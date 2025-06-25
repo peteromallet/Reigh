@@ -1,5 +1,7 @@
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import ToolSelectorPage from '@/pages/ToolSelectorPage';
+import HomePage from '@/pages/HomePage';
+import ArtPage from '@/pages/ArtPage';
 // Placeholder imports for tool pages - these will be updated in later phases
 import ImageGenerationToolPage from '@/tools/image-generation/pages/ImageGenerationToolPage';
 import VideoTravelToolPage from '@/tools/video-travel/pages/VideoTravelToolPage';
@@ -9,16 +11,28 @@ import EditTravelToolPage from '@/tools/edit-travel/pages/EditTravelToolPage';
 import ShotsPage from "@/pages/ShotsPage";
 import GenerationsPage from "@/pages/GenerationsPage"; // Import the new GenerationsPage
 import Layout from './Layout'; // Import the new Layout component
+import { AppEnv } from '@/types/env';
+
+// Determine the environment
+const currentEnv = (import.meta.env.VITE_APP_ENV?.toLowerCase() || AppEnv.DEV);
 
 const router = createBrowserRouter([
+  // HomePage route without Layout (no header) when in web environment
+  ...(currentEnv === AppEnv.WEB ? [{
+    path: '/',
+    element: <HomePage />,
+    errorElement: <NotFoundPage />,
+  }] : []),
+  
   {
     element: <Layout />,
     errorElement: <NotFoundPage />,
     children: [
-      {
+      // ToolSelectorPage at root for non-web environments
+      ...(currentEnv !== AppEnv.WEB ? [{
         path: '/',
         element: <ToolSelectorPage />,
-      },
+      }] : []),
       {
         path: '/tools/image-generation',
         element: <ImageGenerationToolPage />,
@@ -35,10 +49,14 @@ const router = createBrowserRouter([
         path: '/shots',
         element: <ShotsPage />,
       },
-      {
-        path: '/generations',
-        element: <GenerationsPage />,
-      },
+              {
+          path: '/generations',
+          element: <GenerationsPage />,
+        },
+        {
+          path: '/art',
+          element: <ArtPage />,
+        },
       // Any other top-level page routes can become children here
     ]
   },

@@ -69,7 +69,8 @@
 - Visibility logic: ToolSelectorPage.tsx filters tools array based on tool.environments (array of AppEnv from src/types/env.ts) matching VITE_APP_ENV. Modify environments array in ToolSelectorPage.tsx to change visibility.
 
 #### 3.2. Top-Level Pages (`src/pages/`)
-- **ToolSelectorPage.tsx**: App entry. Grid of available tools.
+- **ToolSelectorPage.tsx**: App entry. Grid of available tools. (Shown when VITE_APP_ENV is 'dev' or 'local')
+- **HomePage.tsx**: Landing page with "Reigh" title, tagline, example showcase, and philosophy section. Renders without header/layout. (Shown when VITE_APP_ENV is 'web')
 - **NotFoundPage.tsx**: 404 errors.
 - **ShotsPage.tsx**: Lists project shots (ShotListDisplay). Manages selected shot's images (ShotImageManager).
 - **GenerationsPage.tsx**: Paginated gallery of project's generated media.
