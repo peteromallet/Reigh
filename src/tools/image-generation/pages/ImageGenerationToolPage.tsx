@@ -258,7 +258,7 @@ const ImageGenerationToolPage = () => {
 
   const falApiKey = getApiKey('fal_api_key');
   const openaiApiKey = getApiKey('openai_api_key');
-  const hasValidFalApiKey = !!falApiKey && falApiKey.trim() !== '' && falApiKey !== '0b6f1876-0aab-4b56-b821-b384b64768fa:121392c885a381f93de56d701e3d532f';
+  const hasValidFalApiKey = true;
 
   const targetShotIdForButton = lastAffectedShotId || (shots && shots.length > 0 ? shots[0].id : undefined);
   const targetShotNameForButtonTooltip = targetShotIdForButton 
