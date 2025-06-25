@@ -80,6 +80,9 @@ interface PersistedFormSettings {
   selectedLoras?: ActiveLora[];
   depthStrength?: number;
   softEdgeStrength?: number;
+  beforeEachPromptText?: string;
+  afterEachPromptText?: string;
+  selectedLorasByMode?: Record<GenerationMode, ActiveLora[]>;
 }
 
 const defaultLorasConfig = [
@@ -244,13 +247,18 @@ export const PromptInputRow: React.FC<PromptInputRowProps> = ({
 };
 
 const ImageGenerationForm = forwardRef<ImageGenerationFormHandles, ImageGenerationFormProps>((
-  { onGenerate, isGenerating = false, hasApiKey = true, apiKey, openaiApiKey },
+  { onGenerate, isGenerating = false, hasApiKey: incomingHasApiKey = true, apiKey, openaiApiKey },
   ref
 ) => {
   const [prompts, setPrompts] = useState<PromptEntry[]>([]);
   const promptIdCounter = useRef(1);
   const [isPromptModalOpen, setIsPromptModalOpen] = useState(false);
   const [imagesPerPrompt, setImagesPerPrompt] = useState(1);
+  const [selectedLorasMap, setSelectedLorasMap] = useState<Record<GenerationMode, ActiveLora[]>>({
+    'wan-local': [],
+    'flux-api': [],
+    'hidream-api': []
+  });
   const [selectedLoras, setSelectedLoras] = useState<ActiveLora[]>([]);
   const [depthStrength, setDepthStrength] = useState(50);
   const [softEdgeStrength, setSoftEdgeStrength] = useState(20);
@@ -264,6 +272,13 @@ const ImageGenerationForm = forwardRef<ImageGenerationFormHandles, ImageGenerati
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [directFormActivePromptId, setDirectFormActivePromptId] = useState<string | null>(null);
   const [generationMode, setGenerationMode] = useState<GenerationMode>('wan-local');
+
+  // Text to prepend/append to every prompt
+  const [beforeEachPromptText, setBeforeEachPromptText] = useState('');
+  const [afterEachPromptText, setAfterEachPromptText] = useState('');
+
+  // Treat Wan-local mode as not requiring a stored API key.
+  const hasApiKey = generationMode === 'wan-local' ? true : incomingHasApiKey;
 
   const generatePromptId = () => `prompt-${promptIdCounter.current++}`;
   
@@ -339,6 +354,9 @@ const ImageGenerationForm = forwardRef<ImageGenerationFormHandles, ImageGenerati
         setStartingImage(null);
         setDeterminedApiImageSize(null);
       }
+
+      if (settings.beforeEachPromptText !== undefined) setBeforeEachPromptText(settings.beforeEachPromptText);
+      if (settings.afterEachPromptText !== undefined) setAfterEachPromptText(settings.afterEachPromptText);
     }
   }));
 
@@ -374,12 +392,17 @@ const ImageGenerationForm = forwardRef<ImageGenerationFormHandles, ImageGenerati
         }
 
         if (settingsToLoad.imagesPerPrompt !== undefined) setImagesPerPrompt(settingsToLoad.imagesPerPrompt);
-        if (settingsToLoad.selectedLoras !== undefined && settingsToLoad.selectedLoras.length > 0) {
-            setSelectedLoras(settingsToLoad.selectedLoras);
-            defaultsApplied.current = true;
+        if (settingsToLoad.selectedLorasByMode) {
+            const emptyMap: Record<GenerationMode, ActiveLora[]> = { 'wan-local': [], 'flux-api': [], 'hidream-api': [] };
+            setSelectedLorasMap({ ...emptyMap, ...(settingsToLoad.selectedLorasByMode as Record<GenerationMode, ActiveLora[]>) });
+        } else if (settingsToLoad.selectedLoras !== undefined && settingsToLoad.selectedLoras.length > 0) {
+            setSelectedLorasMap({ 'wan-local': [], 'flux-api': settingsToLoad.selectedLoras, 'hidream-api': [] });
         }
         if (settingsToLoad.depthStrength !== undefined) setDepthStrength(settingsToLoad.depthStrength);
         if (settingsToLoad.softEdgeStrength !== undefined) setSoftEdgeStrength(settingsToLoad.softEdgeStrength);
+
+        if (settingsToLoad.beforeEachPromptText !== undefined) setBeforeEachPromptText(settingsToLoad.beforeEachPromptText);
+        if (settingsToLoad.afterEachPromptText !== undefined) setAfterEachPromptText(settingsToLoad.afterEachPromptText);
 
       } catch (error) { 
           console.error("Error loading saved form settings:", error); 
@@ -418,11 +441,11 @@ const ImageGenerationForm = forwardRef<ImageGenerationFormHandles, ImageGenerati
 
   useEffect(() => {
     if (hasLoadedFromStorage.current) { 
-      const currentSettings: PersistedFormSettings = { prompts, imagesPerPrompt, selectedLoras, depthStrength, softEdgeStrength };
+      const currentSettings: PersistedFormSettings = { prompts, imagesPerPrompt, selectedLorasByMode: selectedLorasMap, depthStrength, softEdgeStrength, beforeEachPromptText, afterEachPromptText };
       console.log("[ImageGenerationForm] Saving to localStorage. Prompts count:", prompts.length, "Data:", currentSettings);
       localStorage.setItem(FORM_SETTINGS_KEY, JSON.stringify(currentSettings));
     }
-  }, [prompts, imagesPerPrompt, selectedLoras, depthStrength, softEdgeStrength]);
+  }, [prompts, imagesPerPrompt, selectedLorasMap, depthStrength, softEdgeStrength, beforeEachPromptText, afterEachPromptText]);
 
   useEffect(() => { fetch('/data/loras.json').then(response => response.json()).then((data: LoraData) => setAvailableLoras(data.models || [])).catch(error => console.error("Error fetching LoRA data:", error)); }, []);
   useEffect(() => { 
@@ -446,6 +469,15 @@ const ImageGenerationForm = forwardRef<ImageGenerationFormHandles, ImageGenerati
       }
     } 
   }, [availableLoras, hasLoadedFromStorage.current, defaultsApplied.current, selectedLoras.length]);
+
+  useEffect(() => {
+    setSelectedLoras(selectedLorasMap[generationMode] || []);
+  }, [generationMode, selectedLorasMap]);
+
+  useEffect(() => {
+    setSelectedLorasMap(prev => ({ ...prev, [generationMode]: selectedLoras }));
+  }, [selectedLoras, generationMode]);
+
   const handleAddLora = (loraToAdd: LoraModel) => { 
     if (selectedLoras.find(sl => sl.id === loraToAdd["Model ID"])) { toast.info(`LoRA already added.`); return; }
     if (loraToAdd["Model Files"] && loraToAdd["Model Files"].length > 0) {
@@ -502,8 +534,8 @@ const ImageGenerationForm = forwardRef<ImageGenerationFormHandles, ImageGenerati
   const processFile = async (file: File | null) => {
     await processFileInternal(file, false);
   };
-  const handleFileChange = (file: File | null) => {
-    processFile(file);
+  const handleFileChange = (files: File[]) => {
+    processFile(files.length > 0 ? files[0] : null);
   };
   const handleFileRemove = () => { processFile(null); };
 
@@ -571,11 +603,14 @@ const ImageGenerationForm = forwardRef<ImageGenerationFormHandles, ImageGenerati
     }
 
     const generationData = {
-      prompts: activePrompts.map(p => ({
-        id: p.id, 
-        fullPrompt: p.fullPrompt, 
-        shortPrompt: p.shortPrompt || (p.fullPrompt.substring(0,30) + (p.fullPrompt.length > 30 ? "..." : ""))
-      })), 
+      prompts: activePrompts.map(p => {
+        const combinedFull = `${beforeEachPromptText ? `${beforeEachPromptText} ` : ''}${p.fullPrompt}${afterEachPromptText ? ` ${afterEachPromptText}` : ''}`.trim();
+        return {
+          id: p.id,
+          fullPrompt: combinedFull,
+          shortPrompt: p.shortPrompt || (combinedFull.substring(0, 30) + (combinedFull.length > 30 ? "..." : ""))
+        };
+      }), 
       imagesPerPrompt, 
       loras: lorasForApi, 
       fullSelectedLoras: selectedLoras, 
@@ -583,7 +618,8 @@ const ImageGenerationForm = forwardRef<ImageGenerationFormHandles, ImageGenerati
       softEdgeStrength: normalizedSoftEdgeStrength, 
       startingImage,
       appliedStartingImageUrl,
-      determinedApiImageSize
+      determinedApiImageSize,
+      generationMode
     };
 
     console.log("[ImageGenerationForm] handleSubmit: Calling onGenerate with data:", JSON.stringify(generationData, null, 2));
@@ -657,6 +693,32 @@ const ImageGenerationForm = forwardRef<ImageGenerationFormHandles, ImageGenerati
                   <p className="text-xs text-primary">(Click to Edit)</p>
               </div>
             )}
+          </div>
+
+          {/* Before / After prompt modifiers */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="beforeEachPromptText">Before each prompt</Label>
+              <Textarea
+                id="beforeEachPromptText"
+                value={beforeEachPromptText}
+                onChange={(e) => setBeforeEachPromptText(e.target.value)}
+                placeholder="Text to prepend"
+                disabled={!hasApiKey || isGenerating}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label htmlFor="afterEachPromptText">After each prompt</Label>
+              <Textarea
+                id="afterEachPromptText"
+                value={afterEachPromptText}
+                onChange={(e) => setAfterEachPromptText(e.target.value)}
+                placeholder="Text to append"
+                disabled={!hasApiKey || isGenerating}
+                className="mt-1"
+              />
+            </div>
           </div>
 
           <div className="grid grid-cols-1 gap-4 pt-4 border-t">

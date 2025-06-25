@@ -40,6 +40,7 @@
 | `/db/migrations-sqlite/` | SQLite migration files |
 | `/db/seed.ts` | Seeds local SQLite DB for development |
 | `/src/lib/db/index.ts` | Runtime DAL: Exports Drizzle client (server-side, SQLite/PG) & Supabase JS client (client-side) |
+| `/src/server/routes/singleImageGeneration.ts` | New route for single-image tasks (POST /api/single-image/generate). Queues `single_image` tasks mirroring Wan local image generation.
 
 ### DB Workflow (Drizzle ORM - SQLite & PostgreSQL)
 1. **Schema**: `/db/schema/schema.ts` (Drizzle, PG-first)

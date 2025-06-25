@@ -170,35 +170,77 @@ const ImageGenerationToolPage = () => {
     }
 
     setIsCreatingTask(true);
-    toast.info("Preparing image generation task to be sent to API...");
 
-    if (showPlaceholders && formData.prompts.length * formData.imagesPerPrompt > 0) {
-      setGeneratedImages([]); // Clear placeholders
+    const { generationMode, ...restOfFormData } = formData;
+
+    // Clear placeholders if needed
+    if (showPlaceholders && restOfFormData.prompts.length * restOfFormData.imagesPerPrompt > 0) {
+      setGeneratedImages([]);
       setShowPlaceholders(false);
     }
 
-    let userImageUrl: string | null = null;
-    if (formData.startingImage) {
+    if (generationMode === 'wan-local') {
+      // Prepare payload for single-image route
+      const primaryPrompt = restOfFormData.prompts[0]?.fullPrompt || '';
+
+      const lorasMapped: Array<{ path: string; strength: number }> = (restOfFormData.loras || []).map((lora: any) => ({
+        path: lora.path,
+        strength: parseFloat(lora.scale ?? lora.strength) || 0.0,
+      }));
+
+      const requestPayload: any = {
+        project_id: selectedProjectId,
+        prompt: primaryPrompt,
+        resolution: restOfFormData.determinedApiImageSize || undefined,
+        seed: 11111,
+        loras: lorasMapped,
+      };
+
       try {
-        toast.info("Uploading starting image...");
-        userImageUrl = await uploadImageToStorage(formData.startingImage);
+        const response = await fetch('/api/single-image/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestPayload),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ message: response.statusText }));
+          throw new Error(errorData.message || `HTTP error ${response.status}`);
+        }
+
+        const newTask = await response.json();
+        toast.success(`Single image task queued (ID: ${(newTask.id as string).substring(0,8)}...).`);
+      } catch (err: any) {
+        console.error('[ImageGenerationToolPage] Error creating single image task:', err);
+        toast.error(`Failed to create task: ${err.message || 'Unknown API error'}`);
+      } finally {
+        setIsCreatingTask(false);
+      }
+
+      return; // early exit for wan-local
+    }
+
+    // Existing FAL-based generation for flux-api (default)
+    let userImageUrl: string | null = null;
+    if (restOfFormData.startingImage) {
+      try {
+        toast.info('Uploading starting image...');
+        userImageUrl = await uploadImageToStorage(restOfFormData.startingImage);
         if (!userImageUrl) {
-          toast.error("Starting image upload failed. Please try again.");
+          toast.error('Starting image upload failed. Please try again.');
           setIsCreatingTask(false);
           return;
         }
-        toast.success("Starting image uploaded!");
+        toast.success('Starting image uploaded!');
       } catch (uploadError: any) {
-        console.error("[ImageGenerationToolPage] Error uploading starting image:", uploadError);
+        console.error('[ImageGenerationToolPage] Error uploading starting image:', uploadError);
         toast.error(`Failed to upload starting image: ${uploadError.message || 'Unknown error'}`);
         setIsCreatingTask(false);
         return;
       }
-    } else if (formData.appliedStartingImageUrl) {
-        userImageUrl = formData.appliedStartingImageUrl;
+    } else if (restOfFormData.appliedStartingImageUrl) {
+      userImageUrl = restOfFormData.appliedStartingImageUrl;
     }
-
-    const { onGenerationComplete, onGenerationStart, ...restOfFormData } = formData;
 
     const taskPayload = {
       project_id: selectedProjectId,
@@ -206,10 +248,9 @@ const ImageGenerationToolPage = () => {
       params: {
         ...restOfFormData,
         user_image_url: userImageUrl,
-        // Ensure LoRAs are serializable and match expected structure
-        loras: formData.loras.map((lora: any) => ({
-            path: lora.path,
-            strength: lora.scale // Assuming the form still provides 'scale'
+        loras: (restOfFormData.loras || []).map((lora: any) => ({
+          path: lora.path,
+          strength: lora.scale,
         })),
       },
       status: 'Pending',
@@ -222,8 +263,6 @@ const ImageGenerationToolPage = () => {
 
       if (newTask) {
         toast.success(`Image generation task created (ID: ${newTask.id.substring(0,8)}...). Check the Tasks pane for progress.`);
-        // No longer need to call onGenerationStart or onGenerationComplete
-        // The backend and WebSocket will handle state updates.
       }
     } catch (err: any) {
       console.error('Error creating image generation task:', err);

@@ -11,6 +11,7 @@ import { useListResources, useCreateResource, useDeleteResource, Resource } from
 import { Textarea } from '@/shared/components/ui/textarea';
 import { Label } from '@/shared/components/ui/label';
 import { UseQueryResult, UseMutationResult } from '@tanstack/react-query';
+import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/shared/components/ui/pagination";
 
 interface LoraModelImage {
   alt_text: string;
@@ -64,6 +65,8 @@ interface CommunityLorasTabProps {
 const CommunityLorasTab: React.FC<CommunityLorasTabProps> = ({ loras, onAddLora, selectedLoraIds, lora_type, myLorasResource, createResource }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [sortOption, setSortOption] = useState<SortOption>('downloads');
+  const [page, setPage] = useState(0);
+  const ITEMS_PER_PAGE = 20;
 
   const myLoraModelIds = useMemo(() => myLorasResource.data?.map(r => r.metadata["Model ID"]) || [], [myLorasResource.data]);
 
@@ -115,6 +118,12 @@ const CommunityLorasTab: React.FC<CommunityLorasTabProps> = ({ loras, onAddLora,
     return sorted;
   }, [loras, searchTerm, sortOption, lora_type]);
 
+  // Reset page when filter/sort changes
+  React.useEffect(() => { setPage(0); }, [searchTerm, sortOption, lora_type]);
+
+  const totalPages = Math.ceil(processedLoras.length / ITEMS_PER_PAGE);
+  const paginatedLoras = useMemo(() => processedLoras.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE), [processedLoras, page]);
+
   return (
     <div>
       <div className="flex gap-2 mb-4 pt-2">
@@ -140,8 +149,8 @@ const CommunityLorasTab: React.FC<CommunityLorasTabProps> = ({ loras, onAddLora,
       </div>
       <ScrollArea className="flex-grow pr-4 h-[500px]">
         <div className="space-y-3 p-1">
-          {processedLoras.length > 0 ? (
-            processedLoras.map((lora) => {
+          {paginatedLoras.length > 0 ? (
+            paginatedLoras.map((lora) => {
               const isSelectedOnGenerator = selectedLoraIds.includes(lora["Model ID"]);
               const isinMyLoras = myLoraModelIds.includes(lora["Model ID"]);
 
@@ -215,6 +224,39 @@ const CommunityLorasTab: React.FC<CommunityLorasTabProps> = ({ loras, onAddLora,
             })
           ) : (
             <p className="text-center text-muted-foreground py-8">No LoRA models match your search criteria.</p>
+          )}
+
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <Pagination className="pt-4">
+              <PaginationContent>
+                <PaginationItem>
+                  <PaginationPrevious
+                    href="#"
+                    onClick={(e) => { e.preventDefault(); if (page > 0) setPage(page - 1); }}
+                    className={page === 0 ? 'pointer-events-none opacity-50' : ''}
+                  />
+                </PaginationItem>
+                {Array.from({ length: totalPages }).map((_, idx) => (
+                  <PaginationItem key={idx}>
+                    <PaginationLink
+                      href="#"
+                      isActive={idx === page}
+                      onClick={(e) => { e.preventDefault(); setPage(idx); }}
+                    >
+                      {idx + 1}
+                    </PaginationLink>
+                  </PaginationItem>
+                ))}
+                <PaginationItem>
+                  <PaginationNext
+                    href="#"
+                    onClick={(e) => { e.preventDefault(); if (page < totalPages - 1) setPage(page + 1); }}
+                    className={page === totalPages - 1 ? 'pointer-events-none opacity-50' : ''}
+                  />
+                </PaginationItem>
+              </PaginationContent>
+            </Pagination>
           )}
         </div>
       </ScrollArea>

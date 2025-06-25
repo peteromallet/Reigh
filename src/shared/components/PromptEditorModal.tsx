@@ -472,7 +472,7 @@ const PromptEditorModal: React.FC<PromptEditorModalProps> = ({
                     onRemove={() => handleInternalRemovePrompt(prompt.id)}
                     canRemove={internalPrompts.length > 1}
                     isGenerating={isAILoading}
-                    hasApiKey={actualCanUseAI}
+                    hasApiKey={true}
                     onEditWithAI={() => openEditWithAIForm(prompt.id, prompt.fullPrompt)}
                     onSetActiveForFullView={setActivePromptIdForFullView}
                     isActiveForFullView={activePromptIdForFullView === prompt.id}

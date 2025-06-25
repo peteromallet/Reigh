@@ -27,6 +27,7 @@ import { startTaskPoller, startTaskStatusPoller } from './services/taskProcessin
 import { initializeWebSocketServer } from './services/webSocketService';
 import http from 'http';
 import { seedDatabase } from '../lib/seed';
+import singleImageRouter from './routes/singleImageGeneration';
 // import { fileURLToPath } from 'url'; // No longer needed if using process.cwd()
 
 // // Determine __dirname for ES modules
@@ -100,6 +101,7 @@ app.use('/api/tasks', tasksRouter);
 app.use('/api/steerable-motion', steerableMotionRouter);
 app.use('/api/resources', resourcesRouter);
 app.use('/api/api-keys', apiKeysRouter);
+app.use('/api/single-image', singleImageRouter);
 
 const startServer = async () => {
   try {
