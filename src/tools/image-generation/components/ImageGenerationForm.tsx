@@ -19,9 +19,12 @@ import {
 import { useToast } from "@/shared/hooks/use-toast";
 import FileInput from "@/shared/components/FileInput";
 import { fileToDataURL, dataURLtoFile } from "@/shared/lib/utils";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/components/ui/select";
 
 const FORM_SETTINGS_KEY = 'artfulPaneCraftFormSettings';
 const STARTING_IMAGE_KEY = 'artfulPaneCraftStartingImage';
+
+type GenerationMode = 'wan-local' | 'flux-api' | 'hidream-api';
 
 export interface MetadataLora {
     id: string;
@@ -260,6 +263,7 @@ const ImageGenerationForm = forwardRef<ImageGenerationFormHandles, ImageGenerati
   const defaultsApplied = useRef(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [directFormActivePromptId, setDirectFormActivePromptId] = useState<string | null>(null);
+  const [generationMode, setGenerationMode] = useState<GenerationMode>('wan-local');
 
   const generatePromptId = () => `prompt-${promptIdCounter.current++}`;
   
@@ -591,6 +595,21 @@ const ImageGenerationForm = forwardRef<ImageGenerationFormHandles, ImageGenerati
   return (
     <>
       <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6 bg-white rounded-lg shadow-sm">
+        {/* Generation Mode Selector */}
+        <div className="md:col-span-2 mb-6">
+          <Label className="text-lg font-semibold mb-3 block">Generation Mode</Label>
+          <Select value={generationMode} onValueChange={(value: GenerationMode) => setGenerationMode(value)}>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Select generation mode" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="wan-local">Wan (local)</SelectItem>
+              <SelectItem value="flux-api">Flux (via API)</SelectItem>
+              <SelectItem value="hidream-api">HiDream (via API)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
         <div className="space-y-6">
           <div className="space-y-3">
             <div className="flex justify-between items-center mb-2">
@@ -653,32 +672,39 @@ const ImageGenerationForm = forwardRef<ImageGenerationFormHandles, ImageGenerati
               />
             </div>
           </div>
-          <div>
-            <Label htmlFor="starting-image" className="mb-2 block font-medium">Optional Starting Image (Guidance)</Label>
-            <FileInput
-              onFileChange={handleFileChange}
-              onFileRemove={handleFileRemove}
-              acceptTypes={['image']}
-              label="Drag & drop an image or click to upload"
-              currentFilePreviewUrl={startingImagePreview}
-              currentFileName={startingImage?.name}
-              disabled={isGenerating || !hasApiKey}
-            />
-          </div>
+          {/* Show starting image and ControlNet for Flux API only */}
+          {generationMode === 'flux-api' && (
+            <>
+              <div>
+                <Label htmlFor="starting-image" className="mb-2 block font-medium">Optional Starting Image (Guidance)</Label>
+                <FileInput
+                  onFileChange={handleFileChange}
+                  onFileRemove={handleFileRemove}
+                  acceptTypes={['image']}
+                  label="Drag & drop an image or click to upload"
+                  currentFilePreviewUrl={startingImagePreview}
+                  currentFileName={startingImage?.name}
+                  disabled={isGenerating || !hasApiKey}
+                />
+              </div>
 
-          <div className="space-y-6 pt-4 border-t">
-            <h3 className="text-md font-semibold">ControlNet Strengths:</h3>
-            <SliderWithValue label="Depth Strength" value={depthStrength} onChange={setDepthStrength} disabled={!hasApiKey || isGenerating}/>
-            <SliderWithValue label="Soft Edge Strength" value={softEdgeStrength} onChange={setSoftEdgeStrength} disabled={!hasApiKey || isGenerating}/>
-          </div>
+              <div className="space-y-6 pt-4 border-t">
+                <h3 className="text-md font-semibold">ControlNet Strengths:</h3>
+                <SliderWithValue label="Depth Strength" value={depthStrength} onChange={setDepthStrength} disabled={!hasApiKey || isGenerating}/>
+                <SliderWithValue label="Soft Edge Strength" value={softEdgeStrength} onChange={setSoftEdgeStrength} disabled={!hasApiKey || isGenerating}/>
+              </div>
+            </>
+          )}
         </div>
 
         <div className="space-y-6">
-          <div>
-            <Label>LoRA Models</Label>
-            <Button type="button" variant="outline" className="w-full mt-1" onClick={() => setIsLoraModalOpen(true)} disabled={isGenerating}>
-              Add or Manage LoRA Models
-            </Button>
+          {/* Show LoRA section for Wan and Flux modes */}
+          {(generationMode === 'wan-local' || generationMode === 'flux-api') && (
+            <div>
+              <Label>LoRA Models {generationMode === 'wan-local' ? '(Wan)' : '(Flux)'}</Label>
+              <Button type="button" variant="outline" className="w-full mt-1" onClick={() => setIsLoraModalOpen(true)} disabled={isGenerating}>
+                Add or Manage LoRA Models
+              </Button>
             {availableLoras.length === 0 && !isLoraModalOpen && <p className="text-xs text-muted-foreground mt-1">Loading LoRA models for selection...</p>}
             {selectedLoras.length > 0 && (
               <TooltipProvider delayDuration={300}>
@@ -721,15 +747,28 @@ const ImageGenerationForm = forwardRef<ImageGenerationFormHandles, ImageGenerati
                       </div>
                     </div>
                   ))}
-                </div>
-              </TooltipProvider>
-            )}
-          </div>
+                                  </div>
+                </TooltipProvider>
+              )}
+            </div>
+          )}
+
+          {/* HiDream placeholder */}
+          {generationMode === 'hidream-api' && (
+            <div className="p-6 border-2 border-dashed border-gray-300 rounded-lg text-center">
+              <h3 className="text-lg font-semibold mb-2">HiDream (via API)</h3>
+              <p className="text-muted-foreground">Coming soon...</p>
+            </div>
+          )}
         </div>
 
         <div className="md:col-span-2 flex justify-center mt-4">
-          <Button type="submit" className="w-full md:w-1/2" disabled={isGenerating || !hasApiKey || actionablePromptsCount === 0}>
-            {isGenerating ? "Generating..." : "Generate Images"}
+          <Button 
+            type="submit" 
+            className="w-full md:w-1/2" 
+            disabled={isGenerating || !hasApiKey || actionablePromptsCount === 0 || generationMode === 'hidream-api'}
+          >
+            {isGenerating ? "Generating..." : generationMode === 'hidream-api' ? "Coming Soon" : "Generate Images"}
           </Button>
         </div>
       </form>
@@ -740,7 +779,7 @@ const ImageGenerationForm = forwardRef<ImageGenerationFormHandles, ImageGenerati
         loras={availableLoras}
         onAddLora={handleAddLora}
         selectedLoraIds={selectedLoras.map(l => l["Model ID"])}
-        lora_type="Flux.dev"
+        lora_type={generationMode === 'wan-local' ? "Wan 2.1 14b" : "Flux.dev"}
       />
         
       <PromptEditorModal
