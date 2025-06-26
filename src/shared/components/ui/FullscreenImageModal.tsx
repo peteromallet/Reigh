@@ -80,21 +80,30 @@ const FullscreenImageModal: React.FC<FullscreenImageModalProps> = ({ imageUrl, i
   const handleSave = async () => {
     if (!hasChanges) return;
     
+    console.log(`[FlipSave] Starting save process for image:`, { imageId, imageUrl, isFlippedHorizontally });
+    
     setIsSaving(true);
     try {
+      console.log(`[FlipSave] Creating flipped canvas...`);
       const canvas = await createFlippedCanvas();
+      console.log(`[FlipSave] Canvas created:`, { width: canvas.width, height: canvas.height });
       
       // Convert canvas to blob
       canvas.toBlob(async (blob) => {
         if (!blob) {
+          console.error(`[FlipSave] ERROR: Failed to create image blob from canvas`);
           throw new Error('Failed to create image blob');
         }
+
+        console.log(`[FlipSave] Blob created:`, { size: blob.size, type: blob.type });
 
         // Create a FormData object to send the file
         const formData = new FormData();
         const fileName = `flipped_${imageId || 'image'}_${Date.now()}.png`;
         const file = new File([blob], fileName, { type: 'image/png' });
         formData.append('file', file);
+
+        console.log(`[FlipSave] Uploading file:`, { fileName, fileSize: file.size, fileType: file.type });
 
         try {
           // Send to your API endpoint to save the flipped image
@@ -103,24 +112,35 @@ const FullscreenImageModal: React.FC<FullscreenImageModalProps> = ({ imageUrl, i
             body: formData,
           });
 
+          console.log(`[FlipSave] Upload response status:`, response.status, response.statusText);
+
           if (!response.ok) {
+            const errorText = await response.text().catch(() => 'Unknown error');
+            console.error(`[FlipSave] Upload failed:`, { status: response.status, statusText: response.statusText, errorText });
             throw new Error(`Failed to save image: ${response.status} ${response.statusText}`);
           }
 
           const result = await response.json();
+          console.log(`[FlipSave] Upload successful, server response:`, result);
+          
           const newImageUrl = result.url || result.imageUrl;
+          console.log(`[FlipSave] New image URL:`, newImageUrl);
 
           if (newImageUrl && onImageSaved) {
+            console.log(`[FlipSave] Calling onImageSaved callback with:`, { newImageUrl });
             onImageSaved(newImageUrl);
+          } else {
+            console.warn(`[FlipSave] WARNING: No newImageUrl or onImageSaved callback`, { newImageUrl, hasCallback: !!onImageSaved });
           }
 
           setHasChanges(false);
+          console.log(`[FlipSave] Save process completed successfully`);
           toast({ 
             title: "Image Saved", 
             description: "Flipped image has been saved successfully",
           });
         } catch (error) {
-          console.error('Error saving flipped image:', error);
+          console.error('[FlipSave] ERROR during upload:', error);
           toast({ 
             title: "Save Failed", 
             description: "Could not save the flipped image",
@@ -129,7 +149,7 @@ const FullscreenImageModal: React.FC<FullscreenImageModalProps> = ({ imageUrl, i
         }
       }, 'image/png');
     } catch (error) {
-      console.error('Error creating flipped image:', error);
+      console.error('[FlipSave] ERROR creating flipped image:', error);
       toast({ 
         title: "Save Failed", 
         description: "Could not process the image",

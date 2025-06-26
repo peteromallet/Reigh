@@ -319,34 +319,44 @@ const ImageGenerationToolPage = () => {
   };
 
   const handleImageSaved = async (imageId: string, newImageUrl: string) => {
+    console.log(`[ImageGeneration-HandleImageSaved] Starting image update process:`, { imageId, newImageUrl });
+    
     try {
       // Update the database record
+      console.log(`[ImageGeneration-HandleImageSaved] Updating database record for image:`, imageId);
       const { error } = await supabase
         .from('generations')
         .update({ image_url: newImageUrl })
         .eq('id', imageId);
 
       if (error) {
-        console.error("Error updating image URL in database:", error);
+        console.error("[ImageGeneration-HandleImageSaved] Database update error:", error);
         toast.error("Failed to update image in database.");
         return;
       }
 
+      console.log(`[ImageGeneration-HandleImageSaved] Database update successful for image:`, imageId);
+
       // Update local state
-      setGeneratedImages(prevImages =>
-        prevImages.map(img => 
+      console.log(`[ImageGeneration-HandleImageSaved] Updating local state...`);
+      setGeneratedImages(prevImages => {
+        const updated = prevImages.map(img => 
           img.id === imageId 
             ? { ...img, url: newImageUrl } 
             : img
-        )
-      );
+        );
+        console.log(`[ImageGeneration-HandleImageSaved] Local state updated. Found image to update:`, updated.some(img => img.id === imageId));
+        return updated;
+      });
 
       // Invalidate the generations query to ensure fresh data
+      console.log(`[ImageGeneration-HandleImageSaved] Invalidating React Query cache...`);
       queryClient.invalidateQueries({ queryKey: ['generations', selectedProjectId] });
 
+      console.log(`[ImageGeneration-HandleImageSaved] Complete process finished successfully`);
       toast.success("Image updated successfully!");
     } catch (error) {
-      console.error("Error saving flipped image:", error);
+      console.error("[ImageGeneration-HandleImageSaved] Unexpected error:", error);
       toast.error("Failed to update image.");
     }
   };

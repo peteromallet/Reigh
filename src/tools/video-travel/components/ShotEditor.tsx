@@ -506,35 +506,45 @@ const ShotEditor: React.FC<ShotEditorProps> = ({
   };
 
   const handleImageSaved = async (imageId: string, newImageUrl: string) => {
+    console.log(`[ShotEditor-HandleImageSaved] Starting image update process:`, { imageId, newImageUrl, shotId: selectedShot.id });
+    
     try {
       // Update the database record
+      console.log(`[ShotEditor-HandleImageSaved] Updating database record for image:`, imageId);
       const { error } = await supabase
         .from('generations')
         .update({ image_url: newImageUrl })
         .eq('id', imageId);
 
       if (error) {
-        console.error("Error updating image URL in database:", error);
+        console.error("[ShotEditor-HandleImageSaved] Database update error:", error);
         toast.error("Failed to update image in database.");
         return;
       }
 
+      console.log(`[ShotEditor-HandleImageSaved] Database update successful for image:`, imageId);
+
       // Update local state
-      setLocalOrderedShotImages(prevImages =>
-        prevImages.map(img => 
+      console.log(`[ShotEditor-HandleImageSaved] Updating local state...`);
+      setLocalOrderedShotImages(prevImages => {
+        const updated = prevImages.map(img => 
           img.id === imageId 
             ? { ...img, imageUrl: newImageUrl, thumbUrl: newImageUrl } 
             : img
-        )
-      );
+        );
+        console.log(`[ShotEditor-HandleImageSaved] Local state updated. Found image to update:`, updated.some(img => img.id === imageId));
+        return updated;
+      });
 
       // Invalidate relevant queries to ensure fresh data
+      console.log(`[ShotEditor-HandleImageSaved] Invalidating React Query cache...`);
       queryClient.invalidateQueries({ queryKey: ['shots', selectedProjectId] });
       queryClient.invalidateQueries({ queryKey: ['generations', selectedProjectId] });
 
+      console.log(`[ShotEditor-HandleImageSaved] Complete process finished successfully`);
       toast.success("Image updated successfully!");
     } catch (error) {
-      console.error("Error saving flipped image:", error);
+      console.error("[ShotEditor-HandleImageSaved] Unexpected error:", error);
       toast.error("Failed to update image.");
     }
   };

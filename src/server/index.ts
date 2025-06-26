@@ -95,14 +95,46 @@ app.post('/api/local-image-upload', upload.single('image'), (req: express.Reques
 
 // --- START: Flipped Image Upload Logic ---
 app.post('/api/upload-flipped-image', upload.single('file'), (req: express.Request, res: express.Response): void => {
+  console.log(`[FlippedImageUpload] Started processing flipped image upload`);
+  console.log(`[FlippedImageUpload] Request headers:`, {
+    'content-type': req.headers['content-type'],
+    'content-length': req.headers['content-length']
+  });
+  
   if (!req.file) {
+    console.error(`[FlippedImageUpload] ERROR: No file uploaded in request`);
     res.status(400).json({ message: 'No file uploaded.' });
     return;
   }
+  
+  console.log(`[FlippedImageUpload] File details:`, {
+    originalname: req.file.originalname,
+    filename: req.file.filename,
+    size: req.file.size,
+    mimetype: req.file.mimetype,
+    destination: req.file.destination,
+    path: req.file.path
+  });
+  
   // Build relative URL for the uploaded file
   const relativeFileUrl = `/${LOCAL_FILES_DIR_NAME}/${req.file.filename}`;
-  console.log(`[Flipped Image] Saved flipped image: ${req.file.filename} (${req.file.size} bytes)`);
-  res.json({ url: relativeFileUrl, imageUrl: relativeFileUrl }); // Return both url and imageUrl for compatibility
+  const fullPath = path.join(localFilesStorageDir, req.file.filename);
+  
+  // Verify file exists on disk
+  const fileExists = fs.existsSync(fullPath);
+  console.log(`[FlippedImageUpload] File saved successfully:`, {
+    relativeUrl: relativeFileUrl,
+    fullPath: fullPath,
+    fileExists: fileExists,
+    storageDirectory: localFilesStorageDir
+  });
+  
+  console.log(`[FlippedImageUpload] Saved flipped image: ${req.file.filename} (${req.file.size} bytes)`);
+  
+  const response = { url: relativeFileUrl, imageUrl: relativeFileUrl };
+  console.log(`[FlippedImageUpload] Sending response:`, response);
+  
+  res.json(response); // Return both url and imageUrl for compatibility
   return;
 });
 // --- END: Flipped Image Upload Logic ---

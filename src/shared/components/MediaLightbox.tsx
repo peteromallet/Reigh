@@ -87,21 +87,30 @@ const MediaLightbox: React.FC<MediaLightboxProps> = ({ media, onClose, onNext, o
   const handleSave = async () => {
     if (!hasChanges) return;
     
+    console.log(`[MediaLightbox-FlipSave] Starting save process for media:`, { mediaId: media.id, mediaUrl: getDisplayUrl(media.imageUrl || ''), isFlippedHorizontally });
+    
     setIsSaving(true);
     try {
+      console.log(`[MediaLightbox-FlipSave] Creating flipped canvas...`);
       const canvas = await createFlippedCanvas();
+      console.log(`[MediaLightbox-FlipSave] Canvas created:`, { width: canvas.width, height: canvas.height });
       
       // Convert canvas to blob
       canvas.toBlob(async (blob) => {
         if (!blob) {
+          console.error(`[MediaLightbox-FlipSave] ERROR: Failed to create image blob from canvas`);
           throw new Error('Failed to create image blob');
         }
+
+        console.log(`[MediaLightbox-FlipSave] Blob created:`, { size: blob.size, type: blob.type });
 
         // Create a FormData object to send the file
         const formData = new FormData();
         const fileName = `flipped_${media.id || 'image'}_${Date.now()}.png`;
         const file = new File([blob], fileName, { type: 'image/png' });
         formData.append('file', file);
+
+        console.log(`[MediaLightbox-FlipSave] Uploading file:`, { fileName, fileSize: file.size, fileType: file.type });
 
         try {
           // Send to your API endpoint to save the flipped image
@@ -110,24 +119,35 @@ const MediaLightbox: React.FC<MediaLightboxProps> = ({ media, onClose, onNext, o
             body: formData,
           });
 
+          console.log(`[MediaLightbox-FlipSave] Upload response status:`, response.status, response.statusText);
+
           if (!response.ok) {
+            const errorText = await response.text().catch(() => 'Unknown error');
+            console.error(`[MediaLightbox-FlipSave] Upload failed:`, { status: response.status, statusText: response.statusText, errorText });
             throw new Error(`Failed to save image: ${response.status} ${response.statusText}`);
           }
 
           const result = await response.json();
+          console.log(`[MediaLightbox-FlipSave] Upload successful, server response:`, result);
+          
           const newImageUrl = result.url || result.imageUrl;
+          console.log(`[MediaLightbox-FlipSave] New image URL:`, newImageUrl);
 
           if (newImageUrl && onImageSaved) {
+            console.log(`[MediaLightbox-FlipSave] Calling onImageSaved callback with:`, { mediaId: media.id, newImageUrl });
             onImageSaved(newImageUrl);
+          } else {
+            console.warn(`[MediaLightbox-FlipSave] WARNING: No newImageUrl or onImageSaved callback`, { newImageUrl, hasCallback: !!onImageSaved });
           }
 
           setHasChanges(false);
+          console.log(`[MediaLightbox-FlipSave] Save process completed successfully`);
           toast({ 
             title: "Image Saved", 
             description: "Flipped image has been saved successfully",
           });
         } catch (error) {
-          console.error('Error saving flipped image:', error);
+          console.error('[MediaLightbox-FlipSave] ERROR during upload:', error);
           toast({ 
             title: "Save Failed", 
             description: "Could not save the flipped image",
@@ -136,7 +156,7 @@ const MediaLightbox: React.FC<MediaLightboxProps> = ({ media, onClose, onNext, o
         }
       }, 'image/png');
     } catch (error) {
-      console.error('Error creating flipped image:', error);
+      console.error('[MediaLightbox-FlipSave] ERROR creating flipped image:', error);
       toast({ 
         title: "Save Failed", 
         description: "Could not process the image",
