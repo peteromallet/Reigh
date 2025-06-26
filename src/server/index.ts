@@ -92,6 +92,20 @@ app.post('/api/local-image-upload', upload.single('image'), (req: express.Reques
   res.json({ url: relativeFileUrl }); // Return the relative URL
   return;
 });
+
+// --- START: Flipped Image Upload Logic ---
+app.post('/api/upload-flipped-image', upload.single('file'), (req: express.Request, res: express.Response): void => {
+  if (!req.file) {
+    res.status(400).json({ message: 'No file uploaded.' });
+    return;
+  }
+  // Build relative URL for the uploaded file
+  const relativeFileUrl = `/${LOCAL_FILES_DIR_NAME}/${req.file.filename}`;
+  console.log(`[Flipped Image] Saved flipped image: ${req.file.filename} (${req.file.size} bytes)`);
+  res.json({ url: relativeFileUrl, imageUrl: relativeFileUrl }); // Return both url and imageUrl for compatibility
+  return;
+});
+// --- END: Flipped Image Upload Logic ---
 // --- END: Local File Upload Logic ---
 
 // API Routes

@@ -32,9 +32,10 @@ interface VideoOutputsGalleryProps {
     replaceImages?: boolean;
     inputImages?: string[];
   }) => void;
+  onImageSaved?: (newImageUrl: string) => void;
 }
 
-const VideoOutputsGallery: React.FC<VideoOutputsGalleryProps> = ({ videoOutputs, onDelete, deletingVideoId, onApplySettings }) => {
+const VideoOutputsGallery: React.FC<VideoOutputsGalleryProps> = ({ videoOutputs, onDelete, deletingVideoId, onApplySettings, onImageSaved }) => {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [animatedVideoOutputs, setAnimatedVideoOutputs] = useState<GenerationRow[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
@@ -90,6 +91,7 @@ const VideoOutputsGallery: React.FC<VideoOutputsGalleryProps> = ({ videoOutputs,
         <VideoLightbox
           video={sortedVideoOutputs[lightboxIndex]}
           onClose={() => setLightboxIndex(null)}
+          onImageSaved={onImageSaved}
         />
       )}
 

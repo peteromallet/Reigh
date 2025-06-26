@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Download } from 'lucide-react'; // Import Download icon
+import React, { useState, useRef, useCallback } from 'react';
+import { Download, FlipHorizontal, Save } from 'lucide-react'; // Import FlipHorizontal and Save icons
 import { Button } from "./button"; // Updated
 import {
   Tooltip,
@@ -16,10 +16,15 @@ interface FullscreenImageModalProps {
   imageAlt?: string; // Optional alt text
   imageId?: string; // Optional image ID for download filename
   onClose: () => void;
+  onImageSaved?: (newImageUrl: string) => void; // Callback when image is saved with changes
 }
 
-const FullscreenImageModal: React.FC<FullscreenImageModalProps> = ({ imageUrl, imageAlt, imageId, onClose }) => {
+const FullscreenImageModal: React.FC<FullscreenImageModalProps> = ({ imageUrl, imageAlt, imageId, onClose, onImageSaved }) => {
   const [isDownloading, setIsDownloading] = useState(false); // State for download button loading
+  const [isSaving, setIsSaving] = useState(false); // State for save button loading
+  const [isFlippedHorizontally, setIsFlippedHorizontally] = useState(false); // State for horizontal flip
+  const [hasChanges, setHasChanges] = useState(false); // State to track if there are unsaved changes
+  const imgRef = useRef<HTMLImageElement>(null); // Reference to the image element
   const { toast } = useToast(); // Initialize useToast
   
   // Get pane state for positioning adjustments
@@ -36,12 +41,135 @@ const FullscreenImageModal: React.FC<FullscreenImageModalProps> = ({ imageUrl, i
 
   const downloadFileName = `artful_pane_craft_fullscreen_${imageId || 'image'}_${Date.now()}.png`;
 
+  // Function to create a canvas with the flipped image
+  const createFlippedCanvas = useCallback(async (): Promise<HTMLCanvasElement> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Could not get canvas context'));
+          return;
+        }
+
+        canvas.width = img.width;
+        canvas.height = img.height;
+
+        // Apply horizontal flip if needed
+        if (isFlippedHorizontally) {
+          ctx.scale(-1, 1);
+          ctx.drawImage(img, -img.width, 0);
+        } else {
+          ctx.drawImage(img, 0, 0);
+        }
+
+        resolve(canvas);
+      };
+      img.onerror = () => reject(new Error('Failed to load image'));
+      img.src = imageUrl;
+    });
+  }, [imageUrl, isFlippedHorizontally]);
+
+  const handleFlipHorizontal = () => {
+    setIsFlippedHorizontally(!isFlippedHorizontally);
+    setHasChanges(true);
+  };
+
+  const handleSave = async () => {
+    if (!hasChanges) return;
+    
+    setIsSaving(true);
+    try {
+      const canvas = await createFlippedCanvas();
+      
+      // Convert canvas to blob
+      canvas.toBlob(async (blob) => {
+        if (!blob) {
+          throw new Error('Failed to create image blob');
+        }
+
+        // Create a FormData object to send the file
+        const formData = new FormData();
+        const fileName = `flipped_${imageId || 'image'}_${Date.now()}.png`;
+        const file = new File([blob], fileName, { type: 'image/png' });
+        formData.append('file', file);
+
+        try {
+          // Send to your API endpoint to save the flipped image
+          const response = await fetch('/api/upload-flipped-image', {
+            method: 'POST',
+            body: formData,
+          });
+
+          if (!response.ok) {
+            throw new Error(`Failed to save image: ${response.status} ${response.statusText}`);
+          }
+
+          const result = await response.json();
+          const newImageUrl = result.url || result.imageUrl;
+
+          if (newImageUrl && onImageSaved) {
+            onImageSaved(newImageUrl);
+          }
+
+          setHasChanges(false);
+          toast({ 
+            title: "Image Saved", 
+            description: "Flipped image has been saved successfully",
+          });
+        } catch (error) {
+          console.error('Error saving flipped image:', error);
+          toast({ 
+            title: "Save Failed", 
+            description: "Could not save the flipped image",
+            variant: "destructive"
+          });
+        }
+      }, 'image/png');
+    } catch (error) {
+      console.error('Error creating flipped image:', error);
+      toast({ 
+        title: "Save Failed", 
+        description: "Could not process the image",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleDownloadClick = async () => {
     if (!imageUrl) return;
     setIsDownloading(true);
 
     try {
-      // Use XMLHttpRequest instead of fetch for better compatibility with Supabase storage URLs
+      let downloadUrl = imageUrl;
+      let downloadName = downloadFileName;
+
+      // If the image has been flipped, download the flipped version
+      if (isFlippedHorizontally) {
+        const canvas = await createFlippedCanvas();
+        canvas.toBlob((blob) => {
+          if (blob) {
+            downloadUrl = URL.createObjectURL(blob);
+            downloadName = `flipped_${downloadFileName}`;
+            
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = downloadUrl;
+            a.download = downloadName;
+            document.body.appendChild(a);
+            a.click();
+            URL.revokeObjectURL(downloadUrl);
+            document.body.removeChild(a);
+          }
+        }, 'image/png');
+        return;
+      }
+
+      // Use XMLHttpRequest for original image download
       const xhr = new XMLHttpRequest();
       xhr.open('GET', imageUrl, true);
       xhr.responseType = 'blob';
@@ -53,12 +181,11 @@ const FullscreenImageModal: React.FC<FullscreenImageModalProps> = ({ imageUrl, i
           const a = document.createElement('a');
           a.style.display = 'none';
           a.href = url;
-          a.download = downloadFileName;
+          a.download = downloadName;
           document.body.appendChild(a);
           a.click();
           URL.revokeObjectURL(url);
           document.body.removeChild(a);
-          // toast({ title: "Download Started", description: downloadFileName });
         } else {
           throw new Error(`Failed to fetch image: ${this.status} ${this.statusText}`);
         }
@@ -103,37 +230,89 @@ const FullscreenImageModal: React.FC<FullscreenImageModalProps> = ({ imageUrl, i
           onClick={(e) => e.stopPropagation()} // Prevent modal close when clicking on the image/modal content itself
         >
           <img
+            ref={imgRef}
             src={imageUrl}
             alt={imageAlt || "Fullscreen view"}
-            className="w-auto h-auto max-w-full max-h-[calc(85vh-40px)] object-contain rounded mb-2" // Adjusted max-h to make space for buttons
+            className={`w-auto h-auto max-w-full max-h-[calc(85vh-40px)] object-contain rounded mb-2 transition-transform duration-200 ${
+              isFlippedHorizontally ? 'scale-x-[-1]' : ''
+            }`}
           />
           {/* Buttons container */}
           <div className="flex justify-between items-center mt-auto pt-2">
-            {/* Download Button (Bottom Left) */}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="bg-black/10 hover:bg-black/20 text-black"
-                  onClick={handleDownloadClick}
-                  disabled={isDownloading}
-                >
-                  {isDownloading ? (
-                    <>
-                      <div className="h-4 w-4 mr-2 animate-spin rounded-full border-b-2 border-current"></div>
-                      Downloading...
-                    </>
-                  ) : (
-                    <>
-                      <Download className="h-4 w-4 mr-2" />
-                      Download
-                    </>
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="top"><p>Download Image</p></TooltipContent>
-            </Tooltip>
+            {/* Left side buttons */}
+            <div className="flex items-center space-x-2">
+              {/* Download Button */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="bg-black/10 hover:bg-black/20 text-black"
+                    onClick={handleDownloadClick}
+                    disabled={isDownloading}
+                  >
+                    {isDownloading ? (
+                      <>
+                        <div className="h-4 w-4 mr-2 animate-spin rounded-full border-b-2 border-current"></div>
+                        Downloading...
+                      </>
+                    ) : (
+                      <>
+                        <Download className="h-4 w-4 mr-2" />
+                        Download
+                      </>
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top"><p>Download Image</p></TooltipContent>
+              </Tooltip>
+
+              {/* Flip Horizontal Button */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={`bg-black/10 hover:bg-black/20 text-black ${
+                      isFlippedHorizontally ? 'bg-blue-100 border-blue-300' : ''
+                    }`}
+                    onClick={handleFlipHorizontal}
+                  >
+                    <FlipHorizontal className="h-4 w-4 mr-2" />
+                    Flip
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top"><p>Flip Horizontally</p></TooltipContent>
+              </Tooltip>
+
+              {/* Save Button (only show when there are changes) */}
+              {hasChanges && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="default"
+                      size="sm"
+                      className="bg-blue-600 hover:bg-blue-700 text-white"
+                      onClick={handleSave}
+                      disabled={isSaving}
+                    >
+                      {isSaving ? (
+                        <>
+                          <div className="h-4 w-4 mr-2 animate-spin rounded-full border-b-2 border-current"></div>
+                          Saving...
+                        </>
+                      ) : (
+                        <>
+                          <Save className="h-4 w-4 mr-2" />
+                          Save
+                        </>
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top"><p>Save Changes</p></TooltipContent>
+                </Tooltip>
+              )}
+            </div>
 
             {/* Close Button (Bottom Right) */}
             <Button

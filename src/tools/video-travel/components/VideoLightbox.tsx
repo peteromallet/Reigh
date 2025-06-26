@@ -8,9 +8,10 @@ import { usePanes } from '@/shared/contexts/PanesContext';
 interface VideoLightboxProps {
   video: GenerationRow;
   onClose: () => void;
+  onImageSaved?: (newImageUrl: string) => void; // Callback when image is saved with changes
 }
 
-const VideoLightbox: React.FC<VideoLightboxProps> = ({ video, onClose }) => {
+const VideoLightbox: React.FC<VideoLightboxProps> = ({ video, onClose, onImageSaved }) => {
   // Get pane state for positioning adjustments
   const { 
     isTasksPaneLocked, 

@@ -352,127 +352,109 @@ const MyLorasTab: React.FC<MyLorasTabProps> = ({ myLorasResource, onAddLora, sel
             
             <h3 className="text-lg font-semibold">Your Saved LoRAs</h3>
             
-            {/* Debug info */}
-            <div className="p-2 bg-blue-50 border border-blue-300 rounded-md text-xs text-blue-900 mb-2">
-                Debug: lora_type="{lora_type}", isWan={!!(lora_type && lora_type.toLowerCase().includes('wan'))}, localWanLoras.length={localWanLoras.length}
-                <br/>localWanLoras: {JSON.stringify(localWanLoras.map(l => l.Name))}
-                <br/>Condition check: localWanLoras.length &gt; 0 = {localWanLoras.length > 0}
-            </div>
-
-            <div className="p-4 bg-yellow-50 border border-yellow-300 rounded-md text-sm text-yellow-900 mb-4">
-                Drop your LoRAs in <code>Headless-Wan2GP/loras</code> to use them locally.
+            <div className="p-3 bg-yellow-50 border border-yellow-300 rounded-md text-sm text-yellow-900 mb-4">
+                💡 Drop your LoRAs in <code>Headless-Wan2GP/loras</code> to use them locally.
             </div>
 
             {myLorasResource.isLoading && <p>Loading your LoRAs...</p>}
             {myLorasResource.isError && <p className="text-red-500">Error loading your LoRAs.</p>}
-            
-            {myLorasResource.data && myLorasResource.data.length === 0 && (
-                <div className="text-center text-muted-foreground py-8">
-                    <p>You haven't added any LoRAs yet.</p>
-                    <p>Explore the "Community LoRAs" tab to find and add models.</p>
-                </div>
-            )}
 
-            {/* Temporary: Always show this section for debugging */}
-            <div className="pt-4 bg-red-50 border border-red-300 p-2">
-                <h4 className="text-md font-semibold mb-2">DEBUG: Always visible - Local LoRAs ({localWanLoras.length})</h4>
-                {localWanLoras.length === 0 ? (
-                    <p className="text-sm text-red-600">No local LoRAs found</p>
-                ) : (
-                    <div className="space-y-2">
-                        {localWanLoras.map((lora, index) => (
-                            <div key={index} className="text-xs bg-white p-1 rounded border">
-                                {lora.Name} - {lora["Model ID"]}
+            <ScrollArea className="h-[500px] pr-4">
+                <div className="space-y-4">
+                    {/* Local LoRAs Section */}
+                    {localWanLoras.length > 0 && (
+                        <div>
+                            <h4 className="text-md font-semibold mb-3">Local LoRAs ({localWanLoras.length})</h4>
+                            <div className="space-y-3">
+                                {localWanLoras.map((lora) => {
+                                    const isSelectedOnGenerator = selectedLoraIds.includes(lora["Model ID"]);
+                                    return (
+                                        <Card key={lora["Model ID"]} className="w-full">
+                                            <div className="flex flex-col">
+                                                <CardHeader className="pb-2">
+                                                    <CardTitle className="text-lg truncate" title={lora.Name}>{lora.Name}</CardTitle>
+                                                    <p className="text-xs text-muted-foreground">📁 Local file</p>
+                                                </CardHeader>
+                                                <ItemCardFooter className="mt-auto pt-2">
+                                                    <Button
+                                                        variant={isSelectedOnGenerator ? "secondary" : "outline"}
+                                                        size="sm"
+                                                        className="w-full"
+                                                        onClick={() => onAddLora(lora)}
+                                                        disabled={isSelectedOnGenerator}
+                                                    >
+                                                        {isSelectedOnGenerator ? "Added" : "Add to Generator"}
+                                                    </Button>
+                                                </ItemCardFooter>
+                                            </div>
+                                        </Card>
+                                    );
+                                })}
                             </div>
-                        ))}
-                    </div>
-                )}
-            </div>
-
-            {/* Local LoRAs */}
-            {localWanLoras.length > 0 && (
-                <div className="pt-4">
-                    <h4 className="text-md font-semibold mb-2">Local LoRAs ({localWanLoras.length})</h4>
-                    <ScrollArea className="h-[300px] pr-4">
-                        <div className="space-y-3 p-1">
-                        {localWanLoras.map((lora) => {
-                            const isSelectedOnGenerator = selectedLoraIds.includes(lora["Model ID"]);
-                            return (
-                                <Card key={lora["Model ID"]} className="w-full">
-                                    <div className="flex flex-col">
-                                        <CardHeader className="pb-2">
-                                            <CardTitle className="text-lg truncate" title={lora.Name}>{lora.Name}</CardTitle>
-                                            <p className="text-xs text-muted-foreground">Local file</p>
-                                        </CardHeader>
-                                        <ItemCardFooter className="mt-auto pt-2">
-                                            <Button
-                                                variant={isSelectedOnGenerator ? "secondary" : "outline"}
-                                                size="sm"
-                                                className="w-full"
-                                                onClick={() => onAddLora(lora)}
-                                                disabled={isSelectedOnGenerator}
-                                            >
-                                                {isSelectedOnGenerator ? "Added" : "Add to Generator"}
-                                            </Button>
-                                        </ItemCardFooter>
-                                    </div>
-                                </Card>
-                            );
-                        })}
                         </div>
-                    </ScrollArea>
-                </div>
-            )}
+                    )}
 
-            {myLorasResource.data && myLorasResource.data.length > 0 && (
-                <ScrollArea className="h-[400px] pr-4">
-                    <div className="space-y-3 p-1">
-                    {myLorasResource.data.map((resource: Resource) => {
-                        const lora = resource.metadata;
-                        const isSelectedOnGenerator = selectedLoraIds.includes(lora["Model ID"]);
-                        return (
-                            <Card key={resource.id} className="w-full">
-                                <div className="flex flex-col">
-                                    <CardHeader className="pb-2">
-                                        <CardTitle className="text-lg" title={lora.Name || lora["Model ID"]}>
-                                            {lora.Name || lora["Model ID"]}
-                                        </CardTitle>
-                                        <p className="text-sm text-muted-foreground" title={lora.Author}>By: {lora.Author}</p>
-                                    </CardHeader>
-                                     <CardContent className="space-y-3 pt-0">
-                                        {lora.Images && lora.Images.length > 0 && (
-                                          <div className="flex space-x-2 overflow-x-auto pb-2 pt-1">
-                                            {lora.Images.slice(0, 3).map((image, index) => (
-                                              <img key={index} src={image.url} alt={image.alt_text} className="h-24 w-auto object-contain rounded border p-0.5"/>
-                                            ))}
-                                          </div>
-                                        )}
-                                    </CardContent>
-                                    <ItemCardFooter className="mt-auto pt-2 flex justify-between">
-                                        <Button
-                                            variant={isSelectedOnGenerator ? "secondary" : "outline"}
-                                            size="sm"
-                                            onClick={() => onAddLora(lora)}
-                                            disabled={isSelectedOnGenerator}
-                                        >
-                                            {isSelectedOnGenerator ? 'Added to Generator' : 'Add to Generator'}
-                                        </Button>
-                                        <Button
-                                            variant="destructive"
-                                            size="sm"
-                                            onClick={() => deleteResource.mutate({ id: resource.id, type: 'lora' })}
-                                            disabled={deleteResource.isPending}
-                                        >
-                                            Remove
-                                        </Button>
-                                    </ItemCardFooter>
-                                </div>
-                            </Card>
-                        )
-                    })}
-                    </div>
-                </ScrollArea>
-            )}
+                    {/* Saved LoRAs Section */}
+                    {myLorasResource.data && myLorasResource.data.length > 0 && (
+                        <div>
+                            <h4 className="text-md font-semibold mb-3">Saved LoRAs ({myLorasResource.data.length})</h4>
+                            <div className="space-y-3">
+                                {myLorasResource.data.map((resource: Resource) => {
+                                    const lora = resource.metadata;
+                                    const isSelectedOnGenerator = selectedLoraIds.includes(lora["Model ID"]);
+                                    return (
+                                        <Card key={resource.id} className="w-full">
+                                            <div className="flex flex-col">
+                                                <CardHeader className="pb-2">
+                                                    <CardTitle className="text-lg" title={lora.Name || lora["Model ID"]}>
+                                                        {lora.Name || lora["Model ID"]}
+                                                    </CardTitle>
+                                                    <p className="text-sm text-muted-foreground" title={lora.Author}>By: {lora.Author}</p>
+                                                </CardHeader>
+                                                <CardContent className="space-y-3 pt-0">
+                                                    {lora.Images && lora.Images.length > 0 && (
+                                                        <div className="flex space-x-2 overflow-x-auto pb-2 pt-1">
+                                                            {lora.Images.slice(0, 3).map((image, index) => (
+                                                                <img key={index} src={image.url} alt={image.alt_text} className="h-24 w-auto object-contain rounded border p-0.5"/>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </CardContent>
+                                                <ItemCardFooter className="mt-auto pt-2 flex justify-between">
+                                                    <Button
+                                                        variant={isSelectedOnGenerator ? "secondary" : "outline"}
+                                                        size="sm"
+                                                        onClick={() => onAddLora(lora)}
+                                                        disabled={isSelectedOnGenerator}
+                                                    >
+                                                        {isSelectedOnGenerator ? 'Added to Generator' : 'Add to Generator'}
+                                                    </Button>
+                                                    <Button
+                                                        variant="destructive"
+                                                        size="sm"
+                                                        onClick={() => deleteResource.mutate({ id: resource.id, type: 'lora' })}
+                                                        disabled={deleteResource.isPending}
+                                                    >
+                                                        Remove
+                                                    </Button>
+                                                </ItemCardFooter>
+                                            </div>
+                                        </Card>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Empty state */}
+                    {(!myLorasResource.data || myLorasResource.data.length === 0) && localWanLoras.length === 0 && (
+                        <div className="text-center text-muted-foreground py-8">
+                            <p>You haven't added any LoRAs yet.</p>
+                            <p>Explore the "Community LoRAs" tab to find and add models.</p>
+                        </div>
+                    )}
+                </div>
+            </ScrollArea>
         </div>
     );
 };
