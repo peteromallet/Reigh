@@ -31,6 +31,7 @@ interface TravelRequestBody {
   main_output_dir_for_run?: string;
   enhance_prompt?: boolean; // Whether to enhance prompts using AI
   openai_api_key?: string; // OpenAI API key for prompt enhancement
+  loras?: Array<{ path: string; strength: number }>; // Optional LoRAs to apply
 }
 
 // Set a default aspect ratio key, which will be used to look up the resolution.
@@ -120,7 +121,7 @@ router.post('/travel-between-images', async (req: any, res: any) => {
     const frameOverlapExpanded = expandArray(body.frame_overlap, numSegments) || [];
 
     // Build orchestrator payload (subset of the huge Python equivalent)
-    const orchestratorPayload = {
+    const orchestratorPayload: Record<string, any> = {
       orchestrator_task_id: orchestratorTaskId,
       run_id: runId,
       input_image_paths_resolved: body.image_urls,
@@ -132,20 +133,30 @@ router.post('/travel-between-images', async (req: any, res: any) => {
       parsed_resolution_wh: finalResolution,
       model_name: body.model_name ?? 'vace_14B',
       seed_base: body.seed ?? 789,
-      apply_reward_lora: body.apply_reward_lora ?? true,
+      apply_reward_lora: body.apply_reward_lora ?? false,
       colour_match_videos: body.colour_match_videos ?? true,
       apply_causvid: body.apply_causvid ?? true,
-      fade_in_params_json_str: typeof body.fade_in_duration === 'object' && body.fade_in_duration !== null ? JSON.stringify(body.fade_in_duration) : body.fade_in_duration ?? '{"low_point":0.0,"high_point":0.8,"curve_type":"ease_in_out","duration_factor":0.0}',
-      fade_out_params_json_str: typeof body.fade_out_duration === 'object' && body.fade_out_duration !== null ? JSON.stringify(body.fade_out_duration) : body.fade_out_duration ?? '{"low_point":0.0,"high_point":0.8,"curve_type":"ease_in_out","duration_factor":0.0}',
-      after_first_post_generation_saturation: body.after_first_post_generation_saturation ?? 0.75,
-      after_first_post_generation_brightness: body.after_first_post_generation_brightness ?? -0.3,
+      fade_in_params_json_str: typeof body.fade_in_duration === 'object' && body.fade_in_duration !== null ? JSON.stringify(body.fade_in_duration) : body.fade_in_duration ?? '{"low_point":0.0,"high_point":1.0,"curve_type":"ease_in_out","duration_factor":0.0}',
+      fade_out_params_json_str: typeof body.fade_out_duration === 'object' && body.fade_out_duration !== null ? JSON.stringify(body.fade_out_duration) : body.fade_out_duration ?? '{"low_point":0.0,"high_point":1.0,"curve_type":"ease_in_out","duration_factor":0.0}',
+      after_first_post_generation_saturation: body.after_first_post_generation_saturation ?? 1,
+      after_first_post_generation_brightness: body.after_first_post_generation_brightness ?? 0,
       params_json_str_override: typeof body.params_json_str === 'object' && body.params_json_str !== null ? JSON.stringify(body.params_json_str) : body.params_json_str ?? '{"steps":4}',
       debug_mode_enabled: body.debug ?? true,
       shot_id: body.shot_id ?? undefined,
       main_output_dir_for_run: body.main_output_dir_for_run ?? './outputs/default_travel_output',
       enhance_prompt: body.enhance_prompt ?? false,
-      openai_api_key: body.openai_api_key ?? ''
+      openai_api_key: body.openai_api_key ?? '',
     };
+
+    // Attach additional_loras mapping if provided
+    if (body.loras && body.loras.length > 0) {
+      const additionalLoras: Record<string, number> = body.loras.reduce<Record<string, number>>((acc, lora) => {
+        acc[lora.path] = lora.strength;
+        return acc;
+      }, {});
+      orchestratorPayload.additional_loras = additionalLoras;
+    }
+
     console.log('[API /steerable-motion/travel-between-images] Constructed orchestratorPayload:', JSON.stringify(orchestratorPayload, null, 2)); // Log payload
 
     // Insert task into SQLite via Drizzle

@@ -51,13 +51,13 @@ const VideoTravelToolPage: React.FC = () => {
     model_name: 'vace_14B',
     seed: 789,
     debug: true,
-    apply_reward_lora: true,
+    apply_reward_lora: false,
     colour_match_videos: true,
     apply_causvid: true,
-    fade_in_duration: '{"low_point":0.0,"high_point":0.8,"curve_type":"ease_in_out","duration_factor":0.0}',
-    fade_out_duration: '{"low_point":0.0,"high_point":0.8,"curve_type":"ease_in_out","duration_factor":0.0}',
-    after_first_post_generation_saturation: 0.75,
-    after_first_post_generation_brightness: -0.3,
+    fade_in_duration: '{"low_point":0.0,"high_point":1.0,"curve_type":"ease_in_out","duration_factor":0.0}',
+    fade_out_duration: '{"low_point":0.0,"high_point":1.0,"curve_type":"ease_in_out","duration_factor":0.0}',
+    after_first_post_generation_saturation: 1,
+    after_first_post_generation_brightness: 0,
   });
 
   useEffect(() => {
@@ -237,7 +237,7 @@ const VideoTravelToolPage: React.FC = () => {
           id: loraToAdd["Model ID"],
           name: loraToAdd.Name !== "N/A" ? loraToAdd.Name : loraToAdd["Model ID"],
           path: loraToAdd["Model Files"][0].url,
-          strength: 40,
+          strength: 1.0,
           previewImageUrl: loraToAdd.Images && loraToAdd.Images.length > 0 ? loraToAdd.Images[0].url : undefined,
         },
       ]);

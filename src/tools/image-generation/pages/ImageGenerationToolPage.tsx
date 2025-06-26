@@ -250,7 +250,7 @@ const ImageGenerationToolPage = () => {
         user_image_url: userImageUrl,
         loras: (restOfFormData.loras || []).map((lora: any) => ({
           path: lora.path,
-          strength: lora.scale,
+          strength: lora.strength,
         })),
       },
       status: 'Pending',

@@ -28,6 +28,7 @@ import { initializeWebSocketServer } from './services/webSocketService';
 import http from 'http';
 import { seedDatabase } from '../lib/seed';
 import singleImageRouter from './routes/singleImageGeneration';
+import localLorasRouter from './routes/localLoras';
 // import { fileURLToPath } from 'url'; // No longer needed if using process.cwd()
 
 // // Determine __dirname for ES modules
@@ -102,6 +103,7 @@ app.use('/api/steerable-motion', steerableMotionRouter);
 app.use('/api/resources', resourcesRouter);
 app.use('/api/api-keys', apiKeysRouter);
 app.use('/api/single-image', singleImageRouter);
+app.use('/api/local-loras', localLorasRouter);
 
 const startServer = async () => {
   try {

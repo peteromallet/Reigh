@@ -40,7 +40,7 @@ const SliderWithValue = ({
           disabled={disabled}
         />
         <div className="border rounded w-16 h-10 flex items-center justify-center bg-white">
-          {value}
+          {Number.isInteger(value) ? value : value.toFixed(2)}
         </div>
       </div>
     </div>

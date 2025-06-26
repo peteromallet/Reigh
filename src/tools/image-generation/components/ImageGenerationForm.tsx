@@ -86,10 +86,10 @@ interface PersistedFormSettings {
 }
 
 const defaultLorasConfig = [
-  { modelId: "Shakker-Labs/FLUX.1-dev-LoRA-add-details", strength: 78 },
-  { modelId: "Shakker-Labs/FLUX.1-dev-LoRA-AntiBlur", strength: 43 },
-  { modelId: "kudzueye/boreal-flux-dev-v2", strength: 6 },
-  { modelId: "strangerzonehf/Flux-Super-Realism-LoRA", strength: 40 },
+  { modelId: "Shakker-Labs/FLUX.1-dev-LoRA-add-details", strength: 0.78 },
+  { modelId: "Shakker-Labs/FLUX.1-dev-LoRA-AntiBlur", strength: 0.43 },
+  { modelId: "kudzueye/boreal-flux-dev-v2", strength: 0.06 },
+  { modelId: "strangerzonehf/Flux-Super-Realism-LoRA", strength: 0.40 },
 ];
 
 export interface PromptInputRowProps {
@@ -495,7 +495,7 @@ const ImageGenerationForm = forwardRef<ImageGenerationFormHandles, ImageGenerati
     if (loraToAdd["Model Files"] && loraToAdd["Model Files"].length > 0) {
       setSelectedLoras(prevLoras => [ ...prevLoras, {
           id: loraToAdd["Model ID"], name: loraToAdd.Name !== "N/A" ? loraToAdd.Name : loraToAdd["Model ID"],
-          path: loraToAdd["Model Files"][0].url, strength: 40, 
+          path: loraToAdd["Model Files"][0].url, strength: 1.0, 
           previewImageUrl: loraToAdd.Images && loraToAdd.Images.length > 0 ? loraToAdd.Images[0].url : undefined,
         }]);
       toast.success(`LoRA added.`);
@@ -593,7 +593,7 @@ const ImageGenerationForm = forwardRef<ImageGenerationFormHandles, ImageGenerati
     e.preventDefault();
     console.log("[ImageGenerationForm] handleSubmit triggered. Event type:", e.type);
 
-    const lorasForApi = selectedLoras.map(lora => ({ path: lora.path, scale: (lora.strength / 100).toString() }));    
+    const lorasForApi = selectedLoras.map(lora => ({ path: lora.path, strength: lora.strength }));    
     const normalizedDepthStrength = depthStrength / 100;
     const normalizedSoftEdgeStrength = softEdgeStrength / 100;
     const appliedStartingImageUrl = (startingImagePreview && !startingImagePreview.startsWith('data:image')) ? startingImagePreview : null;
@@ -805,7 +805,7 @@ const ImageGenerationForm = forwardRef<ImageGenerationFormHandles, ImageGenerati
                             label={`Strength`}
                             value={lora.strength}
                             onChange={(newStrength) => handleLoraStrengthChange(lora.id, newStrength)}
-                            min={0} max={100} step={1}
+                            min={0} max={2} step={0.05}
                             disabled={!hasApiKey || isGenerating}
                           />
                         </div>

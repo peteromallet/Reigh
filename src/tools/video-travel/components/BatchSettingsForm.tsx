@@ -331,49 +331,8 @@ const BatchSettingsForm: React.FC<BatchSettingsFormProps> = ({
                     />
                   </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                   <div>
-                    <Label htmlFor="saturation">Post-Gen Saturation: {steerableMotionSettings.after_first_post_generation_saturation}</Label>
-                    <Slider
-                      id="saturation"
-                      min={0} max={2} step={0.05}
-                      value={[steerableMotionSettings.after_first_post_generation_saturation]}
-                      onValueChange={(v) => onSteerableMotionSettingsChange({ after_first_post_generation_saturation: v[0] })}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="brightness">Post-Gen Brightness: {steerableMotionSettings.after_first_post_generation_brightness}</Label>
-                    <Slider
-                      id="brightness"
-                      min={-1} max={1} step={0.05}
-                      value={[steerableMotionSettings.after_first_post_generation_brightness]}
-                      onValueChange={(v) => onSteerableMotionSettingsChange({ after_first_post_generation_brightness: v[0] })}
-                    />
-                  </div>
-                </div>
-                <div>
-                  <Label htmlFor="fade_in_duration">Fade-In Duration (JSON)</Label>
-                  <Textarea
-                    id="fade_in_duration"
-                    value={steerableMotionSettings.fade_in_duration}
-                    onChange={(e) => onSteerableMotionSettingsChange({ fade_in_duration: e.target.value })}
-                    placeholder='e.g., {"low_point":0.0,"high_point":0.8,"curve_type":"ease_in_out","duration_factor":0.0}'
-                    className="font-mono text-xs"
-                    rows={3}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="fade_out_duration">Fade-Out Duration (JSON)</Label>
-                  <Textarea
-                    id="fade_out_duration"
-                    value={steerableMotionSettings.fade_out_duration}
-                    onChange={(e) => onSteerableMotionSettingsChange({ fade_out_duration: e.target.value })}
-                    placeholder='e.g., {"low_point":0.0,"high_point":0.8,"curve_type":"ease_in_out","duration_factor":0.0}'
-                    className="font-mono text-xs"
-                    rows={3}
-                  />
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 items-center">
+
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 items-center">
                   <div className="flex items-center space-x-2">
                     <Switch
                       id="debug"
@@ -389,14 +348,6 @@ const BatchSettingsForm: React.FC<BatchSettingsFormProps> = ({
                       onCheckedChange={(v) => onSteerableMotionSettingsChange({ apply_reward_lora: v })}
                     />
                     <Label htmlFor="apply_reward_lora">Apply Reward LoRA</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Switch
-                      id="colour-match"
-                      checked={steerableMotionSettings.colour_match_videos ?? true}
-                      onCheckedChange={(v) => onSteerableMotionSettingsChange({ colour_match_videos: v })}
-                    />
-                    <Label htmlFor="colour-match">Color Match Videos</Label>
                   </div>
                   <div className="flex items-center space-x-2">
                     <Switch

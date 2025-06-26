@@ -256,13 +256,13 @@ const ShotEditor: React.FC<ShotEditorProps> = ({
           model_name: 'vace_14B',
           seed: 789,
           debug: true,
-          apply_reward_lora: true,
+                      apply_reward_lora: false,
           colour_match_videos: true,
           apply_causvid: true,
-          fade_in_duration: '{"low_point":0.0,"high_point":0.8,"curve_type":"ease_in_out","duration_factor":0.0}',
-          fade_out_duration: '{"low_point":0.0,"high_point":0.8,"curve_type":"ease_in_out","duration_factor":0.0}',
-          after_first_post_generation_saturation: 0.75,
-          after_first_post_generation_brightness: -0.3,
+              fade_in_duration: '{"low_point":0.0,"high_point":1.0,"curve_type":"ease_in_out","duration_factor":0.0}',
+    fade_out_duration: '{"low_point":0.0,"high_point":1.0,"curve_type":"ease_in_out","duration_factor":0.0}',
+    after_first_post_generation_saturation: 1,
+    after_first_post_generation_brightness: 0,
         };
         onSteerableMotionSettingsChange({
           ...defaultSteerableSettings,
@@ -651,6 +651,10 @@ const ShotEditor: React.FC<ShotEditorProps> = ({
         openai_api_key: enhancePrompt ? openaiApiKey : '',
       };
 
+      if (selectedLoras && selectedLoras.length > 0) {
+        requestBody.loras = selectedLoras.map(l => ({ path: l.path, strength: l.strength }));
+      }
+
       if (resolution) {
         requestBody.resolution = resolution;
       }
@@ -993,7 +997,7 @@ const ShotEditor: React.FC<ShotEditorProps> = ({
                                     label={`Strength`}
                                     value={lora.strength}
                                     onChange={(newStrength) => onLoraStrengthChange(lora.id, newStrength)}
-                                    min={0} max={100} step={1}
+                                    min={0} max={2} step={0.05}
                                   />
                                 </div>
                               </div>

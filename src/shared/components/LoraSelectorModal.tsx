@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "@/shared/components/ui/dialog";
 import { ScrollArea } from "@/shared/components/ui/scroll-area";
 import { Button } from "@/shared/components/ui/button";
@@ -270,10 +270,36 @@ interface MyLorasTabProps {
   selectedLoraIds: string[];
   deleteResource: UseMutationResult<void, Error, { id: string; type: "lora"; }, unknown>;
   createResource: UseMutationResult<Resource, Error, { type: 'lora'; metadata: LoraModel; }, unknown>;
+  lora_type: string;
 }
 
-const MyLorasTab: React.FC<MyLorasTabProps> = ({ myLorasResource, onAddLora, selectedLoraIds, deleteResource, createResource }) => {
+const MyLorasTab: React.FC<MyLorasTabProps> = ({ myLorasResource, onAddLora, selectedLoraIds, deleteResource, createResource, lora_type }) => {
     const [addForm, setAddForm] = useState({ url: '', type: 'Flux.dev', name: '' });
+
+    // Local Wan LoRAs (files dropped into Headless-Wan2GP/loras)
+    const [localWanLoras, setLocalWanLoras] = useState<LoraModel[]>([]);
+
+    useEffect(() => {
+        // Only fetch for Wan type
+        if (lora_type && lora_type.toLowerCase().includes('wan')) {
+            fetch('/api/local-loras')
+              .then(res => res.json())
+              .then((data) => {
+                  if (Array.isArray(data.files)) {
+                      const parsed: LoraModel[] = data.files.map((filePath: string) => ({
+                          "Model ID": filePath,
+                          Name: filePath.split('/').pop() || filePath,
+                          Author: 'Local',
+                          Images: [],
+                          "Model Files": [{ path: filePath, url: filePath }],
+                          lora_type: 'Wan 2.1 14b',
+                      }));
+                      setLocalWanLoras(parsed);
+                  }
+              })
+              .catch(err => console.error('Error fetching local LoRAs:', err));
+        }
+    }, [lora_type]);
 
     const handleAddLoraFromUrl = () => {
         // This is a placeholder. In a real implementation, you would fetch the URL,
@@ -319,6 +345,12 @@ const MyLorasTab: React.FC<MyLorasTabProps> = ({ myLorasResource, onAddLora, sel
             
             <h3 className="text-lg font-semibold">Your Saved LoRAs</h3>
             
+            {lora_type && lora_type.toLowerCase().includes('wan') && (
+                <div className="p-4 bg-yellow-50 border border-yellow-300 rounded-md text-sm text-yellow-900 mb-4">
+                    Drop your LoRAs in <code>Headless-Wan2GP/loras</code> to use them locally.
+                </div>
+            )}
+
             {myLorasResource.isLoading && <p>Loading your LoRAs...</p>}
             {myLorasResource.isError && <p className="text-red-500">Error loading your LoRAs.</p>}
             
@@ -326,6 +358,41 @@ const MyLorasTab: React.FC<MyLorasTabProps> = ({ myLorasResource, onAddLora, sel
                 <div className="text-center text-muted-foreground py-8">
                     <p>You haven't added any LoRAs yet.</p>
                     <p>Explore the "Community LoRAs" tab to find and add models.</p>
+                </div>
+            )}
+
+            {/* Local Wan LoRAs */}
+            {lora_type && lora_type.toLowerCase().includes('wan') && localWanLoras.length > 0 && (
+                <div className="pt-4">
+                    <h4 className="text-md font-semibold mb-2">Local Wan LoRAs</h4>
+                    <ScrollArea className="h-[300px] pr-4">
+                        <div className="space-y-3 p-1">
+                        {localWanLoras.map((lora) => {
+                            const isSelectedOnGenerator = selectedLoraIds.includes(lora["Model ID"]);
+                            return (
+                                <Card key={lora["Model ID"]} className="w-full">
+                                    <div className="flex flex-col">
+                                        <CardHeader className="pb-2">
+                                            <CardTitle className="text-lg truncate" title={lora.Name}>{lora.Name}</CardTitle>
+                                            <p className="text-xs text-muted-foreground">Local file</p>
+                                        </CardHeader>
+                                        <ItemCardFooter className="mt-auto pt-2">
+                                            <Button
+                                                variant={isSelectedOnGenerator ? "secondary" : "outline"}
+                                                size="sm"
+                                                className="w-full"
+                                                onClick={() => onAddLora(lora)}
+                                                disabled={isSelectedOnGenerator}
+                                            >
+                                                {isSelectedOnGenerator ? "Added" : "Add to Generator"}
+                                            </Button>
+                                        </ItemCardFooter>
+                                    </div>
+                                </Card>
+                            );
+                        })}
+                        </div>
+                    </ScrollArea>
                 </div>
             )}
 
@@ -431,6 +498,7 @@ export const LoraSelectorModal: React.FC<LoraSelectorModalProps> = ({
                     selectedLoraIds={selectedLoraIds}
                     deleteResource={deleteResource}
                     createResource={createResource}
+                    lora_type={lora_type}
                 />
             </TabsContent>
         </Tabs>
