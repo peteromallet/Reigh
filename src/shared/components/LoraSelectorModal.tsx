@@ -280,11 +280,17 @@ const MyLorasTab: React.FC<MyLorasTabProps> = ({ myLorasResource, onAddLora, sel
     const [localWanLoras, setLocalWanLoras] = useState<LoraModel[]>([]);
 
     useEffect(() => {
+        console.log('[LoraSelectorModal] useEffect triggered, lora_type:', lora_type);
         // Only fetch for Wan type
         if (lora_type && lora_type.toLowerCase().includes('wan')) {
+            console.log('[LoraSelectorModal] Fetching local LoRAs...');
             fetch('/api/local-loras')
-              .then(res => res.json())
+              .then(res => {
+                  console.log('[LoraSelectorModal] Fetch response status:', res.status);
+                  return res.json();
+              })
               .then((data) => {
+                  console.log('[LoraSelectorModal] Fetch response data:', data);
                   if (Array.isArray(data.files)) {
                       const parsed: LoraModel[] = data.files.map((filePath: string) => ({
                           "Model ID": filePath,
@@ -294,10 +300,15 @@ const MyLorasTab: React.FC<MyLorasTabProps> = ({ myLorasResource, onAddLora, sel
                           "Model Files": [{ path: filePath, url: filePath }],
                           lora_type: 'Wan 2.1 14b',
                       }));
+                      console.log('[LoraSelectorModal] Parsed local LoRAs:', parsed);
                       setLocalWanLoras(parsed);
+                  } else {
+                      console.log('[LoraSelectorModal] data.files is not an array:', data.files);
                   }
               })
-              .catch(err => console.error('Error fetching local LoRAs:', err));
+              .catch(err => console.error('[LoraSelectorModal] Error fetching local LoRAs:', err));
+        } else {
+            console.log('[LoraSelectorModal] Not fetching local LoRAs, lora_type does not include "wan"');
         }
     }, [lora_type]);
 
@@ -345,6 +356,11 @@ const MyLorasTab: React.FC<MyLorasTabProps> = ({ myLorasResource, onAddLora, sel
             
             <h3 className="text-lg font-semibold">Your Saved LoRAs</h3>
             
+            {/* Debug info */}
+            <div className="p-2 bg-blue-50 border border-blue-300 rounded-md text-xs text-blue-900 mb-2">
+                Debug: lora_type="{lora_type}", isWan={!!(lora_type && lora_type.toLowerCase().includes('wan'))}, localWanLoras.length={localWanLoras.length}
+            </div>
+
             {lora_type && lora_type.toLowerCase().includes('wan') && (
                 <div className="p-4 bg-yellow-50 border border-yellow-300 rounded-md text-sm text-yellow-900 mb-4">
                     Drop your LoRAs in <code>Headless-Wan2GP/loras</code> to use them locally.
@@ -364,7 +380,7 @@ const MyLorasTab: React.FC<MyLorasTabProps> = ({ myLorasResource, onAddLora, sel
             {/* Local Wan LoRAs */}
             {lora_type && lora_type.toLowerCase().includes('wan') && localWanLoras.length > 0 && (
                 <div className="pt-4">
-                    <h4 className="text-md font-semibold mb-2">Local Wan LoRAs</h4>
+                    <h4 className="text-md font-semibold mb-2">Local Wan LoRAs ({localWanLoras.length})</h4>
                     <ScrollArea className="h-[300px] pr-4">
                         <div className="space-y-3 p-1">
                         {localWanLoras.map((lora) => {
