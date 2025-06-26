@@ -353,9 +353,23 @@ const BatchSettingsForm: React.FC<BatchSettingsFormProps> = ({
                     <Switch
                       id="apply-causvid"
                       checked={steerableMotionSettings.apply_causvid ?? true}
-                      onCheckedChange={(v) => onSteerableMotionSettingsChange({ apply_causvid: v })}
+                      onCheckedChange={(v) => onSteerableMotionSettingsChange({ 
+                        apply_causvid: v, 
+                        use_lighti2x_lora: v ? false : steerableMotionSettings.use_lighti2x_lora 
+                      })}
                     />
                     <Label htmlFor="apply-causvid">Apply Causvid</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      id="use-lighti2x-lora"
+                      checked={steerableMotionSettings.use_lighti2x_lora ?? false}
+                      onCheckedChange={(v) => onSteerableMotionSettingsChange({ 
+                        use_lighti2x_lora: v,
+                        apply_causvid: v ? false : steerableMotionSettings.apply_causvid
+                      })}
+                    />
+                    <Label htmlFor="use-lighti2x-lora">Use LightI2X LoRA</Label>
                   </div>
                 </div>
               </CollapsibleContent>

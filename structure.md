@@ -87,7 +87,7 @@
 ##### Video Travel (`src/tools/video-travel/`)
 - **pages/VideoTravelToolPage.tsx**: Main UI. Lists project shots (ShotListDisplay). Creates new shots (API). Hosts ShotEditor. Manages LoRA state and filtering for "Wan 2.1 14b" models.
 - **components/ShotEditor.tsx**: Main shot editing. VideoOutputsGallery now positioned above main content area for better visibility. Orchestrates BatchSettingsForm, ShotImageManager. Includes LoRA selector UI with strength controls. Features OpenAI API key validation for prompt enhancement, disabling generate button and showing clickable warning when enhance prompt is enabled but no API key is set.
-- **components/BatchSettingsForm.tsx**: Form for batch video gen settings (prompts, frames, etc.). Includes "Enhance prompt" checkbox that requires OpenAI API key for AI-powered prompt improvement.
+- **components/BatchSettingsForm.tsx**: Form for batch video gen settings (prompts, frames, etc.). Includes "Enhance prompt" checkbox that requires OpenAI API key for AI-powered prompt improvement. Features mutually exclusive LoRA toggles: "Apply Causvid" and "Use LightI2X LoRA" where only one can be enabled at a time.
 - **components/VideoOutputsGallery.tsx**: Displays generated videos for a shot (pagination, lightbox). Updated to show 3 videos per row consistently across screen sizes.
 - **components/SimpleVideoPlayer.tsx**: Clean video player with speed controls (-2x, -1x, 1x, 2x). Replaces complex HoverScrubVideo functionality in lightbox for simplified playback experience.
 - **components/VideoLightbox.tsx**: Modal video player using SimpleVideoPlayer for clean viewing experience.
@@ -172,4 +172,4 @@
 - **utils.ts**: General utilities
 - **imageCropper.ts**: Crops images to supported aspect ratios
 - **aspectRatios.ts**: Defines aspect ratios (e.g., "16:9" -> "902x508"). Single source for project/server dimensions. Parsing/matching helpers
-- **steerableMotion.ts**: Video generation API (POST /api/steerable-motion). Includes prompt enhancement via OpenAI API when enhance_prompt=true and openai_api_key is provided.
+- **steerableMotion.ts**: Video generation API (POST /api/steerable-motion). Includes prompt enhancement via OpenAI API when enhance_prompt=true and openai_api_key is provided. Supports mutually exclusive LoRA options: apply_causvid and use_lighti2x_lora.
