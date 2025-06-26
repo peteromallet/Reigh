@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import ShotEditor, { SteerableMotionSettings } from '../components/ShotEditor';
 import { useListShots, useCreateShot, useHandleExternalImageDrop } from '@/shared/hooks/useShots';
 import { Shot } from '@/types/shots';
@@ -22,6 +23,8 @@ export interface ActiveLora {
 }
 
 const VideoTravelToolPage: React.FC = () => {
+  const location = useLocation();
+  const viaShotClick = (location.state as { viaShotClick?: boolean } | null)?.viaShotClick;
   const { selectedProjectId } = useProject();
   const { data: shots, isLoading, error, refetch: refetchShots } = useListShots(selectedProjectId);
   const [selectedShot, setSelectedShot] = useState<Shot | null>(null);
@@ -121,8 +124,27 @@ const VideoTravelToolPage: React.FC = () => {
     }
   }, [selectedShot?.images]);
 
-  // Auto-select shot if currentShotId is set and shot is available
+  // Clear any previously selected shot unless this navigation explicitly came from a shot click
   useEffect(() => {
+    if (!viaShotClick) {
+      if (currentShotId) {
+        setCurrentShotId(null);
+      }
+      if (selectedShot) {
+        setSelectedShot(null);
+        setVideoPairConfigs([]);
+      }
+    }
+    // We only want this to run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    // Only attempt to auto-select a shot if we navigated here via a shot click
+    if (!viaShotClick) {
+      return;
+    }
+
     // Case 1: No current shot ID - clear selection
     if (!currentShotId) {
       if (selectedShot) {
@@ -148,7 +170,7 @@ const VideoTravelToolPage: React.FC = () => {
         setVideoPairConfigs([]);
       }
     }
-  }, [currentShotId, shots]); // Removed selectedShot from deps to avoid loops
+  }, [currentShotId, shots, viaShotClick]); // Removed selectedShot from deps to avoid loops
 
   const handleShotSelect = (shot: Shot) => {
     setSelectedShot(shot);

@@ -178,7 +178,7 @@ const ShotGroup: React.FC<ShotGroupProps> = ({ shot }) => {
       return;
     }
     setCurrentShotId(shot.id);
-    navigate('/tools/video-travel');
+    navigate('/tools/video-travel', { state: { viaShotClick: true } });
   };
 
   return (

@@ -60,7 +60,7 @@ const ShotsPane: React.FC = () => {
 
     if (createdShotId) {
       setCurrentShotId(createdShotId);
-      navigate('/tools/video-travel');
+      navigate('/tools/video-travel', { state: { viaShotClick: true } });
     }
   };
 
