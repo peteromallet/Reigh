@@ -811,3 +811,13 @@
     transform: scale(1.05);
   }
 }
+
+/* Animation for drag drop shrink fade */
+@keyframes scaleFade {
+  0% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(0.3); opacity: 0; }
+}
+
+.animate-scale-fade {
+  animation: scaleFade 0.3s forwards ease-out;
+}

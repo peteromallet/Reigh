@@ -42,6 +42,7 @@ const AppInternalContent = () => {
   const handleExternalImageDropMutation = useHandleExternalImageDrop();
 
   const [activeDragData, setActiveDragData] = React.useState<any | null>(null);
+  const [dropAnimation, setDropAnimation] = React.useState(false);
 
   const getDisplayUrl = (relativePath: string | undefined): string => {
     if (!relativePath) return '';
@@ -57,6 +58,7 @@ const AppInternalContent = () => {
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event;
     setActiveDragData(active?.data?.current || null);
+    setDropAnimation(false);
   };
 
   const handleDragEnd = async (event: DragEndEvent) => {
@@ -152,7 +154,12 @@ const AppInternalContent = () => {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
     }
 
-    setActiveDragData(null);
+    // trigger shrink/fade animation then remove overlay
+    setDropAnimation(true);
+    setTimeout(() => {
+      setActiveDragData(null);
+      setDropAnimation(false);
+    }, 300);
   };
 
   return (
@@ -164,10 +171,14 @@ const AppInternalContent = () => {
             (() => {
               const url = getDisplayUrl(activeDragData.imageUrl);
               const isVideo = url.match(/\.(webm|mp4|mov)$/i);
-              return isVideo ? (
-                <video src={url} style={{ maxWidth: '200px', maxHeight: '200px' }} playsInline muted />
-              ) : (
-                <img src={url} style={{ maxWidth: '200px', maxHeight: '200px' }} alt="drag preview" />
+              return (
+                <div className={dropAnimation ? 'animate-scale-fade' : ''}>
+                  {isVideo ? (
+                    <video src={url} style={{ maxWidth: '200px', maxHeight: '200px' }} playsInline muted />
+                  ) : (
+                    <img src={url} style={{ maxWidth: '200px', maxHeight: '200px' }} alt="drag preview" />
+                  )}
+                </div>
               );
             })()
           ) : null}
