@@ -322,15 +322,19 @@ const ImageGenerationToolPage = () => {
     console.log(`[ImageGeneration-HandleImageSaved] Starting image update process:`, { imageId, newImageUrl });
     
     try {
-      // Update the database record
+      // Update the database record via local API
       console.log(`[ImageGeneration-HandleImageSaved] Updating database record for image:`, imageId);
-      const { error } = await supabase
-        .from('generations')
-        .update({ location: newImageUrl })
-        .eq('id', imageId);
+      const response = await fetch(`/api/generations/${imageId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ location: newImageUrl }),
+      });
 
-      if (error) {
-        console.error("[ImageGeneration-HandleImageSaved] Database update error:", error);
+      if (!response.ok) {
+        const errorData = await response.text();
+        console.error("[ImageGeneration-HandleImageSaved] Database update error:", errorData);
         toast.error("Failed to update image in database.");
         return;
       }

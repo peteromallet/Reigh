@@ -143,4 +143,35 @@ generationsRouter.get('/:id/task-id', asyncHandler(async (req: Request, res: Res
   }
 }));
 
+// PATCH /api/generations/:id
+generationsRouter.patch('/:id', asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { location } = req.body;
+
+  if (!id) {
+    return res.status(400).json({ message: 'Generation ID is required' });
+  }
+
+  if (!location) {
+    return res.status(400).json({ message: 'Location is required' });
+  }
+
+  try {
+    const result = await db.update(generationsTable)
+      .set({ location, updatedAt: new Date() })
+      .where(eq(generationsTable.id, id))
+      .returning();
+
+    if (result.length === 0) {
+      return res.status(404).json({ message: 'Generation not found' });
+    }
+
+    res.status(200).json({ message: 'Generation updated successfully', generation: result[0] });
+
+  } catch (error: any) {
+    console.error(`[API Error updating generation ${id}]`, error);
+    res.status(500).json({ message: 'Failed to update generation' });
+  }
+}));
+
 export default generationsRouter; 
