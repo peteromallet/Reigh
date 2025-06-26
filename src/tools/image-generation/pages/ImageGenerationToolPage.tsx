@@ -326,7 +326,7 @@ const ImageGenerationToolPage = () => {
       console.log(`[ImageGeneration-HandleImageSaved] Updating database record for image:`, imageId);
       const { error } = await supabase
         .from('generations')
-        .update({ image_url: newImageUrl })
+        .update({ location: newImageUrl })
         .eq('id', imageId);
 
       if (error) {
