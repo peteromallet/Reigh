@@ -479,7 +479,10 @@ export const LoraSelectorModal: React.FC<LoraSelectorModalProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent style={modalStyle} className="max-w-4xl flex flex-col">
+      <DialogContent
+        style={modalStyle}
+        className="max-w-4xl flex flex-col overflow-y-auto"
+      >
         <DialogHeader>
           <DialogTitle>Add LoRA Models</DialogTitle>
           <DialogDescription>
