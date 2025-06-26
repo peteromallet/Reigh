@@ -149,7 +149,7 @@ const ImageGallery: React.FC<ImageGalleryProps> = ({ images, onDelete, isDeletin
   // When filters change, reset to first page
   React.useEffect(() => {
     setPage(0);
-  }, [filterByToolType, mediaTypeFilter, images]);
+  }, [filterByToolType, mediaTypeFilter]);
 
   const tickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
