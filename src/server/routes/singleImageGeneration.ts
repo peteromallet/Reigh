@@ -81,7 +81,7 @@ router.post('/generate', async (req: Request, res: Response) => {
     const orchestratorPayload: Record<string, any> = {
       run_id: runId,
       prompt: body.prompt,
-      model: body.model_name ?? 'wan_14B',
+      model: body.model_name ?? 't2v',
       resolution: finalResolution,
       seed: body.seed ?? 11111,
       negative_prompt: body.negative_prompt ?? '',
