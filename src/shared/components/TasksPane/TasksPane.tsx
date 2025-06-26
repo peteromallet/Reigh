@@ -6,6 +6,9 @@ import { LockIcon, UnlockIcon } from 'lucide-react'; // Example icons
 import { useSlidingPane } from '@/shared/hooks/useSlidingPane';
 import { usePanes } from '@/shared/contexts/PanesContext';
 import PaneControlTab from '../PaneControlTab';
+import { useProject } from '@/shared/contexts/ProjectContext';
+import { useCancelAllPendingTasks, useListTasks } from '@/shared/hooks/useTasks';
+import { useToast } from '@/shared/hooks/use-toast';
 
 const TasksPane: React.FC = () => {
   const {
@@ -14,6 +17,38 @@ const TasksPane: React.FC = () => {
     setIsTasksPaneLocked,
     tasksPaneWidth,
   } = usePanes();
+
+  // Project context & task helpers
+  const { selectedProjectId } = useProject();
+  const { data: pendingTasks } = useListTasks({ projectId: selectedProjectId, status: ['Pending'] });
+  const pendingCount = pendingTasks?.length ?? 0;
+
+  const cancelAllPendingMutation = useCancelAllPendingTasks();
+  const { toast } = useToast();
+
+  const handleCancelAllPending = () => {
+    if (!selectedProjectId) {
+      toast({ title: 'Error', description: 'No project selected.', variant: 'destructive' });
+      return;
+    }
+
+    cancelAllPendingMutation.mutate({ projectId: selectedProjectId }, {
+      onSuccess: (data) => {
+        toast({
+          title: 'Tasks Cancellation Initiated',
+          description: data.message || `Attempting to cancel all pending tasks.`,
+          variant: 'default',
+        });
+      },
+      onError: (error) => {
+        toast({
+          title: 'Cancellation Failed',
+          description: error.message || 'Could not cancel all pending tasks.',
+          variant: 'destructive',
+        });
+      },
+    });
+  };
 
   const { isLocked, isOpen, toggleLock, openPane, paneProps, transformClass, handlePaneEnter, handlePaneLeave } = useSlidingPane({
     side: 'right',
@@ -57,6 +92,16 @@ const TasksPane: React.FC = () => {
         >
           <div className="p-2 border-b border-zinc-800 flex items-center justify-between flex-shrink-0">
               <h2 className="text-lg font-semibold text-zinc-200 ml-2">Tasks</h2>
+              {pendingCount > 0 && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={handleCancelAllPending}
+                  disabled={cancelAllPendingMutation.isPending}
+                >
+                  {cancelAllPendingMutation.isPending ? 'Cancelling All...' : `Cancel All (${pendingCount})`}
+                </Button>
+              )}
           </div>
           <div className="flex-grow overflow-y-auto">
             <TaskList />
