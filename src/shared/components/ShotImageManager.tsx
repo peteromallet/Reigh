@@ -36,7 +36,7 @@ export interface ShotImageManagerProps {
   generationMode: 'batch' | 'by-pair';
   pairConfigs: PairConfig[];
   onPairConfigChange: (id: string, field: 'prompt' | 'frames' | 'negativePrompt' | 'context', value: string | number) => void;
-  onImageSaved?: (newImageUrl: string) => void; // Callback when image is saved with changes
+  onImageSaved?: (imageId: string, newImageUrl: string) => void; // Callback when image is saved with changes
 }
 
 const ShotImageManager: React.FC<ShotImageManagerProps> = ({
@@ -317,7 +317,7 @@ const ShotImageManager: React.FC<ShotImageManagerProps> = ({
           onClose={() => setLightboxIndex(null)}
           onNext={handleNext}
           onPrevious={handlePrevious}
-          onImageSaved={onImageSaved}
+          onImageSaved={onImageSaved ? (newImageUrl: string) => onImageSaved(images[lightboxIndex].id, newImageUrl) : undefined}
         />
       )}
     </DndContext>

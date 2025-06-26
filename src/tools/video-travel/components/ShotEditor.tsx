@@ -30,6 +30,9 @@ import { SliderWithValue } from '@/shared/components/ui/slider-with-value';
 import { useApiKeys } from '@/shared/hooks/useApiKeys';
 import SettingsModal from '@/shared/components/SettingsModal';
 import { ToggleGroup, ToggleGroupItem } from "@/shared/components/ui/toggle-group";
+import { useListTasks, useCancelTask } from "@/shared/hooks/useTasks";
+import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from '@tanstack/react-query';
 
 // Add the missing type definition
 export interface SegmentGenerationParams {
@@ -205,6 +208,7 @@ const ShotEditor: React.FC<ShotEditorProps> = ({
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [generationMode, setGenerationMode] = useState<'batch' | 'by-pair'>('batch');
   const [pairConfigs, setPairConfigs] = useState<PairConfig[]>([]);
+  const queryClient = useQueryClient();
 
   // Use local state for optimistic updates on image list
   const [localOrderedShotImages, setLocalOrderedShotImages] = useState(orderedShotImages || []);
@@ -481,7 +485,7 @@ const ShotEditor: React.FC<ShotEditorProps> = ({
       console.error('Cannot reorder images: No shot or project selected.');
       return;
     }
-    
+
     // Optimistic update of local state
     const imageMap = new Map(localOrderedShotImages.map(img => [img.shotImageEntryId, img]));
     const reorderedImages = orderedShotGenerationIds
@@ -499,6 +503,40 @@ const ShotEditor: React.FC<ShotEditorProps> = ({
         setLocalOrderedShotImages(orderedShotImages);
       }
     });
+  };
+
+  const handleImageSaved = async (imageId: string, newImageUrl: string) => {
+    try {
+      // Update the database record
+      const { error } = await supabase
+        .from('generations')
+        .update({ image_url: newImageUrl })
+        .eq('id', imageId);
+
+      if (error) {
+        console.error("Error updating image URL in database:", error);
+        toast.error("Failed to update image in database.");
+        return;
+      }
+
+      // Update local state
+      setLocalOrderedShotImages(prevImages =>
+        prevImages.map(img => 
+          img.id === imageId 
+            ? { ...img, imageUrl: newImageUrl, thumbUrl: newImageUrl } 
+            : img
+        )
+      );
+
+      // Invalidate relevant queries to ensure fresh data
+      queryClient.invalidateQueries({ queryKey: ['shots', selectedProjectId] });
+      queryClient.invalidateQueries({ queryKey: ['generations', selectedProjectId] });
+
+      toast.success("Image updated successfully!");
+    } catch (error) {
+      console.error("Error saving flipped image:", error);
+      toast.error("Failed to update image.");
+    }
   };
 
   const handleGenerateVideo = async (pairConfig: VideoPairConfig) => {
@@ -911,6 +949,7 @@ const ShotEditor: React.FC<ShotEditorProps> = ({
                   generationMode={generationMode}
                   pairConfigs={pairConfigs}
                   onPairConfigChange={handleUpdatePairConfig}
+                  onImageSaved={handleImageSaved}
                 />
               </div>
             </CardContent>

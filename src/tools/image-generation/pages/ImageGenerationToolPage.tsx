@@ -13,6 +13,7 @@ import { nanoid } from 'nanoid';
 import { useListAllGenerations, useDeleteGeneration } from "@/shared/hooks/useGenerations";
 import { Settings } from "lucide-react";
 import { useApiKeys } from '@/shared/hooks/useApiKeys';
+import { useQueryClient } from '@tanstack/react-query';
 
 export type Json =
   | string
@@ -68,6 +69,8 @@ const ImageGenerationToolPage = () => {
   const { lastAffectedShotId, setLastAffectedShotId } = useLastAffectedShot();
   const { data: generatedImagesData, isLoading: isLoadingGenerations } = useListAllGenerations(selectedProjectId);
   const deleteGenerationMutation = useDeleteGeneration();
+
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     if (generatedImagesData) {
@@ -315,6 +318,39 @@ const ImageGenerationToolPage = () => {
     }
   };
 
+  const handleImageSaved = async (imageId: string, newImageUrl: string) => {
+    try {
+      // Update the database record
+      const { error } = await supabase
+        .from('generations')
+        .update({ image_url: newImageUrl })
+        .eq('id', imageId);
+
+      if (error) {
+        console.error("Error updating image URL in database:", error);
+        toast.error("Failed to update image in database.");
+        return;
+      }
+
+      // Update local state
+      setGeneratedImages(prevImages =>
+        prevImages.map(img => 
+          img.id === imageId 
+            ? { ...img, url: newImageUrl } 
+            : img
+        )
+      );
+
+      // Invalidate the generations query to ensure fresh data
+      queryClient.invalidateQueries({ queryKey: ['generations', selectedProjectId] });
+
+      toast.success("Image updated successfully!");
+    } catch (error) {
+      console.error("Error saving flipped image:", error);
+      toast.error("Failed to update image.");
+    }
+  };
+
   const falApiKey = getApiKey('fal_api_key');
   const openaiApiKey = getApiKey('openai_api_key');
   const hasValidFalApiKey = true;
@@ -423,6 +459,7 @@ const ImageGenerationToolPage = () => {
               allShots={shots || []}
               lastShotId={lastAffectedShotId}
               currentToolType="image-generation"
+              onImageSaved={handleImageSaved}
             />
           </div>
         </>

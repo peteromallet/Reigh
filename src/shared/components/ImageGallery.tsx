@@ -82,6 +82,7 @@ interface ImageGalleryProps {
   onAddToLastShot: (generationId: string, imageUrl?: string, thumbUrl?: string) => Promise<boolean>;
   currentToolType?: string; // Added for filtering
   initialFilterState?: boolean; // Added for default filter state
+  onImageSaved?: (imageId: string, newImageUrl: string) => void; // Callback when image is saved with changes
 }
 
 // Helper to format metadata for display
@@ -116,7 +117,7 @@ const formatMetadataForDisplay = (metadata: DisplayableMetadata): string => {
   return displayText.trim() || "No metadata available.";
 };
 
-const ImageGallery: React.FC<ImageGalleryProps> = ({ images, onDelete, isDeleting, onApplySettings, allShots, lastShotId, onAddToLastShot, currentToolType, initialFilterState = true }) => {
+const ImageGallery: React.FC<ImageGalleryProps> = ({ images, onDelete, isDeleting, onApplySettings, allShots, lastShotId, onAddToLastShot, currentToolType, initialFilterState = true, onImageSaved }) => {
   const [lightboxImageUrl, setLightboxImageUrl] = useState<string | null>(null);
   const [lightboxImageAlt, setLightboxImageAlt] = useState<string>("Fullscreen view");
   const [lightboxImageId, setLightboxImageId] = useState<string | undefined>(undefined);
@@ -182,6 +183,12 @@ const ImageGallery: React.FC<ImageGalleryProps> = ({ images, onDelete, isDeletin
     setLightboxImageUrl(null);
     setLightboxImageAlt("Fullscreen view");
     setLightboxImageId(undefined);
+  };
+
+  const handleImageSaved = (newImageUrl: string) => {
+    if (lightboxImageId && onImageSaved) {
+      onImageSaved(lightboxImageId, newImageUrl);
+    }
   };
 
   const handleDownloadImage = async (rawUrl: string, filename: string, imageId?: string, isVideo?: boolean, originalContentType?: string) => {
@@ -604,6 +611,7 @@ const ImageGallery: React.FC<ImageGalleryProps> = ({ images, onDelete, isDeletin
           imageAlt={lightboxImageAlt}
           onClose={handleCloseLightbox}
           imageId={lightboxImageId}
+          onImageSaved={handleImageSaved}
         />
       )}
     </TooltipProvider>
