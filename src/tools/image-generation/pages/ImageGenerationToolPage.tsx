@@ -180,39 +180,59 @@ const ImageGenerationToolPage = () => {
     }
 
     if (generationMode === 'wan-local') {
-      // Prepare payload for single-image route
-      const primaryPrompt = restOfFormData.prompts[0]?.fullPrompt || '';
-
+      // Process all prompts for wan-local mode
+      const totalTasks = restOfFormData.prompts.length * restOfFormData.imagesPerPrompt;
+      
       const lorasMapped: Array<{ path: string; strength: number }> = (restOfFormData.loras || []).map((lora: any) => ({
         path: lora.path,
         strength: parseFloat(lora.scale ?? lora.strength) || 0.0,
       }));
 
-      const requestPayload: any = {
-        project_id: selectedProjectId,
-        prompt: primaryPrompt,
-        resolution: restOfFormData.determinedApiImageSize || undefined,
-        seed: 11111,
-        loras: lorasMapped,
-      };
+      let successCount = 0;
+      let errorCount = 0;
 
       try {
-        const response = await fetch('/api/single-image/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(requestPayload),
-        });
+        // Create tasks for each prompt x imagesPerPrompt
+        for (const promptEntry of restOfFormData.prompts) {
+          for (let imageIndex = 0; imageIndex < restOfFormData.imagesPerPrompt; imageIndex++) {
+            const requestPayload: any = {
+              project_id: selectedProjectId,
+              prompt: promptEntry.fullPrompt,
+              resolution: restOfFormData.determinedApiImageSize || undefined,
+              seed: 11111 + (successCount * 100), // Vary seed for each image
+              loras: lorasMapped,
+            };
 
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ message: response.statusText }));
-          throw new Error(errorData.message || `HTTP error ${response.status}`);
+            try {
+              const response = await fetch('/api/single-image/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(requestPayload),
+              });
+
+              if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ message: response.statusText }));
+                throw new Error(errorData.message || `HTTP error ${response.status}`);
+              }
+
+              const newTask = await response.json();
+              successCount++;
+              console.log(`[wan-local] Task ${successCount}/${totalTasks} created:`, newTask.id);
+            } catch (taskError: any) {
+              console.error(`[wan-local] Error creating task for prompt "${promptEntry.shortPrompt || promptEntry.fullPrompt.substring(0, 50)}...":`, taskError);
+              errorCount++;
+            }
+          }
         }
 
-        const newTask = await response.json();
-        toast.success(`Single image task queued (ID: ${(newTask.id as string).substring(0,8)}...).`);
+        if (successCount > 0) {
+          toast.success(`${successCount} image generation tasks queued successfully! ${errorCount > 0 ? `(${errorCount} failed)` : ''} Check the Tasks pane for progress.`);
+        } else {
+          toast.error(`Failed to create any tasks. ${errorCount} errors occurred.`);
+        }
       } catch (err: any) {
-        console.error('[ImageGenerationToolPage] Error creating single image task:', err);
-        toast.error(`Failed to create task: ${err.message || 'Unknown API error'}`);
+        console.error('[ImageGenerationToolPage] Error creating wan-local tasks:', err);
+        toast.error(`Failed to create tasks: ${err.message || 'Unknown API error'}`);
       } finally {
         setIsCreatingTask(false);
       }
