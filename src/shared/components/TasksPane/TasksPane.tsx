@@ -20,8 +20,8 @@ const TasksPane: React.FC = () => {
 
   // Project context & task helpers
   const { selectedProjectId } = useProject();
-  const { data: pendingTasks } = useListTasks({ projectId: selectedProjectId, status: ['Pending'] });
-  const pendingCount = pendingTasks?.length ?? 0;
+  const { data: cancellableTasks } = useListTasks({ projectId: selectedProjectId, status: ['Pending', 'Queued', 'In Progress'] });
+  const cancellableCount = cancellableTasks?.length ?? 0;
 
   const cancelAllPendingMutation = useCancelAllPendingTasks();
   const { toast } = useToast();
@@ -36,14 +36,14 @@ const TasksPane: React.FC = () => {
       onSuccess: (data) => {
         toast({
           title: 'Tasks Cancellation Initiated',
-          description: data.message || `Attempting to cancel all pending tasks.`,
+          description: data.message || `Attempting to cancel all active tasks.`,
           variant: 'default',
         });
       },
       onError: (error) => {
         toast({
           title: 'Cancellation Failed',
-          description: error.message || 'Could not cancel all pending tasks.',
+          description: error.message || 'Could not cancel all active tasks.',
           variant: 'destructive',
         });
       },
@@ -92,14 +92,14 @@ const TasksPane: React.FC = () => {
         >
           <div className="p-2 border-b border-zinc-800 flex items-center justify-between flex-shrink-0">
               <h2 className="text-lg font-semibold text-zinc-200 ml-2">Tasks</h2>
-              {pendingCount > 0 && (
+              {cancellableCount > 0 && (
                 <Button
                   variant="destructive"
                   size="sm"
                   onClick={handleCancelAllPending}
                   disabled={cancelAllPendingMutation.isPending}
                 >
-                  {cancelAllPendingMutation.isPending ? 'Cancelling All...' : `Cancel All (${pendingCount})`}
+                  {cancelAllPendingMutation.isPending ? 'Cancelling All...' : `Cancel All (${cancellableCount})`}
                 </Button>
               )}
           </div>
