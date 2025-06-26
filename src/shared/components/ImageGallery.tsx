@@ -307,7 +307,11 @@ const ImageGallery: React.FC<ImageGalleryProps> = ({ images, onDelete, isDeletin
     <TooltipProvider delayDuration={300}>
       <div className="space-y-4">
         <div className="flex flex-wrap justify-between items-center mb-2 gap-x-4 gap-y-2"> {/* Added gap-y-2 and flex-wrap for better responsiveness */}
-            <h2 className="text-xl font-medium">Generated: ({filteredImages.length} of {images.length})</h2>
+            {images.length > 0 && (
+              <h2 className="text-xl font-medium">
+                Showing {filteredImages.length > 0 ? 1 : 0}-{filteredImages.length} (out of {images.length})
+              </h2>
+            )}
             <div className="flex items-center gap-x-4 gap-y-2 flex-wrap"> {/* Grouping filters, added flex-wrap */}
                 {/* New Media Type Filter */}
                 <div className="flex items-center space-x-1.5">
