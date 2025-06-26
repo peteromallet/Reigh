@@ -84,6 +84,10 @@ interface ImageGalleryProps {
   currentToolType?: string; // Added for filtering
   initialFilterState?: boolean; // Added for default filter state
   onImageSaved?: (imageId: string, newImageUrl: string) => void; // Callback when image is saved with changes
+  /** Zero-based offset of the first image in `images` relative to the full list after any server-side filtering/pagination. */
+  offset?: number;
+  /** Total number of items in the full list (after any server-side filtering/pagination but before client-side page slice). */
+  totalCount?: number;
 }
 
 // Helper to format metadata for display
@@ -118,7 +122,7 @@ const formatMetadataForDisplay = (metadata: DisplayableMetadata): string => {
   return displayText.trim() || "No metadata available.";
 };
 
-const ImageGallery: React.FC<ImageGalleryProps> = ({ images, onDelete, isDeleting, onApplySettings, allShots, lastShotId, onAddToLastShot, currentToolType, initialFilterState = true, onImageSaved }) => {
+const ImageGallery: React.FC<ImageGalleryProps> = ({ images, onDelete, isDeleting, onApplySettings, allShots, lastShotId, onAddToLastShot, currentToolType, initialFilterState = true, onImageSaved, offset = 0, totalCount }) => {
   const [lightboxImageUrl, setLightboxImageUrl] = useState<string | null>(null);
   const [lightboxImageAlt, setLightboxImageAlt] = useState<string>("Fullscreen view");
   const [lightboxImageId, setLightboxImageId] = useState<string | undefined>(undefined);
@@ -309,7 +313,7 @@ const ImageGallery: React.FC<ImageGalleryProps> = ({ images, onDelete, isDeletin
         <div className="flex flex-wrap justify-between items-center mb-2 gap-x-4 gap-y-2"> {/* Added gap-y-2 and flex-wrap for better responsiveness */}
             {images.length > 0 && (
               <h2 className="text-xl font-medium">
-                Showing {filteredImages.length > 0 ? 1 : 0}-{filteredImages.length} (out of {images.length})
+                Showing {offset + 1}-{offset + filteredImages.length} (out of {totalCount ?? images.length})
               </h2>
             )}
             <div className="flex items-center gap-x-4 gap-y-2 flex-wrap"> {/* Grouping filters, added flex-wrap */}

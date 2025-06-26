@@ -163,6 +163,8 @@ const GenerationsPane: React.FC = () => {
                     allShots={shotsData || []}
                     lastShotId={lastAffectedShotId || undefined}
                     onAddToLastShot={handleAddToShot}
+                    offset={(page - 1) * GENERATIONS_PER_PAGE}
+                    totalCount={allGenerations?.length || paginatedData.items.length}
                 />
             )}
             {paginatedData.items.length === 0 && !isLoading && (
