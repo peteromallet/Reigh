@@ -166,13 +166,13 @@ const AppInternalContent = () => {
     <TooltipProvider>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
         <AppRoutes />
-        <DragOverlay zIndex={2000} style={{ pointerEvents: 'none' }}>
+        <DragOverlay zIndex={10000} style={{ pointerEvents: 'none' }}>
           {activeDragData && activeDragData.imageUrl ? (
             (() => {
               const url = getDisplayUrl(activeDragData.imageUrl);
               const isVideo = url.match(/\.(webm|mp4|mov)$/i);
               return (
-                <div className={dropAnimation ? 'animate-scale-fade' : ''}>
+                <div className={dropAnimation ? 'animate-scale-fade' : ''} style={{ zIndex: 10000 }}>
                   {isVideo ? (
                     <video src={url} style={{ maxWidth: '200px', maxHeight: '200px' }} playsInline muted />
                   ) : (
