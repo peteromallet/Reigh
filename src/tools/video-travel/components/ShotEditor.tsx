@@ -83,6 +83,7 @@ export interface SteerableMotionSettings {
   fade_out_duration: string;
   after_first_post_generation_saturation: number;
   after_first_post_generation_brightness: number;
+  show_input_images: boolean;
 }
 
 interface ShotSettings {
@@ -269,6 +270,7 @@ const ShotEditor: React.FC<ShotEditorProps> = ({
           fade_out_duration: '{"low_point":0.0,"high_point":1.0,"curve_type":"ease_in_out","duration_factor":0.0}',
           after_first_post_generation_saturation: 1,
           after_first_post_generation_brightness: 0,
+          show_input_images: false,
         };
         onSteerableMotionSettingsChange({
           ...defaultSteerableSettings,
@@ -704,6 +706,7 @@ const ShotEditor: React.FC<ShotEditorProps> = ({
         params_json_str: JSON.stringify({ steps: batchVideoSteps }),
         enhance_prompt: enhancePrompt,
         openai_api_key: enhancePrompt ? openaiApiKey : '',
+        show_input_images: steerableMotionSettings.show_input_images,
       };
 
       if (selectedLoras && selectedLoras.length > 0) {

@@ -5,6 +5,7 @@ import { useUpdateShotName, useHandleExternalImageDrop } from '@/shared/hooks/us
 import { useToast } from '@/shared/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { useCurrentShot } from '@/shared/contexts/CurrentShotContext';
+import { getDisplayUrl } from '@/shared/lib/utils';
 
 interface ShotGroupProps {
   shot: Shot;
@@ -226,7 +227,7 @@ const ShotGroup: React.FC<ShotGroupProps> = ({ shot }) => {
             {displayedImages.map((image, index) => (
               <img 
                 key={image.shotImageEntryId}
-                src={image.imageUrl || './placeholder.svg'} 
+                src={getDisplayUrl(image.thumbUrl || image.imageUrl)}
                 alt={`Shot image ${index + 1}`}
                 className="w-12 h-12 object-cover rounded-full border-2 border-zinc-700 bg-zinc-600 shadow"
                 title={`Image ID: ${image.id} (Entry: ${image.shotImageEntryId})`}

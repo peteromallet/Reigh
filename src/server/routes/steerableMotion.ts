@@ -33,6 +33,7 @@ interface TravelRequestBody {
   enhance_prompt?: boolean; // Whether to enhance prompts using AI
   openai_api_key?: string; // OpenAI API key for prompt enhancement
   loras?: Array<{ path: string; strength: number }>; // Optional LoRAs to apply
+  show_input_images?: boolean;
 }
 
 // Set a default aspect ratio key, which will be used to look up the resolution.
@@ -148,6 +149,7 @@ router.post('/travel-between-images', async (req: any, res: any) => {
       main_output_dir_for_run: body.main_output_dir_for_run ?? './outputs/default_travel_output',
       enhance_prompt: body.enhance_prompt ?? false,
       openai_api_key: body.openai_api_key ?? '',
+      show_input_images: body.show_input_images ?? false,
     };
 
     // Attach additional_loras mapping if provided

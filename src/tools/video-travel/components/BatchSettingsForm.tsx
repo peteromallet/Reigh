@@ -371,6 +371,14 @@ const BatchSettingsForm: React.FC<BatchSettingsFormProps> = ({
                     />
                     <Label htmlFor="use-lighti2x-lora">Use LightI2X LoRA</Label>
                   </div>
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      id="show-input-images"
+                      checked={steerableMotionSettings.show_input_images ?? false}
+                      onCheckedChange={(v) => onSteerableMotionSettingsChange({ show_input_images: v })}
+                    />
+                    <Label htmlFor="show-input-images">Show Input Images</Label>
+                  </div>
                 </div>
               </CollapsibleContent>
             </Collapsible>

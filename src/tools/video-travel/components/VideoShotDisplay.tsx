@@ -5,6 +5,7 @@ import { Input } from '@/shared/components/ui/input';
 import { Button } from '@/shared/components/ui/button';
 import { Pencil, Trash2, Check, X, Copy } from 'lucide-react'; // Icons
 import { toast } from 'sonner';
+import { getDisplayUrl } from '@/shared/lib/utils';
 
 interface VideoShotDisplayProps {
   shot: Shot;
@@ -181,7 +182,7 @@ const VideoShotDisplay: React.FC<VideoShotDisplayProps> = ({ shot, onSelectShot,
               style={{ animationDelay: `${index * 0.1}s` }}
             >
               <img 
-                src={image.thumbUrl || image.imageUrl || '/placeholder.svg'} 
+                src={getDisplayUrl(image.thumbUrl || image.imageUrl)} 
                 alt={`Shot image ${index + 1} for ${shot.name}`}
                 className="w-full h-full object-cover"
               />

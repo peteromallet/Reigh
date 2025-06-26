@@ -461,7 +461,13 @@ const ImageGenerationForm = forwardRef<ImageGenerationFormHandles, ImageGenerati
 
   useEffect(() => { fetch('/data/loras.json').then(response => response.json()).then((data: LoraData) => setAvailableLoras(data.models || [])).catch(error => console.error("Error fetching LoRA data:", error)); }, []);
   useEffect(() => { 
-    if (hasLoadedFromStorage.current && !defaultsApplied.current && availableLoras.length > 0 && selectedLoras.length === 0) { 
+    if (
+      generationMode === 'flux-api' && // only apply defaults when in Flux mode
+      hasLoadedFromStorage.current && 
+      !defaultsApplied.current && 
+      availableLoras.length > 0 && 
+      selectedLoras.length === 0
+    ) { 
       const newSelectedLoras: ActiveLora[] = [];
       for (const defaultConfig of defaultLorasConfig) {
         const foundLora = availableLoras.find(lora => lora["Model ID"] === defaultConfig.modelId);
@@ -480,7 +486,7 @@ const ImageGenerationForm = forwardRef<ImageGenerationFormHandles, ImageGenerati
         defaultsApplied.current = true;
       }
     } 
-  }, [availableLoras, hasLoadedFromStorage.current, defaultsApplied.current, selectedLoras.length]);
+  }, [generationMode, availableLoras, hasLoadedFromStorage.current, defaultsApplied.current, selectedLoras.length]);
 
   useEffect(() => {
     setSelectedLoras(selectedLorasMap[generationMode] || []);
