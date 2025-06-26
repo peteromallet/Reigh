@@ -35,7 +35,7 @@ export function useWebSocket() {
             console.log(`[WebSocket] Task completed for project ${projectId}. Invalidating task & generation queries.`);
             queryClient.invalidateQueries({ queryKey: ['tasks', { projectId }] });
             queryClient.invalidateQueries({ queryKey: ['tasks'] }); // General task list
-            queryClient.invalidateQueries({ queryKey: ['generations', { projectId }] });
+            queryClient.invalidateQueries({ queryKey: ['generations', projectId] });
             break;
           }
           case 'TASKS_STATUS_UPDATE': {
@@ -48,7 +48,7 @@ export function useWebSocket() {
             const { projectId, shotId } = message.payload;
             console.log(`[WebSocket] Invalidating generation/shot queries for project: ${projectId}, shot: ${shotId}`);
             queryClient.invalidateQueries({ queryKey: ['shots', { projectId }] });
-            queryClient.invalidateQueries({ queryKey: ['generations', { projectId }] });
+            queryClient.invalidateQueries({ queryKey: ['generations', projectId] });
             if (shotId) {
               queryClient.invalidateQueries({ queryKey: ['shots', { shotId }] });
             }

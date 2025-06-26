@@ -326,10 +326,106 @@ export function startTaskPoller(): void {
       } else {
         // console.log('[TaskPoller] No new completed travel_stitch tasks found.'); // Can be noisy, enable if needed
       }
+
+      // Additional processing for completed single_image tasks
+      try {
+        const imageTasksToProcess = await db
+          .select()
+          .from(tasksSchema)
+          .where(
+            and(
+              eq(tasksSchema.taskType, 'single_image'),
+              eq(tasksSchema.status, 'Complete'),
+              isNull(tasksSchema.generationProcessedAt)
+            )
+          );
+
+        if (imageTasksToProcess.length > 0) {
+          console.log(`[TaskPoller] Found ${imageTasksToProcess.length} completed single_image tasks to process.`);
+          for (const task of imageTasksToProcess) {
+            await processCompletedSingleImageTask(task);
+          }
+        }
+      } catch (error) {
+        console.error('[TaskPoller] Error querying for single_image tasks to process:', error);
+      }
     } catch (error) {
       console.error('[TaskPoller] Error querying for tasks to process:', error);
     }
   });
 
   pollerStarted = true;
+}
+
+// I am adding the new helper that processes completed single_image tasks
+export async function processCompletedSingleImageTask(task: Task): Promise<void> {
+  if (task.taskType !== 'single_image' || task.status !== 'Complete') {
+    console.warn(`[SingleImageGenDebug] Task ${task.id} is not a completed single_image task. Skipping.`);
+    return;
+  }
+
+  console.log(`[SingleImageGenDebug] Processing completed single_image task ${task.id}.`);
+
+  // Determine the output image location. Prefer the dedicated column, but also fallback to common param locations
+  let outputLocation: string | undefined = task.outputLocation;
+
+  // Some workers may embed the output location inside the params JSON under various keys.
+  // Try a few common ones as a fallback.
+  const params = (task.params ?? {}) as Record<string, any>;
+  if (!outputLocation) {
+    outputLocation = params?.output_location || params?.outputLocation || params?.image_url || params?.imageUrl;
+  }
+
+  // If still no location we cannot proceed.
+  if (!outputLocation) {
+    console.error(`[SingleImageGenDebug] Could not determine output location for task ${task.id}. Params:`, params);
+    return;
+  }
+
+  // Strip potential host:port from URL so that the client can request via current host proxy.
+  outputLocation = normalizeImagePath(outputLocation);
+
+  try {
+    const newGenerationId = randomUUID();
+    const insertedGenerations = await db.insert(generationsSchema).values({
+      id: newGenerationId,
+      projectId: task.projectId,
+      tasks: [task.id],
+      location: outputLocation,
+      type: 'single_image_output',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }).returning();
+
+    if (insertedGenerations.length === 0) {
+      console.error(`[SingleImageGenDebug] Failed to insert generation for task ${task.id}.`);
+      return;
+    }
+
+    console.log(`[SingleImageGenDebug] Created generation ${newGenerationId} for task ${task.id} with location: ${outputLocation}.`);
+
+    // Mark task as processed so we do not duplicate work later
+    await db.update(tasksSchema)
+      .set({
+        generationProcessedAt: new Date(),
+      })
+      .where(eq(tasksSchema.id, task.id));
+
+    // Notify clients that tasks/generations changed
+    broadcast({
+      type: 'TASK_COMPLETED',
+      payload: {
+        taskId: task.id,
+        projectId: task.projectId,
+      },
+    });
+    broadcast({
+      type: 'GENERATIONS_UPDATED',
+      payload: {
+        projectId: task.projectId,
+      },
+    });
+  } catch (error) {
+    console.error(`[SingleImageGenDebug] Error creating generation for task ${task.id}:`, error);
+  }
 } 

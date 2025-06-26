@@ -115,6 +115,13 @@ export const PromptInputRow: React.FC<PromptInputRowProps> = ({
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isEditingFullPrompt, setIsEditingFullPrompt] = useState(false);
+  const [localFullPrompt, setLocalFullPrompt] = useState(promptEntry.fullPrompt);
+
+  useEffect(() => {
+    if (!isEditingFullPrompt) {
+      setLocalFullPrompt(promptEntry.fullPrompt);
+    }
+  }, [promptEntry.fullPrompt, isEditingFullPrompt]);
 
   const effectiveShortPrompt = promptEntry.shortPrompt?.trim();
   
@@ -123,7 +130,7 @@ export const PromptInputRow: React.FC<PromptInputRowProps> = ({
   let isShowingShort = !!effectiveShortPrompt;
 
   if (isActiveForFullView || isEditingFullPrompt) {
-    displayText = promptEntry.fullPrompt;
+    displayText = isEditingFullPrompt ? localFullPrompt : promptEntry.fullPrompt;
     isShowingShort = false;
     if (isEditingFullPrompt) {
         currentPlaceholder = `Editing detailed prompt #${index + 1}...`;
@@ -159,7 +166,9 @@ export const PromptInputRow: React.FC<PromptInputRowProps> = ({
   useEffect(() => { autoResizeTextarea(); }, []);
 
   const handleFullPromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    onUpdate(promptEntry.id, 'fullPrompt', e.target.value);
+    const newText = e.target.value;
+    setLocalFullPrompt(newText);
+    onUpdate(promptEntry.id, 'fullPrompt', newText);
   };
 
   const handleFocus = () => {
@@ -169,6 +178,9 @@ export const PromptInputRow: React.FC<PromptInputRowProps> = ({
 
   const handleBlur = () => {
     setIsEditingFullPrompt(false);
+    if (localFullPrompt !== promptEntry.fullPrompt) {
+      onUpdate(promptEntry.id, 'fullPrompt', localFullPrompt);
+    }
   };
 
   return (
@@ -577,15 +589,6 @@ const ImageGenerationForm = forwardRef<ImageGenerationFormHandles, ImageGenerati
     setIsPromptModalOpen(false);
   };
 
-  const handleAutoSavePromptsFromModal = (updatedPrompts: PromptEntry[]) => {
-    console.log("[ImageGenerationForm] Auto-saving prompts received from modal:", updatedPrompts);
-    setPrompts(updatedPrompts.map(p => ({
-        ...p,
-        id: p.id || generatePromptId(),
-        shortPrompt: p.shortPrompt || (p.fullPrompt ? (p.fullPrompt.substring(0,30) + (p.fullPrompt.length > 30 ? "..." : "")) : undefined)
-    })));
-  };
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     console.log("[ImageGenerationForm] handleSubmit triggered. Event type:", e.type);
@@ -849,7 +852,6 @@ const ImageGenerationForm = forwardRef<ImageGenerationFormHandles, ImageGenerati
         onClose={() => setIsPromptModalOpen(false)}
         prompts={prompts}
         onSave={handleSavePromptsFromModal}
-        onAutoSavePrompts={handleAutoSavePromptsFromModal}
         generatePromptId={generatePromptId}
         apiKey={openaiApiKey}
       />

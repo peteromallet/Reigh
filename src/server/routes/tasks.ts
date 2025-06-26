@@ -1,10 +1,8 @@
 import express, { Request, Response, Router } from 'express';
 import { db } from '@/lib/db'; // Adjusted path assuming db is exported from here
 import { tasks as tasksSchema, taskStatusEnum } from '../../../db/schema/schema'; // Adjusted path to schema
-import { sql, eq, and, inArray, max } from 'drizzle-orm';
-import { generations as generationsSchema, shotGenerations as shotGenerationsSchema } from '../../../db/schema/schema';
-import { randomUUID } from 'crypto';
-import { processCompletedStitchTask, cascadeTaskStatus } from '../services/taskProcessingService';
+import { sql, eq, and, inArray } from 'drizzle-orm';
+import { processCompletedStitchTask, processCompletedSingleImageTask, cascadeTaskStatus } from '../services/taskProcessingService';
 
 const router = express.Router() as any; // Changed Router to any to resolve overload errors
 
@@ -199,6 +197,13 @@ router.patch('/:taskId/status', async (req: Request, res: Response) => {
       // For now, let it run in the background.
       processCompletedStitchTask(updatedTask).catch(err => {
         console.error(`[VideoStitchGenDebug] Error from processCompletedStitchTask called via API for task ${updatedTask.id}:`, err);
+      });
+    }
+
+    // NEW: Handle completed single_image tasks to create generation entries
+    if (updatedTask.taskType === 'single_image' && updatedTask.status === 'Complete') {
+      processCompletedSingleImageTask(updatedTask).catch(err => {
+        console.error(`[SingleImageGenDebug] Error from processCompletedSingleImageTask called via API for task ${updatedTask.id}:`, err);
       });
     }
 

@@ -347,7 +347,6 @@ const EditTravelToolPage = () => {
           onClose={() => setIsPromptEditorOpen(false)}
           prompts={prompts}
           onSave={handleSavePrompts}
-          onAutoSavePrompts={handleSavePrompts}
           generatePromptId={generatePromptId}
           apiKey={openaiApiKey || falApiKey || undefined}
         />

@@ -49,7 +49,6 @@ export interface PromptEditorModalProps {
   onClose: () => void;
   prompts: PromptEntry[];
   onSave: (updatedPrompts: PromptEntry[]) => void;
-  onAutoSavePrompts: (updatedPrompts: PromptEntry[]) => void;
   generatePromptId: () => string;
   apiKey?: string;
 }
@@ -57,8 +56,7 @@ export interface PromptEditorModalProps {
 type EditorMode = 'generate' | 'bulk-edit';
 
 const PromptEditorModal: React.FC<PromptEditorModalProps> = ({
-  isOpen, onClose, prompts: initialPrompts, onSave, 
-  onAutoSavePrompts,
+  isOpen, onClose, prompts: initialPrompts, onSave,
   generatePromptId,
   apiKey,
 }) => {
@@ -94,14 +92,6 @@ const PromptEditorModal: React.FC<PromptEditorModalProps> = ({
       scrollRef.current.scrollTo({ top: 0, behavior: 'smooth' });
     }
   }, []);
-
-  const debouncedAutoSavePrompts = useCallback(
-    debounce((promptsToSave: PromptEntry[]) => {
-      console.log(`[PromptEditorModal] Auto-saving prompts to parent. Count: ${promptsToSave.length}`, JSON.stringify(promptsToSave.map(p => ({id: p.id, text: p.fullPrompt.substring(0,30)+'...'}))));
-      onAutoSavePrompts(promptsToSave);
-    }, 1500),
-    [onAutoSavePrompts]
-  );
 
   // Effect to initialize modal state (prompts and control settings) when it *first* opens
   useEffect(() => {
@@ -149,18 +139,6 @@ const PromptEditorModal: React.FC<PromptEditorModalProps> = ({
     }
   }, [isOpen]); 
 
-  // Effect to sync internalPrompts if initialPrompts prop changes WHILE modal is already open.
-  // This handles cases where parent form might update prompts for reasons external to this modal's auto-save loop,
-  // or to reflect the result of an auto-save without re-initializing control fields.
-  useEffect(() => {
-    if (isOpen) {
-        if (initialPrompts !== internalPrompts) { 
-            console.log(`[PromptEditorModal] initialPrompts prop changed while modal is open. Syncing internalPrompts. New count: ${initialPrompts.length}`);
-            setInternalPrompts(initialPrompts.map(p => ({ ...p })));
-        }
-    }
-  }, [initialPrompts, isOpen]);
-
   const debouncedSaveControlSettings = useCallback(
     debounce((settings: PersistedEditorControlsSettings) => {
       localStorage.setItem(PROMPT_EDITOR_MODAL_CONTROLS_KEY, JSON.stringify(settings));
@@ -194,7 +172,6 @@ const PromptEditorModal: React.FC<PromptEditorModalProps> = ({
   const handleFinalSaveAndClose = () => {
     console.log(`[PromptEditorModal] 'Close' button clicked. Saving prompts. Count: ${internalPrompts.length}`, JSON.stringify(internalPrompts.map(p => ({id: p.id, text: p.fullPrompt.substring(0,30)+'...'}))));
     onSave(internalPrompts);
-    onAutoSavePrompts(internalPrompts);
     if (scrollRef.current) {
         scrollRef.current.scrollTop = 0;
     }
@@ -206,16 +183,14 @@ const PromptEditorModal: React.FC<PromptEditorModalProps> = ({
     setInternalPrompts(currentPrompts => {
       const newPrompts = currentPrompts.map(p => (p.id === id ? { ...p, ...updates } : p));
       console.log(`[PromptEditorModal] Prompt updated (manual edit). ID: ${id}, Updates: ${JSON.stringify(updates)}. New list count: ${newPrompts.length}`);
-      if (isOpen) debouncedAutoSavePrompts(newPrompts);
       return newPrompts;
     });
-  }, [isOpen, debouncedAutoSavePrompts]);
+  }, [isOpen]);
   
   const handleInternalRemovePrompt = (id: string) => {
     setInternalPrompts(currentPrompts => {
       const newPrompts = currentPrompts.filter(p => p.id !== id);
       console.log(`[PromptEditorModal] Prompt removed (manual). ID: ${id}. New list count: ${newPrompts.length}`);
-      if (isOpen) debouncedAutoSavePrompts(newPrompts);
       return newPrompts;
     });
   };
@@ -225,7 +200,6 @@ const PromptEditorModal: React.FC<PromptEditorModalProps> = ({
     setInternalPrompts(currentPrompts => {
       const newPrompts = [...currentPrompts, newPromptEntry];
       console.log(`[PromptEditorModal] Blank prompt added (manual). New prompt ID: ${newPromptEntry.id}. New list count: ${newPrompts.length}`);
-      if (isOpen) debouncedAutoSavePrompts(newPrompts);
       return newPrompts;
     });
   };
@@ -233,7 +207,6 @@ const PromptEditorModal: React.FC<PromptEditorModalProps> = ({
   const handleRemoveAllPrompts = () => {
     console.log(`[PromptEditorModal] Removing all prompts. Current count: ${internalPrompts.length}`);
     setInternalPrompts([]);
-    if (isOpen) debouncedAutoSavePrompts([]);
     toast.info("All prompts have been deleted.");
   };
 
@@ -260,7 +233,6 @@ const PromptEditorModal: React.FC<PromptEditorModalProps> = ({
       const updatedPrompts = [...currentPrompts, ...newEntries];
       newlyAddedPromptIds = newEntries.map(e => e.id); // Capture IDs of newly added prompts
       console.log(`[PromptEditorModal] AI Generation: Added ${newEntries.length} prompts to internal list. New total: ${updatedPrompts.length}`);
-      if (isOpen) debouncedAutoSavePrompts(updatedPrompts);
       return updatedPrompts;
     });
 
@@ -297,7 +269,6 @@ const PromptEditorModal: React.FC<PromptEditorModalProps> = ({
       // After all potential summary updates, trigger one final auto-save if there were new prompts that needed summaries.
       // This ensures the parent gets the summarized versions.
       setInternalPrompts(currentPrompts => {
-        if (isOpen) debouncedAutoSavePrompts(currentPrompts);
         return currentPrompts;
       });
     }
@@ -332,7 +303,6 @@ const PromptEditorModal: React.FC<PromptEditorModalProps> = ({
             const updatedPrompts = currentPrompts.map(p => 
               p.id === promptIdToUpdate ? { ...p, fullPrompt: result.newText!, shortPrompt: result.newShortText || '' } : p
             );
-            if (isOpen) debouncedAutoSavePrompts(updatedPrompts);
             return updatedPrompts;
           });
           successCount++;
@@ -374,7 +344,6 @@ const PromptEditorModal: React.FC<PromptEditorModalProps> = ({
           const updatedPrompts = currentPrompts.map(p =>
             p.id === promptToEdit.id ? { ...p, fullPrompt: result.newText!, shortPrompt: result.newShortText || '' } : p
           );
-          if (isOpen) debouncedAutoSavePrompts(updatedPrompts);
           return updatedPrompts;
         });
         toast.success("Prompt updated with AI assistance.");

@@ -1,5 +1,55 @@
 # Local Development Setup
 
+## 🚀 Quick Start (Recommended)
+
+If you just want to get everything running locally as fast as possible, use the provided helper scripts.
+
+1. **Clone the repository and enter it**
+   ```bash
+   git clone https://github.com/peteromallet/reigh
+   cd reigh
+   ```
+2. **Run the automated setup** (first-time only)
+   ```bash
+   ./setup.sh
+   ```
+   This script will:
+   • install Node dependencies and seed the local SQLite DB
+   • clone the Python server (peteromallet/Headless-Wan2GP) and create its virtual-env
+   • install Python dependencies (incl. PyTorch & ffmpeg)
+   • create the necessary `.env` / `.env.local` files
+
+   > **Note**
+   > • The script expects Node 18+ and Python 3.10 (or `python3`) to be available in your `PATH`.
+   > • On Debian/Ubuntu images the script tries `apt-get install python3.10-venv ffmpeg` if you run it with `sudo/root`.
+   > • On macOS you should have `ffmpeg` installed via Homebrew (`brew install ffmpeg`).
+
+3. **Launch all services** (every time you want to work)
+   ```bash
+   ./launch.sh
+   ```
+   This spawns three background processes and writes their output to log files:
+   • `api.log`      – Express API (port 8085)
+   • `frontend.log` – Vite dev server (port 2222)
+   • `python.log`   – Headless-Wan2GP Python server
+
+   Press `Ctrl+C` in the launch shell to stop everything gracefully.
+
+4. **Check service health (optional)**
+   ```bash
+   ./check-status.sh
+   ```
+   A small helper that pings the dev servers and tells you whether they are up.
+
+---
+
+## 📖 Manual / Detailed Setup
+
+<details>
+<summary><strong>📖 Manual / Detailed Setup (click to expand)</strong></summary>
+
+> Skip this section if you used the scripts above. The steps below describe what the scripts do under the hood and can be useful if you prefer a manual approach or need to debug.
+
 This guide provides the essential steps to set up and run this project locally using a SQLite database.
 
 ## Prerequisites
@@ -139,3 +189,4 @@ This guide provides the essential steps to set up and run this project locally u
 ---
 
 Your local development environment is now ready. You can access the application in your browser and begin working.
+</details>
