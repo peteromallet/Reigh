@@ -142,6 +142,15 @@ const ImageGallery: React.FC<ImageGalleryProps> = ({ images, onDelete, isDeletin
   // State for the new media type filter
   const [mediaTypeFilter, setMediaTypeFilter] = useState<'all' | 'image' | 'video'>('all');
 
+  // Pagination state (48 items per page)
+  const ITEMS_PER_PAGE = 48;
+  const [page, setPage] = React.useState(0);
+
+  // When filters change, reset to first page
+  React.useEffect(() => {
+    setPage(0);
+  }, [filterByToolType, mediaTypeFilter, images]);
+
   const tickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const baseUrl = import.meta.env.VITE_API_TARGET_URL || '';
@@ -307,14 +316,60 @@ const ImageGallery: React.FC<ImageGalleryProps> = ({ images, onDelete, isDeletin
     return currentFiltered;
   }, [images, filterByToolType, currentToolType, mediaTypeFilter]);
 
+  // Calculate pagination helpers (must come after filteredImages is defined)
+  const totalFilteredItems = filteredImages.length;
+  const totalPages = Math.max(1, Math.ceil(totalFilteredItems / ITEMS_PER_PAGE));
+  const paginatedImages = React.useMemo(() =>
+    filteredImages.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE),
+    [filteredImages, page]
+  );
+
+  const rangeStart = totalFilteredItems === 0 ? 0 : page * ITEMS_PER_PAGE + 1;
+  const rangeEnd = rangeStart + paginatedImages.length - 1;
+
+  // Ensure current page is within bounds when totalPages changes (e.g., after filtering)
+  React.useEffect(() => {
+    if (page >= totalPages) {
+      setPage(Math.max(0, totalPages - 1));
+    }
+  }, [totalPages, page]);
+
   return (
     <TooltipProvider delayDuration={300}>
       <div className="space-y-4">
         <div className="flex flex-wrap justify-between items-center mb-2 gap-x-4 gap-y-2"> {/* Added gap-y-2 and flex-wrap for better responsiveness */}
             {images.length > 0 && (
-              <h2 className="text-xl font-medium">
-                Showing {offset + 1}-{offset + filteredImages.length} (out of {totalCount ?? images.length})
-              </h2>
+              <div className="ml-auto flex items-center gap-2">
+                {/* Pagination Controls */}
+                {totalPages > 1 && (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPage((p) => Math.max(0, p - 1))}
+                      disabled={page === 0}
+                    >
+                      Prev
+                    </Button>
+                    <span className="text-sm text-muted-foreground whitespace-nowrap">
+                      Showing {rangeStart}-{rangeEnd} (out of {totalFilteredItems})
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                      disabled={page >= totalPages - 1}
+                    >
+                      Next
+                    </Button>
+                  </>
+                )}
+                {totalPages === 1 && (
+                  <span className="text-sm text-muted-foreground whitespace-nowrap ml-auto">
+                    Showing {rangeStart}-{rangeEnd} (out of {totalFilteredItems})
+                  </span>
+                )}
+              </div>
             )}
             <div className="flex items-center gap-x-4 gap-y-2 flex-wrap"> {/* Grouping filters, added flex-wrap */}
                 {/* New Media Type Filter */}
@@ -365,9 +420,9 @@ const ImageGallery: React.FC<ImageGalleryProps> = ({ images, onDelete, isDeletin
            </div>
         )}
 
-        {filteredImages.length > 0 && (
+        {paginatedImages.length > 0 && (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4">
-            {filteredImages.map((image, index) => {
+            {paginatedImages.map((image, index) => {
                 const displayUrl = getDisplayUrl(image.url);
                 const metadataForDisplay = image.metadata ? formatMetadataForDisplay(image.metadata) : "No metadata available.";
                 const isCurrentDeleting = isDeleting === image.id;
