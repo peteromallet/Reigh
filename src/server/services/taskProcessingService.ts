@@ -393,6 +393,14 @@ export async function processCompletedSingleImageTask(task: Task): Promise<void>
       tasks: [task.id],
       location: outputLocation,
       type: 'single_image_output',
+      params: {
+        tool_type: 'image-generation',
+        prompt: (task.params as any)?.orchestrator_details?.prompt || '',
+        seed: (task.params as any)?.orchestrator_details?.seed,
+        model: (task.params as any)?.orchestrator_details?.model,
+        resolution: (task.params as any)?.orchestrator_details?.resolution,
+        source: 'wan_single_image_task',
+      },
       createdAt: new Date(),
       updatedAt: new Date(),
     }).returning();
