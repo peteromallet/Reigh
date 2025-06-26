@@ -40,7 +40,10 @@
 | `/db/migrations-sqlite/` | SQLite migration files |
 | `/db/seed.ts` | Seeds local SQLite DB for development |
 | `/src/lib/db/index.ts` | Runtime DAL: Exports Drizzle client (server-side, SQLite/PG) & Supabase JS client (client-side) |
-| `/src/server/routes/singleImageGeneration.ts` | New route for single-image tasks (POST /api/single-image/generate). Queues `single_image` tasks mirroring Wan local image generation.
+| `/src/server/routes/singleImageGeneration.ts` | New route for single-image tasks (POST /api/single-image/generate). Queues `single_image` tasks mirroring Wan local image generation |
+| **API Endpoints** | |
+| `POST /api/local-image-upload` | Upload single image files to server local storage |
+| `POST /api/upload-flipped-image` | Upload processed (flipped) images from lightbox edit functionality |
 
 ### DB Workflow (Drizzle ORM - SQLite & PostgreSQL)
 1. **Schema**: `/db/schema/schema.ts` (Drizzle, PG-first)
@@ -125,9 +128,10 @@
 - **CreateProjectModal.tsx**: Dialog to create new project (uses ProjectContext.addNewProject)
 - **ProjectSettingsModal.tsx**: Dialog to update project name/aspect ratio (uses ProjectContext.updateProject)
 - **FileInput.tsx**: Reusable file input (image/video) with drag-and-drop, preview
-- **MediaLightbox.tsx**: Reusable lightbox for images/videos. Keyboard/button navigation
+- **MediaLightbox.tsx**: Reusable lightbox for images/videos. Keyboard/button navigation. Now includes horizontal flip functionality for images with canvas-based save capability
 - **ShotImageManager.tsx**: Manages images in a shot (D&D reorder, delete via callbacks). Used by ShotEditor, ShotsPage.tsx
 - **HoverScrubVideo.tsx**: Wrapper for useVideoScrubbing (hover-play, scrub, progress, rate overlay). Reused by VideoOutputItem, MediaLightbox
+- **ui/FullscreenImageModal.tsx**: Enhanced fullscreen image modal with horizontal flip and save functionality. Features flip button, save button (appears when changes made), canvas-based image processing for accurate flipping
 
 ##### Hooks
 - **useGenerations.ts**: CRUD for generations:
