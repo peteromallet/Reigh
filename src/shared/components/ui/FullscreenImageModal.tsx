@@ -37,6 +37,14 @@ const FullscreenImageModal: React.FC<FullscreenImageModalProps> = ({ imageUrl, i
     generationsPaneHeight 
   } = usePanes();
 
+  // Debug: Check if callback is provided
+  console.log(`[FullscreenImageModal] Component initialized with:`, {
+    imageId,
+    imageUrl,
+    hasOnImageSavedCallback: !!onImageSaved,
+    onImageSavedType: typeof onImageSaved
+  });
+
   if (!imageUrl) return null;
 
   const downloadFileName = `artful_pane_craft_fullscreen_${imageId || 'image'}_${Date.now()}.png`;
@@ -126,9 +134,17 @@ const FullscreenImageModal: React.FC<FullscreenImageModalProps> = ({ imageUrl, i
           const newImageUrl = result.url || result.imageUrl;
           console.log(`[FlipSave] New image URL:`, newImageUrl);
 
+          console.log(`[FlipSave] CRITICAL CHECK - About to call callback:`, {
+            hasNewImageUrl: !!newImageUrl,
+            hasOnImageSavedCallback: !!onImageSaved,
+            newImageUrl: newImageUrl,
+            callbackFunction: onImageSaved?.toString()
+          });
+
           if (newImageUrl && onImageSaved) {
             console.log(`[FlipSave] Calling onImageSaved callback with:`, { newImageUrl });
             onImageSaved(newImageUrl);
+            console.log(`[FlipSave] onImageSaved callback called successfully`);
           } else {
             console.warn(`[FlipSave] WARNING: No newImageUrl or onImageSaved callback`, { newImageUrl, hasCallback: !!onImageSaved });
           }
