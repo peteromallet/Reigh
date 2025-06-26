@@ -355,6 +355,8 @@ const MyLorasTab: React.FC<MyLorasTabProps> = ({ myLorasResource, onAddLora, sel
             {/* Debug info */}
             <div className="p-2 bg-blue-50 border border-blue-300 rounded-md text-xs text-blue-900 mb-2">
                 Debug: lora_type="{lora_type}", isWan={!!(lora_type && lora_type.toLowerCase().includes('wan'))}, localWanLoras.length={localWanLoras.length}
+                <br/>localWanLoras: {JSON.stringify(localWanLoras.map(l => l.Name))}
+                <br/>Condition check: localWanLoras.length &gt; 0 = {localWanLoras.length > 0}
             </div>
 
             <div className="p-4 bg-yellow-50 border border-yellow-300 rounded-md text-sm text-yellow-900 mb-4">
@@ -370,6 +372,22 @@ const MyLorasTab: React.FC<MyLorasTabProps> = ({ myLorasResource, onAddLora, sel
                     <p>Explore the "Community LoRAs" tab to find and add models.</p>
                 </div>
             )}
+
+            {/* Temporary: Always show this section for debugging */}
+            <div className="pt-4 bg-red-50 border border-red-300 p-2">
+                <h4 className="text-md font-semibold mb-2">DEBUG: Always visible - Local LoRAs ({localWanLoras.length})</h4>
+                {localWanLoras.length === 0 ? (
+                    <p className="text-sm text-red-600">No local LoRAs found</p>
+                ) : (
+                    <div className="space-y-2">
+                        {localWanLoras.map((lora, index) => (
+                            <div key={index} className="text-xs bg-white p-1 rounded border">
+                                {lora.Name} - {lora["Model ID"]}
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
 
             {/* Local LoRAs */}
             {localWanLoras.length > 0 && (
