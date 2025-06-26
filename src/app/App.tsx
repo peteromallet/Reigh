@@ -2,7 +2,7 @@ import React, { useContext } from 'react';
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@/shared/components/ui/tooltip";
 import { Toaster as Sonner } from "@/shared/components/ui/sonner";
-import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent, DragStartEvent, DragOverlay } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { useHandleExternalImageDrop, useCreateShot, useAddImageToShot, useListShots } from "@/shared/hooks/useShots";
 import { NEW_GROUP_DROPPABLE_ID } from '@/shared/components/ShotsPane/NewGroupDropZone';
@@ -40,6 +40,24 @@ const AppInternalContent = () => {
   const createShotMutation = useCreateShot();
   const addImageToShotMutation = useAddImageToShot();
   const handleExternalImageDropMutation = useHandleExternalImageDrop();
+
+  const [activeDragData, setActiveDragData] = React.useState<any | null>(null);
+
+  const getDisplayUrl = (relativePath: string | undefined): string => {
+    if (!relativePath) return '';
+    if (relativePath.startsWith('http') || relativePath.startsWith('blob:')) {
+      return relativePath;
+    }
+    const baseUrl = import.meta.env.VITE_API_TARGET_URL || '';
+    const cleanBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+    const cleanRelative = relativePath.startsWith('/') ? relativePath.substring(1) : relativePath;
+    return `${cleanBase}/${cleanRelative}`;
+  };
+
+  const handleDragStart = (event: DragStartEvent) => {
+    const { active } = event;
+    setActiveDragData(active?.data?.current || null);
+  };
 
   const handleDragEnd = async (event: DragEndEvent) => {
     console.log('handleDragEnd triggered.', {
@@ -133,12 +151,27 @@ const AppInternalContent = () => {
       console.error('Error handling drop:', error);
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
     }
+
+    setActiveDragData(null);
   };
 
   return (
     <TooltipProvider>
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
         <AppRoutes />
+        <DragOverlay zIndex={2000} style={{ pointerEvents: 'none' }}>
+          {activeDragData && activeDragData.imageUrl ? (
+            (() => {
+              const url = getDisplayUrl(activeDragData.imageUrl);
+              const isVideo = url.match(/\.(webm|mp4|mov)$/i);
+              return isVideo ? (
+                <video src={url} style={{ maxWidth: '200px', maxHeight: '200px' }} playsInline muted />
+              ) : (
+                <img src={url} style={{ maxWidth: '200px', maxHeight: '200px' }} alt="drag preview" />
+              );
+            })()
+          ) : null}
+        </DragOverlay>
         <Sonner />
       </DndContext>
     </TooltipProvider>
