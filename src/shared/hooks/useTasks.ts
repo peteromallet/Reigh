@@ -85,8 +85,8 @@ export const useCancelAllPendingTasks = () => {
       queryClient.invalidateQueries({ queryKey: [TASKS_QUERY_KEY, selectedProjectId, ['Pending']] });
       queryClient.invalidateQueries({ queryKey: [TASKS_QUERY_KEY, selectedProjectId, ['Cancelled']] });
     },
-    // onError: (error) => { // Handled by caller using toast for now
-    //   console.error("Error cancelling all pending tasks:", error);
-    // }
+    onError: (error) => {
+      console.error('Cancel-All error:', error);
+    },
   });
 }; 

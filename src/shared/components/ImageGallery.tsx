@@ -23,6 +23,7 @@ import { Label } from "@/shared/components/ui/label";
 import { nanoid } from "nanoid";
 import { formatDistanceToNow } from "date-fns";
 import { useCurrentShot } from '@/shared/contexts/CurrentShotContext';
+import { DraggableImage } from "@/shared/components/DraggableImage";
 
 // Define the structure for individual LoRA details within metadata
 export interface MetadataLora {
@@ -383,25 +384,25 @@ const ImageGallery: React.FC<ImageGalleryProps> = ({ images, onDelete, isDeletin
                 // This specific placeholder rendering should only occur if filteredImages actually contains such placeholders.
                 // The filter logic above might already exclude them if they don't have metadata.tool_type
                 if (isPlaceholder) {
-                return (
+                  return (
                     <div 
-                    key={imageKey}
-                    className="border rounded-lg overflow-hidden bg-muted animate-pulse"
+                      key={imageKey}
+                      className="border rounded-lg overflow-hidden bg-muted animate-pulse"
                     >
-                    <div style={{ paddingBottom: aspectRatioPadding }} className="relative">
+                      <div style={{ paddingBottom: aspectRatioPadding }} className="relative">
                         <div className="absolute inset-0 flex items-center justify-center">
-                        <Sparkles className="h-12 w-12 text-muted-foreground opacity-30" />
+                          <Sparkles className="h-12 w-12 text-muted-foreground opacity-30" />
                         </div>
+                      </div>
                     </div>
-                    </div>
-                );
+                  );
                 }
 
                 return (
-                <div 
-                    key={imageKey}
-                    className="border rounded-lg overflow-hidden hover:shadow-md transition-shadow relative group bg-card"
-                >
+                <DraggableImage key={`draggable-${imageKey}`} image={image}>
+                  <div 
+                      className="border rounded-lg overflow-hidden hover:shadow-md transition-shadow relative group bg-card"
+                  >
                     <div className="relative w-full">
                     <div style={{ paddingBottom: aspectRatioPadding }} className="relative bg-gray-200">
                         {isActuallyVideo ? (
@@ -598,7 +599,8 @@ const ImageGallery: React.FC<ImageGalleryProps> = ({ images, onDelete, isDeletin
                         </div>
                     </>)
                     }
-                </div>
+                  </div>
+                </DraggableImage>
                 );
             })}
             </div>

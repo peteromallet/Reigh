@@ -41,9 +41,10 @@ const TasksPane: React.FC = () => {
         });
       },
       onError: (error) => {
+        console.error('Cancel-All failed:', error);
         toast({
           title: 'Cancellation Failed',
-          description: error.message || 'Could not cancel all active tasks.',
+          description: (error as Error).message || 'Could not cancel all active tasks.',
           variant: 'destructive',
         });
       },

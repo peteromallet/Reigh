@@ -5,7 +5,9 @@ import { GeneratedImageWithMetadata } from '@/shared/components/ImageGallery';
 
 // 1. Fetch Generations using API endpoint
 const fetchGenerations = async (projectId: string): Promise<GeneratedImageWithMetadata[]> => {
-  const response = await fetch(`/api/generations?projectId=${projectId}`);
+  // Request a larger limit than the API default (24) so the gallery can display more images.
+  // TODO: In the future we might replace this with proper pagination / infinite scroll.
+  const response = await fetch(`/api/generations?projectId=${projectId}&limit=1000`);
   if (!response.ok) {
     throw new Error(`Failed to fetch generations: ${response.status} ${response.statusText}`);
   }

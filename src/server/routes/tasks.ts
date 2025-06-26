@@ -217,13 +217,15 @@ router.patch('/:taskId/status', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/tasks/cancel-pending - Cancel all pending tasks for a project
+// POST /api/tasks/cancel-pending - Cancel all active (pending/queued/in-progress) tasks for a project
 router.post('/cancel-pending', async (req: Request, res: Response) => {
   const { projectId } = req.body;
 
   if (!projectId) {
     return res.status(400).json({ message: 'Missing required body parameter: projectId' });
   }
+
+  const STATUSES_TO_CANCEL: (typeof taskStatusEnum[number])[] = ['Pending', 'Queued', 'In Progress'];
 
   try {
     const result = await db
@@ -234,24 +236,30 @@ router.post('/cancel-pending', async (req: Request, res: Response) => {
       })
       .where(and(
         eq(tasksSchema.projectId, projectId),
-        eq(tasksSchema.status, 'Pending' as typeof taskStatusEnum[number])
+        inArray(tasksSchema.status, STATUSES_TO_CANCEL)
       ))
-      .returning({ id: tasksSchema.id }); // Only return IDs or a count for efficiency
+      .returning({ id: tasksSchema.id });
 
-    // Drizzle update doesn't directly return a count of affected rows easily across all drivers.
-    // The number of items in 'result' array is the count of updated (cancelled) tasks.
     const cancelledCount = result.length;
 
-    if (cancelledCount === 0) {
-      return res.status(200).json({ message: 'No pending tasks found for this project to cancel.', cancelledCount });
+    console.log(`[Tasks] Cancelled ${cancelledCount} tasks for project ${projectId}`);
+
+    // Cascade status update for each cancelled task (fire-and-forget)
+    for (const row of result) {
+      cascadeTaskStatus(row.id, 'Cancelled', 'Bulk cancelled via /cancel-pending').catch(err => {
+        console.error('[Tasks] Error cascading cancel for task', row.id, err);
+      });
     }
 
-    console.log(`[API /api/tasks/cancel-pending] Cancelled ${cancelledCount} pending tasks for project ${projectId}`);
-    return res.status(200).json({ message: `Successfully cancelled ${cancelledCount} pending tasks.`, cancelledCount });
+    if (cancelledCount === 0) {
+      return res.status(200).json({ message: 'No active tasks found for this project to cancel.', cancelledCount });
+    }
+
+    return res.status(200).json({ message: `Successfully cancelled ${cancelledCount} tasks.`, cancelledCount });
 
   } catch (error: any) {
-    console.error(`[API /api/tasks/cancel-pending] Error cancelling all pending tasks for project ${projectId}:`, error);
-    return res.status(500).json({ message: 'Internal server error while cancelling all pending tasks', error: error.message });
+    console.error(`[Tasks] Error cancelling tasks for project ${projectId}:`, error);
+    return res.status(500).json({ message: 'Internal server error while cancelling tasks', error: error.message });
   }
 });
 
