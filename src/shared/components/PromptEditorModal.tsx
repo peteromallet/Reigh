@@ -76,7 +76,7 @@ const PromptEditorModal: React.FC<PromptEditorModalProps> = ({
     numberToGenerate: 3, includeExistingContext: false, addSummary: true,
   });
   const [bulkEditControlValues, setBulkEditControlValues] = useState<BulkEditControlValues>({
-    editInstructions: '', modelType: 'standard' as AIModelType,
+    editInstructions: '', modelType: 'smart' as AIModelType,
   });
 
   // Scroll handler
@@ -321,7 +321,7 @@ const PromptEditorModal: React.FC<PromptEditorModalProps> = ({
   };
 
   const openEditWithAIForm = (promptId: string, currentText: string) => {
-    setPromptToEdit({ id: promptId, originalText: currentText, instructions: '', modelType: 'standard' });
+    setPromptToEdit({ id: promptId, originalText: currentText, instructions: '', modelType: 'smart' });
   };
 
   const handleConfirmEditWithAI = async () => {

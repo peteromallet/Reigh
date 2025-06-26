@@ -143,13 +143,13 @@ export const useAIInteractionService = ({
 
       const userMessage = `Original Prompt:\\n"${params.originalPromptText}"\\n\\nEdit Instructions:\\n"${params.editInstructions}"`;
 
-      const model = params.modelType === 'smart' ? 'o3-mini' : 'gpt-4o-mini';
+      const model = params.modelType === 'smart' ? 'o3' : 'gpt-4o-mini';
       
       try {
         let newText: string | null = null;
-        if (model === 'o3-mini') {
+        if (model === 'o3') {
           const response = await openai.chat.completions.create({
-            model: 'o3-mini',
+            model: 'o3',
             messages: [
               { role: 'system', content: systemMessage },
               { role: 'user', content: userMessage },

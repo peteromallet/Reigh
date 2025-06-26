@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Shot, GenerationRow } from '../../../types/shots'; // Corrected import path
-import { useUpdateShotName, useDeleteShot } from '../../../shared/hooks/useShots'; // Import new hooks
+import { useUpdateShotName, useDeleteShot, useDuplicateShot } from '../../../shared/hooks/useShots'; // Import new hooks
 import { Input } from '@/shared/components/ui/input';
 import { Button } from '@/shared/components/ui/button';
-import { Pencil, Trash2, Check, X } from 'lucide-react'; // Icons
+import { Pencil, Trash2, Check, X, Copy } from 'lucide-react'; // Icons
 import { toast } from 'sonner';
 
 interface VideoShotDisplayProps {
@@ -18,6 +18,7 @@ const VideoShotDisplay: React.FC<VideoShotDisplayProps> = ({ shot, onSelectShot,
 
   const updateShotNameMutation = useUpdateShotName();
   const deleteShotMutation = useDeleteShot();
+  const duplicateShotMutation = useDuplicateShot();
 
   useEffect(() => {
     setEditableName(shot.name); // Reset editable name if shot prop changes
@@ -93,6 +94,22 @@ const VideoShotDisplay: React.FC<VideoShotDisplayProps> = ({ shot, onSelectShot,
     }
   };
 
+  const handleDuplicateShot = async () => {
+    if (!currentProjectId) {
+      toast.error('Cannot duplicate shot: Project ID is missing.');
+      return;
+    }
+    try {
+      await duplicateShotMutation.mutateAsync({
+        shotId: shot.id,
+        projectId: currentProjectId,
+      });
+    } catch (error) {
+      console.error("Error during duplicateShotMutation call:", error);
+      toast.error(`Failed to duplicate shot: ${(error as Error).message}`);
+    }
+  };
+
   const imagesOnly = shot.images?.filter(image => image.type !== 'video_travel_output') || [];
   const imagesToShow: GenerationRow[] = imagesOnly.slice(0, 5);
 
@@ -139,6 +156,16 @@ const VideoShotDisplay: React.FC<VideoShotDisplayProps> = ({ shot, onSelectShot,
                 <Pencil className="h-4 w-4" />
             </Button>
           )}
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            onClick={handleDuplicateShot} 
+            className="h-8 w-8" 
+            disabled={duplicateShotMutation.isPending}
+            title="Duplicate shot"
+          >
+            <Copy className="h-4 w-4" />
+          </Button>
           <Button variant="ghost" size="icon" onClick={handleDeleteShot} className="text-destructive hover:text-destructive-foreground hover:bg-destructive h-8 w-8">
             <Trash2 className="h-4 w-4" />
           </Button>

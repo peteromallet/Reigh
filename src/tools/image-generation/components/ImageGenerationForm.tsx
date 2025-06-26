@@ -484,11 +484,11 @@ const ImageGenerationForm = forwardRef<ImageGenerationFormHandles, ImageGenerati
 
   useEffect(() => {
     setSelectedLoras(selectedLorasMap[generationMode] || []);
-  }, [generationMode, selectedLorasMap]);
+  }, [generationMode]);
 
   useEffect(() => {
     setSelectedLorasMap(prev => ({ ...prev, [generationMode]: selectedLoras }));
-  }, [selectedLoras, generationMode]);
+  }, [selectedLoras]);
 
   const handleAddLora = (loraToAdd: LoraModel) => { 
     if (selectedLoras.find(sl => sl.id === loraToAdd["Model ID"])) { toast.info(`LoRA already added.`); return; }

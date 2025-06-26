@@ -66,7 +66,7 @@ export const useCreateShot = () => {
       };
       
       queryClient.setQueryData<Shot[]>(['shots', projectId], (oldShots = []) => 
-        [...oldShots, optimisticShot].sort((a,b) => a.name.localeCompare(b.name)) // Keep consistent sort order
+        [optimisticShot, ...oldShots] // Add at beginning since server orders by newest first
       );
       return { previousShots, projectId };
     },
@@ -82,6 +82,81 @@ export const useCreateShot = () => {
       }
       if (!error && data) {
         toast.success(`Shot "${data.name}" created!`);
+      }
+    },
+  });
+};
+
+// Duplicate a shot with all its images VIA API
+interface DuplicateShotArgs {
+  shotId: string;
+  projectId: string | null;
+  newName?: string;
+}
+
+export const useDuplicateShot = () => {
+  const queryClient = useQueryClient();
+  return useMutation<
+    Shot,
+    Error,
+    DuplicateShotArgs,
+    { previousShots?: Shot[], projectId?: string | null }
+  >({
+    mutationFn: async ({ shotId, projectId, newName }: DuplicateShotArgs): Promise<Shot> => {
+      if (!projectId) {
+        console.error('Error duplicating shot: Project ID is missing');
+        throw new Error('Project ID is required to duplicate a shot.');
+      }
+
+      const response = await fetch(`/api/shots/${shotId}/duplicate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newName }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: response.statusText }));
+        throw new Error(errorData.message || `Failed to duplicate shot: ${response.statusText}`);
+      }
+
+      const duplicatedShot: Shot = await response.json();
+      return duplicatedShot;
+    },
+    onMutate: async ({ projectId, newName, shotId }) => {
+      if (!projectId) return { previousShots: [], projectId: null };
+      await queryClient.cancelQueries({ queryKey: ['shots', projectId] });
+      const previousShots = queryClient.getQueryData<Shot[]>(['shots', projectId]);
+
+      // Create an optimistic shot for immediate UI feedback
+      const originalShot = previousShots?.find(s => s.id === shotId);
+      if (originalShot) {
+        const optimisticDuplicatedShot: Shot = {
+          id: `optimistic-duplicate-${Date.now()}`,
+          name: newName || `${originalShot.name} (Copy)`,
+          created_at: new Date().toISOString(),
+          images: originalShot.images, // Copy images reference for optimistic update
+          project_id: projectId,
+        };
+
+        queryClient.setQueryData<Shot[]>(['shots', projectId], (oldShots = []) =>
+          [optimisticDuplicatedShot, ...oldShots] // Add at beginning since server orders by newest first
+        );
+      }
+
+      return { previousShots, projectId };
+    },
+    onError: (err, { projectId }, context) => {
+      console.error('Optimistic update failed, rolling back for duplicateShot:', err);
+      if (context?.previousShots && projectId) {
+        queryClient.setQueryData<Shot[]>(['shots', projectId], context.previousShots);
+      }
+    },
+    onSettled: (data, error, { projectId }) => {
+      if (projectId) {
+        queryClient.invalidateQueries({ queryKey: ['shots', projectId] });
+      }
+      if (!error && data) {
+        toast.success(`Shot "${data.name}" duplicated successfully!`);
       }
     },
   });

@@ -157,6 +157,98 @@ shotsRouter.put('/:shotId', asyncHandler(async (req: Request, res: Response) => 
   }
 }));
 
+// POST /api/shots/:shotId/duplicate - Duplicate a shot with all its images
+shotsRouter.post('/:shotId/duplicate', asyncHandler(async (req: Request, res: Response) => {
+  const { shotId } = req.params;
+  const { newName } = req.body;
+
+  if (!shotId) {
+    return res.status(400).json({ message: 'Shot ID is required' });
+  }
+
+  try {
+    // First, fetch the original shot to duplicate
+    const originalShotData = await db.query.shots.findFirst({
+      where: eq(shotsTable.id, shotId),
+      with: {
+        shotGenerations: {
+          orderBy: [asc(shotGenerationsTable.position)],
+          with: {
+            generation: true,
+          },
+        },
+      },
+    });
+
+    if (!originalShotData) {
+      return res.status(404).json({ message: 'Original shot not found' });
+    }
+
+    // Create the new shot
+    const duplicatedShotName = newName || `${originalShotData.name} (Copy)`;
+    const newShotArray = await db.insert(shotsTable).values({
+      name: duplicatedShotName,
+      projectId: originalShotData.projectId,
+    }).returning();
+
+    if (!newShotArray || newShotArray.length === 0) {
+      return res.status(500).json({ message: 'Failed to create duplicated shot' });
+    }
+
+    const newShot = newShotArray[0];
+
+    // Duplicate all shot-generation relationships
+    const shotGenerationsToInsert = originalShotData.shotGenerations.map((sg) => ({
+      shotId: newShot.id,
+      generationId: sg.generationId,
+      position: sg.position,
+    }));
+
+    if (shotGenerationsToInsert.length > 0) {
+      await db.insert(shotGenerationsTable).values(shotGenerationsToInsert);
+    }
+
+    // Fetch the complete duplicated shot with images to return
+    const duplicatedShotData = await db.query.shots.findFirst({
+      where: eq(shotsTable.id, newShot.id),
+      with: {
+        shotGenerations: {
+          orderBy: [asc(shotGenerationsTable.position)],
+          with: {
+            generation: true,
+          },
+        },
+      },
+    });
+
+    // Transform data to match the client's expected Shot structure
+    const responseShot = {
+      id: duplicatedShotData!.id,
+      name: duplicatedShotData!.name,
+      created_at: duplicatedShotData!.createdAt ? duplicatedShotData!.createdAt.toISOString() : new Date().toISOString(),
+      project_id: duplicatedShotData!.projectId,
+      images: duplicatedShotData!.shotGenerations.map(sg => {
+        if (!sg.generation) return null;
+        return {
+          shotImageEntryId: sg.id,
+          id: sg.generation.id,
+          imageUrl: sg.generation.location,
+          thumbUrl: sg.generation.location,
+          metadata: sg.generation.params,
+          createdAt: sg.generation.createdAt.toISOString(),
+          type: sg.generation.type,
+          location: sg.generation.location
+        };
+      }).filter((img): img is NonNullable<typeof img> => img !== null),
+    };
+
+    res.status(201).json(responseShot);
+  } catch (error: any) {
+    console.error(`[API Error Duplicating Shot ${shotId}]`, error);
+    res.status(500).json({ message: 'Failed to duplicate shot' });
+  }
+}));
+
 // DELETE /api/shots/:shotId - Delete a shot and its links
 shotsRouter.delete('/:shotId', asyncHandler(async (req: Request, res: Response) => {
   const { shotId } = req.params;
