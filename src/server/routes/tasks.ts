@@ -291,4 +291,30 @@ router.get('/by-task-id/:taskId', async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/tasks/:id - Get a single task by its primary ID
+router.get('/:id', async (req: Request, res: Response) => {
+  const id = req.params.id as string;
+
+  if (!id) {
+    return res.status(400).json({ message: 'Missing required path parameter: id' });
+  }
+
+  try {
+    const tasks = await db
+      .select()
+      .from(tasksSchema)
+      .where(eq(tasksSchema.id, id))
+      .limit(1);
+
+    if (tasks.length === 0) {
+      return res.status(404).json({ message: 'Task not found' });
+    }
+
+    return res.status(200).json(tasks[0]);
+  } catch (error: any) {
+    console.error(`[API /api/tasks/${id}] Error fetching task:`, error);
+    return res.status(500).json({ message: 'Internal server error while fetching task', error: error.message });
+  }
+});
+
 export default router; 

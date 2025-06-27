@@ -33,6 +33,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/shared/components/ui/toggle-grou
 import { useListTasks, useCancelTask } from "@/shared/hooks/useTasks";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from '@tanstack/react-query';
+import { useCurrentShot } from '@/shared/contexts/CurrentShotContext';
 
 // Add the missing type definition
 export interface SegmentGenerationParams {
@@ -210,6 +211,7 @@ const ShotEditor: React.FC<ShotEditorProps> = ({
   const [generationMode, setGenerationMode] = useState<'batch' | 'by-pair'>('batch');
   const [pairConfigs, setPairConfigs] = useState<PairConfig[]>([]);
   const queryClient = useQueryClient();
+  const [taskCreationStatus, setTaskCreationStatus] = useState<string>('');
 
   // Use local state for optimistic updates on image list
   const [localOrderedShotImages, setLocalOrderedShotImages] = useState(orderedShotImages || []);
@@ -625,6 +627,7 @@ const ShotEditor: React.FC<ShotEditorProps> = ({
 
     setIsCreatingTask(true);
     setCreatingTaskId('batch');
+    setTaskCreationStatus('Queuing task...');
     toast.info('Queuing travel-between-images task via API...');
 
     let resolution: string | undefined = undefined;
@@ -654,6 +657,7 @@ const ShotEditor: React.FC<ShotEditorProps> = ({
         toast.error('Custom dimensions are selected, but width or height is not set.');
         setIsCreatingTask(false);
         setCreatingTaskId(null);
+        setTaskCreationStatus('');
         return;
       }
     }
@@ -668,6 +672,7 @@ const ShotEditor: React.FC<ShotEditorProps> = ({
       toast.error('Not enough valid image URLs to generate video. Ensure images are processed correctly.');
       setIsCreatingTask(false);
       setCreatingTaskId(null);
+      setTaskCreationStatus('');
       return;
     }
 
@@ -729,13 +734,54 @@ const ShotEditor: React.FC<ShotEditorProps> = ({
       }
 
       const newTask = await response.json();
-      toast.success(`Travel task queued (ID: ${(newTask.id as string).substring(0, 8)}...).`);
+      const taskId = newTask.id;
+      toast.success(`Travel task queued (ID: ${(taskId as string).substring(0, 8)}...). Waiting for processing to begin...`);
+      setTaskCreationStatus('Waiting for task to be picked up...');
+
+      // Poll for task status change from 'Queued' to indicate it's been picked up
+      const maxPollingAttempts = 30; // 30 seconds max wait
+      let pollingAttempts = 0;
+      let taskStatusConfirmed = false;
+
+      const pollTaskStatus = async (): Promise<boolean> => {
+        try {
+          const statusResponse = await fetch(`/api/tasks/${taskId}`);
+          if (statusResponse.ok) {
+            const taskData = await statusResponse.json();
+            // Task is confirmed when status changes from 'Queued' to anything else
+            if (taskData.status !== 'Queued') {
+              return true;
+            }
+          }
+        } catch (error) {
+          console.error('[ShotEditor] Error polling task status:', error);
+        }
+        return false;
+      };
+
+      // Poll every 1 second
+      while (pollingAttempts < maxPollingAttempts && !taskStatusConfirmed) {
+        taskStatusConfirmed = await pollTaskStatus();
+        if (!taskStatusConfirmed) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          pollingAttempts++;
+          setTaskCreationStatus(`Waiting for task to be picked up... (${pollingAttempts}s)`);
+        }
+      }
+
+      if (taskStatusConfirmed) {
+        toast.success('Task has been picked up for processing!');
+      } else {
+        toast.warning('Task was queued but confirmation timeout reached. The task may still process in the background.');
+      }
+
     } catch (err: any) {
       console.error('[ShotEditor] Error creating travel task:', err);
       toast.error(`Failed to create travel task: ${err.message || 'Unknown error'}`);
     } finally {
       setIsCreatingTask(false);
       setCreatingTaskId(null);
+      setTaskCreationStatus('');
     }
   };
 
@@ -1074,7 +1120,7 @@ const ShotEditor: React.FC<ShotEditorProps> = ({
                         onClick={handleGenerateAllVideos} 
                         disabled={isGenerationDisabled}
                     >
-                        {isCreatingTask ? 'Creating Tasks...' : 'Generate All Videos'}
+                        {isCreatingTask ? (taskCreationStatus || 'Creating Tasks...') : 'Generate All Videos'}
                     </Button>
                     {nonVideoImages.length < 2 && <p className="text-xs text-center text-muted-foreground mt-2">You need at least two images to generate videos.</p>}
                     {isGenerationDisabledDueToApiKey && (
