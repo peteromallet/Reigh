@@ -49,16 +49,18 @@ export function TimelineRulerAndGrid({
   unusedTrackCount,
   onClearUnusedTracks,
 }: TimelineRulerAndGridProps) {
+  const resolvedUnusedTrackCount = unusedTrackCount ?? 0;
+
   return (
     <>
-      {unusedTrackCount > 0 && onClearUnusedTracks && (
+      {resolvedUnusedTrackCount > 0 && onClearUnusedTracks && (
         <button
           type="button"
           className="absolute left-0 top-0 z-20 flex h-[30px] items-center justify-center border-b border-r border-border bg-card/90 text-[9px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           style={{ width: LABEL_WIDTH }}
           onClick={onClearUnusedTracks}
         >
-          Clear {unusedTrackCount} unused
+          Clear {resolvedUnusedTrackCount} unused
         </button>
       )}
       <TimeRuler

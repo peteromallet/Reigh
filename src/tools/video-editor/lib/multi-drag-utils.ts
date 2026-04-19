@@ -1,9 +1,18 @@
-import { getConfigSignature, getStableConfigSignature } from '@/tools/video-editor/lib/config-utils';
+import {
+  getConfigSignature,
+  getPinnedShotGroups,
+  getStableConfigSignature,
+} from '@/tools/video-editor/lib/config-utils';
 import { addTrack } from '@/tools/video-editor/lib/editor-utils';
 import type { PinnedGroupKey } from '@/tools/video-editor/lib/pinned-group-projection';
 import { getSourceTime, type ClipMeta, type ClipOrderMap, type TimelineData } from '@/tools/video-editor/lib/timeline-data';
 import type { TimelineRow } from '@/tools/video-editor/types/timeline-canvas';
-import type { PinnedShotGroup, ResolvedTimelineConfig, TrackKind } from '@/tools/video-editor/types';
+import type {
+  PinnedShotGroup,
+  ResolvedTimelineConfig,
+  TimelinePinnedShotGroups,
+  TrackKind,
+} from '@/tools/video-editor/types';
 import { findNearestFreeTrack, moveClipBetweenTracks, trySnapToEdge } from '@/tools/video-editor/lib/coordinate-utils';
 import {
   findBestGroupStart,
@@ -96,8 +105,8 @@ export function buildConfigFromDragResult(
   baseMeta: Record<string, ClipMeta>,
   nextRows: TimelineRow[],
   metaUpdates: Record<string, Partial<ClipMeta>>,
-  pinnedShotGroups?: PinnedShotGroup[],
-): ResolvedTimelineConfig & { pinnedShotGroups?: PinnedShotGroup[] } {
+  pinnedShotGroups?: TimelinePinnedShotGroups,
+): ResolvedTimelineConfig & { pinnedShotGroups?: TimelinePinnedShotGroups } {
   const mergedMeta: Record<string, ClipMeta> = Object.fromEntries(
     Object.entries(baseMeta).map(([clipId, clipMeta]) => [
       clipId,
@@ -215,7 +224,7 @@ export function planMultiDragMoves(
       return { canMove: false, moves: [] };
     }
 
-    const group = data.config.pinnedShotGroups?.find((candidate) => (
+    const group = getPinnedShotGroups(data.config)?.find((candidate) => (
       candidate.shotId === groupDragEntry.groupKey.shotId
       && candidate.trackId === groupDragEntry.groupKey.trackId
     ));

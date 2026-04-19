@@ -1,4 +1,5 @@
 import type { TimelineApplyEdit } from '@/tools/video-editor/hooks/timeline-state-types';
+import { getPinnedShotGroups } from '@/tools/video-editor/lib/config-utils';
 import type { DropPosition } from '@/tools/video-editor/lib/drop-position';
 import type { TimelineInputModality } from '@/tools/video-editor/lib/mobile-interaction-model';
 import {
@@ -397,7 +398,7 @@ export function commitDraggingSession({
             );
             const pinnedShotGroupsOverride = session.groupDragEntry
               ? rebuildGroupAfterDrag(
-                  liveData.config.pinnedShotGroups,
+                  getPinnedShotGroups(liveData.config),
                   session.groupDragEntry.groupKey,
                   newTrackId,
                   nextRows,
@@ -435,7 +436,7 @@ export function commitDraggingSession({
           const { nextRows, metaUpdates, nextClipOrder } = applyMultiDragMoves(liveData, moves);
           const pinnedShotGroupsOverride = session.groupDragEntry
             ? rebuildGroupAfterDrag(
-                liveData.config.pinnedShotGroups,
+                getPinnedShotGroups(liveData.config),
                 session.groupDragEntry.groupKey,
                 anchorTargetRowId,
                 nextRows,

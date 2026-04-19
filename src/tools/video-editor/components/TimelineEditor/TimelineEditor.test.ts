@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getConfigSignature, getStableConfigSignature } from '@/tools/video-editor/lib/config-utils';
+import { getConfigSignature, getStableConfigSignature, setPinnedShotGroups } from '@/tools/video-editor/lib/config-utils';
 import { configToRows, type ClipMeta, type TimelineData } from '@/tools/video-editor/lib/timeline-data';
 import { buildDeleteShotGroupMutation } from '@/tools/video-editor/lib/shot-group-commands';
 import type { TimelineConfig } from '@/tools/video-editor/types';
@@ -195,7 +195,7 @@ describe('buildDeleteShotGroupMutation', () => {
   }
 
   it('removes shot clips and the pinned group in one mutation for a single-step undo', () => {
-    const currentData = makeTimelineData({
+    const currentData = makeTimelineData(setPinnedShotGroups({
       output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
       tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
       clips: [
@@ -203,11 +203,10 @@ describe('buildDeleteShotGroupMutation', () => {
         { id: 'clip-2', at: 2, track: 'V1', clipType: 'hold', hold: 2 },
         { id: 'clip-3', at: 4, track: 'V1', clipType: 'hold', hold: 2 },
       ],
-      pinnedShotGroups: [
-        { shotId: 'shot-1', trackId: 'V1', clipIds: ['clip-1', 'clip-2'], mode: 'images' },
-        { shotId: 'shot-2', trackId: 'V1', clipIds: ['clip-3'], mode: 'images' },
-      ],
-    });
+    }, [
+      { shotId: 'shot-1', trackId: 'V1', clipIds: ['clip-1', 'clip-2'], mode: 'images' },
+      { shotId: 'shot-2', trackId: 'V1', clipIds: ['clip-3'], mode: 'images' },
+    ]));
 
     const mutation = buildDeleteShotGroupMutation({
       currentData,

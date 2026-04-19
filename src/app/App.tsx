@@ -20,7 +20,7 @@ import { useProjectSelectionContext } from '@/shared/contexts/ProjectContext';
 import { AppProviders } from '@/app/providers/AppProviders';
 import { useAppDndOverlay } from '@/app/hooks/useAppDndOverlay';
 import { useAppExternalDrop } from '@/app/hooks/useAppExternalDrop';
-import { AgentChat } from '@/tools/video-editor/components/AgentChat';
+import { AgentChat } from '@/tools/video-editor-host/components/AgentChat';
 import { isRenderBudgetRuntimeEnabled } from '@/shared/dev/useRenderBudget';
 import { useLastAffectedShot } from '@/shared/state/selectionStore';
 

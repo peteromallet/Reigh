@@ -80,13 +80,13 @@ export async function fetchToolSettingsResult<T extends ToolDefaultsId>(
   signal?: AbortSignal,
   supabaseClient?: ToolSettingsSupabaseClient,
 ): Promise<OperationResult<SettingsFetchResult<ToolDefaultsById[T]>>>;
-export async function fetchToolSettingsResult<T extends Record<string, unknown>>(
+export async function fetchToolSettingsResult<T extends object>(
   toolId: string,
   ctx: ToolSettingsContext,
   signal?: AbortSignal,
   supabaseClient?: ToolSettingsSupabaseClient,
 ): Promise<OperationResult<SettingsFetchResult<T>>>;
-export async function fetchToolSettingsResult<T extends Record<string, unknown>>(
+export async function fetchToolSettingsResult<T extends object>(
   toolId: string,
   ctx: ToolSettingsContext,
   signal?: AbortSignal,
@@ -166,13 +166,13 @@ export async function fetchToolSettingsSupabase<T extends ToolDefaultsId>(
   signal?: AbortSignal,
   supabaseClient?: ToolSettingsSupabaseClient,
 ): Promise<SettingsFetchResult<ToolDefaultsById[T]>>;
-export async function fetchToolSettingsSupabase<T extends Record<string, unknown>>(
+export async function fetchToolSettingsSupabase<T extends object>(
   toolId: string,
   ctx: ToolSettingsContext,
   signal?: AbortSignal,
   supabaseClient?: ToolSettingsSupabaseClient,
 ): Promise<SettingsFetchResult<T>>;
-export async function fetchToolSettingsSupabase<T extends Record<string, unknown>>(
+export async function fetchToolSettingsSupabase<T extends object>(
   toolId: string,
   ctx: ToolSettingsContext,
   signal?: AbortSignal,

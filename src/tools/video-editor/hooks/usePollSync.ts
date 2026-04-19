@@ -258,8 +258,9 @@ export function usePollSync({
       }
       logConfigVersionUpdate('poll', polledData.configVersion);
       configVersionRef.current = polledData.configVersion;
+      const latestData = getDataRef().current;
       commitDataRef.current(
-        getDataRef().current ? preserveUploadingClips(getDataRef().current, polledData) : polledData,
+        latestData ? preserveUploadingClips(latestData, polledData) : polledData,
         { save: false, skipHistory: true, updateLastSavedSignature: true },
       );
     }, 0);
@@ -298,15 +299,20 @@ export function usePollSync({
 
     lastRegistryDataRef.current = registry;
 
+    const currentData = getDataRef().current;
+    if (!currentData) {
+      return;
+    }
+
     void buildTimelineData(
-      current.config,
+      currentData.config,
       registry,
       (file) => provider.resolveAssetUrl(file),
-      current.configVersion,
+      currentData.configVersion,
     ).then((nextData) => {
       if (
-        nextData.stableSignature === current.stableSignature
-        && Object.keys(nextData.assetMap).length === Object.keys(current.assetMap).length
+        nextData.stableSignature === currentData.stableSignature
+        && Object.keys(nextData.assetMap).length === Object.keys(currentData.assetMap).length
       ) {
         return;
       }

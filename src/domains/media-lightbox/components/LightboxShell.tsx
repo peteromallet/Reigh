@@ -44,7 +44,7 @@ interface LightboxShellProps {
 
   // Responsive
   isMobile: boolean;
-  isTabletOrLarger: boolean;
+  isTabletOrLarger?: boolean;
 
   // Layout constraints from the layout subsystem.
   overlayViewport: OverlayViewportConstraints;
@@ -63,7 +63,7 @@ export const LightboxShell: React.FC<LightboxShellProps> = ({
   hasCanvasOverlay,
   isRepositionMode,
   isMobile,
-  isTabletOrLarger,
+  isTabletOrLarger = false,
   overlayViewport,
   contentRef,
   accessibilityTitle,

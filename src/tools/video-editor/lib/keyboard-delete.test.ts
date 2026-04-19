@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getConfigSignature, getStableConfigSignature } from '@/tools/video-editor/lib/config-utils';
+import { getConfigSignature, getStableConfigSignature, setPinnedShotGroups } from '@/tools/video-editor/lib/config-utils';
 import { buildKeyboardDeleteMutation } from '@/tools/video-editor/lib/keyboard-delete';
 import { buildDeleteShotGroupMutation } from '@/tools/video-editor/lib/shot-group-commands';
 import { configToRows, type TimelineData } from '@/tools/video-editor/lib/timeline-data';
@@ -35,20 +35,19 @@ function makeConfigTimelineData(config: TimelineConfig, registry: AssetRegistry)
 describe('buildKeyboardDeleteMutation', () => {
   it('reuses the shot menu deletion mutation for a single pinned shot selection', () => {
     const currentData = makeConfigTimelineData(
-      {
+      setPinnedShotGroups({
         output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
         tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
         clips: [
           { id: 'clip-1', at: 0, track: 'V1', clipType: 'hold', asset: 'asset-1', hold: 2 },
           { id: 'clip-2', at: 2, track: 'V1', clipType: 'hold', asset: 'asset-2', hold: 2 },
         ],
-        pinnedShotGroups: [{
-          shotId: 'shot-1',
-          trackId: 'V1',
-          clipIds: ['clip-1', 'clip-2'],
-          mode: 'images',
-        }],
-      },
+      }, [{
+        shotId: 'shot-1',
+        trackId: 'V1',
+        clipIds: ['clip-1', 'clip-2'],
+        mode: 'images',
+      }]),
       {
         assets: {
           'asset-1': { file: 'one.png', type: 'image/png' },
@@ -71,7 +70,7 @@ describe('buildKeyboardDeleteMutation', () => {
 
   it('expands grouped clips to full shot deletes while preserving free-clip keyboard deletes', () => {
     const currentData = makeConfigTimelineData(
-      {
+      setPinnedShotGroups({
         output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
         tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
         clips: [
@@ -79,13 +78,12 @@ describe('buildKeyboardDeleteMutation', () => {
           { id: 'clip-2', at: 2, track: 'V1', clipType: 'hold', asset: 'asset-2', hold: 2 },
           { id: 'clip-3', at: 4, track: 'V1', clipType: 'hold', asset: 'asset-3', hold: 2 },
         ],
-        pinnedShotGroups: [{
-          shotId: 'shot-1',
-          trackId: 'V1',
-          clipIds: ['clip-1', 'clip-2'],
-          mode: 'images',
-        }],
-      },
+      }, [{
+        shotId: 'shot-1',
+        trackId: 'V1',
+        clipIds: ['clip-1', 'clip-2'],
+        mode: 'images',
+      }]),
       {
         assets: {
           'asset-1': { file: 'one.png', type: 'image/png' },

@@ -105,7 +105,7 @@ async function createGeneration(params: CreateGenerationInput): Promise<Generati
     generationParams,
   });
 
-  const row = coerceGenerationRowDto(data as Json | Record<string, unknown>);
+  const row = coerceGenerationRowDto(data as unknown as Json | Record<string, unknown>);
   if (!row) {
     throw new Error('Created generation row has unexpected shape');
   }

@@ -3,6 +3,7 @@ import React, { useMemo, useState } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TimelineCanvas } from '@/tools/video-editor/components/TimelineEditor/TimelineCanvas';
+import { setPinnedShotGroups } from '@/tools/video-editor/lib/config-utils';
 import { createInteractionState, onInteractionEnd } from '@/tools/video-editor/lib/interaction-state';
 import type { TrackDefinition } from '@/tools/video-editor/types';
 import type { TimelineAction, TimelineRow } from '@/tools/video-editor/types/timeline-canvas';
@@ -915,7 +916,7 @@ describe('TimelineCanvas resize pending ops', () => {
       }],
       dataRef: {
         current: {
-          config: {
+          config: setPinnedShotGroups({
             output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
             tracks: [track],
             clips: [
@@ -923,19 +924,12 @@ describe('TimelineCanvas resize pending ops', () => {
               { id: 'clip-2', at: 2, track: 'V1', clipType: 'hold', hold: 1 },
               { id: 'clip-3', at: 3, track: 'V1', clipType: 'hold', hold: 1 },
             ],
-            pinnedShotGroups: [{
-              shotId: 'shot-1',
-              trackId: 'V1',
-              start: 1,
-              clipIds: ['clip-1', 'clip-2', 'clip-3'],
-              children: [
-                { clipId: 'clip-1', offset: 0, duration: 1 },
-                { clipId: 'clip-2', offset: 1, duration: 1 },
-                { clipId: 'clip-3', offset: 2, duration: 1 },
-              ],
-              mode: 'images',
-            }],
-          },
+          }, [{
+            shotId: 'shot-1',
+            trackId: 'V1',
+            clipIds: ['clip-1', 'clip-2', 'clip-3'],
+            mode: 'images',
+          }]),
         },
       },
       onClipEdgeResizeEnd,

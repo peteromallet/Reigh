@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { getConfigSignature, getStableConfigSignature } from '@/tools/video-editor/lib/config-utils';
+import {
+  getConfigSignature,
+  getPinnedShotGroups,
+  getStableConfigSignature,
+  setPinnedShotGroups,
+} from '@/tools/video-editor/lib/config-utils';
 import { migrateToFlatTracks, repairConfig } from '@/tools/video-editor/lib/migrate';
 import { buildDataFromCurrentRegistry, shouldAcceptPolledData } from '@/tools/video-editor/lib/timeline-save-utils';
 import { assembleTimelineData } from '@/tools/video-editor/lib/timeline-data';
@@ -275,19 +280,18 @@ describe('timeline save utils regression coverage', () => {
       mode: 'images',
     });
 
-    const nextConfig: TimelineConfig = {
+    const nextConfig = setPinnedShotGroups({
       output: { resolution: '1920x1080', fps: 30, file: 'next.mp4' },
       tracks: [makeTrack('V1'), makeTrack('V2')],
       clips: [
         { id: 'clip-1', at: 0, track: 'V1', clipType: 'hold', hold: 99 },
         { id: 'clip-2', at: 0, track: 'V1', clipType: 'hold', hold: 99 },
       ],
-      pinnedShotGroups: [pinnedGroup],
-    };
+    }, [pinnedGroup]);
 
     const data = buildDataFromCurrentRegistry(nextConfig, current);
 
-    expect(data.config.pinnedShotGroups).toEqual([pinnedGroup]);
+    expect(getPinnedShotGroups(data.config)).toEqual([pinnedGroup]);
     expect(data.resolvedConfig.clips).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'clip-1', at: 0, track: 'V1', hold: 99 }),
       expect.objectContaining({ id: 'clip-2', at: 0, track: 'V1', hold: 99 }),
@@ -317,25 +321,24 @@ describe('timeline save utils regression coverage', () => {
       assetMap: makeAssetMap(currentRegistry),
     });
 
-    const nextConfig: TimelineConfig = {
+    const nextConfig = setPinnedShotGroups({
       output: { resolution: '1920x1080', fps: 30, file: 'next.mp4' },
       tracks: [makeTrack('V1')],
       clips: [
         { id: 'clip-1', at: 7, track: 'V1', clipType: 'hold', asset: 'asset-2', hold: 2 },
         { id: 'clip-2', at: 9, track: 'V1', clipType: 'hold', asset: 'asset-2', hold: 3 },
       ],
-      pinnedShotGroups: [makePinnedGroup({
+    }, [makePinnedGroup({
         shotId: 'shot-1',
         trackId: 'V1',
         clipIds: ['clip-1', 'clip-2'],
         mode: 'images',
-      })],
-    };
+      })]);
 
     const data = buildDataFromCurrentRegistry(nextConfig, current);
     const unprojectedResolvedConfig = buildResolvedConfig(nextConfig, buildResolvedRegistry(currentRegistry));
 
-    expect(data.config.pinnedShotGroups).toEqual(nextConfig.pinnedShotGroups);
+    expect(getPinnedShotGroups(data.config)).toEqual(getPinnedShotGroups(nextConfig));
     expect(data.config.clips).toEqual(nextConfig.clips);
     expect(data.rows).toEqual([
       {
@@ -388,11 +391,11 @@ describe('timeline save utils regression coverage', () => {
           { clipId: 'clip-1', offset: 3, duration: 2 },
         ],
         mode: 'images',
-      }] as unknown as TimelineConfig['pinnedShotGroups'],
+      }] as unknown as Array<Record<string, unknown>>,
     }, current);
 
-    expect(data.config.pinnedShotGroups?.[0]).toEqual(expect.objectContaining({
-      clipIds: ['clip-2', 'clip-1'],
+    expect(getPinnedShotGroups(data.config)?.[0]).toEqual(expect.objectContaining({
+      clipIds: ['clip-1', 'clip-2'],
     }));
     expect(data.resolvedConfig.clips).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'clip-2', at: 4, hold: 3 }),

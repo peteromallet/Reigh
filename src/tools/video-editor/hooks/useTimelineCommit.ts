@@ -10,8 +10,9 @@ import {
 import { useTimelineSelectionStore, useSelectionStoreApi } from '@/shared/state/selectionStore';
 import { TimelineEventBus } from '@/tools/video-editor/hooks/useTimelineEventBus';
 import { buildTrackClipOrder } from '@/tools/video-editor/lib/coordinate-utils';
+import { getPinnedShotGroups, setPinnedShotGroups } from '@/tools/video-editor/lib/config-utils';
 import { migrateToFlatTracks } from '@/tools/video-editor/lib/migrate';
-import { serializeForDisk } from '@/tools/video-editor/lib/serialize';
+import { serializeForDisk } from '@tbd/schema';
 import { buildDataFromCurrentRegistry } from '@/tools/video-editor/lib/timeline-save-utils';
 import {
   assembleTimelineData,
@@ -22,7 +23,7 @@ import {
   type TimelineData,
 } from '@/tools/video-editor/lib/timeline-data';
 import type { TimelineRow } from '@/tools/video-editor/types/timeline-canvas';
-import type { AssetRegistryEntry } from '@/tools/video-editor/types';
+import type { AssetRegistryEntry, TimelinePinnedShotGroups } from '@/tools/video-editor/types';
 
 export type CommitHistoryOptions = {
   transactionId?: string;
@@ -51,16 +52,16 @@ export type TimelineEditMutation =
       metaUpdates?: Record<string, Partial<ClipMeta>>;
       metaDeletes?: string[];
       clipOrderOverride?: ClipOrderMap;
-      pinnedShotGroupsOverride?: TimelineData['config']['pinnedShotGroups'];
+      pinnedShotGroupsOverride?: TimelinePinnedShotGroups;
     }
   | {
       type: 'config';
       resolvedConfig: TimelineData['resolvedConfig'];
-      pinnedShotGroupsOverride?: TimelineData['config']['pinnedShotGroups'];
+      pinnedShotGroupsOverride?: TimelinePinnedShotGroups;
     }
   | {
       type: 'pinnedShotGroups';
-      pinnedShotGroups: NonNullable<TimelineData['config']['pinnedShotGroups']>;
+      pinnedShotGroups: TimelinePinnedShotGroups;
     };
 
 export type ApplyEditOptions = {
@@ -132,13 +133,8 @@ export function useTimelineCommit({
 
   const withPinnedShotGroups = useCallback((
     config: TimelineData['config'],
-    pinnedShotGroups: TimelineData['config']['pinnedShotGroups'],
-  ): TimelineData['config'] => ({
-    ...config,
-    pinnedShotGroups: pinnedShotGroups && pinnedShotGroups.length > 0
-      ? pinnedShotGroups
-      : undefined,
-  }), []);
+    pinnedShotGroups: TimelinePinnedShotGroups | undefined,
+  ): TimelineData['config'] => setPinnedShotGroups(config, pinnedShotGroups), []);
 
   const materializeData = useCallback((
     current: TimelineData,
@@ -156,7 +152,8 @@ export function useTimelineCommit({
       current.output,
       clipOrder,
       current.tracks,
-      current.config.pinnedShotGroups,
+      current.config.app,
+      getPinnedShotGroups(current.config),
     );
 
     return preserveUploadingClips(
@@ -294,8 +291,10 @@ export function useTimelineCommit({
         current,
         buildDataFromCurrentRegistry(
           serializeForDisk(
-            mutation.resolvedConfig,
-            mutation.pinnedShotGroupsOverride ?? current.config.pinnedShotGroups,
+            withPinnedShotGroups(
+              mutation.resolvedConfig,
+              mutation.pinnedShotGroupsOverride ?? getPinnedShotGroups(current.config),
+            ),
           ),
           current,
         ),
@@ -347,6 +346,7 @@ export function useTimelineCommit({
         })),
         // Reuse resolved entries for unchanged assets and patch the current asset in-place.
         registry: nextResolvedRegistry,
+        ...(migratedConfig.app ? { app: { ...migratedConfig.app } } : {}),
       },
       assetMap: Object.fromEntries(
         Object.entries(nextRegistry.assets ?? {}).map(([nextAssetId, nextEntry]) => [nextAssetId, nextEntry.file]),
@@ -391,6 +391,7 @@ export function useTimelineCommit({
           assetEntry: clip.asset ? remainingResolvedRegistry[clip.asset] : undefined,
         })),
         registry: remainingResolvedRegistry,
+        ...(migratedConfig.app ? { app: { ...migratedConfig.app } } : {}),
       },
       assetMap: Object.fromEntries(
         Object.entries(remainingAssets).map(([nextAssetId, nextEntry]) => [nextAssetId, nextEntry.file]),

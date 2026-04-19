@@ -1,3 +1,4 @@
+import { getPinnedShotGroups } from '@/tools/video-editor/lib/config-utils';
 import { categorizeSelection, findGroupForTrack } from '@/tools/video-editor/lib/pinned-group-projection';
 import { buildDeleteShotGroupMutation, clonePinnedShotGroup } from '@/tools/video-editor/lib/shot-group-commands';
 import type { TimelineEditMutation } from '@/tools/video-editor/hooks/useTimelineCommit';
@@ -35,7 +36,7 @@ export function buildKeyboardDeleteMutation(
 
   const matchedGroups = selection.groups
     .map((groupEntry) => findGroupForTrack(
-      currentData.config.pinnedShotGroups ?? [],
+      getPinnedShotGroups(currentData.config) ?? [],
       groupEntry.groupKey.shotId,
       groupEntry.groupKey.trackId,
       currentData.rows,
@@ -62,7 +63,7 @@ export function buildKeyboardDeleteMutation(
       actions: row.actions.filter((action) => !deletedClipIdSet.has(action.id)),
     })),
     metaDeletes: deletedClipIds,
-    pinnedShotGroupsOverride: (currentData.config.pinnedShotGroups ?? [])
+    pinnedShotGroupsOverride: (getPinnedShotGroups(currentData.config) ?? [])
       .filter((group) => !matchedGroupSet.has(group))
       .map(clonePinnedShotGroup),
   };

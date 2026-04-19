@@ -4,7 +4,12 @@ import { describe, expect, it } from 'vitest';
 import { useTimelineCommit } from './useTimelineCommit';
 import { TimelineEventBus } from './useTimelineEventBus';
 import { configToRows, type TimelineData } from '../lib/timeline-data';
-import { getConfigSignature, getStableConfigSignature } from '../lib/config-utils';
+import {
+  getConfigSignature,
+  getPinnedShotGroups,
+  getStableConfigSignature,
+  setPinnedShotGroups,
+} from '../lib/config-utils';
 import type { PinnedShotImageClipSnapshot, TimelineConfig } from '../types';
 
 function makeVideoModeGroupData(): TimelineData {
@@ -23,7 +28,7 @@ function makeVideoModeGroupData(): TimelineData {
     },
   ];
 
-  const config: TimelineConfig = {
+  const config = setPinnedShotGroups({
     output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
     tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
     clips: [
@@ -38,17 +43,16 @@ function makeVideoModeGroupData(): TimelineData {
         speed: 1,
       },
     ],
-    pinnedShotGroups: [
-      {
-        shotId: 'shot-1',
-        trackId: 'V1',
-        clipIds: ['clip-video'],
-        mode: 'video',
-        videoAssetKey: 'video-asset',
-        imageClipSnapshot,
-      },
-    ],
-  };
+  }, [
+    {
+      shotId: 'shot-1',
+      trackId: 'V1',
+      clipIds: ['clip-video'],
+      mode: 'video',
+      videoAssetKey: 'video-asset',
+      imageClipSnapshot,
+    },
+  ]);
 
   const rowData = configToRows(config);
   const resolvedConfig = {
@@ -92,9 +96,9 @@ describe('useTimelineCommit — delete-shot / auto-restore regression', () => {
 
     const initial = result.current.dataRef.current!;
     expect(initial.rows[0].actions.map((a) => a.id)).toEqual(['clip-video']);
-    expect(initial.config.pinnedShotGroups?.[0].clipIds).toEqual(['clip-video']);
-    expect(initial.config.pinnedShotGroups?.[0].mode).toBe('video');
-    expect(initial.config.pinnedShotGroups?.[0].imageClipSnapshot).toHaveLength(2);
+    expect(getPinnedShotGroups(initial.config)?.[0].clipIds).toEqual(['clip-video']);
+    expect(getPinnedShotGroups(initial.config)?.[0].mode).toBe('video');
+    expect(getPinnedShotGroups(initial.config)?.[0].imageClipSnapshot).toHaveLength(2);
 
     // Delete the video clip via a rows mutation: rows now have no actions on V1,
     // and the video clip's meta is deleted. No pinnedShotGroupsOverride is passed,
@@ -127,7 +131,7 @@ describe('useTimelineCommit — delete-shot / auto-restore regression', () => {
     // (c) The group entry is preserved (no auto-delete either). clipIds still
     // reference the deleted video clip id because the mutation did not pass a
     // pinnedShotGroupsOverride — rendering will show a degraded placeholder.
-    const groupAfter = after.config.pinnedShotGroups?.[0];
+    const groupAfter = getPinnedShotGroups(after.config)?.[0];
     expect(groupAfter).toBeDefined();
     expect(groupAfter?.shotId).toBe('shot-1');
     expect(groupAfter?.mode).toBe('video');
@@ -163,7 +167,7 @@ describe('useTimelineCommit — delete-shot / auto-restore regression', () => {
     });
 
     const after = result.current.dataRef.current!;
-    expect(after.config.pinnedShotGroups ?? []).toEqual([]);
+    expect(getPinnedShotGroups(after.config) ?? []).toEqual([]);
     expect(after.config.clips).toEqual([]);
   });
 });

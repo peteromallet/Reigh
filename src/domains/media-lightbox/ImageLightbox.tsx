@@ -330,9 +330,9 @@ export const ImageLightbox: React.FC<ImageLightboxProps> = (props) => {
   const prevPropsRef = useRef<unknown>();
   const changed: string[] = [];
   if (prevPropsRef.current) {
-    const prev = prevPropsRef.current as Record<string, unknown>;
+    const prev = prevPropsRef.current as unknown as Record<string, unknown>;
     for (const k of Object.keys(props) as Array<keyof typeof props>) {
-      if (prev[k as string] !== (props as Record<string, unknown>)[k as string]) changed.push(k as string);
+      if (prev[k as string] !== (props as unknown as Record<string, unknown>)[k as string]) changed.push(k as string);
     }
   }
   prevPropsRef.current = props;
@@ -384,6 +384,7 @@ export const ImageLightbox: React.FC<ImageLightboxProps> = (props) => {
           hasCanvasOverlay={editModel.editOrchestrator.isInpaintMode}
           isRepositionMode={editModel.editOrchestrator.isInpaintMode && editModel.editOrchestrator.editMode === 'reposition'}
           isMobile={env.isMobile}
+          isTabletOrLarger={sharedModel.sharedState.layout.isTabletOrLarger}
           overlayViewport={overlayViewport}
           contentRef={env.contentRef}
           accessibilityTitle={renderModel.accessibilityTitle}

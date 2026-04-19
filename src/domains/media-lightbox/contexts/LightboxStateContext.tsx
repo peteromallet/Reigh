@@ -15,6 +15,7 @@ import React, { createContext, useContext, RefObject } from 'react';
 import type { GenerationRow } from '@/domains/generation/types';
 import type { GenerationVariant } from '@/shared/hooks/variants/useVariants';
 import type { CurrentSegmentImagesData } from '@/shared/components/VariantSelector/variantSourceImages';
+import type { BasicPointerHandlers } from '@/shared/types/pointerHandlers';
 
 // ============================================================================
 // Core State
@@ -85,7 +86,7 @@ interface LightboxNavigationState {
   handleSlotNavNext: () => void;
   handleSlotNavPrev: () => void;
   swipeNavigation: {
-    swipeHandlers: Record<string, unknown>;
+    swipeHandlers: BasicPointerHandlers;
     isSwiping: boolean;
     swipeOffset: number;
   };
@@ -194,7 +195,12 @@ const EMPTY_NAVIGATION: LightboxNavigationState = {
   handleSlotNavNext: () => {},
   handleSlotNavPrev: () => {},
   swipeNavigation: {
-    swipeHandlers: {},
+    swipeHandlers: {
+      onPointerDown: () => {},
+      onPointerMove: () => {},
+      onPointerUp: () => {},
+      onPointerCancel: () => {},
+    },
     isSwiping: false,
     swipeOffset: 0,
   },

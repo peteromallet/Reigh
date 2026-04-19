@@ -1,7 +1,8 @@
 import { useCallback, useMemo } from 'react';
 import { arrayMove } from '@dnd-kit/sortable';
+import { getPinnedShotGroups, setPinnedShotGroups } from '@/tools/video-editor/lib/config-utils';
 import { addTrack, getTrackIndex } from '@/tools/video-editor/lib/editor-utils';
-import { DEFAULT_VIDEO_TRACKS } from '@/tools/video-editor/lib/defaults';
+import { DEFAULT_VIDEO_TRACKS } from '@tbd/schema';
 import type { PinnedShotGroup, TrackDefinition, TrackKind } from '@/tools/video-editor/types';
 import { findNearestFreeTrack, moveClipBetweenTracks, trySnapToEdge } from '@/tools/video-editor/lib/coordinate-utils';
 import type { ClipMeta, TimelineData } from '@/tools/video-editor/lib/timeline-data';
@@ -106,7 +107,7 @@ function translateGroupMembers({
   const memberSet = new Set(group.clipIds);
   const sourceTrackId = group.trackId;
   const storedGroup = findGroupForTrack(
-    current.config.pinnedShotGroups ?? [],
+    getPinnedShotGroups(current.config) ?? [],
     group.shotId,
     sourceTrackId,
     current.rows,
@@ -161,7 +162,7 @@ function translateGroupMembers({
   // positions (order preserved for the trivial same-delta case, but reads from
   // nextRows so any future resolveOverlaps shuffles are honored).
   const orderedClipIds = orderClipIdsByAt(group.clipIds, { rows: nextRows });
-  const pinnedShotGroupsOverride = (current.config.pinnedShotGroups ?? []).map((g) => (
+  const pinnedShotGroupsOverride = (getPinnedShotGroups(current.config) ?? []).map((g) => (
     g.shotId === group.shotId && g.trackId === storedTrackId
       ? { ...g, trackId: targetRowId, clipIds: orderedClipIds }
       : g
@@ -380,7 +381,7 @@ export function useTimelineTrackManagement({
     const sourceTrack = sourceTrackId
       ? current.resolvedConfig.tracks.find((track) => track.id === sourceTrackId)
       : null;
-    if ((!sourceClip && !enclosingGroup) || !sourceTrack || sourceTrack.kind !== kind) {
+    if ((!sourceClip && !enclosingGroup) || !sourceTrack || sourceTrack.kind !== kind || (enclosingGroup && !sourceTrackId)) {
       return;
     }
 
@@ -393,6 +394,10 @@ export function useTimelineTrackManagement({
     }
 
     if (enclosingGroup) {
+      const groupTrackId = sourceTrackId;
+      if (!groupTrackId) {
+        return;
+      }
       const previewCurrent: TimelineData = {
         ...current,
         tracks: nextResolvedConfigBase.tracks.map((track) => ({ ...track })),
@@ -404,9 +409,9 @@ export function useTimelineTrackManagement({
           tracks: nextResolvedConfigBase.tracks.map((track) => ({ ...track })),
         },
       };
-      const resolvedGroup = sourceTrackId === enclosingGroup.group.trackId
+      const resolvedGroup: PinnedShotGroup = groupTrackId === enclosingGroup.group.trackId
         ? enclosingGroup.group
-        : { ...enclosingGroup.group, trackId: sourceTrackId };
+        : { ...enclosingGroup.group, trackId: groupTrackId };
       const groupStart = getLiveGroupStart(current, resolvedGroup);
       if (groupStart == null) {
         return;
@@ -514,7 +519,7 @@ export function useTimelineTrackManagement({
     const groupsByRow = new Map<string, { clipIds: string[]; rowIndex: number; kind: TrackKind }>();
     const groupedUnits = selection.groups.flatMap((groupEntry) => {
       const group = findGroupForTrack(
-        current.config.pinnedShotGroups ?? [],
+        getPinnedShotGroups(current.config) ?? [],
         groupEntry.groupKey.shotId,
         groupEntry.groupKey.trackId,
         current.rows,
@@ -637,7 +642,7 @@ export function useTimelineTrackManagement({
 
       for (const move of plannedGroupMoves) {
         const existingGroup = findGroupForTrack(
-          workingState.config.pinnedShotGroups ?? [],
+          getPinnedShotGroups(workingState.config) ?? [],
           move.groupKey.shotId,
           move.groupKey.trackId,
           workingState.rows,
@@ -667,10 +672,7 @@ export function useTimelineTrackManagement({
           rows: translatedGroup.nextRows,
           meta: nextMeta,
           clipOrder: translatedGroup.nextClipOrder,
-          config: {
-            ...workingState.config,
-            pinnedShotGroups: translatedGroup.pinnedShotGroupsOverride,
-          },
+          config: setPinnedShotGroups(workingState.config, translatedGroup.pinnedShotGroupsOverride),
         };
         appliedGroupMove = true;
       }
@@ -681,7 +683,7 @@ export function useTimelineTrackManagement({
           rows: workingState.rows,
           metaUpdates: Object.keys(accumulatedMetaUpdates).length > 0 ? accumulatedMetaUpdates : undefined,
           clipOrderOverride: workingState.clipOrder,
-          pinnedShotGroupsOverride: workingState.config.pinnedShotGroups,
+          pinnedShotGroupsOverride: getPinnedShotGroups(workingState.config),
         }, { transactionId });
       }
     }

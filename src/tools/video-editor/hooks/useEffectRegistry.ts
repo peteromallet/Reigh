@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useSyncExternalStore } from 'react';
-import { DynamicEffectRegistry } from '@/tools/video-editor/effects/DynamicEffectRegistry';
 import {
   continuousEffects,
+  DynamicEffectRegistry,
   entranceEffects,
   exitEffects,
   getEffectRegistry,
   replaceEffectRegistry,
-} from '@/tools/video-editor/effects';
+} from '@tbd/engine';
 import { loadDraftEffects } from '@/tools/video-editor/effects/effect-store';
 import type { EffectResource } from '@/tools/video-editor/hooks/useEffectResources';
 

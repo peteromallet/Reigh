@@ -1,8 +1,7 @@
 import { useCallback } from 'react';
 import type { ComponentType, Dispatch, SetStateAction } from 'react';
+import { TimelineRenderer, type ResolvedTimelineConfig } from '@tbd/engine';
 import { toast } from '@/shared/components/ui/toast';
-import { TimelineRenderer } from '@/tools/video-editor/compositions/TimelineRenderer';
-import type { ResolvedTimelineConfig } from '@/tools/video-editor/types';
 
 type RenderStatus = 'idle' | 'rendering' | 'done' | 'error';
 type RenderProgress = { current: number; total: number; percent: number; phase: string } | null;

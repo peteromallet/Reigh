@@ -5,6 +5,7 @@ import {
   buildFinalVideoAssetEntry,
   resolveFinalVideoDurationSeconds,
 } from '@/tools/video-editor/lib/finalVideoAssets';
+import { getPinnedShotGroups } from '@/tools/video-editor/lib/config-utils';
 import {
   buildSwitchShotGroupToFinalVideoMutation,
   buildSwitchShotGroupToImagesMutation,
@@ -78,7 +79,7 @@ function buildRestoreShotGroupVideoMutation({
     return null;
   }
 
-  const pinnedShotGroups = currentData.config.pinnedShotGroups ?? [];
+  const pinnedShotGroups = getPinnedShotGroups(currentData.config) ?? [];
   const foundGroup = findGroupForTrack(pinnedShotGroups, shotId, rowId, currentData.rows);
   const pinnedGroup = foundGroup?.mode === 'video' && typeof foundGroup.videoAssetKey === 'string' && foundGroup.videoAssetKey.length > 0
     ? foundGroup
@@ -170,7 +171,7 @@ export function useSwitchToFinalVideo({
     }
 
     const currentGroup = dataRef.current
-      ? findGroupForTrack(dataRef.current.config.pinnedShotGroups ?? [], shotId, rowId, dataRef.current.rows)
+      ? findGroupForTrack(getPinnedShotGroups(dataRef.current.config) ?? [], shotId, rowId, dataRef.current.rows)
       : undefined;
     const oldVideoAssetKey = currentGroup?.mode === 'video' ? currentGroup.videoAssetKey : undefined;
     const oldVideoGenerationId = oldVideoAssetKey

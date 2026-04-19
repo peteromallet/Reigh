@@ -3044,6 +3044,91 @@
       "resolved": false,
       "resolved_by": null,
       "resolved_at": null
+    },
+    {
+      "id": "DEBT-180",
+      "subsystem": "verification",
+      "concern": "manual dev-server smoke validation remains prerequisite-dependent and cannot be made a fully automated hard gate from the current repo evidence.",
+      "flag_ids": [
+        "FLAG-002"
+      ],
+      "plan_ids": [
+        "execute-the-video-editor-oss-20260419-1756"
+      ],
+      "occurrence_count": 1,
+      "created_at": "2026-04-19T18:06:33Z",
+      "updated_at": "2026-04-19T18:06:33Z",
+      "resolved": false,
+      "resolved_by": null,
+      "resolved_at": null
+    },
+    {
+      "id": "DEBT-181",
+      "subsystem": "test-ownership",
+      "concern": "test-surface expansion beyond the named \u00a78.4 cluster will add execution scope.",
+      "flag_ids": [
+        "all_locations-1"
+      ],
+      "plan_ids": [
+        "execute-the-video-editor-oss-20260419-1756"
+      ],
+      "occurrence_count": 1,
+      "created_at": "2026-04-19T18:06:33Z",
+      "updated_at": "2026-04-19T18:06:33Z",
+      "resolved": false,
+      "resolved_by": null,
+      "resolved_at": null
+    },
+    {
+      "id": "DEBT-182",
+      "subsystem": "workspace-tooling",
+      "concern": "the pnpm workspace conversion will require broader dependency and script churn than the high-level plan text implies.",
+      "flag_ids": [
+        "all_locations-2"
+      ],
+      "plan_ids": [
+        "execute-the-video-editor-oss-20260419-1756"
+      ],
+      "occurrence_count": 1,
+      "created_at": "2026-04-19T18:06:33Z",
+      "updated_at": "2026-04-19T18:06:33Z",
+      "resolved": false,
+      "resolved_by": null,
+      "resolved_at": null
+    },
+    {
+      "id": "DEBT-183",
+      "subsystem": "verification",
+      "concern": "browser route load remains a manual validation rather than a ci-enforced criterion.",
+      "flag_ids": [
+        "criteria_quality"
+      ],
+      "plan_ids": [
+        "execute-the-video-editor-oss-20260419-1756"
+      ],
+      "occurrence_count": 1,
+      "created_at": "2026-04-19T18:06:33Z",
+      "updated_at": "2026-04-19T18:06:33Z",
+      "resolved": false,
+      "resolved_by": null,
+      "resolved_at": null
+    },
+    {
+      "id": "DEBT-184",
+      "subsystem": "did-the-work-fully-address-the-issue-hints-user-notes-and-approved-plan-requirements",
+      "concern": "did the work fully address the issue hints, user notes, and approved plan requirements?: smoke-check preconditions: the plan asks what url should be used, but the repository already fixes the route at `/tools/video-editor` (`src/app/routes.tsx:142-143`, `src/app/hooks/usevideoeditorroutestate.ts:3-13`). the real ambiguity is not the path but the runtime preconditions, because `videoeditorpage` requires a selected project and authenticated user before it can build the `supabasedataprovider`, auto-create/select a timeline, and mount the shell (`src/tools/video-editor/pages/videoeditorpage.tsx:183-321`). the validation section should name those prerequisites rather than treating this as only a route-string question.",
+      "flag_ids": [
+        "issue_hints-2"
+      ],
+      "plan_ids": [
+        "execute-the-video-editor-oss-20260419-1756"
+      ],
+      "occurrence_count": 1,
+      "created_at": "2026-04-19T18:06:33Z",
+      "updated_at": "2026-04-19T18:06:33Z",
+      "resolved": false,
+      "resolved_by": null,
+      "resolved_at": null
     }
   ]
 }

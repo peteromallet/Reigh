@@ -5,6 +5,10 @@ import { selectTimelineImages } from '@/shared/lib/shotImageSelectors';
 import { buildAssetDropEdit, type UseAssetManagementResult } from '@/tools/video-editor/hooks/useAssetManagement';
 import type { TimelineApplyEdit, TimelineDataRef } from '@/tools/video-editor/hooks/timeline-state-types';
 import {
+  getPinnedShotGroups as getPinnedShotGroupsFromConfig,
+  setPinnedShotGroups,
+} from '@/tools/video-editor/lib/config-utils';
+import {
   buildPinShotGroupMutation,
   buildUnpinShotGroupMutation,
   buildUpdatePinnedShotGroupMutation,
@@ -32,7 +36,7 @@ interface UsePinnedGroupSyncArgs extends UsePinnedShotGroupsArgs {
 type PinnedShotGroupUpdates = Partial<Omit<PinnedShotGroup, 'shotId' | 'trackId'>>;
 
 function getPinnedShotGroups(dataRef: TimelineDataRef) {
-  return dataRef.current?.config.pinnedShotGroups;
+  return getPinnedShotGroupsFromConfig(dataRef.current?.config);
 }
 
 function readPinnedShotGroups(dataRef: TimelineDataRef): NonNullable<ReturnType<typeof getPinnedShotGroups>> {
@@ -143,7 +147,7 @@ export function usePinnedGroupSync({
 
   useEffect(() => {
     const current = dataRef.current;
-    const pinnedShotGroups = current?.config.pinnedShotGroups ?? [];
+    const pinnedShotGroups = getPinnedShotGroupsFromConfig(current?.config) ?? [];
     if (!data || !shots || pinnedShotGroups.length === 0) {
       if (timeoutRef.current !== null) {
         window.clearTimeout(timeoutRef.current);
@@ -179,7 +183,7 @@ export function usePinnedGroupSync({
       }
 
       let workingData = latest;
-      let workingPinnedShotGroups = (latest.config.pinnedShotGroups ?? []).map(clonePinnedShotGroup);
+      let workingPinnedShotGroups = (getPinnedShotGroupsFromConfig(latest.config) ?? []).map(clonePinnedShotGroup);
       const accumulatedMetaUpdates: Record<string, ClipMeta> = {};
       const accumulatedMetaDeletes = new Set<string>();
       let hasChanges = false;
@@ -382,10 +386,7 @@ export function usePinnedGroupSync({
         workingPinnedShotGroups = nextGroups;
         workingData = {
           ...groupWorkingData,
-          config: {
-            ...groupWorkingData.config,
-            pinnedShotGroups: nextGroups,
-          },
+          config: setPinnedShotGroups(groupWorkingData.config, nextGroups),
           rows: nextRows,
           clipOrder: nextClipOrder,
         };

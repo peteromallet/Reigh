@@ -7,7 +7,7 @@ import type { GenerationRow } from '@/domains/generation/types';
 interface MaybeHasGenerationId {
   generation_id?: string | null;
   id?: string | null;
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, unknown> | null;
 }
 
 const NON_PRELOADABLE_URL_MARKERS = ['_joined_frame.jpg'] as const;
@@ -51,8 +51,11 @@ interface MediaWithUrls {
   location?: string | null;
   url?: string | null;
   thumbnail_url?: string | null;
+  thumbnailUrl?: string | null;
   thumbUrl?: string | null;
   imageUrl?: string | null;
+  created_at?: string;
+  variant_name?: string | null;
 }
 
 function getFirstNonEmptyUrl(...urls: Array<string | null | undefined>): string | undefined {
@@ -77,7 +80,7 @@ export function getMediaUrl(media: MediaWithUrls | null | undefined): string | u
 
 export function getThumbnailUrl(media: MediaWithUrls | null | undefined): string | undefined {
   if (!media) return undefined;
-  return getFirstNonEmptyUrl(media.thumbnail_url, media.thumbUrl);
+  return getFirstNonEmptyUrl(media.thumbnail_url, media.thumbnailUrl, media.thumbUrl);
 }
 
 /** Transform a variant to a GenerationRow shape for lightbox display. */

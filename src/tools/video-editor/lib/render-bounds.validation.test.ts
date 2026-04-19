@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { getPinnedShotGroups } from '@/tools/video-editor/lib/config-utils';
 import { configToRows, rowsToConfig } from '@/tools/video-editor/lib/timeline-data';
 import {
   computeRenderBounds,
@@ -35,7 +36,8 @@ const roundTripConfig = (config: TimelineConfig): TimelineConfig => {
     config.output,
     clipOrder,
     tracks,
-    config.pinnedShotGroups,
+    config.app,
+    getPinnedShotGroups(config),
   );
 };
 
@@ -153,7 +155,7 @@ describe('render bounds validation', () => {
       cropBottom: 0.53,
       opacity: 1,
     });
-    expect(nextConfig.pinnedShotGroups).toEqual([{
+    expect(getPinnedShotGroups(nextConfig)).toEqual([{
       shotId: 'shot-1',
       trackId: 'V1',
       clipIds: ['clip-1'],

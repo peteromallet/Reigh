@@ -33,7 +33,7 @@ type StateMapping<T extends object> = {
   [K in keyof T]: [T[K], StateSetter<T[K]>];
 };
 
-interface UsePersistentToolStateOptions<T extends Record<string, unknown>> {
+interface UsePersistentToolStateOptions<T extends object> {
   debounceMs?: number;
   scope?: SettingsScope;
   /**
@@ -90,7 +90,7 @@ interface UsePersistentToolStateResult {
  * );
  * // Call markAsInteracted() in onChange handlers to enable persistence
  */
-export function usePersistentToolState<T extends Record<string, unknown>>(
+export function usePersistentToolState<T extends object>(
   toolId: string,
   context: { projectId?: string; shotId?: string },
   stateMapping: StateMapping<T>,

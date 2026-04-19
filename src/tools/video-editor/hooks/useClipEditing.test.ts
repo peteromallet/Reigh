@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Shot } from '@/domains/generation/types';
 import { toast } from '@/shared/components/ui/runtime/sonner';
 import { patchAffectsDuration, recalcActionEnd } from '@/tools/video-editor/lib/clip-editing-utils';
-import { getConfigSignature } from '@/tools/video-editor/lib/config-utils';
+import { getConfigSignature, getPinnedShotGroups } from '@/tools/video-editor/lib/config-utils';
 import { useClipEditing } from '@/tools/video-editor/hooks/useClipEditing';
 import { usePinnedGroupSync, usePinnedShotGroups } from '@/tools/video-editor/hooks/usePinnedShotGroups';
 import { useSwitchToFinalVideo } from '@/tools/video-editor/hooks/useSwitchToFinalVideo';
@@ -12,7 +12,7 @@ import { configToRows, type ClipMeta, type TimelineData } from '@/tools/video-ed
 import { TimelineEventBus } from '@/tools/video-editor/hooks/useTimelineEventBus';
 import { useTimelineCommit } from '@/tools/video-editor/hooks/useTimelineCommit';
 import type { TimelineRow } from '@/tools/video-editor/types/timeline-canvas';
-import type { AssetRegistry, TimelineConfig } from '@/tools/video-editor/types';
+import type { AssetRegistry, TimelineConfig, TimelinePinnedShotGroups } from '@/tools/video-editor/types';
 import { extractVideoMetadataFromUrl } from '@/shared/lib/media/videoMetadata';
 
 vi.mock('@/shared/components/ui/runtime/sonner', () => ({
@@ -33,9 +33,7 @@ const makePinnedGroup = (args: {
   clipIds: string[];
   mode?: 'images' | 'video';
   videoAssetKey?: string;
-  imageClipSnapshot?: TimelineConfig['pinnedShotGroups'] extends Array<infer Group>
-    ? Group extends { imageClipSnapshot?: infer Snapshot } ? Snapshot : never
-    : never;
+  imageClipSnapshot?: TimelinePinnedShotGroups[number]['imageClipSnapshot'];
 }) => ({
   shotId: args.shotId,
   trackId: args.trackId,
@@ -433,7 +431,7 @@ describe('useTimelineCommit pinned shot reconciliation', () => {
     expect(result.current.dataRef.current?.signature).toBe(
       getConfigSignature(result.current.dataRef.current!.resolvedConfig),
     );
-    const projectedGroup = result.current.dataRef.current?.config.pinnedShotGroups?.[0];
+    const projectedGroup = getPinnedShotGroups(result.current.dataRef.current?.config)?.[0];
     expect(projectedGroup).toEqual({
       shotId: 'shot-1',
       trackId: 'V1',

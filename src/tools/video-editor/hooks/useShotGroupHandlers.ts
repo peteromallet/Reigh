@@ -1,10 +1,11 @@
 import { useCallback, useMemo } from 'react';
 import type { Shot } from '@/domains/generation/types';
+import { getPinnedShotGroups } from '@/tools/video-editor/lib/config-utils';
 import { buildDeleteShotGroupMutation } from '@/tools/video-editor/lib/shot-group-commands';
 import type { TimelineApplyEdit, TimelineDataRef } from '@/tools/video-editor/hooks/timeline-state-types';
 import type { ShotFinalVideo } from '@/tools/video-editor/hooks/useFinalVideoAvailable';
 import type { ShotGroup } from '@/tools/video-editor/hooks/useShotGroups';
-import type { ResolvedAssetRegistryEntry, PinnedShotGroup } from '@/tools/video-editor/types';
+import type { ResolvedAssetRegistryEntry } from '@/tools/video-editor/types';
 import type { TimelineRow } from '@/tools/video-editor/types/timeline-canvas';
 
 interface UseShotGroupHandlersArgs {
@@ -13,7 +14,7 @@ interface UseShotGroupHandlersArgs {
   data: {
     rows: TimelineRow[];
     meta: Record<string, { asset?: string; track?: string }>;
-    config: { pinnedShotGroups?: PinnedShotGroup[] };
+    config: { app?: Record<string, unknown> };
   } | null;
   resolvedRegistry: Record<string, ResolvedAssetRegistryEntry> | undefined;
   activeTaskAssetKeys: Set<string>;
@@ -71,7 +72,7 @@ export function useShotGroupHandlers({
   }, [activeTaskAssetKeys, data?.rows, data?.meta]);
 
   const staleShotGroupIds = useMemo(() => {
-    const pinnedShotGroups = data?.config.pinnedShotGroups ?? [];
+    const pinnedShotGroups = getPinnedShotGroups(data?.config) ?? [];
     const registry = resolvedRegistry;
     if (pinnedShotGroups.length === 0 || !registry) {
       return new Set<string>();
@@ -95,7 +96,7 @@ export function useShotGroupHandlers({
     }
 
     return staleIds;
-  }, [data?.config.pinnedShotGroups, finalVideoMap, resolvedRegistry]);
+  }, [data?.config, finalVideoMap, resolvedRegistry]);
 
   const handleShotGroupNavigate = useCallback((shotId: string) => {
     const shot = shots?.find((s) => s.id === shotId);

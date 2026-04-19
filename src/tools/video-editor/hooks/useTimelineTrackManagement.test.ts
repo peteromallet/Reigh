@@ -1,7 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { buildTimelineData } from '@/tools/video-editor/lib/timeline-data';
-import { serializeForDisk } from '@/tools/video-editor/lib/serialize';
+import { serializeForDisk } from '@tbd/schema';
 import {
   useTimelineTrackManagement,
   moveTrackWithinKind,

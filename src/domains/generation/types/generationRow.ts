@@ -11,10 +11,13 @@ export interface PersistedGenerationRow {
   generation_id?: string;
   variant_fetch_generation_id?: string | null;
   location?: string | null;
+  thumbnail_url?: string | null;
   type?: string | null;
   createdAt?: string;
+  created_at?: string;
   metadata?: GenerationMetadata | null;
   name?: string | null;
+  variant_name?: string | null;
   timeline_frame?: number | null;
   starred?: boolean;
   based_on?: string | null;
@@ -24,5 +27,7 @@ export interface PersistedGenerationRow {
   child_order?: number | null;
   pair_shot_generation_id?: string | null;
   primary_variant_id?: string | null;
+  shotImageEntryId?: string;
+  shot_generation_id?: string;
   source_task_id?: string | null;
 }

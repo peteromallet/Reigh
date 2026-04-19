@@ -1,4 +1,9 @@
-import { getClipTimelineDuration } from './config-utils';
+import {
+  canonicalizeTimelineConfig,
+  getClipTimelineDuration,
+  getPinnedShotGroups,
+  setPinnedShotGroups,
+} from './config-utils';
 import type {
   ClipContinuous,
   ClipEntrance,
@@ -6,6 +11,7 @@ import type {
   PinnedShotGroup,
   TimelineClip,
   TimelineConfig,
+  TimelinePinnedShotGroups,
   TrackDefinition,
 } from '@/tools/video-editor/types';
 
@@ -175,8 +181,8 @@ const clonePinnedShotImageSnapshots = (
 }));
 
 const clonePinnedShotGroups = (
-  pinnedShotGroups: TimelineConfig['pinnedShotGroups'],
-): TimelineConfig['pinnedShotGroups'] => pinnedShotGroups?.map((group) => ({
+  pinnedShotGroups: TimelinePinnedShotGroups | undefined,
+): TimelinePinnedShotGroups | undefined => pinnedShotGroups?.map((group) => ({
   shotId: group.shotId,
   trackId: group.trackId,
   clipIds: [...group.clipIds],
@@ -190,8 +196,10 @@ const clonePinnedShotGroups = (
  * Ensures tracks exist, clips have clipType. No dedup, no repair.
  */
 export const migrateToFlatTracks = (config: TimelineConfig): TimelineConfig => {
+  const pinnedShotGroups = clonePinnedShotGroups(getPinnedShotGroups(config));
+
   if (config.tracks?.length) {
-    return {
+    return setPinnedShotGroups({
       output: { ...config.output },
       tracks: config.tracks.map((track) => ({ ...track })),
       clips: config.clips.map((clip) => ({
@@ -199,16 +207,16 @@ export const migrateToFlatTracks = (config: TimelineConfig): TimelineConfig => {
         clipType: clip.clipType
           ?? (clip.text ? 'text' : typeof clip.hold === 'number' ? 'hold' : 'media'),
       })),
-      pinnedShotGroups: clonePinnedShotGroups(config.pinnedShotGroups),
-    };
+      ...(config.app ? { app: { ...config.app } } : {}),
+    }, pinnedShotGroups);
   }
 
-  return {
+  return setPinnedShotGroups({
     output: { ...config.output },
     tracks: getDefaultTracks(config),
     clips: ensureBackgroundClip(config),
-    pinnedShotGroups: clonePinnedShotGroups(config.pinnedShotGroups),
-  };
+    ...(config.app ? { app: { ...config.app } } : {}),
+  }, pinnedShotGroups);
 };
 
 const CONTIGUITY_EPSILON = 0.001;
@@ -221,7 +229,8 @@ const CONTIGUITY_EPSILON = 0.001;
  * Returns the original config unchanged when no repairs are needed.
  */
 export const repairShotGroupContiguity = (config: TimelineConfig): TimelineConfig => {
-  if (!config.pinnedShotGroups?.length) return config;
+  const pinnedShotGroups = getPinnedShotGroups(config);
+  if (!pinnedShotGroups?.length) return config;
 
   const clipById = new Map<string, TimelineClip>();
   for (const clip of config.clips) {
@@ -232,7 +241,7 @@ export const repairShotGroupContiguity = (config: TimelineConfig): TimelineConfi
   // Track which clip ids need their `at` updated, and to what value
   const clipAtOverrides = new Map<string, number>();
 
-  for (const group of config.pinnedShotGroups) {
+  for (const group of pinnedShotGroups) {
     if (group.clipIds.length < 2) continue;
 
     // Resolve clips in the group's declared order
@@ -279,7 +288,7 @@ export const repairShotGroupContiguity = (config: TimelineConfig): TimelineConfi
     return override !== undefined ? { ...clip, at: override } : clip;
   });
 
-  return { ...config, clips: nextClips, pinnedShotGroups: config.pinnedShotGroups };
+  return setPinnedShotGroups({ ...config, clips: nextClips }, pinnedShotGroups);
 };
 
 /** Strip cascading `-dup-N` suffixes from a clip id back to its base. */
@@ -291,11 +300,12 @@ const stripDupSuffix = (id: string): string => id.replace(/(-dup-\d+)+$/, '');
  * cascading -dup- suffixes), and logs what it fixed.
  */
 export const repairConfig = (config: TimelineConfig): TimelineConfig => {
-  let repaired = false;
+  const canonicalConfig = canonicalizeTimelineConfig(config);
+  let repaired = canonicalConfig !== config;
 
   // Deduplicate tracks by id
   const seenTracks = new Set<string>();
-  const tracks = (config.tracks ?? []).filter((track) => {
+  const tracks = (canonicalConfig.tracks ?? []).filter((track) => {
     if (seenTracks.has(track.id)) {
       repaired = true;
       return false;
@@ -307,7 +317,7 @@ export const repairConfig = (config: TimelineConfig): TimelineConfig => {
   // Deduplicate clips: strip -dup- suffixes, keep first occurrence of each base id
   const seenClips = new Set<string>();
   const clips: TimelineClip[] = [];
-  for (const clip of config.clips) {
+  for (const clip of canonicalConfig.clips) {
     const baseId = stripDupSuffix(clip.id);
     if (seenClips.has(baseId)) {
       repaired = true;
@@ -317,7 +327,7 @@ export const repairConfig = (config: TimelineConfig): TimelineConfig => {
     clips.push(baseId !== clip.id ? { ...clip, id: baseId } : clip);
   }
 
-  const pinnedShotGroups = config.pinnedShotGroups?.map((group) => {
+  const pinnedShotGroups = getPinnedShotGroups(canonicalConfig)?.map((group) => {
     const legacy = group as LegacyPinnedShotGroup;
     const hasLegacyFields
       = typeof legacy.start === 'number'
@@ -349,12 +359,18 @@ export const repairConfig = (config: TimelineConfig): TimelineConfig => {
   if (repaired) {
     console.warn(
       '[timeline] repairConfig: fixed corrupted data —',
-      'tracks:', config.tracks?.length, '→', tracks.length,
-      'clips:', config.clips.length, '→', clips.length,
+      'tracks:', canonicalConfig.tracks?.length, '→', tracks.length,
+      'clips:', canonicalConfig.clips.length, '→', clips.length,
     );
   }
 
-  return repaired
-    ? { ...config, tracks, clips, pinnedShotGroups }
-    : config;
+  if (!repaired) {
+    return canonicalConfig;
+  }
+
+  return setPinnedShotGroups({
+    ...canonicalConfig,
+    tracks,
+    clips,
+  }, pinnedShotGroups);
 };

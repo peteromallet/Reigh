@@ -1,4 +1,5 @@
 import { updateClipOrder } from '@/tools/video-editor/lib/coordinate-utils';
+import { getPinnedShotGroups } from '@/tools/video-editor/lib/config-utils';
 import {
   findGroupForTrack,
   orderClipIdsByAt,
@@ -6,7 +7,11 @@ import {
 } from '@/tools/video-editor/lib/pinned-group-projection';
 import { ensureGroupContiguity } from '@/tools/video-editor/lib/shot-group-contiguity';
 import { getNextClipId, type ClipMeta, type TimelineData } from '@/tools/video-editor/lib/timeline-data';
-import type { PinnedShotGroup, PinnedShotImageClipSnapshot } from '@/tools/video-editor/types';
+import type {
+  PinnedShotGroup,
+  PinnedShotImageClipSnapshot,
+  TimelinePinnedShotGroups,
+} from '@/tools/video-editor/types';
 import type { TimelineAction } from '@/tools/video-editor/types/timeline-canvas';
 
 type ShotGroupLocator = {
@@ -67,7 +72,7 @@ function buildPinnedShotGroupEntry(
 function findLocatedPinnedShotGroup(
   currentData: TimelineData,
   locator: ShotGroupLocator,
-  groups = currentData.config.pinnedShotGroups ?? [],
+  groups = getPinnedShotGroups(currentData.config) ?? [],
 ): {
   matchedGroup: PinnedShotGroup | undefined;
   resolvedTrackId: string;
@@ -82,8 +87,8 @@ function findLocatedPinnedShotGroup(
 export function buildPinnedShotGroupsOverride(
   currentData: TimelineData,
   nextGroup: ShotGroupModeInput,
-  existingGroups = currentData.config.pinnedShotGroups ?? [],
-): NonNullable<TimelineData['config']['pinnedShotGroups']> {
+  existingGroups = getPinnedShotGroups(currentData.config) ?? [],
+): TimelinePinnedShotGroups {
   const builtGroup = buildPinnedShotGroupEntry(currentData, nextGroup);
   const { matchedGroup } = findLocatedPinnedShotGroup(currentData, nextGroup, existingGroups);
   const existingIndex = matchedGroup ? existingGroups.indexOf(matchedGroup) : -1;
@@ -123,7 +128,7 @@ export function buildUnpinShotGroupMutation(
 
   return {
     type: 'pinnedShotGroups' as const,
-    pinnedShotGroups: (currentData.config.pinnedShotGroups ?? [])
+    pinnedShotGroups: (getPinnedShotGroups(currentData.config) ?? [])
       .filter((group) => (
         matchedGroup
           ? group !== matchedGroup
@@ -146,7 +151,7 @@ export function buildUpdatePinnedShotGroupMutation(
 
   return {
     type: 'pinnedShotGroups' as const,
-    pinnedShotGroups: (currentData.config.pinnedShotGroups ?? []).map((group) => {
+    pinnedShotGroups: (getPinnedShotGroups(currentData.config) ?? []).map((group) => {
       if (group !== matchedGroup) {
         return clonePinnedShotGroup(group);
       }
@@ -185,7 +190,7 @@ export function buildDeleteShotGroupMutation({
       actions: row.actions.filter((action) => !deletedClipIdSet.has(action.id)),
     })),
     metaDeletes: deletedClipIds,
-    pinnedShotGroupsOverride: (currentData.config.pinnedShotGroups ?? [])
+    pinnedShotGroupsOverride: (getPinnedShotGroups(currentData.config) ?? [])
       .filter((candidate) => (
         matchedGroup
           ? candidate !== matchedGroup
@@ -285,7 +290,7 @@ export function buildSwitchShotGroupToFinalVideoMutation({
     return null;
   }
 
-  const existingPinnedGroups = currentData.config.pinnedShotGroups ?? [];
+  const existingPinnedGroups = getPinnedShotGroups(currentData.config) ?? [];
   const pinnedGroup = findGroupForTrack(existingPinnedGroups, shotId, rowId, currentData.rows);
   const resolvedTrackId = pinnedGroup ? resolveGroupTrackId(pinnedGroup, currentData.rows) : rowId;
   const sourceClipIds = pinnedGroup?.mode === 'images' ? pinnedGroup.clipIds : clipIds;
@@ -410,7 +415,7 @@ export function buildUpdateShotGroupToLatestVideoMutation({
     return null;
   }
 
-  const existingPinnedGroups = currentData.config.pinnedShotGroups ?? [];
+  const existingPinnedGroups = getPinnedShotGroups(currentData.config) ?? [];
   const foundGroup = findGroupForTrack(existingPinnedGroups, shotId, rowId, currentData.rows);
   const pinnedGroup = foundGroup?.mode === 'video' && typeof foundGroup.videoAssetKey === 'string' && foundGroup.videoAssetKey.length > 0
     ? foundGroup
@@ -489,7 +494,7 @@ export function buildSwitchShotGroupToImagesMutation({
     return null;
   }
 
-  const existingPinnedGroups = currentData.config.pinnedShotGroups ?? [];
+  const existingPinnedGroups = getPinnedShotGroups(currentData.config) ?? [];
   const foundGroup = findGroupForTrack(existingPinnedGroups, shotId, rowId, currentData.rows);
   const pinnedGroup = foundGroup?.mode === 'video' ? foundGroup : undefined;
   const resolvedTrackId = pinnedGroup ? resolveGroupTrackId(pinnedGroup, currentData.rows) : rowId;

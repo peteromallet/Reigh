@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as editorUtils from '@/tools/video-editor/lib/editor-utils';
+import { setPinnedShotGroups } from '@/tools/video-editor/lib/config-utils';
 import {
   applyMultiDragMoves,
   buildAugmentedData,
@@ -290,10 +291,7 @@ describe('planMultiDragMoves on grouped drag (soft-tag)', () => {
       clipIds: ['clip-1', 'clip-2'],
       mode: 'images',
     };
-    data.config = {
-      ...data.config,
-      pinnedShotGroups: [pinnedGroup],
-    };
+    data.config = setPinnedShotGroups(data.config, [pinnedGroup]);
     return data;
   };
 
@@ -431,7 +429,7 @@ describe('planMultiDragMoves with stale group trackId', () => {
       clipIds: ['clip-video'],
       mode: 'video',
     };
-    data.config = { ...data.config, pinnedShotGroups: [pinnedGroup] };
+    data.config = setPinnedShotGroups(data.config, [pinnedGroup]);
 
     const result = planMultiDragMoves(
       data,

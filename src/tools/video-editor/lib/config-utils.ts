@@ -1,103 +1,127 @@
+import {
+  getClipDurationInFrames as getClipDurationInFramesShared,
+  getClipSourceDuration as getClipSourceDurationShared,
+  getClipTimelineDuration as getClipTimelineDurationShared,
+  getSanitizedAssetFile as getSanitizedAssetFileShared,
+  getSanitizedMediaSrc as getSanitizedMediaSrcShared,
+  getSanitizedMediaTrimProps as getSanitizedMediaTrimPropsShared,
+  getSanitizedPlaybackRate as getSanitizedPlaybackRateShared,
+  getSanitizedVolume as getSanitizedVolumeShared,
+  getTimelineDurationInFrames as getTimelineDurationInFramesShared,
+  parseResolution as parseResolutionShared,
+  resolveTimelineConfig as resolveTimelineConfigShared,
+  secondsToFrames as secondsToFramesShared,
+  type UrlResolver,
+} from '@tbd/engine';
 import type {
   AssetRegistry,
-  ResolvedAssetRegistryEntry,
+  PinnedShotGroup,
   ResolvedTimelineConfig,
   TimelineClip,
+  TimelinePinnedShotGroups,
   TimelineConfig,
+  TimelineApp,
 } from '@/tools/video-editor/types';
 
-export const parseResolution = (resolution: string): { width: number; height: number } => {
-  const [width, height] = resolution.toLowerCase().split('x');
-  return {
-    width: Number(width),
-    height: Number(height),
-  };
+export const REIGH_TIMELINE_APP_NAMESPACE = 'x-reigh';
+
+type TimelineConfigWithLegacyPinnedShotGroups = TimelineConfig & {
+  pinnedShotGroups?: TimelinePinnedShotGroups;
 };
 
-export const getClipSourceDuration = (clip: TimelineClip): number => {
-  if (typeof clip.hold === 'number') {
-    return clip.hold;
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+};
+
+const clonePinnedShotImageSnapshots = (
+  imageClipSnapshot: PinnedShotGroup['imageClipSnapshot'],
+): PinnedShotGroup['imageClipSnapshot'] => imageClipSnapshot?.map((snapshot) => ({
+  ...snapshot,
+  meta: { ...snapshot.meta },
+}));
+
+const clonePinnedShotGroups = (
+  pinnedShotGroups: TimelinePinnedShotGroups | undefined,
+): TimelinePinnedShotGroups | undefined => pinnedShotGroups?.map((group) => ({
+  shotId: group.shotId,
+  trackId: group.trackId,
+  clipIds: [...group.clipIds],
+  mode: group.mode,
+  videoAssetKey: group.videoAssetKey,
+  imageClipSnapshot: clonePinnedShotImageSnapshots(group.imageClipSnapshot),
+}));
+
+export const getTimelineAppNamespace = (
+  config: Pick<TimelineConfig, 'app'> | null | undefined,
+  namespace: string,
+): Record<string, unknown> | undefined => {
+  if (!isRecord(config?.app)) {
+    return undefined;
   }
 
-  return (clip.to ?? 0) - (clip.from ?? 0);
+  const value = config.app[namespace];
+  return isRecord(value) ? value : undefined;
 };
 
-export const getClipTimelineDuration = (clip: TimelineClip): number => {
-  const speed = clip.speed ?? 1;
-  return getClipSourceDuration(clip) / speed;
-};
-
-export const secondsToFrames = (seconds: number, fps: number): number => {
-  return Math.round(seconds * fps);
-};
-
-export const getSanitizedMediaTrimProps = (
-  clip: Pick<TimelineClip, 'from' | 'to'>,
-  fps: number,
-): { trimBefore: number; trimAfter?: number } => {
-  const trimBeforeSeconds = typeof clip.from === 'number' && Number.isFinite(clip.from)
-    ? Math.max(0, clip.from)
-    : 0;
-  const trimAfterSeconds = typeof clip.to === 'number' && Number.isFinite(clip.to) && clip.to > trimBeforeSeconds
-    ? clip.to
-    : undefined;
-
-  return {
-    trimBefore: secondsToFrames(trimBeforeSeconds, fps),
-    ...(trimAfterSeconds === undefined ? {} : { trimAfter: secondsToFrames(trimAfterSeconds, fps) }),
-  };
-};
-
-export const getSanitizedPlaybackRate = (speed: TimelineClip['speed']): number => {
-  return typeof speed === 'number' && Number.isFinite(speed) && speed > 0 ? speed : 1;
-};
-
-export const getSanitizedVolume = (volume: number | undefined, fallback = 1): number => {
-  return typeof volume === 'number' && Number.isFinite(volume)
-    ? Math.max(0, volume)
-    : fallback;
-};
-
-export const getSanitizedAssetFile = (file: string | undefined): string | null => {
-  return typeof file === 'string' && file.trim().length > 0 ? file.trim() : null;
-};
-
-export const getSanitizedMediaSrc = (src: string | undefined): string | null => {
-  if (typeof src !== 'string') {
-    return null;
+export const getPinnedShotGroups = (
+  config: ({ app?: TimelineApp } & { pinnedShotGroups?: TimelinePinnedShotGroups }) | null | undefined,
+): TimelinePinnedShotGroups | undefined => {
+  const namespacedPinnedShotGroups = getTimelineAppNamespace(config, REIGH_TIMELINE_APP_NAMESPACE)?.pinnedShotGroups;
+  if (Array.isArray(namespacedPinnedShotGroups)) {
+    return namespacedPinnedShotGroups as TimelinePinnedShotGroups;
   }
 
-  const trimmed = src.trim();
-  if (trimmed.length === 0) {
-    return null;
+  const legacyPinnedShotGroups = (config as TimelineConfigWithLegacyPinnedShotGroups | null | undefined)?.pinnedShotGroups;
+  return Array.isArray(legacyPinnedShotGroups) ? legacyPinnedShotGroups : undefined;
+};
+
+export const setPinnedShotGroups = (
+  config: TimelineConfigWithLegacyPinnedShotGroups,
+  pinnedShotGroups: TimelinePinnedShotGroups | undefined,
+): TimelineConfig => {
+  const { app, pinnedShotGroups: _legacyPinnedShotGroups, ...rest } = config;
+  const nextApp: TimelineApp = isRecord(app) ? { ...app } : {};
+  const currentReighApp = getTimelineAppNamespace(config, REIGH_TIMELINE_APP_NAMESPACE);
+  const nextReighApp: Record<string, unknown> = currentReighApp ? { ...currentReighApp } : {};
+
+  if (pinnedShotGroups && pinnedShotGroups.length > 0) {
+    nextReighApp.pinnedShotGroups = clonePinnedShotGroups(pinnedShotGroups);
+  } else {
+    delete nextReighApp.pinnedShotGroups;
   }
 
-  if (/^(?:https?:\/\/|\/)/.test(trimmed)) {
-    try {
-      const url = new URL(trimmed, 'http://localhost');
-      if (url.pathname.endsWith('/')) {
-        return null;
-      }
-    } catch {
-      return null;
-    }
+  if (Object.keys(nextReighApp).length > 0) {
+    nextApp[REIGH_TIMELINE_APP_NAMESPACE] = nextReighApp;
+  } else {
+    delete nextApp[REIGH_TIMELINE_APP_NAMESPACE];
   }
 
-  return trimmed;
+  return Object.keys(nextApp).length > 0
+    ? { ...rest, app: nextApp }
+    : { ...rest };
 };
 
-export const getClipDurationInFrames = (clip: TimelineClip, fps: number): number => {
-  return Math.max(1, secondsToFrames(getClipTimelineDuration(clip), fps));
+export const canonicalizeTimelineConfig = (
+  config: TimelineConfig | TimelineConfigWithLegacyPinnedShotGroups,
+): TimelineConfig => {
+  if (!Object.prototype.hasOwnProperty.call(config, 'pinnedShotGroups')) {
+    return config;
+  }
+
+  return setPinnedShotGroups(config, getPinnedShotGroups(config));
 };
 
-export const getTimelineDurationInFrames = (config: ResolvedTimelineConfig, fps: number): number => {
-  return Math.max(
-    1,
-    ...config.clips.map((clip) => {
-      return secondsToFrames(clip.at, fps) + getClipDurationInFrames(clip, fps);
-    }),
-  );
-};
+export const parseResolution = parseResolutionShared;
+export const getClipSourceDuration = getClipSourceDurationShared;
+export const getClipTimelineDuration = getClipTimelineDurationShared;
+export const secondsToFrames = secondsToFramesShared;
+export const getSanitizedMediaTrimProps = getSanitizedMediaTrimPropsShared;
+export const getSanitizedPlaybackRate = getSanitizedPlaybackRateShared;
+export const getSanitizedVolume = getSanitizedVolumeShared;
+export const getSanitizedAssetFile = getSanitizedAssetFileShared;
+export const getSanitizedMediaSrc = getSanitizedMediaSrcShared;
+export const getClipDurationInFrames = getClipDurationInFramesShared;
+export const getTimelineDurationInFrames = getTimelineDurationInFramesShared;
 
 export const getEffectValue = (
   effects: TimelineClip['effects'],
@@ -157,8 +181,6 @@ export const getStableConfigSignature = (
   }));
 };
 
-export type UrlResolver = (file: string) => string | Promise<string>;
-
 export const isRemoteUrl = (url: string): boolean => /^https?:\/\//.test(url);
 
 export const resolveTimelineConfig = async (
@@ -166,68 +188,7 @@ export const resolveTimelineConfig = async (
   registry: AssetRegistry,
   resolveUrl: UrlResolver,
 ): Promise<ResolvedTimelineConfig> => {
-  const resolvedRegistry: Record<string, ResolvedAssetRegistryEntry> = {};
-
-  await Promise.all(
-    Object.entries(registry.assets ?? {}).map(async ([assetId, entry]) => {
-      const sanitizedFile = getSanitizedAssetFile(entry.file);
-      if (!sanitizedFile) {
-        console.warn(`Asset '${assetId}' has no file path - skipping`);
-        return;
-      }
-
-      let resolvedSrc: string;
-      try {
-        resolvedSrc = isRemoteUrl(sanitizedFile) ? sanitizedFile : await resolveUrl(sanitizedFile);
-      } catch (error) {
-        console.warn(`Asset '${assetId}' failed to resolve URL - skipping`, error);
-        return;
-      }
-
-      const sanitizedSrc = getSanitizedMediaSrc(resolvedSrc);
-      if (!sanitizedSrc) {
-        console.warn(`Asset '${assetId}' resolved to an invalid media URL - skipping`, {
-          file: sanitizedFile,
-          src: resolvedSrc,
-        });
-        return;
-      }
-
-      resolvedRegistry[assetId] = {
-        ...entry,
-        file: sanitizedFile,
-        src: sanitizedSrc,
-      };
-    }),
-  );
-
-  const clips = config.clips.map((clip) => {
-    if (!clip.asset) {
-      return {
-        ...clip,
-        assetEntry: undefined,
-      };
-    }
-
-    const assetEntry = resolvedRegistry[clip.asset];
-    if (!assetEntry) {
-      console.warn(`Clip '${clip.id}' references missing asset '${clip.asset}' - skipping`);
-      return {
-        ...clip,
-        assetEntry: undefined,
-      };
-    }
-
-    return {
-      ...clip,
-      assetEntry,
-    };
-  });
-
-  return {
-    output: { ...config.output },
-    tracks: config.tracks ?? [],
-    clips,
-    registry: resolvedRegistry,
-  };
+  return resolveTimelineConfigShared(config, registry, resolveUrl);
 };
+
+export type { UrlResolver };

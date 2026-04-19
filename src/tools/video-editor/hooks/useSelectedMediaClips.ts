@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useShots } from '@/shared/contexts/ShotsContext';
 import { useTimelineEditorData } from '@/tools/video-editor/hooks/timelineStore';
-import { getClipTimelineDuration } from '@/tools/video-editor/lib/config-utils';
+import { getClipTimelineDuration, getPinnedShotGroups } from '@/tools/video-editor/lib/config-utils';
 
 export type SelectedMediaClip = {
   clipId: string;
@@ -133,7 +133,7 @@ export function useSelectedMediaClips(): { clips: SelectedMediaClip[]; summary: 
       return { clips: [], summary: '' };
     }
 
-    const pinnedGroups = data?.config.pinnedShotGroups ?? [];
+    const pinnedGroups = getPinnedShotGroups(data?.config) ?? [];
     const shotNameById = new Map((shots ?? []).map((shot) => [shot.id, shot.name]));
     const shotByClipId = new Map(
       pinnedGroups.flatMap((group) => group.clipIds.map((clipId) => [clipId, group] as const)),
@@ -203,5 +203,5 @@ export function useSelectedMediaClips(): { clips: SelectedMediaClip[]; summary: 
       clips,
       summary: buildSummary(clips),
     };
-  }, [data?.config.pinnedShotGroups, resolvedConfig, selectedClipIds, shots]);
+  }, [data?.config, resolvedConfig, selectedClipIds, shots]);
 }

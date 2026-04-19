@@ -26,7 +26,9 @@ export function coerceGenerationRowDto(
     ...(asNullableString(record.type) !== undefined ? { type: asNullableString(record.type) } : {}),
     ...(typeof record.createdAt === 'string' ? { createdAt: record.createdAt } : {}),
     ...(typeof record.created_at === 'string' ? { created_at: record.created_at } : {}),
-    ...(asJsonRecord(record.metadata) !== undefined ? { metadata: asJsonRecord(record.metadata) } : {}),
+    ...(asJsonRecord(record.metadata) !== undefined
+      ? { metadata: asJsonRecord(record.metadata) as GenerationRowDto['metadata'] }
+      : {}),
     ...(asNullableString(record.name) !== undefined ? { name: asNullableString(record.name) } : {}),
     ...(asNullableNumber(record.timeline_frame) !== undefined ? { timeline_frame: asNullableNumber(record.timeline_frame) } : {}),
     ...(typeof record.starred === 'boolean' ? { starred: record.starred } : {}),

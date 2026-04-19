@@ -1,7 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { Shot } from '@/domains/generation/types';
-import { getConfigSignature, getStableConfigSignature } from '@/tools/video-editor/lib/config-utils';
+import { getConfigSignature, getStableConfigSignature, setPinnedShotGroups } from '@/tools/video-editor/lib/config-utils';
 import { configToRows, type TimelineData } from '@/tools/video-editor/lib/timeline-data';
 import type { AssetRegistry, TimelineConfig } from '@/tools/video-editor/types';
 import { useVideoEditorLightboxNavigation } from './useVideoEditorLightboxNavigation';
@@ -57,7 +57,7 @@ describe('useVideoEditorLightboxNavigation', () => {
     },
   };
 
-  const data = makeTimelineData({
+  const data = makeTimelineData(setPinnedShotGroups({
     output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
     tracks: [
       { id: 'V1', kind: 'visual', label: 'V1' },
@@ -72,11 +72,10 @@ describe('useVideoEditorLightboxNavigation', () => {
       { id: 'clip-5', at: 3, track: 'V2', clipType: 'media', asset: 'asset-4', from: 0, to: 2 },
       { id: 'clip-6', at: 0, track: 'A1', clipType: 'media', asset: 'asset-audio', from: 0, to: 2 },
     ],
-    pinnedShotGroups: [
-      { shotId: 'shot-1', trackId: 'V1', clipIds: ['clip-1', 'clip-2'], mode: 'images' },
-      { shotId: 'shot-2', trackId: 'V2', clipIds: ['clip-4'], mode: 'images' },
-    ],
-  }, registry);
+  }, [
+    { shotId: 'shot-1', trackId: 'V1', clipIds: ['clip-1', 'clip-2'], mode: 'images' },
+    { shotId: 'shot-2', trackId: 'V2', clipIds: ['clip-4'], mode: 'images' },
+  ]), registry);
 
   it('orders same-shot items first, then same-track, then other tracks, preserving the first asset occurrence', () => {
     const setLightboxAssetKey = vi.fn();

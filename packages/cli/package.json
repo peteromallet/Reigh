@@ -1,0 +1,33 @@
+{
+  "name": "@tbd/cli",
+  "version": "0.0.0",
+  "type": "module",
+  "bin": {
+    "tbd-render": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@remotion/bundler": "4.0.438",
+    "@remotion/renderer": "4.0.438",
+    "@tbd/engine": "workspace:*",
+    "@tbd/schema": "workspace:*",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "^4.0.434"
+  }
+}

@@ -13,7 +13,7 @@ import VideoTravelToolPage from '@/tools/travel-between-images/pages/VideoTravel
 import CharacterAnimatePage from '@/tools/character-animate/pages/CharacterAnimatePage';
 import JoinClipsPage from '@/tools/join-clips/pages/JoinClipsPage';
 import EditVideoPage from '@/tools/edit-video/pages/EditVideoPage';
-import VideoEditorPage from '@/tools/video-editor/pages/VideoEditorPage';
+import VideoEditorPage from '@/tools/video-editor-host/pages/VideoEditorPage';
 // Secondary tools: lazy-loaded (not default landing pages, so hydration race is less likely)
 const EditImagesPage = lazy(() => import('@/tools/edit-images/pages/EditImagesPage'));
 const TrainingDataHelperPage = lazy(() => import('@/tools/training-data-helper/pages/TrainingDataHelperPage'));

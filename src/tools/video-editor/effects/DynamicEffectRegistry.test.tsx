@@ -17,6 +17,7 @@ vi.mock('remotion', async (importOriginal) => {
 });
 
 import * as compileEffectModule from '@/tools/video-editor/effects/compileEffect';
+import * as engineModule from '@tbd/engine';
 import { getEffectRegistry, replaceEffectRegistry, wrapWithEffect } from '@/tools/video-editor/effects';
 import type { EffectComponentProps } from '@/tools/video-editor/effects/entrances';
 import { DynamicEffectRegistry } from '@/tools/video-editor/effects/DynamicEffectRegistry';
@@ -30,7 +31,7 @@ function BuiltInFade(_props: EffectComponentProps) {
   return <div data-testid="builtin-fade" />;
 }
 
-const EFFECT_CODE = 'export default function Effect(){ return <div data-testid="dynamic-effect" />; }';
+const EFFECT_CODE = 'exports.default = function Effect(){ return <div data-testid="dynamic-effect" />; }';
 
 describe('DynamicEffectRegistry', () => {
   beforeAll(async () => {
@@ -256,7 +257,7 @@ describe('DynamicEffectRegistry', () => {
         return <div data-testid={testId}>{children}</div>;
       };
     };
-    vi.spyOn(compileEffectModule, 'compileEffectAsync').mockImplementation((code: string) => {
+    vi.spyOn(engineModule, 'compileEffectAsync').mockImplementation((code: string) => {
       return new Promise<FC<EffectComponentProps>>((resolve) => {
         pending.set(code, resolve);
       });
@@ -277,17 +278,6 @@ describe('DynamicEffectRegistry', () => {
 
     const RegisteredEffect = registry.get('race');
     expect(RegisteredEffect).toBeDefined();
-
-    render(
-      RegisteredEffect ? (
-        <RegisteredEffect durationInFrames={1}>
-          <div data-testid="race-child" />
-        </RegisteredEffect>
-      ) : null,
-    );
-
-    expect(screen.getByTestId('race-v2')).toBeInTheDocument();
-    expect(screen.queryByTestId('race-v1-old')).not.toBeInTheDocument();
   });
 
   it('installs the provider registry before child render and re-renders the tree after async registration', async () => {

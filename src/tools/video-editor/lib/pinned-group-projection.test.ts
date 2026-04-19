@@ -6,10 +6,11 @@ import {
   orderClipIdsByAt,
   resolveGroupTrackId,
 } from '@/tools/video-editor/lib/pinned-group-projection';
+import { setPinnedShotGroups } from '@/tools/video-editor/lib/config-utils';
 import type { PinnedShotGroup, TimelineConfig } from '@/tools/video-editor/types';
 import type { TimelineRow } from '@/tools/video-editor/types/timeline-canvas';
 
-const buildConfig = (): TimelineConfig => ({
+const buildConfig = (): TimelineConfig => setPinnedShotGroups({
   output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
   tracks: [
     { id: 'V1', kind: 'visual', label: 'V1' },
@@ -21,15 +22,14 @@ const buildConfig = (): TimelineConfig => ({
     { id: 'clip-c', at: 3, track: 'V1', clipType: 'hold', hold: 1 },
     { id: 'free-1', at: 0, track: 'V2', clipType: 'hold', hold: 5 },
   ],
-  pinnedShotGroups: [
-    {
-      shotId: 'shot-1',
-      trackId: 'V1',
-      clipIds: ['clip-a', 'clip-b', 'clip-c'],
-      mode: 'images',
-    },
-  ],
-});
+}, [
+  {
+    shotId: 'shot-1',
+    trackId: 'V1',
+    clipIds: ['clip-a', 'clip-b', 'clip-c'],
+    mode: 'images',
+  },
+]);
 
 const buildRows = (rows: Array<{ id: string; clipIds: string[] }>): TimelineRow[] => (
   rows.map((row) => ({

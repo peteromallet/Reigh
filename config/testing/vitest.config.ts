@@ -8,6 +8,9 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(projectRoot, 'src'),
+      '@tbd/editor': path.resolve(projectRoot, 'packages/editor/src/index.ts'),
+      '@tbd/schema': path.resolve(projectRoot, 'packages/schema/src/index.ts'),
+      '@tbd/engine': path.resolve(projectRoot, 'packages/engine/src/index.ts'),
     },
   },
   esbuild: {

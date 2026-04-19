@@ -1,0 +1,380 @@
+{
+  "requiredRootScripts": [
+    "build",
+    "build:app",
+    "build:packages",
+    "test",
+    "test:app",
+    "test:packages",
+    "typecheck",
+    "typecheck:app",
+    "typecheck:packages",
+    "workspace:list",
+    "check:video-editor-extraction"
+  ],
+  "requiredFiles": [
+    "pnpm-workspace.yaml",
+    "packages/schema/package.json",
+    "packages/engine/package.json",
+    "packages/editor/package.json",
+    "packages/cli/package.json",
+    "docs/design/video-editor-oss-extraction-review.md",
+    "src/tools/video-editor-host/pages/VideoEditorPage.tsx",
+    "src/tools/video-editor-host/contexts/VideoEditorProvider.tsx",
+    "src/tools/video-editor-host/components/VideoEditorShell.tsx",
+    "src/app/routes.tsx"
+  ],
+  "docAnchors": [
+    {
+      "id": "json-contract-step1",
+      "file": "docs/design/video-editor-oss-extraction.md",
+      "mustContain": [
+        "Legacy documents that still contain top-level `pinnedShotGroups` must load successfully",
+        "Serializer writes only the new namespaced location once writers flip."
+      ]
+    },
+    {
+      "id": "workspace-topology",
+      "file": "docs/design/video-editor-oss-extraction.md",
+      "mustContain": [
+        "packages/schema",
+        "packages/engine",
+        "packages/editor",
+        "packages/cli"
+      ]
+    },
+    {
+      "id": "split-table",
+      "file": "docs/design/video-editor-oss-extraction.md",
+      "mustContain": [
+        "| `components/VideoEditorShell.tsx` | `SPLIT` |",
+        "| `contexts/VideoEditorProvider.tsx` | `STAY` |",
+        "| `pages/VideoEditorPage.tsx` | `STAY` |"
+      ]
+    },
+    {
+      "id": "rollback-order",
+      "file": "docs/design/video-editor-oss-extraction.md",
+      "mustContain": [
+        "### 13.2 Numbered order of operations",
+        "1. Land the pre-extraction serializer and `pinnedShotGroups` compatibility step in reigh first.",
+        "5. Flip reigh to `workspace:*` or local `file:` consumption and validate in app."
+      ]
+    },
+    {
+      "id": "review-notes",
+      "file": "docs/design/video-editor-oss-extraction-review.md",
+      "mustContain": [
+        "Route: `/tools/video-editor`",
+        "authenticated user session",
+        "Rollback checkpoints remain aligned",
+        "The review expectation for `SPLIT` files is narrow ownership",
+        "Root pnpm entrypoints remain the main developer workflow surface"
+      ]
+    }
+  ],
+  "workflowChecks": [
+    {
+      "script": "build",
+      "mustContain": [
+        "corepack pnpm run build:packages",
+        "corepack pnpm run build:app"
+      ]
+    },
+    {
+      "script": "test",
+      "mustContain": [
+        "corepack pnpm run test:packages",
+        "corepack pnpm run test:app"
+      ]
+    },
+    {
+      "script": "typecheck",
+      "mustContain": [
+        "corepack pnpm run typecheck:packages",
+        "corepack pnpm run typecheck:app"
+      ]
+    },
+    {
+      "script": "test:app",
+      "mustContain": [
+        "corepack pnpm run check:no-smoke-tests",
+        "corepack pnpm run check:video-editor-extraction",
+        "vitest run --config config/testing/vitest.config.ts"
+      ]
+    },
+    {
+      "script": "workspace:list",
+      "mustContain": [
+        "corepack pnpm list -r --depth -1"
+      ]
+    }
+  ],
+  "workspaceListPackages": [
+    "reigh-app",
+    "@tbd/schema",
+    "@tbd/engine",
+    "@tbd/editor",
+    "@tbd/cli"
+  ],
+  "rollbackStages": [
+    {
+      "id": "step1-compatibility-gate",
+      "evidenceFiles": [
+        "src/tools/video-editor/lib/config-utils.ts",
+        "src/tools/video-editor/lib/migrate.ts",
+        "src/tools/video-editor/hooks/usePinnedShotGroups.ts",
+        "src/tools/video-editor/hooks/useTimelineCommit.ts",
+        "src/tools/video-editor/types/index.ts"
+      ],
+      "requiredSnippets": [
+        {
+          "file": "src/tools/video-editor/lib/config-utils.ts",
+          "mustContain": [
+            "export const getPinnedShotGroups",
+            "export const setPinnedShotGroups",
+            "export const canonicalizeTimelineConfig"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "step2-regression-gate",
+      "evidenceFiles": [
+        "src/tools/video-editor/lib/serialize.test.ts",
+        "src/tools/video-editor/lib/migrate.test.ts",
+        "src/tools/video-editor/components/TimelineEditor/TimelineCanvas.test.tsx",
+        "src/tools/video-editor/lib/shot-group-commands.test.ts"
+      ],
+      "requiredSnippets": [
+        {
+          "file": "src/tools/video-editor/lib/serialize.test.ts",
+          "mustContain": [
+            "getTimelineAppNamespace",
+            "pinnedShotGroups"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "step3-workspace-topology",
+      "evidenceFiles": [
+        "package.json",
+        "pnpm-workspace.yaml",
+        "packages/schema/package.json",
+        "packages/engine/package.json",
+        "packages/editor/package.json",
+        "packages/cli/package.json"
+      ],
+      "requiredSnippets": [
+        {
+          "file": "package.json",
+          "mustContain": [
+            "\"workspace:*\"",
+            "\"workspace:list\""
+          ]
+        }
+      ]
+    },
+    {
+      "id": "step4-schema-extraction",
+      "evidenceFiles": [
+        "packages/schema/src/index.ts",
+        "packages/schema/src/types.ts",
+        "packages/schema/src/serialize.ts",
+        "packages/schema/src/validators.ts",
+        "packages/schema/src/json-schema.ts"
+      ],
+      "requiredSnippets": [
+        {
+          "file": "packages/schema/src/serialize.ts",
+          "mustContain": [
+            "app",
+            "validateSerializedConfig"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "step5-engine-extraction",
+      "evidenceFiles": [
+        "packages/engine/src/index.ts",
+        "packages/engine/src/compositions/TimelineRenderer.tsx",
+        "packages/engine/src/effects/DynamicEffectRegistry.ts"
+      ],
+      "requiredSnippets": [
+        {
+          "file": "packages/engine/src/index.ts",
+          "mustContain": [
+            "./effects/index.js",
+            "./compositions/TimelineRenderer.js"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "step6-editor-extraction",
+      "evidenceFiles": [
+        "packages/editor/src/EditorProvider.tsx",
+        "packages/editor/src/components/VideoEditorShell.tsx",
+        "packages/editor/src/data/ports.ts"
+      ],
+      "requiredSnippets": [
+        {
+          "file": "packages/editor/src/EditorProvider.tsx",
+          "mustContain": [
+            "export function EditorProvider"
+          ]
+        },
+        {
+          "file": "packages/editor/src/components/VideoEditorShell.tsx",
+          "mustContain": [
+            "export function TimelineEditorShell"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "step7-cli-extraction",
+      "evidenceFiles": [
+        "packages/cli/src/index.ts",
+        "packages/cli/src/remotion-root.tsx"
+      ],
+      "requiredSnippets": [
+        {
+          "file": "packages/cli/src/index.ts",
+          "mustContain": [
+            "Usage: render timeline.json out.mp4",
+            "export const parseArgs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "step8-host-flip",
+      "evidenceFiles": [
+        "src/app/routes.tsx",
+        "src/tools/video-editor-host/pages/VideoEditorPage.tsx",
+        "src/tools/video-editor-host/contexts/VideoEditorProvider.tsx",
+        "src/tools/video-editor-host/components/VideoEditorShell.tsx"
+      ],
+      "requiredSnippets": [
+        {
+          "file": "src/tools/video-editor-host/contexts/VideoEditorProvider.tsx",
+          "mustContain": [
+            "from '@tbd/editor'",
+            "createBrowserMediaPicker"
+          ]
+        },
+        {
+          "file": "src/tools/video-editor-host/pages/VideoEditorPage.tsx",
+          "mustContain": [
+            "@/tools/video-editor-host/contexts/VideoEditorProvider",
+            "@/tools/video-editor-host/components/VideoEditorShell"
+          ]
+        }
+      ]
+    }
+  ],
+  "splitChecks": [
+    {
+      "id": "route-mounts-host-page",
+      "file": "src/app/routes.tsx",
+      "mustContain": [
+        "@/tools/video-editor-host/pages/VideoEditorPage"
+      ],
+      "mustNotContain": [
+        "@/tools/video-editor/pages/VideoEditorPage"
+      ]
+    },
+    {
+      "id": "host-provider-wraps-editor-provider",
+      "file": "src/tools/video-editor-host/contexts/VideoEditorProvider.tsx",
+      "mustContain": [
+        "from '@tbd/editor'",
+        "<EditorProvider"
+      ],
+      "mustNotContain": [
+        "@/tools/video-editor/contexts/VideoEditorProvider"
+      ]
+    },
+    {
+      "id": "host-shell-wraps-editor-shell",
+      "file": "src/tools/video-editor-host/components/VideoEditorShell.tsx",
+      "mustContain": [
+        "from '@tbd/editor'",
+        "<TimelineEditorShell />"
+      ],
+      "mustNotContain": [
+        "@/tools/video-editor/components/VideoEditorShell"
+      ]
+    },
+    {
+      "id": "host-page-stays-host-owned",
+      "file": "src/tools/video-editor-host/pages/VideoEditorPage.tsx",
+      "mustContain": [
+        "@/tools/video-editor-host/contexts/VideoEditorProvider",
+        "@/tools/video-editor-host/components/VideoEditorShell",
+        "@/tools/video-editor-host/data/SupabaseDataProvider"
+      ],
+      "mustNotContain": [
+        "@/tools/video-editor/pages/VideoEditorPage"
+      ]
+    }
+  ],
+  "dependencyDirection": {
+    "@tbd/schema": [],
+    "@tbd/engine": [
+      "@tbd/schema"
+    ],
+    "@tbd/editor": [
+      "@tbd/engine",
+      "@tbd/schema"
+    ],
+    "@tbd/cli": [
+      "@tbd/engine",
+      "@tbd/schema"
+    ]
+  },
+  "forbiddenPackageTerms": [
+    "AgentChat",
+    "Supabase",
+    "pinnedShotGroups",
+    "ShotGroupContextMenu",
+    "ShotGroupOverlay",
+    "VideoEditorLightboxOverlay",
+    "useFinalVideoAvailable",
+    "useStaleVariants",
+    "useActiveTaskClips",
+    "useAgentSession",
+    "tools/video-editor-host"
+  ],
+  "routeSmokeChecks": [
+    {
+      "id": "real-host-route-harness",
+      "file": "src/app/routes.test.tsx",
+      "mustContain": [
+        "vi.mock('@tbd/editor'",
+        "mounts the video editor route through the real host page",
+        "useAuthMock.mockReturnValue({ userId: 'user-1' })",
+        "useProjectSelectionContextMock.mockReturnValue({ selectedProjectId: 'project-1' })",
+        "screen.findByTestId('editor-provider')"
+      ],
+      "mustNotContain": [
+        "vi.mock('@/tools/video-editor-host/contexts/VideoEditorProvider'",
+        "vi.mock('@/tools/video-editor-host/components/VideoEditorShell'",
+        "vi.mock('@/tools/video-editor-host/pages/VideoEditorPage'"
+      ]
+    },
+    {
+      "id": "auto-create-route-harness",
+      "file": "src/app/routes.test.tsx",
+      "mustContain": [
+        "auto-creates a timeline and mounts the host shell",
+        "createTimeline).toHaveBeenCalledWith('Main timeline')",
+        "lastTimelineId: 'timeline-created'"
+      ],
+      "mustNotContain": []
+    }
+  ]
+}

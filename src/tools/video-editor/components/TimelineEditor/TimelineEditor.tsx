@@ -21,6 +21,7 @@ import { useRenderDiagnostic } from '@/tools/video-editor/hooks/usePerfDiagnosti
 import { ClipAction } from '@/tools/video-editor/components/TimelineEditor/ClipAction';
 import { DropIndicator } from '@/tools/video-editor/components/TimelineEditor/DropIndicator';
 import { TimelineCanvas } from '@/tools/video-editor/components/TimelineEditor/TimelineCanvas';
+import { getPinnedShotGroups } from '@/tools/video-editor/lib/config-utils';
 import { ROW_HEIGHT, TIMELINE_START_LEFT } from '@/tools/video-editor/lib/coordinate-utils';
 import type { ClipMeta } from '@/tools/video-editor/lib/timeline-data';
 import {
@@ -434,7 +435,7 @@ function TimelineEditorComponent() {
   const shotGroups = useShotGroups(
     data?.rows ?? [],
     shots,
-    data?.config.pinnedShotGroups,
+    getPinnedShotGroups(data?.config),
   );
   const assetGenerationMap = useMemo<Record<string, string>>(() => {
     const assets = data?.registry?.assets;
@@ -627,7 +628,7 @@ function TimelineEditorComponent() {
       assetKey,
       generationId,
       fileUrl,
-      pinnedShotGroups: dataRef.current?.config.pinnedShotGroups ?? [],
+      pinnedShotGroups: getPinnedShotGroups(dataRef.current?.config) ?? [],
       finalVideoMap,
     });
     log('[video-editor] handleDoubleClickVideoClip:start', {

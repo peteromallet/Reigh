@@ -6,19 +6,22 @@ import type {
 import {
   getClipSourceDuration,
   getConfigSignature,
+  setPinnedShotGroups,
   getStableConfigSignature,
   resolveTimelineConfig as resolveTimelineConfigShared,
   type UrlResolver,
 } from '@/tools/video-editor/lib/config-utils';
 import { migrateToFlatTracks, repairConfig, repairShotGroupContiguity } from '@/tools/video-editor/lib/migrate';
-import { TIMELINE_CLIP_FIELDS, validateSerializedConfig } from '@/tools/video-editor/lib/serialize';
+import { TIMELINE_CLIP_FIELDS, validateSerializedConfig } from '@tbd/schema';
 import type { DataProvider } from '@/tools/video-editor/data/DataProvider';
 import type {
   AssetRegistry,
   ClipType,
   ResolvedTimelineConfig,
+  TimelineApp,
   TimelineClip,
   TimelineConfig,
+  TimelinePinnedShotGroups,
   TimelineOutput,
   TrackDefinition,
   TrackKind,
@@ -91,8 +94,8 @@ const roundTimelineTime = (value: number): number => Math.round(value * TIMELINE
 
 const effectIdForClip = (clipId: string): string => `effect-${clipId}`;
 const clonePinnedShotGroups = (
-  pinnedShotGroups: TimelineConfig['pinnedShotGroups'],
-): TimelineConfig['pinnedShotGroups'] => pinnedShotGroups?.map((group) => ({
+  pinnedShotGroups: TimelinePinnedShotGroups | undefined,
+): TimelinePinnedShotGroups | undefined => pinnedShotGroups?.map((group) => ({
   shotId: group.shotId,
   trackId: group.trackId,
   clipIds: [...group.clipIds],
@@ -209,7 +212,8 @@ export const rowsToConfig = (
   output: TimelineOutput,
   clipOrder: ClipOrderMap,
   tracks: TrackDefinition[],
-  pinnedShotGroups?: TimelineConfig['pinnedShotGroups'],
+  app: TimelineApp | undefined,
+  pinnedShotGroups?: TimelinePinnedShotGroups,
 ): TimelineConfig => {
   const actionMap = new Map<string, TimelineAction>();
   const trackActionIds: Record<string, string[]> = Object.fromEntries(tracks.map((track) => [track.id, []]));
@@ -312,12 +316,11 @@ export const rowsToConfig = (
     output: { ...output },
     tracks: tracks.map((track) => ({ ...track })),
     clips,
+    ...(app ? { app: { ...app } } : {}),
   };
-  if (pinnedShotGroups && pinnedShotGroups.length > 0) {
-    config.pinnedShotGroups = clonePinnedShotGroups(pinnedShotGroups);
-  }
-  validateSerializedConfig(config);
-  return config;
+  const serializedConfig = setPinnedShotGroups(config, clonePinnedShotGroups(pinnedShotGroups));
+  validateSerializedConfig(serializedConfig);
+  return serializedConfig;
 };
 
 interface AssembleTimelineDataParams {

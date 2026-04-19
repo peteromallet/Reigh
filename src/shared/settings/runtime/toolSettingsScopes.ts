@@ -59,7 +59,7 @@ export function fetchToolSettingsScopes(
   return Promise.all([userQuery, projectQuery, shotQuery]) as Promise<[SettingsRow, SettingsRow, SettingsRow]>;
 }
 
-export function mergeToolSettingsScopes<T extends Record<string, unknown>>(
+export function mergeToolSettingsScopes<T extends object>(
   userResult: SettingsRow,
   projectResult: SettingsRow,
   shotResult: SettingsRow,

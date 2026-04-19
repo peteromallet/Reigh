@@ -182,10 +182,11 @@ export const useClipResizeGesture = ({
           latestRef.current.interactionStateRef.current.resize = false;
           notifyInteractionEndIfIdle(latestRef.current.interactionStateRef);
         }
+        const previewClientX = clientX ?? currentState.session.startClientX;
         const preview = !cancelled && Number.isFinite(clientX)
           ? computeResizePreview(
               currentState.session,
-              clientX,
+              previewClientX,
               latestRef.current.pixelToTime,
               latestRef.current.pixelsPerSecond,
               latestRef.current.minDuration,

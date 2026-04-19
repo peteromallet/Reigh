@@ -2,11 +2,10 @@ import type { RefObject } from 'react';
 import { forwardRef, memo, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Pause, Play, SkipBack } from 'lucide-react';
 import { Player, type PlayerRef } from '@remotion/player';
+import { TimelineRenderer, getClipDurationInFrames, parseResolution, secondsToFrames } from '@tbd/engine';
 import { Button } from '@/shared/components/ui/button';
-import { TimelineRenderer } from '@/tools/video-editor/compositions/TimelineRenderer';
 import { useEffectDiagnostic, useRenderDiagnostic } from '@/tools/video-editor/hooks/usePerfDiagnostics';
-import { getClipDurationInFrames, parseResolution, secondsToFrames } from '@/tools/video-editor/lib/config-utils';
-import type { ResolvedTimelineConfig } from '@/tools/video-editor/types';
+import type { ResolvedTimelineConfig } from '@tbd/engine';
 
 export interface PreviewHandle {
   seek: (time: number) => void;

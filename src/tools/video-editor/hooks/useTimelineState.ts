@@ -811,7 +811,8 @@ export function useTimelineState(): UseTimelineStateResult {
   // Seed the external store before descendants render for the first time so
   // mounted-provider readers such as AgentChat and pending-add helpers do not
   // observe the placeholder slice values from createTimelineStore().
-  syncInitialTimelineStoreBootstrap(storeRef.current, {
+  const store = storeRef.current;
+  syncInitialTimelineStoreBootstrap(store, {
     data: editorData,
     ops: editorOps,
     chrome,
@@ -819,16 +820,16 @@ export function useTimelineState(): UseTimelineStateResult {
   });
 
   useLayoutEffect(() => {
-    storeRef.current.getState().syncSlices({
+    store.getState().syncSlices({
       data: editorData,
       ops: editorOps,
       chrome,
       playback: playbackValue,
     });
-  }, [chrome, editorData, editorOps, playbackValue]);
+  }, [chrome, editorData, editorOps, playbackValue, store]);
 
   return {
-    store: storeRef.current,
+    store,
     editor,
     editorData,
     editorOps,

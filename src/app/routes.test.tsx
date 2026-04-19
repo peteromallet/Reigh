@@ -7,9 +7,25 @@ import { AppRoutes } from './routes';
 const {
   probeStoredSessionTokenMock,
   normalizeAndPresentErrorMock,
+  useAuthMock,
+  useProjectSelectionContextMock,
+  useToolSettingsMock,
+  useTimelinesListMock,
+  supabaseDataProviderCtorMock,
+  createBrowserMediaPickerMock,
+  editorProviderMock,
+  timelineEditorShellMock,
 } = vi.hoisted(() => ({
   probeStoredSessionTokenMock: vi.fn(),
   normalizeAndPresentErrorMock: vi.fn(),
+  useAuthMock: vi.fn(),
+  useProjectSelectionContextMock: vi.fn(),
+  useToolSettingsMock: vi.fn(),
+  useTimelinesListMock: vi.fn(),
+  supabaseDataProviderCtorMock: vi.fn(),
+  createBrowserMediaPickerMock: vi.fn(),
+  editorProviderMock: vi.fn(),
+  timelineEditorShellMock: vi.fn(),
 }));
 
 vi.mock('@/pages/Home/HomePage', () => ({
@@ -41,9 +57,6 @@ vi.mock('@/tools/join-clips/pages/JoinClipsPage', () => ({
 }));
 vi.mock('@/tools/edit-video/pages/EditVideoPage', () => ({
   default: () => <div data-testid="edit-video-page" />,
-}));
-vi.mock('@/tools/video-editor/pages/VideoEditorPage', () => ({
-  default: () => <div data-testid="video-editor-page" />,
 }));
 vi.mock('@/tools/edit-images/pages/EditImagesPage', () => ({
   default: () => <div data-testid="edit-images-page" />,
@@ -84,6 +97,46 @@ vi.mock('@/shared/lib/supabaseSession', () => ({
 vi.mock('@/shared/lib/errorHandling/runtimeError', () => ({
   normalizeAndPresentError: normalizeAndPresentErrorMock,
 }));
+vi.mock('@/shared/contexts/AuthContext', () => ({
+  useAuth: (...args: unknown[]) => useAuthMock(...args),
+}));
+vi.mock('@/shared/contexts/ProjectContext', () => ({
+  useProjectSelectionContext: (...args: unknown[]) => useProjectSelectionContextMock(...args),
+}));
+vi.mock('@/shared/hooks/settings/useToolSettings', () => ({
+  useToolSettings: (...args: unknown[]) => useToolSettingsMock(...args),
+}));
+vi.mock('@/tools/video-editor-host/hooks/useTimelinesList', () => ({
+  useTimelinesList: (...args: unknown[]) => useTimelinesListMock(...args),
+}));
+vi.mock('@/tools/video-editor-host/data/SupabaseDataProvider', () => ({
+  SupabaseDataProvider: class MockSupabaseDataProvider {
+    constructor(args: unknown) {
+      supabaseDataProviderCtorMock(args);
+    }
+  },
+}));
+vi.mock('@tbd/editor', () => ({
+  createBrowserMediaPicker: () => {
+    createBrowserMediaPickerMock();
+    return { open: vi.fn() };
+  },
+  EditorProvider: ({
+    children,
+    ...props
+  }: {
+    children: React.ReactNode;
+    timelineId: string;
+    hostContext: { userId: string; brand: { appName: string } };
+  }) => {
+    editorProviderMock(props);
+    return <div data-testid="editor-provider">{children}</div>;
+  },
+  TimelineEditorShell: (props: { timelineId?: string }) => {
+    timelineEditorShellMock(props);
+    return <div data-testid="timeline-editor-shell">mounted</div>;
+  },
+}));
 
 function renderRoute(path: string) {
   return render(
@@ -98,6 +151,25 @@ describe('AppRoutes', () => {
     probeStoredSessionTokenMock.mockReset();
     probeStoredSessionTokenMock.mockReturnValue({ ok: true, value: null });
     normalizeAndPresentErrorMock.mockReset();
+    useAuthMock.mockReset();
+    useAuthMock.mockReturnValue({ userId: null });
+    useProjectSelectionContextMock.mockReset();
+    useProjectSelectionContextMock.mockReturnValue({ selectedProjectId: null });
+    useToolSettingsMock.mockReset();
+    useToolSettingsMock.mockReturnValue({ settings: null, update: vi.fn().mockResolvedValue(undefined) });
+    useTimelinesListMock.mockReset();
+    useTimelinesListMock.mockReturnValue({
+      isLoading: false,
+      error: null,
+      data: [],
+      createTimeline: { isPending: false, mutateAsync: vi.fn() },
+      renameTimeline: { mutateAsync: vi.fn() },
+      deleteTimeline: { mutateAsync: vi.fn() },
+    });
+    supabaseDataProviderCtorMock.mockReset();
+    createBrowserMediaPickerMock.mockReset();
+    editorProviderMock.mockReset();
+    timelineEditorShellMock.mockReset();
   });
 
   it('renders the /home route inside MemoryRouter', async () => {
@@ -114,19 +186,85 @@ describe('AppRoutes', () => {
     expect(await screen.findByTestId('default-tool-redirect')).toBeInTheDocument();
   });
 
-  it('renders nested tool routes through the layout outlet', () => {
-    renderRoute('/tools/video-editor');
+  it('mounts the video editor route through the real host page once auth, project, provider, and timeline prerequisites are satisfied', async () => {
+    const update = vi.fn().mockResolvedValue(undefined);
+    useAuthMock.mockReturnValue({ userId: 'user-1' });
+    useProjectSelectionContextMock.mockReturnValue({ selectedProjectId: 'project-1' });
+    useToolSettingsMock.mockReturnValue({
+      settings: { lastTimelineId: 'timeline-1' },
+      update,
+    });
+    useTimelinesListMock.mockReturnValue({
+      isLoading: false,
+      error: null,
+      data: [{ id: 'timeline-1', name: 'Main timeline' }],
+      createTimeline: { isPending: false, mutateAsync: vi.fn() },
+      renameTimeline: { mutateAsync: vi.fn() },
+      deleteTimeline: { mutateAsync: vi.fn() },
+    });
 
-    expect(screen.getByTestId('video-editor-page')).toBeInTheDocument();
+    renderRoute('/tools/video-editor?timeline=timeline-1');
+
+    expect(await screen.findByTestId('editor-provider')).toBeInTheDocument();
+    expect(screen.getByTestId('timeline-editor-shell')).toHaveTextContent('mounted');
+    expect(supabaseDataProviderCtorMock).toHaveBeenCalledWith({ projectId: 'project-1', userId: 'user-1' });
+    expect(createBrowserMediaPickerMock).toHaveBeenCalledTimes(1);
+    expect(editorProviderMock).toHaveBeenCalledWith(expect.objectContaining({
+      timelineId: 'timeline-1',
+      hostContext: expect.objectContaining({
+        userId: 'user-1',
+        brand: { appName: 'Main timeline' },
+      }),
+      ports: expect.objectContaining({
+        dataProvider: expect.anything(),
+      }),
+    }));
+    expect(timelineEditorShellMock).toHaveBeenCalledWith({});
   });
 
-  it('renders public routes outside the layout tree', () => {
+  it('auto-creates a timeline and mounts the host shell when the editor route has no selected timeline yet', async () => {
+    const update = vi.fn().mockResolvedValue(undefined);
+    let timelinesData: Array<{ id: string; name: string; updated_at: string }> = [];
+    const createTimeline = vi.fn().mockImplementation(async () => {
+      timelinesData = [{ id: 'timeline-created', name: 'Main timeline', updated_at: '2026-04-19T00:00:00.000Z' }];
+      return { id: 'timeline-created' };
+    });
+    useAuthMock.mockReturnValue({ userId: 'user-1' });
+    useProjectSelectionContextMock.mockReturnValue({ selectedProjectId: 'project-1' });
+    useToolSettingsMock.mockReturnValue({
+      settings: null,
+      update,
+    });
+    useTimelinesListMock.mockImplementation(() => ({
+      isLoading: false,
+      error: null,
+      data: timelinesData,
+      createTimeline: { isPending: false, mutateAsync: createTimeline },
+      renameTimeline: { mutateAsync: vi.fn() },
+      deleteTimeline: { mutateAsync: vi.fn() },
+    }));
+
+    renderRoute('/tools/video-editor');
+
+    expect(await screen.findByTestId('editor-provider')).toBeInTheDocument();
+    expect(createTimeline).toHaveBeenCalledWith('Main timeline');
+    expect(update).toHaveBeenCalledWith('project', { lastTimelineId: 'timeline-created' });
+    expect(editorProviderMock).toHaveBeenCalledWith(expect.objectContaining({
+      timelineId: 'timeline-created',
+      hostContext: expect.objectContaining({
+        userId: 'user-1',
+        brand: { appName: 'Main timeline' },
+      }),
+    }));
+  });
+
+  it('renders public routes outside the layout tree', async () => {
     renderRoute('/payments/success');
 
     expect(screen.getByTestId('payment-success-page')).toBeInTheDocument();
   });
 
-  it('renders the catch-all route for unknown paths', () => {
+  it('renders the catch-all route for unknown paths', async () => {
     renderRoute('/does-not-exist');
 
     expect(screen.getByTestId('not-found-page')).toBeInTheDocument();

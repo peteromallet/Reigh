@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import type { Shot } from '@/domains/generation/types';
 import { resolveGroupTrackId } from '@/tools/video-editor/lib/pinned-group-projection';
-import type { TimelineConfig } from '@/tools/video-editor/types';
+import type { TimelinePinnedShotGroups } from '@/tools/video-editor/types';
 import type { TimelineRow } from '@/tools/video-editor/types/timeline-canvas';
 
 const SHOT_COLORS = ['#a855f7', '#ef4444', '#22c55e', '#3b82f6', '#f59e0b', '#14b8a6', '#ec4899', '#84cc16'];
@@ -29,7 +29,7 @@ export function getShotColor(shotId: string): string {
 export function useShotGroups(
   rows: TimelineRow[],
   shots: Shot[] | undefined,
-  pinnedShotGroups?: TimelineConfig['pinnedShotGroups'],
+  pinnedShotGroups?: TimelinePinnedShotGroups,
 ): ShotGroup[] {
   return useMemo(() => {
     const rowIndexById = new Map(rows.map((row, rowIndex) => [row.id, rowIndex]));

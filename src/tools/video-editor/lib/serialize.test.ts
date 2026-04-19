@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import {
+  getPinnedShotGroups,
+  getTimelineAppNamespace,
+  REIGH_TIMELINE_APP_NAMESPACE,
+  setPinnedShotGroups,
+} from '@/tools/video-editor/lib/config-utils';
 import { repairConfig } from '@/tools/video-editor/lib/migrate';
-import { serializeForDisk, validateSerializedConfig } from '@/tools/video-editor/lib/serialize';
-import type { ResolvedTimelineConfig, TimelineConfig } from '@/tools/video-editor/types';
+import { serializeForDisk, validateSerializedConfig } from '@tbd/schema';
+import type { ResolvedTimelineConfig, TimelineConfig, TimelinePinnedShotGroups } from '@/tools/video-editor/types';
 
 describe('video-editor serialization', () => {
   it('preserves exact source fields and strips resolved-only data', () => {
@@ -82,7 +88,7 @@ describe('video-editor serialization', () => {
       },
     } as unknown as ResolvedTimelineConfig;
 
-    const pinnedShotGroups: TimelineConfig['pinnedShotGroups'] = [
+    const pinnedShotGroups: TimelinePinnedShotGroups = [
       {
         shotId: 'shot-1',
         trackId: 'V1',
@@ -103,10 +109,12 @@ describe('video-editor serialization', () => {
       },
     ];
 
-    const serialized = serializeForDisk(resolved, pinnedShotGroups);
+    const serialized = serializeForDisk(setPinnedShotGroups(resolved, pinnedShotGroups));
 
     expect(() => validateSerializedConfig(serialized)).not.toThrow();
-    expect(serialized.pinnedShotGroups).toEqual(pinnedShotGroups);
+    expect(getPinnedShotGroups(serialized)).toEqual(pinnedShotGroups);
+    expect(Object.prototype.hasOwnProperty.call(serialized, 'pinnedShotGroups')).toBe(false);
+    expect(getTimelineAppNamespace(serialized, REIGH_TIMELINE_APP_NAMESPACE)?.pinnedShotGroups).toEqual(pinnedShotGroups);
   });
 
   it('round-trips legacy pinnedShotGroups through repairConfig before serialization', () => {
@@ -165,32 +173,37 @@ describe('video-editor serialization', () => {
       }],
     } as TimelineConfig);
 
-    expect(repaired.pinnedShotGroups).toEqual([{
-      shotId: 'shot-1',
-      trackId: 'V1',
-      clipIds: ['clip-1', 'clip-2'],
-      mode: 'images',
-      imageClipSnapshot: [
-        {
-          clipId: 'clip-1',
-          assetKey: 'asset-1',
-          start: 1,
-          end: 5,
-          meta: { clipType: 'hold', hold: 4 },
-        },
-      ],
-    }]);
+    expect(getPinnedShotGroups(repaired)).toEqual([
+      expect.objectContaining({
+        shotId: 'shot-1',
+        trackId: 'V1',
+        clipIds: ['clip-2', 'clip-1'],
+        mode: 'images',
+        imageClipSnapshot: [
+          {
+            clipId: 'clip-1',
+            assetKey: 'asset-1',
+            start: 1,
+            end: 5,
+            meta: { clipType: 'hold', hold: 4 },
+          },
+        ],
+      }),
+    ]);
 
-    const serialized = serializeForDisk({
+    const serialized = serializeForDisk(setPinnedShotGroups({
       output: repaired.output,
       tracks: repaired.tracks ?? [],
       clips: repaired.clips,
       registry: {},
-    } as unknown as ResolvedTimelineConfig, repaired.pinnedShotGroups);
+      app: repaired.app,
+    } as unknown as ResolvedTimelineConfig, getPinnedShotGroups(repaired)));
 
     expect(() => validateSerializedConfig(serialized)).not.toThrow();
-    expect(serialized.pinnedShotGroups).toEqual(repaired.pinnedShotGroups);
-    expect(serialized.pinnedShotGroups?.[0]).not.toHaveProperty('start');
-    expect(serialized.pinnedShotGroups?.[0]).not.toHaveProperty('children');
+    expect(Object.prototype.hasOwnProperty.call(repaired, 'pinnedShotGroups')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(serialized, 'pinnedShotGroups')).toBe(false);
+    expect(getPinnedShotGroups(serialized)).toEqual(getPinnedShotGroups(repaired));
+    expect(getPinnedShotGroups(serialized)?.[0]).not.toHaveProperty('start');
+    expect(getPinnedShotGroups(serialized)?.[0]).not.toHaveProperty('children');
   });
 });

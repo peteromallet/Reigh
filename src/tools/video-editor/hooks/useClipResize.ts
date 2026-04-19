@@ -7,6 +7,7 @@ import type {
 } from '@/tools/video-editor/lib/resize-math';
 import { getSourceTime, type ClipMeta, type TimelineData } from '@/tools/video-editor/lib/timeline-data';
 import { resolveOverlaps } from '@/tools/video-editor/lib/resolve-overlaps';
+import { getPinnedShotGroups } from '@/tools/video-editor/lib/config-utils';
 import { ensureGroupContiguity } from '@/tools/video-editor/lib/shot-group-contiguity';
 import type { TimelineApplyEdit } from '@/tools/video-editor/hooks/timeline-state-types';
 import type { TrackKind } from '@/tools/video-editor/types';
@@ -260,7 +261,7 @@ export function useClipResize({
 
     if (session.context.kind === 'group') {
       const updatedRows = applyActionUpdates(current.rows, session.rowId, updates);
-      let nextRows = ensureGroupContiguity(updatedRows, current.config.pinnedShotGroups);
+      let nextRows = ensureGroupContiguity(updatedRows, getPinnedShotGroups(current.config));
 
       // Resolve overlaps between group clips and non-group siblings on the same row.
       // The resized group clip may extend into non-group clips; resolveOverlaps trims it to fit.

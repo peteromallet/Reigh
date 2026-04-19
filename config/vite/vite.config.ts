@@ -34,6 +34,9 @@ export default defineConfig(() => {
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "../../src"),
+        "@tbd/editor": path.resolve(__dirname, "../../packages/editor/src/index.ts"),
+        "@tbd/schema": path.resolve(__dirname, "../../packages/schema/src/index.ts"),
+        "@tbd/engine": path.resolve(__dirname, "../../packages/engine/src/index.ts"),
       },
       dedupe: ['react', 'react-dom', 'react-reconciler'],
     },
