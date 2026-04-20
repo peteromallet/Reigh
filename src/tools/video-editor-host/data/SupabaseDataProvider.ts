@@ -1,6 +1,7 @@
 import { getSupabaseClient } from '@/integrations/supabase/client';
 import { generateUUID } from '@/shared/lib/taskCreation/ids';
 import { createDefaultTimelineConfig, validateSerializedConfig } from '@tbd/schema';
+import { canonicalizeTimelineConfig } from '@/tools/video-editor/lib/config-utils';
 import { extractAssetRegistryEntry } from '@/tools/video-editor/lib/mediaMetadata';
 import {
   TimelineNotFoundError,
@@ -31,7 +32,7 @@ function mapCheckpointRow(row: TimelineCheckpointRow): Checkpoint {
   return {
     id: row.id,
     timelineId: row.timeline_id,
-    config: row.config,
+    config: canonicalizeTimelineConfig(row.config),
     createdAt: row.created_at,
     triggerType: row.trigger_type,
     label: row.label,
@@ -59,7 +60,8 @@ export class SupabaseDataProvider implements DataProvider {
       throw error;
     }
 
-    const config = (data?.config ?? createDefaultTimelineConfig()) as TimelineConfig;
+    const rawConfig = (data?.config ?? createDefaultTimelineConfig()) as TimelineConfig;
+    const config = canonicalizeTimelineConfig(rawConfig);
     validateSerializedConfig(config);
 
     return {
@@ -76,7 +78,8 @@ export class SupabaseDataProvider implements DataProvider {
     expectedVersion: number,
     registry?: AssetRegistry,
   ): Promise<number> {
-    validateSerializedConfig(config);
+    const canonical = canonicalizeTimelineConfig(config);
+    validateSerializedConfig(canonical);
 
     const supabase = getSupabaseClient() as any;
     const rpcName = registry !== undefined
@@ -86,13 +89,13 @@ export class SupabaseDataProvider implements DataProvider {
       ? {
           p_timeline_id: timelineId,
           p_expected_version: expectedVersion,
-          p_config: config,
+          p_config: canonical,
           p_asset_registry: registry,
         }
       : {
           p_timeline_id: timelineId,
           p_expected_version: expectedVersion,
-          p_config: config,
+          p_config: canonical,
         };
     const { data, error } = await supabase.rpc(rpcName as never, rpcParams as never);
 
@@ -109,7 +112,8 @@ export class SupabaseDataProvider implements DataProvider {
   }
 
   async saveCheckpoint(timelineId: string, checkpoint: Omit<Checkpoint, 'id'>): Promise<string> {
-    validateSerializedConfig(checkpoint.config);
+    const canonicalConfig = canonicalizeTimelineConfig(checkpoint.config);
+    validateSerializedConfig(canonicalConfig);
 
     const supabase = getSupabaseClient() as any;
     const { data, error } = await supabase
@@ -117,7 +121,7 @@ export class SupabaseDataProvider implements DataProvider {
       .insert({
         timeline_id: timelineId,
         user_id: this.options.userId,
-        config: checkpoint.config,
+        config: canonicalConfig,
         trigger_type: checkpoint.triggerType,
         label: checkpoint.label,
         edits_since_last_checkpoint: checkpoint.editsSinceLastCheckpoint,

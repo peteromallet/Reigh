@@ -12,6 +12,7 @@ export default {
 		"./components/**/*.{ts,tsx}",
 		"./app/**/*.{ts,tsx}",
 		"./src/**/*.{ts,tsx}",
+		"./packages/*/src/**/*.{ts,tsx}",
 	],
 	prefix: "",
 	corePlugins: {
