@@ -138,6 +138,8 @@ export type CustomEffectEntry = {
   category?: 'entrance' | 'exit' | 'continuous';
 };
 
+export type TimelineApp = Record<string, unknown>;
+
 export type PinnedShotImageClipSnapshot = {
   clipId: string;
   assetKey?: string;
@@ -183,6 +185,7 @@ export type TimelineConfig = {
   clips: TimelineClip[];
   tracks?: TrackDefinition[];
   pinnedShotGroups?: PinnedShotGroup[];
+  app?: TimelineApp;
 };
 
 export type AssetRegistryEntry = {
@@ -213,6 +216,7 @@ export type ResolvedTimelineConfig = {
   tracks: TrackDefinition[];
   clips: ResolvedTimelineClip[];
   registry: Record<string, ResolvedAssetRegistryEntry>;
+  app?: TimelineApp;
 };
 
 export type TimelineCompositionProps = {

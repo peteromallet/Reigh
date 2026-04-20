@@ -95,7 +95,7 @@ export const serializeTrackForDisk = (track: TrackDefinition): TrackDefinition =
   return serializedTrack as TrackDefinition;
 };
 
-const ALLOWED_TOP_LEVEL_KEYS = new Set(['output', 'clips', 'tracks', 'pinnedShotGroups']);
+const ALLOWED_TOP_LEVEL_KEYS = new Set(['output', 'clips', 'tracks', 'pinnedShotGroups', 'app']);
 
 export const validateSerializedConfig = (config: TimelineConfig): void => {
   const topLevelKeys = Object.keys(config);
@@ -129,6 +129,7 @@ export const serializeForDisk = (
     output: { ...resolved.output },
     tracks: resolved.tracks.map(serializeTrackForDisk),
     clips: resolved.clips.map(serializeClipForDisk),
+    ...(resolved.app ? { app: { ...resolved.app } } : {}),
   };
 
   if (pinnedShotGroups && pinnedShotGroups.length > 0) {

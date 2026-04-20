@@ -1,10 +1,95 @@
 import type {
   AssetRegistry,
+  PinnedShotGroup,
   ResolvedAssetRegistryEntry,
   ResolvedTimelineConfig,
   TimelineClip,
   TimelineConfig,
 } from '@/tools/video-editor/types';
+
+const REIGH_APP_NAMESPACE = 'x-reigh';
+
+type TimelineConfigWithLegacyPinnedShotGroups = TimelineConfig & {
+  pinnedShotGroups?: PinnedShotGroup[];
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+};
+
+const clonePinnedShotGroups = (
+  pinnedShotGroups: PinnedShotGroup[] | undefined,
+): PinnedShotGroup[] | undefined => pinnedShotGroups?.map((group) => ({
+  shotId: group.shotId,
+  trackId: group.trackId,
+  clipIds: [...group.clipIds],
+  mode: group.mode,
+  videoAssetKey: group.videoAssetKey,
+  imageClipSnapshot: group.imageClipSnapshot?.map((snapshot) => ({
+    ...snapshot,
+    meta: { ...snapshot.meta },
+  })),
+}));
+
+const getReighAppState = (config: TimelineConfig): Record<string, unknown> | undefined => {
+  if (!isRecord(config.app)) {
+    return undefined;
+  }
+
+  const namespaced = config.app[REIGH_APP_NAMESPACE];
+  return isRecord(namespaced) ? namespaced : undefined;
+};
+
+export const getPinnedShotGroups = (
+  config: TimelineConfigWithLegacyPinnedShotGroups,
+): PinnedShotGroup[] | undefined => {
+  const namespacedPinnedShotGroups = getReighAppState(config)?.pinnedShotGroups;
+  return Array.isArray(namespacedPinnedShotGroups)
+    ? namespacedPinnedShotGroups as PinnedShotGroup[]
+    : config.pinnedShotGroups;
+};
+
+export const setPinnedShotGroups = (
+  config: TimelineConfigWithLegacyPinnedShotGroups,
+  pinnedShotGroups: PinnedShotGroup[] | undefined,
+): TimelineConfigWithLegacyPinnedShotGroups => {
+  const nextPinnedShotGroups = clonePinnedShotGroups(pinnedShotGroups);
+  const nextApp = isRecord(config.app) ? { ...config.app } : {};
+  const nextNamespace = {
+    ...(getReighAppState(config) ?? {}),
+  };
+
+  if (nextPinnedShotGroups && nextPinnedShotGroups.length > 0) {
+    nextNamespace.pinnedShotGroups = nextPinnedShotGroups;
+  } else {
+    delete nextNamespace.pinnedShotGroups;
+  }
+
+  if (Object.keys(nextNamespace).length > 0) {
+    nextApp[REIGH_APP_NAMESPACE] = nextNamespace;
+  } else {
+    delete nextApp[REIGH_APP_NAMESPACE];
+  }
+
+  return {
+    ...config,
+    ...(nextPinnedShotGroups && nextPinnedShotGroups.length > 0
+      ? { pinnedShotGroups: nextPinnedShotGroups }
+      : { pinnedShotGroups: undefined }),
+    ...(Object.keys(nextApp).length > 0 ? { app: nextApp } : { app: undefined }),
+  };
+};
+
+export const canonicalizeTimelineConfig = (
+  config: TimelineConfigWithLegacyPinnedShotGroups,
+): TimelineConfig => {
+  const pinnedShotGroups = getPinnedShotGroups(config);
+  if (!pinnedShotGroups && !isRecord(config.app)) {
+    return config;
+  }
+
+  return setPinnedShotGroups(config, pinnedShotGroups);
+};
 
 export const parseResolution = (resolution: string): { width: number; height: number } => {
   const [width, height] = resolution.toLowerCase().split('x');
@@ -229,5 +314,6 @@ export const resolveTimelineConfig = async (
     tracks: config.tracks ?? [],
     clips,
     registry: resolvedRegistry,
+    ...(config.app ? { app: { ...config.app } } : {}),
   };
 };

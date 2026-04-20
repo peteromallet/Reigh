@@ -1,5 +1,6 @@
 import { getSupabaseClient } from '@/integrations/supabase/client';
 import { generateUUID } from '@/shared/lib/taskCreation/ids';
+import { canonicalizeTimelineConfig } from '@/tools/video-editor/lib/config-utils';
 import { validateSerializedConfig } from '@/tools/video-editor/lib/serialize';
 import { createDefaultTimelineConfig } from '@/tools/video-editor/lib/defaults';
 import { extractAssetRegistryEntry } from '@/tools/video-editor/lib/mediaMetadata';
@@ -29,10 +30,13 @@ type TimelineCheckpointRow = {
 };
 
 function mapCheckpointRow(row: TimelineCheckpointRow): Checkpoint {
+  const config = canonicalizeTimelineConfig(row.config);
+  validateSerializedConfig(config);
+
   return {
     id: row.id,
     timelineId: row.timeline_id,
-    config: row.config,
+    config,
     createdAt: row.created_at,
     triggerType: row.trigger_type,
     label: row.label,
@@ -60,7 +64,9 @@ export class SupabaseDataProvider implements DataProvider {
       throw error;
     }
 
-    const config = (data?.config ?? createDefaultTimelineConfig()) as TimelineConfig;
+    const config = canonicalizeTimelineConfig(
+      (data?.config ?? createDefaultTimelineConfig()) as TimelineConfig,
+    );
     validateSerializedConfig(config);
 
     return {

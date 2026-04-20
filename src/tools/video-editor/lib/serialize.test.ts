@@ -42,6 +42,9 @@ describe('video-editor serialization', () => {
       registry: {
         'asset-1': { file: 'foo.png', src: 'https://example.com/foo.png' },
       },
+      app: {
+        arbitrary: { enabled: true },
+      },
     } as unknown as ResolvedTimelineConfig;
 
     const serialized = serializeForDisk(resolved);
@@ -50,6 +53,9 @@ describe('video-editor serialization', () => {
     expect(serialized.clips[0]).not.toHaveProperty('assetEntry');
     expect(serialized.clips[0]).not.toHaveProperty('extra');
     expect(serialized.tracks?.[0]).not.toHaveProperty('extra');
+    expect(serialized.app).toEqual({
+      arbitrary: { enabled: true },
+    });
     expect(() => validateSerializedConfig(serialized)).not.toThrow();
   });
 

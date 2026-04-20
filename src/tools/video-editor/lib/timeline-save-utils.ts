@@ -40,6 +40,7 @@ export function buildDataFromCurrentRegistry(
       assetEntry: clip.asset ? current.resolvedConfig.registry[clip.asset] : undefined,
     })),
     registry: current.resolvedConfig.registry,
+    ...(migratedConfig.app ? { app: { ...migratedConfig.app } } : {}),
   };
 
   return assembleTimelineData({
@@ -83,6 +84,7 @@ export function buildDataFromSnapshot(
       assetEntry: clip.asset ? mergedResolvedRegistry[clip.asset] : undefined,
     })),
     registry: mergedResolvedRegistry,
+    ...(migratedConfig.app ? { app: { ...migratedConfig.app } } : {}),
   };
 
   return assembleTimelineData({

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  canonicalizeTimelineConfig,
+  getPinnedShotGroups,
   getSanitizedAssetFile,
   getSanitizedMediaSrc,
   getSanitizedMediaTrimProps,
@@ -70,5 +72,87 @@ describe('config-utils media sanitizers', () => {
 
     expect(resolved.registry).toEqual({});
     expect(resolved.clips[0].assetEntry).toBeUndefined();
+  });
+
+  it('canonicalizes legacy top-level pinnedShotGroups into the x-reigh app namespace', () => {
+    const pinnedShotGroups = [{
+      shotId: 'shot-1',
+      trackId: 'V1',
+      clipIds: ['clip-1'],
+      mode: 'images' as const,
+    }];
+
+    const canonical = canonicalizeTimelineConfig({
+      output: { file: 'out.mp4', resolution: '1920x1080', fps: 30 },
+      clips: [],
+      tracks: [],
+      pinnedShotGroups,
+    });
+
+    expect(canonical.app).toEqual({
+      'x-reigh': {
+        pinnedShotGroups,
+      },
+    });
+    expect(getPinnedShotGroups(canonical)).toEqual(pinnedShotGroups);
+    expect(canonical.pinnedShotGroups).toEqual(pinnedShotGroups);
+  });
+
+  it('backfills the legacy top-level field from namespaced app data for compatibility', () => {
+    const pinnedShotGroups = [{
+      shotId: 'shot-2',
+      trackId: 'V2',
+      clipIds: ['clip-2'],
+      mode: 'video' as const,
+    }];
+
+    const canonical = canonicalizeTimelineConfig({
+      output: { file: 'out.mp4', resolution: '1920x1080', fps: 30 },
+      clips: [],
+      tracks: [],
+      app: {
+        'x-reigh': {
+          pinnedShotGroups,
+        },
+      },
+    });
+
+    expect(canonical.pinnedShotGroups).toEqual(pinnedShotGroups);
+    expect(getPinnedShotGroups(canonical)).toEqual(pinnedShotGroups);
+  });
+
+  it('preserves generic app data when resolving timeline config', async () => {
+    const resolved = await resolveTimelineConfig(
+      {
+        output: { file: 'out.mp4', resolution: '1920x1080', fps: 30 },
+        clips: [],
+        tracks: [],
+        app: {
+          arbitrary: { enabled: true },
+          'x-reigh': {
+            pinnedShotGroups: [{
+              shotId: 'shot-1',
+              trackId: 'V1',
+              clipIds: ['clip-1'],
+              mode: 'images',
+            }],
+          },
+        },
+      },
+      { assets: {} },
+      async (file: string) => `https://example.com/${file}`,
+    );
+
+    expect(resolved.app).toEqual({
+      arbitrary: { enabled: true },
+      'x-reigh': {
+        pinnedShotGroups: [{
+          shotId: 'shot-1',
+          trackId: 'V1',
+          clipIds: ['clip-1'],
+          mode: 'images',
+        }],
+      },
+    });
   });
 });
