@@ -2,16 +2,19 @@ import {
   useEffect,
   useRef,
 } from 'react';
+import {
+  usePollSync,
+  useTimelinePersistence,
+  type UsePollSyncQueries,
+} from '@tbd/editor';
 import type { InteractionStateRef } from '@/tools/video-editor/lib/interaction-state';
 import { useTimelineCommit } from '@/tools/video-editor/hooks/useTimelineCommit';
 import { TimelineEventBus } from '@/tools/video-editor/hooks/useTimelineEventBus';
-import { useTimelinePersistence } from '@/tools/video-editor/hooks/useTimelinePersistence';
-import { usePollSync, type UsePollSyncQueries } from '@/tools/video-editor/hooks/usePollSync';
-import type { TimelineStoreApi } from '@/tools/video-editor/hooks/timelineStore';
+import type { TimelineStoreApi } from '@tbd/editor';
 import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext';
 import type { DataProvider } from '@/tools/video-editor/data/DataProvider';
 export { shouldAcceptPolledData } from '@/tools/video-editor/lib/timeline-save-utils';
-export type { SaveStatus } from '@/tools/video-editor/hooks/useTimelinePersistence';
+export type { SaveStatus } from '@tbd/editor';
 
 type UseTimelineSaveQueries = UsePollSyncQueries;
 
@@ -46,10 +49,10 @@ export function useTimelineSave(
     configVersionRef,
     lastSavedSignatureRef,
     interactionStateRef,
-  });
+  } as never);
 
   useEffect(() => {
-    return eventBusRef.current.on('scheduleSave', persistence.scheduleSave);
+    return eventBusRef.current.on('scheduleSave', persistence.scheduleSave as never);
   }, [persistence.scheduleSave]);
 
   usePollSync({
@@ -67,7 +70,7 @@ export function useTimelineSave(
     lastSavedSignatureRef,
     isSavingRef: persistence.isSavingRef,
     interactionStateRef,
-  });
+  } as never);
 
   return {
     data: commit.data,

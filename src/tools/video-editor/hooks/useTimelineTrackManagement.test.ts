@@ -1,6 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { buildTimelineData } from '@/tools/video-editor/lib/timeline-data';
+import { setPinnedShotGroups } from '@/tools/video-editor/lib/config-utils';
 import { serializeForDisk } from '@tbd/schema';
 import {
   useTimelineTrackManagement,
@@ -136,6 +137,15 @@ describe('useTimelineTrackManagement', () => {
       makeTrack('V1', 'visual'),
       makeTrack('V2', 'visual'),
     ];
+    const config = setPinnedShotGroups({
+      output: {
+        resolution: '1280x720',
+        fps: 30,
+        file: 'out.mp4',
+      },
+      tracks,
+      clips: [{ id: 'clip-1', at: 0, track: 'V1', clipType: 'hold', hold: 2 }],
+    }, [makePinnedGroup({ shotId: 'shot-1', trackId: 'V1', clipIds: ['clip-1'], mode: 'images' })]);
     const dataRef = {
       current: {
         rows: [
@@ -147,16 +157,7 @@ describe('useTimelineTrackManagement', () => {
           'clip-1': { track: 'V1', clipType: 'hold', hold: 2 },
         },
         clipOrder: { V1: ['clip-1'], V2: [] },
-        config: {
-          output: {
-            resolution: '1280x720',
-            fps: 30,
-            file: 'out.mp4',
-          },
-          tracks,
-          clips: [{ id: 'clip-1', at: 0, track: 'V1', clipType: 'hold', hold: 2 }],
-          pinnedShotGroups: [makePinnedGroup({ shotId: 'shot-1', trackId: 'V1', clipIds: ['clip-1'], mode: 'images' })],
-        },
+        config,
         resolvedConfig: makeResolvedConfig(tracks),
       },
     } as any;
@@ -200,6 +201,15 @@ describe('useTimelineTrackManagement', () => {
       makeTrack('V2', 'visual'),
     ];
     const applyEdit = vi.fn();
+    const config = setPinnedShotGroups({
+      output: {
+        resolution: '1280x720',
+        fps: 30,
+        file: 'out.mp4',
+      },
+      tracks,
+      clips: [{ id: 'clip-1', at: 0, track: 'V1', clipType: 'hold', hold: 2 }],
+    }, [makePinnedGroup({ shotId: 'shot-1', trackId: 'V1', clipIds: ['clip-1'], mode: 'images' })]);
     const dataRef = {
       current: {
         rows: [
@@ -211,16 +221,7 @@ describe('useTimelineTrackManagement', () => {
           'clip-1': { track: 'V1', clipType: 'hold', hold: 2 },
         },
         clipOrder: { V1: ['clip-1'], V2: [] },
-        config: {
-          output: {
-            resolution: '1280x720',
-            fps: 30,
-            file: 'out.mp4',
-          },
-          tracks,
-          clips: [{ id: 'clip-1', at: 0, track: 'V1', clipType: 'hold', hold: 2 }],
-          pinnedShotGroups: [makePinnedGroup({ shotId: 'shot-1', trackId: 'V1', clipIds: ['clip-1'], mode: 'images' })],
-        },
+        config,
         resolvedConfig: {
           output: {
             resolution: '1280x720',
@@ -270,6 +271,23 @@ describe('useTimelineTrackManagement', () => {
     ];
     const setSelectedTrackId = vi.fn();
     const applyEdit = vi.fn();
+    const config = setPinnedShotGroups({
+      output: {
+        resolution: '1280x720',
+        fps: 30,
+        file: 'out.mp4',
+      },
+      tracks,
+      clips: [
+        { id: 'clip-1', at: 0, track: 'V1', clipType: 'hold', hold: 2 },
+        { id: 'clip-2', at: 2, track: 'V1', clipType: 'hold', hold: 2 },
+      ],
+    }, [makePinnedGroup({
+      shotId: 'shot-1',
+      trackId: 'V1',
+      clipIds: ['clip-1', 'clip-2'],
+      mode: 'images',
+    })]);
     const dataRef = {
       current: {
         rows: [
@@ -288,24 +306,7 @@ describe('useTimelineTrackManagement', () => {
           'clip-2': { track: 'V1', clipType: 'hold', hold: 2 },
         },
         clipOrder: { V1: ['clip-1', 'clip-2'], V2: [] },
-        config: {
-          output: {
-            resolution: '1280x720',
-            fps: 30,
-            file: 'out.mp4',
-          },
-          tracks,
-          clips: [
-            { id: 'clip-1', at: 0, track: 'V1', clipType: 'hold', hold: 2 },
-            { id: 'clip-2', at: 2, track: 'V1', clipType: 'hold', hold: 2 },
-          ],
-          pinnedShotGroups: [makePinnedGroup({
-            shotId: 'shot-1',
-            trackId: 'V1',
-            clipIds: ['clip-1', 'clip-2'],
-            mode: 'images',
-          })],
-        },
+        config,
         resolvedConfig: makeResolvedConfig(tracks),
       },
     } as any;
@@ -358,6 +359,23 @@ describe('useTimelineTrackManagement', () => {
     ];
     const setSelectedTrackId = vi.fn();
     const applyEdit = vi.fn();
+    const config = setPinnedShotGroups({
+      output: {
+        resolution: '1280x720',
+        fps: 30,
+        file: 'out.mp4',
+      },
+      tracks,
+      clips: [
+        { id: 'clip-1', at: 0, track: 'V2', clipType: 'hold', hold: 2 },
+        { id: 'clip-2', at: 2, track: 'V2', clipType: 'hold', hold: 2 },
+      ],
+    }, [makePinnedGroup({
+      shotId: 'shot-1',
+      trackId: 'V2',
+      clipIds: ['clip-1', 'clip-2'],
+      mode: 'images',
+    })]);
     const dataRef = {
       current: {
         rows: [
@@ -376,24 +394,7 @@ describe('useTimelineTrackManagement', () => {
           'clip-2': { track: 'V2', clipType: 'hold', hold: 2 },
         },
         clipOrder: { V1: [], V2: ['clip-1', 'clip-2'] },
-        config: {
-          output: {
-            resolution: '1280x720',
-            fps: 30,
-            file: 'out.mp4',
-          },
-          tracks,
-          clips: [
-            { id: 'clip-1', at: 0, track: 'V2', clipType: 'hold', hold: 2 },
-            { id: 'clip-2', at: 2, track: 'V2', clipType: 'hold', hold: 2 },
-          ],
-          pinnedShotGroups: [makePinnedGroup({
-            shotId: 'shot-1',
-            trackId: 'V2',
-            clipIds: ['clip-1', 'clip-2'],
-            mode: 'images',
-          })],
-        },
+        config,
         resolvedConfig: makeResolvedConfig(tracks),
       },
     } as any;

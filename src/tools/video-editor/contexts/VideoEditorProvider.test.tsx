@@ -1,4 +1,14 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import {
+  createTimelineStore,
+  TimelineStoreProvider,
+  type TimelineStoreBootstrap,
+  useTimelineAvailabilityState,
+  useTimelineChromeContext,
+  useTimelineEditorData,
+  useTimelineEditorOps,
+  useTimelinePlaybackContext,
+} from '@tbd/editor';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
@@ -10,15 +20,6 @@ import {
 import { AgentChatProvider, useAgentChatBridge } from '@/shared/contexts/AgentChatContext';
 import { buildVideoEditorLightboxMedia, VideoEditorProvider } from '@/tools/video-editor/contexts/VideoEditorProvider';
 import {
-  createTimelineStore,
-  TimelineStoreProvider,
-  useTimelineAvailabilityState,
-  useTimelineChromeContext,
-  useTimelineEditorData,
-  useTimelineEditorOps,
-  useTimelinePlaybackContext,
-} from '@/tools/video-editor/hooks/timelineStore';
-import {
   shouldAllowTouchClipDrag,
   shouldAllowTouchMarquee,
   shouldExpandTouchTrimHandles,
@@ -28,6 +29,33 @@ import {
 import type { DataProvider } from '@/tools/video-editor/data/DataProvider';
 
 const navigateMock = vi.fn();
+
+function createTestStore(bootstrap?: Partial<TimelineStoreBootstrap>) {
+  const assetResolver = {
+    resolveAssetUrl: ({ file }: { file: string }) => file,
+  };
+  const provider: DataProvider = {
+    loadTimeline: vi.fn(),
+    saveTimeline: vi.fn(),
+    loadAssetRegistry: vi.fn(),
+    resolveAssetUrl: vi.fn(async (file: string) => file),
+  };
+  const store = createTimelineStore({
+    timelineId: 'timeline-test',
+    ports: {
+      dataProvider: provider,
+      assetResolver,
+    },
+    hostContext: {
+      userId: 'user-1',
+    },
+    assetResolver,
+  });
+  if (bootstrap) {
+    store.getState().syncSlices(bootstrap);
+  }
+  return store;
+}
 
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
@@ -233,7 +261,7 @@ vi.mock('@/tools/video-editor/hooks/useTimelineState', () => ({
     };
 
     return {
-      store: createTimelineStore({
+      store: createTestStore({
         data: editor,
         ops: editor,
         chrome,
@@ -489,7 +517,7 @@ describe('VideoEditorProvider', () => {
     render(
       <MemoryRouter>
         <QueryClientProvider client={queryClient}>
-          <TimelineStoreProvider store={createTimelineStore()}>
+          <TimelineStoreProvider store={createTestStore()}>
             <AddToVideoEditorConsumer />
           </TimelineStoreProvider>
         </QueryClientProvider>
@@ -515,9 +543,10 @@ describe('VideoEditorProvider', () => {
         },
       },
     });
-    const store = createTimelineStore({
+    const baseState = createTestStore().getState();
+    const store = createTestStore({
       data: {
-        ...createTimelineStore().getState().data,
+        ...baseState.data,
         resolvedConfig: {
           clips: [
             { id: 'clip-1', at: 3, from: 0, to: 2 },
@@ -525,7 +554,7 @@ describe('VideoEditorProvider', () => {
         } as never,
       },
       ops: {
-        ...createTimelineStore().getState().ops,
+        ...baseState.ops,
         registerGenerationAsset,
         handleAssetDrop,
       },

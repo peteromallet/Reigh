@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
+import type { TimelineStoreApi } from '@tbd/editor';
 import {
   getGenerationDropData,
   getMultiGenerationDropData,
@@ -40,7 +41,6 @@ import type { TrackKind } from '@/tools/video-editor/types';
 import { createAutoScroller } from '@/tools/video-editor/lib/auto-scroll';
 import type { Shot } from '@/domains/generation/types';
 import { useFinalVideoAvailable } from '@/tools/video-editor/hooks/useFinalVideoAvailable';
-import type { TimelineStoreApi } from '@/tools/video-editor/hooks/timelineStore';
 
 async function resolveFinalVideoDurationSecondsWithRetry(
   finalVideo: Parameters<typeof resolveFinalVideoDurationSeconds>[0],
@@ -383,7 +383,7 @@ export function useExternalDrop({
   } | null>(null);
   const latestExternalPositionRef = useRef<ReturnType<DragCoordinator['update']> | null>(null);
   const getDataRef = useCallback(() => {
-    const storeDataRef = store?.getState().data.dataRef;
+    const storeDataRef = store?.getState().data.dataRef as React.MutableRefObject<TimelineData | null> | undefined;
     return storeDataRef && storeDataRef.current !== null ? storeDataRef : dataRef;
   }, [dataRef, store]);
   const getPendingOpsRef = useCallback(() => {

@@ -1,5 +1,15 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import {
+  createAssetResolverFromDataProvider,
+  createTimelineStore,
+  type TimelineStoreApi,
+  type TimelineStoreBootstrap,
+  useAssetOperations,
+  useRenderState,
+  useTimelineHistory,
+  useTimelineQueries,
+} from '@tbd/editor';
 import { useIsMobile, useIsTablet } from '@/shared/hooks/mobile';
 import { useTimelineSelectionStore } from '@/shared/state/selectionStore';
 import { createInteractionState, type InteractionStateRef } from '@/tools/video-editor/lib/interaction-state';
@@ -7,7 +17,6 @@ import { useProjectSelectionContext } from '@/shared/contexts/ProjectContext';
 import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext';
 import { ROW_HEIGHT, TIMELINE_START_LEFT } from '@/tools/video-editor/lib/coordinate-utils';
 import { useAssetManagement } from '@/tools/video-editor/hooks/useAssetManagement';
-import { useAssetOperations } from '@/tools/video-editor/hooks/useAssetOperations';
 import { useClipEditing } from '@/tools/video-editor/hooks/useClipEditing';
 import { useClipResize } from '@/tools/video-editor/hooks/useClipResize';
 import { useDerivedTimeline } from '@/tools/video-editor/hooks/useDerivedTimeline';
@@ -15,16 +24,8 @@ import { useDragCoordinator } from '@/tools/video-editor/hooks/useDragCoordinato
 import { useEditorPreferences } from '@/tools/video-editor/hooks/useEditorPreferences';
 import { useExternalDrop } from '@/tools/video-editor/hooks/useExternalDrop';
 import { useTimelinePlayback } from '@/tools/video-editor/hooks/useTimelinePlayback';
-import { useRenderState } from '@/tools/video-editor/hooks/useRenderState';
-import { useTimelineHistory } from '@/tools/video-editor/hooks/useTimelineHistory';
-import { useTimelineQueries } from '@/tools/video-editor/hooks/useTimelineQueries';
 import { useTimelineSave } from '@/tools/video-editor/hooks/useTimelineSave';
 import { useTimelineSelection } from '@/tools/video-editor/hooks/useTimelineSelection';
-import {
-  createTimelineStore,
-  type TimelineStoreApi,
-  type TimelineStoreBootstrap,
-} from '@/tools/video-editor/hooks/timelineStore';
 import type {
   TimelineChromeContextValue,
   TimelineEditorContextValue,
@@ -41,7 +42,7 @@ import type { TimelineData } from '@/tools/video-editor/lib/timeline-data';
 import { useTimelineTrackManagement } from '@/tools/video-editor/hooks/useTimelineTrackManagement';
 
 export type { EditorPreferences } from '@/tools/video-editor/hooks/useEditorPreferences';
-export type { RenderStatus } from '@/tools/video-editor/hooks/useRenderState';
+export type { RenderStatus } from '@tbd/editor';
 export type { SaveStatus } from '@/tools/video-editor/hooks/useTimelineSave';
 
 type SelectionHook = ReturnType<typeof useTimelineSelection>;
@@ -174,7 +175,13 @@ function useTimelineEditorContextValue({
     setInspectorTarget,
     setSelectedClipId: selection.setSelectedClipId,
     isClipSelected: selection.isClipSelected,
-    selectClip: selection.selectClip,
+    selectClip: (clipId) => {
+      if (clipId) {
+        selection.selectClip(clipId);
+        return;
+      }
+      selection.clearSelection();
+    },
     selectClips: selection.selectClips,
     replaceTimelineSelection: selection.replaceTimelineSelection,
     addToSelection: selection.addToSelection,
@@ -339,7 +346,9 @@ function useTimelineChromeContextValue({
     canRedo: history.canRedo,
     checkpoints: history.checkpoints,
     jumpToCheckpoint: history.jumpToCheckpoint,
-    createManualCheckpoint: history.createManualCheckpoint,
+    createManualCheckpoint: async (label) => {
+      await history.createManualCheckpoint(label);
+    },
     setScaleWidth,
     handleAddTrack: trackManagement.handleAddTrack,
     handleClearUnusedTracks: trackManagement.handleClearUnusedTracks,
@@ -400,14 +409,19 @@ function useTimelinePlaybackContextValue({
 
 function syncInitialTimelineStoreBootstrap(
   store: TimelineStoreApi,
-  bootstrap: TimelineStoreBootstrap,
+  bootstrap: {
+    data: UseTimelineStateResult['editorData'];
+    ops: UseTimelineStateResult['editorOps'];
+    chrome: UseTimelineStateResult['chrome'];
+    playback: UseTimelineStateResult['playback'];
+  },
 ) {
   const state = store.getState();
   if (state.availability.mounted) {
     return;
   }
 
-  store.getState().syncSlices(bootstrap);
+  store.getState().syncSlices(bootstrap as never);
 }
 
 export function useTimelineState(): UseTimelineStateResult {
@@ -417,12 +431,23 @@ export function useTimelineState(): UseTimelineStateResult {
   const isTablet = useIsTablet();
   const playback = useTimelinePlayback();
   const preferences = useEditorPreferences(runtime.timelineId);
-  const queries = useTimelineQueries(runtime.provider, runtime.timelineId);
+  const queries = useTimelineQueries(runtime.provider as never, runtime.timelineId);
   // Shared gate observed by drag/resize writers and read by save/persistence/poll.
   const interactionStateRef = useRef(createInteractionState());
   const storeRef = useRef<ReturnType<typeof createTimelineStore> | null>(null);
   if (storeRef.current === null) {
-    storeRef.current = createTimelineStore();
+    const assetResolver = createAssetResolverFromDataProvider(runtime.provider);
+    storeRef.current = createTimelineStore({
+      timelineId: runtime.timelineId,
+      ports: {
+        dataProvider: runtime.provider,
+        assetResolver,
+      },
+      hostContext: {
+        userId: runtime.userId,
+      },
+      assetResolver,
+    });
   }
   const deviceClass = useMemo(
     () => resolveTimelineDeviceClass({ isMobile, isTablet }),
@@ -437,12 +462,12 @@ export function useTimelineState(): UseTimelineStateResult {
   const [precisionEnabled, setPrecisionEnabled] = useState(initialInteractionPolicyRef.current.precisionEnabled);
   const [contextTarget, setContextTarget] = useState(initialInteractionPolicyRef.current.contextTarget);
   const [inspectorTarget, setInspectorTarget] = useState(initialInteractionPolicyRef.current.inspectorTarget);
-  const save = useTimelineSave(queries, runtime.provider, interactionStateRef, storeRef.current);
+  const save = useTimelineSave(queries, runtime.provider, interactionStateRef, storeRef.current as unknown as TimelineStoreApi);
   const history = useTimelineHistory({
     dataRef: save.dataRef,
     commitData: save.commitData,
     interactionStateRef,
-  });
+  } as never);
   const derived = useDerivedTimeline(save.data, save.selectedClipId, save.selectedTrackId);
   const render = useRenderState(derived.resolvedConfig, derived.renderMetadata);
   const assetOperations = useAssetOperations(
@@ -451,7 +476,7 @@ export function useTimelineState(): UseTimelineStateResult {
     runtime.userId,
     queryClient,
     save.pendingOpsRef,
-  );
+  ) as ReturnType<typeof useAssetOperations>;
   const {
     data,
     dataRef,
@@ -546,7 +571,7 @@ export function useTimelineState(): UseTimelineStateResult {
   ]);
 
   useEffect(() => {
-    return eventBus.on('beforeCommit', onBeforeCommit);
+    return eventBus.on('beforeCommit', onBeforeCommit as never);
   }, [eventBus, onBeforeCommit]);
 
   useEffect(() => {
@@ -577,7 +602,7 @@ export function useTimelineState(): UseTimelineStateResult {
   });
 
   const assetManagement = useAssetManagement({
-    store: storeRef.current,
+    store: storeRef.current as unknown as TimelineStoreApi,
     dataRef,
     selectedTrackId,
     selectedProjectId,
@@ -609,7 +634,7 @@ export function useTimelineState(): UseTimelineStateResult {
   });
 
   const externalDrop = useExternalDrop({
-    store: storeRef.current,
+    store: storeRef.current as unknown as TimelineStoreApi,
     dataRef,
     pendingOpsRef,
     scale,
@@ -812,7 +837,7 @@ export function useTimelineState(): UseTimelineStateResult {
   // mounted-provider readers such as AgentChat and pending-add helpers do not
   // observe the placeholder slice values from createTimelineStore().
   const store = storeRef.current;
-  syncInitialTimelineStoreBootstrap(store, {
+  syncInitialTimelineStoreBootstrap(store as unknown as TimelineStoreApi, {
     data: editorData,
     ops: editorOps,
     chrome,
@@ -820,16 +845,16 @@ export function useTimelineState(): UseTimelineStateResult {
   });
 
   useLayoutEffect(() => {
-    store.getState().syncSlices({
+    (store as unknown as TimelineStoreApi).getState().syncSlices({
       data: editorData,
       ops: editorOps,
       chrome,
       playback: playbackValue,
-    });
+    } as never);
   }, [chrome, editorData, editorOps, playbackValue, store]);
 
   return {
-    store,
+    store: store as unknown as TimelineStoreApi,
     editor,
     editorData,
     editorOps,

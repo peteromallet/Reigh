@@ -30,3 +30,7 @@ export function useEditorRuntime(): EditorRuntimeContextValue {
   }
   return value;
 }
+
+export function useOptionalEditorRuntime(): EditorRuntimeContextValue | null {
+  return useContext(EditorRuntimeContext);
+}

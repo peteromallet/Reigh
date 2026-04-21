@@ -31,6 +31,13 @@ export function EditorProvider({
   });
 
   useEffect(() => {
+    store.getState().setMounted(true);
+    return () => {
+      store.getState().setMounted(false);
+    };
+  }, [store]);
+
+  useEffect(() => {
     let cancelled = false;
     const run = async () => {
       store.getState().setLoading(true);

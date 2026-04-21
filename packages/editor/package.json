@@ -23,15 +23,23 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.56.2",
     "@tbd/engine": "workspace:*",
     "@tbd/schema": "workspace:*",
     "@remotion/web-renderer": "4.0.438",
     "zustand": "^5.0.12"
   },
   "peerDependencies": {
+    "@tanstack/react-query": "^5.56.2",
     "@remotion/player": "^4.0.434",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "remotion": "^4.0.434"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "jsdom": "^28.0.0",
+    "vitest": "^4.0.18"
   }
 }

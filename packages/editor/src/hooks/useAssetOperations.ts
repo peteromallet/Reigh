@@ -1,36 +1,59 @@
-import { useCallback } from 'react';
+import type { QueryClient } from '@tanstack/react-query';
+import { useCallback, type MutableRefObject } from 'react';
+import { assetRegistryQueryKey, timelineQueryKey } from './queryKeys.js';
+import type { DataProvider } from '../data/DataProvider.js';
 import type { AssetRegistryEntry } from '@tbd/engine';
-import { useEditorStore } from './timelineStore.js';
 
-export function useAssetOperations() {
-  const document = useEditorStore((state) => state.document);
-  const ports = useEditorStore((state) => state.ports);
-  const setDocument = useEditorStore((state) => state.setDocument);
+export function useAssetOperations(
+  provider: DataProvider,
+  timelineId: string,
+  userId: string | null,
+  queryClient: QueryClient,
+  pendingOpsRef: MutableRefObject<number>,
+) {
+  const uploadAsset = useCallback(async (file: File) => {
+    if (!provider.uploadAsset) {
+      throw new Error('This editor backend does not support asset uploads');
+    }
+
+    pendingOpsRef.current += 1;
+    try {
+      return await provider.uploadAsset(file, { timelineId, userId: userId ?? undefined });
+    } finally {
+      pendingOpsRef.current -= 1;
+    }
+  }, [pendingOpsRef, provider, timelineId, userId]);
 
   const registerAsset = useCallback(async (assetId: string, entry: AssetRegistryEntry) => {
-    if (!document || !ports.dataProvider.registerAsset) {
-      throw new Error('Asset registration is unavailable');
+    if (!provider.registerAsset) {
+      throw new Error('This editor backend does not support asset registration');
     }
 
-    await ports.dataProvider.registerAsset(document.timelineId, assetId, entry);
-    setDocument({
-      ...document,
-      registry: {
-        assets: {
-          ...document.registry.assets,
-          [assetId]: entry,
-        },
-      },
-    });
-  }, [document, ports.dataProvider, setDocument]);
-
-  const uploadAsset = useCallback(async (file: File | Blob | Uint8Array) => {
-    if (!document || !ports.dataProvider.uploadAsset) {
-      throw new Error('Asset upload is unavailable');
+    pendingOpsRef.current += 1;
+    try {
+      await provider.registerAsset(timelineId, assetId, entry);
+      await queryClient.invalidateQueries({ queryKey: assetRegistryQueryKey(timelineId) });
+    } finally {
+      pendingOpsRef.current -= 1;
     }
+  }, [pendingOpsRef, provider, queryClient, timelineId]);
 
-    return ports.dataProvider.uploadAsset(file, { timelineId: document.timelineId });
-  }, [document, ports.dataProvider]);
+  const uploadFiles = useCallback(async (files: File[]) => {
+    await Promise.all(files.map(uploadAsset));
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: timelineQueryKey(timelineId) }),
+      queryClient.invalidateQueries({ queryKey: assetRegistryQueryKey(timelineId) }),
+    ]);
+  }, [queryClient, timelineId, uploadAsset]);
 
-  return { registerAsset, uploadAsset };
+  const invalidateAssetRegistry = useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: assetRegistryQueryKey(timelineId) });
+  }, [queryClient, timelineId]);
+
+  return {
+    uploadAsset,
+    registerAsset,
+    uploadFiles,
+    invalidateAssetRegistry,
+  };
 }

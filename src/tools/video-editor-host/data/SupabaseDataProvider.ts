@@ -78,8 +78,7 @@ export class SupabaseDataProvider implements DataProvider {
     expectedVersion: number,
     registry?: AssetRegistry,
   ): Promise<number> {
-    const canonical = canonicalizeTimelineConfig(config);
-    validateSerializedConfig(canonical);
+    validateSerializedConfig(config);
 
     const supabase = getSupabaseClient() as any;
     const rpcName = registry !== undefined
@@ -89,13 +88,13 @@ export class SupabaseDataProvider implements DataProvider {
       ? {
           p_timeline_id: timelineId,
           p_expected_version: expectedVersion,
-          p_config: canonical,
+          p_config: config,
           p_asset_registry: registry,
         }
       : {
           p_timeline_id: timelineId,
           p_expected_version: expectedVersion,
-          p_config: canonical,
+          p_config: config,
         };
     const { data, error } = await supabase.rpc(rpcName as never, rpcParams as never);
 
@@ -112,8 +111,7 @@ export class SupabaseDataProvider implements DataProvider {
   }
 
   async saveCheckpoint(timelineId: string, checkpoint: Omit<Checkpoint, 'id'>): Promise<string> {
-    const canonicalConfig = canonicalizeTimelineConfig(checkpoint.config);
-    validateSerializedConfig(canonicalConfig);
+    validateSerializedConfig(checkpoint.config);
 
     const supabase = getSupabaseClient() as any;
     const { data, error } = await supabase
@@ -121,7 +119,7 @@ export class SupabaseDataProvider implements DataProvider {
       .insert({
         timeline_id: timelineId,
         user_id: this.options.userId,
-        config: canonicalConfig,
+        config: checkpoint.config,
         trigger_type: checkpoint.triggerType,
         label: checkpoint.label,
         edits_since_last_checkpoint: checkpoint.editsSinceLastCheckpoint,

@@ -1,4 +1,9 @@
 import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  useTimelineChromeSelector,
+  useTimelineDataSelector,
+  useTimelineOpsSelector,
+} from '@tbd/editor';
 import { shallow } from 'zustand/shallow';
 import {
   KeyboardSensor,
@@ -24,11 +29,6 @@ import { TimelineCanvas } from '@/tools/video-editor/components/TimelineEditor/T
 import { getPinnedShotGroups } from '@/tools/video-editor/lib/config-utils';
 import { ROW_HEIGHT, TIMELINE_START_LEFT } from '@/tools/video-editor/lib/coordinate-utils';
 import type { ClipMeta } from '@/tools/video-editor/lib/timeline-data';
-import {
-  useTimelineChromeSelector,
-  useTimelineDataSelector,
-  useTimelineOpsSelector,
-} from '@/tools/video-editor/hooks/timelineStore';
 import { useClipDrag } from '@/tools/video-editor/hooks/useClipDrag';
 import { useActiveTaskClips } from '@/tools/video-editor/hooks/useActiveTaskClips';
 import { useFinalVideoAvailable } from '@/tools/video-editor/hooks/useFinalVideoAvailable';
@@ -41,6 +41,11 @@ import { useSwitchToFinalVideo } from '@/tools/video-editor/hooks/useSwitchToFin
 import { useTimelineScale } from '@/tools/video-editor/hooks/useTimelineScale';
 import { buildDuplicateClipEdit } from '@/tools/video-editor/lib/duplicate-clip';
 import { duplicateGenerationAsset } from '@/tools/video-editor/lib/generation-utils';
+import type {
+  TimelineChromeContextValue,
+  TimelineEditorDataContextValue,
+  TimelineEditorOpsContextValue,
+} from '@/tools/video-editor/hooks/useTimelineState.types';
 import {
   clampClipToMediaDuration,
   convertOverhangToHold,
@@ -49,6 +54,7 @@ import {
 import type { TimelineActionResizeStart, TimelineClipEdgeResizeEnd } from '@/tools/video-editor/hooks/useTimelineState.types';
 import type { ResolvedTimelineClip, TrackDefinition } from '@/tools/video-editor/types';
 import type { TimelineAction, TimelineRow } from '@/tools/video-editor/types/timeline-canvas';
+import type { TimelineData } from '@/tools/video-editor/lib/timeline-data';
 
 const EMPTY_ASSET_GENERATION_MAP: Record<string, string> = {};
 const log = import.meta.env.DEV ? (...args: Parameters<typeof console.log>) => console.log(...args) : () => {};
@@ -238,7 +244,28 @@ function TimelineEditorComponent() {
     editAreaRef: timeline.editAreaRef,
     selectedTrackId: timeline.selectedTrackId,
     interactionStateRef: timeline.interactionStateRef,
-  }), shallow);
+  }), shallow) as unknown as Pick<TimelineEditorDataContextValue,
+    'data'
+    | 'resolvedConfig'
+    | 'timelineRef'
+    | 'timelineWrapperRef'
+    | 'dataRef'
+    | 'deviceClass'
+    | 'inputModality'
+    | 'interactionMode'
+    | 'gestureOwner'
+    | 'primaryClipId'
+    | 'selectedClipIds'
+    | 'selectedClipIdsRef'
+    | 'additiveSelectionRef'
+    | 'scale'
+    | 'scaleWidth'
+    | 'coordinator'
+    | 'indicatorRef'
+    | 'editAreaRef'
+    | 'selectedTrackId'
+    | 'interactionStateRef'
+  >;
   const {
     applyEdit,
     moveClipToRow,
@@ -303,7 +330,39 @@ function TimelineEditorComponent() {
     unpatchRegistry: ops.unpatchRegistry,
     registerAsset: ops.registerAsset,
     registerGenerationAsset: ops.registerGenerationAsset,
-  }), shallow);
+  }), shallow) as unknown as Pick<TimelineEditorOpsContextValue,
+    'applyEdit'
+    | 'moveClipToRow'
+    | 'createTrackAndMoveClip'
+    | 'selectClip'
+    | 'selectClips'
+    | 'addToSelection'
+    | 'clearSelection'
+    | 'isClipSelected'
+    | 'setSelectedTrackId'
+    | 'handleTrackPopoverChange'
+    | 'handleMoveTrack'
+    | 'handleRemoveTrack'
+    | 'handleSplitClipAtTime'
+    | 'handleSplitClipsAtPlayhead'
+    | 'handleDeleteClips'
+    | 'handleDeleteClip'
+    | 'handleToggleMuteClips'
+    | 'onCursorDrag'
+    | 'onClickTimeArea'
+    | 'setGestureOwner'
+    | 'setInputModalityFromPointerType'
+    | 'onActionResizeStart'
+    | 'onClipEdgeResizeEnd'
+    | 'onTimelineDragOver'
+    | 'onTimelineDragLeave'
+    | 'onTimelineDrop'
+    | 'onDoubleClickAsset'
+    | 'patchRegistry'
+    | 'unpatchRegistry'
+    | 'registerAsset'
+    | 'registerGenerationAsset'
+  >;
   const {
     handleAddTrack,
     handleAddTextAt,
@@ -314,7 +373,12 @@ function TimelineEditorComponent() {
     handleAddTextAt: chrome.handleAddTextAt,
     handleClearUnusedTracks: chrome.handleClearUnusedTracks,
     unusedTrackCount: chrome.unusedTrackCount,
-  }), shallow);
+  }), shallow) as unknown as Pick<TimelineChromeContextValue,
+    'handleAddTrack'
+    | 'handleAddTextAt'
+    | 'handleClearUnusedTracks'
+    | 'unusedTrackCount'
+  >;
   const trackSensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 5 },

@@ -4,13 +4,18 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@/shared/components/ui/button';
 import { Slider } from '@/shared/components/ui/slider';
 import { RemotionPreview } from '@/tools/video-editor/components/PreviewPanel/RemotionPreview';
+import type {
+  TimelineChromeContextValue,
+  TimelineEditorDataContextValue,
+  TimelinePlaybackContextValue,
+} from '@/tools/video-editor/hooks/useTimelineState.types';
 import { getTimelineDurationInFrames } from '@/tools/video-editor/lib/config-utils';
 import { useRenderDiagnostic } from '@/tools/video-editor/hooks/usePerfDiagnostics';
 import {
   useTimelineChromeContext,
   useTimelineEditorData,
   useTimelinePlaybackContext,
-} from '@/tools/video-editor/hooks/timelineStore';
+} from '@tbd/editor';
 
 interface CompactPreviewProps {
   timelineId?: string | null;
@@ -20,9 +25,9 @@ interface CompactPreviewProps {
 export function CompactPreview({ timelineId, onCreateTimeline }: CompactPreviewProps) {
   useRenderDiagnostic('CompactPreview');
   const navigate = useNavigate();
-  const { resolvedConfig } = useTimelineEditorData();
-  const { saveStatus } = useTimelineChromeContext();
-  const { previewRef, playerContainerRef, currentTime, onPreviewTimeUpdate } = useTimelinePlaybackContext();
+  const { resolvedConfig } = useTimelineEditorData() as unknown as TimelineEditorDataContextValue;
+  const { saveStatus } = useTimelineChromeContext() as unknown as TimelineChromeContextValue;
+  const { previewRef, playerContainerRef, currentTime, onPreviewTimeUpdate } = useTimelinePlaybackContext() as unknown as TimelinePlaybackContextValue;
 
   const totalSeconds = useMemo(() => {
     if (!resolvedConfig) {
@@ -67,11 +72,11 @@ export function CompactPreview({ timelineId, onCreateTimeline }: CompactPreviewP
       <div className="min-h-0 flex-1 p-3">
         <div className="h-full overflow-hidden rounded-xl border border-border">
           <RemotionPreview
-            ref={previewRef}
+            ref={previewRef as never}
             config={resolvedConfig}
             compact
             onTimeUpdate={onPreviewTimeUpdate}
-            playerContainerRef={playerContainerRef}
+            playerContainerRef={playerContainerRef as never}
           />
         </div>
       </div>

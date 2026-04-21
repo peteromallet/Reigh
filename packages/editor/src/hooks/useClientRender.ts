@@ -1,28 +1,6 @@
-import { useCallback } from 'react';
-import type { ComponentType, Dispatch, SetStateAction } from 'react';
+import { useCallback, type ComponentType, type Dispatch, type SetStateAction } from 'react';
 import { TimelineRenderer, type ResolvedTimelineConfig } from '@tbd/engine';
-import { toast } from '@/shared/components/ui/toast';
-
-type RenderStatus = 'idle' | 'rendering' | 'done' | 'error';
-type RenderProgress = { current: number; total: number; percent: number; phase: string } | null;
-type RenderResult = { url: string | null; filename: string | null };
-
-interface CompositionMetadata {
-  fps: number;
-  durationInFrames: number;
-  compositionWidth: number;
-  compositionHeight: number;
-}
-
-interface UseClientRenderOptions {
-  resolvedConfig: ResolvedTimelineConfig | null;
-  metadata: CompositionMetadata | null;
-  setRenderStatus: Dispatch<SetStateAction<RenderStatus>>;
-  setRenderProgress: Dispatch<SetStateAction<RenderProgress>>;
-  setRenderLog: Dispatch<SetStateAction<string>>;
-  setRenderDirty: Dispatch<SetStateAction<boolean>>;
-  setRenderResult: Dispatch<SetStateAction<RenderResult>>;
-}
+import type { CompositionMetadata, RenderProgress, RenderResult, RenderStatus } from './render-types.js';
 
 interface CanRenderIssue {
   message?: string;
@@ -38,19 +16,32 @@ interface WebRendererModule {
   renderMediaOnWeb: (options: Record<string, unknown>) => Promise<unknown>;
 }
 
+export interface UseClientRenderOptions {
+  resolvedConfig: ResolvedTimelineConfig | null;
+  metadata: CompositionMetadata | null;
+  setRenderStatus: Dispatch<SetStateAction<RenderStatus>>;
+  setRenderProgress: Dispatch<SetStateAction<RenderProgress>>;
+  setRenderLog: Dispatch<SetStateAction<string>>;
+  setRenderDirty: Dispatch<SetStateAction<boolean>>;
+  setRenderResult: Dispatch<SetStateAction<RenderResult>>;
+  loadWebRenderer?: () => Promise<WebRendererModule>;
+}
+
 const FREE_LICENSE_KEY = 'free-license';
 
 let webRendererCache: WebRendererModule | null = null;
 
 const getWebRendererModule = async (): Promise<WebRendererModule> => {
-  if (webRendererCache) return webRendererCache;
+  if (webRendererCache) {
+    return webRendererCache;
+  }
 
   try {
     const mod = await import('@remotion/web-renderer') as unknown as WebRendererModule;
     webRendererCache = mod;
     return mod;
-  } catch (err) {
-    console.error('[useClientRender] Failed to import @remotion/web-renderer:', err);
+  } catch (error) {
+    console.error('[useClientRender] Failed to import @remotion/web-renderer:', error);
     throw new Error(
       'Could not load @remotion/web-renderer. Make sure the package is installed: npm install @remotion/web-renderer',
     );
@@ -99,7 +90,6 @@ const getBlobFromResult = async (
 
   const record = result as Record<string, unknown>;
 
-  // @remotion/web-renderer returns { getBlob: () => Promise<Blob> }
   if (typeof record.getBlob === 'function') {
     return await (record.getBlob as () => Promise<Blob>)();
   }
@@ -147,10 +137,11 @@ const getProgressUpdate = (
 
   const record = value as Record<string, unknown>;
 
-  // @remotion/web-renderer passes { progress: 0..1, renderedFrames, encodedFrames, ... }
   if (typeof record.progress === 'number' && record.progress >= 0 && record.progress <= 1) {
     const percent = Math.round(record.progress * 100);
-    const current = typeof record.renderedFrames === 'number' ? record.renderedFrames : Math.round(record.progress * fallbackTotal);
+    const current = typeof record.renderedFrames === 'number'
+      ? record.renderedFrames
+      : Math.round(record.progress * fallbackTotal);
     return {
       current,
       total: fallbackTotal,
@@ -190,10 +181,11 @@ export function useClientRender({
   setRenderLog,
   setRenderDirty,
   setRenderResult,
+  loadWebRenderer,
 }: UseClientRenderOptions) {
   return useCallback(async () => {
     if (!resolvedConfig || !metadata) {
-      toast.error('Timeline is not ready to render yet');
+      appendLogLine(setRenderLog, 'Timeline is not ready to render yet');
       return;
     }
 
@@ -201,7 +193,6 @@ export function useClientRender({
       const message = 'WebCodecs not supported in this browser';
       setRenderStatus('error');
       appendLogLine(setRenderLog, message);
-      toast.error(message);
       return;
     }
 
@@ -214,14 +205,17 @@ export function useClientRender({
     });
     setRenderResult({ url: null, filename: null });
     setRenderLog('');
+
     try {
-      const { canRenderMediaOnWeb, renderMediaOnWeb } = await getWebRendererModule();
+      const { canRenderMediaOnWeb, renderMediaOnWeb } = await (loadWebRenderer ?? getWebRendererModule)();
 
-      // Ensure dimensions are even (H264 requires multiples of 2)
-      const width = metadata.compositionWidth % 2 === 0 ? metadata.compositionWidth : metadata.compositionWidth + 1;
-      const height = metadata.compositionHeight % 2 === 0 ? metadata.compositionHeight : metadata.compositionHeight + 1;
+      const width = metadata.compositionWidth % 2 === 0
+        ? metadata.compositionWidth
+        : metadata.compositionWidth + 1;
+      const height = metadata.compositionHeight % 2 === 0
+        ? metadata.compositionHeight
+        : metadata.compositionHeight + 1;
 
-      // canRenderMediaOnWeb expects width/height as top-level options
       const canRenderOptions = {
         width,
         height,
@@ -231,17 +225,22 @@ export function useClientRender({
 
       const canRender = await canRenderMediaOnWeb(canRenderOptions);
       if (!canRender.canRender) {
-        const message = canRender.issues?.map((issue) => issue.message).filter(Boolean).join('\n')
-          || 'This browser cannot render the selected video format.';
+        const message = canRender.issues
+          ?.map((issue) => issue.message)
+          .filter(Boolean)
+          .join('\n') || 'This browser cannot render the selected video format.';
         throw new Error(message);
       }
 
       const resolvedVideoCodec = canRender.resolvedVideoCodec ?? 'h264';
       const resolvedAudioCodec = canRender.resolvedAudioCodec ?? null;
       const extension = getFileExtension(resolvedVideoCodec);
-      appendLogLine(setRenderLog, `Rendering ${width}x${height} @ ${metadata.fps}fps with ${resolvedVideoCodec}${resolvedAudioCodec ? ` + ${resolvedAudioCodec}` : ''}`);
 
-      // renderMediaOnWeb expects a composition object
+      appendLogLine(
+        setRenderLog,
+        `Rendering ${width}x${height} @ ${metadata.fps}fps with ${resolvedVideoCodec}${resolvedAudioCodec ? ` + ${resolvedAudioCodec}` : ''}`,
+      );
+
       const composition = {
         id: 'video-editor-timeline-renderer',
         component: TimelineRenderer as ComponentType<{ config: ResolvedTimelineConfig }>,
@@ -279,14 +278,13 @@ export function useClientRender({
       setRenderResult({ url, filename });
       setRenderStatus('done');
       appendLogLine(setRenderLog, `Saved ${filename}`);
-      toast.success('Render complete');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown render error';
       setRenderStatus('error');
       appendLogLine(setRenderLog, message);
-      toast.error('Render failed', { description: message });
     }
   }, [
+    loadWebRenderer,
     metadata,
     resolvedConfig,
     setRenderDirty,

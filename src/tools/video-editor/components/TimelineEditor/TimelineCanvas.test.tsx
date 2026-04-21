@@ -10,9 +10,9 @@ import type { TimelineAction, TimelineRow } from '@/tools/video-editor/types/tim
 
 const useTimelineMutableAdaptersMock = vi.fn();
 
-vi.mock('@/tools/video-editor/hooks/timelineStore', async () => {
-  const actual = await vi.importActual<typeof import('@/tools/video-editor/hooks/timelineStore')>(
-    '@/tools/video-editor/hooks/timelineStore',
+vi.mock('@tbd/editor', async () => {
+  const actual = await vi.importActual<typeof import('@tbd/editor')>(
+    '@tbd/editor',
   );
 
   return {

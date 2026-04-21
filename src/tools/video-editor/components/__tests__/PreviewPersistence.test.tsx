@@ -16,9 +16,9 @@ let editorDataValue: any;
 let editorOpsValue: any;
 let overlayEditorProps: any;
 
-vi.mock('@/tools/video-editor/hooks/timelineStore', async () => {
-  const actual = await vi.importActual<typeof import('@/tools/video-editor/hooks/timelineStore')>(
-    '@/tools/video-editor/hooks/timelineStore',
+vi.mock('@tbd/editor', async () => {
+  const actual = await vi.importActual<typeof import('@tbd/editor')>(
+    '@tbd/editor',
   );
 
   return {

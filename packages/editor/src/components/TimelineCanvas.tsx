@@ -1,33 +1,34 @@
 import { getClipTimelineDuration } from '@tbd/engine';
-import { useEditorStore } from '../hooks/timelineStore.js';
+import { useTimelineEditorData, useTimelineEditorOps } from '../hooks/timelineStore.js';
 
 export interface TimelineCanvasProps {
   onSelectClip?: (clipId: string) => void;
 }
 
 export function TimelineCanvas({ onSelectClip }: TimelineCanvasProps) {
-  const data = useEditorStore((state) => state.data);
-  const selectedClipIds = useEditorStore((state) => state.selectedClipIds);
-  const setSelectedClipIds = useEditorStore((state) => state.setSelectedClipIds);
+  const data = useTimelineEditorData();
+  const ops = useTimelineEditorOps();
 
-  if (!data) {
+  if (!data.data) {
     return <div>No timeline loaded.</div>;
   }
 
+  const timelineData = data.data;
+
   return (
     <div style={{ display: 'grid', gap: 12 }}>
-      {data.tracks.map((track) => (
+      {timelineData.tracks.map((track) => (
         <div key={track.id} style={{ border: '1px solid #d4d4d8', borderRadius: 8, padding: 12 }}>
           <div style={{ fontWeight: 600, marginBottom: 8 }}>{track.label}</div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {data.config.clips.filter((clip) => clip.track === track.id).map((clip) => {
-              const selected = selectedClipIds.includes(clip.id);
+            {timelineData.config.clips.filter((clip) => clip.track === track.id).map((clip) => {
+              const selected = data.selectedClipIds.has(clip.id);
               return (
                 <button
                   key={clip.id}
                   type="button"
                   onClick={() => {
-                    setSelectedClipIds([clip.id]);
+                    ops.selectClip(clip.id);
                     onSelectClip?.(clip.id);
                   }}
                   style={{

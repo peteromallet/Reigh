@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getPinnedShotGroups } from '@/tools/video-editor/lib/config-utils';
+import { getPinnedShotGroups, setPinnedShotGroups } from '@/tools/video-editor/lib/config-utils';
 import { configToRows, rowsToConfig } from '@/tools/video-editor/lib/timeline-data';
 import {
   computeRenderBounds,
@@ -102,7 +102,7 @@ describe('render bounds validation', () => {
   });
 
   it('preserves stored clip values across editor round-trip serialization', () => {
-    const config: TimelineConfig = {
+    const config = setPinnedShotGroups({
       output: {
         resolution: '1920x1080',
         fps: 30,
@@ -133,15 +133,14 @@ describe('render bounds validation', () => {
           opacity: 1,
         },
       ],
-      pinnedShotGroups: [
-        {
-          shotId: 'shot-1',
-          trackId: 'V1',
-          clipIds: ['clip-1'],
-          mode: 'images',
-        },
-      ],
-    };
+    }, [
+      {
+        shotId: 'shot-1',
+        trackId: 'V1',
+        clipIds: ['clip-1'],
+        mode: 'images',
+      },
+    ]);
     const nextConfig = roundTripConfig(config);
     const [nextClip] = nextConfig.clips;
 
@@ -167,7 +166,7 @@ describe('render bounds validation', () => {
 
   it('preserves adjacent grouped hold boundaries across repeated editor round-trips', () => {
     const expectedBoundary = 2.3334;
-    let nextConfig: TimelineConfig = {
+    let nextConfig = setPinnedShotGroups({
       output: {
         resolution: '1920x1080',
         fps: 30,
@@ -196,15 +195,14 @@ describe('render bounds validation', () => {
           hold: 0.6666,
         },
       ],
-      pinnedShotGroups: [
-        {
-          shotId: 'shot-1',
-          trackId: 'V1',
-          clipIds: ['clip-left', 'clip-right'],
-          mode: 'images',
-        },
-      ],
-    };
+    }, [
+      {
+        shotId: 'shot-1',
+        trackId: 'V1',
+        clipIds: ['clip-left', 'clip-right'],
+        mode: 'images',
+      },
+    ]);
 
     for (let cycle = 0; cycle < 6; cycle += 1) {
       nextConfig = roundTripConfig(nextConfig);

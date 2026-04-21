@@ -23,7 +23,8 @@ import {
   useTimelineDataSliceSafe,
   useTimelineMutableAdaptersSafe,
   useTimelineOpsSliceSafe,
-} from '@/tools/video-editor/hooks/timelineStore';
+} from '@tbd/editor';
+import type { TimelineEditorDataContextValue, TimelineEditorOpsContextValue } from '@/tools/video-editor/hooks/useTimelineState.types';
 import type { ActionDragState, DragMachineState, DragSession, InternalDragSession } from '@/tools/video-editor/hooks/useClipDrag.helpers';
 import { buildPendingDragSession, commitDraggingSession, createFloatingGhost, ensureCountBadge, findClipElement, updateFloatingGhostPosition } from '@/tools/video-editor/hooks/useClipDrag.helpers';
 
@@ -103,9 +104,12 @@ export const useClipDrag = ({
   scaleWidth,
   startLeft: _startLeft,
 }: UseCrossTrackDragOptions): UseClipDragResult => {
-  const storeData = useTimelineDataSliceSafe();
-  const storeOps = useTimelineOpsSliceSafe();
-  const storeAdapters = useTimelineMutableAdaptersSafe();
+  const storeData = useTimelineDataSliceSafe() as unknown as TimelineEditorDataContextValue | null;
+  const storeOps = useTimelineOpsSliceSafe() as unknown as TimelineEditorOpsContextValue | null;
+  const storeAdapters = useTimelineMutableAdaptersSafe() as unknown as Pick<
+    TimelineEditorDataContextValue,
+    'dataRef' | 'interactionStateRef' | 'selectedClipIdsRef' | 'additiveSelectionRef'
+  > | null;
   const effectiveTimelineWrapperRef = storeData?.timelineWrapperRef ?? timelineWrapperRef;
   const effectiveDataRef = storeAdapters?.dataRef ?? dataRef;
   const effectiveInteractionStateRef = storeAdapters?.interactionStateRef ?? interactionStateRef;

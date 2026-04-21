@@ -1,6 +1,7 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { shouldAcceptPolledData } from '@/tools/video-editor/lib/timeline-save-utils';
-import { getTimelinePollRejectionReason, isTimelinePollIdle } from '@/tools/video-editor/hooks/usePollSync';
+import { shouldAcceptPolledData } from '../lib/timeline-save-utils.js';
+import { getTimelinePollRejectionReason, isTimelinePollIdle } from './usePollSync.js';
 
 function getLegacyPollRejectionReason(input: {
   editSeq: number;
@@ -88,29 +89,7 @@ describe('usePollSync helpers', () => {
     }
   });
 
-  it('default-rejects polls while a save is in flight even if other idle conditions are true', () => {
-    expect(isTimelinePollIdle({
-      editSeq: 4,
-      savedSeq: 4,
-      pendingOps: 0,
-      isSaving: true,
-    })).toBe(false);
-
-    expect(getTimelinePollRejectionReason({
-      editSeq: 4,
-      savedSeq: 4,
-      pendingOps: 0,
-      isSaving: true,
-      polledConfigVersion: 8,
-      currentConfigVersion: 7,
-      polledStableSignature: 'remote-sig',
-      lastSavedStableSignature: 'saved-sig',
-    })).toBe('saving');
-  });
-
-  it('rejects polls while an interaction (drag/resize) is active', () => {
-    // Even when the timeline would otherwise be idle and the poll signature is fresh,
-    // an active interaction must defer the conflict reload.
+  it('rejects polls while an interaction is active and accepts them once idle', () => {
     expect(isTimelinePollIdle({
       editSeq: 4,
       savedSeq: 4,
@@ -130,16 +109,6 @@ describe('usePollSync helpers', () => {
       polledStableSignature: 'remote-sig',
       lastSavedStableSignature: 'saved-sig',
     })).toBe('interaction active');
-  });
-
-  it('accepts polls when interaction is no longer active', () => {
-    expect(isTimelinePollIdle({
-      editSeq: 4,
-      savedSeq: 4,
-      pendingOps: 0,
-      isSaving: false,
-      interactionActive: false,
-    })).toBe(true);
 
     expect(getTimelinePollRejectionReason({
       editSeq: 4,

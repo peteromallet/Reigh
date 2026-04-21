@@ -96,6 +96,24 @@ describe('repairConfig — legacy pinnedShotGroups migration', () => {
     expect(Object.prototype.hasOwnProperty.call(repairedGroup, 'start')).toBe(false);
   });
 
+  it('reads pinnedShotGroups only from app[x-reigh] before repair', () => {
+    const legacyConfig = buildLegacyConfig();
+
+    expect(getPinnedShotGroups(legacyConfig)).toBeUndefined();
+
+    const namespaced = setPinnedShotGroups(legacyConfig, legacyConfig.pinnedShotGroups);
+    expect(getPinnedShotGroups(namespaced)).toEqual([
+      expect.objectContaining({
+        shotId: 'shot-1',
+        trackId: 'V1',
+        clipIds: ['clip-a', 'clip-b', 'clip-c'],
+        mode: 'images',
+      }),
+    ]);
+    expect(getPinnedShotGroups(namespaced)?.[0]).not.toHaveProperty('start');
+    expect(getPinnedShotGroups(namespaced)?.[0]).not.toHaveProperty('children');
+  });
+
   it('round-trips via configToRows → rowsToConfig without emitting legacy fields', () => {
     const repaired = repairConfig(buildLegacyConfig());
     const { rows, meta, clipOrder } = configToRows(repaired);

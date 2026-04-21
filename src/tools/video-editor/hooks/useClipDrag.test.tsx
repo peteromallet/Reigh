@@ -3,6 +3,7 @@ import { act, fireEvent, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useClipDrag } from '@/tools/video-editor/hooks/useClipDrag';
 import type { DragCoordinator } from '@/tools/video-editor/hooks/useDragCoordinator';
+import { setPinnedShotGroups } from '@/tools/video-editor/lib/config-utils';
 import { createInteractionState } from '@/tools/video-editor/lib/interaction-state';
 import { repairConfig } from '@/tools/video-editor/lib/migrate';
 import { configToRows, type TimelineData } from '@/tools/video-editor/lib/timeline-data';
@@ -167,30 +168,28 @@ function makeMultiClipData(): TimelineData {
 
 function makePinnedGroupData(): TimelineData {
   const tracks = [makeTrack('V1'), makeTrack('V2')];
+  const config = setPinnedShotGroups({
+    output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
+    tracks,
+    clips: [
+      { id: 'clip-1', at: 0, track: 'V1', clipType: 'hold', hold: 2 },
+      { id: 'clip-2', at: 2, track: 'V1', clipType: 'hold', hold: 2 },
+    ],
+  }, [{
+    shotId: 'shot-1',
+    trackId: 'V1',
+    clipIds: ['clip-1', 'clip-2'],
+    mode: 'images',
+  }]);
+
   return canonicalizeTimelineData({
-    config: {
-      output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
-      tracks,
-      clips: [
-        { id: 'clip-1', at: 0, track: 'V1', clipType: 'hold', hold: 2 },
-        { id: 'clip-2', at: 2, track: 'V1', clipType: 'hold', hold: 2 },
-      ],
-      pinnedShotGroups: [{
-        shotId: 'shot-1',
-        trackId: 'V1',
-        clipIds: ['clip-1', 'clip-2'],
-        mode: 'images',
-      }],
-    },
+    config,
     configVersion: 1,
     registry: { assets: {} },
     resolvedConfig: {
-      output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
+      output: { ...config.output },
       tracks,
-      clips: [
-        { id: 'clip-1', at: 0, track: 'V1', clipType: 'hold', hold: 2 },
-        { id: 'clip-2', at: 2, track: 'V1', clipType: 'hold', hold: 2 },
-      ],
+      clips: config.clips.map((clip) => ({ ...clip })),
       registry: {},
     },
     rows: [

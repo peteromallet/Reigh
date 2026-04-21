@@ -55,6 +55,11 @@ export class TimelineVersionConflictError extends Error {
   }
 }
 
+export function isTimelineVersionConflictError(error: unknown): error is TimelineVersionConflictError {
+  return error instanceof TimelineVersionConflictError
+    || (error instanceof Error && error.name === 'TimelineVersionConflictError');
+}
+
 export class TimelineNotFoundError extends Error {
   code = 'timeline_not_found' as const;
 
@@ -62,6 +67,11 @@ export class TimelineNotFoundError extends Error {
     super(`Timeline ${timelineId} not found`);
     this.name = 'TimelineNotFoundError';
   }
+}
+
+export function isTimelineNotFoundError(error: unknown): error is TimelineNotFoundError {
+  return error instanceof TimelineNotFoundError
+    || (error instanceof Error && error.name === 'TimelineNotFoundError');
 }
 
 export interface DataProvider {

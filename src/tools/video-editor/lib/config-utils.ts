@@ -25,7 +25,7 @@ import type {
 
 export const REIGH_TIMELINE_APP_NAMESPACE = 'x-reigh';
 
-type TimelineConfigWithLegacyPinnedShotGroups = TimelineConfig & {
+type TimelineConfigLoadInput = TimelineConfig & {
   pinnedShotGroups?: TimelinePinnedShotGroups;
 };
 
@@ -64,19 +64,16 @@ export const getTimelineAppNamespace = (
 };
 
 export const getPinnedShotGroups = (
-  config: ({ app?: TimelineApp } & { pinnedShotGroups?: TimelinePinnedShotGroups }) | null | undefined,
+  config: { app?: TimelineApp } | null | undefined,
 ): TimelinePinnedShotGroups | undefined => {
   const namespacedPinnedShotGroups = getTimelineAppNamespace(config, REIGH_TIMELINE_APP_NAMESPACE)?.pinnedShotGroups;
-  if (Array.isArray(namespacedPinnedShotGroups)) {
-    return namespacedPinnedShotGroups as TimelinePinnedShotGroups;
-  }
-
-  const legacyPinnedShotGroups = (config as TimelineConfigWithLegacyPinnedShotGroups | null | undefined)?.pinnedShotGroups;
-  return Array.isArray(legacyPinnedShotGroups) ? legacyPinnedShotGroups : undefined;
+  return Array.isArray(namespacedPinnedShotGroups)
+    ? (namespacedPinnedShotGroups as TimelinePinnedShotGroups)
+    : undefined;
 };
 
 export const setPinnedShotGroups = (
-  config: TimelineConfigWithLegacyPinnedShotGroups,
+  config: TimelineConfigLoadInput,
   pinnedShotGroups: TimelinePinnedShotGroups | undefined,
 ): TimelineConfig => {
   const { app, pinnedShotGroups: _legacyPinnedShotGroups, ...rest } = config;
@@ -102,13 +99,16 @@ export const setPinnedShotGroups = (
 };
 
 export const canonicalizeTimelineConfig = (
-  config: TimelineConfig | TimelineConfigWithLegacyPinnedShotGroups,
+  config: TimelineConfigLoadInput,
 ): TimelineConfig => {
   if (!Object.prototype.hasOwnProperty.call(config, 'pinnedShotGroups')) {
     return config;
   }
 
-  return setPinnedShotGroups(config, getPinnedShotGroups(config));
+  return setPinnedShotGroups(
+    config,
+    Array.isArray(config.pinnedShotGroups) ? config.pinnedShotGroups : getPinnedShotGroups(config),
+  );
 };
 
 export const parseResolution = parseResolutionShared;

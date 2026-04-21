@@ -1,13 +1,18 @@
-import { useCallback, useRef } from 'react';
-import type { PreviewHandle } from '@/tools/video-editor/components/PreviewPanel/RemotionPreview';
-import type { TimelineCanvasHandle } from '@/tools/video-editor/types/timeline-canvas';
+import { useCallback, useRef, type Dispatch, type MutableRefObject, type RefObject, type SetStateAction } from 'react';
+import type { PreviewHandle, TimelineCanvasHandle } from './render-types.js';
 
-interface UseTimelineSyncOptions {
-  timelineRef: React.RefObject<TimelineCanvasHandle>;
-  previewRef: React.RefObject<PreviewHandle>;
-  setCurrentTime: React.Dispatch<React.SetStateAction<number>>;
-  isSyncingFromPreview: React.MutableRefObject<boolean>;
-  isSyncingFromTimeline: React.MutableRefObject<boolean>;
+export interface UseTimelineSyncOptions {
+  timelineRef: RefObject<TimelineCanvasHandle | null>;
+  previewRef: RefObject<PreviewHandle | null>;
+  setCurrentTime: Dispatch<SetStateAction<number>>;
+  isSyncingFromPreview: MutableRefObject<boolean>;
+  isSyncingFromTimeline: MutableRefObject<boolean>;
+}
+
+export interface UseTimelineSyncResult {
+  onPreviewTimeUpdate: (time: number) => void;
+  onCursorDrag: (time: number) => void;
+  onClickTimeArea: (time: number) => void;
 }
 
 export function useTimelineSync({
@@ -16,7 +21,7 @@ export function useTimelineSync({
   setCurrentTime,
   isSyncingFromPreview,
   isSyncingFromTimeline,
-}: UseTimelineSyncOptions) {
+}: UseTimelineSyncOptions): UseTimelineSyncResult {
   const lastTimeUpdateRef = useRef(0);
 
   const onPreviewTimeUpdate = useCallback((time: number) => {
@@ -53,7 +58,6 @@ export function useTimelineSync({
   const onClickTimeArea = useCallback((time: number) => {
     previewRef.current?.seek(time);
     setCurrentTime(time);
-    return undefined;
   }, [previewRef, setCurrentTime]);
 
   return { onPreviewTimeUpdate, onCursorDrag, onClickTimeArea };

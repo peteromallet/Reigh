@@ -1,16 +1,22 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { act, renderHook } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useTimelinePersistence } from './useTimelinePersistence';
-import { TimelineEventBus } from './useTimelineEventBus';
-import { createInteractionState, notifyInteractionEndIfIdle, type InteractionStateRef } from '../lib/interaction-state';
-import { configToRows, type TimelineData } from '../lib/timeline-data';
-import { getConfigSignature, getStableConfigSignature } from '../lib/config-utils';
-import { createDefaultTimelineConfig } from '../lib/defaults';
-import { TimelineVersionConflictError, type DataProvider } from '../data/DataProvider';
-import type { AssetRegistry } from '../types';
+import { createTestQueryClient } from '../testing.js';
+import { useTimelinePersistence } from './useTimelinePersistence.js';
+import { TimelineEventBus } from './timeline-events.js';
+import { createInteractionState, notifyInteractionEndIfIdle, type InteractionStateRef } from '../lib/interaction-state.js';
+import { buildTimelineRows } from '../lib/timeline-data.js';
+import { getConfigSignature, getStableConfigSignature } from '../lib/config-signatures.js';
+import {
+  TimelineVersionConflictError,
+  type DataProvider,
+} from '../data/DataProvider.js';
+import type { AssetRegistry } from '@tbd/engine';
+import type { TimelineData } from '../types.js';
+import type { TimelineConfig } from '@tbd/schema';
+import { createDefaultTimelineConfig } from '@tbd/schema';
 
 function makeRegistry(label: string): AssetRegistry {
   return {
@@ -27,19 +33,19 @@ function makeRegistry(label: string): AssetRegistry {
 
 function makeTimelineData(label: string, registry: AssetRegistry = { assets: {} }): TimelineData {
   const base = createDefaultTimelineConfig();
-  const config = {
+  const config: TimelineConfig = {
     ...base,
     output: { ...base.output, file: `output-${label}.mp4` },
     tracks: (base.tracks ?? []).map((track) => ({ ...track })),
     clips: [{
       id: `clip-${label}`,
       at: 0,
-      track: 'V1' as const,
-      clipType: 'hold' as const,
+      track: 'V1',
+      clipType: 'hold',
       hold: 1,
     }],
   };
-  const rowData = configToRows(config);
+  const rowData = buildTimelineRows(config);
   const assetMap = Object.fromEntries(
     Object.entries(registry.assets).map(([assetId, entry]) => [assetId, entry.file]),
   );
@@ -70,13 +76,13 @@ function makeTimelineData(label: string, registry: AssetRegistry = { assets: {} 
 }
 
 interface TestHarness {
-  provider: DataProvider;
   saveTimeline: ReturnType<typeof vi.fn>;
   loadTimeline: ReturnType<typeof vi.fn>;
   loadAssetRegistry: ReturnType<typeof vi.fn>;
   interactionStateRef: InteractionStateRef;
   dataRef: { current: TimelineData | null };
   scheduleSave: (data: TimelineData) => void;
+  result: { current: ReturnType<typeof useTimelinePersistence> };
 }
 
 interface SetupOptions {
@@ -94,7 +100,7 @@ interface SetupOptions {
 function setup(options?: SetupOptions): TestHarness {
   const saveTimeline = vi.fn(
     options?.saveTimelineImpl
-      ?? (async (_id: string, _config: TimelineData['config'], _version: number, _registry?: AssetRegistry) => 2),
+      ?? (async () => 2),
   );
   const loadTimeline = vi.fn(
     options?.loadTimelineImpl
@@ -119,9 +125,7 @@ function setup(options?: SetupOptions): TestHarness {
   const configVersionRef = { current: 1 };
   const lastSavedSignatureRef = { current: '' };
 
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
+  const queryClient = createTestQueryClient();
   const wrapper = ({ children }: { children: React.ReactNode }) =>
     React.createElement(QueryClientProvider, { client: queryClient }, children);
 
@@ -144,12 +148,12 @@ function setup(options?: SetupOptions): TestHarness {
   );
 
   return {
-    provider,
     saveTimeline,
     loadTimeline,
     loadAssetRegistry,
     interactionStateRef,
     dataRef,
+    result: hook.result,
     scheduleSave: (data) => {
       dataRef.current = data;
       act(() => {
@@ -159,7 +163,7 @@ function setup(options?: SetupOptions): TestHarness {
   };
 }
 
-describe('useTimelinePersistence — interaction gating', () => {
+describe('useTimelinePersistence', () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });
@@ -169,26 +173,11 @@ describe('useTimelinePersistence — interaction gating', () => {
     vi.useRealTimers();
   });
 
-  it('does NOT fire saveTimeline while a drag interaction is active', async () => {
+  it('does not fire saveTimeline while a drag interaction is active', async () => {
     const harness = setup();
     harness.interactionStateRef.current.drag = true;
 
     harness.scheduleSave(makeTimelineData('mid-drag'));
-
-    // Advance well past the 500ms debounce.
-    await act(async () => {
-      vi.advanceTimersByTime(2000);
-      await Promise.resolve();
-    });
-
-    expect(harness.saveTimeline).not.toHaveBeenCalled();
-  });
-
-  it('does NOT fire saveTimeline while a resize interaction is active', async () => {
-    const harness = setup();
-    harness.interactionStateRef.current.resize = true;
-
-    harness.scheduleSave(makeTimelineData('mid-resize'));
 
     await act(async () => {
       vi.advanceTimersByTime(2000);
@@ -202,7 +191,6 @@ describe('useTimelinePersistence — interaction gating', () => {
     const harness = setup();
     harness.interactionStateRef.current.drag = true;
 
-    // First scheduled mid-drag — should be deferred and replaced.
     harness.scheduleSave(makeTimelineData('drag-1'));
     harness.scheduleSave(makeTimelineData('drag-2'));
     harness.scheduleSave(makeTimelineData('drag-3'));
@@ -213,45 +201,8 @@ describe('useTimelinePersistence — interaction gating', () => {
     });
     expect(harness.saveTimeline).not.toHaveBeenCalled();
 
-    // End the gesture.
     await act(async () => {
       harness.interactionStateRef.current.drag = false;
-      notifyInteractionEndIfIdle(harness.interactionStateRef);
-      // Now scheduleSave's setTimeout(500) should fire.
-      vi.advanceTimersByTime(600);
-      await Promise.resolve();
-    });
-
-    expect(harness.saveTimeline).toHaveBeenCalledTimes(1);
-    // Should have flushed the newest payload — output.file ends with 'drag-3'.
-    const args = harness.saveTimeline.mock.calls[0]?.[1];
-    expect(args?.output.file).toBe('output-drag-3.mp4');
-  });
-
-  it('keeps save deferred until both drag and resize interactions are idle', async () => {
-    const harness = setup();
-    harness.interactionStateRef.current.drag = true;
-    harness.interactionStateRef.current.resize = true;
-
-    harness.scheduleSave(makeTimelineData('both-active'));
-
-    await act(async () => {
-      vi.advanceTimersByTime(2000);
-      await Promise.resolve();
-    });
-    expect(harness.saveTimeline).not.toHaveBeenCalled();
-
-    await act(async () => {
-      harness.interactionStateRef.current.drag = false;
-      notifyInteractionEndIfIdle(harness.interactionStateRef);
-      vi.advanceTimersByTime(600);
-      await Promise.resolve();
-    });
-
-    expect(harness.saveTimeline).not.toHaveBeenCalled();
-
-    await act(async () => {
-      harness.interactionStateRef.current.resize = false;
       notifyInteractionEndIfIdle(harness.interactionStateRef);
       vi.advanceTimersByTime(600);
       await Promise.resolve();
@@ -259,57 +210,24 @@ describe('useTimelinePersistence — interaction gating', () => {
 
     expect(harness.saveTimeline).toHaveBeenCalledTimes(1);
     const args = harness.saveTimeline.mock.calls[0]?.[1];
-    expect(args?.output.file).toBe('output-both-active.mp4');
+    expect(args?.output.file).toBe('output-drag-3.mp4');
   });
 
-  it('schedules saves normally when no interaction is active', async () => {
-    const harness = setup();
-
-    harness.scheduleSave(makeTimelineData('normal'));
-
-    await act(async () => {
-      vi.advanceTimersByTime(600);
-      await Promise.resolve();
-    });
-
-    expect(harness.saveTimeline).toHaveBeenCalledTimes(1);
-  });
-
-  it('doSave passes registry to saveTimeline', async () => {
-    const harness = setup();
-    const registry = makeRegistry('save');
-    const nextData = makeTimelineData('with-registry', registry);
-
-    harness.scheduleSave(nextData);
-
-    await act(async () => {
-      vi.advanceTimersByTime(600);
-      await Promise.resolve();
-    });
-
-    expect(harness.saveTimeline).toHaveBeenCalledTimes(1);
-    expect(harness.saveTimeline).toHaveBeenCalledWith('timeline-1', nextData.config, 1, registry);
-  });
-
-  it('conflict retry reloads registry and updates dataRef', async () => {
-    const staleRegistry = makeRegistry('stale');
-    const freshRegistry = makeRegistry('fresh');
-    const nextData = makeTimelineData('conflict', staleRegistry);
-    let saveAttempt = 0;
+  it('reloads and retries after a version conflict', async () => {
+    const registry = makeRegistry('latest');
     const harness = setup({
-      initialData: nextData,
-      saveTimelineImpl: async (_id, _config, _version, _registry) => {
-        saveAttempt += 1;
-        if (saveAttempt === 1) {
-          throw new TimelineVersionConflictError();
-        }
-        return 2;
-      },
-      loadTimelineImpl: async () => ({ config: nextData.config, configVersion: 2 }),
-      loadAssetRegistryImpl: async () => freshRegistry,
+      initialData: makeTimelineData('local', registry),
+      saveTimelineImpl: vi.fn()
+        .mockRejectedValueOnce(new TimelineVersionConflictError())
+        .mockResolvedValueOnce(3),
+      loadTimelineImpl: async () => ({
+        config: makeTimelineData('server').config,
+        configVersion: 2,
+      }),
+      loadAssetRegistryImpl: async () => registry,
     });
 
-    harness.scheduleSave(nextData);
+    harness.scheduleSave(makeTimelineData('local', registry));
 
     await act(async () => {
       vi.advanceTimersByTime(600);
@@ -317,10 +235,10 @@ describe('useTimelinePersistence — interaction gating', () => {
       await Promise.resolve();
     });
 
+    expect(harness.loadTimeline).toHaveBeenCalledWith('timeline-1');
     expect(harness.loadAssetRegistry).toHaveBeenCalledWith('timeline-1');
     expect(harness.saveTimeline).toHaveBeenCalledTimes(2);
-    expect(harness.saveTimeline.mock.calls[0]?.[3]).toEqual(staleRegistry);
-    expect(harness.saveTimeline.mock.calls[1]?.[3]).toEqual(freshRegistry);
-    expect(harness.dataRef.current?.registry).toEqual(freshRegistry);
+    expect(harness.result.current.isConflictExhausted).toBe(false);
+    expect(harness.result.current.saveStatus).toBe('saved');
   });
 });

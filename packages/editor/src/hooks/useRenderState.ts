@@ -1,12 +1,9 @@
 import { useEffect, useState } from 'react';
-import { useClientRender } from '@/tools/video-editor/hooks/useClientRender';
-import type { CompositionMetadata } from '@/tools/video-editor/hooks/useDerivedTimeline';
-import type { ResolvedTimelineConfig } from '@/tools/video-editor/types';
+import { useClientRender } from './useClientRender.js';
+import type { CompositionMetadata, RenderProgress, RenderStatus } from './render-types.js';
+import type { ResolvedTimelineConfig } from '@tbd/engine';
 
-export type RenderStatus = 'idle' | 'rendering' | 'done' | 'error';
-
-type RenderProgress = { current: number; total: number; percent: number; phase: string } | null;
-type RenderResult = { url: string | null; filename: string | null };
+export type { RenderStatus } from './render-types.js';
 
 export function useRenderState(
   resolvedConfig: ResolvedTimelineConfig | null,

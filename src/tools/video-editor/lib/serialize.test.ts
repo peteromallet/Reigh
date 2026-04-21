@@ -117,6 +117,40 @@ describe('video-editor serialization', () => {
     expect(getTimelineAppNamespace(serialized, REIGH_TIMELINE_APP_NAMESPACE)?.pinnedShotGroups).toEqual(pinnedShotGroups);
   });
 
+  it('rejects save-time validation for legacy top-level pinnedShotGroups', () => {
+    const legacyConfig = {
+      output: {
+        resolution: '1280x720',
+        fps: 30,
+        file: 'out.mp4',
+      },
+      tracks: [
+        {
+          id: 'V1',
+          kind: 'visual',
+          label: 'V1',
+        },
+      ],
+      clips: [
+        {
+          id: 'clip-1',
+          at: 0,
+          track: 'V1',
+          clipType: 'hold',
+          hold: 5,
+        },
+      ],
+      pinnedShotGroups: [{
+        shotId: 'shot-1',
+        trackId: 'V1',
+        clipIds: ['clip-1'],
+        mode: 'images',
+      }],
+    } as unknown as TimelineConfig;
+
+    expect(() => validateSerializedConfig(legacyConfig)).toThrow(/unrecognized key/i);
+  });
+
   it('round-trips legacy pinnedShotGroups through repairConfig before serialization', () => {
     const repaired = repairConfig({
       output: {

@@ -1,5 +1,6 @@
-import type { TimelineClip, TimelineConfig, TrackDefinition } from '@tbd/schema';
 import type { AssetRegistry, ResolvedTimelineConfig } from '@tbd/engine';
+import type { TimelineClip, TimelineConfig, TrackDefinition } from '@tbd/schema';
+import type { TimelineEffect } from './lib/timeline-data.js';
 
 export interface TimelineAction {
   id: string;
@@ -30,7 +31,11 @@ export interface TimelineData {
   resolvedConfig: ResolvedTimelineConfig;
   rows: TimelineRow[];
   meta: Record<string, ClipMeta>;
+  effects: Record<string, TimelineEffect>;
+  assetMap: Record<string, string>;
   tracks: TrackDefinition[];
   output: TimelineConfig['output'];
   clipOrder: Record<string, string[]>;
+  signature: string;
+  stableSignature: string;
 }

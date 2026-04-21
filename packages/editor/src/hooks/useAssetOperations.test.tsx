@@ -2,8 +2,9 @@
 import { QueryClient } from '@tanstack/react-query';
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { DataProvider } from '@/tools/video-editor/data/DataProvider';
-import { useAssetOperations } from '@/tools/video-editor/hooks/useAssetOperations';
+import type { DataProvider } from '../data/DataProvider.js';
+import { useAssetOperations } from './useAssetOperations.js';
+import { assetRegistryQueryKey, timelineQueryKey } from './queryKeys.js';
 
 function makeProvider(overrides: Partial<DataProvider> = {}): DataProvider {
   return {
@@ -17,7 +18,7 @@ function makeProvider(overrides: Partial<DataProvider> = {}): DataProvider {
     })),
     saveTimeline: vi.fn(async () => 1),
     loadAssetRegistry: vi.fn(async () => ({ assets: {} })),
-    resolveAssetUrl: vi.fn(async (file: string) => file),
+    resolveAssetUrl: vi.fn((file: string) => file),
     ...overrides,
   };
 }
@@ -42,22 +43,29 @@ describe('useAssetOperations', () => {
     expect(pendingOpsRef.current).toBe(0);
   });
 
-  it('decrements pendingOpsRef when registerAsset throws', async () => {
+  it('invalidates timeline and asset registry queries after uploads', async () => {
     const pendingOpsRef = { current: 0 };
     const provider = makeProvider({
-      registerAsset: vi.fn(async () => {
-        throw new Error('register failed');
-      }),
+      uploadAsset: vi.fn(async () => ({
+        assetId: 'asset-1',
+        entry: { file: 'media/clip.mp4', type: 'video/mp4' },
+      })),
     });
     const queryClient = new QueryClient();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
     const { result } = renderHook(() => (
       useAssetOperations(provider, 'timeline-1', 'user-1', queryClient, pendingOpsRef)
     ));
 
-    await expect(act(async () => {
-      await result.current.registerAsset('asset-1', { file: 'clip.mp4' });
-    })).rejects.toThrow('register failed');
+    await act(async () => {
+      await result.current.uploadFiles([
+        new File(['a'], 'a.mp4', { type: 'video/mp4' }),
+        new File(['b'], 'b.mp4', { type: 'video/mp4' }),
+      ]);
+    });
 
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: timelineQueryKey('timeline-1') });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: assetRegistryQueryKey('timeline-1') });
     expect(pendingOpsRef.current).toBe(0);
   });
 });

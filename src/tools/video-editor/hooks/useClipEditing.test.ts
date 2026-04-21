@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Shot } from '@/domains/generation/types';
 import { toast } from '@/shared/components/ui/runtime/sonner';
 import { patchAffectsDuration, recalcActionEnd } from '@/tools/video-editor/lib/clip-editing-utils';
-import { getConfigSignature, getPinnedShotGroups } from '@/tools/video-editor/lib/config-utils';
+import { getConfigSignature, getPinnedShotGroups, setPinnedShotGroups } from '@/tools/video-editor/lib/config-utils';
 import { useClipEditing } from '@/tools/video-editor/hooks/useClipEditing';
 import { usePinnedGroupSync, usePinnedShotGroups } from '@/tools/video-editor/hooks/usePinnedShotGroups';
 import { useSwitchToFinalVideo } from '@/tools/video-editor/hooks/useSwitchToFinalVideo';
@@ -42,6 +42,11 @@ const makePinnedGroup = (args: {
   ...(args.videoAssetKey ? { videoAssetKey: args.videoAssetKey } : {}),
   ...(args.imageClipSnapshot ? { imageClipSnapshot: args.imageClipSnapshot } : {}),
 });
+
+const withPinnedShotGroups = (
+  config: TimelineConfig,
+  pinnedShotGroups: TimelinePinnedShotGroups,
+): TimelineConfig => setPinnedShotGroups(config, pinnedShotGroups);
 
 const makeTimelineData = (overrides?: {
   rows?: TimelineRow[];
@@ -209,20 +214,19 @@ describe('useClipEditing pinned group guards', () => {
     const applyEdit = vi.fn();
     const dataRef = {
       current: makeConfigTimelineData(
-        {
+        withPinnedShotGroups({
           output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
           tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
           clips: [
             { id: 'clip-1', at: 0, track: 'V1', clipType: 'hold', asset: 'asset-1', hold: 5 },
             { id: 'clip-2', at: 5, track: 'V1', clipType: 'hold', asset: 'asset-2', hold: 5 },
           ],
-          pinnedShotGroups: [makePinnedGroup({
-            shotId: 'shot-1',
-            trackId: 'V1',
-            clipIds: ['clip-1', 'clip-2'],
-            mode: 'images',
-          })],
-        },
+        }, [makePinnedGroup({
+          shotId: 'shot-1',
+          trackId: 'V1',
+          clipIds: ['clip-1', 'clip-2'],
+          mode: 'images',
+        })]),
         {
           assets: {
             'asset-1': { file: 'one.png', type: 'image/png' },
@@ -259,19 +263,18 @@ describe('useClipEditing pinned group guards', () => {
     const applyEdit = vi.fn();
     const dataRef = {
       current: makeConfigTimelineData(
-        {
+        withPinnedShotGroups({
           output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
           tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
           clips: [
             { id: 'clip-1', at: 0, track: 'V1', clipType: 'hold', asset: 'asset-1', hold: 5 },
           ],
-          pinnedShotGroups: [makePinnedGroup({
-            shotId: 'shot-1',
-            trackId: 'V1',
-            clipIds: ['clip-1'],
-            mode: 'images',
-          })],
-        },
+        }, [makePinnedGroup({
+          shotId: 'shot-1',
+          trackId: 'V1',
+          clipIds: ['clip-1'],
+          mode: 'images',
+        })]),
         {
           assets: {
             'asset-1': { file: 'one.png', type: 'image/png' },
@@ -304,19 +307,18 @@ describe('useClipEditing pinned group guards', () => {
     const applyEdit = vi.fn();
     const dataRef = {
       current: makeConfigTimelineData(
-        {
+        withPinnedShotGroups({
           output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
           tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
           clips: [
             { id: 'clip-1', at: 0, track: 'V1', clipType: 'hold', asset: 'asset-1', hold: 5 },
           ],
-          pinnedShotGroups: [makePinnedGroup({
-            shotId: 'shot-1',
-            trackId: 'V1',
-            clipIds: ['clip-1'],
-            mode: 'images',
-          })],
-        },
+        }, [makePinnedGroup({
+          shotId: 'shot-1',
+          trackId: 'V1',
+          clipIds: ['clip-1'],
+          mode: 'images',
+        })]),
         {
           assets: {
             'asset-1': { file: 'one.png', type: 'image/png' },
@@ -349,19 +351,18 @@ describe('useClipEditing pinned group guards', () => {
     const applyEdit = vi.fn();
     const dataRef = {
       current: makeConfigTimelineData(
-        {
+        withPinnedShotGroups({
           output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
           tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
           clips: [
             { id: 'clip-1', at: 0, track: 'V1', clipType: 'hold', asset: 'asset-1', hold: 5 },
           ],
-          pinnedShotGroups: [makePinnedGroup({
-            shotId: 'shot-1',
-            trackId: 'V1',
-            clipIds: ['clip-1'],
-            mode: 'images',
-          })],
-        },
+        }, [makePinnedGroup({
+          shotId: 'shot-1',
+          trackId: 'V1',
+          clipIds: ['clip-1'],
+          mode: 'images',
+        })]),
         {
           assets: {
             'asset-1': { file: 'one.png', type: 'image/png' },
@@ -485,20 +486,19 @@ describe('useSwitchToFinalVideo', () => {
     const registerAsset = vi.fn(async () => undefined);
     const dataRef = {
       current: makeConfigTimelineData(
-        {
+        withPinnedShotGroups({
           output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
           tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
           clips: [
             { id: 'clip-1', at: 4, track: 'V1', clipType: 'hold', asset: 'asset-1', hold: 5 },
             { id: 'clip-2', at: 9, track: 'V1', clipType: 'hold', asset: 'asset-2', hold: 5 },
           ],
-          pinnedShotGroups: [makePinnedGroup({
-            shotId: 'shot-1',
-            trackId: 'V1',
-            clipIds: ['clip-1', 'clip-2'],
-            mode: 'images',
-          })],
-        },
+        }, [makePinnedGroup({
+          shotId: 'shot-1',
+          trackId: 'V1',
+          clipIds: ['clip-1', 'clip-2'],
+          mode: 'images',
+        })]),
         {
           assets: {
             'asset-1': { file: 'one.png', type: 'image/png', generationId: 'gen-1' },
@@ -562,23 +562,22 @@ describe('useSwitchToFinalVideo', () => {
     const registerAsset = vi.fn(async () => undefined);
     const dataRef = {
       current: makeConfigTimelineData(
-        {
+        withPinnedShotGroups({
           output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
           tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
           clips: [
             { id: 'clip-3', at: 7, track: 'V1', clipType: 'media', asset: 'asset-video', from: 0, to: 10, speed: 1 },
           ],
-          pinnedShotGroups: [makePinnedGroup({
-            shotId: 'shot-1',
-            trackId: 'V1',
-            clipIds: ['clip-3'],
-            mode: 'video',
-            videoAssetKey: 'asset-video',
-            imageClipSnapshot: [
-              { clipId: 'clip-1', assetKey: 'asset-1', start: 7, end: 10, meta: { clipType: 'hold', hold: 3 } },
-            ],
-          })],
-        },
+        }, [makePinnedGroup({
+          shotId: 'shot-1',
+          trackId: 'V1',
+          clipIds: ['clip-3'],
+          mode: 'video',
+          videoAssetKey: 'asset-video',
+          imageClipSnapshot: [
+            { clipId: 'clip-1', assetKey: 'asset-1', start: 7, end: 10, meta: { clipType: 'hold', hold: 3 } },
+          ],
+        })]),
         {
           assets: {
             'asset-video': { file: 'video-old.mp4', type: 'video/mp4', generationId: 'final-old' },
@@ -638,24 +637,23 @@ describe('useSwitchToFinalVideo', () => {
     const applyEdit = vi.fn();
     const dataRef = {
       current: makeConfigTimelineData(
-        {
+        withPinnedShotGroups({
           output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
           tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
           clips: [
             { id: 'clip-3', at: 7, track: 'V1', clipType: 'media', asset: 'asset-video', from: 0, to: 10, speed: 1 },
           ],
-          pinnedShotGroups: [makePinnedGroup({
-            shotId: 'shot-1',
-            trackId: 'V1',
-            clipIds: ['clip-3'],
-            mode: 'video',
-            videoAssetKey: 'asset-video',
-            imageClipSnapshot: [
-              { clipId: 'clip-1', assetKey: 'asset-1', start: 7, end: 10, meta: { clipType: 'hold', hold: 3 } },
-              { clipId: 'clip-2', assetKey: 'asset-2', start: 10, end: 14, meta: { clipType: 'hold', hold: 4 } },
-            ],
-          })],
-        },
+        }, [makePinnedGroup({
+          shotId: 'shot-1',
+          trackId: 'V1',
+          clipIds: ['clip-3'],
+          mode: 'video',
+          videoAssetKey: 'asset-video',
+          imageClipSnapshot: [
+            { clipId: 'clip-1', assetKey: 'asset-1', start: 7, end: 10, meta: { clipType: 'hold', hold: 3 } },
+            { clipId: 'clip-2', assetKey: 'asset-2', start: 10, end: 14, meta: { clipType: 'hold', hold: 4 } },
+          ],
+        })]),
         {
           assets: {
             'asset-video': { file: 'video.mp4', type: 'video/mp4' },
@@ -748,19 +746,18 @@ describe('usePinnedGroupSync', () => {
     const applyEdit = vi.fn();
     const dataRef = {
       current: makeConfigTimelineData(
-        {
+        withPinnedShotGroups({
           output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
           tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
           clips: [
             { id: 'clip-1', at: 0, track: 'V1', clipType: 'hold', asset: 'asset-1', hold: 5 },
           ],
-          pinnedShotGroups: [makePinnedGroup({
-            shotId: 'shot-1',
-            trackId: 'V1',
-            clipIds: ['clip-1'],
-            mode: 'images',
-          })],
-        },
+        }, [makePinnedGroup({
+          shotId: 'shot-1',
+          trackId: 'V1',
+          clipIds: ['clip-1'],
+          mode: 'images',
+        })]),
         {
           assets: {
             'asset-1': { file: 'one.png', type: 'image/png', generationId: 'gen-1' },
@@ -822,19 +819,18 @@ describe('usePinnedGroupSync', () => {
     const interactionStateRef = { current: { drag: false, resize: true } };
     const dataRef = {
       current: makeConfigTimelineData(
-        {
+        withPinnedShotGroups({
           output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
           tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
           clips: [
             { id: 'clip-1', at: 0, track: 'V1', clipType: 'hold', asset: 'asset-1', hold: 5 },
           ],
-          pinnedShotGroups: [makePinnedGroup({
-            shotId: 'shot-1',
-            trackId: 'V1',
-            clipIds: ['clip-1'],
-            mode: 'images',
-          })],
-        },
+        }, [makePinnedGroup({
+          shotId: 'shot-1',
+          trackId: 'V1',
+          clipIds: ['clip-1'],
+          mode: 'images',
+        })]),
         {
           assets: {
             'asset-1': { file: 'one.png', type: 'image/png', generationId: 'gen-1' },
@@ -900,19 +896,18 @@ describe('usePinnedGroupSync', () => {
     const applyEdit = vi.fn();
     const dataRef = {
       current: makeConfigTimelineData(
-        {
+        withPinnedShotGroups({
           output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
           tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
           clips: [
             { id: 'clip-1', at: 0, track: 'V1', clipType: 'media', asset: 'asset-1', from: 0, to: 5, speed: 1 },
           ],
-          pinnedShotGroups: [makePinnedGroup({
-            shotId: 'shot-1',
-            trackId: 'V1',
-            clipIds: ['clip-1'],
-            mode: 'video',
-          })],
-        },
+        }, [makePinnedGroup({
+          shotId: 'shot-1',
+          trackId: 'V1',
+          clipIds: ['clip-1'],
+          mode: 'video',
+        })]),
         {
           assets: {
             'asset-1': { file: 'video.mp4', type: 'video/mp4', generationId: 'final-1' },
@@ -948,19 +943,18 @@ describe('usePinnedGroupSync', () => {
     const registerGenerationAsset = vi.fn();
     const dataRef = {
       current: makeConfigTimelineData(
-        {
+        withPinnedShotGroups({
           output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
           tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
           clips: [
             { id: 'clip-1', at: 0, track: 'V1', clipType: 'hold', asset: 'asset-1', hold: 5 },
           ],
-          pinnedShotGroups: [makePinnedGroup({
-            shotId: 'shot-1',
-            trackId: 'V1',
-            clipIds: ['clip-1'],
-            mode: 'images',
-          })],
-        },
+        }, [makePinnedGroup({
+          shotId: 'shot-1',
+          trackId: 'V1',
+          clipIds: ['clip-1'],
+          mode: 'images',
+        })]),
         {
           assets: {
             'asset-1': { file: 'one.png', type: 'image/png', generationId: 'gen-1' },
@@ -999,19 +993,18 @@ describe('usePinnedGroupSync', () => {
     const applyEdit = vi.fn();
     const dataRef = {
       current: makeConfigTimelineData(
-        {
+        withPinnedShotGroups({
           output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
           tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
           clips: [
             { id: 'clip-1', at: 7, track: 'V1', clipType: 'hold', asset: 'asset-1', hold: 5 },
           ],
-          pinnedShotGroups: [makePinnedGroup({
-            shotId: 'shot-1',
-            trackId: 'V1',
-            clipIds: ['clip-1'],
-            mode: 'images',
-          })],
-        },
+        }, [makePinnedGroup({
+          shotId: 'shot-1',
+          trackId: 'V1',
+          clipIds: ['clip-1'],
+          mode: 'images',
+        })]),
         {
           assets: {
             'asset-1': { file: 'one.png', type: 'image/png', generationId: 'gen-1' },

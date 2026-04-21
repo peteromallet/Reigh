@@ -1,28 +1,25 @@
-import { useEffect, useState } from 'react';
-import type { TimelineSummary } from '../data/DataProvider.js';
-import { useEditorStore } from './timelineStore.js';
+import { useQuery } from '@tanstack/react-query';
+import { loadTimelineJsonFromProvider } from '../lib/timeline-data.js';
+import { assetRegistryQueryKey, timelineQueryKey } from './queryKeys.js';
+import type { DataProvider } from '../data/DataProvider.js';
 
-export function useTimelineQueries() {
-  const ports = useEditorStore((state) => state.ports);
-  const [timelines, setTimelines] = useState<TimelineSummary[]>([]);
+export function useTimelineQueries(provider: DataProvider, timelineId: string) {
+  const timelineQuery = useQuery({
+    queryKey: timelineQueryKey(timelineId),
+    enabled: Boolean(timelineId),
+    queryFn: () => loadTimelineJsonFromProvider(provider, timelineId),
+    refetchInterval: 30_000,
+  });
 
-  useEffect(() => {
-    let cancelled = false;
-    if (!ports.dataProvider.listTimelines) {
-      setTimelines([]);
-      return;
-    }
+  const assetRegistryQuery = useQuery({
+    queryKey: assetRegistryQueryKey(timelineId),
+    enabled: Boolean(timelineId),
+    queryFn: () => provider.loadAssetRegistry(timelineId),
+    refetchInterval: 30_000,
+  });
 
-    void ports.dataProvider.listTimelines().then((next) => {
-      if (!cancelled) {
-        setTimelines(next);
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [ports.dataProvider]);
-
-  return { timelines };
+  return {
+    timelineQuery,
+    assetRegistryQuery,
+  };
 }

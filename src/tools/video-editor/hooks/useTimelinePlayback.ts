@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
+import { useTimelineSync } from '@tbd/editor';
 import type { PreviewHandle } from '@/tools/video-editor/components/PreviewPanel/RemotionPreview';
-import { useTimelineSync } from '@/tools/video-editor/hooks/useTimelineSync';
 import type { TimelineCanvasHandle } from '@/tools/video-editor/types/timeline-canvas';
 
 export interface UseTimelinePlaybackResult {
@@ -12,7 +12,7 @@ export interface UseTimelinePlaybackResult {
   timelineWrapperRef: React.RefObject<HTMLDivElement>;
   onPreviewTimeUpdate: (time: number) => void;
   onCursorDrag: (time: number) => void;
-  onClickTimeArea: (time: number) => undefined;
+  onClickTimeArea: (time: number) => void;
   formatTime: (time: number) => string;
 }
 

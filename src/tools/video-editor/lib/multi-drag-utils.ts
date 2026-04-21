@@ -10,7 +10,6 @@ import type { TimelineRow } from '@/tools/video-editor/types/timeline-canvas';
 import type {
   PinnedShotGroup,
   ResolvedTimelineConfig,
-  TimelinePinnedShotGroups,
   TrackKind,
 } from '@/tools/video-editor/types';
 import { findNearestFreeTrack, moveClipBetweenTracks, trySnapToEdge } from '@/tools/video-editor/lib/coordinate-utils';
@@ -105,8 +104,7 @@ export function buildConfigFromDragResult(
   baseMeta: Record<string, ClipMeta>,
   nextRows: TimelineRow[],
   metaUpdates: Record<string, Partial<ClipMeta>>,
-  pinnedShotGroups?: TimelinePinnedShotGroups,
-): ResolvedTimelineConfig & { pinnedShotGroups?: TimelinePinnedShotGroups } {
+): ResolvedTimelineConfig {
   const mergedMeta: Record<string, ClipMeta> = Object.fromEntries(
     Object.entries(baseMeta).map(([clipId, clipMeta]) => [
       clipId,
@@ -173,7 +171,6 @@ export function buildConfigFromDragResult(
   return {
     ...baseConfig,
     clips: nextClips,
-    ...(pinnedShotGroups && pinnedShotGroups.length > 0 ? { pinnedShotGroups } : {}),
   };
 }
 

@@ -30,9 +30,29 @@ function buildTimelineData(): TimelineData {
       'clip-1': { asset: 'asset-1', track: 'V1', clipType: 'hold', hold: 2, text: { content: 'A' }, id: 'clip-1', at: 2 },
       'clip-2': { asset: 'asset-2', track: 'V1', clipType: 'hold', hold: 2, id: 'clip-2', at: 7 },
     },
+    effects: {
+      'effect-clip-0': { id: 'effect-clip-0' },
+      'effect-clip-1': { id: 'effect-clip-1' },
+      'effect-clip-2': { id: 'effect-clip-2' },
+    },
+    assetMap: {},
     tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
     output: { resolution: '1280x720', fps: 30, file: 'out.mp4' },
     clipOrder: { V1: ['clip-0', 'clip-1', 'clip-2'] },
+    signature: JSON.stringify({
+      output: { resolution: '1280x720', fps: 30, file: 'out.mp4' },
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+      registry: {},
+    }),
+    stableSignature: JSON.stringify({
+      config: {
+        output: { resolution: '1280x720', fps: 30, file: 'out.mp4' },
+        clips: [],
+        tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      },
+      registry: { assets: {} },
+    }),
   };
 }
 

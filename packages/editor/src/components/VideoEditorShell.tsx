@@ -1,21 +1,26 @@
 import { useMemo } from 'react';
-import { useEditorStore } from '../hooks/timelineStore.js';
+import {
+  useEditorStore,
+  useTimelineEditorData,
+  useTimelinePlaybackContext,
+} from '../hooks/timelineStore.js';
 import { TimelineCanvas } from './TimelineCanvas.js';
 import { RemotionPreview } from './PreviewPanel/RemotionPreview.js';
 
 export function TimelineEditorShell() {
-  const data = useEditorStore((state) => state.data);
+  const editorData = useTimelineEditorData();
+  const playback = useTimelinePlaybackContext();
   const loading = useEditorStore((state) => state.loading);
   const error = useEditorStore((state) => state.error);
-  const currentTime = useEditorStore((state) => state.currentTime);
-  const setCurrentTime = useEditorStore((state) => state.setCurrentTime);
-  const selectedClipIds = useEditorStore((state) => state.selectedClipIds);
+  const data = editorData.data;
+  const selectedClipIds = editorData.selectedClipIds;
 
   const selectedClip = useMemo(() => {
-    if (!data || selectedClipIds.length !== 1) {
+    if (!data || selectedClipIds.size !== 1) {
       return null;
     }
-    return data.config.clips.find((clip) => clip.id === selectedClipIds[0]) ?? null;
+    const [selectedClipId] = selectedClipIds;
+    return data.config.clips.find((clip) => clip.id === selectedClipId) ?? null;
   }, [data, selectedClipIds]);
 
   if (loading) {
@@ -35,8 +40,8 @@ export function TimelineEditorShell() {
       <div style={{ display: 'grid', gap: 16 }}>
         <RemotionPreview
           config={data.resolvedConfig}
-          currentTime={currentTime}
-          onTimeUpdate={setCurrentTime}
+          currentTime={playback.currentTime}
+          onTimeUpdate={playback.onPreviewTimeUpdate}
         />
         <TimelineCanvas />
       </div>

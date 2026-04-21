@@ -11,6 +11,7 @@ import {
   buildAugmentedData,
   planMultiDragMoves,
 } from '../lib/multi-drag-utils';
+import { getPinnedShotGroups, setPinnedShotGroups } from '../lib/config-utils';
 import { orderClipIdsByAt } from '../lib/pinned-group-projection';
 import type { PinnedShotGroup, TrackDefinition } from '../types';
 import type { ClipMeta, TimelineData } from '../lib/timeline-data';
@@ -52,12 +53,11 @@ function makeData(opts: {
     };
   }));
   return {
-    config: {
+    config: setPinnedShotGroups({
       output,
       tracks: opts.tracks,
       clips,
-      pinnedShotGroups: opts.pinnedShotGroups,
-    },
+    }, opts.pinnedShotGroups),
     configVersion: 1,
     registry: { assets: {} },
     resolvedConfig: { output, tracks: opts.tracks, clips, registry: {} },
@@ -167,7 +167,7 @@ describe('T9 — soft-tag grouped drag', () => {
 
     // Soft-tag override: trackId unchanged, clipIds in live `at` order.
     const override = rebuildGroupAfterDrag(
-      data.config.pinnedShotGroups,
+      getPinnedShotGroups(data.config),
       { shotId: 'shot-1', trackId: 'V1' },
       'V1',
       nextRows,
@@ -221,7 +221,7 @@ describe('T9 — soft-tag grouped drag', () => {
 
     // The rebuilt override keeps the group on the original track.
     const override = rebuildGroupAfterDrag(
-      data.config.pinnedShotGroups,
+      getPinnedShotGroups(data.config),
       { shotId: 'shot-1', trackId: 'V1' },
       'V1',
       nextRows,
@@ -263,7 +263,7 @@ describe('T9 — soft-tag grouped drag', () => {
 
     // Override: trackId updated to V2.
     const override = rebuildGroupAfterDrag(
-      data.config.pinnedShotGroups,
+      getPinnedShotGroups(data.config),
       { shotId: 'shot-1', trackId: 'V1' },
       'V2',
       nextRows,
@@ -309,7 +309,7 @@ describe('T9 — soft-tag grouped drag', () => {
 
     // Override: trackId updated to the new track.
     const override = rebuildGroupAfterDrag(
-      data.config.pinnedShotGroups,
+      getPinnedShotGroups(data.config),
       { shotId: 'shot-1', trackId: 'V1' },
       newTrackId,
       nextRows,

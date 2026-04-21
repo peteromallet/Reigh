@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import {
+  TimelineStoreProvider,
+  useTimelineEditorOps,
+} from '@tbd/editor';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from '@/shared/components/ui/runtime/sonner';
 import { MediaLightbox } from '@/domains/media-lightbox/MediaLightbox';
@@ -20,10 +24,6 @@ import { useEffectRegistry } from '@/tools/video-editor/hooks/useEffectRegistry'
 import { useEffectResources } from '@/tools/video-editor/hooks/useEffectResources';
 import { useSelectedMediaClips } from '@/tools/video-editor/hooks/useSelectedMediaClips';
 import { useTimelineState } from '@/tools/video-editor/hooks/useTimelineState';
-import {
-  TimelineStoreProvider,
-  useTimelineEditorOps,
-} from '@/tools/video-editor/hooks/timelineStore';
 import type {
   TimelineActionResizeStart,
   TimelineClipEdgeResizeEnd,
@@ -349,7 +349,7 @@ function InnerProvider({
   }), [editor, onActionResizeStart, onClipEdgeResizeEnd, onDoubleClickAsset, setLightboxAssetKey]);
 
   useLayoutEffect(() => {
-    store.getState().syncOpsSlice(editorOps);
+    store.getState().syncOpsSlice(editorOps as never);
   }, [editorOps, store]);
 
   const resolvedLightboxMedia = lightboxQuery.data ?? lightboxFallbackMedia;
@@ -365,7 +365,7 @@ function InnerProvider({
   );
 
   return (
-    <TimelineStoreProvider store={store}>
+    <TimelineStoreProvider store={store as never}>
       <AgentChatBridgeRegistration />
       {children}
       {lightboxAssetKey && resolvedLightboxMedia && (

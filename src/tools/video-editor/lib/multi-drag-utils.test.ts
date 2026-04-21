@@ -195,6 +195,7 @@ describe('buildConfigFromDragResult', () => {
       from: 1,
       to: 3,
     });
+    expect(Object.prototype.hasOwnProperty.call(result, 'pinnedShotGroups')).toBe(false);
   });
 });
 

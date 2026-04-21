@@ -1,3 +1,9 @@
+import {
+  useTimelineChromeContext,
+  useTimelineEditorData,
+  useTimelineEditorOps,
+  useTimelinePlaybackContext,
+} from '@tbd/editor';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { formatDistanceToNow } from 'date-fns';
@@ -17,12 +23,12 @@ import { PreviewPanel } from '@/tools/video-editor/components/PreviewPanel/Previ
 import { RemotionPreview } from '@/tools/video-editor/components/PreviewPanel/RemotionPreview';
 import { PropertiesPanel } from '@/tools/video-editor/components/PropertiesPanel/PropertiesPanel';
 import { TimelineEditor } from '@/tools/video-editor/components/TimelineEditor/TimelineEditor';
-import {
-  useTimelineChromeContext,
-  useTimelineEditorData,
-  useTimelineEditorOps,
-  useTimelinePlaybackContext,
-} from '@/tools/video-editor/hooks/timelineStore';
+import type {
+  TimelineChromeContextValue,
+  TimelineEditorDataContextValue,
+  TimelineEditorOpsContextValue,
+  TimelinePlaybackContextValue,
+} from '@/tools/video-editor/hooks/useTimelineState.types';
 import { useKeyboardShortcuts } from '@/tools/video-editor/hooks/useKeyboardShortcuts';
 import { useTimelineRealtime } from '@/tools/video-editor/hooks/useTimelineRealtime';
 import { getTimelineDurationInFrames, parseResolution } from '@/tools/video-editor/lib/config-utils';
@@ -91,10 +97,10 @@ function getInspectorTargetForSelection(
 
 function FullEditorLayout({ timelineId, forceCondensed = false }: { timelineId: string; forceCondensed?: boolean }) {
   useRenderDiagnostic('FullEditorLayout');
-  const editorData = useTimelineEditorData();
-  const editorOps = useTimelineEditorOps();
-  const chrome = useTimelineChromeContext();
-  const playback = useTimelinePlaybackContext();
+  const editorData = useTimelineEditorData() as unknown as TimelineEditorDataContextValue;
+  const editorOps = useTimelineEditorOps() as unknown as TimelineEditorOpsContextValue;
+  const chrome = useTimelineChromeContext() as unknown as TimelineChromeContextValue;
+  const playback = useTimelinePlaybackContext() as unknown as TimelinePlaybackContextValue;
   const { navigateHome } = useHomeNavigation();
   const isEditorPaneLocked = usePanesStore((state) => state.isEditorPaneLocked);
   const isGenerationsPaneLocked = usePanesStore((state) => state.isGenerationsPaneLocked);

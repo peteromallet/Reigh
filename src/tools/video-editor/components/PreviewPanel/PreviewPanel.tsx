@@ -1,11 +1,16 @@
 import { memo, type RefObject } from 'react';
-import { shallow } from 'zustand/shallow';
-import OverlayEditor from '@/tools/video-editor/components/PreviewPanel/OverlayEditor';
 import {
   useTimelineDataSelector,
   useTimelineOpsSelector,
   useTimelinePlaybackSelector,
-} from '@/tools/video-editor/hooks/timelineStore';
+} from '@tbd/editor';
+import { shallow } from 'zustand/shallow';
+import OverlayEditor from '@/tools/video-editor/components/PreviewPanel/OverlayEditor';
+import type {
+  TimelineEditorDataContextValue,
+  TimelineEditorOpsContextValue,
+  TimelinePlaybackContextValue,
+} from '@/tools/video-editor/hooks/useTimelineState.types';
 import { useRenderDiagnostic } from '@/tools/video-editor/hooks/usePerfDiagnostics';
 import { isTouchTimelineInput } from '@/tools/video-editor/lib/mobile-interaction-model';
 import { useRenderBudget } from '@/shared/dev/useRenderBudget';
@@ -39,7 +44,7 @@ function PreviewPanelComponent({ previewSlotRef }: PreviewPanelProps) {
     interactionMode: timeline.interactionMode,
     gestureOwner: timeline.gestureOwner,
     precisionEnabled: timeline.precisionEnabled,
-  }), shallow);
+  }), shallow) as unknown as Pick<TimelineEditorDataContextValue, 'data' | 'resolvedConfig' | 'trackScaleMap' | 'compositionSize' | 'selectedClipId' | 'deviceClass' | 'inputModality' | 'interactionMode' | 'gestureOwner' | 'precisionEnabled'>;
   const {
     setSelectedClipId,
     onOverlayChange,
@@ -56,14 +61,14 @@ function PreviewPanelComponent({ previewSlotRef }: PreviewPanelProps) {
     setGestureOwner: ops.setGestureOwner,
     setContextTarget: ops.setContextTarget,
     setInspectorTarget: ops.setInspectorTarget,
-  }), shallow);
+  }), shallow) as unknown as Pick<TimelineEditorOpsContextValue, 'setSelectedClipId' | 'onOverlayChange' | 'onDoubleClickAsset' | 'setInputModalityFromPointerType' | 'setGestureOwner' | 'setContextTarget' | 'setInspectorTarget'>;
   const {
     playerContainerRef,
     currentTime,
   } = useTimelinePlaybackSelector((playback) => ({
     playerContainerRef: playback.playerContainerRef,
     currentTime: playback.currentTime,
-  }), shallow);
+  }), shallow) as unknown as Pick<TimelinePlaybackContextValue, 'playerContainerRef' | 'currentTime'>;
 
   if (!data || !resolvedConfig) {
     return null;

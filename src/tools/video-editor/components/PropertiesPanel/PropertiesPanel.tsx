@@ -1,13 +1,17 @@
+import {
+  useTimelineEditorData,
+  useTimelineEditorOps,
+} from '@tbd/editor';
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button';
 import AssetPanel from '@/tools/video-editor/components/PropertiesPanel/AssetPanel';
 import { BulkClipPanel } from '@/tools/video-editor/components/PropertiesPanel/BulkClipPanel';
 import { ClipPanel, getVisibleClipTabs, NO_EFFECT } from '@/tools/video-editor/components/PropertiesPanel/ClipPanel';
-import {
-  useTimelineEditorData,
-  useTimelineEditorOps,
-} from '@/tools/video-editor/hooks/timelineStore';
+import type {
+  TimelineEditorDataContextValue,
+  TimelineEditorOpsContextValue,
+} from '@/tools/video-editor/hooks/useTimelineState.types';
 import { useStaleVariants } from '@/tools/video-editor/hooks/useStaleVariants';
 import { useRenderDiagnostic } from '@/tools/video-editor/hooks/usePerfDiagnostics';
 import { getBulkVisibleTabs, getSharedNestedValue, getSharedValue } from '@/tools/video-editor/lib/bulk-utils';
@@ -27,7 +31,7 @@ function PropertiesPanelComponent() {
     selectedClipHasPredecessor,
     compositionSize,
     preferences,
-  } = useTimelineEditorData();
+  } = useTimelineEditorData() as unknown as TimelineEditorDataContextValue;
   const {
     clearSelection,
     setSelectedClipId,
@@ -51,7 +55,7 @@ function PropertiesPanelComponent() {
     setPrecisionEnabled,
     patchRegistry,
     registerAsset,
-  } = useTimelineEditorOps();
+  } = useTimelineEditorOps() as unknown as TimelineEditorOpsContextValue;
   const { staleAssetKeys, dismissedAssetKeys, dismissAsset, updateAssetToCurrentVariant } = useStaleVariants({
     registry: resolvedConfig?.registry,
     patchRegistry,

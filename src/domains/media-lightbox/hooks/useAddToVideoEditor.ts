@@ -10,7 +10,7 @@ import { getClipTimelineDuration } from '@/tools/video-editor/lib/config-utils';
 import {
   useTimelineEditorDataSafe,
   useTimelineEditorOpsSafe,
-} from '@/tools/video-editor/hooks/timelineStore';
+} from '@tbd/editor';
 import {
   ADD_GENERATION_QUERY_PARAM,
   readPendingAdds,

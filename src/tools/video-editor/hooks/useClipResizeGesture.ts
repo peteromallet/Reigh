@@ -25,7 +25,8 @@ import {
   useTimelineDataSliceSafe,
   useTimelineMutableAdaptersSafe,
   useTimelineOpsSliceSafe,
-} from '@/tools/video-editor/hooks/timelineStore';
+} from '@tbd/editor';
+import type { TimelineEditorDataContextValue, TimelineEditorOpsContextValue } from '@/tools/video-editor/hooks/useTimelineState.types';
 
 export interface InternalResizeSession extends ClipEdgeResizeSession {
   startClientX: number;
@@ -93,9 +94,12 @@ export const useClipResizeGesture = ({
   pixelsPerSecond,
   minDuration,
 }: UseClipResizeGestureArgs): UseClipResizeGestureResult => {
-  const storeData = useTimelineDataSliceSafe();
-  const storeOps = useTimelineOpsSliceSafe();
-  const storeAdapters = useTimelineMutableAdaptersSafe();
+  const storeData = useTimelineDataSliceSafe() as unknown as TimelineEditorDataContextValue | null;
+  const storeOps = useTimelineOpsSliceSafe() as unknown as TimelineEditorOpsContextValue | null;
+  const storeAdapters = useTimelineMutableAdaptersSafe() as unknown as Pick<
+    TimelineEditorDataContextValue,
+    'dataRef' | 'interactionStateRef'
+  > | null;
   const effectiveDataRef = storeAdapters?.dataRef ?? dataRef;
   const effectiveInteractionStateRef = storeAdapters?.interactionStateRef ?? interactionStateRef;
   const effectiveGestureOwner = storeData?.gestureOwner ?? gestureOwner;

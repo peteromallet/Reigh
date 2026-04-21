@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
+import { useTimelineEditorData } from '@tbd/editor';
 import { useShots } from '@/shared/contexts/ShotsContext';
-import { useTimelineEditorData } from '@/tools/video-editor/hooks/timelineStore';
 import { getClipTimelineDuration, getPinnedShotGroups } from '@/tools/video-editor/lib/config-utils';
 
 export type SelectedMediaClip = {

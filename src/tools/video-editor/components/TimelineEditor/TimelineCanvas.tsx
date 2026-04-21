@@ -23,6 +23,7 @@ import {
   ShotGroupContextMenu,
   type ShotGroupMenuState,
 } from '@/tools/video-editor/components/TimelineEditor/ShotGroupContextMenu';
+import { useTimelineMutableAdapters } from '@tbd/editor';
 import {
   buildGridBackground,
   TimelineRulerAndGrid,
@@ -30,7 +31,7 @@ import {
 import { TrackListRenderer } from '@/tools/video-editor/components/TimelineEditor/TrackListRenderer';
 import { useClipResizeGesture } from '@/tools/video-editor/hooks/useClipResizeGesture';
 import type { ShotGroup } from '@/tools/video-editor/hooks/useShotGroups';
-import { useTimelineMutableAdapters } from '@/tools/video-editor/hooks/timelineStore';
+import type { TimelineDataRef } from '@/tools/video-editor/hooks/timeline-state-types';
 import { LABEL_WIDTH } from '@/tools/video-editor/lib/coordinate-utils';
 import {
   shouldExpandTouchTrimHandles,
@@ -175,7 +176,7 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
   newTrackDropLabel,
 }: TimelineCanvasProps, ref) {
   useRenderBudget('TimelineCanvas', 3);
-  const { dataRef } = useTimelineMutableAdapters();
+  const { dataRef } = useTimelineMutableAdapters() as unknown as { dataRef: TimelineDataRef };
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const cursorRef = useRef<HTMLDivElement>(null);
   const timeRef = useRef(0);

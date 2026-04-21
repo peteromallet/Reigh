@@ -106,7 +106,7 @@ vi.mock('@/shared/contexts/ProjectContext', () => ({
 vi.mock('@/shared/hooks/settings/useToolSettings', () => ({
   useToolSettings: (...args: unknown[]) => useToolSettingsMock(...args),
 }));
-vi.mock('@/tools/video-editor-host/hooks/useTimelinesList', () => ({
+vi.mock('@/tools/video-editor/hooks/useTimelinesList', () => ({
   useTimelinesList: (...args: unknown[]) => useTimelinesListMock(...args),
 }));
 vi.mock('@/tools/video-editor-host/data/SupabaseDataProvider', () => ({

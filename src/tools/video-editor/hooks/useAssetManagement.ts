@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import type { TimelineStoreApi } from '@tbd/editor';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { toast } from '@/shared/components/ui/runtime/sonner';
 import type { GenerationDropData } from '@/shared/lib/dnd/dragDrop';
@@ -28,7 +29,6 @@ import type {
 } from '@/tools/video-editor/hooks/timeline-state-types';
 import type { TimelineAction } from '@/tools/video-editor/types/timeline-canvas';
 import type { AssetRegistryEntry, ClipType } from '@/tools/video-editor/types';
-import type { TimelineStoreApi } from '@/tools/video-editor/hooks/timelineStore';
 
 function estimateAssetDuration(
   assetEntry: AssetRegistryEntry | undefined,
@@ -277,7 +277,7 @@ export function useAssetManagement({
   registerAsset,
 }: UseAssetManagementArgs): UseAssetManagementResult {
   const getDataRef = useCallback(() => {
-    const storeDataRef = store?.getState().data.dataRef;
+    const storeDataRef = store?.getState().data.dataRef as MutableRefObject<TimelineData | null> | undefined;
     return storeDataRef && storeDataRef.current !== null ? storeDataRef : dataRef;
   }, [dataRef, store]);
   const getSelectedTrackId = useCallback(() => {
