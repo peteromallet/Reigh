@@ -1,6 +1,4 @@
 import { useMemo, useRef, useState } from 'react';
-import { useQueries } from '@tanstack/react-query';
-import { MediaLightbox } from '@/domains/media-lightbox/MediaLightbox';
 import { cn } from '@/shared/components/ui/contracts/cn';
 import { getGenerationDropData, getDragType } from '@/shared/lib/dnd/dragDrop';
 import { Button } from '@/shared/components/ui/button';
@@ -8,7 +6,6 @@ import { Input } from '@/shared/components/ui/input';
 import { ScrollArea } from '@/shared/components/ui/scroll-area';
 import { ExternalLink, Film, ImageIcon, Music2, Upload } from 'lucide-react';
 import { useTimelineEditorOps } from '@/tools/video-editor/hooks/timelineStore';
-import { loadGenerationForLightbox } from '@/tools/video-editor/lib/generation-utils';
 import type { ClipMeta } from '@/tools/video-editor/lib/timeline-data';
 import type { AssetRegistryEntry } from '@/tools/video-editor/types';
 
@@ -51,8 +48,7 @@ export default function AssetPanel({
 }: AssetPanelProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isGenerationDragOver, setIsGenerationDragOver] = useState(false);
-  const [lightboxAssetId, setLightboxAssetId] = useState<string | null>(null);
-  const { registerGenerationAsset } = useTimelineEditorOps();
+  const { registerGenerationAsset, onDoubleClickAsset } = useTimelineEditorOps();
 
   const usedAssets = useMemo(() => {
     const used = new Set<string>();
@@ -86,73 +82,32 @@ export default function AssetPanel({
     });
   }, [assetMap, hidden, showAll, showHidden, usedAssets]);
 
-  const generationAssets = useMemo(() => {
-    return visibleAssets.flatMap(([assetKey]) => {
-      const generationId = registry?.[assetKey]?.generationId;
-      return generationId ? [{ assetKey, generationId }] : [];
-    });
-  }, [registry, visibleAssets]);
-
-  const uniqueGenerationAssets = useMemo(() => {
-    const seen = new Set<string>();
-    return generationAssets.filter(({ generationId }) => {
-      if (seen.has(generationId)) {
-        return false;
-      }
-
-      seen.add(generationId);
-      return true;
-    });
-  }, [generationAssets]);
-
-  const generationQueries = useQueries({
-    queries: uniqueGenerationAssets.map(({ generationId }) => ({
-      queryKey: ['video-editor', 'generation-lightbox', generationId],
-      queryFn: () => loadGenerationForLightbox(generationId),
-      staleTime: 60_000,
-    })),
-  });
-
-  const generationMap = useMemo(() => {
-    const queryByGenerationId = new Map(
-      uniqueGenerationAssets.map(({ generationId }, index) => [generationId, generationQueries[index]]),
-    );
-
-    return Object.fromEntries(
-      generationAssets.map(({ assetKey, generationId }) => [assetKey, queryByGenerationId.get(generationId)]),
-    );
-  }, [generationAssets, generationQueries, uniqueGenerationAssets]);
-
-  const lightboxAsset = lightboxAssetId ? registry?.[lightboxAssetId] : undefined;
-  const lightboxQuery = lightboxAssetId ? generationMap[lightboxAssetId] : undefined;
-
   return (
-    <>
-      <div
-        className={cn(
-          'space-y-3 rounded-lg p-2 transition-colors',
-          isGenerationDragOver && 'bg-accent/10 ring-1 ring-inset ring-accent',
-        )}
-        onDragOver={(event) => {
-          if (getDragType(event) !== 'generation') {
-            return;
-          }
-          event.preventDefault();
-          event.stopPropagation();
-          setIsGenerationDragOver(true);
-        }}
-        onDragLeave={() => setIsGenerationDragOver(false)}
-        onDrop={(event) => {
-          const generationData = getGenerationDropData(event);
-          if (!generationData) {
-            return;
-          }
-          event.preventDefault();
-          event.stopPropagation();
-          setIsGenerationDragOver(false);
-          registerGenerationAsset(generationData);
-        }}
-      >
+    <div
+      className={cn(
+        'space-y-3 rounded-lg p-2 transition-colors',
+        isGenerationDragOver && 'bg-accent/10 ring-1 ring-inset ring-accent',
+      )}
+      onDragOver={(event) => {
+        if (getDragType(event) !== 'generation') {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        setIsGenerationDragOver(true);
+      }}
+      onDragLeave={() => setIsGenerationDragOver(false)}
+      onDrop={(event) => {
+        const generationData = getGenerationDropData(event);
+        if (!generationData) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        setIsGenerationDragOver(false);
+        registerGenerationAsset(generationData);
+      }}
+    >
         <div className="rounded-lg border border-dashed border-border bg-muted/30 p-3">
           <div className="flex items-center justify-between gap-2">
             <div>
@@ -204,9 +159,7 @@ export default function AssetPanel({
               const kind = inferKind(entry, file);
               const isUsed = usedAssets.has(assetKey);
               const isHidden = hidden.includes(assetKey);
-              const generationQuery = generationMap[assetKey];
-              const canOpenSource = Boolean(entry?.generationId) && Boolean(generationQuery?.data);
-              const sourceUnavailable = Boolean(entry?.generationId) && !generationQuery?.isLoading && !generationQuery?.data;
+              const canOpenSource = Boolean(entry?.generationId) && Boolean(onDoubleClickAsset);
               const icon = kind === 'audio'
                 ? <Music2 className="h-3.5 w-3.5" />
                 : entry?.type?.startsWith('image')
@@ -242,8 +195,8 @@ export default function AssetPanel({
                       size="icon"
                       className="h-7 w-7"
                       disabled={!canOpenSource}
-                      title={sourceUnavailable ? 'Source generation unavailable' : 'Open source generation'}
-                      onClick={() => setLightboxAssetId(assetKey)}
+                      title="Open source generation"
+                      onClick={() => onDoubleClickAsset?.(assetKey)}
                     >
                       <ExternalLink className="h-3.5 w-3.5" />
                     </Button>
@@ -273,15 +226,6 @@ export default function AssetPanel({
           </div>
         </ScrollArea>
       </div>
-
-      {lightboxAssetId && lightboxQuery?.data && (
-        <MediaLightbox
-          media={lightboxQuery.data}
-          initialVariantId={lightboxAsset?.variantId ?? lightboxQuery.data.primary_variant_id ?? undefined}
-          onClose={() => setLightboxAssetId(null)}
-          features={{ showTaskDetails: true }}
-        />
-      )}
-    </>
+    </div>
   );
 }

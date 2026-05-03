@@ -1,11 +1,11 @@
 import { useCallback, useState } from 'react';
 import { getSupabaseClient } from '@/integrations/supabase/client';
 import { toast } from '@/shared/components/ui/runtime/sonner';
-import { useProjectSelectionContext } from '@/shared/contexts/ProjectContext';
 import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
 import { hasVideoExtension } from '@/shared/lib/typeGuards';
 import { usePromoteVariantToGeneration } from '@/shared/hooks/variants/usePromoteVariantToGeneration';
 import type { GenerationVariant } from '@/shared/hooks/variants/useVariants';
+import { useVideoEditorCorePorts } from '@/tools/video-editor/core/core-runtime';
 import { buildDuplicateClipEdit } from '@/tools/video-editor/lib/duplicate-clip';
 import {
   useTimelineEditorOps,
@@ -23,7 +23,7 @@ export interface UseAddVariantAsGenerationResult {
  * an arbitrary variant rather than the current primary).
  */
 export function useAddVariantAsGeneration(): UseAddVariantAsGenerationResult {
-  const { selectedProjectId } = useProjectSelectionContext();
+  const { selectedProjectId } = useVideoEditorCorePorts();
   const { applyEdit, registerGenerationAsset } = useTimelineEditorOps();
   const { dataRef } = useTimelineMutableAdapters();
   const promoteVariant = usePromoteVariantToGeneration();

@@ -9,8 +9,10 @@ import {
   userSelectTimelineClips,
 } from '@/shared/state/selectionStore';
 import { createInteractionState, type InteractionStateRef } from '@/tools/video-editor/lib/interaction-state';
-import { useProjectSelectionContext } from '@/shared/contexts/ProjectContext';
-import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext';
+import {
+  useVideoEditorCorePorts,
+  useVideoEditorCoreRuntime,
+} from '@/tools/video-editor/core/core-runtime';
 import { ROW_HEIGHT, TIMELINE_START_LEFT } from '@/tools/video-editor/lib/coordinate-utils';
 import { useAssetManagement } from '@/tools/video-editor/hooks/useAssetManagement';
 import { useAssetOperations } from '@/tools/video-editor/hooks/useAssetOperations';
@@ -20,6 +22,7 @@ import { useDerivedTimeline } from '@/tools/video-editor/hooks/useDerivedTimelin
 import { useDragCoordinator } from '@/tools/video-editor/hooks/useDragCoordinator';
 import { useEditorPreferences } from '@/tools/video-editor/hooks/useEditorPreferences';
 import { useExternalDrop } from '@/tools/video-editor/hooks/useExternalDrop';
+import type { ShotFinalVideo } from '@/tools/video-editor/hooks/useFinalVideoAvailable';
 import { useTimelinePlayback } from '@/tools/video-editor/hooks/useTimelinePlayback';
 import { useRenderState } from '@/tools/video-editor/hooks/useRenderState';
 import { useTimelineHistory } from '@/tools/video-editor/hooks/useTimelineHistory';
@@ -28,8 +31,7 @@ import { useTimelineSave } from '@/tools/video-editor/hooks/useTimelineSave';
 import { useTimelineSelection } from '@/tools/video-editor/hooks/useTimelineSelection';
 import {
   createTimelineStore,
-  type TimelineStoreApi,
-  type TimelineStoreBootstrap,
+  seedTimelineStoreBeforeRender,
 } from '@/tools/video-editor/hooks/timelineStore';
 import type {
   TimelineChromeContextValue,
@@ -49,6 +51,8 @@ import { useTimelineTrackManagement } from '@/tools/video-editor/hooks/useTimeli
 export type { EditorPreferences } from '@/tools/video-editor/hooks/useEditorPreferences';
 export type { RenderStatus } from '@/tools/video-editor/hooks/useRenderState';
 export type { SaveStatus } from '@/tools/video-editor/hooks/useTimelineSave';
+
+const EMPTY_FINAL_VIDEO_MAP = new Map<string, ShotFinalVideo>();
 
 type SelectionHook = ReturnType<typeof useTimelineSelection>;
 type MultiSelectHook = ReturnType<typeof useTimelineMultiSelect>;
@@ -402,26 +406,15 @@ function useTimelinePlaybackContextValue({
   ]);
 }
 
-function syncInitialTimelineStoreBootstrap(
-  store: TimelineStoreApi,
-  bootstrap: TimelineStoreBootstrap,
-) {
-  const state = store.getState();
-  if (state.availability.mounted) {
-    return;
-  }
-
-  store.getState().syncSlices(bootstrap);
-}
-
 export function useTimelineState(): UseTimelineStateResult {
-  const runtime = useVideoEditorRuntime();
+  const runtime = useVideoEditorCoreRuntime();
+  const ports = useVideoEditorCorePorts();
   const queryClient = useQueryClient();
   const isMobile = useIsMobile();
   const isTablet = useIsTablet();
   const playback = useTimelinePlayback();
   const preferences = useEditorPreferences(runtime.timelineId);
-  const queries = useTimelineQueries(runtime.provider, runtime.timelineId);
+  const queries = useTimelineQueries(ports.dataProvider, runtime.timelineId);
   // Shared gate observed by drag/resize writers and read by save/persistence/poll.
   const interactionStateRef = useRef(createInteractionState());
   const storeRef = useRef<ReturnType<typeof createTimelineStore> | null>(null);
@@ -441,7 +434,7 @@ export function useTimelineState(): UseTimelineStateResult {
   const [precisionEnabled, setPrecisionEnabled] = useState(initialInteractionPolicyRef.current.precisionEnabled);
   const [contextTarget, setContextTarget] = useState(initialInteractionPolicyRef.current.contextTarget);
   const [inspectorTarget, setInspectorTarget] = useState(initialInteractionPolicyRef.current.inspectorTarget);
-  const save = useTimelineSave(queries, runtime.provider, interactionStateRef, storeRef.current);
+  const save = useTimelineSave(queries, ports.dataProvider, interactionStateRef, storeRef.current);
   const history = useTimelineHistory({
     dataRef: save.dataRef,
     commitData: save.commitData,
@@ -450,7 +443,7 @@ export function useTimelineState(): UseTimelineStateResult {
   const derived = useDerivedTimeline(save.data, save.selectedClipId, save.selectedTrackId);
   const render = useRenderState(derived.resolvedConfig, derived.renderMetadata);
   const assetOperations = useAssetOperations(
-    runtime.provider,
+    ports.dataProvider,
     runtime.timelineId,
     runtime.userId,
     queryClient,
@@ -510,7 +503,9 @@ export function useTimelineState(): UseTimelineStateResult {
     uploadFiles,
     invalidateAssetRegistry,
   } = assetOperations;
-  const { selectedProjectId } = useProjectSelectionContext();
+  const selectedProjectId = ports.selectedProjectId ?? null;
+  const shots = ports.shots;
+  const finalVideoMap = ports.finalVideoMap ?? EMPTY_FINAL_VIDEO_MAP;
   const selection = useTimelineSelection({
     data,
     selectedTrackId,
@@ -588,7 +583,7 @@ export function useTimelineState(): UseTimelineStateResult {
     registerAsset,
     uploadAsset,
     invalidateAssetRegistry,
-    resolveAssetUrl: runtime.provider.resolveAssetUrl.bind(runtime.provider),
+    resolveAssetUrl: ports.dataProvider.resolveAssetUrl.bind(ports.dataProvider),
   });
 
   const clipResize = useClipResize({
@@ -619,7 +614,7 @@ export function useTimelineState(): UseTimelineStateResult {
     registerAsset,
     uploadAsset,
     invalidateAssetRegistry,
-    resolveAssetUrl: runtime.provider.resolveAssetUrl.bind(runtime.provider),
+    resolveAssetUrl: ports.dataProvider.resolveAssetUrl.bind(ports.dataProvider),
     coordinator: dragCoordinator.coordinator,
     registerGenerationAsset: assetManagement.registerGenerationAsset,
     uploadImageGeneration: assetManagement.uploadImageGeneration,
@@ -627,6 +622,8 @@ export function useTimelineState(): UseTimelineStateResult {
     handleAssetDrop: assetManagement.handleAssetDrop,
     handleAddTextAt: clipEditing.handleAddTextAt,
     onSeekToTime: playback.onClickTimeArea,
+    shots,
+    finalVideoMap,
   });
 
   const trackManagement = useTimelineTrackManagement({
@@ -809,7 +806,7 @@ export function useTimelineState(): UseTimelineStateResult {
   // Seed the external store before descendants render for the first time so
   // mounted-provider readers such as AgentChat and pending-add helpers do not
   // observe the placeholder slice values from createTimelineStore().
-  syncInitialTimelineStoreBootstrap(storeRef.current, {
+  seedTimelineStoreBeforeRender(storeRef.current, {
     data: editorData,
     ops: editorOps,
     chrome,

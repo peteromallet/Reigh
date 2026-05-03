@@ -38,6 +38,19 @@ export interface TimelineStoreBootstrap {
   playback: TimelinePlaybackContextValue;
 }
 
+export interface TimelineMutableAdapters {
+  dataRef: TimelineEditorDataContextValue['dataRef'];
+  pendingOpsRef: TimelineEditorDataContextValue['pendingOpsRef'];
+  interactionStateRef: TimelineEditorDataContextValue['interactionStateRef'];
+  selectedClipIdsRef: TimelineEditorDataContextValue['selectedClipIdsRef'];
+  additiveSelectionRef: TimelineEditorDataContextValue['additiveSelectionRef'];
+  timelineRef: TimelineEditorDataContextValue['timelineRef'];
+  timelineWrapperRef: TimelineEditorDataContextValue['timelineWrapperRef'];
+  previewRef: TimelinePlaybackContextValue['previewRef'];
+  playerContainerRef: TimelinePlaybackContextValue['playerContainerRef'];
+  ops: TimelineEditorOpsContextValue;
+}
+
 export interface TimelineStoreState extends TimelineStoreBootstrap {
   availability: TimelineAvailabilityState;
   setMounted: (mounted: boolean) => void;
@@ -392,6 +405,18 @@ export function createTimelineStore(bootstrap?: Partial<TimelineStoreBootstrap>)
   }));
 }
 
+export function seedTimelineStoreBeforeRender(
+  store: TimelineStoreApi,
+  bootstrap: TimelineStoreBootstrap,
+) {
+  const state = store.getState();
+  if (state.availability.mounted) {
+    return;
+  }
+
+  store.getState().syncSlices(bootstrap);
+}
+
 const TimelineStoreContext = createContext<TimelineStoreApi | null>(null);
 const fallbackTimelineStore = createTimelineStore();
 
@@ -518,22 +543,32 @@ export function useTimelinePlaybackSliceSafe(): TimelinePlaybackContextValue | n
 }
 
 export function useTimelineMutableAdapters() {
-  return useBoundTimelineStore((state) => ({
+  return useBoundTimelineStore<TimelineMutableAdapters>((state) => ({
     dataRef: state.data.dataRef,
     pendingOpsRef: state.data.pendingOpsRef,
     interactionStateRef: state.data.interactionStateRef,
     selectedClipIdsRef: state.data.selectedClipIdsRef,
     additiveSelectionRef: state.data.additiveSelectionRef,
+    timelineRef: state.data.timelineRef,
+    timelineWrapperRef: state.data.timelineWrapperRef,
+    previewRef: state.playback.previewRef,
+    playerContainerRef: state.playback.playerContainerRef,
+    ops: state.ops,
   }), shallow);
 }
 
 export function useTimelineMutableAdaptersSafe() {
-  return useSafeTimelineStoreValue((state) => ({
+  return useSafeTimelineStoreValue<TimelineMutableAdapters>((state) => ({
     dataRef: state.data.dataRef,
     pendingOpsRef: state.data.pendingOpsRef,
     interactionStateRef: state.data.interactionStateRef,
     selectedClipIdsRef: state.data.selectedClipIdsRef,
     additiveSelectionRef: state.data.additiveSelectionRef,
+    timelineRef: state.data.timelineRef,
+    timelineWrapperRef: state.data.timelineWrapperRef,
+    previewRef: state.playback.previewRef,
+    playerContainerRef: state.playback.playerContainerRef,
+    ops: state.ops,
   }), shallow);
 }
 

@@ -16,6 +16,30 @@ let editorDataValue: any;
 let editorOpsValue: any;
 let overlayEditorProps: any;
 
+vi.mock('@banodoco/timeline-composition/theme-api', () => ({
+  DEFAULT_THEME: {
+    id: 'default',
+    visual: {
+      canvas: {
+        width: 1280,
+        height: 720,
+        fps: 30,
+      },
+    },
+  },
+  ThemeProvider: ({ children }: any) => <>{children}</>,
+  useTheme: () => ({
+    id: 'default',
+    visual: {
+      canvas: {
+        width: 1280,
+        height: 720,
+        fps: 30,
+      },
+    },
+  }),
+}), { virtual: true });
+
 vi.mock('@/tools/video-editor/hooks/timelineStore', async () => {
   const actual = await vi.importActual<typeof import('@/tools/video-editor/hooks/timelineStore')>(
     '@/tools/video-editor/hooks/timelineStore',
@@ -80,6 +104,37 @@ vi.mock('@/tools/video-editor/components/AgentChat', () => ({
 
 vi.mock('@/tools/video-editor/components/TimelineEditor/TimelineEditor', () => ({
   TimelineEditor: () => <div data-testid="timeline-editor" />,
+}));
+
+vi.mock('@/tools/video-editor/components/SequenceCreator/SequenceCreatorPanel', () => ({
+  SequenceCreatorPanel: () => <div data-testid="sequence-creator-panel" />,
+}));
+
+vi.mock('@/tools/video-editor/components/ThemeChip', () => ({
+  ThemeChip: () => <div data-testid="theme-chip" />,
+}));
+
+vi.mock('@/tools/video-editor/components/PreviewPanel/RemotionPreview', () => ({
+  RemotionPreview: forwardRef(function MockRemotionPreview({ compact = false, config }: any, ref) {
+    const api = {
+      seek: vi.fn(),
+      play: vi.fn(),
+      pause: vi.fn(),
+      togglePlayPause: vi.fn(),
+      get isPlaying() {
+        return false;
+      },
+    };
+
+    useImperativeHandle(ref, () => api, []);
+
+    return (
+      <div data-testid="mock-preview">
+        <div data-testid="mock-player" />
+        {!compact ? <div>{config.output.resolution}</div> : null}
+      </div>
+    );
+  }),
 }));
 
 vi.mock('@/tools/video-editor/components/PropertiesPanel/PropertiesPanel', () => ({

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useShots } from '@/shared/contexts/ShotsContext';
+import { useVideoEditorCorePorts } from '@/tools/video-editor/core/core-runtime';
 import { useTimelineEditorData } from '@/tools/video-editor/hooks/timelineStore';
 import { getClipTimelineDuration } from '@/tools/video-editor/lib/config-utils';
 
@@ -127,7 +127,7 @@ export function buildAttachedSummary(clips: SummaryMediaClip[]) {
 
 export function useSelectedMediaClips(): { clips: SelectedMediaClip[]; summary: string } {
   const { data, selectedClipIds, resolvedConfig } = useTimelineEditorData();
-  const { shots } = useShots();
+  const { shots } = useVideoEditorCorePorts();
 
   return useMemo(() => {
     if (!resolvedConfig || selectedClipIds.size === 0) {

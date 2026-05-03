@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Clapperboard, Pencil, Plus, Trash2 } from 'lucide-react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { Button } from '@/shared/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/shared/components/ui/card';
 import { cn } from '@/shared/components/ui/contracts/cn';
@@ -12,8 +12,8 @@ import { useToolSettings } from '@/shared/hooks/settings/useToolSettings';
 import { toast } from '@/shared/components/ui/toast';
 import { SupabaseDataProvider } from '@/tools/video-editor/data/SupabaseDataProvider';
 import { VideoEditorProvider } from '@/tools/video-editor/contexts/VideoEditorProvider';
+import { ReighVideoEditorShell } from '@/tools/video-editor/components/ReighVideoEditorShell';
 import { useTimelinesList } from '@/tools/video-editor/hooks/useTimelinesList';
-import { VideoEditorShell } from '@/tools/video-editor/components/VideoEditorShell';
 import { videoEditorSettings } from '@/tools/video-editor/settings/videoEditorDefaults';
 
 function TimelineList({ onSelect }: { onSelect: (timelineId: string) => void }) {
@@ -183,7 +183,6 @@ export default function VideoEditorPage() {
   const { selectedProjectId } = useProjectSelectionContext();
   const { userId } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
-  const navigate = useNavigate();
   const creatingRef = useRef(false);
   const timelineId = searchParams.get('timeline');
   const provider = useMemo(() => {
@@ -323,11 +322,7 @@ export default function VideoEditorPage() {
   return (
     <div className={cn('h-full w-full overflow-hidden bg-background')}>
       <VideoEditorProvider dataProvider={provider} timelineId={timelineId} timelineName={timelineName} userId={userId}>
-        <VideoEditorShell
-          mode="full"
-          timelineId={timelineId}
-          onCreateTimeline={() => navigate('/')}
-        />
+        <ReighVideoEditorShell mode="full" timelineId={timelineId} />
       </VideoEditorProvider>
     </div>
   );

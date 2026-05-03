@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { useAddToVideoEditor } from '@/domains/media-lightbox/hooks/useAddToVideoEditor';
@@ -21,7 +21,9 @@ import {
   useTimelineAvailabilityState,
   useTimelineChromeContext,
   useTimelineEditorData,
+  useTimelineEditorDataSafe,
   useTimelineEditorOps,
+  useTimelineEditorOpsSafe,
   useTimelinePlaybackContext,
 } from '@/tools/video-editor/hooks/timelineStore';
 import {
@@ -32,8 +34,188 @@ import {
   shouldToggleTouchSelection,
 } from '@/tools/video-editor/lib/mobile-interaction-model';
 import type { DataProvider } from '@/tools/video-editor/data/DataProvider';
+import { CORE_TEST_TIMELINE_ID, createCoreTestPorts } from '@/tools/video-editor/testing/coreTestPorts';
 
 const navigateMock = vi.fn();
+const timelineMultiSelectMock = vi.fn();
+const timelineQueriesMock = vi.fn();
+const timelinePlaybackMock = vi.fn();
+const editorPreferencesMock = vi.fn();
+const timelineSaveMock = vi.fn();
+const timelineHistoryMock = vi.fn();
+const derivedTimelineMock = vi.fn();
+const renderStateMock = vi.fn();
+const assetOperationsMock = vi.fn();
+const timelineSelectionMock = vi.fn();
+const dragCoordinatorMock = vi.fn();
+const assetManagementMock = vi.fn();
+const clipResizeMock = vi.fn();
+const clipEditingMock = vi.fn();
+const externalDropMock = vi.fn();
+const timelineTrackManagementMock = vi.fn();
+const shotFinalVideosMock = vi.fn(() => ({
+  finalVideoMap: new Map(),
+  isLoading: false,
+}));
+
+function createActualTimelineStateHarness() {
+  const bootstrap = createTimelineStore({}).getState();
+  const resolvedConfig = {
+    clips: [],
+    registry: {},
+  } as never;
+  const eventBus = {
+    on: vi.fn(() => () => {}),
+  };
+
+  return {
+    queries: {
+      timelineQuery: {
+        isLoading: false,
+      },
+    },
+    playback: {
+      currentTime: 0,
+      previewRef: { current: null },
+      playerContainerRef: { current: null },
+      timelineRef: { current: null },
+      timelineWrapperRef: { current: null },
+      onPreviewTimeUpdate: vi.fn(),
+      formatTime: vi.fn((time: number) => `${time}`),
+      onCursorDrag: vi.fn(),
+      onClickTimeArea: vi.fn(),
+    },
+    preferences: {
+      scale: bootstrap.data.scale,
+      scaleWidth: bootstrap.data.scaleWidth,
+      preferences: bootstrap.data.preferences,
+      setScaleWidth: vi.fn(),
+      setActiveClipTab: vi.fn(),
+      setAssetPanelState: vi.fn(),
+    },
+    save: {
+      data: null,
+      dataRef: { current: null },
+      isConflictExhausted: false,
+      selectedClipId: 'clip-1',
+      selectedTrackId: 'track-1',
+      saveStatus: 'saved' as const,
+      setSelectedTrackId: vi.fn(),
+      applyEdit: vi.fn(),
+      patchRegistry: vi.fn(),
+      unpatchRegistry: vi.fn(),
+      commitData: vi.fn(),
+      eventBus,
+      reloadFromServer: vi.fn(),
+      retrySaveAfterConflict: vi.fn(),
+      editSeqRef: { current: 0 },
+      pendingOpsRef: { current: 0 },
+      savedSeqRef: { current: 0 },
+      selectedClipIdRef: { current: 'clip-1' },
+      selectedTrackIdRef: { current: 'track-1' },
+      isLoading: false,
+    },
+    history: {
+      undo: vi.fn(),
+      redo: vi.fn(),
+      canUndo: false,
+      canRedo: false,
+      checkpoints: [],
+      jumpToCheckpoint: vi.fn(),
+      createManualCheckpoint: vi.fn(),
+      onBeforeCommit: vi.fn(),
+    },
+    derived: {
+      resolvedConfig,
+      renderMetadata: {},
+      compositionSize: { width: 1920, height: 1080 },
+      trackScaleMap: {},
+    },
+    render: {
+      renderStatus: 'idle' as const,
+      renderLog: '',
+      renderDirty: false,
+      renderProgress: null,
+      renderResultUrl: null,
+      renderResultFilename: null,
+      setRenderDirty: vi.fn(),
+      startRender: vi.fn(),
+    },
+    assetOperations: {
+      registerAsset: vi.fn(),
+      uploadAsset: vi.fn(),
+      uploadFiles: vi.fn(),
+      invalidateAssetRegistry: vi.fn(),
+    },
+    selection: {
+      resolvedConfig,
+      primaryClipId: 'clip-1',
+      selectedClipIds: new Set(['clip-1']),
+      selectedClipIdsRef: { current: new Set(['clip-1']) },
+      additiveSelectionRef: { current: false },
+      selectedClip: null,
+      selectedTrack: null,
+      selectedClipHasPredecessor: false,
+      pruneSelection: vi.fn(),
+    },
+    multiSelect: {
+      isClipSelected: vi.fn(() => true),
+      selectClip: vi.fn(),
+    },
+    dragCoordinator: {
+      coordinator: bootstrap.data.coordinator,
+      indicatorRef: { current: null },
+      editAreaRef: { current: null },
+    },
+    assetManagement: {
+      registerGenerationAsset: vi.fn(() => 'asset-1'),
+      handleAssetDrop: vi.fn(),
+      uploadImageGeneration: vi.fn(),
+      uploadVideoGeneration: vi.fn(),
+    },
+    clipResize: {
+      onActionResizeStart: vi.fn(),
+      onClipEdgeResizeEnd: vi.fn(),
+    },
+    clipEditing: {
+      onOverlayChange: vi.fn(),
+      handleUpdateClips: vi.fn(),
+      handleUpdateClipsDeep: vi.fn(),
+      handleDeleteClips: vi.fn(),
+      handleDeleteClip: vi.fn(),
+      handleSelectedClipChange: vi.fn(),
+      handleResetClipPosition: vi.fn(),
+      handleResetClipsPosition: vi.fn(),
+      handleSplitSelectedClip: vi.fn(),
+      handleSplitClipAtTime: vi.fn(),
+      handleSplitClipsAtPlayhead: vi.fn(),
+      handleToggleMuteClips: vi.fn(),
+      handleToggleMute: vi.fn(),
+      handleDetachAudioClip: vi.fn(),
+      handleAddText: vi.fn(),
+      handleAddTextAt: vi.fn(),
+    },
+    externalDrop: {
+      onTimelineDragOver: vi.fn(),
+      onTimelineDragLeave: vi.fn(),
+      onTimelineDrop: vi.fn(),
+    },
+    trackManagement: {
+      handleTrackPopoverChange: vi.fn(),
+      handleMoveTrack: vi.fn(),
+      handleRemoveTrack: vi.fn(),
+      moveSelectedClipToTrack: vi.fn(),
+      moveSelectedClipsToTrack: vi.fn(),
+      moveClipToRow: vi.fn(),
+      createTrackAndMoveClip: vi.fn(),
+      handleAddTrack: vi.fn(),
+      handleClearUnusedTracks: vi.fn(),
+      unusedTrackCount: 0,
+    },
+  };
+}
+
+let actualTimelineStateHarness = createActualTimelineStateHarness();
 
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
@@ -42,6 +224,25 @@ vi.mock('react-router-dom', async () => {
     useNavigate: () => navigateMock,
   };
 });
+
+vi.mock('@/shared/state/selectionStore', async () => {
+  const actual = await vi.importActual<typeof import('@/shared/state/selectionStore')>('@/shared/state/selectionStore');
+  return {
+    ...actual,
+    useTimelineMultiSelect: () => timelineMultiSelectMock(),
+  };
+});
+
+vi.mock('@/shared/hooks/mobile', () => ({
+  useIsMobile: () => false,
+  useIsTablet: () => false,
+}));
+
+vi.mock('@/shared/contexts/ProjectContext', () => ({
+  useProjectSelectionContext: () => ({
+    selectedProjectId: 'project-1',
+  }),
+}));
 
 const mocks = {
   setInputModality: vi.fn(),
@@ -90,12 +291,82 @@ vi.mock('@/shared/contexts/ShotsContext', () => ({
   }),
 }));
 
+vi.mock('@/tools/travel-between-images/hooks/video/useShotFinalVideos', () => ({
+  useShotFinalVideos: (...args: unknown[]) => shotFinalVideosMock(...args),
+}));
+
 vi.mock('@/shared/hooks/settings/useToolSettings', () => ({
   useToolSettings: () => ({
     settings: {
       lastTimelineId: 'timeline-staged',
     },
   }),
+}));
+
+vi.mock('@/tools/video-editor/hooks/useTimelineQueries', () => ({
+  useTimelineQueries: () => timelineQueriesMock(),
+}));
+
+vi.mock('@/tools/video-editor/hooks/useTimelinePlayback', () => ({
+  useTimelinePlayback: () => timelinePlaybackMock(),
+}));
+
+vi.mock('@/tools/video-editor/hooks/useEditorPreferences', async () => {
+  const actual = await vi.importActual<typeof import('@/tools/video-editor/hooks/useEditorPreferences')>(
+    '@/tools/video-editor/hooks/useEditorPreferences',
+  );
+  return {
+    ...actual,
+    useEditorPreferences: () => editorPreferencesMock(),
+  };
+});
+
+vi.mock('@/tools/video-editor/hooks/useTimelineSave', () => ({
+  useTimelineSave: () => timelineSaveMock(),
+}));
+
+vi.mock('@/tools/video-editor/hooks/useTimelineHistory', () => ({
+  useTimelineHistory: () => timelineHistoryMock(),
+}));
+
+vi.mock('@/tools/video-editor/hooks/useDerivedTimeline', () => ({
+  useDerivedTimeline: () => derivedTimelineMock(),
+}));
+
+vi.mock('@/tools/video-editor/hooks/useRenderState', () => ({
+  useRenderState: () => renderStateMock(),
+}));
+
+vi.mock('@/tools/video-editor/hooks/useAssetOperations', () => ({
+  useAssetOperations: () => assetOperationsMock(),
+}));
+
+vi.mock('@/tools/video-editor/hooks/useTimelineSelection', () => ({
+  useTimelineSelection: () => timelineSelectionMock(),
+}));
+
+vi.mock('@/tools/video-editor/hooks/useDragCoordinator', () => ({
+  useDragCoordinator: () => dragCoordinatorMock(),
+}));
+
+vi.mock('@/tools/video-editor/hooks/useAssetManagement', () => ({
+  useAssetManagement: () => assetManagementMock(),
+}));
+
+vi.mock('@/tools/video-editor/hooks/useClipResize', () => ({
+  useClipResize: () => clipResizeMock(),
+}));
+
+vi.mock('@/tools/video-editor/hooks/useClipEditing', () => ({
+  useClipEditing: () => clipEditingMock(),
+}));
+
+vi.mock('@/tools/video-editor/hooks/useExternalDrop', () => ({
+  useExternalDrop: () => externalDropMock(),
+}));
+
+vi.mock('@/tools/video-editor/hooks/useTimelineTrackManagement', () => ({
+  useTimelineTrackManagement: () => timelineTrackManagementMock(),
 }));
 
 vi.mock('@/tools/video-editor/hooks/useTimelineState', () => ({
@@ -239,6 +510,8 @@ vi.mock('@/tools/video-editor/hooks/useTimelineState', () => ({
         playback,
       }),
       editor,
+      editorData: editor,
+      editorOps: editor,
       chrome,
       playback,
     };
@@ -312,12 +585,67 @@ function AddToVideoEditorConsumer() {
   );
 }
 
+function TimelineStoreSafeHooksConsumer() {
+  const data = useTimelineEditorDataSafe();
+  const ops = useTimelineEditorOpsSafe();
+  const availability = useTimelineAvailabilityState();
+
+  return (
+    <div>
+      <span data-testid="timeline-has-provider">{String(availability.hasProvider)}</span>
+      <span data-testid="timeline-mounted">{String(availability.mounted)}</span>
+      <span data-testid="safe-data-present">{String(data !== null)}</span>
+      <span data-testid="safe-ops-present">{String(ops !== null)}</span>
+    </div>
+  );
+}
+
 describe('VideoEditorProvider', () => {
   beforeEach(() => {
     navigateMock.mockReset();
+    [
+      timelineMultiSelectMock,
+      timelineQueriesMock,
+      timelinePlaybackMock,
+      editorPreferencesMock,
+      timelineSaveMock,
+      timelineHistoryMock,
+      derivedTimelineMock,
+      renderStateMock,
+      assetOperationsMock,
+      timelineSelectionMock,
+      dragCoordinatorMock,
+      assetManagementMock,
+      clipResizeMock,
+      clipEditingMock,
+      externalDropMock,
+      timelineTrackManagementMock,
+      shotFinalVideosMock,
+    ].forEach((mock) => mock.mockReset());
     systemResetSelectionForProjectChange();
     localStorage.clear();
     Object.values(mocks).forEach((mock) => mock.mockClear());
+    actualTimelineStateHarness = createActualTimelineStateHarness();
+    timelineMultiSelectMock.mockImplementation(() => actualTimelineStateHarness.multiSelect);
+    timelineQueriesMock.mockImplementation(() => actualTimelineStateHarness.queries);
+    timelinePlaybackMock.mockImplementation(() => actualTimelineStateHarness.playback);
+    editorPreferencesMock.mockImplementation(() => actualTimelineStateHarness.preferences);
+    timelineSaveMock.mockImplementation(() => actualTimelineStateHarness.save);
+    timelineHistoryMock.mockImplementation(() => actualTimelineStateHarness.history);
+    derivedTimelineMock.mockImplementation(() => actualTimelineStateHarness.derived);
+    renderStateMock.mockImplementation(() => actualTimelineStateHarness.render);
+    assetOperationsMock.mockImplementation(() => actualTimelineStateHarness.assetOperations);
+    timelineSelectionMock.mockImplementation(() => actualTimelineStateHarness.selection);
+    dragCoordinatorMock.mockImplementation(() => actualTimelineStateHarness.dragCoordinator);
+    assetManagementMock.mockImplementation(() => actualTimelineStateHarness.assetManagement);
+    clipResizeMock.mockImplementation(() => actualTimelineStateHarness.clipResize);
+    clipEditingMock.mockImplementation(() => actualTimelineStateHarness.clipEditing);
+    externalDropMock.mockImplementation(() => actualTimelineStateHarness.externalDrop);
+    timelineTrackManagementMock.mockImplementation(() => actualTimelineStateHarness.trackManagement);
+    shotFinalVideosMock.mockReturnValue({
+      finalVideoMap: new Map(),
+      isLoading: false,
+    });
   });
 
   it('builds fallback lightbox media for raw video assets without a generation id', () => {
@@ -468,6 +796,51 @@ describe('VideoEditorProvider', () => {
     expect(navigateMock).not.toHaveBeenCalled();
   });
 
+  it('keeps safe hooks nullable until the editor store is mounted, even when a store provider exists', () => {
+    const bootstrap = createTimelineStore({}).getState();
+    const store = createTimelineStore();
+
+    const { rerender } = render(<TimelineStoreSafeHooksConsumer />);
+
+    expect(screen.getByTestId('timeline-has-provider')).toHaveTextContent('false');
+    expect(screen.getByTestId('timeline-mounted')).toHaveTextContent('false');
+    expect(screen.getByTestId('safe-data-present')).toHaveTextContent('false');
+    expect(screen.getByTestId('safe-ops-present')).toHaveTextContent('false');
+
+    rerender(
+      <TimelineStoreProvider store={store}>
+        <TimelineStoreSafeHooksConsumer />
+      </TimelineStoreProvider>,
+    );
+
+    expect(screen.getByTestId('timeline-has-provider')).toHaveTextContent('true');
+    expect(screen.getByTestId('timeline-mounted')).toHaveTextContent('false');
+    expect(screen.getByTestId('safe-data-present')).toHaveTextContent('false');
+    expect(screen.getByTestId('safe-ops-present')).toHaveTextContent('false');
+
+    act(() => {
+      store.getState().syncSlices({
+        data: bootstrap.data,
+        ops: bootstrap.ops,
+        chrome: bootstrap.chrome,
+        playback: bootstrap.playback,
+      });
+    });
+
+    expect(screen.getByTestId('timeline-mounted')).toHaveTextContent('true');
+    expect(screen.getByTestId('safe-data-present')).toHaveTextContent('true');
+    expect(screen.getByTestId('safe-ops-present')).toHaveTextContent('true');
+
+    act(() => {
+      store.getState().resetSlices();
+    });
+
+    expect(screen.getByTestId('timeline-has-provider')).toHaveTextContent('true');
+    expect(screen.getByTestId('timeline-mounted')).toHaveTextContent('false');
+    expect(screen.getByTestId('safe-data-present')).toHaveTextContent('false');
+    expect(screen.getByTestId('safe-ops-present')).toHaveTextContent('false');
+  });
+
   it('drops immediately when the mounted timeline store is available', () => {
     const registerGenerationAsset = vi.fn(() => 'asset-1');
     const handleAssetDrop = vi.fn();
@@ -517,6 +890,74 @@ describe('VideoEditorProvider', () => {
     expect(handleAssetDrop).toHaveBeenCalledWith('asset-1', undefined, 5, false, false);
     expect(readPendingAdds()).toEqual([]);
     expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  it('mounts the headless core with test ports and seeds the store before descendants render', async () => {
+    const { CoreProvider } = await vi.importActual<typeof import('@/tools/video-editor/core/CoreProvider')>(
+      '@/tools/video-editor/core/CoreProvider',
+    );
+
+    const snapshots: Array<{
+      hasData: boolean;
+      hasOps: boolean;
+      mounted: boolean;
+      selectedClipId: string | null;
+    }> = [];
+
+    function BootstrapReader({
+      entries,
+    }: {
+      entries: typeof snapshots;
+    }) {
+      const data = useTimelineEditorDataSafe();
+      const ops = useTimelineEditorOpsSafe();
+      const availability = useTimelineAvailabilityState();
+
+      entries.push({
+        hasData: data !== null,
+        hasOps: ops !== null,
+        mounted: availability.mounted,
+        selectedClipId: data?.selectedClipId ?? null,
+      });
+
+      return <span data-testid="bootstrap-selected-clip">{data?.selectedClipId ?? 'none'}</span>;
+    }
+
+    const { ports } = createCoreTestPorts({
+      selectedProjectId: undefined,
+      shots: undefined,
+      finalVideoMap: undefined,
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <CoreProvider
+          ports={ports}
+          timelineId={CORE_TEST_TIMELINE_ID}
+          timelineName="Bootstrap Timeline"
+          userId="user-1"
+        >
+          <BootstrapReader entries={snapshots} />
+        </CoreProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByTestId('bootstrap-selected-clip')).toHaveTextContent('clip-1');
+    expect(snapshots).toEqual([
+      {
+        hasData: true,
+        hasOps: true,
+        mounted: true,
+        selectedClipId: 'clip-1',
+      },
+    ]);
   });
 
   it('navigates on the second staged click when the editor is not mounted', () => {

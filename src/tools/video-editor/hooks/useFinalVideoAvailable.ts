@@ -1,18 +1,15 @@
 import { useCallback, useState } from 'react';
-import { useProjectSelectionContext } from '@/shared/contexts/ProjectContext';
-import {
-  useShotFinalVideos,
-  type ShotFinalVideo,
-} from '@/tools/travel-between-images/hooks/video/useShotFinalVideos';
+import { useVideoEditorCorePorts } from '@/tools/video-editor/core/core-runtime';
+import type { VideoEditorFinalVideo } from '@/tools/video-editor/core/core-ports';
 
-export type { ShotFinalVideo };
+export type ShotFinalVideo = VideoEditorFinalVideo;
 
 const MAX_DISMISSED = 256;
 const dismissedFinalVideoIds = new Set<string>();
+const EMPTY_FINAL_VIDEO_MAP = new Map<string, ShotFinalVideo>();
 
 export function useFinalVideoAvailable() {
-  const { selectedProjectId } = useProjectSelectionContext();
-  const { finalVideoMap } = useShotFinalVideos(selectedProjectId);
+  const { finalVideoMap } = useVideoEditorCorePorts();
   const [, forceRender] = useState(0);
 
   const dismissFinalVideo = useCallback((finalVideoId: string) => {
@@ -25,7 +22,7 @@ export function useFinalVideoAvailable() {
   }, []);
 
   return {
-    finalVideoMap,
+    finalVideoMap: finalVideoMap ?? EMPTY_FINAL_VIDEO_MAP,
     dismissFinalVideo,
   };
 }

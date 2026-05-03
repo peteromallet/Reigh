@@ -3,22 +3,18 @@ import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from '@/shared/components/ui/runtime/sonner';
 import { MediaLightbox } from '@/domains/media-lightbox/MediaLightbox';
+import { useProjectSelectionContext } from '@/shared/contexts/ProjectContext';
 import { useShots } from '@/shared/contexts/ShotsContext';
 import type { GenerationRow } from '@/domains/generation/types';
 import { VideoEditorLightboxOverlay } from '@/tools/video-editor/components/VideoEditorLightboxOverlay';
 import type { DataProvider } from '@/tools/video-editor/data/DataProvider';
-import {
-  DataProviderWrapper,
-  useVideoEditorRuntime,
-} from '@/tools/video-editor/contexts/DataProviderContext';
+import { CoreProvider, type CoreProviderRenderState } from '@/tools/video-editor/core/CoreProvider';
 import { useAgentChatRegistry } from '@/shared/contexts/AgentChatContext';
 import { clearTimelineClipData, setTimelineClipData } from '@/shared/state/selectionStore';
 import { useEffects } from '@/tools/video-editor/hooks/useEffects';
 import { useEffectRegistry } from '@/tools/video-editor/hooks/useEffectRegistry';
 import { useEffectResources } from '@/tools/video-editor/hooks/useEffectResources';
 import { useTimelineClipsForAttachments } from '@/tools/video-editor/hooks/useTimelineClipsForAttachments';
-import { useTimelineState } from '@/tools/video-editor/hooks/useTimelineState';
-import { TimelineStoreProvider } from '@/tools/video-editor/hooks/timelineStore';
 import type {
   TimelineActionResizeStart,
   TimelineClipEdgeResizeEnd,
@@ -28,6 +24,7 @@ import { useVideoEditorLightboxNavigation } from '@/tools/video-editor/hooks/use
 import { isOpenableAssetType } from '@/tools/video-editor/lib/editor-utils';
 import { loadGenerationForLightbox } from '@/tools/video-editor/lib/generation-utils';
 import { getClipTimelineDuration } from '@/tools/video-editor/lib/config-utils';
+import { useShotFinalVideos } from '@/tools/travel-between-images/hooks/video/useShotFinalVideos';
 import {
   ADD_GENERATION_QUERY_PARAM,
   readPendingAdds,
@@ -35,6 +32,7 @@ import {
 } from '@/domains/media-lightbox/hooks/addToVideoEditorConstants';
 import { useRenderDiagnostic } from '@/tools/video-editor/hooks/usePerfDiagnostics';
 import type { ResolvedAssetRegistryEntry } from '@/tools/video-editor/types';
+import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext';
 
 const log = import.meta.env.DEV ? (...args: Parameters<typeof console.log>) => console.log(...args) : () => {};
 
@@ -66,8 +64,6 @@ export function buildVideoEditorLightboxMedia(
   };
 }
 
-/** Registers video-editor state into the app-level AgentChatContext and keeps
- *  timeline attachment metadata synchronized in the selection store. */
 function AgentChatBridgeRegistration() {
   const { timelineId } = useVideoEditorRuntime();
   const allClips = useTimelineClipsForAttachments();
@@ -86,11 +82,13 @@ function AgentChatBridgeRegistration() {
   return null;
 }
 
-function InnerProvider({
+function VideoEditorProviderAdapterShell({
   children,
+  state,
   userId,
 }: {
   children: React.ReactNode;
+  state: CoreProviderRenderState;
   userId: string;
 }) {
   useRenderDiagnostic('VideoEditorProvider');
@@ -103,19 +101,19 @@ function InnerProvider({
     })),
     effectResources.effects,
   );
-  const { store, editor } = useTimelineState();
+
+  const { store, editor, editorData, editorOps: coreEditorOps } = state;
   const { shots } = useShots();
   const [searchParams, setSearchParams] = useSearchParams();
   const pendingAddGenerationId = searchParams.get(ADD_GENERATION_QUERY_PARAM);
   const consumedAddGenerationRef = useRef<string | null>(null);
-
   const drainedStagedRef = useRef(false);
   const drainInFlightRef = useRef(false);
   const editorRef = useRef(editor);
   editorRef.current = editor;
 
   useEffect(() => {
-    if (editor.isLoading) return;
+    if (editorData.isLoading) return;
     if (drainInFlightRef.current) return;
 
     const queue: string[] = [];
@@ -155,7 +153,6 @@ function InnerProvider({
             processed.push(generationId);
             continue;
           }
-          // Let registry patch settle before reading resolvedConfig.
           await new Promise<void>((resolve) => setTimeout(resolve, 0));
           const editorForDrop = editorRef.current;
           const clips = editorForDrop.resolvedConfig?.clips ?? [];
@@ -165,7 +162,6 @@ function InnerProvider({
           );
           editorForDrop.handleAssetDrop(assetKey, undefined, timelineEnd, false, false);
           processed.push(generationId);
-          // Allow React to commit the clip before the next iteration reads clips.
           await new Promise<void>((resolve) => setTimeout(resolve, 50));
         }
       } finally {
@@ -181,11 +177,11 @@ function InnerProvider({
         drainInFlightRef.current = false;
       }
     })();
-  }, [pendingAddGenerationId, editor.isLoading, setSearchParams]);
+  }, [editorData.isLoading, pendingAddGenerationId, setSearchParams]);
 
   const [lightboxAssetKey, setLightboxAssetKey] = useState<string | null>(null);
   const [lightboxClipId, setLightboxClipId] = useState<string | null>(null);
-  const lightboxAsset = lightboxAssetKey ? editor.resolvedConfig?.registry[lightboxAssetKey] : undefined;
+  const lightboxAsset = lightboxAssetKey ? editorData.resolvedConfig?.registry[lightboxAssetKey] : undefined;
   const lightboxFallbackMedia = useMemo(
     () => buildVideoEditorLightboxMedia(lightboxAssetKey, lightboxAsset),
     [lightboxAsset, lightboxAssetKey],
@@ -221,14 +217,14 @@ function InnerProvider({
   const navResult = useVideoEditorLightboxNavigation({
     lightboxAssetKey,
     lightboxClipId,
-    data: editor.data,
+    data: editorData.data,
     shots,
     setLightboxAssetKey,
     setLightboxClipId,
   });
 
   const onDoubleClickAsset = useCallback((assetKey: string, clipId?: string) => {
-    const asset = editor.resolvedConfig?.registry[assetKey];
+    const asset = editorData.resolvedConfig?.registry[assetKey];
     log('[video-editor] onDoubleClickAsset', {
       assetKey,
       clipId: clipId ?? null,
@@ -243,7 +239,7 @@ function InnerProvider({
 
     setLightboxClipId(clipId ?? null);
     setLightboxAssetKey(assetKey);
-  }, [editor.resolvedConfig]);
+  }, [editorData.resolvedConfig]);
 
   useEffect(() => {
     if (!lightboxAssetKey) {
@@ -267,59 +263,12 @@ function InnerProvider({
   const onClipEdgeResizeEnd: TimelineClipEdgeResizeEnd = editor.onClipEdgeResizeEnd;
 
   const editorOps = useMemo<TimelineEditorOpsContextValue>(() => ({
-    setInputModality: editor.setInputModality,
-    setInputModalityFromPointerType: editor.setInputModalityFromPointerType,
-    setInteractionMode: editor.setInteractionMode,
-    setGestureOwner: editor.setGestureOwner,
-    setPrecisionEnabled: editor.setPrecisionEnabled,
-    setContextTarget: editor.setContextTarget,
-    setInspectorTarget: editor.setInspectorTarget,
-    isClipSelected: editor.isClipSelected,
-    selectClip: editor.selectClip,
-    selectClips: editor.selectClips,
-    addToSelection: editor.addToSelection,
-    clearSelection: editor.clearSelection,
-    setSelectedTrackId: editor.setSelectedTrackId,
-    setActiveClipTab: editor.setActiveClipTab,
-    setAssetPanelState: editor.setAssetPanelState,
-    registerGenerationAsset: editor.registerGenerationAsset,
-    onCursorDrag: editor.onCursorDrag,
-    onClickTimeArea: editor.onClickTimeArea,
+    ...coreEditorOps,
     onActionResizeStart,
     onClipEdgeResizeEnd,
-    onOverlayChange: editor.onOverlayChange,
-    onTimelineDragOver: editor.onTimelineDragOver,
-    onTimelineDragLeave: editor.onTimelineDragLeave,
-    onTimelineDrop: editor.onTimelineDrop,
-    handleAssetDrop: editor.handleAssetDrop,
-    handleUpdateClips: editor.handleUpdateClips,
-    handleUpdateClipsDeep: editor.handleUpdateClipsDeep,
-    handleDeleteClips: editor.handleDeleteClips,
-    handleDeleteClip: editor.handleDeleteClip,
-    handleSelectedClipChange: editor.handleSelectedClipChange,
-    handleResetClipPosition: editor.handleResetClipPosition,
-    handleResetClipsPosition: editor.handleResetClipsPosition,
-    handleSplitSelectedClip: editor.handleSplitSelectedClip,
-    handleSplitClipAtTime: editor.handleSplitClipAtTime,
-    handleSplitClipsAtPlayhead: editor.handleSplitClipsAtPlayhead,
-    handleToggleMuteClips: editor.handleToggleMuteClips,
-    handleToggleMute: editor.handleToggleMute,
-    handleDetachAudioClip: editor.handleDetachAudioClip,
-    handleTrackPopoverChange: editor.handleTrackPopoverChange,
-    handleMoveTrack: editor.handleMoveTrack,
-    handleRemoveTrack: editor.handleRemoveTrack,
-    moveSelectedClipToTrack: editor.moveSelectedClipToTrack,
-    moveSelectedClipsToTrack: editor.moveSelectedClipsToTrack,
-    moveClipToRow: editor.moveClipToRow,
-    createTrackAndMoveClip: editor.createTrackAndMoveClip,
-    uploadFiles: editor.uploadFiles,
-    applyEdit: editor.applyEdit,
-    patchRegistry: editor.patchRegistry,
-    unpatchRegistry: editor.unpatchRegistry,
-    registerAsset: editor.registerAsset,
     onDoubleClickAsset,
     setLightboxAssetKey,
-  }), [editor, onActionResizeStart, onClipEdgeResizeEnd, onDoubleClickAsset, setLightboxAssetKey]);
+  }), [coreEditorOps, onActionResizeStart, onClipEdgeResizeEnd, onDoubleClickAsset]);
 
   useLayoutEffect(() => {
     store.getState().syncOpsSlice(editorOps);
@@ -338,7 +287,7 @@ function InnerProvider({
   );
 
   return (
-    <TimelineStoreProvider store={store}>
+    <>
       <AgentChatBridgeRegistration />
       {children}
       {lightboxAssetKey && resolvedLightboxMedia && (
@@ -353,7 +302,7 @@ function InnerProvider({
           {navResult.indicator ? <VideoEditorLightboxOverlay indicator={navResult.indicator} /> : null}
         </>
       )}
-    </TimelineStoreProvider>
+    </>
   );
 }
 
@@ -370,9 +319,28 @@ export function VideoEditorProvider({
   userId: string;
   children: React.ReactNode;
 }) {
+  const { selectedProjectId } = useProjectSelectionContext();
+  const { shots } = useShots();
+  const { finalVideoMap } = useShotFinalVideos(selectedProjectId);
+  const ports = useMemo(() => ({
+    dataProvider,
+    selectedProjectId,
+    shots,
+    finalVideoMap,
+  }), [dataProvider, finalVideoMap, selectedProjectId, shots]);
+
   return (
-    <DataProviderWrapper value={{ provider: dataProvider, timelineId, timelineName, userId }}>
-      <InnerProvider userId={userId}>{children}</InnerProvider>
-    </DataProviderWrapper>
+    <CoreProvider
+      ports={ports}
+      timelineId={timelineId}
+      timelineName={timelineName}
+      userId={userId}
+    >
+      {(state) => (
+        <VideoEditorProviderAdapterShell state={state} userId={userId}>
+          {children}
+        </VideoEditorProviderAdapterShell>
+      )}
+    </CoreProvider>
   );
 }
