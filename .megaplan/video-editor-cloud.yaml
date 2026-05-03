@@ -15,7 +15,7 @@ codex:
 mode: idle
 
 megaplan:
-  ref: afcfff3a290dea87a3033412b3291d8bff30a327
+  ref: 20681671dae1d135f0feca199cd63d780bd36632
 
 resources:
   volume: agent-volume
