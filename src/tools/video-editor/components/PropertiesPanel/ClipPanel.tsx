@@ -12,6 +12,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/components/ui
 import { Textarea } from '@/shared/components/ui/textarea';
 import { ParameterControls, getDefaultValues } from '@/tools/video-editor/components/ParameterControls';
 import { SequenceParamEditor } from '@/tools/video-editor/components/PropertiesPanel/SequenceParamEditor';
+import {
+  clipTypeUsesHoldTiming,
+  getRegisteredClipTypeDescriptor,
+  isClipTypeCommandAvailable,
+} from '@/tools/video-editor/clip-types';
+import { isSequenceParamsSchema } from '@/tools/video-editor/clip-types/defineClipType';
 import { continuousEffectTypes, entranceEffectTypes, exitEffectTypes } from '@/tools/video-editor/effects';
 import { EffectCreatorPanel } from '@/tools/video-editor/components/EffectCreatorPanel';
 import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext';
@@ -19,7 +25,7 @@ import { useEffectResources, type EffectCategory, type EffectResource } from '@/
 import type { ClipTab } from '@/tools/video-editor/hooks/useEditorPreferences';
 import type { ClipMeta } from '@/tools/video-editor/lib/timeline-data';
 import type { TimelineDeviceClass, TimelineInteractionMode } from '@/tools/video-editor/lib/mobile-interaction-model';
-import { getAvailableSequenceMetadata, isAvailableSequenceClipType } from '@/tools/video-editor/sequences/registry';
+import { resolveAvailableClipType } from '@/tools/video-editor/sequences/registry';
 import type { ResolvedTimelineClip, ResolvedTimelineConfig, TrackDefinition } from '@/tools/video-editor/types';
 
 interface ClipPanelProps {
@@ -66,23 +72,40 @@ export function getVisibleClipTabs(
   clip: ResolvedTimelineClip | null,
   track: TrackDefinition | null,
 ): ClipTab[] {
-  if (clip?.clipType === 'effect-layer') {
+  const descriptor = getRegisteredClipTypeDescriptor(clip?.clipType);
+  const context = clip ? { clip, track, selectedClipIds: [clip.id] } : { clip, track, selectedClipIds: [] };
+  const features = descriptor?.renderCapabilities.features ?? [];
+  const isEffectLayer = descriptor?.renderCapabilities.previewRoute === 'effect-layer';
+  const isSequenceClip = Boolean(descriptor && isSequenceParamsSchema(descriptor.paramsSchema));
+  const supportsInlineTextEdit = features.includes('inline-text-edit');
+  const supportsPosition = track?.kind === 'visual' && features.includes('manual-bounds');
+  const supportsAudio = Boolean(
+    descriptor && isClipTypeCommandAvailable(descriptor, 'toggle-mute', context),
+  );
+
+  if (isEffectLayer || isSequenceClip) {
     return ['effects', 'timing'];
   }
 
-  if (clip?.clipType && isAvailableSequenceClipType(clip.clipType)) {
-    return ['effects', 'timing'];
-  }
-
-  if (clip?.clipType === 'text') {
+  if (supportsInlineTextEdit) {
     return ['effects', 'timing', 'position', 'text'];
   }
 
   if (track?.kind === 'audio') {
+    return supportsAudio ? ['effects', 'timing', 'audio'] : ['effects', 'timing'];
+  }
+
+  if (supportsPosition && supportsAudio) {
+    return ['effects', 'timing', 'position', 'audio'];
+  }
+  if (supportsPosition) {
+    return ['effects', 'timing', 'position'];
+  }
+  if (supportsAudio) {
     return ['effects', 'timing', 'audio'];
   }
 
-  return ['effects', 'timing', 'position', 'audio'];
+  return ['effects', 'timing'];
 }
 
 export function FieldLabel({ children }: { children: React.ReactNode }) {
@@ -188,15 +211,35 @@ export function ClipPanel({
   const [creatorOpen, setCreatorOpen] = useState(false);
   const [editingEffect, setEditingEffect] = useState<EffectResource | null>(null);
   const visibleTabs = useMemo(() => getVisibleClipTabs(clip, track), [clip, track]);
-  const isEffectLayer = clip?.clipType === 'effect-layer';
-  const sequenceMetadata = clip?.clipType && isAvailableSequenceClipType(clip.clipType)
-    ? getAvailableSequenceMetadata(clip.clipType)
+  const clipDescriptor = clip
+    ? getRegisteredClipTypeDescriptor(clip.clipType)
     : undefined;
-  const isSequenceClip = Boolean(sequenceMetadata);
+  const clipTypeResolution = resolveAvailableClipType(clip?.clipType);
+  const isEffectLayer = clipDescriptor?.renderCapabilities.previewRoute === 'effect-layer';
+  const isSequenceClip = Boolean(clipDescriptor && isSequenceParamsSchema(clipDescriptor.paramsSchema));
+  const supportsInlineTextEdit = Boolean(
+    clipDescriptor?.renderCapabilities.features?.includes('inline-text-edit'),
+  );
+  const commandContext = useMemo(() => (
+    clip
+      ? { clip, track, selectedClipIds: [clip.id] }
+      : { clip, track, selectedClipIds: [] }
+  ), [clip, track]);
+  const canSplit = Boolean(
+    clipDescriptor && isClipTypeCommandAvailable(clipDescriptor, 'split', commandContext),
+  );
+  const canMoveTrack = Boolean(
+    clipDescriptor && isClipTypeCommandAvailable(clipDescriptor, 'move-track-up', commandContext),
+  );
+  const canToggleMute = Boolean(
+    clipDescriptor && isClipTypeCommandAvailable(clipDescriptor, 'toggle-mute', commandContext),
+  );
+  const canDetachAudio = Boolean(
+    clipDescriptor && isClipTypeCommandAvailable(clipDescriptor, 'detach-audio', commandContext),
+  );
   const entranceEffect = findEffectResourceByType(clip?.entrance?.type, effectResources.effects);
   const exitEffect = findEffectResourceByType(clip?.exit?.type, effectResources.effects);
   const continuousEffect = findEffectResourceByType(clip?.continuous?.type, effectResources.effects);
-  const canDetachAudio = track?.kind === 'visual' && clip?.assetEntry?.type?.startsWith('video/');
   const showInspectorActions = deviceClass !== 'desktop';
 
   if (!clip) {
@@ -215,8 +258,10 @@ export function ClipPanel({
             {isEffectLayer
               ? (getEffectDisplayLabel(clip.continuous?.type, effectResources.effects) ?? 'Effect Layer')
               : isSequenceClip
-                ? sequenceMetadata?.label
-              : (clip.text?.content || clip.asset || clip.id)}
+                ? (clipDescriptor?.label ?? clip.clipType ?? clip.id)
+                : supportsInlineTextEdit
+                  ? (clip.text?.content || clipDescriptor?.label || clip.id)
+                  : (clip.asset || clipDescriptor?.label || clip.id)}
           </div>
           <div className="mt-1 text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
             {clip.clipType ?? 'media'} · {track?.label ?? clip.track}
@@ -283,16 +328,16 @@ export function ClipPanel({
             <Button type="button" variant="secondary" size="sm" className="justify-start" onClick={() => { onSetInteractionMode('move'); setActiveTab('timing'); }}>
               Move in inspector
             </Button>
-            <Button type="button" variant="outline" size="sm" className="justify-start" onClick={onMoveTrackUp}>
+            <Button type="button" variant="outline" size="sm" className="justify-start" onClick={onMoveTrackUp} disabled={!canMoveTrack}>
               Track up
             </Button>
-            <Button type="button" variant="outline" size="sm" className="justify-start" onClick={onMoveTrackDown}>
+            <Button type="button" variant="outline" size="sm" className="justify-start" onClick={onMoveTrackDown} disabled={!canMoveTrack}>
               Track down
             </Button>
-            <Button type="button" variant="outline" size="sm" className="justify-start" onClick={onSplitAtPlayhead}>
+            <Button type="button" variant="outline" size="sm" className="justify-start" onClick={onSplitAtPlayhead} disabled={!canSplit}>
               Split at playhead
             </Button>
-            <Button type="button" variant="outline" size="sm" className="justify-start" onClick={onToggleMute}>
+            <Button type="button" variant="outline" size="sm" className="justify-start" onClick={onToggleMute} disabled={!canToggleMute}>
               Mute or unmute
             </Button>
             <Button type="button" variant={precisionEnabled ? 'secondary' : 'outline'} size="sm" className="justify-start" onClick={() => onSetPrecisionEnabled(!precisionEnabled)}>
@@ -318,13 +363,21 @@ export function ClipPanel({
 
         {visibleTabs.includes('effects') && (
           <TabsContent value="effects" className="space-y-3">
-            {isSequenceClip && sequenceMetadata ? (
+            {clipTypeResolution.status === 'unknown' && clip.clipType ? (
+              <div className="rounded-xl border border-dashed border-amber-400/40 bg-amber-500/10 p-3 text-sm text-amber-100">
+                {clip.clipType} is not registered in the clip-type registry for this editor build.
+              </div>
+            ) : isSequenceClip && clipTypeResolution.status === 'available' ? (
               <SequenceParamEditor
-                metadata={sequenceMetadata}
+                clipType={clip.clipType}
                 params={clip.params}
                 registry={registry}
                 onChange={(nextParams) => onChange({ params: nextParams })}
               />
+            ) : isSequenceClip && clipTypeResolution.status === 'unavailable' ? (
+              <div className="rounded-xl border border-dashed border-amber-400/40 bg-amber-500/10 p-3 text-sm text-amber-100">
+                {clip.clipType} is trusted in the clip-type registry, but its render component is not available in this editor build.
+              </div>
             ) : (
               <>
             <div className="grid gap-3 md:grid-cols-2">
@@ -586,14 +639,14 @@ export function ClipPanel({
                 <FieldLabel>Start (seconds)</FieldLabel>
                 <NumberInput value={clip.at} step={0.1} onChange={(value) => { if (value !== null) onChange({ at: value }); }} />
               </div>
-              {isEffectLayer || isSequenceClip ? (
+              {clipTypeUsesHoldTiming(clipDescriptor) ? (
                 <div className="space-y-2">
                   <FieldLabel>Duration (seconds)</FieldLabel>
                   <NumberInput
-                    value={clip.hold ?? sequenceMetadata?.hold.defaultSeconds ?? 5}
-                    min={sequenceMetadata?.hold.minSeconds ?? 0.1}
-                    max={sequenceMetadata?.hold.maxSeconds}
-                    step={sequenceMetadata?.hold.stepSeconds ?? 0.1}
+                    value={clip.hold ?? (clipDescriptor && clipDescriptor.hold.kind !== 'unsupported' ? clipDescriptor.hold.defaultSeconds : 5)}
+                    min={clipDescriptor?.hold.kind !== 'unsupported' ? clipDescriptor.hold.minSeconds : 0.1}
+                    max={clipDescriptor?.hold.kind !== 'unsupported' ? clipDescriptor.hold.maxSeconds : undefined}
+                    step={clipDescriptor?.hold.kind !== 'unsupported' ? clipDescriptor.hold.stepSeconds : 0.1}
                     onChange={(value) => { if (value !== null) onChange({ hold: value }); }}
                   />
                 </div>
@@ -667,7 +720,7 @@ export function ClipPanel({
                 step={0.05}
                 onValueChange={(value) => onChange({ volume: value })}
               />
-              <Button type="button" variant="secondary" size="sm" className="mt-3" onClick={onToggleMute}>
+              <Button type="button" variant="secondary" size="sm" className="mt-3" onClick={onToggleMute} disabled={!canToggleMute}>
                 Toggle mute
               </Button>
               {canDetachAudio && (
@@ -688,7 +741,7 @@ export function ClipPanel({
 
         {visibleTabs.includes('text') && (
           <TabsContent value="text" className="space-y-3">
-            {clip.clipType === 'text' ? (
+            {supportsInlineTextEdit ? (
               <>
                 <Textarea
                   value={clip.text?.content ?? ''}

@@ -2,7 +2,7 @@ import { AbsoluteFill, Sequence } from 'remotion';
 import { memo, useMemo, type FC, type ReactNode } from 'react';
 import { getAudioTracks, getVisualTracks } from '@/tools/video-editor/lib/editor-utils';
 import { getTimelineDurationInFrames } from '@/tools/video-editor/lib/config-utils';
-import { BUILTIN_CLIP_TYPES, type ResolvedTimelineClip, type ResolvedTimelineConfig, type TrackDefinition } from '@/tools/video-editor/types';
+import { type ResolvedTimelineClip, type ResolvedTimelineConfig, type TrackDefinition } from '@/tools/video-editor/types';
 import { AudioTrack } from '@/tools/video-editor/compositions/AudioTrack';
 import { AudioAnalysisProvider } from '@/tools/video-editor/compositions/AudioAnalysisProvider';
 import { EffectLayerSequence } from '@/tools/video-editor/compositions/EffectLayerSequence';
@@ -21,7 +21,7 @@ import {
   type RuntimeTheme,
   type Theme,
 } from '@banodoco/timeline-composition/theme-api';
-import { SEQUENCE_COMPONENT_REGISTRY } from '@/tools/video-editor/sequences/registry';
+import { resolveAvailableClipType, SEQUENCE_COMPONENT_REGISTRY } from '@/tools/video-editor/sequences/registry';
 
 // Phase 4d (Sprint 5): EFFECT_REGISTRY dispatch.
 //
@@ -35,20 +35,6 @@ import { SEQUENCE_COMPONENT_REGISTRY } from '@/tools/video-editor/sequences/regi
 //      @banodoco/timeline-theme-* packages) — render the theme component.
 //   3. Sprint-3 loud placeholder — defensive fallback when the theme
 //      package isn't installed OR the clipType is unknown.
-const isBuiltinClipType = (value: string | undefined): boolean => {
-  if (typeof value !== 'string') {
-    return true; // legacy clips with no clipType default to media-equivalent dispatch
-  }
-  return (BUILTIN_CLIP_TYPES as readonly string[]).includes(value);
-};
-
-const isSequenceComponentClipType = (
-  value: string | undefined,
-): value is keyof typeof SEQUENCE_COMPONENT_REGISTRY => {
-  if (typeof value !== 'string') return false;
-  return Object.prototype.hasOwnProperty.call(SEQUENCE_COMPONENT_REGISTRY, value);
-};
-
 const sortClipsByAt = (clips: ResolvedTimelineClip[]): ResolvedTimelineClip[] => {
   return [...clips].sort((left, right) => left.at - right.at);
 };
@@ -176,27 +162,8 @@ const renderVisualTrack = (
           return <GeneratedModulePlaceholderSequence key={clip.id} clip={clip} fps={fps} />;
         }
 
-        if (clip.clipType === 'effect-layer') {
-          return null;
-        }
-
-        if (clip.clipType === 'text') {
-          return <TextClipSequence key={clip.id} clip={clip} track={track} fps={fps} />;
-        }
-
-        // EFFECT_REGISTRY dispatch (Sprint 5 / SD-026): if the clipType
-        // is provided by an installed theme package, render via the
-        // codegenned registry entry. Mirrors HypeComposition.tsx:58-64.
-        if (isSequenceComponentClipType(clip.clipType)) {
-          return <ThemeEffectSequence key={clip.id} clip={clip} fps={fps} theme={theme} />;
-        }
-
-        // SD-025 (Sprint 3): loud placeholder for unknown clipTypes that
-        // are NOT in BUILTIN_CLIP_TYPES and NOT in the theme registry —
-        // theme package missing, typo, or future clipType not yet
-        // supported. Surfaces as a labeled band rather than a silent
-        // black void.
-        if (!isBuiltinClipType(clip.clipType)) {
+        const clipTypeResolution = resolveAvailableClipType(clip.clipType);
+        if (clipTypeResolution.status === 'unknown') {
           return (
             <UnknownClipPlaceholderSequence
               key={clip.id}
@@ -205,6 +172,29 @@ const renderVisualTrack = (
               reason="unsupported"
             />
           );
+        }
+        const descriptor = clipTypeResolution.registration.descriptor;
+
+        if (descriptor.renderCapabilities.previewRoute === 'effect-layer') {
+          return null;
+        }
+
+        if (descriptor.renderCapabilities.previewRoute === 'native-text') {
+          return <TextClipSequence key={clip.id} clip={clip} track={track} fps={fps} />;
+        }
+
+        if (descriptor.renderCapabilities.previewRoute === 'sequence-component') {
+          if (clipTypeResolution.status !== 'available' || clipTypeResolution.registration.source !== 'sequence') {
+            return (
+              <UnknownClipPlaceholderSequence
+                key={clip.id}
+                clip={clip}
+                fps={fps}
+                reason="unsupported"
+              />
+            );
+          }
+          return <ThemeEffectSequence key={clip.id} clip={clip} fps={fps} theme={theme} />;
         }
 
         const predecessor = index > 0 ? sortedClips[index - 1] : null;
@@ -283,9 +273,12 @@ export const TimelineRenderer: FC<{ config: ResolvedTimelineConfig }> = memo(({ 
       effectLayers: Record<string, ResolvedTimelineClip[]>;
       all: Record<string, ResolvedTimelineClip[]>;
     }>((groups, clip) => {
+      const clipTypeResolution = resolveAvailableClipType(clip.clipType);
+      const isEffectLayer = clipTypeResolution.status !== 'unknown'
+        && clipTypeResolution.registration.descriptor.renderCapabilities.previewRoute === 'effect-layer';
       groups.all[clip.track] ??= [];
       groups.all[clip.track].push(clip);
-      if (clip.clipType === 'effect-layer' && !isGeneratedRemotionModuleClip(clip)) {
+      if (isEffectLayer && !isGeneratedRemotionModuleClip(clip)) {
         groups.effectLayers[clip.track] ??= [];
         groups.effectLayers[clip.track].push(clip);
       } else {

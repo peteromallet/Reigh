@@ -1,25 +1,16 @@
+import type {
+  ClipTypeHoldTiming,
+  ClipTypeSequenceParamDefinition,
+  ClipTypeSequenceParamKind,
+} from '@/tools/video-editor/clip-types/defineClipType';
+
 export const TRUSTED_SEQUENCE_THEME_ID = '2rp' as const;
 
-export type SequenceParamKind = 'string' | 'asset-list';
+export type SequenceParamKind = ClipTypeSequenceParamKind;
 
-export type SequenceParamMetadata = {
-  key: string;
-  label: string;
-  kind: SequenceParamKind;
-  description: string;
-  required?: boolean;
-  defaultValue?: string | readonly string[];
-  options?: readonly string[];
-  maxItems?: number;
-  componentParam?: string;
-};
+export type SequenceParamMetadata = ClipTypeSequenceParamDefinition;
 
-export type SequenceHoldMetadata = {
-  defaultSeconds: number;
-  minSeconds: number;
-  maxSeconds: number;
-  stepSeconds: number;
-};
+export type SequenceHoldMetadata = ClipTypeHoldTiming;
 
 export type TrustedSequenceMetadata = {
   clipType: string;

@@ -10,6 +10,7 @@ import {
   resolveTimelineConfig as resolveTimelineConfigShared,
   type UrlResolver,
 } from '@/tools/video-editor/lib/config-utils';
+import { createClipMetaFromDescriptor } from '@/tools/video-editor/clip-types/runtime';
 import { migrateToFlatTracks, repairConfig, repairShotGroupContiguity } from '@/tools/video-editor/lib/migrate';
 import { TIMELINE_CLIP_FIELDS, validateSerializedConfig } from '@/tools/video-editor/lib/serialize';
 import type { DataProvider } from '@/tools/video-editor/data/DataProvider';
@@ -491,9 +492,13 @@ export function getNextClipId(meta: Record<string, ClipMeta>): string {
 }
 
 export function createEffectLayerClipMeta(trackId: string): ClipMeta {
-  return {
+  const clipMeta = createClipMetaFromDescriptor({
+    clipType: 'effect-layer',
+    trackId,
+  });
+  return (clipMeta ?? {
     track: trackId,
     clipType: 'effect-layer',
     hold: 5,
-  };
+  }) as ClipMeta;
 }

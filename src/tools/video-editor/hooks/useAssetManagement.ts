@@ -13,6 +13,7 @@ import { createExternalUploadGeneration } from '@/integrations/supabase/reposito
 import { generateUUID } from '@/shared/lib/taskCreation/ids';
 import { findNearestFreeTrack, getCompatibleTrackId, trySnapToEdge, updateClipOrder } from '@/tools/video-editor/lib/coordinate-utils';
 import { getTrackIndex } from '@/tools/video-editor/lib/editor-utils';
+import { createClipMetaFromDescriptor } from '@/tools/video-editor/clip-types/runtime';
 import {
   getNextClipId,
   type ClipMeta,
@@ -234,44 +235,57 @@ export function buildAssetDropEdit({
 
   if (track.kind === 'audio') {
     duration = assetEntry?.duration ?? 10;
-    clipMeta = {
-      asset: assetKey,
-      track: trackId,
+    const nextMeta = createClipMetaFromDescriptor({
       clipType: 'media',
-      from: 0,
-      to: duration,
-      speed: 1,
-      volume: 1,
-    };
+      trackId,
+      clipOverrides: {
+        asset: assetKey,
+        from: 0,
+        to: duration,
+      },
+    });
+    if (!nextMeta) {
+      return null;
+    }
+    clipMeta = nextMeta as ClipMeta;
   } else if (isImage) {
     duration = 5;
-    clipMeta = {
-      asset: assetKey,
-      track: trackId,
+    const nextMeta = createClipMetaFromDescriptor({
       clipType,
-      hold: duration,
-      opacity: 1,
-      x: isManual ? 100 : undefined,
-      y: isManual ? 100 : undefined,
-      width: isManual ? 320 : undefined,
-      height: isManual ? 240 : undefined,
-    };
+      trackId,
+      clipOverrides: {
+        asset: assetKey,
+        hold: duration,
+        x: isManual ? 100 : undefined,
+        y: isManual ? 100 : undefined,
+        width: isManual ? 320 : undefined,
+        height: isManual ? 240 : undefined,
+      },
+    });
+    if (!nextMeta) {
+      return null;
+    }
+    clipMeta = nextMeta as ClipMeta;
   } else {
     duration = baseDuration;
-    clipMeta = {
-      asset: assetKey,
-      track: trackId,
+    const nextMeta = createClipMetaFromDescriptor({
       clipType,
-      from: 0,
-      to: duration,
-      speed: 1,
-      volume: 1,
-      opacity: 1,
-      x: isManual ? 100 : undefined,
-      y: isManual ? 100 : undefined,
-      width: isManual ? 320 : undefined,
-      height: isManual ? 240 : undefined,
-    };
+      trackId,
+      clipOverrides: {
+        asset: assetKey,
+        from: 0,
+        to: duration,
+        opacity: 1,
+        x: isManual ? 100 : undefined,
+        y: isManual ? 100 : undefined,
+        width: isManual ? 320 : undefined,
+        height: isManual ? 240 : undefined,
+      },
+    });
+    if (!nextMeta) {
+      return null;
+    }
+    clipMeta = nextMeta as ClipMeta;
   }
 
   const action: TimelineAction = {

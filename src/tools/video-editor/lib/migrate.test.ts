@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { repairConfig } from '@/tools/video-editor/lib/migrate';
+import { migrateToFlatTracks, repairConfig } from '@/tools/video-editor/lib/migrate';
 import { configToRows, rowsToConfig } from '@/tools/video-editor/lib/timeline-data';
 import type { TimelineConfig } from '@/tools/video-editor/types';
 
@@ -130,5 +130,57 @@ describe('repairConfig — legacy pinnedShotGroups migration', () => {
     };
     const repaired = repairConfig(config);
     expect(repaired.pinnedShotGroups).toBe(config.pinnedShotGroups);
+  });
+});
+
+describe('migrateToFlatTracks clip-type defaults', () => {
+  it('infers legacy clip types and synthesizes descriptor-backed background hold clips', () => {
+    const migrated = migrateToFlatTracks({
+      output: {
+        resolution: '1920x1080',
+        fps: 30,
+        file: 'out.mp4',
+        background: 'asset-background',
+      },
+      clips: [
+        {
+          id: 'clip-text',
+          at: 1,
+          track: 'overlay',
+          text: { content: 'hello' },
+          hold: 2,
+        },
+        {
+          id: 'clip-media',
+          at: 3,
+          track: 'video',
+          asset: 'asset-video',
+          from: 0,
+          to: 4,
+        },
+      ],
+    });
+
+    expect(migrated.tracks?.map((track) => track.id)).toEqual(['V1', 'V2', 'V3', 'A1']);
+    expect(migrated.clips[0]).toMatchObject({
+      id: 'clip-background',
+      track: 'V1',
+      clipType: 'hold',
+      asset: 'asset-background',
+      opacity: 1,
+    });
+    expect(migrated.clips[1]).toMatchObject({
+      id: 'clip-text',
+      track: 'V3',
+      clipType: 'text',
+      hold: 2,
+    });
+    expect(migrated.clips[2]).toMatchObject({
+      id: 'clip-media',
+      track: 'V2',
+      clipType: 'media',
+      from: 0,
+      to: 4,
+    });
   });
 });

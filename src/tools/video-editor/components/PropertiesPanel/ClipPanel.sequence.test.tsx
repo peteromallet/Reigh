@@ -53,6 +53,21 @@ vi.mock('@/tools/video-editor/components/EffectCreatorPanel', () => ({
   EffectCreatorPanel: () => null,
 }));
 
+vi.mock('@banodoco/timeline-composition/registry.generated', async () => ({
+  THEME_PACKAGE_REGISTRY: {
+    'resource-card': {
+      component: () => null,
+      themeId: '2rp',
+      source: 'installed:@banodoco/timeline-theme-2rp',
+    },
+    'section-hook': {
+      component: () => null,
+      themeId: '2rp',
+      source: 'installed:@banodoco/timeline-theme-2rp',
+    },
+  },
+}));
+
 const visualTrack: TrackDefinition = {
   id: 'visual-1',
   kind: 'visual',
@@ -224,5 +239,40 @@ describe('ClipPanel sequence inspector', () => {
     fireEvent.change(inputs[1], { target: { value: '6' } });
 
     expect(onChange).toHaveBeenCalledWith({ hold: 6 });
+  });
+
+  it('warns loudly when a trusted sequence clip is unavailable in the current editor registry', () => {
+    renderClipPanel({
+      clip: {
+        ...sequenceClip,
+        clipType: 'cta-card',
+      },
+    });
+
+    expect(screen.getByText(/is trusted in the clip-type registry, but its render component is not available/i)).toBeInTheDocument();
+  });
+
+  it('uses command-aware tabs so non-audio hold clips hide audio controls while video media clips keep them', () => {
+    expect(getVisibleClipTabs({
+      id: 'hold-1',
+      clipType: 'hold',
+      track: 'visual-1',
+      at: 0,
+      hold: 3,
+    }, visualTrack)).toEqual(['effects', 'timing', 'position']);
+
+    expect(getVisibleClipTabs({
+      id: 'media-1',
+      clipType: 'media',
+      track: 'visual-1',
+      at: 0,
+      from: 0,
+      to: 4,
+      assetEntry: {
+        file: 'clip.mp4',
+        src: 'https://cdn.example.test/clip.mp4',
+        type: 'video/mp4',
+      },
+    }, visualTrack)).toEqual(['effects', 'timing', 'position', 'audio']);
   });
 });

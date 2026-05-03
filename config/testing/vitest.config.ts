@@ -1,7 +1,11 @@
 import { defineConfig } from 'vitest/config';
+import fs from 'fs';
 import path from 'path';
 
 const projectRoot = path.resolve(__dirname, '../..');
+const resolveExistingAlias = (preferred: string, fallback: string): string => (
+  fs.existsSync(preferred) ? preferred : fallback
+);
 
 export default defineConfig({
   root: projectRoot,
@@ -19,8 +23,14 @@ export default defineConfig({
       'react-dom': path.resolve(projectRoot, 'node_modules/react-dom'),
       'remotion': path.resolve(projectRoot, 'node_modules/remotion'),
       '@remotion/layout-utils': path.resolve(projectRoot, 'node_modules/@remotion/layout-utils'),
-      '@banodoco/timeline-composition/registry.generated': path.resolve(projectRoot, 'node_modules/@banodoco/timeline-composition/typescript/src/registry.generated.ts'),
-      '@banodoco/timeline-composition/theme-api': path.resolve(projectRoot, 'node_modules/@banodoco/timeline-composition/typescript/src/theme-api.ts'),
+      '@banodoco/timeline-composition/registry.generated': resolveExistingAlias(
+        path.resolve(projectRoot, 'node_modules/@banodoco/timeline-composition/typescript/src/registry.generated.ts'),
+        path.resolve(projectRoot, 'src/test/stubs/banodoco/registry.generated.ts'),
+      ),
+      '@banodoco/timeline-composition/theme-api': resolveExistingAlias(
+        path.resolve(projectRoot, 'node_modules/@banodoco/timeline-composition/typescript/src/theme-api.ts'),
+        path.resolve(projectRoot, 'src/test/stubs/banodoco/theme-api.tsx'),
+      ),
       '@banodoco/timeline-composition': path.resolve(projectRoot, 'node_modules/@banodoco/timeline-composition'),
       // Sprint 5: workspace-primitive aliases for the linked packages.
       // The composition package's animations.generated / transitions.generated

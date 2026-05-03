@@ -1,4 +1,5 @@
 import { getClipTimelineDuration } from './config-utils';
+import { createClipMetaFromDescriptor, inferLegacyClipType } from '@/tools/video-editor/clip-types/runtime';
 import type {
   ClipContinuous,
   ClipEntrance,
@@ -123,8 +124,7 @@ const migrateLegacyEffects = (clip: TimelineClip): TimelineClip => {
 
 const migrateLegacyClip = (clip: TimelineClip): TimelineClip => {
   const nextTrack = LEGACY_TRACK_MAP[clip.track] ?? clip.track;
-  const clipType = clip.clipType
-    ?? (clip.text ? 'text' : typeof clip.hold === 'number' ? 'hold' : 'media');
+  const clipType = inferLegacyClipType(clip);
 
   return migrateLegacyEffects({
     ...clip,
@@ -153,15 +153,25 @@ const ensureBackgroundClip = (config: TimelineConfig): TimelineClip[] => {
   }
 
   const timelineDuration = Math.max(0.1, roundTimelineValue(getTimelineEndSeconds(config)));
+  const clipDefaults = createClipMetaFromDescriptor({
+    clipType: 'hold',
+    trackId: 'V1',
+    clipOverrides: {
+      asset: backgroundAsset,
+      hold: timelineDuration,
+    },
+  });
   return [
     {
       id: 'clip-background',
       at: 0,
-      track: 'V1',
-      clipType: 'hold',
-      asset: backgroundAsset,
-      hold: timelineDuration,
-      opacity: 1,
+      ...(clipDefaults ?? {
+        track: 'V1',
+        clipType: 'hold',
+        asset: backgroundAsset,
+        hold: timelineDuration,
+        opacity: 1,
+      }),
     },
     ...migratedClips,
   ];
@@ -204,8 +214,7 @@ export const migrateToFlatTracks = (config: TimelineConfig): TimelineConfig => {
       tracks: config.tracks.map((track) => ({ ...track })),
       clips: config.clips.map((clip) => ({
         ...clip,
-        clipType: clip.clipType
-          ?? (clip.text ? 'text' : typeof clip.hold === 'number' ? 'hold' : 'media'),
+        clipType: inferLegacyClipType(clip),
       })),
       pinnedShotGroups: clonePinnedShotGroups(config.pinnedShotGroups),
       ...cloneTimelineExtras(config),
