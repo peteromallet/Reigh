@@ -65,5 +65,11 @@ describe('buildAssetDropEdit media kind validation', () => {
       from: 0,
       to: 4,
     });
+    expect(edit?.rows[0]?.actions[0]).toMatchObject({
+      id: edit?.clipId,
+      start: 2,
+      end: 6,
+    });
+    expect(edit?.clipOrderOverride).toEqual({ V1: [edit?.clipId] });
   });
 });

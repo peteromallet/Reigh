@@ -282,7 +282,7 @@ export function parseCommand(raw: string): ParsedCommand {
 
   return {
     type: "error",
-    message: `Unknown command "${command}". Available: view, move, trim, delete, set, add-text, find-issues. For generation requests, use create_task (legacy generate still works).`,
+    message: `Unknown command "${command}". Available: view, move, split, trim, delete, set, set-text, add-text, add-media, swap, duplicate, query, undo, repeat, find-issues. For generation requests, use create_task (legacy generate still works).`,
   };
 }
 

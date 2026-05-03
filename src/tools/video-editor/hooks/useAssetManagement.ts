@@ -11,7 +11,12 @@ import { generateClientThumbnail, uploadImageWithThumbnail } from '@/shared/medi
 import type { SelectClipOptions } from '@/shared/state/selectionStore';
 import { createExternalUploadGeneration } from '@/integrations/supabase/repositories/generationMutationsRepository';
 import { generateUUID } from '@/shared/lib/taskCreation/ids';
-import { findNearestFreeTrack, getCompatibleTrackId, trySnapToEdge, updateClipOrder } from '@/tools/video-editor/lib/coordinate-utils';
+import {
+  buildAddMediaCommandEffect,
+  estimateProvisionedAssetDuration,
+  provisionRegisteredTimelineMedia,
+} from '@/tools/video-editor/commands';
+import { findNearestFreeTrack, getCompatibleTrackId, trySnapToEdge } from '@/tools/video-editor/lib/coordinate-utils';
 import { getTrackIndex } from '@/tools/video-editor/lib/editor-utils';
 import {
   getNextClipId,
@@ -26,35 +31,8 @@ import type {
   TimelineUnpatchRegistry,
   TimelineUploadAsset,
 } from '@/tools/video-editor/hooks/timeline-state-types';
-import type { TimelineAction } from '@/tools/video-editor/types/timeline-canvas';
-import type { AssetRegistryEntry, ClipType } from '@/tools/video-editor/types';
+import type { AssetRegistryEntry } from '@/tools/video-editor/types';
 import type { TimelineStoreApi } from '@/tools/video-editor/hooks/timelineStore';
-
-function estimateAssetDuration(
-  assetEntry: AssetRegistryEntry | undefined,
-  assetKind: 'audio' | 'visual',
-): number {
-  if (assetKind === 'audio') return assetEntry?.duration ?? 10;
-  if (assetEntry?.type?.startsWith('image')) return 5;
-  return assetEntry?.duration ?? 5;
-}
-
-function getPlayableAssetKind(assetEntry: AssetRegistryEntry | undefined): 'image' | 'video' | 'audio' | null {
-  const mimeType = assetEntry?.type?.toLowerCase() ?? '';
-  const file = (assetEntry?.file ?? assetEntry?.src ?? '').toLowerCase();
-
-  if (mimeType.startsWith('image/') || /\.(png|jpe?g|gif|webp|avif|svg)$/i.test(file)) {
-    return 'image';
-  }
-  if (mimeType.startsWith('video/') || /\.(mp4|mov|webm|m4v)$/i.test(file)) {
-    return 'video';
-  }
-  if (mimeType.startsWith('audio/') || /\.(mp3|wav|aac|m4a|ogg|flac)$/i.test(file)) {
-    return 'audio';
-  }
-
-  return null;
-}
 
 type UploadedGenerationData = GenerationDropData & {
   durationSeconds?: number;
@@ -202,91 +180,32 @@ export function buildAssetDropEdit({
   trackId: string;
   time: number;
 }): BuildAssetDropEditResult | null {
-  const assetEntry = current.registry.assets[assetKey];
-  const playableKind = getPlayableAssetKind(assetEntry);
-  if (!assetEntry || !playableKind) {
+  const provisionedAsset = provisionRegisteredTimelineMedia(assetKey, current.registry.assets[assetKey]);
+  if (!provisionedAsset) {
     return null;
   }
-  const track = current.tracks.find((candidate) => candidate.id === trackId);
-  if (!track) {
+  const effect = buildAddMediaCommandEffect(current, {
+    trackId,
+    at: time,
+    asset: provisionedAsset,
+  });
+  if (effect.mutation.type !== 'rows') {
     return null;
   }
-  if (track.kind === 'visual' && playableKind === 'audio') {
-    return null;
-  }
-  if (track.kind === 'audio' && playableKind === 'image') {
-    return null;
-  }
-
-  const clipId = getNextClipId(current.meta);
-  const isImage = playableKind === 'image';
-  const isVideo = playableKind === 'video';
-  const isManual = track.fit === 'manual';
-  const clipType: ClipType = isImage ? 'hold' : 'media';
-  const baseDuration = isVideo
-    ? (assetEntry?.duration ?? 5)
-    : isImage
-      ? 5
-      : Math.max(1, assetEntry?.duration ?? 5);
-
-  let clipMeta: ClipMeta;
-  let duration: number;
-
-  if (track.kind === 'audio') {
-    duration = assetEntry?.duration ?? 10;
-    clipMeta = {
-      asset: assetKey,
-      track: trackId,
-      clipType: 'media',
-      from: 0,
-      to: duration,
-      speed: 1,
-      volume: 1,
-    };
-  } else if (isImage) {
-    duration = 5;
-    clipMeta = {
-      asset: assetKey,
-      track: trackId,
-      clipType,
-      hold: duration,
-      opacity: 1,
-      x: isManual ? 100 : undefined,
-      y: isManual ? 100 : undefined,
-      width: isManual ? 320 : undefined,
-      height: isManual ? 240 : undefined,
-    };
-  } else {
-    duration = baseDuration;
-    clipMeta = {
-      asset: assetKey,
-      track: trackId,
-      clipType,
-      from: 0,
-      to: duration,
-      speed: 1,
-      volume: 1,
-      opacity: 1,
-      x: isManual ? 100 : undefined,
-      y: isManual ? 100 : undefined,
-      width: isManual ? 320 : undefined,
-      height: isManual ? 240 : undefined,
-    };
-  }
-
-  const action: TimelineAction = {
-    id: clipId,
-    start: time,
-    end: time + duration,
-    effectId: `effect-${clipId}`,
-  };
+  const detailClipId = typeof effect.detail?.clipId === 'string'
+    ? effect.detail.clipId
+    : getNextClipId(current.meta);
+  const duration = effect.mutation.rows
+    .flatMap((row) => row.actions)
+    .find((action) => action.id === detailClipId);
+  const metaUpdates = effect.mutation.metaUpdates ?? {};
 
   return {
-    clipId,
-    duration,
-    rows: current.rows.map((row) => (row.id === trackId ? { ...row, actions: [...row.actions, action] } : row)),
-    metaUpdates: { [clipId]: clipMeta },
-    clipOrderOverride: updateClipOrder(current.clipOrder, trackId, (ids) => [...ids, clipId]),
+    clipId: detailClipId,
+    duration: duration ? duration.end - duration.start : estimateProvisionedAssetDuration(provisionedAsset),
+    rows: effect.mutation.rows,
+    metaUpdates,
+    clipOrderOverride: effect.mutation.clipOrderOverride ?? current.clipOrder,
   };
 }
 
@@ -490,14 +409,15 @@ export function useAssetManagement({
   const handleAssetDrop = useCallback((assetKey: string, trackId: string | undefined, time: number, forceNewTrack = false, insertAtTop = false) => {
     const latestDataRef = getDataRef();
     const current = latestDataRef.current;
-    const assetEntry = current?.registry.assets[assetKey];
-    const playableKind = getPlayableAssetKind(assetEntry);
-    if (!assetEntry || !playableKind) {
+    const provisionedAsset = current
+      ? provisionRegisteredTimelineMedia(assetKey, current.registry.assets[assetKey])
+      : null;
+    if (!provisionedAsset) {
       toast.error('Only image, video, and audio assets can be added to the timeline');
       return;
     }
-    const assetKind = playableKind === 'audio' ? 'audio' : 'visual';
-    const duration = estimateAssetDuration(assetEntry, assetKind);
+    const assetKind = provisionedAsset.mediaType === 'audio' ? 'audio' : 'visual';
+    const duration = estimateProvisionedAssetDuration(provisionedAsset);
     const resolvedTarget = resolveAssetDropTarget({
       dataRef: latestDataRef,
       assetKind,

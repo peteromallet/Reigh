@@ -6,6 +6,13 @@ import type {
   TrackDefinition,
 } from "../../../../src/tools/video-editor/types/index.ts";
 import type { ToolHandler, ToolResult } from "../types.ts";
+import {
+  applyProvisionedMediaCommandToConfig,
+  provisionRegisteredTimelineMedia,
+  type AddMediaCommand,
+  type SwapMediaCommand,
+  type TimelineProvisionedAsset,
+} from "../../../../src/tools/video-editor/commands/index.ts";
 // Sprint 3 (SD-018): surgical CRUD ops moved to @banodoco/timeline-ops.
 // `moveClip` and `setClipProperty` here delegate to the shared package; the
 // handler-level result strings remain byte-equivalent so the LLM tool
@@ -437,108 +444,65 @@ export function addTextClip(
 export function addMediaClip(
   config: TimelineConfig,
   registry: AssetRegistry,
-  args: { track?: string; at?: number; assetKey?: string; mediaType?: "image" | "video" },
+  args: {
+    track?: string;
+    at?: number;
+    assetKey?: string;
+    mediaType?: "image" | "video";
+    asset?: TimelineProvisionedAsset;
+  },
 ): TimelineToolResult {
-  if (
-    typeof args.track !== "string"
-    || typeof args.at !== "number"
-    || typeof args.assetKey !== "string"
-    || (args.mediaType !== "image" && args.mediaType !== "video")
-  ) {
+  if (typeof args.track !== "string" || typeof args.at !== "number") {
+    return { result: "add_media_clip requires track, at, assetKey, and mediaType." };
+  }
+  const provisionedAsset = args.asset ?? (
+    typeof args.assetKey === "string"
+      ? provisionRegisteredTimelineMedia(args.assetKey, registry.assets?.[args.assetKey], args.mediaType)
+      : null
+  );
+  if (!provisionedAsset) {
     return { result: "add_media_clip requires track, at, assetKey, and mediaType." };
   }
 
-  const tracks = getTrackDefinitions(config);
-  if (tracks.length > 0 && !tracks.some((track) => track.id === args.track)) {
-    return { result: `Track ${args.track} does not exist.` };
-  }
-
-  const nextConfig = cloneConfig(config);
-  const clipId = `clip-${crypto.randomUUID().slice(0, 6)}`;
-  const clip = args.mediaType === "video"
-    ? {
-      id: clipId,
+  return applyProvisionedMediaCommandToConfig(config, registry, {
+    type: "add-media",
+    payload: {
+      trackId: args.track,
       at: roundSeconds(args.at),
-      track: args.track,
-      asset: args.assetKey,
-      clipType: "media" as const,
-      from: 0,
-      to: roundSeconds(getAssetDuration(registry, args.assetKey) ?? 5),
-      speed: 1,
-      volume: 1,
-      opacity: 1,
-    }
-    : {
-      id: clipId,
-      at: roundSeconds(args.at),
-      track: args.track,
-      asset: args.assetKey,
-      clipType: "hold" as const,
-      hold: 5,
-      opacity: 1,
-    };
-  nextConfig.clips.push(clip);
-
-  return {
-    config: nextConfig,
-    result: `Added media clip ${clipId} on track ${args.track} at ${roundSeconds(args.at)}s using asset ${args.assetKey}.`,
-  };
+      asset: provisionedAsset,
+    },
+  } satisfies AddMediaCommand);
 }
 
 export function swapClipAsset(
   config: TimelineConfig,
   registry: AssetRegistry,
-  args: { clipId?: string; assetKey?: string; mediaType?: "image" | "video" },
+  args: {
+    clipId?: string;
+    assetKey?: string;
+    mediaType?: "image" | "video";
+    asset?: TimelineProvisionedAsset;
+  },
 ): TimelineToolResult {
-  if (
-    typeof args.clipId !== "string"
-    || typeof args.assetKey !== "string"
-    || (args.mediaType !== "image" && args.mediaType !== "video")
-  ) {
+  if (typeof args.clipId !== "string") {
+    return { result: "swap_clip_asset requires clipId, assetKey, and mediaType." };
+  }
+  const provisionedAsset = args.asset ?? (
+    typeof args.assetKey === "string"
+      ? provisionRegisteredTimelineMedia(args.assetKey, registry.assets?.[args.assetKey], args.mediaType)
+      : null
+  );
+  if (!provisionedAsset) {
     return { result: "swap_clip_asset requires clipId, assetKey, and mediaType." };
   }
 
-  const nextConfig = cloneConfig(config);
-  const clipIndex = getClipIndex(nextConfig, args.clipId);
-  if (clipIndex < 0) {
-    return { result: `Clip ${args.clipId} was not found.` };
-  }
-
-  const clip = nextConfig.clips[clipIndex];
-  if (clip.clipType === "text" || clip.clipType === "effect-layer") {
-    return { result: `Clip ${clip.id} cannot swap media assets.` };
-  }
-
-  const currentMediaType = clip.clipType === "hold" ? "image" : "video";
-  clip.asset = args.assetKey;
-
-  if (currentMediaType === args.mediaType) {
-    return {
-      config: nextConfig,
-      result: `Swapped asset on clip ${clip.id} to ${args.assetKey}.`,
-    };
-  }
-
-  if (args.mediaType === "video") {
-    clip.clipType = "media";
-    clip.from = 0;
-    clip.to = roundSeconds(getAssetDuration(registry, args.assetKey) ?? 5);
-    clip.speed = 1;
-    clip.volume = 1;
-    delete clip.hold;
-  } else {
-    clip.clipType = "hold";
-    clip.hold = 5;
-    delete clip.from;
-    delete clip.to;
-    delete clip.speed;
-    delete clip.volume;
-  }
-
-  return {
-    config: nextConfig,
-    result: `Swapped clip ${clip.id} to ${args.mediaType} asset ${args.assetKey}.`,
-  };
+  return applyProvisionedMediaCommandToConfig(config, registry, {
+    type: "swap",
+    payload: {
+      clipId: args.clipId,
+      asset: provisionedAsset,
+    },
+  } satisfies SwapMediaCommand);
 }
 
 export function queryTimeline(config: TimelineConfig, registry: AssetRegistry): TimelineToolResult {

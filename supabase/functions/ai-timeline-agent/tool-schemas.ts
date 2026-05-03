@@ -12,13 +12,64 @@ export const TIMELINE_AGENT_TOOLS: TimelineAgentToolDefinition[] = [
     type: "function",
     function: {
       name: "run",
-      description: "Execute a timeline editing command. Commands: view, move <clipId> <seconds>, split <clipId> <time>, trim <clipId> [--from N] [--to N] [--duration N], delete <clipId>, set <clipId> <property> <value>, add-text <track> <at> <duration> <text>, add-media <track> <at> <generation_id> <url> [--type image|video], swap <clipId> <generation_id> <url> [--type image|video], duplicate <clipId> [count], query, undo, find-issues",
+      description: "Execute timeline edits through either a legacy command string or a typed transaction batch. Legacy commands: view, move <clipId> <seconds>, split <clipId> <time>, trim <clipId> [--from N] [--to N] [--duration N], delete <clipId>, set <clipId> <property> <value>, add-text <track> <at> <duration> <text>, add-media <track> <at> <generation_id> <url> [--type image|video], swap <clipId> <generation_id> <url> [--type image|video], duplicate <clipId> [count], query, undo, find-issues",
       parameters: {
         type: "object",
         properties: {
-          command: { type: "string", description: "The command to execute" },
+          command: {
+            type: "string",
+            description: "Optional legacy single-command string.",
+          },
+          transaction: {
+            type: "object",
+            description: "Optional typed command batch. Commands use {type, payload}. add-media and swap may provide either payload.asset or external-media fields (url, generationId, mediaType) that will be provisioned automatically.",
+            properties: {
+              transactionId: {
+                type: "string",
+                description: "Optional stable transaction identifier used for history coalescing and reporting.",
+              },
+              commands: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    type: {
+                      type: "string",
+                      description: "Command type such as move, split, trim, delete, set, add-text, set-text, duplicate, add-media, swap, set-params, set-theme, or set-theme-overrides.",
+                    },
+                    payload: {
+                      type: "object",
+                      description: "JSON payload for the command.",
+                      additionalProperties: true,
+                    },
+                    commandId: {
+                      type: "string",
+                      description: "Optional stable identifier for this command within the transaction.",
+                    },
+                    metadata: {
+                      type: "object",
+                      description: "Optional JSON metadata.",
+                      additionalProperties: true,
+                    },
+                  },
+                  required: ["type"],
+                  additionalProperties: false,
+                },
+              },
+            },
+            required: ["commands"],
+            additionalProperties: false,
+          },
+          mode: {
+            type: "string",
+            enum: ["apply", "dry_run", "validate"],
+            description: "Optional execution mode. Defaults to apply.",
+          },
         },
-        required: ["command"],
+        anyOf: [
+          { required: ["command"] },
+          { required: ["transaction"] },
+        ],
         additionalProperties: false,
       },
     },

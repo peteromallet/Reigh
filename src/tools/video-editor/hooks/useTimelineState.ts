@@ -31,9 +31,17 @@ import {
   type TimelineStoreApi,
   type TimelineStoreBootstrap,
 } from '@/tools/video-editor/hooks/timelineStore';
+import {
+  createTimelineCommandRunner,
+  MEDIA_COMMAND_DESCRIPTORS,
+  provisionRegisteredTimelineMedia,
+} from '@/tools/video-editor/commands';
 import type {
   TimelineChromeContextValue,
+  TimelineEditorCommandInput,
+  TimelineEditorCommandResult,
   TimelineEditorContextValue,
+  TimelineEditorCommands,
   TimelinePlaybackContextValue,
   UseTimelineStateResult,
 } from '@/tools/video-editor/hooks/useTimelineState.types';
@@ -62,6 +70,8 @@ type ExternalDropHook = ReturnType<typeof useExternalDrop>;
 type TimelineHistoryHook = ReturnType<typeof useTimelineHistory>;
 type RenderStateHook = ReturnType<typeof useRenderState>;
 
+const editorCommandRunner = createTimelineCommandRunner([...MEDIA_COMMAND_DESCRIPTORS]);
+
 function useTimelineEditorContextValue({
   data,
   interactionPolicy,
@@ -89,6 +99,7 @@ function useTimelineEditorContextValue({
   trackManagement,
   uploadFiles,
   applyEdit,
+  commands,
   patchRegistry,
   unpatchRegistry,
   registerAsset,
@@ -126,6 +137,7 @@ function useTimelineEditorContextValue({
   trackManagement: TimelineTrackManagementHook;
   uploadFiles: ReturnType<typeof useAssetOperations>['uploadFiles'];
   applyEdit: ReturnType<typeof useTimelineSave>['applyEdit'];
+  commands: TimelineEditorCommands;
   patchRegistry: ReturnType<typeof useTimelineSave>['patchRegistry'];
   unpatchRegistry: ReturnType<typeof useTimelineSave>['unpatchRegistry'];
   registerAsset: ReturnType<typeof useAssetOperations>['registerAsset'];
@@ -224,11 +236,13 @@ function useTimelineEditorContextValue({
     createTrackAndMoveClip: trackManagement.createTrackAndMoveClip,
     uploadFiles,
     applyEdit,
+    commands,
     patchRegistry,
     unpatchRegistry,
     registerAsset,
   }), [
     applyEdit,
+    commands,
     assetManagement.handleAssetDrop,
     assetManagement.registerGenerationAsset,
     clipEditing.handleDeleteClip,
@@ -637,6 +651,84 @@ export function useTimelineState(): UseTimelineStateResult {
     applyEdit,
   });
 
+  const timelineCommands = useMemo<TimelineEditorCommands>(() => {
+    const getCurrentData = () => {
+      const current = dataRef.current ?? data;
+      if (!current) {
+        throw new Error('Timeline data is not ready.');
+      }
+      return current;
+    };
+
+    const buildAddMediaCommand = ({ trackId, at, assetKey }: { trackId: string; at: number; assetKey: string }) => {
+      const current = getCurrentData();
+      const asset = provisionRegisteredTimelineMedia(assetKey, current.registry.assets[assetKey]);
+      if (!asset) {
+        return null;
+      }
+
+      return {
+        type: 'add-media' as const,
+        payload: {
+          trackId,
+          at,
+          asset,
+        },
+      };
+    };
+
+    const buildSwapCommand = ({ clipId, assetKey }: { clipId: string; assetKey: string }) => {
+      const current = getCurrentData();
+      const asset = provisionRegisteredTimelineMedia(assetKey, current.registry.assets[assetKey]);
+      if (!asset) {
+        return null;
+      }
+
+      return {
+        type: 'swap' as const,
+        payload: {
+          clipId,
+          asset,
+        },
+      };
+    };
+
+    const validate = (input: TimelineEditorCommandInput | unknown, options?: Parameters<typeof editorCommandRunner.validate>[2]) => {
+      return editorCommandRunner.validate(getCurrentData(), input, options);
+    };
+
+    const dryRun = (input: TimelineEditorCommandInput | unknown, options?: Parameters<typeof editorCommandRunner.dryRun>[2]) => {
+      return editorCommandRunner.dryRun(getCurrentData(), input, options);
+    };
+
+    const apply = (input: TimelineEditorCommandInput | unknown, options?: Parameters<TimelineEditorCommands['apply']>[1]): TimelineEditorCommandResult => {
+      const current = getCurrentData();
+      const result = editorCommandRunner.apply(current, input, options);
+      if (result.status !== 'rejected' && result.nextData.stableSignature !== current.stableSignature) {
+        save.commitData(result.nextData, {
+          save: options?.save,
+          selectedClipId: options?.selectedClipId,
+          selectedTrackId: options?.selectedTrackId,
+          transactionId: result.transaction.transactionId,
+          commandHistory: {
+            transaction: result.transaction,
+            history: result.history,
+          },
+        });
+      }
+
+      return result;
+    };
+
+    return {
+      buildAddMediaCommand,
+      buildSwapCommand,
+      validate,
+      dryRun,
+      apply,
+    };
+  }, [data, dataRef, save]);
+
   const editor = useTimelineEditorContextValue({
     data,
     interactionPolicy,
@@ -664,6 +756,7 @@ export function useTimelineState(): UseTimelineStateResult {
     trackManagement,
     uploadFiles,
     applyEdit,
+    commands: timelineCommands,
     patchRegistry,
     unpatchRegistry,
     registerAsset,
@@ -763,10 +856,11 @@ export function useTimelineState(): UseTimelineStateResult {
     createTrackAndMoveClip: editor.createTrackAndMoveClip,
     uploadFiles: editor.uploadFiles,
     applyEdit: editor.applyEdit,
+    commands: timelineCommands,
     patchRegistry: editor.patchRegistry,
     unpatchRegistry: editor.unpatchRegistry,
     registerAsset: editor.registerAsset,
-  }), [editor, onActionResizeStart, onClipEdgeResizeEnd]);
+  }), [editor, onActionResizeStart, onClipEdgeResizeEnd, timelineCommands]);
 
   const chrome = useTimelineChromeContextValue({
     timelineName: runtime.timelineName ?? null,

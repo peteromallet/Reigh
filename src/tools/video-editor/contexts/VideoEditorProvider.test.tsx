@@ -24,6 +24,7 @@ import {
   useTimelineEditorOps,
   useTimelinePlaybackContext,
 } from '@/tools/video-editor/hooks/timelineStore';
+import { useTimelineCommands } from '@/tools/video-editor/hooks/useTimelineCommands';
 import {
   shouldAllowTouchClipDrag,
   shouldAllowTouchMarquee,
@@ -192,6 +193,13 @@ vi.mock('@/tools/video-editor/hooks/useTimelineState', () => ({
       createTrackAndMoveClip: vi.fn(),
       uploadFiles: vi.fn(),
       applyEdit: vi.fn(),
+      commands: {
+        buildAddMediaCommand: vi.fn(),
+        buildSwapCommand: vi.fn(),
+        validate: vi.fn(),
+        dryRun: vi.fn(),
+        apply: vi.fn(),
+      },
       patchRegistry: vi.fn(),
       unpatchRegistry: vi.fn(),
       registerAsset: vi.fn(),
@@ -267,6 +275,8 @@ function Consumer() {
       <span>{typeof editorData.additiveSelectionRef?.current}</span>
       <span>{typeof editorOps.selectClip}</span>
       <span>{typeof editorOps.selectClips}</span>
+      <span>{typeof editorOps.commands.apply}</span>
+      <span>{typeof editorOps.commands.buildAddMediaCommand}</span>
       <span>{chrome.saveStatus}</span>
       <span>{playback.currentTime}</span>
       <span data-testid="agent-chat-timeline-id">{agentChatBridge.timelineId}</span>
@@ -284,6 +294,17 @@ function Consumer() {
       >
         update interaction
       </button>
+    </div>
+  );
+}
+
+function TimelineCommandsConsumer() {
+  const commands = useTimelineCommands();
+
+  return (
+    <div>
+      <span data-testid="command-apply-type">{typeof commands.apply}</span>
+      <span data-testid="command-build-type">{typeof commands.buildAddMediaCommand}</span>
     </div>
   );
 }
@@ -378,7 +399,7 @@ describe('VideoEditorProvider', () => {
     }));
     expect(screen.getByText('false')).toBeInTheDocument();
     expect(screen.getByText('boolean')).toBeInTheDocument();
-    expect(screen.getAllByText('function')).toHaveLength(2);
+    expect(screen.getAllByText('function')).toHaveLength(4);
     expect(screen.getByText('saved')).toBeInTheDocument();
     expect(screen.getByText('12.5')).toBeInTheDocument();
     expect(screen.getByTestId('agent-chat-timeline-id')).toHaveTextContent('timeline-1');
@@ -517,6 +538,33 @@ describe('VideoEditorProvider', () => {
     expect(handleAssetDrop).toHaveBeenCalledWith('asset-1', undefined, 5, false, false);
     expect(readPendingAdds()).toEqual([]);
     expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  it('exposes useTimelineCommands from the mounted timeline store', () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+    const store = createTimelineStore({
+      data: createTimelineStore().getState().data,
+      ops: createTimelineStore().getState().ops,
+    });
+
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <TimelineStoreProvider store={store}>
+            <TimelineCommandsConsumer />
+          </TimelineStoreProvider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId('command-apply-type')).toHaveTextContent('function');
+    expect(screen.getByTestId('command-build-type')).toHaveTextContent('function');
   });
 
   it('navigates on the second staged click when the editor is not mounted', () => {
