@@ -20,9 +20,11 @@ milestones:
   - label: sprint-07-ui-slots-theming
     idea: /workspace/reigh-app/.megaplan/video-editor-dx-sprint-07-idea.md
     branch: megaplan/video-editor-dx-sprint-07
+    robustness: light
   - label: sprint-08-public-api-docs-demo
     idea: /workspace/reigh-app/.megaplan/video-editor-dx-sprint-08-idea.md
     branch: megaplan/video-editor-dx-sprint-08
+    robustness: light
 
 on_failure:
   abort: stop_chain
