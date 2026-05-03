@@ -1,7 +1,7 @@
 import { AbsoluteFill, Sequence } from 'remotion';
 import { memo, useMemo, type FC, type ReactNode } from 'react';
 import { getAudioTracks, getVisualTracks } from '@/tools/video-editor/lib/editor-utils';
-import { getTimelineDurationInFrames } from '@/tools/video-editor/lib/config-utils';
+import { getClipDurationInFrames, getTimelineDurationInFrames } from '@/tools/video-editor/lib/config-utils';
 import { BUILTIN_CLIP_TYPES, type ResolvedTimelineClip, type ResolvedTimelineConfig, type TrackDefinition } from '@/tools/video-editor/types';
 import { AudioTrack } from '@/tools/video-editor/compositions/AudioTrack';
 import { AudioAnalysisProvider } from '@/tools/video-editor/compositions/AudioAnalysisProvider';
@@ -88,7 +88,7 @@ const ThemeEffectSequence: FC<ThemeEffectSequenceProps> = ({ clip, fps, theme })
     theme: RuntimeTheme;
     fps: number;
   }>;
-  const durationInFrames = Math.max(1, Math.round(((clip.hold ?? 0) + ((clip.to ?? 0) - (clip.from ?? 0))) * fps)) || Math.max(1, Math.round((clip.hold ?? 1) * fps));
+  const durationInFrames = getClipDurationInFrames(clip, fps);
   return (
     <Sequence
       key={clip.id}
@@ -107,7 +107,7 @@ const GeneratedModulePlaceholderSequence: FC<{
   fps: number;
 }> = ({ clip, fps }) => {
   const moduleStatus = getGeneratedRemotionModuleStatus(clip);
-  const durationInFrames = Math.max(1, Math.round(((clip.hold ?? 0) + ((clip.to ?? 0) - (clip.from ?? 0))) * fps)) || Math.max(1, Math.round((clip.hold ?? 1) * fps));
+  const durationInFrames = getClipDurationInFrames(clip, fps);
   const artifactId = moduleStatus.kind === 'valid_module' ? moduleStatus.artifactId : null;
   const reason = moduleStatus.kind === 'blocked_module' ? moduleStatus.reason : 'worker_only';
   return (

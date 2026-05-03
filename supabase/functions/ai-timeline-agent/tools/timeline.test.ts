@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addMediaClip, viewTimeline } from "./timeline.ts";
+import { addMediaClip, queryTimeline, viewTimeline } from "./timeline.ts";
 import type { AssetRegistry, TimelineConfig } from "../../../../src/tools/video-editor/types/index.ts";
 
 function makeConfig(tracks: { id: string; label: string; kind: string }[] = []): TimelineConfig {
@@ -132,5 +132,33 @@ describe("viewTimeline", () => {
     expect(result.result).toContain("Shot groups:");
     expect(result.result).toContain("- shot=Hero Shot | shotId=shot-1 | trackId=V1 | clipIds=clip-1 | mode=images");
     expect(result.result).toContain("- shot=shot-2 | shotId=shot-2 | trackId=V1 | clipIds=clip-2 | mode=video");
+  });
+
+  it("uses pair-aware registry duration semantics for malformed media clips", () => {
+    const config = {
+      output: { file: "out.mp4", fps: 30, resolution: "1920x1080" },
+      tracks: [{ id: "V1", label: "V1", kind: "visual" }],
+      clips: [
+        {
+          id: "clip-video",
+          asset: "asset-video",
+          at: 3,
+          track: "V1",
+          clipType: "media",
+          speed: 2,
+        },
+      ],
+    } as unknown as TimelineConfig;
+
+    const registry = makeRegistry({
+      "asset-video": { duration: 10 },
+    });
+
+    const viewResult = viewTimeline(config, registry);
+    const queryResult = queryTimeline(config, registry);
+
+    expect(viewResult.result).toContain("- id=clip-video | track=V1 | at=3s | duration=5s | type=media | asset=asset-video");
+    expect(queryResult.result).toContain("Duration: 8s | Clips: 1 | Tracks: V1(1)");
+    expect(queryResult.result).toContain("Longest: clip-video 5s | Shortest: clip-video 5s");
   });
 });

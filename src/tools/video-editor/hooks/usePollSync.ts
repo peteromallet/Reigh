@@ -128,6 +128,7 @@ export function usePollSync({
 }: UsePollSyncOptions): void {
   const lastRegistryDataRef = useRef<Awaited<ReturnType<DataProvider['loadAssetRegistry']>> | null>(null);
   const commitDataRef = useRef(commitData);
+  const latestObservedRemoteConfigVersionRef = useRef<number | null>(null);
   // Newest polled timeline data observed while a drag/resize was in flight.
   // Replayed via the normal commit path on gesture end.
   const deferredPolledDataRef = useRef<TimelineData | null>(null);
@@ -153,10 +154,10 @@ export function usePollSync({
 
   useEffect(() => {
     const polledVersion = queries.timelineQuery.data?.configVersion;
-    if (queries.timelineQuery.data && typeof polledVersion === 'number' && polledVersion > configVersionRef.current) {
-      configVersionRef.current = polledVersion;
+    if (queries.timelineQuery.data && typeof polledVersion === 'number') {
+      latestObservedRemoteConfigVersionRef.current = polledVersion;
     }
-  }, [configVersionRef, queries.timelineQuery.data]);
+  }, [queries.timelineQuery.data]);
 
   const logTimelineSync = useCallback((message: string, details?: Record<string, unknown>) => {
     if (!import.meta.env.DEV) {
@@ -208,12 +209,20 @@ export function usePollSync({
     logTimelineSync(`poll rejected (${phase}: ${reason})`, {
       polledConfigVersion: polledData.configVersion,
       currentConfigVersion: configVersionRef.current,
+      latestObservedRemoteConfigVersion: latestObservedRemoteConfigVersionRef.current,
       editSeq: editSeqRef.current,
       savedSeq: savedSeqRef.current,
       pendingOps: getPendingOpsRef().current,
       isSaving: isSavingRef.current,
     });
-  }, [configVersionRef, editSeqRef, getPendingOpsRef, isSavingRef, logTimelineSync, savedSeqRef]);
+  }, [
+    configVersionRef,
+    editSeqRef,
+    getPendingOpsRef,
+    isSavingRef,
+    logTimelineSync,
+    savedSeqRef,
+  ]);
 
   // Wake the poll-acceptance effect once a gesture ends so the most recently
   // deferred polled payload (if any) is re-evaluated against the freshly idle gate.
@@ -252,8 +261,10 @@ export function usePollSync({
         logTimelineSync('poll accepted', {
           fromConfigVersion: configVersionRef.current,
           toConfigVersion: polledData.configVersion,
+          latestObservedRemoteConfigVersion: latestObservedRemoteConfigVersionRef.current,
         });
       }
+      latestObservedRemoteConfigVersionRef.current = polledData.configVersion;
       logConfigVersionUpdate('poll', polledData.configVersion);
       configVersionRef.current = polledData.configVersion;
       commitDataRef.current(

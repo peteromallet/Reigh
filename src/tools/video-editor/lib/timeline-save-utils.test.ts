@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { getConfigSignature, getStableConfigSignature } from '@/tools/video-editor/lib/config-utils';
 import { migrateToFlatTracks, repairConfig } from '@/tools/video-editor/lib/migrate';
-import { buildDataFromCurrentRegistry, shouldAcceptPolledData } from '@/tools/video-editor/lib/timeline-save-utils';
+import {
+  buildDataFromCurrentRegistry,
+  buildDataFromSnapshot,
+  shouldAcceptPolledData,
+} from '@/tools/video-editor/lib/timeline-save-utils';
 import { assembleTimelineData } from '@/tools/video-editor/lib/timeline-data';
 import type {
   AssetRegistry,
@@ -220,6 +224,101 @@ describe('timeline save utils regression coverage', () => {
     expect(data.resolvedConfig.clips[0]?.assetEntry).toBe(current.resolvedConfig.registry['asset-2']);
   });
 
+  it('buildDataFromCurrentRegistry repairs malformed non-hold trims using the joined registry', () => {
+    const currentConfig: TimelineConfig = {
+      output: { resolution: '1920x1080', fps: 30, file: 'current.mp4' },
+      tracks: [makeTrack('V1')],
+      clips: [{ id: 'clip-current', at: 0, track: 'V1', clipType: 'hold', asset: 'asset-1', hold: 2 }],
+    };
+    const currentRegistry: AssetRegistry = {
+      assets: {
+        'asset-1': { file: 'current.png' },
+        'asset-video': { file: 'video.mp4', duration: 9 },
+      },
+    };
+    const current = assembleTimelineData({
+      config: currentConfig,
+      configVersion: 3,
+      registry: currentRegistry,
+      resolvedConfig: buildResolvedConfig(currentConfig, buildResolvedRegistry(currentRegistry)),
+      output: { ...currentConfig.output },
+      assetMap: makeAssetMap(currentRegistry),
+    });
+
+    const data = buildDataFromCurrentRegistry({
+      output: { resolution: '1920x1080', fps: 30, file: 'next.mp4' },
+      tracks: [makeTrack('V1')],
+      clips: [{
+        id: 'clip-video',
+        at: 1,
+        track: 'V1',
+        clipType: 'media',
+        asset: 'asset-video',
+      }],
+    }, current);
+
+    expect(data.config.clips[0]).toMatchObject({
+      id: 'clip-video',
+      from: 0,
+      to: 9,
+    });
+    expect(data.rows[0]?.actions[0]).toMatchObject({
+      id: 'clip-video',
+      start: 1,
+      end: 10,
+    });
+  });
+
+  it('buildDataFromSnapshot repairs malformed non-hold trims using the snapshot registry', () => {
+    const currentConfig: TimelineConfig = {
+      output: { resolution: '1920x1080', fps: 30, file: 'current.mp4' },
+      tracks: [makeTrack('V1')],
+      clips: [{ id: 'clip-current', at: 0, track: 'V1', clipType: 'hold', asset: 'asset-1', hold: 2 }],
+    };
+    const currentRegistry: AssetRegistry = {
+      assets: {
+        'asset-1': { file: 'current.png' },
+      },
+    };
+    const current = assembleTimelineData({
+      config: currentConfig,
+      configVersion: 3,
+      registry: currentRegistry,
+      resolvedConfig: buildResolvedConfig(currentConfig, buildResolvedRegistry(currentRegistry)),
+      output: { ...currentConfig.output },
+      assetMap: makeAssetMap(currentRegistry),
+    });
+    const snapshotRegistry: AssetRegistry = {
+      assets: {
+        'asset-video': { file: 'snapshot.mp4', duration: 6 },
+      },
+    };
+
+    const data = buildDataFromSnapshot({
+      output: { resolution: '1920x1080', fps: 30, file: 'snapshot.mp4' },
+      tracks: [makeTrack('V1')],
+      clips: [{
+        id: 'clip-video',
+        at: 2,
+        track: 'V1',
+        clipType: 'media',
+        asset: 'asset-video',
+      }],
+    }, snapshotRegistry, current);
+
+    expect(data.registry).toEqual(snapshotRegistry);
+    expect(data.config.clips[0]).toMatchObject({
+      id: 'clip-video',
+      from: 0,
+      to: 6,
+    });
+    expect(data.rows[0]?.actions[0]).toMatchObject({
+      id: 'clip-video',
+      start: 2,
+      end: 8,
+    });
+  });
+
   it('buildDataFromCurrentRegistry carries theme extras through registry-backed reconstruction', () => {
     const currentConfig: TimelineConfig = {
       output: { resolution: '1920x1080', fps: 30, file: 'current.mp4' },
@@ -296,7 +395,7 @@ describe('timeline save utils regression coverage', () => {
     expect(Object.keys(data.clipOrder)).toEqual(['V1', 'V3']);
   });
 
-  it('preserves soft-tag pinned shot groups without rewriting resolved clip geometry', () => {
+  it('preserves soft-tag pinned shot groups while repairing their contiguity', () => {
     const currentConfig: TimelineConfig = {
       output: { resolution: '1920x1080', fps: 30, file: 'current.mp4' },
       tracks: [makeTrack('V1'), makeTrack('V2')],
@@ -337,10 +436,10 @@ describe('timeline save utils regression coverage', () => {
     expect(data.config.pinnedShotGroups).toEqual([pinnedGroup]);
     expect(data.resolvedConfig.clips).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'clip-1', at: 0, track: 'V1', hold: 99 }),
-      expect.objectContaining({ id: 'clip-2', at: 0, track: 'V1', hold: 99 }),
+      expect.objectContaining({ id: 'clip-2', at: 99, track: 'V1', hold: 99 }),
     ]));
     expect(data.signature).toBe(getConfigSignature(data.resolvedConfig));
-    expect(data.signature).toBe(getConfigSignature(buildResolvedConfig(nextConfig, current.resolvedConfig.registry)));
+    expect(data.signature).not.toBe(getConfigSignature(buildResolvedConfig(nextConfig, current.resolvedConfig.registry)));
   });
 
   it('buildDataFromCurrentRegistry materializes rows from clip geometry while keeping soft-tag groups unchanged', () => {
@@ -443,7 +542,7 @@ describe('timeline save utils regression coverage', () => {
     }));
     expect(data.resolvedConfig.clips).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'clip-2', at: 4, hold: 3 }),
-      expect.objectContaining({ id: 'clip-1', at: 9, hold: 2 }),
+      expect.objectContaining({ id: 'clip-1', at: 7, hold: 2 }),
     ]));
     expect(data.signature).toBe(getConfigSignature(data.resolvedConfig));
   });

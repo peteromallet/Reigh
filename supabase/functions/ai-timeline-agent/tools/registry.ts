@@ -1,5 +1,9 @@
 import { parseCommand, validateCommand, type ParsedCommand } from "../command-parser.ts";
-import { loadTimelineState, saveTimelineConfigVersioned } from "../db.ts";
+import {
+  loadTimelineState,
+  prepareTimelineConfigForPersistence,
+  saveTimelineConfigVersioned,
+} from "../db.ts";
 import type { AssetRegistryEntry } from "../../../../src/tools/video-editor/types/index.ts";
 import type {
   SupabaseAdmin,
@@ -271,18 +275,22 @@ export async function executeCommand(
     return result;
   }
 
+  const configToSave = parsed.type === "add-media" || parsed.type === "swap"
+    ? prepareTimelineConfigForPersistence(result.config, state.registry)
+    : result.config;
+
   // Versioned save with retry
   let nextVersion = await saveTimelineConfigVersioned(
     supabaseAdmin,
     timelineId,
     state.configVersion,
-    result.config,
+    configToSave,
   );
 
   if (nextVersion !== null) {
-    state.config = result.config;
+    state.config = configToSave;
     state.configVersion = nextVersion;
-    return result;
+    return { ...result, config: configToSave };
   }
 
   // Reload and retry once on version conflict
@@ -298,18 +306,26 @@ export async function executeCommand(
     return { result: `${result.result} (retried after reload.)` };
   }
 
+  const retriedConfigToSave = parsed.type === "add-media" || parsed.type === "swap"
+    ? prepareTimelineConfigForPersistence(result.config, state.registry)
+    : result.config;
+
   nextVersion = await saveTimelineConfigVersioned(
     supabaseAdmin,
     timelineId,
     state.configVersion,
-    result.config,
+    retriedConfigToSave,
   );
 
   if (nextVersion === null) {
     return { result: "Version conflict. Please retry." };
   }
 
-  state.config = result.config;
+  state.config = retriedConfigToSave;
   state.configVersion = nextVersion;
-  return { ...result, result: `${result.result} (retried after reload.)` };
+  return {
+    ...result,
+    config: retriedConfigToSave,
+    result: `${result.result} (retried after reload.)`,
+  };
 }

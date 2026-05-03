@@ -27,6 +27,33 @@ vi.mock('remotion', async () => {
   };
 });
 
+vi.mock('@banodoco/timeline-composition/theme-api', async () => {
+  const reactModule = await import('react');
+  const themeValue = {
+    color: {
+      accent: '#ffffff',
+      bg: '#000000',
+    },
+    type: {
+      families: {
+        heading: 'Georgia, serif',
+      },
+    },
+  };
+
+  const ThemeContext = reactModule.createContext(themeValue);
+
+  return {
+    ThemeProvider: ({
+      children,
+      value,
+    }: PropsWithChildren<{ value: typeof themeValue }>) => (
+      <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
+    ),
+    useTheme: () => reactModule.useContext(ThemeContext),
+  };
+});
+
 vi.mock('@/tools/video-editor/compositions/AudioAnalysisProvider', async () => {
   return {
     AudioAnalysisProvider: ({ children }: PropsWithChildren) => (
@@ -143,6 +170,31 @@ describe('TimelineRenderer registered sequences', () => {
     expect(sequence).toHaveAttribute('data-fps', '30');
     expect(sequenceProps[0]).toMatchObject({
       from: 30,
+      durationInFrames: 90,
+    });
+  });
+
+  it('uses shared duration helpers for speed-adjusted registered sequence clips', () => {
+    render(<TimelineRenderer config={{
+      ...buildConfig({ theme: '2rp' }),
+      clips: [
+        {
+          id: 'clip-speed-adjusted',
+          clipType: 'section-hook',
+          track: 'V1',
+          at: 0,
+          from: 0,
+          to: 6,
+          speed: 2,
+          params: {
+            title: 'Speed adjusted',
+          },
+        },
+      ],
+    }} />);
+
+    expect(sequenceProps[0]).toMatchObject({
+      from: 0,
       durationInFrames: 90,
     });
   });
