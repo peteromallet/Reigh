@@ -1,8 +1,26 @@
 import { createContext, useContext } from 'react';
 import type { DataProvider } from '@/tools/video-editor/data/DataProvider';
+import type {
+  VideoEditorAgentChatHost,
+  VideoEditorAssetResolver,
+  VideoEditorAuthHost,
+  VideoEditorMediaLightboxHost,
+  VideoEditorProjectHost,
+  VideoEditorShotsHost,
+  VideoEditorTelemetryHost,
+  VideoEditorToastHost,
+} from '@/tools/video-editor/runtime/ports';
 
 export interface VideoEditorRuntimeContextValue {
   provider: DataProvider;
+  assetResolver: VideoEditorAssetResolver;
+  auth: VideoEditorAuthHost;
+  project: VideoEditorProjectHost;
+  shots: VideoEditorShotsHost;
+  mediaLightbox: VideoEditorMediaLightboxHost;
+  agentChat: VideoEditorAgentChatHost;
+  toast: VideoEditorToastHost;
+  telemetry: VideoEditorTelemetryHost;
   timelineId: string;
   userId: string;
   timelineName?: string | null;

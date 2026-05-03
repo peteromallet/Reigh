@@ -1,10 +1,14 @@
 import { useCallback } from 'react';
-import { toast } from '@/shared/components/ui/runtime/sonner';
 import { generateUUID } from '@/shared/lib/taskCreation/ids';
+import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext';
 import {
   buildFinalVideoAssetEntry,
   resolveFinalVideoDurationSeconds,
 } from '@/tools/video-editor/lib/finalVideoAssets';
+import {
+  executeGenerationAssetRegistrationPlan,
+  planGenerationAssetRegistration,
+} from '@/tools/video-editor/lib/timeline-asset-plans';
 import {
   buildSwitchShotGroupToFinalVideoMutation,
   buildSwitchShotGroupToImagesMutation,
@@ -29,21 +33,34 @@ interface UseSwitchToFinalVideoArgs {
   registerAsset: TimelineRegisterAsset;
 }
 
-function registerFinalVideoAsset(
+function planFinalVideoAssetRegistration(
   finalVideo: ShotFinalVideo,
   currentData: TimelineDataRef['current'],
-  patchRegistry: TimelinePatchRegistry,
-  registerAsset: TimelineRegisterAsset,
-): Promise<{ assetKey: string; durationSeconds: number | null; persistPromise: Promise<void> }> {
+): Promise<{
+  plan: Extract<ReturnType<typeof planGenerationAssetRegistration>, { ok: true }>;
+  assetDurationSeconds: number | null;
+}> {
   return (async () => {
-    const durationSeconds = await resolveFinalVideoDurationSeconds(finalVideo, currentData?.registry.assets);
+    const assetDurationSeconds = await resolveFinalVideoDurationSeconds(finalVideo, currentData?.registry.assets);
     const assetKey = generateUUID();
-    const assetEntry = buildFinalVideoAssetEntry(finalVideo, durationSeconds);
-    patchRegistry(assetKey, assetEntry, finalVideo.location);
+    const assetEntry = buildFinalVideoAssetEntry(finalVideo, assetDurationSeconds);
+    const plan = planGenerationAssetRegistration({
+      assetId: assetKey,
+      generationId: finalVideo.id,
+      variantType: 'video',
+      imageUrl: finalVideo.location,
+      thumbUrl: finalVideo.thumbnailUrl ?? finalVideo.location,
+      assetDurationSeconds,
+      metadata: {
+        content_type: assetEntry.type,
+      },
+    });
+    if (!plan.ok) {
+      throw new Error('Failed to plan final video asset registration.');
+    }
     return {
-      assetKey,
-      durationSeconds,
-      persistPromise: registerAsset(assetKey, assetEntry),
+      plan,
+      assetDurationSeconds,
     };
   })();
 }
@@ -118,35 +135,31 @@ export function useSwitchToFinalVideo({
   unpatchRegistry,
   registerAsset,
 }: UseSwitchToFinalVideoArgs) {
+  const runtime = useVideoEditorRuntime();
   const switchToFinalVideo = useCallback(async ({ shotId, clipIds, rowId }: { shotId: string; clipIds: string[]; rowId: string }) => {
     const finalVideo = finalVideoMap.get(shotId);
     if (!finalVideo) {
       return;
     }
 
-    const { assetKey, durationSeconds, persistPromise } = await registerFinalVideoAsset(
-      finalVideo,
-      dataRef.current,
-      patchRegistry,
-      registerAsset,
-    );
+    const { plan, assetDurationSeconds } = await planFinalVideoAssetRegistration(finalVideo, dataRef.current);
     const mutation = buildSwitchShotGroupToFinalVideoMutation({
       currentData: dataRef.current,
       shotId,
       rowId,
       clipIds,
-      assetKey,
-      durationSeconds,
+      assetKey: plan.assetId,
+      durationSeconds: assetDurationSeconds,
     });
     if (!mutation) {
-      void persistPromise.catch((error) => {
-        console.error('[TimelineEditor] Failed to persist final video asset:', error);
-        unpatchRegistry(assetKey);
-        toast.error('Failed to save asset');
-      });
       return;
     }
 
+    const { assetKey, persistPromise } = executeGenerationAssetRegistrationPlan({
+      plan,
+      patchRegistry,
+      registerAsset,
+    });
     applyEdit(mutation);
     void persistPromise.catch((error) => {
       console.error('[TimelineEditor] Failed to persist final video asset:', error);
@@ -159,9 +172,9 @@ export function useSwitchToFinalVideo({
         applyEdit(rollbackMutation);
       }
       unpatchRegistry(assetKey);
-      toast.error('Failed to save asset');
+      runtime.toast.error('Failed to save asset');
     });
-  }, [applyEdit, dataRef, finalVideoMap, patchRegistry, registerAsset, unpatchRegistry]);
+  }, [applyEdit, dataRef, finalVideoMap, patchRegistry, registerAsset, runtime.toast, unpatchRegistry]);
 
   const updateToLatestVideo = useCallback(async ({ shotId, rowId }: { shotId: string; rowId: string }) => {
     const finalVideo = finalVideoMap.get(shotId);
@@ -176,29 +189,24 @@ export function useSwitchToFinalVideo({
     const oldVideoGenerationId = oldVideoAssetKey
       ? dataRef.current?.registry.assets[oldVideoAssetKey]?.generationId
       : undefined;
-    const { assetKey, durationSeconds, persistPromise } = await registerFinalVideoAsset(
-      finalVideo,
-      dataRef.current,
-      patchRegistry,
-      registerAsset,
-    );
+    const { plan, assetDurationSeconds } = await planFinalVideoAssetRegistration(finalVideo, dataRef.current);
     const mutation = buildUpdateShotGroupToLatestVideoMutation({
       currentData: dataRef.current,
       shotId,
       rowId,
-      assetKey,
+      assetKey: plan.assetId,
       targetGenerationId: finalVideo.id,
-      durationSeconds,
+      durationSeconds: assetDurationSeconds,
     });
     if (!mutation) {
-      void persistPromise.catch((error) => {
-        console.error('[TimelineEditor] Failed to persist final video asset:', error);
-        unpatchRegistry(assetKey);
-        toast.error('Failed to save asset');
-      });
       return;
     }
 
+    const { assetKey, persistPromise } = executeGenerationAssetRegistrationPlan({
+      plan,
+      patchRegistry,
+      registerAsset,
+    });
     applyEdit(mutation);
     void persistPromise.catch((error) => {
       console.error('[TimelineEditor] Failed to persist final video asset:', error);
@@ -215,9 +223,9 @@ export function useSwitchToFinalVideo({
         applyEdit(rollbackMutation);
       }
       unpatchRegistry(assetKey);
-      toast.error('Failed to save asset');
+      runtime.toast.error('Failed to save asset');
     });
-  }, [applyEdit, dataRef, finalVideoMap, patchRegistry, registerAsset, unpatchRegistry]);
+  }, [applyEdit, dataRef, finalVideoMap, patchRegistry, registerAsset, runtime.toast, unpatchRegistry]);
 
   const switchToImages = useCallback(({ shotId, rowId }: { shotId: string; rowId: string }) => {
     const mutation = buildSwitchShotGroupToImagesMutation({

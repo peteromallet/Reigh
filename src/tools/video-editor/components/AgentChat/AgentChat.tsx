@@ -1,16 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp, Loader2, MessageSquareText, Mic, Send, Square, X } from 'lucide-react';
 import type { GenerationRow } from '@/domains/generation/types';
-import { MediaLightbox } from '@/domains/media-lightbox/MediaLightbox';
 import { Button } from '@/shared/components/ui/button';
 import { useAgentChatBridge, useAgentChatActionsRegistry, type AgentChatActionsHandlers } from '@/shared/contexts/AgentChatContext';
 import { composerClearAttachments, composerRemoveAttachment } from '@/shared/state/selectionStore';
 import { useCurrentAttachmentSet } from '@/shared/state/currentAttachmentSet';
 import { usePanesStore } from '@/shared/state/panesStore';
+import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext';
 import { useAgentSession, useAgentSessions, useCancelSession, useCreateSession, useSendMessage } from '@/tools/video-editor/hooks/useAgentSession';
 import { useAgentVoice } from '@/tools/video-editor/hooks/useAgentVoice';
 import { useRenderDiagnostic } from '@/tools/video-editor/hooks/usePerfDiagnostics';
-import { loadGenerationForLightbox } from '@/tools/video-editor/lib/generation-utils';
 import type { AgentTurn, AgentTurnAttachment } from '@/tools/video-editor/types/agent-session';
 import { AgentChatAttachmentStrip, AgentChatMessage, AgentChatToolGroup, type AgentChatAttachmentPreviewItem } from './AgentChatMessage';
 
@@ -122,6 +121,7 @@ export function AgentChatPanel() {
   const bottomAnchorRef = useRef<HTMLDivElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const { mediaLightbox } = useVideoEditorRuntime();
   const hasTimeline = timelineId !== null;
 
   const activeSession = useAgentSession(activeSessionId);
@@ -168,7 +168,7 @@ export function AgentChatPanel() {
     setAttachmentLightboxMedia(null);
 
     try {
-      const media = await loadGenerationForLightbox(attachment.generationId);
+      const media = await mediaLightbox.loadGenerationForLightbox(attachment.generationId);
       if (lightboxRequestIdRef.current !== requestId) {
         return;
       }
@@ -180,7 +180,7 @@ export function AgentChatPanel() {
       }
       console.warn('[AgentChat] Failed to open attachment lightbox', error);
     }
-  }, []);
+  }, [mediaLightbox]);
 
   const handleCloseAttachmentLightbox = useCallback(() => {
     lightboxRequestIdRef.current += 1;
@@ -799,7 +799,7 @@ export function AgentChatPanel() {
       </div>
 
       {attachmentLightboxMedia && (
-        <MediaLightbox
+        <mediaLightbox.Lightbox
           media={attachmentLightboxMedia}
           initialVariantId={attachmentLightboxMedia.primary_variant_id ?? undefined}
           onClose={handleCloseAttachmentLightbox}

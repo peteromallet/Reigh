@@ -322,7 +322,13 @@ export default function VideoEditorPage() {
 
   return (
     <div className={cn('h-full w-full overflow-hidden bg-background')}>
-      <VideoEditorProvider dataProvider={provider} timelineId={timelineId} timelineName={timelineName} userId={userId}>
+      <VideoEditorProvider
+        dataProvider={provider}
+        projectId={selectedProjectId}
+        timelineId={timelineId}
+        timelineName={timelineName}
+        userId={userId}
+      >
         <VideoEditorShell
           mode="full"
           timelineId={timelineId}

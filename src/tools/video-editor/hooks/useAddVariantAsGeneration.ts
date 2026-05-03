@@ -1,12 +1,12 @@
 import { useCallback, useState } from 'react';
-import { getSupabaseClient } from '@/integrations/supabase/client';
-import { toast } from '@/shared/components/ui/runtime/sonner';
-import { useProjectSelectionContext } from '@/shared/contexts/ProjectContext';
 import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
 import { hasVideoExtension } from '@/shared/lib/typeGuards';
 import { usePromoteVariantToGeneration } from '@/shared/hooks/variants/usePromoteVariantToGeneration';
+import { loadPrimaryVariantForGeneration } from '@/tools/video-editor/adapters/reigh/variantPromotionLookup';
 import type { GenerationVariant } from '@/shared/hooks/variants/useVariants';
+import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext';
 import { buildDuplicateClipEdit } from '@/tools/video-editor/lib/duplicate-clip';
+import { planGenerationAssetRegistration } from '@/tools/video-editor/lib/timeline-asset-plans';
 import {
   useTimelineEditorOps,
   useTimelineMutableAdapters,
@@ -23,7 +23,8 @@ export interface UseAddVariantAsGenerationResult {
  * an arbitrary variant rather than the current primary).
  */
 export function useAddVariantAsGeneration(): UseAddVariantAsGenerationResult {
-  const { selectedProjectId } = useProjectSelectionContext();
+  const runtime = useVideoEditorRuntime();
+  const selectedProjectId = runtime.project.projectId;
   const { applyEdit, registerGenerationAsset } = useTimelineEditorOps();
   const { dataRef } = useTimelineMutableAdapters();
   const promoteVariant = usePromoteVariantToGeneration();
@@ -39,7 +40,7 @@ export function useAddVariantAsGeneration(): UseAddVariantAsGenerationResult {
 
   const addVariantAsGenerationAfterClip = useCallback(async (clipId: string, variant: GenerationVariant) => {
     if (!selectedProjectId) {
-      toast.error('Select a project before adding a generation.');
+      runtime.toast.error('Select a project before adding a generation.');
       return;
     }
 
@@ -61,14 +62,7 @@ export function useAddVariantAsGeneration(): UseAddVariantAsGenerationResult {
       // The DB trigger trg_auto_create_variant_after_generation creates the new
       // generation's primary variant synchronously — fetch it so we can bind the
       // asset to a real variant id (not the source's).
-      const { data: primaryRow, error: primaryErr } = await getSupabaseClient()
-        .from('generation_variants')
-        .select('id, location, thumbnail_url')
-        .eq('generation_id', promoted.id)
-        .eq('is_primary', true)
-        .maybeSingle();
-
-      if (primaryErr) throw primaryErr;
+      const primaryRow = await loadPrimaryVariantForGeneration(promoted.id);
 
       const newVariantId = primaryRow?.id ?? variant.id;
       const newLocation = primaryRow?.location ?? promoted.location ?? variant.location;
@@ -78,8 +72,31 @@ export function useAddVariantAsGeneration(): UseAddVariantAsGenerationResult {
       const variantType: 'image' | 'video' = isVideo ? 'video' : 'image';
       const contentType = sourceAssetEntry?.type
         ?? (isVideo ? 'video/mp4' : 'image/png');
+      const registrationPlan = planGenerationAssetRegistration({
+        generationId: promoted.id,
+        variantId: newVariantId,
+        variantType,
+        imageUrl: newLocation,
+        thumbUrl: newThumb ?? newLocation,
+        assetDurationSeconds: typeof sourceAssetEntry?.duration === 'number' ? sourceAssetEntry.duration : undefined,
+        metadata: { content_type: contentType },
+      });
+      if (!registrationPlan.ok) {
+        throw new Error('Failed to plan the new generation asset.');
+      }
+
+      const latest = dataRef?.current;
+      if (!latest) {
+        throw new Error('Timeline state was unavailable before registering the asset.');
+      }
+
+      const edit = buildDuplicateClipEdit(latest, clipId, registrationPlan.assetId);
+      if (!edit) {
+        throw new Error('Failed to insert the new clip on the timeline.');
+      }
 
       const newAssetKey = registerGenerationAsset({
+        assetId: registrationPlan.assetId,
         generationId: promoted.id,
         variantId: newVariantId,
         variantType,
@@ -91,16 +108,6 @@ export function useAddVariantAsGeneration(): UseAddVariantAsGenerationResult {
 
       if (!newAssetKey) {
         throw new Error('Failed to register the new generation as an asset.');
-      }
-
-      const latest = dataRef?.current;
-      if (!latest) {
-        throw new Error('Timeline state was unavailable after registering the asset.');
-      }
-
-      const edit = buildDuplicateClipEdit(latest, clipId, newAssetKey);
-      if (!edit) {
-        throw new Error('Failed to insert the new clip on the timeline.');
       }
 
       applyEdit({
@@ -121,7 +128,7 @@ export function useAddVariantAsGeneration(): UseAddVariantAsGenerationResult {
     } finally {
       setPendingKey(key, false);
     }
-  }, [applyEdit, dataRef, promoteVariant, registerGenerationAsset, selectedProjectId, setPendingKey]);
+  }, [applyEdit, dataRef, promoteVariant, registerGenerationAsset, runtime.toast, selectedProjectId, setPendingKey]);
 
   const isPending = useCallback(
     (clipId: string, variantId: string) => pending.has(`${clipId}:${variantId}`),

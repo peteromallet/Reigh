@@ -9,7 +9,6 @@ import {
   userSelectTimelineClips,
 } from '@/shared/state/selectionStore';
 import { createInteractionState, type InteractionStateRef } from '@/tools/video-editor/lib/interaction-state';
-import { useProjectSelectionContext } from '@/shared/contexts/ProjectContext';
 import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext';
 import { ROW_HEIGHT, TIMELINE_START_LEFT } from '@/tools/video-editor/lib/coordinate-utils';
 import { useAssetManagement } from '@/tools/video-editor/hooks/useAssetManagement';
@@ -510,7 +509,7 @@ export function useTimelineState(): UseTimelineStateResult {
     uploadFiles,
     invalidateAssetRegistry,
   } = assetOperations;
-  const { selectedProjectId } = useProjectSelectionContext();
+  const selectedProjectId = runtime.project.projectId;
   const selection = useTimelineSelection({
     data,
     selectedTrackId,
@@ -588,7 +587,7 @@ export function useTimelineState(): UseTimelineStateResult {
     registerAsset,
     uploadAsset,
     invalidateAssetRegistry,
-    resolveAssetUrl: runtime.provider.resolveAssetUrl.bind(runtime.provider),
+    resolveAssetUrl: runtime.assetResolver.resolveAssetUrl,
   });
 
   const clipResize = useClipResize({
@@ -619,7 +618,7 @@ export function useTimelineState(): UseTimelineStateResult {
     registerAsset,
     uploadAsset,
     invalidateAssetRegistry,
-    resolveAssetUrl: runtime.provider.resolveAssetUrl.bind(runtime.provider),
+    resolveAssetUrl: runtime.assetResolver.resolveAssetUrl,
     coordinator: dragCoordinator.coordinator,
     registerGenerationAsset: assetManagement.registerGenerationAsset,
     uploadImageGeneration: assetManagement.uploadImageGeneration,

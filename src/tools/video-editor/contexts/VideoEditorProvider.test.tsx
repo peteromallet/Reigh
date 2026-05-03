@@ -14,6 +14,7 @@ import {
   systemResetSelectionForProjectChange,
   userSelectGalleryItem,
 } from '@/shared/state/selectionStore';
+import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext';
 import { buildVideoEditorLightboxMedia, VideoEditorProvider } from '@/tools/video-editor/contexts/VideoEditorProvider';
 import {
   createTimelineStore,
@@ -95,6 +96,13 @@ vi.mock('@/shared/hooks/settings/useToolSettings', () => ({
     settings: {
       lastTimelineId: 'timeline-staged',
     },
+  }),
+}));
+
+vi.mock('@/tools/travel-between-images/hooks/video/useShotFinalVideos', () => ({
+  useShotFinalVideos: () => ({
+    finalVideoMap: new Map(),
+    isLoading: false,
   }),
 }));
 
@@ -246,6 +254,7 @@ vi.mock('@/tools/video-editor/hooks/useTimelineState', () => ({
 }));
 
 function Consumer() {
+  const runtime = useVideoEditorRuntime();
   const editorData = useTimelineEditorData();
   const editorOps = useTimelineEditorOps();
   const chrome = useTimelineChromeContext();
@@ -270,6 +279,10 @@ function Consumer() {
       <span>{chrome.saveStatus}</span>
       <span>{playback.currentTime}</span>
       <span data-testid="agent-chat-timeline-id">{agentChatBridge.timelineId}</span>
+      <span data-testid="runtime-project-id">{runtime.project.projectId}</span>
+      <span data-testid="runtime-user-id">{runtime.auth.userId}</span>
+      <span data-testid="runtime-shots-count">{runtime.shots.shots?.length ?? 0}</span>
+      <span data-testid="runtime-resolver-type">{typeof runtime.assetResolver.resolveAssetUrl}</span>
       <button
         type="button"
         onClick={() => {
@@ -354,7 +367,7 @@ describe('VideoEditorProvider', () => {
       <MemoryRouter>
         <QueryClientProvider client={queryClient}>
           <AgentChatProvider>
-            <VideoEditorProvider dataProvider={provider} timelineId="timeline-1" userId="user-1">
+            <VideoEditorProvider dataProvider={provider} projectId="project-1" timelineId="timeline-1" userId="user-1">
               <Consumer />
             </VideoEditorProvider>
           </AgentChatProvider>
@@ -378,10 +391,14 @@ describe('VideoEditorProvider', () => {
     }));
     expect(screen.getByText('false')).toBeInTheDocument();
     expect(screen.getByText('boolean')).toBeInTheDocument();
-    expect(screen.getAllByText('function')).toHaveLength(2);
+    expect(screen.getAllByText('function')).toHaveLength(3);
     expect(screen.getByText('saved')).toBeInTheDocument();
     expect(screen.getByText('12.5')).toBeInTheDocument();
     expect(screen.getByTestId('agent-chat-timeline-id')).toHaveTextContent('timeline-1');
+    expect(screen.getByTestId('runtime-project-id')).toHaveTextContent('project-1');
+    expect(screen.getByTestId('runtime-user-id')).toHaveTextContent('user-1');
+    expect(screen.getByTestId('runtime-shots-count')).toHaveTextContent('0');
+    expect(screen.getByTestId('runtime-resolver-type')).toHaveTextContent('function');
 
     fireEvent.click(screen.getByRole('button', { name: 'update interaction' }));
 

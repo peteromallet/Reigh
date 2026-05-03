@@ -21,6 +21,14 @@ vi.mock('@/shared/components/ui/runtime/sonner', () => ({
   },
 }));
 
+vi.mock('@/tools/video-editor/contexts/DataProviderContext', () => ({
+  useVideoEditorRuntime: () => ({
+    toast: {
+      error: vi.fn(),
+    },
+  }),
+}));
+
 vi.mock('@/shared/lib/media/videoMetadata', () => ({
   extractVideoMetadataFromUrl: vi.fn(),
 }));
@@ -634,6 +642,60 @@ describe('useSwitchToFinalVideo', () => {
         { clipId: 'clip-1', assetKey: 'asset-1', start: 7, end: 10, meta: { clipType: 'hold', hold: 3 } },
       ],
     })]);
+  });
+
+  it('does not patch the registry when switching to final video cannot build a valid mutation', async () => {
+    mockedExtractVideoMetadataFromUrl.mockResolvedValue({
+      duration_seconds: 6,
+      frame_rate: 30,
+      total_frames: 180,
+      width: 1920,
+      height: 1080,
+      file_size: 0,
+    });
+    const applyEdit = vi.fn();
+    const patchRegistry = vi.fn();
+    const registerAsset = vi.fn(async () => undefined);
+    const dataRef = {
+      current: makeConfigTimelineData(
+        {
+          output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
+          tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+          clips: [
+            { id: 'clip-1', at: 4, track: 'V1', clipType: 'hold', asset: 'asset-1', hold: 5 },
+            { id: 'clip-2', at: 9, track: 'V1', clipType: 'hold', asset: 'asset-2', hold: 5 },
+          ],
+          pinnedShotGroups: [makePinnedGroup({
+            shotId: 'shot-1',
+            trackId: 'V1',
+            clipIds: ['clip-1', 'clip-2'],
+            mode: 'images',
+          })],
+        },
+        {
+          assets: {
+            'asset-1': { file: 'one.png', type: 'image/png', generationId: 'gen-1' },
+            'asset-2': { file: 'two.png', type: 'image/png', generationId: 'gen-2' },
+          },
+        },
+      ),
+    };
+
+    const { result } = renderHook(() => useSwitchToFinalVideo({
+      applyEdit,
+      dataRef,
+      finalVideoMap: new Map([['shot-1', { id: 'final-1', location: 'https://example.com/final.mp4', thumbnailUrl: null }]]),
+      patchRegistry,
+      registerAsset,
+    }));
+
+    await act(async () => {
+      await result.current.switchToFinalVideo({ shotId: 'shot-1', clipIds: ['clip-1'], rowId: 'V2' });
+    });
+
+    expect(patchRegistry).not.toHaveBeenCalled();
+    expect(registerAsset).not.toHaveBeenCalled();
+    expect(applyEdit).not.toHaveBeenCalled();
   });
 
   it('restores image clips from snapshot in one edit when switching back to images', () => {
