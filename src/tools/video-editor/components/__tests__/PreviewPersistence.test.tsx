@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { forwardRef, useImperativeHandle } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { VideoEditorShell } from '@/tools/video-editor/components/VideoEditorShell';
 
 const useTimelineEditorDataMock = vi.fn();
 const useTimelineEditorOpsMock = vi.fn();
@@ -15,6 +15,21 @@ const useKeyboardShortcutsMock = vi.fn();
 let editorDataValue: any;
 let editorOpsValue: any;
 let overlayEditorProps: any;
+let CompactPreviewComponent: any;
+let VideoEditorShellComponent: any;
+
+vi.mock('@banodoco/timeline-schema', () => ({
+  resolveTheme: vi.fn(() => null),
+}), { virtual: true });
+
+vi.mock('@banodoco/timeline-composition/theme-api', () => ({
+  ThemeProvider: ({ children }: any) => <>{children}</>,
+  useTheme: () => null,
+}), { virtual: true });
+
+vi.mock('@banodoco/timeline-composition/registry.generated', () => ({
+  THEME_PACKAGE_REGISTRY: {},
+}), { virtual: true });
 
 vi.mock('@/tools/video-editor/hooks/timelineStore', async () => {
   const actual = await vi.importActual<typeof import('@/tools/video-editor/hooks/timelineStore')>(
@@ -86,6 +101,14 @@ vi.mock('@/tools/video-editor/components/PropertiesPanel/PropertiesPanel', () =>
   PropertiesPanel: () => <div data-testid="properties-panel" />,
 }));
 
+vi.mock('@/tools/video-editor/components/SequenceCreator/SequenceCreatorPanel', () => ({
+  SequenceCreatorPanel: () => <div data-testid="sequence-creator-panel" />,
+}));
+
+vi.mock('@/tools/video-editor/components/ThemeChip', () => ({
+  ThemeChip: () => <div data-testid="theme-chip" />,
+}));
+
 vi.mock('@/tools/video-editor/components/PreviewPanel/OverlayEditor', () => ({
   default: (props: any) => {
     overlayEditorProps = props;
@@ -145,9 +168,9 @@ vi.mock('@/shared/components/ui/alert-dialog', () => ({
   AlertDialogTitle: ({ children }: any) => <div>{children}</div>,
 }));
 
-vi.mock('@remotion/player', () => ({
-  Player: forwardRef(function MockPlayer(_props: any, ref) {
-    const api = {
+vi.mock('@/tools/video-editor/components/PreviewPanel/RemotionPreview', () => ({
+  RemotionPreview: forwardRef(function MockRemotionPreview(_props: any, ref) {
+    useImperativeHandle(ref, () => ({
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
       seekTo: vi.fn(),
@@ -155,9 +178,7 @@ vi.mock('@remotion/player', () => ({
       pause: vi.fn(),
       toggle: vi.fn(),
       isPlaying: vi.fn(() => false),
-    };
-
-    useImperativeHandle(ref, () => api, []);
+    }), []);
 
     return <div data-testid="mock-player" />;
   }),
@@ -169,7 +190,7 @@ function renderShell(mode: 'compact' | 'full') {
       initialEntries={['/tools/video-editor?timeline=timeline-1']}
       future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
     >
-      <VideoEditorShell mode={mode} timelineId="timeline-1" />
+      <VideoEditorShellComponent mode={mode} timelineId="timeline-1" />
     </MemoryRouter>,
   );
 }
@@ -289,6 +310,11 @@ beforeEach(() => {
   });
 });
 
+beforeEach(async () => {
+  ({ CompactPreview: CompactPreviewComponent } = await import('@/tools/video-editor/components/CompactPreview'));
+  ({ VideoEditorShell: VideoEditorShellComponent } = await import('@/tools/video-editor/components/VideoEditorShell'));
+});
+
 describe('VideoEditorShell preview persistence', () => {
   it('uses a safe fallback fps before resolved config is available', () => {
     editorDataValue = {
@@ -318,7 +344,7 @@ describe('VideoEditorShell preview persistence', () => {
         initialEntries={['/tools/video-editor?timeline=timeline-1']}
         future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
       >
-        <VideoEditorShell mode="full" timelineId="timeline-1" />
+        <VideoEditorShellComponent mode="full" timelineId="timeline-1" />
       </MemoryRouter>,
     );
 
@@ -423,5 +449,17 @@ describe('VideoEditorShell preview persistence', () => {
     expect(screen.getByTestId('overlay-editor')).toHaveAttribute('data-interaction-mode', 'trim');
     expect(overlayEditorProps.setGestureOwner).toBe(editorOpsValue.setGestureOwner);
     expect(overlayEditorProps.setInputModalityFromPointerType).toBe(editorOpsValue.setInputModalityFromPointerType);
+  });
+
+  it('renders the standalone compact preview through the shared preview surface', () => {
+    render(
+      <MemoryRouter initialEntries={['/']} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <CompactPreviewComponent timelineId="timeline-1" />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('region', { name: 'Preview panel' })).toBeInTheDocument();
+    expect(screen.getByTestId('mock-player')).toBeInTheDocument();
+    expect(screen.getByText(/Timeline timeline/i)).toBeInTheDocument();
   });
 });

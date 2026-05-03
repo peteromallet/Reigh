@@ -31,7 +31,16 @@ import {
   shouldPreserveTouchSelectionForMove,
   shouldToggleTouchSelection,
 } from '@/tools/video-editor/lib/mobile-interaction-model';
+import {
+  useVideoEditorDialogDescriptors,
+  useVideoEditorExtensionRuntime,
+  useVideoEditorPanelRegistry,
+  useVideoEditorRenderContext,
+  useVideoEditorSlotRenderers,
+} from '@/tools/video-editor/runtime/useVideoEditorRenderContext';
+import { useVideoEditorDialogRegistration } from '@/tools/video-editor/runtime/VideoEditorDialogHost';
 import type { DataProvider } from '@/tools/video-editor/data/DataProvider';
+import type { VideoEditorDialogDescriptor } from '@/tools/video-editor/runtime/extensionSurface';
 
 const navigateMock = vi.fn();
 
@@ -288,6 +297,42 @@ function Consumer() {
   );
 }
 
+function RuntimeConsumer() {
+  const extensions = useVideoEditorExtensionRuntime();
+  const renderContext = useVideoEditorRenderContext();
+  const slots = useVideoEditorSlotRenderers();
+  const dialogs = useVideoEditorDialogDescriptors();
+  const registry = useVideoEditorPanelRegistry();
+
+  return (
+    <div>
+      <span data-testid="runtime-timeline-id">{renderContext.timelineId}</span>
+      <span data-testid="runtime-user-id">{renderContext.userId}</span>
+      <span data-testid="runtime-timeline-name">{renderContext.timelineName}</span>
+      <span data-testid="runtime-save-status">{renderContext.chrome.saveStatus}</span>
+      <span data-testid="runtime-selected-clip">{renderContext.data.selectedClipId}</span>
+      <span data-testid="runtime-slot-count">{Object.keys(slots).length}</span>
+      <span data-testid="runtime-dialog-count">{dialogs.length}</span>
+      <span data-testid="runtime-panel-count">{registry.panels.length}</span>
+      <span data-testid="runtime-inspector-count">{registry.inspectorSections.length}</span>
+      <span data-testid="runtime-extension-dialog-count">{extensions.dialogHost.dialogs.length}</span>
+    </div>
+  );
+}
+
+function RegisteredDialogConsumer({ open = true }: { open?: boolean }) {
+  const dialogs: readonly VideoEditorDialogDescriptor[] = open
+    ? [{
+        id: 'registered-test-dialog',
+        order: 99,
+        render: () => <div data-testid="registered-dialog">Registered dialog</div>,
+      }]
+    : [];
+
+  useVideoEditorDialogRegistration(dialogs);
+  return null;
+}
+
 const media = {
   id: 'generation-1',
   generation_id: 'generation-1',
@@ -342,6 +387,37 @@ describe('VideoEditorProvider', () => {
       loadAssetRegistry: vi.fn(),
       resolveAssetUrl: vi.fn(),
     };
+    const extensions = {
+      slots: {
+        header: () => 'header-slot',
+        inspectorPanel: () => 'inspector-slot',
+      },
+      dialogHost: {
+        dialogs: [
+          {
+            id: 'conflict-dialog',
+            layer: 'modal' as const,
+            render: () => null,
+          },
+        ],
+      },
+      registry: {
+        panels: [
+          {
+            id: 'asset-panel-extra',
+            placement: 'asset-panel' as const,
+            render: () => null,
+          },
+        ],
+        inspectorSections: [
+          {
+            id: 'inspector-after',
+            placement: 'after-default' as const,
+            render: () => null,
+          },
+        ],
+      },
+    };
     const queryClient = new QueryClient({
       defaultOptions: {
         queries: {
@@ -354,15 +430,23 @@ describe('VideoEditorProvider', () => {
       <MemoryRouter>
         <QueryClientProvider client={queryClient}>
           <AgentChatProvider>
-            <VideoEditorProvider dataProvider={provider} timelineId="timeline-1" userId="user-1">
+            <VideoEditorProvider
+              dataProvider={provider}
+              timelineId="timeline-1"
+              timelineName="Timeline One"
+              userId="user-1"
+              extensions={extensions}
+            >
               <Consumer />
+              <RuntimeConsumer />
+              <RegisteredDialogConsumer />
             </VideoEditorProvider>
           </AgentChatProvider>
         </QueryClientProvider>
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('clip-1')).toBeInTheDocument();
+    expect(screen.getAllByText('clip-1')).toHaveLength(2);
     expect(screen.getAllByText('tablet')).toHaveLength(2);
     expect(screen.getByText('mouse')).toBeInTheDocument();
     expect(screen.getByText('select')).toBeInTheDocument();
@@ -379,9 +463,20 @@ describe('VideoEditorProvider', () => {
     expect(screen.getByText('false')).toBeInTheDocument();
     expect(screen.getByText('boolean')).toBeInTheDocument();
     expect(screen.getAllByText('function')).toHaveLength(2);
-    expect(screen.getByText('saved')).toBeInTheDocument();
+    expect(screen.getAllByText('saved')).toHaveLength(2);
     expect(screen.getByText('12.5')).toBeInTheDocument();
     expect(screen.getByTestId('agent-chat-timeline-id')).toHaveTextContent('timeline-1');
+    expect(screen.getByTestId('runtime-timeline-id')).toHaveTextContent('timeline-1');
+    expect(screen.getByTestId('runtime-user-id')).toHaveTextContent('user-1');
+    expect(screen.getByTestId('runtime-timeline-name')).toHaveTextContent('Timeline One');
+    expect(screen.getByTestId('runtime-save-status')).toHaveTextContent('saved');
+    expect(screen.getByTestId('runtime-selected-clip')).toHaveTextContent('clip-1');
+    expect(screen.getByTestId('runtime-slot-count')).toHaveTextContent('2');
+    expect(screen.getByTestId('runtime-dialog-count')).toHaveTextContent('1');
+    expect(screen.getByTestId('runtime-panel-count')).toHaveTextContent('1');
+    expect(screen.getByTestId('runtime-inspector-count')).toHaveTextContent('1');
+    expect(screen.getByTestId('runtime-extension-dialog-count')).toHaveTextContent('1');
+    expect(screen.getByTestId('registered-dialog')).toHaveTextContent('Registered dialog');
 
     fireEvent.click(screen.getByRole('button', { name: 'update interaction' }));
 

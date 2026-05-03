@@ -3,7 +3,8 @@ import { ExternalLink, Plus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/shared/components/ui/button';
 import { Slider } from '@/shared/components/ui/slider';
-import { RemotionPreview } from '@/tools/video-editor/components/PreviewPanel/RemotionPreview';
+import { PreviewPanel } from '@/tools/video-editor/components/PreviewPanel/PreviewPanel';
+import { useVideoEditorPreviewSurface } from '@/tools/video-editor/components/PreviewPanel/useVideoEditorPreviewSurface';
 import { getTimelineDurationInFrames } from '@/tools/video-editor/lib/config-utils';
 import { useRenderDiagnostic } from '@/tools/video-editor/hooks/usePerfDiagnostics';
 import {
@@ -20,9 +21,10 @@ interface CompactPreviewProps {
 export function CompactPreview({ timelineId, onCreateTimeline }: CompactPreviewProps) {
   useRenderDiagnostic('CompactPreview');
   const navigate = useNavigate();
+  const previewSurface = useVideoEditorPreviewSurface({ compact: true });
   const { resolvedConfig } = useTimelineEditorData();
   const { saveStatus } = useTimelineChromeContext();
-  const { previewRef, playerContainerRef, currentTime, onPreviewTimeUpdate } = useTimelinePlaybackContext();
+  const { previewRef, currentTime } = useTimelinePlaybackContext();
 
   const totalSeconds = useMemo(() => {
     if (!resolvedConfig) {
@@ -65,23 +67,20 @@ export function CompactPreview({ timelineId, onCreateTimeline }: CompactPreviewP
         </Button>
       </div>
       <div className="min-h-0 flex-1 p-3">
-        <div className="h-full overflow-hidden rounded-xl border border-border">
-          <RemotionPreview
-            ref={previewRef}
-            config={resolvedConfig}
-            compact
-            onTimeUpdate={onPreviewTimeUpdate}
-            playerContainerRef={playerContainerRef}
-          />
-        </div>
-      </div>
-      <div className="border-t border-border px-3 py-3">
-        <Slider
-          value={[currentTime]}
-          min={0}
-          max={Math.max(1, totalSeconds)}
-          step={0.05}
-          onValueChange={(value) => previewRef.current?.seek(value)}
+        <PreviewPanel
+          surface={previewSurface}
+          showOverlayEditor={false}
+          panelClassName="h-full rounded-xl border border-border bg-background"
+          surfaceClassName="bg-background"
+          footer={(
+            <Slider
+              value={[currentTime]}
+              min={0}
+              max={Math.max(1, totalSeconds)}
+              step={0.05}
+              onValueChange={([value = 0]) => previewRef.current?.seek(value)}
+            />
+          )}
         />
       </div>
     </div>

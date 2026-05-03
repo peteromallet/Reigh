@@ -28,6 +28,12 @@ import { useVideoEditorLightboxNavigation } from '@/tools/video-editor/hooks/use
 import { isOpenableAssetType } from '@/tools/video-editor/lib/editor-utils';
 import { loadGenerationForLightbox } from '@/tools/video-editor/lib/generation-utils';
 import { getClipTimelineDuration } from '@/tools/video-editor/lib/config-utils';
+import { VideoEditorDialogHost } from '@/tools/video-editor/runtime/VideoEditorDialogHost';
+import {
+  resolveVideoEditorExtensionRuntime,
+  type VideoEditorDialogDescriptor,
+  type VideoEditorExtensionConfig,
+} from '@/tools/video-editor/runtime/extensionSurface';
 import {
   ADD_GENERATION_QUERY_PARAM,
   readPendingAdds,
@@ -336,13 +342,15 @@ function InnerProvider({
     () => ({ showDownload: true, showTaskDetails: true }),
     [],
   );
+  const providerDialogs = useMemo<VideoEditorDialogDescriptor[]>(() => {
+    const dialogs: VideoEditorDialogDescriptor[] = [];
 
-  return (
-    <TimelineStoreProvider store={store}>
-      <AgentChatBridgeRegistration />
-      {children}
-      {lightboxAssetKey && resolvedLightboxMedia && (
-        <>
+    if (lightboxAssetKey && resolvedLightboxMedia) {
+      dialogs.push({
+        id: 'provider-media-lightbox',
+        order: 10,
+        layer: 'modal',
+        render: () => (
           <MediaLightbox
             media={resolvedLightboxMedia}
             navigation={navResult.navigation}
@@ -350,11 +358,47 @@ function InnerProvider({
             onClose={lightboxOnClose}
             features={lightboxFeatures}
           />
-          {navResult.indicator ? <VideoEditorLightboxOverlay indicator={navResult.indicator} /> : null}
-        </>
-      )}
+        ),
+      });
+    }
+
+    if (navResult.indicator) {
+      dialogs.push({
+        id: 'provider-lightbox-overlay',
+        order: 20,
+        layer: 'overlay',
+        render: () => <VideoEditorLightboxOverlay indicator={navResult.indicator} />,
+      });
+    }
+
+    return dialogs;
+  }, [
+    lightboxAssetKey,
+    lightboxFeatures,
+    lightboxInitialVariantId,
+    lightboxOnClose,
+    navResult.indicator,
+    navResult.navigation,
+    resolvedLightboxMedia,
+  ]);
+
+  return (
+    <TimelineStoreProvider store={store}>
+      <VideoEditorDialogHost dialogs={providerDialogs}>
+        <AgentChatBridgeRegistration />
+        {children}
+      </VideoEditorDialogHost>
     </TimelineStoreProvider>
   );
+}
+
+export interface VideoEditorProviderProps {
+  dataProvider: DataProvider;
+  timelineId: string;
+  timelineName?: string | null;
+  userId: string;
+  extensions?: VideoEditorExtensionConfig;
+  children: React.ReactNode;
 }
 
 export function VideoEditorProvider({
@@ -362,16 +406,23 @@ export function VideoEditorProvider({
   timelineId,
   timelineName,
   userId,
+  extensions,
   children,
-}: {
-  dataProvider: DataProvider;
-  timelineId: string;
-  timelineName?: string | null;
-  userId: string;
-  children: React.ReactNode;
-}) {
+}: VideoEditorProviderProps) {
+  const runtimeExtensions = useMemo(
+    () => resolveVideoEditorExtensionRuntime(extensions),
+    [extensions],
+  );
+
   return (
-    <DataProviderWrapper value={{ provider: dataProvider, timelineId, timelineName, userId }}>
+    <DataProviderWrapper value={{
+      provider: dataProvider,
+      timelineId,
+      timelineName,
+      userId,
+      extensions: runtimeExtensions,
+    }}
+    >
       <InnerProvider userId={userId}>{children}</InnerProvider>
     </DataProviderWrapper>
   );

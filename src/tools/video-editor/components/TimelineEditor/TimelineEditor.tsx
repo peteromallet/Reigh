@@ -42,6 +42,8 @@ import { useSwitchToFinalVideo } from '@/tools/video-editor/hooks/useSwitchToFin
 import { useTimelineScale } from '@/tools/video-editor/hooks/useTimelineScale';
 import { buildDuplicateClipEdit } from '@/tools/video-editor/lib/duplicate-clip';
 import { duplicateGenerationAsset } from '@/tools/video-editor/lib/generation-utils';
+import { useVideoEditorDialogRegistration } from '@/tools/video-editor/runtime/VideoEditorDialogHost';
+import type { VideoEditorDialogDescriptor } from '@/tools/video-editor/runtime/extensionSurface';
 import {
   clampClipToMediaDuration,
   convertOverhangToHold,
@@ -975,6 +977,7 @@ function TimelineEditorComponent({ onOpenSequenceCreator }: TimelineEditorProps)
     isCreating,
     isClipSelected,
     onDoubleClickAsset,
+    onOpenSequenceCreator,
     primaryClipId,
     resolvedClipMap,
     trackMap,
@@ -1006,6 +1009,29 @@ function TimelineEditorComponent({ onOpenSequenceCreator }: TimelineEditorProps)
     const overTrackId = overSortableId.slice('track-'.length);
     handleMoveTrack(activeTrackId, overTrackId);
   }, [handleMoveTrack]);
+  const timelineDialogs = useMemo<VideoEditorDialogDescriptor[]>(() => {
+    if (!videoModalShot) {
+      return [];
+    }
+
+    return [{
+      id: 'timeline-video-generation-modal',
+      order: 30,
+      layer: 'modal',
+      render: () => (
+        <VideoGenerationModal
+          isOpen={true}
+          onClose={() => {
+            setVideoModalShot(null);
+            setVideoModalShowImages(false);
+          }}
+          shot={videoModalShot}
+          defaultTopOpen={videoModalShowImages}
+        />
+      ),
+    }];
+  }, [videoModalShot, videoModalShowImages]);
+  useVideoEditorDialogRegistration(timelineDialogs);
 
   if (!data) {
     return null;
@@ -1073,18 +1099,6 @@ function TimelineEditorComponent({ onOpenSequenceCreator }: TimelineEditorProps)
         />
         <DropIndicator ref={indicatorRef} editAreaRef={editAreaRef} onNewTrackLabel={setNewTrackDropLabel} />
       </div>
-
-      {videoModalShot && (
-        <>
-          {/* VideoGenerationModal only uses app-wide providers, so it can open from timeline selection flow. */}
-          <VideoGenerationModal
-            isOpen={true}
-            onClose={() => { setVideoModalShot(null); setVideoModalShowImages(false); }}
-            shot={videoModalShot}
-            defaultTopOpen={videoModalShowImages}
-          />
-        </>
-      )}
     </div>
   );
 }

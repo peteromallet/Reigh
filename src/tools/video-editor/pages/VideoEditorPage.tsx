@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
 import { Clapperboard, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/shared/components/ui/button';
@@ -10,10 +10,12 @@ import { useAuth } from '@/shared/contexts/AuthContext';
 import { useProjectSelectionContext } from '@/shared/contexts/ProjectContext';
 import { useToolSettings } from '@/shared/hooks/settings/useToolSettings';
 import { toast } from '@/shared/components/ui/toast';
+import type { DataProvider } from '@/tools/video-editor/data/DataProvider';
 import { SupabaseDataProvider } from '@/tools/video-editor/data/SupabaseDataProvider';
 import { VideoEditorProvider } from '@/tools/video-editor/contexts/VideoEditorProvider';
 import { useTimelinesList } from '@/tools/video-editor/hooks/useTimelinesList';
-import { VideoEditorShell } from '@/tools/video-editor/components/VideoEditorShell';
+import { VideoEditorShell, type VideoEditorShellProps } from '@/tools/video-editor/components/VideoEditorShell';
+import type { VideoEditorExtensionConfig } from '@/tools/video-editor/runtime/extensionSurface';
 import { videoEditorSettings } from '@/tools/video-editor/settings/videoEditorDefaults';
 
 function TimelineList({ onSelect }: { onSelect: (timelineId: string) => void }) {
@@ -179,7 +181,17 @@ function TimelineList({ onSelect }: { onSelect: (timelineId: string) => void }) 
   );
 }
 
-export default function VideoEditorPage() {
+export interface VideoEditorPageProps {
+  extensions?: VideoEditorExtensionConfig;
+  ShellComponent?: ComponentType<VideoEditorShellProps>;
+  createDataProvider?: (args: { projectId: string; userId: string }) => DataProvider;
+}
+
+export default function VideoEditorPage({
+  extensions,
+  ShellComponent = VideoEditorShell,
+  createDataProvider,
+}: VideoEditorPageProps = {}) {
   const { selectedProjectId } = useProjectSelectionContext();
   const { userId } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -190,8 +202,11 @@ export default function VideoEditorPage() {
     if (!selectedProjectId || !userId) {
       return null;
     }
+    if (createDataProvider) {
+      return createDataProvider({ projectId: selectedProjectId, userId });
+    }
     return new SupabaseDataProvider({ projectId: selectedProjectId, userId });
-  }, [selectedProjectId, userId]);
+  }, [createDataProvider, selectedProjectId, userId]);
   const timelines = useTimelinesList(selectedProjectId, userId);
   const { settings, update } = useToolSettings(videoEditorSettings.id, {
     projectId: selectedProjectId ?? undefined,
@@ -322,8 +337,14 @@ export default function VideoEditorPage() {
 
   return (
     <div className={cn('h-full w-full overflow-hidden bg-background')}>
-      <VideoEditorProvider dataProvider={provider} timelineId={timelineId} timelineName={timelineName} userId={userId}>
-        <VideoEditorShell
+      <VideoEditorProvider
+        dataProvider={provider}
+        timelineId={timelineId}
+        timelineName={timelineName}
+        userId={userId}
+        extensions={extensions}
+      >
+        <ShellComponent
           mode="full"
           timelineId={timelineId}
           onCreateTimeline={() => navigate('/')}

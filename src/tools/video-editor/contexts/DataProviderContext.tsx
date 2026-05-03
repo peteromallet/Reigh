@@ -1,11 +1,13 @@
 import { createContext, useContext } from 'react';
 import type { DataProvider } from '@/tools/video-editor/data/DataProvider';
+import type { VideoEditorExtensionRuntimeConfig } from '@/tools/video-editor/runtime/extensionSurface';
 
 export interface VideoEditorRuntimeContextValue {
   provider: DataProvider;
   timelineId: string;
   userId: string;
   timelineName?: string | null;
+  extensions: VideoEditorExtensionRuntimeConfig;
 }
 
 const DataProviderContext = createContext<VideoEditorRuntimeContextValue | null>(null);

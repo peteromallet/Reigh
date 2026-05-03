@@ -1,5 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
-import { createPortal } from 'react-dom';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { Download, Eye, GripHorizontal, History, Maximize2, Minimize2, Redo2, Settings, SlidersHorizontal, Undo2, ZoomIn, ZoomOut } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -15,7 +14,7 @@ import { usePanesStore } from '@/shared/state/panesStore';
 import { editorReplaceTimelineSelection } from '@/shared/state/selectionStore';
 import { CompactPreview } from '@/tools/video-editor/components/CompactPreview';
 import { PreviewPanel } from '@/tools/video-editor/components/PreviewPanel/PreviewPanel';
-import { RemotionPreview } from '@/tools/video-editor/components/PreviewPanel/RemotionPreview';
+import { useVideoEditorPreviewSurface } from '@/tools/video-editor/components/PreviewPanel/useVideoEditorPreviewSurface';
 import { PropertiesPanel } from '@/tools/video-editor/components/PropertiesPanel/PropertiesPanel';
 import { SequenceCreatorPanel } from '@/tools/video-editor/components/SequenceCreator/SequenceCreatorPanel';
 import { ThemeChip } from '@/tools/video-editor/components/ThemeChip';
@@ -37,6 +36,8 @@ import {
 } from '@/tools/video-editor/lib/mobile-interaction-model';
 import { bootDiagnostics, MemoryPressureDetector } from '@/tools/video-editor/lib/perf-diagnostics';
 import { useRenderDiagnostic } from '@/tools/video-editor/hooks/usePerfDiagnostics';
+import { useVideoEditorDialogRegistration } from '@/tools/video-editor/runtime/VideoEditorDialogHost';
+import type { VideoEditorDialogDescriptor } from '@/tools/video-editor/runtime/extensionSurface';
 import { dispatchAppEvent } from '@/shared/lib/typedEvents';
 
 const MIN_TIMELINE_HEIGHT = 140;
@@ -67,7 +68,7 @@ const PHONE_MODE_ITEMS: Array<{ mode: Exclude<TimelineInteractionMode, 'precisio
   { mode: 'trim', label: 'Trim' },
 ];
 
-interface VideoEditorShellProps {
+export interface VideoEditorShellProps {
   mode: 'full' | 'compact';
   timelineId?: string | null;
   onCreateTimeline?: () => void;
@@ -211,22 +212,11 @@ function FullEditorLayout({ timelineId, forceCondensed = false }: { timelineId: 
   }, [outputResolution]);
   const [tooSmall, setTooSmall] = useState(false);
   const outerRef = useRef<HTMLDivElement>(null);
-  const condensedSlotRef = useRef<HTMLDivElement>(null);
-  const fullSlotRef = useRef<HTMLDivElement>(null);
   const selectedClipIdsList = useMemo(() => [...editorData.selectedClipIds], [editorData.selectedClipIds]);
   const inspectorTarget = useMemo(
     () => getInspectorTargetForSelection(selectedClipIdsList, editorData.selectedTrackId),
     [editorData.selectedTrackId, selectedClipIdsList],
   );
-  const [previewHostEl] = useState<HTMLDivElement | null>(() => {
-    if (typeof document === 'undefined') {
-      return null;
-    }
-
-    const host = document.createElement('div');
-    host.style.display = 'contents';
-    return host;
-  });
 
   useEffect(() => {
     const el = outerRef.current;
@@ -244,7 +234,7 @@ function FullEditorLayout({ timelineId, forceCondensed = false }: { timelineId: 
 
   const mobileSinglePane = isPhone && !forceCondensed;
   const condensed = forceCondensed || tooSmall || mobileSinglePane || (isOnEditorPage && isEditorPaneLocked);
-  const hasConfig = Boolean(editorData.resolvedConfig);
+  const previewSurface = useVideoEditorPreviewSurface({ compact: condensed });
   const hasClipSelection = selectedClipIdsList.length > 0;
   const mobilePropertiesTitle = hasClipSelection
     ? selectedClipIdsList.length > 1
@@ -281,28 +271,6 @@ function FullEditorLayout({ timelineId, forceCondensed = false }: { timelineId: 
       setCondensedRightPanel('properties');
     }
   }, [condensed, condensedRightPanel, hasClipSelection, isTablet]);
-
-  useLayoutEffect(() => {
-    if (!previewHostEl) {
-      return;
-    }
-
-    const activeSlot = condensed ? condensedSlotRef.current : fullSlotRef.current;
-    if (!hasConfig || !activeSlot) {
-      previewHostEl.remove();
-      return () => {
-        previewHostEl.remove();
-      };
-    }
-
-    if (previewHostEl.parentElement !== activeSlot) {
-      activeSlot.appendChild(previewHostEl);
-    }
-
-    return () => {
-      previewHostEl.remove();
-    };
-  }, [condensed, hasConfig, previewHostEl]);
 
   const gridTemplateRows = isTimelineMaximized
     ? `${MIN_PREVIEW_HEIGHT}px auto 1fr`
@@ -514,7 +482,7 @@ function FullEditorLayout({ timelineId, forceCondensed = false }: { timelineId: 
   // ── Preview overlay (time top-left, render top-right) ──────────────
 
   const previewOverlay = (
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center justify-between px-3 py-3" data-shell-interaction="true">
+    <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center justify-between px-3 py-3" data-shell-interaction="true">
       <span className="pointer-events-auto rounded bg-background/70 px-1.5 py-0.5 font-mono text-[11px] tracking-[0.08em] text-muted-foreground backdrop-blur-sm">{playback.formatTime(playback.currentTime)}</span>
       <div className="pointer-events-auto flex items-center gap-1">
         <ThemeChip timeline={editorData.data?.config} />
@@ -619,189 +587,187 @@ function FullEditorLayout({ timelineId, forceCondensed = false }: { timelineId: 
     </div>
   );
 
-  const previewPortal =
-    previewHostEl && editorData.resolvedConfig
-      ? createPortal(
-          <RemotionPreview
-            ref={playback.previewRef}
-            config={editorData.resolvedConfig}
-            compact={condensed}
-            initialTime={playback.currentTime}
-            onTimeUpdate={playback.onPreviewTimeUpdate}
-            playerContainerRef={playback.playerContainerRef}
-          />,
-          previewHostEl,
-        )
-      : null;
+  const previewScrubber = (
+    <Slider
+      value={[playback.currentTime]}
+      min={0}
+      max={Math.max(1, totalSeconds)}
+      step={0.05}
+      onValueChange={([value = 0]) => playback.previewRef.current?.seek(value)}
+    />
+  );
+  const shellDialogs = useMemo<VideoEditorDialogDescriptor[]>(() => {
+    const dialogs: VideoEditorDialogDescriptor[] = [];
+
+    if (isSequenceCreatorOpen) {
+      dialogs.push({
+        id: 'sequence-creator-panel',
+        order: 40,
+        layer: 'modal',
+        render: () => (
+          <SequenceCreatorPanel
+            open={isSequenceCreatorOpen}
+            onOpenChange={setIsSequenceCreatorOpen}
+          />
+        ),
+      });
+    }
+
+    if (conflict.isOpen) {
+      dialogs.push({
+        id: 'remote-conflict-dialog',
+        order: 50,
+        layer: 'modal',
+        render: () => (
+          <AlertDialog open={conflict.isOpen} onOpenChange={conflict.setOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Remote timeline changes detected</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Another tab updated this timeline while you still have unsaved local edits. Keep your local draft or discard it and reload the latest server version.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel onClick={() => void conflict.keepLocalChanges()}>Keep local draft</AlertDialogCancel>
+                <AlertDialogAction onClick={() => void conflict.discardAndReload()}>Discard and reload</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        ),
+      });
+    }
+
+    return dialogs;
+  }, [conflict, isSequenceCreatorOpen]);
+  useVideoEditorDialogRegistration(shellDialogs);
 
   return (
-    <>
-      <div ref={outerRef} className="flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground">
-        <div className="sr-only" aria-live="polite" aria-atomic="true">
-          {interactionStatusLabel}
+    <div ref={outerRef} className="flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground">
+      <div className="sr-only" aria-live="polite" aria-atomic="true">
+        {interactionStatusLabel}
+      </div>
+      {!condensed && (
+        <div className="flex h-10 items-center gap-3 border-b border-border bg-background px-3 text-sm text-muted-foreground">
+          <button
+            type="button"
+            className={cn('shrink-0 transition-colors hover:text-foreground motion-reduce:transition-none', touchChrome && 'min-h-11 px-2')}
+            onClick={navigateHome}
+          >
+            ← Back
+          </button>
+          <div className="truncate text-foreground">{chrome.timelineName ?? 'Untitled timeline'}</div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className={cn('ml-auto text-muted-foreground', touchChrome ? 'h-11 w-11' : 'h-7 w-7')}
+            onClick={() => dispatchAppEvent('openSettings', {})}
+            title="Settings"
+          >
+            <Settings className="h-3.5 w-3.5" />
+          </Button>
         </div>
-        {!condensed && (
-          <div className="flex h-10 items-center gap-3 border-b border-border bg-background px-3 text-sm text-muted-foreground">
-            <button
-              type="button"
-              className={cn('shrink-0 transition-colors hover:text-foreground motion-reduce:transition-none', touchChrome && 'min-h-11 px-2')}
-              onClick={navigateHome}
-            >
-              ← Back
-            </button>
-            <div className="truncate text-foreground">{chrome.timelineName ?? 'Untitled timeline'}</div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className={cn('ml-auto text-muted-foreground', touchChrome ? 'h-11 w-11' : 'h-7 w-7')}
-              onClick={() => dispatchAppEvent('openSettings', {})}
-              title="Settings"
-            >
-              <Settings className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        )}
+      )}
 
-        {mobileSinglePane ? (
-          <main className="grid h-full min-h-0 flex-1 animate-in fade-in duration-200 motion-reduce:animate-none motion-reduce:transition-none grid-rows-[auto_auto_minmax(260px,42dvh)_minmax(0,1fr)] gap-3 p-3 transition-opacity">
-            <div>
-              {toolbar}
+      {mobileSinglePane ? (
+        <main className="grid h-full min-h-0 flex-1 animate-in fade-in duration-200 motion-reduce:animate-none motion-reduce:transition-none grid-rows-[auto_auto_minmax(260px,42dvh)_minmax(0,1fr)] gap-3 p-3 transition-opacity">
+          <div>
+            {toolbar}
+          </div>
+
+          {phoneModeBar}
+
+          <div className="flex min-h-0 flex-col gap-3">
+            <div className="relative min-h-0 flex-1">
+              <PreviewPanel
+                surface={previewSurface}
+                overlay={previewOverlay}
+                footer={previewScrubber}
+              />
+            </div>
+          </div>
+
+          <div className="relative min-h-0 overflow-hidden">
+            <TimelineEditor onOpenSequenceCreator={() => setIsSequenceCreatorOpen(true)} />
+          </div>
+        </main>
+      ) : condensed ? (
+        /* ── Condensed layout: timeline left, preview or props right ── */
+        <main className="grid h-full min-h-0 flex-1 animate-in fade-in duration-200 motion-reduce:animate-none motion-reduce:transition-none grid-cols-[minmax(0,1fr)_320px] grid-rows-[auto_minmax(0,1fr)] gap-3 p-3 transition-opacity">
+          <div className="col-span-1">
+            {toolbar}
+          </div>
+
+          <div className="row-span-2 flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card/80">
+            <div className="flex items-center border-b border-border">
+              <button
+                type="button"
+                className={`flex min-h-11 flex-1 items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.12em] transition-colors motion-reduce:transition-none ${condensedRightPanel === 'preview' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                onClick={() => setCondensedRightPanel('preview')}
+              >
+                <Eye className="h-3 w-3" />
+                Preview
+              </button>
+              <button
+                type="button"
+                className={`flex min-h-11 flex-1 items-center justify-center gap-1.5 border px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.12em] transition-colors motion-reduce:transition-none ${condensedRightPanel === 'properties' ? 'border-transparent bg-accent text-foreground' : editorData.selectedClipIds.size > 0 ? 'border-sky-400 text-muted-foreground hover:text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+                onClick={openInspector}
+              >
+                <SlidersHorizontal className="h-3 w-3" />
+                {inspectorButtonLabel}
+              </button>
             </div>
 
-            {phoneModeBar}
-
-            <div className="flex min-h-0 flex-col gap-3">
-              <div className="relative min-h-0 flex-1">
-                {previewOverlay}
-                <PreviewPanel previewSlotRef={condensedSlotRef} />
-              </div>
-              <div className="rounded-xl border border-border bg-card/80 px-3 py-2">
-                <Slider
-                  value={[playback.currentTime]}
-                  min={0}
-                  max={Math.max(1, totalSeconds)}
-                  step={0.05}
-                  onValueChange={(value) => playback.previewRef.current?.seek(value)}
+            <div
+              className={cn('relative flex min-h-0 flex-1 flex-col', condensedRightPanel !== 'preview' && 'hidden')}
+              aria-hidden={condensedRightPanel !== 'preview'}
+            >
+              <div className="min-h-0 flex-1">
+                <PreviewPanel
+                  surface={previewSurface}
+                  overlay={previewOverlay}
+                  footer={previewScrubber}
+                  panelClassName="h-full rounded-none border-0 bg-transparent"
                 />
               </div>
             </div>
-
-            <div className="relative min-h-0 overflow-hidden">
-              <TimelineEditor onOpenSequenceCreator={() => setIsSequenceCreatorOpen(true)} />
-            </div>
-
-          </main>
-        ) : condensed ? (
-          /* ── Condensed layout: timeline left, preview or props right ── */
-          <main className="grid h-full min-h-0 flex-1 animate-in fade-in duration-200 motion-reduce:animate-none motion-reduce:transition-none grid-cols-[minmax(0,1fr)_320px] grid-rows-[auto_minmax(0,1fr)] gap-3 p-3 transition-opacity">
-            <div className="col-span-1">
-              {toolbar}
-            </div>
-
-            <div className="row-span-2 flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card/80">
-              <div className="flex items-center border-b border-border">
-                <button
-                  type="button"
-                  className={`flex min-h-11 flex-1 items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.12em] transition-colors motion-reduce:transition-none ${condensedRightPanel === 'preview' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-                  onClick={() => setCondensedRightPanel('preview')}
-                >
-                  <Eye className="h-3 w-3" />
-                  Preview
-                </button>
-                <button
-                  type="button"
-                  className={`flex min-h-11 flex-1 items-center justify-center gap-1.5 border px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.12em] transition-colors motion-reduce:transition-none ${condensedRightPanel === 'properties' ? 'border-transparent bg-accent text-foreground' : editorData.selectedClipIds.size > 0 ? 'border-sky-400 text-muted-foreground hover:text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
-                  onClick={openInspector}
-                >
-                  <SlidersHorizontal className="h-3 w-3" />
-                  {inspectorButtonLabel}
-                </button>
-              </div>
-
-              <div
-                className={cn('relative flex min-h-0 flex-1 flex-col', condensedRightPanel !== 'preview' && 'hidden')}
-                aria-hidden={condensedRightPanel !== 'preview'}
-              >
-                {previewOverlay}
-                <div className="min-h-0 flex-1">
-                  <div ref={condensedSlotRef} className="flex h-full w-full min-h-0 items-center justify-center" />
-                </div>
-                <div className="border-t border-border px-3 py-2">
-                  <Slider
-                    value={[playback.currentTime]}
-                    min={0}
-                    max={Math.max(1, totalSeconds)}
-                    step={0.05}
-                    onValueChange={(value) => playback.previewRef.current?.seek(value)}
-                  />
-                </div>
-              </div>
-              <div
-                className={cn('min-h-0 flex-1 overflow-auto p-3', condensedRightPanel !== 'properties' && 'hidden')}
-                aria-hidden={condensedRightPanel !== 'properties'}
-              >
-                <PropertiesPanel />
-              </div>
-            </div>
-
-            <div className="relative col-span-1 min-h-0 overflow-hidden">
-              <TimelineEditor onOpenSequenceCreator={() => setIsSequenceCreatorOpen(true)} />
-
-            </div>
-
-          </main>
-        ) : (
-          /* ── Standard layout: preview top, timeline bottom ── */
-          <main
-            ref={containerRef}
-            className="grid h-full min-h-0 flex-1 animate-in fade-in duration-200 motion-reduce:animate-none motion-reduce:transition-none grid-cols-[minmax(0,1fr)_360px] gap-3 p-3 transition-[grid-template-rows,opacity] duration-300 ease-smooth"
-            style={{ gridTemplateRows }}
-          >
-            <div className="relative min-h-0">
-              {previewOverlay}
-              <PreviewPanel previewSlotRef={fullSlotRef} />
-            </div>
-
-            <div className="row-span-2 min-h-0 overflow-hidden">
+            <div
+              className={cn('min-h-0 flex-1 overflow-auto p-3', condensedRightPanel !== 'properties' && 'hidden')}
+              aria-hidden={condensedRightPanel !== 'properties'}
+            >
               <PropertiesPanel />
             </div>
+          </div>
 
-            <div ref={dividerRef} className="col-span-1">
-              {toolbar}
-            </div>
+          <div className="relative col-span-1 min-h-0 overflow-hidden">
+            <TimelineEditor onOpenSequenceCreator={() => setIsSequenceCreatorOpen(true)} />
+          </div>
+        </main>
+      ) : (
+        /* ── Standard layout: preview top, timeline bottom ── */
+        <main
+          ref={containerRef}
+          className="grid h-full min-h-0 flex-1 animate-in fade-in duration-200 motion-reduce:animate-none motion-reduce:transition-none grid-cols-[minmax(0,1fr)_360px] gap-3 p-3 transition-[grid-template-rows,opacity] duration-300 ease-smooth"
+          style={{ gridTemplateRows }}
+        >
+          <div className="relative min-h-0">
+            <PreviewPanel surface={previewSurface} overlay={previewOverlay} />
+          </div>
 
-            <div className="relative col-span-2 min-h-0 overflow-hidden">
-              <TimelineEditor onOpenSequenceCreator={() => setIsSequenceCreatorOpen(true)} />
+          <div className="row-span-2 min-h-0 overflow-hidden">
+            <PropertiesPanel />
+          </div>
 
-            </div>
+          <div ref={dividerRef} className="col-span-1">
+            {toolbar}
+          </div>
 
-          </main>
-        )}
-      </div>
-      {previewPortal}
-      {isSequenceCreatorOpen && (
-        <SequenceCreatorPanel
-          open={isSequenceCreatorOpen}
-          onOpenChange={setIsSequenceCreatorOpen}
-        />
+          <div className="relative col-span-2 min-h-0 overflow-hidden">
+            <TimelineEditor onOpenSequenceCreator={() => setIsSequenceCreatorOpen(true)} />
+          </div>
+        </main>
       )}
-
-      <AlertDialog open={conflict.isOpen} onOpenChange={conflict.setOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remote timeline changes detected</AlertDialogTitle>
-            <AlertDialogDescription>
-              Another tab updated this timeline while you still have unsaved local edits. Keep your local draft or discard it and reload the latest server version.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => void conflict.keepLocalChanges()}>Keep local draft</AlertDialogCancel>
-            <AlertDialogAction onClick={() => void conflict.discardAndReload()}>Discard and reload</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+    </div>
   );
 }
 
