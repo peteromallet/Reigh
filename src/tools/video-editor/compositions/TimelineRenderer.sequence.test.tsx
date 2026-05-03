@@ -235,6 +235,31 @@ describe('TimelineRenderer registered sequences', () => {
     expect(sequence).toHaveAttribute('data-preview-asset-keys', JSON.stringify(['asset-a']));
   });
 
+  it('renders locally-registered title-card clips through the same registry-backed sequence route', () => {
+    render(<TimelineRenderer config={{
+      ...buildConfig({ theme: '2rp' }),
+      clips: [
+        {
+          id: 'clip-title-card',
+          clipType: 'title-card',
+          track: 'V1',
+          at: 0,
+          hold: 3,
+          params: {
+            kicker: 'INTRO',
+            title: 'Registry Title',
+            subtitle: 'Local example component',
+          },
+        },
+      ],
+    }} />);
+
+    const sequence = screen.getByTestId('title-card-sequence');
+    expect(sequence).toHaveAttribute('data-kicker', 'INTRO');
+    expect(sequence).toHaveAttribute('data-title', 'Registry Title');
+    expect(sequence).toHaveAttribute('data-subtitle', 'Local example component');
+  });
+
   it('renders remotion_module clips as safe placeholders before registered, native, or unknown clipType dispatch', () => {
     render(<TimelineRenderer config={{
       ...buildConfig({ theme: '2rp' }),

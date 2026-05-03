@@ -12,10 +12,16 @@ import {
 } from '@/tools/video-editor/clip-types/runtime';
 import { TRUSTED_SEQUENCE_THEME_ID } from './metadata';
 import { ImageJumpSequence } from '@/tools/video-editor/sequences/components/ImageJumpSequence';
+import { TitleCardSequence } from '@/tools/video-editor/sequences/components/TitleCardSequence';
 
 export const LOCAL_SEQUENCE_REGISTRY = {
   'image-jump': {
     component: ImageJumpSequence,
+    themeId: TRUSTED_SEQUENCE_THEME_ID,
+    source: 'local:reigh',
+  },
+  'title-card': {
+    component: TitleCardSequence,
     themeId: TRUSTED_SEQUENCE_THEME_ID,
     source: 'local:reigh',
   },

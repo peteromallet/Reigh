@@ -7,6 +7,11 @@ export {
   isSequenceParamsSchema,
   toClipTypeManifest,
 } from './defineClipType';
+export { createVideoEditorClipTypeCapabilityManifest } from './manifest';
+export type {
+  ClipTypeCapabilityManifestEntry,
+  VideoEditorClipTypeCapabilityManifest,
+} from './manifest';
 export {
   TRUSTED_CLIP_TYPE_DESCRIPTORS,
   TRUSTED_CLIP_TYPE_METADATA,

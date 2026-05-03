@@ -64,6 +64,38 @@ export const TRUSTED_SEQUENCE_METADATA = [
     ],
   },
   {
+    clipType: 'title-card',
+    themeId: TRUSTED_SEQUENCE_THEME_ID,
+    label: 'Title Card',
+    description: 'Simple headline card example for local and third-party-style registry extensions.',
+    whenToUse: 'Use for openers, chapter titles, interstitial headlines, and concise branded statements.',
+    hold: DEFAULT_HOLD,
+    params: [
+      {
+        key: 'kicker',
+        label: 'Kicker',
+        kind: 'string',
+        description: 'Short uppercase label above the title.',
+        defaultValue: 'TITLE',
+      },
+      {
+        key: 'title',
+        label: 'Title',
+        kind: 'string',
+        description: 'Primary headline.',
+        required: true,
+        defaultValue: 'Build on the registry',
+      },
+      {
+        key: 'subtitle',
+        label: 'Subtitle',
+        kind: 'string',
+        description: 'Optional supporting line beneath the headline.',
+        defaultValue: 'One descriptor plus registration.',
+      },
+    ],
+  },
+  {
     clipType: 'section-hook',
     themeId: TRUSTED_SEQUENCE_THEME_ID,
     label: '2RP Section Hook',

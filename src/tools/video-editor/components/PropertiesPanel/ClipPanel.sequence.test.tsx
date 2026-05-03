@@ -110,6 +110,19 @@ const sequenceClip: ResolvedTimelineClip = {
   },
 };
 
+const titleCardClip: ResolvedTimelineClip = {
+  id: 'title-card-1',
+  clipType: 'title-card',
+  track: 'visual-1',
+  at: 1,
+  hold: 4,
+  params: {
+    kicker: 'INTRO',
+    title: 'Registry Title',
+    subtitle: 'Example subtitle',
+  },
+};
+
 const renderClipPanel = ({
   clip = sequenceClip,
   activeTab = 'effects',
@@ -250,6 +263,28 @@ describe('ClipPanel sequence inspector', () => {
     });
 
     expect(screen.getByText(/is trusted in the clip-type registry, but its render component is not available/i)).toBeInTheDocument();
+  });
+
+  it('renders locally-registered title-card clips through the same sequence inspector path', () => {
+    const { onChange } = renderClipPanel({
+      clip: titleCardClip,
+    });
+
+    expect(getVisibleClipTabs(titleCardClip, visualTrack)).toEqual(['effects', 'timing']);
+    expect(screen.getAllByText('Title Card').length).toBeGreaterThan(0);
+    expect(screen.getByDisplayValue('Registry Title')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByDisplayValue('Registry Title'), {
+      target: { value: 'Updated Registry Title' },
+    });
+
+    expect(onChange).toHaveBeenCalledWith({
+      params: {
+        kicker: 'INTRO',
+        title: 'Updated Registry Title',
+        subtitle: 'Example subtitle',
+      },
+    });
   });
 
   it('uses command-aware tabs so non-audio hold clips hide audio controls while video media clips keep them', () => {

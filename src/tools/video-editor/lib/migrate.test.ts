@@ -183,4 +183,36 @@ describe('migrateToFlatTracks clip-type defaults', () => {
       to: 4,
     });
   });
+
+  it('preserves explicitly-registered custom clip types during flat-track migration', () => {
+    const migrated = migrateToFlatTracks({
+      output: {
+        resolution: '1920x1080',
+        fps: 30,
+        file: 'out.mp4',
+      },
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [
+        {
+          id: 'clip-title-card',
+          at: 0,
+          track: 'V1',
+          clipType: 'title-card',
+          hold: 3,
+          params: {
+            title: 'Keep me',
+          },
+        },
+      ],
+    });
+
+    expect(migrated.clips[0]).toMatchObject({
+      id: 'clip-title-card',
+      clipType: 'title-card',
+      hold: 3,
+      params: {
+        title: 'Keep me',
+      },
+    });
+  });
 });

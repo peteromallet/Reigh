@@ -15,6 +15,7 @@ describe('clip-type registry', () => {
       'section-hook': { component: () => null },
       'resource-card': { component: () => null },
       'image-jump': { component: () => null },
+      'title-card': { component: () => null },
     });
 
     expect([...TRUSTED_CLIP_TYPES].sort()).toEqual([
@@ -23,14 +24,16 @@ describe('clip-type registry', () => {
       'image-jump',
       'resource-card',
       'section-hook',
+      'title-card',
     ]);
     expect([...availableView.clipTypes].sort()).toEqual([
       'image-jump',
       'resource-card',
       'section-hook',
+      'title-card',
     ]);
-    expect(TRUSTED_CLIP_TYPE_METADATA).toHaveLength(5);
-    expect(availableView.metadata).toHaveLength(3);
+    expect(TRUSTED_CLIP_TYPE_METADATA).toHaveLength(6);
+    expect(availableView.metadata).toHaveLength(4);
   });
 
   it('filters trusted clip types against a provided available registry shape', () => {
@@ -49,6 +52,7 @@ describe('clip-type registry', () => {
     const availableView = createAvailableClipTypeRegistry({
       'resource-card': { component: () => null },
       'image-jump': { component: () => null },
+      'title-card': { component: () => null },
     });
 
     expect(resolveTrustedClipTypeRegistration('cta-card')).toMatchObject({
@@ -63,6 +67,10 @@ describe('clip-type registry', () => {
     expect(availableView.resolveAvailableClipTypeRegistration('resource-card')).toMatchObject({
       status: 'available',
       registration: { id: 'resource-card' },
+    });
+    expect(availableView.resolveAvailableClipTypeRegistration('title-card')).toMatchObject({
+      status: 'available',
+      registration: { id: 'title-card' },
     });
     expect(availableView.resolveAvailableClipTypeRegistration('cta-card')).toMatchObject({
       status: 'unavailable',

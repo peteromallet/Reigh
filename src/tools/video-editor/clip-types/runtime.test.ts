@@ -11,6 +11,7 @@ describe('clip-type runtime registry', () => {
   it('resolves builtin, available sequence, unavailable sequence, and unknown clip types distinctly', () => {
     const view = createEditorClipTypeRegistry({
       'resource-card': { component: () => null },
+      'title-card': { component: () => null },
     });
 
     expect(view.resolveRegistration('media')).toMatchObject({
@@ -20,6 +21,10 @@ describe('clip-type runtime registry', () => {
     expect(view.resolveRegistration('resource-card')).toMatchObject({
       status: 'available',
       registration: { id: 'resource-card', source: 'sequence' },
+    });
+    expect(view.resolveRegistration('title-card')).toMatchObject({
+      status: 'available',
+      registration: { id: 'title-card', source: 'sequence' },
     });
     expect(view.resolveRegistration('cta-card')).toMatchObject({
       status: 'unavailable',
@@ -33,22 +38,22 @@ describe('clip-type runtime registry', () => {
 
   it('builds descriptor-backed clip meta without injecting extra persisted sequence params', () => {
     const clipMeta = createClipMetaFromDescriptor({
-      clipType: 'section-hook',
+      clipType: 'title-card',
       trackId: 'V1',
       clipOverrides: {
         hold: 4,
       },
       params: {
-        title: 'Renaissance systems',
+        title: 'Registry title',
       },
     });
 
     expect(clipMeta).toEqual({
       track: 'V1',
-      clipType: 'section-hook',
+      clipType: 'title-card',
       hold: 4,
       params: {
-        title: 'Renaissance systems',
+        title: 'Registry title',
       },
     });
   });
