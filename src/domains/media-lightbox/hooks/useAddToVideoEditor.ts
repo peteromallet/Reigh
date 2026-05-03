@@ -8,9 +8,14 @@ import { videoEditorSettings } from '@/tools/video-editor/settings/videoEditorDe
 import { videoEditorPathWithTimeline } from '@/tools/video-editor/lib/video-editor-path';
 import { getClipTimelineDuration } from '@/tools/video-editor/lib/config-utils';
 import {
+  executeGenerationAssetRegistrationPlan,
+  planGenerationAssetRegistration,
+} from '@/tools/video-editor/lib/timeline-asset-plans';
+import {
   useTimelineEditorDataSafe,
   useTimelineEditorOpsSafe,
 } from '@/tools/video-editor/hooks/timelineStore';
+import { useTimelineCommandsSafe } from '@/tools/video-editor/hooks/useTimelineCommands';
 import {
   ADD_GENERATION_QUERY_PARAM,
   readPendingAdds,
@@ -40,6 +45,7 @@ interface UseAddToVideoEditorResult {
 export function useAddToVideoEditor(media: GenerationRow | undefined): UseAddToVideoEditorResult {
   const ops = useTimelineEditorOpsSafe();
   const data = useTimelineEditorDataSafe();
+  const commands = useTimelineCommandsSafe();
   const navigate = useNavigate();
   const { settings: videoSettings } = useToolSettings(videoEditorSettings.id);
 
@@ -69,26 +75,44 @@ export function useAddToVideoEditor(media: GenerationRow | undefined): UseAddToV
   }, [generationId]);
 
   const onClick = useCallback(() => {
-    if (!media) return;
-    if (!generationId) return;
+    if (!media || !generationId) return;
 
-    if (ops && data) {
-      const assetKey = ops.registerGenerationAsset({
+    if (commands && ops && data) {
+      const registrationPlan = planGenerationAssetRegistration({
         generationId,
         variantType: media.type === 'video' ? 'video' : 'image',
         imageUrl: media.location ?? media.imageUrl ?? '',
         thumbUrl: media.thumbUrl ?? media.imageUrl ?? media.location ?? '',
       });
-      if (!assetKey) {
+      if (!registrationPlan.ok) {
         toast.error('Could not register asset');
         return;
       }
+
+      const { assetKey, persistPromise } = executeGenerationAssetRegistrationPlan({
+        plan: registrationPlan,
+        patchRegistry: ops.patchRegistry,
+        registerAsset: ops.registerAsset,
+      });
+      void persistPromise.catch((error) => {
+        console.error('[video-editor] Failed to persist add-to-editor asset:', error);
+        ops.unpatchRegistry(assetKey);
+        toast.error('Failed to save asset');
+      });
+
       const clips = data.resolvedConfig?.clips ?? [];
       const timelineEnd = clips.reduce(
         (max, clip) => Math.max(max, clip.at + getClipTimelineDuration(clip)),
         0,
       );
-      ops.handleAssetDrop(assetKey, undefined, timelineEnd, false, false);
+      const insertResult = commands.addClip({
+        assetId: assetKey,
+        time: timelineEnd,
+      });
+      if (!insertResult.ok) {
+        ops.unpatchRegistry(assetKey);
+        toast.error(insertResult.error.message);
+      }
       return;
     }
 
@@ -104,7 +128,7 @@ export function useAddToVideoEditor(media: GenerationRow | undefined): UseAddToV
       writePendingAdds([...current, generationId]);
     }
     setPhase('staged');
-  }, [media, generationId, ops, data, navigate, videoSettings?.lastTimelineId, phase]);
+  }, [commands, data, generationId, media, navigate, ops, phase, videoSettings?.lastTimelineId]);
 
   return { onClick, phase };
 }

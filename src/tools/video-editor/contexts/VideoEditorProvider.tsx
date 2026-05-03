@@ -16,6 +16,7 @@ import { clearTimelineClipData, setTimelineClipData } from '@/shared/state/selec
 import { useEffects } from '@/tools/video-editor/hooks/useEffects';
 import { useEffectRegistry } from '@/tools/video-editor/hooks/useEffectRegistry';
 import { useEffectResources } from '@/tools/video-editor/hooks/useEffectResources';
+import { createTimelineCommands } from '@/tools/video-editor/hooks/useTimelineCommands';
 import { useTimelineClipsForAttachments } from '@/tools/video-editor/hooks/useTimelineClipsForAttachments';
 import { useTimelineState } from '@/tools/video-editor/hooks/useTimelineState';
 import { TimelineStoreProvider } from '@/tools/video-editor/hooks/timelineStore';
@@ -33,6 +34,10 @@ import {
   readPendingAdds,
   writePendingAdds,
 } from '@/domains/media-lightbox/hooks/addToVideoEditorConstants';
+import {
+  executeGenerationAssetRegistrationPlan,
+  planGenerationAssetRegistration,
+} from '@/tools/video-editor/lib/timeline-asset-plans';
 import { useRenderDiagnostic } from '@/tools/video-editor/hooks/usePerfDiagnostics';
 import type { ResolvedAssetRegistryEntry } from '@/tools/video-editor/types';
 
@@ -98,6 +103,7 @@ function InnerProvider({ children }: { children: React.ReactNode }) {
     effectResources.effects,
   );
   const { store, editor } = useTimelineState();
+  const commands = useMemo(() => createTimelineCommands(store), [store]);
   const [searchParams, setSearchParams] = useSearchParams();
   const pendingAddGenerationId = searchParams.get(ADD_GENERATION_QUERY_PARAM);
   const consumedAddGenerationRef = useRef<string | null>(null);
@@ -106,6 +112,8 @@ function InnerProvider({ children }: { children: React.ReactNode }) {
   const drainInFlightRef = useRef(false);
   const editorRef = useRef(editor);
   editorRef.current = editor;
+  const commandsRef = useRef(commands);
+  commandsRef.current = commands;
 
   useEffect(() => {
     if (editor.isLoading) return;
@@ -136,18 +144,28 @@ function InnerProvider({ children }: { children: React.ReactNode }) {
             processed.push(generationId);
             continue;
           }
-          const currentEditor = editorRef.current;
-          const assetKey = currentEditor.registerGenerationAsset({
+          const registrationPlan = planGenerationAssetRegistration({
             generationId: generation.id,
             variantType: generation.type === 'video' ? 'video' : 'image',
             imageUrl: generation.location ?? generation.imageUrl ?? '',
             thumbUrl: generation.thumbUrl ?? generation.imageUrl ?? generation.location ?? '',
           });
-          if (!assetKey) {
+          if (!registrationPlan.ok) {
             runtime.toast.error('Could not register asset');
             processed.push(generationId);
             continue;
           }
+          const currentOps = store.getState().ops;
+          const { assetKey, persistPromise } = executeGenerationAssetRegistrationPlan({
+            plan: registrationPlan,
+            patchRegistry: currentOps.patchRegistry,
+            registerAsset: currentOps.registerAsset,
+          });
+          void persistPromise.catch((error) => {
+            console.error('[video-editor] Failed to persist staged add asset:', error);
+            store.getState().ops.unpatchRegistry(assetKey);
+            runtime.toast.error('Failed to save asset');
+          });
           // Let registry patch settle before reading resolvedConfig.
           await new Promise<void>((resolve) => setTimeout(resolve, 0));
           const editorForDrop = editorRef.current;
@@ -156,7 +174,16 @@ function InnerProvider({ children }: { children: React.ReactNode }) {
             (max, clip) => Math.max(max, clip.at + getClipTimelineDuration(clip)),
             0,
           );
-          editorForDrop.handleAssetDrop(assetKey, undefined, timelineEnd, false, false);
+          const insertResult = commandsRef.current.addClip({
+            assetId: assetKey,
+            time: timelineEnd,
+          });
+          if (!insertResult.ok) {
+            store.getState().ops.unpatchRegistry(assetKey);
+            runtime.toast.error(insertResult.error.message);
+            processed.push(generationId);
+            continue;
+          }
           processed.push(generationId);
           // Allow React to commit the clip before the next iteration reads clips.
           await new Promise<void>((resolve) => setTimeout(resolve, 50));
@@ -174,7 +201,7 @@ function InnerProvider({ children }: { children: React.ReactNode }) {
         drainInFlightRef.current = false;
       }
     })();
-  }, [editor.isLoading, pendingAddGenerationId, runtime.mediaLightbox, runtime.toast, setSearchParams]);
+  }, [commands, editor.isLoading, pendingAddGenerationId, runtime.mediaLightbox, runtime.toast, setSearchParams, store]);
 
   const [lightboxAssetKey, setLightboxAssetKey] = useState<string | null>(null);
   const [lightboxClipId, setLightboxClipId] = useState<string | null>(null);

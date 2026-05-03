@@ -29,26 +29,83 @@ vi.mock('remotion', async () => {
 
 vi.mock('@banodoco/timeline-composition/theme-api', async () => {
   const reactModule = await import('react');
-  const themeValue = {
+  const runtimeThemeValue = {
     color: {
       accent: '#ffffff',
       bg: '#000000',
+      fg: '#ffffff',
     },
     type: {
       families: {
         heading: 'Georgia, serif',
+        body: 'Inter, system-ui, sans-serif',
+        mono: 'JetBrains Mono, ui-monospace, monospace',
       },
+      size: {
+        base: 56,
+        small: 32,
+        large: 128,
+      },
+      weight: {
+        normal: 300,
+        bold: 500,
+      },
+      lineHeight: 1.1,
+    },
+    motion: {
+      fadeMs: 500,
+    },
+    canvas: {
+      width: 1920,
+      height: 1080,
+      fps: 30,
     },
   };
 
-  const ThemeContext = reactModule.createContext(themeValue);
+  const DEFAULT_THEME = {
+    id: 'default',
+    visual: runtimeThemeValue,
+  };
+
+  const toRuntimeTheme = (value: unknown) => {
+    if (
+      value
+      && typeof value === 'object'
+      && 'visual' in value
+      && value.visual
+      && typeof value.visual === 'object'
+    ) {
+      return {
+        ...runtimeThemeValue,
+        ...value.visual,
+        color: {
+          ...runtimeThemeValue.color,
+          ...(typeof value.visual.color === 'object' ? value.visual.color : {}),
+        },
+        type: {
+          ...runtimeThemeValue.type,
+          ...(typeof value.visual.type === 'object' ? value.visual.type : {}),
+          families: {
+            ...runtimeThemeValue.type.families,
+            ...(typeof value.visual.type === 'object' && typeof value.visual.type.families === 'object'
+              ? value.visual.type.families
+              : {}),
+          },
+        },
+      };
+    }
+    return runtimeThemeValue;
+  };
+
+  const ThemeContext = reactModule.createContext(runtimeThemeValue);
 
   return {
+    DEFAULT_THEME,
     ThemeProvider: ({
       children,
       value,
-    }: PropsWithChildren<{ value: typeof themeValue }>) => (
-      <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
+    }: PropsWithChildren<{ value: typeof DEFAULT_THEME }>) => (
+      <ThemeContext.Provider value={toRuntimeTheme(value)}>{children}</ThemeContext.Provider>
     ),
     useTheme: () => reactModule.useContext(ThemeContext),
   };

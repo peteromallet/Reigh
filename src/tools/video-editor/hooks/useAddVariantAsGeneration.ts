@@ -5,8 +5,11 @@ import { usePromoteVariantToGeneration } from '@/shared/hooks/variants/usePromot
 import { loadPrimaryVariantForGeneration } from '@/tools/video-editor/adapters/reigh/variantPromotionLookup';
 import type { GenerationVariant } from '@/shared/hooks/variants/useVariants';
 import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext';
-import { buildDuplicateClipEdit } from '@/tools/video-editor/lib/duplicate-clip';
-import { planGenerationAssetRegistration } from '@/tools/video-editor/lib/timeline-asset-plans';
+import {
+  executeGenerationAssetRegistrationPlan,
+  planGenerationAssetRegistration,
+} from '@/tools/video-editor/lib/timeline-asset-plans';
+import { useTimelineCommands } from '@/tools/video-editor/hooks/useTimelineCommands';
 import {
   useTimelineEditorOps,
   useTimelineMutableAdapters,
@@ -25,7 +28,8 @@ export interface UseAddVariantAsGenerationResult {
 export function useAddVariantAsGeneration(): UseAddVariantAsGenerationResult {
   const runtime = useVideoEditorRuntime();
   const selectedProjectId = runtime.project.projectId;
-  const { applyEdit, registerGenerationAsset } = useTimelineEditorOps();
+  const commands = useTimelineCommands();
+  const { patchRegistry, registerAsset, unpatchRegistry } = useTimelineEditorOps();
   const { dataRef } = useTimelineMutableAdapters();
   const promoteVariant = usePromoteVariantToGeneration();
   const [pending, setPending] = useState<Set<string>>(() => new Set());
@@ -85,40 +89,24 @@ export function useAddVariantAsGeneration(): UseAddVariantAsGenerationResult {
         throw new Error('Failed to plan the new generation asset.');
       }
 
-      const latest = dataRef?.current;
-      if (!latest) {
-        throw new Error('Timeline state was unavailable before registering the asset.');
-      }
-
-      const edit = buildDuplicateClipEdit(latest, clipId, registrationPlan.assetId);
-      if (!edit) {
-        throw new Error('Failed to insert the new clip on the timeline.');
-      }
-
-      const newAssetKey = registerGenerationAsset({
-        assetId: registrationPlan.assetId,
-        generationId: promoted.id,
-        variantId: newVariantId,
-        variantType,
-        imageUrl: newLocation,
-        thumbUrl: newThumb ?? newLocation,
-        durationSeconds: typeof sourceAssetEntry?.duration === 'number' ? sourceAssetEntry.duration : undefined,
-        metadata: { content_type: contentType },
+      const { assetKey, persistPromise } = executeGenerationAssetRegistrationPlan({
+        plan: registrationPlan,
+        patchRegistry,
+        registerAsset,
       });
-
-      if (!newAssetKey) {
-        throw new Error('Failed to register the new generation as an asset.');
+      const insertResult = commands.addClip({
+        assetId: assetKey,
+        afterClipId: clipId,
+      });
+      if (!insertResult.ok) {
+        unpatchRegistry(assetKey);
+        throw new Error(insertResult.error.message);
       }
 
-      applyEdit({
-        type: 'rows',
-        rows: edit.rows,
-        metaUpdates: edit.metaUpdates,
-        clipOrderOverride: edit.clipOrderOverride,
-      }, {
-        selectedClipId: edit.clipId,
-        selectedTrackId: edit.trackId,
-        semantic: true,
+      void persistPromise.catch((error) => {
+        console.error('[video-editor] Failed to persist promoted variant asset:', error);
+        unpatchRegistry(assetKey);
+        runtime.toast.error('Failed to save asset');
       });
     } catch (error) {
       normalizeAndPresentError(error, {
@@ -128,7 +116,7 @@ export function useAddVariantAsGeneration(): UseAddVariantAsGenerationResult {
     } finally {
       setPendingKey(key, false);
     }
-  }, [applyEdit, dataRef, promoteVariant, registerGenerationAsset, runtime.toast, selectedProjectId, setPendingKey]);
+  }, [commands, dataRef, patchRegistry, promoteVariant, registerAsset, runtime.toast, selectedProjectId, setPendingKey, unpatchRegistry]);
 
   const isPending = useCallback(
     (clipId: string, variantId: string) => pending.has(`${clipId}:${variantId}`),

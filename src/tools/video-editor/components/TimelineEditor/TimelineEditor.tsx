@@ -37,10 +37,13 @@ import { useStaleVariants } from '@/tools/video-editor/hooks/useStaleVariants';
 import { useAddVariantAsGeneration } from '@/tools/video-editor/hooks/useAddVariantAsGeneration';
 import { useShotGroupHandlers } from '@/tools/video-editor/hooks/useShotGroupHandlers';
 import { useSwitchToFinalVideo } from '@/tools/video-editor/hooks/useSwitchToFinalVideo';
+import { useTimelineCommands } from '@/tools/video-editor/hooks/useTimelineCommands';
 import { useTimelineScale } from '@/tools/video-editor/hooks/useTimelineScale';
-import { buildDuplicateClipEdit } from '@/tools/video-editor/lib/duplicate-clip';
 import { duplicateGenerationAsset } from '@/tools/video-editor/lib/generation-utils';
-import { planGenerationAssetRegistration } from '@/tools/video-editor/lib/timeline-asset-plans';
+import {
+  executeGenerationAssetRegistrationPlan,
+  planGenerationAssetRegistration,
+} from '@/tools/video-editor/lib/timeline-asset-plans';
 import {
   clampClipToMediaDuration,
   convertOverhangToHold,
@@ -199,6 +202,7 @@ function TimelineEditorComponent({ onOpenSequenceCreator }: TimelineEditorProps)
   const { createShot, isCreating } = useShotCreation();
   const { navigateToShot } = useShotNavigation();
   const runtime = useVideoEditorRuntime();
+  const commands = useTimelineCommands();
   const selectedProjectId = runtime.project.projectId;
   const shots = runtime.shots.shots;
   const {
@@ -753,44 +757,24 @@ function TimelineEditorComponent({ onOpenSequenceCreator }: TimelineEditorProps)
         throw new Error('Failed to plan the duplicated asset.');
       }
 
-      const nextCurrent = dataRef.current;
-      if (!nextCurrent) {
-        throw new Error('Timeline state was unavailable before registering the duplicated asset.');
-      }
-
-      const duplicateEdit = buildDuplicateClipEdit(nextCurrent, clipId, registrationPlan.assetId);
-      if (!duplicateEdit) {
-        throw new Error('Failed to insert the duplicated clip on the timeline.');
-      }
-
-      const duplicatedAssetKey = registerGenerationAsset({
-        assetId: registrationPlan.assetId,
-        generationId: duplicatedGeneration.generationId,
-        variantId: duplicatedGeneration.variantId,
-        variantType: duplicatedGeneration.variantType,
-        imageUrl: duplicatedGeneration.imageUrl,
-        thumbUrl: duplicatedGeneration.thumbUrl,
-        durationSeconds: typeof assetEntry?.duration === 'number' ? assetEntry.duration : undefined,
-        metadata: {
-          content_type: assetEntry?.type ?? (
-            duplicatedGeneration.variantType === 'video' ? 'video/mp4' : 'image/png'
-          ),
-        },
+      const { assetKey, persistPromise } = executeGenerationAssetRegistrationPlan({
+        plan: registrationPlan,
+        patchRegistry,
+        registerAsset,
       });
-
-      if (!duplicatedAssetKey) {
-        throw new Error('Failed to register the duplicated asset.');
+      const insertResult = commands.addClip({
+        assetId: assetKey,
+        afterClipId: clipId,
+      });
+      if (!insertResult.ok) {
+        unpatchRegistry(assetKey);
+        throw new Error(insertResult.error.message);
       }
 
-      applyEdit({
-        type: 'rows',
-        rows: duplicateEdit.rows,
-        metaUpdates: duplicateEdit.metaUpdates,
-        clipOrderOverride: duplicateEdit.clipOrderOverride,
-      }, {
-        selectedClipId: duplicateEdit.clipId,
-        selectedTrackId: duplicateEdit.trackId,
-        semantic: true,
+      void persistPromise.catch((error) => {
+        console.error('[video-editor] Failed to persist duplicated asset:', error);
+        unpatchRegistry(assetKey);
+        runtime.toast.error('Failed to save asset');
       });
     } catch (error) {
       normalizeAndPresentError(error, {
@@ -800,7 +784,7 @@ function TimelineEditorComponent({ onOpenSequenceCreator }: TimelineEditorProps)
     } finally {
       setDuplicatingClipId((currentClipId) => (currentClipId === clipId ? null : currentClipId));
     }
-  }, [applyEdit, dataRef, registerGenerationAsset, runtime.toast, selectedProjectId]);
+  }, [commands, dataRef, patchRegistry, registerAsset, runtime.toast, selectedProjectId, unpatchRegistry]);
 
   const handleTrimClipToMediaEnd = useCallback((clipId: string) => {
     const current = dataRef.current;

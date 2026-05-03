@@ -19,9 +19,10 @@ export default defineConfig({
       'react-dom': path.resolve(projectRoot, 'node_modules/react-dom'),
       'remotion': path.resolve(projectRoot, 'node_modules/remotion'),
       '@remotion/layout-utils': path.resolve(projectRoot, 'node_modules/@remotion/layout-utils'),
-      '@banodoco/timeline-composition/registry.generated': path.resolve(projectRoot, 'node_modules/@banodoco/timeline-composition/typescript/src/registry.generated.ts'),
-      '@banodoco/timeline-composition/theme-api': path.resolve(projectRoot, 'node_modules/@banodoco/timeline-composition/typescript/src/theme-api.ts'),
-      '@banodoco/timeline-composition': path.resolve(projectRoot, 'node_modules/@banodoco/timeline-composition'),
+      '@banodoco/timeline-composition/registry.generated': path.resolve(projectRoot, 'src/test/shims/banodoco/timeline-composition/registry.generated.ts'),
+      '@banodoco/timeline-composition/theme-api': path.resolve(projectRoot, 'src/test/shims/banodoco/timeline-composition/theme-api.ts'),
+      '@banodoco/timeline-composition': path.resolve(projectRoot, 'src/test/shims/banodoco/timeline-composition'),
+      '@banodoco/timeline-schema': path.resolve(projectRoot, 'src/test/shims/banodoco/timeline-schema.ts'),
       // Sprint 5: workspace-primitive aliases for the linked packages.
       // The composition package's animations.generated / transitions.generated
       // / effects.generated import via these aliases. Reigh's bundler needs

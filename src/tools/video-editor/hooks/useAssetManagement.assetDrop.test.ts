@@ -59,12 +59,37 @@ describe('buildAssetDropEdit media kind validation', () => {
       time: 2,
     });
 
+    expect(edit?.rows[0]?.actions[0]).toMatchObject({
+      start: 2,
+      end: 6,
+    });
     expect(edit?.metaUpdates[edit.clipId]).toMatchObject({
       asset: 'asset1',
       track: 'V1',
       clipType: 'media',
       from: 0,
       to: 4,
+    });
+  });
+
+  it('uses the 5 second visible-span fallback when video duration is unresolved and no clip span override is provided', () => {
+    const current = createTimelineData('video/mp4', 'https://example.com/missing-duration.mp4');
+    delete current.registry.assets.asset1.duration;
+
+    const edit = buildAssetDropEdit({
+      current,
+      assetKey: 'asset1',
+      trackId: 'V1',
+      time: 1,
+    });
+
+    expect(edit?.rows[0]?.actions[0]).toMatchObject({
+      start: 1,
+      end: 6,
+    });
+    expect(edit?.metaUpdates[edit.clipId]).toMatchObject({
+      asset: 'asset1',
+      to: 5,
     });
   });
 
