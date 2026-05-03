@@ -34,6 +34,12 @@ export interface TimelineAvailabilityState {
 export const UNMOUNTED_TIMELINE_AVAILABILITY: TimelineAvailabilityState = Object.freeze({ mounted: false });
 export const MOUNTED_TIMELINE_AVAILABILITY: TimelineAvailabilityState = Object.freeze({ mounted: true });
 
+export function hasMountedTimelineAvailability(
+  availability: Pick<TimelineAvailabilityState, 'mounted'> & { hasProvider?: boolean },
+): boolean {
+  return availability.mounted && availability.hasProvider !== false;
+}
+
 function getTimelineAvailabilityState(mounted: boolean): TimelineAvailabilityState {
   return mounted ? MOUNTED_TIMELINE_AVAILABILITY : UNMOUNTED_TIMELINE_AVAILABILITY;
 }

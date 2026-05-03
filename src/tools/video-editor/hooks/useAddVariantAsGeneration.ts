@@ -7,9 +7,8 @@ import type { GenerationVariant } from '@/shared/hooks/variants/useVariants';
 import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext';
 import {
   executeGenerationAssetRegistrationPlan,
-  planGenerationAssetRegistration,
+  planDuplicateGenerationAssetRegistration,
 } from '@/tools/video-editor/lib/timeline-asset-plans';
-import { getDuplicateGenerationDurationContract } from '@/tools/video-editor/lib/timeline-asset-durations';
 import { useTimelineCommands } from '@/tools/video-editor/hooks/useTimelineCommands';
 import {
   useTimelineEditorOps,
@@ -75,17 +74,13 @@ export function useAddVariantAsGeneration(): UseAddVariantAsGenerationResult {
 
       const isVideo = hasVideoExtension(newLocation);
       const variantType: 'image' | 'video' = isVideo ? 'video' : 'image';
-      const durationContract = getDuplicateGenerationDurationContract(sourceAssetEntry);
-      const contentType = sourceAssetEntry?.type
-        ?? (isVideo ? 'video/mp4' : 'image/png');
-      const registrationPlan = planGenerationAssetRegistration({
+      const registrationPlan = planDuplicateGenerationAssetRegistration({
         generationId: promoted.id,
         variantId: newVariantId,
         variantType,
         imageUrl: newLocation,
         thumbUrl: newThumb ?? newLocation,
-        assetDurationSeconds: durationContract.assetDurationSeconds,
-        metadata: { content_type: contentType },
+        sourceAssetEntry,
       });
       if (!registrationPlan.ok) {
         throw new Error('Failed to plan the new generation asset.');

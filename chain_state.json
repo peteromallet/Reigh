@@ -1,7 +1,7 @@
 {
   "current_milestone_index": 1,
   "current_plan_name": "video-editor-developer-20260503-0101",
-  "last_state": "stalled",
+  "last_state": "worker_blocked",
   "pr_number": null,
   "pr_state": "open",
   "completed": [

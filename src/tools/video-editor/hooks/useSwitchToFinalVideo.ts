@@ -2,13 +2,10 @@ import { useCallback } from 'react';
 import { generateUUID } from '@/shared/lib/taskCreation/ids';
 import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext';
 import { getFinalVideoReplacementDurationContract } from '@/tools/video-editor/lib/timeline-asset-durations';
-import {
-  buildFinalVideoAssetEntry,
-  resolveFinalVideoDurationSeconds,
-} from '@/tools/video-editor/lib/finalVideoAssets';
+import { resolveFinalVideoDurationSeconds } from '@/tools/video-editor/lib/finalVideoAssets';
 import {
   executeGenerationAssetRegistrationPlan,
-  planGenerationAssetRegistration,
+  planFinalVideoGenerationAssetRegistration,
 } from '@/tools/video-editor/lib/timeline-asset-plans';
 import {
   buildSwitchShotGroupToFinalVideoMutation,
@@ -38,7 +35,7 @@ function planFinalVideoAssetRegistration(
   finalVideo: ShotFinalVideo,
   currentData: TimelineDataRef['current'],
 ): Promise<{
-  plan: Extract<ReturnType<typeof planGenerationAssetRegistration>, { ok: true }>;
+  plan: Extract<ReturnType<typeof planFinalVideoGenerationAssetRegistration>, { ok: true }>;
   assetDurationSeconds: number | null;
 }> {
   return (async () => {
@@ -46,17 +43,12 @@ function planFinalVideoAssetRegistration(
       await resolveFinalVideoDurationSeconds(finalVideo, currentData?.registry.assets),
     );
     const assetKey = generateUUID();
-    const assetEntry = buildFinalVideoAssetEntry(finalVideo, durationContract.assetDurationSeconds);
-    const plan = planGenerationAssetRegistration({
+    const plan = planFinalVideoGenerationAssetRegistration({
       assetId: assetKey,
       generationId: finalVideo.id,
-      variantType: 'video',
       imageUrl: finalVideo.location,
       thumbUrl: finalVideo.thumbnailUrl ?? finalVideo.location,
       assetDurationSeconds: durationContract.assetDurationSeconds,
-      metadata: {
-        content_type: assetEntry.type,
-      },
     });
     if (!plan.ok) {
       throw new Error('Failed to plan final video asset registration.');

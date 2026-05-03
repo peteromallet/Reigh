@@ -3,6 +3,22 @@ import type { Shot, GenerationRow } from '@/domains/generation/types';
 import type { DataProvider } from '@/tools/video-editor/data/DataProvider';
 import type { ShotFinalVideo } from '@/tools/travel-between-images/hooks/video/useShotFinalVideos';
 
+/**
+ * Checklist-backed runtime inventory for the host surfaces Sprint 2 is
+ * allowed to depend on directly.
+ */
+export const VIDEO_EDITOR_HOST_PORT_NAMES = [
+  'DataProvider',
+  'AssetResolver',
+  'ProjectHost',
+  'ShotsHost',
+  'MediaLightboxHost',
+  'AgentChatHost',
+  'ToastHost',
+  'TelemetryHost',
+  'AuthHost',
+] as const;
+
 export interface VideoEditorAssetResolver {
   resolveAssetUrl: DataProvider['resolveAssetUrl'];
 }

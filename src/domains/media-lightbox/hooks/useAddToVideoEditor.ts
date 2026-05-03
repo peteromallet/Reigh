@@ -12,6 +12,8 @@ import {
   planGenerationAssetRegistration,
 } from '@/tools/video-editor/lib/timeline-asset-plans';
 import {
+  hasMountedTimelineAvailability,
+  useTimelineAvailabilityState,
   useTimelineEditorDataSafe,
   useTimelineEditorOpsSafe,
 } from '@/tools/video-editor/hooks/timelineStore';
@@ -46,8 +48,10 @@ export function useAddToVideoEditor(media: GenerationRow | undefined): UseAddToV
   const ops = useTimelineEditorOpsSafe();
   const data = useTimelineEditorDataSafe();
   const commands = useTimelineCommandsSafe();
+  const availability = useTimelineAvailabilityState();
   const navigate = useNavigate();
   const { settings: videoSettings } = useToolSettings(videoEditorSettings.id);
+  const hasMountedEditor = hasMountedTimelineAvailability(availability);
 
   const generationId = media ? (getGenerationId(media) ?? media.id) : null;
 
@@ -77,7 +81,12 @@ export function useAddToVideoEditor(media: GenerationRow | undefined): UseAddToV
   const onClick = useCallback(() => {
     if (!media || !generationId) return;
 
-    if (commands && ops && data) {
+    const hasMountedCommandSurface = hasMountedEditor
+      && commands !== null
+      && ops !== null
+      && data !== null;
+
+    if (hasMountedCommandSurface && commands && ops && data) {
       const registrationPlan = planGenerationAssetRegistration({
         generationId,
         variantType: media.type === 'video' ? 'video' : 'image',
@@ -128,7 +137,7 @@ export function useAddToVideoEditor(media: GenerationRow | undefined): UseAddToV
       writePendingAdds([...current, generationId]);
     }
     setPhase('staged');
-  }, [commands, data, generationId, media, navigate, ops, phase, videoSettings?.lastTimelineId]);
+  }, [commands, data, generationId, hasMountedEditor, media, navigate, ops, phase, videoSettings?.lastTimelineId]);
 
   return { onClick, phase };
 }

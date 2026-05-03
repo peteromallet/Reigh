@@ -9,8 +9,15 @@ import { useShots } from '@/shared/contexts/ShotsContext';
 import { getMediaUrl, getThumbnailUrl } from '@/shared/lib/media/mediaTypeHelpers';
 import { inferDragKind } from '@/tools/video-editor/lib/drop-position';
 import { resolveFinalVideoDurationSeconds } from '@/tools/video-editor/lib/finalVideoAssets';
-import { getFinalVideoDropDurationContract } from '@/tools/video-editor/lib/timeline-asset-durations';
-import { planAssetDropTarget, planGenerationAssetRegistration } from '@/tools/video-editor/lib/timeline-asset-plans';
+import {
+  EXTERNAL_DROP_VISIBLE_VIDEO_FALLBACK_SECONDS,
+  getFinalVideoDropDurationContract,
+} from '@/tools/video-editor/lib/timeline-asset-durations';
+import {
+  planAssetDropTarget,
+  planFinalVideoGenerationAssetRegistration,
+  planGenerationAssetRegistration,
+} from '@/tools/video-editor/lib/timeline-asset-plans';
 import type { DragCoordinator } from '@/tools/video-editor/hooks/useDragCoordinator';
 import {
   buildAssetDropEdit,
@@ -130,15 +137,11 @@ async function dispatchTimelineDrop({
     if (finalVideo) {
       const assetDurationSeconds = await resolveFinalVideoDurationSecondsWithRetry(finalVideo, dataRef.current?.registry.assets);
       const durationContract = getFinalVideoDropDurationContract(assetDurationSeconds);
-      const registrationPlan = planGenerationAssetRegistration({
+      const registrationPlan = planFinalVideoGenerationAssetRegistration({
         generationId: finalVideo.id,
-        variantType: 'video',
         imageUrl: finalVideo.location,
         thumbUrl: finalVideo.thumbnailUrl ?? finalVideo.location,
         assetDurationSeconds: durationContract.assetDurationSeconds,
-        metadata: {
-          content_type: 'video/mp4',
-        },
       });
       if (!registrationPlan.ok) {
         return;
@@ -152,7 +155,7 @@ async function dispatchTimelineDrop({
         forceNewTrack: dropPosition.isNewTrack,
         insertAtTop,
         time: dropPosition.time,
-        duration: durationContract.clipSpanSeconds ?? 5,
+        duration: durationContract.clipSpanSeconds ?? EXTERNAL_DROP_VISIBLE_VIDEO_FALLBACK_SECONDS,
       });
       if (!resolvedTarget.ok) {
         return;

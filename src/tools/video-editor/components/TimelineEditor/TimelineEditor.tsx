@@ -42,9 +42,8 @@ import { useTimelineScale } from '@/tools/video-editor/hooks/useTimelineScale';
 import { duplicateGenerationAsset } from '@/tools/video-editor/lib/generation-utils';
 import {
   executeGenerationAssetRegistrationPlan,
-  planGenerationAssetRegistration,
+  planDuplicateGenerationAssetRegistration,
 } from '@/tools/video-editor/lib/timeline-asset-plans';
-import { getDuplicateGenerationDurationContract } from '@/tools/video-editor/lib/timeline-asset-durations';
 import {
   clampClipToMediaDuration,
   convertOverhangToHold,
@@ -741,19 +740,13 @@ function TimelineEditorComponent({ onOpenSequenceCreator }: TimelineEditorProps)
         generationId,
         projectId: selectedProjectId,
       });
-      const durationContract = getDuplicateGenerationDurationContract(assetEntry);
-      const registrationPlan = planGenerationAssetRegistration({
+      const registrationPlan = planDuplicateGenerationAssetRegistration({
         generationId: duplicatedGeneration.generationId,
         variantId: duplicatedGeneration.variantId,
         variantType: duplicatedGeneration.variantType,
         imageUrl: duplicatedGeneration.imageUrl,
         thumbUrl: duplicatedGeneration.thumbUrl,
-        assetDurationSeconds: durationContract.assetDurationSeconds,
-        metadata: {
-          content_type: assetEntry?.type ?? (
-            duplicatedGeneration.variantType === 'video' ? 'video/mp4' : 'image/png'
-          ),
-        },
+        sourceAssetEntry: assetEntry,
       });
       if (!registrationPlan.ok) {
         throw new Error('Failed to plan the duplicated asset.');

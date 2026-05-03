@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { buildAssetDropEdit } from '@/tools/video-editor/hooks/useAssetManagement';
 import {
+  EXTERNAL_DROP_VISIBLE_VIDEO_FALLBACK_SECONDS,
   getDroppedGenerationDurationContract,
   getDuplicateGenerationDurationContract,
+  getFinalVideoReplacementDurationContract,
 } from '@/tools/video-editor/lib/timeline-asset-durations';
-import { planGenerationAssetRegistration } from '@/tools/video-editor/lib/timeline-asset-plans';
+import {
+  planDuplicateGenerationAssetRegistration,
+  planFinalVideoGenerationAssetRegistration,
+  planGenerationAssetRegistration,
+} from '@/tools/video-editor/lib/timeline-asset-plans';
 import type { TimelineData } from '@/tools/video-editor/lib/timeline-data';
 
 const createTimelineData = (assetType: string, file: string): TimelineData => ({
@@ -134,15 +140,18 @@ describe('buildAssetDropEdit media kind validation', () => {
   });
 
   it('preserves explicit asset duration for duplicate-generation style registrations', () => {
-    const registrationPlan = planGenerationAssetRegistration({
+    const registrationPlan = planDuplicateGenerationAssetRegistration({
       assetId: 'asset-dup',
       generationId: 'gen-video',
       variantId: 'variant-video',
       variantType: 'video',
       imageUrl: 'https://example.com/source.mp4',
       thumbUrl: 'https://example.com/source-thumb.jpg',
-      assetDurationSeconds: 8.25,
-      metadata: { content_type: 'video/mp4' },
+      sourceAssetEntry: {
+        file: 'https://example.com/source.mp4',
+        type: 'video/mp4',
+        duration: 8.25,
+      },
     });
 
     expect(registrationPlan).toMatchObject({
@@ -175,8 +184,57 @@ describe('buildAssetDropEdit media kind validation', () => {
       metadata: { content_type: 'video/mp4' },
     })).toEqual({
       assetDurationSeconds: null,
-      clipSpanSeconds: 5,
+      clipSpanSeconds: EXTERNAL_DROP_VISIBLE_VIDEO_FALLBACK_SECONDS,
     });
+  });
+
+  it('keeps final-video replacement duration unresolved instead of falling back to a visible five-second clip', () => {
+    expect(getFinalVideoReplacementDurationContract(null)).toEqual({
+      assetDurationSeconds: null,
+      clipSpanSeconds: null,
+    });
+
+    const registrationPlan = planFinalVideoGenerationAssetRegistration({
+      assetId: 'asset-final',
+      generationId: 'final-video-1',
+      imageUrl: 'https://example.com/final.mp4',
+      thumbUrl: 'https://example.com/final-thumb.jpg',
+      assetDurationSeconds: null,
+    });
+
+    expect(registrationPlan.ok).toBe(true);
+    if (!registrationPlan.ok) {
+      throw new Error('final video registration plan should succeed');
+    }
+
+    expect(registrationPlan.assetEntry.duration).toBeUndefined();
+    expect(registrationPlan.assetEntry.type).toBe('video/mp4');
+    expect(registrationPlan.assetEntry.generationId).toBe('final-video-1');
+  });
+
+  it('keeps external-drop registrations explicit about their unresolved five-second fallback', () => {
+    const registrationPlan = planGenerationAssetRegistration({
+      assetId: 'asset-drop-fallback',
+      generationId: 'gen-video-fallback',
+      variantType: 'video',
+      imageUrl: 'https://example.com/final.mp4',
+      thumbUrl: 'https://example.com/final-thumb.jpg',
+      assetDurationSeconds: null,
+      metadata: { content_type: 'video/mp4' },
+    });
+
+    expect(registrationPlan.ok).toBe(true);
+    if (!registrationPlan.ok) {
+      throw new Error('external-drop registration plan should succeed');
+    }
+
+    expect(registrationPlan.assetEntry.duration).toBeUndefined();
+    expect(getDroppedGenerationDurationContract({
+      generationId: 'gen-video-fallback',
+      imageUrl: 'https://example.com/final.mp4',
+      variantType: 'video',
+      metadata: { content_type: 'video/mp4' },
+    }).clipSpanSeconds).toBe(EXTERNAL_DROP_VISIBLE_VIDEO_FALLBACK_SECONDS);
   });
 });
 

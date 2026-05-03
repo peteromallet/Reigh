@@ -22,6 +22,7 @@ import { readPositiveDurationSeconds } from '@/tools/video-editor/lib/timeline-a
 import type { TimelineData } from '@/tools/video-editor/lib/timeline-data';
 import { moveTrackWithinKind } from '@/tools/video-editor/hooks/useTimelineTrackManagement';
 import {
+  hasMountedTimelineAvailability,
   useTimelineAvailabilityState,
   useTimelineStoreApi,
   useTimelineStoreApiSafe,
@@ -192,6 +193,22 @@ export const PUBLIC_TIMELINE_COMMAND_NAMES = [
   'registerAsset',
   'setClipParams',
 ] as const satisfies ReadonlyArray<keyof TimelineCommands>;
+
+/**
+ * Sprint 2 intentionally keeps the public facade on non-gesture entrypoints.
+ * Gesture-driven timeline edits continue to reuse shared planners internally.
+ */
+export const PUBLIC_TIMELINE_COMMAND_SCOPE = 'non-gesture' as const;
+export const INTERNAL_GESTURE_TIMELINE_MUTATIONS = [
+  'useExternalDrop',
+  'usePinnedShotGroups',
+] as const;
+
+const PUBLIC_TIMELINE_COMMAND_NAME_SET = new Set<string>(PUBLIC_TIMELINE_COMMAND_NAMES);
+
+export function isPublicTimelineCommandName(value: string): value is typeof PUBLIC_TIMELINE_COMMAND_NAMES[number] {
+  return PUBLIC_TIMELINE_COMMAND_NAME_SET.has(value);
+}
 
 type CommandStoreState = {
   data: TimelineEditorDataContextValue;
@@ -823,9 +840,9 @@ export function useTimelineCommandsSafe(): TimelineCommands | null {
   const availability = useTimelineAvailabilityState();
 
   return useMemo(() => {
-    if (!store || !availability.mounted) {
+    if (!store || !hasMountedTimelineAvailability(availability)) {
       return null;
     }
     return createTimelineCommands(store);
-  }, [availability.mounted, store]);
+  }, [availability.hasProvider, availability.mounted, store]);
 }

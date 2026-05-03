@@ -72,6 +72,8 @@ Planned stable host/adapter names for Sprint 2:
 - `TelemetryHost`
 - `AuthHost`
 
+These names are the runtime source of truth and must stay aligned with `VIDEO_EDITOR_HOST_PORT_NAMES` in `src/tools/video-editor/runtime/ports.ts`.
+
 Sprint 2 host-governance work should treat these imports as the watched Reigh-coupling surface under `src/tools/video-editor/`:
 
 ```text
@@ -99,6 +101,7 @@ Governance policy:
 - New direct imports from the watched surface are not allowed unless they land behind a named port/adapter or are added to the explicit allowlist below.
 - Existing direct imports listed in the allowlist are tolerated only for the reason stated here; the allowlist must shrink or stay flat during Sprint 2.
 - `src/tools/video-editor/hooks/useAddVariantAsGeneration.ts` is explicitly not allowlisted. It is a required migration target for the shared command/planner surface.
+- Mounted command consumers must stay on the documented non-gesture facade (`useTimelineCommands()` / `useTimelineCommandsSafe()`); gesture-heavy flows remain internal even when they reuse the same duration helpers.
 
 ## Authoritative host inventory
 

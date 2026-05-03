@@ -7,7 +7,10 @@ import {
 } from '@/tools/video-editor/lib/coordinate-utils';
 import { getTrackIndex } from '@/tools/video-editor/lib/editor-utils';
 import { getNextClipId, type ClipMeta, type TimelineData } from '@/tools/video-editor/lib/timeline-data';
-import { readPositiveDurationSeconds } from '@/tools/video-editor/lib/timeline-asset-durations';
+import {
+  getDuplicateGenerationDurationContract,
+  readPositiveDurationSeconds,
+} from '@/tools/video-editor/lib/timeline-asset-durations';
 import type { AssetRegistryEntry, ClipType } from '@/tools/video-editor/types';
 import type { TimelineAction } from '@/tools/video-editor/types/timeline-canvas';
 
@@ -120,6 +123,64 @@ export function planGenerationAssetRegistration({
       ...(resolvedThumbUrl !== imageUrl ? { thumbnailUrl: resolvedThumbUrl } : {}),
     },
   };
+}
+
+export function planDuplicateGenerationAssetRegistration({
+  assetId,
+  generationId,
+  variantId,
+  variantType,
+  imageUrl,
+  thumbUrl,
+  sourceAssetEntry,
+}: {
+  assetId?: string;
+  generationId: string;
+  variantId?: string;
+  variantType: 'image' | 'video';
+  imageUrl: string;
+  thumbUrl?: string | null;
+  sourceAssetEntry: AssetRegistryEntry | undefined;
+}): PlannedGenerationAssetRegistration {
+  const durationContract = getDuplicateGenerationDurationContract(sourceAssetEntry);
+  return planGenerationAssetRegistration({
+    assetId,
+    generationId,
+    variantId,
+    variantType,
+    imageUrl,
+    thumbUrl,
+    assetDurationSeconds: durationContract.assetDurationSeconds,
+    metadata: {
+      content_type: sourceAssetEntry?.type ?? (variantType === 'video' ? 'video/mp4' : 'image/png'),
+    },
+  });
+}
+
+export function planFinalVideoGenerationAssetRegistration({
+  assetId,
+  generationId,
+  imageUrl,
+  thumbUrl,
+  assetDurationSeconds,
+}: {
+  assetId?: string;
+  generationId: string;
+  imageUrl: string;
+  thumbUrl?: string | null;
+  assetDurationSeconds: number | null;
+}): PlannedGenerationAssetRegistration {
+  return planGenerationAssetRegistration({
+    assetId,
+    generationId,
+    variantType: 'video',
+    imageUrl,
+    thumbUrl,
+    assetDurationSeconds,
+    metadata: {
+      content_type: 'video/mp4',
+    },
+  });
 }
 
 export function executeGenerationAssetRegistrationPlan({

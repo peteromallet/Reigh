@@ -20,7 +20,10 @@ import {
 import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext';
 import { buildVideoEditorLightboxMedia, VideoEditorProvider } from '@/tools/video-editor/contexts/VideoEditorProvider';
 import {
+  INTERNAL_GESTURE_TIMELINE_MUTATIONS,
   PUBLIC_TIMELINE_COMMAND_NAMES,
+  PUBLIC_TIMELINE_COMMAND_SCOPE,
+  isPublicTimelineCommandName,
   useTimelineCommands,
   useTimelineCommandsSafe,
 } from '@/tools/video-editor/hooks/useTimelineCommands';
@@ -41,6 +44,7 @@ import {
   shouldToggleTouchSelection,
 } from '@/tools/video-editor/lib/mobile-interaction-model';
 import { configToRows, type TimelineData } from '@/tools/video-editor/lib/timeline-data';
+import { VIDEO_EDITOR_HOST_PORT_NAMES } from '@/tools/video-editor/runtime/ports';
 import type { DataProvider } from '@/tools/video-editor/data/DataProvider';
 
 const navigateMock = vi.fn();
@@ -420,10 +424,11 @@ function buildCommandTestStore(overrides?: {
   patchRegistry?: (...args: unknown[]) => void;
   unpatchRegistry?: (...args: unknown[]) => void;
   data?: TimelineData;
+  mounted?: boolean;
 }) {
   const baseStore = createTimelineStore();
   const current = overrides?.data ?? buildCommandTimelineData();
-  return createTimelineStore({
+  const store = createTimelineStore({
     data: {
       ...baseStore.getState().data,
       data: current,
@@ -440,6 +445,10 @@ function buildCommandTestStore(overrides?: {
       unpatchRegistry: overrides?.unpatchRegistry ?? vi.fn(),
     },
   });
+  if (overrides?.mounted === false) {
+    store.getState().setMounted(false);
+  }
+  return store;
 }
 
 const media = {
@@ -716,6 +725,35 @@ describe('VideoEditorProvider', () => {
     );
   });
 
+  it('keeps staged add-to-editor behavior when a timeline provider exists but the mounted store is unavailable', () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+    const store = buildCommandTestStore({ mounted: false });
+
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <TimelineStoreProvider store={store}>
+            <AddToVideoEditorConsumer />
+          </TimelineStoreProvider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId('timeline-mounted')).toHaveTextContent('false');
+
+    fireEvent.click(screen.getByRole('button', { name: 'add to video editor' }));
+
+    expect(readPendingAdds()).toEqual(['generation-1']);
+    expect(screen.getByTestId('add-phase')).toHaveTextContent('staged');
+    expect(navigateMock).not.toHaveBeenCalled();
+  });
+
   it('exposes the mounted timeline command facade and keeps the safe hook nullable outside a mounted editor', () => {
     const store = buildCommandTestStore();
     const wrapper = ({ children }: { children: ReactNode }) => (
@@ -730,7 +768,10 @@ describe('VideoEditorProvider', () => {
       safeCommands: useTimelineCommandsSafe(),
     }), { wrapper });
 
-    expect(Object.keys(inside.result.current.commands).sort()).toEqual([...PUBLIC_TIMELINE_COMMAND_NAMES].sort());
+    const commandNames = Object.keys(inside.result.current.commands).sort();
+    expect(commandNames).toEqual([...PUBLIC_TIMELINE_COMMAND_NAMES].sort());
+    expect(commandNames.every(isPublicTimelineCommandName)).toBe(true);
+    expect(PUBLIC_TIMELINE_COMMAND_SCOPE).toBe('non-gesture');
     expect(inside.result.current.safeCommands).not.toBeNull();
   });
 
@@ -909,10 +950,18 @@ describe('VideoEditorProvider', () => {
 
     expect(checklist).toContain('useTimelineCommandsSafe()');
     expect(checklist).toContain('### Command-facade caller set');
+    expect(checklist).toContain('VIDEO_EDITOR_HOST_PORT_NAMES');
     expect(checklist).toContain('src/domains/media-lightbox/hooks/useAddToVideoEditor.ts');
     expect(checklist).toContain('src/tools/video-editor/hooks/useAddVariantAsGeneration.ts');
     expect(checklist).toContain('src/tools/video-editor/hooks/useSwitchToFinalVideo.ts');
     expect(checklist).toContain('src/tools/video-editor/hooks/useExternalDrop.ts');
+    expect(checklist).toContain('non-gesture facade');
+    for (const portName of VIDEO_EDITOR_HOST_PORT_NAMES) {
+      expect(checklist).toContain(`\`${portName}\``);
+    }
+    for (const gestureOnlyHook of INTERNAL_GESTURE_TIMELINE_MUTATIONS) {
+      expect(checklist).toContain(gestureOnlyHook);
+    }
     expect(allowlist).toContain('src/tools/video-editor/adapters/reigh/generationLookup.ts');
     expect(allowlist).toContain('src/tools/video-editor/adapters/reigh/useReighEffectsCatalog.ts');
     expect(allowlist).toContain('src/tools/video-editor/adapters/reigh/variantPromotionLookup.ts');

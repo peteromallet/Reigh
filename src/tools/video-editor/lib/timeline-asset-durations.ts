@@ -6,6 +6,9 @@ export type VideoDurationContract = {
   clipSpanSeconds: number | null;
 };
 
+export const DEFAULT_VISIBLE_CLIP_SPAN_SECONDS = 5;
+export const EXTERNAL_DROP_VISIBLE_VIDEO_FALLBACK_SECONDS = DEFAULT_VISIBLE_CLIP_SPAN_SECONDS;
+
 /**
  * Sprint 2 keeps registry asset duration separate from visible clip span:
  * duplicate-generation style callers preserve the source asset duration on the
@@ -56,18 +59,18 @@ export function getDroppedGenerationDurationContract(data: GenerationDropData): 
   if (!isVideoGenerationDrop(data)) {
     return {
       assetDurationSeconds: null,
-      clipSpanSeconds: 5,
+      clipSpanSeconds: DEFAULT_VISIBLE_CLIP_SPAN_SECONDS,
     };
   }
 
   return {
     assetDurationSeconds,
-    clipSpanSeconds: assetDurationSeconds ?? 5,
+    clipSpanSeconds: assetDurationSeconds ?? EXTERNAL_DROP_VISIBLE_VIDEO_FALLBACK_SECONDS,
   };
 }
 
 export function getDroppedGenerationClipSpanSeconds(data: GenerationDropData): number {
-  return getDroppedGenerationDurationContract(data).clipSpanSeconds ?? 5;
+  return getDroppedGenerationDurationContract(data).clipSpanSeconds ?? EXTERNAL_DROP_VISIBLE_VIDEO_FALLBACK_SECONDS;
 }
 
 export function getFinalVideoDropDurationContract(
@@ -75,7 +78,7 @@ export function getFinalVideoDropDurationContract(
 ): VideoDurationContract {
   return {
     assetDurationSeconds,
-    clipSpanSeconds: assetDurationSeconds ?? 5,
+    clipSpanSeconds: assetDurationSeconds ?? EXTERNAL_DROP_VISIBLE_VIDEO_FALLBACK_SECONDS,
   };
 }
 

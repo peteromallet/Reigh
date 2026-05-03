@@ -709,6 +709,84 @@ describe('useSwitchToFinalVideo', () => {
     });
   });
 
+  it('keeps unresolved final-video replacement duration out of the registry and preserves the existing image span', async () => {
+    mockedExtractVideoMetadataFromUrl.mockResolvedValue({
+      duration_seconds: undefined,
+      frame_rate: 30,
+      total_frames: 0,
+      width: 1920,
+      height: 1080,
+      file_size: 0,
+    });
+    const applyEdit = vi.fn();
+    const patchRegistry = vi.fn();
+    const registerAsset = vi.fn(async () => undefined);
+    const dataRef = {
+      current: makeConfigTimelineData(
+        {
+          output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
+          tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+          clips: [
+            { id: 'clip-1', at: 4, track: 'V1', clipType: 'hold', asset: 'asset-1', hold: 5 },
+            { id: 'clip-2', at: 9, track: 'V1', clipType: 'hold', asset: 'asset-2', hold: 5 },
+          ],
+          pinnedShotGroups: [makePinnedGroup({
+            shotId: 'shot-1',
+            trackId: 'V1',
+            clipIds: ['clip-1', 'clip-2'],
+            mode: 'images',
+          })],
+        },
+        {
+          assets: {
+            'asset-1': { file: 'one.png', type: 'image/png', generationId: 'gen-1' },
+            'asset-2': { file: 'two.png', type: 'image/png', generationId: 'gen-2' },
+          },
+        },
+      ),
+    };
+
+    const { result } = renderHook(() => useSwitchToFinalVideo({
+      applyEdit,
+      dataRef,
+      finalVideoMap: new Map([['shot-1', { id: 'final-1', location: 'https://example.com/final.mp4', thumbnailUrl: null }]]),
+      patchRegistry,
+      registerAsset,
+    }));
+
+    await act(async () => {
+      await result.current.switchToFinalVideo({ shotId: 'shot-1', clipIds: ['clip-1', 'clip-2'], rowId: 'V1' });
+    });
+
+    await waitFor(() => {
+      expect(applyEdit).toHaveBeenCalledTimes(1);
+      expect(patchRegistry).toHaveBeenCalledTimes(1);
+    });
+
+    expect(patchRegistry.mock.calls[0]?.[1]).toEqual(expect.objectContaining({
+      file: 'https://example.com/final.mp4',
+      type: 'video/mp4',
+      generationId: 'final-1',
+    }));
+    expect(patchRegistry.mock.calls[0]?.[1]).not.toHaveProperty('duration');
+
+    const mutation = applyEdit.mock.calls[0][0];
+    expect(mutation.rows).toEqual([
+      {
+        id: 'V1',
+        actions: [
+          { id: 'clip-3', start: 4, end: 14, effectId: 'effect-clip-3' },
+        ],
+      },
+    ]);
+    expect(mutation.metaUpdates).toEqual({
+      'clip-3': expect.objectContaining({
+        asset: expect.any(String),
+        to: 10,
+      }),
+    });
+  });
+
   it('does not patch the registry when switching to final video cannot build a valid mutation', async () => {
     mockedExtractVideoMetadataFromUrl.mockResolvedValue({
       duration_seconds: 6,
