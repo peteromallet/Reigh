@@ -26,6 +26,9 @@ import {
   type MutableClipProperty,
 } from "@banodoco/timeline-ops";
 import type { TimelineConfigT } from "@banodoco/timeline-schema";
+import {
+  TRUSTED_SEQUENCE_CLIP_TYPES,
+} from "../../../../src/tools/video-editor/sequences/metadata.ts";
 
 export type TimelineToolResult = ToolResult;
 
@@ -40,6 +43,26 @@ const MUTABLE_CLIP_PROPERTIES: ClipProperty[] = [
   "width",
   "height",
 ];
+
+const INSTALLED_TIMELINE_THEME_IDS = ["2rp"] as const;
+
+const SUPPORTED_SET_PARAMS_CLIP_TYPES = [...TRUSTED_SEQUENCE_CLIP_TYPES] as readonly string[];
+
+function formatAvailableThemeIds(): string {
+  return INSTALLED_TIMELINE_THEME_IDS.join(", ");
+}
+
+function formatSupportedSetParamsClipTypes(): string {
+  return SUPPORTED_SET_PARAMS_CLIP_TYPES.join(", ");
+}
+
+function isInstalledTimelineThemeId(value: string): boolean {
+  return (INSTALLED_TIMELINE_THEME_IDS as readonly string[]).includes(value);
+}
+
+function supportsSetParamsClipType(value: unknown): boolean {
+  return typeof value === "string" && (SUPPORTED_SET_PARAMS_CLIP_TYPES as readonly string[]).includes(value);
+}
 
 function roundSeconds(value: number): number {
   return Math.round(value * 1000) / 1000;
@@ -726,6 +749,15 @@ export function setClipParams(
       || typeof args.params !== "object" || Array.isArray(args.params)) {
     return { result: "set_params requires clipId and a params object." };
   }
+  const targetClip = config.clips.find((clip) => clip.id === args.clipId);
+  if (!targetClip) {
+    return { result: `Clip ${args.clipId} was not found.` };
+  }
+  if (!supportsSetParamsClipType(targetClip.clipType)) {
+    return {
+      result: `Clip ${args.clipId} does not support set_params. Installed sequence clip types: ${formatSupportedSetParamsClipTypes()}.`,
+    };
+  }
   const opResult = opsSetClipParams(
     config as unknown as TimelineConfigT,
     args.clipId,
@@ -757,18 +789,25 @@ export function setTheme(
   if (typeof args.themeId !== "string") {
     return { result: "set_theme requires themeId." };
   }
-  const opResult = opsSetTimelineTheme(config as unknown as TimelineConfigT, args.themeId);
+  const themeId = args.themeId.trim();
+  if (themeId.length === 0) {
+    return { result: "set_theme requires a non-empty themeId." };
+  }
+  if (!isInstalledTimelineThemeId(themeId)) {
+    return { result: `Theme ${themeId} is not installed. Available themes: ${formatAvailableThemeIds()}.` };
+  }
+  const opResult = opsSetTimelineTheme(config as unknown as TimelineConfigT, themeId);
   if (!opResult.changed) {
     if (opResult.detail?.reason === "invalid_value") {
       return { result: "set_theme requires a non-empty themeId." };
     }
     // Theme already matches; return identity update so loop can no-op.
-    return { result: `Theme is already ${args.themeId}.` };
+    return { result: `Theme is already ${themeId}.` };
   }
   const previous = opResult.detail?.previousTheme as string | undefined;
   return {
     config: opResult.config as unknown as TimelineConfig,
-    result: `Switched theme from ${previous ?? "unset"} to ${args.themeId}. (Note: existing themed clips referencing the old theme's clipType may need remapping.)`,
+    result: `Switched theme from ${previous ?? "unset"} to ${themeId}. (Note: existing themed clips referencing the old theme's clipType may need remapping.)`,
   };
 }
 

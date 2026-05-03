@@ -181,7 +181,7 @@ function makeConfig(): TimelineConfig {
         id: "clip-x",
         at: 1,
         track: "V1",
-        clipType: "media",
+        clipType: "section-hook",
         asset: "asset-x",
         from: 0,
         to: 5,
@@ -215,6 +215,20 @@ describe("LLM tool schema byte-equivalence (Sprint 3)", () => {
       "set_theme_overrides",
       "transform_image",
     ]);
+  });
+
+  it("direct themed tool descriptions advertise only the installed families", () => {
+    const setParamsTool = TIMELINE_AGENT_TOOLS.find((tool) => tool.function.name === "set_params");
+    const setThemeTool = TIMELINE_AGENT_TOOLS.find((tool) => tool.function.name === "set_theme");
+
+    expect(setParamsTool?.function.description).toContain(
+      "currently: image-jump, section-hook, art-card, resource-card, cta-card",
+    );
+    expect(setThemeTool?.function.description).toContain(
+      'Installed themes in this build: "2rp"',
+    );
+    expect((setThemeTool?.function.parameters.properties as { themeId?: { description?: string } }).themeId?.description)
+      .toContain("Currently: 2rp.");
   });
 
   it("timelineHandlers keys match the closed parsed-command target set + Sprint 4 themed ops", () => {
@@ -336,12 +350,21 @@ describe("LLM tool schema byte-equivalence (Sprint 3)", () => {
   });
 
   it("set_theme happy-path result string is stable", () => {
+    const config = makeConfig();
+    const result = setTheme(config, makeRegistry(), { themeId: "2rp" });
+    expect(result.result).toBe(
+      "Switched theme from unset to 2rp. (Note: existing themed clips referencing the old theme's clipType may need remapping.)",
+    );
+    expect((result.config as unknown as { theme: string }).theme).toBe("2rp");
+  });
+
+  it("set_theme rejects themes that are not installed", () => {
     const config = { ...makeConfig(), theme: "2rp" } as unknown as TimelineConfig;
     const result = setTheme(config, makeRegistry(), { themeId: "arca-gidan" });
     expect(result.result).toBe(
-      "Switched theme from 2rp to arca-gidan. (Note: existing themed clips referencing the old theme's clipType may need remapping.)",
+      "Theme arca-gidan is not installed. Available themes: 2rp.",
     );
-    expect((result.config as unknown as { theme: string }).theme).toBe("arca-gidan");
+    expect(result.config).toBeUndefined();
   });
 
   it("set_theme rejects empty themeId", () => {

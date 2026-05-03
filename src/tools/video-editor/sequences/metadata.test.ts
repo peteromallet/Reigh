@@ -5,6 +5,7 @@ import {
   getTrustedSequenceMetadata,
 } from '@/tools/video-editor/sequences/metadata';
 import {
+  AVAILABLE_SEQUENCE_THEME_IDS,
   AVAILABLE_SEQUENCE_CLIP_TYPES,
   AVAILABLE_SEQUENCE_METADATA,
   filterTrustedSequenceMetadataForRegistry,
@@ -78,20 +79,32 @@ describe('available sequence metadata', () => {
       'section-hook',
     ]);
     expect(AVAILABLE_SEQUENCE_METADATA).toHaveLength(5);
+    expect(AVAILABLE_SEQUENCE_THEME_IDS).toEqual(['2rp']);
     expect(isAvailableSequenceClipType('section-hook')).toBe(true);
     expect(isAvailableSequenceClipType('image-jump')).toBe(true);
     expect(isAvailableSequenceClipType('theme-package-not-yet-trusted')).toBe(false);
   });
 
-  it('filters trusted metadata against a provided frontend registry shape', () => {
+  it('filters trusted metadata against provided clip and theme registries', () => {
     const filtered = filterTrustedSequenceMetadataForRegistry({
       'section-hook': {},
       'resource-card': {},
+    }, {
+      '2rp': {},
     });
 
     expect(filtered.map((metadata) => metadata.clipType).sort()).toEqual([
       'resource-card',
       'section-hook',
     ]);
+  });
+
+  it('drops sequence metadata when the owning theme is not installed', () => {
+    const filtered = filterTrustedSequenceMetadataForRegistry({
+      'section-hook': {},
+      'resource-card': {},
+    }, {});
+
+    expect(filtered).toEqual([]);
   });
 });

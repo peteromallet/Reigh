@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { buildAssetDropEdit } from '@/tools/video-editor/hooks/useAssetManagement';
+import {
+  buildAssetDropCommand,
+  buildAssetDropEdit,
+} from '@/tools/video-editor/hooks/useAssetManagement';
 import type { TimelineData } from '@/tools/video-editor/lib/timeline-data';
 
 const createTimelineData = (assetType: string, file: string): TimelineData => ({
@@ -39,6 +42,46 @@ const createTimelineData = (assetType: string, file: string): TimelineData => ({
 });
 
 describe('buildAssetDropEdit media kind validation', () => {
+  it('builds an add-media command for supported assets instead of hand-authoring rows in callers', () => {
+    const command = buildAssetDropCommand({
+      current: createTimelineData('video/mp4', 'https://example.com/clip.mp4'),
+      assetKey: 'asset1',
+      trackId: 'V1',
+      time: 2,
+    });
+
+    expect(command).toEqual({
+      type: 'add-media',
+      payload: {
+        trackId: 'V1',
+        at: 2,
+        asset: {
+          assetKey: 'asset1',
+          mediaType: 'video',
+          durationSeconds: 4,
+          entry: {
+            src: 'https://example.com/clip.mp4',
+            file: 'https://example.com/clip.mp4',
+            type: 'video/mp4',
+            duration: 4,
+          },
+          source: 'registered',
+        },
+      },
+    });
+  });
+
+  it('rejects unsupported assets before building an add-media command', () => {
+    const command = buildAssetDropCommand({
+      current: createTimelineData('text/plain', 'https://example.com/script.txt'),
+      assetKey: 'asset1',
+      trackId: 'V1',
+      time: 0,
+    });
+
+    expect(command).toBeNull();
+  });
+
   it('rejects text assets instead of adding them as visual video clips', () => {
     const edit = buildAssetDropEdit({
       current: createTimelineData('text/plain', 'https://example.com/script.txt'),

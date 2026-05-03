@@ -513,6 +513,22 @@ describe("loop helpers", () => {
     expect(systemPrompt).toContain("do not fall back to plain text-to-image without a reference");
   });
 
+  it("surfaces the installed themed command families in the system prompt", () => {
+    const systemPrompt = buildTimelineAgentSystemPrompt({
+      projectId: "project-1",
+      timelineSummary: "- id=clip-1 track=V1",
+      selectedClips: [{
+        clip_id: "clip-1",
+        url: "https://example.com/reference.png",
+        media_type: "image",
+      }],
+    });
+
+    expect(systemPrompt).toContain("Installed themed command families in this build:");
+    expect(systemPrompt).toContain("set_params supports trusted sequence clip types: image-jump, section-hook, art-card, resource-card, cta-card");
+    expect(systemPrompt).toContain("set_theme supports installed themes: 2rp");
+  });
+
   it("extracts text-formatted create_task blocks from assistant text", () => {
     const toolCalls = extractToolCalls({
       role: "assistant",

@@ -12,6 +12,7 @@ import type { SelectClipOptions } from '@/shared/state/selectionStore';
 import { createExternalUploadGeneration } from '@/integrations/supabase/repositories/generationMutationsRepository';
 import { generateUUID } from '@/shared/lib/taskCreation/ids';
 import {
+  type AddMediaCommand,
   buildAddMediaCommandEffect,
   estimateProvisionedAssetDuration,
   provisionRegisteredTimelineMedia,
@@ -33,6 +34,7 @@ import type {
 } from '@/tools/video-editor/hooks/timeline-state-types';
 import type { AssetRegistryEntry } from '@/tools/video-editor/types';
 import type { TimelineStoreApi } from '@/tools/video-editor/hooks/timelineStore';
+import type { TimelineEditorCommands } from '@/tools/video-editor/hooks/useTimelineState.types';
 
 type UploadedGenerationData = GenerationDropData & {
   durationSeconds?: number;
@@ -92,6 +94,32 @@ export interface BuildAssetDropEditResult {
   rows: TimelineData['rows'];
   metaUpdates: Record<string, ClipMeta>;
   clipOrderOverride: TimelineData['clipOrder'];
+}
+
+export function buildAssetDropCommand({
+  current,
+  assetKey,
+  trackId,
+  time,
+}: {
+  current: TimelineData;
+  assetKey: string;
+  trackId: string;
+  time: number;
+}): AddMediaCommand | null {
+  const provisionedAsset = provisionRegisteredTimelineMedia(assetKey, current.registry.assets[assetKey]);
+  if (!provisionedAsset) {
+    return null;
+  }
+
+  return {
+    type: 'add-media',
+    payload: {
+      trackId,
+      at: time,
+      asset: provisionedAsset,
+    },
+  };
 }
 
 export function resolveAssetDropTarget({
@@ -180,14 +208,19 @@ export function buildAssetDropEdit({
   trackId: string;
   time: number;
 }): BuildAssetDropEditResult | null {
-  const provisionedAsset = provisionRegisteredTimelineMedia(assetKey, current.registry.assets[assetKey]);
-  if (!provisionedAsset) {
+  const command = buildAssetDropCommand({
+    current,
+    assetKey,
+    trackId,
+    time,
+  });
+  if (!command) {
     return null;
   }
   const effect = buildAddMediaCommandEffect(current, {
-    trackId,
-    at: time,
-    asset: provisionedAsset,
+    trackId: command.payload.trackId,
+    at: command.payload.at,
+    asset: command.payload.asset,
   });
   if (effect.mutation.type !== 'rows') {
     return null;
@@ -202,7 +235,7 @@ export function buildAssetDropEdit({
 
   return {
     clipId: detailClipId,
-    duration: duration ? duration.end - duration.start : estimateProvisionedAssetDuration(provisionedAsset),
+    duration: duration ? duration.end - duration.start : estimateProvisionedAssetDuration(command.payload.asset),
     rows: effect.mutation.rows,
     metaUpdates,
     clipOrderOverride: effect.mutation.clipOrderOverride ?? current.clipOrder,
@@ -240,6 +273,9 @@ export function useAssetManagement({
   const getApplyEdit = useCallback(() => {
     return store?.getState().ops.applyEdit ?? applyEdit;
   }, [applyEdit, store]);
+  const getTimelineCommands = useCallback((): TimelineEditorCommands | null => {
+    return store?.getState().ops.commands ?? null;
+  }, [store]);
   const getSelectClip = useCallback(() => {
     return store?.getState().ops.selectClip ?? selectClip;
   }, [selectClip, store]);
@@ -431,11 +467,35 @@ export function useAssetManagement({
     if (!resolvedTarget) {
       return;
     }
+    const resolvedTime = resolvedTarget.snappedTime ?? time;
+    const commands = getTimelineCommands();
+    if (commands && resolvedTarget.current.registry.assets[assetKey]) {
+      const command = commands.buildAddMediaCommand({
+        trackId: resolvedTarget.trackId,
+        at: resolvedTime,
+        assetKey,
+      });
+      if (command) {
+        const dryRunResult = commands.dryRun(command);
+        if (dryRunResult.status !== 'rejected') {
+          const insertedClipId = typeof dryRunResult.commandResults[0]?.detail?.clipId === 'string'
+            ? dryRunResult.commandResults[0].detail.clipId
+            : undefined;
+          const applyResult = commands.apply(command, {
+            selectedClipId: insertedClipId,
+            selectedTrackId: resolvedTarget.trackId,
+          });
+          if (applyResult.status !== 'rejected') {
+            return;
+          }
+        }
+      }
+    }
     const nextEdit = buildAssetDropEdit({
       current: resolvedTarget.current,
       assetKey,
       trackId: resolvedTarget.trackId,
-      time: resolvedTarget.snappedTime ?? time,
+      time: resolvedTime,
     });
     if (!nextEdit) {
       return;
@@ -448,7 +508,7 @@ export function useAssetManagement({
     });
     getSelectClip()(nextEdit.clipId);
     getSetSelectedTrackId()(resolvedTarget.trackId);
-  }, [getApplyEdit, getDataRef, getSelectedTrackId, getSelectClip, getSetSelectedTrackId]);
+  }, [getApplyEdit, getDataRef, getSelectedTrackId, getSelectClip, getSetSelectedTrackId, getTimelineCommands]);
 
   return {
     registerGenerationAsset,

@@ -84,7 +84,7 @@ export const TIMELINE_AGENT_TOOLS: TimelineAgentToolDefinition[] = [
     function: {
       name: "set_params",
       description:
-        "Edit a themed clip's `params` object (e.g. kicker, title, subtitle on a section-hook clip). Shallow-merges the patch into the clip's existing params. Pass null for a key to clear it. Use this — not `run set_clip_property` — for any non-numeric themed-effect parameter.",
+        "Edit an installed trusted sequence clip's `params` object (currently: image-jump, section-hook, art-card, resource-card, cta-card). Shallow-merges the patch into the clip's existing params. Pass null for a key to clear it. Use this — not `run set_clip_property` — for any non-numeric themed-effect parameter.",
       parameters: {
         type: "object",
         properties: {
@@ -109,15 +109,15 @@ export const TIMELINE_AGENT_TOOLS: TimelineAgentToolDefinition[] = [
     function: {
       name: "set_theme",
       description:
-        "Switch the timeline's active theme (e.g. \"2rp\", \"arca-gidan\"). Existing themed clips referencing the old theme's clipType may need remapping; the tool warns the user when this happens.",
-      parameters: {
-        type: "object",
-        properties: {
-          themeId: {
-            type: "string",
-            description: "Theme slug to activate.",
+        "Switch the timeline's active theme. Installed themes in this build: \"2rp\". Existing themed clips referencing the old theme's clipType may need remapping; the tool warns the user when this happens.",
+        parameters: {
+          type: "object",
+          properties: {
+            themeId: {
+              type: "string",
+              description: "Installed theme slug to activate. Currently: 2rp.",
+            },
           },
-        },
         required: ["themeId"],
         additionalProperties: false,
       },

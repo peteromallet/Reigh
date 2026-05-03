@@ -19,7 +19,7 @@ vi.mock("../db.ts", async (importOriginal) => {
   };
 });
 import { executeCommand } from "./registry.ts";
-import { addMediaClip, swapClipAsset, viewTimeline } from "./timeline.ts";
+import { addMediaClip, setClipParams, setTheme, swapClipAsset, viewTimeline } from "./timeline.ts";
 import { provisionTimelineMedia } from "../../../../src/tools/video-editor/commands/index.ts";
 import type { AssetRegistry, TimelineConfig } from "../../../../src/tools/video-editor/types/index.ts";
 
@@ -239,7 +239,76 @@ describe("viewTimeline", () => {
   });
 });
 
+describe("themed command availability", () => {
+  it("rejects set_params for clips outside the installed sequence families", () => {
+    const config = {
+      clips: [{
+        id: "clip-1",
+        at: 0,
+        track: "V1",
+        clipType: "media",
+        asset: "asset-1",
+      }],
+      tracks: [{ id: "V1", label: "V1", kind: "visual" }],
+    } as unknown as TimelineConfig;
+
+    const result = setClipParams(config, makeRegistry(), {
+      clipId: "clip-1",
+      params: { title: "Hello" },
+    });
+
+    expect(result.result).toBe(
+      "Clip clip-1 does not support set_params. Installed sequence clip types: image-jump, section-hook, art-card, resource-card, cta-card.",
+    );
+    expect(result.config).toBeUndefined();
+  });
+
+  it("rejects set_theme for themes not installed in this build", () => {
+    const result = setTheme(makeConfig(), makeRegistry(), { themeId: "arca-gidan" });
+    expect(result.result).toBe("Theme arca-gidan is not installed. Available themes: 2rp.");
+    expect(result.config).toBeUndefined();
+  });
+});
+
 describe("executeCommand", () => {
+  it("validates a typed transaction without saving or mutating the timeline", async () => {
+    const state = {
+      config: {
+        clips: [],
+        tracks: [{ id: "V1", label: "V1", kind: "visual" }],
+      },
+      configVersion: 2,
+      registry: makeRegistry(),
+      projectId: "project-1",
+      shotNamesById: {},
+    } as unknown as import("../types.ts").TimelineState;
+    const supabaseAdmin = {
+      rpc: () => ({
+        maybeSingle: async () => ({ data: null, error: null }),
+      }),
+    } as unknown as import("../types.ts").SupabaseAdmin;
+
+    const result = await executeCommand({
+      transaction: {
+        transactionId: "tx-validate",
+        commands: [{
+          type: "add-text",
+          payload: {
+            track: "V1",
+            at: 3,
+            duration: 2,
+            text: "hello",
+          },
+        }],
+      },
+      mode: "validate",
+    }, state, "timeline-1", supabaseAdmin);
+
+    expect(result.result).toContain("Validated 1/1 command(s).");
+    expect(registryMocks.saveTimelineConfigVersioned).not.toHaveBeenCalled();
+    expect(state.config.clips).toHaveLength(0);
+  });
+
   it("dry-runs a typed add-media transaction without saving", async () => {
     const state = {
       config: makeConfig([{ id: "V1", label: "V1", kind: "visual" }]),
@@ -325,6 +394,52 @@ describe("executeCommand", () => {
     expect(state.configVersion).toBe(5);
   });
 
+  it("rejects invalid typed batches atomically without saving", async () => {
+    const state = {
+      config: {
+        clips: [],
+        tracks: [{ id: "V1", label: "V1", kind: "visual" }],
+      },
+      configVersion: 6,
+      registry: makeRegistry(),
+      projectId: "project-1",
+      shotNamesById: {},
+    } as unknown as import("../types.ts").TimelineState;
+    const supabaseAdmin = {
+      rpc: () => ({
+        maybeSingle: async () => ({ data: null, error: null }),
+      }),
+    } as unknown as import("../types.ts").SupabaseAdmin;
+
+    const result = await executeCommand({
+      transaction: {
+        transactionId: "tx-invalid-batch",
+        commands: [
+          {
+            type: "add-text",
+            payload: {
+              track: "V1",
+              at: 2,
+              duration: 1.5,
+              text: "hello",
+            },
+          },
+          {
+            type: "delete",
+            payload: {
+              clipId: "missing-clip",
+            },
+          },
+        ],
+      },
+    }, state, "timeline-1", supabaseAdmin);
+
+    expect(result.result).toContain("Clip missing-clip was not found.");
+    expect(registryMocks.saveTimelineConfigVersioned).not.toHaveBeenCalled();
+    expect(state.config.clips).toHaveLength(0);
+    expect(state.configVersion).toBe(6);
+  });
+
   it("keeps repeat as a compatibility adapter and rejects nested add-media", async () => {
     const state = {
       config: makeConfig([{ id: "V1", label: "V1", kind: "visual" }]),
@@ -347,6 +462,41 @@ describe("executeCommand", () => {
     );
 
     expect(result.result).toContain("add-media is not supported inside repeat.");
+    expect(registryMocks.saveTimelineConfigVersioned).not.toHaveBeenCalled();
+  });
+
+  it("keeps repeat as a compatibility adapter and rejects nested swap", async () => {
+    const state = {
+      config: {
+        clips: [{
+          id: "clip-1",
+          at: 0,
+          track: "V1",
+          clipType: "hold",
+          hold: 2,
+          asset: "asset-1",
+        }],
+        tracks: [{ id: "V1", label: "V1", kind: "visual" }],
+      },
+      configVersion: 1,
+      registry: makeRegistry({ "asset-1": { duration: 2 } }),
+      projectId: "project-1",
+      shotNamesById: {},
+    } as unknown as import("../types.ts").TimelineState;
+    const supabaseAdmin = {
+      rpc: () => ({
+        maybeSingle: async () => ({ data: null, error: null }),
+      }),
+    } as unknown as import("../types.ts").SupabaseAdmin;
+
+    const result = await executeCommand(
+      "repeat 2 swap clip-1 gen-1 https://example.com/swap.png --start 0 --gap 1",
+      state,
+      "timeline-1",
+      supabaseAdmin,
+    );
+
+    expect(result.result).toContain("swap is not supported inside repeat.");
     expect(registryMocks.saveTimelineConfigVersioned).not.toHaveBeenCalled();
   });
 });

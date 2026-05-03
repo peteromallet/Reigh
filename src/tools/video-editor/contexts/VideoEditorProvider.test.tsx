@@ -275,8 +275,6 @@ function Consumer() {
       <span>{typeof editorData.additiveSelectionRef?.current}</span>
       <span>{typeof editorOps.selectClip}</span>
       <span>{typeof editorOps.selectClips}</span>
-      <span>{typeof editorOps.commands.apply}</span>
-      <span>{typeof editorOps.commands.buildAddMediaCommand}</span>
       <span>{chrome.saveStatus}</span>
       <span>{playback.currentTime}</span>
       <span data-testid="agent-chat-timeline-id">{agentChatBridge.timelineId}</span>
@@ -399,7 +397,7 @@ describe('VideoEditorProvider', () => {
     }));
     expect(screen.getByText('false')).toBeInTheDocument();
     expect(screen.getByText('boolean')).toBeInTheDocument();
-    expect(screen.getAllByText('function')).toHaveLength(4);
+    expect(screen.getAllByText('function')).toHaveLength(2);
     expect(screen.getByText('saved')).toBeInTheDocument();
     expect(screen.getByText('12.5')).toBeInTheDocument();
     expect(screen.getByTestId('agent-chat-timeline-id')).toHaveTextContent('timeline-1');
