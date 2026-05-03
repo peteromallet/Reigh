@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createClipMetaFromDescriptor,
   createEditorClipTypeRegistry,
+  getClipTypeOverlayBehavior,
   getRegisteredClipTypeDescriptor,
   isClipTypeCommandAvailable,
 } from '@/tools/video-editor/clip-types/runtime';
@@ -114,5 +115,41 @@ describe('clip-type runtime registry', () => {
       track: { id: 'V1', kind: 'visual', label: 'V1' },
       selectedClipIds: ['clip-hold'],
     })).toBe(false);
+  });
+
+  it('derives overlay, crop, inline-edit, and lightbox behavior from clip descriptors', () => {
+    expect(getClipTypeOverlayBehavior(getRegisteredClipTypeDescriptor('media'))).toMatchObject({
+      excluded: false,
+      allowsBoundsEditing: true,
+      allowsCrop: true,
+      supportsInlineTextEdit: false,
+      doubleClickAction: 'lightbox',
+      lightboxEnabled: true,
+      defaultBounds: null,
+    });
+
+    expect(getClipTypeOverlayBehavior(getRegisteredClipTypeDescriptor('text'))).toMatchObject({
+      excluded: false,
+      allowsBoundsEditing: true,
+      allowsCrop: false,
+      supportsInlineTextEdit: true,
+      doubleClickAction: 'inline-text-edit',
+      lightboxEnabled: false,
+      defaultBounds: {
+        x: 120,
+        y: 120,
+        width: 640,
+        height: 180,
+      },
+    });
+
+    expect(getClipTypeOverlayBehavior(getRegisteredClipTypeDescriptor('effect-layer'))).toMatchObject({
+      excluded: true,
+      allowsBoundsEditing: false,
+      allowsCrop: false,
+      supportsInlineTextEdit: false,
+      doubleClickAction: 'none',
+      lightboxEnabled: false,
+    });
   });
 });

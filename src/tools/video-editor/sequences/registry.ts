@@ -39,6 +39,10 @@ export type AvailableSequenceRegistration = AvailableClipTypeRegistration;
 export const AVAILABLE_SEQUENCE_REGISTRATIONS = availableSequenceView.registrations;
 export const AVAILABLE_SEQUENCE_METADATA = availableSequenceView.metadata;
 export const AVAILABLE_SEQUENCE_CLIP_TYPES = availableSequenceView.clipTypes;
+export const AVAILABLE_SEQUENCE_VALIDATION_OPTIONS = {
+  metadata: AVAILABLE_SEQUENCE_METADATA,
+  allowedClipTypes: AVAILABLE_SEQUENCE_CLIP_TYPES,
+} as const;
 
 export const filterTrustedSequenceMetadataForRegistry = (
   registry: Partial<Record<string, unknown>>,

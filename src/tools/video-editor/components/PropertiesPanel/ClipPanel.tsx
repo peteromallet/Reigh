@@ -15,6 +15,7 @@ import { SequenceParamEditor } from '@/tools/video-editor/components/PropertiesP
 import {
   clipTypeUsesHoldTiming,
   getRegisteredClipTypeDescriptor,
+  getClipTypeOverlayBehavior,
   isClipTypeCommandAvailable,
 } from '@/tools/video-editor/clip-types';
 import { isSequenceParamsSchema } from '@/tools/video-editor/clip-types/defineClipType';
@@ -24,9 +25,12 @@ import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProvide
 import { useEffectResources, type EffectCategory, type EffectResource } from '@/tools/video-editor/hooks/useEffectResources';
 import type { ClipTab } from '@/tools/video-editor/hooks/useEditorPreferences';
 import type { ClipMeta } from '@/tools/video-editor/lib/timeline-data';
+import { getVisibleClipTabs } from '@/tools/video-editor/lib/clip-inspector';
 import type { TimelineDeviceClass, TimelineInteractionMode } from '@/tools/video-editor/lib/mobile-interaction-model';
 import { resolveAvailableClipType } from '@/tools/video-editor/sequences/registry';
 import type { ResolvedTimelineClip, ResolvedTimelineConfig, TrackDefinition } from '@/tools/video-editor/types';
+
+export { getVisibleClipTabs } from '@/tools/video-editor/lib/clip-inspector';
 
 interface ClipPanelProps {
   clip: ResolvedTimelineClip | null;
@@ -67,46 +71,6 @@ export const TAB_COLUMNS_CLASS = {
   4: 'grid-cols-4',
   5: 'grid-cols-5',
 } as const;
-
-export function getVisibleClipTabs(
-  clip: ResolvedTimelineClip | null,
-  track: TrackDefinition | null,
-): ClipTab[] {
-  const descriptor = getRegisteredClipTypeDescriptor(clip?.clipType);
-  const context = clip ? { clip, track, selectedClipIds: [clip.id] } : { clip, track, selectedClipIds: [] };
-  const features = descriptor?.renderCapabilities.features ?? [];
-  const isEffectLayer = descriptor?.renderCapabilities.previewRoute === 'effect-layer';
-  const isSequenceClip = Boolean(descriptor && isSequenceParamsSchema(descriptor.paramsSchema));
-  const supportsInlineTextEdit = features.includes('inline-text-edit');
-  const supportsPosition = track?.kind === 'visual' && features.includes('manual-bounds');
-  const supportsAudio = Boolean(
-    descriptor && isClipTypeCommandAvailable(descriptor, 'toggle-mute', context),
-  );
-
-  if (isEffectLayer || isSequenceClip) {
-    return ['effects', 'timing'];
-  }
-
-  if (supportsInlineTextEdit) {
-    return ['effects', 'timing', 'position', 'text'];
-  }
-
-  if (track?.kind === 'audio') {
-    return supportsAudio ? ['effects', 'timing', 'audio'] : ['effects', 'timing'];
-  }
-
-  if (supportsPosition && supportsAudio) {
-    return ['effects', 'timing', 'position', 'audio'];
-  }
-  if (supportsPosition) {
-    return ['effects', 'timing', 'position'];
-  }
-  if (supportsAudio) {
-    return ['effects', 'timing', 'audio'];
-  }
-
-  return ['effects', 'timing'];
-}
 
 export function FieldLabel({ children }: { children: React.ReactNode }) {
   return <div className="text-xs font-medium text-muted-foreground">{children}</div>;
@@ -217,9 +181,8 @@ export function ClipPanel({
   const clipTypeResolution = resolveAvailableClipType(clip?.clipType);
   const isEffectLayer = clipDescriptor?.renderCapabilities.previewRoute === 'effect-layer';
   const isSequenceClip = Boolean(clipDescriptor && isSequenceParamsSchema(clipDescriptor.paramsSchema));
-  const supportsInlineTextEdit = Boolean(
-    clipDescriptor?.renderCapabilities.features?.includes('inline-text-edit'),
-  );
+  const overlayBehavior = getClipTypeOverlayBehavior(clipDescriptor);
+  const supportsInlineTextEdit = overlayBehavior.supportsInlineTextEdit;
   const commandContext = useMemo(() => (
     clip
       ? { clip, track, selectedClipIds: [clip.id] }

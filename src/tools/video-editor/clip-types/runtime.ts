@@ -55,6 +55,29 @@ export type ClipTypeCommandAvailability = {
   allowed: boolean;
 };
 
+export type ClipTypeOverlayDoubleClickAction =
+  | 'none'
+  | 'lightbox'
+  | 'inline-text-edit';
+
+export type ClipTypeDefaultBounds = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export type ClipTypeOverlayBehavior = {
+  excluded: boolean;
+  alwaysVisible: boolean;
+  allowsBoundsEditing: boolean;
+  allowsCrop: boolean;
+  supportsInlineTextEdit: boolean;
+  doubleClickAction: ClipTypeOverlayDoubleClickAction;
+  lightboxEnabled: boolean;
+  defaultBounds: ClipTypeDefaultBounds | null;
+};
+
 const MEDIA_COMMANDS = [
   {
     id: 'split',
@@ -178,7 +201,7 @@ const BUILTIN_CLIP_TYPE_REGISTRATIONS = [
       renderCapabilities: {
         previewRoute: 'native-media',
         exportRoute: 'client',
-        features: ['visual', 'manual-bounds', 'lightbox', 'waveform'],
+        features: ['visual', 'manual-bounds', 'crop', 'lightbox', 'waveform'],
       },
     }),
   },
@@ -205,7 +228,7 @@ const BUILTIN_CLIP_TYPE_REGISTRATIONS = [
       renderCapabilities: {
         previewRoute: 'native-media',
         exportRoute: 'client',
-        features: ['visual', 'manual-bounds', 'lightbox', 'hold-duration'],
+        features: ['visual', 'manual-bounds', 'crop', 'lightbox', 'hold-duration'],
       },
     }),
   },
@@ -490,6 +513,56 @@ export const getSequenceDescriptorParams = (
     return [];
   }
   return descriptor.paramsSchema.params;
+};
+
+const descriptorHasFeature = (
+  descriptor: ClipTypeDescriptor | undefined,
+  feature: string,
+): boolean => {
+  return descriptor?.renderCapabilities.features?.includes(feature) ?? false;
+};
+
+const getDescriptorDefaultBounds = (
+  descriptor: ClipTypeDescriptor | undefined,
+): ClipTypeDefaultBounds | null => {
+  const x = descriptor?.defaults.clip.x;
+  const y = descriptor?.defaults.clip.y;
+  const width = descriptor?.defaults.clip.width;
+  const height = descriptor?.defaults.clip.height;
+  return typeof x === 'number'
+    && typeof y === 'number'
+    && typeof width === 'number'
+    && typeof height === 'number'
+    ? { x, y, width, height }
+    : null;
+};
+
+export const getClipTypeOverlayBehavior = (
+  descriptor: ClipTypeDescriptor | undefined,
+): ClipTypeOverlayBehavior => {
+  const previewRoute = descriptor?.renderCapabilities.previewRoute;
+  const supportsInlineTextEdit = descriptorHasFeature(descriptor, 'inline-text-edit');
+  const allowsBoundsEditing = descriptorHasFeature(descriptor, 'manual-bounds')
+    || supportsInlineTextEdit;
+  const lightboxEnabled = descriptorHasFeature(descriptor, 'lightbox');
+  const defaultBounds = getDescriptorDefaultBounds(descriptor);
+  const excluded = previewRoute === 'effect-layer'
+    || (!allowsBoundsEditing && !supportsInlineTextEdit);
+
+  return {
+    excluded,
+    alwaysVisible: supportsInlineTextEdit || defaultBounds !== null,
+    allowsBoundsEditing,
+    allowsCrop: descriptorHasFeature(descriptor, 'crop'),
+    supportsInlineTextEdit,
+    doubleClickAction: supportsInlineTextEdit
+      ? 'inline-text-edit'
+      : lightboxEnabled
+        ? 'lightbox'
+        : 'none',
+    lightboxEnabled,
+    defaultBounds,
+  };
 };
 
 const getCommandFactValue = (

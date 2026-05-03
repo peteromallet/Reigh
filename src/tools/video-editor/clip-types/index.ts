@@ -28,6 +28,7 @@ export {
   getBuiltinClipTypeDescriptor,
   getClipAssetMediaType,
   getClipTypeCommandAvailability,
+  getClipTypeOverlayBehavior,
   getRegisteredClipTypeDescriptor,
   getSequenceDescriptorParams,
   inferLegacyClipType,
@@ -78,6 +79,9 @@ export type {
   ClipAssetMediaType,
   ClipTypeCommandAvailability,
   ClipTypeCommandEvaluationContext,
+  ClipTypeDefaultBounds,
+  ClipTypeOverlayBehavior,
+  ClipTypeOverlayDoubleClickAction,
   RegisteredClipTypeLookupResult,
   TrustedRegisteredClipTypeRegistration,
 } from './runtime';

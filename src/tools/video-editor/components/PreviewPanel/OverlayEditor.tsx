@@ -2,6 +2,11 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent, RefObject } from 'react';
 import { Maximize2, RotateCcw } from 'lucide-react';
 import {
+  getClipTypeOverlayBehavior,
+  getRegisteredClipTypeDescriptor,
+  type ClipTypeOverlayBehavior,
+} from '@/tools/video-editor/clip-types';
+import {
   hasRenderableBounds,
 } from '@/tools/video-editor/lib/render-bounds';
 import { useEffectDiagnostic, useRenderDiagnostic } from '@/tools/video-editor/hooks/usePerfDiagnostics';
@@ -71,7 +76,7 @@ type OverlayViewModel = {
   bounds: OverlayBounds;
   fullBounds: OverlayBounds;
   cropValues: CropValues;
-  isText: boolean;
+  behavior: ClipTypeOverlayBehavior;
 };
 
 function OverlayEditorComponent({
@@ -141,14 +146,8 @@ function OverlayEditorComponent({
   }, [compositionHeight, compositionWidth, trackScaleMap]);
 
   const getClipBounds = useCallback((clipMeta: ClipMeta, trackId: string): OverlayBounds => {
-    if (clipMeta.clipType === 'text') {
-      return {
-        x: clipMeta.x ?? 0,
-        y: clipMeta.y ?? 0,
-        width: clipMeta.width ?? 640,
-        height: clipMeta.height ?? 180,
-      };
-    }
+    const descriptor = getRegisteredClipTypeDescriptor(clipMeta.clipType);
+    const overlayBehavior = getClipTypeOverlayBehavior(descriptor);
 
     // Must match VisualClip's hasPositionOverride check (includes crop fields).
     // When any of these are set, Remotion renders with absolute positioning at
@@ -171,6 +170,10 @@ function OverlayEditorComponent({
         width: clipMeta.width ?? compositionWidth,
         height: clipMeta.height ?? compositionHeight,
       };
+    }
+
+    if (overlayBehavior.defaultBounds) {
+      return overlayBehavior.defaultBounds;
     }
 
     return getTrackDefaultBounds(trackId);
@@ -206,11 +209,13 @@ function OverlayEditorComponent({
         if (!clipMeta || clipMeta.track !== row.id) {
           continue;
         }
-        if (clipMeta.clipType === 'effect-layer') {
+        const descriptor = getRegisteredClipTypeDescriptor(clipMeta.clipType);
+        const behavior = getClipTypeOverlayBehavior(descriptor);
+        if (behavior.excluded) {
           continue;
         }
 
-        const hasPositionOverride = clipMeta.clipType === 'text'
+        const hasPositionOverride = behavior.alwaysVisible
           || clipMeta.x !== undefined
           || clipMeta.y !== undefined
           || clipMeta.width !== undefined
@@ -234,11 +239,11 @@ function OverlayEditorComponent({
         overlays.push({
           actionId: action.id,
           track: row.id,
-          label: clipMeta.text?.content || clipMeta.asset || action.id,
+          label: clipMeta.text?.content || clipMeta.asset || descriptor?.label || action.id,
           bounds: visibleBounds,
           fullBounds,
           cropValues,
-          isText: clipMeta.clipType === 'text',
+          behavior,
         });
       }
     }
@@ -555,7 +560,10 @@ function OverlayEditorComponent({
 
   const beginTextEdit = useCallback((actionId: string) => {
     const clipMeta = meta[actionId];
-    if (clipMeta?.clipType !== 'text') {
+    const behavior = getClipTypeOverlayBehavior(
+      getRegisteredClipTypeDescriptor(clipMeta?.clipType),
+    );
+    if (!behavior.supportsInlineTextEdit) {
       return;
     }
 
@@ -569,7 +577,10 @@ function OverlayEditorComponent({
     }
 
     const clipMeta = meta[editingClipId];
-    if (clipMeta?.clipType === 'text') {
+    const behavior = getClipTypeOverlayBehavior(
+      getRegisteredClipTypeDescriptor(clipMeta?.clipType),
+    );
+    if (behavior.supportsInlineTextEdit) {
       onOverlayChange(editingClipId, {
         text: {
           ...(clipMeta.text ?? { content: '' }),
@@ -668,7 +679,7 @@ function OverlayEditorComponent({
                   style={ghostStyle}
                 />
               )}
-              {editingClipId === overlay.actionId && overlay.isText ? (
+              {editingClipId === overlay.actionId && overlay.behavior.supportsInlineTextEdit ? (
               <textarea
                 data-inline-text-editor="true"
                 className="h-full w-full resize-none rounded border border-sky-400 bg-black/80 p-2 text-white outline-none"
@@ -697,9 +708,9 @@ function OverlayEditorComponent({
                 aria-pressed={isSelected}
                 onPointerDown={(event) => startDrag(event, overlay, 'move')}
                 onDoubleClick={() => {
-                  if (clipMeta?.clipType === 'text') {
+                  if (overlay.behavior.doubleClickAction === 'inline-text-edit') {
                     beginTextEdit(overlay.actionId);
-                  } else if (clipMeta?.asset) {
+                  } else if (overlay.behavior.doubleClickAction === 'lightbox' && clipMeta?.asset) {
                     onDoubleClickAsset?.(clipMeta.asset, overlay.actionId);
                   }
                 }}
@@ -716,7 +727,7 @@ function OverlayEditorComponent({
                   onSelectClip(overlay.actionId);
                 }}
               >
-                {isSelected && allowsDirectManipulationControls && (['resize-nw', 'resize-ne', 'resize-sw', 'resize-se'] as const).map((mode) => {
+                {isSelected && allowsDirectManipulationControls && overlay.behavior.allowsBoundsEditing && (['resize-nw', 'resize-ne', 'resize-sw', 'resize-se'] as const).map((mode) => {
                   const pos = {
                     'resize-nw': 'left-0 top-0 -translate-x-1/2 -translate-y-1/2 cursor-nwse-resize',
                     'resize-ne': 'right-0 top-0 translate-x-1/2 -translate-y-1/2 cursor-nesw-resize',
@@ -733,7 +744,7 @@ function OverlayEditorComponent({
                     />
                   );
                 })}
-                {isSelected && allowsDirectManipulationControls && !overlay.isText && ([
+                {isSelected && allowsDirectManipulationControls && overlay.behavior.allowsCrop && ([
                   {
                     mode: 'crop-n',
                     hitClassName: 'left-1.5 right-1.5 top-0 h-3 -translate-y-1/2 cursor-ns-resize',
