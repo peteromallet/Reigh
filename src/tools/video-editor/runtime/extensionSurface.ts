@@ -86,10 +86,27 @@ export interface VideoEditorExtensionRuntimeConfig {
   };
 }
 
+export interface ResolvedVideoEditorPanelRegistry {
+  assetPanels: readonly VideoEditorPanelDescriptor[];
+  inspectorSections: {
+    all: readonly VideoEditorInspectorSectionDescriptor[];
+    beforeDefault: readonly VideoEditorInspectorSectionDescriptor[];
+    afterDefault: readonly VideoEditorInspectorSectionDescriptor[];
+  };
+}
+
 const EMPTY_SLOTS: Partial<Record<VideoEditorSlotName, VideoEditorSlotRenderer>> = Object.freeze({});
 const EMPTY_DIALOGS: readonly VideoEditorDialogDescriptor[] = Object.freeze([]);
 const EMPTY_PANELS: readonly VideoEditorPanelDescriptor[] = Object.freeze([]);
 const EMPTY_INSPECTOR_SECTIONS: readonly VideoEditorInspectorSectionDescriptor[] = Object.freeze([]);
+const EMPTY_RESOLVED_PANEL_REGISTRY: ResolvedVideoEditorPanelRegistry = Object.freeze({
+  assetPanels: EMPTY_PANELS,
+  inspectorSections: Object.freeze({
+    all: EMPTY_INSPECTOR_SECTIONS,
+    beforeDefault: EMPTY_INSPECTOR_SECTIONS,
+    afterDefault: EMPTY_INSPECTOR_SECTIONS,
+  }),
+});
 
 export const DEFAULT_VIDEO_EDITOR_EXTENSION_RUNTIME: VideoEditorExtensionRuntimeConfig = Object.freeze({
   slots: EMPTY_SLOTS,
@@ -124,6 +141,61 @@ export function resolveVideoEditorExtensionRuntime(
     registry: {
       panels,
       inspectorSections,
+    },
+  };
+}
+
+type RegistryDescriptor = {
+  id: string;
+  order?: number;
+  when?: VideoEditorVisibilityPredicate;
+};
+
+function sortRegistryDescriptors<T extends RegistryDescriptor>(descriptors: readonly T[]) {
+  return [...descriptors].sort((left, right) => {
+    const leftOrder = left.order ?? 0;
+    const rightOrder = right.order ?? 0;
+    if (leftOrder !== rightOrder) {
+      return leftOrder - rightOrder;
+    }
+
+    return left.id.localeCompare(right.id);
+  });
+}
+
+function resolveVisibleRegistryDescriptors<T extends RegistryDescriptor>(
+  descriptors: readonly T[],
+  context: VideoEditorRenderContext,
+) {
+  if (descriptors.length === 0) {
+    return EMPTY_PANELS as unknown as readonly T[];
+  }
+
+  return sortRegistryDescriptors(
+    descriptors.filter((descriptor) => !descriptor.when || descriptor.when(context)),
+  );
+}
+
+export function resolveVideoEditorPanelRegistry(
+  registry: VideoEditorExtensionRuntimeConfig['registry'],
+  context: VideoEditorRenderContext,
+): ResolvedVideoEditorPanelRegistry {
+  const assetPanels = resolveVisibleRegistryDescriptors(registry.panels, context);
+  const inspectorSections = resolveVisibleRegistryDescriptors(registry.inspectorSections, context);
+
+  if (assetPanels.length === 0 && inspectorSections.length === 0) {
+    return EMPTY_RESOLVED_PANEL_REGISTRY;
+  }
+
+  const beforeDefault = inspectorSections.filter((descriptor) => descriptor.placement === 'before-default');
+  const afterDefault = inspectorSections.filter((descriptor) => descriptor.placement === 'after-default');
+
+  return {
+    assetPanels,
+    inspectorSections: {
+      all: inspectorSections,
+      beforeDefault,
+      afterDefault,
     },
   };
 }

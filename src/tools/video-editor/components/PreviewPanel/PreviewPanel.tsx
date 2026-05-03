@@ -13,7 +13,7 @@ import { isTouchTimelineInput } from '@/tools/video-editor/lib/mobile-interactio
 import { useRenderBudget } from '@/shared/dev/useRenderBudget';
 import { userClearAllSelection, userSelectTimelineClip } from '@/shared/state/selectionStore';
 
-interface PreviewPanelProps {
+export interface PreviewPanelProps {
   surface: VideoEditorPreviewSurface;
   overlay?: ReactNode;
   footer?: ReactNode;

@@ -7,10 +7,12 @@ import {
   useTimelinePlaybackSlice,
 } from '@/tools/video-editor/hooks/timelineStore';
 import type {
+  ResolvedVideoEditorPanelRegistry,
   VideoEditorExtensionRuntimeConfig,
   VideoEditorRenderContext,
   VideoEditorRuntimeSlices,
 } from '@/tools/video-editor/runtime/extensionSurface';
+import { resolveVideoEditorPanelRegistry } from '@/tools/video-editor/runtime/extensionSurface';
 
 export function buildVideoEditorRenderContext(
   runtime: ReturnType<typeof useVideoEditorRuntime>,
@@ -64,4 +66,32 @@ export function useVideoEditorDialogDescriptors() {
 
 export function useVideoEditorPanelRegistry() {
   return useVideoEditorExtensionRuntime().registry;
+}
+
+export function useResolvedVideoEditorPanelRegistry(): ResolvedVideoEditorPanelRegistry {
+  const registry = useVideoEditorPanelRegistry();
+  const renderContext = useVideoEditorRenderContext();
+
+  return useMemo(
+    () => resolveVideoEditorPanelRegistry(registry, renderContext),
+    [registry, renderContext],
+  );
+}
+
+export function useVideoEditorAssetPanels() {
+  return useResolvedVideoEditorPanelRegistry().assetPanels;
+}
+
+export function useVideoEditorInspectorSections(placement?: 'before-default' | 'after-default') {
+  const registry = useResolvedVideoEditorPanelRegistry();
+
+  if (placement === 'before-default') {
+    return registry.inspectorSections.beforeDefault;
+  }
+
+  if (placement === 'after-default') {
+    return registry.inspectorSections.afterDefault;
+  }
+
+  return registry.inspectorSections.all;
 }

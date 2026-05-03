@@ -32,8 +32,11 @@ import {
   shouldToggleTouchSelection,
 } from '@/tools/video-editor/lib/mobile-interaction-model';
 import {
+  useResolvedVideoEditorPanelRegistry,
+  useVideoEditorAssetPanels,
   useVideoEditorDialogDescriptors,
   useVideoEditorExtensionRuntime,
+  useVideoEditorInspectorSections,
   useVideoEditorPanelRegistry,
   useVideoEditorRenderContext,
   useVideoEditorSlotRenderers,
@@ -320,6 +323,23 @@ function RuntimeConsumer() {
   );
 }
 
+function ResolvedRegistryConsumer() {
+  const registry = useResolvedVideoEditorPanelRegistry();
+  const assetPanels = useVideoEditorAssetPanels();
+  const beforeSections = useVideoEditorInspectorSections('before-default');
+  const afterSections = useVideoEditorInspectorSections('after-default');
+
+  return (
+    <div>
+      <span data-testid="resolved-asset-panel-count">{registry.assetPanels.length}</span>
+      <span data-testid="resolved-asset-panel-ids">{assetPanels.map((panel) => panel.id).join(',')}</span>
+      <span data-testid="resolved-inspector-all-ids">{registry.inspectorSections.all.map((section) => section.id).join(',')}</span>
+      <span data-testid="resolved-inspector-before-ids">{beforeSections.map((section) => section.id).join(',')}</span>
+      <span data-testid="resolved-inspector-after-ids">{afterSections.map((section) => section.id).join(',')}</span>
+    </div>
+  );
+}
+
 function RegisteredDialogConsumer({ open = true }: { open?: boolean }) {
   const dialogs: readonly VideoEditorDialogDescriptor[] = open
     ? [{
@@ -406,13 +426,53 @@ describe('VideoEditorProvider', () => {
           {
             id: 'asset-panel-extra',
             placement: 'asset-panel' as const,
+            order: 10,
+            render: () => null,
+          },
+          {
+            id: 'asset-panel-alpha',
+            placement: 'asset-panel' as const,
+            order: 10,
+            render: () => null,
+          },
+          {
+            id: 'asset-panel-hidden',
+            placement: 'asset-panel' as const,
+            order: 1,
+            when: () => false,
             render: () => null,
           },
         ],
         inspectorSections: [
           {
+            id: 'inspector-before-beta',
+            placement: 'before-default' as const,
+            order: 5,
+            render: () => null,
+          },
+          {
+            id: 'inspector-before-alpha',
+            placement: 'before-default' as const,
+            order: 5,
+            render: () => null,
+          },
+          {
             id: 'inspector-after',
             placement: 'after-default' as const,
+            order: 20,
+            render: () => null,
+          },
+          {
+            id: 'inspector-after-alpha',
+            placement: 'after-default' as const,
+            order: 10,
+            render: () => null,
+          },
+          {
+            id: 'inspector-hidden',
+            placement: 'after-default' as const,
+            order: 1,
+            when: () => false,
             render: () => null,
           },
         ],
@@ -439,6 +499,7 @@ describe('VideoEditorProvider', () => {
             >
               <Consumer />
               <RuntimeConsumer />
+              <ResolvedRegistryConsumer />
               <RegisteredDialogConsumer />
             </VideoEditorProvider>
           </AgentChatProvider>
@@ -473,9 +534,20 @@ describe('VideoEditorProvider', () => {
     expect(screen.getByTestId('runtime-selected-clip')).toHaveTextContent('clip-1');
     expect(screen.getByTestId('runtime-slot-count')).toHaveTextContent('2');
     expect(screen.getByTestId('runtime-dialog-count')).toHaveTextContent('1');
-    expect(screen.getByTestId('runtime-panel-count')).toHaveTextContent('1');
-    expect(screen.getByTestId('runtime-inspector-count')).toHaveTextContent('1');
+    expect(screen.getByTestId('runtime-panel-count')).toHaveTextContent('3');
+    expect(screen.getByTestId('runtime-inspector-count')).toHaveTextContent('5');
     expect(screen.getByTestId('runtime-extension-dialog-count')).toHaveTextContent('1');
+    expect(screen.getByTestId('resolved-asset-panel-count')).toHaveTextContent('2');
+    expect(screen.getByTestId('resolved-asset-panel-ids')).toHaveTextContent('asset-panel-alpha,asset-panel-extra');
+    expect(screen.getByTestId('resolved-inspector-all-ids')).toHaveTextContent(
+      'inspector-before-alpha,inspector-before-beta,inspector-after-alpha,inspector-after',
+    );
+    expect(screen.getByTestId('resolved-inspector-before-ids')).toHaveTextContent(
+      'inspector-before-alpha,inspector-before-beta',
+    );
+    expect(screen.getByTestId('resolved-inspector-after-ids')).toHaveTextContent(
+      'inspector-after-alpha,inspector-after',
+    );
     expect(screen.getByTestId('registered-dialog')).toHaveTextContent('Registered dialog');
 
     fireEvent.click(screen.getByRole('button', { name: 'update interaction' }));
@@ -533,6 +605,60 @@ describe('VideoEditorProvider', () => {
       tabletTouchPreserveSelectionInMove: true,
       tabletMousePreserveSelectionInMove: false,
     });
+  });
+
+  it('routes registered dialogs through the shared host and removes them when registration closes', () => {
+    const provider: DataProvider = {
+      loadTimeline: vi.fn(),
+      saveTimeline: vi.fn(),
+      loadAssetRegistry: vi.fn(),
+      resolveAssetUrl: vi.fn(),
+    };
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+
+    const view = render(
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <AgentChatProvider>
+            <VideoEditorProvider
+              dataProvider={provider}
+              timelineId="timeline-1"
+              timelineName="Timeline One"
+              userId="user-1"
+            >
+              <RegisteredDialogConsumer open />
+            </VideoEditorProvider>
+          </AgentChatProvider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId('registered-dialog')).toHaveTextContent('Registered dialog');
+
+    view.rerender(
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <AgentChatProvider>
+            <VideoEditorProvider
+              dataProvider={provider}
+              timelineId="timeline-1"
+              timelineName="Timeline One"
+              userId="user-1"
+            >
+              <RegisteredDialogConsumer open={false} />
+            </VideoEditorProvider>
+          </AgentChatProvider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByTestId('registered-dialog')).not.toBeInTheDocument();
   });
 
   it('keeps the mounted-vs-staged add boundary when a store provider exists but the editor is not mounted', () => {

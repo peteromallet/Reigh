@@ -15,7 +15,7 @@ import { SequenceParamEditor } from '@/tools/video-editor/components/PropertiesP
 import { continuousEffectTypes, entranceEffectTypes, exitEffectTypes } from '@/tools/video-editor/effects';
 import { EffectCreatorPanel } from '@/tools/video-editor/components/EffectCreatorPanel';
 import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext';
-import { useEffectResources, type EffectCategory, type EffectResource } from '@/tools/video-editor/hooks/useEffectResources';
+import { useEffectResources, type EffectResource } from '@/tools/video-editor/hooks/useEffectResources';
 import type { ClipTab } from '@/tools/video-editor/hooks/useEditorPreferences';
 import type { ClipMeta } from '@/tools/video-editor/lib/timeline-data';
 import type { TimelineDeviceClass, TimelineInteractionMode } from '@/tools/video-editor/lib/mobile-interaction-model';
@@ -158,7 +158,7 @@ export function ClipPanel({
   deviceClass,
   interactionMode,
   precisionEnabled,
-  hasPredecessor,
+  hasPredecessor: _hasPredecessor,
   onChange,
   onResetPosition,
   onClose,
@@ -246,16 +246,16 @@ export function ClipPanel({
       </div>
 
       {isVariantStale && (
-        <div className="flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+        <div className="flex items-center gap-2 rounded-lg border border-[color:var(--video-editor-warning-border)] bg-[var(--video-editor-warning-bg)] px-3 py-2 text-sm text-[color:var(--video-editor-warning-text)]">
           <RefreshCw className="h-3.5 w-3.5 shrink-0" />
           <span className="flex-1">Variant outdated</span>
           {onUpdateVariant && (
-            <Button type="button" variant="ghost" size="sm" className="h-6 gap-1 px-2 text-xs text-amber-200 hover:bg-amber-500/20 hover:text-amber-100" onClick={onUpdateVariant}>
+            <Button type="button" variant="ghost" size="sm" className="h-6 gap-1 px-2 text-xs text-[color:var(--video-editor-warning-text)] hover:bg-[var(--video-editor-warning-bg-hover)] hover:text-[color:var(--video-editor-warning-text)]" onClick={onUpdateVariant}>
               Update
             </Button>
           )}
           {onDismissStale && (
-            <Button type="button" variant="ghost" size="icon" className="h-6 w-6 text-amber-200/60 hover:bg-amber-500/20 hover:text-amber-100" onClick={onDismissStale}>
+            <Button type="button" variant="ghost" size="icon" className="h-6 w-6 text-[color:var(--video-editor-warning-text-muted)] hover:bg-[var(--video-editor-warning-bg-hover)] hover:text-[color:var(--video-editor-warning-text)]" onClick={onDismissStale}>
               <X className="h-3.5 w-3.5" />
             </Button>
           )}
@@ -263,7 +263,7 @@ export function ClipPanel({
       )}
 
       {showInspectorActions && (
-        <div className="rounded-xl border border-sky-400/40 bg-sky-500/10 p-3">
+        <div className="rounded-xl border border-[color:var(--video-editor-accent-border)] bg-[var(--video-editor-accent-bg)] p-3">
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="text-sm font-medium text-foreground">Inspector-first actions</div>
@@ -271,7 +271,7 @@ export function ClipPanel({
                 Use explicit controls for trim, move, track changes, split, mute, and delete when touch editing needs to stay stable.
               </div>
             </div>
-            <div className="text-[11px] uppercase tracking-[0.12em] text-sky-100">
+            <div className="text-[11px] uppercase tracking-[0.12em] text-[color:var(--video-editor-accent-text)]">
               {interactionMode}
               {precisionEnabled ? ' + precision' : ''}
             </div>
@@ -532,7 +532,7 @@ export function ClipPanel({
               </div>
             </div>
             {isEffectLayer && !clip.continuous && (
-              <div className="rounded-lg border border-dashed border-violet-400/40 bg-violet-500/10 p-3 text-sm text-violet-100">
+              <div className="rounded-lg border border-dashed border-[color:var(--video-editor-effect-border)] bg-[var(--video-editor-effect-bg)] p-3 text-sm text-[color:var(--video-editor-effect-text)]">
                 Select a continuous effect to turn this layer into an active adjustment clip.
               </div>
             )}

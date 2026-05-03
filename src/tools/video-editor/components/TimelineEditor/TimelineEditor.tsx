@@ -189,7 +189,7 @@ export function resolveWaveformAudioSrc(
   return undefined;
 }
 
-interface TimelineEditorProps {
+export interface TimelineEditorProps {
   onOpenSequenceCreator?: () => void;
 }
 
