@@ -3248,40 +3248,6 @@
       "resolved": false,
       "resolved_by": null,
       "resolved_at": null
-    },
-    {
-      "id": "DEBT-192",
-      "subsystem": "does-the-change-touch-all-locations-and-supporting-infrastructure",
-      "concern": "does the change touch all locations and supporting infrastructure?: there is still one narrower supporting-test omission inside that overlay surface. `src/tools/video-editor/components/previewpanel/overlayeditor.tsx` also contains a dedicated `if (clipmeta.cliptype === 'effect-layer') { continue; }` branch that suppresses effect-layer overlays entirely, but the newly listed dedicated cases only mention text edit start/commit, crop-handle suppression for text, and text-versus-asset double-click behavior, and there is no existing direct `overlayeditor` test elsewhere for effect-layer exclusion.",
-      "flag_ids": [
-        "all_locations"
-      ],
-      "plan_ids": [
-        "video-editor-developer-20260503-1435"
-      ],
-      "occurrence_count": 1,
-      "created_at": "2026-05-03T15:07:51Z",
-      "updated_at": "2026-05-03T15:07:51Z",
-      "resolved": false,
-      "resolved_by": null,
-      "resolved_at": null
-    },
-    {
-      "id": "DEBT-193",
-      "subsystem": "overlay-verification",
-      "concern": "overlay verification: the new dedicated `overlayeditor` tests still omit the `effect-layer` exclusion branch, even though `overlayeditor` itself contains a hard-coded `cliptype === 'effect-layer'` skip path and there is no other direct overlay test covering that behavior.",
-      "flag_ids": [
-        "FLAG-CLIP-008"
-      ],
-      "plan_ids": [
-        "video-editor-developer-20260503-1435"
-      ],
-      "occurrence_count": 1,
-      "created_at": "2026-05-03T15:07:51Z",
-      "updated_at": "2026-05-03T15:07:51Z",
-      "resolved": false,
-      "resolved_by": null,
-      "resolved_at": null
     }
   ]
 }
