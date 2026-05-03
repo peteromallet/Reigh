@@ -3,7 +3,7 @@
   "current_plan_name": "video-editor-developer-20260503-1435",
   "last_state": "done",
   "pr_number": null,
-  "pr_state": null,
+  "pr_state": "open",
   "completed": [
     {
       "label": "sprint-01-canonical-data-model",
