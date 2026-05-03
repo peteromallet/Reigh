@@ -3248,6 +3248,57 @@
       "resolved": false,
       "resolved_by": null,
       "resolved_at": null
+    },
+    {
+      "id": "DEBT-192",
+      "subsystem": "search-for-related-code-that-handles-the-same-concept-is-the-reported-issue-a-symptom-of-something-broader",
+      "concern": "search for related code that handles the same concept. is the reported issue a symptom of something broader?: checked whether the revised fix stays minimal relative to the repository structure. because the current unsupported-subcommand rule already lives in the agent adapter at `tools/registry.ts:110-114`, pushing legality filtering down into a generic `runner.ts` broadens the implementation surface beyond what the current codebase shape appears to need.",
+      "flag_ids": [
+        "scope"
+      ],
+      "plan_ids": [
+        "video-editor-developer-20260503-1831"
+      ],
+      "occurrence_count": 1,
+      "created_at": "2026-05-03T19:01:03Z",
+      "updated_at": "2026-05-03T19:01:03Z",
+      "resolved": false,
+      "resolved_by": null,
+      "resolved_at": null
+    },
+    {
+      "id": "DEBT-193",
+      "subsystem": "are-the-proposed-changes-technically-correct",
+      "concern": "are the proposed changes technically correct?: checked the current location of `repeat` legality filtering in `supabase/functions/ai-timeline-agent/tools/registry.ts:110-114` against the revised plan boundary. in the repository today, unsupported-subcommand filtering is an agent-adapter concern, but the new step 2 moves legality filtering into the shared headless runner even though the plan's own should-level success criterion says legality filtering should stay in adapters rather than in the core executor; that is a real design inconsistency and broadens the shared core beyond what this repo currently requires.",
+      "flag_ids": [
+        "correctness"
+      ],
+      "plan_ids": [
+        "video-editor-developer-20260503-1831"
+      ],
+      "occurrence_count": 1,
+      "created_at": "2026-05-03T19:01:03Z",
+      "updated_at": "2026-05-03T19:01:03Z",
+      "resolved": false,
+      "resolved_by": null,
+      "resolved_at": null
+    },
+    {
+      "id": "DEBT-194",
+      "subsystem": "compatibility-filter-boundary",
+      "concern": "compatibility-filter-boundary: revised step 2 moves legacy legality filtering into the shared runner even though the current repository keeps `repeat` unsupported-subcommand rejection in the agent adapter, and the plan's own adapter-boundary goal says legality filtering should stay out of the core executor.",
+      "flag_ids": [
+        "FLAG-007"
+      ],
+      "plan_ids": [
+        "video-editor-developer-20260503-1831"
+      ],
+      "occurrence_count": 1,
+      "created_at": "2026-05-03T19:01:03Z",
+      "updated_at": "2026-05-03T19:01:03Z",
+      "resolved": false,
+      "resolved_by": null,
+      "resolved_at": null
     }
   ]
 }
