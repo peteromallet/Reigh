@@ -1,9 +1,9 @@
 {
-  "current_milestone_index": 2,
-  "current_plan_name": "video-editor-developer-20260503-0642",
+  "current_milestone_index": 3,
+  "current_plan_name": null,
   "last_state": "done",
   "pr_number": null,
-  "pr_state": "open",
+  "pr_state": null,
   "completed": [
     {
       "label": "sprint-01-canonical-data-model",
@@ -13,6 +13,13 @@
     {
       "label": "sprint-02-ports-adapters",
       "plan": "video-editor-developer-20260503-0101",
+      "status": "done",
+      "pr_number": null,
+      "pr_state": "open"
+    },
+    {
+      "label": "sprint-03-headless-core",
+      "plan": "video-editor-developer-20260503-0642",
       "status": "done",
       "pr_number": null,
       "pr_state": "open"
