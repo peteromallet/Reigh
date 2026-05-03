@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { generateUUID } from '@/shared/lib/taskCreation/ids';
 import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext';
+import { getFinalVideoReplacementDurationContract } from '@/tools/video-editor/lib/timeline-asset-durations';
 import {
   buildFinalVideoAssetEntry,
   resolveFinalVideoDurationSeconds,
@@ -41,16 +42,18 @@ function planFinalVideoAssetRegistration(
   assetDurationSeconds: number | null;
 }> {
   return (async () => {
-    const assetDurationSeconds = await resolveFinalVideoDurationSeconds(finalVideo, currentData?.registry.assets);
+    const durationContract = getFinalVideoReplacementDurationContract(
+      await resolveFinalVideoDurationSeconds(finalVideo, currentData?.registry.assets),
+    );
     const assetKey = generateUUID();
-    const assetEntry = buildFinalVideoAssetEntry(finalVideo, assetDurationSeconds);
+    const assetEntry = buildFinalVideoAssetEntry(finalVideo, durationContract.assetDurationSeconds);
     const plan = planGenerationAssetRegistration({
       assetId: assetKey,
       generationId: finalVideo.id,
       variantType: 'video',
       imageUrl: finalVideo.location,
       thumbUrl: finalVideo.thumbnailUrl ?? finalVideo.location,
-      assetDurationSeconds,
+      assetDurationSeconds: durationContract.assetDurationSeconds,
       metadata: {
         content_type: assetEntry.type,
       },
@@ -60,7 +63,7 @@ function planFinalVideoAssetRegistration(
     }
     return {
       plan,
-      assetDurationSeconds,
+      assetDurationSeconds: durationContract.assetDurationSeconds,
     };
   })();
 }

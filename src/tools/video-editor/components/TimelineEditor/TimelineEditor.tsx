@@ -44,6 +44,7 @@ import {
   executeGenerationAssetRegistrationPlan,
   planGenerationAssetRegistration,
 } from '@/tools/video-editor/lib/timeline-asset-plans';
+import { getDuplicateGenerationDurationContract } from '@/tools/video-editor/lib/timeline-asset-durations';
 import {
   clampClipToMediaDuration,
   convertOverhangToHold,
@@ -740,13 +741,14 @@ function TimelineEditorComponent({ onOpenSequenceCreator }: TimelineEditorProps)
         generationId,
         projectId: selectedProjectId,
       });
+      const durationContract = getDuplicateGenerationDurationContract(assetEntry);
       const registrationPlan = planGenerationAssetRegistration({
         generationId: duplicatedGeneration.generationId,
         variantId: duplicatedGeneration.variantId,
         variantType: duplicatedGeneration.variantType,
         imageUrl: duplicatedGeneration.imageUrl,
         thumbUrl: duplicatedGeneration.thumbUrl,
-        assetDurationSeconds: typeof assetEntry?.duration === 'number' ? assetEntry.duration : undefined,
+        assetDurationSeconds: durationContract.assetDurationSeconds,
         metadata: {
           content_type: assetEntry?.type ?? (
             duplicatedGeneration.variantType === 'video' ? 'video/mp4' : 'image/png'

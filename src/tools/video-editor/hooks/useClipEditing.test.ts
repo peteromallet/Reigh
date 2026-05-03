@@ -644,6 +644,71 @@ describe('useSwitchToFinalVideo', () => {
     })]);
   });
 
+  it('prefers an already-registered final-video duration before fetching fresh metadata', async () => {
+    mockedExtractVideoMetadataFromUrl.mockReset();
+    const applyEdit = vi.fn();
+    const patchRegistry = vi.fn();
+    const registerAsset = vi.fn(async () => undefined);
+    const dataRef = {
+      current: makeConfigTimelineData(
+        {
+          output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
+          tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+          clips: [
+            { id: 'clip-3', at: 7, track: 'V1', clipType: 'media', asset: 'asset-video', from: 0, to: 10, speed: 1 },
+          ],
+          pinnedShotGroups: [makePinnedGroup({
+            shotId: 'shot-1',
+            trackId: 'V1',
+            clipIds: ['clip-3'],
+            mode: 'video',
+            videoAssetKey: 'asset-video',
+            imageClipSnapshot: [
+              { clipId: 'clip-1', assetKey: 'asset-1', start: 7, end: 10, meta: { clipType: 'hold', hold: 3 } },
+            ],
+          })],
+        },
+        {
+          assets: {
+            'asset-video': { file: 'video-old.mp4', type: 'video/mp4', generationId: 'final-old' },
+            'asset-1': { file: 'one.png', type: 'image/png' },
+            'asset-final-existing': {
+              file: 'https://example.com/final-new.mp4',
+              type: 'video/mp4',
+              generationId: 'final-new',
+              duration: 6,
+            },
+          },
+        },
+      ),
+    };
+
+    const { result } = renderHook(() => useSwitchToFinalVideo({
+      applyEdit,
+      dataRef,
+      finalVideoMap: new Map([['shot-1', { id: 'final-new', location: 'https://example.com/final-new.mp4', thumbnailUrl: null }]]),
+      patchRegistry,
+      registerAsset,
+    }));
+
+    await act(async () => {
+      await result.current.updateToLatestVideo({ shotId: 'shot-1', rowId: 'V1' });
+    });
+
+    await waitFor(() => {
+      expect(applyEdit).toHaveBeenCalledTimes(1);
+    });
+
+    expect(mockedExtractVideoMetadataFromUrl).not.toHaveBeenCalled();
+    const mutation = applyEdit.mock.calls[0][0];
+    expect(mutation.metaUpdates).toEqual({
+      'clip-3': {
+        asset: expect.any(String),
+        to: 6,
+      },
+    });
+  });
+
   it('does not patch the registry when switching to final video cannot build a valid mutation', async () => {
     mockedExtractVideoMetadataFromUrl.mockResolvedValue({
       duration_seconds: 6,

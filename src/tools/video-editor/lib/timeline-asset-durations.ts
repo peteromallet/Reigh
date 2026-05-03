@@ -6,12 +6,28 @@ export type VideoDurationContract = {
   clipSpanSeconds: number | null;
 };
 
+/**
+ * Sprint 2 keeps registry asset duration separate from visible clip span:
+ * duplicate-generation style callers preserve the source asset duration on the
+ * new registry entry, while external-drop retains its existing five-second
+ * visible fallback when media length stays unresolved.
+ */
+
 export function readPositiveDurationSeconds(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
 }
 
 export function getRegistryAssetDurationSeconds(assetEntry: AssetRegistryEntry | undefined): number | null {
   return readPositiveDurationSeconds(assetEntry?.duration);
+}
+
+export function getDuplicateGenerationDurationContract(
+  assetEntry: AssetRegistryEntry | undefined,
+): VideoDurationContract {
+  return {
+    assetDurationSeconds: getRegistryAssetDurationSeconds(assetEntry),
+    clipSpanSeconds: null,
+  };
 }
 
 export function isVideoGenerationDrop(data: GenerationDropData): boolean {
@@ -34,12 +50,24 @@ export function getDroppedGenerationAssetDurationSeconds(data: GenerationDropDat
     ?? readPositiveDurationSeconds(data.metadata?.original_duration);
 }
 
-export function getDroppedGenerationClipSpanSeconds(data: GenerationDropData): number {
+export function getDroppedGenerationDurationContract(data: GenerationDropData): VideoDurationContract {
+  const assetDurationSeconds = getDroppedGenerationAssetDurationSeconds(data);
+
   if (!isVideoGenerationDrop(data)) {
-    return 5;
+    return {
+      assetDurationSeconds: null,
+      clipSpanSeconds: 5,
+    };
   }
 
-  return getDroppedGenerationAssetDurationSeconds(data) ?? 5;
+  return {
+    assetDurationSeconds,
+    clipSpanSeconds: assetDurationSeconds ?? 5,
+  };
+}
+
+export function getDroppedGenerationClipSpanSeconds(data: GenerationDropData): number {
+  return getDroppedGenerationDurationContract(data).clipSpanSeconds ?? 5;
 }
 
 export function getFinalVideoDropDurationContract(
@@ -48,5 +76,14 @@ export function getFinalVideoDropDurationContract(
   return {
     assetDurationSeconds,
     clipSpanSeconds: assetDurationSeconds ?? 5,
+  };
+}
+
+export function getFinalVideoReplacementDurationContract(
+  assetDurationSeconds: number | null,
+): VideoDurationContract {
+  return {
+    assetDurationSeconds,
+    clipSpanSeconds: assetDurationSeconds,
   };
 }

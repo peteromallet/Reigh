@@ -43,6 +43,21 @@ This boundary is load-bearing and must not change in Sprint 2:
 - `src/tools/video-editor/contexts/VideoEditorProvider.tsx` must keep the later `syncOpsSlice` augmentation ordering intact.
 - `src/domains/media-lightbox/hooks/useAddToVideoEditor.ts` remains the canary consumer for mounted-vs-staged behavior; Sprint 2 must preserve its current fallback choice boundary.
 
+### Command-facade caller set
+
+Sprint 2 migrates these non-gesture callers onto the shared command/planner surface:
+
+- `src/domains/media-lightbox/hooks/useAddToVideoEditor.ts`
+- `src/tools/video-editor/contexts/VideoEditorProvider.tsx`
+- `src/tools/video-editor/components/TimelineEditor/TimelineEditor.tsx`
+- `src/tools/video-editor/hooks/useAddVariantAsGeneration.ts`
+- `src/tools/video-editor/hooks/useSwitchToFinalVideo.ts`
+
+These flows stay internal in Sprint 2, but must reuse the shared planners and explicit duration contract:
+
+- `src/tools/video-editor/hooks/useExternalDrop.ts`
+- `src/tools/video-editor/hooks/usePinnedShotGroups.ts`
+
 ## Runtime governance rules
 
 Planned stable host/adapter names for Sprint 2:

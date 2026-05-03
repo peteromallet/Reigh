@@ -19,7 +19,11 @@ import {
 } from '@/shared/state/selectionStore';
 import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext';
 import { buildVideoEditorLightboxMedia, VideoEditorProvider } from '@/tools/video-editor/contexts/VideoEditorProvider';
-import { useTimelineCommands, useTimelineCommandsSafe } from '@/tools/video-editor/hooks/useTimelineCommands';
+import {
+  PUBLIC_TIMELINE_COMMAND_NAMES,
+  useTimelineCommands,
+  useTimelineCommandsSafe,
+} from '@/tools/video-editor/hooks/useTimelineCommands';
 import {
   createTimelineStore,
   TimelineStoreProvider,
@@ -726,18 +730,7 @@ describe('VideoEditorProvider', () => {
       safeCommands: useTimelineCommandsSafe(),
     }), { wrapper });
 
-    expect(Object.keys(inside.result.current.commands).sort()).toEqual([
-      'addClip',
-      'addTrack',
-      'deleteClip',
-      'moveClip',
-      'moveTrack',
-      'registerAsset',
-      'setClipParams',
-      'splitClip',
-      'trimClip',
-      'updateClip',
-    ]);
+    expect(Object.keys(inside.result.current.commands).sort()).toEqual([...PUBLIC_TIMELINE_COMMAND_NAMES].sort());
     expect(inside.result.current.safeCommands).not.toBeNull();
   });
 
@@ -780,6 +773,35 @@ describe('VideoEditorProvider', () => {
       },
     });
     expect(applyEdit).not.toHaveBeenCalled();
+  });
+
+  it('returns structured registerAsset failures without patching the registry for invalid generation inputs', async () => {
+    const patchRegistry = vi.fn();
+    const registerAsset = vi.fn(async () => undefined);
+    const store = buildCommandTestStore({
+      patchRegistry,
+      registerAsset,
+    });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <TimelineStoreProvider store={store}>{children}</TimelineStoreProvider>
+    );
+
+    const { result } = renderHook(() => useTimelineCommands(), { wrapper });
+    const response = await result.current.registerAsset({
+      generationId: 'generation-1',
+      imageUrl: '',
+      variantType: 'image',
+    });
+
+    expect(response).toEqual({
+      ok: false,
+      error: {
+        code: 'invalid_argument',
+        message: 'registerAsset requires a non-empty media URL.',
+      },
+    });
+    expect(patchRegistry).not.toHaveBeenCalled();
+    expect(registerAsset).not.toHaveBeenCalled();
   });
 
   it('supports duplicate-style addClip insertion after an existing clip through the public facade', () => {
@@ -886,8 +908,11 @@ describe('VideoEditorProvider', () => {
     );
 
     expect(checklist).toContain('useTimelineCommandsSafe()');
+    expect(checklist).toContain('### Command-facade caller set');
+    expect(checklist).toContain('src/domains/media-lightbox/hooks/useAddToVideoEditor.ts');
     expect(checklist).toContain('src/tools/video-editor/hooks/useAddVariantAsGeneration.ts');
     expect(checklist).toContain('src/tools/video-editor/hooks/useSwitchToFinalVideo.ts');
+    expect(checklist).toContain('src/tools/video-editor/hooks/useExternalDrop.ts');
     expect(allowlist).toContain('src/tools/video-editor/adapters/reigh/generationLookup.ts');
     expect(allowlist).toContain('src/tools/video-editor/adapters/reigh/useReighEffectsCatalog.ts');
     expect(allowlist).toContain('src/tools/video-editor/adapters/reigh/variantPromotionLookup.ts');

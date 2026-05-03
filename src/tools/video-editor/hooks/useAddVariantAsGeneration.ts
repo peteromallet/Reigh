@@ -9,6 +9,7 @@ import {
   executeGenerationAssetRegistrationPlan,
   planGenerationAssetRegistration,
 } from '@/tools/video-editor/lib/timeline-asset-plans';
+import { getDuplicateGenerationDurationContract } from '@/tools/video-editor/lib/timeline-asset-durations';
 import { useTimelineCommands } from '@/tools/video-editor/hooks/useTimelineCommands';
 import {
   useTimelineEditorOps,
@@ -74,6 +75,7 @@ export function useAddVariantAsGeneration(): UseAddVariantAsGenerationResult {
 
       const isVideo = hasVideoExtension(newLocation);
       const variantType: 'image' | 'video' = isVideo ? 'video' : 'image';
+      const durationContract = getDuplicateGenerationDurationContract(sourceAssetEntry);
       const contentType = sourceAssetEntry?.type
         ?? (isVideo ? 'video/mp4' : 'image/png');
       const registrationPlan = planGenerationAssetRegistration({
@@ -82,7 +84,7 @@ export function useAddVariantAsGeneration(): UseAddVariantAsGenerationResult {
         variantType,
         imageUrl: newLocation,
         thumbUrl: newThumb ?? newLocation,
-        assetDurationSeconds: typeof sourceAssetEntry?.duration === 'number' ? sourceAssetEntry.duration : undefined,
+        assetDurationSeconds: durationContract.assetDurationSeconds,
         metadata: { content_type: contentType },
       });
       if (!registrationPlan.ok) {

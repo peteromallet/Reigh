@@ -174,6 +174,25 @@ export interface TimelineCommands {
   setClipParams: (input: SetClipParamsCommandInput) => TimelineCommandResult<{ clipId: string }>;
 }
 
+/**
+ * Sprint 2 public command surface for non-gesture callers.
+ *
+ * Keep this list narrow so developers and agents mutate timelines through the
+ * facade without depending on raw rows/meta/clipOrder internals.
+ */
+export const PUBLIC_TIMELINE_COMMAND_NAMES = [
+  'addClip',
+  'updateClip',
+  'moveClip',
+  'trimClip',
+  'splitClip',
+  'deleteClip',
+  'addTrack',
+  'moveTrack',
+  'registerAsset',
+  'setClipParams',
+] as const satisfies ReadonlyArray<keyof TimelineCommands>;
+
 type CommandStoreState = {
   data: TimelineEditorDataContextValue;
   ops: TimelineEditorOpsContextValue;

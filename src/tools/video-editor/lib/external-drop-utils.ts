@@ -7,8 +7,7 @@ import { getTrackIndex } from '@/tools/video-editor/lib/editor-utils';
 import { inferDragKind } from '@/tools/video-editor/lib/drop-position';
 import { resolveOverlaps } from '@/tools/video-editor/lib/resolve-overlaps';
 import {
-  getDroppedGenerationAssetDurationSeconds,
-  getDroppedGenerationClipSpanSeconds,
+  getDroppedGenerationDurationContract,
 } from '@/tools/video-editor/lib/timeline-asset-durations';
 import {
   buildAssetDropEdit,
@@ -396,8 +395,9 @@ export function handleMultiGenerationDrop({
   let timeOffset = 0;
 
   for (const generationData of generationItems) {
-    const assetDurationSeconds = getDroppedGenerationAssetDurationSeconds(generationData);
-    const clipSpanSeconds = getDroppedGenerationClipSpanSeconds(generationData);
+    const durationContract = getDroppedGenerationDurationContract(generationData);
+    const assetDurationSeconds = durationContract.assetDurationSeconds;
+    const clipSpanSeconds = durationContract.clipSpanSeconds ?? 5;
     const registrationPlan = planGenerationAssetRegistration({
       generationId: generationData.generationId,
       variantId: generationData.variantId,
@@ -498,8 +498,9 @@ export function handleSingleGenerationDrop({
     return false;
   }
 
-  const assetDurationSeconds = getDroppedGenerationAssetDurationSeconds(generationData);
-  const clipSpanSeconds = getDroppedGenerationClipSpanSeconds(generationData);
+  const durationContract = getDroppedGenerationDurationContract(generationData);
+  const assetDurationSeconds = durationContract.assetDurationSeconds;
+  const clipSpanSeconds = durationContract.clipSpanSeconds ?? 5;
   const registrationPlan = planGenerationAssetRegistration({
     generationId: generationData.generationId,
     variantId: generationData.variantId,

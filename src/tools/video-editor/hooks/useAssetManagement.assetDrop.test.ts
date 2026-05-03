@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { buildAssetDropEdit } from '@/tools/video-editor/hooks/useAssetManagement';
+import {
+  getDroppedGenerationDurationContract,
+  getDuplicateGenerationDurationContract,
+} from '@/tools/video-editor/lib/timeline-asset-durations';
 import { planGenerationAssetRegistration } from '@/tools/video-editor/lib/timeline-asset-plans';
 import type { TimelineData } from '@/tools/video-editor/lib/timeline-data';
 
@@ -149,6 +153,29 @@ describe('buildAssetDropEdit media kind validation', () => {
         generationId: 'gen-video',
         variantId: 'variant-video',
       },
+    });
+  });
+
+  it('keeps duplicate-generation duration separate from visible clip-span planning', () => {
+    expect(getDuplicateGenerationDurationContract({
+      file: 'https://example.com/source.mp4',
+      type: 'video/mp4',
+      duration: 8.25,
+    })).toEqual({
+      assetDurationSeconds: 8.25,
+      clipSpanSeconds: null,
+    });
+  });
+
+  it('keeps unresolved external-drop video duration out of the registry while preserving the five-second visible fallback', () => {
+    expect(getDroppedGenerationDurationContract({
+      generationId: 'gen-video',
+      imageUrl: 'https://example.com/final.mp4',
+      variantType: 'video',
+      metadata: { content_type: 'video/mp4' },
+    })).toEqual({
+      assetDurationSeconds: null,
+      clipSpanSeconds: 5,
     });
   });
 });
