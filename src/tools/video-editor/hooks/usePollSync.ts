@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MutableRefObject } from 'react';
 import { isInteractionActive, onInteractionEnd, type InteractionStateRef } from '@/tools/video-editor/lib/interaction-state';
 import { shouldAcceptPolledData } from '@/tools/video-editor/lib/timeline-save-utils';
-import { buildTimelineData, preserveUploadingClips, type TimelineData } from '@/tools/video-editor/lib/timeline-data';
+import type { AssetResolver } from '@/tools/video-editor/data/AssetResolver';
+import { buildTimelineDataWithResolver, preserveUploadingClips, type TimelineData } from '@/tools/video-editor/lib/timeline-data';
 import type { DataProvider } from '@/tools/video-editor/data/DataProvider';
 import type { CommitDataOptions } from '@/tools/video-editor/hooks/useTimelineCommit';
 import type { TimelineStoreApi } from '@/tools/video-editor/hooks/timelineStore';
@@ -39,7 +40,8 @@ export interface PollRejectionInput extends TimelinePollGate {
 interface UsePollSyncOptions {
   store?: TimelineStoreApi;
   queries: UsePollSyncQueries;
-  provider: DataProvider;
+  assetResolver: AssetResolver;
+  timelineId?: string;
   commitData: (nextData: TimelineData, options?: CommitDataOptions) => void;
   dataRef: MutableRefObject<TimelineData | null>;
   selectedClipIdRef: MutableRefObject<string | null>;
@@ -113,7 +115,8 @@ export function getTimelinePollRejectionReason({
 export function usePollSync({
   store,
   queries,
-  provider,
+  assetResolver,
+  timelineId,
   commitData,
   dataRef,
   selectedClipIdRef,
@@ -296,11 +299,12 @@ export function usePollSync({
 
     lastRegistryDataRef.current = registry;
 
-    void buildTimelineData(
+    void buildTimelineDataWithResolver(
       current.config,
       registry,
-      (file) => provider.resolveAssetUrl(file),
+      assetResolver,
       current.configVersion,
+      timelineId,
     ).then((nextData) => {
       if (
         nextData.stableSignature === current.stableSignature
@@ -332,9 +336,9 @@ export function usePollSync({
       return () => window.clearTimeout(syncHandle);
     });
   }, [
+    assetResolver,
     editSeqRef,
     isSavingRef,
-    provider,
     queries.assetRegistryQuery.data,
     savedSeqRef,
     selectedClipIdRef,
@@ -342,5 +346,6 @@ export function usePollSync({
     getDataRef,
     getInteractionStateRef,
     getPendingOpsRef,
+    timelineId,
   ]);
 }

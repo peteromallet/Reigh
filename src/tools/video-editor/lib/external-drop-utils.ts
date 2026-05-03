@@ -1,6 +1,10 @@
 import type { DragEvent, MutableRefObject } from 'react';
 import type { GenerationDropData } from '@/shared/lib/dnd/dragDrop';
 import { getDragType } from '@/shared/lib/dnd/dragDrop';
+import {
+  resolveAssetUrlWithResolver,
+  type AssetResolver,
+} from '@/tools/video-editor/data/AssetResolver';
 import { createAutoScroller } from '@/tools/video-editor/lib/auto-scroll';
 import { getCompatibleTrackId, updateClipOrder } from '@/tools/video-editor/lib/coordinate-utils';
 import { getTrackIndex } from '@/tools/video-editor/lib/editor-utils';
@@ -226,6 +230,7 @@ export function handleEffectLayerDrop({
 export async function handleFileDrop({
   files,
   dataRef,
+  timelineId,
   pendingOpsRef,
   dropPosition,
   insertAtTop,
@@ -234,7 +239,7 @@ export async function handleFileDrop({
   patchRegistry,
   uploadAsset,
   invalidateAssetRegistry,
-  resolveAssetUrl,
+  assetResolver,
   registerGenerationAsset,
   uploadImageGeneration,
   uploadVideoGeneration,
@@ -242,6 +247,7 @@ export async function handleFileDrop({
 }: {
   files: File[];
   dataRef: MutableRefObject<TimelineData | null>;
+  timelineId: string;
   pendingOpsRef: MutableRefObject<number>;
   dropPosition: TimelineDropPosition;
   insertAtTop: boolean;
@@ -250,7 +256,7 @@ export async function handleFileDrop({
   patchRegistry: TimelinePatchRegistry;
   uploadAsset: TimelineUploadAsset;
   invalidateAssetRegistry: TimelineInvalidateAssetRegistry;
-  resolveAssetUrl: (file: string) => Promise<string>;
+  assetResolver: AssetResolver;
   registerGenerationAsset: UseAssetManagementResult['registerGenerationAsset'];
   uploadImageGeneration: UseAssetManagementResult['uploadImageGeneration'];
   uploadVideoGeneration: UseAssetManagementResult['uploadVideoGeneration'];
@@ -349,7 +355,12 @@ export async function handleFileDrop({
         }
 
         const result = await uploadAsset(file);
-        const sourceUrl = await resolveAssetUrl(result.entry.file);
+        const sourceUrl = await resolveAssetUrlWithResolver(assetResolver, {
+          file: result.entry.file,
+          assetId: result.assetId,
+          entry: result.entry,
+          timelineId,
+        });
         patchRegistry(result.assetId, result.entry, sourceUrl);
 
         const current = dataRef.current;

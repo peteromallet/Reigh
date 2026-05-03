@@ -23,7 +23,7 @@ export function useTimelineSave(
   interactionStateRef: InteractionStateRef,
   store: TimelineStoreApi,
 ) {
-  const { timelineId } = useVideoEditorRuntime();
+  const { assetResolver, timelineId } = useVideoEditorRuntime();
   const lastSavedSignatureRef = useRef('');
   const savedSeqRef = useRef(0);
   const configVersionRef = useRef(1);
@@ -35,6 +35,7 @@ export function useTimelineSave(
   const persistence = useTimelinePersistence({
     store,
     provider,
+    assetResolver,
     timelineId,
     eventBus: eventBusRef.current,
     dataRef: commit.dataRef,
@@ -55,7 +56,8 @@ export function useTimelineSave(
   usePollSync({
     store,
     queries,
-    provider,
+    assetResolver,
+    timelineId,
     commitData: commit.commitData,
     dataRef: commit.dataRef,
     selectedClipIdRef: commit.selectedClipIdRef,

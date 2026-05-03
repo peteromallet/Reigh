@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Clapperboard, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { getSupabaseUrl } from '@/integrations/supabase/config/env';
 import { Button } from '@/shared/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/shared/components/ui/card';
 import { cn } from '@/shared/components/ui/contracts/cn';
@@ -9,11 +10,13 @@ import { Skeleton } from '@/shared/components/ui/skeleton';
 import { useAuth } from '@/shared/contexts/AuthContext';
 import { useProjectSelectionContext } from '@/shared/contexts/ProjectContext';
 import { useToolSettings } from '@/shared/hooks/settings/useToolSettings';
+import { readAccessTokenFromStorage } from '@/shared/lib/supabaseSession';
 import { toast } from '@/shared/components/ui/toast';
 import { SupabaseDataProvider } from '@/tools/video-editor/data/SupabaseDataProvider';
 import { VideoEditorProvider } from '@/tools/video-editor/contexts/VideoEditorProvider';
 import { useTimelinesList } from '@/tools/video-editor/hooks/useTimelinesList';
 import { VideoEditorShell } from '@/tools/video-editor/components/VideoEditorShell';
+import { createRenderRuntime } from '@/tools/video-editor/render/renderRuntime';
 import { videoEditorSettings } from '@/tools/video-editor/settings/videoEditorDefaults';
 
 function TimelineList({ onSelect }: { onSelect: (timelineId: string) => void }) {
@@ -192,6 +195,16 @@ export default function VideoEditorPage() {
     }
     return new SupabaseDataProvider({ projectId: selectedProjectId, userId });
   }, [selectedProjectId, userId]);
+  const renderRuntime = useMemo(() => {
+    if (!selectedProjectId) {
+      return null;
+    }
+    return createRenderRuntime({
+      projectId: selectedProjectId,
+      orchestratorBaseUrl: getSupabaseUrl(),
+      getWorkerJwt: async () => readAccessTokenFromStorage(),
+    });
+  }, [selectedProjectId]);
   const timelines = useTimelinesList(selectedProjectId, userId);
   const { settings, update } = useToolSettings(videoEditorSettings.id, {
     projectId: selectedProjectId ?? undefined,
@@ -322,7 +335,14 @@ export default function VideoEditorPage() {
 
   return (
     <div className={cn('h-full w-full overflow-hidden bg-background')}>
-      <VideoEditorProvider dataProvider={provider} timelineId={timelineId} timelineName={timelineName} userId={userId}>
+      <VideoEditorProvider
+        dataProvider={provider}
+        assetResolver={provider}
+        renderRuntime={renderRuntime ?? undefined}
+        timelineId={timelineId}
+        timelineName={timelineName}
+        userId={userId}
+      >
         <VideoEditorShell
           mode="full"
           timelineId={timelineId}

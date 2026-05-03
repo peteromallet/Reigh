@@ -1,21 +1,19 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useClientRender } from '@/tools/video-editor/hooks/useClientRender';
-import type { CompositionMetadata } from '@/tools/video-editor/hooks/useDerivedTimeline';
+import type { TimelineQueuedRender, TimelineRenderRequest } from '@/tools/video-editor/hooks/timeline-state-types';
 import { decideRenderRoute } from '@/tools/video-editor/lib/renderRouter';
-import type { ResolvedTimelineConfig } from '@/tools/video-editor/types';
+import { executeRenderPipeline } from '@/tools/video-editor/render/renderPipeline';
 
-export type RenderStatus = 'idle' | 'rendering' | 'done' | 'error';
+export type RenderStatus = 'idle' | 'rendering' | 'queued' | 'done' | 'error';
 
 type RenderProgress = { current: number; total: number; percent: number; phase: string } | null;
 
-export function useRenderState(
-  resolvedConfig: ResolvedTimelineConfig | null,
-  renderMetadata: CompositionMetadata | null,
-) {
+export function useRenderState(renderRequest: TimelineRenderRequest) {
   const [renderStatus, setRenderStatus] = useState<RenderStatus>('idle');
   const [renderLog, setRenderLog] = useState('');
   const [renderDirty, setRenderDirty] = useState(false);
   const [renderProgress, setRenderProgress] = useState<RenderProgress>(null);
+  const [queuedRender, setQueuedRender] = useState<TimelineQueuedRender>(null);
   const [renderResultUrl, setRenderResultUrl] = useState<string | null>(null);
   const [renderResultFilename, setRenderResultFilename] = useState<string | null>(null);
 
@@ -28,8 +26,8 @@ export function useRenderState(
   }, [renderResultUrl]);
 
   const startClientRender = useClientRender({
-    resolvedConfig,
-    metadata: renderMetadata,
+    resolvedConfig: renderRequest.resolvedConfig,
+    metadata: renderRequest.renderMetadata,
     setRenderStatus,
     setRenderProgress,
     setRenderLog,
@@ -49,31 +47,42 @@ export function useRenderState(
   });
 
   const startRender = useCallback(async () => {
-    const decision = decideRenderRoute(resolvedConfig);
-    if (decision.route === 'blocked') {
-      setRenderStatus('error');
+    setQueuedRender(null);
+    const decision = decideRenderRoute(renderRequest.resolvedConfig);
+    const result = await executeRenderPipeline({
+      decision,
+      request: renderRequest,
+      startBrowserRender: startClientRender,
+    });
+
+    if (result.status === 'queued') {
+      setRenderStatus('queued');
       setRenderProgress(null);
       setRenderDirty(false);
-      setRenderLog(`Render blocked: ${decision.reason}. Generated Remotion module clips require valid worker artifact metadata.`);
+      setRenderLog(result.message);
+      setQueuedRender({
+        providerId: result.providerId,
+        taskId: result.taskId ?? null,
+        correlationId: result.correlationId ?? null,
+        message: result.message,
+      });
       return;
     }
 
-    if (decision.route === 'banodoco') {
+    if (result.status === 'error') {
       setRenderStatus('error');
       setRenderProgress(null);
       setRenderDirty(false);
-      setRenderLog(`Worker render unavailable for route "${decision.reason}". This timeline was not sent to the browser renderer.`);
-      return;
+      setRenderLog(result.message);
     }
-
-    await startClientRender();
-  }, [resolvedConfig, startClientRender]);
+  }, [renderRequest, startClientRender]);
 
   return {
     renderStatus,
     renderLog,
     renderDirty,
     renderProgress,
+    queuedRender,
     renderResultUrl,
     renderResultFilename,
     setRenderStatus,

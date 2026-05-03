@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { useEffect, useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { useAddToVideoEditor } from '@/domains/media-lightbox/hooks/useAddToVideoEditor';
@@ -24,6 +25,7 @@ import {
   useTimelineEditorOps,
   useTimelinePlaybackContext,
 } from '@/tools/video-editor/hooks/timelineStore';
+import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext';
 import {
   shouldAllowTouchClipDrag,
   shouldAllowTouchMarquee,
@@ -31,7 +33,9 @@ import {
   shouldPreserveTouchSelectionForMove,
   shouldToggleTouchSelection,
 } from '@/tools/video-editor/lib/mobile-interaction-model';
+import type { AssetResolver } from '@/tools/video-editor/data/AssetResolver';
 import type { DataProvider } from '@/tools/video-editor/data/DataProvider';
+import type { RenderRuntime } from '@/tools/video-editor/render/renderRuntime';
 
 const navigateMock = vi.fn();
 
@@ -204,8 +208,21 @@ vi.mock('@/tools/video-editor/hooks/useTimelineState', () => ({
       renderLog: '',
       renderDirty: false,
       renderProgress: null,
+      queuedRender: null,
       renderResultUrl: null,
       renderResultFilename: null,
+      renderRequest: {
+        timelineId: 'timeline-1',
+        assetRegistry: { assets: {} },
+        resolvedConfig: { registry: {} },
+        renderMetadata: null,
+        renderRuntime: {
+          projectId: 'project-1',
+          orchestratorBaseUrl: 'https://orchestrator.example.test',
+          getSupabaseSession: vi.fn(async () => null),
+          getWorkerJwt: vi.fn(async () => null),
+        },
+      },
       undo: vi.fn(),
       redo: vi.fn(),
       canUndo: false,
@@ -312,6 +329,31 @@ function AddToVideoEditorConsumer() {
   );
 }
 
+function RuntimeProbe({ assetPath }: { assetPath: string }) {
+  const runtime = useVideoEditorRuntime();
+  const [resolvedUrl, setResolvedUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void runtime.assetResolver.resolveAssetUrl(assetPath).then((value) => {
+      if (!cancelled) {
+        setResolvedUrl(value);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [assetPath, runtime]);
+
+  return (
+    <div>
+      <span data-testid="runtime-project-id">{runtime.renderRuntime.projectId}</span>
+      <span data-testid="runtime-orchestrator">{runtime.renderRuntime.orchestratorBaseUrl}</span>
+      <span data-testid="runtime-resolved-url">{resolvedUrl ?? 'loading'}</span>
+    </div>
+  );
+}
+
 describe('VideoEditorProvider', () => {
   beforeEach(() => {
     navigateMock.mockReset();
@@ -335,12 +377,24 @@ describe('VideoEditorProvider', () => {
     }));
   });
 
-  it('provides editor data, editor ops, chrome, and playback contexts together', () => {
+  it('provides editor data, editor ops, chrome, and playback contexts together', async () => {
     const provider: DataProvider = {
-      loadTimeline: vi.fn(),
-      saveTimeline: vi.fn(),
-      loadAssetRegistry: vi.fn(),
-      resolveAssetUrl: vi.fn(),
+      loadTimeline: vi.fn(async () => ({
+        config: { output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' }, clips: [], tracks: [] },
+        configVersion: 1,
+      })),
+      saveTimeline: vi.fn(async () => 1),
+      loadAssetRegistry: vi.fn(async () => ({ assets: {} })),
+      resolveAssetUrl: vi.fn(async (file: string) => `provider:${file}`),
+    };
+    const assetResolver: AssetResolver = {
+      resolveAssetUrl: vi.fn(async (file: string) => `resolver:${file}`),
+    };
+    const renderRuntime: RenderRuntime = {
+      projectId: 'project-1',
+      orchestratorBaseUrl: 'https://supabase.example.test',
+      getSupabaseSession: vi.fn(async () => null),
+      getWorkerJwt: vi.fn(async () => null),
     };
     const queryClient = new QueryClient({
       defaultOptions: {
@@ -354,8 +408,15 @@ describe('VideoEditorProvider', () => {
       <MemoryRouter>
         <QueryClientProvider client={queryClient}>
           <AgentChatProvider>
-            <VideoEditorProvider dataProvider={provider} timelineId="timeline-1" userId="user-1">
+            <VideoEditorProvider
+              dataProvider={provider}
+              assetResolver={assetResolver}
+              renderRuntime={renderRuntime}
+              timelineId="timeline-1"
+              userId="user-1"
+            >
               <Consumer />
+              <RuntimeProbe assetPath="clip.mp4" />
             </VideoEditorProvider>
           </AgentChatProvider>
         </QueryClientProvider>
@@ -382,6 +443,11 @@ describe('VideoEditorProvider', () => {
     expect(screen.getByText('saved')).toBeInTheDocument();
     expect(screen.getByText('12.5')).toBeInTheDocument();
     expect(screen.getByTestId('agent-chat-timeline-id')).toHaveTextContent('timeline-1');
+    expect(screen.getByTestId('runtime-project-id')).toHaveTextContent('project-1');
+    expect(screen.getByTestId('runtime-orchestrator')).toHaveTextContent('https://supabase.example.test');
+    await waitFor(() => {
+      expect(screen.getByTestId('runtime-resolved-url')).toHaveTextContent('resolver:clip.mp4');
+    });
 
     fireEvent.click(screen.getByRole('button', { name: 'update interaction' }));
 
@@ -396,6 +462,8 @@ describe('VideoEditorProvider', () => {
       clipId: 'clip-1',
       url: 'https://example.com/image.png',
     }));
+    expect(provider.resolveAssetUrl).not.toHaveBeenCalled();
+    expect(assetResolver.resolveAssetUrl).toHaveBeenCalledWith('clip.mp4');
   });
 
   it('lets editor timeline replacement update selection while preserving gallery attachments', () => {

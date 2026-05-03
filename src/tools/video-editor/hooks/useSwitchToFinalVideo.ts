@@ -10,6 +10,7 @@ import {
   buildSwitchShotGroupToImagesMutation,
   buildUpdateShotGroupToLatestVideoMutation,
 } from '@/tools/video-editor/lib/shot-group-commands';
+import { optimisticallyPersistAssetRegistryEntry } from '@/tools/video-editor/lib/assetRegistryPersistence';
 import { findGroupForTrack, resolveGroupTrackId } from '@/tools/video-editor/lib/pinned-group-projection';
 import type {
   TimelineApplyEdit,
@@ -33,17 +34,27 @@ function registerFinalVideoAsset(
   finalVideo: ShotFinalVideo,
   currentData: TimelineDataRef['current'],
   patchRegistry: TimelinePatchRegistry,
+  unpatchRegistry: TimelineUnpatchRegistry,
   registerAsset: TimelineRegisterAsset,
 ): Promise<{ assetKey: string; durationSeconds: number | null; persistPromise: Promise<void> }> {
   return (async () => {
     const durationSeconds = await resolveFinalVideoDurationSeconds(finalVideo, currentData?.registry.assets);
     const assetKey = generateUUID();
     const assetEntry = buildFinalVideoAssetEntry(finalVideo, durationSeconds);
-    patchRegistry(assetKey, assetEntry, finalVideo.location);
     return {
       assetKey,
       durationSeconds,
-      persistPromise: registerAsset(assetKey, assetEntry),
+      persistPromise: optimisticallyPersistAssetRegistryEntry({
+        assetId: assetKey,
+        entry: assetEntry,
+        patchRegistry,
+        persistAsset: registerAsset,
+        src: finalVideo.location,
+        rollback: {
+          mode: 'remove',
+          unpatchRegistry,
+        },
+      }),
     };
   })();
 }
@@ -128,6 +139,7 @@ export function useSwitchToFinalVideo({
       finalVideo,
       dataRef.current,
       patchRegistry,
+      unpatchRegistry,
       registerAsset,
     );
     const mutation = buildSwitchShotGroupToFinalVideoMutation({
@@ -180,6 +192,7 @@ export function useSwitchToFinalVideo({
       finalVideo,
       dataRef.current,
       patchRegistry,
+      unpatchRegistry,
       registerAsset,
     );
     const mutation = buildUpdateShotGroupToLatestVideoMutation({

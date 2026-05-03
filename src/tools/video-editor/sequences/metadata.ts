@@ -21,6 +21,14 @@ export type SequenceHoldMetadata = {
   stepSeconds: number;
 };
 
+export type SequenceCapabilityOverrides = {
+  preview?: 'browser' | 'placeholder';
+  previewFallbackReason?: 'worker_only' | 'unsupported';
+  browserRender?: boolean;
+  workerRender?: boolean;
+  externalRender?: boolean;
+};
+
 export type TrustedSequenceMetadata = {
   clipType: string;
   themeId: typeof TRUSTED_SEQUENCE_THEME_ID;
@@ -29,6 +37,7 @@ export type TrustedSequenceMetadata = {
   whenToUse: string;
   hold: SequenceHoldMetadata;
   params: readonly SequenceParamMetadata[];
+  capabilities?: SequenceCapabilityOverrides;
 };
 
 const DEFAULT_HOLD: SequenceHoldMetadata = {

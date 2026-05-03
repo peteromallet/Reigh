@@ -603,6 +603,20 @@ function FullEditorLayout({ timelineId, forceCondensed = false }: { timelineId: 
             ? `Render ${chrome.renderProgress.percent}%`
             : 'Render'}
         </Button>
+        {chrome.queuedRender && chrome.renderStatus === 'queued' && (
+          <div
+            className={cn(
+              'flex items-center gap-2 rounded-md border border-border/70 bg-background/80 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground',
+              touchChrome ? 'min-h-11 px-3 py-2' : 'px-2 py-1',
+            )}
+          >
+            <Badge variant="secondary" className="h-5 px-1.5 text-[9px] tracking-[0.14em]">
+              Queued
+            </Badge>
+            {chrome.queuedRender.taskId && <span>{`Task ${chrome.queuedRender.taskId}`}</span>}
+            {!chrome.queuedRender.taskId && <span>{chrome.queuedRender.providerId}</span>}
+          </div>
+        )}
         {chrome.renderResultUrl && chrome.renderStatus === 'done' && !chrome.renderDirty && (
           <a
             href={chrome.renderResultUrl}
@@ -616,6 +630,12 @@ function FullEditorLayout({ timelineId, forceCondensed = false }: { timelineId: 
           </a>
         )}
       </div>
+      {chrome.queuedRender && chrome.renderStatus === 'queued' && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+          <span>{chrome.queuedRender.message}</span>
+          {chrome.queuedRender.correlationId && <span>{`Ref ${chrome.queuedRender.correlationId}`}</span>}
+        </div>
+      )}
     </div>
   );
 

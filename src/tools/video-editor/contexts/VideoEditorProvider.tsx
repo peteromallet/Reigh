@@ -6,6 +6,7 @@ import { MediaLightbox } from '@/domains/media-lightbox/MediaLightbox';
 import { useShots } from '@/shared/contexts/ShotsContext';
 import type { GenerationRow } from '@/domains/generation/types';
 import { VideoEditorLightboxOverlay } from '@/tools/video-editor/components/VideoEditorLightboxOverlay';
+import type { AssetResolver } from '@/tools/video-editor/data/AssetResolver';
 import type { DataProvider } from '@/tools/video-editor/data/DataProvider';
 import {
   DataProviderWrapper,
@@ -28,6 +29,7 @@ import { useVideoEditorLightboxNavigation } from '@/tools/video-editor/hooks/use
 import { isOpenableAssetType } from '@/tools/video-editor/lib/editor-utils';
 import { loadGenerationForLightbox } from '@/tools/video-editor/lib/generation-utils';
 import { getClipTimelineDuration } from '@/tools/video-editor/lib/config-utils';
+import type { RenderRuntime } from '@/tools/video-editor/render/renderRuntime';
 import {
   ADD_GENERATION_QUERY_PARAM,
   readPendingAdds,
@@ -359,19 +361,32 @@ function InnerProvider({
 
 export function VideoEditorProvider({
   dataProvider,
+  assetResolver,
+  renderRuntime,
   timelineId,
   timelineName,
   userId,
   children,
 }: {
   dataProvider: DataProvider;
+  assetResolver?: AssetResolver;
+  renderRuntime?: RenderRuntime;
   timelineId: string;
   timelineName?: string | null;
   userId: string;
   children: React.ReactNode;
 }) {
   return (
-    <DataProviderWrapper value={{ provider: dataProvider, timelineId, timelineName, userId }}>
+    <DataProviderWrapper
+      value={{
+        provider: dataProvider,
+        assetResolver: assetResolver ?? dataProvider,
+        renderRuntime,
+        timelineId,
+        timelineName,
+        userId,
+      }}
+    >
       <InnerProvider userId={userId}>{children}</InnerProvider>
     </DataProviderWrapper>
   );

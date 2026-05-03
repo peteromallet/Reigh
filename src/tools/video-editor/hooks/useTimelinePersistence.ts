@@ -3,12 +3,13 @@ import { useMutation } from '@tanstack/react-query';
 import { isInteractionActive, onInteractionEnd, type InteractionStateRef } from '@/tools/video-editor/lib/interaction-state';
 import { TimelineEventBus } from '@/tools/video-editor/hooks/useTimelineEventBus';
 import type { TimelineStoreApi } from '@/tools/video-editor/hooks/timelineStore';
+import type { AssetResolver } from '@/tools/video-editor/data/AssetResolver';
 import {
   isTimelineNotFoundError,
   isTimelineVersionConflictError,
   type DataProvider,
 } from '@/tools/video-editor/data/DataProvider';
-import { buildTimelineData, type TimelineData } from '@/tools/video-editor/lib/timeline-data';
+import { buildTimelineDataWithResolver, type TimelineData } from '@/tools/video-editor/lib/timeline-data';
 import type { AssetRegistry, TimelineConfig } from '@/tools/video-editor/types';
 import type { CommitDataOptions, ScheduleSaveFn } from '@/tools/video-editor/hooks/useTimelineCommit';
 
@@ -22,6 +23,7 @@ type ConfigVersionUpdateSource = 'save' | 'reload' | 'conflict-retry';
 interface UseTimelinePersistenceOptions {
   store?: TimelineStoreApi;
   provider: DataProvider;
+  assetResolver: AssetResolver;
   timelineId: string;
   eventBus: TimelineEventBus;
   dataRef: MutableRefObject<TimelineData | null>;
@@ -47,6 +49,7 @@ export interface UseTimelinePersistenceResult {
 export function useTimelinePersistence({
   store,
   provider,
+  assetResolver,
   timelineId,
   eventBus,
   dataRef,
@@ -65,6 +68,7 @@ export function useTimelinePersistence({
   // Stash for scheduleSave() calls that arrive while a drag/resize is active.
   // Flushed on gesture end by the onInteractionEnd listener below.
   const deferredSaveRef = useRef<{ data: TimelineData; preserveStatus?: boolean } | null>(null);
+  const scheduleSaveRef = useRef<ScheduleSaveFn | null>(null);
   const isSavingRef = useRef(false);
 
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
@@ -275,8 +279,9 @@ export function useTimelinePersistence({
       }
 
       setSaveStatus('error');
-      if (dataRef.current) {
-        scheduleSave(dataRef.current, { preserveStatus: true });
+      const latestDataRef = getDataRef();
+      if (latestDataRef.current) {
+        scheduleSaveRef.current?.(latestDataRef.current, { preserveStatus: true });
       }
     } finally {
       if (!options?.bypassQueue) {
@@ -341,6 +346,10 @@ export function useTimelinePersistence({
     }, 500);
   }, [doSave, editSeqRef, getInteractionStateRef]);
 
+  useEffect(() => {
+    scheduleSaveRef.current = scheduleSave;
+  }, [scheduleSave]);
+
   // When a gesture ends, flush the latest deferred payload (if any) through
   // the normal scheduleSave path, which will now proceed past the gate.
   useEffect(() => {
@@ -368,11 +377,12 @@ export function useTimelinePersistence({
     configVersionRef.current = loadedTimeline.configVersion;
 
     commitData(
-      await buildTimelineData(
+      await buildTimelineDataWithResolver(
         loadedTimeline.config,
         registry,
-        (file) => provider.resolveAssetUrl(file),
+        assetResolver,
         loadedTimeline.configVersion,
+        timelineId,
       ),
       {
         save: false,
@@ -389,6 +399,7 @@ export function useTimelinePersistence({
     editSeqRef,
     logConfigVersionUpdate,
     provider,
+    assetResolver,
     savedSeqRef,
     selectedClipIdRef,
     selectedTrackIdRef,

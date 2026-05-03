@@ -7,8 +7,12 @@ import {
 import {
   AVAILABLE_SEQUENCE_CLIP_TYPES,
   AVAILABLE_SEQUENCE_METADATA,
+  buildSequenceClipCapabilityRegistry,
+  CLIP_CAPABILITY_REGISTRY,
   filterTrustedSequenceMetadataForRegistry,
+  getClipCapabilityDescriptor,
   isAvailableSequenceClipType,
+  SEQUENCE_COMPONENT_REGISTRY,
 } from '@/tools/video-editor/sequences/registry';
 
 describe('trusted sequence metadata', () => {
@@ -69,18 +73,15 @@ describe('trusted sequence metadata', () => {
 });
 
 describe('available sequence metadata', () => {
-  it('exposes only trusted sequences that exist in the generated theme package registry', () => {
-    expect([...AVAILABLE_SEQUENCE_CLIP_TYPES].sort()).toEqual([
-      'art-card',
-      'cta-card',
-      'image-jump',
-      'resource-card',
-      'section-hook',
-    ]);
-    expect(AVAILABLE_SEQUENCE_METADATA).toHaveLength(5);
-    expect(isAvailableSequenceClipType('section-hook')).toBe(true);
+  it('exposes only trusted sequences that exist in the active component registry', () => {
+    expect(AVAILABLE_SEQUENCE_METADATA).toEqual(
+      filterTrustedSequenceMetadataForRegistry(SEQUENCE_COMPONENT_REGISTRY),
+    );
+    expect(AVAILABLE_SEQUENCE_CLIP_TYPES).toContain('image-jump');
     expect(isAvailableSequenceClipType('image-jump')).toBe(true);
-    expect(isAvailableSequenceClipType('theme-package-not-yet-trusted')).toBe(false);
+    expect(
+      AVAILABLE_SEQUENCE_CLIP_TYPES.every((clipType) => TRUSTED_SEQUENCE_CLIP_TYPES.includes(clipType as typeof TRUSTED_SEQUENCE_CLIP_TYPES[number])),
+    ).toBe(true);
   });
 
   it('filters trusted metadata against a provided frontend registry shape', () => {
@@ -93,5 +94,56 @@ describe('available sequence metadata', () => {
       'resource-card',
       'section-hook',
     ]);
+  });
+
+  it('builds explicit capability defaults for registry-discovered sequence clips', () => {
+    const descriptors = buildSequenceClipCapabilityRegistry({
+      'section-hook': {
+        component: () => null,
+        themeId: '2rp',
+        source: 'installed:@banodoco/timeline-theme-2rp',
+      },
+      'theme-package-not-yet-trusted': {
+        component: () => null,
+        themeId: 'custom',
+        source: 'installed:@banodoco/timeline-theme-custom',
+      },
+    });
+
+    expect(descriptors['section-hook']).toMatchObject({
+      source: 'installed-sequence',
+      capabilities: {
+        preview: 'browser',
+        browserRender: false,
+        workerRender: true,
+      },
+    });
+    expect(descriptors['theme-package-not-yet-trusted']).toMatchObject({
+      source: 'registry-discovered',
+      capabilities: {
+        preview: 'browser',
+        browserRender: false,
+        workerRender: true,
+      },
+    });
+  });
+
+  it('keeps built-ins and trusted local sequences in one clip capability source of truth', () => {
+    expect(CLIP_CAPABILITY_REGISTRY.media).toMatchObject({
+      source: 'builtin',
+      capabilities: {
+        preview: 'browser',
+        browserRender: true,
+        workerRender: false,
+      },
+    });
+    expect(getClipCapabilityDescriptor('image-jump')).toMatchObject({
+      source: 'trusted-local-sequence',
+      capabilities: {
+        preview: 'browser',
+        browserRender: false,
+        workerRender: true,
+      },
+    });
   });
 });

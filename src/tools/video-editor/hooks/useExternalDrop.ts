@@ -9,6 +9,7 @@ import { useShots } from '@/shared/contexts/ShotsContext';
 import { getMediaUrl, getThumbnailUrl } from '@/shared/lib/media/mediaTypeHelpers';
 import { inferDragKind } from '@/tools/video-editor/lib/drop-position';
 import { resolveFinalVideoDurationSeconds } from '@/tools/video-editor/lib/finalVideoAssets';
+import type { AssetResolver } from '@/tools/video-editor/data/AssetResolver';
 import type { DragCoordinator } from '@/tools/video-editor/hooks/useDragCoordinator';
 import {
   buildAssetDropEdit,
@@ -57,6 +58,7 @@ async function resolveFinalVideoDurationSecondsWithRetry(
 async function dispatchTimelineDrop({
   event,
   dataRef,
+  timelineId,
   pendingOpsRef,
   dropPosition,
   selectedTrackId,
@@ -64,7 +66,7 @@ async function dispatchTimelineDrop({
   patchRegistry,
   uploadAsset,
   invalidateAssetRegistry,
-  resolveAssetUrl,
+  assetResolver,
   registerGenerationAsset,
   uploadImageGeneration,
   uploadVideoGeneration,
@@ -75,6 +77,7 @@ async function dispatchTimelineDrop({
 }: {
   event: React.DragEvent<HTMLDivElement>;
   dataRef: React.MutableRefObject<TimelineData | null>;
+  timelineId: string;
   pendingOpsRef: React.MutableRefObject<number>;
   dropPosition: TimelineDropPosition;
   selectedTrackId: string | null;
@@ -82,7 +85,7 @@ async function dispatchTimelineDrop({
   patchRegistry: TimelinePatchRegistry;
   uploadAsset: TimelineUploadAsset;
   invalidateAssetRegistry: TimelineInvalidateAssetRegistry;
-  resolveAssetUrl: (file: string) => Promise<string>;
+  assetResolver: AssetResolver;
   registerGenerationAsset: UseAssetManagementResult['registerGenerationAsset'];
   uploadImageGeneration: UseAssetManagementResult['uploadImageGeneration'];
   uploadVideoGeneration: UseAssetManagementResult['uploadVideoGeneration'];
@@ -114,7 +117,8 @@ async function dispatchTimelineDrop({
     patchRegistry,
     uploadAsset,
     invalidateAssetRegistry,
-    resolveAssetUrl,
+    assetResolver,
+    timelineId,
     registerGenerationAsset,
     uploadImageGeneration,
     uploadVideoGeneration,
@@ -329,6 +333,7 @@ async function dispatchTimelineDrop({
 export interface UseExternalDropArgs {
   store?: TimelineStoreApi;
   dataRef: React.MutableRefObject<TimelineData | null>;
+  timelineId: string;
   pendingOpsRef: React.MutableRefObject<number>;
   scale: number;
   scaleWidth: number;
@@ -338,7 +343,7 @@ export interface UseExternalDropArgs {
   registerAsset: TimelineRegisterAsset;
   uploadAsset: TimelineUploadAsset;
   invalidateAssetRegistry: TimelineInvalidateAssetRegistry;
-  resolveAssetUrl: (file: string) => Promise<string>;
+  assetResolver: AssetResolver;
   coordinator: DragCoordinator;
   registerGenerationAsset: UseAssetManagementResult['registerGenerationAsset'];
   uploadImageGeneration: UseAssetManagementResult['uploadImageGeneration'];
@@ -357,13 +362,14 @@ export interface UseExternalDropResult {
 export function useExternalDrop({
   store,
   dataRef,
+  timelineId,
   pendingOpsRef,
   selectedTrackId,
   applyEdit,
   patchRegistry,
   uploadAsset,
   invalidateAssetRegistry,
-  resolveAssetUrl,
+  assetResolver,
   coordinator,
   registerGenerationAsset,
   uploadImageGeneration,
@@ -489,6 +495,7 @@ export function useExternalDrop({
     await dispatchTimelineDrop({
       event,
       dataRef: getDataRef(),
+      timelineId,
       pendingOpsRef: getPendingOpsRef(),
       dropPosition,
       selectedTrackId: getSelectedTrackId(),
@@ -496,7 +503,7 @@ export function useExternalDrop({
       patchRegistry: getPatchRegistry(),
       uploadAsset,
       invalidateAssetRegistry,
-      resolveAssetUrl,
+      assetResolver,
       registerGenerationAsset,
       uploadImageGeneration,
       uploadVideoGeneration,
@@ -516,11 +523,12 @@ export function useExternalDrop({
     getSelectedTrackId,
     invalidateAssetRegistry,
     registerGenerationAsset,
-    resolveAssetUrl,
+    assetResolver,
     shots,
     finalVideoMap,
     handleAddTextAt,
     onSeekToTime,
+    timelineId,
     uploadAsset,
     uploadImageGeneration,
     uploadVideoGeneration,

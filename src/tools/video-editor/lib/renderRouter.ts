@@ -26,15 +26,13 @@
 // dispatch, not theme presence.
 
 import {
-  THEME_PACKAGE_REGISTRY,
-  type ThemePackageClipType,
-} from '@banodoco/timeline-composition/registry.generated';
-import {
   getGeneratedRemotionModuleStatus,
   type GeneratedRemotionModuleBlockReason,
   type GeneratedLaneClipShape,
 } from '@/tools/video-editor/lib/generated-lanes';
+import type { TimelineRenderRequest } from '@/tools/video-editor/hooks/timeline-state-types';
 import { materializeSequenceConfig } from '@/tools/video-editor/sequences/materialize';
+import { describeClipCapability } from '@/tools/video-editor/sequences/registry';
 
 /** Minimal clip shape we need from the resolved timeline. */
 export interface RouterClipShape extends GeneratedLaneClipShape {
@@ -46,10 +44,41 @@ export interface RouterTimelineShape {
   clips?: ReadonlyArray<RouterClipShape> | null;
 }
 
-export type RenderRoute = 'client' | 'banodoco' | 'blocked';
+export type RenderProviderId =
+  | 'browser-remotion'
+  | 'worker-banodoco'
+  | 'external'
+  | 'preview-only';
+
+export type RenderExportTarget = 'video-export' | 'preview-only';
+
+export interface RenderProviderDescriptor {
+  id: RenderProviderId;
+  exportTarget: RenderExportTarget;
+}
+
+export const RENDER_PROVIDER_REGISTRY: Record<RenderProviderId, RenderProviderDescriptor> = {
+  'browser-remotion': {
+    id: 'browser-remotion',
+    exportTarget: 'video-export',
+  },
+  'worker-banodoco': {
+    id: 'worker-banodoco',
+    exportTarget: 'video-export',
+  },
+  external: {
+    id: 'external',
+    exportTarget: 'video-export',
+  },
+  'preview-only': {
+    id: 'preview-only',
+    exportTarget: 'preview-only',
+  },
+};
 
 export interface RenderRouteDecision {
-  route: RenderRoute;
+  route: RenderProviderId;
+  provider: RenderProviderDescriptor;
   /** True iff at least one clip is themed (i.e. uses the registry). */
   hasThemedClip: boolean;
   /** True iff at least one clip is pure-media / Reigh-native. */
@@ -61,13 +90,9 @@ export interface RenderRouteDecision {
     | 'mixed_themed_and_media'
     | 'generated_remotion_module'
     | 'mixed_generated_module_and_other'
+    | 'external_only'
     | GeneratedRemotionModuleBlockReason;
 }
-
-const isThemePackageClipType = (value: unknown): value is ThemePackageClipType => {
-  if (typeof value !== 'string') return false;
-  return Object.prototype.hasOwnProperty.call(THEME_PACKAGE_REGISTRY, value);
-};
 
 const NATIVE_BUILTIN_CLIP_TYPES: ReadonlySet<string> = new Set([
   'media',
@@ -91,7 +116,8 @@ export function decideRenderRoute(
 
   if (clips.length === 0) {
     return {
-      route: 'client',
+      route: 'browser-remotion',
+      provider: RENDER_PROVIDER_REGISTRY['browser-remotion'],
       hasThemedClip: false,
       hasMediaClip: false,
       reason: 'no_clips',
@@ -101,12 +127,14 @@ export function decideRenderRoute(
   let hasThemedClip = false;
   let hasMediaClip = false;
   let hasGeneratedModuleClip = false;
+  let hasExternalOnlyClip = false;
   let hasOtherClip = false;
   for (const clip of clips) {
     const moduleStatus = getGeneratedRemotionModuleStatus(clip);
     if (moduleStatus.kind === 'blocked_module') {
       return {
-        route: 'blocked',
+        route: 'preview-only',
+        provider: RENDER_PROVIDER_REGISTRY['preview-only'],
         hasThemedClip: false,
         hasMediaClip: false,
         reason: moduleStatus.reason,
@@ -118,9 +146,10 @@ export function decideRenderRoute(
     }
 
     hasOtherClip = true;
-    if (isThemePackageClipType(clip?.clipType)) {
+    const descriptor = describeClipCapability(clip);
+    if (descriptor?.source !== 'builtin' && descriptor?.source !== 'generated-module' && descriptor?.capabilities.workerRender) {
       hasThemedClip = true;
-    } else if (isNativeBuiltinClipType(clip?.clipType)) {
+    } else if (descriptor?.source === 'builtin' || isNativeBuiltinClipType(clip?.clipType)) {
       hasMediaClip = true;
     } else {
       // Unknown clipType (theme package not installed, typo). Treat as
@@ -130,20 +159,40 @@ export function decideRenderRoute(
       // registered themes.
       hasMediaClip = true;
     }
+
+    if (
+      descriptor?.capabilities.externalRender
+      && !descriptor.capabilities.workerRender
+      && !descriptor.capabilities.browserRender
+    ) {
+      hasExternalOnlyClip = true;
+    }
   }
 
   if (hasGeneratedModuleClip) {
     return {
-      route: 'banodoco',
+      route: 'worker-banodoco',
+      provider: RENDER_PROVIDER_REGISTRY['worker-banodoco'],
       hasThemedClip,
       hasMediaClip,
       reason: hasOtherClip ? 'mixed_generated_module_and_other' : 'generated_remotion_module',
     };
   }
 
+  if (hasExternalOnlyClip && !hasThemedClip && !hasMediaClip) {
+    return {
+      route: 'external',
+      provider: RENDER_PROVIDER_REGISTRY.external,
+      hasThemedClip,
+      hasMediaClip,
+      reason: 'external_only',
+    };
+  }
+
   if (hasThemedClip && hasMediaClip) {
     return {
-      route: 'banodoco',
+      route: 'worker-banodoco',
+      provider: RENDER_PROVIDER_REGISTRY['worker-banodoco'],
       hasThemedClip,
       hasMediaClip,
       reason: 'mixed_themed_and_media',
@@ -151,14 +200,16 @@ export function decideRenderRoute(
   }
   if (hasThemedClip) {
     return {
-      route: 'banodoco',
+      route: 'worker-banodoco',
+      provider: RENDER_PROVIDER_REGISTRY['worker-banodoco'],
       hasThemedClip,
       hasMediaClip,
       reason: 'themed_only',
     };
   }
   return {
-    route: 'client',
+    route: 'browser-remotion',
+    provider: RENDER_PROVIDER_REGISTRY['browser-remotion'],
     hasThemedClip,
     hasMediaClip,
     reason: 'pure_native_clips',
@@ -181,10 +232,7 @@ export interface BanodocoRenderTimelinePayload {
 }
 
 export interface BuildRenderPayloadInput {
-  timelineId: string;
-  projectId: string;
-  resolvedConfig: { theme?: string; clips?: ReadonlyArray<RouterClipShape> } & Record<string, unknown>;
-  assetRegistry: Record<string, unknown> | null | undefined;
+  request: TimelineRenderRequest;
   outputFilename?: string;
   userJwt: string;
   /** Tests inject a deterministic UUID; production uses crypto.randomUUID. */
@@ -215,20 +263,20 @@ function newCorrelationId(): string {
 export function buildRenderTimelinePayload(
   input: BuildRenderPayloadInput,
 ): { payload?: BanodocoRenderTimelinePayload; error?: string } {
-  if (!input.timelineId) return { error: 'timelineId is required' };
-  if (!input.projectId) return { error: 'projectId is required' };
+  if (!input.request.timelineId) return { error: 'timelineId is required' };
+  if (!input.request.renderRuntime.projectId) return { error: 'projectId is required' };
   if (!input.userJwt) return { error: 'user JWT is required (SD-022)' };
-  if (!input.resolvedConfig) return { error: 'resolved timeline config is required' };
+  if (!input.request.resolvedConfig) return { error: 'resolved timeline config is required' };
 
   return {
     payload: {
-      timeline_id: input.timelineId,
-      timeline: materializeSequenceConfig(input.resolvedConfig as Parameters<typeof materializeSequenceConfig>[0]),
-      assets: input.assetRegistry ?? { assets: {} },
-      theme_id: defaultThemeId(input.resolvedConfig),
-      output_filename: input.outputFilename ?? defaultOutputFilename(input.timelineId),
+      timeline_id: input.request.timelineId,
+      timeline: materializeSequenceConfig(input.request.resolvedConfig as Parameters<typeof materializeSequenceConfig>[0]),
+      assets: input.request.assetRegistry ?? { assets: {} },
+      theme_id: defaultThemeId(input.request.resolvedConfig),
+      output_filename: input.outputFilename ?? defaultOutputFilename(input.request.timelineId),
       user_jwt: input.userJwt,
-      project_id: input.projectId,
+      project_id: input.request.renderRuntime.projectId,
       correlation_id: input.correlationId ?? newCorrelationId(),
     },
   };

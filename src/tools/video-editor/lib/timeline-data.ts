@@ -4,6 +4,13 @@ import type {
   TimelineRow,
 } from '@/tools/video-editor/types/timeline-canvas';
 import {
+  loadAssetProfileWithResolver,
+  notifyMissingAsset,
+  resolveAssetUrlWithResolver,
+  type AssetResolver,
+  type AssetMissingReason,
+} from '@/tools/video-editor/data/AssetResolver';
+import {
   getClipSourceDuration,
   getConfigSignature,
   getStableConfigSignature,
@@ -410,8 +417,24 @@ export const buildTimelineData = async (
   });
 };
 
+export const buildTimelineDataWithResolver = async (
+  config: TimelineConfig,
+  registry: AssetRegistry,
+  assetResolver: AssetResolver,
+  configVersion = 1,
+  timelineId?: string,
+): Promise<TimelineData> => {
+  return buildTimelineData(
+    config,
+    registry,
+    (file) => resolveAssetUrlWithResolver(assetResolver, { file, timelineId }),
+    configVersion,
+  );
+};
+
 export const loadTimelineJsonFromProvider = async (
   provider: DataProvider,
+  assetResolver: AssetResolver,
   timelineId: string,
 ): Promise<TimelineData> => {
   const [loadedTimeline, registry] = await Promise.all([
@@ -419,19 +442,43 @@ export const loadTimelineJsonFromProvider = async (
     provider.loadAssetRegistry(timelineId),
   ]);
 
-  return buildTimelineData(
+  return buildTimelineDataWithResolver(
     loadedTimeline.config,
     registry,
-    (file) => provider.resolveAssetUrl(file),
+    assetResolver,
     loadedTimeline.configVersion,
-  );
+    timelineId,
+  ).then(async (data) => {
+    const missingRequests = loadedTimeline.config.clips
+      .filter((clip) => typeof clip.asset === 'string' && !data.resolvedConfig.registry[clip.asset])
+      .map((clip) => {
+        const assetId = clip.asset as string;
+        const entry = registry.assets[assetId];
+        const reason: AssetMissingReason = entry ? 'unresolvable_asset' : 'missing_asset';
+        return notifyMissingAsset(assetResolver, {
+          assetId,
+          clipId: clip.id,
+          timelineId,
+          file: entry?.file,
+          entry,
+          clip,
+          config: loadedTimeline.config,
+          registry,
+          reason,
+        });
+      });
+
+    await Promise.all(missingRequests);
+    return data;
+  });
 };
 
 export async function loadTranscript(
-  provider: DataProvider,
+  assetResolver: AssetResolver,
   assetKey: string,
+  timelineId?: string,
 ): Promise<TranscriptSegment[]> {
-  const profile = await provider.loadAssetProfile?.(assetKey);
+  const profile = await loadAssetProfileWithResolver(assetResolver, { assetId: assetKey, timelineId });
   return profile?.transcript?.segments ?? [];
 }
 

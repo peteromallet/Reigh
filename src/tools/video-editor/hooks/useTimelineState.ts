@@ -31,6 +31,7 @@ import {
   type TimelineStoreApi,
   type TimelineStoreBootstrap,
 } from '@/tools/video-editor/hooks/timelineStore';
+import type { TimelineRenderRequest } from '@/tools/video-editor/hooks/timeline-state-types';
 import type {
   TimelineChromeContextValue,
   TimelineEditorContextValue,
@@ -307,6 +308,7 @@ function useTimelineChromeContextValue({
   saveStatus,
   isConflictExhausted,
   render,
+  renderRequest,
   history,
   setScaleWidth,
   trackManagement,
@@ -318,7 +320,8 @@ function useTimelineChromeContextValue({
   timelineName: string | null;
   saveStatus: ReturnType<typeof useTimelineSave>['saveStatus'];
   isConflictExhausted: boolean;
-  render: Pick<RenderStateHook, 'renderStatus' | 'renderLog' | 'renderDirty' | 'renderProgress' | 'renderResultUrl' | 'renderResultFilename'>;
+  render: Pick<RenderStateHook, 'renderStatus' | 'renderLog' | 'renderDirty' | 'renderProgress' | 'queuedRender' | 'renderResultUrl' | 'renderResultFilename'>;
+  renderRequest: TimelineRenderRequest;
   history: Pick<TimelineHistoryHook, 'undo' | 'redo' | 'canUndo' | 'canRedo' | 'checkpoints' | 'jumpToCheckpoint' | 'createManualCheckpoint'>;
   setScaleWidth: ReturnType<typeof useEditorPreferences>['setScaleWidth'];
   trackManagement: Pick<TimelineTrackManagementHook, 'handleAddTrack' | 'handleClearUnusedTracks' | 'unusedTrackCount'>;
@@ -335,8 +338,10 @@ function useTimelineChromeContextValue({
     renderLog: render.renderLog,
     renderDirty: render.renderDirty,
     renderProgress: render.renderProgress,
+    queuedRender: render.queuedRender,
     renderResultUrl: render.renderResultUrl,
     renderResultFilename: render.renderResultFilename,
+    renderRequest,
     undo: history.undo,
     redo: history.redo,
     canUndo: history.canUndo,
@@ -368,9 +373,11 @@ function useTimelineChromeContextValue({
     render.renderDirty,
     render.renderLog,
     render.renderProgress,
+    render.queuedRender,
     render.renderResultFilename,
     render.renderResultUrl,
     render.renderStatus,
+    renderRequest,
     retrySaveAfterConflict,
     saveStatus,
     setScaleWidth,
@@ -421,7 +428,7 @@ export function useTimelineState(): UseTimelineStateResult {
   const isTablet = useIsTablet();
   const playback = useTimelinePlayback();
   const preferences = useEditorPreferences(runtime.timelineId);
-  const queries = useTimelineQueries(runtime.provider, runtime.timelineId);
+  const queries = useTimelineQueries(runtime.provider, runtime.assetResolver, runtime.timelineId);
   // Shared gate observed by drag/resize writers and read by save/persistence/poll.
   const interactionStateRef = useRef(createInteractionState());
   const storeRef = useRef<ReturnType<typeof createTimelineStore> | null>(null);
@@ -448,9 +455,22 @@ export function useTimelineState(): UseTimelineStateResult {
     interactionStateRef,
   });
   const derived = useDerivedTimeline(save.data, save.selectedClipId, save.selectedTrackId);
-  const render = useRenderState(derived.resolvedConfig, derived.renderMetadata);
+  const renderRequest = useMemo<TimelineRenderRequest>(() => ({
+    timelineId: runtime.timelineId,
+    assetRegistry: save.data?.registry ?? null,
+    resolvedConfig: derived.resolvedConfig,
+    renderMetadata: derived.renderMetadata,
+    renderRuntime: runtime.renderRuntime,
+  }), [
+    derived.renderMetadata,
+    derived.resolvedConfig,
+    runtime.renderRuntime,
+    runtime.timelineId,
+    save.data,
+  ]);
+  const render = useRenderState(renderRequest);
   const assetOperations = useAssetOperations(
-    runtime.provider,
+    runtime.assetResolver,
     runtime.timelineId,
     runtime.userId,
     queryClient,
@@ -481,6 +501,7 @@ export function useTimelineState(): UseTimelineStateResult {
     renderLog,
     renderDirty,
     renderProgress,
+    queuedRender,
     renderResultUrl,
     renderResultFilename,
     setRenderDirty,
@@ -578,6 +599,9 @@ export function useTimelineState(): UseTimelineStateResult {
   const assetManagement = useAssetManagement({
     store: storeRef.current,
     dataRef,
+    assetResolver: runtime.assetResolver,
+    timelineId: runtime.timelineId,
+    userId: runtime.userId,
     selectedTrackId,
     selectedProjectId,
     selectClip: multiSelect.selectClip,
@@ -588,7 +612,6 @@ export function useTimelineState(): UseTimelineStateResult {
     registerAsset,
     uploadAsset,
     invalidateAssetRegistry,
-    resolveAssetUrl: runtime.provider.resolveAssetUrl.bind(runtime.provider),
   });
 
   const clipResize = useClipResize({
@@ -610,6 +633,7 @@ export function useTimelineState(): UseTimelineStateResult {
   const externalDrop = useExternalDrop({
     store: storeRef.current,
     dataRef,
+    timelineId: runtime.timelineId,
     pendingOpsRef,
     scale,
     scaleWidth,
@@ -619,7 +643,7 @@ export function useTimelineState(): UseTimelineStateResult {
     registerAsset,
     uploadAsset,
     invalidateAssetRegistry,
-    resolveAssetUrl: runtime.provider.resolveAssetUrl.bind(runtime.provider),
+    assetResolver: runtime.assetResolver,
     coordinator: dragCoordinator.coordinator,
     registerGenerationAsset: assetManagement.registerGenerationAsset,
     uploadImageGeneration: assetManagement.uploadImageGeneration,
@@ -777,9 +801,11 @@ export function useTimelineState(): UseTimelineStateResult {
       renderLog,
       renderDirty,
       renderProgress,
+      queuedRender,
       renderResultUrl,
       renderResultFilename,
     },
+    renderRequest,
     history: {
       undo,
       redo,

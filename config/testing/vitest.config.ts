@@ -1,7 +1,14 @@
 import { defineConfig } from 'vitest/config';
+import fs from 'fs';
 import path from 'path';
 
 const projectRoot = path.resolve(__dirname, '../..');
+const generatedRegistryPath = path.resolve(projectRoot, 'node_modules/@banodoco/timeline-composition/typescript/src/registry.generated.ts');
+const generatedRegistryFallbackPath = path.resolve(projectRoot, 'src/tools/video-editor/lib/registry.generated.fallback.ts');
+const themeApiPath = path.resolve(projectRoot, 'node_modules/@banodoco/timeline-composition/typescript/src/theme-api.ts');
+const themeApiFallbackPath = path.resolve(projectRoot, 'src/tools/video-editor/lib/theme-api.fallback.tsx');
+const timelineSchemaPath = path.resolve(projectRoot, 'node_modules/@banodoco/timeline-schema/dist/index.js');
+const timelineSchemaFallbackPath = path.resolve(projectRoot, 'src/tools/video-editor/lib/timeline-schema.fallback.ts');
 
 export default defineConfig({
   root: projectRoot,
@@ -19,8 +26,15 @@ export default defineConfig({
       'react-dom': path.resolve(projectRoot, 'node_modules/react-dom'),
       'remotion': path.resolve(projectRoot, 'node_modules/remotion'),
       '@remotion/layout-utils': path.resolve(projectRoot, 'node_modules/@remotion/layout-utils'),
-      '@banodoco/timeline-composition/registry.generated': path.resolve(projectRoot, 'node_modules/@banodoco/timeline-composition/typescript/src/registry.generated.ts'),
-      '@banodoco/timeline-composition/theme-api': path.resolve(projectRoot, 'node_modules/@banodoco/timeline-composition/typescript/src/theme-api.ts'),
+      '@banodoco/timeline-composition/registry.generated': fs.existsSync(generatedRegistryPath)
+        ? generatedRegistryPath
+        : generatedRegistryFallbackPath,
+      '@banodoco/timeline-composition/theme-api': fs.existsSync(themeApiPath)
+        ? themeApiPath
+        : themeApiFallbackPath,
+      '@banodoco/timeline-schema': fs.existsSync(timelineSchemaPath)
+        ? timelineSchemaPath
+        : timelineSchemaFallbackPath,
       '@banodoco/timeline-composition': path.resolve(projectRoot, 'node_modules/@banodoco/timeline-composition'),
       // Sprint 5: workspace-primitive aliases for the linked packages.
       // The composition package's animations.generated / transitions.generated

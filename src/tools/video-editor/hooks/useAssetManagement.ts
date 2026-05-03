@@ -11,6 +11,10 @@ import { generateClientThumbnail, uploadImageWithThumbnail } from '@/shared/medi
 import type { SelectClipOptions } from '@/shared/state/selectionStore';
 import { createExternalUploadGeneration } from '@/integrations/supabase/repositories/generationMutationsRepository';
 import { generateUUID } from '@/shared/lib/taskCreation/ids';
+import {
+  transcodeAssetWithResolver,
+  type AssetResolver,
+} from '@/tools/video-editor/data/AssetResolver';
 import { findNearestFreeTrack, getCompatibleTrackId, trySnapToEdge, updateClipOrder } from '@/tools/video-editor/lib/coordinate-utils';
 import { getTrackIndex } from '@/tools/video-editor/lib/editor-utils';
 import {
@@ -63,6 +67,9 @@ type UploadedGenerationData = GenerationDropData & {
 export interface UseAssetManagementArgs {
   store?: TimelineStoreApi;
   dataRef: MutableRefObject<TimelineData | null>;
+  assetResolver: AssetResolver;
+  timelineId: string;
+  userId: string;
   selectedTrackId: string | null;
   selectedProjectId: string | null;
   selectClip: (clipId: string, opts?: SelectClipOptions) => void;
@@ -73,7 +80,6 @@ export interface UseAssetManagementArgs {
   registerAsset: TimelineRegisterAsset;
   uploadAsset: TimelineUploadAsset;
   invalidateAssetRegistry: TimelineInvalidateAssetRegistry;
-  resolveAssetUrl: (file: string) => Promise<string>;
 }
 
 export interface UseAssetManagementResult {
@@ -293,6 +299,9 @@ export function buildAssetDropEdit({
 export function useAssetManagement({
   store,
   dataRef,
+  assetResolver,
+  timelineId,
+  userId,
   selectedTrackId,
   selectedProjectId,
   selectClip,
@@ -393,17 +402,24 @@ export function useAssetManagement({
       throw new Error('External image drop requires a selected project');
     }
 
+    const preparedFile = await transcodeAssetWithResolver(assetResolver, {
+      file,
+      timelineId,
+      userId,
+      intent: 'image-generation',
+    });
+
     let imageUrl = '';
     let thumbnailUrl = '';
 
     try {
-      const thumbnailResult = await generateClientThumbnail(file, 300, 0.8);
-      const uploadResult = await uploadImageWithThumbnail(file, thumbnailResult.thumbnailBlob);
+      const thumbnailResult = await generateClientThumbnail(preparedFile, 300, 0.8);
+      const uploadResult = await uploadImageWithThumbnail(preparedFile, thumbnailResult.thumbnailBlob);
       imageUrl = uploadResult.imageUrl;
       thumbnailUrl = uploadResult.thumbnailUrl;
     } catch (error) {
-      normalizeAndPresentError(error, { context: `video-editor:external-drop:${file.name}`, showToast: false });
-      imageUrl = await uploadImageToStorage(file, 3);
+      normalizeAndPresentError(error, { context: `video-editor:external-drop:${preparedFile.name}`, showToast: false });
+      imageUrl = await uploadImageToStorage(preparedFile, 3);
       thumbnailUrl = imageUrl;
     }
 
@@ -413,12 +429,12 @@ export function useAssetManagement({
       fileType: 'image',
       projectId: selectedProjectId,
       generationParams: {
-        prompt: `Uploaded ${file.name}`,
+        prompt: `Uploaded ${preparedFile.name}`,
         extra: {
           source: 'external_upload',
-          original_filename: file.name,
-          file_type: file.type || 'image',
-          file_size: file.size,
+          original_filename: preparedFile.name,
+          file_type: preparedFile.type || 'image',
+          file_size: preparedFile.size,
         },
       },
     });
@@ -429,33 +445,40 @@ export function useAssetManagement({
       imageUrl,
       thumbUrl: thumbnailUrl,
       metadata: {
-        content_type: file.type || 'image',
-        original_filename: file.name,
+        content_type: preparedFile.type || 'image',
+        original_filename: preparedFile.name,
       },
     };
-  }, [selectedProjectId]);
+  }, [assetResolver, selectedProjectId, timelineId, userId]);
 
   const uploadVideoGeneration = useCallback(async (file: File) => {
     if (!selectedProjectId) {
       throw new Error('No project selected');
     }
 
-    const videoUrl = await uploadImageToStorage(file);
+    const preparedFile = await transcodeAssetWithResolver(assetResolver, {
+      file,
+      timelineId,
+      userId,
+      intent: 'video-generation',
+    });
+
+    const videoUrl = await uploadImageToStorage(preparedFile);
 
     let thumbnailUrl = videoUrl;
     try {
-      const thumbnailBlob = await extractVideoPosterFrame(file);
+      const thumbnailBlob = await extractVideoPosterFrame(preparedFile);
       thumbnailUrl = await uploadBlobToStorage(thumbnailBlob, 'thumbnail.jpg', 'image/jpeg');
     } catch (error) {
-      normalizeAndPresentError(error, { context: `video-editor:external-video-thumbnail:${file.name}`, showToast: false });
+      normalizeAndPresentError(error, { context: `video-editor:external-video-thumbnail:${preparedFile.name}`, showToast: false });
     }
 
     let durationSeconds: number | undefined;
     try {
-      const metadata = await extractVideoMetadata(file);
+      const metadata = await extractVideoMetadata(preparedFile);
       durationSeconds = metadata.duration_seconds;
     } catch (error) {
-      normalizeAndPresentError(error, { context: `video-editor:external-video-metadata:${file.name}`, showToast: false });
+      normalizeAndPresentError(error, { context: `video-editor:external-video-metadata:${preparedFile.name}`, showToast: false });
     }
 
     const generation = await createExternalUploadGeneration({
@@ -464,12 +487,12 @@ export function useAssetManagement({
       fileType: 'video',
       projectId: selectedProjectId,
       generationParams: {
-        prompt: file.name.replace(/\.[^.]+$/, ''),
+        prompt: preparedFile.name.replace(/\.[^.]+$/, ''),
         extra: {
           source: 'external_upload',
-          original_filename: file.name,
-          file_type: file.type || 'video/mp4',
-          file_size: file.size,
+          original_filename: preparedFile.name,
+          file_type: preparedFile.type || 'video/mp4',
+          file_size: preparedFile.size,
         },
       },
     });
@@ -481,11 +504,11 @@ export function useAssetManagement({
       thumbUrl: thumbnailUrl,
       durationSeconds,
       metadata: {
-        content_type: file.type || 'video/mp4',
-        original_filename: file.name,
+        content_type: preparedFile.type || 'video/mp4',
+        original_filename: preparedFile.name,
       },
     };
-  }, [selectedProjectId]);
+  }, [assetResolver, selectedProjectId, timelineId, userId]);
 
   const handleAssetDrop = useCallback((assetKey: string, trackId: string | undefined, time: number, forceNewTrack = false, insertAtTop = false) => {
     const latestDataRef = getDataRef();

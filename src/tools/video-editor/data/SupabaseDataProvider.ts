@@ -4,7 +4,6 @@ import { validateSerializedConfig } from '@/tools/video-editor/lib/serialize';
 import { createDefaultTimelineConfig } from '@/tools/video-editor/lib/defaults';
 import { extractAssetRegistryEntry } from '@/tools/video-editor/lib/mediaMetadata';
 import {
-  TimelineNotFoundError,
   TimelineVersionConflictError,
   type DataProvider,
   type LoadedTimeline,
@@ -223,6 +222,10 @@ export class SupabaseDataProvider implements DataProvider {
     return data.publicUrl;
   }
 
+  async onResolve({ file }: { file: string }): Promise<string> {
+    return this.resolveAssetUrl(file);
+  }
+
   async registerAsset(
     timelineId: string,
     assetId: string,
@@ -270,11 +273,31 @@ export class SupabaseDataProvider implements DataProvider {
     return { assetId, entry };
   }
 
+  async onUpload({
+    file,
+    options,
+  }: {
+    file: File;
+    options: UploadAssetOptions;
+  }): Promise<{ assetId: string; entry: Awaited<ReturnType<typeof extractAssetRegistryEntry>> }> {
+    return this.uploadAsset(file, options);
+  }
+
+  async onTranscode({ file }: { file: File }): Promise<File> {
+    return file;
+  }
+
+  async onMissing(): Promise<void> {}
+
   async loadWaveform(): Promise<null> {
     return null;
   }
 
   async loadAssetProfile(): Promise<null> {
+    return null;
+  }
+
+  async onProfileLoad(): Promise<null> {
     return null;
   }
 }

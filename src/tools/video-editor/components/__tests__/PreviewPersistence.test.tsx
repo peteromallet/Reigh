@@ -3,7 +3,6 @@ import React, { forwardRef, useImperativeHandle } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { VideoEditorShell } from '@/tools/video-editor/components/VideoEditorShell';
 
 const useTimelineEditorDataMock = vi.fn();
 const useTimelineEditorOpsMock = vi.fn();
@@ -80,6 +79,10 @@ vi.mock('@/tools/video-editor/components/AgentChat', () => ({
 
 vi.mock('@/tools/video-editor/components/TimelineEditor/TimelineEditor', () => ({
   TimelineEditor: () => <div data-testid="timeline-editor" />,
+}));
+
+vi.mock('@/tools/video-editor/components/ThemeChip', () => ({
+  ThemeChip: () => <div data-testid="theme-chip" />,
 }));
 
 vi.mock('@/tools/video-editor/components/PropertiesPanel/PropertiesPanel', () => ({
@@ -162,6 +165,8 @@ vi.mock('@remotion/player', () => ({
     return <div data-testid="mock-player" />;
   }),
 }));
+
+const { VideoEditorShell } = await import('@/tools/video-editor/components/VideoEditorShell');
 
 function renderShell(mode: 'compact' | 'full') {
   return render(
@@ -256,8 +261,21 @@ beforeEach(() => {
     renderLog: '',
     renderDirty: false,
     renderProgress: null,
+    queuedRender: null,
     renderResultUrl: null,
     renderResultFilename: null,
+    renderRequest: {
+      timelineId: 'timeline-1',
+      assetRegistry: { assets: {} },
+      resolvedConfig: editorDataValue.resolvedConfig,
+      renderMetadata: null,
+      renderRuntime: {
+        projectId: 'project-1',
+        orchestratorBaseUrl: 'https://orchestrator.example.test',
+        getSupabaseSession: vi.fn(async () => null),
+        getWorkerJwt: vi.fn(async () => null),
+      },
+    },
     undo: vi.fn(),
     redo: vi.fn(),
     canUndo: false,
@@ -326,6 +344,61 @@ describe('VideoEditorShell preview persistence', () => {
     expect(screen.getAllByTestId('mock-player')).toHaveLength(1);
     expect(sameNode).toBe(initialNode);
     expect(screen.getByText('1280x720')).toBeInTheDocument();
+  });
+
+  it('shows queued worker render metadata without regressing the render action', () => {
+    useTimelineChromeContextMock.mockReturnValue({
+      timelineName: 'Persistence Test',
+      saveStatus: 'saved',
+      isConflictExhausted: false,
+      renderStatus: 'queued',
+      renderLog: 'Themed render queued.',
+      renderDirty: false,
+      renderProgress: null,
+      queuedRender: {
+        providerId: 'worker-banodoco',
+        taskId: 'task-42',
+        correlationId: 'corr-42',
+        message: 'Themed render queued.',
+      },
+      renderResultUrl: null,
+      renderResultFilename: null,
+      renderRequest: {
+        timelineId: 'timeline-1',
+        assetRegistry: { assets: {} },
+        resolvedConfig: editorDataValue.resolvedConfig,
+        renderMetadata: null,
+        renderRuntime: {
+          projectId: 'project-1',
+          orchestratorBaseUrl: 'https://orchestrator.example.test',
+          getSupabaseSession: vi.fn(async () => null),
+          getWorkerJwt: vi.fn(async () => null),
+        },
+      },
+      undo: vi.fn(),
+      redo: vi.fn(),
+      canUndo: false,
+      canRedo: false,
+      checkpoints: [],
+      jumpToCheckpoint: vi.fn(),
+      createManualCheckpoint: vi.fn(),
+      setScaleWidth: vi.fn(),
+      handleAddTrack: vi.fn(),
+      handleClearUnusedTracks: vi.fn(),
+      unusedTrackCount: 0,
+      handleAddText: vi.fn(),
+      handleAddTextAt: vi.fn(),
+      reloadFromServer: vi.fn(),
+      retrySaveAfterConflict: vi.fn(),
+      startRender: vi.fn(),
+    });
+
+    renderShell('full');
+
+    expect(screen.getByText('Render')).toBeInTheDocument();
+    expect(screen.getByText('Queued')).toBeInTheDocument();
+    expect(screen.getByText('Task task-42')).toBeInTheDocument();
+    expect(screen.getByText('Ref corr-42')).toBeInTheDocument();
   });
 
   it('shows the phone mode bar and routes mode changes through editor ops', () => {

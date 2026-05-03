@@ -1,11 +1,89 @@
 import {
   THEME_PACKAGE_REGISTRY,
 } from '@banodoco/timeline-composition/registry.generated';
+import { getGeneratedRemotionModuleStatus, type GeneratedLaneClipShape } from '@/tools/video-editor/lib/generated-lanes';
+import { BUILTIN_CLIP_TYPES } from '@/tools/video-editor/types';
 import {
   TRUSTED_SEQUENCE_METADATA,
+  type SequenceCapabilityOverrides,
   type TrustedSequenceMetadata,
 } from '@/tools/video-editor/sequences/metadata';
 import { ImageJumpSequence } from '@/tools/video-editor/sequences/components/ImageJumpSequence';
+
+export type SequenceComponentRegistryEntry = {
+  component?: unknown;
+  themeId?: string;
+  source?: string;
+};
+
+export type SequenceComponentRegistryShape = Partial<Record<string, SequenceComponentRegistryEntry | undefined>>;
+
+export type ClipCapabilitySource =
+  | 'builtin'
+  | 'trusted-local-sequence'
+  | 'installed-sequence'
+  | 'registry-discovered'
+  | 'generated-module';
+
+export interface ClipCapabilityDescriptor {
+  clipType: string;
+  source: ClipCapabilitySource;
+  metadata?: TrustedSequenceMetadata;
+  registryEntry?: SequenceComponentRegistryEntry;
+  capabilities: {
+    preview: 'browser' | 'placeholder';
+    previewFallbackReason?: 'worker_only' | 'unsupported';
+    browserRender: boolean;
+    workerRender: boolean;
+    externalRender: boolean;
+  };
+}
+
+const BUILTIN_CAPABILITIES: ClipCapabilityDescriptor['capabilities'] = {
+  preview: 'browser',
+  browserRender: true,
+  workerRender: false,
+  externalRender: false,
+};
+
+const DEFAULT_SEQUENCE_CAPABILITIES: ClipCapabilityDescriptor['capabilities'] = {
+  preview: 'browser',
+  browserRender: false,
+  workerRender: true,
+  externalRender: false,
+};
+
+const GENERATED_MODULE_CAPABILITIES: ClipCapabilityDescriptor['capabilities'] = {
+  preview: 'placeholder',
+  previewFallbackReason: 'worker_only',
+  browserRender: false,
+  workerRender: true,
+  externalRender: false,
+};
+
+function applyCapabilityOverrides(
+  defaults: ClipCapabilityDescriptor['capabilities'],
+  overrides?: SequenceCapabilityOverrides,
+): ClipCapabilityDescriptor['capabilities'] {
+  if (!overrides) {
+    return defaults;
+  }
+
+  return {
+    ...defaults,
+    ...(overrides.preview !== undefined ? { preview: overrides.preview } : {}),
+    ...(overrides.previewFallbackReason !== undefined
+      ? { previewFallbackReason: overrides.previewFallbackReason }
+      : {}),
+    ...(overrides.browserRender !== undefined ? { browserRender: overrides.browserRender } : {}),
+    ...(overrides.workerRender !== undefined ? { workerRender: overrides.workerRender } : {}),
+    ...(overrides.externalRender !== undefined ? { externalRender: overrides.externalRender } : {}),
+  };
+}
+
+function getTrustedMetadataMap(): Record<string, TrustedSequenceMetadata> {
+  return Object.fromEntries(TRUSTED_SEQUENCE_METADATA.map((metadata) => [metadata.clipType, metadata]));
+}
 
 export const LOCAL_SEQUENCE_REGISTRY = {
   'image-jump': {
@@ -13,12 +91,12 @@ export const LOCAL_SEQUENCE_REGISTRY = {
     themeId: '2rp',
     source: 'local:reigh',
   },
-} as const;
+} as const satisfies SequenceComponentRegistryShape;
 
 export const SEQUENCE_COMPONENT_REGISTRY = {
   ...THEME_PACKAGE_REGISTRY,
   ...LOCAL_SEQUENCE_REGISTRY,
-};
+} as const satisfies SequenceComponentRegistryShape;
 
 export type AvailableSequenceMetadata = TrustedSequenceMetadata & {
   clipType: keyof typeof SEQUENCE_COMPONENT_REGISTRY;
@@ -30,6 +108,66 @@ export const filterTrustedSequenceMetadataForRegistry = (
   return TRUSTED_SEQUENCE_METADATA.filter((metadata): metadata is AvailableSequenceMetadata => {
     return Object.prototype.hasOwnProperty.call(registry, metadata.clipType);
   });
+};
+
+export function buildSequenceClipCapabilityRegistry(
+  registry: SequenceComponentRegistryShape,
+): Record<string, ClipCapabilityDescriptor> {
+  const trustedMetadataByClipType = getTrustedMetadataMap();
+
+  return Object.fromEntries(
+    Object.entries(registry)
+      .filter(([, entry]): entry is SequenceComponentRegistryEntry => Boolean(entry))
+      .map(([clipType, entry]) => {
+        const metadata = trustedMetadataByClipType[clipType];
+        const isLocal = Object.prototype.hasOwnProperty.call(LOCAL_SEQUENCE_REGISTRY, clipType)
+          || entry.source?.startsWith('local:') === true;
+
+        const source: ClipCapabilitySource = metadata
+          ? (isLocal ? 'trusted-local-sequence' : 'installed-sequence')
+          : 'registry-discovered';
+
+        const capabilities = applyCapabilityOverrides(
+          DEFAULT_SEQUENCE_CAPABILITIES,
+          metadata?.capabilities,
+        );
+
+        return [clipType, {
+          clipType,
+          source,
+          metadata,
+          registryEntry: entry,
+          capabilities,
+        } satisfies ClipCapabilityDescriptor];
+      }),
+  );
+}
+
+function buildBuiltinClipCapabilityRegistry(): Record<string, ClipCapabilityDescriptor> {
+  return Object.fromEntries(
+    BUILTIN_CLIP_TYPES.map((clipType) => [clipType, {
+      clipType,
+      source: 'builtin',
+      capabilities: BUILTIN_CAPABILITIES,
+    } satisfies ClipCapabilityDescriptor]),
+  );
+}
+
+export const BUILTIN_CLIP_CAPABILITY_REGISTRY = buildBuiltinClipCapabilityRegistry();
+
+export const SEQUENCE_CLIP_CAPABILITY_REGISTRY = buildSequenceClipCapabilityRegistry(
+  SEQUENCE_COMPONENT_REGISTRY,
+);
+
+export const CLIP_CAPABILITY_REGISTRY: Record<string, ClipCapabilityDescriptor> = {
+  ...BUILTIN_CLIP_CAPABILITY_REGISTRY,
+  ...SEQUENCE_CLIP_CAPABILITY_REGISTRY,
+};
+
+export const GENERATED_MODULE_CLIP_CAPABILITY: ClipCapabilityDescriptor = {
+  clipType: '__generated-module__',
+  source: 'generated-module',
+  capabilities: GENERATED_MODULE_CAPABILITIES,
 };
 
 export const AVAILABLE_SEQUENCE_METADATA = filterTrustedSequenceMetadataForRegistry(
@@ -48,4 +186,25 @@ export const getAvailableSequenceMetadata = (
   clipType: string,
 ): AvailableSequenceMetadata | undefined => {
   return AVAILABLE_SEQUENCE_METADATA.find((metadata) => metadata.clipType === clipType);
+};
+
+export const getClipCapabilityDescriptor = (
+  clipType: string | undefined,
+): ClipCapabilityDescriptor | undefined => {
+  if (typeof clipType !== 'string') {
+    return undefined;
+  }
+
+  return CLIP_CAPABILITY_REGISTRY[clipType];
+};
+
+export const describeClipCapability = (
+  clip: GeneratedLaneClipShape & { clipType?: string } | null | undefined,
+): ClipCapabilityDescriptor | undefined => {
+  const moduleStatus = getGeneratedRemotionModuleStatus(clip);
+  if (moduleStatus.kind !== 'not_module') {
+    return GENERATED_MODULE_CLIP_CAPABILITY;
+  }
+
+  return getClipCapabilityDescriptor(clip?.clipType);
 };

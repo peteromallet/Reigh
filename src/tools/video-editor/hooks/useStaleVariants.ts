@@ -1,7 +1,9 @@
+/* eslint-disable no-restricted-imports */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getSupabaseClient } from '@/integrations/supabase/client';
 import { toast } from '@/shared/components/ui/runtime/sonner';
 import { realtimeEventProcessor } from '@/shared/realtime/RealtimeEventProcessor';
+import { optimisticallyPersistAssetRegistryEntry } from '@/tools/video-editor/lib/assetRegistryPersistence';
 import type { AssetRegistryEntry, ResolvedAssetRegistryEntry } from '@/tools/video-editor/types';
 import type {
   TimelinePatchRegistry,
@@ -184,11 +186,19 @@ export function useStaleVariants({ registry, patchRegistry, registerAsset }: Use
       variantId: variant.id,
     };
 
-    patchRegistry(assetKey, updatedEntry, variant.location);
-
-    void registerAsset(assetKey, updatedEntry).catch((err) => {
+    void optimisticallyPersistAssetRegistryEntry({
+      assetId: assetKey,
+      entry: updatedEntry,
+      patchRegistry,
+      persistAsset: registerAsset,
+      src: variant.location,
+      rollback: {
+        mode: 'restore',
+        previousEntry,
+        previousSrc: previousFile,
+      },
+    }).catch((err) => {
       console.error('[StaleVariants] Failed to persist variant update:', err);
-      patchRegistry(assetKey, previousEntry, previousFile);
       toast.error('Failed to update variant');
     });
 
