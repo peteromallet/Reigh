@@ -3,6 +3,7 @@
  * Edge-safe core SDK entrypoint for the video editor.
  *
  * Import browser-only host helpers from `./browser.ts`.
+ * Import supported custom-sequence extension helpers from `./sequence.ts`.
  * Import test helpers from `./testing.ts`.
  */
 export { BUILTIN_CLIP_TYPES } from './types/index.ts';

@@ -413,6 +413,7 @@ export const buildTimelineData = async (
 export const loadTimelineJsonFromProvider = async (
   provider: DataProvider,
   timelineId: string,
+  urlResolver?: UrlResolver,
 ): Promise<TimelineData> => {
   const [loadedTimeline, registry] = await Promise.all([
     provider.loadTimeline(timelineId),
@@ -422,7 +423,7 @@ export const loadTimelineJsonFromProvider = async (
   return buildTimelineData(
     loadedTimeline.config,
     registry,
-    (file) => provider.resolveAssetUrl(file),
+    urlResolver ?? ((file) => provider.resolveAssetUrl(file)),
     loadedTimeline.configVersion,
   );
 };

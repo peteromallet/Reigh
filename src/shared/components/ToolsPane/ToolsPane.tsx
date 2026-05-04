@@ -10,7 +10,8 @@ import { useClickRipple } from '@/shared/hooks/interaction/useClickRipple';
 import { PaneBackdrop } from '@/shared/components/panes/PaneBackdrop';
 import { useProjectSelectionContext } from '@/shared/contexts/ProjectContext';
 import { useToolSettings } from '@/shared/hooks/settings/useToolSettings';
-import { VIDEO_EDITOR_PATH, videoEditorPathWithTimeline, videoEditorSettings } from '@/tools/video-editor/browser';
+import { VIDEO_EDITOR_PATH, videoEditorPathWithTimeline } from '@/tools/video-editor/lib/video-editor-path';
+import { videoEditorSettings } from '@/tools/video-editor/settings/videoEditorDefaults';
 import {
   Home,
   LayoutGrid,

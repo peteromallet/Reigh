@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
 import { requireContextValue } from '@/shared/contexts/contextGuard';
 import { useToolSettings } from '@/shared/hooks/settings/useToolSettings';
-import { videoEditorSettings } from '@/tools/video-editor/browser';
+import { videoEditorSettings } from '@/tools/video-editor/settings/videoEditorDefaults';
 
 export type AgentChatContextValue = {
   timelineId: string | null;

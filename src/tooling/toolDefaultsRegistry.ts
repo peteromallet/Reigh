@@ -5,7 +5,7 @@ import { joinClipsSettings, type JoinClipsSettings } from '@/shared/lib/joinClip
 import { editImagesSettings } from '@/tools/edit-images/settings';
 import { editVideoSettings, type EditVideoSettings } from '@/shared/settings/config/editVideoDefaults';
 import { trainingDataHelperSettings } from '@/tools/training-data-helper/settings';
-import { videoEditorSettings, type VideoEditorSettings } from '@/tools/video-editor/browser';
+import { videoEditorSettings, type VideoEditorSettings } from '@/tools/video-editor/settings/videoEditorDefaults';
 import { userPreferencesSettings, type UserPreferences } from '@/shared/settings/userPreferences';
 
 type ImageGenerationSettings = typeof imageGenerationSettings.defaults;

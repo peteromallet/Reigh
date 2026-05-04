@@ -9,7 +9,6 @@ import {
   userSelectTimelineClips,
 } from '@/shared/state/selectionStore';
 import { createInteractionState, type InteractionStateRef } from '@/tools/video-editor/lib/interaction-state';
-import { useProjectSelectionContext } from '@/shared/contexts/ProjectContext';
 import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext';
 import { ROW_HEIGHT, TIMELINE_START_LEFT } from '@/tools/video-editor/lib/coordinate-utils';
 import { useAssetManagement } from '@/tools/video-editor/hooks/useAssetManagement';
@@ -421,7 +420,14 @@ export function useTimelineState(): UseTimelineStateResult {
   const isTablet = useIsTablet();
   const playback = useTimelinePlayback();
   const preferences = useEditorPreferences(runtime.timelineId);
-  const queries = useTimelineQueries(runtime.provider, runtime.timelineId);
+  const resolveAssetUrl = useCallback(async (file: string) => {
+    if (runtime.assetResolver) {
+      return await runtime.assetResolver.resolveAssetUrl(file);
+    }
+
+    return await runtime.provider.resolveAssetUrl(file);
+  }, [runtime.assetResolver, runtime.provider]);
+  const queries = useTimelineQueries(runtime.provider, runtime.timelineId, resolveAssetUrl);
   // Shared gate observed by drag/resize writers and read by save/persistence/poll.
   const interactionStateRef = useRef(createInteractionState());
   const storeRef = useRef<ReturnType<typeof createTimelineStore> | null>(null);
@@ -448,7 +454,7 @@ export function useTimelineState(): UseTimelineStateResult {
     interactionStateRef,
   });
   const derived = useDerivedTimeline(save.data, save.selectedClipId, save.selectedTrackId);
-  const render = useRenderState(derived.resolvedConfig, derived.renderMetadata);
+  const render = useRenderState(derived.resolvedConfig, derived.renderMetadata, runtime.exporter ?? null);
   const assetOperations = useAssetOperations(
     runtime.provider,
     runtime.timelineId,
@@ -510,7 +516,7 @@ export function useTimelineState(): UseTimelineStateResult {
     uploadFiles,
     invalidateAssetRegistry,
   } = assetOperations;
-  const { selectedProjectId } = useProjectSelectionContext();
+  const selectedProjectId = runtime.hostContext?.projectId ?? null;
   const selection = useTimelineSelection({
     data,
     selectedTrackId,
@@ -588,7 +594,7 @@ export function useTimelineState(): UseTimelineStateResult {
     registerAsset,
     uploadAsset,
     invalidateAssetRegistry,
-    resolveAssetUrl: runtime.provider.resolveAssetUrl.bind(runtime.provider),
+    resolveAssetUrl,
   });
 
   const clipResize = useClipResize({
@@ -619,7 +625,7 @@ export function useTimelineState(): UseTimelineStateResult {
     registerAsset,
     uploadAsset,
     invalidateAssetRegistry,
-    resolveAssetUrl: runtime.provider.resolveAssetUrl.bind(runtime.provider),
+    resolveAssetUrl,
     coordinator: dragCoordinator.coordinator,
     registerGenerationAsset: assetManagement.registerGenerationAsset,
     uploadImageGeneration: assetManagement.uploadImageGeneration,

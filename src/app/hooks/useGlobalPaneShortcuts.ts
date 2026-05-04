@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useProjectSelectionContext } from '@/shared/contexts/ProjectContext';
 import { usePanesStore } from '@/shared/state/panesStore';
-import { resolveVideoEditorPath } from '@/tools/video-editor/browser';
+import { resolveVideoEditorPath } from '@/tools/video-editor/lib/video-editor-path';
 
 /**
  * Global keyboard shortcuts for pane management.

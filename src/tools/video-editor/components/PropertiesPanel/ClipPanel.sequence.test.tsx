@@ -53,6 +53,29 @@ vi.mock('@/tools/video-editor/components/EffectCreatorPanel', () => ({
   EffectCreatorPanel: () => null,
 }));
 
+vi.mock('@banodoco/timeline-composition/registry.generated', () => ({
+  THEME_PACKAGE_REGISTRY: {},
+}), { virtual: true });
+
+vi.mock('@/tools/video-editor/sequences/registry', () => ({
+  isAvailableSequenceClipType: (clipType: string) => clipType === 'resource-card' || clipType === 'image-jump',
+  getAvailableSequenceMetadata: (clipType: string) => {
+    if (clipType === 'resource-card') {
+      return {
+        label: '2RP Resource Card',
+        hold: { defaultSeconds: 5, minSeconds: 0.1, stepSeconds: 0.1 },
+      };
+    }
+    if (clipType === 'image-jump') {
+      return {
+        label: 'Image Jump',
+        hold: { defaultSeconds: 5, minSeconds: 0.1, stepSeconds: 0.1 },
+      };
+    }
+    return undefined;
+  },
+}));
+
 const visualTrack: TrackDefinition = {
   id: 'visual-1',
   kind: 'visual',

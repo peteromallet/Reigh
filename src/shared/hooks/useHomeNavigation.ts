@@ -11,7 +11,7 @@ import {
 } from '@/shared/lib/tooling/homeNavigation';
 import { TOOL_IDS } from '@/shared/lib/tooling/toolIds';
 import { usePanesStore } from '@/shared/state/panesStore';
-import { videoEditorSettings } from '@/tools/video-editor/browser';
+import { videoEditorSettings } from '@/tools/video-editor/settings/videoEditorDefaults';
 
 const FALLBACK_GENERATION_METHODS = { onComputer: true, inCloud: true };
 
