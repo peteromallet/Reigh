@@ -32,8 +32,11 @@ import {
   shouldToggleTouchSelection,
 } from '@/tools/video-editor/lib/mobile-interaction-model';
 import type { DataProvider } from '@/tools/video-editor/data/DataProvider';
+import { createVideoEditorEffectCatalog } from '@/tools/video-editor/lib/effect-catalog';
 
 const navigateMock = vi.fn();
+const useEffectsMock = vi.fn();
+const useResolvedEffectCatalogMock = vi.fn();
 
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
@@ -56,16 +59,21 @@ const mocks = {
 };
 
 vi.mock('@/tools/video-editor/hooks/useEffects', () => ({
-  useEffects: () => ({ data: [] }),
+  useEffects: (...args: unknown[]) => useEffectsMock(...args),
 }));
 
 vi.mock('@/tools/video-editor/hooks/useEffectRegistry', () => ({
   useEffectRegistry: vi.fn(),
 }));
 
-vi.mock('@/tools/video-editor/hooks/useEffectResources', () => ({
-  useEffectResources: () => ({ effects: [] }),
-}));
+vi.mock('@/tools/video-editor/hooks/useEffectResources', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/tools/video-editor/hooks/useEffectResources')>();
+  return {
+    ...actual,
+    EffectCatalogProvider: ({ children }: { children: any }) => children,
+    useResolvedEffectCatalog: (...args: unknown[]) => useResolvedEffectCatalogMock(...args),
+  };
+});
 
 vi.mock('@/tools/video-editor/hooks/useTimelineClipsForAttachments', () => ({
   useTimelineClipsForAttachments: () => [
@@ -318,6 +326,10 @@ describe('VideoEditorProvider', () => {
     systemResetSelectionForProjectChange();
     localStorage.clear();
     Object.values(mocks).forEach((mock) => mock.mockClear());
+    useEffectsMock.mockReset();
+    useEffectsMock.mockReturnValue({ data: [] });
+    useResolvedEffectCatalogMock.mockReset();
+    useResolvedEffectCatalogMock.mockReturnValue(createVideoEditorEffectCatalog());
   });
 
   it('builds fallback lightbox media for raw video assets without a generation id', () => {
@@ -396,6 +408,55 @@ describe('VideoEditorProvider', () => {
       clipId: 'clip-1',
       url: 'https://example.com/image.png',
     }));
+  });
+
+  it('uses an injected effect catalog without enabling the legacy effect query', () => {
+    const provider: DataProvider = {
+      loadTimeline: vi.fn(),
+      saveTimeline: vi.fn(),
+      loadAssetRegistry: vi.fn(),
+      resolveAssetUrl: vi.fn(),
+    };
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+    const injectedCatalog = createVideoEditorEffectCatalog({
+      effects: [{
+        id: 'effect-1',
+        type: 'effect',
+        name: 'Standalone Fade',
+        slug: 'standalone-fade',
+        code: 'export default function Effect() { return null; }',
+        category: 'entrance',
+        description: 'Standalone effect',
+        created_by: { is_you: true },
+        is_public: false,
+      }],
+    });
+
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <AgentChatProvider>
+            <VideoEditorProvider
+              dataProvider={provider}
+              timelineId="timeline-1"
+              userId="user-1"
+              effectCatalog={injectedCatalog}
+            >
+              <Consumer />
+            </VideoEditorProvider>
+          </AgentChatProvider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    expect(useEffectsMock).toHaveBeenCalledWith('user-1', { enabled: false });
+    expect(useResolvedEffectCatalogMock).toHaveBeenCalledWith('user-1', injectedCatalog);
   });
 
   it('lets editor timeline replacement update selection while preserving gallery attachments', () => {

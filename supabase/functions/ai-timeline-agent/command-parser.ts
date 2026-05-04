@@ -1,4 +1,4 @@
-import type { TimelineConfig, AssetRegistry } from "../../src/tools/video-editor/types/index.ts";
+import type { AssetRegistry, TimelineConfig } from "../../src/tools/video-editor/index.ts";
 
 export type ParsedCommand =
   | { type: "view" }

@@ -4,7 +4,7 @@ import type {
   TimelineClip,
   TimelineConfig,
   TrackDefinition,
-} from "../../../../src/tools/video-editor/types/index.ts";
+} from "../../../../src/tools/video-editor/index.ts";
 import type { ToolHandler, ToolResult } from "../types.ts";
 // Sprint 3 (SD-018): surgical CRUD ops moved to @banodoco/timeline-ops.
 // `moveClip` and `setClipProperty` here delegate to the shared package; the

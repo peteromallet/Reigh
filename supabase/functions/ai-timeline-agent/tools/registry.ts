@@ -1,6 +1,6 @@
 import { parseCommand, validateCommand, type ParsedCommand } from "../command-parser.ts";
 import { loadTimelineState, saveTimelineConfigVersioned } from "../db.ts";
-import type { AssetRegistryEntry } from "../../../../src/tools/video-editor/types/index.ts";
+import type { AssetRegistryEntry } from "../../../../src/tools/video-editor/index.ts";
 import type {
   SupabaseAdmin,
   TimelineState,

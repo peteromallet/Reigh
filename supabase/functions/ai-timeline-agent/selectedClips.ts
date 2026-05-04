@@ -1,5 +1,5 @@
 import { isRecord } from "./llm/messages.ts";
-import { getClipTimelineDuration } from "../../../src/tools/video-editor/lib/config-utils.ts";
+import { getClipTimelineDuration } from "../../../src/tools/video-editor/index.ts";
 import type { TimelinePlacement } from "../create-task/resolvers/shared/lineage.ts";
 import type {
   ResolvedSelectionContext,

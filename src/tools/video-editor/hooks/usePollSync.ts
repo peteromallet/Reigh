@@ -40,6 +40,7 @@ interface UsePollSyncOptions {
   store?: TimelineStoreApi;
   queries: UsePollSyncQueries;
   provider: DataProvider;
+  resolveAssetUrl?: (file: string) => Promise<string>;
   commitData: (nextData: TimelineData, options?: CommitDataOptions) => void;
   dataRef: MutableRefObject<TimelineData | null>;
   selectedClipIdRef: MutableRefObject<string | null>;
@@ -114,6 +115,7 @@ export function usePollSync({
   store,
   queries,
   provider,
+  resolveAssetUrl,
   commitData,
   dataRef,
   selectedClipIdRef,
@@ -299,7 +301,7 @@ export function usePollSync({
     void buildTimelineData(
       current.config,
       registry,
-      (file) => provider.resolveAssetUrl(file),
+      resolveAssetUrl ?? ((file) => provider.resolveAssetUrl(file)),
       current.configVersion,
     ).then((nextData) => {
       if (
@@ -335,6 +337,7 @@ export function usePollSync({
     editSeqRef,
     isSavingRef,
     provider,
+    resolveAssetUrl,
     queries.assetRegistryQuery.data,
     savedSeqRef,
     selectedClipIdRef,

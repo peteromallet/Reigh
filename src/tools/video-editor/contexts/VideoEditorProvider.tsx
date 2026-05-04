@@ -1,3 +1,7 @@
+/**
+ * Internal host-only provider wiring for the Reigh app shell.
+ * Not part of the supported public SDK surface.
+ */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
@@ -15,7 +19,11 @@ import { useAgentChatRegistry } from '@/shared/contexts/AgentChatContext';
 import { clearTimelineClipData, setTimelineClipData } from '@/shared/state/selectionStore';
 import { useEffects } from '@/tools/video-editor/hooks/useEffects';
 import { useEffectRegistry } from '@/tools/video-editor/hooks/useEffectRegistry';
-import { useEffectResources } from '@/tools/video-editor/hooks/useEffectResources';
+import {
+  EffectCatalogProvider,
+  useResolvedEffectCatalog,
+  type VideoEditorEffectCatalog,
+} from '@/tools/video-editor/hooks/useEffectResources';
 import { useTimelineClipsForAttachments } from '@/tools/video-editor/hooks/useTimelineClipsForAttachments';
 import { useTimelineState } from '@/tools/video-editor/hooks/useTimelineState';
 import { TimelineStoreProvider } from '@/tools/video-editor/hooks/timelineStore';
@@ -89,13 +97,15 @@ function AgentChatBridgeRegistration() {
 function InnerProvider({
   children,
   userId,
+  effectCatalog,
 }: {
   children: React.ReactNode;
   userId: string;
+  effectCatalog?: VideoEditorEffectCatalog | null;
 }) {
   useRenderDiagnostic('VideoEditorProvider');
-  const effectsQuery = useEffects(userId);
-  const effectResources = useEffectResources(userId);
+  const effectsQuery = useEffects(userId, { enabled: !effectCatalog });
+  const effectResources = useResolvedEffectCatalog(userId, effectCatalog);
   useEffectRegistry(
     effectsQuery.data?.map((effect) => ({
       slug: effect.slug,
@@ -338,22 +348,24 @@ function InnerProvider({
   );
 
   return (
-    <TimelineStoreProvider store={store}>
-      <AgentChatBridgeRegistration />
-      {children}
-      {lightboxAssetKey && resolvedLightboxMedia && (
-        <>
-          <MediaLightbox
-            media={resolvedLightboxMedia}
-            navigation={navResult.navigation}
-            initialVariantId={lightboxInitialVariantId}
-            onClose={lightboxOnClose}
-            features={lightboxFeatures}
-          />
-          {navResult.indicator ? <VideoEditorLightboxOverlay indicator={navResult.indicator} /> : null}
-        </>
-      )}
-    </TimelineStoreProvider>
+    <EffectCatalogProvider value={effectResources}>
+      <TimelineStoreProvider store={store}>
+        <AgentChatBridgeRegistration />
+        {children}
+        {lightboxAssetKey && resolvedLightboxMedia && (
+          <>
+            <MediaLightbox
+              media={resolvedLightboxMedia}
+              navigation={navResult.navigation}
+              initialVariantId={lightboxInitialVariantId}
+              onClose={lightboxOnClose}
+              features={lightboxFeatures}
+            />
+            {navResult.indicator ? <VideoEditorLightboxOverlay indicator={navResult.indicator} /> : null}
+          </>
+        )}
+      </TimelineStoreProvider>
+    </EffectCatalogProvider>
   );
 }
 
@@ -362,17 +374,19 @@ export function VideoEditorProvider({
   timelineId,
   timelineName,
   userId,
+  effectCatalog,
   children,
 }: {
   dataProvider: DataProvider;
   timelineId: string;
   timelineName?: string | null;
   userId: string;
+  effectCatalog?: VideoEditorEffectCatalog | null;
   children: React.ReactNode;
 }) {
   return (
     <DataProviderWrapper value={{ provider: dataProvider, timelineId, timelineName, userId }}>
-      <InnerProvider userId={userId}>{children}</InnerProvider>
+      <InnerProvider userId={userId} effectCatalog={effectCatalog}>{children}</InnerProvider>
     </DataProviderWrapper>
   );
 }

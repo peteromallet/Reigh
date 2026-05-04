@@ -1,3 +1,7 @@
+/**
+ * Internal attachment-selection adapter for Reigh host surfaces.
+ * Not part of the supported public SDK surface.
+ */
 import { useMemo } from 'react';
 import { useShots } from '@/shared/contexts/ShotsContext';
 import { useTimelineEditorData } from '@/tools/video-editor/hooks/timelineStore';

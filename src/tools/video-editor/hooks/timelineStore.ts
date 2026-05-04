@@ -1,3 +1,7 @@
+/**
+ * Internal bridge between the app shell and editor state contexts.
+ * Not part of the supported public SDK surface.
+ */
 import {
   createContext,
   createElement,

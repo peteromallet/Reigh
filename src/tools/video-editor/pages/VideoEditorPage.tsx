@@ -1,3 +1,7 @@
+/**
+ * Internal Reigh route adapter for the in-app video editor page.
+ * Not part of the supported public SDK surface.
+ */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Clapperboard, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';

@@ -14,7 +14,6 @@ import { ParameterControls, getDefaultValues } from '@/tools/video-editor/compon
 import { SequenceParamEditor } from '@/tools/video-editor/components/PropertiesPanel/SequenceParamEditor';
 import { continuousEffectTypes, entranceEffectTypes, exitEffectTypes } from '@/tools/video-editor/effects';
 import { EffectCreatorPanel } from '@/tools/video-editor/components/EffectCreatorPanel';
-import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext';
 import { useEffectResources, type EffectCategory, type EffectResource } from '@/tools/video-editor/hooks/useEffectResources';
 import type { ClipTab } from '@/tools/video-editor/hooks/useEditorPreferences';
 import type { ClipMeta } from '@/tools/video-editor/lib/timeline-data';
@@ -183,10 +182,11 @@ export function ClipPanel({
   isAddingVariantAsGeneration,
   timelineFps,
 }: ClipPanelProps) {
-  const { userId } = useVideoEditorRuntime();
-  const effectResources = useEffectResources(userId);
+  const effectResources = useEffectResources();
   const [creatorOpen, setCreatorOpen] = useState(false);
   const [editingEffect, setEditingEffect] = useState<EffectResource | null>(null);
+  const canCreateEffects = effectResources.canCreateEffect;
+  const canEditEffects = effectResources.canUpdateEffect;
   const visibleTabs = useMemo(() => getVisibleClipTabs(clip, track), [clip, track]);
   const isEffectLayer = clip?.clipType === 'effect-layer';
   const sequenceMetadata = clip?.clipType && isAvailableSequenceClipType(clip.clipType)
@@ -364,7 +364,7 @@ export function ClipPanel({
                     )}
                   </SelectContent>
                 </Select>
-                {entranceEffect && (
+                {entranceEffect && canEditEffects && (
                   <Button
                     type="button"
                     variant="ghost"
@@ -432,7 +432,7 @@ export function ClipPanel({
                     )}
                   </SelectContent>
                 </Select>
-                {exitEffect && (
+                {exitEffect && canEditEffects && (
                   <Button
                     type="button"
                     variant="ghost"
@@ -499,7 +499,7 @@ export function ClipPanel({
                     )}
                   </SelectContent>
                 </Select>
-                {continuousEffect && (
+                {continuousEffect && canEditEffects && (
                   <Button
                     type="button"
                     variant="ghost"
@@ -536,19 +536,21 @@ export function ClipPanel({
                 Select a continuous effect to turn this layer into an active adjustment clip.
               </div>
             )}
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              className="gap-1.5"
-              onClick={() => {
-                setEditingEffect(null);
-                setCreatorOpen(true);
-              }}
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Create Effect
-            </Button>
+            {canCreateEffects && (
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="gap-1.5"
+                onClick={() => {
+                  setEditingEffect(null);
+                  setCreatorOpen(true);
+                }}
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Create Effect
+              </Button>
+            )}
             <EffectCreatorPanel
               open={creatorOpen}
               onOpenChange={setCreatorOpen}
