@@ -31,6 +31,7 @@ describe('public sequence SDK', () => {
       'image-jump',
       'resource-card',
       'section-hook',
+      'title-card',
     ]);
 
     const result = validateSequenceDraft({

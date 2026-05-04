@@ -57,24 +57,32 @@ vi.mock('@banodoco/timeline-composition/registry.generated', () => ({
   THEME_PACKAGE_REGISTRY: {},
 }), { virtual: true });
 
-vi.mock('@/tools/video-editor/sequences/registry', () => ({
-  isAvailableSequenceClipType: (clipType: string) => clipType === 'resource-card' || clipType === 'image-jump',
-  getAvailableSequenceMetadata: (clipType: string) => {
+vi.mock('@/tools/video-editor/sequences/registry', () => {
+  const sequenceMetadata = (clipType: string) => {
     if (clipType === 'resource-card') {
       return {
+        clipType: 'resource-card' as const,
         label: '2RP Resource Card',
         hold: { defaultSeconds: 5, minSeconds: 0.1, stepSeconds: 0.1 },
       };
     }
     if (clipType === 'image-jump') {
       return {
+        clipType: 'image-jump' as const,
         label: 'Image Jump',
         hold: { defaultSeconds: 5, minSeconds: 0.1, stepSeconds: 0.1 },
       };
     }
     return undefined;
-  },
-}));
+  };
+  const isAvailable = (clipType: string) => clipType === 'resource-card' || clipType === 'image-jump';
+  return {
+    isAvailableSequenceClipType: isAvailable,
+    getAvailableSequenceMetadata: sequenceMetadata,
+    resolveAvailableClipType: (clipType: string) => (isAvailable(clipType) ? sequenceMetadata(clipType) : undefined),
+    getAvailableClipTypeDescriptor: (clipType: string) => sequenceMetadata(clipType),
+  };
+});
 
 const visualTrack: TrackDefinition = {
   id: 'visual-1',
