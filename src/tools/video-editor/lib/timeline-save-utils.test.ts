@@ -1,4 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import {
+  createTimelineCommandRunner,
+  type TimelineCommand,
+  type TimelineCommandContext,
+  type TimelineCommandDescriptor,
+  type TimelineCommandValidationError,
+} from '@/tools/video-editor/commands';
 import { getConfigSignature, getStableConfigSignature } from '@/tools/video-editor/lib/config-utils';
 import { migrateToFlatTracks, repairConfig } from '@/tools/video-editor/lib/migrate';
 import {
@@ -68,6 +75,154 @@ const buildResolvedConfig = (
   ...(config.theme_overrides !== undefined ? { theme_overrides: config.theme_overrides } : {}),
   ...(config.generation_defaults !== undefined ? { generation_defaults: config.generation_defaults } : {}),
 });
+
+type MoveClipCommand = TimelineCommand<'move-clip', {
+  clipId: string;
+  at: number;
+}>;
+
+const getCommandAction = (
+  context: TimelineCommandContext<MoveClipCommand>,
+): { rowIndex: number; actionIndex: number } | null => {
+  const clipId = context.command.payload?.clipId;
+  if (typeof clipId !== 'string') {
+    return null;
+  }
+
+  for (let rowIndex = 0; rowIndex < context.currentData.rows.length; rowIndex += 1) {
+    const actionIndex = context.currentData.rows[rowIndex]?.actions.findIndex((action) => action.id === clipId) ?? -1;
+    if (actionIndex >= 0) {
+      return { rowIndex, actionIndex };
+    }
+  }
+
+  return null;
+};
+
+const buildMoveClipEffect = (
+  context: TimelineCommandContext<MoveClipCommand>,
+) => {
+  const location = getCommandAction(context);
+  if (!location) {
+    throw new Error('move-clip requires an existing clip.');
+  }
+
+  const nextAt = context.command.payload?.at;
+  if (typeof nextAt !== 'number') {
+    throw new Error('move-clip requires a numeric at value.');
+  }
+
+  const row = context.currentData.rows[location.rowIndex];
+  const action = row.actions[location.actionIndex];
+  const duration = action.end - action.start;
+  const nextRows = context.currentData.rows.map((candidateRow, rowIndex) => (
+    rowIndex === location.rowIndex
+      ? {
+          ...candidateRow,
+          actions: candidateRow.actions.map((candidateAction, actionIndex) => (
+            actionIndex === location.actionIndex
+              ? { ...candidateAction, start: nextAt, end: nextAt + duration }
+              : candidateAction
+          )),
+        }
+      : candidateRow
+  ));
+
+  return {
+    mutation: {
+      type: 'rows' as const,
+      rows: nextRows,
+    },
+    summary: `Move ${action.id} to ${nextAt}s`,
+  };
+};
+
+const moveClipCommandDescriptor: TimelineCommandDescriptor<MoveClipCommand> = {
+  type: 'move-clip',
+  validate: (context) => {
+    const { clipId, at } = context.command.payload ?? {};
+    const errors: TimelineCommandValidationError[] = [];
+
+    if (typeof clipId !== 'string' || clipId.trim().length === 0) {
+      errors.push({
+        path: `$.commands[${context.commandIndex}].payload.clipId`,
+        code: 'invalid_clip_id',
+        message: 'clipId must be a non-empty string.',
+      });
+    } else if (!context.currentData.meta[clipId]) {
+      errors.push({
+        path: `$.commands[${context.commandIndex}].payload.clipId`,
+        code: 'missing_clip',
+        message: `Clip "${clipId}" was not found.`,
+      });
+    }
+
+    if (typeof at !== 'number' || !Number.isFinite(at) || at < 0) {
+      errors.push({
+        path: `$.commands[${context.commandIndex}].payload.at`,
+        code: 'invalid_at',
+        message: 'at must be a finite non-negative number.',
+      });
+    }
+
+    return errors;
+  },
+  dryRun: buildMoveClipEffect,
+  apply: buildMoveClipEffect,
+  invert: (context) => {
+    const location = getCommandAction(context);
+    if (!location) {
+      return null;
+    }
+
+    const currentAction = context.currentData.rows[location.rowIndex]?.actions[location.actionIndex];
+    if (!currentAction) {
+      return null;
+    }
+
+    return {
+      type: 'move-clip',
+      payload: {
+        clipId: currentAction.id,
+        at: currentAction.start,
+      },
+    };
+  },
+};
+
+const commandRunner = createTimelineCommandRunner([moveClipCommandDescriptor]);
+
+const buildCommandTestData = () => {
+  const config: TimelineConfig = {
+    output: { resolution: '1920x1080', fps: 30, file: 'command-test.mp4' },
+    tracks: [makeTrack('V1')],
+    clips: [
+      {
+        id: 'clip-1',
+        at: 0,
+        track: 'V1',
+        clipType: 'media',
+        asset: 'asset-1',
+        from: 0,
+        to: 2,
+      },
+    ],
+  };
+  const assetRegistry: AssetRegistry = {
+    assets: {
+      'asset-1': { file: 'asset-1.mp4', type: 'video/mp4', duration: 2 },
+    },
+  };
+
+  return assembleTimelineData({
+    config,
+    configVersion: 1,
+    registry: assetRegistry,
+    resolvedConfig: buildResolvedConfig(config, buildResolvedRegistry(assetRegistry)),
+    output: { ...config.output },
+    assetMap: makeAssetMap(assetRegistry),
+  });
+};
 
 describe('timeline save utils regression coverage', () => {
   it('assembleTimelineData produces consistent output with the resolved-config signature', () => {
@@ -617,5 +772,173 @@ describe('timeline save utils regression coverage', () => {
 
   it('rejects polled data while drag is in progress (pendingOps incremented by drag)', () => {
     expect(shouldAcceptPolledData(5, 5, 1, 'polled-sig', 'saved-sig')).toBe(false);
+  });
+});
+
+describe('timeline command runner core', () => {
+  it('returns structured validation failures without mutating timeline data', () => {
+    const data = buildCommandTestData();
+
+    const result = commandRunner.validate(data, {
+      transactionId: 'tx-invalid',
+      commands: [
+        {
+          type: 'move-clip',
+          payload: {
+            clipId: 'missing-clip',
+            at: 3,
+          },
+        },
+      ],
+    });
+
+    expect(result.status).toBe('rejected');
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toMatchObject({
+      code: 'validation_failed',
+      transactionId: 'tx-invalid',
+      commandType: 'move-clip',
+    });
+    expect(result.errors[0]?.validationErrors?.[0]).toMatchObject({
+      code: 'missing_clip',
+      path: '$.commands[0].payload.clipId',
+    });
+    expect(result.nextData.stableSignature).toBe(data.stableSignature);
+    expect(data.config.clips[0]?.at).toBe(0);
+  });
+
+  it('supports dry-run with inverse transaction metadata', () => {
+    const data = buildCommandTestData();
+
+    const result = commandRunner.dryRun(data, {
+      transactionId: 'tx-dry-run',
+      commands: [
+        {
+          type: 'move-clip',
+          payload: {
+            clipId: 'clip-1',
+            at: 5,
+          },
+        },
+      ],
+    });
+
+    expect(result.status).toBe('ok');
+    expect(result.nextData.config.clips[0]?.at).toBe(5);
+    expect(data.config.clips[0]?.at).toBe(0);
+    expect(result.history.strategy).toBe('inverse_transaction');
+    expect(result.history.inverseTransaction).toEqual({
+      transactionId: 'tx-dry-run:undo',
+      commands: [
+        {
+          type: 'move-clip',
+          payload: {
+            clipId: 'clip-1',
+            at: 0,
+          },
+        },
+      ],
+    });
+  });
+
+  it('applies commands and uses inverse transactions to undo them', () => {
+    const data = buildCommandTestData();
+    const applied = commandRunner.apply(data, {
+      transactionId: 'tx-apply',
+      commands: [
+        {
+          type: 'move-clip',
+          payload: {
+            clipId: 'clip-1',
+            at: 4,
+          },
+        },
+      ],
+    });
+    const inverseTransaction = applied.history.inverseTransaction;
+
+    expect(applied.status).toBe('ok');
+    expect(applied.nextData.config.clips[0]?.at).toBe(4);
+    expect(inverseTransaction).not.toBeNull();
+
+    if (!inverseTransaction) {
+      throw new Error('Expected inverse transaction metadata.');
+    }
+
+    const undone = commandRunner.apply(applied.nextData, inverseTransaction);
+
+    expect(undone.status).toBe('ok');
+    expect(undone.nextData.config.clips[0]?.at).toBe(0);
+    expect(undone.nextData.stableSignature).toBe(data.stableSignature);
+  });
+
+  it('keeps atomic batches all-or-nothing when any command fails', () => {
+    const data = buildCommandTestData();
+
+    const result = commandRunner.apply(data, {
+      transactionId: 'tx-atomic',
+      commands: [
+        {
+          type: 'move-clip',
+          payload: {
+            clipId: 'clip-1',
+            at: 2,
+          },
+        },
+        {
+          type: 'move-clip',
+          payload: {
+            clipId: 'missing-clip',
+            at: 6,
+          },
+        },
+      ],
+    });
+
+    expect(result.status).toBe('rejected');
+    expect(result.errors).toHaveLength(1);
+    expect(result.history.appliedCount).toBe(0);
+    expect(result.nextData.stableSignature).toBe(data.stableSignature);
+    expect(result.nextData.config.clips[0]?.at).toBe(0);
+  });
+
+  it('supports compat_partial batch execution without embedding adapter policy in the core runner', () => {
+    const data = buildCommandTestData();
+
+    const result = commandRunner.apply(data, {
+      transactionId: 'tx-partial',
+      commands: [
+        {
+          type: 'move-clip',
+          payload: {
+            clipId: 'clip-1',
+            at: 2,
+          },
+        },
+        {
+          type: 'move-clip',
+          payload: {
+            clipId: 'missing-clip',
+            at: 6,
+          },
+        },
+        {
+          type: 'move-clip',
+          payload: {
+            clipId: 'clip-1',
+            at: 4,
+          },
+        },
+      ],
+    }, {
+      executionMode: 'compat_partial',
+    });
+
+    expect(result.status).toBe('partial');
+    expect(result.errors).toHaveLength(1);
+    expect(result.history.partial).toBe(true);
+    expect(result.history.appliedCount).toBe(2);
+    expect(result.nextData.config.clips[0]?.at).toBe(4);
+    expect(result.history.inverseTransaction?.commands).toHaveLength(2);
   });
 });

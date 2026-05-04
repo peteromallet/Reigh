@@ -219,6 +219,19 @@ function createInitialOpsSlice(): TimelineEditorOpsContextValue {
   const createTrackAndMoveClip: TimelineEditorOpsContextValue['createTrackAndMoveClip'] = noop;
   const uploadFiles: TimelineEditorOpsContextValue['uploadFiles'] = noopAsync;
   const applyEdit: TimelineEditorOpsContextValue['applyEdit'] = noop;
+  const commands: TimelineEditorOpsContextValue['commands'] = {
+    buildAddMediaCommand: () => null,
+    buildSwapCommand: () => null,
+    validate: () => {
+      throw new Error('Timeline commands are unavailable before the editor is mounted.');
+    },
+    dryRun: () => {
+      throw new Error('Timeline commands are unavailable before the editor is mounted.');
+    },
+    apply: () => {
+      throw new Error('Timeline commands are unavailable before the editor is mounted.');
+    },
+  };
   const patchRegistry: TimelineEditorOpsContextValue['patchRegistry'] = noop;
   const unpatchRegistry: TimelineEditorOpsContextValue['unpatchRegistry'] = noop;
   const registerAsset: TimelineEditorOpsContextValue['registerAsset'] = noopAsync;
@@ -271,6 +284,7 @@ function createInitialOpsSlice(): TimelineEditorOpsContextValue {
     createTrackAndMoveClip,
     uploadFiles,
     applyEdit,
+    commands,
     patchRegistry,
     unpatchRegistry,
     registerAsset,
@@ -531,6 +545,14 @@ export function useTimelineOpsSliceSafe(): TimelineEditorOpsContextValue | null 
   return useSafeTimelineStoreValue((state) => state.ops, shallow);
 }
 
+export function useTimelineCommands() {
+  return useTimelineOpsSelector((ops) => ops.commands);
+}
+
+export function useTimelineCommandsSafe() {
+  return useSafeTimelineStoreValue((state) => state.ops.commands, shallow);
+}
+
 export function useTimelineChromeSlice(): TimelineChromeContextValue {
   return useBoundTimelineStore((state) => state.chrome, shallow);
 }
@@ -595,6 +617,8 @@ export const useTimelineEditorData = useTimelineDataSlice;
 export const useTimelineEditorDataSafe = useTimelineDataSliceSafe;
 export const useTimelineEditorOps = useTimelineOpsSlice;
 export const useTimelineEditorOpsSafe = useTimelineOpsSliceSafe;
+export const useTimelineCommandsContext = useTimelineCommands;
+export const useTimelineCommandsContextSafe = useTimelineCommandsSafe;
 export const useTimelineChromeContext = useTimelineChromeSlice;
 export const useTimelineChromeContextSafe = useTimelineChromeSliceSafe;
 export const useTimelinePlaybackContext = useTimelinePlaybackSlice;

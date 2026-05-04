@@ -91,3 +91,27 @@ export {
   serializeTimelinePair,
   TimelineDomainError,
 } from './lib/timeline-domain.ts';
+
+export {
+  applyProvisionedMediaCommandToConfig,
+  buildTimelineCommandData,
+  createTimelineCommandRunner,
+  MEDIA_COMMAND_DESCRIPTORS,
+  provisionRegisteredTimelineMedia,
+  provisionTimelineMedia,
+} from './commands/index.ts';
+
+export type {
+  AddMediaCommand,
+  JsonObject,
+  SwapMediaCommand,
+  TimelineCommand,
+  TimelineCommandDescriptor,
+  TimelineCommandExecutionResult,
+  TimelineCommandInput,
+  TimelineCommandRunMode,
+  TimelineCommandTransaction,
+  TimelineProvisionedAsset,
+} from './commands/index.ts';
+
+export { TRUSTED_SEQUENCE_CLIP_TYPES } from './sequences/metadata.ts';

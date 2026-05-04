@@ -14,25 +14,34 @@ import {
   useTimelineSelectionStore,
 } from '@/shared/state/selectionStore';
 import { TimelineEventBus } from '@/tools/video-editor/hooks/useTimelineEventBus';
+import { buildTrackClipOrder } from '@/tools/video-editor/lib/coordinate-utils';
 import { migrateToFlatTracks } from '@/tools/video-editor/lib/migrate';
-import {
-  applyTimelineMutation,
-  materializeTimelineRows,
-  rethrowTimelineMutationFailure,
-  type TimelineEditMutation as TimelineEditMutationModel,
-} from '@/tools/video-editor/lib/timeline-mutation-engine';
+import { serializeForDisk } from '@/tools/video-editor/lib/serialize';
+import { buildDataFromCurrentRegistry } from '@/tools/video-editor/lib/timeline-save-utils';
 import {
   assembleTimelineData,
+  preserveUploadingClips,
+  rowsToConfig,
   type ClipMeta,
   type ClipOrderMap,
   type TimelineData,
 } from '@/tools/video-editor/lib/timeline-data';
+import type {
+  TimelineCommandHistoryMetadata,
+  TimelineCommandTransaction,
+} from '@/tools/video-editor/commands';
 import type { TimelineRow } from '@/tools/video-editor/types/timeline-canvas';
 import type { AssetRegistryEntry } from '@/tools/video-editor/types';
+
+export type CommandHistoryCommitMetadata = {
+  transaction: TimelineCommandTransaction;
+  history: TimelineCommandHistoryMetadata;
+};
 
 export type CommitHistoryOptions = {
   transactionId?: string;
   semantic?: boolean;
+  commandHistory?: CommandHistoryCommitMetadata;
 };
 
 export type CommitDataOptions = {
@@ -43,6 +52,7 @@ export type CommitDataOptions = {
   transactionId?: string;
   semantic?: boolean;
   skipHistory?: boolean;
+  commandHistory?: CommandHistoryCommitMetadata;
 };
 
 export type ScheduleSaveFn = (
@@ -50,7 +60,24 @@ export type ScheduleSaveFn = (
   options?: { preserveStatus?: boolean },
 ) => void;
 
-export type TimelineEditMutation = TimelineEditMutationModel;
+export type TimelineEditMutation =
+  | {
+      type: 'rows';
+      rows: TimelineRow[];
+      metaUpdates?: Record<string, Partial<ClipMeta>>;
+      metaDeletes?: string[];
+      clipOrderOverride?: ClipOrderMap;
+      pinnedShotGroupsOverride?: TimelineData['config']['pinnedShotGroups'];
+    }
+  | {
+      type: 'config';
+      resolvedConfig: TimelineData['resolvedConfig'];
+      pinnedShotGroupsOverride?: TimelineData['config']['pinnedShotGroups'];
+    }
+  | {
+      type: 'pinnedShotGroups';
+      pinnedShotGroups: NonNullable<TimelineData['config']['pinnedShotGroups']>;
+    };
 
 export type ApplyEditOptions = {
   save?: boolean;
@@ -58,6 +85,7 @@ export type ApplyEditOptions = {
   selectedTrackId?: string | null;
   transactionId?: string;
   semantic?: boolean;
+  commandHistory?: CommandHistoryCommitMetadata;
 };
 
 interface UseTimelineCommitOptions {
@@ -114,12 +142,41 @@ export function useTimelineCommit({
     selectedTrackIdRef.current = selectedTrackId;
   }, [data, selectedClipId, selectedTrackId]);
 
+  const withPinnedShotGroups = useCallback((
+    config: TimelineData['config'],
+    pinnedShotGroups: TimelineData['config']['pinnedShotGroups'],
+  ): TimelineData['config'] => ({
+    ...config,
+    pinnedShotGroups: pinnedShotGroups && pinnedShotGroups.length > 0
+      ? pinnedShotGroups
+      : undefined,
+  }), []);
+
   const materializeData = useCallback((
     current: TimelineData,
     rows: TimelineRow[],
     meta: Record<string, ClipMeta>,
     clipOrder: ClipOrderMap,
-  ) => materializeTimelineRows(current, rows, meta, clipOrder), []);
+  ) => {
+    // Soft-tag model: cohesion is a property of edit operations, not data shape.
+    // rowsToConfig receives the untouched pinnedShotGroups from the current config;
+    // callers that need to update group membership must pass `pinnedShotGroupsOverride`
+    // explicitly on the mutation, which `applyEdit` handles below.
+    const config = rowsToConfig(
+      rows,
+      meta,
+      current.output,
+      clipOrder,
+      current.tracks,
+      current.config.pinnedShotGroups,
+      current.config,
+    );
+
+    return preserveUploadingClips(
+      { ...current, rows, meta } as TimelineData,
+      buildDataFromCurrentRegistry(config, current),
+    );
+  }, []);
 
   const commitData = useCallback((
     nextData: TimelineData,
@@ -132,6 +189,7 @@ export function useTimelineCommit({
       eventBus.emit('beforeCommit', currentData, {
         transactionId: options?.transactionId,
         semantic: options?.semantic,
+        commandHistory: options?.commandHistory,
       });
     }
 
@@ -183,22 +241,97 @@ export function useTimelineCommit({
       return;
     }
 
-    const result = applyTimelineMutation(current, mutation);
-    if (!result.ok) {
-      rethrowTimelineMutationFailure(result.error);
+    if (mutation.type === 'pinnedShotGroups') {
+      // Membership/metadata-only mutation. Soft-tag model: no projection; the
+      // clips are unchanged, only the group entries' clipIds/mode/etc. update.
+      commitData(
+        preserveUploadingClips(
+          current,
+          buildDataFromCurrentRegistry(
+            withPinnedShotGroups(current.config, mutation.pinnedShotGroups),
+            current,
+          ),
+        ),
+        {
+          save: options?.save,
+          selectedClipId: options?.selectedClipId,
+          selectedTrackId: options?.selectedTrackId,
+          transactionId: options?.transactionId,
+          semantic: options?.semantic,
+          commandHistory: options?.commandHistory,
+        },
+      );
+      return;
+    }
+
+    if (mutation.type === 'rows') {
+      const nextMeta: Record<string, ClipMeta> = { ...current.meta };
+
+      if (mutation.metaUpdates) {
+        for (const [clipId, patch] of Object.entries(mutation.metaUpdates)) {
+          nextMeta[clipId] = nextMeta[clipId]
+            ? { ...nextMeta[clipId], ...patch }
+            : (patch as ClipMeta);
+        }
+      }
+
+      if (mutation.metaDeletes) {
+        for (const clipId of mutation.metaDeletes) {
+          delete nextMeta[clipId];
+        }
+      }
+
+      const baseNextData = materializeData(
+        current,
+        mutation.rows,
+        nextMeta,
+        mutation.clipOrderOverride ?? buildTrackClipOrder(current.tracks, current.clipOrder, mutation.metaDeletes),
+      );
+      const nextData = mutation.pinnedShotGroupsOverride === undefined
+        ? baseNextData
+        : preserveUploadingClips(
+            { ...current, rows: mutation.rows, meta: nextMeta } as TimelineData,
+            buildDataFromCurrentRegistry(
+              withPinnedShotGroups(baseNextData.config, mutation.pinnedShotGroupsOverride),
+              current,
+            ),
+          );
+
+      commitData(
+        nextData,
+        {
+          save: options?.save,
+          selectedClipId: options?.selectedClipId,
+          selectedTrackId: options?.selectedTrackId,
+          transactionId: options?.transactionId,
+          semantic: options?.semantic,
+          commandHistory: options?.commandHistory,
+        },
+      );
+      return;
     }
 
     commitData(
-      result.nextData,
+      preserveUploadingClips(
+        current,
+        buildDataFromCurrentRegistry(
+          serializeForDisk(
+            mutation.resolvedConfig,
+            mutation.pinnedShotGroupsOverride ?? current.config.pinnedShotGroups,
+          ),
+          current,
+        ),
+      ),
       {
         save: options?.save,
         selectedClipId: options?.selectedClipId,
         selectedTrackId: options?.selectedTrackId,
         transactionId: options?.transactionId,
         semantic: options?.semantic,
+        commandHistory: options?.commandHistory,
       },
     );
-  }, [commitData]);
+  }, [commitData, materializeData, withPinnedShotGroups]);
 
   const patchRegistry = useCallback((assetId: string, entry: AssetRegistryEntry, src?: string) => {
     const current = dataRef.current;
