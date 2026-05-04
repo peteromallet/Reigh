@@ -13,6 +13,7 @@ import {
   type TrustedSequenceMetadata,
 } from '@/tools/video-editor/sequences/metadata';
 import { ImageJumpSequence } from '@/tools/video-editor/sequences/components/ImageJumpSequence';
+import { createAvailableClipTypeRegistry } from '@/tools/video-editor/clip-types';
 
 export type SequenceComponentRegistryEntry = {
   component?: unknown;
@@ -188,6 +189,8 @@ export const AVAILABLE_SEQUENCE_THEME_IDS = AVAILABLE_TIMELINE_THEME_IDS.filter(
   AVAILABLE_SEQUENCE_METADATA.some((metadata) => metadata.themeId === themeId)
 )) as readonly string[];
 
+const AVAILABLE_CLIP_TYPE_REGISTRY_VIEW = createAvailableClipTypeRegistry(SEQUENCE_COMPONENT_REGISTRY);
+
 export const isAvailableSequenceClipType = (value: unknown): value is AvailableSequenceMetadata['clipType'] => {
   return typeof value === 'string' && (AVAILABLE_SEQUENCE_CLIP_TYPES as readonly string[]).includes(value);
 };
@@ -196,6 +199,33 @@ export const getAvailableSequenceMetadata = (
   clipType: string,
 ): AvailableSequenceMetadata | undefined => {
   return AVAILABLE_SEQUENCE_METADATA.find((metadata) => metadata.clipType === clipType);
+};
+
+export const getAvailableClipTypeDescriptor = (
+  clipType: string,
+) => AVAILABLE_CLIP_TYPE_REGISTRY_VIEW.getAvailableClipTypeDescriptor(clipType);
+
+export const resolveAvailableClipType = (
+  clipType: string | undefined,
+):
+  | { status: 'available'; metadata: AvailableSequenceMetadata }
+  | { status: 'unavailable'; metadata: TrustedSequenceMetadata }
+  | { status: 'unknown'; clipType: string | undefined } => {
+  if (!clipType) {
+    return { status: 'unknown', clipType };
+  }
+
+  const available = getAvailableSequenceMetadata(clipType);
+  if (available) {
+    return { status: 'available', metadata: available };
+  }
+
+  const trusted = TRUSTED_SEQUENCE_METADATA.find((metadata) => metadata.clipType === clipType);
+  if (trusted) {
+    return { status: 'unavailable', metadata: trusted };
+  }
+
+  return { status: 'unknown', clipType };
 };
 
 export const getClipCapabilityDescriptor = (

@@ -24,7 +24,6 @@ import {
   useResolvedEffectCatalog,
   type VideoEditorEffectCatalog,
 } from '@/tools/video-editor/hooks/useEffectResources';
-import { createTimelineCommands } from '@/tools/video-editor/hooks/useTimelineCommands';
 import { useTimelineClipsForAttachments } from '@/tools/video-editor/hooks/useTimelineClipsForAttachments';
 import { useTimelineState } from '@/tools/video-editor/hooks/useTimelineState';
 import { TimelineStoreProvider } from '@/tools/video-editor/hooks/timelineStore';
@@ -117,7 +116,6 @@ function InnerProvider({
     effectResources.effects,
   );
   const { store, editor } = useTimelineState();
-  const commands = useMemo(() => createTimelineCommands(store), [store]);
   const [searchParams, setSearchParams] = useSearchParams();
   const pendingAddGenerationId = searchParams.get(ADD_GENERATION_QUERY_PARAM);
   const consumedAddGenerationRef = useRef<string | null>(null);
@@ -126,8 +124,6 @@ function InnerProvider({
   const drainInFlightRef = useRef(false);
   const editorRef = useRef(editor);
   editorRef.current = editor;
-  const commandsRef = useRef(commands);
-  commandsRef.current = commands;
 
   useEffect(() => {
     if (editor.isLoading) return;
@@ -188,16 +184,7 @@ function InnerProvider({
             (max, clip) => Math.max(max, clip.at + getClipTimelineDuration(clip)),
             0,
           );
-          const insertResult = commandsRef.current.addClip({
-            assetId: assetKey,
-            time: timelineEnd,
-          });
-          if (!insertResult.ok) {
-            store.getState().ops.unpatchRegistry(assetKey);
-            runtime.toast.error(insertResult.error.message);
-            processed.push(generationId);
-            continue;
-          }
+          editorForDrop.handleAssetDrop(assetKey, undefined, timelineEnd, false, false);
           processed.push(generationId);
           // Allow React to commit the clip before the next iteration reads clips.
           await new Promise<void>((resolve) => setTimeout(resolve, 50));
@@ -215,7 +202,7 @@ function InnerProvider({
         drainInFlightRef.current = false;
       }
     })();
-  }, [commands, editor.isLoading, pendingAddGenerationId, runtime.mediaLightbox, runtime.toast, setSearchParams, store]);
+  }, [editor.isLoading, pendingAddGenerationId, runtime.mediaLightbox, runtime.toast, setSearchParams, store]);
 
   const [lightboxAssetKey, setLightboxAssetKey] = useState<string | null>(null);
   const [lightboxClipId, setLightboxClipId] = useState<string | null>(null);

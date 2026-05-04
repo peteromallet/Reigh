@@ -4,7 +4,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Clapperboard, Pencil, Plus, Trash2 } from 'lucide-react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/shared/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/shared/components/ui/card';
 import { cn } from '@/shared/components/ui/contracts/cn';
@@ -186,6 +186,7 @@ function TimelineList({ onSelect }: { onSelect: (timelineId: string) => void }) 
 export default function VideoEditorPage() {
   const { selectedProjectId } = useProjectSelectionContext();
   const { userId } = useAuth();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const creatingRef = useRef(false);
   const timelineId = searchParams.get('timeline');
