@@ -64,7 +64,7 @@ export function CompactPreviewCore({ timelineId, onCreateTimeline, onOpenEditor 
           Open in editor
         </Button>
       </div>
-      <div className="min-h-0 flex-1 p-3">
+      <section role="region" aria-label="Preview panel" className="min-h-0 flex-1 p-3">
         <div className="h-full overflow-hidden rounded-xl border border-border">
           <RemotionPreview
             ref={previewRef}
@@ -74,7 +74,7 @@ export function CompactPreviewCore({ timelineId, onCreateTimeline, onOpenEditor 
             playerContainerRef={playerContainerRef}
           />
         </div>
-      </div>
+      </section>
       <div className="border-t border-border px-3 py-3">
         <Slider
           value={[currentTime]}

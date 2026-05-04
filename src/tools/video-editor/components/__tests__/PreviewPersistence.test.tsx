@@ -143,7 +143,12 @@ vi.mock('@/tools/video-editor/components/PreviewPanel/RemotionPreview', () => ({
       play: vi.fn(),
       pause: vi.fn(),
       togglePlayPause: vi.fn(),
-      get isPlaying() {
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      seekTo: vi.fn(),
+      toggle: vi.fn(),
+      isPlaying: vi.fn(() => false),
+      get isPlayingProp() {
         return false;
       },
     };
@@ -152,8 +157,8 @@ vi.mock('@/tools/video-editor/components/PreviewPanel/RemotionPreview', () => ({
 
     return (
       <div data-testid="mock-preview">
-        <div data-testid="mock-player" />
-        {!compact ? <div>{config.output.resolution}</div> : null}
+        <div data-testid="mock-player" data-compact={compact ? 'true' : 'false'} />
+        {!compact && config?.output?.resolution ? <div>{config.output.resolution}</div> : null}
       </div>
     );
   }),
@@ -234,22 +239,6 @@ vi.mock('@/shared/components/ui/alert-dialog', () => ({
   AlertDialogFooter: ({ children }: any) => <div>{children}</div>,
   AlertDialogHeader: ({ children }: any) => <div>{children}</div>,
   AlertDialogTitle: ({ children }: any) => <div>{children}</div>,
-}));
-
-vi.mock('@/tools/video-editor/components/PreviewPanel/RemotionPreview', () => ({
-  RemotionPreview: forwardRef(function MockRemotionPreview(_props: any, ref) {
-    useImperativeHandle(ref, () => ({
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      seekTo: vi.fn(),
-      play: vi.fn(),
-      pause: vi.fn(),
-      toggle: vi.fn(),
-      isPlaying: vi.fn(() => false),
-    }), []);
-
-    return <div data-testid="mock-player" data-compact={_props.compact ? 'true' : 'false'} />;
-  }),
 }));
 
 vi.mock('@/tools/video-editor/runtime/useVideoEditorRenderContext', async () => {

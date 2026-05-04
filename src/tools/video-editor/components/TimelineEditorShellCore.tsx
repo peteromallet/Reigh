@@ -12,9 +12,15 @@ import { editorReplaceTimelineSelection } from '@/shared/state/selectionStore';
 import { PreviewPanel } from '@/tools/video-editor/components/PreviewPanel/PreviewPanel';
 import { useVideoEditorPreviewSurface } from '@/tools/video-editor/components/PreviewPanel/useVideoEditorPreviewSurface';
 import { PropertiesPanel } from '@/tools/video-editor/components/PropertiesPanel/PropertiesPanel';
+import { VideoEditorAssetPanelSurface } from '@/tools/video-editor/components/PropertiesPanel/VideoEditorAssetPanelSurface';
 import { SequenceCreatorPanel } from '@/tools/video-editor/components/SequenceCreator/SequenceCreatorPanel';
 import { ThemeChip } from '@/tools/video-editor/components/ThemeChip';
 import { TimelineEditor } from '@/tools/video-editor/components/TimelineEditor/TimelineEditor';
+import {
+  useVideoEditorAssetPanels,
+  useVideoEditorRenderContext,
+  useVideoEditorSlotRenderers,
+} from '@/tools/video-editor/runtime/useVideoEditorRenderContext';
 import {
   useTimelineChromeContext,
   useTimelineEditorData,
@@ -273,6 +279,23 @@ function TimelineEditorShellCoreComponent({
   }, [condensed, condensedRightPanel, hasClipSelection, isTablet]);
 
   const previewSurface = useVideoEditorPreviewSurface({ compact: condensed });
+
+  // Extension slots: hosts can override entire chrome regions.
+  const slotRenderers = useVideoEditorSlotRenderers();
+  const renderContext = useVideoEditorRenderContext();
+  const contributedAssetPanels = useVideoEditorAssetPanels();
+  const headerSlot = slotRenderers.header ? slotRenderers.header(renderContext) : null;
+  const toolbarSlot = slotRenderers.toolbar ? slotRenderers.toolbar(renderContext) : null;
+  const assetPanelSlot = slotRenderers.assetPanel
+    ? slotRenderers.assetPanel(renderContext)
+    : (contributedAssetPanels.length > 0 ? <VideoEditorAssetPanelSurface includeBuiltIn={false} /> : null);
+  const inspectorPanelSlot = slotRenderers.inspectorPanel
+    ? slotRenderers.inspectorPanel(renderContext)
+    : null;
+  const timelineFooterSlot = slotRenderers.timelineFooter
+    ? slotRenderers.timelineFooter(renderContext)
+    : null;
+  const statusBarSlot = slotRenderers.statusBar ? slotRenderers.statusBar(renderContext) : null;
 
   const gridTemplateRows = isTimelineMaximized
     ? `${MIN_PREVIEW_HEIGHT}px auto 1fr`
@@ -591,7 +614,8 @@ function TimelineEditorShellCoreComponent({
         <div className="sr-only" aria-live="polite" aria-atomic="true">
           {interactionStatusLabel}
         </div>
-        {!condensed && (
+        {headerSlot}
+        {!condensed && !headerSlot && (
           <div className="flex h-10 items-center gap-3 border-b border-border bg-background px-3 text-sm text-muted-foreground">
             {onNavigateHome && (
               <button
@@ -714,21 +738,28 @@ function TimelineEditorShellCoreComponent({
             </div>
 
             <div className="row-span-2 min-h-0 overflow-hidden">
-              <PropertiesPanel />
+              {assetPanelSlot}
+              {inspectorPanelSlot ?? <PropertiesPanel />}
             </div>
 
             <div ref={dividerRef} className="col-span-1">
-              {toolbar}
+              {toolbarSlot ?? toolbar}
             </div>
 
             <div className="relative col-span-2 min-h-0 overflow-hidden">
               <TimelineEditor onOpenSequenceCreator={() => setIsSequenceCreatorOpen(true)} />
+              {timelineFooterSlot}
             </div>
 
           </main>
         )}
+        {statusBarSlot}
       </div>
-      {previewPortal}
+      {/* Render the shared preview portal here only when the layout uses
+          a bare `previewSurface.slotRef` host (condensed/mobile single-pane).
+          The full-pane path renders the same portal inside <PreviewPanel>,
+          so guarding here prevents a duplicate <RemotionPreview> in tests. */}
+      {(condensed || mobileSinglePane) && previewPortal}
       {isSequenceCreatorOpen && (
         <SequenceCreatorPanel
           open={isSequenceCreatorOpen}
