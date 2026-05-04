@@ -16,7 +16,7 @@ vi.mock('@/tools/video-editor/lib/renderRouter', () => ({
     const clip = timeline?.clips?.[0];
     if (clip?.generation?.sequence_lane === 'remotion_module' && !clip?.generation?.artifact_id) {
       return {
-        route: 'blocked',
+        route: 'preview-only',
         hasThemedClip: false,
         hasMediaClip: false,
         reason: 'remotion_module_missing_artifact',
@@ -25,7 +25,7 @@ vi.mock('@/tools/video-editor/lib/renderRouter', () => ({
 
     if (clip?.clipType === 'generated-module') {
       return {
-        route: 'banodoco',
+        route: 'worker-banodoco',
         hasThemedClip: false,
         hasMediaClip: false,
         reason: 'generated_remotion_module',
@@ -33,7 +33,7 @@ vi.mock('@/tools/video-editor/lib/renderRouter', () => ({
     }
 
     return {
-      route: 'client',
+      route: 'browser-remotion',
       hasThemedClip: false,
       hasMediaClip: true,
       reason: 'pure_native_clips',

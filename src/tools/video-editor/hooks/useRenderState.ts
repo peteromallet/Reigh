@@ -14,7 +14,7 @@ function getFastRenderRouteDecision(resolvedConfig: ResolvedTimelineConfig | nul
   const clips = resolvedConfig?.clips ?? [];
 
   if (clips.length === 0) {
-    return { route: 'client' as const, reason: 'no_clips' };
+    return { route: 'browser-remotion' as const, reason: 'no_clips' };
   }
 
   let hasGeneratedModuleClip = false;
@@ -22,7 +22,7 @@ function getFastRenderRouteDecision(resolvedConfig: ResolvedTimelineConfig | nul
   for (const clip of clips) {
     if (clip.generation?.sequence_lane === 'remotion_module') {
       if (!clip.generation?.artifact_id) {
-        return { route: 'blocked' as const, reason: 'remotion_module_missing_artifact' };
+        return { route: 'preview-only' as const, reason: 'remotion_module_missing_artifact' };
       }
       hasGeneratedModuleClip = true;
       continue;
@@ -38,12 +38,12 @@ function getFastRenderRouteDecision(resolvedConfig: ResolvedTimelineConfig | nul
 
   if (hasGeneratedModuleClip) {
     return {
-      route: 'banodoco' as const,
+      route: 'worker-banodoco' as const,
       reason: hasOtherClip ? 'mixed_generated_module_and_other' : 'generated_remotion_module',
     };
   }
 
-  return { route: 'client' as const, reason: 'pure_native_clips' };
+  return { route: 'browser-remotion' as const, reason: 'pure_native_clips' };
 }
 
 export function useRenderState(
@@ -91,7 +91,7 @@ export function useRenderState(
     let decision = getFastRenderRouteDecision(resolvedConfig);
     if (!decision) {
       let importedDecision: {
-      route: 'client' | 'banodoco' | 'blocked';
+      route: 'browser-remotion' | 'worker-banodoco' | 'preview-only' | 'external';
       reason: string;
       };
       try {
@@ -108,7 +108,7 @@ export function useRenderState(
       }
       decision = importedDecision;
     }
-    if (decision.route === 'blocked') {
+    if (decision.route === 'preview-only') {
       setRenderStatus('error');
       setRenderProgress(null);
       setRenderDirty(false);
@@ -116,7 +116,7 @@ export function useRenderState(
       return;
     }
 
-    if (decision.route === 'banodoco') {
+    if (decision.route === 'worker-banodoco' || decision.route === 'external') {
       setRenderStatus('error');
       setRenderProgress(null);
       setRenderDirty(false);

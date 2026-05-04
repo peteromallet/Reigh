@@ -39,7 +39,7 @@ describe('Sprint 8 render-button router (decideRenderRoute)', () => {
     const decision = decideRenderRoute({
       clips: [{ clipType: 'title-card' }],
     });
-    expect(decision.route).toBe('banodoco');
+    expect(decision.route).toBe('worker-banodoco');
     expect(decision.hasThemedClip).toBe(true);
     expect(decision.hasMediaClip).toBe(false);
     expect(decision.reason).toBe('themed_only');
@@ -65,7 +65,7 @@ describe('Sprint 8 render-button router (decideRenderRoute)', () => {
         { clipType: 'title-card' },
       ],
     });
-    expect(decision.route).toBe('banodoco');
+    expect(decision.route).toBe('worker-banodoco');
     expect(decision.hasThemedClip).toBe(true);
     expect(decision.hasMediaClip).toBe(true);
     expect(decision.reason).toBe('mixed_themed_and_media');
