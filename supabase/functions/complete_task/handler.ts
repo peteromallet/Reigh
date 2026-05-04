@@ -8,7 +8,7 @@ import { bootstrapEdgeHandler, NO_SESSION_RUNTIME_OPTIONS } from "../_shared/edg
 import { toErrorMessage } from "../_shared/errorMessage.ts";
 import { resolveTaskStorageActor } from "../_shared/taskActorPolicy.ts";
 import { ensureTaskActor } from "../_shared/requestGuards.ts";
-import type { AssetRegistryEntry } from "../../../src/tools/video-editor/types/index.ts";
+import type { AssetRegistryEntry } from "../../../src/tools/video-editor/index.ts";
 import { loadTimelineState, saveTimelineConfigVersioned } from "../ai-timeline-agent/db.ts";
 import { addMediaClip } from "../ai-timeline-agent/tools/timeline.ts";
 import type { SupabaseAdmin as TimelineSupabaseAdmin } from "../ai-timeline-agent/types.ts";

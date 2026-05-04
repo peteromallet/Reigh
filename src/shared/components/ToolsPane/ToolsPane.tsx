@@ -10,7 +10,7 @@ import { useClickRipple } from '@/shared/hooks/interaction/useClickRipple';
 import { PaneBackdrop } from '@/shared/components/panes/PaneBackdrop';
 import { useProjectSelectionContext } from '@/shared/contexts/ProjectContext';
 import { useToolSettings } from '@/shared/hooks/settings/useToolSettings';
-import { VIDEO_EDITOR_PATH, videoEditorPathWithTimeline } from '@/tools/video-editor/lib/video-editor-path';
+import { VIDEO_EDITOR_PATH, videoEditorPathWithTimeline, videoEditorSettings } from '@/tools/video-editor/browser';
 import {
   Home,
   LayoutGrid,
@@ -18,7 +18,6 @@ import {
 import { AppEnv, type AppEnvValue } from '@/types/env';
 import { isToolEligible } from '@/shared/lib/tooling/toolEligibility';
 import { toolsUIManifest, type ToolUIDefinition } from '@/shared/lib/tooling/toolManifest';
-import { videoEditorSettings } from '@/tools/video-editor/settings/videoEditorDefaults';
 import { usePanesStore } from '@/shared/state/panesStore';
 
 const processTools = toolsUIManifest.filter((tool) => tool.paneSection === 'main');

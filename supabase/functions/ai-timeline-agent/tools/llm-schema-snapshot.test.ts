@@ -29,7 +29,7 @@ import {
   setThemeOverrides,
   timelineTools,
 } from "./timeline.ts";
-import type { AssetRegistry, TimelineConfig } from "../../../../src/tools/video-editor/types/index.ts";
+import type { AssetRegistry, TimelineConfig } from "../../../../src/tools/video-editor/index.ts";
 
 function snapshotSchema(): string {
   const lines: string[] = [];

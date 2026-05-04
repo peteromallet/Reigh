@@ -1,3 +1,7 @@
+/**
+ * Internal host-only provider wiring for the Reigh app shell.
+ * Not part of the supported public SDK surface.
+ */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';

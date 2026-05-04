@@ -1,4 +1,4 @@
-import type { TimelineConfig } from "../../../src/tools/video-editor/types/index.ts";
+import type { TimelineConfig } from "../../../src/tools/video-editor/index.ts";
 import { isRecord, isSessionStatus, normalizeTimelineRow } from "./llm/messages.ts";
 import type {
   AgentProjectImageSettings,

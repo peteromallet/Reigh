@@ -1,4 +1,4 @@
-import { videoEditorPathWithTimeline } from '@/tools/video-editor/lib/video-editor-path';
+import { videoEditorPathWithTimeline } from '@/tools/video-editor/browser';
 import { AppEnv, type AppEnvValue } from '@/types/env';
 
 import { isToolEligible } from './toolEligibility';

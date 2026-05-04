@@ -1,4 +1,4 @@
-import type { AssetRegistryEntry, TimelineClip, TimelineConfig } from "../../../src/tools/video-editor/types/index.ts";
+import type { AssetRegistryEntry, TimelineClip, TimelineConfig } from "../../../src/tools/video-editor/index.ts";
 import { loadTimelineState, saveTimelineConfigVersioned } from "../ai-timeline-agent/db.ts";
 import { addMediaClip } from "../ai-timeline-agent/tools/timeline.ts";
 import type { PlacementIntent, SupabaseAdmin as TimelineSupabaseAdmin } from "../ai-timeline-agent/types.ts";

@@ -1,3 +1,7 @@
+/**
+ * Internal Reigh persistence adapter backed by Supabase.
+ * Not part of the supported public SDK surface.
+ */
 import { getSupabaseClient } from '@/integrations/supabase/client';
 import { generateUUID } from '@/shared/lib/taskCreation/ids';
 import { validateSerializedConfig } from '@/tools/video-editor/lib/serialize';

@@ -4,9 +4,8 @@ import { toast } from '@/shared/components/ui/runtime/sonner';
 import type { GenerationRow } from '@/domains/generation/types';
 import { getGenerationId } from '@/shared/lib/media/mediaTypeHelpers';
 import { useToolSettings } from '@/shared/hooks/settings/useToolSettings';
-import { videoEditorSettings } from '@/tools/video-editor/settings/videoEditorDefaults';
-import { videoEditorPathWithTimeline } from '@/tools/video-editor/lib/video-editor-path';
-import { getClipTimelineDuration } from '@/tools/video-editor/lib/config-utils';
+import { getClipTimelineDuration } from '@/tools/video-editor';
+import { videoEditorPathWithTimeline, videoEditorSettings } from '@/tools/video-editor/browser';
 import {
   useTimelineEditorDataSafe,
   useTimelineEditorOpsSafe,

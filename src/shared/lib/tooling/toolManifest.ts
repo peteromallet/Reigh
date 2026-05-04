@@ -6,7 +6,7 @@ import { editImagesSettings } from '@/tools/edit-images/settings';
 import { editVideoSettings } from '@/tools/edit-video/settings/editVideoDefaults';
 import { imageGenerationSettings } from '@/tools/image-generation/settings';
 import { trainingDataHelperSettings } from '@/tools/training-data-helper/settings';
-import { videoEditorSettings } from '@/tools/video-editor/settings/videoEditorDefaults';
+import { videoEditorSettings } from '@/tools/video-editor/browser';
 import { videoTravelSettings } from '@/tools/travel-between-images/settings';
 
 import { joinClipsSettings } from '@/shared/lib/joinClips/defaults';

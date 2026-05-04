@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { addMediaClip, viewTimeline } from "./timeline.ts";
-import type { AssetRegistry, TimelineConfig } from "../../../../src/tools/video-editor/types/index.ts";
+import type { AssetRegistry, TimelineConfig } from "../../../../src/tools/video-editor/index.ts";
 
 function makeConfig(tracks: { id: string; label: string; kind: string }[] = []): TimelineConfig {
   return { clips: [], tracks } as unknown as TimelineConfig;
