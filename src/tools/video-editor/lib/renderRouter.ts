@@ -25,10 +25,7 @@
 // client renderer can still handle that. The trigger is the clipType
 // dispatch, not theme presence.
 
-import {
-  THEME_PACKAGE_REGISTRY,
-  type ThemePackageClipType,
-} from '@banodoco/timeline-composition/registry.generated';
+import { getRegisteredClipTypeDescriptor } from '@/tools/video-editor/clip-types/runtime';
 import {
   getGeneratedRemotionModuleStatus,
   type GeneratedRemotionModuleBlockReason,
@@ -64,11 +61,6 @@ export interface RenderRouteDecision {
     | GeneratedRemotionModuleBlockReason;
 }
 
-const isThemePackageClipType = (value: unknown): value is ThemePackageClipType => {
-  if (typeof value !== 'string') return false;
-  return Object.prototype.hasOwnProperty.call(THEME_PACKAGE_REGISTRY, value);
-};
-
 const NATIVE_BUILTIN_CLIP_TYPES: ReadonlySet<string> = new Set([
   'media',
   'text',
@@ -81,6 +73,14 @@ const isNativeBuiltinClipType = (value: unknown): boolean => {
   // legacy clips). They route to the client renderer.
   if (typeof value !== 'string') return true;
   return NATIVE_BUILTIN_CLIP_TYPES.has(value);
+};
+
+const isCustomRenderClipType = (value: unknown): boolean => {
+  if (typeof value !== 'string') {
+    return false;
+  }
+  const descriptor = getRegisteredClipTypeDescriptor(value);
+  return descriptor?.renderCapabilities.exportRoute === 'custom';
 };
 
 /** Pure-decision routing — call this from a hook or test. */
@@ -118,7 +118,7 @@ export function decideRenderRoute(
     }
 
     hasOtherClip = true;
-    if (isThemePackageClipType(clip?.clipType)) {
+    if (isCustomRenderClipType(clip?.clipType)) {
       hasThemedClip = true;
     } else if (isNativeBuiltinClipType(clip?.clipType)) {
       hasMediaClip = true;

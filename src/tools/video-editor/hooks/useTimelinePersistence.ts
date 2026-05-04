@@ -23,6 +23,7 @@ interface UseTimelinePersistenceOptions {
   store?: TimelineStoreApi;
   provider: DataProvider;
   timelineId: string;
+  resolveAssetUrl?: (file: string) => Promise<string>;
   eventBus: TimelineEventBus;
   dataRef: MutableRefObject<TimelineData | null>;
   commitData: (nextData: TimelineData, options?: CommitDataOptions) => void;
@@ -48,6 +49,7 @@ export function useTimelinePersistence({
   store,
   provider,
   timelineId,
+  resolveAssetUrl,
   eventBus,
   dataRef,
   commitData,
@@ -371,7 +373,7 @@ export function useTimelinePersistence({
       await buildTimelineData(
         loadedTimeline.config,
         registry,
-        (file) => provider.resolveAssetUrl(file),
+        resolveAssetUrl ?? ((file) => provider.resolveAssetUrl(file)),
         loadedTimeline.configVersion,
       ),
       {
@@ -389,6 +391,7 @@ export function useTimelinePersistence({
     editSeqRef,
     logConfigVersionUpdate,
     provider,
+    resolveAssetUrl,
     savedSeqRef,
     selectedClipIdRef,
     selectedTrackIdRef,
