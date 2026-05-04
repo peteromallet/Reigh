@@ -215,6 +215,8 @@ describe('useExternalDrop', () => {
       uploadImageGeneration: vi.fn(),
       uploadVideoGeneration: vi.fn(),
       handleAssetDrop: vi.fn(),
+      shots: mockUseShots().shots,
+      finalVideoMap: mockUseFinalVideoAvailable().finalVideoMap,
     }));
 
     result.current.onTimelineDragOver(event);
@@ -322,6 +324,8 @@ describe('useExternalDrop', () => {
       uploadImageGeneration: vi.fn(),
       uploadVideoGeneration: vi.fn(),
       handleAssetDrop,
+      shots: mockUseShots().shots,
+      finalVideoMap: mockUseFinalVideoAvailable().finalVideoMap,
     }));
 
     const multiItems: GenerationDropData[] = [
@@ -465,6 +469,8 @@ describe('useExternalDrop', () => {
       uploadImageGeneration: vi.fn(),
       uploadVideoGeneration,
       handleAssetDrop: vi.fn(),
+      shots: mockUseShots().shots,
+      finalVideoMap: mockUseFinalVideoAvailable().finalVideoMap,
     }));
 
     const event = createFileDropEvent([
@@ -577,6 +583,8 @@ describe('useExternalDrop', () => {
       uploadImageGeneration: vi.fn(),
       uploadVideoGeneration: vi.fn(),
       handleAssetDrop,
+      shots: mockUseShots().shots,
+      finalVideoMap: mockUseFinalVideoAvailable().finalVideoMap,
     }));
 
     const event = createDropEvent(
@@ -708,6 +716,8 @@ describe('useExternalDrop', () => {
       uploadImageGeneration: vi.fn(),
       uploadVideoGeneration: vi.fn(),
       handleAssetDrop,
+      shots: mockUseShots().shots,
+      finalVideoMap: mockUseFinalVideoAvailable().finalVideoMap,
     }));
 
     const event = createDropEvent(
@@ -845,6 +855,8 @@ describe('useExternalDrop', () => {
       uploadImageGeneration: vi.fn(),
       uploadVideoGeneration: vi.fn(),
       handleAssetDrop: vi.fn(),
+      shots: mockUseShots().shots,
+      finalVideoMap: mockUseFinalVideoAvailable().finalVideoMap,
     }));
 
     const event = createDropEvent(

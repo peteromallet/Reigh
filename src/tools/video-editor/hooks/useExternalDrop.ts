@@ -5,7 +5,6 @@ import {
   getShotDropData,
   getDragType,
 } from '@/shared/lib/dnd/dragDrop';
-import { useShots } from '@/shared/contexts/ShotsContext';
 import { getMediaUrl, getThumbnailUrl } from '@/shared/lib/media/mediaTypeHelpers';
 import { inferDragKind } from '@/tools/video-editor/lib/drop-position';
 import { resolveFinalVideoDurationSeconds } from '@/tools/video-editor/lib/finalVideoAssets';
@@ -47,7 +46,7 @@ import { buildPinnedShotGroupsOverride } from '@/tools/video-editor/lib/shot-gro
 import type { TrackKind } from '@/tools/video-editor/types';
 import { createAutoScroller } from '@/tools/video-editor/lib/auto-scroll';
 import type { Shot } from '@/domains/generation/types';
-import { useFinalVideoAvailable } from '@/tools/video-editor/hooks/useFinalVideoAvailable';
+import type { ShotFinalVideo } from '@/tools/video-editor/hooks/useFinalVideoAvailable';
 import type { TimelineStoreApi } from '@/tools/video-editor/hooks/timelineStore';
 
 async function resolveFinalVideoDurationSecondsWithRetry(
@@ -390,6 +389,8 @@ export interface UseExternalDropArgs {
   handleAssetDrop: UseAssetManagementResult['handleAssetDrop'];
   handleAddTextAt?: (trackId: string, time: number) => void;
   onSeekToTime?: (time: number) => void;
+  shots?: Shot[] | undefined;
+  finalVideoMap: Map<string, ShotFinalVideo>;
 }
 
 export interface UseExternalDropResult {
@@ -415,9 +416,9 @@ export function useExternalDrop({
   handleAssetDrop: dropAsset,
   handleAddTextAt,
   onSeekToTime,
+  shots,
+  finalVideoMap,
 }: UseExternalDropArgs): UseExternalDropResult {
-  const { shots } = useShots();
-  const { finalVideoMap } = useFinalVideoAvailable();
   const externalDragFrameRef = useRef<number | null>(null);
   const autoScrollerRef = useRef<ReturnType<typeof createAutoScroller> | null>(null);
   const latestExternalDragRef = useRef<{

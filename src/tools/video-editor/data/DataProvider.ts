@@ -70,3 +70,8 @@ export interface DataProvider {
   loadWaveform?(assetId: string): Promise<SilenceRegion[] | null>;
   loadAssetProfile?(assetId: string): Promise<AssetProfile | null>;
 }
+
+// The persistence boundary for the headless editor core remains the existing
+// data provider contract. Core/runtime ports can rename or regroup host inputs,
+// but persistence should continue to flow through this canonical interface.
+export type VideoEditorPersistencePort = DataProvider;
