@@ -200,6 +200,7 @@ describe('useExternalDrop', () => {
 
     const { result } = renderHook(() => useExternalDrop({
       dataRef,
+      timelineId: 'timeline-1',
       pendingOpsRef,
       scale: 1,
       scaleWidth: 1,
@@ -209,7 +210,7 @@ describe('useExternalDrop', () => {
       registerAsset: vi.fn(),
       uploadAsset: vi.fn(),
       invalidateAssetRegistry: vi.fn(),
-      resolveAssetUrl: vi.fn(),
+      assetResolver: { resolveAssetUrl: vi.fn() },
       coordinator,
       registerGenerationAsset: vi.fn(),
       uploadImageGeneration: vi.fn(),
@@ -309,6 +310,7 @@ describe('useExternalDrop', () => {
 
     const { result } = renderHook(() => useExternalDrop({
       dataRef,
+      timelineId: 'timeline-1',
       pendingOpsRef,
       scale: 1,
       scaleWidth: 1,
@@ -318,7 +320,7 @@ describe('useExternalDrop', () => {
       registerAsset: vi.fn(),
       uploadAsset: vi.fn(),
       invalidateAssetRegistry: vi.fn(),
-      resolveAssetUrl: vi.fn(),
+      assetResolver: { resolveAssetUrl: vi.fn() },
       coordinator,
       registerGenerationAsset,
       uploadImageGeneration: vi.fn(),
@@ -454,6 +456,7 @@ describe('useExternalDrop', () => {
 
     const { result } = renderHook(() => useExternalDrop({
       dataRef,
+      timelineId: 'timeline-1',
       pendingOpsRef,
       scale: 1,
       scaleWidth: 1,
@@ -463,7 +466,7 @@ describe('useExternalDrop', () => {
       registerAsset: vi.fn(),
       uploadAsset: vi.fn(),
       invalidateAssetRegistry: vi.fn(),
-      resolveAssetUrl: vi.fn(async (file: string) => `https://cdn.example/${file}`),
+      assetResolver: { resolveAssetUrl: vi.fn(async (file: string) => `https://cdn.example/${file}`) },
       coordinator,
       registerGenerationAsset: vi.fn(),
       uploadImageGeneration: vi.fn(),
@@ -568,6 +571,7 @@ describe('useExternalDrop', () => {
 
     const { result } = renderHook(() => useExternalDrop({
       dataRef,
+      timelineId: 'timeline-1',
       pendingOpsRef,
       scale: 1,
       scaleWidth: 1,
@@ -577,7 +581,7 @@ describe('useExternalDrop', () => {
       registerAsset: vi.fn(),
       uploadAsset: vi.fn(),
       invalidateAssetRegistry: vi.fn(),
-      resolveAssetUrl: vi.fn(),
+      assetResolver: { resolveAssetUrl: vi.fn() },
       coordinator,
       registerGenerationAsset,
       uploadImageGeneration: vi.fn(),
@@ -701,6 +705,7 @@ describe('useExternalDrop', () => {
 
     const { result } = renderHook(() => useExternalDrop({
       dataRef,
+      timelineId: 'timeline-1',
       pendingOpsRef,
       scale: 1,
       scaleWidth: 1,
@@ -710,7 +715,7 @@ describe('useExternalDrop', () => {
       registerAsset: vi.fn(),
       uploadAsset: vi.fn(),
       invalidateAssetRegistry: vi.fn(),
-      resolveAssetUrl: vi.fn(),
+      assetResolver: { resolveAssetUrl: vi.fn() },
       coordinator,
       registerGenerationAsset,
       uploadImageGeneration: vi.fn(),
@@ -840,6 +845,7 @@ describe('useExternalDrop', () => {
 
     const { result } = renderHook(() => useExternalDrop({
       dataRef,
+      timelineId: 'timeline-1',
       pendingOpsRef,
       scale: 1,
       scaleWidth: 1,
@@ -849,7 +855,7 @@ describe('useExternalDrop', () => {
       registerAsset: vi.fn(),
       uploadAsset: vi.fn(),
       invalidateAssetRegistry: vi.fn(),
-      resolveAssetUrl: vi.fn(),
+      assetResolver: { resolveAssetUrl: vi.fn() },
       coordinator,
       registerGenerationAsset,
       uploadImageGeneration: vi.fn(),

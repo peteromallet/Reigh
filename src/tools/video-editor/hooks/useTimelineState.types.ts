@@ -21,7 +21,9 @@ import type {
   TimelineJumpToCheckpoint,
   TimelinePatchRegistry,
   TimelinePendingOpsRef,
+  TimelineQueuedRender,
   TimelineRegisterAsset,
+  TimelineRenderRequest,
   TimelineReloadFromServer,
   TimelineRenderProgress,
   TimelineResolvedConfig,
@@ -189,8 +191,10 @@ export interface TimelineChromeContextValue {
   renderLog: string;
   renderDirty: boolean;
   renderProgress: TimelineRenderProgress;
+  queuedRender: TimelineQueuedRender;
   renderResultUrl: string | null;
   renderResultFilename: string | null;
+  renderRequest: TimelineRenderRequest;
   undo: () => void;
   redo: () => void;
   canUndo: boolean;
