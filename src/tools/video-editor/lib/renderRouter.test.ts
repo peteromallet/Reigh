@@ -34,11 +34,34 @@ describe('Sprint 8 render-button router (decideRenderRoute)', () => {
     expect(decision.reason).toBe('themed_only');
   });
 
+  it('routes locally-registered title-card timelines to banodoco_render_timeline', () => {
+    const decision = decideRenderRoute({
+      clips: [{ clipType: 'title-card' }],
+    });
+    expect(decision.route).toBe('banodoco');
+    expect(decision.hasThemedClip).toBe(true);
+    expect(decision.hasMediaClip).toBe(false);
+    expect(decision.reason).toBe('themed_only');
+  });
+
   it('routes a mixed themed+media timeline to banodoco_render_timeline', () => {
     const decision = decideRenderRoute({
       clips: [
         { clipType: 'media' },
         { clipType: 'art-card' },
+      ],
+    });
+    expect(decision.route).toBe('banodoco');
+    expect(decision.hasThemedClip).toBe(true);
+    expect(decision.hasMediaClip).toBe(true);
+    expect(decision.reason).toBe('mixed_themed_and_media');
+  });
+
+  it('routes mixed local-sequence and media timelines to banodoco_render_timeline', () => {
+    const decision = decideRenderRoute({
+      clips: [
+        { clipType: 'media' },
+        { clipType: 'title-card' },
       ],
     });
     expect(decision.route).toBe('banodoco');

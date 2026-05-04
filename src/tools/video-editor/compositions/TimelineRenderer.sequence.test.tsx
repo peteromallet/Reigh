@@ -133,6 +133,37 @@ vi.mock('@/tools/video-editor/compositions/TextClip', () => ({
   },
 }));
 
+vi.mock('@banodoco/timeline-composition/theme-api', async () => {
+  const React = await import('react');
+  const DEFAULT_THEME = {
+    id: 'default',
+    visual: {
+      color: {
+        accent: '#ffffff',
+        bg: '#000000',
+      },
+      type: {
+        families: {
+          heading: 'Georgia, serif',
+        },
+      },
+    },
+  };
+  const ThemeContext = React.createContext(DEFAULT_THEME.visual);
+  return {
+    DEFAULT_THEME,
+    ThemeProvider: ({
+      children,
+      value,
+    }: PropsWithChildren<{ value: unknown }>) => (
+      <ThemeContext.Provider value={(value as typeof DEFAULT_THEME)?.visual ?? DEFAULT_THEME.visual}>
+        {children}
+      </ThemeContext.Provider>
+    ),
+    useTheme: () => React.useContext(ThemeContext),
+  };
+});
+
 vi.mock('@banodoco/timeline-composition/registry.generated', async () => {
   const React = await import('react');
   const RegisteredSequence = ({
@@ -313,6 +344,31 @@ describe('TimelineRenderer registered sequences', () => {
     expect(sequence).toHaveAttribute('data-preview-asset-keys', JSON.stringify(['asset-a']));
   });
 
+  it('renders locally-registered title-card clips through the same registry-backed sequence route', () => {
+    render(<TimelineRenderer config={{
+      ...buildConfig({ theme: '2rp' }),
+      clips: [
+        {
+          id: 'clip-title-card',
+          clipType: 'title-card',
+          track: 'V1',
+          at: 0,
+          hold: 3,
+          params: {
+            kicker: 'INTRO',
+            title: 'Registry Title',
+            subtitle: 'Local example component',
+          },
+        },
+      ],
+    }} />);
+
+    const sequence = screen.getByTestId('title-card-sequence');
+    expect(sequence).toHaveAttribute('data-kicker', 'INTRO');
+    expect(sequence).toHaveAttribute('data-title', 'Registry Title');
+    expect(sequence).toHaveAttribute('data-subtitle', 'Local example component');
+  });
+
   it('renders remotion_module clips as safe placeholders before registered, native, or unknown clipType dispatch', () => {
     render(<TimelineRenderer config={{
       ...buildConfig({ theme: '2rp' }),
@@ -406,5 +462,25 @@ describe('TimelineRenderer registered sequences', () => {
     expect(screen.queryByTestId('generated-module-placeholder')).not.toBeInTheDocument();
     expect(screen.getByTestId('registered-sequence')).toHaveAttribute('data-clip-id', 'clip-trusted');
     expect(visualClipMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('falls back loudly when a trusted sequence clip is unavailable in the installed registry', () => {
+    render(<TimelineRenderer config={{
+      ...buildConfig({ theme: '2rp' }),
+      clips: [
+        {
+          id: 'clip-unavailable',
+          clipType: 'cta-card',
+          track: 'V1',
+          at: 0,
+          hold: 2,
+        },
+      ],
+    }} />);
+
+    expect(screen.getByTestId('unknown-clip-placeholder')).toBeInTheDocument();
+    expect(screen.queryByTestId('registered-sequence')).not.toBeInTheDocument();
+    expect(visualClipMock).not.toHaveBeenCalled();
+    expect(textClipMock).not.toHaveBeenCalled();
   });
 });

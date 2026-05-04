@@ -1,25 +1,16 @@
+import type {
+  ClipTypeHoldTiming,
+  ClipTypeSequenceParamDefinition,
+  ClipTypeSequenceParamKind,
+} from '@/tools/video-editor/clip-types/defineClipType';
+
 export const TRUSTED_SEQUENCE_THEME_ID = '2rp' as const;
 
-export type SequenceParamKind = 'string' | 'asset-list';
+export type SequenceParamKind = ClipTypeSequenceParamKind;
 
-export type SequenceParamMetadata = {
-  key: string;
-  label: string;
-  kind: SequenceParamKind;
-  description: string;
-  required?: boolean;
-  defaultValue?: string | readonly string[];
-  options?: readonly string[];
-  maxItems?: number;
-  componentParam?: string;
-};
+export type SequenceParamMetadata = ClipTypeSequenceParamDefinition;
 
-export type SequenceHoldMetadata = {
-  defaultSeconds: number;
-  minSeconds: number;
-  maxSeconds: number;
-  stepSeconds: number;
-};
+export type SequenceHoldMetadata = ClipTypeHoldTiming;
 
 export type TrustedSequenceMetadata = {
   clipType: string;
@@ -69,6 +60,38 @@ export const TRUSTED_SEQUENCE_METADATA = [
         description: 'Motion style. Use jump for hard cuts, snap for quick scale hits, gallery for side-by-side browsing, pulse for rhythmic zooms, and shuffle for overlapping card movement.',
         defaultValue: 'jump',
         options: ['jump', 'snap', 'gallery', 'pulse', 'shuffle'],
+      },
+    ],
+  },
+  {
+    clipType: 'title-card',
+    themeId: TRUSTED_SEQUENCE_THEME_ID,
+    label: 'Title Card',
+    description: 'Simple headline card example for local and third-party-style registry extensions.',
+    whenToUse: 'Use for openers, chapter titles, interstitial headlines, and concise branded statements.',
+    hold: DEFAULT_HOLD,
+    params: [
+      {
+        key: 'kicker',
+        label: 'Kicker',
+        kind: 'string',
+        description: 'Short uppercase label above the title.',
+        defaultValue: 'TITLE',
+      },
+      {
+        key: 'title',
+        label: 'Title',
+        kind: 'string',
+        description: 'Primary headline.',
+        required: true,
+        defaultValue: 'Build on the registry',
+      },
+      {
+        key: 'subtitle',
+        label: 'Subtitle',
+        kind: 'string',
+        description: 'Optional supporting line beneath the headline.',
+        defaultValue: 'One descriptor plus registration.',
       },
     ],
   },

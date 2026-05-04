@@ -11,6 +11,7 @@ import {
 import { useStaleVariants } from '@/tools/video-editor/hooks/useStaleVariants';
 import { useAddVariantAsGeneration } from '@/tools/video-editor/hooks/useAddVariantAsGeneration';
 import { useRenderDiagnostic } from '@/tools/video-editor/hooks/usePerfDiagnostics';
+import { getFallbackClipTab, getSelectionDefaultClipTab } from '@/tools/video-editor/lib/clip-inspector';
 import { getBulkVisibleTabs, getSharedNestedValue, getSharedValue } from '@/tools/video-editor/lib/bulk-utils';
 
 function PropertiesPanelComponent() {
@@ -108,10 +109,10 @@ function PropertiesPanelComponent() {
     const nextVisibleTabs = getVisibleClipTabs(selectedClip, selectedTrack);
     const isClipChange = selectedClip?.id !== prevClipIdRef.current;
 
-    if (isClipChange && selectedClip?.clipType === 'text') {
-      setActiveClipTab('text');
+    if (isClipChange && selectedClip) {
+      setActiveClipTab(getSelectionDefaultClipTab(selectedClip, selectedTrack));
     } else if (!nextVisibleTabs.includes(preferences.activeClipTab)) {
-      setActiveClipTab('effects');
+      setActiveClipTab(getFallbackClipTab(preferences.activeClipTab, nextVisibleTabs));
     }
 
     prevClipIdRef.current = selectedClip?.id;
