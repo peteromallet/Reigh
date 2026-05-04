@@ -79,7 +79,18 @@ vi.mock('@/tools/video-editor/sequences/registry', () => {
   return {
     isAvailableSequenceClipType: isAvailable,
     getAvailableSequenceMetadata: sequenceMetadata,
-    resolveAvailableClipType: (clipType: string) => (isAvailable(clipType) ? sequenceMetadata(clipType) : undefined),
+    // Match the production tagged-result shape so the inspector can branch
+    // between available/unavailable/unknown render-component states.
+    resolveAvailableClipType: (clipType: string) => {
+      const metadata = sequenceMetadata(clipType);
+      if (isAvailable(clipType) && metadata) {
+        return { status: 'available' as const, metadata };
+      }
+      if (metadata) {
+        return { status: 'unavailable' as const, metadata };
+      }
+      return { status: 'unknown' as const, clipType };
+    },
     getAvailableClipTypeDescriptor: (clipType: string) => sequenceMetadata(clipType),
   };
 });

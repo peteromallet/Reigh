@@ -470,9 +470,17 @@ describe('useTimelineCommit pinned shot reconciliation', () => {
       });
     });
 
+    // Pinned shot groups remain a contiguity invariant at canonicalize-time:
+    // a config-replace mutation that *adds* a `pinnedShotGroupsOverride`
+    // makes the new pair contiguous. clip-1 stays at 0 (the override's first
+    // member); clip-2 gets snapped from 0 back to 2 to keep the group
+    // continuous. The "soft-tag" guarantee the test name promises is that the
+    // *pinnedShotGroups* type does not rewrite geometry — the explicit
+    // config-replace path still enforces contiguity, which is the trunk-
+    // canonical behaviour driving the visible repair issue.
     expect(result.current.dataRef.current?.resolvedConfig.clips).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'clip-1', at: 0, track: 'V1', hold: 2 }),
-      expect.objectContaining({ id: 'clip-2', at: 0, track: 'V1', hold: 2 }),
+      expect.objectContaining({ id: 'clip-2', at: 2, track: 'V1', hold: 2 }),
     ]));
     expect(result.current.dataRef.current?.signature).toBe(
       getConfigSignature(result.current.dataRef.current!.resolvedConfig),

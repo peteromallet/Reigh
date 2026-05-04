@@ -8,7 +8,8 @@ import {
   isTimelineVersionConflictError,
   type DataProvider,
 } from '@/tools/video-editor/data/DataProvider';
-import { buildTimelineData, type TimelineData } from '@/tools/video-editor/lib/timeline-data';
+import { buildTimelineData, buildTimelineDataWithResolver, type TimelineData } from '@/tools/video-editor/lib/timeline-data';
+import type { AssetResolver } from '@/tools/video-editor/data/AssetResolver';
 import type { AssetRegistry, TimelineConfig } from '@/tools/video-editor/types';
 import type { CommitDataOptions, ScheduleSaveFn } from '@/tools/video-editor/hooks/useTimelineCommit';
 
@@ -24,6 +25,13 @@ interface UseTimelinePersistenceOptions {
   provider: DataProvider;
   timelineId: string;
   resolveAssetUrl?: (file: string) => Promise<string>;
+  /**
+   * Optional AssetResolver. When provided, reload paths route asset
+   * lookups through `assetResolver.onResolve` (and surface missing
+   * assets via `onMissing`) so the host's resolver lifecycle stays
+   * authoritative on refresh.
+   */
+  assetResolver?: AssetResolver;
   eventBus: TimelineEventBus;
   dataRef: MutableRefObject<TimelineData | null>;
   commitData: (nextData: TimelineData, options?: CommitDataOptions) => void;
@@ -50,6 +58,7 @@ export function useTimelinePersistence({
   provider,
   timelineId,
   resolveAssetUrl,
+  assetResolver,
   eventBus,
   dataRef,
   commitData,
@@ -369,23 +378,31 @@ export function useTimelinePersistence({
     logConfigVersionUpdate('reload', loadedTimeline.configVersion);
     configVersionRef.current = loadedTimeline.configVersion;
 
-    commitData(
-      await buildTimelineData(
-        loadedTimeline.config,
-        registry,
-        resolveAssetUrl ?? ((file) => provider.resolveAssetUrl(file)),
-        loadedTimeline.configVersion,
-      ),
-      {
-        save: false,
-        skipHistory: true,
-        updateLastSavedSignature: true,
-        selectedClipId: selectedClipIdRef.current,
-        selectedTrackId: selectedTrackIdRef.current,
-      },
-    );
+    const reloadedData = assetResolver
+      ? await buildTimelineDataWithResolver(
+          loadedTimeline.config,
+          registry,
+          assetResolver,
+          loadedTimeline.configVersion,
+          timelineId,
+        )
+      : await buildTimelineData(
+          loadedTimeline.config,
+          registry,
+          resolveAssetUrl ?? ((file) => provider.resolveAssetUrl(file)),
+          loadedTimeline.configVersion,
+        );
+
+    commitData(reloadedData, {
+      save: false,
+      skipHistory: true,
+      updateLastSavedSignature: true,
+      selectedClipId: selectedClipIdRef.current,
+      selectedTrackId: selectedTrackIdRef.current,
+    });
     setSaveStatus('saved');
   }, [
+    assetResolver,
     commitData,
     configVersionRef,
     editSeqRef,

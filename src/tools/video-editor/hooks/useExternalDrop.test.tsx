@@ -973,6 +973,7 @@ describe('useExternalDrop', () => {
       uploadImageGeneration: vi.fn(),
       uploadVideoGeneration: vi.fn(),
       handleAssetDrop: vi.fn(),
+      finalVideoMap: mockUseFinalVideoAvailable().finalVideoMap,
     }));
 
     const event = createDropEvent(
@@ -1072,6 +1073,7 @@ describe('useExternalDrop', () => {
       uploadImageGeneration: vi.fn(),
       uploadVideoGeneration: vi.fn(),
       handleAssetDrop: vi.fn(),
+      finalVideoMap: mockUseFinalVideoAvailable().finalVideoMap,
     }));
 
     const event = createDropEvent(
