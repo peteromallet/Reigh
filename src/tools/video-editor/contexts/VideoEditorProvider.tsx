@@ -10,6 +10,7 @@ import { MediaLightbox } from '@/domains/media-lightbox/MediaLightbox';
 import type { GenerationRow } from '@/domains/generation/types';
 import { VideoEditorLightboxOverlay } from '@/tools/video-editor/components/VideoEditorLightboxOverlay';
 import { useReighShotsHost } from '@/tools/video-editor/adapters/reigh/useReighShotsHost';
+import { DEFAULT_VIDEO_EDITOR_EXTENSION_RUNTIME } from '@/tools/video-editor/runtime/extensionSurface';
 import type { DataProvider } from '@/tools/video-editor/data/DataProvider';
 import {
   DataProviderWrapper,
@@ -433,6 +434,7 @@ export function VideoEditorProvider({
     timelineId,
     timelineName,
     userId,
+    extensions: DEFAULT_VIDEO_EDITOR_EXTENSION_RUNTIME,
   }), [agentChatRegistry.register, agentChatRegistry.unregister, dataProvider, projectId, shotsHost, timelineId, timelineName, userId]);
 
   return (

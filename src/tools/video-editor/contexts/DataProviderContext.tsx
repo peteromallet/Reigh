@@ -14,6 +14,7 @@ import type {
   VideoEditorTelemetryHost,
   VideoEditorToastHost,
 } from '@/tools/video-editor/runtime/ports';
+import type { VideoEditorExtensionRuntimeConfig } from '@/tools/video-editor/runtime/extensionSurface';
 
 export interface VideoEditorRuntimeContextValue {
   provider: DataProvider;
@@ -30,6 +31,7 @@ export interface VideoEditorRuntimeContextValue {
   timelineName?: string | null;
   exporter?: VideoEditorExporter | null;
   hostContext?: VideoEditorHostContext | null;
+  extensions: VideoEditorExtensionRuntimeConfig;
 }
 
 const DataProviderContext = createContext<VideoEditorRuntimeContextValue | null>(null);

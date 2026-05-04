@@ -1,5 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
-import { createPortal } from 'react-dom';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { Download, Eye, GripHorizontal, History, Maximize2, Minimize2, Redo2, Settings, SlidersHorizontal, Undo2, ZoomIn, ZoomOut } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/shared/components/ui/alert-dialog';
@@ -11,7 +10,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { Slider } from '@/shared/components/ui/slider';
 import { editorReplaceTimelineSelection } from '@/shared/state/selectionStore';
 import { PreviewPanel } from '@/tools/video-editor/components/PreviewPanel/PreviewPanel';
-import { RemotionPreview } from '@/tools/video-editor/components/PreviewPanel/RemotionPreview';
+import { useVideoEditorPreviewSurface } from '@/tools/video-editor/components/PreviewPanel/useVideoEditorPreviewSurface';
 import { PropertiesPanel } from '@/tools/video-editor/components/PropertiesPanel/PropertiesPanel';
 import { SequenceCreatorPanel } from '@/tools/video-editor/components/SequenceCreator/SequenceCreatorPanel';
 import { ThemeChip } from '@/tools/video-editor/components/ThemeChip';
@@ -213,22 +212,11 @@ function TimelineEditorShellCoreComponent({
   }, [outputResolution]);
   const [tooSmall, setTooSmall] = useState(false);
   const outerRef = useRef<HTMLDivElement>(null);
-  const condensedSlotRef = useRef<HTMLDivElement>(null);
-  const fullSlotRef = useRef<HTMLDivElement>(null);
   const selectedClipIdsList = useMemo(() => [...editorData.selectedClipIds], [editorData.selectedClipIds]);
   const inspectorTarget = useMemo(
     () => getInspectorTargetForSelection(selectedClipIdsList, editorData.selectedTrackId),
     [editorData.selectedTrackId, selectedClipIdsList],
   );
-  const [previewHostEl] = useState<HTMLDivElement | null>(() => {
-    if (typeof document === 'undefined') {
-      return null;
-    }
-
-    const host = document.createElement('div');
-    host.style.display = 'contents';
-    return host;
-  });
 
   useEffect(() => {
     const el = outerRef.current;
@@ -284,27 +272,7 @@ function TimelineEditorShellCoreComponent({
     }
   }, [condensed, condensedRightPanel, hasClipSelection, isTablet]);
 
-  useLayoutEffect(() => {
-    if (!previewHostEl) {
-      return;
-    }
-
-    const activeSlot = condensed ? condensedSlotRef.current : fullSlotRef.current;
-    if (!hasConfig || !activeSlot) {
-      previewHostEl.remove();
-      return () => {
-        previewHostEl.remove();
-      };
-    }
-
-    if (previewHostEl.parentElement !== activeSlot) {
-      activeSlot.appendChild(previewHostEl);
-    }
-
-    return () => {
-      previewHostEl.remove();
-    };
-  }, [condensed, hasConfig, previewHostEl]);
+  const previewSurface = useVideoEditorPreviewSurface({ compact: condensed });
 
   const gridTemplateRows = isTimelineMaximized
     ? `${MIN_PREVIEW_HEIGHT}px auto 1fr`
@@ -615,20 +583,7 @@ function TimelineEditorShellCoreComponent({
     </div>
   );
 
-  const previewPortal =
-    previewHostEl && editorData.resolvedConfig
-      ? createPortal(
-        <RemotionPreview
-          ref={playback.previewRef}
-          config={editorData.resolvedConfig}
-          compact={condensed}
-          initialTime={playback.currentTime}
-          onTimeUpdate={playback.onPreviewTimeUpdate}
-          playerContainerRef={playback.playerContainerRef}
-        />,
-        previewHostEl,
-      )
-      : null;
+  const previewPortal = previewSurface.portal;
 
   return (
     <>
@@ -672,7 +627,7 @@ function TimelineEditorShellCoreComponent({
             <div className="flex min-h-0 flex-col gap-3">
               <div className="relative min-h-0 flex-1">
                 {previewOverlay}
-                <PreviewPanel previewSlotRef={condensedSlotRef} />
+                <PreviewPanel surface={previewSurface} />
               </div>
               <div className="rounded-xl border border-border bg-card/80 px-3 py-2">
                 <Slider
@@ -722,7 +677,7 @@ function TimelineEditorShellCoreComponent({
               >
                 {previewOverlay}
                 <div className="min-h-0 flex-1">
-                  <div ref={condensedSlotRef} className="flex h-full w-full min-h-0 items-center justify-center" />
+                  <div ref={previewSurface.slotRef} className="flex h-full w-full min-h-0 items-center justify-center" />
                 </div>
                 <div className="border-t border-border px-3 py-2">
                   <Slider
@@ -755,7 +710,7 @@ function TimelineEditorShellCoreComponent({
           >
             <div className="relative min-h-0">
               {previewOverlay}
-              <PreviewPanel previewSlotRef={fullSlotRef} />
+              <PreviewPanel surface={previewSurface} />
             </div>
 
             <div className="row-span-2 min-h-0 overflow-hidden">
