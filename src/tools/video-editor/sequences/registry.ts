@@ -13,6 +13,7 @@ import {
   type TrustedSequenceMetadata,
 } from '@/tools/video-editor/sequences/metadata';
 import { ImageJumpSequence } from '@/tools/video-editor/sequences/components/ImageJumpSequence';
+import { TitleCardSequence } from '@/tools/video-editor/sequences/components/TitleCardSequence';
 import { createAvailableClipTypeRegistry } from '@/tools/video-editor/clip-types';
 
 export type SequenceComponentRegistryEntry = {
@@ -93,6 +94,11 @@ function getTrustedMetadataMap(): Record<string, TrustedSequenceMetadata> {
 export const LOCAL_SEQUENCE_REGISTRY = {
   'image-jump': {
     component: ImageJumpSequence,
+    themeId: '2rp',
+    source: 'local:reigh',
+  },
+  'title-card': {
+    component: TitleCardSequence,
     themeId: '2rp',
     source: 'local:reigh',
   },

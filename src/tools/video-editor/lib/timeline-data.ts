@@ -13,6 +13,10 @@ import {
 import { TIMELINE_CLIP_FIELDS } from '@/tools/video-editor/lib/serialize';
 import type { DataProvider } from '@/tools/video-editor/data/DataProvider';
 import type {
+  AssetMissingRequest,
+  AssetResolver,
+} from '@/tools/video-editor/data/AssetResolver';
+import type {
   AssetRegistry,
   ClipType,
   ResolvedTimelineConfig,
@@ -406,29 +410,132 @@ export const buildTimelineData = async (
   });
 };
 
-export const loadTimelineJsonFromProvider = async (
-  provider: DataProvider,
-  timelineId: string,
-  urlResolver?: UrlResolver,
-): Promise<TimelineData> => {
-  const [loadedTimeline, registry] = await Promise.all([
-    provider.loadTimeline(timelineId),
-    provider.loadAssetRegistry(timelineId),
-  ]);
-
-  return buildTimelineData(
-    loadedTimeline.config,
-    registry,
-    urlResolver ?? ((file) => provider.resolveAssetUrl(file)),
-    loadedTimeline.configVersion,
+function isAssetResolverArg(value: unknown): value is AssetResolver {
+  return (
+    typeof value === 'object'
+    && value !== null
+    && typeof (value as { resolveAssetUrl?: unknown }).resolveAssetUrl === 'function'
   );
+}
+
+/**
+ * Build a TimelineData using the resolver-hook contract (`onResolve`,
+ * `onMissing`). Used for refresh paths and unit tests that exercise the
+ * pluggable resolver lifecycle. Production load paths can keep calling
+ * `buildTimelineData(config, registry, urlResolver, configVersion)`.
+ */
+export const buildTimelineDataWithResolver = async (
+  config: TimelineConfig,
+  registry: AssetRegistry,
+  resolver: AssetResolver,
+  configVersion = 1,
+  timelineId?: string,
+): Promise<TimelineData> => {
+  const canonical = canonicalizeTimelinePair(config, registry);
+
+  const urlResolver: UrlResolver = (file) => {
+    if (resolver.onResolve) {
+      return resolver.onResolve({ file, timelineId });
+    }
+    return resolver.resolveAssetUrl(file);
+  };
+
+  const resolvedConfig = await resolveTimelineConfig(canonical.config, canonical.registry, urlResolver);
+
+  // Surface missing-asset references through the resolver lifecycle so
+  // the host can render a tombstone / retry path.
+  if (resolver.onMissing) {
+    const registeredAssets = canonical.registry.assets ?? {};
+    for (const clip of canonical.config.clips) {
+      if (!clip.asset) continue;
+      const entry = registeredAssets[clip.asset];
+      if (!entry) {
+        const missingRequest: AssetMissingRequest = {
+          assetId: clip.asset,
+          reason: 'missing_asset',
+          clipId: clip.id,
+          timelineId,
+          clip,
+          config: canonical.config,
+          registry: canonical.registry,
+        };
+        // Fire-and-forget — host listens.
+        await resolver.onMissing(missingRequest);
+      }
+    }
+  }
+
+  return assembleTimelineData({
+    config: canonical.config,
+    configVersion,
+    registry: canonical.registry,
+    resolvedConfig,
+    output: { ...canonical.config.output },
+    assetMap: buildAssetMap(canonical.registry),
+  });
 };
 
-export async function loadTranscript(
+export function loadTimelineJsonFromProvider(
   provider: DataProvider,
+  timelineIdOrResolver: string | AssetResolver,
+  resolverOrTimelineId?: UrlResolver | string,
+  legacyUrlResolver?: UrlResolver,
+): Promise<TimelineData> {
+  // New shape: (provider, assetResolver, timelineId)
+  if (isAssetResolverArg(timelineIdOrResolver)) {
+    const assetResolver = timelineIdOrResolver;
+    const timelineId = String(resolverOrTimelineId ?? '');
+    return (async () => {
+      const [loadedTimeline, registry] = await Promise.all([
+        provider.loadTimeline(timelineId),
+        provider.loadAssetRegistry(timelineId),
+      ]);
+      return buildTimelineDataWithResolver(
+        loadedTimeline.config,
+        registry,
+        assetResolver,
+        loadedTimeline.configVersion,
+        timelineId,
+      );
+    })();
+  }
+
+  // Legacy shape: (provider, timelineId, urlResolver?)
+  const timelineId = timelineIdOrResolver as string;
+  const urlResolver = (resolverOrTimelineId as UrlResolver | undefined)
+    ?? legacyUrlResolver
+    ?? ((file: string) => provider.resolveAssetUrl(file));
+  return (async () => {
+    const [loadedTimeline, registry] = await Promise.all([
+      provider.loadTimeline(timelineId),
+      provider.loadAssetRegistry(timelineId),
+    ]);
+    return buildTimelineData(
+      loadedTimeline.config,
+      registry,
+      urlResolver,
+      loadedTimeline.configVersion,
+    );
+  })();
+}
+
+export async function loadTranscript(
+  providerOrResolver: DataProvider | AssetResolver,
   assetKey: string,
+  timelineId?: string,
 ): Promise<TranscriptSegment[]> {
-  const profile = await provider.loadAssetProfile?.(assetKey);
+  // Resolver-aware path: prefer onProfileLoad if installed.
+  if (
+    typeof (providerOrResolver as AssetResolver).onProfileLoad === 'function'
+  ) {
+    const resolver = providerOrResolver as AssetResolver;
+    const profile = await resolver.onProfileLoad?.({ assetId: assetKey, timelineId });
+    return profile?.transcript?.segments ?? [];
+  }
+
+  // Legacy path: provider.loadAssetProfile(assetId) or resolver.loadAssetProfile.
+  const legacy = (providerOrResolver as { loadAssetProfile?: (id: string) => Promise<{ transcript?: { segments?: TranscriptSegment[] } } | null> }).loadAssetProfile;
+  const profile = legacy ? await legacy(assetKey) : null;
   return profile?.transcript?.segments ?? [];
 }
 
