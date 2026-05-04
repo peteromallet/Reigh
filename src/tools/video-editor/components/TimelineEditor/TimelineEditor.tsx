@@ -8,16 +8,14 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core';
 import type { Shot } from '@/domains/generation/types';
-import { toast } from '@/shared/components/ui/runtime/sonner';
 import { userSelectTimelineClip } from '@/shared/state/selectionStore';
 import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
 import { useShotCreation } from '@/shared/hooks/shotCreation/useShotCreation';
 import { useShotNavigation } from '@/shared/hooks/shots/useShotNavigation';
-import { useProjectSelectionContext } from '@/shared/contexts/ProjectContext';
-import { useShots } from '@/shared/contexts/ShotsContext';
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { VideoGenerationModal } from '@/tools/travel-between-images/components/VideoGenerationModal';
 import '@/tools/video-editor/components/TimelineEditor/timeline-overrides.css';
+import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext';
 import { useRenderDiagnostic } from '@/tools/video-editor/hooks/usePerfDiagnostics';
 import { ClipAction } from '@/tools/video-editor/components/TimelineEditor/ClipAction';
 import { DropIndicator } from '@/tools/video-editor/components/TimelineEditor/DropIndicator';
@@ -39,9 +37,13 @@ import { useStaleVariants } from '@/tools/video-editor/hooks/useStaleVariants';
 import { useAddVariantAsGeneration } from '@/tools/video-editor/hooks/useAddVariantAsGeneration';
 import { useShotGroupHandlers } from '@/tools/video-editor/hooks/useShotGroupHandlers';
 import { useSwitchToFinalVideo } from '@/tools/video-editor/hooks/useSwitchToFinalVideo';
+import { useTimelineCommands } from '@/tools/video-editor/hooks/useTimelineCommands';
 import { useTimelineScale } from '@/tools/video-editor/hooks/useTimelineScale';
-import { buildDuplicateClipEdit } from '@/tools/video-editor/lib/duplicate-clip';
 import { duplicateGenerationAsset } from '@/tools/video-editor/lib/generation-utils';
+import {
+  executeGenerationAssetRegistrationPlan,
+  planDuplicateGenerationAssetRegistration,
+} from '@/tools/video-editor/lib/timeline-asset-plans';
 import {
   clampClipToMediaDuration,
   convertOverhangToHold,
@@ -199,8 +201,10 @@ function TimelineEditorComponent({ onOpenSequenceCreator }: TimelineEditorProps)
   const [duplicatingClipId, setDuplicatingClipId] = useState<string | null>(null);
   const { createShot, isCreating } = useShotCreation();
   const { navigateToShot } = useShotNavigation();
-  const { selectedProjectId } = useProjectSelectionContext();
-  const { shots } = useShots();
+  const runtime = useVideoEditorRuntime();
+  const commands = useTimelineCommands();
+  const selectedProjectId = runtime.project.projectId;
+  const shots = runtime.shots.shots;
   const {
     data,
     resolvedConfig,
@@ -712,7 +716,7 @@ function TimelineEditorComponent({ onOpenSequenceCreator }: TimelineEditorProps)
 
   const handleDuplicateGenerationClip = useCallback(async (clipId: string) => {
     if (!selectedProjectId) {
-      toast.error('Select a project before duplicating a generation.');
+      runtime.toast.error('Select a project before duplicating a generation.');
       return;
     }
 
@@ -726,7 +730,7 @@ function TimelineEditorComponent({ onOpenSequenceCreator }: TimelineEditorProps)
     const assetEntry = assetKey ? current.registry.assets[assetKey] : undefined;
     const generationId = assetEntry?.generationId;
     if (!generationId) {
-      toast.error('This clip is not linked to a generation.');
+      runtime.toast.error('This clip is not linked to a generation.');
       return;
     }
 
@@ -736,43 +740,36 @@ function TimelineEditorComponent({ onOpenSequenceCreator }: TimelineEditorProps)
         generationId,
         projectId: selectedProjectId,
       });
-      const duplicatedAssetKey = registerGenerationAsset({
+      const registrationPlan = planDuplicateGenerationAssetRegistration({
         generationId: duplicatedGeneration.generationId,
         variantId: duplicatedGeneration.variantId,
         variantType: duplicatedGeneration.variantType,
         imageUrl: duplicatedGeneration.imageUrl,
         thumbUrl: duplicatedGeneration.thumbUrl,
-        durationSeconds: typeof assetEntry?.duration === 'number' ? assetEntry.duration : undefined,
-        metadata: {
-          content_type: assetEntry?.type ?? (
-            duplicatedGeneration.variantType === 'video' ? 'video/mp4' : 'image/png'
-          ),
-        },
+        sourceAssetEntry: assetEntry,
       });
-
-      if (!duplicatedAssetKey) {
-        throw new Error('Failed to register the duplicated asset.');
+      if (!registrationPlan.ok) {
+        throw new Error('Failed to plan the duplicated asset.');
       }
 
-      const nextCurrent = dataRef.current;
-      if (!nextCurrent) {
-        throw new Error('Timeline state was unavailable after registering the duplicated asset.');
+      const { assetKey, persistPromise } = executeGenerationAssetRegistrationPlan({
+        plan: registrationPlan,
+        patchRegistry,
+        registerAsset,
+      });
+      const insertResult = commands.addClip({
+        assetId: assetKey,
+        afterClipId: clipId,
+      });
+      if (!insertResult.ok) {
+        unpatchRegistry(assetKey);
+        throw new Error(insertResult.error.message);
       }
 
-      const duplicateEdit = buildDuplicateClipEdit(nextCurrent, clipId, duplicatedAssetKey);
-      if (!duplicateEdit) {
-        throw new Error('Failed to insert the duplicated clip on the timeline.');
-      }
-
-      applyEdit({
-        type: 'rows',
-        rows: duplicateEdit.rows,
-        metaUpdates: duplicateEdit.metaUpdates,
-        clipOrderOverride: duplicateEdit.clipOrderOverride,
-      }, {
-        selectedClipId: duplicateEdit.clipId,
-        selectedTrackId: duplicateEdit.trackId,
-        semantic: true,
+      void persistPromise.catch((error) => {
+        console.error('[video-editor] Failed to persist duplicated asset:', error);
+        unpatchRegistry(assetKey);
+        runtime.toast.error('Failed to save asset');
       });
     } catch (error) {
       normalizeAndPresentError(error, {
@@ -782,7 +779,7 @@ function TimelineEditorComponent({ onOpenSequenceCreator }: TimelineEditorProps)
     } finally {
       setDuplicatingClipId((currentClipId) => (currentClipId === clipId ? null : currentClipId));
     }
-  }, [applyEdit, dataRef, registerGenerationAsset, selectedProjectId]);
+  }, [commands, dataRef, patchRegistry, registerAsset, runtime.toast, selectedProjectId, unpatchRegistry]);
 
   const handleTrimClipToMediaEnd = useCallback((clipId: string) => {
     const current = dataRef.current;
@@ -975,6 +972,7 @@ function TimelineEditorComponent({ onOpenSequenceCreator }: TimelineEditorProps)
     isCreating,
     isClipSelected,
     onDoubleClickAsset,
+    onOpenSequenceCreator,
     primaryClipId,
     resolvedClipMap,
     trackMap,

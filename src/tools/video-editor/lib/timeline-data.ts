@@ -10,8 +10,7 @@ import {
   resolveTimelineConfig as resolveTimelineConfigShared,
   type UrlResolver,
 } from '@/tools/video-editor/lib/config-utils';
-import { migrateToFlatTracks, repairConfig, repairShotGroupContiguity } from '@/tools/video-editor/lib/migrate';
-import { TIMELINE_CLIP_FIELDS, validateSerializedConfig } from '@/tools/video-editor/lib/serialize';
+import { TIMELINE_CLIP_FIELDS } from '@/tools/video-editor/lib/serialize';
 import type { DataProvider } from '@/tools/video-editor/data/DataProvider';
 import type {
   AssetRegistry,
@@ -23,6 +22,10 @@ import type {
   TrackDefinition,
   TrackKind,
 } from '@/tools/video-editor/types';
+import {
+  canonicalizeTimelinePair,
+  serializeTimelineConfigSnapshot,
+} from '@/tools/video-editor/lib/timeline-domain';
 
 export interface ClipMeta {
   asset?: string;
@@ -341,8 +344,7 @@ export const rowsToConfig = (
   if (extras?.generation_defaults !== undefined) {
     config.generation_defaults = extras.generation_defaults;
   }
-  validateSerializedConfig(config);
-  return config;
+  return serializeTimelineConfigSnapshot(config).config;
 };
 
 interface AssembleTimelineDataParams {
@@ -391,22 +393,16 @@ export const buildTimelineData = async (
   urlResolver?: UrlResolver,
   configVersion = 1,
 ): Promise<TimelineData> => {
-  // Repair first (dedup corrupted data), then migrate (structural transform),
-  // then fix any non-contiguous clips in shot groups.
-  // All repair steps are no-ops on clean data. This only runs on load from server.
-  const repairedConfig = repairConfig(config);
-  const contiguousConfig = repairShotGroupContiguity(repairedConfig);
-  const migratedConfig = migrateToFlatTracks(contiguousConfig);
-  migratedConfig.tracks = migratedConfig.tracks ?? [];
-  const resolvedConfig = await resolveTimelineConfig(migratedConfig, registry, urlResolver);
+  const canonical = canonicalizeTimelinePair(config, registry);
+  const resolvedConfig = await resolveTimelineConfig(canonical.config, canonical.registry, urlResolver);
 
   return assembleTimelineData({
-    config: migratedConfig,
+    config: canonical.config,
     configVersion,
-    registry,
+    registry: canonical.registry,
     resolvedConfig,
-    output: { ...migratedConfig.output },
-    assetMap: buildAssetMap(registry),
+    output: { ...canonical.config.output },
+    assetMap: buildAssetMap(canonical.registry),
   });
 };
 

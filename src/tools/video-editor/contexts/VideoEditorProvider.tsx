@@ -7,9 +7,9 @@ import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from '@/shared/components/ui/runtime/sonner';
 import { MediaLightbox } from '@/domains/media-lightbox/MediaLightbox';
-import { useShots } from '@/shared/contexts/ShotsContext';
 import type { GenerationRow } from '@/domains/generation/types';
 import { VideoEditorLightboxOverlay } from '@/tools/video-editor/components/VideoEditorLightboxOverlay';
+import { useReighShotsHost } from '@/tools/video-editor/adapters/reigh/useReighShotsHost';
 import type { DataProvider } from '@/tools/video-editor/data/DataProvider';
 import {
   DataProviderWrapper,
@@ -24,6 +24,7 @@ import {
   useResolvedEffectCatalog,
   type VideoEditorEffectCatalog,
 } from '@/tools/video-editor/hooks/useEffectResources';
+import { createTimelineCommands } from '@/tools/video-editor/hooks/useTimelineCommands';
 import { useTimelineClipsForAttachments } from '@/tools/video-editor/hooks/useTimelineClipsForAttachments';
 import { useTimelineState } from '@/tools/video-editor/hooks/useTimelineState';
 import { TimelineStoreProvider } from '@/tools/video-editor/hooks/timelineStore';
@@ -41,6 +42,10 @@ import {
   readPendingAdds,
   writePendingAdds,
 } from '@/domains/media-lightbox/hooks/addToVideoEditorConstants';
+import {
+  executeGenerationAssetRegistrationPlan,
+  planGenerationAssetRegistration,
+} from '@/tools/video-editor/lib/timeline-asset-plans';
 import { useRenderDiagnostic } from '@/tools/video-editor/hooks/usePerfDiagnostics';
 import type { ResolvedAssetRegistryEntry } from '@/tools/video-editor/types';
 
@@ -77,9 +82,8 @@ export function buildVideoEditorLightboxMedia(
 /** Registers video-editor state into the app-level AgentChatContext and keeps
  *  timeline attachment metadata synchronized in the selection store. */
 function AgentChatBridgeRegistration() {
-  const { timelineId } = useVideoEditorRuntime();
+  const { timelineId, agentChat } = useVideoEditorRuntime();
   const allClips = useTimelineClipsForAttachments();
-  const { register, unregister } = useAgentChatRegistry();
 
   useEffect(() => {
     setTimelineClipData(allClips);
@@ -87,25 +91,24 @@ function AgentChatBridgeRegistration() {
   }, [allClips]);
 
   useEffect(() => {
-    register({ timelineId });
-    return unregister;
-  }, [register, unregister, timelineId]);
+    agentChat.registerTimeline({ timelineId });
+    return agentChat.unregisterTimeline;
+  }, [agentChat, timelineId]);
 
   return null;
 }
 
 function InnerProvider({
   children,
-  userId,
   effectCatalog,
 }: {
   children: React.ReactNode;
-  userId: string;
   effectCatalog?: VideoEditorEffectCatalog | null;
 }) {
   useRenderDiagnostic('VideoEditorProvider');
-  const effectsQuery = useEffects(userId, { enabled: !effectCatalog });
-  const effectResources = useResolvedEffectCatalog(userId, effectCatalog);
+  const runtime = useVideoEditorRuntime();
+  const effectsQuery = useEffects(runtime.auth.userId, { enabled: !effectCatalog });
+  const effectResources = useResolvedEffectCatalog(runtime.auth.userId, effectCatalog);
   useEffectRegistry(
     effectsQuery.data?.map((effect) => ({
       slug: effect.slug,
@@ -114,7 +117,7 @@ function InnerProvider({
     effectResources.effects,
   );
   const { store, editor } = useTimelineState();
-  const { shots } = useShots();
+  const commands = useMemo(() => createTimelineCommands(store), [store]);
   const [searchParams, setSearchParams] = useSearchParams();
   const pendingAddGenerationId = searchParams.get(ADD_GENERATION_QUERY_PARAM);
   const consumedAddGenerationRef = useRef<string | null>(null);
@@ -123,6 +126,8 @@ function InnerProvider({
   const drainInFlightRef = useRef(false);
   const editorRef = useRef(editor);
   editorRef.current = editor;
+  const commandsRef = useRef(commands);
+  commandsRef.current = commands;
 
   useEffect(() => {
     if (editor.isLoading) return;
@@ -147,24 +152,34 @@ function InnerProvider({
       const processed: string[] = [];
       try {
         for (const generationId of queue) {
-          const generation = await loadGenerationForLightbox(generationId);
+          const generation = await runtime.mediaLightbox.loadGenerationForLightbox(generationId);
           if (!generation) {
-            toast.error('Could not load asset');
+            runtime.toast.error('Could not load asset');
             processed.push(generationId);
             continue;
           }
-          const currentEditor = editorRef.current;
-          const assetKey = currentEditor.registerGenerationAsset({
+          const registrationPlan = planGenerationAssetRegistration({
             generationId: generation.id,
             variantType: generation.type === 'video' ? 'video' : 'image',
             imageUrl: generation.location ?? generation.imageUrl ?? '',
             thumbUrl: generation.thumbUrl ?? generation.imageUrl ?? generation.location ?? '',
           });
-          if (!assetKey) {
-            toast.error('Could not register asset');
+          if (!registrationPlan.ok) {
+            runtime.toast.error('Could not register asset');
             processed.push(generationId);
             continue;
           }
+          const currentOps = store.getState().ops;
+          const { assetKey, persistPromise } = executeGenerationAssetRegistrationPlan({
+            plan: registrationPlan,
+            patchRegistry: currentOps.patchRegistry,
+            registerAsset: currentOps.registerAsset,
+          });
+          void persistPromise.catch((error) => {
+            console.error('[video-editor] Failed to persist staged add asset:', error);
+            store.getState().ops.unpatchRegistry(assetKey);
+            runtime.toast.error('Failed to save asset');
+          });
           // Let registry patch settle before reading resolvedConfig.
           await new Promise<void>((resolve) => setTimeout(resolve, 0));
           const editorForDrop = editorRef.current;
@@ -173,7 +188,16 @@ function InnerProvider({
             (max, clip) => Math.max(max, clip.at + getClipTimelineDuration(clip)),
             0,
           );
-          editorForDrop.handleAssetDrop(assetKey, undefined, timelineEnd, false, false);
+          const insertResult = commandsRef.current.addClip({
+            assetId: assetKey,
+            time: timelineEnd,
+          });
+          if (!insertResult.ok) {
+            store.getState().ops.unpatchRegistry(assetKey);
+            runtime.toast.error(insertResult.error.message);
+            processed.push(generationId);
+            continue;
+          }
           processed.push(generationId);
           // Allow React to commit the clip before the next iteration reads clips.
           await new Promise<void>((resolve) => setTimeout(resolve, 50));
@@ -191,7 +215,7 @@ function InnerProvider({
         drainInFlightRef.current = false;
       }
     })();
-  }, [pendingAddGenerationId, editor.isLoading, setSearchParams]);
+  }, [commands, editor.isLoading, pendingAddGenerationId, runtime.mediaLightbox, runtime.toast, setSearchParams, store]);
 
   const [lightboxAssetKey, setLightboxAssetKey] = useState<string | null>(null);
   const [lightboxClipId, setLightboxClipId] = useState<string | null>(null);
@@ -203,7 +227,7 @@ function InnerProvider({
   const lightboxGenerationId = lightboxAsset?.generationId ?? null;
   const lightboxQuery = useQuery({
     queryKey: ['video-editor', 'lightbox', lightboxGenerationId],
-    queryFn: () => loadGenerationForLightbox(lightboxGenerationId as string),
+    queryFn: () => runtime.mediaLightbox.loadGenerationForLightbox(lightboxGenerationId as string),
     enabled: Boolean(lightboxGenerationId),
     staleTime: 60_000,
   });
@@ -232,7 +256,7 @@ function InnerProvider({
     lightboxAssetKey,
     lightboxClipId,
     data: editor.data,
-    shots,
+    shots: runtime.shots.shots,
     setLightboxAssetKey,
     setLightboxClipId,
   });
@@ -354,7 +378,7 @@ function InnerProvider({
         {children}
         {lightboxAssetKey && resolvedLightboxMedia && (
           <>
-            <MediaLightbox
+            <runtime.mediaLightbox.Lightbox
               media={resolvedLightboxMedia}
               navigation={navResult.navigation}
               initialVariantId={lightboxInitialVariantId}
@@ -371,6 +395,7 @@ function InnerProvider({
 
 export function VideoEditorProvider({
   dataProvider,
+  projectId,
   timelineId,
   timelineName,
   userId,
@@ -378,15 +403,54 @@ export function VideoEditorProvider({
   children,
 }: {
   dataProvider: DataProvider;
+  projectId: string | null;
   timelineId: string;
   timelineName?: string | null;
   userId: string;
   effectCatalog?: VideoEditorEffectCatalog | null;
   children: React.ReactNode;
 }) {
+  const shotsHost = useReighShotsHost(projectId);
+  const agentChatRegistry = useAgentChatRegistry();
+  const runtimeValue = useMemo(() => ({
+    provider: dataProvider,
+    assetResolver: {
+      resolveAssetUrl: dataProvider.resolveAssetUrl.bind(dataProvider),
+    },
+    auth: {
+      userId,
+    },
+    project: {
+      projectId,
+    },
+    shots: shotsHost,
+    mediaLightbox: {
+      Lightbox: MediaLightbox,
+      loadGenerationForLightbox,
+    },
+    agentChat: {
+      registerTimeline: agentChatRegistry.register,
+      unregisterTimeline: agentChatRegistry.unregister,
+    },
+    toast: {
+      error: toast.error,
+      success: toast.success,
+      warning: toast.warning,
+      info: toast.info,
+    },
+    telemetry: {
+      log: (...args: unknown[]) => console.log(...args),
+      warn: (...args: unknown[]) => console.warn(...args),
+      error: (...args: unknown[]) => console.error(...args),
+    },
+    timelineId,
+    timelineName,
+    userId,
+  }), [agentChatRegistry.register, agentChatRegistry.unregister, dataProvider, projectId, shotsHost, timelineId, timelineName, userId]);
+
   return (
-    <DataProviderWrapper value={{ provider: dataProvider, timelineId, timelineName, userId }}>
-      <InnerProvider userId={userId} effectCatalog={effectCatalog}>{children}</InnerProvider>
+    <DataProviderWrapper value={runtimeValue}>
+      <InnerProvider effectCatalog={effectCatalog}>{children}</InnerProvider>
     </DataProviderWrapper>
   );
 }

@@ -35,6 +35,19 @@ export interface TimelineAvailabilityState {
   mounted: boolean;
 }
 
+export const UNMOUNTED_TIMELINE_AVAILABILITY: TimelineAvailabilityState = Object.freeze({ mounted: false });
+export const MOUNTED_TIMELINE_AVAILABILITY: TimelineAvailabilityState = Object.freeze({ mounted: true });
+
+export function hasMountedTimelineAvailability(
+  availability: Pick<TimelineAvailabilityState, 'mounted'> & { hasProvider?: boolean },
+): boolean {
+  return availability.mounted && availability.hasProvider !== false;
+}
+
+function getTimelineAvailabilityState(mounted: boolean): TimelineAvailabilityState {
+  return mounted ? MOUNTED_TIMELINE_AVAILABILITY : UNMOUNTED_TIMELINE_AVAILABILITY;
+}
+
 export interface TimelineStoreBootstrap {
   data: TimelineEditorDataContextValue;
   ops: TimelineEditorOpsContextValue;
@@ -311,13 +324,13 @@ export function createTimelineStore(bootstrap?: Partial<TimelineStoreBootstrap>)
   const initialMounted = bootstrap !== undefined;
 
   return createStore<TimelineStoreState>((set) => ({
-    availability: { mounted: initialMounted },
+    availability: getTimelineAvailabilityState(initialMounted),
     ...seededSlices,
     setMounted: (mounted) => {
       set((state) => (
         state.availability.mounted === mounted
           ? state
-          : { availability: { mounted } }
+          : { availability: getTimelineAvailabilityState(mounted) }
       ));
     },
     syncDataSlice: (data) => {
@@ -325,7 +338,7 @@ export function createTimelineStore(bootstrap?: Partial<TimelineStoreBootstrap>)
         state.data === data && state.availability.mounted
           ? state
           : {
-              availability: state.availability.mounted ? state.availability : { mounted: true },
+              availability: state.availability.mounted ? state.availability : MOUNTED_TIMELINE_AVAILABILITY,
               data,
             }
       ));
@@ -335,7 +348,7 @@ export function createTimelineStore(bootstrap?: Partial<TimelineStoreBootstrap>)
         state.ops === ops && state.availability.mounted
           ? state
           : {
-              availability: state.availability.mounted ? state.availability : { mounted: true },
+              availability: state.availability.mounted ? state.availability : MOUNTED_TIMELINE_AVAILABILITY,
               ops,
             }
       ));
@@ -345,7 +358,7 @@ export function createTimelineStore(bootstrap?: Partial<TimelineStoreBootstrap>)
         state.chrome === chrome && state.availability.mounted
           ? state
           : {
-              availability: state.availability.mounted ? state.availability : { mounted: true },
+              availability: state.availability.mounted ? state.availability : MOUNTED_TIMELINE_AVAILABILITY,
               chrome,
             }
       ));
@@ -355,7 +368,7 @@ export function createTimelineStore(bootstrap?: Partial<TimelineStoreBootstrap>)
         state.playback === playback && state.availability.mounted
           ? state
           : {
-              availability: state.availability.mounted ? state.availability : { mounted: true },
+              availability: state.availability.mounted ? state.availability : MOUNTED_TIMELINE_AVAILABILITY,
               playback,
             }
       ));
@@ -379,7 +392,7 @@ export function createTimelineStore(bootstrap?: Partial<TimelineStoreBootstrap>)
         }
 
         return {
-          availability: { mounted: nextMounted },
+          availability: MOUNTED_TIMELINE_AVAILABILITY,
           data: nextData,
           ops: nextOps,
           chrome: nextChrome,
@@ -389,7 +402,7 @@ export function createTimelineStore(bootstrap?: Partial<TimelineStoreBootstrap>)
     },
     resetSlices: () => {
       set(() => ({
-        availability: { mounted: false },
+        availability: UNMOUNTED_TIMELINE_AVAILABILITY,
         ...createInitialSlices(),
       }));
     },
@@ -434,6 +447,8 @@ function useSafeTimelineStoreValue<T>(
   const store = providedStore ?? fallbackTimelineStore;
   const mounted = useStoreWithEqualityFn(store, (state) => state.availability.mounted);
   const value = useStoreWithEqualityFn(store, selector, equalityFn);
+  // Preserve the mounted-only safe-hook contract: a provider without a mounted
+  // editor still behaves like "no editor" for staged add-to-editor callers.
   return providedStore && mounted ? value : null;
 }
 

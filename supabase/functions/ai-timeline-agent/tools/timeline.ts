@@ -4,6 +4,8 @@ import type {
   TimelineClip,
   TimelineConfig,
   TrackDefinition,
+  getPairTimelineClipDuration,
+  getPairTimelineDuration,
 } from "../../../../src/tools/video-editor/index.ts";
 import type { ToolHandler, ToolResult } from "../types.ts";
 // Sprint 3 (SD-018): surgical CRUD ops moved to @banodoco/timeline-ops.
@@ -51,23 +53,6 @@ function getAssetDuration(registry: AssetRegistry, assetId?: string): number | n
   return typeof duration === "number" ? duration : null;
 }
 
-function getClipSourceDuration(clip: TimelineClip, registry: AssetRegistry): number {
-  if (typeof clip.hold === "number") {
-    return clip.hold;
-  }
-
-  if (typeof clip.from === "number" && typeof clip.to === "number") {
-    return clip.to - clip.from;
-  }
-
-  return getAssetDuration(registry, clip.asset) ?? 0;
-}
-
-function getClipTimelineDuration(clip: TimelineClip, registry: AssetRegistry): number {
-  const speed = clip.speed ?? 1;
-  return getClipSourceDuration(clip, registry) / speed;
-}
-
 function getShotLabel(shotId: string, shotNamesById: Record<string, string>): string {
   return shotNamesById[shotId] ?? shotId;
 }
@@ -88,7 +73,7 @@ function formatClipLine(
   shotGroupByClipId: Map<string, PinnedShotGroup>,
   shotNamesById: Record<string, string>,
 ): string {
-  const duration = roundSeconds(getClipTimelineDuration(clip, registry));
+  const duration = roundSeconds(getPairTimelineClipDuration(clip, registry));
   const parts = [
     `id=${clip.id}`,
     `track=${clip.track}`,
@@ -141,9 +126,7 @@ function describeTimeline(
   const tracks = getTrackDefinitions(config);
   const shotGroupByClipId = buildShotGroupByClipId(config);
   const shotGroups = config.pinnedShotGroups ?? [];
-  const totalDuration = config.clips.reduce((maxDuration, clip) => {
-    return Math.max(maxDuration, clip.at + getClipTimelineDuration(clip, registry));
-  }, 0);
+  const totalDuration = getPairTimelineDuration(config.clips, registry);
 
   const lines = [
     `Timeline summary: ${tracks.length} track(s), ${config.clips.length} clip(s), total duration ${roundSeconds(totalDuration)}s.`,
@@ -211,7 +194,7 @@ export function splitClip(
   }
 
   const clip = nextConfig.clips[clipIndex];
-  const clipEnd = clip.at + getClipTimelineDuration(clip, registry);
+  const clipEnd = clip.at + getPairTimelineClipDuration(clip, registry);
   if (!(args.time > clip.at && args.time < clipEnd)) {
     return { result: `Split time ${roundSeconds(args.time)}s must be inside clip ${clip.id}.` };
   }
@@ -556,7 +539,7 @@ export function queryTimeline(config: TimelineConfig, registry: AssetRegistry): 
   }
 
   for (const clip of nextConfig.clips) {
-    const duration = roundSeconds(getClipTimelineDuration(clip, registry));
+    const duration = roundSeconds(getPairTimelineClipDuration(clip, registry));
     totalDuration = Math.max(totalDuration, roundSeconds(clip.at + duration));
 
     if (!longest || duration > longest.duration) {
@@ -576,7 +559,7 @@ export function queryTimeline(config: TimelineConfig, registry: AssetRegistry): 
     for (let index = 1; index < sortedClips.length; index += 1) {
       const previousClip = sortedClips[index - 1];
       const currentClip = sortedClips[index];
-      const previousEnd = previousClip.at + getClipTimelineDuration(previousClip, registry);
+      const previousEnd = previousClip.at + getPairTimelineClipDuration(previousClip, registry);
 
       if (currentClip.at - previousEnd > 0.01) {
         gapCount += 1;
@@ -632,7 +615,7 @@ export function findIssues(config: TimelineConfig, registry: AssetRegistry): Tim
     for (let index = 1; index < sortedClips.length; index += 1) {
       const previousClip = sortedClips[index - 1];
       const currentClip = sortedClips[index];
-      const previousEnd = previousClip.at + getClipTimelineDuration(previousClip, registry);
+      const previousEnd = previousClip.at + getPairTimelineClipDuration(previousClip, registry);
 
       if (currentClip.at - previousEnd > 0.01) {
         issues.push(
@@ -688,7 +671,7 @@ export function duplicateClip(
   if (!sourceClip) return { result: `Clip ${args.clipId} was not found.` };
 
   const count = typeof args.count === "number" ? Math.max(1, Math.round(args.count)) : 1;
-  const duration = getClipTimelineDuration(sourceClip, registry);
+  const duration = getPairTimelineClipDuration(sourceClip, registry);
 
   const nextConfig = cloneConfig(config);
   const newIds: string[] = [];

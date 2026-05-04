@@ -27,6 +27,90 @@ vi.mock('remotion', async () => {
   };
 });
 
+vi.mock('@banodoco/timeline-composition/theme-api', async () => {
+  const reactModule = await import('react');
+  const runtimeThemeValue = {
+    color: {
+      accent: '#ffffff',
+      bg: '#000000',
+      fg: '#ffffff',
+    },
+    type: {
+      families: {
+        heading: 'Georgia, serif',
+        body: 'Inter, system-ui, sans-serif',
+        mono: 'JetBrains Mono, ui-monospace, monospace',
+      },
+      size: {
+        base: 56,
+        small: 32,
+        large: 128,
+      },
+      weight: {
+        normal: 300,
+        bold: 500,
+      },
+      lineHeight: 1.1,
+    },
+    motion: {
+      fadeMs: 500,
+    },
+    canvas: {
+      width: 1920,
+      height: 1080,
+      fps: 30,
+    },
+  };
+
+  const DEFAULT_THEME = {
+    id: 'default',
+    visual: runtimeThemeValue,
+  };
+
+  const toRuntimeTheme = (value: unknown) => {
+    if (
+      value
+      && typeof value === 'object'
+      && 'visual' in value
+      && value.visual
+      && typeof value.visual === 'object'
+    ) {
+      return {
+        ...runtimeThemeValue,
+        ...value.visual,
+        color: {
+          ...runtimeThemeValue.color,
+          ...(typeof value.visual.color === 'object' ? value.visual.color : {}),
+        },
+        type: {
+          ...runtimeThemeValue.type,
+          ...(typeof value.visual.type === 'object' ? value.visual.type : {}),
+          families: {
+            ...runtimeThemeValue.type.families,
+            ...(typeof value.visual.type === 'object' && typeof value.visual.type.families === 'object'
+              ? value.visual.type.families
+              : {}),
+          },
+        },
+      };
+    }
+    return runtimeThemeValue;
+  };
+
+  const ThemeContext = reactModule.createContext(runtimeThemeValue);
+
+  return {
+    DEFAULT_THEME,
+    ThemeProvider: ({
+      children,
+      value,
+    }: PropsWithChildren<{ value: typeof DEFAULT_THEME }>) => (
+      <ThemeContext.Provider value={toRuntimeTheme(value)}>{children}</ThemeContext.Provider>
+    ),
+    useTheme: () => reactModule.useContext(ThemeContext),
+  };
+});
+
 vi.mock('@/tools/video-editor/compositions/AudioAnalysisProvider', async () => {
   return {
     AudioAnalysisProvider: ({ children }: PropsWithChildren) => (
@@ -143,6 +227,31 @@ describe('TimelineRenderer registered sequences', () => {
     expect(sequence).toHaveAttribute('data-fps', '30');
     expect(sequenceProps[0]).toMatchObject({
       from: 30,
+      durationInFrames: 90,
+    });
+  });
+
+  it('uses shared duration helpers for speed-adjusted registered sequence clips', () => {
+    render(<TimelineRenderer config={{
+      ...buildConfig({ theme: '2rp' }),
+      clips: [
+        {
+          id: 'clip-speed-adjusted',
+          clipType: 'section-hook',
+          track: 'V1',
+          at: 0,
+          from: 0,
+          to: 6,
+          speed: 2,
+          params: {
+            title: 'Speed adjusted',
+          },
+        },
+      ],
+    }} />);
+
+    expect(sequenceProps[0]).toMatchObject({
+      from: 0,
       durationInFrames: 90,
     });
   });

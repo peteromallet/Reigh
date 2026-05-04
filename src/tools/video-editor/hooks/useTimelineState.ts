@@ -516,7 +516,7 @@ export function useTimelineState(): UseTimelineStateResult {
     uploadFiles,
     invalidateAssetRegistry,
   } = assetOperations;
-  const selectedProjectId = runtime.hostContext?.projectId ?? null;
+  const selectedProjectId = runtime.hostContext?.projectId ?? runtime.project.projectId;
   const selection = useTimelineSelection({
     data,
     selectedTrackId,

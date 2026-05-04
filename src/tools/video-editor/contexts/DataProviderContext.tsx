@@ -5,13 +5,29 @@ import type {
   VideoEditorExporter,
   VideoEditorHostContext,
 } from '@/tools/video-editor/lib/browser-runtime';
+import type {
+  VideoEditorAgentChatHost,
+  VideoEditorAuthHost,
+  VideoEditorMediaLightboxHost,
+  VideoEditorProjectHost,
+  VideoEditorShotsHost,
+  VideoEditorTelemetryHost,
+  VideoEditorToastHost,
+} from '@/tools/video-editor/runtime/ports';
 
 export interface VideoEditorRuntimeContextValue {
   provider: DataProvider;
+  assetResolver: VideoEditorAssetResolver;
+  auth: VideoEditorAuthHost;
+  project: VideoEditorProjectHost;
+  shots: VideoEditorShotsHost;
+  mediaLightbox: VideoEditorMediaLightboxHost;
+  agentChat: VideoEditorAgentChatHost;
+  toast: VideoEditorToastHost;
+  telemetry: VideoEditorTelemetryHost;
   timelineId: string;
   userId: string | null;
   timelineName?: string | null;
-  assetResolver?: VideoEditorAssetResolver | null;
   exporter?: VideoEditorExporter | null;
   hostContext?: VideoEditorHostContext | null;
 }

@@ -82,3 +82,12 @@ export {
 } from './lib/config-utils.ts';
 
 export type { UrlResolver } from './lib/config-utils.ts';
+
+export {
+  canonicalizeTimelinePair,
+  getPairTimelineClipDuration,
+  getPairTimelineDuration,
+  serializeTimelineConfigSnapshot,
+  serializeTimelinePair,
+  TimelineDomainError,
+} from './lib/timeline-domain.ts';

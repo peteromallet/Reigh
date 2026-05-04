@@ -12,6 +12,8 @@
     ],
     "src/domains/media-lightbox/hooks/useAddToVideoEditor.ts": [
       "src/tools/video-editor/hooks/timelineStore.ts",
+      "src/tools/video-editor/hooks/useTimelineCommands.ts",
+      "src/tools/video-editor/lib/timeline-asset-plans.ts",
       "src/tools/video-editor/lib/video-editor-path.ts",
       "src/tools/video-editor/settings/videoEditorDefaults.ts"
     ],
