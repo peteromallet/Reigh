@@ -504,7 +504,6 @@ export async function executeCreateTask(
       steps: asPositiveNumber(args.steps) ?? travelContext?.steps,
       guidance_scale: asFiniteNumber(args.guidance_scale) ?? travelContext?.guidanceScale,
       enhance_prompt: typeof args.enhance_prompt === "boolean" ? args.enhance_prompt : travelContext?.enhancePrompt,
-      turbo_mode: typeof args.turbo_mode === "boolean" ? args.turbo_mode : travelContext?.turboMode,
       loras: travelContext?.loras?.map((lora) => ({ path: lora.path, strength: lora.strength })),
       negative_prompts: travelContext?.negativePrompt ? [travelContext.negativePrompt] : undefined,
       text_before_prompts: travelContext?.textBeforePrompts || undefined,

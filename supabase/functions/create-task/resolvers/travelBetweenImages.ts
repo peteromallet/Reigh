@@ -130,6 +130,9 @@ async function ensureShotParentGenerationId(
 }
 
 function validateTravelBetweenImagesInput(input: TravelBetweenImagesTaskInput): void {
+  if (input.turbo_mode === true) {
+    throw new TaskValidationError('turbo_mode is not supported', 'turbo_mode');
+  }
   validateRequiredFields(input, ["image_urls", "base_prompts", "segment_frames", "frame_overlap"]);
 
   if (input.image_urls.length === 0) {
@@ -312,6 +315,9 @@ export const travelBetweenImagesResolver: TaskFamilyResolver = async (
   const orchestratorTaskId = generateTaskId("sm_travel_orchestrator");
   const runId = generateRunId();
   const isTurboMode = input.turbo_mode === true;
+  if (isTurboMode) {
+    throw new TaskValidationError('turbo_mode is not supported', 'turbo_mode');
+  }
   const taskType = isTurboMode ? "wan_2_2_i2v" : "travel_orchestrator";
 
   return {

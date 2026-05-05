@@ -103,7 +103,7 @@ describe('requestBody', () => {
     expect(result.enhance_prompt).toBeUndefined();
     expect(result.advanced_mode).toBe(true);
     expect(result.debug).toBe(true);
-    expect(result.turbo_mode).toBe(true);
+    expect(result.turbo_mode).toBe(false);
     expect(result.num_inference_steps).toBeUndefined();
     expect(result.guidance_scale).toBeUndefined();
   });

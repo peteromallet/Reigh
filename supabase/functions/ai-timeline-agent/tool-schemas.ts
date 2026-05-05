@@ -300,10 +300,6 @@ export const TIMELINE_AGENT_TOOLS: TimelineAgentToolDefinition[] = [
             type: "boolean",
             description: "Auto-enhance prompts for image-to-video.",
           },
-          turbo_mode: {
-            type: "boolean",
-            description: "Turbo mode for wan-2.2 image-to-video (faster, lower quality).",
-          },
           timeline_placement: {
             type: "object",
             description: "Optional post-task placement intent. Include only when the user explicitly asks to place the generated result after or in place of a selected timeline clip.",

@@ -127,7 +127,7 @@ export function buildTravelRequestBodyV2(params: BuildTravelRequestBodyParams): 
     ...(!hasValidEnhancedPrompts ? { enhance_prompt: enhancePrompt } : {}),
     generation_mode: generationMode,
     random_seed: randomSeed,
-    turbo_mode: turboMode,
+    turbo_mode: false,
     ...(spec.ui.inferenceSteps && numInferenceSteps !== undefined ? { num_inference_steps: numInferenceSteps } : {}),
     ...(spec.ui.guidanceScale && guidanceScale !== undefined ? { guidance_scale: guidanceScale } : {}),
     ...motionFields,

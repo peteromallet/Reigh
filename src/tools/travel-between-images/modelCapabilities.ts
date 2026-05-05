@@ -90,7 +90,7 @@ export const MODEL_SPEC_REGISTRY: Record<SelectedModel, ModelSpec> = {
     stepRange: [6, 6],
     ui: {
       motionPresets: true,
-      turboMode: true,
+      turboMode: false,
       advancedMode: true,
       inferenceSteps: false,
       guidanceScale: false,
