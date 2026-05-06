@@ -257,6 +257,83 @@ describe('complete_task/generation-child exports', () => {
       true,
     );
   });
+
+  it('creates travel child records with completion shape fields', async () => {
+    const taskUpdateEq = vi.fn().mockResolvedValue({ error: null });
+    const taskUpdate = vi.fn().mockReturnValue({ eq: taskUpdateEq });
+    const shotGenQuery = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn().mockResolvedValue({ data: { id: 'pair-shot-1' }, error: null }),
+    };
+    const supabase = {
+      from: vi.fn((table: string) => {
+        if (table === 'tasks') {
+          return { update: taskUpdate };
+        }
+        if (table === 'shot_generations') {
+          return shotGenQuery;
+        }
+        throw new Error(`Unexpected table ${table}`);
+      }),
+    };
+
+    mocks.buildGenerationParams.mockReturnValue({ pair_shot_generation_id: 'pair-shot-1' });
+    mocks.getChildVariantViewedAt.mockResolvedValueOnce(null);
+
+    const result = await createChildGenerationRecord(
+      {
+        supabase: supabase as never,
+        taskId: 'task-travel-child',
+        taskData: {
+          task_type: 'travel_segment',
+          project_id: 'project-1',
+          params: {
+            pair_shot_generation_id: 'pair-shot-1',
+            orchestrator_details: { run_id: 'run-1' },
+          },
+          content_type: 'video',
+          tool_type: 'travel-between-images',
+          variant_type: 'travel_segment',
+        },
+        publicUrl: 'https://example.com/travel-child.mp4',
+        thumbnailUrl: 'https://example.com/travel-child.jpg',
+        logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn() },
+      } as never,
+      'parent-1',
+      2,
+      false,
+      'pair-shot-1',
+    );
+
+    expect(result).toMatchObject({ id: expect.any(String) });
+    expect(mocks.insertGeneration).toHaveBeenCalledWith(
+      supabase,
+      expect.objectContaining({
+        parent_generation_id: 'parent-1',
+        child_order: 2,
+        is_child: true,
+        pair_shot_generation_id: 'pair-shot-1',
+      }),
+    );
+    expect(mocks.createVariant).toHaveBeenCalledWith(
+      supabase,
+      expect.any(String),
+      'https://example.com/travel-child.mp4',
+      'https://example.com/travel-child.jpg',
+      expect.objectContaining({
+        source_task_id: 'task-travel-child',
+        created_from: 'child_generation_original',
+        pair_shot_generation_id: 'pair-shot-1',
+      }),
+      true,
+      'original',
+      null,
+      null,
+    );
+    expect(mocks.createVariantOnParent).not.toHaveBeenCalled();
+    expect(taskUpdate).toHaveBeenCalledWith({ generation_created: true });
+  });
 });
 
 describe('complete_task/generation-child findExistingGenerationAtPosition', () => {

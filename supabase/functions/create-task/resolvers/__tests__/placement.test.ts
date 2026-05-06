@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { imageGenerationResolver } from "../imageGeneration.ts";
 import { imageUpscaleResolver } from "../imageUpscale.ts";
+import { joinClipsResolver } from "../joinClips.ts";
 import { magicEditResolver } from "../magicEdit.ts";
+import { travelBetweenImagesResolver } from "../travelBetweenImages.ts";
 import { zImageTurboI2IResolver } from "../zImageTurboI2I.ts";
+import { createWorkerPassthroughResolver } from "../workerPassthrough.ts";
 import type { ResolveRequest, ResolverContext, ResolverResult } from "../types.ts";
 
 const timelinePlacement = {
@@ -126,5 +129,191 @@ describe("resolver timeline placement persistence", () => {
     } satisfies ResolveRequest, context);
 
     expectPlacementIntent(result);
+  });
+});
+
+describe("Wan/VACE child contract resolver coverage", () => {
+  it("passes worker-created Wan/VACE travel child ids and dependencies through", () => {
+    const resolver = createWorkerPassthroughResolver("travel_segment");
+    const result = resolver({
+      family: "travel_segment",
+      project_id: "project-1",
+      input: {
+        task_id: "travel-child-worker-id",
+        dependant_on: ["previous-child-id"],
+        model_name: "wan_2_2_vace_lightning_baseline_2_2_2",
+        model_type: "vace",
+        selected_phase_preset_id: "__builtin_vace_default__",
+        phase_config: {
+          num_phases: 3,
+          steps_per_phase: [2, 2, 2],
+          flow_shift: 5,
+          model_switch_phase: 2,
+          phases: [
+            { guidance_scale: 3 },
+            { guidance_scale: 1 },
+            { guidance_scale: 1 },
+          ],
+        },
+        parent_generation_id: "parent-generation-1",
+        child_order: 1,
+        pair_shot_generation_id: "pair-shot-1",
+      },
+    } satisfies ResolveRequest, context) as ResolverResult;
+
+    expect(result.tasks).toHaveLength(1);
+    expect(result.tasks[0]).toMatchObject({
+      id: "travel-child-worker-id",
+      task_type: "travel_segment",
+      dependant_on: ["previous-child-id"],
+    });
+    expect(result.tasks[0]?.params).toMatchObject({
+      model_type: "vace",
+      selected_phase_preset_id: "__builtin_vace_default__",
+      parent_generation_id: "parent-generation-1",
+      child_order: 1,
+      pair_shot_generation_id: "pair-shot-1",
+    });
+  });
+
+  it("passes worker-created Wan/VACE join child overrides and dependency arrays through", () => {
+    const resolver = createWorkerPassthroughResolver("join_clips_segment");
+    const result = resolver({
+      family: "join_clips_segment",
+      project_id: "project-1",
+      input: {
+        task_id: "join-child-worker-id",
+        dependant_on: ["clip-a-task", "clip-b-task"],
+        model: "wan_2_2_vace_lightning_baseline_2_2_2",
+        selected_phase_preset_id: "__builtin_vace_default__",
+        prompt: "bridge two clips",
+        negative_prompt: "warped",
+        num_inference_steps: 6,
+        guidance_scale: 3,
+        guidance2_scale: 1,
+        guidance3_scale: 1,
+        parent_generation_id: "parent-generation-join",
+        child_order: 0,
+        pair_shot_generation_id: "join-pair-shot-1",
+      },
+    } satisfies ResolveRequest, context) as ResolverResult;
+
+    expect(result.tasks).toHaveLength(1);
+    expect(result.tasks[0]).toMatchObject({
+      id: "join-child-worker-id",
+      task_type: "join_clips_segment",
+      dependant_on: ["clip-a-task", "clip-b-task"],
+    });
+    expect(result.tasks[0]?.params).toMatchObject({
+      selected_phase_preset_id: "__builtin_vace_default__",
+      num_inference_steps: 6,
+      guidance_scale: 3,
+      guidance2_scale: 1,
+      guidance3_scale: 1,
+      parent_generation_id: "parent-generation-join",
+      child_order: 0,
+      pair_shot_generation_id: "join-pair-shot-1",
+    });
+  });
+
+  it("keeps Wan/VACE join defaults and per-join overrides in the task contract", () => {
+    const result = joinClipsResolver({
+      family: "join_clips",
+      project_id: "project-1",
+      input: {
+        mode: "multi_clip",
+        parent_generation_id: "parent-generation-join",
+        clip_source: {
+          kind: "clips",
+          clips: [
+            { url: "https://example.com/a.mp4" },
+            { url: "https://example.com/b.mp4" },
+            { url: "https://example.com/c.mp4" },
+          ],
+        },
+        per_join_settings: [
+          { prompt: "first bridge", guidance_scale: 2.5 },
+          { prompt: "second bridge", seed: 333 },
+        ],
+      },
+    } satisfies ResolveRequest, context) as ResolverResult;
+
+    const params = result.tasks[0]?.params;
+    expect(result.tasks[0]?.task_type).toBe("join_clips_orchestrator");
+    expect(params).toMatchObject({
+      model: "wan_2_2_vace_lightning_baseline_2_2_2",
+      selected_phase_preset_id: "__builtin_vace_default__",
+      parent_generation_id: "parent-generation-join",
+    });
+    expect(params?.phase_config).toMatchObject({
+      num_phases: 3,
+      flow_shift: 5,
+      model_switch_phase: 2,
+      mode: "vace",
+    });
+    expect(params?.per_join_settings).toEqual([
+      { prompt: "first bridge", guidance_scale: 2.5 },
+      { prompt: "second bridge", seed: 333 },
+    ]);
+    expect(params?.orchestration_contract).toMatchObject({
+      task_family: "join_clips",
+      parent_generation_id: "parent-generation-join",
+    });
+  });
+
+  it("keeps Wan/VACE travel orchestrator contract inputs without sibling completion assertions", async () => {
+    const supabaseAdmin = {
+      rpc: async () => ({ data: "parent-generation-travel", error: null }),
+    };
+    const result = await travelBetweenImagesResolver({
+      family: "travel_between_images",
+      project_id: "project-1",
+      input: {
+        shot_id: "shot-1",
+        image_urls: ["https://example.com/start.png", "https://example.com/end.png"],
+        image_generation_ids: ["start-gen", "end-gen"],
+        pair_shot_generation_ids: ["pair-shot-travel"],
+        base_prompts: ["travel bridge"],
+        segment_frames: [49],
+        frame_overlap: [0],
+        model_name: "wan_2_2_vace_lightning_baseline_2_2_2",
+        model_type: "vace",
+        selected_phase_preset_id: "__builtin_vace_default__",
+        travel_guidance: { kind: "vace", mode: "raw" },
+      },
+    } satisfies ResolveRequest, { ...context, supabaseAdmin } as ResolverContext);
+
+    const params = result.tasks[0]?.params;
+    expect(result.meta).toEqual({ parentGenerationId: "parent-generation-travel" });
+    expect(result.tasks[0]?.task_type).toBe("travel_orchestrator");
+    expect(params?.parent_generation_id).toBe("parent-generation-travel");
+    expect(params?.orchestrator_details).toMatchObject({
+      model_name: "wan_2_2_vace_lightning_baseline_2_2_2",
+      model_type: "vace",
+      selected_phase_preset_id: "__builtin_vace_default__",
+      travel_guidance: { kind: "vace", mode: "raw" },
+      parent_generation_id: "parent-generation-travel",
+      input_image_generation_ids: ["start-gen", "end-gen"],
+      pair_shot_generation_ids: ["pair-shot-travel"],
+    });
+  });
+
+  it("routes default non-Qwen non-Z image generation to Wan T2I without app frame fields", () => {
+    const result = imageGenerationResolver({
+      family: "image_generation",
+      project_id: "project-1",
+      input: {
+        prompts: [{ id: "prompt-1", fullPrompt: "single-frame image" }],
+        imagesPerPrompt: 1,
+        model_name: "optimised-t2i",
+        seed: 42,
+      },
+    } satisfies ResolveRequest, context);
+
+    expect(result.tasks).toHaveLength(1);
+    expect(result.tasks[0]?.task_type).toBe("wan_2_2_t2i");
+    expect(result.tasks[0]?.params.model).toBe("optimised-t2i");
+    expect(result.tasks[0]?.params.video_length).toBeUndefined();
+    expect(result.tasks[0]?.params.num_frames).toBeUndefined();
   });
 });
