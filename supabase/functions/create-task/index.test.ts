@@ -378,9 +378,9 @@ describe('create-task edge entrypoint', () => {
     }));
   });
 
-  it('materializes promoted Section 3A routes through selector-backed VibeComfy snapshots', async () => {
+  it('keeps LTX first-last Section 3A rows on explicit WGP missing-selector fallback until adapter wiring exists', async () => {
     const logger = createLogger();
-    const taskInsert = createTasksInsertChain('task-section3a-promoted');
+    const taskInsert = createTasksInsertChain('task-section3a-ltx-first-last-blocked');
     const section3aRouteKey = 'travel_segment__model-ltx2_distilled__guidance-none__continuity-first_last__profile-default';
     mocks.getTaskFamilyResolver.mockReturnValue(
       vi.fn().mockResolvedValue({
@@ -401,19 +401,12 @@ describe('create-task edge entrypoint', () => {
       }),
     );
     const routeLookups = createRouteLookupChains({
-      selector: {
-        route_key: section3aRouteKey,
-        selected_backend: 'vibecomfy',
-        selector_version: 9,
-        enabled: true,
-        expires_at: null,
-        min_worker_version: null,
-      },
+      selector: null,
       capability: {
-        backend: 'vibecomfy',
+        backend: 'wgp',
         route_key: section3aRouteKey,
         supports_route: true,
-        supports_missing_selector: false,
+        supports_missing_selector: true,
         capability_version: 9,
         enabled: true,
         expires_at: null,
@@ -451,30 +444,26 @@ describe('create-task edge entrypoint', () => {
     expect(response.status).toBe(200);
     expect(routeLookups.selectors.eq).toHaveBeenCalledWith('selector_namespace', 'production');
     expect(routeLookups.selectors.eq).toHaveBeenCalledWith('route_key', section3aRouteKey);
-    expect(routeLookups.capabilities.eq).toHaveBeenCalledWith('backend', 'vibecomfy');
+    expect(routeLookups.capabilities.eq).toHaveBeenCalledWith('backend', 'wgp');
     expect(routeLookups.capabilities.eq).toHaveBeenCalledWith('route_key', section3aRouteKey);
     expect(taskInsert.insert).toHaveBeenCalledWith(expect.objectContaining({
       selector_namespace: 'production',
       route_key: section3aRouteKey,
-      selected_backend: 'vibecomfy',
-      selector_version: 9,
+      selected_backend: 'wgp',
+      selector_version: null,
       route_selection_snapshot: expect.objectContaining({
         selector_namespace: 'production',
         route_key: section3aRouteKey,
-        selected_backend: 'vibecomfy',
-        selector_version: 9,
-        decision_reason: 'selector_supported',
-        selector_snapshot: expect.objectContaining({
-          selector_namespace: 'production',
-          route_key: section3aRouteKey,
-          selected_backend: 'vibecomfy',
-          selector_version: 9,
-        }),
+        selected_backend: 'wgp',
+        selector_version: null,
+        decision_reason: 'missing_selector_wgp_capability_supported',
+        selector_snapshot: null,
         capability_snapshot: expect.objectContaining({
-          backend: 'vibecomfy',
+          backend: 'wgp',
           route_key: section3aRouteKey,
           capability_version: 9,
           supports_route: true,
+          supports_missing_selector: true,
         }),
       }),
     }));

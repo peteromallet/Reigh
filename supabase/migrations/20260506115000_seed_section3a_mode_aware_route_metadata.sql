@@ -22,8 +22,8 @@ WITH section3a_routes (
     (4, 'travel_segment__model-wan22_vace__guidance-vace_depth__continuity-first_last__profile-default', 'NEW', 'wgp', 'vibecomfy_unsupported', 'Requires the NEW Wan 2.2 VACE cocktail template and depth guide handling before promotion.'),
     (5, 'travel_segment__model-wan22_vace__guidance-vace_raw__continuity-first_last__profile-default', 'NEW', 'wgp', 'vibecomfy_unsupported', 'Requires the NEW Wan 2.2 VACE cocktail template and raw guide-video passthrough before promotion.'),
     (6, 'travel_segment__model-wan22_vace__guidance-uni3c__continuity-first_last__profile-default', 'NEW', 'wgp', 'vibecomfy_unsupported', 'Requires the NEW Wan 2.2 VACE cocktail template and Uni3C patch before promotion.'),
-    (7, 'travel_segment__model-ltx2__guidance-none__continuity-first_last__profile-default', 'ADAPT', 'vibecomfy', 'vibecomfy_supported', NULL),
-    (8, 'travel_segment__model-ltx2_distilled__guidance-none__continuity-first_last__profile-default', 'ADAPT', 'vibecomfy', 'vibecomfy_supported', NULL),
+    (7, 'travel_segment__model-ltx2__guidance-none__continuity-first_last__profile-default', 'BLOCKED', 'wgp', 'vibecomfy_unsupported', 'The LTX first/last ready template is not yet wired through the Reigh travel child adapter with first/last image inputs and completion semantics.'),
+    (8, 'travel_segment__model-ltx2_distilled__guidance-none__continuity-first_last__profile-default', 'BLOCKED', 'wgp', 'vibecomfy_unsupported', 'The LTX first/last ready template is not yet wired through the Reigh travel child adapter with first/last image inputs and completion semantics.'),
     (9, 'travel_segment__model-ltx2_distilled__guidance-ltx_control_video__continuity-first_last__profile-default', 'BLOCKED', 'wgp', 'vibecomfy_unsupported', 'The pinned LTX first/last template is not yet proven control-capable for a full-length control guide.'),
     (10, 'travel_segment__model-ltx2_distilled__guidance-ltx_control_pose__continuity-first_last__profile-default', 'BLOCKED', 'wgp', 'vibecomfy_unsupported', 'The pinned LTX first/last template is not yet proven control-capable for pose-preprocessed full-length guides.'),
     (11, 'travel_segment__model-ltx2_distilled__guidance-ltx_control_depth__continuity-first_last__profile-default', 'BLOCKED', 'wgp', 'vibecomfy_unsupported', 'The pinned LTX first/last template is not yet proven control-capable for depth-preprocessed full-length guides.'),
@@ -76,8 +76,8 @@ WITH section3a_routes (
     (4, 'travel_segment__model-wan22_vace__guidance-vace_depth__continuity-first_last__profile-default', 'NEW', 'wgp', 'vibecomfy_unsupported', 'Requires the NEW Wan 2.2 VACE cocktail template and depth guide handling before promotion.'),
     (5, 'travel_segment__model-wan22_vace__guidance-vace_raw__continuity-first_last__profile-default', 'NEW', 'wgp', 'vibecomfy_unsupported', 'Requires the NEW Wan 2.2 VACE cocktail template and raw guide-video passthrough before promotion.'),
     (6, 'travel_segment__model-wan22_vace__guidance-uni3c__continuity-first_last__profile-default', 'NEW', 'wgp', 'vibecomfy_unsupported', 'Requires the NEW Wan 2.2 VACE cocktail template and Uni3C patch before promotion.'),
-    (7, 'travel_segment__model-ltx2__guidance-none__continuity-first_last__profile-default', 'ADAPT', 'vibecomfy', 'vibecomfy_supported', NULL),
-    (8, 'travel_segment__model-ltx2_distilled__guidance-none__continuity-first_last__profile-default', 'ADAPT', 'vibecomfy', 'vibecomfy_supported', NULL),
+    (7, 'travel_segment__model-ltx2__guidance-none__continuity-first_last__profile-default', 'BLOCKED', 'wgp', 'vibecomfy_unsupported', 'The LTX first/last ready template is not yet wired through the Reigh travel child adapter with first/last image inputs and completion semantics.'),
+    (8, 'travel_segment__model-ltx2_distilled__guidance-none__continuity-first_last__profile-default', 'BLOCKED', 'wgp', 'vibecomfy_unsupported', 'The LTX first/last ready template is not yet wired through the Reigh travel child adapter with first/last image inputs and completion semantics.'),
     (9, 'travel_segment__model-ltx2_distilled__guidance-ltx_control_video__continuity-first_last__profile-default', 'BLOCKED', 'wgp', 'vibecomfy_unsupported', 'The pinned LTX first/last template is not yet proven control-capable for a full-length control guide.'),
     (10, 'travel_segment__model-ltx2_distilled__guidance-ltx_control_pose__continuity-first_last__profile-default', 'BLOCKED', 'wgp', 'vibecomfy_unsupported', 'The pinned LTX first/last template is not yet proven control-capable for pose-preprocessed full-length guides.'),
     (11, 'travel_segment__model-ltx2_distilled__guidance-ltx_control_depth__continuity-first_last__profile-default', 'BLOCKED', 'wgp', 'vibecomfy_unsupported', 'The pinned LTX first/last template is not yet proven control-capable for depth-preprocessed full-length guides.'),
@@ -115,46 +115,11 @@ ON CONFLICT (backend, route_key) DO UPDATE SET
   metadata = public.route_backend_capabilities.metadata || EXCLUDED.metadata,
   updated_at = now();
 
-WITH promoted_section3a_routes (
-  row_id,
-  route_key,
-  selected_backend,
-  selector_version
-) AS (
-  VALUES
-    (7, 'travel_segment__model-ltx2__guidance-none__continuity-first_last__profile-default', 'vibecomfy', 9),
-    (8, 'travel_segment__model-ltx2_distilled__guidance-none__continuity-first_last__profile-default', 'vibecomfy', 9)
-)
-INSERT INTO public.route_backend_selectors (
-  selector_namespace,
-  route_key,
-  selected_backend,
-  selector_version,
-  enabled,
-  reason,
-  metadata
-)
-SELECT
-  'production',
-  route_key,
-  selected_backend,
-  selector_version,
-  true,
-  'Sprint 9 Section 3A canary-promoted route',
-  jsonb_build_object(
-    'seeded_by', '20260506115000_seed_section3a_mode_aware_route_metadata',
-    'source', 'section3a_matrix',
-    'row_id', row_id,
-    'disposition', 'ADAPT',
-    'support_state', 'vibecomfy_supported'
-  )
-FROM promoted_section3a_routes
-ON CONFLICT (selector_namespace, route_key) DO UPDATE SET
-  selected_backend = EXCLUDED.selected_backend,
-  selector_version = EXCLUDED.selector_version,
-  enabled = EXCLUDED.enabled,
-  reason = EXCLUDED.reason,
-  metadata = public.route_backend_selectors.metadata || EXCLUDED.metadata,
-  updated_at = now();
+DELETE FROM public.route_backend_selectors
+WHERE selector_namespace = 'production'
+  AND route_key IN (
+    'travel_segment__model-ltx2__guidance-none__continuity-first_last__profile-default',
+    'travel_segment__model-ltx2_distilled__guidance-none__continuity-first_last__profile-default'
+  );
 
 COMMIT;

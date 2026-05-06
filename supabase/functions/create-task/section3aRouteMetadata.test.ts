@@ -51,11 +51,8 @@ describe("Section 3A route metadata seed", () => {
     expect(migrationSql).toContain("supports_missing_selector");
   });
 
-  it("seeds production selectors only for canary-promoted Section 3A rows", () => {
+  it("does not seed production selectors for blocked Section 3A rows", () => {
     const migrationSql = loadMigration();
-    const selectorBlock = migrationSql.slice(
-      migrationSql.indexOf("WITH promoted_section3a_routes"),
-    );
     const fixture = loadFixture();
     const promotedRows = fixture.rows.filter(
       (row) => row.disposition === "ADAPT" && row.expected_backend === "vibecomfy",
@@ -64,18 +61,12 @@ describe("Section 3A route metadata seed", () => {
       (row) => !(row.disposition === "ADAPT" && row.expected_backend === "vibecomfy"),
     );
 
-    expect(promotedRows.map((row) => row.row_id)).toEqual([7, 8]);
-    expect(selectorBlock).toContain("INSERT INTO public.route_backend_selectors");
-    expect(selectorBlock).toContain("'production'");
-    expect(selectorBlock).toContain("'Sprint 9 Section 3A canary-promoted route'");
-
-    for (const row of promotedRows) {
-      expect(selectorBlock).toContain(row.route_key_expectation);
-      expect(selectorBlock).toContain(`(${row.row_id}, '${row.route_key_expectation}', 'vibecomfy', 9)`);
-    }
+    expect(promotedRows).toEqual([]);
+    expect(migrationSql).toContain("DELETE FROM public.route_backend_selectors");
+    expect(migrationSql).toContain("selector_namespace = 'production'");
 
     for (const row of nonPromotedRows) {
-      expect(selectorBlock).not.toContain(row.route_key_expectation);
+      expect(migrationSql).toContain(row.route_key_expectation);
     }
   });
 });
