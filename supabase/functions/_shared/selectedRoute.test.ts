@@ -2,7 +2,16 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { parseWorkerBackend, routeSnapshotFields, WORKER_ROUTE_CONTRACT_VERSION } from "./selectedRoute.ts";
+import {
+  classifyVibeComfyBlockerForEntry,
+  parseWorkerBackend,
+  requiredRouteRequirementsForParent,
+  routeRequirementForRouteKey,
+  routeRequirementForTask,
+  routeSnapshotFields,
+  selectedRouteRequirementFromContract,
+  WORKER_ROUTE_CONTRACT_VERSION,
+} from "./selectedRoute.ts";
 
 interface Fixture {
   name: string;
@@ -40,5 +49,118 @@ describe("selected route contract", () => {
     expect(parseWorkerBackend(null)).toBe("wgp");
     expect(parseWorkerBackend("vibecomfy")).toBe("vibecomfy");
     expect(() => parseWorkerBackend("comfy")).toThrow(/Unsupported worker backend/);
+  });
+
+  it("enumerates travel parent child and control route requirements", () => {
+    expect(requiredRouteRequirementsForParent({ task_type: "travel_orchestrator" })).toEqual([
+      expect.objectContaining({
+        task_type: "travel_segment",
+        route_key: "travel_segment__model-unknown__guidance-none__continuity-first_last__profile-default",
+        role: "child",
+        required_by_route_key: "travel_orchestrator",
+        vibecomfy_blocker: "unsupported",
+      }),
+      expect.objectContaining({
+        task_type: "travel_stitch",
+        route_key: "travel_stitch",
+        role: "control",
+        required_by_route_key: "travel_orchestrator",
+        vibecomfy_blocker: "wgp_only",
+      }),
+      expect.objectContaining({
+        task_type: "join_clips_orchestrator",
+        route_key: "join_clips_orchestrator",
+        role: "nested_parent",
+        required_by_route_key: "travel_orchestrator",
+        vibecomfy_blocker: "wgp_only",
+      }),
+    ]);
+  });
+
+  it("enumerates join and edit-video child/control route requirements", () => {
+    expect(requiredRouteRequirementsForParent({ task_type: "join_clips_orchestrator" })).toEqual([
+      expect.objectContaining({
+        task_type: "join_clips_segment",
+        role: "child",
+        required_by_route_key: "join_clips_orchestrator",
+        vibecomfy_blocker: "unsupported",
+      }),
+      expect.objectContaining({
+        task_type: "join_final_stitch",
+        route_key: "join_final_stitch",
+        role: "control",
+        required_by_route_key: "join_clips_orchestrator",
+        vibecomfy_blocker: "wgp_only",
+      }),
+    ]);
+
+    expect(requiredRouteRequirementsForParent({ task_type: "edit_video_orchestrator" })).toEqual([
+      expect.objectContaining({
+        task_type: "join_clips_segment",
+        role: "child",
+        required_by_route_key: "edit_video_orchestrator",
+        vibecomfy_blocker: "unsupported",
+      }),
+      expect.objectContaining({
+        task_type: "join_final_stitch",
+        route_key: "join_final_stitch",
+        role: "control",
+        required_by_route_key: "edit_video_orchestrator",
+        vibecomfy_blocker: "wgp_only",
+      }),
+    ]);
+  });
+
+  it("classifies dimensional child routes and direct VibeComfy-supported routes", () => {
+    expect(routeRequirementForTask({
+      task_type: "join_clips_segment",
+      params: {
+        model_family: "wan22_vace",
+        guidance_kind: "vace",
+        continuity_case: "join_bridge",
+      },
+    })).toMatchObject({
+      route_key: "join_clips_segment__model-wan22_vace__guidance-vace__continuity-join_bridge__profile-default",
+      support_state: "vibecomfy_unsupported",
+      vibecomfy_blocker: "unsupported",
+    });
+
+    expect(routeRequirementForRouteKey({ route_key: "z_image_turbo" })).toMatchObject({
+      support_state: "vibecomfy_supported",
+      template_id: "image/z_image",
+      vibecomfy_blocker: null,
+    });
+  });
+
+  it("classifies VibeComfy blocker reasons consistently", () => {
+    expect(routeRequirementForRouteKey({ route_key: "unknown_route" }).vibecomfy_blocker).toBe("unknown");
+    expect(routeRequirementForRouteKey({ route_key: "travel_stitch" }).vibecomfy_blocker).toBe("wgp_only");
+    expect(routeRequirementForRouteKey({ route_key: "travel_segment" }).vibecomfy_blocker).toBe("unsupported");
+    expect(selectedRouteRequirementFromContract({
+      route_selection_snapshot: {
+        route_key: "future_supported_route",
+        support_state: "vibecomfy_supported",
+        template_id: null,
+      },
+    }).vibecomfy_blocker).toBe("missing_template");
+    expect(classifyVibeComfyBlockerForEntry("fallback_route", {
+      route_key: "fallback_route",
+      support_state: "vibecomfy_supported",
+      template_id: "video/fallback",
+      vibecomfy_status: "fallback",
+    })).toBe("fallback");
+    expect(classifyVibeComfyBlockerForEntry("untested_route", {
+      route_key: "untested_route",
+      support_state: "vibecomfy_supported",
+      template_id: "video/untested",
+      vibecomfy_status: "untested",
+    })).toBe("untested");
+    expect(selectedRouteRequirementFromContract({
+      route_selection_snapshot: {
+        route_key: "broken_route",
+        support_state: "bad_state",
+        template_id: null,
+      },
+    }).vibecomfy_blocker).toBe("malformed");
   });
 });

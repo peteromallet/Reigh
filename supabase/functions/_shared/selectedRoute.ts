@@ -8,6 +8,28 @@ export interface RouteSelectorEntry {
   support_state: RouteSupportState;
   template_id: string | null;
   default_resolution?: string | null;
+  vibecomfy_status?: "tested" | "untested" | "fallback";
+}
+
+export type VibeComfyRouteBlockerReason =
+  | "wgp_only"
+  | "unsupported"
+  | "missing_template"
+  | "fallback"
+  | "untested"
+  | "unknown"
+  | "malformed";
+
+export type RouteRequirementRole = "parent" | "child" | "control" | "nested_parent";
+
+export interface SelectedRouteRequirement {
+  task_type: string;
+  route_key: string;
+  support_state: RouteSupportState | null;
+  template_id: string | null;
+  role: RouteRequirementRole;
+  required_by_route_key?: string;
+  vibecomfy_blocker: VibeComfyRouteBlockerReason | null;
 }
 
 export interface RouteSnapshotInput {
@@ -69,6 +91,7 @@ export const SPRINT_2_SELECTOR_MAP: Record<string, RouteSelectorEntry> = {
     support_state: "vibecomfy_supported",
     template_id: "image/z_image",
     default_resolution: "1024x1024",
+    vibecomfy_status: "tested",
   },
   z_image_turbo_i2i: { route_key: "z_image_turbo_i2i", support_state: "wgp_only", template_id: null },
   qwen_image_2512: { route_key: "qwen_image_2512", support_state: "wgp_only", template_id: null },
@@ -77,6 +100,9 @@ export const SPRINT_2_SELECTOR_MAP: Record<string, RouteSelectorEntry> = {
   qwen_image_style: { route_key: "qwen_image_style", support_state: "wgp_only", template_id: null },
   image_inpaint: { route_key: "image_inpaint", support_state: "wgp_only", template_id: null },
   annotated_image_edit: { route_key: "annotated_image_edit", support_state: "wgp_only", template_id: null },
+  travel_orchestrator: { route_key: "travel_orchestrator", support_state: "wgp_only", template_id: null },
+  join_clips_orchestrator: { route_key: "join_clips_orchestrator", support_state: "wgp_only", template_id: null },
+  edit_video_orchestrator: { route_key: "edit_video_orchestrator", support_state: "wgp_only", template_id: null },
   travel_segment: { route_key: "travel_segment", support_state: "vibecomfy_unsupported", template_id: null },
   individual_travel_segment: {
     route_key: "individual_travel_segment",
@@ -84,7 +110,25 @@ export const SPRINT_2_SELECTOR_MAP: Record<string, RouteSelectorEntry> = {
     template_id: null,
   },
   join_clips_segment: { route_key: "join_clips_segment", support_state: "vibecomfy_unsupported", template_id: null },
+  travel_stitch: { route_key: "travel_stitch", support_state: "wgp_only", template_id: null },
+  join_final_stitch: { route_key: "join_final_stitch", support_state: "wgp_only", template_id: null },
   wan_2_2_t2i: { route_key: "wan_2_2_t2i", support_state: "wgp_only", template_id: null },
+};
+
+const ORCHESTRATED_PARENT_REQUIREMENTS: Record<string, Array<{ task_type: string; role: RouteRequirementRole }>> = {
+  travel_orchestrator: [
+    { task_type: "travel_segment", role: "child" },
+    { task_type: "travel_stitch", role: "control" },
+    { task_type: "join_clips_orchestrator", role: "nested_parent" },
+  ],
+  join_clips_orchestrator: [
+    { task_type: "join_clips_segment", role: "child" },
+    { task_type: "join_final_stitch", role: "control" },
+  ],
+  edit_video_orchestrator: [
+    { task_type: "join_clips_segment", role: "child" },
+    { task_type: "join_final_stitch", role: "control" },
+  ],
 };
 
 const DIMENSIONAL_CHILD_TASK_TYPES = new Set([
@@ -152,7 +196,7 @@ export function routeSnapshotFields(input: RouteSnapshotInput): RouteSnapshotFie
   };
 }
 
-function selectorEntryForRouteKey(routeKey: string): RouteSelectorEntry | null {
+export function selectorEntryForRouteKey(routeKey: string): RouteSelectorEntry | null {
   const selectorEntry = SPRINT_2_SELECTOR_MAP[routeKey];
   if (selectorEntry) return selectorEntry;
   if (
@@ -163,6 +207,125 @@ function selectorEntryForRouteKey(routeKey: string): RouteSelectorEntry | null {
     return { route_key: routeKey, support_state: "vibecomfy_unsupported", template_id: null };
   }
   return null;
+}
+
+export function classifyVibeComfyBlockerForEntry(
+  routeKey: string,
+  selectorEntry: RouteSelectorEntry | null,
+): VibeComfyRouteBlockerReason | null {
+  if (!selectorEntry) return "unknown";
+  if (selectorEntry.route_key !== routeKey) return "malformed";
+  if (selectorEntry.support_state === "wgp_only") return "wgp_only";
+  if (selectorEntry.support_state === "vibecomfy_unsupported") return "unsupported";
+  if (selectorEntry.vibecomfy_status === "fallback") return "fallback";
+  if (selectorEntry.vibecomfy_status === "untested") return "untested";
+  if (!selectorEntry.template_id) return "missing_template";
+  return null;
+}
+
+export function routeRequirementForTask(input: {
+  task_type: string;
+  params?: Record<string, unknown> | null;
+  role?: RouteRequirementRole;
+  required_by_route_key?: string;
+}): SelectedRouteRequirement {
+  const routeKey = deriveRouteKey(input.task_type, input.params ?? {});
+  return routeRequirementForRouteKey({
+    task_type: input.task_type,
+    route_key: routeKey,
+    role: input.role ?? "child",
+    required_by_route_key: input.required_by_route_key,
+  });
+}
+
+export function routeRequirementForRouteKey(input: {
+  task_type?: string;
+  route_key: string;
+  role?: RouteRequirementRole;
+  required_by_route_key?: string;
+}): SelectedRouteRequirement {
+  const selectorEntry = selectorEntryForRouteKey(input.route_key);
+  return {
+    task_type: input.task_type ?? input.route_key,
+    route_key: input.route_key,
+    support_state: selectorEntry?.support_state ?? null,
+    template_id: selectorEntry?.template_id ?? null,
+    role: input.role ?? "child",
+    ...(input.required_by_route_key ? { required_by_route_key: input.required_by_route_key } : {}),
+    vibecomfy_blocker: classifyVibeComfyBlockerForEntry(input.route_key, selectorEntry),
+  };
+}
+
+export function selectedRouteRequirementFromContract(candidate: unknown): SelectedRouteRequirement {
+  if (!isRecord(candidate)) {
+    return malformedRouteRequirement();
+  }
+
+  const snapshot = isRecord(candidate.route_selection_snapshot)
+    ? candidate.route_selection_snapshot
+    : candidate;
+  const routeKey = typeof snapshot.route_key === "string" ? snapshot.route_key : null;
+  const supportState = snapshot.support_state;
+  const templateId = snapshot.template_id;
+
+  if (
+    !routeKey ||
+    (supportState !== "wgp_only" &&
+      supportState !== "vibecomfy_supported" &&
+      supportState !== "vibecomfy_unsupported") ||
+    (templateId !== null && typeof templateId !== "string")
+  ) {
+    return malformedRouteRequirement();
+  }
+
+  const selectorEntry: RouteSelectorEntry = {
+    route_key: routeKey,
+    support_state: supportState,
+    template_id: templateId,
+  };
+
+  return {
+    task_type: routeKey,
+    route_key: routeKey,
+    support_state: supportState,
+    template_id: templateId,
+    role: "child",
+    vibecomfy_blocker: classifyVibeComfyBlockerForEntry(routeKey, selectorEntry),
+  };
+}
+
+export function requiredRouteRequirementsForParent(input: {
+  task_type: string;
+  params?: Record<string, unknown> | null;
+}): SelectedRouteRequirement[] {
+  const parentRouteKey = deriveRouteKey(input.task_type, input.params ?? {});
+  const required = ORCHESTRATED_PARENT_REQUIREMENTS[parentRouteKey] ?? [];
+  return required.map((requirement) =>
+    routeRequirementForTask({
+      task_type: requirement.task_type,
+      role: requirement.role,
+      required_by_route_key: parentRouteKey,
+    })
+  );
+}
+
+export function isOrchestratedParentRouteKey(routeKey: string): boolean {
+  return routeKey in ORCHESTRATED_PARENT_REQUIREMENTS;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function malformedRouteRequirement(): SelectedRouteRequirement {
+  return {
+    task_type: "malformed",
+    route_key: "malformed",
+    support_state: null,
+    template_id: null,
+    role: "child",
+    vibecomfy_blocker: "malformed",
+  };
 }
 
 function directRouteKey(taskType: string): string {

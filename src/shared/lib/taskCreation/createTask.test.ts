@@ -93,3 +93,40 @@ describe('createTask materialized_inputs body wiring', () => {
     expect(body.materialized_inputs).toEqual(records);
   });
 });
+
+describe('createTask route selection body wiring', () => {
+  it('includes an explicit VibeComfy route selection candidate', async () => {
+    await createTask({
+      family: 'image-generation',
+      project_id: 'proj-1',
+      input: { prompt: 'hi' },
+      route_selection_candidate: {
+        backend: 'vibecomfy',
+        selector_namespace: 'production',
+        selector_version: 8,
+        profile: 'canary',
+        run_id: 'run-1',
+      },
+    });
+
+    const body = lastFetchBody();
+    expect(body.route_selection_candidate).toEqual({
+      backend: 'vibecomfy',
+      selector_namespace: 'production',
+      selector_version: 8,
+      profile: 'canary',
+      run_id: 'run-1',
+    });
+  });
+
+  it('omits route_selection_candidate for default callers', async () => {
+    await createTask({
+      family: 'image-generation',
+      project_id: 'proj-1',
+      input: { prompt: 'hi' },
+    });
+
+    const body = lastFetchBody();
+    expect(body).not.toHaveProperty('route_selection_candidate');
+  });
+});

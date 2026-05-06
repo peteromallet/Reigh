@@ -7,6 +7,14 @@ import type { TaskInsertObject } from "./resolvers/types.ts";
 
 export const ROUTE_CONTRACT_PARAM_KEY = "route_contract";
 
+export interface RouteSelectionCandidate {
+  backend: WorkerBackend;
+  selector_namespace?: string | null;
+  selector_version?: number | string | null;
+  profile?: string | null;
+  run_id?: string | null;
+}
+
 const LEGACY_ROUTE_FIELD_KEYS = new Set([
   "selector_namespace",
   "route_key",
@@ -126,19 +134,33 @@ function validateCandidate(
   return expected;
 }
 
-export function stampTaskRouteContract(task: TaskInsertObject): TaskInsertObject {
+export function stampTaskRouteContract(
+  task: TaskInsertObject,
+  routeSelectionCandidate?: RouteSelectionCandidate,
+): TaskInsertObject {
   const sanitizedParams = sanitizeRouteParams(task.params ?? {});
   const preservedContract = validateCandidate(
     task,
     sanitizedParams,
     extractRouteCandidate(task.params ?? {}),
   );
-  const routeContract = preservedContract ?? routeSnapshotFields({
-    task_type: task.task_type,
-    params: sanitizedParams,
-    task_id: task.id,
-    backend: "wgp",
-  });
+  const routeContract = routeSelectionCandidate
+    ? routeSnapshotFields({
+        task_type: task.task_type,
+        params: sanitizedParams,
+        task_id: task.id,
+        backend: routeSelectionCandidate.backend,
+        selector_namespace: routeSelectionCandidate.selector_namespace,
+        selector_version: routeSelectionCandidate.selector_version,
+        profile: routeSelectionCandidate.profile,
+        run_id: routeSelectionCandidate.run_id,
+      })
+    : preservedContract ?? routeSnapshotFields({
+        task_type: task.task_type,
+        params: sanitizedParams,
+        task_id: task.id,
+        backend: "wgp",
+      });
 
   return {
     ...task,

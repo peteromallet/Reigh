@@ -29,6 +29,32 @@ describe("create-task route contract stamping", () => {
     );
   });
 
+  it("stamps explicit request route selection candidates", () => {
+    const stamped = stampTaskRouteContract(
+      baseTask({ prompt: "a lighthouse", profile: "fast" }),
+      {
+        backend: "vibecomfy",
+        selector_namespace: "canary",
+        selector_version: 8,
+        profile: "production",
+        run_id: "run-vc-1",
+      },
+    );
+
+    expect(stamped.params[ROUTE_CONTRACT_PARAM_KEY]).toEqual(
+      routeSnapshotFields({
+        task_type: "z_image_turbo",
+        params: { prompt: "a lighthouse", profile: "fast" },
+        task_id: "task-1",
+        backend: "vibecomfy",
+        selector_namespace: "canary",
+        selector_version: 8,
+        profile: "production",
+        run_id: "run-vc-1",
+      }),
+    );
+  });
+
   it("normalizes valid worker-provided snapshots into the canonical nested param", () => {
     const params = {
       _source_task_type: "join_clips_segment",

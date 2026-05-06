@@ -35,7 +35,18 @@ describe('get-orchestrator-children auth scoping', () => {
           id: 'child-1',
           task_type: 'segment',
           status: 'Queued',
-          params: {},
+          params: {
+            route_contract: {
+              route_key: 'travel_segment',
+              selected_backend: 'wgp',
+              selector_version: 12,
+              selected_profile: 'production',
+              route_selection_snapshot: {
+                support_state: 'wgp_only',
+                parent_route_key: 'travel_orchestrator',
+              },
+            },
+          },
           output_location: null,
           project_id: 'project-1',
         },
@@ -96,6 +107,7 @@ describe('get-orchestrator-children auth scoping', () => {
 
     expect(response.status).toBe(200);
     expect(supabaseAdmin.from).toHaveBeenCalledWith('tasks');
+    expect(selectMock.mock.calls[1][0]).toContain('params');
     expect(eqIdMock).toHaveBeenCalledWith('id', 'orch-1');
     expect(eqProjectIdMock).toHaveBeenCalledWith('project_id', 'project-1');
     await expect(response.json()).resolves.toEqual({
@@ -104,7 +116,18 @@ describe('get-orchestrator-children auth scoping', () => {
           id: 'child-1',
           task_type: 'segment',
           status: 'Queued',
-          params: {},
+          params: {
+            route_contract: {
+              route_key: 'travel_segment',
+              selected_backend: 'wgp',
+              selector_version: 12,
+              selected_profile: 'production',
+              route_selection_snapshot: {
+                support_state: 'wgp_only',
+                parent_route_key: 'travel_orchestrator',
+              },
+            },
+          },
           output_location: null,
         },
       ],

@@ -12,8 +12,9 @@ import { JWT_AUTH_REQUIRED } from "../_shared/requestGuards.ts";
 import { getTaskFamilyResolver } from "./resolvers/registry.ts";
 import { createWorkerPassthroughResolver } from "./resolvers/workerPassthrough.ts";
 import { TaskValidationError } from "./resolvers/shared/validation.ts";
-import type { MaterializedInputRecord, ResolveRequest } from "./resolvers/types.ts";
-import { stampTaskRouteContract } from "./routeContract.ts";
+import type { MaterializedInputRecord, ResolveRequest, TaskInsertObject } from "./resolvers/types.ts";
+import { stampTaskRouteContract, type RouteSelectionCandidate } from "./routeContract.ts";
+import { isOrchestratedParentRouteKey, requiredRouteRequirementsForParent } from "../_shared/selectedRoute.ts";
 
 function createErrorResponse(
   message: string,
@@ -67,6 +68,12 @@ interface InsertTaskWithRecoveryOptions {
     error: (message: string, context?: Record<string, unknown>) => void;
     flush: () => Promise<void>;
   };
+}
+
+interface LoggerLike {
+  info: (message: string, context?: Record<string, unknown>) => void;
+  error: (message: string, context?: Record<string, unknown>) => void;
+  flush: () => Promise<void>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -126,6 +133,80 @@ function parseMaterializedInputs(
   return { ok: true, value: result.length > 0 ? result : undefined };
 }
 
+function parseOptionalCandidateString(
+  value: unknown,
+  fieldName: string,
+): { ok: true; value: string | null | undefined } | { ok: false; error: string } {
+  if (value == null) {
+    return { ok: true, value: value as null | undefined };
+  }
+  const text = asNonEmptyString(value);
+  if (!text) {
+    return { ok: false, error: `route_selection_candidate.${fieldName} must be a non-empty string when provided` };
+  }
+  return { ok: true, value: text };
+}
+
+function parseOptionalSelectorVersion(
+  value: unknown,
+): { ok: true; value: number | string | null | undefined } | { ok: false; error: string } {
+  if (value == null) {
+    return { ok: true, value: value as null | undefined };
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return { ok: true, value };
+  }
+  const text = asNonEmptyString(value);
+  if (text) {
+    return { ok: true, value: text };
+  }
+  return {
+    ok: false,
+    error: "route_selection_candidate.selector_version must be a finite number or non-empty string when provided",
+  };
+}
+
+function parseRouteSelectionCandidate(
+  body: unknown,
+): { ok: true; value: RouteSelectionCandidate | undefined } | { ok: false; error: string } {
+  if (!isRecord(body) || !("route_selection_candidate" in body)) {
+    return { ok: true, value: undefined };
+  }
+
+  const raw = body.route_selection_candidate;
+  if (!isRecord(raw)) {
+    return { ok: false, error: "route_selection_candidate must be an object when provided" };
+  }
+
+  const backend = raw.backend;
+  if (backend !== "wgp" && backend !== "vibecomfy") {
+    return { ok: false, error: "route_selection_candidate.backend must be 'wgp' or 'vibecomfy'" };
+  }
+
+  const selectorNamespace = parseOptionalCandidateString(raw.selector_namespace, "selector_namespace");
+  if (!selectorNamespace.ok) return selectorNamespace;
+
+  const selectorVersion = parseOptionalSelectorVersion(raw.selector_version);
+  if (!selectorVersion.ok) return selectorVersion;
+
+  const profile = parseOptionalCandidateString(raw.profile, "profile");
+  if (!profile.ok) return profile;
+
+  const runId = parseOptionalCandidateString(raw.run_id, "run_id");
+  if (!runId.ok) return runId;
+
+  return {
+    ok: true,
+    value: {
+      backend,
+      selector_namespace: selectorNamespace.value,
+      selector_version: selectorVersion.value,
+      profile: profile.value,
+      run_id: runId.value,
+    },
+  };
+}
+
 function parseResolverRequest(body: unknown): ParseResolverRequestResult | null {
   if (!isRecord(body) || !("family" in body)) {
     return null;
@@ -153,6 +234,55 @@ function parseResolverRequest(body: unknown): ParseResolverRequestResult | null 
       input: body.input,
     },
   };
+}
+
+async function validateOrchestratedParentRoutesBeforeInsert(
+  insertObjects: TaskInsertObject[],
+  logger: LoggerLike,
+): Promise<Response | null> {
+  for (const insertObject of insertObjects) {
+    const routeContract = isRecord(insertObject.params.route_contract)
+      ? insertObject.params.route_contract
+      : null;
+    const routeKey = typeof routeContract?.route_key === "string" ? routeContract.route_key : null;
+    const selectedBackend = routeContract?.selected_backend;
+
+    if (selectedBackend !== "vibecomfy") {
+      continue;
+    }
+
+    if (!routeKey || !isOrchestratedParentRouteKey(routeKey)) {
+      continue;
+    }
+
+    const blockedRequirements = requiredRouteRequirementsForParent({
+      task_type: insertObject.task_type,
+      params: insertObject.params,
+    }).filter((requirement) => requirement.vibecomfy_blocker !== null);
+
+    if (blockedRequirements.length === 0) {
+      continue;
+    }
+
+    logger.error("VibeComfy parent route selection blocked before task inserts", {
+      parent_task_type: insertObject.task_type,
+      parent_route_key: routeKey,
+      blocked_requirements: blockedRequirements,
+    });
+    await logger.flush();
+
+    const blockedSummary = blockedRequirements
+      .map((requirement) => `${requirement.route_key} (${requirement.vibecomfy_blocker})`)
+      .join(", ");
+    return createErrorResponse(
+      `VibeComfy route selection for ${routeKey} is blocked by required child/control routes: ${blockedSummary}`,
+      400,
+      "unsupported_route_selection",
+      false,
+    );
+  }
+
+  return null;
 }
 
 async function sha256Hex(value: string): Promise<string> {
@@ -346,6 +476,14 @@ serve(async (req) => {
   }
   const materializedInputs = parsedMaterializedInputs.value;
 
+  const parsedRouteSelectionCandidate = parseRouteSelectionCandidate(rawBody);
+  if (!parsedRouteSelectionCandidate.ok) {
+    logger.error("Invalid route_selection_candidate", { error: parsedRouteSelectionCandidate.error });
+    await logger.flush();
+    return createErrorResponse(parsedRouteSelectionCandidate.error, 400, "invalid_request_body", false);
+  }
+  const routeSelectionCandidate = parsedRouteSelectionCandidate.value;
+
   const parsedResolverRequest = parseResolverRequest(rawBody);
   if (!parsedResolverRequest) {
     logger.error("Missing family field in request body");
@@ -503,8 +641,13 @@ serve(async (req) => {
     const resolvedInsertObjects = materializedInputs
       ? resolverResult.tasks.map((task) => ({ ...task, materialized_inputs: materializedInputs }))
       : resolverResult.tasks;
-    const insertObjects = resolvedInsertObjects.map((task) => stampTaskRouteContract(task));
+    const insertObjects = resolvedInsertObjects.map((task) => stampTaskRouteContract(task, routeSelectionCandidate));
     const responseMeta = resolverResult.meta;
+
+    const routeValidationResponse = await validateOrchestratedParentRoutesBeforeInsert(insertObjects, logger);
+    if (routeValidationResponse) {
+      return routeValidationResponse;
+    }
 
     const createdTaskIds: string[] = [];
     let deduplicatedCount = 0;

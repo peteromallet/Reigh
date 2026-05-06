@@ -211,6 +211,9 @@ export async function createTask(
     project_id: taskParams.project_id,
     input: taskParams.input,
     idempotency_key,
+    ...(taskParams.route_selection_candidate
+      ? { route_selection_candidate: taskParams.route_selection_candidate }
+      : {}),
     ...(materializations.length > 0 ? { materialized_inputs: materializations } : {}),
   });
 

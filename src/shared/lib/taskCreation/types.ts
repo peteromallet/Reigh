@@ -7,10 +7,21 @@ export interface ProjectResolutionResult {
   aspectRatio: string;
 }
 
+export type TaskRouteSelectionBackend = 'wgp' | 'vibecomfy';
+
+export interface TaskRouteSelectionCandidate {
+  backend: TaskRouteSelectionBackend;
+  selector_namespace?: string | null;
+  selector_version?: number | string | null;
+  profile?: string | null;
+  run_id?: string | null;
+}
+
 export interface TaskCreationRequest {
   project_id: string;
   family: string;
   input: Record<string, unknown>;
+  route_selection_candidate?: TaskRouteSelectionCandidate;
 }
 
 export type BaseTaskParams = TaskCreationRequest;

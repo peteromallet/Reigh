@@ -247,6 +247,209 @@ describe('create-task edge entrypoint', () => {
     expect(logger.flush).toHaveBeenCalled();
   });
 
+  it('applies a valid route selection candidate before inserting tasks', async () => {
+    const logger = createLogger();
+    const taskInsert = createTasksInsertChain('task-created-1');
+    const supabaseAdmin = {
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'tasks') return { insert: taskInsert.insert };
+        if (table === 'projects') return { select: createProjectsLookupChain({ aspect_ratio: '16:9' }).select };
+        throw new Error(`Unexpected table: ${table}`);
+      }),
+    };
+
+    mocks.bootstrapEdgeHandler.mockResolvedValue({
+      ok: true,
+      value: {
+        supabaseAdmin,
+        logger,
+        auth: { isServiceRole: true, userId: null },
+        body: {
+          family: 'image_upscale',
+          project_id: 'project-1',
+          input: { image_url: 'https://example.com/source.png' },
+          route_selection_candidate: {
+            backend: 'vibecomfy',
+            selector_namespace: 'canary',
+            selector_version: 8,
+            profile: 'production',
+            run_id: 'run-vc-1',
+          },
+        },
+      },
+    });
+
+    const handler = await loadHandler();
+    const response = await handler(new Request('https://edge.test/create-task', { method: 'POST' }));
+
+    expect(response.status).toBe(200);
+    expect(taskInsert.insert).toHaveBeenCalledWith(expect.objectContaining({
+      params: expect.objectContaining({
+        route_contract: expect.objectContaining({
+          selector_namespace: 'canary',
+          route_key: 'image_upscale',
+          selected_backend: 'vibecomfy',
+          selector_version: 8,
+          selected_profile: 'production',
+          route_run_id: 'run-vc-1',
+          worker_contract_version: 1,
+          route_selection_snapshot: expect.objectContaining({
+            selected_backend: 'vibecomfy',
+            selector_namespace: 'canary',
+            selector_version: 8,
+            selected_profile: 'production',
+            route_run_id: 'run-vc-1',
+          }),
+        }),
+      }),
+    }));
+  });
+
+  it('rejects VibeComfy orchestrated parents before inserting any task when a child route is blocked', async () => {
+    const logger = createLogger();
+    const taskInsert = createTasksInsertChain('task-created-1');
+    const supabaseAdmin = {
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'tasks') return { insert: taskInsert.insert };
+        if (table === 'projects') return { select: createProjectsLookupChain({ aspect_ratio: '16:9' }).select };
+        throw new Error(`Unexpected table: ${table}`);
+      }),
+    };
+    mocks.getTaskFamilyResolver.mockReturnValue(
+      vi.fn().mockResolvedValue({
+        tasks: [
+          {
+            project_id: 'project-1',
+            task_type: 'travel_orchestrator',
+            params: { orchestrator_task_id_ref: 'parent-1' },
+            status: 'Queued',
+          },
+        ],
+      }),
+    );
+
+    mocks.bootstrapEdgeHandler.mockResolvedValue({
+      ok: true,
+      value: {
+        supabaseAdmin,
+        logger,
+        auth: { isServiceRole: true, userId: null },
+        body: {
+          family: 'travel_orchestrator',
+          project_id: 'project-1',
+          input: { prompt: 'travel' },
+          route_selection_candidate: {
+            backend: 'vibecomfy',
+            selector_namespace: 'canary',
+            selector_version: 8,
+            profile: 'production',
+            run_id: 'run-vc-parent',
+          },
+        },
+      },
+    });
+
+    const handler = await loadHandler();
+    const response = await handler(new Request('https://edge.test/create-task', { method: 'POST' }));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      errorCode: 'unsupported_route_selection',
+      message: expect.stringContaining('VibeComfy route selection for travel_orchestrator is blocked'),
+      recoverable: false,
+    });
+    expect(taskInsert.insert).not.toHaveBeenCalled();
+    expect(logger.flush).toHaveBeenCalled();
+  });
+
+  it('preserves WGP default stamping for orchestrated parents without explicit route selection', async () => {
+    const logger = createLogger();
+    const taskInsert = createTasksInsertChain('task-created-1');
+    const supabaseAdmin = {
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'tasks') return { insert: taskInsert.insert };
+        if (table === 'projects') return { select: createProjectsLookupChain({ aspect_ratio: '16:9' }).select };
+        throw new Error(`Unexpected table: ${table}`);
+      }),
+    };
+    mocks.getTaskFamilyResolver.mockReturnValue(
+      vi.fn().mockResolvedValue({
+        tasks: [
+          {
+            project_id: 'project-1',
+            task_type: 'join_clips_orchestrator',
+            params: { orchestrator_task_id_ref: 'join-parent-1' },
+            status: 'Queued',
+          },
+        ],
+      }),
+    );
+
+    mocks.bootstrapEdgeHandler.mockResolvedValue({
+      ok: true,
+      value: {
+        supabaseAdmin,
+        logger,
+        auth: { isServiceRole: true, userId: null },
+        body: {
+          family: 'join_clips_orchestrator',
+          project_id: 'project-1',
+          input: { clips: [] },
+        },
+      },
+    });
+
+    const handler = await loadHandler();
+    const response = await handler(new Request('https://edge.test/create-task', { method: 'POST' }));
+
+    expect(response.status).toBe(200);
+    expect(taskInsert.insert).toHaveBeenCalledWith(expect.objectContaining({
+      task_type: 'join_clips_orchestrator',
+      params: expect.objectContaining({
+        route_contract: expect.objectContaining({
+          route_key: 'join_clips_orchestrator',
+          selected_backend: 'wgp',
+          selector_namespace: 'production',
+        }),
+      }),
+    }));
+  });
+
+  it('rejects malformed route selection candidates before resolver output or inserts', async () => {
+    const logger = createLogger();
+    const supabaseAdmin = { from: vi.fn() };
+
+    mocks.bootstrapEdgeHandler.mockResolvedValue({
+      ok: true,
+      value: {
+        supabaseAdmin,
+        logger,
+        auth: { isServiceRole: true, userId: null },
+        body: {
+          family: 'image_upscale',
+          project_id: 'project-1',
+          input: { image_url: 'https://example.com/source.png' },
+          route_selection_candidate: {
+            backend: 'comfy',
+          },
+        },
+      },
+    });
+
+    const handler = await loadHandler();
+    const response = await handler(new Request('https://edge.test/create-task', { method: 'POST' }));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      errorCode: 'invalid_request_body',
+      message: "route_selection_candidate.backend must be 'wgp' or 'vibecomfy'",
+      recoverable: false,
+    });
+    expect(mocks.getTaskFamilyResolver).not.toHaveBeenCalled();
+    expect(supabaseAdmin.from).not.toHaveBeenCalled();
+    expect(logger.flush).toHaveBeenCalled();
+  });
+
   it('returns the existing task when idempotent recovery stays within the authorized project', async () => {
     const logger = createLogger();
     const duplicateError = {

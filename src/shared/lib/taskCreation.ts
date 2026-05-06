@@ -1,7 +1,10 @@
 export type {
   BaseTaskParams,
   HiresFixApiParams,
+  TaskCreationRequest,
   TaskCreationResult,
+  TaskRouteSelectionBackend,
+  TaskRouteSelectionCandidate,
 } from './taskCreation/types';
 
 export {
