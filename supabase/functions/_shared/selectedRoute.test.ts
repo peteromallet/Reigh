@@ -132,6 +132,49 @@ describe("selected route contract", () => {
     });
   });
 
+  it("derives mode-aware WAN VACE and LTX control keys", () => {
+    const wanBase = {
+      model_name: "wan_2_2_vace_lightning_baseline_2_2_2",
+      continuity_case: "first_last",
+      profile: "default",
+    };
+    const ltxBase = {
+      model_name: "ltx2_22B_distilled_1_1",
+      continuity_case: "first_last",
+      profile: "default",
+      guidance_kind: "ltx_control",
+    };
+
+    expect(
+      ["flow", "canny", "depth", "raw"].map((mode) =>
+        routeRequirementForTask({
+          task_type: "travel_segment",
+          params: { ...wanBase, travel_guidance: { kind: "vace", mode } },
+        }).route_key
+      ),
+    ).toEqual([
+      "travel_segment__model-wan22_vace__guidance-vace_flow__continuity-first_last__profile-default",
+      "travel_segment__model-wan22_vace__guidance-vace_canny__continuity-first_last__profile-default",
+      "travel_segment__model-wan22_vace__guidance-vace_depth__continuity-first_last__profile-default",
+      "travel_segment__model-wan22_vace__guidance-vace_raw__continuity-first_last__profile-default",
+    ]);
+
+    expect(
+      ["video", "pose", "depth", "canny", "cameraman"].map((guidance_mode) =>
+        routeRequirementForTask({
+          task_type: "travel_segment",
+          params: { ...ltxBase, guidance_mode },
+        }).route_key
+      ),
+    ).toEqual([
+      "travel_segment__model-ltx2_distilled__guidance-ltx_control_video__continuity-first_last__profile-default",
+      "travel_segment__model-ltx2_distilled__guidance-ltx_control_pose__continuity-first_last__profile-default",
+      "travel_segment__model-ltx2_distilled__guidance-ltx_control_depth__continuity-first_last__profile-default",
+      "travel_segment__model-ltx2_distilled__guidance-ltx_control_canny__continuity-first_last__profile-default",
+      "travel_segment__model-ltx2_distilled__guidance-ltx_control_cameraman__continuity-first_last__profile-default",
+    ]);
+  });
+
   it("classifies VibeComfy blocker reasons consistently", () => {
     expect(routeRequirementForRouteKey({ route_key: "unknown_route" }).vibecomfy_blocker).toBe("unknown");
     expect(routeRequirementForRouteKey({ route_key: "travel_stitch" }).vibecomfy_blocker).toBe("wgp_only");

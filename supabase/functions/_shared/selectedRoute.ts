@@ -64,6 +64,7 @@ export interface RouteSnapshotFields {
   route_key: string;
   selected_backend: WorkerBackend;
   selector_version: number | string | null;
+  support_state: RouteSupportState;
   selected_profile: string;
   selected_template_id: string | null;
   route_run_id: string | null;
@@ -188,6 +189,7 @@ export function routeSnapshotFields(input: RouteSnapshotInput): RouteSnapshotFie
     route_key: routeKey,
     selected_backend: selectedBackend,
     selector_version: selectorVersion,
+    support_state: supportState,
     selected_profile: selectedProfile,
     selected_template_id: templateId,
     route_run_id: routeRunId,
@@ -337,7 +339,7 @@ function dimensionalChildRouteKey(taskType: string, params: Record<string, unkno
   return [
     slug(taskType),
     `model-${slug(routeModelFamily(params))}`,
-    `guidance-${slug(routeGuidanceKind(taskType, params))}`,
+    `guidance-${slug(routeGuidanceKey(taskType, params))}`,
     `continuity-${slug(routeContinuityCase(taskType, params))}`,
     `profile-${slug(routeProfile(params))}`,
   ].join("__");
@@ -379,6 +381,27 @@ function routeGuidanceKind(taskType: string, params: Record<string, unknown>): s
   if (params.video_guide || params.video_mask) return "vace";
   if (taskType === "join_clips_segment" && routeModelFamily(params) === "wan22_vace") return "vace";
   return "none";
+}
+
+function routeGuidanceMode(params: Record<string, unknown>): string {
+  const explicitMode = params.guidance_mode ?? params.travel_guidance_mode;
+  if (explicitMode) return String(explicitMode);
+
+  const travelGuidance = params.travel_guidance;
+  if (travelGuidance && typeof travelGuidance === "object" && "mode" in travelGuidance) {
+    const mode = (travelGuidance as { mode?: unknown }).mode;
+    if (mode) return String(mode);
+  }
+  return "none";
+}
+
+function routeGuidanceKey(taskType: string, params: Record<string, unknown>): string {
+  const kind = routeGuidanceKind(taskType, params);
+  const mode = routeGuidanceMode(params);
+  if ((kind === "vace" || kind === "ltx_control") && mode && mode !== "none") {
+    return `${kind}_${mode}`;
+  }
+  return kind;
 }
 
 function routeContinuityCase(taskType: string, params: Record<string, unknown>): string {

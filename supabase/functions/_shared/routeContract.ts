@@ -10,6 +10,7 @@ export interface RouteDemandEntry {
   selector_namespace: string;
   selector_version: number | string | null;
   route_key: string;
+  support_state: RouteSnapshotFields["support_state"];
   selected_template_id: string | null;
   route_run_id: string | null;
   worker_contract_version: number;
@@ -66,11 +67,17 @@ export function readRouteContractFromParams(
     if (!selectedBackend || !selectorNamespace || !routeKey || !selectedProfile || workerContractVersion == null || !snapshot) {
       return null;
     }
+    const normalizedSupportState = snapshot.support_state === "wgp_only" ||
+        snapshot.support_state === "vibecomfy_supported" ||
+        snapshot.support_state === "vibecomfy_unsupported"
+      ? snapshot.support_state
+      : "vibecomfy_unsupported";
     return {
       selector_namespace: selectorNamespace,
       route_key: routeKey,
       selected_backend: selectedBackend,
       selector_version: asSelectorVersion(candidate.selector_version),
+      support_state: normalizedSupportState,
       selected_profile: selectedProfile,
       selected_template_id: typeof candidate.selected_template_id === "string" ? candidate.selected_template_id : null,
       route_run_id: typeof candidate.route_run_id === "string" ? candidate.route_run_id : null,
@@ -80,11 +87,7 @@ export function readRouteContractFromParams(
         route_key: routeKey,
         selected_backend: selectedBackend,
         selector_version: asSelectorVersion(candidate.selector_version),
-        support_state: snapshot.support_state === "wgp_only" ||
-            snapshot.support_state === "vibecomfy_supported" ||
-            snapshot.support_state === "vibecomfy_unsupported"
-          ? snapshot.support_state
-          : "vibecomfy_unsupported",
+        support_state: normalizedSupportState,
         template_id: typeof candidate.selected_template_id === "string" ? candidate.selected_template_id : null,
         selected_profile: selectedProfile,
         route_run_id: typeof candidate.route_run_id === "string" ? candidate.route_run_id : null,
@@ -145,6 +148,7 @@ export function addRouteDemand(
     selector_namespace: route.selector_namespace,
     selector_version: route.selector_version,
     route_key: route.route_key,
+    support_state: route.support_state,
     selected_template_id: route.selected_template_id,
     route_run_id: route.route_run_id,
     worker_contract_version: route.worker_contract_version,
