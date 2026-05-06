@@ -9,6 +9,11 @@ import {
 } from "../_shared/rpcDecoders.ts";
 
 type RunType = 'gpu' | 'api';
+type RouteBackend = 'wgp' | 'vibecomfy';
+
+type ParseResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; error: string };
 
 function parseRunType(body: unknown): RunType | null {
   if (!body || typeof body !== 'object') {
@@ -23,6 +28,53 @@ function parseDebug(body: unknown): boolean {
     return false;
   }
   return (body as Record<string, unknown>).debug === true;
+}
+
+function parseWorkerBackend(body: unknown): ParseResult<RouteBackend> {
+  if (!body || typeof body !== 'object') {
+    return { ok: true, value: 'wgp' };
+  }
+
+  const value = (body as Record<string, unknown>).worker_backend;
+  if (value === undefined || value === null || value === '') {
+    return { ok: true, value: 'wgp' };
+  }
+
+  if (typeof value !== 'string') {
+    return { ok: false, error: "worker_backend must be 'wgp' or 'vibecomfy'" };
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'wgp' || normalized === 'vibecomfy') {
+    return { ok: true, value: normalized };
+  }
+
+  return { ok: false, error: "worker_backend must be 'wgp' or 'vibecomfy'" };
+}
+
+function parseSelectorNamespace(body: unknown): ParseResult<string> {
+  if (!body || typeof body !== 'object') {
+    return { ok: true, value: 'production' };
+  }
+
+  const value = (body as Record<string, unknown>).selector_namespace;
+  if (value === undefined || value === null || value === '') {
+    return { ok: true, value: 'production' };
+  }
+
+  if (typeof value !== 'string') {
+    return { ok: false, error: 'selector_namespace must be a string' };
+  }
+
+  const normalized = value.trim();
+  if (!/^[a-z][a-z0-9_-]{0,62}$/.test(normalized)) {
+    return {
+      ok: false,
+      error: 'selector_namespace must start with a lowercase letter and contain only lowercase letters, digits, underscores, or hyphens',
+    };
+  }
+
+  return { ok: true, value: normalized };
 }
 
 function isOrchestratorTask(taskType: string | null | undefined): boolean {
@@ -136,6 +188,16 @@ serve(async (req) => {
   const { supabaseAdmin, logger, auth, body: requestBody } = bootstrap.value;
   const requestedRunType = parseRunType(requestBody); // 'gpu', 'api', or null (no filtering)
   const debug = parseDebug(requestBody); // Enable verbose logging
+  const parsedWorkerBackend = parseWorkerBackend(requestBody);
+  if (!parsedWorkerBackend.ok) {
+    return new Response(parsedWorkerBackend.error, { status: 400 });
+  }
+  const workerBackend = parsedWorkerBackend.value;
+  const parsedSelectorNamespace = parseSelectorNamespace(requestBody);
+  if (!parsedSelectorNamespace.ok) {
+    return new Response(parsedSelectorNamespace.error, { status: 400 });
+  }
+  const selectorNamespace = parsedSelectorNamespace.value;
 
   const startTime = Date.now();
 
@@ -162,9 +224,23 @@ serve(async (req) => {
 
       // ESSENTIAL: Get counts from RPC functions (4 parallel calls)
       const [countQueuedOnly, countQueuedPlusActive, breakdownResult, userStatsResult] = await Promise.all([
-        supabaseAdmin.rpc('count_eligible_tasks_service_role', { p_include_active: false, p_run_type: appliedRunType }),
-        supabaseAdmin.rpc('count_eligible_tasks_service_role', { p_include_active: true, p_run_type: appliedRunType }),
-        supabaseAdmin.rpc('count_queued_tasks_breakdown_service_role', { p_run_type: appliedRunType }),
+        supabaseAdmin.rpc('count_eligible_tasks_service_role', {
+          p_include_active: false,
+          p_run_type: appliedRunType,
+          p_worker_backend: workerBackend,
+          p_selector_namespace: selectorNamespace,
+        }),
+        supabaseAdmin.rpc('count_eligible_tasks_service_role', {
+          p_include_active: true,
+          p_run_type: appliedRunType,
+          p_worker_backend: workerBackend,
+          p_selector_namespace: selectorNamespace,
+        }),
+        supabaseAdmin.rpc('count_queued_tasks_breakdown_service_role', {
+          p_run_type: appliedRunType,
+          p_worker_backend: workerBackend,
+          p_selector_namespace: selectorNamespace,
+        }),
         supabaseAdmin.rpc('per_user_capacity_stats_service_role')
       ]);
 
@@ -252,6 +328,11 @@ serve(async (req) => {
           .select(`
             id,
             task_type,
+            route_key,
+            selected_backend,
+            selector_namespace,
+            selector_version,
+            route_selection_snapshot,
             created_at,
             dependant_on,
             projects!inner(user_id, users!inner(credits, settings))
@@ -265,6 +346,12 @@ serve(async (req) => {
             id,
             task_type,
             worker_id,
+            claimed_backend,
+            claimed_selector_namespace,
+            claimed_route_key,
+            claimed_selector_version,
+            claimed_capability_version,
+            claim_decision_reason,
             updated_at,
             projects!inner(user_id, users!inner(credits, settings))
           `)
@@ -293,7 +380,7 @@ serve(async (req) => {
 
       // Filter queued tasks to match RPC criteria (only claimable tasks)
       // Criteria: not orchestrator, credits > 0, allows_cloud, deps complete, user not at capacity
-      const queued_tasks = (queuedResult.data || [])
+      const queuedCandidates = (queuedResult.data || [])
         .filter(task => {
           // Exclude orchestrator tasks
           if (isOrchestratorTask(task.task_type)) return false;
@@ -313,10 +400,38 @@ serve(async (req) => {
             if (!taskRunType || taskRunType !== appliedRunType) return false;
           }
           return true;
-        })
-        .map(task => ({
+        });
+
+      const queuedDecisionRows = await Promise.all(
+        queuedCandidates.map(async (task) => {
+          const { data, error } = await supabaseAdmin.rpc('route_backend_claim_decision', {
+            p_selector_namespace: selectorNamespace,
+            p_route_key: task.route_key,
+            p_worker_backend: workerBackend,
+          });
+          if (error) {
+            logger.error('Route decision lookup failed for queued task', {
+              task_id: task.id,
+              route_key: task.route_key,
+              error: error.message,
+            });
+            throw error;
+          }
+          const decision = Array.isArray(data) ? data[0] : data;
+          return { task, decision };
+        }),
+      );
+
+      const queued_tasks = queuedDecisionRows
+        .filter(({ decision }) => decision?.eligible === true)
+        .map(({ task, decision }) => ({
           task_id: task.id,
           task_type: task.task_type,
+          route_key: task.route_key,
+          selected_backend: decision.selected_backend,
+          selector_namespace: decision.selector_namespace,
+          selector_version: decision.selector_version,
+          claim_decision_reason: decision.decision_reason,
           user_id: task.projects.user_id,
           created_at: task.created_at
         }));
@@ -327,6 +442,8 @@ serve(async (req) => {
           if (task.task_type?.toLowerCase().includes('orchestrator')) return false;
           if (task.projects.users.credits <= 0) return false;
           if (appliedRunType === 'gpu' && task.worker_id === 'api-worker-main') return false;
+          if (task.claimed_backend !== workerBackend) return false;
+          if (task.claimed_selector_namespace !== selectorNamespace) return false;
           if (appliedRunType && taskTypeRunTypeMap) {
             const taskRunType = taskTypeRunTypeMap.get(task.task_type);
             if (!taskRunType || taskRunType !== appliedRunType) return false;
@@ -337,6 +454,12 @@ serve(async (req) => {
           task_id: task.id,
           task_type: task.task_type,
           worker_id: task.worker_id,
+          claimed_backend: task.claimed_backend,
+          claimed_selector_namespace: task.claimed_selector_namespace,
+          claimed_route_key: task.claimed_route_key,
+          claimed_selector_version: task.claimed_selector_version,
+          claimed_capability_version: task.claimed_capability_version,
+          claim_decision_reason: task.claim_decision_reason,
           user_id: task.projects.user_id,
           started_at: task.updated_at
         }));
@@ -368,6 +491,8 @@ serve(async (req) => {
         timestamp: new Date().toISOString(),
         run_type_filter_requested: requestedRunType,
         run_type_filter: appliedRunType,
+        worker_backend: workerBackend,
+        selector_namespace: selectorNamespace,
         totals: {
           // Core counts (capacity-limited, for claim logic)
           queued_only,              // Immediately claimable (capacity-limited)

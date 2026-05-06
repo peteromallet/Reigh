@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { __getServeHandler, __resetServeHandler } from '../_tests/mocks/denoHttpServer.ts';
 import * as CreateTaskEntrypoint from './index.ts';
 
@@ -65,6 +67,50 @@ function createProjectsLookupChain(project: { user_id?: string; aspect_ratio?: s
   return { select, eq, single };
 }
 
+function createMaybeSingleChain(response: { data: unknown; error: unknown }) {
+  const chain = {
+    select: vi.fn(),
+    eq: vi.fn(),
+    maybeSingle: vi.fn().mockResolvedValue(response),
+  };
+  chain.select.mockReturnValue(chain);
+  chain.eq.mockReturnValue(chain);
+  return chain;
+}
+
+function createRouteLookupChains(options?: {
+  selector?: Record<string, unknown> | null;
+  selectorError?: Record<string, unknown> | null;
+  capability?: Record<string, unknown> | null;
+  capabilityError?: Record<string, unknown> | null;
+}) {
+  const routeKey = "image_upscale";
+  const selector = options?.selector === undefined ? null : options.selector;
+  const capability = options?.capability === undefined
+    ? {
+        backend: "wgp",
+        route_key: routeKey,
+        supports_route: true,
+        supports_missing_selector: true,
+        capability_version: 1,
+        enabled: true,
+        expires_at: null,
+        min_worker_version: null,
+      }
+    : options.capability;
+
+  return {
+    selectors: createMaybeSingleChain({
+      data: selector,
+      error: options?.selectorError ?? null,
+    }),
+    capabilities: createMaybeSingleChain({
+      data: capability,
+      error: options?.capabilityError ?? null,
+    }),
+  };
+}
+
 async function loadHandler() {
   await import('./index.ts');
   return __getServeHandler();
@@ -104,10 +150,13 @@ describe('create-task edge entrypoint', () => {
     );
 
     const taskInsert = createTasksInsertChain('task-created-1');
+    const routeLookups = createRouteLookupChains();
     const supabaseAdmin = {
       from: vi.fn().mockImplementation((table: string) => {
         if (table === 'tasks') return { insert: taskInsert.insert };
         if (table === 'projects') return { select: createProjectsLookupChain({ aspect_ratio: '16:9' }).select };
+        if (table === 'route_backend_selectors') return routeLookups.selectors;
+        if (table === 'route_backend_capabilities') return routeLookups.capabilities;
         throw new Error(`Unexpected table: ${table}`);
       }),
     };
@@ -201,10 +250,13 @@ describe('create-task edge entrypoint', () => {
   it('creates task successfully for service-role requests', async () => {
     const logger = createLogger();
     const taskInsert = createTasksInsertChain('task-created-1');
+    const routeLookups = createRouteLookupChains();
     const supabaseAdmin = {
       from: vi.fn().mockImplementation((table: string) => {
         if (table === 'tasks') return { insert: taskInsert.insert };
         if (table === 'projects') return { select: createProjectsLookupChain({ aspect_ratio: '16:9' }).select };
+        if (table === 'route_backend_selectors') return routeLookups.selectors;
+        if (table === 'route_backend_capabilities') return routeLookups.capabilities;
         throw new Error(`Unexpected table: ${table}`);
       }),
     };
@@ -234,6 +286,407 @@ describe('create-task edge entrypoint', () => {
     expect(mocks.enforceRateLimit).not.toHaveBeenCalled();
     expect(logger.setDefaultTaskId).toHaveBeenCalledWith('task-created-1');
     expect(logger.flush).toHaveBeenCalled();
+    expect(taskInsert.insert).toHaveBeenCalledWith(expect.objectContaining({
+      selector_namespace: 'production',
+      route_key: 'image_upscale',
+      selected_backend: 'wgp',
+      selector_version: null,
+      route_selection_snapshot: expect.objectContaining({
+        decision_reason: 'missing_selector_wgp_capability_supported',
+        selected_backend: 'wgp',
+        selector_version: null,
+      }),
+    }));
+  });
+
+  it('stores present selector route snapshots when live selector and capability support the backend', async () => {
+    const logger = createLogger();
+    const taskInsert = createTasksInsertChain('task-created-present');
+    mocks.getTaskFamilyResolver.mockReturnValue(
+      vi.fn().mockResolvedValue({
+        tasks: [
+          {
+            project_id: 'project-1',
+            task_type: 'run_model',
+            route_key: 'image_upscale',
+            params: { image_url: 'https://example.com/source.png' },
+            status: 'Queued',
+          },
+        ],
+      }),
+    );
+    const routeLookups = createRouteLookupChains({
+      selector: {
+        route_key: 'image_upscale',
+        selected_backend: 'vibecomfy',
+        selector_version: 9,
+        enabled: true,
+        expires_at: null,
+        min_worker_version: null,
+      },
+      capability: {
+        backend: 'vibecomfy',
+        route_key: 'image_upscale',
+        supports_route: true,
+        supports_missing_selector: false,
+        capability_version: 4,
+        enabled: true,
+        expires_at: null,
+        min_worker_version: null,
+      },
+    });
+    const supabaseAdmin = {
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'tasks') return { insert: taskInsert.insert };
+        if (table === 'projects') return { select: createProjectsLookupChain({ aspect_ratio: '16:9' }).select };
+        if (table === 'route_backend_selectors') return routeLookups.selectors;
+        if (table === 'route_backend_capabilities') return routeLookups.capabilities;
+        throw new Error(`Unexpected table: ${table}`);
+      }),
+    };
+
+    mocks.bootstrapEdgeHandler.mockResolvedValue({
+      ok: true,
+      value: {
+        supabaseAdmin,
+        logger,
+        auth: { isServiceRole: true, userId: null },
+        body: {
+          family: 'image_upscale',
+          project_id: 'project-1',
+          input: { image_url: 'https://example.com/source.png' },
+          selector_namespace: 'staging',
+        },
+      },
+    });
+
+    const handler = await loadHandler();
+    const response = await handler(new Request('https://edge.test/create-task', { method: 'POST' }));
+
+    expect(response.status).toBe(200);
+    expect(routeLookups.selectors.eq).toHaveBeenCalledWith('selector_namespace', 'staging');
+    expect(taskInsert.insert).toHaveBeenCalledWith(expect.objectContaining({
+      selector_namespace: 'staging',
+      route_key: 'image_upscale',
+      selected_backend: 'vibecomfy',
+      selector_version: 9,
+      route_selection_snapshot: expect.objectContaining({
+        decision_reason: 'selector_supported',
+        selector_snapshot: expect.objectContaining({ selected_backend: 'vibecomfy', selector_version: 9 }),
+        capability_snapshot: expect.objectContaining({ backend: 'vibecomfy', capability_version: 4 }),
+      }),
+    }));
+  });
+
+  it('honors service-role pinned child route snapshots without live selector lookup', async () => {
+    const logger = createLogger();
+    const taskInsert = createTasksInsertChain('task-child-pinned');
+    const routeLookups = createRouteLookupChains({
+      selectorError: { message: 'should not be queried for pinned snapshots' },
+      capabilityError: { message: 'should not be queried for pinned snapshots' },
+    });
+    mocks.getTaskFamilyResolver.mockReturnValue(
+      vi.fn().mockResolvedValue({
+        tasks: [
+          {
+            project_id: 'project-1',
+            task_type: 'join_clips_segment',
+            params: { segment_index: 0 },
+            status: 'Queued',
+            selector_namespace: 'production',
+            route_key: 'join_clips_segment__model-wan22_vace__guidance-vace__continuity-join_bridge__profile-default',
+            selected_backend: 'wgp',
+            selector_version: 12,
+            route_selection_snapshot: {
+              selector_namespace: 'production',
+              route_key: 'join_clips_segment__model-wan22_vace__guidance-vace__continuity-join_bridge__profile-default',
+              selected_backend: 'wgp',
+              selector_version: 12,
+              parent_route_key: 'join_clips_orchestrator',
+            },
+          },
+        ],
+      }),
+    );
+    const supabaseAdmin = {
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'tasks') return { insert: taskInsert.insert };
+        if (table === 'projects') return { select: createProjectsLookupChain({ aspect_ratio: '16:9' }).select };
+        if (table === 'route_backend_selectors') return routeLookups.selectors;
+        if (table === 'route_backend_capabilities') return routeLookups.capabilities;
+        throw new Error(`Unexpected table: ${table}`);
+      }),
+    };
+
+    mocks.bootstrapEdgeHandler.mockResolvedValue({
+      ok: true,
+      value: {
+        supabaseAdmin,
+        logger,
+        auth: { isServiceRole: true, userId: null },
+        body: {
+          family: 'join_clips_segment',
+          project_id: 'project-1',
+          input: {},
+        },
+      },
+    });
+
+    const handler = await loadHandler();
+    const response = await handler(new Request('https://edge.test/create-task', { method: 'POST' }));
+
+    expect(response.status).toBe(200);
+    expect(routeLookups.selectors.maybeSingle).not.toHaveBeenCalled();
+    expect(routeLookups.capabilities.maybeSingle).not.toHaveBeenCalled();
+    expect(taskInsert.insert).toHaveBeenCalledWith(expect.objectContaining({
+      route_key: 'join_clips_segment__model-wan22_vace__guidance-vace__continuity-join_bridge__profile-default',
+      selected_backend: 'wgp',
+      selector_version: 12,
+      route_selection_snapshot: expect.objectContaining({
+        parent_route_key: 'join_clips_orchestrator',
+        selected_backend: 'wgp',
+      }),
+    }));
+  });
+
+  it('fails closed when selector is missing and WGP capability does not allow missing selectors', async () => {
+    const logger = createLogger();
+    const taskInsert = createTasksInsertChain('task-unsupported');
+    const routeLookups = createRouteLookupChains({
+      selector: null,
+      capability: {
+        backend: 'wgp',
+        route_key: 'image_upscale',
+        supports_route: true,
+        supports_missing_selector: false,
+        capability_version: 1,
+        enabled: true,
+        expires_at: null,
+        min_worker_version: null,
+      },
+    });
+    const supabaseAdmin = {
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'tasks') return { insert: taskInsert.insert };
+        if (table === 'projects') return { select: createProjectsLookupChain({ aspect_ratio: '16:9' }).select };
+        if (table === 'route_backend_selectors') return routeLookups.selectors;
+        if (table === 'route_backend_capabilities') return routeLookups.capabilities;
+        throw new Error(`Unexpected table: ${table}`);
+      }),
+    };
+
+    mocks.bootstrapEdgeHandler.mockResolvedValue({
+      ok: true,
+      value: {
+        supabaseAdmin,
+        logger,
+        auth: { isServiceRole: true, userId: null },
+        body: {
+          family: 'image_upscale',
+          project_id: 'project-1',
+          input: { image_url: 'https://example.com/source.png' },
+        },
+      },
+    });
+
+    const handler = await loadHandler();
+    const response = await handler(new Request('https://edge.test/create-task', { method: 'POST' }));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      errorCode: 'validation_error',
+      recoverable: false,
+    });
+    expect(taskInsert.insert).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when missing selector has no WGP capability row', async () => {
+    const logger = createLogger();
+    const taskInsert = createTasksInsertChain('task-missing-capability');
+    const routeLookups = createRouteLookupChains({
+      selector: null,
+      capability: null,
+    });
+    const supabaseAdmin = {
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'tasks') return { insert: taskInsert.insert };
+        if (table === 'projects') return { select: createProjectsLookupChain({ aspect_ratio: '16:9' }).select };
+        if (table === 'route_backend_selectors') return routeLookups.selectors;
+        if (table === 'route_backend_capabilities') return routeLookups.capabilities;
+        throw new Error(`Unexpected table: ${table}`);
+      }),
+    };
+
+    mocks.bootstrapEdgeHandler.mockResolvedValue({
+      ok: true,
+      value: {
+        supabaseAdmin,
+        logger,
+        auth: { isServiceRole: true, userId: null },
+        body: {
+          family: 'image_upscale',
+          project_id: 'project-1',
+          input: { image_url: 'https://example.com/source.png' },
+        },
+      },
+    });
+
+    const handler = await loadHandler();
+    const response = await handler(new Request('https://edge.test/create-task', { method: 'POST' }));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      errorCode: 'validation_error',
+      recoverable: false,
+    });
+    expect(taskInsert.insert).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when selector is disabled or expired before insert', async () => {
+    const logger = createLogger();
+    const taskInsert = createTasksInsertChain('task-disabled');
+    const routeLookups = createRouteLookupChains({
+      selector: {
+        route_key: 'image_upscale',
+        selected_backend: 'wgp',
+        selector_version: 3,
+        enabled: false,
+        expires_at: null,
+      },
+    });
+    const supabaseAdmin = {
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'tasks') return { insert: taskInsert.insert };
+        if (table === 'projects') return { select: createProjectsLookupChain({ aspect_ratio: '16:9' }).select };
+        if (table === 'route_backend_selectors') return routeLookups.selectors;
+        if (table === 'route_backend_capabilities') return routeLookups.capabilities;
+        throw new Error(`Unexpected table: ${table}`);
+      }),
+    };
+
+    mocks.bootstrapEdgeHandler.mockResolvedValue({
+      ok: true,
+      value: {
+        supabaseAdmin,
+        logger,
+        auth: { isServiceRole: true, userId: null },
+        body: {
+          family: 'image_upscale',
+          project_id: 'project-1',
+          input: { image_url: 'https://example.com/source.png' },
+        },
+      },
+    });
+
+    const handler = await loadHandler();
+    const disabledResponse = await handler(new Request('https://edge.test/create-task', { method: 'POST' }));
+
+    expect(disabledResponse.status).toBe(400);
+    expect(taskInsert.insert).not.toHaveBeenCalled();
+
+    routeLookups.selectors.maybeSingle.mockResolvedValue({
+      data: {
+        route_key: 'image_upscale',
+        selected_backend: 'wgp',
+        selector_version: 3,
+        enabled: true,
+        expires_at: '2000-01-01T00:00:00.000Z',
+      },
+      error: null,
+    });
+
+    const expiredResponse = await handler(new Request('https://edge.test/create-task', { method: 'POST' }));
+    expect(expiredResponse.status).toBe(400);
+    expect(taskInsert.insert).not.toHaveBeenCalled();
+  });
+
+  it('fails closed on malformed selector backend values', async () => {
+    const logger = createLogger();
+    const routeLookups = createRouteLookupChains({
+      selector: {
+        route_key: 'image_upscale',
+        selected_backend: 'comfy',
+        selector_version: 3,
+        enabled: true,
+        expires_at: null,
+      },
+    });
+    const taskInsert = createTasksInsertChain('task-malformed');
+    const supabaseAdmin = {
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'tasks') return { insert: taskInsert.insert };
+        if (table === 'projects') return { select: createProjectsLookupChain({ aspect_ratio: '16:9' }).select };
+        if (table === 'route_backend_selectors') return routeLookups.selectors;
+        if (table === 'route_backend_capabilities') return routeLookups.capabilities;
+        throw new Error(`Unexpected table: ${table}`);
+      }),
+    };
+
+    mocks.bootstrapEdgeHandler.mockResolvedValue({
+      ok: true,
+      value: {
+        supabaseAdmin,
+        logger,
+        auth: { isServiceRole: true, userId: null },
+        body: {
+          family: 'image_upscale',
+          project_id: 'project-1',
+          input: { image_url: 'https://example.com/source.png' },
+        },
+      },
+    });
+
+    const handler = await loadHandler();
+    const response = await handler(new Request('https://edge.test/create-task', { method: 'POST' }));
+
+    expect(response.status).toBe(500);
+    expect(taskInsert.insert).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when selector lookup is unreachable', async () => {
+    const logger = createLogger();
+    const routeLookups = createRouteLookupChains({
+      selectorError: { message: 'connection refused' },
+    });
+    const taskInsert = createTasksInsertChain('task-lookup-failure');
+    const supabaseAdmin = {
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'tasks') return { insert: taskInsert.insert };
+        if (table === 'projects') return { select: createProjectsLookupChain({ aspect_ratio: '16:9' }).select };
+        if (table === 'route_backend_selectors') return routeLookups.selectors;
+        if (table === 'route_backend_capabilities') return routeLookups.capabilities;
+        throw new Error(`Unexpected table: ${table}`);
+      }),
+    };
+
+    mocks.bootstrapEdgeHandler.mockResolvedValue({
+      ok: true,
+      value: {
+        supabaseAdmin,
+        logger,
+        auth: { isServiceRole: true, userId: null },
+        body: {
+          family: 'image_upscale',
+          project_id: 'project-1',
+          input: { image_url: 'https://example.com/source.png' },
+        },
+      },
+    });
+
+    const handler = await loadHandler();
+    const response = await handler(new Request('https://edge.test/create-task', { method: 'POST' }));
+
+    expect(response.status).toBe(500);
+    expect(taskInsert.insert).not.toHaveBeenCalled();
+  });
+
+  it('keeps create-time selector lookup uncached', () => {
+    const source = readFileSync(path.resolve(process.cwd(), 'supabase/functions/create-task/index.ts'), 'utf8');
+
+    expect(source).toContain('.from("route_backend_selectors")');
+    expect(source).toContain('.from("route_backend_capabilities")');
+    expect(source).not.toContain('ROUTE_SELECTOR_CACHE_TTL_MS');
+    expect(source).not.toMatch(/selectorCache|routeSelectorCache|cachedSelector/i);
   });
 
   it('returns the existing task when idempotent recovery stays within the authorized project', async () => {
@@ -251,6 +704,7 @@ describe('create-task edge entrypoint', () => {
       status: 'Queued',
       project_id: 'project-1',
     });
+    const routeLookups = createRouteLookupChains();
     const supabaseAdmin = {
       from: vi.fn().mockImplementation((table: string) => {
         if (table === 'projects') return { select: projects.select };
@@ -260,6 +714,8 @@ describe('create-task edge entrypoint', () => {
             select: existingTask.select,
           };
         }
+        if (table === 'route_backend_selectors') return routeLookups.selectors;
+        if (table === 'route_backend_capabilities') return routeLookups.capabilities;
         throw new Error(`Unexpected table: ${table}`);
       }),
     };
@@ -307,6 +763,7 @@ describe('create-task edge entrypoint', () => {
       status: 'Queued',
       project_id: 'project-other',
     });
+    const routeLookups = createRouteLookupChains();
     const supabaseAdmin = {
       from: vi.fn().mockImplementation((table: string) => {
         if (table === 'projects') return { select: projects.select };
@@ -316,6 +773,8 @@ describe('create-task edge entrypoint', () => {
             select: existingTask.select,
           };
         }
+        if (table === 'route_backend_selectors') return routeLookups.selectors;
+        if (table === 'route_backend_capabilities') return routeLookups.capabilities;
         throw new Error(`Unexpected table: ${table}`);
       }),
     };

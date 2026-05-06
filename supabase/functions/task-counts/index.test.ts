@@ -80,6 +80,280 @@ function createServiceRoleSupabase() {
       return Promise.resolve({ data: [], error: null });
     }
 
+    if (fn === 'route_backend_claim_decision') {
+      return Promise.resolve({
+        data: {
+          eligible: true,
+          selector_namespace: args.p_selector_namespace,
+          route_key: args.p_route_key,
+          selected_backend: args.p_worker_backend,
+          selector_version: 1,
+          decision_reason: 'eligible',
+        },
+        error: null,
+      });
+    }
+
+    throw new Error(`Unexpected rpc: ${fn}`);
+  });
+
+  return { rpc, from };
+}
+
+function createRouteAwareServiceRoleSupabase() {
+  const queuedLimit = vi.fn().mockResolvedValue({
+    data: [
+      {
+        id: 'queued-vibecomfy',
+        task_type: 'z_image_turbo',
+        route_key: 'z_image_turbo',
+        selected_backend: 'vibecomfy',
+        selector_namespace: 'production',
+        selector_version: 7,
+        route_selection_snapshot: {
+          selector_namespace: 'production',
+          route_key: 'z_image_turbo',
+          selected_backend: 'vibecomfy',
+          selector_version: 7,
+        },
+        created_at: '2026-03-01T00:00:00.000Z',
+        dependant_on: null,
+        projects: {
+          user_id: 'user-route-1',
+          users: { credits: 10, settings: {} },
+        },
+      },
+    ],
+    error: null,
+  });
+  const queuedOrder = vi.fn().mockReturnValue({ limit: queuedLimit });
+  const queuedEq = vi.fn().mockReturnValue({ order: queuedOrder });
+
+  const activeLimit = vi.fn().mockResolvedValue({
+    data: [
+      {
+        id: 'active-vibecomfy',
+        task_type: 'z_image_turbo',
+        worker_id: 'worker-vibe',
+        claimed_backend: 'vibecomfy',
+        claimed_selector_namespace: 'production',
+        claimed_route_key: 'z_image_turbo',
+        claimed_selector_version: 7,
+        claimed_capability_version: 4,
+        claim_decision_reason: 'eligible',
+        updated_at: '2026-03-01T00:05:00.000Z',
+        projects: {
+          user_id: 'user-route-1',
+          users: { credits: 10, settings: {} },
+        },
+      },
+      {
+        id: 'active-wgp-after-rollback',
+        task_type: 'z_image_turbo',
+        worker_id: 'worker-wgp',
+        claimed_backend: 'wgp',
+        claimed_selector_namespace: 'production',
+        claimed_route_key: 'z_image_turbo',
+        claimed_selector_version: 6,
+        claimed_capability_version: 3,
+        claim_decision_reason: 'eligible',
+        updated_at: '2026-03-01T00:06:00.000Z',
+        projects: {
+          user_id: 'user-route-2',
+          users: { credits: 10, settings: {} },
+        },
+      },
+    ],
+    error: null,
+  });
+  const activeOrder = vi.fn().mockReturnValue({ limit: activeLimit });
+  const activeNot = vi.fn().mockReturnValue({ order: activeOrder });
+  const activeEq = vi.fn().mockReturnValue({ not: activeNot });
+
+  let tasksSelectCount = 0;
+  const from = vi.fn().mockImplementation((table: string) => {
+    if (table === 'tasks') {
+      return {
+        select: vi.fn().mockImplementation(() => {
+          tasksSelectCount += 1;
+          if (tasksSelectCount === 1) {
+            return { eq: queuedEq };
+          }
+          return { eq: activeEq };
+        }),
+      };
+    }
+
+    return { select: vi.fn() };
+  });
+
+  const rpc = vi.fn().mockImplementation((fn: string, args: Record<string, unknown>) => {
+    if (fn === 'count_eligible_tasks_service_role') {
+      return Promise.resolve({ data: args.p_include_active === false ? 1 : 2, error: null });
+    }
+
+    if (fn === 'count_queued_tasks_breakdown_service_role') {
+      return Promise.resolve({
+        data: [{ claimable_now: 1, blocked_by_capacity: 0, blocked_by_deps: 0, blocked_by_settings: 0, total_queued: 1 }],
+        error: null,
+      });
+    }
+
+    if (fn === 'per_user_capacity_stats_service_role') {
+      return Promise.resolve({
+        data: [{
+          user_id: 'user-route-1',
+          credits: 10,
+          queued_tasks: 1,
+          in_progress_tasks: 0,
+          allows_cloud: true,
+          at_limit: false,
+        }],
+        error: null,
+      });
+    }
+
+    if (fn === 'route_backend_claim_decision') {
+      expect(args).toEqual({
+        p_selector_namespace: 'production',
+        p_route_key: 'z_image_turbo',
+        p_worker_backend: 'vibecomfy',
+      });
+      return Promise.resolve({
+        data: {
+          eligible: true,
+          selector_namespace: 'production',
+          route_key: 'z_image_turbo',
+          selected_backend: 'vibecomfy',
+          selector_version: 8,
+          decision_reason: 'eligible',
+        },
+        error: null,
+      });
+    }
+
+    throw new Error(`Unexpected rpc: ${fn}`);
+  });
+
+  return { rpc, from };
+}
+
+function createSelectorRollbackServiceRoleSupabase() {
+  const queuedLimit = vi.fn().mockResolvedValue({
+    data: [
+      {
+        id: 'queued-rolled-back',
+        task_type: 'z_image_turbo',
+        route_key: 'z_image_turbo',
+        selected_backend: 'vibecomfy',
+        selector_namespace: 'production',
+        selector_version: 7,
+        route_selection_snapshot: {
+          selector_namespace: 'production',
+          route_key: 'z_image_turbo',
+          selected_backend: 'vibecomfy',
+          selector_version: 7,
+        },
+        created_at: '2026-03-01T00:00:00.000Z',
+        dependant_on: null,
+        projects: {
+          user_id: 'user-route-1',
+          users: { credits: 10, settings: {} },
+        },
+      },
+    ],
+    error: null,
+  });
+  const queuedOrder = vi.fn().mockReturnValue({ limit: queuedLimit });
+  const queuedEq = vi.fn().mockReturnValue({ order: queuedOrder });
+
+  const activeLimit = vi.fn().mockResolvedValue({
+    data: [
+      {
+        id: 'active-vibecomfy-before-rollback',
+        task_type: 'z_image_turbo',
+        worker_id: 'worker-vibe',
+        claimed_backend: 'vibecomfy',
+        claimed_selector_namespace: 'production',
+        claimed_route_key: 'z_image_turbo',
+        claimed_selector_version: 7,
+        claimed_capability_version: 4,
+        claim_decision_reason: 'eligible',
+        updated_at: '2026-03-01T00:05:00.000Z',
+        projects: {
+          user_id: 'user-route-1',
+          users: { credits: 10, settings: {} },
+        },
+      },
+    ],
+    error: null,
+  });
+  const activeOrder = vi.fn().mockReturnValue({ limit: activeLimit });
+  const activeNot = vi.fn().mockReturnValue({ order: activeOrder });
+  const activeEq = vi.fn().mockReturnValue({ not: activeNot });
+
+  let tasksSelectCount = 0;
+  const from = vi.fn().mockImplementation((table: string) => {
+    if (table === 'tasks') {
+      return {
+        select: vi.fn().mockImplementation(() => {
+          tasksSelectCount += 1;
+          if (tasksSelectCount === 1) {
+            return { eq: queuedEq };
+          }
+          return { eq: activeEq };
+        }),
+      };
+    }
+
+    return { select: vi.fn() };
+  });
+
+  const rpc = vi.fn().mockImplementation((fn: string, args: Record<string, unknown>) => {
+    if (fn === 'count_eligible_tasks_service_role') {
+      return Promise.resolve({ data: args.p_include_active === false ? 0 : 1, error: null });
+    }
+
+    if (fn === 'count_queued_tasks_breakdown_service_role') {
+      return Promise.resolve({
+        data: [{ claimable_now: 0, blocked_by_capacity: 0, blocked_by_deps: 0, blocked_by_settings: 0, total_queued: 1 }],
+        error: null,
+      });
+    }
+
+    if (fn === 'per_user_capacity_stats_service_role') {
+      return Promise.resolve({
+        data: [{
+          user_id: 'user-route-1',
+          credits: 10,
+          queued_tasks: 0,
+          in_progress_tasks: 1,
+          allows_cloud: true,
+          at_limit: false,
+        }],
+        error: null,
+      });
+    }
+
+    if (fn === 'route_backend_claim_decision') {
+      expect(args).toEqual({
+        p_selector_namespace: 'production',
+        p_route_key: 'z_image_turbo',
+        p_worker_backend: 'vibecomfy',
+      });
+      return Promise.resolve({
+        data: {
+          eligible: false,
+          selector_namespace: 'production',
+          route_key: 'z_image_turbo',
+          selected_backend: 'wgp',
+          selector_version: 8,
+          decision_reason: 'selector_backend_mismatch',
+        },
+        error: null,
+      });
+    }
+
     throw new Error(`Unexpected rpc: ${fn}`);
   });
 
@@ -250,6 +524,8 @@ describe('task-counts edge entrypoint', () => {
     expect(payload.mode).toBe('count');
     expect(payload.run_type_filter_requested).toBeNull();
     expect(payload.run_type_filter).toBeNull();
+    expect(payload.worker_backend).toBe('wgp');
+    expect(payload.selector_namespace).toBe('production');
     expect(payload.totals).toEqual({
       queued_only: 3,
       active_only: 2,
@@ -262,6 +538,127 @@ describe('task-counts edge entrypoint', () => {
     expect(payload.queued_tasks).toEqual([]);
     expect(payload.active_tasks).toEqual([]);
     expect(payload.users).toEqual([]);
+  });
+
+  it('filters service-role queued and active details through route selector eligibility', async () => {
+    mocks.bootstrapEdgeHandler.mockResolvedValue({
+      ok: true,
+      value: {
+        supabaseAdmin: createRouteAwareServiceRoleSupabase(),
+        logger: createLogger(),
+        auth: { isServiceRole: true, userId: null },
+        body: { worker_backend: 'vibecomfy', selector_namespace: 'production' },
+      },
+    });
+
+    const handler = await loadHandler();
+    const response = await handler(new Request('https://edge.test/task-counts', { method: 'POST' }));
+
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+
+    expect(payload.worker_backend).toBe('vibecomfy');
+    expect(payload.selector_namespace).toBe('production');
+    expect(payload.queued_tasks).toEqual([
+      {
+        task_id: 'queued-vibecomfy',
+        task_type: 'z_image_turbo',
+        route_key: 'z_image_turbo',
+        selected_backend: 'vibecomfy',
+        selector_namespace: 'production',
+        selector_version: 8,
+        claim_decision_reason: 'eligible',
+        user_id: 'user-route-1',
+        created_at: '2026-03-01T00:00:00.000Z',
+      },
+    ]);
+    expect(payload.active_tasks).toEqual([
+      {
+        task_id: 'active-vibecomfy',
+        task_type: 'z_image_turbo',
+        worker_id: 'worker-vibe',
+        claimed_backend: 'vibecomfy',
+        claimed_selector_namespace: 'production',
+        claimed_route_key: 'z_image_turbo',
+        claimed_selector_version: 7,
+        claimed_capability_version: 4,
+        claim_decision_reason: 'eligible',
+        user_id: 'user-route-1',
+        started_at: '2026-03-01T00:05:00.000Z',
+      },
+    ]);
+  });
+
+  it('applies live selector rollback to queued details while preserving active claimed work', async () => {
+    mocks.bootstrapEdgeHandler.mockResolvedValue({
+      ok: true,
+      value: {
+        supabaseAdmin: createSelectorRollbackServiceRoleSupabase(),
+        logger: createLogger(),
+        auth: { isServiceRole: true, userId: null },
+        body: { worker_backend: 'vibecomfy', selector_namespace: 'production' },
+      },
+    });
+
+    const handler = await loadHandler();
+    const response = await handler(new Request('https://edge.test/task-counts', { method: 'POST' }));
+
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+
+    expect(payload.totals).toMatchObject({
+      queued_only: 0,
+      active_only: 1,
+      queued_plus_active: 1,
+      potentially_claimable: 0,
+    });
+    expect(payload.queued_tasks).toEqual([]);
+    expect(payload.active_tasks).toEqual([
+      {
+        task_id: 'active-vibecomfy-before-rollback',
+        task_type: 'z_image_turbo',
+        worker_id: 'worker-vibe',
+        claimed_backend: 'vibecomfy',
+        claimed_selector_namespace: 'production',
+        claimed_route_key: 'z_image_turbo',
+        claimed_selector_version: 7,
+        claimed_capability_version: 4,
+        claim_decision_reason: 'eligible',
+        user_id: 'user-route-1',
+        started_at: '2026-03-01T00:05:00.000Z',
+      },
+    ]);
+  });
+
+  it('rejects malformed service-role backend and selector namespace filters', async () => {
+    mocks.bootstrapEdgeHandler.mockResolvedValue({
+      ok: true,
+      value: {
+        supabaseAdmin: createServiceRoleSupabase(),
+        logger: createLogger(),
+        auth: { isServiceRole: true, userId: null },
+        body: { worker_backend: 'comfy' },
+      },
+    });
+
+    const handler = await loadHandler();
+    const backendResponse = await handler(new Request('https://edge.test/task-counts', { method: 'POST' }));
+    expect(backendResponse.status).toBe(400);
+    await expect(backendResponse.text()).resolves.toContain("worker_backend must be 'wgp' or 'vibecomfy'");
+
+    mocks.bootstrapEdgeHandler.mockResolvedValue({
+      ok: true,
+      value: {
+        supabaseAdmin: createServiceRoleSupabase(),
+        logger: createLogger(),
+        auth: { isServiceRole: true, userId: null },
+        body: { selector_namespace: '../prod' },
+      },
+    });
+
+    const namespaceResponse = await handler(new Request('https://edge.test/task-counts', { method: 'POST' }));
+    expect(namespaceResponse.status).toBe(400);
+    await expect(namespaceResponse.text()).resolves.toContain('selector_namespace must start');
   });
 
   it('filters PAT queued_tasks to the same immediately-claimable contract as queued_only', async () => {

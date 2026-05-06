@@ -178,12 +178,22 @@ describe("Wan/VACE child contract resolver coverage", () => {
 
   it("passes worker-created Wan/VACE join child overrides and dependency arrays through", () => {
     const resolver = createWorkerPassthroughResolver("join_clips_segment");
+    const routeSnapshot = {
+      selector_namespace: "production",
+      route_key: "join_clips_segment__model-wan22_vace__guidance-vace__continuity-join_bridge__profile-default",
+      selected_backend: "vibecomfy",
+      selector_version: 12,
+    };
     const result = resolver({
       family: "join_clips_segment",
       project_id: "project-1",
       input: {
         task_id: "join-child-worker-id",
         dependant_on: ["clip-a-task", "clip-b-task"],
+        route_key: routeSnapshot.route_key,
+        selected_backend: "vibecomfy",
+        selector_version: 12,
+        route_selection_snapshot: routeSnapshot,
         model: "wan_2_2_vace_lightning_baseline_2_2_2",
         selected_phase_preset_id: "__builtin_vace_default__",
         prompt: "bridge two clips",
@@ -203,8 +213,16 @@ describe("Wan/VACE child contract resolver coverage", () => {
       id: "join-child-worker-id",
       task_type: "join_clips_segment",
       dependant_on: ["clip-a-task", "clip-b-task"],
+      route_key: routeSnapshot.route_key,
+      selected_backend: "vibecomfy",
+      selector_version: 12,
+      route_selection_snapshot: routeSnapshot,
     });
     expect(result.tasks[0]?.params).toMatchObject({
+      route_key: routeSnapshot.route_key,
+      selected_backend: "vibecomfy",
+      selector_version: 12,
+      route_selection_snapshot: routeSnapshot,
       selected_phase_preset_id: "__builtin_vace_default__",
       num_inference_steps: 6,
       guidance_scale: 3,
@@ -214,6 +232,31 @@ describe("Wan/VACE child contract resolver coverage", () => {
       child_order: 0,
       pair_shot_generation_id: "join-pair-shot-1",
     });
+  });
+
+  it("rejects worker-created route fields with malformed backend or snapshot shape", () => {
+    const resolver = createWorkerPassthroughResolver("travel_segment");
+
+    expect(() => resolver({
+      family: "travel_segment",
+      project_id: "project-1",
+      input: {
+        task_id: "bad-backend-child",
+        route_key: "travel_segment",
+        selected_backend: "comfy",
+      },
+    } satisfies ResolveRequest, context)).toThrow(/Unsupported route backend/);
+
+    expect(() => resolver({
+      family: "travel_segment",
+      project_id: "project-1",
+      input: {
+        task_id: "bad-snapshot-child",
+        route_key: "travel_segment",
+        selected_backend: "wgp",
+        route_selection_snapshot: ["not", "an", "object"],
+      },
+    } satisfies ResolveRequest, context)).toThrow(/route_selection_snapshot must be an object/);
   });
 
   it("keeps Wan/VACE join defaults and per-join overrides in the task contract", () => {

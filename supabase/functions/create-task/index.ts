@@ -10,9 +10,15 @@ import type { SupabaseClient } from "../_shared/supabaseClient.ts";
 import { getErrorMessage } from "./request.ts";
 import { JWT_AUTH_REQUIRED } from "../_shared/requestGuards.ts";
 import { getTaskFamilyResolver } from "./resolvers/registry.ts";
+import {
+  deriveRouteKey,
+  parseRouteBackend,
+  routeSnapshotFields,
+  type RouteBackend,
+} from "./resolvers/shared/routeKeys.ts";
 import { createWorkerPassthroughResolver } from "./resolvers/workerPassthrough.ts";
 import { TaskValidationError } from "./resolvers/shared/validation.ts";
-import type { ResolveRequest } from "./resolvers/types.ts";
+import type { ResolveRequest, TaskInsertObject } from "./resolvers/types.ts";
 
 function createErrorResponse(
   message: string,
@@ -68,6 +74,39 @@ interface InsertTaskWithRecoveryOptions {
   };
 }
 
+interface RouteSelectorRow {
+  route_key?: unknown;
+  selected_backend?: unknown;
+  selector_version?: unknown;
+  enabled?: unknown;
+  expires_at?: unknown;
+  min_worker_version?: unknown;
+}
+
+interface RouteCapabilityRow {
+  backend?: unknown;
+  route_key?: unknown;
+  supports_route?: unknown;
+  supports_missing_selector?: unknown;
+  capability_version?: unknown;
+  enabled?: unknown;
+  expires_at?: unknown;
+  min_worker_version?: unknown;
+}
+
+interface MaterializedRouteDecision {
+  routeKey: string;
+  selectedBackend: RouteBackend;
+  selectorVersion: number | string | null;
+  decisionReason: string;
+  selectorSnapshot: Record<string, unknown> | null;
+  capabilitySnapshot: Record<string, unknown>;
+}
+
+interface MaterializeRouteSnapshotOptions {
+  allowPinnedSnapshot: boolean;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -87,6 +126,22 @@ function parseRequestIdempotencyKey(body: unknown): string | undefined {
   }
 
   return asNonEmptyString(body.idempotency_key) ?? undefined;
+}
+
+function parseSelectorNamespace(body: unknown): string {
+  const rawNamespace = isRecord(body)
+    ? asNonEmptyString(body.selector_namespace) ?? asNonEmptyString(body.selectorNamespace)
+    : null;
+  const selectorNamespace = rawNamespace ?? "production";
+
+  if (!/^[a-z][a-z0-9_-]{0,62}$/.test(selectorNamespace)) {
+    throw new TaskValidationError(
+      "selector_namespace must start with a lowercase letter and contain only lowercase letters, digits, underscores, or hyphens",
+      "selector_namespace",
+    );
+  }
+
+  return selectorNamespace;
 }
 
 function parseResolverRequest(body: unknown): ParseResolverRequestResult | null {
@@ -280,6 +335,272 @@ async function insertTaskWithRecovery({
   };
 }
 
+function isExpired(value: unknown): boolean {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return false;
+  }
+
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && timestamp <= Date.now();
+}
+
+function assertPositiveVersion(value: unknown, field: string): number | string {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return value;
+  }
+
+  if (typeof value === "string" && /^[1-9][0-9]*$/.test(value)) {
+    return value;
+  }
+
+  throw new Error(`Malformed route selector data: ${field} must be a positive version`);
+}
+
+function buildSelectorSnapshot(
+  selectorNamespace: string,
+  selector: RouteSelectorRow,
+  selectedBackend: RouteBackend,
+): Record<string, unknown> {
+  return {
+    selector_namespace: selectorNamespace,
+    route_key: selector.route_key,
+    selected_backend: selectedBackend,
+    selector_version: selector.selector_version,
+    enabled: selector.enabled,
+    expires_at: selector.expires_at ?? null,
+    min_worker_version: selector.min_worker_version ?? null,
+  };
+}
+
+function buildCapabilitySnapshot(capability: RouteCapabilityRow): Record<string, unknown> {
+  return {
+    backend: capability.backend,
+    route_key: capability.route_key,
+    supports_route: capability.supports_route,
+    supports_missing_selector: capability.supports_missing_selector,
+    capability_version: capability.capability_version,
+    enabled: capability.enabled,
+    expires_at: capability.expires_at ?? null,
+    min_worker_version: capability.min_worker_version ?? null,
+  };
+}
+
+function ensureCapabilityCanCreate(
+  capability: RouteCapabilityRow | null,
+  routeKey: string,
+  backend: RouteBackend,
+  mode: "selected_route" | "missing_selector",
+): RouteCapabilityRow {
+  if (!capability) {
+    throw new TaskValidationError(
+      `Route ${routeKey} is not supported by backend ${backend}: missing capability`,
+      "route_key",
+    );
+  }
+
+  if (capability.backend !== backend || capability.route_key !== routeKey) {
+    throw new Error("Malformed route capability data: backend or route_key mismatch");
+  }
+
+  assertPositiveVersion(capability.capability_version, "capability_version");
+
+  if (capability.enabled !== true) {
+    throw new TaskValidationError(
+      `Route ${routeKey} is not supported by backend ${backend}: capability disabled`,
+      "route_key",
+    );
+  }
+
+  if (isExpired(capability.expires_at)) {
+    throw new TaskValidationError(
+      `Route ${routeKey} is not supported by backend ${backend}: capability expired`,
+      "route_key",
+    );
+  }
+
+  if (mode === "selected_route" && capability.supports_route !== true) {
+    throw new TaskValidationError(
+      `Route ${routeKey} is not supported by backend ${backend}`,
+      "route_key",
+    );
+  }
+
+  if (mode === "missing_selector" && capability.supports_missing_selector !== true) {
+    throw new TaskValidationError(
+      `Route ${routeKey} has no selector and backend ${backend} does not support missing-selector fallback`,
+      "route_key",
+    );
+  }
+
+  return capability;
+}
+
+async function lookupRouteSelector(
+  supabaseAdmin: SupabaseClient,
+  selectorNamespace: string,
+  routeKey: string,
+): Promise<RouteSelectorRow | null> {
+  const { data, error } = await supabaseAdmin
+    .from("route_backend_selectors")
+    .select("route_key, selected_backend, selector_version, enabled, expires_at, min_worker_version")
+    .eq("selector_namespace", selectorNamespace)
+    .eq("route_key", routeKey)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Route selector lookup failed: ${error.message ?? "unknown error"}`);
+  }
+
+  return data as RouteSelectorRow | null;
+}
+
+async function lookupRouteCapability(
+  supabaseAdmin: SupabaseClient,
+  routeKey: string,
+  backend: RouteBackend,
+): Promise<RouteCapabilityRow | null> {
+  const { data, error } = await supabaseAdmin
+    .from("route_backend_capabilities")
+    .select("backend, route_key, supports_route, supports_missing_selector, capability_version, enabled, expires_at, min_worker_version")
+    .eq("backend", backend)
+    .eq("route_key", routeKey)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Route capability lookup failed: ${error.message ?? "unknown error"}`);
+  }
+
+  return data as RouteCapabilityRow | null;
+}
+
+async function resolveCreateTimeRouteDecision(
+  supabaseAdmin: SupabaseClient,
+  insertObject: TaskInsertObject,
+  selectorNamespace: string,
+): Promise<MaterializedRouteDecision> {
+  const explicitRouteKey = asNonEmptyString(insertObject.route_key);
+  const routeKey = explicitRouteKey ?? deriveRouteKey(insertObject.task_type, insertObject.params);
+
+  if (!routeKey || /\s/.test(routeKey)) {
+    throw new TaskValidationError("route_key must be a non-empty string without whitespace", "route_key");
+  }
+
+  const selector = await lookupRouteSelector(supabaseAdmin, selectorNamespace, routeKey);
+
+  if (!selector) {
+    const wgpCapability = ensureCapabilityCanCreate(
+      await lookupRouteCapability(supabaseAdmin, routeKey, "wgp"),
+      routeKey,
+      "wgp",
+      "missing_selector",
+    );
+
+    return {
+      routeKey,
+      selectedBackend: "wgp",
+      selectorVersion: null,
+      decisionReason: "missing_selector_wgp_capability_supported",
+      selectorSnapshot: null,
+      capabilitySnapshot: buildCapabilitySnapshot(wgpCapability),
+    };
+  }
+
+  if (selector.route_key !== routeKey) {
+    throw new Error("Malformed route selector data: route_key mismatch");
+  }
+
+  const selectedBackend = parseRouteBackend(selector.selected_backend);
+  const selectorVersion = assertPositiveVersion(selector.selector_version, "selector_version");
+
+  if (selector.enabled !== true) {
+    throw new TaskValidationError(`Route ${routeKey} selector is disabled`, "route_key");
+  }
+
+  if (isExpired(selector.expires_at)) {
+    throw new TaskValidationError(`Route ${routeKey} selector is expired`, "route_key");
+  }
+
+  const capability = ensureCapabilityCanCreate(
+    await lookupRouteCapability(supabaseAdmin, routeKey, selectedBackend),
+    routeKey,
+    selectedBackend,
+    "selected_route",
+  );
+
+  return {
+    routeKey,
+    selectedBackend,
+    selectorVersion,
+    decisionReason: "selector_supported",
+    selectorSnapshot: buildSelectorSnapshot(selectorNamespace, selector, selectedBackend),
+    capabilitySnapshot: buildCapabilitySnapshot(capability),
+  };
+}
+
+async function materializeRouteSnapshot(
+  supabaseAdmin: SupabaseClient,
+  insertObject: TaskInsertObject,
+  selectorNamespace: string,
+  options: MaterializeRouteSnapshotOptions,
+): Promise<TaskInsertObject> {
+  const pinnedRouteKey = asNonEmptyString(insertObject.route_key);
+  const pinnedSnapshot = insertObject.route_selection_snapshot;
+
+  if (options.allowPinnedSnapshot && pinnedRouteKey && insertObject.selected_backend !== undefined && pinnedSnapshot !== undefined) {
+    if (/\s/.test(pinnedRouteKey)) {
+      throw new TaskValidationError("route_key must be a non-empty string without whitespace", "route_key");
+    }
+
+    const pinnedBackend = parseRouteBackend(insertObject.selected_backend);
+    if (!isRecord(pinnedSnapshot)) {
+      throw new TaskValidationError("route_selection_snapshot must be an object", "route_selection_snapshot");
+    }
+
+    const pinnedSelectorNamespace = asNonEmptyString(insertObject.selector_namespace) ?? selectorNamespace;
+    const pinnedSelectorVersion = insertObject.selector_version ?? pinnedSnapshot.selector_version ?? null;
+
+    return {
+      ...insertObject,
+      selector_namespace: pinnedSelectorNamespace,
+      route_key: pinnedRouteKey,
+      selected_backend: pinnedBackend,
+      selector_version: pinnedSelectorVersion,
+      route_selection_snapshot: {
+        ...pinnedSnapshot,
+        selector_namespace: pinnedSelectorNamespace,
+        route_key: pinnedRouteKey,
+        selected_backend: pinnedBackend,
+        selector_version: pinnedSelectorVersion,
+      },
+    };
+  }
+
+  const decision = await resolveCreateTimeRouteDecision(supabaseAdmin, insertObject, selectorNamespace);
+  const snapshotFields = routeSnapshotFields({
+    taskType: insertObject.task_type,
+    params: insertObject.params,
+    selectedBackend: decision.selectedBackend,
+    selectorNamespace,
+    selectorVersion: decision.selectorVersion,
+  });
+
+  return {
+    ...insertObject,
+    selector_namespace: selectorNamespace,
+    route_key: decision.routeKey,
+    selected_backend: decision.selectedBackend,
+    selector_version: decision.selectorVersion,
+    route_selection_snapshot: {
+      ...snapshotFields.route_selection_snapshot,
+      route_key: decision.routeKey,
+      selector_version: decision.selectorVersion,
+      decision_reason: decision.decisionReason,
+      selector_snapshot: decision.selectorSnapshot,
+      capability_snapshot: decision.capabilitySnapshot,
+    },
+  };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return jsonResponse({ ok: true });
@@ -421,6 +742,7 @@ serve(async (req) => {
   }
 
   try {
+    const selectorNamespace = parseSelectorNamespace(rawBody);
     let resolver = getTaskFamilyResolver(resolverRequest.family);
     if (!resolver) {
       // No explicit resolver — check if this task type exists in the DB.
@@ -455,7 +777,13 @@ serve(async (req) => {
       return createErrorResponse("Resolver did not return any tasks", 500, "invalid_resolver_result");
     }
 
-    const insertObjects = resolverResult.tasks;
+    const insertObjects = await Promise.all(
+      resolverResult.tasks.map((insertObject) =>
+        materializeRouteSnapshot(supabaseAdmin, insertObject, selectorNamespace, {
+          allowPinnedSnapshot: auth.isServiceRole === true,
+        })
+      ),
+    );
     const responseMeta = resolverResult.meta;
 
     const createdTaskIds: string[] = [];

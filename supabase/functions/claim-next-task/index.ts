@@ -2,6 +2,49 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { withEdgeRequest } from "../_shared/edgeHandler.ts";
 
+type RouteBackend = "wgp" | "vibecomfy";
+
+type ParseResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; error: string };
+
+function parseWorkerBackend(value: unknown): ParseResult<RouteBackend> {
+  if (value === undefined || value === null || value === "") {
+    return { ok: true, value: "wgp" };
+  }
+
+  if (typeof value !== "string") {
+    return { ok: false, error: "worker_backend must be 'wgp' or 'vibecomfy'" };
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "wgp" || normalized === "vibecomfy") {
+    return { ok: true, value: normalized };
+  }
+
+  return { ok: false, error: "worker_backend must be 'wgp' or 'vibecomfy'" };
+}
+
+function parseSelectorNamespace(value: unknown): ParseResult<string> {
+  if (value === undefined || value === null || value === "") {
+    return { ok: true, value: "production" };
+  }
+
+  if (typeof value !== "string") {
+    return { ok: false, error: "selector_namespace must be a string" };
+  }
+
+  const normalized = value.trim();
+  if (!/^[a-z][a-z0-9_-]{0,62}$/.test(normalized)) {
+    return {
+      ok: false,
+      error: "selector_namespace must start with a lowercase letter and contain only lowercase letters, digits, underscores, or hyphens",
+    };
+  }
+
+  return { ok: true, value: normalized };
+}
+
 /**
  * Edge function: claim-next-task
  *
@@ -23,6 +66,8 @@ import { withEdgeRequest } from "../_shared/edgeHandler.ts";
  * Body: {
  *   worker_id?: string,        // Optional worker ID for service role
  *   run_type?: 'gpu' | 'api',  // Optional: filter tasks by execution environment
+ *   worker_backend?: 'wgp' | 'vibecomfy', // Optional: execution backend, defaults to wgp
+ *   selector_namespace?: string, // Optional: selector namespace, defaults to production
  *   same_model_only?: boolean, // Optional: only claim tasks matching worker's current_model
  *   max_task_wait_minutes?: number, // Optional: max age in minutes for claimable tasks (default 5, must be positive finite number)
  *   debug?: boolean            // Optional: enable verbose logging/analysis on 204 responses
@@ -55,6 +100,16 @@ serve((req) => {
   const runType = requestBody.run_type === "gpu" || requestBody.run_type === "api"
     ? requestBody.run_type
     : null;
+  const parsedWorkerBackend = parseWorkerBackend(requestBody.worker_backend);
+  if (!parsedWorkerBackend.ok) {
+    return new Response(parsedWorkerBackend.error, { status: 400 });
+  }
+  const workerBackend = parsedWorkerBackend.value;
+  const parsedSelectorNamespace = parseSelectorNamespace(requestBody.selector_namespace);
+  if (!parsedSelectorNamespace.ok) {
+    return new Response(parsedSelectorNamespace.error, { status: 400 });
+  }
+  const selectorNamespace = parsedSelectorNamespace.value;
   const sameModelOnly = requestBody.same_model_only === true;
   const rawMaxWait = requestBody.max_task_wait_minutes;
   const maxTaskWaitMinutes = typeof rawMaxWait === "number" && rawMaxWait > 0 && isFinite(rawMaxWait)
@@ -66,7 +121,12 @@ serve((req) => {
   const callerId = auth!.userId;
 
   if (isServiceRole) {
-    logger.info("Authenticated via service-role key", { worker_id: workerId, run_type: runType });
+    logger.info("Authenticated via service-role key", {
+      worker_id: workerId,
+      run_type: runType,
+      worker_backend: workerBackend,
+      selector_namespace: selectorNamespace,
+    });
   } else {
     logger.info("Authenticated via PAT", { user_id: callerId });
   }
@@ -79,6 +139,8 @@ serve((req) => {
     logger.info(`Claiming task (service-role, ${pathType} path)`, {
       worker_id: workerId,
       run_type: runType,
+      worker_backend: workerBackend,
+      selector_namespace: selectorNamespace,
       same_model_only: sameModelOnly,
       max_task_wait_minutes: maxTaskWaitMinutes,
     });
@@ -92,6 +154,8 @@ serve((req) => {
           p_run_type: runType,
           p_same_model_only: sameModelOnly,
           p_max_task_wait_minutes: maxTaskWaitMinutes,
+          p_worker_backend: workerBackend,
+          p_selector_namespace: selectorNamespace,
         });
 
       claimResult = rpcResponse.data;
@@ -116,6 +180,8 @@ serve((req) => {
         logger.info("No eligible tasks available", {
           worker_id: workerId,
           run_type: runType,
+          worker_backend: workerBackend,
+          selector_namespace: selectorNamespace,
           same_model_only: sameModelOnly,
           max_task_wait_minutes: maxTaskWaitMinutes,
         });
@@ -154,14 +220,40 @@ serve((req) => {
       task_id: task.task_id,
       task_type: task.task_type,
       worker_id: workerId,
-      project_id: task.project_id
+      project_id: task.project_id,
+      route_key: task.claimed_route_key,
+      task_route_key: task.task_route_key,
+      selected_backend: task.selected_backend,
+      selector_namespace: task.claimed_selector_namespace,
+      selector_version: task.claimed_selector_version,
+      claimed_backend: task.claimed_backend,
+      task_selected_backend: task.task_selected_backend,
+      task_selector_version: task.task_selector_version,
+      claim_decision_reason: task.claim_decision_reason,
     });
 
     return new Response(JSON.stringify({
       task_id: task.task_id,
       params: task.params,
       task_type: task.task_type,
-      project_id: task.project_id
+      project_id: task.project_id,
+      route_key: task.claimed_route_key,
+      selector_namespace: task.claimed_selector_namespace,
+      selected_backend: task.selected_backend,
+      selector_version: task.claimed_selector_version,
+      route_selection_snapshot: task.route_selection_snapshot,
+      task_selector_namespace: task.task_selector_namespace,
+      task_route_key: task.task_route_key,
+      task_selected_backend: task.task_selected_backend,
+      task_selector_version: task.task_selector_version,
+      task_route_selection_snapshot: task.task_route_selection_snapshot,
+      claimed_backend: task.claimed_backend,
+      claimed_selector_namespace: task.claimed_selector_namespace,
+      claimed_route_key: task.claimed_route_key,
+      claimed_selector_version: task.claimed_selector_version,
+      claimed_capability_version: task.claimed_capability_version,
+      claim_decision_reason: task.claim_decision_reason,
+      claim_decision_snapshot: task.claim_decision_snapshot,
     }), {
       status: 200,
       headers: { "Content-Type": "application/json" }

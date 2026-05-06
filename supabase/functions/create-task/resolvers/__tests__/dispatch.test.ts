@@ -60,6 +60,36 @@ function createProjectsLookupChain(project: { user_id?: string; aspect_ratio?: s
   return { select, eq, single };
 }
 
+function createMaybeSingleChain(response: { data: unknown; error: unknown }) {
+  const chain = {
+    select: vi.fn(),
+    eq: vi.fn(),
+    maybeSingle: vi.fn().mockResolvedValue(response),
+  };
+  chain.select.mockReturnValue(chain);
+  chain.eq.mockReturnValue(chain);
+  return chain;
+}
+
+function createRouteLookupChains(routeKey: string) {
+  return {
+    selectors: createMaybeSingleChain({ data: null, error: null }),
+    capabilities: createMaybeSingleChain({
+      data: {
+        backend: "wgp",
+        route_key: routeKey,
+        supports_route: true,
+        supports_missing_selector: true,
+        capability_version: 1,
+        enabled: true,
+        expires_at: null,
+        min_worker_version: null,
+      },
+      error: null,
+    }),
+  };
+}
+
 function createTaskTableChain(taskResponses: Array<{ type: 'insert' | 'lookup'; value: unknown }>) {
   let index = 0;
 
@@ -146,6 +176,7 @@ describe('create-task resolver dispatch', () => {
         value: { data: { id: 'task-created-1' }, error: null },
       },
     ]);
+    const routeLookups = createRouteLookupChains("image_upscale");
 
     mocks.getTaskFamilyResolver.mockReturnValue(
       vi.fn().mockResolvedValue({
@@ -163,12 +194,14 @@ describe('create-task resolver dispatch', () => {
     mocks.bootstrapEdgeHandler.mockResolvedValue({
       ok: true,
       value: {
-        supabaseAdmin: {
-          from: vi.fn().mockImplementation((table: string) => {
-            if (table === 'tasks') return { insert: tasks.insert };
-            if (table === 'projects') return createProjectsLookupChain({ user_id: 'user-1', aspect_ratio: '16:9' });
-            throw new Error(`Unexpected table: ${table}`);
-          }),
+          supabaseAdmin: {
+            from: vi.fn().mockImplementation((table: string) => {
+              if (table === 'tasks') return { insert: tasks.insert };
+              if (table === 'projects') return createProjectsLookupChain({ user_id: 'user-1', aspect_ratio: '16:9' });
+              if (table === 'route_backend_selectors') return routeLookups.selectors;
+              if (table === 'route_backend_capabilities') return routeLookups.capabilities;
+              throw new Error(`Unexpected table: ${table}`);
+            }),
         },
         logger,
         auth: { isServiceRole: false, isJwtAuth: true, userId: 'user-1' },
@@ -212,6 +245,7 @@ describe('create-task resolver dispatch', () => {
         value: { data: { id: 'task-created-2' }, error: null },
       },
     ]);
+    const routeLookups = createRouteLookupChains("z_image_turbo_i2i");
 
     mocks.getTaskFamilyResolver.mockReturnValue(
       vi.fn().mockResolvedValue({
@@ -235,17 +269,19 @@ describe('create-task resolver dispatch', () => {
     mocks.bootstrapEdgeHandler.mockResolvedValue({
       ok: true,
       value: {
-        supabaseAdmin: {
-          from: vi.fn().mockImplementation((table: string) => {
-            if (table === 'tasks') {
-              return {
-                insert: tasks.insert,
-                select: tasks.select,
-              };
-            }
-            if (table === 'projects') return createProjectsLookupChain({ aspect_ratio: '16:9' });
-            throw new Error(`Unexpected table: ${table}`);
-          }),
+          supabaseAdmin: {
+            from: vi.fn().mockImplementation((table: string) => {
+              if (table === 'tasks') {
+                return {
+                  insert: tasks.insert,
+                  select: tasks.select,
+                };
+              }
+              if (table === 'projects') return createProjectsLookupChain({ aspect_ratio: '16:9' });
+              if (table === 'route_backend_selectors') return routeLookups.selectors;
+              if (table === 'route_backend_capabilities') return routeLookups.capabilities;
+              throw new Error(`Unexpected table: ${table}`);
+            }),
         },
         logger,
         auth: { isServiceRole: true, userId: null },

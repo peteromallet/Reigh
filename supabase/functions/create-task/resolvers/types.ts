@@ -18,6 +18,11 @@ export interface TaskInsertObject {
   params: Record<string, unknown>;
   project_id: string;
   result_data?: Record<string, unknown> | null;
+  route_key?: string | null;
+  route_selection_snapshot?: Record<string, unknown> | null;
+  selected_backend?: "wgp" | "vibecomfy" | null;
+  selector_namespace?: string | null;
+  selector_version?: number | string | null;
   status?: TaskStatus;
   task_type: string;
   updated_at?: string | null;
