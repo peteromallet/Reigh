@@ -81,11 +81,32 @@ describe('claim-next-task edge entrypoint', () => {
   });
 
   it('returns claimed task for PAT user', async () => {
+    const routeContract = {
+      selector_namespace: 'production',
+      route_key: 'image_generation',
+      selected_backend: 'wgp',
+      selector_version: null,
+      selected_profile: 'default',
+      selected_template_id: null,
+      route_run_id: null,
+      worker_contract_version: 1,
+      route_selection_snapshot: {
+        selector_namespace: 'production',
+        route_key: 'image_generation',
+        selected_backend: 'wgp',
+        selector_version: null,
+        support_state: 'vibecomfy_unsupported',
+        template_id: null,
+        selected_profile: 'default',
+        route_run_id: null,
+        worker_contract_version: 1,
+      },
+    };
     mocks.rpc.mockResolvedValue({
       data: [
         {
           task_id: 'task-42',
-          params: { prompt: 'hello' },
+          params: { prompt: 'hello', route_contract: routeContract },
           task_type: 'image_generation',
           project_id: 'project-7',
         },
@@ -97,11 +118,15 @@ describe('claim-next-task edge entrypoint', () => {
     const response = await handler(new Request('https://edge.test/claim-next-task', { method: 'POST' }));
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({
+    await expect(response.json()).resolves.toMatchObject({
       task_id: 'task-42',
-      params: { prompt: 'hello' },
+      params: { prompt: 'hello', route_contract: routeContract },
       task_type: 'image_generation',
       project_id: 'project-7',
+      selected_backend: 'wgp',
+      selector_namespace: 'production',
+      route_key: 'image_generation',
+      claim_decision_reason: 'eligible',
     });
     expect(mocks.loggerSetDefaultTaskId).toHaveBeenCalledWith('task-42');
   });
@@ -137,12 +162,21 @@ describe('claim-next-task edge entrypoint', () => {
       p_max_task_wait_minutes: 5,
       p_worker_pool: null,
       p_task_types: null,
+      p_worker_backend: 'wgp',
+      p_worker_profile: 'default',
+      p_selector_namespace: 'production',
+      p_selector_version: null,
+      p_worker_contract_version: 1,
     });
-    await expect(response.json()).resolves.toEqual({
+    await expect(response.json()).resolves.toMatchObject({
       task_id: 'task-service',
       params: {},
       task_type: 'video_generation',
       project_id: 'project-service',
+      selected_backend: 'wgp',
+      selector_namespace: 'production',
+      route_key: 'video_generation',
+      claim_decision_reason: 'eligible',
     });
   });
 
@@ -181,12 +215,21 @@ describe('claim-next-task edge entrypoint', () => {
       p_max_task_wait_minutes: 3,
       p_worker_pool: null,
       p_task_types: null,
+      p_worker_backend: 'wgp',
+      p_worker_profile: 'default',
+      p_selector_namespace: 'production',
+      p_selector_version: null,
+      p_worker_contract_version: 1,
     });
-    await expect(response.json()).resolves.toEqual({
+    await expect(response.json()).resolves.toMatchObject({
       task_id: 'task-service-2',
       params: {},
       task_type: 'video_generation',
       project_id: 'project-service-2',
+      selected_backend: 'wgp',
+      selector_namespace: 'production',
+      route_key: 'video_generation',
+      claim_decision_reason: 'eligible',
     });
   });
 
@@ -229,12 +272,18 @@ describe('claim-next-task edge entrypoint', () => {
       p_max_task_wait_minutes: 5,
       p_worker_pool: 'banodoco',
       p_task_types: ['banodoco_timeline_generate', 'banodoco_render_timeline'],
+      p_worker_backend: 'wgp',
+      p_worker_profile: 'default',
+      p_selector_namespace: 'production',
+      p_selector_version: null,
+      p_worker_contract_version: 1,
     });
-    await expect(response.json()).resolves.toEqual({
+    await expect(response.json()).resolves.toMatchObject({
       task_id: 'task-banodoco-1',
       params: { foo: 'bar' },
       task_type: 'banodoco_timeline_generate',
       project_id: 'project-banodoco',
+      selected_backend: 'wgp',
     });
   });
 
@@ -320,6 +369,37 @@ describe('claim-next-task edge entrypoint', () => {
       p_run_type: 'gpu',
       p_worker_pool: null,
       p_task_types: null,
+    }));
+  });
+
+  it('forwards route contract fields and returns no claim for incompatible pools', async () => {
+    mocks.withEdgeRequest.mockImplementation(
+      async (_req: Request, _opts: unknown, handler: (ctx: unknown) => Promise<Response>) => {
+        return handler(createContext({
+          worker_id: 'worker-canary-vibe',
+          run_type: 'gpu',
+          worker_backend: 'vibecomfy',
+          worker_profile: '3',
+          selector_namespace: 'canary',
+          selector_version: '42',
+          worker_contract_version: 2,
+        }, { userId: null, isServiceRole: true }));
+      },
+    );
+
+    mocks.rpc.mockResolvedValue({ data: [], error: null });
+
+    const handler = await loadHandler();
+    const response = await handler(new Request('https://edge.test/claim-next-task', { method: 'POST' }));
+
+    expect(response.status).toBe(204);
+    expect(mocks.rpc).toHaveBeenCalledWith('claim_next_task_service_role', expect.objectContaining({
+      p_worker_id: 'worker-canary-vibe',
+      p_worker_backend: 'vibecomfy',
+      p_worker_profile: '3',
+      p_selector_namespace: 'canary',
+      p_selector_version: '42',
+      p_worker_contract_version: 2,
     }));
   });
 });

@@ -13,6 +13,7 @@ import { getTaskFamilyResolver } from "./resolvers/registry.ts";
 import { createWorkerPassthroughResolver } from "./resolvers/workerPassthrough.ts";
 import { TaskValidationError } from "./resolvers/shared/validation.ts";
 import type { MaterializedInputRecord, ResolveRequest } from "./resolvers/types.ts";
+import { stampTaskRouteContract } from "./routeContract.ts";
 
 function createErrorResponse(
   message: string,
@@ -499,9 +500,10 @@ serve(async (req) => {
       return createErrorResponse("Resolver did not return any tasks", 500, "invalid_resolver_result");
     }
 
-    const insertObjects = materializedInputs
+    const resolvedInsertObjects = materializedInputs
       ? resolverResult.tasks.map((task) => ({ ...task, materialized_inputs: materializedInputs }))
       : resolverResult.tasks;
+    const insertObjects = resolvedInsertObjects.map((task) => stampTaskRouteContract(task));
     const responseMeta = resolverResult.meta;
 
     const createdTaskIds: string[] = [];

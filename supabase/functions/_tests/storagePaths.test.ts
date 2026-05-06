@@ -36,7 +36,7 @@ describe("storagePaths", () => {
   it("builds user-namespaced storage paths", () => {
     expect(storagePaths.upload("user-1", "file.png")).toBe("user-1/uploads/file.png");
     expect(storagePaths.thumbnail("user-1", "thumb.jpg")).toBe("user-1/thumbnails/thumb.jpg");
-    expect(storagePaths.taskOutput("user-1", "task-1", "output.mp4")).toBe("user-1/tasks/task-1/output.mp4");
+    expect(storagePaths.taskOutput("user-1", "task-1", "output.mp4")).toBe("user-1/tasks/task-1/final/output.mp4");
     expect(storagePaths.taskThumbnail("user-1", "task-1", "thumb.jpg")).toBe(
       "user-1/tasks/task-1/thumbnails/thumb.jpg",
     );

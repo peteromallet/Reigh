@@ -1,6 +1,7 @@
 // deno-lint-ignore-file
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { withEdgeRequest } from "../_shared/edgeHandler.ts";
+import { parseWorkerRouteRequest, readRouteContractFromParams } from "../_shared/routeContract.ts";
 
 /**
  * Edge function: claim-next-task
@@ -77,6 +78,7 @@ serve((req) => {
     ? rawMaxWait
     : 5;
   const debug = requestBody.debug === true;
+  const routeRequest = parseWorkerRouteRequest(requestBody);
 
   const isServiceRole = auth!.isServiceRole;
   const callerId = auth!.userId;
@@ -86,6 +88,11 @@ serve((req) => {
       worker_id: workerId,
       run_type: runType,
       worker_pool: workerPool,
+      worker_backend: routeRequest.worker_backend,
+      worker_profile: routeRequest.worker_profile,
+      selector_namespace: routeRequest.selector_namespace,
+      selector_version: routeRequest.selector_version,
+      worker_contract_version: routeRequest.worker_contract_version,
     });
   } else {
     logger.info("Authenticated via PAT", { user_id: callerId });
@@ -124,6 +131,11 @@ serve((req) => {
           p_max_task_wait_minutes: maxTaskWaitMinutes,
           p_worker_pool: workerPool,
           p_task_types: taskTypesFilter,
+          p_worker_backend: routeRequest.worker_backend,
+          p_worker_profile: routeRequest.worker_profile,
+          p_selector_namespace: routeRequest.selector_namespace,
+          p_selector_version: routeRequest.selector_version,
+          p_worker_contract_version: routeRequest.worker_contract_version,
         });
 
       claimResult = rpcResponse.data;
@@ -179,6 +191,7 @@ serve((req) => {
     }
 
     const task = claimResult[0];
+    const routeContract = readRouteContractFromParams(task.task_type, task.params, task.task_id);
 
     // Now we have a task_id - set it for this log entry
     logger.setDefaultTaskId(task.task_id);
@@ -186,14 +199,32 @@ serve((req) => {
       task_id: task.task_id,
       task_type: task.task_type,
       worker_id: workerId,
-      project_id: task.project_id
+      project_id: task.project_id,
+      route_key: task.route_key ?? routeContract?.route_key,
+      selected_backend: task.selected_backend ?? routeContract?.selected_backend,
+      selector_namespace: task.selector_namespace ?? routeContract?.selector_namespace,
+      selector_version: task.selector_version ?? routeContract?.selector_version,
     });
 
     return new Response(JSON.stringify({
       task_id: task.task_id,
       params: task.params,
       task_type: task.task_type,
-      project_id: task.project_id
+      project_id: task.project_id,
+      selector_namespace: task.selector_namespace ?? routeContract?.selector_namespace,
+      route_key: task.route_key ?? routeContract?.route_key,
+      selected_backend: task.selected_backend ?? routeContract?.selected_backend,
+      selector_version: task.selector_version ?? routeContract?.selector_version,
+      selected_profile: task.selected_profile ?? routeContract?.selected_profile,
+      selected_template_id: task.selected_template_id ?? routeContract?.selected_template_id,
+      route_run_id: task.route_run_id ?? routeContract?.route_run_id,
+      worker_contract_version: task.worker_contract_version ?? routeContract?.worker_contract_version,
+      claimed_backend: routeRequest.worker_backend,
+      claimed_selector_namespace: routeRequest.selector_namespace,
+      claimed_route_key: task.route_key ?? routeContract?.route_key,
+      claimed_selector_version: routeRequest.selector_version,
+      claimed_capability_version: routeRequest.worker_contract_version,
+      claim_decision_reason: task.claim_decision_reason ?? "eligible",
     }), {
       status: 200,
       headers: { "Content-Type": "application/json" }
@@ -253,6 +284,7 @@ serve((req) => {
     }
 
     const task = claimResult[0];
+    const routeContract = readRouteContractFromParams(task.task_type, task.params, task.task_id);
 
     // Now we have a task_id - set it for this log entry
     logger.setDefaultTaskId(task.task_id);
@@ -267,7 +299,21 @@ serve((req) => {
       task_id: task.task_id,
       params: task.params,
       task_type: task.task_type,
-      project_id: task.project_id
+      project_id: task.project_id,
+      selector_namespace: routeContract?.selector_namespace,
+      route_key: routeContract?.route_key,
+      selected_backend: routeContract?.selected_backend,
+      selector_version: routeContract?.selector_version,
+      selected_profile: routeContract?.selected_profile,
+      selected_template_id: routeContract?.selected_template_id,
+      route_run_id: routeContract?.route_run_id,
+      worker_contract_version: routeContract?.worker_contract_version,
+      claimed_backend: routeContract?.selected_backend,
+      claimed_selector_namespace: routeContract?.selector_namespace,
+      claimed_route_key: routeContract?.route_key,
+      claimed_selector_version: routeContract?.selector_version,
+      claimed_capability_version: routeContract?.worker_contract_version,
+      claim_decision_reason: routeContract ? "eligible" : "missing_or_malformed_route_contract",
     }), {
       status: 200,
       headers: { "Content-Type": "application/json" }

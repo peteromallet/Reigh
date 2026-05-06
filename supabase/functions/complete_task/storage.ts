@@ -5,7 +5,7 @@
 
 import { getContentType } from './params.ts';
 import type { ParsedRequest } from './request.ts';
-import { storagePaths, MEDIA_BUCKET } from '../_shared/storagePaths.ts';
+import { buildArtifactLifecycleMetadata, storagePaths, MEDIA_BUCKET } from '../_shared/storagePaths.ts';
 
 // ===== TYPES =====
 
@@ -15,7 +15,11 @@ interface StorageBucket {
     path?: string,
     options?: { limit?: number; offset?: number; search?: string },
   ): Promise<{ data: Array<{ name: string }> | null; error: { message: string } | null }>;
-  upload(path: string, data: unknown, options: { contentType: string; upsert: boolean }): Promise<{ error: { message: string } | null }>;
+  upload(
+    path: string,
+    data: unknown,
+    options: { contentType: string; upsert: boolean; metadata?: Record<string, unknown> },
+  ): Promise<{ error: { message: string } | null }>;
   remove(paths: string[]): Promise<{ error: { message: string } | null }>;
 }
 
@@ -59,14 +63,19 @@ export async function handleStorageOperations(
   } else {
     // MODE 1: Upload file from base64
     const effectiveContentType = parsedRequest.fileContentType || getContentType(parsedRequest.filename);
-    // Use standardized task output path: {userId}/tasks/{taskId}/{filename}
+    // Use canonical artifact path: {userId}/tasks/{taskId}/final/{filename}
     objectPath = storagePaths.taskOutput(userId, parsedRequest.taskId, parsedRequest.filename);
 
     const { error: uploadError } = await supabase.storage
       .from(MEDIA_BUCKET)
       .upload(objectPath, parsedRequest.fileData as unknown, {
         contentType: effectiveContentType,
-        upsert: true
+        upsert: true,
+        metadata: buildArtifactLifecycleMetadata({
+          artifactClass: 'final',
+          taskId: parsedRequest.taskId,
+          contentType: effectiveContentType,
+        }),
       });
 
     if (uploadError) {
@@ -104,13 +113,18 @@ async function handleThumbnail(
   // If thumbnail was provided, upload it
   if (parsedRequest.thumbnailData && parsedRequest.thumbnailFilename) {
     try {
-      // Use standardized task thumbnail path: {userId}/tasks/{taskId}/thumbnails/{filename}
+      // Use canonical thumbnail artifact path: {userId}/tasks/{taskId}/thumbnails/{filename}
       const thumbnailPath = storagePaths.taskThumbnail(userId, taskId, parsedRequest.thumbnailFilename);
       const { error: thumbnailUploadError } = await supabase.storage
         .from(MEDIA_BUCKET)
         .upload(thumbnailPath, parsedRequest.thumbnailData as unknown, {
           contentType: parsedRequest.thumbnailContentType || getContentType(parsedRequest.thumbnailFilename),
-          upsert: true
+          upsert: true,
+          metadata: buildArtifactLifecycleMetadata({
+            artifactClass: 'thumbnail',
+            taskId,
+            contentType: parsedRequest.thumbnailContentType || getContentType(parsedRequest.thumbnailFilename),
+          }),
         });
 
       if (thumbnailUploadError) {

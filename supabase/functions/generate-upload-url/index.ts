@@ -3,7 +3,13 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { withEdgeRequest } from "../_shared/edgeHandler.ts";
 import { jsonResponse } from "../_shared/http.ts";
 import { ensureTaskActor, normalizeTaskId } from "../_shared/requestGuards.ts";
-import { MEDIA_BUCKET, storagePaths } from "../_shared/storagePaths.ts";
+import {
+  buildArtifactLifecycleMetadata,
+  MEDIA_BUCKET,
+  normalizeArtifactClass,
+  storagePaths,
+  type ArtifactLifecycleMetadata,
+} from "../_shared/storagePaths.ts";
 import { resolveTaskStorageActor } from "../_shared/taskActorPolicy.ts";
 
 interface GenerateUploadUrlBody extends Record<string, unknown> {
@@ -11,6 +17,7 @@ interface GenerateUploadUrlBody extends Record<string, unknown> {
   filename?: string;
   content_type?: string;
   generate_thumbnail_url?: boolean;
+  artifact_class?: string;
 }
 
 interface UploadUrlResponse {
@@ -18,9 +25,12 @@ interface UploadUrlResponse {
   storage_path: string;
   token: string;
   expires_at: string;
+  artifact_class: string;
+  artifact_metadata: ArtifactLifecycleMetadata;
   thumbnail_upload_url?: string;
   thumbnail_storage_path?: string;
   thumbnail_token?: string;
+  thumbnail_artifact_metadata?: ArtifactLifecycleMetadata;
 }
 
 serve((req) => {
@@ -47,6 +57,7 @@ serve((req) => {
   const filename = typeof body.filename === 'string' ? body.filename : '';
   const contentType = typeof body.content_type === 'string' ? body.content_type : '';
   const generateThumbnailUrl = body.generate_thumbnail_url === true;
+  const artifactClass = normalizeArtifactClass(body.artifact_class);
 
   if (!taskIdString || !filename || !contentType) {
     logger.error("Missing required fields", {
@@ -76,7 +87,12 @@ serve((req) => {
   }
   const userId = taskActor.value.taskUserId;
 
-  const taskStoragePath = storagePaths.taskOutput(userId, taskIdString, filename);
+  const taskStoragePath = storagePaths.artifact(userId, taskIdString, artifactClass, filename);
+  const artifactMetadata = buildArtifactLifecycleMetadata({
+    artifactClass,
+    taskId: taskIdString,
+    contentType,
+  });
   logger.debug("Generating signed upload URL", { storage_path: taskStoragePath });
 
   const { data: signedData, error: signedError } = await supabaseAdmin.storage
@@ -93,11 +109,18 @@ serve((req) => {
     storage_path: taskStoragePath,
     token: signedData.token,
     expires_at: new Date(Date.now() + 3600000).toISOString(),
+    artifact_class: artifactClass,
+    artifact_metadata: artifactMetadata,
   };
 
   if (generateThumbnailUrl) {
     const thumbnailFilename = `thumb_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.jpg`;
-    const thumbnailPath = storagePaths.taskThumbnail(userId, taskIdString, thumbnailFilename);
+    const thumbnailPath = storagePaths.artifact(userId, taskIdString, 'thumbnail', thumbnailFilename);
+    const thumbnailMetadata = buildArtifactLifecycleMetadata({
+      artifactClass: 'thumbnail',
+      taskId: taskIdString,
+      contentType: 'image/jpeg',
+    });
     logger.debug("Generating thumbnail upload URL", { thumbnail_path: thumbnailPath });
 
     const { data: thumbSignedData, error: thumbSignedError } = await supabaseAdmin.storage
@@ -110,6 +133,7 @@ serve((req) => {
       response.thumbnail_upload_url = thumbSignedData.signedUrl;
       response.thumbnail_storage_path = thumbnailPath;
       response.thumbnail_token = thumbSignedData.token;
+      response.thumbnail_artifact_metadata = thumbnailMetadata;
     }
   }
 

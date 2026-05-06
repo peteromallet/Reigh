@@ -232,6 +232,17 @@ describe('create-task edge entrypoint', () => {
       status: 'Task queued',
     });
     expect(mocks.enforceRateLimit).not.toHaveBeenCalled();
+    expect(taskInsert.insert).toHaveBeenCalledWith(expect.objectContaining({
+      params: expect.objectContaining({
+        image_url: 'https://example.com/source.png',
+        route_contract: expect.objectContaining({
+          selector_namespace: 'production',
+          route_key: 'image_upscale',
+          selected_backend: 'wgp',
+          worker_contract_version: 1,
+        }),
+      }),
+    }));
     expect(logger.setDefaultTaskId).toHaveBeenCalledWith('task-created-1');
     expect(logger.flush).toHaveBeenCalled();
   });

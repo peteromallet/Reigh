@@ -7,6 +7,11 @@ import {
   parseTaskAvailabilityAnalysis,
   parseUserCapacityStatsRows,
 } from "../_shared/rpcDecoders.ts";
+import {
+  addRouteDemand,
+  parseWorkerRouteRequest,
+  readRouteContractFromParams,
+} from "../_shared/routeContract.ts";
 
 type RunType = 'gpu' | 'api';
 
@@ -136,6 +141,7 @@ serve(async (req) => {
   const { supabaseAdmin, logger, auth, body: requestBody } = bootstrap.value;
   const requestedRunType = parseRunType(requestBody); // 'gpu', 'api', or null (no filtering)
   const debug = parseDebug(requestBody); // Enable verbose logging
+  const routeRequest = parseWorkerRouteRequest(requestBody);
 
   const startTime = Date.now();
 
@@ -252,6 +258,7 @@ serve(async (req) => {
           .select(`
             id,
             task_type,
+            params,
             created_at,
             dependant_on,
             projects!inner(user_id, users!inner(credits, settings))
@@ -264,6 +271,7 @@ serve(async (req) => {
           .select(`
             id,
             task_type,
+            params,
             worker_id,
             updated_at,
             projects!inner(user_id, users!inner(credits, settings))
@@ -293,6 +301,8 @@ serve(async (req) => {
 
       // Filter queued tasks to match RPC criteria (only claimable tasks)
       // Criteria: not orchestrator, credits > 0, allows_cloud, deps complete, user not at capacity
+      const routeDemand = new Map();
+
       const queued_tasks = (queuedResult.data || [])
         .filter(task => {
           // Exclude orchestrator tasks
@@ -306,7 +316,14 @@ serve(async (req) => {
           if (!allDependenciesComplete(task.dependant_on, completedDepIds)) return false;
           // Exclude users at capacity (5+ in progress)
           const userInProgress = userInProgressMap.get(task.projects.user_id) ?? 0;
-          if (userInProgress >= 5) return false;
+          if (userInProgress >= 5) {
+            addRouteDemand(
+              routeDemand,
+              readRouteContractFromParams(task.task_type, task.params, task.id),
+              "blocked_by_capacity",
+            );
+            return false;
+          }
           // Apply run_type filter if specified
           if (appliedRunType && taskTypeRunTypeMap) {
             const taskRunType = taskTypeRunTypeMap.get(task.task_type);
@@ -314,12 +331,17 @@ serve(async (req) => {
           }
           return true;
         })
-        .map(task => ({
-          task_id: task.id,
-          task_type: task.task_type,
-          user_id: task.projects.user_id,
-          created_at: task.created_at
-        }));
+        .map(task => {
+          const route_contract = readRouteContractFromParams(task.task_type, task.params, task.id);
+          addRouteDemand(routeDemand, route_contract, "queued_only");
+          return {
+            task_id: task.id,
+            task_type: task.task_type,
+            user_id: task.projects.user_id,
+            created_at: task.created_at,
+            route_contract,
+          };
+        });
 
       // Filter active tasks (orchestrator, credits, run_type, api-worker exclusion)
       const active_tasks = (activeResult.data || [])
@@ -333,13 +355,20 @@ serve(async (req) => {
           }
           return true;
         })
-        .map(task => ({
-          task_id: task.id,
-          task_type: task.task_type,
-          worker_id: task.worker_id,
-          user_id: task.projects.user_id,
-          started_at: task.updated_at
-        }));
+        .map(task => {
+          const route_contract = readRouteContractFromParams(task.task_type, task.params, task.id);
+          addRouteDemand(routeDemand, route_contract, "active_only");
+          return {
+            task_id: task.id,
+            task_type: task.task_type,
+            worker_id: task.worker_id,
+            user_id: task.projects.user_id,
+            started_at: task.updated_at,
+            route_contract,
+          };
+        });
+
+      const route_totals = Array.from(routeDemand.values());
 
       // Debug logging (only when debug=true)
       if (debug) {
@@ -368,6 +397,7 @@ serve(async (req) => {
         timestamp: new Date().toISOString(),
         run_type_filter_requested: requestedRunType,
         run_type_filter: appliedRunType,
+        route_filter: routeRequest,
         totals: {
           // Core counts (capacity-limited, for claim logic)
           queued_only,              // Immediately claimable (capacity-limited)
@@ -379,6 +409,7 @@ serve(async (req) => {
           blocked_by_settings,      // User has cloud disabled (won't become claimable)
           potentially_claimable     // queued_only + blocked_by_capacity (for scaling)
         },
+        route_totals,
         queued_tasks,
         active_tasks,
         users: user_stats,
@@ -439,20 +470,21 @@ serve(async (req) => {
 
       let queued_tasks: unknown[] = [];
       let active_tasks: unknown[] = [];
+      let route_totals: unknown[] = [];
 
       if (projectIds.length > 0) {
         // Fetch task details (parallel)
         const [queuedResult, activeResult] = await Promise.all([
           supabaseAdmin
             .from('tasks')
-            .select('id, task_type, created_at, project_id, dependant_on')
+            .select('id, task_type, params, created_at, project_id, dependant_on')
             .eq('status', 'Queued')
             .in('project_id', projectIds)
             .order('created_at', { ascending: true })
             .limit(50),
           supabaseAdmin
             .from('tasks')
-            .select('id, task_type, worker_id, updated_at, project_id')
+            .select('id, task_type, params, worker_id, updated_at, project_id')
             .eq('status', 'In Progress')
             .in('project_id', projectIds)
             .not('worker_id', 'is', null)
@@ -478,28 +510,51 @@ serve(async (req) => {
         }
 
         // Filter and format queued tasks
+        const routeDemand = new Map();
+
         queued_tasks = (queuedResult.data || [])
-          .filter(task => !isOrchestratorTask(task.task_type))
-          .filter(() => userHasCredits)
-          .filter(() => userHasCapacity)
-          .filter(task => allDependenciesComplete(task.dependant_on, completedDepIds))
-          .map(task => ({
-            task_id: task.id,
-            task_type: task.task_type,
-            user_id: callerId,
-            created_at: task.created_at
-          }));
+          .filter(task => {
+            if (isOrchestratorTask(task.task_type)) return false;
+            if (!userHasCredits) return false;
+            if (!allDependenciesComplete(task.dependant_on, completedDepIds)) return false;
+            if (!userHasCapacity) {
+              addRouteDemand(
+                routeDemand,
+                readRouteContractFromParams(task.task_type, task.params, task.id),
+                "blocked_by_capacity",
+              );
+              return false;
+            }
+            return true;
+          })
+          .map(task => {
+            const route_contract = readRouteContractFromParams(task.task_type, task.params, task.id);
+            addRouteDemand(routeDemand, route_contract, "queued_only");
+            return {
+              task_id: task.id,
+              task_type: task.task_type,
+              user_id: callerId,
+              created_at: task.created_at,
+              route_contract,
+            };
+          });
 
         // Filter and format active tasks
         active_tasks = (activeResult.data || [])
           .filter(task => !isOrchestratorTask(task.task_type))
-          .map(task => ({
-            task_id: task.id,
-            task_type: task.task_type,
-            worker_id: task.worker_id,
-            user_id: callerId,
-            started_at: task.updated_at
-          }));
+          .map(task => {
+            const route_contract = readRouteContractFromParams(task.task_type, task.params, task.id);
+            addRouteDemand(routeDemand, route_contract, "active_only");
+            return {
+              task_id: task.id,
+              task_type: task.task_type,
+              worker_id: task.worker_id,
+              user_id: callerId,
+              started_at: task.updated_at,
+              route_contract,
+            };
+          });
+        route_totals = Array.from(routeDemand.values());
       }
 
       if (debug) {
@@ -514,12 +569,14 @@ serve(async (req) => {
         user_id: callerId,
         run_type_filter_requested: requestedRunType,
         run_type_filter: appliedRunType,
+        route_filter: routeRequest,
         totals: {
           queued_only,
           active_only,
           queued_plus_active,
           eligible_queued
         },
+        route_totals,
         queued_tasks,
         active_tasks,
         user_info,

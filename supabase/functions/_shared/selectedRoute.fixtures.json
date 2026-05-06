@@ -1,0 +1,114 @@
+[
+  {
+    "name": "vibecomfy z-image direct route",
+    "input": {
+      "task_type": "z_image_turbo",
+      "task_id": "task-z",
+      "backend": "vibecomfy",
+      "selector_namespace": "staging",
+      "selector_version": 42,
+      "profile": "3",
+      "run_id": "run-z",
+      "worker_contract_version": 1,
+      "params": {
+        "prompt": "fixture",
+        "resolution": "1024x1024",
+        "override_profile": "3"
+      }
+    },
+    "expected": {
+      "selector_namespace": "staging",
+      "route_key": "z_image_turbo",
+      "selected_backend": "vibecomfy",
+      "selector_version": 42,
+      "selected_profile": "3",
+      "selected_template_id": "image/z_image",
+      "route_run_id": "run-z",
+      "worker_contract_version": 1,
+      "route_selection_snapshot": {
+        "selector_namespace": "staging",
+        "route_key": "z_image_turbo",
+        "selected_backend": "vibecomfy",
+        "selector_version": 42,
+        "support_state": "vibecomfy_supported",
+        "template_id": "image/z_image",
+        "selected_profile": "3",
+        "route_run_id": "run-z",
+        "worker_contract_version": 1,
+        "task_id": "task-z"
+      }
+    }
+  },
+  {
+    "name": "wgp join child dimensional route",
+    "input": {
+      "task_type": "join_clips_segment",
+      "task_id": "child-1",
+      "backend": "wgp",
+      "selector_namespace": "production",
+      "selector_version": 12,
+      "parent_route_key": "join_clips_orchestrator",
+      "run_id": "join-run",
+      "params": {
+        "model": "wan_2_2_vace_lightning_baseline_2_2_2",
+        "model_family": "wan22_vace",
+        "guidance_kind": "vace",
+        "continuity_case": "join_bridge",
+        "wgp_profile": "default"
+      }
+    },
+    "expected": {
+      "selector_namespace": "production",
+      "route_key": "join_clips_segment__model-wan22_vace__guidance-vace__continuity-join_bridge__profile-default",
+      "selected_backend": "wgp",
+      "selector_version": 12,
+      "selected_profile": "default",
+      "selected_template_id": null,
+      "route_run_id": "join-run",
+      "worker_contract_version": 1,
+      "route_selection_snapshot": {
+        "selector_namespace": "production",
+        "route_key": "join_clips_segment__model-wan22_vace__guidance-vace__continuity-join_bridge__profile-default",
+        "selected_backend": "wgp",
+        "selector_version": 12,
+        "support_state": "vibecomfy_unsupported",
+        "template_id": null,
+        "selected_profile": "default",
+        "route_run_id": "join-run",
+        "worker_contract_version": 1,
+        "task_id": "child-1",
+        "parent_route_key": "join_clips_orchestrator"
+      }
+    }
+  },
+  {
+    "name": "legacy unknown route defaults",
+    "input": {
+      "task_type": "legacy_custom_task",
+      "selector_namespace": "production",
+      "backend": "wgp",
+      "params": {}
+    },
+    "expected": {
+      "selector_namespace": "production",
+      "route_key": "legacy_custom_task",
+      "selected_backend": "wgp",
+      "selector_version": null,
+      "selected_profile": "default",
+      "selected_template_id": null,
+      "route_run_id": null,
+      "worker_contract_version": 1,
+      "route_selection_snapshot": {
+        "selector_namespace": "production",
+        "route_key": "legacy_custom_task",
+        "selected_backend": "wgp",
+        "selector_version": null,
+        "support_state": "vibecomfy_unsupported",
+        "template_id": null,
+        "selected_profile": "default",
+        "route_run_id": null,
+        "worker_contract_version": 1
+      }
+    }
+  }
+]

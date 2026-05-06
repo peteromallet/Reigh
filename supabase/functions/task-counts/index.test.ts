@@ -92,6 +92,29 @@ function createUserSupabase() {
       {
         id: 'queued-eligible',
         task_type: 'image_generation',
+        params: {
+          route_contract: {
+            selector_namespace: 'production',
+            route_key: 'image_generation',
+            selected_backend: 'wgp',
+            selector_version: null,
+            selected_profile: 'default',
+            selected_template_id: null,
+            route_run_id: null,
+            worker_contract_version: 1,
+            route_selection_snapshot: {
+              selector_namespace: 'production',
+              route_key: 'image_generation',
+              selected_backend: 'wgp',
+              selector_version: null,
+              support_state: 'vibecomfy_unsupported',
+              template_id: null,
+              selected_profile: 'default',
+              route_run_id: null,
+              worker_contract_version: 1,
+            },
+          },
+        },
         created_at: '2026-03-01T00:00:00.000Z',
         project_id: 'project-1',
         dependant_on: ['dep-complete'],
@@ -99,6 +122,7 @@ function createUserSupabase() {
       {
         id: 'queued-blocked',
         task_type: 'image_generation',
+        params: {},
         created_at: '2026-03-01T00:01:00.000Z',
         project_id: 'project-1',
         dependant_on: ['dep-pending'],
@@ -106,6 +130,7 @@ function createUserSupabase() {
       {
         id: 'queued-orchestrator',
         task_type: 'image_orchestrator',
+        params: {},
         created_at: '2026-03-01T00:02:00.000Z',
         project_id: 'project-1',
         dependant_on: null,
@@ -122,6 +147,7 @@ function createUserSupabase() {
       {
         id: 'active-1',
         task_type: 'image_generation',
+        params: {},
         worker_id: 'worker-1',
         updated_at: '2026-03-01T00:03:00.000Z',
         project_id: 'project-1',
@@ -289,12 +315,32 @@ describe('task-counts edge entrypoint', () => {
       eligible_queued: 2,
     });
     expect(payload.queued_tasks).toEqual([
-      {
+      expect.objectContaining({
         task_id: 'queued-eligible',
         task_type: 'image_generation',
         user_id: 'user-1',
         created_at: '2026-03-01T00:00:00.000Z',
-      },
+        route_contract: expect.objectContaining({
+          selected_backend: 'wgp',
+          selected_profile: 'default',
+          selector_namespace: 'production',
+          route_key: 'image_generation',
+          worker_contract_version: 1,
+        }),
+      }),
+    ]);
+    expect(payload.route_totals).toEqual([
+      expect.objectContaining({
+        selected_backend: 'wgp',
+        selected_profile: 'default',
+        selector_namespace: 'production',
+        route_key: 'image_generation',
+        queued_only: 1,
+        active_only: 1,
+        queued_plus_active: 2,
+        blocked_by_capacity: 0,
+        potentially_claimable: 1,
+      }),
     ]);
     expect(payload.debug_summary).toEqual({
       at_capacity: false,

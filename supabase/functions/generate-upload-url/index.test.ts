@@ -83,6 +83,7 @@ describe('generate-upload-url edge entrypoint', () => {
             task_id: 'task-1',
             filename: 'video.mp4',
             content_type: 'video/mp4',
+            artifact_class: 'intermediate',
             generate_thumbnail_url: true,
           }),
         );
@@ -129,12 +130,29 @@ describe('generate-upload-url edge entrypoint', () => {
       expect.objectContaining({
         upload_url: 'https://upload.test/primary',
         token: 'token-primary',
+        artifact_class: 'intermediate',
         thumbnail_upload_url: 'https://upload.test/thumb',
         thumbnail_token: 'token-thumb',
       }),
     );
-    expect(payload.storage_path).toContain('/task-1/');
-    expect(payload.thumbnail_storage_path).toContain('/task-1/');
+    expect(payload.storage_path).toBe('task-user-1/tasks/task-1/intermediates/video.mp4');
+    expect(payload.thumbnail_storage_path).toContain('/task-1/thumbnails/');
+    expect(payload.artifact_metadata).toEqual(
+      expect.objectContaining({
+        artifact_class: 'intermediate',
+        task_id: 'task-1',
+        content_type: 'video/mp4',
+        debug_retention: 'discard',
+        redaction: 'redacted',
+      }),
+    );
+    expect(payload.thumbnail_artifact_metadata).toEqual(
+      expect.objectContaining({
+        artifact_class: 'thumbnail',
+        task_id: 'task-1',
+        content_type: 'image/jpeg',
+      }),
+    );
     expect(mocks.loggerSetDefaultTaskId).toHaveBeenCalledWith('task-1');
   });
 });
