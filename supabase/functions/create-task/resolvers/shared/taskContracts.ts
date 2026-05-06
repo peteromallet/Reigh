@@ -45,8 +45,10 @@ export interface TravelBetweenImagesReadContract {
   segment_frames_expanded?: number[];
   frame_overlap_expanded?: number[];
   continuation_config?: unknown;
+  chain_segments?: boolean;
   travel_guidance?: unknown;
   structure_guidance?: unknown;
+  structure_videos?: unknown;
 }
 
 interface OrchestrationContractInput {

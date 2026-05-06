@@ -21,8 +21,13 @@ export interface TaskInsertObject {
   route_key?: string | null;
   route_selection_snapshot?: Record<string, unknown> | null;
   selected_backend?: "wgp" | "vibecomfy" | null;
+  selected_profile?: string | null;
+  selected_template_id?: string | null;
   selector_namespace?: string | null;
   selector_version?: number | string | null;
+  support_state?: "wgp_only" | "vibecomfy_supported" | "vibecomfy_unsupported" | null;
+  route_run_id?: string | null;
+  worker_contract_version?: number | null;
   status?: TaskStatus;
   task_type: string;
   updated_at?: string | null;

@@ -36,6 +36,10 @@ interface IndividualTravelSegmentInput {
   num_frames?: number;
   frame_overlap_from_previous?: number;
   continuation_config?: Record<string, unknown>;
+  chain_segments?: boolean;
+  video_source?: string;
+  prefix_video_source?: string;
+  continuity_case?: string;
   seed?: number;
   random_seed?: boolean;
   amount_of_motion?: number;
@@ -63,6 +67,22 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 
 function asString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function appendTravelGuidancePayload(
+  target: Record<string, unknown>,
+  input: Pick<IndividualTravelSegmentInput, "travel_guidance" | "structure_guidance" | "structure_videos">,
+): void {
+  if (input.travel_guidance) {
+    target.travel_guidance = input.travel_guidance;
+    return;
+  }
+  if (input.structure_guidance) {
+    target.structure_guidance = input.structure_guidance;
+  }
+  if (input.structure_videos?.length) {
+    target.structure_videos = input.structure_videos;
+  }
 }
 
 function buildQueuedTask(
@@ -227,6 +247,7 @@ function buildIndividualTravelSegmentParams(
   } | undefined;
   const numInferenceSteps = input.num_inference_steps
     ?? (phaseConfig?.steps_per_phase?.reduce((sum, steps) => sum + steps, 0) ?? 6);
+  const chainSegments = input.chain_segments ?? Boolean(input.continuation_config);
   // Start from the original orchestrator_details (preserves pipeline layout fields
   // like segment_frames_expanded, frame_overlap_expanded, etc.) then override with
   // the user-editable fields. This way new fields added to the pipeline path don't
@@ -254,15 +275,18 @@ function buildIndividualTravelSegmentParams(
     parent_generation_id: parentGenerationId,
     fps_helpers: 16,
     ...(input.model_type ? { model_type: input.model_type } : {}),
-    independent_segments: !input.continuation_config,
-    chain_segments: Boolean(input.continuation_config),
+    independent_segments: !chainSegments,
+    chain_segments: chainSegments,
     ...(input.continuation_config ? { continuation_config: input.continuation_config } : {}),
-    ...(input.travel_guidance ? { travel_guidance: input.travel_guidance } : {}),
+    ...(input.video_source ? { video_source: input.video_source } : {}),
+    ...(input.prefix_video_source ? { prefix_video_source: input.prefix_video_source } : {}),
+    ...(input.continuity_case ? { continuity_case: input.continuity_case } : {}),
     ...(segmentLayout ? {
       segment_frames_expanded: segmentLayout.segmentFramesExpanded,
       frame_overlap_expanded: segmentLayout.frameOverlapExpanded,
     } : {}),
   };
+  appendTravelGuidancePayload(orchestratorDetails, input);
 
   const hasPairShotGenerationId = Boolean(
     input.pair_shot_generation_id || input.start_image_variant_id || input.end_image_variant_id,
@@ -293,7 +317,42 @@ function buildIndividualTravelSegmentParams(
     }),
   });
 
-  return {
+  const individualSegmentParams: Record<string, unknown> = {
+    input_image_paths_resolved: inputImages,
+    start_image_url: input.start_image_url,
+    ...(input.end_image_url ? { end_image_url: input.end_image_url } : {}),
+    base_prompt: input.base_prompt ?? "",
+    negative_prompt: input.negative_prompt ?? "",
+    num_frames: Math.min(input.num_frames ?? 49, 81),
+    seed_to_use: finalSeed,
+    random_seed: input.random_seed ?? false,
+    amount_of_motion: input.amount_of_motion ?? 0.5,
+    motion_mode: input.motion_mode ?? "basic",
+    advanced_mode: input.advanced_mode ?? false,
+    ...(input.frame_overlap_from_previous !== undefined
+      ? { frame_overlap_from_previous: input.frame_overlap_from_previous }
+      : {}),
+    additional_loras: additionalLoras,
+    after_first_post_generation_saturation: 1,
+    after_first_post_generation_brightness: 0,
+    ...(input.phase_config ? { phase_config: input.phase_config } : {}),
+    ...(input.continuation_config ? { continuation_config: input.continuation_config } : {}),
+    chain_segments: chainSegments,
+    independent_segments: !chainSegments,
+    ...(input.video_source ? { video_source: input.video_source } : {}),
+    ...(input.prefix_video_source ? { prefix_video_source: input.prefix_video_source } : {}),
+    ...(input.continuity_case ? { continuity_case: input.continuity_case } : {}),
+    ...(input.start_image_generation_id ? { start_image_generation_id: input.start_image_generation_id } : {}),
+    ...(input.end_image_generation_id ? { end_image_generation_id: input.end_image_generation_id } : {}),
+    ...(input.pair_shot_generation_id ? { pair_shot_generation_id: input.pair_shot_generation_id } : {}),
+    ...(input.start_image_variant_id ? { start_image_variant_id: input.start_image_variant_id } : {}),
+    ...(input.end_image_variant_id ? { end_image_variant_id: input.end_image_variant_id } : {}),
+    ...(input.enhanced_prompt ? { enhanced_prompt: input.enhanced_prompt } : {}),
+    ...(input.selected_phase_preset_id ? { selected_phase_preset_id: input.selected_phase_preset_id } : {}),
+  };
+  appendTravelGuidancePayload(individualSegmentParams, input);
+
+  const topLevelParams: Record<string, unknown> = {
     flow_shift: phaseConfig?.flow_shift ?? 5,
     lora_names: [],
     model_name: input.model_name ?? "wan_2_2_i2v_lightning_baseline_2_2_2",
@@ -349,42 +408,21 @@ function buildIndividualTravelSegmentParams(
     motion_mode: input.motion_mode ?? "basic",
     ...(input.enhanced_prompt ? { enhanced_prompt: input.enhanced_prompt } : {}),
     ...(input.continuation_config ? { continuation_config: input.continuation_config } : {}),
-    ...(input.travel_guidance ? { travel_guidance: input.travel_guidance } : {}),
+    chain_segments: chainSegments,
+    independent_segments: !chainSegments,
+    ...(input.video_source ? { video_source: input.video_source } : {}),
+    ...(input.prefix_video_source ? { prefix_video_source: input.prefix_video_source } : {}),
+    ...(input.continuity_case ? { continuity_case: input.continuity_case } : {}),
     ...(input.start_image_generation_id ? { start_image_generation_id: input.start_image_generation_id } : {}),
     ...(input.end_image_generation_id ? { end_image_generation_id: input.end_image_generation_id } : {}),
     ...(input.pair_shot_generation_id ? { pair_shot_generation_id: input.pair_shot_generation_id } : {}),
     ...(input.generation_name ? { generation_name: input.generation_name } : {}),
     make_primary_variant: input.make_primary_variant ?? true,
     ...composedPayload,
-    individual_segment_params: {
-      input_image_paths_resolved: inputImages,
-      start_image_url: input.start_image_url,
-      ...(input.end_image_url ? { end_image_url: input.end_image_url } : {}),
-      base_prompt: input.base_prompt ?? "",
-      negative_prompt: input.negative_prompt ?? "",
-      num_frames: Math.min(input.num_frames ?? 49, 81),
-      seed_to_use: finalSeed,
-      random_seed: input.random_seed ?? false,
-      amount_of_motion: input.amount_of_motion ?? 0.5,
-      motion_mode: input.motion_mode ?? "basic",
-      advanced_mode: input.advanced_mode ?? false,
-      ...(input.frame_overlap_from_previous !== undefined
-        ? { frame_overlap_from_previous: input.frame_overlap_from_previous }
-        : {}),
-      additional_loras: additionalLoras,
-      after_first_post_generation_saturation: 1,
-      after_first_post_generation_brightness: 0,
-      ...(input.phase_config ? { phase_config: input.phase_config } : {}),
-      ...(input.continuation_config ? { continuation_config: input.continuation_config } : {}),
-      ...(input.start_image_generation_id ? { start_image_generation_id: input.start_image_generation_id } : {}),
-      ...(input.end_image_generation_id ? { end_image_generation_id: input.end_image_generation_id } : {}),
-      ...(input.pair_shot_generation_id ? { pair_shot_generation_id: input.pair_shot_generation_id } : {}),
-      ...(input.start_image_variant_id ? { start_image_variant_id: input.start_image_variant_id } : {}),
-      ...(input.end_image_variant_id ? { end_image_variant_id: input.end_image_variant_id } : {}),
-      ...(input.enhanced_prompt ? { enhanced_prompt: input.enhanced_prompt } : {}),
-      ...(input.selected_phase_preset_id ? { selected_phase_preset_id: input.selected_phase_preset_id } : {}),
-    },
+    individual_segment_params: individualSegmentParams,
   };
+  appendTravelGuidancePayload(topLevelParams, input);
+  return topLevelParams;
 }
 
 function calculateStitchedStart(

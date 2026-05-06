@@ -323,6 +323,9 @@ describe("Wan/VACE child contract resolver coverage", () => {
         model_type: "vace",
         selected_phase_preset_id: "__builtin_vace_default__",
         travel_guidance: { kind: "vace", mode: "raw" },
+        structure_guidance: { type: "depth" },
+        structure_videos: [{ url: "https://example.com/depth.mp4" }],
+        chain_segments: true,
       },
     } satisfies ResolveRequest, { ...context, supabaseAdmin } as ResolverContext);
 
@@ -335,10 +338,42 @@ describe("Wan/VACE child contract resolver coverage", () => {
       model_type: "vace",
       selected_phase_preset_id: "__builtin_vace_default__",
       travel_guidance: { kind: "vace", mode: "raw" },
+      chain_segments: true,
       parent_generation_id: "parent-generation-travel",
       input_image_generation_ids: ["start-gen", "end-gen"],
       pair_shot_generation_ids: ["pair-shot-travel"],
     });
+    expect(params?.orchestrator_details?.structure_guidance).toBeUndefined();
+    expect(params?.orchestrator_details?.structure_videos).toBeUndefined();
+  });
+
+  it("passes legacy structure guidance when travel_guidance is absent", async () => {
+    const supabaseAdmin = {
+      rpc: async () => ({ data: "parent-generation-structure", error: null }),
+    };
+    const result = await travelBetweenImagesResolver({
+      family: "travel_between_images",
+      project_id: "project-1",
+      input: {
+        shot_id: "shot-1",
+        image_urls: ["https://example.com/start.png", "https://example.com/end.png"],
+        base_prompts: ["uni3c bridge"],
+        segment_frames: [49],
+        frame_overlap: [0],
+        model_name: "wan_2_2_i2v_lightning_baseline_2_2_2",
+        structure_guidance: { type: "uni3c", strength: 0.75 },
+        structure_videos: [{ url: "https://example.com/uni3c.mp4" }],
+        chain_segments: false,
+      },
+    } satisfies ResolveRequest, { ...context, supabaseAdmin } as ResolverContext);
+
+    const params = result.tasks[0]?.params;
+    expect(params?.orchestrator_details).toMatchObject({
+      structure_guidance: { type: "uni3c", strength: 0.75 },
+      structure_videos: [{ url: "https://example.com/uni3c.mp4" }],
+      chain_segments: false,
+    });
+    expect(params?.orchestrator_details?.travel_guidance).toBeUndefined();
   });
 
   it("routes default non-Qwen non-Z image generation to Wan T2I without app frame fields", () => {

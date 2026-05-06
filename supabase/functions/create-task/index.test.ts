@@ -378,6 +378,195 @@ describe('create-task edge entrypoint', () => {
     }));
   });
 
+  it('materializes promoted Section 3A routes through selector-backed VibeComfy snapshots', async () => {
+    const logger = createLogger();
+    const taskInsert = createTasksInsertChain('task-section3a-promoted');
+    const section3aRouteKey = 'travel_segment__model-ltx2_distilled__guidance-none__continuity-first_last__profile-default';
+    mocks.getTaskFamilyResolver.mockReturnValue(
+      vi.fn().mockResolvedValue({
+        tasks: [
+          {
+            project_id: 'project-1',
+            task_type: 'travel_segment',
+            params: {
+              model_name: 'ltx2_22B_distilled_1_1',
+              guidance_kind: 'none',
+              guidance_mode: 'none',
+              continuity_case: 'first_last',
+              profile: 'default',
+            },
+            status: 'Queued',
+          },
+        ],
+      }),
+    );
+    const routeLookups = createRouteLookupChains({
+      selector: {
+        route_key: section3aRouteKey,
+        selected_backend: 'vibecomfy',
+        selector_version: 9,
+        enabled: true,
+        expires_at: null,
+        min_worker_version: null,
+      },
+      capability: {
+        backend: 'vibecomfy',
+        route_key: section3aRouteKey,
+        supports_route: true,
+        supports_missing_selector: false,
+        capability_version: 9,
+        enabled: true,
+        expires_at: null,
+        min_worker_version: null,
+      },
+    });
+    const supabaseAdmin = {
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'tasks') return { insert: taskInsert.insert };
+        if (table === 'projects') return { select: createProjectsLookupChain({ aspect_ratio: '16:9' }).select };
+        if (table === 'route_backend_selectors') return routeLookups.selectors;
+        if (table === 'route_backend_capabilities') return routeLookups.capabilities;
+        throw new Error(`Unexpected table: ${table}`);
+      }),
+    };
+
+    mocks.bootstrapEdgeHandler.mockResolvedValue({
+      ok: true,
+      value: {
+        supabaseAdmin,
+        logger,
+        auth: { isServiceRole: true, userId: null },
+        body: {
+          family: 'travel_segment',
+          project_id: 'project-1',
+          input: {},
+          selector_namespace: 'production',
+        },
+      },
+    });
+
+    const handler = await loadHandler();
+    const response = await handler(new Request('https://edge.test/create-task', { method: 'POST' }));
+
+    expect(response.status).toBe(200);
+    expect(routeLookups.selectors.eq).toHaveBeenCalledWith('selector_namespace', 'production');
+    expect(routeLookups.selectors.eq).toHaveBeenCalledWith('route_key', section3aRouteKey);
+    expect(routeLookups.capabilities.eq).toHaveBeenCalledWith('backend', 'vibecomfy');
+    expect(routeLookups.capabilities.eq).toHaveBeenCalledWith('route_key', section3aRouteKey);
+    expect(taskInsert.insert).toHaveBeenCalledWith(expect.objectContaining({
+      selector_namespace: 'production',
+      route_key: section3aRouteKey,
+      selected_backend: 'vibecomfy',
+      selector_version: 9,
+      route_selection_snapshot: expect.objectContaining({
+        selector_namespace: 'production',
+        route_key: section3aRouteKey,
+        selected_backend: 'vibecomfy',
+        selector_version: 9,
+        decision_reason: 'selector_supported',
+        selector_snapshot: expect.objectContaining({
+          selector_namespace: 'production',
+          route_key: section3aRouteKey,
+          selected_backend: 'vibecomfy',
+          selector_version: 9,
+        }),
+        capability_snapshot: expect.objectContaining({
+          backend: 'vibecomfy',
+          route_key: section3aRouteKey,
+          capability_version: 9,
+          supports_route: true,
+        }),
+      }),
+    }));
+  });
+
+  it('keeps blocked Section 3A rows on explicit WGP missing-selector fallback', async () => {
+    const logger = createLogger();
+    const taskInsert = createTasksInsertChain('task-section3a-blocked');
+    const blockedRouteKey = 'travel_segment__model-ltx2_distilled__guidance-ltx_control_depth__continuity-first_last__profile-default';
+    mocks.getTaskFamilyResolver.mockReturnValue(
+      vi.fn().mockResolvedValue({
+        tasks: [
+          {
+            project_id: 'project-1',
+            task_type: 'travel_segment',
+            params: {
+              model_name: 'ltx2_22B_distilled_1_1',
+              guidance_kind: 'ltx_control',
+              guidance_mode: 'depth',
+              continuity_case: 'first_last',
+              profile: 'default',
+            },
+            status: 'Queued',
+          },
+        ],
+      }),
+    );
+    const routeLookups = createRouteLookupChains({
+      selector: null,
+      capability: {
+        backend: 'wgp',
+        route_key: blockedRouteKey,
+        supports_route: true,
+        supports_missing_selector: true,
+        capability_version: 9,
+        enabled: true,
+        expires_at: null,
+        min_worker_version: null,
+      },
+    });
+    const supabaseAdmin = {
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'tasks') return { insert: taskInsert.insert };
+        if (table === 'projects') return { select: createProjectsLookupChain({ aspect_ratio: '16:9' }).select };
+        if (table === 'route_backend_selectors') return routeLookups.selectors;
+        if (table === 'route_backend_capabilities') return routeLookups.capabilities;
+        throw new Error(`Unexpected table: ${table}`);
+      }),
+    };
+
+    mocks.bootstrapEdgeHandler.mockResolvedValue({
+      ok: true,
+      value: {
+        supabaseAdmin,
+        logger,
+        auth: { isServiceRole: true, userId: null },
+        body: {
+          family: 'travel_segment',
+          project_id: 'project-1',
+          input: {},
+        },
+      },
+    });
+
+    const handler = await loadHandler();
+    const response = await handler(new Request('https://edge.test/create-task', { method: 'POST' }));
+
+    expect(response.status).toBe(200);
+    expect(routeLookups.selectors.eq).toHaveBeenCalledWith('route_key', blockedRouteKey);
+    expect(routeLookups.capabilities.eq).toHaveBeenCalledWith('backend', 'wgp');
+    expect(routeLookups.capabilities.eq).toHaveBeenCalledWith('route_key', blockedRouteKey);
+    expect(taskInsert.insert).toHaveBeenCalledWith(expect.objectContaining({
+      selector_namespace: 'production',
+      route_key: blockedRouteKey,
+      selected_backend: 'wgp',
+      selector_version: null,
+      route_selection_snapshot: expect.objectContaining({
+        route_key: blockedRouteKey,
+        selected_backend: 'wgp',
+        selector_version: null,
+        decision_reason: 'missing_selector_wgp_capability_supported',
+        selector_snapshot: null,
+        capability_snapshot: expect.objectContaining({
+          backend: 'wgp',
+          route_key: blockedRouteKey,
+          capability_version: 9,
+          supports_missing_selector: true,
+        }),
+      }),
+    }));
+  });
+
   it('honors service-role pinned child route snapshots without live selector lookup', async () => {
     const logger = createLogger();
     const taskInsert = createTasksInsertChain('task-child-pinned');

@@ -52,17 +52,14 @@ interface TravelBetweenImagesTaskInput {
   after_first_post_generation_brightness?: number;
   generation_name?: string;
   independent_segments?: boolean;
-  // TODO: wire through to orchestrator_details.
   chain_segments?: boolean;
   pair_phase_configs?: (Record<string, unknown> | null)[];
   pair_loras?: (Array<{ path: string; strength: number }> | null)[];
   loras?: Array<{ path: string; strength: number }>;
   pair_motion_settings?: (Record<string, unknown> | null)[];
   travel_guidance?: Record<string, unknown>;
-  // TODO: wire through to orchestrator_details.
   structure_guidance?: Record<string, unknown>;
   structure_videos?: Record<string, unknown>[];
-  // TODO: wire through to orchestrator_details.
   stitch_config?: Record<string, unknown>;
 }
 
@@ -156,6 +153,22 @@ function buildAdditionalLorasRecord(
   }, {});
 }
 
+function appendTravelGuidancePayload(
+  target: Record<string, unknown>,
+  input: Pick<TravelBetweenImagesTaskInput, "travel_guidance" | "structure_guidance" | "structure_videos">,
+): void {
+  if (input.travel_guidance) {
+    target.travel_guidance = input.travel_guidance;
+    return;
+  }
+  if (input.structure_guidance) {
+    target.structure_guidance = input.structure_guidance;
+  }
+  if (input.structure_videos?.length) {
+    target.structure_videos = input.structure_videos;
+  }
+}
+
 function buildTravelBetweenImagesPayload(
   input: TravelBetweenImagesTaskInput,
   finalResolution: string,
@@ -172,6 +185,7 @@ function buildTravelBetweenImagesPayload(
     : (input.enhance_prompt ? Array(numSegments).fill("") : undefined);
   const segmentFramesExpanded = expandArrayToCount(input.segment_frames, numSegments) ?? [];
   const frameOverlapExpanded = expandArrayToCount(input.frame_overlap, numSegments) ?? [];
+  const chainSegments = input.chain_segments ?? Boolean(input.continuation_config);
   const finalSeed = resolveSeed32Bit({
     seed: input.seed,
     randomize: input.random_seed === true,
@@ -230,14 +244,13 @@ function buildTravelBetweenImagesPayload(
     advanced_mode: input.advanced_mode ?? false,
     generation_name: input.generation_name,
     independent_segments: input.independent_segments ?? true,
+    chain_segments: chainSegments,
     ...(input.text_before_prompts ? { text_before_prompts: input.text_before_prompts } : {}),
     ...(input.text_after_prompts ? { text_after_prompts: input.text_after_prompts } : {}),
     ...(input.motion_mode ? { motion_mode: input.motion_mode } : {}),
   };
 
-  if (input.travel_guidance) {
-    orchestratorPayload.travel_guidance = input.travel_guidance;
-  }
+  appendTravelGuidancePayload(orchestratorPayload, input);
 
   const additionalLoras = buildAdditionalLorasRecord(input.loras);
   if (additionalLoras) {
@@ -268,7 +281,13 @@ function buildTravelBetweenImagesPayload(
     segment_frames_expanded: segmentFramesExpanded,
     frame_overlap_expanded: frameOverlapExpanded,
     continuation_config: input.continuation_config,
-    travel_guidance: input.travel_guidance,
+    chain_segments: chainSegments,
+    ...(input.travel_guidance
+      ? { travel_guidance: input.travel_guidance }
+      : {
+        structure_guidance: input.structure_guidance,
+        structure_videos: input.structure_videos,
+      }),
   };
 
   return composeTaskFamilyPayload({

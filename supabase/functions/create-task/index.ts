@@ -12,9 +12,11 @@ import { JWT_AUTH_REQUIRED } from "../_shared/requestGuards.ts";
 import { getTaskFamilyResolver } from "./resolvers/registry.ts";
 import {
   deriveRouteKey,
+  normalizeRouteSnapshotFields,
   parseRouteBackend,
   routeSnapshotFields,
   type RouteBackend,
+  type RouteSupportState,
 } from "./resolvers/shared/routeKeys.ts";
 import { createWorkerPassthroughResolver } from "./resolvers/workerPassthrough.ts";
 import { TaskValidationError } from "./resolvers/shared/validation.ts";
@@ -92,12 +94,14 @@ interface RouteCapabilityRow {
   enabled?: unknown;
   expires_at?: unknown;
   min_worker_version?: unknown;
+  metadata?: unknown;
 }
 
 interface MaterializedRouteDecision {
   routeKey: string;
   selectedBackend: RouteBackend;
   selectorVersion: number | string | null;
+  supportState: RouteSupportState;
   decisionReason: string;
   selectorSnapshot: Record<string, unknown> | null;
   capabilitySnapshot: Record<string, unknown>;
@@ -382,7 +386,33 @@ function buildCapabilitySnapshot(capability: RouteCapabilityRow): Record<string,
     enabled: capability.enabled,
     expires_at: capability.expires_at ?? null,
     min_worker_version: capability.min_worker_version ?? null,
+    ...(isRecord(capability.metadata) ? { metadata: capability.metadata } : {}),
   };
+}
+
+function parseSupportStateFromMetadata(value: unknown): RouteSupportState | null {
+  if (!isRecord(value)) return null;
+  const supportState = value.support_state;
+  if (
+    supportState === "wgp_only" ||
+    supportState === "vibecomfy_supported" ||
+    supportState === "vibecomfy_unsupported"
+  ) {
+    return supportState;
+  }
+  return null;
+}
+
+function inferDecisionSupportState(
+  backend: RouteBackend,
+  capability: RouteCapabilityRow,
+): RouteSupportState {
+  const metadataSupportState = parseSupportStateFromMetadata(capability.metadata);
+  if (metadataSupportState) return metadataSupportState;
+  if (backend === "vibecomfy" && capability.supports_route === true) {
+    return "vibecomfy_supported";
+  }
+  return "vibecomfy_unsupported";
 }
 
 function ensureCapabilityCanCreate(
@@ -461,7 +491,7 @@ async function lookupRouteCapability(
 ): Promise<RouteCapabilityRow | null> {
   const { data, error } = await supabaseAdmin
     .from("route_backend_capabilities")
-    .select("backend, route_key, supports_route, supports_missing_selector, capability_version, enabled, expires_at, min_worker_version")
+    .select("backend, route_key, supports_route, supports_missing_selector, capability_version, enabled, expires_at, min_worker_version, metadata")
     .eq("backend", backend)
     .eq("route_key", routeKey)
     .maybeSingle();
@@ -499,6 +529,7 @@ async function resolveCreateTimeRouteDecision(
       routeKey,
       selectedBackend: "wgp",
       selectorVersion: null,
+      supportState: inferDecisionSupportState("wgp", wgpCapability),
       decisionReason: "missing_selector_wgp_capability_supported",
       selectorSnapshot: null,
       capabilitySnapshot: buildCapabilitySnapshot(wgpCapability),
@@ -531,6 +562,7 @@ async function resolveCreateTimeRouteDecision(
     routeKey,
     selectedBackend,
     selectorVersion,
+    supportState: inferDecisionSupportState(selectedBackend, capability),
     decisionReason: "selector_supported",
     selectorSnapshot: buildSelectorSnapshot(selectorNamespace, selector, selectedBackend),
     capabilitySnapshot: buildCapabilitySnapshot(capability),
@@ -556,22 +588,21 @@ async function materializeRouteSnapshot(
       throw new TaskValidationError("route_selection_snapshot must be an object", "route_selection_snapshot");
     }
 
-    const pinnedSelectorNamespace = asNonEmptyString(insertObject.selector_namespace) ?? selectorNamespace;
-    const pinnedSelectorVersion = insertObject.selector_version ?? pinnedSnapshot.selector_version ?? null;
+    const normalized = normalizeRouteSnapshotFields(
+      insertObject as Record<string, unknown>,
+      {
+        taskType: insertObject.task_type,
+        params: insertObject.params,
+        selectedBackend: insertObject.selected_backend ?? "wgp",
+        selectorNamespace: asNonEmptyString(insertObject.selector_namespace) ?? selectorNamespace,
+        selectorVersion: insertObject.selector_version ?? null,
+      },
+    );
 
     return {
       ...insertObject,
-      selector_namespace: pinnedSelectorNamespace,
-      route_key: pinnedRouteKey,
+      ...normalized,
       selected_backend: pinnedBackend,
-      selector_version: pinnedSelectorVersion,
-      route_selection_snapshot: {
-        ...pinnedSnapshot,
-        selector_namespace: pinnedSelectorNamespace,
-        route_key: pinnedRouteKey,
-        selected_backend: pinnedBackend,
-        selector_version: pinnedSelectorVersion,
-      },
     };
   }
 
@@ -582,6 +613,7 @@ async function materializeRouteSnapshot(
     selectedBackend: decision.selectedBackend,
     selectorNamespace,
     selectorVersion: decision.selectorVersion,
+    supportState: decision.supportState,
   });
 
   return {
@@ -590,10 +622,16 @@ async function materializeRouteSnapshot(
     route_key: decision.routeKey,
     selected_backend: decision.selectedBackend,
     selector_version: decision.selectorVersion,
+    support_state: snapshotFields.support_state,
+    selected_profile: snapshotFields.selected_profile,
+    selected_template_id: snapshotFields.selected_template_id,
+    route_run_id: snapshotFields.route_run_id,
+    worker_contract_version: snapshotFields.worker_contract_version,
     route_selection_snapshot: {
       ...snapshotFields.route_selection_snapshot,
       route_key: decision.routeKey,
       selector_version: decision.selectorVersion,
+      support_state: decision.supportState,
       decision_reason: decision.decisionReason,
       selector_snapshot: decision.selectorSnapshot,
       capability_snapshot: decision.capabilitySnapshot,

@@ -1,13 +1,27 @@
 export type RouteBackend = "wgp" | "vibecomfy";
+export type RouteSupportState = "wgp_only" | "vibecomfy_supported" | "vibecomfy_unsupported";
+
+export const WORKER_ROUTE_CONTRACT_VERSION = 1;
+
+export interface RouteSelectorEntry {
+  route_key: string;
+  support_state: RouteSupportState;
+  template_id: string | null;
+}
 
 export interface RouteSnapshotFieldsInput {
   taskType: string;
   params?: Record<string, unknown> | null;
-  selectedBackend: RouteBackend | string;
+  selectedBackend?: RouteBackend | string | null;
   selectorNamespace?: string;
   selectorVersion?: number | string | null;
   taskId?: string | null;
   parentRouteKey?: string | null;
+  profile?: string | null;
+  runId?: string | null;
+  workerContractVersion?: number | null;
+  supportState?: RouteSupportState | null;
+  selectedTemplateId?: string | null;
 }
 
 export interface RouteSelectionSnapshot {
@@ -15,6 +29,11 @@ export interface RouteSelectionSnapshot {
   route_key: string;
   selected_backend: RouteBackend;
   selector_version: number | string | null;
+  support_state: RouteSupportState;
+  template_id: string | null;
+  selected_profile: string;
+  route_run_id: string | null;
+  worker_contract_version: number;
   task_id?: string;
   parent_route_key?: string;
 }
@@ -24,6 +43,11 @@ export interface RouteSnapshotFields {
   route_key: string;
   selected_backend: RouteBackend;
   selector_version: number | string | null;
+  support_state: RouteSupportState;
+  selected_profile: string;
+  selected_template_id: string | null;
+  route_run_id: string | null;
+  worker_contract_version: number;
   route_selection_snapshot: RouteSelectionSnapshot;
 }
 
@@ -46,6 +70,34 @@ const DIMENSIONAL_CHILD_TASK_TYPES = new Set([
   "individual_travel_segment",
   "join_clips_segment",
 ]);
+
+const ROUTE_SELECTOR_MAP: Readonly<Record<string, RouteSelectorEntry>> = Object.freeze({
+  z_image_turbo: {
+    route_key: "z_image_turbo",
+    support_state: "vibecomfy_supported",
+    template_id: "image/z_image",
+  },
+  z_image_turbo_i2i: { route_key: "z_image_turbo_i2i", support_state: "wgp_only", template_id: null },
+  qwen_image_2512: { route_key: "qwen_image_2512", support_state: "wgp_only", template_id: null },
+  qwen_image: { route_key: "qwen_image", support_state: "wgp_only", template_id: null },
+  qwen_image_edit: { route_key: "qwen_image_edit", support_state: "wgp_only", template_id: null },
+  qwen_image_style: { route_key: "qwen_image_style", support_state: "wgp_only", template_id: null },
+  image_inpaint: { route_key: "image_inpaint", support_state: "wgp_only", template_id: null },
+  annotated_image_edit: { route_key: "annotated_image_edit", support_state: "wgp_only", template_id: null },
+  travel_orchestrator: { route_key: "travel_orchestrator", support_state: "wgp_only", template_id: null },
+  join_clips_orchestrator: { route_key: "join_clips_orchestrator", support_state: "wgp_only", template_id: null },
+  edit_video_orchestrator: { route_key: "edit_video_orchestrator", support_state: "wgp_only", template_id: null },
+  travel_segment: { route_key: "travel_segment", support_state: "vibecomfy_unsupported", template_id: null },
+  individual_travel_segment: {
+    route_key: "individual_travel_segment",
+    support_state: "vibecomfy_unsupported",
+    template_id: null,
+  },
+  join_clips_segment: { route_key: "join_clips_segment", support_state: "vibecomfy_unsupported", template_id: null },
+  travel_stitch: { route_key: "travel_stitch", support_state: "wgp_only", template_id: null },
+  join_final_stitch: { route_key: "join_final_stitch", support_state: "wgp_only", template_id: null },
+  wan_2_2_t2i: { route_key: "wan_2_2_t2i", support_state: "wgp_only", template_id: null },
+});
 
 function hasRoutingValue(value: unknown): boolean {
   return Boolean(value);
@@ -95,15 +147,26 @@ export function deriveRouteKey(
 
 export function routeSnapshotFields(input: RouteSnapshotFieldsInput): RouteSnapshotFields {
   const selectorNamespace = input.selectorNamespace ?? "production";
-  const selectedBackend = parseRouteBackend(input.selectedBackend);
+  const selectedBackend = parseRouteBackend(input.selectedBackend ?? "wgp");
   const routeKey = deriveRouteKey(input.taskType, input.params);
   const selectorVersion = input.selectorVersion ?? null;
+  const selectorEntry = selectorEntryForRouteKey(routeKey);
+  const supportState = input.supportState ?? selectorEntry?.support_state ?? "vibecomfy_unsupported";
+  const templateId = input.selectedTemplateId ?? selectorEntry?.template_id ?? null;
+  const selectedProfile = String(input.profile ?? routeProfile(input.params ?? {}));
+  const routeRunId = input.runId ?? null;
+  const workerContractVersion = input.workerContractVersion ?? WORKER_ROUTE_CONTRACT_VERSION;
 
   const snapshot: RouteSelectionSnapshot = {
     selector_namespace: selectorNamespace,
     route_key: routeKey,
     selected_backend: selectedBackend,
     selector_version: selectorVersion,
+    support_state: supportState,
+    template_id: templateId,
+    selected_profile: selectedProfile,
+    route_run_id: routeRunId,
+    worker_contract_version: workerContractVersion,
   };
 
   if (input.taskId) snapshot.task_id = input.taskId;
@@ -114,8 +177,81 @@ export function routeSnapshotFields(input: RouteSnapshotFieldsInput): RouteSnaps
     route_key: routeKey,
     selected_backend: selectedBackend,
     selector_version: selectorVersion,
+    support_state: supportState,
+    selected_profile: selectedProfile,
+    selected_template_id: templateId,
+    route_run_id: routeRunId,
+    worker_contract_version: workerContractVersion,
     route_selection_snapshot: snapshot,
   };
+}
+
+export function normalizeRouteSnapshotFields(
+  candidate: Record<string, unknown> | null | undefined,
+  fallback: RouteSnapshotFieldsInput,
+): RouteSnapshotFields {
+  const base = routeSnapshotFields(fallback);
+  const record = isRecord(candidate) ? candidate : {};
+  const snapshot = isRecord(record.route_selection_snapshot) ? record.route_selection_snapshot : {};
+  const routeKey = asNonEmptyString(record.route_key) ?? asNonEmptyString(snapshot.route_key) ?? base.route_key;
+  const selectedBackend = parseRouteBackend(
+    record.selected_backend ?? snapshot.selected_backend ?? fallback.selectedBackend ?? base.selected_backend,
+  );
+  const selectorNamespace = asNonEmptyString(record.selector_namespace)
+    ?? asNonEmptyString(snapshot.selector_namespace)
+    ?? base.selector_namespace;
+  const selectorVersion = asSelectorVersion(record.selector_version ?? snapshot.selector_version) ?? base.selector_version;
+  const supportState = parseSupportState(record.support_state ?? snapshot.support_state) ?? base.support_state;
+  const selectedProfile = asNonEmptyString(record.selected_profile)
+    ?? asNonEmptyString(snapshot.selected_profile)
+    ?? base.selected_profile;
+  const selectedTemplateId = asNullableString(record.selected_template_id ?? snapshot.template_id)
+    ?? base.selected_template_id;
+  const routeRunId = asNullableString(record.route_run_id ?? snapshot.route_run_id) ?? base.route_run_id;
+  const workerContractVersion = asWorkerContractVersion(record.worker_contract_version ?? snapshot.worker_contract_version)
+    ?? base.worker_contract_version;
+
+  const normalizedSnapshot: RouteSelectionSnapshot = {
+    selector_namespace: selectorNamespace,
+    route_key: routeKey,
+    selected_backend: selectedBackend,
+    selector_version: selectorVersion,
+    support_state: supportState,
+    template_id: selectedTemplateId,
+    selected_profile: selectedProfile,
+    route_run_id: routeRunId,
+    worker_contract_version: workerContractVersion,
+  };
+  const taskId = asNonEmptyString(snapshot.task_id) ?? fallback.taskId ?? null;
+  const parentRouteKey = asNonEmptyString(snapshot.parent_route_key) ?? fallback.parentRouteKey ?? null;
+  if (taskId) normalizedSnapshot.task_id = taskId;
+  if (parentRouteKey) normalizedSnapshot.parent_route_key = parentRouteKey;
+
+  return {
+    selector_namespace: selectorNamespace,
+    route_key: routeKey,
+    selected_backend: selectedBackend,
+    selector_version: selectorVersion,
+    support_state: supportState,
+    selected_profile: selectedProfile,
+    selected_template_id: selectedTemplateId,
+    route_run_id: routeRunId,
+    worker_contract_version: workerContractVersion,
+    route_selection_snapshot: normalizedSnapshot,
+  };
+}
+
+export function selectorEntryForRouteKey(routeKey: string): RouteSelectorEntry | null {
+  const selectorEntry = ROUTE_SELECTOR_MAP[routeKey];
+  if (selectorEntry) return selectorEntry;
+  if (
+    routeKey.startsWith("travel_segment__") ||
+    routeKey.startsWith("individual_travel_segment__") ||
+    routeKey.startsWith("join_clips_segment__")
+  ) {
+    return { route_key: routeKey, support_state: "vibecomfy_unsupported", template_id: null };
+  }
+  return null;
 }
 
 function directRouteKey(taskType: string): string {
@@ -130,7 +266,7 @@ function dimensionalChildRouteKey(
   return [
     slugRoutePart(taskType),
     `model-${slugRoutePart(routeModelFamily(params))}`,
-    `guidance-${slugRoutePart(routeGuidanceKind(taskType, params))}`,
+    `guidance-${slugRoutePart(routeGuidanceKey(taskType, params))}`,
     `continuity-${slugRoutePart(routeContinuityCase(taskType, params))}`,
     `profile-${slugRoutePart(routeProfile(params))}`,
   ].join("__");
@@ -173,6 +309,27 @@ function routeGuidanceKind(taskType: string, params: Record<string, unknown>): s
   return "none";
 }
 
+function routeGuidanceMode(params: Record<string, unknown>): string {
+  const explicitMode = params.guidance_mode || params.travel_guidance_mode;
+  if (hasRoutingValue(explicitMode)) return valueToString(explicitMode);
+
+  const travelGuidance = params.travel_guidance;
+  if (isRecord(travelGuidance) && hasRoutingValue(travelGuidance.mode)) {
+    return valueToString(travelGuidance.mode);
+  }
+
+  return "none";
+}
+
+function routeGuidanceKey(taskType: string, params: Record<string, unknown>): string {
+  const kind = routeGuidanceKind(taskType, params);
+  const mode = routeGuidanceMode(params);
+  if ((kind === "vace" || kind === "ltx_control") && mode && mode !== "none") {
+    return `${kind}_${mode}`;
+  }
+  return kind;
+}
+
 function routeContinuityCase(taskType: string, params: Record<string, unknown>): string {
   if (hasRoutingValue(params.continuity_case)) return valueToString(params.continuity_case);
   if (taskType === "join_clips_segment") return "join_bridge";
@@ -187,4 +344,31 @@ function routeProfile(params: Record<string, unknown>): string {
     || params.override_profile
     || "default",
   );
+}
+
+function asNonEmptyString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function asNullableString(value: unknown): string | null {
+  return value === null || typeof value === "string" ? value : null;
+}
+
+function asSelectorVersion(value: unknown): number | string | null {
+  return typeof value === "number" || typeof value === "string" ? value : null;
+}
+
+function asWorkerContractVersion(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function parseSupportState(value: unknown): RouteSupportState | null {
+  if (
+    value === "wgp_only" ||
+    value === "vibecomfy_supported" ||
+    value === "vibecomfy_unsupported"
+  ) {
+    return value;
+  }
+  return null;
 }
