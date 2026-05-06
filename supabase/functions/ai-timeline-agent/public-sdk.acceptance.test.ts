@@ -13,13 +13,18 @@ const { loadTimelineState, saveTimelineConfigVersioned } = vi.hoisted(() => ({
   saveTimelineConfigVersioned: vi.fn(),
 }));
 
+type MockTimelineConfig = {
+  clips: Array<{ id: string; at: number; [key: string]: unknown }>;
+  [key: string]: unknown;
+};
+
 vi.mock('./db.ts', () => ({
   loadTimelineState,
   saveTimelineConfigVersioned,
 }));
 
 vi.mock('@banodoco/timeline-ops', () => ({
-  moveClip: (config: Record<string, any>, clipId: string, at: number) => {
+  moveClip: (config: MockTimelineConfig, clipId: string, at: number) => {
     const nextConfig = structuredClone(config);
     const clipIndex = nextConfig.clips.findIndex((clip: { id: string }) => clip.id === clipId);
     if (clipIndex < 0) {
@@ -42,22 +47,22 @@ vi.mock('@banodoco/timeline-ops', () => ({
       detail: { previousAt },
     };
   },
-  setClipParams: (config: Record<string, any>) => ({
+  setClipParams: (config: MockTimelineConfig) => ({
     changed: false,
     config,
     detail: { reason: 'noop' },
   }),
-  setClipProperty: (config: Record<string, any>) => ({
+  setClipProperty: (config: MockTimelineConfig) => ({
     changed: false,
     config,
     detail: { reason: 'noop' },
   }),
-  setThemeOverrides: (config: Record<string, any>) => ({
+  setThemeOverrides: (config: MockTimelineConfig) => ({
     changed: false,
     config,
     detail: { reason: 'noop' },
   }),
-  setTimelineTheme: (config: Record<string, any>) => ({
+  setTimelineTheme: (config: MockTimelineConfig) => ({
     changed: false,
     config,
     detail: { reason: 'noop' },

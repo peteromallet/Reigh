@@ -166,12 +166,12 @@ describe('complete_task/generation-handlers exports', () => {
 
     await expect(handleVariantCreation(
       supabase as never,
-      'task-variant',
+      'task-image-upscale',
       {
         params: { is_primary: true, source_variant_id: 'source-variant-1' },
         variant_type: 'magic-edit',
-        task_type: 'magic-edit',
-        tool_type: 'qwen_image_edit',
+        task_type: 'image-upscale',
+        tool_type: 'image-upscale',
         content_type: 'image',
       },
       'gen-source',
@@ -185,6 +185,23 @@ describe('complete_task/generation-handlers exports', () => {
       media_type: 'image',
       created_as: 'variant',
     });
+    expect(mocks.createVariant).toHaveBeenCalledWith(
+      supabase,
+      'gen-source',
+      'https://example.com/out.png',
+      'https://example.com/thumb.png',
+      expect.objectContaining({
+        source_task_id: 'task-image-upscale',
+        source_variant_id: 'source-variant-1',
+        created_from: 'image-upscale',
+        tool_type: 'image-upscale',
+      }),
+      true,
+      'magic-edit',
+      null,
+    );
+    expect(taskUpdate).toHaveBeenCalledWith({ generation_created: true });
+    expect(taskUpdateEq).toHaveBeenCalledWith('id', 'task-image-upscale');
   });
 
   it('returns completion asset identity for standalone generation originals', async () => {
@@ -210,16 +227,16 @@ describe('complete_task/generation-handlers exports', () => {
 
     const result = await handleStandaloneGeneration({
       supabase: supabase as never,
-      taskId: 'task-standalone',
+      taskId: 'task-animate-character',
       taskData: {
-        task_type: 'image_generation',
+        task_type: 'animate_character',
         project_id: 'project-1',
         params: {},
-        tool_type: 'wan',
-        content_type: 'image',
+        tool_type: 'animate_character',
+        content_type: 'video',
       },
-      publicUrl: 'https://example.com/generated.png',
-      thumbnailUrl: 'https://example.com/generated-thumb.png',
+      publicUrl: 'https://example.com/generated.mp4',
+      thumbnailUrl: 'https://example.com/generated-thumb.jpg',
       logger: { info: vi.fn() },
     } as never) as {
       id: string;
@@ -238,12 +255,40 @@ describe('complete_task/generation-handlers exports', () => {
       completionAsset: {
         generation_id: 'gen-standalone',
         variant_id: 'variant-1',
-        location: 'https://example.com/generated.png',
-        thumbnail_url: 'https://example.com/generated-thumb.png',
-        media_type: 'image',
+        location: 'https://example.com/generated.mp4',
+        thumbnail_url: 'https://example.com/generated-thumb.jpg',
+        media_type: 'video',
         created_as: 'generation',
       },
     });
+    expect(mocks.insertGeneration).toHaveBeenCalledWith(
+      supabase,
+      expect.objectContaining({
+        id: expect.any(String),
+        tasks: ['task-animate-character'],
+        project_id: 'project-1',
+        type: 'video',
+        parent_generation_id: null,
+        is_child: false,
+        child_order: null,
+      }),
+    );
+    expect(mocks.createVariant).toHaveBeenCalledWith(
+      supabase,
+      'gen-standalone',
+      'https://example.com/generated.mp4',
+      'https://example.com/generated-thumb.jpg',
+      expect.objectContaining({
+        source_task_id: 'task-animate-character',
+        created_from: 'generation_original',
+      }),
+      true,
+      'original',
+      null,
+      null,
+    );
+    expect(taskUpdate).toHaveBeenCalledWith({ generation_created: true });
+    expect(taskUpdateEq).toHaveBeenCalledWith('id', 'task-animate-character');
   });
 
   it('creates the variant on the child generation and auto-marks viewed_at for single-segment cases', async () => {

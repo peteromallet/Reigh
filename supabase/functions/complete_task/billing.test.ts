@@ -31,4 +31,48 @@ describe('complete_task/billing', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
   });
+
+  it('triggers cost calculation once for non-sub-task completion', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ success: true, cost: 3.25 }), { status: 200 }),
+    );
+
+    const result = await triggerCostCalculationIfNotSubTask(
+      {
+        from: () => ({
+          select: () => ({
+            eq: () => ({
+              single: async () => ({
+                data: {
+                  params: {
+                    prompt: 'bill this parent task',
+                  },
+                },
+              }),
+            }),
+          }),
+        }),
+      },
+      'https://example.supabase.co',
+      'service-key',
+      'parent-task-id',
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        status: 200,
+        cost: 3.25,
+      },
+    });
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'https://example.supabase.co/functions/v1/calculate-task-cost',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ task_id: 'parent-task-id' }),
+      }),
+    );
+    fetchSpy.mockRestore();
+  });
 });

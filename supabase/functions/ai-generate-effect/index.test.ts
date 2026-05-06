@@ -74,25 +74,6 @@ function createLogger() {
   };
 }
 
-function createFireworksSseResponse(content: string): Response {
-  const encoder = new TextEncoder();
-  return new Response(
-    new ReadableStream({
-      start(controller) {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-          choices: [{ delta: { content } }],
-        })}\n\n`));
-        controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-        controller.close();
-      },
-    }),
-    {
-      status: 200,
-      headers: { 'Content-Type': 'text/event-stream' },
-    },
-  );
-}
-
 function createAnthropicSseResponse(content: string): Response {
   const encoder = new TextEncoder();
   return new Response(

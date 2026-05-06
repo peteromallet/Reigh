@@ -292,6 +292,97 @@ describe('completeTaskHandler', () => {
     expect(logger.flush).toHaveBeenCalled();
   });
 
+  it('passes canary completion product effects through generation creation without live services', async () => {
+    const logger = createLogger();
+    const supabaseAdmin = createSupabaseAdmin();
+    mocks.bootstrapEdgeHandler.mockResolvedValue({
+      ok: true,
+      value: {
+        supabaseAdmin,
+        logger,
+        auth: { userId: null, isServiceRole: true },
+      },
+    });
+    mocks.fetchTaskContext.mockResolvedValue({
+      id: 'task-1',
+      task_type: 'video_enhance',
+      project_id: 'project-1',
+      params: { based_on: 'source-generation-1' },
+      result_data: {},
+      tool_type: 'video_enhance',
+      category: 'video',
+      content_type: 'video',
+      variant_type: 'enhanced_video',
+    });
+    mocks.handleStorageOperations.mockResolvedValue({
+      publicUrl: 'https://cdn.example.com/tasks/task-1/out.mp4',
+      objectPath: 'tasks/user-1/task-1/out.mp4',
+      thumbnailUrl: 'https://cdn.example.com/tasks/task-1/thumb.jpg',
+    });
+    mocks.setThumbnailInParams.mockImplementationOnce((params: Record<string, unknown>) => ({
+      ...params,
+      thumbnail_url: 'https://cdn.example.com/tasks/task-1/thumb.jpg',
+    }));
+    mocks.createGenerationFromTask.mockResolvedValue({
+      status: 'created',
+      generation: { id: 'source-generation-1' },
+      completionAsset: {
+        generation_id: 'source-generation-1',
+        variant_id: 'variant-enhanced-1',
+        location: 'https://cdn.example.com/tasks/task-1/out.mp4',
+        thumbnail_url: 'https://cdn.example.com/tasks/task-1/thumb.jpg',
+        media_type: 'video',
+        created_as: 'variant',
+      },
+    });
+
+    const response = await completeTaskHandler(
+      new Request('https://edge.test/complete-task', { method: 'POST' }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      success: true,
+      public_url: 'https://cdn.example.com/tasks/task-1/out.mp4',
+      thumbnail_url: 'https://cdn.example.com/tasks/task-1/thumb.jpg',
+      follow_up: { status: 'ok', issues: [] },
+      message: 'Task completed and file uploaded successfully',
+    });
+    expect(mocks.setThumbnailInParams).toHaveBeenCalledWith(
+      { based_on: 'source-generation-1' },
+      'video_enhance',
+      'https://cdn.example.com/tasks/task-1/thumb.jpg',
+    );
+    expect(mocks.createGenerationFromTask).toHaveBeenCalledWith(
+      supabaseAdmin,
+      'task-1',
+      expect.objectContaining({
+        task_type: 'video_enhance',
+        params: expect.objectContaining({
+          based_on: 'source-generation-1',
+          thumbnail_url: 'https://cdn.example.com/tasks/task-1/thumb.jpg',
+        }),
+        content_type: 'video',
+        variant_type: 'enhanced_video',
+      }),
+      'https://cdn.example.com/tasks/task-1/out.mp4',
+      'https://cdn.example.com/tasks/task-1/thumb.jpg',
+      logger,
+      {
+        isServiceRole: true,
+        taskOwnerVerified: true,
+        actorId: 'service-role',
+      },
+    );
+    expect(logger.info).toHaveBeenCalledWith('Task completed successfully', expect.objectContaining({
+      task_id: 'task-1',
+      output_location: 'https://cdn.example.com/tasks/task-1/out.mp4',
+      generation_id: 'source-generation-1',
+      has_thumbnail: true,
+    }));
+    expect(mocks.persistCompletionFollowUpIssues).not.toHaveBeenCalled();
+  });
+
   it('preserves structured CompletionError details when generation creation fails', async () => {
     const logger = createLogger();
     const supabaseAdmin = createSupabaseAdmin();
