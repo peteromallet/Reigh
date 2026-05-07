@@ -121,13 +121,24 @@ describe("selected route contract", () => {
       },
     })).toMatchObject({
       route_key: "join_clips_segment__model-wan22_vace__guidance-vace__continuity-join_bridge__profile-default",
-      support_state: "vibecomfy_unsupported",
-      vibecomfy_blocker: "unsupported",
+      support_state: "vibecomfy_supported",
+      template_id: "video/wanvideo_wrapper_22_14b_vace_cocktail",
+      vibecomfy_blocker: null,
     });
 
     expect(routeRequirementForRouteKey({ route_key: "z_image_turbo" })).toMatchObject({
       support_state: "vibecomfy_supported",
       template_id: "image/z_image",
+      vibecomfy_blocker: null,
+    });
+    expect(routeRequirementForRouteKey({ route_key: "z_image_turbo_i2i" })).toMatchObject({
+      support_state: "vibecomfy_supported",
+      template_id: "image/z_image_img2img",
+      vibecomfy_blocker: null,
+    });
+    expect(routeRequirementForRouteKey({ route_key: "wan_2_2_t2i" })).toMatchObject({
+      support_state: "vibecomfy_supported",
+      template_id: "video/wanvideo_wrapper_22_14b_t2i",
       vibecomfy_blocker: null,
     });
   });

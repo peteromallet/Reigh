@@ -94,13 +94,44 @@ export const SPRINT_2_SELECTOR_MAP: Record<string, RouteSelectorEntry> = {
     default_resolution: "1024x1024",
     vibecomfy_status: "tested",
   },
-  z_image_turbo_i2i: { route_key: "z_image_turbo_i2i", support_state: "wgp_only", template_id: null },
-  qwen_image_2512: { route_key: "qwen_image_2512", support_state: "wgp_only", template_id: null },
+  z_image_turbo_i2i: {
+    route_key: "z_image_turbo_i2i",
+    support_state: "vibecomfy_supported",
+    template_id: "image/z_image_img2img",
+    default_resolution: "1024x1024",
+    vibecomfy_status: "tested",
+  },
+  qwen_image_2512: {
+    route_key: "qwen_image_2512",
+    support_state: "vibecomfy_supported",
+    template_id: "image/qwen_image_2512",
+    vibecomfy_status: "tested",
+  },
   qwen_image: { route_key: "qwen_image", support_state: "wgp_only", template_id: null },
-  qwen_image_edit: { route_key: "qwen_image_edit", support_state: "wgp_only", template_id: null },
-  qwen_image_style: { route_key: "qwen_image_style", support_state: "wgp_only", template_id: null },
-  image_inpaint: { route_key: "image_inpaint", support_state: "wgp_only", template_id: null },
-  annotated_image_edit: { route_key: "annotated_image_edit", support_state: "wgp_only", template_id: null },
+  qwen_image_edit: {
+    route_key: "qwen_image_edit",
+    support_state: "vibecomfy_supported",
+    template_id: "edit/qwen_image_edit",
+    vibecomfy_status: "tested",
+  },
+  qwen_image_style: {
+    route_key: "qwen_image_style",
+    support_state: "vibecomfy_supported",
+    template_id: "edit/qwen_image_edit",
+    vibecomfy_status: "tested",
+  },
+  image_inpaint: {
+    route_key: "image_inpaint",
+    support_state: "vibecomfy_supported",
+    template_id: "edit/qwen_image_edit",
+    vibecomfy_status: "tested",
+  },
+  annotated_image_edit: {
+    route_key: "annotated_image_edit",
+    support_state: "vibecomfy_supported",
+    template_id: "edit/qwen_image_edit",
+    vibecomfy_status: "tested",
+  },
   travel_orchestrator: { route_key: "travel_orchestrator", support_state: "wgp_only", template_id: null },
   join_clips_orchestrator: { route_key: "join_clips_orchestrator", support_state: "wgp_only", template_id: null },
   edit_video_orchestrator: { route_key: "edit_video_orchestrator", support_state: "wgp_only", template_id: null },
@@ -113,7 +144,66 @@ export const SPRINT_2_SELECTOR_MAP: Record<string, RouteSelectorEntry> = {
   join_clips_segment: { route_key: "join_clips_segment", support_state: "vibecomfy_unsupported", template_id: null },
   travel_stitch: { route_key: "travel_stitch", support_state: "wgp_only", template_id: null },
   join_final_stitch: { route_key: "join_final_stitch", support_state: "wgp_only", template_id: null },
-  wan_2_2_t2i: { route_key: "wan_2_2_t2i", support_state: "wgp_only", template_id: null },
+  wan_2_2_t2i: {
+    route_key: "wan_2_2_t2i",
+    support_state: "vibecomfy_supported",
+    template_id: "video/wanvideo_wrapper_22_14b_t2i",
+    default_resolution: "832x480",
+    vibecomfy_status: "tested",
+  },
+};
+
+const WAN_VACE_COCKTAIL_TEMPLATE = "video/wanvideo_wrapper_22_14b_vace_cocktail";
+
+export const SECTION3A_ROUTE_SUPPORT_MAP: Record<string, RouteSelectorEntry> = {
+  "travel_segment__model-wan22_vace__guidance-vace_flow__continuity-first_last__profile-default": {
+    route_key: "travel_segment__model-wan22_vace__guidance-vace_flow__continuity-first_last__profile-default",
+    support_state: "vibecomfy_supported",
+    template_id: WAN_VACE_COCKTAIL_TEMPLATE,
+    vibecomfy_status: "tested",
+  },
+  "travel_segment__model-wan22_vace__guidance-vace_canny__continuity-first_last__profile-default": {
+    route_key: "travel_segment__model-wan22_vace__guidance-vace_canny__continuity-first_last__profile-default",
+    support_state: "vibecomfy_supported",
+    template_id: WAN_VACE_COCKTAIL_TEMPLATE,
+    vibecomfy_status: "tested",
+  },
+  "travel_segment__model-wan22_vace__guidance-vace_depth__continuity-first_last__profile-default": {
+    route_key: "travel_segment__model-wan22_vace__guidance-vace_depth__continuity-first_last__profile-default",
+    support_state: "vibecomfy_supported",
+    template_id: WAN_VACE_COCKTAIL_TEMPLATE,
+    vibecomfy_status: "tested",
+  },
+  "travel_segment__model-wan22_vace__guidance-vace_raw__continuity-first_last__profile-default": {
+    route_key: "travel_segment__model-wan22_vace__guidance-vace_raw__continuity-first_last__profile-default",
+    support_state: "vibecomfy_supported",
+    template_id: WAN_VACE_COCKTAIL_TEMPLATE,
+    vibecomfy_status: "tested",
+  },
+  "travel_segment__model-wan22_vace__guidance-vace__continuity-video_source__profile-default": {
+    route_key: "travel_segment__model-wan22_vace__guidance-vace__continuity-video_source__profile-default",
+    support_state: "vibecomfy_supported",
+    template_id: WAN_VACE_COCKTAIL_TEMPLATE,
+    vibecomfy_status: "tested",
+  },
+  "individual_travel_segment__model-wan22_vace__guidance-vace__continuity-first_last__profile-default": {
+    route_key: "individual_travel_segment__model-wan22_vace__guidance-vace__continuity-first_last__profile-default",
+    support_state: "vibecomfy_supported",
+    template_id: WAN_VACE_COCKTAIL_TEMPLATE,
+    vibecomfy_status: "tested",
+  },
+  "individual_travel_segment__model-wan22_vace__guidance-vace_raw__continuity-first_last__profile-default": {
+    route_key: "individual_travel_segment__model-wan22_vace__guidance-vace_raw__continuity-first_last__profile-default",
+    support_state: "vibecomfy_supported",
+    template_id: WAN_VACE_COCKTAIL_TEMPLATE,
+    vibecomfy_status: "tested",
+  },
+  "join_clips_segment__model-wan22_vace__guidance-vace__continuity-join_bridge__profile-default": {
+    route_key: "join_clips_segment__model-wan22_vace__guidance-vace__continuity-join_bridge__profile-default",
+    support_state: "vibecomfy_supported",
+    template_id: WAN_VACE_COCKTAIL_TEMPLATE,
+    vibecomfy_status: "tested",
+  },
 };
 
 const ORCHESTRATED_PARENT_REQUIREMENTS: Record<string, Array<{ task_type: string; role: RouteRequirementRole }>> = {
@@ -201,6 +291,8 @@ export function routeSnapshotFields(input: RouteSnapshotInput): RouteSnapshotFie
 export function selectorEntryForRouteKey(routeKey: string): RouteSelectorEntry | null {
   const selectorEntry = SPRINT_2_SELECTOR_MAP[routeKey];
   if (selectorEntry) return selectorEntry;
+  const section3aEntry = SECTION3A_ROUTE_SUPPORT_MAP[routeKey];
+  if (section3aEntry) return section3aEntry;
   if (
     routeKey.startsWith("travel_segment__") ||
     routeKey.startsWith("individual_travel_segment__") ||
