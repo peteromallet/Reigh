@@ -77,13 +77,37 @@ const ROUTE_SELECTOR_MAP: Readonly<Record<string, RouteSelectorEntry>> = Object.
     support_state: "vibecomfy_supported",
     template_id: "image/z_image",
   },
-  z_image_turbo_i2i: { route_key: "z_image_turbo_i2i", support_state: "wgp_only", template_id: null },
-  qwen_image_2512: { route_key: "qwen_image_2512", support_state: "wgp_only", template_id: null },
+  z_image_turbo_i2i: {
+    route_key: "z_image_turbo_i2i",
+    support_state: "vibecomfy_supported",
+    template_id: "image/z_image_img2img",
+  },
+  qwen_image_2512: {
+    route_key: "qwen_image_2512",
+    support_state: "vibecomfy_supported",
+    template_id: "image/qwen_image_2512",
+  },
   qwen_image: { route_key: "qwen_image", support_state: "wgp_only", template_id: null },
-  qwen_image_edit: { route_key: "qwen_image_edit", support_state: "wgp_only", template_id: null },
-  qwen_image_style: { route_key: "qwen_image_style", support_state: "wgp_only", template_id: null },
-  image_inpaint: { route_key: "image_inpaint", support_state: "wgp_only", template_id: null },
-  annotated_image_edit: { route_key: "annotated_image_edit", support_state: "wgp_only", template_id: null },
+  qwen_image_edit: {
+    route_key: "qwen_image_edit",
+    support_state: "vibecomfy_supported",
+    template_id: "edit/qwen_image_edit",
+  },
+  qwen_image_style: {
+    route_key: "qwen_image_style",
+    support_state: "vibecomfy_supported",
+    template_id: "edit/qwen_image_edit",
+  },
+  image_inpaint: {
+    route_key: "image_inpaint",
+    support_state: "vibecomfy_supported",
+    template_id: "edit/qwen_image_edit",
+  },
+  annotated_image_edit: {
+    route_key: "annotated_image_edit",
+    support_state: "vibecomfy_supported",
+    template_id: "edit/qwen_image_edit",
+  },
   travel_orchestrator: { route_key: "travel_orchestrator", support_state: "wgp_only", template_id: null },
   join_clips_orchestrator: { route_key: "join_clips_orchestrator", support_state: "wgp_only", template_id: null },
   edit_video_orchestrator: { route_key: "edit_video_orchestrator", support_state: "wgp_only", template_id: null },
@@ -96,7 +120,11 @@ const ROUTE_SELECTOR_MAP: Readonly<Record<string, RouteSelectorEntry>> = Object.
   join_clips_segment: { route_key: "join_clips_segment", support_state: "vibecomfy_unsupported", template_id: null },
   travel_stitch: { route_key: "travel_stitch", support_state: "wgp_only", template_id: null },
   join_final_stitch: { route_key: "join_final_stitch", support_state: "wgp_only", template_id: null },
-  wan_2_2_t2i: { route_key: "wan_2_2_t2i", support_state: "wgp_only", template_id: null },
+  wan_2_2_t2i: {
+    route_key: "wan_2_2_t2i",
+    support_state: "vibecomfy_supported",
+    template_id: "video/wanvideo_wrapper_22_14b_t2i",
+  },
 });
 
 function hasRoutingValue(value: unknown): boolean {
@@ -249,9 +277,28 @@ export function selectorEntryForRouteKey(routeKey: string): RouteSelectorEntry |
     routeKey.startsWith("individual_travel_segment__") ||
     routeKey.startsWith("join_clips_segment__")
   ) {
+    if (isWanVaceCocktailRoute(routeKey)) {
+      return {
+        route_key: routeKey,
+        support_state: "vibecomfy_supported",
+        template_id: "video/wanvideo_wrapper_22_14b_vace_cocktail",
+      };
+    }
     return { route_key: routeKey, support_state: "vibecomfy_unsupported", template_id: null };
   }
   return null;
+}
+
+function isWanVaceCocktailRoute(routeKey: string): boolean {
+  if (!routeKey.includes("__model-wan22_vace__")) return false;
+  if (routeKey.includes("__guidance-uni3c__")) return false;
+  return (
+    routeKey.includes("__guidance-vace__") ||
+    routeKey.includes("__guidance-vace_flow__") ||
+    routeKey.includes("__guidance-vace_canny__") ||
+    routeKey.includes("__guidance-vace_depth__") ||
+    routeKey.includes("__guidance-vace_raw__")
+  );
 }
 
 function directRouteKey(taskType: string): string {

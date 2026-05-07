@@ -279,7 +279,7 @@ describe('claim-next-task edge entrypoint', () => {
       'utf8',
     );
     const claimSql = readFileSync(
-      path.resolve(process.cwd(), 'supabase/migrations/20260506113000_update_claim_next_task_route_selector.sql'),
+      path.resolve(process.cwd(), 'supabase/migrations/20260507215500_respect_task_selector_namespace_in_claims.sql'),
       'utf8',
     );
 
@@ -294,5 +294,9 @@ describe('claim-next-task edge entrypoint', () => {
     expect(claimSql).toContain('rd.selected_backend AS decision_selected_backend');
     expect(claimSql).toContain('rt.decision_selected_backend');
     expect(claimSql).toContain('task_selected_backend TEXT');
+    expect(claimSql).toContain(
+      "AND (COALESCE(NULLIF(t.selector_namespace, ''), 'production') = v_effective_selector_namespace)",
+    );
+    expect(claimSql).toContain("COALESCE(NULLIF(t.selector_namespace, ''), v_effective_selector_namespace)");
   });
 });
