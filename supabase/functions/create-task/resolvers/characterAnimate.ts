@@ -12,6 +12,7 @@ interface CharacterAnimateTaskInput {
   prompt?: string;
   mode: "replace" | "animate";
   resolution: "480p" | "720p";
+  num_frames?: number;
   seed?: number;
   random_seed?: boolean;
 }
@@ -48,6 +49,17 @@ function validateCharacterAnimateInput(input: CharacterAnimateTaskInput): void {
   if (!["480p", "720p"].includes(input.resolution)) {
     throw new TaskValidationError("resolution must be '480p' or '720p'", "resolution");
   }
+  if (
+    input.num_frames !== undefined
+    && (
+      !Number.isInteger(input.num_frames)
+      || input.num_frames < 1
+      || input.num_frames > 337
+      || (input.num_frames - 1) % 4 !== 0
+    )
+  ) {
+    throw new TaskValidationError("num_frames must be an integer between 1 and 337 in 4N+1 form", "num_frames");
+  }
 }
 
 export const characterAnimateResolver: TaskFamilyResolver = (request, context): ResolverResult => {
@@ -64,6 +76,7 @@ export const characterAnimateResolver: TaskFamilyResolver = (request, context): 
         prompt: input.prompt ?? DEFAULT_CHARACTER_ANIMATE_VALUES.prompt,
         mode: input.mode ?? DEFAULT_CHARACTER_ANIMATE_VALUES.mode,
         resolution: input.resolution ?? DEFAULT_CHARACTER_ANIMATE_VALUES.resolution,
+        ...(input.num_frames !== undefined ? { num_frames: input.num_frames } : {}),
         seed: resolveSeed32Bit({
           seed: input.seed,
           randomize: input.random_seed ?? DEFAULT_CHARACTER_ANIMATE_VALUES.random_seed,

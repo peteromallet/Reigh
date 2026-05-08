@@ -214,4 +214,39 @@ describe("active app create-task families", () => {
       expect(candidate.expectedSupport).toHaveProperty(snapshot.route_key);
     }
   });
+
+  it("passes character animate frame count through to the worker params", async () => {
+    const result = await resolveFamily({
+      name: "character animate duration",
+      family: "character_animate",
+      input: {
+        character_image_url: "https://example.com/character.png",
+        motion_video_url: "https://example.com/motion.mp4",
+        mode: "animate",
+        resolution: "480p",
+        num_frames: 49,
+      },
+      expectedTaskTypes: ["animate_character"],
+      expectedSupport: { animate_character: "vibecomfy_supported" },
+    });
+
+    expect(result.tasks).toHaveLength(1);
+    expect(result.tasks[0]?.params.num_frames).toBe(49);
+  });
+
+  it("rejects character animate frame counts that cannot map to Wan frame cadence", async () => {
+    await expect(resolveFamily({
+      name: "character animate bad duration",
+      family: "character_animate",
+      input: {
+        character_image_url: "https://example.com/character.png",
+        motion_video_url: "https://example.com/motion.mp4",
+        mode: "animate",
+        resolution: "480p",
+        num_frames: 50,
+      },
+      expectedTaskTypes: ["animate_character"],
+      expectedSupport: { animate_character: "vibecomfy_supported" },
+    })).rejects.toThrow(/num_frames must be an integer between 1 and 337 in 4N\+1 form/);
+  });
 });
