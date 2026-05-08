@@ -109,14 +109,14 @@ const activeFamilyCases: ActiveFamilyCase[] = [
     family: "image_upscale",
     input: { image_url: "https://example.com/source.png" },
     expectedTaskTypes: ["image-upscale"],
-    expectedSupport: { "image-upscale": "vibecomfy_unsupported" },
+    expectedSupport: { "image-upscale": "vibecomfy_supported" },
   },
   {
     name: "video enhance",
     family: "video_enhance",
     input: { video_url: "https://example.com/source.mp4", enable_interpolation: true, enable_upscale: true },
     expectedTaskTypes: ["video_enhance"],
-    expectedSupport: { video_enhance: "vibecomfy_unsupported" },
+    expectedSupport: { video_enhance: "vibecomfy_supported" },
   },
   {
     name: "character animate",
@@ -128,14 +128,14 @@ const activeFamilyCases: ActiveFamilyCase[] = [
       resolution: "480p",
     },
     expectedTaskTypes: ["animate_character"],
-    expectedSupport: { animate_character: "vibecomfy_unsupported" },
+    expectedSupport: { animate_character: "vibecomfy_supported" },
   },
   {
     name: "klein edit",
     family: "klein_edit",
     input: { prompt: "edit", image_url: "https://example.com/source.png", klein_model: "flux-klein-4b" },
     expectedTaskTypes: ["flux_klein_edit"],
-    expectedSupport: { flux_klein_edit: "vibecomfy_unsupported" },
+    expectedSupport: { flux_klein_edit: "vibecomfy_supported" },
   },
   {
     name: "travel between images parent",

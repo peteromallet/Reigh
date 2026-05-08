@@ -83,13 +83,13 @@ describe("create-task route key serialization", () => {
   });
 
   it.each([
-    "wan_2_2_i2v",
-    "image-upscale",
-    "image_upscale",
-    "video_enhance",
-    "animate_character",
-    "flux_klein_edit",
-  ])("marks active but unported route %s as explicitly unsupported for VibeComfy", (taskType) => {
+    ["wan_2_2_i2v", "video/wanvideo_wrapper_22_14b_i2v_kijai"],
+    ["image-upscale", "image/basic_image_upscale"],
+    ["image_upscale", "image/basic_image_upscale"],
+    ["video_enhance", "video/basic_video_enhance"],
+    ["animate_character", "video/wanvideo_wrapper_22_wan_animate_preprocess_kijai"],
+    ["flux_klein_edit", "edit/flux2_klein_4b_image_edit_distilled"],
+  ])("marks active route %s as supported for VibeComfy", (taskType, templateId) => {
     expect(
       routeSnapshotFields({
         taskType,
@@ -98,13 +98,13 @@ describe("create-task route key serialization", () => {
     ).toMatchObject({
       route_key: taskType,
       selected_backend: "vibecomfy",
-      support_state: "vibecomfy_unsupported",
-      selected_template_id: null,
+      support_state: "vibecomfy_supported",
+      selected_template_id: templateId,
       route_selection_snapshot: {
         route_key: taskType,
         selected_backend: "vibecomfy",
-        support_state: "vibecomfy_unsupported",
-        template_id: null,
+        support_state: "vibecomfy_supported",
+        template_id: templateId,
       },
     });
   });
