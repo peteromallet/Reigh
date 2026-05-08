@@ -376,6 +376,31 @@ describe("Wan/VACE child contract resolver coverage", () => {
     expect(params?.orchestrator_details?.travel_guidance).toBeUndefined();
   });
 
+  it("keeps turbo-mode Wan I2V travel requests on the owned orchestrator path", async () => {
+    const supabaseAdmin = {
+      rpc: async () => ({ data: "parent-generation-turbo", error: null }),
+    };
+    const result = await travelBetweenImagesResolver({
+      family: "travel_between_images",
+      project_id: "project-1",
+      input: {
+        shot_id: "shot-1",
+        image_urls: ["https://example.com/start.png", "https://example.com/end.png"],
+        base_prompts: ["turbo bridge"],
+        segment_frames: [49],
+        frame_overlap: [0],
+        model_name: "wan_2_2_i2v_lightning_baseline_2_2_2",
+        turbo_mode: true,
+      },
+    } satisfies ResolveRequest, { ...context, supabaseAdmin } as ResolverContext);
+
+    expect(result.tasks[0]?.task_type).toBe("travel_orchestrator");
+    expect(result.tasks[0]?.params?.orchestrator_details).toMatchObject({
+      model_name: "wan_2_2_i2v_lightning_baseline_2_2_2",
+      parent_generation_id: "parent-generation-turbo",
+    });
+  });
+
   it("routes default non-Qwen non-Z image generation to Wan T2I without app frame fields", () => {
     const result = imageGenerationResolver({
       family: "image_generation",

@@ -330,8 +330,10 @@ export const travelBetweenImagesResolver: TaskFamilyResolver = async (
   const parentGenerationId = await ensureShotParentGenerationId(context, input);
   const orchestratorTaskId = generateTaskId("sm_travel_orchestrator");
   const runId = generateRunId();
-  const isTurboMode = input.turbo_mode === true;
-  const taskType = isTurboMode ? "wan_2_2_i2v" : "travel_orchestrator";
+  // `wan_2_2_i2v` is not owned by the worker dispatch catalog yet. Keep
+  // turbo-mode requests on the proven travel orchestrator path until direct I2V
+  // has a real runtime owner, selector seed, and live proof.
+  const taskType = "travel_orchestrator";
 
   return {
     tasks: [
