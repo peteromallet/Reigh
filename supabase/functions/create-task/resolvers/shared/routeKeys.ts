@@ -152,7 +152,7 @@ const ROUTE_SELECTOR_MAP: Readonly<Record<string, RouteSelectorEntry>> = Object.
   animate_character: {
     route_key: "animate_character",
     support_state: "vibecomfy_supported",
-    template_id: "video/wanvideo_wrapper_22_wan_animate_preprocess_kijai",
+    template_id: "video/wan22_animate_native_first_stage",
   },
   flux_klein_edit: {
     route_key: "flux_klein_edit",

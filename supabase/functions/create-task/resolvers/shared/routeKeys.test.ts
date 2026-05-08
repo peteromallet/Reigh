@@ -87,7 +87,7 @@ describe("create-task route key serialization", () => {
     ["image-upscale", "image/basic_image_upscale"],
     ["image_upscale", "image/basic_image_upscale"],
     ["video_enhance", "video/basic_video_enhance"],
-    ["animate_character", "video/wanvideo_wrapper_22_wan_animate_preprocess_kijai"],
+    ["animate_character", "video/wan22_animate_native_first_stage"],
     ["flux_klein_edit", "edit/flux2_klein_4b_image_edit_distilled"],
   ])("marks active route %s as supported for VibeComfy", (taskType, templateId) => {
     expect(
