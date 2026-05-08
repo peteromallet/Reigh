@@ -87,7 +87,11 @@ const ROUTE_SELECTOR_MAP: Readonly<Record<string, RouteSelectorEntry>> = Object.
     support_state: "vibecomfy_supported",
     template_id: "image/qwen_image_2512",
   },
-  qwen_image: { route_key: "qwen_image", support_state: "wgp_only", template_id: null },
+  qwen_image: {
+    route_key: "qwen_image",
+    support_state: "vibecomfy_supported",
+    template_id: "image/qwen_image_2512",
+  },
   qwen_image_edit: {
     route_key: "qwen_image_edit",
     support_state: "vibecomfy_supported",

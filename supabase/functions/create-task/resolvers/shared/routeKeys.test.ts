@@ -59,6 +59,29 @@ describe("create-task route key serialization", () => {
     expect(deriveRouteKey("image-upscale")).toBe("image-upscale");
   });
 
+  it("reports promoted qwen_image as VibeComfy-supported with the 2512 template", () => {
+    expect(
+      routeSnapshotFields({
+        taskType: "qwen_image",
+        selectedBackend: "vibecomfy",
+        selectorVersion: 11,
+      }),
+    ).toMatchObject({
+      route_key: "qwen_image",
+      selected_backend: "vibecomfy",
+      support_state: "vibecomfy_supported",
+      selected_template_id: "image/qwen_image_2512",
+      selector_version: 11,
+      route_selection_snapshot: {
+        route_key: "qwen_image",
+        selected_backend: "vibecomfy",
+        support_state: "vibecomfy_supported",
+        template_id: "image/qwen_image_2512",
+        selector_version: 11,
+      },
+    });
+  });
+
   it("derives travel and individual travel dimensional keys with Python slug parity", () => {
     const params = {
       model_name: "LTX2 Distilled 13B",
