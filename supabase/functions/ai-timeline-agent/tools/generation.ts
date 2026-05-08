@@ -321,26 +321,32 @@ function buildCharacterAnimateInput(args: CreateGenerationTaskArgs): Record<stri
 function buildCreateTaskRequest(args: CreateGenerationTaskArgs): CreateTaskRequest | null {
   const taskType = asTrimmedString(args.task_type) ?? "image_generation";
   switch (taskType) {
+    case "travel_between_images":
     case "image-to-video": {
       const input = buildTravelBetweenImagesInput(args);
       return input ? { family: "travel_between_images", input } : null;
     }
+    case "z_image_turbo_i2i":
     case "image-to-image": {
       const input = buildZImageI2IInput(args);
       return input ? { family: "z_image_turbo_i2i", input } : null;
     }
+    case "magic_edit":
     case "magic-edit": {
       const input = buildMagicEditInput(args);
       return input ? { family: "magic_edit", input } : null;
     }
+    case "image_upscale":
     case "image-upscale": {
       const input = buildImageUpscaleInput(args);
       return input ? { family: "image_upscale", input } : null;
     }
+    case "video_enhance":
     case "video-enhance": {
       const input = buildVideoEnhanceInput(args);
       return input ? { family: "video_enhance", input } : null;
     }
+    case "character_animate":
     case "character-animate": {
       const input = buildCharacterAnimateInput(args);
       return input ? { family: "character_animate", input } : null;
