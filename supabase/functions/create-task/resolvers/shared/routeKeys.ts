@@ -129,6 +129,12 @@ const ROUTE_SELECTOR_MAP: Readonly<Record<string, RouteSelectorEntry>> = Object.
     support_state: "vibecomfy_supported",
     template_id: "video/wanvideo_wrapper_22_14b_t2i",
   },
+  wan_2_2_i2v: { route_key: "wan_2_2_i2v", support_state: "vibecomfy_unsupported", template_id: null },
+  "image-upscale": { route_key: "image-upscale", support_state: "vibecomfy_unsupported", template_id: null },
+  image_upscale: { route_key: "image_upscale", support_state: "vibecomfy_unsupported", template_id: null },
+  video_enhance: { route_key: "video_enhance", support_state: "vibecomfy_unsupported", template_id: null },
+  animate_character: { route_key: "animate_character", support_state: "vibecomfy_unsupported", template_id: null },
+  flux_klein_edit: { route_key: "flux_klein_edit", support_state: "vibecomfy_unsupported", template_id: null },
 });
 
 function hasRoutingValue(value: unknown): boolean {

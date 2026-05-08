@@ -82,6 +82,33 @@ describe("create-task route key serialization", () => {
     });
   });
 
+  it.each([
+    "wan_2_2_i2v",
+    "image-upscale",
+    "image_upscale",
+    "video_enhance",
+    "animate_character",
+    "flux_klein_edit",
+  ])("marks active but unported route %s as explicitly unsupported for VibeComfy", (taskType) => {
+    expect(
+      routeSnapshotFields({
+        taskType,
+        selectedBackend: "vibecomfy",
+      }),
+    ).toMatchObject({
+      route_key: taskType,
+      selected_backend: "vibecomfy",
+      support_state: "vibecomfy_unsupported",
+      selected_template_id: null,
+      route_selection_snapshot: {
+        route_key: taskType,
+        selected_backend: "vibecomfy",
+        support_state: "vibecomfy_unsupported",
+        template_id: null,
+      },
+    });
+  });
+
   it("derives travel and individual travel dimensional keys with Python slug parity", () => {
     const params = {
       model_name: "LTX2 Distilled 13B",
