@@ -12,8 +12,10 @@ const HEX_COLOR_RE = /^#[0-9a-fA-F]{3,8}$/;
 /** params.X / params["X"] / params['X'] — covers what the model will emit. */
 const PARAMS_REFERENCE_RE = /\bparams\s*(?:\.\s*([A-Za-z_$][\w$]*)|\[\s*"([^"\\]+)"\s*\]|\[\s*'([^'\\]+)'\s*\])/g;
 
-/** Asset-key/URL-array params are managed by the asset picker, not CONTROLS. */
+/** Managed params are owned by the asset-slot picker/runtime, not CONTROLS. */
 const RESERVED_NON_CONTROL_PARAMS = new Set([
+  'assetSlotBindings',
+  'assetSlots',
   'imageAssetKeys',
   'videoAssetKeys',
   'images',
@@ -57,6 +59,9 @@ function validateEntry(
   }
   if (seenNames.has(name)) {
     errors.push(`Duplicate control name "${name}"`);
+  }
+  if (RESERVED_NON_CONTROL_PARAMS.has(name)) {
+    errors.push(`Control name "${name}" is reserved for host-managed asset slots and cannot be user-facing`);
   }
   seenNames.add(name);
 

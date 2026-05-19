@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { Loader2, Sparkles } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Loader2, Sparkles, Trash2, Upload } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button.tsx';
 import {
   Dialog,
@@ -35,6 +35,7 @@ import {
   buildSequenceGenerationMetadata,
   createDraftGroupId,
   nameDraftGroupFromPrompt,
+  type AllowedSequenceAsset,
   type EditableSequenceDraft,
   type SequenceCreatorMode,
   type SequenceDraftGroup,
@@ -51,10 +52,12 @@ import {
   validateSequenceDraft,
   type ValidatedSequenceDraft,
 } from '@/tools/video-editor/sequences/validation.ts';
+import { sequenceComponentMetadataToElementManifest } from '@/tools/video-editor/sequence.ts';
 import type {
   ResolvedTimelineClip,
   ResolvedTimelineConfig,
 } from '@/tools/video-editor/types/index.ts';
+import type { SequenceComponentMetadata } from '@/features/resources/hooks/useResources.ts';
 import {
   runSequenceComponentGenerationRequest,
   runSequenceGenerationRequest,
@@ -68,14 +71,37 @@ import {
   type SequenceComponentResource,
 } from '@/tools/video-editor/hooks/useSequenceResources.ts';
 import { useAuth } from '@/shared/contexts/AuthContext.tsx';
+import { createGenerationForUploadedImage, createGenerationForUploadedVideo } from '@/shared/lib/media/createGenerationFromFile.ts';
+import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
 import { CodePathPreview } from './CodePathPreview.tsx';
+import { AssetSlotPicker } from './AssetSlotPicker.tsx';
 import { CodePathParamEditor } from './CodePathParamEditor.tsx';
 import { ControlsManifestLayout } from './ControlsManifestLayout.tsx';
 import { validateControlsManifest } from '@/tools/video-editor/sequences/controlsManifest.ts';
+import {
+  ASSET_SLOT_BINDINGS_PARAM,
+  ASSET_SLOTS_PARAM,
+  materializeAssetSlots,
+  normalizeAssetSlotBindings,
+  normalizeAssetSlots,
+  validateAssetSlotBindings,
+  type AssetSlotBindings,
+  type AssetSlotDefinition,
+  type AssetSlotAssetRegistry,
+} from '@/tools/video-editor/sequences/assetSlots.ts';
+import type { GeneratedComponent } from '@/tools/video-editor/state/sequenceCreatorStore.ts';
 
 type SequenceCreatorPanelProps = {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+};
+
+const sequenceCreatorLog = (message: string, metadata?: Record<string, unknown>): void => {
+  console.info('[SequenceCreator:Panel]', message, metadata ?? {});
+};
+
+const sequenceCreatorWarn = (message: string, metadata?: Record<string, unknown>): void => {
+  console.error('[SequenceCreator:Panel]', message, metadata ?? {});
 };
 
 const TEMP_SEQUENCE_PREVIEW_CLIP_ID = '__sequence_preview__';
@@ -133,6 +159,145 @@ const summarizeValidationErrors = (errors: readonly { message: string }[]): stri
   errors.map((error) => error.message).join(' ')
 );
 
+const normalizeLibraryAssetSlots = (resource: SequenceComponentResource) => {
+  const result = normalizeAssetSlots(resource.assetSlots ?? []);
+  if (result.errors.length > 0) {
+    sequenceCreatorWarn('library:asset_slots_invalid', {
+      resourceId: resource.id,
+      clipType: resource.clipType,
+      errors: result.errors.map((error) => error.message),
+    });
+  }
+  return result.slots;
+};
+
+const buildPanelAssetSlotRegistry = (
+  assets: readonly AllowedSequenceAsset[],
+): AssetSlotAssetRegistry => Object.fromEntries(assets.map((asset) => [asset.key, {
+  key: asset.key,
+  url: asset.url,
+  mediaType: asset.mediaType,
+  type: asset.mediaType,
+}]));
+
+const getGeneratedComponentAssetSlots = (
+  component: Pick<GeneratedComponent, 'assetSlots'> | null | undefined,
+): AssetSlotDefinition[] => (
+  Array.isArray(component?.assetSlots) ? component.assetSlots : []
+);
+
+const allowedAssetSourceRank: Record<AllowedSequenceAsset['source'], number> = {
+  selected: 0,
+  attached: 1,
+  uploaded: 2,
+};
+
+const isAssetValidForSlot = (
+  asset: AllowedSequenceAsset | undefined,
+  slot: AssetSlotDefinition,
+): boolean => Boolean(asset?.url) && asset?.mediaType === slot.mediaType;
+
+const defaultBindingsForAvailableAssets = (
+  slots: readonly AssetSlotDefinition[],
+  existingBindings: unknown,
+  assets: readonly AllowedSequenceAsset[],
+): AssetSlotBindings => {
+  const normalized = normalizeAssetSlotBindings(existingBindings).bindings;
+  const assetsByKey = new Map(assets.map((asset) => [asset.key, asset]));
+  const nextBindings: AssetSlotBindings = {};
+  let changed = false;
+
+  for (const slot of slots) {
+    const existingKeys = normalized[slot.id] ?? [];
+    const validExistingKeys = existingKeys.filter((key) => isAssetValidForSlot(assetsByKey.get(key), slot));
+    const needsRebind = existingKeys.length > 0
+      ? validExistingKeys.length !== existingKeys.length || validExistingKeys.length > slot.maxItems
+      : slot.required || slot.minItems > 0;
+
+    if (!needsRebind) {
+      if (validExistingKeys.length > 0) {
+        nextBindings[slot.id] = validExistingKeys;
+      }
+      continue;
+    }
+
+    const candidates = assets
+      .filter((asset) => isAssetValidForSlot(asset, slot))
+      .sort((a, b) => (
+        allowedAssetSourceRank[a.source] - allowedAssetSourceRank[b.source]
+        || a.label.localeCompare(b.label)
+      ));
+    const desiredCount = existingKeys.length > 0
+      ? Math.min(slot.maxItems, Math.max(slot.minItems, existingKeys.length))
+      : slot.minItems;
+    const replacementKeys = candidates.slice(0, desiredCount).map((asset) => asset.key);
+    if (replacementKeys.length > 0) {
+      nextBindings[slot.id] = replacementKeys;
+    }
+    changed = changed
+      || replacementKeys.length !== existingKeys.length
+      || replacementKeys.some((key, index) => key !== existingKeys[index]);
+  }
+
+  for (const slotId of Object.keys(normalized)) {
+    if (!slots.some((slot) => slot.id === slotId)) {
+      changed = true;
+    }
+  }
+
+  return changed ? nextBindings : normalized;
+};
+
+const applyAvailableAssetSlotDefaults = (
+  defaultsJson: object,
+  slots: readonly AssetSlotDefinition[],
+  assets: readonly AllowedSequenceAsset[],
+): object => {
+  if (slots.length === 0) return defaultsJson;
+  const defaults = (defaultsJson ?? {}) as Record<string, unknown>;
+  const nextBindings = defaultBindingsForAvailableAssets(
+    slots,
+    defaults[ASSET_SLOT_BINDINGS_PARAM],
+    assets,
+  );
+  return {
+    ...defaults,
+    [ASSET_SLOT_BINDINGS_PARAM]: nextBindings,
+  };
+};
+
+const materializeGeneratedComponentDefaults = (
+  component: GeneratedComponent,
+  assets: readonly AllowedSequenceAsset[],
+): { ok: true; defaultsJson: Record<string, unknown> } | { ok: false; error: string } => {
+  const baseDefaults = (component.defaultsJson ?? {}) as Record<string, unknown>;
+  const assetSlots = getGeneratedComponentAssetSlots(component);
+  if (assetSlots.length === 0) {
+    return { ok: true, defaultsJson: baseDefaults };
+  }
+
+  const result = materializeAssetSlots({
+    slots: assetSlots,
+    bindings: baseDefaults[ASSET_SLOT_BINDINGS_PARAM],
+    registry: buildPanelAssetSlotRegistry(assets),
+    path: `defaultsJson.${ASSET_SLOT_BINDINGS_PARAM}`,
+  });
+  if (result.errors.length > 0) {
+    return {
+      ok: false,
+      error: result.errors.map((error) => error.message).join(' '),
+    };
+  }
+
+  return {
+    ok: true,
+    defaultsJson: {
+      ...baseDefaults,
+      [ASSET_SLOTS_PARAM]: result.assetSlots,
+    },
+  };
+};
+
 export function SequenceCreatorPanel({
   open = true,
   onOpenChange,
@@ -140,7 +305,8 @@ export function SequenceCreatorPanel({
   const selectedMedia = useSelectedMediaClips();
   const attachmentSet = useCurrentAttachmentSet();
   const { data, resolvedConfig, selectedClipId, selectedClipIds, selectedTrackId } = useTimelineEditorData();
-  const { applyEdit } = useTimelineEditorOps();
+  const { applyEdit, registerGenerationAsset } = useTimelineEditorOps();
+  const runtime = useVideoEditorRuntime();
   const currentTime = useTimelinePlaybackSelector((playback) => playback.currentTime);
   const previewContainerRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -209,12 +375,24 @@ export function SequenceCreatorPanel({
   // Transient request lifecycle — deliberately NOT lifted to the store.
   // An in-flight request from before unmount/reload is gone afterward.
   const [isGenerating, setIsGenerating] = useState(false);
+  const [uploadedAllowedAssets, setUploadedAllowedAssets] = useState<AllowedSequenceAsset[]>([]);
+  const [isUploadingAllowedAsset, setIsUploadingAllowedAsset] = useState(false);
+  const [libraryPreviewResource, setLibraryPreviewResource] = useState<SequenceComponentResource | null>(null);
+  const [deletingLibraryResourceId, setDeletingLibraryResourceId] = useState<string | null>(null);
 
-  const allowedAssets = useMemo(() => (
+  const baseAllowedAssets = useMemo(() => (
     resolvedConfig
       ? buildAllowedSequenceAssets(selectedMedia.clips, attachmentSet.clips, resolvedConfig.registry)
       : []
   ), [attachmentSet.clips, resolvedConfig, selectedMedia.clips]);
+
+  const allowedAssets = useMemo(() => {
+    const byKey = new Map<string, AllowedSequenceAsset>();
+    for (const asset of [...baseAllowedAssets, ...uploadedAllowedAssets]) {
+      byKey.set(asset.key, asset);
+    }
+    return [...byKey.values()];
+  }, [baseAllowedAssets, uploadedAllowedAssets]);
 
   const allowedAssetKeys = useMemo(() => allowedAssets.map((asset) => asset.key), [allowedAssets]);
 
@@ -237,6 +415,56 @@ export function SequenceCreatorPanel({
     ? getAvailableClipTypeDescriptor(selectedDraft.clipType)
     : undefined;
   const selectedMetadata = selectedDraft ? getAvailableSequenceMetadata(selectedDraft.clipType) : undefined;
+  const generatedComponentAssetSlots = useMemo(
+    () => getGeneratedComponentAssetSlots(generatedComponent),
+    [generatedComponent],
+  );
+  const generatedAssetSlotValidation = useMemo(() => {
+    if (!generatedComponent || generatedComponentAssetSlots.length === 0) {
+      return { bindings: {}, errors: [] };
+    }
+    return validateAssetSlotBindings({
+      slots: generatedComponentAssetSlots,
+      bindings: (generatedComponent.defaultsJson as Record<string, unknown>)[ASSET_SLOT_BINDINGS_PARAM],
+      registry: buildPanelAssetSlotRegistry(allowedAssets),
+      path: `defaultsJson.${ASSET_SLOT_BINDINGS_PARAM}`,
+    });
+  }, [allowedAssets, generatedComponent, generatedComponentAssetSlots]);
+  const generatedAssetSlotError = generatedAssetSlotValidation.errors.length > 0
+    ? generatedAssetSlotValidation.errors.map((error) => error.message).join(' ')
+    : null;
+
+  useEffect(() => {
+    if (!generatedComponent || generatedComponentAssetSlots.length === 0) return;
+    const hasUnavailableBinding = generatedAssetSlotValidation.errors.some((error) => (
+      error.code === 'unknown_asset_key'
+      || error.code === 'media_type_mismatch'
+      || error.code === 'missing_asset_url'
+    ));
+    if (!hasUnavailableBinding) return;
+
+    const defaults = (generatedComponent.defaultsJson ?? {}) as Record<string, unknown>;
+    const currentBindings = normalizeAssetSlotBindings(defaults[ASSET_SLOT_BINDINGS_PARAM]).bindings;
+    const nextDefaults = applyAvailableAssetSlotDefaults(
+      generatedComponent.defaultsJson,
+      generatedComponentAssetSlots,
+      allowedAssets,
+    ) as Record<string, unknown>;
+    const nextBindings = normalizeAssetSlotBindings(nextDefaults[ASSET_SLOT_BINDINGS_PARAM]).bindings;
+    if (JSON.stringify(currentBindings) === JSON.stringify(nextBindings)) return;
+
+    setGeneratedComponent((prev) => (
+      prev === generatedComponent
+        ? { ...prev, defaultsJson: nextDefaults }
+        : prev
+    ));
+  }, [
+    allowedAssets,
+    generatedAssetSlotValidation.errors,
+    generatedComponent,
+    generatedComponentAssetSlots,
+    setGeneratedComponent,
+  ]);
 
   const previewConfig = useMemo(() => {
     if (!resolvedConfig || !validatedDraft) return null;
@@ -249,6 +477,9 @@ export function SequenceCreatorPanel({
   }, [data, selectedClipId, selectedClipIds, validatedDraft]);
 
   const replaceDisabledReason = useMemo(() => {
+    if (generatedComponent && generatedAssetSlotError) {
+      return generatedAssetSlotError;
+    }
     if (!validatedDraft && !generatedComponent) {
       return selectedValidation && !selectedValidation.ok
         ? summarizeValidationErrors(selectedValidation.errors)
@@ -262,7 +493,7 @@ export function SequenceCreatorPanel({
       return replaceProbe.ok ? null : formatEditError(replaceProbe.error);
     }
     return null;
-  }, [generatedComponent, replaceProbe, selectedClipId, selectedClipIds, selectedValidation, validatedDraft]);
+  }, [generatedAssetSlotError, generatedComponent, replaceProbe, selectedClipId, selectedClipIds, selectedValidation, validatedDraft]);
 
   const runSequenceGeneration = useCallback(async (rawPrompt: string, options: {
     mode?: SequenceCreatorMode;
@@ -299,6 +530,12 @@ export function SequenceCreatorPanel({
       // code-path edge function directly. Avoids wasted Claude tokens on a
       // routing decision the user has already made.
       if (generationMode === 'code') {
+        sequenceCreatorLog('code_path:forced:start', {
+          promptLength: generationPrompt.length,
+          selectedClipCount: selectedMedia.clips.length,
+          attachedClipCount: attachmentSet.clips.length,
+          allowedAssetCount: allowedAssets.length,
+        });
         const codeResult = await runSequenceComponentGenerationRequest({
           prompt: generationPrompt,
           resolvedConfig,
@@ -310,10 +547,20 @@ export function SequenceCreatorPanel({
         });
         if (codeResult.status === 'aborted') return;
         if (codeResult.status === 'error') {
+          sequenceCreatorWarn('code_path:forced:error', {
+            error: codeResult.error,
+            rawOutputLength: codeResult.rawOutput?.length ?? 0,
+          });
           setActionError(codeResult.error);
           setGenerationNote(`Code-path generation failed: ${codeResult.error}`);
           return;
         }
+        sequenceCreatorLog('code_path:forced:ok', {
+          codeLength: codeResult.code.length,
+          name: codeResult.name,
+          model: codeResult.model,
+          controlsManifestCount: codeResult.controlsManifest.length,
+        });
         setClassifierVerdict({ path: 'code', reason: 'Custom animation mode (forced).' });
         setGeneratedComponent({
           code: codeResult.code,
@@ -321,6 +568,7 @@ export function SequenceCreatorPanel({
           description: codeResult.description,
           schemaJson: codeResult.schemaJson,
           defaultsJson: codeResult.defaultsJson,
+          assetSlots: codeResult.assetSlots,
           controlsManifest: codeResult.controlsManifest as unknown[],
         });
         setGeneratedComponentSourceClipType(undefined);
@@ -352,6 +600,10 @@ export function SequenceCreatorPanel({
       }
 
       if (result.status === 'classifier_code') {
+        sequenceCreatorLog('code_path:classifier_routed', {
+          reason: result.classifier.reason,
+          promptLength: result.generationPrompt.length,
+        });
         // Unified-UX (T13): classifier routed this prompt to the code path.
         // For theme-bundled clips we require deliberate fork-to-DB confirmation
         // ("Customize this sequence for yourself"); otherwise we dispatch
@@ -368,6 +620,10 @@ export function SequenceCreatorPanel({
         const isThemeBundled = descriptor?.source === 'installed-sequence';
         if (isThemeBundled && selectedClipType) {
           const bundled = getBundledComponentSource(selectedClipType);
+          sequenceCreatorLog('code_path:fork_pending', {
+            selectedClipType,
+            bundledStatus: bundled.status,
+          });
           setForkPending({
             prompt: result.generationPrompt,
             reason: result.classifier.reason,
@@ -383,6 +639,12 @@ export function SequenceCreatorPanel({
         }
         // Non-bundled selection (DB-stored sequence or no selection): dispatch
         // the code-path call directly.
+        sequenceCreatorLog('code_path:classifier_followup:start', {
+          promptLength: result.generationPrompt.length,
+          selectedClipCount: selectedMedia.clips.length,
+          attachedClipCount: attachmentSet.clips.length,
+          allowedAssetCount: allowedAssets.length,
+        });
         const codeResult = await runSequenceComponentGenerationRequest({
           prompt: result.generationPrompt,
           resolvedConfig,
@@ -394,16 +656,27 @@ export function SequenceCreatorPanel({
         });
         if (codeResult.status === 'aborted') return;
         if (codeResult.status === 'error') {
+          sequenceCreatorWarn('code_path:classifier_followup:error', {
+            error: codeResult.error,
+            rawOutputLength: codeResult.rawOutput?.length ?? 0,
+          });
           setActionError(codeResult.error);
           setGenerationNote(`Code-path generation failed: ${codeResult.error}`);
           return;
         }
+        sequenceCreatorLog('code_path:classifier_followup:ok', {
+          codeLength: codeResult.code.length,
+          name: codeResult.name,
+          model: codeResult.model,
+          controlsManifestCount: codeResult.controlsManifest.length,
+        });
         setGeneratedComponent({
           code: codeResult.code,
           name: codeResult.name,
           description: codeResult.description,
           schemaJson: codeResult.schemaJson,
           defaultsJson: codeResult.defaultsJson,
+          assetSlots: codeResult.assetSlots,
           controlsManifest: codeResult.controlsManifest as unknown[],
         });
         setGeneratedComponentSourceClipType(undefined);
@@ -458,6 +731,16 @@ export function SequenceCreatorPanel({
     selectedClipId,
     selectedClipIds,
     selectedMedia.clips,
+    setActionError,
+    setClassifierVerdict,
+    setDraftGroups,
+    setForkPending,
+    setGeneratedComponent,
+    setGeneratedComponentSourceClipType,
+    setGenerationNote,
+    setMode,
+    setSelectedDraftIndex,
+    setSelectedGroupId,
   ]);
 
   const handleGenerate = useCallback(() => {
@@ -479,6 +762,11 @@ export function SequenceCreatorPanel({
     setIsGenerating(true);
     setActionError(null);
     try {
+      sequenceCreatorLog('code_path:fork:start', {
+        selectedClipType: forkPending.selectedClipType,
+        promptLength: forkPending.prompt.length,
+        bundledCodeLength: forkPending.bundledSource.code.length,
+      });
       const codeResult = await runSequenceComponentGenerationRequest({
         prompt: forkPending.prompt,
         existingComponent: {
@@ -497,16 +785,27 @@ export function SequenceCreatorPanel({
       });
       if (codeResult.status === 'aborted') return;
       if (codeResult.status === 'error') {
+        sequenceCreatorWarn('code_path:fork:error', {
+          error: codeResult.error,
+          rawOutputLength: codeResult.rawOutput?.length ?? 0,
+        });
         setActionError(codeResult.error);
         setGenerationNote(`Fork failed: ${codeResult.error}`);
         return;
       }
+      sequenceCreatorLog('code_path:fork:ok', {
+        codeLength: codeResult.code.length,
+        name: codeResult.name,
+        model: codeResult.model,
+        controlsManifestCount: codeResult.controlsManifest.length,
+      });
       setGeneratedComponent({
         code: codeResult.code,
         name: codeResult.name,
         description: codeResult.description,
         schemaJson: codeResult.schemaJson,
         defaultsJson: codeResult.defaultsJson,
+        assetSlots: codeResult.assetSlots,
         controlsManifest: codeResult.controlsManifest as unknown[],
       });
       setGeneratedComponentSourceClipType(undefined);
@@ -523,12 +822,25 @@ export function SequenceCreatorPanel({
     } finally {
       setIsGenerating(false);
     }
-  }, [allowedAssetKeys, allowedAssets, attachmentSet.clips, forkPending, resolvedConfig, selectedMedia.clips]);
+  }, [
+    allowedAssetKeys,
+    allowedAssets,
+    attachmentSet.clips,
+    forkPending,
+    resolvedConfig,
+    selectedMedia.clips,
+    setActionError,
+    setForkPending,
+    setGeneratedComponent,
+    setGeneratedComponentSourceClipType,
+    setGenerationNote,
+    setMode,
+  ]);
 
   const handleCancelFork = useCallback(() => {
     setForkPending(null);
     setGenerationNote(null);
-  }, []);
+  }, [setForkPending, setGenerationNote]);
 
   // T14 — headless smoke-render gate before persisting a generated
   // sequence component. Save flow:
@@ -553,19 +865,22 @@ export function SequenceCreatorPanel({
   const persistGeneratedComponent = useCallback(async ():
     Promise<{ ok: true; draft: ValidatedSequenceDraft } | { ok: false; error: string }> => {
     if (!generatedComponent) return { ok: false, error: 'No generated component.' };
-    const smoke = await smokeRenderSequenceComponent({
-      code: generatedComponent.code,
-      schemaJson: generatedComponent.schemaJson,
-      defaultsJson: generatedComponent.defaultsJson,
-      fps: resolvedConfig?.output.fps ?? 30,
+    const startedAt = Date.now();
+    sequenceCreatorLog('persist:start', {
+      name: generatedComponent.name,
+      codeLength: generatedComponent.code.length,
+      controlsManifestCount: generatedComponent.controlsManifest?.length ?? 0,
+      sourceClipType: generatedComponentSourceClipType ?? null,
     });
-    if (!smoke.ok) {
-      return { ok: false, error: `Smoke render failed: ${smoke.error}. Component NOT saved.` };
-    }
     const defaultHold = 4;
     // Loaded from library: the resource already exists in DB. Reuse its
-    // clipType and skip the create-resource call so we don't double-save.
+    // clipType and skip the create-resource smoke/save gate so Insert/Replace
+    // cannot be blocked by a persistence-only check.
     if (generatedComponentSourceClipType) {
+      sequenceCreatorLog('persist:reuse_existing', {
+        durationMs: Date.now() - startedAt,
+        clipType: generatedComponentSourceClipType,
+      });
       return {
         ok: true,
         draft: {
@@ -575,30 +890,75 @@ export function SequenceCreatorPanel({
         },
       };
     }
+
+    const smokeDefaults = materializeGeneratedComponentDefaults(generatedComponent, allowedAssets);
+    if (!smokeDefaults.ok) {
+      sequenceCreatorWarn('persist:asset_slots_invalid', {
+        durationMs: Date.now() - startedAt,
+        error: smokeDefaults.error,
+      });
+      return { ok: false, error: `Asset slot bindings invalid: ${smokeDefaults.error}. Component NOT saved.` };
+    }
+    const smoke = await smokeRenderSequenceComponent({
+      code: generatedComponent.code,
+      schemaJson: generatedComponent.schemaJson,
+      defaultsJson: smokeDefaults.defaultsJson,
+      fps: resolvedConfig?.output.fps ?? 30,
+    });
+    if (!smoke.ok) {
+      sequenceCreatorWarn('persist:smoke_failed', {
+        durationMs: Date.now() - startedAt,
+        error: smoke.error,
+      });
+      return { ok: false, error: `Smoke render failed: ${smoke.error}. Component NOT saved.` };
+    }
+    sequenceCreatorLog('persist:smoke_ok', {
+      durationMs: Date.now() - startedAt,
+    });
     const slug = (generatedComponent.name || 'component')
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-');
     const uniqueClipType = forkPending?.selectedClipType
       ?? `custom-component:${slug}-${Date.now().toString(36)}`;
-    const metadata = {
+    const metadata: SequenceComponentMetadata = {
       name: generatedComponent.name || 'Untitled component',
       slug,
       code: generatedComponent.code,
       schemaJson: generatedComponent.schemaJson,
       defaultsJson: generatedComponent.defaultsJson,
       controlsManifest: generatedComponent.controlsManifest,
+      assetSlots: getGeneratedComponentAssetSlots(generatedComponent),
       clipType: uniqueClipType,
       themeId: resolvedConfig?.theme ?? '2rp',
       description: generatedComponent.description,
       created_by: { is_you: true },
       is_public: false,
     };
+    metadata.elementManifest = sequenceComponentMetadataToElementManifest(metadata, {
+      id: `reigh:sequence-component:${uniqueClipType}`,
+      generatedBy: 'sequence-creator',
+    });
     try {
+      sequenceCreatorLog('persist:save:start', {
+        clipType: uniqueClipType,
+        slug,
+        themeId: metadata.themeId,
+      });
       await createSequenceComponent.mutateAsync({ metadata });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Save failed.';
+      console.error('[SequenceCreator:Panel] persist:save_failed', {
+        durationMs: Date.now() - startedAt,
+        clipType: uniqueClipType,
+        message,
+      });
       return { ok: false, error: `Save failed: ${message}. Component NOT saved.` };
     }
+    sequenceCreatorLog('persist:save_ok', {
+      durationMs: Date.now() - startedAt,
+      clipType: uniqueClipType,
+      slug,
+    });
     return {
       ok: true,
       draft: {
@@ -607,7 +967,27 @@ export function SequenceCreatorPanel({
         params: (generatedComponent.defaultsJson ?? {}) as ValidatedSequenceDraft['params'],
       },
     };
-  }, [createSequenceComponent, forkPending, generatedComponent, generatedComponentSourceClipType, resolvedConfig?.output.fps, resolvedConfig?.theme]);
+  }, [
+    allowedAssets,
+    createSequenceComponent,
+    forkPending,
+    generatedComponent,
+    generatedComponentSourceClipType,
+    resolvedConfig?.output.fps,
+    resolvedConfig?.theme,
+  ]);
+
+  const buildLibraryResourceDraft = useCallback((resource: SequenceComponentResource): ValidatedSequenceDraft => {
+    const assetSlots = normalizeLibraryAssetSlots(resource);
+    const defaultsJson = generatedComponentSourceClipType === resource.clipType && generatedComponent
+      ? generatedComponent.defaultsJson
+      : applyAvailableAssetSlotDefaults(resource.defaultsJson, assetSlots, allowedAssets);
+    return {
+      clipType: resource.clipType,
+      hold: 4,
+      params: (defaultsJson ?? {}) as ValidatedSequenceDraft['params'],
+    };
+  }, [allowedAssets, generatedComponent, generatedComponentSourceClipType]);
 
   const handleEditSelected = useCallback(() => {
     if (!selectedGroup || !selectedDraft) return;
@@ -639,36 +1019,106 @@ export function SequenceCreatorPanel({
         : group
     )));
     setActionError(null);
-  }, [selectedDraftIndex, selectedGroup]);
+  }, [selectedDraftIndex, selectedGroup, setActionError, setDraftGroups]);
+
+  const updateGeneratedAssetSlotBinding = useCallback((slotId: string, assetKeys: string[]) => {
+    const nextAssetKeys = [...new Set(assetKeys)];
+    setGeneratedComponent((prev) => {
+      if (!prev) return prev;
+      const defaults = (prev.defaultsJson ?? {}) as Record<string, unknown>;
+      const normalized = normalizeAssetSlotBindings(defaults[ASSET_SLOT_BINDINGS_PARAM]);
+      const nextBindings = { ...normalized.bindings };
+      if (nextAssetKeys.length === 0) {
+        delete nextBindings[slotId];
+      } else {
+        nextBindings[slotId] = nextAssetKeys;
+      }
+      return {
+        ...prev,
+        defaultsJson: {
+          ...defaults,
+          [ASSET_SLOT_BINDINGS_PARAM]: nextBindings,
+        },
+      };
+    });
+    setActionError(null);
+  }, [setActionError, setGeneratedComponent]);
 
   // Resolve the draft to insert/replace with: prefer an explicit JSON
   // validated draft; otherwise persist the code-path generatedComponent and
   // synthesize a draft pointing at its DB resource.
   const resolveDraftForApply = useCallback(async ():
     Promise<{ ok: true; draft: ValidatedSequenceDraft } | { ok: false; error: string }> => {
-    if (validatedDraft) return { ok: true, draft: validatedDraft };
-    if (generatedComponent) return persistGeneratedComponent();
+    if (mode === 'library' && libraryPreviewResource) {
+      sequenceCreatorLog('apply:resolve_draft:library_preview', {
+        name: libraryPreviewResource.name,
+        clipType: libraryPreviewResource.clipType,
+      });
+      return { ok: true, draft: buildLibraryResourceDraft(libraryPreviewResource) };
+    }
+    if (validatedDraft) {
+      sequenceCreatorLog('apply:resolve_draft:validated', {
+        clipType: validatedDraft.clipType,
+      });
+      return { ok: true, draft: validatedDraft };
+    }
+    if (generatedComponent) {
+      sequenceCreatorLog('apply:resolve_draft:generated_component', {
+        name: generatedComponent.name,
+        codeLength: generatedComponent.code.length,
+      });
+      return persistGeneratedComponent();
+    }
+    sequenceCreatorWarn('apply:resolve_draft:missing');
     return { ok: false, error: 'Generate a sequence first.' };
-  }, [generatedComponent, persistGeneratedComponent, validatedDraft]);
+  }, [
+    buildLibraryResourceDraft,
+    generatedComponent,
+    libraryPreviewResource,
+    mode,
+    persistGeneratedComponent,
+    validatedDraft,
+  ]);
 
   const handleInsert = useCallback(async () => {
     if (!data) return;
     setIsSaving(true);
     setActionError(null);
     try {
+      sequenceCreatorLog('apply:insert:start', {
+        currentTime,
+        selectedTrackId: selectedTrackId ?? null,
+      });
       const resolved = await resolveDraftForApply();
       if (!resolved.ok) {
+        sequenceCreatorWarn('apply:insert:resolve_failed', {
+          error: resolved.error,
+        });
         setActionError(resolved.error);
         return;
       }
+      sequenceCreatorLog('apply:insert:draft_resolved', {
+        clipType: resolved.draft.clipType,
+        hold: resolved.draft.hold,
+        paramKeys: Object.keys(resolved.draft.params ?? {}),
+      });
       const result = buildInsertSequenceDraftEdit(data, resolved.draft, {
         at: currentTime,
         selectedTrackId,
       });
       if (!result.ok) {
+        sequenceCreatorWarn('apply:insert:build_failed', {
+          error: result.error,
+          clipType: resolved.draft.clipType,
+        });
         setActionError(formatEditError(result.error));
         return;
       }
+      sequenceCreatorLog('apply:insert:build_ok', {
+        clipId: result.clipId,
+        selectedClipId: result.selectedClipId,
+        selectedTrackId: result.selectedTrackId,
+      });
       applyEdit(attachSequenceGenerationMetadata(
         result.mutation,
         result.clipId,
@@ -678,27 +1128,52 @@ export function SequenceCreatorPanel({
         selectedTrackId: result.selectedTrackId,
       });
       requestCenterTimelineClip(result.selectedClipId);
+      sequenceCreatorLog('apply:insert:applied', {
+        clipId: result.clipId,
+        selectedClipId: result.selectedClipId,
+      });
       onOpenChange?.(false);
     } finally {
       setIsSaving(false);
     }
-  }, [applyEdit, currentTime, data, onOpenChange, resolveDraftForApply, selectedDraftIndex, selectedGroup, selectedTrackId]);
+  }, [applyEdit, currentTime, data, onOpenChange, resolveDraftForApply, selectedDraftIndex, selectedGroup, selectedTrackId, setActionError]);
 
   const handleReplace = useCallback(async () => {
     if (!data) return;
     setIsSaving(true);
     setActionError(null);
     try {
+      sequenceCreatorLog('apply:replace:start', {
+        selectedClipId: selectedClipId ?? null,
+        selectedClipIds: selectedClipIds ? Array.from(selectedClipIds) : [],
+      });
       const resolved = await resolveDraftForApply();
       if (!resolved.ok) {
+        sequenceCreatorWarn('apply:replace:resolve_failed', {
+          error: resolved.error,
+        });
         setActionError(resolved.error);
         return;
       }
+      sequenceCreatorLog('apply:replace:draft_resolved', {
+        clipType: resolved.draft.clipType,
+        hold: resolved.draft.hold,
+        paramKeys: Object.keys(resolved.draft.params ?? {}),
+      });
       const result = buildReplaceSequenceDraftEdit(data, resolved.draft, { selectedClipId, selectedClipIds });
       if (!result.ok) {
+        sequenceCreatorWarn('apply:replace:build_failed', {
+          error: result.error,
+          clipType: resolved.draft.clipType,
+        });
         setActionError(formatEditError(result.error));
         return;
       }
+      sequenceCreatorLog('apply:replace:build_ok', {
+        clipId: result.clipId,
+        selectedClipId: result.selectedClipId,
+        selectedTrackId: result.selectedTrackId,
+      });
       applyEdit(attachSequenceGenerationMetadata(
         result.mutation,
         result.clipId,
@@ -708,18 +1183,26 @@ export function SequenceCreatorPanel({
         selectedTrackId: result.selectedTrackId,
       });
       requestCenterTimelineClip(result.selectedClipId);
+      sequenceCreatorLog('apply:replace:applied', {
+        clipId: result.clipId,
+        selectedClipId: result.selectedClipId,
+      });
       onOpenChange?.(false);
     } finally {
       setIsSaving(false);
     }
-  }, [applyEdit, data, onOpenChange, resolveDraftForApply, selectedClipId, selectedClipIds, selectedDraftIndex, selectedGroup]);
+  }, [applyEdit, data, onOpenChange, resolveDraftForApply, selectedClipId, selectedClipIds, selectedDraftIndex, selectedGroup, setActionError]);
 
   const handleRemoveAllowedAsset = useCallback((asset: {
     clipId: string;
     url: string;
     mediaType: 'image' | 'video';
     generationId?: string;
+    assetKey?: string;
   }) => {
+    if (asset.assetKey) {
+      setUploadedAllowedAssets((current) => current.filter((item) => item.key !== asset.assetKey));
+    }
     composerRemoveAttachment({
       clipId: asset.clipId,
       url: asset.url,
@@ -727,6 +1210,70 @@ export function SequenceCreatorPanel({
       generationId: asset.generationId,
     });
   }, []);
+
+  const handleUploadAllowedAssets = useCallback(async (files: FileList | File[]) => {
+    const fileArray = Array.from(files).filter((file) => (
+      file.type.startsWith('image/') || file.type.startsWith('video/')
+    ));
+    if (fileArray.length === 0) return;
+
+    const projectId = runtime.project.projectId;
+    if (!projectId) {
+      toast({ title: 'Project unavailable', description: 'Load a project before uploading sequence assets.', variant: 'destructive' });
+      return;
+    }
+
+    setIsUploadingAllowedAsset(true);
+    setActionError(null);
+    try {
+      const uploaded: AllowedSequenceAsset[] = [];
+      for (const file of fileArray) {
+        const isVideo = file.type.startsWith('video/');
+        const generation = isVideo
+          ? await createGenerationForUploadedVideo({ videoFile: file, projectId })
+          : await createGenerationForUploadedImage({ imageFile: file, projectId });
+        const url = typeof generation.location === 'string' ? generation.location : '';
+        if (!url) {
+          throw new Error(`Upload completed without a media URL for ${file.name}`);
+        }
+        const thumbnailUrl = typeof generation.thumbnail_url === 'string' ? generation.thumbnail_url : url;
+        const assetKey = registerGenerationAsset({
+          generationId: generation.id,
+          variantType: isVideo ? 'video' : 'image',
+          imageUrl: url,
+          thumbUrl: thumbnailUrl,
+          metadata: {
+            content_type: file.type || (isVideo ? 'video/mp4' : 'image/png'),
+            original_filename: file.name,
+          },
+        });
+        if (!assetKey) {
+          throw new Error(`Failed to register uploaded asset ${file.name}`);
+        }
+        uploaded.push({
+          key: assetKey,
+          url,
+          mediaType: isVideo ? 'video' : 'image',
+          source: 'uploaded',
+          label: file.name,
+          clipId: `sequence-upload:${assetKey}`,
+          generationId: generation.id,
+        });
+      }
+      setUploadedAllowedAssets((current) => {
+        const byKey = new Map(current.map((asset) => [asset.key, asset]));
+        uploaded.forEach((asset) => byKey.set(asset.key, asset));
+        return [...byKey.values()];
+      });
+      toast({ title: 'Assets uploaded', description: `${uploaded.length} asset${uploaded.length === 1 ? '' : 's'} added to Sequence Creator.` });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to upload sequence assets.';
+      setActionError(message);
+      toast({ title: 'Upload failed', description: message, variant: 'destructive' });
+    } finally {
+      setIsUploadingAllowedAsset(false);
+    }
+  }, [registerGenerationAsset, runtime.project.projectId, setActionError]);
 
   const handleRemoveAllowedShot = useCallback((shotId: string) => {
     allowedAssets
@@ -739,11 +1286,13 @@ export function SequenceCreatorPanel({
       }));
   }, [allowedAssets]);
 
-  const insertDisabledReason = (!validatedDraft && !generatedComponent)
-    ? (selectedValidation && !selectedValidation.ok
-      ? summarizeValidationErrors(selectedValidation.errors)
-      : 'Generate or select a sequence first.')
-    : (!data ? 'Timeline unavailable.' : null);
+  const insertDisabledReason = generatedComponent && generatedAssetSlotError
+    ? generatedAssetSlotError
+    : ((!validatedDraft && !generatedComponent)
+      ? (selectedValidation && !selectedValidation.ok
+        ? summarizeValidationErrors(selectedValidation.errors)
+        : 'Generate or select a sequence first.')
+      : (!data ? 'Timeline unavailable.' : null));
 
   // Library list — sorted newest-first by created_at, falling back to name.
   const libraryComponents = useMemo(() => {
@@ -760,14 +1309,19 @@ export function SequenceCreatorPanel({
     });
     return list;
   }, [libraryCatalog.components]);
+  const libraryPreviewAssetSlots = useMemo(() => (
+    libraryPreviewResource ? normalizeLibraryAssetSlots(libraryPreviewResource) : []
+  ), [libraryPreviewResource]);
 
   const handleLoadLibraryComponent = useCallback((resource: SequenceComponentResource) => {
+    const assetSlots = normalizeLibraryAssetSlots(resource);
     setGeneratedComponent({
       code: resource.code,
       name: resource.name,
       description: resource.description ?? '',
       schemaJson: resource.schemaJson,
-      defaultsJson: resource.defaultsJson,
+      defaultsJson: applyAvailableAssetSlotDefaults(resource.defaultsJson, assetSlots, allowedAssets),
+      assetSlots,
       controlsManifest: resource.controlsManifest as unknown[] | undefined,
     });
     setGeneratedComponentSourceClipType(resource.clipType);
@@ -786,6 +1340,64 @@ export function SequenceCreatorPanel({
     setGenerationNote,
     setMode,
     setSelectedGroupId,
+    allowedAssets,
+  ]);
+
+  const handlePreviewLibraryComponent = useCallback((resource: SequenceComponentResource) => {
+    const assetSlots = normalizeLibraryAssetSlots(resource);
+    setLibraryPreviewResource(resource);
+    setGeneratedComponent({
+      code: resource.code,
+      name: resource.name,
+      description: resource.description ?? '',
+      schemaJson: resource.schemaJson,
+      defaultsJson: applyAvailableAssetSlotDefaults(resource.defaultsJson, assetSlots, allowedAssets),
+      assetSlots,
+      controlsManifest: resource.controlsManifest as unknown[] | undefined,
+    });
+    setGeneratedComponentSourceClipType(resource.clipType);
+    setClassifierVerdict({ path: 'code', reason: 'Previewing from library.' });
+    setSelectedGroupId(null);
+    setActionError(null);
+    setGenerationNote(`Previewing "${resource.name}" from library.`);
+  }, [
+    setActionError,
+    setClassifierVerdict,
+    setGeneratedComponent,
+    setGeneratedComponentSourceClipType,
+    setGenerationNote,
+    setSelectedGroupId,
+    allowedAssets,
+  ]);
+
+  const handleDeleteLibraryComponent = useCallback(async (resource: SequenceComponentResource) => {
+    if (!libraryCatalog.canDeleteComponent || !libraryCatalog.deleteComponent) {
+      setActionError('This library does not support deleting saved sequences.');
+      return;
+    }
+    setDeletingLibraryResourceId(resource.id);
+    setActionError(null);
+    try {
+      await libraryCatalog.deleteComponent({ id: resource.id });
+      if (generatedComponentSourceClipType === resource.clipType) {
+        setGeneratedComponent(null);
+        setGeneratedComponentSourceClipType(undefined);
+      }
+      setLibraryPreviewResource((current) => (current?.id === resource.id ? null : current));
+      toast({ title: 'Sequence deleted', description: resource.name || 'Saved sequence removed.' });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to delete saved sequence.';
+      setActionError(message);
+      toast({ title: 'Delete failed', description: message, variant: 'destructive' });
+    } finally {
+      setDeletingLibraryResourceId(null);
+    }
+  }, [
+    generatedComponentSourceClipType,
+    libraryCatalog,
+    setActionError,
+    setGeneratedComponent,
+    setGeneratedComponentSourceClipType,
   ]);
 
   // Edit tab is enabled when there's anything to edit: a JSON draft group OR
@@ -912,11 +1524,14 @@ export function SequenceCreatorPanel({
                     ) : (
                       <div className="space-y-2">
                         {libraryComponents.map((resource) => (
-                          <button
+                          <div
                             key={resource.id}
-                            type="button"
-                            onClick={() => handleLoadLibraryComponent(resource)}
-                            className="w-full rounded-lg border border-border bg-card p-3 text-left transition-colors hover:bg-muted/40"
+                            className={[
+                              'group relative rounded-lg border bg-card p-3 transition-colors hover:bg-muted/40',
+                              generatedComponentSourceClipType === resource.clipType
+                                ? 'border-primary/70'
+                                : 'border-border',
+                            ].join(' ')}
                           >
                             <div className="flex items-start justify-between gap-2">
                               <div className="min-w-0 flex-1 space-y-1">
@@ -929,11 +1544,53 @@ export function SequenceCreatorPanel({
                                   </div>
                                 )}
                               </div>
+                              {libraryCatalog.canDeleteComponent && (
+                                <Button
+                                  type="button"
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-7 w-7 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+                                  title="Delete saved sequence"
+                                  disabled={deletingLibraryResourceId === resource.id}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    void handleDeleteLibraryComponent(resource);
+                                  }}
+                                >
+                                  {deletingLibraryResourceId === resource.id ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  )}
+                                </Button>
+                              )}
                             </div>
-                            <div className="mt-2 truncate text-right text-xs text-muted-foreground">
-                              {resource.clipType}
+                            <div className="mt-3 flex items-center justify-between gap-2">
+                              <div className="min-w-0 truncate text-xs text-muted-foreground">
+                                {resource.clipType}
+                              </div>
+                              <div className="flex shrink-0 items-center gap-1.5">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 px-2 text-xs opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+                                  onClick={() => handlePreviewLibraryComponent(resource)}
+                                >
+                                  Preview
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="secondary"
+                                  className="h-7 px-2 text-xs"
+                                  onClick={() => handleLoadLibraryComponent(resource)}
+                                >
+                                  Load
+                                </Button>
+                              </div>
                             </div>
-                          </button>
+                          </div>
                         ))}
                       </div>
                     )}
@@ -979,7 +1636,40 @@ export function SequenceCreatorPanel({
                 <div className="space-y-2 rounded-lg border border-border bg-card/60 p-3">
                   <div className="flex items-center justify-between gap-3">
                     <div className="text-sm font-medium text-foreground">Allowed Assets</div>
-                    <div className="text-xs text-muted-foreground">{allowedAssets.length}</div>
+                    <div className="flex items-center gap-2">
+                      <div className="text-xs text-muted-foreground">{allowedAssets.length}</div>
+                      <Button
+                        type="button"
+                        asChild
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 gap-1.5 px-2 text-xs"
+                        disabled={isUploadingAllowedAsset}
+                      >
+                        <label>
+                          {isUploadingAllowedAsset ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Upload className="h-3.5 w-3.5" />
+                          )}
+                          Upload
+                          <input
+                            type="file"
+                            accept="image/*,video/*"
+                            multiple
+                            className="sr-only"
+                            disabled={isUploadingAllowedAsset}
+                            onChange={(event) => {
+                              const files = event.currentTarget.files;
+                              if (files && files.length > 0) {
+                                void handleUploadAllowedAssets(files);
+                              }
+                              event.currentTarget.value = '';
+                            }}
+                          />
+                        </label>
+                      </Button>
+                    </div>
                   </div>
                   {allowedAssets.length > 0 ? (
                     <AgentChatAttachmentStrip
@@ -1118,7 +1808,27 @@ export function SequenceCreatorPanel({
 
             <div className="grid min-h-0 grid-rows-[minmax(180px,1fr)_minmax(0,360px)]">
               <div className="min-h-0 overflow-hidden bg-black">
-                {previewConfig ? (
+                {mode === 'library' && libraryPreviewResource ? (
+                  <CodePathPreview
+                    code={
+                      generatedComponentSourceClipType === libraryPreviewResource.clipType
+                        ? generatedComponent?.code ?? libraryPreviewResource.code
+                        : libraryPreviewResource.code
+                    }
+                    defaultsJson={
+                      generatedComponentSourceClipType === libraryPreviewResource.clipType
+                        ? generatedComponent?.defaultsJson ?? libraryPreviewResource.defaultsJson
+                        : libraryPreviewResource.defaultsJson
+                    }
+                    fps={resolvedConfig?.output.fps ?? 30}
+                    allowedAssets={allowedAssets}
+                    assetSlots={
+                      generatedComponentSourceClipType === libraryPreviewResource.clipType
+                        ? generatedComponent?.assetSlots ?? libraryPreviewAssetSlots
+                        : libraryPreviewAssetSlots
+                    }
+                  />
+                ) : previewConfig ? (
                   <RemotionPreview
                     config={previewConfig}
                     onTimeUpdate={() => undefined}
@@ -1132,6 +1842,7 @@ export function SequenceCreatorPanel({
                     defaultsJson={generatedComponent.defaultsJson}
                     fps={resolvedConfig?.output.fps ?? 30}
                     allowedAssets={allowedAssets}
+                    assetSlots={generatedComponentAssetSlots}
                   />
                 ) : (
                   <div className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
@@ -1194,6 +1905,15 @@ export function SequenceCreatorPanel({
                                 </div>
                               )}
                             </div>
+                            {generatedComponentAssetSlots.length > 0 && (
+                              <AssetSlotPicker
+                                slots={generatedComponentAssetSlots}
+                                bindings={generatedAssetSlotValidation.bindings}
+                                allowedAssets={allowedAssets}
+                                errors={generatedAssetSlotValidation.errors}
+                                onChangeSlot={updateGeneratedAssetSlotBinding}
+                              />
+                            )}
                             {(() => {
                               // Render controls via the new manifest layout when the
                               // component declared one (AI-generated post-manifest).

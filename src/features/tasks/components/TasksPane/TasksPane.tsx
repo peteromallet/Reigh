@@ -7,7 +7,7 @@ import { TaskList } from './TaskList';
 import { cn } from '@/shared/components/ui/contracts/cn';
 import { Button } from '@/shared/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/components/ui/tooltip';
-import { ChevronDown, ChevronUp, Loader2, MessageSquareText, Mic, Square } from 'lucide-react';
+import { CheckCircle2, ChevronDown, ChevronUp, CircleX, ListChecks, Loader2, MessageSquareText, Mic, Square, XCircle } from 'lucide-react';
 import { PaneControlTab } from '@/shared/components/PaneControlTab';
 import { useAgentChatActions } from '@/shared/contexts/AgentChatContext';
 import { AgentChatPanel } from '@/tools/video-editor/components/AgentChat';
@@ -283,84 +283,17 @@ const TasksPaneComponent: React.FC<TasksPaneProps> = ({ onOpenSettings }) => {
               isPointerEventsEnabled ? 'pointer-events-auto' : 'pointer-events-none'
             )}>
             {/* Header */}
-            <div className="p-2 border-b border-zinc-800 flex items-center justify-between flex-shrink-0">
-              <h2 className="text-xl font-light text-zinc-200 ml-2">Action</h2>
-              <div className="flex gap-2">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={handleCancelAllPending}
-                      disabled={isCancelAllPending || cancellableTaskCount === 0}
-                      className="flex items-center gap-2"
-                    >
-                      {isCancelAllPending ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          Cancel All
-                        </>
-                      ) : (
-                        'Cancel All'
-                      )}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Cancel all queued tasks</TooltipContent>
-                </Tooltip>
+            <div className="flex items-center gap-2 border-b border-border/70 px-3 py-4 flex-shrink-0">
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <ListChecks className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium text-zinc-200">Tasks</span>
               </div>
-            </div>
-          
-            {/* Status Filter Toggle — three buttons side-by-side, count inline as (N) so the row never overflows */}
-            <div className="p-4 border-b border-zinc-800 flex-shrink-0">
-              <div className="bg-zinc-800 rounded-lg p-1">
-                <div className="flex gap-1">
-                  {(['Processing', 'Succeeded', 'Failed'] as FilterGroup[]).map((filter) => {
-                    const count = filter === 'Processing'
-                      ? cancellableTaskCount
-                      : filter === 'Succeeded'
-                        ? (displayStatusCounts?.recentSuccesses || 0)
-                        : (displayStatusCounts?.recentFailures || 0);
-
-                    return (
-                      <Button
-                        key={filter}
-                        variant={selectedFilter === filter ? "default" : "ghost"}
-                        size="sm"
-                        onClick={() => handleFilterChange(filter)}
-                        className={cn(
-                          "flex-1 text-xs flex items-center justify-center gap-1 px-2 min-w-0",
-                          selectedFilter === filter
-                            ? "bg-zinc-600 text-zinc-100 md:hover:bg-zinc-500"
-                            : "text-zinc-400 md:hover:text-zinc-200 md:hover:bg-zinc-700"
-                        )}
-                      >
-                        <span className="truncate">{filter}</span>
-                        <span className={cn(
-                          'font-light tabular-nums',
-                          count === 0 ? 'opacity-40' : 'opacity-80'
-                        )}>
-                          ({count})
-                        </span>
-                      </Button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {isStatusCountsDegraded && (
-                <p className="mt-2 text-[11px] text-amber-300">
-                  Task counters are partially degraded
-                  {failedStatusQueries ? ` (${failedStatusQueries})` : ''}.
-                </p>
-              )}
-              
-              {/* Task Type + Project Scope Filters */}
-              <div className="mt-2 flex items-center gap-2">
+              <div className="flex min-w-0 flex-1 items-center gap-1.5">
                 <Select
                   value={selectedTaskType || 'all'}
                   onValueChange={(value) => handleTaskTypeChange(value === 'all' ? null : value)}
                 >
-                  <SelectTrigger variant="retro-dark" size="sm" colorScheme="zinc" className="h-7 !text-xs flex-1 min-w-0">
+                  <SelectTrigger variant="retro-dark" size="sm" colorScheme="zinc" className="h-7 !text-xs min-w-0 flex-1">
                     <SelectValue placeholder="All task types" />
                   </SelectTrigger>
                   <SelectContent variant="zinc">
@@ -373,7 +306,7 @@ const TasksPaneComponent: React.FC<TasksPaneProps> = ({ onOpenSettings }) => {
                     ))}
                   </SelectContent>
                 </Select>
-                
+
                 <Select
                   value={projectScope}
                   onValueChange={(value) => {
@@ -381,7 +314,7 @@ const TasksPaneComponent: React.FC<TasksPaneProps> = ({ onOpenSettings }) => {
                     handlePageChange(1);
                   }}
                 >
-                  <SelectTrigger variant="retro-dark" size="sm" colorScheme="zinc" className="h-7 !text-xs flex-1 min-w-0">
+                  <SelectTrigger variant="retro-dark" size="sm" colorScheme="zinc" className="h-7 !text-xs min-w-0 flex-1">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent variant="zinc">
@@ -403,6 +336,94 @@ const TasksPaneComponent: React.FC<TasksPaneProps> = ({ onOpenSettings }) => {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="flex flex-shrink-0 items-center gap-1">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="destructive"
+                      size="icon"
+                      onClick={handleCancelAllPending}
+                      disabled={isCancelAllPending || cancellableTaskCount === 0}
+                      className="h-7 w-7"
+                      aria-label="Cancel all queued tasks"
+                    >
+                      {isCancelAllPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <CircleX className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Cancel all queued tasks</TooltipContent>
+                </Tooltip>
+              </div>
+            </div>
+          
+            {/* Status Filter Toggle — three buttons side-by-side, count inline as (N) so the row never overflows */}
+            <div className="px-3 py-2 border-b border-zinc-800 flex-shrink-0">
+              <div className="bg-zinc-800 rounded-lg p-1">
+                <div className="flex gap-1">
+                  {(['Failed', 'Processing', 'Succeeded'] as FilterGroup[]).map((filter) => {
+                    const count = filter === 'Processing'
+                      ? cancellableTaskCount
+                      : filter === 'Succeeded'
+                        ? (displayStatusCounts?.recentSuccesses || 0)
+                        : (displayStatusCounts?.recentFailures || 0);
+                    const Icon = filter === 'Processing'
+                      ? Loader2
+                      : filter === 'Succeeded'
+                        ? CheckCircle2
+                        : XCircle;
+                    const colorClass = filter === 'Processing'
+                      ? 'text-sky-300'
+                      : filter === 'Succeeded'
+                        ? 'text-emerald-300'
+                        : 'text-rose-300';
+
+                    return (
+                      <Tooltip key={filter}>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant={selectedFilter === filter ? "default" : "ghost"}
+                            size="sm"
+                            onClick={() => handleFilterChange(filter)}
+                            aria-label={`${filter} tasks (${count})`}
+                            className={cn(
+                              "flex-1 text-xs flex items-center justify-center gap-1.5 px-2 min-w-0 tabular-nums",
+                              selectedFilter === filter
+                                ? "bg-zinc-600 text-zinc-100 md:hover:bg-zinc-500"
+                                : "text-zinc-400 md:hover:text-zinc-200 md:hover:bg-zinc-700"
+                            )}
+                          >
+                            <Icon className={cn(
+                              "h-3.5 w-3.5 flex-shrink-0",
+                              colorClass,
+                              filter === 'Processing' && count > 0 ? 'animate-spin' : ''
+                            )} />
+                            <span className={cn(
+                              'font-medium',
+                              colorClass,
+                              count === 0 ? 'opacity-50' : 'opacity-100'
+                            )}>
+                              {count}
+                            </span>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {filter} ({count})
+                        </TooltipContent>
+                      </Tooltip>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {isStatusCountsDegraded && (
+                <p className="mt-2 text-[11px] text-amber-300">
+                  Task counters are partially degraded
+                  {failedStatusQueries ? ` (${failedStatusQueries})` : ''}.
+                </p>
+              )}
             </div>
 
             <PaginationControls

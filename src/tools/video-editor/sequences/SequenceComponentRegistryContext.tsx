@@ -9,6 +9,7 @@ import {
 import { DynamicSequenceRegistry } from '@/tools/video-editor/sequences/DynamicSequenceRegistry.ts';
 import type { SequenceComponentResource } from '@/tools/video-editor/lib/sequence-component-catalog.ts';
 import type { DynamicSequenceComponentEntry } from '@/tools/video-editor/sequences/registry.ts';
+import { normalizeAssetSlots } from '@/tools/video-editor/sequences/assetSlots.ts';
 
 // Implementation note (FLAG-003 divergence — intentional):
 // The effects side uses a module-level singleton + `lookupEffect()` pattern
@@ -34,6 +35,20 @@ export interface SequenceComponentRegistryProviderProps {
   children: ReactNode;
 }
 
+const normalizeResourceAssetSlots = (
+  component: SequenceComponentResource,
+) => {
+  const result = normalizeAssetSlots(component.assetSlots ?? []);
+  if (result.errors.length > 0) {
+    console.warn('[SequenceComponentRegistry] entries:asset_slots_invalid', {
+      resourceId: component.id,
+      clipType: component.clipType,
+      errors: result.errors.map((error) => error.message),
+    });
+  }
+  return result.slots;
+};
+
 export function SequenceComponentRegistryProvider({
   components,
   children,
@@ -51,9 +66,18 @@ export function SequenceComponentRegistryProvider({
   // currently has (DEBT-047).
   useEffect(() => {
     let stale = false;
+    const componentCount = components?.length ?? 0;
+    console.info('[SequenceComponentRegistry] batch:start', {
+      componentCount,
+    });
     void registry.batch(async () => {
       for (const component of components ?? []) {
-        if (stale) return;
+        if (stale) {
+          console.warn('[SequenceComponentRegistry] batch:stale_abort', {
+            componentCount,
+          });
+          return;
+        }
         // NOTE: register by `entry.clipType` (NOT by `custom:` prefix) —
         // DynamicComponentRegistry.normalizeName strips the prefix on lookup,
         // so callers querying via `custom:my-pulse` resolve to the entry
@@ -64,6 +88,17 @@ export function SequenceComponentRegistryProvider({
           component.schemaJson,
         );
       }
+    }).then(() => {
+      if (!stale) {
+        console.info('[SequenceComponentRegistry] batch:ok', {
+          componentCount,
+        });
+      }
+    }).catch((err: unknown) => {
+      console.error('[SequenceComponentRegistry] batch:failed', {
+        componentCount,
+        error: err instanceof Error ? err.message : String(err),
+      });
     });
     return () => {
       stale = true;
@@ -78,12 +113,21 @@ export function SequenceComponentRegistryProvider({
     const list: DynamicSequenceComponentEntry[] = [];
     for (const component of components ?? []) {
       const compiled = registry.get(component.clipType);
-      if (!compiled) continue;
+      if (!compiled) {
+        console.warn('[SequenceComponentRegistry] entries:missing_compiled_component', {
+          clipType: component.clipType,
+          codeLength: component.code.length,
+          version,
+        });
+        continue;
+      }
       list.push({
         clipType: component.clipType,
         component: compiled as DynamicSequenceComponentEntry['component'],
         schemaJson: component.schemaJson,
+        assetSlots: normalizeResourceAssetSlots(component),
         themeId: component.themeId,
+        manifest: component.elementManifest,
       });
     }
     return list;

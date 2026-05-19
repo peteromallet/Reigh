@@ -3384,6 +3384,23 @@
       "resolved": false,
       "resolved_by": null,
       "resolved_at": null
+    },
+    {
+      "id": "DEBT-200",
+      "subsystem": "did-the-work-fully-address-the-issue-hints-user-notes-and-approved-plan-requirements",
+      "concern": "did the work fully address the issue hints, user notes, and approved plan requirements?: verified the revised verification limitation in this sandbox by running `psql \"${supabase_db_url:-postgresql://postgres:postgres@127.0.0.1:54322/postgres}\" -f supabase/tests/duplicate_shot_with_videos.test.sql`, which failed with `operation not permitted` on 127.0.0.1:54322. this is a documented review limitation rather than an implementation contradiction, but it means the database graph clone is still supported here by static sql inspection and fixture coverage rather than a runtime sql pass.",
+      "flag_ids": [
+        "issue_hints"
+      ],
+      "plan_ids": [
+        "implement-an-opt-in-duplicate-20260508-1523"
+      ],
+      "occurrence_count": 1,
+      "created_at": "2026-05-08T14:46:36Z",
+      "updated_at": "2026-05-08T14:46:36Z",
+      "resolved": false,
+      "resolved_by": null,
+      "resolved_at": null
     }
   ]
 }

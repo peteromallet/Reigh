@@ -17,17 +17,28 @@ logger.warn = (msg, options) => {
 
 export default defineConfig(() => {
   const port = resolveVitePort(process.env.PORT);
-  const generatedRegistryPath = path.resolve(
+  const installedTimelineCompositionPath = path.resolve(
     __dirname,
-    "../../node_modules/@banodoco/timeline-composition/typescript/src/registry.generated.ts",
+    "../../node_modules/@banodoco/timeline-composition",
+  );
+  const vendoredTimelineCompositionPath = path.resolve(
+    __dirname,
+    "../../vendor/timeline-composition",
+  );
+  const timelineCompositionPath = fs.existsSync(installedTimelineCompositionPath)
+    ? installedTimelineCompositionPath
+    : vendoredTimelineCompositionPath;
+  const generatedRegistryPath = path.resolve(
+    timelineCompositionPath,
+    "typescript/src/registry.generated.ts",
   );
   const generatedRegistryFallbackPath = path.resolve(
     __dirname,
     "../../src/tools/video-editor/lib/registry.generated.fallback.ts",
   );
   const themeApiPath = path.resolve(
-    __dirname,
-    "../../node_modules/@banodoco/timeline-composition/typescript/src/theme-api.ts",
+    timelineCompositionPath,
+    "typescript/src/theme-api.ts",
   );
   const themeApiFallbackPath = path.resolve(
     __dirname,
@@ -80,7 +91,7 @@ export default defineConfig(() => {
         "@banodoco/timeline-schema": fs.existsSync(timelineSchemaPath)
           ? timelineSchemaPath
           : timelineSchemaFallbackPath,
-        "@banodoco/timeline-composition": path.resolve(__dirname, "../../node_modules/@banodoco/timeline-composition"),
+        "@banodoco/timeline-composition": timelineCompositionPath,
         // Workspace-primitive aliases (mirrors banodoco shell webpack-alias.mjs).
         // Vendored into reigh-app/vendor/ so the Docker build context can resolve them
         // — the original ../../../../banodoco-workspace paths sit outside the build context.

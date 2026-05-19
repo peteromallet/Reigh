@@ -1,4 +1,7 @@
-import { invokeSupabaseEdgeFunction } from '@/integrations/supabase/functions/invokeSupabaseEdgeFunction.ts';
+import {
+  invokeSupabaseEdgeFunction,
+  SupabaseEdgeFunctionError,
+} from '@/integrations/supabase/functions/invokeSupabaseEdgeFunction.ts';
 import type { SelectedMediaClip } from '@/tools/video-editor/hooks/useSelectedMediaClips.ts';
 import {
   buildAnimationIntentPayload,
@@ -19,6 +22,16 @@ import {
   validateControlsManifest,
   type ControlsManifest,
 } from '@/tools/video-editor/sequences/controlsManifest.ts';
+import {
+  ASSET_SLOT_BINDINGS_PARAM,
+  ASSET_SLOTS_PARAM,
+  collectLooseGeneratedMediaParamErrors,
+  GENERATED_SEQUENCE_LOOSE_MEDIA_PARAM_KEYS,
+  normalizeAssetSlots,
+  validateAssetSlotBindings,
+  type AssetSlotDefinition,
+  type AssetSlotAssetRegistry,
+} from '@/tools/video-editor/sequences/assetSlots.ts';
 import type { ResolvedTimelineConfig } from '@/tools/video-editor/types/index.ts';
 
 export type RunSequenceGenerationOptions = {
@@ -107,6 +120,7 @@ export const runSequenceGenerationRequest = async ({
             assetKey: asset.key,
             url: asset.url,
             mediaType: asset.mediaType,
+            label: asset.label,
             source: asset.source,
           })),
           theme: resolvedConfig.theme,
@@ -220,6 +234,7 @@ export interface SequenceComponentGenerationResponse {
   description?: string;
   schemaJson?: object;
   defaultsJson?: object;
+  assetSlots?: unknown[];
   controlsManifest?: unknown[];
   message?: string;
   model?: string;
@@ -227,6 +242,46 @@ export interface SequenceComponentGenerationResponse {
   details?: string;
   rawOutput?: string;
 }
+
+const sequenceComponentLog = (message: string, metadata?: Record<string, unknown>): void => {
+  console.info('[SequenceCreator:ComponentGeneration]', message, metadata ?? {});
+};
+
+const sequenceComponentWarn = (message: string, metadata?: Record<string, unknown>): void => {
+  console.error('[SequenceCreator:ComponentGeneration]', message, metadata ?? {});
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+);
+
+const PARAMS_REFERENCE_RE = /\bparams\s*(?:\.\s*([A-Za-z_$][\w$]*)|\[\s*"([^"\\]+)"\s*\]|\[\s*'([^'\\]+)'\s*\])/g;
+
+const collectLooseCodeParamNames = (code: string): string[] => {
+  const names = new Set<string>();
+  let match: RegExpExecArray | null;
+  while ((match = PARAMS_REFERENCE_RE.exec(code)) !== null) {
+    const name = match[1] ?? match[2] ?? match[3];
+    if ((GENERATED_SEQUENCE_LOOSE_MEDIA_PARAM_KEYS as readonly string[]).includes(name)) {
+      names.add(name);
+    }
+  }
+  return [...names];
+};
+
+const buildAllowedAssetSlotRegistry = (
+  assets: readonly AllowedSequenceAsset[],
+): AssetSlotAssetRegistry => {
+  return assets.reduce<AssetSlotAssetRegistry>((registry, asset) => {
+    registry[asset.key] = {
+      key: asset.key,
+      url: asset.url,
+      mediaType: asset.mediaType,
+      type: asset.mediaType === 'video' ? 'video/mp4' : 'image/png',
+    };
+    return registry;
+  }, {});
+};
 
 export type RunSequenceComponentGenerationResult =
   | { status: 'aborted' }
@@ -237,6 +292,7 @@ export type RunSequenceComponentGenerationResult =
       description: string;
       schemaJson: object;
       defaultsJson: object;
+      assetSlots: AssetSlotDefinition[];
       controlsManifest: ControlsManifest;
       message: string | null;
       model: string | null;
@@ -260,6 +316,17 @@ export const runSequenceComponentGenerationRequest = async ({
   signal,
 }: RunSequenceComponentGenerationOptions): Promise<RunSequenceComponentGenerationResult> => {
   const generationPrompt = prompt.trim();
+  const startedAt = Date.now();
+  sequenceComponentLog('request:start', {
+    promptLength: generationPrompt.length,
+    hasName: Boolean(name),
+    themeId: themeId ?? resolvedConfig.theme ?? null,
+    existingComponent: Boolean(existingComponent),
+    selectedClipCount: selectedClips.length,
+    attachedClipCount: attachedClips.length,
+    allowedAssetCount: allowedAssets.length,
+    allowedAssetKeyCount: allowedAssetKeys.length,
+  });
   try {
     const response = await invokeSupabaseEdgeFunction<SequenceComponentGenerationResponse>(
       'ai-generate-sequence-component',
@@ -276,6 +343,7 @@ export const runSequenceComponentGenerationRequest = async ({
             assetKey: asset.key,
             url: asset.url,
             mediaType: asset.mediaType,
+            label: asset.label,
             source: asset.source,
           })),
           allowed_asset_keys: allowedAssetKeys,
@@ -286,11 +354,107 @@ export const runSequenceComponentGenerationRequest = async ({
         signal,
       },
     );
-    if (signal.aborted) return { status: 'aborted' };
-    if (response.error || !response.code || !response.schemaJson || !response.defaultsJson) {
+    const durationMs = Date.now() - startedAt;
+    if (signal.aborted) {
+      sequenceComponentWarn('request:aborted_after_response', { durationMs });
+      return { status: 'aborted' };
+    }
+    sequenceComponentLog('request:response', {
+      durationMs,
+      hasError: Boolean(response.error),
+      hasCode: Boolean(response.code),
+      codeLength: response.code?.length ?? 0,
+      hasSchemaJson: Boolean(response.schemaJson),
+      hasDefaultsJson: Boolean(response.defaultsJson),
+      assetSlotsCount: Array.isArray(response.assetSlots) ? response.assetSlots.length : null,
+      controlsManifestCount: Array.isArray(response.controlsManifest) ? response.controlsManifest.length : null,
+      rawOutputLength: response.rawOutput?.length ?? 0,
+      name: response.name ?? null,
+      model: response.model ?? null,
+    });
+    if (response.error || !response.code || !response.schemaJson || !response.defaultsJson || !Array.isArray(response.assetSlots)) {
+      sequenceComponentWarn('request:incomplete_or_error', {
+        durationMs,
+        error: response.error ?? null,
+        details: response.details ?? null,
+        hasCode: Boolean(response.code),
+        hasSchemaJson: Boolean(response.schemaJson),
+        hasDefaultsJson: Boolean(response.defaultsJson),
+        hasAssetSlots: Array.isArray(response.assetSlots),
+        rawOutputLength: response.rawOutput?.length ?? 0,
+      });
       return {
         status: 'error',
         error: response.details || response.error || 'Sequence component generation returned an incomplete response',
+        rawOutput: response.rawOutput,
+      };
+    }
+    const assetSlotsResult = normalizeAssetSlots(response.assetSlots);
+    if (assetSlotsResult.errors.length > 0) {
+      sequenceComponentWarn('request:asset_slots_invalid', {
+        durationMs,
+        errors: assetSlotsResult.errors.map((e) => e.message),
+        assetSlotsCount: response.assetSlots.length,
+        codeLength: response.code.length,
+      });
+      return {
+        status: 'error',
+        error: `Asset slots invalid: ${assetSlotsResult.errors.map((e) => e.message).join('; ')}`,
+        rawOutput: response.rawOutput,
+      };
+    }
+    const schemaProperties = isRecord(response.schemaJson)
+      && isRecord(response.schemaJson.properties)
+      ? response.schemaJson.properties
+      : {};
+    const defaultsJson = response.defaultsJson;
+    const defaultsRecord = defaultsJson as Record<string, unknown>;
+    const looseErrors = [
+      ...collectLooseGeneratedMediaParamErrors(schemaProperties, 'schemaJson.properties'),
+      ...collectLooseGeneratedMediaParamErrors(defaultsJson, 'defaultsJson'),
+      ...collectLooseCodeParamNames(response.code).map((name) => ({
+        code: 'loose_generated_media_param' as const,
+        path: `params.${name}`,
+        message: `Generated sequence components must use ${ASSET_SLOT_BINDINGS_PARAM} for persisted asset keys and host-injected ${ASSET_SLOTS_PARAM} for URLs, not "${name}".`,
+      })),
+    ];
+    const assetSlotContractErrors: string[] = [];
+    if (Object.prototype.hasOwnProperty.call(schemaProperties, ASSET_SLOTS_PARAM)) {
+      assetSlotContractErrors.push(`Host-injected param "${ASSET_SLOTS_PARAM}" must not be declared in schemaJson.properties`);
+    }
+    if (Object.prototype.hasOwnProperty.call(defaultsRecord, ASSET_SLOTS_PARAM)) {
+      assetSlotContractErrors.push(`Host-injected param "${ASSET_SLOTS_PARAM}" must not be declared in defaultsJson`);
+    }
+    if (assetSlotsResult.slots.length > 0) {
+      if (!Object.prototype.hasOwnProperty.call(schemaProperties, ASSET_SLOT_BINDINGS_PARAM)) {
+        assetSlotContractErrors.push(`schemaJson.properties.${ASSET_SLOT_BINDINGS_PARAM} is required when assetSlots are declared`);
+      }
+      if (!Object.prototype.hasOwnProperty.call(defaultsRecord, ASSET_SLOT_BINDINGS_PARAM)) {
+        assetSlotContractErrors.push(`defaultsJson.${ASSET_SLOT_BINDINGS_PARAM} is required when assetSlots are declared`);
+      }
+    }
+    const bindingValidation = validateAssetSlotBindings({
+      slots: assetSlotsResult.slots,
+      bindings: defaultsRecord[ASSET_SLOT_BINDINGS_PARAM],
+      registry: buildAllowedAssetSlotRegistry(allowedAssets),
+      path: `defaultsJson.${ASSET_SLOT_BINDINGS_PARAM}`,
+    });
+    const bindingMessages = bindingValidation.errors.map((error) => error.message);
+    if (looseErrors.length > 0 || assetSlotContractErrors.length > 0 || bindingMessages.length > 0) {
+      const errors = [
+        ...looseErrors.map((error) => error.message),
+        ...assetSlotContractErrors,
+        ...bindingMessages,
+      ];
+      sequenceComponentWarn('request:asset_slot_contract_invalid', {
+        durationMs,
+        errors,
+        assetSlotsCount: assetSlotsResult.slots.length,
+        codeLength: response.code.length,
+      });
+      return {
+        status: 'error',
+        error: `Asset slot contract invalid: ${errors.join('; ')}`,
         rawOutput: response.rawOutput,
       };
     }
@@ -300,12 +464,26 @@ export const runSequenceComponentGenerationRequest = async ({
     // sees a useful error even if the response shape ever drifts.
     const manifestResult = validateControlsManifest(response.controlsManifest, { code: response.code });
     if (!manifestResult.ok) {
+      sequenceComponentWarn('request:controls_manifest_invalid', {
+        durationMs,
+        errors: manifestResult.errors.map((e) => e.message),
+        controlsManifestCount: Array.isArray(response.controlsManifest) ? response.controlsManifest.length : null,
+        codeLength: response.code.length,
+      });
       return {
         status: 'error',
         error: `Controls manifest invalid: ${manifestResult.errors.map((e) => e.message).join('; ')}`,
         rawOutput: response.rawOutput,
       };
     }
+    sequenceComponentLog('request:ok', {
+      durationMs,
+      codeLength: response.code.length,
+      controlsManifestCount: manifestResult.manifest.length,
+      assetSlotsCount: assetSlotsResult.slots.length,
+      name: response.name ?? null,
+      model: response.model ?? null,
+    });
     return {
       status: 'ok',
       code: response.code,
@@ -313,12 +491,40 @@ export const runSequenceComponentGenerationRequest = async ({
       description: response.description ?? '',
       schemaJson: response.schemaJson,
       defaultsJson: response.defaultsJson,
+      assetSlots: assetSlotsResult.slots,
       controlsManifest: manifestResult.manifest,
       message: response.message ?? null,
       model: response.model ?? null,
     };
   } catch (err) {
-    if ((err as Error).name === 'AbortError') return { status: 'aborted' };
+    const durationMs = Date.now() - startedAt;
+    if ((err as Error).name === 'AbortError') {
+      sequenceComponentWarn('request:aborted', { durationMs });
+      return { status: 'aborted' };
+    }
+    if (err instanceof SupabaseEdgeFunctionError) {
+      const payload = err.responseJson && typeof err.responseJson === 'object'
+        ? err.responseJson as Record<string, unknown>
+        : {};
+      console.error('[SequenceCreator:ComponentGeneration] request:edge_error', {
+        durationMs,
+        status: err.status,
+        message: err.message,
+        error: typeof payload.error === 'string' ? payload.error : null,
+        details: typeof payload.details === 'string' ? payload.details : null,
+        rawOutputLength: typeof payload.rawOutput === 'string' ? payload.rawOutput.length : 0,
+      });
+      return {
+        status: 'error',
+        error: err.message,
+        rawOutput: typeof payload.rawOutput === 'string' ? payload.rawOutput : undefined,
+      };
+    }
+    console.error('[SequenceCreator:ComponentGeneration] request:exception', {
+      durationMs,
+      message: err instanceof Error ? err.message : String(err),
+      name: err instanceof Error ? err.name : null,
+    });
     throw err;
   }
 };

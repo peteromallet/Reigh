@@ -7,18 +7,16 @@ import {
 import { bootstrapEdgeHandler, NO_SESSION_RUNTIME_OPTIONS } from "../_shared/edgeHandler.ts";
 import { jsonResponse } from "../_shared/http.ts";
 import { toErrorMessage } from "../_shared/errorMessage.ts";
-import { attemptSelfInvokeRetry } from "../_shared/aiCodegenRetry.ts";
 import {
   buildGenerateSequenceComponentMessages,
   extractSequenceComponentCodeAndMeta,
+  type AllowedSequenceComponentAsset,
   type ExistingSequenceComponent,
 } from "./templates.ts";
 
 const ANTHROPIC_MODEL = "claude-opus-4-6";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_TIMEOUT_MS = 150_000;
-
-const MAX_RETRY_DEPTH = 1;
 
 interface LLMResponse {
   content: string;
@@ -31,25 +29,74 @@ const asStringArray = (value: unknown): string[] => {
     : [];
 };
 
-const collectAssetKeys = (...sources: unknown[]): string[] => {
-  const keys = new Set<string>();
+const trimString = (value: unknown): string | null => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const inferMediaTypeFromUrl = (value: unknown): AllowedSequenceComponentAsset["mediaType"] | null => {
+  const url = trimString(value);
+  if (!url) return null;
+  const normalized = url.split(/[?#]/, 1)[0]?.toLowerCase() ?? "";
+  if (/\.(png|jpe?g|webp|gif|avif|bmp|svg)$/.test(normalized)) return "image";
+  if (/\.(mp4|mov|webm|m4v|avi|mkv)$/.test(normalized)) return "video";
+  return null;
+};
+
+const normalizeMediaType = (value: unknown): AllowedSequenceComponentAsset["mediaType"] | null => {
+  const raw = trimString(value)?.toLowerCase();
+  if (!raw) return null;
+  if (raw === "image" || raw.startsWith("image/")) return "image";
+  if (raw === "video" || raw.startsWith("video/")) return "video";
+  return null;
+};
+
+const readAssetKey = (record: Record<string, unknown>): string | null => {
+  for (const field of ["key", "assetKey", "asset_key", "asset", "id"]) {
+    const value = trimString(record[field]);
+    if (value) return value;
+  }
+  return null;
+};
+
+const normalizeAllowedAssets = (...sources: unknown[]): AllowedSequenceComponentAsset[] => {
+  const assets = new Map<string, AllowedSequenceComponentAsset>();
   for (const source of sources) {
     if (!Array.isArray(source)) continue;
     for (const item of source) {
-      if (typeof item === "string" && item.trim()) {
-        keys.add(item);
-      } else if (item && typeof item === "object") {
-        const record = item as Record<string, unknown>;
-        for (const field of ["assetKey", "asset_key", "asset", "id", "key"]) {
-          const value = record[field];
-          if (typeof value === "string" && value.trim()) {
-            keys.add(value);
-          }
+      if (typeof item === "string") {
+        const key = trimString(item);
+        if (key && !assets.has(key)) {
+          assets.set(key, { key, mediaType: "image", label: key });
         }
+        continue;
       }
+      if (!item || typeof item !== "object") continue;
+      const record = item as Record<string, unknown>;
+      const key = readAssetKey(record);
+      if (!key || assets.has(key)) continue;
+      const mediaType = normalizeMediaType(record.mediaType)
+        ?? normalizeMediaType(record.media_type)
+        ?? normalizeMediaType(record.type)
+        ?? inferMediaTypeFromUrl(record.url)
+        ?? inferMediaTypeFromUrl(record.src)
+        ?? inferMediaTypeFromUrl(record.file)
+        ?? "image";
+      const label = trimString(record.label)
+        ?? trimString(record.shotName)
+        ?? trimString(record.shot_name)
+        ?? trimString(record.name)
+        ?? key;
+      assets.set(key, {
+        key,
+        mediaType,
+        label,
+        ...(trimString(record.source) ? { source: trimString(record.source) as string } : {}),
+      });
     }
   }
-  return [...keys];
+  return [...assets.values()];
 };
 
 function isExistingComponent(value: unknown): value is ExistingSequenceComponent {
@@ -191,12 +238,16 @@ serve(async (req) => {
     return jsonResponse({ error: "prompt is required" }, 400);
   }
 
-  // Asset keys come from explicit allowed_asset_keys OR are derived from the
-  // selected/attached/allowed_assets payloads (mirroring ai-generate-sequence:54-79).
+  // Allowed assets are normalized to the slot contract shape for prompts.
+  // allowedAssetKeys remains only a convenience list for logs/fallbacks.
   const explicitAssetKeys = asStringArray(body.allowed_asset_keys);
-  const allowedAssetKeys = explicitAssetKeys.length > 0
-    ? explicitAssetKeys
-    : collectAssetKeys(body.allowed_assets, body.selected_clips, body.attached_clips);
+  const allowedAssets = normalizeAllowedAssets(body.allowed_assets, body.selected_clips, body.attached_clips);
+  for (const key of explicitAssetKeys) {
+    if (!allowedAssets.some((asset) => asset.key === key)) {
+      allowedAssets.push({ key, mediaType: "image", label: key });
+    }
+  }
+  const allowedAssetKeys = allowedAssets.map((asset) => asset.key);
 
   const retryDepth = typeof body._retryDepth === "number" ? body._retryDepth : 0;
   const retryError = typeof body._retryError === "string" ? body._retryError : undefined;
@@ -219,7 +270,7 @@ serve(async (req) => {
         name: componentName || undefined,
         themeId: themeId || undefined,
         existingComponent: { ...retryExisting, code: retryFailedCode },
-        allowedAssetKeys,
+        allowedAssets,
         selectedClips: body.selected_clips,
         attachedClips: body.attached_clips,
         theme: body.theme,
@@ -236,7 +287,7 @@ serve(async (req) => {
         name: componentName || undefined,
         themeId: themeId || undefined,
         existingComponent,
-        allowedAssetKeys,
+        allowedAssets,
         selectedClips: body.selected_clips,
         attachedClips: body.attached_clips,
         theme: body.theme,
@@ -250,7 +301,7 @@ serve(async (req) => {
 
     const isEditMode = Boolean(existingComponent);
     logger.info(
-      `[AI-GENERATE-SEQUENCE-COMPONENT] ${retryDepth > 0 ? `retry(${retryDepth})` : isEditMode ? "edit" : "create"} → ${ANTHROPIC_MODEL} (Anthropic)`,
+      `[AI-GENERATE-SEQUENCE-COMPONENT] ${retryDepth > 0 ? `retry(${retryDepth})` : isEditMode ? "edit" : "create"} → ${ANTHROPIC_MODEL} (Anthropic), allowedAssets=${allowedAssetKeys.length}`,
     );
     await logger.flush();
     const llmResponse = await callAnthropic(messages, logger);
@@ -261,43 +312,16 @@ serve(async (req) => {
 
     let extracted;
     try {
-      extracted = extractSequenceComponentCodeAndMeta(llmResponse.content);
+      extracted = extractSequenceComponentCodeAndMeta(llmResponse.content, { allowedAssets });
     } catch (parseErr: unknown) {
       const parseMsg = parseErr instanceof Error ? parseErr.message : String(parseErr);
       logger.info(`[AI-GENERATE-SEQUENCE-COMPONENT] extraction/validation failed: ${parseMsg}`);
-
-      const retryResponse = await attemptSelfInvokeRetry({
-        req,
-        functionName: "ai-generate-sequence-component",
-        retryDepth,
-        maxDepth: MAX_RETRY_DEPTH,
-        payload: {
-          prompt,
-          name: componentName || undefined,
-          themeId: themeId || undefined,
-          existingComponent,
-          allowed_asset_keys: allowedAssetKeys,
-          allowed_assets: body.allowed_assets,
-          selected_clips: body.selected_clips,
-          attached_clips: body.attached_clips,
-          theme: body.theme,
-          theme_overrides: body.theme_overrides,
-        },
-        parseError: parseMsg,
-        rawOutput: llmResponse.content,
-        logger,
-      });
-      if (retryResponse) {
-        return retryResponse;
-      }
-
-      logger.info(`[AI-GENERATE-SEQUENCE-COMPONENT] max retry depth reached, returning error`);
       logger.info(`[AI-GENERATE-SEQUENCE-COMPONENT] final output: ${llmResponse.content.slice(0, 1000)}`);
       await logger.flush();
       return jsonResponse({ error: parseMsg, rawOutput: llmResponse.content.slice(0, 500) }, 422);
     }
 
-    const { code, name: generatedName, description, schemaJson, defaultsJson, controlsManifest, message } = extracted;
+    const { code, name: generatedName, description, schemaJson, defaultsJson, assetSlots, controlsManifest, message } = extracted;
 
     if (retryDepth > 0) {
       logger.info(`[AI-GENERATE-SEQUENCE-COMPONENT] retry succeeded at depth ${retryDepth}`);
@@ -309,6 +333,7 @@ serve(async (req) => {
       description,
       schemaJson,
       defaultsJson,
+      assetSlots,
       controlsManifest,
       message: message || undefined,
       model: llmResponse.model,

@@ -14,14 +14,14 @@ const SCHEMA_DURATION = {
 } as const;
 const DEFAULTS_DURATION = { duration: 30 } as const;
 
-const SCHEMA_ASSET_KEYS = {
+const SCHEMA_ASSET_SLOT_BINDINGS = {
   type: 'object',
   properties: {
-    imageAssetKeys: { type: 'array' },
+    assetSlotBindings: { type: 'object' },
     duration: { type: 'number' },
   },
 } as const;
-const DEFAULTS_ASSET_KEYS = { imageAssetKeys: [], duration: 30 } as const;
+const DEFAULTS_ASSET_SLOT_BINDINGS = { assetSlotBindings: { hero: ['asset-a'] }, duration: 30 } as const;
 
 Deno.test('valid component passes', () => {
   const code = `
@@ -88,15 +88,96 @@ exports.default = MyComponent;
   validateSequenceComponentCode(code, SCHEMA_DURATION, DEFAULTS_DURATION);
 });
 
-Deno.test('asset-key params (params.imageAssetKeys) are accepted', () => {
+Deno.test('host-injected params.assetSlots is accepted without schema/defaults coverage', () => {
   const code = `
 function MyComponent({ params }) {
-  const keys = params.imageAssetKeys || [];
+  const heroUrl = (params.assetSlots?.hero ?? [])[0];
+  return React.createElement('div', null, params.duration, heroUrl);
+}
+exports.default = MyComponent;
+`;
+  validateSequenceComponentCode(code, SCHEMA_DURATION, DEFAULTS_DURATION);
+});
+
+Deno.test('persisted params.assetSlotBindings requires schema/defaults coverage when read', () => {
+  const code = `
+function MyComponent({ params }) {
+  const keys = params.assetSlotBindings?.hero ?? [];
   return React.createElement('div', null, params.duration, keys.length);
 }
 exports.default = MyComponent;
 `;
-  validateSequenceComponentCode(code, SCHEMA_ASSET_KEYS, DEFAULTS_ASSET_KEYS);
+  validateSequenceComponentCode(code, SCHEMA_ASSET_SLOT_BINDINGS, DEFAULTS_ASSET_SLOT_BINDINGS);
+});
+
+Deno.test('loose generated media params are rejected in code', () => {
+  const code = `
+function MyComponent({ params }) {
+  const keys = params.imageAssetKeys ?? [];
+  return React.createElement('div', null, params.duration, keys.length);
+}
+exports.default = MyComponent;
+`;
+  assertThrows(
+    () => validateSequenceComponentCode(code, SCHEMA_DURATION, DEFAULTS_DURATION),
+    Error,
+    'loose media params',
+  );
+});
+
+Deno.test('loose generated media params are rejected in schema/defaults', () => {
+  const code = `
+function MyComponent({ params }) {
+  return React.createElement('div', null, params.duration);
+}
+exports.default = MyComponent;
+`;
+  assertThrows(
+    () => validateSequenceComponentCode(
+      code,
+      { type: 'object', properties: { duration: { type: 'number' }, imageAssetKeys: { type: 'array' } } },
+      { duration: 30 },
+    ),
+    Error,
+    'loose media params',
+  );
+  assertThrows(
+    () => validateSequenceComponentCode(
+      code,
+      SCHEMA_DURATION,
+      { duration: 30, videos: [] },
+    ),
+    Error,
+    'loose media params',
+  );
+});
+
+Deno.test('host-injected params.assetSlots is rejected in schema/defaults', () => {
+  const code = `
+function MyComponent({ params }) {
+  const heroUrl = (params.assetSlots?.hero ?? [])[0];
+  return React.createElement('div', null, params.duration, heroUrl);
+}
+exports.default = MyComponent;
+`;
+  assertThrows(
+    () => validateSequenceComponentCode(
+      code,
+      { type: 'object', properties: { duration: { type: 'number' }, assetSlots: { type: 'object' } } },
+      DEFAULTS_DURATION,
+    ),
+    Error,
+    'assetSlots',
+  );
+  assertThrows(
+    () => validateSequenceComponentCode(
+      code,
+      SCHEMA_DURATION,
+      { duration: 30, assetSlots: { hero: ['https://example.test/a.png'] } },
+    ),
+    Error,
+    'assetSlots',
+  );
 });
 
 Deno.test('aliased destructuring `({ params: p })` is handled', () => {

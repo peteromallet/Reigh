@@ -10,6 +10,10 @@ import {
   SelectValue,
 } from '@/shared/components/ui/select.tsx';
 import { cn } from '@/shared/components/ui/contracts/cn.ts';
+import {
+  ASSET_SLOT_BINDINGS_PARAM,
+  ASSET_SLOTS_PARAM,
+} from '@/tools/video-editor/sequences/assetSlots.ts';
 
 export interface CodePathParamEditorAsset {
   key: string;
@@ -118,15 +122,11 @@ export function CodePathParamEditor({
   const schema = schemaJson as JsonSchemaObject;
   const properties = useMemo(() => schema.properties ?? {}, [schema.properties]);
   const propertyEntries = useMemo(
-    () => Object.entries(properties),
+    () => Object.entries(properties).filter(([name]) => (
+      name !== ASSET_SLOT_BINDINGS_PARAM && name !== ASSET_SLOTS_PARAM
+    )),
     [properties],
   );
-
-  const assetByKey = useMemo(() => {
-    const map = new Map<string, CodePathParamEditorAsset>();
-    (allowedAssets ?? []).forEach((asset) => map.set(asset.key, asset));
-    return map;
-  }, [allowedAssets]);
 
   const setField = useCallback(
     (name: string, nextValue: unknown) => {

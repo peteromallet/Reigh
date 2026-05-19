@@ -130,6 +130,12 @@ function validateEntry(
   if (seenNames.has(name)) {
     errors.push({ controlName: name, message: `Duplicate control name "${name}"` });
   }
+  if (RESERVED_NON_CONTROL_PARAMS.has(name)) {
+    errors.push({
+      controlName: name,
+      message: `Control name "${name}" is reserved for host-managed asset slots and cannot be user-facing`,
+    });
+  }
   seenNames.add(name);
 
   const type = entry.type;
@@ -240,6 +246,18 @@ function validateEntry(
 
 const PARAMS_REFERENCE_RE = /\bparams\s*(?:\.\s*([A-Za-z_$][\w$]*)|\[\s*"([^"\\]+)"\s*\]|\[\s*'([^'\\]+)'\s*\])/g;
 
+// Asset-slot params and legacy generated media params are managed by the
+// picker/runtime, not by user-facing controls. Keep this in sync with
+// supabase/functions/ai-generate-sequence-component/controls-manifest-validation.ts.
+const RESERVED_NON_CONTROL_PARAMS = new Set([
+  'assetSlotBindings',
+  'assetSlots',
+  'imageAssetKeys',
+  'videoAssetKeys',
+  'images',
+  'videos',
+]);
+
 function collectParamReferences(code: string): Set<string> {
   const refs = new Set<string>();
   let match: RegExpExecArray | null;
@@ -283,6 +301,7 @@ export function validateControlsManifest(
       }
     }
     for (const ref of codeRefs) {
+      if (RESERVED_NON_CONTROL_PARAMS.has(ref)) continue;
       if (!manifestNames.has(ref)) {
         errors.push({
           controlName: ref,

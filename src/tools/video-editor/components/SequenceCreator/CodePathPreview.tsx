@@ -2,6 +2,12 @@ import { useEffect, useMemo, useState, type FC } from 'react';
 import { Player } from '@remotion/player';
 import { compileSequenceComponentAsync } from '@/tools/video-editor/sequences/compileSequenceComponent.tsx';
 import type { ResolvedTimelineClip } from '@/tools/video-editor/types/index.ts';
+import {
+  ASSET_SLOT_BINDINGS_PARAM,
+  ASSET_SLOTS_PARAM,
+  materializeAssetSlots,
+  type AssetSlotDefinition,
+} from '@/tools/video-editor/sequences/assetSlots.ts';
 
 const PREVIEW_FPS = 30;
 const PREVIEW_WIDTH = 1280;
@@ -11,89 +17,107 @@ const PREVIEW_DURATION_SECONDS = 4;
 export interface CodePathPreviewAsset {
   key: string;
   url: string;
+  mediaType?: unknown;
 }
 
 export interface CodePathPreviewProps {
   code: string;
   defaultsJson: object;
   fps?: number;
-  /**
-   * User-supplied assets attached/selected in the panel. Their URLs are
-   * injected into the preview clip + params so the generated component
-   * has actual image data to render against (matching the trusted-clip
-   * pattern: params.images = [...urls], imageAssetKeys = [...keys],
-   * clip.asset.src = first url).
-   */
+  /** User-supplied assets attached/selected in the panel. */
   allowedAssets?: readonly CodePathPreviewAsset[];
+  /** Generated-component asset slot contract metadata. */
+  assetSlots?: readonly AssetSlotDefinition[];
 }
 
-export function CodePathPreview({ code, defaultsJson, fps = PREVIEW_FPS, allowedAssets }: CodePathPreviewProps) {
+export function CodePathPreview({
+  code,
+  defaultsJson,
+  fps = PREVIEW_FPS,
+  allowedAssets,
+  assetSlots,
+}: CodePathPreviewProps) {
   const [Component, setComponent] = useState<FC<unknown> | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    const startedAt = Date.now();
     setComponent(null);
     setError(null);
+    console.info('[SequenceCreator:Preview] compile:start', {
+      codeLength: code.length,
+      allowedAssetCount: allowedAssets?.length ?? 0,
+    });
     compileSequenceComponentAsync(code)
       .then((compiled) => {
         if (cancelled) return;
+        const compileError = (compiled as unknown as { __sequenceCompileError?: string }).__sequenceCompileError;
+        if (compileError) {
+          console.error('[SequenceCreator:Preview] compile:fallback_component', {
+            durationMs: Date.now() - startedAt,
+            error: compileError,
+          });
+        } else {
+          console.info('[SequenceCreator:Preview] compile:ok', {
+            durationMs: Date.now() - startedAt,
+          });
+        }
         setComponent(() => compiled as unknown as FC<unknown>);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
+        console.error('[SequenceCreator:Preview] compile:exception', {
+          durationMs: Date.now() - startedAt,
+          error: err instanceof Error ? err.message : String(err),
+        });
         setError(err instanceof Error ? err.message : String(err));
       });
     return () => {
       cancelled = true;
     };
-  }, [code]);
+  }, [allowedAssets?.length, code]);
 
   const durationInFrames = Math.max(1, Math.round(PREVIEW_DURATION_SECONDS * fps));
 
   const inputProps = useMemo(() => {
-    const urls = (allowedAssets ?? []).map((a) => a.url).filter(Boolean);
-    const keys = (allowedAssets ?? []).map((a) => a.key).filter(Boolean);
-    // key → url lookup, used to resolve any imageAssetKeys the model
-    // returned in defaults into the URL form components actually render
-    // (mirrors what the runtime asset registry does at insert time).
-    const keyToUrl = new Map<string, string>();
+    const registry: Record<string, { url: string; mediaType?: unknown; type?: unknown }> = {};
     for (const a of allowedAssets ?? []) {
-      if (a.key && a.url) keyToUrl.set(a.key, a.url);
+      if (a.key && a.url) {
+        registry[a.key] = {
+          url: a.url,
+          mediaType: a.mediaType,
+          type: a.mediaType,
+        };
+      }
+    }
+    const baseParams = (defaultsJson ?? {}) as Record<string, unknown>;
+    const slots = assetSlots ?? [];
+    const materialized = slots.length > 0
+      ? materializeAssetSlots({
+        slots,
+        bindings: baseParams[ASSET_SLOT_BINDINGS_PARAM],
+        registry,
+        path: `defaultsJson.${ASSET_SLOT_BINDINGS_PARAM}`,
+      })
+      : { assetSlots: {}, errors: [] };
+    if (materialized.errors.length > 0) {
+      console.warn('[SequenceCreator:Preview] asset_slots_invalid', {
+        allowedAssetCount: allowedAssets?.length ?? 0,
+        slotCount: slots.length,
+        errors: materialized.errors.map((error) => error.message),
+      });
     }
 
-    const baseParams = (defaultsJson ?? {}) as Record<string, unknown>;
-    const isStringArray = (v: unknown): v is string[] =>
-      Array.isArray(v) && v.every((x) => typeof x === 'string');
-    const resolveKeysToUrls = (raw: unknown): string[] | undefined => {
-      if (!isStringArray(raw) || raw.length === 0) return undefined;
-      const resolved = raw
-        .map((k) => keyToUrl.get(k) ?? null)
-        .filter((u): u is string => typeof u === 'string' && u.length > 0);
-      return resolved.length > 0 ? resolved : undefined;
-    };
-    const hasNonEmptyArray = (v: unknown) => Array.isArray(v) && v.length > 0;
-
-    // Build `images` (URL strings the component renders against) by
-    // preferring model defaults if they already contain URLs, else
-    // resolving asset keys, else falling back to the user's attached URLs.
-    const modelImages = isStringArray(baseParams.images)
-      ? (baseParams.images as string[]).filter((s) => /^https?:\/\//.test(s) || s.startsWith('data:'))
-      : [];
-    const resolvedFromKeys = resolveKeysToUrls(baseParams.imageAssetKeys)
-      ?? resolveKeysToUrls(baseParams.assetKeys);
-    const images = modelImages.length > 0
-      ? modelImages
-      : (resolvedFromKeys ?? urls);
-
-    const params = {
-      ...baseParams,
-      images,
-      ...(hasNonEmptyArray(baseParams.imageAssetKeys) ? {} : { imageAssetKeys: keys }),
-      ...(hasNonEmptyArray(baseParams.assetKeys) ? {} : { assetKeys: keys }),
-      assetUrls: hasNonEmptyArray(baseParams.assetUrls) ? baseParams.assetUrls : urls,
-    };
-    const firstImage = images[0] ?? urls[0];
+    const hasMaterializedSlots = Object.values(materialized.assetSlots).some((urls) => urls.length > 0);
+    const params = hasMaterializedSlots
+      ? {
+        ...baseParams,
+        [ASSET_SLOTS_PARAM]: materialized.assetSlots,
+      }
+      : baseParams;
+    const firstSlotUrl = Object.values(materialized.assetSlots).flat()[0];
+    const firstSlot = slots.find((slot) => (materialized.assetSlots[slot.id] ?? []).length > 0);
     const previewClip: ResolvedTimelineClip = {
       id: 'code-path-preview',
       clipType: 'code-path-preview',
@@ -101,7 +125,7 @@ export function CodePathPreview({ code, defaultsJson, fps = PREVIEW_FPS, allowed
       at: 0,
       from: 0,
       to: PREVIEW_DURATION_SECONDS,
-      asset: firstImage ? { src: firstImage, mediaType: 'image' } : undefined,
+      asset: firstSlotUrl ? { src: firstSlotUrl, mediaType: firstSlot?.mediaType ?? 'image' } : undefined,
     } as unknown as ResolvedTimelineClip;
     return {
       clip: previewClip,
@@ -109,7 +133,7 @@ export function CodePathPreview({ code, defaultsJson, fps = PREVIEW_FPS, allowed
       theme: undefined,
       fps,
     };
-  }, [allowedAssets, defaultsJson, fps]);
+  }, [allowedAssets, assetSlots, defaultsJson, fps]);
 
   if (error) {
     return (

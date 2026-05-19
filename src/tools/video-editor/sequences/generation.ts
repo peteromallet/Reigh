@@ -9,7 +9,7 @@ export type AllowedSequenceAsset = {
   key: string;
   url: string;
   mediaType: SelectedMediaClip['mediaType'];
-  source: 'selected' | 'attached';
+  source: 'selected' | 'attached' | 'uploaded';
   label: string;
   clipId: string;
   generationId?: string;
@@ -193,7 +193,16 @@ export const buildAllowedAssetRegistry = (
 ): ResolvedTimelineConfig['registry'] => {
   return assets.reduce<Record<string, ResolvedAssetRegistryEntry>>((next, asset) => {
     const entry = registry[asset.key];
-    if (entry) next[asset.key] = entry;
+    if (entry) {
+      next[asset.key] = entry;
+    } else {
+      next[asset.key] = {
+        file: asset.url,
+        src: asset.url,
+        type: asset.mediaType === 'video' ? 'video/mp4' : 'image/png',
+        ...(asset.generationId ? { generationId: asset.generationId } : {}),
+      };
+    }
     return next;
   }, {});
 };

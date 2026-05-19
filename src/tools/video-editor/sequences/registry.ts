@@ -280,6 +280,8 @@ export const describeClipCapability = (
 //   rewrite the effects side to match — keep them divergent for MVP.
 
 import type { FC } from 'react';
+import type { AssetSlotDefinition } from '@/tools/video-editor/sequences/assetSlots.ts';
+import type { ElementManifestV1 } from '@/tools/video-editor/sequence.ts';
 
 export interface DynamicSequenceComponentEntry {
   clipType: string;
@@ -290,7 +292,9 @@ export interface DynamicSequenceComponentEntry {
     fps: number;
   }>;
   schemaJson?: object;
+  assetSlots?: readonly AssetSlotDefinition[];
   themeId?: string;
+  manifest?: ElementManifestV1;
 }
 
 // Local type alias to avoid a circular dependency with `@/tools/video-editor/types`.

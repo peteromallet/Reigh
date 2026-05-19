@@ -25,6 +25,7 @@ import type {
   SequenceCreatorMode,
   SequenceDraftGroup,
 } from '@/tools/video-editor/sequences/generation.ts';
+import type { AssetSlotDefinition } from '@/tools/video-editor/sequences/assetSlots.ts';
 import type { getBundledComponentSource } from '@/tools/video-editor/sequences/getBundledComponentSource.ts';
 
 export type GenerationMode = 'auto' | 'code' | 'json';
@@ -47,6 +48,11 @@ export type GeneratedComponent = {
   description: string;
   schemaJson: object;
   defaultsJson: object;
+  /**
+   * Normalized ASSET_SLOTS metadata for code-path components. The editable
+   * picker-owned bindings stay in defaultsJson.assetSlotBindings.
+   */
+  assetSlots: AssetSlotDefinition[];
   /**
    * Controls manifest emitted by the agent. Undefined for components loaded
    * from the library before the manifest field existed (backwards compat:

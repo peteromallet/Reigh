@@ -56,11 +56,20 @@ const COMPILE_OPTIONS = {
   jsxRuntime: 'classic' as const,
 };
 
+export type FailedSequenceComponent = FC<SequenceComponentProps> & {
+  __sequenceCompileError?: string;
+};
+
 function createFailedSequence(message: string): FC<SequenceComponentProps> {
-  return function FailedSequence() {
+  console.error('[SequenceComponent:Compile] compile_failed', {
+    message,
+  });
+  const FailedSequence: FailedSequenceComponent = function FailedSequence() {
     void message;
     return null;
   };
+  FailedSequence.__sequenceCompileError = message;
+  return FailedSequence;
 }
 
 export function compileSequenceComponent(code: string): FC<SequenceComponentProps> {

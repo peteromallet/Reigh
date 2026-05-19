@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { serializeForDisk } from '@/tools/video-editor/lib/serialize';
 import { materializeResolvedSequenceConfig } from '@/tools/video-editor/sequences/materialize';
 import type { ResolvedTimelineConfig } from '@/tools/video-editor/types';
+import type { DynamicSequenceComponentEntry } from '@/tools/video-editor/sequences/registry';
 
 const buildConfig = (): ResolvedTimelineConfig => ({
   output: {
@@ -119,5 +120,79 @@ describe('sequence asset materialization', () => {
       imageAssetKeys: ['asset-a', 'asset-b'],
       mode: 'shuffle',
     });
+  });
+
+  it('injects DB-stored dynamic component assetSlots from persisted bindings without mutating params', () => {
+    const dynamicEntries: DynamicSequenceComponentEntry[] = [{
+      clipType: 'hero-pulse',
+      component: (() => null) as DynamicSequenceComponentEntry['component'],
+      assetSlots: [{
+        id: 'hero',
+        label: 'Hero',
+        mediaType: 'image',
+        required: true,
+        minItems: 1,
+        maxItems: 1,
+      }],
+    }];
+    const config: ResolvedTimelineConfig = {
+      ...buildConfig(),
+      clips: [
+        {
+          id: 'clip-generated',
+          clipType: 'custom:hero-pulse',
+          track: 'V1',
+          at: 0,
+          hold: 4,
+          params: {
+            assetSlotBindings: {
+              hero: ['asset-a'],
+            },
+          },
+        },
+      ],
+    };
+
+    const materialized = materializeResolvedSequenceConfig(config, { dynamicEntries });
+
+    expect(materialized.clips[0].params).toEqual({
+      assetSlotBindings: {
+        hero: ['asset-a'],
+      },
+      assetSlots: {
+        hero: ['https://cdn.example.com/asset-a.png'],
+      },
+    });
+    expect(config.clips[0].params).toEqual({
+      assetSlotBindings: {
+        hero: ['asset-a'],
+      },
+    });
+  });
+
+  it('does not materialize generated loose media params for DB-stored components', () => {
+    const dynamicEntries: DynamicSequenceComponentEntry[] = [{
+      clipType: 'hero-pulse',
+      component: (() => null) as DynamicSequenceComponentEntry['component'],
+      assetSlots: [],
+    }];
+    const config: ResolvedTimelineConfig = {
+      ...buildConfig(),
+      clips: [
+        {
+          id: 'clip-generated',
+          clipType: 'custom:hero-pulse',
+          track: 'V1',
+          at: 0,
+          hold: 4,
+          params: {
+            imageAssetKeys: ['asset-a'],
+            videoAssetKeys: ['asset-b'],
+          },
+        },
+      ],
+    };
+
+    expect(materializeResolvedSequenceConfig(config, { dynamicEntries })).toBe(config);
   });
 });

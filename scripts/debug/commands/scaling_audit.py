@@ -1,5 +1,6 @@
 """Scaling audit command — replay orchestrator decisions and flag contradictions."""
 
+import json
 import re
 from datetime import datetime, timezone, timedelta
 
@@ -118,6 +119,8 @@ def run(client: DebugClient, options: dict):
                         'timestamp': kill_time,
                         'reason': meta.get('termination_reason', meta.get('error', f"status={w['status']}")),
                     }
+
+        capacity_report = _build_capacity_reconciler_report(client, cutoff, logs)
 
         # ── 4. Analyze each worker ────────────────────────────────────────
         all_worker_ids = set(spawns.keys()) | set(kills.keys()) | set(promotions.keys()) | set(worker_tasks.keys())
@@ -259,12 +262,43 @@ def run(client: DebugClient, options: dict):
         total_spawned = len(spawns) or 1
         normal_lifecycle = len(healthy)
         utilization = int((normal_lifecycle / total_spawned) * 100) if total_spawned else 0
+        capacity_report['legacy_worker_mutation_counts'] = {
+            'spawns': len(spawns),
+            'kills': len(kills),
+            'productive_kills': productive_kills,
+            'wasted_spawns': wasted_spawns,
+        }
+        capacity_report['divergence_counts'] = {
+            'shadow_intended_actions': sum(capacity_report.get('shadow_action_counts', {}).values()),
+            'intent_actions': sum(capacity_report.get('intent_action_counts', {}).values()),
+            'legacy_worker_mutations': len(spawns) + len(kills),
+            'lease_suppressed': capacity_report.get('lease_suppressed_rows', 0),
+            'route_demand_fallback': capacity_report.get('route_demand_fallback_rows', 0),
+        }
+
+        if options.get('format') == 'json':
+            print(json.dumps({
+                'hours': hours,
+                'workers_spawned': len(spawns),
+                'workers_promoted': total_promoted or len(promotions),
+                'workers_killed': len(kills),
+                'workers_still_alive': still_alive,
+                'productive_kills': productive_kills,
+                'wasted_spawns': wasted_spawns,
+                'effective_utilization_percent': utilization,
+                'issues': issues,
+                'healthy': healthy,
+                'capacity_reconciler': capacity_report,
+            }, indent=2, default=str))
+            return
 
         print("  " + "\u2500" * 3 + " Churn Rate " + "\u2500" * 3)
         print()
         print(f"  Workers spawned: {len(spawns)} | Productive kills: {productive_kills} | Wasted spawns: {wasted_spawns}")
         print(f"  Effective utilization: {utilization}% ({normal_lifecycle} of {len(spawns)} workers completed their lifecycle normally)")
         print()
+
+        _print_capacity_reconciler_report(capacity_report)
 
     except Exception as e:
         print(f"Error running scaling audit: {e}")
@@ -301,3 +335,253 @@ def _fmt_duration(seconds: float) -> str:
     if secs:
         return f"{minutes}m {secs}s"
     return f"{minutes}m"
+
+
+def _build_capacity_reconciler_report(client: DebugClient, cutoff: str, logs: list[dict]) -> dict:
+    intents, intents_error = _fetch_table_rows(
+        client,
+        table='worker_capacity_intents',
+        select=(
+            'id, pool, route_key, desired_capacity, reason, observed_queued, '
+            'observed_active, observed_spawning, observed_idle, observed_in_progress, '
+            'effective_capacity, cycle_id, observer_id, observation_id, actions, '
+            'suppressed_actions, outcome, created_at, valid_until, stable_since, shadow'
+        ),
+        cutoff_column='created_at',
+        cutoff=cutoff,
+        limit=1000,
+        order_column='created_at',
+    )
+    backoffs, backoffs_error = _fetch_table_rows(
+        client,
+        table='worker_capacity_route_backoffs',
+        select=(
+            'pool, route_key, consecutive_spawn_failures, next_spawn_allowed_at, '
+            'last_spawn_failed_at, last_spawn_succeeded_at, last_error, updated_at'
+        ),
+        cutoff_column=None,
+        cutoff=cutoff,
+        limit=1000,
+        order_column='updated_at',
+    )
+
+    leases, leases_error = _fetch_table_rows(
+        client,
+        table='orchestrator_leases',
+        select='lease_key, pool, holder_id, acquired_at, expires_at, metadata',
+        cutoff_column=None,
+        cutoff=cutoff,
+        limit=100,
+        order_column='expires_at',
+    )
+
+    shadow_logs = [
+        log for log in logs
+        if isinstance(log.get('metadata'), dict)
+        and log.get('metadata', {}).get('shadow_intended_action')
+    ]
+
+    intents_by_pool: dict[str, list[dict]] = {}
+    authoritative_cycle_counts: dict[tuple[str, str], int] = {}
+    shadow_observations: dict[tuple[str, str], int] = {}
+    action_counts: dict[str, int] = {}
+    suppressed_counts: dict[str, int] = {}
+    route_fallback_count = 0
+    lease_suppressed_count = 0
+    adoptions: list[dict] = []
+
+    for row in intents:
+        pool = row.get('pool') or 'unknown'
+        intents_by_pool.setdefault(pool, []).append(row)
+        for action in row.get('actions') or []:
+            action_type = action.get('type', 'unknown')
+            action_counts[action_type] = action_counts.get(action_type, 0) + 1
+        for action in row.get('suppressed_actions') or []:
+            action_type = action.get('type', 'unknown')
+            suppressed_counts[action_type] = suppressed_counts.get(action_type, 0) + 1
+
+        outcome = row.get('outcome') or {}
+        if outcome.get('route_demand_fallback'):
+            route_fallback_count += 1
+        if outcome.get('lease_suppressed'):
+            lease_suppressed_count += 1
+
+        adopted = outcome.get('adopted_legacy_spawning_worker_ids') or []
+        if adopted:
+            adoptions.append({
+                'created_at': row.get('created_at'),
+                'pool': pool,
+                'cycle_id': row.get('cycle_id'),
+                'intent_id': row.get('id'),
+                'worker_ids': adopted,
+            })
+
+        cycle_id = row.get('cycle_id')
+        if row.get('shadow') is False and cycle_id is not None:
+            key = (pool, str(cycle_id))
+            authoritative_cycle_counts[key] = authoritative_cycle_counts.get(key, 0) + 1
+
+        if row.get('shadow') is True:
+            key = (str(row.get('observer_id')), str(row.get('observation_id')))
+            shadow_observations[key] = shadow_observations.get(key, 0) + 1
+
+    pool_stability = []
+    for pool, rows in sorted(intents_by_pool.items()):
+        ordered = sorted(rows, key=lambda row: row.get('created_at') or '')
+        changes = 0
+        previous = None
+        for row in ordered:
+            desired = row.get('desired_capacity')
+            if previous is not None and desired != previous:
+                changes += 1
+            previous = desired
+        latest = ordered[-1] if ordered else {}
+        pool_stability.append({
+            'pool': pool,
+            'rows': len(rows),
+            'latest_created_at': latest.get('created_at'),
+            'latest_desired_capacity': latest.get('desired_capacity'),
+            'latest_effective_capacity': latest.get('effective_capacity'),
+            'latest_reason': latest.get('reason'),
+            'latest_stable_since': latest.get('stable_since'),
+            'desired_capacity_changes': changes,
+        })
+
+    active_backoffs = [
+        row for row in backoffs
+        if row.get('next_spawn_allowed_at') and row.get('consecutive_spawn_failures', 0)
+    ]
+
+    return {
+        'errors': {
+            'intents': intents_error,
+            'route_backoffs': backoffs_error,
+            'leases': leases_error,
+        },
+        'intent_rows': len(intents),
+        'shadow_intent_rows': len([row for row in intents if row.get('shadow') is True]),
+        'authoritative_intent_rows': len([row for row in intents if row.get('shadow') is False]),
+        'shadow_intended_log_rows': len(shadow_logs),
+        'shadow_action_counts': _count_shadow_log_actions(shadow_logs),
+        'intent_action_counts': action_counts,
+        'suppressed_action_counts': suppressed_counts,
+        'pool_stability': pool_stability,
+        'duplicate_shadow_observations': [
+            {'observer_id': key[0], 'observation_id': key[1], 'rows': count}
+            for key, count in shadow_observations.items()
+            if count > 1
+        ],
+        'authoritative_cycle_duplicates': [
+            {'pool': key[0], 'cycle_id': key[1], 'rows': count}
+            for key, count in authoritative_cycle_counts.items()
+            if count != 1
+        ],
+        'route_demand_fallback_rows': route_fallback_count,
+        'lease_suppressed_rows': lease_suppressed_count,
+        'latest_adoptions': adoptions[:10],
+        'route_backoffs': active_backoffs[:20],
+        'leases': leases[:20],
+    }
+
+
+def _fetch_table_rows(
+    client: DebugClient,
+    *,
+    table: str,
+    select: str,
+    cutoff_column: str | None,
+    cutoff: str,
+    limit: int,
+    order_column: str,
+) -> tuple[list[dict], str | None]:
+    try:
+        query = client.supabase.table(table).select(select)
+        if cutoff_column:
+            query = query.gte(cutoff_column, cutoff)
+        result = query.order(order_column, desc=True).limit(limit).execute()
+        return result.data or [], None
+    except Exception as exc:
+        return [], str(exc)
+
+
+def _count_shadow_log_actions(shadow_logs: list[dict]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for log in shadow_logs:
+        action = (log.get('metadata') or {}).get('action') or {}
+        action_type = action.get('type', 'unknown')
+        counts[action_type] = counts.get(action_type, 0) + 1
+    return counts
+
+
+def _print_capacity_reconciler_report(report: dict) -> None:
+    print("  " + "\u2500" * 3 + " Capacity Reconciler " + "\u2500" * 3)
+    print()
+    errors = {key: value for key, value in report.get('errors', {}).items() if value}
+    if errors:
+        print("  Capacity tables unavailable or partially unavailable:")
+        for key, value in errors.items():
+            print(f"    {key}: {value}")
+        print()
+        return
+
+    print(
+        "  Intent rows: "
+        f"{report['intent_rows']} "
+        f"(shadow={report['shadow_intent_rows']}, authoritative={report['authoritative_intent_rows']})"
+    )
+    print(f"  Shadow intended log rows: {report['shadow_intended_log_rows']}")
+    print(f"  Shadow action counts: {report['shadow_action_counts'] or {}}")
+    print(f"  Intent action counts: {report['intent_action_counts'] or {}}")
+    print(f"  Suppressed action counts: {report['suppressed_action_counts'] or {}}")
+    print(f"  Legacy worker mutation counts: {report.get('legacy_worker_mutation_counts') or {}}")
+    print(f"  Divergence counts: {report.get('divergence_counts') or {}}")
+    print(f"  Route-demand fallback rows: {report['route_demand_fallback_rows']}")
+    print(f"  Lease-suppressed rows: {report['lease_suppressed_rows']}")
+    print()
+
+    if report.get('pool_stability'):
+        print("  Pool intent stability:")
+        for pool in report['pool_stability']:
+            print(
+                f"    {pool['pool']}: latest desired={pool['latest_desired_capacity']} "
+                f"effective={pool['latest_effective_capacity']} "
+                f"changes={pool['desired_capacity_changes']} "
+                f"reason={pool['latest_reason']} stable_since={pool['latest_stable_since']}"
+            )
+        print()
+
+    if report.get('route_backoffs'):
+        print("  Active route backoff windows:")
+        for row in report['route_backoffs']:
+            print(
+                f"    {row.get('pool')}/{row.get('route_key')}: "
+                f"failures={row.get('consecutive_spawn_failures')} "
+                f"next_spawn_allowed_at={row.get('next_spawn_allowed_at')} "
+                f"last_error={row.get('last_error')}"
+            )
+        print()
+
+    if report.get('latest_adoptions'):
+        print("  Latest adoption intents:")
+        for adoption in report['latest_adoptions']:
+            print(
+                f"    {adoption['created_at']} pool={adoption['pool']} "
+                f"cycle={adoption['cycle_id']} workers={adoption['worker_ids']}"
+            )
+        print()
+
+    duplicate_observations = report.get('duplicate_shadow_observations') or []
+    duplicate_cycles = report.get('authoritative_cycle_duplicates') or []
+    if duplicate_observations or duplicate_cycles:
+        print("  Invariant warnings:")
+        for row in duplicate_observations:
+            print(
+                f"    duplicate shadow observation observer={row['observer_id']} "
+                f"observation={row['observation_id']} rows={row['rows']}"
+            )
+        for row in duplicate_cycles:
+            print(
+                f"    authoritative rows for pool={row['pool']} "
+                f"cycle={row['cycle_id']}: {row['rows']}"
+            )
+        print()

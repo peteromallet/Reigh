@@ -99,10 +99,7 @@ async function cancelTasksByIds(taskIds: string[]): Promise<void> {
     (result): result is PromiseRejectedResult => result.status === 'rejected',
   );
   if (rejected) {
-    normalizeAndPresentError(rejected.reason, {
-      context: 'useTaskPlaceholder.cancelTasksByIds',
-      showToast: false,
-    });
+    console.warn('[useTaskPlaceholder.cancelTasksByIds] Best-effort cancellation failed', rejected.reason);
   }
 }
 

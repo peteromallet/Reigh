@@ -16,6 +16,7 @@ import { TIMELINE_CENTER_CLIP_EVENT } from '@/tools/video-editor/lib/timeline-vi
 import type { SelectedMediaClip } from '@/tools/video-editor/hooks/useSelectedMediaClips';
 import type { TimelineData } from '@/tools/video-editor/lib/timeline-data';
 import type { ResolvedTimelineConfig } from '@/tools/video-editor/types';
+import { getSequenceCreatorStore } from '@/tools/video-editor/state/sequenceCreatorStore';
 
 const mocks = vi.hoisted(() => ({
   invokeSupabaseEdgeFunction: vi.fn(),
@@ -30,6 +31,7 @@ const mocks = vi.hoisted(() => ({
   buildInsertSequenceDraftEdit: vi.fn(),
   buildReplaceSequenceDraftEdit: vi.fn(),
   composerRemoveAttachment: vi.fn(),
+  sequenceComponents: [] as Array<Record<string, unknown>>,
 }));
 
 vi.mock('@/integrations/supabase/functions/invokeSupabaseEdgeFunction', () => ({
@@ -38,6 +40,18 @@ vi.mock('@/integrations/supabase/functions/invokeSupabaseEdgeFunction', () => ({
 
 vi.mock('@/tools/video-editor/hooks/useSelectedMediaClips', () => ({
   useSelectedMediaClips: mocks.useSelectedMediaClips,
+}));
+
+vi.mock('@/tools/video-editor/contexts/DataProviderContext', () => ({
+  useVideoEditorRuntime: () => ({
+    project: { projectId: 'project-1' },
+  }),
+}));
+
+vi.mock('@/shared/contexts/AuthContext.tsx', () => ({
+  useAuth: () => ({
+    userId: 'user-1',
+  }),
 }));
 
 vi.mock('@/shared/state/currentAttachmentSet', () => ({
@@ -52,6 +66,14 @@ vi.mock('@/shared/state/selectionStore', () => ({
 // when the user never triggers a Save. Mock to a no-op so the test harness
 // does not need to provide a QueryClientProvider.
 vi.mock('@/tools/video-editor/hooks/useSequenceResources', () => ({
+  useSequenceResources: () => ({
+    components: mocks.sequenceComponents,
+    isLoading: false,
+    isFetching: false,
+    error: null,
+    canDeleteComponent: false,
+    refetch: vi.fn(),
+  }),
   useCreateSequenceComponentResource: () => ({
     mutateAsync: vi.fn(),
     mutate: vi.fn(),
@@ -68,6 +90,15 @@ vi.mock('@/tools/video-editor/hooks/useSequenceResources', () => ({
     failureReason: null,
     isPaused: false,
   }),
+}));
+
+vi.mock('@/tools/video-editor/components/SequenceCreator/CodePathPreview', () => ({
+  CodePathPreview: (props: { code: string; defaultsJson: object }) => (
+    <div data-testid="sequence-code-preview">{JSON.stringify({
+      codeLength: props.code.length,
+      defaultsJson: props.defaultsJson,
+    })}</div>
+  ),
 }));
 
 vi.mock('@/tools/video-editor/hooks/timelineStore', () => ({
@@ -308,6 +339,8 @@ const createDeferred = <T,>() => {
 describe('SequenceCreatorPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.sequenceComponents.length = 0;
+    getSequenceCreatorStore().getState().reset();
     mocks.invokeSupabaseEdgeFunction.mockResolvedValue({
       drafts: [
         {
@@ -916,6 +949,7 @@ describe('SequenceCreatorPanel', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: /insert at playhead/i }));
 
+    await waitFor(() => expect(mocks.buildInsertSequenceDraftEdit).toHaveBeenCalledTimes(1));
     expect(mocks.buildInsertSequenceDraftEdit).toHaveBeenCalledTimes(1);
     expect(mocks.buildInsertSequenceDraftEdit).toHaveBeenCalledWith(
       timelineData,
@@ -965,6 +999,7 @@ describe('SequenceCreatorPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /replace selected/i }));
 
+    await waitFor(() => expect(mocks.applyEdit).toHaveBeenCalledTimes(1));
     expect(mocks.buildReplaceSequenceDraftEdit).toHaveBeenCalledWith(
       timelineData,
       expect.objectContaining({ clipType: 'resource-card' }),
@@ -1042,6 +1077,55 @@ describe('SequenceCreatorPanel', () => {
       multiSelectedTimelineData,
       expect.objectContaining({ clipType: 'resource-card' }),
       { selectedClipId: 'clip-1', selectedClipIds: new Set(['clip-1', 'clip-2']) },
+    );
+  });
+
+  it('inserts the library item currently being previewed instead of a previously loaded item', async () => {
+    mocks.sequenceComponents.push(
+      {
+        id: 'resource-loaded',
+        name: 'Loaded item',
+        description: 'Previously loaded',
+        clipType: 'custom-component:loaded-item',
+        code: 'const Loaded = () => React.createElement(AbsoluteFill); exports.default = Loaded;',
+        schemaJson: { type: 'object', properties: {} },
+        defaultsJson: { title: 'loaded' },
+        controlsManifest: [],
+        assetSlots: [],
+        created_at: '2026-05-05T00:00:00Z',
+      },
+      {
+        id: 'resource-previewed',
+        name: 'Previewed item',
+        description: 'Currently previewed',
+        clipType: 'custom-component:previewed-item',
+        code: 'const Previewed = () => React.createElement(AbsoluteFill); exports.default = Previewed;',
+        schemaJson: { type: 'object', properties: {} },
+        defaultsJson: { title: 'previewed' },
+        controlsManifest: [],
+        assetSlots: [],
+        created_at: '2026-05-06T00:00:00Z',
+      },
+    );
+    renderPanel();
+
+    fireEvent.click(screen.getByRole('button', { name: /^library$/i }));
+    fireEvent.click(screen.getAllByRole('button', { name: /^load$/i })[1]);
+    expect(await screen.findByText('Loaded "Loaded item" from library.')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /^library$/i }));
+    fireEvent.click(screen.getAllByRole('button', { name: /^preview$/i })[0]);
+    expect(await screen.findByText('Previewing "Previewed item" from library.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /insert at playhead/i }));
+
+    await waitFor(() => expect(mocks.buildInsertSequenceDraftEdit).toHaveBeenCalled());
+    expect(mocks.buildInsertSequenceDraftEdit).toHaveBeenLastCalledWith(
+      timelineData,
+      expect.objectContaining({
+        clipType: 'custom-component:previewed-item',
+        params: expect.objectContaining({ title: 'previewed' }),
+      }),
+      { at: 2, selectedTrackId: 'visual-1' },
     );
   });
 

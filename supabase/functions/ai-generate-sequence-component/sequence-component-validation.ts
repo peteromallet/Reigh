@@ -23,6 +23,12 @@
 
 import { transform as sucraseTransform } from 'https://esm.sh/sucrase@3.34.0?target=denonext';
 import * as acorn from 'https://esm.sh/acorn@8.12.1?target=denonext';
+import {
+  ASSET_SLOT_BINDINGS_PARAM,
+  ASSET_SLOTS_PARAM,
+  collectLooseGeneratedMediaParamPaths,
+  hasLooseGeneratedMediaParamName,
+} from './asset-slot-validation.ts';
 
 interface AcornNode {
   type: string;
@@ -330,9 +336,31 @@ export function validateSequenceComponentCode(
     );
   }
 
-  // Param-coverage check: every params.X must appear in schema.properties AND defaults.
+  const looseSchemaParams = collectLooseGeneratedMediaParamPaths(
+    (schema as { properties?: Record<string, unknown> }).properties,
+    'SCHEMA.properties',
+  );
+  const looseDefaultParams = collectLooseGeneratedMediaParamPaths(defaults, 'DEFAULTS');
+  const looseCodeParams = [...analysis.paramNames]
+    .filter(hasLooseGeneratedMediaParamName)
+    .map((name) => `params.${name}`);
+  const looseParams = [...looseSchemaParams, ...looseDefaultParams, ...looseCodeParams];
+  if (looseParams.length > 0) {
+    throw new Error(`Generated sequence components must use ${ASSET_SLOT_BINDINGS_PARAM} and host-injected ${ASSET_SLOTS_PARAM}, not loose media params: ${looseParams.join(', ')}`);
+  }
+
+  // Param-coverage check: every user-owned params.X must appear in schema.properties AND defaults.
+  // Host-injected params.assetSlots is intentionally excluded. Persisted
+  // params.assetSlotBindings remains covered when code reads it.
   const schemaProperties = (schema as { properties?: Record<string, unknown> }).properties ?? {};
+  if (Object.prototype.hasOwnProperty.call(schemaProperties, ASSET_SLOTS_PARAM)) {
+    throw new Error(`Host-injected param "${ASSET_SLOTS_PARAM}" must not be declared in SCHEMA.properties`);
+  }
+  if (Object.prototype.hasOwnProperty.call(defaults, ASSET_SLOTS_PARAM)) {
+    throw new Error(`Host-injected param "${ASSET_SLOTS_PARAM}" must not be declared in DEFAULTS`);
+  }
   for (const paramName of analysis.paramNames) {
+    if (paramName === ASSET_SLOTS_PARAM) continue;
     assertObjectHasKey(schemaProperties as object, paramName, 'schema.properties', paramName);
     assertObjectHasKey(defaults, paramName, 'defaults', paramName);
   }

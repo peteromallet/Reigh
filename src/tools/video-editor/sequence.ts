@@ -48,6 +48,39 @@ export type {
 } from './sequences/materialize.ts';
 
 export {
+  sequenceComponentMetadataToElementManifest,
+  elementManifestToSequenceComponentMetadata,
+  artAgentsElementManifestToElementManifest,
+} from './sequences/elementManifest.ts';
+
+export type {
+  ArtAgentsElementManifestLike,
+  ArtAgentsElementManifestToElementManifest,
+  ElementManifestAdapterFunctions,
+  ElementManifestArtAgentsCompatibilityBlock,
+  ElementManifestAssetSlotBlock,
+  ElementManifestCatalogBlock,
+  ElementManifestCompatibilityBlock,
+  ElementManifestContractBlock,
+  ElementManifestControlBlock,
+  ElementManifestInputBlock,
+  ElementManifestInputType,
+  ElementManifestJsonObject,
+  ElementManifestJsonValue,
+  ElementManifestKindBlock,
+  ElementManifestProvenanceBlock,
+  ElementManifestReighCompatibilityBlock,
+  ElementManifestRuntimeBlock,
+  ElementManifestSource,
+  ElementManifestToSequenceComponentMetadata,
+  ElementManifestV1,
+  ElementManifestVersion,
+  SequenceComponentMetadataLike,
+  SequenceComponentMetadataManifestOptions,
+  SequenceComponentMetadataToElementManifest,
+} from './sequences/elementManifest.ts';
+
+export {
   applySequenceDraftToTimeline,
 } from './lib/sequence-public.ts';
 

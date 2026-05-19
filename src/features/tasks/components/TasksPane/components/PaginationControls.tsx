@@ -29,11 +29,11 @@ export const PaginationControls: React.FC<PaginationControlsProps> = ({
   const getFilterLabel = () => {
     switch (filterType) {
       case 'Processing':
-        return 'processing tasks';
+        return 'processing';
       case 'Succeeded':
-        return 'succeeded tasks';
+        return 'succeeded';
       case 'Failed':
-        return 'failed tasks';
+        return 'failed';
       default:
         return 'tasks';
     }
@@ -42,18 +42,16 @@ export const PaginationControls: React.FC<PaginationControlsProps> = ({
   // Show recent count info if available and it's a filter that has recent data
   const showRecentInfo = recentCount && recentCount > 0 && (filterType === 'Succeeded' || filterType === 'Failed');
 
+  const summaryText = showRecentInfo
+    ? `${recentCount.toLocaleString()} recent, ${totalItems.toLocaleString()} total`
+    : `${totalItems.toLocaleString()} ${getFilterLabel()} • ${ITEMS_PER_PAGE}/page`;
+
   return (
-    <div className="flex items-center justify-between px-4 py-2 text-[11px] text-zinc-400">
-      <span>
-        {showRecentInfo ? (
-          filterType === 'Succeeded' ? 
-            `${recentCount} succeeded in the past hour, ${totalItems} in total.` :
-            `${recentCount} fails in the past hour, ${totalItems} in total.`
-        ) : (
-          `${totalItems} ${getFilterLabel()}, showing ${ITEMS_PER_PAGE} per page`
-        )}
+    <div className="flex flex-nowrap items-center gap-2 px-3 py-1.5 text-[11px] text-zinc-400">
+      <span className="min-w-0 flex-1 truncate whitespace-nowrap" title={summaryText}>
+        {summaryText}
       </span>
-      <div className="flex items-center gap-1">
+      <div className="flex flex-shrink-0 items-center gap-0.5 whitespace-nowrap">
         <Button
           variant="ghost"
           size="sm"
@@ -73,7 +71,7 @@ export const PaginationControls: React.FC<PaginationControlsProps> = ({
           }}
           disabled={isLoading}
         >
-          <SelectTrigger variant="retro-dark" colorScheme="zinc" size="sm" className="h-6 w-9 text-xs px-1 !justify-center [&>span]:!text-center" hideIcon>
+          <SelectTrigger variant="retro-dark" colorScheme="zinc" size="sm" className="h-6 w-8 text-xs px-1 !justify-center [&>span]:!text-center" hideIcon>
             <SelectValue />
           </SelectTrigger>
           <SelectContent variant="zinc" className="!min-w-0 w-11 text-xs">
@@ -84,8 +82,8 @@ export const PaginationControls: React.FC<PaginationControlsProps> = ({
             ))}
           </SelectContent>
         </Select>
-        <span className="text-zinc-300 text-[11px] ml-1">
-          of {totalPages}
+        <span className="text-zinc-300 text-[11px]">
+          / {totalPages}
         </span>
         
         <Button

@@ -36,7 +36,7 @@ function stubDenoEnv(): void {
   vi.stubGlobal('Deno', {
     env: {
       get: (key: string) => {
-        if (key === 'ANTHROPIC_API_KEY') return 'anthropic-test-key';
+        if (key === 'FIREWORKS_API_KEY') return 'fireworks-test-key';
         return undefined;
       },
     },
@@ -50,23 +50,14 @@ function createLogger() {
   };
 }
 
-function createAnthropicSseResponse(content: string): Response {
-  const encoder = new TextEncoder();
-  return new Response(
-    new ReadableStream({
-      start(controller) {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({
-          type: 'content_block_delta',
-          delta: { type: 'text_delta', text: content },
-        })}\n\n`));
-        controller.close();
-      },
-    }),
-    {
-      status: 200,
-      headers: { 'Content-Type': 'text/event-stream' },
-    },
-  );
+function createFireworksResponse(content: string): Response {
+  return new Response(JSON.stringify({
+    choices: [{ message: { content } }],
+    model: 'accounts/fireworks/models/kimi-k2p6',
+  }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
 }
 
 async function loadHandler() {
@@ -85,7 +76,7 @@ describe('ai-generate-sequence edge entrypoint', () => {
     __resetServeHandler();
     stubDenoEnv();
     vi.stubGlobal('fetch', vi.fn(async () =>
-      createAnthropicSseResponse(JSON.stringify({
+      createFireworksResponse(JSON.stringify({
         drafts: [
           {
             clipType: 'resource-card',
@@ -156,7 +147,7 @@ describe('ai-generate-sequence edge entrypoint', () => {
     expect(mocks.enforceRateLimit).not.toHaveBeenCalled();
   });
 
-  it('returns validated structured drafts from Anthropic output', async () => {
+  it('returns validated structured drafts from Fireworks output', async () => {
     const handler = await loadHandler();
     const response = await handler(new Request('https://edge.test/ai-generate-sequence', { method: 'POST' }));
 
@@ -173,26 +164,26 @@ describe('ai-generate-sequence edge entrypoint', () => {
         },
       ],
       invalid_drafts: [],
-      model: 'claude-opus-4-6',
+      model: 'accounts/fireworks/models/kimi-k2p6',
     });
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'https://api.anthropic.com/v1/messages',
+      'https://api.fireworks.ai/inference/v1/chat/completions',
       expect.objectContaining({
         method: 'POST',
         headers: expect.objectContaining({
-          'x-api-key': 'anthropic-test-key',
+          'Authorization': 'Bearer fireworks-test-key',
         }),
       }),
     );
     const body = JSON.parse((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body as string);
-    expect(body.model).toBe('claude-opus-4-6');
-    expect(body.stream).toBe(true);
-    expect(body.system).toContain('trusted structured timeline sequence drafts');
-    expect(body.system).toContain('Prefer image-jump');
-    expect(body.system).toContain('params.imageAssetKeys');
-    expect(body.system).toContain('jump, snap, gallery, pulse, shuffle');
-    expect(body.messages[0].content).toContain('allowed_asset_keys');
+    expect(body.model).toBe('accounts/fireworks/models/kimi-k2p6');
+    expect(body.stream).toBeUndefined();
+    expect(body.messages[0].content).toContain('trusted structured timeline sequence drafts');
+    expect(body.messages[0].content).toContain('Prefer image-jump');
+    expect(body.messages[0].content).toContain('params.imageAssetKeys');
+    expect(body.messages[0].content).toContain('jump, snap, gallery, pulse, shuffle');
+    expect(body.messages[1].content).toContain('allowed_asset_keys');
   });
 
   it('accepts text-free image-jump drafts for selected assets', async () => {
@@ -212,7 +203,7 @@ describe('ai-generate-sequence edge entrypoint', () => {
       },
     });
     vi.stubGlobal('fetch', vi.fn(async () =>
-      createAnthropicSseResponse(JSON.stringify({
+      createFireworksResponse(JSON.stringify({
         drafts: [
           {
             clipType: 'image-jump',
@@ -267,7 +258,7 @@ describe('ai-generate-sequence edge entrypoint', () => {
       },
     });
     vi.stubGlobal('fetch', vi.fn(async () =>
-      createAnthropicSseResponse(JSON.stringify({
+      createFireworksResponse(JSON.stringify({
         drafts: [
           {
             clipType: 'resource-card',
@@ -287,9 +278,9 @@ describe('ai-generate-sequence edge entrypoint', () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    const anthropicBody = JSON.parse((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body as string);
-    expect(anthropicBody.system).toContain('Treat animation_intent as guidance');
-    const userPayload = JSON.parse(anthropicBody.messages[0].content);
+    const fireworksBody = JSON.parse((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body as string);
+    expect(fireworksBody.messages[0].content).toContain('Treat animation_intent as guidance');
+    const userPayload = JSON.parse(fireworksBody.messages[1].content);
     expect(userPayload.animation_intent).toMatchObject({
       freeform: 'Reuse asset-a twice; ignore raw URL https://unsafe.example/ref.png',
     });
@@ -303,7 +294,7 @@ describe('ai-generate-sequence edge entrypoint', () => {
 
   it('rejects unsupported image-jump modes in edge validation', async () => {
     vi.stubGlobal('fetch', vi.fn(async () =>
-      createAnthropicSseResponse(JSON.stringify({
+      createFireworksResponse(JSON.stringify({
         drafts: [
           {
             clipType: 'image-jump',
@@ -331,7 +322,7 @@ describe('ai-generate-sequence edge entrypoint', () => {
 
   it('extracts valid drafts from prose-wrapped fenced JSON', async () => {
     vi.stubGlobal('fetch', vi.fn(async () =>
-      createAnthropicSseResponse(`The prompt asks for a professional animation sequence.
+      createFireworksResponse(`The prompt asks for a professional animation sequence.
 
 \`\`\`json
 ${JSON.stringify({
@@ -368,10 +359,10 @@ ${JSON.stringify({
     });
   });
 
-  it('repairs Anthropic output that contains no JSON before returning drafts', async () => {
+  it('repairs Fireworks output that contains no JSON before returning drafts', async () => {
     vi.stubGlobal('fetch', vi.fn()
-      .mockResolvedValueOnce(createAnthropicSseResponse('The prompt asks for an animated sequence, but I need more context.'))
-      .mockResolvedValueOnce(createAnthropicSseResponse(JSON.stringify({
+      .mockResolvedValueOnce(createFireworksResponse('The prompt asks for an animated sequence, but I need more context.'))
+      .mockResolvedValueOnce(createFireworksResponse(JSON.stringify({
         drafts: [
           {
             clipType: 'resource-card',
@@ -403,13 +394,13 @@ ${JSON.stringify({
     });
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
     const repairBody = JSON.parse((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[1][1].body as string);
-    expect(repairBody.system).toContain('repair malformed Reigh sequence draft responses');
+    expect(repairBody.messages[0].content).toContain('repair malformed Reigh sequence draft responses');
   });
 
   it('returns a stable 422 when repair output still contains no JSON', async () => {
     vi.stubGlobal('fetch', vi.fn()
-      .mockResolvedValueOnce(createAnthropicSseResponse('The prompt asks for an animated sequence, but I need more context.'))
-      .mockResolvedValueOnce(createAnthropicSseResponse('I still cannot provide the JSON.')));
+      .mockResolvedValueOnce(createFireworksResponse('The prompt asks for an animated sequence, but I need more context.'))
+      .mockResolvedValueOnce(createFireworksResponse('I still cannot provide the JSON.')));
 
     const handler = await loadHandler();
     const response = await handler(new Request('https://edge.test/ai-generate-sequence', { method: 'POST' }));
@@ -423,7 +414,7 @@ ${JSON.stringify({
 
   it('drops invalid model drafts and returns structured validation errors without raw draft values', async () => {
     vi.stubGlobal('fetch', vi.fn(async () =>
-      createAnthropicSseResponse(JSON.stringify({
+      createFireworksResponse(JSON.stringify({
         drafts: [
           {
             clipType: 'resource-card',

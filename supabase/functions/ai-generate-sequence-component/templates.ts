@@ -1,6 +1,12 @@
 import { parseEnvelope } from '../_shared/promptEnvelope.ts';
 import { validateSequenceComponentCode } from './sequence-component-validation.ts';
 import { validateControlsManifestForCode } from './controls-manifest-validation.ts';
+import {
+  ASSET_SLOT_BINDINGS_PARAM,
+  normalizeAssetSlots,
+  validateAssetSlotBindings,
+  type AssetSlotValidationAsset,
+} from './asset-slot-validation.ts';
 
 export interface ExistingSequenceComponent {
   code: string;
@@ -10,12 +16,19 @@ export interface ExistingSequenceComponent {
   controls?: unknown[];
 }
 
+export interface AllowedSequenceComponentAsset {
+  key: string;
+  mediaType: 'image' | 'video';
+  label: string;
+  source?: string;
+}
+
 export interface BuildGenerateSequenceComponentMessagesInput {
   prompt: string;
   name?: string;
   themeId?: string;
   existingComponent?: ExistingSequenceComponent;
-  allowedAssetKeys: readonly string[];
+  allowedAssets: readonly AllowedSequenceComponentAsset[];
   selectedClips?: unknown;
   attachedClips?: unknown;
   theme?: unknown;
@@ -24,12 +37,17 @@ export interface BuildGenerateSequenceComponentMessagesInput {
   validationError?: string;
 }
 
+export interface ExtractSequenceComponentCodeAndMetaOptions {
+  allowedAssets?: readonly AssetSlotValidationAsset[];
+}
+
 interface ExtractedSequenceComponentMeta {
   code: string;
   name: string;
   description: string;
   schemaJson: object;
   defaultsJson: object;
+  assetSlots: unknown[];
   controlsManifest: unknown[];
   message: string;
 }
@@ -70,10 +88,12 @@ const OUTPUT_RULES = `Output requirements:
   // DESCRIPTION: <one concise sentence describing the visual>
   // SCHEMA: { "type": "object", "properties": { ... }, "required": [...] }
   // DEFAULTS: { ... }
+  // ASSET_SLOTS: [ { "id": "hero", "label": "Hero image", "mediaType": "image", "required": true, "minItems": 1, "maxItems": 1 } ]
   // CONTROLS: [ { "name": "...", "label": "...", "type": "...", "priority": "primary" | "secondary", "default": ..., ... } ]
   // MESSAGE: <brief note for the user>
-- SCHEMA is JSON Schema (a JSON object). Every \`params.X\` access in your code MUST appear in SCHEMA.properties.
+- SCHEMA is JSON Schema (a JSON object). Every user-tunable \`params.X\` access in your code MUST appear in SCHEMA.properties.
 - DEFAULTS is a JSON object with one entry per SCHEMA property; values must be valid for the schema.
+- ASSET_SLOTS is a JSON array describing media picker slots. Emit [] when no allowed assets exist or no media is needed.
 - CONTROLS is the user-facing controls manifest (a JSON array). See "Controls manifest contract" below.
 - After the metadata, write the component definition and assign it via \`exports.default = ComponentName\`.
 - The default export MUST be a function component compatible with the contract above.
@@ -83,9 +103,8 @@ const OUTPUT_RULES = `Output requirements:
 
 const CONTROLS_MANIFEST_CONTRACT = `Controls manifest contract:
 - CONTROLS is a JSON array. One entry per user-tunable param the component reads from \`params.X\`.
-- Asset-key fields (params.imageAssetKeys, params.videoAssetKeys) and host-injected URL arrays
-  (params.images, params.videos) are EXCLUDED from CONTROLS — they are managed by the asset picker,
-  not by the controls panel.
+- params.assetSlotBindings and host-injected params.assetSlots are EXCLUDED from CONTROLS — they are
+  managed by the asset picker and host, not by the controls panel.
 - Every entry MUST have these fields:
     { "name": "<JS identifier matching params.X>",
       "label": "<short human label>",
@@ -105,35 +124,48 @@ const CONTROLS_MANIFEST_CONTRACT = `Controls manifest contract:
     0–2 primary controls. If you find yourself marking 3+ as primary, demote the rest to secondary.
 - Cross-coverage:
     Every entry's "name" MUST be referenced as \`params.<name>\` somewhere in the component code.
-    Every \`params.<name>\` accessed in the code (excluding asset-key/URL fields above) MUST have a
+    Every \`params.<name>\` accessed in the code (excluding assetSlotBindings and assetSlots) MUST have a
     matching CONTROLS entry. The host rejects manifests that fail this check.
 - Type allowlist is FIXED. Do not invent new widget types — pick the closest from the list above.`;
 
-const ASSET_KEY_CONTRACT = `Asset-key contract:
-- The host injects a list of allowed asset keys (image and video) per generation.
-- Declare keys in your SCHEMA + DEFAULTS as:
-    params.imageAssetKeys: string[]   (one or more entries from the allowed list)
-    params.videoAssetKeys: string[]   (likewise)
-- At render time the host populates SIBLING URL arrays the component should READ FROM:
-    params.images: string[]           (resolved URLs for imageAssetKeys, in order)
-    params.videos: string[]           (resolved URLs for videoAssetKeys, in order)
-  Render images via <Img src={(params.images ?? [])[0]} ... /> (and similarly for videos).
-  NEVER read params.imageAssetKeys at render — those are keys the host translates into URLs.
-- NEVER inline raw URLs in params or in code. The host resolves keys → URLs at render time.
+const ASSET_SLOT_CONTRACT = `Asset-slot contract:
+- The host provides numbered allowed assets. Each has a key, media type, label, and optional source.
+- Declare media needs with the required // ASSET_SLOTS metadata line. Each slot object MUST have:
+    { "id": "<stable JS identifier>", "label": "<short picker label>", "mediaType": "image" | "video",
+      "required": true | false, "minItems": <integer >= 0>, "maxItems": <integer >= 1> }
+- Persist default asset key selections in DEFAULTS.assetSlotBindings, e.g.
+    "assetSlotBindings": { "hero": ["asset-a"], "background": ["asset-b"] }
+- Include assetSlotBindings in SCHEMA.properties as an object so the defaults are persisted.
+- NEVER put params.assetSlots in SCHEMA, DEFAULTS, or CONTROLS. The host injects URL arrays into it
+  at render time from assetSlotBindings.
+- In component code, read host-injected URLs from params.assetSlots.<slotId>, e.g.
+    const heroUrl = (params.assetSlots?.hero ?? [])[0];
+    return heroUrl ? <Img src={heroUrl} /> : null;
+- NEVER read params.assetSlotBindings at render time except for harmless diagnostics; render from
+  params.assetSlots.<slotId> URL arrays only.
+- NEVER emit params.imageAssetKeys, params.videoAssetKeys, params.images, or params.videos for a
+  generated component. Those loose media params are rejected.
+- NEVER inline raw URLs in params or code. The host resolves asset keys to URLs at render time.
+- Match the user's requested asset cardinality with slot minItems/maxItems:
+    Single-image sequence → one required image slot with maxItems 1.
+    Multi-image sequence → one image slot with maxItems > 1, or multiple named image slots.
+    Single-video sequence → one required video slot with maxItems 1 and render with <Video>.
+    Mixed media sequence → separate image/video slots and branch by the injected URL arrays.
 - **If allowed asset keys are non-empty (the user attached/selected media), the component
   MUST visually display at least one of those assets as a primary, foreground visual element
   — not merely as a faint backdrop or placeholder.** A glow / vignette / particle field on its
   own is NOT enough; the user's image (or video) must be rendered prominently and visibly.
-- If the user did not select assets, omit imageAssetKeys / videoAssetKeys from params; default to [].
-- This mirrors how built-in sequence components like ImageJumpSequence consume images
-  (declares imageAssetKeys, renders from params.images URL array).`;
+- If no allowed assets exist or the user asks for a purely graphic/text component, emit ASSET_SLOTS: []
+  and omit DEFAULTS.assetSlotBindings unless slots are declared.`;
 
 const VALIDATION_RULES = `Validation rules (the host will reject your output if violated):
 - The code must contain \`exports.default =\`.
 - The code must NOT contain import or export statements.
 - The code must NOT call Date.now(), performance.now(), or crypto.getRandomValues().
 - Math.random() is allowed only inside React.useMemo(() => …, []).
-- Every \`params.X\` reference must be present in SCHEMA.properties AND DEFAULTS.`;
+- Every user-tunable \`params.X\` reference must be present in SCHEMA.properties AND DEFAULTS.
+- params.assetSlots is host-injected and must NOT be present in SCHEMA or DEFAULTS.
+- params.assetSlotBindings is persisted key data and must be present in SCHEMA and DEFAULTS when slots are declared.`;
 
 export function buildGenerateSequenceComponentMessages(
   input: BuildGenerateSequenceComponentMessagesInput,
@@ -143,13 +175,14 @@ export function buildGenerateSequenceComponentMessages(
     name,
     themeId,
     existingComponent,
-    allowedAssetKeys,
+    allowedAssets,
     selectedClips,
     attachedClips,
     theme,
     themeOverrides,
     validationError,
   } = input;
+  const allowedAssetKeys = allowedAssets.map((asset) => asset.key);
 
   let modeInstructions: string;
   if (validationError && existingComponent?.code) {
@@ -195,9 +228,11 @@ Existing CONTROLS: ${JSON.stringify(existingComponent.controls ?? [])}`;
   }
 
   const assetKeysBlock = allowedAssetKeys.length > 0
-    ? `Allowed asset keys (use these in params.imageAssetKeys / params.videoAssetKeys, never inline URLs):
-${JSON.stringify([...allowedAssetKeys])}`
-    : 'No allowed asset keys for this generation. Do not reference media assets in params or code.';
+    ? `Allowed assets (use these keys only in DEFAULTS.assetSlotBindings; never inline URLs):
+${allowedAssets.map((asset, index) => (
+  `${index + 1}. key=${asset.key}; mediaType=${asset.mediaType}; label=${asset.label}${asset.source ? `; source=${asset.source}` : ''}`
+)).join('\n')}`
+    : 'No allowed assets for this generation. Emit ASSET_SLOTS: [] unless the user explicitly asks for empty media slots.';
 
   const contextBlock = [
     selectedClips ? `Selected clips: ${JSON.stringify(selectedClips).slice(0, 2000)}` : null,
@@ -216,7 +251,7 @@ ${SEQUENCE_COMPONENT_CONTRACT}
 
 ${AVAILABLE_SEQUENCE_GLOBALS}
 
-${ASSET_KEY_CONTRACT}
+${ASSET_SLOT_CONTRACT}
 
 ${OUTPUT_RULES}
 
@@ -246,11 +281,12 @@ Return only the metadata lines plus the final code.`;
 
 export function extractSequenceComponentCodeAndMeta(
   responseText: string,
+  options: ExtractSequenceComponentCodeAndMetaOptions = {},
 ): ExtractedSequenceComponentMeta {
   const { values, jsonValues, codeBody } = parseEnvelope(
     responseText,
-    ['NAME', 'DESCRIPTION', 'SCHEMA', 'DEFAULTS', 'CONTROLS', 'MESSAGE'],
-    { jsonObjectFields: ['SCHEMA', 'DEFAULTS'], jsonArrayFields: ['CONTROLS'] },
+    ['NAME', 'DESCRIPTION', 'SCHEMA', 'DEFAULTS', 'ASSET_SLOTS', 'CONTROLS', 'MESSAGE'],
+    { jsonObjectFields: ['SCHEMA', 'DEFAULTS'], jsonArrayFields: ['ASSET_SLOTS', 'CONTROLS'] },
   );
 
   const schemaJson = (jsonValues.SCHEMA && typeof jsonValues.SCHEMA === 'object'
@@ -262,6 +298,9 @@ export function extractSequenceComponentCodeAndMeta(
   const controlsManifest = Array.isArray(jsonValues.CONTROLS)
     ? jsonValues.CONTROLS as unknown[]
     : null;
+  const assetSlots = Array.isArray(jsonValues.ASSET_SLOTS)
+    ? jsonValues.ASSET_SLOTS as unknown[]
+    : null;
 
   if (!schemaJson) {
     throw new Error('Generated sequence component is missing a valid // SCHEMA: { ... } block');
@@ -272,9 +311,36 @@ export function extractSequenceComponentCodeAndMeta(
   if (!controlsManifest) {
     throw new Error('Generated sequence component is missing a valid // CONTROLS: [ ... ] block');
   }
+  if (!assetSlots) {
+    throw new Error('Generated sequence component is missing a valid // ASSET_SLOTS: [ ... ] block');
+  }
+
+  const normalizedSlots = normalizeAssetSlots(assetSlots);
+  if (normalizedSlots.errors.length > 0) {
+    throw new Error(`Invalid ASSET_SLOTS metadata: ${normalizedSlots.errors.join('; ')}`);
+  }
 
   validateSequenceComponentCode(codeBody, schemaJson, defaultsJson);
   validateControlsManifestForCode(controlsManifest, codeBody);
+
+  const schemaProperties = (schemaJson as { properties?: Record<string, unknown> }).properties ?? {};
+  if (normalizedSlots.slots.length > 0) {
+    if (!Object.prototype.hasOwnProperty.call(schemaProperties, ASSET_SLOT_BINDINGS_PARAM)) {
+      throw new Error(`Generated sequence component declares ASSET_SLOTS but SCHEMA.properties.${ASSET_SLOT_BINDINGS_PARAM} is missing`);
+    }
+    if (!Object.prototype.hasOwnProperty.call(defaultsJson, ASSET_SLOT_BINDINGS_PARAM)) {
+      throw new Error(`Generated sequence component declares ASSET_SLOTS but DEFAULTS.${ASSET_SLOT_BINDINGS_PARAM} is missing`);
+    }
+  }
+
+  const bindingErrors = validateAssetSlotBindings({
+    slots: normalizedSlots.slots,
+    bindings: (defaultsJson as Record<string, unknown>)[ASSET_SLOT_BINDINGS_PARAM],
+    allowedAssets: options.allowedAssets ?? [],
+  });
+  if (bindingErrors.length > 0) {
+    throw new Error(`Invalid asset slot bindings: ${bindingErrors.join('; ')}`);
+  }
 
   return {
     code: codeBody,
@@ -282,6 +348,7 @@ export function extractSequenceComponentCodeAndMeta(
     description: values.DESCRIPTION ?? '',
     schemaJson,
     defaultsJson,
+    assetSlots: normalizedSlots.slots,
     controlsManifest,
     message: values.MESSAGE ?? '',
   };

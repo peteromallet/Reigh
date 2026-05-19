@@ -9,6 +9,56 @@ type InvokeOptions = {
   signal?: AbortSignal;
 };
 
+export class SupabaseEdgeFunctionError extends Error {
+  functionName: string;
+  status: number;
+  responseText: string;
+  responseJson: unknown;
+
+  constructor({
+    functionName,
+    status,
+    message,
+    responseText,
+    responseJson,
+  }: {
+    functionName: string;
+    status: number;
+    message: string;
+    responseText: string;
+    responseJson: unknown;
+  }) {
+    super(message);
+    this.name = 'SupabaseEdgeFunctionError';
+    this.functionName = functionName;
+    this.status = status;
+    this.responseText = responseText;
+    this.responseJson = responseJson;
+  }
+}
+
+const parseJsonObject = (text: string): Record<string, unknown> | null => {
+  if (!text.trim()) return null;
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+const getErrorMessage = (functionName: string, status: number, text: string, parsed: Record<string, unknown> | null): string => {
+  for (const key of ['details', 'error', 'message']) {
+    const value = parsed?.[key];
+    if (typeof value === 'string' && value.trim()) {
+      return value;
+    }
+  }
+  return text || `Function ${functionName} failed with status ${status}`;
+};
+
 /**
  * Calls a Supabase edge function with a client-side timeout and abort propagation.
  * Reads the access token directly from localStorage to avoid navigator.locks contention.
@@ -58,7 +108,14 @@ export async function invokeSupabaseEdgeFunction<T = unknown>(
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => '');
-      throw new Error(errorText || `Function ${functionName} failed with status ${response.status}`);
+      const responseJson = parseJsonObject(errorText);
+      throw new SupabaseEdgeFunctionError({
+        functionName,
+        status: response.status,
+        message: getErrorMessage(functionName, response.status, errorText, responseJson),
+        responseText: errorText,
+        responseJson,
+      });
     }
 
     const data = await response.json() as T;

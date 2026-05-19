@@ -138,6 +138,37 @@ exports.default = C;`;
     if (!result.ok) expect(result.errors.some((e) => /no controls manifest entry/i.test(e.message))).toBe(true);
   });
 
+  it('does not require controls for host-managed asset params', () => {
+    const code = `function C({ params }) {
+  const image = params.images?.[0];
+  const keys = params.imageAssetKeys ?? [];
+  const video = params["videos"]?.[0];
+  const videoKeys = params['videoAssetKeys'] ?? [];
+  const hero = params.assetSlots?.hero?.[0];
+  const bindings = params.assetSlotBindings?.hero ?? [];
+  return params.duration + keys.length + videoKeys.length + bindings.length + (image ? 1 : 0) + (video ? 1 : 0) + (hero ? 1 : 0);
+}
+exports.default = C;`;
+    const result = validateControlsManifest(
+      [
+        { name: 'duration', label: 'Duration', priority: 'primary', type: 'number', default: 30 },
+      ],
+      { code },
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it('rejects controls that try to own host-managed asset slot params', () => {
+    const result = validateControlsManifest([
+      { name: 'assetSlots', label: 'Asset slots', priority: 'primary', type: 'text', default: '' },
+      { name: 'assetSlotBindings', label: 'Bindings', priority: 'secondary', type: 'text', default: '' },
+    ]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.map((error) => error.message).join('\n')).toMatch(/reserved/);
+    }
+  });
+
   it('accepts a manifest where every entry is consumed and no extra params.X is accessed', () => {
     const code = `function C({ params }) { return params.duration + params['mode']; }
 exports.default = C;`;

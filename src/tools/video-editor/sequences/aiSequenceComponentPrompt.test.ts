@@ -40,6 +40,19 @@ describe('ai-generate-sequence-component system prompt', () => {
     expect(source).toMatch(/\/\/ CONTROLS:/);
   });
 
+  it('requires asset slot metadata and host-injected slot URL access', () => {
+    expect(source).toMatch(/\/\/ ASSET_SLOTS:/);
+    expect(source).toContain('DEFAULTS.assetSlotBindings');
+    expect(source).toContain('params.assetSlots.<slotId>');
+    expect(source).toContain('params.assetSlots?.hero');
+  });
+
+  it('numbers rich allowed assets instead of prompting for loose media key params', () => {
+    expect(source).toContain('${index + 1}. key=${asset.key}; mediaType=${asset.mediaType}; label=${asset.label}');
+    expect(source).not.toContain('use these in params.imageAssetKeys / params.videoAssetKeys');
+    expect(source).not.toContain('Render images via <Img src={(params.images ?? [])[0]}');
+  });
+
   it('teaches cross-coverage between manifest entries and params accesses', () => {
     // Source uses escaped backticks (\`...\`) inside the template literal.
     expect(source).toContain('Every entry\'s "name" MUST be referenced as \\`params.<name>\\`');

@@ -73,13 +73,48 @@ export class DynamicComponentRegistry<TProps, TSchema = unknown> {
   async registerAsync(name: string, code: string, schema?: TSchema): Promise<void> {
     const normalized = this._normalizeName(name);
     const existing = this.dynamic[normalized];
-    if (existing?.code === code && this._schemasEqual(existing.schema, schema)) return;
+    if (existing?.code === code && this._schemasEqual(existing.schema, schema)) {
+      console.info('[DynamicComponentRegistry] register_async:skip_unchanged', {
+        name,
+        normalized,
+        codeLength: code.length,
+      });
+      return;
+    }
+    const startedAt = Date.now();
+    console.info('[DynamicComponentRegistry] register_async:start', {
+      name,
+      normalized,
+      codeLength: code.length,
+    });
     this.pendingAsync[normalized] = { code, schema };
     const component = await this.compileAsync(code);
+    const compileError = (component as unknown as { __sequenceCompileError?: string }).__sequenceCompileError;
+    if (compileError) {
+      console.error('[DynamicComponentRegistry] register_async:compile_fallback', {
+        name,
+        normalized,
+        durationMs: Date.now() - startedAt,
+        error: compileError,
+      });
+    }
     const pending = this.pendingAsync[normalized];
-    if (!pending || pending.code !== code || !this._schemasEqual(pending.schema, schema)) return;
+    if (!pending || pending.code !== code || !this._schemasEqual(pending.schema, schema)) {
+      console.warn('[DynamicComponentRegistry] register_async:stale_skip', {
+        name,
+        normalized,
+        durationMs: Date.now() - startedAt,
+      });
+      return;
+    }
     delete this.pendingAsync[normalized];
     this.dynamic[normalized] = { component, code, schema };
+    console.info('[DynamicComponentRegistry] register_async:ok', {
+      name,
+      normalized,
+      durationMs: Date.now() - startedAt,
+      failedComponent: Boolean(compileError),
+    });
     this._notify();
   }
 

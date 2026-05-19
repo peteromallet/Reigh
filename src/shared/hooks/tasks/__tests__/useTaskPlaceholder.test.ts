@@ -257,4 +257,28 @@ describe('useTaskPlaceholder', () => {
     expect(mockResolveTaskIds).not.toHaveBeenCalled();
     expect(mockAcknowledgeCancellation).toHaveBeenCalledWith('incoming-1');
   });
+
+  it('does not surface best-effort cancellation network failures as runtime errors', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    mockWasCancelled.mockReturnValue(true);
+    mockInvokeWithTimeout.mockRejectedValue(new TypeError('Network request failed'));
+    const { result } = renderHook(() => useTaskPlaceholder());
+
+    await act(async () => {
+      await result.current({
+        taskType: 'image_generation',
+        label: 'Generate 1 image',
+        context: 'test',
+        toastTitle: 'Failed',
+        create: async () => ({ task_id: 'task-1' }),
+      });
+    });
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[useTaskPlaceholder.cancelTasksByIds] Best-effort cancellation failed',
+      expect.any(TypeError),
+    );
+    expect(mockAcknowledgeCancellation).toHaveBeenCalledWith('incoming-1');
+    warnSpy.mockRestore();
+  });
 });

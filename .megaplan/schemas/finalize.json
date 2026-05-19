@@ -27,6 +27,19 @@
               "blocked"
             ]
           },
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "code",
+              "audit",
+              "test",
+              "docs",
+              "research"
+            ]
+          },
           "executor_notes": {
             "type": "string"
           },
@@ -105,6 +118,7 @@
           "description",
           "depends_on",
           "status",
+          "kind",
           "executor_notes",
           "files_changed",
           "commands_run",

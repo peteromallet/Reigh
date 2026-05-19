@@ -146,6 +146,7 @@ describe('update-task-status edge entrypoint', () => {
     const response = await handler(new Request('https://edge.test/update-task-status', { method: 'POST' }));
 
     expect(response.status).toBe(401);
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('*');
     await expect(response.text()).resolves.toBe('blocked');
   });
 
@@ -159,6 +160,7 @@ describe('update-task-status edge entrypoint', () => {
     const response = await handler(new Request('https://edge.test/update-task-status', { method: 'POST' }));
 
     expect(response.status).toBe(500);
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('*');
     await expect(response.text()).resolves.toBe('Server configuration error');
   });
 
@@ -172,6 +174,7 @@ describe('update-task-status edge entrypoint', () => {
     const response = await handler(new Request('https://edge.test/update-task-status', { method: 'POST' }));
 
     expect(response.status).toBe(400);
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('*');
     await expect(response.text()).resolves.toBe('invalid payload');
   });
 
@@ -216,6 +219,7 @@ describe('update-task-status edge entrypoint', () => {
     const response = await handler(new Request('https://edge.test/update-task-status', { method: 'POST' }));
 
     expect(response.status).toBe(409);
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('*');
     await expect(response.text()).resolves.toBe('invalid transition');
     expect(logger.flush).toHaveBeenCalled();
     expect(mocks.updateTaskByRole).not.toHaveBeenCalled();
@@ -257,6 +261,7 @@ describe('update-task-status edge entrypoint', () => {
     const response = await handler(new Request('https://edge.test/update-task-status', { method: 'POST' }));
 
     expect(response.status).toBe(200);
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('*');
     await expect(response.json()).resolves.toEqual({
       success: true,
       task_id: 'task-1',

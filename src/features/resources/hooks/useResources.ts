@@ -11,6 +11,7 @@ import type { VideoMetadata } from '@/shared/lib/media/videoUploader';
 import { QUERY_PRESETS } from '@/shared/lib/query/queryDefaults';
 import { resourceQueryKeys } from '@/shared/lib/queryKeys/resources';
 import type { ParameterSchema } from '@/tools/video-editor';
+import type { ElementManifestV1 } from '@/tools/video-editor/sequence';
 
 export interface PhaseConfigMetadata {
     name: string;
@@ -103,6 +104,13 @@ export interface SequenceComponentMetadata {
      * (no migration). See src/tools/video-editor/sequences/controlsManifest.ts.
      */
     controlsManifest?: unknown[];
+    /**
+     * AI-generated sequence asset slot declarations. Persisted params store
+     * registry keys in `defaultsJson.assetSlotBindings`; the host injects
+     * runtime URLs into `params.assetSlots` when rendering.
+     */
+    assetSlots?: unknown[];
+    elementManifest?: ElementManifestV1;
     clipType: string;
     themeId: string;
     description: string;

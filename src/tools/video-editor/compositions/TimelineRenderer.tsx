@@ -100,7 +100,21 @@ const ThemeEffectSequence: FC<ThemeEffectSequenceProps> = ({ clip, fps, theme, d
   // safety net for clipTypes that *are* in the registry but somehow fail to
   // render.
   if (!Component) {
+    console.error('[TimelineRenderer:SequenceComponent] component_missing', {
+      clipId: clip.id,
+      clipType: clip.clipType,
+      dynamicEntryCount: dynamicEntries.length,
+      hasStaticEntry: Boolean(staticEntry),
+    });
     return <UnknownClipPlaceholderSequence clip={clip} fps={fps} reason="unsupported" />;
+  }
+  const compileError = (Component as unknown as { __sequenceCompileError?: string }).__sequenceCompileError;
+  if (compileError) {
+    console.error('[TimelineRenderer:SequenceComponent] component_compile_fallback_rendered', {
+      clipId: clip.id,
+      clipType: clip.clipType,
+      error: compileError,
+    });
   }
   const durationInFrames = getClipDurationInFrames(clip, fps);
   return (
@@ -171,13 +185,10 @@ interface VisualTrackProps {
   clips: ResolvedTimelineClip[];
   fps: number;
   theme: Theme;
+  dynamicEntries: readonly DynamicSequenceComponentEntry[];
 }
 
-// Lifted into a component so we can call useSequenceComponentRegistrySnapshot
-// once per visual track. Keeps the dynamic-registry subscription out of the
-// per-clip dispatch loop.
-const VisualTrack: FC<VisualTrackProps> = ({ track, clips, fps, theme }) => {
-  const { entries: dynamicEntries } = useSequenceComponentRegistrySnapshot();
+const VisualTrack: FC<VisualTrackProps> = ({ track, clips, fps, theme, dynamicEntries }) => {
   const sortedClips = sortClipsByAt(clips);
   if (sortedClips.length === 0) {
     return null;
@@ -241,6 +252,12 @@ const VisualTrack: FC<VisualTrackProps> = ({ track, clips, fps, theme }) => {
         // supported. Surfaces as a labeled band rather than a silent
         // black void.
         if (!isBuiltinClipType(clip.clipType)) {
+          console.error('[TimelineRenderer:SequenceComponent] unknown_non_builtin_clip_type', {
+            clipId: clip.id,
+            clipType: clip.clipType,
+            dynamicEntryCount: dynamicEntries.length,
+            descriptorSource: descriptor?.source ?? null,
+          });
           return (
             <UnknownClipPlaceholderSequence
               key={clip.id}
@@ -311,7 +328,10 @@ const VisualTrack: FC<VisualTrackProps> = ({ track, clips, fps, theme }) => {
 };
 
 export const TimelineRenderer: FC<{ config: ResolvedTimelineConfig }> = memo(({ config }) => {
-  const renderConfig = useMemo(() => materializeResolvedSequenceConfig(config), [config]);
+  const { entries: dynamicEntries } = useSequenceComponentRegistrySnapshot();
+  const renderConfig = useMemo(() => (
+    materializeResolvedSequenceConfig(config, { dynamicEntries })
+  ), [config, dynamicEntries]);
   const fps = renderConfig.output.fps;
   const theme = useMemo(() => resolveTimelineRenderTheme(renderConfig), [renderConfig]);
   const visualTracks = useMemo(() => [...getVisualTracks(renderConfig)].reverse(), [renderConfig]);
@@ -346,7 +366,16 @@ export const TimelineRenderer: FC<{ config: ResolvedTimelineConfig }> = memo(({ 
     for (const track of visualTracks) {
       const trackClips = clipsByTrack.regular[track.id] ?? [];
       const trackContent: ReactNode = trackClips.length > 0
-        ? <VisualTrack key={track.id} track={track} clips={trackClips} fps={fps} theme={theme} />
+        ? (
+          <VisualTrack
+            key={track.id}
+            track={track}
+            clips={trackClips}
+            fps={fps}
+            theme={theme}
+            dynamicEntries={dynamicEntries}
+          />
+        )
         : null;
       let lowerTrackContent: ReactNode = accumulated;
       const effectLayers = sortClipsByAt(clipsByTrack.effectLayers[track.id] ?? []);
@@ -367,7 +396,7 @@ export const TimelineRenderer: FC<{ config: ResolvedTimelineConfig }> = memo(({ 
     }
 
     return accumulated;
-  }, [clipsByTrack.effectLayers, clipsByTrack.regular, fps, theme, visualTracks]);
+  }, [clipsByTrack.effectLayers, clipsByTrack.regular, dynamicEntries, fps, theme, visualTracks]);
 
   return (
     <AudioAnalysisProvider clips={audioClips} fps={fps} totalDurationInFrames={totalDurationInFrames}>

@@ -18,9 +18,9 @@ import {
   type SequenceDraftValidationError,
 } from "./sequence-validation.ts";
 
-const ANTHROPIC_MODEL = "claude-opus-4-6";
-const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
-const ANTHROPIC_TIMEOUT_MS = 150_000;
+const FIREWORKS_MODEL = "accounts/fireworks/models/kimi-k2p6";
+const FIREWORKS_URL = "https://api.fireworks.ai/inference/v1/chat/completions";
+const FIREWORKS_TIMEOUT_MS = 120_000;
 
 interface LLMResponse {
   content: string;
@@ -78,70 +78,47 @@ const collectAssetKeys = (...sources: unknown[]): string[] => {
   return [...keys];
 };
 
-async function callAnthropic(
+async function callFireworks(
   messages: Array<{ role: string; content: string }>,
   logger: { info: (msg: string) => void },
 ): Promise<LLMResponse> {
-  const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-  if (!apiKey) throw new Error("[ai-generate-sequence] Missing ANTHROPIC_API_KEY");
+  const apiKey = Deno.env.get("FIREWORKS_API_KEY");
+  if (!apiKey) throw new Error("[ai-generate-sequence] Missing FIREWORKS_API_KEY");
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), ANTHROPIC_TIMEOUT_MS);
-  const systemContent = messages.find((message) => message.role === "system")?.content;
-  const chatMessages = messages.filter((message) => message.role !== "system");
+  const timeout = setTimeout(() => controller.abort(), FIREWORKS_TIMEOUT_MS);
 
   try {
     const startedAt = Date.now();
-    logger.info(`[AI-GENERATE-SEQUENCE] Anthropic streaming request: model=${ANTHROPIC_MODEL}`);
-    const response = await fetch(ANTHROPIC_URL, {
+    logger.info(`[AI-GENERATE-SEQUENCE] Fireworks request: model=${FIREWORKS_MODEL}`);
+    const response = await fetch(FIREWORKS_URL, {
       method: "POST",
       headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
+        "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json",
+        "Accept": "application/json",
       },
       body: JSON.stringify({
-        model: ANTHROPIC_MODEL,
+        model: FIREWORKS_MODEL,
         max_tokens: 4096,
         temperature: 0.3,
-        ...(systemContent ? { system: systemContent } : {}),
-        messages: chatMessages,
-        stream: true,
+        messages,
       }),
       signal: controller.signal,
     });
 
     if (!response.ok) {
       const text = await response.text().catch(() => "");
-      throw new Error(`Anthropic ${response.status}: ${text.slice(0, 500)}`);
+      throw new Error(`Fireworks ${response.status}: ${text.slice(0, 500)}`);
     }
 
-    const reader = response.body!.getReader();
-    const decoder = new TextDecoder();
-    let content = "";
-    let buffer = "";
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-      for (const line of lines) {
-        if (!line.startsWith("data: ")) continue;
-        const data = line.slice(6).trim();
-        try {
-          const chunk = JSON.parse(data);
-          if (chunk.type === "content_block_delta" && chunk.delta?.type === "text_delta") {
-            content += chunk.delta.text;
-          }
-        } catch {
-          // Ignore malformed SSE chunks.
-        }
-      }
-    }
-    content = content.trim();
-    logger.info(`[AI-GENERATE-SEQUENCE] Anthropic response in ${Date.now() - startedAt}ms, model=${ANTHROPIC_MODEL}, length=${content.length}`);
-    return { content, model: ANTHROPIC_MODEL };
+    const data = await response.json() as {
+      choices?: Array<{ message?: { content?: string | null } }>;
+      model?: string;
+    };
+    const content = data.choices?.[0]?.message?.content?.trim() ?? "";
+    logger.info(`[AI-GENERATE-SEQUENCE] Fireworks response in ${Date.now() - startedAt}ms, model=${data.model ?? FIREWORKS_MODEL}, length=${content.length}`);
+    return { content, model: data.model ?? FIREWORKS_MODEL };
   } finally {
     clearTimeout(timeout);
   }
@@ -217,9 +194,9 @@ serve(async (req) => {
       themeOverrides: body.theme_overrides,
     });
 
-    logger.info(`[AI-GENERATE-SEQUENCE] create → ${ANTHROPIC_MODEL} (Anthropic)`);
+    logger.info(`[AI-GENERATE-SEQUENCE] create → ${FIREWORKS_MODEL} (Fireworks)`);
     await logger.flush();
-    const llmResponse = await callAnthropic([
+    const llmResponse = await callFireworks([
       { role: "system", content: systemMsg },
       { role: "user", content: userMsg },
     ], logger);
@@ -251,7 +228,7 @@ serve(async (req) => {
       const parseMsg = parseErr instanceof Error ? parseErr.message : String(parseErr);
       logger.info(`[AI-GENERATE-SEQUENCE] extraction failed: ${parseMsg}; retrying JSON repair`);
       await logger.flush();
-      const repairResponse = await callAnthropic(
+      const repairResponse = await callFireworks(
         buildRepairMessages(llmResponse.content, allowedClipTypes, allowedAssetKeys),
         logger,
       );

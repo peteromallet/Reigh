@@ -59,7 +59,7 @@ export const GoldSpotlight: React.FC = () => {
     >
       {/* Base text */}
       <h1 className="text-8xl md:text-[10rem] text-[#ecede3] mb-0 leading-tight select-none">
-        Reigh
+        Samstag
       </h1>
       {/* Gold trail - fading spots where cursor has been */}
       {goldTrail.map(point => (
@@ -74,7 +74,7 @@ export const GoldSpotlight: React.FC = () => {
           }}
           aria-hidden="true"
         >
-          Reigh
+          Samstag
         </h1>
       ))}
       {/* Current cursor spotlight - solid gold */}
@@ -89,7 +89,7 @@ export const GoldSpotlight: React.FC = () => {
         }}
         aria-hidden="true"
       >
-        Reigh
+        Samstag
       </h1>
     </div>
   );

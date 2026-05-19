@@ -15,7 +15,7 @@ Usage:
     debug.py worker-timeline <id>       # Full lifecycle timeline for a worker
     debug.py why-killed <id>            # Diagnose why a worker was terminated
     debug.py task-journey <id>          # All state transitions for a task
-    debug.py scaling-audit              # Audit recent orchestrator scaling decisions
+    debug.py scaling-audit              # Audit scaling, churn, and capacity reconciler intents
 
 Options:
     --json                              # Output as JSON
@@ -33,7 +33,7 @@ Examples:
     # See full worker lifecycle: spawn → init → claim → complete → kill
     debug.py worker-timeline gpu-20260330_104235-f64bf1a7
 
-    # Find workers killed while productive, wasted spawns, churn rate
+    # Find workers killed while productive, wasted spawns, churn rate, intent divergence
     debug.py scaling-audit --hours 6
 
     # Investigate why a task failed
@@ -148,7 +148,7 @@ def create_parser() -> argparse.ArgumentParser:
     ctx_parser.add_argument('--debug', action='store_true', help='Show debug info on errors')
 
     # Scaling audit command
-    sa_parser = subparsers.add_parser('scaling-audit', help='Audit recent orchestrator decisions for issues')
+    sa_parser = subparsers.add_parser('scaling-audit', help='Audit recent orchestrator decisions, worker churn, and capacity intents')
     sa_parser.add_argument('--hours', type=int, default=3, help='Time window (default: 3)')
     sa_parser.add_argument('--json', action='store_true', help='Output as JSON')
     sa_parser.add_argument('--debug', action='store_true', help='Show debug info on errors')

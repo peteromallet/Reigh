@@ -13,6 +13,41 @@ import { fetchCurrentTaskStatus, updateTaskByRole } from './taskUpdates.ts';
 
 declare const Deno: { env: { get: (key: string) => string | undefined } };
 
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+function textResponse(body: string, status: number): Response {
+  return new Response(body, {
+    status,
+    headers: corsHeaders,
+  });
+}
+
+function jsonCorsResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      ...corsHeaders,
+      'Content-Type': 'application/json',
+    },
+  });
+}
+
+function withCors(response: Response): Response {
+  const headers = new Headers(response.headers);
+  for (const [key, value] of Object.entries(corsHeaders)) {
+    headers.set(key, value);
+  }
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 serve(async (req) => {
   const bootstrap = await bootstrapEdgeHandler(req, {
     functionName: 'update-task-status',
@@ -25,7 +60,7 @@ serve(async (req) => {
     },
   });
   if (!bootstrap.ok) {
-    return bootstrap.response;
+    return withCors(bootstrap.response);
   }
 
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -33,14 +68,14 @@ serve(async (req) => {
 
   if (!serviceKey || !supabaseUrl) {
     console.error('[UPDATE-TASK-STATUS] Missing required environment variables');
-    return new Response('Server configuration error', { status: 500 });
+    return textResponse('Server configuration error', 500);
   }
 
   const { supabaseAdmin, logger, auth } = bootstrap.value;
 
   const parseResult = await parseAndValidateRequest(req, logger);
   if (!parseResult.ok) {
-    return parseResult.response;
+    return withCors(parseResult.response);
   }
 
   const requestBody = parseResult.data;
@@ -69,7 +104,7 @@ serve(async (req) => {
         status_code: actor.statusCode,
       });
       await logger.flush();
-      return new Response(actor.error, { status: actor.statusCode });
+      return textResponse(actor.error, actor.statusCode);
     }
 
     const { isServiceRole, callerId } = actor.value;
@@ -77,13 +112,13 @@ serve(async (req) => {
     if (currentTaskResult.error) {
       logger.error('Error checking current task status', { error: currentTaskResult.error.message });
       await logger.flush();
-      return new Response(`Failed to check current task status: ${currentTaskResult.error.message}`, { status: 500 });
+      return textResponse(`Failed to check current task status: ${currentTaskResult.error.message}`, 500);
     }
 
     if (!currentTaskResult.data) {
       logger.warn('Task not found while checking current status', { task_id: requestBody.task_id });
       await logger.flush();
-      return new Response('Task not found or not accessible', { status: 404 });
+      return textResponse('Task not found or not accessible', 404);
     }
 
     const isTimestampResetOnly =
@@ -105,7 +140,7 @@ serve(async (req) => {
 
       if (transitionResponse) {
         await logger.flush();
-        return transitionResponse;
+        return withCors(transitionResponse);
       }
     }
 
@@ -122,13 +157,13 @@ serve(async (req) => {
       if (updateResult.error.message === 'User has no projects') {
         logger.error('User has no projects', { user_id: callerId ?? undefined });
         await logger.flush();
-        return new Response('User has no projects', { status: 403 });
+        return textResponse('User has no projects', 403);
       }
 
       if (updateResult.error.code === 'PGRST116') {
         logger.warn('Task not found or not accessible', { task_id: requestBody.task_id });
         await logger.flush();
-        return new Response('Task not found or not accessible', { status: 404 });
+        return textResponse('Task not found or not accessible', 404);
       }
 
       logger.error('Database update error', {
@@ -137,13 +172,13 @@ serve(async (req) => {
         code: updateResult.error.code,
       });
       await logger.flush();
-      return new Response(`Database error: ${updateResult.error.message}`, { status: 500 });
+      return textResponse(`Database error: ${updateResult.error.message}`, 500);
     }
 
     if (!updateResult.data) {
       logger.warn('Task not found or not accessible (no data)', { task_id: requestBody.task_id });
       await logger.flush();
-      return new Response('Task not found or not accessible', { status: 404 });
+      return textResponse('Task not found or not accessible', 404);
     }
 
     logger.info('Task status updated successfully', {
@@ -174,19 +209,16 @@ serve(async (req) => {
     }
 
     await logger.flush();
-    return new Response(JSON.stringify({
+    return jsonCorsResponse({
       success: true,
       task_id: requestBody.task_id,
       status: requestBody.status,
       message: `Task status updated to '${requestBody.status}'`,
-    }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
     });
   } catch (error: unknown) {
     const message = toErrorMessage(error);
     logger.critical('Unexpected error', { task_id: requestBody.task_id, error: message });
     await logger.flush();
-    return new Response(`Internal server error: ${message}`, { status: 500 });
+    return textResponse(`Internal server error: ${message}`, 500);
   }
 });
