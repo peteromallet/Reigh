@@ -1,0 +1,10 @@
+{
+  "claude-plugins-official": {
+    "source": {
+      "source": "github",
+      "repo": "anthropics/claude-plugins-official"
+    },
+    "installLocation": "/workspace/reigh-app/.megaplan/shannon-home/.claude/plugins/marketplaces/claude-plugins-official",
+    "lastUpdated": "2026-05-19T18:45:08.081Z"
+  }
+}

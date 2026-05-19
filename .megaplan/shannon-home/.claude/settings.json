@@ -1,0 +1,6 @@
+{
+  "skipDangerousModePermissionPrompt": true,
+  "env": {
+    "MEGAPLAN_TRUSTED_CONTAINER": "1"
+  }
+}
