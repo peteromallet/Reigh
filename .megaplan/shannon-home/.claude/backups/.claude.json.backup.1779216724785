@@ -8,8 +8,7 @@
   },
   "tipsHistory": {
     "new-user-warmup": 1,
-    "plan-mode-for-complex-tasks": 2,
-    "memory-command": 3
+    "plan-mode-for-complex-tasks": 2
   },
   "cachedGrowthBookFeatures": {
     "tengu_prompt_suggestion": true,
