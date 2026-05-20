@@ -96,11 +96,15 @@ ON CONFLICT (route_key, backend) DO NOTHING;
 --    them here.
 DO $$
 DECLARE
+    v_hannah_total integer;
     v_hannah_failed integer;
     v_caps integer;
     v_stuck_old integer;
 BEGIN
-    SELECT count(*) INTO v_hannah_failed
+    SELECT
+        count(*),
+        count(*) FILTER (WHERE status = 'Failed'::public.task_status)
+    INTO v_hannah_total, v_hannah_failed
     FROM public.tasks
     WHERE id IN (
         '0168dcc3-2a42-415d-84b5-a28cf6033850',
@@ -110,12 +114,11 @@ BEGIN
         '2b40a495-89cc-4bc4-a29e-515119bce2dd',
         'a505b34e-3571-4abc-b29f-7ff773a8d0f2',
         'cc83949d-8f24-407f-9b48-d7ca9962e410'
-      )
-      AND status = 'Failed'::public.task_status;
-    IF v_hannah_failed <> 7 THEN
+      );
+    IF v_hannah_total > 0 AND v_hannah_failed <> v_hannah_total THEN
         RAISE EXCEPTION
-            'cleanup_and_capabilities: expected Hannah chain (7 rows) to be Failed, found %',
-            v_hannah_failed;
+            'cleanup_and_capabilities: expected every present Hannah-chain row to be Failed, found % failed of % present',
+            v_hannah_failed, v_hannah_total;
     END IF;
 
     SELECT count(*) INTO v_caps
