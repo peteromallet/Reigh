@@ -5,7 +5,7 @@
 -- 1. Create task_types table
 -- =============================================================================
 
-CREATE TABLE task_types (
+CREATE TABLE IF NOT EXISTS task_types (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name text NOT NULL UNIQUE,                    -- e.g., 'single_image', 'travel_orchestrator'
   run_type text NOT NULL DEFAULT 'gpu',         -- 'gpu' | 'api' 
@@ -20,13 +20,18 @@ CREATE TABLE task_types (
 );
 
 -- Create indexes for performance
-CREATE INDEX idx_task_types_name ON task_types(name);
-CREATE INDEX idx_task_types_run_type ON task_types(run_type);
-CREATE INDEX idx_task_types_category ON task_types(category);
-CREATE INDEX idx_task_types_active ON task_types(is_active);
+CREATE INDEX IF NOT EXISTS idx_task_types_name ON task_types(name);
+CREATE INDEX IF NOT EXISTS idx_task_types_run_type ON task_types(run_type);
+CREATE INDEX IF NOT EXISTS idx_task_types_category ON task_types(category);
+CREATE INDEX IF NOT EXISTS idx_task_types_active ON task_types(is_active);
 
 -- Add constraint for run_type values
-ALTER TABLE task_types ADD CONSTRAINT check_run_type CHECK (run_type IN ('gpu', 'api'));
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'check_run_type' AND conrelid = 'task_types'::regclass) THEN
+    ALTER TABLE task_types ADD CONSTRAINT check_run_type CHECK (run_type IN ('gpu', 'api'));
+  END IF;
+END $$;
 
 -- =============================================================================
 -- 2. Migrate data from task_cost_configs (all as 'gpu' type)
@@ -54,7 +59,16 @@ SELECT
   tcc.cost_factors,
   tcc.is_active
 FROM task_cost_configs tcc
-WHERE tcc.is_active = true;
+WHERE tcc.is_active = true
+ON CONFLICT (name) DO UPDATE SET
+  run_type = EXCLUDED.run_type,
+  category = EXCLUDED.category,
+  display_name = EXCLUDED.display_name,
+  description = EXCLUDED.description,
+  base_cost_per_second = EXCLUDED.base_cost_per_second,
+  cost_factors = EXCLUDED.cost_factors,
+  is_active = EXCLUDED.is_active,
+  updated_at = now();
 
 -- =============================================================================
 -- 3. Add helper function to get task run_type with fallback

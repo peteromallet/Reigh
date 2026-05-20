@@ -2,10 +2,10 @@
 -- This field indicates whether the task produces image or video content
 
 -- Add the content_type column
-ALTER TABLE task_types ADD COLUMN content_type text;
+ALTER TABLE task_types ADD COLUMN IF NOT EXISTS content_type text;
 
 -- Create index for performance
-CREATE INDEX idx_task_types_content_type ON task_types(content_type);
+CREATE INDEX IF NOT EXISTS idx_task_types_content_type ON task_types(content_type);
 
 -- Populate content_type based on existing task types and their output
 UPDATE task_types SET content_type = CASE 
@@ -34,8 +34,13 @@ UPDATE task_types SET content_type = CASE
 END;
 
 -- Add constraint to ensure content_type is either 'image', 'video', or NULL
-ALTER TABLE task_types ADD CONSTRAINT check_content_type 
-CHECK (content_type IS NULL OR content_type IN ('image', 'video'));
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'check_content_type' AND conrelid = 'task_types'::regclass) THEN
+    ALTER TABLE task_types ADD CONSTRAINT check_content_type
+    CHECK (content_type IS NULL OR content_type IN ('image', 'video'));
+  END IF;
+END $$;
 
 -- Add comment for the new column
 COMMENT ON COLUMN task_types.content_type IS 'Type of content produced by the task: image, video, or NULL for non-content tasks';

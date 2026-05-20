@@ -7,18 +7,22 @@
 
 -- Add billing type column with constraint
 ALTER TABLE task_types 
-ADD COLUMN billing_type text NOT NULL DEFAULT 'per_second';
+ADD COLUMN IF NOT EXISTS billing_type text NOT NULL DEFAULT 'per_second';
 
 -- Add constraint for billing_type values
-ALTER TABLE task_types 
-ADD CONSTRAINT check_billing_type CHECK (billing_type IN ('per_second', 'per_unit'));
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'check_billing_type' AND conrelid = 'task_types'::regclass) THEN
+    ALTER TABLE task_types ADD CONSTRAINT check_billing_type CHECK (billing_type IN ('per_second', 'per_unit'));
+  END IF;
+END $$;
 
 -- Add unit_cost column for per-unit billing (nullable for per-second tasks)
 ALTER TABLE task_types 
-ADD COLUMN unit_cost decimal(10,6) DEFAULT NULL;
+ADD COLUMN IF NOT EXISTS unit_cost decimal(10,6) DEFAULT NULL;
 
 -- Create index for billing type lookups
-CREATE INDEX idx_task_types_billing_type ON task_types(billing_type);
+CREATE INDEX IF NOT EXISTS idx_task_types_billing_type ON task_types(billing_type);
 
 -- =============================================================================
 -- 2. Update existing task types with appropriate billing models

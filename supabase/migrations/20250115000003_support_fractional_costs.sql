@@ -4,6 +4,10 @@
 -- First, drop the view that depends on the amount column
 DROP VIEW IF EXISTS user_credit_balance;
 
+-- The auto-top-up trigger references users.credits, so drop it before changing
+-- the column type and recreate it after the dependent functions are refreshed.
+DROP TRIGGER IF EXISTS auto_topup_trigger ON users;
+
 -- Update the users.credits column to also support fractional values
 ALTER TABLE users 
 ALTER COLUMN credits TYPE numeric(10,3);
@@ -45,4 +49,10 @@ BEGIN
   
   RETURN COALESCE(NEW, OLD);
 END;
-$$; 
+$$;
+
+CREATE TRIGGER auto_topup_trigger
+  AFTER UPDATE OF credits ON users
+  FOR EACH ROW
+  WHEN (OLD.credits IS DISTINCT FROM NEW.credits)
+  EXECUTE FUNCTION check_auto_topup_trigger();

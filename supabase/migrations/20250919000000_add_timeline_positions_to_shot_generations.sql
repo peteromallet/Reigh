@@ -3,22 +3,27 @@
 
 -- Add new columns
 ALTER TABLE shot_generations 
-ADD COLUMN timeline_frame integer,
-ADD COLUMN metadata jsonb;
+ADD COLUMN IF NOT EXISTS timeline_frame integer,
+ADD COLUMN IF NOT EXISTS metadata jsonb;
 
 -- Add unique constraint for timeline frames (no two items at same frame in same shot)
 -- Note: PostgreSQL partial unique constraints require a separate CREATE UNIQUE INDEX statement
-CREATE UNIQUE INDEX unique_timeline_frame_per_shot 
+CREATE UNIQUE INDEX IF NOT EXISTS unique_timeline_frame_per_shot
 ON shot_generations(shot_id, timeline_frame) 
 WHERE timeline_frame IS NOT NULL;
 
 -- Add constraint to ensure timeline_frame is non-negative when present
-ALTER TABLE shot_generations 
-ADD CONSTRAINT timeline_frame_non_negative 
-CHECK (timeline_frame IS NULL OR timeline_frame >= 0);
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'timeline_frame_non_negative' AND conrelid = 'shot_generations'::regclass) THEN
+    ALTER TABLE shot_generations
+    ADD CONSTRAINT timeline_frame_non_negative
+    CHECK (timeline_frame IS NULL OR timeline_frame >= 0);
+  END IF;
+END $$;
 
 -- Create indexes for performance
-CREATE INDEX idx_shot_generations_timeline_frame 
+CREATE INDEX IF NOT EXISTS idx_shot_generations_timeline_frame
 ON shot_generations(shot_id, timeline_frame) 
 WHERE timeline_frame IS NOT NULL;
 

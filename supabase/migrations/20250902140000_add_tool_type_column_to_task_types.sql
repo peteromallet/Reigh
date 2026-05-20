@@ -2,10 +2,10 @@
 -- This makes generation trigger logic much cleaner by using database-driven tool_type mapping
 
 -- Add the tool_type column
-ALTER TABLE task_types ADD COLUMN tool_type text;
+ALTER TABLE task_types ADD COLUMN IF NOT EXISTS tool_type text;
 
 -- Create index for performance
-CREATE INDEX idx_task_types_tool_type ON task_types(tool_type);
+CREATE INDEX IF NOT EXISTS idx_task_types_tool_type ON task_types(tool_type);
 
 -- Populate tool_type based on existing task types and their usage patterns
 UPDATE task_types SET tool_type = CASE 
@@ -32,8 +32,13 @@ UPDATE task_types SET tool_type = CASE
 END;
 
 -- Add constraint to ensure tool_type is not null for active tasks
-ALTER TABLE task_types ADD CONSTRAINT check_tool_type_not_null 
-CHECK (tool_type IS NOT NULL OR is_active = false);
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'check_tool_type_not_null' AND conrelid = 'task_types'::regclass) THEN
+    ALTER TABLE task_types ADD CONSTRAINT check_tool_type_not_null
+    CHECK (tool_type IS NOT NULL OR is_active = false);
+  END IF;
+END $$;
 
 -- Update the generation trigger to use the tool_type from task_types table
 CREATE OR REPLACE FUNCTION create_generation_on_task_complete()
