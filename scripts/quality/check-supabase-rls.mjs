@@ -8,6 +8,8 @@ const explicitUserOwnedTables = new Map([
   ['projects', 'core project container owned by users'],
   ['shots', 'project-owned child records'],
   ['shot_generations', 'project-owned join records'],
+  ['shot_slots', 'project-owned slot identity'],
+  ['attempts', 'project-owned attempt history'],
 ]);
 
 function normalizeSql(sql) {
