@@ -18,7 +18,6 @@ import {
   type TimelineInputModality,
   type TimelineInteractionMode,
 } from '@/tools/video-editor/lib/mobile-interaction-model.ts';
-import { snapDrag } from '@/tools/video-editor/lib/snap-edges.ts';
 import { useTimelineScale } from '@/tools/video-editor/hooks/useTimelineScale.ts';
 import {
   useTimelineDataSliceSafe,
@@ -43,7 +42,15 @@ interface UseCrossTrackDragOptions {
   gestureOwner: TimelineGestureOwner;
   setGestureOwner: (owner: TimelineGestureOwner) => void;
   setInputModalityFromPointerType: (pointerType: string | null | undefined) => TimelineInputModality;
-  moveClipToRow: (clipId: string, targetRowId: string, newStartTime?: number, transactionId?: string) => void;
+  applyResolvedClipMove?: (
+    clipId: string,
+    targetRowId: string,
+    targetTrackId: string | null,
+    start: number,
+    needsNewTrack: boolean,
+    transactionId?: string,
+  ) => void;
+  moveClipToRow: (clipId: string, targetRowId: string, newStartTime?: number, transactionId?: string, snapThresholdS?: number) => void;
   createTrackAndMoveClip: (clipId: string, kind: TrackKind, newStartTime?: number, insertAtTop?: boolean) => void;
   selectClip: (clipId: string, opts?: SelectClipOptions) => void;
   selectClips: (clipIds: Iterable<string>) => void;
@@ -59,6 +66,7 @@ interface UseCrossTrackDragOptions {
 
 interface UseClipDragLatest {
   coordinator: DragCoordinator;
+  applyResolvedClipMove?: UseCrossTrackDragOptions['applyResolvedClipMove'];
   moveClipToRow: UseCrossTrackDragOptions['moveClipToRow'];
   createTrackAndMoveClip: UseCrossTrackDragOptions['createTrackAndMoveClip'];
   selectClip: UseCrossTrackDragOptions['selectClip'];
@@ -91,6 +99,7 @@ export const useClipDrag = ({
   gestureOwner,
   setGestureOwner,
   setInputModalityFromPointerType,
+  applyResolvedClipMove,
   moveClipToRow,
   createTrackAndMoveClip,
   selectClip,
@@ -115,6 +124,7 @@ export const useClipDrag = ({
   const effectiveGestureOwner = storeData?.gestureOwner ?? gestureOwner;
   const effectiveSetGestureOwner = storeOps?.setGestureOwner ?? setGestureOwner;
   const effectiveSetInputModalityFromPointerType = storeOps?.setInputModalityFromPointerType ?? setInputModalityFromPointerType;
+  const effectiveApplyResolvedClipMove = storeOps?.applyResolvedClipMove ?? applyResolvedClipMove;
   const effectiveMoveClipToRow = storeOps?.moveClipToRow ?? moveClipToRow;
   const effectiveCreateTrackAndMoveClip = storeOps?.createTrackAndMoveClip ?? createTrackAndMoveClip;
   const effectiveSelectClip = storeOps?.selectClip ?? selectClip;
@@ -140,6 +150,7 @@ export const useClipDrag = ({
   // when zoom/scale changes.
   const latestRef = useRef<UseClipDragLatest>({
     coordinator: effectiveCoordinator,
+    applyResolvedClipMove: effectiveApplyResolvedClipMove,
     moveClipToRow: effectiveMoveClipToRow,
     createTrackAndMoveClip: effectiveCreateTrackAndMoveClip,
     selectClip: effectiveSelectClip,
@@ -156,6 +167,7 @@ export const useClipDrag = ({
   });
   latestRef.current = {
     coordinator: effectiveCoordinator,
+    applyResolvedClipMove: effectiveApplyResolvedClipMove,
     moveClipToRow: effectiveMoveClipToRow,
     createTrackAndMoveClip: effectiveCreateTrackAndMoveClip,
     selectClip: effectiveSelectClip,
@@ -235,26 +247,15 @@ export const useClipDrag = ({
         excludeClipIds: new Set(session.draggedClipIds),
       });
 
-      const pixelsPerSecond = pixelsPerSecondRef.current;
-      const snapThresholdS = SNAP_THRESHOLD_PX / pixelsPerSecond;
-      const targetRowId = nextPosition.trackId ?? session.sourceRowId;
-      const targetRow = effectiveDataRef.current?.rows.find((row) => row.id === targetRowId);
-      const siblings = targetRow?.actions ?? [];
-      const { start: snappedStart } = snapDrag(
-        nextPosition.time,
-        session.clipDuration,
-        siblings,
-        session.clipId,
-        snapThresholdS,
-        session.draggedClipIds,
-      );
-
       const dragState = actionDragStateRef.current;
       if (dragState) {
         const duration = dragState.initialEnd - dragState.initialStart;
-        dragState.latestStart = snappedStart;
-        dragState.latestEnd = snappedStart + duration;
+        const resolvedStart = latestRef.current.coordinator.lastPlan?.resolvedStart ?? nextPosition.time;
+        dragState.latestStart = resolvedStart;
+        dragState.latestEnd = resolvedStart + duration;
       }
+
+      const pixelsPerSecond = pixelsPerSecondRef.current;
 
       const dy = adjustedClientY - session.startClientY;
       if (!crossTrackActiveRef.current && Math.abs(dy) >= CROSS_TRACK_THRESHOLD_PX) {
@@ -418,6 +419,7 @@ export const useClipDrag = ({
         const session = currentState.session;
         if (currentState.phase === 'dragging') {
           const dropPosition = latestRef.current.coordinator.lastPosition;
+          const lastPlan = latestRef.current.coordinator.lastPlan;
           const nextStart = actionDragStateRef.current?.latestStart
             ?? currentState.intent.clipOffsets.find((clip) => clip.clipId === session.clipId)?.initialStart
             ?? 0;
@@ -428,9 +430,25 @@ export const useClipDrag = ({
             session,
             nextStart,
             dropPosition,
+            lastPlan,
             crossTrackActive: crossTrackActiveRef.current,
+            snapThresholdS: SNAP_THRESHOLD_PX / pixelsPerSecondRef.current,
             liveData: effectiveDataRef.current,
             callbacks: {
+              applyResolvedClipMove: latestRef.current.applyResolvedClipMove
+                ?? ((clipId, targetRowId, targetTrackId, start, needsNewTrack, transactionId) => {
+                  if (needsNewTrack) {
+                    latestRef.current.createTrackAndMoveClip(session.clipId, session.sourceKind, start, false);
+                    return;
+                  }
+                  latestRef.current.moveClipToRow(
+                    clipId,
+                    targetTrackId ?? targetRowId,
+                    start,
+                    transactionId,
+                    SNAP_THRESHOLD_PX / pixelsPerSecondRef.current,
+                  );
+                }),
               moveClipToRow: latestRef.current.moveClipToRow,
               createTrackAndMoveClip: latestRef.current.createTrackAndMoveClip,
               selectClip: latestRef.current.selectClip,

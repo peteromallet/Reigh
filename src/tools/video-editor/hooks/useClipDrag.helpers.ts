@@ -14,6 +14,7 @@ import {
   orderClipIdsByAt,
   resolveGroupTrackId,
 } from '@/tools/video-editor/lib/pinned-group-projection.ts';
+import type { ClipDragPlan } from '@/tools/video-editor/lib/clip-drag-planner.ts';
 import type { TimelineData } from '@/tools/video-editor/lib/timeline-data.ts';
 import type { PinnedShotGroup, TrackKind } from '@/tools/video-editor/types/index.ts';
 import type { TimelineAction, TimelineRow } from '@/tools/video-editor/types/timeline-canvas.ts';
@@ -112,7 +113,15 @@ interface BuildPendingDragSessionResult {
 }
 
 interface DragCommitCallbacks {
-  moveClipToRow: (clipId: string, targetRowId: string, newStartTime?: number, transactionId?: string) => void;
+  applyResolvedClipMove: (
+    clipId: string,
+    targetRowId: string,
+    targetTrackId: string | null,
+    start: number,
+    needsNewTrack: boolean,
+    transactionId?: string,
+  ) => void;
+  moveClipToRow: (clipId: string, targetRowId: string, newStartTime?: number, transactionId?: string, snapThresholdS?: number) => void;
   createTrackAndMoveClip: (clipId: string, kind: TrackKind, newStartTime?: number, insertAtTop?: boolean) => void;
   selectClip: (clipId: string) => void;
   selectClips: (clipIds: Iterable<string>) => void;
@@ -123,7 +132,9 @@ interface CommitDraggingSessionArgs {
   session: InternalDragSession;
   nextStart: number;
   dropPosition: DropPosition | null;
+  lastPlan: ClipDragPlan | null;
   crossTrackActive: boolean;
+  snapThresholdS?: number;
   liveData: TimelineData | null;
   callbacks: DragCommitCallbacks;
 }
@@ -342,27 +353,43 @@ export function commitDraggingSession({
   session,
   nextStart,
   dropPosition,
+  lastPlan,
   crossTrackActive,
+  snapThresholdS,
   liveData,
   callbacks,
 }: CommitDraggingSessionArgs): { deferDeactivate: boolean } {
   const isGroupDrag = session.groupDragEntry !== null;
+  const anchorPlan = lastPlan?.valid && !lastPlan.rejectReason ? lastPlan : null;
 
-  if (!isGroupDrag && crossTrackActive && session.draggedClipIds.length === 1) {
-    if (dropPosition?.isNewTrack) {
+  if (!isGroupDrag && session.draggedClipIds.length === 1) {
+    if (anchorPlan) {
+      callbacks.applyResolvedClipMove(
+        session.clipId,
+        anchorPlan.targetTrackId ?? session.sourceRowId,
+        anchorPlan.targetTrackId,
+        anchorPlan.resolvedStart,
+        anchorPlan.needsNewTrack,
+        session.transactionId,
+      );
+      userSelectTimelineClip(session.clipId, { additive: false });
+      return { deferDeactivate: crossTrackActive };
+    }
+
+    if (crossTrackActive && dropPosition?.isNewTrack) {
       callbacks.createTrackAndMoveClip(
         session.clipId,
         session.sourceKind,
         nextStart,
         dropPosition.isNewTrackTop,
       );
-    } else if (dropPosition?.trackId && !dropPosition.isReject) {
-      callbacks.moveClipToRow(session.clipId, dropPosition.trackId, nextStart, session.transactionId);
+    } else if (crossTrackActive && dropPosition?.trackId && !dropPosition.isReject) {
+      callbacks.moveClipToRow(session.clipId, dropPosition.trackId, nextStart, session.transactionId, snapThresholdS);
     } else {
-      callbacks.moveClipToRow(session.clipId, session.sourceRowId, nextStart, session.transactionId);
+      callbacks.moveClipToRow(session.clipId, session.sourceRowId, nextStart, session.transactionId, snapThresholdS);
     }
     userSelectTimelineClip(session.clipId, { additive: false });
-    return { deferDeactivate: true };
+    return { deferDeactivate: crossTrackActive };
   }
 
   if (session.draggedClipIds.length > 1 || isGroupDrag) {
@@ -370,11 +397,11 @@ export function commitDraggingSession({
       const timeDelta = getAnchorTimeDelta(session, nextStart);
       let handledNewTrackMove = false;
 
-      if (crossTrackActive && dropPosition?.isNewTrack) {
+      if (crossTrackActive && (anchorPlan?.needsNewTrack ?? Boolean(dropPosition?.isNewTrack))) {
         const augmentedData = buildAugmentedData(
           liveData,
           session.sourceKind,
-          dropPosition.isNewTrackTop ?? false,
+          anchorPlan?.newTrackPlacement === 'top' || (!anchorPlan && Boolean(dropPosition?.isNewTrackTop)),
         );
         if (augmentedData) {
           const { augmented, newTrackId } = augmentedData;
@@ -385,6 +412,7 @@ export function commitDraggingSession({
             newTrackId,
             session.sourceRowId,
             timeDelta,
+            anchorPlan?.snapThresholdS ?? snapThresholdS ?? 0,
             session.groupDragEntry ?? undefined,
           );
 
@@ -417,11 +445,12 @@ export function commitDraggingSession({
       }
 
       if (!handledNewTrackMove) {
-        const anchorTargetRowId = crossTrackActive
-          ? (dropPosition?.trackId && !dropPosition.isReject && !dropPosition.isNewTrack
-              ? dropPosition.trackId
-              : session.sourceRowId)
-          : session.sourceRowId;
+        const anchorTargetRowId = anchorPlan?.targetTrackId
+          ?? (crossTrackActive
+            ? (dropPosition?.trackId && !dropPosition.isReject && !dropPosition.isNewTrack
+                ? dropPosition.trackId
+                : session.sourceRowId)
+            : session.sourceRowId);
         const { canMove, moves } = planMultiDragMoves(
           liveData,
           session.clipOffsets,
@@ -429,6 +458,7 @@ export function commitDraggingSession({
           anchorTargetRowId,
           session.sourceRowId,
           timeDelta,
+          anchorPlan?.snapThresholdS ?? snapThresholdS ?? 0,
           session.groupDragEntry ?? undefined,
         );
 
@@ -459,7 +489,7 @@ export function commitDraggingSession({
     return { deferDeactivate: crossTrackActive };
   }
 
-  callbacks.moveClipToRow(session.clipId, session.sourceRowId, nextStart, session.transactionId);
+  callbacks.moveClipToRow(session.clipId, session.sourceRowId, nextStart, session.transactionId, snapThresholdS);
   userSelectTimelineClip(session.clipId, { additive: false });
   return { deferDeactivate: false };
 }

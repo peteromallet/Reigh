@@ -163,6 +163,7 @@ function createInitialDataSlice(): TimelineEditorDataContextValue {
       showSecondaryGhosts: noop,
       end: noop,
       lastPosition: null,
+      lastPlan: null,
       editAreaRef,
     },
     indicatorRef: createMutableRef(null),
@@ -215,6 +216,7 @@ function createInitialOpsSlice(): TimelineEditorOpsContextValue {
   const handleRemoveTrack: TimelineEditorOpsContextValue['handleRemoveTrack'] = noop;
   const moveSelectedClipToTrack: TimelineEditorOpsContextValue['moveSelectedClipToTrack'] = noop;
   const moveSelectedClipsToTrack: TimelineEditorOpsContextValue['moveSelectedClipsToTrack'] = noop;
+  const applyResolvedClipMove: TimelineEditorOpsContextValue['applyResolvedClipMove'] = noop;
   const moveClipToRow: TimelineEditorOpsContextValue['moveClipToRow'] = noop;
   const createTrackAndMoveClip: TimelineEditorOpsContextValue['createTrackAndMoveClip'] = noop;
   const uploadFiles: TimelineEditorOpsContextValue['uploadFiles'] = noopAsync;
@@ -280,6 +282,7 @@ function createInitialOpsSlice(): TimelineEditorOpsContextValue {
     handleRemoveTrack,
     moveSelectedClipToTrack,
     moveSelectedClipsToTrack,
+    applyResolvedClipMove,
     moveClipToRow,
     createTrackAndMoveClip,
     uploadFiles,

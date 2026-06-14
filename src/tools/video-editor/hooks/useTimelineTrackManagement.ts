@@ -31,7 +31,15 @@ export interface UseTimelineTrackManagementResult {
   handleRemoveTrack: (trackId: string) => void;
   handleClearUnusedTracks: () => void;
   unusedTrackCount: number;
-  moveClipToRow: (clipId: string, targetRowId: string, newStartTime?: number, transactionId?: string) => void;
+  applyResolvedClipMove: (
+    clipId: string,
+    targetRowId: string,
+    targetTrackId: string | null,
+    start: number,
+    needsNewTrack: boolean,
+    transactionId?: string,
+  ) => void;
+  moveClipToRow: (clipId: string, targetRowId: string, newStartTime?: number, transactionId?: string, snapThresholdS?: number) => void;
   createTrackAndMoveClip: (clipId: string, kind: TrackKind, newStartTime?: number, insertAtTop?: boolean) => void;
   moveSelectedClipToTrack: (direction: 'up' | 'down') => void;
   moveSelectedClipsToTrack: (direction: 'up' | 'down', selectedClipIds: ReadonlySet<string>) => void;
@@ -196,6 +204,24 @@ function getLiveGroupEnd(current: Pick<TimelineData, 'rows'>, group: PinnedShotG
   return Math.max(...actionEnds);
 }
 
+function appendTrackForResolvedMove(
+  current: TimelineData,
+  kind: TrackKind,
+): { nextState: TimelineData; trackId: string } {
+  const prefix = kind === 'audio' ? 'A' : 'V';
+  const nextNumber = getTrackIndex(current.tracks, prefix) + 1;
+  const trackId = `${prefix}${nextNumber}`;
+  const nextTrack = { id: trackId, kind, label: trackId };
+  return {
+    nextState: {
+      ...current,
+      tracks: [...current.tracks, nextTrack],
+      rows: [...current.rows, { id: trackId, actions: [] }],
+    },
+    trackId,
+  };
+}
+
 export function useTimelineTrackManagement({
   dataRef,
   resolvedConfig,
@@ -203,11 +229,118 @@ export function useTimelineTrackManagement({
   setSelectedTrackId,
   applyEdit,
 }: UseTimelineTrackManagementArgs): UseTimelineTrackManagementResult {
+  const applyResolvedClipMove = useCallback((
+    clipId: string,
+    targetRowId: string,
+    targetTrackId: string | null,
+    start: number,
+    needsNewTrack: boolean,
+    transactionId?: string,
+  ) => {
+    let current = dataRef.current;
+    if (!current) {
+      return;
+    }
+
+    const enclosingGroup = findEnclosingPinnedGroup(current.config, clipId);
+    if (enclosingGroup) {
+      const resolvedTrackId = resolveGroupTrackId(enclosingGroup.group, current.rows);
+      const resolvedGroup = resolvedTrackId === enclosingGroup.group.trackId
+        ? enclosingGroup.group
+        : { ...enclosingGroup.group, trackId: resolvedTrackId };
+      const sourceTrack = current.tracks.find((track) => track.id === resolvedTrackId);
+      const baseTargetTrackId = targetTrackId ?? targetRowId;
+      const targetTrack = current.tracks.find((track) => track.id === baseTargetTrackId);
+      if (!sourceTrack || (!needsNewTrack && !targetTrack) || (targetTrack && sourceTrack.kind !== targetTrack.kind)) {
+        return;
+      }
+
+      const groupStart = getLiveGroupStart(current, resolvedGroup);
+      if (groupStart == null) {
+        return;
+      }
+
+      let finalTargetId = targetTrackId;
+      if (needsNewTrack || !finalTargetId) {
+        const appendedTrack = appendTrackForResolvedMove(current, sourceTrack.kind);
+        current = appendedTrack.nextState;
+        finalTargetId = appendedTrack.trackId;
+        dataRef.current = current;
+      }
+
+      const translatedGroup = translateGroupMembers({
+        current,
+        group: resolvedGroup,
+        targetRowId: finalTargetId,
+        deltaTime: start - groupStart,
+      });
+      applyEdit({
+        type: 'rows',
+        rows: translatedGroup.nextRows,
+        metaUpdates: Object.keys(translatedGroup.metaUpdates).length > 0 ? translatedGroup.metaUpdates : undefined,
+        clipOrderOverride: translatedGroup.nextClipOrder,
+        pinnedShotGroupsOverride: translatedGroup.pinnedShotGroupsOverride,
+      }, { transactionId });
+      return;
+    }
+
+    const sourceRow = current.rows.find((row) => row.actions.some((action) => action.id === clipId));
+    const action = sourceRow?.actions.find((candidate) => candidate.id === clipId);
+    const sourceTrack = sourceRow
+      ? current.tracks.find((track) => track.id === sourceRow.id)
+      : null;
+    const baseTargetTrackId = targetTrackId ?? targetRowId;
+    const targetTrack = current.tracks.find((track) => track.id === baseTargetTrackId);
+    if (!sourceRow || !sourceTrack || !action || (!needsNewTrack && !targetTrack) || (targetTrack && sourceTrack.kind !== targetTrack.kind)) {
+      return;
+    }
+
+    let finalTrackId = targetTrackId;
+    if (needsNewTrack || !finalTrackId) {
+      const appendedTrack = appendTrackForResolvedMove(current, sourceTrack.kind);
+      current = appendedTrack.nextState;
+      finalTrackId = appendedTrack.trackId;
+      dataRef.current = current;
+    }
+
+    const duration = action.end - action.start;
+    const nextAction = { ...action, start, end: start + duration };
+    const nextRows = current.rows.map((row) => {
+      if (row.id === sourceRow.id && row.id === finalTrackId) {
+        return {
+          ...row,
+          actions: row.actions.map((candidate) => (candidate.id === clipId ? nextAction : candidate)),
+        };
+      }
+
+      if (row.id === sourceRow.id) {
+        return { ...row, actions: row.actions.filter((candidate) => candidate.id !== clipId) };
+      }
+
+      if (row.id === finalTrackId) {
+        return { ...row, actions: [...row.actions, nextAction] };
+      }
+
+      return row;
+    });
+
+    const nextClipOrder = moveClipBetweenTracks(current.clipOrder, clipId, sourceRow.id, finalTrackId);
+    applyEdit({
+      type: 'rows',
+      rows: nextRows,
+      metaUpdates: {
+        [clipId]: { track: finalTrackId },
+      },
+      clipOrderOverride: nextClipOrder,
+    }, { transactionId });
+  }, [applyEdit, dataRef]);
+
   const moveClipToRow = useCallback((
     clipId: string,
     targetRowId: string,
     newStartTime?: number,
     transactionId?: string,
+    snapThresholdS?: number,
   ) => {
     let current = dataRef.current;
     if (!current) {
@@ -245,9 +378,11 @@ export function useTimelineTrackManagement({
         targetRowId,
         nextStart,
         groupDuration,
+        undefined,
+        snapThresholdS,
       );
       const effectiveGroupStart = snapResult.snapped ? snapResult.time : nextStart;
-      let finalTargetId = snapResult.snapped
+      const finalTargetId = snapResult.snapped
         ? targetRowId
         : findNearestFreeTrack(
             current.tracks,
@@ -257,32 +392,14 @@ export function useTimelineTrackManagement({
             effectiveGroupStart,
             groupDuration,
           );
-
-      if (!finalTargetId) {
-        const prefix = sourceTrack.kind === 'audio' ? 'A' : 'V';
-        const nextNumber = getTrackIndex(current.tracks, prefix) + 1;
-        finalTargetId = `${prefix}${nextNumber}`;
-        current = {
-          ...current,
-          tracks: [...current.tracks, { id: finalTargetId, kind: sourceTrack.kind, label: finalTargetId }],
-          rows: [...current.rows, { id: finalTargetId, actions: [] }],
-        };
-        dataRef.current = current;
-      }
-
-      const translatedGroup = translateGroupMembers({
-        current,
-        group: resolvedGroup,
-        targetRowId: finalTargetId,
-        deltaTime: effectiveGroupStart - groupStart,
-      });
-      applyEdit({
-        type: 'rows',
-        rows: translatedGroup.nextRows,
-        metaUpdates: Object.keys(translatedGroup.metaUpdates).length > 0 ? translatedGroup.metaUpdates : undefined,
-        clipOrderOverride: translatedGroup.nextClipOrder,
-        pinnedShotGroupsOverride: translatedGroup.pinnedShotGroupsOverride,
-      }, { transactionId });
+      applyResolvedClipMove(
+        clipId,
+        targetRowId,
+        finalTargetId,
+        effectiveGroupStart,
+        !finalTargetId,
+        transactionId,
+      );
       return;
     }
 
@@ -309,9 +426,10 @@ export function useTimelineTrackManagement({
       nextStart,
       duration,
       clipId,
+      snapThresholdS,
     );
-    let effectiveStart = snapResult.snapped ? snapResult.time : nextStart;
-    let finalTrackId = snapResult.snapped
+    const effectiveStart = snapResult.snapped ? snapResult.time : nextStart;
+    const finalTrackId = snapResult.snapped
       ? targetRow.id
       : findNearestFreeTrack(
           current.tracks,
@@ -322,49 +440,15 @@ export function useTimelineTrackManagement({
           duration,
           clipId,
         );
-
-    if (!finalTrackId) {
-      const prefix = sourceTrack.kind === 'audio' ? 'A' : 'V';
-      const nextNumber = getTrackIndex(current.tracks, prefix) + 1;
-      finalTrackId = `${prefix}${nextNumber}`;
-      current = {
-        ...current,
-        tracks: [...current.tracks, { id: finalTrackId, kind: sourceTrack.kind, label: finalTrackId }],
-        rows: [...current.rows, { id: finalTrackId, actions: [] }],
-      };
-      dataRef.current = current;
-    }
-
-    const nextAction = { ...action, start: effectiveStart, end: effectiveStart + duration };
-    const nextRows = current.rows.map((row) => {
-      if (row.id === sourceRow.id && row.id === finalTrackId) {
-        return {
-          ...row,
-          actions: row.actions.map((candidate) => (candidate.id === clipId ? nextAction : candidate)),
-        };
-      }
-
-      if (row.id === sourceRow.id) {
-        return { ...row, actions: row.actions.filter((candidate) => candidate.id !== clipId) };
-      }
-
-      if (row.id === finalTrackId) {
-        return { ...row, actions: [...row.actions, nextAction] };
-      }
-
-      return row;
-    });
-
-    const nextClipOrder = moveClipBetweenTracks(current.clipOrder, clipId, sourceRow.id, finalTrackId);
-    applyEdit({
-      type: 'rows',
-      rows: nextRows,
-      metaUpdates: {
-        [clipId]: { track: finalTrackId },
-      },
-      clipOrderOverride: nextClipOrder,
-    }, { transactionId });
-  }, [applyEdit, dataRef]);
+    applyResolvedClipMove(
+      clipId,
+      targetRowId,
+      finalTrackId,
+      effectiveStart,
+      !finalTrackId,
+      transactionId,
+    );
+  }, [applyResolvedClipMove, dataRef]);
 
   const createTrackAndMoveClip = useCallback((clipId: string, kind: TrackKind, newStartTime?: number, insertAtTop = false) => {
     const current = dataRef.current;
@@ -849,6 +933,7 @@ export function useTimelineTrackManagement({
     handleRemoveTrack,
     handleClearUnusedTracks,
     unusedTrackCount,
+    applyResolvedClipMove,
     moveClipToRow,
     createTrackAndMoveClip,
     moveSelectedClipToTrack,

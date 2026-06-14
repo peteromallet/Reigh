@@ -145,6 +145,7 @@ describe('T9 — soft-tag grouped drag', () => {
       'V1',
       'V1',
       timeDelta,
+      0.08,
       { groupKey: { shotId: 'shot-1', trackId: 'V1' }, originStart: 0, originTrackId: 'V1' },
     );
 
@@ -204,6 +205,7 @@ describe('T9 — soft-tag grouped drag', () => {
       'V1',
       'V1',
       7, // pushes the group to 7..10, overlapping free clip at 8..10
+      3,
       { groupKey: { shotId: 'shot-1', trackId: 'V1' }, originStart: 0, originTrackId: 'V1' },
     );
 
@@ -244,6 +246,7 @@ describe('T9 — soft-tag grouped drag', () => {
       'V2',
       'V1',
       0,
+      0.08,
       { groupKey: { shotId: 'shot-1', trackId: 'V1' }, originStart: 0, originTrackId: 'V1' },
     );
 
@@ -296,6 +299,7 @@ describe('T9 — soft-tag grouped drag', () => {
       newTrackId,
       'V1',
       0,
+      0.08,
       { groupKey: { shotId: 'shot-1', trackId: 'V1' }, originStart: 0, originTrackId: 'V1' },
     );
 

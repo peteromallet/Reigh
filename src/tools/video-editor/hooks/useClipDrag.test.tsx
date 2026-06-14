@@ -18,9 +18,9 @@ vi.mock('@/shared/state/selectionStore', () => ({
   userSelectTimelineClips: selectionMocks.userSelectTimelineClips,
 }));
 
-const makeTrack = (id: string): TrackDefinition => ({
+const makeTrack = (id: string, kind: TrackDefinition['kind'] = 'visual'): TrackDefinition => ({
   id,
-  kind: 'visual',
+  kind,
   label: id,
   scale: 1,
   fit: 'manual',
@@ -60,11 +60,13 @@ function makeCoordinator(overrides: Partial<ReturnType<DragCoordinator['update']
         },
       };
       coordinator.lastPosition = nextPosition;
+      coordinator.lastPlan = nextPosition.plan ?? null;
       return nextPosition;
     }),
     showSecondaryGhosts: vi.fn(),
     end: vi.fn(),
     lastPosition: null,
+    lastPlan: null,
     editAreaRef: { current: null },
   } satisfies DragCoordinator;
 
@@ -265,6 +267,50 @@ function makePinnedGroupDataWithExtraSelection(): TimelineData {
       'effect-clip-3': { id: 'effect-clip-3' },
     },
     clipOrder: { V1: ['clip-1', 'clip-2'], V2: ['clip-3'] },
+  });
+}
+
+function makeMixedKindData(): TimelineData {
+  const tracks = [makeTrack('V1'), makeTrack('V2'), makeTrack('A1', 'audio')];
+  return canonicalizeTimelineData({
+    config: {
+      output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
+      tracks,
+      clips: [
+        { id: 'clip-1', at: 0, track: 'V1', clipType: 'hold', hold: 2 },
+        { id: 'clip-2', at: 4, track: 'V2', clipType: 'hold', hold: 2 },
+      ],
+    },
+    configVersion: 1,
+    registry: { assets: {} },
+    resolvedConfig: {
+      output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
+      tracks,
+      clips: [
+        { id: 'clip-1', at: 0, track: 'V1', clipType: 'hold', hold: 2 },
+        { id: 'clip-2', at: 4, track: 'V2', clipType: 'hold', hold: 2 },
+      ],
+      registry: {},
+    },
+    rows: [
+      { id: 'V1', actions: [{ id: 'clip-1', start: 0, end: 2, effectId: 'effect-clip-1' }] },
+      { id: 'V2', actions: [{ id: 'clip-2', start: 4, end: 6, effectId: 'effect-clip-2' }] },
+      { id: 'A1', actions: [] },
+    ],
+    meta: {
+      'clip-1': { track: 'V1', clipType: 'hold', hold: 2 },
+      'clip-2': { track: 'V2', clipType: 'hold', hold: 2 },
+    },
+    effects: {
+      'effect-clip-1': { id: 'effect-clip-1' },
+      'effect-clip-2': { id: 'effect-clip-2' },
+    },
+    assetMap: {},
+    output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
+    tracks,
+    clipOrder: { V1: ['clip-1'], V2: ['clip-2'], A1: [] },
+    signature: 'sig-mixed',
+    stableSignature: 'stable-mixed',
   });
 }
 
@@ -1106,9 +1152,28 @@ describe('useClipDrag', () => {
     const selectClips = vi.fn();
     const coordinator = makeCoordinator({
       time: 1,
-      rowIndex: 1,
-      trackId: 'V2',
-      trackName: 'V2',
+      rowIndex: 0,
+      trackId: 'V1',
+      trackName: 'V1',
+      plan: {
+        pointerTime: 1,
+        resolvedStart: 1,
+        targetTrackId: 'V2',
+        targetRowIndex: 1,
+        requestedRowIndex: 0,
+        requestedTrackId: 'V1',
+        trackKind: 'visual',
+        needsNewTrack: false,
+        newTrackPlacement: null,
+        snapThresholdS: 0.08,
+        snapped: false,
+        snapEdgeType: 'none',
+        pixelSnapThreshold: 8,
+        pixelsPerSecond: 100,
+        valid: true,
+        invalidReason: null,
+        rejectReason: null,
+      },
       screenCoords: {
         rowTop: 48,
         rowLeft: 0,
@@ -1216,12 +1281,31 @@ describe('useClipDrag', () => {
     const applyEdit = vi.fn();
     const coordinator = makeCoordinator({
       time: 3,
-      rowIndex: 2,
-      trackId: undefined,
-      trackName: '',
-      isNewTrack: true,
+      rowIndex: 1,
+      trackId: 'V2',
+      trackName: 'V2',
+      isNewTrack: false,
       isNewTrackTop: false,
-      newTrackKind: 'visual',
+      newTrackKind: null,
+      plan: {
+        pointerTime: 3,
+        resolvedStart: 3,
+        targetTrackId: null,
+        targetRowIndex: 2,
+        requestedRowIndex: 1,
+        requestedTrackId: 'V2',
+        trackKind: 'visual',
+        needsNewTrack: true,
+        newTrackPlacement: 'bottom',
+        snapThresholdS: 0.08,
+        snapped: false,
+        snapEdgeType: 'none',
+        pixelSnapThreshold: 8,
+        pixelsPerSecond: 100,
+        valid: true,
+        invalidReason: null,
+        rejectReason: null,
+      },
       screenCoords: {
         rowTop: 96,
         rowLeft: 0,
@@ -1294,6 +1378,403 @@ describe('useClipDrag', () => {
         clipIds: ['clip-1', 'clip-2'],
         mode: 'images',
       })]);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('commits single-clip pointer drags from the cached lastPlan without rerunning move resolution', () => {
+    const applyResolvedClipMove = vi.fn();
+    const moveClipToRow = vi.fn();
+    const coordinator = makeCoordinator({
+      time: 12,
+      trackId: 'V2',
+      trackName: 'V2',
+      plan: {
+        pointerTime: 12,
+        resolvedStart: 7,
+        targetTrackId: 'V2',
+        targetRowIndex: 1,
+        requestedRowIndex: 1,
+        requestedTrackId: 'V2',
+        trackKind: 'visual',
+        needsNewTrack: false,
+        newTrackPlacement: null,
+        snapThresholdS: 0.08,
+        snapped: true,
+        snapEdgeType: 'sibling-end',
+        pixelSnapThreshold: 8,
+        pixelsPerSecond: 100,
+        valid: true,
+        invalidReason: null,
+        rejectReason: null,
+      },
+      screenCoords: {
+        rowTop: 48,
+        rowLeft: 0,
+        rowWidth: 400,
+        rowHeight: 48,
+        clipLeft: 300,
+        clipWidth: 120,
+        ghostCenter: 300,
+      },
+    });
+    const { clip, wrapper, cleanup } = setupDom();
+    const timelineWrapperRef = { current: wrapper };
+    const dataRef = { current: makeData() };
+
+    try {
+      renderHook(() => useClipDrag({
+        timelineWrapperRef,
+        dataRef,
+        deviceClass: 'desktop',
+        interactionMode: 'select',
+        gestureOwner: 'none',
+        setGestureOwner: vi.fn(),
+        setInputModalityFromPointerType: vi.fn(() => 'mouse'),
+        applyResolvedClipMove,
+        moveClipToRow,
+        createTrackAndMoveClip: vi.fn(),
+        selectClip: vi.fn(),
+        selectClips: vi.fn(),
+        selectedClipIdsRef: { current: new Set<string>() },
+        additiveSelectionRef: { current: false },
+        applyEdit: vi.fn(),
+        coordinator,
+        rowHeight: 48,
+        scale: 1,
+        scaleWidth: 100,
+        startLeft: 0,
+      }));
+
+      act(() => {
+        fireEvent.pointerDown(clip, {
+          button: 0,
+          pointerId: 17,
+          clientX: 24,
+          clientY: 12,
+        });
+      });
+
+      act(() => {
+        fireEvent.pointerMove(window, {
+          pointerId: 17,
+          clientX: 124,
+          clientY: 32,
+        });
+      });
+
+      act(() => {
+        fireEvent.pointerUp(window, {
+          pointerId: 17,
+          clientX: 124,
+          clientY: 32,
+        });
+      });
+
+      expect(applyResolvedClipMove).toHaveBeenCalledWith(
+        'clip-1',
+        'V2',
+        'V2',
+        7,
+        false,
+        expect.any(String),
+      );
+      expect(moveClipToRow).not.toHaveBeenCalled();
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('keeps pointer preview and commit aligned with the planner when the hovered row is an incompatible kind', () => {
+    const applyResolvedClipMove = vi.fn();
+    const moveClipToRow = vi.fn();
+    const coordinator = makeCoordinator({
+      time: 12,
+      trackId: 'A1',
+      trackKind: 'audio',
+      trackName: 'A1',
+      plan: {
+        pointerTime: 12,
+        resolvedStart: 9,
+        targetTrackId: 'V2',
+        targetRowIndex: 1,
+        requestedRowIndex: 2,
+        requestedTrackId: 'A1',
+        trackKind: 'visual',
+        needsNewTrack: false,
+        newTrackPlacement: null,
+        snapThresholdS: 0.08,
+        snapped: true,
+        snapEdgeType: 'sibling-end',
+        pixelSnapThreshold: 8,
+        pixelsPerSecond: 100,
+        valid: true,
+        invalidReason: null,
+        rejectReason: null,
+      },
+      screenCoords: {
+        rowTop: 96,
+        rowLeft: 0,
+        rowWidth: 400,
+        rowHeight: 48,
+        clipLeft: 320,
+        clipWidth: 120,
+        ghostCenter: 320,
+      },
+    });
+    const { clip, wrapper, cleanup } = setupDom();
+    const timelineWrapperRef = { current: wrapper };
+    const dataRef = { current: makeMixedKindData() };
+
+    try {
+      renderHook(() => useClipDrag({
+        timelineWrapperRef,
+        dataRef,
+        deviceClass: 'desktop',
+        interactionMode: 'select',
+        gestureOwner: 'none',
+        setGestureOwner: vi.fn(),
+        setInputModalityFromPointerType: vi.fn(() => 'mouse'),
+        applyResolvedClipMove,
+        moveClipToRow,
+        createTrackAndMoveClip: vi.fn(),
+        selectClip: vi.fn(),
+        selectClips: vi.fn(),
+        selectedClipIdsRef: { current: new Set<string>() },
+        additiveSelectionRef: { current: false },
+        applyEdit: vi.fn(),
+        coordinator,
+        rowHeight: 48,
+        scale: 1,
+        scaleWidth: 100,
+        startLeft: 0,
+      }));
+
+      act(() => {
+        fireEvent.pointerDown(clip, {
+          button: 0,
+          pointerId: 19,
+          clientX: 24,
+          clientY: 12,
+        });
+      });
+
+      act(() => {
+        fireEvent.pointerMove(window, {
+          pointerId: 19,
+          clientX: 124,
+          clientY: 108,
+        });
+      });
+
+      expect(coordinator.lastPosition?.trackId).toBe('A1');
+      expect(coordinator.lastPlan?.requestedTrackId).toBe('A1');
+      expect(coordinator.lastPlan?.targetTrackId).toBe('V2');
+      expect(coordinator.lastPlan?.resolvedStart).toBe(9);
+
+      act(() => {
+        fireEvent.pointerUp(window, {
+          pointerId: 19,
+          clientX: 124,
+          clientY: 108,
+        });
+      });
+
+      expect(applyResolvedClipMove).toHaveBeenCalledWith(
+        'clip-1',
+        'V2',
+        'V2',
+        9,
+        false,
+        expect.any(String),
+      );
+      expect(moveClipToRow).not.toHaveBeenCalled();
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('falls back to moveClipToRow when no cached plan is available on pointer-up', () => {
+    const applyResolvedClipMove = vi.fn();
+    const moveClipToRow = vi.fn();
+    const coordinator = makeCoordinator({
+      time: 3,
+      trackId: 'V2',
+      trackName: 'V2',
+      plan: undefined,
+      screenCoords: {
+        rowTop: 48,
+        rowLeft: 0,
+        rowWidth: 400,
+        rowHeight: 48,
+        clipLeft: 300,
+        clipWidth: 120,
+        ghostCenter: 300,
+      },
+    });
+    const { clip, wrapper, cleanup } = setupDom();
+    const timelineWrapperRef = { current: wrapper };
+    const dataRef = { current: makeData() };
+
+    try {
+      renderHook(() => useClipDrag({
+        timelineWrapperRef,
+        dataRef,
+        deviceClass: 'desktop',
+        interactionMode: 'select',
+        gestureOwner: 'none',
+        setGestureOwner: vi.fn(),
+        setInputModalityFromPointerType: vi.fn(() => 'mouse'),
+        applyResolvedClipMove,
+        moveClipToRow,
+        createTrackAndMoveClip: vi.fn(),
+        selectClip: vi.fn(),
+        selectClips: vi.fn(),
+        selectedClipIdsRef: { current: new Set<string>() },
+        additiveSelectionRef: { current: false },
+        applyEdit: vi.fn(),
+        coordinator,
+        rowHeight: 48,
+        scale: 1,
+        scaleWidth: 100,
+        startLeft: 0,
+      }));
+
+      act(() => {
+        fireEvent.pointerDown(clip, {
+          button: 0,
+          pointerId: 18,
+          clientX: 24,
+          clientY: 12,
+        });
+      });
+
+      act(() => {
+        fireEvent.pointerMove(window, {
+          pointerId: 18,
+          clientX: 124,
+          clientY: 32,
+        });
+      });
+
+      act(() => {
+        fireEvent.pointerUp(window, {
+          pointerId: 18,
+          clientX: 124,
+          clientY: 32,
+        });
+      });
+
+      expect(applyResolvedClipMove).not.toHaveBeenCalled();
+      expect(moveClipToRow).toHaveBeenCalledWith('clip-1', 'V2', 3, expect.any(String), 0.08);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('commits a ~1590s ADOS-shaped clip using exact cached plan start and track', () => {
+    // When the coordinator returns a plan for a ~1590s panel video clip,
+    // pointer-up must commit exactly the plan's resolvedStart and targetTrackId,
+    // never recomputing snap/collision independently.
+    const applyResolvedClipMove = vi.fn();
+    const moveClipToRow = vi.fn();
+    const coordinator = makeCoordinator({
+      time: 1585,
+      trackId: 'video_main',
+      trackName: 'Video Main',
+      plan: {
+        pointerTime: 1585,
+        resolvedStart: 1575,
+        targetTrackId: 'video_main',
+        targetRowIndex: 0,
+        requestedRowIndex: 0,
+        requestedTrackId: 'video_main',
+        trackKind: 'visual',
+        needsNewTrack: false,
+        newTrackPlacement: null,
+        snapThresholdS: 1,
+        snapped: true,
+        snapEdgeType: 'sibling-end',
+        pixelSnapThreshold: 100,
+        pixelsPerSecond: 100,
+        valid: true,
+        invalidReason: null,
+        rejectReason: null,
+      },
+      screenCoords: {
+        rowTop: 0,
+        rowLeft: 0,
+        rowWidth: 400,
+        rowHeight: 48,
+        clipLeft: 200,
+        clipWidth: 800,
+        ghostCenter: 200,
+      },
+    });
+    const { clip, wrapper, cleanup } = setupDom();
+    const timelineWrapperRef = { current: wrapper };
+    const dataRef = { current: makeData() };
+
+    try {
+      renderHook(() => useClipDrag({
+        timelineWrapperRef,
+        dataRef,
+        deviceClass: 'desktop',
+        interactionMode: 'select',
+        gestureOwner: 'none',
+        setGestureOwner: vi.fn(),
+        setInputModalityFromPointerType: vi.fn(() => 'mouse'),
+        applyResolvedClipMove,
+        moveClipToRow,
+        createTrackAndMoveClip: vi.fn(),
+        selectClip: vi.fn(),
+        selectClips: vi.fn(),
+        selectedClipIdsRef: { current: new Set<string>() },
+        additiveSelectionRef: { current: false },
+        applyEdit: vi.fn(),
+        coordinator,
+        rowHeight: 48,
+        scale: 1,
+        scaleWidth: 100,
+        startLeft: 0,
+      }));
+
+      act(() => {
+        fireEvent.pointerDown(clip, {
+          button: 0,
+          pointerId: 20,
+          clientX: 24,
+          clientY: 12,
+        });
+      });
+
+      act(() => {
+        fireEvent.pointerMove(window, {
+          pointerId: 20,
+          clientX: 200,
+          clientY: 12,
+        });
+      });
+
+      act(() => {
+        fireEvent.pointerUp(window, {
+          pointerId: 20,
+          clientX: 200,
+          clientY: 12,
+        });
+      });
+
+      // Commit MUST use the plan's resolvedStart (1575), not the position.time (1585).
+      expect(applyResolvedClipMove).toHaveBeenCalledWith(
+        'clip-1',
+        'video_main',   // plan.targetTrackId
+        'video_main',   // plan.targetTrackId (same for same-track commit)
+        1575,           // plan.resolvedStart, NOT coordinator.lastPosition.time
+        false,          // needsNewTrack
+        expect.any(String),
+      );
+      expect(moveClipToRow).not.toHaveBeenCalled();
     } finally {
       cleanup();
     }

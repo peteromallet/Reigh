@@ -185,6 +185,7 @@ export function planMultiDragMoves(
   anchorTargetRowId: string,
   anchorSourceRowId: string,
   timeDelta: number,
+  snapThresholdS: number,
   groupDragEntry?: {
     groupKey: PinnedGroupKey;
     originStart: number;
@@ -263,6 +264,8 @@ export function planMultiDragMoves(
       anchorTargetRowId,
       groupStart,
       groupDuration,
+      undefined,
+      snapThresholdS,
     );
     const effectiveGroupStart = snapResult.snapped ? snapResult.time : groupStart;
 

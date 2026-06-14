@@ -166,6 +166,7 @@ export interface TimelineEditorOpsContextValue {
   handleRemoveTrack: TimelineTrackManagementHook['handleRemoveTrack'];
   moveSelectedClipToTrack: TimelineTrackManagementHook['moveSelectedClipToTrack'];
   moveSelectedClipsToTrack: TimelineTrackManagementHook['moveSelectedClipsToTrack'];
+  applyResolvedClipMove: TimelineTrackManagementHook['applyResolvedClipMove'];
   moveClipToRow: TimelineTrackManagementHook['moveClipToRow'];
   createTrackAndMoveClip: TimelineTrackManagementHook['createTrackAndMoveClip'];
   uploadFiles: TimelineUploadFiles;

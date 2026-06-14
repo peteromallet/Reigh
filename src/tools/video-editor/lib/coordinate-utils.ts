@@ -167,6 +167,18 @@ export const findNearestFreeTrack = (
   return null;
 };
 
+/**
+ * Try to snap a clip's start time to a sibling edge on the same track when
+ * the proposed [time, time+duration) range overlaps an existing clip.
+ *
+ * **Drag callers MUST pass an explicit `thresholdS`** derived from a pixel
+ * snap threshold and the current zoom (`pixelSnapThreshold / pixelsPerSecond`).
+ * When `thresholdS` is omitted the function falls back to `duration` as the
+ * snap threshold — this non-drag fallback is preserved for backward
+ * compatibility with callers that were written before the planner migration,
+ * but it is the root-cause mechanism for the long-clip preview/commit
+ * divergence bug.  Drag code paths must never rely on the duration fallback.
+ */
 export const trySnapToEdge = (
   rows: { id: string; actions: { start: number; end: number; id: string }[] }[],
   trackId: string,

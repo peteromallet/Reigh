@@ -195,6 +195,7 @@ describe('useExternalDrop', () => {
       showSecondaryGhosts: vi.fn(),
       end: vi.fn(),
       lastPosition: null,
+      lastPlan: null,
       editAreaRef: { current: null },
     };
 
@@ -305,6 +306,7 @@ describe('useExternalDrop', () => {
           ghostCenter: 0,
         },
       },
+      lastPlan: null,
       editAreaRef: { current: null },
     };
 
@@ -451,6 +453,7 @@ describe('useExternalDrop', () => {
           ghostCenter: 0,
         },
       },
+      lastPlan: null,
       editAreaRef: { current: null },
     };
 
@@ -566,6 +569,7 @@ describe('useExternalDrop', () => {
           ghostCenter: 0,
         },
       },
+      lastPlan: null,
       editAreaRef: { current: null },
     };
 
@@ -700,6 +704,7 @@ describe('useExternalDrop', () => {
           ghostCenter: 0,
         },
       },
+      lastPlan: null,
       editAreaRef: { current: null },
     };
 
@@ -840,6 +845,7 @@ describe('useExternalDrop', () => {
           ghostCenter: 0,
         },
       },
+      lastPlan: null,
       editAreaRef: { current: null },
     };
 
@@ -953,6 +959,7 @@ describe('useExternalDrop', () => {
           ghostCenter: 0,
         },
       },
+      lastPlan: null,
       editAreaRef: { current: null },
     };
 
@@ -1053,6 +1060,7 @@ describe('useExternalDrop', () => {
           ghostCenter: 0,
         },
       },
+      lastPlan: null,
       editAreaRef: { current: null },
     };
 

@@ -8,6 +8,7 @@ import {
   computeDropPosition,
   type DropPosition,
 } from '@/tools/video-editor/lib/drop-position.ts';
+import type { ClipDragPlan } from '@/tools/video-editor/lib/clip-drag-planner.ts';
 import type { GhostRect } from '@/tools/video-editor/lib/multi-drag-utils.ts';
 import { RafLoopDetector } from '@/tools/video-editor/lib/perf-diagnostics.ts';
 import type { TimelineData } from '@/tools/video-editor/lib/timeline-data.ts';
@@ -26,6 +27,7 @@ export interface DragCoordinator {
   showSecondaryGhosts(ghosts: GhostRect[]): void;
   end(): void;
   lastPosition: DropPosition | null;
+  lastPlan: ClipDragPlan | null;
   editAreaRef: MutableRefObject<HTMLElement | null>;
 }
 
@@ -64,12 +66,16 @@ const buildFallbackPosition = (rowHeight: number, sourceKind: TrackKind | null):
 });
 
 const toIndicatorPosition = (position: DropPosition): DropIndicatorPosition => {
+  // The time label is anchored to the plan's resolvedStart, which is the
+  // canonical snapped time shared between preview and pointer-up commit.
   const timeLabel = `${position.time.toFixed(1)}s`;
   return {
     rowTop: position.screenCoords.rowTop,
     rowHeight: position.screenCoords.rowHeight,
     rowLeft: position.screenCoords.rowLeft,
     rowWidth: position.screenCoords.rowWidth,
+    // Line/label anchors to the planned start (trueLeft) so the time label stays
+    // accurate even when the ghost rectangle is clipped offscreen.
     lineLeft: position.screenCoords.ghostCenter,
     ghostLeft: position.screenCoords.clipLeft,
     ghostTop: position.screenCoords.rowTop + 2,
@@ -82,6 +88,10 @@ const toIndicatorPosition = (position: DropPosition): DropIndicatorPosition => {
     trackId: position.trackId,
     newTrackKind: position.newTrackKind,
     reject: position.isReject,
+    // Propagate the shared plan so the DropIndicator can derive its visual
+    // affordances (reject state, ghost anchor, etc.) from the same canonical
+    // source used by the pointer-up commit path.
+    plan: position.plan,
   };
 };
 
@@ -95,6 +105,7 @@ export function useDragCoordinator({
   const indicatorRef = useRef<DropIndicatorHandle | null>(null);
   const editAreaRef = useRef<HTMLElement | null>(null);
   const lastPositionRef = useRef<DropPosition | null>(null);
+  const lastPlanRef = useRef<ClipDragPlan | null>(null);
   const pendingIndicatorRef = useRef<DropIndicatorPosition | null>(null);
   const frameRef = useRef<number | null>(null);
 
@@ -116,6 +127,7 @@ export function useDragCoordinator({
 
     pendingIndicatorRef.current = null;
     lastPositionRef.current = null;
+    lastPlanRef.current = null;
     indicatorRef.current?.hide();
   }, []);
 
@@ -131,6 +143,7 @@ export function useDragCoordinator({
     if (!wrapper) {
       const fallback = lastPositionRef.current ?? buildFallbackPosition(rowHeight, params.sourceKind);
       lastPositionRef.current = fallback;
+      lastPlanRef.current = fallback.plan ?? lastPlanRef.current ?? null;
       return fallback;
     }
 
@@ -150,6 +163,7 @@ export function useDragCoordinator({
     });
 
     lastPositionRef.current = nextPosition;
+    lastPlanRef.current = nextPosition.plan ?? null;
     pendingIndicatorRef.current = toIndicatorPosition(nextPosition);
 
     if (frameRef.current === null) {
@@ -177,6 +191,9 @@ export function useDragCoordinator({
     editAreaRef,
     get lastPosition() {
       return lastPositionRef.current;
+    },
+    get lastPlan() {
+      return lastPlanRef.current;
     },
   }), [editAreaRef, end, showSecondaryGhosts, update]);
 
