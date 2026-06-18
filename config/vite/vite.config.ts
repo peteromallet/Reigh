@@ -36,7 +36,7 @@ export default defineConfig(() => {
   );
   const timelineSchemaPath = path.resolve(
     __dirname,
-    "../../node_modules/@banodoco/timeline-schema/dist/index.js",
+    "../../node_modules/@banodoco/timeline-schema/typescript/dist/src/index.js",
   );
   const timelineSchemaFallbackPath = path.resolve(
     __dirname,
