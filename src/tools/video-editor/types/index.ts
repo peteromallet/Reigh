@@ -64,7 +64,7 @@ export type TrackBlendMode =
 // call sites that still narrow against the legacy four. Effect-id / theme-id
 // validation against a registry is Sprint 5; the editor's placeholder fallback
 // for unknown clipTypes is Sprint 3.
-export const BUILTIN_CLIP_TYPES = ['media', 'hold', 'text', 'effect-layer'] as const;
+export const BUILTIN_CLIP_TYPES = ['media', 'hold', 'text', 'effect-layer', 'automation'] as const;
 export type BuiltinClipType = (typeof BUILTIN_CLIP_TYPES)[number];
 export type ClipType = string;
 

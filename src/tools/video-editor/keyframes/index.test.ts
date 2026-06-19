@@ -6,6 +6,9 @@
  * - ParameterDefinition validation diagnostics for all types
  * - resolveAnimatedParams() with empty curves, clamping, duplicate times,
  *   stepped values, colors, JSON values, and invalid types
+ * - Automation recorder: quantization, tolerance downsampling, hold
+ *   semantics, non-serializable rejection, schema-invalid rejection,
+ *   canary tests proving dense samples are summarized
  * - Edge cases: NaN times, infinite times, unsorted arrays, null values
  */
 
@@ -17,10 +20,15 @@ import {
   validateKeyframeValue,
   validateKeyframes,
   resolveAnimatedParams,
+  quantizeValue,
+  recordAutomation,
 } from './index';
 import type {
   KeyframeValidationDiagnostic,
   InterpolatedParam,
+  SamplePoint,
+  AutomationRecorderOptions,
+  AutomationRecorderResult,
 } from './index';
 import type {
   ClipKeyframe,
@@ -912,5 +920,840 @@ describe('keyframe determinism', () => {
     for (const r of results) {
       expect(r).toEqual(first);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Automation recorder: quantizeValue
+// ---------------------------------------------------------------------------
+
+describe('quantizeValue', () => {
+  it('rounds to nearest step (down)', () => {
+    expect(quantizeValue(0.123, 0.01)).toBe(0.12);
+  });
+
+  it('rounds to nearest step (up)', () => {
+    expect(quantizeValue(0.126, 0.01)).toBe(0.13);
+  });
+
+  it('rounds to nearest step (exact midpoint rounds up)', () => {
+    expect(quantizeValue(0.125, 0.01)).toBe(0.13);
+  });
+
+  it('handles step=1', () => {
+    expect(quantizeValue(3.4, 1)).toBe(3);
+    expect(quantizeValue(3.6, 1)).toBe(4);
+  });
+
+  it('handles step=0 (no quantization)', () => {
+    expect(quantizeValue(0.123456, 0)).toBe(0.123456);
+  });
+
+  it('handles negative step (no quantization)', () => {
+    expect(quantizeValue(0.123456, -1)).toBe(0.123456);
+  });
+
+  it('handles non-finite step (no quantization)', () => {
+    expect(quantizeValue(0.123456, Infinity)).toBe(0.123456);
+    expect(quantizeValue(0.123456, NaN)).toBe(0.123456);
+  });
+
+  it('handles negative values', () => {
+    expect(quantizeValue(-0.123, 0.01)).toBe(-0.12);
+    expect(quantizeValue(-0.126, 0.01)).toBe(-0.13);
+  });
+
+  it('handles zero value', () => {
+    expect(quantizeValue(0, 0.01)).toBe(0);
+  });
+
+  it('produces deterministic results', () => {
+    for (let i = 0; i < 100; i++) {
+      expect(quantizeValue(0.123456, 0.01)).toBe(0.12);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Automation recorder: recordAutomation
+// ---------------------------------------------------------------------------
+
+describe('recordAutomation', () => {
+  // ── Helper: create sample arrays ──────────────────────────────────────
+
+  function s(time: number, value: number | string | boolean): SamplePoint {
+    return { time, value };
+  }
+
+  function makeOpts(overrides?: Partial<AutomationRecorderOptions>): AutomationRecorderOptions {
+    return {
+      tolerance: 0,
+      quantizationStep: 0,
+      defaultInterpolation: 'linear',
+      ...overrides,
+    };
+  }
+
+  // ── Basic: empty / single sample ─────────────────────────────────────
+
+  it('returns empty keyframes for empty sample array', () => {
+    const result = recordAutomation([], makeNumberParam());
+    expect(result.keyframes).toEqual([]);
+    expect(result.diagnostics).toEqual([]);
+    expect(result.sampleCount).toBe(0);
+    expect(result.keyframeCount).toBe(0);
+  });
+
+  it('emits a single keyframe for a single sample', () => {
+    const result = recordAutomation([s(0, 0.5)], makeNumberParam());
+    expect(result.keyframes).toEqual([
+      { time: 0, value: 0.5, interpolation: 'linear' },
+    ]);
+    expect(result.diagnostics).toEqual([]);
+    expect(result.sampleCount).toBe(1);
+    expect(result.keyframeCount).toBe(1);
+  });
+
+  // ── Duplicate times ──────────────────────────────────────────────────
+
+  it('deduplicates samples with identical times (keeps first)', () => {
+    const samples = [s(0, 0), s(0, 0.5), s(0, 1)];
+    const result = recordAutomation(samples, makeNumberParam());
+    expect(result.keyframes).toEqual([
+      { time: 0, value: 0, interpolation: 'linear' },
+    ]);
+    expect(result.diagnostics.some((d) => d.code === 'automation-recorder/duplicate-sample-time')).toBe(true);
+    expect(result.sampleCount).toBe(3);
+    expect(result.keyframeCount).toBe(1);
+  });
+
+  // ── Sorting ──────────────────────────────────────────────────────────
+
+  it('sorts unsorted samples by time', () => {
+    const samples = [s(2, 2), s(0, 0), s(1, 1)];
+    const result = recordAutomation(samples, makeNumberParam());
+    expect(result.keyframes.map((k) => k.time)).toEqual([0, 1, 2]);
+    expect(result.keyframes.map((k) => k.value)).toEqual([0, 1, 2]);
+  });
+
+  // ── Quantization ─────────────────────────────────────────────────────
+
+  it('quantizes numeric values before emitting keyframes', () => {
+    const samples = [
+      s(0, 0.123),
+      s(0.5, 0.456),
+      s(1.0, 0.789),
+    ];
+    const result = recordAutomation(samples, makeNumberParam(), makeOpts({ quantizationStep: 0.1 }));
+    // 0.123 → 0.1, 0.456 → 0.5, 0.789 → 0.8
+    expect(result.keyframes.map((k) => k.value)).toEqual([0.1, 0.5, 0.8]);
+  });
+
+  it('quantization does not affect non-numeric values', () => {
+    const samples = [
+      s(0, '#ff0000'),
+      s(1, '#0000ff'),
+    ];
+    const result = recordAutomation(samples, makeColorParam(), makeOpts({ quantizationStep: 0.1 }));
+    expect(result.keyframes.map((k) => k.value)).toEqual(['#ff0000', '#0000ff']);
+  });
+
+  // ── Tolerance downsampling (numeric) ─────────────────────────────────
+
+  it('emits all samples when tolerance is 0', () => {
+    const samples = [s(0, 0.01), s(0.5, 0.02), s(1, 0.03)];
+    const result = recordAutomation(samples, makeNumberParam(), makeOpts({ tolerance: 0 }));
+    expect(result.keyframes).toHaveLength(3);
+  });
+
+  it('downsamples similar values within tolerance', () => {
+    const samples = [
+      s(0, 0),
+      s(0.5, 0.01),
+      s(1, 0.02),
+      s(1.5, 0.5),   // big jump
+      s(2, 0.51),
+      s(2.5, 0.52),
+    ];
+    const result = recordAutomation(samples, makeNumberParam(), makeOpts({ tolerance: 0.1 }));
+    // Only 0, 0.5 should be kept (0→0.01→0.02 all within 0.1 of 0)
+    // Then 0.5 starts a new run; 0.51, 0.52 within 0.1 of 0.5
+    expect(result.keyframes.map((k) => k.value)).toEqual([0, 0.5]);
+    expect(result.keyframes.map((k) => k.time)).toEqual([0, 1.5]);
+    expect(result.keyframeCount).toBe(2);
+    expect(result.sampleCount).toBe(6);
+  });
+
+  // ── CANARY: Dense samples are summarized ─────────────────────────────
+
+  it('CANARY: summarizes 100 dense samples into far fewer keyframes with tolerance', () => {
+    // Generate 100 samples that slowly ramp from 0 to 1 over 10 seconds
+    const denseSamples: SamplePoint[] = [];
+    for (let i = 0; i < 100; i++) {
+      const t = (i / 99) * 10; // 0..10 seconds
+      const v = i / 99; // 0..1
+      denseSamples.push(s(t, v));
+    }
+
+    const result = recordAutomation(
+      denseSamples,
+      makeNumberParam({ name: 'opacity', min: 0, max: 1 }),
+      makeOpts({ tolerance: 0.05, quantizationStep: 0.01 }),
+    );
+
+    // With tolerance 0.05 over range 1.0, we expect ~20 keyframes max
+    // (1.0 / 0.05 = 20 segments). Let's be generous and say < 40.
+    expect(result.keyframeCount).toBeLessThan(40);
+    // Should still have > 1 keyframe (we're not collapsing everything)
+    expect(result.keyframeCount).toBeGreaterThan(1);
+    // Every keyframe time should be in sorted order
+    for (let i = 1; i < result.keyframes.length; i++) {
+      expect(result.keyframes[i].time).toBeGreaterThan(result.keyframes[i - 1].time);
+    }
+    // All keyframe values should be quantized to 0.01 multiples
+    for (const kf of result.keyframes) {
+      const v = kf.value as number;
+      expect(Math.abs(v - Math.round(v * 100) / 100)).toBeLessThan(0.001);
+    }
+    // Sample count should be 100
+    expect(result.sampleCount).toBe(100);
+    // No errors
+    expect(result.diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+  });
+
+  it('CANARY: dense constant samples collapse to a single keyframe', () => {
+    // 50 samples all at the same value (noise within tolerance)
+    const denseSamples: SamplePoint[] = [];
+    for (let i = 0; i < 50; i++) {
+      const t = i * 0.1;
+      // Slight noise that stays within tolerance
+      const noise = (Math.sin(i * 1.7) * 0.001);
+      denseSamples.push(s(t, 0.5 + noise));
+    }
+
+    const result = recordAutomation(
+      denseSamples,
+      makeNumberParam({ name: 'opacity' }),
+      makeOpts({ tolerance: 0.01, quantizationStep: 0.001 }),
+    );
+
+    // All noise is within tolerance of 0.5, so should collapse to 1 keyframe
+    expect(result.keyframeCount).toBe(1);
+    expect(result.keyframes[0].value).toBe(0.5);
+    expect(result.sampleCount).toBe(50);
+  });
+
+  it('CANARY: step-function samples preserve hold semantics', () => {
+    // Simulate a boolean-like toggle: 10 samples at 0, then 10 samples at 1
+    const samples: SamplePoint[] = [];
+    for (let i = 0; i < 10; i++) {
+      samples.push(s(i * 0.1, 0));
+    }
+    for (let i = 10; i < 20; i++) {
+      samples.push(s(i * 0.1, 1));
+    }
+
+    const result = recordAutomation(
+      samples,
+      makeNumberParam({ name: 'enabled', min: 0, max: 1 }),
+      makeOpts({ tolerance: 0.01 }),
+    );
+
+    // After tolerance downsampling, should have 2 keyframes: (0, 0) and (1.0, 1)
+    expect(result.keyframeCount).toBe(2);
+    expect(result.keyframes[0]).toMatchObject({ time: 0, value: 0 });
+    expect(result.keyframes[1]).toMatchObject({ time: 1.0, value: 1 });
+    // The first keyframe should be 'hold' because of the jump
+    expect(result.keyframes[0].interpolation).toBe('hold');
+    expect(result.sampleCount).toBe(20);
+  });
+
+  // ── Hold semantics for non-numeric values ────────────────────────────
+
+  it('uses hold interpolation for boolean transitions', () => {
+    const samples = [
+      s(0, false),
+      s(1, true),
+    ];
+    const result = recordAutomation(samples, makeBooleanParam());
+    expect(result.keyframes).toHaveLength(2);
+    // The transition from false→true is non-numeric → hold
+    expect(result.keyframes[0].interpolation).toBe('hold');
+    expect(result.keyframes[1].interpolation).toBe('linear'); // last kf default
+  });
+
+  it('uses hold interpolation for string transitions', () => {
+    const samples = [
+      s(0, 'normal'),
+      s(1, 'multiply'),
+    ];
+    const result = recordAutomation(samples, makeSelectParam());
+    expect(result.keyframes).toHaveLength(2);
+    expect(result.keyframes[0].interpolation).toBe('hold');
+  });
+
+  it('uses hold interpolation for color transitions', () => {
+    const samples = [
+      s(0, '#ff0000'),
+      s(1, '#0000ff'),
+    ];
+    const result = recordAutomation(samples, makeColorParam());
+    expect(result.keyframes).toHaveLength(2);
+    expect(result.keyframes[0].interpolation).toBe('hold');
+  });
+
+  // ── Rejection: non-serializable values ───────────────────────────────
+
+  it('rejects function values', () => {
+    const samples = [
+      s(0, 0.5),
+      { time: 1, value: () => {} } as unknown as SamplePoint,
+      s(2, 1.0),
+    ];
+    const result = recordAutomation(samples, makeNumberParam());
+    expect(result.diagnostics.some((d) => d.code === 'automation-recorder/non-serializable-value')).toBe(true);
+    // The bad sample is skipped; we should get the 2 good ones
+    expect(result.keyframes).toHaveLength(2);
+    expect(result.keyframes.map((k) => k.time)).toEqual([0, 2]);
+  });
+
+  it('rejects symbol values', () => {
+    const samples = [
+      { time: 0, value: Symbol('test') } as unknown as SamplePoint,
+    ];
+    const result = recordAutomation(samples, makeNumberParam());
+    expect(result.diagnostics.some((d) => d.code === 'automation-recorder/non-serializable-value')).toBe(true);
+    expect(result.keyframes).toEqual([]);
+  });
+
+  it('rejects object values', () => {
+    const samples = [
+      { time: 0, value: { nested: true } } as unknown as SamplePoint,
+    ];
+    const result = recordAutomation(samples, makeNumberParam());
+    expect(result.diagnostics.some((d) => d.code === 'automation-recorder/non-serializable-value')).toBe(true);
+    expect(result.keyframes).toEqual([]);
+  });
+
+  it('rejects null values', () => {
+    const samples = [
+      { time: 0, value: null } as unknown as SamplePoint,
+    ];
+    const result = recordAutomation(samples, makeNumberParam());
+    // null is not serializable (isSerializable returns false for null)
+    expect(result.diagnostics.some((d) => d.code === 'automation-recorder/non-serializable-value')).toBe(true);
+    expect(result.keyframes).toEqual([]);
+  });
+
+  it('rejects undefined values', () => {
+    const samples = [
+      { time: 0, value: undefined } as unknown as SamplePoint,
+    ];
+    const result = recordAutomation(samples, makeNumberParam());
+    expect(result.diagnostics.some((d) => d.code === 'automation-recorder/non-serializable-value')).toBe(true);
+    expect(result.keyframes).toEqual([]);
+  });
+
+  // ── Rejection: schema-invalid values ─────────────────────────────────
+
+  it('rejects NaN number for number parameter', () => {
+    const samples = [
+      s(0, NaN),
+    ];
+    const result = recordAutomation(samples, makeNumberParam());
+    expect(result.diagnostics.some((d) => d.severity === 'error')).toBe(true);
+    expect(result.keyframes).toEqual([]);
+  });
+
+  it('rejects string value for number parameter', () => {
+    const samples = [
+      s(0, 'not-a-number' as unknown as number),
+    ];
+    const result = recordAutomation(samples, makeNumberParam());
+    expect(result.diagnostics.some((d) => d.severity === 'error')).toBe(true);
+    expect(result.keyframes).toEqual([]);
+  });
+
+  it('rejects number value for boolean parameter', () => {
+    const samples = [
+      s(0, 1 as unknown as boolean),
+    ];
+    const result = recordAutomation(samples, makeBooleanParam());
+    expect(result.diagnostics.some((d) => d.severity === 'error')).toBe(true);
+    expect(result.keyframes).toEqual([]);
+  });
+
+  it('rejects invalid hex color', () => {
+    const samples = [
+      s(0, 'not-a-color'),
+    ];
+    const result = recordAutomation(samples, makeColorParam());
+    expect(result.diagnostics.some((d) => d.severity === 'error')).toBe(true);
+    expect(result.keyframes).toEqual([]);
+  });
+
+  // ── Rejection: invalid times ─────────────────────────────────────────
+
+  it('rejects samples with NaN time', () => {
+    const samples = [
+      { time: NaN, value: 0.5 } as SamplePoint,
+    ];
+    const result = recordAutomation(samples, makeNumberParam());
+    expect(result.diagnostics.some((d) => d.code === 'automation-recorder/invalid-time')).toBe(true);
+    expect(result.keyframes).toEqual([]);
+  });
+
+  it('rejects samples with infinite time', () => {
+    const samples = [
+      { time: Infinity, value: 0.5 } as SamplePoint,
+    ];
+    const result = recordAutomation(samples, makeNumberParam());
+    expect(result.diagnostics.some((d) => d.code === 'automation-recorder/invalid-time')).toBe(true);
+    expect(result.keyframes).toEqual([]);
+  });
+
+  it('filters bad samples and continues with good ones', () => {
+    const samples = [
+      { time: NaN, value: 0.5 } as SamplePoint,
+      s(0, 0),
+      { time: Infinity, value: 1 } as SamplePoint,
+      s(1, 1),
+      s(2, 'bad' as unknown as number),
+      s(3, 0.5),
+    ];
+    const result = recordAutomation(samples, makeNumberParam());
+    // Should skip the 3 bad samples, keep 3 good ones
+    expect(result.diagnostics.filter((d) => d.severity === 'error')).toHaveLength(3);
+    expect(result.keyframes).toHaveLength(3);
+    expect(result.keyframes.map((k) => k.time)).toEqual([0, 1, 3]);
+    expect(result.sampleCount).toBe(6);
+  });
+
+  // ── Warnings (not rejections) ────────────────────────────────────────
+
+  it('collects warnings for values outside min/max range', () => {
+    const samples = [
+      s(0, -0.5),  // below min 0
+      s(1, 1.5),   // above max 1
+    ];
+    const result = recordAutomation(
+      samples,
+      makeNumberParam({ name: 'opacity', min: 0, max: 1 }),
+    );
+    // Should still produce keyframes (warnings, not errors)
+    expect(result.keyframes).toHaveLength(2);
+    expect(result.diagnostics.filter((d) => d.severity === 'warning')).toHaveLength(2);
+    expect(result.diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+  });
+
+  // ── Default interpolation override ───────────────────────────────────
+
+  it('respects defaultInterpolation option', () => {
+    const samples = [s(0, 0), s(1, 0.5), s(2, 1)];
+    const result = recordAutomation(
+      samples,
+      makeNumberParam(),
+      makeOpts({ defaultInterpolation: 'hold', tolerance: 0.1 }),
+    );
+    // First and last keyframes get the default. Middle transitions
+    // from first→second (small jump) stays hold because of the default.
+    expect(result.keyframes[0].interpolation).toBe('hold');
+    expect(result.keyframes[result.keyframes.length - 1].interpolation).toBe('hold');
+  });
+
+  // ── Determinism ─────────────────────────────────────────────────────
+
+  it('produces deterministic keyframes for identical sample streams', () => {
+    const samples: SamplePoint[] = [];
+    for (let i = 0; i < 50; i++) {
+      samples.push(s(i * 0.2, Math.sin(i * 0.3) * 0.5 + 0.5));
+    }
+
+    const opts = makeOpts({ tolerance: 0.05, quantizationStep: 0.01 });
+    const r1 = recordAutomation(samples, makeNumberParam(), opts);
+    const r2 = recordAutomation(samples, makeNumberParam(), opts);
+    const r3 = recordAutomation(samples, makeNumberParam(), opts);
+
+    expect(r1.keyframes).toEqual(r2.keyframes);
+    expect(r2.keyframes).toEqual(r3.keyframes);
+    expect(r1.diagnostics).toEqual(r2.diagnostics);
+    expect(r1.keyframeCount).toBe(r2.keyframeCount);
+  });
+
+  // ── Mixed types in sample stream ─────────────────────────────────────
+
+  it('handles mixed precision samples with quantization+downsampling', () => {
+    // Samples with varying precision should produce consistent quantized keyframes
+    const samples = [
+      s(0, 0.123456),
+      s(0.5, 0.123457),   // close enough to be same after quantization
+      s(1.0, 0.5),
+      s(1.5, 0.500001),   // close to 0.5 after quantization
+      s(2.0, 1.0),
+    ];
+    const result = recordAutomation(
+      samples,
+      makeNumberParam(),
+      makeOpts({ tolerance: 0.01, quantizationStep: 0.01 }),
+    );
+    // After quantization to 0.01: 0.12, 0.12, 0.5, 0.5, 1.0
+    // After tolerance 0.01: 0.12 (kept), 0.12 (skip), 0.5 (kept), 0.5 (skip), 1.0 (kept)
+    expect(result.keyframes.map((k) => k.value)).toEqual([0.12, 0.5, 1.0]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M9 T13: applyAutomationOverrides
+// ---------------------------------------------------------------------------
+
+import {
+  applyAutomationOverrides,
+  type AutomationClipShape,
+} from './index';
+
+describe('applyAutomationOverrides', () => {
+  function makeAutomationClip(overrides: {
+    contributionId?: string;
+    parameterPath?: string;
+    keyframes?: Array<{ time: number; value: number | string | boolean; interpolation?: string }>;
+    enabled?: boolean;
+  } = {}): AutomationClipShape {
+    return {
+      clipType: 'automation',
+      params: {
+        target: {
+          contributionId: overrides.contributionId ?? 'ext-glow',
+          parameterPath: overrides.parameterPath ?? 'intensity',
+        },
+        keyframes: (overrides.keyframes ?? [
+          { time: 0, value: 0, interpolation: 'linear' },
+          { time: 1, value: 1, interpolation: 'linear' },
+        ]) as unknown as Record<string, unknown>[],
+        enabled: overrides.enabled ?? true,
+      },
+    } as AutomationClipShape;
+  }
+
+  it('overrides a top-level parameter from a matching automation clip', () => {
+    const automationClips = [
+      makeAutomationClip({
+        keyframes: [
+          { time: 0, value: 0, interpolation: 'linear' },
+          { time: 2, value: 100, interpolation: 'linear' },
+        ],
+      }),
+    ];
+
+    const result = applyAutomationOverrides(
+      automationClips,
+      'ext-glow',
+      { intensity: 50 },
+      1, // t=1s → halfway between 0 and 100 → 50
+    );
+
+    expect(result.intensity).toBe(50);
+  });
+
+  it('returns original params when no automation clips match the target clipTypeId', () => {
+    const automationClips = [
+      makeAutomationClip({ contributionId: 'ext-other' }),
+    ];
+
+    const result = applyAutomationOverrides(
+      automationClips,
+      'ext-glow',
+      { intensity: 42 },
+      0.5,
+    );
+
+    expect(result).toEqual({ intensity: 42 });
+  });
+
+  it('returns original params when automation clips array is empty', () => {
+    const result = applyAutomationOverrides(
+      [],
+      'ext-glow',
+      { intensity: 42 },
+      0.5,
+    );
+
+    expect(result).toEqual({ intensity: 42 });
+  });
+
+  it('ignores disabled automation clips', () => {
+    const automationClips = [
+      makeAutomationClip({ enabled: false }),
+    ];
+
+    const result = applyAutomationOverrides(
+      automationClips,
+      'ext-glow',
+      { intensity: 99 },
+      0.5,
+    );
+
+    expect(result).toEqual({ intensity: 99 });
+  });
+
+  it('applies hold interpolation for non-numeric values', () => {
+    const automationClips = [
+      makeAutomationClip({
+        keyframes: [
+          { time: 0, value: 'low', interpolation: 'hold' },
+          { time: 1, value: 'high', interpolation: 'hold' },
+        ],
+        parameterPath: 'mode',
+      }),
+    ];
+
+    // t=0.5: still in the first hold segment → 'low'
+    const result = applyAutomationOverrides(
+      automationClips,
+      'ext-glow',
+      { mode: 'default' },
+      0.5,
+    );
+
+    expect(result.mode).toBe('low');
+  });
+
+  it('switches to next hold value at exact keyframe time boundary', () => {
+    const automationClips = [
+      makeAutomationClip({
+        keyframes: [
+          { time: 0, value: 'low', interpolation: 'hold' },
+          { time: 1, value: 'high', interpolation: 'hold' },
+        ],
+        parameterPath: 'mode',
+      }),
+    ];
+
+    // t=1: exact boundary, at → returns last value (clamped at last)
+    const result = applyAutomationOverrides(
+      automationClips,
+      'ext-glow',
+      { mode: 'default' },
+      1,
+    );
+
+    expect(result.mode).toBe('high');
+  });
+
+  it('clamps before first keyframe to first keyframe value', () => {
+    const automationClips = [
+      makeAutomationClip({
+        keyframes: [
+          { time: 2, value: 100, interpolation: 'linear' },
+          { time: 4, value: 200, interpolation: 'linear' },
+        ],
+      }),
+    ];
+
+    const result = applyAutomationOverrides(
+      automationClips,
+      'ext-glow',
+      { intensity: 0 },
+      0, // before first keyframe
+    );
+
+    expect(result.intensity).toBe(100);
+  });
+
+  it('clamps after last keyframe to last keyframe value', () => {
+    const automationClips = [
+      makeAutomationClip({
+        keyframes: [
+          { time: 0, value: 0, interpolation: 'linear' },
+          { time: 2, value: 100, interpolation: 'linear' },
+        ],
+      }),
+    ];
+
+    const result = applyAutomationOverrides(
+      automationClips,
+      'ext-glow',
+      { intensity: 0 },
+      5, // after last keyframe
+    );
+
+    expect(result.intensity).toBe(100);
+  });
+
+  it('overrides a nested parameter path (dot-separated)', () => {
+    const automationClips = [
+      makeAutomationClip({
+        keyframes: [
+          { time: 0, value: 5, interpolation: 'linear' },
+          { time: 1, value: 15, interpolation: 'linear' },
+        ],
+        parameterPath: 'blur.radius',
+      }),
+    ];
+
+    const result = applyAutomationOverrides(
+      automationClips,
+      'ext-glow',
+      { blur: { radius: 0, enabled: true } },
+      0.5, // halfway → 10
+    );
+
+    expect(result.blur).toEqual({ radius: 10, enabled: true });
+  });
+
+  it('preserves non-overridden params while applying targeted overrides', () => {
+    const automationClips = [
+      makeAutomationClip({
+        keyframes: [
+          { time: 0, value: 0.5, interpolation: 'linear' },
+          { time: 1, value: 1.0, interpolation: 'linear' },
+        ],
+        parameterPath: 'opacity',
+      }),
+    ];
+
+    const result = applyAutomationOverrides(
+      automationClips,
+      'ext-glow',
+      { opacity: 0, color: '#ff0000', enabled: true },
+      0.5,
+    );
+
+    expect(result.opacity).toBe(0.75); // halfway between 0.5 and 1.0
+    expect(result.color).toBe('#ff0000');
+    expect(result.enabled).toBe(true);
+  });
+
+  it('later automation clip overrides earlier one for same target path (last-write-wins)', () => {
+    const automationClips = [
+      makeAutomationClip({
+        keyframes: [
+          { time: 0, value: 10, interpolation: 'linear' },
+        ],
+      }),
+      makeAutomationClip({
+        keyframes: [
+          { time: 0, value: 99, interpolation: 'linear' },
+        ],
+      }),
+    ];
+
+    const result = applyAutomationOverrides(
+      automationClips,
+      'ext-glow',
+      { intensity: 0 },
+      0,
+    );
+
+    // Second clip wins
+    expect(result.intensity).toBe(99);
+  });
+
+  it('ignores clips that are not automation type', () => {
+    const result = applyAutomationOverrides(
+      [
+        { clipType: 'media', params: {} },
+        { clipType: 'text', params: null },
+        { clipType: 'automation', params: { target: { contributionId: 'ext-glow', parameterPath: 'brightness' }, keyframes: [{ time: 0, value: 77, interpolation: 'hold' }], enabled: true } },
+      ],
+      'ext-glow',
+      { brightness: 0 },
+      0,
+    );
+
+    expect(result.brightness).toBe(77);
+  });
+
+  it('ignores automation clips with malformed params', () => {
+    const result = applyAutomationOverrides(
+      [
+        { clipType: 'automation', params: null },
+        { clipType: 'automation', params: {} },
+        { clipType: 'automation', params: { target: null, keyframes: [], enabled: true } },
+        { clipType: 'automation', params: { target: { contributionId: 'ext-glow' }, keyframes: [], enabled: true } }, // missing parameterPath
+        makeAutomationClip({
+          keyframes: [{ time: 0, value: 42, interpolation: 'linear' }],
+        }),
+      ],
+      'ext-glow',
+      { intensity: 0 },
+      0,
+    );
+
+    expect(result.intensity).toBe(42);
+  });
+
+  it('returns original params unchanged when no valid overrides exist', () => {
+    const original = Object.freeze({ intensity: 50 });
+    const result = applyAutomationOverrides(
+      [
+        { clipType: 'automation', params: { target: { contributionId: 'other', parameterPath: 'intensity' }, keyframes: [{ time: 0, value: 99, interpolation: 'hold' }], enabled: true } },
+      ],
+      'ext-glow',
+      original as unknown as Record<string, unknown>,
+      0,
+    );
+
+    expect(result).toBe(original); // Same reference, no overrides applied
+  });
+
+  it('applies an automation clip with boolean values', () => {
+    const automationClips = [
+      makeAutomationClip({
+        keyframes: [
+          { time: 0, value: false, interpolation: 'hold' },
+          { time: 1, value: true, interpolation: 'hold' },
+        ],
+        parameterPath: 'active',
+      }),
+    ];
+
+    const result = applyAutomationOverrides(
+      automationClips,
+      'ext-glow',
+      { active: false },
+      1,
+    );
+
+    expect(result.active).toBe(true);
+  });
+
+  it('interpolates numeric values linearly between keyframes', () => {
+    const automationClips = [
+      makeAutomationClip({
+        keyframes: [
+          { time: 0, value: 0, interpolation: 'linear' },
+          { time: 1, value: 1, interpolation: 'linear' },
+        ],
+      }),
+    ];
+
+    const result = applyAutomationOverrides(
+      automationClips,
+      'ext-glow',
+      { intensity: -1 },
+      0.25, // quarter way → 0.25
+    );
+
+    expect(result.intensity).toBeCloseTo(0.25, 5);
+  });
+
+  it('creates nested objects when overriding a deeply nested path', () => {
+    const automationClips = [
+      makeAutomationClip({
+        keyframes: [
+          { time: 0, value: 34, interpolation: 'linear' },
+        ],
+        parameterPath: 'a.b.c',
+      }),
+    ];
+
+    const result = applyAutomationOverrides(
+      automationClips,
+      'ext-glow',
+      { other: 1 },
+      0,
+    );
+
+    expect(result).toEqual({ other: 1, a: { b: { c: 34 } } });
   });
 });
