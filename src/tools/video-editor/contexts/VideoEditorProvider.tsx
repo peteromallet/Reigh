@@ -33,8 +33,6 @@ import {
   type ContextMenuItemContribution,
   type ExtensionCommandService,
   createDiagnosticCollection,
-  type Diagnostic,
-  type ExtensionDiagnostic,
   type DiagnosticCollection,
 } from '@reigh/editor-sdk';
 import type { CreativeContext } from '@reigh/editor-sdk';
@@ -86,6 +84,10 @@ import { createCommandRegistry, type CommandRegistry } from '@/tools/video-edito
 import { useTimelineOpsFromStore } from '@/tools/video-editor/hooks/timelineStore.ts';
 import type { SaveStatus } from '@/tools/video-editor/hooks/useTimelinePersistence.ts';
 import type { ResolvedAssetRegistryEntry } from '@/tools/video-editor/types/index.ts';
+import {
+  removeExtensionDiagnosticsFromCollection,
+  syncExtensionDiagnosticsToCollection,
+} from '@/tools/video-editor/runtime/diagnosticCollectionSync.ts';
 
 const log = import.meta.env.DEV ? (...args: Parameters<typeof console.log>) => console.log(...args) : () => {};
 
@@ -162,6 +164,11 @@ function InnerProvider({
     sequenceComponentCatalog,
   );
   const { store, editor, chrome } = useTimelineState();
+  const diagnosticCollection = runtime.diagnosticCollection;
+  const activeExtensionIds = useMemo(
+    () => new Set(extensionRuntime.extensions.map((ext) => ext.manifest.id as string)),
+    [extensionRuntime.extensions],
+  );
   useEffect(() => {
     onSaveStatusChange?.(chrome.saveStatus);
   }, [chrome.saveStatus, onSaveStatusChange]);
@@ -269,7 +276,11 @@ function InnerProvider({
         return createExtensionContext(ext, liveCreativeOverrides, commandsService);
       },
     );
-  }, [lifecycleHostRef, extensionRuntime.extensions, liveCreativeOverrides, commandRegistryRef]);
+    syncExtensionDiagnosticsToCollection(diagnosticCollection, 'extension-lifecycle', [
+      ...extensionRuntime.diagnostics,
+      ...host.diagnostics,
+    ], { activeExtensionIds });
+  }, [activeExtensionIds, diagnosticCollection, lifecycleHostRef, extensionRuntime, liveCreativeOverrides, commandRegistryRef]);
   const [searchParams, setSearchParams] = useSearchParams();
   const pendingAddGenerationId = searchParams.get(ADD_GENERATION_QUERY_PARAM);
   const consumedAddGenerationRef = useRef<string | null>(null);
@@ -520,6 +531,7 @@ function InnerProvider({
           effectResources={effectResources.effects}
           lifecycleHostRef={lifecycleHostRef}
           commandRegistryRef={commandRegistryRef}
+          activeExtensionIds={activeExtensionIds}
         />
         <SequenceComponentCatalogProvider value={sequenceComponentResources}>
           <SequenceComponentRegistryProvider components={sequenceComponentResources.components}>
@@ -551,11 +563,13 @@ function VideoEditorEffectRegistryLifecycle({
   effectResources,
   lifecycleHostRef,
   commandRegistryRef,
+  activeExtensionIds,
 }: {
   effectsQueryData: Array<{ slug: string; code: string }> | undefined;
   effectResources: VideoEditorEffectCatalog['effects'];
   lifecycleHostRef: React.MutableRefObject<ExtensionLifecycleHost | null>;
   commandRegistryRef: React.MutableRefObject<CommandRegistry | null>;
+  activeExtensionIds: ReadonlySet<string>;
 }) {
   const { registry: effectRegistry, snapshot: effectRegistrySnapshot } = useEffectRegistryContext();
   const diagnosticCollection = useVideoEditorRuntime().diagnosticCollection;
@@ -575,37 +589,37 @@ function VideoEditorEffectRegistryLifecycle({
     const handle = host.onLifecycleDisposed((extensionId: string) => {
       commandRegistry?.unregisterAll(extensionId);
       effectRegistry.unregisterOwner(extensionId);
+      removeExtensionDiagnosticsFromCollection(diagnosticCollection, extensionId);
     });
     return () => handle.dispose();
-  }, [commandRegistryRef, effectRegistry, lifecycleHostRef]);
+  }, [commandRegistryRef, diagnosticCollection, effectRegistry, lifecycleHostRef]);
 
   useEffect(() => {
-    diagnosticCollection?.remove((diagnostic) => diagnostic.detail?.source === 'effect-registry');
-    effectRegistrySnapshot.diagnostics.forEach((diagnostic, index) => {
-      diagnosticCollection?.publish(effectRegistryDiagnostic(diagnostic, index));
-    });
-  }, [diagnosticCollection, effectRegistrySnapshot]);
+    syncExtensionDiagnosticsToCollection(
+      diagnosticCollection,
+      'effect-registry',
+      effectRegistrySnapshot.diagnostics,
+      { activeExtensionIds },
+    );
+  }, [activeExtensionIds, diagnosticCollection, effectRegistrySnapshot]);
+
+  useEffect(() => {
+    const registry = commandRegistryRef.current;
+    if (!registry) return;
+    const sync = () => {
+      syncExtensionDiagnosticsToCollection(
+        diagnosticCollection,
+        'command-registry',
+        registry.diagnostics,
+        { activeExtensionIds },
+      );
+    };
+    sync();
+    const handle = registry.subscribe(sync);
+    return () => handle.dispose();
+  }, [activeExtensionIds, commandRegistryRef, diagnosticCollection]);
 
   return null;
-}
-
-function effectRegistryDiagnostic(diagnostic: ExtensionDiagnostic, index: number): Diagnostic {
-  return {
-    id: [
-      'effect-registry',
-      diagnostic.code,
-      diagnostic.extensionId ?? 'host',
-      diagnostic.contributionId ?? 'registry',
-      index,
-    ].join(':'),
-    severity: diagnostic.severity,
-    code: diagnostic.code,
-    message: diagnostic.message,
-    ...(diagnostic.extensionId ? { extensionId: diagnostic.extensionId } : {}),
-    ...(diagnostic.contributionId ? { contributionId: diagnostic.contributionId } : {}),
-    ...(diagnostic.milestone ? { milestone: diagnostic.milestone } : {}),
-    detail: { ...(diagnostic.detail ?? {}), source: 'effect-registry' },
-  };
 }
 
 export interface VideoEditorProviderProps {

@@ -41,6 +41,11 @@ export type EffectRegistrySubscriber = (snapshot: EffectRegistrySnapshot) => voi
 
 export interface EffectRegistry {
   register(record: EffectRegistryRecord): DisposeHandle;
+  updateRecord(
+    effectId: string,
+    updater: (current: EffectRegistryRecord) => EffectRegistryRecord,
+    newDispose?: DisposeHandle['dispose'],
+  ): DisposeHandle;
   unregister(effectId: string): void;
   unregisterOwner(ownerExtensionId: string): void;
   resolve(effectId: string): EffectRegistryRecord | undefined;

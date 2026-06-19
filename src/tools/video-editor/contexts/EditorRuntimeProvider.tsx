@@ -44,8 +44,6 @@ import {
   type ContextMenuItemContribution,
   type ExtensionCommandService,
   createDiagnosticCollection,
-  type Diagnostic,
-  type ExtensionDiagnostic,
   type DiagnosticCollection,
 } from '@reigh/editor-sdk';
 import type { CreativeContext } from '@reigh/editor-sdk';
@@ -59,6 +57,10 @@ import type {
   VideoEditorTelemetryHost,
 } from '@/tools/video-editor/runtime/ports.ts';
 import { createCommandRegistry, type CommandRegistry } from '@/tools/video-editor/runtime/commandRegistry.ts';
+import {
+  removeExtensionDiagnosticsFromCollection,
+  syncExtensionDiagnosticsToCollection,
+} from '@/tools/video-editor/runtime/diagnosticCollectionSync.ts';
 
 export interface EditorRuntimeProviderProps {
   dataProvider: DataProvider;
@@ -104,6 +106,11 @@ function EditorRuntimeProviderInner({
   );
 
   const { store } = useTimelineState();
+  const diagnosticCollection = useVideoEditorRuntime().diagnosticCollection;
+  const activeExtensionIds = useMemo(
+    () => new Set(extensionRuntime.extensions.map((ext) => ext.manifest.id as string)),
+    [extensionRuntime.extensions],
+  );
 
   // ---- M3: live creative context for extensions --------------------------
   const timelineReader = useMemo(
@@ -185,7 +192,11 @@ function EditorRuntimeProviderInner({
         return createExtensionContext(ext, liveCreativeOverrides, commandsService);
       },
     );
-  }, [lifecycleHostRef, extensionRuntime.extensions, liveCreativeOverrides, commandRegistryRef]);
+    syncExtensionDiagnosticsToCollection(diagnosticCollection, 'extension-lifecycle', [
+      ...extensionRuntime.diagnostics,
+      ...host.diagnostics,
+    ], { activeExtensionIds });
+  }, [activeExtensionIds, diagnosticCollection, lifecycleHostRef, extensionRuntime, liveCreativeOverrides, commandRegistryRef]);
 
   // Sync proposalRuntime to the store so host-owned UI (ProposalPanel) can access it.
   useEffect(() => {
@@ -209,6 +220,7 @@ function EditorRuntimeProviderInner({
           effectResources={effectResources.effects}
           lifecycleHostRef={lifecycleHostRef}
           commandRegistryRef={commandRegistryRef}
+          activeExtensionIds={activeExtensionIds}
         />
         <SequenceComponentCatalogProvider value={sequenceComponentResources}>
           <SequenceComponentRegistryProvider components={sequenceComponentResources.components}>
@@ -227,11 +239,13 @@ function EditorRuntimeEffectRegistryLifecycle({
   effectResources,
   lifecycleHostRef,
   commandRegistryRef,
+  activeExtensionIds,
 }: {
   effectsQueryData: Array<{ slug: string; code: string }> | undefined;
   effectResources: VideoEditorEffectCatalog['effects'];
   lifecycleHostRef: React.MutableRefObject<ExtensionLifecycleHost | null>;
   commandRegistryRef: React.MutableRefObject<CommandRegistry | null>;
+  activeExtensionIds: ReadonlySet<string>;
 }) {
   const { registry: effectRegistry, snapshot: effectRegistrySnapshot } = useEffectRegistryContext();
   const diagnosticCollection = useVideoEditorRuntime().diagnosticCollection;
@@ -251,37 +265,37 @@ function EditorRuntimeEffectRegistryLifecycle({
     const handle = host.onLifecycleDisposed((extensionId: string) => {
       commandRegistry?.unregisterAll(extensionId);
       effectRegistry.unregisterOwner(extensionId);
+      removeExtensionDiagnosticsFromCollection(diagnosticCollection, extensionId);
     });
     return () => handle.dispose();
-  }, [commandRegistryRef, effectRegistry, lifecycleHostRef]);
+  }, [commandRegistryRef, diagnosticCollection, effectRegistry, lifecycleHostRef]);
 
   useEffect(() => {
-    diagnosticCollection?.remove((diagnostic) => diagnostic.detail?.source === 'effect-registry');
-    effectRegistrySnapshot.diagnostics.forEach((diagnostic, index) => {
-      diagnosticCollection?.publish(effectRegistryDiagnostic(diagnostic, index));
-    });
-  }, [diagnosticCollection, effectRegistrySnapshot]);
+    syncExtensionDiagnosticsToCollection(
+      diagnosticCollection,
+      'effect-registry',
+      effectRegistrySnapshot.diagnostics,
+      { activeExtensionIds },
+    );
+  }, [activeExtensionIds, diagnosticCollection, effectRegistrySnapshot]);
+
+  useEffect(() => {
+    const registry = commandRegistryRef.current;
+    if (!registry) return;
+    const sync = () => {
+      syncExtensionDiagnosticsToCollection(
+        diagnosticCollection,
+        'command-registry',
+        registry.diagnostics,
+        { activeExtensionIds },
+      );
+    };
+    sync();
+    const handle = registry.subscribe(sync);
+    return () => handle.dispose();
+  }, [activeExtensionIds, commandRegistryRef, diagnosticCollection]);
 
   return null;
-}
-
-function effectRegistryDiagnostic(diagnostic: ExtensionDiagnostic, index: number): Diagnostic {
-  return {
-    id: [
-      'effect-registry',
-      diagnostic.code,
-      diagnostic.extensionId ?? 'host',
-      diagnostic.contributionId ?? 'registry',
-      index,
-    ].join(':'),
-    severity: diagnostic.severity,
-    code: diagnostic.code,
-    message: diagnostic.message,
-    ...(diagnostic.extensionId ? { extensionId: diagnostic.extensionId } : {}),
-    ...(diagnostic.contributionId ? { contributionId: diagnostic.contributionId } : {}),
-    ...(diagnostic.milestone ? { milestone: diagnostic.milestone } : {}),
-    detail: { ...(diagnostic.detail ?? {}), source: 'effect-registry' },
-  };
 }
 
 export function EditorRuntimeProvider({

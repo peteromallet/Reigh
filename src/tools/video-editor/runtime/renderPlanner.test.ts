@@ -71,12 +71,10 @@ describe('planRender', () => {
 
     expect(result.canBrowserExport).toBe(false);
     expect(result.routes).toEqual([
-      {
-        route: 'browser-export',
-        blockerCount: 1,
-        findingCount: 1,
-        blocked: true,
-      },
+      { route: 'preview', blockerCount: 0, findingCount: 0, blocked: false },
+      { route: 'browser-export', blockerCount: 2, findingCount: 2, blocked: true },
+      { route: 'worker-export', blockerCount: 0, findingCount: 0, blocked: false },
+      { route: 'sidecar-export', blockerCount: 0, findingCount: 0, blocked: false },
     ]);
     expect(result.blockers[0]).toMatchObject({
       route: 'browser-export',
@@ -85,5 +83,97 @@ describe('planRender', () => {
       extensionId: 'ext.preview',
       contributionId: 'preview-only-contrib',
     });
+  });
+
+  it('maps registry capability statuses to findings and per-route blocker summaries without selecting a route', () => {
+    const result = planRender({
+      config: makeConfig('multi-route-effect'),
+      builtInKnownIds: {
+        clipTypes: new Set(['media']),
+        effectTypes: new Set(),
+        transitionTypes: new Set(),
+      },
+      inactiveKnownIds: {
+        effectIds: new Set(),
+        transitionIds: new Set(),
+        clipTypeIds: new Set(),
+      },
+      effectRegistrySnapshot: snapshotWith({
+        effectId: 'multi-route-effect',
+        contributionId: 'multi-route-contrib',
+        component: Effect,
+        provenance: 'trusted-loader',
+        ownerExtensionId: 'ext.routes',
+        status: 'active',
+        renderability: {
+          defaultRoute: 'preview',
+          determinism: 'unknown',
+          capabilities: [
+            { route: 'preview', status: 'supported', determinism: 'preview-only' },
+            { route: 'browser-export', status: 'supported', determinism: 'deterministic' },
+            {
+              route: 'worker-export',
+              status: 'unknown',
+              determinism: 'unknown',
+              message: 'Worker route has not been classified.',
+            },
+            {
+              route: 'sidecar-export',
+              status: 'blocked',
+              determinism: 'process-dependent',
+              blockerReason: 'process-dependent',
+              message: 'Sidecar route requires a process.',
+            },
+          ],
+          blockers: [
+            {
+              id: 'registry.sidecar.process',
+              severity: 'error',
+              route: 'sidecar-export',
+              reason: 'process-dependent',
+              message: 'Sidecar route requires a process.',
+            },
+          ],
+        },
+      }),
+    });
+
+    expect(result.canBrowserExport).toBe(true);
+    expect(result.routes).toEqual([
+      { route: 'preview', blockerCount: 0, findingCount: 0, blocked: false },
+      { route: 'browser-export', blockerCount: 0, findingCount: 0, blocked: false },
+      { route: 'worker-export', blockerCount: 0, findingCount: 1, blocked: false },
+      { route: 'sidecar-export', blockerCount: 2, findingCount: 1, blocked: true },
+    ]);
+    expect(result.findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'registry.effect.multi-route-effect.worker-export.unknown',
+        severity: 'warning',
+        route: 'worker-export',
+        reason: 'unknown',
+      }),
+      expect.objectContaining({
+        id: 'registry.effect.multi-route-effect.sidecar-export.process-dependent',
+        severity: 'error',
+        route: 'sidecar-export',
+        reason: 'process-dependent',
+      }),
+    ]));
+    expect(result.blockers).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'registry.effect.multi-route-effect.sidecar-export.process-dependent',
+        route: 'sidecar-export',
+        reason: 'process-dependent',
+        extensionId: 'ext.routes',
+        contributionId: 'multi-route-contrib',
+      }),
+      expect.objectContaining({
+        id: 'registry.sidecar.process',
+        route: 'sidecar-export',
+        reason: 'process-dependent',
+        extensionId: 'ext.routes',
+        contributionId: 'multi-route-contrib',
+      }),
+    ]));
   });
 });

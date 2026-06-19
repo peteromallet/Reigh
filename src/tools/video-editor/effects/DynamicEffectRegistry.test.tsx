@@ -22,6 +22,7 @@ import {
   entranceEffects,
   getEffectRegistry,
   replaceEffectRegistry,
+  wrapWithClipEffects,
   wrapWithEffect,
 } from '@/tools/video-editor/effects';
 import type { EffectComponentProps } from '@/tools/video-editor/effects/entrances';
@@ -34,7 +35,7 @@ import {
 import { validateAndCoerceParams } from '@/tools/video-editor/effects/validateParams';
 import { useEffectRegistry } from '@/tools/video-editor/hooks/useEffectRegistry';
 import type { EffectResource } from '@/tools/video-editor/hooks/useEffectResources';
-import type { ParameterSchema } from '@/tools/video-editor/types';
+import type { ParameterSchema, ResolvedTimelineClip } from '@/tools/video-editor/types';
 
 function BuiltInFade(_props: EffectComponentProps) {
   return <div data-testid="builtin-fade" />;
@@ -42,7 +43,7 @@ function BuiltInFade(_props: EffectComponentProps) {
 
 const EFFECT_CODE = 'export default function Effect(){ return <div data-testid="dynamic-effect" />; }';
 
-function makeResourceEffect(id: string, code: string): EffectResource {
+function makeResourceEffect(id: string, code: string, parameterSchema?: ParameterSchema): EffectResource {
   return {
     id,
     type: 'effect',
@@ -51,6 +52,7 @@ function makeResourceEffect(id: string, code: string): EffectResource {
     code,
     category: 'continuous',
     description: id,
+    ...(parameterSchema ? { parameterSchema } : {}),
     created_by: { is_you: true },
     is_public: false,
   };
@@ -379,6 +381,78 @@ describe('DynamicEffectRegistry', () => {
     });
     expect(replaceSpy).toHaveBeenCalledTimes(0);
     expect(getEffectRegistry().get('custom:resource-effect')).toBeUndefined();
+  });
+
+  it('resolves built-ins, normalized custom resources, schemas, and wrapping from provider snapshots', async () => {
+    let receivedProps: Omit<EffectComponentProps, 'children'> | null = null;
+    const schema: ParameterSchema = [
+      { name: 'amount', label: 'Amount', description: 'Effect amount', type: 'number', default: 4, min: 0, max: 10 },
+      { name: 'enabled', label: 'Enabled', description: 'Enable effect', type: 'boolean', default: true },
+    ];
+    vi.spyOn(compileEffectModule, 'compileEffect').mockImplementation((code: string) => {
+      return function ProviderCompiledEffect({ children, ...props }: EffectComponentProps) {
+        receivedProps = props;
+        return <div data-testid={`provider-${code}`}>{children}</div>;
+      };
+    });
+
+    const resourceEffects: EffectResource[] = [
+      makeResourceEffect('custom:provider-custom', 'provider-custom-code', schema),
+    ];
+
+    function ProviderSnapshotHost() {
+      const registry = useEffectRegistry(undefined, resourceEffects);
+      const snapshot = useEffectRegistrySnapshot();
+      const clip = {
+        id: 'clip-1',
+        continuous: {
+          type: 'custom:provider-custom',
+          params: { amount: 'bad', enabled: 'false' },
+          intensity: 0.8,
+        },
+      } as ResolvedTimelineClip;
+      const wrapped = wrapWithClipEffects(
+        <div data-testid="provider-child" />,
+        clip,
+        30,
+        30,
+        snapshot,
+      );
+      const customRecord = snapshot.get('provider-custom');
+      return (
+        <div data-testid="provider-snapshot-state">
+          <span data-testid="builtin-state">
+            {snapshot.get('fade')?.component === entranceEffects.fade ? 'builtin-found' : 'builtin-missing'}
+          </span>
+          <span data-testid="custom-state">
+            {customRecord?.schema === schema && registry.resolve('provider-custom') === customRecord
+              ? 'custom-found'
+              : 'custom-missing'}
+          </span>
+          {wrapped}
+        </div>
+      );
+    }
+
+    replaceEffectRegistry(new DynamicEffectRegistry({}));
+    render(
+      <EffectRegistryProvider>
+        <ProviderSnapshotHost />
+      </EffectRegistryProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('builtin-state').textContent).toBe('builtin-found');
+      expect(screen.getByTestId('custom-state').textContent).toBe('custom-found');
+      expect(screen.getByTestId('provider-provider-custom-code')).toContainElement(screen.getByTestId('provider-child'));
+    });
+    expect(receivedProps).toEqual({
+      durationInFrames: 30,
+      effectFrames: 30,
+      intensity: 0.8,
+      params: { amount: 4, enabled: true },
+    });
+    expect(getEffectRegistry().get('custom:provider-custom')).toBeUndefined();
   });
 
   it('isolates same effect IDs across provider registries without leaking components or singleton state', async () => {

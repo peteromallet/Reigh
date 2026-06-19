@@ -11,6 +11,7 @@ import {
   scanExportConfig,
 } from '@/tools/video-editor/runtime/exportGuard.ts';
 import { DataProviderContext } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+import { syncPlannerDiagnosticsToCollection } from '@/tools/video-editor/runtime/diagnosticCollectionSync.ts';
 import type { Diagnostic } from '@reigh/editor-sdk';
 
 export type RenderStatus = 'idle' | 'rendering' | 'done' | 'error';
@@ -184,6 +185,7 @@ export function useRenderState(
 
   const runExportGuard = useCallback((): boolean => {
     diagnosticCollection?.remove((diagnostic) => diagnostic.detail?.source === 'export-guard');
+    diagnosticCollection?.remove((diagnostic) => diagnostic.detail?.source === 'render-planner');
 
     // Skip guard work only when there is no active extension/provider registry input.
     if (isExtensionRuntimeEmpty(extensionRuntime) && effectRegistrySnapshot.records.length === 0) {
@@ -202,6 +204,7 @@ export function useRenderState(
     guardResult.diagnostics.forEach((diagnostic, index) => {
       diagnosticCollection?.publish(toCollectionDiagnostic(diagnostic, index));
     });
+    syncPlannerDiagnosticsToCollection(diagnosticCollection, guardResult.blockers ?? []);
 
     // Emit structured diagnostics as concise render log output
     const log = formatExportGuardLog(guardResult);

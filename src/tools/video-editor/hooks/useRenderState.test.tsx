@@ -13,6 +13,11 @@ import type {
   EffectRegistryRecord,
   EffectRegistrySnapshot,
 } from '@/tools/video-editor/effects/registry';
+import {
+  DataProviderContext,
+  type VideoEditorRuntimeContextValue,
+} from '@/tools/video-editor/contexts/DataProviderContext';
+import { createDiagnosticCollection } from '@reigh/editor-sdk';
 
 const mocks = vi.hoisted(() => ({
   startClientRender: vi.fn(),
@@ -728,6 +733,74 @@ describe('useRenderState export guard', () => {
       expect(log).toContain('[export/unknown-effect-type]');
       // Warning still shown
       expect(log).toContain('[export/unknown-transition-type]');
+    });
+
+    it('publishes export and planner diagnostics to the provider collection during guard execution', async () => {
+      const extRuntime = makeExtensionRuntime({
+        extensions: [
+          {
+            manifest: {
+              id: 'test-ext' as any,
+              version: '1.0.0',
+              contributions: [],
+            },
+          } as any,
+        ],
+      });
+      const collection = createDiagnosticCollection();
+      const runtimeValue = {
+        diagnosticCollection: collection,
+      } as unknown as VideoEditorRuntimeContextValue;
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <DataProviderContext.Provider value={runtimeValue}>
+          {children}
+        </DataProviderContext.Provider>
+      );
+
+      guardMocks.scanExportConfig.mockReturnValue({
+        ...cleanGuardResult(),
+        diagnostics: [
+          {
+            severity: 'error',
+            code: 'export/unknown-effect-type',
+            message: 'Continuous effect "hyperspace" is not recognised.',
+            detail: { clipId: 'c1', effectType: 'hyperspace' },
+          },
+        ],
+        blockers: [
+          {
+            id: 'export.effect.c1.continuous.hyperspace.missing',
+            severity: 'error',
+            route: 'browser-export',
+            reason: 'missing-contribution',
+            message: 'Continuous effect "hyperspace" is not recognised.',
+            clipId: 'c1',
+            detail: { effectType: 'hyperspace', slot: 'continuous' },
+          },
+        ],
+        hasBlockingErrors: true,
+      });
+
+      const { result } = renderHook(() => useRenderState(
+        buildConfig({
+          id: 'c1',
+          clipType: 'media',
+          track: 'V1',
+          at: 0,
+          hold: 1,
+        }),
+        null,
+        null,
+        extRuntime,
+      ), { wrapper });
+
+      await act(async () => {
+        await result.current.startRender();
+      });
+
+      const diagnostics = collection.getSnapshot();
+      expect(diagnostics.some((diagnostic) => diagnostic.detail?.source === 'export-guard')).toBe(true);
+      expect(diagnostics.some((diagnostic) => diagnostic.detail?.source === 'render-planner')).toBe(true);
     });
   });
 

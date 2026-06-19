@@ -125,6 +125,31 @@ describe('createEffectRegistry', () => {
     expect(registry.resolve('fx.fade')).toBeUndefined();
   });
 
+  it('updates existing records for HMR replacement without treating stale handles as current', () => {
+    const registry = createEffectRegistry();
+    const disposeA = vi.fn();
+    const disposeB = vi.fn();
+    const handleA = registry.register(record('fx.hmr', { dispose: disposeA }));
+    const handleB = registry.updateRecord('fx.hmr', (current) => ({
+      ...current,
+      component: ReplacementComponent,
+      contributionId: 'fx.hmr.replacement',
+    }), disposeB);
+
+    expect(disposeA).toHaveBeenCalledTimes(1);
+    expect(registry.resolve('fx.hmr')?.component).toBe(ReplacementComponent);
+    expect(registry.resolve('fx.hmr')?.contributionId).toBe('fx.hmr.replacement');
+
+    handleA.dispose();
+    expect(registry.resolve('fx.hmr')).toBeDefined();
+    expect(disposeA).toHaveBeenCalledTimes(1);
+
+    handleB.dispose();
+    handleB.dispose();
+    expect(disposeB).toHaveBeenCalledTimes(1);
+    expect(registry.resolve('fx.hmr')).toBeUndefined();
+  });
+
   it('unregister disposes a removed record exactly once and preserves other records', () => {
     const registry = createEffectRegistry();
     const disposeFade = vi.fn();

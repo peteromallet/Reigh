@@ -194,6 +194,70 @@ export function createEffectRegistry(): EffectRegistry {
     };
   }
 
+  function updateRecord(
+    effectId: string,
+    updater: (current: EffectRegistryRecord) => EffectRegistryRecord,
+    newDispose?: EffectRegistryRecord['dispose'],
+  ): DisposeHandle {
+    if (guardDisposed('updateRecord')) {
+      return { dispose(): void {} };
+    }
+
+    const existing = records.get(effectId);
+    if (!existing) {
+      emitDiagnostic(
+        diagnostics,
+        'warning',
+        'effect-registry/update-missing-effect',
+        `Effect "${effectId}" cannot be updated because it is not registered.`,
+        undefined,
+        undefined,
+        { effectId },
+      );
+      invalidateSnapshot();
+      notifySubscribers();
+      return { dispose(): void {} };
+    }
+
+    const nextRecord = freezeRecord({
+      ...updater(existing.record),
+      ...(newDispose ? { dispose: newDispose } : {}),
+    });
+
+    if (nextRecord.effectId !== effectId) {
+      emitDiagnostic(
+        diagnostics,
+        'error',
+        'effect-registry/update-effect-id-mismatch',
+        `Effect "${effectId}" update returned mismatched effect ID "${nextRecord.effectId}".`,
+        nextRecord.ownerExtensionId,
+        nextRecord.contributionId,
+        { effectId, nextEffectId: nextRecord.effectId },
+      );
+      invalidateSnapshot();
+      notifySubscribers();
+      return { dispose(): void {} };
+    }
+
+    safeDispose(existing, diagnostics);
+
+    const token = Symbol(effectId);
+    records.set(effectId, {
+      token,
+      record: nextRecord,
+      disposed: false,
+    });
+
+    invalidateSnapshot();
+    notifySubscribers();
+
+    return {
+      dispose(): void {
+        removeEntry(effectId, token);
+      },
+    };
+  }
+
   function unregister(effectId: string): void {
     if (guardDisposed('unregister')) return;
     removeEntry(effectId);
@@ -243,6 +307,7 @@ export function createEffectRegistry(): EffectRegistry {
 
   return {
     register,
+    updateRecord,
     unregister,
     unregisterOwner,
     resolve,

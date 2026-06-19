@@ -764,9 +764,27 @@ describe('ExtensionStatusDrawer', () => {
     expect(screen.getByText('Render blockers')).toBeDefined();
   });
 
-  it('shows provider effect registry counts and export blockers', async () => {
+  it('shows provider effect registry counts, renderability summaries, and planner/export blockers', async () => {
     const ext = makeSlotExtension('com.example.status', 'Status Extension', 'status.slot');
-    const ctx = buildRuntimeContext([ext]);
+    const dc = createDiagnosticCollection();
+    dc.publish({
+      id: 'export-status-blocker',
+      severity: 'error',
+      code: 'export/effect-preview-only',
+      message: 'Effect cannot browser export.',
+      extensionId: 'com.example.status',
+      contributionId: 'status.effect',
+    });
+    dc.publish({
+      id: 'planner-status-blocker',
+      severity: 'error',
+      code: 'planner/browser-export/preview-only',
+      message: 'Planner blocked browser export.',
+      extensionId: 'com.example.status',
+      contributionId: 'status.effect',
+      detail: { source: 'render-planner' },
+    });
+    const ctx = buildRuntimeContext([ext], dc);
     const onClose = vi.fn();
 
     render(
@@ -781,10 +799,17 @@ describe('ExtensionStatusDrawer', () => {
     await waitFor(() => {
       expect(screen.getByText('Effects')).toBeDefined();
       expect(screen.getByText('Effect export blockers')).toBeDefined();
+      expect(screen.getByText('supported routes')).toBeDefined();
+      expect(screen.getByText('blocked routes')).toBeDefined();
+      expect(screen.getByText('Export blockers')).toBeDefined();
+      expect(screen.getByText('Planner blockers')).toBeDefined();
     });
 
     expect(document.querySelector('[data-video-editor-effect-registry-summary="records"]')?.textContent).toContain('1');
     expect(document.querySelector('[data-video-editor-effect-registry-summary="browser-export-blockers"]')?.textContent).toContain('1');
+    expect(document.querySelector('[data-video-editor-effect-renderability-summary="supported"]')?.textContent).toContain('1');
+    expect(document.querySelector('[data-video-editor-effect-renderability-summary="blocked"]')?.textContent).toContain('1');
+    expect(document.querySelector('[data-video-editor-planner-summary="blockers"]')?.textContent).toContain('1');
   });
 
   it('does not expose any install/uninstall/enable/disable buttons', () => {

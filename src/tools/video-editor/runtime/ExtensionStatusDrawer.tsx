@@ -19,6 +19,7 @@ import {
   useCallback,
   useMemo,
   useState,
+  useSyncExternalStore,
 } from 'react';
 import {
   X,
@@ -89,6 +90,8 @@ export interface ExtensionStatusSummary {
   readonly warningDiagnostics: number;
   readonly infoDiagnostics: number;
   readonly exportBlockers: number;
+  /** M5: Planner-compatible blocker diagnostics published by renderPlanner. */
+  readonly plannerBlockers: number;
   readonly renderBlockers: number;
   /** M4: Total commands registered in the command registry. */
   readonly commandCount: number;
@@ -102,6 +105,12 @@ export interface ExtensionStatusSummary {
   readonly effectRecordCount: number;
   /** M5: Effect records that block browser export. */
   readonly effectBrowserExportBlockers: number;
+  /** M5: Supported renderability capability declarations across effect records. */
+  readonly effectSupportedRoutes: number;
+  /** M5: Blocked renderability capability declarations across effect records. */
+  readonly effectBlockedRoutes: number;
+  /** M5: Unknown renderability capability declarations across effect records. */
+  readonly effectUnknownRoutes: number;
 }
 
 /** Complete read-only inventory derived from extension runtime state. */
@@ -134,6 +143,7 @@ const EMPTY_INVENTORY: ExtensionStatusInventory = Object.freeze({
     warningDiagnostics: 0,
     infoDiagnostics: 0,
     exportBlockers: 0,
+    plannerBlockers: 0,
     renderBlockers: 0,
     commandCount: 0,
     keybindingCount: 0,
@@ -141,11 +151,16 @@ const EMPTY_INVENTORY: ExtensionStatusInventory = Object.freeze({
     commandsFailedLastRun: 0,
     effectRecordCount: 0,
     effectBrowserExportBlockers: 0,
+    effectSupportedRoutes: 0,
+    effectBlockedRoutes: 0,
+    effectUnknownRoutes: 0,
   }),
   exportBlockers: Object.freeze([]),
   renderBlockers: Object.freeze([]),
   derivedAt: 0,
 });
+
+const EMPTY_DIAGNOSTICS: readonly Diagnostic[] = Object.freeze([]);
 
 // ---------------------------------------------------------------------------
 // Hook
@@ -167,6 +182,15 @@ const EMPTY_INVENTORY: ExtensionStatusInventory = Object.freeze({
 export function useExtensionStatusInventory(): ExtensionStatusInventory {
   const { extensionRuntime, diagnosticCollection, commandRegistry } = useVideoEditorRuntime();
   const effectRegistrySnapshot = useEffectRegistrySnapshot();
+  const diagnostics = useSyncExternalStore(
+    useCallback((listener) => {
+      if (!diagnosticCollection) return () => {};
+      const handle = diagnosticCollection.subscribe(listener);
+      return () => handle.dispose();
+    }, [diagnosticCollection]),
+    useCallback(() => diagnosticCollection?.getSnapshot() ?? EMPTY_DIAGNOSTICS, [diagnosticCollection]),
+    () => EMPTY_DIAGNOSTICS,
+  );
 
   return useMemo(() => {
     if (!extensionRuntime || extensionRuntime.extensions.length === 0) {
@@ -175,46 +199,7 @@ export function useExtensionStatusInventory(): ExtensionStatusInventory {
 
     const runtime = extensionRuntime;
 
-    // Merge diagnostics from the legacy DiagnosticCollection (if wired) and
-    // the M4 command registry so command diagnostics flow into the same
-    // summary counts and blocker lists without a separate reporting surface.
-    const legacyDiags: readonly Diagnostic[] = diagnosticCollection?.snapshot ?? [];
-    const commandRegistryDiags: readonly Diagnostic[] = (commandRegistry?.diagnostics ?? []).map((diagnostic, index) => ({
-      id: [
-        'command-registry',
-        diagnostic.code,
-        diagnostic.extensionId ?? 'host',
-        diagnostic.contributionId ?? 'commands',
-        index,
-      ].join(':'),
-      severity: diagnostic.severity,
-      code: diagnostic.code,
-      message: diagnostic.message,
-      ...(diagnostic.extensionId ? { extensionId: diagnostic.extensionId } : {}),
-      ...(diagnostic.contributionId ? { contributionId: diagnostic.contributionId } : {}),
-      ...(diagnostic.milestone ? { milestone: diagnostic.milestone } : {}),
-      ...(diagnostic.detail ? { detail: { ...diagnostic.detail, source: 'command-registry' } } : { detail: { source: 'command-registry' } }),
-    }));
-    const registryDiagnostics: readonly Diagnostic[] = effectRegistrySnapshot.diagnostics.map((diagnostic, index) => ({
-      id: [
-        'effect-registry',
-        diagnostic.code,
-        diagnostic.extensionId ?? 'host',
-        diagnostic.contributionId ?? 'registry',
-        index,
-      ].join(':'),
-      severity: diagnostic.severity,
-      code: diagnostic.code,
-      message: diagnostic.message,
-      ...(diagnostic.extensionId ? { extensionId: diagnostic.extensionId } : {}),
-      ...(diagnostic.contributionId ? { contributionId: diagnostic.contributionId } : {}),
-      detail: { ...(diagnostic.detail ?? {}), source: 'effect-registry' },
-    }));
-    const allDiagnostics: readonly Diagnostic[] = Object.freeze([
-      ...legacyDiags,
-      ...commandRegistryDiags,
-      ...registryDiagnostics,
-    ]);
+    const allDiagnostics: readonly Diagnostic[] = diagnostics;
 
     // Snapshot the command registry once per inventory derivation.
     let commandSnapshot: CommandRegistrySnapshot | undefined;
@@ -300,11 +285,15 @@ export function useExtensionStatusInventory(): ExtensionStatusInventory {
     // ---- Compute blockers --------------------------------------------------
 
     const exportBlockers: Diagnostic[] = [];
+    const plannerBlockers: Diagnostic[] = [];
     const renderBlockers: Diagnostic[] = [];
     for (const d of allDiagnostics) {
       if (d.severity === 'error') {
         if (d.code.startsWith('export/')) {
           exportBlockers.push(d);
+        }
+        if (d.detail?.source === 'render-planner' || d.code.startsWith('planner/')) {
+          plannerBlockers.push(d);
         }
         if (d.code === 'render/missing-renderer' || d.code === 'render/contribution-error') {
           renderBlockers.push(d);
@@ -336,6 +325,10 @@ export function useExtensionStatusInventory(): ExtensionStatusInventory {
       const capability = record.renderability.capabilities.find((item) => item.route === 'browser-export');
       return capability?.status !== 'supported';
     }).length;
+    const effectCapabilities = effectRegistrySnapshot.records.flatMap((record) => record.renderability.capabilities);
+    const effectSupportedRoutes = effectCapabilities.filter((capability) => capability.status === 'supported').length;
+    const effectBlockedRoutes = effectCapabilities.filter((capability) => capability.status === 'blocked').length;
+    const effectUnknownRoutes = effectCapabilities.filter((capability) => capability.status === 'unknown').length;
 
     const summary: ExtensionStatusSummary = {
       totalExtensions: extensions.length,
@@ -356,6 +349,7 @@ export function useExtensionStatusInventory(): ExtensionStatusInventory {
       warningDiagnostics: allDiagnostics.filter((d) => d.severity === 'warning').length,
       infoDiagnostics: allDiagnostics.filter((d) => d.severity === 'info').length,
       exportBlockers: exportBlockers.length,
+      plannerBlockers: plannerBlockers.length,
       renderBlockers: renderBlockers.length,
       commandCount,
       keybindingCount,
@@ -363,6 +357,9 @@ export function useExtensionStatusInventory(): ExtensionStatusInventory {
       commandsFailedLastRun,
       effectRecordCount,
       effectBrowserExportBlockers,
+      effectSupportedRoutes,
+      effectBlockedRoutes,
+      effectUnknownRoutes,
     };
 
     return {
@@ -372,7 +369,7 @@ export function useExtensionStatusInventory(): ExtensionStatusInventory {
       renderBlockers: Object.freeze(renderBlockers),
       derivedAt: Date.now(),
     };
-  }, [extensionRuntime, diagnosticCollection, commandRegistry, effectRegistrySnapshot]);
+  }, [extensionRuntime, diagnostics, commandRegistry, effectRegistrySnapshot]);
 }
 
 // ---------------------------------------------------------------------------
@@ -511,6 +508,15 @@ function SummaryBar({ inventory }: { inventory: ExtensionStatusInventory }) {
             </span>
           </div>
         )}
+        {summary.plannerBlockers > 0 && (
+          <div className="flex items-center gap-0.5" data-video-editor-planner-summary="blockers">
+            <ShieldX className="h-2.5 w-2.5 text-red-400" aria-hidden="true" />
+            <span className="text-[10px] text-zinc-600">Planner blockers</span>
+            <span className="text-[10px] font-medium text-red-400 tabular-nums">
+              {summary.plannerBlockers}
+            </span>
+          </div>
+        )}
         {summary.renderBlockers > 0 && (
           <div className="flex items-center gap-0.5">
             <AlertCircle className="h-2.5 w-2.5 text-red-400" aria-hidden="true" />
@@ -566,6 +572,26 @@ function SummaryBar({ inventory }: { inventory: ExtensionStatusInventory }) {
             </span>
             <span className="text-[10px] text-zinc-600">Effect export blockers</span>
           </div>
+          <div className="flex items-center gap-1" data-video-editor-effect-renderability-summary="supported">
+            <span className="text-[10px] font-medium text-emerald-400 tabular-nums">
+              {summary.effectSupportedRoutes}
+            </span>
+            <span className="text-[10px] text-zinc-600">supported routes</span>
+          </div>
+          <div className="flex items-center gap-1" data-video-editor-effect-renderability-summary="blocked">
+            <span className={`text-[10px] font-medium tabular-nums ${summary.effectBlockedRoutes > 0 ? 'text-red-400' : 'text-zinc-500'}`}>
+              {summary.effectBlockedRoutes}
+            </span>
+            <span className="text-[10px] text-zinc-600">blocked routes</span>
+          </div>
+          {summary.effectUnknownRoutes > 0 && (
+            <div className="flex items-center gap-1" data-video-editor-effect-renderability-summary="unknown">
+              <span className="text-[10px] font-medium text-yellow-400 tabular-nums">
+                {summary.effectUnknownRoutes}
+              </span>
+              <span className="text-[10px] text-zinc-600">unknown routes</span>
+            </div>
+          )}
         </div>
       )}
     </div>
