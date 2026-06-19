@@ -142,7 +142,7 @@ function extractResultDiagnostics(
   result: ToolResult | null,
 ): readonly ToolResultDiagnostic[] {
   if (!result) return [];
-  const r = result as Record<string, unknown>;
+  const r = result as unknown as Record<string, unknown>;
   if (Array.isArray(r.diagnostics)) {
     return r.diagnostics as readonly ToolResultDiagnostic[];
   }
@@ -785,28 +785,28 @@ export function AgentToolsPanel({
                               {/* Rationale */}
                               {'rationale' in result &&
                                 result.rationale &&
-                                typeof (result as Record<string, unknown>).rationale === 'string' && (
+                                typeof (result as unknown as Record<string, unknown>).rationale === 'string' && (
                                   <div className="text-[10px] text-zinc-500 italic">
-                                    {String(
-                                      (result as Record<string, unknown>).rationale,
+                                    {(String(
+                                      (result as unknown as Record<string, unknown>).rationale,
                                     ).length > 200
                                       ? String(
-                                          (result as Record<string, unknown>).rationale,
+                                          (result as unknown as Record<string, unknown>).rationale,
                                         ).slice(0, 200) + '\u2026'
                                       : String(
-                                          (result as Record<string, unknown>).rationale,
-                                        )}
+                                          (result as unknown as Record<string, unknown>).rationale,
+                                        ))}
                                   </div>
                                 )}
                               {/* Affected objects */}
                               {'affectedObjectIds' in result &&
                                 Array.isArray(
-                                  (result as Record<string, unknown>).affectedObjectIds,
+                                  (result as unknown as Record<string, unknown>).affectedObjectIds,
                                 ) && (
                                   <div className="text-[9px] text-zinc-600">
                                     Affected:{' '}
                                     {(
-                                      (result as Record<string, unknown>)
+                                      (result as unknown as Record<string, unknown>)
                                         .affectedObjectIds as string[]
                                     ).join(', ')}
                                   </div>
@@ -814,12 +814,12 @@ export function AgentToolsPanel({
                               {/* Source refs */}
                               {'sourceRefs' in result &&
                                 Array.isArray(
-                                  (result as Record<string, unknown>).sourceRefs,
+                                  (result as unknown as Record<string, unknown>).sourceRefs,
                                 ) && (
                                   <div className="text-[9px] text-zinc-600">
                                     Ref map:{' '}
                                     {(
-                                      (result as Record<string, unknown>)
+                                      (result as unknown as Record<string, unknown>)
                                         .sourceRefs as Array<Record<string, unknown>>
                                     )
                                       .map((r) => `${r.sourceId}→${r.outputId}`)

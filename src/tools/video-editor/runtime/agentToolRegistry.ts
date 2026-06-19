@@ -561,7 +561,7 @@ export function createAgentToolRegistry(): AgentToolRegistry {
 
       // If the result has its own diagnostics, surface them
       if (result && typeof result === 'object' && 'diagnostics' in result) {
-        const resultDiags = (result as Record<string, unknown>).diagnostics;
+        const resultDiags = (result as unknown as Record<string, unknown>).diagnostics;
         if (Array.isArray(resultDiags)) {
           for (const diag of resultDiags) {
             if (diag && typeof diag === 'object') {
@@ -585,7 +585,7 @@ export function createAgentToolRegistry(): AgentToolRegistry {
       if (
         result &&
         typeof result === 'object' &&
-        (result as Record<string, unknown>).family === 'generation/session'
+        (result as unknown as Record<string, unknown>).family === 'generation/session'
       ) {
         const sessionResult = result as { session: GenerationSession };
         if (sessionResult.session && typeof sessionResult.session === 'object') {

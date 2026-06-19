@@ -68,7 +68,7 @@ export function createToolResultDiagnostic(
     message,
   };
   if (detail !== undefined) {
-    (diagnostic as Record<string, unknown>).detail = detail;
+    (diagnostic as unknown as Record<string, unknown>).detail = detail;
   }
   return diagnostic;
 }
