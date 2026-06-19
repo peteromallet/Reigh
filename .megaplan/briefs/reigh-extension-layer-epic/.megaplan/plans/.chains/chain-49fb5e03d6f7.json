@@ -3,8 +3,8 @@
   "current_milestone_index": 5,
   "current_plan_name": "m5-provider-scoped-registry-20260619-1050",
   "last_state": "advance",
-  "pr_number": null,
-  "pr_state": null,
+  "pr_number": 30,
+  "pr_state": "open",
   "completed": [
     {
       "label": "m0-workspace-scaffold",
@@ -96,7 +96,7 @@
       "target_root": "/Users/peteromalley/Documents/.megaplan-worktrees/reigh-extension-layer-epic",
       "work_dir": "/Users/peteromalley/Documents/.megaplan-worktrees/reigh-extension-layer-epic",
       "engine_root": "/Users/peteromalley/Documents/megaplan",
-      "target_head": "05e8719f0daeb6dbc030d728b369bbc0adbf9601",
+      "target_head": "7af03c8e8c0956d0dcd32e338d1b0cad0cb64d71",
       "target_base": "05e8719f0daeb6dbc030d728b369bbc0adbf9601",
       "target_base_ref": "main",
       "target_fallback_reason": null
