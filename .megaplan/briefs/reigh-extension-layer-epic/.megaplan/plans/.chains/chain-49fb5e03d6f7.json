@@ -2,7 +2,7 @@
   "schema_version": 0,
   "current_milestone_index": 5,
   "current_plan_name": "m5-provider-scoped-registry-20260619-1050",
-  "last_state": "stalled",
+  "last_state": "active",
   "pr_number": 30,
   "pr_state": "open",
   "completed": [
@@ -70,11 +70,11 @@
       "plan_name": "m4-commands-keybindings-20260619-0843"
     }
   ],
-  "branch_head": "ada1924cb1e74d74fc16e1c8ada3b0a09e04ad92",
-  "pr_head": "51b922d464b8350389e0766f10677e925063405e",
-  "last_pushed_commit": "ada1924cb1e74d74fc16e1c8ada3b0a09e04ad92",
+  "branch_head": "c5d32b3a072b18601d09eccaaa0cd8ab39c1b817",
+  "pr_head": "c5d32b3a072b18601d09eccaaa0cd8ab39c1b817",
+  "last_pushed_commit": "c5d32b3a072b18601d09eccaaa0cd8ab39c1b817",
   "dirty_flag": false,
-  "sync_state": "stale",
+  "sync_state": "clean",
   "extra_repos": [],
   "chain_session": null,
   "resolved_workspace": null,
