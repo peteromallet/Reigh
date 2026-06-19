@@ -98,6 +98,36 @@ export interface ExportDiagnostic extends ExtensionDiagnostic {
 }
 
 // ---------------------------------------------------------------------------
+// M5: Renderability, blocker, material, and artifact contracts
+// ---------------------------------------------------------------------------
+
+export {
+  DETERMINISM_STATUSES,
+  RENDER_BLOCKER_REASONS,
+  RENDER_ROUTES,
+} from '@/tools/video-editor/runtime/renderability.ts';
+
+export type {
+  ArtifactBoundary,
+  BakeContract,
+  CapabilityFinding,
+  CapabilityFindingSeverity,
+  ContributionRenderability,
+  DeterminismStatus,
+  RenderArtifact,
+  RenderBlocker,
+  RenderBlockerReason,
+  RenderCapability,
+  RenderCapabilityStatus,
+  RenderLocatorKind,
+  RenderMaterial,
+  RenderMaterialMediaKind,
+  RenderMaterialRef,
+  RenderRoute,
+  RenderStorageLocator,
+} from '@/tools/video-editor/runtime/renderability.ts';
+
+// ---------------------------------------------------------------------------
 // M4: Commands, Keybindings, Context Menus — target and handler contracts
 // ---------------------------------------------------------------------------
 
