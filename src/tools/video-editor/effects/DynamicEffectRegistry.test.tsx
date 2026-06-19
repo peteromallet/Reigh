@@ -17,10 +17,20 @@ vi.mock('remotion', async (importOriginal) => {
 });
 
 import * as compileEffectModule from '@/tools/video-editor/effects/compileEffect';
-import { getEffectRegistry, replaceEffectRegistry, wrapWithEffect } from '@/tools/video-editor/effects';
+import * as effectsModule from '@/tools/video-editor/effects';
+import {
+  entranceEffects,
+  getEffectRegistry,
+  replaceEffectRegistry,
+  wrapWithEffect,
+} from '@/tools/video-editor/effects';
 import type { EffectComponentProps } from '@/tools/video-editor/effects/entrances';
 import { DynamicEffectRegistry } from '@/tools/video-editor/effects/DynamicEffectRegistry';
 import { EffectErrorBoundary } from '@/tools/video-editor/effects/EffectErrorBoundary';
+import {
+  EffectRegistryProvider,
+  useEffectRegistrySnapshot,
+} from '@/tools/video-editor/effects/registry/EffectRegistryContext';
 import { validateAndCoerceParams } from '@/tools/video-editor/effects/validateParams';
 import { useEffectRegistry } from '@/tools/video-editor/hooks/useEffectRegistry';
 import type { EffectResource } from '@/tools/video-editor/hooks/useEffectResources';
@@ -31,6 +41,20 @@ function BuiltInFade(_props: EffectComponentProps) {
 }
 
 const EFFECT_CODE = 'export default function Effect(){ return <div data-testid="dynamic-effect" />; }';
+
+function makeResourceEffect(id: string, code: string): EffectResource {
+  return {
+    id,
+    type: 'effect',
+    name: id,
+    slug: id,
+    code,
+    category: 'continuous',
+    description: id,
+    created_by: { is_you: true },
+    is_public: false,
+  };
+}
 
 describe('DynamicEffectRegistry', () => {
   beforeAll(async () => {
@@ -225,6 +249,36 @@ describe('DynamicEffectRegistry', () => {
     expect(errorSpy).toHaveBeenCalledWith('[EffectErrorBoundary] "wrap-failure" runtime error: wrap failure');
   });
 
+  it('keeps the deprecated singleton bridge seedable without mutating built-in exports or wrappers', () => {
+    const originalFade = entranceEffects.fade;
+    const LegacyBridgeEffect = ({ children }: EffectComponentProps) => (
+      <div data-testid="legacy-bridge-effect">{children}</div>
+    );
+    const DirectEffect = ({ children }: EffectComponentProps) => (
+      <div data-testid="direct-wrapped-effect">{children}</div>
+    );
+    const seededRegistry = new DynamicEffectRegistry({
+      'legacy-bridge': LegacyBridgeEffect,
+    });
+
+    expect(replaceEffectRegistry(seededRegistry)).toBe(seededRegistry);
+    expect(getEffectRegistry()).toBe(seededRegistry);
+    expect(getEffectRegistry().get('custom:legacy-bridge')).toBe(LegacyBridgeEffect);
+
+    render(
+      <>
+        {wrapWithEffect(<div data-testid="direct-child" />, DirectEffect, {
+          effectName: 'direct',
+          durationInFrames: 10,
+        })}
+      </>,
+    );
+
+    expect(entranceEffects.fade).toBe(originalFade);
+    expect(getEffectRegistry()).toBe(seededRegistry);
+    expect(screen.getByTestId('direct-wrapped-effect')).toContainElement(screen.getByTestId('direct-child'));
+  });
+
   it('re-renders subscribed components when async registration completes', async () => {
     const registry = new DynamicEffectRegistry({});
 
@@ -290,46 +344,185 @@ describe('DynamicEffectRegistry', () => {
     expect(screen.queryByTestId('race-v1-old')).not.toBeInTheDocument();
   });
 
-  it('installs the provider registry before child render and re-renders the tree after async registration', async () => {
+  it('loads effects into the provider registry without mutating the legacy singleton', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const replaceSpy = vi.spyOn(effectsModule, 'replaceEffectRegistry');
 
     const resourceEffects: EffectResource[] = [
-      {
-        id: 'resource-effect',
-        type: 'effect',
-        name: 'Resource Effect',
-        slug: 'resource-effect',
-        code: EFFECT_CODE,
-        category: 'continuous',
-        description: 'Async resource effect',
-        created_by: { is_you: true },
-        is_public: false,
-      },
+      makeResourceEffect('resource-effect', EFFECT_CODE),
     ];
 
-    function LookupConsumer({ registry }: { registry: DynamicEffectRegistry }) {
-      const currentRegistry = getEffectRegistry();
-      const effect = currentRegistry.get('custom:resource-effect');
+    function RegistryHost() {
+      const registry = useEffectRegistry(undefined, resourceEffects);
+      const snapshot = useEffectRegistrySnapshot();
+      const effect = snapshot.get('resource-effect');
       return (
         <div data-testid="registry-state">
-          {currentRegistry === registry ? 'same' : 'different'}:{effect ? 'found' : 'missing'}
+          {snapshot === registry.getSnapshot() ? 'same' : 'different'}:{effect ? 'found' : 'missing'}
         </div>
       );
     }
 
+    replaceEffectRegistry(new DynamicEffectRegistry({}));
+    replaceSpy.mockClear();
+    render(
+      <EffectRegistryProvider>
+        <RegistryHost />
+      </EffectRegistryProvider>,
+    );
+
+    expect(replaceSpy).toHaveBeenCalledTimes(0);
+    expect(getEffectRegistry().get('custom:resource-effect')).toBeUndefined();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('registry-state').textContent).toBe('same:found');
+    });
+    expect(replaceSpy).toHaveBeenCalledTimes(0);
+    expect(getEffectRegistry().get('custom:resource-effect')).toBeUndefined();
+  });
+
+  it('isolates same effect IDs across provider registries without leaking components or singleton state', async () => {
+    const compileSpy = vi.spyOn(compileEffectModule, 'compileEffect').mockImplementation((code: string) => {
+      return function MockCompiledEffect({ children }: EffectComponentProps) {
+        return <div data-testid={`compiled-${code}`}>{children}</div>;
+      };
+    });
+
+    function ProviderRegistryHost({
+      label,
+      resourceEffects,
+    }: {
+      label: string;
+      resourceEffects: EffectResource[];
+    }) {
+      const registry = useEffectRegistry(undefined, resourceEffects);
+      const snapshot = useEffectRegistrySnapshot();
+      const record = snapshot.get('shared-effect');
+      const CompiledEffect = record?.component;
+      const registryRecord = registry.resolve('shared-effect');
+      return (
+        <div data-testid={`${label}-state`}>
+          <span data-testid={`${label}-code`}>{registryRecord?.code ?? 'missing'}</span>
+          {CompiledEffect ? (
+            <CompiledEffect durationInFrames={1}>
+              <span data-testid={`${label}-child`} />
+            </CompiledEffect>
+          ) : null}
+        </div>
+      );
+    }
+
+    replaceEffectRegistry(new DynamicEffectRegistry({}));
+    render(
+      <>
+        <EffectRegistryProvider>
+          <ProviderRegistryHost
+            label="provider-a"
+            resourceEffects={[makeResourceEffect('shared-effect', 'provider-a')]}
+          />
+        </EffectRegistryProvider>
+        <EffectRegistryProvider>
+          <ProviderRegistryHost
+            label="provider-b"
+            resourceEffects={[makeResourceEffect('shared-effect', 'provider-b')]}
+          />
+        </EffectRegistryProvider>
+      </>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('provider-a-code').textContent).toBe('provider-a');
+      expect(screen.getByTestId('provider-b-code').textContent).toBe('provider-b');
+    });
+
+    expect(screen.getByTestId('compiled-provider-a')).toContainElement(screen.getByTestId('provider-a-child'));
+    expect(screen.getByTestId('compiled-provider-b')).toContainElement(screen.getByTestId('provider-b-child'));
+    expect(screen.queryByTestId('compiled-provider-a')).not.toContainElement(screen.getByTestId('provider-b-child'));
+    expect(screen.queryByTestId('compiled-provider-b')).not.toContainElement(screen.getByTestId('provider-a-child'));
+    expect(getEffectRegistry().get('custom:shared-effect')).toBeUndefined();
+    expect(compileSpy).toHaveBeenCalledWith('provider-a');
+    expect(compileSpy).toHaveBeenCalledWith('provider-b');
+  });
+
+  it('uses a memoized standalone fallback registry outside a provider', async () => {
+    const resourceEffects: EffectResource[] = [
+      makeResourceEffect('standalone-resource-effect', EFFECT_CODE),
+    ];
+
     function RegistryHost() {
       const registry = useEffectRegistry(undefined, resourceEffects);
-      return <LookupConsumer registry={registry} />;
+      const effect = registry.resolve('standalone-resource-effect');
+      return (
+        <div data-testid="standalone-registry-state">
+          {effect ? 'found' : 'missing'}:{registry.getSnapshot().records.length}
+        </div>
+      );
     }
 
     replaceEffectRegistry(new DynamicEffectRegistry({}));
     render(<RegistryHost />);
 
-    expect(screen.getByTestId('registry-state').textContent).toBe('same:missing');
+    expect(getEffectRegistry().get('custom:standalone-resource-effect')).toBeUndefined();
 
     await waitFor(() => {
-      expect(screen.getByTestId('registry-state').textContent).toBe('same:found');
+      expect(screen.getByTestId('standalone-registry-state').textContent).toMatch(/^found:/);
     });
+    expect(getEffectRegistry().get('custom:standalone-resource-effect')).toBeUndefined();
+  });
+
+  it('seeds provider-unaware fallback registries locally without leaking same effect IDs', async () => {
+    vi.spyOn(compileEffectModule, 'compileEffect').mockImplementation((code: string) => {
+      return function MockCompiledEffect({ children }: EffectComponentProps) {
+        return <div data-testid={`standalone-${code}`}>{children}</div>;
+      };
+    });
+
+    function StandaloneRegistryHost({
+      label,
+      resourceEffects,
+    }: {
+      label: string;
+      resourceEffects: EffectResource[];
+    }) {
+      const registry = useEffectRegistry(undefined, resourceEffects);
+      const record = registry.resolve('fallback-shared-effect');
+      const CompiledEffect = record?.component;
+      return (
+        <div data-testid={`${label}-fallback-state`}>
+          <span data-testid={`${label}-fallback-code`}>{record?.code ?? 'missing'}</span>
+          {CompiledEffect ? (
+            <CompiledEffect durationInFrames={1}>
+              <span data-testid={`${label}-fallback-child`} />
+            </CompiledEffect>
+          ) : null}
+        </div>
+      );
+    }
+
+    replaceEffectRegistry(new DynamicEffectRegistry({}));
+    render(
+      <>
+        <StandaloneRegistryHost
+          label="fallback-a"
+          resourceEffects={[makeResourceEffect('fallback-shared-effect', 'fallback-a')]}
+        />
+        <StandaloneRegistryHost
+          label="fallback-b"
+          resourceEffects={[makeResourceEffect('fallback-shared-effect', 'fallback-b')]}
+        />
+      </>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('fallback-a-fallback-code').textContent).toBe('fallback-a');
+      expect(screen.getByTestId('fallback-b-fallback-code').textContent).toBe('fallback-b');
+    });
+
+    expect(screen.getByTestId('standalone-fallback-a')).toContainElement(screen.getByTestId('fallback-a-fallback-child'));
+    expect(screen.getByTestId('standalone-fallback-b')).toContainElement(screen.getByTestId('fallback-b-fallback-child'));
+    expect(screen.queryByTestId('standalone-fallback-a')).not.toContainElement(screen.getByTestId('fallback-b-fallback-child'));
+    expect(screen.queryByTestId('standalone-fallback-b')).not.toContainElement(screen.getByTestId('fallback-a-fallback-child'));
+    expect(getEffectRegistry().get('custom:fallback-shared-effect')).toBeUndefined();
   });
 
   it('validates and coerces effect params from schema defaults', () => {

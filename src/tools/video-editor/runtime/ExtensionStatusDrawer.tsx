@@ -38,6 +38,7 @@ import type {
 } from '@reigh/editor-sdk';
 import type { InactiveReservedContribution } from '@/tools/video-editor/runtime/extensionSurface';
 import type { CommandRegistry, CommandRegistrySnapshot } from '@/tools/video-editor/runtime/commandRegistry';
+import { useEffectRegistrySnapshot } from '@/tools/video-editor/effects/registry/EffectRegistryContext';
 
 // ---------------------------------------------------------------------------
 // Inventory types
@@ -97,6 +98,10 @@ export interface ExtensionStatusSummary {
   readonly contextMenuCount: number;
   /** M4: Commands whose most recent invocation threw or rejected. */
   readonly commandsFailedLastRun: number;
+  /** M5: Effect records currently loaded in the provider-scoped registry. */
+  readonly effectRecordCount: number;
+  /** M5: Effect records that block browser export. */
+  readonly effectBrowserExportBlockers: number;
 }
 
 /** Complete read-only inventory derived from extension runtime state. */
@@ -134,6 +139,8 @@ const EMPTY_INVENTORY: ExtensionStatusInventory = Object.freeze({
     keybindingCount: 0,
     contextMenuCount: 0,
     commandsFailedLastRun: 0,
+    effectRecordCount: 0,
+    effectBrowserExportBlockers: 0,
   }),
   exportBlockers: Object.freeze([]),
   renderBlockers: Object.freeze([]),
@@ -159,6 +166,7 @@ const EMPTY_INVENTORY: ExtensionStatusInventory = Object.freeze({
  */
 export function useExtensionStatusInventory(): ExtensionStatusInventory {
   const { extensionRuntime, diagnosticCollection, commandRegistry } = useVideoEditorRuntime();
+  const effectRegistrySnapshot = useEffectRegistrySnapshot();
 
   return useMemo(() => {
     if (!extensionRuntime || extensionRuntime.extensions.length === 0) {
@@ -171,10 +179,42 @@ export function useExtensionStatusInventory(): ExtensionStatusInventory {
     // the M4 command registry so command diagnostics flow into the same
     // summary counts and blocker lists without a separate reporting surface.
     const legacyDiags: readonly Diagnostic[] = diagnosticCollection?.snapshot ?? [];
-    const commandRegistryDiags: readonly Diagnostic[] = commandRegistry?.diagnostics ?? [];
-    const allDiagnostics: readonly Diagnostic[] = legacyDiags.length === 0
-      ? commandRegistryDiags
-      : Object.freeze([...legacyDiags, ...commandRegistryDiags]);
+    const commandRegistryDiags: readonly Diagnostic[] = (commandRegistry?.diagnostics ?? []).map((diagnostic, index) => ({
+      id: [
+        'command-registry',
+        diagnostic.code,
+        diagnostic.extensionId ?? 'host',
+        diagnostic.contributionId ?? 'commands',
+        index,
+      ].join(':'),
+      severity: diagnostic.severity,
+      code: diagnostic.code,
+      message: diagnostic.message,
+      ...(diagnostic.extensionId ? { extensionId: diagnostic.extensionId } : {}),
+      ...(diagnostic.contributionId ? { contributionId: diagnostic.contributionId } : {}),
+      ...(diagnostic.milestone ? { milestone: diagnostic.milestone } : {}),
+      ...(diagnostic.detail ? { detail: { ...diagnostic.detail, source: 'command-registry' } } : { detail: { source: 'command-registry' } }),
+    }));
+    const registryDiagnostics: readonly Diagnostic[] = effectRegistrySnapshot.diagnostics.map((diagnostic, index) => ({
+      id: [
+        'effect-registry',
+        diagnostic.code,
+        diagnostic.extensionId ?? 'host',
+        diagnostic.contributionId ?? 'registry',
+        index,
+      ].join(':'),
+      severity: diagnostic.severity,
+      code: diagnostic.code,
+      message: diagnostic.message,
+      ...(diagnostic.extensionId ? { extensionId: diagnostic.extensionId } : {}),
+      ...(diagnostic.contributionId ? { contributionId: diagnostic.contributionId } : {}),
+      detail: { ...(diagnostic.detail ?? {}), source: 'effect-registry' },
+    }));
+    const allDiagnostics: readonly Diagnostic[] = Object.freeze([
+      ...legacyDiags,
+      ...commandRegistryDiags,
+      ...registryDiagnostics,
+    ]);
 
     // Snapshot the command registry once per inventory derivation.
     let commandSnapshot: CommandRegistrySnapshot | undefined;
@@ -290,6 +330,12 @@ export function useExtensionStatusInventory(): ExtensionStatusInventory {
         }
       }
     }
+    const effectRecordCount = effectRegistrySnapshot.records.length;
+    const effectBrowserExportBlockers = effectRegistrySnapshot.records.filter((record) => {
+      if (record.status !== 'active') return true;
+      const capability = record.renderability.capabilities.find((item) => item.route === 'browser-export');
+      return capability?.status !== 'supported';
+    }).length;
 
     const summary: ExtensionStatusSummary = {
       totalExtensions: extensions.length,
@@ -315,6 +361,8 @@ export function useExtensionStatusInventory(): ExtensionStatusInventory {
       keybindingCount,
       contextMenuCount,
       commandsFailedLastRun,
+      effectRecordCount,
+      effectBrowserExportBlockers,
     };
 
     return {
@@ -324,7 +372,7 @@ export function useExtensionStatusInventory(): ExtensionStatusInventory {
       renderBlockers: Object.freeze(renderBlockers),
       derivedAt: Date.now(),
     };
-  }, [extensionRuntime, diagnosticCollection, commandRegistry]);
+  }, [extensionRuntime, diagnosticCollection, commandRegistry, effectRegistrySnapshot]);
 }
 
 // ---------------------------------------------------------------------------
@@ -409,6 +457,7 @@ function SummaryBar({ inventory }: { inventory: ExtensionStatusInventory }) {
   const hasCommands = summary.commandCount > 0
     || summary.keybindingCount > 0
     || summary.contextMenuCount > 0;
+  const hasEffectRegistryRecords = summary.effectRecordCount > 0;
 
   const cmdItems: { label: string; value: number; color: string }[] = [
     { label: 'Commands', value: summary.commandCount, color: 'text-zinc-300' },
@@ -500,6 +549,23 @@ function SummaryBar({ inventory }: { inventory: ExtensionStatusInventory }) {
               <span className="text-[10px] text-zinc-600">failed last run</span>
             </div>
           )}
+        </div>
+      )}
+
+      {hasEffectRegistryRecords && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-2 border-t border-white/5 pt-1.5">
+          <div className="flex items-center gap-1" data-video-editor-effect-registry-summary="records">
+            <span className="text-[10px] font-medium text-zinc-300 tabular-nums">
+              {summary.effectRecordCount}
+            </span>
+            <span className="text-[10px] text-zinc-600">Effects</span>
+          </div>
+          <div className="flex items-center gap-1" data-video-editor-effect-registry-summary="browser-export-blockers">
+            <span className={`text-[10px] font-medium tabular-nums ${summary.effectBrowserExportBlockers > 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+              {summary.effectBrowserExportBlockers}
+            </span>
+            <span className="text-[10px] text-zinc-600">Effect export blockers</span>
+          </div>
         </div>
       )}
     </div>

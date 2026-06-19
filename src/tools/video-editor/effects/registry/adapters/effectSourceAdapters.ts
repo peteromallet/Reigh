@@ -5,6 +5,10 @@ import type {
   EffectRegistryRecord,
   EffectRegistryRecordStatus,
 } from '@/tools/video-editor/effects/registry/types.ts';
+import type {
+  EffectResource,
+  VideoEditorEffectCatalog,
+} from '@/tools/video-editor/lib/effect-catalog.ts';
 import type { ContributionRenderability } from '@/tools/video-editor/runtime/renderability.ts';
 import type { ParameterSchema } from '@/tools/video-editor/types/index.ts';
 
@@ -26,6 +30,32 @@ export interface BuiltInEffectAdapterOptions extends EffectAdapterOptions {
 export interface LocalDraftEffectAdapterOptions extends EffectAdapterOptions {
   readonly contributionIdPrefix?: string;
 }
+
+export interface LegacyDbEffectRow {
+  readonly id?: string;
+  readonly slug: string;
+  readonly code: string;
+  readonly parameterSchema?: ParameterSchema;
+}
+
+export interface LegacyDbEffectAdapterOptions extends EffectAdapterOptions {
+  readonly contributionIdPrefix?: string;
+}
+
+export type EffectResourceWithGenerationMetadata = EffectResource & {
+  readonly generation_id?: string | null;
+  readonly generationId?: string | null;
+  readonly generatedAt?: string;
+  readonly generated_at?: string;
+  readonly provenance?: string;
+};
+
+export interface EffectResourceAdapterOptions extends EffectAdapterOptions {
+  readonly contributionIdPrefix?: string;
+  readonly provenance?: EffectRegistryProvenance;
+}
+
+export interface EffectCatalogAdapterOptions extends EffectResourceAdapterOptions {}
 
 export function normalizeEffectRegistryId(effectId: string): string {
   return effectId.startsWith('custom:') ? effectId.slice('custom:'.length) : effectId;
@@ -139,5 +169,77 @@ export function localDraftEffectsToRegistryRecords(
       schema: schemaFor(options.schemaByEffectId, rawEffectId, effectId),
       options,
     });
+  });
+}
+
+function provenanceForEffectResource(
+  resource: EffectResourceWithGenerationMetadata,
+  fallback: EffectRegistryProvenance,
+): EffectRegistryProvenance {
+  if (
+    resource.provenance === 'ai-generated'
+    || resource.generation_id
+    || resource.generationId
+    || resource.generatedAt
+    || resource.generated_at
+  ) {
+    return 'ai-generated';
+  }
+
+  return fallback;
+}
+
+export function legacyDbEffectsToRegistryRecords(
+  effects: readonly LegacyDbEffectRow[] | undefined,
+  compile: EffectCodeCompiler,
+  options: LegacyDbEffectAdapterOptions = {},
+): EffectRegistryRecord[] {
+  const contributionIdPrefix = options.contributionIdPrefix ?? 'legacy-db:effect';
+
+  return (effects ?? []).map((effect) => {
+    const effectId = normalizeEffectRegistryId(effect.slug);
+    return createEffectRecord({
+      effectId,
+      contributionId: `${contributionIdPrefix}:${effectId}`,
+      component: compile(effect.code, effectId),
+      provenance: 'legacy-db-effect',
+      code: effect.code,
+      schema: effect.parameterSchema ?? schemaFor(options.schemaByEffectId, effect.slug, effectId),
+      options,
+    });
+  });
+}
+
+export function effectResourcesToRegistryRecords(
+  resources: readonly EffectResourceWithGenerationMetadata[] | undefined,
+  compile: EffectCodeCompiler,
+  options: EffectResourceAdapterOptions = {},
+): EffectRegistryRecord[] {
+  const contributionIdPrefix = options.contributionIdPrefix ?? 'db-resource:effect';
+  const fallbackProvenance = options.provenance ?? 'db-resource';
+
+  return (resources ?? []).map((resource) => {
+    const effectId = normalizeEffectRegistryId(resource.id);
+    return createEffectRecord({
+      effectId,
+      contributionId: `${contributionIdPrefix}:${effectId}`,
+      component: compile(resource.code, effectId),
+      provenance: provenanceForEffectResource(resource, fallbackProvenance),
+      code: resource.code,
+      schema: resource.parameterSchema ?? schemaFor(options.schemaByEffectId, resource.id, effectId),
+      options,
+    });
+  });
+}
+
+export function effectCatalogToRegistryRecords(
+  catalog: Pick<VideoEditorEffectCatalog, 'effects'> | null | undefined,
+  compile: EffectCodeCompiler,
+  options: EffectCatalogAdapterOptions = {},
+): EffectRegistryRecord[] {
+  return effectResourcesToRegistryRecords(catalog?.effects, compile, {
+    contributionIdPrefix: options.contributionIdPrefix ?? 'external-catalog:effect',
+    provenance: options.provenance ?? 'external-catalog',
+    ...options,
   });
 }

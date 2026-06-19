@@ -3,15 +3,22 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   builtInEffectsToRegistryRecords,
   createDefaultEffectRenderability,
+  effectCatalogToRegistryRecords,
+  effectResourcesToRegistryRecords,
+  legacyDbEffectsToRegistryRecords,
   localDraftEffectsToRegistryRecords,
   normalizeEffectRegistryId,
 } from '@/tools/video-editor/effects/registry/adapters/effectSourceAdapters.ts';
 import type { EffectComponentProps } from '@/tools/video-editor/effects/entrances.tsx';
+import { createVideoEditorEffectCatalog } from '@/tools/video-editor/lib/effect-catalog.ts';
 import type { ParameterSchema } from '@/tools/video-editor/types/index.ts';
 
 const BuiltInFade: FC<EffectComponentProps> = ({ children }) => children;
 const BuiltInZoom: FC<EffectComponentProps> = ({ children }) => children;
 const DraftEffect: FC<EffectComponentProps> = ({ children }) => children;
+const DbEffect: FC<EffectComponentProps> = ({ children }) => children;
+const ResourceEffect: FC<EffectComponentProps> = ({ children }) => children;
+const CatalogEffect: FC<EffectComponentProps> = ({ children }) => children;
 
 function schema(defaultValue: number): ParameterSchema {
   return [
@@ -129,5 +136,155 @@ describe('effect source registry adapters', () => {
         blockerReason: 'route-unsupported',
       }),
     ]);
+  });
+
+  it('maps legacy DB effect rows by slug with legacy provenance and compiled string code', () => {
+    const compile = vi.fn((_code: string, _effectId: string) => DbEffect);
+    const amountSchema = schema(2);
+    const records = legacyDbEffectsToRegistryRecords([
+      {
+        id: 'row-1',
+        slug: 'custom:db-shake',
+        code: 'export default function DbShake() {}',
+        parameterSchema: amountSchema,
+      },
+    ], compile);
+
+    expect(compile).toHaveBeenCalledWith('export default function DbShake() {}', 'db-shake');
+    expect(records).toEqual([
+      expect.objectContaining({
+        effectId: 'db-shake',
+        contributionId: 'legacy-db:effect:db-shake',
+        component: DbEffect,
+        code: 'export default function DbShake() {}',
+        schema: amountSchema,
+        provenance: 'legacy-db-effect',
+        status: 'active',
+      }),
+    ]);
+  });
+
+  it('maps resource-table effects by resource id with db-resource provenance and schemas', () => {
+    const compile = vi.fn((_code: string, _effectId: string) => ResourceEffect);
+    const amountSchema = schema(4);
+    const records = effectResourcesToRegistryRecords([
+      {
+        id: 'resource-effect',
+        type: 'effect',
+        name: 'Resource Effect',
+        slug: 'resource-effect-slug',
+        code: 'export default function ResourceEffect() {}',
+        category: 'continuous',
+        description: 'Resource-backed effect',
+        parameterSchema: amountSchema,
+        created_by: { is_you: true },
+        is_public: false,
+      },
+    ], compile);
+
+    expect(compile).toHaveBeenCalledWith('export default function ResourceEffect() {}', 'resource-effect');
+    expect(records).toEqual([
+      expect.objectContaining({
+        effectId: 'resource-effect',
+        contributionId: 'db-resource:effect:resource-effect',
+        component: ResourceEffect,
+        code: 'export default function ResourceEffect() {}',
+        schema: amountSchema,
+        provenance: 'db-resource',
+        status: 'active',
+      }),
+    ]);
+  });
+
+  it('maps external effect catalogs without changing catalog grouping or resource APIs', () => {
+    const compile = vi.fn((_code: string, _effectId: string) => CatalogEffect);
+    const catalog = createVideoEditorEffectCatalog({
+      effects: [{
+        id: 'catalog-effect',
+        type: 'effect',
+        name: 'Catalog Effect',
+        slug: 'catalog-effect',
+        code: 'export default function CatalogEffect() {}',
+        category: 'entrance',
+        description: 'Catalog-backed effect',
+        created_by: { is_you: false, username: 'library' },
+        is_public: true,
+      }],
+      createEffect: async () => ({ id: 'created' }),
+    });
+
+    const records = effectCatalogToRegistryRecords(catalog, compile);
+
+    expect(catalog.canCreateEffect).toBe(true);
+    expect(catalog.entrance.map((effect) => effect.id)).toEqual(['catalog-effect']);
+    expect(records).toEqual([
+      expect.objectContaining({
+        effectId: 'catalog-effect',
+        contributionId: 'external-catalog:effect:catalog-effect',
+        component: CatalogEffect,
+        code: 'export default function CatalogEffect() {}',
+        provenance: 'external-catalog',
+      }),
+    ]);
+  });
+
+  it('marks generated compiled-string resources with ai-generated provenance when metadata supports it', () => {
+    const compile = vi.fn((_code: string, _effectId: string) => ResourceEffect);
+    const records = effectResourcesToRegistryRecords([
+      {
+        id: 'generated-effect',
+        type: 'effect',
+        name: 'Generated Effect',
+        slug: 'generated-effect',
+        code: 'export default function GeneratedEffect() {}',
+        category: 'exit',
+        description: 'Generated by AI',
+        created_by: { is_you: true },
+        is_public: false,
+        generation_id: 'generation-1',
+      },
+    ], compile);
+
+    expect(records[0]).toEqual(expect.objectContaining({
+      effectId: 'generated-effect',
+      contributionId: 'db-resource:effect:generated-effect',
+      code: 'export default function GeneratedEffect() {}',
+      provenance: 'ai-generated',
+    }));
+  });
+
+  it('keeps source adapters pure and does not require browser globals', () => {
+    const compile = vi.fn((_code: string, _effectId: string) => ResourceEffect);
+    const originalWindow = (globalThis as { window?: unknown }).window;
+
+    try {
+      Reflect.deleteProperty(globalThis, 'window');
+      const records = effectResourcesToRegistryRecords([
+        {
+          id: 'headless-resource',
+          type: 'effect',
+          name: 'Headless Resource',
+          slug: 'headless-resource',
+          code: 'export default function HeadlessResource() {}',
+          category: 'entrance',
+          description: 'Headless adapter fixture',
+          created_by: { is_you: true },
+          is_public: false,
+        },
+      ], compile);
+
+      expect(records[0]).toMatchObject({
+        effectId: 'headless-resource',
+        provenance: 'db-resource',
+      });
+      expect(compile).toHaveBeenCalledWith('export default function HeadlessResource() {}', 'headless-resource');
+    } finally {
+      if (originalWindow !== undefined) {
+        Object.defineProperty(globalThis, 'window', {
+          configurable: true,
+          value: originalWindow,
+        });
+      }
+    }
   });
 });

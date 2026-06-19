@@ -5,6 +5,10 @@ import { createTimelineReader } from '@/tools/video-editor/lib/timeline-reader.t
 import { createProposalRuntime } from '@/tools/video-editor/lib/proposal-runtime.ts';
 import { useEffectRegistry } from '@/tools/video-editor/hooks/useEffectRegistry.ts';
 import {
+  EffectRegistryProvider,
+  useEffectRegistryContext,
+} from '@/tools/video-editor/effects/registry/EffectRegistryContext.tsx';
+import {
   EffectCatalogProvider,
   useResolvedEffectCatalog,
   type VideoEditorEffectCatalog,
@@ -20,6 +24,7 @@ import { useTimelineState } from '@/tools/video-editor/hooks/useTimelineState.ts
 import type { DataProvider } from '@/tools/video-editor/data/DataProvider.ts';
 import {
   DataProviderWrapper,
+  useVideoEditorRuntime,
   type VideoEditorRuntimeContextValue,
 } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
 import {
@@ -38,6 +43,10 @@ import {
   type KeybindingContribution,
   type ContextMenuItemContribution,
   type ExtensionCommandService,
+  createDiagnosticCollection,
+  type Diagnostic,
+  type ExtensionDiagnostic,
+  type DiagnosticCollection,
 } from '@reigh/editor-sdk';
 import type { CreativeContext } from '@reigh/editor-sdk';
 import type {
@@ -193,16 +202,86 @@ function EditorRuntimeProviderInner({
   }, [store]);
 
   return (
-    <EffectCatalogProvider value={effectResources}>
-      <SequenceComponentCatalogProvider value={sequenceComponentResources}>
-        <SequenceComponentRegistryProvider components={sequenceComponentResources.components}>
-          <TimelineStoreProvider store={store}>
-            {children}
-          </TimelineStoreProvider>
-        </SequenceComponentRegistryProvider>
-      </SequenceComponentCatalogProvider>
-    </EffectCatalogProvider>
+    <EffectRegistryProvider>
+      <EffectCatalogProvider value={effectResources}>
+        <EditorRuntimeEffectRegistryLifecycle
+          effectsQueryData={effectsQuery.data}
+          effectResources={effectResources.effects}
+          lifecycleHostRef={lifecycleHostRef}
+          commandRegistryRef={commandRegistryRef}
+        />
+        <SequenceComponentCatalogProvider value={sequenceComponentResources}>
+          <SequenceComponentRegistryProvider components={sequenceComponentResources.components}>
+            <TimelineStoreProvider store={store}>
+              {children}
+            </TimelineStoreProvider>
+          </SequenceComponentRegistryProvider>
+        </SequenceComponentCatalogProvider>
+      </EffectCatalogProvider>
+    </EffectRegistryProvider>
   );
+}
+
+function EditorRuntimeEffectRegistryLifecycle({
+  effectsQueryData,
+  effectResources,
+  lifecycleHostRef,
+  commandRegistryRef,
+}: {
+  effectsQueryData: Array<{ slug: string; code: string }> | undefined;
+  effectResources: VideoEditorEffectCatalog['effects'];
+  lifecycleHostRef: React.MutableRefObject<ExtensionLifecycleHost | null>;
+  commandRegistryRef: React.MutableRefObject<CommandRegistry | null>;
+}) {
+  const { registry: effectRegistry, snapshot: effectRegistrySnapshot } = useEffectRegistryContext();
+  const diagnosticCollection = useVideoEditorRuntime().diagnosticCollection;
+
+  useEffectRegistry(
+    effectsQueryData?.map((effect) => ({
+      slug: effect.slug,
+      code: effect.code,
+    })),
+    effectResources,
+  );
+
+  useEffect(() => {
+    const host = lifecycleHostRef.current;
+    const commandRegistry = commandRegistryRef.current;
+    if (!host) return;
+    const handle = host.onLifecycleDisposed((extensionId: string) => {
+      commandRegistry?.unregisterAll(extensionId);
+      effectRegistry.unregisterOwner(extensionId);
+    });
+    return () => handle.dispose();
+  }, [commandRegistryRef, effectRegistry, lifecycleHostRef]);
+
+  useEffect(() => {
+    diagnosticCollection?.remove((diagnostic) => diagnostic.detail?.source === 'effect-registry');
+    effectRegistrySnapshot.diagnostics.forEach((diagnostic, index) => {
+      diagnosticCollection?.publish(effectRegistryDiagnostic(diagnostic, index));
+    });
+  }, [diagnosticCollection, effectRegistrySnapshot]);
+
+  return null;
+}
+
+function effectRegistryDiagnostic(diagnostic: ExtensionDiagnostic, index: number): Diagnostic {
+  return {
+    id: [
+      'effect-registry',
+      diagnostic.code,
+      diagnostic.extensionId ?? 'host',
+      diagnostic.contributionId ?? 'registry',
+      index,
+    ].join(':'),
+    severity: diagnostic.severity,
+    code: diagnostic.code,
+    message: diagnostic.message,
+    ...(diagnostic.extensionId ? { extensionId: diagnostic.extensionId } : {}),
+    ...(diagnostic.contributionId ? { contributionId: diagnostic.contributionId } : {}),
+    ...(diagnostic.milestone ? { milestone: diagnostic.milestone } : {}),
+    detail: { ...(diagnostic.detail ?? {}), source: 'effect-registry' },
+  };
 }
 
 export function EditorRuntimeProvider({
@@ -233,16 +312,10 @@ export function EditorRuntimeProvider({
     commandRegistryRef.current = createCommandRegistry();
   }
 
-  // Wire lifecycle disposal → registry cleanup
-  useEffect(() => {
-    const host = lifecycleHostRef.current;
-    const registry = commandRegistryRef.current;
-    if (!host || !registry) return;
-    const handle = host.onLifecycleDisposed((extensionId: string) => {
-      registry.unregisterAll(extensionId);
-    });
-    return () => handle.dispose();
-  }, []);
+  const diagnosticCollectionRef = useRef<DiagnosticCollection | null>(null);
+  if (!diagnosticCollectionRef.current) {
+    diagnosticCollectionRef.current = createDiagnosticCollection();
+  }
 
   // Wire registry callbacks (stub — no host toast in browser context)
   useEffect(() => {
@@ -332,6 +405,7 @@ export function EditorRuntimeProvider({
     extensions: extensionRuntime.config,
     extensionRuntime,
     commandRegistry: commandRegistryRef.current ?? undefined,
+    diagnosticCollection: diagnosticCollectionRef.current ?? undefined,
   }), [
     dataProvider,
     runtime?.assetResolver,
