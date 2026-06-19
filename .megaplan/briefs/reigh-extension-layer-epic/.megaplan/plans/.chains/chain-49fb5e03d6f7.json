@@ -1,0 +1,82 @@
+{
+  "schema_version": 0,
+  "current_milestone_index": 5,
+  "current_plan_name": "m5-provider-scoped-registry-20260619-1050",
+  "last_state": "active",
+  "pr_number": 30,
+  "pr_state": "open",
+  "completed": [
+    {
+      "label": "m0-workspace-scaffold",
+      "index": 0,
+      "pr_number": 23,
+      "pr_state": "merged",
+      "plan_name": "m0-workspace-and-sdk-scaffold-20260618-2252",
+      "merged_at": "2026-06-18T21:33:46Z"
+    },
+    {
+      "label": "m1-sdk-kernel",
+      "index": 1,
+      "pr_number": 25,
+      "pr_state": "merged",
+      "plan_name": "m1-sdk-kernel-and-trusted-20260618-2338",
+      "merged_at": "2026-06-18T23:33:29Z"
+    },
+    {
+      "label": "m2-surfaces",
+      "index": 2,
+      "pr_number": 26,
+      "pr_state": "merged",
+      "plan_name": "m2-surfaces-inspectors-20260619-0136",
+      "merged_at": "2026-06-19T01:52:17Z"
+    },
+    {
+      "label": "m3-timeline-patch",
+      "index": 3,
+      "pr_number": 28,
+      "pr_state": "merged",
+      "plan_name": "m3-timelinepatch-atomic-ops-20260619-0357",
+      "merged_at": "2026-06-19T06:42:48Z"
+    },
+    {
+      "label": "m4-commands",
+      "index": 4,
+      "pr_number": 29,
+      "pr_state": "merged",
+      "plan_name": "m4-commands-keybindings-20260619-0843",
+      "merged_at": "2026-06-19T08:45:39Z"
+    }
+  ],
+  "branch_head": "0f8c84905ab9fb79fadfb3f658473386583b4a81",
+  "pr_head": "0f8c84905ab9fb79fadfb3f658473386583b4a81",
+  "last_pushed_commit": "0f8c84905ab9fb79fadfb3f658473386583b4a81",
+  "dirty_flag": false,
+  "sync_state": "clean",
+  "extra_repos": [],
+  "chain_session": null,
+  "resolved_workspace": null,
+  "extra_repo_sync": [],
+  "completion_contract_mode": "shadow",
+  "full_suite_backstop_mode": "shadow",
+  "retry_counts": {},
+  "ladder_stage": {},
+  "profile_bumps": {},
+  "robustness_bumps": {},
+  "depth_bumps": {},
+  "enforce_revise_counts": {},
+  "metadata": {
+    "execution_environment": {
+      "schema_version": 1,
+      "created_phase": "chain_start",
+      "last_observed_phase": "chain_start",
+      "project_root": "/Users/peteromalley/Documents/.megaplan-worktrees/reigh-extension-layer-epic",
+      "target_root": "/Users/peteromalley/Documents/.megaplan-worktrees/reigh-extension-layer-epic",
+      "work_dir": "/Users/peteromalley/Documents/.megaplan-worktrees/reigh-extension-layer-epic",
+      "engine_root": "/Users/peteromalley/Documents/megaplan",
+      "target_head": "0f8c84905ab9fb79fadfb3f658473386583b4a81",
+      "target_base": "05e8719f0daeb6dbc030d728b369bbc0adbf9601",
+      "target_base_ref": "main",
+      "target_fallback_reason": null
+    }
+  }
+}
