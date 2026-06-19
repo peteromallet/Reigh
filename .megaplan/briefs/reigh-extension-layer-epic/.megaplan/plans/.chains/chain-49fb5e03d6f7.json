@@ -70,9 +70,9 @@
       "plan_name": "m4-commands-keybindings-20260619-0843"
     }
   ],
-  "branch_head": "957d465f39146a6e9e35d1d237768893f8037771",
+  "branch_head": "dfa8288753fb191751977a44d3c0a32b365dde25",
   "pr_head": "6a99fddb64c29b8601ce2a449d97728d3df77d9a",
-  "last_pushed_commit": "957d465f39146a6e9e35d1d237768893f8037771",
+  "last_pushed_commit": "dfa8288753fb191751977a44d3c0a32b365dde25",
   "dirty_flag": false,
   "sync_state": "stale",
   "extra_repos": [],
