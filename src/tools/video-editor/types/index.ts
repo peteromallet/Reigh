@@ -119,6 +119,19 @@ export type TextClipData = {
   italic?: boolean;
 };
 
+// M9: Keyframe interpolation mode — mirrors the SDK KeyframeInterpolation type.
+export type KeyframeInterpolation = 'linear' | 'hold';
+
+// M9: A single keyframe stored as JSON-serializable timeline data on a clip.
+export type ClipKeyframe = {
+  /** Time in seconds. */
+  time: number;
+  /** JSON-serializable value (number | string | boolean). */
+  value: number | string | boolean;
+  /** Interpolation mode from this keyframe to the next. */
+  interpolation: KeyframeInterpolation;
+};
+
 export type TimelineClip = {
   id: string;
   at: number;
@@ -154,6 +167,9 @@ export type TimelineClip = {
   source_uuid?: string;
   generation?: Record<string, unknown>;
   app?: Record<string, unknown>;
+  // M9: Host-owned keyframes keyed by parameter name.
+  // Each parameter maps to an ordered array of keyframes.
+  keyframes?: Record<string, ClipKeyframe[]>;
 };
 
 export type TimelineOutput = {
@@ -201,6 +217,7 @@ export type PinnedShotImageClipSnapshot = {
     clip_order?: number;
     source_uuid?: string;
     generation?: Record<string, unknown>;
+    keyframes?: Record<string, ClipKeyframe[]>;
   };
 };
 
