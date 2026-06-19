@@ -30,6 +30,7 @@ import {
 import type { DropPosition } from '@/tools/video-editor/lib/drop-position.ts';
 import type { TimelineCanvasHandle } from '@/tools/video-editor/types/timeline-canvas.ts';
 import type { PreviewHandle } from '@/tools/video-editor/components/PreviewPanel/RemotionPreview.tsx';
+import type { TimelineOps } from '@/sdk/index';
 
 export interface TimelineAvailabilityState {
   mounted: boolean;
@@ -53,6 +54,7 @@ export interface TimelineStoreBootstrap {
   ops: TimelineEditorOpsContextValue;
   chrome: TimelineChromeContextValue;
   playback: TimelinePlaybackContextValue;
+  timelineOps?: TimelineOps | null;
 }
 
 export interface TimelineMutableAdapters {
@@ -70,6 +72,7 @@ export interface TimelineMutableAdapters {
 
 export interface TimelineStoreState extends TimelineStoreBootstrap {
   availability: TimelineAvailabilityState;
+  timelineOps: TimelineOps | null;
   setMounted: (mounted: boolean) => void;
   syncDataSlice: (data: TimelineEditorDataContextValue) => void;
   syncOpsSlice: (ops: TimelineEditorOpsContextValue) => void;
@@ -350,6 +353,7 @@ function createInitialSlices(): TimelineStoreBootstrap {
     ops: createInitialOpsSlice(),
     chrome: createInitialChromeSlice(),
     playback: createInitialPlaybackSlice(),
+    timelineOps: null,
   };
 }
 
@@ -360,6 +364,7 @@ export function createTimelineStore(bootstrap?: Partial<TimelineStoreBootstrap>)
     ops: bootstrap?.ops ?? initialSlices.ops,
     chrome: bootstrap?.chrome ?? initialSlices.chrome,
     playback: bootstrap?.playback ?? initialSlices.playback,
+    timelineOps: bootstrap?.timelineOps ?? initialSlices.timelineOps ?? null,
   };
   const initialMounted = bootstrap !== undefined;
 
@@ -419,6 +424,9 @@ export function createTimelineStore(bootstrap?: Partial<TimelineStoreBootstrap>)
         const nextOps = bootstrap.ops ?? state.ops;
         const nextChrome = bootstrap.chrome ?? state.chrome;
         const nextPlayback = bootstrap.playback ?? state.playback;
+        const nextTimelineOps = 'timelineOps' in bootstrap
+          ? (bootstrap.timelineOps ?? null)
+          : state.timelineOps;
         const nextMounted = true;
 
         if (
@@ -426,6 +434,7 @@ export function createTimelineStore(bootstrap?: Partial<TimelineStoreBootstrap>)
           && state.ops === nextOps
           && state.chrome === nextChrome
           && state.playback === nextPlayback
+          && state.timelineOps === nextTimelineOps
           && state.availability.mounted === nextMounted
         ) {
           return state;
@@ -437,6 +446,7 @@ export function createTimelineStore(bootstrap?: Partial<TimelineStoreBootstrap>)
           ops: nextOps,
           chrome: nextChrome,
           playback: nextPlayback,
+          timelineOps: nextTimelineOps,
         };
       });
     },
@@ -636,3 +646,11 @@ export const useTimelineChromeContext = useTimelineChromeSlice;
 export const useTimelineChromeContextSafe = useTimelineChromeSliceSafe;
 export const useTimelinePlaybackContext = useTimelinePlaybackSlice;
 export const useTimelinePlaybackContextSafe = useTimelinePlaybackSliceSafe;
+
+export function useTimelineOpsFromStore(): TimelineOps | null {
+  return useBoundTimelineStore((state) => state.timelineOps);
+}
+
+export function useTimelineOpsFromStoreSafe(): TimelineOps | null {
+  return useSafeTimelineStoreValue((state) => state.timelineOps);
+}
