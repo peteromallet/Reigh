@@ -2,7 +2,7 @@
   "schema_version": 0,
   "current_milestone_index": 5,
   "current_plan_name": "m5-provider-scoped-registry-20260619-1050",
-  "last_state": "advance",
+  "last_state": "stalled",
   "pr_number": 30,
   "pr_state": "open",
   "completed": [
@@ -70,11 +70,11 @@
       "plan_name": "m4-commands-keybindings-20260619-0843"
     }
   ],
-  "branch_head": "dfa8288753fb191751977a44d3c0a32b365dde25",
-  "pr_head": "6a99fddb64c29b8601ce2a449d97728d3df77d9a",
-  "last_pushed_commit": "dfa8288753fb191751977a44d3c0a32b365dde25",
-  "dirty_flag": false,
-  "sync_state": "stale",
+  "branch_head": "51b922d464b8350389e0766f10677e925063405e",
+  "pr_head": "51b922d464b8350389e0766f10677e925063405e",
+  "last_pushed_commit": "51b922d464b8350389e0766f10677e925063405e",
+  "dirty_flag": true,
+  "sync_state": "dirty",
   "extra_repos": [],
   "chain_session": null,
   "resolved_workspace": null,
@@ -96,7 +96,7 @@
       "target_root": "/Users/peteromalley/Documents/.megaplan-worktrees/reigh-extension-layer-epic",
       "work_dir": "/Users/peteromalley/Documents/.megaplan-worktrees/reigh-extension-layer-epic",
       "engine_root": "/Users/peteromalley/Documents/megaplan",
-      "target_head": "957d465f39146a6e9e35d1d237768893f8037771",
+      "target_head": "51b922d464b8350389e0766f10677e925063405e",
       "target_base": "05e8719f0daeb6dbc030d728b369bbc0adbf9601",
       "target_base_ref": "main",
       "target_fallback_reason": null
