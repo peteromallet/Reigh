@@ -70,11 +70,11 @@
       "plan_name": "m4-commands-keybindings-20260619-0843"
     }
   ],
-  "branch_head": "6a99fddb64c29b8601ce2a449d97728d3df77d9a",
+  "branch_head": "957d465f39146a6e9e35d1d237768893f8037771",
   "pr_head": "6a99fddb64c29b8601ce2a449d97728d3df77d9a",
-  "last_pushed_commit": "6a99fddb64c29b8601ce2a449d97728d3df77d9a",
+  "last_pushed_commit": "957d465f39146a6e9e35d1d237768893f8037771",
   "dirty_flag": false,
-  "sync_state": "clean",
+  "sync_state": "stale",
   "extra_repos": [],
   "chain_session": null,
   "resolved_workspace": null,
@@ -96,7 +96,7 @@
       "target_root": "/Users/peteromalley/Documents/.megaplan-worktrees/reigh-extension-layer-epic",
       "work_dir": "/Users/peteromalley/Documents/.megaplan-worktrees/reigh-extension-layer-epic",
       "engine_root": "/Users/peteromalley/Documents/megaplan",
-      "target_head": "d5c110f14ceb4da56607f5b2f5ad2d5a6da3375e",
+      "target_head": "957d465f39146a6e9e35d1d237768893f8037771",
       "target_base": "05e8719f0daeb6dbc030d728b369bbc0adbf9601",
       "target_base_ref": "main",
       "target_fallback_reason": null
