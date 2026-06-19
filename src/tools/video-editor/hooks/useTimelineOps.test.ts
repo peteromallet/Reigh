@@ -924,4 +924,399 @@ describe('useTimelineOps', () => {
       // (only the newly added clip and its track are affected).
     });
   });
+
+  // -----------------------------------------------------------------------
+  // Base-version staleness (T13)
+  // -----------------------------------------------------------------------
+  describe('apply — base-version staleness rejection', () => {
+    it('rejects a stale patch when patch.version !== dataRef.current.configVersion', () => {
+      const commitData = vi.fn();
+      const dataRef = { current: makeBaseTimelineData() };
+      const createManualCheckpoint = vi.fn();
+      const jumpToCheckpoint = vi.fn();
+      const checkpoints: Checkpoint[] = [];
+
+      const { result } = renderHook(() =>
+        useTimelineOps({
+          commitData,
+          dataRef,
+          createManualCheckpoint,
+          jumpToCheckpoint,
+          checkpoints,
+        }),
+      );
+
+      expect(() =>
+        act(() =>
+          result.current.apply({
+            version: 5,
+            operations: [
+              {
+                op: 'clip.add',
+                target: 'clip-stale',
+                payload: { track: 'V1', at: 0, clipType: 'hold', hold: 1 },
+              },
+            ],
+          }),
+        ),
+      ).toThrow();
+
+      expect(commitData).not.toHaveBeenCalled();
+    });
+
+    it('rejects a stale patch when patch.version is behind configVersion', () => {
+      const commitData = vi.fn();
+      const data = makeBaseTimelineData();
+      (data as any).configVersion = 5;
+      const dataRef = { current: data };
+      const createManualCheckpoint = vi.fn();
+      const jumpToCheckpoint = vi.fn();
+      const checkpoints: Checkpoint[] = [];
+
+      const { result } = renderHook(() =>
+        useTimelineOps({
+          commitData,
+          dataRef,
+          createManualCheckpoint,
+          jumpToCheckpoint,
+          checkpoints,
+        }),
+      );
+
+      expect(() =>
+        act(() =>
+          result.current.apply({
+            version: 1,
+            operations: [
+              {
+                op: 'clip.add',
+                target: 'clip-stale',
+                payload: { track: 'V1', at: 0, clipType: 'hold', hold: 1 },
+              },
+            ],
+          }),
+        ),
+      ).toThrow();
+
+      expect(commitData).not.toHaveBeenCalled();
+    });
+
+    it('throws TimelineVersionConflictError with a descriptive message', () => {
+      const commitData = vi.fn();
+      const data = makeBaseTimelineData();
+      (data as any).configVersion = 3;
+      const dataRef = { current: data };
+      const createManualCheckpoint = vi.fn();
+      const jumpToCheckpoint = vi.fn();
+      const checkpoints: Checkpoint[] = [];
+
+      const { result } = renderHook(() =>
+        useTimelineOps({
+          commitData,
+          dataRef,
+          createManualCheckpoint,
+          jumpToCheckpoint,
+          checkpoints,
+        }),
+      );
+
+      let caught: unknown;
+      try {
+        act(() =>
+          result.current.apply({
+            version: 7,
+            operations: [
+              {
+                op: 'clip.add',
+                target: 'clip-x',
+                payload: { track: 'V1', at: 0, clipType: 'hold', hold: 1 },
+              },
+            ],
+          }),
+        );
+      } catch (e) {
+        caught = e;
+      }
+
+      expect(caught).toBeDefined();
+      expect((caught as any)?.name).toBe('TimelineVersionConflictError');
+      expect((caught as any)?.message).toContain('stale baseVersion');
+      expect((caught as any)?.message).toContain('version 7');
+      expect((caught as any)?.message).toContain('version 3');
+    });
+
+    it('does NOT reject when patch.version is 0 (no-version-expectation bypass)', () => {
+      const commitData = vi.fn();
+      const dataRef = { current: makeBaseTimelineData() };
+      const createManualCheckpoint = vi.fn();
+      const jumpToCheckpoint = vi.fn();
+      const checkpoints: Checkpoint[] = [];
+
+      const { result } = renderHook(() =>
+        useTimelineOps({
+          commitData,
+          dataRef,
+          createManualCheckpoint,
+          jumpToCheckpoint,
+          checkpoints,
+        }),
+      );
+
+      let diff: TimelineDiff | undefined;
+      act(() => {
+        diff = result.current.apply({
+          version: 0,
+          operations: [
+            {
+              op: 'clip.add',
+              target: 'clip-v0',
+              payload: { track: 'V1', at: 0, clipType: 'hold', hold: 1 },
+            },
+          ],
+        });
+      });
+
+      expect(diff).toBeDefined();
+      expect(commitData).toHaveBeenCalledTimes(1);
+    });
+
+    it('accepts patch when version matches current configVersion', () => {
+      const commitData = vi.fn();
+      const dataRef = { current: makeBaseTimelineData() };
+      const createManualCheckpoint = vi.fn();
+      const jumpToCheckpoint = vi.fn();
+      const checkpoints: Checkpoint[] = [];
+
+      const { result } = renderHook(() =>
+        useTimelineOps({
+          commitData,
+          dataRef,
+          createManualCheckpoint,
+          jumpToCheckpoint,
+          checkpoints,
+        }),
+      );
+
+      let diff: TimelineDiff | undefined;
+      act(() => {
+        diff = result.current.apply({
+          version: 1,
+          operations: [
+            {
+              op: 'clip.add',
+              target: 'clip-ok',
+              payload: { track: 'V1', at: 5, clipType: 'hold', hold: 2 },
+            },
+          ],
+        });
+      });
+
+      expect(diff).toBeDefined();
+      expect(commitData).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves the canonical timeline unchanged on stale rejection', () => {
+      const commitData = vi.fn();
+      const original = makeBaseTimelineData();
+      const dataRef = { current: original };
+      const createManualCheckpoint = vi.fn();
+      const jumpToCheckpoint = vi.fn();
+      const checkpoints: Checkpoint[] = [];
+
+      const { result } = renderHook(() =>
+        useTimelineOps({
+          commitData,
+          dataRef,
+          createManualCheckpoint,
+          jumpToCheckpoint,
+          checkpoints,
+        }),
+      );
+
+      const clipCountBefore = original.config.clips.length;
+
+      expect(() =>
+        act(() =>
+          result.current.apply({
+            version: 999,
+            operations: [
+              {
+                op: 'clip.add',
+                target: 'clip-should-not-exist',
+                payload: { track: 'V1', at: 0, clipType: 'hold', hold: 1 },
+              },
+            ],
+          }),
+        ),
+      ).toThrow();
+
+      expect(original.config.clips).toHaveLength(clipCountBefore);
+      expect(commitData).not.toHaveBeenCalled();
+    });
+
+    it('rejects stale batch even when some operations are valid', () => {
+      const commitData = vi.fn();
+      const data = makeBaseTimelineData();
+      (data as any).configVersion = 10;
+      const dataRef = { current: data };
+      const createManualCheckpoint = vi.fn();
+      const jumpToCheckpoint = vi.fn();
+      const checkpoints: Checkpoint[] = [];
+
+      const { result } = renderHook(() =>
+        useTimelineOps({
+          commitData,
+          dataRef,
+          createManualCheckpoint,
+          jumpToCheckpoint,
+          checkpoints,
+        }),
+      );
+
+      expect(() =>
+        act(() =>
+          result.current.apply({
+            version: 1,
+            operations: [
+              {
+                op: 'clip.add',
+                target: 'clip-a',
+                payload: { track: 'V1', at: 0, clipType: 'hold', hold: 1 },
+              },
+              {
+                op: 'clip.add',
+                target: 'clip-b',
+                payload: { track: 'V1', at: 5, clipType: 'hold', hold: 2 },
+              },
+            ],
+          }),
+        ),
+      ).toThrow();
+
+      expect(commitData).not.toHaveBeenCalled();
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Preview — stale base-version warning (T13)
+  // -----------------------------------------------------------------------
+  describe('preview — stale base-version warning', () => {
+    it('attaches a warning diagnostic when baseVersion does not match configVersion', () => {
+      const commitData = vi.fn();
+      const data = makeBaseTimelineData();
+      (data as any).configVersion = 5;
+      const dataRef = { current: data };
+      const createManualCheckpoint = vi.fn();
+      const jumpToCheckpoint = vi.fn();
+      const checkpoints: Checkpoint[] = [];
+
+      const { result } = renderHook(() =>
+        useTimelineOps({
+          commitData,
+          dataRef,
+          createManualCheckpoint,
+          jumpToCheckpoint,
+          checkpoints,
+        }),
+      );
+
+      let previewResult: TimelinePreviewResult | undefined;
+      act(() => {
+        previewResult = result.current.preview({
+          version: 3,
+          operations: [
+            {
+              op: 'clip.add',
+              target: 'clip-p',
+              payload: { track: 'V1', at: 0, clipType: 'hold', hold: 1 },
+            },
+          ],
+        });
+      });
+
+      expect(previewResult).toBeDefined();
+      expect(previewResult!.fullyPreviewable).toBe(true);
+      const staleDiag = previewResult!.diagnostics.find(
+        (d) => d.code === 'timeline-patch/stale-base-version',
+      );
+      expect(staleDiag).toBeDefined();
+      expect(staleDiag!.severity).toBe('warning');
+      expect(staleDiag!.message).toContain('baseVersion (3)');
+      expect(staleDiag!.message).toContain('version (5)');
+    });
+
+    it('does NOT warn when baseVersion matches configVersion', () => {
+      const commitData = vi.fn();
+      const dataRef = { current: makeBaseTimelineData() };
+      const createManualCheckpoint = vi.fn();
+      const jumpToCheckpoint = vi.fn();
+      const checkpoints: Checkpoint[] = [];
+
+      const { result } = renderHook(() =>
+        useTimelineOps({
+          commitData,
+          dataRef,
+          createManualCheckpoint,
+          jumpToCheckpoint,
+          checkpoints,
+        }),
+      );
+
+      let previewResult: TimelinePreviewResult | undefined;
+      act(() => {
+        previewResult = result.current.preview({
+          version: 1,
+          operations: [
+            {
+              op: 'clip.add',
+              target: 'clip-p',
+              payload: { track: 'V1', at: 0, clipType: 'hold', hold: 1 },
+            },
+          ],
+        });
+      });
+
+      const staleDiag = previewResult!.diagnostics.find(
+        (d) => d.code === 'timeline-patch/stale-base-version',
+      );
+      expect(staleDiag).toBeUndefined();
+    });
+
+    it('does NOT warn when patch.version is 0 (no-version-expectation bypass)', () => {
+      const commitData = vi.fn();
+      const dataRef = { current: makeBaseTimelineData() };
+      const createManualCheckpoint = vi.fn();
+      const jumpToCheckpoint = vi.fn();
+      const checkpoints: Checkpoint[] = [];
+
+      const { result } = renderHook(() =>
+        useTimelineOps({
+          commitData,
+          dataRef,
+          createManualCheckpoint,
+          jumpToCheckpoint,
+          checkpoints,
+        }),
+      );
+
+      let previewResult: TimelinePreviewResult | undefined;
+      act(() => {
+        previewResult = result.current.preview({
+          version: 0,
+          operations: [
+            {
+              op: 'clip.add',
+              target: 'clip-p',
+              payload: { track: 'V1', at: 0, clipType: 'hold', hold: 1 },
+            },
+          ],
+        });
+      });
+
+      const staleDiag = previewResult!.diagnostics.find(
+        (d) => d.code === 'timeline-patch/stale-base-version',
+      );
+      expect(staleDiag).toBeUndefined();
+    });
+  });
 });

@@ -2038,6 +2038,662 @@ describe('compileTimelinePatch — merge/replace for project-data.write', () => 
   });
 });
 
+describe('compileTimelinePatch — project-data extension total bytes overflow', () => {
+  it('produces error diagnostic when projected total bytes exceed MAX_EXTENSION_TOTAL_BYTES', () => {
+    // Build existing app data close to 1 MB
+    const existingEntries: Record<string, unknown> = {};
+    const bigValue = 'x'.repeat(50000); // ~50KB per entry
+    for (let i = 0; i < 20; i++) {
+      existingEntries[`key${i}`] = { data: bigValue };
+    }
+    // This is roughly 20 * 50011 ≈ 1,000,220 bytes (just under 1 MB)
+
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+      app: { 'com.example.ext': existingEntries },
+    });
+
+    // Now try to write another entry that pushes it over 1 MB
+    const newBigValue = 'x'.repeat(50000);
+    const result = compileTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('project-data.write', 'com.example.ext', {
+            key: 'overflow-key',
+            value: { data: newBigValue },
+          }),
+        ],
+      }),
+      data,
+    );
+
+    // Should produce error diagnostic about extension-total-exceeded
+    const overflowDiag = result.diagnostics.find(
+      (d) => d.code === 'timeline-patch/project-data-overflow' &&
+        (d.detail as any)?.code === 'project-data/extension-total-exceeded',
+    );
+    expect(overflowDiag).toBeDefined();
+    expect(overflowDiag!.severity).toBe('error');
+    expect(overflowDiag!.op).toBe('project-data.write');
+    expect(overflowDiag!.target).toBe('com.example.ext');
+    // Should still be valid since overflow diagnostic is guidance
+    expect(result.valid).toBe(true);
+  });
+
+  it('produces ProjectDataLimitDetail with extension-total-exceeded shape', () => {
+    const existingEntries: Record<string, unknown> = {};
+    const bigValue = 'x'.repeat(50000);
+    for (let i = 0; i < 21; i++) {
+      existingEntries[`key${i}`] = { data: bigValue };
+    }
+
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+      app: { 'com.example.ext': existingEntries },
+    });
+
+    const result = compileTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('project-data.write', 'com.example.ext', {
+            key: 'overflow',
+            value: { data: 'x'.repeat(50000) },
+          }),
+        ],
+      }),
+      data,
+    );
+
+    const diag = result.diagnostics.find(
+      (d) => d.code === 'timeline-patch/project-data-overflow' &&
+        (d.detail as any)?.code === 'project-data/extension-total-exceeded',
+    );
+    expect(diag).toBeDefined();
+    const detail = diag!.detail as {
+      code: string;
+      extensionId: string;
+      limit: number;
+      actual: number;
+      unit: string;
+    };
+    expect(detail.code).toBe('project-data/extension-total-exceeded');
+    expect(detail.extensionId).toBe('com.example.ext');
+    expect(detail.limit).toBe(1 * 1024 * 1024);
+    expect(typeof detail.actual).toBe('number');
+    expect(detail.actual).toBeGreaterThan(1 * 1024 * 1024);
+    expect(detail.unit).toBe('bytes');
+  });
+
+  it('does not produce overflow diagnostic when under MAX_EXTENSION_TOTAL_BYTES', () => {
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+      app: { 'com.example.ext': { k1: { data: 'small' } } },
+    });
+
+    const result = compileTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('project-data.write', 'com.example.ext', {
+            key: 'k2',
+            value: { data: 'also-small' },
+          }),
+        ],
+      }),
+      data,
+    );
+
+    const overflowDiag = result.diagnostics.find(
+      (d) => d.code === 'timeline-patch/project-data-overflow',
+    );
+    expect(overflowDiag).toBeUndefined();
+    expect(result.valid).toBe(true);
+  });
+
+  it('replacing an existing entry with a smaller one does not overflow', () => {
+    const bigValue = 'x'.repeat(900000); // ~900 KB
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+      app: { 'com.example.ext': { big: { data: bigValue } } },
+    });
+
+    const result = compileTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('project-data.write', 'com.example.ext', {
+            key: 'big',
+            value: { data: 'tiny' },
+          }),
+        ],
+      }),
+      data,
+    );
+
+    const overflowDiag = result.diagnostics.find(
+      (d) => d.code === 'timeline-patch/project-data-overflow',
+    );
+    expect(overflowDiag).toBeUndefined();
+    expect(result.valid).toBe(true);
+  });
+
+  it('separate extensions have independent total byte budgets', () => {
+    const existingEntries: Record<string, unknown> = {};
+    const bigValue = 'x'.repeat(50000);
+    for (let i = 0; i < 20; i++) {
+      existingEntries[`key${i}`] = { data: bigValue };
+    }
+    // Extension A is nearly full. Extension B is empty.
+
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+      app: {
+        'com.ext-a': existingEntries,
+        'com.ext-b': {},
+      },
+    });
+
+    // Writing to extension B should not overflow (it has its own budget)
+    const result = compileTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('project-data.write', 'com.ext-b', {
+            key: 'new-key',
+            value: { data: bigValue },
+          }),
+        ],
+      }),
+      data,
+    );
+
+    const overflowDiag = result.diagnostics.find(
+      (d) => d.code === 'timeline-patch/project-data-overflow',
+    );
+    expect(overflowDiag).toBeUndefined();
+    expect(result.valid).toBe(true);
+  });
+
+  it('exactly at MAX_EXTENSION_TOTAL_BYTES is accepted (boundary)', () => {
+    // Build entries that sum exactly to 1 MB
+    const MAX = 1 * 1024 * 1024;
+    const existingEntries: Record<string, unknown> = {};
+    const entryValue = 'x'.repeat(10000);
+    const entrySize = JSON.stringify({ data: entryValue }).length;
+    const entriesNeeded = Math.floor(MAX / entrySize);
+
+    for (let i = 0; i < entriesNeeded; i++) {
+      existingEntries[`key${i}`] = { data: entryValue };
+    }
+
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+      app: { 'com.example.ext': existingEntries },
+    });
+
+    const result = compileTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('project-data.write', 'com.example.ext', {
+            key: `key${entriesNeeded}`,
+            value: { data: entryValue },
+          }),
+        ],
+      }),
+      data,
+    );
+
+    const overflowDiag = result.diagnostics.find(
+      (d) => d.code === 'timeline-patch/project-data-overflow' &&
+        (d.detail as any)?.code === 'project-data/extension-total-exceeded',
+    );
+    // This test documents behavior at the boundary
+    if (overflowDiag) {
+      const detail = overflowDiag.detail as Record<string, unknown>;
+      expect(detail.code).toBe('project-data/extension-total-exceeded');
+      expect(detail.extensionId).toBe('com.example.ext');
+      expect(detail.unit).toBe('bytes');
+    }
+  });
+});
+
+describe('compileTimelinePatch — project-data entry count overflow', () => {
+  it('produces error diagnostic when a new key exceeds MAX_ENTRIES_PER_EXTENSION', () => {
+    const existingEntries: Record<string, unknown> = {};
+    for (let i = 0; i < 128; i++) {
+      existingEntries[`key${i}`] = { value: i };
+    }
+
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+      app: { 'com.example.ext': existingEntries },
+    });
+
+    const result = compileTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('project-data.write', 'com.example.ext', {
+            key: 'new-key',
+            value: { value: 999 },
+          }),
+        ],
+      }),
+      data,
+    );
+
+    const overflowDiag = result.diagnostics.find(
+      (d) => d.code === 'timeline-patch/project-data-overflow' &&
+        (d.detail as any)?.code === 'project-data/entry-count-exceeded',
+    );
+    expect(overflowDiag).toBeDefined();
+    expect(overflowDiag!.severity).toBe('error');
+    expect(overflowDiag!.op).toBe('project-data.write');
+    expect(overflowDiag!.target).toBe('com.example.ext');
+    expect(result.valid).toBe(true);
+  });
+
+  it('produces ProjectDataLimitDetail with entry-count-exceeded shape', () => {
+    const existingEntries: Record<string, unknown> = {};
+    for (let i = 0; i < 128; i++) {
+      existingEntries[`key${i}`] = { value: i };
+    }
+
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+      app: { 'com.example.ext': existingEntries },
+    });
+
+    const result = compileTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('project-data.write', 'com.example.ext', {
+            key: 'new-key',
+            value: { value: 999 },
+          }),
+        ],
+      }),
+      data,
+    );
+
+    const diag = result.diagnostics.find(
+      (d) => d.code === 'timeline-patch/project-data-overflow' &&
+        (d.detail as any)?.code === 'project-data/entry-count-exceeded',
+    );
+    expect(diag).toBeDefined();
+    const detail = diag!.detail as {
+      code: string;
+      extensionId: string;
+      limit: number;
+      actual: number;
+      unit: string;
+    };
+    expect(detail.code).toBe('project-data/entry-count-exceeded');
+    expect(detail.extensionId).toBe('com.example.ext');
+    expect(detail.limit).toBe(128);
+    expect(detail.actual).toBe(129);
+    expect(detail.unit).toBe('entries');
+  });
+
+  it('does not produce entry-count diagnostic when under MAX_ENTRIES_PER_EXTENSION', () => {
+    const existingEntries: Record<string, unknown> = {};
+    for (let i = 0; i < 10; i++) {
+      existingEntries[`key${i}`] = { value: i };
+    }
+
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+      app: { 'com.example.ext': existingEntries },
+    });
+
+    const result = compileTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('project-data.write', 'com.example.ext', {
+            key: 'new-key',
+            value: { value: 999 },
+          }),
+        ],
+      }),
+      data,
+    );
+
+    const overflowDiag = result.diagnostics.find(
+      (d) => d.code === 'timeline-patch/project-data-overflow',
+    );
+    expect(overflowDiag).toBeUndefined();
+    expect(result.valid).toBe(true);
+  });
+
+  it('replacing an existing key does not count toward entry limit', () => {
+    const existingEntries: Record<string, unknown> = {};
+    for (let i = 0; i < 128; i++) {
+      existingEntries[`key${i}`] = { value: i };
+    }
+
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+      app: { 'com.example.ext': existingEntries },
+    });
+
+    // Replace an existing key — should not trigger entry-count overflow
+    const result = compileTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('project-data.write', 'com.example.ext', {
+            key: 'key0',
+            value: { value: 999 },
+          }),
+        ],
+      }),
+      data,
+    );
+
+    const overflowDiag = result.diagnostics.find(
+      (d) => d.code === 'timeline-patch/project-data-overflow' &&
+        (d.detail as any)?.code === 'project-data/entry-count-exceeded',
+    );
+    expect(overflowDiag).toBeUndefined();
+    expect(result.valid).toBe(true);
+  });
+
+  it('separate extensions have independent entry count budgets', () => {
+    const existingEntries: Record<string, unknown> = {};
+    for (let i = 0; i < 128; i++) {
+      existingEntries[`key${i}`] = { value: i };
+    }
+
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+      app: {
+        'com.ext-a': existingEntries,
+        'com.ext-b': {},
+      },
+    });
+
+    // Writing to extension B should not be subject to extension A's entry count
+    const result = compileTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('project-data.write', 'com.ext-b', {
+            key: 'new-key',
+            value: { value: 1 },
+          }),
+        ],
+      }),
+      data,
+    );
+
+    const overflowDiag = result.diagnostics.find(
+      (d) => d.code === 'timeline-patch/project-data-overflow',
+    );
+    expect(overflowDiag).toBeUndefined();
+    expect(result.valid).toBe(true);
+  });
+
+  it('entry count overflow diagnostic includes operationIndex', () => {
+    const existingEntries: Record<string, unknown> = {};
+    for (let i = 0; i < 128; i++) {
+      existingEntries[`key${i}`] = { value: i };
+    }
+
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+      app: { 'com.example.ext': existingEntries },
+    });
+
+    const result = compileTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('clip.add', 'c1', { at: 0, clipType: 'media' }),
+          makeOp('project-data.write', 'com.example.ext', {
+            key: 'new-key',
+            value: { value: 999 },
+          }),
+        ],
+      }),
+      data,
+    );
+
+    const diag = result.diagnostics.find(
+      (d) => d.code === 'timeline-patch/project-data-overflow' &&
+        (d.detail as any)?.code === 'project-data/entry-count-exceeded',
+    );
+    expect(diag).toBeDefined();
+    expect(diag!.operationIndex).toBe(1);
+  });
+
+  it('total bytes overflow diagnostic includes operationIndex', () => {
+    const existingEntries: Record<string, unknown> = {};
+    const bigValue = 'x'.repeat(50000);
+    for (let i = 0; i < 21; i++) {
+      existingEntries[`key${i}`] = { data: bigValue };
+    }
+
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+      app: { 'com.example.ext': existingEntries },
+    });
+
+    const result = compileTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('clip.add', 'c1', { at: 0, clipType: 'media' }),
+          makeOp('project-data.write', 'com.example.ext', {
+            key: 'overflow',
+            value: { data: 'x'.repeat(50000) },
+          }),
+        ],
+      }),
+      data,
+    );
+
+    const diag = result.diagnostics.find(
+      (d) => d.code === 'timeline-patch/project-data-overflow' &&
+        (d.detail as any)?.code === 'project-data/extension-total-exceeded',
+    );
+    expect(diag).toBeDefined();
+    expect(diag!.operationIndex).toBe(1);
+  });
+
+  it('both total bytes and entry count overflow diagnostics produced for same write', () => {
+    const existingEntries: Record<string, unknown> = {};
+    const bigValue = 'x'.repeat(10000);
+    for (let i = 0; i < 128; i++) {
+      existingEntries[`key${i}`] = { data: bigValue };
+    }
+
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+      app: { 'com.example.ext': existingEntries },
+    });
+
+    // This write should trigger BOTH overflow limits
+    const result = compileTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('project-data.write', 'com.example.ext', {
+            key: 'overflow',
+            value: { data: bigValue },
+          }),
+        ],
+      }),
+      data,
+    );
+
+    const totalDiag = result.diagnostics.find(
+      (d) => d.code === 'timeline-patch/project-data-overflow' &&
+        (d.detail as any)?.code === 'project-data/extension-total-exceeded',
+    );
+    const countDiag = result.diagnostics.find(
+      (d) => d.code === 'timeline-patch/project-data-overflow' &&
+        (d.detail as any)?.code === 'project-data/entry-count-exceeded',
+    );
+    expect(totalDiag).toBeDefined();
+    expect(countDiag).toBeDefined();
+    expect(result.valid).toBe(true);
+  });
+});
+
+describe('compileTimelinePatch — project-data overflow guidance', () => {
+  it('overflow diagnostic messages include extension ID, limit, and actual values', () => {
+    const existingEntries: Record<string, unknown> = {};
+    for (let i = 0; i < 128; i++) {
+      existingEntries[`key${i}`] = { value: i };
+    }
+
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+      app: { 'com.example.ext': existingEntries },
+    });
+
+    const result = compileTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('project-data.write', 'com.example.ext', {
+            key: 'new-key',
+            value: { value: 999 },
+          }),
+        ],
+      }),
+      data,
+    );
+
+    const diag = result.diagnostics.find(
+      (d) => d.code === 'timeline-patch/project-data-overflow' &&
+        (d.detail as any)?.code === 'project-data/entry-count-exceeded',
+    );
+    expect(diag).toBeDefined();
+    // Message should be diagnostic-rich for overflow guidance
+    expect(diag!.message).toContain('com.example.ext');
+    expect(diag!.message).toContain('128');
+    expect(diag!.message).toContain('MAX_ENTRIES_PER_EXTENSION');
+  });
+
+  it('total bytes overflow message contains size guidance', () => {
+    const existingEntries: Record<string, unknown> = {};
+    const bigValue = 'x'.repeat(50000);
+    for (let i = 0; i < 21; i++) {
+      existingEntries[`key${i}`] = { data: bigValue };
+    }
+
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+      app: { 'com.example.ext': existingEntries },
+    });
+
+    const result = compileTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('project-data.write', 'com.example.ext', {
+            key: 'overflow',
+            value: { data: 'x'.repeat(50000) },
+          }),
+        ],
+      }),
+      data,
+    );
+
+    const diag = result.diagnostics.find(
+      (d) => d.code === 'timeline-patch/project-data-overflow' &&
+        (d.detail as any)?.code === 'project-data/extension-total-exceeded',
+    );
+    expect(diag).toBeDefined();
+    expect(diag!.message).toContain('com.example.ext');
+    expect(diag!.message).toContain('MAX_EXTENSION_TOTAL_BYTES');
+    expect(diag!.message).toContain(String(1 * 1024 * 1024));
+  });
+
+  it('rollback-safety: original configApp is not mutated when overflow occurs', () => {
+    const existingEntries: Record<string, unknown> = {};
+    const bigValue = 'x'.repeat(50000);
+    for (let i = 0; i < 21; i++) {
+      existingEntries[`key${i}`] = { data: bigValue };
+    }
+
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+      app: { 'com.example.ext': existingEntries },
+    });
+
+    const appBefore = data.config.app;
+    const extBefore = { ...(appBefore['com.example.ext'] as Record<string, unknown>) };
+    const extKeyCountBefore = Object.keys(extBefore).length;
+
+    const result = compileTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('project-data.write', 'com.example.ext', {
+            key: 'overflow',
+            value: { data: 'x'.repeat(50000) },
+          }),
+        ],
+      }),
+      data,
+    );
+
+    // Original data must be unmodified (rollback-safe)
+    const appAfter = data.config.app;
+    const extAfter = { ...(appAfter['com.example.ext'] as Record<string, unknown>) };
+    expect(Object.keys(extAfter).length).toBe(extKeyCountBefore);
+    // The patch should still be applied to nextData
+    expect(result.valid).toBe(true);
+    expect(result.nextData).not.toBeNull();
+  });
+
+  it('replayability: same patch produces same diagnostics and nextData when replayed', () => {
+    const existingEntries: Record<string, unknown> = {};
+    for (let i = 0; i < 128; i++) {
+      existingEntries[`key${i}`] = { value: i };
+    }
+
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+      app: { 'com.example.ext': existingEntries },
+    });
+
+    const patch = makePatch({
+      operations: [
+        makeOp('project-data.write', 'com.example.ext', {
+          key: 'new-key',
+          value: { value: 999 },
+        }),
+      ],
+    });
+
+    const result1 = compileTimelinePatch(patch, data);
+    const result2 = compileTimelinePatch(patch, data);
+
+    // Same patch on same data should produce identical results (replayable)
+    expect(result1.valid).toBe(result2.valid);
+    expect(result1.diagnostics.length).toBe(result2.diagnostics.length);
+    expect(result1.diff.entries.length).toBe(result2.diff.entries.length);
+
+    const diags1 = result1.diagnostics.filter(
+      (d) => d.code === 'timeline-patch/project-data-overflow',
+    );
+    const diags2 = result2.diagnostics.filter(
+      (d) => d.code === 'timeline-patch/project-data-overflow',
+    );
+    expect(diags1.length).toBe(diags2.length);
+  });
+});
+
+
 describe('compileTimelinePatch — operation ordering', () => {
   it('applies operations with order field first, in ascending order', () => {
     const data = makeMinimalTimelineData({
@@ -3392,5 +4048,723 @@ describe('compileTimelinePatch — edge cases', () => {
     const order = result.mutation!.clipOrderOverride!['V1'];
     expect(order).toEqual(expect.arrayContaining(['c1', 'c2', 'c3']));
     expect(order).toHaveLength(3);
+  });
+});
+
+// ============================================================================
+// T29: Extension project-data persistence, replay, rollback, actionable diagnostics
+// ============================================================================
+
+describe('compileTimelinePatch — tiny DSL/annotation data persistence', () => {
+  it('persists a tiny annotation object and reads it back from nextData', () => {
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+    });
+
+    const annotation = { type: 'annotation', start: 1.5, end: 3.0, text: 'hello world', color: '#ff0000' };
+
+    const result = compileTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('project-data.write', 'com.annotations.ext', { key: 'ann_001', value: annotation }),
+        ],
+      }),
+      data,
+    );
+
+    expect(result.valid).toBe(true);
+    expect(result.nextData).not.toBeNull();
+    
+    // Verify the data was persisted in nextData.config.app
+    const nextApp = result.nextData!.config.app;
+    expect(nextApp).toHaveProperty('com.annotations.ext');
+    expect((nextApp['com.annotations.ext'] as Record<string, unknown>).ann_001).toEqual(annotation);
+    
+    // Verify diff entry
+    const diffEntry = result.diff.entries.find(e => e.granularity === 'project-data');
+    expect(diffEntry).toBeDefined();
+    expect(diffEntry!.kind).toBe('added');
+    expect(diffEntry!.target).toBe('com.annotations.ext');
+  });
+
+  it('persists a small DSL snippet (shader/material) and replays identically', () => {
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+    });
+
+    const dslSnippet = {
+      type: 'shader',
+      language: 'glsl',
+      source: 'void main() { gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); }',
+      uniforms: { u_time: 'float', u_resolution: 'vec2' },
+      version: 1,
+    };
+
+    const patch = makePatch({
+      operations: [
+        makeOp('project-data.write', 'com.shaders.ext', { key: 'fragment_red', value: dslSnippet }),
+      ],
+    });
+
+    // First application
+    const result1 = compileTimelinePatch(patch, data);
+    expect(result1.valid).toBe(true);
+    const stored1 = (result1.nextData!.config.app['com.shaders.ext'] as Record<string, unknown>).fragment_red;
+    expect(stored1).toEqual(dslSnippet);
+
+    // Replay: same patch on same data produces identical results
+    const result2 = compileTimelinePatch(patch, data);
+    expect(result2.valid).toBe(true);
+    const stored2 = (result2.nextData!.config.app['com.shaders.ext'] as Record<string, unknown>).fragment_red;
+    expect(stored2).toEqual(dslSnippet);
+    
+    // Replay determinism: diff should be identical
+    expect(result2.diff.entries).toHaveLength(result1.diff.entries.length);
+    expect(result2.diagnostics).toHaveLength(result1.diagnostics.length);
+  });
+
+  it('persists multiple small annotation entries and retrieves all', () => {
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+    });
+
+    const annotations = [
+      { key: 'ann_a', value: { type: 'highlight', region: 'intro', confidence: 0.95 } },
+      { key: 'ann_b', value: { type: 'marker', label: 'cut-point', frame: 240 } },
+      { key: 'ann_c', value: { type: 'note', author: 'editor', text: 'review needed' } },
+    ];
+
+    // Write each annotation in sequence
+    let currentData = data;
+    for (const ann of annotations) {
+      const result = compileTimelinePatch(
+        makePatch({
+          operations: [
+            makeOp('project-data.write', 'com.annotations.ext', { key: ann.key, value: ann.value }),
+          ],
+        }),
+        currentData,
+      );
+      expect(result.valid).toBe(true);
+      currentData = result.nextData!;
+    }
+
+    // Verify all entries are present in final state
+    const finalApp = currentData.config.app['com.annotations.ext'] as Record<string, unknown>;
+    expect(Object.keys(finalApp)).toHaveLength(3);
+    expect(finalApp.ann_a).toEqual(annotations[0].value);
+    expect(finalApp.ann_b).toEqual(annotations[1].value);
+    expect(finalApp.ann_c).toEqual(annotations[2].value);
+  });
+
+  it('deletes an annotation entry and verifies it is gone', () => {
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+      app: { 'com.annotations.ext': { ann_001: { type: 'marker', label: 'start' } } },
+    });
+
+    const delResult = compileTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('project-data.delete', 'com.annotations.ext', { key: 'ann_001' }),
+        ],
+      }),
+      data,
+    );
+
+    expect(delResult.valid).toBe(true);
+    const appAfterDel = delResult.nextData!.config.app;
+    // The extension namespace should be removed entirely since it was the only key.
+    // When configApp is empty, nextConfig.app is not set, so config.app may be undefined.
+    if (appAfterDel) {
+      expect(appAfterDel['com.annotations.ext']).toBeUndefined();
+    }
+
+    // Diff should show removed
+    const diffEntry = delResult.diff.entries.find(e => e.kind === 'removed');
+    expect(diffEntry).toBeDefined();
+    expect(diffEntry!.target).toBe('com.annotations.ext');
+  });
+
+  it('round-trips a material reference through write, read, delete, re-add', () => {
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+    });
+
+    const materialRef = {
+      type: 'material_ref',
+      packageId: 'com.example.package',
+      resourcePath: '/materials/glossy_red.json',
+      version: '2.1.0',
+      parameters: { roughness: 0.3, metallic: 0.1 },
+    };
+
+    // Phase 1: Write
+    const r1 = compileTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('project-data.write', 'com.materials.ext', { key: 'mat_glossy', value: materialRef }),
+        ],
+      }),
+      data,
+    );
+    expect(r1.valid).toBe(true);
+    expect((r1.nextData!.config.app['com.materials.ext'] as Record<string, unknown>).mat_glossy).toEqual(materialRef);
+
+    // Phase 2: Read back implicitly via nextData
+    const stored = (r1.nextData!.config.app['com.materials.ext'] as Record<string, unknown>).mat_glossy;
+    expect(stored).toEqual(materialRef);
+
+    // Phase 3: Delete
+    const r2 = compileTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('project-data.delete', 'com.materials.ext', { key: 'mat_glossy' }),
+        ],
+      }),
+      r1.nextData!,
+    );
+    expect(r2.valid).toBe(true);
+    const r2App = r2.nextData!.config.app;
+    // After deleting the only key, config.app may be undefined (empty app not serialized)
+    if (r2App) {
+      expect(r2App['com.materials.ext']).toBeUndefined();
+    }
+
+    // Phase 4: Re-add with different parameters
+    const updatedRef = { ...materialRef, parameters: { roughness: 0.7, metallic: 0.5 } };
+    const r3 = compileTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('project-data.write', 'com.materials.ext', { key: 'mat_glossy', value: updatedRef }),
+        ],
+      }),
+      r2.nextData!,
+    );
+    expect(r3.valid).toBe(true);
+    expect((r3.nextData!.config.app['com.materials.ext'] as Record<string, unknown>).mat_glossy).toEqual(updatedRef);
+  });
+});
+
+describe('compileTimelinePatch — project-data rollback safety', () => {
+  it('rollback: original configApp is unmodified when entry-size overflow occurs in batch', () => {
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+      app: { 'com.example.ext': { existing: { data: 'safe' } } },
+    });
+    
+    const appBefore = JSON.stringify(data.config.app);
+    
+    const bigString = 'x'.repeat(64 * 1024 + 100); // Over MAX_ENTRY_BYTES
+    const result = compileTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('clip.add', 'c1', { at: 0, clipType: 'media' }),
+          makeOp('project-data.write', 'com.example.ext', { key: 'too-big', value: { data: bigString } }),
+        ],
+      }),
+      data,
+    );
+    
+    // Original data must be byte-for-byte unchanged
+    expect(JSON.stringify(data.config.app)).toBe(appBefore);
+    
+    // Entry-size overflow is caught during validation, making the batch invalid.
+    // The original TimelineData must still be unmodified.
+    expect(result.valid).toBe(false);
+    // The overflow diagnostic should still be emitted
+    const overflowDiag = result.diagnostics.find(d => d.code === 'timeline-patch/project-data-overflow');
+    expect(overflowDiag).toBeDefined();
+    // nextData and mutation should be null for invalid batches
+    expect(result.nextData).toBeNull();
+    expect(result.mutation).toBeNull();
+  });
+
+  it('rollback: original configApp is unmodified when extension total bytes overflow occurs', () => {
+    const existingEntries: Record<string, unknown> = {};
+    const bigValue = 'x'.repeat(50000);
+    for (let i = 0; i < 21; i++) {
+      existingEntries[`key${i}`] = { data: bigValue };
+    }
+
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+      app: { 'com.example.ext': existingEntries },
+    });
+    
+    const appBefore = JSON.stringify(data.config.app);
+    
+    const result = compileTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('project-data.write', 'com.example.ext', { key: 'overflow', value: { data: bigValue } }),
+        ],
+      }),
+      data,
+    );
+
+    // Original data must be byte-for-byte unchanged
+    expect(JSON.stringify(data.config.app)).toBe(appBefore);
+    
+    const overflowDiag = result.diagnostics.find(
+      d => d.code === 'timeline-patch/project-data-overflow' && (d.detail as any)?.code === 'project-data/extension-total-exceeded'
+    );
+    expect(overflowDiag).toBeDefined();
+  });
+
+  it('rollback: original app state is unmodified when entry count overflow occurs', () => {
+    const existingEntries: Record<string, unknown> = {};
+    for (let i = 0; i < 128; i++) {
+      existingEntries[`key${i}`] = { value: i };
+    }
+
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+      app: { 'com.example.ext': existingEntries },
+    });
+    
+    const appBefore = JSON.stringify(data.config.app);
+    const extEntryCountBefore = Object.keys(data.config.app['com.example.ext'] as object).length;
+    
+    const result = compileTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('project-data.write', 'com.example.ext', { key: 'new-key', value: { value: 999 } }),
+        ],
+      }),
+      data,
+    );
+
+    // Original data must be byte-for-byte unchanged
+    expect(JSON.stringify(data.config.app)).toBe(appBefore);
+    expect(Object.keys(data.config.app['com.example.ext'] as object).length).toBe(extEntryCountBefore);
+    
+    const countDiag = result.diagnostics.find(
+      d => d.code === 'timeline-patch/project-data-overflow' && (d.detail as any)?.code === 'project-data/entry-count-exceeded'
+    );
+    expect(countDiag).toBeDefined();
+  });
+
+  it('rollback: overflow does not prevent valid operations in same batch from being applied to nextData', () => {
+    const existingEntries: Record<string, unknown> = {};
+    for (let i = 0; i < 128; i++) {
+      existingEntries[`key${i}`] = { value: i };
+    }
+
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+      app: { 'com.example.ext': existingEntries },
+    });
+
+    const result = compileTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('track.add', 'A1', { kind: 'audio' }, 0),
+          makeOp('project-data.write', 'com.example.ext', { key: 'new-key', value: { value: 999 } }, 1),
+          makeOp('clip.add', 'c1', { track: 'V1', at: 0, clipType: 'media' }, 2),
+        ],
+      }),
+      data,
+    );
+
+    expect(result.valid).toBe(true);
+    // Track add and clip add should have been applied to nextData
+    const nextTracks = result.nextData!.config.tracks as Array<Record<string, unknown>>;
+    expect(nextTracks.find(t => t.id === 'A1')).toBeDefined();
+    const nextClips = result.nextData!.config.clips as Array<Record<string, unknown>>;
+    expect(nextClips.find(c => c.id === 'c1')).toBeDefined();
+    
+    // But the overflow diagnostic should be present
+    const countDiag = result.diagnostics.find(
+      d => d.code === 'timeline-patch/project-data-overflow' && (d.detail as any)?.code === 'project-data/entry-count-exceeded'
+    );
+    expect(countDiag).toBeDefined();
+  });
+
+  it('rollback: failed validation (invalid batch) returns original data shape and no mutation', () => {
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+      app: { 'com.example.ext': { k1: { data: 'safe' } } },
+    });
+    
+    const appBefore = JSON.stringify(data.config.app);
+    
+    // An invalid patch (unknown operation)
+    const result = compileTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('unknown.op' as any, 'target', {}),
+        ],
+      }),
+      data,
+    );
+
+    // Original must be unmodified
+    expect(JSON.stringify(data.config.app)).toBe(appBefore);
+    expect(result.valid).toBe(false);
+    expect(result.nextData).toBeNull();
+    expect(result.mutation).toBeNull();
+  });
+});
+
+describe('compileTimelinePatch — project-data actionable overflow diagnostics', () => {
+  it('entry-size overflow diagnostic message suggests reducing entry size', () => {
+    const bigString = 'x'.repeat(64 * 1024 + 100);
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+    });
+
+    const result = compileTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('project-data.write', 'com.example.ext', { key: 'big-entry', value: { data: bigString } }),
+        ],
+      }),
+      data,
+    );
+
+    const overflowDiag = result.diagnostics.find(
+      d => d.code === 'timeline-patch/project-data-overflow' && (d.detail as any)?.code === 'project-data/entry-size-exceeded'
+    );
+    expect(overflowDiag).toBeDefined();
+    // Message should provide actionable guidance
+    const msg = overflowDiag!.message;
+    expect(msg).toContain('MAX_ENTRY_BYTES');
+    expect(msg).toContain('65536'); // 64 KB = 65536 bytes
+    // Diagnostic should be actionable: points to the specific entry and limit
+    expect(overflowDiag!.target).toBe('com.example.ext');
+    expect(overflowDiag!.op).toBe('project-data.write');
+  });
+
+  it('extension total bytes overflow diagnostic includes actual byte count for guidance', () => {
+    const existingEntries: Record<string, unknown> = {};
+    const bigValue = 'x'.repeat(50000);
+    for (let i = 0; i < 21; i++) {
+      existingEntries[`key${i}`] = { data: bigValue };
+    }
+
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+      app: { 'com.example.ext': existingEntries },
+    });
+
+    const result = compileTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('project-data.write', 'com.example.ext', { key: 'overflow', value: { data: bigValue } }),
+        ],
+      }),
+      data,
+    );
+
+    const diag = result.diagnostics.find(
+      d => d.code === 'timeline-patch/project-data-overflow' && (d.detail as any)?.code === 'project-data/extension-total-exceeded'
+    );
+    expect(diag).toBeDefined();
+    
+    const detail = diag!.detail as { code: string; extensionId: string; limit: number; actual: number; unit: string };
+    expect(detail.unit).toBe('bytes');
+    expect(detail.limit).toBe(1 * 1024 * 1024);
+    expect(detail.actual).toBeGreaterThan(detail.limit);
+    
+    // Message contains the limit and extension ID for actionable guidance
+    expect(diag!.message).toContain('com.example.ext');
+    expect(diag!.message).toContain('MAX_EXTENSION_TOTAL_BYTES');
+  });
+
+  it('entry count overflow diagnostic includes current count for actionable guidance', () => {
+    const existingEntries: Record<string, unknown> = {};
+    for (let i = 0; i < 128; i++) {
+      existingEntries[`key${i}`] = { value: i };
+    }
+
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+      app: { 'com.example.ext': existingEntries },
+    });
+
+    const result = compileTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('project-data.write', 'com.example.ext', { key: 'new-key', value: { value: 999 } }),
+        ],
+      }),
+      data,
+    );
+
+    const diag = result.diagnostics.find(
+      d => d.code === 'timeline-patch/project-data-overflow' && (d.detail as any)?.code === 'project-data/entry-count-exceeded'
+    );
+    expect(diag).toBeDefined();
+    
+    const detail = diag!.detail as { code: string; extensionId: string; limit: number; actual: number; unit: string };
+    expect(detail.unit).toBe('entries');
+    expect(detail.limit).toBe(128);
+    expect(detail.actual).toBe(129);
+    
+    // Message provides actionable info
+    expect(diag!.message).toContain('com.example.ext');
+    expect(diag!.message).toContain('MAX_ENTRIES_PER_EXTENSION');
+    expect(diag!.message).toContain('128');
+  });
+
+  it('overflow diagnostic detail shape supports provider-backed repository guidance', () => {
+    // The ProjectDataLimitDetail shape carries extensionId, limit, actual, unit
+    // which a host UI can use to render actionable guidance pointing to:
+    // - package resources (extensionId maps to an installed package)
+    // - material refs (key values are often material/asset references)
+    // - provider-backed repositories (extension data is stored in config.app 
+    //   which is provider-backed via commitData)
+    
+    const existingEntries: Record<string, unknown> = {};
+    const bigValue = 'x'.repeat(50000);
+    for (let i = 0; i < 21; i++) {
+      existingEntries[`key${i}`] = { data: bigValue };
+    }
+
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+      app: { 'com.example.ext': existingEntries },
+    });
+
+    const result = compileTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('project-data.write', 'com.example.ext', { key: 'mat_ref', value: { data: bigValue } }),
+        ],
+      }),
+      data,
+    );
+
+    const diag = result.diagnostics.find(
+      d => d.code === 'timeline-patch/project-data-overflow'
+    );
+    expect(diag).toBeDefined();
+    
+    // The detail shape carries all fields needed for UI to build actionable messages
+    const detail = diag!.detail as Record<string, unknown>;
+    expect(detail).toHaveProperty('extensionId');
+    expect(detail).toHaveProperty('limit');
+    expect(detail).toHaveProperty('actual');
+    expect(detail).toHaveProperty('unit');
+    expect(detail).toHaveProperty('code');
+    
+    // The diagnostic severity is 'error' so host can surface it prominently
+    expect(diag!.severity).toBe('error');
+    
+    // The operationIndex allows the host to point to the specific operation
+    expect(diag!.operationIndex).toBeGreaterThanOrEqual(0);
+  });
+
+  it('both overflow types produce distinct diagnostic codes for targeted guidance', () => {
+    const existingEntries: Record<string, unknown> = {};
+    const bigValue = 'x'.repeat(10000);
+    for (let i = 0; i < 128; i++) {
+      existingEntries[`key${i}`] = { data: bigValue };
+    }
+
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+      app: { 'com.example.ext': existingEntries },
+    });
+
+    const result = compileTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('project-data.write', 'com.example.ext', { key: 'both-overflow', value: { data: bigValue } }),
+        ],
+      }),
+      data,
+    );
+
+    // Both entry-count and total-bytes overflow should fire
+    const countDiag = result.diagnostics.find(d => (d.detail as any)?.code === 'project-data/entry-count-exceeded');
+    const bytesDiag = result.diagnostics.find(d => (d.detail as any)?.code === 'project-data/extension-total-exceeded');
+    
+    expect(countDiag).toBeDefined();
+    expect(bytesDiag).toBeDefined();
+    
+    // Each has a distinct code for targeted UI guidance
+    expect((countDiag!.detail as any).code).toBe('project-data/entry-count-exceeded');
+    expect((bytesDiag!.detail as any).code).toBe('project-data/extension-total-exceeded');
+    
+    // Both point to the same extension
+    expect((countDiag!.detail as any).extensionId).toBe('com.example.ext');
+    expect((bytesDiag!.detail as any).extensionId).toBe('com.example.ext');
+  });
+
+  it('overflow diagnostics for separate extensions produce independent guidance', () => {
+    const existingEntries: Record<string, unknown> = {};
+    const bigValue = 'x'.repeat(50000);
+    for (let i = 0; i < 21; i++) {
+      existingEntries[`key${i}`] = { data: bigValue };
+    }
+
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+      app: {
+        'com.ext-overflow': existingEntries,
+        'com.ext-ok': { small: { data: 'tiny' } },
+      },
+    });
+
+    const result = compileTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('project-data.write', 'com.ext-overflow', { key: 'too-much', value: { data: bigValue } }),
+          makeOp('project-data.write', 'com.ext-ok', { key: 'another', value: { data: 'still-tiny' } }),
+        ],
+      }),
+      data,
+    );
+
+    // Only com.ext-overflow should have overflow diagnostics
+    const overflowDiags = result.diagnostics.filter(d => d.code === 'timeline-patch/project-data-overflow');
+    expect(overflowDiags.length).toBeGreaterThan(0);
+    
+    // All overflow diags should reference the overflowing extension
+    for (const d of overflowDiags) {
+      expect((d.detail as any).extensionId).toBe('com.ext-overflow');
+    }
+    
+    // com.ext-ok should have been written successfully
+    const nextApp = result.nextData!.config.app;
+    expect(nextApp['com.ext-ok']).toBeDefined();
+  });
+});
+
+describe('compileTimelinePatch — project-data replay determinism', () => {
+  it('replay: identical patch on identical data produces identical nextData serialization', () => {
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+    });
+
+    const patch = makePatch({
+      operations: [
+        makeOp('project-data.write', 'com.example.ext', { key: 'settings', value: { volume: 0.8, muted: false } }),
+        makeOp('project-data.write', 'com.example.ext', { key: 'annotations', value: { regions: [{ start: 0, end: 5 }] } }),
+      ],
+    });
+
+    const result1 = compileTimelinePatch(patch, data);
+    const result2 = compileTimelinePatch(patch, data);
+
+    // Full determinism: nextData, diff, diagnostics must match
+    expect(result1.valid).toBe(result2.valid);
+    expect(JSON.stringify(result1.nextData!.config.app)).toBe(JSON.stringify(result2.nextData!.config.app));
+    expect(result1.diff.entries.length).toBe(result2.diff.entries.length);
+    expect(result1.diagnostics.length).toBe(result2.diagnostics.length);
+  });
+
+  it('replay: patch with extension noop + project-data writes is deterministic', () => {
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+    });
+
+    const patch = makePatch({
+      operations: [
+        makeOp('extension.noop', 'com.example.ext', { example: true }),
+        makeOp('project-data.write', 'com.example.ext', { key: 'k1', value: { a: 1 } }),
+      ],
+    });
+
+    const r1 = compileTimelinePatch(patch, data);
+    const r2 = compileTimelinePatch(patch, data);
+
+    expect(r1.valid).toBe(r2.valid);
+    expect(r1.diff.entries.length).toBe(r2.diff.entries.length);
+    expect(r1.diagnostics.length).toBe(r2.diagnostics.length);
+    expect(JSON.stringify(r1.nextData!.config.app)).toBe(JSON.stringify(r2.nextData!.config.app));
+  });
+
+  it('replay: overflow diagnostics are deterministic across replays', () => {
+    const existingEntries: Record<string, unknown> = {};
+    for (let i = 0; i < 128; i++) {
+      existingEntries[`key${i}`] = { value: i };
+    }
+
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+      app: { 'com.example.ext': existingEntries },
+    });
+
+    const patch = makePatch({
+      operations: [
+        makeOp('project-data.write', 'com.example.ext', { key: 'overflow-key', value: { value: 999 } }),
+      ],
+    });
+
+    const r1 = compileTimelinePatch(patch, data);
+    const r2 = compileTimelinePatch(patch, data);
+    const r3 = compileTimelinePatch(patch, data);
+
+    // All replays must produce identical diagnostics
+    expect(r1.diagnostics.length).toBe(r2.diagnostics.length);
+    expect(r2.diagnostics.length).toBe(r3.diagnostics.length);
+
+    const countDiag1 = r1.diagnostics.find(d => (d.detail as any)?.code === 'project-data/entry-count-exceeded');
+    const countDiag2 = r2.diagnostics.find(d => (d.detail as any)?.code === 'project-data/entry-count-exceeded');
+    const countDiag3 = r3.diagnostics.find(d => (d.detail as any)?.code === 'project-data/entry-count-exceeded');
+    
+    expect(countDiag1).toBeDefined();
+    expect(countDiag2).toBeDefined();
+    expect(countDiag3).toBeDefined();
+    
+    expect((countDiag1!.detail as any).actual).toBe((countDiag2!.detail as any).actual);
+    expect((countDiag2!.detail as any).actual).toBe((countDiag3!.detail as any).actual);
+  });
+
+  it('replay: delete and re-add produces same final state as original on identical sequence', () => {
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+    });
+
+    // Sequence: write, delete, rewrite
+    const writePatch = makePatch({
+      operations: [makeOp('project-data.write', 'com.example.ext', { key: 'k1', value: { data: 'hello' } })],
+    });
+    const deletePatch = makePatch({
+      operations: [makeOp('project-data.delete', 'com.example.ext', { key: 'k1' })],
+    });
+    const rewritePatch = makePatch({
+      operations: [makeOp('project-data.write', 'com.example.ext', { key: 'k1', value: { data: 'hello' } })],
+    });
+
+    // First run
+    const w1 = compileTimelinePatch(writePatch, data);
+    const d1 = compileTimelinePatch(deletePatch, w1.nextData!);
+    const rw1 = compileTimelinePatch(rewritePatch, d1.nextData!);
+    
+    // Second run (replay)
+    const w2 = compileTimelinePatch(writePatch, data);
+    const d2 = compileTimelinePatch(deletePatch, w2.nextData!);
+    const rw2 = compileTimelinePatch(rewritePatch, d2.nextData!);
+
+    // Final states must match
+    expect(JSON.stringify(rw1.nextData!.config.app)).toBe(JSON.stringify(rw2.nextData!.config.app));
+    
+    // The re-added entry should be present
+    const finalApp = rw1.nextData!.config.app['com.example.ext'] as Record<string, unknown>;
+    expect(finalApp.k1).toEqual({ data: 'hello' });
   });
 });

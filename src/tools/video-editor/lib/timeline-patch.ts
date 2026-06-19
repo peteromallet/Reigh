@@ -26,6 +26,7 @@ import type {
   TimelineDiffGranularity,
   TimelineDiffKind,
   TimelinePreviewResult,
+  ProjectDataLimitDetail,
 } from '@/sdk/index';
 
 import {
@@ -1530,7 +1531,7 @@ export function compileTimelinePatch(
         break;
       }
 
-      // ── project-data.write ────────────────────────────────────────────
+      // ── project-data.write ──────────────────────────────────────────────────────
       case 'project-data.write': {
         const extId = op.target;
         const key = op.payload?.key as string;
@@ -1545,18 +1546,73 @@ export function compileTimelinePatch(
           hadValue: beforeValue !== undefined,
         };
 
+        // ── Compute projected state for limit checks ──────────────────
+        const projectedApp = { ...existingApp };
+
         if (mode === 'merge' && beforeValue !== null && typeof beforeValue === 'object' && !Array.isArray(beforeValue)
             && value !== null && typeof value === 'object' && !Array.isArray(value)) {
-          // Deep-merge value into existing object
-          existingApp[key] = deepMergeObject(
+          projectedApp[key] = deepMergeObject(
             { ...(beforeValue as Record<string, unknown>) },
             value as Record<string, unknown>,
           );
         } else {
-          // Replace mode (default for project-data): overwrite key
-          existingApp[key] = value;
+          projectedApp[key] = value;
         }
-        configApp[extId] = existingApp;
+
+        // ── Extension total bytes check (V1: 1 MB per extension) ─────
+        let projectedTotalBytes = 0;
+        for (const [, entryValue] of Object.entries(projectedApp)) {
+          if (entryValue !== undefined) {
+            try {
+              projectedTotalBytes += JSON.stringify(entryValue).length;
+            } catch {
+              // Non-serializable value ─ skip
+            }
+          }
+        }
+
+        if (projectedTotalBytes > EXTENSION_PROJECT_DATA_LIMITS.MAX_EXTENSION_TOTAL_BYTES) {
+          compileDiags.push(
+            diag('error', 'timeline-patch/project-data-overflow',
+              `project-data.write: extension "${extId}" total bytes would exceed MAX_EXTENSION_TOTAL_BYTES (${EXTENSION_PROJECT_DATA_LIMITS.MAX_EXTENSION_TOTAL_BYTES})`, {
+              operationIndex: originalIndex,
+              op: family,
+              target: extId,
+              detail: {
+                code: 'project-data/extension-total-exceeded',
+                extensionId: extId,
+                limit: EXTENSION_PROJECT_DATA_LIMITS.MAX_EXTENSION_TOTAL_BYTES,
+                actual: projectedTotalBytes,
+                unit: 'bytes',
+              } satisfies ProjectDataLimitDetail,
+            }),
+          );
+        }
+
+        // ── Entry count check (V1: 128 entries per extension) ────────
+        const projectedEntryCount = Object.keys(projectedApp).length;
+        const isNewKey = !(key in existingApp);
+
+        if (isNewKey && projectedEntryCount > EXTENSION_PROJECT_DATA_LIMITS.MAX_ENTRIES_PER_EXTENSION) {
+          compileDiags.push(
+            diag('error', 'timeline-patch/project-data-overflow',
+              `project-data.write: extension "${extId}" entry count would exceed MAX_ENTRIES_PER_EXTENSION (${EXTENSION_PROJECT_DATA_LIMITS.MAX_ENTRIES_PER_EXTENSION})`, {
+              operationIndex: originalIndex,
+              op: family,
+              target: extId,
+              detail: {
+                code: 'project-data/entry-count-exceeded',
+                extensionId: extId,
+                limit: EXTENSION_PROJECT_DATA_LIMITS.MAX_ENTRIES_PER_EXTENSION,
+                actual: projectedEntryCount,
+                unit: 'entries',
+              } satisfies ProjectDataLimitDetail,
+            }),
+          );
+        }
+
+        // ── Apply to working state ─────────────────────────────────────
+        configApp[extId] = projectedApp;
 
         affectedIds.add(extId);
         diffEntries.push({
@@ -1565,7 +1621,7 @@ export function compileTimelinePatch(
           target: extId,
           op: family,
           before: beforeSummary,
-          after: { extensionId: extId, key, value: existingApp[key], mode },
+          after: { extensionId: extId, key, value: projectedApp[key], mode },
         });
         break;
       }

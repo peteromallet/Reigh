@@ -14,6 +14,8 @@ import type {
   TimelineClipSummary,
   TimelineTrackSummary,
   ProjectExtensionRequirement,
+  GeneratedObjectMeta,
+  SourceMapEntry,
 } from '@/sdk/index';
 
 import type { TimelineData, ClipMeta } from '@/tools/video-editor/lib/timeline-data';
@@ -70,6 +72,37 @@ function deriveManaged(
   }
 
   return { managed: false };
+}
+
+/**
+ * Well-known key under which GeneratedObjectMeta is stored
+ * in clip / track / asset app data.
+ */
+const GENERATED_META_KEY = '__generated__';
+
+/**
+ * Extract GeneratedObjectMeta from an object's app record if present.
+ * The app record may carry arbitrary extension data; we only extract
+ * the well-known `__generated__` key.
+ */
+function extractGeneratedMeta(
+  app: Record<string, unknown> | undefined,
+): GeneratedObjectMeta | undefined {
+  if (!app) return undefined;
+  const raw = app[GENERATED_META_KEY];
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const g = raw as Record<string, unknown>;
+  if (typeof g.extensionId !== 'string') return undefined;
+  const meta: GeneratedObjectMeta = {
+    extensionId: g.extensionId,
+  };
+  if (typeof g.contributionId === 'string') meta.contributionId = g.contributionId;
+  if (g.provenance !== undefined && typeof g.provenance === 'object' && !Array.isArray(g.provenance)) {
+    meta.provenance = g.provenance as Record<string, unknown>;
+  }
+  if (typeof g.generatedAt === 'number') meta.generatedAt = g.generatedAt;
+  if (typeof g.sourceMapEntryId === 'string') meta.sourceMapEntryId = g.sourceMapEntryId;
+  return meta;
 }
 
 // ---------------------------------------------------------------------------
@@ -132,6 +165,9 @@ export function createTimelineReader(
 
         const { managed, managedBy } = deriveManaged(clip, knownExtensionIds);
 
+        const generatedMeta: GeneratedObjectMeta | undefined =
+          extractGeneratedMeta(clip.app);
+
         clipSummaries.push({
           id: clip.id,
           track: clip.track,
@@ -140,18 +176,24 @@ export function createTimelineReader(
           duration: computeClipDuration(clipMeta),
           managed,
           ...(managedBy !== undefined ? { managedBy } : {}),
+          ...(generatedMeta !== undefined ? { generatedMeta } : {}),
         });
       }
 
       // ── Tracks ─────────────────────────────────────────────────────
       const trackSummaries: TimelineTrackSummary[] = (config.tracks ?? []).map(
-        (track) => ({
-          id: track.id,
-          kind: track.kind,
-          label: track.label,
-          muted: track.muted ?? false,
-          ...(track.app !== undefined ? { app: track.app } : {}),
-        }),
+        (track) => {
+          const trackGeneratedMeta: GeneratedObjectMeta | undefined =
+            extractGeneratedMeta(track.app);
+          return {
+            id: track.id,
+            kind: track.kind,
+            label: track.label,
+            muted: track.muted ?? false,
+            ...(track.app !== undefined ? { app: track.app } : {}),
+            ...(trackGeneratedMeta !== undefined ? { generatedMeta: trackGeneratedMeta } : {}),
+          };
+        },
       );
 
       // ── Asset keys ─────────────────────────────────────────────────
@@ -162,6 +204,31 @@ export function createTimelineReader(
         ? { ...config.app }
         : {};
 
+      // ── Source-map entries ─────────────────────────────────────────
+      const sourceMapEntries: SourceMapEntry[] = [];
+      for (const [, extData] of Object.entries(app)) {
+        if (!extData || typeof extData !== 'object' || Array.isArray(extData)) continue;
+        const extObj = extData as Record<string, unknown>;
+        for (const [key, value] of Object.entries(extObj)) {
+          if (!key.startsWith('__sm__:') || !value || typeof value !== 'object') continue;
+          const entry = value as Record<string, unknown>;
+          if (typeof entry.id !== 'string' || typeof entry.source !== 'string') continue;
+          sourceMapEntries.push({
+            id: entry.id as string,
+            source: entry.source as string,
+            targetId: entry.targetId as string,
+            targetGranularity: entry.targetGranularity as SourceMapEntry['targetGranularity'],
+            sourceUri: entry.sourceUri as string,
+            sourceStartLine: typeof entry.sourceStartLine === 'number' ? entry.sourceStartLine : 0,
+            sourceStartColumn: typeof entry.sourceStartColumn === 'number' ? entry.sourceStartColumn : 0,
+            sourceEndLine: typeof entry.sourceEndLine === 'number' ? entry.sourceEndLine : 0,
+            sourceEndColumn: typeof entry.sourceEndColumn === 'number' ? entry.sourceEndColumn : 0,
+            stale: entry.stale === true,
+            ...(entry.meta !== undefined && typeof entry.meta === 'object' ? { meta: entry.meta as Record<string, unknown> } : {}),
+          });
+        }
+      }
+
       return {
         projectId,
         baseVersion: configVersion,
@@ -171,6 +238,7 @@ export function createTimelineReader(
         tracks: trackSummaries,
         assetKeys,
         app,
+        sourceMapEntries,
       };
     },
   };

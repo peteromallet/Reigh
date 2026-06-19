@@ -27,6 +27,7 @@ import {
 import type { TimelineData } from '@/tools/video-editor/lib/timeline-data';
 import type { CommitDataOptions } from '@/tools/video-editor/hooks/useTimelineCommit';
 import type { Checkpoint } from '@/tools/video-editor/types/history';
+import { TimelineVersionConflictError } from '@/tools/video-editor/data/DataProvider';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -72,6 +73,21 @@ export interface UseTimelineOpsArgs {
  * Every method that reads timeline state accesses `dataRef.current` at call
  * time so the adapter always operates on the latest canonical data without
  * re-creating the object on every render.
+ *
+ * ## Base-version semantics
+ *
+ * Every `apply()` call compares the patch's `version` field (the base version
+ * the patch was built against) with the current `dataRef.current.configVersion`.
+ * If they differ the patch is stale and a {@link TimelineVersionConflictError}
+ * is thrown before any mutation occurs.
+ *
+ * This is the **local monotonic invalidation** layer: it catches stale patches
+ * before they reach the provider, which is essential when the provider does
+ * not enforce strict compare-and-swap on save (e.g. AstridBridge).  When the
+ * provider *does* enforce CAS the provider layer adds a second line of defence.
+ *
+ * Version 0 is treated as "no base-version expectation" (initial patches,
+ * extensions that intentionally bypass version gating).
  */
 export function useTimelineOps({
   commitData,
@@ -116,7 +132,32 @@ export function useTimelineOps({
           ],
         };
       }
-      return previewTimelinePatch(patch, current);
+
+      const result = previewTimelinePatch(patch, current);
+
+      // Attach a stale-base-version warning when the patch was built against
+      // a different version than the current canonical state.  Preview is
+      // read-only, so we warn rather than block.
+      if (
+        patch.version !== 0 &&
+        patch.version !== current.configVersion &&
+        result.fullyPreviewable
+      ) {
+        result.diagnostics = [
+          ...result.diagnostics,
+          {
+            severity: 'warning' as const,
+            code: 'timeline-patch/stale-base-version' as const,
+            message:
+              `Preview: patch baseVersion (${patch.version}) does not match ` +
+              `current timeline version (${current.configVersion}). ` +
+              `The preview may not reflect the current state. Re-snapshot ` +
+              `to get an accurate preview.`,
+          },
+        ];
+      }
+
+      return result;
     },
     [dataRef],
   );
@@ -125,6 +166,31 @@ export function useTimelineOps({
 
   const apply = useCallback(
     (patch: TimelinePatch): TimelineDiff => {
+      // 0. Guard against no data
+      const current = dataRef.current;
+      if (!current) {
+        throw new Error('TimelineOps.apply: timeline data is not yet loaded.');
+      }
+
+      // 0a. Base-version staleness check (local monotonic invalidation).
+      //
+      //     The patch.version is the base version the caller observed when
+      //     building the patch.  If it doesn't match the current canonical
+      //     configVersion the timeline has been modified since the patch was
+      //     created — the patch is stale and must be rejected.
+      //
+      //     Version 0 is treated as "no base-version expectation" (e.g.
+      //     initial patches before the first provider load or patches from
+      //     extensions that intentionally bypass version gating).
+      if (patch.version !== 0 && patch.version !== current.configVersion) {
+        throw new TimelineVersionConflictError(
+          `TimelineOps.apply: stale baseVersion — ` +
+          `patch created at version ${patch.version} but timeline is at ` +
+          `version ${current.configVersion}. ` +
+          `Re-read the current snapshot and rebuild the patch.`,
+        );
+      }
+
       // 1. Validate the full batch
       const validation = validateTimelinePatch(patch);
       if (!validation.valid) {
@@ -138,11 +204,6 @@ export function useTimelineOps({
       }
 
       // 2. Compile against current canonical data
-      const current = dataRef.current;
-      if (!current) {
-        throw new Error('TimelineOps.apply: timeline data is not yet loaded.');
-      }
-
       const compiled = compileTimelinePatch(patch, current);
       if (!compiled.valid || !compiled.nextData) {
         const messages = compiled.diagnostics
@@ -277,7 +338,9 @@ export function useTimelineOps({
         };
       }
 
-      // Build a patch with track.update for each audio track
+      // Build a patch with track.update for each audio track.
+      // The version is set to current.configVersion so the base-version
+      // check in apply() will pass.
       const patch: TimelinePatch = {
         version: current.configVersion,
         operations: audioTracks.map((track) => ({

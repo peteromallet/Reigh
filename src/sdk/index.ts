@@ -338,6 +338,10 @@ export interface CreativeContext {
   readonly project: unknown;
   /** Public mutation surface for atomic timeline operations (M3). */
   readonly timeline: TimelineOps;
+  /** Read-only snapshot projection of the current timeline state (M3). */
+  readonly reader: TimelineReader;
+  /** Provider-scoped proposal lifecycle manager (M3). */
+  readonly proposals: ProposalRuntime;
   readonly assets: unknown;
   readonly materials: unknown;
   readonly sessions: unknown;
@@ -350,6 +354,8 @@ export interface CreativeContext {
 export const CREATIVE_MEMBER_MILESTONE: Record<keyof CreativeContext, string> = {
   project: 'M2',
   timeline: 'M3',
+  reader: 'M3',
+  proposals: 'M3',
   assets: 'M6',
   materials: 'M6',
   sessions: 'M4',
@@ -391,6 +397,48 @@ export function createCreativeContextStubs(): CreativeContext {
   }
 
   return Object.freeze(stub) as unknown as CreativeContext;
+}
+
+/**
+ * Create a CreativeContext with optional live overrides.
+ *
+ * Members present in `overrides` are used directly; all other members
+ * retain the default throwing-stub behavior from createCreativeContextStubs().
+ * This lets host providers inject live timeline services for extensions
+ * running inside a mounted video-editor context while keeping stubs for
+ * unmounted or non-editor contexts.
+ */
+export function createCreativeContext(
+  overrides?: Partial<CreativeContext>,
+): CreativeContext {
+  if (!overrides) {
+    return createCreativeContextStubs();
+  }
+
+  const members = Object.keys(CREATIVE_MEMBER_MILESTONE) as (keyof CreativeContext)[];
+  const merged: Record<string, unknown> = {};
+
+  for (const member of members) {
+    if (member in overrides) {
+      Object.defineProperty(merged, member, {
+        value: (overrides as Record<string, unknown>)[member],
+        enumerable: true,
+        writable: false,
+        configurable: false,
+      });
+    } else {
+      const milestone = CREATIVE_MEMBER_MILESTONE[member];
+      Object.defineProperty(merged, member, {
+        get(): never {
+          throw new ExtensionNotImplementedError(member, milestone);
+        },
+        enumerable: true,
+        configurable: false,
+      });
+    }
+  }
+
+  return Object.freeze(merged) as unknown as CreativeContext;
 }
 
 // ---------------------------------------------------------------------------
@@ -475,7 +523,10 @@ export function getEditorShellRoot(): HTMLElement | null {
  * No raw DataProvider, applyEdit, timeline store, or internal mutation
  * escape hatch is exposed.
  */
-export function createExtensionContext(extension: ReighExtension): ExtensionContext {
+export function createExtensionContext(
+  extension: ReighExtension,
+  creativeOverrides?: Partial<CreativeContext>,
+): ExtensionContext {
   const extensionId = extension.manifest.id as string;
   const manifest = extension.manifest; // Already frozen by defineExtension
 
@@ -733,8 +784,8 @@ export function createExtensionContext(extension: ReighExtension): ExtensionCont
     subscribers.clear();
   }
 
-  // ---- creative stubs -----------------------------------------------------
-  const creative = createCreativeContextStubs();
+  // ---- creative context (stubs with optional live overrides) --------------
+  const creative = createCreativeContext(creativeOverrides);
 
   // ---- assemble, attach dispose, then freeze -------------------------------
   const ctx = {
@@ -1192,6 +1243,11 @@ export interface TimelineSnapshot {
   assetKeys: readonly string[];
   /** Extension-owned app data (project-data) keyed by extension ID. */
   app: Record<string, unknown>;
+  /**
+   * Source-map entries extracted from extension project-data.
+   * Each entry maps a timeline object to a source location.
+   */
+  sourceMapEntries?: readonly SourceMapEntry[];
 }
 
 /** Lightweight clip summary for TimelineSnapshot projection. */
@@ -1206,6 +1262,8 @@ export interface TimelineClipSummary {
   managed: boolean;
   /** Extension ID that manages this clip, if managed. */
   managedBy?: string;
+  /** Generated-object metadata attached by the owning extension, if any. */
+  generatedMeta?: GeneratedObjectMeta;
 }
 
 /** Lightweight track summary for TimelineSnapshot projection. */
@@ -1216,6 +1274,8 @@ export interface TimelineTrackSummary {
   muted: boolean;
   /** Extension-owned app data attached to this track. */
   app?: Record<string, unknown>;
+  /** Generated-object metadata attached by the owning extension, if any. */
+  generatedMeta?: GeneratedObjectMeta;
 }
 
 /**
@@ -1345,6 +1405,77 @@ export interface ProposalRuntime {
    * Get the current reader snapshot version for baseVersion comparisons.
    */
   readonly currentVersion: number;
+}
+
+// ---------------------------------------------------------------------------
+// M3: SourceMapRuntime
+// ---------------------------------------------------------------------------
+
+/**
+ * Provider-scoped runtime for managing SourceMapEntry records.
+ *
+ * Stores entries in extension project-data under well-known keys so they
+ * are replayable, rollback-safe, and stale-aware.
+ *
+ * SourceMapEntry records are stored in the extension's project-data namespace
+ * using the key pattern `__sm__:<entryId>`.  This keeps them alongside other
+ * extension-owned data and makes them subject to the same limits.
+ */
+export interface SourceMapRuntime {
+  /**
+   * Create a new non-stale source-map entry and persist it via project-data.
+   * Returns the created entry.
+   */
+  create(
+    extensionId: string,
+    targetId: string,
+    targetGranularity: TimelineDiffGranularity,
+    sourceUri: string,
+    sourceStartLine: number,
+    sourceStartColumn: number,
+    sourceEndLine: number,
+    sourceEndColumn: number,
+    meta?: Record<string, unknown>,
+  ): SourceMapEntry;
+
+  /**
+   * Retrieve a source-map entry by ID from project-data.
+   * Returns undefined if not found.
+   */
+  get(extensionId: string, entryId: string): SourceMapEntry | undefined;
+
+  /**
+   * Retrieve all source-map entries for a given timeline target (clip, track, etc.).
+   */
+  getForTarget(extensionId: string, targetId: string): SourceMapEntry[];
+
+  /**
+   * Retrieve all source-map entries for a given source URI.
+   */
+  getForSource(extensionId: string, sourceUri: string): SourceMapEntry[];
+
+  /**
+   * Mark all source-map entries for a given source URI as stale.
+   * Updates the stale flag in persisted project-data.
+   * Returns the updated entries.
+   */
+  markStale(extensionId: string, sourceUri: string): SourceMapEntry[];
+
+  /**
+   * Mark all source-map entries for a given target as stale.
+   */
+  markStaleForTarget(extensionId: string, targetId: string): SourceMapEntry[];
+
+  /**
+   * Delete a source-map entry from project-data.
+   * Returns true if the entry existed and was deleted.
+   */
+  delete(extensionId: string, entryId: string): boolean;
+
+  /**
+   * List all source-map entries for an extension.
+   */
+  list(extensionId: string): SourceMapEntry[];
 }
 
 // ---------------------------------------------------------------------------
