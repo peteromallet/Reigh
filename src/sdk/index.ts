@@ -9,6 +9,7 @@
  */
 
 import { createExtensionSettingsService } from './extensionSettingsService';
+import { runSettingsMigration, getManifestSettingsSchemaVersion } from './extensionSettingsMigration';
 
 // ---------------------------------------------------------------------------
 // ID validation
@@ -2839,7 +2840,9 @@ export interface ExtensionSettingsService {
 
 // Re-export the injectable settings service factory (T8)
 export { createExtensionSettingsService, getSettingsPrefix } from './extensionSettingsService';
-export type { ExtensionSettingsServiceFactoryResult } from './extensionSettingsService';
+export { runSettingsMigration, getManifestSettingsSchemaVersion, findSettingsMigrationDeclarations } from './extensionSettingsMigration';
+export type { ExtensionSettingsServiceFactoryResult, CreateExtensionSettingsServiceOptions, SettingsMigrationConfig } from './extensionSettingsService';
+export type { SettingsMigrationHandler, SettingsMigrationResult, RunSettingsMigrationOptions } from './extensionSettingsMigration';
 
 /** i18n service: minimal t() scaffolding with namespace fallback. */
 export interface ExtensionI18nService {
