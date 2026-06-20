@@ -7,6 +7,9 @@ import type { FC, ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { defineExtension } from '@reigh/editor-sdk';
+import type { ReighExtension, ExtensionContext, DisposeHandle } from '@reigh/editor-sdk';
+import { commandExtension } from '@/examples/command-extension';
+import { flagshipLocalExtension } from '@/tools/video-editor/examples/extensions/flagship-local/index';
 import { useAddToVideoEditor } from '@/domains/media-lightbox/hooks/useAddToVideoEditor';
 import {
   ADD_GENERATION_QUERY_PARAM,
@@ -780,6 +783,204 @@ describe('VideoEditorProvider', () => {
     hmrHandle?.dispose();
     hmrHandle?.dispose();
     expect(disposeReplacement).toHaveBeenCalledTimes(1);
+  });
+
+  // -------------------------------------------------------------------------
+  // T1: Focused compatibility tests — extensions prop lifecycle
+  // -------------------------------------------------------------------------
+  // Prove the direct `extensions` prop activates, deactivates, and
+  // unregisters provider-scoped command + media contributions when the
+  // extension list changes, and keep M1 example manifests loadable.
+
+  it('activates, deactivates, and unregisters provider-scoped command + media (effect) contributions when the extensions prop changes', async () => {
+    const provider: DataProvider = {
+      loadTimeline: vi.fn(),
+      saveTimeline: vi.fn(),
+      loadAssetRegistry: vi.fn(),
+      resolveAssetUrl: vi.fn(),
+    };
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const extensionId = 'com.t1.provider-lifecycle';
+    const commandId = `${extensionId}.testCommand`;
+    const effectId = 'trusted-t1-provider-fx';
+    const disposeEffect = vi.fn();
+    let latestCommandIds: readonly string[] = [];
+    let latestEffectIds: readonly string[] = [];
+
+    const extension: ReighExtension = defineExtension({
+      manifest: {
+        id: extensionId as never,
+        version: '1.0.0',
+        label: 'T1 provider lifecycle',
+        contributions: [
+          {
+            id: 't1.command' as never,
+            kind: 'command',
+            command: commandId,
+            label: 'T1 test command',
+          },
+          {
+            id: 't1.effect' as never,
+            kind: 'effect',
+            label: 'T1 Effect',
+            effectId,
+          },
+        ],
+      },
+      activate(ctx: ExtensionContext): DisposeHandle {
+        const commandHandle = ctx.commands.registerCommand(commandId, vi.fn());
+        const effectHandle = ctx.effects.registerComponent(effectId, LifecycleComponent, {
+          label: 'T1 Effect',
+        });
+        return {
+          dispose() {
+            disposeEffect();
+            commandHandle.dispose();
+            effectHandle.dispose();
+          },
+        };
+      },
+    });
+
+    function ProviderSnapshot() {
+      const { snapshot } = useEffectRegistryContext();
+      const runtime = useVideoEditorRuntime();
+      latestEffectIds = snapshot.records.map((r) => r.effectId);
+      latestCommandIds =
+        runtime.commandRegistry?.getSnapshot().commands.map((c) => c.commandId) ?? [];
+      return null;
+    }
+
+    const props = {
+      dataProvider: provider,
+      projectId: 'project-t1',
+      timelineId: 'timeline-t1',
+      userId: 'user-t1',
+    };
+
+    const { rerender } = render(
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <AgentChatProvider>
+            <VideoEditorProvider {...props} extensions={[extension]}>
+              <ProviderSnapshot />
+            </VideoEditorProvider>
+          </AgentChatProvider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    // Both command and effect must be registered after activation
+    await waitFor(() => {
+      expect(latestCommandIds).toContain(commandId);
+      expect(latestEffectIds).toContain(effectId);
+    });
+
+    // Remove the extension — both command and effect must be cleaned up
+    rerender(
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <AgentChatProvider>
+            <VideoEditorProvider {...props} extensions={[]}>
+              <ProviderSnapshot />
+            </VideoEditorProvider>
+          </AgentChatProvider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(latestCommandIds).not.toContain(commandId);
+      expect(latestEffectIds).not.toContain(effectId);
+    });
+    // The extension's dispose handle must have been invoked
+    expect(disposeEffect).toHaveBeenCalledTimes(1);
+  });
+
+  it('loads the M1 command-extension example manifest through the extensions prop without crashing', async () => {
+    const provider: DataProvider = {
+      loadTimeline: vi.fn(),
+      saveTimeline: vi.fn(),
+      loadAssetRegistry: vi.fn(),
+      resolveAssetUrl: vi.fn(),
+    };
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    let rendered = false;
+    function CheckRender() {
+      rendered = true;
+      return null;
+    }
+
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <AgentChatProvider>
+            <VideoEditorProvider
+              dataProvider={provider}
+              projectId="project-m1-cmd"
+              timelineId="timeline-m1-cmd"
+              userId="user-m1-cmd"
+              extensions={[commandExtension]}
+            >
+              <CheckRender />
+            </VideoEditorProvider>
+          </AgentChatProvider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(rendered).toBe(true);
+    });
+    // The command-extension manifest ID must match the known constant
+    expect(commandExtension.manifest.id).toBe('com.reigh.examples.command-extension');
+  });
+
+  it('loads the M1 flagship-local example manifest through the extensions prop without crashing', async () => {
+    const provider: DataProvider = {
+      loadTimeline: vi.fn(),
+      saveTimeline: vi.fn(),
+      loadAssetRegistry: vi.fn(),
+      resolveAssetUrl: vi.fn(),
+    };
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    let rendered = false;
+    function CheckRender() {
+      rendered = true;
+      return null;
+    }
+
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <AgentChatProvider>
+            <VideoEditorProvider
+              dataProvider={provider}
+              projectId="project-m1-flagship"
+              timelineId="timeline-m1-flagship"
+              userId="user-m1-flagship"
+              extensions={[flagshipLocalExtension]}
+            >
+              <CheckRender />
+            </VideoEditorProvider>
+          </AgentChatProvider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(rendered).toBe(true);
+    });
+    // The flagship manifest ID must match the known constant
+    expect(flagshipLocalExtension.manifest.id).toBe('com.reigh.examples.flagship-local');
   });
 
   it('lifts save status changes through the provider boundary', () => {
