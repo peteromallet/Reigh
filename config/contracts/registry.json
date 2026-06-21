@@ -248,6 +248,30 @@
       ]
     },
     {
+      "id": "video-editor-extension-sdk",
+      "class": "runtime_contract",
+      "path": "src/tools/video-editor/extension.ts",
+      "requiredTags": [
+        "@publicContract"
+      ],
+      "expectedExports": [
+        "defineExtension",
+        "VideoEditorDialogDescriptor",
+        "VideoEditorDialogHostConfig",
+        "VideoEditorExtensionConfig",
+        "VideoEditorExtensionInput",
+        "VideoEditorExtensionRuntimeConfig",
+        "VideoEditorInspectorSectionDescriptor",
+        "VideoEditorPanelDescriptor",
+        "VideoEditorPanelRegistryConfig",
+        "VideoEditorRenderContext",
+        "VideoEditorRuntimeSlices",
+        "VideoEditorSlotName",
+        "VideoEditorSlotRenderer",
+        "VideoEditorVisibilityPredicate"
+      ]
+    },
+    {
       "id": "video-editor-testing-sdk",
       "class": "testing_contract",
       "path": "src/tools/video-editor/testing.ts",

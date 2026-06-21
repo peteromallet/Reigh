@@ -109,4 +109,48 @@ describe('BrowserVideoEditor', () => {
     expect(container.textContent).toBe('');
     container.remove();
   });
+
+  // ---- extension negative coverage (no-input / disabled-input) ----
+
+  it('mounts the real shell when extensions is omitted (undefined)', () => {
+    render(
+      <BrowserVideoEditor
+        dataProvider={provider}
+        timelineId="timeline-1"
+        timelineName="No extensions"
+      />,
+    );
+
+    expect(screen.getByTestId('runtime-provider')).toBeInTheDocument();
+    expect(screen.getByTestId('video-editor-shell')).toHaveTextContent('full:timeline-1');
+  });
+
+  it('mounts the real shell when extensions is an empty array', () => {
+    render(
+      <BrowserVideoEditor
+        dataProvider={provider}
+        timelineId="timeline-1"
+        extensions={[]}
+      />,
+    );
+
+    expect(screen.getByTestId('runtime-provider')).toBeInTheDocument();
+    expect(screen.getByTestId('video-editor-shell')).toHaveTextContent('full:timeline-1');
+  });
+
+  it('mounts the real shell when all extensions are disabled', () => {
+    render(
+      <BrowserVideoEditor
+        dataProvider={provider}
+        timelineId="timeline-1"
+        extensions={[
+          { enabled: false, slots: { toolbar: () => 'hidden' } },
+          { enabled: false },
+        ]}
+      />,
+    );
+
+    expect(screen.getByTestId('runtime-provider')).toBeInTheDocument();
+    expect(screen.getByTestId('video-editor-shell')).toHaveTextContent('full:timeline-1');
+  });
 });

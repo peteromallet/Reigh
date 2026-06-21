@@ -9,6 +9,9 @@ import type {
   VideoEditorExporter,
   VideoEditorHostContext,
 } from '@/tools/video-editor/lib/browser-runtime.ts';
+import {
+  type VideoEditorExtensionInput,
+} from '@/tools/video-editor/runtime/extensionSurface.ts';
 
 export interface BrowserVideoEditorProviderProps {
   dataProvider: DataProvider;
@@ -21,6 +24,7 @@ export interface BrowserVideoEditorProviderProps {
   hostContext?: VideoEditorHostContext | null;
   queryClient?: QueryClient;
   initialEntries?: string[];
+  extensions?: VideoEditorExtensionInput;
   children: ReactNode;
 }
 
@@ -50,6 +54,7 @@ export function BrowserVideoEditorProvider({
   hostContext = null,
   queryClient,
   initialEntries,
+  extensions,
   children,
 }: BrowserVideoEditorProviderProps) {
   const [ownedQueryClient] = useState(() => queryClient ?? createDefaultQueryClient());
@@ -64,6 +69,7 @@ export function BrowserVideoEditorProvider({
           userId={userId}
           effectCatalog={effectCatalog}
           runtime={{ assetResolver, exporter, hostContext }}
+          extensions={extensions}
         >
           {children}
         </EditorRuntimeProvider>
