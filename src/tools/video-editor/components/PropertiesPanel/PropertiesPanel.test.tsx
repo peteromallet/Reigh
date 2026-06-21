@@ -3,6 +3,10 @@ import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PropertiesPanel } from '@/tools/video-editor/components/PropertiesPanel/PropertiesPanel';
 import { VideoEditorAssetPanelSurface } from '@/tools/video-editor/components/PropertiesPanel/VideoEditorAssetPanelSurface';
+import { DataProviderWrapper } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+import { createVideoEditorDiagnosticsStore } from '@/tools/video-editor/runtime/diagnostics.ts';
+import type { VideoEditorDiagnosticsStore } from '@/tools/video-editor/runtime/diagnostics.ts';
+import type { VideoEditorRuntimeContextValue } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
 
 const useTimelineEditorDataMock = vi.fn();
 const useTimelineEditorOpsMock = vi.fn();
@@ -250,5 +254,238 @@ describe('PropertiesPanel registry surfaces', () => {
       'mock-built-in-asset-panel',
       'asset-panel-extra',
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Extension fallback tests (inspector sections + asset panels)
+// ---------------------------------------------------------------------------
+
+function createThrowingInspectorSection(id: string, placement: 'before-default' | 'after-default') {
+  return {
+    id,
+    placement,
+    render: () => {
+      throw new Error(`Inspector section ${id} render failure`);
+    },
+  };
+}
+
+function createThrowingAssetPanel(id: string) {
+  return {
+    id,
+    placement: 'asset-panel' as const,
+    render: () => {
+      throw new Error(`Asset panel ${id} render failure`);
+    },
+  };
+}
+
+function createRuntimeContext(
+  store: VideoEditorDiagnosticsStore,
+): VideoEditorRuntimeContextValue {
+  return {
+    provider: {} as any,
+    assetResolver: {} as any,
+    auth: {} as any,
+    project: {} as any,
+    shots: {} as any,
+    mediaLightbox: {} as any,
+    agentChat: {} as any,
+    toast: {} as any,
+    telemetry: {} as any,
+    timelineId: 'test-timeline',
+    userId: 'test-user',
+    timelineName: 'Test Timeline',
+    extensions: {
+      slots: {},
+      dialogHost: { dialogs: [] },
+      registry: { panels: [], inspectorSections: [] },
+    },
+    diagnosticsStore: store,
+  };
+}
+
+describe('PropertiesPanel inspector section fallback', () => {
+  it('renders fallback when an inspector section render throws', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const store = createVideoEditorDiagnosticsStore();
+
+    useTimelineEditorDataMock.mockReturnValue(createBaseEditorData());
+    useTimelineEditorOpsMock.mockReturnValue(createEditorOps());
+    useVideoEditorRenderContextMock.mockReturnValue({ timelineId: 'test-timeline' });
+    useVideoEditorInspectorSectionsMock.mockImplementation(
+      (placement?: 'before-default' | 'after-default') => {
+        if (placement === 'before-default') {
+          return [createThrowingInspectorSection('before-crash', 'before-default')];
+        }
+        if (placement === 'after-default') {
+          return [];
+        }
+        return [];
+      },
+    );
+    useVideoEditorAssetPanelsMock.mockReturnValue([]);
+
+    const runtime = createRuntimeContext(store);
+
+    render(
+      <DataProviderWrapper value={runtime}>
+        <PropertiesPanel />
+      </DataProviderWrapper>,
+    );
+
+    // The built-in clip panel should still render (not blanked)
+    expect(screen.getByTestId('mock-clip-panel')).toBeInTheDocument();
+
+    // Fallback should appear for the throwing section
+    expect(screen.getByTestId('extension-render-fallback')).toBeInTheDocument();
+
+    // Diagnostics should be emitted
+    const snapshot = store.getSnapshot();
+    const renderDiags = snapshot.filter(
+      (d) => d.code === 'extension_render_exception',
+    );
+    expect(renderDiags.length).toBeGreaterThanOrEqual(1);
+    const diag = renderDiags.find(
+      (d) => d.detail?.descriptorId === 'before-crash',
+    );
+    expect(diag).toBeDefined();
+    expect(diag!.source).toBe('extension-render');
+    expect(diag!.severity).toBe('error');
+    expect(diag!.detail).toMatchObject({
+      descriptorId: 'before-crash',
+      descriptorType: 'inspectorSection',
+      errorMessage: 'Inspector section before-crash render failure',
+    });
+
+    spy.mockRestore();
+  });
+
+  it('renders healthy inspector section without diagnostics', () => {
+    const store = createVideoEditorDiagnosticsStore();
+
+    useTimelineEditorDataMock.mockReturnValue(createBaseEditorData());
+    useTimelineEditorOpsMock.mockReturnValue(createEditorOps());
+    useVideoEditorRenderContextMock.mockReturnValue({ timelineId: 'test-timeline' });
+    useVideoEditorInspectorSectionsMock.mockImplementation(
+      (placement?: 'before-default' | 'after-default') => {
+        if (placement === 'before-default') {
+          return [createInspectorSection('before-ok')];
+        }
+        if (placement === 'after-default') {
+          return [];
+        }
+        return [];
+      },
+    );
+    useVideoEditorAssetPanelsMock.mockReturnValue([]);
+
+    const runtime = createRuntimeContext(store);
+
+    render(
+      <DataProviderWrapper value={runtime}>
+        <PropertiesPanel />
+      </DataProviderWrapper>,
+    );
+
+    expect(screen.getByTestId('mock-clip-panel')).toBeInTheDocument();
+    expect(screen.getByTestId('section-before-ok')).toBeInTheDocument();
+    expect(screen.queryByTestId('extension-render-fallback')).not.toBeInTheDocument();
+    expect(store.getSnapshot()).toHaveLength(0);
+  });
+});
+
+describe('VideoEditorAssetPanelSurface extension fallback', () => {
+  it('renders fallback when an asset panel render throws', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const store = createVideoEditorDiagnosticsStore();
+
+    const throwingPanel = createThrowingAssetPanel('panel-crash');
+
+    useTimelineEditorDataMock.mockReturnValue(createBaseEditorData());
+    useTimelineEditorOpsMock.mockReturnValue(createEditorOps());
+    useVideoEditorRenderContextMock.mockReturnValue({ timelineId: 'test-timeline' });
+    useVideoEditorAssetPanelsMock.mockReturnValue([throwingPanel]);
+
+    const runtime = createRuntimeContext(store);
+
+    render(
+      <DataProviderWrapper value={runtime}>
+        <VideoEditorAssetPanelSurface includeBuiltIn />
+      </DataProviderWrapper>,
+    );
+
+    // Built-in asset panel should render
+    expect(screen.getByTestId('mock-built-in-asset-panel')).toBeInTheDocument();
+
+    // Fallback should appear for the throwing panel
+    expect(screen.getByTestId('extension-render-fallback')).toBeInTheDocument();
+    expect(screen.getByTestId('extension-render-fallback')).toHaveTextContent(
+      'Extension content unavailable',
+    );
+
+    // Diagnostics should be emitted
+    const snapshot = store.getSnapshot();
+    const renderDiags = snapshot.filter(
+      (d) => d.code === 'extension_render_exception',
+    );
+    expect(renderDiags.length).toBeGreaterThanOrEqual(1);
+    const diag = renderDiags.find(
+      (d) => d.detail?.descriptorId === 'panel-crash',
+    );
+    expect(diag).toBeDefined();
+    expect(diag!.source).toBe('extension-render');
+    expect(diag!.severity).toBe('error');
+    expect(diag!.detail).toMatchObject({
+      descriptorId: 'panel-crash',
+      descriptorType: 'panel',
+      errorMessage: 'Asset panel panel-crash render failure',
+    });
+
+    spy.mockRestore();
+  });
+
+  it('renders healthy asset panel without diagnostics', () => {
+    const store = createVideoEditorDiagnosticsStore();
+    const healthyPanel = createAssetPanel('panel-ok');
+
+    useTimelineEditorDataMock.mockReturnValue(createBaseEditorData());
+    useTimelineEditorOpsMock.mockReturnValue(createEditorOps());
+    useVideoEditorRenderContextMock.mockReturnValue({ timelineId: 'test-timeline' });
+    useVideoEditorAssetPanelsMock.mockReturnValue([healthyPanel]);
+
+    const runtime = createRuntimeContext(store);
+
+    render(
+      <DataProviderWrapper value={runtime}>
+        <VideoEditorAssetPanelSurface includeBuiltIn />
+      </DataProviderWrapper>,
+    );
+
+    expect(screen.getByTestId('mock-built-in-asset-panel')).toBeInTheDocument();
+    expect(screen.getByTestId('panel-panel-ok')).toBeInTheDocument();
+    expect(screen.queryByTestId('extension-render-fallback')).not.toBeInTheDocument();
+    expect(store.getSnapshot()).toHaveLength(0);
+  });
+
+  it('renders nothing when no asset panels and built-in is excluded', () => {
+    const store = createVideoEditorDiagnosticsStore();
+
+    useTimelineEditorDataMock.mockReturnValue({ ...createBaseEditorData(), data: null });
+    useTimelineEditorOpsMock.mockReturnValue(createEditorOps());
+    useVideoEditorRenderContextMock.mockReturnValue({ timelineId: 'test-timeline' });
+    useVideoEditorAssetPanelsMock.mockReturnValue([]);
+
+    const runtime = createRuntimeContext(store);
+
+    const { container } = render(
+      <DataProviderWrapper value={runtime}>
+        <VideoEditorAssetPanelSurface includeBuiltIn={false} />
+      </DataProviderWrapper>,
+    );
+
+    expect(container.firstChild).toBeNull();
+    expect(store.getSnapshot()).toHaveLength(0);
   });
 });

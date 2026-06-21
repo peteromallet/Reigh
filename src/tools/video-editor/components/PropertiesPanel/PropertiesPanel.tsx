@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef } from 'react';
+import { memo, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { Button } from '@/shared/components/ui/button.tsx';
 import { BulkClipPanel } from '@/tools/video-editor/components/PropertiesPanel/BulkClipPanel.tsx';
 import { ClipPanel, getVisibleClipTabs, NO_EFFECT } from '@/tools/video-editor/components/PropertiesPanel/ClipPanel.tsx';
@@ -16,6 +16,26 @@ import {
   useVideoEditorInspectorSections,
   useVideoEditorRenderContext,
 } from '@/tools/video-editor/runtime/useVideoEditorRenderContext.ts';
+import type {
+  VideoEditorRenderContext,
+  VideoEditorSlotRenderer,
+} from '@/tools/video-editor/runtime/extensionSurface.ts';
+import { ExtensionRenderBoundary } from '@/tools/video-editor/runtime/ExtensionRenderBoundary.tsx';
+
+// ---------------------------------------------------------------------------
+// Deferred descriptor renderer — defers renderer invocation into the child
+// render phase so that React error boundaries can catch throws.
+// ---------------------------------------------------------------------------
+
+function DescriptorRenderer({
+  renderer,
+  context,
+}: {
+  renderer: VideoEditorSlotRenderer;
+  context: VideoEditorRenderContext;
+}): ReactNode {
+  return renderer(context);
+}
 
 function InspectorRegistrySections({
   placement,
@@ -33,7 +53,14 @@ function InspectorRegistrySections({
     <div className="flex flex-col gap-3">
       {sections.map((section) => (
         <div key={section.id} data-video-editor-inspector-section-id={section.id}>
-          {section.render(renderContext)}
+          <ExtensionRenderBoundary
+            metadata={{
+              descriptorId: section.id,
+              descriptorType: 'inspectorSection',
+            }}
+          >
+            <DescriptorRenderer renderer={section.render} context={renderContext} />
+          </ExtensionRenderBoundary>
         </div>
       ))}
     </div>

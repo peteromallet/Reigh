@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_VIDEO_EDITOR_EXTENSION_RUNTIME,
   resolveVideoEditorExtensionRuntime,
+  resolveVideoEditorExtensionRuntimeWithDiagnostics,
   resolveVideoEditorPanelRegistry,
+  type ResolveVideoEditorExtensionRuntimeResult,
   type VideoEditorExtensionConfig,
   type VideoEditorExtensionInput,
   type VideoEditorRenderContext,
@@ -182,40 +184,142 @@ describe('resolveVideoEditorExtensionRuntime', () => {
     expect(result.slots.statusBar?.({} as VideoEditorRenderContext)).toBe('a-status');
   });
 
-  // ---- duplicate descriptor ID rejection ----
+  // ---- duplicate descriptor ID: no throw, diagnostics + fail-closed ----
 
-  it('throws on duplicate dialog descriptor IDs', () => {
+  it('no longer throws on duplicate dialog descriptor IDs; first-wins, diagnostic emitted', () => {
     const a = { dialogHost: dialogDescriptor('dup', 1) };
     const b = { dialogHost: dialogDescriptor('dup', 2) };
 
-    expect(() => resolveVideoEditorExtensionRuntime([a, b])).toThrow(
-      'Duplicate extension descriptor ID "dup" in collection "dialogs".',
-    );
+    // Legacy wrapper must not throw
+    const runtime = resolveVideoEditorExtensionRuntime([a, b]);
+    expect(runtime.dialogHost.dialogs).toHaveLength(1);
+    expect(runtime.dialogHost.dialogs[0].id).toBe('dup');
+
+    // Diagnostics-aware resolver emits diagnostic
+    const result = resolveVideoEditorExtensionRuntimeWithDiagnostics([a, b]);
+    expect(result.runtime.dialogHost.dialogs).toHaveLength(1);
+    expect(result.diagnostics).toHaveLength(1);
+    expect(result.diagnostics[0].code).toBe('duplicate_descriptor_id');
+    expect(result.diagnostics[0].source).toBe('extension-runtime');
+    expect(result.diagnostics[0].severity).toBe('error');
+    expect(result.diagnostics[0].detail).toEqual({ descriptorId: 'dup', collection: 'dialogs' });
   });
 
-  it('throws on duplicate panel descriptor IDs', () => {
+  it('no longer throws on duplicate panel descriptor IDs; first-wins, diagnostic emitted', () => {
     const a = { registry: panelDescriptor('dup') };
     const b = { registry: panelDescriptor('dup') };
 
-    expect(() => resolveVideoEditorExtensionRuntime([a, b])).toThrow(
-      'Duplicate extension descriptor ID "dup" in collection "panels".',
-    );
+    // Legacy wrapper must not throw
+    expect(() => resolveVideoEditorExtensionRuntime([a, b])).not.toThrow();
+
+    const result = resolveVideoEditorExtensionRuntimeWithDiagnostics([a, b]);
+    expect(result.runtime.registry.panels).toHaveLength(1);
+    expect(result.runtime.registry.panels[0].id).toBe('dup');
+    expect(result.diagnostics).toHaveLength(1);
+    expect(result.diagnostics[0].detail).toEqual({ descriptorId: 'dup', collection: 'panels' });
   });
 
-  it('throws on duplicate inspector section descriptor IDs', () => {
+  it('no longer throws on duplicate inspector section descriptor IDs; first-wins, diagnostic emitted', () => {
     const a = { registry: inspectorDescriptor('dup', 'before-default') };
     const b = { registry: inspectorDescriptor('dup', 'after-default') };
 
-    expect(() => resolveVideoEditorExtensionRuntime([a, b])).toThrow(
-      'Duplicate extension descriptor ID "dup" in collection "inspectorSections".',
-    );
+    // Legacy wrapper must not throw
+    expect(() => resolveVideoEditorExtensionRuntime([a, b])).not.toThrow();
+
+    const result = resolveVideoEditorExtensionRuntimeWithDiagnostics([a, b]);
+    expect(result.runtime.registry.inspectorSections).toHaveLength(1);
+    expect(result.diagnostics).toHaveLength(1);
+    expect(result.diagnostics[0].detail).toEqual({ descriptorId: 'dup', collection: 'inspectorSections' });
   });
 
   it('allows the same ID in different collections (dialog vs panel)', () => {
     const a = { dialogHost: dialogDescriptor('shared-id'), registry: panelDescriptor('shared-id') };
 
-    // Should not throw — cross-collection duplicates are allowed
-    expect(() => resolveVideoEditorExtensionRuntime([a])).not.toThrow();
+    // Should not throw or produce diagnostics — cross-collection duplicates are allowed
+    const result = resolveVideoEditorExtensionRuntimeWithDiagnostics([a]);
+    expect(result.diagnostics).toHaveLength(0);
+    expect(result.runtime.dialogHost.dialogs).toHaveLength(1);
+    expect(result.runtime.registry.panels).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveVideoEditorExtensionRuntimeWithDiagnostics
+// ---------------------------------------------------------------------------
+
+describe('resolveVideoEditorExtensionRuntimeWithDiagnostics', () => {
+  it('returns empty diagnostics for undefined input', () => {
+    const result = resolveVideoEditorExtensionRuntimeWithDiagnostics(undefined);
+    expect(result.runtime).toBe(DEFAULT_VIDEO_EDITOR_EXTENSION_RUNTIME);
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  it('returns empty diagnostics for empty array input', () => {
+    const result = resolveVideoEditorExtensionRuntimeWithDiagnostics([]);
+    expect(result.runtime).toBe(DEFAULT_VIDEO_EDITOR_EXTENSION_RUNTIME);
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  it('returns empty diagnostics for valid configs without duplicates', () => {
+    const a = { dialogHost: dialogDescriptor('a', 1) };
+    const b = { dialogHost: dialogDescriptor('b', 2) };
+
+    const result = resolveVideoEditorExtensionRuntimeWithDiagnostics([a, b]);
+    expect(result.diagnostics).toEqual([]);
+    expect(result.runtime.dialogHost.dialogs).toHaveLength(2);
+  });
+
+  it('returns empty diagnostics when all configs are disabled', () => {
+    const result = resolveVideoEditorExtensionRuntimeWithDiagnostics([
+      configWithEnabling(false),
+      configWithEnabling(false),
+    ]);
+    expect(result.runtime).toBe(DEFAULT_VIDEO_EDITOR_EXTENSION_RUNTIME);
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  it('collects multiple duplicate diagnostics across different collections', () => {
+    const a: VideoEditorExtensionConfig = {
+      dialogHost: dialogDescriptor('shared', 1),
+      registry: panelDescriptor('shared'),
+    };
+    const b: VideoEditorExtensionConfig = {
+      dialogHost: dialogDescriptor('shared', 2),
+      registry: panelDescriptor('shared'),
+    };
+
+    const result = resolveVideoEditorExtensionRuntimeWithDiagnostics([a, b]);
+    expect(result.diagnostics).toHaveLength(2);
+    expect(result.diagnostics.map((d) => d.detail?.collection).sort()).toEqual(['dialogs', 'panels']);
+
+    // Fail-closed: only first occurrence of each survives
+    expect(result.runtime.dialogHost.dialogs).toHaveLength(1);
+    expect(result.runtime.registry.panels).toHaveLength(1);
+  });
+
+  it('legacy wrapper returns same runtime as diagnostics-aware resolver', () => {
+    const extA: VideoEditorExtensionConfig = {
+      slots: { toolbar: slotRenderer('a-toolbar') },
+      dialogHost: dialogDescriptor('a-dialog', 10),
+      registry: {
+        panels: [{ id: 'a-panel', placement: 'asset-panel', order: 20, render: slotRenderer('a-panel') }],
+      },
+    };
+    const extB: VideoEditorExtensionConfig = {
+      slots: { toolbar: slotRenderer('b-toolbar') },
+      registry: {
+        panels: [{ id: 'b-panel', placement: 'asset-panel', order: 10, render: slotRenderer('b-panel') }],
+      },
+    };
+
+    const legacy = resolveVideoEditorExtensionRuntime([extA, extB]);
+    const withDiags = resolveVideoEditorExtensionRuntimeWithDiagnostics([extA, extB]);
+
+    // Runtime configs must be structurally equivalent
+    expect(legacy.slots.toolbar).toBe(withDiags.runtime.slots.toolbar);
+    expect(legacy.dialogHost.dialogs).toEqual(withDiags.runtime.dialogHost.dialogs);
+    expect(legacy.registry.panels).toEqual(withDiags.runtime.registry.panels);
+    expect(withDiags.diagnostics).toEqual([]);
   });
 });
 
@@ -434,7 +538,7 @@ describe('extension resolution integration', () => {
     expect(registry.inspectorSections.beforeDefault.map((s) => s.id)).toEqual(['a-inspector']);
   });
 
-  it('propagates duplicate ID errors from across separate configs in the same collection', () => {
+  it('propagates duplicate ID diagnostics from across separate configs in the same collection', () => {
     const a: VideoEditorExtensionConfig = {
       dialogHost: dialogDescriptor('collision', 1),
       registry: {
@@ -445,6 +549,15 @@ describe('extension resolution integration', () => {
       dialogHost: dialogDescriptor('collision', 2), // duplicate dialog
     };
 
-    expect(() => resolveVideoEditorExtensionRuntime([a, b])).toThrow(/dialogs/);
+    // Legacy wrapper must not throw
+    expect(() => resolveVideoEditorExtensionRuntime([a, b])).not.toThrow();
+
+    const result = resolveVideoEditorExtensionRuntimeWithDiagnostics([a, b]);
+    // Dialog duplicate produces diagnostic; panel with same ID in different collection is OK
+    expect(result.diagnostics).toHaveLength(1);
+    expect(result.diagnostics[0].detail).toEqual({ descriptorId: 'collision', collection: 'dialogs' });
+    // Both panels should be present (different collection, no duplicate)
+    expect(result.runtime.registry.panels).toHaveLength(1);
+    expect(result.runtime.dialogHost.dialogs).toHaveLength(1);
   });
 });

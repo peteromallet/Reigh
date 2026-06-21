@@ -1,6 +1,7 @@
 import type { AssetRegistry, TimelineConfig } from '@/tools/video-editor/types/index.ts';
 import type { Checkpoint } from '@/tools/video-editor/types/history.ts';
 import type { AssetResolver } from '@/tools/video-editor/data/AssetResolver.ts';
+import type { VideoEditorDiagnostic } from '@/tools/video-editor/runtime/diagnostics.ts';
 export type {
   AssetProfile,
   SilenceRegion,
@@ -53,6 +54,15 @@ export interface DataProvider extends AssetResolver {
   saveCheckpoint?(timelineId: string, checkpoint: Omit<Checkpoint, 'id'>): Promise<string>;
   loadCheckpoints?(timelineId: string): Promise<Checkpoint[]>;
   loadAssetRegistry(timelineId: string): Promise<AssetRegistry>;
+  /**
+   * Collect diagnostics from the data provider (materialization failures,
+   * generation asset resolution failures, provider degradation, etc.).
+   *
+   * Optional — providers that don't produce diagnostics can omit this.
+   * Callers should use `provider.collectDiagnostics?.()` and gracefully
+   * handle `undefined`.
+   */
+  collectDiagnostics?(): Array<Omit<VideoEditorDiagnostic, 'id' | 'timestamp'>>;
 }
 
 export function isDataProviderPersistenceEnabled(provider: DataProvider | null | undefined): boolean {

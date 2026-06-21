@@ -18,6 +18,10 @@ import type {
 import { extractAssetRegistryEntry } from '@/tools/video-editor/lib/mediaMetadata.ts';
 import { resolveGenerationAsset } from '@/tools/video-editor/data/generationAssetResolver.ts';
 import {
+  normalizeMaterializationDiagnostics,
+  type VideoEditorDiagnostic,
+} from '@/tools/video-editor/runtime/diagnostics.ts';
+import {
   ensurePermission,
   getDirectoryHandle,
   saveDirectoryHandle,
@@ -250,6 +254,19 @@ export class AstridBridgeDataProvider implements DataProvider {
       }
     }
     return { states, diagnostics };
+  }
+
+  /**
+   * Collect provider and materialization diagnostics for the central
+   * diagnostics stream.
+   *
+   * Adapts {@link getMaterializationSummary}.diagnostics through the
+   * public normalization helper so the shape matches the
+   * VideoEditorDiagnostic contract exactly.
+   */
+  collectDiagnostics(): Array<Omit<VideoEditorDiagnostic, 'id' | 'timestamp'>> {
+    const summary = this.getMaterializationSummary();
+    return normalizeMaterializationDiagnostics(summary.diagnostics);
   }
 
   async resolveAssetUrl(file: string): Promise<string> {

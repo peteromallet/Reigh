@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from 'react';
+import { useEffect, useMemo, type ReactNode } from 'react';
 import { useLayoutEffect } from 'react';
 import { useEffects } from '@/tools/video-editor/hooks/useEffects.ts';
 import { useEffectRegistry } from '@/tools/video-editor/hooks/useEffectRegistry.ts';
@@ -21,9 +21,10 @@ import {
   type VideoEditorRuntimeContextValue,
 } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
 import {
-  resolveVideoEditorExtensionRuntime,
+  resolveVideoEditorExtensionRuntimeWithDiagnostics,
   type VideoEditorExtensionInput,
 } from '@/tools/video-editor/runtime/extensionSurface.ts';
+import type { VideoEditorDiagnosticsStore } from '@/tools/video-editor/runtime/diagnostics.ts';
 
 export interface EditorRuntimeProviderProps {
   dataProvider: DataProvider;
@@ -34,6 +35,7 @@ export interface EditorRuntimeProviderProps {
   sequenceComponentCatalog?: VideoEditorSequenceComponentCatalog | null;
   runtime?: Pick<VideoEditorRuntimeContextValue, 'assetResolver' | 'exporter' | 'hostContext'>;
   extensions?: VideoEditorExtensionInput;
+  diagnosticsStore?: VideoEditorDiagnosticsStore;
   children: ReactNode;
 }
 
@@ -92,12 +94,43 @@ export function EditorRuntimeProvider({
   sequenceComponentCatalog,
   runtime,
   extensions,
+  diagnosticsStore,
   children,
 }: EditorRuntimeProviderProps) {
-  const resolvedExtensions = useMemo(
-    () => resolveVideoEditorExtensionRuntime(extensions),
+  // T4: Use the diagnostics-aware resolver so duplicate-contribution and
+  // other extension-runtime diagnostics are collected instead of thrown.
+  const resolved = useMemo(
+    () => resolveVideoEditorExtensionRuntimeWithDiagnostics(extensions),
     [extensions],
   );
+
+  // T4: Publish extension-runtime diagnostics into the store with source
+  // replacement so rerenders do not duplicate entries.
+  useEffect(() => {
+    if (resolved.diagnostics.length > 0) {
+      diagnosticsStore!.replaceBySource('extension-runtime', resolved.diagnostics);
+    }
+  }, [resolved.diagnostics, diagnosticsStore]);
+
+  // T9: Refresh provider/materialization diagnostics when the data provider
+  // or timeline identity changes.  Uses source replacement to prevent stale
+  // or duplicate entries from accumulating across rerenders.
+  useEffect(() => {
+    const providerDiagnostics = dataProvider.collectDiagnostics?.();
+    if (providerDiagnostics && providerDiagnostics.length > 0) {
+      // Collect diagnostics may carry different sources (e.g. asset-materialization).
+      // Group by source and replace atomically per source to avoid cross-contamination.
+      const bySource = new Map<string, Array<typeof providerDiagnostics[number]>>();
+      for (const d of providerDiagnostics) {
+        const group = bySource.get(d.source);
+        if (group) group.push(d);
+        else bySource.set(d.source, [d]);
+      }
+      for (const [source, diags] of bySource) {
+        diagnosticsStore!.replaceBySource(source as any, diags);
+      }
+    }
+  }, [dataProvider, timelineId, diagnosticsStore]);
 
   return (
     <DataProviderWrapper
@@ -109,7 +142,10 @@ export function EditorRuntimeProvider({
         assetResolver: runtime?.assetResolver ?? null,
         exporter: runtime?.exporter ?? null,
         hostContext: runtime?.hostContext ?? null,
-        extensions: resolvedExtensions,
+        extensions: resolved.runtime,
+        // diagnosticsStore is always provided — BrowserVideoEditorProvider
+        // creates a default store when none is injected.
+        diagnosticsStore: diagnosticsStore!,
       }}
     >
       <EditorRuntimeProviderInner

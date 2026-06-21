@@ -5,6 +5,7 @@ import {
   type LoadedTimeline,
 } from '@/tools/video-editor/data/DataProvider.ts';
 import { createDefaultTimelineConfig } from '@/tools/video-editor/lib/defaults.ts';
+import type { VideoEditorDiagnostic } from '@/tools/video-editor/runtime/diagnostics.ts';
 import type { AssetRegistry, AssetRegistryEntry, TimelineConfig } from '@/tools/video-editor/types/index.ts';
 
 type TimelineSeed = {
@@ -33,11 +34,22 @@ const normalizeTimelineSeed = (seed?: TimelineSeed): InMemoryTimelineRecord => {
 
 export class InMemoryDataProvider implements DataProvider {
   private readonly timelines = new Map<string, InMemoryTimelineRecord>();
+  private _diagnostics: Array<Omit<VideoEditorDiagnostic, 'id' | 'timestamp'>> | null = null;
 
-  constructor(seed: Record<string, TimelineSeed> = {}) {
+  constructor(seed: Record<string, TimelineSeed> = {}, diagnostics?: Array<Omit<VideoEditorDiagnostic, 'id' | 'timestamp'>>) {
     for (const [timelineId, value] of Object.entries(seed)) {
       this.timelines.set(timelineId, normalizeTimelineSeed(value));
     }
+    if (diagnostics) this._diagnostics = diagnostics;
+  }
+
+  /** Set provider diagnostics to be returned by collectDiagnostics(). */
+  setDiagnostics(diagnostics: Array<Omit<VideoEditorDiagnostic, 'id' | 'timestamp'>>): void {
+    this._diagnostics = diagnostics;
+  }
+
+  collectDiagnostics(): Array<Omit<VideoEditorDiagnostic, 'id' | 'timestamp'>> {
+    return this._diagnostics ?? [];
   }
 
   seedTimeline(timelineId: string, seed?: TimelineSeed) {

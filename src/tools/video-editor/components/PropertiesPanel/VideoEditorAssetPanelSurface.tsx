@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, type ReactNode } from 'react';
 import AssetPanel from '@/tools/video-editor/components/PropertiesPanel/AssetPanel.tsx';
 import {
   useTimelineEditorData,
@@ -8,6 +8,26 @@ import {
   useVideoEditorAssetPanels,
   useVideoEditorRenderContext,
 } from '@/tools/video-editor/runtime/useVideoEditorRenderContext.ts';
+import type {
+  VideoEditorRenderContext,
+  VideoEditorSlotRenderer,
+} from '@/tools/video-editor/runtime/extensionSurface.ts';
+import { ExtensionRenderBoundary } from '@/tools/video-editor/runtime/ExtensionRenderBoundary.tsx';
+
+// ---------------------------------------------------------------------------
+// Deferred descriptor renderer — defers renderer invocation into the child
+// render phase so that React error boundaries can catch throws.
+// ---------------------------------------------------------------------------
+
+function DescriptorRenderer({
+  renderer,
+  context,
+}: {
+  renderer: VideoEditorSlotRenderer;
+  context: VideoEditorRenderContext;
+}): ReactNode {
+  return renderer(context);
+}
 
 export interface VideoEditorAssetPanelSurfaceProps {
   includeBuiltIn?: boolean;
@@ -47,7 +67,14 @@ function VideoEditorAssetPanelSurfaceComponent({
       {builtInPanel}
       {assetPanels.map((panel) => (
         <div key={panel.id} data-video-editor-panel-id={panel.id}>
-          {panel.render(renderContext)}
+          <ExtensionRenderBoundary
+            metadata={{
+              descriptorId: panel.id,
+              descriptorType: 'panel',
+            }}
+          >
+            <DescriptorRenderer renderer={panel.render} context={renderContext} />
+          </ExtensionRenderBoundary>
         </div>
       ))}
     </div>

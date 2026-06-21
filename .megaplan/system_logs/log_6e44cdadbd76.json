@@ -1,0 +1,69 @@
+{
+  "id": "log_6e44cdadbd76",
+  "level": "debug",
+  "category": "system",
+  "event_type": "authority_divergence",
+  "message": "authority_divergence emitted",
+  "details": {
+    "event": {
+      "seq": 1254,
+      "schema_version": 1,
+      "ts_utc": "2026-06-21T22:33:29.389306+00:00",
+      "ts_rel_init_s": 2074.616583,
+      "kind": "authority_divergence",
+      "phase": "execute",
+      "payload": {
+        "diagnostic_version": 1,
+        "task_id": "T1",
+        "raw_terminal_status": "done",
+        "authority_status": "unknown",
+        "authoritative": false,
+        "reason": "stale_evidence:missing_head:task_files_changed",
+        "missing_outputs": [],
+        "stale_evidence": [
+          "missing_head:task_files_changed",
+          "missing_head:task_files_changed",
+          "missing_head:task_files_changed",
+          "missing_head:task_files_changed",
+          "missing_head:task_files_changed",
+          "missing_head:task_commands_run"
+        ],
+        "would_block_reasons": [
+          "stale_evidence:missing_head:task_files_changed",
+          "stale_evidence:missing_head:task_commands_run"
+        ],
+        "error": null,
+        "diagnostics": {
+          "task_id": "T1",
+          "declared_outputs": {
+            "files_changed": [
+              "src/tools/video-editor/runtime/diagnostics.ts",
+              "src/tools/video-editor/runtime/diagnostics.test.ts",
+              "src/tools/video-editor/extension.ts",
+              "src/tools/video-editor/browser.ts",
+              "src/tools/video-editor/browser-provider.ts"
+            ],
+            "commands_run": [
+              "npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/runtime/diagnostics.test.ts"
+            ]
+          },
+          "linked_evidence_count": 12,
+          "evidence_count": 58,
+          "normalization": "iterable",
+          "status": "unknown",
+          "evidence_sources": [
+            "plan_artifacts"
+          ],
+          "loaded_evidence_count": 58,
+          "raw_terminal_status": "done"
+        },
+        "ts_utc": "2026-06-21T22:33:29.388638+00:00"
+      },
+      "transaction_id": "e61bc857531f8e30",
+      "store_method": "log_system_event"
+    }
+  },
+  "turn_id": null,
+  "epic_id": "m3-diagnostics-and-failure-20260621-2358",
+  "occurred_at": "2026-06-21T22:33:29.389384Z"
+}

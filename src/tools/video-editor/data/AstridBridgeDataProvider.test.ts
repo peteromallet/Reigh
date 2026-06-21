@@ -1144,6 +1144,69 @@ describe('AstridBridgeDataProvider', () => {
     });
   });
 
+  it('collectDiagnostics returns normalized diagnostics from materialization summary', async () => {
+    const originalRegistry = {
+      assets: {
+        'asset-failure': {
+          file: '',
+          type: 'video/mp4',
+          generationId: 'gen-failure',
+          origin: 'refreshable-from-generation',
+        },
+      },
+    };
+    const localTree = createFileSystemHandleTree({
+      'project.json': JSON.stringify({ slug: 'ados-talks' }),
+      'timelines/01JM4K5N7P0000000000000017/assembly.json': JSON.stringify({
+        clips: [],
+        tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      }),
+      'timelines/01JM4K5N7P0000000000000017/registry.json': JSON.stringify(originalRegistry),
+    });
+    vi.mocked(getDirectoryHandle).mockResolvedValue(localTree.projectRootHandle);
+    vi.mocked(resolveGenerationAsset).mockResolvedValue({
+      ok: false,
+      missingReason: 'unresolvable_asset',
+      diagnostic: {
+        code: 'refresh-required',
+        message: 'Cannot resolve asset.',
+        generationId: 'gen-failure',
+        assetId: 'asset-failure',
+      },
+    });
+
+    const provider = new AstridBridgeDataProvider({
+      projectSlug: 'ados-talks',
+      timelineRef: '01JM4K5N7P0000000000000017',
+      timelineId: '01JM4K5N7P0000000000000017',
+    });
+
+    await provider.loadAssetRegistry('01JM4K5N7P0000000000000017');
+
+    // Verify materialization summary records the diagnostic
+    const summary = provider.getMaterializationSummary();
+    expect(summary.diagnostics).toHaveLength(1);
+
+    // collectDiagnostics adapts through normalization helper
+    const diagnostics = provider.collectDiagnostics();
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0].source).toBe('asset-materialization');
+    expect(diagnostics[0].severity).toBe('warning');
+    expect(diagnostics[0].code).toBe('materialization_refresh-required');
+    expect(diagnostics[0].detail).toEqual({
+      assetId: 'asset-failure',
+      generationId: 'gen-failure',
+      reason: 'refresh-required',
+    });
+
+    // When no materialization entries exist, returns empty array
+    const emptyDiagnostics = new AstridBridgeDataProvider({
+      projectSlug: 'empty',
+      timelineRef: 'empty-timeline',
+    }).collectDiagnostics();
+    expect(emptyDiagnostics).toEqual([]);
+  });
+
   it('uses the direct localhost asset base default', () => {
     expect(defaultAstridBridgeAssetBaseUrl()).toBe('http://127.0.0.1:17333');
   });

@@ -14,6 +14,8 @@ import CharacterAnimatePage from '@/tools/character-animate/pages/CharacterAnima
 import JoinClipsPage from '@/tools/join-clips/pages/JoinClipsPage';
 import EditVideoPage from '@/tools/edit-video/pages/EditVideoPage';
 import VideoEditorPage from '@/tools/video-editor/pages/VideoEditorPage';
+// Dev-only diagnostics harness — eagerly loaded for Playwright acceptance tests
+import { DiagnosticsHarnessPage } from '@/tools/video-editor/testing/DiagnosticsHarnessPage.tsx';
 // Secondary tools: lazy-loaded (not default landing pages, so hydration race is less likely)
 const EditImagesPage = lazy(() => import('@/tools/edit-images/pages/EditImagesPage'));
 const TrainingDataHelperPage = lazy(() => import('@/tools/training-data-helper/pages/TrainingDataHelperPage'));
@@ -155,6 +157,12 @@ export function AppRoutes() {
         <Route path="/shots" element={<ShotsPage />} />
         <Route path="/art" element={<ArtPage />} />
       </Route>
+
+      {/* Dev-only diagnostics harness for browser acceptance tests */}
+      <Route
+        path="/dev/video-editor-diagnostics-harness"
+        element={<DiagnosticsHarnessPage />}
+      />
 
       <Route path="*" element={<NotFoundPage />} />
     </Routes>

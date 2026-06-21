@@ -3,6 +3,8 @@ import { useClientRender } from '@/tools/video-editor/hooks/useClientRender.ts';
 import type { CompositionMetadata } from '@/tools/video-editor/hooks/useDerivedTimeline.ts';
 import type { VideoEditorExporter } from '@/tools/video-editor/lib/browser-runtime.ts';
 import type { ResolvedTimelineConfig } from '@/tools/video-editor/types/index.ts';
+import { createRenderDiagnostic } from '@/tools/video-editor/runtime/diagnostics.ts';
+import type { VideoEditorDiagnosticReporter } from '@/tools/video-editor/runtime/diagnostics.ts';
 
 export type RenderStatus = 'idle' | 'rendering' | 'done' | 'error';
 
@@ -46,10 +48,19 @@ function getFastRenderRouteDecision(resolvedConfig: ResolvedTimelineConfig | nul
   return { route: 'browser-remotion' as const, reason: 'pure_native_clips' };
 }
 
+export interface UseRenderStateOptions {
+  resolvedConfig: ResolvedTimelineConfig | null;
+  renderMetadata: CompositionMetadata | null;
+  exporter?: VideoEditorExporter | null;
+  /** Optional reporter for bridging render blockers into the central diagnostics stream. */
+  diagnosticsReporter?: VideoEditorDiagnosticReporter | null;
+}
+
 export function useRenderState(
   resolvedConfig: ResolvedTimelineConfig | null,
   renderMetadata: CompositionMetadata | null,
   exporter?: VideoEditorExporter | null,
+  diagnosticsReporter?: VideoEditorDiagnosticReporter | null,
 ) {
   const [renderStatus, setRenderStatus] = useState<RenderStatus>('idle');
   const [renderLog, setRenderLog] = useState('');
@@ -98,29 +109,47 @@ export function useRenderState(
         const renderRouter = await import('@/tools/video-editor/lib/renderRouter');
         importedDecision = renderRouter.decideRenderRoute(resolvedConfig);
       } catch (error) {
+        const message = error instanceof Error
+          ? `Render routing unavailable: ${error.message}`
+          : 'Render routing unavailable.';
         setRenderStatus('error');
         setRenderProgress(null);
         setRenderDirty(false);
-        setRenderLog(error instanceof Error
-          ? `Render routing unavailable: ${error.message}`
-          : 'Render routing unavailable.');
+        setRenderLog(message);
+        diagnosticsReporter?.report(createRenderDiagnostic(
+          'render_router_import_failed',
+          message,
+          { error: error instanceof Error ? error.message : String(error) },
+        ));
         return;
       }
       decision = importedDecision;
     }
     if (decision.route === 'preview-only') {
+      const message = `Render blocked: ${decision.reason}. Generated Remotion module clips require valid worker artifact metadata.`;
       setRenderStatus('error');
       setRenderProgress(null);
       setRenderDirty(false);
-      setRenderLog(`Render blocked: ${decision.reason}. Generated Remotion module clips require valid worker artifact metadata.`);
+      setRenderLog(message);
+      diagnosticsReporter?.report(createRenderDiagnostic(
+        'render_preview_only',
+        message,
+        { reason: decision.reason },
+      ));
       return;
     }
 
     if (decision.route === 'worker-banodoco' || decision.route === 'external') {
+      const message = `Worker render unavailable for route "${decision.reason}". This timeline was not sent to the browser renderer.`;
       setRenderStatus('error');
       setRenderProgress(null);
       setRenderDirty(false);
-      setRenderLog(`Worker render unavailable for route "${decision.reason}". This timeline was not sent to the browser renderer.`);
+      setRenderLog(message);
+      diagnosticsReporter?.report(createRenderDiagnostic(
+        'render_worker_unavailable',
+        message,
+        { route: decision.route, reason: decision.reason },
+      ));
       return;
     }
 
@@ -174,6 +203,11 @@ export function useRenderState(
         if (progress.phase === 'failed') {
           setRenderStatus('error');
           setRenderDirty(false);
+          diagnosticsReporter?.report(createRenderDiagnostic(
+            'render_failed',
+            progress.log ?? 'Render failed.',
+            { phase: progress.phase, log: progress.log },
+          ));
           return;
         }
 
@@ -183,7 +217,7 @@ export function useRenderState(
     }
 
     await startClientRender();
-  }, [exporter, renderMetadata?.durationInFrames, resolvedConfig, startClientRender]);
+  }, [exporter, renderMetadata?.durationInFrames, resolvedConfig, startClientRender, diagnosticsReporter]);
 
   return {
     renderStatus,

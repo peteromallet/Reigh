@@ -4,6 +4,8 @@ import { BrowserVideoEditorProvider } from '@/tools/video-editor/browser/Browser
 import type { DataProvider } from '@/tools/video-editor/data/DataProvider';
 import { InMemoryExtensionStateRepository } from '@/tools/video-editor/runtime/extensionStateRepository';
 import type { ExtensionPackage, ExtensionManifest } from '@/tools/video-editor/runtime/extensionManifest';
+import { createVideoEditorDiagnosticsStore } from '@/tools/video-editor/runtime/diagnostics';
+import type { VideoEditorDiagnosticsStore } from '@/tools/video-editor/runtime/diagnostics';
 
 const runtimeProviderSpy = vi.fn();
 
@@ -402,6 +404,217 @@ describe('BrowserVideoEditorProvider', () => {
       expect(cfg.registry).toBeDefined();
       expect(cfg.registry!.panels).toHaveLength(1);
       expect(cfg.registry!.inspectorSections).toHaveLength(1);
+    });
+  });
+
+  // ---- diagnostics store threading ---- 
+
+  describe('diagnostics store', () => {
+    it('creates a default diagnostics store and passes it through to EditorRuntimeProvider', () => {
+      render(
+        <BrowserVideoEditorProvider
+          dataProvider={provider}
+          timelineId="timeline-1"
+        >
+          <div data-testid="custom-shell">Diag</div>
+        </BrowserVideoEditorProvider>,
+      );
+
+      expect(runtimeProviderSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          diagnosticsStore: expect.objectContaining({
+            getSnapshot: expect.any(Function),
+            subscribe: expect.any(Function),
+            report: expect.any(Function),
+            reportMany: expect.any(Function),
+            replaceBySource: expect.any(Function),
+            clear: expect.any(Function),
+          }),
+        }),
+      );
+    });
+
+    it('accepts an external diagnostics store and threads it through to EditorRuntimeProvider unchanged', () => {
+      const injected: VideoEditorDiagnosticsStore = createVideoEditorDiagnosticsStore();
+      // Pre-populate with a diagnostic so we can identify it
+      injected.report({
+        severity: 'warning',
+        source: 'provider',
+        code: 'P_TEST',
+        message: 'injected store test',
+      });
+
+      render(
+        <BrowserVideoEditorProvider
+          dataProvider={provider}
+          timelineId="timeline-1"
+          diagnosticsStore={injected}
+        >
+          <div data-testid="custom-shell">Injected</div>
+        </BrowserVideoEditorProvider>,
+      );
+
+      const passedStore = runtimeProviderSpy.mock.calls[0][0].diagnosticsStore as VideoEditorDiagnosticsStore;
+      expect(passedStore).toBe(injected);
+      const snapshot = passedStore.getSnapshot();
+      expect(snapshot).toHaveLength(1);
+      expect(snapshot[0].code).toBe('P_TEST');
+    });
+
+    it('reports no loader diagnostics when extensionPackages is omitted', () => {
+      const store = createVideoEditorDiagnosticsStore();
+
+      render(
+        <BrowserVideoEditorProvider
+          dataProvider={provider}
+          timelineId="timeline-1"
+          diagnosticsStore={store}
+        >
+          <div data-testid="custom-shell">No pkgs</div>
+        </BrowserVideoEditorProvider>,
+      );
+
+      const loaderDiags = store.getSnapshot().filter((d) => d.source === 'extension-loader');
+      expect(loaderDiags).toHaveLength(0);
+    });
+
+    it('reports no loader diagnostics when extensionPackages is empty', () => {
+      const store = createVideoEditorDiagnosticsStore();
+
+      render(
+        <BrowserVideoEditorProvider
+          dataProvider={provider}
+          timelineId="timeline-1"
+          diagnosticsStore={store}
+          extensionPackages={[]}
+        >
+          <div data-testid="custom-shell">Empty pkgs</div>
+        </BrowserVideoEditorProvider>,
+      );
+
+      const loaderDiags = store.getSnapshot().filter((d) => d.source === 'extension-loader');
+      expect(loaderDiags).toHaveLength(0);
+    });
+
+    it('routes valid package loader diagnostics into the store via replaceBySource', () => {
+      const store = createVideoEditorDiagnosticsStore();
+      const pkg = extPackage({ id: 'com.example.ok' });
+
+      render(
+        <BrowserVideoEditorProvider
+          dataProvider={provider}
+          timelineId="timeline-1"
+          diagnosticsStore={store}
+          extensionPackages={[pkg]}
+        >
+          <div data-testid="custom-shell">Valid pkg</div>
+        </BrowserVideoEditorProvider>,
+      );
+
+      // Valid package produces no diagnostics, so loader source should be empty
+      const loaderDiags = store.getSnapshot().filter((d) => d.source === 'extension-loader');
+      expect(loaderDiags).toHaveLength(0);
+
+      // Extension config threading is unchanged
+      const passedExtensions = runtimeProviderSpy.mock.calls[0][0].extensions;
+      expect(passedExtensions).toHaveLength(1);
+      expect(passedExtensions[0].extensionId).toBe('com.example.ok');
+    });
+
+    it('routes invalid package diagnostics into the store via replaceBySource', () => {
+      const store = createVideoEditorDiagnosticsStore();
+      // Missing required 'id' field in manifest
+      const invalidPkg = extPackage({ id: '' });
+
+      render(
+        <BrowserVideoEditorProvider
+          dataProvider={provider}
+          timelineId="timeline-1"
+          diagnosticsStore={store}
+          extensionPackages={[invalidPkg]}
+        >
+          <div data-testid="custom-shell">Invalid pkg</div>
+        </BrowserVideoEditorProvider>,
+      );
+
+      const loaderDiags = store.getSnapshot().filter((d) => d.source === 'extension-loader');
+      expect(loaderDiags.length).toBeGreaterThanOrEqual(1);
+
+      // Invalid package should be excluded from enabled configs
+      const passedExtensions = runtimeProviderSpy.mock.calls[0][0].extensions;
+      expect(passedExtensions).toHaveLength(0);
+    });
+
+    it('replaces loader diagnostics on rerender so entries do not duplicate', () => {
+      const store = createVideoEditorDiagnosticsStore();
+      const pkg = extPackage({ id: 'com.example.stable' });
+
+      const { rerender } = render(
+        <BrowserVideoEditorProvider
+          dataProvider={provider}
+          timelineId="timeline-1"
+          diagnosticsStore={store}
+          extensionPackages={[pkg]}
+        >
+          <div data-testid="custom-shell">Stable</div>
+        </BrowserVideoEditorProvider>,
+      );
+
+      const countAfterFirst = store.getSnapshot().filter((d) => d.source === 'extension-loader').length;
+
+      rerender(
+        <BrowserVideoEditorProvider
+          dataProvider={provider}
+          timelineId="timeline-1"
+          diagnosticsStore={store}
+          extensionPackages={[pkg]}
+        >
+          <div data-testid="custom-shell">Stable rerender</div>
+        </BrowserVideoEditorProvider>,
+      );
+
+      const countAfterRerender = store.getSnapshot().filter((d) => d.source === 'extension-loader').length;
+      // replaceBySource prevents duplication — same count
+      expect(countAfterRerender).toBe(countAfterFirst);
+    });
+
+    it('does not change extension config threading when diagnostics collection is active', () => {
+      const store = createVideoEditorDiagnosticsStore();
+      const pkg = extPackage(
+        {
+          id: 'com.example.threaded',
+          contributions: {
+            slots: [{ slot: 'toolbar', id: 'threaded-toolbar' }],
+            dialogs: [{ id: 'threaded-dialog' }],
+            panels: [{ id: 'threaded-panel', placement: 'asset-panel' }],
+          },
+        },
+        {
+          slots: { toolbar: slotRenderer('threaded-toolbar') },
+          dialogHost: { dialogs: [{ id: 'threaded-dialog', render: () => 'x' }] },
+          registry: { panels: [{ id: 'threaded-panel', placement: 'asset-panel', render: () => 'x' }] },
+        },
+      );
+
+      render(
+        <BrowserVideoEditorProvider
+          dataProvider={provider}
+          timelineId="timeline-1"
+          diagnosticsStore={store}
+          extensionPackages={[pkg]}
+        >
+          <div data-testid="custom-shell">Threaded</div>
+        </BrowserVideoEditorProvider>,
+      );
+
+      const passedExtensions = runtimeProviderSpy.mock.calls[0][0].extensions;
+      expect(passedExtensions).toHaveLength(1);
+      const cfg = passedExtensions[0];
+      expect(cfg.extensionId).toBe('com.example.threaded');
+      expect(cfg.slots).toBeDefined();
+      expect(cfg.dialogHost).toBeDefined();
+      expect(cfg.registry).toBeDefined();
+      expect(cfg.settings).toEqual({});
     });
   });
 });

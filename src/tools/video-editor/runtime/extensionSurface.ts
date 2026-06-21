@@ -7,6 +7,7 @@ import type {
   TimelinePlaybackContextValue,
 } from '@/tools/video-editor/hooks/useTimelineState.types.ts';
 import type { ExtensionSettings } from './extensionManifest.ts';
+import type { VideoEditorDiagnostic } from './diagnostics.ts';
 
 export type VideoEditorSlotName =
   | 'header'
@@ -161,20 +162,35 @@ function normalizeExtensionInput(
   return configs.filter((config) => config.enabled !== false);
 }
 
-function checkDuplicateDescriptorIds<T extends { id: string }>(
+/**
+ * Collect duplicate descriptor IDs and return diagnostics for each duplicate.
+ * The `unique` output array contains only the first occurrence of every ID
+ * (fail-closed: duplicates are excluded).
+ */
+function collectDuplicateDescriptorDiagnostics<T extends { id: string }>(
   descriptors: readonly T[],
   collection: string,
-): void {
+): { unique: T[]; diagnostics: Array<Omit<VideoEditorDiagnostic, 'id' | 'timestamp'>> } {
   const seen = new Set<string>();
+  const unique: T[] = [];
+  const diagnostics: Array<Omit<VideoEditorDiagnostic, 'id' | 'timestamp'>> = [];
 
   for (const descriptor of descriptors) {
     if (seen.has(descriptor.id)) {
-      throw new Error(
-        `Duplicate extension descriptor ID "${descriptor.id}" in collection "${collection}". Each descriptor must have a unique ID.`,
-      );
+      diagnostics.push({
+        code: 'duplicate_descriptor_id',
+        severity: 'error',
+        source: 'extension-runtime',
+        message: `Duplicate extension descriptor ID "${descriptor.id}" in collection "${collection}". The duplicate was excluded.`,
+        detail: { descriptorId: descriptor.id, collection },
+      });
+    } else {
+      seen.add(descriptor.id);
+      unique.push(descriptor);
     }
-    seen.add(descriptor.id);
   }
+
+  return { unique, diagnostics };
 }
 
 function mergeSlots(
@@ -197,7 +213,7 @@ function mergeSlots(
 
 function mergeDialogs(
   effectiveConfigs: readonly VideoEditorExtensionConfig[],
-): readonly VideoEditorDialogDescriptor[] {
+): { descriptors: readonly VideoEditorDialogDescriptor[]; diagnostics: Array<Omit<VideoEditorDiagnostic, 'id' | 'timestamp'>> } {
   const merged: VideoEditorDialogDescriptor[] = [];
 
   for (const config of effectiveConfigs) {
@@ -207,17 +223,17 @@ function mergeDialogs(
   }
 
   if (merged.length === 0) {
-    return EMPTY_DIALOGS;
+    return { descriptors: EMPTY_DIALOGS, diagnostics: [] };
   }
 
-  checkDuplicateDescriptorIds(merged, 'dialogs');
+  const { unique, diagnostics } = collectDuplicateDescriptorDiagnostics(merged, 'dialogs');
 
-  return merged;
+  return { descriptors: unique, diagnostics };
 }
 
 function mergePanels(
   effectiveConfigs: readonly VideoEditorExtensionConfig[],
-): readonly VideoEditorPanelDescriptor[] {
+): { descriptors: readonly VideoEditorPanelDescriptor[]; diagnostics: Array<Omit<VideoEditorDiagnostic, 'id' | 'timestamp'>> } {
   const merged: VideoEditorPanelDescriptor[] = [];
 
   for (const config of effectiveConfigs) {
@@ -227,17 +243,17 @@ function mergePanels(
   }
 
   if (merged.length === 0) {
-    return EMPTY_PANELS;
+    return { descriptors: EMPTY_PANELS, diagnostics: [] };
   }
 
-  checkDuplicateDescriptorIds(merged, 'panels');
+  const { unique, diagnostics } = collectDuplicateDescriptorDiagnostics(merged, 'panels');
 
-  return merged;
+  return { descriptors: unique, diagnostics };
 }
 
 function mergeInspectorSections(
   effectiveConfigs: readonly VideoEditorExtensionConfig[],
-): readonly VideoEditorInspectorSectionDescriptor[] {
+): { descriptors: readonly VideoEditorInspectorSectionDescriptor[]; diagnostics: Array<Omit<VideoEditorDiagnostic, 'id' | 'timestamp'>> } {
   const merged: VideoEditorInspectorSectionDescriptor[] = [];
 
   for (const config of effectiveConfigs) {
@@ -247,27 +263,54 @@ function mergeInspectorSections(
   }
 
   if (merged.length === 0) {
-    return EMPTY_INSPECTOR_SECTIONS;
+    return { descriptors: EMPTY_INSPECTOR_SECTIONS, diagnostics: [] };
   }
 
-  checkDuplicateDescriptorIds(merged, 'inspectorSections');
+  const { unique, diagnostics } = collectDuplicateDescriptorDiagnostics(merged, 'inspectorSections');
 
-  return merged;
+  return { descriptors: unique, diagnostics };
 }
 
-export function resolveVideoEditorExtensionRuntime(
+/**
+ * Result of the diagnostics-aware extension runtime resolver.
+ *
+ * Consumers that need duplicate-descriptor diagnostics should use
+ * {@link resolveVideoEditorExtensionRuntimeWithDiagnostics} and pipe
+ * `diagnostics` into the central diagnostics store via
+ * `store.replaceBySource('extension-runtime', diagnostics)`.
+ */
+export interface ResolveVideoEditorExtensionRuntimeResult {
+  runtime: VideoEditorExtensionRuntimeConfig;
+  diagnostics: Array<Omit<VideoEditorDiagnostic, 'id' | 'timestamp'>>;
+}
+
+/**
+ * Resolve extension runtime config and collect duplicate-descriptor
+ * diagnostics without throwing.
+ *
+ * Duplicate descriptor IDs are excluded fail-closed (first-wins).
+ * Valid and disabled config behaviour is unchanged from the legacy resolver.
+ */
+export function resolveVideoEditorExtensionRuntimeWithDiagnostics(
   input?: VideoEditorExtensionInput,
-): VideoEditorExtensionRuntimeConfig {
+): ResolveVideoEditorExtensionRuntimeResult {
   const effectiveConfigs = normalizeExtensionInput(input);
 
   if (effectiveConfigs.length === 0) {
-    return DEFAULT_VIDEO_EDITOR_EXTENSION_RUNTIME;
+    return { runtime: DEFAULT_VIDEO_EDITOR_EXTENSION_RUNTIME, diagnostics: [] };
   }
 
   const slots = mergeSlots(effectiveConfigs);
-  const dialogs = mergeDialogs(effectiveConfigs);
-  const panels = mergePanels(effectiveConfigs);
-  const inspectorSections = mergeInspectorSections(effectiveConfigs);
+
+  const dialogResult = mergeDialogs(effectiveConfigs);
+  const panelResult = mergePanels(effectiveConfigs);
+  const inspectorResult = mergeInspectorSections(effectiveConfigs);
+
+  const diagnostics = [
+    ...dialogResult.diagnostics,
+    ...panelResult.diagnostics,
+    ...inspectorResult.diagnostics,
+  ];
 
   // Build package and settings maps keyed only by defined extension IDs.
   // Raw M1 configs without extensionId are omitted — no undefined map keys.
@@ -284,17 +327,34 @@ export function resolveVideoEditorExtensionRuntime(
   }
 
   return {
-    slots,
-    dialogHost: {
-      dialogs,
+    runtime: {
+      slots,
+      dialogHost: {
+        dialogs: dialogResult.descriptors,
+      },
+      registry: {
+        panels: panelResult.descriptors,
+        inspectorSections: inspectorResult.descriptors,
+      },
+      packages,
+      settings,
     },
-    registry: {
-      panels,
-      inspectorSections,
-    },
-    packages,
-    settings,
+    diagnostics,
   };
+}
+
+/**
+ * Legacy compatibility wrapper.
+ *
+ * Calls the diagnostics-aware resolver and returns only the runtime
+ * config. Duplicate descriptor diagnostics are silently discarded by
+ * this wrapper — callers that need diagnostics should use
+ * {@link resolveVideoEditorExtensionRuntimeWithDiagnostics} directly.
+ */
+export function resolveVideoEditorExtensionRuntime(
+  input?: VideoEditorExtensionInput,
+): VideoEditorExtensionRuntimeConfig {
+  return resolveVideoEditorExtensionRuntimeWithDiagnostics(input).runtime;
 }
 
 type RegistryDescriptor = {

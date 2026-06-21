@@ -8,10 +8,12 @@ import {
 
 export type BrowserVideoEditorLayoutRenderer = (shell: ReactNode) => ReactNode;
 
-export interface BrowserVideoEditorProps extends Omit<BrowserVideoEditorProviderProps, 'children'> {
+export interface BrowserVideoEditorProps extends Omit<BrowserVideoEditorProviderProps, 'children' | 'diagnosticsStore'> {
   mode?: 'full' | 'compact';
   onCreateTimeline?: () => void;
   renderLayout?: BrowserVideoEditorLayoutRenderer;
+  /** Optional diagnostics store — when omitted the provider creates a default in-memory store. */
+  diagnosticsStore?: BrowserVideoEditorProviderProps['diagnosticsStore'];
   children?: ReactNode;
 }
 
@@ -44,6 +46,7 @@ export function BrowserVideoEditor({
   extensions,
   extensionPackages,
   extensionStateRepository,
+  diagnosticsStore,
   onCreateTimeline,
   renderLayout,
   children,
@@ -66,6 +69,7 @@ export function BrowserVideoEditor({
       extensions={extensions}
       extensionPackages={extensionPackages}
       extensionStateRepository={extensionStateRepository}
+      diagnosticsStore={diagnosticsStore}
     >
       {renderLayout ? renderLayout(shell) : shell}
     </BrowserVideoEditorProvider>

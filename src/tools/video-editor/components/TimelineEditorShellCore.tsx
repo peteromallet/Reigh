@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { formatDistanceToNow } from 'date-fns';
-import { Download, Eye, GripHorizontal, History, Maximize2, Minimize2, Redo2, RefreshCw, Settings, SlidersHorizontal, Undo2, ZoomIn, ZoomOut } from 'lucide-react';
+import { AlertTriangle, Download, Eye, GripHorizontal, History, Maximize2, Minimize2, Redo2, RefreshCw, Settings, SlidersHorizontal, Undo2, XCircle, ZoomIn, ZoomOut } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/shared/components/ui/alert-dialog.tsx';
 import { Badge } from '@/shared/components/ui/badge.tsx';
 import { Button } from '@/shared/components/ui/button.tsx';
@@ -40,6 +40,9 @@ import { bootDiagnostics, MemoryPressureDetector } from '@/tools/video-editor/li
 import { useRenderDiagnostic } from '@/tools/video-editor/hooks/usePerfDiagnostics.ts';
 import { useEditorSync } from '@/tools/video-editor/hooks/useEditorSync.ts';
 import { dispatchAppEvent } from '@/shared/lib/typedEvents.ts';
+import { ExtensionRenderBoundary } from '@/tools/video-editor/runtime/ExtensionRenderBoundary.tsx';
+import { useVideoEditorDiagnostics } from '@/tools/video-editor/hooks/useVideoEditorDiagnostics.ts';
+import { DiagnosticsPanel } from '@/tools/video-editor/components/DiagnosticsPanel.tsx';
 
 const MIN_TIMELINE_HEIGHT = 140;
 const MIN_PREVIEW_HEIGHT = 180;
@@ -131,8 +134,10 @@ function TimelineEditorShellCoreComponent({
     onDiscardRemoteChanges: chrome.reloadFromServer,
   });
   const sync = useEditorSync();
+  const diagnostics = useVideoEditorDiagnostics();
   const [syncDialogOpen, setSyncDialogOpen] = useState(false);
   const [syncResultMessage, setSyncResultMessage] = useState<string | null>(null);
+  const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
 
   // Show sync result feedback and auto-clear
   useEffect(() => {
@@ -297,6 +302,34 @@ function TimelineEditorShellCoreComponent({
   const touchChrome = isPhone || isTablet;
   const toolbarButtonSizeClass = touchChrome ? 'h-11 w-11' : 'h-6 w-6';
   const previewActionButtonClass = touchChrome ? 'h-11 min-w-11 px-3 text-[11px]' : 'h-7 px-3 text-[11px]';
+
+  // Default header (rendered when no extension header slot is registered, or as
+  // the ExtensionRenderBoundary fallback when a registered header slot throws).
+  const defaultHeader = !condensed ? (
+    <div className="flex h-10 items-center gap-3 border-b border-border bg-background px-3 text-sm text-muted-foreground">
+      {onNavigateHome && (
+        <button
+          type="button"
+          className={cn('shrink-0 transition-colors hover:text-foreground motion-reduce:transition-none', touchChrome && 'min-h-11 px-2')}
+          onClick={onNavigateHome}
+        >
+          ← Back
+        </button>
+      )}
+      <div className="truncate text-foreground">{chrome.timelineName ?? 'Untitled timeline'}</div>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className={cn('ml-auto text-muted-foreground', touchChrome ? 'h-11 w-11' : 'h-7 w-7')}
+        onClick={() => dispatchAppEvent('openSettings', {})}
+        title="Settings"
+      >
+        <Settings className="h-3.5 w-3.5" />
+      </Button>
+    </div>
+  ) : null;
+
   const interactionStatusLabel = [
     `Timeline mode ${editorData.interactionMode}.`,
     `Precision ${editorData.precisionEnabled ? 'enabled' : 'disabled'}.`,
@@ -323,18 +356,6 @@ function TimelineEditorShellCoreComponent({
   const slotRenderers = useVideoEditorSlotRenderers();
   const renderContext = useVideoEditorRenderContext();
   const contributedAssetPanels = useVideoEditorAssetPanels();
-  const headerSlot = slotRenderers.header ? slotRenderers.header(renderContext) : null;
-  const toolbarSlot = slotRenderers.toolbar ? slotRenderers.toolbar(renderContext) : null;
-  const assetPanelSlot = slotRenderers.assetPanel
-    ? slotRenderers.assetPanel(renderContext)
-    : (contributedAssetPanels.length > 0 ? <VideoEditorAssetPanelSurface includeBuiltIn={false} /> : null);
-  const inspectorPanelSlot = slotRenderers.inspectorPanel
-    ? slotRenderers.inspectorPanel(renderContext)
-    : null;
-  const timelineFooterSlot = slotRenderers.timelineFooter
-    ? slotRenderers.timelineFooter(renderContext)
-    : null;
-  const statusBarSlot = slotRenderers.statusBar ? slotRenderers.statusBar(renderContext) : null;
 
   const gridTemplateRows = isTimelineMaximized
     ? `${MIN_PREVIEW_HEIGHT}px auto 1fr`
@@ -535,6 +556,34 @@ function TimelineEditorShellCoreComponent({
         {saveBadge}
         {syncButton}
         {historyControls}
+        {/* Diagnostics status button with error/warning counts */}
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className={cn(
+            toolbarButtonSizeClass,
+            'relative',
+            diagnostics.errorCount > 0 && 'text-red-400',
+            diagnostics.errorCount === 0 && diagnostics.warningCount > 0 && 'text-amber-400',
+          )}
+          onClick={() => setIsDiagnosticsOpen(true)}
+          title={`Diagnostics: ${diagnostics.errorCount} error${diagnostics.errorCount === 1 ? '' : 's'}, ${diagnostics.warningCount} warning${diagnostics.warningCount === 1 ? '' : 's'}`}
+          data-testid="video-editor-diagnostics-button"
+        >
+          {diagnostics.errorCount > 0 ? (
+            <XCircle className="h-3.5 w-3.5" />
+          ) : diagnostics.warningCount > 0 ? (
+            <AlertTriangle className="h-3.5 w-3.5" />
+          ) : (
+            <AlertTriangle className="h-3.5 w-3.5 text-muted-foreground/40" />
+          )}
+          {diagnostics.totalCount > 0 && (
+            <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-destructive px-[2px] text-[8px] font-bold text-destructive-foreground leading-none">
+              {diagnostics.totalCount > 99 ? '99+' : diagnostics.totalCount}
+            </span>
+          )}
+        </Button>
       </div>
       {!condensed && (
         <div
@@ -566,6 +615,76 @@ function TimelineEditorShellCoreComponent({
       </div>
     </div>
   );
+
+  // Extension slots: hosts can override entire chrome regions.
+  // Slots are defined here so they can reference `defaultHeader` and `toolbar` as fallbacks.
+  //
+  // Each slot renderer is wrapped in a <SlotRenderer> child component so the
+  // call to `renderer(context)` happens **inside** the error boundary subtree.
+  // If we called `slotRenderers.header(renderContext)` inline, the throw would
+  // escape during the parent's render phase and never reach the boundary.
+
+  // Deferred slot renderer wrapper — renders the slot inside the error boundary.
+  function SlotRenderer({
+    renderer,
+    context,
+  }: {
+    renderer: (ctx: typeof renderContext) => React.ReactNode;
+    context: typeof renderContext;
+  }): React.ReactNode {
+    return renderer(context);
+  }
+
+  const headerSlot = slotRenderers.header ? (
+    <ExtensionRenderBoundary
+      metadata={{ descriptorId: 'header', descriptorType: 'slot', slotName: 'header' }}
+      fallback={defaultHeader}
+    >
+      <SlotRenderer renderer={slotRenderers.header} context={renderContext} />
+    </ExtensionRenderBoundary>
+  ) : null;
+  const toolbarSlot = slotRenderers.toolbar ? (
+    <ExtensionRenderBoundary
+      metadata={{ descriptorId: 'toolbar', descriptorType: 'slot', slotName: 'toolbar' }}
+      fallback={toolbar}
+    >
+      <SlotRenderer renderer={slotRenderers.toolbar} context={renderContext} />
+    </ExtensionRenderBoundary>
+  ) : null;
+  const assetPanelSlot = slotRenderers.assetPanel
+    ? (
+      <ExtensionRenderBoundary
+        metadata={{ descriptorId: 'assetPanel', descriptorType: 'slot', slotName: 'assetPanel' }}
+      >
+        <SlotRenderer renderer={slotRenderers.assetPanel} context={renderContext} />
+      </ExtensionRenderBoundary>
+    )
+    : (contributedAssetPanels.length > 0 ? <VideoEditorAssetPanelSurface includeBuiltIn={false} /> : null);
+  const inspectorPanelSlot = slotRenderers.inspectorPanel
+    ? (
+      <ExtensionRenderBoundary
+        metadata={{ descriptorId: 'inspectorPanel', descriptorType: 'slot', slotName: 'inspectorPanel' }}
+      >
+        <SlotRenderer renderer={slotRenderers.inspectorPanel} context={renderContext} />
+      </ExtensionRenderBoundary>
+    )
+    : null;
+  const timelineFooterSlot = slotRenderers.timelineFooter
+    ? (
+      <ExtensionRenderBoundary
+        metadata={{ descriptorId: 'timelineFooter', descriptorType: 'slot', slotName: 'timelineFooter' }}
+      >
+        <SlotRenderer renderer={slotRenderers.timelineFooter} context={renderContext} />
+      </ExtensionRenderBoundary>
+    )
+    : null;
+  const statusBarSlot = slotRenderers.statusBar ? (
+    <ExtensionRenderBoundary
+      metadata={{ descriptorId: 'statusBar', descriptorType: 'slot', slotName: 'statusBar' }}
+    >
+      <SlotRenderer renderer={slotRenderers.statusBar} context={renderContext} />
+    </ExtensionRenderBoundary>
+  ) : null;
 
   const previewOverlay = (
     <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center justify-between px-3 py-3" data-shell-interaction="true">
@@ -681,31 +800,7 @@ function TimelineEditorShellCoreComponent({
         <div className="sr-only" aria-live="polite" aria-atomic="true">
           {interactionStatusLabel}
         </div>
-        {headerSlot}
-        {!condensed && !headerSlot && (
-          <div className="flex h-10 items-center gap-3 border-b border-border bg-background px-3 text-sm text-muted-foreground">
-            {onNavigateHome && (
-              <button
-                type="button"
-                className={cn('shrink-0 transition-colors hover:text-foreground motion-reduce:transition-none', touchChrome && 'min-h-11 px-2')}
-                onClick={onNavigateHome}
-              >
-                ← Back
-              </button>
-            )}
-            <div className="truncate text-foreground">{chrome.timelineName ?? 'Untitled timeline'}</div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className={cn('ml-auto text-muted-foreground', touchChrome ? 'h-11 w-11' : 'h-7 w-7')}
-              onClick={() => dispatchAppEvent('openSettings', {})}
-              title="Settings"
-            >
-              <Settings className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        )}
+        {headerSlot ?? defaultHeader}
 
         {mobileSinglePane ? (
           <main className="grid h-full min-h-0 flex-1 animate-in fade-in duration-200 motion-reduce:animate-none motion-reduce:transition-none grid-rows-[auto_auto_minmax(260px,42dvh)_minmax(0,1fr)] gap-3 p-3 transition-opacity">
@@ -908,6 +1003,8 @@ function TimelineEditorShellCoreComponent({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <DiagnosticsPanel open={isDiagnosticsOpen} onOpenChange={setIsDiagnosticsOpen} />
     </>
   );
 }
