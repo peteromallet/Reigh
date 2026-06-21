@@ -41,6 +41,7 @@ export function BrowserVideoEditor({
   hostContext = null,
   queryClient,
   initialEntries,
+  extensions,
   onCreateTimeline,
   renderLayout,
   children,
@@ -60,6 +61,7 @@ export function BrowserVideoEditor({
       hostContext={hostContext}
       queryClient={ownedQueryClient}
       initialEntries={initialEntries}
+      extensions={extensions}
     >
       {renderLayout ? renderLayout(shell) : shell}
     </BrowserVideoEditorProvider>

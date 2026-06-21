@@ -1,0 +1,62 @@
+{
+  "id": "log_d5575f9e4d25",
+  "level": "debug",
+  "category": "system",
+  "event_type": "authority_divergence",
+  "message": "authority_divergence emitted",
+  "details": {
+    "event": {
+      "seq": 2701,
+      "schema_version": 1,
+      "ts_utc": "2026-06-21T19:33:11.266448+00:00",
+      "ts_rel_init_s": 3090.393867,
+      "kind": "authority_divergence",
+      "phase": "execute",
+      "payload": {
+        "diagnostic_version": 1,
+        "task_id": "T10",
+        "raw_terminal_status": "done",
+        "authority_status": "unknown",
+        "authoritative": false,
+        "reason": "stale_evidence:missing_head:task_commands_run",
+        "missing_outputs": [],
+        "stale_evidence": [
+          "missing_head:task_commands_run",
+          "missing_head:task_commands_run",
+          "missing_head:task_commands_run",
+          "missing_head:task_commands_run"
+        ],
+        "would_block_reasons": [
+          "stale_evidence:missing_head:task_commands_run"
+        ],
+        "error": null,
+        "diagnostics": {
+          "task_id": "T10",
+          "declared_outputs": {
+            "commands_run": [
+              "node scripts/quality/check-video-editor-sdk-imports.mjs (5 pre-existing failures, 0 new \u2014 exit 1)",
+              "npx vitest run src/tools/video-editor/public-browser.acceptance.test.tsx (6/6 passed \u2014 exit 0)",
+              "npx vitest run src/tools/video-editor/runtime/extensionSurface.test.ts src/tools/video-editor/browser/BrowserVideoEditor.test.tsx src/tools/video-editor/browser/BrowserVideoEditorProvider.test.tsx (39/39 passed \u2014 exit 0)",
+              "Temporary deep-import probe verified rejection, then deleted"
+            ]
+          },
+          "linked_evidence_count": 8,
+          "evidence_count": 94,
+          "normalization": "iterable",
+          "status": "unknown",
+          "evidence_sources": [
+            "plan_artifacts"
+          ],
+          "loaded_evidence_count": 94,
+          "raw_terminal_status": "done"
+        },
+        "ts_utc": "2026-06-21T19:33:11.266159+00:00"
+      },
+      "transaction_id": "2ea81f3926f1c736",
+      "store_method": "log_system_event"
+    }
+  },
+  "turn_id": null,
+  "epic_id": "m1-runtime-spine-and-public-20260621-2041",
+  "occurred_at": "2026-06-21T19:33:11.266477Z"
+}

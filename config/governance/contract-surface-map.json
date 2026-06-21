@@ -2,6 +2,7 @@
   "test:contracts": [
     "src/tools/video-editor/index.ts",
     "src/tools/video-editor/browser.ts",
+    "src/tools/video-editor/extension.ts",
     "src/tools/video-editor/testing.ts",
     "src/shared/components/ui/contracts/cn.ts",
     "src/shared/lib/errorHandling/runtimeError.ts",
@@ -17,6 +18,7 @@
   "quality:check": [
     "src/tools/video-editor/index.ts",
     "src/tools/video-editor/browser.ts",
+    "src/tools/video-editor/extension.ts",
     "src/tools/video-editor/testing.ts",
     "scripts/quality/check-video-editor-sdk-imports.mjs",
     "config/governance/video-editor-sdk-import-allowlist.json",

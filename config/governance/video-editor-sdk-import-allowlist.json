@@ -4,7 +4,8 @@
     "src/tools/video-editor/browser.ts",
     "src/tools/video-editor/browser-provider.ts",
     "src/tools/video-editor/sequence.ts",
-    "src/tools/video-editor/testing.ts"
+    "src/tools/video-editor/testing.ts",
+    "src/tools/video-editor/extension.ts"
   ],
   "allowlist": {
     "src/app/routes.tsx": [

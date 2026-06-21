@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { useLayoutEffect } from 'react';
 import { useEffects } from '@/tools/video-editor/hooks/useEffects.ts';
 import { useEffectRegistry } from '@/tools/video-editor/hooks/useEffectRegistry.ts';
@@ -20,6 +20,10 @@ import {
   DataProviderWrapper,
   type VideoEditorRuntimeContextValue,
 } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+import {
+  resolveVideoEditorExtensionRuntime,
+  type VideoEditorExtensionInput,
+} from '@/tools/video-editor/runtime/extensionSurface.ts';
 
 export interface EditorRuntimeProviderProps {
   dataProvider: DataProvider;
@@ -29,6 +33,7 @@ export interface EditorRuntimeProviderProps {
   effectCatalog?: VideoEditorEffectCatalog | null;
   sequenceComponentCatalog?: VideoEditorSequenceComponentCatalog | null;
   runtime?: Pick<VideoEditorRuntimeContextValue, 'assetResolver' | 'exporter' | 'hostContext'>;
+  extensions?: VideoEditorExtensionInput;
   children: ReactNode;
 }
 
@@ -86,8 +91,14 @@ export function EditorRuntimeProvider({
   effectCatalog,
   sequenceComponentCatalog,
   runtime,
+  extensions,
   children,
 }: EditorRuntimeProviderProps) {
+  const resolvedExtensions = useMemo(
+    () => resolveVideoEditorExtensionRuntime(extensions),
+    [extensions],
+  );
+
   return (
     <DataProviderWrapper
       value={{
@@ -98,6 +109,7 @@ export function EditorRuntimeProvider({
         assetResolver: runtime?.assetResolver ?? null,
         exporter: runtime?.exporter ?? null,
         hostContext: runtime?.hostContext ?? null,
+        extensions: resolvedExtensions,
       }}
     >
       <EditorRuntimeProviderInner

@@ -57,7 +57,10 @@ function walk(dir, files = []) {
       relativePath.includes(`${path.sep}__tests__${path.sep}`)
       || relativePath.endsWith('.test.ts')
       || relativePath.endsWith('.test.tsx')
-      || relativePath.startsWith(`src${path.sep}tools${path.sep}video-editor${path.sep}`)
+      || (
+        relativePath.startsWith(`src${path.sep}tools${path.sep}video-editor${path.sep}`)
+        && !relativePath.startsWith(`src${path.sep}tools${path.sep}video-editor${path.sep}testing${path.sep}extensions${path.sep}`)
+      )
     ) {
       continue;
     }
