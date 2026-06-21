@@ -6,6 +6,7 @@ import type {
   TimelineEditorOpsContextValue,
   TimelinePlaybackContextValue,
 } from '@/tools/video-editor/hooks/useTimelineState.types.ts';
+import type { ExtensionSettings } from './extensionManifest.ts';
 
 export type VideoEditorSlotName =
   | 'header'
@@ -70,6 +71,10 @@ export interface VideoEditorDialogHostConfig {
 }
 
 export interface VideoEditorExtensionConfig {
+  /** Extension identifier matching {@link ExtensionManifest.id}.  Only set for package-loaded configs; raw M1 configs omit it. */
+  extensionId?: string;
+  /** Resolved extension settings (JSON-only).  Only set for package-loaded configs after settings resolution. */
+  settings?: ExtensionSettings;
   enabled?: boolean;
   slots?: Partial<Record<VideoEditorSlotName, VideoEditorSlotRenderer>>;
   dialogHost?: VideoEditorDialogHostConfig;
@@ -90,6 +95,21 @@ export interface VideoEditorExtensionRuntimeConfig {
     panels: readonly VideoEditorPanelDescriptor[];
     inspectorSections: readonly VideoEditorInspectorSectionDescriptor[];
   };
+  /**
+   * Package configs keyed by defined extension ID.
+   *
+   * Only package-loaded configs that carry an `extensionId` appear here.
+   * Raw M1 configs without an `extensionId` are omitted — consumers can
+   * safely iterate without `undefined` key checks.
+   */
+  packages: Record<string, VideoEditorExtensionConfig>;
+  /**
+   * Resolved extension settings keyed by defined extension ID.
+   *
+   * Only entries whose corresponding config carries both `extensionId` and
+   * `settings` appear here.  Raw M1 configs are omitted.
+   */
+  settings: Record<string, ExtensionSettings>;
 }
 
 export interface ResolvedVideoEditorPanelRegistry {
@@ -105,6 +125,8 @@ const EMPTY_SLOTS: Partial<Record<VideoEditorSlotName, VideoEditorSlotRenderer>>
 const EMPTY_DIALOGS: readonly VideoEditorDialogDescriptor[] = Object.freeze([]);
 const EMPTY_PANELS: readonly VideoEditorPanelDescriptor[] = Object.freeze([]);
 const EMPTY_INSPECTOR_SECTIONS: readonly VideoEditorInspectorSectionDescriptor[] = Object.freeze([]);
+const EMPTY_PACKAGES_MAP: Record<string, VideoEditorExtensionConfig> = Object.freeze({});
+const EMPTY_SETTINGS_MAP: Record<string, ExtensionSettings> = Object.freeze({});
 const EMPTY_RESOLVED_PANEL_REGISTRY: ResolvedVideoEditorPanelRegistry = Object.freeze({
   assetPanels: EMPTY_PANELS,
   inspectorSections: Object.freeze({
@@ -123,6 +145,8 @@ export const DEFAULT_VIDEO_EDITOR_EXTENSION_RUNTIME: VideoEditorExtensionRuntime
     panels: EMPTY_PANELS,
     inspectorSections: EMPTY_INSPECTOR_SECTIONS,
   }),
+  packages: EMPTY_PACKAGES_MAP,
+  settings: EMPTY_SETTINGS_MAP,
 });
 
 function normalizeExtensionInput(
@@ -245,6 +269,20 @@ export function resolveVideoEditorExtensionRuntime(
   const panels = mergePanels(effectiveConfigs);
   const inspectorSections = mergeInspectorSections(effectiveConfigs);
 
+  // Build package and settings maps keyed only by defined extension IDs.
+  // Raw M1 configs without extensionId are omitted — no undefined map keys.
+  const packages: Record<string, VideoEditorExtensionConfig> = {};
+  const settings: Record<string, ExtensionSettings> = {};
+
+  for (const config of effectiveConfigs) {
+    if (config.extensionId !== undefined) {
+      packages[config.extensionId] = config;
+      if (config.settings !== undefined) {
+        settings[config.extensionId] = config.settings;
+      }
+    }
+  }
+
   return {
     slots,
     dialogHost: {
@@ -254,6 +292,8 @@ export function resolveVideoEditorExtensionRuntime(
       panels,
       inspectorSections,
     },
+    packages,
+    settings,
   };
 }
 

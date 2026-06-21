@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reigh.dev/schemas/reigh-extension.schema.json",
+  "title": "Reigh Extension Manifest",
+  "description": "Schema for Reigh video-editor extension manifests. Validated at package-load time; invalid manifests are rejected with structured diagnostics.",
+  "type": "object",
+  "required": ["id", "name", "version", "apiVersion"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique extension identifier (e.g. com.example.my-extension).",
+      "minLength": 1,
+      "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-readable extension name.",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string",
+      "description": "Extension version (semver).",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+    },
+    "apiVersion": {
+      "type": "string",
+      "description": "Required runtime API version (semver). Must be same-major compatible with runtime API 1.0.0.",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+    },
+    "description": {
+      "type": "string",
+      "description": "Optional prose description."
+    },
+    "author": {
+      "type": "string",
+      "description": "Optional author attribution."
+    },
+    "permissions": {
+      "type": "array",
+      "description": "Declarative permission allow-list. Only known permissions are accepted.",
+      "items": {
+        "type": "string",
+        "enum": [
+          "timeline:read",
+          "timeline:write",
+          "assets:read",
+          "assets:write"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "settingsSchema": {
+      "description": "JSON Schema describing extension settings. Default values are used as baseline settings.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": true
+        },
+        {
+          "type": "boolean"
+        }
+      ]
+    },
+    "contributions": {
+      "type": "object",
+      "description": "Declared contribution descriptors.",
+      "additionalProperties": false,
+      "properties": {
+        "slots": {
+          "type": "array",
+          "description": "Slot contribution descriptors.",
+          "items": {
+            "type": "object",
+            "required": ["slot", "id"],
+            "additionalProperties": false,
+            "properties": {
+              "slot": {
+                "type": "string",
+                "enum": [
+                  "header",
+                  "toolbar",
+                  "leftPanel",
+                  "rightPanel",
+                  "timelineFooter",
+                  "statusBar",
+                  "dialogs",
+                  "assetPanel",
+                  "inspectorPanel"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "order": {
+                "type": "number"
+              }
+            }
+          },
+          "uniqueItems": true
+        },
+        "dialogs": {
+          "type": "array",
+          "description": "Dialog contribution descriptors.",
+          "items": {
+            "type": "object",
+            "required": ["id"],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "order": {
+                "type": "number"
+              },
+              "layer": {
+                "type": "string",
+                "enum": ["modal", "overlay"]
+              }
+            }
+          },
+          "uniqueItems": true
+        },
+        "panels": {
+          "type": "array",
+          "description": "Panel contribution descriptors.",
+          "items": {
+            "type": "object",
+            "required": ["id"],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "order": {
+                "type": "number"
+              }
+            }
+          },
+          "uniqueItems": true
+        },
+        "inspectorSections": {
+          "type": "array",
+          "description": "Inspector section contribution descriptors.",
+          "items": {
+            "type": "object",
+            "required": ["id", "placement"],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "placement": {
+                "type": "string",
+                "enum": ["before-default", "after-default"]
+              },
+              "order": {
+                "type": "number"
+              }
+            }
+          },
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}
