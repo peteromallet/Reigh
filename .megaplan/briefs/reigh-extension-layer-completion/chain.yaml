@@ -1,0 +1,79 @@
+base_branch: reigh-extension-layer-epic
+
+milestones:
+  - label: m1-runtime-spine
+    idea: .megaplan/briefs/reigh-extension-layer-completion/m1-runtime-spine.md
+    branch: epic/reigh-ext-completion-m1-runtime-spine
+    profile: partnered-5
+    robustness: thorough
+    depth: high
+    vendor: codex
+    with_prep: true
+    prep_direction: "Focus on the public extension runtime spine: provider/browser injection, public exports, contract registry/import allowlist, and a minimal fixture extension acceptance test. Treat package manager UI, shader/WebGL, and sidecars as explicit scope decisions, not assumed work."
+    notes: "Make the existing extension surface reachable through public provider/browser APIs and prove it with a minimal public extension fixture."
+
+  - label: m2-manifest-loader-state
+    idea: .megaplan/briefs/reigh-extension-layer-completion/m2-manifest-loader-state.md
+    branch: epic/reigh-ext-completion-m2-manifest-loader-state
+    profile: partnered-5
+    robustness: thorough
+    depth: high
+    vendor: codex
+    notes: "Add manifest schema, package loader, extension state repository, enabled/disabled state, and settings persistence."
+
+  - label: m3-diagnostics-failure-isolation
+    idea: .megaplan/briefs/reigh-extension-layer-completion/m3-diagnostics-failure-isolation.md
+    branch: epic/reigh-ext-completion-m3-diagnostics-failure-isolation
+    profile: partnered-5
+    robustness: full
+    depth: high
+    vendor: codex
+    notes: "Unify extension diagnostics and make invalid packages, runtime failures, and degraded provider states visible in user-facing diagnostics."
+
+  - label: m4-proposals-commands
+    idea: .megaplan/briefs/reigh-extension-layer-completion/m4-proposals-commands.md
+    branch: epic/reigh-ext-completion-m4-proposals-commands
+    profile: partnered-5
+    robustness: thorough
+    depth: high
+    vendor: codex
+    notes: "Add versioned timeline proposals, proposal review/apply UX, and extension-safe commands, keybindings, menus, and palette integration."
+
+  - label: m5-contribution-families
+    idea: .megaplan/briefs/reigh-extension-layer-completion/m5-contribution-families.md
+    branch: epic/reigh-ext-completion-m5-contribution-families
+    profile: partnered-5
+    robustness: full
+    depth: high
+    vendor: codex
+    notes: "Normalize supported contribution families and explicitly document/de-scope unsupported families with tests for every supported family."
+
+  - label: m6-render-provider-parity
+    idea: .megaplan/briefs/reigh-extension-layer-completion/m6-render-provider-parity.md
+    branch: epic/reigh-ext-completion-m6-render-provider-parity
+    profile: partnered-5
+    robustness: thorough
+    depth: high
+    vendor: codex
+    notes: "Add render capability planning, export blockers/artifacts, and provider parity/conformance for extension state, settings, diagnostics, and proposals."
+
+  - label: m7-docs-release-validation
+    idea: .megaplan/briefs/reigh-extension-layer-completion/m7-docs-release-validation.md
+    branch: epic/reigh-ext-completion-m7-docs-release-validation
+    profile: partnered-5
+    robustness: full
+    depth: medium
+    vendor: codex
+    notes: "Finish public docs/examples, release gates, CI scripts, and run the post-epic validation walkthrough."
+
+on_failure:
+  abort: stop_chain
+on_escalate:
+  abort: stop_chain
+merge_policy: auto
+
+driver:
+  robustness: full
+  auto_approve: true
+  max_iterations: 120
+  poll_sleep: 8.0
