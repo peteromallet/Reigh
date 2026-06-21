@@ -15,6 +15,7 @@ import type {
   VideoEditorToastHost,
 } from '@/tools/video-editor/runtime/ports.ts';
 import type { VideoEditorExtensionRuntimeConfig } from '@/tools/video-editor/runtime/extensionSurface.ts';
+import type { VideoEditorDiagnosticsStore } from '@/tools/video-editor/runtime/diagnostics.ts';
 
 export interface VideoEditorRuntimeContextValue {
   provider: DataProvider;
@@ -32,6 +33,7 @@ export interface VideoEditorRuntimeContextValue {
   exporter?: VideoEditorExporter | null;
   hostContext?: VideoEditorHostContext | null;
   extensions: VideoEditorExtensionRuntimeConfig;
+  diagnosticsStore: VideoEditorDiagnosticsStore;
 }
 
 export const DataProviderContext = createContext<VideoEditorRuntimeContextValue | null>(null);

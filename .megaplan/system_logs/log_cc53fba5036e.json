@@ -1,0 +1,65 @@
+{
+  "id": "log_cc53fba5036e",
+  "level": "debug",
+  "category": "system",
+  "event_type": "authority_divergence",
+  "message": "authority_divergence emitted",
+  "details": {
+    "event": {
+      "seq": 3566,
+      "schema_version": 1,
+      "ts_utc": "2026-06-21T23:12:04.290422+00:00",
+      "ts_rel_init_s": 4389.517699,
+      "kind": "authority_divergence",
+      "phase": "execute",
+      "payload": {
+        "diagnostic_version": 1,
+        "task_id": "T8",
+        "raw_terminal_status": "done",
+        "authority_status": "unknown",
+        "authoritative": false,
+        "reason": "stale_evidence:missing_head:task_files_changed",
+        "missing_outputs": [],
+        "stale_evidence": [
+          "missing_head:task_files_changed",
+          "missing_head:task_files_changed",
+          "missing_head:task_files_changed",
+          "missing_head:task_commands_run"
+        ],
+        "would_block_reasons": [
+          "stale_evidence:missing_head:task_files_changed",
+          "stale_evidence:missing_head:task_commands_run"
+        ],
+        "error": null,
+        "diagnostics": {
+          "task_id": "T8",
+          "declared_outputs": {
+            "files_changed": [
+              "src/tools/video-editor/data/DataProvider.ts",
+              "src/tools/video-editor/data/AstridBridgeDataProvider.ts",
+              "src/tools/video-editor/data/AstridBridgeDataProvider.test.ts"
+            ],
+            "commands_run": [
+              "npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/data/AstridBridgeDataProvider.test.ts src/tools/video-editor/runtime/diagnostics.test.ts"
+            ]
+          },
+          "linked_evidence_count": 8,
+          "evidence_count": 164,
+          "normalization": "iterable",
+          "status": "unknown",
+          "evidence_sources": [
+            "plan_artifacts"
+          ],
+          "loaded_evidence_count": 164,
+          "raw_terminal_status": "done"
+        },
+        "ts_utc": "2026-06-21T23:12:04.290156+00:00"
+      },
+      "transaction_id": "304ac56d5dd10fa9",
+      "store_method": "log_system_event"
+    }
+  },
+  "turn_id": null,
+  "epic_id": "m3-diagnostics-and-failure-20260621-2358",
+  "occurred_at": "2026-06-21T23:12:04.290467Z"
+}

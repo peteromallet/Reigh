@@ -25,6 +25,39 @@ function arePerfDiagnosticsEnabled() {
   return false;
 }
 
+// ---------------------------------------------------------------------------
+// Central diagnostics bridge
+// ---------------------------------------------------------------------------
+
+let _centralReporter: {
+  report: (raw: { code: string; message: string; detail?: Record<string, unknown> }) => void;
+} | null = null;
+
+/**
+ * Register a reporter that bridges perf diagnostics into the central
+ * diagnostics stream. Only has an effect when perf diagnostics are
+ * enabled via the existing localStorage/global gate.
+ *
+ * Returns an unsubscribe function that removes the reporter.
+ */
+export function registerPerfDiagnosticsReporter(
+  reporter: {
+    report: (raw: { code: string; message: string; detail?: Record<string, unknown> }) => void;
+  },
+): () => void {
+  _centralReporter = reporter;
+  return () => {
+    if (_centralReporter === reporter) {
+      _centralReporter = null;
+    }
+  };
+}
+
+function emitPerfDiagnostic(code: string, message: string, detail?: Record<string, unknown>): void {
+  if (!_centralReporter || !arePerfDiagnosticsEnabled()) return;
+  _centralReporter.report({ code, message, detail });
+}
+
 const logPerf = (message: string, ...args: unknown[]) => {
   if (!arePerfDiagnosticsEnabled()) {
     return;
@@ -39,6 +72,7 @@ export function bootDiagnostics() {
   if (_booted || !arePerfDiagnosticsEnabled()) return;
   _booted = true;
   logPerf('diagnostics active');
+  emitPerfDiagnostic('perf_diagnostics_active', 'Performance diagnostics activated.');
 
   // Report long tasks via PerformanceObserver (catches any JS blocking >50ms)
   if (typeof PerformanceObserver !== 'undefined') {
@@ -47,6 +81,9 @@ export function bootDiagnostics() {
         for (const entry of list.getEntries()) {
           if (entry.duration > 50) {
             logPerf(`long-task: ${Math.round(entry.duration)}ms`, entry.toJSON());
+            emitPerfDiagnostic('long_task', `Long task detected: ${Math.round(entry.duration)}ms`, {
+              duration: Math.round(entry.duration),
+            });
           }
         }
       });
@@ -64,6 +101,11 @@ export function bootDiagnostics() {
           const res = entry as PerformanceResourceTiming;
           if (res.duration > 2000 && (res.name.includes('supabase') || res.name.includes('storage'))) {
             logPerf(`slow-resource: ${Math.round(res.duration)}ms | ${res.initiatorType} | ${res.name.slice(0, 120)}`);
+            emitPerfDiagnostic('slow_resource', `Slow resource load: ${Math.round(res.duration)}ms`, {
+              duration: Math.round(res.duration),
+              initiatorType: res.initiatorType,
+              name: res.name.slice(0, 120),
+            });
           }
         }
       });
@@ -105,6 +147,11 @@ const createWindowDetector = (
       if (!state.fired && state.count > threshold) {
         state.fired = true;
         logPerf(`${label}: ${id} exceeded ${threshold}/${windowMs}ms`);
+        emitPerfDiagnostic(
+          label.replace(/-/g, '_'),
+          `${label}: ${id} exceeded ${threshold}/${windowMs}ms`,
+          { id, threshold, windowMs, label },
+        );
       }
     },
   };
@@ -137,6 +184,7 @@ export const RafLoopDetector = {
     if (!state.fired && state.count > 300) {
       state.fired = true;
       logPerf(`raf-loop: ${id} exceeded 1000 callbacks in 5s`);
+      emitPerfDiagnostic('raf_loop', `RAF loop detected: ${id} exceeded 300 callbacks in 5s`, { id });
     }
   },
 };
@@ -172,6 +220,10 @@ const sampleHeap = () => {
     if (!memoryFired && growthSamples >= 5) {
       memoryFired = true;
       logPerf(`memory-pressure: heap grew across ${growthSamples} samples`);
+      emitPerfDiagnostic('memory_pressure', `Heap grew across ${growthSamples} consecutive samples`, {
+        growthSamples,
+        usedHeap,
+      });
     }
   } else {
     growthSamples = 0;

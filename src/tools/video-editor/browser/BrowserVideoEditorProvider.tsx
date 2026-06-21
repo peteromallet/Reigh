@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { EditorRuntimeProvider } from '@/tools/video-editor/contexts/EditorRuntimeProvider.tsx';
 import type { DataProvider } from '@/tools/video-editor/data/DataProvider.ts';
@@ -23,6 +23,11 @@ import {
   type VideoEditorExtensionConfig,
   type VideoEditorExtensionInput,
 } from '@/tools/video-editor/runtime/extensionSurface.ts';
+import {
+  createVideoEditorDiagnosticsStore,
+  normalizeExtensionDiagnostics,
+  type VideoEditorDiagnosticsStore,
+} from '@/tools/video-editor/runtime/diagnostics.ts';
 
 export interface BrowserVideoEditorProviderProps {
   dataProvider: DataProvider;
@@ -41,6 +46,8 @@ export interface BrowserVideoEditorProviderProps {
   extensionPackages?: readonly ExtensionPackage[];
   /** Repository for extension enabled/disabled state and settings overrides. */
   extensionStateRepository?: ExtensionStateRepository;
+  /** Optional diagnostics store — when omitted the provider creates a default in-memory store. */
+  diagnosticsStore?: VideoEditorDiagnosticsStore;
   children: ReactNode;
 }
 
@@ -73,6 +80,7 @@ export function BrowserVideoEditorProvider({
   extensions,
   extensionPackages,
   extensionStateRepository,
+  diagnosticsStore,
   children,
 }: BrowserVideoEditorProviderProps) {
   const [ownedQueryClient] = useState(() => queryClient ?? createDefaultQueryClient());
@@ -106,12 +114,27 @@ export function BrowserVideoEditorProvider({
     return new InMemoryExtensionStateRepository();
   }, [extensionStateRepository, userId, hostContext?.projectId]);
 
+  // Create a default diagnostics store when none is injected.
+  // useRef ensures the store is stable across renders.
+  const defaultStoreRef = useRef<VideoEditorDiagnosticsStore | null>(null);
+  const store = diagnosticsStore ?? (defaultStoreRef.current ??= createVideoEditorDiagnosticsStore());
+
   // Load extension packages through the loader.
   const loadResult: ExtensionLoadResult | null = useMemo(() => {
     if (!extensionPackages || extensionPackages.length === 0) return null;
     const loader = new ExtensionLoader(extensionPackages, repository);
     return loader.load();
   }, [extensionPackages, repository]);
+
+  // Route loader diagnostics into the store exactly once per loader source
+  // replacement.  Using replaceBySource prevents stale entries from
+  // accumulating across rerenders.
+  useEffect(() => {
+    if (loadResult) {
+      const normalized = normalizeExtensionDiagnostics(loadResult.diagnostics);
+      store.replaceBySource('extension-loader', normalized);
+    }
+  }, [loadResult, store]);
 
   // Combine raw M1 extension configs with package-loaded configs.
   // Raw configs do NOT carry extensionId, so they don't pollute the
@@ -140,6 +163,7 @@ export function BrowserVideoEditorProvider({
           effectCatalog={effectCatalog}
           runtime={{ assetResolver, exporter, hostContext }}
           extensions={combinedExtensions}
+          diagnosticsStore={store}
         >
           {children}
         </EditorRuntimeProvider>

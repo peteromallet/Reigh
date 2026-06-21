@@ -6,12 +6,38 @@ import {
   useMemo,
   useState,
   type PropsWithChildren,
+  type ReactNode,
 } from 'react';
-import type { VideoEditorDialogDescriptor } from '@/tools/video-editor/runtime/extensionSurface.ts';
+import type {
+  VideoEditorDialogDescriptor,
+  VideoEditorRenderContext,
+  VideoEditorSlotRenderer,
+} from '@/tools/video-editor/runtime/extensionSurface.ts';
 import {
   useVideoEditorDialogDescriptors,
   useVideoEditorRenderContext,
 } from '@/tools/video-editor/runtime/useVideoEditorRenderContext.ts';
+import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+import {
+  ExtensionRenderBoundary,
+  reportExtensionRenderDiagnostic,
+  type ExtensionRenderBoundaryMetadata,
+} from '@/tools/video-editor/runtime/ExtensionRenderBoundary.tsx';
+
+// ---------------------------------------------------------------------------
+// Deferred descriptor renderer — defers renderer invocation into the child
+// render phase so that React error boundaries can catch throws.
+// ---------------------------------------------------------------------------
+
+function DescriptorRenderer({
+  renderer,
+  context,
+}: {
+  renderer: VideoEditorSlotRenderer;
+  context: VideoEditorRenderContext;
+}): ReactNode {
+  return renderer(context);
+}
 
 interface VideoEditorDialogHostRegistryValue {
   upsert: (ownerId: string, dialogs: readonly VideoEditorDialogDescriptor[]) => void;
@@ -41,6 +67,15 @@ export function VideoEditorDialogHost({
   const renderContext = useVideoEditorRenderContext();
   const extensionDialogs = useVideoEditorDialogDescriptors();
   const [registeredDialogs, setRegisteredDialogs] = useState<Record<string, readonly VideoEditorDialogDescriptor[]>>({});
+
+  // Access diagnostics store for when-predicate error reporting.
+  let store = null;
+  try {
+    const runtime = useVideoEditorRuntime();
+    store = runtime.diagnosticsStore;
+  } catch {
+    // Runtime context not available — diagnostics will not be reported.
+  }
 
   const registryValue = useMemo<VideoEditorDialogHostRegistryValue>(() => ({
     upsert: (ownerId, nextDialogs) => {
@@ -80,7 +115,27 @@ export function VideoEditorDialogHost({
     <VideoEditorDialogHostRegistryContext.Provider value={registryValue}>
       {children}
       {resolvedDialogs.map((dialog) => {
-        if (dialog.when && !dialog.when(renderContext)) {
+        // Wrap the when predicate with fail-closed error handling.
+        let visible = true;
+        if (dialog.when) {
+          try {
+            visible = dialog.when(renderContext);
+          } catch (error) {
+            const meta: ExtensionRenderBoundaryMetadata = {
+              descriptorId: dialog.id,
+              descriptorType: 'dialog',
+            };
+            reportExtensionRenderDiagnostic(
+              store,
+              error instanceof Error ? error : new Error(String(error)),
+              meta,
+              'visibility',
+            );
+            visible = false;
+          }
+        }
+
+        if (!visible) {
           return null;
         }
 
@@ -90,7 +145,14 @@ export function VideoEditorDialogHost({
             data-video-editor-dialog-id={dialog.id}
             data-video-editor-dialog-layer={dialog.layer ?? 'modal'}
           >
-            {dialog.render(renderContext)}
+            <ExtensionRenderBoundary
+              metadata={{
+                descriptorId: dialog.id,
+                descriptorType: 'dialog',
+              }}
+            >
+              <DescriptorRenderer renderer={dialog.render} context={renderContext} />
+            </ExtensionRenderBoundary>
           </div>
         );
       })}

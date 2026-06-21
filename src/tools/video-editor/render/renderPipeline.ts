@@ -6,6 +6,8 @@ import {
   type RenderProviderId,
   type RenderRouteDecision,
 } from '@/tools/video-editor/lib/renderRouter.ts';
+import { createRenderDiagnostic } from '@/tools/video-editor/runtime/diagnostics.ts';
+import type { VideoEditorDiagnosticReporter } from '@/tools/video-editor/runtime/diagnostics.ts';
 
 export type RenderPipelineEvent =
   | {
@@ -46,6 +48,8 @@ export interface ExecuteRenderPipelineOptions {
   request: TimelineRenderRequest;
   startBrowserRender: () => Promise<BrowserRenderResult>;
   middlewares?: readonly RenderPipelineMiddleware[];
+  /** Optional reporter for bridging render pipeline failures into the central diagnostics stream. */
+  diagnosticsReporter?: VideoEditorDiagnosticReporter | null;
 }
 
 export interface ExecuteRenderPipelineResult {
@@ -156,6 +160,7 @@ export async function executeRenderPipeline({
   request,
   startBrowserRender,
   middlewares = [],
+  diagnosticsReporter,
 }: ExecuteRenderPipelineOptions): Promise<ExecuteRenderPipelineResult> {
   const provider = RENDER_PROVIDER_REGISTRY[decision.route];
   const baseEvent = {
@@ -193,6 +198,16 @@ export async function executeRenderPipeline({
       providerId: result.providerId,
       error: result.message,
     });
+    // Bridge the pipeline failure into the central diagnostics stream.
+    diagnosticsReporter?.report(createRenderDiagnostic(
+      'render_pipeline_failed',
+      result.message,
+      {
+        providerId: result.providerId,
+        route: decision.route,
+        reason: decision.reason,
+      },
+    ));
   }
 
   return result;
