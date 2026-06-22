@@ -30,7 +30,7 @@ function arePerfDiagnosticsEnabled() {
 // ---------------------------------------------------------------------------
 
 let _centralReporter: {
-  report: (raw: { code: string; message: string; detail?: Record<string, unknown> }) => void;
+  report: (raw: { severity: 'info'; source: 'perf'; code: string; message: string; detail?: Record<string, unknown> }) => void;
 } | null = null;
 
 /**
@@ -42,7 +42,7 @@ let _centralReporter: {
  */
 export function registerPerfDiagnosticsReporter(
   reporter: {
-    report: (raw: { code: string; message: string; detail?: Record<string, unknown> }) => void;
+    report: (raw: { severity: 'info'; source: 'perf'; code: string; message: string; detail?: Record<string, unknown> }) => void;
   },
 ): () => void {
   _centralReporter = reporter;
@@ -55,7 +55,7 @@ export function registerPerfDiagnosticsReporter(
 
 function emitPerfDiagnostic(code: string, message: string, detail?: Record<string, unknown>): void {
   if (!_centralReporter || !arePerfDiagnosticsEnabled()) return;
-  _centralReporter.report({ code, message, detail });
+  _centralReporter.report({ severity: 'info', source: 'perf', code, message, detail });
 }
 
 const logPerf = (message: string, ...args: unknown[]) => {

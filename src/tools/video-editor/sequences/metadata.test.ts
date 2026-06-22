@@ -68,7 +68,7 @@ describe('trusted sequence metadata', () => {
     });
   });
 
-  it('defines title-card as a simple text-first third-party-style example clip', () => {
+  it('defines title-card as a simple text-first trusted registry example clip', () => {
     const titleCard = getTrustedSequenceMetadata('title-card');
     expect(titleCard).toBeDefined();
     expect(titleCard).toMatchObject({

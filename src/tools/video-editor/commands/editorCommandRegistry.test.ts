@@ -186,6 +186,7 @@ const ADD_ROW_DESCRIPTOR: TimelineCommandDescriptor<AddRowCommand> = {
 const makeExtensionCommands = (): readonly ExtensionCommandContribution[] => [
   {
     id: 'myext.echo',
+    extensionId: 'myext',
     title: 'Echo',
     description: 'Echo a message via extension',
     proposal: true,
@@ -198,6 +199,7 @@ const makeExtensionCommands = (): readonly ExtensionCommandContribution[] => [
   },
   {
     id: 'myext.transform',
+    extensionId: 'myext',
     title: 'Transform',
     description: 'Transform the selected clip',
     proposal: false,
@@ -210,6 +212,7 @@ const makeExtensionCommands = (): readonly ExtensionCommandContribution[] => [
   },
   {
     id: 'myext.analyze',
+    extensionId: 'myext',
     title: 'Analyze Timeline',
     description: 'Analyze the current timeline state',
     proposal: false,
@@ -221,6 +224,7 @@ const makeExtensionCommands = (): readonly ExtensionCommandContribution[] => [
   },
   {
     id: 'myext.noMenuCmd',
+    extensionId: 'myext',
     title: 'No Menu Command',
     description: 'A command without menu context',
     proposal: true,
@@ -569,6 +573,23 @@ describe('EditorCommandRegistry', () => {
         group: 'extensions',
         order: 10,
       });
+    });
+
+    it('preserves full dot-separated extension IDs on public command entries', () => {
+      const registry = createRegistry({
+        extensionCommands: [
+          {
+            id: 'com.example.myext.echo',
+            extensionId: 'com.example.myext',
+            title: 'Echo',
+            proposal: false,
+          },
+        ],
+      });
+
+      const entry = registry.getCommand('com.example.myext.echo');
+      expect(entry).toBeDefined();
+      expect(entry!.extensionId).toBe('com.example.myext');
     });
   });
 

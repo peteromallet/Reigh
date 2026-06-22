@@ -34,6 +34,7 @@ function DiagnosticRow({ diagnostic }: { diagnostic: VideoEditorDiagnostic }) {
   return (
     <div
       className={cn('rounded-md px-3 py-2 text-xs', styles.rowClass)}
+      data-testid="video-editor-diagnostic-row"
       data-diagnostic-code={diagnostic.code}
       data-diagnostic-severity={diagnostic.severity}
       data-diagnostic-source={diagnostic.source}

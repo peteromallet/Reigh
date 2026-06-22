@@ -133,6 +133,7 @@ export class ExtensionLoader {
     const diagnostics: ExtensionDiagnostic[] = [];
     const configs: VideoEditorExtensionConfig[] = [];
     const installedPackages: InstalledPackageState[] = [];
+    const loadedEntries: Array<{ manifest: ExtensionManifest; config: VideoEditorExtensionConfig }> = [];
 
     // 1. Hydrate persisted state.
     const repoDiagnostics = this._repository.load();
@@ -193,6 +194,7 @@ export class ExtensionLoader {
           } as VideoEditorExtensionConfig;
 
           configs.push(adaptedConfig);
+          loadedEntries.push({ manifest, config: adaptedConfig });
           seenIds.add(manifest.id);
           loaded = true;
 
@@ -221,9 +223,7 @@ export class ExtensionLoader {
     }
 
     // 3. Collect command contributions from loaded manifests, detect duplicates.
-    const loadedManifests = installedPackages
-      .filter((ip) => ip.loaded)
-      .map((ip) => ip.manifest);
+    const loadedManifests = loadedEntries.map((entry) => entry.manifest);
 
     // Cross-manifest duplicate command ID detection (fail-closed: first-wins).
     const commandIdDiags = validateCommandDuplicateIds(loadedManifests);
@@ -233,39 +233,36 @@ export class ExtensionLoader {
     const keybindingDiags = validateCommandDuplicateKeybindings(loadedManifests);
     diagnostics.push(...keybindingDiags);
 
-    // Build the seen-command-ID set from diagnostics so we can exclude
-    // duplicates when collecting commands.
-    const duplicateCommandIds = new Set<string>();
-    for (const diag of commandIdDiags) {
-      const fullId = diag.detail?.fullCommandId;
-      if (typeof fullId === 'string') {
-        duplicateCommandIds.add(fullId);
-      }
-    }
-
     // Collect namespaced command contributions (first-loaded wins).
     const commands: ExtensionCommandContribution[] = [];
     const seenCommandIds = new Set<string>();
 
-    for (const manifest of loadedManifests) {
+    for (const { manifest, config } of loadedEntries) {
       const rawCommands = manifest.contributions?.commands;
       if (!rawCommands) continue;
 
+      const configCommands: ExtensionCommandContribution[] = [];
+
       for (const cmd of rawCommands) {
         const fullId = `${manifest.id}.${cmd.id}`;
-
-        // Skip if this full ID was flagged as a duplicate (second+ occurrence).
-        if (duplicateCommandIds.has(fullId)) continue;
 
         // Skip if we've already collected this full ID from an earlier manifest.
         if (seenCommandIds.has(fullId)) continue;
 
         seenCommandIds.add(fullId);
 
-        commands.push({
+        const namespacedCommand = {
           ...cmd,
+          extensionId: manifest.id,
           id: fullId, // Replace local ID with fully-qualified namespaced ID
-        });
+        };
+
+        commands.push(namespacedCommand);
+        configCommands.push(namespacedCommand);
+      }
+
+      if (configCommands.length > 0) {
+        config.commands = configCommands;
       }
     }
 

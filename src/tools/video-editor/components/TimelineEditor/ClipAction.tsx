@@ -84,15 +84,38 @@ const destructiveMenuItemClassName = `${menuItemClassName} hover:bg-destructive 
 const disabledMenuItemClassName = 'disabled:cursor-wait disabled:opacity-60';
 
 type ClipContextMenuProps = Pick<ClipActionProps, 'isGenerationAsset' | 'isDuplicatingGeneration' | 'onDuplicateGeneration' | 'onUpdateVariant' | 'isVariantStale' | 'onDismissStale' | 'onSplitHere' | 'onSplitClipsAtPlayhead' | 'onTrimToMediaEnd' | 'onConvertOverhangToHold' | 'overhangDurationSeconds' | 'onToggleMuteClips' | 'onOpenSequenceCreator' | 'onCreateShotFromSelection' | 'onGenerateVideoFromSelection' | 'onNavigateToShot' | 'onOpenGenerateVideo' | 'isCreatingShot' | 'onDeleteClip' | 'onDeleteClips' | 'isInPinnedShotGroup' | 'extensionCommands' | 'onExecuteExtensionCommand'> & { actionId: string; contextMenu: ContextMenuState; menuRef: React.RefObject<HTMLDivElement>; closeMenu: () => void; hasBatchSelection: boolean; selectedClipIds: string[]; showShotActions: boolean; hasActionsBeforeShotSection: boolean; existingShots?: Shot[]; };
-type ClipContextMenuItemProps = { icon: React.ComponentType<{ className?: string }>; onClick: () => void; children: React.ReactNode; disabled?: boolean; destructive?: boolean; suffix?: React.ReactNode; };
+type ClipContextMenuItemProps = {
+  icon: React.ComponentType<{ className?: string }>;
+  onClick: () => void;
+  children: React.ReactNode;
+  disabled?: boolean;
+  destructive?: boolean;
+  suffix?: React.ReactNode;
+  testId?: string;
+  commandId?: string;
+  extensionId?: string;
+};
 
-function ClipContextMenuItem({ icon: Icon, onClick, children, disabled = false, destructive = false, suffix }: ClipContextMenuItemProps) {
+function ClipContextMenuItem({
+  icon: Icon,
+  onClick,
+  children,
+  disabled = false,
+  destructive = false,
+  suffix,
+  testId,
+  commandId,
+  extensionId,
+}: ClipContextMenuItemProps) {
   return (
     <button
       type="button"
       className={cn(destructive ? destructiveMenuItemClassName : menuItemClassName, disabled && disabledMenuItemClassName)}
       onClick={onClick}
       disabled={disabled}
+      {...(testId ? { 'data-testid': testId } : {})}
+      {...(commandId ? { 'data-command-id': commandId } : {})}
+      {...(extensionId ? { 'data-extension-id': extensionId } : {})}
     >
       <Icon className="h-4 w-4" />
       {children}
@@ -188,6 +211,8 @@ function ClipContextMenu(props: ClipContextMenuProps) {
       ref={props.menuRef}
       className="fixed z-50 min-w-[10rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95"
       style={{ left: pos.x, top: pos.y, visibility: adjusted ? 'visible' : 'hidden' }}
+      data-testid="clip-context-menu"
+      data-clip-id={props.actionId}
     >
       {!props.hasBatchSelection && !props.isInPinnedShotGroup && props.isGenerationAsset && props.onDuplicateGeneration && (
         <ClipContextMenuItem
@@ -254,6 +279,9 @@ function ClipContextMenu(props: ClipContextMenuProps) {
                 <ClipContextMenuItem
                   key={cmd.id}
                   icon={Puzzle}
+                  testId="clip-context-command-entry"
+                  commandId={cmd.id}
+                  extensionId={cmd.extensionId}
                   onClick={() => {
                     props.closeMenu();
                     props.onExecuteExtensionCommand?.(cmd.id);

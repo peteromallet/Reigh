@@ -246,6 +246,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
       role="dialog"
       aria-modal="true"
       aria-label="Command palette"
+      data-testid="command-palette"
       className="fixed inset-0 z-[90000] flex items-start justify-center bg-black/40 pt-[15vh]"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
@@ -267,6 +268,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
             placeholder="Search commands by name or ID…"
             className="flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
             aria-label="Search commands"
+            data-testid="command-palette-input"
             autoComplete="off"
             spellCheck={false}
           />
@@ -281,6 +283,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
           className="max-h-[360px] overflow-y-auto p-1"
           role="listbox"
           aria-label="Command results"
+          data-testid="command-palette-results"
         >
           {filteredCommands.length === 0 ? (
             <div className="px-3 py-8 text-center text-sm text-muted-foreground">
@@ -295,6 +298,10 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
                 type="button"
                 role="option"
                 aria-selected={index === selectedIndex}
+                data-testid="command-palette-entry"
+                data-command-id={entry.id}
+                data-command-source={entry.source}
+                {...(entry.extensionId ? { 'data-extension-id': entry.extensionId } : {})}
                 className={cn(
                   'flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors',
                   index === selectedIndex
@@ -330,7 +337,11 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
                 {/* Right: keybinding + ID */}
                 <div className="flex shrink-0 items-center gap-2">
                   {entry.keybinding && (
-                    <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
+                    <kbd
+                      className="rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground"
+                      data-testid="command-palette-keybinding"
+                      data-command-id={entry.id}
+                    >
                       {formatKeybinding(entry.keybinding)}
                     </kbd>
                   )}

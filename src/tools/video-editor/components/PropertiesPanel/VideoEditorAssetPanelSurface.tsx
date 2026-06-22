@@ -66,7 +66,14 @@ function VideoEditorAssetPanelSurfaceComponent({
     <div className="flex flex-col gap-3">
       {builtInPanel}
       {assetPanels.map((panel) => (
-        <div key={panel.id} data-video-editor-panel-id={panel.id}>
+        <div
+          key={panel.id}
+          data-testid="video-editor-surface-contribution"
+          data-video-editor-contribution-family="surfaces"
+          data-video-editor-contribution-id={panel.id}
+          data-video-editor-surface-kind="asset-panel"
+          data-video-editor-panel-id={panel.id}
+        >
           <ExtensionRenderBoundary
             metadata={{
               descriptorId: panel.id,

@@ -99,6 +99,8 @@ export interface ExtensionCommandMenu {
 }
 
 export interface ExtensionCommandContribution {
+  /** Fully qualified contributing extension ID once adapted by the loader. */
+  extensionId?: string;
   /** Local command identifier (e.g. 'myCommand'). The runtime namespaces this as `${manifest.id}.${localCommandId}`. */
   id: string;
   /** Human-readable command label shown in the command palette. */
@@ -198,7 +200,10 @@ const MANIFEST_SCHEMA: Record<string, unknown> = {
     description: { type: 'string' },
     permissions: {
       type: 'array',
-      items: { type: 'string' },
+      items: {
+        type: 'string',
+        enum: [...ALLOWED_PERMISSIONS],
+      },
       uniqueItems: true,
     },
     settingsSchema: { type: 'object' },
@@ -370,6 +375,52 @@ export function validateManifestSchema(manifest: unknown): ExtensionDiagnostic[]
     }
   }
 
+  if (m.permissions !== undefined) {
+    if (!Array.isArray(m.permissions)) {
+      diagnostics.push({
+        kind: 'error',
+        code: 'manifest_schema_invalid',
+        message: 'Manifest "permissions" must be an array of known permission strings.',
+        extensionId: typeof m.id === 'string' ? m.id : undefined,
+      });
+    } else {
+      const seenPermissions = new Set<string>();
+      for (const permission of m.permissions) {
+        if (typeof permission !== 'string') {
+          diagnostics.push({
+            kind: 'error',
+            code: 'manifest_schema_invalid',
+            message: 'Manifest "permissions" must contain only known permission strings.',
+            extensionId: typeof m.id === 'string' ? m.id : undefined,
+            detail: { permission },
+          });
+          continue;
+        }
+
+        if (seenPermissions.has(permission)) {
+          diagnostics.push({
+            kind: 'error',
+            code: 'manifest_schema_invalid',
+            message: `Manifest "permissions" contains duplicate permission "${permission}".`,
+            extensionId: typeof m.id === 'string' ? m.id : undefined,
+            detail: { permission },
+          });
+        }
+        seenPermissions.add(permission);
+
+        if (!(ALLOWED_PERMISSIONS as readonly string[]).includes(permission)) {
+          diagnostics.push({
+            kind: 'error',
+            code: 'manifest_schema_invalid',
+            message: `Manifest "permissions" contains unsupported permission "${permission}".`,
+            extensionId: typeof m.id === 'string' ? m.id : undefined,
+            detail: { permission },
+          });
+        }
+      }
+    }
+  }
+
   // Validate contributions if present
   if (typeof m.contributions === 'object' && m.contributions !== null) {
     const contribs = m.contributions as Record<string, unknown>;
@@ -377,7 +428,7 @@ export function validateManifestSchema(manifest: unknown): ExtensionDiagnostic[]
     for (const key of Object.keys(contribs)) {
       if (!validCollections.includes(key)) {
         diagnostics.push({
-          kind: 'warning',
+          kind: 'error',
           code: 'manifest_schema_invalid',
           message: `Unknown contribution collection \"${key}\".`,
           extensionId: typeof m.id === 'string' ? m.id : undefined,
@@ -569,23 +620,25 @@ export function validateApiVersionCompatibility(manifest: ExtensionManifest): Ex
  * Validate that all declared permissions are in the allowed set.
  */
 export function validateManifestPermissions(manifest: ExtensionManifest): ExtensionDiagnostic[] {
-  const diagnostics: ExtensionDiagnostic[] = [];
-
-  if (manifest.permissions) {
-    for (const perm of manifest.permissions) {
-      if (!(ALLOWED_PERMISSIONS as readonly string[]).includes(perm)) {
-        diagnostics.push({
-          kind: 'error',
-          code: 'permission_rejected',
-          message: `Extension "${manifest.id}" requests unknown permission "${perm}".`,
-          extensionId: manifest.id,
-          detail: { permission: perm },
-        });
-      }
-    }
+  if (!manifest.permissions) {
+    return [];
   }
 
-  return diagnostics;
+  const rejected = manifest.permissions.filter(
+    (perm) => !(ALLOWED_PERMISSIONS as readonly string[]).includes(perm),
+  );
+
+  if (rejected.length === 0) {
+    return [];
+  }
+
+  return [{
+    kind: 'error',
+    code: 'permission_rejected',
+    message: `Extension "${manifest.id}" requests unsupported permissions: ${rejected.join(', ')}. Allowed: ${ALLOWED_PERMISSIONS.join(', ')}.`,
+    extensionId: manifest.id,
+    detail: { rejected },
+  }];
 }
 
 // ---------------------------------------------------------------------------
@@ -607,7 +660,6 @@ export function validateDuplicateContributionIdsAcrossCollections(
     ['dialogs', manifest.contributions?.dialogs],
     ['panels', manifest.contributions?.panels],
     ['inspectorSections', manifest.contributions?.inspectorSections],
-    ['commands', manifest.contributions?.commands],
   ];
 
   for (const [collectionName, items] of collections) {
@@ -784,77 +836,133 @@ export function validateContributionDescriptorMatch(
 ): ExtensionDiagnostic[] {
   const diagnostics: ExtensionDiagnostic[] = [];
 
-  // Collect all manifest contribution IDs
-  const manifestIds = new Set<string>();
-  const collections: [string, readonly { id: string }[] | undefined][] = [
-    ['slots', manifest.contributions?.slots],
-    ['dialogs', manifest.contributions?.dialogs],
-    ['panels', manifest.contributions?.panels],
-    ['inspectorSections', manifest.contributions?.inspectorSections],
-  ];
+  const slotDeclarations = manifest.contributions?.slots ?? [];
+  const dialogDeclarations = manifest.contributions?.dialogs ?? [];
+  const panelDeclarations = manifest.contributions?.panels ?? [];
+  const inspectorDeclarations = manifest.contributions?.inspectorSections ?? [];
 
-  for (const [, items] of collections) {
-    if (!items) continue;
-    for (const item of items) {
-      manifestIds.add(item.id);
+  const declaredSlots = new Set(slotDeclarations.map((item) => item.slot));
+  const declaredDialogIds = new Set(dialogDeclarations.map((item) => item.id));
+  const declaredPanelIds = new Set(panelDeclarations.map((item) => item.id));
+  const declaredInspectorIds = new Set(inspectorDeclarations.map((item) => item.id));
+
+  const configSlots = isRecord(config.slots) ? config.slots : undefined;
+  const configDialogDescriptors = collectDescriptorArray(config.dialogHost, 'dialogs');
+  const configPanelDescriptors = collectDescriptorArray(config.registry, 'panels');
+  const configInspectorDescriptors = collectDescriptorArray(config.registry, 'inspectorSections');
+
+  for (const declaration of slotDeclarations) {
+    if (typeof configSlots?.[declaration.slot] !== 'function') {
+      diagnostics.push(contributionMismatchDiagnostic(
+        manifest.id,
+        `Manifest slot contribution "${declaration.id}" declares slot "${declaration.slot}" but config.slots.${declaration.slot} is not registered.`,
+        { descriptorId: declaration.id, slot: declaration.slot, collection: 'slots' },
+      ));
     }
   }
 
-  // Collect config descriptor IDs
-  const configKeys = ['slots', 'dialogHost', 'registry'] as const;
-  for (const key of configKeys) {
-    const value = config[key];
-    if (!value || typeof value !== 'object') continue;
-
-    if (key === 'dialogHost') {
-      const dh = value as { dialogs?: { id: string }[] };
-      if (dh.dialogs) {
-        for (const d of dh.dialogs) {
-          if (!manifestIds.has(d.id)) {
-            diagnostics.push({
-              kind: 'warning',
-              code: 'contribution_id_mismatch',
-              message: `Config descriptor "${d.id}" in dialogHost has no matching contribution in manifest.`,
-              extensionId: manifest.id,
-              detail: { descriptorId: d.id, collection: 'dialogs' },
-            });
-          }
-        }
-      }
-    }
-
-    if (key === 'registry') {
-      const reg = value as { panels?: { id: string }[]; inspectorSections?: { id: string }[] };
-      if (reg.panels) {
-        for (const p of reg.panels) {
-          if (!manifestIds.has(p.id)) {
-            diagnostics.push({
-              kind: 'warning',
-              code: 'contribution_id_mismatch',
-              message: `Config descriptor "${p.id}" in registry.panels has no matching contribution in manifest.`,
-              extensionId: manifest.id,
-              detail: { descriptorId: p.id, collection: 'panels' },
-            });
-          }
-        }
-      }
-      if (reg.inspectorSections) {
-        for (const is of reg.inspectorSections) {
-          if (!manifestIds.has(is.id)) {
-            diagnostics.push({
-              kind: 'warning',
-              code: 'contribution_id_mismatch',
-              message: `Config descriptor "${is.id}" in registry.inspectorSections has no matching contribution in manifest.`,
-              extensionId: manifest.id,
-              detail: { descriptorId: is.id, collection: 'inspectorSections' },
-            });
-          }
-        }
-      }
+  for (const [slotName, renderer] of Object.entries(configSlots ?? {})) {
+    if (typeof renderer !== 'function' || !declaredSlots.has(slotName as ExtensionSlotName)) {
+      diagnostics.push(contributionMismatchDiagnostic(
+        manifest.id,
+        `Config slot "${slotName}" has no matching manifest slot contribution or invalid renderer.`,
+        { slot: slotName, collection: 'slots' },
+      ));
     }
   }
+
+  validateDescriptorCollection(
+    manifest.id,
+    'dialogs',
+    'dialogHost.dialogs',
+    declaredDialogIds,
+    configDialogDescriptors,
+    diagnostics,
+  );
+  validateDescriptorCollection(
+    manifest.id,
+    'panels',
+    'registry.panels',
+    declaredPanelIds,
+    configPanelDescriptors,
+    diagnostics,
+  );
+  validateDescriptorCollection(
+    manifest.id,
+    'inspectorSections',
+    'registry.inspectorSections',
+    declaredInspectorIds,
+    configInspectorDescriptors,
+    diagnostics,
+  );
 
   return diagnostics;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function collectDescriptorArray(
+  container: unknown,
+  key: 'dialogs' | 'panels' | 'inspectorSections',
+): readonly Record<string, unknown>[] {
+  if (!isRecord(container) || !Array.isArray(container[key])) {
+    return [];
+  }
+
+  return (container[key] as unknown[]).filter(isRecord);
+}
+
+function contributionMismatchDiagnostic(
+  extensionId: string,
+  message: string,
+  detail: Record<string, unknown>,
+): ExtensionDiagnostic {
+  return {
+    kind: 'warning',
+    code: 'contribution_id_mismatch',
+    message,
+    extensionId,
+    detail,
+  };
+}
+
+function validateDescriptorCollection(
+  extensionId: string,
+  collection: 'dialogs' | 'panels' | 'inspectorSections',
+  configPath: string,
+  declaredIds: ReadonlySet<string>,
+  configDescriptors: readonly Record<string, unknown>[],
+  diagnostics: ExtensionDiagnostic[],
+): void {
+  const registeredIds = new Set<string>();
+
+  for (const descriptor of configDescriptors) {
+    const descriptorId = typeof descriptor.id === 'string' ? descriptor.id : undefined;
+    const hasRenderer = typeof descriptor.render === 'function';
+
+    if (!descriptorId || !hasRenderer || !declaredIds.has(descriptorId)) {
+      diagnostics.push(contributionMismatchDiagnostic(
+        extensionId,
+        `Config descriptor "${descriptorId ?? '<missing id>'}" in ${configPath} has no matching manifest contribution or invalid renderer.`,
+        { descriptorId, collection },
+      ));
+      continue;
+    }
+
+    registeredIds.add(descriptorId);
+  }
+
+  for (const declaredId of declaredIds) {
+    if (!registeredIds.has(declaredId)) {
+      diagnostics.push(contributionMismatchDiagnostic(
+        extensionId,
+        `Manifest ${collection} contribution "${declaredId}" has no matching config descriptor in ${configPath}.`,
+        { descriptorId: declaredId, collection },
+      ));
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

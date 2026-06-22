@@ -142,6 +142,10 @@ export function VideoEditorDialogHost({
         return (
           <div
             key={dialog.id}
+            data-testid="video-editor-surface-contribution"
+            data-video-editor-contribution-family="surfaces"
+            data-video-editor-contribution-id={dialog.id}
+            data-video-editor-surface-kind="dialog"
             data-video-editor-dialog-id={dialog.id}
             data-video-editor-dialog-layer={dialog.layer ?? 'modal'}
           >

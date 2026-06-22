@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import type { ReactNode } from 'react';
 import {
+  ALLOWED_PERMISSIONS,
   validateManifestSchema,
   validateApiVersionCompatibility,
   validateManifestPermissions,
@@ -82,7 +83,7 @@ describe('reigh-extension.schema.json validation', () => {
     const manifest = validManifest({
       description: 'A test extension.',
       author: 'Test Author',
-      permissions: ['timeline:read', 'assets:read'],
+      permissions: ['read:timeline', 'read:assets'],
       settingsSchema: {
         type: 'object',
         properties: { debug: { type: 'boolean', default: false } },
@@ -191,7 +192,7 @@ describe('reigh-extension.schema.json validation', () => {
 
   it('rejects a manifest with an unknown permission string', () => {
     const { valid, errors } = validateManifest(
-      validManifest({ permissions: ['timeline:read', 'unknown:perm'] }),
+      validManifest({ permissions: ['read:timeline', 'unknown:perm'] }),
     );
     expect(valid).toBe(false);
     expect(errors).toContain('must be equal to one of the allowed values');
@@ -208,10 +209,28 @@ describe('reigh-extension.schema.json validation', () => {
   it('accepts a manifest with only allowed permissions', () => {
     const { valid } = validateManifest(
       validManifest({
-        permissions: ['timeline:read', 'timeline:write', 'assets:read', 'assets:write'],
+        permissions: [...ALLOWED_PERMISSIONS],
       }),
     );
     expect(valid).toBe(true);
+  });
+
+  it('accepts canonical action:resource timeline permission', () => {
+    const { valid, errors } = validateManifest(
+      validManifest({ permissions: ['read:timeline'] }),
+    );
+    expect(valid).toBe(true);
+    expect(errors).toBeNull();
+  });
+
+  it('rejects inverted resource:action permissions', () => {
+    const { valid, errors } = validateManifest(
+      validManifest({
+        permissions: ['timeline:read', 'assets:write'],
+      }),
+    );
+    expect(valid).toBe(false);
+    expect(errors).toContain('must be equal to one of the allowed values');
   });
 
   it('accepts a manifest with no permissions', () => {
@@ -366,7 +385,7 @@ describe('reigh-extension.schema.json validation', () => {
   it('rejects duplicate permission entries', () => {
     const { valid, errors } = validateManifest(
       validManifest({
-        permissions: ['timeline:read', 'timeline:read'],
+        permissions: ['read:timeline', 'read:timeline'],
       }),
     );
     expect(valid).toBe(false);
@@ -525,6 +544,40 @@ describe('validateManifestSchema', () => {
     expect(diags).toEqual([]);
   });
 
+  it('accepts canonical action:resource timeline permission at runtime schema validation', () => {
+    const diags = validateManifestSchema(
+      testManifest({ permissions: ['read:timeline'] }),
+    );
+    expect(diags).toEqual([]);
+  });
+
+  it('rejects inverted resource:action permissions at runtime schema validation', () => {
+    const diags = validateManifestSchema(
+      testManifest({ permissions: ['timeline:read'] }),
+    );
+    expect(diags).toContainEqual(expect.objectContaining({
+      code: 'manifest_schema_invalid',
+      message: expect.stringContaining('timeline:read'),
+    }));
+  });
+
+  it('rejects unsupported contribution collections at runtime schema validation', () => {
+    const diags = validateManifestSchema(
+      testManifest({
+        contributions: {
+          effects: [{ id: 'third-party-effect' }],
+        },
+      }),
+    );
+    expect(diags).toEqual([
+      expect.objectContaining({
+        kind: 'error',
+        code: 'manifest_schema_invalid',
+        message: expect.stringContaining('Unknown contribution collection "effects"'),
+      }),
+    ]);
+  });
+
   it('returns diagnostics with code manifest_schema_invalid for a missing required field', () => {
     const { id: _, ...noId } = testManifest();
     const diags = validateManifestSchema(noId);
@@ -615,13 +668,13 @@ describe('validateManifestPermissions', () => {
 
   it('returns no diagnostics for all allowed permissions', () => {
     const manifest = testManifest({
-      permissions: ['timeline:read', 'assets:write'],
+      permissions: [...ALLOWED_PERMISSIONS],
     });
     expect(validateManifestPermissions(manifest)).toEqual([]);
   });
 
   it('returns no diagnostics for single allowed permission', () => {
-    const manifest = testManifest({ permissions: ['timeline:write'] });
+    const manifest = testManifest({ permissions: ['write:timeline'] });
     expect(validateManifestPermissions(manifest)).toEqual([]);
   });
 
@@ -649,14 +702,15 @@ describe('validateManifestPermissions', () => {
 
   it('rejects mixed allowed and unknown permissions', () => {
     const manifest = testManifest({
-      permissions: ['timeline:read', 'evil:destroy'],
+      permissions: ['read:timeline', 'timeline:read', 'evil:destroy'],
     });
     const diags = validateManifestPermissions(manifest);
     expect(diags.length).toBe(1);
     expect(diags[0].code).toBe('permission_rejected');
+    expect(diags[0].message).toContain('timeline:read');
     expect(diags[0].message).toContain('evil:destroy');
     // The message lists rejected perms only, but the "Allowed:" suffix
-    // is always appended, so timeline:read may appear there.
+    // is always appended, so read:timeline may appear there.
   });
 
   it('includes rejected permissions in detail', () => {
@@ -921,7 +975,7 @@ describe('validateExtensionPackage', () => {
   it('returns no diagnostics for a fully compatible package', () => {
     const pkg = testPackage(
       {
-        permissions: ['timeline:read', 'assets:write'],
+        permissions: ['read:timeline', 'write:assets'],
         contributions: {
           slots: [{ slot: 'toolbar', id: 'btn' }],
           dialogs: [{ id: 'dlg' }],
@@ -960,7 +1014,7 @@ describe('validateExtensionPackage', () => {
     // Since the JSON Schema permission enum matches ALLOWED_PERMISSIONS,
     // unknown permissions fail schema validation before the runtime
     // belt-and-suspenders check fires.
-    const pkg = testPackage({ permissions: ['timeline:read', 'bad:perm'] });
+    const pkg = testPackage({ permissions: ['read:timeline', 'bad:perm'] });
     const diags = validateExtensionPackage(pkg);
     expect(diags.length).toBe(1);
     expect(diags[0].code).toBe('manifest_schema_invalid');
@@ -1001,7 +1055,7 @@ describe('validateExtensionPackage', () => {
     const pkg = testPackage(
       {
         apiVersion: '2.0.0', // incompatible API
-        permissions: ['timeline:read'], // schema-valid allowed permission
+        permissions: ['read:timeline'], // schema-valid allowed permission
         contributions: {
           slots: [{ slot: 'toolbar', id: 'dup' }],
           dialogs: [{ id: 'dup' }], // cross-collection duplicate
@@ -1161,7 +1215,7 @@ describe('structured diagnostics for excluded packages', () => {
     // Use the standalone runtime check since unknown permissions are
     // caught at the schema level in validateExtensionPackage.
     const manifest = testManifest({
-      permissions: ['timeline:read', 'evil:destroy', 'bad:access'],
+      permissions: ['read:timeline', 'evil:destroy', 'bad:access'],
     });
     const diags = validateManifestPermissions(manifest);
     const permDiag = diags.find((d) => d.code === 'permission_rejected');

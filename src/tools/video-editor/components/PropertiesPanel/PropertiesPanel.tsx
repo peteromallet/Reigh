@@ -52,7 +52,14 @@ function InspectorRegistrySections({
   return (
     <div className="flex flex-col gap-3">
       {sections.map((section) => (
-        <div key={section.id} data-video-editor-inspector-section-id={section.id}>
+        <div
+          key={section.id}
+          data-testid="video-editor-surface-contribution"
+          data-video-editor-contribution-family="surfaces"
+          data-video-editor-contribution-id={section.id}
+          data-video-editor-surface-kind="inspector-section"
+          data-video-editor-inspector-section-id={section.id}
+        >
           <ExtensionRenderBoundary
             metadata={{
               descriptorId: section.id,
