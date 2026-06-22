@@ -3,8 +3,8 @@
   "current_milestone_index": 3,
   "current_plan_name": "m4-diagnostics-reporter-20260623-0108",
   "last_state": "done",
-  "pr_number": null,
-  "pr_state": null,
+  "pr_number": 57,
+  "pr_state": "open",
   "completed": [
     {
       "label": "m1-preview-truth-contract-freeze",
