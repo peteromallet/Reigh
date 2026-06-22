@@ -17,14 +17,14 @@ The current runtime API version is `1.0.0`, exported as
 
 Every manifest must declare a semver `apiVersion`. The loader accepts packages
 when the manifest major version matches the runtime major version. A package
-with a different major version receives an `api_version_mismatch` error and is
+with a different major version receives an `api_version_incompatible` error and is
 not loaded.
 
 | Manifest `apiVersion` | Runtime `1.0.0` result |
 | --- | --- |
 | `1.0.0` | Compatible. |
 | `1.2.0` | Compatible by same major version. |
-| `2.0.0` | Rejected with `api_version_mismatch`. |
+| `2.0.0` | Rejected with `api_version_incompatible`. |
 | Malformed semver | Rejected with `manifest_schema_invalid`. |
 
 ## Permissions
@@ -87,9 +87,9 @@ Surfaces are the public UI contribution family:
 | `inspectorSections` | `placement: 'before-default' | 'after-default'` |
 
 Surface declarations must match runtime descriptors in the package config.
-Missing renderers, undeclared descriptors, or mismatched descriptor IDs produce
+Missing renderers or mismatched descriptor IDs produce
 `contribution_id_mismatch` diagnostics. Package authors should treat those
-diagnostics as release blockers even when they are warnings, because they mean
+diagnostics as release blockers because they mean
 the manifest and config no longer describe the same contribution surface.
 
 ## Command Detail

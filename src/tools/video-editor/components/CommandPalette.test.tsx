@@ -20,6 +20,7 @@ import type {
 const mockExecute = vi.fn<(id: string, context: EditorCommandContext) => EditorCommandResult | null>();
 const mockQueryCommands = vi.fn<(context: EditorCommandContext) => readonly EditorCommandEntry[]>();
 const mockBuildContext = vi.fn<(overrides?: Partial<EditorCommandContext>) => EditorCommandContext>();
+const mockHandleCommandResult = vi.fn<(result: EditorCommandResult | null) => boolean>();
 
 const mockRegistry: Partial<EditorCommandRegistry> = {
   commands: [] as readonly EditorCommandEntry[],
@@ -37,6 +38,7 @@ vi.mock('@/tools/video-editor/hooks/useEditorCommandRegistry.ts', () => ({
     registry: mockRegistry as EditorCommandRegistry,
     buildContext: mockBuildContext,
     execute: (id: string, context: EditorCommandContext) => (mockRegistry as EditorCommandRegistry).executeCommand(id, context),
+    handleCommandResult: mockHandleCommandResult,
     queryCommands: (source: string, menuContext?: unknown) => {
       const ctx = mockBuildContext({ source: source as EditorCommandContext['source'], menuContext: menuContext as EditorCommandContext['menuContext'] });
       return (mockRegistry as EditorCommandRegistry).queryCommands(ctx);
@@ -134,12 +136,22 @@ function setupMocks(commands: PaletteCommandSpec[], overrides?: Partial<EditorCo
 
   // Mock executeCommand
   mockExecute.mockReturnValue(null);
+  mockHandleCommandResult.mockImplementation((result) => {
+    if (!result) {
+      return false;
+    }
+    if (result.kind === 'proposal') {
+      mockOpenReview(result.proposal, result.input, result.runner);
+    }
+    return true;
+  });
 
   mockOpenReview.mockClear();
   mockCloseReview.mockClear();
   mockAcceptProposal.mockClear();
   mockRejectProposal.mockClear();
   mockExecute.mockClear();
+  mockHandleCommandResult.mockClear();
   mockQueryCommands.mockClear();
   mockBuildContext.mockClear();
 }
@@ -218,9 +230,12 @@ describe('CommandPalette', () => {
       // Namespaced ID should be visible
       expect(screen.getByText('com.example.palette.inspect-clip')).toBeDefined();
 
-      const entry = screen.getByTestId('command-palette-entry');
-      expect(entry).toHaveAttribute('data-command-id', 'com.example.palette.inspect-clip');
-      expect(entry).toHaveAttribute('data-extension-id', 'com.example.palette');
+      const entry = screen
+        .getAllByTestId('command-palette-entry')
+        .find((node) => node.getAttribute('data-command-source') === 'extension');
+      expect(entry).toBeDefined();
+      expect(entry!).toHaveAttribute('data-command-id', 'com.example.palette.inspect-clip');
+      expect(entry!).toHaveAttribute('data-extension-id', 'com.example.palette');
     });
 
     it('displays proposal commands with REVIEW badge', () => {
@@ -461,6 +476,14 @@ describe('CommandPalette', () => {
           commandIds: [],
           createdAt: Date.now(),
         },
+        input: {
+          type: 'com.example.palette.export-timeline',
+          payload: {
+            commandId: 'com.example.palette.export-timeline',
+            extensionId: 'com.example.palette',
+          },
+        },
+        runner: {} as never,
       };
       mockExecute.mockReturnValue(proposalResult);
 
@@ -504,6 +527,14 @@ describe('CommandPalette', () => {
           commandIds: [],
           createdAt: Date.now(),
         },
+        input: {
+          type: 'com.example.proposal.auto-color',
+          payload: {
+            commandId: 'com.example.proposal.auto-color',
+            extensionId: 'com.example.proposal',
+          },
+        },
+        runner: {} as never,
       };
       mockExecute.mockReturnValue(proposalResult);
 
@@ -552,6 +583,14 @@ describe('CommandPalette', () => {
           commandIds: [],
           createdAt: Date.now(),
         },
+        input: {
+          type: 'com.example.palette.export-timeline',
+          payload: {
+            commandId: 'com.example.palette.export-timeline',
+            extensionId: 'com.example.palette',
+          },
+        },
+        runner: {} as never,
       });
 
       const onClose = vi.fn();

@@ -968,8 +968,7 @@ describe('integration: end-to-end loader → registry → proposal lifecycle', (
     expect(pingEntry).toBeDefined();
     expect(pingEntry!.isProposal).toBe(true);
     expect(pingEntry!.source).toBe('extension');
-    // extensionId is derived from the first dot-separated segment of the ID
-    expect(pingEntry!.extensionId).toBe('com');
+    expect(pingEntry!.extensionId).toBe('com.example.flow');
     expect(pingEntry!.title).toBe('Ping Command');
     expect(pingEntry!.description).toBe('Send a ping');
     expect(pingEntry!.keybinding).toEqual({ key: 'Ctrl+Shift+P', mac: 'Cmd+Shift+P' });
@@ -1043,8 +1042,7 @@ describe('integration: end-to-end loader → registry → proposal lifecycle', (
     const pingEntry = paletteResults.find((e) => e.id === 'com.example.fixture.ping');
     expect(pingEntry).toBeDefined();
     expect(pingEntry!.isProposal).toBe(true);
-    // extensionId is derived from the first dot-separated segment of the ID
-    expect(pingEntry!.extensionId).toBe('com');
+    expect(pingEntry!.extensionId).toBe('com.example.fixture');
 
     // Query context menu with clip context
     const menuCtx: EditorCommandContext = {

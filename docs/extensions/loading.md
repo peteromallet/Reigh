@@ -187,14 +187,13 @@ Diagnostics are structured objects:
 ```ts
 type ExtensionDiagnostic = {
   kind: 'error' | 'warning';
-  code:
-    | 'manifest_schema_invalid'
-    | 'api_version_incompatible'
-    | 'api_version_mismatch'
-    | 'permission_rejected'
-    | 'contribution_id_mismatch'
-    | 'duplicate_contribution_id'
-    | 'duplicate_command_id'
+	  code:
+	    | 'manifest_schema_invalid'
+	    | 'api_version_incompatible'
+	    | 'permission_rejected'
+	    | 'contribution_id_mismatch'
+	    | 'duplicate_descriptor_id'
+	    | 'duplicate_command_id'
     | 'duplicate_keybinding'
     | 'duplicate_package_id'
     | 'settings_validation_failed'

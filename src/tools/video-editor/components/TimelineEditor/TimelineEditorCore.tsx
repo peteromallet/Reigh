@@ -335,7 +335,11 @@ function TimelineEditorCoreComponent({
   }), shallow);
 
   // Extension command registry for context-menu contributions
-  const { registry: commandRegistry, buildContext } = useEditorCommandRegistry();
+  const {
+    registry: commandRegistry,
+    buildContext,
+    handleCommandResult,
+  } = useEditorCommandRegistry();
 
   // Compute context-menu extension commands for a given menu context.
   // Memoized per-menu-context to avoid re-filtering on every clip render.
@@ -372,9 +376,9 @@ function TimelineEditorCoreComponent({
         source: 'context-menu',
         menuContext: selectedClipIds.size > 1 ? 'clip-selection-context' : 'clip-context',
       });
-      commandRegistry.executeCommand(commandId, ctx);
+      handleCommandResult(commandRegistry.executeCommand(commandId, ctx));
     },
-    [commandRegistry, buildContext, selectedClipIds.size],
+    [commandRegistry, buildContext, handleCommandResult, selectedClipIds.size],
   );
 
   const trackSensors = useSensors(

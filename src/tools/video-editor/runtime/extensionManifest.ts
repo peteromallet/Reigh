@@ -152,17 +152,14 @@ export type ExtensionDiagnosticKind = 'error' | 'warning';
 export type ExtensionDiagnosticCode =
   | 'manifest_schema_invalid'
   | 'api_version_incompatible'
-  | 'api_version_mismatch'
   | 'permission_rejected'
   | 'contribution_id_mismatch'
-  | 'duplicate_contribution_id'
+  | 'duplicate_descriptor_id'
   | 'duplicate_command_id'
   | 'duplicate_keybinding'
   | 'duplicate_package_id'
-  | 'settings_validation_failed'
   | 'settings_override_invalid'
   | 'state_corrupt'
-  | 'unsupported_record_version'
   | 'unknown_manifest_field';
 
 export interface ExtensionDiagnostic {
@@ -326,7 +323,10 @@ const MANIFEST_SCHEMA: Record<string, unknown> = {
  * Validate a manifest object against the Reigh extension JSON Schema.
  * Uses a minimal in-tree validator to avoid heavy Ajv dependency at runtime.
  */
-export function validateManifestSchema(manifest: unknown): ExtensionDiagnostic[] {
+export function validateManifestSchema(
+  manifest: unknown,
+  fallbackExtensionId?: string,
+): ExtensionDiagnostic[] {
   const diagnostics: ExtensionDiagnostic[] = [];
 
   if (typeof manifest !== 'object' || manifest === null || Array.isArray(manifest)) {
@@ -339,6 +339,7 @@ export function validateManifestSchema(manifest: unknown): ExtensionDiagnostic[]
   }
 
   const m = manifest as Record<string, unknown>;
+  const extensionId = typeof m.id === 'string' ? m.id : fallbackExtensionId;
 
   // Required fields
   for (const field of ['id', 'name', 'version', 'apiVersion']) {
@@ -346,8 +347,15 @@ export function validateManifestSchema(manifest: unknown): ExtensionDiagnostic[]
       diagnostics.push({
         kind: 'error',
         code: 'manifest_schema_invalid',
-        message: `Manifest is missing required field "${field}" or it is not a non-empty string.`,
-        extensionId: typeof m.id === 'string' ? m.id : undefined,
+        message: `Manifest must have required property "${field}".`,
+        extensionId,
+        detail: [{
+          instancePath: '',
+          schemaPath: `#/required/${field}`,
+          keyword: 'required',
+          params: { missingProperty: field },
+          message: `must have required property '${field}'`,
+        }],
       });
     }
   }
@@ -600,10 +608,12 @@ export function validateApiVersionCompatibility(manifest: ExtensionManifest): Ex
   const manifestMajor = parseSemverMajor(manifest.apiVersion);
 
   if (runtimeMajor === null || manifestMajor === null || runtimeMajor !== manifestMajor) {
+    const manifestMajorLabel = manifestMajor === null ? 'unknown' : String(manifestMajor);
+    const runtimeMajorLabel = runtimeMajor === null ? 'unknown' : String(runtimeMajor);
     return [{
       kind: 'error',
-      code: 'api_version_mismatch',
-      message: `Extension "${manifest.id}" requires API version ${manifest.apiVersion}, but runtime is ${RUNTIME_API_VERSION}.`,
+      code: 'api_version_incompatible',
+      message: `Extension "${manifest.id}" requires API version ${manifest.apiVersion} (major ${manifestMajorLabel}), but runtime is ${RUNTIME_API_VERSION} (major ${runtimeMajorLabel}).`,
       extensionId: manifest.id,
       detail: { manifestApiVersion: manifest.apiVersion, runtimeApiVersion: RUNTIME_API_VERSION },
     }];
@@ -654,6 +664,7 @@ export function validateDuplicateContributionIdsAcrossCollections(
 ): ExtensionDiagnostic[] {
   const diagnostics: ExtensionDiagnostic[] = [];
   const seen = new Map<string, string>(); // id -> collection name
+  const duplicates = new Map<string, Set<string>>();
 
   const collections: [string, readonly { id: string }[] | undefined][] = [
     ['slots', manifest.contributions?.slots],
@@ -666,17 +677,30 @@ export function validateDuplicateContributionIdsAcrossCollections(
     if (!items) continue;
     for (const item of items) {
       if (seen.has(item.id)) {
-        diagnostics.push({
-          kind: 'error',
-          code: 'duplicate_contribution_id',
-          message: `Duplicate contribution ID \"${item.id}\" found in collections \"${seen.get(item.id)}\" and \"${collectionName}\".`,
-          extensionId: manifest.id,
-          detail: { duplicateId: item.id, collections: [seen.get(item.id), collectionName] },
-        });
+        const collections = duplicates.get(item.id) ?? new Set<string>([seen.get(item.id)!]);
+        collections.add(collectionName);
+        duplicates.set(item.id, collections);
       } else {
         seen.set(item.id, collectionName);
       }
     }
+  }
+
+  if (duplicates.size > 0) {
+    diagnostics.push({
+      kind: 'error',
+      code: 'duplicate_descriptor_id',
+      message: `Duplicate descriptor IDs found across manifest contribution collections: ${Array.from(duplicates.entries())
+        .map(([id, collections]) => `"${id}" in ${Array.from(collections).join(', ')}`)
+        .join('; ')}.`,
+      extensionId: manifest.id,
+      detail: {
+        duplicates: Array.from(duplicates.entries()).map(([id, collections]) => ({
+          id,
+          collections: Array.from(collections),
+        })),
+      },
+    });
   }
 
   return diagnostics;
@@ -841,7 +865,6 @@ export function validateContributionDescriptorMatch(
   const panelDeclarations = manifest.contributions?.panels ?? [];
   const inspectorDeclarations = manifest.contributions?.inspectorSections ?? [];
 
-  const declaredSlots = new Set(slotDeclarations.map((item) => item.slot));
   const declaredDialogIds = new Set(dialogDeclarations.map((item) => item.id));
   const declaredPanelIds = new Set(panelDeclarations.map((item) => item.id));
   const declaredInspectorIds = new Set(inspectorDeclarations.map((item) => item.id));
@@ -856,17 +879,8 @@ export function validateContributionDescriptorMatch(
       diagnostics.push(contributionMismatchDiagnostic(
         manifest.id,
         `Manifest slot contribution "${declaration.id}" declares slot "${declaration.slot}" but config.slots.${declaration.slot} is not registered.`,
-        { descriptorId: declaration.id, slot: declaration.slot, collection: 'slots' },
-      ));
-    }
-  }
-
-  for (const [slotName, renderer] of Object.entries(configSlots ?? {})) {
-    if (typeof renderer !== 'function' || !declaredSlots.has(slotName as ExtensionSlotName)) {
-      diagnostics.push(contributionMismatchDiagnostic(
-        manifest.id,
-        `Config slot "${slotName}" has no matching manifest slot contribution or invalid renderer.`,
-        { slot: slotName, collection: 'slots' },
+        { contributionId: declaration.id, slot: declaration.slot },
+        'error',
       ));
     }
   }
@@ -918,9 +932,10 @@ function contributionMismatchDiagnostic(
   extensionId: string,
   message: string,
   detail: Record<string, unknown>,
+  severity: 'warning' | 'error' = 'warning',
 ): ExtensionDiagnostic {
   return {
-    kind: 'warning',
+    kind: severity,
     code: 'contribution_id_mismatch',
     message,
     extensionId,
@@ -936,30 +951,19 @@ function validateDescriptorCollection(
   configDescriptors: readonly Record<string, unknown>[],
   diagnostics: ExtensionDiagnostic[],
 ): void {
-  const registeredIds = new Set<string>();
-
-  for (const descriptor of configDescriptors) {
-    const descriptorId = typeof descriptor.id === 'string' ? descriptor.id : undefined;
-    const hasRenderer = typeof descriptor.render === 'function';
-
-    if (!descriptorId || !hasRenderer || !declaredIds.has(descriptorId)) {
-      diagnostics.push(contributionMismatchDiagnostic(
-        extensionId,
-        `Config descriptor "${descriptorId ?? '<missing id>'}" in ${configPath} has no matching manifest contribution or invalid renderer.`,
-        { descriptorId, collection },
-      ));
-      continue;
-    }
-
-    registeredIds.add(descriptorId);
-  }
+  const registeredIds = new Set(
+    configDescriptors
+      .filter((descriptor) => typeof descriptor.render === 'function')
+      .map((descriptor) => descriptor.id)
+      .filter((id): id is string => typeof id === 'string'),
+  );
 
   for (const declaredId of declaredIds) {
     if (!registeredIds.has(declaredId)) {
       diagnostics.push(contributionMismatchDiagnostic(
         extensionId,
         `Manifest ${collection} contribution "${declaredId}" has no matching config descriptor in ${configPath}.`,
-        { descriptorId: declaredId, collection },
+        { contributionId: declaredId },
       ));
     }
   }

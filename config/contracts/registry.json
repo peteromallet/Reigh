@@ -306,7 +306,20 @@
         "ResolvedExtensionSettings",
         "ExtensionLoader",
         "InstalledPackageState",
-        "ExtensionLoadResult"
+        "ExtensionLoadResult",
+        "EditorCommandContext",
+        "EditorCommandDirectResult",
+        "EditorCommandExecutor",
+        "EditorCommandProposalResult",
+        "EditorCommandResult",
+        "EditorCommandSource",
+        "TimelineCommand",
+        "TimelineCommandContext",
+        "TimelineCommandDescriptor",
+        "TimelineCommandEffect",
+        "TimelineCommandInput",
+        "TimelineCommandRunner",
+        "TimelineProposal"
       ]
     },
     {

@@ -76,7 +76,7 @@ test('negative contribution fixtures surface diagnostics without duplicate regis
     page.locator(
       `${DIAGNOSTIC_ROW}[data-diagnostic-code="contribution_id_mismatch"][data-diagnostic-extension-id="com.example.family-surfaces-mismatch"]`,
     ).first(),
-  ).toHaveAttribute('data-diagnostic-severity', 'warning');
+  ).toHaveAttribute('data-diagnostic-severity', 'error');
   await expect(
     page.locator(
       `${DIAGNOSTIC_ROW}[data-diagnostic-code="duplicate_command_id"][data-diagnostic-extension-id="com.example.family-duplicate-commands"]`,

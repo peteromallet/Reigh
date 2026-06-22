@@ -684,7 +684,12 @@ describe('EditorCommandRegistry', () => {
   describe('proposal execution (executeCommand — extension proposals)', () => {
     it('returns a proposal result for extension commands with isProposal:true', () => {
       const data = buildData();
-      const runner = createTestRunner();
+      const runner = createTimelineCommandRunner([
+        {
+          ...PING_DESCRIPTOR,
+          type: 'myext.echo',
+        } as TimelineCommandDescriptor,
+      ]);
 
       const registry = createRegistry({
         extensionCommands: [
@@ -700,17 +705,13 @@ describe('EditorCommandRegistry', () => {
       const ctx = makeContext({ data });
       const result = registry.executeCommand('myext.echo', ctx);
 
-      // The proposal path calls runner.dryRun. Since our runner has a 'ping'
-      // descriptor but not a 'myext.echo' descriptor, the dryRun will return
-      // 'rejected' (unknown_command). That makes createProposalFromInput
-      // return null, so executeCommand returns null.
-      //
-      // For the registry to successfully route proposals, the extension must
-      // register its command type as a descriptor in the runner, OR the
-      // caller must use the executor path for non-proposal commands.
-      //
-      // This test validates the proposal path is entered.
-      expect(result).toBeNull();
+      expect(result).not.toBeNull();
+      expect(result!.kind).toBe('proposal');
+      expect((result as { proposal: TimelineProposal }).proposal.status).toBe('pending');
+      expect((result as { input: TimelineCommandInput }).input).toMatchObject({
+        type: 'myext.echo',
+      });
+      expect((result as { runner: TimelineCommandRunner }).runner).toBe(runner);
     });
 
     it('returns null when proposal command dry-run is rejected', () => {
@@ -775,6 +776,34 @@ describe('EditorCommandRegistry', () => {
       expect((result as { summary?: string }).summary).toBe(
         'Transform executed via executor',
       );
+    });
+
+    it('applies non-proposal extension commands through registered descriptors', () => {
+      const data = buildData();
+      const runner = createTimelineCommandRunner([
+        {
+          ...PING_DESCRIPTOR,
+          type: 'myext.transform',
+        } as TimelineCommandDescriptor,
+      ]);
+
+      const registry = createRegistry({
+        extensionCommands: [
+          {
+            id: 'myext.transform',
+            title: 'Transform',
+            proposal: false,
+          },
+        ],
+        runner,
+      });
+
+      const ctx = makeContext({ data });
+      const result = registry.executeCommand('myext.transform', ctx);
+
+      expect(result).not.toBeNull();
+      expect(result!.kind).toBe('direct');
+      expect((result as { nextData: ReturnType<typeof buildData> }).nextData.config.theme).toBe('ping-theme');
     });
 
     it('returns null for non-proposal extension command without a registered executor', () => {

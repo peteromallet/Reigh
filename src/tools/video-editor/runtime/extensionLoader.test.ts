@@ -14,6 +14,8 @@ import type {
 } from './extensionManifest.ts';
 import type { VideoEditorExtensionConfig } from './extensionSurface.ts';
 import { resolveVideoEditorExtensionRuntime } from './extensionSurface.ts';
+import type { TimelineCommandDescriptor } from '@/tools/video-editor/commands/types.ts';
+import type { EditorCommandExecutor } from '@/tools/video-editor/commands/editorCommandRegistry.ts';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1175,6 +1177,65 @@ describe('ExtensionLoader', () => {
       expect(runtime.commands[0].extensionId).toBe('com.example.myext');
       expect(runtime.commands[0].keybinding?.key).toBe('Ctrl+Alt+S');
       expect(runtime.commands[0].menu?.context).toBe('timeline-context');
+    });
+
+    it('namespaces trusted command descriptors and executors from package configs', () => {
+      const manifest = validManifest({
+        id: 'com.example.myext',
+        contributions: {
+          commands: [
+            {
+              id: 'show',
+              title: 'Show',
+              proposal: true,
+            },
+            {
+              id: 'direct',
+              title: 'Direct',
+              proposal: false,
+            },
+          ],
+        },
+      });
+      const descriptor = {
+        type: 'show',
+        validate: () => null,
+        dryRun: (context) => ({
+          mutation: { type: 'data', data: context.currentData },
+          summary: 'Show preview',
+        }),
+        apply: (context) => ({
+          mutation: { type: 'data', data: context.currentData },
+          summary: 'Show applied',
+        }),
+        invert: () => null,
+      } satisfies TimelineCommandDescriptor;
+      const executor: EditorCommandExecutor = (context) => ({
+        kind: 'direct',
+        nextData: context.data,
+        summary: 'Direct executed',
+      });
+
+      const result = loader([
+        pkg(manifest, {
+          commandDescriptors: [descriptor],
+          commandExecutors: { direct: executor },
+        }),
+      ]).load();
+      const runtime = resolveVideoEditorExtensionRuntime(result.configs);
+
+      expect(result.configs[0].commandDescriptors?.map((entry) => entry.type)).toEqual([
+        'com.example.myext.show',
+      ]);
+      expect(Object.keys(result.configs[0].commandExecutors ?? {})).toEqual([
+        'com.example.myext.direct',
+      ]);
+      expect(runtime.commandDescriptors.map((entry) => entry.type)).toEqual([
+        'com.example.myext.show',
+      ]);
+      expect(Object.keys(runtime.commandExecutors)).toEqual([
+        'com.example.myext.direct',
+      ]);
     });
   });
 

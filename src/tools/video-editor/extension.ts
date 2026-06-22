@@ -22,6 +22,25 @@ export type {
 } from './runtime/contributionFamilies.ts';
 
 export type {
+  EditorCommandContext,
+  EditorCommandDirectResult,
+  EditorCommandExecutor,
+  EditorCommandProposalResult,
+  EditorCommandResult,
+  EditorCommandSource,
+} from './commands/editorCommandRegistry.ts';
+
+export type {
+  TimelineCommand,
+  TimelineCommandContext,
+  TimelineCommandDescriptor,
+  TimelineCommandEffect,
+  TimelineCommandInput,
+  TimelineCommandRunner,
+  TimelineProposal,
+} from './commands/types.ts';
+
+export type {
   VideoEditorDialogDescriptor,
   VideoEditorDialogHostConfig,
   VideoEditorExtensionConfig,

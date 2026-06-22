@@ -12,27 +12,14 @@ import {
   type EditorCommandResult,
   type EditorCommandSource,
 } from '@/tools/video-editor/commands/editorCommandRegistry.ts';
+import { useProposalReview } from '@/tools/video-editor/components/ProposalReviewDialog.tsx';
 import { createTimelineCommandRunner } from '@/tools/video-editor/commands/runner.ts';
 import { MEDIA_COMMAND_DESCRIPTORS } from '@/tools/video-editor/commands/media.ts';
 import type {
-  TimelineCommand,
-  TimelineCommandInput,
+  TimelineCommandDescriptor,
   TimelineCommandRunner,
 } from '@/tools/video-editor/commands/types.ts';
 import type { ExtensionCommandMenuContext } from '@/tools/video-editor/runtime/extensionManifest.ts';
-
-// ---------------------------------------------------------------------------
-// Lazy runner singleton — built once from internal descriptors
-// ---------------------------------------------------------------------------
-
-let _sharedRunner: TimelineCommandRunner | null = null;
-
-function getSharedRunner(): TimelineCommandRunner {
-  if (!_sharedRunner) {
-    _sharedRunner = createTimelineCommandRunner([...MEDIA_COMMAND_DESCRIPTORS]);
-  }
-  return _sharedRunner;
-}
 
 // ---------------------------------------------------------------------------
 // Empty registry stub
@@ -62,6 +49,7 @@ function createEmptyRegistryResult(): UseEditorCommandRegistryResult {
     registry: emptyRegistry,
     buildContext: () => emptyContext,
     execute: () => null,
+    handleCommandResult: () => false,
     queryCommands: () => EMPTY_COMMANDS,
     commands: EMPTY_COMMANDS,
   };
@@ -82,6 +70,9 @@ export interface UseEditorCommandRegistryResult {
 
   /** Execute a command by ID and return its result. Proposal commands return EditorCommandProposalResult. */
   execute: (id: string, context: EditorCommandContext) => EditorCommandResult | null;
+
+  /** Route a command result to proposal review or commit a direct timeline mutation. */
+  handleCommandResult: (result: EditorCommandResult | null) => boolean;
 
   /** Query commands matching the given source and optional menu context. */
   queryCommands: (
@@ -109,21 +100,33 @@ export function useEditorCommandRegistry(): UseEditorCommandRegistryResult {
   // Must call ALL hooks unconditionally, even when runtime is null.
   const dataSlice = useTimelineDataSliceSafe();
   const opsSlice = useTimelineOpsSliceSafe();
-  const runner = useMemo(() => getSharedRunner(), []);
+  const proposalReview = useProposalReview();
+
+  const extensionCommandDescriptors = runtime?.extensions.commandDescriptors ?? [];
+  const runner = useMemo(
+    () =>
+      createTimelineCommandRunner([
+        ...MEDIA_COMMAND_DESCRIPTORS,
+        ...(extensionCommandDescriptors as readonly TimelineCommandDescriptor[]),
+      ]),
+    [extensionCommandDescriptors],
+  );
 
   if (!runtime || !dataSlice) {
     return useMemo(() => createEmptyRegistryResult(), []);
   }
 
   const extensionCommands = runtime.extensions.commands;
+  const extensionExecutors = runtime.extensions.commandExecutors;
 
   const registry = useMemo(
     () =>
       createEditorCommandRegistry({
         extensionCommands,
         runner,
+        executors: extensionExecutors,
       }),
-    [extensionCommands, runner],
+    [extensionCommands, runner, extensionExecutors],
   );
 
   const buildContext = useCallback(
@@ -156,6 +159,41 @@ export function useEditorCommandRegistry(): UseEditorCommandRegistryResult {
     [registry],
   );
 
+  const handleCommandResult = useCallback(
+    (result: EditorCommandResult | null): boolean => {
+      if (!result) {
+        return false;
+      }
+
+      if (result.kind === 'proposal') {
+        if (!proposalReview) {
+          return false;
+        }
+        proposalReview.openReview(result.proposal, result.input, result.runner);
+        return true;
+      }
+
+      if (!opsSlice) {
+        return false;
+      }
+
+      opsSlice.applyEdit(
+        {
+          type: 'config',
+          resolvedConfig: result.nextData.resolvedConfig,
+          pinnedShotGroupsOverride: result.nextData.config.pinnedShotGroups,
+        },
+        {
+          selectedClipId: null,
+          selectedTrackId: null,
+          semantic: true,
+        },
+      );
+      return true;
+    },
+    [opsSlice, proposalReview],
+  );
+
   const queryCommands = useCallback(
     (
       source: EditorCommandSource,
@@ -171,6 +209,7 @@ export function useEditorCommandRegistry(): UseEditorCommandRegistryResult {
     registry,
     buildContext,
     execute,
+    handleCommandResult,
     queryCommands,
     commands: registry.commands,
   };

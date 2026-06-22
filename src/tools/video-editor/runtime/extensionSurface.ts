@@ -8,6 +8,12 @@ import type {
 } from '@/tools/video-editor/hooks/useTimelineState.types.ts';
 import type { ExtensionSettings, ExtensionCommandContribution } from './extensionManifest.ts';
 import type { VideoEditorDiagnostic } from './diagnostics.ts';
+import type {
+  TimelineCommandDescriptor,
+} from '@/tools/video-editor/commands/types.ts';
+import type {
+  EditorCommandExecutor,
+} from '@/tools/video-editor/commands/editorCommandRegistry.ts';
 
 export type VideoEditorSlotName =
   | 'header'
@@ -82,6 +88,22 @@ export interface VideoEditorExtensionConfig {
   registry?: VideoEditorPanelRegistryConfig;
   /** Namespaced command contributions from this extension. Only set for package-loaded configs after command resolution. */
   commands?: readonly ExtensionCommandContribution[];
+  /**
+   * Trusted command descriptors used to execute contributed commands.
+   *
+   * Package-loaded configs may provide local command types matching manifest
+   * command IDs; the loader namespaces them to `${manifest.id}.${commandId}`.
+   * Raw host configs should provide fully-qualified command types directly.
+   */
+  commandDescriptors?: readonly TimelineCommandDescriptor[];
+  /**
+   * Trusted command executors for direct extension commands.
+   *
+   * Package-loaded configs may key this map by local command ID; the loader
+   * namespaces keys to `${manifest.id}.${commandId}`. Raw host configs should
+   * use fully-qualified command IDs directly.
+   */
+  commandExecutors?: Readonly<Record<string, EditorCommandExecutor>>;
 }
 
 export type VideoEditorExtensionInput =
@@ -125,6 +147,10 @@ export interface VideoEditorExtensionRuntimeConfig {
    * TimelineCommands with these extension contributions.
    */
   commands: readonly ExtensionCommandContribution[];
+  /** Trusted timeline command descriptors from enabled extensions. */
+  commandDescriptors: readonly TimelineCommandDescriptor[];
+  /** Trusted direct command executors from enabled extensions, keyed by fully-qualified command ID. */
+  commandExecutors: Readonly<Record<string, EditorCommandExecutor>>;
 }
 
 export interface ResolvedVideoEditorPanelRegistry {
@@ -143,6 +169,8 @@ const EMPTY_INSPECTOR_SECTIONS: readonly VideoEditorInspectorSectionDescriptor[]
 const EMPTY_PACKAGES_MAP: Record<string, VideoEditorExtensionConfig> = Object.freeze({});
 const EMPTY_SETTINGS_MAP: Record<string, ExtensionSettings> = Object.freeze({});
 const EMPTY_COMMANDS: readonly ExtensionCommandContribution[] = Object.freeze([]);
+const EMPTY_COMMAND_DESCRIPTORS: readonly TimelineCommandDescriptor[] = Object.freeze([]);
+const EMPTY_COMMAND_EXECUTORS: Readonly<Record<string, EditorCommandExecutor>> = Object.freeze({});
 const EMPTY_RESOLVED_PANEL_REGISTRY: ResolvedVideoEditorPanelRegistry = Object.freeze({
   assetPanels: EMPTY_PANELS,
   inspectorSections: Object.freeze({
@@ -164,6 +192,8 @@ export const DEFAULT_VIDEO_EDITOR_EXTENSION_RUNTIME: VideoEditorExtensionRuntime
   packages: EMPTY_PACKAGES_MAP,
   settings: EMPTY_SETTINGS_MAP,
   commands: EMPTY_COMMANDS,
+  commandDescriptors: EMPTY_COMMAND_DESCRIPTORS,
+  commandExecutors: EMPTY_COMMAND_EXECUTORS,
 });
 
 function normalizeExtensionInput(
@@ -186,6 +216,7 @@ function normalizeExtensionInput(
 function collectDuplicateDescriptorDiagnostics<T extends { id: string }>(
   descriptors: readonly T[],
   collection: string,
+  sourceExtensionIds?: ReadonlyMap<string, string>,
 ): { unique: T[]; diagnostics: Array<Omit<VideoEditorDiagnostic, 'id' | 'timestamp'>> } {
   const seen = new Set<string>();
   const unique: T[] = [];
@@ -198,6 +229,7 @@ function collectDuplicateDescriptorDiagnostics<T extends { id: string }>(
         severity: 'error',
         source: 'extension-runtime',
         message: `Duplicate extension descriptor ID "${descriptor.id}" in collection "${collection}". The duplicate was excluded.`,
+        extensionId: sourceExtensionIds?.get(descriptor.id),
         detail: { descriptorId: descriptor.id, collection },
       });
     } else {
@@ -231,9 +263,13 @@ function mergeDialogs(
   effectiveConfigs: readonly VideoEditorExtensionConfig[],
 ): { descriptors: readonly VideoEditorDialogDescriptor[]; diagnostics: Array<Omit<VideoEditorDiagnostic, 'id' | 'timestamp'>> } {
   const merged: VideoEditorDialogDescriptor[] = [];
+  const sourceExtensionIds = new Map<string, string>();
 
   for (const config of effectiveConfigs) {
     if (config.dialogHost?.dialogs) {
+      for (const descriptor of config.dialogHost.dialogs) {
+        sourceExtensionIds.set(descriptor.id, config.extensionId ?? sourceExtensionIds.get(descriptor.id));
+      }
       merged.push(...config.dialogHost.dialogs);
     }
   }
@@ -242,7 +278,7 @@ function mergeDialogs(
     return { descriptors: EMPTY_DIALOGS, diagnostics: [] };
   }
 
-  const { unique, diagnostics } = collectDuplicateDescriptorDiagnostics(merged, 'dialogs');
+  const { unique, diagnostics } = collectDuplicateDescriptorDiagnostics(merged, 'dialogs', sourceExtensionIds);
 
   return { descriptors: unique, diagnostics };
 }
@@ -251,9 +287,13 @@ function mergePanels(
   effectiveConfigs: readonly VideoEditorExtensionConfig[],
 ): { descriptors: readonly VideoEditorPanelDescriptor[]; diagnostics: Array<Omit<VideoEditorDiagnostic, 'id' | 'timestamp'>> } {
   const merged: VideoEditorPanelDescriptor[] = [];
+  const sourceExtensionIds = new Map<string, string>();
 
   for (const config of effectiveConfigs) {
     if (config.registry?.panels) {
+      for (const descriptor of config.registry.panels) {
+        sourceExtensionIds.set(descriptor.id, config.extensionId ?? sourceExtensionIds.get(descriptor.id));
+      }
       merged.push(...config.registry.panels);
     }
   }
@@ -262,7 +302,7 @@ function mergePanels(
     return { descriptors: EMPTY_PANELS, diagnostics: [] };
   }
 
-  const { unique, diagnostics } = collectDuplicateDescriptorDiagnostics(merged, 'panels');
+  const { unique, diagnostics } = collectDuplicateDescriptorDiagnostics(merged, 'panels', sourceExtensionIds);
 
   return { descriptors: unique, diagnostics };
 }
@@ -271,9 +311,13 @@ function mergeInspectorSections(
   effectiveConfigs: readonly VideoEditorExtensionConfig[],
 ): { descriptors: readonly VideoEditorInspectorSectionDescriptor[]; diagnostics: Array<Omit<VideoEditorDiagnostic, 'id' | 'timestamp'>> } {
   const merged: VideoEditorInspectorSectionDescriptor[] = [];
+  const sourceExtensionIds = new Map<string, string>();
 
   for (const config of effectiveConfigs) {
     if (config.registry?.inspectorSections) {
+      for (const descriptor of config.registry.inspectorSections) {
+        sourceExtensionIds.set(descriptor.id, config.extensionId ?? sourceExtensionIds.get(descriptor.id));
+      }
       merged.push(...config.registry.inspectorSections);
     }
   }
@@ -282,7 +326,7 @@ function mergeInspectorSections(
     return { descriptors: EMPTY_INSPECTOR_SECTIONS, diagnostics: [] };
   }
 
-  const { unique, diagnostics } = collectDuplicateDescriptorDiagnostics(merged, 'inspectorSections');
+  const { unique, diagnostics } = collectDuplicateDescriptorDiagnostics(merged, 'inspectorSections', sourceExtensionIds);
 
   return { descriptors: unique, diagnostics };
 }
@@ -306,10 +350,19 @@ function normalizeKeybinding(raw: string): string {
  */
 function mergeCommands(
   effectiveConfigs: readonly VideoEditorExtensionConfig[],
-): { commands: readonly ExtensionCommandContribution[]; diagnostics: Array<Omit<VideoEditorDiagnostic, 'id' | 'timestamp'>> } {
+): {
+  commands: readonly ExtensionCommandContribution[];
+  commandDescriptors: readonly TimelineCommandDescriptor[];
+  commandExecutors: Readonly<Record<string, EditorCommandExecutor>>;
+  diagnostics: Array<Omit<VideoEditorDiagnostic, 'id' | 'timestamp'>>;
+} {
   const diagnostics: Array<Omit<VideoEditorDiagnostic, 'id' | 'timestamp'>> = [];
   const commands: ExtensionCommandContribution[] = [];
+  const commandDescriptors: TimelineCommandDescriptor[] = [];
+  const commandExecutors: Record<string, EditorCommandExecutor> = {};
   const seenIds = new Set<string>();
+  const seenDescriptorTypes = new Set<string>();
+  const seenExecutorIds = new Set<string>();
 
   // Track normalized keybindings for duplicate detection across all configs.
   const seenKey = new Map<string, { commandId: string; rawKey: string }>();
@@ -384,9 +437,50 @@ function mergeCommands(
         }
       }
     }
+
+    if (config.commandDescriptors) {
+      for (const descriptor of config.commandDescriptors) {
+        if (seenDescriptorTypes.has(descriptor.type)) {
+          diagnostics.push({
+            code: 'duplicate_command_id',
+            severity: 'error',
+            source: 'extension-runtime',
+            message: `Duplicate command descriptor type "${descriptor.type}". The duplicate was excluded.`,
+            detail: { commandId: descriptor.type },
+          });
+          continue;
+        }
+        seenDescriptorTypes.add(descriptor.type);
+        commandDescriptors.push(descriptor);
+      }
+    }
+
+    if (config.commandExecutors) {
+      for (const [commandId, executor] of Object.entries(config.commandExecutors)) {
+        if (seenExecutorIds.has(commandId)) {
+          diagnostics.push({
+            code: 'duplicate_command_id',
+            severity: 'error',
+            source: 'extension-runtime',
+            message: `Duplicate command executor ID "${commandId}". The duplicate was excluded.`,
+            detail: { commandId },
+          });
+          continue;
+        }
+        seenExecutorIds.add(commandId);
+        commandExecutors[commandId] = executor;
+      }
+    }
   }
 
-  return { commands, diagnostics };
+  return {
+    commands,
+    commandDescriptors,
+    commandExecutors: Object.keys(commandExecutors).length === 0
+      ? EMPTY_COMMAND_EXECUTORS
+      : commandExecutors,
+    diagnostics,
+  };
 }
 
 /**
@@ -461,6 +555,8 @@ export function resolveVideoEditorExtensionRuntimeWithDiagnostics(
       packages,
       settings,
       commands: commandResult.commands,
+      commandDescriptors: commandResult.commandDescriptors,
+      commandExecutors: commandResult.commandExecutors,
     },
     diagnostics,
   };

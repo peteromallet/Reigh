@@ -8,7 +8,6 @@ import {
 } from 'react';
 import { cn } from '@/shared/components/ui/contracts/cn.ts';
 import { useEditorCommandRegistry } from '@/tools/video-editor/hooks/useEditorCommandRegistry.ts';
-import { useProposalReview } from '@/tools/video-editor/components/ProposalReviewDialog.tsx';
 import type {
   EditorCommandEntry,
   EditorCommandResult,
@@ -84,8 +83,7 @@ function formatKeybinding(keybinding: { key: string; mac?: string }): string {
 // ---------------------------------------------------------------------------
 
 export function CommandPalette({ open, onClose }: CommandPaletteProps) {
-  const { registry, buildContext, execute } = useEditorCommandRegistry();
-  const proposalReview = useProposalReview();
+  const { registry, buildContext, execute, handleCommandResult } = useEditorCommandRegistry();
 
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -197,42 +195,14 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
 
       const result: EditorCommandResult | null = execute(entry.id, paletteContext);
 
-      if (!result) {
+      if (!handleCommandResult(result)) {
         setExecutionError(`Command "${entry.id}" could not be executed.`);
         return;
       }
 
-      if (result.kind === 'proposal') {
-        // Route to proposal review
-        if (proposalReview) {
-          // Build a minimal command input for the proposal
-          const input = {
-            type: entry.id,
-            payload: {
-              commandId: entry.id,
-              extensionId: entry.extensionId,
-              timelineId: paletteContext.timelineId,
-              selectedClipIds: [...paletteContext.selectedClipIds],
-            },
-          };
-          proposalReview.openReview(
-            result.proposal,
-            input,
-            // We need a runner — the registry's internal runner is used for dryRun
-            // The proposal already contains the dryRun result, accept path will
-            // re-apply via the commands facade.
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            null as any,
-          );
-        }
-        onClose();
-        return;
-      }
-
-      // Direct result — close the palette (caller applies the mutation)
       onClose();
     },
-    [execute, paletteContext, proposalReview, onClose],
+    [execute, handleCommandResult, paletteContext, onClose],
   );
 
   // -----------------------------------------------------------------------

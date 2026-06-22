@@ -29,8 +29,6 @@ const DIAGNOSTICS_BUTTON = '[data-testid="video-editor-diagnostics-button"]';
 const DIAGNOSTICS_PANEL = '[data-testid="video-editor-diagnostics-panel"]';
 /** Locator for individual diagnostic rows inside the panel. */
 const DIAGNOSTIC_ROW = '[data-testid="video-editor-diagnostic-row"]';
-/** Locator for the extension render fallback UI. */
-const FALLBACK_UI = '[data-testid="extension-render-fallback"]';
 
 /** Helper: open the harness page, wait for it to settle, open diagnostics. */
 async function openDiagnosticsPanel(

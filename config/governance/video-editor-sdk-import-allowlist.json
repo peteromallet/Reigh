@@ -9,7 +9,18 @@
   ],
   "allowlist": {
     "src/app/routes.tsx": [
-      "src/tools/video-editor/pages/VideoEditorPage.tsx"
+      "src/tools/video-editor/pages/VideoEditorPage.tsx",
+      "src/tools/video-editor/testing/DiagnosticsHarnessPage.tsx",
+      "src/tools/video-editor/testing/ContributionFamilyHarnessPage.tsx"
+    ],
+    "src/tools/video-editor/testing/extensions/command-fixtures/index.ts": [
+      "src/tools/video-editor/runtime/extensionManifest.ts"
+    ],
+    "src/tools/video-editor/testing/extensions/duplicate-runtime/index.tsx": [
+      "src/tools/video-editor/runtime/extensionSurface.ts"
+    ],
+    "src/tools/video-editor/testing/extensions/runtime-exception/index.ts": [
+      "src/tools/video-editor/runtime/extensionSurface.ts"
     ],
     "src/domains/media-lightbox/hooks/useAddToVideoEditor.ts": [
       "src/tools/video-editor/hooks/timelineStore.ts",
@@ -54,6 +65,17 @@
     ],
     "src/tools/travel-between-images/hooks/video/useShotFinalVideos.ts": [
       "src/tools/video-editor/lib/finalVideoAssets.ts"
+    ],
+    "supabase/functions/ai-generate-sequence/sequence-validation.ts": [
+      "src/tools/video-editor/sequences/metadata.ts",
+      "src/tools/video-editor/sequences/validation.ts"
+    ],
+    "supabase/functions/complete_task/handler.ts": [
+      "src/tools/video-editor/types/index.ts"
+    ],
+    "supabase/functions/complete_task/placement.ts": [
+      "src/tools/video-editor/lib/timeline-domain.ts",
+      "src/tools/video-editor/types/index.ts"
     ]
   }
 }

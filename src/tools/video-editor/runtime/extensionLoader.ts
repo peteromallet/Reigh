@@ -26,6 +26,8 @@ import type { ExtensionCommandContribution } from './extensionManifest.ts';
 import type { ExtensionStateRepository } from './extensionStateRepository.ts';
 import { resolveExtensionSettings } from './extensionSettings.ts';
 import type { VideoEditorExtensionConfig } from './extensionSurface.ts';
+import type { TimelineCommandDescriptor } from '@/tools/video-editor/commands/types.ts';
+import type { EditorCommandExecutor } from '@/tools/video-editor/commands/editorCommandRegistry.ts';
 
 // ---------------------------------------------------------------------------
 // Load result types
@@ -263,6 +265,26 @@ export class ExtensionLoader {
 
       if (configCommands.length > 0) {
         config.commands = configCommands;
+      }
+
+      if (config.commandDescriptors && config.commandDescriptors.length > 0) {
+        const descriptors: TimelineCommandDescriptor[] = [];
+        for (const descriptor of config.commandDescriptors) {
+          const localType = descriptor.type;
+          descriptors.push({
+            ...descriptor,
+            type: `${manifest.id}.${localType}`,
+          });
+        }
+        config.commandDescriptors = descriptors;
+      }
+
+      if (config.commandExecutors) {
+        const executors: Record<string, EditorCommandExecutor> = {};
+        for (const [localId, executor] of Object.entries(config.commandExecutors)) {
+          executors[`${manifest.id}.${localId}`] = executor;
+        }
+        config.commandExecutors = executors;
       }
     }
 

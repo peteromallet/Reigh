@@ -47,6 +47,7 @@ import { ExtensionRenderBoundary } from '@/tools/video-editor/runtime/ExtensionR
 import { useVideoEditorDiagnostics } from '@/tools/video-editor/hooks/useVideoEditorDiagnostics.ts';
 import { DiagnosticsPanel } from '@/tools/video-editor/components/DiagnosticsPanel.tsx';
 import { CommandPalette } from '@/tools/video-editor/components/CommandPalette.tsx';
+import { ProposalReviewProvider } from '@/tools/video-editor/components/ProposalReviewDialog.tsx';
 import { isEditableTarget } from '@/tools/video-editor/lib/coordinate-utils.ts';
 
 const MIN_TIMELINE_HEIGHT = 140;
@@ -258,7 +259,9 @@ function TimelineEditorShellCoreComponent({
       : undefined,
     dispatchExtensionCommand: editorCommandsForBinding
       ? (commandId: string, context: EditorCommandContext) => {
-          editorCommandsForBinding.execute(commandId, context);
+          editorCommandsForBinding.handleCommandResult(
+            editorCommandsForBinding.execute(commandId, context),
+          );
         }
       : undefined,
   });
@@ -1147,4 +1150,12 @@ function TimelineEditorShellCoreComponent({
   );
 }
 
-export const TimelineEditorShellCore = memo(TimelineEditorShellCoreComponent);
+export const TimelineEditorShellCore = memo(function TimelineEditorShellCore(
+  props: TimelineEditorShellCoreProps,
+) {
+  return (
+    <ProposalReviewProvider>
+      <TimelineEditorShellCoreComponent {...props} />
+    </ProposalReviewProvider>
+  );
+});

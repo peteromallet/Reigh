@@ -113,6 +113,10 @@ export interface EditorCommandProposalResult {
   kind: 'proposal';
   /** The proposal that must be reviewed before committing. */
   proposal: TimelineProposal;
+  /** The command input that produced the proposal. */
+  input: TimelineCommandInput;
+  /** The runner used to dry-run the proposal and required to apply it. */
+  runner: TimelineCommandRunner;
 }
 
 // ---------------------------------------------------------------------------
@@ -149,9 +153,11 @@ export interface EditorCommandRegistry {
    * - Internal commands: creates a TimelineCommand with the command's type
    *   and runs it through `runner.apply`, returning a direct result.
    * - Extension commands with `isProposal: true`: creates a TimelineCommand
-   *   and runs it through `runner.dryRun`, returning a proposal result.
+   *   and runs it through `runner.dryRun`, returning a proposal result with
+   *   the apply-capable runner and original input.
    * - Extension commands with `isProposal: false`: delegates to the
-   *   registered executor (if any), otherwise returns null.
+   *   registered executor when present; otherwise applies through the runner
+   *   when a descriptor for the command type is registered.
    *
    * Returns null if the command ID is not found, or if an extension command
    * lacks a registered executor.
@@ -228,7 +234,7 @@ function buildExtensionTimelineCommandInput(
     type: entry.id,
     payload: {
       commandId: entry.id,
-      extensionId: entry.extensionId,
+      extensionId: entry.extensionId ?? null,
       timelineId: context.timelineId,
       selectedClipIds: [...context.selectedClipIds],
       clickedClipId: context.clickedClipId ?? null,
@@ -245,6 +251,14 @@ function buildExtensionTimelineCommandInput(
 // ---------------------------------------------------------------------------
 
 const EMPTY_COMMANDS: readonly EditorCommandEntry[] = Object.freeze([]);
+
+function inferExtensionId(commandId: string): string | undefined {
+  const segments = commandId.split('.');
+  if (segments.length <= 1) {
+    return undefined;
+  }
+  return segments.slice(0, -1).join('.');
+}
 
 export interface CreateEditorCommandRegistryOptions {
   /** Extension command contributions from the resolved runtime config. */
@@ -277,7 +291,7 @@ export function createEditorCommandRegistry(
         }
       : undefined,
     source: 'extension' as const,
-    extensionId: cmd.extensionId,
+    extensionId: cmd.extensionId ?? inferExtensionId(cmd.id),
   }));
 
   const allCommands: EditorCommandEntry[] = [
@@ -415,16 +429,34 @@ export function createEditorCommandRegistry(
       return {
         kind: 'proposal',
         proposal,
+        input,
+        runner,
       };
     }
 
-    // Non-proposal extension commands: delegate to registered executor.
+    // Non-proposal extension commands: prefer registered executor.
     const executor = executorMap.get(entry.id);
-    if (!executor) {
-      return null;
+    if (executor) {
+      return executor(context);
     }
 
-    return executor(context);
+    // Descriptor-backed direct extension commands apply through the runner.
+    if (runner.registry.has(entry.id)) {
+      const input = buildExtensionTimelineCommandInput(entry, context);
+      const result = runner.apply(context.data, input);
+
+      if (result.status === 'rejected') {
+        return null;
+      }
+
+      return {
+        kind: 'direct',
+        nextData: result.nextData,
+        summary: result.commandResults[0]?.summary,
+      };
+    }
+
+    return null;
   }
 
   // -----------------------------------------------------------------------

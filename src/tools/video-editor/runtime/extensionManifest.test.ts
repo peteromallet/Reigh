@@ -1175,11 +1175,13 @@ describe('structured diagnostics for excluded packages', () => {
         'api_version_incompatible',
         'permission_rejected',
         'duplicate_package_id',
-        'contribution_unknown',
         'contribution_id_mismatch',
         'duplicate_descriptor_id',
+        'duplicate_command_id',
+        'duplicate_keybinding',
         'settings_override_invalid',
         'state_corrupt',
+        'unknown_manifest_field',
       ]).toContain(code);
     }
   });
