@@ -94,11 +94,11 @@
       }
     }
   ],
-  "branch_head": "67daf18801ab947eaa0e84652062c8d5dd3f3cb7",
-  "pr_head": "67daf18801ab947eaa0e84652062c8d5dd3f3cb7",
-  "last_pushed_commit": "67daf18801ab947eaa0e84652062c8d5dd3f3cb7",
-  "dirty_flag": true,
-  "sync_state": "dirty",
+  "branch_head": "80f9a0125809fb53f830e84aa225551551d13133",
+  "pr_head": "80f9a0125809fb53f830e84aa225551551d13133",
+  "last_pushed_commit": "80f9a0125809fb53f830e84aa225551551d13133",
+  "dirty_flag": false,
+  "sync_state": "clean",
   "extra_repos": [],
   "chain_session": null,
   "resolved_workspace": null,
@@ -120,8 +120,8 @@
       "target_root": "/Users/peteromalley/Documents/reigh-workspace/reigh-app",
       "work_dir": "/Users/peteromalley/Documents/reigh-workspace/reigh-app",
       "engine_root": "/Users/peteromalley/.pyenv/versions/3.11.11/lib/python3.11/site-packages",
-      "target_head": "53b17ca2862c2cc9c6a6920519060d718a442fd9",
-      "target_base": "53b17ca2862c2cc9c6a6920519060d718a442fd9",
+      "target_head": "80f9a0125809fb53f830e84aa225551551d13133",
+      "target_base": "d4e6c2d35eec78fe4cdc8f166a8c737c9de7ff59",
       "target_base_ref": "main",
       "target_fallback_reason": null
     }
