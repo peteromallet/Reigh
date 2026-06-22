@@ -1,9 +1,9 @@
 {
   "schema_version": 0,
-  "current_milestone_index": 6,
+  "current_milestone_index": 7,
   "current_plan_name": null,
-  "current_milestone_base_sha": "a9c335b98ad59136f8c07ff3dc069cb9efcab898",
-  "last_state": "active",
+  "current_milestone_base_sha": "3d4018661d39c2ba7d0a35bd1cb2ab5921f5a7e1",
+  "last_state": "complete",
   "pr_number": null,
   "pr_state": null,
   "completed": [
@@ -186,11 +186,41 @@
         "ran": true,
         "artifact": "full_suite_backstop.json"
       }
+    },
+    {
+      "label": "m7-docs-release-validation",
+      "plan": "m7-docs-release-gates-and-20260622-0608",
+      "status": "done",
+      "pr_number": 51,
+      "pr_state": "merged",
+      "merged_at": "2026-06-22T05:14:33Z",
+      "full_suite_backstop": {
+        "mode": "shadow",
+        "status": "failed",
+        "blocks": false,
+        "reason": "full_suite_backstop_mode=shadow: recorded only",
+        "passed": 8,
+        "failed": 3,
+        "failing_tests": [
+          "vendor/timeline-schema/tests/test_materialize_output.py::MaterializeOutputTests::test_materialize_output_from_2rp_theme",
+          "vendor/timeline-schema/tests/test_materialize_output.py::ResolveThemeTests::test_resolve_theme_2rp",
+          "vendor/timeline-schema/tests/test_materialize_output.py::ResolveThemeTests::test_resolve_theme_with_overrides"
+        ],
+        "newly_failing": [],
+        "deleted_tests": [],
+        "baseline_failing_count": 3,
+        "current_failing_count": 3,
+        "delta_computed": true,
+        "command": "pytest --tb=no -q --no-header -rA",
+        "duration_s": 1.845700916950591,
+        "ran": true,
+        "artifact": "full_suite_backstop.json"
+      }
     }
   ],
-  "branch_head": null,
-  "pr_head": null,
-  "last_pushed_commit": null,
+  "branch_head": "3d4018661d39c2ba7d0a35bd1cb2ab5921f5a7e1",
+  "pr_head": "3d4018661d39c2ba7d0a35bd1cb2ab5921f5a7e1",
+  "last_pushed_commit": "3d4018661d39c2ba7d0a35bd1cb2ab5921f5a7e1",
   "dirty_flag": false,
   "sync_state": "clean",
   "extra_repos": [],
@@ -209,13 +239,13 @@
     "execution_environment": {
       "schema_version": 1,
       "created_phase": "chain_start",
-      "last_observed_phase": "chain_start",
+      "last_observed_phase": "chain_complete",
       "project_root": "/Users/peteromalley/Documents/.megaplan-worktrees/reigh-ext-completion",
       "target_root": "/Users/peteromalley/Documents/.megaplan-worktrees/reigh-ext-completion",
       "work_dir": "/Users/peteromalley/Documents/.megaplan-worktrees/reigh-ext-completion",
       "engine_root": "/Users/peteromalley/Documents/.megaplan-worktrees/workflow-manifest-runtime",
-      "target_head": "a9c335b98ad59136f8c07ff3dc069cb9efcab898",
-      "target_base": "a9c335b98ad59136f8c07ff3dc069cb9efcab898",
+      "target_head": "3d4018661d39c2ba7d0a35bd1cb2ab5921f5a7e1",
+      "target_base": "3d4018661d39c2ba7d0a35bd1cb2ab5921f5a7e1",
       "target_base_ref": "reigh-extension-layer-epic",
       "target_fallback_reason": null
     }
