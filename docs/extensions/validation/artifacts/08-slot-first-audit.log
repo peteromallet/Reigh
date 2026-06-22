@@ -1,0 +1,28 @@
+npm run test:slot:unit
+
+> vite_react_shadcn_ts@0.0.0 test:slot:unit
+> vitest run --config config/testing/vitest.config.ts src/shared/hooks/__tests__/usePromoteVariantToGeneration.test.ts src/domains/media-lightbox/hooks/useVariantPromotion.test.ts src/tools/video-editor/hooks/useAddVariantAsGeneration.test.tsx
+
+failed to load config from /Users/peteromalley/Documents/.megaplan-worktrees/reigh-ext-completion/config/testing/vitest.config.ts
+
+⎯⎯⎯⎯⎯⎯⎯ Startup Error ⎯⎯⎯⎯⎯⎯⎯⎯
+Error: EPERM: operation not permitted, open '/Users/peteromalley/Documents/.megaplan-worktrees/reigh-ext-completion/node_modules/.vite-temp/vitest.config.ts.timestamp-1782104527131-7a3ec3f93b0e7.mjs'
+    at async open (node:internal/fs/promises:639:25)
+    at async Object.writeFile (node:internal/fs/promises:1216:14)
+    at async loadConfigFromBundledFile (file:///Users/peteromalley/Documents/reigh-workspace/reigh-app/node_modules/vitest/node_modules/vite/dist/node/chunks/node.js:34769:3)
+    at async bundleAndLoadConfigFile (file:///Users/peteromalley/Documents/reigh-workspace/reigh-app/node_modules/vitest/node_modules/vite/dist/node/chunks/node.js:34632:17)
+    at async loadConfigFromFile (file:///Users/peteromalley/Documents/reigh-workspace/reigh-app/node_modules/vitest/node_modules/vite/dist/node/chunks/node.js:34599:42)
+    at async resolveConfig (file:///Users/peteromalley/Documents/reigh-workspace/reigh-app/node_modules/vitest/node_modules/vite/dist/node/chunks/node.js:34223:22)
+    at async _createServer (file:///Users/peteromalley/Documents/reigh-workspace/reigh-app/node_modules/vitest/node_modules/vite/dist/node/chunks/node.js:26029:65)
+    at async createViteServer (file:///Users/peteromalley/Documents/reigh-workspace/reigh-app/node_modules/vitest/dist/chunks/cli-api.Cjt90eJu.js:8818:17)
+    at async createVitest (file:///Users/peteromalley/Documents/reigh-workspace/reigh-app/node_modules/vitest/dist/chunks/cli-api.Cjt90eJu.js:14205:18)
+    at async prepareVitest (file:///Users/peteromalley/Documents/reigh-workspace/reigh-app/node_modules/vitest/dist/chunks/cli-api.Cjt90eJu.js:14572:14) {
+  errno: -1,
+  code: 'EPERM',
+  syscall: 'open',
+  path: '/Users/peteromalley/Documents/.megaplan-worktrees/reigh-ext-completion/node_modules/.vite-temp/vitest.config.ts.timestamp-1782104527131-7a3ec3f93b0e7.mjs'
+}
+
+
+
+make: *** [slot-first-unit] Error 1
