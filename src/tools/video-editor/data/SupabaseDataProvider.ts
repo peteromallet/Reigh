@@ -14,9 +14,11 @@ import {
 import {
   TimelineVersionConflictError,
   type DataProvider,
+  type DataProviderCapabilities,
   type LoadedTimeline,
   type UploadAssetOptions,
 } from '@/tools/video-editor/data/DataProvider.ts';
+import type { VideoEditorDiagnostic } from '@/tools/video-editor/runtime/diagnostics.ts';
 import {
   loadSyncBookmark,
   saveKeepBothArtifact,
@@ -52,6 +54,8 @@ type DbHeadSnapshot = {
   hash: string | null;
   event_id: string | null;
 };
+
+type ProviderDiagnosticInput = Omit<VideoEditorDiagnostic, 'id' | 'timestamp'>;
 
 type HeadRelation = 'equal' | 'advanced' | 'behind' | 'conflict';
 
@@ -279,6 +283,20 @@ function compareDbHeadToBookmarkHead(head: DbHeadSnapshot, bookmark: SyncBookmar
 }
 
 export class SupabaseDataProvider implements DataProvider {
+  readonly capabilities: DataProviderCapabilities = {
+    timelinePersistence: true,
+    assetRegistry: true,
+    extensionState: false,
+    extensionSettings: false,
+    commandProposals: false,
+    syncEventLog: true,
+    materialization: true,
+    assetUploads: true,
+    checkpoints: true,
+  };
+
+  private timelineEventsDiagnostic: ProviderDiagnosticInput | null = null;
+
   constructor(
     private readonly options: {
       projectId: string;  // Retained for callers but not used in queries — RLS handles access control.
@@ -297,9 +315,11 @@ export class SupabaseDataProvider implements DataProvider {
       .maybeSingle();
 
     if (error) {
-      throw error;
+      this.timelineEventsDiagnostic = createTimelineEventsUnavailableDiagnostic(error, timelineId, this.options.projectId);
+      return { version: 0, hash: null, event_id: null };
     }
 
+    this.timelineEventsDiagnostic = null;
     if (!data) {
       return { version: 0, hash: null, event_id: null };
     }
@@ -815,4 +835,56 @@ export class SupabaseDataProvider implements DataProvider {
   async loadAssetProfile(): Promise<null> {
     return null;
   }
+
+  collectDiagnostics(): ProviderDiagnosticInput[] {
+    return this.timelineEventsDiagnostic ? [this.timelineEventsDiagnostic] : [];
+  }
+}
+
+function getErrorField(error: unknown, field: string): unknown {
+  return error && typeof error === 'object'
+    ? (error as Record<string, unknown>)[field]
+    : undefined;
+}
+
+function classifyTimelineEventsError(error: unknown): string {
+  const code = getErrorField(error, 'code');
+  const status = getErrorField(error, 'status');
+  const message = String(getErrorField(error, 'message') ?? '').toLowerCase();
+  if (code === '42P01' || message.includes('does not exist') || message.includes('schema cache')) {
+    return 'missing';
+  }
+  if (code === '42501' || status === 401 || status === 403 || message.includes('permission') || message.includes('rls')) {
+    return 'inaccessible';
+  }
+  return 'query_failed';
+}
+
+function createTimelineEventsUnavailableDiagnostic(
+  error: unknown,
+  timelineId: string,
+  projectId: string,
+): ProviderDiagnosticInput {
+  const reason = classifyTimelineEventsError(error);
+  const detail: Record<string, unknown> = {
+    table: 'timeline_events',
+    reason,
+    timelineId,
+    projectId,
+  };
+  for (const field of ['code', 'message', 'details', 'hint', 'status']) {
+    const value = getErrorField(error, field);
+    if (value !== undefined) {
+      detail[field] = value;
+    }
+  }
+  return {
+    code: 'timeline_events_unavailable',
+    severity: 'warning',
+    source: 'provider',
+    message: reason === 'missing'
+      ? 'Supabase timeline event log is unavailable because timeline_events is missing.'
+      : 'Supabase timeline event log is unavailable; sync history will be treated as empty until it can be read.',
+    detail,
+  };
 }

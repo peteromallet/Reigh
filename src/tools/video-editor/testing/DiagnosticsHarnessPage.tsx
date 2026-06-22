@@ -17,17 +17,28 @@
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
+  createRenderDiagnostic,
   createVideoEditorDiagnosticsStore,
   type VideoEditorDiagnosticsStore,
-  type VideoEditorDiagnosticSource,
 } from '@/tools/video-editor/runtime/diagnostics.ts';
+import { planRender } from '@/tools/video-editor/lib/renderRouter.ts';
 import { useVideoEditorDiagnostics } from '@/tools/video-editor/hooks/useVideoEditorDiagnostics.ts';
 import { DiagnosticsPanel } from '@/tools/video-editor/components/DiagnosticsPanel.tsx';
-import { DataProviderWrapper } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+import {
+  DataProviderWrapper,
+  type VideoEditorRuntimeContextValue,
+} from '@/tools/video-editor/contexts/DataProviderContext.tsx';
 import { InMemoryDataProvider } from '@/tools/video-editor/testing/InMemoryDataProvider.ts';
 import { AlertTriangle, XCircle } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button.tsx';
 import { cn } from '@/shared/components/ui/contracts/cn.ts';
+
+declare global {
+  interface Window {
+    __videoEditorDiagnosticsStore?: VideoEditorDiagnosticsStore;
+    __videoEditorBrowserRendererInvocations?: number;
+  }
+}
 
 type FixtureName =
   | 'invalid-package'
@@ -37,6 +48,7 @@ type FixtureName =
   | 'duplicate-runtime'
   | 'runtime-exception'
   | 'provider-diagnostics'
+  | 'render-blocked'
   | 'all'
   | 'none';
 
@@ -48,6 +60,7 @@ const ALL_FIXTURES: FixtureName[] = [
   'duplicate-runtime',
   'runtime-exception',
   'provider-diagnostics',
+  'render-blocked',
 ];
 
 function injectDiagnostics(
@@ -173,14 +186,51 @@ function injectDiagnostics(
           detail: { mode: 'offline', since: new Date().toISOString() },
         });
         break;
+
+      case 'render-blocked':
+        store.reportMany(createRenderBlockedFixtureDiagnostics());
+        break;
     }
   }
 }
 
+function createRenderBlockedFixtureDiagnostics() {
+  const plan = planRender({
+    clips: [{
+      id: 'fixture-generated-module',
+      clipType: 'fixture-generated-module',
+      generation: { sequence_lane: 'remotion_module' },
+    }],
+  });
+
+  return plan.blockers.map((blocker) => createRenderDiagnostic(
+    `render_${blocker.code}`,
+    `Render blocked: ${blocker.message}`,
+    {
+      blocker,
+      decision: plan.decision,
+      providerId: plan.providerId,
+      browserRendererInvoked: false,
+    },
+  ));
+}
+
 function exposeStoreOnWindow(store: VideoEditorDiagnosticsStore): void {
   if (typeof window !== 'undefined') {
-    (window as any).__videoEditorDiagnosticsStore = store;
+    window.__videoEditorDiagnosticsStore = store;
   }
+}
+
+function exposeRenderHarnessState(fixtures: readonly FixtureName[]): void {
+  if (typeof window === 'undefined') return;
+
+  if (fixtures.includes('render-blocked')) {
+    window.__videoEditorBrowserRendererInvocations = 0;
+  }
+}
+
+function nullRuntimePort<T>(): T {
+  return null as unknown as T;
 }
 
 function DiagnosticsHarnessShell() {
@@ -230,30 +280,34 @@ export function DiagnosticsHarnessPage() {
   const [searchParams] = useSearchParams();
 
   const fixtureRaw = searchParams.get('fixture') || 'all';
-  const fixtureNames = fixtureRaw
-    .split(',')
-    .map((s) => s.trim())
-    .filter((s): s is FixtureName => s.length > 0);
+  const fixtureNames = useMemo(
+    () => fixtureRaw
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s): s is FixtureName => s.length > 0),
+    [fixtureRaw],
+  );
 
   // Stable store — created once, injected with diagnostics, and exposed on window.
   const store = useMemo(() => {
     const s = createVideoEditorDiagnosticsStore();
     injectDiagnostics(s, fixtureNames);
     exposeStoreOnWindow(s);
+    exposeRenderHarnessState(fixtureNames);
     return s;
-  }, [fixtureRaw]);
+  }, [fixtureNames]);
 
   // Provide a minimal runtime context so useVideoEditorDiagnostics can read the store.
   const dp = useMemo(() => new InMemoryDataProvider({ 'harness-timeline': {} }), []);
 
-  const contextValue = useMemo(() => ({
+  const contextValue = useMemo<VideoEditorRuntimeContextValue>(() => ({
     provider: dp,
     timelineId: 'harness-timeline',
     timelineName: 'Diagnostics Harness',
-    userId: null as string | null,
-    assetResolver: null as any,
-    exporter: null as any,
-    hostContext: null as any,
+    userId: null,
+    assetResolver: nullRuntimePort<VideoEditorRuntimeContextValue['assetResolver']>(),
+    exporter: null,
+    hostContext: null,
     extensions: {
       slots: {},
       dialogHost: { dialogs: [] },
@@ -262,13 +316,13 @@ export function DiagnosticsHarnessPage() {
       settings: {},
     },
     diagnosticsStore: store,
-    auth: null as any,
-    project: null as any,
-    shots: null as any,
-    mediaLightbox: null as any,
-    agentChat: null as any,
-    toast: null as any,
-    telemetry: null as any,
+    auth: nullRuntimePort<VideoEditorRuntimeContextValue['auth']>(),
+    project: nullRuntimePort<VideoEditorRuntimeContextValue['project']>(),
+    shots: nullRuntimePort<VideoEditorRuntimeContextValue['shots']>(),
+    mediaLightbox: nullRuntimePort<VideoEditorRuntimeContextValue['mediaLightbox']>(),
+    agentChat: nullRuntimePort<VideoEditorRuntimeContextValue['agentChat']>(),
+    toast: nullRuntimePort<VideoEditorRuntimeContextValue['toast']>(),
+    telemetry: nullRuntimePort<VideoEditorRuntimeContextValue['telemetry']>(),
   }), [store, dp]);
 
   return (

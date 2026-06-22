@@ -24,6 +24,7 @@ import {
   defaultAstridBridgeAssetBaseUrl,
 } from '@/tools/video-editor/data/AstridBridgeDataProvider.ts';
 import { TimelineNotFoundError } from '@/tools/video-editor/data/DataProvider.ts';
+import { expectDataProviderCapabilityConformance } from '@/tools/video-editor/data/providerCapabilityConformance.testUtils.ts';
 import {
   ensurePermission,
   getDirectoryHandle,
@@ -75,6 +76,25 @@ describe('AstridBridgeDataProvider', () => {
     } else {
       (globalThis as typeof globalThis & { showDirectoryPicker?: unknown }).showDirectoryPicker = originalShowDirectoryPicker;
     }
+  });
+
+  it('declares bridge provider capabilities and normalizes unsupported feature diagnostics', async () => {
+    const provider = new AstridBridgeDataProvider({
+      projectSlug: 'ados-talks',
+      timelineRef: '01JM4K5N7P0000000000000017',
+    });
+
+    await expectDataProviderCapabilityConformance(provider, 'astrid-bridge', {
+      supported: ['timelinePersistence', 'assetRegistry', 'materialization'],
+      degraded: ['assetUploads'],
+      unsupported: [
+        'extensionState',
+        'extensionSettings',
+        'commandProposals',
+        'syncEventLog',
+        'checkpoints',
+      ],
+    });
   });
 
   function createDirectoryHandleTree() {
@@ -1189,22 +1209,109 @@ describe('AstridBridgeDataProvider', () => {
 
     // collectDiagnostics adapts through normalization helper
     const diagnostics = provider.collectDiagnostics();
-    expect(diagnostics).toHaveLength(1);
-    expect(diagnostics[0].source).toBe('asset-materialization');
-    expect(diagnostics[0].severity).toBe('warning');
-    expect(diagnostics[0].code).toBe('materialization_refresh-required');
-    expect(diagnostics[0].detail).toEqual({
+    const materializationDiagnostic = diagnostics.find((diagnostic) => diagnostic.source === 'asset-materialization');
+    expect(materializationDiagnostic).toEqual(expect.objectContaining({
+      source: 'asset-materialization',
+      severity: 'warning',
+      code: 'materialization_refresh-required',
+      message: 'Cannot resolve asset.',
+    }));
+    expect(materializationDiagnostic?.detail).toEqual({
       assetId: 'asset-failure',
       generationId: 'gen-failure',
       reason: 'refresh-required',
     });
+    expect(diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        source: 'provider',
+        severity: 'warning',
+        code: 'provider_capability_assetUploads_degraded',
+        detail: expect.objectContaining({
+          capability: 'assetUploads',
+          providerId: 'astrid-bridge',
+          functions: ['onUpload'],
+          supportedFunctions: ['uploadAsset'],
+        }),
+      }),
+      expect.objectContaining({
+        source: 'provider',
+        severity: 'warning',
+        code: 'provider_capability_commandProposals_unsupported',
+        detail: expect.objectContaining({
+          capability: 'commandProposals',
+          providerId: 'astrid-bridge',
+          function: 'commandProposals',
+        }),
+      }),
+      expect.objectContaining({
+        source: 'provider',
+        severity: 'warning',
+        code: 'provider_capability_syncEventLog_unsupported',
+        message: 'Data provider does not support sync event log.',
+        detail: expect.objectContaining({
+          capability: 'syncEventLog',
+          providerId: 'astrid-bridge',
+          reason: 'unsupported',
+        }),
+      }),
+      expect.objectContaining({
+        source: 'provider',
+        severity: 'warning',
+        code: 'provider_capability_checkpoints_unsupported',
+        detail: expect.objectContaining({
+          capability: 'checkpoints',
+          providerId: 'astrid-bridge',
+          functions: ['saveCheckpoint', 'loadCheckpoints'],
+        }),
+      }),
+    ]));
+    const unsupportedCapabilityDiagnostics = diagnostics
+      .filter((diagnostic) => diagnostic.source === 'provider' && diagnostic.code.endsWith('_unsupported'))
+      .map((diagnostic) => ({
+        code: diagnostic.code,
+        message: diagnostic.message,
+        detail: diagnostic.detail,
+      }));
+    expect(unsupportedCapabilityDiagnostics).toEqual(expect.arrayContaining([
+      {
+        code: 'provider_capability_commandProposals_unsupported',
+        message: 'Astrid bridge does not support command proposal persistence.',
+        detail: expect.objectContaining({
+          capability: 'commandProposals',
+          providerId: 'astrid-bridge',
+          reason: 'unsupported',
+          remedy: 'Use the app-backed provider for persisted command proposals.',
+          function: 'commandProposals',
+        }),
+      },
+      {
+        code: 'provider_capability_syncEventLog_unsupported',
+        message: 'Data provider does not support sync event log.',
+        detail: expect.objectContaining({
+          capability: 'syncEventLog',
+          providerId: 'astrid-bridge',
+          reason: 'unsupported',
+        }),
+      },
+      {
+        code: 'provider_capability_checkpoints_unsupported',
+        message: 'Astrid bridge checkpoint history is unavailable; checkpoint calls are local no-ops.',
+        detail: expect.objectContaining({
+          capability: 'checkpoints',
+          providerId: 'astrid-bridge',
+          reason: 'unsupported',
+          remedy: 'Use the app-backed provider when checkpoint history must be persisted.',
+          functions: ['saveCheckpoint', 'loadCheckpoints'],
+        }),
+      },
+    ]));
 
-    // When no materialization entries exist, returns empty array
+    // When no materialization entries exist, only static provider capability diagnostics remain.
     const emptyDiagnostics = new AstridBridgeDataProvider({
       projectSlug: 'empty',
       timelineRef: 'empty-timeline',
     }).collectDiagnostics();
-    expect(emptyDiagnostics).toEqual([]);
+    expect(emptyDiagnostics.every((diagnostic) => diagnostic.source === 'provider')).toBe(true);
   });
 
   it('uses the direct localhost asset base default', () => {

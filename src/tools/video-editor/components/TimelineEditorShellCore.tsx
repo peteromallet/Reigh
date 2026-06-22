@@ -339,7 +339,6 @@ function TimelineEditorShellCoreComponent({
 
   const mobileSinglePane = isPhone && !forceCondensed;
   const condensed = forceCondensed || tooSmall || mobileSinglePane || (isOnEditorPage && isEditorPaneLocked);
-  const hasConfig = Boolean(editorData.resolvedConfig);
   const hasClipSelection = selectedClipIdsList.length > 0;
   const mobilePropertiesTitle = hasClipSelection
     ? selectedClipIdsList.length > 1
@@ -357,6 +356,18 @@ function TimelineEditorShellCoreComponent({
   const touchChrome = isPhone || isTablet;
   const toolbarButtonSizeClass = touchChrome ? 'h-11 w-11' : 'h-6 w-6';
   const previewActionButtonClass = touchChrome ? 'h-11 min-w-11 px-3 text-[11px]' : 'h-7 px-3 text-[11px]';
+  const renderBlockers = chrome.renderPlan?.blockers ?? [];
+  const renderBlocked = renderBlockers.length > 0;
+  const primaryRenderBlocker = renderBlockers[0] ?? null;
+  const renderReadinessTitle = renderBlocked
+    ? `Render blocked: ${primaryRenderBlocker?.message ?? chrome.renderPlan?.decision.reason ?? 'planner blocker'}`
+    : 'Render ready';
+  const handleRenderClick = useCallback(async () => {
+    await chrome.startRender();
+    if (renderBlocked) {
+      setIsDiagnosticsOpen(true);
+    }
+  }, [chrome, renderBlocked]);
 
   // Default header (rendered when no extension header slot is registered, or as
   // the ExtensionRenderBoundary fallback when a registered header slot throws).
@@ -819,12 +830,31 @@ function TimelineEditorShellCoreComponent({
             Editor
           </Button>
         )}
+        <Badge
+          variant={renderBlocked ? 'destructive' : 'outline'}
+          className={cn(
+            'h-5 max-w-[160px] gap-1 truncate px-1.5 text-[10px]',
+            renderBlocked ? 'text-destructive-foreground' : 'text-muted-foreground',
+          )}
+          title={renderReadinessTitle}
+          data-testid="video-editor-render-readiness"
+        >
+          {renderBlocked ? (
+            <>
+              <XCircle className="h-3 w-3 shrink-0" />
+              <span className="truncate">Render blocked</span>
+            </>
+          ) : (
+            <span className="truncate">Render ready</span>
+          )}
+        </Badge>
         <Button
           type="button"
           size="sm"
           className={`gap-1.5 ${previewActionButtonClass}`}
-          onClick={() => void chrome.startRender()}
+          onClick={() => void handleRenderClick()}
           disabled={chrome.renderStatus === 'rendering'}
+          title={renderReadinessTitle}
         >
           <Download className="h-3.5 w-3.5" />
           {chrome.renderStatus === 'rendering' && chrome.renderProgress

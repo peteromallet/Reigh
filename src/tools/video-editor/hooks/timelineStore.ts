@@ -300,6 +300,7 @@ function createInitialChromeSlice(): TimelineChromeContextValue {
     renderLog: '',
     renderDirty: false,
     renderProgress: null,
+    renderPlan: null,
     queuedRender: null,
     renderResultUrl: null,
     renderResultFilename: null,

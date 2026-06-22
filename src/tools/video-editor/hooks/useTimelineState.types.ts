@@ -37,6 +37,7 @@ import type {
   TimelineUploadFiles,
 } from '@/tools/video-editor/hooks/timeline-state-types.ts';
 import type { ClipTab, EditorPreferences } from '@/tools/video-editor/hooks/useEditorPreferences.ts';
+import type { RenderPlan } from '@/tools/video-editor/lib/renderRouter.ts';
 import type { RenderStatus } from '@/tools/video-editor/hooks/useRenderState.ts';
 import type { SaveStatus } from '@/tools/video-editor/hooks/useTimelineSave.ts';
 import type { TimelineData } from '@/tools/video-editor/lib/timeline-data.ts';
@@ -191,6 +192,7 @@ export interface TimelineChromeContextValue {
   renderLog: string;
   renderDirty: boolean;
   renderProgress: TimelineRenderProgress;
+  renderPlan?: RenderPlan | null;
   queuedRender: TimelineQueuedRender;
   renderResultUrl: string | null;
   renderResultFilename: string | null;

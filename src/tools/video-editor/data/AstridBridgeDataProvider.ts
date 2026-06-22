@@ -5,8 +5,10 @@ import type {
 } from '@/tools/video-editor/types/index.ts';
 import type { Checkpoint } from '@/tools/video-editor/types/history.ts';
 import {
+  type DataProviderCapabilities,
   type DataProvider,
   type LoadedTimeline,
+  normalizeProviderCapabilityDiagnostics,
   TimelineNotFoundError,
 } from '@/tools/video-editor/data/DataProvider.ts';
 import type {
@@ -202,6 +204,38 @@ const getShowDirectoryPicker = (): ShowDirectoryPicker | null => {
 
 export class AstridBridgeDataProvider implements DataProvider {
   readonly persistenceEnabled = true;
+  readonly capabilities: DataProviderCapabilities = {
+    timelinePersistence: true,
+    assetRegistry: true,
+    extensionState: false,
+    extensionSettings: false,
+    commandProposals: {
+      supported: false,
+      message: 'Astrid bridge does not support command proposal persistence.',
+      remedy: 'Use the app-backed provider for persisted command proposals.',
+      detail: { function: 'commandProposals' },
+    },
+    syncEventLog: false,
+    materialization: true,
+    assetUploads: {
+      supported: true,
+      degraded: true,
+      message: 'Astrid bridge supports direct asset uploads, but generic upload prompts are unavailable.',
+      remedy: 'Use direct local-drop uploads for Astrid bridge timelines.',
+      detail: {
+        functions: ['onUpload'],
+        supportedFunctions: ['uploadAsset'],
+      },
+    },
+    checkpoints: {
+      supported: false,
+      message: 'Astrid bridge checkpoint history is unavailable; checkpoint calls are local no-ops.',
+      remedy: 'Use the app-backed provider when checkpoint history must be persisted.',
+      detail: {
+        functions: ['saveCheckpoint', 'loadCheckpoints'],
+      },
+    },
+  };
   readonly apiBaseUrl: string;
   readonly assetBaseUrl: string;
 
@@ -266,7 +300,36 @@ export class AstridBridgeDataProvider implements DataProvider {
    */
   collectDiagnostics(): Array<Omit<VideoEditorDiagnostic, 'id' | 'timestamp'>> {
     const summary = this.getMaterializationSummary();
-    return normalizeMaterializationDiagnostics(summary.diagnostics);
+    return [
+      ...normalizeMaterializationDiagnostics(summary.diagnostics),
+      ...normalizeProviderCapabilityDiagnostics(this.getCapabilities(), {
+        providerId: 'astrid-bridge',
+        requiredCapabilities: ['assetUploads', 'commandProposals', 'syncEventLog', 'checkpoints'],
+      }),
+    ];
+  }
+
+  getCapabilities(): DataProviderCapabilities {
+    const summary = this.getMaterializationSummary();
+    if (summary.diagnostics.length === 0) {
+      return this.capabilities;
+    }
+    return {
+      ...this.capabilities,
+      materialization: {
+        supported: true,
+        degraded: true,
+        message: 'Astrid bridge materialization completed with recoverable asset failures.',
+        remedy: 'Refresh or replace the listed generation assets, then reload the local timeline.',
+        detail: {
+          failures: summary.diagnostics.map((diagnostic) => ({
+            assetId: diagnostic.assetId,
+            generationId: diagnostic.generationId,
+            reason: diagnostic.reason,
+          })),
+        },
+      },
+    };
   }
 
   async resolveAssetUrl(file: string): Promise<string> {
