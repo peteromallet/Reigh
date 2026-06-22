@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getSupabaseClient } from '@/integrations/supabase/client.ts';
 import type { AgentSession, AgentSessionStatus, AgentTurn } from '@/tools/video-editor/types/agent-session.ts';
+import type { ProposalPolicy, ProposalResponseData } from '@/tools/video-editor/types/agent-session.ts';
 import { timelineQueryKey } from '@/tools/video-editor/hooks/useTimeline.ts';
 
 const TIMELINE_AGENT_SESSIONS_TABLE = 'timeline_agent_sessions';
@@ -12,6 +13,8 @@ type AgentInvocationResponse = {
   session_id: string;
   status: AgentSessionStatus;
   turns_added: number;
+  /** Optional proposal response data from the agent. */
+  proposal_response?: ProposalResponseData;
 };
 
 type AgentMessageAttachment = NonNullable<AgentTurn['attachments']>[number];
@@ -19,6 +22,8 @@ type AgentMessageAttachment = NonNullable<AgentTurn['attachments']>[number];
 type SendMessageInput = {
   message: string;
   attachments?: AgentMessageAttachment[];
+  /** Proposal policy controlling whether the agent proposes changes for review. */
+  proposalPolicy?: ProposalPolicy;
 };
 
 function toErrorMessage(error: unknown) {
@@ -88,13 +93,42 @@ function normalizeSession(row: unknown): AgentSession {
   };
 }
 
+/**
+ * Normalize a proposal response from the agent invocation result.
+ * Returns null if the data doesn't contain a valid proposal response.
+ */
+function normalizeProposalResponse(data: unknown): ProposalResponseData | null {
+  if (!isRecord(data)) return null;
+
+  const proposalData = data.proposal_response;
+  if (!isRecord(proposalData)) return null;
+
+  const proposalId = proposalData.proposalId;
+  const proposal = proposalData.proposal;
+  const input = proposalData.input;
+
+  if (typeof proposalId !== 'string' || !isRecord(proposal) || !isRecord(input)) {
+    return null;
+  }
+
+  return {
+    proposalId,
+    proposal,
+    input,
+    summary: typeof proposalData.summary === 'string' ? proposalData.summary : undefined,
+  };
+}
+
 function normalizeInvokeResponse(value: unknown): AgentInvocationResponse {
   const record = isRecord(value) ? value : {};
+
+  const proposalResponse = normalizeProposalResponse(value);
 
   return {
     session_id: typeof record.session_id === 'string' ? record.session_id : '',
     status: isAgentSessionStatus(record.status) ? record.status : 'error',
     turns_added: typeof record.turns_added === 'number' ? record.turns_added : 0,
+    proposal_response: proposalResponse ?? undefined,
   };
 }
 
@@ -234,12 +268,27 @@ export function useCreateSession(timelineId: string | null | undefined) {
   });
 }
 
+/**
+ * Hook for sending messages to an agent session with proposal policy support.
+ *
+ * When the agent responds with a proposal (proposal_response in the payload),
+ * the timeline query cache is NOT invalidated — instead the proposal data is
+ * exposed via `proposalResponse` state so the consumer can open the shared
+ * ProposalReviewDialog. Rejected proposals are tracked locally in
+ * `rejectedProposalIds` without any cache mutation.
+ */
 export function useSendMessage(sessionId: string | null | undefined, timelineId?: string | null) {
   const queryClient = useQueryClient();
   const timeoutIdsRef = useRef<Set<number>>(new Set());
   const lastMessageRef = useRef<SendMessageInput | null>(null);
   const [continuationNotice, setContinuationNotice] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
+
+  // Proposal state: set when the agent responds with proposal data.
+  const [proposalResponse, setProposalResponse] = useState<ProposalResponseData | null>(null);
+
+  // Track rejected proposal IDs locally (no cache mutation).
+  const rejectedProposalIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const timeoutIds = timeoutIdsRef.current;
@@ -257,10 +306,11 @@ export function useSendMessage(sessionId: string | null | undefined, timelineId?
         throw new Error('sessionId is required');
       }
 
-      const { message, attachments } = input;
+      const { message, attachments, proposalPolicy } = input;
       lastMessageRef.current = {
         message,
         attachments,
+        proposalPolicy,
       };
       setLocalError(null);
 
@@ -268,32 +318,38 @@ export function useSendMessage(sessionId: string | null | undefined, timelineId?
         nextUserMessage?: string,
         continueCount = 0,
       ): Promise<AgentInvocationResponse> => {
+        const body: Record<string, unknown> = {
+          session_id: sessionId,
+          ...(nextUserMessage ? { user_message: nextUserMessage } : {}),
+          // Send proposal policy when provided (only on the first invocation).
+          ...(nextUserMessage === undefined && proposalPolicy !== undefined
+            ? { proposal_policy: proposalPolicy }
+            : {}),
+          ...(nextUserMessage && attachments?.length ? {
+            selected_clips: attachments.map((clip) => ({
+              clip_id: clip.clipId,
+              url: clip.url,
+              media_type: clip.mediaType,
+              ...(typeof clip.isTimelineBacked === 'boolean'
+                ? { is_timeline_backed: clip.isTimelineBacked }
+                : {}),
+              ...(clip.generationId ? { generation_id: clip.generationId } : {}),
+              ...(clip.variantId ? { variant_id: clip.variantId } : {}),
+              ...(clip.prompt ? { prompt: clip.prompt } : {}),
+              ...(clip.shotId ? { shot_id: clip.shotId } : {}),
+              ...(clip.shotName ? { shot_name: clip.shotName } : {}),
+              ...(typeof clip.shotSelectionClipCount === 'number'
+                ? { shot_selection_clip_count: clip.shotSelectionClipCount }
+                : {}),
+              ...(clip.trackId ? { track_id: clip.trackId } : {}),
+              ...(typeof clip.at === 'number' ? { at: clip.at } : {}),
+              ...(typeof clip.duration === 'number' ? { duration: clip.duration } : {}),
+            })),
+          } : {}),
+        };
+
         const { data, error } = await getSupabaseClient().functions.invoke('ai-timeline-agent', {
-          body: {
-            session_id: sessionId,
-            ...(nextUserMessage ? { user_message: nextUserMessage } : {}),
-            ...(nextUserMessage && attachments?.length ? {
-              selected_clips: attachments.map((clip) => ({
-                clip_id: clip.clipId,
-                url: clip.url,
-                media_type: clip.mediaType,
-                ...(typeof clip.isTimelineBacked === 'boolean'
-                  ? { is_timeline_backed: clip.isTimelineBacked }
-                  : {}),
-                ...(clip.generationId ? { generation_id: clip.generationId } : {}),
-                ...(clip.variantId ? { variant_id: clip.variantId } : {}),
-                ...(clip.prompt ? { prompt: clip.prompt } : {}),
-                ...(clip.shotId ? { shot_id: clip.shotId } : {}),
-                ...(clip.shotName ? { shot_name: clip.shotName } : {}),
-                ...(typeof clip.shotSelectionClipCount === 'number'
-                  ? { shot_selection_clip_count: clip.shotSelectionClipCount }
-                  : {}),
-                ...(clip.trackId ? { track_id: clip.trackId } : {}),
-                ...(typeof clip.at === 'number' ? { at: clip.at } : {}),
-                ...(typeof clip.duration === 'number' ? { duration: clip.duration } : {}),
-              })),
-            } : {}),
-          },
+          body,
         });
 
         if (error) {
@@ -352,13 +408,25 @@ export function useSendMessage(sessionId: string | null | undefined, timelineId?
       const clearId = window.setTimeout(() => setLocalError(null), 5000);
       timeoutIdsRef.current.add(clearId);
     },
-    onSuccess: () => {
+    onSuccess: (response: AgentInvocationResponse) => {
       setLocalError(null);
+
+      // Always invalidate agent session queries so new turns appear in the chat.
       void queryClient.invalidateQueries({ queryKey: agentSessionQueryKey(sessionId) });
       void queryClient.invalidateQueries({ queryKey: ['timeline-agent-sessions'] });
-      // Re-fetch the timeline so agent edits appear immediately in the editor
-      if (timelineId) {
-        void queryClient.invalidateQueries({ queryKey: timelineQueryKey(timelineId) });
+
+      // Check if the agent responded with a proposal for review.
+      if (response.proposal_response) {
+        // Open shared review UI: expose proposal data via state instead of
+        // invalidating the timeline query (which would directly apply changes).
+        setProposalResponse(response.proposal_response);
+        // Do NOT invalidate timeline queries — the proposal must be reviewed first.
+      } else {
+        // No proposal — agent edits were applied directly. Re-fetch the timeline
+        // so edits appear immediately in the editor.
+        if (timelineId) {
+          void queryClient.invalidateQueries({ queryKey: timelineQueryKey(timelineId) });
+        }
       }
     },
   });
@@ -372,6 +440,22 @@ export function useSendMessage(sessionId: string | null | undefined, timelineId?
     return mutation.mutateAsync(lastMessageRef.current);
   };
 
+  /** Clear the current proposal response (e.g., after the review dialog closes). */
+  const clearProposalResponse = () => {
+    setProposalResponse(null);
+  };
+
+  /** Record a proposal as rejected locally without cache mutation. */
+  const rejectProposal = (proposalId: string) => {
+    rejectedProposalIdsRef.current.add(proposalId);
+    setProposalResponse(null);
+  };
+
+  /** Check whether a proposal ID has been locally rejected. */
+  const isProposalRejected = (proposalId: string): boolean => {
+    return rejectedProposalIdsRef.current.has(proposalId);
+  };
+
   return {
     continuationNotice,
     clearContinuationNotice: () => setContinuationNotice(null),
@@ -379,6 +463,11 @@ export function useSendMessage(sessionId: string | null | undefined, timelineId?
     clearLocalError: () => setLocalError(null),
     hasRetryableMessage: Boolean(lastMessageRef.current),
     retryLastMessage,
+    // Proposal review state
+    proposalResponse,
+    clearProposalResponse,
+    rejectProposal,
+    isProposalRejected,
     ...mutation,
   };
 }

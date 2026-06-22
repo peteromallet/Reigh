@@ -22,6 +22,10 @@ vi.mock('@/tools/video-editor/hooks/timelineStore', () => ({
   useTimelineEditorOps: () => useTimelineEditorOpsMock(),
   useTimelineChromeContext: () => useTimelineChromeContextMock(),
   useTimelinePlaybackContext: () => useTimelinePlaybackContextMock(),
+  useTimelineDataSlice: () => useTimelineEditorDataMock(),
+  useTimelineOpsSlice: () => useTimelineEditorOpsMock(),
+  useTimelineChromeSlice: () => useTimelineChromeContextMock(),
+  useTimelinePlaybackSlice: () => useTimelinePlaybackContextMock(),
 }));
 
 const useVideoEditorSlotRenderersMock = vi.fn();
@@ -59,6 +63,33 @@ vi.mock('@/tools/video-editor/hooks/useEditorSync', () => ({
 
 vi.mock('@/tools/video-editor/hooks/useKeyboardShortcuts', () => ({
   useKeyboardShortcuts: vi.fn(),
+}));
+
+vi.mock('@/tools/video-editor/hooks/useEditorKeybindings', () => ({
+  useEditorKeybindings: vi.fn(),
+}));
+
+vi.mock('@/tools/video-editor/hooks/useEditorCommandRegistry', () => ({
+  useEditorCommandRegistry: () => ({
+    registry: {
+      commands: [],
+      queryCommands: () => [],
+      executeCommand: () => null,
+      getCommand: () => undefined,
+      registerExecutor: vi.fn(),
+      unregisterExecutor: vi.fn(),
+    },
+    buildContext: () => ({
+      data: {} as any,
+      timelineId: 'test-timeline',
+      userId: 'test-user',
+      selectedClipIds: [],
+      source: 'keybinding' as const,
+    }),
+    execute: () => null,
+    queryCommands: () => [],
+    commands: [],
+  }),
 }));
 
 vi.mock('@/tools/video-editor/lib/perf-diagnostics', () => ({
@@ -264,6 +295,15 @@ function createRuntimeContext(
   store: VideoEditorDiagnosticsStore,
   overrides: Partial<VideoEditorRuntimeContextValue> = {},
 ): VideoEditorRuntimeContextValue {
+  const { extensions: extOverride, ...rest } = overrides;
+  const baseExtensions = {
+    slots: {} as Record<string, any>,
+    dialogHost: { dialogs: [] as any[] },
+    registry: { panels: [] as any[], inspectorSections: [] as any[] },
+    packages: {} as Record<string, any>,
+    settings: {} as Record<string, any>,
+    commands: [] as any[],
+  };
   return {
     provider: {} as any,
     assetResolver: {} as any,
@@ -277,13 +317,11 @@ function createRuntimeContext(
     timelineId: 'test-timeline',
     userId: 'test-user',
     timelineName: 'Test Timeline',
-    extensions: {
-      slots: {},
-      dialogHost: { dialogs: [] },
-      registry: { panels: [], inspectorSections: [] },
-    },
+    extensions: extOverride
+      ? { ...baseExtensions, ...extOverride }
+      : baseExtensions,
     diagnosticsStore: store,
-    ...overrides,
+    ...rest,
   };
 }
 

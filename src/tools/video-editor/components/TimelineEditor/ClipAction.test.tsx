@@ -394,3 +394,192 @@ describe('ClipAction', () => {
     }));
   });
 });
+
+// ---------------------------------------------------------------------------
+// Extension commands in context menu
+// ---------------------------------------------------------------------------
+
+import type { EditorCommandEntry } from '@/tools/video-editor/commands/editorCommandRegistry.ts';
+
+function buildExtensionEntry(overrides: Partial<EditorCommandEntry> = {}): EditorCommandEntry {
+  return {
+    id: 'com.example.clip.normalize-speed',
+    title: 'Normalize Speed',
+    description: 'Adjust clip speed to match timeline frame rate.',
+    isProposal: true,
+    source: 'extension',
+    extensionId: 'com.example.clip',
+    menu: { context: 'clip-context', group: 'clip-ops', order: 100 },
+    ...overrides,
+  };
+}
+
+describe('ClipAction extension commands', () => {
+  const mockWaveform = () => {
+    mocks.useWaveformData.mockImplementation((src: string | undefined) => ({
+      waveform: src ? [0.25, 0.75, 0.5] : null,
+      loading: false,
+    }));
+  };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    mocks.useWaveformData.mockReset();
+  });
+
+  it('shows matching extension commands in the clip context menu', () => {
+    mockWaveform();
+    const onExecuteExtensionCommand = vi.fn();
+    const extensionCommands: EditorCommandEntry[] = [
+      buildExtensionEntry({ id: 'com.example.clip.normalize-speed', title: 'Normalize Speed' }),
+      buildExtensionEntry({ id: 'com.example.clip.add-fade', title: 'Add Fade Transition', description: 'Apply a crossfade transition at the clip boundary.' }),
+    ];
+
+    const props = buildProps({
+      selectedClipIds: ['clip-1'],
+      extensionCommands,
+      onExecuteExtensionCommand,
+    });
+    const { container } = render(<ClipAction {...props} />);
+
+    fireEvent.contextMenu(container.querySelector('[data-clip-id="clip-1"]') as HTMLElement);
+
+    // Both extension commands should appear
+    expect(screen.getByText('Normalize Speed')).toBeInTheDocument();
+    expect(screen.getByText('Add Fade Transition')).toBeInTheDocument();
+    // Descriptions should be visible
+    expect(screen.getByText('Apply a crossfade transition at the clip boundary.')).toBeInTheDocument();
+  });
+
+  it('calls onExecuteExtensionCommand with correct command ID when extension command is clicked', () => {
+    mockWaveform();
+    const onExecuteExtensionCommand = vi.fn();
+    const extensionCommands: EditorCommandEntry[] = [
+      buildExtensionEntry({ id: 'com.example.clip.normalize-speed', title: 'Normalize Speed' }),
+    ];
+
+    const props = buildProps({
+      selectedClipIds: ['clip-1'],
+      extensionCommands,
+      onExecuteExtensionCommand,
+    });
+    const { container } = render(<ClipAction {...props} />);
+
+    fireEvent.contextMenu(container.querySelector('[data-clip-id="clip-1"]') as HTMLElement);
+
+    fireEvent.click(screen.getByText('Normalize Speed'));
+
+    expect(onExecuteExtensionCommand).toHaveBeenCalledTimes(1);
+    expect(onExecuteExtensionCommand).toHaveBeenCalledWith('com.example.clip.normalize-speed');
+  });
+
+  it('does not show extension commands when none are provided', () => {
+    mockWaveform();
+
+    const props = buildProps({
+      selectedClipIds: ['clip-1'],
+      extensionCommands: [],
+    });
+    const { container } = render(<ClipAction {...props} />);
+
+    fireEvent.contextMenu(container.querySelector('[data-clip-id="clip-1"]') as HTMLElement);
+
+    // The Puzzle icon (used for extension commands) should not be present
+    // when no extension commands are provided
+    expect(screen.queryByText('Normalize Speed')).not.toBeInTheDocument();
+  });
+
+  it('does not show extension commands when extensionCommands is undefined', () => {
+    mockWaveform();
+
+    const props = buildProps({
+      selectedClipIds: ['clip-1'],
+      extensionCommands: undefined,
+    });
+    const { container } = render(<ClipAction {...props} />);
+
+    fireEvent.contextMenu(container.querySelector('[data-clip-id="clip-1"]') as HTMLElement);
+
+    // Extension commands should not appear
+    expect(screen.queryByText('Normalize Speed')).not.toBeInTheDocument();
+  });
+
+  it('closes context menu after executing an extension command', () => {
+    mockWaveform();
+    const onExecuteExtensionCommand = vi.fn();
+    const extensionCommands: EditorCommandEntry[] = [
+      buildExtensionEntry({ id: 'com.example.clip.reverse', title: 'Reverse Clip' }),
+    ];
+
+    const props = buildProps({
+      selectedClipIds: ['clip-1'],
+      extensionCommands,
+      onExecuteExtensionCommand,
+    });
+    const { container } = render(<ClipAction {...props} />);
+
+    fireEvent.contextMenu(container.querySelector('[data-clip-id="clip-1"]') as HTMLElement);
+
+    expect(screen.getByText('Reverse Clip')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Reverse Clip'));
+
+    // The menu should be closed after executing
+    expect(onExecuteExtensionCommand).toHaveBeenCalledTimes(1);
+    // After closeMenu, the portal should be removed
+    expect(getContextMenu()).toBeNull();
+  });
+
+  it('preserves existing menu items alongside extension commands', () => {
+    mockWaveform();
+    const onExecuteExtensionCommand = vi.fn();
+    const extensionCommands: EditorCommandEntry[] = [
+      buildExtensionEntry({ id: 'com.example.clip.normalize-speed', title: 'Normalize Speed' }),
+    ];
+
+    const props = buildProps({
+      selectedClipIds: ['clip-1'],
+      onSplitHere: vi.fn(),
+      onDeleteClip: vi.fn(),
+      extensionCommands,
+      onExecuteExtensionCommand,
+    });
+    const { container } = render(<ClipAction {...props} />);
+
+    fireEvent.contextMenu(container.querySelector('[data-clip-id="clip-1"]') as HTMLElement);
+
+    // Existing menu items still appear
+    expect(screen.getByText('Split Here')).toBeInTheDocument();
+    expect(screen.getByText('Delete Clip')).toBeInTheDocument();
+    // Extension command also appears
+    expect(screen.getByText('Normalize Speed')).toBeInTheDocument();
+  });
+
+  it('shows extension commands in batch selection context menu', () => {
+    mockWaveform();
+    const onExecuteExtensionCommand = vi.fn();
+    const extensionCommands: EditorCommandEntry[] = [
+      buildExtensionEntry({ id: 'com.example.clip.normalize-speed', title: 'Normalize Speed' }),
+    ];
+
+    const props = buildProps({
+      isSelected: true,
+      selectedClipIds: ['clip-1', 'clip-2', 'clip-3'],
+      onToggleMuteClips: vi.fn(),
+      onSplitClipsAtPlayhead: vi.fn(),
+      onDeleteClips: vi.fn(),
+      extensionCommands,
+      onExecuteExtensionCommand,
+    });
+    const { container } = render(<ClipAction {...props} />);
+
+    fireEvent.contextMenu(container.querySelector('[data-clip-id="clip-1"]') as HTMLElement);
+
+    // Batch-specific items
+    expect(screen.getByText('Mute/Unmute 3 clips')).toBeInTheDocument();
+    expect(screen.getByText('Split 3 clips at playhead')).toBeInTheDocument();
+    expect(screen.getByText('Delete 3 clips')).toBeInTheDocument();
+    // Extension command also appears
+    expect(screen.getByText('Normalize Speed')).toBeInTheDocument();
+  });
+});

@@ -164,6 +164,82 @@
             }
           },
           "uniqueItems": true
+        },
+        "commands": {
+          "type": "array",
+          "description": "Command contribution descriptors. Each declares a command that the extension contributes to the command palette, context menus, and keybinding registry. Local IDs are namespaced as `${manifest.id}.${localCommandId}` at load time.",
+          "items": {
+            "type": "object",
+            "required": ["id", "title"],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Local command identifier (e.g. 'myCommand'). The runtime prepends the manifest id to form the fully-qualified command ID.",
+                "minLength": 1,
+                "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"
+              },
+              "title": {
+                "type": "string",
+                "description": "Human-readable command label shown in the command palette.",
+                "minLength": 1
+              },
+              "description": {
+                "type": "string",
+                "description": "Optional prose description for the command palette."
+              },
+              "proposal": {
+                "type": "boolean",
+                "description": "When true, executing this command opens the proposal review UI before committing timeline changes. Defaults to false.",
+                "default": false
+              },
+              "keybinding": {
+                "type": "object",
+                "description": "Optional default keybinding. Users can override this in settings.",
+                "additionalProperties": false,
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "description": "Primary key (e.g. 'Ctrl+Shift+P').",
+                    "minLength": 1
+                  },
+                  "mac": {
+                    "type": "string",
+                    "description": "macOS-specific override (e.g. 'Cmd+Shift+P').",
+                    "minLength": 1
+                  }
+                }
+              },
+              "menu": {
+                "type": "object",
+                "description": "Optional context menu placement.",
+                "additionalProperties": false,
+                "properties": {
+                  "context": {
+                    "type": "string",
+                    "description": "Menu context where this command appears.",
+                    "enum": [
+                      "timeline-context",
+                      "clip-context",
+                      "track-context",
+                      "clip-selection-context",
+                      "canvas-context"
+                    ]
+                  },
+                  "group": {
+                    "type": "string",
+                    "description": "Group name for ordering within the menu.",
+                    "minLength": 1
+                  },
+                  "order": {
+                    "type": "number",
+                    "description": "Sort order within the group."
+                  }
+                }
+              }
+            }
+          },
+          "uniqueItems": true
         }
       }
     }

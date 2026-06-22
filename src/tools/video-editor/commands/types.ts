@@ -194,3 +194,45 @@ export type TimelineCommandRunner<TCommand extends TimelineCommand = TimelineCom
     options?: TimelineCommandRunOptions,
   ) => TimelineCommandExecutionResult<TCommand>;
 };
+
+/** Status of a timeline proposal. */
+export type TimelineProposalStatus = 'pending' | 'accepted' | 'rejected';
+
+/** Per-command summary within a proposal. */
+export type TimelineProposalCommandResult = {
+  commandType: string;
+  commandId?: string;
+  summary?: string;
+  detail?: JsonObject;
+  affectedClipIds: string[];
+};
+
+/** A timeline proposal wraps a dry-run execution result for review before application. */
+export type TimelineProposal = {
+  /** Unique proposal identifier. */
+  id: string;
+  /** Current review status. */
+  status: TimelineProposalStatus;
+  /** Config version of the timeline when the proposal was created (used for stale-version checks). */
+  baseConfigVersion: number;
+  /** Stable signature of the timeline before the proposed changes. */
+  baseSignature: string;
+  /** Stable signature predicted after applying the proposal. */
+  predictedSignature: string;
+  /** Predicted timeline data after applying the proposal. */
+  nextData: TimelineData;
+  /** Per-command summaries with affected clip IDs. */
+  commandResults: TimelineProposalCommandResult[];
+  /** Deduplicated set of all clip IDs affected by any command in the proposal. */
+  affectedClipIds: string[];
+  /** Original transaction identifier, if any. */
+  transactionId?: string;
+  /** Ordered list of command types in the proposal. */
+  commandTypes: string[];
+  /** Ordered list of command IDs in the proposal (non-null entries). */
+  commandIds: string[];
+  /** Unix-ms timestamp when the proposal was created. */
+  createdAt: number;
+  /** Arbitrary metadata attached by the proposal creator (extension id, agent context, etc.). */
+  metadata?: JsonObject;
+};

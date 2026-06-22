@@ -96,6 +96,8 @@ export {
   applyProvisionedMediaCommandToConfig,
   buildTimelineCommandData,
   createTimelineCommandRunner,
+  createProposalFromExecutionResult,
+  createProposalFromInput,
   MEDIA_COMMAND_DESCRIPTORS,
   provisionRegisteredTimelineMedia,
   provisionTimelineMedia,
@@ -111,6 +113,7 @@ export type {
   TimelineCommandInput,
   TimelineCommandRunMode,
   TimelineCommandTransaction,
+  TimelineProposal,
   TimelineProvisionedAsset,
 } from './commands/index.ts';
 

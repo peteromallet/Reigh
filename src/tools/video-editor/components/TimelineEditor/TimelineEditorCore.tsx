@@ -37,6 +37,9 @@ import {
 import type { TimelineActionResizeStart, TimelineClipEdgeResizeEnd } from '@/tools/video-editor/hooks/useTimelineState.types.ts';
 import type { ResolvedTimelineClip, TrackDefinition } from '@/tools/video-editor/types/index.ts';
 import type { TimelineAction, TimelineRow } from '@/tools/video-editor/types/timeline-canvas.ts';
+import { useEditorCommandRegistry } from '@/tools/video-editor/hooks/useEditorCommandRegistry.ts';
+import type { EditorCommandEntry } from '@/tools/video-editor/commands/editorCommandRegistry.ts';
+import type { ExtensionCommandMenuContext } from '@/tools/video-editor/runtime/extensionManifest.ts';
 
 const EMPTY_ASSET_GENERATION_MAP: Record<string, string> = {};
 const EMPTY_CLIP_IDS = new Set<string>();
@@ -330,6 +333,50 @@ function TimelineEditorCoreComponent({
     handleClearUnusedTracks: chrome.handleClearUnusedTracks,
     unusedTrackCount: chrome.unusedTrackCount,
   }), shallow);
+
+  // Extension command registry for context-menu contributions
+  const { registry: commandRegistry, buildContext } = useEditorCommandRegistry();
+
+  // Compute context-menu extension commands for a given menu context.
+  // Memoized per-menu-context to avoid re-filtering on every clip render.
+  const contextMenuExtensionCommands = useMemo(() => {
+    const contexts: ExtensionCommandMenuContext[] = [
+      'clip-context',
+      'clip-selection-context',
+      'track-context',
+    ];
+    const result: Record<string, readonly EditorCommandEntry[]> = {};
+    for (const menuContext of contexts) {
+      const ctx = buildContext({ source: 'context-menu', menuContext });
+      result[menuContext] = commandRegistry.queryCommands(ctx);
+    }
+    return result;
+  }, [commandRegistry, buildContext]);
+
+  // Resolve which extension commands apply to a given clip based on its
+  // context (single clip vs batch selection, track kind, etc.)
+  const getExtensionCommandsForClip = useCallback(
+    (hasBatchSelection: boolean): readonly EditorCommandEntry[] => {
+      if (hasBatchSelection) {
+        return contextMenuExtensionCommands['clip-selection-context'] ?? [];
+      }
+      return contextMenuExtensionCommands['clip-context'] ?? [];
+    },
+    [contextMenuExtensionCommands],
+  );
+
+  // Handler for executing an extension command from the context menu
+  const handleExecuteExtensionCommand = useCallback(
+    (commandId: string) => {
+      const ctx = buildContext({
+        source: 'context-menu',
+        menuContext: selectedClipIds.size > 1 ? 'clip-selection-context' : 'clip-context',
+      });
+      commandRegistry.executeCommand(commandId, ctx);
+    },
+    [commandRegistry, buildContext, selectedClipIds.size],
+  );
+
   const trackSensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 5 },
@@ -695,6 +742,10 @@ function TimelineEditorCoreComponent({
         isCreatingShot={isCreatingShot}
         overhangDurationSeconds={clipOverhang?.overhangTimelineDurationSeconds}
         overhangEndFraction={clipOverhang?.mediaEndFraction}
+        extensionCommands={getExtensionCommandsForClip(
+          isClipSelected(action.id) && selectedClipIds.size > 1,
+        )}
+        onExecuteExtensionCommand={handleExecuteExtensionCommand}
       />
     );
   }, [
@@ -737,6 +788,8 @@ function TimelineEditorCoreComponent({
     thumbnailMap,
     trackMap,
     updateAssetToCurrentVariant,
+    getExtensionCommandsForClip,
+    handleExecuteExtensionCommand,
   ]);
 
   const handleTrackDragEnd = useCallback(({ active, over }: DragEndEvent) => {

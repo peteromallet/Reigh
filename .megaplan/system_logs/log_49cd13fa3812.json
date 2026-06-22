@@ -1,0 +1,65 @@
+{
+  "id": "log_49cd13fa3812",
+  "level": "debug",
+  "category": "system",
+  "event_type": "authority_divergence",
+  "message": "authority_divergence emitted",
+  "details": {
+    "event": {
+      "seq": 3147,
+      "schema_version": 1,
+      "ts_utc": "2026-06-22T00:21:27.922955+00:00",
+      "ts_rel_init_s": 3393.260591,
+      "kind": "authority_divergence",
+      "phase": "execute",
+      "payload": {
+        "diagnostic_version": 1,
+        "task_id": "T7",
+        "raw_terminal_status": "done",
+        "authority_status": "unknown",
+        "authoritative": false,
+        "reason": "stale_evidence:missing_head:task_files_changed",
+        "missing_outputs": [],
+        "stale_evidence": [
+          "missing_head:task_files_changed",
+          "missing_head:task_files_changed",
+          "missing_head:task_commands_run",
+          "missing_head:task_commands_run",
+          "missing_head:task_files_changed"
+        ],
+        "would_block_reasons": [
+          "stale_evidence:missing_head:task_files_changed",
+          "stale_evidence:missing_head:task_commands_run"
+        ],
+        "error": null,
+        "diagnostics": {
+          "task_id": "T7",
+          "declared_outputs": {
+            "files_changed": [
+              "src/tools/video-editor/runtime/extensionManifest.ts",
+              "config/contracts/reigh-extension.schema.json"
+            ],
+            "commands_run": [
+              "npx vitest run src/tools/video-editor/runtime/extensionManifest.test.ts"
+            ]
+          },
+          "linked_evidence_count": 10,
+          "evidence_count": 80,
+          "normalization": "iterable",
+          "status": "unknown",
+          "evidence_sources": [
+            "plan_artifacts"
+          ],
+          "loaded_evidence_count": 80,
+          "raw_terminal_status": "done"
+        },
+        "ts_utc": "2026-06-22T00:21:27.922562+00:00"
+      },
+      "transaction_id": "31f5731ca450db96",
+      "store_method": "log_system_event"
+    }
+  },
+  "turn_id": null,
+  "epic_id": "m4-timeline-proposals-and-20260622-0124",
+  "occurred_at": "2026-06-22T00:21:27.922992Z"
+}

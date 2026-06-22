@@ -60,3 +60,11 @@ export function useVideoEditorRuntime(): VideoEditorRuntimeContextValue {
 
   return context;
 }
+
+/**
+ * Safe variant of useVideoEditorRuntime — returns null instead of throwing
+ * when called outside a DataProviderWrapper.
+ */
+export function useVideoEditorRuntimeSafe(): VideoEditorRuntimeContextValue | null {
+  return useContext(DataProviderContext);
+}

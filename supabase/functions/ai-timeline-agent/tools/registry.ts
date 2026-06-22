@@ -3,6 +3,8 @@ import { loadTimelineState, saveTimelineConfigVersioned } from "../db.ts";
 import {
   buildTimelineCommandData,
   createTimelineCommandRunner,
+  createProposalFromExecutionResult,
+  createProposalFromInput,
   MEDIA_COMMAND_DESCRIPTORS,
   provisionTimelineMedia,
   type AssetRegistryEntry,
@@ -15,9 +17,11 @@ import {
   type TimelineCommandInput,
   type TimelineCommandRunMode,
   type TimelineCommandTransaction,
+  type TimelineProposal,
 } from "../../../../src/tools/video-editor/index.ts";
 import type {
   SupabaseAdmin,
+  TimelineMutationMode,
   TimelineState,
   ToolResult,
 } from "../types.ts";
@@ -440,6 +444,7 @@ const executePreparedTransaction = async (
   timelineId: string,
   supabaseAdmin: SupabaseAdmin,
   preserveSingleSummary = false,
+  timelineMutationMode?: TimelineMutationMode,
 ): Promise<ToolResult> => {
   const run = (config = state.config, registry = state.registry) => {
     const currentData = buildTimelineCommandData(config, registry);
@@ -454,6 +459,39 @@ const executePreparedTransaction = async (
 
   let result = run();
   const formatted = formatExecutionResult(result, runMode, preserveSingleSummary);
+
+  // In proposal mode: never persist to DB, return a dry-run proposal instead
+  if (timelineMutationMode === "propose" && runMode === "apply") {
+    const dryRunData = buildTimelineCommandData(state.config, state.registry);
+    const dryResult = agentCommandRunner.dryRun(dryRunData, transaction);
+    if (dryResult.status === "rejected") {
+      return {
+        result: formatted,
+        proposal: {
+          id: `prop_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+          status: "rejected",
+          commandResults: dryResult.commandResults.map((step) => ({
+            commandType: step.command.type,
+            commandId: step.command.commandId,
+            summary: step.summary,
+            error: step.error
+              ? { code: step.error.code, message: step.error.message }
+              : undefined,
+          })),
+          affectedClipIds: [],
+          baseConfigVersion: dryResult.initialData.configVersion,
+          createdAt: Date.now(),
+        },
+      };
+    }
+
+    const proposal = createProposalFromExecutionResult(dryResult);
+    return {
+      result: `[PROPOSAL] ${formatted}\nProposal ID: ${proposal.id}\nReview this proposal before accepting or rejecting.`,
+      proposal: proposal as unknown as Record<string, unknown>,
+    };
+  }
+
   if (runMode !== "apply" || result.status === "rejected") {
     return { result: formatted };
   }
@@ -517,6 +555,7 @@ const handleRepeat = async (
   state: TimelineState,
   timelineId: string,
   supabaseAdmin: SupabaseAdmin,
+  timelineMutationMode?: TimelineMutationMode,
 ): Promise<ToolResult> => {
   const errorMessages: string[] = [];
   let errors = 0;
@@ -572,7 +611,7 @@ const handleRepeat = async (
       || subParsed.type === "undo"
       || subParsed.type === "generate"
     ) {
-      errorMessages.push(`${i + 1}. No handler for "${subParsed.type}".`);
+      errorMessages.push(`${i + 1}. No handler for \"${subParsed.type}\".`);
       errors += 1;
       if (errors >= 3) {
         errorMessages.push("Stopped after 3 errors.");
@@ -612,6 +651,34 @@ const handleRepeat = async (
     };
   }
 
+  // In proposal mode: return a proposal instead of persisting
+  if (timelineMutationMode === "propose") {
+    const dryRunData = buildTimelineCommandData(state.config, state.registry);
+    const dryTransaction = {
+      commands: (await Promise.all(
+        Array.from({ length: parsed.count }).map(async (_v, i) => {
+          const value = parsed.from + parsed.step * i;
+          const roundedValue = Math.round(value * 1000) / 1000;
+          const expanded = parsed.template.replace(
+            new RegExp(`\\{${parsed.varName}\\}`, "g"),
+            String(roundedValue),
+          );
+          const sp = parseCommand(expanded);
+          if (sp.type === "error" || sp.type === "view" || sp.type === "query" || sp.type === "find-issues" || sp.type === "repeat" || sp.type === "undo" || sp.type === "generate" || sp.type === "add-media" || sp.type === "swap") {
+            return null;
+          }
+          return toTransactionCommand(sp, { ...state, config: dryRunData.config, registry: dryRunData.registry }, timelineId, supabaseAdmin);
+        })
+      )).filter((c): c is AgentMutationCommand => c !== null),
+    };
+    const dryResult = agentCommandRunner.dryRun(dryRunData, dryTransaction);
+    const proposal = createProposalFromExecutionResult(dryResult);
+    return {
+      result: `[PROPOSAL] Repeat ${succeeded}/${parsed.count}.\nProposal ID: ${proposal.id}\nReview this proposal before accepting or rejecting.${errorMessages.length > 0 ? `\n${errorMessages.join("\n")}` : ""}`,
+      proposal: proposal as unknown as Record<string, unknown>,
+    };
+  }
+
   state.previousConfig = structuredClone(state.config);
   const nextVersion = await saveTimelineConfigVersioned(
     supabaseAdmin,
@@ -645,6 +712,7 @@ export async function executeCommand(
   state: TimelineState,
   timelineId: string,
   supabaseAdmin: SupabaseAdmin,
+  timelineMutationMode?: TimelineMutationMode,
 ): Promise<ToolResult> {
   const runArgs = normalizeRunArgs(input);
   const runMode = extractMode(input);
@@ -652,7 +720,7 @@ export async function executeCommand(
   if (typeof runArgs.transaction !== "undefined") {
     try {
       const transaction = await normalizeTransactionInput(runArgs.transaction, state, timelineId, supabaseAdmin);
-      return await executePreparedTransaction(transaction, runMode, state, timelineId, supabaseAdmin);
+      return await executePreparedTransaction(transaction, runMode, state, timelineId, supabaseAdmin, false, timelineMutationMode);
     } catch (error) {
       return { result: error instanceof Error ? error.message : String(error) };
     }
@@ -673,7 +741,7 @@ export async function executeCommand(
   }
 
   if (parsed.type === "repeat") {
-    return await handleRepeat(parsed, state, timelineId, supabaseAdmin);
+    return await handleRepeat(parsed, state, timelineId, supabaseAdmin, timelineMutationMode);
   }
 
   if (parsed.type === "generate") {
@@ -685,6 +753,20 @@ export async function executeCommand(
   }
 
   if (parsed.type === "undo") {
+    // In proposal mode: return a dry-run proposal instead of persisting
+    if (timelineMutationMode === "propose") {
+      if (!state.previousConfig) {
+        return { result: "[PROPOSAL] Nothing to undo." };
+      }
+      const dryRunData = buildTimelineCommandData(state.config, state.registry);
+      const dryResult = agentCommandRunner.dryRun(dryRunData, { type: "undo" as never });
+      const proposal = createProposalFromExecutionResult(dryResult);
+      return {
+        result: `[PROPOSAL] Undo ready for review.\nProposal ID: ${proposal.id}`,
+        proposal: proposal as unknown as Record<string, unknown>,
+      };
+    }
+
     if (!state.previousConfig) {
       return { result: "Nothing to undo." };
     }
@@ -723,5 +805,5 @@ export async function executeCommand(
   const transaction = {
     commands: [await toTransactionCommand(parsed, state, timelineId, supabaseAdmin)],
   } satisfies TimelineCommandTransaction<AgentMutationCommand>;
-  return await executePreparedTransaction(transaction, runMode, state, timelineId, supabaseAdmin, true);
+  return await executePreparedTransaction(transaction, runMode, state, timelineId, supabaseAdmin, true, timelineMutationMode);
 }

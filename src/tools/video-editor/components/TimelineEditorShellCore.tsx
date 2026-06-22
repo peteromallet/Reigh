@@ -28,6 +28,9 @@ import {
   useTimelinePlaybackContext,
 } from '@/tools/video-editor/hooks/timelineStore.ts';
 import { useKeyboardShortcuts } from '@/tools/video-editor/hooks/useKeyboardShortcuts.ts';
+import { useEditorKeybindings } from '@/tools/video-editor/hooks/useEditorKeybindings.ts';
+import { useEditorCommandRegistry } from '@/tools/video-editor/hooks/useEditorCommandRegistry.ts';
+import type { EditorCommandContext } from '@/tools/video-editor/commands/editorCommandRegistry.ts';
 import { useTimelineRealtime } from '@/tools/video-editor/hooks/useTimelineRealtime.ts';
 import { getTimelineDurationInFrames, parseResolution } from '@/tools/video-editor/lib/config-utils.ts';
 import { buildKeyboardDeleteMutation } from '@/tools/video-editor/lib/keyboard-delete.ts';
@@ -43,6 +46,8 @@ import { dispatchAppEvent } from '@/shared/lib/typedEvents.ts';
 import { ExtensionRenderBoundary } from '@/tools/video-editor/runtime/ExtensionRenderBoundary.tsx';
 import { useVideoEditorDiagnostics } from '@/tools/video-editor/hooks/useVideoEditorDiagnostics.ts';
 import { DiagnosticsPanel } from '@/tools/video-editor/components/DiagnosticsPanel.tsx';
+import { CommandPalette } from '@/tools/video-editor/components/CommandPalette.tsx';
+import { isEditableTarget } from '@/tools/video-editor/lib/coordinate-utils.ts';
 
 const MIN_TIMELINE_HEIGHT = 140;
 const MIN_PREVIEW_HEIGHT = 180;
@@ -138,6 +143,7 @@ function TimelineEditorShellCoreComponent({
   const [syncDialogOpen, setSyncDialogOpen] = useState(false);
   const [syncResultMessage, setSyncResultMessage] = useState<string | null>(null);
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
 
   // Show sync result feedback and auto-clear
   useEffect(() => {
@@ -180,6 +186,24 @@ function TimelineEditorShellCoreComponent({
     return MemoryPressureDetector.stop;
   }, []);
 
+  // Command palette shortcut: Mod+Shift+P
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (isEditableTarget(event.target)) {
+        return;
+      }
+
+      const isModifierPressed = event.metaKey || event.ctrlKey;
+      if (isModifierPressed && event.shiftKey && event.key.toLowerCase() === 'p') {
+        event.preventDefault();
+        setIsCommandPaletteOpen((prev) => !prev);
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   const handleKeyboardDelete = useCallback(() => {
     const mutation = buildKeyboardDeleteMutation(editorData.dataRef.current, editorData.selectedClipIds);
     if (mutation) {
@@ -206,6 +230,37 @@ function TimelineEditorShellCoreComponent({
     splitSelectedClip: editorOps.handleSplitSelectedClip,
     deleteSelectedClip: handleKeyboardDelete,
     clearSelection: editorOps.clearSelection,
+  });
+
+  // Extension-aware keybinding dispatch (centralized, with duplicate resolution).
+  const editorCommandsForBinding = useEditorCommandRegistry();
+
+  useEditorKeybindings({
+    hasSelectedClip: editorData.selectedClipIds.size > 0,
+    canMoveSelectedClipToTrack: editorData.selectedClipIds.size >= 1,
+    precisionEnabled: editorData.precisionEnabled,
+    selectedClipIds: editorData.selectedClipIds,
+    timelineFps,
+    moveSelectedClipsToTrack: editorOps.moveSelectedClipsToTrack,
+    undo: chrome.undo,
+    redo: chrome.redo,
+    selectAllClips: () => editorReplaceTimelineSelection(Object.keys(editorData.data?.meta ?? {})),
+    togglePlayPause: () => playback.previewRef.current?.togglePlayPause(),
+    seekRelative: (deltaSeconds) => playback.previewRef.current?.seek(Math.max(0, playback.currentTime + deltaSeconds)),
+    toggleMute: () => editorOps.handleToggleMuteClips([...editorData.selectedClipIds]),
+    splitSelectedClip: editorOps.handleSplitSelectedClip,
+    deleteSelectedClip: handleKeyboardDelete,
+    clearSelection: editorOps.clearSelection,
+    // Extension keybinding support
+    commandEntries: editorCommandsForBinding?.commands ?? [],
+    buildCommandContext: editorCommandsForBinding
+      ? () => editorCommandsForBinding.buildContext({ source: 'keybinding' })
+      : undefined,
+    dispatchExtensionCommand: editorCommandsForBinding
+      ? (commandId: string, context: EditorCommandContext) => {
+          editorCommandsForBinding.execute(commandId, context);
+        }
+      : undefined,
   });
 
   const onDividerMouseDown = useCallback((event: ReactMouseEvent) => {
@@ -988,6 +1043,11 @@ function TimelineEditorShellCoreComponent({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <CommandPalette
+        open={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+      />
 
       <AlertDialog open={conflict.isOpen} onOpenChange={conflict.setOpen}>
         <AlertDialogContent>

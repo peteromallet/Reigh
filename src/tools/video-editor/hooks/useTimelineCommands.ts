@@ -33,6 +33,18 @@ import type {
   TimelineEditorOpsContextValue,
 } from '@/tools/video-editor/hooks/useTimelineState.types.ts';
 import type { AssetRegistryEntry, TimelineClip, TrackKind } from '@/tools/video-editor/types/index.ts';
+import {
+  applyProposal,
+  canApplyProposal,
+  createProposalFromInput,
+} from '@/tools/video-editor/commands/proposals.ts';
+import type {
+  JsonObject,
+  TimelineCommand,
+  TimelineCommandInput,
+  TimelineCommandRunner,
+  TimelineProposal,
+} from '@/tools/video-editor/commands/types.ts';
 
 export type TimelineCommandErrorCode =
   | 'editor_not_mounted'
@@ -173,6 +185,32 @@ export interface TimelineCommands {
    * Replace the persisted `params` blob for a clip.
    */
   setClipParams: (input: SetClipParamsCommandInput) => TimelineCommandResult<{ clipId: string }>;
+  /**
+   * Preview a timeline proposal using dry-run only (never mutates timeline
+   * state).  Returns the proposal for review, or null if all commands in the
+   * input would be rejected.
+   */
+  previewTimelineProposal: <T extends TimelineCommand = TimelineCommand>(
+    input: TimelineCommandInput<T>,
+    runner: TimelineCommandRunner<T>,
+    metadata?: JsonObject,
+  ) => TimelineProposal | null;
+  /**
+   * Apply a previously previewed proposal.  Performs a config-version
+   * stale-check before mutation and commits through the existing applyEdit
+   * path.  Returns an error if the timeline has changed since the proposal
+   * was created.
+   */
+  applyTimelineProposal: <T extends TimelineCommand = TimelineCommand>(
+    proposal: TimelineProposal,
+    input: TimelineCommandInput<T>,
+    runner: TimelineCommandRunner<T>,
+  ) => TimelineCommandResult<{ proposalId: string }>;
+  /**
+   * Reject a proposal without performing any timeline mutation.
+   * The caller is responsible for updating any proposal-tracking state.
+   */
+  rejectTimelineProposal: (proposal: TimelineProposal) => void;
 }
 
 /**
@@ -192,6 +230,9 @@ export const PUBLIC_TIMELINE_COMMAND_NAMES = [
   'moveTrack',
   'registerAsset',
   'setClipParams',
+  'previewTimelineProposal',
+  'applyTimelineProposal',
+  'rejectTimelineProposal',
 ] as const satisfies ReadonlyArray<keyof TimelineCommands>;
 
 /**
@@ -813,6 +854,69 @@ export function createTimelineCommands(store: TimelineStoreApi): TimelineCommand
           params: input.params,
         },
       });
+    },
+
+    previewTimelineProposal(input, runner, metadata) {
+      const state = getMountedState();
+      if (!state) {
+        return null;
+      }
+
+      const current = getCurrentData(state);
+      if (!current) {
+        return null;
+      }
+
+      return createProposalFromInput(current, input, runner, metadata);
+    },
+
+    applyTimelineProposal(proposal, input, runner) {
+      const state = getMountedState();
+      if (!state) {
+        return failure('editor_not_mounted', 'Timeline commands are only available in a mounted editor.');
+      }
+
+      const current = getCurrentData(state);
+      if (!current) {
+        return failure('timeline_unavailable', 'Timeline data is not loaded.');
+      }
+
+      if (!canApplyProposal(proposal, current)) {
+        return failure(
+          'mutation_failed',
+          `Cannot apply proposal ${proposal.id}: config version mismatch (proposal: ${proposal.baseConfigVersion}, current: ${current.configVersion}).`,
+        );
+      }
+
+      try {
+        const nextData = applyProposal(proposal, current, input, runner);
+
+        // Commit through the existing applyEdit path.
+        state.ops.applyEdit(
+          {
+            type: 'config',
+            resolvedConfig: nextData.resolvedConfig,
+            pinnedShotGroupsOverride: nextData.config.pinnedShotGroups,
+          },
+          {
+            selectedClipId: null,
+            selectedTrackId: null,
+            semantic: true,
+          },
+        );
+
+        return success({ proposalId: proposal.id });
+      } catch (cause) {
+        return failure(
+          'mutation_failed',
+          cause instanceof Error ? cause.message : 'Failed to apply proposal.',
+          { cause },
+        );
+      }
+    },
+
+    rejectTimelineProposal(_proposal) {
+      // No mutation — intentionally empty.
     },
   };
 
