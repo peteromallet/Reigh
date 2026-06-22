@@ -1,0 +1,11 @@
+ M .github/workflows/slot-first-quality.yml
+ M .gitignore
+ M .megaplan/epics/m7-docs-release-gates-and-20260622-0608/events.jsonl
+ M .megaplan/telemetry/m7-docs-release-gates-and-20260622-0608.ndjson
+ M .megaplan/telemetry/m7-docs-release-gates-and-20260622-0608.seq
+ M Makefile
+ M package.json
+ M scripts/quality/check-video-editor-sdk-imports.mjs
+?? docs/extensions/
+?? examples/video-editor-extension/
+?? post-epic-validation-walkthrough.md

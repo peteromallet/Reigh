@@ -27,6 +27,8 @@
     "bun:preview": "bun run preview",
     "bun:install": "bun install",
     "test": "npm run check:no-smoke-tests && vitest run --config config/testing/vitest.config.ts",
+    "typecheck": "tsc --noEmit",
+    "test:extensions": "npm run check:video-editor-sdk-imports && npm run typecheck && vitest run --config config/testing/vitest.config.ts src/tools/video-editor/runtime/contributionFamilies.test.ts src/tools/video-editor/runtime/diagnostics.test.ts src/tools/video-editor/runtime/ExtensionRenderBoundary.test.tsx src/tools/video-editor/runtime/extensionLoader.test.ts src/tools/video-editor/runtime/extensionManifest.test.ts src/tools/video-editor/runtime/extensionSettings.test.ts src/tools/video-editor/runtime/extensionStateRepository.test.ts src/tools/video-editor/runtime/extensionSurface.test.ts src/tools/video-editor/testing/extensions/family-fixtures/index.test.tsx && npm --prefix examples/video-editor-extension run validate && playwright test --config playwright.config.ts tests/e2e/video-editor-contribution-families.spec.ts tests/e2e/video-editor-diagnostics.spec.ts",
     "test:contracts": "vitest run --config config/testing/vitest.config.ts src/**/**/*.contract.test.ts src/**/**/clientContracts.test.ts src/shared/lib/__tests__/qualityCheck.contract.test.ts",
     "test:arch": "npm run check:shots-shim-usage && npm run check:core-shim-usage && npm run check:video-editor-sdk-imports && npm run check:error-runtime-alias-usage && npm run check:fat-contexts && npm run check:contracts && npm run check:contract-surface-map",
     "test:edge": "npm run test:edge:unit && npm run test:edge:smoke",

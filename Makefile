@@ -6,7 +6,7 @@ PUBLIC_VITE_ENV := \
 	VITE_API_TARGET_URL=https://example.com \
 	VITE_APP_ENV=web
 
-.PHONY: help install-hooks dockerfile-check build-context-check build docker-build deploy-check quality test slot-first-unit slot-first-edge slot-first-db slot-first-e2e slot-first-health slot-first-schema-drift slot-first-test-fixture-legacy slot-first-audit release-check prepush ci
+.PHONY: help install-hooks dockerfile-check build-context-check build docker-build deploy-check quality typecheck test test-extensions slot-first-unit slot-first-edge slot-first-db slot-first-e2e slot-first-health slot-first-schema-drift slot-first-test-fixture-legacy slot-first-audit extension-release-gates release-check prepush ci
 
 help:
 	@printf '%s\n' \
@@ -17,8 +17,11 @@ help:
 		'  make docker-build         Run a Docker image build with dummy public client config.' \
 		'  make deploy-check         Reproduce the Railway build end-to-end (catches the breakage that --check misses).' \
 		'  make quality              Run architecture, lint, and strict type checks.' \
+		'  make typecheck            Run the root TypeScript no-emit check.' \
 		'  make test                 Run the Vitest suite.' \
+		'  make test-extensions      Run extension-focused static, unit, example, and e2e gates.' \
 		'  make slot-first-audit     Run M0 slot-first audit-mode tests and gates.' \
+		'  make extension-release-gates Run extension release gates in cheap-to-expensive order.' \
 		'  make release-check        Run the full release gate before cutting a deployment.' \
 		'  make prepush              Run the lightweight gate before pushing.' \
 		'  make install-hooks        Install repo-managed git hooks.' \
@@ -62,8 +65,14 @@ deploy-check: build-context-check docker-build
 quality:
 	npm run quality:check
 
+typecheck:
+	npm run typecheck
+
 test:
 	npm test
+
+test-extensions:
+	npm run test:extensions
 
 slot-first-unit:
 	npm run test:slot:unit
@@ -89,6 +98,8 @@ slot-first-test-fixture-legacy:
 	npm run quality:test-fixture-legacy -- --audit
 
 slot-first-audit: slot-first-unit slot-first-edge slot-first-db slot-first-schema-drift slot-first-test-fixture-legacy slot-first-health slot-first-e2e
+
+extension-release-gates: test-extensions
 
 release-check: dockerfile-check build-context-check docker-build build quality test
 
