@@ -55,6 +55,10 @@ temp/
 !docs/state_management_refactor_baselines.md
 !docs/state_management_context_audit.md
 !docs/design/*.md
+!docs/extensions/*.md
+!docs/extensions/validation/*.md
+!docs/extensions/validation/artifacts/*.log
+!docs/extensions/validation/artifacts/*.txt
 !tasks/*.md
 !CLAUDE.md
 !post-epic-validation-walkthrough.md

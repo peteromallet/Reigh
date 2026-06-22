@@ -1,0 +1,10 @@
+
+> vite_react_shadcn_ts@0.0.0 dev
+> vite --config config/vite/vite.config.ts --host 127.0.0.1
+
+error when starting dev server:
+Error: listen EPERM: operation not permitted 127.0.0.1:2222
+    at Server.setupListenHandle [as _listen2] (node:net:1886:21)
+    at listenInCluster (node:net:1965:12)
+    at doListen (node:net:2139:7)
+    at process.processTicksAndRejections (node:internal/process/task_queues:83:21)

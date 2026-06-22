@@ -1,0 +1,2 @@
+Docker is not running. Start Docker and rerun make dockerfile-check.
+make: *** [dockerfile-check] Error 1

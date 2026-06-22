@@ -1,0 +1,13 @@
+
+> @reigh/example-video-editor-extension@1.0.0 validate
+> vitest run --config vitest.config.mjs --configLoader runner src/validate.test.ts
+
+
+ RUN  v4.1.5 /Users/peteromalley/Documents/.megaplan-worktrees/reigh-ext-completion/examples/video-editor-extension
+
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  07:01:11
+   Duration  229ms (transform 74ms, setup 0ms, import 127ms, tests 16ms, environment 0ms)
+
