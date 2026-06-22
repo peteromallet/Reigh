@@ -3435,6 +3435,40 @@
       "resolved": false,
       "resolved_by": null,
       "resolved_at": null
+    },
+    {
+      "id": "DEBT-203",
+      "subsystem": "post-epic-validation",
+      "concern": "criterion 7 (post-epic-validation-walkthrough.md) requires drive_browser and inspect_runtime_ui \u2014 human-verification steps that cannot be fully automated.",
+      "flag_ids": [
+        "recurring-criteria-7"
+      ],
+      "plan_ids": [
+        "m7-docs-release-gates-and-20260622-0608"
+      ],
+      "occurrence_count": 1,
+      "created_at": "2026-06-22T04:22:48Z",
+      "updated_at": "2026-06-22T04:22:48Z",
+      "resolved": false,
+      "resolved_by": null,
+      "resolved_at": null
+    },
+    {
+      "id": "DEBT-204",
+      "subsystem": "post-epic-validation",
+      "concern": "criteria 10, 11, 12, 13 require subjective_judgment for qualitative assessment (fixture alignment, command ordering, report auditability, ticket linkage).",
+      "flag_ids": [
+        "recurring-criteria-10-11-12-13"
+      ],
+      "plan_ids": [
+        "m7-docs-release-gates-and-20260622-0608"
+      ],
+      "occurrence_count": 1,
+      "created_at": "2026-06-22T04:22:48Z",
+      "updated_at": "2026-06-22T04:22:48Z",
+      "resolved": false,
+      "resolved_by": null,
+      "resolved_at": null
     }
   ]
 }
