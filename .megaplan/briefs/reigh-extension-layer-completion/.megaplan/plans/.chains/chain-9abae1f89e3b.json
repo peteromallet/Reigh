@@ -1,0 +1,223 @@
+{
+  "schema_version": 0,
+  "current_milestone_index": 6,
+  "current_plan_name": null,
+  "current_milestone_base_sha": "a9c335b98ad59136f8c07ff3dc069cb9efcab898",
+  "last_state": "active",
+  "pr_number": null,
+  "pr_state": null,
+  "completed": [
+    {
+      "label": "m1-runtime-spine",
+      "plan": "m1-runtime-spine-and-public-20260621-2041",
+      "status": "done",
+      "pr_number": 43,
+      "pr_state": "merged",
+      "merged_at": "2026-06-21T20:41:00Z",
+      "full_suite_backstop": {
+        "mode": "shadow",
+        "status": "failed",
+        "blocks": false,
+        "reason": "full_suite_backstop_mode=shadow: recorded only",
+        "passed": 8,
+        "failed": 3,
+        "failing_tests": [
+          "vendor/timeline-schema/tests/test_materialize_output.py::MaterializeOutputTests::test_materialize_output_from_2rp_theme",
+          "vendor/timeline-schema/tests/test_materialize_output.py::ResolveThemeTests::test_resolve_theme_2rp",
+          "vendor/timeline-schema/tests/test_materialize_output.py::ResolveThemeTests::test_resolve_theme_with_overrides"
+        ],
+        "newly_failing": [],
+        "deleted_tests": [],
+        "baseline_failing_count": 3,
+        "current_failing_count": 3,
+        "delta_computed": true,
+        "command": "pytest --tb=no -q --no-header -rA",
+        "duration_s": 1.845700916950591,
+        "ran": true,
+        "artifact": "full_suite_backstop.json"
+      }
+    },
+    {
+      "label": "m2-manifest-loader-state",
+      "plan": "m2-manifest-loader-state-and-20260621-2146",
+      "status": "done",
+      "pr_number": 44,
+      "pr_state": "merged",
+      "merged_at": "2026-06-21T21:45:00Z",
+      "full_suite_backstop": {
+        "mode": "shadow",
+        "status": "failed",
+        "blocks": false,
+        "reason": "full_suite_backstop_mode=shadow: recorded only",
+        "passed": 8,
+        "failed": 3,
+        "failing_tests": [
+          "vendor/timeline-schema/tests/test_materialize_output.py::MaterializeOutputTests::test_materialize_output_from_2rp_theme",
+          "vendor/timeline-schema/tests/test_materialize_output.py::ResolveThemeTests::test_resolve_theme_2rp",
+          "vendor/timeline-schema/tests/test_materialize_output.py::ResolveThemeTests::test_resolve_theme_with_overrides"
+        ],
+        "newly_failing": [],
+        "deleted_tests": [],
+        "baseline_failing_count": 3,
+        "current_failing_count": 3,
+        "delta_computed": true,
+        "command": "pytest --tb=no -q --no-header -rA",
+        "duration_s": 1.845700916950591,
+        "ran": true,
+        "artifact": "full_suite_backstop.json"
+      }
+    },
+    {
+      "label": "m3-diagnostics-failure-isolation",
+      "plan": "m3-diagnostics-and-failure-20260621-2358",
+      "status": "done",
+      "pr_number": 46,
+      "pr_state": "merged",
+      "merged_at": "2026-06-22T00:00:00Z",
+      "full_suite_backstop": {
+        "mode": "shadow",
+        "status": "failed",
+        "blocks": false,
+        "reason": "full_suite_backstop_mode=shadow: recorded only",
+        "passed": 8,
+        "failed": 3,
+        "failing_tests": [
+          "vendor/timeline-schema/tests/test_materialize_output.py::MaterializeOutputTests::test_materialize_output_from_2rp_theme",
+          "vendor/timeline-schema/tests/test_materialize_output.py::ResolveThemeTests::test_resolve_theme_2rp",
+          "vendor/timeline-schema/tests/test_materialize_output.py::ResolveThemeTests::test_resolve_theme_with_overrides"
+        ],
+        "newly_failing": [],
+        "deleted_tests": [],
+        "baseline_failing_count": 3,
+        "current_failing_count": 3,
+        "delta_computed": true,
+        "command": "pytest --tb=no -q --no-header -rA",
+        "duration_s": 1.845700916950591,
+        "ran": true,
+        "artifact": "full_suite_backstop.json"
+      }
+    },
+    {
+      "label": "m4-proposals-commands",
+      "plan": "m4-timeline-proposals-and-20260622-0124",
+      "status": "done",
+      "pr_number": 47,
+      "pr_state": "merged",
+      "merged_at": "2026-06-22T01:00:00Z",
+      "full_suite_backstop": {
+        "mode": "shadow",
+        "status": "failed",
+        "blocks": false,
+        "reason": "full_suite_backstop_mode=shadow: recorded only",
+        "passed": 8,
+        "failed": 3,
+        "failing_tests": [
+          "vendor/timeline-schema/tests/test_materialize_output.py::MaterializeOutputTests::test_materialize_output_from_2rp_theme",
+          "vendor/timeline-schema/tests/test_materialize_output.py::ResolveThemeTests::test_resolve_theme_2rp",
+          "vendor/timeline-schema/tests/test_materialize_output.py::ResolveThemeTests::test_resolve_theme_with_overrides"
+        ],
+        "newly_failing": [],
+        "deleted_tests": [],
+        "baseline_failing_count": 3,
+        "current_failing_count": 3,
+        "delta_computed": true,
+        "command": "pytest --tb=no -q --no-header -rA",
+        "duration_s": 1.845700916950591,
+        "ran": true,
+        "artifact": "full_suite_backstop.json"
+      }
+    },
+    {
+      "label": "m5-contribution-families",
+      "plan": "m5-contribution-families-20260622-0308",
+      "status": "done",
+      "pr_number": 48,
+      "pr_state": "merged",
+      "merged_at": "2026-06-22T03:08:00Z",
+      "full_suite_backstop": {
+        "mode": "shadow",
+        "status": "failed",
+        "blocks": false,
+        "reason": "full_suite_backstop_mode=shadow: recorded only",
+        "passed": 8,
+        "failed": 3,
+        "failing_tests": [
+          "vendor/timeline-schema/tests/test_materialize_output.py::MaterializeOutputTests::test_materialize_output_from_2rp_theme",
+          "vendor/timeline-schema/tests/test_materialize_output.py::ResolveThemeTests::test_resolve_theme_2rp",
+          "vendor/timeline-schema/tests/test_materialize_output.py::ResolveThemeTests::test_resolve_theme_with_overrides"
+        ],
+        "newly_failing": [],
+        "deleted_tests": [],
+        "baseline_failing_count": 3,
+        "current_failing_count": 3,
+        "delta_computed": true,
+        "command": "pytest --tb=no -q --no-header -rA",
+        "duration_s": 1.845700916950591,
+        "ran": true,
+        "artifact": "full_suite_backstop.json"
+      }
+    },
+    {
+      "label": "m6-render-provider-parity",
+      "plan": "m6-render-planner-and-20260622-0433",
+      "status": "done",
+      "pr_number": 49,
+      "pr_state": "merged",
+      "merged_at": "2026-06-22T04:08:09Z",
+      "full_suite_backstop": {
+        "mode": "shadow",
+        "status": "failed",
+        "blocks": false,
+        "reason": "full_suite_backstop_mode=shadow: recorded only",
+        "passed": 8,
+        "failed": 3,
+        "failing_tests": [
+          "vendor/timeline-schema/tests/test_materialize_output.py::MaterializeOutputTests::test_materialize_output_from_2rp_theme",
+          "vendor/timeline-schema/tests/test_materialize_output.py::ResolveThemeTests::test_resolve_theme_2rp",
+          "vendor/timeline-schema/tests/test_materialize_output.py::ResolveThemeTests::test_resolve_theme_with_overrides"
+        ],
+        "newly_failing": [],
+        "deleted_tests": [],
+        "baseline_failing_count": 3,
+        "current_failing_count": 3,
+        "delta_computed": true,
+        "command": "pytest --tb=no -q --no-header -rA",
+        "duration_s": 1.845700916950591,
+        "ran": true,
+        "artifact": "full_suite_backstop.json"
+      }
+    }
+  ],
+  "branch_head": null,
+  "pr_head": null,
+  "last_pushed_commit": null,
+  "dirty_flag": false,
+  "sync_state": "clean",
+  "extra_repos": [],
+  "chain_session": null,
+  "resolved_workspace": null,
+  "extra_repo_sync": [],
+  "completion_contract_mode": "shadow",
+  "full_suite_backstop_mode": "shadow",
+  "retry_counts": {},
+  "ladder_stage": {},
+  "profile_bumps": {},
+  "robustness_bumps": {},
+  "depth_bumps": {},
+  "enforce_revise_counts": {},
+  "metadata": {
+    "execution_environment": {
+      "schema_version": 1,
+      "created_phase": "chain_start",
+      "last_observed_phase": "chain_start",
+      "project_root": "/Users/peteromalley/Documents/.megaplan-worktrees/reigh-ext-completion",
+      "target_root": "/Users/peteromalley/Documents/.megaplan-worktrees/reigh-ext-completion",
+      "work_dir": "/Users/peteromalley/Documents/.megaplan-worktrees/reigh-ext-completion",
+      "engine_root": "/Users/peteromalley/Documents/.megaplan-worktrees/workflow-manifest-runtime",
+      "target_head": "a9c335b98ad59136f8c07ff3dc069cb9efcab898",
+      "target_base": "a9c335b98ad59136f8c07ff3dc069cb9efcab898",
+      "target_base_ref": "reigh-extension-layer-epic",
+      "target_fallback_reason": null
+    }
+  }
+}
