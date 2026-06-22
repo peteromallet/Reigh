@@ -1,0 +1,73 @@
+{
+  "id": "log_15b5174bb283",
+  "level": "debug",
+  "category": "system",
+  "event_type": "authority_divergence",
+  "message": "authority_divergence emitted",
+  "details": {
+    "event": {
+      "seq": 4854,
+      "schema_version": 1,
+      "ts_utc": "2026-06-22T00:50:54.200235+00:00",
+      "ts_rel_init_s": 5159.537871,
+      "kind": "authority_divergence",
+      "phase": "execute",
+      "payload": {
+        "diagnostic_version": 1,
+        "task_id": "T13",
+        "raw_terminal_status": "done",
+        "authority_status": "unknown",
+        "authoritative": false,
+        "reason": "stale_evidence:missing_head:task_commands_run",
+        "missing_outputs": [],
+        "stale_evidence": [
+          "missing_head:task_commands_run",
+          "missing_head:task_files_changed",
+          "missing_head:task_files_changed",
+          "missing_head:task_files_changed",
+          "missing_head:task_files_changed",
+          "missing_head:task_commands_run",
+          "missing_head:task_commands_run",
+          "missing_head:task_files_changed",
+          "missing_head:task_files_changed",
+          "missing_head:task_files_changed"
+        ],
+        "would_block_reasons": [
+          "stale_evidence:missing_head:task_commands_run",
+          "stale_evidence:missing_head:task_files_changed"
+        ],
+        "error": null,
+        "diagnostics": {
+          "task_id": "T13",
+          "declared_outputs": {
+            "files_changed": [
+              "src/tools/video-editor/components/CommandPalette.tsx",
+              "src/tools/video-editor/hooks/useEditorCommandRegistry.ts",
+              "src/tools/video-editor/components/TimelineEditorShellCore.tsx",
+              "src/tools/video-editor/components/TimelineEditorShellCore.test.tsx"
+            ],
+            "commands_run": [
+              "npx vitest run src/tools/video-editor/components/TimelineEditorShellCore.test.tsx",
+              "npx vitest run src/tools/video-editor/commands/editorCommandRegistry.test.ts"
+            ]
+          },
+          "linked_evidence_count": 20,
+          "evidence_count": 146,
+          "normalization": "iterable",
+          "status": "unknown",
+          "evidence_sources": [
+            "plan_artifacts"
+          ],
+          "loaded_evidence_count": 146,
+          "raw_terminal_status": "done"
+        },
+        "ts_utc": "2026-06-22T00:50:54.199859+00:00"
+      },
+      "transaction_id": "264ce6c1894f37bd",
+      "store_method": "log_system_event"
+    }
+  },
+  "turn_id": null,
+  "epic_id": "m4-timeline-proposals-and-20260622-0124",
+  "occurred_at": "2026-06-22T00:50:54.200275Z"
+}

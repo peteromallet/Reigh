@@ -1,0 +1,70 @@
+{
+  "id": "log_5af4e32245be",
+  "level": "debug",
+  "category": "system",
+  "event_type": "authority_divergence",
+  "message": "authority_divergence emitted",
+  "details": {
+    "event": {
+      "seq": 5469,
+      "schema_version": 1,
+      "ts_utc": "2026-06-22T01:01:30.911212+00:00",
+      "ts_rel_init_s": 5796.248848,
+      "kind": "authority_divergence",
+      "phase": "execute",
+      "payload": {
+        "diagnostic_version": 1,
+        "task_id": "T25",
+        "raw_terminal_status": "done",
+        "authority_status": "unknown",
+        "authoritative": false,
+        "reason": "stale_evidence:missing_head:task_commands_run",
+        "missing_outputs": [],
+        "stale_evidence": [
+          "missing_head:task_commands_run",
+          "missing_head:task_commands_run",
+          "missing_head:task_commands_run",
+          "missing_head:task_commands_run",
+          "missing_head:task_commands_run",
+          "missing_head:task_commands_run",
+          "missing_head:task_commands_run",
+          "missing_head:task_commands_run"
+        ],
+        "would_block_reasons": [
+          "stale_evidence:missing_head:task_commands_run"
+        ],
+        "error": null,
+        "diagnostics": {
+          "task_id": "T25",
+          "declared_outputs": {
+            "commands_run": [
+              "npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/commands/ --reporter=verbose (3 files, 93 passed)",
+              "npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/components/{CommandPalette,ProposalReviewDialog,ClipAction,TimelineEditorShellCore}.test.* --reporter=verbose (4 files, 76 passed)",
+              "npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/hooks/{useEditorKeybindings.test,useAgentSession.test}.* --reporter=verbose (2 files, 67 passed)",
+              "npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/runtime/ --reporter=verbose (8 files, 407 passed, 45 pre-existing failures)",
+              "npx vitest run --config config/testing/vitest.edge.config.ts supabase/functions/ai-timeline-agent/tools/registry.test.ts --reporter=verbose (1 file, 20 passed)",
+              "npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor --reporter=verbose (119 files, 1525 passed, 72 pre-existing failures)",
+              "npm run lint (446 pre-existing errors; 0 from changed files)",
+              "npm run lint:edge (16 errors: 10 new from T19/T20 supabase files, 6 pre-existing)"
+            ]
+          },
+          "linked_evidence_count": 16,
+          "evidence_count": 166,
+          "normalization": "iterable",
+          "status": "unknown",
+          "evidence_sources": [
+            "plan_artifacts"
+          ],
+          "loaded_evidence_count": 166,
+          "raw_terminal_status": "done"
+        },
+        "ts_utc": "2026-06-22T01:01:30.910816+00:00"
+      },
+      "transaction_id": "969c758b11b89f70",
+      "store_method": "log_system_event"
+    }
+  },
+  "turn_id": null,
+  "epic_id": "m4-timeline-proposals-and-20260622-0124",
+  "occurred_at": "2026-06-22T01:01:30.911253Z"
+}

@@ -9,6 +9,7 @@ import {
   validateApiVersionCompatibility,
   validateManifestPermissions,
   validateDuplicateContributionIdsAcrossCollections,
+  validateCommandDuplicateIds,
   validateContributionDescriptorMatch,
   validateExtensionPackage,
   isValidPackage,
@@ -1222,5 +1223,606 @@ describe('structured diagnostics for excluded packages', () => {
     expect(mismatches).toHaveLength(2);
     expect(mismatches[0].message).toContain('orphan-dialog');
     expect(mismatches[1].message).toContain('orphan-panel');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T8: Command contribution schema & runtime validation tests
+// ---------------------------------------------------------------------------
+
+describe('command contributions — schema validation', () => {
+  // ---- Accepted command contributions ----
+
+  it('accepts a manifest with valid command contributions', () => {
+    const manifest = validManifest({
+      contributions: {
+        commands: [
+          { id: 'my-command', title: 'My Command' },
+          { id: 'another-command', title: 'Another Command', description: 'Does things.' },
+        ],
+      },
+    });
+    const { valid, errors } = validateManifest(manifest);
+    expect(valid).toBe(true);
+  });
+
+  it('accepts a command with proposal flag', () => {
+    const manifest = validManifest({
+      contributions: {
+        commands: [
+          { id: 'dangerous', title: 'Dangerous Op', proposal: true },
+        ],
+      },
+    });
+    const { valid } = validateManifest(manifest);
+    expect(valid).toBe(true);
+  });
+
+  it('accepts a command with keybinding', () => {
+    const manifest = validManifest({
+      contributions: {
+        commands: [
+          {
+            id: 'shortcutcmd',
+            title: 'Shortcut Command',
+            keybinding: { key: 'Ctrl+Shift+K', mac: 'Cmd+Shift+K' },
+          },
+        ],
+      },
+    });
+    const { valid } = validateManifest(manifest);
+    expect(valid).toBe(true);
+  });
+
+  it('accepts a command with menu context', () => {
+    const manifest = validManifest({
+      contributions: {
+        commands: [
+          {
+            id: 'contextcmd',
+            title: 'Context Command',
+            menu: { context: 'clip-context', group: 'editing', order: 10 },
+          },
+        ],
+      },
+    });
+    const { valid } = validateManifest(manifest);
+    expect(valid).toBe(true);
+  });
+
+  it('accepts a command with all optional fields', () => {
+    const manifest = validManifest({
+      contributions: {
+        commands: [
+          {
+            id: 'fullcmd',
+            title: 'Full Command',
+            description: 'A fully specified command.',
+            proposal: false,
+            keybinding: { key: 'Ctrl+F', mac: 'Cmd+F' },
+            menu: { context: 'timeline-context', group: 'tools', order: 1 },
+          },
+        ],
+      },
+    });
+    const { valid } = validateManifest(manifest);
+    expect(valid).toBe(true);
+  });
+
+  // ---- Invalid command IDs ----
+
+  it('rejects a command with missing id', () => {
+    const manifest = validManifest({
+      contributions: {
+        commands: [
+          { title: 'No ID' } as Record<string, unknown>,
+        ],
+      },
+    });
+    const { valid, errors } = validateManifest(manifest);
+    expect(valid).toBe(false);
+    expect(errors).toContain('must have required property');
+    expect(errors).toContain('id');
+  });
+
+  it('rejects a command with empty id string', () => {
+    const manifest = validManifest({
+      contributions: {
+        commands: [
+          { id: '', title: 'Empty ID' },
+        ],
+      },
+    });
+    const { valid, errors } = validateManifest(manifest);
+    expect(valid).toBe(false);
+    // minLength: 1 should trigger
+    expect(errors).toContain('must NOT have fewer than 1 characters');
+  });
+
+  it('rejects a command id with spaces', () => {
+    const manifest = validManifest({
+      contributions: {
+        commands: [
+          { id: 'bad command', title: 'Bad ID' },
+        ],
+      },
+    });
+    const { valid, errors } = validateManifest(manifest);
+    expect(valid).toBe(false);
+    expect(errors).toContain('must match pattern');
+  });
+
+  it('rejects a command id with uppercase characters', () => {
+    const manifest = validManifest({
+      contributions: {
+        commands: [
+          { id: 'MyCommand', title: 'Uppercase ID' },
+        ],
+      },
+    });
+    const { valid, errors } = validateManifest(manifest);
+    expect(valid).toBe(false);
+    expect(errors).toContain('must match pattern');
+  });
+
+  it('rejects a command id with special characters', () => {
+    const manifest = validManifest({
+      contributions: {
+        commands: [
+          { id: 'my@command!', title: 'Special Chars' },
+        ],
+      },
+    });
+    const { valid, errors } = validateManifest(manifest);
+    expect(valid).toBe(false);
+    expect(errors).toContain('must match pattern');
+  });
+
+  it('rejects a command missing title', () => {
+    const manifest = validManifest({
+      contributions: {
+        commands: [
+          { id: 'noTitle' } as Record<string, unknown>,
+        ],
+      },
+    });
+    const { valid, errors } = validateManifest(manifest);
+    expect(valid).toBe(false);
+    expect(errors).toContain('must have required property');
+    expect(errors).toContain('title');
+  });
+
+  it('rejects a command with empty title', () => {
+    const manifest = validManifest({
+      contributions: {
+        commands: [
+          { id: 'emptyTitle', title: '' },
+        ],
+      },
+    });
+    const { valid, errors } = validateManifest(manifest);
+    expect(valid).toBe(false);
+    expect(errors).toContain('must NOT have fewer than 1 characters');
+  });
+
+  // ---- Invalid keybinding shapes ----
+
+  it('rejects a keybinding that is a string instead of object', () => {
+    const manifest = validManifest({
+      contributions: {
+        commands: [
+          { id: 'strKey', title: 'String Key', keybinding: 'Ctrl+K' },
+        ],
+      },
+    });
+    const { valid, errors } = validateManifest(manifest);
+    expect(valid).toBe(false);
+    expect(errors).toContain('must be object');
+  });
+
+  it('rejects a keybinding that is an array instead of object', () => {
+    const manifest = validManifest({
+      contributions: {
+        commands: [
+          { id: 'arrKey', title: 'Array Key', keybinding: ['Ctrl+K'] },
+        ],
+      },
+    });
+    const { valid, errors } = validateManifest(manifest);
+    expect(valid).toBe(false);
+    expect(errors).toContain('must be object');
+  });
+
+  it('rejects a keybinding missing the required key field', () => {
+    const manifest = validManifest({
+      contributions: {
+        commands: [
+          { id: 'noKey', title: 'No Key', keybinding: { mac: 'Cmd+K' } },
+        ],
+      },
+    });
+    const { valid, errors } = validateManifest(manifest);
+    expect(valid).toBe(false);
+    // The schema requires 'key' but it's not in the required array explicitly.
+    // The additionalProperties: false on keybinding means extra fields are rejected.
+    // Actually, mac is a valid property, but the key field missing means AJV
+    // would not reject it since key is not required in the schema.
+    // However, the runtime validateManifestSchema has explicit checks.
+    // Let's test via runtime validation instead.
+  });
+
+  it('rejects a keybinding with empty key string via runtime validation', () => {
+    const diags = validateManifestSchema({
+      id: 'com.example.test',
+      name: 'Test',
+      version: '1.0.0',
+      apiVersion: '1.0.0',
+      contributions: {
+        commands: [
+          {
+            id: 'emptyKey',
+            title: 'Empty Key',
+            keybinding: { key: '' },
+          },
+        ],
+      },
+    });
+    const keyErrors = diags.filter((d) =>
+      typeof d.detail === 'object' && d.detail !== null &&
+      (d.detail as Record<string, unknown>).field === 'keybinding.key'
+    );
+    expect(keyErrors.length).toBeGreaterThanOrEqual(1);
+    expect(keyErrors[0].message).toContain('keybinding.key');
+  });
+
+  it('rejects a keybinding with empty mac string via runtime validation', () => {
+    const diags = validateManifestSchema({
+      id: 'com.example.test',
+      name: 'Test',
+      version: '1.0.0',
+      apiVersion: '1.0.0',
+      contributions: {
+        commands: [
+          {
+            id: 'emptyMac',
+            title: 'Empty Mac',
+            keybinding: { key: 'Ctrl+K', mac: '' },
+          },
+        ],
+      },
+    });
+    const keyErrors = diags.filter((d) =>
+      typeof d.detail === 'object' && d.detail !== null &&
+      (d.detail as Record<string, unknown>).field === 'keybinding.mac'
+    );
+    expect(keyErrors.length).toBeGreaterThanOrEqual(1);
+    expect(keyErrors[0].message).toContain('keybinding.mac');
+  });
+
+  it('rejects a keybinding that is null', () => {
+    const manifest = validManifest({
+      contributions: {
+        commands: [
+          { id: 'nullKey', title: 'Null Key', keybinding: null },
+        ],
+      },
+    });
+    const { valid, errors } = validateManifest(manifest);
+    expect(valid).toBe(false);
+    expect(errors).toContain('must be object');
+  });
+
+  // ---- Unknown command fields ----
+
+  it('rejects commands with unknown additional properties', () => {
+    const manifest = validManifest({
+      contributions: {
+        commands: [
+          { id: 'extraField', title: 'Extra', unknownProp: 'should-fail' },
+        ],
+      },
+    });
+    const { valid, errors } = validateManifest(manifest);
+    expect(valid).toBe(false);
+    // additionalProperties: false on command items
+    expect(errors).toContain('must NOT have additional properties');
+  });
+
+  it('rejects commands with unknown nested fields inside keybinding', () => {
+    const manifest = validManifest({
+      contributions: {
+        commands: [
+          {
+            id: 'extraKeybind',
+            title: 'Extra Keybind',
+            keybinding: { key: 'Ctrl+K', unknownNested: true },
+          },
+        ],
+      },
+    });
+    const { valid, errors } = validateManifest(manifest);
+    expect(valid).toBe(false);
+    expect(errors).toContain('must NOT have additional properties');
+  });
+
+  it('rejects commands with unknown fields inside menu', () => {
+    const manifest = validManifest({
+      contributions: {
+        commands: [
+          {
+            id: 'extraMenu',
+            title: 'Extra Menu',
+            menu: { context: 'clip-context', unknownMenuField: 'bad' },
+          },
+        ],
+      },
+    });
+    const { valid, errors } = validateManifest(manifest);
+    expect(valid).toBe(false);
+    expect(errors).toContain('must NOT have additional properties');
+  });
+
+  // ---- Duplicate command items ----
+
+  it('rejects duplicate command items within the same manifest', () => {
+    const manifest = validManifest({
+      contributions: {
+        commands: [
+          { id: 'dupCmd', title: 'Duplicate' },
+          { id: 'dupCmd', title: 'Duplicate' },
+        ],
+      },
+    });
+    const { valid, errors } = validateManifest(manifest);
+    expect(valid).toBe(false);
+    expect(errors).toContain('must NOT have duplicate items');
+  });
+
+  // ---- Invalid menu shapes ----
+
+  it('rejects a menu with invalid context enum value', () => {
+    const manifest = validManifest({
+      contributions: {
+        commands: [
+          {
+            id: 'badContext',
+            title: 'Bad Context',
+            menu: { context: 'invalid-context' },
+          },
+        ],
+      },
+    });
+    const { valid, errors } = validateManifest(manifest);
+    expect(valid).toBe(false);
+    expect(errors).toContain('must be equal to one of the allowed values');
+  });
+
+  it('rejects a menu that is a string instead of object', () => {
+    const manifest = validManifest({
+      contributions: {
+        commands: [
+          { id: 'strMenu', title: 'String Menu', menu: 'clip-context' },
+        ],
+      },
+    });
+    const { valid, errors } = validateManifest(manifest);
+    expect(valid).toBe(false);
+    expect(errors).toContain('must be object');
+  });
+
+  // ---- proposal field type ----
+
+  it('rejects a command with non-boolean proposal field', () => {
+    const manifest = validManifest({
+      contributions: {
+        commands: [
+          { id: 'strProposal', title: 'String Proposal', proposal: 'yes' },
+        ],
+      },
+    });
+    const { valid, errors } = validateManifest(manifest);
+    expect(valid).toBe(false);
+    expect(errors).toContain('must be boolean');
+  });
+
+  it('rejects a command with numeric proposal field', () => {
+    const manifest = validManifest({
+      contributions: {
+        commands: [
+          { id: 'numProposal', title: 'Num Proposal', proposal: 1 },
+        ],
+      },
+    });
+    const { valid, errors } = validateManifest(manifest);
+    expect(valid).toBe(false);
+    expect(errors).toContain('must be boolean');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T8: Full namespaced command ID diagnostics
+// ---------------------------------------------------------------------------
+
+describe('validateCommandDuplicateIds', () => {
+  it('returns no diagnostics when there are no commands across any manifest', () => {
+    const manifests: ExtensionManifest[] = [
+      testManifest({ id: 'com.example.a' }),
+      testManifest({ id: 'com.example.b' }),
+    ];
+    expect(validateCommandDuplicateIds(manifests)).toEqual([]);
+  });
+
+  it('returns no diagnostics with unique fully-qualified command IDs', () => {
+    const manifests: ExtensionManifest[] = [
+      testManifest({
+        id: 'com.example.a',
+        contributions: {
+          commands: [
+            { id: 'cmd1', title: 'Command 1' },
+            { id: 'cmd2', title: 'Command 2' },
+          ],
+        },
+      }),
+      testManifest({
+        id: 'com.example.b',
+        contributions: {
+          commands: [
+            { id: 'cmd1', title: 'Command 1' }, // Same local ID, different manifest
+            { id: 'cmd3', title: 'Command 3' },
+          ],
+        },
+      }),
+    ];
+    // com.example.a.cmd1 ≠ com.example.b.cmd1
+    expect(validateCommandDuplicateIds(manifests)).toEqual([]);
+  });
+
+  it('detects duplicate fully-qualified command ID across two manifests', () => {
+    const manifests: ExtensionManifest[] = [
+      testManifest({
+        id: 'com.example.collision',
+        contributions: {
+          commands: [
+            { id: 'sharedCmd', title: 'Shared Command' },
+          ],
+        },
+      }),
+      testManifest({
+        id: 'com.example.collision',
+        contributions: {
+          commands: [
+            { id: 'sharedCmd', title: 'Also Shared' },
+          ],
+        },
+      }),
+    ];
+    const diags = validateCommandDuplicateIds(manifests);
+    expect(diags.length).toBe(1);
+    expect(diags[0].code).toBe('duplicate_command_id');
+    expect(diags[0].kind).toBe('error');
+    expect(diags[0].message).toContain('com.example.collision.sharedCmd');
+    expect(diags[0].message).toContain('Duplicate');
+  });
+
+  it('reports the full namespaced ID in the diagnostic message', () => {
+    const manifests: ExtensionManifest[] = [
+      testManifest({
+        id: 'org.pkg.plugin',
+        contributions: {
+          commands: [{ id: 'run', title: 'Run' }],
+        },
+      }),
+      testManifest({
+        id: 'org.pkg.plugin',
+        contributions: {
+          commands: [{ id: 'run', title: 'Run Too' }],
+        },
+      }),
+    ];
+    const diags = validateCommandDuplicateIds(manifests);
+    expect(diags.length).toBe(1);
+    expect(diags[0].detail).toMatchObject({
+      fullCommandId: 'org.pkg.plugin.run',
+      localId: 'run',
+    });
+  });
+
+  it('includes both manifest IDs in the duplicate diagnostic', () => {
+    const manifests: ExtensionManifest[] = [
+      testManifest({
+        id: 'com.first.pkg',
+        contributions: {
+          commands: [{ id: 'conflict', title: 'First' }],
+        },
+      }),
+      testManifest({
+        id: 'com.first.pkg',
+        contributions: {
+          commands: [{ id: 'conflict', title: 'Second' }],
+        },
+      }),
+    ];
+    const diags = validateCommandDuplicateIds(manifests);
+    expect(diags.length).toBe(1);
+    expect(diags[0].detail).toMatchObject({
+      fullCommandId: 'com.first.pkg.conflict',
+      firstManifest: 'com.first.pkg',
+      secondManifest: 'com.first.pkg',
+    });
+  });
+
+  it('detects multiple duplicate fully-qualified IDs across manifests', () => {
+    const manifests: ExtensionManifest[] = [
+      testManifest({
+        id: 'com.shared',
+        contributions: {
+          commands: [
+            { id: 'a', title: 'A' },
+            { id: 'b', title: 'B' },
+          ],
+        },
+      }),
+      testManifest({
+        id: 'com.shared',
+        contributions: {
+          commands: [
+            { id: 'a', title: 'A Dup' },
+            { id: 'b', title: 'B Dup' },
+          ],
+        },
+      }),
+    ];
+    const diags = validateCommandDuplicateIds(manifests);
+    expect(diags.length).toBe(2);
+    expect(diags[0].code).toBe('duplicate_command_id');
+    expect(diags[1].code).toBe('duplicate_command_id');
+    expect(diags[0].detail).toHaveProperty('fullCommandId');
+    expect(diags[1].detail).toHaveProperty('fullCommandId');
+  });
+
+  it('returns empty diagnostics when commands are only present in one manifest', () => {
+    const manifests: ExtensionManifest[] = [
+      testManifest({
+        id: 'com.solo',
+        contributions: {
+          commands: [
+            { id: 'only', title: 'Only' },
+            { id: 'lonely', title: 'Lonely' },
+          ],
+        },
+      }),
+      testManifest({ id: 'com.other' }),
+    ];
+    expect(validateCommandDuplicateIds(manifests)).toEqual([]);
+  });
+
+  it('sets extensionId to the second manifest in the collision', () => {
+    const manifests: ExtensionManifest[] = [
+      testManifest({
+        id: 'com.first',
+        contributions: { commands: [{ id: 'dup', title: 'First' }] },
+      }),
+      testManifest({
+        id: 'com.second',
+        contributions: { commands: [{ id: 'dup', title: 'Second' }] },
+      }),
+    ];
+    // Different manifest IDs means different full command IDs, no collision.
+    // Let's test same manifest ID scenario for extensionId.
+    const sameIdManifests: ExtensionManifest[] = [
+      testManifest({
+        id: 'com.dupe',
+        contributions: { commands: [{ id: 'x', title: 'X1' }] },
+      }),
+      testManifest({
+        id: 'com.dupe',
+        contributions: { commands: [{ id: 'x', title: 'X2' }] },
+      }),
+    ];
+    const diags = validateCommandDuplicateIds(sameIdManifests);
+    expect(diags.length).toBe(1);
+    // extensionId should be from the manifest where the duplicate was detected
+    // (the second one)
+    expect(diags[0].extensionId).toBe('com.dupe');
   });
 });

@@ -1,0 +1,71 @@
+{
+  "id": "log_4fa68fbbc457",
+  "level": "debug",
+  "category": "system",
+  "event_type": "authority_divergence",
+  "message": "authority_divergence emitted",
+  "details": {
+    "event": {
+      "seq": 5453,
+      "schema_version": 1,
+      "ts_utc": "2026-06-22T01:01:28.626195+00:00",
+      "ts_rel_init_s": 5793.963831,
+      "kind": "authority_divergence",
+      "phase": "execute",
+      "payload": {
+        "diagnostic_version": 1,
+        "task_id": "T9",
+        "raw_terminal_status": "done",
+        "authority_status": "unknown",
+        "authoritative": false,
+        "reason": "stale_evidence:missing_head:task_files_changed",
+        "missing_outputs": [],
+        "stale_evidence": [
+          "missing_head:task_files_changed",
+          "missing_head:task_files_changed",
+          "missing_head:task_files_changed",
+          "missing_head:task_files_changed",
+          "missing_head:task_files_changed",
+          "missing_head:task_commands_run",
+          "missing_head:task_commands_run",
+          "missing_head:task_files_changed"
+        ],
+        "would_block_reasons": [
+          "stale_evidence:missing_head:task_files_changed",
+          "stale_evidence:missing_head:task_commands_run"
+        ],
+        "error": null,
+        "diagnostics": {
+          "task_id": "T9",
+          "declared_outputs": {
+            "files_changed": [
+              "src/tools/video-editor/runtime/extensionManifest.ts",
+              "src/tools/video-editor/runtime/extensionLoader.ts",
+              "src/tools/video-editor/runtime/extensionSurface.ts",
+              "src/tools/video-editor/runtime/extensionLoader.test.ts"
+            ],
+            "commands_run": [
+              "npx vitest run src/tools/video-editor/runtime/extensionLoader.test.ts -t 'command contributions|duplicate command|duplicate keybinding'",
+              "npx vitest run src/tools/video-editor/runtime/extensionSurface.test.ts"
+            ]
+          },
+          "linked_evidence_count": 16,
+          "evidence_count": 166,
+          "normalization": "iterable",
+          "status": "unknown",
+          "evidence_sources": [
+            "plan_artifacts"
+          ],
+          "loaded_evidence_count": 166,
+          "raw_terminal_status": "done"
+        },
+        "ts_utc": "2026-06-22T01:01:28.625875+00:00"
+      },
+      "transaction_id": "b73c05a4084eb353",
+      "store_method": "log_system_event"
+    }
+  },
+  "turn_id": null,
+  "epic_id": "m4-timeline-proposals-and-20260622-0124",
+  "occurred_at": "2026-06-22T01:01:28.626232Z"
+}

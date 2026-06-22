@@ -58,6 +58,7 @@ import type {
   LlmMessage,
   SelectedClipPayload,
   SupabaseAdmin,
+  TimelineMutationMode,
   TimelineState,
   ToolResult,
 } from "./types.ts";
@@ -186,6 +187,8 @@ export interface RunAgentLoopOptions {
   // service-role; in that case the delegate tool will refuse.
   userJwt?: string;
   logger: LoopLogger;
+  /** Controls whether destructive tool calls commit or only produce proposals. */
+  timelineMutationMode?: TimelineMutationMode;
 }
 
 export interface RunAgentLoopResult {
@@ -444,6 +447,7 @@ export async function executeToolCall(
   userId?: string,
   logger?: LoopLogger,
   userJwt?: string,
+  timelineMutationMode?: TimelineMutationMode,
 ): Promise<ToolResult> {
   const toolArgs = toolCall.args;
 
@@ -462,7 +466,7 @@ export async function executeToolCall(
   }
 
   if (toolCall.name === "run") {
-    return await executeCommand(toolArgs, timelineState, timelineId, supabaseAdmin);
+    return await executeCommand(toolArgs, timelineState, timelineId, supabaseAdmin, timelineMutationMode);
   }
 
   if (toolCall.name === "create_task") {
@@ -525,7 +529,7 @@ export async function executeToolCall(
         commands: [transactionCommand],
       },
       mode: "apply",
-    }, timelineState, timelineId, supabaseAdmin);
+    }, timelineState, timelineId, supabaseAdmin, timelineMutationMode);
   }
 
   return { result: `Unknown tool: ${toolCall.name}.` };
@@ -549,6 +553,7 @@ async function processToolCalls({
   userJwt,
   setActiveToolCallId,
   logger,
+  timelineMutationMode,
 }: {
   toolCalls: ExtractedToolCall[];
   assistantText: string;
@@ -564,6 +569,7 @@ async function processToolCalls({
   userJwt?: string;
   setActiveToolCallId: (toolCallId: string | null) => void;
   logger?: LoopLogger;
+  timelineMutationMode?: TimelineMutationMode;
 }): Promise<{ hasError: boolean }> {
   let hasError = false;
 
@@ -595,6 +601,7 @@ async function processToolCalls({
       userId,
       logger,
       userJwt,
+      timelineMutationMode,
     );
     setActiveToolCallId(null);
 
@@ -843,6 +850,7 @@ export async function runAgentLoop(
         userJwt,
         setActiveToolCallId: (toolCallId) => { activeToolCallId = toolCallId; },
         logger,
+        timelineMutationMode: options.timelineMutationMode,
       });
 
       if (hasError) {

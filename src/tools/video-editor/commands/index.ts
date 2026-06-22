@@ -23,6 +23,16 @@ export {
 export {
   buildTimelineCommandData,
 } from './timelineData.ts';
+export {
+  applyProposal,
+  canApplyProposal,
+  createProposalFromExecutionResult,
+  createProposalFromInput,
+  extractAffectedClipIdsFromMutation,
+} from './proposals.ts';
+export {
+  createEditorCommandRegistry,
+} from './editorCommandRegistry.ts';
 export type {
   JsonObject,
   JsonPrimitive,
@@ -40,6 +50,9 @@ export type {
   TimelineCommandHistoryStrategy,
   TimelineCommandInput,
   TimelineCommandMutation,
+  TimelineProposal,
+  TimelineProposalCommandResult,
+  TimelineProposalStatus,
   TimelineCommandRegistry,
   TimelineCommandRunMode,
   TimelineCommandRunOptions,
@@ -49,6 +62,20 @@ export type {
   TimelineCommandTransaction,
   TimelineCommandValidationError,
 } from './types.ts';
+export type {
+  CreateEditorCommandRegistryOptions,
+  EditorCommandContext,
+  EditorCommandDirectResult,
+  EditorCommandEntry,
+  EditorCommandEntrySource,
+  EditorCommandExecutor,
+  EditorCommandKeybinding,
+  EditorCommandMenu,
+  EditorCommandProposalResult,
+  EditorCommandRegistry,
+  EditorCommandResult,
+  EditorCommandSource,
+} from './editorCommandRegistry.ts';
 export type {
   AddMediaCommand,
   SwapMediaCommand,

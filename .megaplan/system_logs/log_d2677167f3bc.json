@@ -1,0 +1,61 @@
+{
+  "id": "log_d2677167f3bc",
+  "level": "debug",
+  "category": "system",
+  "event_type": "authority_divergence",
+  "message": "authority_divergence emitted",
+  "details": {
+    "event": {
+      "seq": 4656,
+      "schema_version": 1,
+      "ts_utc": "2026-06-22T00:47:36.577777+00:00",
+      "ts_rel_init_s": 4961.915413,
+      "kind": "authority_divergence",
+      "phase": "execute",
+      "payload": {
+        "diagnostic_version": 1,
+        "task_id": "T14",
+        "raw_terminal_status": "done",
+        "authority_status": "unknown",
+        "authoritative": false,
+        "reason": "stale_evidence:missing_head:task_files_changed",
+        "missing_outputs": [],
+        "stale_evidence": [
+          "missing_head:task_files_changed",
+          "missing_head:task_commands_run"
+        ],
+        "would_block_reasons": [
+          "stale_evidence:missing_head:task_files_changed",
+          "stale_evidence:missing_head:task_commands_run"
+        ],
+        "error": null,
+        "diagnostics": {
+          "task_id": "T14",
+          "declared_outputs": {
+            "files_changed": [
+              "src/tools/video-editor/components/CommandPalette.test.tsx"
+            ],
+            "commands_run": [
+              "vitest CommandPalette.test.tsx \u2014 21 passed"
+            ]
+          },
+          "linked_evidence_count": 4,
+          "evidence_count": 140,
+          "normalization": "iterable",
+          "status": "unknown",
+          "evidence_sources": [
+            "plan_artifacts"
+          ],
+          "loaded_evidence_count": 140,
+          "raw_terminal_status": "done"
+        },
+        "ts_utc": "2026-06-22T00:47:36.577389+00:00"
+      },
+      "transaction_id": "616bf7426d53f9d5",
+      "store_method": "log_system_event"
+    }
+  },
+  "turn_id": null,
+  "epic_id": "m4-timeline-proposals-and-20260622-0124",
+  "occurred_at": "2026-06-22T00:47:36.577823Z"
+}

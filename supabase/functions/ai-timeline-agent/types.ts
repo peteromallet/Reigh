@@ -8,11 +8,15 @@ import type { AssetRegistry, TimelineConfig } from "../../../src/tools/video-edi
 
 export type { AgentSession, AgentSessionStatus, AgentTurn };
 
+export type TimelineMutationMode = 'apply' | 'propose';
+
 export type ToolResult = {
   result: string;
   config?: TimelineConfig;
   stopLoop?: boolean;
   nextStatus?: AgentSessionStatus;
+  /** Proposal payload returned when timeline_mutation_mode is 'propose'. */
+  proposal?: Record<string, unknown>;
 };
 
 export type ToolContext = {
@@ -20,6 +24,8 @@ export type ToolContext = {
   registry: AssetRegistry;
   projectId: string;
   shotNamesById: Record<string, string>;
+  /** Controls whether destructive tool calls commit or only produce proposals. */
+  timelineMutationMode?: TimelineMutationMode;
 };
 
 export type ToolHandler = (

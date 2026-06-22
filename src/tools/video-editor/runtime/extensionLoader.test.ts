@@ -968,4 +968,329 @@ describe('ExtensionLoader', () => {
       ).toHaveLength(1);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Command contributions
+  // -------------------------------------------------------------------------
+
+  describe('command contributions', () => {
+    it('collects namespaced commands from a single package', () => {
+      const manifest = validManifest({
+        contributions: {
+          commands: [
+            { id: 'my-command', title: 'My Command' },
+            { id: 'another', title: 'Another Command' },
+          ],
+        },
+      });
+      const p = pkg(manifest);
+      const result = loader([p]).load();
+
+      expect(result.commands).toHaveLength(2);
+      expect(result.commands[0].id).toBe('com.example.test.my-command');
+      expect(result.commands[0].title).toBe('My Command');
+      expect(result.commands[1].id).toBe('com.example.test.another');
+      expect(result.commands[1].title).toBe('Another Command');
+    });
+
+    it('namespaces command IDs with manifest.id', () => {
+      const manifest = validManifest({
+        id: 'com.custom.ns',
+        contributions: {
+          commands: [{ id: 'run', title: 'Run' }],
+        },
+      });
+      const p = pkg(manifest);
+      const result = loader([p]).load();
+
+      expect(result.commands).toHaveLength(1);
+      expect(result.commands[0].id).toBe('com.custom.ns.run');
+    });
+
+    it('returns empty commands when no package has command contributions', () => {
+      const p = pkg(validManifest());
+      const result = loader([p]).load();
+
+      expect(result.commands).toEqual([]);
+    });
+
+    it('collects commands from multiple packages with distinct IDs', () => {
+      const p1 = pkg(validManifest({
+        id: 'com.example.one',
+        contributions: { commands: [{ id: 'a', title: 'A' }] },
+      }));
+      const p2 = pkg(validManifest({
+        id: 'com.example.two',
+        contributions: { commands: [{ id: 'b', title: 'B' }] },
+      }));
+
+      const result = loader([p1, p2]).load();
+
+      expect(result.commands).toHaveLength(2);
+      expect(result.commands.map((c) => c.id)).toEqual([
+        'com.example.one.a',
+        'com.example.two.b',
+      ]);
+    });
+
+    it('excludes commands from invalid packages', () => {
+      const badManifest = { id: 'com.example.bad' } as ExtensionManifest;
+      const bad = pkg(badManifest);
+      const good = pkg(validManifest({
+        id: 'com.example.good',
+        contributions: { commands: [{ id: 'cmd', title: 'Good' }] },
+      }));
+
+      const result = loader([bad, good]).load();
+
+      expect(result.commands).toHaveLength(1);
+      expect(result.commands[0].id).toBe('com.example.good.cmd');
+    });
+
+    it('excludes commands from disabled packages', () => {
+      const r = repo();
+      r.setEnabled('com.example.disabled', false);
+
+      const disabled = pkg(validManifest({
+        id: 'com.example.disabled',
+        contributions: { commands: [{ id: 'nope', title: 'Nope' }] },
+      }));
+      const enabled = pkg(validManifest({
+        id: 'com.example.enabled',
+        contributions: { commands: [{ id: 'yes', title: 'Yes' }] },
+      }));
+
+      const result = loader([disabled, enabled], r).load();
+
+      expect(result.commands).toHaveLength(1);
+      expect(result.commands[0].id).toBe('com.example.enabled.yes');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Duplicate command IDs (first-wins, diagnostic emitted)
+  // -------------------------------------------------------------------------
+
+  describe('duplicate command IDs', () => {
+    it('different manifest IDs with same local command ID produce distinct namespaced IDs (no collision)', () => {
+      const p1 = pkg(validManifest({
+        id: 'com.example.first',
+        contributions: { commands: [{ id: 'shared', title: 'First' }] },
+      }));
+      const p2 = pkg(validManifest({
+        id: 'com.example.second',
+        contributions: { commands: [{ id: 'shared', title: 'Second' }] },
+      }));
+
+      const result = loader([p1, p2]).load();
+
+      // Different manifest IDs → different namespaced IDs, both should load
+      expect(result.commands).toHaveLength(2);
+      const ids = result.commands.map((c) => c.id);
+      expect(ids).toContain('com.example.first.shared');
+      expect(ids).toContain('com.example.second.shared');
+      // No duplicate command ID diagnostic since namespaced IDs differ
+      expect(
+        result.diagnostics.filter((d) => d.code === 'duplicate_command_id'),
+      ).toHaveLength(0);
+    });
+
+    it('does not produce duplicate_command_id when manifest IDs differ', () => {
+      const p1 = pkg(validManifest({
+        id: 'com.example.one',
+        contributions: { commands: [{ id: 'collide', title: 'One' }] },
+      }));
+      const p2 = pkg(validManifest({
+        id: 'com.example.two',
+        contributions: { commands: [{ id: 'collide', title: 'Two' }] },
+      }));
+
+      const result = loader([p1, p2]).load();
+
+      const dupDiags = result.diagnostics.filter(
+        (d) => d.code === 'duplicate_command_id',
+      );
+      // Different manifest IDs → no collision
+      expect(dupDiags).toHaveLength(0);
+      expect(result.commands).toHaveLength(2);
+    });
+
+    it('does not flag different local IDs in the same manifest as duplicate', () => {
+      const p = pkg(validManifest({
+        contributions: {
+          commands: [
+            { id: 'cmd-a', title: 'A' },
+            { id: 'cmd-b', title: 'B' },
+          ],
+        },
+      }));
+
+      const result = loader([p]).load();
+
+      expect(result.commands).toHaveLength(2);
+      expect(
+        result.diagnostics.filter((d) => d.code === 'duplicate_command_id'),
+      ).toHaveLength(0);
+    });
+
+    it('different manifest IDs with same local command ID produce different namespaced IDs', () => {
+      // Same local ID but different manifest IDs → different namespaced IDs
+      const p1 = pkg(validManifest({
+        id: 'com.a',
+        contributions: { commands: [{ id: 'run', title: 'Run A' }] },
+      }));
+      const p2 = pkg(validManifest({
+        id: 'com.b',
+        contributions: { commands: [{ id: 'run', title: 'Run B' }] },
+      }));
+
+      const result = loader([p1, p2]).load();
+
+      expect(result.commands).toHaveLength(2);
+      expect(result.commands[0].id).toBe('com.a.run');
+      expect(result.commands[1].id).toBe('com.b.run');
+      expect(
+        result.diagnostics.filter((d) => d.code === 'duplicate_command_id'),
+      ).toHaveLength(0);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Duplicate keybindings (warning diagnostic emitted)
+  // -------------------------------------------------------------------------
+
+  describe('duplicate keybindings', () => {
+    it('emits duplicate_keybinding warning when two commands share the same key', () => {
+      const p1 = pkg(validManifest({
+        id: 'com.example.one',
+        contributions: {
+          commands: [{ id: 'save', title: 'Save', keybinding: { key: 'Ctrl+S' } }],
+        },
+      }));
+      const p2 = pkg(validManifest({
+        id: 'com.example.two',
+        contributions: {
+          commands: [{ id: 'save-as', title: 'Save As', keybinding: { key: 'Ctrl+S' } }],
+        },
+      }));
+
+      const result = loader([p1, p2]).load();
+
+      const kbDiags = result.diagnostics.filter(
+        (d) => d.code === 'duplicate_keybinding',
+      );
+      expect(kbDiags).toHaveLength(1);
+      expect(kbDiags[0].kind).toBe('warning');
+      expect(kbDiags[0].detail?.keybinding).toBe('Ctrl+S');
+      expect(kbDiags[0].detail?.normalizedKeybinding).toBe('ctrl+s');
+    });
+
+    it('normalizes keybinding whitespace and case for comparison', () => {
+      const p1 = pkg(validManifest({
+        id: 'com.example.one',
+        contributions: {
+          commands: [{ id: 'cmd1', title: 'Cmd1', keybinding: { key: '  Ctrl+Shift+P  ' } }],
+        },
+      }));
+      const p2 = pkg(validManifest({
+        id: 'com.example.two',
+        contributions: {
+          commands: [{ id: 'cmd2', title: 'Cmd2', keybinding: { key: 'ctrl+shift+p' } }],
+        },
+      }));
+
+      const result = loader([p1, p2]).load();
+
+      const kbDiags = result.diagnostics.filter(
+        (d) => d.code === 'duplicate_keybinding',
+      );
+      expect(kbDiags).toHaveLength(1);
+      expect(kbDiags[0].detail?.normalizedKeybinding).toBe('ctrl+shift+p');
+    });
+
+    it('does not flag different keybindings as duplicates', () => {
+      const p1 = pkg(validManifest({
+        id: 'com.example.one',
+        contributions: {
+          commands: [{ id: 'save', title: 'Save', keybinding: { key: 'Ctrl+S' } }],
+        },
+      }));
+      const p2 = pkg(validManifest({
+        id: 'com.example.two',
+        contributions: {
+          commands: [{ id: 'open', title: 'Open', keybinding: { key: 'Ctrl+O' } }],
+        },
+      }));
+
+      const result = loader([p1, p2]).load();
+
+      expect(
+        result.diagnostics.filter((d) => d.code === 'duplicate_keybinding'),
+      ).toHaveLength(0);
+    });
+
+    it('detects duplicate Mac keybindings separately from platform key', () => {
+      const p1 = pkg(validManifest({
+        id: 'com.example.one',
+        contributions: {
+          commands: [{ id: 'cmd1', title: 'Cmd1', keybinding: { key: 'Ctrl+S', mac: 'Cmd+S' } }],
+        },
+      }));
+      const p2 = pkg(validManifest({
+        id: 'com.example.two',
+        contributions: {
+          commands: [{ id: 'cmd2', title: 'Cmd2', keybinding: { key: 'Ctrl+O', mac: 'Cmd+S' } }],
+        },
+      }));
+
+      const result = loader([p1, p2]).load();
+
+      const kbDiags = result.diagnostics.filter(
+        (d) => d.code === 'duplicate_keybinding',
+      );
+      // Only the Mac keybinding should be flagged as duplicate
+      expect(kbDiags).toHaveLength(1);
+      expect(kbDiags[0].detail?.keybindingMac).toBe('Cmd+S');
+    });
+
+    it('both commands remain registered despite duplicate keybinding (warning, not exclusion)', () => {
+      const p1 = pkg(validManifest({
+        id: 'com.example.one',
+        contributions: {
+          commands: [{ id: 'save', title: 'Save', keybinding: { key: 'Ctrl+S' } }],
+        },
+      }));
+      const p2 = pkg(validManifest({
+        id: 'com.example.two',
+        contributions: {
+          commands: [{ id: 'save-as', title: 'Save As', keybinding: { key: 'Ctrl+S' } }],
+        },
+      }));
+
+      const result = loader([p1, p2]).load();
+
+      // Both commands should be in the result
+      expect(result.commands).toHaveLength(2);
+      expect(
+        result.diagnostics.filter((d) => d.code === 'duplicate_keybinding'),
+      ).toHaveLength(1);
+    });
+
+    it('no duplicate keybinding diagnostic when commands have no keybindings', () => {
+      const p1 = pkg(validManifest({
+        id: 'com.example.one',
+        contributions: { commands: [{ id: 'a', title: 'A' }] },
+      }));
+      const p2 = pkg(validManifest({
+        id: 'com.example.two',
+        contributions: { commands: [{ id: 'b', title: 'B' }] },
+      }));
+
+      const result = loader([p1, p2]).load();
+
+      expect(
+        result.diagnostics.filter((d) => d.code === 'duplicate_keybinding'),
+      ).toHaveLength(0);
+    });
+  });
 });

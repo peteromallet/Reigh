@@ -6,7 +6,7 @@ import type {
   TimelineEditorOpsContextValue,
   TimelinePlaybackContextValue,
 } from '@/tools/video-editor/hooks/useTimelineState.types.ts';
-import type { ExtensionSettings } from './extensionManifest.ts';
+import type { ExtensionSettings, ExtensionCommandContribution } from './extensionManifest.ts';
 import type { VideoEditorDiagnostic } from './diagnostics.ts';
 
 export type VideoEditorSlotName =
@@ -80,6 +80,8 @@ export interface VideoEditorExtensionConfig {
   slots?: Partial<Record<VideoEditorSlotName, VideoEditorSlotRenderer>>;
   dialogHost?: VideoEditorDialogHostConfig;
   registry?: VideoEditorPanelRegistryConfig;
+  /** Namespaced command contributions from this extension. Only set for package-loaded configs after command resolution. */
+  commands?: readonly ExtensionCommandContribution[];
 }
 
 export type VideoEditorExtensionInput =
@@ -111,6 +113,18 @@ export interface VideoEditorExtensionRuntimeConfig {
    * `settings` appear here.  Raw M1 configs are omitted.
    */
   settings: Record<string, ExtensionSettings>;
+  /**
+   * Resolved command contributions from all enabled extensions, namespaced
+   * as `${manifest.id}.${localCommandId}`. Duplicate command IDs are
+   * excluded (first-loaded wins). Duplicate keybindings are warned but
+   * both commands remain registered.
+   *
+   * Consumers should pass this field as `extensionCommands` to
+   * `createEditorCommandRegistry` (from `@/tools/video-editor/commands`)
+   * to build the unified editor command registry that combines internal
+   * TimelineCommands with these extension contributions.
+   */
+  commands: readonly ExtensionCommandContribution[];
 }
 
 export interface ResolvedVideoEditorPanelRegistry {
@@ -128,6 +142,7 @@ const EMPTY_PANELS: readonly VideoEditorPanelDescriptor[] = Object.freeze([]);
 const EMPTY_INSPECTOR_SECTIONS: readonly VideoEditorInspectorSectionDescriptor[] = Object.freeze([]);
 const EMPTY_PACKAGES_MAP: Record<string, VideoEditorExtensionConfig> = Object.freeze({});
 const EMPTY_SETTINGS_MAP: Record<string, ExtensionSettings> = Object.freeze({});
+const EMPTY_COMMANDS: readonly ExtensionCommandContribution[] = Object.freeze([]);
 const EMPTY_RESOLVED_PANEL_REGISTRY: ResolvedVideoEditorPanelRegistry = Object.freeze({
   assetPanels: EMPTY_PANELS,
   inspectorSections: Object.freeze({
@@ -148,6 +163,7 @@ export const DEFAULT_VIDEO_EDITOR_EXTENSION_RUNTIME: VideoEditorExtensionRuntime
   }),
   packages: EMPTY_PACKAGES_MAP,
   settings: EMPTY_SETTINGS_MAP,
+  commands: EMPTY_COMMANDS,
 });
 
 function normalizeExtensionInput(
@@ -272,6 +288,108 @@ function mergeInspectorSections(
 }
 
 /**
+ * Normalize a keybinding string for duplicate detection.
+ * Lowercases, collapses whitespace, and trims.
+ */
+function normalizeKeybinding(raw: string): string {
+  return raw.toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Merge command contributions from all effective configs.
+ *
+ * Duplicate fully-qualified command IDs are excluded fail-closed (first-wins)
+ * and produce `duplicate_command_id` diagnostics.
+ *
+ * Duplicate normalized keybindings produce `duplicate_keybinding` warnings
+ * but both commands remain registered (the conflict is for the user to resolve).
+ */
+function mergeCommands(
+  effectiveConfigs: readonly VideoEditorExtensionConfig[],
+): { commands: readonly ExtensionCommandContribution[]; diagnostics: Array<Omit<VideoEditorDiagnostic, 'id' | 'timestamp'>> } {
+  const diagnostics: Array<Omit<VideoEditorDiagnostic, 'id' | 'timestamp'>> = [];
+  const commands: ExtensionCommandContribution[] = [];
+  const seenIds = new Set<string>();
+
+  // Track normalized keybindings for duplicate detection across all configs.
+  const seenKey = new Map<string, { commandId: string; rawKey: string }>();
+  const seenMac = new Map<string, { commandId: string; rawKey: string }>();
+
+  for (const config of effectiveConfigs) {
+    const configCommands = config.commands;
+    if (!configCommands) continue;
+
+    for (const cmd of configCommands) {
+      // Duplicate command ID: first-wins, fail-closed.
+      if (seenIds.has(cmd.id)) {
+        diagnostics.push({
+          code: 'duplicate_command_id',
+          severity: 'error',
+          source: 'extension-runtime',
+          message: `Duplicate command ID "${cmd.id}". The duplicate was excluded.`,
+          detail: { commandId: cmd.id },
+        });
+        continue;
+      }
+
+      seenIds.add(cmd.id);
+      commands.push(cmd);
+
+      // Keybinding duplicate detection (warning only).
+      if (cmd.keybinding?.key) {
+        const normalized = normalizeKeybinding(cmd.keybinding.key);
+        const existing = seenKey.get(normalized);
+
+        if (existing) {
+          diagnostics.push({
+            code: 'duplicate_keybinding',
+            severity: 'warning',
+            source: 'extension-runtime',
+            message: `Duplicate keybinding "${cmd.keybinding.key}" (normalized: "${normalized}") ` +
+              `for commands "${existing.commandId}" and "${cmd.id}".`,
+            detail: {
+              commandId: cmd.id,
+              keybinding: cmd.keybinding.key,
+              normalizedKeybinding: normalized,
+              firstCommandId: existing.commandId,
+              secondCommandId: cmd.id,
+            },
+          });
+        } else {
+          seenKey.set(normalized, { commandId: cmd.id, rawKey: cmd.keybinding.key });
+        }
+      }
+
+      if (cmd.keybinding?.mac) {
+        const normalized = normalizeKeybinding(cmd.keybinding.mac);
+        const existing = seenMac.get(normalized);
+
+        if (existing) {
+          diagnostics.push({
+            code: 'duplicate_keybinding',
+            severity: 'warning',
+            source: 'extension-runtime',
+            message: `Duplicate Mac keybinding "${cmd.keybinding.mac}" (normalized: "${normalized}") ` +
+              `for commands "${existing.commandId}" and "${cmd.id}".`,
+            detail: {
+              commandId: cmd.id,
+              keybindingMac: cmd.keybinding.mac,
+              normalizedKeybinding: normalized,
+              firstCommandId: existing.commandId,
+              secondCommandId: cmd.id,
+            },
+          });
+        } else {
+          seenMac.set(normalized, { commandId: cmd.id, rawKey: cmd.keybinding.mac });
+        }
+      }
+    }
+  }
+
+  return { commands, diagnostics };
+}
+
+/**
  * Result of the diagnostics-aware extension runtime resolver.
  *
  * Consumers that need duplicate-descriptor diagnostics should use
@@ -289,6 +407,8 @@ export interface ResolveVideoEditorExtensionRuntimeResult {
  * diagnostics without throwing.
  *
  * Duplicate descriptor IDs are excluded fail-closed (first-wins).
+ * Duplicate command IDs are excluded fail-closed (first-wins).
+ * Duplicate keybindings produce warnings.
  * Valid and disabled config behaviour is unchanged from the legacy resolver.
  */
 export function resolveVideoEditorExtensionRuntimeWithDiagnostics(
@@ -305,11 +425,13 @@ export function resolveVideoEditorExtensionRuntimeWithDiagnostics(
   const dialogResult = mergeDialogs(effectiveConfigs);
   const panelResult = mergePanels(effectiveConfigs);
   const inspectorResult = mergeInspectorSections(effectiveConfigs);
+  const commandResult = mergeCommands(effectiveConfigs);
 
   const diagnostics = [
     ...dialogResult.diagnostics,
     ...panelResult.diagnostics,
     ...inspectorResult.diagnostics,
+    ...commandResult.diagnostics,
   ];
 
   // Build package and settings maps keyed only by defined extension IDs.
@@ -338,6 +460,7 @@ export function resolveVideoEditorExtensionRuntimeWithDiagnostics(
       },
       packages,
       settings,
+      commands: commandResult.commands,
     },
     diagnostics,
   };

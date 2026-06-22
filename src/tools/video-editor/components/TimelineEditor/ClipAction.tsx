@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowRight, Clapperboard, Copy, Ellipsis, Film, FolderPlus, ImageIcon, Layers, Loader2, Music2, RefreshCw, Scissors, Sparkles, Trash2, Type, X } from 'lucide-react';
+import { ArrowRight, Clapperboard, Copy, Ellipsis, Film, FolderPlus, ImageIcon, Layers, Loader2, Music2, Puzzle, RefreshCw, Scissors, Sparkles, Trash2, Type, X } from 'lucide-react';
 import { cn } from '@/shared/components/ui/contracts/cn.ts';
 import { MediaVariantPicker } from '@/shared/components/MediaVariantPicker.tsx';
 import type { GenerationVariant } from '@/shared/hooks/variants/useVariants.ts';
@@ -10,6 +10,7 @@ import { WaveformOverlay } from '@/tools/video-editor/components/TimelineEditor/
 import { useWaveformData } from '@/tools/video-editor/hooks/useWaveformData.ts';
 import type { ClipMeta } from '@/tools/video-editor/lib/timeline-data.ts';
 import type { TimelineAction } from '@/tools/video-editor/types/timeline-canvas.ts';
+import type { EditorCommandEntry } from '@/tools/video-editor/commands/editorCommandRegistry.ts';
 
 const log = import.meta.env.DEV ? (...args: Parameters<typeof console.log>) => console.log(...args) : () => {};
 
@@ -72,13 +73,17 @@ interface ClipActionProps {
   isCreatingShot?: boolean;
   overhangDurationSeconds?: number;
   overhangEndFraction?: number;
+  /** Extension commands to append to the context menu. */
+  extensionCommands?: readonly EditorCommandEntry[];
+  /** Callback to execute an extension command from the context menu. */
+  onExecuteExtensionCommand?: (commandId: string) => void;
 }
 
 const menuItemClassName = 'relative flex w-full cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground';
 const destructiveMenuItemClassName = `${menuItemClassName} hover:bg-destructive hover:text-destructive-foreground`;
 const disabledMenuItemClassName = 'disabled:cursor-wait disabled:opacity-60';
 
-type ClipContextMenuProps = Pick<ClipActionProps, 'isGenerationAsset' | 'isDuplicatingGeneration' | 'onDuplicateGeneration' | 'onUpdateVariant' | 'isVariantStale' | 'onDismissStale' | 'onSplitHere' | 'onSplitClipsAtPlayhead' | 'onTrimToMediaEnd' | 'onConvertOverhangToHold' | 'overhangDurationSeconds' | 'onToggleMuteClips' | 'onOpenSequenceCreator' | 'onCreateShotFromSelection' | 'onGenerateVideoFromSelection' | 'onNavigateToShot' | 'onOpenGenerateVideo' | 'isCreatingShot' | 'onDeleteClip' | 'onDeleteClips' | 'isInPinnedShotGroup'> & { actionId: string; contextMenu: ContextMenuState; menuRef: React.RefObject<HTMLDivElement>; closeMenu: () => void; hasBatchSelection: boolean; selectedClipIds: string[]; showShotActions: boolean; hasActionsBeforeShotSection: boolean; existingShots?: Shot[]; };
+type ClipContextMenuProps = Pick<ClipActionProps, 'isGenerationAsset' | 'isDuplicatingGeneration' | 'onDuplicateGeneration' | 'onUpdateVariant' | 'isVariantStale' | 'onDismissStale' | 'onSplitHere' | 'onSplitClipsAtPlayhead' | 'onTrimToMediaEnd' | 'onConvertOverhangToHold' | 'overhangDurationSeconds' | 'onToggleMuteClips' | 'onOpenSequenceCreator' | 'onCreateShotFromSelection' | 'onGenerateVideoFromSelection' | 'onNavigateToShot' | 'onOpenGenerateVideo' | 'isCreatingShot' | 'onDeleteClip' | 'onDeleteClips' | 'isInPinnedShotGroup' | 'extensionCommands' | 'onExecuteExtensionCommand'> & { actionId: string; contextMenu: ContextMenuState; menuRef: React.RefObject<HTMLDivElement>; closeMenu: () => void; hasBatchSelection: boolean; selectedClipIds: string[]; showShotActions: boolean; hasActionsBeforeShotSection: boolean; existingShots?: Shot[]; };
 type ClipContextMenuItemProps = { icon: React.ComponentType<{ className?: string }>; onClick: () => void; children: React.ReactNode; disabled?: boolean; destructive?: boolean; suffix?: React.ReactNode; };
 
 function ClipContextMenuItem({ icon: Icon, onClick, children, disabled = false, destructive = false, suffix }: ClipContextMenuItemProps) {
@@ -241,6 +246,29 @@ function ClipContextMenu(props: ClipContextMenuProps) {
               Create animation sequence
             </ClipContextMenuItem>
           )}
+          {/* Extension commands section */}
+          {props.extensionCommands && props.extensionCommands.length > 0 && (
+            <>
+              <div className="my-1 h-px bg-border" />
+              {props.extensionCommands.map((cmd) => (
+                <ClipContextMenuItem
+                  key={cmd.id}
+                  icon={Puzzle}
+                  onClick={() => {
+                    props.closeMenu();
+                    props.onExecuteExtensionCommand?.(cmd.id);
+                  }}
+                >
+                  <div className="flex flex-col items-start">
+                    <span>{cmd.title}</span>
+                    {cmd.description && (
+                      <span className="text-[10px] text-muted-foreground">{cmd.description}</span>
+                    )}
+                  </div>
+                </ClipContextMenuItem>
+              ))}
+            </>
+          )}
           {props.showShotActions && (props.hasActionsBeforeShotSection || hasGenerationActions) && <div className="my-1 h-px bg-border" />}
           {props.showShotActions && visibleExistingShots.map((shot) => (
             <div key={shot.id} className="flex w-full items-center gap-1 rounded-sm px-2 py-1.5 text-sm">
@@ -351,6 +379,8 @@ function ClipActionComponent({
   clipWidth,
   overhangDurationSeconds,
   overhangEndFraction,
+  extensionCommands,
+  onExecuteExtensionCommand,
 }: ClipActionProps) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -638,6 +668,8 @@ function ClipActionComponent({
           isCreatingShot={isCreatingShot}
           onDeleteClip={onDeleteClip}
           onDeleteClips={onDeleteClips}
+          extensionCommands={extensionCommands}
+          onExecuteExtensionCommand={onExecuteExtensionCommand}
         />
       )}
     </>
@@ -704,6 +736,8 @@ function areClipActionPropsEqual(prev: ClipActionProps, next: ClipActionProps): 
     && prev.onApplyVariant === next.onApplyVariant
     && prev.onAddVariantAsGeneration === next.onAddVariantAsGeneration
     && prev.isAddingVariantAsGeneration === next.isAddingVariantAsGeneration
+    && prev.extensionCommands === next.extensionCommands
+    && prev.onExecuteExtensionCommand === next.onExecuteExtensionCommand
   );
 }
 

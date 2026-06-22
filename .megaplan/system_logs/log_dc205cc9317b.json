@@ -1,0 +1,66 @@
+{
+  "id": "log_dc205cc9317b",
+  "level": "debug",
+  "category": "system",
+  "event_type": "authority_divergence",
+  "message": "authority_divergence emitted",
+  "details": {
+    "event": {
+      "seq": 3625,
+      "schema_version": 1,
+      "ts_utc": "2026-06-22T00:29:23.164836+00:00",
+      "ts_rel_init_s": 3868.502472,
+      "kind": "authority_divergence",
+      "phase": "execute",
+      "payload": {
+        "diagnostic_version": 1,
+        "task_id": "T21",
+        "raw_terminal_status": "done",
+        "authority_status": "unknown",
+        "authoritative": false,
+        "reason": "stale_evidence:missing_head:task_commands_run",
+        "missing_outputs": [],
+        "stale_evidence": [
+          "missing_head:task_commands_run",
+          "missing_head:task_files_changed",
+          "missing_head:task_files_changed",
+          "missing_head:task_commands_run",
+          "missing_head:task_commands_run"
+        ],
+        "would_block_reasons": [
+          "stale_evidence:missing_head:task_commands_run",
+          "stale_evidence:missing_head:task_files_changed"
+        ],
+        "error": null,
+        "diagnostics": {
+          "task_id": "T21",
+          "declared_outputs": {
+            "files_changed": [
+              "src/tools/video-editor/types/agent-session.ts",
+              "src/tools/video-editor/hooks/useAgentSession.ts"
+            ],
+            "commands_run": [
+              "npx vitest run src/tools/video-editor/hooks/useAgentSession.test.tsx",
+              "npx vitest run src/tools/video-editor/commands/proposals.test.ts"
+            ]
+          },
+          "linked_evidence_count": 10,
+          "evidence_count": 96,
+          "normalization": "iterable",
+          "status": "unknown",
+          "evidence_sources": [
+            "plan_artifacts"
+          ],
+          "loaded_evidence_count": 96,
+          "raw_terminal_status": "done"
+        },
+        "ts_utc": "2026-06-22T00:29:23.164517+00:00"
+      },
+      "transaction_id": "18495a3209a1cb2d",
+      "store_method": "log_system_event"
+    }
+  },
+  "turn_id": null,
+  "epic_id": "m4-timeline-proposals-and-20260622-0124",
+  "occurred_at": "2026-06-22T00:29:23.164869Z"
+}

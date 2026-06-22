@@ -1,0 +1,56 @@
+{
+  "id": "log_7b75fbbe18a0",
+  "level": "debug",
+  "category": "system",
+  "event_type": "authority_divergence",
+  "message": "authority_divergence emitted",
+  "details": {
+    "event": {
+      "seq": 2505,
+      "schema_version": 1,
+      "ts_utc": "2026-06-22T00:10:37.329082+00:00",
+      "ts_rel_init_s": 2742.666718,
+      "kind": "authority_divergence",
+      "phase": "execute",
+      "payload": {
+        "diagnostic_version": 1,
+        "task_id": "T5",
+        "raw_terminal_status": "done",
+        "authority_status": "unknown",
+        "authoritative": false,
+        "reason": "stale_evidence:missing_head:task_files_changed",
+        "missing_outputs": [],
+        "stale_evidence": [
+          "missing_head:task_files_changed"
+        ],
+        "would_block_reasons": [
+          "stale_evidence:missing_head:task_files_changed"
+        ],
+        "error": null,
+        "diagnostics": {
+          "task_id": "T5",
+          "declared_outputs": {
+            "files_changed": [
+              "src/tools/video-editor/components/ProposalReviewDialog.tsx"
+            ]
+          },
+          "linked_evidence_count": 2,
+          "evidence_count": 54,
+          "normalization": "iterable",
+          "status": "unknown",
+          "evidence_sources": [
+            "plan_artifacts"
+          ],
+          "loaded_evidence_count": 54,
+          "raw_terminal_status": "done"
+        },
+        "ts_utc": "2026-06-22T00:10:37.328758+00:00"
+      },
+      "transaction_id": "97638830216a28d8",
+      "store_method": "log_system_event"
+    }
+  },
+  "turn_id": null,
+  "epic_id": "m4-timeline-proposals-and-20260622-0124",
+  "occurred_at": "2026-06-22T00:10:37.329119Z"
+}

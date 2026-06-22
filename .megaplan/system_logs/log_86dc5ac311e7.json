@@ -1,0 +1,75 @@
+{
+  "id": "log_86dc5ac311e7",
+  "level": "debug",
+  "category": "system",
+  "event_type": "authority_divergence",
+  "message": "authority_divergence emitted",
+  "details": {
+    "event": {
+      "seq": 4858,
+      "schema_version": 1,
+      "ts_utc": "2026-06-22T00:50:54.673649+00:00",
+      "ts_rel_init_s": 5160.011285,
+      "kind": "authority_divergence",
+      "phase": "execute",
+      "payload": {
+        "diagnostic_version": 1,
+        "task_id": "T17",
+        "raw_terminal_status": "done",
+        "authority_status": "unknown",
+        "authoritative": false,
+        "reason": "stale_evidence:missing_head:task_files_changed",
+        "missing_outputs": [],
+        "stale_evidence": [
+          "missing_head:task_files_changed",
+          "missing_head:task_files_changed",
+          "missing_head:task_files_changed",
+          "missing_head:task_files_changed",
+          "missing_head:task_files_changed",
+          "missing_head:task_files_changed",
+          "missing_head:task_files_changed",
+          "missing_head:task_files_changed",
+          "missing_head:task_commands_run",
+          "missing_head:task_commands_run",
+          "missing_head:task_files_changed"
+        ],
+        "would_block_reasons": [
+          "stale_evidence:missing_head:task_files_changed",
+          "stale_evidence:missing_head:task_commands_run"
+        ],
+        "error": null,
+        "diagnostics": {
+          "task_id": "T17",
+          "declared_outputs": {
+            "files_changed": [
+              "src/tools/video-editor/hooks/useEditorKeybindings.ts",
+              "src/tools/video-editor/components/TimelineEditorShellCore.tsx",
+              "src/tools/video-editor/components/TimelineEditorShellCore.test.tsx",
+              "src/tools/video-editor/hooks/useEditorCommandRegistry.ts",
+              "src/tools/video-editor/contexts/DataProviderContext.tsx"
+            ],
+            "commands_run": [
+              "vitest TimelineEditorShellCore.test.tsx \u2014 11 passed",
+              "Combined 4-file focused run \u2014 76 passed"
+            ]
+          },
+          "linked_evidence_count": 22,
+          "evidence_count": 146,
+          "normalization": "iterable",
+          "status": "unknown",
+          "evidence_sources": [
+            "plan_artifacts"
+          ],
+          "loaded_evidence_count": 146,
+          "raw_terminal_status": "done"
+        },
+        "ts_utc": "2026-06-22T00:50:54.673349+00:00"
+      },
+      "transaction_id": "0c80f8e3b7a96ca6",
+      "store_method": "log_system_event"
+    }
+  },
+  "turn_id": null,
+  "epic_id": "m4-timeline-proposals-and-20260622-0124",
+  "occurred_at": "2026-06-22T00:50:54.673684Z"
+}

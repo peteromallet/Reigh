@@ -80,6 +80,39 @@ export interface ExtensionInspectorSectionContribution {
   order?: number;
 }
 
+export interface ExtensionCommandKeybinding {
+  key: string;
+  mac?: string;
+}
+
+export type ExtensionCommandMenuContext =
+  | 'timeline-context'
+  | 'clip-context'
+  | 'track-context'
+  | 'clip-selection-context'
+  | 'canvas-context';
+
+export interface ExtensionCommandMenu {
+  context: ExtensionCommandMenuContext;
+  group?: string;
+  order?: number;
+}
+
+export interface ExtensionCommandContribution {
+  /** Local command identifier (e.g. 'myCommand'). The runtime namespaces this as `${manifest.id}.${localCommandId}`. */
+  id: string;
+  /** Human-readable command label shown in the command palette. */
+  title: string;
+  /** Optional prose description for the command palette. */
+  description?: string;
+  /** When true, executing this command opens the proposal review UI before committing timeline changes. */
+  proposal?: boolean;
+  /** Optional default keybinding. Users can override this in settings. */
+  keybinding?: ExtensionCommandKeybinding;
+  /** Optional context menu placement. */
+  menu?: ExtensionCommandMenu;
+}
+
 // ---------------------------------------------------------------------------
 // Manifest and package types
 // ---------------------------------------------------------------------------
@@ -97,6 +130,7 @@ export interface ExtensionManifest {
     dialogs?: readonly ExtensionDialogContribution[];
     panels?: readonly ExtensionPanelContribution[];
     inspectorSections?: readonly ExtensionInspectorSectionContribution[];
+    commands?: readonly ExtensionCommandContribution[];
     [key: string]: unknown;
   };
   [key: string]: unknown;
@@ -116,14 +150,18 @@ export type ExtensionDiagnosticKind = 'error' | 'warning';
 export type ExtensionDiagnosticCode =
   | 'manifest_schema_invalid'
   | 'api_version_incompatible'
+  | 'api_version_mismatch'
   | 'permission_rejected'
   | 'contribution_id_mismatch'
   | 'duplicate_contribution_id'
+  | 'duplicate_command_id'
+  | 'duplicate_keybinding'
   | 'duplicate_package_id'
   | 'settings_validation_failed'
   | 'settings_override_invalid'
   | 'state_corrupt'
-  | 'unsupported_record_version';
+  | 'unsupported_record_version'
+  | 'unknown_manifest_field';
 
 export interface ExtensionDiagnostic {
   kind: ExtensionDiagnosticKind;
@@ -227,6 +265,48 @@ const MANIFEST_SCHEMA: Record<string, unknown> = {
           },
           uniqueItems: true,
         },
+        commands: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['id', 'title'],
+            properties: {
+              id: {
+                type: 'string',
+                minLength: 1,
+                pattern: '^[a-z0-9]+(?:[.-][a-z0-9]+)*$',
+              },
+              title: { type: 'string', minLength: 1 },
+              description: { type: 'string' },
+              proposal: { type: 'boolean' },
+              keybinding: {
+                type: 'object',
+                properties: {
+                  key: { type: 'string', minLength: 1 },
+                  mac: { type: 'string', minLength: 1 },
+                },
+              },
+              menu: {
+                type: 'object',
+                properties: {
+                  context: {
+                    type: 'string',
+                    enum: [
+                      'timeline-context',
+                      'clip-context',
+                      'track-context',
+                      'clip-selection-context',
+                      'canvas-context',
+                    ],
+                  },
+                  group: { type: 'string', minLength: 1 },
+                  order: { type: 'number' },
+                },
+              },
+            },
+          },
+          uniqueItems: true,
+        },
       },
     },
   },
@@ -293,16 +373,164 @@ export function validateManifestSchema(manifest: unknown): ExtensionDiagnostic[]
   // Validate contributions if present
   if (typeof m.contributions === 'object' && m.contributions !== null) {
     const contribs = m.contributions as Record<string, unknown>;
-    const validCollections = ['slots', 'dialogs', 'panels', 'inspectorSections'];
+    const validCollections = ['slots', 'dialogs', 'panels', 'inspectorSections', 'commands'];
     for (const key of Object.keys(contribs)) {
       if (!validCollections.includes(key)) {
         diagnostics.push({
           kind: 'warning',
           code: 'manifest_schema_invalid',
-          message: `Unknown contribution collection "${key}".`,
+          message: `Unknown contribution collection \"${key}\".`,
           extensionId: typeof m.id === 'string' ? m.id : undefined,
         });
       }
+    }
+
+    // Validate commands array if present
+    const rawCommands = contribs.commands;
+    if (Array.isArray(rawCommands)) {
+      const commands = rawCommands as Record<string, unknown>[];
+      for (let i = 0; i < commands.length; i++) {
+        const cmd = commands[i];
+        const cmdPath = `contributions.commands[${i}]`;
+
+        if (typeof cmd.id !== 'string' || cmd.id.length === 0) {
+          diagnostics.push({
+            kind: 'error',
+            code: 'manifest_schema_invalid',
+            message: `${cmdPath}.id must be a non-empty string matching ^[a-z0-9]+(?:[.-][a-z0-9]+)*$.`,
+            extensionId: typeof m.id === 'string' ? m.id : undefined,
+            detail: { path: cmdPath, field: 'id' },
+          });
+        } else if (!/^[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(cmd.id)) {
+          diagnostics.push({
+            kind: 'error',
+            code: 'manifest_schema_invalid',
+            message: `${cmdPath}.id \"${cmd.id}\" must match pattern ^[a-z0-9]+(?:[.-][a-z0-9]+)*$.`,
+            extensionId: typeof m.id === 'string' ? m.id : undefined,
+            detail: { path: cmdPath, field: 'id', value: cmd.id },
+          });
+        }
+
+        if (typeof cmd.title !== 'string' || cmd.title.length === 0) {
+          diagnostics.push({
+            kind: 'error',
+            code: 'manifest_schema_invalid',
+            message: `${cmdPath}.title must be a non-empty string.`,
+            extensionId: typeof m.id === 'string' ? m.id : undefined,
+            detail: { path: cmdPath, field: 'title' },
+          });
+        }
+
+        // Validate proposal field is boolean if present
+        if (cmd.proposal !== undefined && typeof cmd.proposal !== 'boolean') {
+          diagnostics.push({
+            kind: 'error',
+            code: 'manifest_schema_invalid',
+            message: `${cmdPath}.proposal must be a boolean.`,
+            extensionId: typeof m.id === 'string' ? m.id : undefined,
+            detail: { path: cmdPath, field: 'proposal' },
+          });
+        }
+
+        // Validate keybinding object if present
+        if (cmd.keybinding !== undefined) {
+          if (typeof cmd.keybinding !== 'object' || cmd.keybinding === null) {
+            diagnostics.push({
+              kind: 'error',
+              code: 'manifest_schema_invalid',
+              message: `${cmdPath}.keybinding must be an object with 'key' (required) and optional 'mac'.`,
+              extensionId: typeof m.id === 'string' ? m.id : undefined,
+              detail: { path: cmdPath, field: 'keybinding' },
+            });
+          } else {
+            const kb = cmd.keybinding as Record<string, unknown>;
+            if (typeof kb.key !== 'string' || kb.key.length === 0) {
+              diagnostics.push({
+                kind: 'error',
+                code: 'manifest_schema_invalid',
+                message: `${cmdPath}.keybinding.key must be a non-empty string.`,
+                extensionId: typeof m.id === 'string' ? m.id : undefined,
+                detail: { path: cmdPath, field: 'keybinding.key' },
+              });
+            }
+            if (kb.mac !== undefined && (typeof kb.mac !== 'string' || kb.mac.length === 0)) {
+              diagnostics.push({
+                kind: 'error',
+                code: 'manifest_schema_invalid',
+                message: `${cmdPath}.keybinding.mac must be a non-empty string when provided.`,
+                extensionId: typeof m.id === 'string' ? m.id : undefined,
+                detail: { path: cmdPath, field: 'keybinding.mac' },
+              });
+            }
+          }
+        }
+
+        // Validate menu object if present
+        if (cmd.menu !== undefined) {
+          if (typeof cmd.menu !== 'object' || cmd.menu === null) {
+            diagnostics.push({
+              kind: 'error',
+              code: 'manifest_schema_invalid',
+              message: `${cmdPath}.menu must be an object with 'context' (required) and optional 'group'/'order'.`,
+              extensionId: typeof m.id === 'string' ? m.id : undefined,
+              detail: { path: cmdPath, field: 'menu' },
+            });
+          } else {
+            const menu = cmd.menu as Record<string, unknown>;
+            const validContexts = [
+              'timeline-context',
+              'clip-context',
+              'track-context',
+              'clip-selection-context',
+              'canvas-context',
+            ];
+            if (typeof menu.context !== 'string' || !validContexts.includes(menu.context)) {
+              diagnostics.push({
+                kind: 'error',
+                code: 'manifest_schema_invalid',
+                message: `${cmdPath}.menu.context must be one of: ${validContexts.join(', ')}.`,
+                extensionId: typeof m.id === 'string' ? m.id : undefined,
+                detail: { path: cmdPath, field: 'menu.context', value: menu.context },
+              });
+            }
+            if (menu.group !== undefined && (typeof menu.group !== 'string' || menu.group.length === 0)) {
+              diagnostics.push({
+                kind: 'error',
+                code: 'manifest_schema_invalid',
+                message: `${cmdPath}.menu.group must be a non-empty string when provided.`,
+                extensionId: typeof m.id === 'string' ? m.id : undefined,
+                detail: { path: cmdPath, field: 'menu.group' },
+              });
+            }
+            if (menu.order !== undefined && typeof menu.order !== 'number') {
+              diagnostics.push({
+                kind: 'error',
+                code: 'manifest_schema_invalid',
+                message: `${cmdPath}.menu.order must be a number when provided.`,
+                extensionId: typeof m.id === 'string' ? m.id : undefined,
+                detail: { path: cmdPath, field: 'menu.order' },
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Check for unknown top-level fields (additionalProperties: false on root in schema)
+  const knownRootFields = new Set([
+    'id', 'name', 'version', 'apiVersion', 'description', 'author',
+    'permissions', 'settingsSchema', 'contributions',
+  ]);
+  for (const key of Object.keys(m)) {
+    if (!knownRootFields.has(key)) {
+      diagnostics.push({
+        kind: 'error',
+        code: 'unknown_manifest_field',
+        message: `Manifest contains unknown top-level field \"${key}\".`,
+        extensionId: typeof m.id === 'string' ? m.id : undefined,
+        detail: { field: key },
+      });
     }
   }
 
@@ -379,6 +607,7 @@ export function validateDuplicateContributionIdsAcrossCollections(
     ['dialogs', manifest.contributions?.dialogs],
     ['panels', manifest.contributions?.panels],
     ['inspectorSections', manifest.contributions?.inspectorSections],
+    ['commands', manifest.contributions?.commands],
   ];
 
   for (const [collectionName, items] of collections) {
@@ -388,12 +617,157 @@ export function validateDuplicateContributionIdsAcrossCollections(
         diagnostics.push({
           kind: 'error',
           code: 'duplicate_contribution_id',
-          message: `Duplicate contribution ID "${item.id}" found in collections "${seen.get(item.id)}" and "${collectionName}".`,
+          message: `Duplicate contribution ID \"${item.id}\" found in collections \"${seen.get(item.id)}\" and \"${collectionName}\".`,
           extensionId: manifest.id,
           detail: { duplicateId: item.id, collections: [seen.get(item.id), collectionName] },
         });
       } else {
         seen.set(item.id, collectionName);
+      }
+    }
+  }
+
+  return diagnostics;
+}
+
+/**
+ * Detect duplicate normalized command IDs across multiple manifests.
+ *
+ * Command IDs are namespaced as `${manifest.id}.${localCommandId}`.
+ * Returns diagnostics for any collision found; only the first occurrence
+ * from each manifest is retained in the runtime registry.
+ */
+export function validateCommandDuplicateIds(
+  manifests: readonly ExtensionManifest[],
+): ExtensionDiagnostic[] {
+  const diagnostics: ExtensionDiagnostic[] = [];
+  const seen = new Map<string, { manifestId: string; localId: string }>();
+
+  for (const manifest of manifests) {
+    const commands = manifest.contributions?.commands;
+    if (!commands) continue;
+
+    for (const cmd of commands) {
+      const fullId = `${manifest.id}.${cmd.id}`;
+      const existing = seen.get(fullId);
+
+      if (existing) {
+        diagnostics.push({
+          kind: 'error',
+          code: 'duplicate_command_id',
+          message: `Duplicate command ID \"${fullId}\" declared by both \"${existing.manifestId}\" and \"${manifest.id}\". Only the first declaration will be registered.`,
+          extensionId: manifest.id,
+          detail: {
+            fullCommandId: fullId,
+            localId: cmd.id,
+            firstManifest: existing.manifestId,
+            secondManifest: manifest.id,
+          },
+        });
+      } else {
+        seen.set(fullId, { manifestId: manifest.id, localId: cmd.id });
+      }
+    }
+  }
+
+  return diagnostics;
+}
+
+// ---------------------------------------------------------------------------
+// Keybinding normalization
+// ---------------------------------------------------------------------------
+
+/**
+ * Normalize a keybinding string for duplicate detection.
+ *
+ * Lowercases the key string, collapses whitespace, and strips leading/trailing
+ * whitespace so that "Ctrl+S", "ctrl+s", and "  ctrl+s  " all compare equal.
+ * macOS-specific bindings (the `mac` field) are compared separately and only
+ * against other `mac` bindings.
+ */
+export function normalizeKeybinding(raw: string): string {
+  return raw.toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Detect duplicate normalized keybindings across command contributions from
+ * multiple manifests.
+ *
+ * Normalizes each keybinding's `key` and optional `mac` fields and emits a
+ * warning diagnostic when two different fully-qualified command IDs map to
+ * the same normalized shortcut. Only the first occurrence is kept as the
+ * active binding; later duplicates produce diagnostics.
+ */
+export function validateCommandDuplicateKeybindings(
+  manifests: readonly ExtensionManifest[],
+): ExtensionDiagnostic[] {
+  const diagnostics: ExtensionDiagnostic[] = [];
+
+  // Track normalized key -> { fullCommandId, manifestId }
+  const seenKey = new Map<string, { fullCommandId: string; manifestId: string }>();
+  const seenMac = new Map<string, { fullCommandId: string; manifestId: string }>();
+
+  for (const manifest of manifests) {
+    const commands = manifest.contributions?.commands;
+    if (!commands) continue;
+
+    for (const cmd of commands) {
+      const fullId = `${manifest.id}.${cmd.id}`;
+
+      if (cmd.keybinding?.key) {
+        const normalized = normalizeKeybinding(cmd.keybinding.key);
+        const existing = seenKey.get(normalized);
+
+        if (existing) {
+          diagnostics.push({
+            kind: 'warning',
+            code: 'duplicate_keybinding',
+            message: `Duplicate keybinding "${cmd.keybinding.key}" (normalized: "${normalized}") ` +
+              `declared by both "${existing.manifestId}" (command "${existing.fullCommandId}") ` +
+              `and "${manifest.id}" (command "${fullId}").`,
+            extensionId: manifest.id,
+            detail: {
+              fullCommandId: fullId,
+              localId: cmd.id,
+              keybinding: cmd.keybinding.key,
+              normalizedKeybinding: normalized,
+              firstManifest: existing.manifestId,
+              firstFullCommandId: existing.fullCommandId,
+              secondManifest: manifest.id,
+              secondFullCommandId: fullId,
+            },
+          });
+        } else {
+          seenKey.set(normalized, { fullCommandId: fullId, manifestId: manifest.id });
+        }
+      }
+
+      if (cmd.keybinding?.mac) {
+        const normalized = normalizeKeybinding(cmd.keybinding.mac);
+        const existing = seenMac.get(normalized);
+
+        if (existing) {
+          diagnostics.push({
+            kind: 'warning',
+            code: 'duplicate_keybinding',
+            message: `Duplicate Mac keybinding "${cmd.keybinding.mac}" (normalized: "${normalized}") ` +
+              `declared by both "${existing.manifestId}" (command "${existing.fullCommandId}") ` +
+              `and "${manifest.id}" (command "${fullId}").`,
+            extensionId: manifest.id,
+            detail: {
+              fullCommandId: fullId,
+              localId: cmd.id,
+              keybindingMac: cmd.keybinding.mac,
+              normalizedKeybinding: normalized,
+              firstManifest: existing.manifestId,
+              firstFullCommandId: existing.fullCommandId,
+              secondManifest: manifest.id,
+              secondFullCommandId: fullId,
+            },
+          });
+        } else {
+          seenMac.set(normalized, { fullCommandId: fullId, manifestId: manifest.id });
+        }
       }
     }
   }
