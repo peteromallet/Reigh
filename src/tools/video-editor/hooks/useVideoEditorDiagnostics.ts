@@ -2,7 +2,7 @@
  * React hooks for reading from and writing to the video editor diagnostics store.
  *
  * - `useVideoEditorDiagnostics()` returns sorted diagnostics plus severity counts.
- * - `useVideoEditorDiagnosticReporter()` returns a reporter bound to the store.
+ * - `useVideoEditorDiagnosticReporter()` returns an internal reporter bound to the store.
  *
  * Both hooks read the store from `DataProviderContext` and are safe to call
  * without a provider (they fall back to a no-op empty store).
@@ -117,10 +117,11 @@ export function useVideoEditorDiagnostics(): VideoEditorDiagnosticsSnapshot {
 // ---------------------------------------------------------------------------
 
 /**
- * Return a diagnostic reporter that writes into the store.
+ * Return a diagnostics reporter that writes into the store.
  *
- * The returned reporter is stable across rerenders (reference never changes
- * while the store identity is stable).
+ * This hook is for first-party loader/runtime integrations, not extension-authored
+ * diagnostic reporting. The returned reporter is stable across rerenders while
+ * the store identity is stable.
  */
 export function useVideoEditorDiagnosticReporter(): VideoEditorDiagnosticReporter {
   const store = useDiagnosticsStore();

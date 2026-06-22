@@ -102,6 +102,8 @@
         "applyProvisionedMediaCommandToConfig",
         "buildTimelineCommandData",
         "createTimelineCommandRunner",
+        "createProposalFromExecutionResult",
+        "createProposalFromInput",
         "MEDIA_COMMAND_DESCRIPTORS",
         "provisionRegisteredTimelineMedia",
         "provisionTimelineMedia",
@@ -114,6 +116,7 @@
         "TimelineCommandInput",
         "TimelineCommandRunMode",
         "TimelineCommandTransaction",
+        "TimelineProposal",
         "TimelineProvisionedAsset",
         "TRUSTED_SEQUENCE_CLIP_TYPES"
       ]
@@ -256,6 +259,8 @@
       ],
       "expectedExports": [
         "defineExtension",
+        "EXTENSION_CONTRIBUTION_FAMILIES",
+        "EXTENSION_CONTRIBUTION_FAMILY_BY_ID",
         "RUNTIME_API_VERSION",
         "ALLOWED_PERMISSIONS",
         "validateManifestSchema",
@@ -279,6 +284,9 @@
         "VideoEditorSlotName",
         "VideoEditorSlotRenderer",
         "VideoEditorVisibilityPredicate",
+        "ExtensionContributionFamily",
+        "ExtensionContributionFamilyId",
+        "ExtensionContributionFamilyStatus",
         "ExtensionSlotContribution",
         "ExtensionDialogContribution",
         "ExtensionPanelContribution",
@@ -310,7 +318,9 @@
       ],
       "expectedExports": [
         "DEFAULT_VIDEO_TRACKS",
+        "DEFAULT_OUTPUT",
         "createDefaultTimelineConfig",
+        "withDefaultTimelineOutput",
         "AGENT_WORKFLOW_SHOT_ID",
         "AGENT_WORKFLOW_TIMELINE_ID",
         "AGENT_WORKFLOW_TIMELINE_NAME",

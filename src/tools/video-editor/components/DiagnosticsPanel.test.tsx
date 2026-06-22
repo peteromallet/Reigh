@@ -156,7 +156,7 @@ describe('DiagnosticsPanel', () => {
     expect(screen.getByText('Long task detected: 120ms')).toBeInTheDocument();
   });
 
-  it('each diagnostic row exposes data-diagnostic-code attribute', () => {
+  it('each diagnostic row exposes stable selectors and diagnostic attributes', () => {
     store.report({
       severity: 'error',
       source: 'render',
@@ -179,14 +179,20 @@ describe('DiagnosticsPanel', () => {
       </DataProviderWrapper>,
     );
 
-    // Each row should have data-diagnostic-code
-    const errorRow = screen.getByText('Render blocked.').closest('[data-diagnostic-code]');
+    const rows = screen.getAllByTestId('video-editor-diagnostic-row');
+    expect(rows).toHaveLength(2);
+
+    const errorRow = screen.getByText('Render blocked.').closest('[data-testid="video-editor-diagnostic-row"]');
     expect(errorRow).toBeInTheDocument();
     expect(errorRow!.getAttribute('data-diagnostic-code')).toBe('render_blocker');
+    expect(errorRow!.getAttribute('data-diagnostic-severity')).toBe('error');
+    expect(errorRow!.getAttribute('data-diagnostic-source')).toBe('render');
 
-    const warningRow = screen.getByText('Provider degraded.').closest('[data-diagnostic-code]');
+    const warningRow = screen.getByText('Provider degraded.').closest('[data-testid="video-editor-diagnostic-row"]');
     expect(warningRow).toBeInTheDocument();
     expect(warningRow!.getAttribute('data-diagnostic-code')).toBe('provider_degraded');
+    expect(warningRow!.getAttribute('data-diagnostic-severity')).toBe('warning');
+    expect(warningRow!.getAttribute('data-diagnostic-source')).toBe('provider');
   });
 
   it('renders render blocker diagnostics with stable source, severity, code, message, and detail', async () => {
@@ -419,8 +425,9 @@ describe('DiagnosticsPanel', () => {
       </DataProviderWrapper>,
     );
 
-    // All 100 rows should have data-diagnostic-code
-    const rows = document.querySelectorAll('[data-diagnostic-code]');
+    // All 100 rows should expose the stable row test selector and code attribute.
+    const rows = screen.getAllByTestId('video-editor-diagnostic-row');
     expect(rows.length).toBeGreaterThanOrEqual(100);
+    expect(rows.every((row) => row.hasAttribute('data-diagnostic-code'))).toBe(true);
   });
 });

@@ -10,6 +10,16 @@
  * part of the supported public surface.
  */
 export { defineExtension } from './runtime/defineExtension.ts';
+export {
+  EXTENSION_CONTRIBUTION_FAMILIES,
+  EXTENSION_CONTRIBUTION_FAMILY_BY_ID,
+} from './runtime/contributionFamilies.ts';
+
+export type {
+  ExtensionContributionFamily,
+  ExtensionContributionFamilyId,
+  ExtensionContributionFamilyStatus,
+} from './runtime/contributionFamilies.ts';
 
 export type {
   VideoEditorDialogDescriptor,

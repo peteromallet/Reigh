@@ -432,7 +432,7 @@ describe('ClipAction extension commands', () => {
     const onExecuteExtensionCommand = vi.fn();
     const extensionCommands: EditorCommandEntry[] = [
       buildExtensionEntry({ id: 'com.example.clip.normalize-speed', title: 'Normalize Speed' }),
-      buildExtensionEntry({ id: 'com.example.clip.add-fade', title: 'Add Fade Transition', description: 'Apply a crossfade transition at the clip boundary.' }),
+      buildExtensionEntry({ id: 'com.example.clip.fade-marker', title: 'Add Fade Marker', description: 'Queue a command proposal for a fade marker at the clip boundary.' }),
     ];
 
     const props = buildProps({
@@ -446,9 +446,14 @@ describe('ClipAction extension commands', () => {
 
     // Both extension commands should appear
     expect(screen.getByText('Normalize Speed')).toBeInTheDocument();
-    expect(screen.getByText('Add Fade Transition')).toBeInTheDocument();
+    expect(screen.getByText('Add Fade Marker')).toBeInTheDocument();
+    const commandRows = screen.getAllByTestId('clip-context-command-entry');
+    expect(commandRows.map((row) => row.getAttribute('data-command-id'))).toEqual([
+      'com.example.clip.normalize-speed',
+      'com.example.clip.fade-marker',
+    ]);
     // Descriptions should be visible
-    expect(screen.getByText('Apply a crossfade transition at the clip boundary.')).toBeInTheDocument();
+    expect(screen.getByText('Queue a command proposal for a fade marker at the clip boundary.')).toBeInTheDocument();
   });
 
   it('calls onExecuteExtensionCommand with correct command ID when extension command is clicked', () => {

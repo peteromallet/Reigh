@@ -702,54 +702,102 @@ function TimelineEditorShellCoreComponent({
   }
 
   const headerSlot = slotRenderers.header ? (
-    <ExtensionRenderBoundary
-      metadata={{ descriptorId: 'header', descriptorType: 'slot', slotName: 'header' }}
-      fallback={defaultHeader}
+    <div
+      data-testid="video-editor-surface-contribution"
+      data-video-editor-contribution-family="surfaces"
+      data-video-editor-contribution-id="header"
+      data-video-editor-surface-kind="slot"
+      data-video-editor-slot-name="header"
     >
-      <SlotRenderer renderer={slotRenderers.header} context={renderContext} />
-    </ExtensionRenderBoundary>
+      <ExtensionRenderBoundary
+        metadata={{ descriptorId: 'header', descriptorType: 'slot', slotName: 'header' }}
+        fallback={defaultHeader}
+      >
+        <SlotRenderer renderer={slotRenderers.header} context={renderContext} />
+      </ExtensionRenderBoundary>
+    </div>
   ) : null;
   const toolbarSlot = slotRenderers.toolbar ? (
-    <ExtensionRenderBoundary
-      metadata={{ descriptorId: 'toolbar', descriptorType: 'slot', slotName: 'toolbar' }}
-      fallback={toolbar}
+    <div
+      data-testid="video-editor-surface-contribution"
+      data-video-editor-contribution-family="surfaces"
+      data-video-editor-contribution-id="toolbar"
+      data-video-editor-surface-kind="slot"
+      data-video-editor-slot-name="toolbar"
     >
-      <SlotRenderer renderer={slotRenderers.toolbar} context={renderContext} />
-    </ExtensionRenderBoundary>
+      <ExtensionRenderBoundary
+        metadata={{ descriptorId: 'toolbar', descriptorType: 'slot', slotName: 'toolbar' }}
+        fallback={toolbar}
+      >
+        <SlotRenderer renderer={slotRenderers.toolbar} context={renderContext} />
+      </ExtensionRenderBoundary>
+    </div>
   ) : null;
   const assetPanelSlot = slotRenderers.assetPanel
     ? (
-      <ExtensionRenderBoundary
-        metadata={{ descriptorId: 'assetPanel', descriptorType: 'slot', slotName: 'assetPanel' }}
+      <div
+        data-testid="video-editor-surface-contribution"
+        data-video-editor-contribution-family="surfaces"
+        data-video-editor-contribution-id="assetPanel"
+        data-video-editor-surface-kind="slot"
+        data-video-editor-slot-name="assetPanel"
       >
-        <SlotRenderer renderer={slotRenderers.assetPanel} context={renderContext} />
-      </ExtensionRenderBoundary>
+        <ExtensionRenderBoundary
+          metadata={{ descriptorId: 'assetPanel', descriptorType: 'slot', slotName: 'assetPanel' }}
+        >
+          <SlotRenderer renderer={slotRenderers.assetPanel} context={renderContext} />
+        </ExtensionRenderBoundary>
+      </div>
     )
     : (contributedAssetPanels.length > 0 ? <VideoEditorAssetPanelSurface includeBuiltIn={false} /> : null);
   const inspectorPanelSlot = slotRenderers.inspectorPanel
     ? (
-      <ExtensionRenderBoundary
-        metadata={{ descriptorId: 'inspectorPanel', descriptorType: 'slot', slotName: 'inspectorPanel' }}
+      <div
+        data-testid="video-editor-surface-contribution"
+        data-video-editor-contribution-family="surfaces"
+        data-video-editor-contribution-id="inspectorPanel"
+        data-video-editor-surface-kind="slot"
+        data-video-editor-slot-name="inspectorPanel"
       >
-        <SlotRenderer renderer={slotRenderers.inspectorPanel} context={renderContext} />
-      </ExtensionRenderBoundary>
+        <ExtensionRenderBoundary
+          metadata={{ descriptorId: 'inspectorPanel', descriptorType: 'slot', slotName: 'inspectorPanel' }}
+        >
+          <SlotRenderer renderer={slotRenderers.inspectorPanel} context={renderContext} />
+        </ExtensionRenderBoundary>
+      </div>
     )
     : null;
   const timelineFooterSlot = slotRenderers.timelineFooter
     ? (
-      <ExtensionRenderBoundary
-        metadata={{ descriptorId: 'timelineFooter', descriptorType: 'slot', slotName: 'timelineFooter' }}
+      <div
+        data-testid="video-editor-surface-contribution"
+        data-video-editor-contribution-family="surfaces"
+        data-video-editor-contribution-id="timelineFooter"
+        data-video-editor-surface-kind="slot"
+        data-video-editor-slot-name="timelineFooter"
       >
-        <SlotRenderer renderer={slotRenderers.timelineFooter} context={renderContext} />
-      </ExtensionRenderBoundary>
+        <ExtensionRenderBoundary
+          metadata={{ descriptorId: 'timelineFooter', descriptorType: 'slot', slotName: 'timelineFooter' }}
+        >
+          <SlotRenderer renderer={slotRenderers.timelineFooter} context={renderContext} />
+        </ExtensionRenderBoundary>
+      </div>
     )
     : null;
   const statusBarSlot = slotRenderers.statusBar ? (
-    <ExtensionRenderBoundary
-      metadata={{ descriptorId: 'statusBar', descriptorType: 'slot', slotName: 'statusBar' }}
+    <div
+      data-testid="video-editor-surface-contribution"
+      data-video-editor-contribution-family="surfaces"
+      data-video-editor-contribution-id="statusBar"
+      data-video-editor-surface-kind="slot"
+      data-video-editor-slot-name="statusBar"
     >
-      <SlotRenderer renderer={slotRenderers.statusBar} context={renderContext} />
-    </ExtensionRenderBoundary>
+      <ExtensionRenderBoundary
+        metadata={{ descriptorId: 'statusBar', descriptorType: 'slot', slotName: 'statusBar' }}
+      >
+        <SlotRenderer renderer={slotRenderers.statusBar} context={renderContext} />
+      </ExtensionRenderBoundary>
+    </div>
   ) : null;
 
   const previewOverlay = (
