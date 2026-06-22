@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import React from 'react';
@@ -14,7 +14,7 @@ import { DiagnosticsPanel } from '@/tools/video-editor/components/DiagnosticsPan
 // ---------------------------------------------------------------------------
 
 vi.mock('@/shared/components/ui/button.tsx', () => ({
-  Button: ({ children, ...props }: any) => (
+  Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
     <button type="button" {...props}>
       {children}
     </button>
@@ -22,7 +22,11 @@ vi.mock('@/shared/components/ui/button.tsx', () => ({
 }));
 
 vi.mock('@/shared/components/ui/badge.tsx', () => ({
-  Badge: ({ children, variant, ...props }: any) => (
+  Badge: ({
+    children,
+    variant,
+    ...props
+  }: React.HTMLAttributes<HTMLSpanElement> & { variant?: string }) => (
     <span data-variant={variant} {...props}>
       {children}
     </span>
@@ -30,15 +34,15 @@ vi.mock('@/shared/components/ui/badge.tsx', () => ({
 }));
 
 vi.mock('@/shared/components/ui/dialog.tsx', () => ({
-  Dialog: ({ children, open }: any) => (open ? <>{children}</> : null),
-  DialogContent: ({ children, ...props }: any) => <div {...props}>{children}</div>,
-  DialogDescription: ({ children }: any) => <p>{children}</p>,
-  DialogHeader: ({ children }: any) => <div>{children}</div>,
-  DialogTitle: ({ children }: any) => <h2>{children}</h2>,
+  Dialog: ({ children, open }: React.PropsWithChildren<{ open?: boolean }>) => (open ? <>{children}</> : null),
+  DialogContent: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => <div {...props}>{children}</div>,
+  DialogDescription: ({ children }: React.PropsWithChildren) => <p>{children}</p>,
+  DialogHeader: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+  DialogTitle: ({ children }: React.PropsWithChildren) => <h2>{children}</h2>,
 }));
 
 vi.mock('@/shared/components/ui/contracts/cn.ts', () => ({
-  cn: (...args: any[]) => args.filter(Boolean).join(' '),
+  cn: (...args: unknown[]) => args.filter(Boolean).join(' '),
 }));
 
 // ---------------------------------------------------------------------------
@@ -49,15 +53,15 @@ function createRuntimeContext(
   store: VideoEditorDiagnosticsStore,
 ): VideoEditorRuntimeContextValue {
   return {
-    provider: {} as any,
-    assetResolver: {} as any,
-    auth: {} as any,
-    project: {} as any,
-    shots: {} as any,
-    mediaLightbox: {} as any,
-    agentChat: {} as any,
-    toast: {} as any,
-    telemetry: {} as any,
+    provider: {} as VideoEditorRuntimeContextValue['provider'],
+    assetResolver: {} as VideoEditorRuntimeContextValue['assetResolver'],
+    auth: {} as VideoEditorRuntimeContextValue['auth'],
+    project: {} as VideoEditorRuntimeContextValue['project'],
+    shots: {} as VideoEditorRuntimeContextValue['shots'],
+    mediaLightbox: {} as VideoEditorRuntimeContextValue['mediaLightbox'],
+    agentChat: {} as VideoEditorRuntimeContextValue['agentChat'],
+    toast: {} as VideoEditorRuntimeContextValue['toast'],
+    telemetry: {} as VideoEditorRuntimeContextValue['telemetry'],
     timelineId: 'test-timeline',
     userId: 'test-user',
     timelineName: 'Test Timeline',
@@ -189,6 +193,49 @@ describe('DiagnosticsPanel', () => {
     expect(warningRow!.getAttribute('data-diagnostic-code')).toBe('provider_degraded');
     expect(warningRow!.getAttribute('data-diagnostic-severity')).toBe('warning');
     expect(warningRow!.getAttribute('data-diagnostic-source')).toBe('provider');
+  });
+
+  it('renders render blocker diagnostics with stable source, severity, code, message, and detail', async () => {
+    store.report({
+      severity: 'error',
+      source: 'render',
+      code: 'render_preview_only_export_route',
+      message: 'Render blocked: clip type only supports preview.',
+      detail: {
+        blocker: {
+          code: 'preview_only_export_route',
+          clipType: 'sequence.preview-only',
+        },
+        decision: {
+          route: 'unsupported',
+          reason: 'Preview-only clip types cannot be exported.',
+        },
+      },
+    });
+
+    const runtime = createRuntimeContext(store);
+
+    render(
+      <DataProviderWrapper value={runtime}>
+        <DiagnosticsPanel open={true} onOpenChange={vi.fn()} />
+      </DataProviderWrapper>,
+    );
+
+    const row = screen
+      .getByText('Render blocked: clip type only supports preview.')
+      .closest('[data-diagnostic-code]');
+    expect(row).toBeInTheDocument();
+    expect(row).toHaveAttribute('data-diagnostic-source', 'render');
+    expect(row).toHaveAttribute('data-diagnostic-severity', 'error');
+    expect(row).toHaveAttribute('data-diagnostic-code', 'render_preview_only_export_route');
+    expect(screen.getByText('render')).toBeInTheDocument();
+    expect(screen.getByText('render_preview_only_export_route')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByText('Show details'));
+
+    expect(screen.getByText(/"code": "preview_only_export_route"/)).toBeInTheDocument();
+    expect(screen.getByText(/"clipType": "sequence.preview-only"/)).toBeInTheDocument();
+    expect(screen.getByText(/"route": "unsupported"/)).toBeInTheDocument();
   });
 
   it('displays severity badges with correct variants', () => {

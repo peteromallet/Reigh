@@ -24,7 +24,10 @@ import {
   resolveVideoEditorExtensionRuntimeWithDiagnostics,
   type VideoEditorExtensionInput,
 } from '@/tools/video-editor/runtime/extensionSurface.ts';
-import type { VideoEditorDiagnosticsStore } from '@/tools/video-editor/runtime/diagnostics.ts';
+import type {
+  VideoEditorDiagnosticSource,
+  VideoEditorDiagnosticsStore,
+} from '@/tools/video-editor/runtime/diagnostics.ts';
 
 export interface EditorRuntimeProviderProps {
   dataProvider: DataProvider;
@@ -38,6 +41,12 @@ export interface EditorRuntimeProviderProps {
   diagnosticsStore?: VideoEditorDiagnosticsStore;
   children: ReactNode;
 }
+
+const PROVIDER_DIAGNOSTIC_SOURCES: readonly VideoEditorDiagnosticSource[] = [
+  'provider',
+  'asset-materialization',
+  'asset-generation',
+];
 
 function EditorRuntimeProviderInner({
   children,
@@ -116,18 +125,21 @@ export function EditorRuntimeProvider({
   // or timeline identity changes.  Uses source replacement to prevent stale
   // or duplicate entries from accumulating across rerenders.
   useEffect(() => {
-    const providerDiagnostics = dataProvider.collectDiagnostics?.();
-    if (providerDiagnostics && providerDiagnostics.length > 0) {
-      // Collect diagnostics may carry different sources (e.g. asset-materialization).
-      // Group by source and replace atomically per source to avoid cross-contamination.
-      const bySource = new Map<string, Array<typeof providerDiagnostics[number]>>();
-      for (const d of providerDiagnostics) {
-        const group = bySource.get(d.source);
-        if (group) group.push(d);
-        else bySource.set(d.source, [d]);
-      }
-      for (const [source, diags] of bySource) {
-        diagnosticsStore!.replaceBySource(source as any, diags);
+    const providerDiagnostics = dataProvider.collectDiagnostics?.() ?? [];
+    // Collect diagnostics may carry different sources (e.g. asset-materialization).
+    // Group by source and replace atomically per source to avoid cross-contamination.
+    const bySource = new Map<VideoEditorDiagnosticSource, Array<typeof providerDiagnostics[number]>>();
+    for (const d of providerDiagnostics) {
+      const group = bySource.get(d.source);
+      if (group) group.push(d);
+      else bySource.set(d.source, [d]);
+    }
+    for (const source of PROVIDER_DIAGNOSTIC_SOURCES) {
+      diagnosticsStore!.replaceBySource(source, bySource.get(source) ?? []);
+    }
+    for (const [source, diags] of bySource) {
+      if (!PROVIDER_DIAGNOSTIC_SOURCES.includes(source)) {
+        diagnosticsStore!.replaceBySource(source, diags);
       }
     }
   }, [dataProvider, timelineId, diagnosticsStore]);
@@ -158,4 +170,3 @@ export function EditorRuntimeProvider({
     </DataProviderWrapper>
   );
 }
-

@@ -22,12 +22,18 @@ import {
   normalizeMaterializationDiagnostics,
   createRenderDiagnostic,
   createPerfDiagnostic,
+  VIDEO_EDITOR_DIAGNOSTIC_CODE_DOCS,
+  VIDEO_EDITOR_MATERIALIZATION_DIAGNOSTIC_CODES,
+  VIDEO_EDITOR_PROVIDER_CAPABILITY_DIAGNOSTIC_DOC,
+  VIDEO_EDITOR_PROVIDER_CAPABILITY_DIAGNOSTIC_REASONS,
+  VIDEO_EDITOR_RENDER_BLOCKER_DIAGNOSTIC_CODES,
 } from './diagnostics.ts';
+import { DATA_PROVIDER_CAPABILITIES } from '@/tools/video-editor/data/DataProvider.ts';
+import type { RenderBlockerCode } from '@/tools/video-editor/lib/renderRouter.ts';
 import type {
   VideoEditorDiagnostic,
   VideoEditorDiagnosticSeverity,
   VideoEditorDiagnosticSource,
-  VideoEditorDiagnosticsStore,
 } from './diagnostics.ts';
 import type { ExtensionDiagnostic } from './extensionManifest.ts';
 
@@ -535,6 +541,100 @@ describe('createRenderDiagnostic', () => {
   it('works without detail', () => {
     const result = createRenderDiagnostic('worker_unavailable', 'Worker is offline.');
     expect(result.detail).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Diagnostic code catalog
+// ---------------------------------------------------------------------------
+
+describe('VIDEO_EDITOR_DIAGNOSTIC_CODE_DOCS', () => {
+  it('documents every render blocker diagnostic code with a remedy', () => {
+    const expectedCodes = [
+      'unknown_clip_type',
+      'export_route_blocked',
+      'preview_only_clip',
+      'remotion_module_missing_artifact',
+      'remotion_module_invalid_artifact',
+      'worker_provider_unavailable',
+      'external_provider_unavailable',
+    ] satisfies RenderBlockerCode[];
+
+    expect(VIDEO_EDITOR_RENDER_BLOCKER_DIAGNOSTIC_CODES).toEqual(
+      expectedCodes.map((code) => `render_${code}`),
+    );
+
+    for (const code of VIDEO_EDITOR_RENDER_BLOCKER_DIAGNOSTIC_CODES) {
+      const doc = VIDEO_EDITOR_DIAGNOSTIC_CODE_DOCS.find((entry) => entry.code === code);
+      expect(doc).toMatchObject({
+        source: 'render',
+        severity: 'error',
+        stream: 'render-planner',
+      });
+      expect(doc?.message).toBeTruthy();
+      expect(doc?.remedy).toBeTruthy();
+      expect(doc?.detailKeys).toContain('blocker');
+    }
+  });
+
+  it('documents the provider diagnostics stream and generated capability code pattern', () => {
+    const documentedProviderCodes = VIDEO_EDITOR_DIAGNOSTIC_CODE_DOCS
+      .filter((entry) => entry.stream === 'provider-collectDiagnostics')
+      .map((entry) => entry.code);
+
+    expect(VIDEO_EDITOR_PROVIDER_CAPABILITY_DIAGNOSTIC_DOC).toMatchObject({
+      codePattern: 'provider_capability_<capability>_<reason>',
+      source: 'provider',
+      severity: 'warning',
+      stream: 'provider-collectDiagnostics',
+    });
+    expect(VIDEO_EDITOR_PROVIDER_CAPABILITY_DIAGNOSTIC_DOC.detailKeys).toEqual(
+      expect.arrayContaining(['capability', 'supported', 'reason']),
+    );
+    expect(VIDEO_EDITOR_PROVIDER_CAPABILITY_DIAGNOSTIC_DOC.remedy).toContain('getCapabilities');
+
+    expect(documentedProviderCodes).toContain('timeline_events_unavailable');
+    for (const capability of DATA_PROVIDER_CAPABILITIES) {
+      for (const reason of VIDEO_EDITOR_PROVIDER_CAPABILITY_DIAGNOSTIC_REASONS) {
+        const code = `provider_capability_${capability}_${reason}`;
+        expect(code).toMatch(/^provider_capability_[A-Za-z]+_(absent|unsupported|degraded)$/);
+      }
+    }
+
+    const timelineEventsDoc = VIDEO_EDITOR_DIAGNOSTIC_CODE_DOCS.find(
+      (entry) => entry.code === 'timeline_events_unavailable',
+    );
+    expect(timelineEventsDoc).toMatchObject({
+      source: 'provider',
+      severity: 'warning',
+      stream: 'provider-collectDiagnostics',
+    });
+    expect(timelineEventsDoc?.detailKeys).toEqual(
+      expect.arrayContaining(['table', 'reason', 'timelineId', 'projectId']),
+    );
+    expect(timelineEventsDoc?.remedy).toContain('timeline_events');
+  });
+
+  it('documents all materialization diagnostics with asset detail and remedies', () => {
+    expect(VIDEO_EDITOR_MATERIALIZATION_DIAGNOSTIC_CODES).toEqual([
+      'materialization_unresolvable',
+      'materialization_download-failed',
+      'materialization_refresh-required',
+    ]);
+
+    for (const code of VIDEO_EDITOR_MATERIALIZATION_DIAGNOSTIC_CODES) {
+      const doc = VIDEO_EDITOR_DIAGNOSTIC_CODE_DOCS.find((entry) => entry.code === code);
+      expect(doc).toMatchObject({
+        source: 'asset-materialization',
+        severity: 'warning',
+        stream: 'asset-materialization',
+      });
+      expect(doc?.message).toBeTruthy();
+      expect(doc?.remedy).toBeTruthy();
+      expect(doc?.detailKeys).toEqual(
+        expect.arrayContaining(['assetId', 'generationId', 'reason']),
+      );
+    }
   });
 });
 

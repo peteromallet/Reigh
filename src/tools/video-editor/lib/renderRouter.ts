@@ -87,7 +87,81 @@ export interface RenderRouteDecision {
     | 'mixed_themed_and_media'
     | 'generated_remotion_module'
     | 'mixed_generated_module_and_other'
+    | 'export_route_blocked'
+    | 'preview_only_clip'
     | GeneratedRemotionModuleBlockReason;
+}
+
+export type RenderCapability =
+  | 'browser-remotion'
+  | 'worker-banodoco'
+  | 'external-render'
+  | 'artifact-materialization'
+  | 'generated-remotion-module'
+  | 'custom-render-module';
+
+export interface CapabilityFinding {
+  capability: RenderCapability;
+  status: 'satisfied' | 'required' | 'unavailable';
+  providerId?: RenderProviderId;
+  clipId?: string;
+  clipType?: string;
+  message: string;
+  detail?: Record<string, unknown>;
+}
+
+export type RenderBlockerCode =
+  | 'unknown_clip_type'
+  | 'export_route_blocked'
+  | 'preview_only_clip'
+  | 'remotion_module_missing_artifact'
+  | 'remotion_module_invalid_artifact'
+  | 'worker_provider_unavailable'
+  | 'external_provider_unavailable';
+
+export interface RenderBlocker {
+  code: RenderBlockerCode;
+  route: RenderRoute;
+  capability: RenderCapability;
+  clipId?: string;
+  clipType?: string;
+  message: string;
+  remedy: string;
+  detail?: Record<string, unknown>;
+}
+
+export interface RenderMaterial {
+  kind: 'asset-registry' | 'generated-artifact' | 'worker-package' | 'custom-render-module';
+  requiredBy: RenderCapability;
+  clipId?: string;
+  clipType?: string;
+  artifactId?: string;
+  message: string;
+  detail?: Record<string, unknown>;
+}
+
+export interface RenderArtifactManifest {
+  route: RenderRoute;
+  providerId: RenderProviderId;
+  materials: readonly RenderMaterial[];
+}
+
+export interface RenderPlan {
+  decision: RenderRouteDecision;
+  providerId: RenderProviderId;
+  capabilities: readonly CapabilityFinding[];
+  blockers: readonly RenderBlocker[];
+  artifactManifest: RenderArtifactManifest;
+}
+
+export interface PlanRenderOptions {
+  /**
+   * Worker dispatch is available by default to preserve existing
+   * decideRenderRoute compatibility. Callers that know render startup cannot
+   * reach a worker can request a stable blocker without changing the route.
+   */
+  workerAvailable?: boolean;
+  externalAvailable?: boolean;
 }
 
 const NATIVE_BUILTIN_CLIP_TYPES: ReadonlySet<string> = new Set([
@@ -104,16 +178,29 @@ const isNativeBuiltinClipType = (value: unknown): boolean => {
   return NATIVE_BUILTIN_CLIP_TYPES.has(value);
 };
 
-const isCustomRenderClipType = (value: unknown): boolean => {
+const getDescriptorExportRoute = (value: unknown): string | undefined => {
   if (typeof value !== 'string') {
-    return false;
+    return undefined;
   }
   const descriptor = getRegisteredClipTypeDescriptor(value);
-  return descriptor?.renderCapabilities.exportRoute === 'custom';
+  return descriptor?.renderCapabilities.exportRoute;
 };
 
-/** Pure-decision routing — call this from a hook or test. */
-export function decideRenderRoute(
+const isWorkerExportRoute = (value: unknown): boolean => {
+  const exportRoute = getDescriptorExportRoute(value);
+  return exportRoute === 'banodoco' || exportRoute === 'custom';
+};
+
+const isBlockedExportRoute = (value: unknown): boolean => {
+  const exportRoute = getDescriptorExportRoute(value);
+  return exportRoute === 'blocked'
+    || (exportRoute !== undefined
+      && exportRoute !== 'client'
+      && exportRoute !== 'banodoco'
+      && exportRoute !== 'custom');
+};
+
+function createRenderRouteDecision(
   timeline: RouterTimelineShape | null | undefined,
 ): RenderRouteDecision {
   const clips = (timeline?.clips ?? []) as ReadonlyArray<RouterClipShape>;
@@ -147,8 +234,19 @@ export function decideRenderRoute(
     }
 
     hasOtherClip = true;
-    if (isCustomRenderClipType(clip?.clipType)) {
+    if (isWorkerExportRoute(clip?.clipType)) {
       hasThemedClip = true;
+    } else if (isBlockedExportRoute(clip?.clipType)) {
+      return {
+        route: 'preview-only',
+        hasThemedClip: false,
+        hasMediaClip: false,
+        reason: getDescriptorExportRoute(clip?.clipType) === 'blocked'
+          ? 'export_route_blocked'
+          : 'preview_only_clip',
+      };
+    } else if (getDescriptorExportRoute(clip?.clipType) === 'client') {
+      hasMediaClip = true;
     } else if (isNativeBuiltinClipType(clip?.clipType)) {
       hasMediaClip = true;
     } else {
@@ -192,6 +290,246 @@ export function decideRenderRoute(
     hasMediaClip,
     reason: 'pure_native_clips',
   };
+}
+
+const getClipId = (clip: RouterClipShape): string | undefined => {
+  const id = (clip as { id?: unknown }).id;
+  return typeof id === 'string' && id.trim() ? id : undefined;
+};
+
+const getClipType = (clip: RouterClipShape): string | undefined => {
+  return typeof clip.clipType === 'string' ? clip.clipType : undefined;
+};
+
+function describeClip(clip: RouterClipShape): Pick<RenderBlocker, 'clipId' | 'clipType'> {
+  return {
+    clipId: getClipId(clip),
+    clipType: getClipType(clip),
+  };
+}
+
+function buildRoutePlan(
+  decision: RenderRouteDecision,
+  clips: ReadonlyArray<RouterClipShape>,
+  options: PlanRenderOptions,
+): Pick<RenderPlan, 'capabilities' | 'blockers' | 'artifactManifest'> {
+  const capabilities: CapabilityFinding[] = [];
+  const blockers: RenderBlocker[] = [];
+  const materials: RenderMaterial[] = [];
+
+  if (clips.length === 0) {
+    capabilities.push({
+      capability: 'browser-remotion',
+      status: 'satisfied',
+      providerId: 'browser-remotion',
+      message: 'Empty timelines can use the browser Remotion renderer.',
+    });
+    return {
+      capabilities,
+      blockers,
+      artifactManifest: {
+        route: decision.route,
+        providerId: RENDER_PROVIDER_REGISTRY[decision.route],
+        materials,
+      },
+    };
+  }
+
+  for (const clip of clips) {
+    const clipRef = describeClip(clip);
+    const moduleStatus = getGeneratedRemotionModuleStatus(clip);
+    if (moduleStatus.kind === 'blocked_module') {
+      blockers.push({
+        code: moduleStatus.reason,
+        route: 'preview-only',
+        capability: 'generated-remotion-module',
+        ...clipRef,
+        message: moduleStatus.reason === 'remotion_module_missing_artifact'
+          ? 'Generated Remotion module clips require an artifact id before export.'
+          : 'Generated Remotion module clips require a non-empty string artifact id before export.',
+        remedy: 'Regenerate the clip or attach the generated module artifact before rendering.',
+        detail: { reason: moduleStatus.reason },
+      });
+      continue;
+    }
+    if (moduleStatus.kind === 'valid_module') {
+      capabilities.push({
+        capability: 'generated-remotion-module',
+        status: 'required',
+        providerId: 'worker-banodoco',
+        ...clipRef,
+        message: 'Generated Remotion module clips require worker rendering.',
+        detail: { artifactId: moduleStatus.artifactId },
+      });
+      materials.push({
+        kind: 'generated-artifact',
+        requiredBy: 'generated-remotion-module',
+        ...clipRef,
+        artifactId: moduleStatus.artifactId,
+        message: 'Generated Remotion module artifact must be available to the worker.',
+      });
+      continue;
+    }
+
+    const clipType = getClipType(clip);
+    const descriptor = clipType ? getRegisteredClipTypeDescriptor(clipType) : null;
+    const exportRoute = descriptor?.renderCapabilities.exportRoute;
+
+    if (isNativeBuiltinClipType(clip.clipType)) {
+      capabilities.push({
+        capability: 'browser-remotion',
+        status: 'satisfied',
+        providerId: 'browser-remotion',
+        ...clipRef,
+        message: 'Built-in clip content is supported by the browser Remotion renderer.',
+      });
+      continue;
+    }
+
+    if (!descriptor) {
+      blockers.push({
+        code: 'unknown_clip_type',
+        route: 'browser-remotion',
+        capability: 'browser-remotion',
+        ...clipRef,
+        message: `Clip type '${clipType ?? 'unknown'}' is not registered for export.`,
+        remedy: 'Install/register the clip type or replace the clip with a supported clip type before rendering.',
+      });
+      continue;
+    }
+
+    if (exportRoute === 'client') {
+      capabilities.push({
+        capability: 'browser-remotion',
+        status: 'satisfied',
+        providerId: 'browser-remotion',
+        ...clipRef,
+        message: 'Clip type declares browser export support.',
+      });
+      continue;
+    }
+
+    if (exportRoute === 'banodoco') {
+      capabilities.push({
+        capability: 'worker-banodoco',
+        status: 'required',
+        providerId: 'worker-banodoco',
+        ...clipRef,
+        message: 'Clip type declares Banodoco worker export support.',
+      });
+      materials.push({
+        kind: 'worker-package',
+        requiredBy: 'worker-banodoco',
+        ...clipRef,
+        message: 'Worker package and timeline assets must be available to the Banodoco worker.',
+      });
+      continue;
+    }
+
+    if (exportRoute === 'custom') {
+      capabilities.push({
+        capability: 'custom-render-module',
+        status: 'required',
+        providerId: 'worker-banodoco',
+        ...clipRef,
+        message: 'Custom clip type requires a worker/custom render module.',
+      });
+      materials.push({
+        kind: 'custom-render-module',
+        requiredBy: 'custom-render-module',
+        ...clipRef,
+        message: 'Custom render module and referenced assets must be available to the worker.',
+      });
+      continue;
+    }
+
+    if (exportRoute === 'blocked') {
+      blockers.push({
+        code: 'export_route_blocked',
+        route: 'preview-only',
+        capability: 'browser-remotion',
+        ...clipRef,
+        message: `Clip type '${clipType}' is marked as blocked for export.`,
+        remedy: 'Replace this clip or update its clip-type renderCapabilities when export support is implemented.',
+      });
+      continue;
+    }
+
+    blockers.push({
+      code: 'preview_only_clip',
+      route: 'preview-only',
+      capability: 'browser-remotion',
+      ...clipRef,
+      message: `Clip type '${clipType}' declares unsupported export route '${String(exportRoute)}'.`,
+      remedy: 'Use a clip type with client, banodoco, or custom export support before rendering.',
+      detail: { exportRoute },
+    });
+  }
+
+  if (decision.route === 'worker-banodoco' && options.workerAvailable === false) {
+    capabilities.push({
+      capability: 'worker-banodoco',
+      status: 'unavailable',
+      providerId: 'worker-banodoco',
+      message: 'Banodoco worker rendering is required but unavailable in the current runtime.',
+    });
+    blockers.push({
+      code: 'worker_provider_unavailable',
+      route: decision.route,
+      capability: 'worker-banodoco',
+      message: 'This timeline requires worker rendering, but the worker provider is unavailable.',
+      remedy: 'Configure worker render dispatch or use only browser-renderable clips.',
+    });
+  }
+
+  if (decision.route === 'external' && options.externalAvailable === false) {
+    capabilities.push({
+      capability: 'external-render',
+      status: 'unavailable',
+      providerId: 'external',
+      message: 'External render provider is unavailable in the current runtime.',
+    });
+    blockers.push({
+      code: 'external_provider_unavailable',
+      route: decision.route,
+      capability: 'external-render',
+      message: 'This timeline requires an external render provider, but none is available.',
+      remedy: 'Configure an external render provider or use browser/worker-renderable clips.',
+    });
+  }
+
+  return {
+    capabilities,
+    blockers,
+    artifactManifest: {
+      route: decision.route,
+      providerId: RENDER_PROVIDER_REGISTRY[decision.route],
+      materials,
+    },
+  };
+}
+
+export function planRender(
+  timeline: RouterTimelineShape | null | undefined,
+  options: PlanRenderOptions = {},
+): RenderPlan {
+  const decision = createRenderRouteDecision(timeline);
+  const clips = (timeline?.clips ?? []) as ReadonlyArray<RouterClipShape>;
+  const routePlan = buildRoutePlan(decision, clips, options);
+  return {
+    decision,
+    providerId: RENDER_PROVIDER_REGISTRY[decision.route],
+    capabilities: routePlan.capabilities,
+    blockers: routePlan.blockers,
+    artifactManifest: routePlan.artifactManifest,
+  };
+}
+
+/** Pure-decision routing — call this from a hook or test. */
+export function decideRenderRoute(
+  timeline: RouterTimelineShape | null | undefined,
+): RenderRouteDecision {
+  return planRender(timeline).decision;
 }
 
 // ---------------------------------------------------------------------------

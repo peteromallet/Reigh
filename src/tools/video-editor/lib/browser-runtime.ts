@@ -5,6 +5,7 @@ import {
   TimelineNotFoundError,
   TimelineVersionConflictError,
   type DataProvider,
+  type DataProviderCapabilities,
 } from '@/tools/video-editor/data/DataProvider.ts';
 import type { AssetRegistry, AssetRegistryEntry, TimelineConfig } from '@/tools/video-editor/types/index.ts';
 import type { Checkpoint } from '@/tools/video-editor/types/history.ts';
@@ -73,6 +74,18 @@ type InMemoryTimelineRecord = Required<Pick<InMemoryTimelineSeed, 'config'>> & {
 const emptyRegistry = (): AssetRegistry => ({ assets: {} });
 
 export class InMemoryDataProvider implements DataProvider {
+  readonly capabilities: DataProviderCapabilities = {
+    timelinePersistence: true,
+    assetRegistry: true,
+    extensionState: false,
+    extensionSettings: false,
+    commandProposals: false,
+    syncEventLog: false,
+    materialization: true,
+    assetUploads: false,
+    checkpoints: true,
+  };
+
   private readonly timelines = new Map<string, InMemoryTimelineRecord>();
   private readonly resolveAssetUrlImpl: VideoEditorAssetResolver['resolveAssetUrl'];
 

@@ -25,6 +25,7 @@ vi.mock('@/shared/lib/supabaseSession', () => ({
 
 import { TimelineVersionConflictError, type TimelineConfig } from './DataProvider';
 import { SupabaseDataProvider } from './SupabaseDataProvider';
+import { expectDataProviderCapabilityConformance } from './providerCapabilityConformance.testUtils';
 import {
   listKeepBothArtifacts,
   loadSyncBookmark,
@@ -118,6 +119,22 @@ describe('SupabaseDataProvider', () => {
     vi.stubGlobal('fetch', vi.fn());
   });
 
+  it('declares app-backed provider capabilities and normalizes unsupported feature diagnostics', async () => {
+    const provider = new SupabaseDataProvider({ projectId: 'project-1', userId: 'user-1' });
+
+    await expectDataProviderCapabilityConformance(provider, 'supabase', {
+      supported: [
+        'timelinePersistence',
+        'assetRegistry',
+        'syncEventLog',
+        'materialization',
+        'assetUploads',
+        'checkpoints',
+      ],
+      unsupported: ['extensionState', 'extensionSettings', 'commandProposals'],
+    });
+  });
+
   it('loadTimeline and loadAssetRegistry keep reading materialized Supabase rows', async () => {
     const provider = new SupabaseDataProvider({ projectId: 'project-1', userId: 'user-1' });
 
@@ -194,6 +211,133 @@ describe('SupabaseDataProvider', () => {
       hub_hash: 'a'.repeat(64),
       hub_event_id: '01ARZ3NDEKTSV4RRFFQ69G5FAB',
     }));
+  });
+
+  it('preserves empty timeline_events logs as DB head version 0 without diagnostics', async () => {
+    const provider = new SupabaseDataProvider({ projectId: 'project-1', userId: 'user-1' });
+
+    const timelinesQuery = mockTimelinesSelect({
+      data: {
+        config: buildConfig(),
+        config_version: 1,
+      },
+      error: null,
+    });
+    const timelineHeadQuery = mockTimelineHeadSelect({
+      data: null,
+      error: null,
+    });
+    mocks.from.mockImplementation((table: string) => {
+      if (table === 'timelines') {
+        return { select: timelinesQuery.select };
+      }
+      if (table === 'timeline_events') {
+        return { select: timelineHeadQuery.select };
+      }
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
+    await provider.loadTimeline('timeline-empty');
+
+    await expect(loadSyncBookmark('timeline-empty', 'app')).resolves.toEqual(expect.objectContaining({
+      spoke_version: 0,
+      spoke_hash: null,
+      spoke_event_id: null,
+      hub_version: 0,
+      hub_hash: null,
+      hub_event_id: null,
+    }));
+    expect(provider.collectDiagnostics()).toEqual([]);
+  });
+
+  it('degrades missing timeline_events logs to a stable provider diagnostic', async () => {
+    const provider = new SupabaseDataProvider({ projectId: 'project-1', userId: 'user-1' });
+
+    const timelinesQuery = mockTimelinesSelect({
+      data: {
+        config: buildConfig(),
+        config_version: 1,
+      },
+      error: null,
+    });
+    const timelineHeadQuery = mockTimelineHeadSelect({
+      data: null,
+      error: {
+        code: '42P01',
+        message: 'relation "public.timeline_events" does not exist',
+      },
+    });
+    mocks.from.mockImplementation((table: string) => {
+      if (table === 'timelines') {
+        return { select: timelinesQuery.select };
+      }
+      if (table === 'timeline_events') {
+        return { select: timelineHeadQuery.select };
+      }
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
+    await provider.loadTimeline('timeline-1');
+
+    expect(provider.collectDiagnostics()).toEqual([
+      expect.objectContaining({
+        code: 'timeline_events_unavailable',
+        source: 'provider',
+        severity: 'warning',
+        detail: expect.objectContaining({
+          table: 'timeline_events',
+          reason: 'missing',
+          timelineId: 'timeline-1',
+          projectId: 'project-1',
+          code: '42P01',
+        }),
+      }),
+    ]);
+  });
+
+  it('degrades inaccessible timeline_events logs to a stable provider diagnostic', async () => {
+    const provider = new SupabaseDataProvider({ projectId: 'project-1', userId: 'user-1' });
+
+    const timelinesQuery = mockTimelinesSelect({
+      data: {
+        config: buildConfig(),
+        config_version: 1,
+      },
+      error: null,
+    });
+    const timelineHeadQuery = mockTimelineHeadSelect({
+      data: null,
+      error: {
+        code: '42501',
+        message: 'permission denied for table timeline_events',
+      },
+    });
+    mocks.from.mockImplementation((table: string) => {
+      if (table === 'timelines') {
+        return { select: timelinesQuery.select };
+      }
+      if (table === 'timeline_events') {
+        return { select: timelineHeadQuery.select };
+      }
+      throw new Error(`Unexpected table: ${table}`);
+    });
+
+    await provider.loadTimeline('timeline-inaccessible');
+
+    expect(provider.collectDiagnostics()).toEqual([
+      expect.objectContaining({
+        code: 'timeline_events_unavailable',
+        source: 'provider',
+        severity: 'warning',
+        detail: expect.objectContaining({
+          table: 'timeline_events',
+          reason: 'inaccessible',
+          timelineId: 'timeline-inaccessible',
+          projectId: 'project-1',
+          code: '42501',
+        }),
+      }),
+    ]);
   });
 
   it('saveTimeline posts config and registry to the append service with the user JWT', async () => {

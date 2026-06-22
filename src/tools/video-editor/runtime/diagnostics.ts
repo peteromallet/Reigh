@@ -10,8 +10,9 @@
 
 import type {
   ExtensionDiagnostic,
-  ExtensionDiagnosticCode,
 } from './extensionManifest.ts';
+import type { DataProviderCapability } from '@/tools/video-editor/data/DataProvider.ts';
+import type { RenderBlockerCode } from '@/tools/video-editor/lib/renderRouter.ts';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -41,6 +42,217 @@ export type VideoEditorDiagnosticSource =
   | 'render'
   | 'provider'
   | 'perf';
+
+export type RenderBlockerDiagnosticCode = `render_${RenderBlockerCode}`;
+
+export type ProviderCapabilityDiagnosticReason = 'absent' | 'unsupported' | 'degraded';
+
+export type ProviderCapabilityDiagnosticCode =
+  `provider_capability_${DataProviderCapability}_${ProviderCapabilityDiagnosticReason}`;
+
+export type MaterializationDiagnosticReason = 'unresolvable' | 'download-failed' | 'refresh-required';
+
+export type MaterializationDiagnosticCode = `materialization_${MaterializationDiagnosticReason}`;
+
+export type VideoEditorDocumentedDiagnosticCode =
+  | RenderBlockerDiagnosticCode
+  | ProviderCapabilityDiagnosticCode
+  | MaterializationDiagnosticCode
+  | 'render_preview_only'
+  | 'render_worker_unavailable'
+  | 'render_failed'
+  | 'render_pipeline_failed'
+  | 'timeline_events_unavailable';
+
+export interface VideoEditorDiagnosticCodeDoc {
+  code: VideoEditorDocumentedDiagnosticCode;
+  source: VideoEditorDiagnosticSource;
+  severity: VideoEditorDiagnosticSeverity;
+  message: string;
+  remedy: string;
+  detailKeys: readonly string[];
+  stream: 'render-planner' | 'provider-collectDiagnostics' | 'asset-materialization' | 'render-runtime';
+}
+
+export interface VideoEditorGeneratedDiagnosticCodeDoc {
+  codePattern: 'provider_capability_<capability>_<reason>';
+  source: VideoEditorDiagnosticSource;
+  severity: VideoEditorDiagnosticSeverity;
+  message: string;
+  remedy: string;
+  detailKeys: readonly string[];
+  stream: 'provider-collectDiagnostics';
+}
+
+export const VIDEO_EDITOR_RENDER_BLOCKER_DIAGNOSTIC_CODES = [
+  'render_unknown_clip_type',
+  'render_export_route_blocked',
+  'render_preview_only_clip',
+  'render_remotion_module_missing_artifact',
+  'render_remotion_module_invalid_artifact',
+  'render_worker_provider_unavailable',
+  'render_external_provider_unavailable',
+] as const satisfies readonly RenderBlockerDiagnosticCode[];
+
+export const VIDEO_EDITOR_PROVIDER_CAPABILITY_DIAGNOSTIC_REASONS = [
+  'absent',
+  'unsupported',
+  'degraded',
+] as const satisfies readonly ProviderCapabilityDiagnosticReason[];
+
+export const VIDEO_EDITOR_PROVIDER_CAPABILITY_DIAGNOSTIC_DOC = {
+  codePattern: 'provider_capability_<capability>_<reason>',
+  source: 'provider',
+  severity: 'warning',
+  message: 'Data provider capability metadata is absent, unsupported, or degraded for a required feature.',
+  remedy: 'Declare provider.capabilities/getCapabilities(), gate unsupported features, or choose a provider that supports the required capability.',
+  detailKeys: ['capability', 'supported', 'reason', 'providerId', 'remedy'],
+  stream: 'provider-collectDiagnostics',
+} as const satisfies VideoEditorGeneratedDiagnosticCodeDoc;
+
+export const VIDEO_EDITOR_MATERIALIZATION_DIAGNOSTIC_CODES = [
+  'materialization_unresolvable',
+  'materialization_download-failed',
+  'materialization_refresh-required',
+] as const satisfies readonly MaterializationDiagnosticCode[];
+
+export const VIDEO_EDITOR_DIAGNOSTIC_CODE_DOCS = [
+  {
+    code: 'render_unknown_clip_type',
+    source: 'render',
+    severity: 'error',
+    message: 'A timeline clip uses a clip type that is not registered for export.',
+    remedy: 'Install/register the clip type or replace the clip with a supported clip type before rendering.',
+    detailKeys: ['blocker', 'decision', 'providerId'],
+    stream: 'render-planner',
+  },
+  {
+    code: 'render_export_route_blocked',
+    source: 'render',
+    severity: 'error',
+    message: 'A clip type explicitly marks export as blocked.',
+    remedy: 'Replace the clip or update its clip-type renderCapabilities when export support is implemented.',
+    detailKeys: ['blocker', 'decision', 'providerId'],
+    stream: 'render-planner',
+  },
+  {
+    code: 'render_preview_only_clip',
+    source: 'render',
+    severity: 'error',
+    message: 'A clip type declares a preview-only or otherwise unsupported export route.',
+    remedy: 'Use a clip type with client, banodoco, or custom export support before rendering.',
+    detailKeys: ['blocker', 'decision', 'providerId', 'exportRoute'],
+    stream: 'render-planner',
+  },
+  {
+    code: 'render_remotion_module_missing_artifact',
+    source: 'render',
+    severity: 'error',
+    message: 'A generated Remotion module clip is missing artifact metadata.',
+    remedy: 'Regenerate the clip or attach the generated module artifact before rendering.',
+    detailKeys: ['blocker', 'decision', 'providerId', 'reason'],
+    stream: 'render-planner',
+  },
+  {
+    code: 'render_remotion_module_invalid_artifact',
+    source: 'render',
+    severity: 'error',
+    message: 'A generated Remotion module clip has invalid artifact metadata.',
+    remedy: 'Regenerate the clip or attach a non-empty string artifact id before rendering.',
+    detailKeys: ['blocker', 'decision', 'providerId', 'reason'],
+    stream: 'render-planner',
+  },
+  {
+    code: 'render_worker_provider_unavailable',
+    source: 'render',
+    severity: 'error',
+    message: 'The render plan requires the Banodoco worker provider, but it is unavailable.',
+    remedy: 'Configure worker render dispatch or use only browser-renderable clips.',
+    detailKeys: ['blocker', 'decision', 'providerId'],
+    stream: 'render-planner',
+  },
+  {
+    code: 'render_external_provider_unavailable',
+    source: 'render',
+    severity: 'error',
+    message: 'The render plan requires an external render provider, but none is available.',
+    remedy: 'Configure an external render provider or use browser/worker-renderable clips.',
+    detailKeys: ['blocker', 'decision', 'providerId'],
+    stream: 'render-planner',
+  },
+  {
+    code: 'render_preview_only',
+    source: 'render',
+    severity: 'error',
+    message: 'Compatibility render startup reached a preview-only route.',
+    remedy: 'Attach valid worker artifact metadata or replace unsupported preview-only clips.',
+    detailKeys: ['reason'],
+    stream: 'render-runtime',
+  },
+  {
+    code: 'render_worker_unavailable',
+    source: 'render',
+    severity: 'error',
+    message: 'Compatibility render startup reached a worker/external route without a runtime provider.',
+    remedy: 'Configure worker render dispatch or use only browser-renderable clips.',
+    detailKeys: ['route', 'reason'],
+    stream: 'render-runtime',
+  },
+  {
+    code: 'render_failed',
+    source: 'render',
+    severity: 'error',
+    message: 'The browser render path failed after startup.',
+    remedy: 'Inspect the structured error detail and retry after fixing the reported runtime failure.',
+    detailKeys: ['error'],
+    stream: 'render-runtime',
+  },
+  {
+    code: 'render_pipeline_failed',
+    source: 'render',
+    severity: 'error',
+    message: 'The render pipeline failed while preparing or dispatching render work.',
+    remedy: 'Inspect pipeline detail, provider configuration, and asset materialization state.',
+    detailKeys: ['error'],
+    stream: 'render-runtime',
+  },
+  {
+    code: 'timeline_events_unavailable',
+    source: 'provider',
+    severity: 'warning',
+    message: 'Supabase could not read the timeline_events infrastructure.',
+    remedy: 'Apply or repair timeline_events access/migration before relying on sync history.',
+    detailKeys: ['table', 'reason', 'timelineId', 'projectId'],
+    stream: 'provider-collectDiagnostics',
+  },
+  {
+    code: 'materialization_unresolvable',
+    source: 'asset-materialization',
+    severity: 'warning',
+    message: 'Astrid bridge could not resolve a generation asset for local materialization.',
+    remedy: 'Refresh or replace the listed generation asset, then reload the local timeline.',
+    detailKeys: ['assetId', 'generationId', 'reason'],
+    stream: 'asset-materialization',
+  },
+  {
+    code: 'materialization_download-failed',
+    source: 'asset-materialization',
+    severity: 'warning',
+    message: 'Astrid bridge resolved a generation asset but failed to download it.',
+    remedy: 'Check the asset URL/access and retry materialization.',
+    detailKeys: ['assetId', 'generationId', 'reason'],
+    stream: 'asset-materialization',
+  },
+  {
+    code: 'materialization_refresh-required',
+    source: 'asset-materialization',
+    severity: 'warning',
+    message: 'Astrid bridge needs a refreshed generation asset URL before local materialization can continue.',
+    remedy: 'Refresh the generation asset, then retry materialization.',
+    detailKeys: ['assetId', 'generationId', 'reason'],
+    stream: 'asset-materialization',
+  },
+] as const satisfies readonly VideoEditorDiagnosticCodeDoc[];
 
 /**
  * Stable diagnostic emitted by the video editor runtime.

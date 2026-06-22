@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useClientRender } from '@/tools/video-editor/hooks/useClientRender.ts';
 import type { CompositionMetadata } from '@/tools/video-editor/hooks/useDerivedTimeline.ts';
 import type { VideoEditorExporter } from '@/tools/video-editor/lib/browser-runtime.ts';
 import type { ResolvedTimelineConfig } from '@/tools/video-editor/types/index.ts';
 import { createRenderDiagnostic } from '@/tools/video-editor/runtime/diagnostics.ts';
 import type { VideoEditorDiagnosticReporter } from '@/tools/video-editor/runtime/diagnostics.ts';
+import type { RenderBlocker, RenderRouteDecision } from '@/tools/video-editor/lib/renderRouter.ts';
+import { planRender } from '@/tools/video-editor/lib/renderRouter.ts';
 
 export type RenderStatus = 'idle' | 'rendering' | 'done' | 'error';
 
@@ -12,37 +14,25 @@ type RenderProgress = { current: number; total: number; percent: number; phase: 
 
 const CLIENT_CLIP_TYPES = new Set(['media', 'text', 'effect-layer', 'hold']);
 
-function getFastRenderRouteDecision(resolvedConfig: ResolvedTimelineConfig | null) {
+type StartupRenderDecision = Pick<RenderRouteDecision, 'route' | 'reason'>;
+
+function getFastRenderRouteDecision(resolvedConfig: ResolvedTimelineConfig | null): StartupRenderDecision | null {
   const clips = resolvedConfig?.clips ?? [];
 
   if (clips.length === 0) {
     return { route: 'browser-remotion' as const, reason: 'no_clips' };
   }
 
-  let hasGeneratedModuleClip = false;
-  let hasOtherClip = false;
   for (const clip of clips) {
     if (clip.generation?.sequence_lane === 'remotion_module') {
-      if (!clip.generation?.artifact_id) {
-        return { route: 'preview-only' as const, reason: 'remotion_module_missing_artifact' };
-      }
-      hasGeneratedModuleClip = true;
-      continue;
+      return null;
     }
 
     if (!clip.clipType || CLIENT_CLIP_TYPES.has(clip.clipType)) {
-      hasOtherClip = true;
       continue;
     }
 
     return null;
-  }
-
-  if (hasGeneratedModuleClip) {
-    return {
-      route: 'worker-banodoco' as const,
-      reason: hasOtherClip ? 'mixed_generated_module_and_other' : 'generated_remotion_module',
-    };
   }
 
   return { route: 'browser-remotion' as const, reason: 'pure_native_clips' };
@@ -68,6 +58,13 @@ export function useRenderState(
   const [renderProgress, setRenderProgress] = useState<RenderProgress>(null);
   const [renderResultUrl, setRenderResultUrl] = useState<string | null>(null);
   const [renderResultFilename, setRenderResultFilename] = useState<string | null>(null);
+  const renderPlan = useMemo(
+    () => planRender(resolvedConfig, {
+      workerAvailable: false,
+      externalAvailable: false,
+    }),
+    [resolvedConfig],
+  );
 
   useEffect(() => {
     return () => {
@@ -99,31 +96,26 @@ export function useRenderState(
   });
 
   const startRender = useCallback(async () => {
-    let decision = getFastRenderRouteDecision(resolvedConfig);
+    let decision: StartupRenderDecision | null = getFastRenderRouteDecision(resolvedConfig);
     if (!decision) {
-      let importedDecision: {
-      route: 'browser-remotion' | 'worker-banodoco' | 'preview-only' | 'external';
-      reason: string;
-      };
-      try {
-        const renderRouter = await import('@/tools/video-editor/lib/renderRouter');
-        importedDecision = renderRouter.decideRenderRoute(resolvedConfig);
-      } catch (error) {
-        const message = error instanceof Error
-          ? `Render routing unavailable: ${error.message}`
-          : 'Render routing unavailable.';
+      decision = renderPlan.decision;
+      if (renderPlan.blockers.length > 0) {
+        const message = buildBlockedRenderMessage(renderPlan.blockers, renderPlan.decision);
         setRenderStatus('error');
         setRenderProgress(null);
         setRenderDirty(false);
         setRenderLog(message);
-        diagnosticsReporter?.report(createRenderDiagnostic(
-          'render_router_import_failed',
-          message,
-          { error: error instanceof Error ? error.message : String(error) },
-        ));
+        diagnosticsReporter?.reportMany(renderPlan.blockers.map((blocker) => createRenderDiagnostic(
+          `render_${blocker.code}`,
+          blocker.message,
+          {
+            blocker,
+            decision,
+            providerId: renderPlan.providerId,
+          },
+        )));
         return;
       }
-      decision = importedDecision;
     }
     if (decision.route === 'preview-only') {
       const message = `Render blocked: ${decision.reason}. Generated Remotion module clips require valid worker artifact metadata.`;
@@ -217,7 +209,7 @@ export function useRenderState(
     }
 
     await startClientRender();
-  }, [exporter, renderMetadata?.durationInFrames, resolvedConfig, startClientRender, diagnosticsReporter]);
+  }, [exporter, renderMetadata?.durationInFrames, renderPlan, resolvedConfig, startClientRender, diagnosticsReporter]);
 
   return {
     renderStatus,
@@ -226,10 +218,23 @@ export function useRenderState(
     renderProgress,
     renderResultUrl,
     renderResultFilename,
+    renderPlan,
     setRenderStatus,
     setRenderLog,
     setRenderDirty,
     setRenderProgress,
     startRender,
   };
+}
+
+function buildBlockedRenderMessage(
+  blockers: readonly RenderBlocker[],
+  decision: RenderRouteDecision,
+): string {
+  const [primary] = blockers;
+  if (!primary) {
+    return `Render blocked: ${decision.reason}.`;
+  }
+  const suffix = blockers.length > 1 ? ` (${blockers.length} blockers)` : '';
+  return `Render blocked: ${primary.code}${suffix}. ${primary.message} ${primary.remedy}`;
 }

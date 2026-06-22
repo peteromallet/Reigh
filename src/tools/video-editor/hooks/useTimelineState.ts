@@ -331,7 +331,7 @@ function useTimelineChromeContextValue({
   timelineName: string | null;
   saveStatus: ReturnType<typeof useTimelineSave>['saveStatus'];
   isConflictExhausted: boolean;
-  render: Pick<RenderStateHook, 'renderStatus' | 'renderLog' | 'renderDirty' | 'renderProgress' | 'renderResultUrl' | 'renderResultFilename'>;
+  render: Pick<RenderStateHook, 'renderStatus' | 'renderLog' | 'renderDirty' | 'renderProgress' | 'renderPlan' | 'renderResultUrl' | 'renderResultFilename'>;
   history: Pick<TimelineHistoryHook, 'undo' | 'redo' | 'canUndo' | 'canRedo' | 'checkpoints' | 'jumpToCheckpoint' | 'createManualCheckpoint'>;
   setScaleWidth: ReturnType<typeof useEditorPreferences>['setScaleWidth'];
   trackManagement: Pick<TimelineTrackManagementHook, 'handleAddTrack' | 'handleClearUnusedTracks' | 'unusedTrackCount'>;
@@ -348,6 +348,7 @@ function useTimelineChromeContextValue({
     renderLog: render.renderLog,
     renderDirty: render.renderDirty,
     renderProgress: render.renderProgress,
+    renderPlan: render.renderPlan,
     renderResultUrl: render.renderResultUrl,
     renderResultFilename: render.renderResultFilename,
     undo: history.undo,
@@ -380,6 +381,7 @@ function useTimelineChromeContextValue({
     reloadFromServer,
     render.renderDirty,
     render.renderLog,
+    render.renderPlan,
     render.renderProgress,
     render.renderResultFilename,
     render.renderResultUrl,
@@ -468,7 +470,12 @@ export function useTimelineState(): UseTimelineStateResult {
     interactionStateRef,
   });
   const derived = useDerivedTimeline(save.data, save.selectedClipId, save.selectedTrackId);
-  const render = useRenderState(derived.resolvedConfig, derived.renderMetadata, runtime.exporter ?? null);
+  const render = useRenderState(
+    derived.resolvedConfig,
+    derived.renderMetadata,
+    runtime.exporter ?? null,
+    runtime.diagnosticsStore,
+  );
   const assetOperations = useAssetOperations(
     runtime.provider,
     runtime.timelineId,
@@ -501,6 +508,7 @@ export function useTimelineState(): UseTimelineStateResult {
     renderLog,
     renderDirty,
     renderProgress,
+    renderPlan,
     renderResultUrl,
     renderResultFilename,
     setRenderDirty,
@@ -877,6 +885,7 @@ export function useTimelineState(): UseTimelineStateResult {
       renderLog,
       renderDirty,
       renderProgress,
+      renderPlan,
       renderResultUrl,
       renderResultFilename,
     },

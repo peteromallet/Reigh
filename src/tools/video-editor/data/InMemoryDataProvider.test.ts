@@ -3,6 +3,7 @@ import {
   InMemoryDataProvider,
   createLocalAssetResolver,
 } from '@/tools/video-editor/lib/browser-runtime';
+import { expectDataProviderCapabilityConformance } from './providerCapabilityConformance.testUtils';
 import {
   TimelineNotFoundError,
   TimelineVersionConflictError,
@@ -100,5 +101,14 @@ describe('InMemoryDataProvider', () => {
 
     await expect(provider.resolveAssetUrl('video/demo.mp4')).resolves.toBe('https://cdn.example/assets/video/demo.mp4');
     await expect(provider.resolveAssetUrl('https://example.com/absolute.mp4')).resolves.toBe('https://example.com/absolute.mp4');
+  });
+
+  it('declares browser-local provider capabilities and normalizes unsupported feature diagnostics', async () => {
+    const provider = new InMemoryDataProvider();
+
+    await expectDataProviderCapabilityConformance(provider, 'browser-local', {
+      supported: ['timelinePersistence', 'assetRegistry', 'materialization', 'checkpoints'],
+      unsupported: ['extensionState', 'extensionSettings', 'commandProposals', 'syncEventLog', 'assetUploads'],
+    });
   });
 });

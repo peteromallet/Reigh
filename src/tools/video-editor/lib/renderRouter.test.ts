@@ -7,6 +7,7 @@ import {
   buildRenderTimelinePayload,
   decideRenderRoute,
   enqueueBanodocoRenderTimeline,
+  planRender,
 } from '@/tools/video-editor/lib/renderRouter';
 import { executeRenderPipeline } from '@/tools/video-editor/render/renderPipeline';
 
@@ -178,6 +179,231 @@ describe('Sprint 8 render-button router (decideRenderRoute)', () => {
     expect(decideRenderRoute({ clips: [] }).reason).toBe('no_clips');
     expect(decideRenderRoute(null).reason).toBe('no_clips');
     expect(decideRenderRoute(undefined).reason).toBe('no_clips');
+  });
+});
+
+describe('M6 render planner contract (planRender)', () => {
+  it('preserves built-in client route decisions while reporting satisfied browser capabilities', () => {
+    const timeline = {
+      clips: [
+        { id: 'clip-media', clipType: 'media' },
+        { id: 'clip-text', clipType: 'text' },
+        { id: 'clip-effect', clipType: 'effect-layer' },
+        { id: 'clip-hold', clipType: 'hold' },
+      ],
+    };
+
+    expect(planRender(timeline).decision).toEqual(decideRenderRoute(timeline));
+    expect(planRender(timeline)).toMatchObject({
+      providerId: 'browser-remotion',
+      decision: {
+        route: 'browser-remotion',
+        reason: 'pure_native_clips',
+        hasThemedClip: false,
+        hasMediaClip: true,
+      },
+      blockers: [],
+      artifactManifest: {
+        route: 'browser-remotion',
+        providerId: 'browser-remotion',
+        materials: [],
+      },
+    });
+    expect(planRender(timeline).capabilities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          capability: 'browser-remotion',
+          status: 'satisfied',
+          providerId: 'browser-remotion',
+          clipId: 'clip-media',
+          clipType: 'media',
+        }),
+        expect.objectContaining({
+          capability: 'browser-remotion',
+          status: 'satisfied',
+          providerId: 'browser-remotion',
+          clipId: 'clip-text',
+          clipType: 'text',
+        }),
+      ]),
+    );
+  });
+
+  it('uses clip-type exportRoute as the canonical source for custom/extension worker requirements', () => {
+    const plan = planRender({
+      clips: [{ id: 'clip-custom', clipType: 'image-jump' }],
+    });
+
+    expect(plan.decision).toMatchObject({
+      route: 'worker-banodoco',
+      reason: 'themed_only',
+      hasThemedClip: true,
+      hasMediaClip: false,
+    });
+    expect(plan.capabilities).toEqual([
+      expect.objectContaining({
+        capability: 'custom-render-module',
+        status: 'required',
+        providerId: 'worker-banodoco',
+        clipId: 'clip-custom',
+        clipType: 'image-jump',
+      }),
+    ]);
+    expect(plan.artifactManifest).toMatchObject({
+      route: 'worker-banodoco',
+      providerId: 'worker-banodoco',
+      materials: [
+        expect.objectContaining({
+          kind: 'custom-render-module',
+          requiredBy: 'custom-render-module',
+          clipId: 'clip-custom',
+          clipType: 'image-jump',
+        }),
+      ],
+    });
+  });
+
+  it('emits stable blockers for unknown clip types without changing decideRenderRoute compatibility', () => {
+    const timeline = {
+      clips: [{ id: 'clip-unknown', clipType: 'theme-package-not-yet-installed' }],
+    };
+    const decision = decideRenderRoute(timeline);
+    const plan = planRender(timeline);
+
+    expect(decision).toMatchObject({
+      route: 'browser-remotion',
+      reason: 'pure_native_clips',
+      hasThemedClip: false,
+      hasMediaClip: true,
+    });
+    expect(plan.decision).toEqual(decision);
+    expect(plan.blockers).toEqual([
+      expect.objectContaining({
+        code: 'unknown_clip_type',
+        route: 'browser-remotion',
+        capability: 'browser-remotion',
+        clipId: 'clip-unknown',
+        clipType: 'theme-package-not-yet-installed',
+      }),
+    ]);
+  });
+
+  it('emits stable blockers for malformed generated module artifact metadata', () => {
+    const missingPlan = planRender({
+      clips: [{
+        id: 'clip-missing-artifact',
+        clipType: 'media',
+        generation: { sequence_lane: 'remotion_module' },
+      }],
+    });
+    const invalidPlan = planRender({
+      clips: [{
+        id: 'clip-invalid-artifact',
+        clipType: 'media',
+        generation: { sequence_lane: 'remotion_module', artifact_id: 42 },
+      }],
+    });
+
+    expect(missingPlan.decision).toMatchObject({
+      route: 'preview-only',
+      reason: 'remotion_module_missing_artifact',
+    });
+    expect(missingPlan.blockers).toEqual([
+      expect.objectContaining({
+        code: 'remotion_module_missing_artifact',
+        route: 'preview-only',
+        capability: 'generated-remotion-module',
+        clipId: 'clip-missing-artifact',
+      }),
+    ]);
+    expect(invalidPlan.blockers).toEqual([
+      expect.objectContaining({
+        code: 'remotion_module_invalid_artifact',
+        route: 'preview-only',
+        capability: 'generated-remotion-module',
+        clipId: 'clip-invalid-artifact',
+      }),
+    ]);
+  });
+
+  it('emits stable unavailable-provider blockers for worker routes', () => {
+    const plan = planRender({
+      clips: [{ id: 'clip-worker', clipType: 'image-jump' }],
+    }, {
+      workerAvailable: false,
+    });
+
+    expect(plan.decision.route).toBe('worker-banodoco');
+    expect(plan.capabilities).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        capability: 'worker-banodoco',
+        status: 'unavailable',
+        providerId: 'worker-banodoco',
+      }),
+    ]));
+    expect(plan.blockers).toEqual([
+      expect.objectContaining({
+        code: 'worker_provider_unavailable',
+        route: 'worker-banodoco',
+        capability: 'worker-banodoco',
+      }),
+    ]);
+  });
+
+  it('treats blocked and preview-only descriptor export routes as stable planner blockers', async () => {
+    vi.resetModules();
+    vi.doMock('@/tools/video-editor/clip-types/runtime.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('@/tools/video-editor/clip-types/runtime.ts')>();
+      return {
+        ...actual,
+        getRegisteredClipTypeDescriptor: (clipType: string | undefined) => {
+          if (clipType === 'blocked-export') {
+            return {
+              renderCapabilities: {
+                previewRoute: 'custom',
+                exportRoute: 'blocked',
+                knownLimitations: ['Preview-only extension clip.'],
+              },
+            };
+          }
+          if (clipType === 'preview-export') {
+            return {
+              renderCapabilities: {
+                previewRoute: 'custom',
+                exportRoute: 'preview-only',
+              },
+            };
+          }
+          return actual.getRegisteredClipTypeDescriptor(clipType);
+        },
+      };
+    });
+
+    const mockedRouter = await import('@/tools/video-editor/lib/renderRouter.ts');
+    expect(mockedRouter.planRender({
+      clips: [{ id: 'clip-blocked', clipType: 'blocked-export' }],
+    }).blockers).toEqual([
+      expect.objectContaining({
+        code: 'export_route_blocked',
+        route: 'preview-only',
+        clipId: 'clip-blocked',
+        clipType: 'blocked-export',
+      }),
+    ]);
+    expect(mockedRouter.planRender({
+      clips: [{ id: 'clip-preview', clipType: 'preview-export' }],
+    }).blockers).toEqual([
+      expect.objectContaining({
+        code: 'preview_only_clip',
+        route: 'preview-only',
+        clipId: 'clip-preview',
+        clipType: 'preview-export',
+        detail: { exportRoute: 'preview-only' },
+      }),
+    ]);
+
+    vi.doUnmock('@/tools/video-editor/clip-types/runtime.ts');
+    vi.resetModules();
   });
 });
 

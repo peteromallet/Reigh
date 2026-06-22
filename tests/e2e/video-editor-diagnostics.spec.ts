@@ -10,6 +10,16 @@
  */
 
 import { expect, test } from '@playwright/test';
+import type { VideoEditorDiagnostic } from '../../src/tools/video-editor/runtime/diagnostics';
+
+declare global {
+  interface Window {
+    __videoEditorDiagnosticsStore?: {
+      getSnapshot(): readonly VideoEditorDiagnostic[];
+    };
+    __videoEditorBrowserRendererInvocations?: number;
+  }
+}
 
 const HARNESS_URL = '/dev/video-editor-diagnostics-harness';
 
@@ -204,6 +214,33 @@ test('provider-diagnostics fixture produces materialization and provider degrada
 });
 
 // ---------------------------------------------------------------------------
+// Render blocker diagnostics
+// ---------------------------------------------------------------------------
+
+test('render-blocked fixture shows render error and does not invoke browser renderer', async ({
+  page,
+}) => {
+  await openDiagnosticsPanel(page, 'render-blocked');
+
+  const renderDiag = page
+    .locator(DIAGNOSTICS_PANEL)
+    .locator('[data-diagnostic-code="render_remotion_module_missing_artifact"]');
+
+  await expect(renderDiag).toBeAttached();
+  await expect(renderDiag).toHaveAttribute('data-diagnostic-severity', 'error');
+  await expect(renderDiag).toHaveAttribute('data-diagnostic-source', 'render');
+  await expect(renderDiag).toContainText(
+    'Render blocked: Generated Remotion module clips require an artifact id before export.',
+  );
+
+  const browserRendererInvocations = await page.evaluate(() => (
+    window.__videoEditorBrowserRendererInvocations ?? null
+  ));
+
+  expect(browserRendererInvocations).toBe(0);
+});
+
+// ---------------------------------------------------------------------------
 // All fixtures (aggregate verification)
 // ---------------------------------------------------------------------------
 
@@ -264,7 +301,7 @@ test('diagnostics store is exposed on window for direct inspection', async ({ pa
 
   // Inspect the store directly.
   const diagnostics = await page.evaluate(() => {
-    const store = (window as any).__videoEditorDiagnosticsStore;
+    const store = window.__videoEditorDiagnosticsStore;
     if (!store) return null;
     return store.getSnapshot();
   });
@@ -274,7 +311,7 @@ test('diagnostics store is exposed on window for direct inspection', async ({ pa
   expect(diagnostics.length).toBeGreaterThan(0);
 
   // Check that every diagnostic has the required fields.
-  for (const d of diagnostics as any[]) {
+  for (const d of diagnostics as VideoEditorDiagnostic[]) {
     expect(typeof d.id).toBe('string');
     expect(typeof d.code).toBe('string');
     expect(['error', 'warning', 'info']).toContain(d.severity);
