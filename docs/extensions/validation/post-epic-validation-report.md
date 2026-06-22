@@ -1,6 +1,6 @@
 # Post-Epic Validation Report
 
-Commit: `48fc7de40e081ab70357761bb4f848f6c91ee35f`
+Commit: `170f4d8b74de4b01dd4c56fa243f5c2fd796ab0d`
 Date: `2026-06-22T14:20:00Z`
 Validator: Codex fix phase + DeepSeek sense-check
 
