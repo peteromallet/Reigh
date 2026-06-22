@@ -1,0 +1,9 @@
+{
+  "name": "@reigh/example-video-editor-extension",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "validate": "vitest run --config vitest.config.mjs --configLoader runner src/validate.test.ts"
+  }
+}

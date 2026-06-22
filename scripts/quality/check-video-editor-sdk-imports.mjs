@@ -53,13 +53,17 @@ function walk(dir, files = []) {
     }
 
     const relativePath = path.relative(repoRoot, fullPath);
+    const isExampleFile = relativePath.startsWith(`examples${path.sep}`);
     if (
-      relativePath.includes(`${path.sep}__tests__${path.sep}`)
-      || relativePath.endsWith('.test.ts')
-      || relativePath.endsWith('.test.tsx')
-      || (
-        relativePath.startsWith(`src${path.sep}tools${path.sep}video-editor${path.sep}`)
-        && !relativePath.startsWith(`src${path.sep}tools${path.sep}video-editor${path.sep}testing${path.sep}extensions${path.sep}`)
+      !isExampleFile
+      && (
+        relativePath.includes(`${path.sep}__tests__${path.sep}`)
+        || relativePath.endsWith('.test.ts')
+        || relativePath.endsWith('.test.tsx')
+        || (
+          relativePath.startsWith(`src${path.sep}tools${path.sep}video-editor${path.sep}`)
+          && !relativePath.startsWith(`src${path.sep}tools${path.sep}video-editor${path.sep}testing${path.sep}extensions${path.sep}`)
+        )
       )
     ) {
       continue;
@@ -136,6 +140,7 @@ function extractSpecifiers(content) {
 const files = [
   ...walk(path.join(repoRoot, 'src')),
   ...walk(path.join(repoRoot, 'supabase/functions')),
+  ...walk(path.join(repoRoot, 'examples')),
 ];
 
 const failures = [];
