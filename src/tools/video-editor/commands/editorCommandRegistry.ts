@@ -277,7 +277,7 @@ export function createEditorCommandRegistry(
         }
       : undefined,
     source: 'extension' as const,
-    extensionId: cmd.id.includes('.') ? cmd.id.split('.')[0] : undefined,
+    extensionId: cmd.extensionId,
   }));
 
   const allCommands: EditorCommandEntry[] = [

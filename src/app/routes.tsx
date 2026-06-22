@@ -16,6 +16,7 @@ import EditVideoPage from '@/tools/edit-video/pages/EditVideoPage';
 import VideoEditorPage from '@/tools/video-editor/pages/VideoEditorPage';
 // Dev-only diagnostics harness — eagerly loaded for Playwright acceptance tests
 import { DiagnosticsHarnessPage } from '@/tools/video-editor/testing/DiagnosticsHarnessPage.tsx';
+import { ContributionFamilyHarnessPage } from '@/tools/video-editor/testing/ContributionFamilyHarnessPage.tsx';
 // Secondary tools: lazy-loaded (not default landing pages, so hydration race is less likely)
 const EditImagesPage = lazy(() => import('@/tools/edit-images/pages/EditImagesPage'));
 const TrainingDataHelperPage = lazy(() => import('@/tools/training-data-helper/pages/TrainingDataHelperPage'));
@@ -162,6 +163,10 @@ export function AppRoutes() {
       <Route
         path="/dev/video-editor-diagnostics-harness"
         element={<DiagnosticsHarnessPage />}
+      />
+      <Route
+        path="/dev/video-editor-family-harness"
+        element={<ContributionFamilyHarnessPage />}
       />
 
       <Route path="*" element={<NotFoundPage />} />

@@ -217,6 +217,10 @@ describe('CommandPalette', () => {
 
       // Namespaced ID should be visible
       expect(screen.getByText('com.example.palette.inspect-clip')).toBeDefined();
+
+      const entry = screen.getByTestId('command-palette-entry');
+      expect(entry).toHaveAttribute('data-command-id', 'com.example.palette.inspect-clip');
+      expect(entry).toHaveAttribute('data-extension-id', 'com.example.palette');
     });
 
     it('displays proposal commands with REVIEW badge', () => {
@@ -252,6 +256,10 @@ describe('CommandPalette', () => {
       // The keybinding should display (formatted)
       // On Mac platforms, Ctrl is rendered as ⌃
       expect(screen.getByText(/[⌃Ctrl]\+I/)).toBeDefined();
+      expect(screen.getByTestId('command-palette-keybinding')).toHaveAttribute(
+        'data-command-id',
+        'com.example.palette.inspect-clip',
+      );
     });
   });
 

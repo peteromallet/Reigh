@@ -76,7 +76,7 @@ export const TRUSTED_SEQUENCE_METADATA = [
     clipType: 'title-card',
     themeId: TRUSTED_SEQUENCE_THEME_ID,
     label: 'Title Card',
-    description: 'Simple headline card example for local and third-party-style registry extensions.',
+    description: 'Simple headline card example for trusted local registry inventory.',
     whenToUse: 'Use for openers, chapter titles, interstitial headlines, and concise branded statements.',
     hold: DEFAULT_HOLD,
     params: [

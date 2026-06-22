@@ -38,14 +38,20 @@
     },
     "permissions": {
       "type": "array",
-      "description": "Declarative permission allow-list. Only known permissions are accepted.",
+      "description": "Declarative runtime permission allow-list. Only known action:resource permissions are accepted; permissions do not define contribution families.",
       "items": {
         "type": "string",
         "enum": [
-          "timeline:read",
-          "timeline:write",
-          "assets:read",
-          "assets:write"
+          "read:timeline",
+          "write:timeline",
+          "read:assets",
+          "write:assets",
+          "read:effects",
+          "write:effects",
+          "read:sequences",
+          "write:sequences",
+          "network:fetch",
+          "storage:local"
         ]
       },
       "uniqueItems": true
@@ -64,7 +70,7 @@
     },
     "contributions": {
       "type": "object",
-      "description": "Declared contribution descriptors.",
+      "description": "Declared contribution descriptors for supported M5 extension families only: surfaces and commands. Settings use top-level settingsSchema. Effects, transitions, clip types, agent tools, data/live providers, render materials/capabilities, and keyframes are not public contribution collections in this schema.",
       "additionalProperties": false,
       "properties": {
         "slots": {

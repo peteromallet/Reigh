@@ -563,6 +563,51 @@ describe('createPerfDiagnostic', () => {
 // ---------------------------------------------------------------------------
 
 describe('edge cases', () => {
+  it('normalizes invalid report attempts into a central runtime diagnostic', () => {
+    const store = createVideoEditorDiagnosticsStore();
+
+    expect(() => store.report({
+      severity: 'error',
+      source: 'extension-author' as any,
+      code: 'custom_extension_report',
+      message: 'Extension tried to publish a diagnostic.',
+    })).not.toThrow();
+
+    const snapshot = store.getSnapshot();
+    expect(snapshot).toHaveLength(1);
+    expect(snapshot[0]).toMatchObject({
+      severity: 'warning',
+      source: 'extension-runtime',
+      code: 'diagnostic_report_invalid',
+      message: 'Ignored invalid diagnostics report attempt.',
+    });
+    expect(snapshot[0].detail).toMatchObject({
+      reason: 'Diagnostic source is not supported.',
+      attemptedSource: 'extension-author',
+      attemptedCode: 'custom_extension_report',
+    });
+  });
+
+  it('normalizes invalid reportMany and replaceBySource attempts without throwing', () => {
+    const store = createVideoEditorDiagnosticsStore();
+
+    expect(() => store.reportMany(null as any)).not.toThrow();
+    expect(() => store.replaceBySource('extension-authored' as any, [])).not.toThrow();
+    expect(() => store.replaceBySource('extension-loader', [
+      {
+        severity: 'error',
+        source: 'extension-runtime',
+        code: 'wrong_source',
+        message: 'Wrong replacement source.',
+      },
+    ])).not.toThrow();
+
+    const snapshot = store.getSnapshot();
+    expect(snapshot).toHaveLength(1);
+    expect(snapshot[0].code).toBe('diagnostic_report_invalid');
+    expect(snapshot[0].source).toBe('extension-runtime');
+  });
+
   it('store handles rapid report + replaceBySource interleaving', () => {
     const store = createVideoEditorDiagnosticsStore();
     store.report({ severity: 'error', source: 'extension-loader', code: 'L001', message: 'load' });

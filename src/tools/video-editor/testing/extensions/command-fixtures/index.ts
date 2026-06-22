@@ -63,9 +63,9 @@ export const CLIP_CONTEXT_MENU_FIXTURES: CommandFixture[] = [
     menu: { context: 'clip-context', group: 'clip-ops', order: 100 },
   },
   {
-    id: 'com.example.clip.add-fade',
-    title: 'Add Fade Transition',
-    description: 'Apply a crossfade transition at the clip boundary.',
+    id: 'com.example.clip.fade-marker',
+    title: 'Add Fade Marker',
+    description: 'Queue a command proposal for a fade marker at the clip boundary.',
     proposal: true,
     menu: { context: 'clip-context', group: 'clip-ops', order: 110 },
   },

@@ -2,11 +2,10 @@
  * @publicContract
  * Public video editor diagnostics contract.
  *
- * Defines the stable diagnostic shape, in-memory store, reporter interface,
- * and normalization helpers. Every diagnostic producer (extension loader,
- * runtime surface, render boundary, provider, materialization, perf) reports
- * through this single stream so the diagnostics UI (T12) and acceptance tests
- * (T14) have one source of truth.
+ * Defines the stable diagnostic shape, in-memory store, internal reporter
+ * interface, and normalization helpers. Loader/runtime producers report
+ * through this single stream so the diagnostics UI and acceptance tests have
+ * one source of truth.
  */
 
 import type {
@@ -76,9 +75,8 @@ export interface VideoEditorDiagnostic {
 /**
  * Diagnostic reporter — the write side of the store.
  *
- * Extension authors and test harnesses can obtain a reporter from
- * the diagnostics store or from runtime context and use it to
- * inject custom diagnostics.
+ * This is an internal loader/runtime bridge. It is not a public
+ * extension-authored diagnostics API.
  */
 export interface VideoEditorDiagnosticReporter {
   report(diagnostic: Omit<VideoEditorDiagnostic, 'id' | 'timestamp'>): void;
@@ -169,10 +167,11 @@ class DiagnosticsStoreImpl implements VideoEditorDiagnosticsStore {
   // -- Reporter methods --
 
   report(raw: Omit<VideoEditorDiagnostic, 'id' | 'timestamp'>): void {
-    const id = diagnosticId(raw.source, raw.code, raw.extensionId, undefined);
+    const normalized = normalizeReporterDiagnostic(raw);
+    const id = diagnosticId(normalized.source, normalized.code, normalized.extensionId, undefined);
     if (this.seen.has(id)) return;
     const diagnostic: VideoEditorDiagnostic = {
-      ...raw,
+      ...normalized,
       id,
       timestamp: new Date().toISOString(),
     };
@@ -180,14 +179,20 @@ class DiagnosticsStoreImpl implements VideoEditorDiagnosticsStore {
   }
 
   reportMany(raws: ReadonlyArray<Omit<VideoEditorDiagnostic, 'id' | 'timestamp'>>): void {
+    if (!Array.isArray(raws)) {
+      this.report(createInvalidReporterDiagnostic(raws, 'reportMany diagnostics must be an array.'));
+      return;
+    }
+
     const next = [...this.snapshot];
     const batchSeen = new Set(this.seen);
     let changed = false;
     for (const raw of raws) {
-      const id = diagnosticId(raw.source, raw.code, raw.extensionId, undefined);
+      const normalized = normalizeReporterDiagnostic(raw);
+      const id = diagnosticId(normalized.source, normalized.code, normalized.extensionId, undefined);
       if (batchSeen.has(id)) continue;
       batchSeen.add(id);
-      next.push({ ...raw, id, timestamp: new Date().toISOString() });
+      next.push({ ...normalized, id, timestamp: new Date().toISOString() });
       changed = true;
     }
     if (changed) this.commit(next);
@@ -197,12 +202,32 @@ class DiagnosticsStoreImpl implements VideoEditorDiagnosticsStore {
     source: VideoEditorDiagnosticSource,
     raws: ReadonlyArray<Omit<VideoEditorDiagnostic, 'id' | 'timestamp'>>,
   ): void {
+    if (!isVideoEditorDiagnosticSource(source)) {
+      this.report(createInvalidReporterDiagnostic(
+        { source, raws },
+        'replaceBySource source must be a supported diagnostics source.',
+      ));
+      return;
+    }
+
+    if (!Array.isArray(raws)) {
+      this.report(createInvalidReporterDiagnostic(
+        { source, raws },
+        'replaceBySource diagnostics must be an array.',
+      ));
+      return;
+    }
+
     const keep = this.snapshot.filter((d) => d.source !== source);
+    const batchSeen = new Set(keep.map((d) => d.id));
     const now = new Date().toISOString();
     const added: VideoEditorDiagnostic[] = [];
     for (const raw of raws) {
-      const id = diagnosticId(raw.source, raw.code, raw.extensionId, undefined);
-      added.push({ ...raw, id, timestamp: now });
+      const normalized = normalizeReporterDiagnostic(raw, source);
+      const id = diagnosticId(normalized.source, normalized.code, normalized.extensionId, undefined);
+      if (batchSeen.has(id)) continue;
+      batchSeen.add(id);
+      added.push({ ...normalized, id, timestamp: now });
     }
     this.commit([...keep, ...added]);
   }
@@ -235,6 +260,99 @@ class DiagnosticsStoreImpl implements VideoEditorDiagnosticsStore {
  */
 export function createVideoEditorDiagnosticsStore(): VideoEditorDiagnosticsStore {
   return new DiagnosticsStoreImpl();
+}
+
+const VALID_DIAGNOSTIC_SEVERITIES = new Set<VideoEditorDiagnosticSeverity>([
+  'error',
+  'warning',
+  'info',
+]);
+
+const VALID_DIAGNOSTIC_SOURCES = new Set<VideoEditorDiagnosticSource>([
+  'extension-loader',
+  'extension-runtime',
+  'extension-render',
+  'asset-materialization',
+  'asset-generation',
+  'render',
+  'provider',
+  'perf',
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isVideoEditorDiagnosticSource(value: unknown): value is VideoEditorDiagnosticSource {
+  return typeof value === 'string' && VALID_DIAGNOSTIC_SOURCES.has(value as VideoEditorDiagnosticSource);
+}
+
+function createInvalidReporterDiagnostic(
+  raw: unknown,
+  reason: string,
+): Omit<VideoEditorDiagnostic, 'id' | 'timestamp'> {
+  const detail: Record<string, unknown> = { reason };
+  if (isRecord(raw)) {
+    if (typeof raw.source === 'string') detail.attemptedSource = raw.source;
+    if (typeof raw.code === 'string') detail.attemptedCode = raw.code;
+    if (typeof raw.extensionId === 'string') detail.extensionId = raw.extensionId;
+  } else {
+    detail.receivedType = raw === null ? 'null' : typeof raw;
+  }
+
+  return {
+    code: 'diagnostic_report_invalid',
+    severity: 'warning',
+    source: 'extension-runtime',
+    message: 'Ignored invalid diagnostics report attempt.',
+    detail,
+  };
+}
+
+function normalizeReporterDiagnostic(
+  raw: unknown,
+  expectedSource?: VideoEditorDiagnosticSource,
+): Omit<VideoEditorDiagnostic, 'id' | 'timestamp'> {
+  if (!isRecord(raw)) {
+    return createInvalidReporterDiagnostic(raw, 'Diagnostic must be an object.');
+  }
+
+  if (!VALID_DIAGNOSTIC_SEVERITIES.has(raw.severity as VideoEditorDiagnosticSeverity)) {
+    return createInvalidReporterDiagnostic(raw, 'Diagnostic severity must be error, warning, or info.');
+  }
+
+  if (!isVideoEditorDiagnosticSource(raw.source)) {
+    return createInvalidReporterDiagnostic(raw, 'Diagnostic source is not supported.');
+  }
+
+  if (expectedSource && raw.source !== expectedSource) {
+    return createInvalidReporterDiagnostic(raw, `Diagnostic source must match replacement source "${expectedSource}".`);
+  }
+
+  if (typeof raw.code !== 'string' || raw.code.trim().length === 0) {
+    return createInvalidReporterDiagnostic(raw, 'Diagnostic code must be a non-empty string.');
+  }
+
+  if (typeof raw.message !== 'string' || raw.message.trim().length === 0) {
+    return createInvalidReporterDiagnostic(raw, 'Diagnostic message must be a non-empty string.');
+  }
+
+  const normalized: Omit<VideoEditorDiagnostic, 'id' | 'timestamp'> = {
+    code: raw.code,
+    severity: raw.severity as VideoEditorDiagnosticSeverity,
+    source: raw.source as VideoEditorDiagnosticSource,
+    message: raw.message,
+  };
+
+  if (typeof raw.extensionId === 'string' && raw.extensionId.trim().length > 0) {
+    normalized.extensionId = raw.extensionId;
+  }
+
+  if (isRecord(raw.detail)) {
+    normalized.detail = raw.detail;
+  }
+
+  return normalized;
 }
 
 // ---------------------------------------------------------------------------

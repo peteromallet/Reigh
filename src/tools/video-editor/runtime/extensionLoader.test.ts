@@ -13,6 +13,7 @@ import type {
   ExtensionDiagnostic,
 } from './extensionManifest.ts';
 import type { VideoEditorExtensionConfig } from './extensionSurface.ts';
+import { resolveVideoEditorExtensionRuntime } from './extensionSurface.ts';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -314,7 +315,7 @@ describe('ExtensionLoader', () => {
       // runs.  The runtime check exists as belt-and-suspenders for code
       // paths that bypass schema validation.
       const p = pkg(
-        validManifest({ permissions: ['timeline:read', 'network:access'] as string[] }),
+        validManifest({ permissions: ['read:timeline', 'network:access'] as string[] }),
       );
       const result = loader([p]).load();
 
@@ -327,7 +328,7 @@ describe('ExtensionLoader', () => {
 
     it('accepts a package with allowed permissions', () => {
       const p = pkg(
-        validManifest({ permissions: ['timeline:read', 'assets:write'] }),
+        validManifest({ permissions: ['read:timeline', 'write:assets'] }),
       );
       const result = loader([p]).load();
 
@@ -353,7 +354,7 @@ describe('ExtensionLoader', () => {
 
     it('excludes package with disallowed permissions but loads valid ones', () => {
       const good = pkg(
-        validManifest({ id: 'com.example.good', permissions: ['timeline:read'] }),
+        validManifest({ id: 'com.example.good', permissions: ['read:timeline'] }),
       );
       const bad = pkg(
         validManifest({ id: 'com.example.bad', permissions: ['evil:destroy'] as string[] }),
@@ -577,6 +578,61 @@ describe('ExtensionLoader', () => {
       const result = loader([p], r).load();
 
       expect(result.installedPackages[0].state.enabled).toBe(false);
+    });
+
+    it('reload after disable unregisters all package surfaces, commands, and runtime settings', () => {
+      const r = repo();
+      const manifest = validManifest({
+        id: 'com.example.lifecycle',
+        settingsSchema: {
+          type: 'object',
+          properties: {
+            mode: { type: 'string', default: 'default' },
+          },
+        },
+        contributions: {
+          slots: [{ slot: 'toolbar', id: 'toolbar-action' }],
+          dialogs: [{ id: 'lifecycle-dialog' }],
+          panels: [{ id: 'lifecycle-panel', placement: 'asset-panel' }],
+          inspectorSections: [{ id: 'lifecycle-inspector', placement: 'before-default' }],
+          commands: [{ id: 'run', title: 'Run' }],
+        },
+      });
+      const config: VideoEditorExtensionConfig = {
+        slots: { toolbar: () => null as never },
+        dialogHost: { dialogs: [{ id: 'lifecycle-dialog', render: () => null as never }] },
+        registry: {
+          panels: [{ id: 'lifecycle-panel', placement: 'asset-panel', render: () => null as never }],
+          inspectorSections: [
+            { id: 'lifecycle-inspector', placement: 'before-default', render: () => null as never },
+          ],
+        },
+      };
+
+      const l = loader([pkg(manifest, config)], r);
+      const enabled = l.load();
+      const enabledRuntime = resolveVideoEditorExtensionRuntime(enabled.configs);
+
+      expect(enabled.configs).toHaveLength(1);
+      expect(enabledRuntime.slots.toolbar).toBeDefined();
+      expect(enabledRuntime.dialogHost.dialogs.map((d) => d.id)).toEqual(['lifecycle-dialog']);
+      expect(enabledRuntime.registry.panels.map((p) => p.id)).toEqual(['lifecycle-panel']);
+      expect(enabledRuntime.registry.inspectorSections.map((section) => section.id)).toEqual(['lifecycle-inspector']);
+      expect(enabledRuntime.commands.map((command) => command.id)).toEqual(['com.example.lifecycle.run']);
+      expect(enabledRuntime.settings).toEqual({ 'com.example.lifecycle': { mode: 'default' } });
+
+      r.setEnabled('com.example.lifecycle', false);
+      const disabled = l.load();
+      const disabledRuntime = resolveVideoEditorExtensionRuntime(disabled.configs);
+
+      expect(disabled.configs).toHaveLength(0);
+      expect(disabled.commands).toEqual([]);
+      expect(disabledRuntime.slots.toolbar).toBeUndefined();
+      expect(disabledRuntime.dialogHost.dialogs).toEqual([]);
+      expect(disabledRuntime.registry.panels).toEqual([]);
+      expect(disabledRuntime.registry.inspectorSections).toEqual([]);
+      expect(disabledRuntime.commands).toEqual([]);
+      expect(disabledRuntime.settings).toEqual({});
     });
   });
 
@@ -843,6 +899,35 @@ describe('ExtensionLoader', () => {
       expect(result.diagnostics[0].code).toBe('settings_override_invalid');
     });
 
+    it('keeps persisted settings overrides while disabled packages expose no runtime settings', () => {
+      const r = repo();
+      r.setSettingsOverrides('com.example.settings', { volume: 0.5 });
+
+      const p = pkg(
+        validManifest({
+          id: 'com.example.settings',
+          settingsSchema: {
+            type: 'object',
+            properties: {
+              volume: { type: 'number', default: 0.8 },
+            },
+          },
+        }),
+      );
+
+      const enabled = loader([p], r).load();
+      expect(enabled.configs[0].settings).toEqual({ volume: 0.5 });
+      expect(resolveVideoEditorExtensionRuntime(enabled.configs).settings).toEqual({
+        'com.example.settings': { volume: 0.5 },
+      });
+
+      r.setEnabled('com.example.settings', false);
+      const disabled = loader([p], r).load();
+      expect(disabled.configs).toHaveLength(0);
+      expect(resolveVideoEditorExtensionRuntime(disabled.configs).settings).toEqual({});
+      expect(disabled.installedPackages[0].state.settingsOverrides).toEqual({ volume: 0.5 });
+    });
+
     it('load is idempotent with same packages and repository', () => {
       const p = pkg(validManifest());
       const l = loader([p]);
@@ -988,6 +1073,7 @@ describe('ExtensionLoader', () => {
 
       expect(result.commands).toHaveLength(2);
       expect(result.commands[0].id).toBe('com.example.test.my-command');
+      expect(result.commands[0].extensionId).toBe('com.example.test');
       expect(result.commands[0].title).toBe('My Command');
       expect(result.commands[1].id).toBe('com.example.test.another');
       expect(result.commands[1].title).toBe('Another Command');
@@ -1065,6 +1151,31 @@ describe('ExtensionLoader', () => {
       expect(result.commands).toHaveLength(1);
       expect(result.commands[0].id).toBe('com.example.enabled.yes');
     });
+
+    it('threads loaded commands into runtime configs for palette, context, and keybinding queries', () => {
+      const manifest = validManifest({
+        id: 'com.example.myext',
+        contributions: {
+          commands: [
+            {
+              id: 'show',
+              title: 'Show',
+              keybinding: { key: 'Ctrl+Alt+S' },
+              menu: { context: 'timeline-context' },
+            },
+          ],
+        },
+      });
+
+      const result = loader([pkg(manifest)]).load();
+      const runtime = resolveVideoEditorExtensionRuntime(result.configs);
+
+      expect(result.configs[0].commands?.map((command) => command.id)).toEqual(['com.example.myext.show']);
+      expect(runtime.commands.map((command) => command.id)).toEqual(['com.example.myext.show']);
+      expect(runtime.commands[0].extensionId).toBe('com.example.myext');
+      expect(runtime.commands[0].keybinding?.key).toBe('Ctrl+Alt+S');
+      expect(runtime.commands[0].menu?.context).toBe('timeline-context');
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -1131,6 +1242,30 @@ describe('ExtensionLoader', () => {
       expect(
         result.diagnostics.filter((d) => d.code === 'duplicate_command_id'),
       ).toHaveLength(0);
+    });
+
+    it('keeps the first duplicate command ID in a manifest and excludes later duplicates', () => {
+      const p = pkg(validManifest({
+        contributions: {
+          commands: [
+            { id: 'run', title: 'Run First' },
+            { id: 'run', title: 'Run Second' },
+          ],
+        },
+      }));
+
+      const result = loader([p]).load();
+
+      expect(result.commands).toHaveLength(1);
+      expect(result.commands[0]).toEqual(expect.objectContaining({
+        id: 'com.example.test.run',
+        title: 'Run First',
+        extensionId: 'com.example.test',
+      }));
+      expect(
+        result.diagnostics.filter((d) => d.code === 'duplicate_command_id'),
+      ).toHaveLength(1);
+      expect(resolveVideoEditorExtensionRuntime(result.configs).commands.map((command) => command.title)).toEqual(['Run First']);
     });
 
     it('different manifest IDs with same local command ID produce different namespaced IDs', () => {
