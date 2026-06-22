@@ -1,0 +1,40 @@
+
+> vite_react_shadcn_ts@0.0.0 test:extensions
+> npm run check:video-editor-sdk-imports && npm run typecheck && vitest run --config config/testing/vitest.config.ts src/tools/video-editor/runtime/contributionFamilies.test.ts src/tools/video-editor/runtime/diagnostics.test.ts src/tools/video-editor/runtime/ExtensionRenderBoundary.test.tsx src/tools/video-editor/runtime/extensionLoader.test.ts src/tools/video-editor/runtime/extensionManifest.test.ts src/tools/video-editor/runtime/extensionSettings.test.ts src/tools/video-editor/runtime/extensionStateRepository.test.ts src/tools/video-editor/runtime/extensionSurface.test.ts src/tools/video-editor/testing/extensions/family-fixtures/index.test.tsx && npm --prefix examples/video-editor-extension run validate && playwright test --config playwright.config.ts tests/e2e/video-editor-contribution-families.spec.ts tests/e2e/video-editor-diagnostics.spec.ts
+
+
+> vite_react_shadcn_ts@0.0.0 check:video-editor-sdk-imports
+> node scripts/quality/check-video-editor-sdk-imports.mjs
+
+[video-editor-sdk-imports] FAILED: unsupported deep imports into src/tools/video-editor were found.
+[video-editor-sdk-imports] Use the public entrypoints or extend the explicit allowlist for host-only adapters.
+  - src/app/routes.tsx
+      import: @/tools/video-editor/testing/DiagnosticsHarnessPage.tsx
+      target: src/tools/video-editor/testing/DiagnosticsHarnessPage.tsx
+  - src/app/routes.tsx
+      import: @/tools/video-editor/testing/ContributionFamilyHarnessPage.tsx
+      target: src/tools/video-editor/testing/ContributionFamilyHarnessPage.tsx
+  - src/tools/video-editor/testing/extensions/command-fixtures/index.ts
+      import: @/tools/video-editor/runtime/extensionManifest
+      target: src/tools/video-editor/runtime/extensionManifest.ts
+  - src/tools/video-editor/testing/extensions/duplicate-runtime/index.tsx
+      import: @/tools/video-editor/runtime/extensionSurface.ts
+      target: src/tools/video-editor/runtime/extensionSurface.ts
+  - src/tools/video-editor/testing/extensions/runtime-exception/index.ts
+      import: @/tools/video-editor/runtime/extensionSurface.ts
+      target: src/tools/video-editor/runtime/extensionSurface.ts
+  - supabase/functions/ai-generate-sequence/sequence-validation.ts
+      import: ../../../src/tools/video-editor/sequences/metadata.ts
+      target: src/tools/video-editor/sequences/metadata.ts
+  - supabase/functions/ai-generate-sequence/sequence-validation.ts
+      import: ../../../src/tools/video-editor/sequences/validation.ts
+      target: src/tools/video-editor/sequences/validation.ts
+  - supabase/functions/complete_task/handler.ts
+      import: ../../../src/tools/video-editor/types/index.ts
+      target: src/tools/video-editor/types/index.ts
+  - supabase/functions/complete_task/placement.ts
+      import: ../../../src/tools/video-editor/lib/timeline-domain.ts
+      target: src/tools/video-editor/lib/timeline-domain.ts
+  - supabase/functions/complete_task/placement.ts
+      import: ../../../src/tools/video-editor/types/index.ts
+      target: src/tools/video-editor/types/index.ts
