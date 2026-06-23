@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useLayoutEffect } from 'react';
 import { useEffects } from '@/tools/video-editor/hooks/useEffects.ts';
 import { createTimelineReader } from '@/tools/video-editor/lib/timeline-reader.ts';
@@ -21,7 +21,7 @@ import {
 import { SequenceComponentRegistryProvider } from '@/tools/video-editor/sequences/SequenceComponentRegistryContext.tsx';
 import { TimelineStoreProvider } from '@/tools/video-editor/hooks/timelineStore.ts';
 import { useTimelineState } from '@/tools/video-editor/hooks/useTimelineState.ts';
-import type { DataProvider } from '@/tools/video-editor/data/DataProvider.ts';
+import type { DataProvider, ExtensionPersistenceService } from '@/tools/video-editor/data/DataProvider.ts';
 import {
   DataProviderWrapper,
   useVideoEditorRuntime,
@@ -176,6 +176,7 @@ function EditorRuntimeProviderInner({
   clipTypeRegistryRef,
   agentToolRegistryRef,
   liveDataRegistryRef,
+  proposalPersistenceProvider,
 }: {
   children: ReactNode;
   userId: string | null;
@@ -190,6 +191,7 @@ function EditorRuntimeProviderInner({
   clipTypeRegistryRef: React.MutableRefObject<ClipTypeRegistry | null>;
   agentToolRegistryRef: React.MutableRefObject<AgentToolRegistry | null>;
   liveDataRegistryRef: React.MutableRefObject<LiveDataRegistry | null>;
+  proposalPersistenceProvider: ProposalPersistenceProvider | null | undefined;
 }) {
   const effectsQuery = useEffects(userId, { enabled: !effectCatalog && Boolean(userId) });
   const effectResources = useResolvedEffectCatalog(userId, effectCatalog);
@@ -229,27 +231,16 @@ function EditorRuntimeProviderInner({
     [store, extensionRuntime.requirements],
   );
 
-  // ── M3: Provider-backed proposal persistence bridge ─────────────────────
-  const videoEditorRuntime = useVideoEditorRuntime();
-  const proposalPersistenceRef = useRef<ProposalPersistenceProvider | null | undefined>(undefined);
-  if (proposalPersistenceRef.current === undefined) {
-    const svc = videoEditorRuntime.provider.createExtensionPersistenceService?.({
-      userId: videoEditorRuntime.auth.userId ?? 'unknown',
-      timelineId: videoEditorRuntime.timelineId,
-    }, []);
-    proposalPersistenceRef.current = svc?.capabilities.proposals
-      ? createProposalPersistenceBridge(svc)
-      : null;
-  }
-
+  // ── M3: Provider-owned proposal persistence bridge (lifecycle owned by
+  //        EditorRuntimeProvider; gated on initialization readiness) ────
   const proposalRuntimeRef = useRef<ReturnType<typeof createProposalRuntime> | null>(null);
-  if (!proposalRuntimeRef.current) {
+  if (!proposalRuntimeRef.current && proposalPersistenceProvider !== undefined) {
     const ops = store.getState().timelineOps;
     if (ops) {
       proposalRuntimeRef.current = createProposalRuntime({
         timelineOps: ops,
         reader: timelineReader,
-        persistenceProvider: proposalPersistenceRef.current ?? undefined,
+        persistenceProvider: proposalPersistenceProvider ?? undefined,
       });
       store.getState().syncSlices({ proposalRuntime: proposalRuntimeRef.current });
     }
@@ -764,6 +755,62 @@ export function EditorRuntimeProvider({
     diagnosticCollectionRef.current = createDiagnosticCollection();
   }
 
+  // ---- M1: Proposal persistence service lifecycle (provider-owned) ----------
+  const proposalPersistenceBridgeRef = useRef<ProposalPersistenceProvider | null | undefined>(undefined);
+  const [, setPersistenceInitVersion] = useState(0);
+
+  // Lazy-initialize the persistence service when the provider supports it.
+  const persistedServiceRef = useRef<ExtensionPersistenceService | null>(null);
+  if (!persistedServiceRef.current && dataProvider.createExtensionPersistenceService) {
+    persistedServiceRef.current = dataProvider.createExtensionPersistenceService(
+      { userId: userId ?? 'unknown', timelineId },
+      [],
+    );
+  }
+
+  // When the provider does NOT support extension persistence, mark the bridge
+  // null immediately so ProposalRuntime is created without persistence on the
+  // first render.  When the provider DOES support persistence, the bridge stays
+  // undefined until the initialize effect succeeds (fail-closed contract).
+  if (
+    proposalPersistenceBridgeRef.current === undefined
+    && !dataProvider.createExtensionPersistenceService
+  ) {
+    proposalPersistenceBridgeRef.current = null;
+  }
+
+  // Initialize persistence and gate downstream readiness on success.
+  useEffect(() => {
+    const svc = persistedServiceRef.current;
+    if (!svc) {
+      // No persistence service — inner already has a null bridge.
+      return;
+    }
+
+    let cancelled = false;
+    svc.initialize().then(() => {
+      if (cancelled) return;
+      proposalPersistenceBridgeRef.current = svc.capabilities.proposals
+        ? createProposalPersistenceBridge(svc)
+        : null;
+      setPersistenceInitVersion((v) => v + 1);
+    }).catch((err: unknown) => {
+      if (cancelled) return;
+      console.error(
+        '[EditorRuntimeProvider] Extension persistence initialization failed:',
+        err,
+      );
+      // Fail-closed: bridge stays undefined, so ProposalRuntime is never
+      // exposed. The provider advertised persistence support but could not
+      // initialize — operating without it would violate the contract.
+    });
+
+    return () => {
+      cancelled = true;
+      svc.dispose();
+    };
+  }, [userId, timelineId, dataProvider]);
+
   // Wire registry callbacks (stub — no host toast in browser context)
   useEffect(() => {
     const registry = commandRegistryRef.current;
@@ -896,6 +943,7 @@ export function EditorRuntimeProvider({
         clipTypeRegistryRef={clipTypeRegistryRef}
         agentToolRegistryRef={agentToolRegistryRef}
         liveDataRegistryRef={liveDataRegistryRef}
+        proposalPersistenceProvider={proposalPersistenceBridgeRef.current}
       >
         {children}
       </EditorRuntimeProviderInner>
