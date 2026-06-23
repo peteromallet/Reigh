@@ -94,11 +94,11 @@
       }
     }
   ],
-  "branch_head": "cf86556a629f0fbc9116420400e96320ee3a6fe7",
-  "pr_head": "ef9e313fc3b68b53f6f8c61a3c50ecfc7f2337f7",
-  "last_pushed_commit": "cf86556a629f0fbc9116420400e96320ee3a6fe7",
-  "dirty_flag": false,
-  "sync_state": "stale",
+  "branch_head": "a252badbcea3c8f059aaac14e792ab53c1a75199",
+  "pr_head": null,
+  "last_pushed_commit": "a252badbcea3c8f059aaac14e792ab53c1a75199",
+  "dirty_flag": true,
+  "sync_state": "dirty",
   "extra_repos": [],
   "chain_session": null,
   "resolved_workspace": null,
