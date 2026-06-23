@@ -2132,4 +2132,92 @@ describe('M1: proposal persistence provider lifecycle', () => {
     // Cleanup.
     await service.dispose();
   });
+
+  it('scopes persistence to userId/timelineId/provider changes, disposing old service and creating fresh', async () => {
+    // This test verifies the T5 rework: when scope (userId, timelineId, or
+    // dataProvider) changes, the old persistence service is disposed, the
+    // bridge is cleared, and a new service is created + initialized for the
+    // new scope.
+    const disposeFirst = vi.fn().mockResolvedValue(undefined);
+    const disposeSecond = vi.fn().mockResolvedValue(undefined);
+
+    const firstService = makeMockPersistenceService();
+    firstService.dispose = disposeFirst;
+
+    const secondService = makeMockPersistenceService();
+    secondService.dispose = disposeSecond;
+
+    const mockOps = makeMockTimelineOps();
+    vi.mocked(useTimelineState).mockReturnValue({
+      store: {
+        getState: () => ({
+          data: { data: mocks.timelineData },
+          timelineOps: mockOps as any,
+          syncSlices: mocks.syncSlices,
+        }),
+      },
+    } as any);
+
+    mocks.syncSlices.mockClear();
+
+    // createExtensionPersistenceService returns different services based on userId.
+    const factory = vi
+      .fn()
+      .mockReturnValueOnce(firstService)
+      .mockReturnValueOnce(secondService);
+
+    const dataProvider = {
+      createExtensionPersistenceService: factory,
+    } as unknown as DataProvider;
+
+    // Render with scope A.
+    const { rerender } = render(
+      <EditorRuntimeProvider
+        dataProvider={dataProvider}
+        timelineId="timeline-A"
+        userId="user-A"
+        extensions={[]}
+      >
+        <div data-testid="child" />
+      </EditorRuntimeProvider>,
+    );
+
+    // First service created and initialized.
+    expect(factory).toHaveBeenCalledTimes(1);
+    expect(firstService.initialize).toHaveBeenCalledTimes(1);
+    expect(disposeFirst).not.toHaveBeenCalled();
+
+    await waitFor(() => {
+      expect(firstService.initialize).toHaveBeenCalled();
+    });
+
+    // Rerender with scope B (different userId + timelineId).
+    rerender(
+      <EditorRuntimeProvider
+        dataProvider={dataProvider}
+        timelineId="timeline-B"
+        userId="user-B"
+        extensions={[]}
+      >
+        <div data-testid="child" />
+      </EditorRuntimeProvider>,
+    );
+
+    // Old service must have been disposed.
+    await waitFor(() => {
+      expect(disposeFirst).toHaveBeenCalledTimes(1);
+    });
+
+    // New service created for scope B.
+    expect(factory).toHaveBeenCalledTimes(2);
+    expect(secondService.initialize).toHaveBeenCalledTimes(1);
+
+    // Verify the factory was called with the NEW scope params.
+    const secondCallArgs = factory.mock.calls[1];
+    expect(secondCallArgs[0]).toEqual({ userId: 'user-B', timelineId: 'timeline-B' });
+
+    await waitFor(() => {
+      expect(secondService.initialize).toHaveBeenCalled();
+    });
+  });
 });

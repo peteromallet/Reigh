@@ -759,8 +759,24 @@ export function EditorRuntimeProvider({
   const proposalPersistenceBridgeRef = useRef<ProposalPersistenceProvider | null | undefined>(undefined);
   const [, setPersistenceInitVersion] = useState(0);
 
-  // Lazy-initialize the persistence service when the provider supports it.
+  // Track the current scope so we can detect userId / timelineId / provider
+  // changes and tear down the old persistence service before creating a new
+  // one.  Without this the lazy-init guard never resets and a disposed service
+  // is re-used for the new scope (rework item T5-scope).
   const persistedServiceRef = useRef<ExtensionPersistenceService | null>(null);
+  const scopeKeyRef = useRef<string | undefined>(undefined);
+  const currentScopeKey = `${userId ?? 'unknown'}::${timelineId}::${!!dataProvider.createExtensionPersistenceService}`;
+
+  if (scopeKeyRef.current !== undefined && scopeKeyRef.current !== currentScopeKey) {
+    // Scope changed — reset so a fresh service is created for the new scope.
+    // Disposal of the *old* service is handled by the effect cleanup below
+    // (which captures the old svc in its closure), so we only null the refs here.
+    persistedServiceRef.current = null;
+    proposalPersistenceBridgeRef.current = undefined;
+  }
+  scopeKeyRef.current = currentScopeKey;
+
+  // Lazy-initialize the persistence service when the provider supports it.
   if (!persistedServiceRef.current && dataProvider.createExtensionPersistenceService) {
     persistedServiceRef.current = dataProvider.createExtensionPersistenceService(
       { userId: userId ?? 'unknown', timelineId },
