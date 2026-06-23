@@ -685,7 +685,12 @@ export function createProposalRuntime(
     return runtimeDiagnostics;
   }
 
-  // ── importProposal ─────────────────────────────────────────────────────
+  // ── importProposal (CANONICAL PUBLIC IMPORT API) ──────────────────────
+  // M1-LOCKED: importProposal is the sole canonical public proposal import
+  // API.  No importEnvelope alias exists or will be introduced — the name
+  // contract is settled.  importEdgeProposals serves as the envelope-level
+  // wrapper (see bottom of this file).
+  //
   // M3: Import a pre-built TimelineProposal (e.g. from an edge response
   // envelope) into the runtime, preserving the server-assigned ID and all
   // fields.  Unlike create(), this does NOT auto-generate an ID, does NOT

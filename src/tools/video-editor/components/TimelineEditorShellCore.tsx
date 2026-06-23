@@ -799,7 +799,11 @@ function TimelineEditorShellCoreComponent({
     </div>
   );
 
-  /** M1: Extension activity region — shallow placeholder mounted between toolbar and timeline. */
+  /** M1: Extension activity region — shallow placeholder mounted between toolbar and timeline.
+   * M1-LOCKED: This mount point is intentional across all three layout variants
+   * (desktop, condensed, mobile).  Future milestones will wire agent invocation
+   * feedback, diagnostic panels, and proposal-import status into this region
+   * without changing its position.  See docs/extensions/extension-layer-foundation-assessment.md §2.5. */
   const activityRegion = (
     <ExtensionActivityRegion
       statusEvents={activityEvents}
