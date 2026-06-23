@@ -1,5 +1,15 @@
 # Extension Layer Foundation Assessment
 
+This document assesses the last three milestones of the **`reigh-extension-layer-foundation`** epic chain defined in `.megaplan/briefs/reigh-extension-layer-foundation/chain.yaml`:
+
+| Milestone | Idea brief | Merged PR |
+|---|---|---|
+| M3 | `.megaplan/briefs/reigh-extension-layer-foundation/m3-proposal-agent-policy-spine.md` | #56 |
+| M4 | `.megaplan/briefs/reigh-extension-layer-foundation/m4-diagnostics-schemaform-lifecycle.md` | #57 |
+| M5 | `.megaplan/briefs/reigh-extension-layer-foundation/m5-manager-phase4-readiness.md` | #58 |
+
+M5 also produced the Phase 4 readiness artifact at `docs/extensions/phase4-readiness.md`. The follow-up target architecture is captured in `.megaplan/briefs/reigh-extension-layer-full-extensibility-ticket.md`.
+
 ## 1. Executive summary
 
 M3, M4, and M5 do not yet constitute a proper, complete foundation for a user-facing extension development surface. They are a substantial internal foundation: proposal storage/runtime primitives exist, the edge agent can emit proposal-shaped envelopes, diagnostics are bounded and scoped, SchemaForm exists, lifecycle cleanup is largely real, and the Extension Manager exposes package states, toggles, diagnostics, and trust warnings. The foundation breaks at the user-facing integration layer: agent-returned proposals are never imported into the client ProposalRuntime, the manager settings editor does not use SchemaForm and can persist unvalidated string values, proposal policy persistence is only half-built, crashed contribution boundary reset is not centrally wired, and the readiness artifact itself says Phase 4 is prepared but not cleared for public family promotion. The verdict is: useful groundwork, not a shippable Phase 4 extension surface.
