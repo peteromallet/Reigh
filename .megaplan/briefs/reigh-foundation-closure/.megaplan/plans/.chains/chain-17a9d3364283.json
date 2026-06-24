@@ -3,7 +3,7 @@
   "current_milestone_index": 2,
   "current_plan_name": "m3-settings-runtime-write-20260624-1941",
   "current_milestone_base_sha": "5becfecbac8bcf05060367329daccd3647f5c054",
-  "last_state": "pending",
+  "last_state": "worker_blocked",
   "pr_number": 67,
   "pr_state": "open",
   "completed": [
@@ -22,11 +22,11 @@
       "pr_state": "merged"
     }
   ],
-  "branch_head": "a5de5398b93d6b4bb140736ceac85cc42824f5f7",
-  "pr_head": "88e6b010ef0bec256079dc7cbc68a86f3b97de25",
-  "last_pushed_commit": "a5de5398b93d6b4bb140736ceac85cc42824f5f7",
+  "branch_head": "5becfecbac8bcf05060367329daccd3647f5c054",
+  "pr_head": null,
+  "last_pushed_commit": "5becfecbac8bcf05060367329daccd3647f5c054",
   "dirty_flag": false,
-  "sync_state": "stale",
+  "sync_state": "clean",
   "extra_repos": [],
   "chain_session": null,
   "resolved_workspace": null,
