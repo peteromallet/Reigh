@@ -1,7 +1,7 @@
 {
   "schema_version": 0,
   "current_milestone_index": 1,
-  "current_plan_name": null,
+  "current_plan_name": "m2-agent-proposal-vertical-20260624-1828",
   "current_milestone_base_sha": null,
   "last_state": "milestone_complete",
   "pr_number": null,
@@ -15,9 +15,9 @@
       "pr_state": "open"
     }
   ],
-  "branch_head": "2a31bb073299a158077df139d56448804b6054fd",
-  "pr_head": "2a31bb073299a158077df139d56448804b6054fd",
-  "last_pushed_commit": "2a31bb073299a158077df139d56448804b6054fd",
+  "branch_head": "38c459f2d33857bb072400e914adab1dbd16a46f",
+  "pr_head": "38c459f2d33857bb072400e914adab1dbd16a46f",
+  "last_pushed_commit": "38c459f2d33857bb072400e914adab1dbd16a46f",
   "dirty_flag": false,
   "sync_state": "clean",
   "extra_repos": [],
@@ -41,7 +41,7 @@
       "target_root": "/Users/peteromalley/Documents/.codex-worktrees/reigh-foundation-closure-epic",
       "work_dir": "/Users/peteromalley/Documents/.codex-worktrees/reigh-foundation-closure-epic",
       "engine_root": "/Users/peteromalley/Documents/Arnold",
-      "target_head": "2a31bb073299a158077df139d56448804b6054fd",
+      "target_head": "38c459f2d33857bb072400e914adab1dbd16a46f",
       "target_base": "2a31bb073299a158077df139d56448804b6054fd",
       "target_base_ref": "main",
       "target_fallback_reason": null
