@@ -22,11 +22,11 @@
       "pr_state": "merged"
     }
   ],
-  "branch_head": "5becfecbac8bcf05060367329daccd3647f5c054",
-  "pr_head": null,
-  "last_pushed_commit": "5becfecbac8bcf05060367329daccd3647f5c054",
+  "branch_head": "48a3e2136aa406c52487a827253fef95a6c02376",
+  "pr_head": "88e6b010ef0bec256079dc7cbc68a86f3b97de25",
+  "last_pushed_commit": "48a3e2136aa406c52487a827253fef95a6c02376",
   "dirty_flag": false,
-  "sync_state": "clean",
+  "sync_state": "stale",
   "extra_repos": [],
   "chain_session": null,
   "resolved_workspace": null,
