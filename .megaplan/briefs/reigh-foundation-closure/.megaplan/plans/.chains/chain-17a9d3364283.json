@@ -3,7 +3,7 @@
   "current_milestone_index": 0,
   "current_plan_name": "m1-public-proposal-contract-20260624-1529",
   "current_milestone_base_sha": null,
-  "last_state": "blocked",
+  "last_state": "failed",
   "pr_number": 65,
   "pr_state": "open",
   "completed": [],
@@ -33,7 +33,7 @@
       "target_root": "/Users/peteromalley/Documents/.codex-worktrees/reigh-foundation-closure-epic",
       "work_dir": "/Users/peteromalley/Documents/.codex-worktrees/reigh-foundation-closure-epic",
       "engine_root": "/Users/peteromalley/Documents/Arnold",
-      "target_head": "bdf5f790e6cb30762d1e25bf233006039da886a6",
+      "target_head": "7e8e82ce5a0d8c88e90bee27729996d2b5f8c550",
       "target_base": "2a31bb073299a158077df139d56448804b6054fd",
       "target_base_ref": "main",
       "target_fallback_reason": null
