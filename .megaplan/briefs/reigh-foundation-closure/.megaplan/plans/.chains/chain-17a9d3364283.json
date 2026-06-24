@@ -15,9 +15,9 @@
       "pr_state": "open"
     }
   ],
-  "branch_head": "4fb746c217c7f847723ec2308ca2ba95a3a227f4",
-  "pr_head": "4fb746c217c7f847723ec2308ca2ba95a3a227f4",
-  "last_pushed_commit": "4fb746c217c7f847723ec2308ca2ba95a3a227f4",
+  "branch_head": "62e56ca7ed8ed21831bcdfeb3c2b14f8647076d2",
+  "pr_head": "62e56ca7ed8ed21831bcdfeb3c2b14f8647076d2",
+  "last_pushed_commit": "62e56ca7ed8ed21831bcdfeb3c2b14f8647076d2",
   "dirty_flag": false,
   "sync_state": "clean",
   "extra_repos": [],
@@ -40,8 +40,8 @@
       "project_root": "/Users/peteromalley/Documents/.codex-worktrees/reigh-foundation-closure-epic",
       "target_root": "/Users/peteromalley/Documents/.codex-worktrees/reigh-foundation-closure-epic",
       "work_dir": "/Users/peteromalley/Documents/.codex-worktrees/reigh-foundation-closure-epic",
-      "engine_root": "/Users/peteromalley/Documents/Arnold",
-      "target_head": "38c459f2d33857bb072400e914adab1dbd16a46f",
+      "engine_root": "/Users/peteromalley/Documents/.megaplan-worktrees/native-python-pipelines-completion-thread2",
+      "target_head": "62e56ca7ed8ed21831bcdfeb3c2b14f8647076d2",
       "target_base": "2a31bb073299a158077df139d56448804b6054fd",
       "target_base_ref": "main",
       "target_fallback_reason": null
