@@ -3554,6 +3554,23 @@
       "resolved": false,
       "resolved_by": null,
       "resolved_at": null
+    },
+    {
+      "id": "DEBT-210",
+      "subsystem": "are-the-proposed-changes-technically-correct",
+      "concern": "are the proposed changes technically correct?: checked the live boundary infrastructure against steps 6, 8, and 9: `src/sdk/__tests__/sdk-boundary.test.ts` currently uses positive constructability/assignability proofs only, and the revised plan still specifies only a positive `proposalruntime['importproposal']` assertion plus a targeted `tsc` run. that is enough to fail if the public method disappears from `proposalruntime`, but it still does not specify any concrete negative compile-time proof that an older runtime shape without `importproposal` is rejected at the `importedgeproposals(envelope, runtime: proposalruntime)` call boundary after the runtime-era `delete importproposal` test is removed. as written, the executor could satisfy the plan while dropping the only explicit backward-compatibility rejection check, so the prior correctness gap remains under-specified against the actual repo test infrastructure.",
+      "flag_ids": [
+        "correctness"
+      ],
+      "plan_ids": [
+        "m1-public-proposal-contract-20260624-1529"
+      ],
+      "occurrence_count": 1,
+      "created_at": "2026-06-24T15:11:41Z",
+      "updated_at": "2026-06-24T15:11:41Z",
+      "resolved": false,
+      "resolved_by": null,
+      "resolved_at": null
     }
   ]
 }
