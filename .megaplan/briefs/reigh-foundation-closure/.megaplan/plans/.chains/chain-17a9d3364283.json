@@ -1,7 +1,7 @@
 {
   "schema_version": 0,
   "current_milestone_index": 2,
-  "current_plan_name": null,
+  "current_plan_name": "m3-settings-runtime-write-20260624-1941",
   "current_milestone_base_sha": "5becfecbac8bcf05060367329daccd3647f5c054",
   "last_state": "pending",
   "pr_number": null,
@@ -48,7 +48,7 @@
       "target_root": "/Users/peteromalley/Documents/.codex-worktrees/reigh-foundation-closure-epic",
       "work_dir": "/Users/peteromalley/Documents/.codex-worktrees/reigh-foundation-closure-epic",
       "engine_root": "/Users/peteromalley/Documents/.megaplan-worktrees/native-python-pipelines-completion-thread2",
-      "target_head": "5becfecbac8bcf05060367329daccd3647f5c054",
+      "target_head": "ad6e94d03bde30af549d64b38dccf95cd8239d0e",
       "target_base": "2a31bb073299a158077df139d56448804b6054fd",
       "target_base_ref": "main",
       "target_fallback_reason": null
