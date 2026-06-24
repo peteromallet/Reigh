@@ -157,6 +157,7 @@ import type {
   ProposalImportDiagnostic,
   ProposalImportResult,
   ProposalImportStatus,
+  ProposalRuntimeImportStatus,
   // CreativeContext (updated in M3)
   CreativeContext,
   // M6: Parser / output format / search provider
@@ -233,6 +234,19 @@ import type {
   ExtensionDiagnostic,
   DisposeHandle,
 } from '@reigh/editor-sdk';
+
+type IsExactType<Actual, Expected> =
+  (<T>() => T extends Actual ? 1 : 2) extends
+  (<T>() => T extends Expected ? 1 : 2)
+    ? (<T>() => T extends Expected ? 1 : 2) extends
+      (<T>() => T extends Actual ? 1 : 2)
+      ? true
+      : false
+    : false;
+
+type AssertExactType<Actual, Expected> = IsExactType<Actual, Expected> extends true
+  ? true
+  : never;
 
 // ---------------------------------------------------------------------------
 // 1. M3 value exports are importable from @reigh/editor-sdk
@@ -759,6 +773,32 @@ describe('M3: type interfaces are importable from @reigh/editor-sdk', () => {
     // Type-level contract: the union is narrow and compile-time checked.
     const statuses: ProposalImportStatus[] = ['imported', 'skipped', 'rejected'];
     expect(statuses).toHaveLength(3);
+  });
+
+  it('ProposalRuntime.importProposal has the public import signature', () => {
+    type ImportProposalContract = AssertExactType<
+      ProposalRuntime['importProposal'],
+      (proposal: TimelineProposal) => ProposalRuntimeImportStatus
+    >;
+
+    const contract: ImportProposalContract = true;
+    const importProposal: ProposalRuntime['importProposal'] = (
+      _proposal: TimelineProposal,
+    ): ProposalRuntimeImportStatus => 'imported';
+
+    const status = importProposal({
+      id: 'prop-import-contract',
+      source: 'com.test.ext',
+      state: 'pending',
+      patch: { version: 0, operations: [] },
+      baseVersion: 1,
+      previewable: true,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+
+    expect(contract).toBe(true);
+    expect(status).toBe('imported');
   });
 
   it('CreativeContext timeline member is assignable from TimelineOps (typing proof)', () => {

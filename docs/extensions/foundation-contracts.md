@@ -387,7 +387,15 @@ Extensions do not interact with providers directly. The public `TimelineReader.s
 
 ---
 
-## 13. Code Path Index
+## 13. Proposal Import Contract Ledger
+
+| Contract | Owner file(s) | Caller-audit scope | Evidence commands | Status |
+|---|---|---|---|---|
+| Public proposal import contract: `ProposalRuntime.importProposal(proposal: TimelineProposal): ProposalRuntimeImportStatus`; `importEdgeProposals(envelope, runtime)` imports through the public `ProposalRuntime` interface and reports aggregate statuses plus diagnostics without applying or auto-previewing proposals. | `src/sdk/index.ts`; `src/tools/video-editor/lib/proposal-runtime.ts`; `src/tools/video-editor/hooks/useAgentSession.ts`; `src/tools/video-editor/components/ProposalPanel/ProposalPanel.test.tsx`; `src/tools/video-editor/lib/compiler-canary.test.ts`; `src/sdk/__tests__/sdk-boundary-proposal-runtime-import.types.ts`; `tsconfig.sdk-boundary.json`; `package.json` | `rg -n "importEdgeProposals\\(|ProposalRuntime|satisfies ProposalRuntime|as ProposalRuntime|runtime: ProposalRuntime|importProposal" src config tests --glob '!node_modules'`; `rg -n "runtime lacks importProposal|unsupported-runtime|typeof runtime\\.importProposal|delete \\(.*importProposal|as unknown as ProposalRuntime|importEdgeProposals\\(" src/tools/video-editor src/sdk src/examples --glob '!node_modules'` | `npm exec -- vitest run --config config/testing/vitest.config.ts src/tools/video-editor/lib/proposal-runtime.test.ts`; `npm run test:sdk-boundary` | Partial local validation: caller audits matched the expected proposal import surface and did not show restored unsupported-runtime duck typing. `npm run test:sdk-boundary` passed the targeted TypeScript precheck and boundary Vitest suite. The focused `proposal-runtime.test.ts` command was attempted once and failed before tests executed because Vite could not write `node_modules/.vite-temp/vitest.config.ts.timestamp-*.mjs` under the sandbox. Harness post-execute verification remains authoritative for no-new-failures. |
+
+---
+
+## 14. Code Path Index
 
 | Contract | Primary file(s) |
 |---|---|
@@ -413,11 +421,13 @@ Extensions do not interact with providers directly. The public `TimelineReader.s
 | Export guard | `src/tools/video-editor/runtime/renderability.ts` (`runExportGuard`) |
 | Provider compatibility | `src/tools/video-editor/data/InMemoryDataProvider.ts`, `SupabaseDataProvider.ts`, `AstridBridgeDataProvider.ts` |
 | Public SDK boundary (governance) | `config/governance/sdk-public-export-allowlist.json` |
+| Proposal import contract | `src/sdk/index.ts`, `src/tools/video-editor/lib/proposal-runtime.ts`, `src/tools/video-editor/hooks/useAgentSession.ts` |
 
 ---
 
-## 14. Version History
+## 15. Version History
 
 | Date | Change |
 |---|---|
+| 2026-06-24 | Added proposal import contract ledger row for M1 with owner files, caller-audit scope, exact evidence commands, and observed validation status. |
 | 2026-06-24 | Initial foundation contracts document for M5. Covers extension definition, lifecycle, contribution surfaces, runtime normalization, diagnostics, error boundaries, recovery keys, package inventory, settings, export guard, provider compatibility, allowed/restricted capabilities, and a complete code path index. |

@@ -172,6 +172,12 @@ function createMockProposalRuntime(
       notify(p);
       return p;
     },
+    importProposal(proposal) {
+      if (proposals.has(proposal.id)) return 'duplicate';
+      proposals.set(proposal.id, proposal);
+      notify(proposal);
+      return 'imported';
+    },
     preview(id) {
       const p = proposals.get(id);
       if (!p) throw new Error(`Proposal ${id} not found`);

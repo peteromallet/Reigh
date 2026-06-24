@@ -1,0 +1,23 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "noEmit": true,
+    "strict": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "types": ["vite/client"],
+    "paths": {
+      "@/*": ["./src/*"],
+      "@reigh/editor-sdk": ["./src/sdk/index.ts"],
+      "@/tools/video-editor": ["./config/testing/sdk-boundary-type-stubs/video-editor.ts"],
+      "@/tools/video-editor/runtime/renderability.ts": [
+        "./config/testing/sdk-boundary-type-stubs/renderability.ts"
+      ]
+    }
+  },
+  "include": [
+    "src/sdk/__tests__/sdk-boundary-proposal-runtime-import.types.ts"
+  ],
+  "exclude": []
+}

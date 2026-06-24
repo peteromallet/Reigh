@@ -1,7 +1,9 @@
 import { defineConfig } from 'vitest/config';
 import path from 'path';
 import fs from 'fs';
+import { fileURLToPath } from 'url';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '../..');
 const timelineCompositionRegistryPath = path.resolve(
   projectRoot,

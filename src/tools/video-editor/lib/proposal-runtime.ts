@@ -23,11 +23,141 @@ import type {
   ProposalImportResult,
   ProposalImportStatus,
   ProposalImportDiagnostic,
+  ProposalRuntimeImportStatus,
+  TimelinePatchDiagnostic,
 } from '@/sdk/index';
 import type { TimelineOps } from '@/sdk/index';
 import type { TimelineReader } from '@/sdk/index';
 
 import { validateTimelinePatch } from './timeline-patch';
+
+type ProposalImportRuntimeDiagnostic = {
+  severity: 'error' | 'warning';
+  code: string;
+  message: string;
+  proposalId?: string;
+  proposalIndex?: number;
+  detail?: Record<string, unknown>;
+};
+
+type ProposalImportValidation = {
+  valid: boolean;
+  diagnostics: ProposalImportRuntimeDiagnostic[];
+  patchWarnings: TimelinePatchDiagnostic[];
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object';
+}
+
+function proposalIdForDiagnostics(proposal: unknown): string | undefined {
+  return isRecord(proposal) && typeof proposal.id === 'string' && proposal.id.length > 0
+    ? proposal.id
+    : undefined;
+}
+
+function proposalIdForStatus(proposal: unknown): string {
+  return proposalIdForDiagnostics(proposal) ?? '';
+}
+
+function withProposalContext(
+  diagnostic: Omit<ProposalImportRuntimeDiagnostic, 'proposalId' | 'proposalIndex'>,
+  proposal: unknown,
+  proposalIndex?: number,
+): ProposalImportRuntimeDiagnostic {
+  return {
+    ...diagnostic,
+    ...(proposalIndex !== undefined ? { proposalIndex } : {}),
+    ...(proposalIdForDiagnostics(proposal) ? { proposalId: proposalIdForDiagnostics(proposal) } : {}),
+  };
+}
+
+function validateProposalImportCandidate(
+  proposal: unknown,
+  proposalIndex?: number,
+): ProposalImportValidation {
+  const diagnostics: ProposalImportRuntimeDiagnostic[] = [];
+
+  if (!isRecord(proposal)) {
+    diagnostics.push(withProposalContext({
+      severity: 'error',
+      code: 'proposal-import/invalid-shape',
+      message: 'Proposal import rejected: proposal must be an object.',
+    }, proposal, proposalIndex));
+    return { valid: false, diagnostics, patchWarnings: [] };
+  }
+
+  const missingFields: string[] = [];
+  if (typeof proposal.id !== 'string' || proposal.id.length === 0) missingFields.push('id');
+  if (typeof proposal.source !== 'string' || proposal.source.length === 0) missingFields.push('source');
+  if (!isRecord(proposal.patch)) missingFields.push('patch');
+
+  if (missingFields.length > 0) {
+    diagnostics.push(withProposalContext({
+      severity: 'error',
+      code: 'proposal-import/invalid-shape',
+      message: `Proposal import rejected: missing or invalid required field(s): ${missingFields.join(', ')}.`,
+      detail: { missingFields },
+    }, proposal, proposalIndex));
+    return { valid: false, diagnostics, patchWarnings: [] };
+  }
+
+  const patchValidation = validateTimelinePatch(proposal.patch as TimelineProposal['patch']);
+  const patchErrors = patchValidation.diagnostics.filter((diagnostic) => diagnostic.severity === 'error');
+  const patchWarnings = patchValidation.diagnostics.filter((diagnostic) => diagnostic.severity !== 'error');
+
+  if (patchErrors.length > 0) {
+    diagnostics.push(
+      ...patchErrors.map((diagnostic) => withProposalContext({
+        severity: 'error',
+        code: 'proposal-import/invalid-patch',
+        message: `Proposal import rejected: ${diagnostic.message}`,
+        detail: {
+          timelinePatchCode: diagnostic.code,
+          ...(diagnostic.detail ? { timelinePatchDetail: diagnostic.detail } : {}),
+        },
+      }, proposal, proposalIndex)),
+    );
+    return { valid: false, diagnostics, patchWarnings };
+  }
+
+  return { valid: true, diagnostics, patchWarnings };
+}
+
+function duplicateProposalImportDiagnostic(
+  proposal: TimelineProposal,
+  proposalIndex?: number,
+): ProposalImportRuntimeDiagnostic {
+  return withProposalContext({
+    severity: 'warning',
+    code: 'proposal-import/duplicate-id',
+    message: `Proposal "${proposal.id}" skipped: a proposal with that ID already exists.`,
+  }, proposal, proposalIndex);
+}
+
+function rejectedProposalImportDiagnostic(
+  proposal: TimelineProposal,
+  proposalIndex?: number,
+): ProposalImportRuntimeDiagnostic {
+  return withProposalContext({
+    severity: 'error',
+    code: 'proposal-import/rejected',
+    message: `Proposal "${proposal.id}" import was rejected by the runtime.`,
+  }, proposal, proposalIndex);
+}
+
+function unexpectedProposalImportStatusDiagnostic(
+  proposal: TimelineProposal,
+  status: unknown,
+  proposalIndex?: number,
+): ProposalImportRuntimeDiagnostic {
+  return withProposalContext({
+    severity: 'error',
+    code: 'proposal-import/unexpected-status',
+    message: `Proposal "${proposal.id}" import returned unexpected status "${String(status)}".`,
+    detail: { status: String(status) },
+  }, proposal, proposalIndex);
+}
 
 // ---------------------------------------------------------------------------
 // Persistence provider (lightweight bridge to DataProvider proposal CRUD)
@@ -281,13 +411,7 @@ export function createProposalRuntime(
   const persistenceUnsupported = persistenceProvider === null;
 
   /** Accumulated diagnostics (unsupported-provider, etc.). */
-  const runtimeDiagnostics: Array<{
-    severity: string;
-    code: string;
-    message: string;
-    proposalId?: string;
-    proposalIndex?: number;
-  }> = [];
+  const runtimeDiagnostics: ProposalImportRuntimeDiagnostic[] = [];
 
   if (persistenceUnsupported) {
     runtimeDiagnostics.push({
@@ -681,6 +805,7 @@ export function createProposalRuntime(
     message: string;
     proposalId?: string;
     proposalIndex?: number;
+    detail?: Record<string, unknown>;
   }> {
     return runtimeDiagnostics;
   }
@@ -703,32 +828,11 @@ export function createProposalRuntime(
   // a status indicator so callers (e.g. importEdgeProposals) can build a
   // structured ProposalImportResult.
 
-  function importProposal(proposal: TimelineProposal): 'imported' | 'duplicate' | 'rejected' {
-    // ── Validate required fields ───────────────────────────────────────
-    if (!proposal.id || !proposal.source || !proposal.patch) {
-      runtimeDiagnostics.push({
-        severity: 'error',
-        code: 'proposal/import-invalid-shape',
-        message: `importProposal: proposal is missing required fields (id, source, or patch). Proposal not imported.`,
-        proposalId: proposal.id || undefined,
-      });
-      return 'rejected';
-    }
-
-    // ── Validate patch structure through validateTimelinePatch ─────────
-    // Reuse the canonical validator so we don't duplicate schema checks.
-    // Only error-level diagnostics cause rejection; warnings (e.g. reserved
-    // ops) are preserved as non-blocking diagnostics on the stored proposal.
-    const patchValidation = validateTimelinePatch(proposal.patch);
-    if (!patchValidation.valid) {
-      for (const diag of patchValidation.diagnostics) {
-        runtimeDiagnostics.push({
-          severity: diag.severity,
-          code: diag.code,
-          message: diag.message,
-          proposalId: proposal.id,
-        });
-      }
+  function importProposal(proposal: TimelineProposal): ProposalRuntimeImportStatus {
+    // ── Validate required fields and patch structure ───────────────────
+    const validation = validateProposalImportCandidate(proposal);
+    if (!validation.valid) {
+      runtimeDiagnostics.push(...validation.diagnostics);
       return 'rejected';
     }
 
@@ -737,21 +841,14 @@ export function createProposalRuntime(
     // semantics) but report the duplicate diagnostically instead of silently
     // returning.
     if (proposals.has(proposal.id)) {
-      runtimeDiagnostics.push({
-        severity: 'warning',
-        code: 'proposal/import-duplicate-id',
-        message: `importProposal: proposal with ID "${proposal.id}" already exists. Skipping duplicate.`,
-        proposalId: proposal.id,
-      });
+      runtimeDiagnostics.push(duplicateProposalImportDiagnostic(proposal));
       return 'duplicate';
     }
 
     // ── Normalize optional fields with defaults ────────────────────────
     // Collect any warning-level diagnostics from validateTimelinePatch
     // (e.g. reserved-op warnings) as proposal-level diagnostics.
-    const patchWarnings = patchValidation.diagnostics.filter(
-      (d) => d.severity !== 'error',
-    );
+    const patchWarnings = validation.patchWarnings;
 
     const normalized: TimelineProposal = {
       id: proposal.id,
@@ -801,16 +898,7 @@ export function createProposalRuntime(
 
   // ── Return ─────────────────────────────────────────────────────────────
 
-  const runtime: ProposalRuntime & {
-    diagnostics: Array<{
-      severity: string;
-      code: string;
-      message: string;
-      proposalId?: string;
-      proposalIndex?: number;
-    }>;
-    importProposal(proposal: TimelineProposal): 'imported' | 'duplicate' | 'rejected';
-  } = {
+  const runtime = {
     subscribe,
     create,
     preview,
@@ -827,6 +915,9 @@ export function createProposalRuntime(
       return getDiagnostics();
     },
   };
+
+  const runtimeContract = runtime satisfies ProposalRuntime;
+  void runtimeContract;
 
   return runtime;
 }
@@ -853,10 +944,10 @@ export function createProposalRuntime(
  */
 export function importEdgeProposals(
   envelope: ProposalEnvelope,
-  runtime: ProposalRuntime & {
-    importProposal?(proposal: TimelineProposal): 'imported' | 'duplicate' | 'rejected';
-  },
+  runtime: ProposalRuntime,
 ): ProposalImportResult {
+  const envelopeDiagnostics: ProposalImportDiagnostic[] = [];
+
   // ── Envelope-level validation ────────────────────────────────────────
   if (!envelope.proposals || !Array.isArray(envelope.proposals)) {
     return {
@@ -874,31 +965,30 @@ export function importEdgeProposals(
     };
   }
 
-  if (envelope.proposals.length === 0) {
-    return { imported: 0, skipped: 0, rejected: 0, statuses: [], diagnostics: [] };
+  if (typeof envelope.baseVersion !== 'number' || !Number.isInteger(envelope.baseVersion) || envelope.baseVersion < 0) {
+    envelopeDiagnostics.push({
+      severity: 'warning',
+      code: 'proposal-import/malformed-envelope',
+      message: 'ProposalEnvelope.baseVersion should be a non-negative integer.',
+      detail: { baseVersion: envelope.baseVersion },
+    });
   }
 
-  if (typeof runtime.importProposal !== 'function') {
-    return {
-      imported: 0,
-      skipped: envelope.proposals.length,
-      rejected: 0,
-      statuses: envelope.proposals.map((p) => ({
-        proposalId: p.id,
-        status: 'skipped' as const,
-      })),
-      diagnostics: [
-        {
-          severity: 'error',
-          code: 'proposal-import/unsupported',
-          message: 'Runtime does not support proposal import.',
-        },
-      ],
-    };
+  if (typeof envelope.mutationApplied !== 'boolean') {
+    envelopeDiagnostics.push({
+      severity: 'warning',
+      code: 'proposal-import/malformed-envelope',
+      message: 'ProposalEnvelope.mutationApplied should be a boolean.',
+      detail: { mutationApplied: envelope.mutationApplied },
+    });
+  }
+
+  if (envelope.proposals.length === 0) {
+    return { imported: 0, skipped: 0, rejected: 0, statuses: [], diagnostics: envelopeDiagnostics };
   }
 
   // ── Per-proposal import ──────────────────────────────────────────────
-  const diagnostics: ProposalImportDiagnostic[] = [];
+  const diagnostics: ProposalImportDiagnostic[] = [...envelopeDiagnostics];
   const statuses: { proposalId: string; status: ProposalImportStatus }[] = [];
   let imported = 0;
   let skipped = 0;
@@ -906,6 +996,14 @@ export function importEdgeProposals(
 
   for (let i = 0; i < envelope.proposals.length; i++) {
     const proposal = envelope.proposals[i];
+    const validation = validateProposalImportCandidate(proposal, i);
+
+    if (!validation.valid) {
+      diagnostics.push(...validation.diagnostics);
+      statuses.push({ proposalId: proposalIdForStatus(proposal), status: 'rejected' });
+      rejected += 1;
+      continue;
+    }
 
     // Skip terminal states — only pending proposals are actionable.
     // Report them diagnostically so callers know why they were excluded.
@@ -933,15 +1031,18 @@ export function importEdgeProposals(
         imported += 1;
         break;
       case 'duplicate':
+        diagnostics.push(duplicateProposalImportDiagnostic(proposal, i));
         statuses.push({ proposalId: proposal.id, status: 'skipped' });
         skipped += 1;
         break;
       case 'rejected':
+        diagnostics.push(rejectedProposalImportDiagnostic(proposal, i));
         statuses.push({ proposalId: proposal.id, status: 'rejected' });
         rejected += 1;
         break;
       default:
         // Defensive: treat unknown status as rejected
+        diagnostics.push(unexpectedProposalImportStatusDiagnostic(proposal, result, i));
         statuses.push({ proposalId: proposal.id, status: 'rejected' });
         rejected += 1;
     }

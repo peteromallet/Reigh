@@ -5327,6 +5327,12 @@ export interface TimelineProposalInput {
 /** Listener callback for proposal state changes. */
 export type ProposalListener = (proposal: TimelineProposal) => void;
 
+/**
+ * Status returned when importing one pre-built proposal into a
+ * {@link ProposalRuntime}.
+ */
+export type ProposalRuntimeImportStatus = 'imported' | 'duplicate' | 'rejected';
+
 // ---------------------------------------------------------------------------
 // M3: ProposalRuntime
 // ---------------------------------------------------------------------------
@@ -5352,6 +5358,17 @@ export interface ProposalRuntime {
    * (replaceForSource semantics).
    */
   create(input: TimelineProposalInput): TimelineProposal;
+
+  /**
+   * Import a single pre-built pending proposal into this runtime.
+   *
+   * The runtime preserves the proposal's existing ID so edge/client handoff
+   * remains stable. Import is a hydration step only: it does not apply the
+   * proposal's patch to canonical timeline state and does not automatically
+   * preview the proposal. Envelope-level callers should continue to use
+   * {@link ProposalImportResult} as the aggregate result shape.
+   */
+  importProposal(proposal: TimelineProposal): ProposalRuntimeImportStatus;
 
   /**
    * Preview a pending proposal against the current reader snapshot.

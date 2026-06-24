@@ -258,6 +258,17 @@ function createMockServices(snapshotOverrides?: Partial<TimelineSnapshot>): Mock
       return proposal;
     },
 
+    importProposal(proposal: TimelineProposal) {
+      if (createdProposals.some(p => p.id === proposal.id)) {
+        return 'duplicate' as const;
+      }
+      createdProposals.push(proposal);
+      for (const listener of listeners) {
+        try { listener(proposal); } catch { /* ignore */ }
+      }
+      return 'imported' as const;
+    },
+
     preview(proposalId: string): TimelinePreviewResult {
       const proposal = createdProposals.find(p => p.id === proposalId);
       return {
