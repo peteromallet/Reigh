@@ -15,9 +15,9 @@
       "pr_state": "open"
     }
   ],
-  "branch_head": "7b13e1dc590572fc82962fc779a69e34fb42e4fb",
-  "pr_head": "7b13e1dc590572fc82962fc779a69e34fb42e4fb",
-  "last_pushed_commit": "7b13e1dc590572fc82962fc779a69e34fb42e4fb",
+  "branch_head": "b2860b57c4f70332b88ca33af1d64003c6617531",
+  "pr_head": "b2860b57c4f70332b88ca33af1d64003c6617531",
+  "last_pushed_commit": "b2860b57c4f70332b88ca33af1d64003c6617531",
   "dirty_flag": false,
   "sync_state": "clean",
   "extra_repos": [],
