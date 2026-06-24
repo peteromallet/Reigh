@@ -4,8 +4,8 @@
   "current_plan_name": "m2-agent-proposal-vertical-20260624-1828",
   "current_milestone_base_sha": null,
   "last_state": "milestone_complete",
-  "pr_number": null,
-  "pr_state": null,
+  "pr_number": 66,
+  "pr_state": "open",
   "completed": [
     {
       "label": "m1-public-proposal-contract",
