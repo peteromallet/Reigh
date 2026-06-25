@@ -1,0 +1,473 @@
+You are already running inside the megaplan harness for this step. Do the requested planning/review/execution work directly. Do NOT invoke the `megaplan` CLI, do NOT read or activate the `megaplan` skill, do NOT start nested megaplan plans, and do NOT recurse into another planning harness. Treat mentions of megaplan in the repository or environment as implementation context only.
+
+WRITE ACCESS CONTRACT: You are running with auto-approved writes inside a writable workspace. Treat the working directory as fully writable. Do NOT preemptively skip or block tasks on permission, sandbox, or read-only grounds. Attempt every required edit; only report failure AFTER a real OS-level rejection from a specific shell command. Do not infer 'read-only' from absence of activity; absence is not denial. If a single shell command unexpectedly fails, retry with a different invocation before concluding the environment is restricted.
+
+## Anchor Context: North Star
+
+These anchors are durable alignment targets captured at plan initialization. They are not ordinary notes, generated success criteria, or optional background. Use them to keep this stage aligned with the end-state intent.
+
+Scope map:
+- Epic North Star: overall chain/epic objective. Preserve this across all milestones.
+- Plan/Sprint/Milestone North Star: current plan or milestone objective. It extends or operationalizes the epic North Star for this sprint; it does not override it.
+
+If local instructions, generated plan content, or a plan-level anchor appear to conflict with an epic anchor, do not resolve the conflict silently. Surface an explicit anchor conflict and explain what decision, replan, or user approval would be needed.
+
+### Epic North Star: North Star — Pristine SDK Boundary
+Source: `/Users/peteromalley/Documents/.megaplan-worktrees/reigh-pristine-extension-foundation/.megaplan/briefs/pristine-editor-sdk-boundary/north-star.md`
+Captured artifact: `anchors/north_star/epic.md`
+Checksum: `61fea986fa18462ad51342b54e9241b677b4aeb9bddd819047740a557249e560`
+
+```md
+# North Star — Pristine SDK Boundary
+
+## End state (M4)
+
+`@reigh/editor-sdk` is a clean, externally compilable, package-evaluable boundary. It owns only portable contracts and generic family machinery; every video-specific family, timeline, rendering, asset, and export contract lives under `src/sdk/video/*`, while generic maturity/conformance/adapter contracts live under `src/sdk/core/*`.
+
+The host (`src/tools/video-editor/*`) imports from the SDK but the SDK never imports host internals. `src/tools/video-editor/runtime/extensionSurface.ts` is a thin orchestrator over a host-side family adapter registry; families are honestly classified by the two-axis maturity registry in `src/sdk/video/families/familyDefinitions.ts`.
+
+Authors consume a stable public barrel, can direct-import modality-owned modules, and the SDK validates in a temp external consumer with no repo aliases, no Vite context, and no host leakage. Docs, governance, and conformance gates are generated from the same canonical registry.
+
+## Why this matters
+
+This boundary is the foundation for safely adding new extension families and, eventually, new editor modalities. Get it wrong and every future family drags host internals back into the SDK. Get it right and the next modality starts from a clean core.
+```
+
+### Current Stage
+Stage: `critique_evaluator`
+Plan directory: `/Users/peteromalley/Documents/.megaplan-worktrees/reigh-pristine-sdk-boundary/.megaplan/plans/m0-extract-portable-sdk-20260625-1417`
+Current milestone: `m0-extract-portable-sdk-contracts`
+
+### Phase Instruction
+Select critique checks that can catch North Star violations, scope substitution, or unsupported claims of alignment.
+
+### Conflict Note
+Plan-level anchors extend epic anchors. They do not override them silently. When in doubt, flag the tension rather than optimizing around it.
+
+You are the Critique Evaluator. Your job is to decide which critique
+        lenses to fire and to rate each selected lens's difficulty on a 1–5
+        complexity scale. The profile will map your complexity scores to
+        models — you do NOT name models or vendors.
+
+
+        Project directory:
+        /Users/peteromalley/Documents/.megaplan-worktrees/reigh-pristine-sdk-boundary
+
+        Brief summary: # M0 — Extract Portable SDK Contracts
+(Full brief in state.idea; success criteria in plan_v1.meta.json.)
+
+        Finished plan:
+        # Implementation Plan: M0 Extract Portable SDK Contracts
+
+## Overview
+The current checkout matches the M0 contradiction: `src/sdk/index.ts` directly imports from `@/tools/video-editor/runtime/renderability.ts` and `@/tools/video-editor`, so the SDK barrel is not externally portable. The existing guard is also too weak: `npm run check:video-editor-sdk-imports` exits 0 even when the smoke cannot find `node_modules/.bin/tsc`, and its smoke still relies on repo aliases.
+
+Scope narrowing: this is a bridge, not a contradiction. M0 keeps `src/sdk/index.ts` as the public barrel and does not split core/video/family modules yet.
+
+## Main Phase
+
+### Step 1: Baseline doc/code truth
+**Complexity: 2**
+Create `docs/extensions/pristine-sdk-boundary-audit.md` from the named docs and current source. Record stale `runtime/contributionFamilies.ts` references, the missing `reigh-extension-layer-foundation-plan.md`, SDK import leakage, Phase 4 blocked status, and current guard weaknesses.
+
+### Step 2: Extract SDK-owned renderability contracts
+**Complexity: 3**
+Create `src/sdk/video/rendering/renderability.ts`, `artifacts.ts`, and `capabilities.ts`. Move portable route, determinism, blocker, capability, finding, artifact, material, locator, manifest, and shader materializer contracts there. Turn `src/tools/video-editor/runtime/renderability.ts` into a host compatibility/re-export module, keeping any host-only execution behavior in host code.
+
+### Step 3: Extract portable video timeline contracts
+**Complexity: 3**
+Move declaration-only timeline patch, diff, proposal, preview, and reader shapes from `src/sdk/index.ts` into `src/sdk/video/timeline/patch.ts` and `reader.ts`. Keep patch compilation, validation against concrete timeline data, provider commits, and proposal runtime under `src/tools/video-editor/*`. Re-export the same public names from `src/sdk/index.ts`.
+
+### Step 4: Extract asset metadata contracts
+**Complexity: 3**
+Move SDK public metadata shapes into `src/sdk/video/assets/metadata.ts`. Compare SDK names with host names and preserve compatibility aliases instead of silently changing shapes. Keep metadata validation and parser execution in host modules.
+
+### Step 5: Remove SDK-to-host imports
+**Complexity: 3**
+Replace all `@/tools/video-editor/*` imports and exports in `src/sdk/index.ts` with SDK-local imports. For `BUILTIN_CLIP_TYPES`, `TimelineVersionConflictError`, `isTimelineVersionConflictError`, and `getStableConfigSignature`, move truly portable definitions into SDK-owned modules or expose compatible SDK-owned equivalents. Add concise family boundary comments for `metadataFacet`, `shader`, and `process`.
+
+### Step 6: Upgrade the SDK import guard
+**Complexity: 4**
+Keep the fast textual scan, then add TypeScript AST parsing plus `ts.resolveModuleName` for static imports, export-from declarations, and literal dynamic imports under `src/sdk/**`. Fail on any resolved path under `src/tools/video-editor/**`. Add negative fixtures for direct import, export-from, literal dynamic import, and alias-resolved import.
+
+### Step 7: Replace alias smoke with external validator
+**Complexity: 4**
+Create a temp package-like consumer with its own `package.json` and `tsconfig.json`, no repo aliases, and a generated `@reigh/editor-sdk` entrypoint. Run `tsc --noEmit`, fail on SDK diagnostics, assert the import graph never reaches `src/tools/video-editor`, and evaluate/touch SDK value exports in Node.
+
+### Step 8: Validate
+**Complexity: 3**
+Run `npm run check:video-editor-sdk-imports`, focused SDK and renderability tests, then `npm run test:extensions`, `npm run test:readiness`, and `npm run quality:check`.
+
+## Questions
+1. Should `BUILTIN_CLIP_TYPES`, `TimelineVersionConflictError`, and `getStableConfigSignature` remain public SDK value exports as SDK-owned compatible definitions, or should any be deprecated/typed-only later?
+2. Should the missing `docs/extensions/reigh-extension-layer-foundation-plan.md` be recorded as missing, or is there a renamed canonical source?
+
+## Assumptions
+- M0 preserves existing public exports from `@reigh/editor-sdk`.
+- Portable SDK modules may contain deterministic pure helpers and constants, but no host, DOM, React, provider, Vite alias, or editor runtime dependencies.
+- Host compatibility re-export modules are allowed temporarily.
+- Tests should be updated with the extraction.
+- No new dependencies are installed.
+
+
+        Task graph (plan metadata):
+        {
+  "version": 1,
+  "timestamp": "2026-06-25T12:20:19Z",
+  "hash": "sha256:fead7b1697cf891779012ec05e3ec68eaa48001102f619e1d8dfb716de7e07f5",
+  "questions": [
+    "Should `BUILTIN_CLIP_TYPES`, `TimelineVersionConflictError`, and `getStableConfigSignature` remain public SDK value exports as SDK-owned compatible definitions, or should any be deprecated/typed-only later?",
+    "Should the missing `docs/extensions/reigh-extension-layer-foundation-plan.md` be recorded as missing, or is there a renamed canonical source?"
+  ],
+  "success_criteria": [
+    {
+      "criterion": "`docs/extensions/pristine-sdk-boundary-audit.md` exists and records all M0 doc/code discrepancies discovered from the named docs and current source.",
+      "priority": "must",
+      "requires": [
+        "read_files",
+        "parse_diff"
+      ]
+    },
+    {
+      "criterion": "No file under `src/sdk/**` contains or resolves an import/export/dynamic import to `src/tools/video-editor/**` or `@/tools/video-editor/**`.",
+      "priority": "must",
+      "requires": [
+        "run_shell",
+        "read_files",
+        "parse_diff"
+      ]
+    },
+    {
+      "criterion": "`src/sdk/video/rendering/*`, `src/sdk/video/timeline/*`, and `src/sdk/video/assets/*` own the portable video contracts needed by the public SDK barrel.",
+      "priority": "must",
+      "requires": [
+        "read_files",
+        "parse_diff"
+      ]
+    },
+    {
+      "criterion": "All pre-existing public SDK exports remain importable from `@reigh/editor-sdk` with compatible types and required value exports evaluate in Node without host/editor imports.",
+      "priority": "must",
+      "requires": [
+        "run_tests",
+        "read_build_output"
+      ]
+    },
+    {
+      "criterion": "`npm run check:video-editor-sdk-imports` fails deliberate direct import, export-from, literal dynamic import, and alias-resolved SDK violations, and passes on the real tree.",
+      "priority": "must",
+      "requires": [
+        "run_tests",
+        "run_shell",
+        "read_build_output"
+      ]
+    },
+    {
+      "criterion": "The external package-like SDK validator compiles with `tsc --noEmit`, emits no SDK diagnostics, uses no repo aliases, and asserts no import graph path reaches `src/tools/video-editor`.",
+      "priority": "must",
+      "requires": [
+        "run_tests",
+        "read_build_output"
+      ]
+    },
+    {
+      "criterion": "Representative comments for `metadataFacet`, `shader`, and `process` identify portable declaration contracts versus host-owned behavior.",
+      "priority": "must",
+      "requires": [
+        "read_files",
+        "parse_diff"
+      ]
+    },
+    {
+      "criterion": "`npm run test:extensions`, `npm run test:readiness`, and `npm run quality:check` pass after extraction.",
+      "priority": "must",
+      "requires": [
+        "run_tests",
+        "run_linter",
+        "read_build_output"
+      ]
+    },
+    {
+      "criterion": "New modules stay small and domain-scoped.",
+      "priority": "should",
+      "requires": [
+        "read_files",
+        "subjective_judgment"
+      ]
+    },
+    {
+      "criterion": "Host modules import SDK contracts directly where dependency direction is clear.",
+      "priority": "should",
+      "requires": [
+        "read_files",
+        "parse_diff"
+      ]
+    }
+  ],
+  "assumptions": [
+    "M0 preserves all existing public exports from `@reigh/editor-sdk`; compatibility removals are out of scope.",
+    "Portable SDK modules may contain deterministic pure helpers and constants when they are required value exports, but they must not import host modules or depend on DOM, React, provider services, Vite aliases, or editor runtime state.",
+    "Host compatibility re-export modules are allowed temporarily so existing host imports can migrate incrementally.",
+    "Tests may be updated alongside the extraction; existing tests are not a reason to preserve SDK-to-host imports.",
+    "No new dependencies will be installed; the guard and validator should use existing TypeScript/Vitest/tooling already declared by the repo."
+  ],
+  "structure_warnings": [
+    "Plan should include `## Execution Order` or `## Validation Order`.",
+    "Each step section should include at least one numbered substep."
+  ]
+}
+
+        Idea:
+# M0 — Extract Portable SDK Contracts
+
+## Outcome
+
+Every portable contract that `@reigh/editor-sdk` needs is owned by the SDK and has no import from `src/tools/video-editor/*`. `src/sdk/index.ts` no longer re-exports video-editor internals. An external SDK-consumer package fixture compiles cleanly. Doc/code discrepancies are recorded so later milestones align with canonical truth.
+
+## Background
+
+The SDK currently declares it must not depend on editor internals, yet it imports from `@/tools/video-editor/runtime/renderability.ts` and `@/tools/video-editor` in `src/sdk/index.ts`. This milestone fixes that contradiction before any family architecture or barrel-split work. It is the hard prerequisite the rest of the epic builds on.
+
+## Scope (in scope)
+
+1. **Reconcile docs/code state before churn.**
+   - Read `docs/extensions/phase4-readiness.md`, `docs/extensions/reigh-extension-layer-foundation-plan.md`, and `docs/extensions/foundation-closure-assessment.md`.
+   - Record every place where docs disagree with current code (e.g. stale references to `runtime/contributionFamilies.ts`, claims about `src/sdk/index.ts` existence, Phase 4 promotion status).
+   - Produce `docs/extensions/pristine-sdk-boundary-audit.md` with a table of discrepancies, owner, and proposed resolution.
+   - Do not rewrite all docs yet; just establish the canonical truth that later milestones will align with.
+
+2. **Audit every import from `src/tools/video-editor/*` inside `src/sdk/**`.**
+   - List files, imported symbols, and whether each symbol is truly portable or host-only.
+
+3. **Move video renderability contracts into SDK-owned video modules.**
+   - Create `src/sdk/video/rendering/renderability.ts` with data-only types:
+     - `RenderRoute` (video-specific)
+     - `DeterminismStatus` (video-specific)
+     - `RenderBlockerReason`
+     - `CapabilityFinding`
+   - Create `src/sdk/video/rendering/artifacts.ts` with:
+     - `RenderArtifact` (video-specific)
+     - `RenderMaterial` (video-specific)
+     - `RenderMaterialRef`
+     - `RenderStorageLocator`
+   - Create `src/sdk/video/rendering/capabilities.ts` with:
+     - `ShaderMaterializerRequirementScope`
+     - `shaderMissingMaterializerBlockerMessage` (video-specific)
+   - Update `src/tools/video-editor/runtime/renderability.ts` to depend on SDK-owned contracts.
+
+4. **Move video timeline primitives needed by the video SDK surface into SDK-owned video modules.**
+   - Identify which timeline patch/diff/ops/reader types the SDK re-exports only because host code needs them.
+   - Move truly portable shapes (e.g. `TimelinePatch` (video-specific), `TimelineDiff` (video-specific), `TimelineDiffGranularity`, `TimelineProposalInput`) into `src/sdk/video/timeline/patch.ts` and `src/sdk/video/timeline/reader.ts`.
+   - Keep host-only planner execution details in `src/tools/video-editor`.
+
+5. **Move video asset metadata contracts into SDK-owned video modules.**
+   - Move `AssetMetadata`, `AssetIntegrityMetadata`, `AssetGPSMetadata`, etc. into `src/sdk/video/assets/metadata.ts` if they are referenced by SDK public types.
+
+6. **Update `src/sdk/index.ts`.**
+   - Replace all `@/tools/video-editor/*` imports with SDK-local imports.
+   - Keep the file as a barrel; do not do the full module split yet (that is M2).
+
+7. **Strengthen and run the SDK import guard.**
+   - Ensure `scripts/quality/check-video-editor-sdk-imports.mjs` fails if any `src/sdk/**` file imports from `src/tools/video-editor/*` or `@/tools/video-editor/*`.
+   - Upgrade the guard from import-text matching to TypeScript module resolution: create a program or use `ts.resolveModuleName` for every static import, export-from, and literal dynamic import in `src/sdk/**`, then fail if any resolved absolute path is under `src/tools/video-editor/**`.
+   - Keep the textual checks as a fast prefilter, but do not rely on them as the source of truth.
+   - Run the check; fix all failures.
+   - Add negative tests: a direct SDK import, an SDK export-from, a literal dynamic import, and an alias-resolved import from video-editor internals all fail the guard.
+
+8. **Add an external SDK import validator.**
+   - Replace the current repo-alias smoke with a temp external consumer that:
+     - has its own `tsconfig.json` and minimal `package.json`,
+     - resolves `@reigh/editor-sdk` through a package-like temp entrypoint generated from the SDK, not through the repo's `@/*` path alias,
+     - has no `@/` alias, no `src/*` path mapping, and no Vite app context,
+     - imports the full public SDK surface and representative family/contribution symbols available from the public barrel.
+   - Run `tsc --noEmit` in that temp consumer and fail if it emits any diagnostic from SDK files.
+   - Do not filter SDK diagnostics; `skipLibCheck` should remain true only for third-party `.d.ts`.
+   - Add a static import-graph assertion over the temp consumer and SDK entrypoint that no resolved module path falls under `src/tools/video-editor`.
+   - Add a runtime evaluation smoke for value exports: build or transpile the temp consumer enough to import the SDK package entrypoint in Node, enumerate the exported namespace, touch each value export, and report the specific binding that requires browser globals, Vite aliases, lazy host imports, or video-editor internals.
+   - Wire the validator into `npm run check:video-editor-sdk-imports` or `npm run test:extensions`.
+
+9. **Add a representative family contract sanity check.**
+   - Pick three families of different risk types: one video metadata family (e.g. `metadataFacet`), one video render-relevant family (e.g. `shader`), and one video execution/process-like family (e.g. `process`).
+   - For each, document in code comments:
+     - what is portable vs. host-only today,
+     - which SDK types are declaration-only,
+     - which host behavior must remain in `src/tools/video-editor`.
+   - This sanity check is documentation-only; it validates the contract extraction boundaries before M2/M3 broaden the work.
+
+## Locked decisions
+
+- After M0, no file under `src/sdk/**` may import from `src/tools/video-editor/**` or `@/tools/video-editor/**`.
+- Host code may still import from the SDK; the dependency direction is one-way.
+- Portable contracts are data-only shapes, not host behavior or React components.
+- The external SDK import validator must compile with no diagnostics from SDK files and must not rely on repo path aliases.
+- The SDK must evaluate in a package-like Node consumer without importing host/editor internals. Runtime behavior that needs DOM, React providers, DataProvider, timeline contexts, localStorage, or editor services is host-owned.
+
+## Open questions
+
+- Which timeline/planner types are genuinely portable vs. execution details?
+- Are there value-level exports (functions, constants) in the SDK that secretly depend on host modules?
+
+## Constraints
+
+- `npm run quality:check` and `npm run test:readiness` must stay green.
+- Do not install new dependencies.
+- Do not alter profile/model selections in megaplan configs.
+- Pre-push hooks require Docker; use the existing manual pristine-worktree merge workflow with `git push --no-verify` if needed.
+
+## Done criteria
+
+- [ ] `docs/extensions/pristine-sdk-boundary-audit.md` records doc/code discrepancies.
+- [ ] `src/sdk/**` has zero imports from `src/tools/video-editor/**` or `@/tools/video-editor/**`.
+- [ ] `npm run check:video-editor-sdk-imports` passes and catches deliberate direct, re-export, dynamic, and alias-resolved violations.
+- [ ] The external SDK import validator compiles with `tsc --noEmit`, emits no diagnostics from `src/sdk/**`, has no repo aliases, and evaluates/touches SDK value exports at runtime.
+- [ ] Representative family sanity check documents portable vs. host-only boundaries for one metadata, one render-relevant, and one execution/process-like family.
+- [ ] All existing public SDK exports remain available from `@reigh/editor-sdk` with compatible types.
+- [ ] `npm run quality:check` and `npm run test:readiness` pass.
+
+## Touchpoints
+
+- `src/sdk/index.ts`
+- `src/tools/video-editor/runtime/renderability.ts`
+- New `src/sdk/video/rendering/*` modules
+- New `src/sdk/video/timeline/*` modules
+- New `src/sdk/video/assets/*` modules
+- `scripts/quality/check-video-editor-sdk-imports.mjs`
+- External SDK import validator under `scripts/quality/` or `scripts/quality/fixtures/sdk-consumer-package/`
+- `docs/extensions/pristine-sdk-boundary-audit.md` (new)
+
+## Anti-scope (not in this milestone)
+
+- Splitting `src/sdk/index.ts` into scoped core and family modules (M2a/M2b).
+- Defining the family maturity registry (M1).
+- Refactoring `extensionSurface.ts` onto adapters (M3).
+- Governance/docs closure and final release merge (M4).
+
+        Your output template is at: /Users/peteromalley/Documents/.megaplan-worktrees/reigh-pristine-sdk-boundary/.megaplan/plans/m0-extract-portable-sdk-20260625-1417/critique_evaluator_output.json
+        Read this file first — it contains the expected JSON structure with all known check IDs pre-populated in `skipped`.
+        Move checks you are firing to `selections`, fill `why` for the rest, and write the file back.
+        If you cannot use file tools, return the populated JSON structure inline as your response instead.
+
+        ## Critique Lens Catalog (9 lenses)
+
+        ### Lens: `issue_hints` (tier: core, category: completeness)
+**Question:** Did the work fully address the issue hints, user notes, and approved plan requirements?
+**Guidance:** Cross-check the result against explicit user notes, critique corrections, and watch items. Flag anything the implementation ignored, contradicted, or only partially covered.
+
+### Lens: `correctness` (tier: core, category: correctness)
+**Question:** Are the proposed changes technically correct?
+**Guidance:** Look for logic errors, invalid assumptions, broken invariants, schema mismatches, or behavior that would fail at runtime. When the fix adds a conditional branch, check whether it handles all relevant cases — not just the one reported in the issue.
+
+### Lens: `scope` (tier: core, category: completeness)
+**Question:** Search for related code that handles the same concept. Is the reported issue a symptom of something broader — and is any single step sized to fit one worker turn?
+**Guidance:** Look at how the changed function is used across the codebase. Does the fix only address one caller's scenario while others remain broken? Flag missing required work or out-of-scope edits. A minimal patch is often right, but check whether the underlying problem is bigger than what the issue describes. Also audit step SIZING: each step/task is executed in ONE worker turn (~15 min, one conversation) and must be fully implemented AND verified there. A single step that bundles multiple concerns — e.g. 'extract this 2000-line file into modules AND write tests', or 'consolidate the roots AND migrate N registries AND add parity tests' — is a god-task: it cannot finish in one turn and the worker will run out of time mid-implementation. Raising complexity does not buy more time, only a stronger model for the same single turn. Flag any such step and recommend splitting along the natural seam (one step to add the abstraction + its unit tests, then one step per consumer/module to migrate, parity tests on the last).
+
+### Lens: `all_locations` (tier: core, category: completeness)
+**Question:** Does the change touch all locations AND supporting infrastructure?
+**Guidance:** Search for all instances of the symbol/pattern being changed. Also ask: does this feature require setup, registration, or integration code beyond the core logic? Missing glue code causes test failures even when the core fix is correct.
+
+### Lens: `callers` (tier: core, category: correctness)
+**Question:** Find the callers of the changed function. What arguments do they actually pass? Does the fix handle all of them?
+**Guidance:** Grep for call sites. For each caller, check what values it passes — especially edge cases like None, zero, empty, or composite inputs. Then ask: should this change be here, or in a caller, callee, or new method?
+
+### Lens: `conventions` (tier: extended, category: maintainability)
+**Question:** Does the approach match how the codebase solves similar problems?
+**Guidance:** Check not just naming/style but how similar PROBLEMS are solved in this codebase. If the codebase adds new methods for similar cases, the plan should too. Do not spend findings on trivial stylistic preferences.
+
+### Lens: `verification` (tier: extended, category: completeness)
+**Question:** Is there convincing verification for the change?
+**Guidance:** Flag missing tests or weak validation. If verification tests exist, trace the test's execution path through your patch — does every branch it exercises produce the expected result? A patch can look correct but fail because it misses one code path the test covers. If you manually verify an edge case because existing tests don't cover it, also test the cases next to it.
+
+### Lens: `criteria_quality` (tier: extended, category: completeness)
+**Question:** Are the success criteria well-prioritized and verifiable?
+**Guidance:** Check that each `must` criterion has a clear yes/no answer verifiable from code, tests, or git diff. Subjective goals, numeric guidelines, and aspirational targets should be `should`, not `must`. Criteria requiring manual testing or human judgment should be `info`. Flag any `must` criterion that is ambiguous, subjective, or unverifiable in the review pipeline.
+
+### Lens: `prerequisite_ordering` (tier: core, category: correctness)
+**Question:** Do tasks that depend on a precondition gracefully handle that precondition only partially holding?
+**Guidance:** Walk the task graph. For each task that depends on a precondition produced by an earlier task (e.g. 'after T5 regen, remove ref()'), check what happens if the precondition only partially holds — some inputs fail, some succeed. Then re-read the brief: does it lock a graceful-fallback policy for the earlier task (e.g. 'failed templates get skipped with a diagnostic') AND simultaneously demand absolute completion for the dependent task (e.g. 'zero callers remain', 'all migrated')? That's a brief contradiction the planner will transcribe faithfully and the executor will hit at runtime. Flag the conflicting paragraphs and recommend conditionalizing the dependent task, or specifying explicit deferral behavior.
+
+
+        ## Complexity Rubric (1–5)
+
+        Rate each selected lens on its **hardest realistic** aspect, not a
+        worst-case imagining. When genuinely torn between two tiers, choose the
+        LOWER one UNLESS you can name the specific cascading, test-evading
+        failure that earns the higher tier in the justification.
+
+        - **1 = trivial, mechanical check.** The lens's question can be
+          answered by pattern-matching a single file or a grep hit. A weak
+          model cannot get it wrong.
+        - **2 = simple, localized check.** The lens touches one or two
+          files, the question has a linear answer, and the failure mode
+          (missing something) is obvious.
+        - **3 = multi-step check with non-trivial reasoning.** The lens
+          requires holding multiple files or a dataflow in your head;
+          correctness is not self-evident from a quick skim.
+        - **4 = cross-cutting or high-stakes check.** A defect this lens would
+          miss is **non-local and not caught by an obvious test** — it
+          propagates through a shared contract or invariant that code the plan
+          does NOT touch relies on. Spanning several modules is NOT sufficient
+          on its own; a lens whose failure is local and obvious is tier 2-3.
+        - **5 = fundamental system-level check.** The lens probes a
+          security-sensitive path, a schema migration, an auth boundary, or
+          a contract relied on by the whole system, where a subtle error would
+          pass the full suite and corrupt state. Only assign tier 5 when the
+          lens genuinely requires system-level reasoning — not merely
+          "important" or central code.
+
+        **FLOOR rules (hard minimum) — these two lenses ONLY:**
+        - `correctness` — NEVER below tier 4. A correctness defect that
+          slips through is the most expensive failure mode.
+        - `prerequisite_ordering` — NEVER below tier 4. Partial-precondition
+          contradictions are subtle and cascade into runtime failures; a
+          weak model will miss them.
+        Every OTHER lens must EARN tier 4-5 under the rubric above; the
+        expected home for an ordinary, locally-verifiable check is tier 2-3.
+        Do not let "this plan is large" inflate a lens whose own question is
+        answerable by a focused read.
+
+        ## Assignment Contract
+
+        Select the FEWEST lenses that cover the real risk; keep the set lean
+        rather than firing broad, overlapping checks. If a check's verification
+        would likely depend on things outside this project root (external or
+        sibling repos), files the plan only creates later, or runtime-only
+        behavior, either scope the lens to what is statically checkable in this
+        repo or name that dependency in its justification so the worker and gate
+        expect a partial or `unverifiable` result.
+
+        - **Select deliberately**: a lens fires only when it covers a concrete
+          risk in this plan.
+        - **Justify to skip**: every skipped lens must include a concrete, specific
+          `why` — a reason grounded in the plan's content, not a generic dismissal.
+        - **Every lens is assigned exactly once**: the union of `selections` and
+          `skipped` must cover all 9 lens ids with no overlap
+          and no omission.
+        - **At least one lens must be selected** — an all-skip verdict is rejected.
+        - **Every selected catalog lens** must emit a `complexity` (int 1–5) and
+          a `complexity_justification` (one or two sentences citing why this
+          lens sits at exactly that tier — reference the lens's question, the
+          plan's concrete files/interfaces/risks). The justification must be
+          defensible against a reviewer who disagrees. A bare restatement of the
+          rubric ("this is complex") is not acceptable.
+        - **`other` custom areas**: an `other` selection is additive (does not
+          replace a catalog lens). It requires `area` (a non-empty name for the
+          custom critique area), `why` (the probe question for the critic),
+          `complexity`, and `complexity_justification`. At most 2
+          `other` areas.
+
+        Your output must be a JSON object with these keys:
+        - `selections`: list of objects. For catalog lenses:
+          {check_id, complexity (int 1–5), complexity_justification, why?}
+          For `other` custom areas:
+          {check_id: "other", area, why, complexity (int 1–5), complexity_justification}
+        - `skipped`: list of {check_id, why} objects
+        - `evaluator_model`: your own model identifier string
+        - `flag_verifications`: list of
+          {flag_id, lens, outcome, rationale} objects where outcome is
+          one of "verified" / "open" / "accepted_tradeoff"; use [] when the
+          Flag Resolution Verification section is absent
+
+        Remember: prefer the smallest selected set that still covers the real
+        risk.  Skipping requires a justification.  When you skip, explain *why
+        this specific lens is unnecessary for this specific plan* — do not
+        write generic cop-outs.
