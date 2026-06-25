@@ -1,0 +1,342 @@
+## Anchor Check: North Star
+
+One or more North Stars are captured for this plan.
+
+Captured anchors:
+- Epic North Star (overall chain/epic objective): `anchors/north_star/epic.md`
+
+Do not restate the North Star. Do not reinterpret approved scope from scratch.
+Raise an explicit anchor conflict/deviation only if the current step visibly violates a captured North Star.
+
+You are an independent reviewer. Critique the plan against the actual repository.
+
+
+        Project directory:
+        /Users/peteromalley/Documents/.megaplan-worktrees/reigh-pristine-sdk-boundary
+
+        Brief summary: # M0 — Extract Portable SDK Contracts
+(Full brief in state.idea; success criteria in plan_v1.meta.json.)
+
+        Plan:
+        # Implementation Plan: M0 Extract Portable SDK Contracts
+
+## Overview
+The root cause is still the intended M0 problem: the public SDK is not a portable boundary because `src/sdk/**` reaches into `src/tools/video-editor/**`. The critique shows the original plan was too narrow in two ways: it focused on obvious barrel exports while missing later SDK imports in the planner/capability area, and it treated host-typed value exports as if they could be copied without moving their parameter contracts. This revision keeps the same North Star and M0 scope, but makes the work executable by splitting large migrations into smaller seams and by specifying how the external validator can run Node against emitted JavaScript rather than raw TypeScript.
+
+M0 remains a bridge milestone. It preserves `@reigh/editor-sdk` as the public barrel, keeps existing public exports compatible, and creates SDK-owned modules only for portable contracts and pure values needed to break host imports. It does not yet perform the later core/video/family split beyond the scoped rendering, timeline, asset, and config contract modules required for portability.
+
+## Phase 0: Baseline Truth
+
+### Step 1: Audit docs, source, and leak sites
+**Complexity: 2**
+1. Create `docs/extensions/pristine-sdk-boundary-audit.md` from the named docs and current source.
+2. Record stale `runtime/contributionFamilies.ts` references, the missing `docs/extensions/reigh-extension-layer-foundation-plan.md` unless a renamed canonical source is found, SDK import leakage, Phase 4 blocked status, and current guard weaknesses.
+3. Build a concrete symbol map for every SDK-to-host edge, including top-level exports from `@/tools/video-editor/runtime/renderability.ts` and `@/tools/video-editor`, plus the planner/capability imports around the later section of `src/sdk/index.ts`.
+4. Identify public value exports whose signatures depend on host types, especially `getStableConfigSignature`, `TimelineConfig`, and `AssetRegistry`.
+
+## Phase 1: Portable Contract Extraction
+
+### Step 2: Extract SDK-owned config signature contracts
+**Complexity: 3**
+1. Add SDK-owned portable config/signature modules, such as `src/sdk/video/config/signature.ts` and adjacent type modules if needed.
+2. Move or re-alias the parameter contracts required by `getStableConfigSignature` so the exported function keeps compatible `TimelineConfig` and `AssetRegistry` typing without importing from `src/tools/video-editor/types/index.ts`.
+3. Keep the implementation deterministic and pure. If host types contain host-only fields, make host-side types extend or re-export the SDK-owned portable base instead of weakening the SDK public signature.
+4. Add focused coverage or type assertions proving existing host config values remain assignable to the SDK-owned signature input types.
+
+### Step 3: Move renderability pure contracts and constants
+**Complexity: 3**
+1. Create `src/sdk/video/rendering/renderability.ts`, `artifacts.ts`, and `capabilities.ts` for portable route, determinism, blocker, capability, finding, artifact, material, locator, manifest, and shader materializer contracts.
+2. Move only declarations, serializable constants, and pure helpers that do not depend on host runtime, DOM, React, provider services, Vite aliases, or editor state.
+3. Leave execution behavior and runtime orchestration under `src/tools/video-editor/**`.
+4. Add focused tests or type checks for the extracted renderability surface before migrating broad call sites.
+
+### Step 4: Re-point SDK and host renderability imports
+**Complexity: 3**
+1. Re-export the moved renderability names from `src/sdk/index.ts` using SDK-local paths only.
+2. Turn `src/tools/video-editor/runtime/renderability.ts` into a host compatibility module that imports SDK contracts and retains or delegates host-only behavior.
+3. Migrate host importers to SDK paths where dependency direction is clear; keep temporary host compatibility re-exports where migration would create unrelated churn.
+4. Verify all current renderability importers still compile.
+
+### Step 5: Extract timeline contracts by domain seam
+**Complexity: 3**
+1. Move declaration-only patch, diff, and preview shapes from `src/sdk/index.ts` into `src/sdk/video/timeline/patch.ts` and related small modules.
+2. In a separate pass, move reader and proposal declaration shapes into `src/sdk/video/timeline/reader.ts` and `proposal.ts`.
+3. Keep patch compilation, concrete timeline validation, provider commits, proposal execution, and other behavior under `src/tools/video-editor/**`.
+4. Re-export the same public names from `src/sdk/index.ts` and add type coverage for representative existing call sites.
+
+### Step 6: Extract asset metadata contracts and family comments
+**Complexity: 3**
+1. Move SDK-public metadata shapes into `src/sdk/video/assets/metadata.ts`.
+2. Compare SDK names with host names and preserve compatibility aliases instead of silently changing shapes.
+3. Keep metadata validation and parser execution in host modules.
+4. Add concise boundary comments for `metadataFacet`, `shader`, and `process` explaining portable declaration contracts versus host-owned behavior.
+
+## Phase 2: Boundary Cleanup
+
+### Step 7: Remove every SDK-to-host import edge
+**Complexity: 3**
+1. Replace all static imports, export-from declarations, and literal dynamic imports in `src/sdk/**` that target `@/tools/video-editor/**` or resolve to `src/tools/video-editor/**`.
+2. Include the later planner/capability imports in `src/sdk/index.ts`; do not treat the public export block as the whole problem.
+3. Move `BUILTIN_CLIP_TYPES`, `TimelineVersionConflictError`, `isTimelineVersionConflictError`, and `getStableConfigSignature` into SDK-owned modules or SDK-owned compatible equivalents.
+4. Run an interim textual and TypeScript-resolution scan before proceeding to validator work.
+
+### Step 8: Preserve public SDK barrel compatibility
+**Complexity: 3**
+1. Compare the pre-change public exports of `@reigh/editor-sdk` with the revised barrel.
+2. Preserve all existing importable names and compatible types unless a documented contradiction requires escalation.
+3. For value exports, ensure they can be evaluated after TypeScript emission without importing host/editor modules.
+4. Document any temporary compatibility aliases in the audit so later milestones can clean them up intentionally.
+
+## Phase 3: Guard Upgrade
+
+### Step 9: Implement resolver-backed SDK import guard
+**Complexity: 4**
+1. Keep the fast textual scan as an early failure path.
+2. Add TypeScript AST parsing for static imports, export-from declarations, and literal dynamic imports under `src/sdk/**`.
+3. Use `ts.resolveModuleName` with the repo TypeScript configuration so alias-resolved imports are checked by resolved filesystem path, not only by raw specifier text.
+4. Fail closed when required tooling or TypeScript resolution setup is unavailable; do not allow a missing `tsc` or missing compiler API path to produce a passing guard.
+
+### Step 10: Add negative fixtures separately
+**Complexity: 3**
+1. Add deliberate violation fixtures for direct import, export-from, literal dynamic import, and alias-resolved import.
+2. Prove `npm run check:video-editor-sdk-imports` fails each fixture class for the expected reason.
+3. Prove the same command passes on the real tree after SDK extraction.
+4. Keep fixture setup isolated from production source so failures are deterministic and easy to diagnose.
+
+## Phase 4: External SDK Validator
+
+### Step 11: Replace alias smoke with package-like validation
+**Complexity: 4**
+1. Create a temp package-like consumer with its own `package.json` and `tsconfig.json`, no repo aliases, and a generated local `@reigh/editor-sdk` package entrypoint that points at the extracted SDK surface.
+2. Run `tsc --noEmit` for type validation and fail on any SDK diagnostics.
+3. Build an import graph from compiler resolution or emitted metadata and assert no source path reaches `src/tools/video-editor/**`.
+4. For runtime value checks, emit JavaScript to a temp `dist` with `tsc` and run Node against that emitted JS. Do not point plain Node at raw `.ts` source.
+5. Touch representative SDK value exports, including `BUILTIN_CLIP_TYPES`, `TimelineVersionConflictError`, `isTimelineVersionConflictError`, and `getStableConfigSignature`.
+
+## Phase 5: Validation Order
+
+### Step 12: Run focused and full validation
+**Complexity: 3**
+1. Run `npm run check:video-editor-sdk-imports` after guard and validator updates.
+2. Run focused SDK, config signature, timeline, asset metadata, and renderability tests or type tests added during extraction.
+3. Run `npm run test:extensions` and `npm run test:readiness`.
+4. Run `npm run quality:check`.
+5. If a full validation command fails for unrelated pre-existing reasons, capture the failing command, relevant output, and a narrowed reproduction in the audit rather than weakening the boundary criteria.
+
+## Execution Order
+1. Step 1 establishes the authoritative leak and compatibility map.
+2. Steps 2 through 6 extract portable contracts in small, reviewable seams.
+3. Steps 7 and 8 remove all SDK-to-host imports and preserve the public barrel.
+4. Steps 9 and 10 make the boundary guard capable of catching regressions.
+5. Step 11 proves an external consumer can compile and evaluate emitted SDK values without repo aliases or host leakage.
+6. Step 12 runs focused checks first, then broader extension, readiness, and quality gates.
+
+
+        Plan metadata:
+        {
+  "version": 2,
+  "timestamp": "2026-06-25T12:30:57Z",
+  "hash": "sha256:33fb5dc9f91c082b3ff4c5747f042ec1504f2735770fe36ee492e98eb9f3eb05",
+  "changes_summary": "Reframed the plan around all SDK-to-host edges, split oversized extraction and guard tasks into smaller execution seams, added SDK-owned config signature parameter contracts, and made the external runtime validator use emitted JavaScript instead of raw TypeScript.",
+  "flags_addressed": [
+    {
+      "id": "correctness-1",
+      "resolution": "addressed",
+      "reason": "Added a dedicated config signature step that moves or re-aliases `TimelineConfig` and `AssetRegistry` into SDK-owned portable contracts before moving `getStableConfigSignature`.",
+      "where": "Phase 1 \u2014 Step 2; Phase 2 \u2014 Step 7"
+    },
+    {
+      "id": "correctness-2",
+      "resolution": "addressed",
+      "reason": "Specified that runtime value checks emit JavaScript with `tsc` and run Node against the temp `dist`, avoiding direct Node execution of TypeScript source.",
+      "where": "Phase 4 \u2014 Step 11"
+    },
+    {
+      "id": "scope-1",
+      "resolution": "addressed",
+      "reason": "Added an explicit leak-site map and cleanup requirement covering all of `src/sdk/**`, including the later planner/capability imports in `src/sdk/index.ts`.",
+      "where": "Phase 0 \u2014 Step 1; Phase 2 \u2014 Step 7"
+    },
+    {
+      "id": "scope-2",
+      "resolution": "addressed",
+      "reason": "Split renderability work into pure contract extraction and a separate SDK/host import migration pass with compatibility re-exports.",
+      "where": "Phase 1 \u2014 Steps 3 and 4"
+    },
+    {
+      "id": "scope-3",
+      "resolution": "addressed",
+      "reason": "Split timeline migration by domain seam: patch/diff/preview first, reader/proposal second, with runtime behavior explicitly kept in host modules.",
+      "where": "Phase 1 \u2014 Step 5"
+    },
+    {
+      "id": "scope-4",
+      "resolution": "addressed",
+      "reason": "Split guard work into resolver-backed checker implementation, negative fixtures, and separate external package-like validation.",
+      "where": "Phase 3 \u2014 Steps 9 and 10; Phase 4 \u2014 Step 11"
+    }
+  ],
+  "questions": [],
+  "success_criteria": [
+    {
+      "criterion": "`docs/extensions/pristine-sdk-boundary-audit.md` exists and records M0 doc/code discrepancies, all current SDK-to-host leak sites, and public value exports with host-typed signatures.",
+      "priority": "must",
+      "requires": [
+        "read_files",
+        "parse_diff"
+      ]
+    },
+    {
+      "criterion": "No file under `src/sdk/**` contains or resolves a static import, export-from declaration, or literal dynamic import to `src/tools/video-editor/**` or `@/tools/video-editor/**`.",
+      "priority": "must",
+      "requires": [
+        "run_shell",
+        "read_files",
+        "parse_diff"
+      ]
+    },
+    {
+      "criterion": "SDK-owned rendering, timeline, asset metadata, and config signature modules contain the portable contracts needed by the public SDK barrel, including compatible `getStableConfigSignature` parameter contracts.",
+      "priority": "must",
+      "requires": [
+        "read_files",
+        "parse_diff",
+        "run_tests"
+      ]
+    },
+    {
+      "criterion": "All pre-existing public SDK exports remain importable from `@reigh/editor-sdk` with compatible types, and required value exports evaluate in Node from emitted JavaScript without host/editor imports.",
+      "priority": "must",
+      "requires": [
+        "run_tests",
+        "read_build_output"
+      ]
+    },
+    {
+      "criterion": "`npm run check:video-editor-sdk-imports` fails deliberate direct import, export-from, literal dynamic import, alias-resolved SDK violations, and tooling-resolution failures, and passes on the real tree.",
+      "priority": "must",
+      "requires": [
+        "run_tests",
+        "run_shell",
+        "read_build_output"
+      ]
+    },
+    {
+      "criterion": "The external package-like SDK validator compiles with `tsc --noEmit`, uses no repo aliases, asserts no import graph path reaches `src/tools/video-editor`, and runs runtime checks only against emitted JavaScript.",
+      "priority": "must",
+      "requires": [
+        "run_tests",
+        "read_build_output",
+        "run_shell"
+      ]
+    },
+    {
+      "criterion": "Representative comments for `metadataFacet`, `shader`, and `process` identify portable declaration contracts versus host-owned behavior.",
+      "priority": "must",
+      "requires": [
+        "read_files",
+        "parse_diff"
+      ]
+    },
+    {
+      "criterion": "`npm run test:extensions`, `npm run test:readiness`, and `npm run quality:check` pass after extraction, or any unrelated pre-existing failure is captured with a narrowed reproduction.",
+      "priority": "must",
+      "requires": [
+        "run_tests",
+        "run_linter",
+        "read_build_output"
+      ]
+    },
+    {
+      "criterion": "New SDK modules stay small, domain-scoped, and do not become catch-all barrels for unrelated host concepts.",
+      "priority": "should",
+      "requires": [
+        "read_files",
+        "subjective_judgment"
+      ]
+    },
+    {
+      "criterion": "Host modules import SDK contracts directly where dependency direction is clear, while temporary compatibility re-exports are documented for later cleanup.",
+      "priority": "should",
+      "requires": [
+        "read_files",
+        "parse_diff"
+      ]
+    }
+  ],
+  "assumptions": [
+    "M0 preserves all existing public exports from `@reigh/editor-sdk`; removals and deprecations are out of scope.",
+    "Portable SDK modules may contain deterministic pure helpers and constants when required for existing value exports, but they must not import host modules or depend on DOM, React, provider services, Vite aliases, or editor runtime state.",
+    "Host compatibility re-export modules are allowed temporarily so existing host imports can migrate incrementally.",
+    "Host-specific types may extend SDK-owned portable base contracts, but SDK public signatures should not be loosened just to break imports.",
+    "No new dependencies will be installed; the guard and validator should use existing TypeScript, Vitest, Node, and package scripts already available in the repo."
+  ],
+  "delta_from_previous_percent": 88.79,
+  "structure_warnings": []
+}
+
+        Plan structure warnings from validator:
+        []
+
+        Existing flags:
+        [
+  {
+    "id": "verifiability-0",
+    "concern": "Criterion 8: requires human verification (subjective_judgment).",
+    "status": "open",
+    "severity": "minor"
+  },
+  {
+    "id": "scope-3",
+    "concern": "Search for related code that handles the same concept. Is the reported issue a symptom of something broader \u2014 and is any single step sized to fit one worker turn?: Step 3 also bundles too many seams for one turn. The timeline contracts in `src/sdk/index.ts` are spread across multiple sections (`TimelineDiff` around lines 4627-4679, `TimelineReader` around 4867-4996, and `TimelineProposal` around 5247-5409), and the related symbols are referenced widely (`TimelinePatch` in 22 files, `TimelineProposal` in 11 files). Moving patch/diff/proposal/preview/reader declarations, preserving public exports, and proving no runtime behavior moved with them should be split by domain seam, such as `patch+diff+preview` first and `reader+proposal` second.",
+    "status": "open",
+    "severity": "significant"
+  },
+  {
+    "id": "verification",
+    "concern": "Is there convincing verification for the change?: Checked the planned validation against the repo's existing test entrypoints. `package.json:36` runs `test:extensions` with only `src/sdk/manifest-schema-validation.test.ts`, `src/sdk/index.test.ts`, `src/sdk/examples-governance.test.ts`, `src/sdk/extensionSettingsService.test.ts`, and `src/sdk/extensionSettingsMigration.test.ts`, and `package.json:74-75` routes `quality:check` through that same path plus readiness tests. Neither command runs `src/sdk/__tests__/sdk-boundary.test.ts` or `src/sdk/boundary.test.ts`, even though `src/sdk/__tests__/sdk-boundary.test.ts:14-45` is the existing suite that asserts the moved public value exports (`BUILTIN_CLIP_TYPES`, `getStableConfigSignature`, `TimelineVersionConflictError`) remain importable and executable from `@reigh/editor-sdk`. Because this change is specifically relocating those SDK-to-host boundary exports, the current verification plan is not convincing unless it explicitly adds those boundary tests or folds equivalent assertions into the named validation commands.",
+    "status": "open",
+    "severity": "minor"
+  }
+]
+
+
+
+        Your output template is at: /Users/peteromalley/Documents/.megaplan-worktrees/reigh-pristine-sdk-boundary/.megaplan/plans/m0-extract-portable-sdk-20260625-1417/critique_check_correctness.json
+Read this file first — it contains 1 check with a question and guidance.
+Investigate only this check, then add your findings to the `findings` array for that check.
+
+Self-monitor for non-convergence before spending more tool calls. This is NOT about duration or difficulty: hard checks that are still making new progress should continue. But if you are spinning — re-reading the same file 3+ times, searching for a file the plan says to CREATE, needing a sibling/external repo or path outside the project root, or making many tool calls without getting closer to a verdict — STOP investigating. Not finding what you need is a finding; emit exactly one non-flagged finding whose detail starts `unverifiable: ` and explains what you could not resolve and exactly why. An unverifiable check is a complete, valid result for this worker; normal code ambiguity that you can inspect should still be flagged per the usual "when in doubt, flag it" rule.
+
+Check ID: correctness
+Question: Are the proposed changes technically correct?
+Guidance: Look for logic errors, invalid assumptions, broken invariants, schema mismatches, or behavior that would fail at runtime. When the fix adds a conditional branch, check whether it handles all relevant cases — not just the one reported in the issue.
+
+Each finding needs:
+- "detail": what you specifically checked and what you found (at least a full sentence)
+- "flagged": true if this describes a difference, risk, or tension — even if you think it's justified. false only if purely informational with no possible downside.
+- This check must end with at least one finding. Never leave its `findings` array empty. If you found no issue, add one detailed `flagged: false` finding explaining what you checked and why it appears clear.
+
+When in doubt, flag it — the gate can accept tradeoffs, but it can't act on findings it never sees.
+
+Good: {"detail": "Checked callers of nthroot_mod in solveset.py line 1205 — passes prime moduli only, consistent with the fix.", "flagged": false}
+Good: {"detail": "The fix handles empty tuples but not single-element tuples which need a trailing comma.", "flagged": true}
+Bad: {"detail": "No issue found", "flagged": false}  ← too brief, will be rejected
+Bad: {"detail": "The hints suggest approach X but the plan uses Y. However Y is consistent with X's intent.", "flagged": false}  ← a different approach than the hints IS a flag. You found a divergence — flag it. The gate decides if it's acceptable.
+
+After filling in checks, add any additional concerns to the `flags` array (e.g., security, performance, dependencies).
+Use the standard format (id, concern, category, severity_hint, evidence). This array can be empty.
+
+Workflow: read the file → investigate → read file again → add finding → write file back. Repeat for this check.
+
+    This is critique iteration 2. The template file includes prior findings with their status. Verify addressed flags were actually fixed, re-flag if inadequate, and check for new issues introduced by the revision.
+
+        Additional guidelines:
+        - Robustness level: full. Use balanced judgment. Flag significant risks, but do not spend flags on minor polish or executor-obvious boilerplate.
+        - Over-engineering: prefer the simplest approach that fully solves the problem.
+        - Reuse existing flag IDs when the same concern is still open.
+        - `verified_flag_ids`: list flag IDs from prior iterations that the revised plan actually resolves (e.g., if the plan was revised to fix FLAG-001, and you confirm the fix is correct, include "FLAG-001"). Only include flags you've verified — don't guess.
+        - Verify that the plan follows the expected structure when validator warnings or the outline suggest drift.
+        - Additional flags may use these categories: correctness, security, completeness, performance, maintainability, other.
+        - Focus on concrete issues, not structural formatting.
+        - Complexity audit: flag (a) missing complexity scores on plan steps, (b) inflated scores that would waste premium models on trivial work, and (c) under-rated work that should not run on cheap models. Use category `completeness`.
