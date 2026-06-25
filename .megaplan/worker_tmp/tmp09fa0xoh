@@ -1,0 +1,430 @@
+You are already running inside the megaplan harness for this step. Do the requested planning/review/execution work directly. Do NOT invoke the `megaplan` CLI, do NOT read or activate the `megaplan` skill, do NOT start nested megaplan plans, and do NOT recurse into another planning harness. Treat mentions of megaplan in the repository or environment as implementation context only.
+
+WRITE ACCESS CONTRACT: You are running with auto-approved writes inside a writable workspace. Treat the working directory as fully writable. Do NOT preemptively skip or block tasks on permission, sandbox, or read-only grounds. Attempt every required edit; only report failure AFTER a real OS-level rejection from a specific shell command. Do not infer 'read-only' from absence of activity; absence is not denial. If a single shell command unexpectedly fails, retry with a different invocation before concluding the environment is restricted.
+
+## Anchor Context: North Star
+
+These anchors are durable alignment targets captured at plan initialization. They are not ordinary notes, generated success criteria, or optional background. Use them to keep this stage aligned with the end-state intent.
+
+Scope map:
+- Epic North Star: overall chain/epic objective. Preserve this across all milestones.
+- Plan/Sprint/Milestone North Star: current plan or milestone objective. It extends or operationalizes the epic North Star for this sprint; it does not override it.
+
+If local instructions, generated plan content, or a plan-level anchor appear to conflict with an epic anchor, do not resolve the conflict silently. Surface an explicit anchor conflict and explain what decision, replan, or user approval would be needed.
+
+### Epic North Star: North Star — Pristine SDK Boundary
+Source: `/Users/peteromalley/Documents/.megaplan-worktrees/reigh-pristine-extension-foundation/.megaplan/briefs/pristine-editor-sdk-boundary/north-star.md`
+Captured artifact: `anchors/north_star/epic.md`
+Checksum: `61fea986fa18462ad51342b54e9241b677b4aeb9bddd819047740a557249e560`
+
+```md
+# North Star — Pristine SDK Boundary
+
+## End state (M4)
+
+`@reigh/editor-sdk` is a clean, externally compilable, package-evaluable boundary. It owns only portable contracts and generic family machinery; every video-specific family, timeline, rendering, asset, and export contract lives under `src/sdk/video/*`, while generic maturity/conformance/adapter contracts live under `src/sdk/core/*`.
+
+The host (`src/tools/video-editor/*`) imports from the SDK but the SDK never imports host internals. `src/tools/video-editor/runtime/extensionSurface.ts` is a thin orchestrator over a host-side family adapter registry; families are honestly classified by the two-axis maturity registry in `src/sdk/video/families/familyDefinitions.ts`.
+
+Authors consume a stable public barrel, can direct-import modality-owned modules, and the SDK validates in a temp external consumer with no repo aliases, no Vite context, and no host leakage. Docs, governance, and conformance gates are generated from the same canonical registry.
+
+## Why this matters
+
+This boundary is the foundation for safely adding new extension families and, eventually, new editor modalities. Get it wrong and every future family drags host internals back into the SDK. Get it right and the next modality starts from a clean core.
+```
+
+### Current Stage
+Stage: `finalize`
+Plan directory: `/Users/peteromalley/Documents/.megaplan-worktrees/reigh-pristine-sdk-boundary/.megaplan/plans/m0-extract-portable-sdk-20260625-1417`
+Current milestone: `m0-extract-portable-sdk-contracts`
+
+### Phase Instruction
+Convert the approved plan into executable tasks while preserving North Star constraints and visible alignment checks.
+
+### Conflict Note
+Plan-level anchors extend epic anchors. They do not override them silently. When in doubt, flag the tension rather than optimizing around it.
+
+You are DECOMPOSING the approved plan below into an ordered task DAG. The plan has been
+        critiqued, gated, and possibly revised. Do NOT re-evaluate strategy or re-litigate
+        decisions - gate has settled those.
+
+        Project directory:
+        /Users/peteromalley/Documents/.megaplan-worktrees/reigh-pristine-sdk-boundary
+
+        Brief summary: # M0 — Extract Portable SDK Contracts
+(Full brief in state.idea; success criteria in plan_v1.meta.json.)
+
+        Approved plan:
+        # Implementation Plan: M0 Extract Portable SDK Contracts
+
+## Overview
+Root-cause check: the critique does not change the root cause. M0 is still about making `@reigh/editor-sdk` a portable SDK boundary by removing SDK-to-host imports and proving an external package-like consumer can compile and evaluate the SDK without repo aliases or video-editor internals. The critique does sharpen the target in two places: timeline extraction must be split into worker-sized domain seams, and the `src/sdk/**` boundary must explicitly account for tests because existing SDK tests currently deep-import host runtime repositories while the current guard excludes tests.
+
+This revision keeps the North Star intact. Production SDK files must never import host internals. Files that remain under `src/sdk/**`, including tests, must also stop statically importing `src/tools/video-editor/**` or `@/tools/video-editor/**` unless they are deliberate guard fixtures isolated outside the real SDK tree. Host-coupled SDK tests should either move to a host-owned test location or be rewritten with SDK-local fakes so the directory itself stops normalizing host leakage.
+
+M0 remains a bridge milestone. It preserves `@reigh/editor-sdk` as the public barrel, keeps existing public exports compatible, and creates SDK-owned modules only for portable contracts and pure values needed to break host imports. It does not yet perform the later core/video/family split beyond the scoped rendering, timeline, asset, and config contract modules required for portability.
+
+## Phase 0: Baseline Truth
+
+### Step 1: Audit docs, source, leak sites, and test ownership
+**Complexity: 2**
+1. Create `docs/extensions/pristine-sdk-boundary-audit.md` from the named docs and current source.
+2. Record stale `runtime/contributionFamilies.ts` references, the missing `docs/extensions/reigh-extension-layer-foundation-plan.md` unless a renamed canonical source is found, SDK import leakage, Phase 4 blocked status, and current guard weaknesses.
+3. Build a concrete symbol map for every SDK-to-host edge, including top-level exports from `@/tools/video-editor/runtime/renderability.ts` and `@/tools/video-editor`, plus the planner/capability imports around the later section of `src/sdk/index.ts`.
+4. Identify public value exports whose signatures depend on host types, especially `getStableConfigSignature`, `TimelineConfig`, and `AssetRegistry`.
+5. Classify files under `src/sdk/**` as production SDK source, SDK-local tests, or deliberate boundary-fixture files. Explicitly record existing host-coupled SDK tests such as `src/sdk/extensionSettingsMigration.test.ts` and `src/sdk/extensionSettingsService.test.ts` so later cleanup does not rely on the guard's current test exclusion.
+
+## Phase 1: Portable Contract Extraction
+
+### Step 2: Extract SDK-owned config signature contracts
+**Complexity: 3**
+1. Add SDK-owned portable config/signature modules, such as `src/sdk/video/config/signature.ts` and adjacent type modules if needed.
+2. Move or re-alias the parameter contracts required by `getStableConfigSignature` so the exported function keeps compatible `TimelineConfig` and `AssetRegistry` typing without importing from `src/tools/video-editor/types/index.ts`.
+3. Keep the implementation deterministic and pure. If host types contain host-only fields, make host-side types extend or re-export the SDK-owned portable base instead of weakening the SDK public signature.
+4. Add focused coverage or type assertions proving existing host config values remain assignable to the SDK-owned signature input types.
+
+### Step 3: Move renderability pure contracts and constants
+**Complexity: 3**
+1. Create `src/sdk/video/rendering/renderability.ts`, `artifacts.ts`, and `capabilities.ts` for portable route, determinism, blocker, capability, finding, artifact, material, locator, manifest, and shader materializer contracts.
+2. Move only declarations, serializable constants, and pure helpers that do not depend on host runtime, DOM, React, provider services, Vite aliases, or editor state.
+3. Leave execution behavior and runtime orchestration under `src/tools/video-editor/**`.
+4. Add focused tests or type checks for the extracted renderability surface before migrating broad call sites.
+
+### Step 4: Re-point SDK and host renderability imports
+**Complexity: 3**
+1. Re-export the moved renderability names from `src/sdk/index.ts` using SDK-local paths only.
+2. Turn `src/tools/video-editor/runtime/renderability.ts` into a host compatibility module that imports SDK contracts and retains or delegates host-only behavior.
+3. Migrate host importers to SDK paths where dependency direction is clear; keep temporary host compatibility re-exports where migration would create unrelated churn.
+4. Verify all current renderability importers still compile.
+
+### Step 5: Extract timeline patch, diff, and preview contracts
+**Complexity: 3**
+1. Move declaration-only patch, diff, operation, preview, and granularity shapes from the relevant `src/sdk/index.ts` sections into `src/sdk/video/timeline/patch.ts` and related small modules.
+2. Preserve public names from `src/sdk/index.ts` by re-exporting from the new SDK-local modules.
+3. Keep patch compilation, concrete timeline validation, provider commits, and editor-runtime behavior under `src/tools/video-editor/**`.
+4. Add focused type coverage for representative `TimelinePatch`, `TimelineDiff`, and preview call sites before starting reader/proposal extraction.
+
+### Step 6: Extract timeline reader and proposal contracts
+**Complexity: 3**
+1. Move declaration-only reader shapes from the later `TimelineReader` section into `src/sdk/video/timeline/reader.ts`.
+2. Move declaration-only proposal input/result/status shapes from the later `TimelineProposal` section into `src/sdk/video/timeline/proposal.ts`.
+3. Preserve all existing public names from `src/sdk/index.ts` with SDK-local re-exports.
+4. Keep proposal execution, planning services, concrete timeline mutation, and provider commits in host modules.
+5. Add focused type coverage for representative `TimelineReader` and `TimelineProposal` imports and ensure the previous patch/diff checks still pass.
+
+### Step 7: Extract asset metadata contracts and family comments
+**Complexity: 3**
+1. Move SDK-public metadata shapes into `src/sdk/video/assets/metadata.ts`.
+2. Compare SDK names with host names and preserve compatibility aliases instead of silently changing shapes.
+3. Keep metadata validation and parser execution in host modules.
+4. Add concise boundary comments for `metadataFacet`, `shader`, and `process` explaining portable declaration contracts versus host-owned behavior.
+
+## Phase 2: Boundary Cleanup
+
+### Step 8: Normalize SDK test boundary
+**Complexity: 3**
+1. Rewrite SDK-local tests that can use SDK-local fakes so they no longer import `src/tools/video-editor/**` or `@/tools/video-editor/**`.
+2. Move tests that genuinely exercise host runtime repositories, such as the current extension settings service/migration host integrations, to a host-owned test location under `src/tools/video-editor/**` or another non-SDK integration-test area.
+3. Keep compatibility assertions for SDK public exports in `src/sdk/**`, but ensure those assertions import only SDK-local modules or the public SDK barrel.
+4. Document moved or rewritten tests in the audit so reviewers can distinguish boundary cleanup from behavioral test deletion.
+
+### Step 9: Remove every SDK-to-host import edge
+**Complexity: 3**
+1. Replace all static imports, export-from declarations, and literal dynamic imports in real files under `src/sdk/**` that target `@/tools/video-editor/**` or resolve to `src/tools/video-editor/**`.
+2. Include the later planner/capability imports in `src/sdk/index.ts`; do not treat the public export block as the whole problem.
+3. Move `BUILTIN_CLIP_TYPES`, `TimelineVersionConflictError`, `isTimelineVersionConflictError`, and `getStableConfigSignature` into SDK-owned modules or SDK-owned compatible equivalents.
+4. Run an interim textual and TypeScript-resolution scan before proceeding to validator work.
+
+### Step 10: Preserve public SDK barrel compatibility
+**Complexity: 3**
+1. Compare the pre-change public exports of `@reigh/editor-sdk` with the revised barrel.
+2. Preserve all existing importable names and compatible types unless a documented contradiction requires escalation.
+3. For value exports, ensure they can be evaluated after TypeScript emission without importing host/editor modules.
+4. Document any temporary compatibility aliases in the audit so later milestones can clean them up intentionally.
+
+## Phase 3: Guard Upgrade
+
+### Step 11: Implement resolver-backed SDK import guard
+**Complexity: 4**
+1. Keep the fast textual scan as an early failure path.
+2. Add TypeScript AST parsing for static imports, export-from declarations, and literal dynamic imports under `src/sdk/**`.
+3. Remove the blanket test-file exclusion for real `src/sdk/**` files. The real-tree pass must cover production files and SDK-local tests after Step 8.
+4. Use `ts.resolveModuleName` with the repo TypeScript configuration so alias-resolved imports are checked by resolved filesystem path, not only by raw specifier text.
+5. Fail closed when required tooling or TypeScript resolution setup is unavailable; do not allow a missing `tsc` or missing compiler API path to produce a passing guard.
+6. Keep deliberate negative fixtures outside the real SDK tree or behind an explicit fixture mode so they do not create allowed host imports in `src/sdk/**`.
+
+### Step 12: Add negative fixtures separately
+**Complexity: 3**
+1. Add deliberate violation fixtures for direct import, export-from, literal dynamic import, alias-resolved import, and a test-file import pattern that mirrors the previously excluded SDK tests.
+2. Prove `npm run check:video-editor-sdk-imports` fails each fixture class for the expected reason.
+3. Prove the same command passes on the real tree after SDK extraction and SDK test normalization.
+4. Keep fixture setup isolated from production source so failures are deterministic and easy to diagnose.
+
+## Phase 4: External SDK Validator
+
+### Step 13: Replace alias smoke with package-like validation
+**Complexity: 4**
+1. Create a temp package-like consumer with its own `package.json` and `tsconfig.json`, no repo aliases, and a generated local `@reigh/editor-sdk` package entrypoint that points at the extracted SDK surface.
+2. Run `tsc --noEmit` for type validation and fail on any SDK diagnostics.
+3. Build an import graph from compiler resolution or emitted metadata and assert no source path reaches `src/tools/video-editor/**`.
+4. For runtime value checks, emit JavaScript to a temp `dist` with `tsc` and run Node against that emitted JS. Do not point plain Node at raw `.ts` source.
+5. Touch representative SDK value exports, including `BUILTIN_CLIP_TYPES`, `TimelineVersionConflictError`, `isTimelineVersionConflictError`, and `getStableConfigSignature`.
+
+## Phase 5: Validation Order
+
+### Step 14: Run focused and full validation
+**Complexity: 3**
+1. Run `npm run check:video-editor-sdk-imports` after guard and validator updates.
+2. Run focused SDK, config signature, timeline patch/diff/preview, timeline reader/proposal, asset metadata, and renderability tests or type tests added during extraction.
+3. Run the relocated or rewritten extension settings tests to prove Step 8 preserved behavior.
+4. Run `npm run test:extensions` and `npm run test:readiness`.
+5. Run `npm run quality:check`.
+6. If a full validation command fails for unrelated pre-existing reasons, capture the failing command, relevant output, and a narrowed reproduction in the audit rather than weakening the boundary criteria.
+
+## Execution Order
+1. Step 1 establishes the authoritative leak, compatibility, and SDK-test ownership map.
+2. Steps 2 through 7 extract portable contracts in small, reviewable seams.
+3. Step 8 removes or relocates host-coupled tests from the SDK boundary before guard semantics are tightened.
+4. Steps 9 and 10 remove all real SDK-to-host imports and preserve the public barrel.
+5. Steps 11 and 12 make the boundary guard capable of catching regressions, including previously excluded test-file imports.
+6. Step 13 proves an external consumer can compile and evaluate emitted SDK values without repo aliases or host leakage.
+7. Step 14 runs focused checks first, then broader extension, readiness, and quality gates.
+
+## Validation Order
+1. Textual and resolver-backed SDK import scans over real `src/sdk/**` files, including tests.
+2. Focused type/runtime checks for each extracted contract seam.
+3. Guard negative fixtures in isolated fixture mode.
+4. External package-like SDK validator with emitted-JS runtime checks.
+5. Broader extension, readiness, and quality commands.
+
+
+        Plan metadata:
+        {
+  "version": 3,
+  "timestamp": "2026-06-25T12:39:56Z",
+  "hash": "sha256:a4b5b9779c251576207d4053d4eb50f5f551c5811af8b4cfb8a61262214ac719",
+  "changes_summary": "Split timeline extraction into separate patch/diff/preview and reader/proposal steps, added an explicit SDK test-boundary cleanup step, and tightened the guard plan so real `src/sdk/**` tests are checked instead of blanket-excluded.",
+  "flags_addressed": [
+    {
+      "id": "scope-3",
+      "resolution": "addressed",
+      "reason": "The timeline migration is now two separate worker-sized steps: patch/diff/preview first, then reader/proposal, each with its own preservation and focused type coverage requirements.",
+      "where": "Phase 1 - Steps 5 and 6"
+    },
+    {
+      "id": "scope",
+      "resolution": "addressed",
+      "reason": "The plan now classifies SDK tests, rewrites or relocates host-coupled tests, removes the blanket test exclusion from the real-tree guard pass, and adds a negative fixture for test-file host imports.",
+      "where": "Phase 0 - Step 1; Phase 2 - Step 8; Phase 3 - Steps 11 and 12"
+    }
+  ],
+  "questions": [],
+  "success_criteria": [
+    {
+      "criterion": "`docs/extensions/pristine-sdk-boundary-audit.md` exists and records M0 doc/code discrepancies, all current SDK-to-host leak sites, public value exports with host-typed signatures, and SDK test files that currently depend on host internals.",
+      "priority": "must",
+      "requires": [
+        "read_files",
+        "parse_diff"
+      ]
+    },
+    {
+      "criterion": "No real file under `src/sdk/**`, including SDK-local tests, contains or resolves a static import, export-from declaration, or literal dynamic import to `src/tools/video-editor/**` or `@/tools/video-editor/**`; deliberate guard fixtures are isolated outside the real SDK tree or run only in fixture mode.",
+      "priority": "must",
+      "requires": [
+        "run_shell",
+        "read_files",
+        "parse_diff"
+      ]
+    },
+    {
+      "criterion": "Host-coupled SDK tests are rewritten with SDK-local fakes or relocated to a host-owned integration-test location without deleting the behavioral coverage they provided.",
+      "priority": "must",
+      "requires": [
+        "read_files",
+        "parse_diff",
+        "run_tests"
+      ]
+    },
+    {
+      "criterion": "SDK-owned rendering, timeline patch/diff/preview, timeline reader/proposal, asset metadata, and config signature modules contain the portable contracts needed by the public SDK barrel, including compatible `getStableConfigSignature` parameter contracts.",
+      "priority": "must",
+      "requires": [
+        "read_files",
+        "parse_diff",
+        "run_tests"
+      ]
+    },
+    {
+      "criterion": "All pre-existing public SDK exports remain importable from `@reigh/editor-sdk` with compatible types, and required value exports evaluate in Node from emitted JavaScript without host/editor imports.",
+      "priority": "must",
+      "requires": [
+        "run_tests",
+        "read_build_output"
+      ]
+    },
+    {
+      "criterion": "`npm run check:video-editor-sdk-imports` fails deliberate direct import, export-from, literal dynamic import, alias-resolved import, test-file import, and tooling-resolution failure fixtures, and passes on the real tree.",
+      "priority": "must",
+      "requires": [
+        "run_tests",
+        "run_shell",
+        "read_build_output"
+      ]
+    },
+    {
+      "criterion": "The external package-like SDK validator compiles with `tsc --noEmit`, uses no repo aliases, asserts no import graph path reaches `src/tools/video-editor`, and runs runtime checks only against emitted JavaScript.",
+      "priority": "must",
+      "requires": [
+        "run_tests",
+        "read_build_output",
+        "run_shell"
+      ]
+    },
+    {
+      "criterion": "Representative comments for `metadataFacet`, `shader`, and `process` identify portable declaration contracts versus host-owned behavior.",
+      "priority": "must",
+      "requires": [
+        "read_files",
+        "parse_diff"
+      ]
+    },
+    {
+      "criterion": "`npm run test:extensions`, `npm run test:readiness`, and `npm run quality:check` pass after extraction, or any unrelated pre-existing failure is captured with a narrowed reproduction.",
+      "priority": "must",
+      "requires": [
+        "run_tests",
+        "run_linter",
+        "read_build_output"
+      ]
+    },
+    {
+      "criterion": "New SDK modules stay small, domain-scoped, and do not become catch-all barrels for unrelated host concepts.",
+      "priority": "should",
+      "requires": [
+        "read_files",
+        "subjective_judgment"
+      ]
+    },
+    {
+      "criterion": "Host modules import SDK contracts directly where dependency direction is clear, while temporary compatibility re-exports are documented for later cleanup.",
+      "priority": "should",
+      "requires": [
+        "read_files",
+        "parse_diff"
+      ]
+    }
+  ],
+  "assumptions": [
+    "M0 preserves all existing public exports from `@reigh/editor-sdk`; removals and deprecations are out of scope.",
+    "Portable SDK modules may contain deterministic pure helpers and constants when required for existing value exports, but they must not import host modules or depend on DOM, React, provider services, Vite aliases, or editor runtime state.",
+    "Files that remain under `src/sdk/**`, including SDK-local tests, should not statically import host/editor internals; host integration tests should live outside the SDK boundary.",
+    "Host compatibility re-export modules are allowed temporarily so existing host imports can migrate incrementally.",
+    "Host-specific types may extend SDK-owned portable base contracts, but SDK public signatures should not be loosened just to break imports.",
+    "No new dependencies will be installed; the guard and validator should use existing TypeScript, Vitest, Node, and package scripts already available in the repo."
+  ],
+  "delta_from_previous_percent": 53.18,
+  "structure_warnings": []
+}
+
+        Gate summary:
+        {
+  "version": 1,
+  "recommendation": "PROCEED",
+  "passed": true,
+  "rationale_brief": "Auto-inferred PROCEED because the gate worker returned an invalid/empty recommendation and no significant unresolved flags and preflight passed.",
+  "settled_decisions": [],
+  "warnings": [],
+  "orchestrator_guidance": "Plan passed gate and preflight. Proceed to finalize.",
+  "carried_flags": [],
+  "iteration": 3,
+  "produced_at": "2026-06-25T12:49:54Z"
+}
+
+        Your output template is at: /Users/peteromalley/Documents/.megaplan-worktrees/reigh-pristine-sdk-boundary/.megaplan/plans/m0-extract-portable-sdk-20260625-1417/finalize_output.json
+        Read this file first — it contains the expected JSON structure (tasks, user_actions, sense_checks, watch_items, meta_commentary).
+        Fill the JSON structure with your results and write the file back.
+        If you cannot use file tools, return the populated JSON structure inline as your response instead.
+
+        Requirements:
+        - Produce structured JSON only.
+        - For each `## Step N:` in the plan, emit 1-N tasks.
+        - For each task, emit one sense_check.
+        - Default `user_actions` to `[]`. Identify a user_action ONLY when the work is genuinely non-mechanical and the executor literally cannot do it (secrets the human alone holds, identity-bound infra access, legal/license signatories, manual UI smoke tests on production). If a check is mechanical, make it a task — not a user_action. See the detailed guidance below.
+        - Do not invent tasks that don't trace to a plan step.
+        - How batching works at runtime — shape `depends_on` with this in mind, not just literal sequencing. Tasks that share the same `depends_on` set form one batch (capped at 5). Each batch dispatches as a SINGLE LLM conversation to a SINGLE model, picked by the max(complexity) in that batch. So a c=4 audit plus three c=2 tweaks sharing a batch all run in one turn on the c=4 model. Two consequences you control via DAG shape:
+          - Routing: every task in a batch runs on the highest-tier task's model — bundle a c=2 task beside a c=4 sibling and it runs on the pricier model.
+          - Cognitive load: one conversation holds all of the batch's tasks in working context. The more disparate the tasks, the higher the risk the model loses the thread or claims completion without doing the work. Wide, mixed batches are the dominant quality failure mode.
+        - Three principles for shaping batches — judgment, not arithmetic (there is no mechanical split rule):
+          1. Isolate heavyweights. A c=4 or c=5 task usually deserves its own batch. Chain lighter tasks through it via `depends_on` rather than placing them as siblings.
+          2. Bundle context-related light work. Several c=2/c=3 tasks touching the same files or contracts batch well together.
+          3. Never emit more than 5 actionable parallel siblings. If a step legitimately fans out wider, linearize via `depends_on` so the runtime batcher sees at most 5 at a time.
+        - Do not include `validation` or `coverage_complete` fields - the harness computes those.
+        - The FINAL task MUST run tests; harness validation will reject finalize output without it.
+        - `tasks` must be an ordered array of task objects. Every task object must include:
+          - `id`: short stable task ID like `T1`
+          - `description`: concrete work item
+          - `depends_on`: array of earlier task IDs or `[]`
+          - `status`: always `"pending"` at finalize time
+          - `executor_notes`: always `""` at finalize time
+          - `reviewer_verdict`: always `""` at finalize time
+          - `kind`: indicating the type of work. One of:
+            - `code`: writes or modifies source files (executor must produce `files_changed`).
+            - `test`: writes or modifies test files, or runs the test suite (executor must produce `files_changed` in tests/ OR `commands_run` containing pytest/test invocations).
+            - `audit`: read-only investigation — grep, code review, schema inspection (executor evidence is `executor_notes` describing findings; no `files_changed` expected).
+            - `research`: external research or non-code investigation (executor evidence is `executor_notes`).
+            - `docs`: writes documentation files (executor must produce `files_changed`).
+            If unsure, default to `code`.
+          - `complexity`: integer 1–5 complexity score. This score routes the task to a
+            model at execution time, so adjudicate it deliberately — do not guess. Use the rubric:
+            - 1 = trivial, mechanical, single-file change with no logic to reason about
+                  (rename, constant bump, comment, import). A weak model cannot get it wrong.
+            - 2 = simple, localized change plus the obvious test update; one file or two,
+                  logic is linear and the failure mode is obvious.
+            - 3 = multi-file change with non-trivial logic, control flow, or data shape the
+                  executor must hold in its head; correctness is not self-evident from the diff.
+            - 4 = a wrong implementation would be NON-LOCAL and not caught by an obvious test:
+                  the error propagates through a shared contract or invariant that code you did
+                  NOT edit relies on. Touching several files is NOT sufficient on its own — a
+                  mechanical multi-file change whose failure is local and test-evident is tier 2-3.
+            - 5 = fundamental system-invariant change with high regression risk: concurrency that
+                  cascades, a schema/wire-format others build on, a state machine, or a security/
+                  auth boundary. ONLY when a subtle error would pass the full suite and corrupt
+                  state or break a system-wide contract — not merely "important" or central code.
+            Score on the hardest REALISTIC aspect of the task, not a worst-case imagining. When
+            genuinely torn between two tiers, choose the LOWER one UNLESS you can name the specific
+            cascading, test-evading failure that earns the higher tier in the justification.
+            You are not the model that executes this task, and the score neither saves nor
+            costs you anything — so do not lowball to seem efficient and do not highball to
+            play safe. Both distort routing: a too-low score sends a hard task to a model
+            that fails it; a too-high score burns a premium model on trivial work. Score
+            what the task honestly requires, no higher and no lower.
+            FLOOR: a task is NEVER below tier 4 only when it GENUINELY changes the semantics of
+            concurrency, a schema/state-machine, a security/auth boundary, or a contract other
+            code actually depends on — because a subtle error there passes tests but is wrong.
+            This floor does NOT apply to mechanical edits that merely sit near such code, or that
+            add a new interface nothing relies on yet; score those on the rubric (usually 2-3).
+          - `complexity_justification`: REQUIRED. One or two sentences that argue, specifically,
+            why this task sits at exactly that tier — cite the concrete files, interfaces, or
+            risk that places it there (e.g. "touches the auth middleware contract used by 4
+            call sites, so a mistake is non-local → tier 4"). A bare restatement of the rubric
+            ("this is complex") is not acceptable; the justification must be defensible against
+            a reviewer who disagrees.
+        - `watch_items` must be an array of strings covering runtime risks, critique concerns, and assumptions to keep visible during execution.
+        - `sense_checks` must be an array with one verification question per task. Every sense-check object must include:
+          - `id`: short stable ID like `SC1`
+          - `task_id`: the related task ID
+          - `question`: reviewer verification question
+          - `verdict`: always `""` at finalize time
+        - `user_actions` should default to `[]`. Emitting a user_action stalls execution on a human gate — it is a load-bearing escape hatch, not a convenience. Prefer to design every step to be fully mechanical: the executor can read files, run commands, query APIs, fetch URLs, parse JSON, edit code, and run tests. If a check is mechanical, write it as a task — not a user_action.
+- Emit a user_action ONLY when the work is *genuinely non-mechanical* and the executor has no path to do it itself: secrets the human alone holds (a real API key the executor cannot mint), infrastructure access bound to the human's identity (cloud console, VPN), legal/license/security-policy judgments that require a human signatory, or out-of-band manual UI smoke tests on production. If you cannot name a specific reason the executor cannot do it, the task is mechanical — make it a task.
+- Anything that touches code, configuration, fixtures, or local files MUST be a task. Reading docs, grepping, editing, running tests, writing SQL, and producing JSON resolution files are tasks. Negative example: writing the migration SQL is a task, not a user_action; verifying a license URL is reachable is a task, not a user_action.
+- When you do emit a user_action, set `requires_human_only_reason` to a specific sentence naming why the executor literally cannot perform it (not just "it's important").
+- If `user_actions` is non-empty, expect that execution will block until the human resolves each one — only emit them when that block is unavoidable.
+- Positive examples (rare, last-resort): `U1: Set ANTHROPIC_API_KEY in .env (before_execute, requires_human_only_reason: "secret the executor cannot mint")`; `U2: Confirm legal sign-off to commit the third-party JSON corpus (before_execute, requires_human_only_reason: "license judgment with legal liability")`.
+        - `meta_commentary` must be a single string with execution guidance, gotchas, or judgment calls that help the executor succeed.
+        - Preserve information that strong existing artifacts already capture well: execution ordering, watch-outs, reviewer checkpoints, and practical context.
+        - The structured output should be self-contained: an executor reading only `finalize.json` should have everything needed to work.
+        - Keep the task count proportional to the work. A simple 1-2 file fix should be 2 tasks: (1) apply the fix, (2) run tests. Do NOT create separate "inspect" or "read" tasks for simple changes — the executor can read and fix in one step. Only create more tasks when the work has genuinely independent stages.
+        - One task is the unit of ONE worker turn: the executor must IMPLEMENT it, VERIFY it, and emit its result envelope inside a single ~15-minute conversation. A task that cannot realistically finish in one turn is mis-sized and WILL fail — the worker reports `blocked: "turn ended before implementation"` or runs out the clock mid-edit. Size every task to fit one turn; raising `complexity` does NOT buy more turns, it only routes to a stronger model for the SAME single turn. When a step is a large mechanical refactor, SPLIT it across tasks instead of bundling: "add the new abstraction + its unit tests" (T1) → "migrate consumer A" (T2, depends_on T1) → "migrate consumer B + parity tests" (T3, depends_on T2). A single task that says "extract this 2000-line file into modules and write tests" or "consolidate the roots AND migrate three registries AND add parity tests" is a god-task — decompose it into one task per consumer/module, each independently completable and verifiable.
+        - - The harness owns test verification — do NOT author a run-until-pass task. If you include a test-related task, scope it to: introduce no new failures vs the recorded baseline; do not try to make pre-existing baseline failures pass; do not narrow to individual functions. The harness will run the authoritative post-execute suite.
