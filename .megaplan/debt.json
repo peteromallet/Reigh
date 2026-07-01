@@ -3724,6 +3724,23 @@
       "resolved": false,
       "resolved_by": null,
       "resolved_at": null
+    },
+    {
+      "id": "DEBT-220",
+      "subsystem": "documentation-quality",
+      "concern": "criterion 10 requires human verification via subjective_judgment for evaluating whether docs use stable source references to sdk/runtime files rather than copying unverifiable architecture claims without provenance.",
+      "flag_ids": [
+        "FG-001"
+      ],
+      "plan_ids": [
+        "m0-decisions-fixtures-and-20260701-1826"
+      ],
+      "occurrence_count": 1,
+      "created_at": "2026-07-01T19:11:28Z",
+      "updated_at": "2026-07-01T19:11:28Z",
+      "resolved": false,
+      "resolved_by": null,
+      "resolved_at": null
     }
   ]
 }
