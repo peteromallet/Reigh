@@ -8,9 +8,9 @@
   "pr_number": 76,
   "pr_state": "open",
   "completed": [],
-  "branch_head": "c096e64c18cdf152c26f3cce9c316b2f00a635e6",
-  "pr_head": "c096e64c18cdf152c26f3cce9c316b2f00a635e6",
-  "last_pushed_commit": "c096e64c18cdf152c26f3cce9c316b2f00a635e6",
+  "branch_head": "ffe069cbfd4844f1c9e223ac7023c11b9e788fe1",
+  "pr_head": "ffe069cbfd4844f1c9e223ac7023c11b9e788fe1",
+  "last_pushed_commit": "ffe069cbfd4844f1c9e223ac7023c11b9e788fe1",
   "dirty_flag": false,
   "sync_state": "clean",
   "extra_repos": [],
@@ -40,7 +40,7 @@
       "target_fallback_reason": "merge_base_unavailable:main"
     },
     "chain_spec_path": "/workspace/reigh-extension-composition-spine-epic-12d49a3e/reigh-app/.megaplan/initiatives/reigh-extension-composition-spine-epic/chain.yaml",
-    "chain_spec_sha256": "587abdebec583ef126f770f2ecbbcf9647937901dd539ac2131f4c23167df430",
+    "chain_spec_sha256": "11ab4cde1fd4bd4781cc65af9f0b6288c9a1ac1d8c15274e8bd0f087f4bcf32e",
     "ground_truth_reconciliation": {
       "reconciled_at": "2026-07-01T18:26:29Z",
       "plan": null,
