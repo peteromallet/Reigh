@@ -1,5 +1,4 @@
 import {
-  getCapabilityRequirements,
   type CapabilityFinding,
   type CapabilityRequirement,
   type DeterminismStatus,
@@ -11,8 +10,12 @@ import {
   RENDER_ROUTES,
   type TimelineSnapshot,
   type TimelineShaderSummary,
+  getCapabilityRequirements,
 } from '@reigh/editor-sdk';
-import { createShaderScopeOccupied } from '@/tools/video-editor/runtime/composition/shaderValidation.ts';
+import {
+  projectShaderRefs,
+  validateShaderComposition,
+} from '@/tools/video-editor/runtime/composition/shaderValidation.ts';
 import type {
   ContributionIndex,
   ExtensionRuntime,
@@ -261,46 +264,6 @@ function shaderDescriptorKey(extensionId: string | undefined, contributionId: st
   return `${extensionId ?? ''}:${contributionId ?? ''}`;
 }
 
-function shaderContributionScopedKey(
-  shader: Pick<TimelineShaderSummary, 'extensionId' | 'contributionId'>,
-): string {
-  return `shader:${shader.extensionId}:${shader.contributionId}`;
-}
-
-function projectShaderRefs(
-  shaderSummaries: readonly TimelineShaderSummary[] | undefined,
-  contributionIndex: ContributionIndex | undefined,
-): readonly TimelineShaderSummary[] | undefined {
-  if (!shaderSummaries?.length || !contributionIndex) {
-    return shaderSummaries;
-  }
-
-  let changed = false;
-  const projected: TimelineShaderSummary[] = [];
-  for (const shader of shaderSummaries) {
-    if (shader.enabled === false) {
-      projected.push(shader);
-      continue;
-    }
-
-    const entries = contributionIndex[shaderContributionScopedKey(shader)];
-    const projectedEntry = entries
-      ?.find((entry) => entry.kind === 'shader' && entry.status === 'active' && entry.projection.projected);
-    if (!projectedEntry) {
-      if (entries) {
-        changed = true;
-        continue;
-      }
-      projected.push(shader);
-      continue;
-    }
-
-    projected.push(shader);
-  }
-
-  return changed ? projected : shaderSummaries;
-}
-
 function projectSnapshotShaderRefs(
   snapshot: TimelineSnapshot | null | undefined,
   contributionIndex: ContributionIndex | undefined,
@@ -453,12 +416,6 @@ function collectShaderMaterializerRequirement(
   acc.nextActions.push(action);
 }
 
-function shaderCompositionKey(shader: TimelineShaderSummary): string | undefined {
-  if (shader.enabled === false) return undefined;
-  if (shader.scope === 'clip') return `clip:${shader.clipId ?? ''}`;
-  return 'postprocess';
-}
-
 function shaderCompositionScopeLabel(shader: TimelineShaderSummary): string {
   return shader.scope === 'clip' ? `clip:${shader.clipId ?? 'unknown'}` : 'postprocess';
 }
@@ -472,25 +429,14 @@ function diagnoseSnapshotShaderComposition(
     return { snapshot: projectedSnapshot, findings: [] };
   }
 
-  const firstByScope = new Map<string, TimelineShaderSummary>();
+  const validation = validateShaderComposition(projectedSnapshot.shaders);
+  if (validation.occupied.length === 0) {
+    return { snapshot: projectedSnapshot, findings: [] };
+  }
+
   const findings: CapabilityFinding[] = [];
-  const filteredShaders: TimelineShaderSummary[] = [];
-
-  for (const shader of projectedSnapshot.shaders) {
-    const scopeKey = shaderCompositionKey(shader);
-    if (!scopeKey) {
-      filteredShaders.push(shader);
-      continue;
-    }
-
-    const existing = firstByScope.get(scopeKey);
-    if (!existing) {
-      firstByScope.set(scopeKey, shader);
-      filteredShaders.push(shader);
-      continue;
-    }
-
-    const occupied = createShaderScopeOccupied(existing, shader);
+  for (const occupied of validation.occupied) {
+    const shader = occupied.incoming;
     for (const route of ['browser-export', 'worker-export'] as const satisfies readonly RenderRoute[]) {
       findings.push({
         id: `planner.shaderComposition.${shaderCompositionScopeLabel(shader)}.${shader.shaderId}.${route}.scope-occupied`,
@@ -511,14 +457,10 @@ function diagnoseSnapshotShaderComposition(
     }
   }
 
-  if (findings.length === 0) {
-    return { snapshot: projectedSnapshot, findings };
-  }
-
   return {
     snapshot: {
       ...projectedSnapshot,
-      shaders: filteredShaders.length > 0 ? filteredShaders : undefined,
+      shaders: validation.shaders && validation.shaders.length > 0 ? validation.shaders : undefined,
     },
     findings,
   };

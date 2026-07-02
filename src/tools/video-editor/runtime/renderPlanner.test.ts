@@ -626,6 +626,48 @@ describe('planRender', () => {
     });
 
     expect(result.canBrowserExport).toBe(false);
+    expect(result.findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'planner.shaderComposition.clip:clip-1.shader.preview.clip.second.browser-export.scope-occupied',
+        severity: 'error',
+        route: 'browser-export',
+        reason: 'unknown',
+        extensionId: 'ext.shader',
+        contributionId: 'ext.shader.clip.second',
+        detail: {
+          source: 'shader-composition-limit',
+          scope: 'clip',
+          clipId: 'clip-1',
+          existingShaderId: 'shader.preview.clip',
+          incomingShaderId: 'shader.preview.clip.second',
+        },
+      }),
+      expect.objectContaining({
+        id: 'planner.shaderComposition.clip:clip-1.shader.preview.clip.second.worker-export.scope-occupied',
+        severity: 'error',
+        route: 'worker-export',
+      }),
+      expect.objectContaining({
+        id: 'planner.shaderComposition.postprocess.shader.preview.post.second.browser-export.scope-occupied',
+        severity: 'error',
+        route: 'browser-export',
+        reason: 'unknown',
+        extensionId: 'ext.shader',
+        contributionId: 'ext.shader.post.second',
+        detail: {
+          source: 'shader-composition-limit',
+          scope: 'postprocess',
+          clipId: undefined,
+          existingShaderId: 'shader.preview.post',
+          incomingShaderId: 'shader.preview.post.second',
+        },
+      }),
+      expect.objectContaining({
+        id: 'planner.shaderComposition.postprocess.shader.preview.post.second.worker-export.scope-occupied',
+        severity: 'error',
+        route: 'worker-export',
+      }),
+    ]));
     expect(result.blockers).toEqual(expect.arrayContaining([
       expect.objectContaining({
         route: 'browser-export',

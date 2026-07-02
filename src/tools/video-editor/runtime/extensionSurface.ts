@@ -12,6 +12,7 @@ import type {
   ExtensionDiagnostic,
   ContributionKind,
   MetadataFacetValueKind,
+  RouteFitMetadata,
   ShaderFallbackBehavior,
   ShaderMaterializerDescriptor,
   ShaderPassDescriptor,
@@ -462,6 +463,11 @@ export interface ContributionIndexEntry {
   readonly status: ContributionIndexStatus;
   /** Package-state classification when the host supplied package inventory data. */
   readonly packageState?: PackageState;
+  /** Optional render identifier assigned by the host render pipeline. */
+  readonly renderId?: string;
+  /** Optional route-fit metadata attributed to this contribution when a planner
+   *  finding or blocker can be resolved to a scoped contribution key. */
+  readonly routeFit?: RouteFitMetadata;
   /** Scoped diagnostics directly attributable to this contribution key. */
   readonly diagnostics: readonly ExtensionDiagnostic[];
   /** Encounter ordinal within an exact scoped-key duplicate group (0 = first). */

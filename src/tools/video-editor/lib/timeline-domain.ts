@@ -24,6 +24,7 @@ import { validateAssetMetadata } from './assetMetadata';
 import {
   sameCompositionShaderIdentity,
   shaderScopeOccupiedMessage,
+  validateShaderAssignment,
   validateShaderStack,
   type CompositionShaderStackEntry,
 } from '@/tools/video-editor/runtime/composition/shaderValidation.ts';
@@ -349,17 +350,24 @@ export const timelineShaderScopeOccupiedMessage = (
 ): string => shaderScopeOccupiedMessage(scope, existingShaderId, incomingShaderId, clipId);
 
 const createShaderScopeOccupiedResult = <T>(
-  scope: TimelineShaderScope,
+  occupied: { scope: TimelineShaderScope; message: string },
   existing: TimelineShaderMetadata,
   incoming: TimelineShaderMetadata,
-  clipId?: string,
 ): TimelineShaderAssignmentResult<T> => ({
   ok: false,
   code: 'shader_scope_occupied',
-  scope,
+  scope: occupied.scope,
   existing,
   incoming,
-  message: timelineShaderScopeOccupiedMessage(scope, existing.shaderId, incoming.shaderId, clipId),
+  message: occupied.message,
+});
+
+const createTimelineShaderValidationEntry = (
+  shader: TimelineShaderMetadata,
+  clipId?: string,
+): CompositionShaderStackEntry => ({
+  ...shader,
+  ...(shader.scope === 'clip' && clipId ? { clipId } : {}),
 });
 
 export const assignTimelineClipShader = (
@@ -367,8 +375,12 @@ export const assignTimelineClipShader = (
   shader: TimelineClipShaderMetadata,
 ): TimelineShaderAssignmentResult<TimelineClip> => {
   const existing = getTimelineClipShader(clip);
-  if (existing && !sameTimelineShaderIdentity(existing, shader)) {
-    return createShaderScopeOccupiedResult('clip', existing, shader, clip.id);
+  const validation = validateShaderAssignment(
+    existing ? createTimelineShaderValidationEntry(existing, clip.id) : undefined,
+    createTimelineShaderValidationEntry(shader, clip.id),
+  );
+  if (!validation.ok && existing) {
+    return createShaderScopeOccupiedResult(validation.occupied, existing, shader);
   }
 
   return {
@@ -388,8 +400,12 @@ export const assignTimelinePostprocessShader = (
   shader: TimelinePostprocessShaderMetadata,
 ): TimelineShaderAssignmentResult<TimelineConfig> => {
   const existing = getTimelinePostprocessShader(config);
-  if (existing && !sameTimelineShaderIdentity(existing, shader)) {
-    return createShaderScopeOccupiedResult('postprocess', existing, shader);
+  const validation = validateShaderAssignment(
+    existing ? createTimelineShaderValidationEntry(existing) : undefined,
+    createTimelineShaderValidationEntry(shader),
+  );
+  if (!validation.ok && existing) {
+    return createShaderScopeOccupiedResult(validation.occupied, existing, shader);
   }
 
   return {

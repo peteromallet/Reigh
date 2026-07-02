@@ -61,9 +61,14 @@ export type CompileOnlyOutputFormatRegistry = ReadonlyMap<string, CompileOnlyOut
  * Two extensions can register compile-only output formats with the same bare
  * {@link OutputFormatContribution.id} without clobbering each other because
  * the internal registry key is scoped to the owning extension.
+ *
+ * The key follows the system-wide `kind:extensionId:contributionId` format
+ * with `outputFormat` as the fixed kind, consistent with
+ * {@link ContributionIndex} scoped keys used by the planner, router, and
+ * runtime assembly.
  */
 export function formatScopedKey(extensionId: string, formatId: string): string {
-  return `${extensionId}:${formatId}`;
+  return `outputFormat:${extensionId}:${formatId}`;
 }
 
 // ---------------------------------------------------------------------------

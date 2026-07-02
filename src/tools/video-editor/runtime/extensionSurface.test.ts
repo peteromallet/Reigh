@@ -327,6 +327,99 @@ describe('normalizeExtensionRuntime — shared bare contribution IDs', () => {
     expect(rt.config.slots).toHaveProperty('toolbar');
     expect(rt.config.slots).toHaveProperty('statusBar');
   });
+
+  it('falls back to extensionId+contributionId attribution when kind is unavailable', () => {
+    const ex = ext('com.example.shared-kindless', {
+      manifest: {
+        contributions: [
+          { id: 'shared-id' as any, kind: 'slot', slot: 'toolbar', order: 0 },
+          { id: 'shared-id' as any, kind: 'dialog', order: 1 },
+        ],
+      },
+    });
+
+    const seq = buildFamilyContributionSequence([ex]);
+    seq.diagnostics.push({
+      severity: 'warning',
+      code: 'runtime/test-kindless-diagnostic',
+      message: 'Synthetic diagnostic without kind metadata.',
+      extensionId: 'com.example.shared-kindless',
+      contributionId: 'shared-id',
+    });
+
+    const rt = assembleExtensionRuntime(
+      seq,
+      [
+        {
+          extensionId: 'com.example.shared-kindless',
+          packageState: 'loaded',
+          stateReason: 'Loaded.',
+          packageMetadata: { label: 'Shared Kindless', version: '1.0.0' },
+        },
+      ],
+      DEFAULT_VIDEO_EDITOR_EXTENSION_RUNTIME,
+      VIDEO_EDITOR_FAMILY_ADAPTER_REGISTRY,
+    );
+
+    expect(
+      rt.contributionIndex['slot:com.example.shared-kindless:shared-id'][0].diagnostics,
+    ).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'runtime/test-kindless-diagnostic' }),
+    ]));
+    expect(
+      rt.contributionIndex['dialog:com.example.shared-kindless:shared-id'][0].diagnostics,
+    ).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'runtime/test-kindless-diagnostic' }),
+    ]));
+  });
+
+  it('prefers scoped-key attribution when the diagnostic exposes a kind hint', () => {
+    const ex = ext('com.example.shared-kindful', {
+      manifest: {
+        contributions: [
+          { id: 'shared-id' as any, kind: 'slot', slot: 'toolbar', order: 0 },
+          { id: 'shared-id' as any, kind: 'dialog', order: 1 },
+        ],
+      },
+    });
+
+    const seq = buildFamilyContributionSequence([ex]);
+    seq.diagnostics.push({
+      severity: 'warning',
+      code: 'runtime/test-kindful-diagnostic',
+      message: 'Synthetic diagnostic with kind metadata.',
+      extensionId: 'com.example.shared-kindful',
+      contributionId: 'shared-id',
+      detail: {
+        contributionKind: 'dialog',
+      },
+    });
+
+    const rt = assembleExtensionRuntime(
+      seq,
+      [
+        {
+          extensionId: 'com.example.shared-kindful',
+          packageState: 'loaded',
+          stateReason: 'Loaded.',
+          packageMetadata: { label: 'Shared Kindful', version: '1.0.0' },
+        },
+      ],
+      DEFAULT_VIDEO_EDITOR_EXTENSION_RUNTIME,
+      VIDEO_EDITOR_FAMILY_ADAPTER_REGISTRY,
+    );
+
+    expect(
+      rt.contributionIndex['dialog:com.example.shared-kindful:shared-id'][0].diagnostics,
+    ).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'runtime/test-kindful-diagnostic' }),
+    ]));
+    expect(
+      rt.contributionIndex['slot:com.example.shared-kindful:shared-id'][0].diagnostics,
+    ).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'runtime/test-kindful-diagnostic' }),
+    ]));
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -569,6 +662,75 @@ describe('normalizeExtensionRuntime — exact scoped-key duplicates', () => {
           },
         },
       ]);
+    expect(rt.contributionIndex['outputFormat:com.example.runtime-scoped-dup:shared-output'])
+      .toEqual([
+        {
+          scopedKey: 'outputFormat:com.example.runtime-scoped-dup:shared-output',
+          kind: 'outputFormat',
+          extensionId: 'com.example.runtime-scoped-dup',
+          contributionId: 'shared-output',
+          status: 'inactive-reserved',
+          packageState: 'loaded',
+          diagnostics: expect.arrayContaining([
+            expect.objectContaining({
+              code: 'runtime/contribution-kind-not-yet-bridged',
+              severity: 'info',
+              extensionId: 'com.example.runtime-scoped-dup',
+              contributionId: 'shared-output',
+            }),
+            expect.objectContaining({
+              code: 'runtime/duplicate-contribution',
+              severity: 'warning',
+              extensionId: 'com.example.runtime-scoped-dup',
+              contributionId: 'shared-output',
+            }),
+          ]),
+          duplicateOrdinal: 0,
+          projectionEligible: true,
+          projection: {
+            duplicateOrdinal: 0,
+            eligible: true,
+            projected: true,
+            source: 'descriptor-array',
+          },
+        },
+        {
+          scopedKey: 'outputFormat:com.example.runtime-scoped-dup:shared-output',
+          kind: 'outputFormat',
+          extensionId: 'com.example.runtime-scoped-dup',
+          contributionId: 'shared-output',
+          status: 'inactive-reserved',
+          packageState: 'loaded',
+          diagnostics: expect.arrayContaining([
+            expect.objectContaining({
+              code: 'runtime/contribution-kind-not-yet-bridged',
+              severity: 'info',
+              extensionId: 'com.example.runtime-scoped-dup',
+              contributionId: 'shared-output',
+            }),
+            expect.objectContaining({
+              code: 'runtime/duplicate-contribution',
+              severity: 'warning',
+              extensionId: 'com.example.runtime-scoped-dup',
+              contributionId: 'shared-output',
+            }),
+          ]),
+          duplicateOrdinal: 1,
+          projectionEligible: false,
+          projection: {
+            duplicateOrdinal: 1,
+            eligible: false,
+            projected: false,
+            source: 'preserved-record',
+          },
+          resolutionPolicy: {
+            kind: 'exact-duplicate',
+            strategy: 'first-wins-projection',
+            winnerScopedKey: 'outputFormat:com.example.runtime-scoped-dup:shared-output',
+            winnerDuplicateOrdinal: 0,
+          },
+        },
+      ]);
     expect(Object.isFrozen(rt.contributionIndex)).toBe(true);
     expect(
       Object.isFrozen(
@@ -701,8 +863,8 @@ describe('normalizeExtensionRuntime — inactive reserved contributions', () => 
       projection: {
         duplicateOrdinal: 0,
         eligible: true,
-        projected: false,
-        source: 'preserved-record',
+        projected: true,
+        source: 'descriptor-array',
       },
     });
 

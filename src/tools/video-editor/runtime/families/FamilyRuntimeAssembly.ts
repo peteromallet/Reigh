@@ -47,6 +47,7 @@ import type {
   PackageStateInventoryEntry,
 } from '../extensionSurface';
 import type { VideoEditorSlotDescriptor } from './slotAdapter';
+import { normalizeContributionIndexRouteFit } from '../routeFitMapper';
 
 // ---------------------------------------------------------------------------
 // Contribution kind labels
@@ -334,8 +335,24 @@ export function assembleExtensionRuntime(
     return projectionCandidates;
   }
 
-  function contributionRecordKey(item: BridgedContributionRecord): string {
+  function contributionRecordKey(
+    item: Readonly<{ scopedKey: string; duplicateOrdinal: number }>,
+  ): string {
     return `${item.scopedKey}#${item.duplicateOrdinal}`;
+  }
+
+  function duplicateResolutionPolicy(
+    item: Readonly<{ scopedKey: string; duplicateOrdinal: number }>,
+  ): ContributionIndexEntry['resolutionPolicy'] {
+    if (item.duplicateOrdinal === 0) {
+      return undefined;
+    }
+    return Object.freeze({
+      kind: 'exact-duplicate' as const,
+      strategy: 'first-wins-projection' as const,
+      winnerScopedKey: item.scopedKey,
+      winnerDuplicateOrdinal: 0,
+    });
   }
 
   function markProjectedContribution(item: BridgedContributionRecord): void {
@@ -483,7 +500,18 @@ export function assembleExtensionRuntime(
           ...activeKindMatches.map((item) => item.scopedKey),
           ...inactiveKindMatches.map((item) => item.scopedKey),
         ]);
-        targetScopedKeys = [...matchedScopedKeys];
+
+        if (matchedScopedKeys.size > 0) {
+          targetScopedKeys = [...matchedScopedKeys];
+        } else if (!detailKind) {
+          // Fall back only when the diagnostic cannot identify a unique kind.
+          targetScopedKeys = [
+            ...new Set([
+              ...candidateItems.map((item) => item.scopedKey),
+              ...inactiveCandidateItems.map((item) => item.scopedKey),
+            ]),
+          ];
+        }
       }
 
       for (const scopedKey of targetScopedKeys) {
@@ -550,6 +578,7 @@ export function assembleExtensionRuntime(
         contributionIndex[item.scopedKey] = [];
       }
       const projected = projectedContributionRecordKeys.has(contributionRecordKey(item));
+      const resolutionPolicy = !projected ? duplicateResolutionPolicy(item) : undefined;
       const diagnosticsForScopedKey =
         diagnosticsByScopedKey.get(item.scopedKey) ?? Object.freeze([]);
       contributionIndex[item.scopedKey].push(Object.freeze({
@@ -568,16 +597,7 @@ export function assembleExtensionRuntime(
           projected,
           source: projected ? 'descriptor-array' : 'preserved-record',
         }),
-        ...(item.duplicateOrdinal > 0 && !projected
-          ? {
-              resolutionPolicy: Object.freeze({
-                kind: 'exact-duplicate' as const,
-                strategy: 'first-wins-projection' as const,
-                winnerScopedKey: item.scopedKey,
-                winnerDuplicateOrdinal: 0,
-              }),
-            }
-          : {}),
+        ...(resolutionPolicy ? { resolutionPolicy } : {}),
       }));
     }
 
@@ -586,6 +606,8 @@ export function assembleExtensionRuntime(
       if (!contributionIndex[item.scopedKey]) {
         contributionIndex[item.scopedKey] = [];
       }
+      const projected = projectedContributionRecordKeys.has(contributionRecordKey(item));
+      const resolutionPolicy = !projected ? duplicateResolutionPolicy(item) : undefined;
       const diagnosticsForScopedKey =
         diagnosticsByScopedKey.get(item.scopedKey) ?? Object.freeze([]);
       contributionIndex[item.scopedKey].push(Object.freeze({
@@ -601,9 +623,10 @@ export function assembleExtensionRuntime(
         projection: Object.freeze({
           duplicateOrdinal: item.duplicateOrdinal,
           eligible: item.projectionEligible,
-          projected: false,
-          source: 'preserved-record',
+          projected,
+          source: projected ? 'descriptor-array' : 'preserved-record',
         }),
+        ...(resolutionPolicy ? { resolutionPolicy } : {}),
       }));
     }
 
@@ -703,6 +726,17 @@ export function assembleExtensionRuntime(
 
   const contributionIndex = buildContributionIndexEntries();
 
+  // ---- Route-fit normalization ---------------------------------------------
+  // Enrich contribution index entries with route-fit metadata from
+  // descriptor blockers whose identity can be directly or uniquely
+  // resolved to a scoped key.  Ambiguous blockers are silently skipped.
+  const descriptorBlockers = [
+    ...outputFormatDescriptors.flatMap((fmt) => fmt.blockers),
+    ...processDescriptors.flatMap((proc) => proc.blockers),
+  ];
+  const routeFitContributionIndex =
+    normalizeContributionIndexRouteFit(contributionIndex, descriptorBlockers);
+
   // ---- Phase 5: assemble and freeze ----------------------------------------
   /** Whether any contributions — bridged or M6-reserved — affect the config. */
   const hasAnyConfigurableContent =
@@ -783,7 +817,7 @@ export function assembleExtensionRuntime(
     diagnostics: Object.freeze(diagnostics),
     inactiveReserved: Object.freeze(inactiveReserved),
     knownRenderIds: Object.freeze(new Set(knownRenderIds)),
-    contributionIndex: Object.freeze(contributionIndex),
+    contributionIndex: routeFitContributionIndex,
     settingsDefaults: Object.freeze(
       Object.fromEntries(
         Object.entries(settingsDefaults).map(([k, v]) => [k, Object.freeze(v)]),
