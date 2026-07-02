@@ -4,9 +4,9 @@
   "current_plan_name": "m1a-reference-identity-patch-20260702-1603",
   "current_milestone_base_sha": null,
   "target_base_ref": "4c348280f180be93c56efdb1ea9a6a5e2a4bfa4b",
-  "last_state": "done",
-  "pr_number": null,
-  "pr_state": null,
+  "last_state": "prepped",
+  "pr_number": 77,
+  "pr_state": "open",
   "completed": [
     {
       "label": "m0-decisions-fixtures",
@@ -16,9 +16,9 @@
       "pr_state": "merged"
     }
   ],
-  "branch_head": "4c348280f180be93c56efdb1ea9a6a5e2a4bfa4b",
-  "pr_head": "4c348280f180be93c56efdb1ea9a6a5e2a4bfa4b",
-  "last_pushed_commit": "4c348280f180be93c56efdb1ea9a6a5e2a4bfa4b",
+  "branch_head": "e19485769b0c0e515d6df630f78cafc09f57ad20",
+  "pr_head": "e19485769b0c0e515d6df630f78cafc09f57ad20",
+  "last_pushed_commit": "e19485769b0c0e515d6df630f78cafc09f57ad20",
   "dirty_flag": true,
   "sync_state": "dirty",
   "extra_repos": [],
@@ -45,19 +45,19 @@
       "target_base": null,
       "target_base_ref": "main",
       "target_fallback_reason": "merge_base_unavailable:main",
-      "target_head": "43bddf138fadee690c44937a2ab8fce48f0782c1",
+      "target_head": "e19485769b0c0e515d6df630f78cafc09f57ad20",
       "target_root": "/workspace/reigh-extension-composition-spine-epic-12d49a3e/reigh-app",
       "work_dir": "/workspace/reigh-extension-composition-spine-epic-12d49a3e/reigh-app"
     },
     "ground_truth_reconciliation": {
-      "reconciled_at": "2026-07-02T16:03:14Z",
-      "plan": null,
-      "current_state": null,
+      "reconciled_at": "2026-07-02T16:14:20Z",
+      "plan": "m1a-reference-identity-patch-20260702-1603",
+      "current_state": "prepped",
       "latest_failure": null,
-      "last_gate": null,
+      "last_gate": {},
       "active_step": null,
-      "pr_number": null,
-      "pr_state": null
+      "pr_number": 77,
+      "pr_state": "open"
     },
     "operator_recovery_20260702": {
       "previous_current_plan_name": "m0-decisions-fixtures-and-20260701-1826",
