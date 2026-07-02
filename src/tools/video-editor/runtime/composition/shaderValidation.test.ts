@@ -1,0 +1,116 @@
+import { describe, expect, it } from 'vitest';
+import {
+  createShaderScopeOccupied,
+  sameCompositionShaderIdentity,
+  shaderScopeOccupiedMessage,
+  validateShaderStack,
+  type CompositionShaderStackEntry,
+} from '@/tools/video-editor/runtime/composition/shaderValidation.ts';
+
+const clipShader = (overrides: Partial<CompositionShaderStackEntry> = {}): CompositionShaderStackEntry => ({
+  scope: 'clip',
+  clipId: 'clip-1',
+  extensionId: 'com.example.shader',
+  contributionId: 'clip-glow-shader',
+  shaderId: 'shader.clipGlow',
+  ...overrides,
+});
+
+const postprocessShader = (
+  overrides: Partial<CompositionShaderStackEntry> = {},
+): CompositionShaderStackEntry => ({
+  scope: 'postprocess',
+  extensionId: 'com.example.shader',
+  contributionId: 'post-grade-shader',
+  shaderId: 'shader.postGrade',
+  ...overrides,
+});
+
+describe('shaderValidation', () => {
+  it('compares shader identity by scope, extension, contribution, and shader ID', () => {
+    expect(sameCompositionShaderIdentity(
+      clipShader(),
+      clipShader(),
+    )).toBe(true);
+
+    expect(sameCompositionShaderIdentity(
+      clipShader(),
+      clipShader({ contributionId: 'clip-edge-shader', shaderId: 'shader.clipEdge' }),
+    )).toBe(false);
+
+    expect(sameCompositionShaderIdentity(
+      clipShader(),
+      postprocessShader({
+        contributionId: 'clip-glow-shader',
+        shaderId: 'shader.clipGlow',
+      }),
+    )).toBe(false);
+  });
+
+  it('generates exact occupied-scope messages for clip and postprocess scopes', () => {
+    expect(shaderScopeOccupiedMessage(
+      'clip',
+      'shader.clipGlow',
+      'shader.clipEdge',
+      'clip-1',
+    )).toBe(
+      'Cannot add shader "shader.clipEdge" to clip "clip-1" because shader "shader.clipGlow" is already assigned. V1 supports one clip shader per clip. Remove the existing shader before assigning another.',
+    );
+
+    expect(shaderScopeOccupiedMessage(
+      'postprocess',
+      'shader.postGrade',
+      'shader.postVignette',
+    )).toBe(
+      'Cannot add postprocess shader "shader.postVignette" because postprocess shader "shader.postGrade" is already assigned. V1 supports one timeline postprocess shader. Remove the existing postprocess shader before assigning another.',
+    );
+  });
+
+  it('creates occupied payloads with existing/incoming records and derived clip scope', () => {
+    const occupied = createShaderScopeOccupied(
+      clipShader(),
+      clipShader({
+        contributionId: 'clip-edge-shader',
+        shaderId: 'shader.clipEdge',
+      }),
+      3,
+    );
+
+    expect(occupied).toEqual({
+      scope: 'clip',
+      clipId: 'clip-1',
+      existing: clipShader(),
+      incoming: clipShader({
+        contributionId: 'clip-edge-shader',
+        shaderId: 'shader.clipEdge',
+      }),
+      shaderCount: 3,
+      message: 'Cannot add shader "shader.clipEdge" to clip "clip-1" because shader "shader.clipGlow" is already assigned. V1 supports one clip shader per clip. Remove the existing shader before assigning another.',
+    });
+  });
+
+  it('validates shader stacks by returning the first occupied-scope collision', () => {
+    expect(validateShaderStack([clipShader()])).toEqual({ ok: true });
+
+    expect(validateShaderStack([
+      postprocessShader(),
+      postprocessShader({
+        contributionId: 'post-vignette-shader',
+        shaderId: 'shader.postVignette',
+      }),
+    ])).toEqual({
+      ok: false,
+      occupied: {
+        scope: 'postprocess',
+        clipId: undefined,
+        existing: postprocessShader(),
+        incoming: postprocessShader({
+          contributionId: 'post-vignette-shader',
+          shaderId: 'shader.postVignette',
+        }),
+        shaderCount: 2,
+        message: 'Cannot add postprocess shader "shader.postVignette" because postprocess shader "shader.postGrade" is already assigned. V1 supports one timeline postprocess shader. Remove the existing postprocess shader before assigning another.',
+      },
+    });
+  });
+});
