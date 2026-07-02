@@ -12,7 +12,9 @@ import {
   type TimelineSnapshot,
   type TimelineShaderSummary,
 } from '@reigh/editor-sdk';
+import { createShaderScopeOccupied } from '@/tools/video-editor/runtime/composition/shaderValidation.ts';
 import type {
+  ContributionIndex,
   ExtensionRuntime,
   VideoEditorOutputFormatDescriptor,
   VideoEditorPlannerBlockerDescriptor,
@@ -42,7 +44,7 @@ export interface RenderPlannerMaterialStatus {
 export interface RenderPlannerInput {
   readonly snapshot?: TimelineSnapshot | null;
   readonly requirements?: readonly CapabilityRequirement[];
-  readonly extensionRuntime?: Pick<ExtensionRuntime, 'outputFormats' | 'processes' | 'shaders'>;
+  readonly extensionRuntime?: Pick<ExtensionRuntime, 'outputFormats' | 'processes' | 'shaders' | 'contributionIndex'>;
   readonly outputFormats?: readonly VideoEditorOutputFormatDescriptor[];
   readonly processes?: readonly VideoEditorProcessDescriptor[];
   readonly shaders?: readonly VideoEditorShaderDescriptor[];
@@ -259,6 +261,65 @@ function shaderDescriptorKey(extensionId: string | undefined, contributionId: st
   return `${extensionId ?? ''}:${contributionId ?? ''}`;
 }
 
+function shaderContributionScopedKey(
+  shader: Pick<TimelineShaderSummary, 'extensionId' | 'contributionId'>,
+): string {
+  return `shader:${shader.extensionId}:${shader.contributionId}`;
+}
+
+function projectShaderRefs(
+  shaderSummaries: readonly TimelineShaderSummary[] | undefined,
+  contributionIndex: ContributionIndex | undefined,
+): readonly TimelineShaderSummary[] | undefined {
+  if (!shaderSummaries?.length || !contributionIndex) {
+    return shaderSummaries;
+  }
+
+  let changed = false;
+  const projected: TimelineShaderSummary[] = [];
+  for (const shader of shaderSummaries) {
+    if (shader.enabled === false) {
+      projected.push(shader);
+      continue;
+    }
+
+    const entries = contributionIndex[shaderContributionScopedKey(shader)];
+    const projectedEntry = entries
+      ?.find((entry) => entry.kind === 'shader' && entry.status === 'active' && entry.projection.projected);
+    if (!projectedEntry) {
+      if (entries) {
+        changed = true;
+        continue;
+      }
+      projected.push(shader);
+      continue;
+    }
+
+    projected.push(shader);
+  }
+
+  return changed ? projected : shaderSummaries;
+}
+
+function projectSnapshotShaderRefs(
+  snapshot: TimelineSnapshot | null | undefined,
+  contributionIndex: ContributionIndex | undefined,
+): TimelineSnapshot | null | undefined {
+  if (!snapshot?.shaders) {
+    return snapshot;
+  }
+
+  const shaders = projectShaderRefs(snapshot.shaders, contributionIndex);
+  if (shaders === snapshot.shaders) {
+    return snapshot;
+  }
+
+  return {
+    ...snapshot,
+    shaders: shaders && shaders.length > 0 ? shaders : undefined,
+  };
+}
+
 function createShaderDescriptorMap(
   descriptors: readonly VideoEditorShaderDescriptor[],
 ): ReadonlyMap<string, VideoEditorShaderDescriptor> {
@@ -398,36 +459,24 @@ function shaderCompositionKey(shader: TimelineShaderSummary): string | undefined
   return 'postprocess';
 }
 
-function shaderCompositionScopeMessage(
-  existing: TimelineShaderSummary,
-  incoming: TimelineShaderSummary,
-): string {
-  if (incoming.scope === 'clip') {
-    const target = incoming.clipId ? `clip "${incoming.clipId}"` : 'the clip scope';
-    return `Cannot add shader "${incoming.shaderId}" to ${target} because shader "${existing.shaderId}" is already assigned. ` +
-      'V1 supports one clip shader per clip. Remove the existing shader before assigning another.';
-  }
-
-  return `Cannot add postprocess shader "${incoming.shaderId}" because postprocess shader "${existing.shaderId}" is already assigned. ` +
-    'V1 supports one timeline postprocess shader. Remove the existing postprocess shader before assigning another.';
-}
-
 function shaderCompositionScopeLabel(shader: TimelineShaderSummary): string {
   return shader.scope === 'clip' ? `clip:${shader.clipId ?? 'unknown'}` : 'postprocess';
 }
 
 function diagnoseSnapshotShaderComposition(
   snapshot: TimelineSnapshot | null | undefined,
+  contributionIndex: ContributionIndex | undefined,
 ): { snapshot: TimelineSnapshot | null | undefined; findings: CapabilityFinding[] } {
-  if (!snapshot?.shaders || snapshot.shaders.length === 0) {
-    return { snapshot, findings: [] };
+  const projectedSnapshot = projectSnapshotShaderRefs(snapshot, contributionIndex);
+  if (!projectedSnapshot?.shaders || projectedSnapshot.shaders.length === 0) {
+    return { snapshot: projectedSnapshot, findings: [] };
   }
 
   const firstByScope = new Map<string, TimelineShaderSummary>();
   const findings: CapabilityFinding[] = [];
   const filteredShaders: TimelineShaderSummary[] = [];
 
-  for (const shader of snapshot.shaders) {
+  for (const shader of projectedSnapshot.shaders) {
     const scopeKey = shaderCompositionKey(shader);
     if (!scopeKey) {
       filteredShaders.push(shader);
@@ -441,34 +490,34 @@ function diagnoseSnapshotShaderComposition(
       continue;
     }
 
-    const message = shaderCompositionScopeMessage(existing, shader);
+    const occupied = createShaderScopeOccupied(existing, shader);
     for (const route of ['browser-export', 'worker-export'] as const satisfies readonly RenderRoute[]) {
       findings.push({
         id: `planner.shaderComposition.${shaderCompositionScopeLabel(shader)}.${shader.shaderId}.${route}.scope-occupied`,
         severity: 'error',
         route,
         reason: 'unknown',
-        message,
+        message: occupied.message,
         extensionId: shader.extensionId,
         contributionId: shader.contributionId,
         detail: {
           source: 'shader-composition-limit',
-          scope: shader.scope,
-          clipId: shader.clipId,
-          existingShaderId: existing.shaderId,
-          incomingShaderId: shader.shaderId,
+          scope: occupied.scope,
+          clipId: occupied.clipId,
+          existingShaderId: occupied.existing.shaderId,
+          incomingShaderId: occupied.incoming.shaderId,
         },
       });
     }
   }
 
   if (findings.length === 0) {
-    return { snapshot, findings };
+    return { snapshot: projectedSnapshot, findings };
   }
 
   return {
     snapshot: {
-      ...snapshot,
+      ...projectedSnapshot,
       shaders: filteredShaders.length > 0 ? filteredShaders : undefined,
     },
     findings,
@@ -917,7 +966,10 @@ function emptyGuard(
 
 export function planRender(input: RenderPlannerInput): RenderPlannerResult {
   const acc = createAccumulator();
-  const shaderComposition = diagnoseSnapshotShaderComposition(input.snapshot);
+  const shaderComposition = diagnoseSnapshotShaderComposition(
+    input.snapshot,
+    input.extensionRuntime?.contributionIndex,
+  );
   const requirements = input.requirements ?? (shaderComposition.snapshot
     ? getCapabilityRequirements(shaderComposition.snapshot)
     : []);
