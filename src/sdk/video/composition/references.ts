@@ -52,7 +52,7 @@ export interface LiveSourceRef {
   readonly sourceId: string;
 
   /** The kind of live data the source produces. */
-  readonly sourceKind: string;
+  readonly sourceKind?: string;
 }
 
 // ---------------------------------------------------------------------------
