@@ -52,7 +52,12 @@ describe('MaterialBrowser', () => {
 
   it('renders empty states, material detail, findings, and dispatches planner next actions', () => {
     const onAction = vi.fn();
-    const action = { kind: 'resolve-blocker' as const, label: 'Materialize mat-a', message: 'Materialize mat-a' };
+    const action = {
+      kind: 'materialize' as const,
+      label: 'Materialize mat-a',
+      message: 'Materialize mat-a',
+      detail: { specificKind: 'resolve-blocker' as const },
+    };
     const { rerender } = render(<MaterialBrowser materials={[]} />);
     expect(screen.getByText('No materials match the current filters.')).toBeInTheDocument();
 
@@ -80,5 +85,35 @@ describe('MaterialBrowser', () => {
     expect(screen.getByText('Material mat-a is missing')).toBeInTheDocument();
     fireEvent.click(screen.getByText('Materialize mat-a'));
     expect(onAction).toHaveBeenCalledWith(action, expect.objectContaining({ id: 'mat-a' }));
+  });
+
+  it('recognizes bake actions alongside materialize and displays status detail phase/quality', () => {
+    const onAction = vi.fn();
+    const bakeAction = {
+      kind: 'bake' as const,
+      label: 'Bake mat-a',
+      message: 'Material "mat-a" must be baked before export.',
+      detail: { specificKind: 'resolve-blocker' as const },
+    };
+    render(
+      <MaterialBrowser
+        materials={[material('mat-a')]}
+        materialStatuses={[{
+          materialRefId: 'mat-a',
+          state: 'pending',
+          detail: { phase: 'active' as const, quality: 'route-incompatible' as const },
+        }]}
+        plannerResult={{
+          nextActions: [bakeAction],
+          blockers: [],
+          diagnostics: [],
+        }}
+        onAction={onAction}
+      />,
+    );
+
+    expect(screen.getByLabelText('Material detail')).toHaveTextContent('pending (active) [route-incompatible]');
+    fireEvent.click(screen.getByText('Bake mat-a'));
+    expect(onAction).toHaveBeenCalledWith(bakeAction, expect.objectContaining({ id: 'mat-a' }));
   });
 });

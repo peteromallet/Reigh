@@ -308,11 +308,11 @@ describe('VisualClip transition rendering', () => {
         track={track}
         fps={30}
         materialRefs={[ref]}
-        materialStatuses={[{ materialRefId: 'mat-1', state: 'unbaked', message: 'Queued for materialization' }]}
+        materialStatuses={[{ materialRefId: 'mat-1', state: 'pending', message: 'Queued for materialization', detail: { phase: 'queued' } }]}
       />,
     );
 
-    expect(screen.getByTestId('pending-material-placeholder')).toHaveAttribute('data-material-state', 'unbaked');
+    expect(screen.getByTestId('pending-material-placeholder')).toHaveAttribute('data-material-state', 'pending');
     expect(screen.getByText(/pending materialization: mat-1/)).toBeInTheDocument();
 
     rerender(
