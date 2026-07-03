@@ -23,6 +23,7 @@ import type {
   FamilyNormalizeResult,
 } from '@reigh/editor-sdk';
 import type { FamilyContributionSequence } from './FamilyContributionSequence';
+import { contributionScopedKey } from './FamilyContributionSequence';
 import { VIDEO_EDITOR_FAMILY_ADAPTER_REGISTRY } from './familyAdapterRegistry';
 import type {
   ExtensionRuntime,
@@ -142,7 +143,7 @@ export function computePackageContributionSummary(
     const countedScopedKeys = new Set<string>();
     for (const contrib of contribs) {
       const scopedKey = owningExtensionId
-        ? `${contrib.kind}:${owningExtensionId}:${contrib.id as string}`
+        ? contributionScopedKey(owningExtensionId, contrib)
         : `${contrib.kind}:${contrib.id as string}`;
       const activeKey = owningExtensionId ? scopedKey : (contrib.id as string);
       if (activeKeys.has(activeKey) && !countedScopedKeys.has(scopedKey)) {
@@ -645,7 +646,7 @@ export function assembleExtensionRuntime(
       const frozenEmptyDiagnostics = Object.freeze([]);
 
       for (const contrib of manifestContribs) {
-        const scopedKey = `${contrib.kind}:${entry.extensionId}:${contrib.id as string}`;
+        const scopedKey = contributionScopedKey(entry.extensionId, contrib);
         if (!contributionIndex[scopedKey]) {
           contributionIndex[scopedKey] = [];
         }

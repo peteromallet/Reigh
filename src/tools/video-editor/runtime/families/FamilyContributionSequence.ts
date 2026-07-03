@@ -82,7 +82,7 @@ function recordInactiveReservedContribution(
   }
 }
 
-function contributionScopedKey(
+export function contributionScopedKey(
   extensionId: string,
   contribution: ExtensionContribution,
 ): string {
