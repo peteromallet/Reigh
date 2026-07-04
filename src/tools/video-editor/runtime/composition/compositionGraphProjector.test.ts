@@ -400,6 +400,54 @@ describe('compositionGraphProjector', () => {
     ]));
   });
 
+  it('projects shader-summary keyframes as shader-uniform animates edges with canonical target paths', () => {
+    const graph = project({
+      snapshot: timelineSnapshot({
+        shaders: [
+          shaderSummary({
+            keyframes: {
+              intensity: [
+                { time: 0, value: 0.2, interpolation: 'linear' },
+                { time: 1, value: 0.8, interpolation: 'linear' },
+              ],
+              'uniforms.tint': [
+                { time: 0, value: [0.2, 0.4, 0.8, 1], interpolation: 'hold' },
+              ],
+            },
+          }),
+        ],
+      }),
+    });
+
+    expect(graph.edges).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'animates',
+        sourceNodeId: 'clip:clip-1',
+        targetNodeId: 'contribution:shader:com.example.shader:clip-glow',
+        detail: expect.objectContaining({
+          shaderId: 'shader.clipGlow',
+          contributionId: 'clip-glow',
+          targetKind: 'shader-uniform',
+          targetPath: 'uniforms.intensity',
+          uniformName: 'intensity',
+          keyframeCount: 2,
+          refKey: 'shader:com.example.shader:clip-glow',
+        }),
+      }),
+      expect.objectContaining({
+        kind: 'animates',
+        sourceNodeId: 'clip:clip-1',
+        targetNodeId: 'contribution:shader:com.example.shader:clip-glow',
+        detail: expect.objectContaining({
+          targetKind: 'shader-uniform',
+          targetPath: 'uniforms.tint',
+          uniformName: 'tint',
+          keyframeCount: 1,
+        }),
+      }),
+    ]));
+  });
+
   // ---- clip type projection ------------------------------------------------
 
   function renderability(

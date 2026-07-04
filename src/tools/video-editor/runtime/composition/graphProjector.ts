@@ -246,6 +246,12 @@ function scopeLabel(shader: TimelineShaderSummary): 'clip' | 'postprocess' | und
   return undefined;
 }
 
+function shaderUniformName(targetPath: string): string {
+  return targetPath.startsWith('uniforms.')
+    ? targetPath.slice('uniforms.'.length)
+    : targetPath;
+}
+
 function duplicateScopeMessage(
   shader: Pick<TimelineShaderSummary, 'scope' | 'clipId' | 'shaderId'>,
   winnerShaderId: string,
@@ -711,6 +717,31 @@ export function projectCompositionGraph(input: CompositionGraphInput): Compositi
       scope,
       shaderId: shader.shaderId,
     });
+
+    for (const [rawTargetPath, keyframes] of Object.entries(shader.keyframes ?? {})) {
+      const targetPath = canonicalizeShaderUniformPath(rawTargetPath);
+      if (!targetPath || !keyframes.length) {
+        continue;
+      }
+
+      edges.push(Object.freeze({
+        id: `animates:${sourceNodeId}:${contributionNode.id}:${shader.id}:${targetPath}`,
+        kind: 'animates',
+        sourceNodeId,
+        targetNodeId: contributionNode.id,
+        detail: Object.freeze({
+          shaderId: shader.shaderId,
+          clipId: shader.clipId,
+          contributionId: shader.contributionId,
+          refKey,
+          scope,
+          targetKind: 'shader-uniform',
+          targetPath,
+          uniformName: shaderUniformName(targetPath),
+          keyframeCount: keyframes.length,
+        }),
+      }));
+    }
   }
 
   const resolvedReferences = resolveCompositionReferences(refUsages, contributionIndex);
