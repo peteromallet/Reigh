@@ -28,6 +28,7 @@ import type {
   KeyframeInterpolation,
 } from '@/tools/video-editor/types/index.ts';
 import {
+  canonicalizeAutomationParameterPath,
   canonicalizeShaderUniformPath,
   projectCompositionGraph,
 } from '@/tools/video-editor/runtime/composition/graphProjector.ts';
@@ -441,12 +442,7 @@ function cloneMaterialSlotBindings(
 }
 
 function canonicalizeKeyframeParamName(paramName: string): string | undefined {
-  const trimmed = paramName.trim();
-  if (trimmed.length === 0) {
-    return undefined;
-  }
-
-  return trimmed.startsWith('params.') ? trimmed.slice('params.'.length) : trimmed;
+  return canonicalizeAutomationParameterPath(paramName);
 }
 
 function matchAutomationSummary(

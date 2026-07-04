@@ -129,7 +129,7 @@ function buildContributionEntryByContributionId(
   return byContributionId;
 }
 
-function canonicalizeAutomationParameterPath(parameterPath: string): string | undefined {
+export function canonicalizeAutomationParameterPath(parameterPath: string): string | undefined {
   const trimmed = parameterPath.trim();
   if (trimmed.length === 0) {
     return undefined;
