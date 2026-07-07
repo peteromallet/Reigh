@@ -1,0 +1,676 @@
+You are already running inside the megaplan harness for this step. Do the requested planning/review/execution work directly. Do NOT invoke the `megaplan` CLI, do NOT read or activate the `megaplan` skill, do NOT start nested megaplan plans, and do NOT recurse into another planning harness. Treat mentions of megaplan in the repository or environment as implementation context only.
+
+WRITE ACCESS CONTRACT: You are running with auto-approved writes inside a writable workspace. Treat the working directory as fully writable. Do NOT preemptively skip or block tasks on permission, sandbox, or read-only grounds. Attempt every required edit; only report failure AFTER a real OS-level rejection from a specific shell command. Do not infer 'read-only' from absence of activity; absence is not denial. If a single shell command unexpectedly fails, retry with a different invocation before concluding the environment is restricted.
+
+## Anchor Context: North Star
+
+These anchors are durable alignment targets captured at plan initialization. They are not ordinary notes, generated success criteria, or optional background. Use them to keep this stage aligned with the end-state intent.
+
+Scope map:
+- Epic North Star: overall chain/epic objective. Preserve this across all milestones.
+- Plan/Sprint/Milestone North Star: current plan or milestone objective. It extends or operationalizes the epic North Star for this sprint; it does not override it.
+
+If local instructions, generated plan content, or a plan-level anchor appear to conflict with an epic anchor, do not resolve the conflict silently. Surface an explicit anchor conflict and explain what decision, replan, or user approval would be needed.
+
+### Epic North Star: North Star: Extension Reality Convergence
+Source: `.megaplan/initiatives/extension-reality-convergence-epic/NORTHSTAR.md`
+Captured artifact: `anchors/north_star/epic.md`
+Checksum: `5ed92f91a987b5fafb1e8011624176237e2b9fe3164b07cde7fa7d1f59b4baf9`
+
+```md
+# North Star: Extension Reality Convergence
+
+## End State
+
+The Reigh video-editor extension system is truthful and converged across trust, composition authority, and export readiness. Extensions are presented as trusted local code unless a later untrusted-runtime epic adds real isolation. Composition facts used by planner/export/preview flow through a canonical authority spine instead of scattered legacy timeline reads. Export readiness is decided by planner-owned blockers, with guard scans and provider route checks demoted to structured planner inputs.
+
+## Success In One Sentence
+
+From a clean checkout on top of the completed extension-foundation work, Reigh can prove that extension trust claims are honest, the first composition fact family has moved to graph authority, and every user-facing export block originates from canonical planner readiness.
+
+## Immutable Constraints
+
+- Do not implement fake or partial permission enforcement and call it sandboxing.
+- Do not claim marketplace, third-party, or untrusted extension safety.
+- Keep extension code trusted and unsandboxed unless a separate future epic introduces isolation and brokered APIs.
+- Do not delete legacy timeline storage fields before compatibility projection and regression tests exist.
+- Do not let migrated fact families remain authoritative through direct legacy timeline reads.
+- Do not add a second export readiness authority beside the planner.
+- Do not weaken quality gates, docs checks, or release checks to make the epic pass.
+- Preserve existing editor behavior for timelines and packages that do not use migrated composition features.
+- Keep generated-module, provider, and export-guard scans where useful, but make them feed planner readiness instead of bypassing it.
+
+## Required Proof
+
+- SDK, JSON schema, examples, docs, and manager UI agree on the trusted-code/access-disclosure model.
+- A regression gate fails if docs or UI imply sandboxing, runtime permission enforcement, marketplace safety, or third-party safety.
+- The first composition authority ratchet proves shader/ref readiness comes from graph-projected facts, not direct legacy shader fields.
+- A fixture proves legacy-only shader/ref fields do not count as authoritative after projection is disabled.
+- User-facing export/render blocked states are derived from planner blockers.
+- Generated-module artifact state, provider availability, output-format availability, contribution conflicts, shader/material blockers, and live-binding blockers are represented in planner readiness.
+- Quality checks pass from a clean checkout with the convergence gates enabled.
+
+## Explicitly Deferred
+
+- True permission enforcement through iframe, Worker, process, SES-like isolation, or a brokered host API.
+- Marketplace install, remote extension discovery, update/delete flows, code signing, and dependency resolution.
+- Full composition-spine completion beyond the fact families named by this epic.
+- Full process/sidecar runtime hardening unless required as an input to export-readiness diagnostics.
+```
+
+### Current Stage
+Stage: `revise`
+Plan directory: `/workspace/extension-reality-convergence-epic/reigh-app/.megaplan/plans/m3-export-readiness-20260707-2233`
+Current milestone: `m3-export-readiness-convergence`
+
+### Phase Instruction
+Address critique findings without weakening the North Star. If a finding requires changing the anchor, escalate instead of editing around it.
+
+### Conflict Note
+Plan-level anchors extend epic anchors. They do not override them silently. When in doubt, flag the tension rather than optimizing around it.
+
+You are revising an implementation plan after critique and gate feedback.
+
+        Project directory:
+        /workspace/extension-reality-convergence-epic/reigh-app
+
+        Brief summary: # M3: Export Readiness Convergence
+(Full brief in state.idea; success criteria in plan_v1.meta.json.)
+
+        Current plan (markdown):
+        # Implementation Plan: M3 Export Readiness Convergence
+
+## Overview
+The repo matches the brief’s main finding: `planRender()` is the canonical readiness reducer, but `useRenderState.ts` still lets export guard diagnostics and route reason strings drive user-facing blocked text. `renderPlanner.ts` already has a `RenderPlannerGuardCompatibility` result shape, but `emptyGuard()` makes it a dead placeholder. `renderRouter.ts` already returns planner context, yet some consumers strip it and some hard-block paths do not block every canonical route, causing route/planner mismatch.
+
+This plan narrows scope as a bridge, not a contradiction: it does not delete `exportGuard.ts`; it demotes its scan result into planner input and preserves scanner tests for scan correctness. All user-facing readiness decisions move to planner blockers, consistent with the North Star constraint that no second export readiness authority remains beside the planner.
+
+## Phase 1: Planner-Owned Guard Ingestion
+
+### Step 1: Add the planner-owned readiness wrapper (`src/tools/video-editor/runtime/renderPlanner.ts`)
+**Complexity: 4**
+1. Add `buildExportReadinessPlan()` as a thin planner-owned wrapper around `planRender()`.
+2. Accept existing `RenderPlannerInput` plus an optional guard-compatible scan payload matching `ExportGuardResult` shape without making guard blockers authoritative on their own.
+3. Replace `emptyGuard()` usage for this wrapper with real guard compatibility data: diagnostics, findings, blockers, unknown clip/effect/transition IDs, inactive extension IDs, and `hasBlockingErrors`.
+4. Keep `planRender()` as the only reducer that determines final `blockers`, route plans, and `can*Export` booleans.
+
+### Step 2: Harden export diagnostic mapping (`src/tools/video-editor/runtime/renderPlanner.ts`)
+**Complexity: 3**
+1. Move the export-diagnostic-to-planner finding bridge out of `useRenderState.ts` into planner-owned code.
+2. Replace substring matching with an explicit mapping table for known `export/*` diagnostic codes to canonical planner blocker reasons.
+3. Preserve original export diagnostic code and detail in `finding.detail` for debug/diagnostic collection use only.
+4. Add a local fallback for truly unknown export diagnostic codes that maps to reason `unknown` and keeps the original code in metadata.
+
+### Step 3: Add focused planner wrapper tests (`src/tools/video-editor/runtime/renderPlanner.test.ts`)
+**Complexity: 3**
+1. Add tests proving guard-fed unknown clip/effect/transition diagnostics become planner-owned blockers.
+2. Add tests proving guard-fed live-binding blockers appear in `plan.blockers` and `plan.guard` while final blocking still comes from the planner result.
+3. Add tests proving warning-only inactive extension IDs remain non-blocking but are preserved in `plan.guard`.
+
+## Phase 2: Planner Blocker Coverage
+
+### Step 4: Close missing planner blocker categories (`src/tools/video-editor/runtime/renderPlanner.ts`, `src/tools/video-editor/runtime/renderPlanner.test.ts`)
+**Complexity: 4**
+1. Add or normalize planner inputs so generated-module missing artifact, worker unavailable, contributed clip conflict, unknown contribution IDs, missing compile handler, and disabled output format produce `RenderBlocker` records through `planRender()`.
+2. Prefer existing `requirements`, `diagnostics`, output-format blockers, and process dependency paths where possible instead of adding a parallel readiness model.
+3. Add direct planner-owned tests for all six missing categories.
+4. Keep existing planner-owned tests for shader/material, live-binding, missing output format, route-unsupported output format, and missing material/materialization failures passing.
+
+### Step 5: Resolve hard-block route mismatch (`src/tools/video-editor/lib/renderRouter.ts`, `src/tools/video-editor/lib/renderRouter.test.ts`)
+**Complexity: 3**
+1. Ensure router-generated hard blockers such as malformed generated-module artifact metadata block every canonical export route that cannot actually render the timeline, including sidecar when appropriate.
+2. Keep lower-level router `reason` values for debug/analytics, but make tests assert the matching planner blockers and selected planner route.
+3. Update preview-only/contributed-conflict tests to assert `decision.planner.plannerResult.blockers` IDs, reasons, and messages instead of only `route` and `reason`.
+
+## Phase 3: Hook Consumer Migration
+
+### Step 6: Demote `runExportGuard()` in the hook (`src/tools/video-editor/hooks/useRenderState.ts`)
+**Complexity: 4**
+1. Replace `scanExportConfig()` + local `planFromExportGuardResult()` with `buildExportReadinessPlan()`.
+2. Keep `scanExportConfig()` as scanner input, not a blocking authority.
+3. Remove local lossy bridge helpers from the hook once planner-owned mapping exists.
+4. Make `runExportGuard()` return or store planner readiness context so render/export callers can source messages from planner blockers.
+
+### Step 7: Route all user-facing blocked text through planner blockers (`src/tools/video-editor/hooks/useRenderState.ts`)
+**Complexity: 4**
+1. Replace `formatExportGuardLog()` with planner-blocker log formatting that uses `RenderBlocker.message` and includes original diagnostic metadata only as secondary detail.
+2. Stop typing router decisions as `{ route, reason }`; preserve `decision.planner` from `decideRenderRoute()`.
+3. Remove or planner-back `getFastRenderRouteDecision()` so fast blocked outcomes carry planner blocker context.
+4. Update `startRender()` preview-only, worker, and external blocked branches to use planner blocker messages rather than route reason strings.
+5. Update `startExport()` guard-failure fallback to surface planner blocker messages instead of “readiness scan” text.
+
+### Step 8: Update hook tests around planner-owned messages (`src/tools/video-editor/hooks/useRenderState.test.tsx`)
+**Complexity: 4**
+1. Replace tests that mock guard-owned blocking as the final authority with tests that assert planner-produced blockers drive `renderStatus`, `exportStatus`, and visible log text.
+2. Keep scanner call-through tests for provider snapshots and process attach evidence, but assert those scans feed the planner wrapper.
+3. Add a fast-path regression test proving generated-module or provider-route blocked outcomes include planner blocker context.
+4. Preserve pure native browser/exporter render parity tests.
+
+## Phase 4: Guard Test Reframe And Docs
+
+### Step 9: Reframe export guard tests as scanner tests (`src/tools/video-editor/runtime/exportGuard.test.ts`)
+**Complexity: 3**
+1. Keep direct `scanExportConfig()` tests for known ID collection, unknown ID detection, live-binding scan output, and structured scan fields.
+2. Move authority assertions from guard-owned `hasBlockingErrors`/diagnostics to planner-owned `buildExportReadinessPlan()` or `planRender()` expectations where the scenario is about blocked readiness.
+3. Preserve tests that prove scan metadata is deterministic and complete.
+
+### Step 10: Update readiness docs and doc checks (`docs/extensions/composition-spine/m1b-composition-graph.md`, `docs/extensions/composition-spine/m3b-live-binding-and-deterministic-capture.md`, `docs/extensions/composition-spine/v8-architecture-baseline.md`, `docs/extensions/phase4-readiness.md`, `src/tools/video-editor/runtime/phase4ReadinessDocs.test.ts`)
+**Complexity: 2**
+1. Reword stale “export guard authority” claims so guard scans are planner inputs.
+2. Document the canonical planner blocker vocabulary and note that `export/*` diagnostic codes are diagnostic metadata, not user-facing readiness authority.
+3. Update readiness doc tests only where anchors or expected text changed.
+
+## Execution Order
+1. Add planner wrapper and mapping first, with focused planner tests.
+2. Close missing planner blocker categories before migrating hook behavior.
+3. Fix router hard-block route context before hook tests depend on it.
+4. Migrate `useRenderState.ts` message sourcing after planner/router context is available.
+5. Reframe export guard tests and docs last, once the new authority boundary is proven.
+
+## Validation Order
+1. Run targeted planner tests: `npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/runtime/renderPlanner.test.ts src/tools/video-editor/runtime/renderPlanner.compositionGraph.test.ts`.
+2. Run router tests: `npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/lib/renderRouter.test.ts src/tools/video-editor/lib/renderRouter.attach.test.ts`.
+3. Run hook and guard tests: `npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/hooks/useRenderState.test.tsx src/tools/video-editor/runtime/exportGuard.test.ts`.
+4. Run docs readiness tests: `npm run test:readiness`.
+5. Finish with `npm run lint` and `npm run test`; use `npm run quality:check` as the release-quality fallback if scoped checks expose doc/readiness coupling.
+
+
+        Current plan metadata:
+        {
+  "version": 1,
+  "timestamp": "2026-07-07T22:42:17Z",
+  "hash": "sha256:ceb29f02bc15dc0e40eef2e99a2514acf198055d6b9988c03313957a2687d15f",
+  "questions": [
+    "Should missing compile-only output handlers be represented as planner preflight blockers only for explicit `startExport(formatId)` requests, or also as general render readiness blockers for timelines that merely register the format?",
+    "Should diagnostic collection continue publishing original `export/*` diagnostics alongside planner blockers for debug views, provided all user-facing blocked text is sourced from planner blockers?"
+  ],
+  "success_criteria": [
+    {
+      "criterion": "`buildExportReadinessPlan()` exists in `renderPlanner.ts`, delegates final readiness reduction to `planRender()`, and does not compute an independent blocking decision that can disagree with `planRender().blockers`.",
+      "priority": "must",
+      "requires": [
+        "read_files",
+        "parse_diff",
+        "run_tests"
+      ]
+    },
+    {
+      "criterion": "All user-facing render/export blocked messages in `useRenderState.ts` are sourced from `RenderBlocker.message` or planner-owned blocker objects when blockers exist, not raw guard diagnostics or router reason strings.",
+      "priority": "must",
+      "requires": [
+        "read_files",
+        "parse_diff",
+        "run_tests"
+      ]
+    },
+    {
+      "criterion": "Guard scanner output is preserved as structured planner input, including unknown clip/effect/transition IDs and inactive extension IDs, while `scanExportConfig()` is no longer a user-facing readiness authority.",
+      "priority": "must",
+      "requires": [
+        "read_files",
+        "parse_diff",
+        "run_tests"
+      ]
+    },
+    {
+      "criterion": "Generated-module missing artifact, worker unavailable, contributed clip conflict, unknown contribution IDs, shader/material blockers, live-binding blockers, disabled output format, missing output format, and missing compile handler all have planner-owned tests asserting `RenderBlocker` shape.",
+      "priority": "must",
+      "requires": [
+        "read_files",
+        "run_tests"
+      ]
+    },
+    {
+      "criterion": "`renderRouter` decisions for preview-only or blocked outcomes carry planner blocker context and no longer select a route that contradicts planner blockers for hard-blocked generated-module/contributed scenarios.",
+      "priority": "must",
+      "requires": [
+        "read_files",
+        "run_tests"
+      ]
+    },
+    {
+      "criterion": "The export diagnostic adapter uses explicit code-to-reason mappings, preserves original export codes in metadata, and has tests for known and unknown export diagnostic codes.",
+      "priority": "must",
+      "requires": [
+        "read_files",
+        "run_tests"
+      ]
+    },
+    {
+      "criterion": "Existing successful browser render, worker route, exporter-backed render, and compile-only export tests continue to pass after the authority migration.",
+      "priority": "must",
+      "requires": [
+        "run_tests"
+      ]
+    },
+    {
+      "criterion": "Docs no longer describe `exportGuard` or `scanExportConfig()` as authoritative export readiness, and readiness docs identify planner blockers as the canonical user-facing blocker vocabulary.",
+      "priority": "must",
+      "requires": [
+        "read_files",
+        "run_tests"
+      ]
+    },
+    {
+      "criterion": "Implementation avoids deleting useful legacy scanner code unless a scanner is provably unused after adaptation.",
+      "priority": "should",
+      "requires": [
+        "parse_diff",
+        "subjective_judgment"
+      ]
+    },
+    {
+      "criterion": "The new planner wrapper remains thin and direct; mapping tables and message formatters stay small enough to audit without broad abstraction churn.",
+      "priority": "should",
+      "requires": [
+        "read_files",
+        "subjective_judgment"
+      ]
+    }
+  ],
+  "assumptions": [
+    "The narrowing is a bridge: this milestone demotes export guard scans into planner input but does not remove all legacy scanner code.",
+    "Canonical user-facing blocker IDs/reasons remain planner-owned; original `export/*` diagnostic codes are retained only in metadata and diagnostic collection details.",
+    "The fast render route path should be planner-backed or removed; preserving speed is secondary to preserving planner blocker context.",
+    "Hard router blockers should block every canonical export route that is truly unavailable, including sidecar where the timeline cannot be rendered by sidecar either.",
+    "Compile-handler absence is treated as preflight readiness only for explicit compile-only export requests unless the user says it should affect all render readiness."
+  ],
+  "test_blast_radius": {
+    "strategy": "scoped",
+    "confidence": "low",
+    "selectors": [
+      {
+        "kind": "path",
+        "value": "src/tools/video-editor/runtime/renderPlanner.test.ts",
+        "reason": "Primary planner reducer and new wrapper coverage."
+      },
+      {
+        "kind": "path",
+        "value": "src/tools/video-editor/runtime/renderPlanner.compositionGraph.test.ts",
+        "reason": "Composition graph shader/material authority must stay intact."
+      },
+      {
+        "kind": "path",
+        "value": "src/tools/video-editor/runtime/exportGuard.test.ts",
+        "reason": "Guard scan tests are reframed and must preserve scanner output."
+      },
+      {
+        "kind": "path",
+        "value": "src/tools/video-editor/lib/renderRouter.test.ts",
+        "reason": "Router decisions must carry planner blocker context."
+      },
+      {
+        "kind": "path",
+        "value": "src/tools/video-editor/lib/renderRouter.attach.test.ts",
+        "reason": "Router planner input forwarding can regress when readiness inputs change."
+      },
+      {
+        "kind": "path",
+        "value": "src/tools/video-editor/hooks/useRenderState.test.tsx",
+        "reason": "User-facing blocked messages and export/render state changes live here."
+      },
+      {
+        "kind": "path",
+        "value": "src/tools/video-editor/runtime/phase4ReadinessDocs.test.ts",
+        "reason": "Docs readiness anchors may change."
+      }
+    ],
+    "changed_surfaces": [
+      "src/tools/video-editor/runtime/renderPlanner.ts",
+      "src/tools/video-editor/lib/renderRouter.ts",
+      "src/tools/video-editor/hooks/useRenderState.ts",
+      "src/tools/video-editor/runtime/renderPlanner.test.ts",
+      "src/tools/video-editor/runtime/renderPlanner.compositionGraph.test.ts",
+      "src/tools/video-editor/runtime/exportGuard.test.ts",
+      "src/tools/video-editor/lib/renderRouter.test.ts",
+      "src/tools/video-editor/lib/renderRouter.attach.test.ts",
+      "src/tools/video-editor/hooks/useRenderState.test.tsx",
+      "src/tools/video-editor/runtime/phase4ReadinessDocs.test.ts",
+      "docs/extensions/composition-spine/m1b-composition-graph.md",
+      "docs/extensions/composition-spine/m3b-live-binding-and-deterministic-capture.md",
+      "docs/extensions/composition-spine/v8-architecture-baseline.md",
+      "docs/extensions/phase4-readiness.md"
+    ],
+    "always_run": [
+      "npm run check:no-smoke-tests",
+      "npm run lint",
+      "npm run test:readiness"
+    ],
+    "full_suite_fallback": true,
+    "rationale": "Floor: Non-Python data/fixture/golden changes force the full suite because they can affect tests outside the Python import graph: src/tools/video-editor/hooks/useRenderState.test.tsx, src/tools/video-editor/hooks/useRenderState.ts, src/tools/video-editor/lib/renderRouter.attach.test.ts, src/tools/video-editor/lib/renderRouter.test.ts, src/tools/video-editor/lib/renderRouter.ts, src/tools/video-editor/runtime/exportGuard.test.ts, src/tools/video-editor/runtime/phase4ReadinessDocs.test.ts, src/tools/video-editor/runtime/renderPlanner.compositionGraph.test.ts, src/tools/video-editor/runtime/renderPlanner.test.ts, src/tools/video-editor/runtime/renderPlanner.ts. Ignored documentation-only change(s) for selector derivation: docs/extensions/composition-spine/m1b-composition-graph.md, docs/extensions/composition-spine/m3b-live-binding-and-deterministic-capture.md, docs/extensions/composition-spine/v8-architecture-baseline.md, docs/extensions/phase4-readiness.md. Candidate: The baseline should stay scoped to planner/router/hook/guard/docs tests for worker-turn speed, but this touches canonical export readiness and user-facing behavior, so the full suite remains the fallback gate before merge.",
+    "import_graph": {
+      "degraded": false,
+      "dependent_tests": 0,
+      "unresolved": []
+    }
+  },
+  "structure_warnings": []
+}
+
+        Gate summary:
+        {
+  "passed": false,
+  "criteria_check": {
+    "count": 10,
+    "items": [
+      {
+        "criterion": "`buildExportReadinessPlan()` exists in `renderPlanner.ts`, delegates final readiness reduction to `planRender()`, and does not compute an independent blocking decision that can disagree with `planRender().blockers`.",
+        "priority": "must",
+        "requires": [
+          "read_files",
+          "parse_diff",
+          "run_tests"
+        ]
+      },
+      {
+        "criterion": "All user-facing render/export blocked messages in `useRenderState.ts` are sourced from `RenderBlocker.message` or planner-owned blocker objects when blockers exist, not raw guard diagnostics or router reason strings.",
+        "priority": "must",
+        "requires": [
+          "read_files",
+          "parse_diff",
+          "run_tests"
+        ]
+      },
+      {
+        "criterion": "Guard scanner output is preserved as structured planner input, including unknown clip/effect/transition IDs and inactive extension IDs, while `scanExportConfig()` is no longer a user-facing readiness authority.",
+        "priority": "must",
+        "requires": [
+          "read_files",
+          "parse_diff",
+          "run_tests"
+        ]
+      },
+      {
+        "criterion": "Generated-module missing artifact, worker unavailable, contributed clip conflict, unknown contribution IDs, shader/material blockers, live-binding blockers, disabled output format, missing output format, and missing compile handler all have planner-owned tests asserting `RenderBlocker` shape.",
+        "priority": "must",
+        "requires": [
+          "read_files",
+          "run_tests"
+        ]
+      },
+      {
+        "criterion": "`renderRouter` decisions for preview-only or blocked outcomes carry planner blocker context and no longer select a route that contradicts planner blockers for hard-blocked generated-module/contributed scenarios.",
+        "priority": "must",
+        "requires": [
+          "read_files",
+          "run_tests"
+        ]
+      },
+      {
+        "criterion": "The export diagnostic adapter uses explicit code-to-reason mappings, preserves original export codes in metadata, and has tests for known and unknown export diagnostic codes.",
+        "priority": "must",
+        "requires": [
+          "read_files",
+          "run_tests"
+        ]
+      },
+      {
+        "criterion": "Existing successful browser render, worker route, exporter-backed render, and compile-only export tests continue to pass after the authority migration.",
+        "priority": "must",
+        "requires": [
+          "run_tests"
+        ]
+      },
+      {
+        "criterion": "Docs no longer describe `exportGuard` or `scanExportConfig()` as authoritative export readiness, and readiness docs identify planner blockers as the canonical user-facing blocker vocabulary.",
+        "priority": "must",
+        "requires": [
+          "read_files",
+          "run_tests"
+        ]
+      },
+      {
+        "criterion": "Implementation avoids deleting useful legacy scanner code unless a scanner is provably unused after adaptation.",
+        "priority": "should",
+        "requires": [
+          "parse_diff",
+          "subjective_judgment"
+        ]
+      },
+      {
+        "criterion": "The new planner wrapper remains thin and direct; mapping tables and message formatters stay small enough to audit without broad abstraction churn.",
+        "priority": "should",
+        "requires": [
+          "read_files",
+          "subjective_judgment"
+        ]
+      }
+    ]
+  },
+  "preflight_results": {
+    "project_dir_exists": true,
+    "project_dir_writable": true,
+    "success_criteria_present": true,
+    "claude_available": true,
+    "codex_available": true
+  },
+  "unresolved_flags": [
+    {
+      "id": "scope-1",
+      "concern": "Search for related code that handles the same concept. Is the reported issue a symptom of something broader \u2014 and is any single step sized to fit one worker turn?: Step 4 bundles 6 distinct blocker categories (generated-module missing artifact, worker unavailable, contributed clip conflict, unknown contribution IDs, missing compile handler, disabled output format) plus tests for all six. At least 'worker unavailable' and 'missing compile handler' do not currently flow through planRender() at all and would need new implementation logic, not just wiring of existing paths. Combined with 'Add direct planner-owned tests for all six missing categories', this is a god-task at complexity 4. Recommend splitting: one step adding the planner inputs/paths for the blocker categories, a second step for the planner-owned tests. If some categories already have existing path coverage, note which ones only need test additions vs. new implementation.",
+      "category": "completeness",
+      "severity_hint": "likely-significant",
+      "evidence": "Step 4 bundles 6 distinct blocker categories (generated-module missing artifact, worker unavailable, contributed clip conflict, unknown contribution IDs, missing compile handler, disabled output format) plus tests for all six. At least 'worker unavailable' and 'missing compile handler' do not currently flow through planRender() at all and would need new implementation logic, not just wiring of existing paths. Combined with 'Add direct planner-owned tests for all six missing categories', this is a god-task at complexity 4. Recommend splitting: one step adding the planner inputs/paths for the blocker categories, a second step for the planner-owned tests. If some categories already have existing path coverage, note which ones only need test additions vs. new implementation.",
+      "raised_in": "critique_v1.json",
+      "status": "open",
+      "severity": "significant",
+      "verified": false
+    },
+    {
+      "id": "scope-2",
+      "concern": "Search for related code that handles the same concept. Is the reported issue a symptom of something broader \u2014 and is any single step sized to fit one worker turn?: Step 7 bundles 5 distinct changes in a single step: (1) replace formatExportGuardLog(), (2) stop typing router decisions as {route, reason}, (3) remove/planner-back getFastRenderRouteDecision(), (4) update startRender() blocked branches, (5) update startExport() guard-failure fallback. All in one file (useRenderState.ts, 730 lines), so a single worker could potentially complete them. However, getFastRenderRouteDecision() is a full duplication of the router's clip-type classification logic existing independently in the hook \u2014 removing it means startRender() must always go through decideRenderRoute()'s dynamic import path. The plan is ambiguous about 'Remove or planner-back' \u2014 if it keeps the fast path but adds planner context, that requires a third approach distinct from both current paths. Recommend clarifying the intended resolution for getFastRenderRouteDecision() in Step 7.3.",
+      "category": "completeness",
+      "severity_hint": "likely-significant",
+      "evidence": "Step 7 bundles 5 distinct changes in a single step: (1) replace formatExportGuardLog(), (2) stop typing router decisions as {route, reason}, (3) remove/planner-back getFastRenderRouteDecision(), (4) update startRender() blocked branches, (5) update startExport() guard-failure fallback. All in one file (useRenderState.ts, 730 lines), so a single worker could potentially complete them. However, getFastRenderRouteDecision() is a full duplication of the router's clip-type classification logic existing independently in the hook \u2014 removing it means startRender() must always go through decideRenderRoute()'s dynamic import path. The plan is ambiguous about 'Remove or planner-back' \u2014 if it keeps the fast path but adds planner context, that requires a third approach distinct from both current paths. Recommend clarifying the intended resolution for getFastRenderRouteDecision() in Step 7.3.",
+      "raised_in": "critique_v1.json",
+      "status": "open",
+      "severity": "significant",
+      "verified": false
+    },
+    {
+      "id": "scope-3",
+      "concern": "Search for related code that handles the same concept. Is the reported issue a symptom of something broader \u2014 and is any single step sized to fit one worker turn?: Four integration test files (live-data-bridge.integration.test.tsx, live-webcam-canary.test.ts, m5-composed-examples.browser.test.tsx, flagship-local-m5-effect-live-canary.integration.test.tsx) directly call scanExportConfig() for guard assertions. The plan's test blast radius does not include these files. The plan says to keep scanner code and reframe guard tests (Step 9), but the integration tests assert guard-owned blocking (hasBlockingErrors, diagnostics) \u2014 if the plan changes how guard results relate to blocking decisions, these integration tests could break silently. The plan says to keep 'scanner call-through tests for provider snapshots and process attach evidence' (Step 8.2), but this refers to hook tests, not integration tests. The full suite fallback catches these, but consider adding these paths to the blast radius or a note about expected pass-through behavior.",
+      "category": "completeness",
+      "severity_hint": "likely-significant",
+      "evidence": "Four integration test files (live-data-bridge.integration.test.tsx, live-webcam-canary.test.ts, m5-composed-examples.browser.test.tsx, flagship-local-m5-effect-live-canary.integration.test.tsx) directly call scanExportConfig() for guard assertions. The plan's test blast radius does not include these files. The plan says to keep scanner code and reframe guard tests (Step 9), but the integration tests assert guard-owned blocking (hasBlockingErrors, diagnostics) \u2014 if the plan changes how guard results relate to blocking decisions, these integration tests could break silently. The plan says to keep 'scanner call-through tests for provider snapshots and process attach evidence' (Step 8.2), but this refers to hook tests, not integration tests. The full suite fallback catches these, but consider adding these paths to the blast radius or a note about expected pass-through behavior.",
+      "raised_in": "critique_v1.json",
+      "status": "open",
+      "severity": "significant",
+      "verified": false
+    },
+    {
+      "id": "scope-4",
+      "concern": "Search for related code that handles the same concept. Is the reported issue a symptom of something broader \u2014 and is any single step sized to fit one worker turn?: Step 8 (complexity 4) updates the hook test file (useRenderState.test.tsx, 2869 lines). The plan describes replacing mock-based guard-as-authority tests with planner-blocker-driven tests, adding a fast-path regression test, and preserving parity tests. The test file currently mocks scanExportConfig, decideRenderRoute, and useClientRender. After migration, many test assertions will need to change from checking guard-format log strings to checking planner-blocker-based messages. With 2869 lines of tests, this is a large surface for one worker turn at complexity 4. Recommend verifying the test file has adequate existing coverage that maps to the plan's described changes, or splitting into two steps: (a) update existing mock/assertion infrastructure, (b) add new regression tests.",
+      "category": "completeness",
+      "severity_hint": "likely-significant",
+      "evidence": "Step 8 (complexity 4) updates the hook test file (useRenderState.test.tsx, 2869 lines). The plan describes replacing mock-based guard-as-authority tests with planner-blocker-driven tests, adding a fast-path regression test, and preserving parity tests. The test file currently mocks scanExportConfig, decideRenderRoute, and useClientRender. After migration, many test assertions will need to change from checking guard-format log strings to checking planner-blocker-based messages. With 2869 lines of tests, this is a large surface for one worker turn at complexity 4. Recommend verifying the test file has adequate existing coverage that maps to the plan's described changes, or splitting into two steps: (a) update existing mock/assertion infrastructure, (b) add new regression tests.",
+      "raised_in": "critique_v1.json",
+      "status": "open",
+      "severity": "significant",
+      "verified": false
+    }
+  ],
+  "addressed_flags": [],
+  "recommendation": "ITERATE",
+  "rationale": "First-iteration plan with four unresolved significant completeness flags, weighted score 6.0. All flags are plan-quality issues (step granularity and test surface gaps) that are fixable through revision. No addressed-then-reopened pattern, no architectural tension, no stuck loop. The plan's narrowing strategy is sound; the issues are execution-readiness: Step 4 is a god-task bundling 6 new blocker-category implementations plus their tests in one step. Step 7 bundles 5 distinct changes with ambiguity about getFastRenderRouteDecision() resolution (remove vs. planner-back). Step 8 targets a 2869-line test file at complexity 4 without splitting infrastructure updates from new regression tests. Four integration test files that call scanExportConfig() directly are missing from the blast radius and risk silent breakage. Each flag needs a concrete revision before execution can proceed safely.",
+  "signals_assessment": "First iteration, weighted score 6.0, preflight passed. All four flags are open significant completeness flags with no addressed or resolved counterparts. No recurring critique pattern detected \u2014 the issues are first-pass sizing and coverage gaps rather than repeated divergence. The plan direction is correct (planner-owned readiness, guard demotion) but the step decomposition and test blast radius are under-specified for confident execution.",
+  "warnings": [
+    "Step 4 must be split: one step for planner input wiring per blocker category, a separate step for planner-owned tests. Identify which categories already have existing planner paths and only need test additions vs. which need new implementation logic (worker unavailable and missing compile handler flagged as needing new logic).",
+    "Step 7.3 must clarify getFastRenderRouteDecision() resolution \u2014 remove entirely (always go through decideRenderRoute's dynamic import) or planner-back it (retain fast path but wire planner blocker context into its return shape). The current 'Remove or planner-back' ambiguity is an open design decision.",
+    "Step 8 should be split: (a) update mock infrastructure and existing assertions, (b) add new regression tests. With 2869 lines, the test file is too large for one worker turn at complexity 4 without risking coverage gaps.",
+    "Add integration test paths to blast radius: live-data-bridge.integration.test.tsx, live-webcam-canary.test.ts, m5-composed-examples.browser.test.tsx, flagship-local-m5-effect-live-canary.integration.test.tsx. These directly call scanExportConfig() and assert guard-owned blocking (hasBlockingErrors, diagnostics). If the plan changes how guard results relate to blocking decisions, these tests will break. Either add them to the blast radius or add a note documenting expected pass-through behavior and why they do not need updates."
+  ],
+  "settled_decisions": [
+    {
+      "id": "SD1",
+      "decision": "Guard scans are demoted to planner inputs, not deleted. scanExportConfig() remains as a scanner whose output feeds buildExportReadinessPlan() / planRender() rather than acting as an independent readiness authority.",
+      "rationale": "This narrowing strategy is explicitly called out in the plan overview and aligns with the North Star constraint against a second export readiness authority. It should not be re-litigated during revision."
+    },
+    {
+      "id": "SD2",
+      "decision": "planRender() is the single canonical reducer that determines final blockers, route plans, and can*Export booleans. The new buildExportReadinessPlan() wrapper delegates to it and does not compute independent blocking decisions.",
+      "rationale": "This is the core architectural invariant of the milestone. Success criterion 1 encodes it explicitly. Revision should preserve this invariant; only step decomposition and test coverage need adjustment."
+    },
+    {
+      "id": "SD3",
+      "decision": "Original export/* diagnostic codes are preserved in metadata/detail fields for debug and diagnostic collection, but user-facing blocked text is sourced from RenderBlocker.message or planner-owned blocker objects.",
+      "rationale": "This is the bridge strategy that preserves diagnostic value without giving guard diagnostics user-facing authority. Success criteria 2 and 6 encode this. The mapping table (explicit code-to-reason) is the implementation mechanism; the authority boundary is the settled decision."
+    }
+  ],
+  "override_forced": false,
+  "orchestrator_guidance": "First iteration; follow gate recommendation: ITERATE. Verify unresolved flags against the plan and project code before accepting.",
+  "robustness": "thorough",
+  "signals": {
+    "iteration": 1,
+    "idea": "# M3: Export Readiness Convergence\n\n## Outcome\n\nMake export readiness planner-owned. Guard scans, generated-module artifact checks, provider availability, compile-handler availability, contribution conflicts, shader/material blockers, live-binding blockers, and output-format availability should feed one readiness plan and one user-facing blocker vocabulary.\n\n## Execution Posture\n\nDo not delete useful scans just because they are legacy-shaped. Demote them into inputs. The user-facing decision must come from planner blockers.\n\n## Scope\n\nIN:\n- Add a `buildExportReadinessPlan()` or equivalent planner-owned readiness API.\n- Adapt existing export guard scans into planner input data rather than separate blocking authority.\n- Move generated-module missing artifact failures into planner requirements/blockers.\n- Represent provider availability and route/provider mismatch as planner readiness facts.\n- Route user-facing export/render blocked messages through selected-route planner blockers.\n- Keep lower-level route decision reasons available for debug/analytics only.\n- Update stale export diagnostics docs and test fixtures.\n\nOUT:\n- Full removal of export guard scanner code unless it becomes provably dead after adaptation.\n- Full worker/process/sidecar runtime redesign.\n- New output-format product capabilities beyond readiness convergence.\n\n## Constraints\n\n- Do not introduce a second readiness API that disagrees with `planRender()`.\n- Do not leave UI disabled states or blocking messages sourced from provider route strings when planner blockers exist.\n- Do not hide post-execution failures as preflight readiness unless the code explicitly classifies them that way.\n- Preserve current successful browser/worker export behavior.\n\n## Done Criteria\n\n- Every user-facing blocked render/export state can point to a `RenderBlocker` or planner-owned blocker object.\n- `runExportGuard()` is either renamed/demoted to a scanner/adapter or its output is consumed only through the planner readiness layer.\n- Generated-module missing artifact, worker unavailable, contributed clip conflict, unknown contribution IDs, shader/material blockers, live-binding blockers, disabled output format, missing output format, and missing compile handler have planner-owned tests.\n- `renderRouter` route decisions carry planner blocker context for preview-only or blocked outcomes.\n- Docs reflect the canonical blocker codes and remove stale parallel code lists.\n\n## Touchpoints\n\n- `src/tools/video-editor/rendering/renderPlanner.ts`\n- `src/tools/video-editor/rendering/renderability.ts`\n- `src/tools/video-editor/rendering/exportGuard.ts`\n- `src/tools/video-editor/hooks/useRenderState.ts`\n- `src/tools/video-editor/lib/renderRouter.ts`\n- `src/tools/video-editor/**/__tests__/**`\n- `docs/extensions/**`",
+    "significant_flags": 4,
+    "unresolved_flags": [
+      {
+        "id": "scope-1",
+        "concern": "Search for related code that handles the same concept. Is the reported issue a symptom of something broader \u2014 and is any single step sized to fit one worker turn?: Step 4 bundles 6 distinct blocker categories (generated-module missing artifact, worker unavailable, contributed clip conflict, unknown contribution IDs, missing compile handler, disabled output format) plus tests for all six. At least 'worker unavailable' and 'missing compile handler' do not currently flow through planRender() at all and would need new implementation logic, not just wiring of existing paths. Combined with 'Add direct planner-owned tests for all six missing categories', this is a god-task at complexity 4. Recommend splitting: one step adding the planner inputs/paths for the blocker categories, a second step for the planner-owned tests. If some categories already have existing path coverage, note which ones only need test additions vs. new implementation.",
+        "category": "completeness",
+        "severity": "significant",
+        "status": "open"
+      },
+      {
+        "id": "scope-2",
+        "concern": "Search for related code that handles the same concept. Is the reported issue a symptom of something broader \u2014 and is any single step sized to fit one worker turn?: Step 7 bundles 5 distinct changes in a single step: (1) replace formatExportGuardLog(), (2) stop typing router decisions as {route, reason}, (3) remove/planner-back getFastRenderRouteDecision(), (4) update startRender() blocked branches, (5) update startExport() guard-failure fallback. All in one file (useRenderState.ts, 730 lines), so a single worker could potentially complete them. However, getFastRenderRouteDecision() is a full duplication of the router's clip-type classification logic existing independently in the hook \u2014 removing it means startRender() must always go through decideRenderRoute()'s dynamic import path. The plan is ambiguous about 'Remove or planner-back' \u2014 if it keeps the fast path but adds planner context, that requires a third approach distinct from both current paths. Recommend clarifying the intended resolution for getFastRenderRouteDecision() in Step 7.3.",
+        "category": "completeness",
+        "severity": "significant",
+        "status": "open"
+      },
+      {
+        "id": "scope-3",
+        "concern": "Search for related code that handles the same concept. Is the reported issue a symptom of something broader \u2014 and is any single step sized to fit one worker turn?: Four integration test files (live-data-bridge.integration.test.tsx, live-webcam-canary.test.ts, m5-composed-examples.browser.test.tsx, flagship-local-m5-effect-live-canary.integration.test.tsx) directly call scanExportConfig() for guard assertions. The plan's test blast radius does not include these files. The plan says to keep scanner code and reframe guard tests (Step 9), but the integration tests assert guard-owned blocking (hasBlockingErrors, diagnostics) \u2014 if the plan changes how guard results relate to blocking decisions, these integration tests could break silently. The plan says to keep 'scanner call-through tests for provider snapshots and process attach evidence' (Step 8.2), but this refers to hook tests, not integration tests. The full suite fallback catches these, but consider adding these paths to the blast radius or a note about expected pass-through behavior.",
+        "category": "completeness",
+        "severity": "significant",
+        "status": "open"
+      },
+      {
+        "id": "scope-4",
+        "concern": "Search for related code that handles the same concept. Is the reported issue a symptom of something broader \u2014 and is any single step sized to fit one worker turn?: Step 8 (complexity 4) updates the hook test file (useRenderState.test.tsx, 2869 lines). The plan describes replacing mock-based guard-as-authority tests with planner-blocker-driven tests, adding a fast-path regression test, and preserving parity tests. The test file currently mocks scanExportConfig, decideRenderRoute, and useClientRender. After migration, many test assertions will need to change from checking guard-format log strings to checking planner-blocker-based messages. With 2869 lines of tests, this is a large surface for one worker turn at complexity 4. Recommend verifying the test file has adequate existing coverage that maps to the plan's described changes, or splitting into two steps: (a) update existing mock/assertion infrastructure, (b) add new regression tests.",
+        "category": "completeness",
+        "severity": "significant",
+        "status": "open"
+      }
+    ],
+    "addressed_flags": [],
+    "resolved_flags": [],
+    "weighted_score": 6.0,
+    "weighted_history": [],
+    "plan_delta_from_previous": null,
+    "recurring_critiques": [],
+    "scope_creep_flags": [],
+    "loop_summary": "Iteration 1. Weighted score trajectory: 6.0. Plan deltas: n/a. Recurring critiques: 0. Addressed-unverified flags: 0. Resolved flags: 0. Open significant flags: 4.",
+    "debt_overlaps": [],
+    "escalated_debt_subsystems": [],
+    "repeated_divergence_fingerprint": null,
+    "unverifiable_checks": [
+      {
+        "id": "issue_hints",
+        "question": "Did the work fully address the issue hints, user notes, and approved plan requirements?",
+        "reason": "parallel critique worker failed for check 'issue_hints': worker_structural_audit_failed: model output structural audit failed: type_mismatch at /flags/0/evidence: value does not match declared type(s) ['string']",
+        "complexity": 3
+      },
+      {
+        "id": "correctness",
+        "question": "Are the proposed changes technically correct?",
+        "reason": "`useRenderState.startExport()` receives `compileOnlyRegistry` as a local argument and checks it after `planRender()`, while `RenderPlannerInput` has no field for compile-only handler registration or availability.",
+        "complexity": 4,
+        "attention": "high_complexity_unverifiable"
+      },
+      {
+        "id": "verification",
+        "question": "Is there convincing verification for the change?",
+        "reason": "Step 3 lists 3 focused test scenarios; none test wrapper-vs-planner blocker agreement. Success criterion #1 explicitly requires this invariant.",
+        "complexity": 3
+      }
+    ],
+    "execution_acceptance_contract": {
+      "scope": "execute",
+      "verification_mode": "verification_suite",
+      "required_checks": [
+        {
+          "id": "issue_hints",
+          "question": "Did the work fully address the issue hints, user notes, and approved plan requirements?",
+          "reason": "parallel critique worker failed for check 'issue_hints': worker_structural_audit_failed: model output structural audit failed: type_mismatch at /flags/0/evidence: value does not match declared type(s) ['string']",
+          "complexity": 3
+        },
+        {
+          "id": "correctness",
+          "question": "Are the proposed changes technically correct?",
+          "reason": "`useRenderState.startExport()` receives `compileOnlyRegistry` as a local argument and checks it after `planRender()`, while `RenderPlannerInput` has no field for compile-only handler registration or availability.",
+          "complexity": 4,
+          "attention": "high_complexity_unverifiable"
+        },
+        {
+          "id": "verification",
+          "question": "Is there convincing verification for the change?",
+          "reason": "Step 3 lists 3 focused test scenarios; none test wrapper-vs-planner blocker agreement. Success criterion #1 explicitly requires this invariant.",
+          "complexity": 3
+        }
+      ]
+    }
+  },
+  "flag_resolutions": [],
+  "resolved_flag_ids": [],
+  "resolution_summary": "",
+  "reprompted": false
+}
+
+        Open significant flags:
+        [
+  {
+    "id": "scope-1",
+    "severity": "significant",
+    "status": "open",
+    "concern": "Search for related code that handles the same concept. Is the reported issue a symptom of something broader \u2014 and is any single step sized to fit one worker turn?: Step 4 bundles 6 distinct blocker categories (generated-module missing artifact, worker unavailable, contributed clip conflict, unknown contribution IDs, missing compile handler, disabled output format) plus tests for all six. At least 'worker unavailable' and 'missing compile handler' do not currently flow through planRender() at all and would need new implementation logic, not just wiring of existing paths. Combined with 'Add direct planner-owned tests for all six missing categories', this is a god-task at complexity 4. Recommend splitting: one step adding the planner inputs/paths for the blocker categories, a second step for the planner-owned tests. If some categories already have existing path coverage, note which ones only need test additions vs. new implementation.",
+    "evidence": "Step 4 bundles 6 distinct blocker categories (generated-module missing artifact, worker unavailable, contributed clip conflict, unknown contribution IDs, missing compile handler, disabled output format) plus tests for all six. At least 'worker unavailable' and 'missing compile handler' do not currently flow through planRender() at all and would need new implementation logic, not just wiring of existing paths. Combined with 'Add direct planner-owned tests for all six missing categories', this is a god-task at complexity 4. Recommend splitting: one step adding the planner inputs/paths for the blocker categories, a second step for the planner-owned tests. If some categories already have existing path coverage, note which ones only need test additions vs. new implementation."
+  },
+  {
+    "id": "scope-2",
+    "severity": "significant",
+    "status": "open",
+    "concern": "Search for related code that handles the same concept. Is the reported issue a symptom of something broader \u2014 and is any single step sized to fit one worker turn?: Step 7 bundles 5 distinct changes in a single step: (1) replace formatExportGuardLog(), (2) stop typing router decisions as {route, reason}, (3) remove/planner-back getFastRenderRouteDecision(), (4) update startRender() blocked branches, (5) update startExport() guard-failure fallback. All in one file (useRenderState.ts, 730 lines), so a single worker could potentially complete them. However, getFastRenderRouteDecision() is a full duplication of the router's clip-type classification logic existing independently in the hook \u2014 removing it means startRender() must always go through decideRenderRoute()'s dynamic import path. The plan is ambiguous about 'Remove or planner-back' \u2014 if it keeps the fast path but adds planner context, that requires a third approach distinct from both current paths. Recommend clarifying the intended resolution for getFastRenderRouteDecision() in Step 7.3.",
+    "evidence": "Step 7 bundles 5 distinct changes in a single step: (1) replace formatExportGuardLog(), (2) stop typing router decisions as {route, reason}, (3) remove/planner-back getFastRenderRouteDecision(), (4) update startRender() blocked branches, (5) update startExport() guard-failure fallback. All in one file (useRenderState.ts, 730 lines), so a single worker could potentially complete them. However, getFastRenderRouteDecision() is a full duplication of the router's clip-type classification logic existing independently in the hook \u2014 removing it means startRender() must always go through decideRenderRoute()'s dynamic import path. The plan is ambiguous about 'Remove or planner-back' \u2014 if it keeps the fast path but adds planner context, that requires a third approach distinct from both current paths. Recommend clarifying the intended resolution for getFastRenderRouteDecision() in Step 7.3."
+  },
+  {
+    "id": "scope-3",
+    "severity": "significant",
+    "status": "open",
+    "concern": "Search for related code that handles the same concept. Is the reported issue a symptom of something broader \u2014 and is any single step sized to fit one worker turn?: Four integration test files (live-data-bridge.integration.test.tsx, live-webcam-canary.test.ts, m5-composed-examples.browser.test.tsx, flagship-local-m5-effect-live-canary.integration.test.tsx) directly call scanExportConfig() for guard assertions. The plan's test blast radius does not include these files. The plan says to keep scanner code and reframe guard tests (Step 9), but the integration tests assert guard-owned blocking (hasBlockingErrors, diagnostics) \u2014 if the plan changes how guard results relate to blocking decisions, these integration tests could break silently. The plan says to keep 'scanner call-through tests for provider snapshots and process attach evidence' (Step 8.2), but this refers to hook tests, not integration tests. The full suite fallback catches these, but consider adding these paths to the blast radius or a note about expected pass-through behavior.",
+    "evidence": "Four integration test files (live-data-bridge.integration.test.tsx, live-webcam-canary.test.ts, m5-composed-examples.browser.test.tsx, flagship-local-m5-effect-live-canary.integration.test.tsx) directly call scanExportConfig() for guard assertions. The plan's test blast radius does not include these files. The plan says to keep scanner code and reframe guard tests (Step 9), but the integration tests assert guard-owned blocking (hasBlockingErrors, diagnostics) \u2014 if the plan changes how guard results relate to blocking decisions, these integration tests could break silently. The plan says to keep 'scanner call-through tests for provider snapshots and process attach evidence' (Step 8.2), but this refers to hook tests, not integration tests. The full suite fallback catches these, but consider adding these paths to the blast radius or a note about expected pass-through behavior."
+  },
+  {
+    "id": "scope-4",
+    "severity": "significant",
+    "status": "open",
+    "concern": "Search for related code that handles the same concept. Is the reported issue a symptom of something broader \u2014 and is any single step sized to fit one worker turn?: Step 8 (complexity 4) updates the hook test file (useRenderState.test.tsx, 2869 lines). The plan describes replacing mock-based guard-as-authority tests with planner-blocker-driven tests, adding a fast-path regression test, and preserving parity tests. The test file currently mocks scanExportConfig, decideRenderRoute, and useClientRender. After migration, many test assertions will need to change from checking guard-format log strings to checking planner-blocker-based messages. With 2869 lines of tests, this is a large surface for one worker turn at complexity 4. Recommend verifying the test file has adequate existing coverage that maps to the plan's described changes, or splitting into two steps: (a) update existing mock/assertion infrastructure, (b) add new regression tests.",
+    "evidence": "Step 8 (complexity 4) updates the hook test file (useRenderState.test.tsx, 2869 lines). The plan describes replacing mock-based guard-as-authority tests with planner-blocker-driven tests, adding a fast-path regression test, and preserving parity tests. The test file currently mocks scanExportConfig, decideRenderRoute, and useClientRender. After migration, many test assertions will need to change from checking guard-format log strings to checking planner-blocker-based messages. With 2869 lines of tests, this is a large surface for one worker turn at complexity 4. Recommend verifying the test file has adequate existing coverage that maps to the plan's described changes, or splitting into two steps: (a) update existing mock/assertion infrastructure, (b) add new regression tests."
+  }
+]
+
+
+
+
+
+        Requirements:
+        - Before addressing individual flags, check: does any flag suggest the plan is targeting the wrong code or the wrong root cause? If so, consider whether the plan needs a new approach rather than adjustments. Explain your reasoning.
+        - Update the plan to address the significant issues.
+        - Keep the plan readable and executable.
+        - Return flags_addressed with the exact flag IDs you addressed or rejected. For each flag, include:
+          - `id`: the flag ID
+          - `resolution`: `"addressed"` (you incorporated the fix) or `"rejected"` (the flag is invalid or out of scope)
+          - `reason`: a concise explanation of what was changed or why the flag was rejected
+          - `where`: a pointer to the plan section / files the change or claim points at (e.g., "Phase 2 — Step 3", "README.md §API")
+        - Include `changes_summary` as a short plain-English summary of what changed in the revision. If there were no concrete flags, say that explicitly (for example: `No critique flags were raised; refined wording and kept the plan aligned for execution.`).
+        - Preserve or improve success criteria quality. Each criterion must have a `priority` of `must`, `should`, or `info`. Promote or demote priorities if critique feedback reveals a criterion was over- or under-weighted.
+        - Each success criterion should include a `requires` field listing the capabilities needed for verification. Valid capability strings: `run_shell`, `read_files`, `run_tests`, `parse_diff`, `read_build_output`, `run_linter` (container), `drive_browser`, `inspect_runtime_ui`, `observe_runtime_logs`, `subjective_judgment`, `verify_physical_device` (human). `must` criteria MUST have non-empty `requires`. Example: `{"criterion": "All tests pass", "priority": "must", "requires": ["run_tests"]}`.
+        - For code-mode plans with any `run_tests` success criterion, include or preserve a machine-readable `test_blast_radius` object in the structured output. Use this shape: `{"strategy":"scoped","confidence":"high","selectors":[{"kind":"path","value":"tests/test_relevant.py","reason":"covers the changed surface"}],"changed_surfaces":["src/relevant.py"],"always_run":[],"full_suite_fallback":true,"rationale":"Why these tests cover the planned changes."}`. If finalize feedback says scoped baseline metadata was missing, the revision must add this object rather than only adding prose validation commands.
+        - Verify that the plan remains aligned with the user's original intent, not just internal plan quality.
+        - Remove unjustified scope growth. If critique raised scope creep, narrow the plan back to the original idea unless the broader work is strictly required.
+        - Maintain the structural template: H1 title, ## Overview, phase sections with numbered step sections, ## Execution Order or ## Validation Order.
+        - CRITICAL: Your entire revised plan markdown (all sections) must be output as the `plan` field in the structured output. The prose response must not contain the plan text.
+        - CRITICAL: Return only the structured JSON object for the schema fields `plan`, `changes_summary`, `flags_addressed`, `assumptions`, `success_criteria`, `questions`, and optional `changed_surfaces` / `test_blast_radius`. Do not add commentary before or after the JSON object.
+        - Populate `changed_surfaces` with every concrete file path your revised plan will change or create. Include both source files and test files. Use repo-relative paths. This list drives the deterministic test-selection blast radius; be complete. If your revised plan touches a file, list it.
+        - (Optional) Populate `test_blast_radius` with your own scoped test-selection proposal. This complements the deterministic floor the system computes from `changed_surfaces`. Provide `strategy` ("scoped", "full", or "none"), `selectors` (array of `{"kind": "path", "value": "<path>", "reason": "<why>"}` objects), and a `rationale` string. The system merges your proposal with the deterministic floor and the prior plan's blast radius; you cannot narrow below the floor, but you can widen with additional selectors or escalate to full. If you intend a scoped finalize baseline while keeping the full suite as a hard gate, set `strategy` to "scoped", include concrete `selectors`, and set `full_suite_fallback` to true; the floor's full-suite requirement will be honored by the fallback without forcing the baseline strategy to "full".
