@@ -1,0 +1,310 @@
+You are already running inside the megaplan harness for this step. Do the requested planning/review/execution work directly. Do NOT invoke the `megaplan` CLI, do NOT read or activate the `megaplan` skill, do NOT start nested megaplan plans, and do NOT recurse into another planning harness. Treat mentions of megaplan in the repository or environment as implementation context only.
+
+WRITE ACCESS CONTRACT: You are running with auto-approved writes inside a writable workspace. Treat the working directory as fully writable. Do NOT preemptively skip or block tasks on permission, sandbox, or read-only grounds. Attempt every required edit; only report failure AFTER a real OS-level rejection from a specific shell command. Do not infer 'read-only' from absence of activity; absence is not denial. If a single shell command unexpectedly fails, retry with a different invocation before concluding the environment is restricted.
+
+## Anchor Context: North Star
+
+These anchors are durable alignment targets captured at plan initialization. They are not ordinary notes, generated success criteria, or optional background. Use them to keep this stage aligned with the end-state intent.
+
+Scope map:
+- Epic North Star: overall chain/epic objective. Preserve this across all milestones.
+- Plan/Sprint/Milestone North Star: current plan or milestone objective. It extends or operationalizes the epic North Star for this sprint; it does not override it.
+
+If local instructions, generated plan content, or a plan-level anchor appear to conflict with an epic anchor, do not resolve the conflict silently. Surface an explicit anchor conflict and explain what decision, replan, or user approval would be needed.
+
+### Epic North Star: North Star: Extension Reality Convergence
+Source: `.megaplan/initiatives/extension-reality-convergence-epic/NORTHSTAR.md`
+Captured artifact: `anchors/north_star/epic.md`
+Checksum: `5ed92f91a987b5fafb1e8011624176237e2b9fe3164b07cde7fa7d1f59b4baf9`
+
+```md
+# North Star: Extension Reality Convergence
+
+## End State
+
+The Reigh video-editor extension system is truthful and converged across trust, composition authority, and export readiness. Extensions are presented as trusted local code unless a later untrusted-runtime epic adds real isolation. Composition facts used by planner/export/preview flow through a canonical authority spine instead of scattered legacy timeline reads. Export readiness is decided by planner-owned blockers, with guard scans and provider route checks demoted to structured planner inputs.
+
+## Success In One Sentence
+
+From a clean checkout on top of the completed extension-foundation work, Reigh can prove that extension trust claims are honest, the first composition fact family has moved to graph authority, and every user-facing export block originates from canonical planner readiness.
+
+## Immutable Constraints
+
+- Do not implement fake or partial permission enforcement and call it sandboxing.
+- Do not claim marketplace, third-party, or untrusted extension safety.
+- Keep extension code trusted and unsandboxed unless a separate future epic introduces isolation and brokered APIs.
+- Do not delete legacy timeline storage fields before compatibility projection and regression tests exist.
+- Do not let migrated fact families remain authoritative through direct legacy timeline reads.
+- Do not add a second export readiness authority beside the planner.
+- Do not weaken quality gates, docs checks, or release checks to make the epic pass.
+- Preserve existing editor behavior for timelines and packages that do not use migrated composition features.
+- Keep generated-module, provider, and export-guard scans where useful, but make them feed planner readiness instead of bypassing it.
+
+## Required Proof
+
+- SDK, JSON schema, examples, docs, and manager UI agree on the trusted-code/access-disclosure model.
+- A regression gate fails if docs or UI imply sandboxing, runtime permission enforcement, marketplace safety, or third-party safety.
+- The first composition authority ratchet proves shader/ref readiness comes from graph-projected facts, not direct legacy shader fields.
+- A fixture proves legacy-only shader/ref fields do not count as authoritative after projection is disabled.
+- User-facing export/render blocked states are derived from planner blockers.
+- Generated-module artifact state, provider availability, output-format availability, contribution conflicts, shader/material blockers, and live-binding blockers are represented in planner readiness.
+- Quality checks pass from a clean checkout with the convergence gates enabled.
+
+## Explicitly Deferred
+
+- True permission enforcement through iframe, Worker, process, SES-like isolation, or a brokered host API.
+- Marketplace install, remote extension discovery, update/delete flows, code signing, and dependency resolution.
+- Full composition-spine completion beyond the fact families named by this epic.
+- Full process/sidecar runtime hardening unless required as an input to export-readiness diagnostics.
+```
+
+### Current Stage
+Stage: `plan`
+Plan directory: `/workspace/extension-reality-convergence-epic/reigh-app/.megaplan/plans/m3-export-readiness-20260707-2233`
+Current milestone: `m3-export-readiness-convergence`
+
+### Phase Instruction
+Build a plan that advances the local brief while preserving the North Star. If scope is narrowed, state whether the narrowing is a bridge or a contradiction.
+
+### Conflict Note
+Plan-level anchors extend epic anchors. They do not override them silently. When in doubt, flag the tension rather than optimizing around it.
+
+You are creating an implementation plan for the following idea.
+
+        Engineering brief produced from the codebase and task details:
+
+        ### Task Summary
+        Converge dual export-readiness authorities (exportGuard and renderPlanner) into a single planner-owned readiness API. Export guard scans must be demoted to input data feeding planRender(), with every user-facing blocked/preview-only message traceable to a planner-owned RenderBlocker. The renderRouter must carry planner blocker context through to consumers, and the lossy diagnostic-code bridge must be hardened. Test coverage must shift from guard-owned blocker assertions to planner-owned equivalents across 11 blocker categories.
+
+        ### Key Evidence
+        - DUAL AUTHORITY: runExportGuard() in useRenderState.ts acts as a hard gate that aborts the render before decideRenderRoute() is called, bypassing the planner for blocking decisions. Although the boolean decision checks plannerResult.blockers.length > 0 (planner-owned), the user-facing log text is sourced from guardResult.diagnostics (guard-owned), creating a split where the decision gate and the explanation text have different authorities. (source: Areas 1, 2, 3 (convergent finding across caller-inventory, guard-to-planner-gap, and blocked-message-sourcing); relevance: high)
+- RenderPlannerGuardCompatibility (renderPlanner.ts) is structurally identical to ExportGuardResult — every field matches 1:1 — but it is populated by emptyGuard() which returns hardcoded empty arrays. The planner's guard field is a dead placeholder. A buildExportReadinessPlan() API would need to replace emptyGuard() with real guard-scanner-populated data. (source: Area 2 (guard-to-planner-gap), code_refs: renderPlanner.ts:151-164, 2490-2503, 2662; relevance: high)
+- planFromExportGuardResult() bridge exists but is LOSSY: it converts guard findings, blockers, and diagnostics into a flat CapabilityFinding[] array. Guard semantic richness — unknownClipTypes, unknownEffects, unknownTransitions, inactiveExtensionIds, and export-specific diagnostic codes — is discarded. The planner never sees these as structured fields. (source: Areas 1, 2 (convergent), code_refs: useRenderState.ts:229-249; relevance: high)
+- THREE DISTINCT USER-FACING MESSAGE SOURCES violate the goal that all point to planner-owned blockers: (1) formatExportGuardLog() reads raw guardResult.diagnostics, (2) startRender() blocked branches use hardcoded strings from decision.reason, not planner blockers, (3) startExport() uses planner blocker.message for output-format blocks but falls back to a hardcoded string when runExportGuard() returns false. (source: Area 3 (blocked-message-sourcing), code_refs: useRenderState.ts:103-175, 476-489, 608-609, 629-631; relevance: high)
+- PlannerBackedRenderRouteDecision ALREADY CARRIES planner context (planner.plannerResult with blockers[]), but useRenderState.ts startRender() declares a local type { route, reason } that strips the planner field. The planner blockers are never read to produce user-facing messages in the render path. This is a consumer-side gap, not a router-side gap. (source: Area 4 (route-type-convergence), code_refs: renderRouter.ts:322-326, useRenderState.ts:449-452; relevance: high)
+- getFastRenderRouteDecision() BYPASSES THE PLANNER ENTIRELY: it returns a bare { route, reason } object with zero planner context and short-circuits to 'preview-only' or 'worker-banodoco' based on provider-route-string checks, producing blocked messages outside the planner system. (source: Areas 3, 4 (convergent), code_refs: useRenderState.ts:47-81; relevance: high)
+- ROUTE/PLANNER MISMATCH ON BLOCKED OUTCOMES: When a clip is blocked (e.g., remotion_module_missing_artifact), decideRenderRoute forces route: 'preview-only' before selectPlannerRoute() resolves, creating a split-brain where the router blocks but the planner independently selects 'sidecar-export' as viable. (source: Area 4 (route-type-convergence), code_refs: renderRouter.ts:463-471, renderRouter.test.ts:147-154; relevance: medium)
+- DIAGNOSTIC CODE DOMAINS ARE DISJOINT: export guard emits 'export/'-prefixed codes; planner operates on 'composition/'-prefixed codes. The exportDiagnosticToPlannerFinding() adapter uses fragile substring matching (diagnostic.code.includes('unknown') → 'missing-contribution') rather than explicit code mapping. (source: Area 2 (guard-to-planner-gap), code_refs: useRenderState.ts:205-227; relevance: medium)
+- Of 11 blocker categories required by done criteria, 5 already have planner-owned tests (live-binding, shader/material, missing output format, route-unsupported output format, missing material/materialization-failed). 6 categories have NO planner-owned tests: generated-module missing artifact, worker unavailable, contributed clip conflict, unknown contribution IDs, missing compile handler, disabled output format. (source: Area 5 (test-doc-stale-audit), files: renderPlanner.test.ts, renderPlanner.compositionGraph.test.ts; relevance: high)
+- SCANNERS UNIQUE TO EXPORT GUARD with no planner equivalent: live-binding export blocker scanning (export/live-binding-unresolved) and clip-type/effect/transition unknown-type scanning using KnownIdCollection. SCANNERS DUPLICATED: legacy graph shader compatibility scanning and shader/materializer missing-artifact scanning exist in both guard and planner with different ID prefixes. (source: Area 2 (guard-to-planner-gap), code_refs: exportGuard.ts:425-439, 760-792, 938-1000; renderPlanner.ts legacy graph findings; relevance: high)
+- BLAST RADIUS: Convergence requires touching exactly one production file for the core authority shift (useRenderState.ts) plus the planner (renderPlanner.ts) for the new API. All integration tests exercising exportGuard checks must shift assertions to planner blockers. No full removal of export guard scanner code is required per task scope. (source: Area 1 (caller-inventory), convergent with area 5 test findings; relevance: medium)
+- DOCS STALENESS: m3b-live-binding-and-deterministic-capture.md frames exportGuard as 'an authoritative scan' (decision-maker, not input feeder). m1b-composition-graph.md lists 'Graph-first export authority' as a scanExportConfig role. phase4-readiness.md identifies planner as canonical reducer but does not enumerate canonical blocker codes. (source: Area 5 (test-doc-stale-audit), code_refs: docs/extensions/; relevance: medium)
+
+        ### Relevant Code
+        | File | Functions | Why |
+| --- | --- | --- |
+| src/tools/video-editor/hooks/useRenderState.ts | runExportGuard, startRender, startExport, getFastRenderRouteDecision, formatExportGuardLog, planFromExportGuardResult, exportDiagnosticToPlannerFinding, blockerReasonForExportDiagnostic | Sole production consumer of exportGuard; contains runExportGuard() (the dual-authority integration point), startRender() (hardcoded blocked messages), startExport() (partial planner blocker usage), getFastRenderRouteDecision() (planner bypass), formatExportGuardLog() (guard-sourced user text), planFromExportGuardResult() (lossy bridge), and exportDiagnosticToPlannerFinding() (fragile adapter). Primary refactoring target. |
+| src/tools/video-editor/runtime/renderPlanner.ts | planRender, emptyGuard, legacyGraphCompatibilityFindings, diagnoseSnapshotShaderComposition, graphShaderMaterializerRequirements | Target for new buildExportReadinessPlan() API. Contains emptyGuard() stub that must become real, RenderPlannerGuardCompatibility type ready to absorb guard data, and planRender() which is the canonical readiness reducer but never receives structured guard input today. Duplicated legacy graph compatibility and shader materializer scanning that overlaps with exportGuard. |
+| src/tools/video-editor/runtime/exportGuard.ts | scanExportConfig, scanLiveBindingExportBlockers, scanCompositionGraphTargetExportBlockers, scanCompositionGraphM5ExportBlockers, scanTimelineShaderExportBlockers, pushLegacyGraphCompatibilityFindingsAndBlockers, scanClip, collectBuiltInKnownIds, collectExtensionDeclaredIds, hasTimelineShaderMetadata | Legacy scanner to be demoted to planner input data provider. Contains ExportGuardResult type (structurally identical to planner's guard type), scanExportConfig(), live-binding scanner, unknown-type scanner, and duplicated legacy shader/composition graph scanning. Scanners must be preserved but their output must flow through planner, not act as independent blocking authority. |
+| src/tools/video-editor/lib/renderRouter.ts | decideRenderRoute, selectPlannerRoute | Already carries PlannerBackedRenderRouteDecision with planner context, but consumer strips it. Contains selectPlannerRoute() translation between dual RenderRoute type universes. Route/planner mismatch on blocked outcomes where preview-only is forced before planner resolution. Must ensure planner blocker context is preserved and surfaced for preview-only/blocked outcomes. |
+| src/tools/video-editor/runtime/renderability.ts | - | Barrel re-export of SDK renderability types. Clarifies which RenderRoute type universe is SDK/planner-owned vs renderRouter-owned. No functional changes expected but important for understanding the type dualism. |
+| src/tools/video-editor/runtime/diagnosticCollectionSync.ts | syncPlannerDiagnosticsToCollection | syncPlannerDiagnosticsToCollection() feeds planner diagnostics to the diagnostic collection but does not produce user-facing text. May need extension to surface planner blocker messages to the renderLog. |
+| src/tools/video-editor/components/TimelineEditorShellCore.tsx | - | UI renders renderLog string directly when renderStatus==='error'. The first line is displayed in a red error tooltip. Currently receives raw text with no structured blocker metadata. Convergence may require this to also accept structured blocker references. |
+
+        ### Test Expectations
+        - [fail_to_pass] planner:generated-module-missing-artifact: planRender() produces a RenderBlocker when generated Remotion module clips lack valid worker artifact metadata. Currently only tested at router level (renderRouter.test.ts) as decision.route === 'preview-only'; needs planner-owned blocker test where planRender().blockers contains the specific blocker.
+- [fail_to_pass] planner:worker-unavailable: planRender() produces a RenderBlocker when worker availability is absent for a timeline that requires worker export. Currently tested only via router decision reason strings; needs planner-owned blocker with worker-unavailable reason.
+- [fail_to_pass] planner:contributed-clip-conflict: planRender() produces a RenderBlocker for contributed clip conflicts (e.g., overlapping contribution IDs, version mismatches). Currently tested at router level (renderRouter.test.ts M9 T11 section) validating decision.route/reason but not planner blocker shape.
+- [fail_to_pass] planner:unknown-contribution-ids: planRender() produces a RenderBlocker when a timeline references contribution IDs not found in the registry. Currently only tested via exportGuard scanExportConfig with 'export/unknown-clip-type' codes; needs dedicated planner-owned test.
+- [fail_to_pass] planner:missing-compile-handler: planRender() produces a RenderBlocker when no compile handler is available for a requested output format. No existing test found in planner or router suites; must be created.
+- [fail_to_pass] planner:disabled-output-format: planRender() produces a RenderBlocker when an output format is explicitly disabled (as distinct from route-unsupported). renderPlanner.test.ts:1043 tests route-unsupported output format but not a disabled-flag reason.
+- [pass_to_pass] planner:live-binding-blockers: planRender() produces RenderBlockers for live-binding states (active/missing/disposed/orphaned/malformed/partial). Covered at renderPlanner.test.ts:486 but only for the TimelineSnapshot path; should also cover the guard-fed path after convergence.
+- [pass_to_pass] planner:shader-material-blockers: planRender() produces RenderBlockers for timeline shader metadata until a materializer produces RenderMaterial. Covered at renderPlanner.test.ts:701, 729. May need extension for guard-fed shader scanning path.
+- [pass_to_pass] planner:missing-output-format: planRender() surfaces missing requested output formats as structured request blockers. Covered at renderPlanner.test.ts:1022.
+- [pass_to_pass] planner:missing-material-materialization-failed: planRender() produces blockers for missing material and materialization failures. Covered at renderPlanner.test.ts:1095, 1143.
+- [pass_to_pass] export-guard-demotion: exportGuard.test.ts (~2782 lines) validates guard-owned blockers and diagnostics directly. After convergence, these tests must be adapted so that the same scenarios assert planner-owned blockers via planRender() rather than guard-owned blockers via scanExportConfig(). The guard test file should shift to testing scanner output correctness, not blocking authority.
+- [pass_to_pass] useRenderState-hook-blocked-messages: useRenderState.test.tsx mocks entire exportGuard module and verifies that the guard stops rendering. After convergence, it must verify that planRender()-produced planner blockers drive the blocked state, and that user-facing messages are sourced from planner blocker objects rather than hardcoded strings or guard diagnostics.
+- [pass_to_pass] renderRouter-planner-blocker-context: renderRouter.test.ts asserts decision.route and decision.reason but does not assert shape of decision.planner.plannerResult.blockers. After convergence, tests for preview-only/blocked routes must assert that planner blockers contain specific blocker IDs and messages corresponding to the blocked reason.
+- [fail_to_pass] fast-path-elimination-or-planner-backing: getFastRenderRouteDecision() returns blocked decisions without planner context. After convergence, either the fast path is removed or it invokes planRender() to produce planner-backed blocked decisions. Test must verify planner blockers are present on fast-path blocked outcomes.
+
+        ### Constraints
+        - Do not introduce a second readiness API that disagrees with planRender() — buildExportReadinessPlan() must be a planner-owned wrapper or integration, not a parallel authority.
+- Do not leave UI disabled states or blocking messages sourced from provider route strings when planner blockers exist — all user-facing blocked text must derive from planner blocker objects.
+- Do not hide post-execution failures as preflight readiness unless the code explicitly classifies them that way.
+- Preserve current successful browser/worker export behavior — convergence must not regress working export paths.
+- Do not delete useful scans — demote export guard scanners into planner input data providers rather than removing them.
+- Keep lower-level route decision reasons available for debug/analytics only — they must not drive user-facing blocked messages.
+- Do not introduce new output-format product capabilities beyond readiness convergence.
+- No full worker/process/sidecar runtime redesign.
+
+        ### Suggested Approach
+        1. Add buildExportReadinessPlan() to renderPlanner.ts: takes scanExportConfig output (or equivalent scanner inputs) and populates RenderPlannerGuardCompatibility with real data, replacing emptyGuard(). planRender() becomes the sole readiness decision point. The API returns a RenderPlannerResult whose blockers[] array is the canonical blocked-state source.
+
+2. Refactor useRenderState.ts runExportGuard() to call buildExportReadinessPlan() instead of scanExportConfig() + planFromExportGuardResult() as a two-step ad-hoc bridge. The boolean gate should read plannerResult.blockers.length > 0 (already true today for the decision, but the log text must also come from planner blockers). formatExportGuardLog() should be refactored to derive renderLog text from plannerResult.blockers[].message, not guardResult.diagnostics.
+
+3. Fix user-facing message sourcing in startRender(): replace hardcoded blocked-message strings (lines 476-489) with messages from decision.planner.plannerResult.blockers. Stop destructuring the planner field away (line 449-452). For preview-only and worker-banodoco/external outcomes, read blocker.message from the planner context.
+
+4. Eliminate or planner-back getFastRenderRouteDecision(): either remove the fast path entirely and let decideRenderRoute() handle all cases, or make the fast path invoke planRender() so blocked outcomes carry planner blocker context. The speed optimization can come from caching planRender() results rather than bypassing the planner.
+
+5. Harden the export-to-planner adapter: replace exportDiagnosticToPlannerFinding()'s fragile substring matching with explicit code-to-code and code-to-reason mappings. Ensure all export guard diagnostic codes map to well-defined planner finding types and blocker reasons.
+
+6. Resolve duplicated scanners: where both exportGuard and renderPlanner scan the same concern (legacy graph shader compatibility, shader materializer missing artifacts), consolidate into the planner path and remove the guard duplicate. Where scanners are unique to the guard (live-binding export blockers, unknown-type scanning), feed their output as structured input to buildExportReadinessPlan().
+
+7. Add planner-owned tests for the 6 missing blocker categories: generated-module missing artifact, worker unavailable, contributed clip conflict, unknown contribution IDs, missing compile handler, disabled output format. Adapt existing exportGuard.test.ts and integration tests to assert planner blockers rather than guard-owned blockers.
+
+8. Update renderRouter.test.ts to assert decision.planner.plannerResult.blockers contain specific blocker IDs and messages for blocked routes, not just decision.route and decision.reason.
+
+9. Update docs: m1b-composition-graph.md, m3b-live-binding-and-deterministic-capture.md, and phase4-readiness.md to reflect planner-owned canonical blocker codes and frame exportGuard as a scanner input, not an authoritative decision-maker.
+
+### Open Questions
+- [assume_and_proceed] The fast-render-route path (getFastRenderRouteDecision) has zero planner context and produces blocked messages from provider route strings. The task scope requires all user-facing blocked messages to point to planner blockers. Should the fast path be eliminated entirely or refactored to invoke planRender()? _(assumption: Refactor the fast path to invoke planRender() like the normal path, preserving any speed optimization through result caching rather than planner bypass. The fast path's provider-string-based decisions become input hints to planRender(), not independent blocking authority.)_
+- [assume_and_proceed] The export guard and planner use disjoint diagnostic code domains ('export/' vs 'composition/'). The task requires canonical blocker codes. Does convergence mean all codes become composition/-prefixed, or does the planner adopt export/ codes as first-class? _(assumption: The planner retains its existing 'composition/' code domain as canonical. The exportDiagnosticToPlannerFinding() adapter is hardened from fragile substring matching to an explicit code mapping table. Export-guard-specific diagnostic details are preserved in planner finding metadata for debug/analytics but the canonical blocker code vocabulary is planner-owned.)_
+- [assume_and_proceed] The renderRouter forces route: 'preview-only' for blocked clips before selectPlannerRoute() resolves, creating scenarios where the router blocks but the planner independently selects a viable route (e.g., sidecar-export). Should the router defer its blocking decision until after the planner resolves? _(assumption: Yes. The router's blocked-reason path should not force 'preview-only' before planner resolution. Instead, the blocked reason should be fed into planRender() as additional constraints/requirements, and the planner's resulting blockers (if any) should drive the final route decision. If the planner finds a viable route despite the router's concern, that route should be used with the router's concern logged as a debug/analytics finding.)_
+
+        The engineering brief above is evidence gathered from the codebase. Treat it as the default working context, challenge its conclusions when the code disagrees, and only do targeted repository lookups when a concrete gap remains. Open questions in the brief are candidate concerns, not mandates — act on ones that materially affect the plan, dismiss immaterial or already-resolved ones with a brief reason, and treat question count as noise.
+
+        Idea:
+# M3: Export Readiness Convergence
+
+## Outcome
+
+Make export readiness planner-owned. Guard scans, generated-module artifact checks, provider availability, compile-handler availability, contribution conflicts, shader/material blockers, live-binding blockers, and output-format availability should feed one readiness plan and one user-facing blocker vocabulary.
+
+## Execution Posture
+
+Do not delete useful scans just because they are legacy-shaped. Demote them into inputs. The user-facing decision must come from planner blockers.
+
+## Scope
+
+IN:
+- Add a `buildExportReadinessPlan()` or equivalent planner-owned readiness API.
+- Adapt existing export guard scans into planner input data rather than separate blocking authority.
+- Move generated-module missing artifact failures into planner requirements/blockers.
+- Represent provider availability and route/provider mismatch as planner readiness facts.
+- Route user-facing export/render blocked messages through selected-route planner blockers.
+- Keep lower-level route decision reasons available for debug/analytics only.
+- Update stale export diagnostics docs and test fixtures.
+
+OUT:
+- Full removal of export guard scanner code unless it becomes provably dead after adaptation.
+- Full worker/process/sidecar runtime redesign.
+- New output-format product capabilities beyond readiness convergence.
+
+## Constraints
+
+- Do not introduce a second readiness API that disagrees with `planRender()`.
+- Do not leave UI disabled states or blocking messages sourced from provider route strings when planner blockers exist.
+- Do not hide post-execution failures as preflight readiness unless the code explicitly classifies them that way.
+- Preserve current successful browser/worker export behavior.
+
+## Done Criteria
+
+- Every user-facing blocked render/export state can point to a `RenderBlocker` or planner-owned blocker object.
+- `runExportGuard()` is either renamed/demoted to a scanner/adapter or its output is consumed only through the planner readiness layer.
+- Generated-module missing artifact, worker unavailable, contributed clip conflict, unknown contribution IDs, shader/material blockers, live-binding blockers, disabled output format, missing output format, and missing compile handler have planner-owned tests.
+- `renderRouter` route decisions carry planner blocker context for preview-only or blocked outcomes.
+- Docs reflect the canonical blocker codes and remove stale parallel code lists.
+
+## Touchpoints
+
+- `src/tools/video-editor/rendering/renderPlanner.ts`
+- `src/tools/video-editor/rendering/renderability.ts`
+- `src/tools/video-editor/rendering/exportGuard.ts`
+- `src/tools/video-editor/hooks/useRenderState.ts`
+- `src/tools/video-editor/lib/renderRouter.ts`
+- `src/tools/video-editor/**/__tests__/**`
+- `docs/extensions/**`
+
+
+
+        Project directory:
+        /workspace/extension-reality-convergence-epic/reigh-app
+
+
+
+
+
+        No prior clarification artifact exists. Identify ambiguities, ask clarifying questions, and state your assumptions inside the plan output.
+
+
+
+        Requirements:
+        - If the engineering brief suggests an approach, use it as your starting hypothesis — but before committing, consider if there's a simpler or more fundamental fix. The brief is well-researched input, not a final answer.
+        - If the brief is absent, incomplete, or says "skip", inspect the repository yourself before planning.
+        - Stay focused on the requested idea. If repo exploration surfaces unrelated issues or docs, ignore them and return to the task.
+        - Prefer source code, tests, and directly relevant config files. Avoid `.megaplan/`, prior plan artifacts, and unrelated `docs/` or ops/deployment material unless the task explicitly depends on them.
+        - Stop exploring once you have enough evidence to name the concrete touch points and validation path. Do not keep browsing after you can write the plan.
+        - Produce a concrete implementation plan in markdown.
+        - Define observable success criteria as objects with `criterion` (string) and `priority` (`must`, `should`, or `info`):
+          - `must` — hard gate. The reviewer will block on failure. Use for correctness, functional requirements, and verifiable outcomes (e.g., "all existing tests pass", "API returns 200 for valid input"). Every `must` criterion must have a clear yes/no answer.
+          - `should` — quality target. The reviewer flags but does not block. Use for subjective goals, numeric guidelines, and best-effort improvements (e.g., "file under ~300 lines", "no deeply nested conditionals", "each function has a single responsibility").
+          - `info` — documented for humans, reviewer skips. Use for criteria that cannot be verified in this pipeline (e.g., "13 manual smoke tests pass", "stakeholder sign-off obtained").
+        - Each success criterion should include a `requires` field listing the capabilities needed for verification. Valid capability strings: `run_shell`, `read_files`, `run_tests`, `parse_diff`, `read_build_output`, `run_linter` (container), `drive_browser`, `inspect_runtime_ui`, `observe_runtime_logs`, `subjective_judgment`, `verify_physical_device` (human). `must` criteria MUST have non-empty `requires`. Example: `{"criterion": "All tests pass", "priority": "must", "requires": ["run_tests"]}`.
+        - Use the `questions` field for ambiguities that would materially change implementation.
+        - Use the `assumptions` field for defaults you are making so planning can proceed now.
+        - Prefer cheap validation steps early.
+        - Keep the plan proportional to the task. A 1-line fix needs a 2-step plan (apply fix + run tests), not a 5-step investigation.
+        - Size each step so it can be implemented AND verified in a single worker turn (~15 min, one model conversation). A step that bundles "create the abstraction AND migrate every consumer AND write all the tests" is too large to finish in one turn and will fail (the worker runs out of time before it can implement, leaving the step blocked). For large mechanical refactors, split along the natural seam — one step to add the new abstraction + its unit tests, then one step per consumer to migrate (the last migration step also adds parity tests) — rather than one giant step. Higher complexity does not earn a step more time; it only routes to a stronger model for the same single turn.
+        - If user notes answer earlier questions, incorporate them into the draft plan instead of re-asking them.
+        - Fix the problem fully. Do not limit scope just to avoid breaking existing tests — update the tests too if needed.
+        - Prefer the simplest, most direct fix. No fallbacks, type conversions, or defensive wrappers without concrete evidence they are needed.
+        - If the task or issue hints suggest a specific approach, follow it. Only deviate with concrete counter-evidence.
+        - Assign every plan step a complexity score 1–5 before finalize. Reason about complexity in the plan markdown (e.g. "Complexity: 2" per step), and surface it informally so the reviewer can audit:
+          - 1 = trivial single-file mechanical change
+          - 2 = simple change with tests to update
+          - 3 = multi-file change with non-trivial logic
+          - 4 = cross-cutting change with architecture implications
+          - 5 = fundamental system change with high regression risk
+        - Populate `changed_surfaces` with every concrete file path your plan will change or create. Include both source files and test files. Use repo-relative paths (e.g., `src/prompts.py`, `tests/test_prompts.py`). This list drives the deterministic test-selection blast radius; be complete. If your plan touches a file, list it.
+        - (Optional) Populate `test_blast_radius` with your own scoped test-selection proposal. This complements the deterministic floor the system computes from `changed_surfaces`. Provide `strategy` ("scoped", "full", or "none"), `selectors` (array of `{"kind": "path", "value": "<path>", "reason": "<why>"}` objects), and a `rationale` string. The system merges your proposal with the deterministic floor; you cannot narrow below the floor, but you can widen with additional selectors or escalate to full. If you intend a scoped finalize baseline while keeping the full suite as a hard gate, set `strategy` to "scoped", include concrete `selectors`, and set `full_suite_fallback` to true; the floor's full-suite requirement will be honored by the fallback without forcing the baseline strategy to "full".
+
+        Plan template — simple format (adapt to the actual repo and scope):
+````md
+# Implementation Plan: [Title]
+
+## Overview
+Summarize the goal, current repository shape, and the constraints that matter.
+
+## Main Phase
+
+### Step 1: Audit the current behavior (`src/prompts.py`)
+**Scope:** Small
+1. **Inspect** the current implementation and call out the exact insertion points (`src/prompts.py:29`).
+
+### Step 2: Add the first change (`src/evaluation.py`)
+**Scope:** Medium
+1. **Implement** the smallest viable change with exact file references (`src/evaluation.py:1`).
+2. **Capture** any tricky behavior with a short example.
+   ```python
+   issues = validate_plan_structure(plan_text)
+   ```
+
+### Step 3: Wire downstream behavior (`src/handlers.py`, `src/workers.py`)
+**Scope:** Medium
+1. **Update** the runtime flow in the touched files (`src/handlers.py:400`, `src/workers.py:199`).
+
+### Step 4: Prove the change (`tests/test_validator.py`, `tests/test_integration.py`)
+**Scope:** Small
+1. **Run** the cheapest targeted checks first (`tests/test_validator.py:1`).
+2. **Finish** with broader verification once the wiring is in place (`tests/test_integration.py:1`).
+
+## Execution Order
+1. Update prompts and mocks before enforcing stricter validation.
+2. Land higher-risk wiring after the validator and tests are ready.
+
+## Validation Order
+1. Start with focused unit tests.
+2. Run the broader suite after the flow changes are in place.
+````
+
+For complex plans, use multiple phases:
+````md
+## Phase 1: Foundation — Dependencies, DB, Types
+
+### Step 1: Install dependencies (`package.json`)
+...
+
+### Step 2: Create database migration (`supabase/migrations/`)
+...
+
+## Phase 2: Core Integration
+
+### Step 3: Port the main component (`src/components/`)
+...
+````
+
+Template guidance:
+- Simple plans: use `## Main Phase` with `### Step N:` sections underneath.
+- Complex plans: use multiple `## Phase N:` sections, each containing `### Step N:` steps. Step numbers are global (not per-phase).
+- The flat `## Step N:` format (without phases) also works for backwards compatibility.
+- Key invariants: one H1 title, one `## Overview`, numbered step sections (`### Step N:` or `## Step N:`), and at least one ordering section.
