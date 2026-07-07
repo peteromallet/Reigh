@@ -1,0 +1,720 @@
+You are already running inside the megaplan harness for this step. Do the requested planning/review/execution work directly. Do NOT invoke the `megaplan` CLI, do NOT read or activate the `megaplan` skill, do NOT start nested megaplan plans, and do NOT recurse into another planning harness. Treat mentions of megaplan in the repository or environment as implementation context only.
+
+WRITE ACCESS CONTRACT: You are running with auto-approved writes inside a writable workspace. Treat the working directory as fully writable. Do NOT preemptively skip or block tasks on permission, sandbox, or read-only grounds. Attempt every required edit; only report failure AFTER a real OS-level rejection from a specific shell command. Do not infer 'read-only' from absence of activity; absence is not denial. If a single shell command unexpectedly fails, retry with a different invocation before concluding the environment is restricted.
+
+## Anchor Context: North Star
+
+These anchors are durable alignment targets captured at plan initialization. They are not ordinary notes, generated success criteria, or optional background. Use them to keep this stage aligned with the end-state intent.
+
+Scope map:
+- Epic North Star: overall chain/epic objective. Preserve this across all milestones.
+- Plan/Sprint/Milestone North Star: current plan or milestone objective. It extends or operationalizes the epic North Star for this sprint; it does not override it.
+
+If local instructions, generated plan content, or a plan-level anchor appear to conflict with an epic anchor, do not resolve the conflict silently. Surface an explicit anchor conflict and explain what decision, replan, or user approval would be needed.
+
+### Epic North Star: North Star: Extension Reality Convergence
+Source: `.megaplan/initiatives/extension-reality-convergence-epic/NORTHSTAR.md`
+Captured artifact: `anchors/north_star/epic.md`
+Checksum: `5ed92f91a987b5fafb1e8011624176237e2b9fe3164b07cde7fa7d1f59b4baf9`
+
+```md
+# North Star: Extension Reality Convergence
+
+## End State
+
+The Reigh video-editor extension system is truthful and converged across trust, composition authority, and export readiness. Extensions are presented as trusted local code unless a later untrusted-runtime epic adds real isolation. Composition facts used by planner/export/preview flow through a canonical authority spine instead of scattered legacy timeline reads. Export readiness is decided by planner-owned blockers, with guard scans and provider route checks demoted to structured planner inputs.
+
+## Success In One Sentence
+
+From a clean checkout on top of the completed extension-foundation work, Reigh can prove that extension trust claims are honest, the first composition fact family has moved to graph authority, and every user-facing export block originates from canonical planner readiness.
+
+## Immutable Constraints
+
+- Do not implement fake or partial permission enforcement and call it sandboxing.
+- Do not claim marketplace, third-party, or untrusted extension safety.
+- Keep extension code trusted and unsandboxed unless a separate future epic introduces isolation and brokered APIs.
+- Do not delete legacy timeline storage fields before compatibility projection and regression tests exist.
+- Do not let migrated fact families remain authoritative through direct legacy timeline reads.
+- Do not add a second export readiness authority beside the planner.
+- Do not weaken quality gates, docs checks, or release checks to make the epic pass.
+- Preserve existing editor behavior for timelines and packages that do not use migrated composition features.
+- Keep generated-module, provider, and export-guard scans where useful, but make them feed planner readiness instead of bypassing it.
+
+## Required Proof
+
+- SDK, JSON schema, examples, docs, and manager UI agree on the trusted-code/access-disclosure model.
+- A regression gate fails if docs or UI imply sandboxing, runtime permission enforcement, marketplace safety, or third-party safety.
+- The first composition authority ratchet proves shader/ref readiness comes from graph-projected facts, not direct legacy shader fields.
+- A fixture proves legacy-only shader/ref fields do not count as authoritative after projection is disabled.
+- User-facing export/render blocked states are derived from planner blockers.
+- Generated-module artifact state, provider availability, output-format availability, contribution conflicts, shader/material blockers, and live-binding blockers are represented in planner readiness.
+- Quality checks pass from a clean checkout with the convergence gates enabled.
+
+## Explicitly Deferred
+
+- True permission enforcement through iframe, Worker, process, SES-like isolation, or a brokered host API.
+- Marketplace install, remote extension discovery, update/delete flows, code signing, and dependency resolution.
+- Full composition-spine completion beyond the fact families named by this epic.
+- Full process/sidecar runtime hardening unless required as an input to export-readiness diagnostics.
+```
+
+### Current Stage
+Stage: `critique_evaluator`
+Plan directory: `/workspace/extension-reality-convergence-epic/reigh-app/.megaplan/plans/m3-export-readiness-20260707-2233`
+Current milestone: `m3-export-readiness-convergence`
+
+### Phase Instruction
+Select critique checks that can catch North Star violations, scope substitution, or unsupported claims of alignment.
+
+### Conflict Note
+Plan-level anchors extend epic anchors. They do not override them silently. When in doubt, flag the tension rather than optimizing around it.
+
+You are the Critique Evaluator. Your job is to decide which critique
+        lenses to fire and to rate each selected lens's difficulty on a 1–5
+        complexity scale. The profile will map your complexity scores to
+        models — you do NOT name models or vendors.
+
+
+        Project directory:
+        /workspace/extension-reality-convergence-epic/reigh-app
+
+        Brief summary: # M3: Export Readiness Convergence
+(Full brief in state.idea; success criteria in plan_v1.meta.json.)
+
+        Finished plan:
+        # Implementation Plan: M3 Export Readiness Convergence
+
+## Overview
+The repo matches the brief’s main finding: `planRender()` is the canonical readiness reducer, but `useRenderState.ts` still lets export guard diagnostics and route reason strings drive user-facing blocked text. `renderPlanner.ts` already has a `RenderPlannerGuardCompatibility` result shape, but `emptyGuard()` makes it a dead placeholder. `renderRouter.ts` already returns planner context, yet some consumers strip it and some hard-block paths do not block every canonical route, causing route/planner mismatch.
+
+This plan narrows scope as a bridge, not a contradiction: it does not delete `exportGuard.ts`; it demotes its scan result into planner input and preserves scanner tests for scan correctness. All user-facing readiness decisions move to planner blockers, consistent with the North Star constraint that no second export readiness authority remains beside the planner.
+
+## Phase 1: Planner-Owned Guard Ingestion
+
+### Step 1: Add the planner-owned readiness wrapper (`src/tools/video-editor/runtime/renderPlanner.ts`)
+**Complexity: 4**
+1. Add `buildExportReadinessPlan()` as a thin planner-owned wrapper around `planRender()`.
+2. Accept existing `RenderPlannerInput` plus an optional guard-compatible scan payload matching `ExportGuardResult` shape without making guard blockers authoritative on their own.
+3. Replace `emptyGuard()` usage for this wrapper with real guard compatibility data: diagnostics, findings, blockers, unknown clip/effect/transition IDs, inactive extension IDs, and `hasBlockingErrors`.
+4. Keep `planRender()` as the only reducer that determines final `blockers`, route plans, and `can*Export` booleans.
+
+### Step 2: Harden export diagnostic mapping (`src/tools/video-editor/runtime/renderPlanner.ts`)
+**Complexity: 3**
+1. Move the export-diagnostic-to-planner finding bridge out of `useRenderState.ts` into planner-owned code.
+2. Replace substring matching with an explicit mapping table for known `export/*` diagnostic codes to canonical planner blocker reasons.
+3. Preserve original export diagnostic code and detail in `finding.detail` for debug/diagnostic collection use only.
+4. Add a local fallback for truly unknown export diagnostic codes that maps to reason `unknown` and keeps the original code in metadata.
+
+### Step 3: Add focused planner wrapper tests (`src/tools/video-editor/runtime/renderPlanner.test.ts`)
+**Complexity: 3**
+1. Add tests proving guard-fed unknown clip/effect/transition diagnostics become planner-owned blockers.
+2. Add tests proving guard-fed live-binding blockers appear in `plan.blockers` and `plan.guard` while final blocking still comes from the planner result.
+3. Add tests proving warning-only inactive extension IDs remain non-blocking but are preserved in `plan.guard`.
+
+## Phase 2: Planner Blocker Coverage
+
+### Step 4: Close missing planner blocker categories (`src/tools/video-editor/runtime/renderPlanner.ts`, `src/tools/video-editor/runtime/renderPlanner.test.ts`)
+**Complexity: 4**
+1. Add or normalize planner inputs so generated-module missing artifact, worker unavailable, contributed clip conflict, unknown contribution IDs, missing compile handler, and disabled output format produce `RenderBlocker` records through `planRender()`.
+2. Prefer existing `requirements`, `diagnostics`, output-format blockers, and process dependency paths where possible instead of adding a parallel readiness model.
+3. Add direct planner-owned tests for all six missing categories.
+4. Keep existing planner-owned tests for shader/material, live-binding, missing output format, route-unsupported output format, and missing material/materialization failures passing.
+
+### Step 5: Resolve hard-block route mismatch (`src/tools/video-editor/lib/renderRouter.ts`, `src/tools/video-editor/lib/renderRouter.test.ts`)
+**Complexity: 3**
+1. Ensure router-generated hard blockers such as malformed generated-module artifact metadata block every canonical export route that cannot actually render the timeline, including sidecar when appropriate.
+2. Keep lower-level router `reason` values for debug/analytics, but make tests assert the matching planner blockers and selected planner route.
+3. Update preview-only/contributed-conflict tests to assert `decision.planner.plannerResult.blockers` IDs, reasons, and messages instead of only `route` and `reason`.
+
+## Phase 3: Hook Consumer Migration
+
+### Step 6: Demote `runExportGuard()` in the hook (`src/tools/video-editor/hooks/useRenderState.ts`)
+**Complexity: 4**
+1. Replace `scanExportConfig()` + local `planFromExportGuardResult()` with `buildExportReadinessPlan()`.
+2. Keep `scanExportConfig()` as scanner input, not a blocking authority.
+3. Remove local lossy bridge helpers from the hook once planner-owned mapping exists.
+4. Make `runExportGuard()` return or store planner readiness context so render/export callers can source messages from planner blockers.
+
+### Step 7: Route all user-facing blocked text through planner blockers (`src/tools/video-editor/hooks/useRenderState.ts`)
+**Complexity: 4**
+1. Replace `formatExportGuardLog()` with planner-blocker log formatting that uses `RenderBlocker.message` and includes original diagnostic metadata only as secondary detail.
+2. Stop typing router decisions as `{ route, reason }`; preserve `decision.planner` from `decideRenderRoute()`.
+3. Remove or planner-back `getFastRenderRouteDecision()` so fast blocked outcomes carry planner blocker context.
+4. Update `startRender()` preview-only, worker, and external blocked branches to use planner blocker messages rather than route reason strings.
+5. Update `startExport()` guard-failure fallback to surface planner blocker messages instead of “readiness scan” text.
+
+### Step 8: Update hook tests around planner-owned messages (`src/tools/video-editor/hooks/useRenderState.test.tsx`)
+**Complexity: 4**
+1. Replace tests that mock guard-owned blocking as the final authority with tests that assert planner-produced blockers drive `renderStatus`, `exportStatus`, and visible log text.
+2. Keep scanner call-through tests for provider snapshots and process attach evidence, but assert those scans feed the planner wrapper.
+3. Add a fast-path regression test proving generated-module or provider-route blocked outcomes include planner blocker context.
+4. Preserve pure native browser/exporter render parity tests.
+
+## Phase 4: Guard Test Reframe And Docs
+
+### Step 9: Reframe export guard tests as scanner tests (`src/tools/video-editor/runtime/exportGuard.test.ts`)
+**Complexity: 3**
+1. Keep direct `scanExportConfig()` tests for known ID collection, unknown ID detection, live-binding scan output, and structured scan fields.
+2. Move authority assertions from guard-owned `hasBlockingErrors`/diagnostics to planner-owned `buildExportReadinessPlan()` or `planRender()` expectations where the scenario is about blocked readiness.
+3. Preserve tests that prove scan metadata is deterministic and complete.
+
+### Step 10: Update readiness docs and doc checks (`docs/extensions/composition-spine/m1b-composition-graph.md`, `docs/extensions/composition-spine/m3b-live-binding-and-deterministic-capture.md`, `docs/extensions/composition-spine/v8-architecture-baseline.md`, `docs/extensions/phase4-readiness.md`, `src/tools/video-editor/runtime/phase4ReadinessDocs.test.ts`)
+**Complexity: 2**
+1. Reword stale “export guard authority” claims so guard scans are planner inputs.
+2. Document the canonical planner blocker vocabulary and note that `export/*` diagnostic codes are diagnostic metadata, not user-facing readiness authority.
+3. Update readiness doc tests only where anchors or expected text changed.
+
+## Execution Order
+1. Add planner wrapper and mapping first, with focused planner tests.
+2. Close missing planner blocker categories before migrating hook behavior.
+3. Fix router hard-block route context before hook tests depend on it.
+4. Migrate `useRenderState.ts` message sourcing after planner/router context is available.
+5. Reframe export guard tests and docs last, once the new authority boundary is proven.
+
+## Validation Order
+1. Run targeted planner tests: `npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/runtime/renderPlanner.test.ts src/tools/video-editor/runtime/renderPlanner.compositionGraph.test.ts`.
+2. Run router tests: `npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/lib/renderRouter.test.ts src/tools/video-editor/lib/renderRouter.attach.test.ts`.
+3. Run hook and guard tests: `npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/hooks/useRenderState.test.tsx src/tools/video-editor/runtime/exportGuard.test.ts`.
+4. Run docs readiness tests: `npm run test:readiness`.
+5. Finish with `npm run lint` and `npm run test`; use `npm run quality:check` as the release-quality fallback if scoped checks expose doc/readiness coupling.
+
+
+        Task graph (plan metadata):
+        {
+  "version": 1,
+  "timestamp": "2026-07-07T22:42:17Z",
+  "hash": "sha256:ceb29f02bc15dc0e40eef2e99a2514acf198055d6b9988c03313957a2687d15f",
+  "questions": [
+    "Should missing compile-only output handlers be represented as planner preflight blockers only for explicit `startExport(formatId)` requests, or also as general render readiness blockers for timelines that merely register the format?",
+    "Should diagnostic collection continue publishing original `export/*` diagnostics alongside planner blockers for debug views, provided all user-facing blocked text is sourced from planner blockers?"
+  ],
+  "success_criteria": [
+    {
+      "criterion": "`buildExportReadinessPlan()` exists in `renderPlanner.ts`, delegates final readiness reduction to `planRender()`, and does not compute an independent blocking decision that can disagree with `planRender().blockers`.",
+      "priority": "must",
+      "requires": [
+        "read_files",
+        "parse_diff",
+        "run_tests"
+      ]
+    },
+    {
+      "criterion": "All user-facing render/export blocked messages in `useRenderState.ts` are sourced from `RenderBlocker.message` or planner-owned blocker objects when blockers exist, not raw guard diagnostics or router reason strings.",
+      "priority": "must",
+      "requires": [
+        "read_files",
+        "parse_diff",
+        "run_tests"
+      ]
+    },
+    {
+      "criterion": "Guard scanner output is preserved as structured planner input, including unknown clip/effect/transition IDs and inactive extension IDs, while `scanExportConfig()` is no longer a user-facing readiness authority.",
+      "priority": "must",
+      "requires": [
+        "read_files",
+        "parse_diff",
+        "run_tests"
+      ]
+    },
+    {
+      "criterion": "Generated-module missing artifact, worker unavailable, contributed clip conflict, unknown contribution IDs, shader/material blockers, live-binding blockers, disabled output format, missing output format, and missing compile handler all have planner-owned tests asserting `RenderBlocker` shape.",
+      "priority": "must",
+      "requires": [
+        "read_files",
+        "run_tests"
+      ]
+    },
+    {
+      "criterion": "`renderRouter` decisions for preview-only or blocked outcomes carry planner blocker context and no longer select a route that contradicts planner blockers for hard-blocked generated-module/contributed scenarios.",
+      "priority": "must",
+      "requires": [
+        "read_files",
+        "run_tests"
+      ]
+    },
+    {
+      "criterion": "The export diagnostic adapter uses explicit code-to-reason mappings, preserves original export codes in metadata, and has tests for known and unknown export diagnostic codes.",
+      "priority": "must",
+      "requires": [
+        "read_files",
+        "run_tests"
+      ]
+    },
+    {
+      "criterion": "Existing successful browser render, worker route, exporter-backed render, and compile-only export tests continue to pass after the authority migration.",
+      "priority": "must",
+      "requires": [
+        "run_tests"
+      ]
+    },
+    {
+      "criterion": "Docs no longer describe `exportGuard` or `scanExportConfig()` as authoritative export readiness, and readiness docs identify planner blockers as the canonical user-facing blocker vocabulary.",
+      "priority": "must",
+      "requires": [
+        "read_files",
+        "run_tests"
+      ]
+    },
+    {
+      "criterion": "Implementation avoids deleting useful legacy scanner code unless a scanner is provably unused after adaptation.",
+      "priority": "should",
+      "requires": [
+        "parse_diff",
+        "subjective_judgment"
+      ]
+    },
+    {
+      "criterion": "The new planner wrapper remains thin and direct; mapping tables and message formatters stay small enough to audit without broad abstraction churn.",
+      "priority": "should",
+      "requires": [
+        "read_files",
+        "subjective_judgment"
+      ]
+    }
+  ],
+  "assumptions": [
+    "The narrowing is a bridge: this milestone demotes export guard scans into planner input but does not remove all legacy scanner code.",
+    "Canonical user-facing blocker IDs/reasons remain planner-owned; original `export/*` diagnostic codes are retained only in metadata and diagnostic collection details.",
+    "The fast render route path should be planner-backed or removed; preserving speed is secondary to preserving planner blocker context.",
+    "Hard router blockers should block every canonical export route that is truly unavailable, including sidecar where the timeline cannot be rendered by sidecar either.",
+    "Compile-handler absence is treated as preflight readiness only for explicit compile-only export requests unless the user says it should affect all render readiness."
+  ],
+  "test_blast_radius": {
+    "strategy": "scoped",
+    "confidence": "low",
+    "selectors": [
+      {
+        "kind": "path",
+        "value": "src/tools/video-editor/runtime/renderPlanner.test.ts",
+        "reason": "Primary planner reducer and new wrapper coverage."
+      },
+      {
+        "kind": "path",
+        "value": "src/tools/video-editor/runtime/renderPlanner.compositionGraph.test.ts",
+        "reason": "Composition graph shader/material authority must stay intact."
+      },
+      {
+        "kind": "path",
+        "value": "src/tools/video-editor/runtime/exportGuard.test.ts",
+        "reason": "Guard scan tests are reframed and must preserve scanner output."
+      },
+      {
+        "kind": "path",
+        "value": "src/tools/video-editor/lib/renderRouter.test.ts",
+        "reason": "Router decisions must carry planner blocker context."
+      },
+      {
+        "kind": "path",
+        "value": "src/tools/video-editor/lib/renderRouter.attach.test.ts",
+        "reason": "Router planner input forwarding can regress when readiness inputs change."
+      },
+      {
+        "kind": "path",
+        "value": "src/tools/video-editor/hooks/useRenderState.test.tsx",
+        "reason": "User-facing blocked messages and export/render state changes live here."
+      },
+      {
+        "kind": "path",
+        "value": "src/tools/video-editor/runtime/phase4ReadinessDocs.test.ts",
+        "reason": "Docs readiness anchors may change."
+      }
+    ],
+    "changed_surfaces": [
+      "src/tools/video-editor/runtime/renderPlanner.ts",
+      "src/tools/video-editor/lib/renderRouter.ts",
+      "src/tools/video-editor/hooks/useRenderState.ts",
+      "src/tools/video-editor/runtime/renderPlanner.test.ts",
+      "src/tools/video-editor/runtime/renderPlanner.compositionGraph.test.ts",
+      "src/tools/video-editor/runtime/exportGuard.test.ts",
+      "src/tools/video-editor/lib/renderRouter.test.ts",
+      "src/tools/video-editor/lib/renderRouter.attach.test.ts",
+      "src/tools/video-editor/hooks/useRenderState.test.tsx",
+      "src/tools/video-editor/runtime/phase4ReadinessDocs.test.ts",
+      "docs/extensions/composition-spine/m1b-composition-graph.md",
+      "docs/extensions/composition-spine/m3b-live-binding-and-deterministic-capture.md",
+      "docs/extensions/composition-spine/v8-architecture-baseline.md",
+      "docs/extensions/phase4-readiness.md"
+    ],
+    "always_run": [
+      "npm run check:no-smoke-tests",
+      "npm run lint",
+      "npm run test:readiness"
+    ],
+    "full_suite_fallback": true,
+    "rationale": "Floor: Non-Python data/fixture/golden changes force the full suite because they can affect tests outside the Python import graph: src/tools/video-editor/hooks/useRenderState.test.tsx, src/tools/video-editor/hooks/useRenderState.ts, src/tools/video-editor/lib/renderRouter.attach.test.ts, src/tools/video-editor/lib/renderRouter.test.ts, src/tools/video-editor/lib/renderRouter.ts, src/tools/video-editor/runtime/exportGuard.test.ts, src/tools/video-editor/runtime/phase4ReadinessDocs.test.ts, src/tools/video-editor/runtime/renderPlanner.compositionGraph.test.ts, src/tools/video-editor/runtime/renderPlanner.test.ts, src/tools/video-editor/runtime/renderPlanner.ts. Ignored documentation-only change(s) for selector derivation: docs/extensions/composition-spine/m1b-composition-graph.md, docs/extensions/composition-spine/m3b-live-binding-and-deterministic-capture.md, docs/extensions/composition-spine/v8-architecture-baseline.md, docs/extensions/phase4-readiness.md. Candidate: The baseline should stay scoped to planner/router/hook/guard/docs tests for worker-turn speed, but this touches canonical export readiness and user-facing behavior, so the full suite remains the fallback gate before merge.",
+    "import_graph": {
+      "degraded": false,
+      "dependent_tests": 0,
+      "unresolved": []
+    }
+  },
+  "structure_warnings": []
+}
+
+        Idea:
+# M3: Export Readiness Convergence
+
+## Outcome
+
+Make export readiness planner-owned. Guard scans, generated-module artifact checks, provider availability, compile-handler availability, contribution conflicts, shader/material blockers, live-binding blockers, and output-format availability should feed one readiness plan and one user-facing blocker vocabulary.
+
+## Execution Posture
+
+Do not delete useful scans just because they are legacy-shaped. Demote them into inputs. The user-facing decision must come from planner blockers.
+
+## Scope
+
+IN:
+- Add a `buildExportReadinessPlan()` or equivalent planner-owned readiness API.
+- Adapt existing export guard scans into planner input data rather than separate blocking authority.
+- Move generated-module missing artifact failures into planner requirements/blockers.
+- Represent provider availability and route/provider mismatch as planner readiness facts.
+- Route user-facing export/render blocked messages through selected-route planner blockers.
+- Keep lower-level route decision reasons available for debug/analytics only.
+- Update stale export diagnostics docs and test fixtures.
+
+OUT:
+- Full removal of export guard scanner code unless it becomes provably dead after adaptation.
+- Full worker/process/sidecar runtime redesign.
+- New output-format product capabilities beyond readiness convergence.
+
+## Constraints
+
+- Do not introduce a second readiness API that disagrees with `planRender()`.
+- Do not leave UI disabled states or blocking messages sourced from provider route strings when planner blockers exist.
+- Do not hide post-execution failures as preflight readiness unless the code explicitly classifies them that way.
+- Preserve current successful browser/worker export behavior.
+
+## Done Criteria
+
+- Every user-facing blocked render/export state can point to a `RenderBlocker` or planner-owned blocker object.
+- `runExportGuard()` is either renamed/demoted to a scanner/adapter or its output is consumed only through the planner readiness layer.
+- Generated-module missing artifact, worker unavailable, contributed clip conflict, unknown contribution IDs, shader/material blockers, live-binding blockers, disabled output format, missing output format, and missing compile handler have planner-owned tests.
+- `renderRouter` route decisions carry planner blocker context for preview-only or blocked outcomes.
+- Docs reflect the canonical blocker codes and remove stale parallel code lists.
+
+## Touchpoints
+
+- `src/tools/video-editor/rendering/renderPlanner.ts`
+- `src/tools/video-editor/rendering/renderability.ts`
+- `src/tools/video-editor/rendering/exportGuard.ts`
+- `src/tools/video-editor/hooks/useRenderState.ts`
+- `src/tools/video-editor/lib/renderRouter.ts`
+- `src/tools/video-editor/**/__tests__/**`
+- `docs/extensions/**`
+
+        Your output template is at: /workspace/extension-reality-convergence-epic/reigh-app/.megaplan/plans/m3-export-readiness-20260707-2233/critique_evaluator_output.json
+        Read this file first by calling `read_file` with `path` exactly `/workspace/extension-reality-convergence-epic/reigh-app/.megaplan/plans/m3-export-readiness-20260707-2233/critique_evaluator_output.json` — it contains the expected JSON structure with all known check IDs pre-populated in `skipped`.
+        If you cannot supply that exact non-empty path, do not call `read_file`.
+        Move checks you are firing to `selections`, fill `why` for the rest, and write the file back.
+        If you cannot use file tools, return the populated JSON structure inline as your response instead.
+
+        ## Prep that preceded this plan
+
+This plan was produced after a multi-step prep phase (triage -> research
+fan-out -> distill). Use the prep record below when deciding which lenses
+to fire: areas prep researched thoroughly may need less scrutiny, while
+areas prep flagged as gaps, contradictions, or timed-out research warrant
+extra attention from the critics.
+
+**Prep coverage:** area_count=5, fanout_count=5, completed_count=5, partial_count=0, timed_out_count=0, error_count=0
+
+**Contradictions surfaced in research:**
+- file /workspace/extension-reality-convergence-epic/reigh-app/src/tools/video-editor/hooks/useRenderState.ts appears in multiple areas with differing evidence/status: blocked-message-sourcing=complete, route-type-convergence=complete
+- file /workspace/extension-reality-convergence-epic/reigh-app/src/tools/video-editor/lib/renderRouter.ts appears in multiple areas with differing evidence/status: blocked-message-sourcing=complete, route-type-convergence=complete
+- file /workspace/extension-reality-convergence-epic/reigh-app/src/tools/video-editor/runtime/renderPlanner.ts appears in multiple areas with differing evidence/status: blocked-message-sourcing=complete, route-type-convergence=complete
+- file src/tools/video-editor/hooks/useRenderState.test.tsx appears in multiple areas with differing evidence/status: Call site inventory for exportGuard and planRender consumers=complete, Stale test fixtures and docs referencing legacy export diagnostics patterns=complete
+- file src/tools/video-editor/hooks/useRenderState.ts appears in multiple areas with differing evidence/status: Call site inventory for exportGuard and planRender consumers=complete, Export guard output → planner input reconciliation=complete, Stale test fixtures and docs referencing legacy export diagnostics patterns=complete
+- file src/tools/video-editor/lib/renderRouter.attach.test.ts appears in multiple areas with differing evidence/status: Call site inventory for exportGuard and planRender consumers=complete, Stale test fixtures and docs referencing legacy export diagnostics patterns=complete
+- file src/tools/video-editor/lib/renderRouter.test.ts appears in multiple areas with differing evidence/status: Call site inventory for exportGuard and planRender consumers=complete, Stale test fixtures and docs referencing legacy export diagnostics patterns=complete
+- file src/tools/video-editor/lib/renderRouter.ts appears in multiple areas with differing evidence/status: Call site inventory for exportGuard and planRender consumers=complete, Export guard output → planner input reconciliation=complete
+- file src/tools/video-editor/runtime/exportGuard.test.ts appears in multiple areas with differing evidence/status: Call site inventory for exportGuard and planRender consumers=complete, Stale test fixtures and docs referencing legacy export diagnostics patterns=complete
+- file src/tools/video-editor/runtime/exportGuard.ts appears in multiple areas with differing evidence/status: Call site inventory for exportGuard and planRender consumers=complete, Export guard output → planner input reconciliation=complete
+- file src/tools/video-editor/runtime/renderPlanner.compositionGraph.test.ts appears in multiple areas with differing evidence/status: Call site inventory for exportGuard and planRender consumers=complete, Stale test fixtures and docs referencing legacy export diagnostics patterns=complete
+- file src/tools/video-editor/runtime/renderPlanner.test.ts appears in multiple areas with differing evidence/status: Call site inventory for exportGuard and planRender consumers=complete, Stale test fixtures and docs referencing legacy export diagnostics patterns=complete
+- file src/tools/video-editor/runtime/renderPlanner.ts appears in multiple areas with differing evidence/status: Call site inventory for exportGuard and planRender consumers=complete, Export guard output → planner input reconciliation=complete
+- file src/tools/video-editor/runtime/renderability.ts appears in multiple areas with differing evidence/status: Call site inventory for exportGuard and planRender consumers=complete, Export guard output → planner input reconciliation=complete
+
+**Prep dossier:**
+
+# Prep Research Dossier
+
+## Triage
+
+Export readiness is split across two authorities: exportGuard (legacy scanner + blocking gate) and renderPlanner (canonical readiness reducer). They are bridged by planFromExportGuardResult() in useRenderState.ts but each publishes diagnostics independently, uses different blocker vocabularies, and appears at different call sites. The renderRouter also has its own parallel RenderRoute type. The convergence task requires understanding (a) all callers and their dependency direction, (b) the full overlap/gap between export guard scan outputs and planner inputs, (c) where user-facing blocked messages are currently sourced, and (d) the dual RenderRoute type landscape — before a single planner-owned readiness API can be designed.
+
+## Research Areas
+
+1. caller-inventory: Enumerate every file that imports from exportGuard.ts (scanExportConfig, collectBuiltInKnownIds, collectExtensionDeclaredIds, hasTimelineShaderMetadata, etc.) and every file that calls planRender() directly or through renderRouter.decideRenderRoute(). For each call site, document whether it consumes results for blocking decisions, diagnostic publishing, or logging. This determines the blast radius and identifies which consumers bypass the planner today.
+2. guard-to-planner-gap: Map every field and concept in ExportGuardResult (diagnostics with codes like 'export/unknown-clip-type', findings, blockers, unknownClipTypes, unknownEffects, unknownTransitions, inactiveExtensionIds, hasBlockingErrors) against what the planner already represents (RenderBlocker, CapabilityFinding, RenderPlannerGuardCompatibility, route plans). Identify which guard concepts are duplicated in the planner, which are missing from the planner, and which guard scanners (live-binding, composition graph targets, legacy shader compatibility) have no planner equivalent yet. This reveals what the buildExportReadinessPlan() API must absorb vs. what it can discard.
+3. blocked-message-sourcing: Trace every user-visible 'blocked'/'preview-only' message path: the runExportGuard() return path in startRender, the preview-only decision branch in startRender, the compile-only export blocker path in startExport, and any UI disabled-state sourcing. Identify which messages come from exportGuard diagnostics directly, which from renderRouter decision reasons, which from planner blockers, and which from provider route strings. The task requires all to point to planner-owned blockers. This audit categorizes each message by its current source.
+4. route-type-convergence: Map the two RenderRoute type universes: renderRouter's ('browser-remotion' | 'worker-banodoco' | 'preview-only' | 'external') vs. the SDK/planner's ('preview' | 'browser-export' | 'worker-export' | 'sidecar-export'). Document how decideRenderRoute() translates between them (via selectPlannerRoute()), where PlannerBackedRenderRouteDecision carries planner context, and where it doesn't. The task requires renderRouter route decisions to carry planner blocker context for preview-only/blocked outcomes — identify the exact spots where this is missing.
+5. test-doc-stale-audit: Audit test files and documentation that hardcode export guard diagnostic codes, assume exportGuard as a standalone authority, or reference parallel code lists. The done criteria require planner-owned tests for each blocker category (generated-module missing artifact, worker unavailable, contributed clip conflict, unknown contribution IDs, shader/material, live-binding, disabled/missing output format, missing compile handler). Identify which tests need to be adapted vs. created, and which docs reference stale code paths.
+
+## Findings
+
+### Call site inventory for exportGuard and planRender consumers (complete)
+
+Enumerate every file that imports from exportGuard.ts and every file that calls planRender() directly or through renderRouter.decideRenderRoute(), documenting whether each call site consumes results for blocking decisions, diagnostic publishing, or logging.
+
+- PRODUCTION: useRenderState.ts is the sole production consumer of exportGuard (collectBuiltInKnownIds, collectExtensionDeclaredIds, hasTimelineShaderMetadata, scanExportConfig). It uses them in runExportGuard() which acts as a hard gate BEFORE decideRenderRoute() is called — returning false aborts the render entirely. This bypasses the planner for blocking decisions.
+- PRODUCTION: useRenderState.ts also calls planRender() directly in two places: (a) via planFromExportGuardResult() inside runExportGuard() for diagnostic publishing/bridging — but its boolean return is the actual gate, not the planner result; (b) directly in startExport() (line 575) for compile-only output format planning with outputFormats, processes, and diagnostics.
+- PRODUCTION: renderRouter.ts (decideRenderRoute) does NOT import from exportGuard. It calls planRender() internally (via selectPlannerRoute) at 3 call sites (lines 331, 453, 481) using its own internally-derived requirements, completely independent of export guard scans.
+- PRODUCTION: VideoEditorProcessesHarnessPage.tsx calls planRender() in a useMemo for process status display — diagnostic/development use only, not a blocking decision.
+- DUAL AUTHORITY: runExportGuard() publishes diagnostics and calls planFromExportGuardResult() which bridges guard findings into planRender(), but the caller (startRender) gates on the guard's boolean return, not on the planner result. This means export guard and planner each have independent blocking authority.
+- BRIDGE EXISTS: planFromExportGuardResult() (line 229) converts export guard diagnostics into planner CapabilityFinding format and calls planRender() — but this merged result is used only for diagnostic publishing (syncPlannerDiagnosticsToCollection), not for routing/blocking decisions.
+- INTEGRATION TESTS (exportGuard): 4 integration test files import and call scanExportConfig() directly — live-webcam-canary.test.ts, flagship-local-m5-effect-live-canary.integration.test.tsx, live-data-bridge.integration.test.tsx, m5-composed-examples.browser.test.tsx. All use it for verifying blocking diagnostics on live bindings, unknown IDs, and shader blockers.
+- INTEGRATION TESTS (planRender only): 3 additional integration test files call planRender() without importing exportGuard — postprocess-shader-canary.integration.test.tsx, clip-local-shader-canary.integration.test.tsx, process-runtime-canary.integration.test.tsx. They verify planner-generated blockers (missing-material, etc.).
+- UNIT TESTS: exportGuard.test.ts imports planRender in addition to exportGuard functions and tests both in combination. renderPlanner.test.ts, renderPlanner.compositionGraph.test.ts, renderRouter.test.ts, renderRouter.attach.test.ts, routeFitMapper.test.ts, timeline-data.test.ts all call planRender() and/or decideRenderRoute() but do not import exportGuard.
+- NON-CONSUMER: renderability.ts (runtime/renderability.ts, not rendering/renderability.ts — path in task doc is stale) does NOT import from exportGuard or call planRender; it is a pure types/contracts re-export barrel from @reigh/editor-sdk.
+- BLAST RADIUS: Export guard to planner convergence requires touching exactly one production file (useRenderState.ts) and updating its dual-authority pattern. All integration tests exercising exportGuard checks will need their assertions updated to go through planner blockers instead.
+
+### Export guard output → planner input reconciliation (complete)
+
+Map every field and concept in ExportGuardResult against what the planner already represents to identify duplicates, gaps, and missing scanner equivalents.
+
+- TYPE-LEVEL DUPLICATION: `RenderPlannerGuardCompatibility` (renderPlanner.ts:151-164) is structurally identical to `ExportGuardResult` (exportGuard.ts:126-143). Every field — `diagnostics`, `findings`, `blockers`, `unknownClipTypes`, `unknownEffects`, `unknownTransitions`, `inactiveExtensionIds`, `hasBlockingErrors` — matches 1:1. The planner type was deliberately shaped to mirror the guard so that a future `buildExportReadinessPlan()` could populate it from guard data, but this has not been done yet.
+- EMPTY GUARD STUB: `emptyGuard()` (renderPlanner.ts:2490-2503) always returns `unknownClipTypes: []`, `unknownEffects: []`, `unknownTransitions: []`, and `inactiveExtensionIds: EMPTY_IDS` — hardcoded empty values. The only dynamic field is `hasBlockingErrors` derived from the planner's own blockers, not the export guard's diagnostics. The `guard` field on `RenderPlannerResult` is therefore a dead placeholder.
+- LOSSY BRIDGE: `planFromExportGuardResult()` (useRenderState.ts:229-249) converts guard findings, blockers, and diagnostics into a flat `CapabilityFinding[]` array fed as the `diagnostics` input to `planRender()`. The guard's semantic richness — `unknownClipTypes`, `unknownEffects`, `unknownTransitions`, `inactiveExtensionIds`, and export-specific diagnostic codes — is discarded. The planner never sees these as structured fields.
+- NO buildExportReadinessPlan API: A search for `buildExportReadinessPlan` across the entire `src/` tree returns zero results. The task's requested API does not exist yet. Currently `runExportGuard()` in useRenderState.ts (line 371) serves as the ad-hoc integration point, calling `scanExportConfig` then `planFromExportGuardResult`.
+- SCANNERS UNIQUE TO EXPORT GUARD (no planner equivalent): Live-binding export blocker scanning (`scanLiveBindingExportBlockers`, exportGuard.ts:425-439) produces `export/live-binding-unresolved` diagnostics and `live-unbaked` blockers — the planner has no live-binding scanner. Clip-type/effect/transition unknown-type scanning (`scanClip`, exportGuard.ts:938-1000) uses `KnownIdCollection`, registry snapshots, and extension-declared fallback IDs to emit `export/unknown-clip-type`, `export/unknown-effect-type`, `export/unknown-transition-type` diagnostics — the planner has no equivalent type-validity scan.
+- SCANNERS DUPLICATED BETWEEN GUARD AND PLANNER: Legacy graph shader compatibility scanning exists in both — `pushLegacyGraphCompatibilityFindingsAndBlockers` (exportGuard.ts:760-792, ID prefix `exportGuard.compositionGraph.legacy-shader-ref-compatibility`) and `legacyGraphCompatibilityFindings` (renderPlanner.ts, ID prefix `planner.compositionGraph.legacy-shader-ref-compatibility`). Shader/materializer missing-artifact scanning exists in both — `scanTimelineShaderExportBlockers`/`pushShaderMaterializerFindingAndBlocker` (exportGuard.ts:730-851) vs `diagnoseSnapshotShaderComposition`/`graphShaderMaterializerRequirements` (renderPlanner.ts). Composition graph target diagnostic scanning exists in both — `scanCompositionGraphTargetExportBlockers` (exportGuard.ts:535-627) vs planner's capability-requirement-based routeFit analysis.
+- DIAGNOSTIC CODE DOMAINS ARE DISJOINT: The export guard emits `export/`-prefixed diagnostic codes (e.g., `export/unknown-clip-type`, `export/live-binding-unresolved`, `export/unrenderable-shader`, `export/unresolved-ref`, `export/effect-unresolved-ref`, `export/transition-unresolved-ref`). The planner operates on `composition/`-prefixed codes and `CapabilityRequirement` routeFit findings. The `exportDiagnosticToPlannerFinding()` adapter (useRenderState.ts:205-227) mechanically converts these using simple substring matching (`diagnostic.code.includes('unknown')` → `'missing-contribution'`, etc.) — a fragile mapping, not a vocabulary alignment.
+- CANONICAL READINESS DECISION ALREADY PLANNER-OWNED: In `runExportGuard()` (useRenderState.ts:371-439), the blocker decision on line 420 checks `plannerResult.blockers.length > 0`, not `guardResult.hasBlockingErrors`. The comment on line 421 confirms 'Planner-owned blockers are the canonical readiness decision.' This is architecturally correct but the guard data is still independently published to the diagnostic collection (line 411-413), creating two parallel diagnostic streams that a consumer must reconcile.
+- renderRouter USES planRender BUT NOT EXPORT GUARD: `decideRenderRoute()` (renderRouter.ts:322-584) calls `planRender()` directly with capability requirements derived from its own clip-type routing logic. It does NOT consume `scanExportConfig` or export guard data at all. The `PlannerBackedRenderRouteDecision` carries a `planner` context with the selected route and blockers but no guard-derived readiness facts.
+- RENDERPLANNERGUARDCOMPATIBILITY IS STRUCTURALLY READY: Despite being a stub, the `guard` field type has all the right fields to absorb export guard output — `unknownClipTypes`, `unknownEffects`, `unknownTransitions`, `inactiveExtensionIds`, `diagnostics`, `findings`, `blockers`, `hasBlockingErrors`. A `buildExportReadinessPlan()` implementation would need to replace `emptyGuard()` with a real guard-populated version that receives the export guard scan result.
+
+### blocked-message-sourcing (complete)
+
+Trace every user-visible 'blocked'/'preview-only' message path: the runExportGuard() return path in startRender, the preview-only decision branch in startRender, the compile-only export blocker path in startExport, and any UI disabled-state sourcing. Identify which messages come from exportGuard diagnostics directly, which from renderRouter decision reasons, which from planner blockers, and which from provider route strings.
+
+- THREE DISTINCT MESSAGE SOURCES EXIST for user-facing blocked/preview-only states, violating the goal that all point to planner-owned blockers.
+- SOURCE 1 — exportGuard diagnostics (raw): formatExportGuardLog() at useRenderState.ts:103-175 reads guardResult.diagnostics AND guardResult.findings to build the render log string. The guardResult comes from scanExportConfig() in exportGuard.ts. This feeds the renderLog displayed to users in TimelineEditorShellCore.tsx:1034-1041 when renderStatus='error'. The diagnostics have codes like 'export/unknown-clip-type', 'export/unrenderable-effect', 'export/live-binding-unresolved', 'export/unrenderable-shader'.
+- SOURCE 2 — hardcoded router decision strings in startRender: At useRenderState.ts:476-488, preview-only route produces: `Render blocked: ${decision.reason}. Generated Remotion module clips require valid worker artifact metadata.` and worker-banodoco/external produces: `Worker render unavailable for route \"${decision.reason}\". This timeline was not sent to the browser renderer.`. These messages are sourced from decision.reason (a RouterRenderDecision['reason'] literal string like 'remotion_module_missing_artifact'), NOT from planner blockers. The planner context IS present on PlannerBackedRenderRouteDecision.planner but is NOT consulted for the user message.
+- SOURCE 3 — planner blockers (partial, only in startExport): startExport at useRenderState.ts:608-609 uses blocker.message from outputPlan.blockers when the output format plan shows blocked. This IS a planner-owned blocker. However, at lines 629-631, when runExportGuard() returns false, the message is a hardcoded string: `Export blocked by readiness scan. See render log for details.` — this does NOT point to a specific planner blocker object.
+- HYBRID DECISION PIPELINE in runExportGuard: useRenderState.ts:371-438 — scanExportConfig() produces guardResult, planFromExportGuardResult() wraps it through planRender() to get plannerResult, and the BLOCK decision (return false) is governed by plannerResult.blockers.length > 0 (planner-owned). But the LOG text set via formatExportGuardLog(guardResult) still reads from raw guard diagnostics. The planner blockers are synced to diagnosticCollection (syncPlannerDiagnosticsToCollection) but do NOT directly produce the renderLog text.
+- RENDERROUTER DECISIONS CARRY PLANNER CONTEXT but it is unused for user messages: decideRenderRoute in renderRouter.ts:322-584 returns PlannerBackedRenderRouteDecision with a .planner field containing RenderPlannerResult, but startRender's blocked branches only use decision.reason (a string literal). The planner blockers inside decision.planner.result.blockers are NOT read to produce the user-facing message.
+- FAST-RENDER-ROUTE path (useRenderState.ts:47-81): getFastRenderRouteDecision() returns preview-only for remotion_module_missing_artifact with reason 'remotion_module_missing_artifact'. This path produces its OWN blocked message entirely outside the planner system. The fast path has NO planner context at all — it runs before any planner invocation.
+- UI DISPLAY: TimelineEditorShellCore.tsx:1034-1041 renders the renderLog string directly when renderStatus==='error'. The first line of renderLog (via split('\n')[0]) is displayed in a red error tooltip. No structured blocker metadata reaches the UI — only the raw text.
+- EXPORT DIAGNOSTIC → FINDING ADAPTER EXISTS: exportDiagnosticToPlannerFinding() at useRenderState.ts:205-227 converts export guard diagnostics into CapabilityFinding objects (with source: 'export-guard-compat'), and blockerReasonForExportDiagnostic() maps diagnostic codes to RenderBlockerReason values. planFromExportGuardResult() feeds these into planRender(). So the PLUMBING for planner-owned blockers exists, but the user-facing text still reads from the raw guard diagnostics.
+- CONTRADICTION: runExportGuard uses plannerResult.blockers to decide YES/NO but uses guardResult.diagnostics to produce the TEXT. This is a split authority — the decision is planner-owned but the explanation text is guard-diagnostic-sourced.
+- MISSING EVIDENCE: No UI disabled-state sourcing was found that derives from provider route strings (e.g., 'browser-remotion', 'worker-banodoco') as the sole authority. However, renderRouter decision.reason strings (like 'remotion_module_missing_artifact') ARE effectively provider route strings in the fast path.
+
+### route-type-convergence (complete)
+
+Map the two RenderRoute type universes and identify where planner blocker context is missing from renderRouter route decisions for preview-only/blocked outcomes.
+
+- DUAL TYPE UNIVERSES CONFIRMED: renderRouter defines RenderRoute as 'browser-remotion' | 'worker-banodoco' | 'preview-only' | 'external' (renderRouter.ts:89-93, a provider-id taxonomy) while the SDK/planner defines RenderRoute as 'preview' | 'browser-export' | 'worker-export' | 'sidecar-export' (renderability.ts:2, a capability/planning taxonomy). These are semantically different vocabularies with no 1:1 mapping — 'preview-only' (hard blocked) ≠ 'preview' (interactive-only but usable).
+- TRANSLATION MECHANISM: selectPlannerRoute() (renderRouter.ts:308-319) bridges the two universes by mapping RenderPlannerResult boolean flags (canBrowserExport, canWorkerExport, canSidecarExport) to PlannerRouteDecisionContext.selectedPlannerRoute using SDK vocabulary. Priority order: browser-export → worker-export → sidecar-export → preview fallback.
+- PLANNER CONTEXT IS ALWAYS CARRIED IN RETURN TYPE: decideRenderRoute() (renderRouter.ts:322-326) always returns PlannerBackedRenderRouteDecision which extends RenderRouteDecision with planner: PlannerRouteDecisionContext. Every return path (lines 340, 463, 498, 507, 524, 536, 546, 557, 567, 576) includes a planner field populated via selectPlannerRoute(planRender(...)).
+- CRITICAL GAP A — useRenderState.startRender() STRIPS PLANNER CONTEXT: When decideRenderRoute() returns a PlannerBackedRenderRouteDecision, the consuming code (useRenderState.ts:449-452) declares a local type with only { route, reason } — no planner field. The planner.plannerResult.blockers are never read in startRender().
+- CRITICAL GAP B — USER-FACING BLOCKED MESSAGES ARE HARDCODED STRINGS, NOT PLANNER BLOCKERS: Lines 476-482 use `Render blocked: ${decision.reason}. Generated Remotion module clips require valid worker artifact metadata.` and lines 484-489 use `Worker render unavailable for route "${decision.reason}"...`. Neither consults decision.planner.plannerResult.blockers. This violates the done criterion requiring every user-facing blocked state point to a RenderBlocker or planner-owned blocker object.
+- CRITICAL GAP C — getFastRenderRouteDecision() BYPASSES PLANNER ENTIRELY: This fast-path function (useRenderState.ts:47-81) returns a bare { route, reason } object with zero planner context. When it short-circuits to 'preview-only' (line 59), there is no planner block to reference. It also returns 'worker-banodoco' (line 75) without any planner validation of worker availability.
+- CRITICAL GAP D — ROUTE/PLANNER MISMATCH ON BLOCKED OUTCOMES: When a clip is blocked (e.g., remotion_module_missing_artifact), decideRenderRoute forces route: 'preview-only' (line 465) before the planner's selectPlannerRoute() has resolved. The planner may independently select 'sidecar-export' (as confirmed by test at renderRouter.test.ts:151 showing selectedPlannerRoute: 'sidecar-export' while route is 'preview-only'). This creates a split-brain: the router blocks but the planner found a viable route.
+- CRITICAL GAP E — NO PLANNER BLOCKER CONTEXT FOR worker-banodoco/external REJECTION: When route is 'worker-banodoco' or 'external' (lines 484-489), startRender() hard-rejects with a generic string. The PlannerBackedRenderRouteDecision at this point has planner.plannerResult with full blocker/routePlan data (including why worker might actually be available/unavailable) but none of it surfaces to the user.
+- EXISTING PLANNER BLOCKER USAGE IS LIMITED TO exportGuard PATH ONLY: The plannerResult.blockers are only checked in runExportGuard() (useRenderState.ts:420-426) to gate the initial pass. After that gate passes, startRender() switches to legacy string-based messaging.
+- NO RENDERBLOCKER ID PROPAGATION FROM ROUTER TO UI: The task requires renderRouter decisions to carry planner blocker context for preview-only/blocked outcomes. While PlannerRouteDecisionContext carries plannerResult (which has blockers[]), the UI hook never reads it. There is no code path where a RenderBlocker.id or RenderBlocker.message from the planner flows through to the user-facing renderLog.
+- TEST COVERAGE PARTIAL: renderRouter.test.ts verifies planner.selectedPlannerRoute and can*Export flags (lines 36-38, 151-154) but never asserts that planner.plannerResult.blockers contain specific blocker IDs corresponding to the blocked route reason. The tests check structural presence of planner context but not semantic blocker fidelity.
+
+### Stale test fixtures and docs referencing legacy export diagnostics patterns (complete)
+
+Audit test files and documentation that hardcode export guard diagnostic codes, assume exportGuard as a standalone authority, or reference parallel code lists.
+
+- exportGuard.test.ts (~2782 lines) tests scanExportConfig as a standalone blocking authority producing its own RenderBlocker[] and CapabilityFinding[] arrays with export-prefixed IDs (e.g., 'export.effect.c1.entrance.crazy-spin.missing', 'export/live-binding-unresolved'). It imports planRender only in a single compatibility test (line 965: 'keeps scan output as planner-compatible compatibility input'), but the vast majority of test coverage validates guard-owned blockers and diagnostics directly rather than planner-owned equivalents.
+- exportGuard.test.ts tests multiple blocker categories at the guard level: live-binding blockers (active/missing/disposed/orphaned/malformed/partial — 5 tests), unknown clip types (2 tests), unknown effects (8 tests including provider snapshot integration), and unknown transitions. None of these tests verify that the same blocker categories surface through planRender() as the canonical readiness decision.
+- useRenderState.test.tsx mocks the entire export guard module (collectBuiltInKnownIds, collectExtensionDeclaredIds, hasTimelineShaderMetadata, scanExportConfig) rather than testing planner-owned readiness. The mock's scanExportConfig implementation (lines 356-402) hardcodes diagnostic codes like 'export/unknown-effect-type' and 'export/unrenderable-effect'. The hook test verifies that the guard stops rendering but never verifies that planRender() produces equivalent or superseding blockers.
+- renderRouter.attach.test.ts (75 lines) is the thinnest test file among the suggested files. It only validates process-attach forwarding to planRender but has no tests for generated-module missing artifact, contributed clip conflict, unknown contribution IDs, or any other M3 planner blocker categories.
+- The M3 done criteria require planner-owned tests for 11 specific blocker categories: generated-module missing artifact, worker unavailable, contributed clip conflict, unknown contribution IDs, shader/material blockers, live-binding blockers, disabled output format, missing output format, missing compile handler. Of these, renderPlanner.test.ts already covers: live-binding blockers (line 486), shader/material blockers (lines 701, 729), missing output format (line 1022), route-unsupported output format (line 1043), missing material/materialization-failed (lines 1095, 1143). NOT covered in any planner test: generated-module missing artifact, worker unavailable, contributed clip conflict (as planner blocker, not router), unknown contribution IDs (as dedicated planner test), missing compile handler, disabled output format (as disabled flag reason, not route-unsupported).
+- The renderRouter.test.ts file (1106 lines) covers contributed clip routing (M9 T11 section, ~12 tests) and generated-module routing with artifact validation, but these tests validate the router's decideRenderRoute() decision, not that planRender() produces corresponding planner-owned blockers. The router test asserts decision.route and decision.reason but does not assert the shape of decision.planner.plannerResult.blockers for these categories.
+- Docs staleness: m3b-live-binding-and-deterministic-capture.md line 75 describes exportGuard as performing 'an authoritative scan' — treating it as the decision-maker rather than an input scanner feeding the planner. m1b-composition-graph.md line 30 lists 'Graph-first export authority' as a scanExportConfig role, describing it as deriving shader blockers directly rather than as planner input data. phase4-readiness.md line 39 correctly identifies renderPlanner as 'canonical render readiness reducer' but does not enumerate the canonical blocker codes required by the M3 done criteria. foundation-contracts.md is cited in phase4-readiness as covering export guard but would need updating to reflect planner-owned blocker vocabulary.
+- The current useRenderState.ts architecture (lines 371-439) already partially demotes exportGuard: runExportGuard() feeds scanExportConfig output through planFromExportGuardResult() into planRender(), and the final blocking decision is planner-owned ('if (plannerResult.blockers.length > 0)'). However, scanExportConfig still produces its own parallel blockers array that is repackaged as diagnostics into planRender, causing a dual-blocker-vocabulary situation where exportGuard IDs (e.g., 'export.effect.c1...') coexist with planner IDs (e.g., 'snapshot.liveBinding.2.browser-export.live-unbaked').
+- The renderPlanner.compositionGraph.test.ts (598 lines) includes proper planner-owned tests for shader/ref blockers derived from composition graph diagnostics, including all 7 blocking reference state cases. This is the correct pattern for planner-owned blocker tests and should be replicated for the remaining M3 categories.
+
+## Adjudication
+
+### Gap Notes
+
+- (none)
+
+### Contradiction Notes
+
+- file /workspace/extension-reality-convergence-epic/reigh-app/src/tools/video-editor/hooks/useRenderState.ts appears in multiple areas with differing evidence/status: blocked-message-sourcing=complete, route-type-convergence=complete
+- file /workspace/extension-reality-convergence-epic/reigh-app/src/tools/video-editor/lib/renderRouter.ts appears in multiple areas with differing evidence/status: blocked-message-sourcing=complete, route-type-convergence=complete
+- file /workspace/extension-reality-convergence-epic/reigh-app/src/tools/video-editor/runtime/renderPlanner.ts appears in multiple areas with differing evidence/status: blocked-message-sourcing=complete, route-type-convergence=complete
+- file src/tools/video-editor/hooks/useRenderState.test.tsx appears in multiple areas with differing evidence/status: Call site inventory for exportGuard and planRender consumers=complete, Stale test fixtures and docs referencing legacy export diagnostics patterns=complete
+- file src/tools/video-editor/hooks/useRenderState.ts appears in multiple areas with differing evidence/status: Call site inventory for exportGuard and planRender consumers=complete, Export guard output → planner input reconciliation=complete, Stale test fixtures and docs referencing legacy export diagnostics patterns=complete
+- file src/tools/video-editor/lib/renderRouter.attach.test.ts appears in multiple areas with differing evidence/status: Call site inventory for exportGuard and planRender consumers=complete, Stale test fixtures and docs referencing legacy export diagnostics patterns=complete
+- file src/tools/video-editor/lib/renderRouter.test.ts appears in multiple areas with differing evidence/status: Call site inventory for exportGuard and planRender consumers=complete, Stale test fixtures and docs referencing legacy export diagnostics patterns=complete
+- file src/tools/video-editor/lib/renderRouter.ts appears in multiple areas with differing evidence/status: Call site inventory for exportGuard and planRender consumers=complete, Export guard output → planner input reconciliation=complete
+- file src/tools/video-editor/runtime/exportGuard.test.ts appears in multiple areas with differing evidence/status: Call site inventory for exportGuard and planRender consumers=complete, Stale test fixtures and docs referencing legacy export diagnostics patterns=complete
+- file src/tools/video-editor/runtime/exportGuard.ts appears in multiple areas with differing evidence/status: Call site inventory for exportGuard and planRender consumers=complete, Export guard output → planner input reconciliation=complete
+- file src/tools/video-editor/runtime/renderPlanner.compositionGraph.test.ts appears in multiple areas with differing evidence/status: Call site inventory for exportGuard and planRender consumers=complete, Stale test fixtures and docs referencing legacy export diagnostics patterns=complete
+- file src/tools/video-editor/runtime/renderPlanner.test.ts appears in multiple areas with differing evidence/status: Call site inventory for exportGuard and planRender consumers=complete, Stale test fixtures and docs referencing legacy export diagnostics patterns=complete
+- file src/tools/video-editor/runtime/renderPlanner.ts appears in multiple areas with differing evidence/status: Call site inventory for exportGuard and planRender consumers=complete, Export guard output → planner input reconciliation=complete
+- file src/tools/video-editor/runtime/renderability.ts appears in multiple areas with differing evidence/status: Call site inventory for exportGuard and planRender consumers=complete, Export guard output → planner input reconciliation=complete
+
+### Overlap Groups
+
+- file: /workspace/extension-reality-convergence-epic/reigh-app/src/tools/video-editor/hooks/useRenderState.ts [blocked-message-sourcing, route-type-convergence]
+- file: /workspace/extension-reality-convergence-epic/reigh-app/src/tools/video-editor/lib/renderRouter.ts [blocked-message-sourcing, route-type-convergence]
+- file: /workspace/extension-reality-convergence-epic/reigh-app/src/tools/video-editor/runtime/renderPlanner.ts [blocked-message-sourcing, route-type-convergence]
+- file: src/tools/video-editor/hooks/useRenderState.test.tsx [Call site inventory for exportGuard and planRender consumers, Stale test fixtures and docs referencing legacy export diagnostics patterns]
+- file: src/tools/video-editor/hooks/useRenderState.ts [Call site inventory for exportGuard and planRender consumers, Export guard output → planner input reconciliation, Stale test fixtures and docs referencing legacy export diagnostics patterns]
+- file: src/tools/video-editor/lib/renderRouter.attach.test.ts [Call site inventory for exportGuard and planRender consumers, Stale test fixtures and docs referencing legacy export diagnostics patterns]
+- file: src/tools/video-editor/lib/renderRouter.test.ts [Call site inventory for exportGuard and planRender consumers, Stale test fixtures and docs referencing legacy export diagnostics patterns]
+- file: src/tools/video-editor/lib/renderRouter.ts [Call site inventory for exportGuard and planRender consumers, Export guard output → planner input reconciliation]
+- file: src/tools/video-editor/runtime/exportGuard.test.ts [Call site inventory for exportGuard and planRender consumers, Stale test fixtures and docs referencing legacy export diagnostics patterns]
+- file: src/tools/video-editor/runtime/exportGuard.ts [Call site inventory for exportGuard and planRender consumers, Export guard output → planner input reconciliation]
+- file: src/tools/video-editor/runtime/renderPlanner.compositionGraph.test.ts [Call site inventory for exportGuard and planRender consumers, Stale test fixtures and docs referencing legacy export diagnostics patterns]
+- file: src/tools/video-editor/runtime/renderPlanner.test.ts [Call site inventory for exportGuard and planRender consumers, Stale test fixtures and docs referencing legacy export diagnostics patterns]
+- file: src/tools/video-editor/runtime/renderPlanner.ts [Call site inventory for exportGuard and planRender consumers, Export guard output → planner input reconciliation]
+- file: src/tools/video-editor/runtime/renderability.ts [Call site inventory for exportGuard and planRender consumers, Export guard output → planner input reconciliation]
+
+### Bounded Cross-Reference
+
+- Performed: yes
+- Shared files: src/tools/video-editor/hooks/useRenderState.ts, src/tools/video-editor/lib/renderRouter.ts, src/tools/video-editor/runtime/exportGuard.ts, src/tools/video-editor/runtime/renderPlanner.ts, src/tools/video-editor/runtime/renderability.ts
+- Missing files: (none)
+
+## Metrics
+
+- Areas triaged: 5
+- Fan-out units run: 5
+- Complete: 5
+- Partial: 0
+- Timed out: 0
+- Errors: 0
+- Missed units: (none)
+
+
+## Critique Lens Catalog (9 lenses)
+
+        ### Lens: `issue_hints` (tier: core, category: completeness)
+**Question:** Did the work fully address the issue hints, user notes, and approved plan requirements?
+**Guidance:** Cross-check the result against explicit user notes, critique corrections, and watch items. Flag anything the implementation ignored, contradicted, or only partially covered.
+
+### Lens: `correctness` (tier: core, category: correctness)
+**Question:** Are the proposed changes technically correct?
+**Guidance:** Look for logic errors, invalid assumptions, broken invariants, schema mismatches, or behavior that would fail at runtime. When the fix adds a conditional branch, check whether it handles all relevant cases — not just the one reported in the issue.
+
+### Lens: `scope` (tier: core, category: completeness)
+**Question:** Search for related code that handles the same concept. Is the reported issue a symptom of something broader — and is any single step sized to fit one worker turn?
+**Guidance:** Look at how the changed function is used across the codebase. Does the fix only address one caller's scenario while others remain broken? Flag missing required work or out-of-scope edits. A minimal patch is often right, but check whether the underlying problem is bigger than what the issue describes. Also audit step SIZING: each step/task is executed in ONE worker turn (~15 min, one conversation) and must be fully implemented AND verified there. A single step that bundles multiple concerns — e.g. 'extract this 2000-line file into modules AND write tests', or 'consolidate the roots AND migrate N registries AND add parity tests' — is a god-task: it cannot finish in one turn and the worker will run out of time mid-implementation. Raising complexity does not buy more time, only a stronger model for the same single turn. Flag any such step and recommend splitting along the natural seam (one step to add the abstraction + its unit tests, then one step per consumer/module to migrate, parity tests on the last).
+
+### Lens: `all_locations` (tier: core, category: completeness)
+**Question:** Does the change touch all locations AND supporting infrastructure?
+**Guidance:** Search for all instances of the symbol/pattern being changed. Also ask: does this feature require setup, registration, or integration code beyond the core logic? Missing glue code causes test failures even when the core fix is correct.
+
+### Lens: `callers` (tier: core, category: correctness)
+**Question:** Find the callers of the changed function. What arguments do they actually pass? Does the fix handle all of them?
+**Guidance:** Grep for call sites. For each caller, check what values it passes — especially edge cases like None, zero, empty, or composite inputs. Then ask: should this change be here, or in a caller, callee, or new method?
+
+### Lens: `conventions` (tier: extended, category: maintainability)
+**Question:** Does the approach match how the codebase solves similar problems?
+**Guidance:** Check not just naming/style but how similar PROBLEMS are solved in this codebase. If the codebase adds new methods for similar cases, the plan should too. Do not spend findings on trivial stylistic preferences.
+
+### Lens: `verification` (tier: extended, category: completeness)
+**Question:** Is there convincing verification for the change?
+**Guidance:** Flag missing tests or weak validation. If verification tests exist, trace the test's execution path through your patch — does every branch it exercises produce the expected result? A patch can look correct but fail because it misses one code path the test covers. If you manually verify an edge case because existing tests don't cover it, also test the cases next to it.
+
+### Lens: `criteria_quality` (tier: extended, category: completeness)
+**Question:** Are the success criteria well-prioritized and verifiable?
+**Guidance:** Check that each `must` criterion has a clear yes/no answer verifiable from code, tests, or git diff. Subjective goals, numeric guidelines, and aspirational targets should be `should`, not `must`. Criteria requiring manual testing or human judgment should be `info`. Flag any `must` criterion that is ambiguous, subjective, or unverifiable in the review pipeline.
+
+### Lens: `prerequisite_ordering` (tier: core, category: correctness)
+**Question:** Do tasks that depend on a precondition gracefully handle that precondition only partially holding?
+**Guidance:** Walk the task graph. For each task that depends on a precondition produced by an earlier task (e.g. 'after T5 regen, remove ref()'), check what happens if the precondition only partially holds — some inputs fail, some succeed. Then re-read the brief: does it lock a graceful-fallback policy for the earlier task (e.g. 'failed templates get skipped with a diagnostic') AND simultaneously demand absolute completion for the dependent task (e.g. 'zero callers remain', 'all migrated')? That's a brief contradiction the planner will transcribe faithfully and the executor will hit at runtime. Flag the conflicting paragraphs and recommend conditionalizing the dependent task, or specifying explicit deferral behavior.
+
+
+        ## Complexity Rubric (1–5)
+
+        Rate each selected lens on its **hardest realistic** aspect, not a
+        worst-case imagining. When genuinely torn between two tiers, choose the
+        LOWER one UNLESS you can name the specific cascading, test-evading
+        failure that earns the higher tier in the justification.
+
+        - **1 = trivial, mechanical check.** The lens's question can be
+          answered by pattern-matching a single file or a grep hit. A weak
+          model cannot get it wrong.
+        - **2 = simple, localized check.** The lens touches one or two
+          files, the question has a linear answer, and the failure mode
+          (missing something) is obvious.
+        - **3 = multi-step check with non-trivial reasoning.** The lens
+          requires holding multiple files or a dataflow in your head;
+          correctness is not self-evident from a quick skim.
+        - **4 = cross-cutting or high-stakes check.** A defect this lens would
+          miss is **non-local and not caught by an obvious test** — it
+          propagates through a shared contract or invariant that code the plan
+          does NOT touch relies on. Spanning several modules is NOT sufficient
+          on its own; a lens whose failure is local and obvious is tier 2-3.
+        - **5 = fundamental system-level check.** The lens probes a
+          security-sensitive path, a schema migration, an auth boundary, or
+          a contract relied on by the whole system, where a subtle error would
+          pass the full suite and corrupt state. Only assign tier 5 when the
+          lens genuinely requires system-level reasoning — not merely
+          "important" or central code.
+
+        **FLOOR rules (hard minimum) — these two lenses ONLY:**
+        - `correctness` — NEVER below tier 4. A correctness defect that
+          slips through is the most expensive failure mode.
+        - `prerequisite_ordering` — NEVER below tier 4. Partial-precondition
+          contradictions are subtle and cascade into runtime failures; a
+          weak model will miss them.
+        Every OTHER lens must EARN tier 4-5 under the rubric above; the
+        expected home for an ordinary, locally-verifiable check is tier 2-3.
+        Do not let "this plan is large" inflate a lens whose own question is
+        answerable by a focused read.
+
+        ## Assignment Contract
+
+        Select the FEWEST lenses that cover the real risk; keep the set lean
+        rather than firing broad, overlapping checks. If a check's verification
+        would likely depend on things outside this project root (external or
+        sibling repos), files the plan only creates later, or runtime-only
+        behavior, either scope the lens to what is statically checkable in this
+        repo or name that dependency in its justification so the worker and gate
+        expect a partial or `unverifiable` result.
+
+        - **Select deliberately**: a lens fires only when it covers a concrete
+          risk in this plan.
+        - **Justify to skip**: every skipped lens must include a concrete, specific
+          `why` — a reason grounded in the plan's content, not a generic dismissal.
+        - **Every lens is assigned exactly once**: the union of `selections` and
+          `skipped` must cover all 9 lens ids with no overlap
+          and no omission.
+        - **At least one lens must be selected** — an all-skip verdict is rejected.
+        - **Every selected catalog lens** must emit a `complexity` (int 1–5) and
+          a `complexity_justification` (one or two sentences citing why this
+          lens sits at exactly that tier — reference the lens's question, the
+          plan's concrete files/interfaces/risks). The justification must be
+          defensible against a reviewer who disagrees. A bare restatement of the
+          rubric ("this is complex") is not acceptable.
+        - **`other` custom areas**: an `other` selection is additive (does not
+          replace a catalog lens). It requires `area` (a non-empty name for the
+          custom critique area), `why` (the probe question for the critic),
+          `complexity`, and `complexity_justification`. At most 2
+          `other` areas.
+        - **Do not invent check IDs**: North Star, anchor, product, or project-
+          specific concerns must either use one of the catalog lens IDs above
+          or `check_id: "other"` with the specific concern named in `area`.
+          Values such as `north_star_alignment`, `compatibility_shim_risk`, or
+          `behavior_preservation` are invalid as `check_id`s.
+
+        Your output must be a JSON object with these keys:
+        - `selections`: list of objects. For catalog lenses:
+          {check_id, complexity (int 1–5), complexity_justification, why?}
+          For `other` custom areas:
+          {check_id: "other", area, why, complexity (int 1–5), complexity_justification}
+        - `skipped`: list of {check_id, why} objects
+        - `evaluator_model`: your own model identifier string
+        - `flag_verifications`: list of
+          {flag_id, lens, outcome, rationale} objects where outcome is
+          one of "verified" / "open" / "accepted_tradeoff"; use [] when the
+          Flag Resolution Verification section is absent. `lens` must be
+          exactly one catalog lens id; combined lens strings such as
+          `correctness/all_locations` are invalid.
+
+        Remember: prefer the smallest selected set that still covers the real
+        risk.  Skipping requires a justification.  When you skip, explain *why
+        this specific lens is unnecessary for this specific plan* — do not
+        write generic cop-outs.
