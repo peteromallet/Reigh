@@ -1,0 +1,377 @@
+Execute the approved plan in the repository.
+
+        Project directory:
+        /workspace/extension-reality-convergence-epic/reigh-app
+
+        Brief summary: # M3: Export Readiness Convergence
+(Full brief in state.idea; success criteria in plan_v1.meta.json.)
+
+        Batch framing:
+        - Execute batch 12 of 17.
+        - Actionable task IDs for this batch: ['T12']
+        - Already completed task IDs available as dependency context: ['T1', 'T10', 'T11', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9']
+
+        Actionable tasks for this batch:
+        [
+  {
+    "id": "T12",
+    "depends_on": [
+      "T11"
+    ],
+    "status": "pending",
+    "kind": "test",
+    "complexity": 3,
+    "reviewer_verdict": "",
+    "description": "Add hook regressions in `useRenderState.test.tsx` proving generated-module blocked outcomes include planner context, provider/worker unavailable text comes from planner blockers, compile-only missing-handler text is surfaced before execution, and raw guard diagnostic text is not used when planner blockers exist.",
+    "complexity_justification": "These are additional focused hook regressions on top of migrated mocks; they cover multiple branches but use the established test harness from T11.",
+    "executor_notes": ""
+  }
+]
+
+        Completed task context (already satisfied, do not re-execute unless directly required by current edits):
+        [
+  {
+    "id": "T11",
+    "depends_on": [
+      "T10"
+    ],
+    "status": "done",
+    "kind": "test",
+    "complexity": 4,
+    "reviewer_verdict": "",
+    "description": "Update existing `useRenderState.test.tsx` mocks and assertions for `scanExportConfig`, `buildExportReadinessPlan`, and `decideRenderRoute`, replacing guard-as-authority expectations with planner-blocker expectations while preserving successful browser, worker, exporter-backed, compile-only, snapshot, and attach-evidence parity tests.",
+    "complexity_justification": "The hook test file is large and exercises many mocked readiness branches; incorrect mock migration can mask real regressions across render and export workflows.",
+    "executor_notes": "Migrated useRenderState.test.tsx route mocks to return planner-backed decisions, wrapped buildExportReadinessPlan/planRender with observable mocks while preserving actual planner behavior, and replaced legacy export-guard renderLog assertions with planner-blocker or cleared pass-through expectations. Scoped ESLint, TypeScript, hook Vitest file, and diff whitespace checks passed.",
+    "files_changed": [
+      "src/tools/video-editor/hooks/useRenderState.test.tsx"
+    ],
+    "commands_run": [
+      "npx eslint src/tools/video-editor/hooks/useRenderState.test.tsx --ext ts,tsx --max-warnings 0",
+      "npx tsc -p tsconfig.json --noEmit --pretty false",
+      "npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/hooks/useRenderState.test.tsx",
+      "git diff --check -- src/tools/video-editor/hooks/useRenderState.test.tsx"
+    ]
+  },
+  {
+    "id": "T4",
+    "depends_on": [
+      "T3"
+    ],
+    "status": "done",
+    "kind": "audit",
+    "complexity": 2,
+    "reviewer_verdict": "",
+    "description": "Classify export blocker categories in local comments or test names around `renderPlanner.ts` and `renderRouter.ts`, separating already-planner-owned paths from categories that need new or normalized planner-owned inputs.",
+    "complexity_justification": "This is a bounded classification pass over known files and categories; the risk is misunderstanding existing planner paths, not changing shared behavior.",
+    "executor_notes": "Classified blocker categories in local comments: renderPlanner.ts lists existing planner-owned paths (missing output formats, route-unsupported output formats, process dependency states, shader/material blockers, live-binding blockers) and categories needing new or normalized inputs (disabled formats, request-scoped compile handler absence, worker/provider availability, unknown contribution IDs). renderRouter.ts marks generated-module artifact failures and contributed route conflicts as router-fed planner requirements to assert through decision.planner.plannerResult.blockers. Targeted ESLin...",
+    "files_changed": [
+      "src/tools/video-editor/runtime/renderPlanner.ts",
+      "src/tools/video-editor/lib/renderRouter.ts"
+    ],
+    "commands_run": [
+      "npx eslint src/tools/video-editor/runtime/renderPlanner.ts src/tools/video-editor/lib/renderRouter.ts --ext ts --max-warnings 0",
+      "rg -n \"M3 export-readiness category audit|Existing planner-owned paths|Missing/normalized inputs|router-fed planner requirements\" src/tools/video-editor/runtime/renderPlanner.ts src/tools/video-editor/lib/renderRouter.ts",
+      "git diff --check -- src/tools/video-editor/runtime/renderPlanner.ts src/tools/video-editor/lib/renderRouter.ts"
+    ]
+  },
+  {
+    "id": "T9",
+    "depends_on": [
+      "T8"
+    ],
+    "status": "done",
+    "kind": "code",
+    "complexity": 3,
+    "reviewer_verdict": "",
+    "description": "Remove `getFastRenderRouteDecision()` from `useRenderState.ts`, always call `decideRenderRoute()`, and migrate preview-only, worker-unavailable, and external-blocked render branches to use planner blocker messages.",
+    "complexity_justification": "The fast-path removal changes several hook branches but deliberately collapses them onto the existing router/planner path, making failures visible in hook and router tests.",
+    "executor_notes": "Removed getFastRenderRouteDecision() and CLIENT_CLIP_TYPES from useRenderState.ts. startRender now always obtains route decisions through decideRenderRoute() after export readiness passes, forwarding composition graph, process descriptors, process statuses, and attach records for planner context. Preview-only blocks use decision.planner planner blockers, and worker/external unavailable blocks create request-scoped planner routeAvailability blockers and display those planner messages. ESLint, TypeScript, and diff whitespace checks passed. The scoped hook test file was run once and failed onl...",
+    "files_changed": [
+      "src/tools/video-editor/hooks/useRenderState.ts"
+    ],
+    "commands_run": [
+      "npx eslint src/tools/video-editor/hooks/useRenderState.ts --ext ts,tsx --max-warnings 0",
+      "npx tsc -p tsconfig.json --noEmit --pretty false",
+      "npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/hooks/useRenderState.test.tsx",
+      "git diff --check -- src/tools/video-editor/hooks/useRenderState.ts",
+      "rg -n \"getFastRenderRouteDecision|CLIENT_CLIP_TYPES\" src/tools/video-editor/hooks/useRenderState.ts"
+    ]
+  },
+  {
+    "id": "T2",
+    "depends_on": [
+      "T1"
+    ],
+    "status": "done",
+    "kind": "code",
+    "complexity": 3,
+    "reviewer_verdict": "",
+    "description": "Move export diagnostic-to-planner finding mapping into `renderPlanner.ts` with an explicit `export/*` code mapping table, preserving original diagnostic code/detail metadata and mapping unknown codes to reason `unknown`.",
+    "complexity_justification": "The mapping changes non-trivial data shape and error classification in `renderPlanner.ts`, but it is localized and directly testable through planner findings and metadata.",
+    "executor_notes": "Added explicit export diagnostic code-to-RenderBlockerReason mapping in renderPlanner.ts, removed substring/detail.blockerReason classification from the planner adapter, and preserved original export diagnostic code/detail under finding.detail. Unknown export diagnostic codes now fall back to reason unknown. TypeScript and targeted ESLint passed; scoped renderPlanner.test.ts was run once and still has the three pre-existing shader/materializer legacy-graph expectation failures from the prior batch.",
+    "files_changed": [
+      "src/tools/video-editor/runtime/renderPlanner.ts"
+    ],
+    "commands_run": [
+      "npx tsc -p tsconfig.json --noEmit --pretty false",
+      "npx eslint src/tools/video-editor/runtime/renderPlanner.ts --ext ts --max-warnings 0",
+      "npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/runtime/renderPlanner.test.ts",
+      "npx tsc -p tsconfig.json --noEmit --pretty false",
+      "npx eslint src/tools/video-editor/runtime/renderPlanner.ts --ext ts --max-warnings 0"
+    ]
+  },
+  {
+    "id": "T1",
+    "depends_on": [],
+    "status": "done",
+    "kind": "code",
+    "complexity": 4,
+    "reviewer_verdict": "",
+    "description": "Add `buildExportReadinessPlan()` in `src/tools/video-editor/runtime/renderPlanner.ts` as a thin wrapper over `planRender()`, adapt guard-compatible scan payloads into planner guard compatibility fields, and keep `planRender()` as the only final readiness reducer.",
+    "complexity_justification": "This touches the shared planner readiness contract consumed by router and hook code; a subtle wrapper that computes blockers independently would violate the single-authority invariant and propagate non-locally.",
+    "executor_notes": "Added `buildExportReadinessPlan()` as a thin wrapper over `planRender()`. Guard diagnostics/findings/blockers are adapted into `planRender()` diagnostic input and into `result.guard`; final blockers, route plans, and can-export booleans come from `planRender()`. TypeScript and targeted ESLint passed; scoped planner tests have three unrelated existing failures.",
+    "files_changed": [
+      "src/tools/video-editor/runtime/renderPlanner.ts"
+    ],
+    "commands_run": [
+      "npm ci",
+      "npx tsc -p tsconfig.json --noEmit --pretty false",
+      "npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/runtime/renderPlanner.test.ts",
+      "npx eslint src/tools/video-editor/runtime/renderPlanner.ts --ext ts --max-warnings 0"
+    ]
+  },
+  {
+    "id": "T7",
+    "depends_on": [
+      "T6"
+    ],
+    "status": "done",
+    "kind": "code",
+    "complexity": 3,
+    "reviewer_verdict": "",
+    "description": "Resolve router planner-context mismatches in `src/tools/video-editor/lib/renderRouter.ts` and router tests so hard blockers, malformed generated-module artifacts, preview-only cases, contributed conflicts, and process attach evidence produce consistent planner blocker context and selected routes.",
+    "complexity_justification": "Router decisions and tests span two router test files and planner context forwarding, but the behavior is observable through route decisions and blocker assertions.",
+    "executor_notes": "Router-generated hard blockers now block sidecar-export as well as browser/worker routes, browser-only contributed clips block non-browser export routes, and router provider-route selection now follows planner preview/sidecar selections for hard-blocked and external cases. Router tests assert generated-module malformed artifacts, contributed no-browser capability, contributed worker conflicts, process hard blockers, and sidecar-preserved cases carry planner blocker context and selected planner routes. Attach evidence forwarding remains covered by renderRouter.attach.test.ts. ESLint, TypeScr...",
+    "files_changed": [
+      "src/tools/video-editor/lib/renderRouter.ts",
+      "src/tools/video-editor/lib/renderRouter.test.ts"
+    ],
+    "commands_run": [
+      "npx eslint src/tools/video-editor/lib/renderRouter.ts src/tools/video-editor/lib/renderRouter.test.ts src/tools/video-editor/lib/renderRouter.attach.test.ts --ext ts --max-warnings 0",
+      "npx tsc -p tsconfig.json --noEmit --pretty false",
+      "npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/lib/renderRouter.test.ts src/tools/video-editor/lib/renderRouter.attach.test.ts",
+      "git diff --check -- src/tools/video-editor/lib/renderRouter.ts src/tools/video-editor/lib/renderRouter.test.ts src/tools/video-editor/lib/renderRouter.attach.test.ts"
+    ]
+  },
+  {
+    "id": "T6",
+    "depends_on": [
+      "T5"
+    ],
+    "status": "done",
+    "kind": "test",
+    "complexity": 3,
+    "reviewer_verdict": "",
+    "description": "Add direct planner blocker tests for generated-module missing artifact, worker unavailable, contributed clip conflict, unknown contribution IDs, disabled output format, explicit compile-only handler absence, and existing blocker categories, asserting `RenderBlocker` id, route, reason, message, and diagnostic detail metadata.",
+    "complexity_justification": "This is broad test coverage across multiple blocker categories, but it remains direct planner testing with explicit expected `RenderBlocker` shapes.",
+    "executor_notes": "Added direct planner blocker-contract coverage in renderPlanner.test.ts. New tests assert RenderBlocker id, route, reason, message, and detail metadata for router-fed generated-module missing artifacts, router-fed contributed worker-route conflicts, request-scoped worker/provider unavailable routes, guard-fed unknown clip/effect/transition IDs, export diagnostic metadata preservation, disabled output formats, compile-only handler absence, missing/unsupported output formats, and process-not-installed blockers. ESLint, TypeScript, and diff whitespace checks passed. The scoped planner Vitest f...",
+    "files_changed": [
+      "src/tools/video-editor/runtime/renderPlanner.test.ts"
+    ],
+    "commands_run": [
+      "npx eslint src/tools/video-editor/runtime/renderPlanner.test.ts --ext ts --max-warnings 0",
+      "npx tsc -p tsconfig.json --noEmit --pretty false",
+      "npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/runtime/renderPlanner.test.ts",
+      "git diff --check -- src/tools/video-editor/runtime/renderPlanner.test.ts"
+    ]
+  },
+  {
+    "id": "T10",
+    "depends_on": [
+      "T9"
+    ],
+    "status": "done",
+    "kind": "code",
+    "complexity": 4,
+    "reviewer_verdict": "",
+    "description": "Route all remaining user-facing blocked text in `useRenderState.ts` through planner blockers: replace `formatExportGuardLog()`, preserve diagnostic metadata only as debug detail, keep `decision.planner` on route decisions, update export guard failure fallbacks, and move compile-only missing-handler handling into the planner request path before execution.",
+    "complexity_justification": "This is a shared user-facing hook contract across render and export status branches; missed branches can leave a parallel readiness authority that only appears in specific workflows.",
+    "executor_notes": "Removed formatExportGuardLog() and legacy guard-log blocked text from useRenderState.ts. runExportGuard() now returns the planner result, publishes raw guard diagnostics only to the diagnostic collection, syncs planner blockers, writes blocked render logs from planner RenderBlocker messages, and clears stale renderLog on pass-through. startExport() now uses planner blocker messages for guard failures and relies on request-scoped compileOnlyHandlerAvailable before guard/execution instead of a post-guard raw missing-handler branch. ESLint, TypeScript, and diff whitespace checks passed; scoped...",
+    "files_changed": [
+      "src/tools/video-editor/hooks/useRenderState.ts"
+    ],
+    "commands_run": [
+      "npx eslint src/tools/video-editor/hooks/useRenderState.ts --ext ts,tsx --max-warnings 0",
+      "npx tsc -p tsconfig.json --noEmit --pretty false",
+      "npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/hooks/useRenderState.test.tsx",
+      "git diff --check -- src/tools/video-editor/hooks/useRenderState.ts",
+      "rg -n \"formatExportGuardLog|Export blocked by readiness scan|compileOnlyRegistry \\\\|\\\\||getFastRenderRouteDecision|CLIENT_CLIP_TYPES\" src/tools/video-editor/hooks/useRenderState.ts"
+    ]
+  },
+  {
+    "id": "T3",
+    "depends_on": [
+      "T2"
+    ],
+    "status": "done",
+    "kind": "test",
+    "complexity": 3,
+    "reviewer_verdict": "",
+    "description": "Add focused `renderPlanner.test.ts` coverage for guard-fed unknown IDs, live-binding blockers, warning-only inactive extension IDs, known/unknown export diagnostic mappings, metadata preservation, and the wrapper-vs-`planRender()` invariant.",
+    "complexity_justification": "The tests cover several planner data paths and an invariant across wrapper and reducer outputs, but they remain within one test file and one subsystem.",
+    "executor_notes": "Added focused renderPlanner.test.ts coverage for guard-fed unknown ID preservation, warning-only inactive extension diagnostics, guard-fed live-binding blockers, known and unknown export diagnostic reason mapping, diagnostic metadata preservation, and buildExportReadinessPlan wrapper equivalence with direct planRender reduction. TypeScript and targeted ESLint passed. Scoped renderPlanner.test.ts was run once and still fails only the three pre-existing legacy shader/materializer expectation tests noted by prior batches; the new tests passed in that run.",
+    "files_changed": [
+      "src/tools/video-editor/runtime/renderPlanner.test.ts"
+    ],
+    "commands_run": [
+      "npx tsc -p tsconfig.json --noEmit --pretty false",
+      "npx eslint src/tools/video-editor/runtime/renderPlanner.test.ts --ext ts --max-warnings 0",
+      "npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/runtime/renderPlanner.test.ts"
+    ]
+  },
+  {
+    "id": "T8",
+    "depends_on": [
+      "T7"
+    ],
+    "status": "done",
+    "kind": "code",
+    "complexity": 4,
+    "reviewer_verdict": "",
+    "description": "Demote `runExportGuard()` in `src/tools/video-editor/hooks/useRenderState.ts` by replacing local guard-plan adaptation with `buildExportReadinessPlan()`, keeping `scanExportConfig()` as scanner input only, preserving guard diagnostics as debug metadata, and publishing planner blockers as readiness authority.",
+    "complexity_justification": "This rewires a hook-level readiness authority used by render/export callers; a mistake can surface wrong blocked UI text while tests may only cover selected branches.",
+    "executor_notes": "runExportGuard now builds readiness through buildExportReadinessPlan(), uses scanExportConfig() only as scanner input, publishes raw export-guard diagnostics to the diagnostic collection, syncs planner blockers to the diagnostic collection, and writes blocked render-log text from planner RenderBlocker messages. ESLint, TypeScript, and diff whitespace checks passed. The single scoped hook Vitest run failed only in six assertions that still expect raw export-guard blocked-log text; hook assertion migration is scheduled for later tasks.",
+    "files_changed": [
+      "src/tools/video-editor/hooks/useRenderState.ts"
+    ],
+    "commands_run": [
+      "npx eslint src/tools/video-editor/hooks/useRenderState.ts --ext ts,tsx --max-warnings 0",
+      "npx tsc -p tsconfig.json --noEmit --pretty false",
+      "git diff --check -- src/tools/video-editor/hooks/useRenderState.ts",
+      "npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/hooks/useRenderState.test.tsx"
+    ]
+  },
+  {
+    "id": "T5",
+    "depends_on": [
+      "T4"
+    ],
+    "status": "done",
+    "kind": "code",
+    "complexity": 4,
+    "reviewer_verdict": "",
+    "description": "Implement missing planner-owned input paths for disabled output formats, request-scoped compile-only handler availability, provider/worker route availability, and unknown contribution IDs in `renderPlanner.ts` and `useRenderState.ts` as needed.",
+    "complexity_justification": "This changes readiness inputs shared across planner, hook export requests, and route preflight behavior; incorrect scoping can over-block general render readiness or miss route-specific blockers.",
+    "executor_notes": "Added planner request inputs for disabled output formats, compile-only handler availability, and route/provider availability; buildExportReadinessPlan now turns guard unknown clip/effect/transition ID arrays into planner missing-contribution blockers. useRenderState now delegates guard adaptation to buildExportReadinessPlan, passes scoped compile-handler availability into planRender for startExport, and uses a planner route-availability blocker for worker/external render unavailability. Added focused planner tests for unknown contribution ID blockers, disabled format scoping, compile-handle...",
+    "files_changed": [
+      "src/tools/video-editor/runtime/renderPlanner.ts",
+      "src/tools/video-editor/runtime/renderPlanner.test.ts",
+      "src/tools/video-editor/hooks/useRenderState.ts"
+    ],
+    "commands_run": [
+      "npx eslint src/tools/video-editor/runtime/renderPlanner.ts src/tools/video-editor/runtime/renderPlanner.test.ts src/tools/video-editor/hooks/useRenderState.ts --ext ts,tsx --max-warnings 0",
+      "npx tsc -p tsconfig.json --noEmit --pretty false",
+      "npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/runtime/renderPlanner.test.ts src/tools/video-editor/hooks/useRenderState.test.tsx",
+      "npx eslint src/tools/video-editor/runtime/renderPlanner.ts src/tools/video-editor/runtime/renderPlanner.test.ts src/tools/video-editor/hooks/useRenderState.ts --ext ts,tsx --max-warnings 0",
+      "npx tsc -p tsconfig.json --noEmit --pretty false",
+      "git diff --check -- src/tools/video-editor/runtime/renderPlanner.ts src/tools/video-editor/runtime/renderPlanner.test.ts src/tools/video-editor/hooks/useRenderState.ts"
+    ]
+  }
+]
+
+        Prior batch deviations (address if applicable):
+        [
+  "Advisory observation mismatch: executor claimed files not observed in git status/content hash delta: src/tools/video-editor/hooks/useRenderState.test.tsx",
+  "Advisory audit finding: Executor claimed changed files not present in git status: src/tools/video-editor/hooks/useRenderState.test.tsx, src/tools/video-editor/hooks/useRenderState.ts, src/tools/video-editor/lib/renderRouter.test.ts, src/tools/video-editor/lib/renderRouter.ts, src/tools/video-editor/runtime/renderPlanner.test.ts, src/tools/video-editor/runtime/renderPlanner.ts",
+  "Advisory audit finding: Sense check SC12 is missing an executor acknowledgment.",
+  "Advisory audit finding: Sense check SC13 is missing an executor acknowledgment.",
+  "Advisory audit finding: Sense check SC14 is missing an executor acknowledgment.",
+  "Advisory audit finding: Sense check SC15 is missing an executor acknowledgment.",
+  "Advisory audit finding: Sense check SC16 is missing an executor acknowledgment.",
+  "Advisory audit finding: Sense check SC17 is missing an executor acknowledgment.",
+  "Advisory audit finding: Tasks left pending after execute (executor never started them): T12, T13, T14, T15, T16, T17"
+]
+
+        User action prerequisites:
+        No user_action prerequisites for this batch.
+
+
+        Batch-scoped sense checks:
+        [
+  {
+    "id": "SC12",
+    "task_id": "T12",
+    "verdict": "",
+    "question": "Do new hook regressions cover generated-module planner context, provider/worker unavailable planner text, compile-only missing-handler pre-execution text, and guard diagnostic demotion?"
+  }
+]
+
+
+        ## Execution context (settled - DO NOT re-litigate)
+
+        - SD1: getFastRenderRouteDecision() is removed entirely rather than planner-backed as a shortcut; every render path goes through decideRenderRoute() so planner context is always present. - Resolved the ambiguity flagged in scope-2. Preserving a duplicated fast path would create a third code path distinct from both current approaches. Full removal ensures correctness and single-authority planner context...
+- SD2: Guard scanner code (scanExportConfig(), exportGuard.ts) is preserved as structured scanner input, not deleted. Only its role as readiness authority is demoted. - Explicitly deferred by the North Star ('Do not delete legacy timeline storage fields before compatibility projection and regression tests exist') and confirmed by the plan's should-priority criterion: 'Implementation...
+- SD3: buildExportReadinessPlan() is a thin wrapper that delegates final readiness reduction to planRender(); it cannot compute an independent blocking decision. - North Star constraint: 'Do not add a second export readiness authority beside the planner.' The wrapper-vs-reducer invariant test in Step 1 ensures guard-fed findings may enter planner input but final blocking must ma...
+
+        ## Plan execution order rationale
+
+        1. Add `buildExportReadinessPlan()` and explicit diagnostic mapping first.
+2. Classify blocker categories, then implement only missing planner-owned input paths.
+3. Add planner tests before migrating router and hook consumers.
+4. Fix router hard-block planner context before hook tests depend on it.
+5. Remove the hook fast path and migrate user-facing blocked text to planner blockers.
+6. Split hook tests into mock/assertion migration first, new regressions second.
+7. Reframe guard and integration tests after planner wrapper behavior is proven.
+8. Update docs and readiness doc checks last.
+
+        ## Inter-task guidance from finalize
+
+        Execute in the listed order. The main judgment call is authority ownership: scanner, router, and provider diagnostics are allowed to feed planner input and debug metadata, but user-facing blocked readiness must come from planner-owned `RenderBlocker` objects. Keep heavyweight tasks isolated as the DAG does; do not batch hook migration with router or docs work. The final validation task should run the approved commands in order: `npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/runtime/renderPlanner.test.ts src/tools/video-editor/runtime/renderPlanner.compositionGraph.test.ts`; `npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/lib/renderRouter.test.ts src/tools/video-editor/lib/renderRouter.attach.test.ts`; `npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/hooks/useRenderState.test.tsx src/tools/video-editor/runtime/exportGuard.test.ts`; `npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/examples/extensions/__tests__/live-data-bridge.integration.test.tsx src/tools/video-editor/examples/extensions/__tests__/live-webcam-canary.test.ts src/tools/video-editor/examples/extensions/__tests__/m5-composed-examples.browser.test.tsx src/tools/video-editor/examples/extensions/__tests__/flagship-local-m5-effect-live-canary.integration.test.tsx`; `npm run test:readiness`; `npm run check:no-smoke-tests`; `npm run lint`; `npm run test`. Treat unrelated baseline failures as...
+
+        Note: User chose auto-approve mode. This execution was not manually reviewed at the gate. Exercise extra caution on destructive operations.
+        Robustness level: thorough.
+
+        Requirements:
+        - Execute only the actionable tasks in this batch.
+        - Treat completed tasks as dependency context, not new work.
+        - Return structured JSON only.
+        - Fill in the following template and return it as your JSON response. Only update the entries for this batch's tasks/sense checks.
+        - Template file already written for reference: /workspace/extension-reality-convergence-epic/reigh-app/.megaplan/plans/m3-export-readiness-20260707-2233/execute_batch_12_output.json
+        - Only produce `task_updates` for these tasks: [T12]
+        - `task_updates[].status` must be one of `done`, `skipped`, `completed`, or `blocked`; never `pending` or `in_progress`.
+        - Only produce `sense_check_acknowledgments` for these sense checks: [SC12]
+        - Do not include updates for tasks or sense checks outside this batch.
+        - Some prior file lists may be capped prompt projections with `items`, `omitted_count`, and `full_set_artifact_ref`; use the artifact reference when you need the full set.
+        - Keep `executor_notes` verification-focused.
+        - Best-effort progress checkpointing: if `/workspace/extension-reality-convergence-epic/reigh-app/.megaplan/plans/m3-export-readiness-20260707-2233/execution_batch_12.json` is writable, checkpoint task and sense-check updates there (not `finalize.json`). The harness owns `finalize.json`.
+        - All terminal verification commands must run from the Project directory (`/workspace/extension-reality-convergence-epic/reigh-app`) or a descendant. Do not `cd` to `/workspace/arnold`, an editable-engine mirror, or any shared engine checkout for tests; those paths are outside the session worktree and the sandbox will refuse them.
+        - When verifying changes, run the entire test file or module, not individual test functions. Individual tests miss regressions.
+        - Run tests ONCE, in the FOREGROUND, and wait for them to finish (you have a large time budget). Do NOT background a long test run and poll it in a loop. Slowness is NOT a stall — never relaunch a test command because it "seems stuck"; duplicate concurrent runs contend for CPU and make everything slower. Never run more than one heavy test invocation at a time. Prefer scoping to the changed files; run the full suite only when the task explicitly requires it, and then exactly once.
+        - finalize.json includes baseline_test_failures — a list of test IDs that were already failing before your changes. If a test fails and its ID appears in baseline_test_failures, it is pre-existing — do not scope-creep into fixing it. If baseline_test_failures is null, the baseline could not be captured; use your judgment but err on the side of assuming failures are regressions. A mechanical post-execute suite run by the harness — not you — is the authoritative regression check. Run tests for your own fix loop if needed, then stop; do not loop the suite to make pre-existing failures pass.
+        - If this batch includes the final verification task, write a short script that reproduces the exact bug described in the task, run it to confirm the fix resolves it, then delete the script.
+
+        Batch JSON response template:
+        ```json
+        {
+  "output": "",
+  "files_changed": [],
+  "commands_run": [],
+  "deviations": [],
+  "task_updates": [
+    {
+      "task_id": "T12",
+      "status": "pending",
+      "executor_notes": "",
+      "files_changed": [],
+      "commands_run": [],
+      "auto_attributed_files": false
+    }
+  ],
+  "sense_check_acknowledgments": [
+    {
+      "sense_check_id": "SC12",
+      "executor_note": ""
+    }
+  ]
+}
+        ```

@@ -1,0 +1,183 @@
+Execute the approved plan in the repository.
+
+        Project directory:
+        /workspace/extension-reality-convergence-epic/reigh-app
+
+        Brief summary: # M3: Export Readiness Convergence
+(Full brief in state.idea; success criteria in plan_v1.meta.json.)
+
+        Batch framing:
+        - Execute batch 3 of 17.
+        - Actionable task IDs for this batch: ['T3']
+        - Already completed task IDs available as dependency context: ['T1', 'T2']
+
+        Actionable tasks for this batch:
+        [
+  {
+    "id": "T3",
+    "depends_on": [
+      "T2"
+    ],
+    "status": "pending",
+    "kind": "test",
+    "complexity": 3,
+    "reviewer_verdict": "",
+    "description": "Add focused `renderPlanner.test.ts` coverage for guard-fed unknown IDs, live-binding blockers, warning-only inactive extension IDs, known/unknown export diagnostic mappings, metadata preservation, and the wrapper-vs-`planRender()` invariant.",
+    "complexity_justification": "The tests cover several planner data paths and an invariant across wrapper and reducer outputs, but they remain within one test file and one subsystem.",
+    "executor_notes": ""
+  }
+]
+
+        Completed task context (already satisfied, do not re-execute unless directly required by current edits):
+        [
+  {
+    "id": "T2",
+    "depends_on": [
+      "T1"
+    ],
+    "status": "done",
+    "kind": "code",
+    "complexity": 3,
+    "reviewer_verdict": "",
+    "description": "Move export diagnostic-to-planner finding mapping into `renderPlanner.ts` with an explicit `export/*` code mapping table, preserving original diagnostic code/detail metadata and mapping unknown codes to reason `unknown`.",
+    "complexity_justification": "The mapping changes non-trivial data shape and error classification in `renderPlanner.ts`, but it is localized and directly testable through planner findings and metadata.",
+    "executor_notes": "Added explicit export diagnostic code-to-RenderBlockerReason mapping in renderPlanner.ts, removed substring/detail.blockerReason classification from the planner adapter, and preserved original export diagnostic code/detail under finding.detail. Unknown export diagnostic codes now fall back to reason unknown. TypeScript and targeted ESLint passed; scoped renderPlanner.test.ts was run once and still has the three pre-existing shader/materializer legacy-graph expectation failures from the prior batch.",
+    "files_changed": [
+      "src/tools/video-editor/runtime/renderPlanner.ts"
+    ],
+    "commands_run": [
+      "npx tsc -p tsconfig.json --noEmit --pretty false",
+      "npx eslint src/tools/video-editor/runtime/renderPlanner.ts --ext ts --max-warnings 0",
+      "npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/runtime/renderPlanner.test.ts",
+      "npx tsc -p tsconfig.json --noEmit --pretty false",
+      "npx eslint src/tools/video-editor/runtime/renderPlanner.ts --ext ts --max-warnings 0"
+    ]
+  },
+  {
+    "id": "T1",
+    "depends_on": [],
+    "status": "done",
+    "kind": "code",
+    "complexity": 4,
+    "reviewer_verdict": "",
+    "description": "Add `buildExportReadinessPlan()` in `src/tools/video-editor/runtime/renderPlanner.ts` as a thin wrapper over `planRender()`, adapt guard-compatible scan payloads into planner guard compatibility fields, and keep `planRender()` as the only final readiness reducer.",
+    "complexity_justification": "This touches the shared planner readiness contract consumed by router and hook code; a subtle wrapper that computes blockers independently would violate the single-authority invariant and propagate non-locally.",
+    "executor_notes": "Added `buildExportReadinessPlan()` as a thin wrapper over `planRender()`. Guard diagnostics/findings/blockers are adapted into `planRender()` diagnostic input and into `result.guard`; final blockers, route plans, and can-export booleans come from `planRender()`. TypeScript and targeted ESLint passed; scoped planner tests have three unrelated existing failures.",
+    "files_changed": [
+      "src/tools/video-editor/runtime/renderPlanner.ts"
+    ],
+    "commands_run": [
+      "npm ci",
+      "npx tsc -p tsconfig.json --noEmit --pretty false",
+      "npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/runtime/renderPlanner.test.ts",
+      "npx eslint src/tools/video-editor/runtime/renderPlanner.ts --ext ts --max-warnings 0"
+    ]
+  }
+]
+
+        Prior batch deviations (address if applicable):
+        [
+  "Scoped renderPlanner.test.ts was run once and failed in the same three pre-existing shader/materializer legacy-graph expectation tests noted by the prior batch; TypeScript and targeted ESLint passed.",
+  "Advisory observation mismatch: executor claimed files not observed in git status/content hash delta: src/tools/video-editor/runtime/renderPlanner.ts",
+  "Advisory audit finding: Executor claimed changed files not present in git status: src/tools/video-editor/runtime/renderPlanner.ts",
+  "Advisory audit finding: Sense check SC3 is missing an executor acknowledgment.",
+  "Advisory audit finding: Sense check SC4 is missing an executor acknowledgment.",
+  "Advisory audit finding: Sense check SC5 is missing an executor acknowledgment.",
+  "Advisory audit finding: Sense check SC6 is missing an executor acknowledgment.",
+  "Advisory audit finding: Sense check SC7 is missing an executor acknowledgment.",
+  "Advisory audit finding: Sense check SC8 is missing an executor acknowledgment.",
+  "Advisory audit finding: Sense check SC9 is missing an executor acknowledgment.",
+  "Advisory audit finding: Sense check SC10 is missing an executor acknowledgment.",
+  "Advisory audit finding: Sense check SC11 is missing an executor acknowledgment.",
+  "Advisory audit finding: Sense check SC12 is missing an executor acknowledgment.",
+  "Advisory audit finding: Sense check SC13 is missing an executor acknowledgment.",
+  "Advisory audit finding: Sense check SC14 is missing an executor acknowledgment.",
+  "Advisory audit finding: Sense check SC15 is missing an executor acknowledgment.",
+  "Advisory audit finding: Sense check SC16 is missing an executor acknowledgment.",
+  "Advisory audit finding: Sense check SC17 is missing an executor acknowledgment.",
+  "Advisory audit finding: Tasks left pending after execute (executor never started them): T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17"
+]
+
+        User action prerequisites:
+        No user_action prerequisites for this batch.
+
+
+        Batch-scoped sense checks:
+        [
+  {
+    "id": "SC3",
+    "task_id": "T3",
+    "verdict": "",
+    "question": "Do planner tests prove guard-fed IDs, live-binding blockers, inactive extension warnings, diagnostic mappings, metadata retention, and wrapper-vs-reducer invariance?"
+  }
+]
+
+
+        ## Execution context (settled - DO NOT re-litigate)
+
+        - SD1: getFastRenderRouteDecision() is removed entirely rather than planner-backed as a shortcut; every render path goes through decideRenderRoute() so planner context is always present. - Resolved the ambiguity flagged in scope-2. Preserving a duplicated fast path would create a third code path distinct from both current approaches. Full removal ensures correctness and single-authority planner context...
+- SD2: Guard scanner code (scanExportConfig(), exportGuard.ts) is preserved as structured scanner input, not deleted. Only its role as readiness authority is demoted. - Explicitly deferred by the North Star ('Do not delete legacy timeline storage fields before compatibility projection and regression tests exist') and confirmed by the plan's should-priority criterion: 'Implementation...
+- SD3: buildExportReadinessPlan() is a thin wrapper that delegates final readiness reduction to planRender(); it cannot compute an independent blocking decision. - North Star constraint: 'Do not add a second export readiness authority beside the planner.' The wrapper-vs-reducer invariant test in Step 1 ensures guard-fed findings may enter planner input but final blocking must ma...
+
+        ## Plan execution order rationale
+
+        1. Add `buildExportReadinessPlan()` and explicit diagnostic mapping first.
+2. Classify blocker categories, then implement only missing planner-owned input paths.
+3. Add planner tests before migrating router and hook consumers.
+4. Fix router hard-block planner context before hook tests depend on it.
+5. Remove the hook fast path and migrate user-facing blocked text to planner blockers.
+6. Split hook tests into mock/assertion migration first, new regressions second.
+7. Reframe guard and integration tests after planner wrapper behavior is proven.
+8. Update docs and readiness doc checks last.
+
+        ## Inter-task guidance from finalize
+
+        Execute in the listed order. The main judgment call is authority ownership: scanner, router, and provider diagnostics are allowed to feed planner input and debug metadata, but user-facing blocked readiness must come from planner-owned `RenderBlocker` objects. Keep heavyweight tasks isolated as the DAG does; do not batch hook migration with router or docs work. The final validation task should run the approved commands in order: `npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/runtime/renderPlanner.test.ts src/tools/video-editor/runtime/renderPlanner.compositionGraph.test.ts`; `npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/lib/renderRouter.test.ts src/tools/video-editor/lib/renderRouter.attach.test.ts`; `npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/hooks/useRenderState.test.tsx src/tools/video-editor/runtime/exportGuard.test.ts`; `npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/examples/extensions/__tests__/live-data-bridge.integration.test.tsx src/tools/video-editor/examples/extensions/__tests__/live-webcam-canary.test.ts src/tools/video-editor/examples/extensions/__tests__/m5-composed-examples.browser.test.tsx src/tools/video-editor/examples/extensions/__tests__/flagship-local-m5-effect-live-canary.integration.test.tsx`; `npm run test:readiness`; `npm run check:no-smoke-tests`; `npm run lint`; `npm run test`. Treat unrelated baseline failures as...
+
+        Note: User chose auto-approve mode. This execution was not manually reviewed at the gate. Exercise extra caution on destructive operations.
+        Robustness level: thorough.
+
+        Requirements:
+        - Execute only the actionable tasks in this batch.
+        - Treat completed tasks as dependency context, not new work.
+        - Return structured JSON only.
+        - Fill in the following template and return it as your JSON response. Only update the entries for this batch's tasks/sense checks.
+        - Template file already written for reference: /workspace/extension-reality-convergence-epic/reigh-app/.megaplan/plans/m3-export-readiness-20260707-2233/execute_batch_3_output.json
+        - Only produce `task_updates` for these tasks: [T3]
+        - `task_updates[].status` must be one of `done`, `skipped`, `completed`, or `blocked`; never `pending` or `in_progress`.
+        - Only produce `sense_check_acknowledgments` for these sense checks: [SC3]
+        - Do not include updates for tasks or sense checks outside this batch.
+        - Some prior file lists may be capped prompt projections with `items`, `omitted_count`, and `full_set_artifact_ref`; use the artifact reference when you need the full set.
+        - Keep `executor_notes` verification-focused.
+        - Best-effort progress checkpointing: if `/workspace/extension-reality-convergence-epic/reigh-app/.megaplan/plans/m3-export-readiness-20260707-2233/execution_batch_3.json` is writable, checkpoint task and sense-check updates there (not `finalize.json`). The harness owns `finalize.json`.
+        - All terminal verification commands must run from the Project directory (`/workspace/extension-reality-convergence-epic/reigh-app`) or a descendant. Do not `cd` to `/workspace/arnold`, an editable-engine mirror, or any shared engine checkout for tests; those paths are outside the session worktree and the sandbox will refuse them.
+        - When verifying changes, run the entire test file or module, not individual test functions. Individual tests miss regressions.
+        - Run tests ONCE, in the FOREGROUND, and wait for them to finish (you have a large time budget). Do NOT background a long test run and poll it in a loop. Slowness is NOT a stall — never relaunch a test command because it "seems stuck"; duplicate concurrent runs contend for CPU and make everything slower. Never run more than one heavy test invocation at a time. Prefer scoping to the changed files; run the full suite only when the task explicitly requires it, and then exactly once.
+        - finalize.json includes baseline_test_failures — a list of test IDs that were already failing before your changes. If a test fails and its ID appears in baseline_test_failures, it is pre-existing — do not scope-creep into fixing it. If baseline_test_failures is null, the baseline could not be captured; use your judgment but err on the side of assuming failures are regressions. A mechanical post-execute suite run by the harness — not you — is the authoritative regression check. Run tests for your own fix loop if needed, then stop; do not loop the suite to make pre-existing failures pass.
+        - If this batch includes the final verification task, write a short script that reproduces the exact bug described in the task, run it to confirm the fix resolves it, then delete the script.
+
+        Batch JSON response template:
+        ```json
+        {
+  "output": "",
+  "files_changed": [],
+  "commands_run": [],
+  "deviations": [],
+  "task_updates": [
+    {
+      "task_id": "T3",
+      "status": "pending",
+      "executor_notes": "",
+      "files_changed": [],
+      "commands_run": [],
+      "auto_attributed_files": false
+    }
+  ],
+  "sense_check_acknowledgments": [
+    {
+      "sense_check_id": "SC3",
+      "executor_note": ""
+    }
+  ]
+}
+        ```
