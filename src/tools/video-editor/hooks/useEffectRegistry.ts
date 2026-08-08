@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import type { DisposeHandle } from '@reigh/editor-sdk';
 import {
   continuousEffects,
@@ -23,6 +23,29 @@ const BUILT_INS = {
   ...exitEffects,
   ...continuousEffects,
 };
+
+/**
+ * Registry-sourced catalog entries carry `registryStatus`; DB/resource-backed
+ * entries never do. The effect catalog merges the registry snapshot into its
+ * `effects` list, so re-registering those entries would (a) overwrite each live
+ * record with one recompiled from catalog metadata (built-ins carry no `code`,
+ * so they would compile to an error component) and (b) invalidate the registry
+ * snapshot, rebuild the catalog and re-enter this hook — an unbounded
+ * registry -> catalog -> registry render loop.
+ */
+function isRegistrySourced(resource: EffectResource): boolean {
+  return resource.registryStatus !== undefined;
+}
+
+/**
+ * Content signature for the registration inputs. The catalog hands back a new
+ * array identity whenever the registry snapshot changes, so identity-based
+ * effect deps would re-run registration forever. Registration only depends on
+ * the effect ids and code, so key the effect on exactly that.
+ */
+function signature(entries: ReadonlyArray<readonly [string, string]>): string {
+  return entries.map(([id, code]) => `${id.length}:${id}:${code.length}:${code}`).join('|');
+}
 
 /**
  * Dual-read registry: registers effects from both the legacy `effects` table
@@ -51,11 +74,30 @@ export function useEffectRegistry(
     };
   }, [standaloneRegistry]);
 
+  const registrableResources = useMemo(
+    () => (resourceEffects ?? []).filter((resource) => !isRegistrySourced(resource)),
+    [resourceEffects],
+  );
+
+  const dbEffectsSignature = useMemo(
+    () => signature((dbEffects ?? []).map((effect) => [effect.slug, effect.code] as const)),
+    [dbEffects],
+  );
+  const resourcesSignature = useMemo(
+    () => signature(registrableResources.map((resource) => [resource.id, resource.code ?? ''] as const)),
+    [registrableResources],
+  );
+
+  // Read the latest inputs inside the effect without making their (unstable)
+  // array identities part of its dependency list.
+  const latestInputs = useRef({ dbEffects, registrableResources });
+  latestInputs.current = { dbEffects, registrableResources };
+
   useEffect(() => {
     const handles: DisposeHandle[] = [];
     const drafts = Object.entries(draftEffects);
-    const db = dbEffects ?? [];
-    const resources = resourceEffects ?? [];
+    const db = latestInputs.current.dbEffects ?? [];
+    const resources = latestInputs.current.registrableResources;
     if (db.length > 0) {
       console.warn('[EffectRegistry] legacy DB effects are deprecated; migrate to resource-based effects via useEffectResources.');
     }
@@ -83,7 +125,7 @@ export function useEffectRegistry(
     return () => {
       handles.forEach((handle) => handle.dispose());
     };
-  }, [dbEffects, draftEffects, registry, resourceEffects]);
+  }, [dbEffectsSignature, draftEffects, registry, resourcesSignature]);
 
   return registry;
 }

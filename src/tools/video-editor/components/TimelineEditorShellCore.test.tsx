@@ -21,6 +21,9 @@ function __clearSlotRenderers() {
   __slotRenderers = {};
 }
 
+/** Device class reported by the mocked timeline store; drives the shell layout branch. */
+let __deviceClass: 'desktop' | 'tablet' | 'phone' = 'desktop';
+
 // ---------------------------------------------------------------------------
 // Mock dependencies
 // ---------------------------------------------------------------------------
@@ -32,7 +35,7 @@ vi.mock('@/tools/video-editor/hooks/timelineStore.ts', () => ({
     selectedClipIds: new Set<string>(),
     selectedTrackId: null,
     resolvedConfig: null,
-    deviceClass: 'desktop' as const,
+    deviceClass: __deviceClass,
     precisionEnabled: false,
     interactionMode: 'browse' as const,
     gestureOwner: null,
@@ -171,7 +174,7 @@ vi.mock('@/tools/video-editor/components/PreviewPanel/PreviewPanel.tsx', () => (
 vi.mock('@/tools/video-editor/components/PreviewPanel/useVideoEditorPreviewSurface.tsx', () => ({
   useVideoEditorPreviewSurface: () => ({
     slotRef: { current: null },
-    portal: null,
+    portal: <div data-testid="preview-portal">Preview portal</div>,
   }),
 }));
 
@@ -252,6 +255,44 @@ describe('TimelineEditorShellCore surface slots', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     __clearSlotRenderers();
+    __deviceClass = 'desktop';
+  });
+
+  // ---- Shell grid row alignment ---------------------------------------------
+  it('declares one grid row for every stacked region of the desktop layout', () => {
+    render(<TimelineEditorShellCore timelineId="test-timeline" />);
+
+    const grid = document.querySelector('main.grid') as HTMLElement | null;
+    expect(grid).toBeTruthy();
+
+    const rows = (grid?.style.gridTemplateRows ?? '').trim().split(/\s+/).filter(Boolean);
+    // preview, divider/toolbar, extension activity region, timeline
+    expect(rows).toHaveLength(4);
+
+    // Every grid child except the row-spanning right panel stacks in column 1.
+    // An undeclared row would push the timeline into an implicit `auto` track,
+    // collapsing the preview's `1fr` to zero height.
+    const stacked = Array.from(grid?.children ?? []).filter(
+      (child) => child.getAttribute('data-video-editor-shell-region') !== 'rightPanel',
+    );
+    expect(stacked).toHaveLength(rows.length);
+  });
+
+  // ---- Shared preview portal ownership --------------------------------------
+  it('does not mount the shared preview portal next to PreviewPanel on phone', () => {
+    __deviceClass = 'phone';
+    render(<TimelineEditorShellCore timelineId="test-timeline" />);
+
+    // PreviewPanel mounts the portal itself, so the shell must not mount a second one.
+    expect(screen.getAllByTestId('preview-panel')).toHaveLength(1);
+    expect(screen.queryByTestId('preview-portal')).toBeNull();
+  });
+
+  it('mounts the shared preview portal for the condensed layout, which has no PreviewPanel', () => {
+    render(<TimelineEditorShellCore timelineId="test-timeline" forceCondensed />);
+
+    expect(screen.queryByTestId('preview-panel')).toBeNull();
+    expect(screen.getAllByTestId('preview-portal')).toHaveLength(1);
   });
 
   // ---- Baseline rendering ---------------------------------------------------

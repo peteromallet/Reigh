@@ -1,5 +1,3 @@
-import { TextDecoder } from 'node:util';
-
 export type JsonRpcId = number | string;
 
 export type JsonRpcTransportErrorClass =

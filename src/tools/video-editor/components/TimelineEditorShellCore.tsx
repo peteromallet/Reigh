@@ -315,7 +315,7 @@ function TimelineEditorShellCoreComponent({
       if (rect.height - nextHeight < MIN_PREVIEW_HEIGHT) {
         return;
       }
-      container.style.gridTemplateRows = `minmax(0,1fr) auto ${nextHeight}px`;
+      container.style.gridTemplateRows = `minmax(0,1fr) auto auto ${nextHeight}px`;
     };
 
     const onMouseUp = () => {
@@ -597,9 +597,15 @@ function TimelineEditorShellCoreComponent({
     </HostContributionErrorBoundary>
   ) : null;
 
+  // Four rows, in DOM order: preview, divider/toolbar, extension activity
+  // region, timeline. The activity region row must be declared — otherwise the
+  // timeline lands in an implicit `auto` row, the activity region takes the
+  // timeline's sizing, and the preview's `1fr` collapses to zero height.
   const gridTemplateRows = isTimelineMaximized
-    ? `${MIN_PREVIEW_HEIGHT}px auto 1fr`
-    : (timelineHeight ? `minmax(0,1fr) auto ${timelineHeight}px` : 'minmax(0,1fr) auto minmax(200px,36%)');
+    ? `${MIN_PREVIEW_HEIGHT}px auto auto 1fr`
+    : (timelineHeight
+      ? `minmax(0,1fr) auto auto ${timelineHeight}px`
+      : 'minmax(0,1fr) auto auto minmax(200px,36%)');
 
   const totalSeconds = useMemo(() => {
     if (!editorData.resolvedConfig) return 1;
@@ -829,10 +835,26 @@ function TimelineEditorShellCoreComponent({
             {isTimelineMaximized ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
           </Button>
         )}
-        <Button type="button" variant="ghost" size="icon" className={toolbarButtonSizeClass} onClick={() => chrome.setScaleWidth((value) => Math.max(value / 1.4, 40))}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className={toolbarButtonSizeClass}
+          title="Zoom out timeline"
+          aria-label="Zoom out timeline"
+          onClick={() => chrome.setScaleWidth((value) => Math.max(value / 1.4, 40))}
+        >
           <ZoomOut className="h-3.5 w-3.5" />
         </Button>
-        <Button type="button" variant="ghost" size="icon" className={toolbarButtonSizeClass} onClick={() => chrome.setScaleWidth((value) => Math.min(value * 1.4, 500))}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className={toolbarButtonSizeClass}
+          title="Zoom in timeline"
+          aria-label="Zoom in timeline"
+          onClick={() => chrome.setScaleWidth((value) => Math.min(value * 1.4, 500))}
+        >
           <ZoomIn className="h-3.5 w-3.5" />
         </Button>
       </div>
@@ -1093,15 +1115,19 @@ function TimelineEditorShellCoreComponent({
         )}
 
         {mobileSinglePane ? (
-          <main className="grid h-full min-h-0 flex-1 animate-in fade-in duration-200 motion-reduce:animate-none motion-reduce:transition-none grid-rows-[auto_auto_minmax(260px,42dvh)_minmax(0,1fr)] gap-3 p-3 transition-opacity">
+          <main className="grid h-full min-h-0 flex-1 animate-in fade-in duration-200 motion-reduce:animate-none motion-reduce:transition-none grid-rows-[auto_auto_auto_minmax(200px,42dvh)_minmax(140px,1fr)] gap-3 p-3 transition-opacity">
             <div>
               {toolbar}
             </div>
 
             {phoneModeBar}
 
-            {/* M1: Extension activity region — between toolbar and timeline */}
-            {activityRegion}
+            {/* M1: Extension activity region — between toolbar and timeline.
+                Kept in its own wrapper so the row count stays constant whether
+                or not the region has anything to show. */}
+            <div>
+              {activityRegion}
+            </div>
 
             <div className="flex min-h-0 flex-col gap-3">
               <div className="relative min-h-0 flex-1">
@@ -1125,7 +1151,7 @@ function TimelineEditorShellCoreComponent({
 
           </main>
         ) : condensed ? (
-          <main className="grid h-full min-h-0 flex-1 animate-in fade-in duration-200 motion-reduce:animate-none motion-reduce:transition-none grid-cols-[minmax(0,1fr)_320px] grid-rows-[auto_minmax(0,1fr)] gap-3 p-3 transition-opacity">
+          <main className="grid h-full min-h-0 flex-1 animate-in fade-in duration-200 motion-reduce:animate-none motion-reduce:transition-none grid-cols-[minmax(0,1fr)_320px] grid-rows-[auto_auto_minmax(0,1fr)] gap-3 p-3 transition-opacity">
             <div className="col-span-1">
               {toolbar}
             </div>
@@ -1135,7 +1161,7 @@ function TimelineEditorShellCoreComponent({
               {activityRegion}
             </div>
 
-            <div className="row-span-2 flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card/80">
+            <div className="row-span-3 flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card/80">
               <div className="flex items-center border-b border-border">
                 <button
                   type="button"
@@ -1239,9 +1265,13 @@ function TimelineEditorShellCoreComponent({
         )}
         {statusBarSlot}
 
-        {/* Reserved surface slots rendered as canaries (host-owned footer region) */}
+        {/* Reserved surface slots rendered as canaries (host-owned footer region).
+            Height-capped and independently scrollable: the canaries render tall
+            placeholder content, and as an unbounded flex item this footer took
+            that height out of the editor above it — collapsing the preview and
+            clipping the timeline. */}
         <div
-          className="flex flex-wrap items-center gap-2 border-t border-border/40 px-3 py-2"
+          className="flex max-h-32 shrink-0 flex-wrap items-start gap-2 overflow-y-auto border-t border-border/40 px-3 py-2"
           data-video-editor-shell-region="reservedSlots"
         >
           {codePanelSlot}
@@ -1249,11 +1279,13 @@ function TimelineEditorShellCoreComponent({
           {stagePanelSlot}
         </div>
       </div>
-      {/* Render the shared preview portal here only when the layout uses
-          a bare `previewSurface.slotRef` host (condensed/mobile single-pane).
-          The full-pane path renders the same portal inside <PreviewPanel>,
-          so guarding here prevents a duplicate <RemotionPreview> in tests. */}
-      {(condensed || mobileSinglePane) && previewPortal}
+      {/* Render the shared preview portal here only when the rendered layout
+          hosts it on a bare `previewSurface.slotRef` — that is the condensed
+          branch alone. `condensed` is also true for single-pane phone, but
+          that branch renders <PreviewPanel>, which mounts this same portal
+          itself, so it has to be excluded or the phone layout mounts a second
+          <RemotionPreview> beside the first. */}
+      {condensed && !mobileSinglePane && previewPortal}
       {/* Extension-contributed dialog slot */}
       {dialogsSlot}
       {isSequenceCreatorOpen && (

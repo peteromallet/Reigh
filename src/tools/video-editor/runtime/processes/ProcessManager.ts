@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import type {
   CapabilityFinding,
   ExtensionDiagnostic,
@@ -177,11 +177,44 @@ function defaultNow(): string {
   return new Date().toISOString();
 }
 
+type NodeProcessRuntime = {
+  env?: Record<string, string | undefined>;
+  getBuiltinModule?: (id: string) => unknown;
+};
+
+/**
+ * `node:child_process` cannot be statically imported here: this module is part
+ * of the browser editor bundle, and a static import makes bundlers externalize
+ * the specifier into a stub that throws on first property access at module
+ * load. Resolve it synchronously through `process.getBuiltinModule` instead,
+ * which is absent in the browser and present in every supported Node runtime.
+ */
+function getNodeProcessRuntime(): NodeProcessRuntime | undefined {
+  return (globalThis as { process?: NodeProcessRuntime }).process;
+}
+
+function loadNodeChildProcess(): typeof import('node:child_process') | null {
+  const runtime = getNodeProcessRuntime();
+  if (typeof runtime?.getBuiltinModule !== 'function') {
+    return null;
+  }
+  const builtin = runtime.getBuiltinModule('node:child_process');
+  return (builtin as typeof import('node:child_process') | undefined) ?? null;
+}
+
 function createDefaultSpawnProcess(spec: ProcessSpec): ChildProcessWithoutNullStreams {
-  return spawn(spec.spawn.command, [...(spec.spawn.args ?? [])], {
+  const childProcess = loadNodeChildProcess();
+  if (!childProcess) {
+    throw new Error(
+      `Cannot spawn process "${spec.id}": node:child_process is unavailable in this runtime. `
+      + 'Pass a custom spawnProcess to createProcessManager for non-Node hosts.',
+    );
+  }
+
+  return childProcess.spawn(spec.spawn.command, [...(spec.spawn.args ?? [])], {
     cwd: spec.spawn.cwd,
     env: {
-      ...process.env,
+      ...getNodeProcessRuntime()?.env,
       ...spec.spawn.env,
     },
     shell: false,

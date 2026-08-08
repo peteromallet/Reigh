@@ -9,7 +9,12 @@ export function isVideoEditorRoute(pathname: string): boolean {
 export function useVideoEditorRouteState() {
   const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
-  const timelineId = searchParams.get('timeline');
+  // The editor mounts a timeline from `?timeline` in app mode and from
+  // `?localTimeline` in the dev-only local (Astrid bridge) mode. Both mount the
+  // same full-height shell, so both have to switch the app layout over to it —
+  // reading only `timeline` left local mode rendering the shell inside the
+  // scrolling page layout, with the timeline pushed below the fold.
+  const timelineId = searchParams.get('timeline') ?? searchParams.get('localTimeline');
   const isEditorRoute = isVideoEditorRoute(pathname);
   const isVideoEditorShellActive = isEditorRoute && Boolean(timelineId);
 
