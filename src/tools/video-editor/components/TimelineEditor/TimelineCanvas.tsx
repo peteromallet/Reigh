@@ -43,6 +43,7 @@ import type { ShotGroup } from '@/tools/video-editor/hooks/useShotGroups.ts';
 import { useTimelineMutableAdapters } from '@/tools/video-editor/hooks/timelineStore.ts';
 import { LABEL_WIDTH } from '@/tools/video-editor/lib/coordinate-utils.ts';
 import {
+  resolveTouchGestureMode,
   shouldExpandTouchTrimHandles,
   type TimelineDeviceClass,
   type TimelineGestureOwner,
@@ -337,6 +338,7 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
   const resizeHandleWidth = shouldExpandTouchTrimHandles(deviceClass, inputModality, interactionMode)
     ? TOUCH_RESIZE_HANDLE_WIDTH
     : RESIZE_HANDLE_WIDTH;
+  const touchGestureMode = resolveTouchGestureMode(deviceClass, interactionMode);
   const minDuration = MIN_ACTION_WIDTH_PX / pixelsPerSecond;
   const { resizePreviewSnapshot, resizeClampedActionId } = useClipResizeGesture({
     timelineWrapperRef: scrollContainerRef,
@@ -661,6 +663,7 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
       <div
         ref={scrollContainerRef}
         className="timeline-canvas-edit-area timeline-scroll relative min-h-0 flex-1 overflow-auto overscroll-contain bg-background/70"
+        data-touch-gesture-mode={touchGestureMode ?? undefined}
         style={{ '--label-width': `${LABEL_WIDTH}px` } as React.CSSProperties}
         onPointerDown={onEditAreaPointerDown}
         onScroll={handleScroll}

@@ -136,6 +136,26 @@ export function shouldExpandTouchTrimHandles(
   return isTouchTimelineInput(deviceClass, inputModality) && interactionMode === 'trim';
 }
 
+/**
+ * Which in-timeline element owns the touch gesture instead of the scrolling edit
+ * area. Elements matching the returned mode must set `touch-action: none`, or the
+ * browser claims the touch for native panning and cancels the pointer stream
+ * mid-drag — `preventDefault()` on pointermove cannot undo that.
+ *
+ * Deliberately keyed on device class rather than `inputModality`: the CSS has to
+ * be in place before the first pointer event, which is what resolves the modality.
+ */
+export function resolveTouchGestureMode(
+  deviceClass: TimelineDeviceClass,
+  interactionMode: TimelineInteractionMode,
+): Extract<TimelineInteractionMode, 'move' | 'trim'> | null {
+  if (deviceClass === 'desktop') {
+    return null;
+  }
+
+  return interactionMode === 'move' || interactionMode === 'trim' ? interactionMode : null;
+}
+
 export function shouldToggleTouchSelection(
   deviceClass: TimelineDeviceClass,
   inputModality: TimelineInputModality,

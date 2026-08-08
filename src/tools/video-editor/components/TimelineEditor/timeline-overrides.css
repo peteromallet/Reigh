@@ -14,6 +14,36 @@
   pointer-events: none;
 }
 
+/* ── Touch gesture ownership ──
+   A touch that starts on an element with `touch-action: auto` is claimed by the
+   browser for native panning, which cancels the pointer stream mid-drag;
+   preventDefault() on pointermove cannot stop it. Each mode hands the gesture to
+   the element that owns it and leaves the rest of the edit area pannable. */
+
+.timeline-canvas-edit-area[data-touch-gesture-mode='move'] .clip-action {
+  touch-action: none;
+}
+
+.timeline-canvas-edit-area[data-touch-gesture-mode='trim'] [data-resize-edge] {
+  touch-action: none;
+  /* Above the touch overflow-menu button, which otherwise covers the clip's right edge */
+  z-index: 30;
+  background: var(--video-editor-accent-bg);
+}
+
+/* Grip affordance so trim handles are discoverable without hover */
+.timeline-canvas-edit-area[data-touch-gesture-mode='trim'] [data-resize-edge]::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2px;
+  height: 40%;
+  transform: translate(-50%, -50%);
+  border-radius: 1px;
+  background: var(--video-editor-accent-border-strong);
+}
+
 /* Floating ghost clone shown during cross-track drag */
 .cross-track-ghost {
   position: fixed;

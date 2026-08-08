@@ -208,6 +208,7 @@ export function TimeRuler({
   return (
     <div
       ref={containerRef}
+      data-testid="timeline-ruler"
       className="relative h-[30px] overflow-hidden border-b border-border bg-card/80 select-none"
     >
       <div
