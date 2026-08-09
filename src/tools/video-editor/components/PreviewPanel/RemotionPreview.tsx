@@ -3,6 +3,7 @@ import { forwardRef, memo, useEffect, useImperativeHandle, useMemo, useRef, useS
 import { Pause, Play, SkipBack } from 'lucide-react';
 import { Player, type PlayerRef } from '@remotion/player';
 import { Button } from '@/shared/components/ui/button.tsx';
+import { cn } from '@/shared/components/ui/contracts/cn.ts';
 import { TimelineRenderer } from '@/tools/video-editor/compositions/TimelineRenderer.tsx';
 import { useEffectDiagnostic, useRenderDiagnostic } from '@/tools/video-editor/hooks/usePerfDiagnostics.ts';
 import { getClipDurationInFrames, parseResolution, secondsToFrames } from '@/tools/video-editor/lib/config-utils.ts';
@@ -17,17 +18,21 @@ export interface PreviewHandle {
   readonly isPlaying: boolean;
 }
 
+const TRANSPORT_BUTTON_CLASS = 'pointer-events-auto rounded-full border-[color:var(--video-editor-stage-control-border)] bg-[var(--video-editor-stage-control-bg)] text-[color:var(--video-editor-stage-fg)] hover:bg-[var(--video-editor-stage-control-bg-hover)]';
+
 interface RemotionPreviewProps {
   config: ResolvedTimelineConfig;
   onTimeUpdate: (time: number) => void;
   playerContainerRef: RefObject<HTMLDivElement>;
   compact?: boolean;
+  /** Phone/tablet chrome: transport controls grow to touch-sized hit targets. */
+  touchChrome?: boolean;
   initialTime?: number;
   currentTime?: number;
 }
 
 const RemotionPreviewComponent = forwardRef<PreviewHandle, RemotionPreviewProps>(function RemotionPreview(
-  { config, onTimeUpdate, playerContainerRef, compact = false, initialTime = 0, currentTime },
+  { config, onTimeUpdate, playerContainerRef, compact = false, touchChrome = false, initialTime = 0, currentTime },
   ref,
 ) {
   const playerRef = useRef<PlayerRef>(null);
@@ -181,9 +186,10 @@ const RemotionPreviewComponent = forwardRef<PreviewHandle, RemotionPreviewProps>
           type="button"
           variant="outline"
           size="icon"
-          className="pointer-events-auto h-8 w-8 rounded-full border-[color:var(--video-editor-stage-control-border)] bg-[var(--video-editor-stage-control-bg)] text-[color:var(--video-editor-stage-fg)] hover:bg-[var(--video-editor-stage-control-bg-hover)]"
+          className={cn(TRANSPORT_BUTTON_CLASS, touchChrome ? 'h-11 w-11' : 'h-8 w-8')}
           onClick={() => playerRef.current?.seekTo(0)}
           title="Jump to beginning"
+          aria-label="Jump to beginning"
         >
           <SkipBack className="h-4 w-4" />
         </Button>
@@ -191,9 +197,10 @@ const RemotionPreviewComponent = forwardRef<PreviewHandle, RemotionPreviewProps>
           type="button"
           variant="outline"
           size="icon"
-          className="pointer-events-auto h-10 w-10 rounded-full border-[color:var(--video-editor-stage-control-border)] bg-[var(--video-editor-stage-control-bg)] text-[color:var(--video-editor-stage-fg)] hover:bg-[var(--video-editor-stage-control-bg-hover)]"
+          className={cn(TRANSPORT_BUTTON_CLASS, touchChrome ? 'h-12 w-12' : 'h-10 w-10')}
           onClick={() => playerRef.current?.toggle()}
           title={isPlaying ? 'Pause' : 'Play'}
+          aria-label={isPlaying ? 'Pause' : 'Play'}
         >
           {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 fill-current" />}
         </Button>

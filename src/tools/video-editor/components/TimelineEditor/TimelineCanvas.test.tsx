@@ -6,6 +6,15 @@ import { TimelineCanvas } from '@/tools/video-editor/components/TimelineEditor/T
 import { DataProviderWrapper, type VideoEditorRuntimeContextValue } from '@/tools/video-editor/contexts/DataProviderContext';
 import { createInteractionState, onInteractionEnd } from '@/tools/video-editor/lib/interaction-state';
 import { requestCenterTimelineClip } from '@/tools/video-editor/lib/timeline-viewport-events';
+import { resolveTouchGestureMode } from '@/tools/video-editor/lib/mobile-interaction-model';
+import {
+  CLIP_ID_ATTR,
+  EDIT_AREA_SELECTOR,
+  RESIZE_EDGE_ATTR,
+  ROW_ID_ATTR,
+  TOUCH_GESTURE_MODE_ATTR,
+  TRACK_ID_ATTR,
+} from '@/tools/video-editor/lib/timeline-dom';
 import { createCommandRegistry, type CommandRegistry } from '@/tools/video-editor/runtime/commandRegistry';
 import type { TimelinePostprocessShaderMetadata, TrackDefinition } from '@/tools/video-editor/types';
 import type { TimelineAction, TimelineRow } from '@/tools/video-editor/types/timeline-canvas';
@@ -325,6 +334,7 @@ function renderCanvas(params?: {
   tracks?: TrackDefinition[];
   rows?: TimelineRow[];
   onAddTextAt?: React.ComponentProps<typeof TimelineCanvas>['onAddTextAt'];
+  onAddEffectLayerAt?: React.ComponentProps<typeof TimelineCanvas>['onAddEffectLayerAt'];
   onOpenSequenceCreator?: React.ComponentProps<typeof TimelineCanvas>['onOpenSequenceCreator'];
   commandRegistry?: CommandRegistry;
   postprocessShader?: TimelinePostprocessShaderMetadata;
@@ -383,6 +393,7 @@ function renderCanvas(params?: {
       onShotGroupSwitchToImages={params?.onShotGroupSwitchToImages}
       interactionStateRef={params?.interactionStateRef}
       onAddTextAt={params?.onAddTextAt}
+      onAddEffectLayerAt={params?.onAddEffectLayerAt}
       onOpenSequenceCreator={params?.onOpenSequenceCreator}
       postprocessShader={params?.postprocessShader}
       onSelectPostprocessShader={params?.onSelectPostprocessShader}
@@ -436,6 +447,33 @@ afterEach(() => {
   setInputModalityFromPointerType.mockClear();
 });
 
+describe('TimelineCanvas DOM contract', () => {
+  it('marks the edit area with the touch mechanism the stylesheet keys on', () => {
+    const { container } = renderCanvas({ deviceClass: 'phone', interactionMode: 'move' });
+    const editArea = container.querySelector(EDIT_AREA_SELECTOR);
+
+    if (!(editArea instanceof HTMLElement)) {
+      throw new Error(`expected a rendered ${EDIT_AREA_SELECTOR}`);
+    }
+    expect(editArea.getAttribute(TOUCH_GESTURE_MODE_ATTR)).toBe(
+      resolveTouchGestureMode('phone', 'move'),
+    );
+  });
+
+  it('writes row, track and trim-handle attributes the gesture layer reads back', () => {
+    const { container } = renderCanvas();
+    const handle = container.querySelector(`[${RESIZE_EDGE_ATTR}='left']`);
+
+    if (!(handle instanceof HTMLElement)) {
+      throw new Error('expected a rendered left trim handle');
+    }
+    expect(handle.getAttribute(CLIP_ID_ATTR)).toBe(action.id);
+    expect(handle.getAttribute(ROW_ID_ATTR)).toBe(row.id);
+    expect(container.querySelector(`[${ROW_ID_ATTR}='${row.id}']`)).toBeTruthy();
+    expect(container.querySelector(`[${TRACK_ID_ATTR}='${track.id}']`)).toBeTruthy();
+  });
+});
+
 describe('TimelineCanvas floating tools', () => {
   it('shows Sequence beside Text and Effect Layer without changing drag payloads', () => {
     const onOpenSequenceCreator = vi.fn();
@@ -467,6 +505,36 @@ describe('TimelineCanvas floating tools', () => {
 
     fireEvent.click(sequenceTool);
     expect(onOpenSequenceCreator).toHaveBeenCalledTimes(1);
+  });
+
+  it('replaces the drag sources with touch-sized tap actions on phone', () => {
+    const onAddTextAt = vi.fn();
+    const onAddEffectLayerAt = vi.fn();
+    renderCanvas({
+      deviceClass: 'phone',
+      inputModality: 'touch',
+      onAddTextAt,
+      onAddEffectLayerAt,
+      onOpenSequenceCreator: vi.fn(),
+      tracks: [{ id: 'A1', kind: 'audio', label: 'A1' }, track],
+      rows: [{ id: 'A1', actions: [] }, row],
+    });
+
+    expect(screen.queryByTitle('Drag onto timeline to add text')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Drag onto timeline to add an effect layer')).not.toBeInTheDocument();
+
+    const textTool = screen.getByRole('button', { name: 'New text at playhead' });
+    const effectTool = screen.getByRole('button', { name: 'New effect layer at playhead' });
+    const sequenceTool = screen.getByRole('button', { name: 'Create animation sequence' });
+    [textTool, effectTool, sequenceTool].forEach((button) => {
+      expect(button.className).toContain('h-10 w-10');
+    });
+
+    fireEvent.click(textTool);
+    fireEvent.click(effectTool);
+    // Both resolve to the first visual track at the playhead, which starts at 0.
+    expect(onAddTextAt).toHaveBeenCalledWith(track.id, 0);
+    expect(onAddEffectLayerAt).toHaveBeenCalledWith(track.id, 0);
   });
 });
 

@@ -7,6 +7,9 @@ import {
   createTimelineStore,
   TimelineStoreProvider,
 } from '@/tools/video-editor/hooks/timelineStore';
+import { TIMELINE_START_LEFT } from '@/tools/video-editor/lib/coordinate-utils';
+import { EDIT_AREA_SELECTOR } from '@/tools/video-editor/lib/timeline-dom';
+import { computeTimelineExtent, maxClipEndSeconds } from '@/tools/video-editor/lib/timeline-scale';
 
 // ---------------------------------------------------------------------------
 // Mocks for hooks that require deep context chains
@@ -208,61 +211,9 @@ function renderWithStore(ui: React.ReactElement, options: { resolvedConfig?: typ
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('TimelineEditorCore — overlay host', () => {
+describe('TimelineEditorCore', () => {
   afterEach(() => {
     vi.clearAllMocks();
-  });
-
-  describe('overlay host rendering', () => {
-    it('renders the timeline overlay host container above the edit area', () => {
-      renderWithStore(<TimelineEditorCore />);
-      const host = screen.getByTestId('timeline-overlay-host');
-      expect(host).toBeInTheDocument();
-      // Default: no overlay has claimed pointer, so pointer-events should be 'none'
-      expect(host.style.pointerEvents).toBe('none');
-      // Class should also indicate pointer-events-none
-      expect(host.className).toContain('pointer-events-none');
-    });
-
-    it('positions the overlay host absolutely to cover the wrapper area', () => {
-      renderWithStore(<TimelineEditorCore />);
-      const host = screen.getByTestId('timeline-overlay-host');
-      expect(host.className).toContain('absolute');
-      expect(host.className).toContain('inset-0');
-    });
-
-    it('renders overlay host at z-20 above the edit area', () => {
-      renderWithStore(<TimelineEditorCore />);
-      const host = screen.getByTestId('timeline-overlay-host');
-      expect(host.className).toContain('z-20');
-    });
-  });
-
-  describe('pointer policy containment', () => {
-    it('defaults to pointer-events-none so overlays do not steal gestures', () => {
-      renderWithStore(<TimelineEditorCore />);
-      const host = screen.getByTestId('timeline-overlay-host');
-      expect(host.style.pointerEvents).toBe('none');
-      expect(screen.queryByTestId('timeline-overlay-claimed-indicator')).toBeNull();
-    });
-
-    it('does NOT render the claimed indicator when no overlay has claimed pointer', () => {
-      renderWithStore(<TimelineEditorCore />);
-      expect(screen.queryByTestId('timeline-overlay-claimed-indicator')).toBeNull();
-    });
-  });
-
-  describe('viewport and playhead props flow', () => {
-    it('renders the timeline wrapper for scroll tracking', () => {
-      const { container } = renderWithStore(<TimelineEditorCore />);
-      expect(container.querySelector('.timeline-wrapper')).toBeInTheDocument();
-    });
-
-    it('exposes gestureOwner and setGestureOwner to overlay render props', () => {
-      const { container } = renderWithStore(<TimelineEditorCore />);
-      expect(container.querySelector('.timeline-wrapper')).toBeInTheDocument();
-      expect(setGestureOwner).toBeDefined();
-    });
   });
 
   describe('selection and playhead tracking', () => {
@@ -272,11 +223,6 @@ describe('TimelineEditorCore — overlay host', () => {
     });
 
     it('tracks selectedTrackId from the data store', () => {
-      const { container } = renderWithStore(<TimelineEditorCore />);
-      expect(container.querySelector('.timeline-wrapper')).toBeInTheDocument();
-    });
-
-    it('reads currentTime from playback context for overlay render props', () => {
       const { container } = renderWithStore(<TimelineEditorCore />);
       expect(container.querySelector('.timeline-wrapper')).toBeInTheDocument();
     });
@@ -320,5 +266,41 @@ describe('TimelineEditorCore — overlay host', () => {
         contributionId: 'post-grade',
       });
     });
+  });
+});
+
+describe('TimelineEditorCore — geometry', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // Key Invariant 4: ruler width, grid width, scroll-content width and the
+  // overlay's totalWidth all come from one computeTimelineExtent result.
+  it('sizes the ruler and the grid from the shared timeline extent', () => {
+    const { container } = renderWithStore(<TimelineEditorCore />);
+    const { totalWidth } = computeTimelineExtent({
+      maxEndSeconds: maxClipEndSeconds(defaultData.rows),
+      scale: 30,
+      scaleWidth: 30,
+      startLeft: TIMELINE_START_LEFT,
+    });
+
+    const rulerContent = screen.getByTestId('timeline-ruler').firstElementChild;
+    const editArea = container.querySelector(EDIT_AREA_SELECTOR);
+    const grid = editArea?.children[0];
+    const scrollContentFooter = editArea?.children[1];
+
+    if (
+      !(rulerContent instanceof HTMLElement)
+      || !(grid instanceof HTMLElement)
+      || !(scrollContentFooter instanceof HTMLElement)
+    ) {
+      throw new Error('expected a rendered ruler, grid and scroll footer');
+    }
+
+    expect(totalWidth).toBeGreaterThan(TIMELINE_START_LEFT);
+    expect(rulerContent.style.width).toBe(`${totalWidth}px`);
+    expect(grid.style.width).toBe(`${totalWidth}px`);
+    expect(scrollContentFooter.style.width).toBe(`${totalWidth}px`);
   });
 });

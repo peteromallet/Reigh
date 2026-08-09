@@ -3,6 +3,11 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ComponentProps } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ClipMeta } from '@/tools/video-editor/lib/timeline-data';
+import {
+  CLIP_ACTION_SELECTOR,
+  CLIP_ID_ATTR,
+  ROW_ID_ATTR,
+} from '@/tools/video-editor/lib/timeline-dom';
 import { DataProviderWrapper, type VideoEditorRuntimeContextValue } from '@/tools/video-editor/contexts/DataProviderContext';
 import { createCommandRegistry, type CommandRegistry } from '@/tools/video-editor/runtime/commandRegistry';
 import type { TimelineAction } from '@/tools/video-editor/types/timeline-canvas';
@@ -251,6 +256,19 @@ describe('ClipAction', () => {
     expect(screen.getByText('Delete Clip')).toBeInTheDocument();
 
     window.requestAnimationFrame = originalRequestAnimationFrame;
+  });
+
+  it('writes the clip half of the timeline DOM contract', () => {
+    mockUseWaveformData();
+    const props = buildProps({ isSelected: false, selectedClipIds: [] });
+    const { container } = render(<ClipAction {...props} />);
+    const clipRoot = container.querySelector(CLIP_ACTION_SELECTOR);
+
+    if (!(clipRoot instanceof HTMLElement)) {
+      throw new Error(`expected a rendered ${CLIP_ACTION_SELECTOR}`);
+    }
+    expect(clipRoot.getAttribute(CLIP_ID_ATTR)).toBe('clip-1');
+    expect(clipRoot.getAttribute(ROW_ID_ATTR)).toBe('V1');
   });
 
   it('selects the clip when the outer button receives Enter or Space', () => {

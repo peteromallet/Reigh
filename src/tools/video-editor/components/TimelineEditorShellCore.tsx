@@ -20,7 +20,12 @@ import { PropertiesPanel } from '@/tools/video-editor/components/PropertiesPanel
 import { VideoEditorAssetPanelSurface } from '@/tools/video-editor/components/PropertiesPanel/VideoEditorAssetPanelSurface.tsx';
 import { SequenceCreatorPanel } from '@/tools/video-editor/components/SequenceCreator/SequenceCreatorPanel.tsx';
 import { ThemeChip } from '@/tools/video-editor/components/ThemeChip.tsx';
+import {
+  TimelineModeSwitcher,
+  type TimelineSwitchableMode,
+} from '@/tools/video-editor/components/TimelineModeSwitcher.tsx';
 import { TimelineEditor } from '@/tools/video-editor/components/TimelineEditor/TimelineEditor.tsx';
+import { TimelineErrorBoundary } from '@/tools/video-editor/components/TimelineEditor/TimelineErrorBoundary.tsx';
 import {
   useVideoEditorAssetPanels,
   useVideoEditorDialogDescriptors,
@@ -40,11 +45,15 @@ import { useTimelineRealtime } from '@/tools/video-editor/hooks/useTimelineRealt
 import { getTimelineDurationInFrames, parseResolution } from '@/tools/video-editor/lib/config-utils.ts';
 import { buildKeyboardDeleteMutation } from '@/tools/video-editor/lib/keyboard-delete.ts';
 import {
+  APP_PANE_RAIL_GUTTER_PX,
   areTimelineInteractionTargetsEqual,
-  type TimelineInteractionMode,
+  resolveTimelineModeSwitcherVariant,
+  shouldReserveAppPaneRailGutter,
   type TimelineInspectorTarget,
 } from '@/tools/video-editor/lib/mobile-interaction-model.ts';
 import { bootDiagnostics, MemoryPressureDetector } from '@/tools/video-editor/lib/perf-diagnostics.ts';
+import { shellRegionAttrs } from '@/tools/video-editor/lib/timeline-dom.ts';
+import { clampTimelineScaleWidth, TIMELINE_ZOOM_STEP } from '@/tools/video-editor/lib/timeline-scale.ts';
 import { useRenderDiagnostic } from '@/tools/video-editor/hooks/usePerfDiagnostics.ts';
 import { useEditorSync } from '@/tools/video-editor/hooks/useEditorSync.ts';
 import { dispatchAppEvent } from '@/shared/lib/typedEvents.ts'
@@ -82,13 +91,6 @@ const CHECKPOINT_TRIGGER_BADGE_VARIANT = {
   semantic: 'destructive',
   manual: 'default',
 } as const;
-const PHONE_MODE_ITEMS: Array<{ mode: Exclude<TimelineInteractionMode, 'precision'>; label: string }> = [
-  { mode: 'browse', label: 'Browse' },
-  { mode: 'select', label: 'Select' },
-  { mode: 'move', label: 'Move' },
-  { mode: 'trim', label: 'Trim' },
-];
-
 /** Slots reserved for future milestones — rendered as canaries. */
 const RESERVED_SLOT_NAMES: ReadonlySet<VideoEditorSlotName> = new Set([
   'codePanel',
@@ -410,7 +412,7 @@ function TimelineEditorShellCoreComponent({
     }
   }, [condensed, condensedRightPanel, hasClipSelection, isTablet]);
 
-  const previewSurface = useVideoEditorPreviewSurface({ compact: condensed });
+  const previewSurface = useVideoEditorPreviewSurface({ compact: condensed, touchChrome });
 
   // Extension slots: hosts can override entire chrome regions.
   const slotRenderers = useVideoEditorSlotRenderers();
@@ -635,66 +637,45 @@ function TimelineEditorShellCoreComponent({
     setCondensedRightPanel('properties');
   }, [editorOps, inspectorTarget, mobileSinglePane]);
 
-  const handlePhoneModeChange = useCallback((mode: Exclude<TimelineInteractionMode, 'precision'>) => {
+  const handleInteractionModeChange = useCallback((mode: TimelineSwitchableMode) => {
     editorOps.setInteractionMode(mode);
     editorOps.setContextTarget({ kind: 'timeline' });
     editorOps.setInspectorTarget(inspectorTarget);
   }, [editorOps, inspectorTarget]);
 
-  const togglePhonePrecision = useCallback(() => {
+  const toggleInteractionPrecision = useCallback(() => {
     editorOps.setPrecisionEnabled(!editorData.precisionEnabled);
     editorOps.setContextTarget({ kind: 'timeline' });
     editorOps.setInspectorTarget(inspectorTarget);
   }, [editorData.precisionEnabled, editorOps, inspectorTarget]);
 
-  const phoneModeBar = mobileSinglePane ? (
-    <div
-      className="rounded-xl border border-border bg-card/80 p-1"
-      role="toolbar"
-      aria-label="Phone timeline mode bar"
-      data-shell-interaction="true"
-    >
-      <div className="grid grid-cols-5 gap-1">
-        {PHONE_MODE_ITEMS.map((item) => {
-          const isActive = editorData.interactionMode === item.mode;
-          return (
-            <button
-              key={item.mode}
-              type="button"
-              className={cn(
-                'min-h-11 rounded-lg px-2 py-2 text-[11px] font-medium uppercase tracking-[0.12em] transition-colors motion-reduce:transition-none',
-                isActive
-                  ? 'bg-accent text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-              )}
-              aria-pressed={isActive}
-              onClick={() => handlePhoneModeChange(item.mode)}
-            >
-              {item.label}
-            </button>
-          );
-        })}
-        <button
-          type="button"
-          className={cn(
-            'min-h-11 rounded-lg px-2 py-2 text-[11px] font-medium uppercase tracking-[0.12em] transition-colors motion-reduce:transition-none',
-            editorData.precisionEnabled
-              ? 'bg-sky-500/15 text-sky-100 ring-1 ring-sky-400/50'
-              : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-          )}
-          aria-pressed={editorData.precisionEnabled}
-          onClick={togglePhonePrecision}
-        >
-          Precision
-        </button>
-      </div>
-      <div className="px-2 pt-2 text-[11px] text-muted-foreground">
-        {hasClipSelection
-          ? `${inspectorButtonLabel} actions are available in the inspector.`
-          : 'Open the inspector for move, trim, and timeline actions.'}
-      </div>
-    </div>
+  /** Desktop is modeless and gets nothing; the phone's stacked layout gets the
+   *  full-width bar; every other touch layout (tablet, force-condensed phone)
+   *  gets the compact segmented control in the toolbar row. */
+  /** Keeps editor chrome out of the band the host app's fixed pane-control tabs
+   *  occupy at the left/right viewport edges. */
+  const mainPaddingInline = shouldReserveAppPaneRailGutter(editorData.deviceClass)
+    ? APP_PANE_RAIL_GUTTER_PX
+    : undefined;
+
+  const modeSwitcherVariant = resolveTimelineModeSwitcherVariant(
+    editorData.deviceClass,
+    mobileSinglePane ? 'single-pane' : 'split',
+  );
+
+  const modeSwitcher = modeSwitcherVariant ? (
+    <TimelineModeSwitcher
+      variant={modeSwitcherVariant}
+      interactionMode={editorData.interactionMode}
+      precisionEnabled={editorData.precisionEnabled}
+      onModeChange={handleInteractionModeChange}
+      onTogglePrecision={toggleInteractionPrecision}
+      hintSuffix={hasClipSelection ? ` ${inspectorButtonLabel} actions are in the inspector.` : undefined}
+    />
   ) : null;
+
+  const phoneModeBar = modeSwitcherVariant === 'bar' ? modeSwitcher : null;
+  const toolbarModeSwitcher = modeSwitcherVariant === 'compact' ? modeSwitcher : null;
 
   const saveBadge = (
     <Badge variant={STATUS_VARIANT[chrome.saveStatus]} className="h-5 px-1.5 text-[10px] capitalize">
@@ -799,7 +780,16 @@ function TimelineEditorShellCoreComponent({
   );
 
   const toolbar = (
-    <div className={cn('flex items-center justify-between gap-2 rounded-lg border border-border/70 bg-card/80 px-2 text-muted-foreground', touchChrome ? 'min-h-11 py-1' : 'h-7')}>
+    <div
+      className={cn(
+        'flex items-center justify-between gap-2 rounded-lg border border-border/70 bg-card/80 px-2 text-muted-foreground',
+        touchChrome ? 'min-h-11 py-1' : 'h-7',
+        // The compact mode switcher rides in this row. It fits inline on tablet
+        // landscape and wraps to a second line on portrait, which keeps the
+        // preview's `1fr` intact where vertical space is tightest.
+        toolbarModeSwitcher && 'h-auto flex-wrap',
+      )}
+    >
       <div className="flex items-center gap-1">
         {condensed && !forceCondensed && onNavigateHome && (
           <button
@@ -814,6 +804,7 @@ function TimelineEditorShellCoreComponent({
         {syncButton}
         {historyControls}
       </div>
+      {toolbarModeSwitcher}
       {!condensed && (
         <div
           className="flex h-full flex-1 cursor-row-resize items-center justify-center"
@@ -842,7 +833,7 @@ function TimelineEditorShellCoreComponent({
           className={toolbarButtonSizeClass}
           title="Zoom out timeline"
           aria-label="Zoom out timeline"
-          onClick={() => chrome.setScaleWidth((value) => Math.max(value / 1.4, 40))}
+          onClick={() => chrome.setScaleWidth((value) => clampTimelineScaleWidth(value / TIMELINE_ZOOM_STEP))}
         >
           <ZoomOut className="h-3.5 w-3.5" />
         </Button>
@@ -853,7 +844,7 @@ function TimelineEditorShellCoreComponent({
           className={toolbarButtonSizeClass}
           title="Zoom in timeline"
           aria-label="Zoom in timeline"
-          onClick={() => chrome.setScaleWidth((value) => Math.min(value * 1.4, 500))}
+          onClick={() => chrome.setScaleWidth((value) => clampTimelineScaleWidth(value * TIMELINE_ZOOM_STEP))}
         >
           <ZoomIn className="h-3.5 w-3.5" />
         </Button>
@@ -894,9 +885,18 @@ function TimelineEditorShellCoreComponent({
   );
 
   const previewOverlay = (
-    <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center justify-between px-3 py-3" data-shell-interaction="true">
-      <span className="pointer-events-auto rounded bg-background/70 px-1.5 py-0.5 font-mono text-[11px] tracking-[0.08em] text-muted-foreground backdrop-blur-sm">{playback.formatTime(playback.currentTime)}</span>
-      <div className="pointer-events-auto flex items-center gap-1">
+    <div
+      className={cn(
+        'pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-2 px-3 py-3',
+        // Phone is too narrow for the full `APP_PANE_RAIL_GUTTER_PX` inset on the
+        // whole layout, but the app's right-hand pane tab lands exactly on this
+        // chip row there and was covering the Render button. Inset the row alone.
+        mobileSinglePane && 'pr-14',
+      )}
+      data-shell-interaction="true"
+    >
+      <span className="pointer-events-auto shrink-0 rounded bg-background/70 px-1.5 py-0.5 font-mono text-[11px] tracking-[0.08em] text-muted-foreground backdrop-blur-sm">{playback.formatTime(playback.currentTime)}</span>
+      <div className="pointer-events-auto flex min-w-0 flex-wrap items-center justify-end gap-1">
         <ThemeChip timeline={editorData.data?.config} />
         {mobileSinglePane && (
           <Dialog
@@ -972,10 +972,13 @@ function TimelineEditorShellCoreComponent({
           </Button>
         )}
         {/* M6: Export dropdown — compile-only formats near render controls */}
+        {/* Collapsed to a chip: this sits in the preview overlay bar, and at its
+            natural width it laid a 320px card across the video on every device. */}
         <LiveSourcesPanel
           timelineConfig={editorData.resolvedConfig}
           onRemoveSourceBindings={handleRemoveLiveSourceBindings}
           compact={condensed}
+          collapsible
         />
         {hasAnyExportFormat && (
           <DropdownMenu>
@@ -1080,6 +1083,16 @@ function TimelineEditorShellCoreComponent({
     </div>
   );
 
+  /** The timeline region, contained so a render throw under it cannot take the
+   *  toolbar (and therefore undo) down with it. Shared by all three layout
+   *  branches — the boundary is per-branch instance, which is what we want: a
+   *  layout switch re-mounts the timeline anyway. */
+  const timelineRegion = (
+    <TimelineErrorBoundary>
+      <TimelineEditor onOpenSequenceCreator={() => setIsSequenceCreatorOpen(true)} />
+    </TimelineErrorBoundary>
+  );
+
   const previewPortal = previewSurface.portal;
 
   return (
@@ -1115,7 +1128,10 @@ function TimelineEditorShellCoreComponent({
         )}
 
         {mobileSinglePane ? (
-          <main className="grid h-full min-h-0 flex-1 animate-in fade-in duration-200 motion-reduce:animate-none motion-reduce:transition-none grid-rows-[auto_auto_auto_minmax(200px,42dvh)_minmax(140px,1fr)] gap-3 p-3 transition-opacity">
+          <main
+            className="grid h-full min-h-0 flex-1 animate-in fade-in duration-200 motion-reduce:animate-none motion-reduce:transition-none grid-rows-[auto_auto_auto_minmax(200px,42dvh)_minmax(140px,1fr)] gap-3 p-3 transition-opacity"
+            style={{ paddingInline: mainPaddingInline }}
+          >
             <div>
               {toolbar}
             </div>
@@ -1146,12 +1162,15 @@ function TimelineEditorShellCoreComponent({
             </div>
 
             <div className="relative min-h-0 overflow-hidden">
-              <TimelineEditor onOpenSequenceCreator={() => setIsSequenceCreatorOpen(true)} />
+              {timelineRegion}
             </div>
 
           </main>
         ) : condensed ? (
-          <main className="grid h-full min-h-0 flex-1 animate-in fade-in duration-200 motion-reduce:animate-none motion-reduce:transition-none grid-cols-[minmax(0,1fr)_320px] grid-rows-[auto_auto_minmax(0,1fr)] gap-3 p-3 transition-opacity">
+          <main
+            className="grid h-full min-h-0 flex-1 animate-in fade-in duration-200 motion-reduce:animate-none motion-reduce:transition-none grid-cols-[minmax(0,1fr)_320px] grid-rows-[auto_auto_minmax(0,1fr)] gap-3 p-3 transition-opacity"
+            style={{ paddingInline: mainPaddingInline }}
+          >
             <div className="col-span-1">
               {toolbar}
             </div>
@@ -1208,7 +1227,7 @@ function TimelineEditorShellCoreComponent({
             </div>
 
             <div className="relative col-span-1 min-h-0 overflow-hidden">
-              <TimelineEditor onOpenSequenceCreator={() => setIsSequenceCreatorOpen(true)} />
+              {timelineRegion}
             </div>
 
           </main>
@@ -1221,13 +1240,14 @@ function TimelineEditorShellCoreComponent({
               gridTemplateColumns: leftPanelSlot
                 ? 'auto minmax(0,1fr) 360px'
                 : 'minmax(0,1fr) 360px',
+              paddingInline: mainPaddingInline,
             }}
           >
             {/* Left panel surface slot — host-owned placement */}
             {leftPanelSlot && (
               <div
                 className="row-span-2 min-h-0 w-14 overflow-hidden"
-                data-video-editor-shell-region="leftPanel"
+                {...shellRegionAttrs('leftPanel')}
               >
                 {leftPanelSlot}
               </div>
@@ -1238,7 +1258,7 @@ function TimelineEditorShellCoreComponent({
               <PreviewPanel surface={previewSurface} />
             </div>
 
-            <div className="row-span-2 min-h-0 overflow-hidden" data-video-editor-shell-region="rightPanel">
+            <div className="row-span-2 min-h-0 overflow-hidden" {...shellRegionAttrs('rightPanel')}>
               {rightPanelSlot ?? (
                 <>
                   {assetPanelSlot}
@@ -1257,7 +1277,7 @@ function TimelineEditorShellCoreComponent({
             </div>
 
             <div className="relative min-h-0 overflow-hidden" style={{ gridColumn: leftPanelSlot ? '2 / span 2' : '1 / span 2' }}>
-              <TimelineEditor onOpenSequenceCreator={() => setIsSequenceCreatorOpen(true)} />
+              {timelineRegion}
               {timelineFooterSlot}
             </div>
 
@@ -1272,7 +1292,7 @@ function TimelineEditorShellCoreComponent({
             clipping the timeline. */}
         <div
           className="flex max-h-32 shrink-0 flex-wrap items-start gap-2 overflow-y-auto border-t border-border/40 px-3 py-2"
-          data-video-editor-shell-region="reservedSlots"
+          {...shellRegionAttrs('reservedSlots')}
         >
           {codePanelSlot}
           {writingPanelSlot}

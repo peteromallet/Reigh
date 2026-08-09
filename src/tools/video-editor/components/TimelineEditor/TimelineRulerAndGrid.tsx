@@ -19,6 +19,8 @@ interface TimelineRulerAndGridProps {
   setInputModalityFromPointerType: (pointerType: string | null | undefined) => TimelineInputModality;
   unusedTrackCount?: number;
   onClearUnusedTracks?: () => void;
+  /** See `TimeRulerProps.labelRightInsetPx`. */
+  labelRightInsetPx?: number;
 }
 
 export const buildGridBackground = (
@@ -48,6 +50,7 @@ export function TimelineRulerAndGrid({
   setInputModalityFromPointerType,
   unusedTrackCount,
   onClearUnusedTracks,
+  labelRightInsetPx,
 }: TimelineRulerAndGridProps) {
   return (
     <>
@@ -73,6 +76,7 @@ export function TimelineRulerAndGrid({
         onCursorDrag={onCursorDrag}
         setGestureOwner={setGestureOwner}
         setInputModalityFromPointerType={setInputModalityFromPointerType}
+        labelRightInsetPx={labelRightInsetPx}
       />
     </>
   );

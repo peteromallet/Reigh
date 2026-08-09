@@ -200,9 +200,14 @@ vi.mock('@/tools/video-editor/lib/keyboard-delete.ts', () => ({
   buildKeyboardDeleteMutation: () => null,
 }));
 
-vi.mock('@/tools/video-editor/lib/mobile-interaction-model.ts', () => ({
-  areTimelineInteractionTargetsEqual: () => true,
-}));
+// Spread the real module: the shell reads several policy predicates from it, and
+// a hand-listed mock silently breaks every time one is added.
+vi.mock('@/tools/video-editor/lib/mobile-interaction-model.ts', async () => {
+  const actual = await vi.importActual<typeof import('@/tools/video-editor/lib/mobile-interaction-model.ts')>(
+    '@/tools/video-editor/lib/mobile-interaction-model.ts',
+  );
+  return { ...actual, areTimelineInteractionTargetsEqual: () => true };
+});
 
 vi.mock('@/shared/lib/typedEvents.ts', () => ({
   dispatchAppEvent: vi.fn(),

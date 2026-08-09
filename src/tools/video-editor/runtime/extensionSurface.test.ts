@@ -2,12 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   normalizeExtensionRuntime,
   DEFAULT_VIDEO_EDITOR_EXTENSION_RUNTIME,
-  getTimelineOverlayContributions,
 } from '@/tools/video-editor/runtime/extensionSurface.ts';
 import type {
   ExtensionRuntime,
   InactiveReservedContribution,
-  TimelineOverlayRenderProps,
 } from '@/tools/video-editor/runtime/extensionSurface.ts';
 import {
   defineExtension,
@@ -1199,38 +1197,6 @@ describe('normalizeExtensionRuntime — timelineOverlay', () => {
     });
     const rt = normalizeExtensionRuntime([extA]);
     expect(rt.config.overlays).toEqual([]);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// getTimelineOverlayContributions
-// ---------------------------------------------------------------------------
-
-describe('getTimelineOverlayContributions', () => {
-  const baseRenderProps: Omit<TimelineOverlayRenderProps, 'pointerClaimed' | 'claimPointer' | 'releasePointer'> = {
-    scrollLeft: 0,
-    scrollTop: 0,
-    viewportWidth: 800,
-    viewportHeight: 600,
-    totalWidth: 2000,
-    totalHeight: 400,
-    pixelsPerSecond: 30,
-    startLeft: 160,
-    playheadTime: 5,
-    isPlaying: false,
-    selectedClipIds: new Set<string>(),
-    selectedTrackId: null,
-    gestureOwner: 'none',
-    setGestureOwner: () => {},
-  };
-
-  it('returns an empty frozen array when overlays list is empty', () => {
-    const result = getTimelineOverlayContributions(
-      [],
-      { ...baseRenderProps, claimPointer: () => {}, releasePointer: () => {} },
-      null,
-    );
-    expect(result).toEqual([]);
   });
 });
 

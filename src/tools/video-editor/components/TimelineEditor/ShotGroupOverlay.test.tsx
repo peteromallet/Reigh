@@ -2,6 +2,12 @@
 import { fireEvent, render } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { ShotGroupLabels, type PositionedShotGroup } from './ShotGroupOverlay';
+import {
+  ACTION_ID_ATTR,
+  SHOT_GROUP_DRAG_ANCHOR_CLIP_ID_ATTR,
+  SHOT_GROUP_DRAG_ANCHOR_ROW_ID_ATTR,
+  SHOT_GROUP_LABEL_ACTION_ID,
+} from '@/tools/video-editor/lib/timeline-dom';
 
 const positionedShotGroups: PositionedShotGroup[] = [{
   key: 'shot-1:V1',
@@ -22,6 +28,24 @@ const positionedShotGroups: PositionedShotGroup[] = [{
 }];
 
 describe('ShotGroupLabels', () => {
+  it('carries the drag-anchor attributes the clip drag machine resolves', () => {
+    const { getByTitle } = render(
+      <ShotGroupLabels
+        positionedShotGroups={positionedShotGroups}
+        hidden={false}
+        showTouchActions={false}
+        scrollLeft={0}
+        scrollTop={0}
+        openShotGroupMenu={vi.fn()}
+      />,
+    );
+    const label = getByTitle('Shot 1');
+
+    expect(label.getAttribute(ACTION_ID_ATTR)).toBe(SHOT_GROUP_LABEL_ACTION_ID);
+    expect(label.getAttribute(SHOT_GROUP_DRAG_ANCHOR_CLIP_ID_ATTR)).toBe('clip-1');
+    expect(label.getAttribute(SHOT_GROUP_DRAG_ANCHOR_ROW_ID_ATTR)).toBe('V1');
+  });
+
   it('lets pointerdown bubble so label drags reach the shared drag listener', () => {
     const parentPointerDown = vi.fn();
     const { getByTitle } = render(

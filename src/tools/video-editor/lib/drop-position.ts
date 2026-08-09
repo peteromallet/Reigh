@@ -2,6 +2,7 @@ import type { DragEvent as ReactDragEvent, MutableRefObject } from 'react';
 import { getDragType } from '@/shared/lib/dnd/dragDrop.ts';
 import { findNearestFreeTrack, rawRowIndexFromY, trySnapToEdge } from '@/tools/video-editor/lib/coordinate-utils.ts';
 import { createTimelineScale } from '@/tools/video-editor/lib/timeline-scale.ts';
+import { EDIT_AREA_SELECTOR } from '@/tools/video-editor/lib/timeline-dom.ts';
 import type { TimelineData } from '@/tools/video-editor/lib/timeline-data.ts';
 import type { TrackKind } from '@/tools/video-editor/types/index.ts';
 
@@ -66,7 +67,7 @@ export const getTimelineDomNodes = (wrapper: HTMLDivElement): TimelineDomNodes =
     return { wrapper, ...cached };
   }
 
-  const editArea = wrapper.querySelector<HTMLElement>('.timeline-canvas-edit-area');
+  const editArea = wrapper.querySelector<HTMLElement>(EDIT_AREA_SELECTOR);
   // In TimelineCanvas the edit area IS the scroll container (grid).
   const grid = editArea;
   const nextNodes = { editArea, grid };

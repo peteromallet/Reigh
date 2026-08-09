@@ -14,6 +14,7 @@ import {
 import { DataProviderContext } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
 import { useWaveformData } from '@/tools/video-editor/hooks/useWaveformData.ts';
 import type { ClipMeta } from '@/tools/video-editor/lib/timeline-data.ts';
+import { CLIP_ACTION_CLASS, clipActionAttrs } from '@/tools/video-editor/lib/timeline-dom.ts';
 import type { CommandRegistry, ContextMenuItemEntry } from '@/tools/video-editor/runtime/commandRegistry.ts';
 import type { TimelineAction } from '@/tools/video-editor/types/timeline-canvas.ts';
 import type { ReighExtension, TargetContextPayload } from '@reigh/editor-sdk';
@@ -530,7 +531,7 @@ function ClipActionComponent({
         role="button"
         tabIndex={0}
         className={cn(
-          'clip-action group relative flex h-full w-full select-none overflow-hidden rounded-md border text-left outline-none',
+          `${CLIP_ACTION_CLASS} group relative flex h-full w-full select-none overflow-hidden rounded-md border text-left outline-none`,
           isEffectLayer && isSelected
             ? 'border-violet-400 bg-violet-500/20 text-violet-50'
             : isEffectLayer
@@ -539,8 +540,7 @@ function ClipActionComponent({
             ? 'border-sky-400 bg-sky-500/20 text-sky-50'
             : 'border-border bg-card/90 text-foreground hover:border-accent',
         )}
-        data-clip-id={action.id}
-        data-row-id={clipMeta.track}
+        {...clipActionAttrs(action.id, clipMeta.track)}
         onKeyDown={(event) => {
           if (event.currentTarget !== event.target) {
             return;

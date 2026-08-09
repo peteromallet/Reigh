@@ -31,6 +31,7 @@ import { useTimelineState } from '@/tools/video-editor/hooks/useTimelineState';
 
 const mocks = vi.hoisted(() => {
   const syncSlices = vi.fn();
+  const setMounted = vi.fn();
   const timelineData = {
     clips: [],
     tracks: [],
@@ -39,6 +40,7 @@ const mocks = vi.hoisted(() => {
   };
   return {
     syncSlices,
+    setMounted,
     timelineData,
     useEffectRegistry: vi.fn(),
     emptyEffectCatalog: {
@@ -71,6 +73,7 @@ const mocks = vi.hoisted(() => {
         data: { data: timelineData },
         timelineOps: null,
         syncSlices,
+        setMounted,
       }),
     },
   };
@@ -2206,6 +2209,7 @@ describe('M1: proposal persistence provider lifecycle', () => {
           data: { data: mocks.timelineData },
           timelineOps: mockOps as any,
           syncSlices: mocks.syncSlices,
+          setMounted: mocks.setMounted,
         }),
       },
     } as any);
@@ -2263,6 +2267,7 @@ describe('M1: proposal persistence provider lifecycle', () => {
           data: { data: mocks.timelineData },
           timelineOps: mockOps as any,
           syncSlices: mocks.syncSlices,
+          setMounted: mocks.setMounted,
         }),
       },
     } as any);
@@ -2412,6 +2417,7 @@ describe('M1: proposal persistence provider lifecycle', () => {
           data: { data: mocks.timelineData },
           timelineOps: mockOps as any,
           syncSlices: mocks.syncSlices,
+          setMounted: mocks.setMounted,
         }),
       },
     } as any);

@@ -19,8 +19,10 @@ export interface VideoEditorPreviewSurface {
 
 export function useVideoEditorPreviewSurface({
   compact = false,
+  touchChrome = false,
 }: {
   compact?: boolean;
+  touchChrome?: boolean;
 } = {}): VideoEditorPreviewSurface {
   const resolvedConfig = useTimelineDataSelector((timeline) => timeline.resolvedConfig);
   const {
@@ -80,6 +82,7 @@ export function useVideoEditorPreviewSurface({
         ref={previewRef}
         config={resolvedConfig}
         compact={compact}
+        touchChrome={touchChrome}
         initialTime={currentTime}
         currentTime={currentTime}
         onTimeUpdate={onPreviewTimeUpdate}
@@ -90,6 +93,7 @@ export function useVideoEditorPreviewSurface({
   }, [
     compact,
     currentTime,
+    touchChrome,
     hostNode,
     onPreviewTimeUpdate,
     playerContainerRef,

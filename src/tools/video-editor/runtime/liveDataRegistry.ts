@@ -272,6 +272,12 @@ export interface LiveDataRegistry extends LiveSessionsService {
    * by inspecting raw process or registry state directly.
    */
   resolveLiveSourceRef(ref: LiveSourceRef): LiveSourceRefResolution;
+
+  /**
+   * Tear the registry down: dispose every source, clear channel listeners,
+   * and mark the registry disposed. Idempotent. Hosts call this on unmount.
+   */
+  dispose(): void;
 }
 
 // ---------------------------------------------------------------------------

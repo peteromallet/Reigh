@@ -125,6 +125,8 @@ For the properties panel and timeline canvas:
 
 Example references: [inspector-example.ts](../../src/examples/inspector-example.ts) (docs-safe), [overlay-example.ts](../../src/examples/overlay-example.ts) (docs-safe).
 
+> **Status — `timelineOverlay` is reserved.** It is declarable and normalizes into `runtime.config.overlays`, but no host renders it yet: nothing enumerates the contributions or calls `render`. For timeline-scoped UI today use a `contextMenuItem` on a timeline target (§3.3).
+
 ### 3.3 Commands, keybindings, and context menus (M4)
 
 Declare a command, a keyboard shortcut, and a context-menu entry in one extension:

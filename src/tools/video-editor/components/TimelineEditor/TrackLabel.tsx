@@ -7,6 +7,7 @@ import type { SyntheticListenerMap } from '@dnd-kit/core/dist/hooks/utilities';
 import { Check, GripVertical, Settings, Trash2, Video, Volume2, VolumeX } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button.tsx';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/shared/components/ui/dialog.tsx';
+import { Input } from '@/shared/components/ui/input.tsx';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/components/ui/select.tsx';
 import { Slider } from '@/shared/components/ui/slider.tsx';
 import { cn } from '@/shared/components/ui/contracts/cn.ts';
@@ -17,6 +18,11 @@ import {
 } from '@/tools/video-editor/components/TimelineEditor/ExtensionContextMenuItems.tsx';
 import { DataProviderContext } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
 import { isTrackMuted } from '@/tools/video-editor/lib/editor-utils.ts';
+import { trackLabelAttrs } from '@/tools/video-editor/lib/timeline-dom.ts';
+import {
+  shouldPinHoverAffordances,
+  type TimelineDeviceClass,
+} from '@/tools/video-editor/lib/mobile-interaction-model.ts';
 import type { TrackBlendMode, TrackDefinition, TrackFit } from '@/tools/video-editor/types/index.ts';
 import type { TargetContextPayload } from '@reigh/editor-sdk';
 
@@ -25,6 +31,7 @@ interface TrackLabelProps {
   track: TrackDefinition;
   isSelected: boolean;
   hasClips: boolean;
+  deviceClass?: TimelineDeviceClass;
   onSelect: (trackId: string) => void;
   onChange: (trackId: string, patch: Partial<TrackDefinition>) => void;
   onRemove: (trackId: string) => void;
@@ -34,6 +41,7 @@ interface TrackLabelContentProps {
   track: TrackDefinition;
   isSelected: boolean;
   hasClips: boolean;
+  deviceClass?: TimelineDeviceClass;
   onSelect: (trackId: string) => void;
   onChange: (trackId: string, patch: Partial<TrackDefinition>) => void;
   onRemove: (trackId: string) => void;
@@ -145,10 +153,159 @@ function TrackExtensionContextMenu({
   );
 }
 
+interface TrackDefaultsDialogProps {
+  track: TrackDefinition;
+  triggerClassName: string;
+  iconClassName: string;
+  onChange: (trackId: string, patch: Partial<TrackDefinition>) => void;
+  /** Touch-only: rename + remove live in the dialog because the 144px row cannot hold them. */
+  showIdentityControls: boolean;
+  confirmingDelete: boolean;
+  onRemoveClick: (event: React.MouseEvent) => void;
+}
+
+function TrackDefaultsDialog({
+  track,
+  triggerClassName,
+  iconClassName,
+  onChange,
+  showIdentityControls,
+  confirmingDelete,
+  onRemoveClick,
+}: TrackDefaultsDialogProps) {
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className={cn(triggerClassName, 'text-muted-foreground')}
+          title={showIdentityControls ? 'Track settings' : 'Track defaults'}
+          aria-label={showIdentityControls ? 'Track settings' : 'Track defaults'}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <Settings className={iconClassName} />
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-sm" onClick={(e) => e.stopPropagation()}>
+        <DialogHeader>
+          <DialogTitle>{track.label} — Track Defaults</DialogTitle>
+          <DialogDescription>
+            New items dropped on this track will inherit these settings.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 pt-2">
+          {showIdentityControls && (
+            <div className="space-y-1.5">
+              <FieldLabel>Name</FieldLabel>
+              <Input
+                className="h-9 text-xs"
+                value={track.label}
+                aria-label="Track name"
+                onChange={(event) => onChange(track.id, { label: event.target.value })}
+              />
+            </div>
+          )}
+          {track.kind === 'visual' && (
+            <>
+              <div className="space-y-1.5">
+                <FieldLabel>Fit</FieldLabel>
+                <Select
+                  value={track.fit ?? 'contain'}
+                  onValueChange={(value) => onChange(track.id, { fit: value as TrackFit })}
+                >
+                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {FIT_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <FieldLabel>Scale ({((track.scale ?? 1) * 100).toFixed(0)}%)</FieldLabel>
+                <Slider
+                  value={[track.scale ?? 1]}
+                  min={0.1}
+                  max={2}
+                  step={0.05}
+                  onValueChange={(v) => onChange(track.id, { scale: v })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <FieldLabel>Opacity ({((track.opacity ?? 1) * 100).toFixed(0)}%)</FieldLabel>
+                <Slider
+                  value={[track.opacity ?? 1]}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  onValueChange={(v) => onChange(track.id, { opacity: v })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <FieldLabel>Blend Mode</FieldLabel>
+                <Select
+                  value={track.blendMode ?? 'normal'}
+                  onValueChange={(value) => onChange(track.id, { blendMode: value as TrackBlendMode })}
+                >
+                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {BLEND_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </>
+          )}
+          {track.kind === 'audio' && (
+            <div className="space-y-2">
+              <div className="space-y-1.5">
+                <FieldLabel>Default Volume ({((track.volume ?? 1) * 100).toFixed(0)}%)</FieldLabel>
+                <Slider
+                  value={[track.volume ?? 1]}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  onValueChange={(v) => onChange(track.id, { volume: v })}
+                />
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => onChange(track.id, { muted: !isTrackMuted(track) })}
+              >
+                {isTrackMuted(track) ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
+                {isTrackMuted(track) ? 'Unmute Track' : 'Mute Track'}
+              </Button>
+            </div>
+          )}
+          {showIdentityControls && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className={cn('h-11 w-full justify-start gap-1.5', confirmingDelete ? 'text-destructive hover:text-destructive' : 'text-muted-foreground')}
+              onClick={onRemoveClick}
+            >
+              {confirmingDelete ? <Check className="h-3.5 w-3.5" /> : <Trash2 className="h-3.5 w-3.5" />}
+              {confirmingDelete ? 'Tap again to confirm' : 'Remove track'}
+            </Button>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function TrackLabelContent({
   track,
   isSelected,
   hasClips,
+  deviceClass = 'desktop',
   onSelect,
   onChange,
   onRemove,
@@ -219,14 +376,17 @@ export function TrackLabelContent({
     });
   }, [commandRegistry, extensions, onSelect, track.id]);
 
+  const pinActions = shouldPinHoverAffordances(deviceClass);
+
   return (
     <>
       <div
         className={cn(
-          'group relative flex h-9 items-center gap-1 border-b border-border px-2 text-xs text-foreground',
+          'group relative flex h-9 items-center gap-1 border-b border-border text-xs text-foreground',
+          pinActions ? 'px-1' : 'px-2',
           isSelected ? 'bg-accent/70' : 'bg-card/60 hover:bg-accent/50',
         )}
-        data-track-id={track.id}
+        {...trackLabelAttrs(track.id)}
         onClick={() => onSelect(track.id)}
         onContextMenu={handleContextMenu}
       >
@@ -234,146 +394,85 @@ export function TrackLabelContent({
           {track.kind === 'visual' ? <Video className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
         </span>
 
-        {/* Full label shown at rest, fades out on hover */}
-        <span className="min-w-0 flex-1 truncate transition-opacity group-hover:opacity-0">
+        {/* Full label shown at rest; on pointer devices it fades out for the hover overlay */}
+        <span className={cn('min-w-0 flex-1 truncate', !pinActions && 'transition-opacity group-hover:opacity-0')}>
           {track.label}
         </span>
 
-        {/* Editable input + action buttons on hover */}
-        <div className="absolute inset-0 flex items-center gap-1 px-2 opacity-0 transition-opacity group-hover:opacity-100">
-          <span className="w-[18px] shrink-0" />
-          <input
-            className="min-w-0 flex-1 bg-transparent text-xs outline-none"
-            value={track.label}
-            onChange={(event) => onChange(track.id, { label: event.target.value })}
-            onClick={(event) => event.stopPropagation()}
-          />
-          <div className="flex shrink-0 items-center">
+        {pinActions ? (
+          /* Touch: two full-height targets. 144px of row cannot hold rename plus three
+             36px buttons, so rename and remove move inside the settings dialog and the
+             grip stays out here because dnd-kit needs a pointerdown on the handle. */
+          <div className="flex shrink-0 items-center" data-track-actions="touch">
             <Button
               type="button"
               variant="ghost"
               size="icon"
-              className="h-6 w-6 cursor-grab touch-none text-muted-foreground active:cursor-grabbing"
+              className="h-9 w-9 cursor-grab touch-none text-muted-foreground active:cursor-grabbing"
               title="Reorder track"
               aria-label="Reorder track"
               onClick={(event) => event.stopPropagation()}
               {...dragAttributes}
               {...dragListeners}
             >
-              <GripVertical className="h-3.5 w-3.5" />
+              <GripVertical className="h-4 w-4" />
             </Button>
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 text-muted-foreground"
-                  title="Track defaults"
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  <Settings className="h-3.5 w-3.5" />
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-sm" onClick={(e) => e.stopPropagation()}>
-                <DialogHeader>
-                  <DialogTitle>{track.label} — Track Defaults</DialogTitle>
-                  <DialogDescription>
-                    New items dropped on this track will inherit these settings.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4 pt-2">
-                  {track.kind === 'visual' && (
-                    <>
-                      <div className="space-y-1.5">
-                        <FieldLabel>Fit</FieldLabel>
-                        <Select
-                          value={track.fit ?? 'contain'}
-                          onValueChange={(value) => onChange(track.id, { fit: value as TrackFit })}
-                        >
-                          <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            {FIT_OPTIONS.map((opt) => (
-                              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1.5">
-                        <FieldLabel>Scale ({((track.scale ?? 1) * 100).toFixed(0)}%)</FieldLabel>
-                        <Slider
-                          value={[track.scale ?? 1]}
-                          min={0.1}
-                          max={2}
-                          step={0.05}
-                          onValueChange={(v) => onChange(track.id, { scale: v })}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <FieldLabel>Opacity ({((track.opacity ?? 1) * 100).toFixed(0)}%)</FieldLabel>
-                        <Slider
-                          value={[track.opacity ?? 1]}
-                          min={0}
-                          max={1}
-                          step={0.05}
-                          onValueChange={(v) => onChange(track.id, { opacity: v })}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <FieldLabel>Blend Mode</FieldLabel>
-                        <Select
-                          value={track.blendMode ?? 'normal'}
-                          onValueChange={(value) => onChange(track.id, { blendMode: value as TrackBlendMode })}
-                        >
-                          <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            {BLEND_OPTIONS.map((opt) => (
-                              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </>
-                  )}
-                  {track.kind === 'audio' && (
-                    <div className="space-y-2">
-                      <div className="space-y-1.5">
-                        <FieldLabel>Default Volume ({((track.volume ?? 1) * 100).toFixed(0)}%)</FieldLabel>
-                        <Slider
-                          value={[track.volume ?? 1]}
-                          min={0}
-                          max={1}
-                          step={0.05}
-                          onValueChange={(v) => onChange(track.id, { volume: v })}
-                        />
-                      </div>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        className="gap-1.5"
-                        onClick={() => onChange(track.id, { muted: !isTrackMuted(track) })}
-                      >
-                        {isTrackMuted(track) ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
-                        {isTrackMuted(track) ? 'Unmute Track' : 'Mute Track'}
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </DialogContent>
-            </Dialog>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className={cn('h-6 w-6', confirmingDelete ? 'text-destructive hover:text-destructive' : 'text-muted-foreground')}
-              title={confirmingDelete ? 'Click again to confirm deletion' : 'Remove track'}
-              onClick={handleRemoveClick}
-            >
-              {confirmingDelete ? <Check className="h-3.5 w-3.5" /> : <Trash2 className="h-3.5 w-3.5" />}
-            </Button>
+            <TrackDefaultsDialog
+              track={track}
+              triggerClassName="h-9 w-9"
+              iconClassName="h-4 w-4"
+              onChange={onChange}
+              showIdentityControls
+              confirmingDelete={confirmingDelete}
+              onRemoveClick={handleRemoveClick}
+            />
           </div>
-        </div>
+        ) : (
+          /* Editable input + action buttons on hover */
+          <div className="absolute inset-0 flex items-center gap-1 px-2 opacity-0 transition-opacity group-hover:opacity-100">
+            <span className="w-[18px] shrink-0" />
+            <input
+              className="min-w-0 flex-1 bg-transparent text-xs outline-none"
+              value={track.label}
+              onChange={(event) => onChange(track.id, { label: event.target.value })}
+              onClick={(event) => event.stopPropagation()}
+            />
+            <div className="flex shrink-0 items-center">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 cursor-grab touch-none text-muted-foreground active:cursor-grabbing"
+                title="Reorder track"
+                aria-label="Reorder track"
+                onClick={(event) => event.stopPropagation()}
+                {...dragAttributes}
+                {...dragListeners}
+              >
+                <GripVertical className="h-3.5 w-3.5" />
+              </Button>
+              <TrackDefaultsDialog
+                track={track}
+                triggerClassName="h-6 w-6"
+                iconClassName="h-3.5 w-3.5"
+                onChange={onChange}
+                showIdentityControls={false}
+                confirmingDelete={confirmingDelete}
+                onRemoveClick={handleRemoveClick}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className={cn('h-6 w-6', confirmingDelete ? 'text-destructive hover:text-destructive' : 'text-muted-foreground')}
+                title={confirmingDelete ? 'Click again to confirm deletion' : 'Remove track'}
+                onClick={handleRemoveClick}
+              >
+                {confirmingDelete ? <Check className="h-3.5 w-3.5" /> : <Trash2 className="h-3.5 w-3.5" />}
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
       {contextMenu && (
         <TrackExtensionContextMenu
@@ -392,6 +491,7 @@ export function TrackLabel({
   track,
   isSelected,
   hasClips,
+  deviceClass,
   onSelect,
   onChange,
   onRemove,
@@ -417,6 +517,7 @@ export function TrackLabel({
         track={track}
         isSelected={isSelected}
         hasClips={hasClips}
+        deviceClass={deviceClass}
         onSelect={onSelect}
         onChange={onChange}
         onRemove={onRemove}

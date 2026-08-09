@@ -10,7 +10,6 @@ import {
   type MutableRefObject,
   type PropsWithChildren,
   type RefObject,
-  type SetStateAction,
 } from 'react';
 import { shallow } from 'zustand/shallow';
 import { useStoreWithEqualityFn } from 'zustand/traditional';
@@ -123,7 +122,6 @@ const emptyDropPosition: DropPosition = {
 
 const noop = (): void => {};
 const noopAsync = async (): Promise<void> => {};
-const noopSetState = <T,>(_value: SetStateAction<T>): void => {};
 const clonePreferences = (): EditorPreferences => ({
   ...defaultPreferences,
   assetPanel: {
@@ -192,52 +190,66 @@ function createInitialDataSlice(): TimelineEditorDataContextValue {
   };
 }
 
+/**
+ * Every op in the pre-sync slice throws, matching `commands.validate/dryRun/apply`.
+ *
+ * `useTimelineState` seeds the store during render, before descendants mount, so
+ * no mounted consumer can reach these. A caller that does reach one is rendering
+ * outside the editor — a missing provider, which CLAUDE.md's context-hook rule
+ * requires to crash loudly rather than hide behind a no-op setter.
+ */
+const opsUnavailable = (method: string): (() => never) => () => {
+  throw new Error(
+    `Timeline ops accessed before store sync (${method}) — use a Safe hook if this consumer can render outside the editor.`,
+  );
+};
+
 function createInitialOpsSlice(): TimelineEditorOpsContextValue {
-  const setInputModality: TimelineEditorOpsContextValue['setInputModality'] = noop;
-  const setInteractionMode: TimelineEditorOpsContextValue['setInteractionMode'] = noop;
-  const setGestureOwner: TimelineEditorOpsContextValue['setGestureOwner'] = noop;
-  const setPrecisionEnabled: TimelineEditorOpsContextValue['setPrecisionEnabled'] = noop;
-  const setContextTarget: TimelineEditorOpsContextValue['setContextTarget'] = noop;
-  const setInspectorTarget: TimelineEditorOpsContextValue['setInspectorTarget'] = noop;
-  const setSelectedTrackId: TimelineEditorOpsContextValue['setSelectedTrackId'] = noopSetState;
-  const selectClip: TimelineEditorOpsContextValue['selectClip'] = noop;
-  const selectClips: TimelineEditorOpsContextValue['selectClips'] = noop;
-  const addToSelection: TimelineEditorOpsContextValue['addToSelection'] = noop;
-  const clearSelection: TimelineEditorOpsContextValue['clearSelection'] = noop;
-  const setActiveClipTab: TimelineEditorOpsContextValue['setActiveClipTab'] = noop;
-  const setAssetPanelState: TimelineEditorOpsContextValue['setAssetPanelState'] = noop;
-  const registerGenerationAsset: TimelineEditorOpsContextValue['registerGenerationAsset'] = () => null;
-  const onCursorDrag: TimelineEditorOpsContextValue['onCursorDrag'] = noop;
-  const onClickTimeArea: TimelineEditorOpsContextValue['onClickTimeArea'] = () => undefined;
-  const onActionResizeStart: TimelineEditorOpsContextValue['onActionResizeStart'] = noop;
-  const onClipEdgeResizeEnd: TimelineEditorOpsContextValue['onClipEdgeResizeEnd'] = noop;
-  const onOverlayChange: TimelineEditorOpsContextValue['onOverlayChange'] = noop;
-  const onTimelineDragOver: TimelineEditorOpsContextValue['onTimelineDragOver'] = noop;
-  const onTimelineDragLeave: TimelineEditorOpsContextValue['onTimelineDragLeave'] = noop;
-  const onTimelineDrop: TimelineEditorOpsContextValue['onTimelineDrop'] = noopAsync;
-  const handleAssetDrop: TimelineEditorOpsContextValue['handleAssetDrop'] = noop;
-  const handleUpdateClips: TimelineEditorOpsContextValue['handleUpdateClips'] = noop;
-  const handleUpdateClipsDeep: TimelineEditorOpsContextValue['handleUpdateClipsDeep'] = noop;
-  const handleDeleteClips: TimelineEditorOpsContextValue['handleDeleteClips'] = noop;
-  const handleDeleteClip: TimelineEditorOpsContextValue['handleDeleteClip'] = noop;
-  const handleSelectedClipChange: TimelineEditorOpsContextValue['handleSelectedClipChange'] = noop;
-  const handleResetClipPosition: TimelineEditorOpsContextValue['handleResetClipPosition'] = noop;
-  const handleResetClipsPosition: TimelineEditorOpsContextValue['handleResetClipsPosition'] = noop;
-  const handleSplitSelectedClip: TimelineEditorOpsContextValue['handleSplitSelectedClip'] = noop;
-  const handleSplitClipAtTime: TimelineEditorOpsContextValue['handleSplitClipAtTime'] = noop;
-  const handleSplitClipsAtPlayhead: TimelineEditorOpsContextValue['handleSplitClipsAtPlayhead'] = noop;
-  const handleToggleMuteClips: TimelineEditorOpsContextValue['handleToggleMuteClips'] = noop;
-  const handleToggleMute: TimelineEditorOpsContextValue['handleToggleMute'] = noop;
-  const handleDetachAudioClip: TimelineEditorOpsContextValue['handleDetachAudioClip'] = noop;
-  const handleTrackPopoverChange: TimelineEditorOpsContextValue['handleTrackPopoverChange'] = noop;
-  const handleMoveTrack: TimelineEditorOpsContextValue['handleMoveTrack'] = noop;
-  const handleRemoveTrack: TimelineEditorOpsContextValue['handleRemoveTrack'] = noop;
-  const moveSelectedClipToTrack: TimelineEditorOpsContextValue['moveSelectedClipToTrack'] = noop;
-  const moveSelectedClipsToTrack: TimelineEditorOpsContextValue['moveSelectedClipsToTrack'] = noop;
-  const moveClipToRow: TimelineEditorOpsContextValue['moveClipToRow'] = noop;
-  const createTrackAndMoveClip: TimelineEditorOpsContextValue['createTrackAndMoveClip'] = noop;
-  const uploadFiles: TimelineEditorOpsContextValue['uploadFiles'] = noopAsync;
-  const applyEdit: TimelineEditorOpsContextValue['applyEdit'] = noop;
+  const setInputModality: TimelineEditorOpsContextValue['setInputModality'] = opsUnavailable('setInputModality');
+  const setInteractionMode: TimelineEditorOpsContextValue['setInteractionMode'] = opsUnavailable('setInteractionMode');
+  const setGestureOwner: TimelineEditorOpsContextValue['setGestureOwner'] = opsUnavailable('setGestureOwner');
+  const setPrecisionEnabled: TimelineEditorOpsContextValue['setPrecisionEnabled'] = opsUnavailable('setPrecisionEnabled');
+  const setContextTarget: TimelineEditorOpsContextValue['setContextTarget'] = opsUnavailable('setContextTarget');
+  const setInspectorTarget: TimelineEditorOpsContextValue['setInspectorTarget'] = opsUnavailable('setInspectorTarget');
+  const setSelectedTrackId: TimelineEditorOpsContextValue['setSelectedTrackId'] = opsUnavailable('setSelectedTrackId');
+  const selectClip: TimelineEditorOpsContextValue['selectClip'] = opsUnavailable('selectClip');
+  const selectClips: TimelineEditorOpsContextValue['selectClips'] = opsUnavailable('selectClips');
+  const addToSelection: TimelineEditorOpsContextValue['addToSelection'] = opsUnavailable('addToSelection');
+  const clearSelection: TimelineEditorOpsContextValue['clearSelection'] = opsUnavailable('clearSelection');
+  const setActiveClipTab: TimelineEditorOpsContextValue['setActiveClipTab'] = opsUnavailable('setActiveClipTab');
+  const setAssetPanelState: TimelineEditorOpsContextValue['setAssetPanelState'] = opsUnavailable('setAssetPanelState');
+  const registerGenerationAsset: TimelineEditorOpsContextValue['registerGenerationAsset'] = opsUnavailable('registerGenerationAsset');
+  const onCursorDrag: TimelineEditorOpsContextValue['onCursorDrag'] = opsUnavailable('onCursorDrag');
+  const onClickTimeArea: TimelineEditorOpsContextValue['onClickTimeArea'] = opsUnavailable('onClickTimeArea');
+  const onActionResizeStart: TimelineEditorOpsContextValue['onActionResizeStart'] = opsUnavailable('onActionResizeStart');
+  const onClipEdgeResizeEnd: TimelineEditorOpsContextValue['onClipEdgeResizeEnd'] = opsUnavailable('onClipEdgeResizeEnd');
+  const onOverlayChange: TimelineEditorOpsContextValue['onOverlayChange'] = opsUnavailable('onOverlayChange');
+  const onTimelineDragOver: TimelineEditorOpsContextValue['onTimelineDragOver'] = opsUnavailable('onTimelineDragOver');
+  const onTimelineDragLeave: TimelineEditorOpsContextValue['onTimelineDragLeave'] = opsUnavailable('onTimelineDragLeave');
+  const onTimelineDrop: TimelineEditorOpsContextValue['onTimelineDrop'] = opsUnavailable('onTimelineDrop');
+  const handleAssetDrop: TimelineEditorOpsContextValue['handleAssetDrop'] = opsUnavailable('handleAssetDrop');
+  const handleUpdateClips: TimelineEditorOpsContextValue['handleUpdateClips'] = opsUnavailable('handleUpdateClips');
+  const handleUpdateClipsDeep: TimelineEditorOpsContextValue['handleUpdateClipsDeep'] = opsUnavailable('handleUpdateClipsDeep');
+  const handleDeleteClips: TimelineEditorOpsContextValue['handleDeleteClips'] = opsUnavailable('handleDeleteClips');
+  const handleDeleteClip: TimelineEditorOpsContextValue['handleDeleteClip'] = opsUnavailable('handleDeleteClip');
+  const handleSelectedClipChange: TimelineEditorOpsContextValue['handleSelectedClipChange'] = opsUnavailable('handleSelectedClipChange');
+  const handleResetClipPosition: TimelineEditorOpsContextValue['handleResetClipPosition'] = opsUnavailable('handleResetClipPosition');
+  const handleResetClipsPosition: TimelineEditorOpsContextValue['handleResetClipsPosition'] = opsUnavailable('handleResetClipsPosition');
+  const handleSplitSelectedClip: TimelineEditorOpsContextValue['handleSplitSelectedClip'] = opsUnavailable('handleSplitSelectedClip');
+  const handleSplitClipAtTime: TimelineEditorOpsContextValue['handleSplitClipAtTime'] = opsUnavailable('handleSplitClipAtTime');
+  const handleSplitClipsAtPlayhead: TimelineEditorOpsContextValue['handleSplitClipsAtPlayhead'] = opsUnavailable('handleSplitClipsAtPlayhead');
+  const handleToggleMuteClips: TimelineEditorOpsContextValue['handleToggleMuteClips'] = opsUnavailable('handleToggleMuteClips');
+  const handleToggleMute: TimelineEditorOpsContextValue['handleToggleMute'] = opsUnavailable('handleToggleMute');
+  const handleDetachAudioClip: TimelineEditorOpsContextValue['handleDetachAudioClip'] = opsUnavailable('handleDetachAudioClip');
+  const handleTrackPopoverChange: TimelineEditorOpsContextValue['handleTrackPopoverChange'] = opsUnavailable('handleTrackPopoverChange');
+  const handleMoveTrack: TimelineEditorOpsContextValue['handleMoveTrack'] = opsUnavailable('handleMoveTrack');
+  const handleRemoveTrack: TimelineEditorOpsContextValue['handleRemoveTrack'] = opsUnavailable('handleRemoveTrack');
+  const moveSelectedClipToTrack: TimelineEditorOpsContextValue['moveSelectedClipToTrack'] = opsUnavailable('moveSelectedClipToTrack');
+  const moveSelectedClipsToTrack: TimelineEditorOpsContextValue['moveSelectedClipsToTrack'] = opsUnavailable('moveSelectedClipsToTrack');
+  const moveClipToRow: TimelineEditorOpsContextValue['moveClipToRow'] = opsUnavailable('moveClipToRow');
+  const createTrackAndMoveClip: TimelineEditorOpsContextValue['createTrackAndMoveClip'] = opsUnavailable('createTrackAndMoveClip');
+  const uploadFiles: TimelineEditorOpsContextValue['uploadFiles'] = opsUnavailable('uploadFiles');
+  const applyEdit: TimelineEditorOpsContextValue['applyEdit'] = opsUnavailable('applyEdit');
   const commands: TimelineEditorOpsContextValue['commands'] = {
     buildAddMediaCommand: () => null,
     buildSwapCommand: () => null,
@@ -251,9 +263,9 @@ function createInitialOpsSlice(): TimelineEditorOpsContextValue {
       throw new Error('Timeline commands are unavailable before the editor is mounted.');
     },
   };
-  const patchRegistry: TimelineEditorOpsContextValue['patchRegistry'] = noop;
-  const unpatchRegistry: TimelineEditorOpsContextValue['unpatchRegistry'] = noop;
-  const registerAsset: TimelineEditorOpsContextValue['registerAsset'] = noopAsync;
+  const patchRegistry: TimelineEditorOpsContextValue['patchRegistry'] = opsUnavailable('patchRegistry');
+  const unpatchRegistry: TimelineEditorOpsContextValue['unpatchRegistry'] = opsUnavailable('unpatchRegistry');
+  const registerAsset: TimelineEditorOpsContextValue['registerAsset'] = opsUnavailable('registerAsset');
 
   return {
     setInputModality,
@@ -263,7 +275,7 @@ function createInitialOpsSlice(): TimelineEditorOpsContextValue {
     setPrecisionEnabled,
     setContextTarget,
     setInspectorTarget,
-    isClipSelected: () => false,
+    isClipSelected: opsUnavailable('isClipSelected'),
     selectClip,
     selectClips,
     addToSelection,

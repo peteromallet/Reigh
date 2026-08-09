@@ -9,34 +9,31 @@ import { useDeviceInfo as useDeviceInfoSignal } from './responsiveViewModel';
 
 export const isMobileUA = isMobileUaSignal;
 
-/** App-facing mobile signal with a defensive fallback for non-browser runtimes. */
+/** App-facing mobile signal, forced false in non-browser runtimes. */
 export function useIsMobile() {
   const detected = useIsMobileSignal();
   if (typeof window === 'undefined') {
     return false;
   }
-  return detected ?? window.innerWidth < 768;
+  return detected;
 }
 
-/** App-facing tablet signal with a defensive fallback for non-browser runtimes. */
+/** App-facing tablet signal, forced false in non-browser runtimes. */
 export function useIsTablet() {
   const detected = useIsTabletSignal();
   if (typeof window === 'undefined') {
     return false;
   }
-  return detected ?? (window.innerWidth >= 768 && window.innerWidth < 1024);
+  return detected;
 }
 
-/** App-facing touch capability signal with runtime fallback for browser environments. */
+/** App-facing touch capability signal, forced false in non-browser runtimes. */
 export function useIsTouchDevice() {
   const detected = useIsTouchDeviceSignal();
   if (typeof window === 'undefined') {
     return false;
   }
-  if (detected !== undefined) {
-    return detected;
-  }
-  return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  return detected;
 }
 
 /** Composite device view model with normalized base signals from this public module. */

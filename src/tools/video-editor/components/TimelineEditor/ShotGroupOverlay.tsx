@@ -1,6 +1,7 @@
 import React from 'react';
 import { Ellipsis, Loader2, RefreshCw, Video } from 'lucide-react';
 import { cn } from '@/shared/components/ui/contracts/cn.ts';
+import { shotGroupLabelAttrs } from '@/tools/video-editor/lib/timeline-dom.ts';
 import {
   SHOT_GROUP_LABEL_HEIGHT,
   TIME_RULER_HEIGHT,
@@ -65,9 +66,7 @@ export const ShotGroupLabels = React.memo(function ShotGroupLabels({
             showTouchActions ? 'opacity-100' : 'opacity-0 hover:opacity-100',
           )}
           title={group.shotName}
-          data-action-id="shot-group-label"
-          data-shot-group-drag-anchor-clip-id={group.clipIds[0] ?? ''}
-          data-shot-group-drag-anchor-row-id={group.rowId}
+          {...shotGroupLabelAttrs(group.clipIds[0] ?? '', group.rowId)}
           onClick={(event) => {
             event.stopPropagation();
             onSelectClips?.(group.clipIds);

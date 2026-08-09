@@ -7,6 +7,15 @@ import { createInteractionState } from '@/tools/video-editor/lib/interaction-sta
 import { repairConfig } from '@/tools/video-editor/lib/migrate';
 import { configToRows, type TimelineData } from '@/tools/video-editor/lib/timeline-data';
 import type { TimelineConfig, TrackDefinition } from '@/tools/video-editor/types';
+import type { ReactNode } from 'react';
+import {
+  createTimelineStore,
+  TimelineStoreProvider,
+} from '@/tools/video-editor/hooks/timelineStore';
+import type {
+  TimelineEditorDataContextValue,
+  TimelineEditorOpsContextValue,
+} from '@/tools/video-editor/hooks/useTimelineState.types';
 
 const selectionMocks = vi.hoisted(() => ({
   userSelectTimelineClip: vi.fn(),
@@ -268,6 +277,73 @@ function makePinnedGroupDataWithExtraSelection(): TimelineData {
   });
 }
 
+/**
+ * useClipDrag reads everything from the timeline store, so a scenario is store
+ * state — there is no prop channel to pass these through.
+ */
+type ClipDragScenario =
+  Pick<
+    TimelineEditorDataContextValue,
+    | 'timelineWrapperRef'
+    | 'dataRef'
+    | 'selectedClipIdsRef'
+    | 'additiveSelectionRef'
+    | 'deviceClass'
+    | 'interactionMode'
+    | 'gestureOwner'
+    | 'coordinator'
+    | 'scale'
+    | 'scaleWidth'
+  >
+  & Partial<Pick<TimelineEditorDataContextValue, 'interactionStateRef'>>
+  & Pick<
+    TimelineEditorOpsContextValue,
+    | 'setGestureOwner'
+    | 'setInputModalityFromPointerType'
+    | 'moveClipToRow'
+    | 'createTrackAndMoveClip'
+    | 'selectClip'
+    | 'selectClips'
+    | 'applyEdit'
+  >;
+
+function renderClipDrag(scenario: ClipDragScenario) {
+  const store = createTimelineStore();
+  const initial = store.getState();
+  initial.syncSlices({
+    data: {
+      ...initial.data,
+      timelineWrapperRef: scenario.timelineWrapperRef,
+      dataRef: scenario.dataRef,
+      interactionStateRef: scenario.interactionStateRef ?? initial.data.interactionStateRef,
+      selectedClipIdsRef: scenario.selectedClipIdsRef,
+      additiveSelectionRef: scenario.additiveSelectionRef,
+      deviceClass: scenario.deviceClass,
+      interactionMode: scenario.interactionMode,
+      gestureOwner: scenario.gestureOwner,
+      coordinator: scenario.coordinator,
+      scale: scenario.scale,
+      scaleWidth: scenario.scaleWidth,
+    },
+    ops: {
+      ...initial.ops,
+      setGestureOwner: scenario.setGestureOwner,
+      setInputModalityFromPointerType: scenario.setInputModalityFromPointerType,
+      moveClipToRow: scenario.moveClipToRow,
+      createTrackAndMoveClip: scenario.createTrackAndMoveClip,
+      selectClip: scenario.selectClip,
+      selectClips: scenario.selectClips,
+      applyEdit: scenario.applyEdit,
+    },
+  });
+
+  return renderHook(() => useClipDrag(), {
+    wrapper: ({ children }: { children: ReactNode }) => (
+      <TimelineStoreProvider store={store}>{children}</TimelineStoreProvider>
+    ),
+  });
+}
+
 function setupDom(clipId = 'clip-1', rowId = 'V1') {
   const wrapper = document.createElement('div');
   wrapper.className = 'timeline-wrapper';
@@ -338,7 +414,7 @@ describe('useClipDrag', () => {
     const dataRef = { current: makeData() };
 
     try {
-      renderHook(() => useClipDrag({
+      renderClipDrag({
         timelineWrapperRef,
         dataRef,
 
@@ -356,11 +432,9 @@ describe('useClipDrag', () => {
         additiveSelectionRef: { current: false },
         applyEdit: vi.fn(),
         coordinator: makeCoordinator(),
-        rowHeight: 48,
         scale: 1,
         scaleWidth: 100,
-        startLeft: 0,
-      }));
+      });
 
       act(() => {
         fireEvent.pointerDown(clip, {
@@ -415,7 +489,7 @@ describe('useClipDrag', () => {
     const dataRef = { current: makeData() };
 
     try {
-      renderHook(() => useClipDrag({
+      renderClipDrag({
         timelineWrapperRef,
         dataRef,
 
@@ -432,11 +506,9 @@ describe('useClipDrag', () => {
         additiveSelectionRef: { current: false },
         applyEdit: vi.fn(),
         coordinator: makeCoordinator(),
-        rowHeight: 48,
         scale: 1,
         scaleWidth: 100,
-        startLeft: 0,
-      }));
+      });
 
       act(() => {
         fireEvent.pointerDown(clip, {
@@ -470,7 +542,7 @@ describe('useClipDrag', () => {
     const dataRef = { current: makeData() };
 
     try {
-      renderHook(() => useClipDrag({
+      renderClipDrag({
         timelineWrapperRef,
         dataRef,
 
@@ -487,11 +559,9 @@ describe('useClipDrag', () => {
         additiveSelectionRef: { current: true },
         applyEdit: vi.fn(),
         coordinator: makeCoordinator(),
-        rowHeight: 48,
         scale: 1,
         scaleWidth: 100,
-        startLeft: 0,
-      }));
+      });
 
       act(() => {
         fireEvent.pointerDown(clip, {
@@ -529,7 +599,7 @@ describe('useClipDrag', () => {
     const touchDataRef = { current: makeData() };
 
     try {
-      renderHook(() => useClipDrag({
+      renderClipDrag({
         timelineWrapperRef: touchTimelineWrapperRef,
         dataRef: touchDataRef,
 
@@ -547,11 +617,9 @@ describe('useClipDrag', () => {
         additiveSelectionRef: { current: false },
         applyEdit: vi.fn(),
         coordinator: makeCoordinator(),
-        rowHeight: 48,
         scale: 1,
         scaleWidth: 100,
-        startLeft: 0,
-      }));
+      });
 
       act(() => {
         fireEvent.pointerDown(touchDom.clip, {
@@ -597,7 +665,7 @@ describe('useClipDrag', () => {
     const mouseDataRef = { current: makeData() };
 
     try {
-      renderHook(() => useClipDrag({
+      renderClipDrag({
         timelineWrapperRef: mouseTimelineWrapperRef,
         dataRef: mouseDataRef,
 
@@ -615,11 +683,9 @@ describe('useClipDrag', () => {
         additiveSelectionRef: { current: false },
         applyEdit: vi.fn(),
         coordinator: makeCoordinator(),
-        rowHeight: 48,
         scale: 1,
         scaleWidth: 100,
-        startLeft: 0,
-      }));
+      });
 
       act(() => {
         fireEvent.pointerDown(mouseDom.clip, {
@@ -668,7 +734,7 @@ describe('useClipDrag', () => {
     const dataRef = { current: makeData() };
 
     try {
-      renderHook(() => useClipDrag({
+      renderClipDrag({
         timelineWrapperRef,
         dataRef,
 
@@ -686,11 +752,9 @@ describe('useClipDrag', () => {
         additiveSelectionRef: { current: true },
         applyEdit: vi.fn(),
         coordinator: makeCoordinator(),
-        rowHeight: 48,
         scale: 1,
         scaleWidth: 100,
-        startLeft: 0,
-      }));
+      });
 
       act(() => {
         fireEvent.pointerDown(clip, {
@@ -769,7 +833,7 @@ describe('useClipDrag', () => {
     const dataRef = { current: makeMultiClipData() };
 
     try {
-      renderHook(() => useClipDrag({
+      renderClipDrag({
         timelineWrapperRef,
         dataRef,
 
@@ -786,11 +850,9 @@ describe('useClipDrag', () => {
         additiveSelectionRef: { current: true },
         applyEdit,
         coordinator,
-        rowHeight: 48,
         scale: 1,
         scaleWidth: 100,
-        startLeft: 0,
-      }));
+      });
 
       act(() => {
         fireEvent.pointerDown(clip, {
@@ -842,7 +904,7 @@ describe('useClipDrag', () => {
     const dataRef = { current: makeMultiClipData() };
 
     try {
-      const { result } = renderHook(() => useClipDrag({
+      const { result } = renderClipDrag({
         timelineWrapperRef,
         dataRef,
 
@@ -859,11 +921,9 @@ describe('useClipDrag', () => {
         additiveSelectionRef: { current: false },
         applyEdit: vi.fn(),
         coordinator: makeCoordinator(),
-        rowHeight: 48,
         scale: 1,
         scaleWidth: 100,
-        startLeft: 0,
-      }));
+      });
 
       act(() => {
         fireEvent.pointerDown(clip, {
@@ -889,7 +949,7 @@ describe('useClipDrag', () => {
     const dataRef = { current: makePinnedGroupData() };
 
     try {
-      const { result } = renderHook(() => useClipDrag({
+      const { result } = renderClipDrag({
         timelineWrapperRef,
         dataRef,
 
@@ -906,11 +966,9 @@ describe('useClipDrag', () => {
         additiveSelectionRef: { current: false },
         applyEdit: vi.fn(),
         coordinator: makeCoordinator(),
-        rowHeight: 48,
         scale: 1,
         scaleWidth: 100,
-        startLeft: 0,
-      }));
+      });
 
       act(() => {
         fireEvent.pointerDown(clip, {
@@ -942,7 +1000,7 @@ describe('useClipDrag', () => {
     const dataRef = { current: makePinnedGroupDataWithExtraSelection() };
 
     try {
-      const { result } = renderHook(() => useClipDrag({
+      const { result } = renderClipDrag({
         timelineWrapperRef,
         dataRef,
 
@@ -959,11 +1017,9 @@ describe('useClipDrag', () => {
         additiveSelectionRef: { current: false },
         applyEdit: vi.fn(),
         coordinator: makeCoordinator(),
-        rowHeight: 48,
         scale: 1,
         scaleWidth: 100,
-        startLeft: 0,
-      }));
+      });
 
       act(() => {
         fireEvent.pointerDown(label, {
@@ -996,7 +1052,7 @@ describe('useClipDrag', () => {
     const dataRef = { current: makePinnedGroupData() };
 
     try {
-      const { result } = renderHook(() => useClipDrag({
+      const { result } = renderClipDrag({
         timelineWrapperRef,
         dataRef,
 
@@ -1013,11 +1069,9 @@ describe('useClipDrag', () => {
         additiveSelectionRef: { current: false },
         applyEdit: vi.fn(),
         coordinator: makeCoordinator(),
-        rowHeight: 48,
         scale: 1,
         scaleWidth: 100,
-        startLeft: 0,
-      }));
+      });
 
       act(() => {
         fireEvent.pointerDown(label, {
@@ -1051,7 +1105,7 @@ describe('useClipDrag', () => {
     const dataRef = { current: makePinnedGroupData() };
 
     try {
-      renderHook(() => useClipDrag({
+      renderClipDrag({
         timelineWrapperRef,
         dataRef,
 
@@ -1068,11 +1122,9 @@ describe('useClipDrag', () => {
         additiveSelectionRef: { current: false },
         applyEdit: vi.fn(),
         coordinator,
-        rowHeight: 48,
         scale: 1,
         scaleWidth: 100,
-        startLeft: 0,
-      }));
+      });
 
       act(() => {
         fireEvent.pointerDown(label, {
@@ -1124,7 +1176,7 @@ describe('useClipDrag', () => {
     const dataRef = { current: makePinnedGroupData() };
 
     try {
-      renderHook(() => useClipDrag({
+      renderClipDrag({
         timelineWrapperRef,
         dataRef,
 
@@ -1141,11 +1193,9 @@ describe('useClipDrag', () => {
         additiveSelectionRef: { current: false },
         applyEdit,
         coordinator,
-        rowHeight: 48,
         scale: 1,
         scaleWidth: 100,
-        startLeft: 0,
-      }));
+      });
 
       act(() => {
         fireEvent.pointerDown(clip, {
@@ -1237,7 +1287,7 @@ describe('useClipDrag', () => {
     const dataRef = { current: makePinnedGroupData() };
 
     try {
-      renderHook(() => useClipDrag({
+      renderClipDrag({
         timelineWrapperRef,
         dataRef,
 
@@ -1254,11 +1304,9 @@ describe('useClipDrag', () => {
         additiveSelectionRef: { current: false },
         applyEdit,
         coordinator,
-        rowHeight: 48,
         scale: 1,
         scaleWidth: 100,
-        startLeft: 0,
-      }));
+      });
 
       act(() => {
         fireEvent.pointerDown(clip, {

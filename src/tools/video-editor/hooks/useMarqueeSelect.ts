@@ -3,6 +3,11 @@ import { isAdditiveSelectionEvent, isPrimaryPointer } from '@/shared/lib/interac
 import { userClearAllSelection, userSelectTimelineClips } from '@/shared/state/selectionStore.ts';
 import { createAutoScroller } from '@/tools/video-editor/lib/auto-scroll.ts';
 import {
+  CLIP_ACTION_WITH_ID_SELECTOR,
+  CLIP_ID_DATASET_KEY,
+  MARQUEE_IGNORE_SELECTOR,
+} from '@/tools/video-editor/lib/timeline-dom.ts';
+import {
   shouldAllowTouchMarquee,
   type TimelineDeviceClass,
   type TimelineGestureOwner,
@@ -26,9 +31,6 @@ interface UseMarqueeSelectArgs {
   gestureOwner: TimelineGestureOwner;
   setGestureOwner: (owner: TimelineGestureOwner) => void;
   setInputModalityFromPointerType: (pointerType: string | null | undefined) => TimelineInputModality;
-  selectClips?: (clipIds: Iterable<string>) => void;
-  addToSelection?: (clipIds: Iterable<string>) => void;
-  clearSelection?: () => void;
 }
 
 interface MarqueeSession {
@@ -50,12 +52,15 @@ const intersects = (
   top: number,
   right: number,
   bottom: number,
-  rect: DOMRect,
+  boxLeft: number,
+  boxTop: number,
+  boxRight: number,
+  boxBottom: number,
 ): boolean => {
-  return left < rect.right
-    && right > rect.left
-    && top < rect.bottom
-    && bottom > rect.top;
+  return left < boxRight
+    && right > boxLeft
+    && top < boxBottom
+    && bottom > boxTop;
 };
 
 export function useMarqueeSelect({
@@ -101,7 +106,7 @@ export function useMarqueeSelect({
     }
 
     const target = event.target;
-    if (!(target instanceof Element) || target.closest('.clip-action, [data-action-id]')) {
+    if (!(target instanceof Element) || target.closest(MARQUEE_IGNORE_SELECTOR)) {
       return;
     }
 
@@ -141,13 +146,31 @@ export function useMarqueeSelect({
 
       setMarqueeRect(nextRect);
 
-      const left = Math.min(event.clientX, clientX);
-      const right = Math.max(event.clientX, clientX);
-      const top = Math.min(event.clientY, clientY);
-      const bottom = Math.max(event.clientY, clientY);
-      intersectedClipIdsRef.current = [...currentEditArea.querySelectorAll<HTMLElement>('.clip-action[data-clip-id]')]
-        .filter((clipElement) => intersects(left, top, right, bottom, clipElement.getBoundingClientRect()))
-        .map((clipElement) => clipElement.dataset.clipId)
+      // Intersect in canvas space, the same space `nextRect` is drawn in. The
+      // pointerdown anchor is pinned to the canvas, so during autoscroll the
+      // content moves under a viewport-space anchor and the highlighted
+      // rectangle and the selected set drift apart.
+      const left = nextRect.x;
+      const right = nextRect.x + nextRect.width;
+      const top = nextRect.y;
+      const bottom = nextRect.y + nextRect.height;
+      intersectedClipIdsRef.current = [...currentEditArea.querySelectorAll<HTMLElement>(CLIP_ACTION_WITH_ID_SELECTOR)]
+        .filter((clipElement) => {
+          const clipRect = clipElement.getBoundingClientRect();
+          const clipLeft = clipRect.left - currentRect.left + currentEditArea.scrollLeft;
+          const clipTop = clipRect.top - currentRect.top + currentEditArea.scrollTop;
+          return intersects(
+            left,
+            top,
+            right,
+            bottom,
+            clipLeft,
+            clipTop,
+            clipLeft + clipRect.width,
+            clipTop + clipRect.height,
+          );
+        })
+        .map((clipElement) => clipElement.dataset[CLIP_ID_DATASET_KEY])
         .filter((clipId): clipId is string => Boolean(clipId));
     };
     autoScrollerRef.current = createAutoScroller(editArea, (clientX, clientY) => {

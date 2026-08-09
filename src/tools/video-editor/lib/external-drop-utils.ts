@@ -137,16 +137,24 @@ export function handleTextToolDrop({
   return true;
 }
 
-export function handleEffectLayerDrop({
+/**
+ * Places an effect-layer clip on a visual track. Shared by the desktop drop
+ * handler and the touch tool button, which has no drag position to resolve.
+ */
+export function insertEffectLayerAt({
   dataRef,
-  dropPosition,
-  insertAtTop,
+  trackId,
+  time,
+  forceNewTrack = false,
+  insertAtTop = false,
   selectedTrackId,
   applyEdit,
 }: {
   dataRef: MutableRefObject<TimelineData | null>;
-  dropPosition: TimelineDropPosition;
-  insertAtTop: boolean;
+  trackId: string | undefined;
+  time: number;
+  forceNewTrack?: boolean;
+  insertAtTop?: boolean;
   selectedTrackId: string | null;
   applyEdit: TimelineApplyEdit;
 }): boolean {
@@ -155,9 +163,9 @@ export function handleEffectLayerDrop({
     return false;
   }
 
-  let targetTrackId = dropPosition.isNewTrack
+  let targetTrackId = forceNewTrack
     ? null
-    : getCompatibleTrackId(current.tracks, dropPosition.trackId, 'visual', selectedTrackId);
+    : getCompatibleTrackId(current.tracks, trackId, 'visual', selectedTrackId);
 
   if (!targetTrackId) {
     targetTrackId = createTrackForDrop(dataRef, 'visual', insertAtTop)?.trackId ?? null;
@@ -173,8 +181,8 @@ export function handleEffectLayerDrop({
   const duration = clipMeta.hold ?? 5;
   const action: TimelineAction = {
     id: clipId,
-    start: Math.max(0, dropPosition.time),
-    end: Math.max(0, dropPosition.time) + duration,
+    start: Math.max(0, time),
+    end: Math.max(0, time) + duration,
     effectId: `effect-${clipId}`,
   };
   const rowsWithClip = current.rows.map((row) => (
@@ -206,6 +214,30 @@ export function handleEffectLayerDrop({
     clipOrderOverride: nextClipOrder,
   });
   return true;
+}
+
+export function handleEffectLayerDrop({
+  dataRef,
+  dropPosition,
+  insertAtTop,
+  selectedTrackId,
+  applyEdit,
+}: {
+  dataRef: MutableRefObject<TimelineData | null>;
+  dropPosition: TimelineDropPosition;
+  insertAtTop: boolean;
+  selectedTrackId: string | null;
+  applyEdit: TimelineApplyEdit;
+}): boolean {
+  return insertEffectLayerAt({
+    dataRef,
+    trackId: dropPosition.trackId,
+    time: dropPosition.time,
+    forceNewTrack: dropPosition.isNewTrack,
+    insertAtTop,
+    selectedTrackId,
+    applyEdit,
+  });
 }
 
 export async function handleFileDrop({

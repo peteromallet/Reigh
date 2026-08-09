@@ -917,10 +917,29 @@ export function getInspectorContributions(
 const EMPTY_INSPECTOR_CONTRIBUTIONS: readonly InspectorContribution[] = Object.freeze([]);
 
 // ---------------------------------------------------------------------------
-// Timeline overlay — host rendering contract
+// Timeline overlay — RESERVED contract (declarable, not host-wired)
 // ---------------------------------------------------------------------------
+//
+// Reserved the same way reserved *slots* are (`RESERVED_SLOT_CANARY` in
+// `TimelineEditorShellCore.tsx`): the shape stays exported so authors can
+// declare against it and so a future host can adopt it without a breaking
+// change — but no host code renders it today. The previous scaffolding
+// (`getTimelineOverlayContributions`) built a render-props object, dropped it,
+// and returned renderers that ignored their props; `TimelineEditorCore`
+// maintained overlay scroll state on the hot scroll path for that discarded
+// object. Both were removed rather than left as a trap for extension authors.
+//
+// Wiring this up is a product decision, not a cleanup: a host that adopts it
+// owns the overlay mount point, the pointer-claim arbitration against the three
+// drag systems (§3 of `docs/structure_detail/tool_video_editor.md`), and the
+// `HostContributionErrorBoundary` wrapper every other contribution surface has.
 
-/** Viewport and interaction policy props the host passes to each overlay renderer. */
+/**
+ * Viewport and interaction policy props a host would pass to each overlay
+ * renderer.
+ *
+ * **Reserved — not yet wired.** No host currently constructs this.
+ */
 export interface TimelineOverlayRenderProps {
   /** Current horizontal scroll offset (px). */
   readonly scrollLeft: number;
@@ -958,57 +977,20 @@ export interface TimelineOverlayRenderProps {
   readonly releasePointer: () => void;
 }
 
-/** A resolved timeline overlay contribution ready for rendering. */
+/**
+ * A timeline overlay contribution as a host would resolve it.
+ *
+ * **Reserved — not yet wired.** `timelineOverlay` contributions normalize into
+ * `VideoEditorOverlayDescriptor` (see `families/timelineOverlayAdapter.ts`) and
+ * are reachable from `runtime.config.overlays`, but nothing in the timeline
+ * enumerates them or calls `render`. Declaring one is valid; expecting it to
+ * paint is not. Use a `contextMenuItem` on a timeline target for timeline-scoped
+ * UI today (`ExtensionContextMenuItems`, wired in `TimelineCanvas.tsx`).
+ */
 export interface TimelineOverlayContribution {
   readonly id: string;
   readonly extensionId: string;
   readonly order?: number;
   /** Render the overlay with host-supplied viewport and interaction policy props. */
   readonly render: (props: TimelineOverlayRenderProps) => ReactNode;
-}
-
-const EMPTY_TIMELINE_OVERLAY_CONTRIBUTIONS: readonly TimelineOverlayContribution[] = Object.freeze([]);
-
-/**
- * Canonical selector for timeline overlay contributions.
- *
- * Overlays render above the edit area in TimelineEditorCore / TimelineCanvas.
- * They default to `pointer-events: none` and must call `claimPointer()` to
- * capture pointer or scroll gestures, preventing accidental interference
- * with core timeline interactions.
- */
-export function getTimelineOverlayContributions(
-  overlays: readonly VideoEditorOverlayDescriptor[],
-  overlayRenderProps: Omit<
-    TimelineOverlayRenderProps,
-    'pointerClaimed' | 'claimPointer' | 'releasePointer'
-  > & {
-    claimPointer: (overlayId: string) => void;
-    releasePointer: (overlayId: string) => void;
-  },
-  claimedOverlayId: string | null,
-): readonly TimelineOverlayContribution[] {
-  if (overlays.length === 0) {
-    return EMPTY_TIMELINE_OVERLAY_CONTRIBUTIONS;
-  }
-
-  const contributions: TimelineOverlayContribution[] = overlays.map((descriptor) => {
-    const pointerClaimed = claimedOverlayId === descriptor.id;
-
-    const _renderProps: TimelineOverlayRenderProps = {
-      ...overlayRenderProps,
-      pointerClaimed,
-      claimPointer: () => overlayRenderProps.claimPointer(descriptor.id),
-      releasePointer: () => overlayRenderProps.releasePointer(descriptor.id),
-    };
-
-    return {
-      id: descriptor.id,
-      extensionId: '',
-      order: descriptor.order,
-      render: () => (descriptor.render ? descriptor.render(null as unknown as VideoEditorRenderContext) : null),
-    };
-  });
-
-  return contributions;
 }

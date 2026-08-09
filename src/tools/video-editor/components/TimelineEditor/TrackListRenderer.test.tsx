@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { DataProviderWrapper, type VideoEditorRuntimeContextValue } from '@/tools/video-editor/contexts/DataProviderContext';
 import { createCommandRegistry, type CommandRegistry } from '@/tools/video-editor/runtime/commandRegistry';
+import { AIInputModeProvider } from '@/shared/contexts/AIInputModeContext.tsx';
 import { TrackLabelContent } from '@/tools/video-editor/components/TimelineEditor/TrackLabel';
 import { TrackListRenderer } from '@/tools/video-editor/components/TimelineEditor/TrackListRenderer';
 import type { TrackDefinition } from '@/tools/video-editor/types';
@@ -178,6 +179,68 @@ describe('TrackListRenderer', () => {
       extensionId: 'ext.track',
       target: { target: 'track', trackId: 'V1' },
     }));
+  });
+
+  const renderTouchTrackLabel = (onRemove = vi.fn()) => {
+    render(
+      <AIInputModeProvider>
+        <TrackLabelContent
+          track={tracks[0]}
+          isSelected={false}
+          hasClips={false}
+          deviceClass="phone"
+          onSelect={vi.fn()}
+          onChange={vi.fn()}
+          onRemove={onRemove}
+        />
+      </AIInputModeProvider>,
+    );
+    return onRemove;
+  };
+
+  it('pins reorder and settings targets open on touch instead of hiding them behind hover', () => {
+    renderTouchTrackLabel();
+
+    const reorder = screen.getByRole('button', { name: 'Reorder track' });
+    const settings = screen.getByRole('button', { name: 'Track settings' });
+    [reorder, settings].forEach((button) => {
+      expect(button.className).toContain('h-9 w-9');
+      expect(button.closest('.opacity-0')).toBeNull();
+    });
+
+    // Rename and remove move into the dialog: the row cannot hold a third target.
+    expect(screen.queryByRole('button', { name: 'Remove track' })).not.toBeInTheDocument();
+  });
+
+  // Mounting the Radix dialog in jsdom costs seconds on a loaded box, so this one
+  // gets headroom over the 5s default rather than flaking under parallel load.
+  it('moves rename and remove into the touch settings dialog', async () => {
+    const onRemove = renderTouchTrackLabel();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Track settings' }));
+
+    expect(await screen.findByLabelText('Track name')).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: /Remove track/ }));
+    expect(onRemove).toHaveBeenCalledWith('V1');
+  }, 30000);
+
+  it('keeps the desktop hover overlay with its three inline actions', () => {
+    render(
+      <TrackLabelContent
+        track={tracks[0]}
+        isSelected={false}
+        hasClips={false}
+        onSelect={vi.fn()}
+        onChange={vi.fn()}
+        onRemove={vi.fn()}
+      />,
+    );
+
+    const reorder = screen.getByRole('button', { name: 'Reorder track' });
+    expect(reorder.className).toContain('h-6 w-6');
+    expect(reorder.closest('.opacity-0')).not.toBeNull();
+    expect(screen.getByTitle('Remove track')).toBeInTheDocument();
+    expect(screen.getByTitle('Track defaults')).toBeInTheDocument();
   });
 
   it('preserves the native track context menu when no extension items are eligible', () => {

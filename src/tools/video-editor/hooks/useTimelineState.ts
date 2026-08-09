@@ -7,6 +7,7 @@ import {
   useTimelineMultiSelect,
   userSelectTimelineClip,
   userSelectTimelineClips,
+  type SelectClipOptions,
 } from '@/shared/state/selectionStore.ts';
 import { createInteractionState, type InteractionStateRef } from '@/tools/video-editor/lib/interaction-state.ts';
 import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
@@ -27,8 +28,7 @@ import { useTimelineSave } from '@/tools/video-editor/hooks/useTimelineSave.ts';
 import { useTimelineSelection } from '@/tools/video-editor/hooks/useTimelineSelection.ts';
 import {
   createTimelineStore,
-  type TimelineStoreApi,
-  type TimelineStoreBootstrap,
+  seedTimelineStoreBeforeRender,
 } from '@/tools/video-editor/hooks/timelineStore.ts';
 import {
   createTimelineCommandRunner,
@@ -416,18 +416,6 @@ function useTimelinePlaybackContextValue({
   ]);
 }
 
-function syncInitialTimelineStoreBootstrap(
-  store: TimelineStoreApi,
-  bootstrap: TimelineStoreBootstrap,
-) {
-  const state = store.getState();
-  if (state.availability.mounted) {
-    return;
-  }
-
-  store.getState().syncSlices(bootstrap);
-}
-
 export function useTimelineState(): UseTimelineStateResult {
   const runtime = useVideoEditorRuntime();
   const queryClient = useQueryClient();
@@ -439,7 +427,10 @@ export function useTimelineState(): UseTimelineStateResult {
   if (storeRef.current === null) {
     storeRef.current = createTimelineStore();
   }
-  const playback = useTimelinePlayback(storeRef.current);
+  // Non-null alias: closures below (effects, memo bodies) lose the narrowing
+  // that the lazy-init guard above establishes on `storeRef.current`.
+  const store = storeRef.current;
+  const playback = useTimelinePlayback();
   const preferences = useEditorPreferences(runtime.timelineId);
   const resolveAssetUrl = useCallback(async (file: string) => {
     if (runtime.assetResolver) {
@@ -462,7 +453,7 @@ export function useTimelineState(): UseTimelineStateResult {
   const [precisionEnabled, setPrecisionEnabled] = useState(initialInteractionPolicyRef.current.precisionEnabled);
   const [contextTarget, setContextTarget] = useState(initialInteractionPolicyRef.current.contextTarget);
   const [inspectorTarget, setInspectorTarget] = useState(initialInteractionPolicyRef.current.inspectorTarget);
-  const save = useTimelineSave(queries, runtime.provider, interactionStateRef, storeRef.current);
+  const save = useTimelineSave(queries, runtime.provider, interactionStateRef, store);
   const history = useTimelineHistory({
     dataRef: save.dataRef,
     commitData: save.commitData,
@@ -549,6 +540,15 @@ export function useTimelineState(): UseTimelineStateResult {
     selectedTrackId,
   });
   const multiSelect = useTimelineMultiSelect();
+  // useTimelineMultiSelect exposes selection *state*; the select action lives on
+  // the store module. Passing `multiSelect.selectClip` here left every consumer
+  // with `undefined` and crashed the add-text flows after insert.
+  const selectClip = useCallback((clipId: string, opts?: SelectClipOptions) => {
+    userSelectTimelineClip(clipId, {
+      additive: Boolean(opts?.toggle),
+      preserveIfSelected: opts?.preserveSelection,
+    });
+  }, []);
 
   useEffect(() => {
     systemResetTimelineSelection();
@@ -609,11 +609,11 @@ export function useTimelineState(): UseTimelineStateResult {
   });
 
   const assetManagement = useAssetManagement({
-    store: storeRef.current,
+    store,
     dataRef,
     selectedTrackId,
     selectedProjectId,
-    selectClip: multiSelect.selectClip,
+    selectClip,
     setSelectedTrackId,
     applyEdit,
     patchRegistry,
@@ -635,13 +635,13 @@ export function useTimelineState(): UseTimelineStateResult {
     selectedClipId: selection.primaryClipId,
     selectedTrack: selection.selectedTrack,
     currentTime: playback.currentTime,
-    selectClip: multiSelect.selectClip,
+    selectClip,
     setSelectedTrackId,
     applyEdit,
   });
 
   const externalDrop = useExternalDrop({
-    store: storeRef.current,
+    store,
     dataRef,
     pendingOpsRef,
     scale,
@@ -922,7 +922,7 @@ export function useTimelineState(): UseTimelineStateResult {
   // Seed the external store before descendants render for the first time so
   // mounted-provider readers such as AgentChat and pending-add helpers do not
   // observe the placeholder slice values from createTimelineStore().
-  syncInitialTimelineStoreBootstrap(storeRef.current, {
+  seedTimelineStoreBeforeRender(store, {
     data: editorData,
     ops: editorOps,
     chrome,
@@ -931,17 +931,17 @@ export function useTimelineState(): UseTimelineStateResult {
   });
 
   useLayoutEffect(() => {
-    storeRef.current.getState().syncSlices({
+    store.getState().syncSlices({
       data: editorData,
       ops: editorOps,
       chrome,
       playback: playbackValue,
       timelineOps,
     });
-  }, [chrome, editorData, editorOps, playbackValue, timelineOps]);
+  }, [chrome, editorData, editorOps, playbackValue, store, timelineOps]);
 
   return {
-    store: storeRef.current,
+    store,
     editor,
     editorData,
     editorOps,

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
 import type { ReactNode } from 'react';
 import type { VideoEditorRenderContext } from '@/tools/video-editor/runtime/extensionSurface';
 
@@ -23,6 +23,22 @@ function __clearSlotRenderers() {
 
 /** Device class reported by the mocked timeline store; drives the shell layout branch. */
 let __deviceClass: 'desktop' | 'tablet' | 'phone' = 'desktop';
+/** Interaction mode reported by the mocked timeline store. */
+let __interactionMode: 'browse' | 'select' | 'move' | 'trim' | 'precision' = 'browse';
+
+/** Stable op spies, so tests can assert what a rendered control actually calls. */
+const __editorOps = {
+  applyEdit: vi.fn(),
+  handleDeleteClips: vi.fn(),
+  moveSelectedClipsToTrack: vi.fn(),
+  handleToggleMuteClips: vi.fn(),
+  handleSplitSelectedClip: vi.fn(),
+  clearSelection: vi.fn(),
+  setInspectorTarget: vi.fn(),
+  setContextTarget: vi.fn(),
+  setPrecisionEnabled: vi.fn(),
+  setInteractionMode: vi.fn(),
+};
 
 // ---------------------------------------------------------------------------
 // Mock dependencies
@@ -37,22 +53,11 @@ vi.mock('@/tools/video-editor/hooks/timelineStore.ts', () => ({
     resolvedConfig: null,
     deviceClass: __deviceClass,
     precisionEnabled: false,
-    interactionMode: 'browse' as const,
+    interactionMode: __interactionMode,
     gestureOwner: null,
     inspectorTarget: { kind: 'timeline' as const },
   }),
-  useTimelineEditorOps: () => ({
-    applyEdit: vi.fn(),
-    handleDeleteClips: vi.fn(),
-    moveSelectedClipsToTrack: vi.fn(),
-    handleToggleMuteClips: vi.fn(),
-    handleSplitSelectedClip: vi.fn(),
-    clearSelection: vi.fn(),
-    setInspectorTarget: vi.fn(),
-    setContextTarget: vi.fn(),
-    setPrecisionEnabled: vi.fn(),
-    setInteractionMode: vi.fn(),
-  }),
+  useTimelineEditorOps: () => __editorOps,
   useTimelineChromeContext: () => ({
     saveStatus: 'saved' as const,
     isConflictExhausted: false,
@@ -194,8 +199,17 @@ vi.mock('@/tools/video-editor/components/ThemeChip.tsx', () => ({
   ThemeChip: () => null,
 }));
 
+/** When true the mocked timeline throws during render, standing in for one
+ *  malformed clip taking `ClipAction`/`TrackListRenderer` down. */
+let __timelineThrows = false;
+
 vi.mock('@/tools/video-editor/components/TimelineEditor/TimelineEditor.tsx', () => ({
-  TimelineEditor: () => <div data-testid="timeline-editor">Timeline Editor</div>,
+  TimelineEditor: () => {
+    if (__timelineThrows) {
+      throw new Error('malformed clip: hold is NaN');
+    }
+    return <div data-testid="timeline-editor">Timeline Editor</div>;
+  },
 }));
 
 vi.mock('@/tools/video-editor/lib/config-utils.ts', () => ({
@@ -207,9 +221,12 @@ vi.mock('@/tools/video-editor/lib/keyboard-delete.ts', () => ({
   buildKeyboardDeleteMutation: () => null,
 }));
 
-vi.mock('@/tools/video-editor/lib/mobile-interaction-model.ts', () => ({
-  areTimelineInteractionTargetsEqual: () => true,
-}));
+vi.mock('@/tools/video-editor/lib/mobile-interaction-model.ts', async () => {
+  const actual = await vi.importActual<typeof import('@/tools/video-editor/lib/mobile-interaction-model.ts')>(
+    '@/tools/video-editor/lib/mobile-interaction-model.ts',
+  );
+  return { ...actual, areTimelineInteractionTargetsEqual: () => true };
+});
 
 vi.mock('@/shared/lib/typedEvents.ts', () => ({
   dispatchAppEvent: vi.fn(),
@@ -921,4 +938,139 @@ describe('TimelineEditorShellCore — HostContributionErrorBoundary recovery key
   });
 });
 
+});
+
+// ---------------------------------------------------------------------------
+// Host timeline error boundary
+// ---------------------------------------------------------------------------
+
+describe('TimelineEditorShellCore — timeline error boundary', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    __clearSlotRenderers();
+    __clearRuntimeContext();
+    __deviceClass = 'desktop';
+    __timelineThrows = false;
+  });
+
+  afterEach(() => {
+    __timelineThrows = false;
+  });
+
+  it('contains a timeline render throw and keeps the toolbar alive', () => {
+    // React logs the caught error; silence it so the suite output stays readable.
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    __timelineThrows = true;
+
+    render(<TimelineEditorShellCore timelineId="test-timeline" />);
+
+    // The boundary caught it — the timeline is replaced by the fallback...
+    expect(screen.queryByTestId('timeline-editor')).toBeNull();
+    expect(document.querySelector('[data-video-editor-timeline-error]')).toBeTruthy();
+    expect(screen.getByRole('alert')).toHaveTextContent('Timeline failed to render');
+
+    // ...and the rest of the editor — including the toolbar you would use to
+    // undo the edit that produced the bad clip — is still mounted.
+    expect(screen.getByLabelText('Zoom out timeline')).toBeTruthy();
+    expect(screen.getByLabelText('Zoom in timeline')).toBeTruthy();
+    expect(screen.getByText('saved')).toBeTruthy();
+    expect(screen.getByTestId('preview-panel')).toBeTruthy();
+
+    consoleError.mockRestore();
+  });
+
+  it('re-mounts the timeline subtree when "Reload editor" is activated', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    __timelineThrows = true;
+
+    render(<TimelineEditorShellCore timelineId="test-timeline" />);
+    expect(screen.queryByTestId('timeline-editor')).toBeNull();
+
+    // The underlying cause is gone (e.g. the user's undo landed, or a refetch
+    // replaced the bad clip); the reload affordance must produce a fresh mount.
+    __timelineThrows = false;
+    fireEvent.click(screen.getByRole('button', { name: /reload editor/i }));
+
+    expect(screen.getByTestId('timeline-editor')).toBeTruthy();
+    expect(document.querySelector('[data-video-editor-timeline-error]')).toBeNull();
+
+    consoleError.mockRestore();
+  });
+
+  it('does not wrap the timeline in a fallback when it renders cleanly', () => {
+    render(<TimelineEditorShellCore timelineId="test-timeline" />);
+
+    expect(screen.getByTestId('timeline-editor')).toBeTruthy();
+    expect(document.querySelector('[data-video-editor-timeline-error]')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Mode-switcher reachability (Key Invariant 2: every mode reachable per device)
+// ---------------------------------------------------------------------------
+
+describe('TimelineEditorShellCore — mode switcher reachability', () => {
+  const SWITCHABLE_MODES = ['Browse', 'Select', 'Move', 'Trim'];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    __clearSlotRenderers();
+    __clearRuntimeContext();
+    __deviceClass = 'desktop';
+  });
+
+  it('reaches every interaction mode on tablet through the compact toolbar switcher', () => {
+    __deviceClass = 'tablet';
+    render(<TimelineEditorShellCore timelineId="test-timeline" />);
+
+    const switcher = screen.getByRole('toolbar', { name: 'Timeline mode switcher' });
+    expect(switcher).toBeTruthy();
+    // The phone's full-width bar stays phone-only.
+    expect(screen.queryByRole('toolbar', { name: 'Phone timeline mode bar' })).toBeNull();
+
+    for (const label of [...SWITCHABLE_MODES, 'Precision']) {
+      expect(screen.getByRole('button', { name: label })).toBeTruthy();
+    }
+  });
+
+  it('routes tablet mode changes through the same editor ops as the phone bar', () => {
+    __deviceClass = 'tablet';
+    render(<TimelineEditorShellCore timelineId="test-timeline" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Move' }));
+
+    expect(__editorOps.setInteractionMode).toHaveBeenCalledWith('move');
+    expect(__editorOps.setContextTarget).toHaveBeenCalledWith({ kind: 'timeline' });
+    expect(__editorOps.setInspectorTarget).toHaveBeenCalled();
+  });
+
+  it('marks the active mode with aria-pressed on the tablet switcher', () => {
+    __deviceClass = 'tablet';
+    __interactionMode = 'trim';
+    render(<TimelineEditorShellCore timelineId="test-timeline" />);
+
+    expect(screen.getByRole('button', { name: 'Trim' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Move' })).toHaveAttribute('aria-pressed', 'false');
+    __interactionMode = 'browse';
+  });
+
+  it('keeps every switcher target at the 44px touch minimum', () => {
+    __deviceClass = 'tablet';
+    render(<TimelineEditorShellCore timelineId="test-timeline" />);
+
+    const switcher = screen.getByRole('toolbar', { name: 'Timeline mode switcher' });
+    for (const button of Array.from(switcher.querySelectorAll('button'))) {
+      // jsdom has no layout, so assert the class that carries the constraint.
+      expect(button.className).toContain('min-h-11');
+    }
+  });
+
+  it('renders no mode switcher on desktop — its input model is modeless', () => {
+    __deviceClass = 'desktop';
+    render(<TimelineEditorShellCore timelineId="test-timeline" />);
+
+    expect(screen.queryByRole('toolbar', { name: 'Timeline mode switcher' })).toBeNull();
+    expect(screen.queryByRole('toolbar', { name: 'Phone timeline mode bar' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Trim' })).toBeNull();
+  });
 });

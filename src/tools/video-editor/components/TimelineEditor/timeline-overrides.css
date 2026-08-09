@@ -24,6 +24,15 @@
   touch-action: none;
 }
 
+/* Select mode's owner is the scroll container itself: the marquee starts on empty
+   canvas, so there is no inner element to hand the touch to. Without this the
+   drag overscrolls left-to-right at scrollLeft 0 and Chromium turns it into the
+   back-navigation swipe — the tab leaves the editor mid-gesture. Select mode
+   therefore does not pan; browse mode is the one that pans. */
+.timeline-canvas-edit-area[data-touch-gesture-mode='marquee'] {
+  touch-action: none;
+}
+
 .timeline-canvas-edit-area[data-touch-gesture-mode='trim'] [data-resize-edge] {
   touch-action: none;
   /* Above the touch overflow-menu button, which otherwise covers the clip's right edge */

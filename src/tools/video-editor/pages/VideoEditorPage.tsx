@@ -9,6 +9,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/shared/components/ui/button.tsx';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/shared/components/ui/card.tsx';
 import { cn } from '@/shared/components/ui/contracts/cn.ts';
+import { useIsMobile, useIsTablet } from '@/shared/hooks/mobile';
 import { Input } from '@/shared/components/ui/input.tsx';
 import { Skeleton } from '@/shared/components/ui/skeleton.tsx';
 import { useAuth } from '@/shared/contexts/AuthContext.tsx';
@@ -68,6 +69,24 @@ type LocalRouteState = {
 };
 
 const LOCAL_MODE_STORAGE_KEY = 'dev.videoEditor.localMode';
+
+/**
+ * Class for the dev header strip above the editor.
+ *
+ * The app shell parks a fixed pane-control tab at top-centre of the viewport
+ * (`EditorPaneTab` → `PaneControlTab`, `top-0 left-1/2`, ~46px). This page is
+ * full-bleed and renders straight underneath it, so on phone and tablet the tab
+ * landed on the local-mode timeline selector. Reserve that band here rather than
+ * move app-wide chrome that every other page also depends on.
+ *
+ * Two gates, both deliberate:
+ *  - `hasContent`: in production `DevModeToggle` returns null and this strip must
+ *    stay a hairline, not 56px of empty space.
+ *  - `isTouch`: on desktop the row's controls stop well short of centre, so there
+ *    is nothing to clear and the layout stays exactly as it was.
+ */
+const devHeaderClass = (hasContent: boolean, isTouch: boolean) =>
+  cn('border-b border-border px-4', hasContent && isTouch ? 'pb-3 pt-14' : 'py-3');
 const LOCAL_BRIDGE_BASE_URL = '/api/astrid';
 
 function readStoredLocalMode(): boolean {
@@ -447,6 +466,11 @@ export default function VideoEditorPage() {
   const { userId } = useAuth();
   const navigate = useNavigate();
   const { localModeAvailable, mode, setMode } = useVideoEditorModePreference();
+  const isMobileViewport = useIsMobile();
+  const isTabletViewport = useIsTablet();
+  /** Touch viewports are where the app's fixed top-centre pane tab collides
+   *  with this header — see `devHeaderClass`. */
+  const reservesTopPaneTabGutter = isMobileViewport || isTabletViewport;
   const [mountedSaveStatus, setMountedSaveStatus] = useState<SaveStatus>('saved');
   const creatingRef = useRef(false);
   const appTimelineId = searchParams.get('timeline');
@@ -736,7 +760,7 @@ export default function VideoEditorPage() {
 
     return (
       <div className="flex h-full w-full flex-col overflow-hidden bg-background">
-        <div className="border-b border-border px-4 py-3">
+        <div className={devHeaderClass(true, reservesTopPaneTabGutter)}>
           <div className="flex flex-wrap items-center gap-3">
             <DevModeToggle
               localModeAvailable={localModeAvailable}
@@ -883,7 +907,7 @@ export default function VideoEditorPage() {
   if (!selectedProjectId) {
     return (
       <div className="flex h-full w-full flex-col bg-background">
-        <div className="border-b border-border px-4 py-3">
+        <div className={devHeaderClass(localModeAvailable, reservesTopPaneTabGutter)}>
           <DevModeToggle
             localModeAvailable={localModeAvailable}
             mode={mode}
@@ -919,7 +943,7 @@ export default function VideoEditorPage() {
 
   return (
     <div className={cn('flex h-full w-full flex-col overflow-hidden bg-background')}>
-      <div className="border-b border-border px-4 py-3">
+      <div className={devHeaderClass(localModeAvailable, reservesTopPaneTabGutter)}>
         <DevModeToggle localModeAvailable={localModeAvailable} mode={mode} setMode={setMode} />
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">

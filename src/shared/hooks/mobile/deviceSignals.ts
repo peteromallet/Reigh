@@ -39,11 +39,17 @@ export function useIsTablet() {
   const [isTablet, setIsTablet] = React.useState<boolean>(() => computeIsTablet(reportNonFatalMobileError));
 
   React.useEffect(() => {
+    // Mirror useIsMobile's listener set: computeIsTablet reads pointer coarseness
+    // as well as width, so a pointer change (plugging in a touchscreen) must
+    // re-evaluate both signals or they transiently disagree.
+    const mqPointer = window.matchMedia('(pointer: coarse)');
     const onChange = () => setIsTablet(computeIsTablet(reportNonFatalMobileError));
 
+    mqPointer.addEventListener('change', onChange);
     window.addEventListener('resize', onChange);
 
     return () => {
+      mqPointer.removeEventListener('change', onChange);
       window.removeEventListener('resize', onChange);
     };
   }, []);

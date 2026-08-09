@@ -3,6 +3,11 @@ import { userSelectTimelineClip, userSelectTimelineClips } from '@/shared/state/
 import type { DropPosition } from '@/tools/video-editor/lib/drop-position.ts';
 import type { TimelineInputModality } from '@/tools/video-editor/lib/mobile-interaction-model.ts';
 import {
+  CLIP_ACTION_SELECTOR,
+  CLIP_ID_DATASET_KEY,
+  ROW_ID_DATASET_KEY,
+} from '@/tools/video-editor/lib/timeline-dom.ts';
+import {
   type ClipOffset,
   applyMultiDragMoves,
   buildAugmentedData,
@@ -133,9 +138,9 @@ export function findClipElement(
   clipId: string,
   rowId: string,
 ): HTMLElement | null {
-  const candidates = wrapper.querySelectorAll<HTMLElement>('.clip-action');
+  const candidates = wrapper.querySelectorAll<HTMLElement>(CLIP_ACTION_SELECTOR);
   for (const candidate of candidates) {
-    if (candidate.dataset.clipId === clipId && candidate.dataset.rowId === rowId) {
+    if (candidate.dataset[CLIP_ID_DATASET_KEY] === clipId && candidate.dataset[ROW_ID_DATASET_KEY] === rowId) {
       return candidate;
     }
   }
@@ -169,7 +174,7 @@ export function ensureCountBadge(session: InternalDragSession): void {
   }
 
   const badge = document.createElement('span');
-  badge.className = 'pointer-events-none absolute right-1 top-1 rounded-full bg-sky-400 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-sky-950 shadow-sm';
+  badge.className = 'pointer-events-none absolute right-1 top-1 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold leading-none text-primary-foreground shadow-sm';
   badge.textContent = `${session.draggedClipIds.length} clips`;
   session.clipEl.appendChild(badge);
   session.countBadgeEl = badge;

@@ -58,6 +58,16 @@ export interface LiveSourcesPanelProps {
   livePermissionService?: LivePermissionService | null;
   onRemoveSourceBindings?: (sourceId: string) => void;
   compact?: boolean;
+  /**
+   * Collapse to a header-only chip that the user expands on demand.
+   *
+   * The panel is mounted in the preview overlay bar, whose other children are
+   * all chips; at its natural 320px it draped a card across the video on every
+   * device. Collapsed, the header still carries the two things that must stay
+   * glanceable — the source count and the export-blocked badge — and expanding
+   * is then a deliberate act, not the default state.
+   */
+  collapsible?: boolean;
 }
 
 type SourceRow = {
@@ -357,7 +367,9 @@ export function LiveSourcesPanel({
   livePermissionService,
   onRemoveSourceBindings,
   compact = false,
+  collapsible = false,
 }: LiveSourcesPanelProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
   const runtime = useOptionalVideoEditorRuntime();
   const registry = liveDataRegistry ?? runtime?.liveDataRegistry ?? null;
   const permissionService = livePermissionService ?? runtime?.livePermissionService ?? null;
@@ -574,37 +586,66 @@ export function LiveSourcesPanel({
     return null;
   }
 
+  const isCollapsed = collapsible && !isExpanded;
+
+  const headerContent = (
+    <>
+      <div className="flex items-center gap-1.5 whitespace-nowrap text-[11px] font-medium text-foreground">
+        <Radio className="h-3.5 w-3.5 shrink-0 text-sky-300" aria-hidden="true" />
+        {/* Collapsed on a phone-width overlay bar the wordmark does not fit next to
+            the inspector and render chips; the icon plus the export badge carry it. */}
+        <span className={cn(isCollapsed && 'hidden sm:inline')}>Live Sources</span>
+        {isCollapsed && rows.length > 0 && (
+          <span className="rounded bg-muted px-1 text-[9px] text-muted-foreground">{rows.length}</span>
+        )}
+      </div>
+      {exportBlockers.length > 0 ? (
+        <span
+          className="inline-flex items-center gap-1 rounded border border-red-500/30 bg-red-500/10 px-1.5 py-0.5 text-[9px] text-red-300"
+          data-video-editor-live-export-blocked="true"
+        >
+          <ShieldAlert className="h-2.5 w-2.5" aria-hidden="true" />
+          Export blocked
+        </span>
+      ) : (
+        <span className="inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] text-emerald-300">
+          <CheckCircle2 className="h-2.5 w-2.5" aria-hidden="true" />
+          Export clear
+        </span>
+      )}
+    </>
+  );
+
   return (
     <section
       className={cn(
         'pointer-events-auto rounded-md border border-border/70 bg-background/90 text-left text-[10px] text-muted-foreground shadow-sm backdrop-blur-sm',
-        compact ? 'w-72 p-2' : 'w-80 p-2',
+        isCollapsed ? 'w-auto p-1.5' : compact ? 'w-72 p-2' : 'w-80 p-2',
       )}
       data-video-editor-live-sources-panel="true"
+      data-video-editor-live-sources-collapsed={isCollapsed ? 'true' : undefined}
       aria-label="Live sources"
     >
-      <div className="mb-1.5 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 text-[11px] font-medium text-foreground">
-          <Radio className="h-3.5 w-3.5 text-sky-300" aria-hidden="true" />
-          <span>Live Sources</span>
+      {collapsible ? (
+        <button
+          type="button"
+          className={cn(
+            'flex w-full min-h-11 items-center justify-between gap-2 rounded text-left transition-colors hover:bg-muted/40 motion-reduce:transition-none',
+            !isCollapsed && 'mb-1.5',
+          )}
+          aria-expanded={isExpanded}
+          aria-label="Live sources"
+          onClick={() => setIsExpanded((value) => !value)}
+        >
+          {headerContent}
+        </button>
+      ) : (
+        <div className="mb-1.5 flex items-center justify-between gap-2">
+          {headerContent}
         </div>
-        {exportBlockers.length > 0 ? (
-          <span
-            className="inline-flex items-center gap-1 rounded border border-red-500/30 bg-red-500/10 px-1.5 py-0.5 text-[9px] text-red-300"
-            data-video-editor-live-export-blocked="true"
-          >
-            <ShieldAlert className="h-2.5 w-2.5" aria-hidden="true" />
-            Export blocked
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] text-emerald-300">
-            <CheckCircle2 className="h-2.5 w-2.5" aria-hidden="true" />
-            Export clear
-          </span>
-        )}
-      </div>
+      )}
 
-      {rows.length === 0 ? (
+      {isCollapsed ? null : rows.length === 0 ? (
         <div className="rounded border border-dashed border-border/70 px-2 py-1.5 text-[10px] text-muted-foreground">
           No live sources or persisted live bindings.
         </div>

@@ -11,7 +11,7 @@
     "preflight": "docker build .",
     "dev": "vite --config config/vite/vite.config.ts",
     "dev:embed-demo": "vite --config examples/embed-demo/vite.config.ts",
-    "build": "tsc && vite build --config config/vite/vite.config.ts",
+    "build": "vite build --config config/vite/vite.config.ts",
     "build:embed-demo": "vite build --config examples/embed-demo/vite.config.ts",
     "build:dev": "vite build --mode development --config config/vite/vite.config.ts",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
@@ -79,7 +79,9 @@
     "typecheck:strict-probe": "npm run typecheck:strict-islands",
     "quality:check": "npm run check:no-smoke-tests && npm run check:shots-shim-usage && npm run check:core-shim-usage && npm run check:video-editor-sdk-imports && npm run check:error-runtime-alias-usage && npm run check:fat-contexts && npm run check:contracts && npm run check:contract-surface-map && npm run check:contract-recheck && npm run check:deferred-claims && npm run check:docs-maturity-sync && npm run check:extension-family-conformance && npm run check:sdk-public-exports && npm run check:frontend-closure && npm run check:example-readiness && npm run check:release-checklist && npm run lint && npm run typecheck:strict-probe && npm run test:readiness",
     "test:readiness": "node scripts/quality/check-readiness.mjs --strict && vitest run --config config/testing/vitest.config.ts src/tools/video-editor/runtime/extensionLifecycle.test.ts src/tools/video-editor/runtime/ContributionErrorBoundary.test.tsx src/tools/video-editor/components/TimelineEditorShellCore.test.tsx src/tools/video-editor/components/PropertiesPanel/PropertiesPanel.test.tsx src/tools/video-editor/runtime/extensionSurface.test.ts src/tools/video-editor/contexts/VideoEditorProvider.test.tsx src/tools/video-editor/components/ExtensionManager/ExtensionManager.test.tsx src/tools/video-editor/runtime/phase4ReadinessDocs.test.ts",
-    "test:readiness:e2e": "playwright test --config playwright.config.ts tests/e2e/extension-harness.spec.ts"
+    "test:readiness:e2e": "playwright test --config playwright.config.ts tests/e2e/extension-harness.spec.ts",
+    "test:e2e:timeline": "PLAYWRIGHT_TIMELINE_DEVICES=1 PLAYWRIGHT_PORT=${PLAYWRIGHT_PORT:-2222} playwright test --config playwright.config.ts --project=timeline-devices --workers=1",
+    "test:e2e:timeline:bridge": "node tests/e2e/timeline/astrid-bridge-stub.mjs"
   },
   "dependencies": {
     "@banodoco/timeline-composition": "file:vendor/timeline-composition",

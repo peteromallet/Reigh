@@ -16,12 +16,13 @@ import { ClipAction } from '@/tools/video-editor/components/TimelineEditor/ClipA
 import { DropIndicator } from '@/tools/video-editor/components/TimelineEditor/DropIndicator.tsx';
 import { TimelineCanvas } from '@/tools/video-editor/components/TimelineEditor/TimelineCanvas.tsx';
 import { ROW_HEIGHT, TIMELINE_START_LEFT } from '@/tools/video-editor/lib/coordinate-utils.ts';
+import { EDIT_AREA_SELECTOR } from '@/tools/video-editor/lib/timeline-dom.ts';
+import { computeTimelineExtent, maxClipEndSeconds } from '@/tools/video-editor/lib/timeline-scale.ts';
 import type { ClipMeta } from '@/tools/video-editor/lib/timeline-data.ts';
 import {
   useTimelineChromeSelector,
   useTimelineDataSelector,
   useTimelineOpsSelector,
-  useTimelinePlaybackSelector,
 } from '@/tools/video-editor/hooks/timelineStore.ts';
 import { useClipDrag } from '@/tools/video-editor/hooks/useClipDrag.ts';
 import { useActiveTaskClips } from '@/tools/video-editor/hooks/useActiveTaskClips.ts';
@@ -35,20 +36,18 @@ import {
   convertOverhangToHold,
   detectClipOverhang,
 } from '@/tools/video-editor/lib/overhang.ts';
+import { insertEffectLayerAt } from '@/tools/video-editor/lib/external-drop-utils.ts';
 import { getTimelinePostprocessShader } from '@/tools/video-editor/lib/timeline-domain.ts';
 import type { TimelineActionResizeStart, TimelineClipEdgeResizeEnd } from '@/tools/video-editor/hooks/useTimelineState.types.ts';
 import type { ResolvedTimelineClip, TimelinePostprocessShaderMetadata, TrackDefinition } from '@/tools/video-editor/types/index.ts';
 import type { TimelineAction, TimelineRow } from '@/tools/video-editor/types/timeline-canvas.ts';
-import type {
-  TimelineOverlayContribution,
-  TimelineOverlayRenderProps,
-} from '@/tools/video-editor/runtime/extensionSurface';
 
 const EMPTY_ASSET_GENERATION_MAP: Record<string, string> = {};
 const EMPTY_CLIP_IDS = new Set<string>();
 const EMPTY_SHOT_GROUPS: ShotGroup[] = [];
 const EMPTY_FINAL_VIDEO_MAP = new Map<string, DoubleClickFinalVideo>();
 const EMPTY_SHOTS: Shot[] = [];
+const EMPTY_ROWS: TimelineRow[] = [];
 
 interface DoubleClickPinnedGroup {
   shotId: string;
@@ -233,11 +232,8 @@ function TimelineEditorCoreComponent({
     gestureOwner,
     primaryClipId,
     selectedClipIds,
-    selectedClipIdsRef,
-    additiveSelectionRef,
     scale,
     scaleWidth,
-    coordinator,
     indicatorRef,
     editAreaRef,
     selectedTrackId,
@@ -254,11 +250,8 @@ function TimelineEditorCoreComponent({
     gestureOwner: timeline.gestureOwner,
     primaryClipId: timeline.primaryClipId,
     selectedClipIds: timeline.selectedClipIds,
-    selectedClipIdsRef: timeline.selectedClipIdsRef,
-    additiveSelectionRef: timeline.additiveSelectionRef,
     scale: timeline.scale,
     scaleWidth: timeline.scaleWidth,
-    coordinator: timeline.coordinator,
     indicatorRef: timeline.indicatorRef,
     editAreaRef: timeline.editAreaRef,
     selectedTrackId: timeline.selectedTrackId,
@@ -266,11 +259,7 @@ function TimelineEditorCoreComponent({
   }), shallow);
   const {
     applyEdit,
-    moveClipToRow,
-    createTrackAndMoveClip,
-    selectClip,
     selectClips,
-    addToSelection,
     clearSelection,
     isClipSelected,
     setSelectedTrackId,
@@ -298,11 +287,7 @@ function TimelineEditorCoreComponent({
     registerAsset,
   } = useTimelineOpsSelector((ops) => ({
     applyEdit: ops.applyEdit,
-    moveClipToRow: ops.moveClipToRow,
-    createTrackAndMoveClip: ops.createTrackAndMoveClip,
-    selectClip: ops.selectClip,
     selectClips: ops.selectClips,
-    addToSelection: ops.addToSelection,
     clearSelection: ops.clearSelection,
     isClipSelected: ops.isClipSelected,
     setSelectedTrackId: ops.setSelectedTrackId,
@@ -333,13 +318,18 @@ function TimelineEditorCoreComponent({
     handleAddTrack,
     handleAddTextAt,
     handleClearUnusedTracks,
+    setScaleWidth,
     unusedTrackCount,
   } = useTimelineChromeSelector((chrome) => ({
     handleAddTrack: chrome.handleAddTrack,
     handleAddTextAt: chrome.handleAddTextAt,
     handleClearUnusedTracks: chrome.handleClearUnusedTracks,
+    setScaleWidth: chrome.setScaleWidth,
     unusedTrackCount: chrome.unusedTrackCount,
   }), shallow);
+  const handleAddEffectLayerAt = useCallback((trackId: string, time: number) => {
+    insertEffectLayerAt({ dataRef, trackId, time, selectedTrackId, applyEdit });
+  }, [applyEdit, dataRef, selectedTrackId]);
   const trackSensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 5 },
@@ -351,28 +341,7 @@ function TimelineEditorCoreComponent({
   const resizeStartHandler: TimelineActionResizeStart = onActionResizeStart;
   const clipEdgeResizeEndHandler: TimelineClipEdgeResizeEnd = onClipEdgeResizeEnd;
 
-  const { dragSessionRef } = useClipDrag({
-    timelineWrapperRef,
-    dataRef,
-    interactionStateRef,
-    deviceClass,
-    interactionMode,
-    gestureOwner,
-    setGestureOwner,
-    setInputModalityFromPointerType,
-    moveClipToRow,
-    createTrackAndMoveClip,
-    applyEdit,
-    selectClip,
-    selectClips,
-    selectedClipIdsRef,
-    additiveSelectionRef,
-    coordinator,
-    rowHeight: ROW_HEIGHT,
-    scale,
-    scaleWidth,
-    startLeft: TIMELINE_START_LEFT,
-  });
+  const { dragSessionRef } = useClipDrag();
 
   const { marqueeRect, onPointerDown: onMarqueePointerDown } = useMarqueeSelect({
     editAreaRef,
@@ -381,9 +350,6 @@ function TimelineEditorCoreComponent({
     gestureOwner,
     setGestureOwner,
     setInputModalityFromPointerType,
-    selectClips,
-    addToSelection,
-    clearSelection,
   });
 
   const { staleAssetKeys, dismissedAssetKeys, generationAssetKeys, dismissAsset, updateAssetToCurrentVariant, applyVariantToAsset } = useStaleVariants({
@@ -396,7 +362,7 @@ function TimelineEditorCoreComponent({
 
   useLayoutEffect(() => {
     const wrapper = timelineWrapperRef.current;
-    const nextEditArea = wrapper?.querySelector<HTMLElement>('.timeline-canvas-edit-area') ?? null;
+    const nextEditArea = wrapper?.querySelector<HTMLElement>(EDIT_AREA_SELECTOR) ?? null;
     editAreaRef.current = nextEditArea;
 
     return () => {
@@ -406,20 +372,14 @@ function TimelineEditorCoreComponent({
     };
   }, [data, editAreaRef, timelineWrapperRef]);
 
-  const scaleCount = useMemo(() => {
-    if (!data) {
-      return 1;
-    }
-
-    let maxEnd = 0;
-    for (const row of data.rows) {
-      for (const action of row.actions) {
-        maxEnd = Math.max(maxEnd, action.end);
-      }
-    }
-
-    return Math.ceil((maxEnd + 20) / scale) + 1;
-  }, [data, scale]);
+  // One geometry owner: the canvas (ruler, grid, scroll content) and the overlay
+  // host below both size themselves from this.
+  const timelineExtent = useMemo(() => computeTimelineExtent({
+    maxEndSeconds: maxClipEndSeconds(data?.rows ?? EMPTY_ROWS),
+    scale,
+    scaleWidth,
+    startLeft: TIMELINE_START_LEFT,
+  }), [data, scale, scaleWidth]);
 
   const thumbnailMap = useMemo<Record<string, string>>(() => {
     if (!resolvedConfig) {
@@ -462,95 +422,11 @@ function TimelineEditorCoreComponent({
     setInspectorTarget(target);
   }, [clearSelection, setContextTarget, setInspectorTarget, setSelectedTrackId]);
 
-  const { pixelToTime, pixelsPerSecond } = useTimelineScale({
+  const { pixelToTime } = useTimelineScale({
     scale,
     scaleWidth,
     startLeft: TIMELINE_START_LEFT,
   });
-
-  // ---- Timeline overlay host state -------------------------------------------
-  const [overlayScrollLeft, setOverlayScrollLeft] = useState(0);
-  const [overlayScrollTop, setOverlayScrollTop] = useState(0);
-  const [claimedOverlayId, setClaimedOverlayId] = useState<string | null>(null);
-  const overlayViewportRef = useRef<{ width: number; height: number }>({ width: 0, height: 0 });
-  const currentTime = useTimelinePlaybackSelector((pb) => pb.currentTime);
-  const selectedClipIdsSet = useMemo(
-    () => new Set(selectedClipIds),
-    [selectedClipIds],
-  );
-
-  const handleOverlayScroll = useCallback(
-    (metrics: { scrollLeft: number; scrollTop: number }) => {
-      setOverlayScrollLeft(metrics.scrollLeft);
-      setOverlayScrollTop(metrics.scrollTop);
-    },
-    [],
-  );
-
-  const handleClaimPointer = useCallback((overlayId: string) => {
-    setClaimedOverlayId(overlayId);
-  }, []);
-
-  const handleReleasePointer = useCallback((overlayId: string) => {
-    setClaimedOverlayId((current) => (current === overlayId ? null : current));
-  }, []);
-
-  // Resolve overlay viewport dimensions from the timeline wrapper
-  useLayoutEffect(() => {
-    const wrapper = timelineWrapperRef.current;
-    if (!wrapper) return;
-    const editArea = wrapper.querySelector<HTMLElement>('.timeline-canvas-edit-area');
-    if (editArea) {
-      overlayViewportRef.current = {
-        width: editArea.clientWidth,
-        height: editArea.clientHeight,
-      };
-    }
-  });
-
-  // Compute overlay render props (memoised to keep contributions stable)
-  const overlayRenderProps = useMemo<Omit<TimelineOverlayRenderProps, 'pointerClaimed' | 'claimPointer' | 'releasePointer'>>(() => {
-    // Compute total dimensions
-    let maxEnd = 0;
-    if (data) {
-      for (const row of data.rows) {
-        for (const action of row.actions) {
-          maxEnd = Math.max(maxEnd, action.end);
-        }
-      }
-    }
-    const totalWidth = TIMELINE_START_LEFT + (Math.ceil((maxEnd + 20) / scale) + 1) * scaleWidth;
-    const totalHeight = ((data?.rows.length ?? 0) + 1) * ROW_HEIGHT;
-
-    return {
-      scrollLeft: overlayScrollLeft,
-      scrollTop: overlayScrollTop,
-      viewportWidth: overlayViewportRef.current.width,
-      viewportHeight: overlayViewportRef.current.height,
-      totalWidth,
-      totalHeight,
-      pixelsPerSecond,
-      startLeft: TIMELINE_START_LEFT,
-      playheadTime: currentTime,
-      isPlaying: false,
-      selectedClipIds: selectedClipIdsSet,
-      selectedTrackId,
-      gestureOwner,
-      setGestureOwner,
-    };
-  }, [
-    overlayScrollLeft,
-    overlayScrollTop,
-    currentTime,
-    selectedClipIdsSet,
-    selectedTrackId,
-    gestureOwner,
-    setGestureOwner,
-    data,
-    scale,
-    scaleWidth,
-    pixelsPerSecond,
-  ]);
 
   const assetGenerationMap = useMemo<Record<string, string>>(() => {
     const assets = data?.registry?.assets;
@@ -583,7 +459,7 @@ function TimelineEditorCoreComponent({
   const clientXToTime = useCallback((clientX: number): number => {
     const wrapper = timelineWrapperRef.current;
     if (!wrapper) return 0;
-    const editArea = wrapper.querySelector<HTMLElement>('.timeline-canvas-edit-area');
+    const editArea = wrapper.querySelector<HTMLElement>(EDIT_AREA_SELECTOR);
     const grid = editArea;
     const rect = (editArea ?? wrapper).getBoundingClientRect();
     const scrollLeft = grid?.scrollLeft ?? 0;
@@ -896,8 +772,8 @@ function TimelineEditorCoreComponent({
           scaleSplitCount={5}
           startLeft={TIMELINE_START_LEFT}
           rowHeight={ROW_HEIGHT}
-          minScaleCount={scaleCount}
-          maxScaleCount={scaleCount}
+          minScaleCount={timelineExtent.scaleCount}
+          maxScaleCount={timelineExtent.scaleCount}
           selectedTrackId={selectedTrackId}
           getActionRender={getActionRender}
           onSelectTrack={setSelectedTrackId}
@@ -929,34 +805,15 @@ function TimelineEditorCoreComponent({
           onEditAreaPointerDown={onMarqueePointerDown}
           onAddTrack={handleAddTrack}
           onAddTextAt={handleAddTextAt}
+          onAddEffectLayerAt={handleAddEffectLayerAt}
           onOpenSequenceCreator={onOpenSequenceCreator}
+          onScaleWidthChange={setScaleWidth}
           unusedTrackCount={unusedTrackCount}
           onClearUnusedTracks={handleClearUnusedTracks}
           newTrackDropLabel={newTrackDropLabel}
-          onScroll={handleOverlayScroll}
           postprocessShader={postprocessShader}
           onSelectPostprocessShader={handlePostprocessShaderSelect}
         />
-        {/* Timeline overlay host — renders extension overlays above the edit area.
-            Defaults to pointer-events-none so overlays don't steal gestures unless
-            they explicitly claim pointer via claimPointer(). */}
-        <div
-          className="pointer-events-none absolute inset-0 z-20"
-          style={{ pointerEvents: claimedOverlayId ? 'auto' : 'none' }}
-          data-testid="timeline-overlay-host"
-        >
-          {claimedOverlayId && (
-            <div
-              data-testid="timeline-overlay-claimed-indicator"
-              data-claimed-overlay-id={claimedOverlayId}
-              className="sr-only"
-              role="status"
-              aria-live="polite"
-            >
-              Overlay {claimedOverlayId} has claimed pointer
-            </div>
-          )}
-        </div>
         <DropIndicator ref={indicatorRef} editAreaRef={editAreaRef} onNewTrackLabel={setNewTrackDropLabel} />
       </div>
     </div>

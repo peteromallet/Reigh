@@ -15,6 +15,8 @@ import { cn } from '@/shared/components/ui/contracts/cn.ts';
 import { useRenderBudget } from '@/shared/dev/useRenderBudget.ts';
 import { TrackLabelContent } from '@/tools/video-editor/components/TimelineEditor/TrackLabel.tsx';
 import { LABEL_WIDTH } from '@/tools/video-editor/lib/coordinate-utils.ts';
+import { actionSlotAttrs, resizeHandleAttrs, rowAttrs } from '@/tools/video-editor/lib/timeline-dom.ts';
+import type { TimelineDeviceClass } from '@/tools/video-editor/lib/mobile-interaction-model.ts';
 import type { TrackDefinition } from '@/tools/video-editor/types/index.ts';
 import type {
   TimelineAction,
@@ -33,6 +35,7 @@ interface SortableRowProps {
   startLeft: number;
   pixelsPerSecond: number;
   isSelected: boolean;
+  deviceClass: TimelineDeviceClass;
   clampedActionId: string | null;
   resizePreviewSnapshot: Readonly<Record<string, ResizeOverride>>;
   resizeHandleWidth: number;
@@ -60,6 +63,7 @@ interface TrackListRendererProps {
   startLeft: number;
   pixelsPerSecond: number;
   selectedTrackId: string | null;
+  deviceClass: TimelineDeviceClass;
   resizeClampedActionId: string | null;
   rowResizePreview: Readonly<Record<string, ResizeOverride>>[];
   resizeHandleWidth: number;
@@ -78,6 +82,7 @@ function SortableRow({
   startLeft,
   pixelsPerSecond,
   isSelected,
+  deviceClass,
   clampedActionId,
   resizePreviewSnapshot,
   resizeHandleWidth,
@@ -100,7 +105,7 @@ function SortableRow({
     <div
       ref={sortable.setNodeRef}
       className="relative border-b border-border/30"
-      data-row-id={row.id}
+      {...rowAttrs(row.id)}
       style={style}
     >
       <div
@@ -112,6 +117,7 @@ function SortableRow({
           track={track}
           isSelected={isSelected}
           hasClips={row.actions.length > 0}
+          deviceClass={deviceClass}
           onSelect={onSelectTrack}
           onChange={onTrackChange}
           onRemove={onRemoveTrack}
@@ -161,8 +167,7 @@ function RowActionLayer({
           'group absolute',
           clampedActionId === action.id && 'rounded-md ring-2 ring-[var(--video-editor-warning-ring)] ring-offset-1 ring-offset-background',
         )}
-        data-action-id={action.id}
-        data-row-id={row.id}
+        {...actionSlotAttrs(action.id, row.id)}
         style={{
           left,
           top: ACTION_VERTICAL_MARGIN,
@@ -174,16 +179,12 @@ function RowActionLayer({
         <div
           className="absolute inset-y-0 left-0 z-10 cursor-ew-resize rounded-l-sm border-l border-[color:var(--video-editor-accent-ring)] bg-transparent transition-colors group-hover:bg-[var(--video-editor-accent-bg)]"
           style={{ width: resizeHandleWidth }}
-          data-resize-edge="left"
-          data-clip-id={action.id}
-          data-row-id={row.id}
+          {...resizeHandleAttrs('left', action.id, row.id)}
         />
         <div
           className="absolute inset-y-0 right-0 z-10 cursor-ew-resize rounded-r-sm border-r border-[color:var(--video-editor-accent-ring)] bg-transparent transition-colors group-hover:bg-[var(--video-editor-accent-bg)]"
           style={{ width: resizeHandleWidth }}
-          data-resize-edge="right"
-          data-clip-id={action.id}
-          data-row-id={row.id}
+          {...resizeHandleAttrs('right', action.id, row.id)}
         />
       </div>
     );
@@ -213,6 +214,7 @@ function areSortableRowPropsEqual(left: SortableRowProps, right: SortableRowProp
     && left.startLeft === right.startLeft
     && left.pixelsPerSecond === right.pixelsPerSecond
     && left.isSelected === right.isSelected
+    && left.deviceClass === right.deviceClass
     && left.clampedActionId === right.clampedActionId
     && left.resizePreviewSnapshot === right.resizePreviewSnapshot
     && left.resizeHandleWidth === right.resizeHandleWidth
@@ -234,6 +236,7 @@ export function TrackListRenderer({
   startLeft,
   pixelsPerSecond,
   selectedTrackId,
+  deviceClass,
   resizeClampedActionId,
   rowResizePreview,
   resizeHandleWidth,
@@ -278,6 +281,7 @@ export function TrackListRenderer({
               startLeft={startLeft}
               pixelsPerSecond={pixelsPerSecond}
               isSelected={selectedTrackId === track.id}
+              deviceClass={deviceClass}
               clampedActionId={rowClampedActionId}
               resizePreviewSnapshot={rowResizePreview[index] ?? EMPTY_RESIZE_PREVIEW_SNAPSHOT}
               resizeHandleWidth={resizeHandleWidth}

@@ -16,6 +16,7 @@ import React, {
 import { createPortal } from 'react-dom';
 import { type DragEndEvent, useSensors } from '@dnd-kit/core';
 import { Layers, Sparkles } from 'lucide-react';
+import { cn } from '@/shared/components/ui/contracts/cn.ts';
 import { usePortalMousedownGuard } from '@/shared/hooks/usePortalMousedownGuard.ts';
 import {
   ExtensionContextMenuItems,
@@ -43,13 +44,25 @@ import type { ShotGroup } from '@/tools/video-editor/hooks/useShotGroups.ts';
 import { useTimelineMutableAdapters } from '@/tools/video-editor/hooks/timelineStore.ts';
 import { LABEL_WIDTH } from '@/tools/video-editor/lib/coordinate-utils.ts';
 import {
+  EDIT_AREA_CLASS,
+  TIMELINE_AREA_CONTEXT_MENU_IGNORE_SELECTOR,
+  touchGestureModeAttrs,
+} from '@/tools/video-editor/lib/timeline-dom.ts';
+import {
   resolveTouchGestureMode,
+  shouldEnableTimelinePinchZoom,
   shouldExpandTouchTrimHandles,
+  shouldTapTimelineToolButtons,
   type TimelineDeviceClass,
   type TimelineGestureOwner,
   type TimelineInputModality,
   type TimelineInteractionMode,
 } from '@/tools/video-editor/lib/mobile-interaction-model.ts';
+import {
+  clampTimelineScaleWidth,
+  computeTimelineExtent,
+  maxClipEndSeconds,
+} from '@/tools/video-editor/lib/timeline-scale.ts';
 import {
   type ResizeDir,
 } from '@/tools/video-editor/lib/resize-math.ts';
@@ -78,11 +91,6 @@ import {
   TOUCH_RESIZE_HANDLE_WIDTH,
   type ResizeOverride,
 } from './timeline-canvas-constants.ts';
-
-interface ScrollMetrics {
-  scrollLeft: number;
-  scrollTop: number;
-}
 
 export interface TimelineCanvasProps {
   rows: TimelineRow[];
@@ -130,12 +138,14 @@ export interface TimelineCanvasProps {
   onSelectClips?: (clipIds: string[]) => void;
   dragSessionRef?: MutableRefObject<DragSession | null>;
   interactionStateRef?: import('@/tools/video-editor/lib/interaction-state').InteractionStateRef;
-  onScroll?: (metrics: ScrollMetrics) => void;
   marqueeRect?: MarqueeRect | null;
   onEditAreaPointerDown?: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onAddTrack?: (kind: 'visual' | 'audio') => void;
   onAddTextAt?: (trackId: string, time: number) => void;
+  onAddEffectLayerAt?: (trackId: string, time: number) => void;
   onOpenSequenceCreator?: () => void;
+  /** Applies a new timeline zoom (px per `scale` seconds); drives the touch pinch gesture. */
+  onScaleWidthChange?: (scaleWidth: number) => void;
   unusedTrackCount?: number;
   onClearUnusedTracks?: () => void;
   newTrackDropLabel?: string | null;
@@ -148,6 +158,19 @@ export interface TimelineCanvasProps {
   /** Selects the timeline-scoped postprocess shader inspector target. */
   onSelectPostprocessShader?: (shader: TimelinePostprocessShaderMetadata) => void;
 }
+
+const TOOL_BUTTON_BASE_CLASS = 'pointer-events-auto relative flex items-center justify-center rounded-full ring-1 transition-all duration-150 hover:-translate-y-0.5 hover:scale-105 active:translate-y-0 active:scale-100';
+const POINTER_TOOL_BUTTON_SIZE_CLASS = 'h-6 w-6';
+const TOUCH_TOOL_BUTTON_SIZE_CLASS = 'h-10 w-10';
+/** Pixel twin of `TOUCH_TOOL_BUTTON_SIZE_CLASS` — used to reserve ruler space. */
+const TOUCH_TOOL_BUTTON_SIZE_PX = 40;
+const TOUCH_TOOL_CLUSTER_GAP_PX = 6;
+/** `right-2` on the cluster, plus the same again so a label never abuts a button. */
+const TOUCH_TOOL_CLUSTER_MARGIN_PX = 16;
+const TEXT_TOOL_TONE_CLASS = 'bg-[var(--video-editor-accent-bg-strong)] text-[color:var(--video-editor-accent-border-strong)] ring-[var(--video-editor-accent-ring)] hover:bg-[var(--video-editor-accent-bg-hover)] hover:shadow-[0_6px_18px_var(--video-editor-accent-shadow-soft)] hover:ring-[var(--video-editor-accent-border)]';
+const EFFECT_TOOL_TONE_CLASS = 'bg-[var(--video-editor-effect-bg)] text-[color:var(--video-editor-effect-text)] ring-[var(--video-editor-effect-ring)] hover:bg-[var(--video-editor-effect-bg-hover)] hover:shadow-[0_6px_18px_var(--video-editor-effect-shadow-soft)] hover:ring-[var(--video-editor-effect-ring-strong)]';
+const SEQUENCE_TOOL_TONE_CLASS = 'bg-[var(--video-editor-success-bg)] text-[color:var(--video-editor-success-text)] ring-[var(--video-editor-success-ring)] hover:bg-[var(--video-editor-success-bg-hover)] hover:shadow-[0_6px_18px_var(--video-editor-success-shadow-soft)] hover:ring-[var(--video-editor-success-ring-strong)]';
+const TOOL_TOOLTIP_CLASS = 'pointer-events-none absolute bottom-full left-1/2 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-[11px] font-medium text-popover-foreground opacity-0 shadow-md transition-opacity group-hover/tool:opacity-100';
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
 const MENU_VIEWPORT_MARGIN = 8;
@@ -263,12 +286,13 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
   onSelectClips,
   dragSessionRef,
   interactionStateRef,
-  onScroll,
   marqueeRect,
   onEditAreaPointerDown,
   onAddTrack,
   onAddTextAt,
+  onAddEffectLayerAt,
   onOpenSequenceCreator,
+  onScaleWidthChange,
   unusedTrackCount = 0,
   onClearUnusedTracks,
   newTrackDropLabel,
@@ -283,7 +307,6 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
   const cursorRef = useRef<HTMLDivElement>(null);
   const timeRef = useRef(0);
   const playRateRef = useRef(1);
-  const scrollMetricsRef = useRef<ScrollMetrics>({ scrollLeft: 0, scrollTop: 0 });
   const pendingCenterClipIdRef = useRef<string | null>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
@@ -359,13 +382,18 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
   });
   const actionHeight = Math.max(12, rowHeight - ACTION_VERTICAL_MARGIN * 2);
   const scrollContentHeight = (rows.length + 1) * rowHeight;
-  const maxEnd = useMemo(() => rows.reduce(
-    (currentMax, row) => row.actions.reduce((rowMax, action) => Math.max(rowMax, action.end), currentMax),
-    0,
-  ), [rows]);
-  const derivedScaleCount = Math.ceil(maxEnd / Math.max(scale, Number.EPSILON)) + 1;
-  const scaleCount = clamp(derivedScaleCount, minScaleCount, maxScaleCount);
-  const totalWidth = startLeft + scaleCount * scaleWidth;
+  const maxEnd = useMemo(() => maxClipEndSeconds(rows), [rows]);
+  // Content-only derivation: the trailing runway is the owner's call and reaches
+  // us as minScaleCount/maxScaleCount (TimelineEditorCore pins both to one value).
+  const { totalWidth } = computeTimelineExtent({
+    maxEndSeconds: maxEnd,
+    scale,
+    scaleWidth,
+    startLeft,
+    trailingRunwaySeconds: 0,
+    minScaleCount,
+    maxScaleCount,
+  });
   const rowResizePreview = useMemo(
     () => rows.map<Readonly<Record<string, ResizeOverride>>>((row) => {
       let previewForRow: Record<string, ResizeOverride> | null = null;
@@ -429,15 +457,18 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
       return false;
     }
 
+    // Plain loop, not rows.some(): assignments inside a callback are invisible
+    // to control-flow narrowing, which collapsed targetAction to `never` below.
     let targetAction: TimelineAction | null = null;
     let targetRowIndex = -1;
-    rows.some((candidateRow, rowIndex) => {
-      const found = candidateRow.actions.find((candidate) => candidate.id === clipId);
-      if (!found) return false;
-      targetAction = found;
-      targetRowIndex = rowIndex;
-      return true;
-    });
+    for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+      const found = rows[rowIndex].actions.find((candidate) => candidate.id === clipId);
+      if (found) {
+        targetAction = found;
+        targetRowIndex = rowIndex;
+        break;
+      }
+    }
     if (!targetAction || targetRowIndex < 0) {
       return false;
     }
@@ -524,7 +555,7 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
 
   const handleTimelineAreaContextMenu = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     const eventTarget = event.target instanceof Element ? event.target : null;
-    if (eventTarget?.closest('[data-action-id], [data-track-id], [data-shot-group-drag-anchor-clip-id], button, input, textarea, select, [role="menuitem"]')) {
+    if (eventTarget?.closest(TIMELINE_AREA_CONTEXT_MENU_IGNORE_SELECTOR)) {
       return;
     }
 
@@ -598,13 +629,120 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
     },
   }), [handleSetTime, syncCursor]);
 
+  // ── Touch: tool buttons act on tap, anchored at the playhead ───────────
+  const tapToolButtons = shouldTapTimelineToolButtons(deviceClass);
+  /** On touch the tool cluster docks over the ruler's right end; tell the ruler
+   *  how much of its right edge is covered so it stops drawing labels there. */
+  const touchToolButtonCount = tapToolButtons
+    ? (onAddTextAt ? 2 : 0) + (onOpenSequenceCreator ? 1 : 0)
+    : 0;
+  const rulerLabelRightInsetPx = touchToolButtonCount === 0
+    ? 0
+    : touchToolButtonCount * TOUCH_TOOL_BUTTON_SIZE_PX
+      + (touchToolButtonCount - 1) * TOUCH_TOOL_CLUSTER_GAP_PX
+      + TOUCH_TOOL_CLUSTER_MARGIN_PX;
+  // `handleAddTextAt` / the effect-layer insert both fall back to the first visual
+  // track when the id does not resolve, so an empty id is a safe "pick for me".
+  const firstVisualTrackId = useMemo(
+    () => tracks.find((track) => track.kind === 'visual')?.id ?? '',
+    [tracks],
+  );
+  const handleTapAddText = useCallback(() => {
+    onAddTextAt?.(firstVisualTrackId, timeRef.current);
+  }, [firstVisualTrackId, onAddTextAt]);
+  const handleTapAddEffectLayer = useCallback(() => {
+    onAddEffectLayerAt?.(firstVisualTrackId, timeRef.current);
+  }, [firstVisualTrackId, onAddEffectLayerAt]);
+
+  // ── Touch: two-finger pinch zoom ───────────────────────────────────────
+  const pinchSessionRef = useRef<{ startDistance: number; startScaleWidth: number; time: number; offsetX: number } | null>(null);
+  const pinchAnchorRef = useRef<{ time: number; offsetX: number } | null>(null);
+  const pinchInputsRef = useRef({ scaleWidth, pixelsPerSecond, startLeft, onScaleWidthChange });
+  pinchInputsRef.current = { scaleWidth, pixelsPerSecond, startLeft, onScaleWidthChange };
+  const pinchEnabled = shouldEnableTimelinePinchZoom(deviceClass) && Boolean(onScaleWidthChange);
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!pinchEnabled || !container) {
+      return;
+    }
+
+    const spread = (touches: TouchList) => Math.hypot(
+      touches[0].clientX - touches[1].clientX,
+      touches[0].clientY - touches[1].clientY,
+    );
+
+    const handleTouchStart = (event: TouchEvent) => {
+      if (event.touches.length !== 2) {
+        pinchSessionRef.current = null;
+        return;
+      }
+
+      const { pixelsPerSecond: currentPps, scaleWidth: currentScaleWidth, startLeft: currentStartLeft } = pinchInputsRef.current;
+      const offsetX = (event.touches[0].clientX + event.touches[1].clientX) / 2
+        - container.getBoundingClientRect().left;
+      pinchSessionRef.current = {
+        startDistance: Math.max(1, spread(event.touches)),
+        startScaleWidth: currentScaleWidth,
+        time: (container.scrollLeft + offsetX - currentStartLeft) / currentPps,
+        offsetX,
+      };
+      // Claims the gesture from native pan/pinch-zoom for its whole lifetime.
+      event.preventDefault();
+    };
+
+    const handleTouchMove = (event: TouchEvent) => {
+      const session = pinchSessionRef.current;
+      if (!session || event.touches.length !== 2) {
+        return;
+      }
+
+      event.preventDefault();
+      const nextScaleWidth = clampTimelineScaleWidth(
+        session.startScaleWidth * (Math.max(1, spread(event.touches)) / session.startDistance),
+      );
+      if (nextScaleWidth === pinchInputsRef.current.scaleWidth) {
+        return;
+      }
+
+      pinchAnchorRef.current = { time: session.time, offsetX: session.offsetX };
+      pinchInputsRef.current.onScaleWidthChange?.(nextScaleWidth);
+    };
+
+    const endPinch = () => {
+      pinchSessionRef.current = null;
+    };
+
+    container.addEventListener('touchstart', handleTouchStart, { passive: false });
+    container.addEventListener('touchmove', handleTouchMove, { passive: false });
+    container.addEventListener('touchend', endPinch);
+    container.addEventListener('touchcancel', endPinch);
+    return () => {
+      container.removeEventListener('touchstart', handleTouchStart);
+      container.removeEventListener('touchmove', handleTouchMove);
+      container.removeEventListener('touchend', endPinch);
+      container.removeEventListener('touchcancel', endPinch);
+    };
+  }, [pinchEnabled]);
+
+  // Keeps the pinched-at time under the gesture midpoint once the new zoom lands.
+  useLayoutEffect(() => {
+    const anchor = pinchAnchorRef.current;
+    const container = scrollContainerRef.current;
+    if (!anchor || !container) {
+      return;
+    }
+
+    pinchAnchorRef.current = null;
+    container.scrollLeft = Math.max(0, startLeft + anchor.time * pixelsPerSecond - anchor.offsetX);
+  }, [pixelsPerSecond, startLeft]);
+
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
     const nextMetrics = {
       scrollLeft: event.currentTarget.scrollLeft,
       scrollTop: event.currentTarget.scrollTop,
     };
 
-    scrollMetricsRef.current = nextMetrics;
     if (nextMetrics.scrollLeft !== scrollLeft) {
       setScrollLeft(nextMetrics.scrollLeft);
     }
@@ -612,7 +750,6 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
       setScrollTop(nextMetrics.scrollTop);
     }
     syncCursor();
-    onScroll?.(nextMetrics);
   };
 
   return (
@@ -631,6 +768,7 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
         setInputModalityFromPointerType={setInputModalityFromPointerType}
         unusedTrackCount={unusedTrackCount}
         onClearUnusedTracks={onClearUnusedTracks}
+        labelRightInsetPx={rulerLabelRightInsetPx}
       />
       {postprocessShader && onSelectPostprocessShader && (
         <button
@@ -662,8 +800,8 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
       />
       <div
         ref={scrollContainerRef}
-        className="timeline-canvas-edit-area timeline-scroll relative min-h-0 flex-1 overflow-auto overscroll-contain bg-background/70"
-        data-touch-gesture-mode={touchGestureMode ?? undefined}
+        className={`${EDIT_AREA_CLASS} timeline-scroll relative min-h-0 flex-1 overflow-auto overscroll-contain bg-background/70`}
+        {...touchGestureModeAttrs(touchGestureMode)}
         style={{ '--label-width': `${LABEL_WIDTH}px` } as React.CSSProperties}
         onPointerDown={onEditAreaPointerDown}
         onScroll={handleScroll}
@@ -728,6 +866,7 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
             startLeft={startLeft}
             pixelsPerSecond={pixelsPerSecond}
             selectedTrackId={selectedTrackId}
+            deviceClass={deviceClass}
             resizeClampedActionId={resizeClampedActionId}
             rowResizePreview={rowResizePreview}
             resizeHandleWidth={resizeHandleWidth}
@@ -782,10 +921,39 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
           }}
         />
       </div>
-      {/* Floating tool buttons — bottom-left of timeline viewport */}
+      {/* Floating tool buttons — bottom-left of timeline viewport. Touch-sized
+          buttons would blank out a whole 36px track row down there, so on touch
+          the cluster docks to the ruler strip at top-right instead. */}
       {(onAddTextAt || onOpenSequenceCreator) && (
-        <div className="pointer-events-none absolute bottom-4 z-30 flex gap-1.5" style={{ left: LABEL_WIDTH + 8 }}>
-          {onAddTextAt && (
+        <div
+          className={cn(
+            'pointer-events-none absolute z-30 flex gap-1.5',
+            tapToolButtons ? 'right-2 top-1' : 'bottom-4',
+          )}
+          style={tapToolButtons ? undefined : { left: LABEL_WIDTH + 8 }}
+        >
+          {onAddTextAt && (tapToolButtons ? (
+            <>
+              <button
+                type="button"
+                className={`${TOOL_BUTTON_BASE_CLASS} ${TOUCH_TOOL_BUTTON_SIZE_CLASS} ${TEXT_TOOL_TONE_CLASS}`}
+                title="New text"
+                aria-label="New text at playhead"
+                onClick={handleTapAddText}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+              </button>
+              <button
+                type="button"
+                className={`${TOOL_BUTTON_BASE_CLASS} ${TOUCH_TOOL_BUTTON_SIZE_CLASS} ${EFFECT_TOOL_TONE_CLASS}`}
+                title="New effect"
+                aria-label="New effect layer at playhead"
+                onClick={handleTapAddEffectLayer}
+              >
+                <Layers className="h-4 w-4" />
+              </button>
+            </>
+          ) : (
             <>
               <div
                 draggable
@@ -793,11 +961,11 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
                   event.dataTransfer.setData('text-tool', 'true');
                   event.dataTransfer.effectAllowed = 'copy';
                 }}
-                className="group/tool pointer-events-auto relative flex h-6 w-6 cursor-grab items-center justify-center rounded-full bg-[var(--video-editor-accent-bg-strong)] text-[color:var(--video-editor-accent-border-strong)] ring-1 ring-[var(--video-editor-accent-ring)] transition-all duration-150 hover:-translate-y-0.5 hover:scale-105 hover:bg-[var(--video-editor-accent-bg-hover)] hover:shadow-[0_6px_18px_var(--video-editor-accent-shadow-soft)] hover:ring-[var(--video-editor-accent-border)] active:translate-y-0 active:scale-100 active:cursor-grabbing"
+                className={`group/tool ${TOOL_BUTTON_BASE_CLASS} ${POINTER_TOOL_BUTTON_SIZE_CLASS} cursor-grab active:cursor-grabbing ${TEXT_TOOL_TONE_CLASS}`}
                 title="Drag onto timeline to add text"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
-                <span aria-hidden="true" className="pointer-events-none absolute bottom-full left-1/2 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-[11px] font-medium text-popover-foreground opacity-0 shadow-md transition-opacity group-hover/tool:opacity-100">
+                <span aria-hidden="true" className={TOOL_TOOLTIP_CLASS}>
                   New text
                 </span>
               </div>
@@ -807,28 +975,30 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
                   event.dataTransfer.setData('effect-layer', 'true');
                   event.dataTransfer.effectAllowed = 'copy';
                 }}
-                className="group/tool pointer-events-auto relative flex h-6 w-6 cursor-grab items-center justify-center rounded-full bg-[var(--video-editor-effect-bg)] text-[color:var(--video-editor-effect-text)] ring-1 ring-[var(--video-editor-effect-ring)] transition-all duration-150 hover:-translate-y-0.5 hover:scale-105 hover:bg-[var(--video-editor-effect-bg-hover)] hover:shadow-[0_6px_18px_var(--video-editor-effect-shadow-soft)] hover:ring-[var(--video-editor-effect-ring-strong)] active:translate-y-0 active:scale-100 active:cursor-grabbing"
+                className={`group/tool ${TOOL_BUTTON_BASE_CLASS} ${POINTER_TOOL_BUTTON_SIZE_CLASS} cursor-grab active:cursor-grabbing ${EFFECT_TOOL_TONE_CLASS}`}
                 title="Drag onto timeline to add an effect layer"
               >
                 <Layers className="h-3 w-3" />
-                <span aria-hidden="true" className="pointer-events-none absolute bottom-full left-1/2 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-[11px] font-medium text-popover-foreground opacity-0 shadow-md transition-opacity group-hover/tool:opacity-100">
+                <span aria-hidden="true" className={TOOL_TOOLTIP_CLASS}>
                   New effect
                 </span>
               </div>
             </>
-          )}
+          ))}
           {onOpenSequenceCreator && (
             <button
               type="button"
-              className="group/tool pointer-events-auto relative flex h-6 w-6 items-center justify-center rounded-full bg-[var(--video-editor-success-bg)] text-[color:var(--video-editor-success-text)] ring-1 ring-[var(--video-editor-success-ring)] transition-all duration-150 hover:-translate-y-0.5 hover:scale-105 hover:bg-[var(--video-editor-success-bg-hover)] hover:shadow-[0_6px_18px_var(--video-editor-success-shadow-soft)] hover:ring-[var(--video-editor-success-ring-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--video-editor-success-focus-ring)] active:translate-y-0 active:scale-100"
+              className={`group/tool ${TOOL_BUTTON_BASE_CLASS} ${tapToolButtons ? TOUCH_TOOL_BUTTON_SIZE_CLASS : POINTER_TOOL_BUTTON_SIZE_CLASS} ${SEQUENCE_TOOL_TONE_CLASS} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--video-editor-success-focus-ring)]`}
               title="Create animation sequence"
               aria-label="Create animation sequence"
               onClick={onOpenSequenceCreator}
             >
-              <Sparkles className="h-3 w-3" />
-              <span aria-hidden="true" className="pointer-events-none absolute bottom-full left-1/2 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-[11px] font-medium text-popover-foreground opacity-0 shadow-md transition-opacity group-hover/tool:opacity-100 group-focus-visible/tool:opacity-100">
-                Create animation sequence
-              </span>
+              <Sparkles className={tapToolButtons ? 'h-4 w-4' : 'h-3 w-3'} />
+              {!tapToolButtons && (
+                <span aria-hidden="true" className={`${TOOL_TOOLTIP_CLASS} group-focus-visible/tool:opacity-100`}>
+                  Create animation sequence
+                </span>
+              )}
             </button>
           )}
         </div>

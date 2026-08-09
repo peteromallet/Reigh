@@ -4,6 +4,12 @@ import type { ShotGroup } from '@/tools/video-editor/hooks/useShotGroups.ts';
 import { notifyInteractionEndIfIdle } from '@/tools/video-editor/lib/interaction-state.ts';
 import type { TimelineGestureOwner, TimelineInputModality } from '@/tools/video-editor/lib/mobile-interaction-model.ts';
 import type { ResizeDir } from '@/tools/video-editor/lib/resize-math.ts';
+import {
+  CLIP_ID_DATASET_KEY,
+  RESIZE_EDGE_DATASET_KEY,
+  RESIZE_EDGE_SELECTOR,
+  ROW_ID_DATASET_KEY,
+} from '@/tools/video-editor/lib/timeline-dom.ts';
 import type { TimelineData } from '@/tools/video-editor/lib/timeline-data.ts';
 import type { TimelineAction, TimelineRow } from '@/tools/video-editor/types/timeline-canvas.ts';
 import type { ClipEdgeResizeEndTarget, ClipEdgeResizeSession } from '@/tools/video-editor/hooks/useClipResize.ts';
@@ -221,10 +227,10 @@ export const useClipResizeGesture = ({
       }
 
       const eventTarget = event.target instanceof HTMLElement ? event.target : null;
-      const resizeTarget = eventTarget?.closest<HTMLElement>('[data-resize-edge]') ?? null;
-      const edge = resizeTarget?.dataset.resizeEdge;
-      const clipId = resizeTarget?.dataset.clipId;
-      const rowId = resizeTarget?.dataset.rowId;
+      const resizeTarget = eventTarget?.closest<HTMLElement>(RESIZE_EDGE_SELECTOR) ?? null;
+      const edge = resizeTarget?.dataset[RESIZE_EDGE_DATASET_KEY];
+      const clipId = resizeTarget?.dataset[CLIP_ID_DATASET_KEY];
+      const rowId = resizeTarget?.dataset[ROW_ID_DATASET_KEY];
       if (!resizeTarget || !clipId || !rowId || (edge !== 'left' && edge !== 'right')) {
         return;
       }

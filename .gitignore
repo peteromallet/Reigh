@@ -102,3 +102,7 @@ supabase/.branches/
 # megaplan per-run state files — writing them during execute triggers megaplan audit false-positives
 .megaplan/plans/
 this.env
+
+# Playwright output (screenshots, traces, last-run state) — generated, never source
+test-results/
+playwright-report/

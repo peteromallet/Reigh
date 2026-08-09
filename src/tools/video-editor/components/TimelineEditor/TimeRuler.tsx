@@ -5,6 +5,8 @@ import type { TimelineGestureOwner, TimelineInputModality } from '@/tools/video-
 
 const POINTER_DRAG_THRESHOLD_PX = 3;
 const OVERSCAN_STEPS = 4;
+/** Widest a major-tick label gets at this font (`0:00.00` in 10px mono + padding). */
+const MAJOR_LABEL_WIDTH_PX = 52;
 
 export interface TimeRulerProps {
   scale: number;
@@ -18,6 +20,16 @@ export interface TimeRulerProps {
   onCursorDrag: (time: number) => void;
   setGestureOwner: (owner: TimelineGestureOwner) => void;
   setInputModalityFromPointerType: (pointerType: string | null | undefined) => TimelineInputModality;
+  /**
+   * Right-hand strip of the ruler *viewport* that is covered by floating chrome
+   * (today: the touch tool cluster docked at `right-2 top-1` in `TimelineCanvas`).
+   * A label that would land under it is not rendered at all — half a timecode
+   * behind a button reads as a glitch, and it returns as soon as you scroll.
+   *
+   * This trims labels only. Tick lines, `contentWidth` and the scroll extent are
+   * untouched, so the ruler still agrees with the grid (Key Invariant 4).
+   */
+  labelRightInsetPx?: number;
 }
 
 interface PointerSession {
@@ -41,6 +53,7 @@ export function TimeRuler({
   onCursorDrag,
   setGestureOwner,
   setInputModalityFromPointerType,
+  labelRightInsetPx = 0,
 }: TimeRulerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const pointerSessionRef = useRef<PointerSession | null>(null);
@@ -91,7 +104,7 @@ export function TimeRuler({
   const majorTicks = useMemo(() => {
     const firstMajorIndex = Math.floor(visibleRange.firstMinorIndex / safeSplitCount);
     const lastMajorIndex = Math.ceil(visibleRange.lastMinorIndex / safeSplitCount);
-    const ticks: Array<{ key: string; left: number; label: string }> = [];
+    const ticks: Array<{ key: string; left: number; label: string | null }> = [];
 
     for (let index = firstMajorIndex; index <= lastMajorIndex; index += 1) {
       const left = startLeft + index * scaleWidth;
@@ -99,15 +112,22 @@ export function TimeRuler({
         break;
       }
 
+      // `viewportWidth === 0` means the ruler has not been measured yet (or there
+      // is no ResizeObserver, e.g. jsdom) — draw every label rather than guess.
+      const occluded =
+        labelRightInsetPx > 0 &&
+        viewportWidth > 0 &&
+        left - scrollLeft + MAJOR_LABEL_WIDTH_PX > viewportWidth - labelRightInsetPx;
+
       ticks.push({
         key: `major-${index}`,
         left,
-        label: formatTime(index * scale),
+        label: occluded ? null : formatTime(index * scale),
       });
     }
 
     return ticks;
-  }, [contentWidth, safeSplitCount, scale, scaleWidth, startLeft, visibleRange.firstMinorIndex, visibleRange.lastMinorIndex]);
+  }, [contentWidth, labelRightInsetPx, safeSplitCount, scale, scaleWidth, scrollLeft, startLeft, viewportWidth, visibleRange.firstMinorIndex, visibleRange.lastMinorIndex]);
 
   const minorTicks = useMemo(() => {
     const ticks: Array<{ key: string; left: number; isMajor: boolean }> = [];
@@ -235,17 +255,19 @@ export function TimeRuler({
         ))}
 
         {majorTicks.map((tick) => (
-          <div
-            key={tick.key}
-            className="pointer-events-none absolute left-0 top-0"
-            style={{
-              transform: `translateX(${tick.left + 6}px)`,
-            }}
-          >
-            <span className="rounded-sm bg-card/85 px-1 py-0.5 font-mono text-[10px] tracking-[0.08em] text-muted-foreground">
-              {tick.label}
-            </span>
-          </div>
+          tick.label === null ? null : (
+            <div
+              key={tick.key}
+              className="pointer-events-none absolute left-0 top-0"
+              style={{
+                transform: `translateX(${tick.left + 6}px)`,
+              }}
+            >
+              <span className="rounded-sm bg-card/85 px-1 py-0.5 font-mono text-[10px] tracking-[0.08em] text-muted-foreground">
+                {tick.label}
+              </span>
+            </div>
+          )
         ))}
       </div>
 

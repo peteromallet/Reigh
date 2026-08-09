@@ -231,5 +231,77 @@ export default tseslint.config(
         }],
       }],
     },
+  },
+  // Node builtin boundary (timeline dev-surface review §6.3): forbid `node:*`
+  // and bare Node builtin imports under src/. A static Node builtin import
+  // compiles fine but crashes the browser bundle at *import* time, because
+  // Vite externalizes Node builtins into stubs that throw on first property
+  // access -- this shipped as a real bug this week in
+  // runtime/processes/ProcessManager.ts and jsonRpcStdioTransport.ts (both
+  // statically imported node:child_process / node:util). The only legitimate
+  // Node-adjacent module is runtime/processes/** (see the narrower carve-out
+  // below); test files run under Node/Vitest, not the browser bundle, so
+  // they're exempt.
+  {
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: [
+      "src/tools/video-editor/runtime/processes/**",
+      "src/**/*.test.ts",
+      "src/**/*.test.tsx",
+      "src/**/*.spec.ts",
+      "src/**/*.spec.tsx",
+      "src/**/__tests__/**/*.{ts,tsx}",
+      "src/test/**",
+    ],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": ["error", {
+        patterns: [{
+          group: ["node:*"],
+          message: "Node builtins are not available in the browser bundle: Vite externalizes them into stubs that throw at import time. Node-adjacent runtime code belongs under 'src/tools/video-editor/runtime/processes/**' and must resolve the module lazily via `process.getBuiltinModule`, not a static import.",
+        }],
+        paths: [
+          "child_process", "util", "fs", "path", "os", "net", "stream", "buffer", "worker_threads",
+        ].map((name) => ({
+          name,
+          message: "Node builtins are not available in the browser bundle: Vite externalizes them into stubs that throw at import time. Node-adjacent runtime code belongs under 'src/tools/video-editor/runtime/processes/**' and must resolve the module lazily via `process.getBuiltinModule`, not a static import.",
+        })),
+      }],
+    },
+  },
+  // Node builtin boundary carve-out: runtime/processes/** legitimately
+  // resolves node:child_process at runtime (lazily, via
+  // `process.getBuiltinModule` -- see ProcessManager.ts's
+  // `loadNodeChildProcess`), never via a static value import. Type-only
+  // imports (e.g. `import type { ChildProcessWithoutNullStreams } from
+  // 'node:child_process'`) are erased at compile time and never reach the
+  // browser bundle, so they stay allowed here; static *value* imports of
+  // node:* stay forbidden even in this directory, so the lazy-resolution
+  // pattern can't quietly regress back to a static import. Test files in
+  // this directory run under Node/Vitest and legitimately spawn real child
+  // processes, so they're exempt.
+  {
+    files: ["src/tools/video-editor/runtime/processes/**/*.{ts,tsx}"],
+    ignores: [
+      "src/tools/video-editor/runtime/processes/**/*.test.ts",
+      "src/tools/video-editor/runtime/processes/**/*.test.tsx",
+      "src/tools/video-editor/runtime/processes/**/*.spec.ts",
+      "src/tools/video-editor/runtime/processes/**/*.spec.tsx",
+    ],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": ["error", {
+        patterns: [{
+          group: ["node:*"],
+          allowTypeImports: true,
+          message: "Resolve node:* modules lazily via `process.getBuiltinModule` (see ProcessManager.ts's loadNodeChildProcess) instead of a static value import -- a static import externalizes into a browser stub that throws at load time. Type-only imports are fine.",
+        }],
+        paths: [
+          "child_process", "util", "fs", "path", "os", "net", "stream", "buffer", "worker_threads",
+        ].map((name) => ({
+          name,
+          allowTypeImports: true,
+          message: "Resolve Node builtins lazily via `process.getBuiltinModule` instead of a static value import -- a static import externalizes into a browser stub that throws at load time. Type-only imports are fine.",
+        })),
+      }],
+    },
   }
 );
