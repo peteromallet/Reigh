@@ -8,15 +8,28 @@
  * browser's own gesture arbitration (back-swipe, pan, pinch) leaves the editor's
  * gestures reachable. That is what these do, over CDP touch input.
  *
- * They are opt-in (`npm run test:e2e:timeline`) because they need two live
- * processes that default CI does not run:
- *   1. the dev server            — `npm run dev -- --host 127.0.0.1 --port 2222`
- *   2. the local-mode bridge stub — `npm run test:e2e:timeline:bridge`
+ * One command: `npm run test:e2e:timeline` (after a one-time
+ * `npx playwright install chromium`). Its opt-in flag makes `playwright.config.ts`
+ * boot *both* live processes these specs need — the dev server and the local-mode
+ * bridge stub — as `webServer` entries. A second terminal is optional, not
+ * required: `reuseExistingServer` adopts a hot `npm run dev` / `npm run
+ * dev:editor:bridge` if one is already listening.
  *
  * Both endpoints are env-parameterized: `BASE_URL` (default
  * `http://127.0.0.1:2222`) and `ASTRID_BRIDGE_PORT` (default `17333`).
  */
 import type { BrowserContext, Page } from '@playwright/test';
+import {
+  CLIP_ACTION_WITH_ID_SELECTOR,
+  EDIT_AREA_SELECTOR,
+  SELECTED_CLIP_SELECTOR,
+} from '../../../src/tools/video-editor/lib/timeline-dom.ts';
+import {
+  LOCAL_MODE_STORAGE_KEY,
+  PLACEHOLDER_SUPABASE_URL,
+  buildDevSession,
+  devSessionStorageKey,
+} from '../../../src/tools/video-editor/dev/devSession.ts';
 
 export const BASE_URL = (process.env.BASE_URL ?? 'http://127.0.0.1:2222').replace(/\/+$/, '');
 export const BRIDGE_PORT = Number(process.env.ASTRID_BRIDGE_PORT ?? 17333);
@@ -66,43 +79,25 @@ export async function resetBridgeBaseline(): Promise<string | null> {
   }
 }
 
-const b64url = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
-
 /**
  * Seed a Supabase-shaped session in localStorage plus the local-mode flag.
  *
- * The token is unsigned and never leaves the browser: local mode reads the
- * timeline from the bridge stub, and the app only needs *a* session to get past
- * its auth gate and render the editor.
+ * The session shape and the storage-key derivation are shared with the app's own
+ * dev path (`src/tools/video-editor/dev/devSession.ts`) so the forging logic
+ * lives in exactly one place. The token is unsigned and never leaves the
+ * browser: local mode reads the timeline from the bridge stub, and the app only
+ * needs *a* session to get past its auth gate and render the editor.
  */
 export async function seedFakeSession(context: BrowserContext): Promise<void> {
-  const issuedAt = Math.floor(Date.now() / 1000);
-  const token = [
-    b64url({ alg: 'HS256', typ: 'JWT' }),
-    b64url({ sub: 'u', role: 'authenticated', aud: 'authenticated', iat: issuedAt, exp: issuedAt + 86_400 }),
-    'sig',
-  ].join('.');
+  // Mirrors the `webServer` env in `playwright.config.ts`: Supabase derives its
+  // storage key from the URL, so the seed and the dev server must agree.
+  const storageKey = devSessionStorageKey(process.env.VITE_SUPABASE_URL ?? PLACEHOLDER_SUPABASE_URL);
+  const session = buildDevSession();
 
-  await context.addInitScript(({ t }) => {
-    const now = Math.floor(Date.now() / 1000);
-    window.localStorage.setItem('sb-127-auth-token', JSON.stringify({
-      access_token: t,
-      token_type: 'bearer',
-      expires_in: 86_400,
-      expires_at: now + 86_400,
-      refresh_token: 'r',
-      user: {
-        id: '00000000-0000-4000-8000-000000000001',
-        aud: 'authenticated',
-        role: 'authenticated',
-        email: 'dev@localhost',
-        app_metadata: {},
-        user_metadata: {},
-        created_at: new Date(0).toISOString(),
-      },
-    }));
-    window.localStorage.setItem('dev.videoEditor.localMode', '1');
-  }, { t: token });
+  await context.addInitScript(({ key, value, modeKey }) => {
+    window.localStorage.setItem(key, value);
+    window.localStorage.setItem(modeKey, '1');
+  }, { key: storageKey, value: JSON.stringify(session), modeKey: LOCAL_MODE_STORAGE_KEY });
 }
 
 /** Noise the editor emits in local mode that is not a signal about the timeline. */
@@ -187,14 +182,15 @@ export async function openEditor(page: Page): Promise<void> {
 }
 
 /**
- * Selection is expressed as a Tailwind accent border on the clip root
- * (`ClipAction.tsx`), so counting it is the only way to read selection state
- * from outside React.
+ * Selection is published as `data-selected="true"` on the clip root
+ * (`ClipAction.tsx` via `clipActionAttrs`), so this reads the DOM contract, not
+ * the accent-border classes a theming change would silently move.
  */
 export function countSelectedClips(page: Page): Promise<number> {
-  return page.evaluate(() => Array.from(document.querySelectorAll('[data-clip-id]'))
-    .filter((el) => el.className.includes('border-sky-400') || el.className.includes('border-violet-400'))
-    .length);
+  return page.evaluate(
+    (selector) => document.querySelectorAll(selector).length,
+    SELECTED_CLIP_SELECTOR as string,
+  );
 }
 
 export interface ElementBox { x: number; y: number; w: number; h: number; cx: number; cy: number }
@@ -217,10 +213,10 @@ export function boxOf(page: Page, selector: string): Promise<ElementBox | null> 
  * other clip would measure the packing rule rather than the gesture.
  */
 export function pickFreeDraggableClip(page: Page) {
-  return page.evaluate(() => {
-    const area = document.querySelector('.timeline-canvas-edit-area')?.getBoundingClientRect();
+  return page.evaluate((selectors: { editArea: string; clipWithId: string }) => {
+    const area = document.querySelector(selectors.editArea)?.getBoundingClientRect();
     if (!area) return null;
-    const clips = Array.from(document.querySelectorAll('.clip-action[data-clip-id]')).map((el) => {
+    const clips = Array.from(document.querySelectorAll(selectors.clipWithId)).map((el) => {
       const r = el.getBoundingClientRect();
       return {
         id: el.getAttribute('data-clip-id'),
@@ -236,5 +232,5 @@ export function pickFreeDraggableClip(page: Page) {
       (other) => other.id !== c.id && other.row === c.row && other.x > c.x && other.x < c.x + c.w + 140,
     ));
     return free ?? onScreen[0] ?? clips[0] ?? null;
-  });
+  }, { editArea: EDIT_AREA_SELECTOR as string, clipWithId: CLIP_ACTION_WITH_ID_SELECTOR as string });
 }

@@ -1,3 +1,4 @@
+// Layer map & invariants: docs/structure_detail/tool_video_editor.md
 import React, {
   useContext,
   forwardRef,

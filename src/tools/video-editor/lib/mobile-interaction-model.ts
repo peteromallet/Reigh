@@ -1,3 +1,5 @@
+import { TABLET_MAX_WIDTH } from '@/shared/hooks/mobile/deviceDetection';
+
 export type TimelineDeviceClass = 'desktop' | 'tablet' | 'phone';
 
 export type TimelineInputModality = 'mouse' | 'touch' | 'pen' | 'keyboard' | 'unknown';
@@ -55,18 +57,52 @@ export interface MobileInteractionPolicy {
   inspectorTarget: TimelineInspectorTarget;
 }
 
+/**
+ * Which editor a device gets. Pure: the caller reads the signals (see
+ * `hooks/useTimelineState.ts`), this decides.
+ *
+ * The shared `computeIsMobile` is true for *any* coarse pointer at any width,
+ * so `isMobile && !isTablet` alone claimed two devices that are not phones: a
+ * 27-inch touchscreen desktop, and an iPad Pro 12.9 in landscape (1366px, past
+ * `computeIsTablet`'s width bound). Both got the phone's single-pane editor.
+ *
+ * Owner's decision: **large coarse-pointer screens are desktops unless the
+ * hardware is a tablet.** Width alone stops being evidence of a phone at
+ * `TABLET_MAX_WIDTH`; past it the tablet-hardware hint (tablet UA / iPadOS-like,
+ * `isTabletHardware` in `shared/hooks/mobile/deviceDetection.ts`) is the only
+ * thing that keeps touch editing on. A desktop with a touchscreen gets the
+ * desktop editor — hover affordances and drag handles work there, and a
+ * modeless surface beats a mode bar on a 27-inch screen.
+ *
+ * The shared signals keep their app-wide semantics; the correction lives here,
+ * at the timeline seam, because it is a timeline-layout judgement.
+ */
 export function resolveTimelineDeviceClass({
   isMobile,
   isTablet,
+  viewportWidth,
+  isTabletHardware,
 }: {
   isMobile: boolean;
   isTablet: boolean;
+  /** CSS-pixel viewport width. */
+  viewportWidth: number;
+  /** Tablet UA / iPadOS-like platform, independent of width. */
+  isTabletHardware: boolean;
 }): TimelineDeviceClass {
   if (isTablet) {
     return 'tablet';
   }
 
-  return isMobile ? 'phone' : 'desktop';
+  if (!isMobile) {
+    return 'desktop';
+  }
+
+  if (viewportWidth < TABLET_MAX_WIDTH) {
+    return 'phone';
+  }
+
+  return isTabletHardware ? 'tablet' : 'desktop';
 }
 
 export function resolveInputModalityFromPointerType(

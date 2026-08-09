@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
-import { useIsMobile, useIsTablet } from '@/shared/hooks/mobile/index.ts';
+import { isTabletHardware, useIsMobile, useIsTablet, useViewportWidth } from '@/shared/hooks/mobile/index.ts';
 import {
   editorClearTimelineSelection,
   systemResetTimelineSelection,
@@ -421,6 +421,7 @@ export function useTimelineState(): UseTimelineStateResult {
   const queryClient = useQueryClient();
   const isMobile = useIsMobile();
   const isTablet = useIsTablet();
+  const viewportWidth = useViewportWidth();
   // Shared gate observed by drag/resize writers and read by save/persistence/poll.
   const interactionStateRef = useRef(createInteractionState());
   const storeRef = useRef<ReturnType<typeof createTimelineStore> | null>(null);
@@ -441,8 +442,15 @@ export function useTimelineState(): UseTimelineStateResult {
   }, [runtime.assetResolver, runtime.provider]);
   const queries = useTimelineQueries(runtime.provider, runtime.timelineId, resolveAssetUrl);
   const deviceClass = useMemo(
-    () => resolveTimelineDeviceClass({ isMobile, isTablet }),
-    [isMobile, isTablet],
+    // `isTabletHardware` reads UA/platform, which never changes for the life of
+    // the document — the reactive inputs are the two signals and the width.
+    () => resolveTimelineDeviceClass({
+      isMobile,
+      isTablet,
+      viewportWidth,
+      isTabletHardware: isTabletHardware(),
+    }),
+    [isMobile, isTablet, viewportWidth],
   );
   const defaultInteractionMode = getDefaultInteractionMode(deviceClass);
   const initialInteractionPolicyRef = useRef(createMobileInteractionPolicy(deviceClass));

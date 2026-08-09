@@ -1,3 +1,4 @@
+// Layer map & invariants: docs/structure_detail/tool_video_editor.md
 import React, { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowRight, Clapperboard, Copy, Ellipsis, Film, FolderPlus, ImageIcon, Layers, Loader2, MapPin, MapPinOff, Music2, RefreshCw, Scissors, Sparkles, Trash2, Type, X } from 'lucide-react';
@@ -540,7 +541,7 @@ function ClipActionComponent({
             ? 'border-sky-400 bg-sky-500/20 text-sky-50'
             : 'border-border bg-card/90 text-foreground hover:border-accent',
         )}
-        {...clipActionAttrs(action.id, clipMeta.track)}
+        {...clipActionAttrs(action.id, clipMeta.track, Boolean(isSelected))}
         onKeyDown={(event) => {
           if (event.currentTarget !== event.target) {
             return;

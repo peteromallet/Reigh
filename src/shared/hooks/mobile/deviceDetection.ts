@@ -1,5 +1,11 @@
 export const MOBILE_BREAKPOINT = 768;
 
+/**
+ * Upper width bound of the tablet band: at or above this a coarse-pointer screen
+ * is desktop-sized, so width alone stops being evidence of a tablet.
+ */
+export const TABLET_MAX_WIDTH = 1200;
+
 const TABLET_UA_RE = /iPad|Tablet|Android(?!.*Mobile)|Silk|Kindle|PlayBook/i;
 
 type MobileErrorReporter = (key: string, error: unknown) => void;
@@ -35,11 +41,19 @@ const isTabletUA = (): boolean => {
   return TABLET_UA_RE.test(navigator.userAgent || '');
 };
 
+/**
+ * Tablet *hardware*, independent of viewport width: a tablet user agent or an
+ * iPadOS-like platform. Width-based guesses are deliberately excluded — this is
+ * the signal callers reach for when a large coarse-pointer viewport has to be
+ * told apart from a desktop with a touchscreen.
+ */
+export const isTabletHardware = (): boolean => isIpadOsLike() || isTabletUA();
+
 export const computeIsTablet = (onError?: MobileErrorReporter): boolean => {
   if (typeof window === 'undefined') return false;
   const width = window.innerWidth;
-  const isTabletSize = width >= MOBILE_BREAKPOINT && width < 1200;
-  return Boolean(isIpadOsLike() || isTabletUA() || (isTabletSize && hasCoarsePointer(onError)));
+  const isTabletSize = width >= MOBILE_BREAKPOINT && width < TABLET_MAX_WIDTH;
+  return Boolean(isTabletHardware() || (isTabletSize && hasCoarsePointer(onError)));
 };
 
 export const computeIsMobile = (onError?: MobileErrorReporter): boolean => {

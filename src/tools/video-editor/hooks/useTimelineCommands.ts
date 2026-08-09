@@ -970,6 +970,13 @@ export function createTimelineCommands(
  * Mounted-only public timeline command facade.
  *
  * This is the Sprint 2 recommended mutation surface for non-gesture callers.
+ *
+ * **Two hooks share this name.** This one *builds* the `TimelineCommands` facade
+ * from the store api. The other — `useTimelineCommands` in
+ * `hooks/timelineStore.ts` — is a plain selector for `state.ops.commands`, and
+ * that is the one components rendering inside the editor normally want. Their
+ * return types differ, so a wrong auto-import usually type-errors; check the
+ * import path when it does not.
  */
 export function useTimelineCommands(): TimelineCommands {
   const store = useTimelineStoreApi();

@@ -1,5 +1,6 @@
 import { useEffect, useContext } from 'react';
 import { isEditableTarget } from '@/tools/video-editor/lib/coordinate-utils.ts';
+import { resolveKeyboardNudgeSeconds } from '@/tools/video-editor/lib/keyboard-nudge.ts';
 import {
   DataProviderContext,
   type VideoEditorRuntimeContextValue,
@@ -160,6 +161,8 @@ interface UseKeyboardShortcutsOptions {
   selectedClipIds: ReadonlySet<string>;
   timelineFps: number;
   moveSelectedClipsToTrack: (direction: 'up' | 'down', selectedClipIds: ReadonlySet<string>) => void;
+  /** Translate the whole selection along the time axis (Alt+Arrow). */
+  nudgeSelectedClipsInTime: (deltaSeconds: number) => void;
   undo: () => void;
   redo: () => void;
   selectAllClips: () => void;
@@ -182,6 +185,7 @@ export function useKeyboardShortcuts({
   selectedClipIds,
   timelineFps,
   moveSelectedClipsToTrack,
+  nudgeSelectedClipsInTime,
   undo,
   redo,
   selectAllClips,
@@ -219,6 +223,16 @@ export function useKeyboardShortcuts({
       if ((isModifierPressed && key === 'z' && event.shiftKey) || (event.ctrlKey && key === 'y')) {
         event.preventDefault();
         redo();
+        return;
+      }
+
+      // Alt+Arrow is the time axis of the ArrowUp/Down track move: with a
+      // selection it nudges the clips, without one it stays the precision seek
+      // it has always been (that seek is the only other Alt combo in this file).
+      if ((event.key === 'ArrowLeft' || event.key === 'ArrowRight') && event.altKey && hasSelectedClip) {
+        event.preventDefault();
+        const step = resolveKeyboardNudgeSeconds(precisionEnabled, timelineFps);
+        nudgeSelectedClipsInTime(event.key === 'ArrowLeft' ? -step : step);
         return;
       }
 
@@ -327,6 +341,7 @@ export function useKeyboardShortcuts({
     extensions,
     hasSelectedClip,
     moveSelectedClipsToTrack,
+    nudgeSelectedClipsInTime,
     precisionEnabled,
     redo,
     seekRelative,

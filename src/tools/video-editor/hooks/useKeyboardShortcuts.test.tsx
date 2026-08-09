@@ -34,6 +34,7 @@ function makeOptions(overrides: Partial<Parameters<typeof useKeyboardShortcuts>[
     selectedClipIds: new Set<string>(),
     timelineFps: 30,
     moveSelectedClipsToTrack: vi.fn(),
+    nudgeSelectedClipsInTime: vi.fn(),
     undo: vi.fn(),
     redo: vi.fn(),
     selectAllClips: vi.fn(),
@@ -129,6 +130,95 @@ describe('normalizeKeyboardEvent', () => {
     const event = new KeyboardEvent('keydown', { key: 'Shift', shiftKey: true });
 
     expect(normalizeKeyboardEvent(event)).toBeNull();
+  });
+});
+
+describe('useKeyboardShortcuts time-axis nudge', () => {
+  const selection = { hasSelectedClip: true, selectedClipIds: new Set(['clip-1']) };
+
+  it('nudges the selection one frame per press with precision on', () => {
+    const nudgeSelectedClipsInTime = vi.fn();
+    const seekRelative = vi.fn();
+
+    mountShortcuts({
+      options: makeOptions({
+        ...selection,
+        precisionEnabled: true,
+        timelineFps: 24,
+        nudgeSelectedClipsInTime,
+        seekRelative,
+      }),
+    });
+
+    const event = dispatchKey(window, { key: 'ArrowRight', altKey: true });
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(nudgeSelectedClipsInTime).toHaveBeenCalledTimes(1);
+    expect(nudgeSelectedClipsInTime.mock.calls[0][0]).toBeCloseTo(1 / 24, 10);
+    expect(seekRelative).not.toHaveBeenCalled();
+  });
+
+  it('nudges by the coarse step with precision off, and leftwards on ArrowLeft', () => {
+    const nudgeSelectedClipsInTime = vi.fn();
+
+    mountShortcuts({
+      options: makeOptions({ ...selection, precisionEnabled: false, nudgeSelectedClipsInTime }),
+    });
+
+    dispatchKey(window, { key: 'ArrowRight', altKey: true });
+    dispatchKey(window, { key: 'ArrowLeft', altKey: true });
+
+    expect(nudgeSelectedClipsInTime.mock.calls.map((call) => call[0])).toEqual([0.5, -0.5]);
+  });
+
+  it('leaves Alt+Arrow as the precision seek when nothing is selected', () => {
+    const nudgeSelectedClipsInTime = vi.fn();
+    const seekRelative = vi.fn();
+
+    mountShortcuts({
+      options: makeOptions({
+        hasSelectedClip: false,
+        precisionEnabled: true,
+        timelineFps: 24,
+        nudgeSelectedClipsInTime,
+        seekRelative,
+      }),
+    });
+
+    dispatchKey(window, { key: 'ArrowRight', altKey: true });
+
+    expect(nudgeSelectedClipsInTime).not.toHaveBeenCalled();
+    expect(seekRelative).toHaveBeenCalledTimes(1);
+    expect(seekRelative.mock.calls[0][0]).toBeCloseTo(1 / 24, 10);
+  });
+
+  it('leaves the unmodified arrows seeking the playhead', () => {
+    const nudgeSelectedClipsInTime = vi.fn();
+    const seekRelative = vi.fn();
+
+    mountShortcuts({ options: makeOptions({ ...selection, nudgeSelectedClipsInTime, seekRelative }) });
+
+    dispatchKey(window, { key: 'ArrowRight' });
+
+    expect(nudgeSelectedClipsInTime).not.toHaveBeenCalled();
+    expect(seekRelative).toHaveBeenCalledWith(1);
+  });
+
+  it('ignores the nudge while typing in an input', () => {
+    const nudgeSelectedClipsInTime = vi.fn();
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+
+    try {
+      mountShortcuts({ options: makeOptions({ ...selection, nudgeSelectedClipsInTime }) });
+
+      const event = dispatchKey(input, { key: 'ArrowRight', altKey: true });
+
+      expect(event.defaultPrevented).toBe(false);
+      expect(nudgeSelectedClipsInTime).not.toHaveBeenCalled();
+    } finally {
+      input.remove();
+    }
   });
 });
 

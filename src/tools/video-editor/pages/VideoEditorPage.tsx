@@ -1,3 +1,4 @@
+// Layer map & invariants: docs/structure_detail/tool_video_editor.md
 /**
  * Internal Reigh route adapter for the in-app video editor page.
  * Not part of the supported public SDK surface.
@@ -21,6 +22,7 @@ import type { DataProvider } from '@/tools/video-editor/data/DataProvider.ts';
 import { SupabaseDataProvider } from '@/tools/video-editor/data/SupabaseDataProvider.ts';
 import { VideoEditorProvider } from '@/tools/video-editor/contexts/VideoEditorProvider.tsx';
 import { getExtensionSmokeExtension } from '@/sdk/smoke/extensionSmoke';
+import { devLocalExtensions } from '@/tools/video-editor/dev/localExtensions.ts';
 import { useExtensionLoaderWiring } from '@/tools/video-editor/runtime/useExtensionLoaderWiring';
 import { ReighVideoEditorShell } from '@/tools/video-editor/components/ReighVideoEditorShell.tsx';
 import { useTimelinesList } from '@/tools/video-editor/hooks/useTimelinesList.ts';
@@ -105,10 +107,17 @@ function writeStoredLocalMode(enabled: boolean): void {
   }
 }
 
-function useVideoEditorModePreference() {
+/**
+ * @param urlRequestsLocalMode whether the entry URL carried `?localProject` /
+ *   `?localTimeline`. A pasted local-mode link should open local mode without
+ *   the developer first discovering the localStorage flag behind `DevModeToggle`
+ *   (which only renders *after* the auth gate). Initial state only — the mode
+ *   toggle must still be able to switch to App with those params in the URL.
+ */
+function useVideoEditorModePreference(urlRequestsLocalMode: boolean) {
   const localModeAvailable = import.meta.env.DEV;
   const [mode, setMode] = useState<VideoEditorMode>(() => (
-    localModeAvailable && readStoredLocalMode() ? 'local' : 'app'
+    localModeAvailable && (urlRequestsLocalMode || readStoredLocalMode()) ? 'local' : 'app'
   ));
 
   useEffect(() => {
@@ -445,9 +454,15 @@ export default function VideoEditorPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   // ---- Smoke extension wiring (prepend when ?extensionSmoke=1) -------------
+  // `devLocalExtensions` is the author's local scratchpad (empty on main); the
+  // DEV guard is a literal so production builds drop it. See dev/localExtensions.ts.
   const smokeDirectExtensions = useMemo(() => {
     const smokeExt = getExtensionSmokeExtension(searchParams);
-    return smokeExt ? [smokeExt] : undefined;
+    const direct = [
+      ...(smokeExt ? [smokeExt] : []),
+      ...(import.meta.env.DEV ? devLocalExtensions : []),
+    ];
+    return direct.length > 0 ? direct : undefined;
   }, [searchParams]);
 
   // ---- M14: extension loader wiring (host-owned) --------------------------
@@ -465,7 +480,9 @@ export default function VideoEditorPage() {
   });
   const { userId } = useAuth();
   const navigate = useNavigate();
-  const { localModeAvailable, mode, setMode } = useVideoEditorModePreference();
+  const { localModeAvailable, mode, setMode } = useVideoEditorModePreference(
+    searchParams.has('localProject') || searchParams.has('localTimeline'),
+  );
   const isMobileViewport = useIsMobile();
   const isTabletViewport = useIsTablet();
   /** Touch viewports are where the app's fixed top-centre pane tab collides
@@ -828,6 +845,13 @@ export default function VideoEditorPage() {
                 <code className="mt-2 block rounded bg-muted px-2 py-1 text-xs">
                   cd ../Astrid && astrid serve --port 17333
                 </code>
+                <p className="mt-3 text-sm text-muted-foreground">
+                  No Astrid checkout? This repo ships a demo bridge that serves
+                  demo-project/demo-timeline:
+                </p>
+                <code className="mt-2 block rounded bg-muted px-2 py-1 text-xs">
+                  npm run dev:editor:bridge
+                </code>
               </CardContent>
             </Card>
           </div>
@@ -844,6 +868,13 @@ export default function VideoEditorPage() {
                 </p>
                 <code className="mt-2 block rounded bg-muted px-2 py-1 text-xs">
                   cd ../Astrid && astrid serve --port 17333
+                </code>
+                <p className="mt-3 text-sm text-muted-foreground">
+                  No Astrid checkout? This repo ships a demo bridge that serves
+                  demo-project/demo-timeline:
+                </p>
+                <code className="mt-2 block rounded bg-muted px-2 py-1 text-xs">
+                  npm run dev:editor:bridge
                 </code>
               </CardContent>
             </Card>

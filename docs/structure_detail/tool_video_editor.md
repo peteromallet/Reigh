@@ -8,6 +8,23 @@
 
 ---
 
+## 0. Daily commands
+
+| Task | Command |
+|---|---|
+| Boot the timeline with demo clips, no Supabase/Docker/sign-in | `npm run dev:editor` (prints the local-mode URL; bridge stub + Vite) |
+| Bridge stub alone (when Vite is already running) | `npm run dev:editor:bridge` |
+| Run one test file | `npx vitest run <path>` — the root `vitest.config.ts` delegates to `config/testing/`, so the `--config` flag in the package scripts is **not** needed interactively |
+| Watch one test file | `npx vitest <path>` |
+| Everything in the tool | `npx vitest run src/tools/video-editor` (or a subdir, e.g. `.../lib`) |
+| Real-browser device gestures | `npm run test:e2e:timeline` — one command; it boots the dev server *and* the bridge. One-time setup: `npx playwright install chromium` |
+| Is the extension host wired? | open the editor with `?extensionSmoke=1`; the smoke extension's status contribution should appear |
+
+The conformance suite is the slow one (~45s for the 3-file run) — for the edit
+loop, watch the single file you are changing.
+
+---
+
 ## 1. Layer map
 
 Paths below are relative to `src/tools/video-editor/`.
@@ -60,6 +77,8 @@ They coexist and do not share a mechanism. Match the gesture to its owner before
 
 HTML5 DnD never fires on touch — any drag-only affordance needs a tap path (`shouldTapTimelineToolButtons`).
 
+**Keyboard is the pointerless fourth path, and it must not fork the commit.** `hooks/useKeyboardShortcuts.ts` owns the window-level `keydown` map (all built-ins decline before extension keybindings dispatch; `isEditableTarget` gates the whole handler). Arrow keys move the selection on both axes: `ArrowUp`/`ArrowDown` across tracks via `moveSelectedClipsToTrack`, `Alt+ArrowLeft`/`Alt+ArrowRight` along time via `buildKeyboardTimeNudgeMutation` (`lib/keyboard-nudge.ts`) → `applyEdit`, the same builder-plus-`applyEdit` shape as `lib/keyboard-delete.ts` and therefore history-tracked like any other edit. The nudge builder routes through `planMultiDragMoves`/`applyMultiDragMoves` so a keypress lands where the equivalent drag would; it steps one frame with `precision` on and `COARSE_TIME_NUDGE_SECONDS` (0.5s) without, expands a pinned-group member to its group, and clamps a leftward nudge **once for the whole selection** so relative offsets survive at `t=0`. `Alt+Arrow` with no selection is still the precision playhead seek — the only other Alt combo in the file. There is no shortcut help surface in the editor today; adding one means listing these, not inventing a second source of truth.
+
 ---
 
 ## 4. Stringly DOM contract
@@ -72,6 +91,7 @@ The gesture layer's real API is class names and data attributes resolved with `c
 | `.timeline-canvas-edit-area` | `TimelineCanvas.tsx` | `TimelineEditorCore.tsx` (`editAreaRef` + ad-hoc re-queries), `useClipDrag.ts`, `lib/drop-position.ts`, CSS |
 | `data-clip-id` | `ClipAction.tsx`, `TrackListRenderer.tsx` | `useClipDrag.ts`, `useMarqueeSelect.ts` |
 | `data-row-id` | `ClipAction.tsx`, `TrackListRenderer.tsx` | drag/drop row resolution |
+| `data-selected` | `ClipAction.tsx` (`"true"` only when selected) | `tests/e2e/timeline/support.ts`, device probes, DevTools — selection state outside React |
 | `data-resize-edge` | `TrackListRenderer.tsx` | `useClipResizeGesture.ts`, trim `touch-action` CSS |
 | `data-touch-gesture-mode` | `TimelineCanvas.tsx` (edit area) | `timeline-overrides.css` only — this attribute *is* the touch mechanism |
 | `data-shot-group-drag-anchor-clip-id` / `-row-id` | `ShotGroupOverlay.tsx` | `useClipDrag.ts`, `TimelineCanvas.tsx` hit-test exclusions |
@@ -84,7 +104,9 @@ CSS cannot import TypeScript, so `timeline-overrides.css` repeats the tokens as 
 
 ## 5. Mobile interaction: policy vs mechanism
 
-`lib/mobile-interaction-model.ts` is a **pure policy module**: device class (`desktop|tablet|phone`), input modality, interaction mode (`browse|select|move|trim|precision`), gesture owner, plus predicates (`shouldAllowTouchClipDrag`, `shouldAllowTouchMarquee`, `resolveTouchGestureMode`, `shouldExpandTouchTrimHandles`, `shouldPinHoverAffordances`, `shouldTapTimelineToolButtons`, `shouldEnableTimelinePinchZoom`, …). Device class is resolved once in `useTimelineState.ts` from `useIsMobile`/`useIsTablet`.
+`lib/mobile-interaction-model.ts` is a **pure policy module**: device class (`desktop|tablet|phone`), input modality, interaction mode (`browse|select|move|trim|precision`), gesture owner, plus predicates (`shouldAllowTouchClipDrag`, `shouldAllowTouchMarquee`, `resolveTouchGestureMode`, `shouldExpandTouchTrimHandles`, `shouldPinHoverAffordances`, `shouldTapTimelineToolButtons`, `shouldEnableTimelinePinchZoom`, …). Device class is resolved once in `useTimelineState.ts`, which supplies the values `resolveTimelineDeviceClass` decides from.
+
+**Device class inputs.** `useIsMobile` is true for *any* coarse pointer at *any* width, so `isMobile && !isTablet` alone is not a phone test. `resolveTimelineDeviceClass` takes four values — `isMobile`, `isTablet`, `viewportWidth` (`useViewportWidth`), `isTabletHardware` (tablet UA / iPadOS-like, from `shared/hooks/mobile/deviceDetection.ts`) — and applies the owner's rule: **large coarse-pointer screens are desktops unless the hardware is a tablet.** Below `TABLET_MAX_WIDTH` (1200) a coarse pointer still means `phone`; at or above it, tablet hardware keeps `tablet` (an iPad Pro 12.9 in landscape is 1366px, past `computeIsTablet`'s own band) and everything else is `desktop` (a touchscreen monitor gets the desktop editor). The shared signals keep their app-wide semantics — the correction lives at this seam. Pinned by `mobile-interaction-model.test.ts` ("device class").
 
 Policy answers *may this gesture happen*. It cannot make it happen. The **mechanisms** live elsewhere:
 
@@ -101,7 +123,7 @@ Policy answers *may this gesture happen*. It cannot make it happen. The **mechan
 
 **Reachability.** Every `TimelineInteractionMode` is now reachable on every non-desktop device class: one component (`TimelineModeSwitcher`) renders both presentations, so the mode list, the ops calls and the `aria-pressed` semantics cannot drift between phone and tablet. Desktop is deliberately modeless and renders no switcher. Pinned by `TimelineEditorShellCore.test.tsx` ("mode switcher reachability") and by `tests/e2e/timeline/tablet-gestures.spec.ts` (`npm run test:e2e:timeline`).
 
-**Enforcement.** `lib/mobile-interaction-conformance.test.tsx` renders the canvas and the shell over the whole (device class × interaction mode) matrix and binds every predicate to the markup or stylesheet rule that implements it — plus a coverage gate: a new export of `mobile-interaction-model.ts` fails the suite until it is either bound to a mechanism or listed in that file's `EXCLUSIONS` with a reason of its own. jsdom cannot see a browser claim a touch stream, so the suite asserts DOM/CSS contracts only; the gesture itself is proven by the committed device specs in `tests/e2e/timeline/` (`npm run test:e2e:timeline`, opt-in: needs the dev server plus `npm run test:e2e:timeline:bridge`).
+**Enforcement.** `lib/mobile-interaction-conformance.test.tsx` renders the canvas and the shell over the whole (device class × interaction mode) matrix and binds every predicate to the markup or stylesheet rule that implements it — plus a coverage gate: a new export of `mobile-interaction-model.ts` fails the suite until it is either bound to a mechanism or listed in that file's `EXCLUSIONS` with a reason of its own. jsdom cannot see a browser claim a touch stream, so the suite asserts DOM/CSS contracts only; the gesture itself is proven by the committed device specs in `tests/e2e/timeline/` (`npm run test:e2e:timeline`, opt-in: its flag makes Playwright boot both the dev server and the bridge stub).
 
 *Closed (was the last live gap)*: `shouldAllowTouchMarquee` permits touch marquee on tablet in `select` mode, but `resolveTouchGestureMode` used to return a mode only for `move`/`trim`, so no `touch-action` rule covered the select-mode edit area. The consequence was worse than a dead gesture — the left-to-right drag overscrolled at `scrollLeft: 0` and Chromium turned it into the back-navigation swipe, navigating the tab off the editor (which read as "the shell unmounted"; no error was thrown, so no error boundary could have helped). `resolveTouchGestureMode` now derives a third owner, `marquee`, from `shouldAllowTouchMarquee` itself, and the edit area carries `touch-action: none` in that mode. Select mode therefore does not pan — `browse` is the mode that pans. Pinned by the conformance suite above and by `ipad.mjs` (`tablet marquee: shell survives the drag`, `… selects clips`).
 
@@ -112,7 +134,7 @@ Policy answers *may this gesture happen*. It cannot make it happen. The **mechan
 | | App mode | Local mode (dev only) |
 |---|---|---|
 | URL | `?timeline=<id>` (+ project selection) | `?localProject=<slug>&localTimeline=<id>` |
-| Enabled by | default | `import.meta.env.DEV` + `dev.videoEditor.localMode` in localStorage, toggled by `DevModeToggle` |
+| Enabled by | default | `import.meta.env.DEV` + either the `?localProject`/`?localTimeline` params on entry (self-activating, and persists the flag) or `dev.videoEditor.localMode` in localStorage, toggled by `DevModeToggle` |
 | Data provider | `data/SupabaseDataProvider.ts` | `data/AstridBridgeDataProvider.ts` → HTTP to the Vite proxy `/api/astrid` → `127.0.0.1:$VITE_ASTRID_BRIDGE_PORT` (default 17333), `config/vite/vite.config.ts` |
 | Runtime provider | `contexts/VideoEditorProvider.tsx` (**both modes**) | same |
 

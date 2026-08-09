@@ -22,6 +22,15 @@ export const EDIT_AREA_CLASS = 'timeline-canvas-edit-area';
 // ── Data attributes ────────────────────────────────────────────────────────
 
 export const CLIP_ID_ATTR = 'data-clip-id';
+/**
+ * `"true"` on a selected clip root, absent otherwise.
+ *
+ * Selection used to be readable only as a Tailwind accent border, so every
+ * out-of-React reader (e2e specs, device probes, DevTools) matched
+ * `border-sky-400`/`border-violet-400` — which a theming change silently turns
+ * into "0 selected". The attribute is the contract; the border is presentation.
+ */
+export const CLIP_SELECTED_ATTR = 'data-selected';
 export const ROW_ID_ATTR = 'data-row-id';
 export const RESIZE_EDGE_ATTR = 'data-resize-edge';
 export const ACTION_ID_ATTR = 'data-action-id';
@@ -38,6 +47,7 @@ export const TIMELINE_DOM = {
   clipActionClass: CLIP_ACTION_CLASS,
   editAreaClass: EDIT_AREA_CLASS,
   clipId: CLIP_ID_ATTR,
+  clipSelected: CLIP_SELECTED_ATTR,
   rowId: ROW_ID_ATTR,
   resizeEdge: RESIZE_EDGE_ATTR,
   actionId: ACTION_ID_ATTR,
@@ -53,6 +63,8 @@ export const TIMELINE_DOM = {
 export const CLIP_ACTION_SELECTOR = `.${CLIP_ACTION_CLASS}` as const;
 export const EDIT_AREA_SELECTOR = `.${EDIT_AREA_CLASS}` as const;
 export const CLIP_ACTION_WITH_ID_SELECTOR = `.${CLIP_ACTION_CLASS}[${CLIP_ID_ATTR}]` as const;
+/** Every currently selected clip. The out-of-React read of selection state. */
+export const SELECTED_CLIP_SELECTOR = `[${CLIP_ID_ATTR}][${CLIP_SELECTED_ATTR}="true"]` as const;
 export const RESIZE_EDGE_SELECTOR = `[${RESIZE_EDGE_ATTR}]` as const;
 export const SHOT_GROUP_DRAG_ANCHOR_SELECTOR = `[${SHOT_GROUP_DRAG_ANCHOR_CLIP_ID_ATTR}]` as const;
 
@@ -82,10 +94,16 @@ export const datasetKeyForAttribute = (attribute: string): string =>
 
 // ── Attribute builders (the write side, one per markup site) ───────────────
 
-/** `ClipAction` root — the drag machine's hit target. */
-export const clipActionAttrs = (clipId: string, rowId: string) => ({
+/**
+ * `ClipAction` root — the drag machine's hit target, and the selection readout.
+ *
+ * `data-selected` is emitted only when selected (React drops `undefined`), so
+ * `[data-selected="true"]` is an exact match for the selected set.
+ */
+export const clipActionAttrs = (clipId: string, rowId: string, selected = false) => ({
   [CLIP_ID_ATTR]: clipId,
   [ROW_ID_ATTR]: rowId,
+  [CLIP_SELECTED_ATTR]: selected ? 'true' : undefined,
 });
 
 /** `TrackListRenderer` row container. */

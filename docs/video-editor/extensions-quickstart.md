@@ -70,6 +70,44 @@ export const myExtension: ReighExtension = defineExtension({
 
 The `activate()` function receives an `ExtensionContext` and must return a `DisposeHandle` (or `void`). The dispose function is called when the extension is deactivated — it must be **idempotent** and **must not throw**.
 
+### 2.5 Running your extension
+
+Writing the file is not enough — the host has to be told your extension exists.
+The dev entry point for that is:
+
+```
+src/tools/video-editor/dev/localExtensions.ts
+```
+
+```typescript
+import { myExtension } from '../../../path/to/my-extension';
+import type { ReighExtension } from '@reigh/editor-sdk';
+
+export const devLocalExtensions: ReighExtension[] = [myExtension];
+```
+
+`VideoEditorPage` concatenates that array into the editor's direct extensions
+under `import.meta.env.DEV`. Refresh the browser and your contributions appear.
+**Keep the array empty on `main`** — entries there are a local scratchpad, not
+something to commit.
+
+Boot the editor with `npm run dev:editor` (demo timeline, no Supabase, no
+sign-in) and open the URL it prints.
+
+**Scaffold.** Copy `src/examples/hello-world-extension.ts` and rename the
+manifest id — that is the whole scaffold; there is no generator.
+
+**Did it activate?** Every activation and disposal is wrapped in a
+`console.groupCollapsed` labelled with the extension id. Open DevTools Console
+and filter for `[Extension lifecycle]`; see
+[`extensions-debugging.md` §2.1](./extensions-debugging.md#21-lifecycle-console-grouping)
+for what the group contains and what a failed activation looks like.
+
+**Nothing appeared at all?** Load the editor with `?extensionSmoke=1`. That
+mounts the host's own smoke extension. If *its* status contribution shows up,
+the host wiring is fine and the problem is in your extension; if it does not,
+the problem is upstream of you.
+
 ---
 
 ## 3. Declaring contributions

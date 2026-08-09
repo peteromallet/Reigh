@@ -16,13 +16,17 @@ React + Vite + TypeScript · TailwindCSS + shadcn-ui · Supabase (Postgres, Auth
 git clone https://github.com/peteromallet/reigh
 cd reigh && npm install
 
-cp .env .env.local            # or create .env manually
+cp .env.example .env.local    # required VITE_* vars, each commented
 supabase start                # launches Postgres, Auth, Storage, Realtime
-# copy the printed SUPABASE_URL, ANON_KEY & SERVICE_ROLE_KEY into .env
+# copy the printed SUPABASE_URL, ANON_KEY & SERVICE_ROLE_KEY into .env.local
 supabase db push              # applies migrations
 
 npm run dev                   # Vite on http://localhost:2222
 ```
+
+**Timeline only?** `npm run dev:editor` boots the video-editor timeline with demo
+clips against a committed local bridge stub — no Docker, no Supabase, no sign-in.
+It prints the editor URL; open it and the timeline is there.
 
 GPU task processing requires **[Reigh-Worker](https://github.com/banodoco/Reigh-Worker)** running separately. Worker and API orchestration is managed by **[Reigh-Worker-Orchestrator](https://github.com/banodoco/Reigh-Worker-Orchestrator)**.
 

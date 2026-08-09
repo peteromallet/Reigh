@@ -10,6 +10,8 @@
     "preinstall": "npx --yes only-allow npm",
     "preflight": "docker build .",
     "dev": "vite --config config/vite/vite.config.ts",
+    "dev:editor": "node scripts/dev-editor.mjs",
+    "dev:editor:bridge": "node tests/e2e/timeline/astrid-bridge-stub.mjs",
     "dev:embed-demo": "vite --config examples/embed-demo/vite.config.ts",
     "build": "vite build --config config/vite/vite.config.ts",
     "build:embed-demo": "vite build --config examples/embed-demo/vite.config.ts",

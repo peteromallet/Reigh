@@ -1,3 +1,4 @@
+// Layer map & invariants: docs/structure_detail/tool_video_editor.md
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { CommandPalette } from '@/tools/video-editor/components/CommandPalette/CommandPalette.tsx';
 import { formatDistanceToNow } from 'date-fns';
@@ -44,6 +45,7 @@ import { useKeyboardShortcuts } from '@/tools/video-editor/hooks/useKeyboardShor
 import { useTimelineRealtime } from '@/tools/video-editor/hooks/useTimelineRealtime.ts';
 import { getTimelineDurationInFrames, parseResolution } from '@/tools/video-editor/lib/config-utils.ts';
 import { buildKeyboardDeleteMutation } from '@/tools/video-editor/lib/keyboard-delete.ts';
+import { buildKeyboardTimeNudgeMutation } from '@/tools/video-editor/lib/keyboard-nudge.ts';
 import {
   APP_PANE_RAIL_GUTTER_PX,
   areTimelineInteractionTargetsEqual,
@@ -280,6 +282,17 @@ function TimelineEditorShellCoreComponent({
     editorOps.handleDeleteClips([...editorData.selectedClipIds]);
   }, [editorData.dataRef, editorData.selectedClipIds, editorOps]);
 
+  const handleKeyboardTimeNudge = useCallback((deltaSeconds: number) => {
+    const mutation = buildKeyboardTimeNudgeMutation(
+      editorData.dataRef.current,
+      editorData.selectedClipIds,
+      deltaSeconds,
+    );
+    if (mutation) {
+      editorOps.applyEdit(mutation, { semantic: true });
+    }
+  }, [editorData.dataRef, editorData.selectedClipIds, editorOps]);
+
   useKeyboardShortcuts({
     hasSelectedClip: editorData.selectedClipIds.size > 0,
     canMoveSelectedClipToTrack: editorData.selectedClipIds.size >= 1,
@@ -287,6 +300,7 @@ function TimelineEditorShellCoreComponent({
     selectedClipIds: editorData.selectedClipIds,
     timelineFps,
     moveSelectedClipsToTrack: editorOps.moveSelectedClipsToTrack,
+    nudgeSelectedClipsInTime: handleKeyboardTimeNudge,
     undo: chrome.undo,
     redo: chrome.redo,
     selectAllClips: () => editorReplaceTimelineSelection(Object.keys(editorData.data?.meta ?? {})),

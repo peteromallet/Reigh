@@ -1,3 +1,4 @@
+// Layer map & invariants: docs/structure_detail/tool_video_editor.md
 import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { shallow } from 'zustand/shallow';
 import {

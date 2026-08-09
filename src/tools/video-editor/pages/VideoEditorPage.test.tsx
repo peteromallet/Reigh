@@ -466,13 +466,38 @@ describe('VideoEditorPage', () => {
   });
 
   it('passes a save-status callback into the mounted provider', async () => {
-    renderPage('/tools/video-editor?timeline=timeline-1&localProject=ados-talks&localTimeline=11111111-1111-1111-1111-111111111111');
+    renderPage('/tools/video-editor?timeline=timeline-1');
 
     await screen.findByTestId('video-editor-provider');
     expect(state.saveStatusCallback).toBeTypeOf('function');
   });
 
+  it('opens Local mode straight from the URL params, with no storage flag set', async () => {
+    // No `dev.videoEditor.localMode` in localStorage: the pasted link is the
+    // only signal, and it has to be enough (DEV only).
+    setupBridgeFetch();
+
+    renderPage('/tools/video-editor?localProject=ados-talks&localTimeline=11111111-1111-1111-1111-111111111111');
+
+    const provider = await screen.findByTestId('video-editor-provider');
+    expect(provider).toHaveAttribute('data-kind', 'bridge');
+    // ...and the flag is persisted, so a reload without params stays in Local mode.
+    expect(window.localStorage.getItem('dev.videoEditor.localMode')).toBe('1');
+  });
+
+  it('does not self-activate Local mode outside DEV', async () => {
+    (import.meta.env as Record<string, unknown>).DEV = false;
+
+    renderPage('/tools/video-editor?timeline=timeline-1&localProject=ados-talks&localTimeline=11111111-1111-1111-1111-111111111111');
+
+    const provider = await screen.findByTestId('video-editor-provider');
+    expect(provider).toHaveAttribute('data-kind', 'supabase');
+    expect(state.bridgeCtor).not.toHaveBeenCalled();
+  });
+
+
   it('switches between App and Local modes while preserving per-mode selections', async () => {
+    // The URL carries local params, so the page opens in Local mode (self-activating).
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith('/api/astrid/health')) {
@@ -500,7 +525,6 @@ describe('VideoEditorPage', () => {
     renderPage('/tools/video-editor?timeline=timeline-1&localProject=ados-talks&localTimeline=11111111-1111-1111-1111-111111111111');
 
     await screen.findByTestId('video-editor-provider');
-    fireEvent.click(screen.getByRole('button', { name: 'Local' }));
 
     await waitFor(() => {
       expect(screen.getByTestId('video-editor-provider')).toHaveAttribute('data-kind', 'bridge');

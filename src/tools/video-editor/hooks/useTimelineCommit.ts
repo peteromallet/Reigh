@@ -60,7 +60,34 @@ export type ScheduleSaveFn = (
   options?: { preserveStatus?: boolean },
 ) => void;
 
+/**
+ * The one mutation vocabulary every timeline edit passes through (`applyEdit`).
+ *
+ * Pick the variant by *what you already know*, not by size of change:
+ *
+ * @example Move a single clip in time — a `'rows'` edit, the shape the drag
+ * machine commits (`useClipDrag.helpers.ts`):
+ * ```ts
+ * const nextRows = rows.map((row) => (row.id === clip.track
+ *   ? { ...row, actions: row.actions.map((a) => (a.id === clipId
+ *       ? { ...a, start: nextStart, end: nextStart + (a.end - a.start) }
+ *       : a)) }
+ *   : row));
+ *
+ * applyEdit(
+ *   { type: 'rows', rows: nextRows, metaUpdates: { [clipId]: { track: clip.track } } },
+ *   { transactionId, selectedClipId: clipId },
+ * );
+ * ```
+ */
 export type TimelineEditMutation =
+  /**
+   * Bulk declarative edit in row shape: hand over the rows you want, plus any
+   * per-clip metadata to merge (`metaUpdates`) or drop (`metaDeletes`). This is
+   * what multi-drag, group moves and single-clip moves/trims all use — the
+   * commit layer diffs it into the timeline. `clipOrderOverride` pins per-track
+   * ordering when the geometry alone would be ambiguous.
+   */
   | {
       type: 'rows';
       rows: TimelineRow[];
@@ -69,22 +96,46 @@ export type TimelineEditMutation =
       clipOrderOverride?: ClipOrderMap;
       pinnedShotGroupsOverride?: TimelineData['config']['pinnedShotGroups'];
     }
+  /**
+   * Full `resolvedConfig` replacement — the big hammer. For edits that are not
+   * expressible as rows (imports, whole-timeline transforms, track structure
+   * changes). Everything downstream re-derives from the new config.
+   */
   | {
       type: 'config';
       resolvedConfig: TimelineData['resolvedConfig'];
       pinnedShotGroupsOverride?: TimelineData['config']['pinnedShotGroups'];
     }
+  /** Pinned shot groups only; clips and rows are left exactly as they are. */
   | {
       type: 'pinnedShotGroups';
       pinnedShotGroups: NonNullable<TimelineData['config']['pinnedShotGroups']>;
     };
 
 export type ApplyEditOptions = {
+  /**
+   * Persist this edit (default: the commit layer's own scheduling). Set `false`
+   * for intermediate states you do not want written back — e.g. a step inside a
+   * gesture that a later commit in the same transaction will supersede.
+   */
   save?: boolean;
+  /** Selection to apply alongside the edit, so selection and data land in one commit. */
   selectedClipId?: string | null;
+  /** Selected track to apply alongside the edit. */
   selectedTrackId?: string | null;
+  /**
+   * Coalescing key for undo history: every edit sharing a `transactionId`
+   * collapses into one undo step. A drag emits many `applyEdit` calls under one
+   * id, so ⌘Z undoes the drag, not its last frame.
+   */
   transactionId?: string;
+  /**
+   * Marks a *user-meaningful* edit (a deliberate action) rather than a
+   * mechanical/derived one. Semantic edits are what history records and what
+   * undo lands on; non-semantic ones ride along with the surrounding step.
+   */
   semantic?: boolean;
+  /** Explicit command-history metadata when the caller is the command layer. */
   commandHistory?: CommandHistoryCommitMetadata;
 };
 

@@ -203,6 +203,19 @@ export function useTimelineTrackManagement({
   setSelectedTrackId,
   applyEdit,
 }: UseTimelineTrackManagementArgs): UseTimelineTrackManagementResult {
+  /**
+   * Move a clip to `targetRowId`, optionally landing it at `newStartTime`.
+   *
+   * **Also the time-set primitive.** Passing the clip's *current* row with a new
+   * `newStartTime` moves it in time only — the same-row call in
+   * `commitDraggingSession` is intentional, not a no-op to be optimized away.
+   * The signature reads "move to row" but the row is the destination, not the
+   * change: there is no separate `setClipStartTime`.
+   *
+   * Pinned shot groups move as a unit: if the clip is inside one, the whole
+   * group's bounding box is relocated (and edge-snapped) instead of the clip.
+   * `transactionId` coalesces the resulting edits into one undo step.
+   */
   const moveClipToRow = useCallback((
     clipId: string,
     targetRowId: string,

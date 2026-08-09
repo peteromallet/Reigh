@@ -282,9 +282,10 @@ const COVERAGE = {
  */
 const EXCLUSIONS: Record<string, string> = {
   resolveTimelineDeviceClass:
-    'Resolves the matrix input (which device class we are on) from useIsMobile/useIsTablet. '
-    + 'It decides nothing about a gesture, so there is no mechanism to bind; every row below '
-    + 'takes its output as a parameter.',
+    'Resolves the matrix input (which device class we are on) from useIsMobile/useIsTablet plus '
+    + 'viewport width and the tablet-hardware hint. It decides nothing about a gesture, so there '
+    + 'is no mechanism to bind; every row below takes its output as a parameter. The '
+    + 'classification itself is pinned by mobile-interaction-model.test.ts ("device class").',
   resolveInputModalityFromPointerType:
     'The other matrix input: maps a PointerEvent.pointerType to a modality. Pure lookup, no DOM.',
   getDefaultInteractionMode:
@@ -435,7 +436,10 @@ describe.each(DEVICE_CLASSES)('gesture ownership — %s', (deviceClass) => {
     const expectedMode = resolveTouchGestureMode(deviceClass, interactionMode);
     const { editArea } = renderCanvasFor(deviceClass, interactionMode);
 
-    expect(editArea.getAttribute(TOUCH_GESTURE_MODE_ATTR)).toBe(expectedMode);
+    expect(
+      editArea.getAttribute(TOUCH_GESTURE_MODE_ATTR),
+      `edit area's ${TOUCH_GESTURE_MODE_ATTR} disagrees with resolveTouchGestureMode(${deviceClass}, ${interactionMode}) — TimelineCanvas.tsx writes this attribute from that policy; fix whichever side is wrong`,
+    ).toBe(expectedMode);
 
     if (deviceClass === 'desktop') {
       // Modeless by design: a mouse gesture is never claimed by the browser, so
@@ -510,7 +514,10 @@ describe.each(TOUCH_DEVICE_CLASSES)('marquee — %s', (deviceClass) => {
     const allowed = shouldAllowTouchMarquee(deviceClass, 'touch', interactionMode);
     const marqueeOwned = editArea.getAttribute(TOUCH_GESTURE_MODE_ATTR) === 'marquee';
 
-    expect(marqueeOwned).toBe(allowed);
+    expect(
+      marqueeOwned,
+      `shouldAllowTouchMarquee(${deviceClass}, touch, ${interactionMode}) is ${allowed} but the edit area ${marqueeOwned ? 'claims' : 'does not claim'} the marquee gesture — resolveTouchGestureMode must derive marquee ownership from that permission (mobile-interaction-model.ts) and TimelineCanvas.tsx must write the attribute`,
+    ).toBe(allowed);
     if (!allowed) {
       return;
     }

@@ -5,10 +5,11 @@ import {
   computeIsTablet,
   computeIsTouchDevice,
   isMobileUA,
+  isTabletHardware,
 } from '@/shared/hooks/mobile/deviceDetection';
 import { reportNonFatalMobileError } from '@/shared/hooks/mobile/mobileErrorReporter';
 
-export { isMobileUA };
+export { isMobileUA, isTabletHardware };
 
 export function useIsMobile() {
   const [isMobile, setIsMobile] = React.useState<boolean>(() => computeIsMobile(reportNonFatalMobileError));
@@ -55,6 +56,33 @@ export function useIsTablet() {
   }, []);
 
   return isTablet;
+}
+
+/**
+ * Reactive viewport width in CSS pixels; `0` in non-browser runtimes.
+ *
+ * The boolean signals above collapse width into a verdict. Consumers that have
+ * to reason about the width itself — e.g. telling a desktop-sized touchscreen
+ * apart from a tablet — need the number, not the verdict.
+ */
+export function useViewportWidth() {
+  const [width, setWidth] = React.useState<number>(() => (
+    typeof window === 'undefined' ? 0 : window.innerWidth
+  ));
+
+  React.useEffect(() => {
+    const onChange = () => setWidth(window.innerWidth);
+
+    // Resolve once on mount: an SSR/hydration pass seeded 0.
+    onChange();
+    window.addEventListener('resize', onChange);
+
+    return () => {
+      window.removeEventListener('resize', onChange);
+    };
+  }, []);
+
+  return width;
 }
 
 /** Touch-capable device (phones, tablets, touch laptops). */
