@@ -38,7 +38,7 @@ import {
 } from '@/tools/video-editor/components/TimelineEditor/TimelineRulerAndGrid.tsx';
 import { TrackListRenderer } from '@/tools/video-editor/components/TimelineEditor/TrackListRenderer.tsx';
 import { TimelineGhostLayer } from '@/tools/video-editor/components/TimelineEditor/TimelineGhostLayer.tsx';
-import { DataProviderContext } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+import { VideoEditorRuntimeContext } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import type { TimelineGhostEntry } from '@/tools/video-editor/types/timeline-canvas.ts';
 import { useClipResizeGesture } from '@/tools/video-editor/hooks/useClipResizeGesture.ts';
 import type { ShotGroup } from '@/tools/video-editor/hooks/useShotGroups.ts';
@@ -192,7 +192,7 @@ function TimelineAreaExtensionContextMenu({
   closeMenu: () => void;
 }) {
   const [adjusted, setAdjusted] = useState<{ x: number; y: number } | null>(null);
-  const runtime = useContext(DataProviderContext);
+  const runtime = useContext(VideoEditorRuntimeContext);
   const commandRegistry = runtime?.commandRegistry;
   const extensions = runtime?.extensionRuntime?.extensions ?? [];
   const items = commandRegistry
@@ -315,7 +315,7 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
   const [timelineAreaMenu, setTimelineAreaMenu] = useState<TimelineAreaContextMenuState | null>(null);
   const shotGroupMenuRef = useRef<HTMLDivElement>(null);
   const timelineAreaMenuRef = useRef<HTMLDivElement>(null);
-  const runtime = useContext(DataProviderContext);
+  const runtime = useContext(VideoEditorRuntimeContext);
   const commandRegistry = runtime?.commandRegistry;
   const extensions = runtime?.extensionRuntime?.extensions ?? [];
   useRenderDiagnostic('TimelineCanvas');

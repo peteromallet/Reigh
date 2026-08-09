@@ -43,8 +43,8 @@ vi.mock('@/tools/video-editor/data/SupabaseDataProvider', async () => {
 });
 
 import { useEditorSync } from '@/tools/video-editor/hooks/useEditorSync';
-import { DataProviderContext } from '@/tools/video-editor/contexts/DataProviderContext';
-import type { VideoEditorRuntimeContextValue } from '@/tools/video-editor/contexts/DataProviderContext';
+import { VideoEditorRuntimeContext } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext';
+import type { VideoEditorRuntimeContextValue } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext';
 import type { DataProvider } from '@/tools/video-editor/data/DataProvider';
 import type { TimelineConfig } from '@/tools/video-editor/types';
 import type { AssetRegistry } from '@/tools/video-editor/types';
@@ -142,7 +142,7 @@ interface WrapperOptions {
 
 function createWrapper({ runtime }: WrapperOptions) {
   return ({ children }: { children: React.ReactNode }) =>
-    React.createElement(DataProviderContext.Provider, { value: runtime }, children);
+    React.createElement(VideoEditorRuntimeContext.Provider, { value: runtime }, children);
 }
 
 // ---------------------------------------------------------------------------
@@ -215,7 +215,7 @@ describe('useEditorSync', () => {
   // --- Sync button visibility (DB mode detection) ---
 
   describe('Sync button visibility (isSyncAvailable)', () => {
-    it('returns isSyncAvailable: false when no DataProviderContext is provided', () => {
+    it('returns isSyncAvailable: false when no VideoEditorRuntimeContext is provided', () => {
       const { result } = renderHook(() => useEditorSync());
       expect(result.current.isSyncAvailable).toBe(false);
       expect(result.current.syncState).toBe('idle');

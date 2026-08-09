@@ -4,7 +4,7 @@ import {
   MEDIA_COMMAND_DESCRIPTORS,
   type TimelineCommandHistoryMetadata,
 } from '@/tools/video-editor/commands/index.ts';
-import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import { isDataProviderPersistenceEnabled } from '@/tools/video-editor/data/DataProvider.ts';
 import type {
   CommandHistoryCommitMetadata,

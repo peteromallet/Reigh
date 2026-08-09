@@ -22,7 +22,7 @@ import {
   buildAssetDropEdit,
   type UseAssetManagementResult,
 } from '@/tools/video-editor/hooks/useAssetManagement.ts';
-import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import { AstridBridgeDataProvider } from '@/tools/video-editor/data/AstridBridgeDataProvider.ts';
 import type {
   TimelineApplyEdit,

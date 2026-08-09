@@ -252,13 +252,13 @@ function __clearRuntimeContext() {
   __runtimeContext = null;
 }
 
-vi.mock('@/tools/video-editor/contexts/DataProviderContext.tsx', () => ({
+vi.mock('@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx', () => ({
   useOptionalVideoEditorRuntime: () => __runtimeContext,
   useVideoEditorRuntime: () => {
     if (!__runtimeContext) throw new Error('No runtime context');
     return __runtimeContext;
   },
-  DataProviderContext: {
+  VideoEditorRuntimeContext: {
     Provider: ({ children }: any) => children,
   },
 }));

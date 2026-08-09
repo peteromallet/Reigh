@@ -9,7 +9,7 @@ import {
   CommandItem,
   CommandShortcut,
 } from '@/shared/components/ui/command.tsx';
-import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import type { CommandEntry, CommandRunStatus } from '@/tools/video-editor/runtime/commandRegistry.ts';
 import type { AgentToolEntry, AgentToolRunStatus } from '@/tools/video-editor/runtime/agentToolRegistry.ts';
 

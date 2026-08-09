@@ -20,7 +20,7 @@ import {
   useVideoEditorPanelRegistry,
   useVideoEditorRenderContext,
 } from '@/tools/video-editor/runtime/useVideoEditorRenderContext.ts';
-import { useOptionalVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+import { useOptionalVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import {
   getInspectorContributions,
   type InspectorSelectionSnapshot,

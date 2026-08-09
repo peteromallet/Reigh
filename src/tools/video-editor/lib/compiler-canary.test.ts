@@ -1151,7 +1151,7 @@ describe('CompilerCanary', () => {
       const sourcePath = resolve(__dirname, 'compiler-canary.ts');
       const source = readFileSync(sourcePath, 'utf-8');
       expect(source).not.toMatch(/timelineStore/);
-      expect(source).not.toMatch(/DataProviderContext/);
+      expect(source).not.toMatch(/VideoEditorRuntimeContext/);
       expect(source).not.toMatch(/commitData/);
       expect(source).not.toMatch(/timeline-mutation-engine/);
       expect(source).not.toMatch(/useTimelineCommands/);

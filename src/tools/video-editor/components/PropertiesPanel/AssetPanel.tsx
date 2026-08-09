@@ -18,7 +18,7 @@ import {
   ChevronDown,
   ChevronRight,
 } from 'lucide-react';
-import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import { useTimelineEditorOps } from '@/tools/video-editor/hooks/timelineStore.ts';
 import type { ClipMeta } from '@/tools/video-editor/lib/timeline-data.ts';
 import type { AssetRegistryEntry } from '@/tools/video-editor/types/index.ts';

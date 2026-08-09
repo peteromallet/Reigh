@@ -6,9 +6,9 @@ import type { ResolvedTimelineConfig } from '@/tools/video-editor/types';
 import type { ClipRendererProps } from '@/tools/video-editor/clip-types/ClipTypeRegistry';
 import type { FC, PropsWithChildren } from 'react';
 import {
-  DataProviderWrapper,
+  VideoEditorRuntimeProvider,
   type VideoEditorRuntimeContextValue,
-} from '@/tools/video-editor/contexts/DataProviderContext';
+} from '@/tools/video-editor/contexts/VideoEditorRuntimeContext';
 import {
   createLiveDataRegistry,
   type LiveDataRegistry,
@@ -720,9 +720,9 @@ function runtimeWithLiveRegistry(liveDataRegistry?: LiveDataRegistry): VideoEdit
 
 function renderWithLiveRegistry(config: ResolvedTimelineConfig, liveDataRegistry?: LiveDataRegistry) {
   return render(
-    <DataProviderWrapper value={runtimeWithLiveRegistry(liveDataRegistry)}>
+    <VideoEditorRuntimeProvider value={runtimeWithLiveRegistry(liveDataRegistry)}>
       <TimelineRenderer config={config} />
-    </DataProviderWrapper>,
+    </VideoEditorRuntimeProvider>,
   );
 }
 

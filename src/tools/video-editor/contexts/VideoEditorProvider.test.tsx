@@ -22,7 +22,7 @@ import {
   systemResetSelectionForProjectChange,
   userSelectGalleryItem,
 } from '@/shared/state/selectionStore';
-import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext';
+import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext';
 import { buildVideoEditorLightboxMedia, VideoEditorProvider } from '@/tools/video-editor/contexts/VideoEditorProvider';
 import { ExtensionSettingsPanel } from '@/tools/video-editor/components/ExtensionSettings/ExtensionSettingsPanel';
 import type { EffectRegistryRecord } from '@/tools/video-editor/effects/registry/types';
@@ -36,9 +36,9 @@ import {
   PUBLIC_TIMELINE_COMMAND_NAMES,
   PUBLIC_TIMELINE_COMMAND_SCOPE,
   isPublicTimelineCommandName,
-  useTimelineCommands,
-  useTimelineCommandsSafe,
-} from '@/tools/video-editor/hooks/useTimelineCommands';
+  useTimelineCommandsService,
+  useTimelineCommandsServiceSafe,
+} from '@/tools/video-editor/hooks/useTimelineCommandsService';
 import {
   createTimelineStore,
   TimelineStoreProvider,
@@ -1283,12 +1283,12 @@ describe('VideoEditorProvider', () => {
       <TimelineStoreProvider store={store}>{children}</TimelineStoreProvider>
     );
 
-    const outside = renderHook(() => useTimelineCommandsSafe());
+    const outside = renderHook(() => useTimelineCommandsServiceSafe());
     expect(outside.result.current).toBeNull();
 
     const inside = renderHook(() => ({
-      commands: useTimelineCommands(),
-      safeCommands: useTimelineCommandsSafe(),
+      commands: useTimelineCommandsService(),
+      safeCommands: useTimelineCommandsServiceSafe(),
     }), { wrapper });
 
     const commandNames = Object.keys(inside.result.current.commands).sort();
@@ -1304,7 +1304,7 @@ describe('VideoEditorProvider', () => {
       <TimelineStoreProvider store={store}>{children}</TimelineStoreProvider>
     );
 
-    const { result } = renderHook(() => useTimelineCommands(), { wrapper });
+    const { result } = renderHook(() => useTimelineCommandsService(), { wrapper });
     const response = result.current.addClip({ assetId: 'missing-asset', time: 0 });
 
     expect(response).toEqual({
@@ -1326,7 +1326,7 @@ describe('VideoEditorProvider', () => {
       <TimelineStoreProvider store={store}>{children}</TimelineStoreProvider>
     );
 
-    const { result } = renderHook(() => useTimelineCommands(), { wrapper });
+    const { result } = renderHook(() => useTimelineCommandsService(), { wrapper });
     const response = result.current.addClip({ assetId: 'asset-dup' });
 
     expect(response).toEqual({
@@ -1350,7 +1350,7 @@ describe('VideoEditorProvider', () => {
       <TimelineStoreProvider store={store}>{children}</TimelineStoreProvider>
     );
 
-    const { result } = renderHook(() => useTimelineCommands(), { wrapper });
+    const { result } = renderHook(() => useTimelineCommandsService(), { wrapper });
     const response = await result.current.registerAsset({
       generationId: 'generation-1',
       imageUrl: '',
@@ -1378,7 +1378,7 @@ describe('VideoEditorProvider', () => {
       <TimelineStoreProvider store={store}>{children}</TimelineStoreProvider>
     );
 
-    const { result } = renderHook(() => useTimelineCommands(), { wrapper });
+    const { result } = renderHook(() => useTimelineCommandsService(), { wrapper });
     const response = result.current.addClip({
       assetId: 'asset-dup',
       afterClipId: 'clip-1',
@@ -1441,7 +1441,7 @@ describe('VideoEditorProvider', () => {
       <TimelineStoreProvider store={store}>{children}</TimelineStoreProvider>
     );
 
-    const { result } = renderHook(() => useTimelineCommands(), { wrapper });
+    const { result } = renderHook(() => useTimelineCommandsService(), { wrapper });
     const response = await result.current.registerAsset({
       generationId: 'generation-1',
       imageUrl: 'https://example.com/image.png',
@@ -2149,7 +2149,7 @@ describe('VideoEditorProvider', () => {
       'utf8',
     );
 
-    expect(checklist).toContain('useTimelineCommandsSafe()');
+    expect(checklist).toContain('useTimelineCommandsServiceSafe()');
     expect(checklist).toContain('### Command-facade caller set');
     expect(checklist).toContain('VIDEO_EDITOR_HOST_PORT_NAMES');
     expect(checklist).toContain('src/domains/media-lightbox/hooks/useAddToVideoEditor.ts');

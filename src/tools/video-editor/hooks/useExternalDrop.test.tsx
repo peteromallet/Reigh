@@ -45,7 +45,7 @@ vi.mock('@/shared/lib/media/videoMetadata', () => ({
   extractVideoMetadataFromUrl: (...args: unknown[]) => mockExtractVideoMetadataFromUrl(...args),
 }));
 
-vi.mock('@/tools/video-editor/contexts/DataProviderContext.tsx', () => ({
+vi.mock('@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx', () => ({
   useVideoEditorRuntime: () => mockRuntime,
 }));
 

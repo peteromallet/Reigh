@@ -2,9 +2,9 @@ import { useEffect, useContext } from 'react';
 import { isEditableTarget } from '@/tools/video-editor/lib/coordinate-utils.ts';
 import { resolveKeyboardNudgeSeconds } from '@/tools/video-editor/lib/keyboard-nudge.ts';
 import {
-  DataProviderContext,
+  VideoEditorRuntimeContext,
   type VideoEditorRuntimeContextValue,
-} from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+} from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import { evaluatePredicate } from '@/tools/video-editor/runtime/commandPredicates.ts';
 import type { KeybindingEntry } from '@/tools/video-editor/runtime/commandRegistry.ts';
 import type { PredicateContext } from '@/tools/video-editor/runtime/commandPredicates.ts';
@@ -196,10 +196,10 @@ export function useKeyboardShortcuts({
   deleteSelectedClip,
   clearSelection,
 }: UseKeyboardShortcutsOptions) {
-  // Use raw context to avoid throwing when outside DataProviderWrapper.
+  // Use raw context to avoid throwing when outside VideoEditorRuntimeProvider.
   // This is safe: the hook is always mounted inside the provider in production,
   // but test environments that mock the hook at the import level may bypass it.
-  const runtime: VideoEditorRuntimeContextValue | null = useContext(DataProviderContext);
+  const runtime: VideoEditorRuntimeContextValue | null = useContext(VideoEditorRuntimeContext);
   const commandRegistry = runtime?.commandRegistry;
   const extensions = runtime?.extensionRuntime?.extensions ?? [];
 

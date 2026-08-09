@@ -2,7 +2,7 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { DataProviderWrapper, type VideoEditorRuntimeContextValue } from '@/tools/video-editor/contexts/DataProviderContext';
+import { VideoEditorRuntimeProvider, type VideoEditorRuntimeContextValue } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext';
 import { createCommandRegistry, type CommandRegistry } from '@/tools/video-editor/runtime/commandRegistry';
 import { AIInputModeProvider } from '@/shared/contexts/AIInputModeContext.tsx';
 import { TrackLabelContent } from '@/tools/video-editor/components/TimelineEditor/TrackLabel';
@@ -164,9 +164,9 @@ describe('TrackListRenderer', () => {
     } satisfies React.ComponentProps<typeof TrackListRenderer>;
 
     const { container } = render(
-      <DataProviderWrapper value={buildRuntime(registry)}>
+      <VideoEditorRuntimeProvider value={buildRuntime(registry)}>
         <TrackListRenderer {...props} />
-      </DataProviderWrapper>,
+      </VideoEditorRuntimeProvider>,
     );
 
     fireEvent.contextMenu(container.querySelector('[data-track-id="V1"]') as HTMLElement);
@@ -251,7 +251,7 @@ describe('TrackListRenderer', () => {
     });
     const onSelectTrack = vi.fn();
     const { container } = render(
-      <DataProviderWrapper value={buildRuntime(registry)}>
+      <VideoEditorRuntimeProvider value={buildRuntime(registry)}>
         <TrackLabelContent
           track={tracks[0]}
           isSelected={false}
@@ -260,7 +260,7 @@ describe('TrackListRenderer', () => {
           onChange={vi.fn()}
           onRemove={vi.fn()}
         />
-      </DataProviderWrapper>,
+      </VideoEditorRuntimeProvider>,
     );
     const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
 
@@ -284,7 +284,7 @@ describe('TrackListRenderer', () => {
       when: 'target.trackId == "V2"',
     });
     const { container } = render(
-      <DataProviderWrapper value={buildRuntime(registry)}>
+      <VideoEditorRuntimeProvider value={buildRuntime(registry)}>
         <TrackLabelContent
           track={tracks[0]}
           isSelected={false}
@@ -293,7 +293,7 @@ describe('TrackListRenderer', () => {
           onChange={vi.fn()}
           onRemove={vi.fn()}
         />
-      </DataProviderWrapper>,
+      </VideoEditorRuntimeProvider>,
     );
 
     fireEvent.contextMenu(container.firstElementChild as HTMLElement);
@@ -311,7 +311,7 @@ describe('TrackListRenderer', () => {
       handler,
     });
     const renderTrack = (track: TrackDefinition) => (
-      <DataProviderWrapper value={buildRuntime(registry)}>
+      <VideoEditorRuntimeProvider value={buildRuntime(registry)}>
         <TrackLabelContent
           track={track}
           isSelected={false}
@@ -320,7 +320,7 @@ describe('TrackListRenderer', () => {
           onChange={vi.fn()}
           onRemove={vi.fn()}
         />
-      </DataProviderWrapper>
+      </VideoEditorRuntimeProvider>
     );
     const { container, rerender } = render(renderTrack(tracks[0]));
 
@@ -349,7 +349,7 @@ describe('TrackListRenderer', () => {
       handler,
     });
     const renderTrack = (track: TrackDefinition) => (
-      <DataProviderWrapper value={buildRuntime(registry)}>
+      <VideoEditorRuntimeProvider value={buildRuntime(registry)}>
         <TrackLabelContent
           track={track}
           isSelected={false}
@@ -358,7 +358,7 @@ describe('TrackListRenderer', () => {
           onChange={vi.fn()}
           onRemove={vi.fn()}
         />
-      </DataProviderWrapper>
+      </VideoEditorRuntimeProvider>
     );
     const { container, rerender } = render(renderTrack(tracks[0]));
 

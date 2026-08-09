@@ -65,7 +65,7 @@ const previewRef = {
   },
 };
 
-vi.mock('@/tools/video-editor/contexts/DataProviderContext', () => ({
+vi.mock('@/tools/video-editor/contexts/VideoEditorRuntimeContext', () => ({
   useVideoEditorRuntime: () => ({
     timelineId: 'timeline-1',
     timelineName: 'Embed demo',

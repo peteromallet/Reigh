@@ -32,7 +32,7 @@ import {
   Zap,
   ShieldX,
 } from 'lucide-react';
-import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext';
+import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext';
 import type {
   Diagnostic,
   ContributionKind,

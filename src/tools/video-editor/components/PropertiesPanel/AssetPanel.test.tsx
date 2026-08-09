@@ -29,7 +29,7 @@ const mockRuntimeExtensions: {
 // Module mocks
 // ---------------------------------------------------------------------------
 
-vi.mock('@/tools/video-editor/contexts/DataProviderContext', () => ({
+vi.mock('@/tools/video-editor/contexts/VideoEditorRuntimeContext', () => ({
   useVideoEditorRuntime: () => ({
     extensions: mockRuntimeExtensions,
     mediaLightbox: {

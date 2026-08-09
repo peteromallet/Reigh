@@ -8,7 +8,7 @@ import {
   CLIP_ID_ATTR,
   ROW_ID_ATTR,
 } from '@/tools/video-editor/lib/timeline-dom';
-import { DataProviderWrapper, type VideoEditorRuntimeContextValue } from '@/tools/video-editor/contexts/DataProviderContext';
+import { VideoEditorRuntimeProvider, type VideoEditorRuntimeContextValue } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext';
 import { createCommandRegistry, type CommandRegistry } from '@/tools/video-editor/runtime/commandRegistry';
 import type { TimelineAction } from '@/tools/video-editor/types/timeline-canvas';
 import type { ReighExtension } from '@reigh/editor-sdk';
@@ -140,9 +140,9 @@ function registerMenuCommand(
 
 function renderWithRuntime(props: ReturnType<typeof buildProps>, registry: CommandRegistry) {
   return render(
-    <DataProviderWrapper value={buildRuntime(registry)}>
+    <VideoEditorRuntimeProvider value={buildRuntime(registry)}>
       <ClipAction {...props} />
-    </DataProviderWrapper>,
+    </VideoEditorRuntimeProvider>,
   );
 }
 
@@ -440,21 +440,21 @@ describe('ClipAction', () => {
     });
     const props = buildProps({ selectedClipIds: ['clip-1'], onDeleteClip: vi.fn() });
     const { container, rerender } = render(
-      <DataProviderWrapper value={buildRuntime(registry)}>
+      <VideoEditorRuntimeProvider value={buildRuntime(registry)}>
         <ClipAction {...props} />
-      </DataProviderWrapper>,
+      </VideoEditorRuntimeProvider>,
     );
 
     fireEvent.contextMenu(container.querySelector('[data-clip-id="clip-1"]') as HTMLElement);
 
     rerender(
-      <DataProviderWrapper value={buildRuntime(registry)}>
+      <VideoEditorRuntimeProvider value={buildRuntime(registry)}>
         <ClipAction
           {...props}
           action={{ ...props.action, id: 'clip-9' }}
           selectedClipIds={['clip-9']}
         />
-      </DataProviderWrapper>,
+      </VideoEditorRuntimeProvider>,
     );
     fireEvent.click(screen.getByText('Use stale clip'));
 
@@ -488,17 +488,17 @@ describe('ClipAction', () => {
     });
     const props = buildProps({ selectedClipIds: ['clip-1', 'clip-2'] });
     const { container, rerender } = render(
-      <DataProviderWrapper value={buildRuntime(registry)}>
+      <VideoEditorRuntimeProvider value={buildRuntime(registry)}>
         <ClipAction {...props} />
-      </DataProviderWrapper>,
+      </VideoEditorRuntimeProvider>,
     );
 
     fireEvent.contextMenu(container.querySelector('[data-clip-id="clip-1"]') as HTMLElement);
 
     rerender(
-      <DataProviderWrapper value={buildRuntime(registry)}>
+      <VideoEditorRuntimeProvider value={buildRuntime(registry)}>
         <ClipAction {...props} selectedClipIds={['clip-1', 'clip-3']} />
-      </DataProviderWrapper>,
+      </VideoEditorRuntimeProvider>,
     );
     fireEvent.click(screen.getByText('Use stale selection'));
 

@@ -1,5 +1,5 @@
 import { useCallback, useContext, useRef, useState } from 'react';
-import { DataProviderContext } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+import { VideoEditorRuntimeContext } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import { useTimelineEditorData } from '@/tools/video-editor/hooks/timelineStore.ts';
 import { useTimelineChromeContext } from '@/tools/video-editor/hooks/timelineStore.ts';
 import { SupabaseDataProvider } from '@/tools/video-editor/data/SupabaseDataProvider.ts';
@@ -38,7 +38,7 @@ export function useEditorSync(): {
   syncError: string | null;
   performSync: () => Promise<void>;
 } {
-  const runtime = useContext(DataProviderContext);
+  const runtime = useContext(VideoEditorRuntimeContext);
   const editorData = useTimelineEditorData();
   const chrome = useTimelineChromeContext();
 

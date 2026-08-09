@@ -17,7 +17,7 @@ import {
 } from '@/tools/video-editor/components/BlockerActionCard.tsx';
 import { ProcessDashboard } from '@/tools/video-editor/components/ProcessDashboard/ProcessDashboard.tsx';
 import { RoundtripResultsPanel } from '@/tools/video-editor/components/RoundtripResultsPanel.tsx';
-import { DataProviderWrapper, type VideoEditorRuntimeContextValue } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+import { VideoEditorRuntimeProvider, type VideoEditorRuntimeContextValue } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import { projectHostMaterialRuntime } from '@/tools/video-editor/runtime/composition/materialRuntime.ts';
 import {
   createProcessResultAttachRecord,
@@ -456,7 +456,7 @@ function ProcessRuntimeCanaryShell({
   );
 
   return (
-    <DataProviderWrapper value={contextValue}>
+    <VideoEditorRuntimeProvider value={contextValue}>
       <section aria-label="Process runtime canary" className="space-y-3">
         <div data-testid="planner-summary">
           {JSON.stringify({
@@ -522,7 +522,7 @@ function ProcessRuntimeCanaryShell({
           />
         ) : null}
       </section>
-    </DataProviderWrapper>
+    </VideoEditorRuntimeProvider>
   );
 }
 

@@ -35,7 +35,7 @@ Paths below are relative to `src/tools/video-editor/`.
 | Runtime assembly (app) | `contexts/VideoEditorProvider.tsx` | Calls `useTimelineState()`, creates the store, assembles command/agent-tool/live-data registries, extension lifecycle, `ProcessManager` |
 | Shared assembly | `contexts/editorRuntimeAssembly.tsx` | `useEditorRuntimeAssembly` / `useEditorRuntimeSync` / `EditorRuntimeScaffold` — the wiring itself (registries, extension lifecycle, proposal runtime, process manager, diagnostics) lives here once, for both hosts |
 | Runtime assembly (embed) | `contexts/EditorRuntimeProvider.tsx` via `browser/BrowserVideoEditorProvider.tsx` | The browser/embed host. Owns host-specific ports (console vs toasts, lightbox, stubs, settings persistence) and its own **option set** into the shared assembly (`enableLiveData`, `enableShaderRegistry`, `eagerProposalRetry`, …) |
-| Runtime context | `contexts/DataProviderContext.tsx` | Misnomer: `VideoEditorRuntimeContextValue` is the whole runtime, not just the provider. Accessor is `useVideoEditorRuntime()` |
+| Runtime context | `contexts/VideoEditorRuntimeContext.tsx` | `VideoEditorRuntimeContextValue` — the whole runtime (ports, registries, provider, ids). Wrapper is `VideoEditorRuntimeProvider`, accessor is `useVideoEditorRuntime()` |
 | Shell | `components/ReighVideoEditorShell.tsx` → `components/TimelineEditorShellCore.tsx` | CSS-grid layout, toolbar, mode switcher placement, extension slots, activity region, contribution + timeline error boundaries |
 | Editor core | `components/TimelineEditor/TimelineEditor.tsx` (re-export) → `components/ReighTimelineEditor.tsx` (shots / shot groups / variants glue) → `components/TimelineEditor/TimelineEditorCore.tsx` | Registers gestures, computes extent, per-clip render, `DropIndicator`. Mounted inside `TimelineErrorBoundary` (§9) |
 | Canvas | `components/TimelineEditor/TimelineCanvas.tsx` | Ruler, grid, scroll container, pinch zoom, context menus, tool buttons |
@@ -49,10 +49,10 @@ Paths below are relative to `src/tools/video-editor/`.
 
 | Slice | Contains | Read via |
 |---|---|---|
-| `data` | Resolved config, clips, refs, zoom, device class, interaction mode | `useTimelineDataSlice` / `useTimelineDataSelector` |
-| `ops` | Mutations (`applyEdit`, `moveClipToRow`, …), selection setters, `commands` | `useTimelineOpsSlice` / `useTimelineOpsSelector`, `useTimelineCommands` |
-| `chrome` | Panels, zoom setters, shell UI state | `useTimelineChromeSlice` / `useTimelineChromeSelector` |
-| `playback` | Preview refs, transport | `useTimelinePlaybackSlice` / `useTimelinePlaybackSelector` |
+| `data` | Resolved config, clips, refs, zoom, device class, interaction mode | `useTimelineEditorData` / `useTimelineDataSelector` |
+| `ops` | Mutations (`applyEdit`, `moveClipToRow`, …), selection setters, `commands` | `useTimelineEditorOps` / `useTimelineOpsSelector`, `useTimelineCommands` |
+| `chrome` | Panels, zoom setters, shell UI state | `useTimelineChromeContext` / `useTimelineChromeSelector` |
+| `playback` | Preview refs, transport | `useTimelinePlaybackContext` / `useTimelinePlaybackSelector` |
 | (adapters) | Mutable refs handed to gesture code (`dataRef`, `selectedClipIdsRef`, …) | `useTimelineMutableAdapters` |
 
 **Safe vs non-Safe.** Non-`Safe` hooks throw when no `TimelineStoreProvider` is above them — use them **inside the mounted editor subtree**. `Safe` variants return `null` when there is no provider *or* the editor is not mounted — use them only for consumers that legitimately run with no editor open (e.g. "add to editor" affordances elsewhere in the app), and handle the `null`.

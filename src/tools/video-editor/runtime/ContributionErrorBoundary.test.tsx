@@ -7,8 +7,8 @@ import {
   HostContributionErrorBoundary,
   type ContributionErrorInfo,
 } from '@/tools/video-editor/runtime/ContributionErrorBoundary';
-import { DataProviderWrapper } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
-import type { VideoEditorRuntimeContextValue } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+import { VideoEditorRuntimeProvider } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
+import type { VideoEditorRuntimeContextValue } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 
 // Component that throws during render
 function ThrowingSlot({ message = 'Boom!' }: { message?: string }) {
@@ -530,7 +530,7 @@ function HostNormalSlot({ label = 'OK' }: { label?: string }) {
 }
 
 describe('HostContributionErrorBoundary', () => {
-  describe('with real DataProviderWrapper context', () => {
+  describe('with real VideoEditorRuntimeProvider context', () => {
     it('renders children normally when no error', () => {
       const runtime: VideoEditorRuntimeContextValue = {
         provider: null as unknown as VideoEditorRuntimeContextValue['provider'],
@@ -548,14 +548,14 @@ describe('HostContributionErrorBoundary', () => {
       };
 
       render(
-        <DataProviderWrapper value={runtime}>
+        <VideoEditorRuntimeProvider value={runtime}>
           <HostContributionErrorBoundary
             contributionId="test.host.normal"
             kind="slot"
           >
             <HostNormalSlot label="Host normal" />
           </HostContributionErrorBoundary>
-        </DataProviderWrapper>,
+        </VideoEditorRuntimeProvider>,
       );
 
       expect(screen.getByTestId('host-normal-slot')).toBeDefined();
@@ -584,7 +584,7 @@ describe('HostContributionErrorBoundary', () => {
       };
 
       render(
-        <DataProviderWrapper value={runtime}>
+        <VideoEditorRuntimeProvider value={runtime}>
           <HostContributionErrorBoundary
             contributionId="test.host.broken"
             extensionId="com.example.broken"
@@ -595,7 +595,7 @@ describe('HostContributionErrorBoundary', () => {
           >
             <HostThrowingSlot message="Host crash" />
           </HostContributionErrorBoundary>
-        </DataProviderWrapper>,
+        </VideoEditorRuntimeProvider>,
       );
 
       // Fallback UI shown
@@ -638,14 +638,14 @@ describe('HostContributionErrorBoundary', () => {
       };
 
       const { rerender } = render(
-        <DataProviderWrapper value={runtime}>
+        <VideoEditorRuntimeProvider value={runtime}>
           <HostContributionErrorBoundary
             contributionId="test.host.noid"
             kind="slot"
           >
             <HostThrowingSlot message="No ID crash" />
           </HostContributionErrorBoundary>
-        </DataProviderWrapper>,
+        </VideoEditorRuntimeProvider>,
       );
 
       // Fallback shown
@@ -657,14 +657,14 @@ describe('HostContributionErrorBoundary', () => {
 
       // Re-render with new children — should auto-reset (legacy behavior)
       rerender(
-        <DataProviderWrapper value={runtime}>
+        <VideoEditorRuntimeProvider value={runtime}>
           <HostContributionErrorBoundary
             contributionId="test.host.noid"
             kind="slot"
           >
             <HostNormalSlot label="Recovered without ID" />
           </HostContributionErrorBoundary>
-        </DataProviderWrapper>,
+        </VideoEditorRuntimeProvider>,
       );
 
       // Should recover (legacy children-change reset)
@@ -702,7 +702,7 @@ describe('HostContributionErrorBoundary', () => {
       }
 
       const { rerender } = render(
-        <DataProviderWrapper value={createRuntime()}>
+        <VideoEditorRuntimeProvider value={createRuntime()}>
           <HostContributionErrorBoundary
             contributionId="test.host.recover"
             extensionId="com.example.recover"
@@ -711,7 +711,7 @@ describe('HostContributionErrorBoundary', () => {
           >
             <HostThrowingSlot message="Will recover" />
           </HostContributionErrorBoundary>
-        </DataProviderWrapper>,
+        </VideoEditorRuntimeProvider>,
       );
 
       // Fallback shown
@@ -721,7 +721,7 @@ describe('HostContributionErrorBoundary', () => {
       // Simulate external recovery: increment key and re-render
       currentKey = '2';
       rerender(
-        <DataProviderWrapper value={createRuntime()}>
+        <VideoEditorRuntimeProvider value={createRuntime()}>
           <HostContributionErrorBoundary
             contributionId="test.host.recover"
             extensionId="com.example.recover"
@@ -730,7 +730,7 @@ describe('HostContributionErrorBoundary', () => {
           >
             <HostNormalSlot label="Fresh after recovery" />
           </HostContributionErrorBoundary>
-        </DataProviderWrapper>,
+        </VideoEditorRuntimeProvider>,
       );
 
       // Should render fresh children after recovery key change
@@ -763,7 +763,7 @@ describe('HostContributionErrorBoundary', () => {
       }
 
       const { rerender } = render(
-        <DataProviderWrapper value={createRuntime()}>
+        <VideoEditorRuntimeProvider value={createRuntime()}>
           <HostContributionErrorBoundary
             contributionId="test.host.stuck"
             extensionId="com.example.stuck"
@@ -772,7 +772,7 @@ describe('HostContributionErrorBoundary', () => {
           >
             <HostThrowingSlot message="First crash" />
           </HostContributionErrorBoundary>
-        </DataProviderWrapper>,
+        </VideoEditorRuntimeProvider>,
       );
 
       expect(screen.getByRole('alert')).toBeDefined();
@@ -780,7 +780,7 @@ describe('HostContributionErrorBoundary', () => {
 
       // Re-render with new children but same recovery key
       rerender(
-        <DataProviderWrapper value={createRuntime()}>
+        <VideoEditorRuntimeProvider value={createRuntime()}>
           <HostContributionErrorBoundary
             contributionId="test.host.stuck"
             extensionId="com.example.stuck"
@@ -789,7 +789,7 @@ describe('HostContributionErrorBoundary', () => {
           >
             <HostThrowingSlot message="Second crash" />
           </HostContributionErrorBoundary>
-        </DataProviderWrapper>,
+        </VideoEditorRuntimeProvider>,
       );
 
       // Error should persist — recovery key hasn't changed
@@ -821,7 +821,7 @@ describe('HostContributionErrorBoundary', () => {
       };
 
       render(
-        <DataProviderWrapper value={runtime}>
+        <VideoEditorRuntimeProvider value={runtime}>
           <HostContributionErrorBoundary
             contributionId="test.host.exhausted"
             extensionId="com.example.exhausted"
@@ -831,7 +831,7 @@ describe('HostContributionErrorBoundary', () => {
           >
             <HostThrowingSlot message="Always crashes" />
           </HostContributionErrorBoundary>
-        </DataProviderWrapper>,
+        </VideoEditorRuntimeProvider>,
       );
 
       // Fallback shown
@@ -885,7 +885,7 @@ describe('HostContributionErrorBoundary', () => {
       };
 
       render(
-        <DataProviderWrapper value={runtime}>
+        <VideoEditorRuntimeProvider value={runtime}>
           <HostContributionErrorBoundary
             contributionId="test.host.noauto"
             extensionId="com.example.noauto"
@@ -895,7 +895,7 @@ describe('HostContributionErrorBoundary', () => {
           >
             <HostThrowingSlot message="No auto retry" />
           </HostContributionErrorBoundary>
-        </DataProviderWrapper>,
+        </VideoEditorRuntimeProvider>,
       );
 
       // Fallback shown

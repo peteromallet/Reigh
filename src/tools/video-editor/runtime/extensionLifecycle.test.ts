@@ -1868,7 +1868,6 @@ describe('ExtensionLifecycle — creative context internal API boundary', () => 
     'store',
     'getTimeline',
     'timelineRef',
-    'useTimelineDataSlice',
     'useTimelineDataSelector',
     'useTimelineEditorData',
     'timelineState',

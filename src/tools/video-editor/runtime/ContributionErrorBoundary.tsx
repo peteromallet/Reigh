@@ -21,7 +21,7 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
-import { useOptionalVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+import { useOptionalVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 
 // ---------------------------------------------------------------------------
 // Types

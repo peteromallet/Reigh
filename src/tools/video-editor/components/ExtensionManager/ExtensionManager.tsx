@@ -35,7 +35,7 @@ import {
   X,
   Zap,
 } from 'lucide-react';
-import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext';
+import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext';
 import type { PackageState } from '@/tools/video-editor/runtime/extensionLoader';
 import type { PackageStateInventoryEntry } from '@/tools/video-editor/runtime/extensionSurface';
 import type { ContributionKind, Diagnostic, DiagnosticSeverity, ExtensionManifest } from '@reigh/editor-sdk';

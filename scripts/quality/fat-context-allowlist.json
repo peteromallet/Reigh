@@ -13,5 +13,5 @@
   "src/tools/travel-between-images/components/ShotEditor/ShotSettingsContext.provider.tsx::ShotSettingsGenerationContext",
   "src/tools/travel-between-images/providers/VideoTravelSettingsProvider.tsx::VideoTravelSettingsDataContext",
   "src/tools/travel-between-images/providers/VideoTravelSettingsProvider.tsx::VideoTravelSettingsHandlersContext",
-  "src/tools/video-editor/contexts/DataProviderContext.tsx::DataProviderContext"
+  "src/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx::VideoEditorRuntimeContext"
 ]

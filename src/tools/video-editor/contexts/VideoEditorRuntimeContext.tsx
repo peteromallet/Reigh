@@ -82,9 +82,9 @@ export interface VideoEditorRuntimeContextValue {
   recordProcessResultAttach?: (record: ProcessResultAttachRecord) => void;
 }
 
-export const DataProviderContext = createContext<VideoEditorRuntimeContextValue | null>(null);
+export const VideoEditorRuntimeContext = createContext<VideoEditorRuntimeContextValue | null>(null);
 
-export function DataProviderWrapper({
+export function VideoEditorRuntimeProvider({
   value,
   children,
 }: {
@@ -92,21 +92,21 @@ export function DataProviderWrapper({
   children: React.ReactNode;
 }) {
   return (
-    <DataProviderContext.Provider value={value}>
+    <VideoEditorRuntimeContext.Provider value={value}>
       {children}
-    </DataProviderContext.Provider>
+    </VideoEditorRuntimeContext.Provider>
   );
 }
 
 export function useVideoEditorRuntime(): VideoEditorRuntimeContextValue {
-  const context = useContext(DataProviderContext);
+  const context = useContext(VideoEditorRuntimeContext);
   if (!context) {
-    throw new Error('useVideoEditorRuntime must be used within DataProviderWrapper');
+    throw new Error('useVideoEditorRuntime must be used within VideoEditorRuntimeProvider');
   }
 
   return context;
 }
 
 export function useOptionalVideoEditorRuntime(): VideoEditorRuntimeContextValue | null {
-  return useContext(DataProviderContext);
+  return useContext(VideoEditorRuntimeContext);
 }

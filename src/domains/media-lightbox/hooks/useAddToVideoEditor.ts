@@ -17,7 +17,7 @@ import {
   useTimelineEditorDataSafe,
   useTimelineEditorOpsSafe,
 } from '@/tools/video-editor/hooks/timelineStore';
-import { useTimelineCommandsSafe } from '@/tools/video-editor/hooks/useTimelineCommands';
+import { useTimelineCommandsServiceSafe } from '@/tools/video-editor/hooks/useTimelineCommandsService';
 import {
   ADD_GENERATION_QUERY_PARAM,
   readPendingAdds,
@@ -47,7 +47,7 @@ interface UseAddToVideoEditorResult {
 export function useAddToVideoEditor(media: GenerationRow | undefined): UseAddToVideoEditorResult {
   const ops = useTimelineEditorOpsSafe();
   const data = useTimelineEditorDataSafe();
-  const commands = useTimelineCommandsSafe();
+  const commands = useTimelineCommandsServiceSafe();
   const availability = useTimelineAvailabilityState();
   const navigate = useNavigate();
   const { settings: videoSettings } = useToolSettings(videoEditorSettings.id);

@@ -5,7 +5,7 @@ import {
   fetchPrimaryVariantLocations,
   type PrimaryVariantInfo,
 } from '@/tools/video-editor/adapters/reigh/staleVariantRepository.ts';
-import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import type { AssetRegistryEntry, ResolvedAssetRegistryEntry } from '@/tools/video-editor/types/index.ts';
 import type {
   TimelinePatchRegistry,

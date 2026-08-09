@@ -28,7 +28,7 @@ vi.mock('@/shared/contexts/AgentChatContext', () => ({
   useAgentChatActionsRegistry: (...args: unknown[]) => mocks.useAgentChatActionsRegistry(...args),
 }));
 
-vi.mock('@/tools/video-editor/contexts/DataProviderContext', () => ({
+vi.mock('@/tools/video-editor/contexts/VideoEditorRuntimeContext', () => ({
   useVideoEditorRuntime: (...args: unknown[]) => mocks.useVideoEditorRuntime(...args),
 }));
 

@@ -10,7 +10,7 @@ import {
   type SelectClipOptions,
 } from '@/shared/state/selectionStore.ts';
 import { createInteractionState, type InteractionStateRef } from '@/tools/video-editor/lib/interaction-state.ts';
-import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import { ROW_HEIGHT, TIMELINE_START_LEFT } from '@/tools/video-editor/lib/coordinate-utils.ts';
 import { useAssetManagement } from '@/tools/video-editor/hooks/useAssetManagement.ts';
 import { useAssetOperations } from '@/tools/video-editor/hooks/useAssetOperations.ts';

@@ -6,7 +6,7 @@ import {
   createTimelineCommandRunner,
   MEDIA_COMMAND_DESCRIPTORS,
 } from '@/tools/video-editor/commands';
-import { DataProviderWrapper } from '../contexts/DataProviderContext';
+import { VideoEditorRuntimeProvider } from '../contexts/VideoEditorRuntimeContext';
 import type { DataProvider } from '../data/DataProvider';
 import { getConfigSignature, getStableConfigSignature } from '../lib/config-utils';
 import { createDefaultTimelineConfig } from '../lib/defaults';
@@ -181,7 +181,7 @@ function setup(options: {
   });
 
   const wrapper = ({ children }: { children: React.ReactNode }) => React.createElement(
-    DataProviderWrapper,
+    VideoEditorRuntimeProvider,
     {
       value: {
         provider,

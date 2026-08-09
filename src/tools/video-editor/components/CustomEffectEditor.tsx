@@ -3,7 +3,7 @@ import { Button } from '@/shared/components/ui/button.tsx';
 import { Input } from '@/shared/components/ui/input.tsx';
 import { Textarea } from '@/shared/components/ui/textarea.tsx';
 import { toast } from '@/shared/components/ui/toast.tsx';
-import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import { deleteDraftEffect, loadDraftEffects, saveDraftEffect } from '@/tools/video-editor/effects/effect-store.ts';
 import { getEffectPromptTemplate } from '@/tools/video-editor/effects/effectPromptTemplate.ts';
 import { useEffects } from '@/tools/video-editor/hooks/useEffects.ts';

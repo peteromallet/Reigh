@@ -3,7 +3,7 @@
  * Not part of the supported public SDK surface.
  */
 import { useMemo } from 'react';
-import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import { useTimelineEditorData } from '@/tools/video-editor/hooks/timelineStore.ts';
 import { getClipTimelineDuration } from '@/tools/video-editor/lib/config-utils.ts';
 

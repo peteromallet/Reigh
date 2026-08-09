@@ -3,7 +3,7 @@ import React, { useMemo, useState } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TimelineCanvas } from '@/tools/video-editor/components/TimelineEditor/TimelineCanvas';
-import { DataProviderWrapper, type VideoEditorRuntimeContextValue } from '@/tools/video-editor/contexts/DataProviderContext';
+import { VideoEditorRuntimeProvider, type VideoEditorRuntimeContextValue } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext';
 import { createInteractionState, onInteractionEnd } from '@/tools/video-editor/lib/interaction-state';
 import { requestCenterTimelineClip } from '@/tools/video-editor/lib/timeline-viewport-events';
 import { resolveTouchGestureMode } from '@/tools/video-editor/lib/mobile-interaction-model';
@@ -403,7 +403,7 @@ function renderCanvas(params?: {
 
   const renderResult = render(
     params?.commandRegistry
-      ? <DataProviderWrapper value={buildRuntime(params.commandRegistry)}>{canvas}</DataProviderWrapper>
+      ? <VideoEditorRuntimeProvider value={buildRuntime(params.commandRegistry)}>{canvas}</VideoEditorRuntimeProvider>
       : canvas,
   );
 

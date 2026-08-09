@@ -8,7 +8,7 @@ import { TimelineEventBus } from '@/tools/video-editor/hooks/useTimelineEventBus
 import { useTimelinePersistence } from '@/tools/video-editor/hooks/useTimelinePersistence.ts';
 import { usePollSync, type UsePollSyncQueries } from '@/tools/video-editor/hooks/usePollSync.ts';
 import type { TimelineStoreApi } from '@/tools/video-editor/hooks/timelineStore.ts';
-import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import type { DataProvider } from '@/tools/video-editor/data/DataProvider.ts';
 export { shouldAcceptPolledData } from '@/tools/video-editor/lib/timeline-save-utils.ts';
 export type { SaveStatus } from '@/tools/video-editor/hooks/useTimelinePersistence.ts';

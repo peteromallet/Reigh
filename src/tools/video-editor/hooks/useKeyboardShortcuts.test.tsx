@@ -6,9 +6,9 @@ import {
   normalizeKeyboardEvent,
 } from '@/tools/video-editor/hooks/useKeyboardShortcuts.ts';
 import {
-  DataProviderContext,
+  VideoEditorRuntimeContext,
   type VideoEditorRuntimeContextValue,
-} from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+} from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import {
   createCommandRegistry,
   type CommandRegistry,
@@ -64,9 +64,9 @@ function mountShortcuts({
 
   return renderHook(() => useKeyboardShortcuts(options), {
     wrapper: ({ children }) => (
-      <DataProviderContext.Provider value={runtime}>
+      <VideoEditorRuntimeContext.Provider value={runtime}>
         {children}
-      </DataProviderContext.Provider>
+      </VideoEditorRuntimeContext.Provider>
     ),
   });
 }

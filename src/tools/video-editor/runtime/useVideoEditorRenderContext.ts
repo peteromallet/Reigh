@@ -1,10 +1,10 @@
 import { useMemo } from 'react';
-import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import {
-  useTimelineChromeSlice,
-  useTimelineDataSlice,
-  useTimelineOpsSlice,
-  useTimelinePlaybackSlice,
+  useTimelineChromeContext,
+  useTimelineEditorData,
+  useTimelineEditorOps,
+  useTimelinePlaybackContext,
 } from '@/tools/video-editor/hooks/timelineStore.ts';
 import type {
   ResolvedVideoEditorPanelRegistry,
@@ -33,10 +33,10 @@ export function useVideoEditorExtensionRuntime(): VideoEditorExtensionRuntimeCon
 }
 
 export function useVideoEditorRuntimeSlices(): VideoEditorRuntimeSlices {
-  const data = useTimelineDataSlice();
-  const ops = useTimelineOpsSlice();
-  const chrome = useTimelineChromeSlice();
-  const playback = useTimelinePlaybackSlice();
+  const data = useTimelineEditorData();
+  const ops = useTimelineEditorOps();
+  const chrome = useTimelineChromeContext();
+  const playback = useTimelinePlaybackContext();
 
   return useMemo(() => ({
     data,

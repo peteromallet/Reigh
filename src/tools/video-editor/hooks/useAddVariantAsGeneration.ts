@@ -7,12 +7,12 @@ import {
 } from '@/shared/hooks/variants/usePromoteVariantToGeneration.ts';
 import { loadPrimaryVariantForGeneration } from '@/tools/video-editor/adapters/reigh/variantPromotionLookup.ts';
 import type { GenerationVariant } from '@/shared/hooks/variants/useVariants.ts';
-import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import {
   executeGenerationAssetRegistrationPlan,
   planDuplicateGenerationAssetRegistration,
 } from '@/tools/video-editor/lib/timeline-asset-plans.ts';
-import { useTimelineCommands } from '@/tools/video-editor/hooks/useTimelineCommands.ts';
+import { useTimelineCommandsService } from '@/tools/video-editor/hooks/useTimelineCommandsService.ts';
 import {
   useTimelineEditorOps,
   useTimelineMutableAdapters,
@@ -31,7 +31,7 @@ export interface UseAddVariantAsGenerationResult {
 export function useAddVariantAsGeneration(): UseAddVariantAsGenerationResult {
   const runtime = useVideoEditorRuntime();
   const selectedProjectId = runtime.project.projectId;
-  const commands = useTimelineCommands();
+  const commands = useTimelineCommandsService();
   const { patchRegistry, registerAsset, unpatchRegistry } = useTimelineEditorOps();
   const { dataRef } = useTimelineMutableAdapters();
   const promoteVariant = usePromoteVariantToGeneration();

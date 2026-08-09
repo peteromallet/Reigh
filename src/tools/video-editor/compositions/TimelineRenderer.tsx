@@ -43,7 +43,7 @@ import type {
   ClipTypeRegistryRecord,
 } from '@/tools/video-editor/clip-types/ClipTypeRegistry.ts';
 import { applyAutomationOverrides, resolveAnimatedParams } from '@/tools/video-editor/keyframes/index.ts';
-import { DataProviderContext } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+import { VideoEditorRuntimeContext } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import {
   getTimelinePostprocessShader,
   scanTimelineLiveBindings,
@@ -1200,7 +1200,7 @@ const VisualTrack: FC<VisualTrackProps> = ({
 };
 
 export const TimelineRenderer: FC<{ config: ResolvedTimelineConfig }> = memo(({ config }) => {
-  const runtime = useContext(DataProviderContext);
+  const runtime = useContext(VideoEditorRuntimeContext);
   const environment = useRemotionEnvironment();
   const frame = useCurrentFrame();
   const liveDataRegistry = runtime?.liveDataRegistry;

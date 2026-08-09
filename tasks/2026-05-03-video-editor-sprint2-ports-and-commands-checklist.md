@@ -38,7 +38,7 @@ Out of scope for the recommended public API in Sprint 2:
 
 This boundary is load-bearing and must not change in Sprint 2:
 
-- Outside a mounted editor, the safe command hook must stay nullable: `useTimelineCommandsSafe() === null`.
+- Outside a mounted editor, the safe command hook must stay nullable: `useTimelineCommandsServiceSafe() === null`.
 - Inside a mounted editor, the seeded store bootstrap in `src/tools/video-editor/hooks/useTimelineState.ts` remains synchronous.
 - `src/tools/video-editor/contexts/VideoEditorProvider.tsx` must keep the later `syncOpsSlice` augmentation ordering intact.
 - `src/domains/media-lightbox/hooks/useAddToVideoEditor.ts` remains the canary consumer for mounted-vs-staged behavior; Sprint 2 must preserve its current fallback choice boundary.
@@ -101,7 +101,7 @@ Governance policy:
 - New direct imports from the watched surface are not allowed unless they land behind a named port/adapter or are added to the explicit allowlist below.
 - Existing direct imports listed in the allowlist are tolerated only for the reason stated here; the allowlist must shrink or stay flat during Sprint 2.
 - `src/tools/video-editor/hooks/useAddVariantAsGeneration.ts` is explicitly not allowlisted. It is a required migration target for the shared command/planner surface.
-- Mounted command consumers must stay on the documented non-gesture facade (`useTimelineCommands()` / `useTimelineCommandsSafe()`); gesture-heavy flows remain internal even when they reuse the same duration helpers.
+- Mounted command consumers must stay on the documented non-gesture facade (`useTimelineCommandsService()` / `useTimelineCommandsServiceSafe()`); gesture-heavy flows remain internal even when they reuse the same duration helpers.
 
 ## Authoritative host inventory
 

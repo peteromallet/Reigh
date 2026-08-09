@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { generateUUID } from '@/shared/lib/taskCreation/ids.ts';
-import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import { getFinalVideoReplacementDurationContract } from '@/tools/video-editor/lib/timeline-asset-durations.ts';
 import { resolveFinalVideoDurationSeconds } from '@/tools/video-editor/lib/finalVideoAssets.ts';
 import {

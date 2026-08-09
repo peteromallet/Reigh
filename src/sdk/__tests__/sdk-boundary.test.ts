@@ -1010,7 +1010,6 @@ describe('M3: internal types are NOT re-exported from @reigh/editor-sdk', () => 
     'store',
     'getTimeline',
     'timelineRef',
-    'useTimelineDataSlice',
     'useTimelineDataSelector',
     'useTimelineEditorData',
     'timelineState',

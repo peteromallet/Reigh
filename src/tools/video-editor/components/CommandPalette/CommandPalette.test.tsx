@@ -28,7 +28,7 @@ beforeAll(() => {
   }
 });
 import { CommandPalette } from '@/tools/video-editor/components/CommandPalette/CommandPalette';
-import { DataProviderWrapper, type VideoEditorRuntimeContextValue } from '@/tools/video-editor/contexts/DataProviderContext';
+import { VideoEditorRuntimeProvider, type VideoEditorRuntimeContextValue } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext';
 import { createCommandRegistry, type CommandRegistry } from '@/tools/video-editor/runtime/commandRegistry';
 import { createAgentToolRegistry, type AgentToolRegistry } from '@/tools/video-editor/runtime/agentToolRegistry';
 import type {
@@ -165,9 +165,9 @@ describe('CommandPalette component', () => {
     const runtime = buildRuntime(commandRegistry, agentToolRegistry);
     const onOpenChange = vi.fn();
     const result = render(
-      <DataProviderWrapper value={runtime}>
+      <VideoEditorRuntimeProvider value={runtime}>
         <CommandPalette open={open} onOpenChange={onOpenChange} />
-      </DataProviderWrapper>,
+      </VideoEditorRuntimeProvider>,
     );
     return { ...result, onOpenChange };
   }

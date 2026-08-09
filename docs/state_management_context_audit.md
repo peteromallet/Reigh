@@ -151,7 +151,7 @@ The tables below enumerate every current `createContext` declaration in the repo
 
 | Declaration | Expanded field count | External production consumers | Decision | Rationale |
 | --- | ---: | ---: | --- | --- |
-| [src/tools/video-editor/contexts/DataProviderContext.tsx](/workspace/reigh-app/src/tools/video-editor/contexts/DataProviderContext.tsx) `DataProviderContext` | 13 | 7 | `keep` | Wider than ideal, but it is runtime provider plumbing rather than a broad mutable editor-state pubsub surface. |
+| [src/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx](/workspace/reigh-app/src/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx) `VideoEditorRuntimeContext` | 13 | 7 | `keep` | Wider than ideal, but it is runtime provider plumbing rather than a broad mutable editor-state pubsub surface. |
 | [src/tools/video-editor/compositions/AudioAnalysisProvider.tsx](/workspace/reigh-app/src/tools/video-editor/compositions/AudioAnalysisProvider.tsx) `AudioAnalysisContext` | 1 | 0 | `out-of-scope` | Render-pipeline analysis data, not app-shell UI state. |
 | [src/tools/video-editor/hooks/timelineStore.ts](/workspace/reigh-app/src/tools/video-editor/hooks/timelineStore.ts) `TimelineStoreContext` | 4 | 0 | `out-of-scope` | Store API provider boundary for Zustand. This is intentionally exempt from the fat-context rule. |
 
@@ -241,7 +241,7 @@ src/tools/travel-between-images/providers/VideoTravelSettingsProvider.tsx::Video
 src/tools/travel-between-images/providers/VideoTravelSettingsProvider.tsx::VideoTravelSettingsLorasContext
 src/tools/travel-between-images/providers/VideoTravelSettingsProvider.tsx::VideoTravelSettingsStatusContext
 src/tools/video-editor/compositions/AudioAnalysisProvider.tsx::AudioAnalysisContext
-src/tools/video-editor/contexts/DataProviderContext.tsx::DataProviderContext
+src/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx::VideoEditorRuntimeContext
 src/tools/video-editor/hooks/timelineStore.ts::TimelineStoreContext
 ```
 

@@ -65,7 +65,7 @@ import {
   HostContributionErrorBoundary,
   type ContributionErrorInfo,
 } from '@/tools/video-editor/runtime/ContributionErrorBoundary.tsx';
-import { useOptionalVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+import { useOptionalVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import type { VideoEditorSlotName, VideoEditorRenderContext, VideoEditorOutputFormatDescriptor } from '@/tools/video-editor/runtime/extensionSurface';
 import { CodePanelCanary } from '@/tools/video-editor/components/Canary/CodePanelCanary';
 import { WritingPanelCanary } from '@/tools/video-editor/components/Canary/WritingPanelCanary';

@@ -386,7 +386,7 @@ Error semantics:
 
 Current evidence:
 
-- `DataProviderContext` currently carries `provider`, `timelineId`, `userId`, and `timelineName` in a runtime wrapper rather than a pure port contract (`reigh-app/src/tools/video-editor/contexts/DataProviderContext.tsx:4-33`).
+- `VideoEditorRuntimeContext` currently carries `provider`, `timelineId`, `userId`, and `timelineName` in a runtime wrapper rather than a pure port contract (`reigh-app/src/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx:4-33`).
 - `videoEditorDefaults` and `useEditorSettings()` show that some current configuration is editor chrome, not document state (`reigh-app/src/tools/video-editor/settings/videoEditorDefaults.ts:3-12`, `reigh-app/src/tools/video-editor/settings/useEditorSettings.ts:5-31`).
 
 In-memory default:
@@ -836,7 +836,7 @@ The extracted packages must contain none of the following concepts:
 | --- | --- | --- | --- |
 | `data/DataProvider.ts` | `SPLIT` | `@tbd/editor/src/data/DataProvider.ts` | Canonical interface anchor moves into editor package (`reigh-app/src/tools/video-editor/data/DataProvider.ts:53-71`). |
 | `data/SupabaseDataProvider.ts` | `STAY` | `reigh-app/src/tools/video-editor-host/data/SupabaseDataProvider.ts` | This is the reference reigh adapter and keeps `projectId`/`userId`/Supabase coupling (`reigh-app/src/tools/video-editor/data/SupabaseDataProvider.ts:43-279`). |
-| `contexts/DataProviderContext.tsx` | `SPLIT` | generic runtime context to `@tbd/editor/src/contexts/EditorRuntimeContext.tsx`; host-only wrapper removed | Current wrapper carries `provider`, `timelineId`, `timelineName`, and `userId` (`reigh-app/src/tools/video-editor/contexts/DataProviderContext.tsx:4-33`). |
+| `contexts/VideoEditorRuntimeContext.tsx` | `SPLIT` | generic runtime context to `@tbd/editor/src/contexts/EditorRuntimeContext.tsx`; host-only wrapper removed | Current wrapper carries `provider`, `timelineId`, `timelineName`, and `userId` (`reigh-app/src/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx:4-33`). |
 | `contexts/VideoEditorProvider.tsx` | `STAY` | `reigh-app/src/tools/video-editor-host/contexts/VideoEditorProvider.tsx` | This is the host bootstrap example; it wires MediaLightbox and AgentChat (`reigh-app/src/tools/video-editor/contexts/VideoEditorProvider.tsx:74-112`, `reigh-app/src/tools/video-editor/contexts/VideoEditorProvider.tsx:367-405`). |
 | `components/VideoEditorShell.tsx` | `SPLIT` | generic shell to `@tbd/editor/src/components/VideoEditorShell.tsx`; route/pane integration to host shell | Current shell mixes generic editor UI with routing, pane locks, and realtime dialog state (`reigh-app/src/tools/video-editor/components/VideoEditorShell.tsx:13-29`, `reigh-app/src/tools/video-editor/components/VideoEditorShell.tsx:67-120`). |
 | `components/TimelineEditor/TimelineEditor.tsx` | `SPLIT` | generic orchestration to `@tbd/editor`; reigh overlays and dialogs to host extensions | Current file imports shots, project selection, active tasks, stale variants, final video hooks, and generation modal directly (`reigh-app/src/tools/video-editor/components/TimelineEditor/TimelineEditor.tsx:10-50`). |
@@ -1183,7 +1183,7 @@ Trigger for revisit:
 | --- | --- |
 | `reigh-app/src/tools/video-editor/data/DataProvider.ts` | Canonical current persistence contract and error semantics. |
 | `reigh-app/src/tools/video-editor/data/SupabaseDataProvider.ts` | Reference host adapter for persistence, registry, uploads, and URL resolution. |
-| `reigh-app/src/tools/video-editor/contexts/DataProviderContext.tsx` | Current runtime wrapper carrying provider, timeline id, user id, and name. |
+| `reigh-app/src/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx` | Current runtime wrapper carrying provider, timeline id, user id, and name. |
 | `reigh-app/src/tools/video-editor/contexts/VideoEditorProvider.tsx` | Bootstrap example and host-only MediaLightbox/AgentChat integration. |
 | `reigh-app/src/tools/video-editor/types/index.ts` | Current core types and `pinnedShotGroups` leakage point. |
 | `reigh-app/src/tools/video-editor/types/timeline-canvas.ts` | Editor-only timeline canvas types. |

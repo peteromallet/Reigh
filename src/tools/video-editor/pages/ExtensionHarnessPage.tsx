@@ -3,7 +3,7 @@
  *
  * Renders ExtensionManager and ExtensionActivityRegion in populated, empty,
  * package-error, and repaired-settings states using mock VideoEditorRuntimeContextValue
- * injected through DataProviderWrapper. Also exposes a dedicated manager-cycle
+ * injected through VideoEditorRuntimeProvider. Also exposes a dedicated manager-cycle
  * scenario backed by the real BrowserVideoEditorProvider, persistence
  * repository, loader re-resolution, and smoke contribution rendering.
  *
@@ -16,10 +16,10 @@ import { useEffect, useMemo, useState, type FC } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { BrowserVideoEditorProvider } from '@/tools/video-editor/browser/BrowserVideoEditorProvider';
 import {
-  DataProviderWrapper,
+  VideoEditorRuntimeProvider,
   useVideoEditorRuntime,
   type VideoEditorRuntimeContextValue,
-} from '@/tools/video-editor/contexts/DataProviderContext';
+} from '@/tools/video-editor/contexts/VideoEditorRuntimeContext';
 import { ExtensionManager } from '@/tools/video-editor/components/ExtensionManager/ExtensionManager';
 import { ExtensionActivityRegion, type ExtensionStatusEvent } from '@/tools/video-editor/components/ExtensionActivityRegion';
 import {
@@ -409,9 +409,9 @@ const ScenarioCard: FC<{
           Extension Manager
         </h3>
         <div className="rounded-lg border border-border bg-card/30 p-3">
-          <DataProviderWrapper value={mockContextValue}>
+          <VideoEditorRuntimeProvider value={mockContextValue}>
             <ExtensionManager />
-          </DataProviderWrapper>
+          </VideoEditorRuntimeProvider>
         </div>
       </div>
     </div>

@@ -8,7 +8,7 @@ import {
   useVideoEditorAssetPanels,
   useVideoEditorRenderContext,
 } from '@/tools/video-editor/runtime/useVideoEditorRenderContext.ts';
-import { useOptionalVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+import { useOptionalVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import {
   HostContributionErrorBoundary,
   type ContributionErrorInfo,

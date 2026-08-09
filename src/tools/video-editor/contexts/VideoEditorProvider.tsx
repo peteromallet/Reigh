@@ -19,9 +19,9 @@ import { VideoEditorLightboxOverlay } from '@/tools/video-editor/components/Vide
 import { useReighShotsHost } from '@/tools/video-editor/adapters/reigh/useReighShotsHost.ts';
 import type { DataProvider } from '@/tools/video-editor/data/DataProvider.ts';
 import {
-  DataProviderWrapper,
+  VideoEditorRuntimeProvider,
   useVideoEditorRuntime,
-} from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+} from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import {
   EditorRuntimeScaffold,
   useEditorRuntimeAssembly,
@@ -529,7 +529,7 @@ export function VideoEditorProvider({
   }), [agentChatRegistry.register, agentChatRegistry.unregister, dataProvider, projectId, shotsHost, timelineId, timelineName, userId, assembly.resolvedExtensionsConfig, assembly.extensionRuntime, assembly.processResultAttachRecords, assembly.processStatuses, assembly.recordProcessResultAttach, assembly.getRecoveryKey, assembly.incrementRecoveryKey]);
 
   return (
-    <DataProviderWrapper value={runtimeValue}>
+    <VideoEditorRuntimeProvider value={runtimeValue}>
       <InnerProvider
         effectCatalog={effectCatalog}
         sequenceComponentCatalog={sequenceComponentCatalog}
@@ -538,6 +538,6 @@ export function VideoEditorProvider({
       >
         {children}
       </InnerProvider>
-    </DataProviderWrapper>
+    </VideoEditorRuntimeProvider>
   );
 }

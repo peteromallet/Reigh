@@ -7,7 +7,7 @@
  *
  * ```tsx
  * const confirmation = useManagedObjectConfirmation({
- *   commands: useTimelineCommands(),
+ *   commands: useTimelineCommandsService(),
  *   onNavigateToSource: (extensionId, clipId) => { ... },
  * });
  * // Then:

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { DataProviderWrapper, type VideoEditorRuntimeContextValue } from '@/tools/video-editor/contexts/DataProviderContext';
+import { VideoEditorRuntimeProvider, type VideoEditorRuntimeContextValue } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext';
 import {
   ExtensionStatusDrawer,
   useExtensionStatusInventory,
@@ -74,9 +74,9 @@ function buildRuntimeContext(
 function buildDrawerWrapper(contextValue: VideoEditorRuntimeContextValue) {
   return function Wrapper({ children }: { children: ReactNode }) {
     return (
-      <DataProviderWrapper value={contextValue}>
+      <VideoEditorRuntimeProvider value={contextValue}>
         {children}
-      </DataProviderWrapper>
+      </VideoEditorRuntimeProvider>
     );
   };
 }
@@ -677,9 +677,9 @@ describe('ExtensionStatusDrawer', () => {
     const onClose = vi.fn();
 
     render(
-      <DataProviderWrapper value={ctx}>
+      <VideoEditorRuntimeProvider value={ctx}>
         <ExtensionStatusDrawer onClose={onClose} />
-      </DataProviderWrapper>,
+      </VideoEditorRuntimeProvider>,
     );
 
     const drawer = screen.getByRole('dialog', { name: 'Extension status' });
@@ -693,9 +693,9 @@ describe('ExtensionStatusDrawer', () => {
     const onClose = vi.fn();
 
     render(
-      <DataProviderWrapper value={ctx}>
+      <VideoEditorRuntimeProvider value={ctx}>
         <ExtensionStatusDrawer onClose={onClose} />
-      </DataProviderWrapper>,
+      </VideoEditorRuntimeProvider>,
     );
 
     expect(screen.getByText('UI Extension')).toBeDefined();
@@ -708,9 +708,9 @@ describe('ExtensionStatusDrawer', () => {
     const onClose = vi.fn();
 
     render(
-      <DataProviderWrapper value={ctx}>
+      <VideoEditorRuntimeProvider value={ctx}>
         <ExtensionStatusDrawer onClose={onClose} />
-      </DataProviderWrapper>,
+      </VideoEditorRuntimeProvider>,
     );
 
     expect(screen.getByText('Extension Status')).toBeDefined();
@@ -721,9 +721,9 @@ describe('ExtensionStatusDrawer', () => {
     const onClose = vi.fn();
 
     render(
-      <DataProviderWrapper value={ctx}>
+      <VideoEditorRuntimeProvider value={ctx}>
         <ExtensionStatusDrawer onClose={onClose} />
-      </DataProviderWrapper>,
+      </VideoEditorRuntimeProvider>,
     );
 
     expect(screen.getByText('No extensions loaded.')).toBeDefined();
@@ -735,9 +735,9 @@ describe('ExtensionStatusDrawer', () => {
     const onClose = vi.fn();
 
     render(
-      <DataProviderWrapper value={ctx}>
+      <VideoEditorRuntimeProvider value={ctx}>
         <ExtensionStatusDrawer onClose={onClose} />
-      </DataProviderWrapper>,
+      </VideoEditorRuntimeProvider>,
     );
 
     const closeButton = screen.getByLabelText('Close extension status drawer');
@@ -751,9 +751,9 @@ describe('ExtensionStatusDrawer', () => {
     const onClose = vi.fn();
 
     render(
-      <DataProviderWrapper value={ctx}>
+      <VideoEditorRuntimeProvider value={ctx}>
         <ExtensionStatusDrawer onClose={onClose} />
-      </DataProviderWrapper>,
+      </VideoEditorRuntimeProvider>,
     );
 
     // Should show 1 extension, 1 active
@@ -767,9 +767,9 @@ describe('ExtensionStatusDrawer', () => {
     const onClose = vi.fn();
 
     render(
-      <DataProviderWrapper value={ctx}>
+      <VideoEditorRuntimeProvider value={ctx}>
         <ExtensionStatusDrawer onClose={onClose} />
-      </DataProviderWrapper>,
+      </VideoEditorRuntimeProvider>,
     );
 
     // Initially the contribution label should not be visible (card collapsed)
@@ -794,9 +794,9 @@ describe('ExtensionStatusDrawer', () => {
     const onClose = vi.fn();
 
     render(
-      <DataProviderWrapper value={ctx}>
+      <VideoEditorRuntimeProvider value={ctx}>
         <ExtensionStatusDrawer onClose={onClose} />
-      </DataProviderWrapper>,
+      </VideoEditorRuntimeProvider>,
     );
 
     // Expand the card
@@ -824,9 +824,9 @@ describe('ExtensionStatusDrawer', () => {
     const onClose = vi.fn();
 
     render(
-      <DataProviderWrapper value={ctx}>
+      <VideoEditorRuntimeProvider value={ctx}>
         <ExtensionStatusDrawer onClose={onClose} />
-      </DataProviderWrapper>,
+      </VideoEditorRuntimeProvider>,
     );
 
     // Card should be auto-expanded because hasErrors=true
@@ -850,9 +850,9 @@ describe('ExtensionStatusDrawer', () => {
     const onClose = vi.fn();
 
     render(
-      <DataProviderWrapper value={ctx}>
+      <VideoEditorRuntimeProvider value={ctx}>
         <ExtensionStatusDrawer onClose={onClose} />
-      </DataProviderWrapper>,
+      </VideoEditorRuntimeProvider>,
     );
 
     // The error badge should be visible since the card auto-expands
@@ -886,9 +886,9 @@ describe('ExtensionStatusDrawer', () => {
     const onClose = vi.fn();
 
     render(
-      <DataProviderWrapper value={ctx}>
+      <VideoEditorRuntimeProvider value={ctx}>
         <ExtensionStatusDrawer onClose={onClose} />
-      </DataProviderWrapper>,
+      </VideoEditorRuntimeProvider>,
     );
 
     // The extension header should show the error count badge (2 errors)
@@ -912,9 +912,9 @@ describe('ExtensionStatusDrawer', () => {
     const onClose = vi.fn();
 
     render(
-      <DataProviderWrapper value={ctx}>
+      <VideoEditorRuntimeProvider value={ctx}>
         <ExtensionStatusDrawer onClose={onClose} />
-      </DataProviderWrapper>,
+      </VideoEditorRuntimeProvider>,
     );
 
     expect(screen.getByText('Export blockers')).toBeDefined();
@@ -938,9 +938,9 @@ describe('ExtensionStatusDrawer', () => {
     const onClose = vi.fn();
 
     render(
-      <DataProviderWrapper value={ctx}>
+      <VideoEditorRuntimeProvider value={ctx}>
         <ExtensionStatusDrawer onClose={onClose} />
-      </DataProviderWrapper>,
+      </VideoEditorRuntimeProvider>,
     );
 
     expect(screen.getByText('Render blockers')).toBeDefined();
@@ -975,12 +975,12 @@ describe('ExtensionStatusDrawer', () => {
     const onClose = vi.fn();
 
     render(
-      <DataProviderWrapper value={ctx}>
+      <VideoEditorRuntimeProvider value={ctx}>
         <EffectRegistryProvider>
           <RegisterPreviewOnlyEffect />
           <ExtensionStatusDrawer onClose={onClose} />
         </EffectRegistryProvider>
-      </DataProviderWrapper>,
+      </VideoEditorRuntimeProvider>,
     );
 
     await waitFor(() => {
@@ -1008,9 +1008,9 @@ describe('ExtensionStatusDrawer', () => {
     const onClose = vi.fn();
 
     render(
-      <DataProviderWrapper value={ctx}>
+      <VideoEditorRuntimeProvider value={ctx}>
         <ExtensionStatusDrawer onClose={onClose} />
-      </DataProviderWrapper>,
+      </VideoEditorRuntimeProvider>,
     );
 
     // Verify no install/enable/disable/uninstall text appears
@@ -1040,9 +1040,9 @@ describe('ExtensionStatusDrawer', () => {
     const onClose = vi.fn();
 
     render(
-      <DataProviderWrapper value={ctx}>
+      <VideoEditorRuntimeProvider value={ctx}>
         <ExtensionStatusDrawer onClose={onClose} />
-      </DataProviderWrapper>,
+      </VideoEditorRuntimeProvider>,
     );
 
     // The disabled extension should be visible in the drawer
@@ -1059,9 +1059,9 @@ describe('ExtensionStatusDrawer', () => {
     const onClose = vi.fn();
 
     render(
-      <DataProviderWrapper value={ctx}>
+      <VideoEditorRuntimeProvider value={ctx}>
         <ExtensionStatusDrawer onClose={onClose} />
-      </DataProviderWrapper>,
+      </VideoEditorRuntimeProvider>,
     );
 
     // Extension entry data attribute

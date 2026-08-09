@@ -579,10 +579,10 @@ describe('PropertiesPanel — processes tab', () => {
 
 const useOptionalVideoEditorRuntimeMock = vi.fn();
 
-vi.mock('@/tools/video-editor/contexts/DataProviderContext.tsx', async () => {
+vi.mock('@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx', async () => {
   const actual = await vi.importActual<
-    typeof import('@/tools/video-editor/contexts/DataProviderContext.tsx')
-  >('@/tools/video-editor/contexts/DataProviderContext.tsx');
+    typeof import('@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx')
+  >('@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx');
   return {
     ...actual,
     useOptionalVideoEditorRuntime: () => useOptionalVideoEditorRuntimeMock(),

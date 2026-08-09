@@ -1,9 +1,9 @@
 import { createContext, useContext, useMemo, type PropsWithChildren } from 'react';
 import {
-  DataProviderWrapper,
+  VideoEditorRuntimeProvider,
   useVideoEditorRuntime,
   type VideoEditorRuntimeContextValue,
-} from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+} from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import type { Shot } from '@/domains/generation/types/index.ts';
 import type { VideoEditorCorePorts, VideoEditorFinalVideo } from '@/tools/video-editor/core/core-ports.ts';
 
@@ -26,11 +26,11 @@ export function CoreRuntimeProvider({
   children,
 }: CoreRuntimeProviderProps) {
   return (
-    <DataProviderWrapper value={runtime}>
+    <VideoEditorRuntimeProvider value={runtime}>
       <VideoEditorCorePortsContext.Provider value={ports}>
         {children}
       </VideoEditorCorePortsContext.Provider>
-    </DataProviderWrapper>
+    </VideoEditorRuntimeProvider>
   );
 }
 

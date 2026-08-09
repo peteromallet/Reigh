@@ -17,9 +17,9 @@ import { type VideoEditorEffectCatalog } from '@/tools/video-editor/hooks/useEff
 import { type VideoEditorSequenceComponentCatalog } from '@/tools/video-editor/hooks/useSequenceResources.ts';
 import type { DataProvider, ExtensionPersistenceService } from '@/tools/video-editor/data/DataProvider.ts';
 import {
-  DataProviderWrapper,
+  VideoEditorRuntimeProvider,
   type VideoEditorRuntimeContextValue,
-} from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+} from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import {
   EditorRuntimeScaffold,
   useEditorRuntimeAssembly,
@@ -394,7 +394,7 @@ export function EditorRuntimeProvider({
   ]);
 
   return (
-    <DataProviderWrapper value={contextValue}>
+    <VideoEditorRuntimeProvider value={contextValue}>
       <EditorRuntimeProviderInner
         userId={userId}
         effectCatalog={effectCatalog}
@@ -407,6 +407,6 @@ export function EditorRuntimeProvider({
       >
         {children}
       </EditorRuntimeProviderInner>
-    </DataProviderWrapper>
+    </VideoEditorRuntimeProvider>
   );
 }

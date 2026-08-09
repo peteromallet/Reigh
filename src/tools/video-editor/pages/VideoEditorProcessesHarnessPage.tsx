@@ -17,9 +17,9 @@ import { ProcessDashboard } from '@/tools/video-editor/components/ProcessDashboa
 import { RoundtripResultsPanel } from '@/tools/video-editor/components/RoundtripResultsPanel.tsx';
 import { RouteCompletionDashboard } from '@/tools/video-editor/components/RouteCompletionDashboard/RouteCompletionDashboard.tsx';
 import {
-  DataProviderWrapper,
+  VideoEditorRuntimeProvider,
   type VideoEditorRuntimeContextValue,
-} from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+} from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import { projectHostMaterialRuntime } from '@/tools/video-editor/runtime/composition/materialRuntime.ts';
 import {
   createProcessResultAttachRecord,
@@ -831,7 +831,7 @@ function ProcessHarnessScenarioView({
         </section>
 
         {sidecar && routePlan ? (
-          <DataProviderWrapper value={contextValue}>
+          <VideoEditorRuntimeProvider value={contextValue}>
             <section
               className="rounded-xl border border-border bg-card/60 shadow-sm"
               data-testid="route-completion-section"
@@ -849,13 +849,13 @@ function ProcessHarnessScenarioView({
                 }}
               />
             </section>
-          </DataProviderWrapper>
+          </VideoEditorRuntimeProvider>
         ) : (
-          <DataProviderWrapper value={contextValue}>
+          <VideoEditorRuntimeProvider value={contextValue}>
             <section className="rounded-xl border border-border bg-card/60 shadow-sm">
               <ProcessDashboard />
             </section>
-          </DataProviderWrapper>
+          </VideoEditorRuntimeProvider>
         )}
 
         {latestResult && latestAttachRecord ? (

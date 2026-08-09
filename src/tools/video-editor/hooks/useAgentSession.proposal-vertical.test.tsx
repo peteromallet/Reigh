@@ -217,13 +217,13 @@ vi.mock('@/shared/state/selectionStore.ts', () => ({
   editorReplaceTimelineSelection: vi.fn(),
 }));
 
-vi.mock('@/tools/video-editor/contexts/DataProviderContext.tsx', () => ({
+vi.mock('@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx', () => ({
   useOptionalVideoEditorRuntime: () => mockRuntimeContext,
   useVideoEditorRuntime: () => {
     if (!mockRuntimeContext) throw new Error('No runtime context');
     return mockRuntimeContext;
   },
-  DataProviderContext: {
+  VideoEditorRuntimeContext: {
     Provider: ({ children }: any) => children,
   },
 }));

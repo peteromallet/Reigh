@@ -338,7 +338,7 @@ export interface CreateTimelineCommandsOptions {
 /**
  * Build the mounted command facade from the timeline store.
  *
- * Prefer `useTimelineCommands()` or `useTimelineCommandsSafe()` at runtime.
+ * Prefer `useTimelineCommandsService()` or `useTimelineCommandsServiceSafe()` at runtime.
  */
 export function createTimelineCommands(
   store: TimelineStoreApi,
@@ -971,14 +971,11 @@ export function createTimelineCommands(
  *
  * This is the Sprint 2 recommended mutation surface for non-gesture callers.
  *
- * **Two hooks share this name.** This one *builds* the `TimelineCommands` facade
- * from the store api. The other — `useTimelineCommands` in
- * `hooks/timelineStore.ts` — is a plain selector for `state.ops.commands`, and
- * that is the one components rendering inside the editor normally want. Their
- * return types differ, so a wrong auto-import usually type-errors; check the
- * import path when it does not.
+ * *Builds* the `TimelineCommands` facade from the store api. Components
+ * rendering inside the editor normally want `useTimelineCommands` in
+ * `hooks/timelineStore.ts` instead — a plain selector for `state.ops.commands`.
  */
-export function useTimelineCommands(): TimelineCommands {
+export function useTimelineCommandsService(): TimelineCommands {
   const store = useTimelineStoreApi();
   return useMemo(() => createTimelineCommands(store), [store]);
 }
@@ -989,7 +986,7 @@ export function useTimelineCommands(): TimelineCommands {
  * Outside a mounted editor this returns `null` so staged add-to-editor flows can
  * preserve their existing fallback behavior.
  */
-export function useTimelineCommandsSafe(): TimelineCommands | null {
+export function useTimelineCommandsServiceSafe(): TimelineCommands | null {
   const store = useTimelineStoreApiSafe();
   const availability = useTimelineAvailabilityState();
 

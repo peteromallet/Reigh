@@ -36,7 +36,7 @@
         "expiration": "M5"
       },
       {
-        "target": "src/tools/video-editor/hooks/useTimelineCommands.ts",
+        "target": "src/tools/video-editor/hooks/useTimelineCommandsService.ts",
         "classification": "internal",
         "owner": "media-lightbox",
         "rationale": "Media lightbox pushes selected media into the video-editor timeline.",

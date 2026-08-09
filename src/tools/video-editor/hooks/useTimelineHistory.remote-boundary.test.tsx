@@ -19,7 +19,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Shot } from '@/domains/generation/types';
 import { __resetSelectionStoreForTests } from '@/shared/state/selectionStore';
-import { DataProviderWrapper } from '../contexts/DataProviderContext';
+import { VideoEditorRuntimeProvider } from '../contexts/VideoEditorRuntimeContext';
 import type { DataProvider } from '../data/DataProvider';
 import { getConfigSignature, getStableConfigSignature } from '../lib/config-utils';
 import { createDefaultTimelineConfig } from '../lib/defaults';
@@ -123,7 +123,7 @@ function setupHarness(options: {
     QueryClientProvider,
     { client: queryClient },
     React.createElement(
-      DataProviderWrapper,
+      VideoEditorRuntimeProvider,
       {
         value: {
           provider,

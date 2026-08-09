@@ -28,9 +28,9 @@ import {
   type ResizePreviewStore,
 } from '@/tools/video-editor/hooks/useClipResizeGesture.helpers.ts';
 import {
-  useTimelineDataSliceSafe,
+  useTimelineEditorDataSafe,
   useTimelineMutableAdaptersSafe,
-  useTimelineOpsSliceSafe,
+  useTimelineEditorOpsSafe,
 } from '@/tools/video-editor/hooks/timelineStore.ts';
 
 export interface InternalResizeSession extends ClipEdgeResizeSession {
@@ -99,8 +99,8 @@ export const useClipResizeGesture = ({
   pixelsPerSecond,
   minDuration,
 }: UseClipResizeGestureArgs): UseClipResizeGestureResult => {
-  const storeData = useTimelineDataSliceSafe();
-  const storeOps = useTimelineOpsSliceSafe();
+  const storeData = useTimelineEditorDataSafe();
+  const storeOps = useTimelineEditorOpsSafe();
   const storeAdapters = useTimelineMutableAdaptersSafe();
   const effectiveDataRef = storeAdapters?.dataRef ?? dataRef;
   const effectiveInteractionStateRef = storeAdapters?.interactionStateRef ?? interactionStateRef;

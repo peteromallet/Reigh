@@ -15,15 +15,15 @@ const mocks = vi.hoisted(() => ({
   unpatchRegistry: vi.fn(),
 }));
 
-vi.mock('@/tools/video-editor/contexts/DataProviderContext.tsx', () => ({
+vi.mock('@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx', () => ({
   useVideoEditorRuntime: () => ({
     project: { projectId: 'project-1' },
     toast: { error: (...args: unknown[]) => mocks.toastError(...args) },
   }),
 }));
 
-vi.mock('@/tools/video-editor/hooks/useTimelineCommands.ts', () => ({
-  useTimelineCommands: () => ({
+vi.mock('@/tools/video-editor/hooks/useTimelineCommandsService.ts', () => ({
+  useTimelineCommandsService: () => ({
     addClip: mocks.addClip,
   }),
 }));

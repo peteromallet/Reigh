@@ -101,7 +101,7 @@ export const strictLintDebtFiles = [
   "src/tools/video-editor/hooks/useKeyboardShortcuts.ts",
   "src/tools/video-editor/hooks/usePinnedShotGroups.ts",
   "src/tools/video-editor/hooks/useRenderState.ts",
-  "src/tools/video-editor/hooks/useTimelineCommands.ts",
+  "src/tools/video-editor/hooks/useTimelineCommandsService.ts",
   "src/tools/video-editor/hooks/useTimelinePersistence.ts",
   "src/tools/video-editor/hooks/useTimelineScale.ts",
   "src/tools/video-editor/lib/assetMetadata.ts",

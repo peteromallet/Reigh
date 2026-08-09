@@ -63,7 +63,7 @@ vi.mock('@/shared/components/ui/select', async () => {
   };
 });
 
-vi.mock('@/tools/video-editor/contexts/DataProviderContext', () => ({
+vi.mock('@/tools/video-editor/contexts/VideoEditorRuntimeContext', () => ({
   useVideoEditorRuntime: () => ({ userId: 'user-1' }),
 }));
 

@@ -7,11 +7,11 @@
  * The assembly is split in three pieces, matching how each provider
  * consumes it:
  *
- *  - `useEditorRuntimeAssembly` — outer half (above `DataProviderWrapper`):
+ *  - `useEditorRuntimeAssembly` — outer half (above `VideoEditorRuntimeProvider`):
  *    per-mount registries (command, agent tool, renderer, optional live
  *    data), the extension lifecycle host, the diagnostic collection, and
  *    the process manager with its attach-record/status plumbing.
- *  - `useEditorRuntimeSync` — inner half (below `DataProviderWrapper`):
+ *  - `useEditorRuntimeSync` — inner half (below `VideoEditorRuntimeProvider`):
  *    the timeline state/store, timeline reader, proposal runtime, agent
  *    tool invocation service, effect/sequence catalogs, and the extension
  *    synchronize effect that builds per-extension contexts.
@@ -51,7 +51,7 @@ import { SequenceComponentRegistryProvider } from '@/tools/video-editor/sequence
 import { TimelineStoreProvider } from '@/tools/video-editor/hooks/timelineStore.ts';
 import { useTimelineState } from '@/tools/video-editor/hooks/useTimelineState.ts';
 import type { UseTimelineStateResult } from '@/tools/video-editor/hooks/useTimelineState.types.ts';
-import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import {
   normalizeExtensionRuntime,
   type ExtensionRuntime,

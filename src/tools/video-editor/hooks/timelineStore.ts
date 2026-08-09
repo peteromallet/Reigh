@@ -203,7 +203,7 @@ const opsUnavailable = (method: string): (() => never) => () => {
   throw new Error(
     `Timeline ops accessed before store sync (${method}). Either this component rendered outside `
     + `<TimelineStoreProvider> / the editor subtree, or it should use the matching *Safe hook variant `
-    + `(e.g. useTimelineOpsSliceSafe) and handle null.`,
+    + `(e.g. useTimelineEditorOpsSafe) and handle null.`,
   );
 };
 
@@ -603,7 +603,7 @@ export function useTimelineStoreLifecycle() {
 // CLAUDE.md's context-hook rule, a missing provider is a crash, not a no-op.
 
 /** Read the whole `data` slice: resolved config, clips, refs, zoom, device class, interaction mode. */
-export function useTimelineDataSlice(): TimelineEditorDataContextValue {
+export function useTimelineEditorData(): TimelineEditorDataContextValue {
   return useBoundTimelineStore((state) => state.data, shallow);
 }
 
@@ -615,13 +615,13 @@ export function useTimelineDataSelector<T>(
   return useBoundTimelineStore((state) => selector(state.data), equalityFn);
 }
 
-/** `useTimelineDataSlice` for consumers that may render with no editor mounted — returns `null` instead of throwing. */
-export function useTimelineDataSliceSafe(): TimelineEditorDataContextValue | null {
+/** `useTimelineEditorData` for consumers that may render with no editor mounted — returns `null` instead of throwing. */
+export function useTimelineEditorDataSafe(): TimelineEditorDataContextValue | null {
   return useSafeTimelineStoreValue((state) => state.data, shallow);
 }
 
 /** Read the whole `ops` slice: mutations (`applyEdit`, `moveClipToRow`, …), selection setters, `commands`. */
-export function useTimelineOpsSlice(): TimelineEditorOpsContextValue {
+export function useTimelineEditorOps(): TimelineEditorOpsContextValue {
   return useBoundTimelineStore((state) => state.ops, shallow);
 }
 
@@ -633,18 +633,17 @@ export function useTimelineOpsSelector<T>(
   return useBoundTimelineStore((state) => selector(state.ops), equalityFn);
 }
 
-/** `useTimelineOpsSlice` for consumers that may render with no editor mounted — returns `null` instead of throwing. */
-export function useTimelineOpsSliceSafe(): TimelineEditorOpsContextValue | null {
+/** `useTimelineEditorOps` for consumers that may render with no editor mounted — returns `null` instead of throwing. */
+export function useTimelineEditorOpsSafe(): TimelineEditorOpsContextValue | null {
   return useSafeTimelineStoreValue((state) => state.ops, shallow);
 }
 
 /**
- * The command registry carried on the `ops` slice — this is the *store selector*.
+ * The command registry carried on the `ops` slice: a plain selector with no
+ * construction cost, and what components rendering inside the editor want.
  *
- * A same-named hook lives in `hooks/useTimelineCommands.ts`; that one *builds*
- * the `TimelineCommands` facade from the store. Components rendering inside the
- * editor want **this** one: it is a plain selector with no construction cost.
- * Auto-import picks the wrong one easily — check the import path.
+ * (`hooks/useTimelineCommandsService.ts` *builds* the `TimelineCommands` facade
+ * from the store api — that one is for `useTimelineState`, not for components.)
  */
 export function useTimelineCommands() {
   return useTimelineOpsSelector((ops) => ops.commands);
@@ -656,7 +655,7 @@ export function useTimelineCommandsSafe() {
 }
 
 /** Read the whole `chrome` slice: panels, zoom setters, shell UI state. */
-export function useTimelineChromeSlice(): TimelineChromeContextValue {
+export function useTimelineChromeContext(): TimelineChromeContextValue {
   return useBoundTimelineStore((state) => state.chrome, shallow);
 }
 
@@ -668,13 +667,13 @@ export function useTimelineChromeSelector<T>(
   return useBoundTimelineStore((state) => selector(state.chrome), equalityFn);
 }
 
-/** `useTimelineChromeSlice` for consumers that may render with no editor mounted — returns `null` instead of throwing. */
-export function useTimelineChromeSliceSafe(): TimelineChromeContextValue | null {
+/** `useTimelineChromeContext` for consumers that may render with no editor mounted — returns `null` instead of throwing. */
+export function useTimelineChromeContextSafe(): TimelineChromeContextValue | null {
   return useSafeTimelineStoreValue((state) => state.chrome, shallow);
 }
 
 /** Read the whole `playback` slice: preview refs and transport. */
-export function useTimelinePlaybackSlice(): TimelinePlaybackContextValue {
+export function useTimelinePlaybackContext(): TimelinePlaybackContextValue {
   return useBoundTimelineStore((state) => state.playback, shallow);
 }
 
@@ -686,8 +685,8 @@ export function useTimelinePlaybackSelector<T>(
   return useBoundTimelineStore((state) => selector(state.playback), equalityFn);
 }
 
-/** `useTimelinePlaybackSlice` for consumers that may render with no editor mounted — returns `null` instead of throwing. */
-export function useTimelinePlaybackSliceSafe(): TimelinePlaybackContextValue | null {
+/** `useTimelinePlaybackContext` for consumers that may render with no editor mounted — returns `null` instead of throwing. */
+export function useTimelinePlaybackContextSafe(): TimelinePlaybackContextValue | null {
   return useSafeTimelineStoreValue((state) => state.playback, shallow);
 }
 
@@ -701,7 +700,7 @@ export function useTimelinePlaybackSliceSafe(): TimelinePlaybackContextValue | n
  *
  * **Do not read these during render.** A ref's `.current` is not tracked by
  * React, so a render that depends on it will not re-run when it changes and will
- * paint stale UI. Render from `useTimelineDataSlice` / the selectors instead.
+ * paint stale UI. Render from `useTimelineEditorData` / the selectors instead.
  */
 export function useTimelineMutableAdapters() {
   return useBoundTimelineStore<TimelineMutableAdapters>((state) => ({
@@ -733,32 +732,6 @@ export function useTimelineMutableAdaptersSafe() {
     ops: state.ops,
   }), shallow);
 }
-
-// ── Aliases ────────────────────────────────────────────────────────────────
-// Historical spellings from the pre-store context era, still the majority at
-// call sites. Each is the *same function object* as its `*Slice` counterpart —
-// identical behavior, so an IDE hover is the only place the pairing is visible.
-
-/** Alias of {@link useTimelineDataSlice}. */
-export const useTimelineEditorData = useTimelineDataSlice;
-/** Alias of {@link useTimelineDataSliceSafe}. */
-export const useTimelineEditorDataSafe = useTimelineDataSliceSafe;
-/** Alias of {@link useTimelineOpsSlice}. */
-export const useTimelineEditorOps = useTimelineOpsSlice;
-/** Alias of {@link useTimelineOpsSliceSafe}. */
-export const useTimelineEditorOpsSafe = useTimelineOpsSliceSafe;
-/** Alias of {@link useTimelineCommands} (the store selector, not the builder in hooks/useTimelineCommands.ts). */
-export const useTimelineCommandsContext = useTimelineCommands;
-/** Alias of {@link useTimelineCommandsSafe}. */
-export const useTimelineCommandsContextSafe = useTimelineCommandsSafe;
-/** Alias of {@link useTimelineChromeSlice}. */
-export const useTimelineChromeContext = useTimelineChromeSlice;
-/** Alias of {@link useTimelineChromeSliceSafe}. */
-export const useTimelineChromeContextSafe = useTimelineChromeSliceSafe;
-/** Alias of {@link useTimelinePlaybackSlice}. */
-export const useTimelinePlaybackContext = useTimelinePlaybackSlice;
-/** Alias of {@link useTimelinePlaybackSliceSafe}. */
-export const useTimelinePlaybackContextSafe = useTimelinePlaybackSliceSafe;
 
 export function useTimelineOpsFromStore(): TimelineOps | null {
   return useBoundTimelineStore((state) => state.timelineOps);

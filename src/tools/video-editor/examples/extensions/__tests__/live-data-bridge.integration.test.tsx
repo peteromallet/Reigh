@@ -24,7 +24,7 @@ import {
   startLiveWebcamCanary,
 } from '@/tools/video-editor/examples/extensions/live-webcam-canary';
 import { TimelineRenderer } from '@/tools/video-editor/compositions/TimelineRenderer';
-import { DataProviderWrapper, type VideoEditorRuntimeContextValue } from '@/tools/video-editor/contexts/DataProviderContext';
+import { VideoEditorRuntimeProvider, type VideoEditorRuntimeContextValue } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext';
 import { removeLiveBindingsFromResolvedConfig } from '@/tools/video-editor/components/LiveSourcesPanel/LiveSourcesPanel';
 import {
   createExtensionLifecycleHost,
@@ -275,9 +275,9 @@ function makeLiveMediaConfig(binding: Record<string, unknown>): ResolvedTimeline
 
 function renderPreview(config: ResolvedTimelineConfig, registry: LiveDataRegistry) {
   return render(
-    <DataProviderWrapper value={runtimeWithLiveRegistry(registry)}>
+    <VideoEditorRuntimeProvider value={runtimeWithLiveRegistry(registry)}>
       <TimelineRenderer config={config} />
-    </DataProviderWrapper>,
+    </VideoEditorRuntimeProvider>,
   );
 }
 

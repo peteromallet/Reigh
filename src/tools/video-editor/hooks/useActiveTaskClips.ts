@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { taskReferencesGeneration } from '@/shared/hooks/tasks/usePendingGenerationTasks.ts';
 import { realtimeEventProcessor } from '@/shared/realtime/RealtimeEventProcessor.ts';
 import { TASK_STATUS } from '@/types/tasks.ts';
-import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import type { ResolvedAssetRegistryEntry } from '@/tools/video-editor/types/index.ts';
 import { isUuid } from '@/shared/lib/uuid.ts';
 

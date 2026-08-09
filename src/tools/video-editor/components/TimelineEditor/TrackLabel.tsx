@@ -16,7 +16,7 @@ import {
   ExtensionContextMenuItems,
   hasEligibleExtensionContextMenuItems,
 } from '@/tools/video-editor/components/TimelineEditor/ExtensionContextMenuItems.tsx';
-import { DataProviderContext } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+import { VideoEditorRuntimeContext } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import { isTrackMuted } from '@/tools/video-editor/lib/editor-utils.ts';
 import { trackLabelAttrs } from '@/tools/video-editor/lib/timeline-dom.ts';
 import {
@@ -99,7 +99,7 @@ function TrackExtensionContextMenu({
   closeMenu: () => void;
 }) {
   const [adjusted, setAdjusted] = useState<{ x: number; y: number } | null>(null);
-  const runtime = useContext(DataProviderContext);
+  const runtime = useContext(VideoEditorRuntimeContext);
   const commandRegistry = runtime?.commandRegistry;
   const extensions = runtime?.extensionRuntime?.extensions ?? [];
   const items = commandRegistry
@@ -316,7 +316,7 @@ export function TrackLabelContent({
   const [contextMenu, setContextMenu] = useState<TrackContextMenuState | null>(null);
   const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const runtime = useContext(DataProviderContext);
+  const runtime = useContext(VideoEditorRuntimeContext);
   const commandRegistry = runtime?.commandRegistry;
   const extensions = runtime?.extensionRuntime?.extensions ?? [];
 

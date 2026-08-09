@@ -15,9 +15,9 @@ import type {
   EffectRegistrySnapshot,
 } from '@/tools/video-editor/effects/registry';
 import {
-  DataProviderContext,
+  VideoEditorRuntimeContext,
   type VideoEditorRuntimeContextValue,
-} from '@/tools/video-editor/contexts/DataProviderContext';
+} from '@/tools/video-editor/contexts/VideoEditorRuntimeContext';
 import { createDiagnosticCollection } from '@reigh/editor-sdk';
 
 const mocks = vi.hoisted(() => ({
@@ -957,9 +957,9 @@ describe('useRenderState export guard', () => {
         diagnosticCollection: collection,
       } as unknown as VideoEditorRuntimeContextValue;
       const wrapper = ({ children }: { children: ReactNode }) => (
-        <DataProviderContext.Provider value={runtimeValue}>
+        <VideoEditorRuntimeContext.Provider value={runtimeValue}>
           {children}
-        </DataProviderContext.Provider>
+        </VideoEditorRuntimeContext.Provider>
       );
 
       guardMocks.scanExportConfig.mockReturnValue({
@@ -2650,9 +2650,9 @@ describe('useRenderState export guard — clip-type registry snapshot', () => {
       processResultAttachRecords: [attachRecord],
     } as unknown as VideoEditorRuntimeContextValue;
     const wrapper = ({ children }: { children: ReactNode }) => (
-      <DataProviderContext.Provider value={runtimeValue}>
+      <VideoEditorRuntimeContext.Provider value={runtimeValue}>
         {children}
-      </DataProviderContext.Provider>
+      </VideoEditorRuntimeContext.Provider>
     );
 
     guardMocks.scanExportConfig.mockReturnValue({
@@ -2813,9 +2813,9 @@ describe('useRenderState export guard — clip-type registry snapshot', () => {
       diagnosticCollection: collection,
     } as unknown as VideoEditorRuntimeContextValue;
     const wrapper = ({ children }: { children: ReactNode }) => (
-      <DataProviderContext.Provider value={runtimeValue}>
+      <VideoEditorRuntimeContext.Provider value={runtimeValue}>
         {children}
-      </DataProviderContext.Provider>
+      </VideoEditorRuntimeContext.Provider>
     );
 
     guardMocks.scanExportConfig.mockReturnValue({

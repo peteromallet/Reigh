@@ -9,7 +9,7 @@ import { extractVideoPosterFrame } from '@/shared/lib/media/videoPosterExtractor
 import { generateClientThumbnail, uploadImageWithThumbnail } from '@/shared/media/clientThumbnailGenerator.ts';
 import type { SelectClipOptions } from '@/shared/state/selectionStore.ts';
 import { createExternalUploadGeneration } from '@/integrations/supabase/repositories/generationMutationsRepository.ts';
-import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import {
   type TimelineData,
 } from '@/tools/video-editor/lib/timeline-data.ts';

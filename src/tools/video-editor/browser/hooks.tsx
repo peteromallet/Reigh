@@ -6,7 +6,7 @@ import {
   type ApplySequenceDraftToTimelineResult,
   type ValidatedSequenceDraft,
 } from '@/tools/video-editor/sequence.ts';
-import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import {
   useTimelineChromeSelector,
   useTimelineDataSelector,

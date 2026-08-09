@@ -12,7 +12,7 @@ import {
   ExtensionContextMenuItems,
   hasEligibleExtensionContextMenuItems,
 } from '@/tools/video-editor/components/TimelineEditor/ExtensionContextMenuItems.tsx';
-import { DataProviderContext } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+import { VideoEditorRuntimeContext } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import { useWaveformData } from '@/tools/video-editor/hooks/useWaveformData.ts';
 import type { ClipMeta } from '@/tools/video-editor/lib/timeline-data.ts';
 import { CLIP_ACTION_CLASS, clipActionAttrs } from '@/tools/video-editor/lib/timeline-dom.ts';
@@ -419,7 +419,7 @@ function ClipActionComponent({
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const openMenuWithSelectionRef = useRef<(clientX: number, clientY: number) => void>(() => undefined);
-  const runtime = useContext(DataProviderContext);
+  const runtime = useContext(VideoEditorRuntimeContext);
   const commandRegistry = runtime?.commandRegistry;
   const extensions = runtime?.extensionRuntime?.extensions ?? [];
   const { waveform } = useWaveformData(audioSrc, {

@@ -24,9 +24,9 @@ import {
   type RenderPlannerResult,
 } from '@/tools/video-editor/runtime/renderPlanner.ts';
 import {
-  DataProviderContext,
+  VideoEditorRuntimeContext,
   type VideoEditorRuntimeContextValue,
-} from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+} from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import { syncPlannerDiagnosticsToCollection } from '@/tools/video-editor/runtime/diagnosticCollectionSync.ts';
 import type { PlannerBackedRenderRouteDecision } from '@/tools/video-editor/lib/renderRouter.ts';
 import type {
@@ -345,7 +345,7 @@ export function useRenderState(
     const outputFormats = outputFormatsForPlanning(extensionRuntime);
     return categorizeExportFormats(outputFormats);
   }, [extensionRuntime]);
-  const runtimeContext = useContext(DataProviderContext);
+  const runtimeContext = useContext(VideoEditorRuntimeContext);
   const diagnosticCollection = runtimeContext?.diagnosticCollection;
   const processStatuses = runtimeContext?.processStatuses;
   const processResultAttachRecords = runtimeContext?.processResultAttachRecords;

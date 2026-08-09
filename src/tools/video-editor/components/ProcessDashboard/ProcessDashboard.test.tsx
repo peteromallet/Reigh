@@ -4,7 +4,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ProcessRoundtripResult } from '@/sdk/capabilities';
 import type { ProcessStatus } from '@/sdk/video/families/processes';
-import { DataProviderWrapper, type VideoEditorRuntimeContextValue } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+import { VideoEditorRuntimeProvider, type VideoEditorRuntimeContextValue } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import {
   createProcessResultAttachRecord,
   type ProcessResultAttachRecord,
@@ -239,9 +239,9 @@ function runtimeValue(params: {
 
 function renderDashboard(context: VideoEditorRuntimeContextValue) {
   return render(
-    <DataProviderWrapper value={context}>
+    <VideoEditorRuntimeProvider value={context}>
       <ProcessDashboard />
-    </DataProviderWrapper>,
+    </VideoEditorRuntimeProvider>,
   );
 }
 

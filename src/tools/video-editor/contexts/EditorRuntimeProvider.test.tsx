@@ -13,7 +13,7 @@ import { useShaderEffectRegistryContext } from '@/tools/video-editor/shaders/reg
 import type { ShaderEffectRegistryRecord } from '@/tools/video-editor/shaders/registry/types.ts';
 import { useClipTypeRegistryContext } from '@/tools/video-editor/clip-types/ClipTypeRegistryContext.tsx';
 import type { ClipTypeRegistryRecord } from '@/tools/video-editor/clip-types/ClipTypeRegistry.ts';
-import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
+import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import { EditorRuntimeProvider } from '@/tools/video-editor/contexts/EditorRuntimeProvider.tsx';
 import type { LiveDataRegistry } from '@/tools/video-editor/runtime/liveDataRegistry.ts';
 import type { LivePermissionService } from '@/tools/video-editor/runtime/livePermissions.ts';
