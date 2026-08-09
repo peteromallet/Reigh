@@ -18,6 +18,18 @@ export type SaveStatus = 'saved' | 'saving' | 'dirty' | 'error';
 
 const MAX_CONFLICT_RETRIES = 3;
 const TIMELINE_SYNC_LOG_TAG = '[TimelineSync]';
+const SAVE_DEBOUNCE_MS = 500;
+/**
+ * Backoff for the *transport* retry (a 500, a dropped connection — anything that
+ * is neither a version conflict nor a missing timeline). It must be a real timer:
+ * routing this retry back through `scheduleSave` puts it in `pendingSaveRef`,
+ * which the `finally` block below drains immediately, so a backend that keeps
+ * failing gets re-POSTed once per round trip forever with no gap between
+ * attempts (measured: 73 POSTs in 1.5s at a 20ms RTT, and the chain outlived the
+ * unmounted editor).
+ */
+const SAVE_ERROR_RETRY_BASE_MS = 500;
+const SAVE_ERROR_RETRY_MAX_MS = 8_000;
 
 type ConfigVersionUpdateSource = 'save' | 'reload' | 'conflict-retry';
 
@@ -79,6 +91,12 @@ export function useTimelinePersistence({
   // Flushed on gesture end by the onInteractionEnd listener below.
   const deferredSaveRef = useRef<{ data: TimelineData; preserveStatus?: boolean } | null>(null);
   const isSavingRef = useRef(false);
+  // Transport-failure retry: attempt counter + its own timer, so a failing
+  // backend is retried on a backoff instead of as fast as it can answer.
+  const errorRetryRef = useRef(0);
+  const errorRetryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isMountedRef = useRef(true);
+  const doSaveRef = useRef<((nextData: TimelineData, seq: number) => void) | null>(null);
 
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
   const [isConflictExhausted, setIsConflictExhausted] = useState(false);
@@ -143,6 +161,54 @@ export function useTimelinePersistence({
     return loaded.configVersion;
   }, [configVersionRef, getDataRef, logConfigVersionUpdate, provider, timelineId]);
 
+  const cancelErrorRetryTimer = useCallback(() => {
+    if (errorRetryTimer.current) {
+      clearTimeout(errorRetryTimer.current);
+      errorRetryTimer.current = null;
+    }
+  }, []);
+
+  /** A save landed (or persistence is off): drop the pending retry and its backoff. */
+  const clearErrorRetry = useCallback(() => {
+    cancelErrorRetryTimer();
+    errorRetryRef.current = 0;
+  }, [cancelErrorRetryTimer]);
+
+  /**
+   * Re-attempt a save that failed for transport reasons, on an exponential
+   * backoff, from a timer this hook owns and cancels on unmount. Unbounded in
+   * attempts (the edit must eventually land) but bounded in rate.
+   */
+  const scheduleErrorRetry = useCallback((nextData: TimelineData) => {
+    if (!isMountedRef.current) {
+      return;
+    }
+
+    if (errorRetryTimer.current) {
+      clearTimeout(errorRetryTimer.current);
+    }
+
+    const attempt = errorRetryRef.current;
+    errorRetryRef.current = attempt + 1;
+    const delay = Math.min(SAVE_ERROR_RETRY_BASE_MS * 2 ** attempt, SAVE_ERROR_RETRY_MAX_MS);
+    console.log('[TimelineSave] save failed, retrying', { attempt: attempt + 1, delayMs: delay });
+
+    errorRetryTimer.current = setTimeout(() => {
+      errorRetryTimer.current = null;
+      if (!isMountedRef.current) {
+        return;
+      }
+      if (isInteractionActive(getInteractionStateRef())) {
+        // Same gate `scheduleSave` applies: no save round-trip mid-gesture.
+        // Waiting out a drag is not a failure, so re-arm at the same level.
+        errorRetryRef.current = attempt;
+        scheduleErrorRetry(nextData);
+        return;
+      }
+      doSaveRef.current?.(nextData, editSeqRef.current);
+    }, delay);
+  }, [editSeqRef, getInteractionStateRef]);
+
   const doSave = useCallback(async (
     nextData: TimelineData,
     seq: number,
@@ -185,6 +251,7 @@ export function useTimelinePersistence({
             }
 
             conflictRetryRef.current = 0;
+            clearErrorRetry();
             setIsConflictExhausted(false);
 
             const latestDataRef = getDataRef();
@@ -288,8 +355,9 @@ export function useTimelinePersistence({
       }
 
       setSaveStatus('error');
-      if (dataRef.current) {
-        scheduleSave(dataRef.current, { preserveStatus: true });
+      const retryData = getDataRef().current ?? dataRef.current;
+      if (retryData) {
+        scheduleErrorRetry(retryData);
       }
     } finally {
       if (!options?.bypassQueue) {
@@ -305,8 +373,10 @@ export function useTimelinePersistence({
       }
     }
   }, [
+    clearErrorRetry,
     commitData,
     configVersionRef,
+    dataRef,
     editSeqRef,
     getDataRef,
     handleConflictExhausted,
@@ -316,9 +386,14 @@ export function useTimelinePersistence({
     eventBus,
     saveMutation,
     savedSeqRef,
+    scheduleErrorRetry,
     selectedClipIdRef,
     selectedTrackIdRef,
   ]);
+
+  // `scheduleErrorRetry` fires `doSave` from a timer, and `doSave` schedules the
+  // retry — the indirection keeps that cycle out of the dependency arrays.
+  doSaveRef.current = (nextData, seq) => { void doSave(nextData, seq); };
 
   const scheduleSave = useCallback<ScheduleSaveFn>((nextData, options) => {
     if (!persistenceEnabled) {
@@ -328,6 +403,7 @@ export function useTimelinePersistence({
       }
       pendingSaveRef.current = null;
       deferredSaveRef.current = null;
+      clearErrorRetry();
       if (!options?.preserveStatus) {
         setSaveStatus('saved');
       }
@@ -355,6 +431,10 @@ export function useTimelinePersistence({
       clearTimeout(saveTimer.current);
     }
 
+    // A newer payload supersedes any queued transport retry — but keep the
+    // backoff level, or editing during an outage would reset it every keystroke.
+    cancelErrorRetryTimer();
+
     if (isSavingRef.current) {
       pendingSaveRef.current = { data: nextData, seq: editSeqRef.current };
       return;
@@ -364,8 +444,8 @@ export function useTimelinePersistence({
       saveTimer.current = null;
       conflictRetryRef.current = 0;
       void doSave(nextData, editSeqRef.current);
-    }, 500);
-  }, [doSave, editSeqRef, getInteractionStateRef, persistenceEnabled]);
+    }, SAVE_DEBOUNCE_MS);
+  }, [cancelErrorRetryTimer, doSave, editSeqRef, getInteractionStateRef, persistenceEnabled]);
 
   // When a gesture ends, flush the latest deferred payload (if any) through
   // the normal scheduleSave path, which will now proceed past the gate.
@@ -388,6 +468,7 @@ export function useTimelinePersistence({
 
     conflictRetryRef.current = 0;
     pendingSaveRef.current = null;
+    clearErrorRetry();
     setIsConflictExhausted(false);
     editSeqRef.current = savedSeqRef.current;
     logConfigVersionUpdate('reload', loadedTimeline.configVersion);
@@ -418,6 +499,7 @@ export function useTimelinePersistence({
     setSaveStatus('saved');
   }, [
     assetResolver,
+    clearErrorRetry,
     commitData,
     configVersionRef,
     editSeqRef,
@@ -439,6 +521,7 @@ export function useTimelinePersistence({
     setIsConflictExhausted(false);
     setSaveStatus('saving');
     conflictRetryRef.current = 0;
+    clearErrorRetry();
 
     try {
       await loadConflictRetryVersion();
@@ -452,15 +535,20 @@ export function useTimelinePersistence({
         reason: 'load_failed',
       });
     }
-  }, [configVersionRef, doSave, editSeqRef, getDataRef, handleConflictExhausted, loadConflictRetryVersion]);
+  }, [clearErrorRetry, configVersionRef, doSave, editSeqRef, getDataRef, handleConflictExhausted, loadConflictRetryVersion]);
 
   useEffect(() => {
+    isMountedRef.current = true;
     return () => {
+      // Without this the transport-retry chain outlives the editor: the timer is
+      // this hook's, but nothing else stops the doSave -> retry -> doSave loop.
+      isMountedRef.current = false;
+      clearErrorRetry();
       if (saveTimer.current) {
         clearTimeout(saveTimer.current);
       }
     };
-  }, []);
+  }, [clearErrorRetry]);
 
   return {
     scheduleSave,

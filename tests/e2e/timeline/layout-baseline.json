@@ -1,0 +1,205 @@
+{
+  "desktop": {
+    "viewport": {
+      "w": 1600,
+      "h": 1000
+    },
+    "rects": {
+      "preview": {
+        "x": 12,
+        "y": 132,
+        "w": 1204,
+        "h": 388
+      },
+      "editArea": {
+        "x": 12,
+        "y": 628,
+        "w": 1576,
+        "h": 232
+      },
+      "modeSwitcher": null,
+      "trackLabelColumn": {
+        "x": 12,
+        "y": 628,
+        "w": 144,
+        "h": 36
+      },
+      "ruler": {
+        "x": 12,
+        "y": 600,
+        "w": 1576,
+        "h": 32
+      },
+      "firstClip": {
+        "x": 156,
+        "y": 632,
+        "w": 128,
+        "h": 28
+      }
+    },
+    "counts": {
+      "tracks": 3,
+      "visibleModeButtons": 0
+    },
+    "flags": {
+      "phoneBarPresent": false,
+      "gutterPadding": "144px"
+    }
+  },
+  "phone": {
+    "viewport": {
+      "w": 420,
+      "h": 820
+    },
+    "rects": {
+      "preview": {
+        "x": 12,
+        "y": 368,
+        "w": 396,
+        "h": 160
+      },
+      "editArea": {
+        "x": 12,
+        "y": 608,
+        "w": 396,
+        "h": 108
+      },
+      "modeSwitcher": {
+        "x": 12,
+        "y": 248,
+        "w": 396,
+        "h": 80
+      },
+      "trackLabelColumn": {
+        "x": 12,
+        "y": 608,
+        "w": 144,
+        "h": 36
+      },
+      "ruler": {
+        "x": 12,
+        "y": 580,
+        "w": 396,
+        "h": 32
+      },
+      "firstClip": {
+        "x": 156,
+        "y": 612,
+        "w": 128,
+        "h": 28
+      }
+    },
+    "counts": {
+      "tracks": 3,
+      "visibleModeButtons": 5
+    },
+    "flags": {
+      "phoneBarPresent": true,
+      "gutterPadding": "144px"
+    }
+  },
+  "tabletPortrait": {
+    "viewport": {
+      "w": 834,
+      "h": 1194
+    },
+    "rects": {
+      "preview": {
+        "x": 52,
+        "y": 176,
+        "w": 356,
+        "h": 348
+      },
+      "editArea": {
+        "x": 52,
+        "y": 768,
+        "w": 728,
+        "h": 284
+      },
+      "modeSwitcher": {
+        "x": 60,
+        "y": 592,
+        "w": 308,
+        "h": 52
+      },
+      "trackLabelColumn": {
+        "x": 52,
+        "y": 768,
+        "w": 144,
+        "h": 36
+      },
+      "ruler": {
+        "x": 52,
+        "y": 740,
+        "w": 728,
+        "h": 32
+      },
+      "firstClip": {
+        "x": 196,
+        "y": 772,
+        "w": 128,
+        "h": 28
+      }
+    },
+    "counts": {
+      "tracks": 3,
+      "visibleModeButtons": 5
+    },
+    "flags": {
+      "phoneBarPresent": false,
+      "gutterPadding": "144px"
+    }
+  },
+  "tabletLandscape": {
+    "viewport": {
+      "w": 1180,
+      "h": 820
+    },
+    "rects": {
+      "preview": {
+        "x": 52,
+        "y": 176,
+        "w": 704,
+        "h": 192
+      },
+      "editArea": {
+        "x": 52,
+        "y": 512,
+        "w": 1076,
+        "h": 168
+      },
+      "modeSwitcher": {
+        "x": 252,
+        "y": 388,
+        "w": 308,
+        "h": 52
+      },
+      "trackLabelColumn": {
+        "x": 52,
+        "y": 512,
+        "w": 144,
+        "h": 36
+      },
+      "ruler": {
+        "x": 52,
+        "y": 480,
+        "w": 1076,
+        "h": 32
+      },
+      "firstClip": {
+        "x": 196,
+        "y": 516,
+        "w": 128,
+        "h": 28
+      }
+    },
+    "counts": {
+      "tracks": 3,
+      "visibleModeButtons": 5
+    },
+    "flags": {
+      "phoneBarPresent": false,
+      "gutterPadding": "144px"
+    }
+  }
+}

@@ -80,6 +80,7 @@ interface TestHarness {
   dataRef: { current: TimelineData | null };
   scheduleSave: (data: TimelineData) => void;
   reloadFromServer: () => Promise<void>;
+  unmount: () => void;
 }
 
 interface SetupOptions {
@@ -167,6 +168,7 @@ function setup(options?: SetupOptions): TestHarness {
       });
     },
     reloadFromServer: () => hook.result.current.reloadFromServer(),
+    unmount: () => { hook.unmount(); },
   };
 }
 
@@ -297,6 +299,89 @@ describe('useTimelinePersistence — interaction gating', () => {
     });
 
     expect(harness.saveTimeline).not.toHaveBeenCalled();
+  });
+
+  // A transport failure (500, dropped connection) used to be retried by calling
+  // scheduleSave() from the catch block. That lands in pendingSaveRef, which the
+  // finally block drains immediately — so a permanently failing backend was
+  // re-POSTed once per round trip with no gap, forever, and the chain kept
+  // running after the editor unmounted.
+  describe('transport-failure retry', () => {
+    const advance = async (ms: number) => {
+      await act(async () => {
+        vi.advanceTimersByTime(ms);
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    };
+
+    it('retries a failed save on a backoff, not once per round trip', async () => {
+      const harness = setup({
+        saveTimelineImpl: async () => {
+          throw new Error('Astrid bridge save timeline failed: 500 Internal Server Error');
+        },
+      });
+
+      harness.scheduleSave(makeTimelineData('flaky'));
+
+      await advance(600);
+      expect(harness.saveTimeline).toHaveBeenCalledTimes(1);
+
+      // First backoff is 500ms — nothing fires before it elapses.
+      await advance(200);
+      expect(harness.saveTimeline).toHaveBeenCalledTimes(1);
+
+      await advance(400);
+      expect(harness.saveTimeline).toHaveBeenCalledTimes(2);
+
+      // Second backoff doubles to 1000ms.
+      await advance(600);
+      expect(harness.saveTimeline).toHaveBeenCalledTimes(2);
+
+      await advance(500);
+      expect(harness.saveTimeline).toHaveBeenCalledTimes(3);
+    });
+
+    it('stops retrying once the editor unmounts', async () => {
+      const harness = setup({
+        saveTimelineImpl: async () => {
+          throw new Error('Astrid bridge save timeline failed: 500 Internal Server Error');
+        },
+      });
+
+      harness.scheduleSave(makeTimelineData('flaky-unmount'));
+      await advance(600);
+      expect(harness.saveTimeline).toHaveBeenCalledTimes(1);
+
+      harness.unmount();
+      await advance(10_000);
+      expect(harness.saveTimeline).toHaveBeenCalledTimes(1);
+    });
+
+    it('resumes normally once the backend recovers', async () => {
+      let attempt = 0;
+      const harness = setup({
+        saveTimelineImpl: async () => {
+          attempt += 1;
+          if (attempt === 1) {
+            throw new Error('Astrid bridge save timeline failed: 500 Internal Server Error');
+          }
+          return 2;
+        },
+      });
+
+      harness.scheduleSave(makeTimelineData('recovers'));
+      await advance(600);
+      expect(harness.saveTimeline).toHaveBeenCalledTimes(1);
+
+      await advance(600);
+      expect(harness.saveTimeline).toHaveBeenCalledTimes(2);
+
+      // Backoff is cleared by the successful save: no further attempts.
+      await advance(10_000);
+      expect(harness.saveTimeline).toHaveBeenCalledTimes(2);
+    });
   });
 
   it('doSave passes registry to saveTimeline', async () => {
