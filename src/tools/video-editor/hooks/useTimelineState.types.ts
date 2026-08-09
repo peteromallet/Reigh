@@ -187,6 +187,14 @@ export interface TimelineChromeContextValue {
   timelineName: string | null;
   saveStatus: SaveStatus;
   isConflictExhausted: boolean;
+  /**
+   * The timeline load query's error, or null. A load failure never reaches
+   * `TimelineErrorBoundary` (it happens before any render), so without this the
+   * shell mounts an empty editor whose badge reads `saved`.
+   */
+  loadError: Error | null;
+  /** Refetch the timeline load query — the retry affordance on the error card. */
+  retryLoad: () => void;
   renderStatus: RenderStatus;
   renderLog: string;
   renderDirty: boolean;

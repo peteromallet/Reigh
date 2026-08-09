@@ -6,6 +6,7 @@ import { AlertTriangle, Download, Eye, FileOutput, GripHorizontal, History, Maxi
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/shared/components/ui/alert-dialog.tsx';
 import { Badge } from '@/shared/components/ui/badge.tsx';
 import { Button } from '@/shared/components/ui/button.tsx';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui/card.tsx';
 import { cn } from '@/shared/components/ui/contracts/cn.ts';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/shared/components/ui/dialog.tsx';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/shared/components/ui/dropdown-menu.tsx';
@@ -1100,8 +1101,38 @@ function TimelineEditorShellCoreComponent({
   /** The timeline region, contained so a render throw under it cannot take the
    *  toolbar (and therefore undo) down with it. Shared by all three layout
    *  branches — the boundary is per-branch instance, which is what we want: a
-   *  layout switch re-mounts the timeline anyway. */
-  const timelineRegion = (
+   *  layout switch re-mounts the timeline anyway.
+   *
+   *  A *load* failure cannot reach that boundary (it happens before the first
+   *  render, so nothing throws during rendering); it takes the explicit branch
+   *  below, which is the only thing standing between a malformed backend
+   *  payload and a blank editor whose badge claims `saved`. */
+  const timelineRegion = chrome.loadError ? (
+    <div className="flex h-full min-h-0 items-center justify-center overflow-auto p-4">
+      <Card className="w-full max-w-md" role="alert">
+        <CardHeader>
+          <CardTitle className="text-base">Unable to load this timeline</CardTitle>
+          <CardDescription>{chrome.loadError.message}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            The editor kept its toolbar so you can switch timelines, but there is
+            nothing to edit until the timeline loads.
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="mt-3 gap-1.5"
+            onClick={chrome.retryLoad}
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Retry
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
+  ) : (
     <TimelineErrorBoundary>
       <TimelineEditor onOpenSequenceCreator={() => setIsSequenceCreatorOpen(true)} />
     </TimelineErrorBoundary>

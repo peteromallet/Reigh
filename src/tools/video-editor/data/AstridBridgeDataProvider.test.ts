@@ -24,7 +24,12 @@ import {
   AstridBridgeDataProvider,
   defaultAstridBridgeAssetBaseUrl,
 } from '@/tools/video-editor/data/AstridBridgeDataProvider.ts';
-import { TimelineNotFoundError } from '@/tools/video-editor/data/DataProvider.ts';
+import {
+  isTimelineVersionConflictError,
+  TimelineNotFoundError,
+  TimelineVersionConflictError,
+} from '@/tools/video-editor/data/DataProvider.ts';
+import { BridgeContractError } from '@/tools/video-editor/data/bridgeContract.ts';
 import {
   expectUnsupportedExtensionPersistenceDiagnostics,
 } from '@/tools/video-editor/data/conformance/extensionPersistenceConformance';
@@ -241,7 +246,10 @@ describe('AstridBridgeDataProvider', () => {
 
     const loaded = await provider.loadTimeline('11111111-1111-1111-1111-111111111111');
 
-    expect(globalThis.fetch).toHaveBeenCalledWith('/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111');
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      '/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111',
+      { signal: expect.any(AbortSignal) },
+    );
     expect(loaded.configVersion).toBe(1);
     expect(loaded.config.output).toEqual(expect.objectContaining({
       resolution: '1280x720',
@@ -299,7 +307,7 @@ describe('AstridBridgeDataProvider', () => {
     );
   });
 
-  it('persists registry before config save, ignores expectedVersion conflicts, and refreshes cached assets from the bridge payload', async () => {
+  it('persists registry before config save, sends expected_version, and refreshes cached assets from the bridge payload', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith('/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111')) {
@@ -326,6 +334,7 @@ describe('AstridBridgeDataProvider', () => {
             clips: [],
             tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
           },
+          expected_version: 999,
         }));
         return new Response(JSON.stringify({
           ...makePayload(),
@@ -520,6 +529,7 @@ describe('AstridBridgeDataProvider', () => {
         expect(init?.method).toBe('POST');
         expect(init?.body).toBe(JSON.stringify({
           config: { output: {}, clips: [], tracks: [] },
+          expected_version: 1,
         }));
         return new Response(JSON.stringify({
           ...makePayload(),
@@ -1186,71 +1196,114 @@ describe('AstridBridgeDataProvider', () => {
   });
 
   // -------------------------------------------------------------------------
-  // Local monotonic stale invalidation gap (T14)
+  // Optimistic concurrency on the bridge save (expected_version / 409)
+  //
+  // This block used to pin the *absence* of CAS ("local monotonic stale
+  // invalidation gap"): saveTimeline dropped `expectedVersion` on the floor, so
+  // the conflict-retry ladder in useTimelinePersistence was unreachable and two
+  // windows on one timeline silently reverted each other's whole document.
+  // The provider now participates in CAS, so the pin is inverted: what must be
+  // guaranteed is that the version is *sent*, that a 409 becomes the typed
+  // conflict error, and that a bridge which ignores the field is unaffected.
   // -------------------------------------------------------------------------
-  describe('local monotonic stale invalidation gap', () => {
-    it('does NOT reject saves with a stale expectedVersion (no CAS enforcement)', async () => {
-      // AstridBridgeDataProvider explicitly ignores expectedVersion
-      // (the parameter is named _expectedVersion in saveTimeline).
-      // This test demonstrates the gap: without the local monotonic
-      // invalidation in useTimelineOps.apply(), a stale patch would
-      // silently overwrite newer data.
-      const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input);
-        if (url.endsWith('/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111')) {
-          return new Response(JSON.stringify(makePayload()), { status: 200 });
-        }
-        if (url.endsWith('/registry')) {
-          return new Response(JSON.stringify(makePayload().registry), { status: 200 });
-        }
-        if (url.endsWith('/save')) {
+  describe('optimistic concurrency (expected_version)', () => {
+    const TIMELINE_ID = '11111111-1111-1111-1111-111111111111';
+
+    /** Bridge that answers 409 unless `expected_version` matches `head`. */
+    const makeCasBridge = (head: number) => vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith(`/api/astrid/projects/ados-talks/timelines/${TIMELINE_ID}`)) {
+        return new Response(JSON.stringify({ ...makePayload(), config_version: head }), { status: 200 });
+      }
+      if (url.endsWith('/registry')) {
+        return new Response(JSON.stringify(makePayload().registry), { status: 200 });
+      }
+      if (url.endsWith('/save')) {
+        const body = JSON.parse(String(init?.body ?? '{}')) as { expected_version?: number };
+        if (typeof body.expected_version === 'number' && body.expected_version !== head) {
           return new Response(JSON.stringify({
-            ...makePayload(),
-            config_version: 42,
-          }), { status: 200 });
+            error: 'timeline_version_conflict',
+            detail: `expected_version ${body.expected_version} does not match config_version ${head}`,
+            config_version: head,
+          }), { status: 409 });
         }
-        throw new Error(`Unexpected bridge request: ${url}`);
-      });
-      vi.stubGlobal('fetch', fetchMock);
-
-      const provider = new AstridBridgeDataProvider({
-        projectSlug: 'ados-talks',
-        timelineRef: 'intro-cut',
-        timelineId: '11111111-1111-1111-1111-111111111111',
-      });
-
-      // Save with a wildly stale expectedVersion (99999) — must NOT throw
-      const version = await provider.saveTimeline(
-        '11111111-1111-1111-1111-111111111111',
-        { output: {}, clips: [], tracks: [] },
-        99999,
-      );
-
-      // The save succeeds and returns whatever version the bridge returns
-      expect(version).toBe(42);
+        return new Response(JSON.stringify({ ...makePayload(), config_version: head + 1 }), { status: 200 });
+      }
+      throw new Error(`Unexpected bridge request: ${url}`);
     });
 
-    it('multiple consecutive saves with different stale expectedVersions all succeed', async () => {
-      // Because Astrid ignores expectedVersion, every save succeeds
-      // regardless of what version the caller thinks the timeline is at.
-      // This is the exact scenario where useTimelineOps local invalidation
-      // is essential — it must reject stale patches before they reach the
-      // provider.
-      let callCount = 0;
+    it('sends expected_version in the save body', async () => {
+      const fetchMock = makeCasBridge(5);
+      vi.stubGlobal('fetch', fetchMock);
+
+      const provider = new AstridBridgeDataProvider({
+        projectSlug: 'ados-talks',
+        timelineRef: 'intro-cut',
+        timelineId: TIMELINE_ID,
+      });
+
+      await provider.saveTimeline(TIMELINE_ID, { output: {}, clips: [], tracks: [] }, 5);
+
+      const saveCall = fetchMock.mock.calls.find(([input]) => String(input).endsWith('/save'));
+      expect(JSON.parse(String(saveCall?.[1]?.body))).toEqual({
+        config: { output: {}, clips: [], tracks: [] },
+        expected_version: 5,
+      });
+    });
+
+    it('throws TimelineVersionConflictError when the bridge rejects a stale expected_version', async () => {
+      vi.stubGlobal('fetch', makeCasBridge(7));
+
+      const provider = new AstridBridgeDataProvider({
+        projectSlug: 'ados-talks',
+        timelineRef: 'intro-cut',
+        timelineId: TIMELINE_ID,
+      });
+
+      const error = await provider.saveTimeline(
+        TIMELINE_ID,
+        { output: {}, clips: [], tracks: [] },
+        3,
+      ).catch((thrown: unknown) => thrown);
+
+      expect(isTimelineVersionConflictError(error)).toBe(true);
+      expect(error).toMatchObject({ expectedVersion: 3, actualVersion: 7 });
+    });
+
+    it('succeeds once the caller retries with the version the conflict reported', async () => {
+      vi.stubGlobal('fetch', makeCasBridge(7));
+
+      const provider = new AstridBridgeDataProvider({
+        projectSlug: 'ados-talks',
+        timelineRef: 'intro-cut',
+        timelineId: TIMELINE_ID,
+      });
+
+      await expect(
+        provider.saveTimeline(TIMELINE_ID, { output: {}, clips: [], tracks: [] }, 3),
+      ).rejects.toThrow(TimelineVersionConflictError);
+
+      // The ladder in useTimelinePersistence reloads, adopts the reported
+      // version and re-saves; that second attempt must land.
+      await expect(
+        provider.saveTimeline(TIMELINE_ID, { output: {}, clips: [], tracks: [] }, 7),
+      ).resolves.toBe(8);
+    });
+
+    it('leaves a bridge that ignores expected_version behaving exactly as before', async () => {
+      // Backward-compatibility contract: the field is additive. A bridge that
+      // does not implement CAS answers 200 to any expected_version, and the
+      // provider adopts whatever head version comes back.
       const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
-        callCount += 1;
-        if (url.endsWith('/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111')) {
+        if (url.endsWith(`/api/astrid/projects/ados-talks/timelines/${TIMELINE_ID}`)) {
           return new Response(JSON.stringify(makePayload()), { status: 200 });
         }
         if (url.endsWith('/registry')) {
           return new Response(JSON.stringify(makePayload().registry), { status: 200 });
         }
         if (url.endsWith('/save')) {
-          return new Response(JSON.stringify({
-            ...makePayload(),
-            config_version: 10 + callCount,
-          }), { status: 200 });
+          return new Response(JSON.stringify({ ...makePayload(), config_version: 42 }), { status: 200 });
         }
         throw new Error(`Unexpected bridge request: ${url}`);
       });
@@ -1259,45 +1312,63 @@ describe('AstridBridgeDataProvider', () => {
       const provider = new AstridBridgeDataProvider({
         projectSlug: 'ados-talks',
         timelineRef: 'intro-cut',
-        timelineId: '11111111-1111-1111-1111-111111111111',
+        timelineId: TIMELINE_ID,
       });
 
-      // Three saves, each with a different (and wrong) expectedVersion
-      const v1 = await provider.saveTimeline(
-        '11111111-1111-1111-1111-111111111111',
+      for (const staleVersion of [1, 5, 999, 99999]) {
+        await expect(
+          provider.saveTimeline(TIMELINE_ID, { output: {}, clips: [], tracks: [] }, staleVersion),
+        ).resolves.toBe(42);
+      }
+    });
+
+    it('does not treat a 409 without the conflict code as a version conflict', async () => {
+      vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith(`/api/astrid/projects/ados-talks/timelines/${TIMELINE_ID}`)) {
+          return new Response(JSON.stringify(makePayload()), { status: 200 });
+        }
+        if (url.endsWith('/registry')) {
+          return new Response(JSON.stringify(makePayload().registry), { status: 200 });
+        }
+        if (url.endsWith('/save')) {
+          return new Response(JSON.stringify({ error: 'locked', detail: 'timeline is locked' }), { status: 409 });
+        }
+        throw new Error(`Unexpected bridge request: ${url}`);
+      }));
+
+      const provider = new AstridBridgeDataProvider({
+        projectSlug: 'ados-talks',
+        timelineRef: 'intro-cut',
+        timelineId: TIMELINE_ID,
+      });
+
+      const error = await provider.saveTimeline(
+        TIMELINE_ID,
         { output: {}, clips: [], tracks: [] },
         1,
-      );
-      const v2 = await provider.saveTimeline(
-        '11111111-1111-1111-1111-111111111111',
-        { output: {}, clips: [], tracks: [] },
-        5, // stale
-      );
-      const v3 = await provider.saveTimeline(
-        '11111111-1111-1111-1111-111111111111',
-        { output: {}, clips: [], tracks: [] },
-        999, // very stale
-      );
+      ).catch((thrown: unknown) => thrown);
 
-      // All three succeed because Astrid doesn't check expectedVersion
-      expect(v1).toBeGreaterThan(0);
-      expect(v2).toBeGreaterThan(0);
-      expect(v3).toBeGreaterThan(0);
+      expect(isTimelineVersionConflictError(error)).toBe(false);
+      expect((error as Error).message).toContain('timeline is locked');
     });
+  });
 
-    it('the returned version reflects the bridge state, not the expectedVersion', async () => {
+  // -------------------------------------------------------------------------
+  // Fresh loads (the poll must reach the bridge)
+  // -------------------------------------------------------------------------
+  describe('load freshness', () => {
+    const TIMELINE_ID = '11111111-1111-1111-1111-111111111111';
+
+    it('re-fetches on every loadTimeline/loadAssetRegistry so polling can observe remote changes', async () => {
+      let head = 1;
       const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
-        if (url.endsWith('/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111')) {
-          return new Response(JSON.stringify(makePayload()), { status: 200 });
-        }
-        if (url.endsWith('/registry')) {
-          return new Response(JSON.stringify(makePayload().registry), { status: 200 });
-        }
-        if (url.endsWith('/save')) {
+        if (url.endsWith(`/api/astrid/projects/ados-talks/timelines/${TIMELINE_ID}`)) {
           return new Response(JSON.stringify({
             ...makePayload(),
-            config_version: 77,
+            config_version: head,
+            config: { clips: [{ id: `clip-${head}`, track: 'V1', at: 0 }], tracks: [] },
           }), { status: 200 });
         }
         throw new Error(`Unexpected bridge request: ${url}`);
@@ -1307,48 +1378,53 @@ describe('AstridBridgeDataProvider', () => {
       const provider = new AstridBridgeDataProvider({
         projectSlug: 'ados-talks',
         timelineRef: 'intro-cut',
-        timelineId: '11111111-1111-1111-1111-111111111111',
+        timelineId: TIMELINE_ID,
       });
 
-      // expectedVersion is 5, but the bridge returns version 77
-      const version = await provider.saveTimeline(
-        '11111111-1111-1111-1111-111111111111',
-        { output: {}, clips: [], tracks: [] },
-        5,
-      );
+      const first = await provider.loadTimeline(TIMELINE_ID);
+      expect(first.configVersion).toBe(1);
 
-      expect(version).toBe(77);
-      // Version 77 ≠ expectedVersion 5 + 1, proving the bridge ignores
-      // expectedVersion entirely and just returns its own head version.
+      head = 2;
+      const second = await provider.loadTimeline(TIMELINE_ID);
+      expect(second.configVersion).toBe(2);
+      expect(second.config.clips).toEqual([{ id: 'clip-2', track: 'V1', at: 0 }]);
+
+      head = 3;
+      await provider.loadAssetRegistry(TIMELINE_ID);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
     });
 
-    it('confirms the provider gap that makes useTimelineOps local invalidation essential', async () => {
-      // This test explicitly documents why the local monotonic stale
-      // invalidation in useTimelineOps.apply() is critical for providers
-      // like Astrid that do not enforce CAS:
-      //
-      // 1. The provider never throws TimelineVersionConflictError
-      // 2. Stale writes silently succeed
-      // 3. Without the local check, two concurrent editors could
-      //    overwrite each other's changes
-      //
-      // The useTimelineOps.apply() base-version check (patch.version vs
-      // dataRef.current.configVersion) catches this BEFORE the provider
-      // is called, providing defense-in-depth.
+    it('coalesces the poll\'s concurrent timeline+registry loads onto one request', async () => {
+      const fetchMock = vi.fn(async () => new Response(JSON.stringify(makePayload()), { status: 200 }));
+      vi.stubGlobal('fetch', fetchMock);
 
+      const provider = new AstridBridgeDataProvider({
+        projectSlug: 'ados-talks',
+        timelineRef: 'intro-cut',
+        timelineId: TIMELINE_ID,
+      });
+
+      // React Query fires both queries on the same tick; they must observe the
+      // same bridge revision, not straddle a concurrent write.
+      await Promise.all([
+        provider.loadTimeline(TIMELINE_ID),
+        provider.loadAssetRegistry(TIMELINE_ID),
+      ]);
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('still serves saveTimeline its registry default from the cached payload', async () => {
       const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
-        if (url.endsWith('/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111')) {
+        if (url.endsWith(`/api/astrid/projects/ados-talks/timelines/${TIMELINE_ID}`)) {
           return new Response(JSON.stringify(makePayload()), { status: 200 });
         }
         if (url.endsWith('/registry')) {
           return new Response(JSON.stringify(makePayload().registry), { status: 200 });
         }
         if (url.endsWith('/save')) {
-          return new Response(JSON.stringify({
-            ...makePayload(),
-            config_version: 100,
-          }), { status: 200 });
+          return new Response(JSON.stringify({ ...makePayload(), config_version: 2 }), { status: 200 });
         }
         throw new Error(`Unexpected bridge request: ${url}`);
       });
@@ -1357,22 +1433,84 @@ describe('AstridBridgeDataProvider', () => {
       const provider = new AstridBridgeDataProvider({
         projectSlug: 'ados-talks',
         timelineRef: 'intro-cut',
-        timelineId: '11111111-1111-1111-1111-111111111111',
+        timelineId: TIMELINE_ID,
       });
 
-      // Any expectedVersion, no matter how stale, succeeds
-      for (const staleVersion of [1, 2, 5, 10, 50, 9999]) {
-        const version = await provider.saveTimeline(
-          '11111111-1111-1111-1111-111111111111',
-          { output: {}, clips: [], tracks: [] },
-          staleVersion,
-        );
-        expect(version).toBeGreaterThan(0);
-      }
+      await provider.loadTimeline(TIMELINE_ID);
+      await provider.saveTimeline(TIMELINE_ID, { output: {}, clips: [], tracks: [] }, 1);
 
-      // The provider itself never threw a conflict — the local
-      // invalidation in useTimelineOps is the only guard against
-      // stale writes for this provider.
+      // One GET for the load; the save reuses the cached payload for its
+      // registry default rather than issuing a second GET.
+      expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
+        `/api/astrid/projects/ados-talks/timelines/${TIMELINE_ID}`,
+        `/api/astrid/projects/ados-talks/timelines/${TIMELINE_ID}/registry`,
+        `/api/astrid/projects/ados-talks/timelines/${TIMELINE_ID}/save`,
+      ]);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Wire contract validation (bridgeContract.ts)
+  // -------------------------------------------------------------------------
+  describe('bridge contract validation', () => {
+    const TIMELINE_ID = '11111111-1111-1111-1111-111111111111';
+    const createProvider = () => new AstridBridgeDataProvider({
+      projectSlug: 'ados-talks',
+      timelineRef: 'intro-cut',
+      timelineId: TIMELINE_ID,
+    });
+
+    it.each([
+      ['a non-object config', { ...makePayload(), config: 'garbage-string' }],
+      ['a non-array clips list', { ...makePayload(), config: { clips: 42, tracks: [] } }],
+      ['a non-object registry', { ...makePayload(), registry: 'nope' }],
+      ['a non-numeric config_version', { ...makePayload(), config_version: 'seven' }],
+    ])('rejects %s instead of coercing it', async (_label, payload) => {
+      vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(payload), { status: 200 })));
+
+      await expect(createProvider().loadTimeline(TIMELINE_ID)).rejects.toThrow(BridgeContractError);
+    });
+
+    it('never lets a malformed registry become an empty one that a later save would PUT back', async () => {
+      vi.stubGlobal('fetch', vi.fn(async () => new Response(
+        JSON.stringify({ ...makePayload(), registry: { assets: { 'asset-video': { file: 12 } } } }),
+        { status: 200 },
+      )));
+
+      await expect(createProvider().loadAssetRegistry(TIMELINE_ID)).rejects.toThrow(BridgeContractError);
+    });
+
+    it('accepts payloads that omit the optional fields', async () => {
+      vi.stubGlobal('fetch', vi.fn(async () => new Response(
+        JSON.stringify({ config: { clips: [], tracks: [] } }),
+        { status: 200 },
+      )));
+
+      const provider = new AstridBridgeDataProvider({
+        projectSlug: 'ados-talks',
+        timelineRef: 'intro-cut',
+      });
+
+      await expect(provider.loadTimeline('intro-cut')).resolves.toMatchObject({ configVersion: 1 });
+    });
+
+    it('preserves unknown keys on clips, tracks and registry entries', async () => {
+      vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+        ...makePayload(),
+        config: {
+          clips: [{ id: 'c1', track: 'V1', at: 0, extensionAuthored: { keep: true } }],
+          tracks: [{ id: 'V1', kind: 'visual', label: 'V1', vendorField: 7 }],
+        },
+        registry: { assets: { 'asset-video': { file: 'clips/demo.mp4', vendorField: 'kept' } } },
+      }), { status: 200 })));
+
+      const provider = createProvider();
+      const loaded = await provider.loadTimeline(TIMELINE_ID);
+      const registry = await provider.loadAssetRegistry(TIMELINE_ID);
+
+      expect(loaded.config.clips[0]).toMatchObject({ extensionAuthored: { keep: true } });
+      expect(loaded.config.tracks[0]).toMatchObject({ vendorField: 7 });
+      expect(registry.assets['asset-video']).toMatchObject({ vendorField: 'kept' });
     });
   });
 

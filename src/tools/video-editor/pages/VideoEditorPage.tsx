@@ -5,6 +5,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import type { z, ZodType } from 'zod';
 import { Clapperboard, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/shared/components/ui/button.tsx';
@@ -18,6 +19,13 @@ import { useProjectSelectionContext } from '@/shared/contexts/ProjectContext.tsx
 import { useToolSettings } from '@/shared/hooks/settings/useToolSettings.ts';
 import { toast } from '@/shared/components/ui/toast.tsx';
 import { AstridBridgeDataProvider } from '@/tools/video-editor/data/AstridBridgeDataProvider.ts';
+import {
+  BRIDGE_REQUEST_TIMEOUT_MS,
+  bridgeHealthSchema,
+  bridgeProjectsSchema,
+  bridgeTimelinesSchema,
+  parseBridgePayload,
+} from '@/tools/video-editor/data/bridgeContract.ts';
 import type { DataProvider } from '@/tools/video-editor/data/DataProvider.ts';
 import { SupabaseDataProvider } from '@/tools/video-editor/data/SupabaseDataProvider.ts';
 import { VideoEditorProvider } from '@/tools/video-editor/contexts/VideoEditorProvider.tsx';
@@ -30,27 +38,6 @@ import type { SaveStatus } from '@/tools/video-editor/hooks/useTimelinePersisten
 import { videoEditorSettings } from '@/tools/video-editor/settings/videoEditorDefaults.ts';
 
 type VideoEditorMode = 'app' | 'local';
-
-type BridgeProject = {
-  slug: string;
-  name: string;
-};
-
-type BridgeTimeline = {
-  timeline_id: string;
-  timeline_ulid: string;
-  slug: string;
-  name: string;
-  is_default: boolean;
-};
-
-type BridgeProjectsPayload = {
-  projects?: BridgeProject[];
-};
-
-type BridgeTimelinesPayload = {
-  timelines?: BridgeTimeline[];
-};
 
 type ProviderSelection = {
   dataProvider: DataProvider;
@@ -137,12 +124,24 @@ function useVideoEditorModePreference(urlRequestsLocalMode: boolean) {
   };
 }
 
-async function fetchBridgeJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${LOCAL_BRIDGE_BASE_URL}${path}`);
+/**
+ * Every page-level bridge read goes through the shared wire contract
+ * (`bridgeContract.ts`) rather than a bare `as T` assertion, and every one of
+ * them is bounded by the same transport deadline as the provider's requests —
+ * a hung `astrid serve` must not park the entry screen forever.
+ */
+async function fetchBridgeJson<Schema extends ZodType>(
+  path: string,
+  schema: Schema,
+  what: string,
+): Promise<z.infer<Schema>> {
+  const response = await fetch(`${LOCAL_BRIDGE_BASE_URL}${path}`, {
+    signal: AbortSignal.timeout(BRIDGE_REQUEST_TIMEOUT_MS),
+  });
   if (!response.ok) {
     throw new Error(`Astrid bridge request failed: ${response.status} ${response.statusText}`);
   }
-  return await response.json() as T;
+  return parseBridgePayload(schema, await response.json(), what);
 }
 
 function useBridgeProjects(enabled: boolean) {
@@ -150,8 +149,8 @@ function useBridgeProjects(enabled: boolean) {
     queryKey: ['astrid-bridge', 'projects'],
     enabled,
     queryFn: async () => {
-      const payload = await fetchBridgeJson<BridgeProjectsPayload>('/projects');
-      return Array.isArray(payload.projects) ? payload.projects : [];
+      const payload = await fetchBridgeJson('/projects', bridgeProjectsSchema, 'projects list');
+      return payload.projects ?? [];
     },
   });
 }
@@ -161,10 +160,12 @@ function useBridgeTimelines(projectSlug: string | null, enabled: boolean) {
     queryKey: ['astrid-bridge', 'projects', projectSlug, 'timelines'],
     enabled: enabled && Boolean(projectSlug),
     queryFn: async () => {
-      const payload = await fetchBridgeJson<BridgeTimelinesPayload>(
+      const payload = await fetchBridgeJson(
         `/projects/${encodeURIComponent(projectSlug!)}/timelines`,
+        bridgeTimelinesSchema,
+        'timelines list',
       );
-      return Array.isArray(payload.timelines) ? payload.timelines : [];
+      return payload.timelines ?? [];
     },
   });
 }
@@ -174,7 +175,7 @@ function useBridgeHealth(enabled: boolean) {
     queryKey: ['astrid-bridge', 'health'],
     enabled,
     queryFn: async () => {
-      const payload = await fetchBridgeJson<{ ok: boolean }>('/health');
+      const payload = await fetchBridgeJson('/health', bridgeHealthSchema, 'health response');
       return payload.ok === true;
     },
     retry: 0,

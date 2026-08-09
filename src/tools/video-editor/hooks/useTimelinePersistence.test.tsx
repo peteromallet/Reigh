@@ -384,6 +384,29 @@ describe('useTimelinePersistence — interaction gating', () => {
     });
   });
 
+  it('warns when the backend\'s config_version goes backwards', async () => {
+    // Versions are monotonic per backend generation. A decrease means the
+    // backend lost its history (a restarted local bridge back at its seed) and
+    // the save that just landed re-pushed the browser's copy — the badge will
+    // read `saved` again, so this is the only signal the developer gets.
+    const versions = [9, 2];
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const harness = setup({ saveTimelineImpl: async () => versions.shift() ?? 2 });
+
+    harness.scheduleSave(makeTimelineData('first'));
+    await act(async () => { vi.advanceTimersByTime(600); await Promise.resolve(); });
+    expect(warn).not.toHaveBeenCalled();
+
+    harness.scheduleSave(makeTimelineData('second'));
+    await act(async () => { vi.advanceTimersByTime(600); await Promise.resolve(); });
+
+    expect(warn).toHaveBeenCalledWith(
+      '[TimelineSave] bridge config_version went backwards (restart?) — local state re-pushed',
+      { from: 9, to: 2 },
+    );
+    warn.mockRestore();
+  });
+
   it('doSave passes registry to saveTimeline', async () => {
     const harness = setup();
     const registry = makeRegistry('save');

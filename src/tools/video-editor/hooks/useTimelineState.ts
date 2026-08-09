@@ -328,10 +328,14 @@ function useTimelineChromeContextValue({
   reloadFromServer,
   retrySaveAfterConflict,
   startRender,
+  loadError,
+  retryLoad,
 }: {
   timelineName: string | null;
   saveStatus: ReturnType<typeof useTimelineSave>['saveStatus'];
   isConflictExhausted: boolean;
+  loadError: Error | null;
+  retryLoad: () => void;
   render: Pick<RenderStateHook, 'renderStatus' | 'renderLog' | 'renderDirty' | 'renderProgress' | 'renderResultUrl' | 'renderResultFilename'>;
   history: Pick<TimelineHistoryHook, 'undo' | 'redo' | 'canUndo' | 'canRedo' | 'checkpoints' | 'jumpToCheckpoint' | 'createManualCheckpoint'>;
   setScaleWidth: ReturnType<typeof useEditorPreferences>['setScaleWidth'];
@@ -367,8 +371,12 @@ function useTimelineChromeContextValue({
     reloadFromServer,
     retrySaveAfterConflict,
     startRender,
+    loadError,
+    retryLoad,
   }), [
     clipEditing.handleAddText,
+    loadError,
+    retryLoad,
     clipEditing.handleAddTextAt,
     history.canRedo,
     history.canUndo,
@@ -441,6 +449,14 @@ export function useTimelineState(): UseTimelineStateResult {
     return await runtime.provider.resolveAssetUrl(file);
   }, [runtime.assetResolver, runtime.provider]);
   const queries = useTimelineQueries(runtime.provider, runtime.timelineId, resolveAssetUrl);
+  // A rejected load query is otherwise consumed by nobody: `isLoading` goes
+  // false, no render throws, and the shell mounts an empty editor. Surfaced on
+  // the chrome slice so the shell can put an error card where the timeline goes.
+  const timelineLoadError = queries.timelineQuery.error ?? null;
+  const refetchTimeline = queries.timelineQuery.refetch;
+  const retryLoad = useCallback(() => {
+    void refetchTimeline();
+  }, [refetchTimeline]);
   const deviceClass = useMemo(
     // `isTabletHardware` reads UA/platform, which never changes for the life of
     // the document — the reactive inputs are the two signals and the width.
@@ -923,6 +939,8 @@ export function useTimelineState(): UseTimelineStateResult {
     reloadFromServer,
     retrySaveAfterConflict,
     startRender,
+    loadError: timelineLoadError,
+    retryLoad,
   });
 
   const playbackValue = useTimelinePlaybackContextValue({ playback });

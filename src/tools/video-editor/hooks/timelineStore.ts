@@ -365,6 +365,8 @@ function createInitialChromeSlice(): TimelineChromeContextValue {
     reloadFromServer: noopAsync,
     retrySaveAfterConflict: noopAsync,
     startRender: noopAsync,
+    loadError: null,
+    retryLoad: noop,
   };
 }
 

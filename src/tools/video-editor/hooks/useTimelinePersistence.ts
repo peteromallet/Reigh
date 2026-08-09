@@ -239,6 +239,17 @@ export function useTimelinePersistence({
         },
         {
           onSuccess: (nextVersion) => {
+            if (nextVersion < configVersionRef.current) {
+              // Versions are monotonic per backend generation, so a decrease
+              // means the backend lost its history (a restarted local bridge
+              // reverting to its seed). The save that just landed re-pushed the
+              // browser's state, which is the only surviving copy — say so,
+              // because the badge alone will just read `saved` again.
+              console.warn(
+                '[TimelineSave] bridge config_version went backwards (restart?) — local state re-pushed',
+                { from: configVersionRef.current, to: nextVersion },
+              );
+            }
             logConfigVersionUpdate('save', nextVersion);
             configVersionRef.current = nextVersion;
             completedSeqRef.current = seq;

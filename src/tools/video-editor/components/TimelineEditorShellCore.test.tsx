@@ -23,6 +23,8 @@ function __clearSlotRenderers() {
 
 /** Device class reported by the mocked timeline store; drives the shell layout branch. */
 let __deviceClass: 'desktop' | 'tablet' | 'phone' = 'desktop';
+/** Per-test overrides merged into the mocked chrome slice. */
+let __chromeOverrides: Record<string, unknown> = {};
 /** Interaction mode reported by the mocked timeline store. */
 let __interactionMode: 'browse' | 'select' | 'move' | 'trim' | 'precision' = 'browse';
 
@@ -78,6 +80,9 @@ vi.mock('@/tools/video-editor/hooks/timelineStore.ts', () => ({
     renderResultUrl: null,
     renderResultFilename: null,
     renderDirty: false,
+    loadError: null,
+    retryLoad: vi.fn(),
+    ...__chromeOverrides,
   }),
   useTimelinePlaybackContext: () => ({
     currentTime: 0,
@@ -1002,6 +1007,55 @@ describe('TimelineEditorShellCore — timeline error boundary', () => {
 
     expect(screen.getByTestId('timeline-editor')).toBeTruthy();
     expect(document.querySelector('[data-video-editor-timeline-error]')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Timeline load failure (the error boundary cannot see this one)
+// ---------------------------------------------------------------------------
+
+describe('TimelineEditorShellCore — timeline load error', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    __clearSlotRenderers();
+    __clearRuntimeContext();
+    __deviceClass = 'desktop';
+    __chromeOverrides = {};
+  });
+
+  afterEach(() => {
+    __chromeOverrides = {};
+  });
+
+  it('renders a load-error card where the timeline goes and keeps the toolbar', () => {
+    // A load rejection (malformed bridge payload, dead backend) resolves the
+    // query to an error *before* anything renders, so TimelineErrorBoundary
+    // never fires. Without this branch the shell mounts an empty editor whose
+    // save badge reads "saved".
+    __chromeOverrides = {
+      loadError: new Error('Astrid bridge returned a malformed timeline payload: config: expected object, received string'),
+    };
+
+    render(<TimelineEditorShellCore timelineId="test-timeline" />);
+
+    expect(screen.queryByTestId('timeline-editor')).toBeNull();
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('Unable to load this timeline');
+    expect(alert).toHaveTextContent('malformed timeline payload');
+
+    // The toolbar (and therefore the way out — mode/timeline switching) survives.
+    expect(screen.getByLabelText('Zoom out timeline')).toBeTruthy();
+    expect(screen.getByTestId('preview-panel')).toBeTruthy();
+  });
+
+  it('refetches the timeline when the card\'s retry affordance is used', () => {
+    const retryLoad = vi.fn();
+    __chromeOverrides = { loadError: new Error('bridge unreachable'), retryLoad };
+
+    render(<TimelineEditorShellCore timelineId="test-timeline" />);
+    fireEvent.click(screen.getByRole('button', { name: /retry/i }));
+
+    expect(retryLoad).toHaveBeenCalledTimes(1);
   });
 });
 
