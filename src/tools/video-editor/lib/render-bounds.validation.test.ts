@@ -164,7 +164,13 @@ describe('render bounds validation', () => {
   });
 
   it('preserves adjacent grouped hold boundaries across repeated editor round-trips', () => {
-    const expectedBoundary = 2.3334;
+    // The commit funnel snaps timeline times to the frame grid
+    // (`lib/time-grid.ts`): the seeded off-grid values (1.3334 s is 40.002
+    // frames at 30fps) land on exact frame instants on the FIRST round-trip
+    // and are bit-stable ever after. What this test protects — adjacent
+    // grouped boundaries stay coincident, nothing drifts across cycles —
+    // still holds; only the resting values moved onto the grid.
+    const expectedBoundary = 2.3333; // frame 70 @30fps, 4-decimal serialized
     let nextConfig: TimelineConfig = {
       output: {
         resolution: '1920x1080',
@@ -210,11 +216,11 @@ describe('render bounds validation', () => {
       const serializedBoundary = leftClip.at + (leftClip.hold ?? 0);
 
       expect(leftClip.at).toBe(1);
-      expect(leftClip.hold).toBeCloseTo(1.3334, 10);
+      expect(leftClip.hold).toBeCloseTo(1.3333, 10);
       expect(serializedBoundary).toBeCloseTo(expectedBoundary, 10);
       expect(rightClip.at).toBeCloseTo(expectedBoundary, 10);
       expect(rightClip.at).toBeCloseTo(serializedBoundary, 10);
-      expect(rightClip.hold).toBeCloseTo(0.6666, 10);
+      expect(rightClip.hold).toBeCloseTo(0.6667, 10);
       expect(rightClip.at + (rightClip.hold ?? 0)).toBeCloseTo(3, 10);
     }
   });

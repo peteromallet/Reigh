@@ -724,6 +724,11 @@ function TimelineEditorShellCoreComponent({
       )}
     </div>
   ) : null;
+  // While uploads are in flight the history layer pauses undo/redo (a
+  // snapshot restore would strand the upload's registry patch); say so
+  // instead of presenting a mysteriously dead button.
+  const undoPausedTitle = 'Undo is paused while media uploads finish';
+  const redoPausedTitle = 'Redo is paused while media uploads finish';
   const historyControls = (
     <>
       <Button
@@ -733,7 +738,8 @@ function TimelineEditorShellCoreComponent({
         className={toolbarButtonSizeClass}
         onClick={chrome.undo}
         disabled={!chrome.canUndo}
-        title="Undo"
+        title={chrome.historyPausedForUploads ? undoPausedTitle : 'Undo'}
+        aria-label={chrome.historyPausedForUploads ? undoPausedTitle : 'Undo'}
       >
         <Undo2 className="h-3.5 w-3.5" />
       </Button>
@@ -744,7 +750,8 @@ function TimelineEditorShellCoreComponent({
         className={toolbarButtonSizeClass}
         onClick={chrome.redo}
         disabled={!chrome.canRedo}
-        title="Redo"
+        title={chrome.historyPausedForUploads ? redoPausedTitle : 'Redo'}
+        aria-label={chrome.historyPausedForUploads ? redoPausedTitle : 'Redo'}
       >
         <Redo2 className="h-3.5 w-3.5" />
       </Button>

@@ -17,6 +17,7 @@ import {
   clipTypeUsesHoldTiming,
   getRegisteredClipTypeDescriptor,
   getClipTypeOverlayBehavior,
+  getDefaultBoxForClipType,
   isClipTypeCommandAvailable,
 } from '@/tools/video-editor/clip-types/index.ts';
 import { isEditorParamsSchema, isSequenceParamsSchema } from '@/tools/video-editor/clip-types/defineClipType.ts';
@@ -411,6 +412,11 @@ export function ClipPanel({
   const isSequenceClip = Boolean(clipDescriptor && isSequenceParamsSchema(clipDescriptor.paramsSchema));
   const overlayBehavior = getClipTypeOverlayBehavior(clipDescriptor);
   const supportsInlineTextEdit = overlayBehavior.supportsInlineTextEdit;
+  // Position fallbacks come from the clip-type descriptor — the same canonical
+  // box the renderer draws and the gizmo shows for a position-less clip. The
+  // panel used to invent its own (0,0,compW,compH) fallback and disagreed with
+  // both other surfaces for text clips.
+  const defaultBox = getDefaultBoxForClipType(clip?.clipType, compositionWidth, compositionHeight);
   const commandContext = useMemo(() => (
     clip
       ? { clip, track, selectedClipIds: [clip.id] }
@@ -1572,19 +1578,19 @@ export function ClipPanel({
             <div className="grid gap-3 md:grid-cols-2">
               <div className="space-y-2">
                 <FieldLabel>X</FieldLabel>
-                <NumberInput value={clip.x ?? 0} onChange={(value) => { if (value !== null) onChange({ x: value }); }} />
+                <NumberInput value={clip.x ?? defaultBox.x} onChange={(value) => { if (value !== null) onChange({ x: value }); }} />
               </div>
               <div className="space-y-2">
                 <FieldLabel>Y</FieldLabel>
-                <NumberInput value={clip.y ?? 0} onChange={(value) => { if (value !== null) onChange({ y: value }); }} />
+                <NumberInput value={clip.y ?? defaultBox.y} onChange={(value) => { if (value !== null) onChange({ y: value }); }} />
               </div>
               <div className="space-y-2">
                 <FieldLabel>Width</FieldLabel>
-                <NumberInput value={clip.width ?? compositionWidth} min={0} max={compositionWidth} onChange={(value) => { if (value !== null) onChange({ width: value }); }} />
+                <NumberInput value={clip.width ?? defaultBox.width} min={0} max={compositionWidth} onChange={(value) => { if (value !== null) onChange({ width: value }); }} />
               </div>
               <div className="space-y-2">
                 <FieldLabel>Height</FieldLabel>
-                <NumberInput value={clip.height ?? compositionHeight} min={0} max={compositionHeight} onChange={(value) => { if (value !== null) onChange({ height: value }); }} />
+                <NumberInput value={clip.height ?? defaultBox.height} min={0} max={compositionHeight} onChange={(value) => { if (value !== null) onChange({ height: value }); }} />
               </div>
             </div>
             <div className="space-y-2">

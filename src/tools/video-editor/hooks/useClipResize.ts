@@ -7,6 +7,7 @@ import type {
 } from '@/tools/video-editor/lib/resize-math.ts';
 import { getSourceTime, type ClipMeta, type TimelineData } from '@/tools/video-editor/lib/timeline-data.ts';
 import { resolveOverlaps } from '@/tools/video-editor/lib/resolve-overlaps.ts';
+import { snapToFrameGrid } from '@/tools/video-editor/lib/time-grid.ts';
 import { ensureGroupContiguity } from '@/tools/video-editor/lib/shot-group-contiguity.ts';
 import type { TimelineApplyEdit } from '@/tools/video-editor/hooks/timeline-state-types.ts';
 import type { TrackKind } from '@/tools/video-editor/types/index.ts';
@@ -251,7 +252,18 @@ export function useClipResize({
       return;
     }
 
-    const primaryUpdate = getUpdateByClipId(updates, session.clipId);
+    // The gesture layer hands over raw pixel-derived times. Snap them to the
+    // frame grid *before* deriving `from`/`to`/`speed` below, so the media
+    // trim math starts from the same grid instants the commit funnel persists
+    // (policy: `lib/time-grid.ts`).
+    const fps = current.output.fps;
+    const snappedUpdates = updates.map((update) => ({
+      ...update,
+      start: snapToFrameGrid(update.start, fps),
+      end: snapToFrameGrid(update.end, fps),
+    }));
+
+    const primaryUpdate = getUpdateByClipId(snappedUpdates, session.clipId);
     const primary = getResizeOrigin(current, resizeStartRef.current, session.rowId, session.clipId);
     if (!primaryUpdate || !primary) {
       clearResizeTracking(session.clipId);
@@ -259,14 +271,14 @@ export function useClipResize({
     }
 
     if (session.context.kind === 'group') {
-      const updatedRows = applyActionUpdates(current.rows, session.rowId, updates);
+      const updatedRows = applyActionUpdates(current.rows, session.rowId, snappedUpdates);
       let nextRows = ensureGroupContiguity(updatedRows, current.config.pinnedShotGroups);
 
       // Resolve overlaps between group clips and non-group siblings on the same row.
       // The resized group clip may extend into non-group clips; resolveOverlaps trims it to fit.
       const groupClipIds = new Set(session.context.groupClipIds);
       let overlapMetaPatches: Record<string, Partial<ClipMeta>> = {};
-      for (const update of updates) {
+      for (const update of snappedUpdates) {
         if (!groupClipIds.has(update.clipId)) continue;
         const { rows: resolved, metaPatches } = resolveOverlaps(
           nextRows,
@@ -279,7 +291,7 @@ export function useClipResize({
       }
 
       const perClipMetaUpdates: Record<string, Partial<ClipMeta>> = {};
-      for (const update of updates) {
+      for (const update of snappedUpdates) {
         const clip = getResizeOrigin(current, resizeStartRef.current, session.rowId, update.clipId);
         if (!clip) {
           continue;

@@ -37,6 +37,12 @@ export function resolveKeyboardNudgeSeconds(
  * where the equivalent pointer drag would: same overlap resolution, same clip
  * ordering, same meta updates. Returns `null` when there is nothing to move.
  *
+ * Frame accuracy: this builds a `'rows'` mutation, so the commit funnel
+ * (`rowsToConfig`) snaps the RESULT of every nudge to the frame grid
+ * (`lib/time-grid.ts`). N presses of `1/fps` therefore land on exact frame
+ * instants instead of accumulating binary float dust — `1/24` is inexact in
+ * binary, and pre-snap the dust walked times across rounding boundaries.
+ *
  * Two group behaviours, both borrowed rather than reinvented:
  * - Selecting one member of a pinned shot group moves the whole group, because
  *   `categorizeSelection` expands a member into its group (as the delete path does).

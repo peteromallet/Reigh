@@ -18,6 +18,11 @@ import {
   getConfigTimelineClipSourceDuration,
   getConfigTimelineDuration,
 } from './timeline-domain.ts';
+import { mediaDurationInFrames, secondsToFrames } from './time-grid.ts';
+
+// Frame math is owned by `lib/time-grid.ts`; re-exported here because the
+// composition layer historically imports it from config-utils.
+export { secondsToFrames };
 
 export const parseResolution = (resolution: string): { width: number; height: number } => {
   const [width, height] = resolution.toLowerCase().split('x');
@@ -33,10 +38,6 @@ export const getClipSourceDuration = (clip: TimelineClip): number => {
 
 export const getClipTimelineDuration = (clip: TimelineClip): number => {
   return getConfigTimelineClipDuration(clip);
-};
-
-export const secondsToFrames = (seconds: number, fps: number): number => {
-  return Math.round(seconds * fps);
 };
 
 export const getSanitizedMediaTrimProps = (
@@ -95,6 +96,29 @@ export const getSanitizedMediaSrc = (src: string | undefined): string | null => 
 };
 
 export const getClipDurationInFrames = (clip: TimelineClip, fps: number): number => {
+  // Media clips (a real trim window, not hold-timed) derive their Sequence
+  // duration from the same rounded trim window the player cuts at — see
+  // `mediaDurationInFrames` in `lib/time-grid.ts` for why rounding the
+  // seconds-duration independently produced a blank final frame on 8-9% of
+  // trimmed clips. The condition mirrors `getSanitizedMediaTrimProps`: this
+  // branch applies exactly when that helper would emit a `trimAfter`.
+  const trimBeforeSeconds = typeof clip.from === 'number' && Number.isFinite(clip.from)
+    ? Math.max(0, clip.from)
+    : 0;
+  if (
+    typeof clip.hold !== 'number'
+    && typeof clip.to === 'number'
+    && Number.isFinite(clip.to)
+    && clip.to > trimBeforeSeconds
+  ) {
+    return mediaDurationInFrames({
+      from: trimBeforeSeconds,
+      to: clip.to,
+      speed: getCanonicalClipPlaybackRate(clip.speed),
+      fps,
+    });
+  }
+
   return Math.max(1, secondsToFrames(getClipTimelineDuration(clip), fps));
 };
 

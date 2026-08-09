@@ -986,12 +986,30 @@ const VisualTrack: FC<VisualTrackProps> = ({
     return null;
   }
 
+  // Track scale scales EVERYTHING on the track — one application point for the
+  // whole subtree, so text/theme/extension clips and clips with position
+  // overrides compose with it instead of silently escaping it (they used to:
+  // only plain un-positioned media clips got a per-clip scale wrapper, so the
+  // slider stopped working the moment a clip gained a position override).
+  // Positioned clips' stored x/y/width/height are track-local under this
+  // semantics; pre-existing positioned clips on scaled tracks were baked to
+  // preserve their on-screen appearance (see `applyTrackScaleBakeMigration`
+  // in `lib/timeline-domain.ts`). OverlayEditor mirrors this transform in
+  // both directions so gizmo and render agree.
+  const effectiveScale = track.scale ?? 1;
   return (
     <AbsoluteFill
       key={track.id}
       style={{
         opacity: track.opacity ?? 1,
         mixBlendMode: track.blendMode && track.blendMode !== 'normal' ? track.blendMode : undefined,
+        ...(effectiveScale !== 1
+          ? {
+              transform: `scale(${effectiveScale})`,
+              transformOrigin: 'center center',
+              overflow: 'hidden',
+            }
+          : {}),
       }}
     >
       {sortedClips.map((clip, index) => {
@@ -1141,50 +1159,6 @@ const VisualTrack: FC<VisualTrackProps> = ({
         }
 
         const predecessor = index > 0 ? sortedClips[index - 1] : null;
-        const hasPositionOverride = (
-          clip.x !== undefined
-          || clip.y !== undefined
-          || clip.width !== undefined
-          || clip.height !== undefined
-          || clip.cropTop !== undefined
-          || clip.cropBottom !== undefined
-          || clip.cropLeft !== undefined
-          || clip.cropRight !== undefined
-        );
-        if (hasPositionOverride) {
-          return (
-            <VisualClipSequence
-              key={clip.id}
-              clip={clip}
-              track={track}
-              fps={fps}
-              predecessor={predecessor}
-            />
-          );
-        }
-
-        const effectiveScale = track.scale ?? 1;
-        const needsScaleWrapper = effectiveScale !== 1;
-        if (needsScaleWrapper) {
-          return (
-            <AbsoluteFill
-              key={clip.id}
-              style={{
-                transform: `scale(${effectiveScale})`,
-                transformOrigin: 'center center',
-                overflow: 'hidden',
-                isolation: 'isolate',
-              }}
-            >
-              <VisualClipSequence
-                clip={clip}
-                track={track}
-                fps={fps}
-                predecessor={predecessor}
-              />
-            </AbsoluteFill>
-          );
-        }
         return (
           <VisualClipSequence
             key={clip.id}

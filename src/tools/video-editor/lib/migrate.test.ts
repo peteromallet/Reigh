@@ -161,3 +161,86 @@ describe('repairConfig — legacy pinnedShotGroups migration', () => {
     expect(pairAware.issues.map((issue) => issue.code)).toContain('malformed_non_hold_trim_repaired');
   });
 });
+
+describe('applyTrackScaleBakeMigration — one-time track-scale semantics bake', () => {
+  const buildScaledConfig = (): TimelineConfig => ({
+    output: { resolution: '1280x720', fps: 30, file: 'out.mp4' },
+    tracks: [
+      { id: 'V1', kind: 'visual', label: 'V1', scale: 0.5 },
+      { id: 'V2', kind: 'visual', label: 'V2' },
+      { id: 'A1', kind: 'audio', label: 'A1' },
+    ],
+    clips: [
+      // Positioned clip on the scaled track: must be baked (inverse-scaled
+      // about the composition center) so its on-screen pixels do not move
+      // when the renderer starts scaling positioned clips.
+      { id: 'positioned', at: 0, track: 'V1', clipType: 'hold', hold: 2, x: 320, y: 180, width: 640, height: 360 },
+      // Un-positioned clip on the scaled track: was already scaled before the
+      // decree — stored values stay put.
+      { id: 'plain', at: 2, track: 'V1', clipType: 'hold', hold: 2 },
+      // Positioned clip on an unscaled track: old and new semantics coincide.
+      { id: 'unscaled-track', at: 0, track: 'V2', clipType: 'hold', hold: 2, x: 10, y: 20, width: 100, height: 50 },
+    ],
+  });
+
+  it('bakes positioned clips on scale≠1 visual tracks and stamps every track', () => {
+    const { config, issues } = canonicalizeTimelinePair(buildScaledConfig(), { assets: {} });
+
+    // (320,180,640,360) inverse-scaled by 0.5 about (640,360):
+    // width/height double; center (640,360) maps to itself.
+    expect(config.clips.find((clip) => clip.id === 'positioned')).toMatchObject({
+      x: 0, y: 0, width: 1280, height: 720,
+    });
+    expect(config.clips.find((clip) => clip.id === 'plain')).not.toHaveProperty('x');
+    expect(config.clips.find((clip) => clip.id === 'unscaled-track')).toMatchObject({
+      x: 10, y: 20, width: 100, height: 50,
+    });
+
+    for (const track of config.tracks ?? []) {
+      expect(track.app?.scaleAppliesToPositionedClips, `${track.id} stamped`).toBe(true);
+    }
+    expect(issues.filter((issue) => issue.code === 'track_scale_positions_baked')).toHaveLength(1);
+  });
+
+  it('is idempotent: a stamped config passes through untouched', () => {
+    const first = canonicalizeTimelinePair(buildScaledConfig(), { assets: {} });
+    const second = canonicalizeTimelinePair(first.config, { assets: {} });
+
+    expect(second.config.clips).toEqual(first.config.clips);
+    expect(second.issues.filter((issue) => issue.code === 'track_scale_positions_baked')).toHaveLength(0);
+  });
+
+  it('never bakes clips positioned under the new semantics (marker present, scale changed later)', () => {
+    const stamped = canonicalizeTimelinePair(buildScaledConfig(), { assets: {} }).config;
+    // The user later scales V2 and positions a clip there under new semantics.
+    const evolved: TimelineConfig = {
+      ...stamped,
+      tracks: (stamped.tracks ?? []).map((track) => (
+        track.id === 'V2' ? { ...track, scale: 0.5 } : track
+      )),
+    };
+
+    const { config } = canonicalizeTimelinePair(evolved, { assets: {} });
+    expect(config.clips.find((clip) => clip.id === 'unscaled-track')).toMatchObject({
+      x: 10, y: 20, width: 100, height: 50,
+    });
+  });
+
+  it('survives a rows edit round-trip (marker lives on track.app)', () => {
+    const stamped = canonicalizeTimelinePair(buildScaledConfig(), { assets: {} }).config;
+    const rowData = configToRows(stamped);
+    const roundTripped = rowsToConfig(
+      rowData.rows,
+      rowData.meta,
+      stamped.output,
+      rowData.clipOrder,
+      rowData.tracks,
+      stamped.pinnedShotGroups,
+      stamped,
+    );
+
+    for (const track of roundTripped.tracks ?? []) {
+      expect(track.app?.scaleAppliesToPositionedClips, `${track.id} keeps marker`).toBe(true);
+    }
+  });
+});

@@ -61,6 +61,36 @@ export const getFullBoundsFromVisibleBounds = (visibleBounds: OverlayBounds, cro
   };
 };
 
+/**
+ * Map a box between stored (track-local) and rendered (composition) space for
+ * a track with `scale`. The composition applies `scale(s)` with
+ * `transformOrigin: center` to the whole track subtree, so the rendered box of
+ * a stored box is `scaleBoundsAboutCenter(stored, s, …)` and a gizmo write
+ * must store `scaleBoundsAboutCenter(rendered, 1/s, …)`. Keeping both
+ * directions in one helper is what keeps gizmo and render agreeing.
+ */
+export const scaleBoundsAboutCenter = (
+  bounds: OverlayBounds,
+  scale: number,
+  compositionWidth: number,
+  compositionHeight: number,
+): OverlayBounds => {
+  if (scale === 1 || !Number.isFinite(scale) || scale <= 0) {
+    return bounds;
+  }
+
+  const centerX = compositionWidth / 2;
+  const centerY = compositionHeight / 2;
+  const width = bounds.width * scale;
+  const height = bounds.height * scale;
+  return {
+    x: centerX + (bounds.x + bounds.width / 2 - centerX) * scale - width / 2,
+    y: centerY + (bounds.y + bounds.height / 2 - centerY) * scale - height / 2,
+    width,
+    height,
+  };
+};
+
 export const toOverlayStyle = (
   bounds: OverlayBounds,
   layout: OverlayLayout,

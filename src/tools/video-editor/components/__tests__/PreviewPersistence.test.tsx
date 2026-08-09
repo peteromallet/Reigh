@@ -251,6 +251,16 @@ vi.mock('@/tools/video-editor/runtime/useVideoEditorRenderContext', async () => 
     useVideoEditorRenderContext: () => useVideoEditorRenderContextMock(),
     useVideoEditorSlotRenderers: () => useVideoEditorSlotRenderersMock(),
     useVideoEditorAssetPanels: () => useVideoEditorAssetPanelsMock(),
+    // These pass-throughs reach useVideoEditorRuntime, and this suite renders
+    // the shell without a VideoEditorRuntimeProvider — stub them the same way
+    // mobile-interaction-conformance.test.tsx does.
+    useVideoEditorDialogDescriptors: () => [],
+    useVideoEditorPanelRegistry: () => ({ panels: [], inspectorSections: [] }),
+    useResolvedVideoEditorPanelRegistry: () => ({
+      assetPanels: [],
+      inspectorSections: { all: [], beforeDefault: [], afterDefault: [] },
+    }),
+    useVideoEditorInspectorSections: () => [],
   };
 });
 

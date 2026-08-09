@@ -1,6 +1,7 @@
 import type { FC } from 'react';
-import { AbsoluteFill, Sequence } from 'remotion';
+import { AbsoluteFill, Sequence, useVideoConfig } from 'remotion';
 import { getClipDurationInFrames, secondsToFrames } from '@/tools/video-editor/lib/config-utils.ts';
+import { getDefaultBoxForClipType } from '@/tools/video-editor/clip-types/index.ts';
 import { wrapWithClipEffects } from '@/tools/video-editor/effects/index.tsx';
 import {
   useOptionalEffectRegistryContext,
@@ -18,19 +19,25 @@ type TextClipProps = {
 export const TextClip: FC<TextClipProps> = ({ clip, track: _track, fps, effectRegistrySnapshot }) => {
   const providerRegistryContext = useOptionalEffectRegistryContext();
   const registrySnapshot = effectRegistrySnapshot ?? providerRegistryContext?.snapshot;
+  const { width: compositionWidth, height: compositionHeight } = useVideoConfig();
   const durationInFrames = getClipDurationInFrames(clip, fps);
   const text = clip.text;
   if (!text) {
     return null;
   }
 
+  // Position-less clips fall back to the clip-type descriptor's canonical
+  // default box — the same box the gizmo and the properties panel show. The
+  // renderer used to invent its own (0,0,640,160), so a legacy x-less text
+  // clip rendered 120px away from its own gizmo.
+  const defaultBox = getDefaultBoxForClipType(clip.clipType ?? 'text', compositionWidth, compositionHeight);
   const content = (
     <AbsoluteFill
       style={{
-        left: clip.x ?? 0,
-        top: clip.y ?? 0,
-        width: clip.width ?? 640,
-        height: clip.height ?? 160,
+        left: clip.x ?? defaultBox.x,
+        top: clip.y ?? defaultBox.y,
+        width: clip.width ?? defaultBox.width,
+        height: clip.height ?? defaultBox.height,
         position: 'absolute',
         justifyContent: 'center',
         color: text.color ?? '#ffffff',

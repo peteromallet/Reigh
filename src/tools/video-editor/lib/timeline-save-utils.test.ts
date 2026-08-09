@@ -30,6 +30,10 @@ const makeTrack = (id: string, kind: TrackDefinition['kind'] = 'visual'): TrackD
   fit: kind === 'audio' ? 'contain' : 'manual',
   opacity: 1,
   blendMode: 'normal',
+  // Canonical form: every canonicalized config carries the track-scale
+  // semantics marker (`applyTrackScaleBakeMigration`). Fixtures include it so
+  // signature comparisons against canonicalized outputs stay meaningful.
+  app: { scaleAppliesToPositionedClips: true },
 });
 
 const makePinnedGroup = (args: {

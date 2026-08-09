@@ -390,7 +390,12 @@ describe('video-editor serialization', () => {
     expect(validateTimelineConfigSnapshot(config).ok).toBe(true);
 
     const serialized = serializeTimelineConfigSnapshot(config).config;
-    expect(serialized.tracks?.[0].app).toEqual({ 'x-host': { mutedByPreset: true } });
+    // Extension data survives; canonicalization also stamps the track-scale
+    // semantics marker (`applyTrackScaleBakeMigration`) alongside it.
+    expect(serialized.tracks?.[0].app).toEqual({
+      'x-host': { mutedByPreset: true },
+      scaleAppliesToPositionedClips: true,
+    });
     expect(serialized.tracks?.[0].app).not.toBe(config.tracks?.[0].app);
     expect(serialized.tracks?.[0].app?.['x-host']).not.toBe(config.tracks?.[0].app?.['x-host']);
   });

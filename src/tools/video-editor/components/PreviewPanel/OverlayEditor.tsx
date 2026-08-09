@@ -3,6 +3,7 @@ import type { PointerEvent as ReactPointerEvent, RefObject } from 'react';
 import { Maximize2, RotateCcw } from 'lucide-react';
 import {
   getClipTypeOverlayBehavior,
+  getDefaultBoxForClipType,
   getRegisteredClipTypeDescriptor,
   type ClipTypeOverlayBehavior,
 } from '@/tools/video-editor/clip-types/index.ts';
@@ -30,6 +31,7 @@ import {
   MAX_CROP_FRACTION,
   MIN_CLIP_SIZE,
   normalizeCropValues,
+  scaleBoundsAboutCenter,
   toOverlayStyle,
   type CropValues,
   type OverlayBounds,
@@ -115,6 +117,7 @@ function OverlayEditorComponent({
   const dragState = useRef<{
     mode: DragMode;
     actionId: string;
+    trackId: string;
     startMouseX: number;
     startMouseY: number;
     pointerId: number;
@@ -136,23 +139,28 @@ function OverlayEditorComponent({
   const allowsDirectManipulationControls = !(deviceClass === 'phone' && inputModality === 'touch');
   const previewTouchAction = deviceClass === 'phone' ? 'manipulation' : 'none';
 
-  const getTrackDefaultBounds = useCallback((trackId: string): OverlayBounds => {
-    const trackScale = Math.max(trackScaleMap[trackId] ?? 1, 0.01);
-    return {
-      x: Math.round(compositionWidth * (1 - trackScale) / 2),
-      y: Math.round(compositionHeight * (1 - trackScale) / 2),
-      width: Math.round(compositionWidth * trackScale),
-      height: Math.round(compositionHeight * trackScale),
-    };
-  }, [compositionHeight, compositionWidth, trackScaleMap]);
+  const getTrackScale = useCallback((trackId: string): number => (
+    Math.max(trackScaleMap[trackId] ?? 1, 0.01)
+  ), [trackScaleMap]);
+
+  // The composition applies `scale(track.scale)` (center-origin) to the whole
+  // track subtree, so stored x/y/width/height are track-local. The gizmo works
+  // in rendered (composition) space: read = forward scale, write = inverse.
+  // Keeping both conversions here — and nowhere else — is what keeps gizmo and
+  // render agreeing at every track scale.
+  const toRenderedBounds = useCallback((bounds: OverlayBounds, trackId: string): OverlayBounds => (
+    scaleBoundsAboutCenter(bounds, getTrackScale(trackId), compositionWidth, compositionHeight)
+  ), [compositionHeight, compositionWidth, getTrackScale]);
+
+  const toStoredBounds = useCallback((bounds: OverlayBounds, trackId: string): OverlayBounds => (
+    scaleBoundsAboutCenter(bounds, 1 / getTrackScale(trackId), compositionWidth, compositionHeight)
+  ), [compositionHeight, compositionWidth, getTrackScale]);
 
   const getClipBounds = useCallback((clipMeta: ClipMeta, trackId: string): OverlayBounds => {
-    const descriptor = getRegisteredClipTypeDescriptor(clipMeta.clipType);
-    const overlayBehavior = getClipTypeOverlayBehavior(descriptor);
-
     // Must match VisualClip's hasPositionOverride check (includes crop fields).
     // When any of these are set, Remotion renders with absolute positioning at
-    // clip.x/y/width/height (with fallbacks 0/0/compositionW/compositionH).
+    // clip.x/y/width/height; without them, every surface asks the clip-type
+    // descriptor for the canonical default box (`getDefaultBoxForClipType`).
     const hasPositionOverride = (
       clipMeta.x !== undefined
       || clipMeta.y !== undefined
@@ -164,21 +172,17 @@ function OverlayEditorComponent({
       || clipMeta.cropRight !== undefined
     );
 
-    if (hasPositionOverride) {
-      return {
-        x: clipMeta.x ?? 0,
-        y: clipMeta.y ?? 0,
-        width: clipMeta.width ?? compositionWidth,
-        height: clipMeta.height ?? compositionHeight,
-      };
-    }
+    const storedBounds = hasPositionOverride
+      ? {
+          x: clipMeta.x ?? 0,
+          y: clipMeta.y ?? 0,
+          width: clipMeta.width ?? compositionWidth,
+          height: clipMeta.height ?? compositionHeight,
+        }
+      : getDefaultBoxForClipType(clipMeta.clipType, compositionWidth, compositionHeight);
 
-    if (overlayBehavior.defaultBounds) {
-      return overlayBehavior.defaultBounds;
-    }
-
-    return getTrackDefaultBounds(trackId);
-  }, [compositionHeight, compositionWidth, getTrackDefaultBounds]);
+    return toRenderedBounds(storedBounds, trackId);
+  }, [compositionHeight, compositionWidth, toRenderedBounds]);
 
   // Compute which clip IDs are visible at currentTime — this string only changes when clips enter/exit
   const visibleClipKey = useMemo(() => {
@@ -437,17 +441,22 @@ function OverlayEditorComponent({
       });
 
       // Push changes to Remotion live so IT renders the image (no fake preview).
-      // This is cheap — just a shallow meta merge + React re-render.
+      // This is cheap — just a shallow meta merge + React re-render. The gizmo
+      // works in rendered space; stored x/y/width/height are track-local, so
+      // the write inverts the track scale (`toStoredBounds`).
       if (state.mode.startsWith('crop-')) {
         onOverlayChange(state.actionId, {
-          ...state.startFullBounds,
+          ...toStoredBounds(state.startFullBounds, state.trackId),
           cropTop: nextCropValues.cropTop || undefined,
           cropBottom: nextCropValues.cropBottom || undefined,
           cropLeft: nextCropValues.cropLeft || undefined,
           cropRight: nextCropValues.cropRight || undefined,
         });
       } else {
-        onOverlayChange(state.actionId, getFullBoundsFromVisibleBounds(nextBounds, nextCropValues));
+        onOverlayChange(
+          state.actionId,
+          toStoredBounds(getFullBoundsFromVisibleBounds(nextBounds, nextCropValues), state.trackId),
+        );
       }
     };
 
@@ -497,7 +506,7 @@ function OverlayEditorComponent({
       window.removeEventListener('blur', onWindowBlur);
       window.removeEventListener('contextmenu', onWindowContextMenu);
     };
-  }, [dragActive, finishDrag, onOverlayChange]);
+  }, [dragActive, finishDrag, onOverlayChange, toStoredBounds]);
 
   const startDrag = useCallback((event: ReactPointerEvent<HTMLElement>, overlay: OverlayViewModel, mode: DragMode) => {
     if (event.button !== 0) {
@@ -530,6 +539,7 @@ function OverlayEditorComponent({
     dragState.current = {
       mode,
       actionId: overlay.actionId,
+      trackId: overlay.track,
       startMouseX: event.clientX,
       startMouseY: event.clientY,
       pointerId: event.pointerId,

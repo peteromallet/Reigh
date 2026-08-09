@@ -231,3 +231,64 @@ describe('OverlayEditor memo comparator', () => {
     expect(container.querySelector('[data-overlay-hit="true"]')).not.toBeNull();
   });
 });
+
+describe('OverlayEditor — track scale agreement (decree: scale scales everything)', () => {
+  const cleanups: Array<() => void> = [];
+
+  afterEach(() => {
+    while (cleanups.length > 0) {
+      cleanups.pop()?.();
+    }
+  });
+
+  it('shows a positioned clip at its rendered (track-scaled) box, not its stored box', () => {
+    // Composition scales the whole track subtree by 0.5 about center, so a
+    // stored full-frame box renders as the centered half-size box. The gizmo
+    // must sit on the rendered pixels.
+    const { props, cleanup } = baseProps({
+      'clip-1': {
+        track: 'V1',
+        clipType: 'media',
+        hold: 4,
+        x: 0,
+        y: 0,
+        width: 1920,
+        height: 1080,
+      },
+    });
+    cleanups.push(cleanup);
+    props.trackScaleMap = { V1: 0.5 };
+
+    render(<OverlayEditor {...props} />);
+
+    const overlay = document.querySelector('[data-overlay-hit="true"]') as HTMLElement;
+    // Rendered box = (480,270,960,540) in composition space; layout maps
+    // composition 1920x1080 onto the 960x540 player → screen factor 0.5.
+    expect(overlay.style.left).toBe('240px');
+    expect(overlay.style.top).toBe('135px');
+    expect(overlay.style.width).toBe('480px');
+    expect(overlay.style.height).toBe('270px');
+  });
+
+  it('keeps the unpositioned default box centered and scaled (unchanged semantics)', () => {
+    const { props, cleanup } = baseProps({
+      'clip-1': {
+        track: 'V1',
+        clipType: 'media',
+        hold: 4,
+        asset: 'asset-1',
+      },
+    });
+    cleanups.push(cleanup);
+    props.trackScaleMap = { V1: 0.5 };
+
+    render(<OverlayEditor {...props} />);
+
+    const overlay = document.querySelector('[data-overlay-hit="true"]') as HTMLElement;
+    // Default box for media = full frame, scaled to the same centered half box.
+    expect(overlay.style.left).toBe('240px');
+    expect(overlay.style.top).toBe('135px');
+    expect(overlay.style.width).toBe('480px');
+    expect(overlay.style.height).toBe('270px');
+  });
+});

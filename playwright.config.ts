@@ -1,5 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
-import { PLACEHOLDER_SUPABASE_URL } from './src/tools/video-editor/dev/devSession.ts';
+import { PLACEHOLDER_SUPABASE_URL } from './src/shared/dev/devSession.ts';
 
 const port = Number(process.env.PLAYWRIGHT_PORT ?? 4173);
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${port}`;

@@ -1515,14 +1515,16 @@ describe('TimelineRenderer — extension clip params follow the composition time
 });
 
 // ---------------------------------------------------------------------------
-// track.scale fidelity — characterization. Only plain (un-positioned) media
-// clips are scaled by the track's scale slider; text clips and clips that
-// carry a position override render unscaled. Whether that is the intended
-// meaning of the slider is an open owner decision, so these tests pin
-// today's behavior rather than asserting a desired one.
+// track.scale fidelity — decree semantics. The owner decided: track scale
+// scales EVERYTHING on the track — one transform on the track subtree, so
+// text/theme/extension clips and clips with position overrides compose with
+// it (positioned x/y/width/height are track-local; pre-existing positioned
+// clips on scaled tracks were baked by `applyTrackScaleBakeMigration`).
+// These tests previously pinned the old reach (plain un-positioned media
+// only); they now assert the decree.
 // ---------------------------------------------------------------------------
 
-describe('TimelineRenderer — track.scale reaches only un-positioned media clips', () => {
+describe('TimelineRenderer — track.scale scales the whole track subtree', () => {
   beforeEach(() => {
     sequenceProps.length = 0;
     visualClipMock.mockClear();
@@ -1553,23 +1555,34 @@ describe('TimelineRenderer — track.scale reaches only un-positioned media clip
     expect(wrapperTransform('visual-clip-sequence')).toBe('scale(0.5)');
   });
 
-  it('does not scale a media clip that carries a position override', () => {
+  it('scales a media clip that carries a position override (track-local coordinates)', () => {
     render(<TimelineRenderer config={scaledConfig([
       { id: 'clip-positioned', clipType: 'media', track: 'V1', at: 0, hold: 2, asset: 'a', x: 320, y: 180, width: 640, height: 360 },
     ])} />);
 
-    expect(wrapperTransform('visual-clip-sequence')).toBe('');
+    expect(wrapperTransform('visual-clip-sequence')).toBe('scale(0.5)');
   });
 
-  it('does not scale text clips', () => {
+  it('scales text clips with the rest of the track', () => {
     render(<TimelineRenderer config={scaledConfig([
       { id: 'clip-text', clipType: 'text', track: 'V1', at: 0, hold: 2, text: { content: 'SCALED?' } },
     ])} />);
 
-    expect(wrapperTransform('text-clip-sequence')).toBe('');
-    // TextClip receives the track but ignores its scale entirely.
-    expect(textClipMock).toHaveBeenCalledWith(expect.objectContaining({
-      track: expect.objectContaining({ scale: 0.5 }),
-    }));
+    expect(wrapperTransform('text-clip-sequence')).toBe('scale(0.5)');
+  });
+
+  it('applies the transform once, at the track subtree, not per clip', () => {
+    render(<TimelineRenderer config={scaledConfig([
+      { id: 'clip-plain', clipType: 'media', track: 'V1', at: 0, hold: 2, asset: 'a' },
+      { id: 'clip-text', clipType: 'text', track: 'V1', at: 2, hold: 2, text: { content: 'SCALED?' } },
+    ])} />);
+
+    // Both clips share the same scaled ancestor — a second nested scale would
+    // compound to 0.25 and is exactly the double-application bug the single
+    // application point exists to prevent.
+    const media = screen.getByTestId('visual-clip-sequence');
+    const text = screen.getByTestId('text-clip-sequence');
+    expect(media.parentElement).toBe(text.parentElement);
+    expect(media.parentElement?.style.transform).toBe('scale(0.5)');
   });
 });

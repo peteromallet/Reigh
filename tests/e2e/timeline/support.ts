@@ -29,7 +29,7 @@ import {
   PLACEHOLDER_SUPABASE_URL,
   buildDevSession,
   devSessionStorageKey,
-} from '../../../src/tools/video-editor/dev/devSession.ts';
+} from '../../../src/shared/dev/devSession.ts';
 
 export const BASE_URL = (process.env.BASE_URL ?? 'http://127.0.0.1:2222').replace(/\/+$/, '');
 export const BRIDGE_PORT = Number(process.env.ASTRID_BRIDGE_PORT ?? 17333);
@@ -83,7 +83,7 @@ export async function resetBridgeBaseline(): Promise<string | null> {
  * Seed a Supabase-shaped session in localStorage plus the local-mode flag.
  *
  * The session shape and the storage-key derivation are shared with the app's own
- * dev path (`src/tools/video-editor/dev/devSession.ts`) so the forging logic
+ * dev path (`src/shared/dev/devSession.ts`) so the forging logic
  * lives in exactly one place. The token is unsigned and never leaves the
  * browser: local mode reads the timeline from the bridge stub, and the app only
  * needs *a* session to get past its auth gate and render the editor.

@@ -30,6 +30,7 @@ import {
   canonicalizeTimelinePair,
   serializeTimelineConfigSnapshot,
 } from '@/tools/video-editor/lib/timeline-domain.ts';
+import { snapToFrameGrid } from '@/tools/video-editor/lib/time-grid.ts';
 
 export interface ClipMeta {
   asset?: string;
@@ -101,7 +102,12 @@ const ASSET_COLORS: Record<string, string> = {
 
 const TIMELINE_TIME_PRECISION = 4;
 const TIMELINE_TIME_FACTOR = 10 ** TIMELINE_TIME_PRECISION;
-const roundTimelineTime = (value: number): number => Math.round(value * TIMELINE_TIME_FACTOR) / TIMELINE_TIME_FACTOR;
+/**
+ * Serialization precision for persisted times. 4 decimals keeps configs tidy
+ * and still round-trips the frame grid exactly: |value − k/fps| ≤ 5e-5, so
+ * `round(value·fps)` recovers `k` for any real fps (error ≤ 5e-5·fps ≪ 0.5).
+ */
+export const roundTimelineTime = (value: number): number => Math.round(value * TIMELINE_TIME_FACTOR) / TIMELINE_TIME_FACTOR;
 
 const effectIdForClip = (clipId: string): string => `effect-${clipId}`;
 const clonePinnedShotGroups = (
@@ -262,8 +268,14 @@ export const rowsToConfig = (
         continue;
       }
 
-      const roundedStart = roundTimelineTime(action.start);
-      const roundedEnd = roundTimelineTime(action.end);
+      // Frame-grid snap at the commit funnel: every `'rows'` edit (drag,
+      // resize, nudge, delete, drop) passes through here, and only locally
+      // produced edits do — remote/accepted data re-enters as a config, not as
+      // rows, so it is never re-quantized. See `lib/time-grid.ts` for the
+      // policy and the ~24% one-frame gap/overlap rate this closes.
+      const fps = output.fps;
+      const roundedStart = roundTimelineTime(snapToFrameGrid(action.start, fps));
+      const roundedEnd = roundTimelineTime(snapToFrameGrid(action.end, fps));
 
       const nextClip: Partial<TimelineClip> = {
         id: clipId,

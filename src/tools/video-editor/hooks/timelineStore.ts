@@ -353,6 +353,7 @@ function createInitialChromeSlice(): TimelineChromeContextValue {
     redo: noop,
     canUndo: false,
     canRedo: false,
+    historyPausedForUploads: false,
     checkpoints: [],
     jumpToCheckpoint: noop,
     createManualCheckpoint: noopAsync,

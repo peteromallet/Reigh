@@ -1,7 +1,8 @@
 import { getConfigSignature, getStableConfigSignature } from '@/tools/video-editor/lib/config-utils.ts';
 import { addTrack } from '@/tools/video-editor/lib/editor-utils.ts';
 import type { PinnedGroupKey } from '@/tools/video-editor/lib/pinned-group-projection.ts';
-import { getSourceTime, type ClipMeta, type ClipOrderMap, type TimelineData } from '@/tools/video-editor/lib/timeline-data.ts';
+import { getSourceTime, roundTimelineTime, type ClipMeta, type ClipOrderMap, type TimelineData } from '@/tools/video-editor/lib/timeline-data.ts';
+import { snapToFrameGrid } from '@/tools/video-editor/lib/time-grid.ts';
 import type { TimelineRow } from '@/tools/video-editor/types/timeline-canvas.ts';
 import type { PinnedShotGroup, ResolvedTimelineConfig, TrackKind } from '@/tools/video-editor/types/index.ts';
 import { findNearestFreeTrack, moveClipBetweenTracks, trySnapToEdge } from '@/tools/video-editor/lib/coordinate-utils.ts';
@@ -49,7 +50,14 @@ export interface GhostRect {
   height: number;
 }
 
-const roundConfigValue = (value: number): number => Math.round(value * 100) / 100;
+// Committed times land on the frame grid, then on the shared 4-decimal
+// serialization precision. The 2-decimal rounding that used to live here was
+// the drag path's drift factory: 0.01 s is a non-multiple of every common
+// frame duration, so abutting drag-committed clips straddled frame boundaries
+// ~24% of the time (see `lib/time-grid.ts`).
+const snapConfigTime = (value: number, fps: number): number => (
+  roundTimelineTime(snapToFrameGrid(value, fps))
+);
 
 export function buildAugmentedData(
   data: TimelineData,
@@ -125,6 +133,7 @@ export function buildConfigFromDragResult(
     }
   }
 
+  const fps = baseConfig.output.fps;
   const nextClips = baseConfig.clips.reduce<ResolvedTimelineConfig['clips']>((acc, clip) => {
       const position = positions.get(clip.id);
       const clipMeta = mergedMeta[clip.id];
@@ -132,9 +141,11 @@ export function buildConfigFromDragResult(
         return acc;
       }
 
+      const snappedAt = snapConfigTime(position.at, fps);
+      const snappedEnd = snapConfigTime(position.at + position.duration, fps);
       const nextClip = {
         ...clip,
-        at: roundConfigValue(position.at),
+        at: snappedAt,
         track: position.track,
       };
 
@@ -144,7 +155,7 @@ export function buildConfigFromDragResult(
         delete nextClip.speed;
         acc.push({
           ...nextClip,
-          hold: roundConfigValue(position.duration),
+          hold: roundTimelineTime(snappedEnd - snappedAt),
         });
         return acc;
       }
@@ -155,8 +166,8 @@ export function buildConfigFromDragResult(
       acc.push({
         ...nextClip,
         speed: clipMeta.speed,
-        from: roundConfigValue(from),
-        to: roundConfigValue(getSourceTime({ from, start: position.at, speed }, position.at + position.duration)),
+        from: roundTimelineTime(from),
+        to: roundTimelineTime(getSourceTime({ from, start: snappedAt, speed }, snappedEnd)),
       });
       return acc;
     }, []);

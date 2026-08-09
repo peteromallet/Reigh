@@ -207,6 +207,13 @@ export interface TimelineChromeContextValue {
   redo: () => void;
   canUndo: boolean;
   canRedo: boolean;
+  /**
+   * True while undo/redo are paused because media uploads are in flight
+   * (`pendingOps > 0`). The toolbar uses it for the "Undo is paused while
+   * media uploads finish" affordance; `canUndo`/`canRedo` are already false
+   * during the pause.
+   */
+  historyPausedForUploads: boolean;
   checkpoints: TimelineCheckpoints;
   jumpToCheckpoint: TimelineJumpToCheckpoint;
   createManualCheckpoint: TimelineCreateManualCheckpoint;

@@ -723,6 +723,36 @@ const getDescriptorDefaultBounds = (
     : null;
 };
 
+/**
+ * The canonical default box for a clip with no explicit x/y/width/height.
+ *
+ * The clip-type descriptor owns this value; every surface asks it. Before
+ * this accessor existed, three consumers each invented their own fallback for
+ * a position-less text clip — renderer `(0,0,640,160)`, gizmo
+ * `(120,120,640,180)`, properties panel `(0,0,compW,compH)` — so the gizmo
+ * sat 120px off the rendered text. Clips created through the UI materialize
+ * `descriptor.defaults.clip`, so only legacy/agent/bridge-imported clips ever
+ * hit the fallback; those now land on the descriptor box on every surface.
+ *
+ * Descriptors without a declared box (media & friends) default to the full
+ * frame — which is exactly what the renderer draws for them
+ * (`x ?? 0, width ?? compositionWidth`, `VisualClip.getClipBoxStyle`).
+ *
+ * Enforced by `clip-types/default-box-conformance.test.tsx`, which renders
+ * all three surfaces for a position-less clip and fails if any disagrees
+ * with this accessor.
+ */
+export const getDefaultBoxForClipType = (
+  clipType: string | undefined,
+  compositionWidth: number,
+  compositionHeight: number,
+  extensionRecords?: readonly Pick<ClipTypeRegistryRecord, 'clipTypeId' | 'schema'>[],
+): ClipTypeDefaultBounds => {
+  const descriptor = getRegisteredClipTypeDescriptor(clipType, extensionRecords);
+  return getDescriptorDefaultBounds(descriptor)
+    ?? { x: 0, y: 0, width: compositionWidth, height: compositionHeight };
+};
+
 export const getClipTypeOverlayBehavior = (
   descriptor: ClipTypeDescriptor | undefined,
 ): ClipTypeOverlayBehavior => {

@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ComponentProps, RefObject } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SequenceCreatorPanel } from '@/tools/video-editor/components/SequenceCreator/SequenceCreatorPanel';
+import { getSequenceCreatorStore } from '@/tools/video-editor/state/sequenceCreatorStore';
 import {
   runSequenceGenerationRequest,
 } from '@/tools/video-editor/components/SequenceCreator/sequenceGenerationService';
@@ -36,6 +37,12 @@ vi.mock('@/integrations/supabase/functions/invokeSupabaseEdgeFunction', () => ({
   invokeSupabaseEdgeFunction: mocks.invokeSupabaseEdgeFunction,
 }));
 
+// The panel reads `userId` from the app auth context (required-provider hook,
+// throws without a provider); this suite renders the panel standalone.
+vi.mock('@/shared/contexts/AuthContext', () => ({
+  useAuth: () => ({ userId: 'user-1', user: { id: 'user-1' } }),
+}));
+
 vi.mock('@/tools/video-editor/hooks/useSelectedMediaClips', () => ({
   useSelectedMediaClips: mocks.useSelectedMediaClips,
 }));
@@ -52,6 +59,13 @@ vi.mock('@/shared/state/selectionStore', () => ({
 // when the user never triggers a Save. Mock to a no-op so the test harness
 // does not need to provide a QueryClientProvider.
 vi.mock('@/tools/video-editor/hooks/useSequenceResources', () => ({
+  // The panel also reads the library catalog at hook-time (Library tab).
+  useSequenceResources: () => ({
+    components: [],
+    isLoading: false,
+    error: null,
+    refetch: async () => undefined,
+  }),
   useCreateSequenceComponentResource: () => ({
     mutateAsync: vi.fn(),
     mutate: vi.fn(),
@@ -308,6 +322,11 @@ const createDeferred = <T,>() => {
 describe('SequenceCreatorPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // The panel's mode/prompt/drafts moved into a persisted zustand store
+    // (state/sequenceCreatorStore); reset it and its localStorage key so
+    // state from one test cannot leak into the next.
+    window.localStorage.clear();
+    getSequenceCreatorStore().getState().reset();
     mocks.invokeSupabaseEdgeFunction.mockResolvedValue({
       drafts: [
         {
@@ -916,7 +935,9 @@ describe('SequenceCreatorPanel', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: /insert at playhead/i }));
 
-    expect(mocks.buildInsertSequenceDraftEdit).toHaveBeenCalledTimes(1);
+    // handleInsert is async (resolveDraftForApply may persist a generated
+    // component first) — wait for the edit to be built.
+    await waitFor(() => expect(mocks.buildInsertSequenceDraftEdit).toHaveBeenCalledTimes(1));
     expect(mocks.buildInsertSequenceDraftEdit).toHaveBeenCalledWith(
       timelineData,
       expect.objectContaining({
@@ -924,7 +945,9 @@ describe('SequenceCreatorPanel', () => {
         hold: 5,
         params: expect.objectContaining({ title: 'Edited title' }),
       }),
-      { at: 2, selectedTrackId: 'visual-1' },
+      // extensionRecords rides along so extension clip types resolve their
+      // descriptors during the insert (T7).
+      { at: 2, selectedTrackId: 'visual-1', extensionRecords: [] },
     );
     expect(mocks.applyEdit).toHaveBeenCalledTimes(1);
     const [mutation, options] = mocks.applyEdit.mock.calls[0];
@@ -965,6 +988,8 @@ describe('SequenceCreatorPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /replace selected/i }));
 
+    // handleReplace is async, same as handleInsert.
+    await waitFor(() => expect(mocks.buildReplaceSequenceDraftEdit).toHaveBeenCalled());
     expect(mocks.buildReplaceSequenceDraftEdit).toHaveBeenCalledWith(
       timelineData,
       expect.objectContaining({ clipType: 'resource-card' }),

@@ -337,7 +337,7 @@ function useTimelineChromeContextValue({
   loadError: Error | null;
   retryLoad: () => void;
   render: Pick<RenderStateHook, 'renderStatus' | 'renderLog' | 'renderDirty' | 'renderProgress' | 'renderResultUrl' | 'renderResultFilename'>;
-  history: Pick<TimelineHistoryHook, 'undo' | 'redo' | 'canUndo' | 'canRedo' | 'checkpoints' | 'jumpToCheckpoint' | 'createManualCheckpoint'>;
+  history: Pick<TimelineHistoryHook, 'undo' | 'redo' | 'canUndo' | 'canRedo' | 'historyPausedForUploads' | 'checkpoints' | 'jumpToCheckpoint' | 'createManualCheckpoint'>;
   setScaleWidth: ReturnType<typeof useEditorPreferences>['setScaleWidth'];
   trackManagement: Pick<TimelineTrackManagementHook, 'handleAddTrack' | 'handleClearUnusedTracks' | 'unusedTrackCount'>;
   clipEditing: Pick<ClipEditingHook, 'handleAddText' | 'handleAddTextAt'>;
@@ -359,6 +359,7 @@ function useTimelineChromeContextValue({
     redo: history.redo,
     canUndo: history.canUndo,
     canRedo: history.canRedo,
+    historyPausedForUploads: history.historyPausedForUploads,
     checkpoints: history.checkpoints,
     jumpToCheckpoint: history.jumpToCheckpoint,
     createManualCheckpoint: history.createManualCheckpoint,
@@ -380,6 +381,7 @@ function useTimelineChromeContextValue({
     clipEditing.handleAddTextAt,
     history.canRedo,
     history.canUndo,
+    history.historyPausedForUploads,
     history.checkpoints,
     history.createManualCheckpoint,
     history.jumpToCheckpoint,
@@ -482,6 +484,7 @@ export function useTimelineState(): UseTimelineStateResult {
     dataRef: save.dataRef,
     commitData: save.commitData,
     interactionStateRef,
+    pendingOpsRef: save.pendingOpsRef,
   });
   const derived = useDerivedTimeline(save.data, save.selectedClipId, save.selectedTrackId);
   const render = useRenderState(derived.resolvedConfig, derived.renderMetadata, runtime.exporter ?? null, runtime.extensionRuntime);
@@ -525,6 +528,7 @@ export function useTimelineState(): UseTimelineStateResult {
   const {
     canUndo,
     canRedo,
+    historyPausedForUploads,
     checkpoints,
     undo,
     redo,
@@ -927,6 +931,7 @@ export function useTimelineState(): UseTimelineStateResult {
       redo,
       canUndo,
       canRedo,
+      historyPausedForUploads,
       checkpoints,
       jumpToCheckpoint,
       createManualCheckpoint,

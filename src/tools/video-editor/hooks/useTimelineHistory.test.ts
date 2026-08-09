@@ -174,6 +174,7 @@ function setup(options: {
   const provider = makeProvider(options.providerOverrides);
   const dataRef = { current: options.initialData ?? makeTimelineData(options.initialStep ?? 0) };
   const interactionStateRef = { current: createInteractionState() };
+  const pendingOpsRef = { current: 0 };
   const commitCalls: CommitCall[] = [];
   const commitData = vi.fn((nextData: TimelineData, commitOptions?: CommitCall['options']) => {
     dataRef.current = nextData;
@@ -194,7 +195,7 @@ function setup(options: {
   );
 
   const hook = renderHook(
-    () => useTimelineHistory({ dataRef, commitData, interactionStateRef }),
+    () => useTimelineHistory({ dataRef, commitData, interactionStateRef, pendingOpsRef }),
     { wrapper },
   );
 
@@ -208,6 +209,7 @@ function setup(options: {
   return {
     provider,
     dataRef,
+    pendingOpsRef,
     commitCalls,
     commitData,
     ...hook,
@@ -562,5 +564,50 @@ describe('useTimelineHistory', () => {
 
     expect(dataRef.current.config.output.file).toBe('output-1.mp4');
     expect(result.current.canRedo).toBe(false);
+  });
+});
+
+describe('useTimelineHistory — upload pause gate', () => {
+  it('pauses undo/redo while pendingOps > 0 and releases when it returns to 0', () => {
+    const { result, rerender, pendingOpsRef, commitCalls, applyEdit } = setup();
+
+    // Distinct transactions so the untransacted collapse window cannot merge
+    // them into one undo entry.
+    applyEdit(1, { transactionId: 'gate-1' });
+    applyEdit(2, { transactionId: 'gate-2' });
+    act(() => {
+      result.current.undo();
+    });
+    expect(result.current.canUndo).toBe(true);
+    expect(result.current.canRedo).toBe(true);
+    expect(result.current.historyPausedForUploads).toBe(false);
+
+    // An upload starts: the registry-stranding window opens.
+    pendingOpsRef.current = 1;
+    rerender();
+    expect(result.current.historyPausedForUploads).toBe(true);
+    expect(result.current.canUndo).toBe(false);
+    expect(result.current.canRedo).toBe(false);
+
+    // undo()/redo() are no-ops during the pause: no restore is committed and
+    // the stacks are untouched.
+    const commitsBefore = commitCalls.length;
+    act(() => {
+      result.current.undo();
+      result.current.redo();
+    });
+    expect(commitCalls.length).toBe(commitsBefore);
+
+    // Upload finishes: the gate releases with the stacks intact.
+    pendingOpsRef.current = 0;
+    rerender();
+    expect(result.current.historyPausedForUploads).toBe(false);
+    expect(result.current.canUndo).toBe(true);
+    expect(result.current.canRedo).toBe(true);
+
+    act(() => {
+      result.current.undo();
+    });
+    expect(commitCalls.length).toBe(commitsBefore + 1);
   });
 });

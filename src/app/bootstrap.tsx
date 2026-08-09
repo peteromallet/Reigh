@@ -21,7 +21,7 @@ import {
   DEFAULT_DEV_SUPABASE_URL,
   hasLocalModeUrlParams,
   seedDevLocalModeSession,
-} from '@/tools/video-editor/dev/devSession';
+} from '@/shared/dev/devSession';
 import '@/index.css';
 
 let presenterInstalled = false;

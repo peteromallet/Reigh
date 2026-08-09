@@ -40,11 +40,23 @@ export interface UseTimelineHistoryArgs {
   dataRef: MutableRefObject<TimelineData | null>;
   commitData: (nextData: TimelineData, options?: CommitDataOptions) => void;
   interactionStateRef: InteractionStateRef;
+  /**
+   * In-flight upload counter (drops, asset panel uploads). While it is > 0,
+   * undo/redo are paused: a history snapshot's registry predates the upload's
+   * `patchRegistry` (which is save:false/no-history), so restoring one
+   * mid-upload would strand the upload — delete its skeleton clip and its
+   * registry patch, leaving an orphaned asset. `preserveUploadingClips`
+   * protects the skeleton but nothing can rebase the registry, so the safe
+   * semantics is to wait out the window.
+   */
+  pendingOpsRef: MutableRefObject<number>;
 }
 
 export interface UseTimelineHistoryResult {
   canUndo: boolean;
   canRedo: boolean;
+  /** True while undo/redo are paused because media uploads are in flight. */
+  historyPausedForUploads: boolean;
   checkpoints: Checkpoint[];
   onBeforeCommit: (currentData: TimelineData, options: CommitHistoryOptions) => void;
   onRemoteData: (currentData: TimelineData, nextData: TimelineData) => void;
@@ -178,6 +190,7 @@ export function useTimelineHistory({
   dataRef,
   commitData,
   interactionStateRef,
+  pendingOpsRef,
 }: UseTimelineHistoryArgs): UseTimelineHistoryResult {
   const { provider, timelineId } = useVideoEditorRuntime();
   const undoStackRef = useRef<UndoEntry[]>([]);
@@ -386,6 +399,15 @@ export function useTimelineHistory({
   }, [syncHistoryState]);
 
   const undo = useCallback(() => {
+    if (pendingOpsRef.current > 0) {
+      // Dev-only diagnostic (stripped in prod); the toolbar communicates the
+      // pause to the user via disabled state + title.
+      console.log('[TimelineHistory] undo ignored: paused while media uploads finish', {
+        pendingOps: pendingOpsRef.current,
+      });
+      return;
+    }
+
     const current = dataRef.current;
     const entry = undoStackRef.current[undoStackRef.current.length - 1];
     if (!current || !entry || isInteractionActive(interactionStateRef)) {
@@ -406,9 +428,16 @@ export function useTimelineHistory({
       },
     ].slice(-UNDO_STACK_LIMIT);
     syncHistoryState();
-  }, [dataRef, interactionStateRef, restoreHistoryEntry, syncHistoryState]);
+  }, [dataRef, interactionStateRef, pendingOpsRef, restoreHistoryEntry, syncHistoryState]);
 
   const redo = useCallback(() => {
+    if (pendingOpsRef.current > 0) {
+      console.log('[TimelineHistory] redo ignored: paused while media uploads finish', {
+        pendingOps: pendingOpsRef.current,
+      });
+      return;
+    }
+
     const current = dataRef.current;
     const entry = redoStackRef.current[redoStackRef.current.length - 1];
     if (!current || !entry || isInteractionActive(interactionStateRef)) {
@@ -429,7 +458,7 @@ export function useTimelineHistory({
       },
     ].slice(-UNDO_STACK_LIMIT);
     syncHistoryState();
-  }, [dataRef, interactionStateRef, restoreHistoryEntry, syncHistoryState]);
+  }, [dataRef, interactionStateRef, pendingOpsRef, restoreHistoryEntry, syncHistoryState]);
 
   const jumpToCheckpoint = useCallback((checkpointId: string) => {
     const current = dataRef.current;
@@ -492,9 +521,16 @@ export function useTimelineHistory({
     };
   }, [provider, timelineId]);
 
+  // Read at render time. Every pendingOps transition is bracketed by a data
+  // commit (skeleton insert on increment; skeleton removal / failure cleanup
+  // before the `finally` decrement), so the tree re-renders right after each
+  // transition and this value cannot go stale for longer than that commit.
+  const historyPausedForUploads = pendingOpsRef.current > 0;
+
   return {
-    canUndo,
-    canRedo,
+    canUndo: canUndo && !historyPausedForUploads,
+    canRedo: canRedo && !historyPausedForUploads,
+    historyPausedForUploads,
     checkpoints,
     onBeforeCommit,
     onRemoteData,

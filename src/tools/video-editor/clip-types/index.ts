@@ -36,6 +36,7 @@ export {
   getClipAssetMediaType,
   getClipTypeCommandAvailability,
   getClipTypeOverlayBehavior,
+  getDefaultBoxForClipType,
   getExtensionClipTypeDescriptor,
   getRegisteredClipTypeDescriptor,
   getSequenceDescriptorParams,

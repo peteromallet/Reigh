@@ -64,7 +64,8 @@ export type TimelineDomainIssueCode =
   | 'live_binding_missing_source_kind'
   | 'live_binding_unsupported_source_kind'
   | 'live_binding_sample_payload_rejected'
-  | 'shader_scope_occupied';
+  | 'shader_scope_occupied'
+  | 'track_scale_positions_baked';
 
 export interface TimelineDomainIssue {
   level: TimelineDomainContractLevel;
@@ -952,6 +953,124 @@ const canonicalizeNonHoldTrim = (
   return clip;
 };
 
+/**
+ * Track-scale semantics marker (one-time migration).
+ *
+ * The composition used to apply `track.scale` only to plain, un-positioned
+ * media clips; the owner-approved semantics is that scale composes onto EVERY
+ * clip on the track, multiplying with position overrides (positioned clips'
+ * x/y/width/height are track-local, scaled about the composition center).
+ * Under the new semantics, positioned clips saved by the old code would
+ * visibly move the first time they render — so this load-time migration bakes
+ * their current on-screen appearance into stored values: inverse-scale about
+ * the composition center, exactly cancelling the scale the renderer now
+ * applies.
+ *
+ * `track.app[TRACK_SCALE_BAKE_MARKER] === true` records that a track's
+ * positioned-clip coordinates already use the new semantics. Every track is
+ * stamped on first canonicalization after the change (tracks at scale 1 need
+ * no bake — old and new semantics coincide there), so the transform can never
+ * run twice and never touches clips positioned under the new semantics. The
+ * marker lives on `track.app` because that field survives both
+ * `sanitizeTrackDefinitionSnapshot` and `rowsToConfig`'s track cloning —
+ * config-level `app` does not survive rows edits.
+ */
+export const TRACK_SCALE_BAKE_MARKER = 'scaleAppliesToPositionedClips';
+
+const clipHasPositionOverride = (clip: TimelineClip): boolean => (
+  clip.x !== undefined
+  || clip.y !== undefined
+  || clip.width !== undefined
+  || clip.height !== undefined
+  || clip.cropTop !== undefined
+  || clip.cropBottom !== undefined
+  || clip.cropLeft !== undefined
+  || clip.cropRight !== undefined
+);
+
+const roundBakedCoordinate = (value: number): number => Math.round(value * 100) / 100;
+
+export const applyTrackScaleBakeMigration = (
+  config: TimelineConfig,
+  issues?: TimelineDomainIssue[],
+  level: TimelineDomainContractLevel = 'config-only',
+): TimelineConfig => {
+  const tracks = config.tracks ?? [];
+  const unstamped = tracks.filter((track) => track.app?.[TRACK_SCALE_BAKE_MARKER] !== true);
+  if (unstamped.length === 0) {
+    return config;
+  }
+
+  const [rawWidth, rawHeight] = (config.output?.resolution ?? '').toLowerCase().split('x').map(Number);
+  const compositionWidth = Number.isFinite(rawWidth) && rawWidth > 0 ? rawWidth : 1920;
+  const compositionHeight = Number.isFinite(rawHeight) && rawHeight > 0 ? rawHeight : 1080;
+
+  // Bake only visual tracks whose scale is a real ≠1 factor — everywhere else
+  // the old and new semantics render identically, so stored values stay put.
+  const bakeScaleByTrack = new Map<string, number>();
+  for (const track of unstamped) {
+    if (track.kind === 'visual' && isPositiveNumber(track.scale) && track.scale !== 1) {
+      bakeScaleByTrack.set(track.id, track.scale);
+    }
+  }
+
+  const clips = bakeScaleByTrack.size === 0
+    ? config.clips
+    : config.clips.map((clip) => {
+        const scale = bakeScaleByTrack.get(clip.track);
+        if (!scale || !clipHasPositionOverride(clip)) {
+          return clip;
+        }
+
+        // Inverse-scale the box about the composition center: the renderer now
+        // applies `scale(s)` center-origin to the whole track, so storing
+        // box/s about the same center preserves the exact pre-change pixels.
+        // Crop values are fractions of the box — scale-invariant, untouched.
+        const x = clip.x ?? 0;
+        const y = clip.y ?? 0;
+        const width = clip.width ?? compositionWidth;
+        const height = clip.height ?? compositionHeight;
+        const centerX = compositionWidth / 2;
+        const centerY = compositionHeight / 2;
+        const bakedWidth = width / scale;
+        const bakedHeight = height / scale;
+        const bakedX = centerX + (x + width / 2 - centerX) / scale - bakedWidth / 2;
+        const bakedY = centerY + (y + height / 2 - centerY) / scale - bakedHeight / 2;
+
+        issues?.push(createIssue(
+          level,
+          'warning',
+          'track_scale_positions_baked',
+          `Baked track scale ${scale} into positioned clip '${clip.id}' so the new track-scale semantics keep its on-screen appearance.`,
+          {
+            clipId: clip.id,
+            trackId: clip.track,
+            path: `clips.${clip.id}`,
+            repairApplied: true,
+            details: { scale, from: { x, y, width, height } },
+          },
+        ));
+
+        return {
+          ...clip,
+          x: roundBakedCoordinate(bakedX),
+          y: roundBakedCoordinate(bakedY),
+          width: roundBakedCoordinate(bakedWidth),
+          height: roundBakedCoordinate(bakedHeight),
+        };
+      });
+
+  return {
+    ...config,
+    clips,
+    tracks: tracks.map((track) => (
+      track.app?.[TRACK_SCALE_BAKE_MARKER] === true
+        ? track
+        : { ...track, app: { ...track.app, [TRACK_SCALE_BAKE_MARKER]: true } }
+    )),
+  };
+};
+
 const withCanonicalClips = (
   config: TimelineConfig,
   clips: TimelineClip[],
@@ -969,7 +1088,11 @@ export const canonicalizeTimelineConfigSnapshot = (
   const issues: TimelineDomainIssue[] = [];
   const repairedConfig = repairConfig(config, issues, 'config-only');
   const contiguousConfig = repairShotGroupContiguity(repairedConfig, issues, 'config-only');
-  const migratedConfig = migrateToFlatTracks(contiguousConfig, issues, 'config-only');
+  const migratedConfig = applyTrackScaleBakeMigration(
+    migrateToFlatTracks(contiguousConfig, issues, 'config-only'),
+    issues,
+    'config-only',
+  );
   // Repair clip transitions against built-in catalog (no registry snapshot in config-only)
   const transitionRepairedConfig = repairTimelineClipTransitions(
     migratedConfig,
@@ -996,7 +1119,11 @@ export const canonicalizeTimelinePair = (
   const issues: TimelineDomainIssue[] = [];
   const repairedConfig = repairConfig(config, issues, 'pair-aware');
   const contiguousConfig = repairShotGroupContiguity(repairedConfig, issues, 'pair-aware');
-  const migratedConfig = migrateToFlatTracks(contiguousConfig, issues, 'pair-aware');
+  const migratedConfig = applyTrackScaleBakeMigration(
+    migrateToFlatTracks(contiguousConfig, issues, 'pair-aware'),
+    issues,
+    'pair-aware',
+  );
   // Repair clip transitions against built-in catalog (no registry snapshot in pair-aware)
   const transitionRepairedConfig = repairTimelineClipTransitions(
     migratedConfig,
@@ -1186,21 +1313,6 @@ const createLiveBindingDiagnostic = (
 
 const isTimelineLiveSourceKind = (value: unknown): value is TimelineLiveSourceKind => {
   return typeof value === 'string' && SUPPORTED_LIVE_SOURCE_KINDS.has(value);
-};
-
-const isTimelineLiveBindingResolutionStatus = (
-  value: unknown,
-): value is TimelineLiveBindingResolutionStatus => {
-  return (
-    value === 'active'
-    || value === 'inactive'
-    || value === 'missing'
-    || value === 'disposed'
-    || value === 'orphaned'
-    || value === 'partiallyBaked'
-    || value === 'resolved'
-    || value === 'malformed'
-  );
 };
 
 const hasForbiddenSamplePayload = (value: unknown): boolean => {

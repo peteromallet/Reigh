@@ -21,7 +21,7 @@ const env = {
   VITE_ASTRID_BRIDGE_PORT: BRIDGE_PORT,
   ASTRID_BRIDGE_PORT: BRIDGE_PORT,
   // Must stay in step with PLACEHOLDER_SUPABASE_URL in
-  // src/tools/video-editor/dev/devSession.ts — the dev session's storage key is
+  // src/shared/dev/devSession.ts — the dev session's storage key is
   // derived from this URL. (.mjs cannot import the TS module.)
   VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL ?? 'https://example.supabase.co',
   VITE_SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY ?? 'test-anon-key',

@@ -145,6 +145,7 @@ function setupHarness(options: {
       dataRef: commit.dataRef,
       commitData: commit.commitData,
       interactionStateRef,
+      pendingOpsRef: commit.pendingOpsRef,
     });
     const persistence = useTimelinePersistence({
       provider,
