@@ -1,15 +1,10 @@
 // Layer map & invariants: docs/structure_detail/tool_video_editor.md
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CommandPalette } from '@/tools/video-editor/components/CommandPalette/CommandPalette.tsx';
-import { formatDistanceToNow } from 'date-fns';
-import { AlertTriangle, Download, Eye, FileOutput, GripHorizontal, History, Maximize2, Minimize2, Redo2, RefreshCw, Settings, SlidersHorizontal, Undo2, ZoomIn, ZoomOut } from 'lucide-react';
+import { Eye, Maximize2, Settings, SlidersHorizontal } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/shared/components/ui/alert-dialog.tsx';
-import { Badge } from '@/shared/components/ui/badge.tsx';
 import { Button } from '@/shared/components/ui/button.tsx';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui/card.tsx';
 import { cn } from '@/shared/components/ui/contracts/cn.ts';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/shared/components/ui/dialog.tsx';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/shared/components/ui/dropdown-menu.tsx';
 import { Slider } from '@/shared/components/ui/slider.tsx';
 import { editorReplaceTimelineSelection } from '@/shared/state/selectionStore.ts';
 import { PreviewPanel } from '@/tools/video-editor/components/PreviewPanel/PreviewPanel.tsx';
@@ -19,7 +14,6 @@ import {
   removeLiveBindingsFromResolvedConfig,
 } from '@/tools/video-editor/components/LiveSourcesPanel/LiveSourcesPanel.tsx';
 import { PropertiesPanel } from '@/tools/video-editor/components/PropertiesPanel/PropertiesPanel.tsx';
-import { VideoEditorAssetPanelSurface } from '@/tools/video-editor/components/PropertiesPanel/VideoEditorAssetPanelSurface.tsx';
 import { SequenceCreatorPanel } from '@/tools/video-editor/components/SequenceCreator/SequenceCreatorPanel.tsx';
 import { ThemeChip } from '@/tools/video-editor/components/ThemeChip.tsx';
 import {
@@ -28,12 +22,6 @@ import {
 } from '@/tools/video-editor/components/TimelineModeSwitcher.tsx';
 import { TimelineEditor } from '@/tools/video-editor/components/TimelineEditor/TimelineEditor.tsx';
 import { TimelineErrorBoundary } from '@/tools/video-editor/components/TimelineEditor/TimelineErrorBoundary.tsx';
-import {
-  useVideoEditorAssetPanels,
-  useVideoEditorDialogDescriptors,
-  useVideoEditorRenderContext,
-  useVideoEditorSlotRenderers,
-} from '@/tools/video-editor/runtime/useVideoEditorRenderContext.ts';
 import {
   useTimelineChromeContext,
   useTimelineEditorData,
@@ -56,87 +44,23 @@ import {
 } from '@/tools/video-editor/lib/mobile-interaction-model.ts';
 import { bootDiagnostics, MemoryPressureDetector } from '@/tools/video-editor/lib/perf-diagnostics.ts';
 import { shellRegionAttrs } from '@/tools/video-editor/lib/timeline-dom.ts';
-import { clampTimelineScaleWidth, TIMELINE_ZOOM_STEP } from '@/tools/video-editor/lib/timeline-scale.ts';
 import { useRenderDiagnostic } from '@/tools/video-editor/hooks/usePerfDiagnostics.ts';
-import { useEditorSync } from '@/tools/video-editor/hooks/useEditorSync.ts';
 import { dispatchAppEvent } from '@/shared/lib/typedEvents.ts'
-import {
-  ContributionErrorBoundary,
-  HostContributionErrorBoundary,
-  type ContributionErrorInfo,
-} from '@/tools/video-editor/runtime/ContributionErrorBoundary.tsx';
-import { useOptionalVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
-import type { VideoEditorSlotName, VideoEditorRenderContext, VideoEditorOutputFormatDescriptor } from '@/tools/video-editor/runtime/extensionSurface';
-import { CodePanelCanary } from '@/tools/video-editor/components/Canary/CodePanelCanary';
-import { WritingPanelCanary } from '@/tools/video-editor/components/Canary/WritingPanelCanary';
-import { StagePanelCanary } from '@/tools/video-editor/components/Canary/StagePanelCanary';
 import { ExtensionActivityRegion, type ExtensionStatusEvent } from '@/tools/video-editor/components/ExtensionActivityRegion';
 import { ProposalPanel } from '@/tools/video-editor/components/ProposalPanel/ProposalPanel.tsx';
-
-const MIN_TIMELINE_HEIGHT = 140;
-const MIN_PREVIEW_HEIGHT = 180;
-const CHROME_OVERHEAD = MIN_TIMELINE_HEIGHT + 40 + 28 + 24;
-const STATUS_VARIANT = {
-  saved: 'default',
-  saving: 'secondary',
-  dirty: 'outline',
-  error: 'destructive',
-} as const;
-const CHECKPOINT_TRIGGER_LABELS = {
-  session_boundary: 'Session boundary',
-  edit_distance: 'Edit cap',
-  semantic: 'Destructive edit',
-  manual: 'Manual',
-} as const;
-const CHECKPOINT_TRIGGER_BADGE_VARIANT = {
-  session_boundary: 'secondary',
-  edit_distance: 'outline',
-  semantic: 'destructive',
-  manual: 'default',
-} as const;
-/** Slots reserved for future milestones — rendered as canaries. */
-const RESERVED_SLOT_NAMES: ReadonlySet<VideoEditorSlotName> = new Set([
-  'codePanel',
-  'writingPanel',
-  'stagePanel',
-]);
-
-/** Milestone labels for reserved slots. */
-const RESERVED_SLOT_MILESTONE: Readonly<Partial<Record<VideoEditorSlotName, string>>> = {
-  codePanel: 'M4',
-  writingPanel: 'M4',
-  stagePanel: 'M3',
-};
-
-/** Canary component for each reserved slot. */
-const RESERVED_SLOT_CANARY: Partial<Record<VideoEditorSlotName, (props: { context: VideoEditorRenderContext }) => ReactNode>> = {
-  codePanel: CodePanelCanary,
-  writingPanel: WritingPanelCanary,
-  stagePanel: StagePanelCanary,
-};
-
-/**
- * Inert reserved placeholder rendered when a slot has no registered renderer.
- * Displays the slot name and target milestone — non-interactive, keyboard-inert.
- */
-function InertReservedPlaceholder({ slotName }: { slotName: VideoEditorSlotName }) {
-  const milestone = RESERVED_SLOT_MILESTONE[slotName] ?? 'future';
-  return (
-    <div
-      data-video-editor-slot={slotName}
-      data-video-editor-slot-inert="true"
-      data-video-editor-slot-milestone={milestone}
-      className="flex items-center justify-center rounded-md border border-dashed border-border/50 bg-muted/30 px-3 py-2 text-[10px] text-muted-foreground/60"
-      aria-hidden="true"
-      role="presentation"
-      tabIndex={-1}
-    >
-      <span className="select-none uppercase tracking-[0.14em]">
-        {slotName} — {milestone}
-      </span>
-    </div>
-  );
-}
+import { TimelineEditorShellToolbar } from './TimelineEditorShellToolbar.tsx';
+import { TimelineExportMenu } from './TimelineExportMenu.tsx';
+import { TimelineLoadErrorCard } from './TimelineLoadErrorCard.tsx';
+import { TimelineMobileInspectorDialog } from './TimelineMobileInspectorDialog.tsx';
+import { TimelineRenderControls } from './TimelineRenderControls.tsx';
+import { TimelineSyncDivergenceDialog } from './TimelineSyncDivergenceDialog.tsx';
+import { useEditorSyncFeedback } from './useEditorSyncFeedback.ts';
+import {
+  CHROME_OVERHEAD,
+  MIN_PREVIEW_HEIGHT,
+  useTimelineShellDividerDrag,
+} from './useTimelineShellDividerDrag.ts';
+import { useVideoEditorShellSlots } from './useVideoEditorShellSlots.tsx';
 
 export interface TimelineEditorShellCoreProps {
   timelineId: string;
@@ -185,10 +109,14 @@ function TimelineEditorShellCoreComponent({
   const playback = useTimelinePlaybackContext();
   const isPhone = editorData.deviceClass === 'phone';
   const isTablet = editorData.deviceClass === 'tablet';
-  const containerRef = useRef<HTMLDivElement>(null);
-  const dividerRef = useRef<HTMLDivElement>(null);
-  const [timelineHeight, setTimelineHeight] = useState<number | null>(null);
-  const [isTimelineMaximized, setIsTimelineMaximized] = useState(false);
+  const {
+    containerRef,
+    dividerRef,
+    isTimelineMaximized,
+    setIsTimelineMaximized,
+    onDividerMouseDown,
+    gridTemplateRows,
+  } = useTimelineShellDividerDrag();
   const [condensedRightPanel, setCondensedRightPanel] = useState<'preview' | 'properties'>('preview');
   const [isMobilePropertiesOpen, setIsMobilePropertiesOpen] = useState(false);
   const [isSequenceCreatorOpen, setIsSequenceCreatorOpen] = useState(false);
@@ -209,44 +137,7 @@ function TimelineEditorShellCoreComponent({
     onKeepLocalChanges: chrome.retrySaveAfterConflict,
     onDiscardRemoteChanges: chrome.reloadFromServer,
   });
-  const sync = useEditorSync();
-  const [syncDialogOpen, setSyncDialogOpen] = useState(false);
-  const [syncResultMessage, setSyncResultMessage] = useState<string | null>(null);
-
-  // Show sync result feedback and auto-clear
-  useEffect(() => {
-    if (sync.syncState === 'idle' || sync.syncState === 'syncing') {
-      return;
-    }
-    let message: string | null = null;
-    switch (sync.syncState) {
-      case 'up_to_date':
-        message = 'Timeline is up to date';
-        break;
-      case 'source_only_saved':
-        message = 'Local changes synced';
-        break;
-      case 'destination_only_reloaded':
-        message = 'Loaded latest from server';
-        break;
-      case 'both_advanced':
-        message = 'Divergence detected — both versions preserved';
-        setSyncDialogOpen(true);
-        break;
-      case 'bookmark_incompatible':
-        message = 'Sync bookmarks are incompatible';
-        break;
-      case 'error':
-        message = sync.syncError ?? 'Sync failed';
-        break;
-    }
-    setSyncResultMessage(message);
-    if (message && sync.syncState !== 'both_advanced') {
-      const timer = setTimeout(() => setSyncResultMessage(null), 4000);
-      return () => clearTimeout(timer);
-    }
-    return undefined;
-  }, [sync.syncState, sync.syncError]);
+  const { sync, syncDialogOpen, setSyncDialogOpen, syncResultMessage } = useEditorSyncFeedback();
 
   useEffect(() => {
     bootDiagnostics();
@@ -313,45 +204,6 @@ function TimelineEditorShellCoreComponent({
     clearSelection: editorOps.clearSelection,
   });
 
-  const onDividerMouseDown = useCallback((event: ReactMouseEvent) => {
-    event.preventDefault();
-    setIsTimelineMaximized(false);
-    const container = containerRef.current;
-    const divider = dividerRef.current;
-    if (!container || !divider) {
-      return;
-    }
-
-    divider.classList.add('is-dragging');
-    document.body.style.cursor = 'row-resize';
-    document.body.style.userSelect = 'none';
-
-    const onMouseMove = (moveEvent: MouseEvent) => {
-      const rect = container.getBoundingClientRect();
-      const nextHeight = Math.max(MIN_TIMELINE_HEIGHT, rect.bottom - moveEvent.clientY);
-      if (rect.height - nextHeight < MIN_PREVIEW_HEIGHT) {
-        return;
-      }
-      container.style.gridTemplateRows = `minmax(0,1fr) auto auto ${nextHeight}px`;
-    };
-
-    const onMouseUp = () => {
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-      divider.classList.remove('is-dragging');
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-      const match = container.style.gridTemplateRows.match(/(\d+)px$/);
-      container.style.gridTemplateRows = '';
-      if (match) {
-        setTimelineHeight(Number.parseInt(match[1], 10));
-      }
-    };
-
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-  }, []);
-
   const outputResolution = editorData.resolvedConfig?.output?.resolution;
   const aspectRatio = useMemo(() => {
     if (!outputResolution) {
@@ -389,7 +241,6 @@ function TimelineEditorShellCoreComponent({
 
   const mobileSinglePane = isPhone && !forceCondensed;
   const condensed = forceCondensed || tooSmall || mobileSinglePane || (isOnEditorPage && isEditorPaneLocked);
-  const hasConfig = Boolean(editorData.resolvedConfig);
   const hasClipSelection = selectedClipIdsList.length > 0;
   const mobilePropertiesTitle = hasClipSelection
     ? selectedClipIdsList.length > 1
@@ -405,7 +256,6 @@ function TimelineEditorShellCoreComponent({
       : 'Clip'
     : 'Inspector';
   const touchChrome = isPhone || isTablet;
-  const toolbarButtonSizeClass = touchChrome ? 'h-11 w-11' : 'h-6 w-6';
   const previewActionButtonClass = touchChrome ? 'h-11 min-w-11 px-3 text-[11px]' : 'h-7 px-3 text-[11px]';
   const interactionStatusLabel = [
     `Timeline mode ${editorData.interactionMode}.`,
@@ -429,200 +279,23 @@ function TimelineEditorShellCoreComponent({
 
   const previewSurface = useVideoEditorPreviewSurface({ compact: condensed, touchChrome });
 
-  // Extension slots: hosts can override entire chrome regions.
-  const slotRenderers = useVideoEditorSlotRenderers();
-  const renderContext = useVideoEditorRenderContext();
-
-  // M6: Derive export format categories from extension contributions
-  const compileOnlyExportFormats: VideoEditorOutputFormatDescriptor[] = useMemo(() => {
-    const all = renderContext.extensions?.outputFormats ?? [];
-    return all.filter((f) => !f.requiresRender && !f.disabled);
-  }, [renderContext.extensions?.outputFormats]);
-  const renderDependentExportFormats: VideoEditorOutputFormatDescriptor[] = useMemo(() => {
-    const all = renderContext.extensions?.outputFormats ?? [];
-    return all.filter((f) => f.requiresRender || f.disabled);
-  }, [renderContext.extensions?.outputFormats]);
-  const hasAnyExportFormat = compileOnlyExportFormats.length > 0 || renderDependentExportFormats.length > 0;
-  const contributedAssetPanels = useVideoEditorAssetPanels();
-  const dialogDescriptors = useVideoEditorDialogDescriptors();
-
-  const runtime = useOptionalVideoEditorRuntime();
-
-  // M5: Normalized slot → extensionId mapping derived from contribution manifests.
-  // Used by HostContributionErrorBoundary to wire host-owned recovery keys.
-  const slotOwnerMap = useMemo<ReadonlyMap<string, string>>(() => {
-    const map = new Map<string, string>();
-    const extensions = runtime?.extensionRuntime?.extensions;
-    if (!extensions) return map;
-    for (const ext of extensions) {
-      const extId = ext.manifest.id as string;
-      const contribs = ext.manifest.contributions ?? [];
-      for (const c of contribs) {
-        if (c.kind === 'slot' && c.slot) {
-          // First extension wins per deterministic extension order
-          if (!map.has(c.slot)) {
-            map.set(c.slot, extId);
-          }
-        }
-      }
-    }
-    return map;
-  }, [runtime?.extensionRuntime?.extensions]);
-
-  const handleContributionError = useCallback((info: ContributionErrorInfo) => {
-    // Host-owned diagnostics sink: log to console with structured data.
-    // Future: aggregate into a diagnostics context shared across the shell.
-    if (typeof console !== 'undefined') {
-      console.warn(
-        '[TimelineEditorShellCore] Contribution error captured by boundary:',
-        info,
-      );
-    }
-  }, []);
-
-  /**
-   * Resolve a surface slot renderer or return a canary for reserved slots.
-   * - If a renderer is registered → wrap in HostContributionErrorBoundary
-   * - If the slot is reserved with a canary → render the canary
-   * - If the slot is reserved without a canary → render inert placeholder
-   * - Otherwise → null (slot is unclaimed)
-   */
-  const resolveSurfaceSlot = useCallback(
-    (slotName: VideoEditorSlotName, label: string) => {
-      const renderer = slotRenderers[slotName];
-      if (renderer) {
-        return (
-          <HostContributionErrorBoundary
-            key={slotName}
-            contributionId={`slot:${slotName}`}
-            extensionId={slotOwnerMap.get(slotName)}
-            kind="slot"
-            label={label}
-            onError={handleContributionError}
-          >
-            {renderer(renderContext)}
-          </HostContributionErrorBoundary>
-        );
-      }
-      if (RESERVED_SLOT_NAMES.has(slotName)) {
-        const CanaryComponent = RESERVED_SLOT_CANARY[slotName];
-        if (CanaryComponent) {
-          return (
-            <CanaryComponent
-              key={slotName}
-              context={renderContext}
-            />
-          );
-        }
-        return <InertReservedPlaceholder key={slotName} slotName={slotName} />;
-      }
-      return null;
-    },
-    [handleContributionError, renderContext, slotRenderers, slotOwnerMap],
-  );
-
-  const headerSlot = slotRenderers.header ? (
-    <HostContributionErrorBoundary
-      contributionId="slot:header"
-      extensionId={slotOwnerMap.get("header")}
-      kind="slot"
-      label="Header"
-      onError={handleContributionError}
-    >
-      {slotRenderers.header(renderContext)}
-    </HostContributionErrorBoundary>
-  ) : null;
-  const toolbarSlot = slotRenderers.toolbar ? (
-    <HostContributionErrorBoundary
-      contributionId="slot:toolbar"
-      extensionId={slotOwnerMap.get("toolbar")}
-      kind="slot"
-      label="Toolbar"
-      onError={handleContributionError}
-    >
-      {slotRenderers.toolbar(renderContext)}
-    </HostContributionErrorBoundary>
-  ) : null;
-  const assetPanelSlot = slotRenderers.assetPanel
-    ? (
-      <HostContributionErrorBoundary
-        contributionId="slot:assetPanel"
-        extensionId={slotOwnerMap.get("assetPanel")}
-        kind="slot"
-        label="Asset panel"
-        onError={handleContributionError}
-      >
-        {slotRenderers.assetPanel(renderContext)}
-      </HostContributionErrorBoundary>
-    )
-    : (contributedAssetPanels.length > 0 ? <VideoEditorAssetPanelSurface includeBuiltIn={false} /> : null);
-  const inspectorPanelSlot = slotRenderers.inspectorPanel
-    ? (
-      <HostContributionErrorBoundary
-        contributionId="slot:inspectorPanel"
-        extensionId={slotOwnerMap.get("inspectorPanel")}
-        kind="slot"
-        label="Inspector panel"
-        onError={handleContributionError}
-      >
-        {slotRenderers.inspectorPanel(renderContext)}
-      </HostContributionErrorBoundary>
-    )
-    : null;
-  const timelineFooterSlot = slotRenderers.timelineFooter
-    ? (
-      <HostContributionErrorBoundary
-        contributionId="slot:timelineFooter"
-        extensionId={slotOwnerMap.get("timelineFooter")}
-        kind="slot"
-        label="Timeline footer"
-        onError={handleContributionError}
-      >
-        {slotRenderers.timelineFooter(renderContext)}
-      </HostContributionErrorBoundary>
-    )
-    : null;
-  const statusBarSlot = slotRenderers.statusBar ? (
-    <HostContributionErrorBoundary
-      contributionId="slot:statusBar"
-      extensionId={slotOwnerMap.get("statusBar")}
-      kind="slot"
-      label="Status bar"
-      onError={handleContributionError}
-    >
-      {slotRenderers.statusBar(renderContext)}
-    </HostContributionErrorBoundary>
-  ) : null;
-
-  // ---- New M2 surface slots ------------------------------------------------
-  const leftPanelSlot = resolveSurfaceSlot('leftPanel', 'Left panel');
-  const rightPanelSlot = resolveSurfaceSlot('rightPanel', 'Right panel');
-  const codePanelSlot = resolveSurfaceSlot('codePanel', 'Code panel');
-  const writingPanelSlot = resolveSurfaceSlot('writingPanel', 'Writing panel');
-  const stagePanelSlot = resolveSurfaceSlot('stagePanel', 'Stage panel');
-
-  // ---- Dialog slot: render extension-contributed dialogs --------------------
-  const dialogsSlot = slotRenderers.dialogs ? (
-    <HostContributionErrorBoundary
-      contributionId="slot:dialogs"
-      extensionId={slotOwnerMap.get("dialogs")}
-      kind="slot"
-      label="Dialogs"
-      onError={handleContributionError}
-    >
-      {slotRenderers.dialogs(renderContext)}
-    </HostContributionErrorBoundary>
-  ) : null;
-
-  // Four rows, in DOM order: preview, divider/toolbar, extension activity
-  // region, timeline. The activity region row must be declared — otherwise the
-  // timeline lands in an implicit `auto` row, the activity region takes the
-  // timeline's sizing, and the preview's `1fr` collapses to zero height.
-  const gridTemplateRows = isTimelineMaximized
-    ? `${MIN_PREVIEW_HEIGHT}px auto auto 1fr`
-    : (timelineHeight
-      ? `minmax(0,1fr) auto auto ${timelineHeight}px`
-      : 'minmax(0,1fr) auto auto minmax(200px,36%)');
+  const {
+    compileOnlyExportFormats,
+    renderDependentExportFormats,
+    hasAnyExportFormat,
+    headerSlot,
+    toolbarSlot,
+    assetPanelSlot,
+    inspectorPanelSlot,
+    timelineFooterSlot,
+    statusBarSlot,
+    leftPanelSlot,
+    rightPanelSlot,
+    codePanelSlot,
+    writingPanelSlot,
+    stagePanelSlot,
+    dialogsSlot,
+  } = useVideoEditorShellSlots();
 
   const totalSeconds = useMemo(() => {
     if (!editorData.resolvedConfig) return 1;
@@ -692,186 +365,19 @@ function TimelineEditorShellCoreComponent({
   const phoneModeBar = modeSwitcherVariant === 'bar' ? modeSwitcher : null;
   const toolbarModeSwitcher = modeSwitcherVariant === 'compact' ? modeSwitcher : null;
 
-  const saveBadge = (
-    <Badge variant={STATUS_VARIANT[chrome.saveStatus]} className="h-5 px-1.5 text-[10px] capitalize">
-      {chrome.saveStatus}
-    </Badge>
-  );
-  const syncButton = sync.isSyncAvailable ? (
-    <div className="flex items-center gap-1">
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className={cn(
-          toolbarButtonSizeClass,
-          sync.syncState === 'syncing' && 'animate-spin',
-          sync.syncState === 'source_only_saved' && 'text-green-400',
-          sync.syncState === 'both_advanced' && 'text-amber-400',
-          sync.syncState === 'bookmark_incompatible' && 'text-red-400',
-          sync.syncState === 'error' && 'text-red-400',
-        )}
-        onClick={() => void sync.performSync()}
-        disabled={sync.syncState === 'syncing'}
-        title="Sync timeline with database"
-      >
-        <RefreshCw className="h-3.5 w-3.5" />
-      </Button>
-      {syncResultMessage && sync.syncState !== 'both_advanced' && (
-        <span className="max-w-[140px] truncate text-[10px] text-muted-foreground">
-          {syncResultMessage}
-        </span>
-      )}
-    </div>
-  ) : null;
-  // While uploads are in flight the history layer pauses undo/redo (a
-  // snapshot restore would strand the upload's registry patch); say so
-  // instead of presenting a mysteriously dead button.
-  const undoPausedTitle = 'Undo is paused while media uploads finish';
-  const redoPausedTitle = 'Redo is paused while media uploads finish';
-  const historyControls = (
-    <>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className={toolbarButtonSizeClass}
-        onClick={chrome.undo}
-        disabled={!chrome.canUndo}
-        title={chrome.historyPausedForUploads ? undoPausedTitle : 'Undo'}
-        aria-label={chrome.historyPausedForUploads ? undoPausedTitle : 'Undo'}
-      >
-        <Undo2 className="h-3.5 w-3.5" />
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className={toolbarButtonSizeClass}
-        onClick={chrome.redo}
-        disabled={!chrome.canRedo}
-        title={chrome.historyPausedForUploads ? redoPausedTitle : 'Redo'}
-        aria-label={chrome.historyPausedForUploads ? redoPausedTitle : 'Redo'}
-      >
-        <Redo2 className="h-3.5 w-3.5" />
-      </Button>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button type="button" variant="ghost" size="icon" className={toolbarButtonSizeClass} title="History">
-            <History className="h-3.5 w-3.5" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-80">
-          <DropdownMenuLabel className="pb-1 text-xs font-semibold text-muted-foreground">
-            History
-          </DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          {chrome.checkpoints.length === 0 ? (
-            <div className="px-2 py-3 text-xs text-muted-foreground">
-              No checkpoints yet. Save one manually or keep editing to build history.
-            </div>
-          ) : (
-            chrome.checkpoints.map((checkpoint) => (
-              <DropdownMenuItem
-                key={checkpoint.id}
-                className="flex flex-col items-start gap-1 py-2"
-                onClick={() => chrome.jumpToCheckpoint(checkpoint.id)}
-              >
-                <div className="flex w-full items-start justify-between gap-2">
-                  <span className="truncate text-sm text-foreground">{checkpoint.label}</span>
-                  <Badge
-                    variant={CHECKPOINT_TRIGGER_BADGE_VARIANT[checkpoint.triggerType]}
-                    className="shrink-0 px-1.5 py-0 text-[9px] uppercase tracking-[0.12em]"
-                  >
-                    {CHECKPOINT_TRIGGER_LABELS[checkpoint.triggerType]}
-                  </Badge>
-                </div>
-                <span className="text-[11px] text-muted-foreground">
-                  {formatDistanceToNow(new Date(checkpoint.createdAt), { addSuffix: true })}
-                </span>
-              </DropdownMenuItem>
-            ))
-          )}
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => void chrome.createManualCheckpoint()}>
-            Save checkpoint
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </>
-  );
-
   const toolbar = (
-    <div
-      className={cn(
-        'flex items-center justify-between gap-2 rounded-lg border border-border/70 bg-card/80 px-2 text-muted-foreground',
-        touchChrome ? 'min-h-11 py-1' : 'h-7',
-        // The compact mode switcher rides in this row. It fits inline on tablet
-        // landscape and wraps to a second line on portrait, which keeps the
-        // preview's `1fr` intact where vertical space is tightest.
-        toolbarModeSwitcher && 'h-auto flex-wrap',
-      )}
-    >
-      <div className="flex items-center gap-1">
-        {condensed && !forceCondensed && onNavigateHome && (
-          <button
-            type="button"
-            className="mr-2 min-h-11 shrink-0 px-2 text-[11px] transition-colors hover:text-foreground motion-reduce:transition-none"
-            onClick={onNavigateHome}
-          >
-            ← Back
-          </button>
-        )}
-        {saveBadge}
-        {syncButton}
-        {historyControls}
-      </div>
-      {toolbarModeSwitcher}
-      {!condensed && (
-        <div
-          className="flex h-full flex-1 cursor-row-resize items-center justify-center"
-          onMouseDown={onDividerMouseDown}
-        >
-          <GripHorizontal className="h-4 w-4 text-border" />
-        </div>
-      )}
-      <div className="flex items-center gap-1">
-        {!condensed && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className={toolbarButtonSizeClass}
-            onClick={() => setIsTimelineMaximized((value) => !value)}
-            title={isTimelineMaximized ? 'Restore preview and timeline split' : 'Maximize timeline'}
-          >
-            {isTimelineMaximized ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-          </Button>
-        )}
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className={toolbarButtonSizeClass}
-          title="Zoom out timeline"
-          aria-label="Zoom out timeline"
-          onClick={() => chrome.setScaleWidth((value) => clampTimelineScaleWidth(value / TIMELINE_ZOOM_STEP))}
-        >
-          <ZoomOut className="h-3.5 w-3.5" />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className={toolbarButtonSizeClass}
-          title="Zoom in timeline"
-          aria-label="Zoom in timeline"
-          onClick={() => chrome.setScaleWidth((value) => clampTimelineScaleWidth(value * TIMELINE_ZOOM_STEP))}
-        >
-          <ZoomIn className="h-3.5 w-3.5" />
-        </Button>
-      </div>
-    </div>
+    <TimelineEditorShellToolbar
+      sync={sync}
+      syncResultMessage={syncResultMessage}
+      touchChrome={touchChrome}
+      condensed={condensed}
+      forceCondensed={forceCondensed}
+      onNavigateHome={onNavigateHome}
+      toolbarModeSwitcher={toolbarModeSwitcher}
+      onDividerMouseDown={onDividerMouseDown}
+      isTimelineMaximized={isTimelineMaximized}
+      setIsTimelineMaximized={setIsTimelineMaximized}
+    />
   );
 
   /** M2: Determine whether to show the ProposalPanel inside the activity region.
@@ -921,44 +427,16 @@ function TimelineEditorShellCoreComponent({
       <div className="pointer-events-auto flex min-w-0 flex-wrap items-center justify-end gap-1">
         <ThemeChip timeline={editorData.data?.config} />
         {mobileSinglePane && (
-          <Dialog
-            open={isMobilePropertiesOpen}
-            onOpenChange={(open) => {
-              setIsMobilePropertiesOpen(open);
-              if (open) {
-                editorOps.setInspectorTarget(inspectorTarget);
-                editorOps.setContextTarget(inspectorTarget);
-              }
-            }}
-          >
-            <DialogTrigger asChild>
-              <Button
-                type="button"
-                size="sm"
-                variant={hasClipSelection ? 'secondary' : 'outline'}
-                onClick={() => {
-                  editorOps.setInspectorTarget(inspectorTarget);
-                  editorOps.setContextTarget(inspectorTarget);
-                }}
-                className={cn(
-                  `gap-1.5 ${previewActionButtonClass}`,
-                  hasClipSelection && 'border-sky-400/60 bg-sky-500/10 text-sky-100 hover:bg-sky-500/20',
-                )}
-              >
-                <SlidersHorizontal className="h-3.5 w-3.5" />
-                {inspectorButtonLabel}
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="top-auto bottom-0 max-h-[78dvh] w-[calc(100vw-1rem)] max-w-none translate-x-[-50%] translate-y-0 gap-0 overflow-hidden rounded-t-2xl border-border bg-background p-0 data-[ending-style]:slide-out-to-top-[100%] data-[open]:slide-in-from-top-[100%] motion-reduce:animate-none motion-reduce:transition-none sm:max-w-lg sm:translate-y-[-50%] sm:rounded-lg sm:p-6 sm:data-[ending-style]:slide-out-to-top-[48%] sm:data-[open]:slide-in-from-top-[48%]">
-              <DialogHeader className="border-b border-border px-4 py-3 text-left">
-                <DialogTitle className="text-base">{mobilePropertiesTitle}</DialogTitle>
-                <DialogDescription>{mobilePropertiesDescription}</DialogDescription>
-              </DialogHeader>
-              <div className="min-h-0 flex-1 overflow-hidden p-3">
-                <PropertiesPanel />
-              </div>
-            </DialogContent>
-          </Dialog>
+          <TimelineMobileInspectorDialog
+            isMobilePropertiesOpen={isMobilePropertiesOpen}
+            setIsMobilePropertiesOpen={setIsMobilePropertiesOpen}
+            inspectorTarget={inspectorTarget}
+            hasClipSelection={hasClipSelection}
+            inspectorButtonLabel={inspectorButtonLabel}
+            previewActionButtonClass={previewActionButtonClass}
+            mobilePropertiesTitle={mobilePropertiesTitle}
+            mobilePropertiesDescription={mobilePropertiesDescription}
+          />
         )}
         {condensed && !mobileSinglePane && (
           <Button
@@ -993,9 +471,6 @@ function TimelineEditorShellCoreComponent({
             Editor
           </Button>
         )}
-        {/* M6: Export dropdown — compile-only formats near render controls */}
-        {/* Collapsed to a chip: this sits in the preview overlay bar, and at its
-            natural width it laid a 320px card across the video on every device. */}
         <LiveSourcesPanel
           timelineConfig={editorData.resolvedConfig}
           onRemoveSourceBindings={handleRemoveLiveSourceBindings}
@@ -1003,104 +478,16 @@ function TimelineEditorShellCoreComponent({
           collapsible
         />
         {hasAnyExportFormat && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className={`gap-1.5 ${previewActionButtonClass}`}
-              >
-                <FileOutput className="h-3.5 w-3.5" />
-                Export
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
-                Export Formats
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {compileOnlyExportFormats.length > 0 && (
-                <>
-                  {compileOnlyExportFormats.map((fmt) => (
-                    <DropdownMenuItem
-                      key={fmt.id}
-                      onClick={() => {
-                        // Compile-only export: dispatch via chrome or local handler
-                        console.log(`[Export] Compile-only format: ${fmt.id} (${fmt.label})`);
-                      }}
-                      className="gap-2 text-[11px]"
-                    >
-                      <FileOutput className="h-3 w-3 text-emerald-400" />
-                      <span className="flex-1">{fmt.label}</span>
-                      <span className="text-[10px] text-muted-foreground uppercase">.{fmt.outputExtension}</span>
-                    </DropdownMenuItem>
-                  ))}
-                  {renderDependentExportFormats.length > 0 && <DropdownMenuSeparator />}
-                </>
-              )}
-              {renderDependentExportFormats.length > 0 && (
-                <>
-                  <DropdownMenuLabel className="text-[10px] text-muted-foreground/60">
-                    Reserved — Requires Render
-                  </DropdownMenuLabel>
-                  {renderDependentExportFormats.map((fmt) => (
-                    <DropdownMenuItem
-                      key={fmt.id}
-                      disabled
-                      className="gap-2 text-[11px] text-muted-foreground/50"
-                      title={fmt.disabledReason ?? `"${fmt.label}" requires render pipeline execution. Use the Render button for video output.`}
-                    >
-                      <Download className="h-3 w-3" />
-                      <span className="flex-1">{fmt.label}</span>
-                      <span className="text-[10px] text-muted-foreground/40 uppercase">.{fmt.outputExtension}</span>
-                    </DropdownMenuItem>
-                  ))}
-                </>
-              )}
-              {compileOnlyExportFormats.length === 0 && renderDependentExportFormats.length === 0 && (
-                <DropdownMenuItem disabled className="text-[11px] text-muted-foreground/50">
-                  No export formats registered
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <TimelineExportMenu
+            compileOnlyExportFormats={compileOnlyExportFormats}
+            renderDependentExportFormats={renderDependentExportFormats}
+            previewActionButtonClass={previewActionButtonClass}
+          />
         )}
-        <Button
-          type="button"
-          size="sm"
-          className={`gap-1.5 ${previewActionButtonClass}`}
-          onClick={() => void chrome.startRender()}
-          disabled={chrome.renderStatus === 'rendering'}
-        >
-          <Download className="h-3.5 w-3.5" />
-          {chrome.renderStatus === 'rendering' && chrome.renderProgress
-            ? `Render ${chrome.renderProgress.percent}%`
-            : 'Render'}
-        </Button>
-        {chrome.renderStatus === 'error' && chrome.renderLog && (
-          <div
-            className="absolute right-0 top-full mt-1 w-72 rounded-md border border-red-500/30 bg-red-500/10 px-2 py-1.5 text-[10px] text-red-300 backdrop-blur-sm"
-            data-video-editor-render-blocker="true"
-          >
-            <div className="flex items-start gap-1">
-              <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
-              <span className="line-clamp-3">{chrome.renderLog.split('\n')[0]}</span>
-            </div>
-          </div>
-        )}
-        {chrome.renderResultUrl && chrome.renderStatus === 'done' && !chrome.renderDirty && (
-          <a
-            href={chrome.renderResultUrl}
-            download={chrome.renderResultFilename ?? undefined}
-            className={cn(
-              'rounded-md border border-border/70 bg-background/80 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground transition-colors hover:text-foreground motion-reduce:transition-none',
-              touchChrome ? 'min-h-11 px-3 py-2' : 'px-2 py-1',
-            )}
-          >
-            Download
-          </a>
-        )}
+        <TimelineRenderControls
+          previewActionButtonClass={previewActionButtonClass}
+          touchChrome={touchChrome}
+        />
       </div>
     </div>
   );
@@ -1115,30 +502,7 @@ function TimelineEditorShellCoreComponent({
    *  below, which is the only thing standing between a malformed backend
    *  payload and a blank editor whose badge claims `saved`. */
   const timelineRegion = chrome.loadError ? (
-    <div className="flex h-full min-h-0 items-center justify-center overflow-auto p-4">
-      <Card className="w-full max-w-md" role="alert">
-        <CardHeader>
-          <CardTitle className="text-base">Unable to load this timeline</CardTitle>
-          <CardDescription>{chrome.loadError.message}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">
-            The editor kept its toolbar so you can switch timelines, but there is
-            nothing to edit until the timeline loads.
-          </p>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="mt-3 gap-1.5"
-            onClick={chrome.retryLoad}
-          >
-            <RefreshCw className="h-3.5 w-3.5" />
-            Retry
-          </Button>
-        </CardContent>
-      </Card>
-    </div>
+    <TimelineLoadErrorCard message={chrome.loadError.message} onRetry={chrome.retryLoad} />
   ) : (
     <TimelineErrorBoundary>
       <TimelineEditor onOpenSequenceCreator={() => setIsSequenceCreatorOpen(true)} />
@@ -1376,65 +740,15 @@ function TimelineEditorShellCoreComponent({
         />
       )}
 
-      <AlertDialog open={syncDialogOpen} onOpenChange={setSyncDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Timeline divergence detected</AlertDialogTitle>
-            <AlertDialogDescription className="space-y-3 text-sm">
-              <p>
-                Both your local draft and the database version have advanced since the last sync.
-                Your local edits have been preserved in a keep-both artifact.
-              </p>
-              {sync.lastSyncResult?.keepBothArtifact && (
-                <div className="rounded-md border border-border bg-muted/50 p-3">
-                  <div className="mb-1 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                    Local artifact (IndexedDB)
-                  </div>
-                  <div className="font-mono text-[11px] text-foreground">
-                    ID: {sync.lastSyncResult.keepBothArtifact.id}
-                  </div>
-                  <div className="font-mono text-[11px] text-muted-foreground">
-                    Created: {sync.lastSyncResult.keepBothArtifact.created_at}
-                  </div>
-                  {sync.lastSyncResult.keepBothArtifact.remote_entry_id && (
-                    <>
-                      <div className="mt-2 mb-1 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                        Database divergence record
-                      </div>
-                      <div className="font-mono text-[11px] text-foreground">
-                        Entry ID: {sync.lastSyncResult.keepBothArtifact.remote_entry_id}
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
-              {sync.lastSyncResult?.dbHead && (
-                <div className="text-[11px] text-muted-foreground">
-                  DB head: version {sync.lastSyncResult.dbHead.version}
-                  {sync.lastSyncResult.dbHead.hash && (
-                    <span className="font-mono"> — {sync.lastSyncResult.dbHead.hash.slice(0, 12)}&hellip;</span>
-                  )}
-                </div>
-              )}
-              <p className="text-[11px] text-muted-foreground">
-                To resolve, load the latest from the database and reapply your changes, or continue editing
-                with your local version. Both versions are safely stored.
-              </p>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setSyncDialogOpen(false)}>Continue editing</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                setSyncDialogOpen(false);
-                void chrome.reloadFromServer();
-              }}
-            >
-              Load latest from DB
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <TimelineSyncDivergenceDialog
+        open={syncDialogOpen}
+        onOpenChange={setSyncDialogOpen}
+        lastSyncResult={sync.lastSyncResult}
+        onLoadLatestFromDb={() => {
+          setSyncDialogOpen(false);
+          void chrome.reloadFromServer();
+        }}
+      />
 
       <AlertDialog open={conflict.isOpen} onOpenChange={conflict.setOpen}>
         <AlertDialogContent>

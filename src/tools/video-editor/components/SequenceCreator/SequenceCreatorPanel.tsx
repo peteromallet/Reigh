@@ -8,11 +8,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/shared/components/ui/dialog.tsx';
-import { NumberInput } from '@/shared/components/ui/number-input.tsx';
 import { Textarea } from '@/shared/components/ui/textarea.tsx';
-import { toast } from '@/shared/components/ui/toast.tsx';
 import { RemotionPreview } from '@/tools/video-editor/components/PreviewPanel/RemotionPreview.tsx';
-import { SequenceParamEditor } from '@/tools/video-editor/components/PropertiesPanel/SequenceParamEditor.tsx';
 import { useSelectedMediaClips } from '@/tools/video-editor/hooks/useSelectedMediaClips.ts';
 import {
   useTimelineEditorData,
@@ -22,124 +19,53 @@ import {
 import {
   buildInsertSequenceDraftEdit,
   buildReplaceSequenceDraftEdit,
-  type SequenceDraftEditError,
 } from '@/tools/video-editor/lib/sequence-drafts.ts';
 import { requestCenterTimelineClip } from '@/tools/video-editor/lib/timeline-viewport-events.ts';
 import { useCurrentAttachmentSet } from '@/shared/state/currentAttachmentSet.ts';
 import { composerRemoveAttachment } from '@/shared/state/selectionStore.ts';
-import { AgentChatAttachmentStrip } from '@/tools/video-editor/components/AgentChat/AgentChatMessage.tsx';
 import {
   attachSequenceGenerationMetadata,
   buildAllowedAssetRegistry,
   buildAllowedSequenceAssets,
   buildSequenceGenerationMetadata,
-  createDraftGroupId,
-  nameDraftGroupFromPrompt,
   type EditableSequenceDraft,
-  type SequenceCreatorMode,
-  type SequenceDraftGroup,
 } from '@/tools/video-editor/sequences/generation.ts';
 import { useSequenceCreatorStore } from '@/tools/video-editor/state/sequenceCreatorStore.ts';
-import { materializeResolvedSequenceConfig } from '@/tools/video-editor/sequences/materialize.ts';
 import {
-  AVAILABLE_SEQUENCE_CLIP_TYPES,
-  AVAILABLE_SEQUENCE_METADATA,
   getAvailableClipTypeDescriptor,
   getAvailableSequenceMetadata,
 } from '@/tools/video-editor/sequences/registry.ts';
-import {
-  validateSequenceDraft,
-  type ValidatedSequenceDraft,
-} from '@/tools/video-editor/sequences/validation.ts';
-import type {
-  ResolvedTimelineClip,
-  ResolvedTimelineConfig,
-} from '@/tools/video-editor/types/index.ts';
-import {
-  runSequenceComponentGenerationRequest,
-  runSequenceGenerationRequest,
-} from './sequenceGenerationService.ts';
-import { getBundledComponentSource } from '@/tools/video-editor/sequences/getBundledComponentSource.ts';
-import { getClipCapabilityDescriptor } from '@/tools/video-editor/sequences/registry.ts';
-import { smokeRenderSequenceComponent } from '@/tools/video-editor/sequences/headlessRender.ts';
-import {
-  useCreateSequenceComponentResource,
-  useSequenceResources,
-  type SequenceComponentResource,
-} from '@/tools/video-editor/hooks/useSequenceResources.ts';
-import { useAuth } from '@/shared/contexts/AuthContext.tsx';
+import type { ValidatedSequenceDraft } from '@/tools/video-editor/sequences/validation.ts';
 import { CodePathPreview } from './CodePathPreview.tsx';
-import { CodePathParamEditor } from './CodePathParamEditor.tsx';
-import { ControlsManifestLayout } from './ControlsManifestLayout.tsx';
-import { validateControlsManifest } from '@/tools/video-editor/sequences/controlsManifest.ts';
 import {
   useClipTypeRegistrySnapshot,
   buildExtensionClipTypeDescriptorMap,
   getExtensionClipTypeDescriptor,
 } from '@/tools/video-editor/clip-types/index.ts';
 import type { ClipTypeDescriptor } from '@/tools/video-editor/clip-types/defineClipType.ts';
+import {
+  buildSequencePreviewConfig,
+  formatEditError,
+  summarizeValidationErrors,
+  validateEditableSequenceDraft,
+} from './sequence-creator-helpers.ts';
+import { useSequenceComponentPersistence } from './useSequenceComponentPersistence.ts';
+import { useSequenceGenerationActions } from './useSequenceGenerationActions.ts';
+import { SequenceCreatorAllowedAssets } from './SequenceCreatorAllowedAssets.tsx';
+import { SequenceCreatorComponentControls } from './SequenceCreatorComponentControls.tsx';
+import { SequenceCreatorDraftParams } from './SequenceCreatorDraftParams.tsx';
+import { SequenceCreatorDraftVariants } from './SequenceCreatorDraftVariants.tsx';
+import { SequenceCreatorForkPrompt } from './SequenceCreatorForkPrompt.tsx';
+import { SequenceCreatorLibraryList } from './SequenceCreatorLibraryList.tsx';
+import { useSequenceResources, type SequenceComponentResource } from '@/tools/video-editor/hooks/useSequenceResources.ts';
+import { useAuth } from '@/shared/contexts/AuthContext.tsx';
+
+export { buildSequencePreviewConfig } from './sequence-creator-helpers.ts';
 
 type SequenceCreatorPanelProps = {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 };
-
-const TEMP_SEQUENCE_PREVIEW_CLIP_ID = '__sequence_preview__';
-
-const formatEditError = (error: SequenceDraftEditError): string => {
-  switch (error) {
-    case 'no_visual_track':
-      return 'Add or select a visual track before inserting a sequence.';
-    case 'replace_target_missing':
-      return 'Select a visual clip to replace.';
-    case 'replace_target_not_visual':
-      return 'Sequences can only replace visual clips. Audio clips are not valid replace targets.';
-    default:
-      return 'This sequence cannot be inserted here.';
-  }
-};
-
-const validateEditableSequenceDraft = (
-  draft: EditableSequenceDraft,
-  allowedAssetKeys: readonly string[],
-  extensionClipTypeIds?: ReadonlySet<string>,
-) => validateSequenceDraft(draft, {
-  metadata: AVAILABLE_SEQUENCE_METADATA,
-  allowedClipTypes: AVAILABLE_SEQUENCE_CLIP_TYPES,
-  allowedAssetKeys,
-  extensionClipTypeIds,
-});
-
-export const buildSequencePreviewConfig = (
-  resolvedConfig: ResolvedTimelineConfig,
-  draft: ValidatedSequenceDraft,
-): ResolvedTimelineConfig | null => {
-  const sourceTrack = resolvedConfig.tracks.find((track) => track.kind === 'visual');
-  const trackId = sourceTrack?.id ?? 'sequence-preview-visual';
-
-  const clip: ResolvedTimelineClip = {
-    id: TEMP_SEQUENCE_PREVIEW_CLIP_ID,
-    clipType: draft.clipType,
-    track: trackId,
-    at: 0,
-    hold: draft.hold,
-    params: { ...draft.params },
-  };
-
-  return materializeResolvedSequenceConfig({
-    ...resolvedConfig,
-    tracks: [
-      sourceTrack
-        ? { ...sourceTrack, id: trackId }
-        : { id: trackId, kind: 'visual', label: 'Sequence preview' },
-    ],
-    clips: [clip],
-  });
-};
-
-const summarizeValidationErrors = (errors: readonly { message: string }[]): string => (
-  errors.map((error) => error.message).join(' ')
-);
 
 export function SequenceCreatorPanel({
   open = true,
@@ -151,7 +77,6 @@ export function SequenceCreatorPanel({
   const { applyEdit } = useTimelineEditorOps();
   const currentTime = useTimelinePlaybackSelector((playback) => playback.currentTime);
   const previewContainerRef = useRef<HTMLDivElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
 
   // Lifted into useSequenceCreatorStore so closing/reopening the panel —
   // and full reloads — preserve in-progress state. See the store file's
@@ -196,7 +121,6 @@ export function SequenceCreatorPanel({
   // sequence for yourself" confirmation. Stores the prompt + classifier
   // reason so the confirm action can dispatch the follow-up call.
   const forkPending = useSequenceCreatorStore((s) => s.forkPending);
-  const setForkPending = useSequenceCreatorStore((s) => s.setForkPending);
 
   // Latest generated component metadata (when the code path produces a
   // result). Surfaces in the path badge so the user can see whether
@@ -206,7 +130,6 @@ export function SequenceCreatorPanel({
   // When the user loads an entry from the Library tab, this holds the
   // resource's existing clipType. persistGeneratedComponent reuses it instead
   // of inserting a duplicate DB row.
-  const generatedComponentSourceClipType = useSequenceCreatorStore((s) => s.generatedComponentSourceClipType);
   const setGeneratedComponentSourceClipType = useSequenceCreatorStore((s) => s.setGeneratedComponentSourceClipType);
 
   // Library tab: list of saved sequence-component resources for the current
@@ -229,10 +152,6 @@ export function SequenceCreatorPanel({
     () => new Set(extensionClipTypeRecords.map((r) => r.clipTypeId)),
     [extensionClipTypeRecords],
   );
-
-  // Transient request lifecycle — deliberately NOT lifted to the store.
-  // An in-flight request from before unmount/reload is gone afterward.
-  const [isGenerating, setIsGenerating] = useState(false);
 
   const allowedAssets = useMemo(() => (
     resolvedConfig
@@ -294,350 +213,27 @@ export function SequenceCreatorPanel({
     return null;
   }, [generatedComponent, replaceProbe, selectedClipId, selectedClipIds, selectedValidation, validatedDraft]);
 
-  const runSequenceGeneration = useCallback(async (rawPrompt: string, options: {
-    mode?: SequenceCreatorMode;
-    replaceGroupId?: string | null;
-    editContext?: unknown;
-    nameOverride?: string;
-  } = {}) => {
-    const generationPrompt = rawPrompt.trim();
-    if (!generationPrompt) {
-      toast({
-        title: 'Prompt required',
-        description: options.mode === 'edit' ? 'Describe how to change this animation.' : 'Describe the sequence you want to create.',
-        variant: 'destructive',
-      });
-      return;
-    }
-    if (!resolvedConfig) {
-      toast({ title: 'Timeline unavailable', description: 'Load a timeline before generating a sequence.', variant: 'destructive' });
-      return;
-    }
-
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setIsGenerating(true);
-    setGenerationNote(null);
-    setActionError(null);
-    if ((options.mode ?? 'generate') === 'generate') {
-      setSelectedGroupId(null);
-    }
-
-    try {
-      // Custom animation mode: skip the classifier round-trip and call the
-      // code-path edge function directly. Avoids wasted Claude tokens on a
-      // routing decision the user has already made.
-      if (generationMode === 'code') {
-        const codeResult = await runSequenceComponentGenerationRequest({
-          prompt: generationPrompt,
-          resolvedConfig,
-          selectedClips: selectedMedia.clips,
-          attachedClips: attachmentSet.clips,
-          allowedAssets,
-          allowedAssetKeys,
-          signal: controller.signal,
-        });
-        if (codeResult.status === 'aborted') return;
-        if (codeResult.status === 'error') {
-          setActionError(codeResult.error);
-          setGenerationNote(`Code-path generation failed: ${codeResult.error}`);
-          return;
-        }
-        setClassifierVerdict({ path: 'code', reason: 'Custom animation mode (forced).' });
-        setGeneratedComponent({
-          code: codeResult.code,
-          name: codeResult.name,
-          description: codeResult.description,
-          schemaJson: codeResult.schemaJson,
-          defaultsJson: codeResult.defaultsJson,
-          controlsManifest: codeResult.controlsManifest as unknown[],
-        });
-        setGeneratedComponentSourceClipType(undefined);
-        setMode('edit');
-        setGenerationNote(codeResult.message ?? 'Generated component code (browser-only render).');
-        return;
-      }
-
-      const result = await runSequenceGenerationRequest({
-        prompt: generationPrompt,
-        mode: options.mode,
-        editContext: options.editContext,
-        resolvedConfig,
-        selectedClips: selectedMedia.clips,
-        attachedClips: attachmentSet.clips,
-        allowedAssets,
-        allowedAssetKeys,
-        signal: controller.signal,
-      });
-      if (result.status === 'aborted') return;
-
-      // Basic mode: force-ignore any classifier verdict and treat the
-      // response as JSON-only. The edge function still includes the
-      // classifier preamble; we just refuse to route to code.
-      if (generationMode === 'json' && result.status === 'classifier_code') {
-        setClassifierVerdict({ path: 'json', reason: 'Basic mode (classifier override).' });
-        setGenerationNote('Basic mode: stayed on JSON path even though the classifier suggested code.');
-        return;
-      }
-
-      if (result.status === 'classifier_code') {
-        // Unified-UX (T13): classifier routed this prompt to the code path.
-        // For theme-bundled clips we require deliberate fork-to-DB confirmation
-        // ("Customize this sequence for yourself"); otherwise we dispatch
-        // the follow-up call directly.
-        setClassifierVerdict(result.classifier);
-        // Resolve the clipType of the currently-selected timeline clip via
-        // resolvedConfig — `SelectedMediaClip` doesn't carry clipType.
-        const primaryClipId = selectedClipId ?? selectedClipIds?.values().next().value ?? null;
-        const primaryClip = primaryClipId
-          ? resolvedConfig.clips.find((c) => c.id === primaryClipId) ?? null
-          : null;
-        const selectedClipType = primaryClip?.clipType ?? '';
-        const descriptor = getClipCapabilityDescriptor(selectedClipType);
-        const isThemeBundled = descriptor?.source === 'installed-sequence';
-        if (isThemeBundled && selectedClipType) {
-          const bundled = getBundledComponentSource(selectedClipType);
-          setForkPending({
-            prompt: result.generationPrompt,
-            reason: result.classifier.reason,
-            selectedClipType,
-            bundledSource: bundled,
-          });
-          setGenerationNote(
-            bundled.status === 'cannot-fork'
-              ? bundled.reason
-              : 'This change requires custom component code. Confirm fork-to-DB to proceed.',
-          );
-          return;
-        }
-        // Non-bundled selection (DB-stored sequence or no selection): dispatch
-        // the code-path call directly.
-        const codeResult = await runSequenceComponentGenerationRequest({
-          prompt: result.generationPrompt,
-          resolvedConfig,
-          selectedClips: selectedMedia.clips,
-          attachedClips: attachmentSet.clips,
-          allowedAssets,
-          allowedAssetKeys,
-          signal: controller.signal,
-        });
-        if (codeResult.status === 'aborted') return;
-        if (codeResult.status === 'error') {
-          setActionError(codeResult.error);
-          setGenerationNote(`Code-path generation failed: ${codeResult.error}`);
-          return;
-        }
-        setGeneratedComponent({
-          code: codeResult.code,
-          name: codeResult.name,
-          description: codeResult.description,
-          schemaJson: codeResult.schemaJson,
-          defaultsJson: codeResult.defaultsJson,
-          controlsManifest: codeResult.controlsManifest as unknown[],
-        });
-        setGeneratedComponentSourceClipType(undefined);
-        setMode('edit');
-        setGenerationNote(codeResult.message ?? 'Generated component code (browser-only render).');
-        return;
-      }
-
-      if (result.status === 'no_valid_drafts') {
-        setClassifierVerdict(result.classifier ?? null);
-        setGenerationNote(result.generationNote);
-        return;
-      }
-
-      const nextGroupId = options.replaceGroupId ?? createDraftGroupId();
-      setDraftGroups((current) => {
-        const nextGroup: SequenceDraftGroup = {
-          id: nextGroupId,
-          name: options.nameOverride ?? nameDraftGroupFromPrompt(generationPrompt, current.length),
-          prompt: result.generationPrompt,
-          intent: result.animationIntentPayload,
-          drafts: result.validDrafts,
-        };
-        if (options.replaceGroupId) {
-          return current.map((group) => (group.id === options.replaceGroupId ? nextGroup : group));
-        }
-        return [nextGroup];
-      });
-      setSelectedGroupId(nextGroupId);
-      setSelectedDraftIndex(0);
-      setMode('edit');
-      setGenerationNote(result.generationNote);
-      setClassifierVerdict(result.classifier ?? null);
-      // Successful JSON-path result: clear any stale generated component.
-      setGeneratedComponent(null);
-      setGeneratedComponentSourceClipType(undefined);
-      setForkPending(null);
-    } catch (err) {
-      if ((err as Error).name === 'AbortError') return;
-      const message = err instanceof Error ? err.message : 'Sequence generation failed.';
-      toast({ title: 'Sequence generation failed', description: message, variant: 'destructive' });
-      setGenerationNote(message);
-    } finally {
-      setIsGenerating(false);
-    }
-  }, [
-    allowedAssetKeys,
-    allowedAssets,
-    attachmentSet.clips,
-    generationMode,
+  const {
+    isGenerating,
+    runSequenceGeneration,
+    handleConfirmFork,
+    handleCancelFork,
+  } = useSequenceGenerationActions({
     resolvedConfig,
+    selectedMedia,
+    attachmentSet,
+    allowedAssets,
+    allowedAssetKeys,
     selectedClipId,
     selectedClipIds,
-    selectedMedia.clips,
-  ]);
+  });
 
   const handleGenerate = useCallback(() => {
     void runSequenceGeneration(prompt);
   }, [prompt, runSequenceGeneration]);
 
-  // Fork-to-DB confirmation handler (T13): when the classifier asked for
-  // the code path on a theme-bundled clip, this dispatches the actual
-  // ai-generate-sequence-component call with `existingComponent` derived
-  // from the bundled TSX source. The badge stays visible after either
-  // success or error so the user always knows which path ran.
-  const handleConfirmFork = useCallback(async () => {
-    if (!forkPending || forkPending.bundledSource.status !== 'available' || !resolvedConfig) {
-      return;
-    }
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setIsGenerating(true);
-    setActionError(null);
-    try {
-      const codeResult = await runSequenceComponentGenerationRequest({
-        prompt: forkPending.prompt,
-        existingComponent: {
-          code: forkPending.bundledSource.code,
-          schema: forkPending.bundledSource.schema,
-          defaults: forkPending.bundledSource.defaults,
-        },
-        // Bundled clip types pre-date the manifest concept, so no controls
-        // are surfaced for fork; the model generates a fresh manifest.
-        resolvedConfig,
-        selectedClips: selectedMedia.clips,
-        attachedClips: attachmentSet.clips,
-        allowedAssets,
-        allowedAssetKeys,
-        signal: controller.signal,
-      });
-      if (codeResult.status === 'aborted') return;
-      if (codeResult.status === 'error') {
-        setActionError(codeResult.error);
-        setGenerationNote(`Fork failed: ${codeResult.error}`);
-        return;
-      }
-      setGeneratedComponent({
-        code: codeResult.code,
-        name: codeResult.name,
-        description: codeResult.description,
-        schemaJson: codeResult.schemaJson,
-        defaultsJson: codeResult.defaultsJson,
-        controlsManifest: codeResult.controlsManifest as unknown[],
-      });
-      setGeneratedComponentSourceClipType(undefined);
-      setMode('edit');
-      setGenerationNote(
-        codeResult.message ?? `Forked "${forkPending.selectedClipType}" into a custom DB-stored sequence.`,
-      );
-      setForkPending(null);
-    } catch (err) {
-      if ((err as Error).name === 'AbortError') return;
-      const message = err instanceof Error ? err.message : 'Fork failed.';
-      setActionError(message);
-      setGenerationNote(message);
-    } finally {
-      setIsGenerating(false);
-    }
-  }, [allowedAssetKeys, allowedAssets, attachmentSet.clips, forkPending, resolvedConfig, selectedMedia.clips]);
-
-  const handleCancelFork = useCallback(() => {
-    setForkPending(null);
-    setGenerationNote(null);
-  }, []);
-
-  // T14 — headless smoke-render gate before persisting a generated
-  // sequence component. Save flow:
-  //   1. Run smokeRenderSequenceComponent({code, schema, defaults}). If it
-  //      returns { ok: false }, surface the error inline (NOT a toast — per
-  //      CLAUDE.md UI conventions: errors-only toasts; panel-inline is
-  //      correct for this gate) and DO NOT persist.
-  //   2. On success, call useCreateSequenceComponentResource.mutateAsync
-  //      with the SequenceComponentMetadata derived from the generated
-  //      component.
-  // The gate catches compile errors + obvious runtime errors via
-  // react-dom/server.renderToString — see headlessRender.ts for the
-  // FLAG-005 caveat that ThemeProvider/SequenceContext are NOT exercised.
-  // Smoke-render gate + DB persist + emit a synthetic ValidatedSequenceDraft
-  // that downstream Insert/Replace builders can consume. This unifies the
-  // code-path flow with the JSON-path flow (effects pattern: save-on-action,
-  // not save-as-a-separate-button). Returns the draft pointing at the
-  // freshly-saved resource's unique clipType so the timeline edit will
-  // resolve to the correct component via DynamicSequenceRegistry.
-  const createSequenceComponent = useCreateSequenceComponentResource();
+  const persistGeneratedComponent = useSequenceComponentPersistence({ resolvedConfig });
   const [isSaving, setIsSaving] = useState(false);
-  const persistGeneratedComponent = useCallback(async ():
-    Promise<{ ok: true; draft: ValidatedSequenceDraft } | { ok: false; error: string }> => {
-    if (!generatedComponent) return { ok: false, error: 'No generated component.' };
-    const smoke = await smokeRenderSequenceComponent({
-      code: generatedComponent.code,
-      schemaJson: generatedComponent.schemaJson,
-      defaultsJson: generatedComponent.defaultsJson,
-      fps: resolvedConfig?.output.fps ?? 30,
-    });
-    if (!smoke.ok) {
-      return { ok: false, error: `Smoke render failed: ${smoke.error}. Component NOT saved.` };
-    }
-    const defaultHold = 4;
-    // Loaded from library: the resource already exists in DB. Reuse its
-    // clipType and skip the create-resource call so we don't double-save.
-    if (generatedComponentSourceClipType) {
-      return {
-        ok: true,
-        draft: {
-          clipType: generatedComponentSourceClipType,
-          hold: defaultHold,
-          params: (generatedComponent.defaultsJson ?? {}) as ValidatedSequenceDraft['params'],
-        },
-      };
-    }
-    const slug = (generatedComponent.name || 'component')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-');
-    const uniqueClipType = forkPending?.selectedClipType
-      ?? `custom-component:${slug}-${Date.now().toString(36)}`;
-    const metadata = {
-      name: generatedComponent.name || 'Untitled component',
-      slug,
-      code: generatedComponent.code,
-      schemaJson: generatedComponent.schemaJson,
-      defaultsJson: generatedComponent.defaultsJson,
-      controlsManifest: generatedComponent.controlsManifest,
-      clipType: uniqueClipType,
-      themeId: resolvedConfig?.theme ?? '2rp',
-      description: generatedComponent.description,
-      created_by: { is_you: true },
-      is_public: false,
-    };
-    try {
-      await createSequenceComponent.mutateAsync({ metadata });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Save failed.';
-      return { ok: false, error: `Save failed: ${message}. Component NOT saved.` };
-    }
-    return {
-      ok: true,
-      draft: {
-        clipType: uniqueClipType,
-        hold: defaultHold,
-        params: (generatedComponent.defaultsJson ?? {}) as ValidatedSequenceDraft['params'],
-      },
-    };
-  }, [createSequenceComponent, forkPending, generatedComponent, generatedComponentSourceClipType, resolvedConfig?.output.fps, resolvedConfig?.theme]);
 
   const handleEditSelected = useCallback(() => {
     if (!selectedGroup || !selectedDraft) return;
@@ -933,46 +529,11 @@ export function SequenceCreatorPanel({
                     </Button>
                   </div>
                 ) : mode === 'library' ? (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-xs text-muted-foreground">Your saved sequences</div>
-                      <div className="text-xs text-muted-foreground">{libraryComponents.length}</div>
-                    </div>
-                    {libraryCatalog.isLoading && libraryComponents.length === 0 ? (
-                      <div className="text-xs text-muted-foreground">Loading…</div>
-                    ) : libraryComponents.length === 0 ? (
-                      <div className="text-xs text-muted-foreground">
-                        No saved sequences yet. Generate one and Insert it to save.
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {libraryComponents.map((resource) => (
-                          <button
-                            key={resource.id}
-                            type="button"
-                            onClick={() => handleLoadLibraryComponent(resource)}
-                            className="w-full rounded-lg border border-border bg-card p-3 text-left transition-colors hover:bg-muted/40"
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0 flex-1 space-y-1">
-                                <div className="truncate text-sm font-medium text-foreground">
-                                  {resource.name || 'Untitled component'}
-                                </div>
-                                {resource.description && (
-                                  <div className="line-clamp-2 text-xs text-muted-foreground">
-                                    {resource.description}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                            <div className="mt-2 truncate text-right text-xs text-muted-foreground">
-                              {resource.clipType}
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                  <SequenceCreatorLibraryList
+                    libraryComponents={libraryComponents}
+                    isLoading={libraryCatalog.isLoading}
+                    onLoadLibraryComponent={handleLoadLibraryComponent}
+                  />
                 ) : (
                   <div className="space-y-3 rounded-lg border border-border bg-card/60 p-3">
                     <div className="text-sm font-medium text-foreground">Selected Animation</div>
@@ -1011,36 +572,11 @@ export function SequenceCreatorPanel({
                   </div>
                 )}
 
-                <div className="space-y-2 rounded-lg border border-border bg-card/60 p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-sm font-medium text-foreground">Allowed Assets</div>
-                    <div className="text-xs text-muted-foreground">{allowedAssets.length}</div>
-                  </div>
-                  {allowedAssets.length > 0 ? (
-                    <AgentChatAttachmentStrip
-                      attachments={allowedAssets.map((asset) => ({
-                        clipId: asset.clipId,
-                        url: asset.url,
-                        mediaType: asset.mediaType,
-                        isPlaceholder: asset.isPlaceholder,
-                        generationId: asset.generationId,
-                        assetKey: asset.key,
-                        shotId: asset.shotId,
-                        shotName: asset.shotName,
-                        shotSelectionClipCount: asset.shotSelectionClipCount,
-                      }))}
-                      isUser={false}
-                      className="mt-0"
-                      onRemoveAttachment={handleRemoveAllowedAsset}
-                      onRemoveShot={handleRemoveAllowedShot}
-                      maxPreviewCount={null}
-                    />
-                  ) : (
-                    <div className="text-xs text-muted-foreground">
-                      Select timeline media or attach asset chips before asking for asset-backed drafts.
-                    </div>
-                  )}
-                </div>
+                <SequenceCreatorAllowedAssets
+                  allowedAssets={allowedAssets}
+                  onRemoveAllowedAsset={handleRemoveAllowedAsset}
+                  onRemoveAllowedShot={handleRemoveAllowedShot}
+                />
 
                 {/*
                   Path/capability badge (T13): always visible. Surfaces
@@ -1079,36 +615,12 @@ export function SequenceCreatorPanel({
                 )}
 
                 {forkPending && (
-                  <div
-                    data-testid="sequence-creator-fork-prompt"
-                    className="space-y-2 rounded-lg border border-border bg-muted/30 p-3 text-xs text-foreground"
-                  >
-                    <div className="font-medium">Customize this sequence for yourself</div>
-                    <p className="text-muted-foreground">
-                      This change requires a custom component. Forking copies "{forkPending.selectedClipType}"
-                      into a per-user DB resource you can edit. The result renders in browser only —
-                      worker-side render isn't supported for custom components yet.
-                    </p>
-                    <p className="text-muted-foreground italic">{forkPending.reason}</p>
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={() => void handleConfirmFork()}
-                        disabled={
-                          isGenerating || forkPending.bundledSource.status !== 'available'
-                        }
-                      >
-                        Customize
-                      </Button>
-                      <Button type="button" size="sm" variant="ghost" onClick={handleCancelFork}>
-                        Cancel
-                      </Button>
-                    </div>
-                    {forkPending.bundledSource.status === 'cannot-fork' && (
-                      <div className="text-destructive">{forkPending.bundledSource.reason}</div>
-                    )}
-                  </div>
+                  <SequenceCreatorForkPrompt
+                    forkPending={forkPending}
+                    isGenerating={isGenerating}
+                    onConfirmFork={() => void handleConfirmFork()}
+                    onCancelFork={handleCancelFork}
+                  />
                 )}
 
                 {generationNote && (
@@ -1118,37 +630,15 @@ export function SequenceCreatorPanel({
                 )}
 
                 {drafts.length > 1 && (
-                  <div className="space-y-2">
-                    <div className="text-sm font-medium text-foreground">Draft Variants</div>
-                    <div className="space-y-2">
-                      {drafts.map((draft, index) => {
-                        const metadata = getAvailableSequenceMetadata(draft.clipType);
-                        const extDescriptor = extensionClipTypeDescriptorMap.get(draft.clipType);
-                        const label = metadata?.label ?? extDescriptor?.label ?? draft.clipType;
-                        return (
-                          <button
-                            key={`${draft.clipType}-${index}`}
-                            type="button"
-                            className={[
-                              'w-full rounded-lg border p-3 text-left transition-colors',
-                              index === selectedDraftIndex
-                                ? 'border-primary bg-primary/10'
-                                : 'border-border bg-card/60 hover:bg-muted/60',
-                            ].join(' ')}
-                            onClick={() => {
-                              setSelectedDraftIndex(index);
-                              setActionError(null);
-                            }}
-                          >
-                            <div className="text-sm font-medium text-foreground">
-                              {label}
-                            </div>
-                            <div className="text-xs text-muted-foreground">{draft.hold}s</div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
+                  <SequenceCreatorDraftVariants
+                    drafts={drafts}
+                    selectedDraftIndex={selectedDraftIndex}
+                    extensionClipTypeDescriptorMap={extensionClipTypeDescriptorMap}
+                    onSelectDraftIndex={(index) => {
+                      setSelectedDraftIndex(index);
+                      setActionError(null);
+                    }}
+                  />
                 )}
               </div>
             </div>
@@ -1183,124 +673,21 @@ export function SequenceCreatorPanel({
                     <div className="min-h-0 flex-1 overflow-y-auto p-4">
                       <div className="space-y-4">
                         {selectedDraft && (selectedMetadata || resolvedDescriptor) ? (
-                          <>
-                            <div className="grid grid-cols-[1fr_140px] items-end gap-3">
-                              <div>
-                                <div className="text-sm font-medium text-foreground">
-                                  {resolvedDescriptor?.label ?? selectedMetadata?.label ?? selectedDraft.clipType}
-                                </div>
-                                <div className="text-xs text-muted-foreground">
-                                  {resolvedDescriptor?.description ?? selectedMetadata?.description ?? ''}
-                                </div>
-                              </div>
-                              <div className="space-y-1.5">
-                                <div className="text-xs font-medium text-muted-foreground">Duration</div>
-                                <NumberInput
-                                  value={selectedDraft.hold}
-                                  min={selectedMetadata?.hold.minSeconds ?? resolvedDescriptor?.hold?.kind !== 'unsupported' ? (resolvedDescriptor?.hold as { defaultSeconds: number; minSeconds: number; maxSeconds: number; stepSeconds: number })?.minSeconds ?? 0.05 : 0.05}
-                                  max={selectedMetadata?.hold.maxSeconds ?? (resolvedDescriptor?.hold?.kind !== 'unsupported' ? (resolvedDescriptor?.hold as { defaultSeconds: number; minSeconds: number; maxSeconds: number; stepSeconds: number })?.maxSeconds ?? 120 : 120)}
-                                  step={selectedMetadata?.hold.stepSeconds ?? (resolvedDescriptor?.hold?.kind !== 'unsupported' ? (resolvedDescriptor?.hold as { defaultSeconds: number; minSeconds: number; maxSeconds: number; stepSeconds: number })?.stepSeconds ?? 0.1 : 0.1)}
-                                  onChange={(value) => updateSelectedDraft({ hold: value ?? selectedMetadata?.hold.defaultSeconds ?? 4 })}
-                                />
-                              </div>
-                            </div>
-
-                            {selectedMetadata ? (
-                              <SequenceParamEditor
-                                clipType={selectedDraft.clipType}
-                                metadata={selectedMetadata}
-                                params={selectedDraft.params}
-                                registry={allowedRegistry}
-                                onChange={(params) => updateSelectedDraft({ params })}
-                              />
-                            ) : resolvedDescriptor ? (
-                              <SequenceParamEditor
-                                clipType={selectedDraft.clipType}
-                                metadata={{
-                                  clipType: selectedDraft.clipType,
-                                  label: resolvedDescriptor.label ?? selectedDraft.clipType,
-                                  description: resolvedDescriptor.description ?? '',
-                                  themeId: '2rp',
-                                  hold: resolvedDescriptor.hold?.kind !== 'unsupported'
-                                    ? {
-                                        defaultSeconds: (resolvedDescriptor.hold as { defaultSeconds: number }).defaultSeconds ?? 4,
-                                        minSeconds: (resolvedDescriptor.hold as { minSeconds: number }).minSeconds ?? 0.05,
-                                        maxSeconds: (resolvedDescriptor.hold as { maxSeconds: number }).maxSeconds ?? 120,
-                                        stepSeconds: (resolvedDescriptor.hold as { stepSeconds: number }).stepSeconds ?? 0.1,
-                                      }
-                                    : { defaultSeconds: 4, minSeconds: 0.05, maxSeconds: 120, stepSeconds: 0.1 },
-                                  params: resolvedDescriptor.paramsSchema.kind === 'sequence'
-                                    ? resolvedDescriptor.paramsSchema.params.map((p) => ({
-                                        key: p.key,
-                                        label: p.label,
-                                        kind: p.kind,
-                                        description: p.description,
-                                        required: p.required,
-                                        defaultValue: p.defaultValue,
-                                        options: p.options,
-                                        maxItems: p.maxItems,
-                                        componentParam: p.componentParam,
-                                      }))
-                                    : [],
-                                  dependsOn: [],
-                                } as import('@/tools/video-editor/sequences/metadata').TrustedSequenceMetadata}
-                                params={selectedDraft.params}
-                                registry={allowedRegistry}
-                                onChange={(params) => updateSelectedDraft({ params })}
-                              />
-                            ) : null}
-
-                            {selectedValidation && !selectedValidation.ok && (
-                              <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
-                                {summarizeValidationErrors(selectedValidation.errors)}
-                              </div>
-                            )}
-                          </>
+                          <SequenceCreatorDraftParams
+                            selectedDraft={selectedDraft}
+                            selectedMetadata={selectedMetadata}
+                            resolvedDescriptor={resolvedDescriptor}
+                            selectedValidation={selectedValidation}
+                            allowedRegistry={allowedRegistry}
+                            updateSelectedDraft={updateSelectedDraft}
+                          />
                         ) : generatedComponent ? (
-                          <div className="space-y-3">
-                            <div className="space-y-1">
-                              <div className="text-sm font-medium text-foreground">
-                                {generatedComponent.name || 'Generated component'}
-                              </div>
-                              {generatedComponent.description && (
-                                <div className="text-xs text-muted-foreground">
-                                  {generatedComponent.description}
-                                </div>
-                              )}
-                            </div>
-                            {(() => {
-                              // Render controls via the new manifest layout when the
-                              // component declared one (AI-generated post-manifest).
-                              // Backwards compat: components saved before the manifest
-                              // existed fall back to the JSON-schema-driven editor so
-                              // they keep working without forcing a regeneration.
-                              const manifestResult = generatedComponent.controlsManifest
-                                ? validateControlsManifest(generatedComponent.controlsManifest, { code: generatedComponent.code })
-                                : null;
-                              if (manifestResult?.ok) {
-                                return (
-                                  <ControlsManifestLayout
-                                    manifest={manifestResult.manifest}
-                                    values={generatedComponent.defaultsJson as Record<string, unknown>}
-                                    onChange={(next) => setGeneratedComponent((prev) => (
-                                      prev ? { ...prev, defaultsJson: next } : prev
-                                    ))}
-                                  />
-                                );
-                              }
-                              return (
-                                <CodePathParamEditor
-                                  schemaJson={generatedComponent.schemaJson}
-                                  values={generatedComponent.defaultsJson as Record<string, unknown>}
-                                  allowedAssetKeys={allowedAssetKeys}
-                                  allowedAssets={allowedAssets}
-                                  onChange={(next) => setGeneratedComponent((prev) => (
-                                    prev ? { ...prev, defaultsJson: next } : prev
-                                  ))}
-                                />
-                              );
-                            })()}
-                          </div>
+                          <SequenceCreatorComponentControls
+                            generatedComponent={generatedComponent}
+                            allowedAssets={allowedAssets}
+                            allowedAssetKeys={allowedAssetKeys}
+                            setGeneratedComponent={setGeneratedComponent}
+                          />
                         ) : null}
 
                         {(actionError || replaceDisabledReason || insertDisabledReason) && (
