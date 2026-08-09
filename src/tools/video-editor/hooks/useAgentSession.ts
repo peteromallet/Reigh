@@ -305,7 +305,14 @@ export function useCreateSession(timelineId: string | null | undefined) {
           status: 'waiting_user',
           turns: [],
           model: 'groq',
-          proposal_policy: 'immediate',
+          // The invoke body below hardcodes 'always' and the edge function
+          // persists the body value onto the row, so 'always' is the only
+          // policy this product ever runs under. Seeding the row with
+          // 'immediate' made a message-less session claim auto-apply
+          // semantics it never had — and any caller that invokes without a
+          // body policy (edge precedence: body → session row → 'immediate')
+          // would have inherited that wrong, less safe mode.
+          proposal_policy: 'always',
         })
         .select('*')
         .single();

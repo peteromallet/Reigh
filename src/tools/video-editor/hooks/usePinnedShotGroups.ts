@@ -405,7 +405,10 @@ export function usePinnedGroupSync({
         metaDeletes: accumulatedMetaDeletes.size > 0 ? [...accumulatedMetaDeletes] : undefined,
         clipOrderOverride: workingData.clipOrder,
         pinnedShotGroupsOverride: workingPinnedShotGroups,
-      });
+        // Background repair, not a user edit: it must save but must not create
+        // an undo entry — ⌘Z landing on an invisible sync reads as "undo did
+        // nothing" (the sync re-asserts the repair right after the undo).
+      }, { skipHistory: true });
     };
 
     scheduleSync();

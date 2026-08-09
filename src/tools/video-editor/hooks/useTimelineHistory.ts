@@ -19,7 +19,7 @@ import {
   buildDataFromCurrentRegistry,
   buildDataFromSnapshot,
 } from '@/tools/video-editor/lib/timeline-save-utils.ts';
-import type { TimelineData } from '@/tools/video-editor/lib/timeline-data.ts';
+import { preserveUploadingClips, type TimelineData } from '@/tools/video-editor/lib/timeline-data.ts';
 import type { TimelineConfig } from '@/tools/video-editor/types/index.ts';
 import type {
   Checkpoint,
@@ -47,6 +47,7 @@ export interface UseTimelineHistoryResult {
   canRedo: boolean;
   checkpoints: Checkpoint[];
   onBeforeCommit: (currentData: TimelineData, options: CommitHistoryOptions) => void;
+  onRemoteData: (currentData: TimelineData, nextData: TimelineData) => void;
   undo: () => void;
   redo: () => void;
   jumpToCheckpoint: (checkpointId: string) => void;
@@ -270,8 +271,12 @@ export function useTimelineHistory({
     }
 
     const nextData = applyHistoryEntry(current, entry, direction);
+    // Same protection every applyEdit path has: history snapshots never contain
+    // transient `uploading-*` skeletons (rowsToConfig drops them from config),
+    // so a restore during an in-flight upload would silently delete the
+    // upload's placeholder. Carry it over from the live rows instead.
     commitData(
-      nextData,
+      preserveUploadingClips(current, nextData),
       { save: true, skipHistory: true },
     );
     lastEditTimestampRef.current = Date.now();
@@ -352,6 +357,33 @@ export function useTimelineHistory({
       lastUntransactedEditAtRef.current = null;
     }
   }, [clearRedoStack, persistCheckpoint, pushUndoEntry]);
+
+  /**
+   * Server-authoritative data replaced local state (accepted poll, conflict
+   * reload, registry refresh). Every stacked snapshot predates that boundary:
+   * restoring one would revert the remote client's persisted work and save the
+   * result — silent multi-client data loss with both UIs reading "saved".
+   * Rebasing snapshots over remote changes is a merge problem this history
+   * model does not attempt, so the safe semantics is to invalidate the stacks
+   * at the boundary. Echoes (same stableSignature, e.g. a URL re-resolution
+   * refresh) keep the stacks.
+   */
+  const onRemoteData = useCallback((currentData: TimelineData, nextData: TimelineData) => {
+    if (currentData.stableSignature === nextData.stableSignature) {
+      return;
+    }
+
+    if (undoStackRef.current.length === 0 && redoStackRef.current.length === 0) {
+      return;
+    }
+
+    undoStackRef.current = [];
+    redoStackRef.current = [];
+    // A subsequent untransacted edit must start a fresh entry rather than try
+    // to collapse into a top-of-stack entry that no longer exists.
+    lastUntransactedEditAtRef.current = null;
+    syncHistoryState();
+  }, [syncHistoryState]);
 
   const undo = useCallback(() => {
     const current = dataRef.current;
@@ -465,6 +497,7 @@ export function useTimelineHistory({
     canRedo,
     checkpoints,
     onBeforeCommit,
+    onRemoteData,
     undo,
     redo,
     jumpToCheckpoint,

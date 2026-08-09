@@ -2,9 +2,10 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import OverlayEditor from '@/tools/video-editor/components/PreviewPanel/OverlayEditor';
+import OverlayEditor, { overlayEditorPropsAreEqual } from '@/tools/video-editor/components/PreviewPanel/OverlayEditor';
 import type { ClipMeta } from '@/tools/video-editor/lib/timeline-data';
 import type { TimelineRow } from '@/tools/video-editor/types/timeline-canvas';
+
 
 const baseRows: TimelineRow[] = [
   {
@@ -179,5 +180,54 @@ describe('OverlayEditor', () => {
 
     expect(container.querySelector('[data-overlay-hit="true"]')).toBeNull();
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+});
+
+describe('OverlayEditor memo comparator', () => {
+  const cleanups: Array<() => void> = [];
+
+  afterEach(() => {
+    while (cleanups.length > 0) {
+      cleanups.pop()?.();
+    }
+  });
+
+  const mediaMeta: Record<string, ClipMeta> = {
+    'clip-1': { track: 'V1', clipType: 'media', hold: 4, asset: 'asset-1' },
+  };
+
+  const pair = () => {
+    const { props, cleanup } = baseProps(mediaMeta);
+    cleanups.push(cleanup);
+    return props;
+  };
+
+  it('skips the re-render when every prop is referentially equal', () => {
+    const props = pair();
+    expect(overlayEditorPropsAreEqual(props, { ...props })).toBe(true);
+  });
+
+  it('skips the re-render when only currentTime moves within the same visible clips', () => {
+    const props = pair();
+    expect(overlayEditorPropsAreEqual(props, { ...props, currentTime: 2 })).toBe(true);
+  });
+
+  it('re-renders when currentTime moves the clip out of view', () => {
+    const props = pair();
+    expect(overlayEditorPropsAreEqual(props, { ...props, currentTime: 9 })).toBe(false);
+  });
+
+  it('re-renders when any other prop changes', () => {
+    const props = pair();
+    expect(overlayEditorPropsAreEqual(props, { ...props, selectedClipId: null })).toBe(false);
+    expect(overlayEditorPropsAreEqual(props, { ...props, meta: { ...props.meta } })).toBe(false);
+    expect(overlayEditorPropsAreEqual(props, { ...props, trackScaleMap: { V1: 0.5 } })).toBe(false);
+    expect(overlayEditorPropsAreEqual(props, { ...props, onOverlayChange: vi.fn() })).toBe(false);
+  });
+
+  it('mounts the memoized component (comparator is the one wired into memo)', () => {
+    const props = pair();
+    const { container } = render(<OverlayEditor {...props} />);
+    expect(container.querySelector('[data-overlay-hit="true"]')).not.toBeNull();
   });
 });

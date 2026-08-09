@@ -148,7 +148,10 @@ describe('Sprint 8 render-button router (decideRenderRoute)', () => {
       route: 'preview-only',
       reason: 'remotion_module_missing_artifact',
     });
-    expect(missingArtifact.planner.selectedPlannerRoute).toBe('sidecar-export');
+    // Nothing in this plan targets sidecar-export, so `canSidecarExport`
+    // is only vacuously true and the planner falls through to preview
+    // rather than hijacking the render onto an unimplemented provider.
+    expect(missingArtifact.planner.selectedPlannerRoute).toBe('preview');
     expect(missingArtifact.planner.plannerResult.canBrowserExport).toBe(false);
     expect(missingArtifact.planner.plannerResult.canWorkerExport).toBe(false);
     expect(missingArtifact.planner.plannerResult.canSidecarExport).toBe(true);
@@ -194,15 +197,23 @@ describe('Sprint 8 render-button router (decideRenderRoute)', () => {
 // ---------------------------------------------------------------------------
 
 describe('M7b T2 sidecar-export route selection', () => {
-  it('selects sidecar-export in selectPlannerRoute when browser and worker are blocked but sidecar is unblocked', () => {
-    // Blocked remotion_module blocks browser + worker but not sidecar.
+  it('does not select sidecar-export when nothing in the plan targets that route', () => {
+    // Blocked remotion_module blocks browser + worker but not sidecar —
+    // and sidecar is unblocked only because no requirement, output format,
+    // process requirement or artifact profile ever named it. A vacuously
+    // unblocked route is not a render candidate.
     const decision = decideRenderRoute({
       clips: [{ clipType: 'media', generation: { sequence_lane: 'remotion_module' } }],
     });
-    expect(decision.planner.selectedPlannerRoute).toBe('sidecar-export');
+    expect(decision.planner.selectedPlannerRoute).toBe('preview');
     expect(decision.planner.plannerResult.canBrowserExport).toBe(false);
     expect(decision.planner.plannerResult.canWorkerExport).toBe(false);
     expect(decision.planner.plannerResult.canSidecarExport).toBe(true);
+    const sidecarPlan = decision.planner.plannerResult.routePlans
+      .find((plan) => plan.route === 'sidecar-export');
+    expect(sidecarPlan?.requiredCapabilities).toEqual([]);
+    expect(sidecarPlan?.outputFormatIds).toEqual([]);
+    expect(sidecarPlan?.processRequirements).toEqual([]);
     // Clip-level block still forces preview-only for the UI route.
     expect(decision.route).toBe('preview-only');
   });
@@ -287,10 +298,12 @@ describe('M7b T2 sidecar-export route selection', () => {
     expect(decision.route).toBe('browser-remotion');
   });
 
-  it('maps sidecar-export planner route to external for native clips with browser/worker blocked', () => {
-    // When browser and worker are blocked by process blockers but sidecar
-    // is unblocked, and the clip-based route is browser-remotion (native
-    // clips), the decision maps to external.
+  it('keeps native clips on browser-remotion when browser/worker are blocked and nothing demands sidecar', () => {
+    // The blocking process only ever declares browser-export and
+    // worker-export. sidecar-export is therefore unblocked purely by
+    // vacancy, and must not hijack the decision onto `external` — the
+    // planner's own blockers (browser/worker) are what the user needs to
+    // see, not "no external render provider is registered".
     const decision = decideRenderRoute(
       { clips: [{ clipType: 'media' }] },
       undefined,
@@ -345,6 +358,73 @@ describe('M7b T2 sidecar-export route selection', () => {
     expect(decision.planner.plannerResult.canBrowserExport).toBe(false);
     expect(decision.planner.plannerResult.canWorkerExport).toBe(false);
     expect(decision.planner.plannerResult.canSidecarExport).toBe(true);
+    expect(decision.planner.selectedPlannerRoute).toBe('preview');
+    expect(decision.route).toBe('browser-remotion');
+    expect(decision.reason).toBe('pure_native_clips');
+    // The blockers the user must act on stay addressable on the decision.
+    expect(decision.planner.plannerResult.blockers.map((blocker) => blocker.route))
+      .toEqual(['browser-export', 'worker-export']);
+  });
+
+  it('maps sidecar-export planner route to external when the plan genuinely demands sidecar-export', () => {
+    // Same blocked browser/worker shape, but here a registered process
+    // declares sidecar-export, so the sidecar route plan carries real
+    // demand (a required capability) and selecting it is honest.
+    const decision = decideRenderRoute(
+      { clips: [{ clipType: 'media' }] },
+      undefined,
+      {
+        processes: [{
+          id: 'sidecar-process-contrib',
+          extensionId: 'ext.sidecar',
+          processId: 'sidecar-process',
+          label: 'Sidecar exporter',
+          spec: {
+            id: 'sidecar-process',
+            label: 'Sidecar exporter',
+            protocol: 'stdio-jsonrpc',
+            spawn: { command: 'node', args: ['sidecar.js'] },
+            operations: [{
+              id: 'exportSidecar',
+              label: 'Export sidecar',
+              routes: ['browser-export', 'worker-export', 'sidecar-export'],
+            }],
+          },
+          protocol: 'stdio-jsonrpc',
+          operations: [{
+            id: 'exportSidecar',
+            label: 'Export sidecar',
+            routes: ['browser-export', 'worker-export', 'sidecar-export'],
+          }],
+          availableRoutes: ['browser-export', 'worker-export', 'sidecar-export'],
+          requiredBy: [],
+          blockers: [
+            {
+              id: 'blocker.browser',
+              route: 'browser-export',
+              reason: 'process-dependent',
+              message: 'Browser export blocked.',
+            },
+            {
+              id: 'blocker.worker',
+              route: 'worker-export',
+              reason: 'process-dependent',
+              message: 'Worker export blocked.',
+            },
+          ],
+          nextActions: [],
+        }],
+        processStatuses: [{
+          processId: 'sidecar-process',
+          status: 'ready',
+          operations: {},
+        }],
+      },
+    );
+    const sidecarPlan = decision.planner.plannerResult.routePlans
+      .find((plan) => plan.route === 'sidecar-export');
+    expect(sidecarPlan?.blocked).toBe(false);
+    expect(sidecarPlan?.requiredCapabilities.length).toBeGreaterThan(0);
     expect(decision.planner.selectedPlannerRoute).toBe('sidecar-export');
     expect(decision.route).toBe('external');
     expect(decision.reason).toBe('pure_native_clips');
@@ -363,6 +443,75 @@ describe('M7b T2 sidecar-export route selection', () => {
     expect(decision.route).toBe('browser-remotion');
     // sidecar status does not affect the browser route selection.
     expect(decision.planner.plannerResult.canSidecarExport).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Regression: vacuous route unblocking must never select a route
+// ---------------------------------------------------------------------------
+
+describe('planner route selection never rides a vacuously unblocked route', () => {
+  // `RenderRoutePlan.blocked` answers "does any blocker name this route?".
+  // For a route nothing in the plan targets the answer is always "no", so
+  // `canSidecarExport` (and any future `can*Export`) reads true for an empty
+  // plan. Selecting on that alone routes the render at a provider the
+  // timeline never asked for — historically `external`, which is a
+  // registered stub with no implementation. The invariant below is the
+  // class-level guard: whatever route the planner selects, that route plan
+  // must carry demand.
+  const timelines: ReadonlyArray<{
+    readonly label: string;
+    readonly timeline: Parameters<typeof decideRenderRoute>[0];
+  }> = [
+    { label: 'pure native media', timeline: { clips: [{ clipType: 'media' }] } },
+    { label: 'themed only', timeline: { clips: [{ clipType: 'image-jump' }] } },
+    {
+      label: 'valid generated module',
+      timeline: {
+        clips: [{
+          clipType: 'media',
+          generation: { sequence_lane: 'remotion_module', artifact_id: 'artifact-1' },
+        }],
+      },
+    },
+    {
+      label: 'blocked generated module',
+      timeline: {
+        clips: [{ clipType: 'media', generation: { sequence_lane: 'remotion_module' } }],
+      },
+    },
+    { label: 'empty timeline', timeline: { clips: [] } },
+  ];
+
+  it.each(timelines)('$label — a delegated planner route carries demand', ({ timeline }) => {
+    const decision = decideRenderRoute(timeline);
+    const { selectedPlannerRoute, plannerResult } = decision.planner;
+    // `preview` and `browser-export` are the host's own routes: falling back
+    // to them with an empty plan renders in-browser, which is always
+    // available. `worker-export` and `sidecar-export` delegate outside the
+    // host, so they may only be selected on real demand.
+    if (selectedPlannerRoute === 'preview' || selectedPlannerRoute === 'browser-export') return;
+    const plan = plannerResult.routePlans.find((candidate) => candidate.route === selectedPlannerRoute);
+    expect(plan).toBeDefined();
+    const demand = (plan?.requiredCapabilities.length ?? 0)
+      + (plan?.outputFormatIds.length ?? 0)
+      + (plan?.processRequirements.length ?? 0)
+      + (plan?.artifactCompletion.requiredProfiles.length ?? 0);
+    expect(demand).toBeGreaterThan(0);
+  });
+
+  it('never returns the unimplemented external provider for a plan with no sidecar demand', () => {
+    for (const { timeline } of timelines) {
+      const decision = decideRenderRoute(timeline);
+      const sidecarPlan = decision.planner.plannerResult.routePlans
+        .find((plan) => plan.route === 'sidecar-export');
+      // Every fixture above leaves sidecar-export empty…
+      expect(sidecarPlan?.requiredCapabilities).toEqual([]);
+      expect(sidecarPlan?.blocked).toBe(false);
+      // …and none of them may therefore route to `external`.
+      expect(decision.planner.selectedPlannerRoute).not.toBe('sidecar-export');
+      expect(decision.route).not.toBe('external');
+    }
   });
 });
 

@@ -3,6 +3,13 @@ import type { TimelineData } from '@/tools/video-editor/lib/timeline-data.ts';
 
 type TimelineEventMap = {
   beforeCommit: (currentData: TimelineData, options: CommitHistoryOptions) => void;
+  /**
+   * Server-authoritative data is about to replace local state (accepted poll,
+   * conflict reload, registry refresh). History listens to invalidate undo
+   * entries whose snapshots predate the remote boundary — restoring them would
+   * silently revert the other client's persisted work.
+   */
+  remoteCommit: (currentData: TimelineData, nextData: TimelineData) => void;
   pruneSelection: (validIds: Set<string>) => void;
   scheduleSave: ScheduleSaveFn;
   saveSuccess: () => void;

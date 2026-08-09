@@ -88,6 +88,8 @@ describe('useSendMessage', () => {
     expect(invokeMock).toHaveBeenCalledWith('ai-timeline-agent', {
       body: {
         session_id: 'session-1',
+        // M3: every invoke carries the session's proposal policy.
+        proposal_policy: 'always',
         user_message: 'Use these as references',
         selected_clips: [
           {
@@ -141,6 +143,8 @@ describe('useSendMessage', () => {
     expect(invokeMock).toHaveBeenCalledWith('ai-timeline-agent', {
       body: {
         session_id: 'session-1',
+        // M3: every invoke carries the session's proposal policy.
+        proposal_policy: 'always',
         user_message: 'Edit this clip',
         selected_clips: [{
           clip_id: 'clip-timeline-1',
@@ -444,7 +448,7 @@ describe('useCreateSession — proposal_policy', () => {
         status: 'waiting_user',
         turns: [],
         model: 'groq',
-        proposal_policy: 'immediate',
+        proposal_policy: 'always',
         created_at: '2025-01-01T00:00:00Z',
         updated_at: '2025-01-01T00:00:00Z',
       },
@@ -465,7 +469,9 @@ describe('useCreateSession — proposal_policy', () => {
       await result.current.mutateAsync();
     });
 
-    // Verify the insert call includes proposal_policy
+    // Verify the insert call includes proposal_policy. It must match the
+    // policy every invoke sends ('always'); seeding 'immediate' left the
+    // row describing a mode the client never uses.
     expect(fromMock).toHaveBeenCalledWith('timeline_agent_sessions');
     expect(insertMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -474,7 +480,7 @@ describe('useCreateSession — proposal_policy', () => {
         status: 'waiting_user',
         turns: [],
         model: 'groq',
-        proposal_policy: 'immediate',
+        proposal_policy: 'always',
       }),
     );
   });

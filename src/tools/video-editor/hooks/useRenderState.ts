@@ -28,10 +28,12 @@ import {
   type VideoEditorRuntimeContextValue,
 } from '@/tools/video-editor/contexts/DataProviderContext.tsx';
 import { syncPlannerDiagnosticsToCollection } from '@/tools/video-editor/runtime/diagnosticCollectionSync.ts';
+import type { PlannerBackedRenderRouteDecision } from '@/tools/video-editor/lib/renderRouter.ts';
 import type {
   CapabilityFinding,
   Diagnostic,
   ExportDiagnostic,
+  RenderBlocker,
   RenderBlockerReason,
 } from '@reigh/editor-sdk';
 
@@ -43,6 +45,21 @@ export type ExportStatus = 'idle' | 'exporting' | 'done' | 'error';
 type RenderProgress = { current: number; total: number; percent: number; phase: string } | null;
 
 const CLIENT_CLIP_TYPES = new Set(['media', 'text', 'effect-layer', 'hold']);
+
+/**
+ * Append the planner's own blocker messages to a route-level error line.
+ * The route sentence says *which provider* refused; the blockers say *why*
+ * the plan got there. Without them the log states a route name and nothing
+ * the user can act on.
+ */
+function formatRouteBlockerLog(
+  headline: string,
+  blockers: readonly RenderBlocker[] | undefined,
+): string {
+  if (!blockers || blockers.length === 0) return headline;
+  const lines = blockers.map((blocker) => `- [${blocker.route}/${blocker.reason}] ${blocker.message}`);
+  return [headline, ...lines].join('\n');
+}
 
 function getFastRenderRouteDecision(resolvedConfig: ResolvedTimelineConfig | null) {
   const clips = resolvedConfig?.clips ?? [];
@@ -79,6 +96,8 @@ function getFastRenderRouteDecision(resolvedConfig: ResolvedTimelineConfig | nul
 
   return { route: 'browser-remotion' as const, reason: 'pure_native_clips' };
 }
+
+type FastRenderRouteDecision = NonNullable<ReturnType<typeof getFastRenderRouteDecision>>;
 
 function isExtensionRuntimeEmpty(extRuntime: ExtensionRuntime | undefined): boolean {
   if (!extRuntime) return true;
@@ -444,12 +463,10 @@ export function useRenderState(
       return; // blocked by export guard
     }
 
-    let decision = getFastRenderRouteDecision(resolvedConfig);
+    let decision: FastRenderRouteDecision | PlannerBackedRenderRouteDecision | null =
+      getFastRenderRouteDecision(resolvedConfig);
     if (!decision) {
-      let importedDecision: {
-      route: 'browser-remotion' | 'worker-banodoco' | 'preview-only' | 'external';
-      reason: string;
-      };
+      let importedDecision: PlannerBackedRenderRouteDecision;
       try {
         const renderRouter = await import('@/tools/video-editor/lib/renderRouter');
         importedDecision = renderRouter.decideRenderRoute(
@@ -481,11 +498,30 @@ export function useRenderState(
       return;
     }
 
-    if (decision.route === 'worker-banodoco' || decision.route === 'external') {
+    if (decision.route === 'external') {
+      // `external` is only selected when the plan genuinely demands the
+      // sidecar-export route, and no external provider is registered. Relay
+      // the planner's own blocker text — it names the actual obstacle
+      // (e.g. missing-material for a shader with no RenderMaterial) instead
+      // of a generic worker message that contradicts `reason`.
       setRenderStatus('error');
       setRenderProgress(null);
       setRenderDirty(false);
-      setRenderLog(`Worker render unavailable for route "${decision.reason}". This timeline was not sent to the browser renderer.`);
+      setRenderLog(formatRouteBlockerLog(
+        `No external render provider is registered for route "${decision.reason}".`,
+        'planner' in decision ? decision.planner.plannerResult.blockers : undefined,
+      ));
+      return;
+    }
+
+    if (decision.route === 'worker-banodoco') {
+      setRenderStatus('error');
+      setRenderProgress(null);
+      setRenderDirty(false);
+      setRenderLog(formatRouteBlockerLog(
+        `Worker render unavailable for route "${decision.reason}". This timeline was not sent to the browser renderer.`,
+        'planner' in decision ? decision.planner.plannerResult.blockers : undefined,
+      ));
       return;
     }
 

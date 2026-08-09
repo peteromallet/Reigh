@@ -135,6 +135,13 @@ export type ApplyEditOptions = {
    * undo lands on; non-semantic ones ride along with the surrounding step.
    */
   semantic?: boolean;
+  /**
+   * Suppress the undo entry for this commit while still saving it. For
+   * background/system repairs that are not user edits (e.g. pinned-group
+   * sync): the change persists, but ⌘Z will not land on it — undoing a
+   * repair the user never made reads as "undo did nothing".
+   */
+  skipHistory?: boolean;
   /** Explicit command-history metadata when the caller is the command layer. */
   commandHistory?: CommandHistoryCommitMetadata;
 };
@@ -244,6 +251,14 @@ export function useTimelineCommit({
       });
     }
 
+    // `skipHistory` + `updateLastSavedSignature` is the signature of a
+    // server-authoritative replacement (poll acceptance, conflict reload,
+    // registry refresh) — every such call site passes both. Announce it so
+    // history can drop undo entries that would resurrect pre-remote state.
+    if (options?.skipHistory && options?.updateLastSavedSignature && currentData) {
+      eventBus.emit('remoteCommit', currentData, nextData);
+    }
+
     dataRef.current = nextData;
     setData(nextData);
 
@@ -309,6 +324,7 @@ export function useTimelineCommit({
           selectedTrackId: options?.selectedTrackId,
           transactionId: options?.transactionId,
           semantic: options?.semantic,
+          skipHistory: options?.skipHistory,
           commandHistory: options?.commandHistory,
         },
       );
@@ -356,6 +372,7 @@ export function useTimelineCommit({
           selectedTrackId: options?.selectedTrackId,
           transactionId: options?.transactionId,
           semantic: options?.semantic,
+          skipHistory: options?.skipHistory,
           commandHistory: options?.commandHistory,
         },
       );
@@ -379,6 +396,7 @@ export function useTimelineCommit({
         selectedTrackId: options?.selectedTrackId,
         transactionId: options?.transactionId,
         semantic: options?.semantic,
+        skipHistory: options?.skipHistory,
         commandHistory: options?.commandHistory,
       },
     );

@@ -84,7 +84,14 @@ export interface ContributedClipRecord {
  *                          missing artifact metadata. Cannot be rendered;
  *                          surfaces a hard "render blocked" message.
  *   * `external`          — reserved for future external render providers.
- *                          Currently unreachable from `decideRenderRoute`.
+ *                          Reachable from `decideRenderRoute` only when the
+ *                          planner selects `sidecar-export`, which requires
+ *                          the plan to actually demand that route (see
+ *                          `plannerRouteHasDemand`). No provider implements
+ *                          it yet, so `renderPipeline` reports "no external
+ *                          render provider is registered" — a route the plan
+ *                          asked for and the host cannot serve, never a
+ *                          silent fallback for a blocked browser/worker plan.
  */
 export type RenderRoute =
   | 'browser-remotion'
@@ -305,6 +312,32 @@ function requirementsForBlockedClip(
   ];
 }
 
+/**
+ * A route plan is only a real candidate when something in the plan actually
+ * targets it. `blocked === false` alone is *vacuously* true for every route
+ * nobody asked for: `buildRoutePlan` derives `blocked` from "does this route
+ * own a blocker?", so a route with zero requirements, zero output formats,
+ * zero process requirements and zero artifact profiles always reports
+ * unblocked. Selecting such a route means routing the render at a provider
+ * the timeline never demanded — for `sidecar-export` that lands on the
+ * `external` provider, which is a registered stub with no implementation.
+ *
+ * Demand is the union of every input that can put a route into the plan:
+ * capability requirements, output formats, process requirements and artifact
+ * completion profiles.
+ */
+function plannerRouteHasDemand(
+  result: RenderPlannerResult,
+  route: 'preview' | 'browser-export' | 'worker-export' | 'sidecar-export',
+): boolean {
+  const plan = result.routePlans.find((candidate) => candidate.route === route);
+  if (!plan) return false;
+  return plan.requiredCapabilities.length > 0
+    || plan.outputFormatIds.length > 0
+    || plan.processRequirements.length > 0
+    || plan.artifactCompletion.requiredProfiles.length > 0;
+}
+
 function selectPlannerRoute(result: RenderPlannerResult): PlannerRouteDecisionContext {
   if (result.canBrowserExport) {
     return { plannerResult: result, selectedPlannerRoute: 'browser-export' };
@@ -312,7 +345,11 @@ function selectPlannerRoute(result: RenderPlannerResult): PlannerRouteDecisionCo
   if (result.canWorkerExport) {
     return { plannerResult: result, selectedPlannerRoute: 'worker-export' };
   }
-  if (result.canSidecarExport) {
+  // Sidecar is a fallback only when the plan genuinely demands sidecar
+  // export. Without this guard a timeline whose browser + worker routes are
+  // blocked gets silently re-routed to `external` purely because no blocker
+  // happened to name `sidecar-export`.
+  if (result.canSidecarExport && plannerRouteHasDemand(result, 'sidecar-export')) {
     return { plannerResult: result, selectedPlannerRoute: 'sidecar-export' };
   }
   return { plannerResult: result, selectedPlannerRoute: 'preview' };

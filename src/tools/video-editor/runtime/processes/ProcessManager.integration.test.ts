@@ -37,7 +37,15 @@ interface TransportSpy {
 type ProcessManagerTransportHooks = Parameters<NonNullable<CreateProcessManagerOptions['createTransport']>>[1];
 
 const managedFixtures: ManagedFixture[] = [];
-const FIXTURE_DEFAULT_TIMEOUT_MS = 1_000;
+// Real stdio + tsx child startup routinely needs more than a second when the
+// host is contended (parallel vitest workers, a dev server, a typecheck): four
+// concurrent copies of this file failed 4/4 with a 1s budget. These are
+// fixture knobs — ProcessManager's own defaults are 30s/120s/30s, and the
+// timeout *behaviour* assertions in this file all pass an explicit
+// `timeoutMs`, so widening the default cannot mask them.
+const FIXTURE_DEFAULT_TIMEOUT_MS = 15_000;
+const FIXTURE_STATUS_POLL_TIMEOUT_MS = 10_000;
+const FIXTURE_TEST_TIMEOUT_MS = 60_000;
 
 afterEach(async () => {
   while (managedFixtures.length > 0) {
@@ -57,7 +65,7 @@ afterEach(async () => {
       }
     }
   }
-});
+}, FIXTURE_TEST_TIMEOUT_MS);
 
 function createSpawnError(command: string): NodeJS.ErrnoException {
   const error = new Error(`spawn ${command} ENOENT`) as NodeJS.ErrnoException;
@@ -188,7 +196,7 @@ async function waitForStatus(
   manager: ProcessManager,
   processId: string,
   predicate: (status: ProcessStatus) => boolean,
-  timeoutMs = 1_000,
+  timeoutMs = FIXTURE_STATUS_POLL_TIMEOUT_MS,
 ): Promise<ProcessStatus> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() <= deadline) {
@@ -371,7 +379,7 @@ describe('createProcessManager fixture integration', () => {
         reason: 'user-aborted',
       },
     });
-  });
+  }, FIXTURE_TEST_TIMEOUT_MS);
 
   it('preserves correlated JSON-RPC error shapes for protocol, timeout, invalid-request, and process-exited failures', async () => {
     const cases = [
@@ -469,7 +477,7 @@ describe('createProcessManager fixture integration', () => {
         ...(testCase.expectedErrorCode ? { errorCode: testCase.expectedErrorCode } : {}),
       });
     }
-  });
+  }, FIXTURE_TEST_TIMEOUT_MS);
 
   it('ignores late result, progress, and log messages for state mutation while recording recoverable diagnostics', async () => {
     const { descriptor, manager, operationId, spy } = createManagedFixture({
@@ -574,5 +582,5 @@ describe('createProcessManager fixture integration', () => {
         message: expect.stringContaining('unknown request id'),
       }),
     ]));
-  });
+  }, FIXTURE_TEST_TIMEOUT_MS);
 });

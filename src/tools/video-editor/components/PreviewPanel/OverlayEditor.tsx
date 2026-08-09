@@ -844,37 +844,44 @@ function OverlayEditorComponent({
   );
 }
 
-const OverlayEditor = memo(OverlayEditorComponent, (prev, next) => {
-  // Skip re-render when only currentTime changed but visible clips are the same
-  if (prev.currentTime !== next.currentTime) {
-    const prevKey = getVisibleClipIds(prev.rows, prev.currentTime);
-    const nextKey = getVisibleClipIds(next.rows, next.currentTime);
-    if (prevKey === nextKey
-      && prev.rows === next.rows
-      && prev.meta === next.meta
-      && prev.registry === next.registry
-      && prev.selectedClipId === next.selectedClipId
-      && prev.trackScaleMap === next.trackScaleMap
-      && prev.compositionWidth === next.compositionWidth
-      && prev.compositionHeight === next.compositionHeight
-      && prev.deviceClass === next.deviceClass
-      && prev.inputModality === next.inputModality
-      && prev.interactionMode === next.interactionMode
-      && prev.gestureOwner === next.gestureOwner
-      && prev.playerContainerRef === next.playerContainerRef
-      && prev.onSelectClip === next.onSelectClip
-      && prev.onOverlayChange === next.onOverlayChange
-      && prev.setInputModalityFromPointerType === next.setInputModalityFromPointerType
-      && prev.setGestureOwner === next.setGestureOwner
-      && prev.setContextTarget === next.setContextTarget
-      && prev.setInspectorTarget === next.setInspectorTarget
-      && prev.onDoubleClickAsset === next.onDoubleClickAsset
-    ) {
-      return true; // skip re-render
-    }
+/** Shallow prop equality, ignoring `currentTime` (handled separately below). */
+const propsEqualIgnoringTime = (prev: OverlayEditorProps, next: OverlayEditorProps): boolean => {
+  const prevKeys = Object.keys(prev) as (keyof OverlayEditorProps)[];
+  if (prevKeys.length !== Object.keys(next).length) {
+    return false;
   }
-  // For all other prop changes, use default shallow comparison
-  return false;
-});
+  for (const key of prevKeys) {
+    if (key === 'currentTime') continue;
+    if (!Object.is(prev[key], next[key])) return false;
+  }
+  return true;
+};
+
+/**
+ * `React.memo` comparator: true means "skip the re-render".
+ *
+ * Exported for the unit test — the memo boundary is the only place it is used.
+ */
+export const overlayEditorPropsAreEqual = (
+  prev: OverlayEditorProps,
+  next: OverlayEditorProps,
+): boolean => {
+  // Every other prop must be referentially equal — this is the shallow
+  // comparison React.memo would do on its own. It has to be spelled out
+  // because a custom comparator replaces the default one entirely; the
+  // previous version returned `false` whenever currentTime was unchanged,
+  // so the memo never skipped a single parent-driven re-render.
+  if (!propsEqualIgnoringTime(prev, next)) {
+    return false;
+  }
+  if (prev.currentTime === next.currentTime) {
+    return true;
+  }
+  // currentTime moved: still skip when the same clips are on screen, because
+  // nothing this component renders depends on the playhead beyond visibility.
+  return getVisibleClipIds(prev.rows, prev.currentTime) === getVisibleClipIds(next.rows, next.currentTime);
+};
+
+const OverlayEditor = memo(OverlayEditorComponent, overlayEditorPropsAreEqual);
 
 export default OverlayEditor;

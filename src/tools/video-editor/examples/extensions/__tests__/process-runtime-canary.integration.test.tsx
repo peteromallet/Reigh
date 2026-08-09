@@ -44,6 +44,23 @@ const managedManagers: ProcessManager[] = [];
 const ATTACHED_AT = '2026-07-05T00:00:00.000Z';
 const PROCESS_ROUTE: RenderRoute = 'browser-export';
 
+// This canary drives a *real* child process: the fixture spec spawns
+// `node --import tsx/loader.mjs process-fixture.ts`. Cold-starting Node plus
+// the tsx loader and answering the first `health` JSON-RPC call costs well
+// over a second whenever the test host is under load (parallel vitest
+// workers, a dev server, a typecheck). The fixture previously pinned every
+// manager timeout at 1s and relied on waitFor's 1s default, so the canary
+// went red purely on CPU contention — 4/4 failures when four copies of this
+// file run concurrently on a 4-core box, 0/4 with these budgets.
+//
+// These are fixture knobs, not product config (ProcessManager itself defaults
+// to 30s/120s/30s), and timeout *behaviour* is covered separately by
+// ProcessManager.integration.test.ts. Budget generously here: the test still
+// finishes as fast as the subprocess allows, it just stops racing the clock.
+const PROCESS_RPC_TIMEOUT_MS = 15_000;
+const UI_SETTLE_TIMEOUT_MS = 20_000;
+const CANARY_TEST_TIMEOUT_MS = 60_000;
+
 afterEach(async () => {
   cleanup();
   while (managedManagers.length > 0) {
@@ -51,7 +68,10 @@ afterEach(async () => {
     if (!manager) continue;
     await manager.dispose();
   }
-});
+  // Teardown shuts the child processes down over the same JSON-RPC transport,
+  // so it inherits PROCESS_RPC_TIMEOUT_MS and must outlast vitest's 10s
+  // default hook timeout.
+}, CANARY_TEST_TIMEOUT_MS);
 
 function returnedMaterial(
   id: string,
@@ -162,9 +182,9 @@ function createManagedProcessManager(
 ): ProcessManager {
   const manager = createProcessManager({
     processes: [descriptor.spec],
-    defaultExecuteTimeoutMs: 1_000,
-    defaultHealthTimeoutMs: 1_000,
-    defaultShutdownTimeoutMs: 1_000,
+    defaultExecuteTimeoutMs: PROCESS_RPC_TIMEOUT_MS,
+    defaultHealthTimeoutMs: PROCESS_RPC_TIMEOUT_MS,
+    defaultShutdownTimeoutMs: PROCESS_RPC_TIMEOUT_MS,
   });
   managedManagers.push(manager);
   return manager;
@@ -525,7 +545,7 @@ describe('process runtime M6b jsdom canary', () => {
       expect(screen.queryByRole('button', { name: /Start .*Process/i })).toBeNull();
       expect(screen.getByTestId('planner-summary')).not.toHaveTextContent('"start-process"');
       expect(screen.getByTestId(`process-status-${descriptor.id}`)).not.toHaveTextContent('stopped');
-    });
+    }, { timeout: UI_SETTLE_TIMEOUT_MS });
 
     fireEvent.click(screen.getByTestId('fixture-execute'));
 
@@ -533,7 +553,7 @@ describe('process runtime M6b jsdom canary', () => {
       expect(screen.getByTestId('projected-materials')).toHaveTextContent(
         `${'fixture-material'}:${'resolved'}:${descriptor.id}`,
       );
-    });
+    }, { timeout: UI_SETTLE_TIMEOUT_MS });
 
     fireEvent.click(screen.getByTestId(`process-action-inspect-${descriptor.id}`));
 
@@ -545,7 +565,7 @@ describe('process runtime M6b jsdom canary', () => {
     expect(screen.getAllByText('info: Fixture finished.')).toHaveLength(2);
     expect(screen.getByText('Attached materials: fixture-material')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Create proposal' })).toBeInTheDocument();
-  });
+  }, CANARY_TEST_TIMEOUT_MS);
 
   it('surfaces degraded and recoverable failed diagnostics with retry visibility', async () => {
     const descriptor = createCanaryProcessDescriptor({
@@ -569,7 +589,7 @@ describe('process runtime M6b jsdom canary', () => {
     await waitFor(() => {
       expect(screen.getByTestId(`process-status-${descriptor.id}`)).toHaveTextContent('degraded');
       expect(screen.getByText('Fixture degraded.')).toBeInTheDocument();
-    });
+    }, { timeout: UI_SETTLE_TIMEOUT_MS });
 
     fireEvent.click(screen.getByTestId('fixture-health'));
 
@@ -577,8 +597,8 @@ describe('process runtime M6b jsdom canary', () => {
       expect(screen.getByTestId(`process-status-${descriptor.id}`)).toHaveTextContent('failed');
       expect(screen.getByText('Fixture failed.')).toBeInTheDocument();
       expect(screen.getByTestId(`process-action-retry-${descriptor.id}`)).toBeEnabled();
-    });
+    }, { timeout: UI_SETTLE_TIMEOUT_MS });
 
     expect(screen.getByTestId(`process-action-retry-${descriptor.id}`)).toBeEnabled();
-  });
+  }, CANARY_TEST_TIMEOUT_MS);
 });

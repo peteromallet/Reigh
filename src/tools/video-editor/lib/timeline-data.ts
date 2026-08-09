@@ -583,8 +583,10 @@ export function preserveUploadingClips(source: TimelineData, target: TimelineDat
   if (!found) return target;
 
   const nextRows = target.rows.map((row) => {
-    const extras = uploadingActions[row.id];
-    return extras ? { ...row, actions: [...row.actions, ...extras] } : row;
+    const extras = uploadingActions[row.id]?.filter(
+      (extra) => !row.actions.some((action) => action.id === extra.id),
+    );
+    return extras && extras.length > 0 ? { ...row, actions: [...row.actions, ...extras] } : row;
   });
   return { ...target, rows: nextRows, meta: { ...target.meta, ...uploadingMeta } };
 }

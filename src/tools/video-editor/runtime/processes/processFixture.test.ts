@@ -95,7 +95,16 @@ describe('process fixture descriptor', () => {
       expect.stringContaining('/node_modules/tsx/dist/loader.mjs'),
       expect.stringContaining('/tests/fixtures/video-editor/process-fixture.ts'),
     ]);
-    expect(descriptor.spawn.cwd).toContain('/reigh-app');
+    // "Repo-controlled" means the fixture runs from the repo root so its
+    // repo-relative loader + script paths resolve. Assert that relationship
+    // rather than a hardcoded checkout directory name — the repo is not
+    // always cloned into a directory called "reigh-app", and pinning the
+    // name made this test fail on every checkout that isn't.
+    const repoRoot = descriptor.spawn.cwd;
+    expect(repoRoot).toBeTruthy();
+    for (const spawnPath of descriptor.spawn.args.slice(1)) {
+      expect(spawnPath.startsWith(`${repoRoot}/`)).toBe(true);
+    }
     expect(notInstalledDescriptor.spawn.command).toBe(PROCESS_FIXTURE_MISSING_BINARY);
     expect(notInstalledDescriptor.spawn.args).toEqual([]);
 

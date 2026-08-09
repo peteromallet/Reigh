@@ -863,6 +863,15 @@ interface ExtensionClipSequenceProps {
  * overrides the extension clip's parameters at the current time (SD3 /
  * success criterion 9).
  *
+ * Both are resolved at the CURRENT composition time, not at `clip.at`:
+ * keyframe times are absolute timeline seconds (KeyframeInspector writes the
+ * playhead time; live recording writes `timelineStartSeconds + offset`), so
+ * evaluating at the clip's start froze every animated param at its first
+ * value in preview and in browser export. This component sits outside its own
+ * <Sequence>, so useCurrentFrame() here is the composition frame (an
+ * EffectLayerSequence wrapping a lower track re-offsets its children back to
+ * composition time, so this holds under effect layers too).
+ *
  * If the renderer throws at runtime, the error boundary catches it and
  * displays a loud placeholder preserving the clip's duration and position.
  */
@@ -878,6 +887,14 @@ const ExtensionClipSequence: FC<ExtensionClipSequenceProps> = ({
   const durationInFrames = getClipDurationInFrames(clip, fps);
   const from = Math.max(0, secondsToFrames(clip.at, fps));
   const { width, height } = parseResolution(resolution);
+  const frame = useCurrentFrame();
+
+  // Clamp the evaluation frame to the clip's own range. Inside the range this
+  // is the identity; outside it Remotion renders nothing, and the constant
+  // value keeps the memo below from recomputing on every frame of the
+  // timeline for clips that are not on screen.
+  const clampedFrame = Math.min(Math.max(frame, from), from + Math.max(0, durationInFrames - 1));
+  const timeSeconds = clampedFrame / fps;
 
   // Compute host-interpolated params from keyframe data, then apply
   // automation overrides from automation clips targeting this extension clip.
@@ -889,7 +906,7 @@ const ExtensionClipSequence: FC<ExtensionClipSequenceProps> = ({
       // No schema → pass raw params (no interpolation needed)
       baseParams = (clip.params as Record<string, unknown>) ?? {};
     } else {
-      const resolved = resolveAnimatedParams(keyframes, schema, clip.at);
+      const resolved = resolveAnimatedParams(keyframes, schema, timeSeconds);
       baseParams = interpolatedParamsToRecord(resolved);
     }
 
@@ -899,16 +916,16 @@ const ExtensionClipSequence: FC<ExtensionClipSequenceProps> = ({
         allClips,
         clip.clipType,
         baseParams,
-        clip.at,
+        timeSeconds,
       );
     }
     return baseParams;
-  }, [clip.at, clip.keyframes, clip.params, clip.clipType, registryRecord.schema, allClips]);
+  }, [timeSeconds, clip.keyframes, clip.params, clip.clipType, registryRecord.schema, allClips]);
 
   const rendererProps: ClipRendererProps = {
     clipId: clip.id,
     clipTypeId: registryRecord.clipTypeId,
-    time: clip.at,
+    time: timeSeconds,
     params: interpolatedParams,
     width,
     height,
@@ -1224,11 +1241,20 @@ export const TimelineRenderer: FC<{ config: ResolvedTimelineConfig }> = memo(({ 
       return groups;
     }, { regular: {}, effectLayers: {}, all: {} });
   }, [renderConfig]);
-  const liveBindingScan = scanTimelineLiveBindings(renderConfig as TimelineConfig, {
-    sources: liveSourceSnapshotsFromRegistry(liveRegistrySnapshot),
-  });
-  const liveBindingRecordsByClip = groupLiveBindingRecordsByClip(liveBindingScan.bindings);
-  const postprocessShader = getTimelinePostprocessShader(renderConfig as TimelineConfig);
+  // Memoized on purpose: this component re-renders on every frame during
+  // playback (useCurrentFrame above), and `liveBindingRecordsByClip` is a
+  // dependency of the `visualContent` memo. A fresh Map per frame invalidated
+  // that memo and re-rendered every track and clip on every frame.
+  const liveBindingRecordsByClip = useMemo(() => {
+    const scan = scanTimelineLiveBindings(renderConfig as TimelineConfig, {
+      sources: liveSourceSnapshotsFromRegistry(liveRegistrySnapshot),
+    });
+    return groupLiveBindingRecordsByClip(scan.bindings);
+  }, [renderConfig, liveRegistrySnapshot]);
+  const postprocessShader = useMemo(
+    () => getTimelinePostprocessShader(renderConfig as TimelineConfig),
+    [renderConfig],
+  );
   const postprocessRecord = postprocessShader
     ? shaderSnapshot.get(postprocessShader.shaderId, postprocessShader.extensionId)
     : undefined;

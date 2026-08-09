@@ -531,6 +531,7 @@ export function useTimelineState(): UseTimelineStateResult {
     jumpToCheckpoint,
     createManualCheckpoint,
     onBeforeCommit,
+    onRemoteData,
   } = history;
 
   // Wire TimelineOps (M3 atomic mutation adapter) into the host runtime context.
@@ -604,6 +605,10 @@ export function useTimelineState(): UseTimelineStateResult {
   useEffect(() => {
     return eventBus.on('beforeCommit', onBeforeCommit);
   }, [eventBus, onBeforeCommit]);
+
+  useEffect(() => {
+    return eventBus.on('remoteCommit', onRemoteData);
+  }, [eventBus, onRemoteData]);
 
   useEffect(() => {
     return eventBus.on('pruneSelection', selection.pruneSelection);

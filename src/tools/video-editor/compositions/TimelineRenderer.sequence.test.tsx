@@ -1376,3 +1376,200 @@ describe('TimelineRenderer — built-in live frame preview reader (M11 T7)', () 
     ))).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Keyframe / automation params must follow the playhead, not freeze at clip.at
+// ---------------------------------------------------------------------------
+
+describe('TimelineRenderer — extension clip params follow the composition time', () => {
+  beforeEach(() => {
+    sequenceProps.length = 0;
+    mockClipTypeRegistryGet.mockReset();
+    mockClipTypeRegistryHas.mockReset();
+  });
+
+  const ParamProbe: FC<ClipRendererProps> = (props) => (
+    <div
+      data-testid="extension-clip-renderer"
+      data-time={props.time}
+      data-params={JSON.stringify(props.params)}
+    />
+  );
+
+  const readParams = (): Record<string, unknown> => JSON.parse(
+    screen.getByTestId('extension-clip-renderer').getAttribute('data-params') ?? '{}',
+  );
+  const readTime = (): string | null => (
+    screen.getByTestId('extension-clip-renderer').getAttribute('data-time')
+  );
+
+  it('re-resolves keyframed params as the playhead moves through the clip', () => {
+    mockClipTypeRegistryGet.mockReturnValue(
+      makeRegistryRecord({
+        clipTypeId: 'ext.kf-clip',
+        renderer: ParamProbe,
+        schema: [{ name: 'opacity', label: 'Opacity', description: '', type: 'number', default: 0.5, min: 0, max: 1 }],
+      }),
+    );
+    mockClipTypeRegistryHas.mockReturnValue(true);
+
+    // Clip occupies 1s..5s. Keyframe times are absolute timeline seconds
+    // (KeyframeInspector writes the playhead time; live recording writes
+    // timelineStartSeconds + sample offset).
+    const config: ResolvedTimelineConfig = {
+      output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [
+        {
+          id: 'clip-kf',
+          clipType: 'ext.kf-clip',
+          track: 'V1',
+          at: 1,
+          hold: 4,
+          params: {},
+          keyframes: {
+            opacity: [
+              { time: 1, value: 0.2, interpolation: 'linear' },
+              { time: 5, value: 1, interpolation: 'linear' },
+            ],
+          },
+        },
+      ],
+      registry: {},
+    };
+
+    currentFrame = 30; // t = 1s → clip start
+    const { rerender } = render(<TimelineRenderer config={config} />);
+    expect(readParams().opacity).toBeCloseTo(0.2, 6);
+    expect(readTime()).toBe('1');
+
+    currentFrame = 90; // t = 3s → halfway through the curve
+    rerender(<TimelineRenderer config={{ ...config }} />);
+    expect(readParams().opacity).toBeCloseTo(0.6, 6);
+    expect(readTime()).toBe('3');
+
+    currentFrame = 149; // last frame the clip occupies (from=30, duration=120)
+    rerender(<TimelineRenderer config={{ ...config }} />);
+    expect(readParams().opacity).toBeCloseTo(0.993333, 5);
+
+    // Past the clip's last frame Remotion renders nothing; the resolved value
+    // is clamped to the clip's range so off-screen clips reuse the memo.
+    currentFrame = 400;
+    rerender(<TimelineRenderer config={{ ...config }} />);
+    expect(readParams().opacity).toBeCloseTo(0.993333, 5);
+  });
+
+  it('re-resolves automation-clip overrides as the playhead moves', () => {
+    mockClipTypeRegistryGet.mockReturnValue(
+      makeRegistryRecord({
+        clipTypeId: 'ext.auto-target',
+        renderer: ParamProbe,
+        schema: [{ name: 'intensity', label: 'Intensity', description: '', type: 'number', default: 0.5, min: 0, max: 1 }],
+      }),
+    );
+    mockClipTypeRegistryHas.mockReturnValue(true);
+
+    const config: ResolvedTimelineConfig = {
+      output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [
+        {
+          id: 'clip-target',
+          clipType: 'ext.auto-target',
+          track: 'V1',
+          at: 0,
+          hold: 4,
+          params: {},
+        },
+        {
+          id: 'clip-automation',
+          clipType: 'automation',
+          track: 'V1',
+          at: 0,
+          hold: 4,
+          params: {
+            enabled: true,
+            target: { contributionId: 'ext.auto-target', parameterPath: 'intensity' },
+            keyframes: [
+              { time: 0, value: 0, interpolation: 'linear' },
+              { time: 4, value: 1, interpolation: 'linear' },
+            ],
+          },
+        },
+      ],
+      registry: {},
+    };
+
+    currentFrame = 0;
+    const { rerender } = render(<TimelineRenderer config={config} />);
+    expect(readParams().intensity).toBeCloseTo(0, 6);
+
+    currentFrame = 60; // t = 2s → midpoint of the automation curve
+    rerender(<TimelineRenderer config={{ ...config }} />);
+    expect(readParams().intensity).toBeCloseTo(0.5, 6);
+
+    currentFrame = 105; // t = 3.5s
+    rerender(<TimelineRenderer config={{ ...config }} />);
+    expect(readParams().intensity).toBeCloseTo(0.875, 6);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// track.scale fidelity — characterization. Only plain (un-positioned) media
+// clips are scaled by the track's scale slider; text clips and clips that
+// carry a position override render unscaled. Whether that is the intended
+// meaning of the slider is an open owner decision, so these tests pin
+// today's behavior rather than asserting a desired one.
+// ---------------------------------------------------------------------------
+
+describe('TimelineRenderer — track.scale reaches only un-positioned media clips', () => {
+  beforeEach(() => {
+    sequenceProps.length = 0;
+    visualClipMock.mockClear();
+    textClipMock.mockClear();
+    mockClipTypeRegistryGet.mockReset();
+    mockClipTypeRegistryGet.mockReturnValue(undefined);
+    mockClipTypeRegistryHas.mockReset();
+    mockClipTypeRegistryHas.mockReturnValue(false);
+  });
+
+  const scaledConfig = (clips: ResolvedTimelineConfig['clips']): ResolvedTimelineConfig => ({
+    output: { resolution: '1280x720', fps: 30, file: 'out.mp4' },
+    tracks: [{ id: 'V1', kind: 'visual', label: 'V1', scale: 0.5 }],
+    clips,
+    registry: {},
+  });
+
+  const wrapperTransform = (testId: string): string => {
+    const el = screen.getByTestId(testId);
+    return (el.parentElement as HTMLElement | null)?.style.transform ?? '';
+  };
+
+  it('wraps a plain media clip in the track scale transform', () => {
+    render(<TimelineRenderer config={scaledConfig([
+      { id: 'clip-plain', clipType: 'media', track: 'V1', at: 0, hold: 2, asset: 'a' },
+    ])} />);
+
+    expect(wrapperTransform('visual-clip-sequence')).toBe('scale(0.5)');
+  });
+
+  it('does not scale a media clip that carries a position override', () => {
+    render(<TimelineRenderer config={scaledConfig([
+      { id: 'clip-positioned', clipType: 'media', track: 'V1', at: 0, hold: 2, asset: 'a', x: 320, y: 180, width: 640, height: 360 },
+    ])} />);
+
+    expect(wrapperTransform('visual-clip-sequence')).toBe('');
+  });
+
+  it('does not scale text clips', () => {
+    render(<TimelineRenderer config={scaledConfig([
+      { id: 'clip-text', clipType: 'text', track: 'V1', at: 0, hold: 2, text: { content: 'SCALED?' } },
+    ])} />);
+
+    expect(wrapperTransform('text-clip-sequence')).toBe('');
+    // TextClip receives the track but ignores its scale entirely.
+    expect(textClipMock).toHaveBeenCalledWith(expect.objectContaining({
+      track: expect.objectContaining({ scale: 0.5 }),
+    }));
+  });
+});
