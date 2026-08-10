@@ -34,6 +34,7 @@ vi.mock('@/shared/lib/supabaseSession', () => ({
 }));
 
 import { SupabaseDataProvider } from '@/tools/video-editor/data/SupabaseDataProvider';
+import { serializeTimelineConfigSnapshot } from '@/tools/video-editor/lib/timeline-domain';
 import { TimelineNotFoundError, TimelineVersionConflictError } from '@/tools/video-editor/data/DataProvider';
 import type { TimelineConfig, AssetRegistry } from '@/tools/video-editor/types/index';
 
@@ -48,6 +49,15 @@ function buildConfig(overrides: Partial<TimelineConfig> = {}): TimelineConfig {
     clips: [],
     ...overrides,
   } as TimelineConfig;
+}
+
+/**
+ * Save serializes (canonicalizing) the config before posting, stamping each
+ * track's `app.scaleAppliesToPositionedClips` bake marker — assert the wire
+ * format's canonical form.
+ */
+function canonicalConfig(config: TimelineConfig = config1): TimelineConfig {
+  return serializeTimelineConfigSnapshot(config).config as TimelineConfig;
 }
 
 const config1 = buildConfig();
@@ -248,7 +258,7 @@ describe('SupabaseDataProvider compatibility', () => {
 
       const [, init] = vi.mocked(globalThis.fetch).mock.calls[0];
       expect(JSON.parse(String(init?.body))).toEqual({
-        config: config1,
+        config: canonicalConfig(config1),
         asset_registry: registry1,
         expected_version: 8,
         actor: { type: 'human', id: 'user-123' },
@@ -279,7 +289,7 @@ describe('SupabaseDataProvider compatibility', () => {
       const [, init] = vi.mocked(globalThis.fetch).mock.calls[0];
       const body = JSON.parse(String(init?.body));
       expect(body).toEqual({
-        config: config1,
+        config: canonicalConfig(config1),
         expected_version: 4,
         actor: { type: 'human', id: 'user-123' },
         source: 'editor_save',

@@ -6,7 +6,7 @@ Sprint 3 is introducing a headless editor core plus a Reigh adapter shell. This 
 
 | File | Surface | Sprint 3 owner | Notes |
 | --- | --- | --- | --- |
-| `src/tools/video-editor/contexts/VideoEditorProvider.tsx` | `DataProviderWrapper`, `useTimelineState()`, `TimelineStoreProvider`, editor-op assembly | Core-owned | This is the provider/bootstrap surface that should move behind `CoreProvider` without changing synchronous store seeding or mutable adapter behavior. |
+| `src/tools/video-editor/contexts/VideoEditorProvider.tsx` | `DataProviderWrapper`, `useTimelineState()`, `TimelineStoreProvider`, editor-op assembly | Core-owned | This is the provider/bootstrap surface that should move behind `CoreRuntimeProvider` (`core/core-runtime.tsx`) without changing synchronous store seeding or mutable adapter behavior. |
 | `src/tools/video-editor/contexts/VideoEditorProvider.tsx` | `useSearchParams()` staged-add drain, `readPendingAdds()` / `writePendingAdds()`, URL query cleanup | Adapter-owned | This is Reigh route behavior tied to staged add-to-editor flow and should stay outside the headless core. |
 | `src/tools/video-editor/contexts/VideoEditorProvider.tsx` | `useShots()`, `useVideoEditorLightboxNavigation()`, inline `MediaLightbox`, `VideoEditorLightboxOverlay` | Adapter-owned | Shot-aware lightbox behavior is Reigh-specific in Sprint 3. |
 | `src/tools/video-editor/contexts/VideoEditorProvider.tsx` | `useAgentChatRegistry()`, timeline clip attachment registration into app chat state | Adapter-owned | This is the app bridge into the TasksPane-owned chat workflow. |
@@ -41,7 +41,7 @@ That means:
 
 - `useTimelineState.ts`, `useExternalDrop.ts`, `useActiveTaskClips.ts`, `useFinalVideoAvailable.ts`, `useAddVariantAsGeneration.ts`, `useSelectedMediaClips.ts`, and `useTimelineClipsForAttachments.ts` now read project identity, shots, and final-video availability through `VideoEditorCorePorts` rather than importing `ProjectContext` or `ShotsContext` directly. The current `VideoEditorProvider.tsx` explicitly supplies those adapter values until T5/T7 replace the live composition with dedicated Reigh adapter components.
 - `TimelineEditorShellCore.tsx` now owns the runtime shell responsibilities, while `ReighVideoEditorShell.tsx` still owns Reigh route and pane behavior. T7 should switch the live route composition to call the adapter explicitly instead of relying on the compatibility export in `VideoEditorShell.tsx`.
-- `VideoEditorProvider.tsx` still owns adapter lightbox, staged-add draining, and AgentChat bridge behavior around `CoreProvider`. That is intentional for Sprint 3 and should stay explicit rather than moving back into core hooks.
+- `VideoEditorProvider.tsx` still owns adapter lightbox, staged-add draining, and AgentChat bridge behavior around `CoreRuntimeProvider`. That is intentional for Sprint 3 and should stay explicit rather than moving back into core hooks.
 - `AgentChat.tsx` remains adapter-owned in Sprint 3. The shell split should not pull its panes-store or lightbox behavior back into the headless core.
 
 ## Import Governance

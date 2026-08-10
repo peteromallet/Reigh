@@ -483,7 +483,7 @@ These capabilities are explicitly deferred or unsupported. **Do not document the
 
 | Area | Deferral ref | Earliest milestone |
 |---|---|---|
-| Extension manager UI (install, enable/disable) | D-001–D-010 | M14 |
+| Extension **install/update/delete** from the manager UI (enable/disable, settings editing and persistence are **shipped** — see the supported/deferred matrix S-160–S-164) | D-001, D-010 | M14 |
 | Render planner & export UI | D-020–D-027 | M12 |
 | Live data bridge frontend state coverage | D-030–D-037 | M11 |
 | Agent tool workflow validation & frontend | D-040–D-047 | M10 |

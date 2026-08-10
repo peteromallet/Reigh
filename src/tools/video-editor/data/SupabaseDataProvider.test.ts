@@ -25,6 +25,7 @@ vi.mock('@/shared/lib/supabaseSession', () => ({
 
 import { TimelineVersionConflictError, type TimelineConfig } from './DataProvider';
 import { SupabaseDataProvider } from './SupabaseDataProvider';
+import { serializeTimelineConfigSnapshot } from '@/tools/video-editor/lib/timeline-domain.ts';
 import {
   defineExtensionPersistenceConformanceSuite,
 } from './conformance/extensionPersistenceConformance';
@@ -47,6 +48,15 @@ function buildConfig(): TimelineConfig {
     tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
     clips: [],
   };
+}
+
+/**
+ * The save/sync paths serialize the config before posting, and serialization
+ * canonicalizes it — which stamps each track's `app.scaleAppliesToPositionedClips`
+ * bake marker. Assertions against the wire format must use this canonical form.
+ */
+function canonicalConfig(): TimelineConfig {
+  return serializeTimelineConfigSnapshot(buildConfig()).config as TimelineConfig;
 }
 
 function mockTimelinesSelect(response: unknown) {
@@ -361,7 +371,7 @@ describe('SupabaseDataProvider', () => {
     );
     const [, init] = vi.mocked(globalThis.fetch).mock.calls[0];
     expect(JSON.parse(String(init?.body))).toEqual({
-      config: buildConfig(),
+      config: canonicalConfig(),
       asset_registry: registry,
       expected_version: 8,
       actor: {
@@ -403,7 +413,7 @@ describe('SupabaseDataProvider', () => {
     const [, init] = vi.mocked(globalThis.fetch).mock.calls[0];
     const body = JSON.parse(String(init?.body));
     expect(body).toEqual({
-      config: buildConfig(),
+      config: canonicalConfig(),
       expected_version: 4,
       actor: {
         type: 'human',
@@ -524,7 +534,7 @@ describe('SupabaseDataProvider', () => {
     }));
     const [, init] = vi.mocked(globalThis.fetch).mock.calls[0];
     expect(JSON.parse(String(init?.body))).toEqual({
-      config: buildConfig(),
+      config: canonicalConfig(),
       expected_version: 7,
       actor: {
         type: 'human',
@@ -748,7 +758,7 @@ describe('SupabaseDataProvider', () => {
           config_version: 7,
         },
         remote_timeline: {
-          config: buildConfig(),
+          config: canonicalConfig(),
           asset_registry: { assets: { 'asset-2': { file: 'remote/demo.mp4' } } },
           config_version: 8,
         },
