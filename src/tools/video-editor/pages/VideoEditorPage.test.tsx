@@ -56,6 +56,13 @@ vi.mock('@/shared/contexts/AuthContext.tsx', () => ({
   useAuth: () => state.auth,
 }));
 
+// The local-mode bridge-state tests below exercise the no-backend dev fallback
+// (flag-driven local mode). With a Supabase URL configured the flag is ignored
+// by design, so simulate the no-backend setup for these tests.
+vi.mock('@/integrations/supabase/config/env', () => ({
+  hasSupabaseConfig: () => false,
+}));
+
 vi.mock('@/shared/contexts/ProjectContext.tsx', () => ({
   useProjectSelectionContext: () => state.project,
 }));

@@ -28,6 +28,12 @@ export function getSupabaseUrl(): string {
   return (_supabaseUrl ??= requireEnv('VITE_SUPABASE_URL'));
 }
 
+/** True when a Supabase URL is configured. Non-throwing — used to decide whether
+ *  the no-Supabase dev fallbacks (local-mode editor) may apply at all. */
+export function hasSupabaseConfig(): boolean {
+  return Boolean(import.meta.env.VITE_SUPABASE_URL);
+}
+
 let _supabaseKey: string | undefined;
 /** Supabase anon/publishable key — throws on first access if VITE_SUPABASE_ANON_KEY is missing. */
 export function getSupabasePublishableKey(): string {

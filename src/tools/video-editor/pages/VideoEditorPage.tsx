@@ -15,6 +15,7 @@ import { useIsMobile, useIsTablet } from '@/shared/hooks/mobile';
 import { Input } from '@/shared/components/ui/input.tsx';
 import { Skeleton } from '@/shared/components/ui/skeleton.tsx';
 import { useAuth } from '@/shared/contexts/AuthContext.tsx';
+import { hasSupabaseConfig } from '@/integrations/supabase/config/env';
 import { useProjectSelectionContext } from '@/shared/contexts/ProjectContext.tsx';
 import { useToolSettings } from '@/shared/hooks/settings/useToolSettings.ts';
 import { toast } from '@/shared/components/ui/toast.tsx';
@@ -104,12 +105,13 @@ function writeStoredLocalMode(enabled: boolean): void {
 function useVideoEditorModePreference(urlRequestsLocalMode: boolean) {
   const localModeAvailable = import.meta.env.DEV;
   const { isAuthenticated } = useAuth();
-  // Local mode is the no-Supabase dev fallback. A signed-in developer (real
-  // session against a real or remote Supabase) wants app mode: honoring a
-  // stale `dev.videoEditor.localMode` flag would hijack every app-mode visit
-  // into the local bridge, whose `/api/astrid` proxy 500s when the stub is not
-  // running. Only fall back to the flag when there is no session at all.
-  const usePersistedLocalMode = !isAuthenticated && readStoredLocalMode();
+  // Local mode is the no-Supabase dev fallback. When a Supabase URL is
+  // configured (remote or local backend), the persisted `dev.videoEditor.localMode`
+  // flag must never auto-enter it: the flag is a leftover from a no-backend
+  // session and would hijack app-mode visits into the local bridge, whose
+  // `/api/astrid` proxy 500s when the stub is not running. The flag only
+  // applies with no configured backend AND no session.
+  const usePersistedLocalMode = !hasSupabaseConfig() && !isAuthenticated && readStoredLocalMode();
   const [mode, setMode] = useState<VideoEditorMode>(() => (
     localModeAvailable && (urlRequestsLocalMode || usePersistedLocalMode) ? 'local' : 'app'
   ));
