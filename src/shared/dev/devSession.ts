@@ -109,8 +109,12 @@ export function hasLocalModeUrlParams(search: string): boolean {
 /**
  * Write the fake session + local-mode flag into a storage object.
  *
- * Returns `false` and writes nothing when a session is already stored — a real
- * signed-in developer must never have their session replaced by this one.
+ * Returns `false` and writes nothing when a *valid* session is already stored —
+ * a real signed-in developer must never have their session replaced by this
+ * one. A stored session that has already expired is treated as absent (the
+ * Supabase client drops it on load anyway), so a day-old dev session from a
+ * previous run cannot permanently block the dev auto-login.
+ *
  * Callers own the DEV gate; this function has no environment opinion.
  */
 export function seedDevLocalModeSession(
@@ -118,10 +122,22 @@ export function seedDevLocalModeSession(
   supabaseUrl: string,
 ): boolean {
   const key = devSessionStorageKey(supabaseUrl);
-  if (storage.getItem(key)) {
+  const existing = storage.getItem(key);
+  if (existing && !isStoredSessionExpired(existing)) {
     return false;
   }
   storage.setItem(key, JSON.stringify(buildDevSession()));
   storage.setItem(LOCAL_MODE_STORAGE_KEY, '1');
   return true;
+}
+
+/** True when the stored blob carries an `expires_at` already in the past. */
+function isStoredSessionExpired(raw: string): boolean {
+  try {
+    const parsed = JSON.parse(raw) as { expires_at?: unknown };
+    return typeof parsed.expires_at === 'number' && parsed.expires_at * 1000 <= Date.now();
+  } catch {
+    // Unparseable blob — treat as expired so a fresh dev session replaces it.
+    return true;
+  }
 }
