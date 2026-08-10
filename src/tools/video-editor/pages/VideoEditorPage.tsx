@@ -216,7 +216,10 @@ function useVideoEditorProviderSelection({
         projectId: localProjectSlug,
         timelineId: localTimelineId,
         timelineName: localTimelineName,
-        userId: userId ?? 'local-bridge',
+        // No user in local mode: a fabricated id would be truthy and enable
+        // the auth-gated catalog queries (effects, resources) against a
+        // backend that local mode must never touch. `null` keeps them off.
+        userId: null,
         remountKey: `local:${localProjectSlug}:${localTimelineId}`,
       };
     }

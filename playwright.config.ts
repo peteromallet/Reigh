@@ -1,5 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
-import { PLACEHOLDER_SUPABASE_URL } from './src/shared/dev/devSession.ts';
+import { DEFAULT_DEV_SUPABASE_URL } from './src/shared/dev/devSession.ts';
 
 const port = Number(process.env.PLAYWRIGHT_PORT ?? 4173);
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${port}`;
@@ -43,7 +43,7 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
       env: {
-        VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL ?? PLACEHOLDER_SUPABASE_URL,
+        VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL ?? DEFAULT_DEV_SUPABASE_URL,
         VITE_SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY ?? 'test-anon-key',
         VITE_APP_ENV: process.env.VITE_APP_ENV ?? 'web',
       },

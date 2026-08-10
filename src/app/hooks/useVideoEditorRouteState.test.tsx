@@ -44,6 +44,23 @@ describe('useVideoEditorRouteState', () => {
     expect(state.timelineId).toBe('local-timeline');
   });
 
+  it('flags local mode from either local param', () => {
+    expect(stateFor('/tools/video-editor?localProject=demo').isLocalModeEditor).toBe(true);
+    expect(stateFor('/tools/video-editor?localTimeline=local-timeline').isLocalModeEditor).toBe(true);
+    expect(stateFor('/tools/video-editor?localProject=demo&localTimeline=local-timeline').isLocalModeEditor).toBe(true);
+  });
+
+  it('does not flag local mode for app-mode or param-less editor URLs', () => {
+    expect(stateFor('/tools/video-editor?timeline=app-timeline').isLocalModeEditor).toBe(false);
+    expect(stateFor('/tools/video-editor').isLocalModeEditor).toBe(false);
+    expect(stateFor('/tools/join-clips?localProject=demo').isLocalModeEditor).toBe(false);
+  });
+
+  it('treats a bare local param as local mode (matches bootstrap params.has)', () => {
+    expect(stateFor('/tools/video-editor?localProject=').isLocalModeEditor).toBe(true);
+    expect(stateFor('/tools/video-editor?localTimeline=').isLocalModeEditor).toBe(true);
+  });
+
   it('prefers the app-mode timeline when both params are present', () => {
     const state = stateFor('/tools/video-editor?timeline=app-timeline&localTimeline=local-timeline');
     expect(state.timelineId).toBe('app-timeline');

@@ -45,7 +45,7 @@ function ScrollToTop() {
 }
 
 export const Layout: React.FC = () => {
-  const { isVideoEditorShellActive } = useVideoEditorRouteState();
+  const { isVideoEditorShellActive, isLocalModeEditor } = useVideoEditorRouteState();
   const isTasksPaneLocked = usePanesStore((state) => state.isTasksPaneLocked);
   const tasksPaneWidth = usePanesStore((state) => state.tasksPaneWidth);
   const isShotsPaneLocked = usePanesStore((state) => state.isShotsPaneLocked);
@@ -80,7 +80,16 @@ export const Layout: React.FC = () => {
   // Redirect unauthenticated users to home page
   // Use /home instead of / to avoid redirect loops in non-WEB environments
   // where / is inside Layout
-  if (!isAuthenticated) {
+  //
+  // DEV-only exemption: the local-mode editor (`?localProject`/`?localTimeline`)
+  // renders without any session — it reads the timeline from the Astrid bridge
+  // and needs no login. The app-wide providers no-op on a missing userId, so
+  // nothing fetches against a backend. This exemption is what makes
+  // `npm run dev:editor` work without a fake Supabase session. In production the
+  // branch is dead (`import.meta.env.DEV` is statically `false`).
+  const isDevLocalModeEditor = import.meta.env.DEV && isLocalModeEditor;
+  const isAuthenticatedForRoute = isAuthenticated || isDevLocalModeEditor;
+  if (!isAuthenticatedForRoute) {
     return <Navigate to="/home" replace state={{ fromProtected: true }} />;
   }
 

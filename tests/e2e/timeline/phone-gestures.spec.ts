@@ -15,7 +15,6 @@ import {
   openEditor,
   pickFreeDraggableClip,
   resetBridgeBaseline,
-  seedFakeSession,
 } from './support';
 
 test.describe('timeline phone gestures', () => {
@@ -32,7 +31,6 @@ test.describe('timeline phone gestures', () => {
     const logs: string[] = [];
     const resetError = await resetBridgeBaseline();
     if (resetError) logs.push(resetError);
-    await seedFakeSession(context);
     logs.push(...collectPageLogs(page));
 
     await openEditor(page);

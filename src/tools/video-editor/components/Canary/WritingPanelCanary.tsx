@@ -151,8 +151,8 @@ export function WritingPanelCanary({ context }: WritingPanelCanaryProps) {
         </div>
         <div className="flex gap-3 text-muted-foreground/60">
           <span>Lang: {DEMO_SOURCE_IDENTITY.language}</span>
-          <span>Timeline: {timelineName ?? timelineId.slice(0, 12)}</span>
-          <span>User: {userId.slice(0, 8)}…</span>
+          <span>Timeline: {timelineName ?? (timelineId ? timelineId.slice(0, 12) : '—')}</span>
+          <span>User: {userId ? `${userId.slice(0, 8)}…` : 'local'}</span>
         </div>
       </div>
 

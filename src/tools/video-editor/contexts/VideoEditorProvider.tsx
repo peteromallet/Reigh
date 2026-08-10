@@ -141,7 +141,7 @@ function InnerProvider({
     assembly,
     projectId: runtime.project.projectId,
     catalogUserId: runtime.auth.userId,
-    effectsQueryEnabled: !effectCatalog,
+    effectsQueryEnabled: !effectCatalog && Boolean(runtime.auth.userId),
     effectCatalog,
     sequenceComponentCatalog,
     proposalPersistenceProvider: proposalPersistenceRef.current,

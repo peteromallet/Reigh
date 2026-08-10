@@ -18,9 +18,8 @@ import { initializePreloadingService } from '@/shared/lib/preloading';
 import { initializeToolSettingsWriteRuntime } from '@/shared/settings';
 import { initializeNetworkStatusManager } from '@/shared/services/network/networkStatusManager';
 import {
-  DEFAULT_DEV_SUPABASE_URL,
   hasLocalModeUrlParams,
-  seedDevLocalModeSession,
+  writeStoredLocalModeFlag,
 } from '@/shared/dev/devSession';
 import '@/index.css';
 
@@ -96,22 +95,19 @@ export function initializeAppEnvironment(): void {
     import('@/shared/lib/debug/mobileProjectDebug');
   }
 
-  // Dev-only: let a pasted local-mode timeline URL open the editor with no
-  // sign-in. Safe because (a) the whole block is inside `import.meta.env.DEV`,
-  // which Vite replaces with `false` in a production build so the bundler drops
-  // it entirely; (b) it bails when any session is already stored, so a real
-  // signed-in developer is never overwritten; (c) local mode reads the timeline
-  // from the Astrid bridge and issues no authenticated Supabase request, and the
-  // token is unsigned — nothing would accept it. See `dev/devSession.ts`.
+  // Dev-only: a pasted local-mode editor URL opens the editor with no sign-in.
+  // The editor's local mode reads the timeline from the Astrid bridge and needs
+  // no session — and crucially, no session must be created: a fake Supabase
+  // login would make the app-wide providers (user settings, projects, credits)
+  // fetch real data against a non-existent backend and fail. The auth gate
+  // itself exempts the local-mode editor route in DEV (`Layout.tsx`), so
+  // nothing here needs to write localStorage. See `dev/devSession.ts`.
   if (import.meta.env.DEV && !isTestRuntimeEnvironment(env) && typeof window !== 'undefined') {
     if (hasLocalModeUrlParams(window.location.search)) {
       try {
-        seedDevLocalModeSession(
-          window.localStorage,
-          (import.meta.env.VITE_SUPABASE_URL as string | undefined) ?? DEFAULT_DEV_SUPABASE_URL,
-        );
+        writeStoredLocalModeFlag(window.localStorage);
       } catch {
-        // Restricted storage — the developer just signs in normally.
+        // Restricted storage — the developer just uses the full editor URL.
       }
     }
   }

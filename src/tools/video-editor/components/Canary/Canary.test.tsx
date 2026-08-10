@@ -145,6 +145,13 @@ describe('WritingPanelCanary', () => {
     expect(screen.getByText(/user-abc…/)).toBeDefined();
   });
 
+  it('tolerates a null user id (local mode has no session)', () => {
+    const ctx = mockContext({ userId: null });
+    render(<WritingPanelCanary context={ctx} />);
+    expect(screen.getByText(/User: local/)).toBeDefined();
+    expect(screen.getByText(/Test Timeline/)).toBeDefined();
+  });
+
   it('shows dirty save posture', () => {
     const ctx = mockContext();
     render(<WritingPanelCanary context={ctx} />);

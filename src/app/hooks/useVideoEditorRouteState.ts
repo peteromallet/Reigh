@@ -17,10 +17,16 @@ export function useVideoEditorRouteState() {
   const timelineId = searchParams.get('timeline') ?? searchParams.get('localTimeline');
   const isEditorRoute = isVideoEditorRoute(pathname);
   const isVideoEditorShellActive = isEditorRoute && Boolean(timelineId);
+  // Matches `hasLocalModeUrlParams` in `dev/devSession.ts` (which uses
+  // `params.has()`), so the gate exemption and the flag writer agree even for
+  // bare/empty param values.
+  const isLocalModeEditor = isEditorRoute
+    && (searchParams.has('localTimeline') || searchParams.has('localProject'));
 
   return {
     isEditorRoute,
     timelineId,
     isVideoEditorShellActive,
+    isLocalModeEditor,
   };
 }

@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
-  buildDevSession,
   devSessionStorageKey,
+  hasLocalModeUrlParams,
   LOCAL_MODE_STORAGE_KEY,
-  seedDevLocalModeSession,
+  writeStoredLocalModeFlag,
 } from './devSession.ts';
 
-function makeMemoryStorage(initial: Record<string, string> = {}): Storage {
-  const store = new Map(Object.entries(initial));
+function makeMemoryStorage(): Storage {
+  const store = new Map<string, string>();
   return {
     get length() { return store.size; },
     clear() { store.clear(); },
@@ -18,47 +18,27 @@ function makeMemoryStorage(initial: Record<string, string> = {}): Storage {
   };
 }
 
-const URL = 'https://example.supabase.co';
+const URL = 'http://127.0.0.1:54321';
 
-function storedExpiredSession(): string {
-  return JSON.stringify({ ...buildDevSession(Date.now()), expires_at: Math.floor(Date.now() / 1000) - 1 });
-}
+describe('devSession', () => {
+  it('derives the storage key from the Supabase URL hostname', () => {
+    expect(devSessionStorageKey(URL)).toBe('sb-127-auth-token');
+    expect(devSessionStorageKey('https://abcdef.supabase.co')).toBe('sb-abcdef-auth-token');
+  });
 
-function storedValidSession(): string {
-  return JSON.stringify(buildDevSession());
-}
+  it('recognises local-mode URL params', () => {
+    expect(hasLocalModeUrlParams('?localProject=demo&localTimeline=demo-timeline')).toBe(true);
+    expect(hasLocalModeUrlParams('?localProject=demo')).toBe(true);
+    expect(hasLocalModeUrlParams('?timeline=real-timeline')).toBe(false);
+    expect(hasLocalModeUrlParams('')).toBe(false);
+  });
 
-describe('seedDevLocalModeSession', () => {
-  it('seeds a session and the local-mode flag into empty storage', () => {
+  it('persists only the local-mode flag — never a session', () => {
     const storage = makeMemoryStorage();
-    expect(seedDevLocalModeSession(storage, URL)).toBe(true);
-    expect(storage.getItem(devSessionStorageKey(URL))).toBeTruthy();
+    writeStoredLocalModeFlag(storage);
     expect(storage.getItem(LOCAL_MODE_STORAGE_KEY)).toBe('1');
-  });
-
-  it('does not overwrite a valid stored session (a real signed-in dev)', () => {
-    const key = devSessionStorageKey(URL);
-    const valid = storedValidSession();
-    const storage = makeMemoryStorage({ [key]: valid });
-    expect(seedDevLocalModeSession(storage, URL)).toBe(false);
-    expect(storage.getItem(key)).toBe(valid);
-    expect(storage.getItem(LOCAL_MODE_STORAGE_KEY)).toBeNull();
-  });
-
-  it('replaces an expired stored session so a day-old dev login cannot block auto-login', () => {
-    const key = devSessionStorageKey(URL);
-    const expired = storedExpiredSession();
-    const storage = makeMemoryStorage({ [key]: expired });
-    expect(seedDevLocalModeSession(storage, URL)).toBe(true);
-    const replaced = JSON.parse(storage.getItem(key)!) as { expires_at: number };
-    expect(replaced.expires_at).toBeGreaterThan(Math.floor(Date.now() / 1000));
-    expect(storage.getItem(LOCAL_MODE_STORAGE_KEY)).toBe('1');
-  });
-
-  it('replaces an unparseable stored blob', () => {
-    const key = devSessionStorageKey(URL);
-    const storage = makeMemoryStorage({ [key]: 'not-json' });
-    expect(seedDevLocalModeSession(storage, URL)).toBe(true);
-    expect(JSON.parse(storage.getItem(key)!)).toHaveProperty('access_token');
+    // The dev path must not fabricate a Supabase session: a fake login would
+    // make the app-wide providers fetch against a non-existent backend.
+    expect(Array.from({ length: storage.length }, (_, i) => storage.key(i)!).filter((k) => k.includes('auth-token'))).toEqual([]);
   });
 });

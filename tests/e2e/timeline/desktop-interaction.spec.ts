@@ -10,7 +10,6 @@ import {
   countSelectedClips,
   openEditor,
   resetBridgeBaseline,
-  seedFakeSession,
 } from './support';
 
 test.describe('timeline desktop interaction', () => {
@@ -22,7 +21,6 @@ test.describe('timeline desktop interaction', () => {
     const logs: string[] = [];
     const resetError = await resetBridgeBaseline();
     if (resetError) logs.push(resetError);
-    await seedFakeSession(context);
     logs.push(...collectPageLogs(page));
 
     await openEditor(page);

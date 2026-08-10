@@ -20,10 +20,11 @@ const env = {
   PORT,
   VITE_ASTRID_BRIDGE_PORT: BRIDGE_PORT,
   ASTRID_BRIDGE_PORT: BRIDGE_PORT,
-  // Must stay in step with PLACEHOLDER_SUPABASE_URL in
+  // Must stay in step with DEFAULT_DEV_SUPABASE_URL in
   // src/shared/dev/devSession.ts — the dev session's storage key is
-  // derived from this URL. (.mjs cannot import the TS module.)
-  VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL ?? 'https://example.supabase.co',
+  // derived from this URL. (.mjs cannot import the TS module.) This is the
+  // local `supabase start` convention, not a fake external domain.
+  VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL ?? 'http://127.0.0.1:54321',
   VITE_SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY ?? 'test-anon-key',
   VITE_APP_ENV: process.env.VITE_APP_ENV ?? 'web',
 };

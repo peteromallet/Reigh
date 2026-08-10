@@ -24,12 +24,6 @@ import {
   EDIT_AREA_SELECTOR,
   SELECTED_CLIP_SELECTOR,
 } from '../../../src/tools/video-editor/lib/timeline-dom.ts';
-import {
-  LOCAL_MODE_STORAGE_KEY,
-  PLACEHOLDER_SUPABASE_URL,
-  buildDevSession,
-  devSessionStorageKey,
-} from '../../../src/shared/dev/devSession.ts';
 
 export const BASE_URL = (process.env.BASE_URL ?? 'http://127.0.0.1:2222').replace(/\/+$/, '');
 export const BRIDGE_PORT = Number(process.env.ASTRID_BRIDGE_PORT ?? 17333);
@@ -77,27 +71,6 @@ export async function resetBridgeBaseline(): Promise<string | null> {
   } catch (error) {
     return `[reset] ${(error as Error).message}`;
   }
-}
-
-/**
- * Seed a Supabase-shaped session in localStorage plus the local-mode flag.
- *
- * The session shape and the storage-key derivation are shared with the app's own
- * dev path (`src/shared/dev/devSession.ts`) so the forging logic
- * lives in exactly one place. The token is unsigned and never leaves the
- * browser: local mode reads the timeline from the bridge stub, and the app only
- * needs *a* session to get past its auth gate and render the editor.
- */
-export async function seedFakeSession(context: BrowserContext): Promise<void> {
-  // Mirrors the `webServer` env in `playwright.config.ts`: Supabase derives its
-  // storage key from the URL, so the seed and the dev server must agree.
-  const storageKey = devSessionStorageKey(process.env.VITE_SUPABASE_URL ?? PLACEHOLDER_SUPABASE_URL);
-  const session = buildDevSession();
-
-  await context.addInitScript(({ key, value, modeKey }) => {
-    window.localStorage.setItem(key, value);
-    window.localStorage.setItem(modeKey, '1');
-  }, { key: storageKey, value: JSON.stringify(session), modeKey: LOCAL_MODE_STORAGE_KEY });
 }
 
 /** Noise the editor emits in local mode that is not a signal about the timeline. */
@@ -175,10 +148,35 @@ export async function createTouchInput(context: BrowserContext, page: Page): Pro
   };
 }
 
-/** Open the editor in local mode and wait for it to settle. */
+/**
+ * Open the editor in local mode and wait for it to settle.
+ *
+ * Local mode must never talk to a backend: no session is seeded, so every
+ * auth-gated query is disabled. This waits for the editor, then asserts zero
+ * Supabase REST/auth requests — with a stale project id pre-seeded, covering
+ * the regression where leftover project selection re-enabled queries.
+ */
 export async function openEditor(page: Page): Promise<void> {
+  // Pre-seed a stale project selection: local mode must not let leftover
+  // project state re-enable backend queries (the regression Codex flagged).
+  await page.addInitScript(() => {
+    try {
+      window.localStorage.setItem('reigh.lastSelectedProjectId', 'stale-project-from-earlier-session');
+    } catch {
+      // storage unavailable — the assertion below still covers the happy path
+    }
+  });
   await page.goto(EDITOR_URL, { waitUntil: 'domcontentloaded', timeout: 45_000 });
   await page.waitForTimeout(EDITOR_SETTLE_MS);
+  const backendCalls = await page.evaluate(() => {
+    const urls = performance.getEntriesByType('resource')
+      .map((e) => e.name)
+      .filter((n) => /(supabase\.co|127\.0\.0\.1:54321|localhost:54321)/.test(n));
+    return urls.length;
+  });
+  if (backendCalls > 0) {
+    throw new Error(`local-mode editor made ${backendCalls} backend request(s); local mode must be backend-free`);
+  }
 }
 
 /**

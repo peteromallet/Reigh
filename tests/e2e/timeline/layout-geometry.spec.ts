@@ -37,7 +37,6 @@ import {
   BRIDGE_ORIGIN,
   openEditor,
   PROJECT_SLUG,
-  seedFakeSession,
   TIMELINE_SLUG,
 } from './support';
 
@@ -226,7 +225,6 @@ test.describe('timeline layout geometry', () => {
         test.setTimeout(120_000);
 
         await resetGeometryFixture();
-        await seedFakeSession(context);
         await openEditor(page);
 
         const snapshot = await collectGeometry(page);
