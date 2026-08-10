@@ -83,8 +83,12 @@ export function useStaleVariants({ registry, patchRegistry, registerAsset }: Use
     setPrimaryLocationMap(map);
   }, []);
 
-  // Fetch on mount, when generationIds change, and on a polling interval
+  // Fetch on mount, when generationIds change, and on a polling interval.
+  // Local-mode editor has no session: stale-variant detection queries Supabase
+  // for primary variant locations, which cannot resolve there — and the demo
+  // clips' generation ids would otherwise trigger it on every load.
   useEffect(() => {
+    if (!runtime.auth.userId) return;
     const { generationIds } = generationAssetMap;
     if (generationIds.length === 0) return;
 
@@ -101,6 +105,7 @@ export function useStaleVariants({ registry, patchRegistry, registerAsset }: Use
 
   // Subscribe to realtime variant/generation changes for instant updates
   useEffect(() => {
+    if (!runtime.auth.userId) return;
     const { generationIds } = generationAssetMap;
     if (generationIds.length === 0) return;
 

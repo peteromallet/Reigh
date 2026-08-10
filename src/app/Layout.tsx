@@ -132,10 +132,18 @@ export const Layout: React.FC = () => {
           mainContent
         )}
 
-        <EditorPane />
-        <TasksPane onOpenSettings={handleOpenSettings} />
-        <ToolsPane />
-        <GenerationsPane />
+        {/* App-shell panes. Suppressed on the local-mode editor route: local
+            mode is the backend-free dev editor, and these panes (agent chat,
+            generations, tools) fetch real Supabase data that cannot resolve
+            there. App-mode editor keeps them. */}
+        {!isLocalModeEditor && (
+          <>
+            <EditorPane />
+            <TasksPane onOpenSettings={handleOpenSettings} />
+            <ToolsPane />
+            <GenerationsPane />
+          </>
+        )}
 
         {/* Social Icons Footer */}
         {!isVideoEditorShellActive && (
@@ -147,12 +155,17 @@ export const Layout: React.FC = () => {
           </div>
         )}
 
-        <SettingsModal
-          isOpen={isSettingsModalOpen}
-          onOpenChange={setIsSettingsModalOpen}
-          initialTab={settingsInitialTab}
-          creditsTab={settingsCreditsTab}
-        />
+        {/* App-shell modals; suppressed in local-mode editor like the panes
+            (their content fetches account data from a backend local mode
+            cannot reach). */}
+        {!isLocalModeEditor && (
+          <SettingsModal
+            isOpen={isSettingsModalOpen}
+            onOpenChange={setIsSettingsModalOpen}
+            initialTab={settingsInitialTab}
+            creditsTab={settingsCreditsTab}
+          />
+        )}
 
         {/* Onboarding Modal */}
         <OnboardingModal

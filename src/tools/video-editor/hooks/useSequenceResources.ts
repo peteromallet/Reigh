@@ -60,8 +60,10 @@ function useSupabaseSequenceComponentCatalog(
   options?: { enabled?: boolean },
 ): VideoEditorSequenceComponentCatalog {
   const enabled = options?.enabled ?? true;
+  // Both legs are user-scoped in practice; with no session (dev local-mode
+  // editor) neither should fetch a backend.
   const privateQuery = useListResources('sequence-component', { enabled: enabled && Boolean(userId) });
-  const publicQuery = useListPublicResources('sequence-component', { enabled });
+  const publicQuery = useListPublicResources('sequence-component', { enabled: enabled && Boolean(userId) });
   const createComponent = useCreateSequenceComponentResource();
   const updateComponent = useUpdateSequenceComponentResource();
   const deleteComponent = useDeleteSequenceComponentResource();

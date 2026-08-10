@@ -103,8 +103,15 @@ function writeStoredLocalMode(enabled: boolean): void {
  */
 function useVideoEditorModePreference(urlRequestsLocalMode: boolean) {
   const localModeAvailable = import.meta.env.DEV;
+  const { isAuthenticated } = useAuth();
+  // Local mode is the no-Supabase dev fallback. A signed-in developer (real
+  // session against a real or remote Supabase) wants app mode: honoring a
+  // stale `dev.videoEditor.localMode` flag would hijack every app-mode visit
+  // into the local bridge, whose `/api/astrid` proxy 500s when the stub is not
+  // running. Only fall back to the flag when there is no session at all.
+  const usePersistedLocalMode = !isAuthenticated && readStoredLocalMode();
   const [mode, setMode] = useState<VideoEditorMode>(() => (
-    localModeAvailable && (urlRequestsLocalMode || readStoredLocalMode()) ? 'local' : 'app'
+    localModeAvailable && (urlRequestsLocalMode || usePersistedLocalMode) ? 'local' : 'app'
   ));
 
   useEffect(() => {
@@ -502,13 +509,16 @@ export default function VideoEditorPage() {
     projectSlug: localProjectSlug,
     timelineId: localTimelineId,
   });
-  const timelines = useTimelinesList(selectedProjectId, userId);
+  const timelines = useTimelinesList(
+    mode === 'local' ? null : selectedProjectId,
+    mode === 'local' ? null : userId,
+  );
   const bridgeHealth = useBridgeHealth(mode === 'local');
   const bridgeProjects = useBridgeProjects(mode === 'local');
   const bridgeTimelines = useBridgeTimelines(localProjectSlug, mode === 'local');
   const { settings, update } = useToolSettings(videoEditorSettings.id, {
-    projectId: selectedProjectId ?? undefined,
-    enabled: Boolean(selectedProjectId),
+    projectId: mode === 'local' ? undefined : (selectedProjectId ?? undefined),
+    enabled: mode !== 'local' && Boolean(selectedProjectId),
   });
   const appTimelineName = timelines.data?.find(
     (timeline: { id: string; name: string }) => timeline.id === appTimelineId,

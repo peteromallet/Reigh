@@ -68,8 +68,10 @@ function useSupabaseEffectCatalog(
   options?: { enabled?: boolean },
 ): VideoEditorEffectCatalog {
   const enabled = options?.enabled ?? true;
+  // Both legs are user-scoped in practice (private + the public merge). With
+  // no session (dev local-mode editor) neither should fetch a backend.
   const privateEffectsQuery = useListResources('effect', { enabled: enabled && Boolean(userId) });
-  const publicEffectsQuery = useListPublicResources('effect', { enabled });
+  const publicEffectsQuery = useListPublicResources('effect', { enabled: enabled && Boolean(userId) });
   const createEffect = useCreateEffectResource();
   const updateEffect = useUpdateEffectResource();
   const deleteEffect = useDeleteEffectResource();

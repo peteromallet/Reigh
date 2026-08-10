@@ -136,3 +136,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 export const useAuth = () => {
   return requireContextValue(useContext(AuthContext), 'useAuth', 'AuthProvider');
 };
+
+const NO_AUTH = Object.freeze({ userId: null, isAuthenticated: false, isLoading: false });
+
+/**
+ * Non-throwing auth read: returns a logged-out shape outside `AuthProvider`.
+ *
+ * For hooks that must not crash when rendered without the provider tree (e.g.
+ * shared data hooks mounted in tests or host surfaces that omit it), the
+ * logged-out shape disables auth-gated queries instead of throwing.
+ */
+export const useAuthSafe = (): AuthContextType => {
+  return useContext(AuthContext) ?? NO_AUTH;
+};

@@ -11,6 +11,7 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
+import { useAuthSafe } from '@/shared/contexts/AuthContext';
 import { coerceVariantType, VARIANT_TYPE, type VariantType } from '@/shared/constants/variantTypes';
 import { enqueueVariantInvalidation } from '@/shared/hooks/invalidation/useGenerationInvalidation';
 import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
@@ -59,6 +60,7 @@ export const useVariants = ({
   enabled = true,
 }: UseVariantsProps): UseVariantsReturn => {
   const queryClient = useQueryClient();
+  const { isAuthenticated } = useAuthSafe();
   const [activeVariantId, setActiveVariantIdInternal] = useState<string | null>(null);
   
   // Stable callback - no deps needed since we just forward to internal setter
@@ -92,13 +94,13 @@ export const useVariants = ({
         variant_type: coerceVariantType(variant.variant_type),
       })) as GenerationVariant[];
     },
-    enabled: enabled && !!generationId,
+    enabled: enabled && !!generationId && isAuthenticated,
     staleTime: 30000, // 30 seconds
   });
 
   // Listen for realtime variant changes and refetch when our generationId is affected
   const handleVariantChange = useCallback((detail: { affectedGenerationIds: string[] }) => {
-    if (!generationId || !enabled) return;
+    if (!generationId || !enabled || !isAuthenticated) return;
     const affectedIds = detail?.affectedGenerationIds || [];
     if (affectedIds.includes(generationId)) {
       refetch();

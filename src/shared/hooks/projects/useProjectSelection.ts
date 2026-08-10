@@ -29,8 +29,15 @@ export function useProjectSelection({
   const hadLocalStorageValueRef = useRef<boolean>(false);
   const hasAppliedServerPreferencesRef = useRef<boolean>(false);
 
-  // FAST RESUME: Try to restore selectedProjectId from localStorage immediately
+  // FAST RESUME: Try to restore selectedProjectId from localStorage immediately.
+  // Only for a real user: with no session (dev local-mode editor), restoring a
+  // stale project id would re-enable the project-scoped Supabase queries
+  // (shots, generations) against a backend local mode must never touch.
   const [selectedProjectId, setSelectedProjectIdState] = useState<string | null>(() => {
+    if (!userId) {
+      hadLocalStorageValueRef.current = false;
+      return null;
+    }
     try {
       const stored = localStorage.getItem('lastSelectedProjectId');
       if (stored) {

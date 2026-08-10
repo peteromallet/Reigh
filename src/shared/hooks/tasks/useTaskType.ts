@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
+import { useAuthSafe } from '@/shared/contexts/AuthContext';
 import { taskQueryKeys } from '@/shared/lib/queryKeys/tasks';
 import { setTaskTypeConfigCache, type TaskTypeInfo } from '@/shared/lib/taskTypeCache';
 
@@ -72,9 +73,14 @@ async function fetchAllTaskTypesConfig(): Promise<Record<string, TaskTypeInfo>> 
  * @returns Query result with all task type configurations
  */
 export const useAllTaskTypesConfig = () => {
+  const { isAuthenticated } = useAuthSafe();
   return useQuery({
     queryKey: taskQueryKeys.typesConfigAll,
     queryFn: fetchAllTaskTypesConfig,
+    // Task-type configs feed the app shell's task/tool surfaces; with no
+    // session (dev local-mode editor) there is nothing to warm, and the fetch
+    // would hit a backend local mode must never touch.
+    enabled: isAuthenticated,
     staleTime: 10 * 60 * 1000, // 10 minutes - task types config rarely changes
     gcTime: 30 * 60 * 1000, // 30 minutes
     refetchOnWindowFocus: false,

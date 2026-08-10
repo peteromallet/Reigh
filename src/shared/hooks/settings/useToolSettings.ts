@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRef, useCallback, useMemo } from 'react';
+import { useAuthSafe } from '@/shared/contexts/AuthContext';
 import { getSupabaseClient } from '@/integrations/supabase/client';
 import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
 import { queryKeys } from '@/shared/lib/queryKeys';
@@ -183,12 +184,17 @@ export function useToolSettings<T extends Record<string, unknown>>(
   context?: { projectId?: string; shotId?: string; enabled?: boolean }
 ) {
   const queryClient = useQueryClient();
+  const { isAuthenticated } = useAuthSafe();
 
   // Determine parameter shapes
   const projectIdFromRuntime = getProjectSelectionFallbackId() ?? undefined;
   const projectId: string | undefined = context?.projectId ?? projectIdFromRuntime ?? undefined;
   const shotId: string | undefined = context?.shotId;
-  const fetchEnabled: boolean = context?.enabled ?? true;
+  // Tool settings are user-scoped Supabase rows. Without a session (dev
+  // local-mode editor, or any logged-out page) they cannot resolve and the
+  // callers that omit `enabled` (AgentChatContext, ToolsPane, …) must not
+  // fire a backend request. This is the single choke point.
+  const fetchEnabled: boolean = (context?.enabled ?? true) && isAuthenticated;
 
   // Refs to access current values in stable callbacks without recreating them
   const projectIdRef = useRef(projectId);
