@@ -114,6 +114,14 @@ describe('AppRoutes', () => {
     expect(await screen.findByTestId('default-tool-redirect')).toBeInTheDocument();
   });
 
+  it('redirects a sessionless dev root to the local-mode editor', async () => {
+    // No session stored; in DEV the root must land in the local-mode editor
+    // (needs no login, no backend) instead of the public marketing home.
+    renderRoute('/');
+
+    expect(await screen.findByTestId('video-editor-page')).toBeInTheDocument();
+  });
+
   it('renders nested tool routes through the layout outlet', () => {
     renderRoute('/tools/video-editor');
 

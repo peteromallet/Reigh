@@ -18,6 +18,14 @@ export const LOCAL_MODE_STORAGE_KEY = 'dev.videoEditor.localMode';
 export const LOCAL_MODE_URL_PARAMS = ['localProject', 'localTimeline'] as const;
 
 /**
+ * The demo project/timeline the committed bridge stub serves and `dev:editor`
+ * prints. The DEV root redirect uses them to send a sessionless developer
+ * straight to the working editor.
+ */
+export const DEMO_LOCAL_PROJECT = 'demo-project';
+export const DEMO_LOCAL_TIMELINE = 'demo-timeline';
+
+/**
  * The Supabase URL dev boot paths use when no real one is configured.
  *
  * This is the local `supabase start` convention (`http://127.0.0.1:54321`) —

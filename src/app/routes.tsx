@@ -31,6 +31,7 @@ import { AppEnv } from '@/types/env';
 import { ReighLoading } from '@/shared/components/ReighLoading';
 import { ToolErrorBoundary } from '@/shared/components/ToolErrorBoundary';
 import { probeStoredSessionToken } from '@/shared/lib/supabaseSession';
+import { DEMO_LOCAL_PROJECT, DEMO_LOCAL_TIMELINE } from '@/shared/dev/devSession';
 import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
 
 // Determine the environment
@@ -62,6 +63,15 @@ function HomeWithAuthRedirect() {
 
   if (storedSessionProbe.value) {
     return <Navigate to='/tools' replace />;
+  }
+
+  // DEV-only: with no session, the app root is the developer's entry point.
+  // `npm run dev:editor` prints this editor URL — send a sessionless dev there
+  // directly (the local-mode editor needs no login and makes no backend calls)
+  // instead of the public marketing home. Dead in production builds
+  // (`import.meta.env.DEV` is statically false).
+  if (import.meta.env.DEV) {
+    return <Navigate to={`/tools/video-editor?localProject=${DEMO_LOCAL_PROJECT}&localTimeline=${DEMO_LOCAL_TIMELINE}`} replace />;
   }
 
   return (
