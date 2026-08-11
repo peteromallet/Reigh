@@ -65,6 +65,9 @@ vi.mock('@/tools/video-editor/hooks/timelineStore.ts', () => ({
     isConflictExhausted: false,
     retrySaveAfterConflict: vi.fn(),
     reloadFromServer: vi.fn(),
+    recoveryDraft: null,
+    retryRecoveredDraft: vi.fn(),
+    discardRecoveredDraft: vi.fn(),
     undo: vi.fn(),
     redo: vi.fn(),
     canUndo: false,
@@ -1170,5 +1173,46 @@ describe('TimelineEditorShellCore — diverged conflict banner', () => {
   it('does not render the diverged banner when clean', () => {
     render(<TimelineEditorShellCore timelineId="test-timeline" />);
     expect(screen.queryByText(/this timeline changed elsewhere/i)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Recovery draft (plan-v5 B9)
+// ---------------------------------------------------------------------------
+
+describe('TimelineEditorShellCore — recovery draft banner', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    __clearSlotRenderers();
+    __clearRuntimeContext();
+    __deviceClass = 'desktop';
+    __chromeOverrides = {};
+  });
+
+  afterEach(() => {
+    __chromeOverrides = {};
+  });
+
+  it('offers Retry and Discard for a recovered draft', () => {
+    const retry = vi.fn();
+    const discard = vi.fn();
+    __chromeOverrides = {
+      recoveryDraft: { updatedAt: '2026-08-11T21:00:00.000Z', baseVersion: 159 },
+      retryRecoveredDraft: retry,
+      discardRecoveredDraft: discard,
+    };
+
+    render(<TimelineEditorShellCore timelineId="test-timeline" />);
+
+    expect(screen.getByText(/recovered unsaved changes/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /retry/i }));
+    expect(retry).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /discard/i }));
+    expect(discard).toHaveBeenCalled();
+  });
+
+  it('does not render the recovery banner without a draft', () => {
+    render(<TimelineEditorShellCore timelineId="test-timeline" />);
+    expect(screen.queryByText(/recovered unsaved changes/i)).toBeNull();
   });
 });

@@ -529,6 +529,28 @@ function TimelineEditorShellCoreComponent({
     </div>
   ) : null;
 
+  /** Recovery draft banner (B9): a previous session left unsaved work in the
+   *  one-slot draft. Offer Retry (re-POST the draft) or Discard. */
+  const recoveryBanner = chrome.recoveryDraft ? (
+    <div
+      role="alert"
+      className="flex items-center justify-between gap-3 border-b border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm"
+    >
+      <span>
+        We recovered unsaved changes from a previous session (draft from{' '}
+        {new Date(chrome.recoveryDraft.updatedAt).toLocaleString()}).
+      </span>
+      <div className="flex items-center gap-2">
+        <Button type="button" size="sm" variant="outline" onClick={() => void chrome.retryRecoveredDraft()}>
+          Retry
+        </Button>
+        <Button type="button" size="sm" variant="outline" onClick={() => void chrome.discardRecoveredDraft()}>
+          Discard
+        </Button>
+      </div>
+    </div>
+  ) : null;
+
   /** The timeline region, contained so a render throw under it cannot take the
    *  toolbar (and therefore undo) down with it. Shared by all three layout
    *  branches — the boundary is per-branch instance, which is what we want: a
@@ -542,6 +564,7 @@ function TimelineEditorShellCoreComponent({
     <>
       {conflictBanner}
       {watchdogBanner}
+      {recoveryBanner}
       {chrome.loadError ? (
         <TimelineLoadErrorCard message={chrome.loadError.message} onRetry={chrome.retryLoad} />
       ) : (

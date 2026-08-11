@@ -333,6 +333,9 @@ function useTimelineChromeContextValue({
   watchdogTripped,
   watchdogReason,
   retryWatchdog,
+  recoveryDraft,
+  retryRecoveredDraft,
+  discardRecoveredDraft,
 }: {
   timelineName: string | null;
   saveStatus: ReturnType<typeof useTimelineSave>['saveStatus'];
@@ -350,6 +353,9 @@ function useTimelineChromeContextValue({
   watchdogTripped: boolean;
   watchdogReason: 'timeout' | 'lost-edit' | null;
   retryWatchdog: () => void;
+  recoveryDraft: ReturnType<typeof useTimelineSave>['recoveryDraft'];
+  retryRecoveredDraft: ReturnType<typeof useTimelineSave>['retryRecoveredDraft'];
+  discardRecoveredDraft: ReturnType<typeof useTimelineSave>['discardRecoveredDraft'];
 }): TimelineChromeContextValue {
   return useMemo<TimelineChromeContextValue>(() => ({
     timelineName,
@@ -380,6 +386,9 @@ function useTimelineChromeContextValue({
     watchdogTripped,
     watchdogReason,
     retryWatchdog,
+    recoveryDraft,
+    retryRecoveredDraft,
+    discardRecoveredDraft,
     startRender,
     loadError,
     retryLoad,
@@ -415,6 +424,9 @@ function useTimelineChromeContextValue({
     trackManagement.unusedTrackCount,
     watchdogReason,
     watchdogTripped,
+    recoveryDraft,
+    retryRecoveredDraft,
+    discardRecoveredDraft,
   ]);
 }
 
@@ -964,6 +976,9 @@ export function useTimelineState(): UseTimelineStateResult {
     watchdogTripped: save.watchdogTripped,
     watchdogReason: save.watchdogReason,
     retryWatchdog: save.retryWatchdog,
+    recoveryDraft: save.recoveryDraft,
+    retryRecoveredDraft: save.retryRecoveredDraft,
+    discardRecoveredDraft: save.discardRecoveredDraft,
     startRender,
     loadError: timelineLoadError,
     retryLoad,

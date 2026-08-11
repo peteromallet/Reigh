@@ -233,6 +233,13 @@ export interface TimelineChromeContextValue {
   watchdogTripped: boolean;
   watchdogReason: 'timeout' | 'lost-edit' | null;
   retryWatchdog: () => void;
+  /**
+   * One-slot recovery draft (plan-v5 B9): non-null when a previous session
+   * left unsaved work. The shell offers Retry / Discard.
+   */
+  recoveryDraft: { updatedAt: string; baseVersion: number } | null;
+  retryRecoveredDraft: () => void;
+  discardRecoveredDraft: () => void;
   startRender: TimelineStartRender;
 }
 
