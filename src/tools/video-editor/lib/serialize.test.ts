@@ -53,7 +53,8 @@ describe('video-editor serialization', () => {
 
     const serialized = serializeForDisk(resolved);
 
-    expect(serialized.output.background_scale).toBe(1);
+    // output is derived from theme, not persisted (plan-v5 B3).
+    expect(serialized).not.toHaveProperty('output');
     expect(serialized.clips[0]).not.toHaveProperty('assetEntry');
     expect(serialized.clips[0]).not.toHaveProperty('extra');
     expect(serialized.tracks?.[0]).not.toHaveProperty('extra');
@@ -150,7 +151,9 @@ describe('video-editor serialization', () => {
       registry: {},
     } as unknown as ResolvedTimelineConfig;
     const round = serializeForDisk(resolved);
-    expect(round).toEqual(preSprint2Config);
+    // output is derived, not persisted (plan-v5 B3): the round-trip form omits it.
+    expect(round).not.toHaveProperty('output');
+    expect(round).toEqual({ ...preSprint2Config, output: undefined } as TimelineConfig);
     expect(round).not.toHaveProperty('theme');
     expect(round).not.toHaveProperty('theme_overrides');
     expect(round).not.toHaveProperty('generation_defaults');

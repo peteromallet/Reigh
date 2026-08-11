@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { createTimelineReader } from '@/tools/video-editor/lib/timeline-reader';
-import { serializeTimelineConfigSnapshot } from '@/tools/video-editor/lib/timeline-domain.ts';
+import { getTimelineClipShader, serializeTimelineConfigSnapshot } from '@/tools/video-editor/lib/timeline-domain.ts';
 import type {
   TimelineReader,
   TimelineSnapshot,
@@ -1386,5 +1386,32 @@ describe('createTimelineReader — version-based stale proposal invalidation', (
     const newProposalVersion = reader.snapshot().baseVersion;
     expect(isProposalStale(newProposalVersion)).toBe(false);
     expect(newProposalVersion).toBe(11);
+  });
+});
+
+describe('opaque app bags — extension parse failure is absence (plan-v5 B3)', () => {
+  it('treats a malformed clip app.shader as absent instead of failing the read', async () => {
+    const config: TimelineConfig = {
+      ...makeBaseConfig(),
+      clips: [
+        ...(makeBaseConfig().clips ?? []),
+        {
+          id: 'clip-malformed',
+          at: 10,
+          track: 'V1',
+          clipType: 'hold',
+          hold: 1,
+          app: { shader: 'not-an-object', managedBy: 42 },
+        },
+      ],
+    };
+    const data = await buildTimelineData(config, emptyRegistry);
+    const reader = createTimelineReader({ data, projectId: 'p1' });
+    const snapshot = reader.snapshot();
+    // The malformed clip still reads — no save/load failure from a bad bag.
+    expect(snapshot.clips.some((c) => c.id === 'clip-malformed')).toBe(true);
+    // The consumer guard narrows at the boundary: a malformed value is absence.
+    const rawClip = config.clips?.find((c) => c.id === 'clip-malformed');
+    expect(getTimelineClipShader(rawClip as never)).toBeUndefined();
   });
 });

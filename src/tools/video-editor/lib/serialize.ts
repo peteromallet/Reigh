@@ -40,7 +40,9 @@ export const serializeForDisk = (
 ): TimelineConfig => {
   const resolvedExtras = extras ?? resolved;
   const serialized: TimelineConfig = {
-    output: { ...resolved.output },
+    // `output` is DERIVED (theme.visual.canvas), not persisted: the bridge
+    // strips it on save and the editor re-materializes it on load. Keeping it
+    // off the wire prevents editor/render settings from fighting the theme.
     tracks: resolved.tracks.map(serializeTrackForDisk),
     clips: resolved.clips.map(serializeClipForDisk),
   };
