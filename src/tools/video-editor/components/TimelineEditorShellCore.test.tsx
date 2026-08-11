@@ -352,8 +352,8 @@ describe('TimelineEditorShellCore surface slots', () => {
     expect(screen.getByTestId('properties-panel')).toBeTruthy();
   });
 
-  // ---- Reserved slot canaries --------------------------------------------
-  it('renders canaries for codePanel, writingPanel, and stagePanel', () => {
+  // ---- Reserved slot placeholders ----------------------------------------
+  it('renders reserved placeholders for codePanel, writingPanel, and stagePanel', () => {
     render(<TimelineEditorShellCore timelineId="test-timeline" />);
 
     const codeCanary = document.querySelector('[data-video-editor-slot="codePanel"]');
@@ -365,18 +365,21 @@ describe('TimelineEditorShellCore surface slots', () => {
     expect(stageCanary).toBeTruthy();
   });
 
-  it('renders canaries with canary data attribute', () => {
+  it('renders reserved placeholders with inert data attribute (no canary marker)', () => {
     render(<TimelineEditorShellCore timelineId="test-timeline" />);
 
-    const canaries = document.querySelectorAll('[data-video-editor-canary="true"]');
-    expect(canaries.length).toBe(3);
+    const placeholders = document.querySelectorAll('[data-video-editor-slot-inert="true"]');
+    expect(placeholders.length).toBe(3);
 
-    canaries.forEach((el) => {
-      expect(el.getAttribute('data-video-editor-canary')).toBe('true');
+    placeholders.forEach((el) => {
+      expect(el.getAttribute('data-video-editor-slot-inert')).toBe('true');
     });
+
+    // Canary demo surfaces were removed — no element carries the canary marker.
+    expect(document.querySelectorAll('[data-video-editor-canary="true"]').length).toBe(0);
   });
 
-  it('renders canaries with visible milestone in legend text', () => {
+  it('renders reserved placeholders with milestone label', () => {
     render(<TimelineEditorShellCore timelineId="test-timeline" />);
 
     const codeCanary = document.querySelector('[data-video-editor-slot="codePanel"]');
@@ -388,16 +391,16 @@ describe('TimelineEditorShellCore surface slots', () => {
     expect(stageCanary?.textContent).toContain('M3');
   });
 
-  it('renders canaries with visible slot label text', () => {
+  it('renders reserved placeholders with slot name and milestone label', () => {
     render(<TimelineEditorShellCore timelineId="test-timeline" />);
 
-    const codeCanary = document.querySelector('[data-video-editor-slot="codePanel"]');
-    const writingCanary = document.querySelector('[data-video-editor-slot="writingPanel"]');
-    const stageCanary = document.querySelector('[data-video-editor-slot="stagePanel"]');
+    const codePlaceholder = document.querySelector('[data-video-editor-slot="codePanel"]');
+    const writingPlaceholder = document.querySelector('[data-video-editor-slot="writingPanel"]');
+    const stagePlaceholder = document.querySelector('[data-video-editor-slot="stagePanel"]');
 
-    expect(codeCanary?.textContent).toContain('Code panel canary');
-    expect(writingCanary?.textContent).toContain('Writing panel canary');
-    expect(stageCanary?.textContent).toContain('Stage panel canary');
+    expect(codePlaceholder?.textContent).toContain('codePanel — M4');
+    expect(writingPlaceholder?.textContent).toContain('writingPanel — M4');
+    expect(stagePlaceholder?.textContent).toContain('stagePanel — M3');
   });
 
   // ---- Shell region data attributes -----------------------------------------
@@ -525,16 +528,16 @@ describe('TimelineEditorShellCore with registered slot renderers', () => {
     expect(headerRenderer).toHaveBeenCalled();
   });
 
-  it('replaces canary with registered renderer for reserved slots', () => {
+  it('replaces reserved placeholder with registered renderer for reserved slots', () => {
     const codePanelRenderer = vi.fn(() => <div data-testid="code-panel-content">Code Panel Content</div>);
     __setSlotRenderers({ codePanel: codePanelRenderer });
 
     render(<TimelineEditorShellCore timelineId="test-timeline" />);
 
-    // Should render the actual content, not the canary
+    // Should render the actual content, not the placeholder
     expect(screen.getByTestId('code-panel-content')).toBeTruthy();
-    // The canary should NOT be rendered for codePanel when a renderer is registered
-    expect(document.querySelector('[data-video-editor-canary="true"][data-video-editor-slot="codePanel"]')).toBeNull();
+    // The placeholder should NOT be rendered for codePanel when a renderer is registered
+    expect(document.querySelector('[data-video-editor-slot-inert="true"][data-video-editor-slot="codePanel"]')).toBeNull();
     expect(codePanelRenderer).toHaveBeenCalled();
   });
 
@@ -1126,5 +1129,46 @@ describe('TimelineEditorShellCore — mode switcher reachability', () => {
     expect(screen.queryByRole('toolbar', { name: 'Timeline mode switcher' })).toBeNull();
     expect(screen.queryByRole('toolbar', { name: 'Phone timeline mode bar' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Trim' })).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Diverged (409) banner (plan-v5 B4)
+// ---------------------------------------------------------------------------
+
+describe('TimelineEditorShellCore — diverged conflict banner', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    __clearSlotRenderers();
+    __clearRuntimeContext();
+    __deviceClass = 'desktop';
+    __chromeOverrides = {};
+  });
+
+  afterEach(() => {
+    __chromeOverrides = {};
+  });
+
+  it('renders the diverged banner with Reload and Save-as-copy actions', () => {
+    const reload = vi.fn();
+    const saveAsCopy = vi.fn();
+    __chromeOverrides = {
+      isConflictExhausted: true,
+      reloadFromServer: reload,
+      retrySaveAfterConflict: saveAsCopy,
+    };
+
+    render(<TimelineEditorShellCore timelineId="test-timeline" />);
+
+    expect(screen.getByText(/this timeline changed elsewhere/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /reload/i }));
+    expect(reload).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /save as copy/i }));
+    expect(saveAsCopy).toHaveBeenCalled();
+  });
+
+  it('does not render the diverged banner when clean', () => {
+    render(<TimelineEditorShellCore timelineId="test-timeline" />);
+    expect(screen.queryByText(/this timeline changed elsewhere/i)).toBeNull();
   });
 });

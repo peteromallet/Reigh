@@ -207,3 +207,72 @@ describe('usePollSync helpers', () => {
     expect(commitData).not.toHaveBeenCalled();
   });
 });
+
+  it('accepts a fresh version-0 timeline (initial configVersionRef is 0, not 1)', () => {
+    // Regression: useTimelineSave initialized configVersionRef to 1, so a fresh
+    // bridge timeline at config_version 0 was rejected as 'stale version' and
+    // the editor never became ready ("Timeline data is not ready.").
+    const idle = { editSeq: 0, savedSeq: 0, pendingOps: 0, isSaving: false };
+    expect(getTimelinePollRejectionReason({
+      ...idle,
+      polledConfigVersion: 0,
+      currentConfigVersion: 0,
+      polledStableSignature: 'fresh-sig',
+      lastSavedStableSignature: '',
+    })).toBeNull();
+
+    // Sanity: an older local ref still rejects a lower polled version.
+    expect(getTimelinePollRejectionReason({
+      ...idle,
+      polledConfigVersion: 0,
+      currentConfigVersion: 1,
+      polledStableSignature: 'fresh-sig',
+      lastSavedStableSignature: '',
+    })).toBe('stale version');
+  });
+
+describe('usePollSync — diverged freeze (plan-v5 B4)', () => {
+  it('does not adopt remote data while diverged (409)', async () => {
+    const provider: DataProvider = {
+      loadTimeline: vi.fn(),
+      saveTimeline: vi.fn(),
+      loadAssetRegistry: vi.fn(),
+      resolveAssetUrl: vi.fn(async (file: string) => file),
+    };
+    const interactionStateRef = { current: createInteractionState() };
+    const configVersionRef = { current: 3 };
+    const commitData = vi.fn();
+    const polledData = {
+      configVersion: 7,
+      stableSignature: 'remote-sig',
+      signature: 'remote-sig',
+    } as unknown as TimelineData;
+
+    renderHook(() => usePollSync({
+      queries: {
+        timelineQuery: { data: polledData, isLoading: false },
+        assetRegistryQuery: { data: undefined },
+      },
+      provider,
+      commitData,
+      dataRef: { current: null },
+      selectedClipIdRef: { current: null },
+      selectedTrackIdRef: { current: null },
+      editSeqRef: { current: 4 },
+      pendingOpsRef: { current: 0 },
+      savedSeqRef: { current: 4 },
+      configVersionRef,
+      lastSavedSignatureRef: { current: 'saved-sig' },
+      isSavingRef: { current: false },
+      interactionStateRef,
+      isConflictExhaustedRef: { current: true },
+    }));
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Diverged: the remote payload must not be adopted or committed.
+    expect(configVersionRef.current).toBe(3);
+    expect(commitData).not.toHaveBeenCalled();
+  });
+});

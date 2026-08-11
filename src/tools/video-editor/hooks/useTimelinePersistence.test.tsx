@@ -427,22 +427,15 @@ describe('useTimelinePersistence — interaction gating', () => {
     expect(harness.saveTimeline).toHaveBeenCalledWith('timeline-1', nextData.config, 1, registry);
   });
 
-  it('conflict retry reloads registry and updates dataRef', async () => {
+  it('a 409 enters diverged: no version reload, no re-POST (CAS-defeating retry removed)', async () => {
     const staleRegistry = makeRegistry('stale');
-    const freshRegistry = makeRegistry('fresh');
     const nextData = makeTimelineData('conflict', staleRegistry);
-    let saveAttempt = 0;
     const harness = setup({
       initialData: nextData,
-      saveTimelineImpl: async (_id, _config, _version, _registry) => {
-        saveAttempt += 1;
-        if (saveAttempt === 1) {
-          throw new TimelineVersionConflictError();
-        }
-        return 2;
+      persistenceEnabled: true,
+      saveTimelineImpl: async () => {
+        throw new TimelineVersionConflictError();
       },
-      loadTimelineImpl: async () => ({ config: nextData.config, configVersion: 2 }),
-      loadAssetRegistryImpl: async () => freshRegistry,
     });
 
     harness.scheduleSave(nextData);
@@ -453,11 +446,62 @@ describe('useTimelinePersistence — interaction gating', () => {
       await Promise.resolve();
     });
 
-    expect(harness.loadAssetRegistry).toHaveBeenCalledWith('timeline-1');
-    expect(harness.saveTimeline).toHaveBeenCalledTimes(2);
-    expect(harness.saveTimeline.mock.calls[0]?.[3]).toEqual(staleRegistry);
-    expect(harness.saveTimeline.mock.calls[1]?.[3]).toEqual(freshRegistry);
-    expect(harness.dataRef.current?.registry).toEqual(freshRegistry);
+    // Diverged state, exactly one POST, no remote version reload, no repost.
+    expect(harness.result.current.isConflictExhausted).toBe(true);
+    expect(harness.result.current.saveStatus).toBe('error');
+    expect(harness.saveTimeline).toHaveBeenCalledTimes(1);
+    expect(harness.loadTimeline).not.toHaveBeenCalled();
+    expect(harness.loadAssetRegistry).not.toHaveBeenCalled();
+  });
+
+  it('autosave freezes while diverged (further edits do not POST)', async () => {
+    const harness = setup({
+      persistenceEnabled: true,
+      saveTimelineImpl: async () => {
+        throw new TimelineVersionConflictError();
+      },
+    });
+    harness.scheduleSave(makeTimelineData('conflict'));
+    await act(async () => {
+      vi.advanceTimersByTime(600);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(harness.result.current.isConflictExhausted).toBe(true);
+
+    // A subsequent edit while diverged must not fire another POST.
+    harness.scheduleSave(makeTimelineData('conflict-2'));
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+      await Promise.resolve();
+    });
+    expect(harness.saveTimeline).toHaveBeenCalledTimes(1);
+  });
+
+  it('save as copy stashes a draft then reloads (no silent overwrite)', async () => {
+    const harness = setup({
+      persistenceEnabled: true,
+      saveTimelineImpl: async () => {
+        throw new TimelineVersionConflictError();
+      },
+    });
+    harness.scheduleSave(makeTimelineData('conflict'));
+    await act(async () => {
+      vi.advanceTimersByTime(600);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(harness.result.current.isConflictExhausted).toBe(true);
+
+    const loadBefore = harness.loadTimeline.mock.calls.length;
+    await act(async () => {
+      await harness.result.current.retrySaveAfterConflict();
+      await Promise.resolve();
+    });
+    // Diverged cleared, server reloaded, and the local save was NOT re-POSTed.
+    expect(harness.result.current.isConflictExhausted).toBe(false);
+    expect(harness.loadTimeline.mock.calls.length).toBeGreaterThan(loadBefore);
+    expect(harness.saveTimeline).toHaveBeenCalledTimes(1);
   });
 
   it('reloadFromServer rebuilds timeline data through the asset resolver', async () => {

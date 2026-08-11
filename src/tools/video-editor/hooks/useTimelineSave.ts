@@ -78,6 +78,7 @@ export function useTimelineSave(
     configVersionRef,
     lastSavedSignatureRef,
     isSavingRef: persistence.isSavingRef,
+    isConflictExhaustedRef: persistence.isConflictExhaustedRef,
     interactionStateRef,
   });
 

@@ -52,6 +52,8 @@ interface UsePollSyncOptions {
   lastSavedSignatureRef: MutableRefObject<string>;
   isSavingRef: MutableRefObject<boolean>;
   interactionStateRef: InteractionStateRef;
+  /** When true (a 409 put the editor into diverged), remote data is NOT adopted. */
+  isConflictExhaustedRef?: MutableRefObject<boolean>;
 }
 
 export function isTimelinePollIdle({ editSeq, savedSeq, pendingOps, isSaving, interactionActive }: TimelinePollGate): boolean {
@@ -127,6 +129,7 @@ export function usePollSync({
   lastSavedSignatureRef,
   isSavingRef,
   interactionStateRef,
+  isConflictExhaustedRef,
 }: UsePollSyncOptions): void {
   const lastRegistryDataRef = useRef<Awaited<ReturnType<DataProvider['loadAssetRegistry']>> | null>(null);
   const commitDataRef = useRef(commitData);
@@ -239,38 +242,49 @@ export function usePollSync({
     if (!polledData) {
       return;
     }
+    // Alias for closures: TS does not preserve the `!polledData` narrowing
+    // through the nested setTimeout callback below.
+    const resolvedPolledData: TimelineData = polledData;
 
-    const preflightRejectionReason = getPollRejectionReason(polledData);
+    // Diverged (409): freeze remote adoption — adopting the server state would
+    // silently discard the local edits the user was told about.
+    if (isConflictExhaustedRef?.current) {
+      logPollRejection('preflight', resolvedPolledData, 'diverged');
+      return;
+    }
+
+    const preflightRejectionReason = getPollRejectionReason(resolvedPolledData);
     if (preflightRejectionReason) {
       if (preflightRejectionReason === 'interaction active') {
         // Defer the conflict reload until the gesture ends; keep the newest payload.
-        deferredPolledDataRef.current = polledData;
+        deferredPolledDataRef.current = resolvedPolledData;
       }
-      logPollRejection('preflight', polledData, preflightRejectionReason);
+      logPollRejection('preflight', resolvedPolledData, preflightRejectionReason);
       return;
     }
     // We accepted this payload — clear any stale deferred reference.
     deferredPolledDataRef.current = null;
 
     const syncHandle = window.setTimeout(() => {
-      const timeoutRejectionReason = getPollRejectionReason(polledData);
+      const timeoutRejectionReason = getPollRejectionReason(resolvedPolledData);
       if (timeoutRejectionReason) {
-        logPollRejection('timeout', polledData, timeoutRejectionReason);
+        logPollRejection('timeout', resolvedPolledData, timeoutRejectionReason);
         return;
       }
 
-      if (configVersionRef.current !== polledData.configVersion) {
+      if (configVersionRef.current !== resolvedPolledData.configVersion) {
         logTimelineSync('poll accepted', {
           fromConfigVersion: configVersionRef.current,
-          toConfigVersion: polledData.configVersion,
+          toConfigVersion: resolvedPolledData.configVersion,
           latestObservedRemoteConfigVersion: latestObservedRemoteConfigVersionRef.current,
         });
       }
-      latestObservedRemoteConfigVersionRef.current = polledData.configVersion;
-      logConfigVersionUpdate('poll', polledData.configVersion);
-      configVersionRef.current = polledData.configVersion;
+      latestObservedRemoteConfigVersionRef.current = resolvedPolledData.configVersion;
+      logConfigVersionUpdate('poll', resolvedPolledData.configVersion);
+      configVersionRef.current = resolvedPolledData.configVersion;
+      const currentData = getDataRef().current;
       commitDataRef.current(
-        getDataRef().current ? preserveUploadingClips(getDataRef().current, polledData) : polledData,
+        currentData ? preserveUploadingClips(currentData, resolvedPolledData) : resolvedPolledData,
         { save: false, skipHistory: true, updateLastSavedSignature: true },
       );
     }, 0);
@@ -285,6 +299,7 @@ export function usePollSync({
     logPollRejection,
     logTimelineSync,
     getDataRef,
+    isConflictExhaustedRef,
     queries.timelineQuery.data,
   ]);
 

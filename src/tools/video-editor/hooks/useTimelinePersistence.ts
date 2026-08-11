@@ -11,12 +11,12 @@ import {
 } from '@/tools/video-editor/data/DataProvider.ts';
 import { buildTimelineData, buildTimelineDataWithResolver, type TimelineData } from '@/tools/video-editor/lib/timeline-data.ts';
 import type { AssetResolver } from '@/tools/video-editor/data/AssetResolver.ts';
+import { clearTimelineDraft, saveTimelineDraft } from '@/tools/video-editor/data/timelineDraftIndexedDb.ts';
 import type { AssetRegistry, TimelineConfig } from '@/tools/video-editor/types/index.ts';
 import type { CommitDataOptions, ScheduleSaveFn } from '@/tools/video-editor/hooks/useTimelineCommit.ts';
 
 export type SaveStatus = 'saved' | 'saving' | 'dirty' | 'error';
 
-const MAX_CONFLICT_RETRIES = 3;
 const TIMELINE_SYNC_LOG_TAG = '[TimelineSync]';
 const SAVE_DEBOUNCE_MS = 500;
 /**
@@ -70,6 +70,8 @@ export interface UseTimelinePersistenceResult {
   reloadFromServer: () => Promise<void>;
   retrySaveAfterConflict: () => Promise<void>;
   isSavingRef: MutableRefObject<boolean>;
+  /** Mirrors isConflictExhausted for the poll gate. */
+  isConflictExhaustedRef: MutableRefObject<boolean>;
   /**
    * Write-ack watchdog: true when an edit went unacknowledged past the grace
    * period (or was dropped on the null-data path). Persistent until an ack or
@@ -101,7 +103,6 @@ export function useTimelinePersistence({
 }: UseTimelinePersistenceOptions): UseTimelinePersistenceResult {
   const persistenceEnabled = isDataProviderPersistenceEnabled(provider);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const conflictRetryRef = useRef(0);
   const pendingSaveRef = useRef<{ data: TimelineData; seq: number } | null>(null);
   // Stash for scheduleSave() calls that arrive while a drag/resize is active.
   // Flushed on gesture end by the onInteractionEnd listener below.
@@ -119,6 +120,9 @@ export function useTimelinePersistence({
   const [watchdogTripped, setWatchdogTripped] = useState(false);
   const [watchdogReason, setWatchdogReason] = useState<'timeout' | 'lost-edit' | null>(null);
   const watchdogTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Mirrors isConflictExhausted for the poll gate (usePollSync) — a diverged
+  // timeline must not adopt remote data over local edits.
+  const isConflictExhaustedRef = useRef(false);
   const getDataRef = useCallback(() => {
     const storeDataRef = store?.getState().data.dataRef;
     return storeDataRef && storeDataRef.current !== null ? storeDataRef : dataRef;
@@ -166,19 +170,9 @@ export function useTimelinePersistence({
     retry: false,
   });
 
-  const loadConflictRetryVersion = useCallback(async (): Promise<number> => {
-    const [loaded, registry] = await Promise.all([
-      provider.loadTimeline(timelineId),
-      provider.loadAssetRegistry(timelineId),
-    ]);
-    logConfigVersionUpdate('conflict-retry', loaded.configVersion);
-    configVersionRef.current = loaded.configVersion;
-    const latestDataRef = getDataRef();
-    if (latestDataRef.current) {
-      latestDataRef.current = { ...latestDataRef.current, registry };
-    }
-    return loaded.configVersion;
-  }, [configVersionRef, getDataRef, logConfigVersionUpdate, provider, timelineId]);
+  // The old conflict path reloaded the remote version and re-POSTed local
+  // state, silently overwriting the other writer (the CAS-defeating bug from
+  // the incident). B4 removes it entirely: a 409 enters the diverged state.
 
   const cancelErrorRetryTimer = useCallback(() => {
     if (errorRetryTimer.current) {
@@ -307,16 +301,10 @@ export function useTimelinePersistence({
             configVersionRef.current = nextVersion;
             completedSeqRef.current = seq;
 
-            if (conflictRetryRef.current > 0) {
-              console.log('[TimelineSave] conflict retry succeeded', {
-                attempts: conflictRetryRef.current,
-                finalVersion: nextVersion,
-              });
-            }
-
-            conflictRetryRef.current = 0;
             clearErrorRetry();
             setIsConflictExhausted(false);
+            // An acknowledged save clears the one-slot recovery draft.
+            void clearTimelineDraft(timelineId);
 
             const latestDataRef = getDataRef();
             if (latestDataRef.current?.signature === nextData.signature) {
@@ -346,76 +334,26 @@ export function useTimelinePersistence({
         console.log('[TimelineSave] timeline not found, cannot save');
         handleConflictExhausted({
           expectedVersion: configVersionRef.current,
-          retries: conflictRetryRef.current,
+          retries: 0,
           reason: 'missing_local_data',
         });
         return;
       }
 
       if (isTimelineVersionConflictError(error)) {
-      const expectedVersion = configVersionRef.current;
-        let actualVersion: number | undefined;
-
-        try {
-          actualVersion = await loadConflictRetryVersion();
-          console.log('[TimelineSave] conflict detected', {
-            expectedVersion,
-            actualVersion,
-          });
-        } catch {
-          handleConflictExhausted({
-            expectedVersion,
-            retries: conflictRetryRef.current,
-            reason: 'load_failed',
-          });
-          return;
-        }
-
-        const latestDataRef = getDataRef();
-        if (!latestDataRef.current) {
-          handleConflictExhausted({
-            expectedVersion,
-            actualVersion,
-            retries: conflictRetryRef.current,
-            reason: 'missing_local_data',
-          });
-          return;
-        }
-
-        if (actualVersion === expectedVersion) {
-          console.log('[TimelineSave] reloaded version matches expected — not a version race', {
-            expectedVersion,
-            actualVersion,
-          });
-          handleConflictExhausted({
-            expectedVersion,
-            actualVersion,
-            retries: conflictRetryRef.current,
-            reason: 'max_retries',
-          });
-          return;
-        }
-
-        if (conflictRetryRef.current >= MAX_CONFLICT_RETRIES) {
-          handleConflictExhausted({
-            expectedVersion,
-            actualVersion,
-            retries: conflictRetryRef.current,
-            reason: 'max_retries',
-          });
-          return;
-        }
-
-        conflictRetryRef.current += 1;
-        console.log('[TimelineSave] retrying save after conflict', {
-          attempt: conflictRetryRef.current,
-          expectedVersion,
-          actualVersion,
+        // Diverged: the document changed elsewhere. No version reload, no
+        // re-POST of local state (that silently overwrote the other writer —
+        // the incident's CAS-defeating bug). Enter diverged and let the banner
+        // offer Reload / Save as copy.
+        console.log('[TimelineSave] version conflict — entering diverged state', {
+          expectedVersion: configVersionRef.current,
         });
-        return await doSave(latestDataRef.current, editSeqRef.current, {
-          bypassQueue: true,
-          completedSeqRef,
+        handleConflictExhausted({
+          expectedVersion: configVersionRef.current,
+          retries: 0,
+          reason: 'max_retries',
         });
+        return;
       }
 
       setSaveStatus('error');
@@ -445,7 +383,6 @@ export function useTimelinePersistence({
     getDataRef,
     handleConflictExhausted,
     lastSavedSignatureRef,
-    loadConflictRetryVersion,
     logConfigVersionUpdate,
     eventBus,
     saveMutation,
@@ -479,6 +416,17 @@ export function useTimelinePersistence({
     // within the grace period the UI surfaces a persistent error.
     armWatchdog('timeout');
 
+    // Diverged (409): autosave and remote adoption are frozen. The latest
+    // draft goes to the one-slot recovery store instead of a doomed POST —
+    // the banner offers Reload / Save as copy.
+    if (isConflictExhausted) {
+      const latest = dataRef.current ?? getDataRef().current;
+      if (latest) {
+        void saveTimelineDraft(timelineId, { config: latest.config, registry: latest.registry }, configVersionRef.current);
+      }
+      return;
+    }
+
     if (!options?.preserveStatus) {
       setSaveStatus('dirty');
     }
@@ -511,10 +459,9 @@ export function useTimelinePersistence({
 
     saveTimer.current = setTimeout(() => {
       saveTimer.current = null;
-      conflictRetryRef.current = 0;
       void doSave(nextData, editSeqRef.current);
     }, SAVE_DEBOUNCE_MS);
-  }, [armWatchdog, cancelErrorRetryTimer, doSave, editSeqRef, getInteractionStateRef, persistenceEnabled]);
+  }, [armWatchdog, cancelErrorRetryTimer, doSave, editSeqRef, getDataRef, getInteractionStateRef, isConflictExhausted, persistenceEnabled, timelineId]);
 
   const retryWatchdog = useCallback(() => {
     const reason = watchdogReason;
@@ -548,7 +495,6 @@ export function useTimelinePersistence({
       provider.loadAssetRegistry(timelineId),
     ]);
 
-    conflictRetryRef.current = 0;
     pendingSaveRef.current = null;
     clearErrorRetry();
     clearWatchdog();
@@ -596,30 +542,33 @@ export function useTimelinePersistence({
     timelineId,
   ]);
 
+  /**
+   * "Save as copy" (diverged banner action): the local work is stashed in the
+   * one-slot recovery draft, then the server state is loaded. The local edits
+   * are never silently re-POSTed over the other writer (the CAS-defeating bug
+   * is gone); the copy survives for Retry / Save-as-copy on the next load.
+   */
   const retrySaveAfterConflict = useCallback(async () => {
-    const latestDataRef = getDataRef();
-    if (!latestDataRef.current) {
+    const latest = getDataRef().current ?? dataRef.current;
+    if (!latest) {
+      setIsConflictExhausted(false);
       return;
     }
 
-    setIsConflictExhausted(false);
-    setSaveStatus('saving');
-    conflictRetryRef.current = 0;
-    clearErrorRetry();
-
     try {
-      await loadConflictRetryVersion();
-      if (latestDataRef.current) {
-        void doSave(latestDataRef.current, editSeqRef.current);
-      }
+      await saveTimelineDraft(
+        timelineId,
+        { config: latest.config, registry: latest.registry },
+        configVersionRef.current,
+      );
     } catch {
-      handleConflictExhausted({
-        expectedVersion: configVersionRef.current,
-        retries: conflictRetryRef.current,
-        reason: 'load_failed',
-      });
+      // IndexedDB unavailable (private mode etc.) — the copy can't persist.
+      // Keep the diverged state so the user knows local edits are at risk.
+      return;
     }
-  }, [clearErrorRetry, configVersionRef, doSave, editSeqRef, getDataRef, handleConflictExhausted, loadConflictRetryVersion]);
+    setIsConflictExhausted(false);
+    await reloadFromServer();
+  }, [configVersionRef, dataRef, getDataRef, reloadFromServer, timelineId]);
 
   useEffect(() => {
     // A durable save receipt acknowledges the edit: clear the watchdog.
@@ -635,6 +584,10 @@ export function useTimelinePersistence({
       }
     };
   }, [armWatchdog, clearWatchdog, eventBus]);
+
+  useEffect(() => {
+    isConflictExhaustedRef.current = isConflictExhausted;
+  }, [isConflictExhausted]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -656,6 +609,7 @@ export function useTimelinePersistence({
     reloadFromServer,
     retrySaveAfterConflict,
     isSavingRef,
+    isConflictExhaustedRef,
     watchdogTripped,
     watchdogReason,
     retryWatchdog,

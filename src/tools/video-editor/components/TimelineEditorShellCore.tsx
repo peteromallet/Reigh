@@ -510,6 +510,25 @@ function TimelineEditorShellCoreComponent({
     </div>
   ) : null;
 
+  /** Diverged banner (B4): a 409 means the document changed elsewhere. No
+   *  silent overwrite — explicit Reload or Save as copy. */
+  const conflictBanner = chrome.isConflictExhausted ? (
+    <div
+      role="alert"
+      className="flex items-center justify-between gap-3 border-b border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+    >
+      <span>This timeline changed elsewhere. Reload, or save your work as a copy.</span>
+      <div className="flex items-center gap-2">
+        <Button type="button" size="sm" variant="outline" onClick={chrome.reloadFromServer}>
+          Reload
+        </Button>
+        <Button type="button" size="sm" variant="outline" onClick={chrome.retrySaveAfterConflict}>
+          Save as copy
+        </Button>
+      </div>
+    </div>
+  ) : null;
+
   /** The timeline region, contained so a render throw under it cannot take the
    *  toolbar (and therefore undo) down with it. Shared by all three layout
    *  branches — the boundary is per-branch instance, which is what we want: a
@@ -521,6 +540,7 @@ function TimelineEditorShellCoreComponent({
    *  payload and a blank editor whose badge claims `saved`. */
   const timelineRegion = (
     <>
+      {conflictBanner}
       {watchdogBanner}
       {chrome.loadError ? (
         <TimelineLoadErrorCard message={chrome.loadError.message} onRetry={chrome.retryLoad} />
