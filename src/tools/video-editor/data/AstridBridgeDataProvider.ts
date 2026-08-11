@@ -359,14 +359,12 @@ export class AstridBridgeDataProvider implements DataProvider {
       return normalizeConfigVersion(this.cachedPayload?.config_version);
     }
 
-    await this.putRegistry(timelineId, nextRegistry, 'save registry');
-
     const saveResponse = await fetch(
       `${this.apiBaseUrl}/projects/${encodeURIComponent(this.projectSlug)}/timelines/${encodeURIComponent(timelineRef)}/save`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config, expected_version: expectedVersion }),
+        body: JSON.stringify({ config, registry: nextRegistry, expected_version: expectedVersion }),
         signal: AbortSignal.timeout(BRIDGE_REQUEST_TIMEOUT_MS),
       },
     );
@@ -400,12 +398,13 @@ export class AstridBridgeDataProvider implements DataProvider {
   ): Promise<void> {
     const existingPayload = await this.fetchTimelinePayload(timelineId);
     const registry = normalizeRegistry(existingPayload.registry);
+    const expectedVersion = normalizeConfigVersion(existingPayload.config_version);
     await this.putRegistry(timelineId, {
       assets: {
         ...registry.assets,
         [assetId]: clone(entry),
       },
-    }, 'register asset');
+    }, 'register asset', expectedVersion);
   }
 
   async uploadAsset(
@@ -602,18 +601,19 @@ export class AstridBridgeDataProvider implements DataProvider {
     timelineId: string,
     registry: AssetRegistry,
     action: string,
+    expectedVersion?: number,
   ): Promise<AssetRegistry> {
     const response = await fetch(
       `${this.apiBaseUrl}/projects/${encodeURIComponent(this.projectSlug)}/timelines/${encodeURIComponent(this.getTimelineRequestRef(timelineId))}/registry`,
       {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(registry),
+        body: JSON.stringify({ registry, expected_version: expectedVersion }),
         signal: AbortSignal.timeout(BRIDGE_REQUEST_TIMEOUT_MS),
       },
     );
     if (!response.ok) {
-      throw await this.toBridgeError(response, timelineId, action);
+      throw await this.toBridgeError(response, timelineId, action, expectedVersion);
     }
 
     // An unreadable body (empty, not JSON) is tolerated — we know what we just
@@ -631,6 +631,13 @@ export class AstridBridgeDataProvider implements DataProvider {
       : normalizeRegistry(parseBridgePayload(bridgeAssetRegistrySchema, echoedRegistry, 'registry response'));
 
     this.updateCachedRegistry(timelineId, nextRegistry);
+    // A successful registry PUT appends exactly one registry event server-side,
+    // so the cached CAS version must advance or the next save/register would
+    // send the stale version and get 409.
+    this.cachePayload({
+      ...this.cachedPayload,
+      config_version: normalizeConfigVersion(this.cachedPayload.config_version) + 1,
+    }, timelineId);
     return nextRegistry;
   }
 

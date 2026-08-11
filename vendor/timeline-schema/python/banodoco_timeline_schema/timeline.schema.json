@@ -303,6 +303,10 @@
                   "soft-light",
                   "hard-light"
                 ]
+              },
+              "app": {
+                "type": "object",
+                "additionalProperties": {}
               }
             },
             "required": [
@@ -652,6 +656,10 @@
         "clip_order": {
           "type": "integer",
           "exclusiveMinimum": 0
+        },
+        "app": {
+          "type": "object",
+          "additionalProperties": {}
         }
       },
       "required": [

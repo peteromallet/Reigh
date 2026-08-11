@@ -307,24 +307,11 @@ describe('AstridBridgeDataProvider', () => {
     );
   });
 
-  it('persists registry before config save, sends expected_version, and refreshes cached assets from the bridge payload', async () => {
+  it('sends config, registry, and expected_version in a single save POST and refreshes cached assets from the bridge payload', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith('/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111')) {
         return new Response(JSON.stringify(makePayload()), { status: 200 });
-      }
-      if (url.endsWith('/registry')) {
-        expect(init?.method).toBe('PUT');
-        expect(init?.body).toBe(JSON.stringify({
-          assets: {
-            'asset-save': { file: 'clips/saved.mp4', type: 'video/mp4', duration: 8 },
-          },
-        }));
-        return new Response(JSON.stringify({
-          assets: {
-            'asset-save': { file: 'clips/saved.mp4', type: 'video/mp4', duration: 8 },
-          },
-        }), { status: 200 });
       }
       if (url.endsWith('/save')) {
         expect(init?.method).toBe('POST');
@@ -333,6 +320,11 @@ describe('AstridBridgeDataProvider', () => {
             output: { resolution: '1280x720', fps: 30, file: 'output.mp4' },
             clips: [],
             tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+          },
+          registry: {
+            assets: {
+              'asset-save': { file: 'clips/saved.mp4', type: 'video/mp4', duration: 8 },
+            },
           },
           expected_version: 999,
         }));
@@ -374,7 +366,6 @@ describe('AstridBridgeDataProvider', () => {
     expect(nextVersion).toBe(7);
     expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
       '/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111',
-      '/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111/registry',
       '/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111/save',
     ]);
     await expect(provider.resolveAssetUrl('clips/saved.mp4')).resolves.toBe(
@@ -383,20 +374,17 @@ describe('AstridBridgeDataProvider', () => {
     expect(getSupabaseClient).not.toHaveBeenCalled();
   });
 
-  it('fails the whole save when registry persistence fails', async () => {
+  it('fails the whole save when the save endpoint returns an error', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith('/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111')) {
         return new Response(JSON.stringify(makePayload()), { status: 200 });
       }
-      if (url.endsWith('/registry')) {
+      if (url.endsWith('/save')) {
         return new Response(JSON.stringify({
           error: 'invalid_registry',
           detail: 'registry body must contain an assets object',
         }), { status: 400 });
-      }
-      if (url.endsWith('/save')) {
-        return new Response('{}', { status: 200 });
       }
       throw new Error(`Unexpected bridge request: ${url}`);
     });
@@ -412,7 +400,7 @@ describe('AstridBridgeDataProvider', () => {
       output: { resolution: '1280x720', fps: 30, file: 'output.mp4' },
       clips: [],
       tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
-    }, 1)).rejects.toThrow('Astrid bridge save registry failed: registry body must contain an assets object');
+    }, 1)).rejects.toThrow('Astrid bridge save timeline failed: registry body must contain an assets object');
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -422,7 +410,7 @@ describe('AstridBridgeDataProvider', () => {
       if (url.endsWith('/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111')) {
         return new Response(JSON.stringify(makePayload()), { status: 200 });
       }
-      if (url.endsWith('/registry')) {
+      if (url.endsWith('/save')) {
         return new Response(JSON.stringify({
           error: 'timeline_not_found',
           detail: 'timeline missing',
@@ -466,28 +454,27 @@ describe('AstridBridgeDataProvider', () => {
     await expect(provider.loadCheckpoints('11111111-1111-1111-1111-111111111111')).resolves.toEqual([]);
   });
 
-  it('registerAsset PUTs a merged full registry and refreshes asset maps', async () => {
+  it('registerAsset PUTs a merged full registry with expected_version and refreshes asset maps', async () => {
+    // The mock mirrors the real server: each successful PUT appends one
+    // registry event, so the reported config_version advances.
+    let currentVersion = 1;
+    const baseAssets = {
+      'asset-video': { file: 'clips/demo.mp4', type: 'video/mp4', duration: 4 },
+      'asset-image': { file: 'stills/cover.png', type: 'image/png' },
+      'asset-audio': { file: 'audio/voice.wav', type: 'audio/wav', duration: 2.5 },
+    };
+    const putBodies: Array<{ registry: unknown; expected_version: number }> = [];
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith('/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111')) {
-        return new Response(JSON.stringify(makePayload()), { status: 200 });
+        return new Response(JSON.stringify({ ...makePayload(), config_version: currentVersion }), { status: 200 });
       }
       if (url.endsWith('/registry')) {
         expect(init?.method).toBe('PUT');
-        expect(init?.body).toBe(JSON.stringify({
-          assets: {
-            'asset-video': { file: 'clips/demo.mp4', type: 'video/mp4', duration: 4 },
-            'asset-image': { file: 'stills/cover.png', type: 'image/png' },
-            'asset-audio': { file: 'audio/voice.wav', type: 'audio/wav', duration: 2.5 },
-          },
-        }));
-        return new Response(JSON.stringify({
-          assets: {
-            'asset-video': { file: 'clips/demo.mp4', type: 'video/mp4', duration: 4 },
-            'asset-image': { file: 'stills/cover.png', type: 'image/png' },
-            'asset-audio': { file: 'audio/voice.wav', type: 'audio/wav', duration: 2.5 },
-          },
-        }), { status: 200 });
+        putBodies.push(JSON.parse(String(init?.body)));
+        expect(putBodies[putBodies.length - 1].registry).toEqual({ assets: baseAssets });
+        currentVersion += 1;
+        return new Response(JSON.stringify({ assets: baseAssets }), { status: 200 });
       }
       throw new Error(`Unexpected bridge request: ${url}`);
     });
@@ -504,14 +491,24 @@ describe('AstridBridgeDataProvider', () => {
       type: 'audio/wav',
       duration: 2.5,
     });
+    // Second registration must send the ADVANCED version (2), not the stale 1 —
+    // a stale version would 409 on the real server.
+    await provider.registerAsset('11111111-1111-1111-1111-111111111111', 'asset-audio', {
+      file: 'audio/voice.wav',
+      type: 'audio/wav',
+      duration: 2.5,
+    });
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // GET (1) + PUT (2); the second registerAsset reuses the cached payload,
+    // so the cached config_version bump is what advances the CAS version.
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(putBodies.map((b) => b.expected_version)).toEqual([1, 2]);
     await expect(provider.resolveAssetUrl('audio/voice.wav')).resolves.toBe(
       '/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111/assets/asset-audio',
     );
   });
 
-  it('saveTimeline calls the save endpoint and returns the bridge head version without a registry argument', async () => {
+  it('saveTimeline calls the save endpoint with config, registry, and expected_version in a single POST', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith('/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111')) {
@@ -520,15 +517,11 @@ describe('AstridBridgeDataProvider', () => {
           config_version: 5,
         }), { status: 200 });
       }
-      if (url.endsWith('/registry')) {
-        expect(init?.method).toBe('PUT');
-        expect(init?.body).toBe(JSON.stringify(makePayload().registry));
-        return new Response(JSON.stringify(makePayload().registry), { status: 200 });
-      }
       if (url.endsWith('/save')) {
         expect(init?.method).toBe('POST');
         expect(init?.body).toBe(JSON.stringify({
           config: { output: {}, clips: [], tracks: [] },
+          registry: makePayload().registry,
           expected_version: 1,
         }));
         return new Response(JSON.stringify({
@@ -554,18 +547,15 @@ describe('AstridBridgeDataProvider', () => {
     );
 
     expect(version).toBe(12);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(getSupabaseClient).not.toHaveBeenCalled();
   });
 
-  it('does not throw TimelineVersionConflictError for stale expectedVersion', async () => {
+  it('does not throw TimelineVersionConflictError for stale expectedVersion when bridge ignores CAS', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith('/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111')) {
         return new Response(JSON.stringify(makePayload()), { status: 200 });
-      }
-      if (url.endsWith('/registry')) {
-        return new Response(JSON.stringify(makePayload().registry), { status: 200 });
       }
       if (url.endsWith('/save')) {
         return new Response(JSON.stringify({
@@ -1215,11 +1205,8 @@ describe('AstridBridgeDataProvider', () => {
       if (url.endsWith(`/api/astrid/projects/ados-talks/timelines/${TIMELINE_ID}`)) {
         return new Response(JSON.stringify({ ...makePayload(), config_version: head }), { status: 200 });
       }
-      if (url.endsWith('/registry')) {
-        return new Response(JSON.stringify(makePayload().registry), { status: 200 });
-      }
       if (url.endsWith('/save')) {
-        const body = JSON.parse(String(init?.body ?? '{}')) as { expected_version?: number };
+        const body = JSON.parse(String(init?.body ?? '{}')) as { expected_version?: number; registry?: unknown };
         if (typeof body.expected_version === 'number' && body.expected_version !== head) {
           return new Response(JSON.stringify({
             error: 'timeline_version_conflict',
@@ -1232,7 +1219,7 @@ describe('AstridBridgeDataProvider', () => {
       throw new Error(`Unexpected bridge request: ${url}`);
     });
 
-    it('sends expected_version in the save body', async () => {
+    it('sends config, registry, and expected_version in the save body', async () => {
       const fetchMock = makeCasBridge(5);
       vi.stubGlobal('fetch', fetchMock);
 
@@ -1247,6 +1234,7 @@ describe('AstridBridgeDataProvider', () => {
       const saveCall = fetchMock.mock.calls.find(([input]) => String(input).endsWith('/save'));
       expect(JSON.parse(String(saveCall?.[1]?.body))).toEqual({
         config: { output: {}, clips: [], tracks: [] },
+        registry: makePayload().registry,
         expected_version: 5,
       });
     });
@@ -1299,9 +1287,6 @@ describe('AstridBridgeDataProvider', () => {
         if (url.endsWith(`/api/astrid/projects/ados-talks/timelines/${TIMELINE_ID}`)) {
           return new Response(JSON.stringify(makePayload()), { status: 200 });
         }
-        if (url.endsWith('/registry')) {
-          return new Response(JSON.stringify(makePayload().registry), { status: 200 });
-        }
         if (url.endsWith('/save')) {
           return new Response(JSON.stringify({ ...makePayload(), config_version: 42 }), { status: 200 });
         }
@@ -1328,9 +1313,6 @@ describe('AstridBridgeDataProvider', () => {
         if (url.endsWith(`/api/astrid/projects/ados-talks/timelines/${TIMELINE_ID}`)) {
           return new Response(JSON.stringify(makePayload()), { status: 200 });
         }
-        if (url.endsWith('/registry')) {
-          return new Response(JSON.stringify(makePayload().registry), { status: 200 });
-        }
         if (url.endsWith('/save')) {
           return new Response(JSON.stringify({ error: 'locked', detail: 'timeline is locked' }), { status: 409 });
         }
@@ -1351,6 +1333,51 @@ describe('AstridBridgeDataProvider', () => {
 
       expect(isTimelineVersionConflictError(error)).toBe(false);
       expect((error as Error).message).toContain('timeline is locked');
+    });
+
+    it('rejects a combined save POST with 409 and retries successfully after adopting the reported version', async () => {
+      let head = 5;
+      const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith(`/api/astrid/projects/ados-talks/timelines/${TIMELINE_ID}`)) {
+          return new Response(JSON.stringify({ ...makePayload(), config_version: head }), { status: 200 });
+        }
+        if (url.endsWith('/save')) {
+          const body = JSON.parse(String(init?.body ?? '{}')) as { expected_version?: number; config?: unknown; registry?: unknown };
+          if (typeof body.expected_version === 'number' && body.expected_version !== head) {
+            return new Response(JSON.stringify({
+              error: 'timeline_version_conflict',
+              detail: `expected_version ${body.expected_version} does not match config_version ${head}`,
+              config_version: head,
+            }), { status: 409 });
+          }
+          head += 1;
+          return new Response(JSON.stringify({ ...makePayload(), config_version: head }), { status: 200 });
+        }
+        throw new Error(`Unexpected bridge request: ${url}`);
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const provider = new AstridBridgeDataProvider({
+        projectSlug: 'ados-talks',
+        timelineRef: 'intro-cut',
+        timelineId: TIMELINE_ID,
+      });
+
+      // First attempt: stale (version 2, head is 5) → 409
+      const conflictError = await provider.saveTimeline(
+        TIMELINE_ID,
+        { output: {}, clips: [], tracks: [] },
+        2,
+        { assets: { 'a': { file: 'f.mp4', type: 'video/mp4' } } },
+      ).catch((thrown: unknown) => thrown);
+
+      expect(isTimelineVersionConflictError(conflictError)).toBe(true);
+      expect(conflictError).toMatchObject({ expectedVersion: 2, actualVersion: 5 });
+
+      // Retry with the reported version (5) → success
+      const v6 = await provider.saveTimeline(TIMELINE_ID, { output: {}, clips: [], tracks: [] }, 5);
+      expect(v6).toBe(6);
     });
   });
 
@@ -1414,14 +1441,11 @@ describe('AstridBridgeDataProvider', () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
-    it('still serves saveTimeline its registry default from the cached payload', async () => {
+    it('still serves saveTimeline its registry default from the cached payload via a single save POST', async () => {
       const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
         if (url.endsWith(`/api/astrid/projects/ados-talks/timelines/${TIMELINE_ID}`)) {
           return new Response(JSON.stringify(makePayload()), { status: 200 });
-        }
-        if (url.endsWith('/registry')) {
-          return new Response(JSON.stringify(makePayload().registry), { status: 200 });
         }
         if (url.endsWith('/save')) {
           return new Response(JSON.stringify({ ...makePayload(), config_version: 2 }), { status: 200 });
@@ -1440,10 +1464,9 @@ describe('AstridBridgeDataProvider', () => {
       await provider.saveTimeline(TIMELINE_ID, { output: {}, clips: [], tracks: [] }, 1);
 
       // One GET for the load; the save reuses the cached payload for its
-      // registry default rather than issuing a second GET.
+      // registry default and sends everything in one POST.
       expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
         `/api/astrid/projects/ados-talks/timelines/${TIMELINE_ID}`,
-        `/api/astrid/projects/ados-talks/timelines/${TIMELINE_ID}/registry`,
         `/api/astrid/projects/ados-talks/timelines/${TIMELINE_ID}/save`,
       ]);
     });

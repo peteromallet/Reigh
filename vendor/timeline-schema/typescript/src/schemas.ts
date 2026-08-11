@@ -81,6 +81,10 @@ export const TimelineClip = z.object({
   effects: z.union([z.array(TimelineEffect), z.record(z.number())]).optional(),
   params: z.record(z.any()).optional(),
   generation: z.record(z.any()).optional(),
+  // Editor-extension metadata (e.g. scale-bake markers, clip-local shader
+  // refs) round-trips through providers; keep the shared schema a superset
+  // of Reigh's own TimelineClip type (types/index.ts:384).
+  app: z.record(z.any()).optional(),
   pool_id: z.string().optional(),
   clip_order: z.number().int().positive().optional(),
 });
@@ -95,6 +99,10 @@ export const TrackDefinition = z.object({
   volume: z.number().optional(),
   muted: z.boolean().optional(),
   blendMode: TrackBlendMode.optional(),
+  // Editor-extension metadata (e.g. TRACK_SCALE_BAKE_MARKER) round-trips
+  // through providers; keep the shared schema a superset of Reigh's own
+  // TrackDefinition type (types/index.ts:86).
+  app: z.record(z.any()).optional(),
 });
 
 export const PinnedShotGroup = z.object({
