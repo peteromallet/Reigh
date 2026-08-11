@@ -492,6 +492,24 @@ function TimelineEditorShellCoreComponent({
     </div>
   );
 
+  /** Write-ack watchdog banner: an edit went unacknowledged (or was dropped on
+   *  the null-data path). Persistent and actionable — never a silent badge. */
+  const watchdogBanner = chrome.watchdogTripped ? (
+    <div
+      role="alert"
+      className="flex items-center justify-between gap-3 border-b border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+    >
+      <span>
+        {chrome.watchdogReason === 'lost-edit'
+          ? 'Your edits could not be applied — the timeline is not loaded yet. Reload the timeline before editing.'
+          : 'Your changes have not been saved: the save never got a confirmation.'}
+      </span>
+      <Button type="button" size="sm" variant="outline" onClick={chrome.retryWatchdog}>
+        {chrome.watchdogReason === 'lost-edit' ? 'Dismiss' : 'Retry save'}
+      </Button>
+    </div>
+  ) : null;
+
   /** The timeline region, contained so a render throw under it cannot take the
    *  toolbar (and therefore undo) down with it. Shared by all three layout
    *  branches — the boundary is per-branch instance, which is what we want: a
@@ -501,12 +519,17 @@ function TimelineEditorShellCoreComponent({
    *  render, so nothing throws during rendering); it takes the explicit branch
    *  below, which is the only thing standing between a malformed backend
    *  payload and a blank editor whose badge claims `saved`. */
-  const timelineRegion = chrome.loadError ? (
-    <TimelineLoadErrorCard message={chrome.loadError.message} onRetry={chrome.retryLoad} />
-  ) : (
-    <TimelineErrorBoundary>
-      <TimelineEditor onOpenSequenceCreator={() => setIsSequenceCreatorOpen(true)} />
-    </TimelineErrorBoundary>
+  const timelineRegion = (
+    <>
+      {watchdogBanner}
+      {chrome.loadError ? (
+        <TimelineLoadErrorCard message={chrome.loadError.message} onRetry={chrome.retryLoad} />
+      ) : (
+        <TimelineErrorBoundary>
+          <TimelineEditor onOpenSequenceCreator={() => setIsSequenceCreatorOpen(true)} />
+        </TimelineErrorBoundary>
+      )}
+    </>
   );
 
   const previewPortal = previewSurface.portal;
@@ -701,11 +724,10 @@ function TimelineEditorShellCoreComponent({
         )}
         {statusBarSlot}
 
-        {/* Reserved surface slots rendered as canaries (host-owned footer region).
-            Height-capped and independently scrollable: the canaries render tall
-            placeholder content, and as an unbounded flex item this footer took
-            that height out of the editor above it — collapsing the preview and
-            clipping the timeline. */}
+        {/* Reserved surface slots rendered as inert placeholders (host-owned footer region).
+            Height-capped and independently scrollable: the placeholders stay small,
+            and as an unbounded flex item this footer took height out of the editor
+            above it — collapsing the preview and clipping the timeline. */}
         <div
           className="flex max-h-32 shrink-0 flex-wrap items-start gap-2 overflow-y-auto border-t border-border/40 px-3 py-2"
           {...shellRegionAttrs('reservedSlots')}

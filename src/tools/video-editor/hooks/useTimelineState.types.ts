@@ -225,6 +225,14 @@ export interface TimelineChromeContextValue {
   handleAddTextAt: ClipEditingHook['handleAddTextAt'];
   reloadFromServer: TimelineReloadFromServer;
   retrySaveAfterConflict: TimelineRetrySaveAfterConflict;
+  /**
+   * Write-ack watchdog: true when an edit went unacknowledged past the grace
+   * period or was dropped on the null-data path. The shell renders a
+   * persistent, actionable banner — never a silent badge.
+   */
+  watchdogTripped: boolean;
+  watchdogReason: 'timeout' | 'lost-edit' | null;
+  retryWatchdog: () => void;
   startRender: TimelineStartRender;
 }
 

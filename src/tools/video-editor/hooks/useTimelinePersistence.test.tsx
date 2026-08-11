@@ -3,7 +3,7 @@ import React from 'react';
 import { act, renderHook } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useTimelinePersistence } from './useTimelinePersistence';
+import { useTimelinePersistence, type UseTimelinePersistenceResult } from './useTimelinePersistence';
 import { TimelineEventBus } from './useTimelineEventBus';
 import { createInteractionState, notifyInteractionEndIfIdle, type InteractionStateRef } from '../lib/interaction-state';
 import { configToRows, type TimelineData } from '../lib/timeline-data';
@@ -81,6 +81,8 @@ interface TestHarness {
   scheduleSave: (data: TimelineData) => void;
   reloadFromServer: () => Promise<void>;
   unmount: () => void;
+  eventBus: TimelineEventBus;
+  result: { current: UseTimelinePersistenceResult };
 }
 
 interface SetupOptions {
@@ -169,6 +171,8 @@ function setup(options?: SetupOptions): TestHarness {
     },
     reloadFromServer: () => hook.result.current.reloadFromServer(),
     unmount: () => { hook.unmount(); },
+    eventBus,
+    result: hook.result,
   };
 }
 
@@ -489,5 +493,107 @@ describe('useTimelinePersistence — interaction gating', () => {
       file: 'media/reload.mp4',
       timelineId: 'timeline-1',
     });
+  });
+});
+
+describe('useTimelinePersistence — write-ack watchdog', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  // React Query defers mutationFn onto microtasks; flush them after advancing.
+  const advance = async (ms: number) => {
+    await act(async () => {
+      vi.advanceTimersByTime(ms);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  };
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it('trips after the grace period when a save never acknowledges', async () => {
+    // A save that never settles: doSave starts, the watchdog sees no receipt.
+    const harness = setup({
+      persistenceEnabled: true,
+      saveTimelineImpl: () => new Promise<number>(() => {}),
+    });
+
+    harness.scheduleSave(makeTimelineData('hang'));
+    await advance(600); // debounce fires, save hangs
+    expect(harness.saveTimeline).toHaveBeenCalledTimes(1);
+
+    await advance(5_000);
+    expect(harness.result?.current.watchdogTripped).toBe(true);
+  });
+
+  it('clears on a durable save receipt (saveSuccess)', async () => {
+    const harness = setup({
+      persistenceEnabled: true,
+      saveTimelineImpl: () => new Promise<number>(() => {}),
+    });
+
+    harness.scheduleSave(makeTimelineData('hang'));
+    await advance(6_000);
+    expect(harness.result?.current.watchdogTripped).toBe(true);
+
+    act(() => { harness.eventBus.emit('saveSuccess'); });
+    expect(harness.result?.current.watchdogTripped).toBe(false);
+  });
+
+  it('trips on a rejected CAS conflict that never resolves', async () => {
+    const harness = setup({
+      persistenceEnabled: true,
+      saveTimelineImpl: () => Promise.reject(new TimelineVersionConflictError('conflict', 1)),
+    });
+
+    harness.scheduleSave(makeTimelineData('conflict'));
+    await advance(600); // doSave -> conflict -> exhausted (async retry-version reload)
+    expect(harness.result?.current.saveStatus).toBe('error');
+
+    await advance(5_000);
+    expect(harness.result?.current.watchdogTripped).toBe(true);
+    expect(harness.result?.current.watchdogReason).toBe('timeout');
+  });
+
+  it('surfaces dropped edits immediately via the lostEdit event', () => {
+    const harness = setup();
+
+    act(() => { harness.eventBus.emit('lostEdit'); });
+    expect(harness.result?.current.watchdogTripped).toBe(true);
+    expect(harness.result?.current.watchdogReason).toBe('lost-edit');
+  });
+
+  it('retryWatchdog clears the notice and never duplicates an in-flight save', async () => {
+    let settle: ((v: number) => void) | null = null;
+    const harness = setup({
+      persistenceEnabled: true,
+      saveTimelineImpl: () => new Promise<number>((resolve) => { settle = resolve; }),
+    });
+
+    harness.scheduleSave(makeTimelineData('hang'));
+    await advance(600);
+    expect(harness.saveTimeline).toHaveBeenCalledTimes(1);
+    await advance(5_000);
+    expect(harness.result?.current.watchdogTripped).toBe(true);
+
+    // Retry while the original save is still in flight: the notice clears and
+    // no duplicate POST is issued (the same-seq retry is queued, then dropped
+    // once the original settles).
+    act(() => { harness.result?.current.retryWatchdog(); });
+    expect(harness.result?.current.watchdogTripped).toBe(false);
+    await advance(600);
+    expect(harness.saveTimeline).toHaveBeenCalledTimes(1);
+
+    // The in-flight save settles: its receipt keeps the watchdog cleared.
+    act(() => { settle?.(2); });
+    await advance(0);
+    await advance(0);
+    expect(harness.result?.current.watchdogTripped).toBe(false);
+    expect(harness.saveTimeline).toHaveBeenCalledTimes(1);
   });
 });

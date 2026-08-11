@@ -14,6 +14,7 @@ import {
   type PinnedGroupKey,
 } from '@/tools/video-editor/lib/pinned-group-projection.ts';
 import type { TimelineApplyEdit } from '@/tools/video-editor/hooks/timeline-state-types.ts';
+import type { TimelineEventBus } from '@/tools/video-editor/hooks/useTimelineEventBus.ts';
 import type { TimelineRow } from '@/tools/video-editor/types/timeline-canvas.ts';
 
 export interface UseTimelineTrackManagementArgs {
@@ -22,6 +23,12 @@ export interface UseTimelineTrackManagementArgs {
   selectedClipId: string | null;
   setSelectedTrackId: React.Dispatch<React.SetStateAction<string | null>>;
   applyEdit: TimelineApplyEdit;
+  /**
+   * Optional event bus for surfacing dropped edits (the null-data
+   * moveClipToRow early return). Optional so tests and embed hosts that
+   * don't construct a bus keep working.
+   */
+  eventBus?: TimelineEventBus;
 }
 
 export interface UseTimelineTrackManagementResult {
@@ -202,6 +209,7 @@ export function useTimelineTrackManagement({
   selectedClipId,
   setSelectedTrackId,
   applyEdit,
+  eventBus,
 }: UseTimelineTrackManagementArgs): UseTimelineTrackManagementResult {
   /**
    * Move a clip to `targetRowId`, optionally landing it at `newStartTime`.
@@ -224,6 +232,9 @@ export function useTimelineTrackManagement({
   ) => {
     let current = dataRef.current;
     if (!current) {
+      // Timeline not loaded — this used to be a silent no-op. Surface it so
+      // the write-ack watchdog can make the dropped edit visible.
+      eventBus?.emit('lostEdit');
       return;
     }
 

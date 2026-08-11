@@ -33,7 +33,10 @@ export function useTimelineSave(
   };
   const lastSavedSignatureRef = useRef('');
   const savedSeqRef = useRef(0);
-  const configVersionRef = useRef(1);
+  // Start at 0 so a fresh bridge timeline (config_version 0) is not rejected
+  // as "stale" by the poll gate (polled < current). The bridge CAS is strict
+  // equality, so the first save POSTs expected_version 0 and succeeds.
+  const configVersionRef = useRef(0);
   const eventBusRef = useRef(new TimelineEventBus());
   const commit = useTimelineCommit({
     eventBus: eventBusRef.current,
@@ -99,5 +102,8 @@ export function useTimelineSave(
     selectedClipIdRef: commit.selectedClipIdRef,
     selectedTrackIdRef: commit.selectedTrackIdRef,
     isLoading: queries.timelineQuery.isLoading && !commit.data,
+    watchdogTripped: persistence.watchdogTripped,
+    watchdogReason: persistence.watchdogReason,
+    retryWatchdog: persistence.retryWatchdog,
   };
 }

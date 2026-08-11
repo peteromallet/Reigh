@@ -30,6 +30,12 @@ const SAVE_DEBOUNCE_MS = 500;
  */
 const SAVE_ERROR_RETRY_BASE_MS = 500;
 const SAVE_ERROR_RETRY_MAX_MS = 8_000;
+/**
+ * Write-ack watchdog grace: if an edit is unacknowledged (no durable save
+ * receipt) for longer than this, the UI surfaces a persistent error. Covers
+ * timeouts, 4xx/5xx, rejected CAS, and the null-data no-op path.
+ */
+const WATCHDOG_GRACE_MS = 5_000;
 
 type ConfigVersionUpdateSource = 'save' | 'reload' | 'conflict-retry';
 
@@ -64,6 +70,16 @@ export interface UseTimelinePersistenceResult {
   reloadFromServer: () => Promise<void>;
   retrySaveAfterConflict: () => Promise<void>;
   isSavingRef: MutableRefObject<boolean>;
+  /**
+   * Write-ack watchdog: true when an edit went unacknowledged past the grace
+   * period (or was dropped on the null-data path). Persistent until an ack or
+   * an explicit retry/dismiss clears it.
+   */
+  watchdogTripped: boolean;
+  /** Why the watchdog tripped: a save that never acknowledged, or a dropped edit. */
+  watchdogReason: 'timeout' | 'lost-edit' | null;
+  /** Re-attempt the save (timeout) or dismiss the notice (lost-edit). */
+  retryWatchdog: () => void;
 }
 
 export function useTimelinePersistence({
@@ -100,6 +116,9 @@ export function useTimelinePersistence({
 
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
   const [isConflictExhausted, setIsConflictExhausted] = useState(false);
+  const [watchdogTripped, setWatchdogTripped] = useState(false);
+  const [watchdogReason, setWatchdogReason] = useState<'timeout' | 'lost-edit' | null>(null);
+  const watchdogTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const getDataRef = useCallback(() => {
     const storeDataRef = store?.getState().data.dataRef;
     return storeDataRef && storeDataRef.current !== null ? storeDataRef : dataRef;
@@ -167,6 +186,40 @@ export function useTimelinePersistence({
       errorRetryTimer.current = null;
     }
   }, []);
+
+  const clearWatchdog = useCallback(() => {
+    if (watchdogTimer.current) {
+      clearTimeout(watchdogTimer.current);
+      watchdogTimer.current = null;
+    }
+    setWatchdogTripped(false);
+    setWatchdogReason(null);
+  }, []);
+
+  /**
+   * Arm the write-ack watchdog: an edit exists that has no durable save
+   * receipt. If no ack arrives within the grace period the UI trips. A
+   * 'lost-edit' trips immediately (the edit was already dropped).
+   */
+  const armWatchdog = useCallback((reason: 'timeout' | 'lost-edit') => {
+    setWatchdogReason(reason);
+    if (reason === 'lost-edit') {
+      if (watchdogTimer.current) {
+        clearTimeout(watchdogTimer.current);
+        watchdogTimer.current = null;
+      }
+      setWatchdogTripped(true);
+      return;
+    }
+    if (watchdogTimer.current) {
+      return;
+    }
+    watchdogTimer.current = setTimeout(() => {
+      watchdogTimer.current = null;
+      setWatchdogTripped(true);
+    }, WATCHDOG_GRACE_MS);
+  }, []);
+
 
   /** A save landed (or persistence is off): drop the pending retry and its backoff. */
   const clearErrorRetry = useCallback(() => {
@@ -421,6 +474,11 @@ export function useTimelinePersistence({
       return;
     }
 
+    // A mutation happened and a save is now pending: arm the write-ack
+    // watchdog. A durable receipt (saveSuccess) clears it; if none arrives
+    // within the grace period the UI surfaces a persistent error.
+    armWatchdog('timeout');
+
     if (!options?.preserveStatus) {
       setSaveStatus('dirty');
     }
@@ -456,7 +514,20 @@ export function useTimelinePersistence({
       conflictRetryRef.current = 0;
       void doSave(nextData, editSeqRef.current);
     }, SAVE_DEBOUNCE_MS);
-  }, [cancelErrorRetryTimer, doSave, editSeqRef, getInteractionStateRef, persistenceEnabled]);
+  }, [armWatchdog, cancelErrorRetryTimer, doSave, editSeqRef, getInteractionStateRef, persistenceEnabled]);
+
+  const retryWatchdog = useCallback(() => {
+    const reason = watchdogReason;
+    clearWatchdog();
+    if (reason === 'timeout') {
+      // Re-attempt the save from the latest data. Lost edits have nothing to
+      // re-send — the notice is the signal to reload the timeline.
+      const latest = getDataRef().current ?? dataRef.current;
+      if (latest) {
+        scheduleSave(latest, { preserveStatus: true });
+      }
+    }
+  }, [clearWatchdog, dataRef, getDataRef, scheduleSave, watchdogReason]);
 
   // When a gesture ends, flush the latest deferred payload (if any) through
   // the normal scheduleSave path, which will now proceed past the gate.
@@ -480,6 +551,7 @@ export function useTimelinePersistence({
     conflictRetryRef.current = 0;
     pendingSaveRef.current = null;
     clearErrorRetry();
+    clearWatchdog();
     setIsConflictExhausted(false);
     editSeqRef.current = savedSeqRef.current;
     logConfigVersionUpdate('reload', loadedTimeline.configVersion);
@@ -511,6 +583,7 @@ export function useTimelinePersistence({
   }, [
     assetResolver,
     clearErrorRetry,
+    clearWatchdog,
     commitData,
     configVersionRef,
     editSeqRef,
@@ -549,6 +622,21 @@ export function useTimelinePersistence({
   }, [clearErrorRetry, configVersionRef, doSave, editSeqRef, getDataRef, handleConflictExhausted, loadConflictRetryVersion]);
 
   useEffect(() => {
+    // A durable save receipt acknowledges the edit: clear the watchdog.
+    const offSuccess = eventBus.on('saveSuccess', clearWatchdog);
+    // An edit was dropped on the null-data path: surface it immediately.
+    const offLost = eventBus.on('lostEdit', () => armWatchdog('lost-edit'));
+    return () => {
+      offSuccess();
+      offLost();
+      if (watchdogTimer.current) {
+        clearTimeout(watchdogTimer.current);
+        watchdogTimer.current = null;
+      }
+    };
+  }, [armWatchdog, clearWatchdog, eventBus]);
+
+  useEffect(() => {
     isMountedRef.current = true;
     return () => {
       // Without this the transport-retry chain outlives the editor: the timer is
@@ -568,5 +656,8 @@ export function useTimelinePersistence({
     reloadFromServer,
     retrySaveAfterConflict,
     isSavingRef,
+    watchdogTripped,
+    watchdogReason,
+    retryWatchdog,
   };
 }

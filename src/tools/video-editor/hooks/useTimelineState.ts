@@ -330,6 +330,9 @@ function useTimelineChromeContextValue({
   startRender,
   loadError,
   retryLoad,
+  watchdogTripped,
+  watchdogReason,
+  retryWatchdog,
 }: {
   timelineName: string | null;
   saveStatus: ReturnType<typeof useTimelineSave>['saveStatus'];
@@ -344,6 +347,9 @@ function useTimelineChromeContextValue({
   reloadFromServer: ReturnType<typeof useTimelineSave>['reloadFromServer'];
   retrySaveAfterConflict: ReturnType<typeof useTimelineSave>['retrySaveAfterConflict'];
   startRender: ReturnType<typeof useRenderState>['startRender'];
+  watchdogTripped: boolean;
+  watchdogReason: 'timeout' | 'lost-edit' | null;
+  retryWatchdog: () => void;
 }): TimelineChromeContextValue {
   return useMemo<TimelineChromeContextValue>(() => ({
     timelineName,
@@ -371,6 +377,9 @@ function useTimelineChromeContextValue({
     handleAddTextAt: clipEditing.handleAddTextAt,
     reloadFromServer,
     retrySaveAfterConflict,
+    watchdogTripped,
+    watchdogReason,
+    retryWatchdog,
     startRender,
     loadError,
     retryLoad,
@@ -396,6 +405,7 @@ function useTimelineChromeContextValue({
     render.renderResultUrl,
     render.renderStatus,
     retrySaveAfterConflict,
+    retryWatchdog,
     saveStatus,
     setScaleWidth,
     startRender,
@@ -403,6 +413,8 @@ function useTimelineChromeContextValue({
     trackManagement.handleAddTrack,
     trackManagement.handleClearUnusedTracks,
     trackManagement.unusedTrackCount,
+    watchdogReason,
+    watchdogTripped,
   ]);
 }
 
@@ -701,6 +713,7 @@ export function useTimelineState(): UseTimelineStateResult {
     selectedClipId: selection.primaryClipId,
     setSelectedTrackId,
     applyEdit,
+    eventBus: save.eventBus,
   });
 
   const timelineCommands = useMemo<TimelineEditorCommands>(() => {
@@ -948,6 +961,9 @@ export function useTimelineState(): UseTimelineStateResult {
     },
     reloadFromServer,
     retrySaveAfterConflict,
+    watchdogTripped: save.watchdogTripped,
+    watchdogReason: save.watchdogReason,
+    retryWatchdog: save.retryWatchdog,
     startRender,
     loadError: timelineLoadError,
     retryLoad,

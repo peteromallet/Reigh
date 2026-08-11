@@ -13,6 +13,12 @@ type TimelineEventMap = {
   pruneSelection: (validIds: Set<string>) => void;
   scheduleSave: ScheduleSaveFn;
   saveSuccess: () => void;
+  /**
+   * A user edit was dropped because the timeline data is not loaded (the
+   * applyEdit/moveClipToRow null-data early returns). The write-ack watchdog
+   * listens so "edits while data is null" is visible instead of silent.
+   */
+  lostEdit: () => void;
 };
 
 type TimelineEventName = keyof TimelineEventMap;
