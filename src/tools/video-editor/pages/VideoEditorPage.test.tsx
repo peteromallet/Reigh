@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import VideoEditorPage from '@/tools/video-editor/pages/VideoEditorPage.tsx';
+import { setDevExtensionEnabled } from '@/tools/video-editor/dev/devExtensionEnablement.ts';
 
 const state = vi.hoisted(() => ({
   auth: { userId: 'user-1' as string | null },
@@ -33,6 +34,19 @@ const state = vi.hoisted(() => ({
   confirm: vi.fn(() => true),
   /** Captured extensions prop from the last VideoEditorProvider render (for smoke tests). */
   lastProviderExtensions: null as readonly any[] | null,
+  /**
+   * Dev-local scratchpad array backing the real `devLocalExtensions` module
+   * (which is empty on main). Tests push fixture extensions into it.
+   */
+  devLocalExtensions: [] as any[],
+  /**
+   * Simulated runtime lifecycle: the mocked provider records one activation
+   * entry per extension id when an id enters the extensions prop and one
+   * disposal entry when it leaves — mirroring ExtensionLifecycleHost's
+   * synchronize() contract (dispose on removal, activate on re-add).
+   */
+  extensionActivations: [] as string[],
+  extensionDisposals: [] as string[],
   supabaseCtor: vi.fn(function MockSupabaseProvider(this: Record<string, unknown>, options: unknown) {
     this.kind = 'supabase';
     this.options = options;
@@ -83,6 +97,12 @@ vi.mock('@/tools/video-editor/data/AstridBridgeDataProvider.ts', () => ({
   AstridBridgeDataProvider: state.bridgeCtor,
 }));
 
+// The dev-local scratchpad is empty on main; tests push fixtures into the
+// shared hoisted array so the page's `devLocalExtensions` filter sees them.
+vi.mock('@/tools/video-editor/dev/localExtensions.ts', () => ({
+  devLocalExtensions: state.devLocalExtensions,
+}));
+
 vi.mock('@/tools/video-editor/components/ReighVideoEditorShell.tsx', () => ({
   ReighVideoEditorShell: ({ timelineId }: { timelineId: string }) => (
     <div data-testid="video-editor-shell">{timelineId}</div>
@@ -121,6 +141,27 @@ vi.mock('@/tools/video-editor/contexts/VideoEditorProvider.tsx', async () => {
           }
         };
       }, []);
+
+      // Simulate the runtime lifecycle (mirrors ExtensionLifecycleHost's
+      // synchronize): an id entering the extensions prop is activated once,
+      // an id leaving it is disposed once. The direct-extension fast path
+      // delivers a fresh list whenever the page's external-store memo changes.
+      const prevExtensionIdsRef = ReactModule.useRef<string[]>([]);
+      ReactModule.useEffect(() => {
+        const ids = (extensions ?? [])
+          .map((ext: { manifest?: { id?: unknown } }) =>
+            typeof ext?.manifest?.id === 'string' ? ext.manifest.id : '',
+          )
+          .filter((id: string) => id.length > 0);
+        const prev = prevExtensionIdsRef.current;
+        for (const id of ids) {
+          if (!prev.includes(id)) state.extensionActivations.push(id);
+        }
+        for (const id of prev) {
+          if (!ids.includes(id)) state.extensionDisposals.push(id);
+        }
+        prevExtensionIdsRef.current = ids;
+      }, [extensions]);
 
       ReactModule.useEffect(() => {
         onSaveStatusChange?.(saveStatus);
@@ -192,6 +233,9 @@ describe('VideoEditorPage', () => {
     state.providerUnmounts = 0;
     state.saveStatusCallback = null;
     state.lastProviderExtensions = null;
+    state.devLocalExtensions.length = 0;
+    state.extensionActivations.length = 0;
+    state.extensionDisposals.length = 0;
     state.confirm.mockReset();
     state.confirm.mockReturnValue(true);
     state.supabaseCtor.mockClear();
@@ -291,55 +335,43 @@ describe('VideoEditorPage', () => {
     expect(fetchCalls.every((url) => !url.includes('/render'))).toBe(true);
   });
 
-  it('remounts the editor when the Local timeline selection changes', async () => {
+  it('remounts the editor when the Local timeline selection changes (explicit URL params)', async () => {
+    // B5: there is no timeline picker — the URL params ARE the selection, and
+    // the remount key derives from them. Changing the param changes the editor.
     window.localStorage.setItem('dev.videoEditor.localMode', '1');
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith('/api/astrid/health')) {
         return new Response(JSON.stringify({ ok: true, projects_root: '/tmp/test' }), { status: 200 });
       }
-      if (url.endsWith('/api/astrid/projects')) {
+      if (url.includes('/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111')) {
         return new Response(JSON.stringify({
-          projects: [{ slug: 'ados-talks', name: 'Ados Talks' }],
-        }), { status: 200 });
-      }
-      if (url.endsWith('/api/astrid/projects/ados-talks/timelines')) {
-        return new Response(JSON.stringify({
-          timelines: [
-            {
-              timeline_id: '11111111-1111-1111-1111-111111111111',
-              timeline_ulid: '01JM4K5N7P0000000000000017',
-              slug: 'intro-cut',
-              name: 'Intro Cut',
-              is_default: true,
-            },
-            {
-              timeline_id: '22222222-2222-2222-2222-222222222222',
-              timeline_ulid: '01JM4K5N7P0000000000000018',
-              slug: 'alt-cut',
-              name: 'Alt Cut',
-              is_default: false,
-            },
-          ],
+          timeline_id: '11111111-1111-1111-1111-111111111111',
+          name: 'Intro Cut',
+          config: { clips: [], tracks: [] },
+          config_version: 0,
         }), { status: 200 });
       }
       throw new Error(`Unexpected bridge request: ${url}`);
     }));
 
-    renderPage('/tools/video-editor?localProject=ados-talks&localTimeline=11111111-1111-1111-1111-111111111111');
+    const first = renderPage('/tools/video-editor?localProject=ados-talks&localTimeline=11111111-1111-1111-1111-111111111111');
 
-    await screen.findByTestId('video-editor-provider');
+    const provider = await screen.findByTestId('video-editor-provider');
+    expect(provider).toHaveAttribute('data-timeline-id', '11111111-1111-1111-1111-111111111111');
     expect(state.providerMounts).toBe(1);
-    expect(state.providerUnmounts).toBe(0);
 
-    fireEvent.change(screen.getByLabelText('Timeline'), {
-      target: { value: '22222222-2222-2222-2222-222222222222' },
-    });
+    // A new explicit selection (different URL) mounts a fresh editor.
+    first.unmount();
+    renderPage('/tools/video-editor?localProject=ados-talks&localTimeline=22222222-2222-2222-2222-222222222222');
 
     await waitFor(() => {
-      expect(state.providerMounts).toBe(2);
-      expect(state.providerUnmounts).toBe(1);
+      expect(screen.getByTestId('video-editor-provider')).toHaveAttribute(
+        'data-timeline-id',
+        '22222222-2222-2222-2222-222222222222',
+      );
     });
+    expect(state.providerMounts).toBe(2);
   });
 
   it('shows unavailable state when bridge health check fails', async () => {
@@ -358,70 +390,59 @@ describe('VideoEditorPage', () => {
     expect(screen.queryByTestId('video-editor-provider')).toBeNull();
   });
 
-  it('shows empty projects state when bridge has no projects', async () => {
+  it('requires explicit selection in Local mode: no params renders the selection prompt, no list calls', async () => {
+    // B5: the bridge serves three routes only. With no URL params there is
+    // nothing to discover — the page must prompt for an explicit selection and
+    // must not call the removed /projects or /timelines list endpoints.
     window.localStorage.setItem('dev.videoEditor.localMode', '1');
+    const fetchCalls: string[] = [];
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
+      fetchCalls.push(url);
       if (url.endsWith('/api/astrid/health')) {
         return new Response(JSON.stringify({ ok: true }), { status: 200 });
-      }
-      if (url.endsWith('/api/astrid/projects')) {
-        return new Response(JSON.stringify({ projects: [] }), { status: 200 });
       }
       throw new Error(`Unexpected bridge request: ${url}`);
     }));
 
     renderPage('/tools/video-editor');
 
-    await screen.findByText('No local Astrid projects found');
+    await screen.findByText('Select a local timeline');
     expect(screen.queryByTestId('video-editor-provider')).toBeNull();
+    expect(fetchCalls.some((c) => c.endsWith('/api/astrid/projects'))).toBe(false);
+    expect(fetchCalls.some((c) => c.includes('/timelines'))).toBe(false);
   });
 
-  it('shows empty timelines state when project exists but has no timelines', async () => {
+  it('a project without a timeline param still renders the explicit selection prompt', async () => {
+    // A bare localProject is not a selection — localTimeline is required too.
     window.localStorage.setItem('dev.videoEditor.localMode', '1');
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith('/api/astrid/health')) {
         return new Response(JSON.stringify({ ok: true }), { status: 200 });
-      }
-      if (url.endsWith('/api/astrid/projects')) {
-        return new Response(JSON.stringify({
-          projects: [{ slug: 'ados-talks', name: 'Ados Talks' }],
-        }), { status: 200 });
-      }
-      if (url.endsWith('/api/astrid/projects/ados-talks/timelines')) {
-        return new Response(JSON.stringify({ timelines: [] }), { status: 200 });
       }
       throw new Error(`Unexpected bridge request: ${url}`);
     }));
 
     renderPage('/tools/video-editor?localProject=ados-talks');
 
-    await screen.findByText('No local timelines found');
+    await screen.findByText('Select a local timeline');
     expect(screen.queryByTestId('video-editor-provider')).toBeNull();
   });
 
-  it('removes read-only local labeling while keeping the local editor mounted', async () => {
+  it('shows the explicit local selection readout while keeping the editor mounted', async () => {
     window.localStorage.setItem('dev.videoEditor.localMode', '1');
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith('/api/astrid/health')) {
         return new Response(JSON.stringify({ ok: true }), { status: 200 });
       }
-      if (url.endsWith('/api/astrid/projects')) {
+      if (url.includes('/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111')) {
         return new Response(JSON.stringify({
-          projects: [{ slug: 'ados-talks', name: 'Ados Talks' }],
-        }), { status: 200 });
-      }
-      if (url.endsWith('/api/astrid/projects/ados-talks/timelines')) {
-        return new Response(JSON.stringify({
-          timelines: [{
-            timeline_id: '11111111-1111-1111-1111-111111111111',
-            timeline_ulid: '01JM4K5N7P0000000000000017',
-            slug: 'intro-cut',
-            name: 'Intro Cut',
-            is_default: true,
-          }],
+          timeline_id: '11111111-1111-1111-1111-111111111111',
+          name: 'Intro Cut',
+          config: { clips: [], tracks: [] },
+          config_version: 0,
         }), { status: 200 });
       }
       throw new Error(`Unexpected bridge request: ${url}`);
@@ -431,8 +452,12 @@ describe('VideoEditorPage', () => {
 
     await screen.findByTestId('video-editor-provider');
     expect(screen.queryByText('Read-only')).toBeNull();
-    expect(screen.getByText('Project')).toBeInTheDocument();
-    expect(screen.getByText('Timeline')).toBeInTheDocument();
+    expect(screen.queryByText('Project')).toBeNull();
+    expect(screen.queryByText('Timeline')).toBeNull();
+    // Explicit readout + the change-selection affordance.
+    expect(screen.getByText(/Local:/)).toBeInTheDocument();
+    expect(screen.getByText('ados-talks')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Change selection' })).toBeInTheDocument();
   });
 
   it('fetches health endpoint before loading projects in Local mode', async () => {
@@ -595,9 +620,7 @@ describe('VideoEditorPage', () => {
     act(() => {
       state.saveStatusCallback?.('error');
     });
-    fireEvent.change(screen.getByLabelText('Timeline'), {
-      target: { value: '22222222-2222-2222-2222-222222222222' },
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Change selection' }));
 
     expect(state.confirm).toHaveBeenCalledWith('The last timeline save failed. Switch editors anyway?');
     expect(screen.getByTestId('video-editor-provider')).toHaveAttribute('data-timeline-id', '11111111-1111-1111-1111-111111111111');
@@ -743,16 +766,14 @@ describe('VideoEditorPage', () => {
     );
   });
 
-  it('blocks local project switching while the editor is saving', async () => {
+  it('blocks changing the explicit local selection while the editor is saving', async () => {
     await mountLocalEditor();
 
     act(() => {
       state.saveStatusCallback?.('saving');
     });
 
-    fireEvent.change(screen.getByLabelText('Project'), {
-      target: { value: 'other-project' },
-    });
+    expect(screen.getByRole('button', { name: 'Change selection' })).toBeDisabled();
 
     // Still on the same timeline — switch blocked without confirm
     expect(screen.getByTestId('video-editor-provider')).toHaveAttribute(
@@ -762,22 +783,16 @@ describe('VideoEditorPage', () => {
     expect(state.confirm).not.toHaveBeenCalled();
   });
 
-  it('blocks local timeline switching while the editor is saving', async () => {
+  it('Change selection with a clean editor clears the params and returns to the prompt', async () => {
     await mountLocalEditor();
 
-    act(() => {
-      state.saveStatusCallback?.('saving');
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'Change selection' }));
 
-    fireEvent.change(screen.getByLabelText('Timeline'), {
-      target: { value: '22222222-2222-2222-2222-222222222222' },
+    await waitFor(() => {
+      expect(screen.getByText('Select a local timeline')).toBeInTheDocument();
     });
-
-    expect(screen.getByTestId('video-editor-provider')).toHaveAttribute(
-      'data-timeline-id',
-      '11111111-1111-1111-1111-111111111111',
-    );
-    expect(state.confirm).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('video-editor-provider')).toBeNull();
+    expect(state.providerUnmounts).toBe(1);
   });
 
   // ---------------------------------------------------------------------------
@@ -825,6 +840,122 @@ describe('VideoEditorPage', () => {
       expect(provider).toHaveAttribute('data-kind', 'supabase');
 
       expect(state.lastProviderExtensions ?? []).toHaveLength(0);
+    });
+  });
+
+  describe('dev-local extension enablement (external store)', () => {
+    const DEV_LOCAL_ID = 'com.reigh.dev.local-fixture';
+
+    function makeDevLocalExtension() {
+      return {
+        manifest: {
+          id: DEV_LOCAL_ID,
+          version: '0.1.0',
+          label: 'Local Fixture Extension',
+          description: 'A dev-local scratchpad extension for enablement tests.',
+          apiVersion: 1,
+          contributions: [
+            {
+              id: `${DEV_LOCAL_ID}-status`,
+              kind: 'slot',
+              slot: 'statusBar',
+              render: `${DEV_LOCAL_ID}-status`,
+              label: 'Local Fixture Status',
+            },
+          ],
+        },
+        activate: vi.fn(() => ({ dispose: vi.fn() })),
+      };
+    }
+
+    it('passes an enabled dev-local extension into the provider (activated once)', async () => {
+      state.devLocalExtensions.push(makeDevLocalExtension());
+      renderPage('/tools/video-editor?timeline=timeline-1');
+
+      const provider = await screen.findByTestId('video-editor-provider');
+      expect(provider).toHaveAttribute('data-kind', 'supabase');
+      expect(state.lastProviderExtensions).toHaveLength(1);
+      expect(state.lastProviderExtensions![0].manifest.id).toBe(DEV_LOCAL_ID);
+      expect(state.extensionActivations).toEqual([DEV_LOCAL_ID]);
+      expect(state.extensionDisposals).toEqual([]);
+    });
+
+    it('drops the dev-local extension when disabled through the external store (no searchParams change, no refresh key)', async () => {
+      state.devLocalExtensions.push(makeDevLocalExtension());
+      renderPage('/tools/video-editor?timeline=timeline-1');
+
+      const provider = await screen.findByTestId('video-editor-provider');
+      expect(state.lastProviderExtensions).toHaveLength(1);
+
+      // Toggling the store notifies the page's useSyncExternalStore
+      // subscription; the smokeDirectExtensions memo must update from the
+      // snapshot without any URL or loader-refresh change.
+      act(() => {
+        setDevExtensionEnabled(DEV_LOCAL_ID, false);
+      });
+
+      await waitFor(() => {
+        expect(state.lastProviderExtensions ?? []).toHaveLength(0);
+      });
+      // Runtime teardown: the extension left the provider's extension list.
+      expect(state.extensionDisposals).toEqual([DEV_LOCAL_ID]);
+    });
+
+    it('does not mount a dev-local extension that is disabled before the page renders', async () => {
+      act(() => {
+        setDevExtensionEnabled(DEV_LOCAL_ID, false);
+      });
+      state.devLocalExtensions.push(makeDevLocalExtension());
+      renderPage('/tools/video-editor?timeline=timeline-1');
+
+      await screen.findByTestId('video-editor-provider');
+
+      expect(state.lastProviderExtensions ?? []).toHaveLength(0);
+      expect(state.extensionActivations).toEqual([]);
+    });
+
+    it('re-enables a disabled dev-local extension and activates it exactly once', async () => {
+      state.devLocalExtensions.push(makeDevLocalExtension());
+      renderPage('/tools/video-editor?timeline=timeline-1');
+
+      await screen.findByTestId('video-editor-provider');
+      expect(state.lastProviderExtensions).toHaveLength(1);
+      expect(state.extensionActivations).toEqual([DEV_LOCAL_ID]);
+
+      // Disable → teardown (exactly one disposal).
+      act(() => {
+        setDevExtensionEnabled(DEV_LOCAL_ID, false);
+      });
+      await waitFor(() => {
+        expect(state.lastProviderExtensions ?? []).toHaveLength(0);
+      });
+      expect(state.extensionDisposals).toEqual([DEV_LOCAL_ID]);
+
+      // Re-enable → the extension comes back, and only one new activation is
+      // recorded for the re-add (1 initial + 1 re-enable), with no extra
+      // disposal from the re-add itself.
+      act(() => {
+        setDevExtensionEnabled(DEV_LOCAL_ID, true);
+      });
+
+      await waitFor(() => {
+        expect(state.lastProviderExtensions).toHaveLength(1);
+        expect(state.lastProviderExtensions![0].manifest.id).toBe(DEV_LOCAL_ID);
+      });
+      expect(state.extensionActivations.filter((id) => id === DEV_LOCAL_ID)).toHaveLength(2);
+      expect(state.extensionDisposals.filter((id) => id === DEV_LOCAL_ID)).toHaveLength(1);
+    });
+
+    it('does not mount dev-local extensions when DEV is off', async () => {
+      state.devLocalExtensions.push(makeDevLocalExtension());
+      (import.meta.env as Record<string, unknown>).DEV = false;
+
+      renderPage('/tools/video-editor?timeline=timeline-1');
+
+      const provider = await screen.findByTestId('video-editor-provider');
+      expect(provider).toHaveAttribute('data-kind', 'supabase');
+      expect(state.lastProviderExtensions ?? []).toHaveLength(0);
+      expect(state.extensionActivations).toEqual([]);
     });
   });
 });

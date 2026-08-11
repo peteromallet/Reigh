@@ -396,15 +396,21 @@ export class AstridBridgeDataProvider implements DataProvider {
     assetId: string,
     entry: AssetRegistryEntry,
   ): Promise<void> {
+    // B5: the bridge exposes exactly three routes — no PUT /registry. Asset
+    // registration rides the combined save (config + registry + expected
+    // version in one POST), which appends one config event and advances the
+    // CAS version exactly like a timeline save. The merge is based on the
+    // cached payload, so the version saveTimeline posts is the same one the
+    // merge read; a concurrent writer still gets a 409.
     const existingPayload = await this.fetchTimelinePayload(timelineId);
     const registry = normalizeRegistry(existingPayload.registry);
     const expectedVersion = normalizeConfigVersion(existingPayload.config_version);
-    await this.putRegistry(timelineId, {
+    await this.saveTimeline(timelineId, normalizeConfig(existingPayload.config), expectedVersion, {
       assets: {
         ...registry.assets,
         [assetId]: clone(entry),
       },
-    }, 'register asset', expectedVersion);
+    });
   }
 
   async uploadAsset(
@@ -597,49 +603,7 @@ export class AstridBridgeDataProvider implements DataProvider {
     return new Error(`Astrid bridge ${action} failed: ${description}`);
   }
 
-  private async putRegistry(
-    timelineId: string,
-    registry: AssetRegistry,
-    action: string,
-    expectedVersion?: number,
-  ): Promise<AssetRegistry> {
-    const response = await fetch(
-      `${this.apiBaseUrl}/projects/${encodeURIComponent(this.projectSlug)}/timelines/${encodeURIComponent(this.getTimelineRequestRef(timelineId))}/registry`,
-      {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ registry, expected_version: expectedVersion }),
-        signal: AbortSignal.timeout(BRIDGE_REQUEST_TIMEOUT_MS),
-      },
-    );
-    if (!response.ok) {
-      throw await this.toBridgeError(response, timelineId, action, expectedVersion);
-    }
 
-    // An unreadable body (empty, not JSON) is tolerated — we know what we just
-    // wrote. A body that *is* JSON but violates the registry contract is not:
-    // adopting it would put a malformed registry in the cache, and the next
-    // save would PUT that back.
-    let echoedRegistry: unknown;
-    try {
-      echoedRegistry = await response.json();
-    } catch {
-      echoedRegistry = undefined;
-    }
-    const nextRegistry = echoedRegistry === undefined
-      ? normalizeRegistry(registry)
-      : normalizeRegistry(parseBridgePayload(bridgeAssetRegistrySchema, echoedRegistry, 'registry response'));
-
-    this.updateCachedRegistry(timelineId, nextRegistry);
-    // A successful registry PUT appends exactly one registry event server-side,
-    // so the cached CAS version must advance or the next save/register would
-    // send the stale version and get 409.
-    this.cachePayload({
-      ...this.cachedPayload,
-      config_version: normalizeConfigVersion(this.cachedPayload.config_version) + 1,
-    }, timelineId);
-    return nextRegistry;
-  }
 
   private updateCachedRegistry(timelineId: string, registry: AssetRegistry): void {
     if (this.cachedPayload === null) {

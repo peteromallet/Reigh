@@ -3,7 +3,7 @@
  * Internal Reigh route adapter for the in-app video editor page.
  * Not part of the supported public SDK surface.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { z, ZodType } from 'zod';
 import { Clapperboard, Pencil, Plus, Trash2 } from 'lucide-react';
@@ -23,8 +23,7 @@ import { AstridBridgeDataProvider } from '@/tools/video-editor/data/AstridBridge
 import {
   BRIDGE_REQUEST_TIMEOUT_MS,
   bridgeHealthSchema,
-  bridgeProjectsSchema,
-  bridgeTimelinesSchema,
+  bridgeTimelinePayloadSchema,
   parseBridgePayload,
 } from '@/tools/video-editor/data/bridgeContract.ts';
 import type { DataProvider } from '@/tools/video-editor/data/DataProvider.ts';
@@ -32,6 +31,10 @@ import { SupabaseDataProvider } from '@/tools/video-editor/data/SupabaseDataProv
 import { VideoEditorProvider } from '@/tools/video-editor/contexts/VideoEditorProvider.tsx';
 import { getExtensionSmokeExtension } from '@/sdk/smoke/extensionSmoke';
 import { devLocalExtensions } from '@/tools/video-editor/dev/localExtensions.ts';
+import {
+  getSnapshot as getDevDisabledSnapshot,
+  subscribe as subscribeDevDisabled,
+} from '@/tools/video-editor/dev/devExtensionEnablement.ts';
 import { useExtensionLoaderWiring } from '@/tools/video-editor/runtime/useExtensionLoaderWiring';
 import { ReighVideoEditorShell } from '@/tools/video-editor/components/ReighVideoEditorShell.tsx';
 import { useTimelinesList } from '@/tools/video-editor/hooks/useTimelinesList.ts';
@@ -153,28 +156,23 @@ async function fetchBridgeJson<Schema extends ZodType>(
   return parseBridgePayload(schema, await response.json(), what);
 }
 
-function useBridgeProjects(enabled: boolean) {
+/**
+ * B5: discovery is explicit. The bridge no longer serves project/timeline
+ * lists — the URL params (localProject / localTimeline) ARE the selection.
+ * The only remaining list-shaped need is the timeline *name* for the header,
+ * which comes from the timeline GET itself (one of the three routes).
+ */
+function useBridgeTimelineName(projectSlug: string | null, timelineRef: string | null, enabled: boolean) {
   return useQuery({
-    queryKey: ['astrid-bridge', 'projects'],
-    enabled,
-    queryFn: async () => {
-      const payload = await fetchBridgeJson('/projects', bridgeProjectsSchema, 'projects list');
-      return payload.projects ?? [];
-    },
-  });
-}
-
-function useBridgeTimelines(projectSlug: string | null, enabled: boolean) {
-  return useQuery({
-    queryKey: ['astrid-bridge', 'projects', projectSlug, 'timelines'],
-    enabled: enabled && Boolean(projectSlug),
+    queryKey: ['astrid-bridge', projectSlug, timelineRef, 'name'],
+    enabled: enabled && Boolean(projectSlug) && Boolean(timelineRef),
     queryFn: async () => {
       const payload = await fetchBridgeJson(
-        `/projects/${encodeURIComponent(projectSlug!)}/timelines`,
-        bridgeTimelinesSchema,
-        'timelines list',
+        `/projects/${encodeURIComponent(projectSlug!)}/timelines/${encodeURIComponent(timelineRef!)}`,
+        bridgeTimelinePayloadSchema,
+        'timeline read',
       );
-      return payload.timelines ?? [];
+      return typeof payload.name === 'string' ? payload.name : null;
     },
   });
 }
@@ -469,14 +467,31 @@ export default function VideoEditorPage() {
   // ---- Smoke extension wiring (prepend when ?extensionSmoke=1) -------------
   // `devLocalExtensions` is the author's local scratchpad (empty on main); the
   // DEV guard is a literal so production builds drop it. See dev/localExtensions.ts.
+  //
+  // Dev-local enablement is an external store (`devExtensionEnablement.ts`):
+  // subscribing via useSyncExternalStore makes the disabled-ID snapshot part of
+  // this component's render inputs, so a toggle in the ExtensionManager updates
+  // the direct-extension memo below without a searchParams change or a loader
+  // refresh key. The snapshot is a stable cached Set — unchanged reads never
+  // re-render the page, and disabling an extension drops it from the list, which
+  // tears its runtime lifecycle down (the lifecycle host disposes on removal).
+  const devDisabledIds = useSyncExternalStore(
+    subscribeDevDisabled,
+    getDevDisabledSnapshot,
+    getDevDisabledSnapshot,
+  );
+
   const smokeDirectExtensions = useMemo(() => {
     const smokeExt = getExtensionSmokeExtension(searchParams);
+    const disabled = import.meta.env.DEV ? devDisabledIds : new Set<string>();
     const direct = [
       ...(smokeExt ? [smokeExt] : []),
-      ...(import.meta.env.DEV ? devLocalExtensions : []),
+      ...(import.meta.env.DEV
+        ? devLocalExtensions.filter((ext) => !disabled.has(ext.manifest.id as string))
+        : []),
     ];
     return direct.length > 0 ? direct : undefined;
-  }, [searchParams]);
+  }, [searchParams, devDisabledIds]);
 
   // ---- M14: extension loader wiring (host-owned) --------------------------
   // Resolves direct-local extensions + optional repository state through the
@@ -516,8 +531,7 @@ export default function VideoEditorPage() {
     mode === 'local' ? null : userId,
   );
   const bridgeHealth = useBridgeHealth(mode === 'local');
-  const bridgeProjects = useBridgeProjects(mode === 'local');
-  const bridgeTimelines = useBridgeTimelines(localProjectSlug, mode === 'local');
+  const bridgeTimelineName = useBridgeTimelineName(localProjectSlug, localTimelineId, mode === 'local');
   const { settings, update } = useToolSettings(videoEditorSettings.id, {
     projectId: mode === 'local' ? undefined : (selectedProjectId ?? undefined),
     enabled: mode !== 'local' && Boolean(selectedProjectId),
@@ -525,9 +539,7 @@ export default function VideoEditorPage() {
   const appTimelineName = timelines.data?.find(
     (timeline: { id: string; name: string }) => timeline.id === appTimelineId,
   )?.name ?? null;
-  const localTimelineName = bridgeTimelines.data?.find(
-    (timeline) => timeline.timeline_id === localTimelineId,
-  )?.name ?? null;
+  const localTimelineName = bridgeTimelineName.data ?? null;
   const providerSelection = useVideoEditorProviderSelection({
     mode,
     selectedProjectId,
@@ -607,45 +619,6 @@ export default function VideoEditorPage() {
     setMode(nextMode);
     setModeRoute(nextMode);
   }, [confirmEditorRemount, mode, setMode, setModeRoute]);
-
-  const handleLocalProjectChange = useCallback((nextProjectSlug: string) => {
-    if (nextProjectSlug === localProjectSlug) {
-      return;
-    }
-    if (!confirmEditorRemount()) {
-      return;
-    }
-    localRouteRef.current = {
-      projectSlug: nextProjectSlug,
-      timelineId: null,
-    };
-    setSearchParams((current) => {
-      const next = new URLSearchParams(current);
-      next.delete('timeline');
-      next.set('localProject', nextProjectSlug);
-      next.delete('localTimeline');
-      return next;
-    });
-  }, [confirmEditorRemount, localProjectSlug, setSearchParams]);
-
-  const handleLocalTimelineChange = useCallback((nextTimelineId: string) => {
-    if (nextTimelineId === localTimelineId) {
-      return;
-    }
-    if (!confirmEditorRemount()) {
-      return;
-    }
-    localRouteRef.current = {
-      projectSlug: localProjectSlug,
-      timelineId: nextTimelineId,
-    };
-    setSearchParams((current) => {
-      const next = new URLSearchParams(current);
-      next.delete('timeline');
-      next.set('localTimeline', nextTimelineId);
-      return next;
-    });
-  }, [confirmEditorRemount, localProjectSlug, localTimelineId, setSearchParams]);
 
   // Reconcile the URL timelineId against the live list:
   // - if it exists in the list, persist it as lastTimelineId
@@ -742,54 +715,8 @@ export default function VideoEditorPage() {
     userId,
   ]);
 
-  useEffect(() => {
-    if (mode !== 'local' || bridgeProjects.isLoading || !bridgeProjects.data) {
-      return;
-    }
-
-    const hasSelectedProject = localProjectSlug
-      && bridgeProjects.data.some((project) => project.slug === localProjectSlug);
-    const nextProjectSlug = hasSelectedProject
-      ? localProjectSlug
-      : bridgeProjects.data[0]?.slug ?? null;
-
-    if (!nextProjectSlug || nextProjectSlug === localProjectSlug) {
-      return;
-    }
-
-    setSearchParams((current) => {
-      const next = new URLSearchParams(current);
-      next.set('localProject', nextProjectSlug);
-      next.delete('localTimeline');
-      return next;
-    }, { replace: true });
-  }, [bridgeProjects.data, bridgeProjects.isLoading, localProjectSlug, mode, setSearchParams]);
-
-  useEffect(() => {
-    if (mode !== 'local' || !localProjectSlug || bridgeTimelines.isLoading || !bridgeTimelines.data) {
-      return;
-    }
-
-    const hasSelectedTimeline = localTimelineId
-      && bridgeTimelines.data.some((timeline) => timeline.timeline_id === localTimelineId);
-    const nextTimelineId = hasSelectedTimeline
-      ? localTimelineId
-      : bridgeTimelines.data[0]?.timeline_id ?? null;
-
-    if (!nextTimelineId || nextTimelineId === localTimelineId) {
-      return;
-    }
-
-    setSearchParams((current) => {
-      const next = new URLSearchParams(current);
-      next.set('localTimeline', nextTimelineId);
-      return next;
-    }, { replace: true });
-  }, [bridgeTimelines.data, bridgeTimelines.isLoading, localProjectSlug, localTimelineId, mode, setSearchParams]);
-
   if (mode === 'local') {
-    const hasProjects = (bridgeProjects.data?.length ?? 0) > 0;
-    const hasTimelines = (bridgeTimelines.data?.length ?? 0) > 0;
+    const hasExplicitSelection = Boolean(localProjectSlug && localTimelineId);
 
     return (
       <div className="flex h-full w-full flex-col overflow-hidden bg-background">
@@ -801,44 +728,31 @@ export default function VideoEditorPage() {
               setMode={handleModeChange}
               disabled={isSwitchBlockedBySave}
             />
-            <div className="flex items-center gap-2">
-              <label className="text-xs font-medium text-muted-foreground" htmlFor="video-editor-local-project">
-                Project
-              </label>
-              <select
-                id="video-editor-local-project"
-                aria-label="Project"
-                className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-                value={localProjectSlug ?? ''}
-                onChange={(event) => handleLocalProjectChange(event.target.value)}
-                disabled={!hasProjects || isSwitchBlockedBySave}
+            <span className="text-xs font-medium text-muted-foreground">
+              Local: <span className="font-mono text-foreground">{localProjectSlug}</span> /{' '}
+              <span className="font-mono text-foreground">{localTimelineName ?? localTimelineId ?? '—'}</span>
+            </span>
+            {localProjectSlug && localTimelineId && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={isSwitchBlockedBySave}
+                onClick={() => {
+                  if (!confirmEditorRemount()) {
+                    return;
+                  }
+                  setSearchParams((current) => {
+                    const next = new URLSearchParams(current);
+                    next.delete('localProject');
+                    next.delete('localTimeline');
+                    return next;
+                  }, { replace: true });
+                }}
               >
-                {bridgeProjects.data?.map((project) => (
-                  <option key={project.slug} value={project.slug}>
-                    {project.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex items-center gap-2">
-              <label className="text-xs font-medium text-muted-foreground" htmlFor="video-editor-local-timeline">
-                Timeline
-              </label>
-              <select
-                id="video-editor-local-timeline"
-                aria-label="Timeline"
-                className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-                value={localTimelineId ?? ''}
-                onChange={(event) => handleLocalTimelineChange(event.target.value)}
-                disabled={!hasTimelines || isSwitchBlockedBySave}
-              >
-                {bridgeTimelines.data?.map((timeline) => (
-                  <option key={timeline.timeline_id} value={timeline.timeline_id}>
-                    {timeline.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+                Change selection
+              </Button>
+            )}
           </div>
         </div>
 
@@ -871,59 +785,33 @@ export default function VideoEditorPage() {
               </CardContent>
             </Card>
           </div>
-        ) : bridgeProjects.error ? (
+        ) : !hasExplicitSelection ? (
           <div className="flex flex-1 items-center justify-center px-6">
             <Card className="w-full max-w-md">
               <CardHeader>
-                <CardTitle>Unable to reach the local bridge</CardTitle>
-                <CardDescription>{bridgeProjects.error.message}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  Make sure Astrid is running locally:
-                </p>
-                <code className="mt-2 block rounded bg-muted px-2 py-1 text-xs">
-                  cd ../Astrid && astrid serve --port 17333
-                </code>
-                <p className="mt-3 text-sm text-muted-foreground">
-                  No Astrid checkout? This repo ships a demo bridge that serves
-                  demo-project/demo-timeline:
-                </p>
-                <code className="mt-2 block rounded bg-muted px-2 py-1 text-xs">
-                  npm run dev:editor:bridge
-                </code>
-              </CardContent>
-            </Card>
-          </div>
-        ) : bridgeTimelines.error ? (
-          <div className="flex flex-1 items-center justify-center px-6">
-            <Card className="w-full max-w-md">
-              <CardHeader>
-                <CardTitle>Unable to load local timelines</CardTitle>
-                <CardDescription>{bridgeTimelines.error.message}</CardDescription>
+                <CardTitle>Select a local timeline</CardTitle>
+                <CardDescription>
+                  Local mode needs an explicit project and timeline (B5: the bridge no longer
+                  auto-discovers project/timeline lists). Set them in the URL:
+                </CardDescription>
+                <CardContent>
+                  <code className="mt-2 block rounded bg-muted px-2 py-1 text-xs">
+                    ?localProject=&lt;project-slug&gt;&amp;localTimeline=&lt;timeline-id&gt;
+                  </code>
+                  <p className="mt-3 text-sm text-muted-foreground">
+                    The Astrid bridge serves exactly one projects root (`astrid serve --projects-root
+                    …`); timeline ids are the canonical UUIDs under that root&apos;s `timelines/` dirs.
+                  </p>
+                </CardContent>
               </CardHeader>
             </Card>
           </div>
-        ) : bridgeProjects.isLoading || (localProjectSlug !== null && bridgeTimelines.isLoading) ? (
-          <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-4 p-6">
-            <Skeleton className="h-20 w-full" />
-            <Skeleton className="h-20 w-full" />
-          </div>
-        ) : !hasProjects ? (
+        ) : !providerSelection ? (
           <div className="flex flex-1 items-center justify-center px-6">
             <Card className="w-full max-w-md">
               <CardHeader>
-                <CardTitle>No local Astrid projects found</CardTitle>
-                <CardDescription>Start `astrid serve` with a projects root that contains `project.json` files.</CardDescription>
-              </CardHeader>
-            </Card>
-          </div>
-        ) : !hasTimelines || !providerSelection ? (
-          <div className="flex flex-1 items-center justify-center px-6">
-            <Card className="w-full max-w-md">
-              <CardHeader>
-                <CardTitle>No local timelines found</CardTitle>
-                <CardDescription>Select a different project or add a timeline under the current Astrid projects root.</CardDescription>
+                <CardTitle>Timeline not found</CardTitle>
+                <CardDescription>No such project/timeline under the bridge projects root.</CardDescription>
               </CardHeader>
             </Card>
           </div>

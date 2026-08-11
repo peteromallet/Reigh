@@ -17,7 +17,14 @@ const launchOptions = chromiumExecutablePath
 // See `npm run test:e2e:timeline`.
 const TIMELINE_DEVICE_SPECS = /tests[\\/]e2e[\\/]timeline[\\/].*\.spec\.ts$/;
 const includeTimelineDevices = process.env.PLAYWRIGHT_TIMELINE_DEVICES === '1';
+// B5: REAL_BRIDGE=1 boots `astrid serve` (the actual bridge) instead of the
+// stub, and points the Vite dev proxy at it. Run:
+//   npm run test:e2e:timeline:realbridge
+const useRealBridge = process.env.REAL_BRIDGE === '1';
 const bridgePort = Number(process.env.ASTRID_BRIDGE_PORT ?? 17333);
+const bridgeServeCommand = useRealBridge
+  ? 'node tests/e2e/timeline/real-bridge-serve.mjs'
+  : 'node tests/e2e/timeline/astrid-bridge-stub.mjs';
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -46,11 +53,12 @@ export default defineConfig({
         VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL ?? DEFAULT_DEV_SUPABASE_URL,
         VITE_SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY ?? 'test-anon-key',
         VITE_APP_ENV: process.env.VITE_APP_ENV ?? 'web',
+        VITE_ASTRID_BRIDGE_PORT: useRealBridge ? String(bridgePort) : '17333',
       },
     },
     ...(includeTimelineDevices
       ? [{
-          command: 'node tests/e2e/timeline/astrid-bridge-stub.mjs',
+          command: bridgeServeCommand,
           url: `http://127.0.0.1:${bridgePort}/health`,
           reuseExistingServer: !process.env.CI,
           timeout: 30_000,

@@ -454,27 +454,27 @@ describe('AstridBridgeDataProvider', () => {
     await expect(provider.loadCheckpoints('11111111-1111-1111-1111-111111111111')).resolves.toEqual([]);
   });
 
-  it('registerAsset PUTs a merged full registry with expected_version and refreshes asset maps', async () => {
-    // The mock mirrors the real server: each successful PUT appends one
-    // registry event, so the reported config_version advances.
+  it('registerAsset rides the combined save POST with the merged registry (B5: no PUT /registry)', async () => {
+    // The mock mirrors the real server: each successful save appends one
+    // config event, so the reported config_version advances.
     let currentVersion = 1;
     const baseAssets = {
       'asset-video': { file: 'clips/demo.mp4', type: 'video/mp4', duration: 4 },
       'asset-image': { file: 'stills/cover.png', type: 'image/png' },
       'asset-audio': { file: 'audio/voice.wav', type: 'audio/wav', duration: 2.5 },
     };
-    const putBodies: Array<{ registry: unknown; expected_version: number }> = [];
+    const saveBodies: Array<{ config: unknown; registry: unknown; expected_version: number }> = [];
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith('/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111')) {
         return new Response(JSON.stringify({ ...makePayload(), config_version: currentVersion }), { status: 200 });
       }
-      if (url.endsWith('/registry')) {
-        expect(init?.method).toBe('PUT');
-        putBodies.push(JSON.parse(String(init?.body)));
-        expect(putBodies[putBodies.length - 1].registry).toEqual({ assets: baseAssets });
+      if (url.endsWith('/save')) {
+        expect(init?.method).toBe('POST');
+        saveBodies.push(JSON.parse(String(init?.body)));
+        expect(saveBodies[saveBodies.length - 1].registry).toEqual({ assets: baseAssets });
         currentVersion += 1;
-        return new Response(JSON.stringify({ assets: baseAssets }), { status: 200 });
+        return new Response(JSON.stringify({ ...makePayload(), registry: { assets: baseAssets }, config_version: currentVersion }), { status: 200 });
       }
       throw new Error(`Unexpected bridge request: ${url}`);
     });
@@ -499,10 +499,11 @@ describe('AstridBridgeDataProvider', () => {
       duration: 2.5,
     });
 
-    // GET (1) + PUT (2); the second registerAsset reuses the cached payload,
+    // GET (1) + POST (2); the second registerAsset reuses the cached payload,
     // so the cached config_version bump is what advances the CAS version.
     expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(putBodies.map((b) => b.expected_version)).toEqual([1, 2]);
+    expect(saveBodies.map((b) => b.expected_version)).toEqual([1, 2]);
+    expect(saveBodies.every((b) => 'config' in b)).toBe(true);
     await expect(provider.resolveAssetUrl('audio/voice.wav')).resolves.toBe(
       '/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111/assets/asset-audio',
     );
