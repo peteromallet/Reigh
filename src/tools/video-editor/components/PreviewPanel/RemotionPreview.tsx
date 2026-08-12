@@ -157,13 +157,19 @@ const RemotionPreviewComponent = forwardRef<PreviewHandle, RemotionPreviewProps>
         return;
       }
       const nextFrame = Math.max(0, Math.round(time * metadata.fps));
-      // Remotion's imperative seekTo pauses a playing player; resume so
-      // scrubbing the playhead while playing keeps playback live instead of
-      // parking in the new spot. Seeking to the final frame is "ended" in
-      // Remotion — leave it parked there.
+      const lastFrame = metadata.durationInFrames - 1;
+      // Remotion's imperative seekTo pauses a playing player and arms an
+      // internal hasPausedToResume flag that only clears while paused — if we
+      // resumed first, the next pause would auto-unpause. So pause via the
+      // imperative handle first (it clears the flag), then seek while paused
+      // (no re-arm), then resume when we were playing and aren't at the end.
+      // Seeking to/past the final frame is "ended" in Remotion — park there.
       const wasPlaying = player.isPlaying();
+      if (wasPlaying) {
+        player.pause();
+      }
       player.seekTo(nextFrame);
-      if (wasPlaying && nextFrame < metadata.durationInFrames - 1) {
+      if (wasPlaying && nextFrame < lastFrame) {
         player.play();
       }
     },

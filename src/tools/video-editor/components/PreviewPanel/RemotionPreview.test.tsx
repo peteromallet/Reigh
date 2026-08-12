@@ -358,12 +358,13 @@ describe('RemotionPreview', () => {
     player.isPlaying.mockReturnValue(true);
 
     act(() => {
-      // seek(3) → frame 90, past the last frame (89) of the 90-frame clip;
-      // Remotion treats reaching the end as "ended", so no resume.
-      previewRef.current?.seek(3);
+      // seek exactly to the last frame (89) of the 90-frame clip: Remotion
+      // treats reaching the end as "ended", so no resume. (A sloppy
+      // `nextFrame < durationInFrames` bound would wrongly resume here.)
+      previewRef.current?.seek(89 / 30);
     });
 
-    expect(player.seekTo).toHaveBeenLastCalledWith(90);
+    expect(player.seekTo).toHaveBeenLastCalledWith(89);
     expect(player.play).not.toHaveBeenCalled();
   });
 });
