@@ -420,7 +420,8 @@ export interface VideoEditorProviderProps {
   projectId: string | null;
   timelineId: string;
   timelineName?: string | null;
-  userId: string;
+  /** Local mode (DEV, no session) mounts with `null`; auth-gated queries disable. */
+  userId: string | null;
   effectCatalog?: VideoEditorEffectCatalog | null;
   sequenceComponentCatalog?: VideoEditorSequenceComponentCatalog | null;
   onSaveStatusChange?: (status: SaveStatus) => void;
@@ -431,6 +432,9 @@ export interface VideoEditorProviderProps {
    *  ProcessManager is created from the extension runtime's declared process
    *  specs. */
   processManager?: ProcessManager;
+  /** T22: Provider-owned timeline-overlay feature flag. Explicitly defaults
+   *  to false; hosts opt in by supplying `true`. */
+  timelineOverlaysEnabled?: boolean;
   children: React.ReactNode;
 }
 
@@ -446,6 +450,7 @@ export function VideoEditorProvider({
   extensions,
   packageStateEntries,
   processManager: hostProcessManager,
+  timelineOverlaysEnabled = false,
   children,
 }: VideoEditorProviderProps) {
   const shotsHost = useReighShotsHost(projectId);
@@ -526,7 +531,9 @@ export function VideoEditorProvider({
       ? assembly.processResultAttachRecords
       : undefined,
     recordProcessResultAttach: assembly.recordProcessResultAttach,
-  }), [agentChatRegistry.register, agentChatRegistry.unregister, dataProvider, projectId, shotsHost, timelineId, timelineName, userId, assembly.resolvedExtensionsConfig, assembly.extensionRuntime, assembly.processResultAttachRecords, assembly.processStatuses, assembly.recordProcessResultAttach, assembly.getRecoveryKey, assembly.incrementRecoveryKey]);
+    timelineOverlaysEnabled,
+    timelineViewStore: assembly.timelineViewStoreRef.current ?? undefined,
+  }), [agentChatRegistry.register, agentChatRegistry.unregister, dataProvider, projectId, shotsHost, timelineId, timelineName, userId, assembly.resolvedExtensionsConfig, assembly.extensionRuntime, assembly.processResultAttachRecords, assembly.processStatuses, assembly.recordProcessResultAttach, assembly.getRecoveryKey, assembly.incrementRecoveryKey, timelineOverlaysEnabled]);
 
   return (
     <VideoEditorRuntimeProvider value={runtimeValue}>

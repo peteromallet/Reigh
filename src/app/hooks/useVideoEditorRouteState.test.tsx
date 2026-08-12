@@ -44,21 +44,33 @@ describe('useVideoEditorRouteState', () => {
     expect(state.timelineId).toBe('local-timeline');
   });
 
-  it('flags local mode from either local param', () => {
-    expect(stateFor('/tools/video-editor?localProject=demo').isLocalModeEditor).toBe(true);
-    expect(stateFor('/tools/video-editor?localTimeline=local-timeline').isLocalModeEditor).toBe(true);
-    expect(stateFor('/tools/video-editor?localProject=demo&localTimeline=local-timeline').isLocalModeEditor).toBe(true);
+  it('flags the local session from either local param on ANY route', () => {
+    expect(stateFor('/tools/video-editor?localProject=demo').isLocalModeSession).toBe(true);
+    expect(stateFor('/tools/video-editor?localTimeline=local-timeline').isLocalModeSession).toBe(true);
+    expect(stateFor('/tools/video-editor?localProject=demo&localTimeline=local-timeline').isLocalModeSession).toBe(true);
+    // The params carry the session off the editor route too (Back, tool switches).
+    expect(stateFor('/tools/join-clips?localProject=demo').isLocalModeSession).toBe(true);
+    expect(stateFor('/tools/travel-between-images?localProject=demo&localTimeline=abc').isLocalModeSession).toBe(true);
   });
 
-  it('does not flag local mode for app-mode or param-less editor URLs', () => {
-    expect(stateFor('/tools/video-editor?timeline=app-timeline').isLocalModeEditor).toBe(false);
-    expect(stateFor('/tools/video-editor').isLocalModeEditor).toBe(false);
-    expect(stateFor('/tools/join-clips?localProject=demo').isLocalModeEditor).toBe(false);
+  it('does not flag the local session for app-mode or param-less URLs', () => {
+    expect(stateFor('/tools/video-editor?timeline=app-timeline').isLocalModeSession).toBe(false);
+    expect(stateFor('/tools/video-editor').isLocalModeSession).toBe(false);
+    expect(stateFor('/tools/join-clips').isLocalModeSession).toBe(false);
   });
 
   it('treats a bare local param as local mode (matches bootstrap params.has)', () => {
-    expect(stateFor('/tools/video-editor?localProject=').isLocalModeEditor).toBe(true);
-    expect(stateFor('/tools/video-editor?localTimeline=').isLocalModeEditor).toBe(true);
+    expect(stateFor('/tools/video-editor?localProject=').isLocalModeSession).toBe(true);
+    expect(stateFor('/tools/video-editor?localTimeline=').isLocalModeSession).toBe(true);
+  });
+
+  it('never flags the local session when DEV is off (production cannot use the bridge)', () => {
+    const originalDev = import.meta.env.DEV;
+    (import.meta.env as Record<string, unknown>).DEV = false;
+
+    expect(stateFor('/tools/video-editor?localProject=demo&localTimeline=abc').isLocalModeSession).toBe(false);
+
+    (import.meta.env as Record<string, unknown>).DEV = originalDev;
   });
 
   it('prefers the app-mode timeline when both params are present', () => {

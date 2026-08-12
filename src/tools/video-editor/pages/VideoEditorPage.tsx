@@ -637,12 +637,6 @@ export default function VideoEditorPage() {
     if (mode !== 'local' || !localProjectSlug) {
       return;
     }
-    // A `localTimeline` param that is present but empty is the Back button's
-    // "show the picker" state — do not auto-pick over it. (Project switches
-    // delete the param entirely and keep auto-picking.)
-    if (searchParams.has('localTimeline') && !searchParams.get('localTimeline')) {
-      return;
-    }
     const localTimelines = discovery.timelinesQuery.data?.timelines;
     if (discovery.timelinesQuery.isLoading || discovery.timelinesQuery.error || !localTimelines) {
       return;
@@ -676,7 +670,6 @@ export default function VideoEditorPage() {
     localProjectSlug,
     localTimelineId,
     mode,
-    searchParams,
     setSearchParams,
   ]);
 

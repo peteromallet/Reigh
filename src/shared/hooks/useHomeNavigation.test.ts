@@ -45,20 +45,19 @@ describe('useHomeNavigation', () => {
     };
   });
 
-  it('returns to the local timeline picker from the local-mode editor', () => {
+  it('carries the local params onto the home tool path from the local-mode editor', () => {
     const { result } = renderHook(() => useHomeNavigation());
 
     act(() => {
       result.current.navigateHome();
     });
 
-    // Backend-free dev editor: Back stays on the editor route with the
-    // project kept and the timeline dropped, instead of navigating to a
-    // session-dependent app page that renders blank without a session.
-    expect(navigate).toHaveBeenCalledWith('/tools/video-editor?localProject=demo&localTimeline=');
+    // Same home as app mode, with the local params riding along so the
+    // destination renders the full app shell (auth gate exempts on any route).
+    expect(navigate).toHaveBeenCalledWith('/tools/travel-between-images?localProject=demo&localTimeline=abc');
   });
 
-  it('keeps local mode when only a project is set', () => {
+  it('copies only the params present in local mode', () => {
     currentLocation = { pathname: '/tools/video-editor', search: '?localProject=demo', hash: '' };
     const { result } = renderHook(() => useHomeNavigation());
 
@@ -66,10 +65,10 @@ describe('useHomeNavigation', () => {
       result.current.navigateHome();
     });
 
-    expect(navigate).toHaveBeenCalledWith('/tools/video-editor?localProject=demo');
+    expect(navigate).toHaveBeenCalledWith('/tools/travel-between-images?localProject=demo');
   });
 
-  it('stays on the local route when only localTimeline is set', () => {
+  it('keeps bare local params as the mode signal', () => {
     currentLocation = { pathname: '/tools/video-editor', search: '?localTimeline=abc', hash: '' };
     const { result } = renderHook(() => useHomeNavigation());
 
@@ -77,7 +76,7 @@ describe('useHomeNavigation', () => {
       result.current.navigateHome();
     });
 
-    expect(navigate).toHaveBeenCalledWith('/tools/video-editor?localTimeline=');
+    expect(navigate).toHaveBeenCalledWith('/tools/travel-between-images?localTimeline=abc');
   });
 
   it('navigates to the home tool path outside local mode', () => {
@@ -91,7 +90,7 @@ describe('useHomeNavigation', () => {
     expect(navigate).toHaveBeenCalledWith('/tools/travel-between-images');
   });
 
-  it('ignores leftover local params when DEV is off (production cannot reach the bridge)', () => {
+  it('targets the home tool when DEV is off (params ride along but are inert in prod)', () => {
     const originalDev = import.meta.env.DEV;
     (import.meta.env as Record<string, unknown>).DEV = false;
     currentLocation = { pathname: '/tools/video-editor', search: '?localProject=demo&localTimeline=abc', hash: '' };
@@ -102,7 +101,10 @@ describe('useHomeNavigation', () => {
       result.current.navigateHome();
     });
 
-    expect(navigate).toHaveBeenCalledWith('/tools/travel-between-images');
+    // The mode decision is DEV-gated (route state); the param-copy helper is
+    // DEV-agnostic, so the URL still carries the params — inert because Layout
+    // will not exempt and the auth gate redirects to /home in production.
+    expect(navigate).toHaveBeenCalledWith('/tools/travel-between-images?localProject=demo&localTimeline=abc');
 
     (import.meta.env as Record<string, unknown>).DEV = originalDev;
   });

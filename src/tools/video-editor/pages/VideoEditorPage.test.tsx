@@ -548,15 +548,6 @@ describe('VideoEditorPage', () => {
     expect(provider).toHaveAttribute('data-timeline-id', '01JM4K5N7P0000000000000018');
   });
 
-  it('stays on the picker card when localTimeline is present but empty (Back from a local timeline)', async () => {
-    // Discovery has a default timeline, so without the empty-param guard the
-    // auto-pick effect would immediately remount the editor.
-    renderPage('/tools/video-editor?localProject=ados-talks&localTimeline=');
-
-    await screen.findByText('Select a project and timeline');
-    expect(screen.queryByTestId('video-editor-provider')).not.toBeInTheDocument();
-  });
-
   it('renders the selectors with the current local selection while keeping the editor mounted', async () => {
     setupBridgeFetch();
 

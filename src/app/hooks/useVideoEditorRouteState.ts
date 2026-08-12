@@ -17,16 +17,18 @@ export function useVideoEditorRouteState() {
   const timelineId = searchParams.get('timeline') ?? searchParams.get('localTimeline');
   const isEditorRoute = isVideoEditorRoute(pathname);
   const isVideoEditorShellActive = isEditorRoute && Boolean(timelineId);
-  // Matches `hasLocalModeUrlParams` in `dev/devSession.ts` (which uses
-  // `params.has()`), so the gate exemption and the flag writer agree even for
-  // bare/empty param values.
-  const isLocalModeEditor = isEditorRoute
+  // DEV sessionless local mode: the URL params carry the mode on ANY route,
+  // not just the editor — Back and tool-switch navigation copy them along, so
+  // the auth-gate exemption and app chrome parity survive the move. Matches
+  // `hasLocalModeUrlParams` in `dev/devSession.ts` (which uses `params.has()`),
+  // so the gate exemption and the flag writer agree even for bare/empty values.
+  const isLocalModeSession = import.meta.env.DEV
     && (searchParams.has('localTimeline') || searchParams.has('localProject'));
 
   return {
     isEditorRoute,
     timelineId,
     isVideoEditorShellActive,
-    isLocalModeEditor,
+    isLocalModeSession,
   };
 }

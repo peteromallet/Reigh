@@ -45,7 +45,7 @@ function ScrollToTop() {
 }
 
 export const Layout: React.FC = () => {
-  const { isVideoEditorShellActive, isLocalModeEditor } = useVideoEditorRouteState();
+  const { isVideoEditorShellActive, isLocalModeSession } = useVideoEditorRouteState();
   const isTasksPaneLocked = usePanesStore((state) => state.isTasksPaneLocked);
   const tasksPaneWidth = usePanesStore((state) => state.tasksPaneWidth);
   const isShotsPaneLocked = usePanesStore((state) => state.isShotsPaneLocked);
@@ -81,14 +81,14 @@ export const Layout: React.FC = () => {
   // Use /home instead of / to avoid redirect loops in non-WEB environments
   // where / is inside Layout
   //
-  // DEV-only exemption: the local-mode editor (`?localProject`/`?localTimeline`)
-  // renders without any session — it reads the timeline from the Astrid bridge
-  // and needs no login. The app-wide providers no-op on a missing userId, so
-  // nothing fetches against a backend. This exemption is what makes
-  // `npm run dev:editor` work without a fake Supabase session. In production the
-  // branch is dead (`import.meta.env.DEV` is statically `false`).
-  const isDevLocalModeEditor = import.meta.env.DEV && isLocalModeEditor;
-  const isAuthenticatedForRoute = isAuthenticated || isDevLocalModeEditor;
+  // DEV-only exemption: local mode (`?localProject`/`?localTimeline`) renders
+  // without any session — it reads timelines from the Astrid bridge and needs
+  // no login. The params ride along on any route (Back, tool switches), so the
+  // whole app shell works sessionless: the app-wide providers no-op on a
+  // missing userId and nothing fetches against a backend. This exemption is
+  // what makes `npm run dev:editor` work without a fake Supabase session. In
+  // production the branch is dead (`import.meta.env.DEV` is statically `false`).
+  const isAuthenticatedForRoute = isAuthenticated || isLocalModeSession;
   if (!isAuthenticatedForRoute) {
     return <Navigate to="/home" replace state={{ fromProtected: true }} />;
   }
@@ -132,18 +132,15 @@ export const Layout: React.FC = () => {
           mainContent
         )}
 
-        {/* App-shell panes. Suppressed on the local-mode editor route: local
-            mode is the backend-free dev editor, and these panes (agent chat,
-            generations, tools) fetch real Supabase data that cannot resolve
-            there. App-mode editor keeps them. */}
-        {!isLocalModeEditor && (
-          <>
-            <EditorPane />
-            <TasksPane onOpenSettings={handleOpenSettings} />
-            <ToolsPane />
-            <GenerationsPane />
-          </>
-        )}
+        {/* App-shell panes. Local mode renders them too: every pane already
+            no-ops on a missing userId (queries gated on project/user), so the
+            sessionless shell shows the same chrome as app mode. */}
+        <>
+          <EditorPane />
+          <TasksPane onOpenSettings={handleOpenSettings} />
+          <ToolsPane />
+          <GenerationsPane />
+        </>
 
         {/* Social Icons Footer */}
         {!isVideoEditorShellActive && (
@@ -155,17 +152,14 @@ export const Layout: React.FC = () => {
           </div>
         )}
 
-        {/* App-shell modals; suppressed in local-mode editor like the panes
-            (their content fetches account data from a backend local mode
-            cannot reach). */}
-        {!isLocalModeEditor && (
-          <SettingsModal
-            isOpen={isSettingsModalOpen}
-            onOpenChange={setIsSettingsModalOpen}
-            initialTab={settingsInitialTab}
-            creditsTab={settingsCreditsTab}
-          />
-        )}
+        {/* App-shell modals. Local mode renders them too; their content
+            degrades to empty/disabled states without account data. */}
+        <SettingsModal
+          isOpen={isSettingsModalOpen}
+          onOpenChange={setIsSettingsModalOpen}
+          initialTab={settingsInitialTab}
+          creditsTab={settingsCreditsTab}
+        />
 
         {/* Onboarding Modal */}
         <OnboardingModal

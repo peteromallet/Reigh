@@ -9,6 +9,7 @@ import { useDarkMode } from '@/shared/hooks/core/useDarkMode';
 import { useClickRipple } from '@/shared/hooks/interaction/useClickRipple';
 import { PaneBackdrop } from '@/shared/components/panes/PaneBackdrop';
 import { useProjectSelectionContext } from '@/shared/contexts/ProjectContext';
+import { withLocalModeParams } from '@/shared/dev/localModeUrl.ts';
 import { useToolSettings } from '@/shared/hooks/settings/useToolSettings';
 import { VIDEO_EDITOR_PATH, videoEditorPathWithTimeline } from '@/tools/video-editor/lib/video-editor-path';
 import { videoEditorSettings } from '@/tools/video-editor/settings/videoEditorDefaults';
@@ -321,12 +322,15 @@ const ToolsPaneComponent: React.FC = () => {
   const handleNavigate = (path: string) => {
     setIsShotsPaneLocked(false); // Close the pane when navigating
 
+    // Local mode (DEV, no session) rides along on the destination URL so the
+    // auth gate keeps the sessionless session alive and the Video Editor tool
+    // returns to the same local timeline. No-op in app mode.
     if (path === VIDEO_EDITOR_PATH) {
-      navigate(videoEditorPathWithTimeline(settings?.lastTimelineId));
+      navigate(withLocalModeParams(videoEditorPathWithTimeline(settings?.lastTimelineId), location.search));
       return;
     }
 
-    navigate(path);
+    navigate(withLocalModeParams(path, location.search));
   };
 
   return (

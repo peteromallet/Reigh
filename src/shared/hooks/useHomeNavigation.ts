@@ -2,6 +2,7 @@ import { useCallback, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import { useProjectSelectionContext } from '@/shared/contexts/ProjectContext';
+import { withLocalModeParams } from '@/shared/dev/localModeUrl.ts';
 import { useToolSettings } from '@/shared/hooks/settings/useToolSettings';
 import { useUserUIState } from '@/shared/hooks/useUserUIState';
 import {
@@ -14,29 +15,6 @@ import { usePanesStore } from '@/shared/state/panesStore';
 import { videoEditorSettings } from '@/tools/video-editor/settings/videoEditorDefaults';
 
 const FALLBACK_GENERATION_METHODS = { onComputer: true, inCloud: true };
-
-/** True on the backend-free local-mode editor route (`?localProject`/`?localTimeline`). DEV-only: the page itself ignores local params when DEV is off. */
-function isLocalModeEditorLocation(pathname: string, search: string): boolean {
-  const params = new URLSearchParams(search);
-  return (
-    import.meta.env.DEV
-    && pathname.startsWith('/tools/video-editor')
-    && (params.has('localProject') || params.has('localTimeline'))
-  );
-}
-
-/** Local-mode "home": the timeline picker — keep the project, drop the timeline value. */
-function localModeEditorHomeUrl(search: string): string {
-  const params = new URLSearchParams(search);
-  const next = new URLSearchParams();
-  if (params.has('localProject')) {
-    next.set('localProject', params.get('localProject') ?? '');
-  }
-  if (params.has('localTimeline')) {
-    next.set('localTimeline', '');
-  }
-  return `/tools/video-editor${next.size > 0 ? `?${next.toString()}` : ''}`;
-}
 
 export function useHomeNavigation() {
   const navigate = useNavigate();
@@ -83,21 +61,16 @@ export function useHomeNavigation() {
       return;
     }
 
-    // Local-mode editor (backend-free dev editor, no session): Back returns
-    // to the local timeline picker. The home tool path below is session-
-    // dependent and renders blank without a session.
-    if (isLocalModeEditorLocation(location.pathname, location.search)) {
-      navigate(localModeEditorHomeUrl(location.search));
-      return;
-    }
-
     if (isHomeToolPathActive(location.pathname, targetPath)) {
       setIsShotsPaneLocked(true);
       return;
     }
 
     setIsShotsPaneLocked(false);
-    navigate(targetPath);
+    // Local mode (DEV, no session) rides along on the target path via its URL
+    // params, so the destination renders the full app shell instead of being
+    // dumped to /home by the auth gate. No-op in app mode.
+    navigate(withLocalModeParams(targetPath, location.search));
   }, [location.hash, location.pathname, location.search, navigate, setIsShotsPaneLocked, targetPath]);
 
   return {
