@@ -15,6 +15,28 @@ import { videoEditorSettings } from '@/tools/video-editor/settings/videoEditorDe
 
 const FALLBACK_GENERATION_METHODS = { onComputer: true, inCloud: true };
 
+/** True on the backend-free local-mode editor route (`?localProject`/`?localTimeline`). */
+function isLocalModeEditorLocation(pathname: string, search: string): boolean {
+  const params = new URLSearchParams(search);
+  return (
+    pathname.startsWith('/tools/video-editor')
+    && (params.has('localProject') || params.has('localTimeline'))
+  );
+}
+
+/** Local-mode "home": the timeline picker — keep the project, drop the timeline value. */
+function localModeEditorHomeUrl(search: string): string {
+  const params = new URLSearchParams(search);
+  const next = new URLSearchParams();
+  if (params.has('localProject')) {
+    next.set('localProject', params.get('localProject') ?? '');
+  }
+  if (params.has('localTimeline')) {
+    next.set('localTimeline', '');
+  }
+  return `/tools/video-editor${next.size > 0 ? `?${next.toString()}` : ''}`;
+}
+
 export function useHomeNavigation() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -60,6 +82,14 @@ export function useHomeNavigation() {
       return;
     }
 
+    // Local-mode editor (backend-free dev editor, no session): Back returns
+    // to the local timeline picker. The home tool path below is session-
+    // dependent and renders blank without a session.
+    if (isLocalModeEditorLocation(location.pathname, location.search)) {
+      navigate(localModeEditorHomeUrl(location.search));
+      return;
+    }
+
     if (isHomeToolPathActive(location.pathname, targetPath)) {
       setIsShotsPaneLocked(true);
       return;
@@ -67,7 +97,7 @@ export function useHomeNavigation() {
 
     setIsShotsPaneLocked(false);
     navigate(targetPath);
-  }, [location.pathname, location.hash, navigate, setIsShotsPaneLocked, targetPath]);
+  }, [location.hash, location.pathname, location.search, navigate, setIsShotsPaneLocked, targetPath]);
 
   return {
     targetPath,
