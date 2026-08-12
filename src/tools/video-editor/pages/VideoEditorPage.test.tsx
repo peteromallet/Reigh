@@ -1,14 +1,24 @@
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import VideoEditorPage from '@/tools/video-editor/pages/VideoEditorPage.tsx';
 import { setDevExtensionEnabled } from '@/tools/video-editor/dev/devExtensionEnablement.ts';
 
 const state = vi.hoisted(() => ({
   auth: { userId: 'user-1' as string | null },
-  project: { selectedProjectId: 'project-1' as string | null },
+  project: {
+    selectedProjectId: 'project-1' as string | null,
+    setSelectedProjectId: vi.fn((id: string | null) => {
+      state.project.selectedProjectId = id;
+    }),
+  },
+  projectCrud: {
+    projects: [{ id: 'project-1', name: 'Project One', user_id: 'user-1' }],
+    isLoadingProjects: false,
+  },
   settings: {
     settings: { lastTimelineId: 'timeline-1' as string | undefined },
     update: vi.fn(async () => undefined),
@@ -28,12 +38,31 @@ const state = vi.hoisted(() => ({
       mutateAsync: vi.fn(async () => undefined),
     },
   },
+  discovery: {
+    bridgeHealthy: true,
+    bridgeDown: false,
+    healthLoading: false,
+    projectsLoading: false,
+    projectsError: null as Error | null,
+    projects: [] as { slug: string; name: string }[],
+    timelinesLoading: false,
+    timelinesError: null as Error | null,
+    timelines: [] as {
+      timeline_id: string;
+      timeline_ulid?: string;
+      slug?: string;
+      name: string;
+      is_default?: boolean;
+    }[],
+  },
   providerMounts: 0,
   providerUnmounts: 0,
-  saveStatusCallback: null as null | ((status: 'saved' | 'saving' | 'dirty' | 'error') => void),
+  saveStatusCallback: null as null | ((status: 'saved' | 'saving' | 'dirty' | 'retrying' | 'error') => void),
   confirm: vi.fn(() => true),
   /** Captured extensions prop from the last VideoEditorProvider render (for smoke tests). */
   lastProviderExtensions: null as readonly any[] | null,
+  /** Captured timelineOverlaysEnabled prop from the last VideoEditorProvider render. */
+  lastTimelineOverlaysEnabled: null as boolean | null,
   /**
    * Dev-local scratchpad array backing the real `devLocalExtensions` module
    * (which is empty on main). Tests push fixture extensions into it.
@@ -70,15 +99,9 @@ vi.mock('@/shared/contexts/AuthContext.tsx', () => ({
   useAuth: () => state.auth,
 }));
 
-// The local-mode bridge-state tests below exercise the no-backend dev fallback
-// (flag-driven local mode). With a Supabase URL configured the flag is ignored
-// by design, so simulate the no-backend setup for these tests.
-vi.mock('@/integrations/supabase/config/env', () => ({
-  hasSupabaseConfig: () => false,
-}));
-
 vi.mock('@/shared/contexts/ProjectContext.tsx', () => ({
   useProjectSelectionContext: () => state.project,
+  useProjectCrudContext: () => state.projectCrud,
 }));
 
 vi.mock('@/shared/hooks/settings/useToolSettings.ts', () => ({
@@ -87,6 +110,35 @@ vi.mock('@/shared/hooks/settings/useToolSettings.ts', () => ({
 
 vi.mock('@/tools/video-editor/hooks/useTimelinesList.ts', () => ({
   useTimelinesList: () => state.timelines,
+}));
+
+// The discovery hook is owned by the page; tests drive its result through the
+// mutable `state.discovery` object so bridge-down → online refreshes can be
+// simulated without a real bridge.
+vi.mock('@/tools/video-editor/hooks/useAstridBridgeDiscovery.ts', () => ({
+  useAstridBridgeDiscovery: () => ({
+    healthQuery: {
+      isLoading: state.discovery.healthLoading,
+      isError: state.discovery.bridgeDown,
+      error: state.discovery.bridgeDown ? new Error('bridge unreachable') : null,
+      data: state.discovery.bridgeHealthy ? true : false,
+    },
+    projectsQuery: {
+      isLoading: state.discovery.projectsLoading,
+      isError: state.discovery.projectsError !== null,
+      error: state.discovery.projectsError,
+      data: state.discovery.projects.length > 0 ? { projects: state.discovery.projects } : undefined,
+    },
+    timelinesQuery: {
+      isLoading: state.discovery.timelinesLoading,
+      isError: state.discovery.timelinesError !== null,
+      error: state.discovery.timelinesError,
+      data: state.discovery.timelines.length > 0 ? { timelines: state.discovery.timelines } : undefined,
+    },
+    bridgeHealthy: state.discovery.bridgeHealthy,
+    bridgeDown: state.discovery.bridgeDown,
+    projectsEmpty: state.discovery.projects.length === 0,
+  }),
 }));
 
 vi.mock('@/tools/video-editor/data/SupabaseDataProvider.ts', () => ({
@@ -104,8 +156,11 @@ vi.mock('@/tools/video-editor/dev/localExtensions.ts', () => ({
 }));
 
 vi.mock('@/tools/video-editor/components/ReighVideoEditorShell.tsx', () => ({
-  ReighVideoEditorShell: ({ timelineId }: { timelineId: string }) => (
-    <div data-testid="video-editor-shell">{timelineId}</div>
+  ReighVideoEditorShell: ({ timelineId, navigationControls }: { timelineId: string; navigationControls?: React.ReactNode }) => (
+    <div data-testid="video-editor-shell">
+      {timelineId}
+      {navigationControls}
+    </div>
   ),
 }));
 
@@ -119,18 +174,21 @@ vi.mock('@/tools/video-editor/contexts/VideoEditorProvider.tsx', async () => {
       timelineName,
       onSaveStatusChange,
       extensions,
+      timelineOverlaysEnabled,
       children,
     }: {
       dataProvider: { kind?: string };
       timelineId: string;
       timelineName?: string | null;
-      onSaveStatusChange?: (status: 'saved' | 'saving' | 'dirty' | 'error') => void;
+      onSaveStatusChange?: (status: 'saved' | 'saving' | 'dirty' | 'retrying' | 'error') => void;
       extensions?: readonly any[];
+      timelineOverlaysEnabled?: boolean;
       children: React.ReactNode;
     }) => {
-      const [saveStatus, setSaveStatus] = ReactModule.useState<'saved' | 'saving' | 'dirty' | 'error'>('saved');
+      const [saveStatus, setSaveStatus] = ReactModule.useState<'saved' | 'saving' | 'dirty' | 'retrying' | 'error'>('saved');
       state.saveStatusCallback = onSaveStatusChange ?? null;
       state.lastProviderExtensions = extensions ?? null;
+      state.lastTimelineOverlaysEnabled = timelineOverlaysEnabled ?? false;
 
       ReactModule.useEffect(() => {
         state.providerMounts += 1;
@@ -173,12 +231,16 @@ vi.mock('@/tools/video-editor/contexts/VideoEditorProvider.tsx', async () => {
           data-kind={dataProvider.kind ?? 'unknown'}
           data-timeline-id={timelineId}
           data-timeline-name={timelineName ?? ''}
+          data-timeline-overlays-enabled={String(timelineOverlaysEnabled ?? false)}
         >
           <button type="button" onClick={() => setSaveStatus('saving')}>
             status-saving
           </button>
           <button type="button" onClick={() => setSaveStatus('dirty')}>
             status-dirty
+          </button>
+          <button type="button" onClick={() => setSaveStatus('retrying')}>
+            status-retrying
           </button>
           <button type="button" onClick={() => setSaveStatus('error')}>
             status-error
@@ -215,11 +277,21 @@ function renderPage(initialEntry: string) {
 describe('VideoEditorPage', () => {
   const originalDEV = import.meta.env.DEV;
 
+  beforeAll(() => {
+    // jsdom does not provide scrollIntoView, which cmdk calls internally.
+    if (!Element.prototype.scrollIntoView) {
+      Element.prototype.scrollIntoView = vi.fn();
+    }
+  });
+
   beforeEach(() => {
     (import.meta.env as Record<string, unknown>).DEV = true;
     window.localStorage.clear();
     state.auth.userId = 'user-1';
     state.project.selectedProjectId = 'project-1';
+    state.project.setSelectedProjectId.mockClear();
+    state.projectCrud.projects = [{ id: 'project-1', name: 'Project One', user_id: 'user-1' }];
+    state.projectCrud.isLoadingProjects = false;
     state.settings.settings = { lastTimelineId: 'timeline-1' };
     state.settings.update.mockClear();
     state.timelines.data = [{ id: 'timeline-1', name: 'Main timeline', updated_at: '2026-06-11T10:00:00Z' }];
@@ -229,10 +301,35 @@ describe('VideoEditorPage', () => {
     state.timelines.createTimeline.mutateAsync.mockClear();
     state.timelines.renameTimeline.mutateAsync.mockClear();
     state.timelines.deleteTimeline.mutateAsync.mockClear();
+    state.discovery.bridgeHealthy = true;
+    state.discovery.bridgeDown = false;
+    state.discovery.healthLoading = false;
+    state.discovery.projectsLoading = false;
+    state.discovery.projectsError = null;
+    state.discovery.projects = [{ slug: 'ados-talks', name: 'Ados Talks' }];
+    state.discovery.timelinesLoading = false;
+    state.discovery.timelinesError = null;
+    state.discovery.timelines = [
+      {
+        timeline_id: '11111111-1111-1111-1111-111111111111',
+        timeline_ulid: '01JM4K5N7P0000000000000017',
+        slug: 'intro-cut',
+        name: 'Intro Cut',
+        is_default: true,
+      },
+      {
+        timeline_id: '22222222-2222-2222-2222-222222222222',
+        timeline_ulid: '01JM4K5N7P0000000000000018',
+        slug: 'alt-cut',
+        name: 'Alt Cut',
+        is_default: false,
+      },
+    ];
     state.providerMounts = 0;
     state.providerUnmounts = 0;
     state.saveStatusCallback = null;
     state.lastProviderExtensions = null;
+    state.lastTimelineOverlaysEnabled = null;
     state.devLocalExtensions.length = 0;
     state.extensionActivations.length = 0;
     state.extensionDisposals.length = 0;
@@ -261,26 +358,14 @@ describe('VideoEditorPage', () => {
   });
 
   it('uses AstridBridgeDataProvider in Local mode with bridge persistence enabled', async () => {
-    window.localStorage.setItem('dev.videoEditor.localMode', '1');
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.endsWith('/api/astrid/health')) {
-        return new Response(JSON.stringify({ ok: true, projects_root: '/tmp/test' }), { status: 200 });
-      }
-      if (url.endsWith('/api/astrid/projects')) {
+      if (url.includes('/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111')) {
         return new Response(JSON.stringify({
-          projects: [{ slug: 'ados-talks', name: 'Ados Talks' }],
-        }), { status: 200 });
-      }
-      if (url.endsWith('/api/astrid/projects/ados-talks/timelines')) {
-        return new Response(JSON.stringify({
-          timelines: [{
-            timeline_id: '11111111-1111-1111-1111-111111111111',
-            timeline_ulid: '01JM4K5N7P0000000000000017',
-            slug: 'intro-cut',
-            name: 'Intro Cut',
-            is_default: true,
-          }],
+          timeline_id: '11111111-1111-1111-1111-111111111111',
+          name: 'Intro Cut',
+          config: { clips: [], tracks: [] },
+          config_version: 0,
         }), { status: 200 });
       }
       throw new Error(`Unexpected bridge request: ${url}`);
@@ -300,28 +385,16 @@ describe('VideoEditorPage', () => {
   });
 
   it('does not advertise a local render action when the Astrid render bridge is descoped', async () => {
-    window.localStorage.setItem('dev.videoEditor.localMode', '1');
     const fetchCalls: string[] = [];
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       fetchCalls.push(url);
-      if (url.endsWith('/api/astrid/health')) {
-        return new Response(JSON.stringify({ ok: true, projects_root: '/tmp/test' }), { status: 200 });
-      }
-      if (url.endsWith('/api/astrid/projects')) {
+      if (url.includes('/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111')) {
         return new Response(JSON.stringify({
-          projects: [{ slug: 'ados-talks', name: 'Ados Talks' }],
-        }), { status: 200 });
-      }
-      if (url.endsWith('/api/astrid/projects/ados-talks/timelines')) {
-        return new Response(JSON.stringify({
-          timelines: [{
-            timeline_id: '11111111-1111-1111-1111-111111111111',
-            timeline_ulid: '01JM4K5N7P0000000000000017',
-            slug: 'intro-cut',
-            name: 'Intro Cut',
-            is_default: true,
-          }],
+          timeline_id: '11111111-1111-1111-1111-111111111111',
+          name: 'Intro Cut',
+          config: { clips: [], tracks: [] },
+          config_version: 0,
         }), { status: 200 });
       }
       throw new Error(`Unexpected bridge request: ${url}`);
@@ -336,18 +409,20 @@ describe('VideoEditorPage', () => {
   });
 
   it('remounts the editor when the Local timeline selection changes (explicit URL params)', async () => {
-    // B5: there is no timeline picker — the URL params ARE the selection, and
-    // the remount key derives from them. Changing the param changes the editor.
-    window.localStorage.setItem('dev.videoEditor.localMode', '1');
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.endsWith('/api/astrid/health')) {
-        return new Response(JSON.stringify({ ok: true, projects_root: '/tmp/test' }), { status: 200 });
-      }
       if (url.includes('/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111')) {
         return new Response(JSON.stringify({
           timeline_id: '11111111-1111-1111-1111-111111111111',
           name: 'Intro Cut',
+          config: { clips: [], tracks: [] },
+          config_version: 0,
+        }), { status: 200 });
+      }
+      if (url.includes('/api/astrid/projects/ados-talks/timelines/22222222-2222-2222-2222-222222222222')) {
+        return new Response(JSON.stringify({
+          timeline_id: '22222222-2222-2222-2222-222222222222',
+          name: 'Alt Cut',
           config: { clips: [], tracks: [] },
           config_version: 0,
         }), { status: 200 });
@@ -374,72 +449,54 @@ describe('VideoEditorPage', () => {
     expect(state.providerMounts).toBe(2);
   });
 
-  it('shows unavailable state when bridge health check fails', async () => {
-    window.localStorage.setItem('dev.videoEditor.localMode', '1');
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith('/api/astrid/health')) {
-        return new Response(JSON.stringify({ error: 'unavailable' }), { status: 503 });
-      }
-      throw new Error(`Unexpected bridge request: ${url}`);
-    }));
+  it('renders grouped Reigh and Local projects in the selector dropdown', async () => {
+    renderPage('/tools/video-editor?timeline=timeline-1');
 
-    renderPage('/tools/video-editor');
+    await screen.findByTestId('video-editor-provider');
 
-    await screen.findByText('Unable to reach the local bridge');
-    expect(screen.queryByTestId('video-editor-provider')).toBeNull();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('combobox', { name: 'Select project' }));
+
+    expect(await screen.findByText('Reigh projects')).toBeInTheDocument();
+    expect(screen.getByText('Local (Astrid)')).toBeInTheDocument();
+    expect(await screen.findByRole('option', { name: /Project One/ })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /Ados Talks/ })).toBeInTheDocument();
   });
 
-  it('requires explicit selection in Local mode: no params renders the selection prompt, no list calls', async () => {
-    // B5: the bridge serves three routes only. With no URL params there is
-    // nothing to discover — the page must prompt for an explicit selection and
-    // must not call the removed /projects or /timelines list endpoints.
-    window.localStorage.setItem('dev.videoEditor.localMode', '1');
-    const fetchCalls: string[] = [];
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      fetchCalls.push(url);
-      if (url.endsWith('/api/astrid/health')) {
-        return new Response(JSON.stringify({ ok: true }), { status: 200 });
-      }
-      throw new Error(`Unexpected bridge request: ${url}`);
-    }));
-
-    renderPage('/tools/video-editor');
-
-    await screen.findByText('Select a local timeline');
-    expect(screen.queryByTestId('video-editor-provider')).toBeNull();
-    expect(fetchCalls.some((c) => c.endsWith('/api/astrid/projects'))).toBe(false);
-    expect(fetchCalls.some((c) => c.includes('/timelines'))).toBe(false);
-  });
-
-  it('a project without a timeline param still renders the explicit selection prompt', async () => {
-    // A bare localProject is not a selection — localTimeline is required too.
-    window.localStorage.setItem('dev.videoEditor.localMode', '1');
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith('/api/astrid/health')) {
-        return new Response(JSON.stringify({ ok: true }), { status: 200 });
-      }
-      throw new Error(`Unexpected bridge request: ${url}`);
-    }));
-
+  it('shows the bridge-down card with the selectors visible when the bridge is down', async () => {
+    state.discovery.bridgeDown = true;
+    state.discovery.bridgeHealthy = false;
+    state.discovery.timelines = [];
     renderPage('/tools/video-editor?localProject=ados-talks');
 
-    await screen.findByText('Select a local timeline');
-    expect(screen.queryByTestId('video-editor-provider')).toBeNull();
+    await screen.findByText('Unable to reach the local bridge');
+    // The selectors stay mounted (and openable) so the launch hint is reachable.
+    expect(screen.getByRole('combobox', { name: 'Select project' })).toBeInTheDocument();
   });
 
-  it('shows the explicit local selection readout while keeping the editor mounted', async () => {
-    window.localStorage.setItem('dev.videoEditor.localMode', '1');
+  it('shows the projects-root hint when the bridge is reachable but has no projects', async () => {
+    state.discovery.projects = [];
+    state.discovery.timelines = [];
+    renderPage('/tools/video-editor?localProject=ados-talks');
+
+    await screen.findByText('Select a project and timeline');
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('combobox', { name: 'Select project' }));
+
+    expect(await screen.findByText(/Start astrid serve with a projects root/)).toBeInTheDocument();
+  });
+
+  it('auto-picks the default timeline when a local project has no timeline param', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.endsWith('/api/astrid/health')) {
-        return new Response(JSON.stringify({ ok: true }), { status: 200 });
-      }
-      if (url.includes('/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111')) {
+      if (
+        url.includes('/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111')
+        || url.includes('/api/astrid/projects/ados-talks/timelines/01JM4K5N7P0000000000000017')
+      ) {
         return new Response(JSON.stringify({
           timeline_id: '11111111-1111-1111-1111-111111111111',
+          timeline_ulid: '01JM4K5N7P0000000000000017',
           name: 'Intro Cut',
           config: { clips: [], tracks: [] },
           config_version: 0,
@@ -448,53 +505,215 @@ describe('VideoEditorPage', () => {
       throw new Error(`Unexpected bridge request: ${url}`);
     }));
 
-    renderPage('/tools/video-editor?localProject=ados-talks&localTimeline=11111111-1111-1111-1111-111111111111');
+    renderPage('/tools/video-editor?localProject=ados-talks');
 
-    await screen.findByTestId('video-editor-provider');
-    expect(screen.queryByText('Read-only')).toBeNull();
-    expect(screen.queryByText('Project')).toBeNull();
-    expect(screen.queryByText('Timeline')).toBeNull();
-    // Explicit readout + the change-selection affordance.
-    expect(screen.getByText(/Local:/)).toBeInTheDocument();
-    expect(screen.getByText('ados-talks')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Change selection' })).toBeInTheDocument();
+    const provider = await screen.findByTestId('video-editor-provider');
+    expect(provider).toHaveAttribute('data-kind', 'bridge');
+    // Auto-pick selects the ULID as the routable ref.
+    expect(provider).toHaveAttribute('data-timeline-id', '01JM4K5N7P0000000000000017');
   });
 
-  it('fetches health endpoint before loading projects in Local mode', async () => {
-    window.localStorage.setItem('dev.videoEditor.localMode', '1');
-    const fetchCalls: string[] = [];
+  it('auto-picks the first timeline when no default exists', async () => {
+    state.discovery.timelines = [
+      {
+        timeline_id: '22222222-2222-2222-2222-222222222222',
+        timeline_ulid: '01JM4K5N7P0000000000000018',
+        slug: 'alt-cut',
+        name: 'Alt Cut',
+        is_default: false,
+      },
+    ];
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      fetchCalls.push(url);
-      if (url.endsWith('/api/astrid/health')) {
-        return new Response(JSON.stringify({ ok: true }), { status: 200 });
-      }
-      if (url.endsWith('/api/astrid/projects')) {
+      if (
+        url.includes('/api/astrid/projects/ados-talks/timelines/22222222-2222-2222-2222-222222222222')
+        || url.includes('/api/astrid/projects/ados-talks/timelines/01JM4K5N7P0000000000000018')
+      ) {
         return new Response(JSON.stringify({
-          projects: [{ slug: 'ados-talks', name: 'Ados Talks' }],
-        }), { status: 200 });
-      }
-      if (url.endsWith('/api/astrid/projects/ados-talks/timelines')) {
-        return new Response(JSON.stringify({
-          timelines: [{
-            timeline_id: '11111111-1111-1111-1111-111111111111',
-            timeline_ulid: '01JM4K5N7P0000000000000017',
-            slug: 'intro-cut',
-            name: 'Intro Cut',
-            is_default: true,
-          }],
+          timeline_id: '22222222-2222-2222-2222-222222222222',
+          timeline_ulid: '01JM4K5N7P0000000000000018',
+          name: 'Alt Cut',
+          config: { clips: [], tracks: [] },
+          config_version: 0,
         }), { status: 200 });
       }
       throw new Error(`Unexpected bridge request: ${url}`);
     }));
 
+    renderPage('/tools/video-editor?localProject=ados-talks');
+
+    const provider = await screen.findByTestId('video-editor-provider');
+    expect(provider).toHaveAttribute('data-kind', 'bridge');
+    // Auto-pick selects the ULID as the routable ref.
+    expect(provider).toHaveAttribute('data-timeline-id', '01JM4K5N7P0000000000000018');
+  });
+
+  it('stays on the picker card when localTimeline is present but empty (Back from a local timeline)', async () => {
+    // Discovery has a default timeline, so without the empty-param guard the
+    // auto-pick effect would immediately remount the editor.
+    renderPage('/tools/video-editor?localProject=ados-talks&localTimeline=');
+
+    await screen.findByText('Select a project and timeline');
+    expect(screen.queryByTestId('video-editor-provider')).not.toBeInTheDocument();
+  });
+
+  it('renders the selectors with the current local selection while keeping the editor mounted', async () => {
+    setupBridgeFetch();
+
     renderPage('/tools/video-editor?localProject=ados-talks&localTimeline=11111111-1111-1111-1111-111111111111');
 
     await screen.findByTestId('video-editor-provider');
 
-    // Health should be among the fetch calls
-    const healthCalls = fetchCalls.filter(c => c.endsWith('/api/astrid/health'));
-    expect(healthCalls.length).toBeGreaterThan(0);
+    expect(screen.getByRole('combobox', { name: 'Select project' })).toHaveTextContent('ados-talks');
+    // Timeline label = bridge timeline name once the name GET resolves,
+    // falling back to the timeline id while it loads.
+    expect(screen.getByRole('combobox', { name: 'Select timeline' })).toHaveTextContent('11111111-1111-1111-1111-111111111111');
+  });
+
+  it('opens Local mode straight from the URL params and never writes a storage flag', async () => {
+    // The legacy `dev.videoEditor.localMode` flag is retired — the pasted link
+    // is the only signal, and it has to be enough (any environment).
+    setupBridgeFetch();
+
+    renderPage('/tools/video-editor?localProject=ados-talks&localTimeline=11111111-1111-1111-1111-111111111111');
+
+    const provider = await screen.findByTestId('video-editor-provider');
+    expect(provider).toHaveAttribute('data-kind', 'bridge');
+    // ...and no storage flag is written (existing stored values stay inert).
+    expect(window.localStorage.getItem('dev.videoEditor.localMode')).toBeNull();
+  });
+
+  it('ignores local-mode URL params when DEV is off (production cannot reach the bridge proxy)', async () => {
+    (import.meta.env as Record<string, unknown>).DEV = false;
+
+    renderPage('/tools/video-editor?timeline=timeline-1&localProject=ados-talks&localTimeline=11111111-1111-1111-1111-111111111111');
+
+    const provider = await screen.findByTestId('video-editor-provider');
+    // `/api/astrid` is a development proxy: production must never enter local
+    // mode from a URL, or users would be stranded on a dead bridge.
+    expect(provider).toHaveAttribute('data-kind', 'supabase');
+    expect(state.bridgeCtor).not.toHaveBeenCalled();
+  });
+
+  it('switches Local→App via the selectors, preserving the app timeline', async () => {
+    setupBridgeFetch();
+
+    renderPage('/tools/video-editor?timeline=timeline-1&localProject=ados-talks&localTimeline=11111111-1111-1111-1111-111111111111');
+
+    const provider = await screen.findByTestId('video-editor-provider');
+    await waitFor(() => {
+      expect(provider).toHaveAttribute('data-kind', 'bridge');
+    });
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('combobox', { name: 'Select project' }));
+    await user.click(await screen.findByText('Project One'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('video-editor-provider')).toHaveAttribute('data-kind', 'supabase');
+    });
+    expect(screen.getByTestId('video-editor-provider')).toHaveAttribute('data-timeline-id', 'timeline-1');
+    expect(state.confirm).not.toHaveBeenCalled();
+  });
+
+  it('switches App→Local via the selectors, auto-picking a timeline', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (
+        url.includes('/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111')
+        || url.includes('/api/astrid/projects/ados-talks/timelines/01JM4K5N7P0000000000000017')
+      ) {
+        return new Response(JSON.stringify({
+          timeline_id: '11111111-1111-1111-1111-111111111111',
+          timeline_ulid: '01JM4K5N7P0000000000000017',
+          name: 'Intro Cut',
+          config: { clips: [], tracks: [] },
+          config_version: 0,
+        }), { status: 200 });
+      }
+      throw new Error(`Unexpected bridge request: ${url}`);
+    }));
+
+    renderPage('/tools/video-editor?timeline=timeline-1');
+
+    const provider = await screen.findByTestId('video-editor-provider');
+    expect(provider).toHaveAttribute('data-kind', 'supabase');
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('combobox', { name: 'Select project' }));
+    await user.click(await screen.findByText('Ados Talks'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('video-editor-provider')).toHaveAttribute('data-kind', 'bridge');
+    });
+    // Auto-pick selects the ULID as the routable ref.
+    expect(screen.getByTestId('video-editor-provider')).toHaveAttribute(
+      'data-timeline-id',
+      '01JM4K5N7P0000000000000017',
+    );
+  });
+
+  it('bridge-down → online: the selectors refresh and the editor mounts', async () => {
+    state.discovery.bridgeDown = true;
+    state.discovery.bridgeHealthy = false;
+    state.discovery.projects = [];
+    state.discovery.timelines = [];
+
+    renderPage('/tools/video-editor?localProject=ados-talks');
+
+    await screen.findByText('Unable to reach the local bridge');
+
+    const user = userEvent.setup();
+    const projectTrigger = screen.getByRole('combobox', { name: 'Select project' });
+    await user.click(projectTrigger);
+    expect(await screen.findByText('No local Astrid projects found')).toBeInTheDocument();
+    await user.click(projectTrigger);
+
+    // The bridge comes up with a projects root (but no timelines yet): the
+    // reopened dropdown must now show the discovered project.
+    state.discovery.bridgeDown = false;
+    state.discovery.bridgeHealthy = true;
+    state.discovery.projects = [{ slug: 'ados-talks', name: 'Ados Talks' }];
+    state.discovery.timelines = [];
+
+    await user.click(screen.getByRole('combobox', { name: 'Select project' }));
+    expect(await screen.findByRole('option', { name: /Ados Talks/ })).toBeInTheDocument();
+    await user.click(screen.getByRole('combobox', { name: 'Select project' }));
+
+    // Timelines appear → the auto-pick effect mounts the bridge editor.
+    state.discovery.timelines = [
+      {
+        timeline_id: '11111111-1111-1111-1111-111111111111',
+        timeline_ulid: '01JM4K5N7P0000000000000017',
+        slug: 'intro-cut',
+        name: 'Intro Cut',
+        is_default: true,
+      },
+    ];
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (
+        url.includes('/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111')
+        || url.includes('/api/astrid/projects/ados-talks/timelines/01JM4K5N7P0000000000000017')
+      ) {
+        return new Response(JSON.stringify({
+          timeline_id: '11111111-1111-1111-1111-111111111111',
+          timeline_ulid: '01JM4K5N7P0000000000000017',
+          name: 'Intro Cut',
+          config: { clips: [], tracks: [] },
+          config_version: 0,
+        }), { status: 200 });
+      }
+      throw new Error(`Unexpected bridge request: ${url}`);
+    }));
+
+    // Reopening the dropdown re-renders the page, which re-reads the mocked
+    // discovery state and lets the auto-pick effect run.
+    await user.click(screen.getByRole('combobox', { name: 'Select project' }));
+    await user.click(screen.getByRole('combobox', { name: 'Select project' }));
+
+    const provider = await screen.findByTestId('video-editor-provider');
+    expect(provider).toHaveAttribute('data-kind', 'bridge');
   });
 
   it('passes a save-status callback into the mounted provider', async () => {
@@ -504,202 +723,73 @@ describe('VideoEditorPage', () => {
     expect(state.saveStatusCallback).toBeTypeOf('function');
   });
 
-  it('opens Local mode straight from the URL params, with no storage flag set', async () => {
-    // No `dev.videoEditor.localMode` in localStorage: the pasted link is the
-    // only signal, and it has to be enough (DEV only).
+  it('switching local projects with a clean editor auto-picks a timeline and remounts', async () => {
+    state.discovery.projects = [
+      { slug: 'ados-talks', name: 'Ados Talks' },
+      { slug: 'other-project', name: 'Other Project' },
+    ];
     setupBridgeFetch();
 
     renderPage('/tools/video-editor?localProject=ados-talks&localTimeline=11111111-1111-1111-1111-111111111111');
 
     const provider = await screen.findByTestId('video-editor-provider');
-    expect(provider).toHaveAttribute('data-kind', 'bridge');
-    // ...and the flag is persisted, so a reload without params stays in Local mode.
-    expect(window.localStorage.getItem('dev.videoEditor.localMode')).toBe('1');
-  });
-
-  it('does not self-activate Local mode outside DEV', async () => {
-    (import.meta.env as Record<string, unknown>).DEV = false;
-
-    renderPage('/tools/video-editor?timeline=timeline-1&localProject=ados-talks&localTimeline=11111111-1111-1111-1111-111111111111');
-
-    const provider = await screen.findByTestId('video-editor-provider');
-    expect(provider).toHaveAttribute('data-kind', 'supabase');
-    expect(state.bridgeCtor).not.toHaveBeenCalled();
-  });
-
-
-  it('switches between App and Local modes while preserving per-mode selections', async () => {
-    // The URL carries local params, so the page opens in Local mode (self-activating).
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith('/api/astrid/health')) {
-        return new Response(JSON.stringify({ ok: true }), { status: 200 });
-      }
-      if (url.endsWith('/api/astrid/projects')) {
-        return new Response(JSON.stringify({
-          projects: [{ slug: 'ados-talks', name: 'Ados Talks' }],
-        }), { status: 200 });
-      }
-      if (url.endsWith('/api/astrid/projects/ados-talks/timelines')) {
-        return new Response(JSON.stringify({
-          timelines: [{
-            timeline_id: '11111111-1111-1111-1111-111111111111',
-            timeline_ulid: '01JM4K5N7P0000000000000017',
-            slug: 'intro-cut',
-            name: 'Intro Cut',
-            is_default: true,
-          }],
-        }), { status: 200 });
-      }
-      throw new Error(`Unexpected bridge request: ${url}`);
-    }));
-
-    renderPage('/tools/video-editor?timeline=timeline-1&localProject=ados-talks&localTimeline=11111111-1111-1111-1111-111111111111');
-
-    await screen.findByTestId('video-editor-provider');
-
-    await waitFor(() => {
-      expect(screen.getByTestId('video-editor-provider')).toHaveAttribute('data-kind', 'bridge');
-    });
-    expect(state.bridgeCtor).toHaveBeenLastCalledWith({
-      projectSlug: 'ados-talks',
-      timelineRef: '11111111-1111-1111-1111-111111111111',
-      timelineId: '11111111-1111-1111-1111-111111111111',
-    });
-
-    fireEvent.click(screen.getByRole('button', { name: 'App' }));
-
-    await waitFor(() => {
-      expect(screen.getByTestId('video-editor-provider')).toHaveAttribute('data-kind', 'supabase');
-    });
-    expect(screen.getByTestId('video-editor-provider')).toHaveAttribute('data-timeline-id', 'timeline-1');
-  });
-
-  it('confirms error-state local timeline remounts and cancels them when declined', async () => {
-    window.localStorage.setItem('dev.videoEditor.localMode', '1');
-    state.confirm.mockReturnValue(false);
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith('/api/astrid/health')) {
-        return new Response(JSON.stringify({ ok: true }), { status: 200 });
-      }
-      if (url.endsWith('/api/astrid/projects')) {
-        return new Response(JSON.stringify({
-          projects: [{ slug: 'ados-talks', name: 'Ados Talks' }],
-        }), { status: 200 });
-      }
-      if (url.endsWith('/api/astrid/projects/ados-talks/timelines')) {
-        return new Response(JSON.stringify({
-          timelines: [
-            {
-              timeline_id: '11111111-1111-1111-1111-111111111111',
-              timeline_ulid: '01JM4K5N7P0000000000000017',
-              slug: 'intro-cut',
-              name: 'Intro Cut',
-              is_default: true,
-            },
-            {
-              timeline_id: '22222222-2222-2222-2222-222222222222',
-              timeline_ulid: '01JM4K5N7P0000000000000018',
-              slug: 'alt-cut',
-              name: 'Alt Cut',
-              is_default: false,
-            },
-          ],
-        }), { status: 200 });
-      }
-      throw new Error(`Unexpected bridge request: ${url}`);
-    }));
-
-    renderPage('/tools/video-editor?localProject=ados-talks&localTimeline=11111111-1111-1111-1111-111111111111');
-
-    await screen.findByTestId('video-editor-provider');
     await waitFor(() => {
       expect(screen.getByTestId('mock-save-status')).toHaveTextContent('saved');
     });
-    act(() => {
-      state.saveStatusCallback?.('error');
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Change selection' }));
-
-    expect(state.confirm).toHaveBeenCalledWith('The last timeline save failed. Switch editors anyway?');
-    expect(screen.getByTestId('video-editor-provider')).toHaveAttribute('data-timeline-id', '11111111-1111-1111-1111-111111111111');
     expect(state.providerMounts).toBe(1);
-    expect(state.providerUnmounts).toBe(0);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('combobox', { name: 'Select project' }));
+    await user.click(await screen.findByText('Other Project'));
+
+    await waitFor(() => {
+      expect(state.providerMounts).toBe(2);
+    });
+    expect(screen.getByTestId('video-editor-provider')).toHaveAttribute('data-kind', 'bridge');
+    // Auto-pick selects the ULID as the routable ref.
+    expect(screen.getByTestId('video-editor-provider')).toHaveAttribute(
+      'data-timeline-id',
+      '01JM4K5N7P0000000000000017',
+    );
   });
 
-  function setupBridgeFetch() {
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.endsWith('/api/astrid/health')) {
-        return new Response(JSON.stringify({ ok: true, projects_root: '/tmp/test' }), { status: 200 });
-      }
-      if (url.endsWith('/api/astrid/projects')) {
-        return new Response(JSON.stringify({
-          projects: [{ slug: 'ados-talks', name: 'Ados Talks' }],
-        }), { status: 200 });
-      }
-      if (url.endsWith('/api/astrid/projects/ados-talks/timelines')) {
-        return new Response(JSON.stringify({
-          timelines: [
-            {
-              timeline_id: '11111111-1111-1111-1111-111111111111',
-              timeline_ulid: '01JM4K5N7P0000000000000017',
-              slug: 'intro-cut',
-              name: 'Intro Cut',
-              is_default: true,
-            },
-            {
-              timeline_id: '22222222-2222-2222-2222-222222222222',
-              timeline_ulid: '01JM4K5N7P0000000000000018',
-              slug: 'alt-cut',
-              name: 'Alt Cut',
-              is_default: false,
-            },
-          ],
-        }), { status: 200 });
-      }
-      throw new Error(`Unexpected bridge request: ${url}`);
-    }));
-  }
-
-  async function mountLocalEditor() {
-    window.localStorage.setItem('dev.videoEditor.localMode', '1');
-    setupBridgeFetch();
-    renderPage('/tools/video-editor?localProject=ados-talks&localTimeline=11111111-1111-1111-1111-111111111111');
-    const provider = await screen.findByTestId('video-editor-provider');
-    expect(provider).toHaveAttribute('data-kind', 'bridge');
-    await waitFor(() => {
-      expect(screen.getByTestId('mock-save-status')).toHaveTextContent('saved');
-    });
-    return provider;
-  }
-
-  it('blocks Local-to-App switching while the editor is saving', async () => {
+  it('blocks switching while the editor is saving', async () => {
     await mountLocalEditor();
 
     act(() => {
       state.saveStatusCallback?.('saving');
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'App' }));
+    expect(screen.getByRole('combobox', { name: 'Select project' })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: 'Select timeline' })).toBeDisabled();
 
-    expect(screen.getByTestId('video-editor-provider')).toHaveAttribute('data-kind', 'bridge');
+    // Still on the same timeline — switch blocked without confirm
+    expect(screen.getByTestId('video-editor-provider')).toHaveAttribute(
+      'data-timeline-id',
+      '11111111-1111-1111-1111-111111111111',
+    );
     expect(state.confirm).not.toHaveBeenCalled();
   });
 
-  it('disables mode toggle buttons while the editor is saving in local mode', async () => {
+  it('blocks switching while the editor is retrying a transport failure', async () => {
     await mountLocalEditor();
 
     act(() => {
-      state.saveStatusCallback?.('saving');
+      state.saveStatusCallback?.('retrying');
     });
 
-    expect(screen.getByRole('button', { name: 'Local' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'App' })).toBeDisabled();
+    // A retry is scheduled (a save WILL happen) — switching would abandon it,
+    // so both selectors are disabled and no confirm dialog is offered.
+    expect(screen.getByRole('combobox', { name: 'Select project' })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: 'Select timeline' })).toBeDisabled();
+    expect(screen.getByTestId('video-editor-provider')).toHaveAttribute(
+      'data-timeline-id',
+      '11111111-1111-1111-1111-111111111111',
+    );
+    expect(state.confirm).not.toHaveBeenCalled();
   });
 
-  it('confirms dirty-state Local-to-App switches when accepted and blocks when declined', async () => {
+  it('confirms dirty-state switches when accepted and blocks when declined', async () => {
     await mountLocalEditor();
 
     // Dirty + denied → switch must be blocked, provider unchanged
@@ -709,7 +799,9 @@ describe('VideoEditorPage', () => {
       expect(screen.getByTestId('mock-save-status')).toHaveTextContent('dirty');
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'App' }));
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('combobox', { name: 'Select project' }));
+    await user.click(await screen.findByText('Project One'));
 
     expect(state.confirm).toHaveBeenCalledWith(
       'You have unsaved timeline changes. Switch editors and discard them?',
@@ -728,14 +820,18 @@ describe('VideoEditorPage', () => {
       expect(screen.getByTestId('mock-save-status')).toHaveTextContent('dirty');
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'App' }));
+    await user.click(screen.getByRole('combobox', { name: 'Select project' }));
+    await user.click(await screen.findByText('Project One'));
 
     expect(state.confirm).toHaveBeenCalledWith(
       'You have unsaved timeline changes. Switch editors and discard them?',
     );
+    await waitFor(() => {
+      expect(screen.getByTestId('video-editor-provider')).toHaveAttribute('data-kind', 'supabase');
+    });
   });
 
-  it('confirms error-state Local-to-App switches and blocks when declined', async () => {
+  it('confirms error-state switches and blocks when declined', async () => {
     await mountLocalEditor();
 
     // Error + denied → switch blocked
@@ -744,7 +840,9 @@ describe('VideoEditorPage', () => {
       state.saveStatusCallback?.('error');
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'App' }));
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('combobox', { name: 'Select project' }));
+    await user.click(await screen.findByText('Project One'));
 
     expect(state.confirm).toHaveBeenCalledWith(
       'The last timeline save failed. Switch editors anyway?',
@@ -759,41 +857,81 @@ describe('VideoEditorPage', () => {
       state.saveStatusCallback?.('error');
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'App' }));
+    await user.click(screen.getByRole('combobox', { name: 'Select project' }));
+    await user.click(await screen.findByText('Project One'));
 
     expect(state.confirm).toHaveBeenCalledWith(
       'The last timeline save failed. Switch editors anyway?',
     );
-  });
-
-  it('blocks changing the explicit local selection while the editor is saving', async () => {
-    await mountLocalEditor();
-
-    act(() => {
-      state.saveStatusCallback?.('saving');
-    });
-
-    expect(screen.getByRole('button', { name: 'Change selection' })).toBeDisabled();
-
-    // Still on the same timeline — switch blocked without confirm
-    expect(screen.getByTestId('video-editor-provider')).toHaveAttribute(
-      'data-timeline-id',
-      '11111111-1111-1111-1111-111111111111',
-    );
-    expect(state.confirm).not.toHaveBeenCalled();
-  });
-
-  it('Change selection with a clean editor clears the params and returns to the prompt', async () => {
-    await mountLocalEditor();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Change selection' }));
-
     await waitFor(() => {
-      expect(screen.getByText('Select a local timeline')).toBeInTheDocument();
+      expect(screen.getByTestId('video-editor-provider')).toHaveAttribute('data-kind', 'supabase');
     });
-    expect(screen.queryByTestId('video-editor-provider')).toBeNull();
-    expect(state.providerUnmounts).toBe(1);
   });
+
+  it('confirms error-state local timeline switches and cancels them when declined', async () => {
+    setupBridgeFetch();
+    renderPage('/tools/video-editor?localProject=ados-talks&localTimeline=11111111-1111-1111-1111-111111111111');
+
+    const provider = await screen.findByTestId('video-editor-provider');
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-save-status')).toHaveTextContent('saved');
+    });
+    act(() => {
+      state.saveStatusCallback?.('error');
+    });
+    state.confirm.mockReturnValue(false);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('combobox', { name: 'Select timeline' }));
+    await user.click(await screen.findByText('Alt Cut'));
+
+    expect(state.confirm).toHaveBeenCalledWith('The last timeline save failed. Switch editors anyway?');
+    expect(screen.getByTestId('video-editor-provider')).toHaveAttribute('data-timeline-id', '11111111-1111-1111-1111-111111111111');
+    expect(state.providerMounts).toBe(1);
+    expect(state.providerUnmounts).toBe(0);
+  });
+
+  function setupBridgeFetch() {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (
+        url.includes('/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111')
+        || url.includes('/api/astrid/projects/ados-talks/timelines/01JM4K5N7P0000000000000017')
+      ) {
+        return new Response(JSON.stringify({
+          timeline_id: '11111111-1111-1111-1111-111111111111',
+          timeline_ulid: '01JM4K5N7P0000000000000017',
+          name: 'Intro Cut',
+          config: { clips: [], tracks: [] },
+          config_version: 0,
+        }), { status: 200 });
+      }
+      if (
+        url.includes('/api/astrid/projects/ados-talks/timelines/22222222-2222-2222-2222-222222222222')
+        || url.includes('/api/astrid/projects/ados-talks/timelines/01JM4K5N7P0000000000000018')
+      ) {
+        return new Response(JSON.stringify({
+          timeline_id: '22222222-2222-2222-2222-222222222222',
+          timeline_ulid: '01JM4K5N7P0000000000000018',
+          name: 'Alt Cut',
+          config: { clips: [], tracks: [] },
+          config_version: 0,
+        }), { status: 200 });
+      }
+      throw new Error(`Unexpected bridge request: ${url}`);
+    }));
+  }
+
+  async function mountLocalEditor() {
+    setupBridgeFetch();
+    renderPage('/tools/video-editor?localProject=ados-talks&localTimeline=11111111-1111-1111-1111-111111111111');
+    const provider = await screen.findByTestId('video-editor-provider');
+    expect(provider).toHaveAttribute('data-kind', 'bridge');
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-save-status')).toHaveTextContent('saved');
+    });
+    return provider;
+  }
 
   // ---------------------------------------------------------------------------
   // ?extensionSmoke=1 in the stock app path
@@ -840,6 +978,155 @@ describe('VideoEditorPage', () => {
       expect(provider).toHaveAttribute('data-kind', 'supabase');
 
       expect(state.lastProviderExtensions ?? []).toHaveLength(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // ?timelineOverlayCanary=1 — DEV-only canary gate for the timelineOverlay family
+  // ---------------------------------------------------------------------------
+
+  describe('?timelineOverlayCanary=1 (DEV canary gate)', () => {
+    it('enables timeline overlays in DEV only when the canary query is exactly 1', async () => {
+      renderPage('/tools/video-editor?timeline=timeline-1&timelineOverlayCanary=1');
+
+      const provider = await screen.findByTestId('video-editor-provider');
+      expect(provider).toHaveAttribute('data-kind', 'supabase');
+      expect(state.lastTimelineOverlaysEnabled).toBe(true);
+      expect(provider).toHaveAttribute('data-timeline-overlays-enabled', 'true');
+    });
+
+    it('keeps the overlay dark in DEV when the canary query is absent', async () => {
+      renderPage('/tools/video-editor?timeline=timeline-1');
+
+      const provider = await screen.findByTestId('video-editor-provider');
+      expect(provider).toHaveAttribute('data-kind', 'supabase');
+      expect(state.lastTimelineOverlaysEnabled).toBe(false);
+      expect(provider).toHaveAttribute('data-timeline-overlays-enabled', 'false');
+    });
+
+    it('ignores a non-1 canary value in DEV (only exactly 1 enables)', async () => {
+      renderPage('/tools/video-editor?timeline=timeline-1&timelineOverlayCanary=0');
+
+      const provider = await screen.findByTestId('video-editor-provider');
+      expect(state.lastTimelineOverlaysEnabled).toBe(false);
+      expect(provider).toHaveAttribute('data-timeline-overlays-enabled', 'false');
+    });
+
+    it('ignores the canary query in production (DEV off) — the query must never be honored outside DEV', async () => {
+      (import.meta.env as Record<string, unknown>).DEV = false;
+      renderPage('/tools/video-editor?timeline=timeline-1&timelineOverlayCanary=1');
+
+      const provider = await screen.findByTestId('video-editor-provider');
+      expect(provider).toHaveAttribute('data-kind', 'supabase');
+      expect(state.lastTimelineOverlaysEnabled).toBe(false);
+      expect(provider).toHaveAttribute('data-timeline-overlays-enabled', 'false');
+    });
+
+    it('passes the flag into the local-mode provider mount too (canary + localProject)', async () => {
+      setupBridgeFetch();
+      renderPage(
+        '/tools/video-editor?localProject=ados-talks&localTimeline=11111111-1111-1111-1111-111111111111&timelineOverlayCanary=1',
+      );
+
+      const provider = await screen.findByTestId('video-editor-provider');
+      expect(provider).toHaveAttribute('data-kind', 'bridge');
+      expect(state.lastTimelineOverlaysEnabled).toBe(true);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Extension-driven overlay gate — an enabled dev-local extension that
+  // declares a `timelineOverlay` contribution mounts the host without the
+  // canary query (DEV only; production drops devLocalExtensions entirely).
+  // ---------------------------------------------------------------------------
+
+  describe('timelineOverlay host gate via enabled dev-local extension (DEV)', () => {
+    const OVERLAY_EXT_ID = 'com.reigh.dev.overlay-fixture';
+
+    function makeOverlayDevLocalExtension() {
+      return {
+        manifest: {
+          id: OVERLAY_EXT_ID,
+          version: '0.1.0',
+          label: 'Local Overlay Fixture',
+          description: 'A dev-local overlay extension for host-gate tests.',
+          apiVersion: 1,
+          contributions: [
+            {
+              id: `${OVERLAY_EXT_ID}-overlay`,
+              kind: 'timelineOverlay',
+              render: `${OVERLAY_EXT_ID}-overlay`,
+              order: 5,
+              label: 'Local Overlay Fixture',
+            },
+          ],
+        },
+        activate: vi.fn(() => ({ dispose: vi.fn() })),
+      };
+    }
+
+    it('mounts the overlay host when an overlay-capable dev-local extension is enabled (no URL param)', async () => {
+      state.devLocalExtensions.push(makeOverlayDevLocalExtension());
+      renderPage('/tools/video-editor?timeline=timeline-1');
+
+      const provider = await screen.findByTestId('video-editor-provider');
+      expect(provider).toHaveAttribute('data-kind', 'supabase');
+      expect(state.lastTimelineOverlaysEnabled).toBe(true);
+      expect(provider).toHaveAttribute('data-timeline-overlays-enabled', 'true');
+    });
+
+    it('keeps the host dark when the enabled dev-local extension has no timelineOverlay contribution', async () => {
+      state.devLocalExtensions.push({
+        manifest: {
+          id: 'com.reigh.dev.slot-only-fixture',
+          version: '0.1.0',
+          label: 'Local Slot Fixture',
+          description: 'A dev-local slot-only extension for host-gate tests.',
+          apiVersion: 1,
+          contributions: [
+            {
+              id: 'com.reigh.dev.slot-only-fixture-status',
+              kind: 'slot',
+              slot: 'statusBar',
+              render: 'com.reigh.dev.slot-only-fixture-status',
+              label: 'Local Slot Fixture Status',
+            },
+          ],
+        },
+        activate: vi.fn(() => ({ dispose: vi.fn() })),
+      });
+      renderPage('/tools/video-editor?timeline=timeline-1');
+
+      const provider = await screen.findByTestId('video-editor-provider');
+      expect(state.lastTimelineOverlaysEnabled).toBe(false);
+      expect(provider).toHaveAttribute('data-timeline-overlays-enabled', 'false');
+    });
+
+    it('drops the overlay gate when the overlay extension is disabled through the external store', async () => {
+      state.devLocalExtensions.push(makeOverlayDevLocalExtension());
+      renderPage('/tools/video-editor?timeline=timeline-1');
+
+      const provider = await screen.findByTestId('video-editor-provider');
+      expect(state.lastTimelineOverlaysEnabled).toBe(true);
+
+      act(() => {
+        setDevExtensionEnabled(OVERLAY_EXT_ID, false);
+      });
+
+      await waitFor(() => {
+        expect(state.lastTimelineOverlaysEnabled).toBe(false);
+      });
+    });
+
+    it('ignores the extension-driven gate in production (DEV off)', async () => {
+      (import.meta.env as Record<string, unknown>).DEV = false;
+      state.devLocalExtensions.push(makeOverlayDevLocalExtension());
+      renderPage('/tools/video-editor?timeline=timeline-1');
+
+      const provider = await screen.findByTestId('video-editor-provider');
+      expect(provider).toHaveAttribute('data-kind', 'supabase');
+      expect(state.lastTimelineOverlaysEnabled).toBe(false);
+      expect(provider).toHaveAttribute('data-timeline-overlays-enabled', 'false');
     });
   });
 

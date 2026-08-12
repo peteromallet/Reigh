@@ -8,15 +8,17 @@ import { useQuery } from '@tanstack/react-query';
 import type { z, ZodType } from 'zod';
 import { Clapperboard, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useHomeNavigation } from '@/shared/hooks/useHomeNavigation.ts';
 import { Button } from '@/shared/components/ui/button.tsx';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/shared/components/ui/card.tsx';
 import { cn } from '@/shared/components/ui/contracts/cn.ts';
-import { useIsMobile, useIsTablet } from '@/shared/hooks/mobile';
 import { Input } from '@/shared/components/ui/input.tsx';
 import { Skeleton } from '@/shared/components/ui/skeleton.tsx';
 import { useAuth } from '@/shared/contexts/AuthContext.tsx';
-import { hasSupabaseConfig } from '@/integrations/supabase/config/env';
-import { useProjectSelectionContext } from '@/shared/contexts/ProjectContext.tsx';
+import {
+  useProjectCrudContext,
+  useProjectSelectionContext,
+} from '@/shared/contexts/ProjectContext.tsx';
 import { useToolSettings } from '@/shared/hooks/settings/useToolSettings.ts';
 import { toast } from '@/shared/components/ui/toast.tsx';
 import { AstridBridgeDataProvider } from '@/tools/video-editor/data/AstridBridgeDataProvider.ts';
@@ -37,6 +39,11 @@ import {
 } from '@/tools/video-editor/dev/devExtensionEnablement.ts';
 import { useExtensionLoaderWiring } from '@/tools/video-editor/runtime/useExtensionLoaderWiring';
 import { ReighVideoEditorShell } from '@/tools/video-editor/components/ReighVideoEditorShell.tsx';
+import { EditorProjectTimelineSelectors } from '@/tools/video-editor/components/EditorProjectTimelineSelectors.tsx';
+import {
+  LOCAL_BRIDGE_BASE_URL,
+  useAstridBridgeDiscovery,
+} from '@/tools/video-editor/hooks/useAstridBridgeDiscovery.ts';
 import { useTimelinesList } from '@/tools/video-editor/hooks/useTimelinesList.ts';
 import type { SaveStatus } from '@/tools/video-editor/hooks/useTimelinePersistence.ts';
 import { videoEditorSettings } from '@/tools/video-editor/settings/videoEditorDefaults.ts';
@@ -52,89 +59,16 @@ type ProviderSelection = {
   remountKey: string;
 };
 
-type AppRouteState = {
-  timelineId: string | null;
-};
-
-type LocalRouteState = {
-  projectSlug: string | null;
-  timelineId: string | null;
-};
-
-const LOCAL_MODE_STORAGE_KEY = 'dev.videoEditor.localMode';
-
 /**
- * Class for the dev header strip above the editor.
+ * Dev canary gate for the `timelineOverlay` family (plan step 22).
  *
- * The app shell parks a fixed pane-control tab at top-centre of the viewport
- * (`EditorPaneTab` → `PaneControlTab`, `top-0 left-1/2`, ~46px). This page is
- * full-bleed and renders straight underneath it, so on phone and tablet the tab
- * landed on the local-mode timeline selector. Reserve that band here rather than
- * move app-wide chrome that every other page also depends on.
- *
- * Two gates, both deliberate:
- *  - `hasContent`: in production `DevModeToggle` returns null and this strip must
- *    stay a hairline, not 56px of empty space.
- *  - `isTouch`: on desktop the row's controls stop well short of centre, so there
- *    is nothing to clear and the layout stays exactly as it was.
+ * The overlay host is a rollout-qualification canary: it mounts only when
+ * BOTH the dev build AND the explicit `?timelineOverlayCanary=1` query are
+ * present. The literal `import.meta.env.DEV` guard means production builds
+ * drop the branch entirely, so the query is never honored outside DEV and
+ * the default (no param) stays dark even in DEV.
  */
-const devHeaderClass = (hasContent: boolean, isTouch: boolean) =>
-  cn('border-b border-border px-4', hasContent && isTouch ? 'pb-3 pt-14' : 'py-3');
-const LOCAL_BRIDGE_BASE_URL = '/api/astrid';
-
-function readStoredLocalMode(): boolean {
-  try {
-    return window.localStorage.getItem(LOCAL_MODE_STORAGE_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function writeStoredLocalMode(enabled: boolean): void {
-  try {
-    window.localStorage.setItem(LOCAL_MODE_STORAGE_KEY, enabled ? '1' : '0');
-  } catch {
-    // Ignore storage failures in restricted contexts.
-  }
-}
-
-/**
- * @param urlRequestsLocalMode whether the entry URL carried `?localProject` /
- *   `?localTimeline`. A pasted local-mode link should open local mode without
- *   the developer first discovering the localStorage flag behind `DevModeToggle`
- *   (which only renders *after* the auth gate). Initial state only — the mode
- *   toggle must still be able to switch to App with those params in the URL.
- */
-function useVideoEditorModePreference(urlRequestsLocalMode: boolean) {
-  const localModeAvailable = import.meta.env.DEV;
-  const { isAuthenticated } = useAuth();
-  // Local mode is the no-Supabase dev fallback. When a Supabase URL is
-  // configured (remote or local backend), the persisted `dev.videoEditor.localMode`
-  // flag must never auto-enter it: the flag is a leftover from a no-backend
-  // session and would hijack app-mode visits into the local bridge, whose
-  // `/api/astrid` proxy 500s when the stub is not running. The flag only
-  // applies with no configured backend AND no session.
-  const usePersistedLocalMode = !hasSupabaseConfig() && !isAuthenticated && readStoredLocalMode();
-  const [mode, setMode] = useState<VideoEditorMode>(() => (
-    localModeAvailable && (urlRequestsLocalMode || usePersistedLocalMode) ? 'local' : 'app'
-  ));
-
-  useEffect(() => {
-    if (!localModeAvailable && mode !== 'app') {
-      setMode('app');
-      return;
-    }
-    if (localModeAvailable) {
-      writeStoredLocalMode(mode === 'local');
-    }
-  }, [localModeAvailable, mode]);
-
-  return {
-    localModeAvailable,
-    mode: localModeAvailable ? mode : 'app',
-    setMode,
-  };
-}
+const TIMELINE_OVERLAY_CANARY_PARAM = 'timelineOverlayCanary';
 
 /**
  * Every page-level bridge read goes through the shared wire contract
@@ -157,10 +91,9 @@ async function fetchBridgeJson<Schema extends ZodType>(
 }
 
 /**
- * B5: discovery is explicit. The bridge no longer serves project/timeline
- * lists — the URL params (localProject / localTimeline) ARE the selection.
- * The only remaining list-shaped need is the timeline *name* for the header,
- * which comes from the timeline GET itself (one of the three routes).
+ * The local timeline *name* for the header/dropdown label comes from the
+ * timeline GET itself (one of the three bridge routes). Selection itself is
+ * URL-param driven — see `useAstridBridgeDiscovery` for the list routes.
  */
 function useBridgeTimelineName(projectSlug: string | null, timelineRef: string | null, enabled: boolean) {
   return useQuery({
@@ -174,18 +107,6 @@ function useBridgeTimelineName(projectSlug: string | null, timelineRef: string |
       );
       return typeof payload.name === 'string' ? payload.name : null;
     },
-  });
-}
-
-function useBridgeHealth(enabled: boolean) {
-  return useQuery({
-    queryKey: ['astrid-bridge', 'health'],
-    enabled,
-    queryFn: async () => {
-      const payload = await fetchBridgeJson('/health', bridgeHealthSchema, 'health response');
-      return payload.ok === true;
-    },
-    retry: 0,
   });
 }
 
@@ -253,48 +174,6 @@ function useVideoEditorProviderSelection({
     selectedProjectId,
     userId,
   ]);
-}
-
-function DevModeToggle({
-  localModeAvailable,
-  mode,
-  setMode,
-  disabled,
-}: {
-  localModeAvailable: boolean;
-  mode: VideoEditorMode;
-  setMode: (nextMode: VideoEditorMode) => void;
-  disabled?: boolean;
-}) {
-  if (!localModeAvailable) {
-    return null;
-  }
-
-  return (
-    <div className="flex items-center gap-2 rounded-lg border border-border bg-card/80 p-2">
-      <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
-        Mode
-      </span>
-      <Button
-        type="button"
-        size="sm"
-        variant={mode === 'app' ? 'default' : 'outline'}
-        onClick={() => setMode('app')}
-        disabled={disabled}
-      >
-        App
-      </Button>
-      <Button
-        type="button"
-        size="sm"
-        variant={mode === 'local' ? 'default' : 'outline'}
-        onClick={() => setMode('local')}
-        disabled={disabled}
-      >
-        Local
-      </Button>
-    </div>
-  );
 }
 
 function TimelineList({ onSelect }: { onSelect: (timelineId: string) => void }) {
@@ -461,7 +340,8 @@ function TimelineList({ onSelect }: { onSelect: (timelineId: string) => void }) 
 }
 
 export default function VideoEditorPage() {
-  const { selectedProjectId } = useProjectSelectionContext();
+  const { selectedProjectId, setSelectedProjectId } = useProjectSelectionContext();
+  const { projects: appProjects, isLoadingProjects: appProjectsLoading } = useProjectCrudContext();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // ---- Smoke extension wiring (prepend when ?extensionSmoke=1) -------------
@@ -493,6 +373,22 @@ export default function VideoEditorPage() {
     return direct.length > 0 ? direct : undefined;
   }, [searchParams, devDisabledIds]);
 
+  // ---- T9.1: timeline-overlay host gate (DEV-only) -------------------------
+  // `timelineOverlaysEnabled` defaults to false everywhere. In DEV builds the
+  // page enables it when EITHER the explicit `?timelineOverlayCanary=1` query
+  // is present OR an enabled dev-local extension declares a `timelineOverlay`
+  // contribution — so toggling an overlay extension on in the ExtensionManager
+  // mounts the host without a magic URL. Production ignores both (the query is
+  // stripped by the literal `import.meta.env.DEV` guard and devLocalExtensions
+  // are dropped). Derived from `smokeDirectExtensions` so the enabled-extension
+  // list is the single source of truth.
+  const timelineOverlaysEnabled = import.meta.env.DEV && (
+    searchParams.get(TIMELINE_OVERLAY_CANARY_PARAM) === '1'
+    || (smokeDirectExtensions ?? []).some((ext) => (
+      ext.manifest.contributions?.some((contribution) => contribution.kind === 'timelineOverlay')
+    ))
+  );
+
   // ---- M14: extension loader wiring (host-owned) --------------------------
   // Resolves direct-local extensions + optional repository state through the
   // ExtensionLoader pipeline.  When no repository is provided, direct-local
@@ -508,29 +404,35 @@ export default function VideoEditorPage() {
   });
   const { userId } = useAuth();
   const navigate = useNavigate();
-  const { localModeAvailable, mode, setMode } = useVideoEditorModePreference(
-    searchParams.has('localProject') || searchParams.has('localTimeline'),
-  );
-  const isMobileViewport = useIsMobile();
-  const isTabletViewport = useIsTablet();
-  /** Touch viewports are where the app's fixed top-centre pane tab collides
-   *  with this header — see `devHeaderClass`. */
-  const reservesTopPaneTabGutter = isMobileViewport || isTabletViewport;
-  const [mountedSaveStatus, setMountedSaveStatus] = useState<SaveStatus>('saved');
-  const creatingRef = useRef(false);
-  const appTimelineId = searchParams.get('timeline');
+  const { navigateHome } = useHomeNavigation();
+
+  // Local mode is derived solely from the URL params — the legacy
+  // `dev.videoEditor.localMode` storage flag has been retired. It stays a
+  // DEV-only affordance: `/api/astrid` is a development proxy, so production
+  // builds must never enter local mode from a URL (it would strand users on
+  // a dead bridge).
+  const localModeAvailable = import.meta.env.DEV;
   const localProjectSlug = searchParams.get('localProject');
   const localTimelineId = searchParams.get('localTimeline');
-  const appRouteRef = useRef<AppRouteState>({ timelineId: appTimelineId });
-  const localRouteRef = useRef<LocalRouteState>({
-    projectSlug: localProjectSlug,
-    timelineId: localTimelineId,
+  const mode: VideoEditorMode = localModeAvailable && (
+    searchParams.has('localProject') || searchParams.has('localTimeline')
+  ) ? 'local' : 'app';
+  const appTimelineId = searchParams.get('timeline');
+
+  // Selector dropdown open state drives discovery refetch-on-open + polling.
+  const [selectorsOpen, setSelectorsOpen] = useState(false);
+  const discovery = useAstridBridgeDiscovery({
+    open: selectorsOpen,
+    currentLocal: mode === 'local',
+    selectedProjectSlug: localProjectSlug,
   });
+
+  const [mountedSaveStatus, setMountedSaveStatus] = useState<SaveStatus>('saved');
+  const creatingRef = useRef(false);
   const timelines = useTimelinesList(
     mode === 'local' ? null : selectedProjectId,
     mode === 'local' ? null : userId,
   );
-  const bridgeHealth = useBridgeHealth(mode === 'local');
   const bridgeTimelineName = useBridgeTimelineName(localProjectSlug, localTimelineId, mode === 'local');
   const { settings, update } = useToolSettings(videoEditorSettings.id, {
     projectId: mode === 'local' ? undefined : (selectedProjectId ?? undefined),
@@ -552,30 +454,17 @@ export default function VideoEditorPage() {
   });
 
   useEffect(() => {
-    if (appTimelineId !== null || mode === 'app') {
-      appRouteRef.current = { timelineId: appTimelineId };
-    }
-  }, [appTimelineId, mode]);
-
-  useEffect(() => {
-    if (localProjectSlug !== null || localTimelineId !== null || mode === 'local') {
-      localRouteRef.current = {
-        projectSlug: localProjectSlug,
-        timelineId: localTimelineId,
-      };
-    }
-  }, [localProjectSlug, localTimelineId, mode]);
-
-  useEffect(() => {
     setMountedSaveStatus('saved');
   }, [providerSelection?.remountKey]);
 
-  const isSwitchBlockedBySave = mountedSaveStatus === 'saving';
+  const isSwitchBlockedBySave = mountedSaveStatus === 'saving' || mountedSaveStatus === 'retrying';
   const confirmEditorRemount = useCallback(() => {
     if (!providerSelection) {
       return true;
     }
-    if (mountedSaveStatus === 'saving') {
+    // A save round-trip is in flight or a transport retry is scheduled —
+    // switching would abandon it and lose the edit. Block like `saving`.
+    if (mountedSaveStatus === 'saving' || mountedSaveStatus === 'retrying') {
       return false;
     }
     if (mountedSaveStatus === 'dirty') {
@@ -587,38 +476,63 @@ export default function VideoEditorPage() {
     return true;
   }, [mountedSaveStatus, providerSelection]);
 
-  const setModeRoute = useCallback((nextMode: VideoEditorMode) => {
-    setSearchParams((current) => {
-      const next = new URLSearchParams(current);
-      next.delete('timeline');
-      next.delete('localProject');
-      next.delete('localTimeline');
-      if (nextMode === 'app') {
-        if (appRouteRef.current.timelineId) {
-          next.set('timeline', appRouteRef.current.timelineId);
-        }
-      } else {
-        if (localRouteRef.current.projectSlug) {
-          next.set('localProject', localRouteRef.current.projectSlug);
-        }
-        if (localRouteRef.current.timelineId) {
-          next.set('localTimeline', localRouteRef.current.timelineId);
-        }
+  /**
+   * Selector → route. Values are namespaced: `app:<id>` switches to the app
+   * (Supabase) provider for that project (clearing the local params and letting
+   * the existing restore/first/create flow choose the timeline), `local:<slug>`
+   * switches to the Astrid bridge for that project (clearing any local timeline
+   * so the auto-pick effect below chooses one).
+   */
+  const handleSelectProject = useCallback((value: string) => {
+    if (value.startsWith('app:')) {
+      const appProjectId = value.slice('app:'.length);
+      if (!appProjectId || (mode === 'app' && appProjectId === selectedProjectId)) {
+        return;
       }
-      return next;
-    }, { replace: true });
-  }, [setSearchParams]);
+      if (!confirmEditorRemount()) {
+        return;
+      }
+      setSelectedProjectId(appProjectId);
+      setSearchParams((current) => {
+        const next = new URLSearchParams(current);
+        next.delete('localProject');
+        next.delete('localTimeline');
+        // Never carry a timeline id from another project across the switch.
+        next.delete('timeline');
+        return next;
+      }, { replace: true });
+      return;
+    }
 
-  const handleModeChange = useCallback((nextMode: VideoEditorMode) => {
-    if (nextMode === mode) {
+    const slug = value.slice('local:'.length);
+    if (!slug || (mode === 'local' && slug === localProjectSlug)) {
       return;
     }
     if (!confirmEditorRemount()) {
       return;
     }
-    setMode(nextMode);
-    setModeRoute(nextMode);
-  }, [confirmEditorRemount, mode, setMode, setModeRoute]);
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set('localProject', slug);
+      next.delete('localTimeline');
+      next.delete('timeline');
+      return next;
+    }, { replace: true });
+  }, [confirmEditorRemount, localProjectSlug, mode, selectedProjectId, setSearchParams, setSelectedProjectId]);
+
+  const handleSelectTimeline = useCallback((timelineId: string) => {
+    if (!timelineId || (mode === 'local' && timelineId === localTimelineId)) {
+      return;
+    }
+    if (!confirmEditorRemount()) {
+      return;
+    }
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set('localTimeline', timelineId);
+      return next;
+    }, { replace: true });
+  }, [confirmEditorRemount, localTimelineId, mode, setSearchParams]);
 
   // Reconcile the URL timelineId against the live list:
   // - if it exists in the list, persist it as lastTimelineId
@@ -715,108 +629,94 @@ export default function VideoEditorPage() {
     userId,
   ]);
 
-  if (mode === 'local') {
-    const hasExplicitSelection = Boolean(localProjectSlug && localTimelineId);
+  // Local timeline auto-pick: when a local project is selected without a
+  // timeline (or the current one no longer exists under that project), retain
+  // the current id if it is still valid, otherwise pick `is_default` then the
+  // first timeline from the bridge discovery list.
+  useEffect(() => {
+    if (mode !== 'local' || !localProjectSlug) {
+      return;
+    }
+    // A `localTimeline` param that is present but empty is the Back button's
+    // "show the picker" state — do not auto-pick over it. (Project switches
+    // delete the param entirely and keep auto-picking.)
+    if (searchParams.has('localTimeline') && !searchParams.get('localTimeline')) {
+      return;
+    }
+    const localTimelines = discovery.timelinesQuery.data?.timelines;
+    if (discovery.timelinesQuery.isLoading || discovery.timelinesQuery.error || !localTimelines) {
+      return;
+    }
+    if (localTimelines.length === 0) {
+      return;
+    }
+    // The URL may carry either the canonical id or its ULID alias (the
+    // dropdown selects `timeline_ulid ?? timeline_id`), so validate against both.
+    if (localTimelineId && localTimelines.some((timeline) => (
+      timeline.timeline_id === localTimelineId || timeline.timeline_ulid === localTimelineId
+    ))) {
+      return;
+    }
+    const nextTimeline = localTimelines.find((timeline) => timeline.is_default) ?? localTimelines[0];
+    if (!nextTimeline) {
+      return;
+    }
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set('localProject', localProjectSlug);
+      // Prefer the ULID: it is the routable address for bridge requests,
+      // while the canonical timeline_id is identity only.
+      next.set('localTimeline', nextTimeline.timeline_ulid ?? nextTimeline.timeline_id);
+      return next;
+    }, { replace: true });
+  }, [
+    discovery.timelinesQuery.data,
+    discovery.timelinesQuery.error,
+    discovery.timelinesQuery.isLoading,
+    localProjectSlug,
+    localTimelineId,
+    mode,
+    searchParams,
+    setSearchParams,
+  ]);
 
+  const selectors = (
+    <EditorProjectTimelineSelectors
+      mode={mode}
+      appProjects={appProjects}
+      appProjectsLoading={appProjectsLoading}
+      selectedAppProjectId={mode === 'local' ? null : selectedProjectId}
+      localProjectSlug={localProjectSlug}
+      localTimelineId={localTimelineId}
+      localTimelineName={localTimelineName}
+      discovery={discovery}
+      onSelectProject={handleSelectProject}
+      onSelectTimeline={handleSelectTimeline}
+      disabled={isSwitchBlockedBySave}
+      onOpenChange={setSelectorsOpen}
+    />
+  );
+
+  // Page-level header for the branches where the editor shell (which hosts the
+  // selectors beside its Back button via `navigationControls`) is not shown.
+  const selectorsHeader = (
+    <div className="flex items-center gap-3 border-b border-border px-4 py-3">
+      <button
+        type="button"
+        className="shrink-0 text-sm transition-colors hover:text-foreground"
+        onClick={navigateHome}
+      >
+        ← Back
+      </button>
+      <div className="min-w-0 flex-1">{selectors}</div>
+    </div>
+  );
+
+  if (mode === 'local') {
     return (
       <div className="flex h-full w-full flex-col overflow-hidden bg-background">
-        <div className={devHeaderClass(true, reservesTopPaneTabGutter)}>
-          <div className="flex flex-wrap items-center gap-3">
-            <DevModeToggle
-              localModeAvailable={localModeAvailable}
-              mode={mode}
-              setMode={handleModeChange}
-              disabled={isSwitchBlockedBySave}
-            />
-            <span className="text-xs font-medium text-muted-foreground">
-              Local: <span className="font-mono text-foreground">{localProjectSlug}</span> /{' '}
-              <span className="font-mono text-foreground">{localTimelineName ?? localTimelineId ?? '—'}</span>
-            </span>
-            {localProjectSlug && localTimelineId && (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={isSwitchBlockedBySave}
-                onClick={() => {
-                  if (!confirmEditorRemount()) {
-                    return;
-                  }
-                  setSearchParams((current) => {
-                    const next = new URLSearchParams(current);
-                    next.delete('localProject');
-                    next.delete('localTimeline');
-                    return next;
-                  }, { replace: true });
-                }}
-              >
-                Change selection
-              </Button>
-            )}
-          </div>
-        </div>
-
-        {bridgeHealth.isLoading ? (
-          <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-4 p-6">
-            <Skeleton className="h-20 w-full" />
-            <Skeleton className="h-20 w-full" />
-          </div>
-        ) : bridgeHealth.error ? (
-          <div className="flex flex-1 items-center justify-center px-6">
-            <Card className="w-full max-w-md">
-              <CardHeader>
-                <CardTitle>Unable to reach the local bridge</CardTitle>
-                <CardDescription>{bridgeHealth.error.message}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  Make sure Astrid is running locally:
-                </p>
-                <code className="mt-2 block rounded bg-muted px-2 py-1 text-xs">
-                  cd ../Astrid && astrid serve --port 17333
-                </code>
-                <p className="mt-3 text-sm text-muted-foreground">
-                  No Astrid checkout? This repo ships a demo bridge that serves
-                  demo-project/demo-timeline:
-                </p>
-                <code className="mt-2 block rounded bg-muted px-2 py-1 text-xs">
-                  npm run dev:editor:bridge
-                </code>
-              </CardContent>
-            </Card>
-          </div>
-        ) : !hasExplicitSelection ? (
-          <div className="flex flex-1 items-center justify-center px-6">
-            <Card className="w-full max-w-md">
-              <CardHeader>
-                <CardTitle>Select a local timeline</CardTitle>
-                <CardDescription>
-                  Local mode needs an explicit project and timeline (B5: the bridge no longer
-                  auto-discovers project/timeline lists). Set them in the URL:
-                </CardDescription>
-                <CardContent>
-                  <code className="mt-2 block rounded bg-muted px-2 py-1 text-xs">
-                    ?localProject=&lt;project-slug&gt;&amp;localTimeline=&lt;timeline-id&gt;
-                  </code>
-                  <p className="mt-3 text-sm text-muted-foreground">
-                    The Astrid bridge serves exactly one projects root (`astrid serve --projects-root
-                    …`); timeline ids are the canonical UUIDs under that root&apos;s `timelines/` dirs.
-                  </p>
-                </CardContent>
-              </CardHeader>
-            </Card>
-          </div>
-        ) : !providerSelection ? (
-          <div className="flex flex-1 items-center justify-center px-6">
-            <Card className="w-full max-w-md">
-              <CardHeader>
-                <CardTitle>Timeline not found</CardTitle>
-                <CardDescription>No such project/timeline under the bridge projects root.</CardDescription>
-              </CardHeader>
-            </Card>
-          </div>
-        ) : (
-          <div className={cn('min-h-0 flex-1 overflow-hidden bg-background')}>
+        {providerSelection ? (
+          <div className="min-h-0 flex-1 overflow-hidden">
             <VideoEditorProvider
               key={providerSelection.remountKey}
               dataProvider={providerSelection.dataProvider}
@@ -826,14 +726,68 @@ export default function VideoEditorPage() {
               userId={providerSelection.userId}
               onSaveStatusChange={setMountedSaveStatus}
               extensions={resolvedExtensions}
+              timelineOverlaysEnabled={timelineOverlaysEnabled}
             >
               <ReighVideoEditorShell
                 mode="full"
                 timelineId={providerSelection.timelineId}
                 onCreateTimeline={() => navigate('/')}
+                navigationControls={selectors}
               />
             </VideoEditorProvider>
           </div>
+        ) : (
+          <>
+            {selectorsHeader}
+            <div className="flex flex-1 items-center justify-center px-6">
+              {discovery.healthQuery.isLoading ? (
+                <div className="w-full max-w-4xl space-y-4">
+                  <Skeleton className="h-20 w-full" />
+                  <Skeleton className="h-20 w-full" />
+                </div>
+              ) : discovery.bridgeDown ? (
+                <Card className="w-full max-w-md">
+                  <CardHeader>
+                    <CardTitle>Unable to reach the local bridge</CardTitle>
+                    <CardDescription>
+                      {discovery.healthQuery.error?.message ?? 'The Astrid bridge did not report healthy.'}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground">
+                      Make sure Astrid is running locally:
+                    </p>
+                    <code className="mt-2 block rounded bg-muted px-2 py-1 text-xs">
+                      cd ../Astrid &amp;&amp; astrid serve --port 17333
+                    </code>
+                    <p className="mt-3 text-sm text-muted-foreground">
+                      No Astrid checkout? This repo ships a demo bridge that serves
+                      demo-project/demo-timeline:
+                    </p>
+                    <code className="mt-2 block rounded bg-muted px-2 py-1 text-xs">
+                      npm run dev:editor:bridge
+                    </code>
+                  </CardContent>
+                </Card>
+              ) : !localProjectSlug || !localTimelineId ? (
+                <Card className="w-full max-w-md">
+                  <CardHeader>
+                    <CardTitle>Select a project and timeline</CardTitle>
+                    <CardDescription>
+                      Use the selectors above to open a timeline from the local Astrid bridge.
+                    </CardDescription>
+                  </CardHeader>
+                </Card>
+              ) : (
+                <Card className="w-full max-w-md">
+                  <CardHeader>
+                    <CardTitle>Timeline not found</CardTitle>
+                    <CardDescription>No such project/timeline under the bridge projects root.</CardDescription>
+                  </CardHeader>
+                </Card>
+              )}
+            </div>
+          </>
         )}
       </div>
     );
@@ -842,14 +796,7 @@ export default function VideoEditorPage() {
   if (!selectedProjectId) {
     return (
       <div className="flex h-full w-full flex-col bg-background">
-        <div className={devHeaderClass(localModeAvailable, reservesTopPaneTabGutter)}>
-          <DevModeToggle
-            localModeAvailable={localModeAvailable}
-            mode={mode}
-            setMode={handleModeChange}
-            disabled={isSwitchBlockedBySave}
-          />
-        </div>
+        {selectorsHeader}
         <TimelineList
           onSelect={(nextTimelineId) => {
             setSearchParams({ timeline: nextTimelineId });
@@ -862,25 +809,35 @@ export default function VideoEditorPage() {
   if (!userId || !providerSelection || !appTimelineId) {
     if (timelines.error) {
       return (
-        <div className="flex h-screen items-center justify-center bg-background px-6">
-          <Card className="w-full max-w-md">
-            <CardHeader>
-              <CardTitle>Unable to open video editor</CardTitle>
-              <CardDescription>{timelines.error.message}</CardDescription>
-            </CardHeader>
-          </Card>
+        <div className="flex h-full w-full flex-col bg-background">
+          {selectorsHeader}
+          <div className="flex flex-1 items-center justify-center bg-background px-6">
+            <Card className="w-full max-w-md">
+              <CardHeader>
+                <CardTitle>Unable to open video editor</CardTitle>
+                <CardDescription>{timelines.error.message}</CardDescription>
+              </CardHeader>
+            </Card>
+          </div>
         </div>
       );
     }
 
-    return null;
+    return (
+      <div className="flex h-full w-full flex-col bg-background">
+        {selectorsHeader}
+        <div className="flex flex-1 items-center justify-center px-6">
+          <div className="w-full max-w-4xl space-y-4">
+            <Skeleton className="h-20 w-full" />
+            <Skeleton className="h-20 w-full" />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className={cn('flex h-full w-full flex-col overflow-hidden bg-background')}>
-      <div className={devHeaderClass(localModeAvailable, reservesTopPaneTabGutter)}>
-        <DevModeToggle localModeAvailable={localModeAvailable} mode={mode} setMode={setMode} />
-      </div>
       <div className="min-h-0 flex-1 overflow-hidden">
         <VideoEditorProvider
           key={providerSelection.remountKey}
@@ -891,11 +848,13 @@ export default function VideoEditorPage() {
           userId={providerSelection.userId}
           onSaveStatusChange={setMountedSaveStatus}
           extensions={resolvedExtensions}
+          timelineOverlaysEnabled={timelineOverlaysEnabled}
         >
           <ReighVideoEditorShell
             mode="full"
             timelineId={providerSelection.timelineId}
             onCreateTimeline={() => navigate('/')}
+            navigationControls={selectors}
           />
         </VideoEditorProvider>
       </div>
