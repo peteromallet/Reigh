@@ -152,7 +152,20 @@ const RemotionPreviewComponent = forwardRef<PreviewHandle, RemotionPreviewProps>
 
   useImperativeHandle(ref, () => ({
     seek(time: number) {
-      playerRef.current?.seekTo(Math.max(0, Math.round(time * metadata.fps)));
+      const player = playerRef.current;
+      if (!player) {
+        return;
+      }
+      const nextFrame = Math.max(0, Math.round(time * metadata.fps));
+      // Remotion's imperative seekTo pauses a playing player; resume so
+      // scrubbing the playhead while playing keeps playback live instead of
+      // parking in the new spot. Seeking to the final frame is "ended" in
+      // Remotion — leave it parked there.
+      const wasPlaying = player.isPlaying();
+      player.seekTo(nextFrame);
+      if (wasPlaying && nextFrame < metadata.durationInFrames - 1) {
+        player.play();
+      }
     },
     play() {
       playerRef.current?.play();
@@ -166,7 +179,7 @@ const RemotionPreviewComponent = forwardRef<PreviewHandle, RemotionPreviewProps>
     get isPlaying() {
       return playerRef.current?.isPlaying() ?? isPlaying;
     },
-  }), [isPlaying, metadata.fps]);
+  }), [isPlaying, metadata.fps, metadata.durationInFrames]);
 
   useEffect(() => {
     if (isPlaying || currentTime === undefined) {

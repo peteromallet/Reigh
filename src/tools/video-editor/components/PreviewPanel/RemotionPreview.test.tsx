@@ -2,12 +2,17 @@
 import React, { createRef } from 'react';
 import { act, render } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { RemotionPreview } from '@/tools/video-editor/components/PreviewPanel/RemotionPreview';
+import { RemotionPreview, type PreviewHandle } from '@/tools/video-editor/components/PreviewPanel/RemotionPreview';
 import type { ResolvedTimelineConfig } from '@/tools/video-editor/types';
 
 const playerListeners = new Map<string, Set<(...args: any[]) => void>>();
 const playerPropsHistory: Array<{ config: ResolvedTimelineConfig }> = [];
-const playerHandles: Array<{ seekTo: ReturnType<typeof vi.fn>; getCurrentFrame: ReturnType<typeof vi.fn> }> = [];
+const playerHandles: Array<{
+  seekTo: ReturnType<typeof vi.fn>;
+  getCurrentFrame: ReturnType<typeof vi.fn>;
+  play: ReturnType<typeof vi.fn>;
+  isPlaying: ReturnType<typeof vi.fn>;
+}> = [];
 
 vi.mock('@remotion/player', async () => {
   const React = await import('react');
@@ -21,7 +26,9 @@ vi.mock('@remotion/player', async () => {
       React.useImperativeHandle(ref, () => {
         const seekTo = vi.fn();
         const getCurrentFrame = vi.fn(() => 0);
-        playerHandles.push({ seekTo, getCurrentFrame });
+        const play = vi.fn();
+        const isPlaying = vi.fn(() => false);
+        playerHandles.push({ seekTo, getCurrentFrame, play, isPlaying });
         return {
           addEventListener: (name: string, listener: (...args: unknown[]) => void) => {
             if (!playerListeners.has(name)) {
@@ -34,10 +41,10 @@ vi.mock('@remotion/player', async () => {
           },
           seekTo,
           getCurrentFrame,
-          play: vi.fn(),
+          play,
           pause: vi.fn(),
           toggle: vi.fn(),
-          isPlaying: vi.fn(() => false),
+          isPlaying,
         };
       }, []);
 
@@ -296,5 +303,67 @@ describe('RemotionPreview', () => {
     );
 
     expect(playerHandles.at(-1)?.seekTo).not.toHaveBeenLastCalledWith(23);
+  });
+
+  it('resumes playback when scrubbing the playhead while playing', () => {
+    const previewRef = createRef<PreviewHandle>();
+    const onTimeUpdate = vi.fn();
+    const playerContainerRef = createRef<HTMLDivElement>();
+
+    render(
+      <RemotionPreview
+        ref={previewRef}
+        config={makeConfig('scrub-resume', 3)}
+        onTimeUpdate={onTimeUpdate}
+        playerContainerRef={playerContainerRef}
+      />,
+    );
+
+    act(() => {
+      emitPlayerEvent('play');
+    });
+
+    const player = playerHandles.at(-1)!;
+    player.isPlaying.mockReturnValue(true);
+
+    act(() => {
+      previewRef.current?.seek(2);
+    });
+
+    // 2s @ 30fps = frame 60 (mid-timeline, 90-frame clip), and playback
+    // continues instead of parking in the new spot.
+    expect(player.seekTo).toHaveBeenLastCalledWith(60);
+    expect(player.play).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves playback parked when scrubbing to the final frame while playing', () => {
+    const previewRef = createRef<PreviewHandle>();
+    const onTimeUpdate = vi.fn();
+    const playerContainerRef = createRef<HTMLDivElement>();
+
+    render(
+      <RemotionPreview
+        ref={previewRef}
+        config={makeConfig('scrub-end', 3)}
+        onTimeUpdate={onTimeUpdate}
+        playerContainerRef={playerContainerRef}
+      />,
+    );
+
+    act(() => {
+      emitPlayerEvent('play');
+    });
+
+    const player = playerHandles.at(-1)!;
+    player.isPlaying.mockReturnValue(true);
+
+    act(() => {
+      // seek(3) → frame 90, past the last frame (89) of the 90-frame clip;
+      // Remotion treats reaching the end as "ended", so no resume.
+      previewRef.current?.seek(3);
+    });
+
+    expect(player.seekTo).toHaveBeenLastCalledWith(90);
+    expect(player.play).not.toHaveBeenCalled();
   });
 });
