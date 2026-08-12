@@ -90,4 +90,20 @@ describe('useHomeNavigation', () => {
 
     expect(navigate).toHaveBeenCalledWith('/tools/travel-between-images');
   });
+
+  it('ignores leftover local params when DEV is off (production cannot reach the bridge)', () => {
+    const originalDev = import.meta.env.DEV;
+    (import.meta.env as Record<string, unknown>).DEV = false;
+    currentLocation = { pathname: '/tools/video-editor', search: '?localProject=demo&localTimeline=abc', hash: '' };
+
+    const { result } = renderHook(() => useHomeNavigation());
+
+    act(() => {
+      result.current.navigateHome();
+    });
+
+    expect(navigate).toHaveBeenCalledWith('/tools/travel-between-images');
+
+    (import.meta.env as Record<string, unknown>).DEV = originalDev;
+  });
 });

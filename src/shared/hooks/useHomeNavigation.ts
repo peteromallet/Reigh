@@ -15,11 +15,12 @@ import { videoEditorSettings } from '@/tools/video-editor/settings/videoEditorDe
 
 const FALLBACK_GENERATION_METHODS = { onComputer: true, inCloud: true };
 
-/** True on the backend-free local-mode editor route (`?localProject`/`?localTimeline`). */
+/** True on the backend-free local-mode editor route (`?localProject`/`?localTimeline`). DEV-only: the page itself ignores local params when DEV is off. */
 function isLocalModeEditorLocation(pathname: string, search: string): boolean {
   const params = new URLSearchParams(search);
   return (
-    pathname.startsWith('/tools/video-editor')
+    import.meta.env.DEV
+    && pathname.startsWith('/tools/video-editor')
     && (params.has('localProject') || params.has('localTimeline'))
   );
 }

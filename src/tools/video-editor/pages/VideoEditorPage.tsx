@@ -55,7 +55,7 @@ type ProviderSelection = {
   projectId: string | null;
   timelineId: string;
   timelineName: string | null;
-  userId: string;
+  userId: string | null;
   remountKey: string;
 };
 
