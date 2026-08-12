@@ -121,7 +121,9 @@ describe('RemotionPreview', () => {
     );
 
     act(() => {
-      vi.runAllTimers();
+      // One animation frame (16ms) — a 150ms debounce would NOT have flushed yet,
+      // so this pins the rAF-mailbox delivery, not just "eventually applies".
+      vi.advanceTimersByTime(16);
     });
 
     // The edit reaches the Player on the next animation frame — no pause needed.
@@ -165,7 +167,9 @@ describe('RemotionPreview', () => {
     const entriesBeforeFlush = playerPropsHistory.length;
 
     act(() => {
-      vi.runAllTimers();
+      // Exactly one animation frame: the burst coalesces into a single flush.
+      // A debounce-style delivery would still be pending at 16ms.
+      vi.advanceTimersByTime(16);
     });
 
     // One frame flush: only the last config of the burst reaches the Player.
