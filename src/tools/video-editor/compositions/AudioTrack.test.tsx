@@ -3,6 +3,7 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AudioTrack } from '@/tools/video-editor/compositions/AudioTrack';
+import { secondsToFrames } from '@/tools/video-editor/lib/config-utils';
 import type { ResolvedTimelineClip, TrackDefinition } from '@/tools/video-editor/types';
 
 const sequenceProps: Array<Record<string, unknown>> = [];
@@ -94,5 +95,21 @@ describe('AudioTrack', () => {
     expect(screen.getByTestId('media-audio')).toBeInTheDocument();
     expect(sequenceProps[0]?.premountFor).toBe(24);
     expect(mediaAudioProps[0]?.pauseWhenBuffering).toBe(false);
+  });
+
+  it('remounts the audio sequence when a clip moves mid-playback (keyed on at)', () => {
+    const { rerender } = render(<AudioTrack track={track} clips={[clip]} fps={30} />);
+
+    const firstSequenceNode = screen.getByTestId('sequence');
+    const firstAudioMounters = html5AudioProps.length;
+
+    const movedClip: ResolvedTimelineClip = { ...clip, at: 5 };
+    rerender(<AudioTrack track={track} clips={[movedClip]} fps={30} />);
+
+    // The Sequence key includes `at`, so a move remounts the subtree — the only
+    // path that re-times Remotion audio during playback.
+    expect(screen.getByTestId('sequence')).not.toBe(firstSequenceNode);
+    expect(html5AudioProps.length).toBe(firstAudioMounters + 1);
+    expect(sequenceProps.at(-1)?.from).toBe(secondsToFrames(5, 30));
   });
 });

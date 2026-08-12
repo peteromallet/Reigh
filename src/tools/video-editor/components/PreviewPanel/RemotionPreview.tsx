@@ -43,9 +43,18 @@ const RemotionPreviewComponent = forwardRef<PreviewHandle, RemotionPreviewProps>
   // The timeline canvas shows immediate visual feedback; the Player catches up after 150ms idle.
   const [deferredConfig, setDeferredConfig] = useState(config);
   const deferTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingConfigRef = useRef<ResolvedTimelineConfig | null>(null);
+  // Live-edit mailbox: while playing, timeline edits must reach the Player on
+  // the next animation frame (live media updates, no pause+restart), but no
+  // more than once per frame so rapid commits can't cause renderer jank.
+  const latestConfigRef = useRef<ResolvedTimelineConfig | null>(null);
+  const rafRef = useRef<number | null>(null);
   const flushDeferredConfig = (nextConfig: ResolvedTimelineConfig, delayMs: number) => {
-    if (deferTimerRef.current) clearTimeout(deferTimerRef.current);
+    // Guard is load-bearing: it narrows `Timeout | null` away (this lib mix
+    // rejects null) and resets the ref so a stale timer can't double-fire.
+    if (deferTimerRef.current) {
+      clearTimeout(deferTimerRef.current);
+      deferTimerRef.current = null;
+    }
     if (delayMs <= 0) {
       setDeferredConfig(nextConfig);
       return;
@@ -55,16 +64,37 @@ const RemotionPreviewComponent = forwardRef<PreviewHandle, RemotionPreviewProps>
 
   useEffect(() => {
     if (isPlaying) {
-      pendingConfigRef.current = config;
-      return;
+      latestConfigRef.current = config;
+      if (rafRef.current === null) {
+        rafRef.current = requestAnimationFrame(() => {
+          rafRef.current = null;
+          const nextConfig = latestConfigRef.current;
+          latestConfigRef.current = null;
+          if (nextConfig) {
+            setDeferredConfig(nextConfig);
+          }
+        });
+      }
+    } else {
+      // Paused: flush any in-flight live update immediately, then debounce idle edits.
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      const nextConfig = latestConfigRef.current ?? config;
+      const delayMs = latestConfigRef.current ? 0 : 150;
+      latestConfigRef.current = null;
+      flushDeferredConfig(nextConfig, delayMs);
     }
-
-    const nextConfig = pendingConfigRef.current ?? config;
-    const delayMs = pendingConfigRef.current ? 0 : 150;
-    pendingConfigRef.current = null;
-    flushDeferredConfig(nextConfig, delayMs);
     return () => {
-      if (deferTimerRef.current) clearTimeout(deferTimerRef.current);
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      if (deferTimerRef.current) {
+        clearTimeout(deferTimerRef.current);
+        deferTimerRef.current = null;
+      }
     };
   }, [config, isPlaying]);
 
@@ -83,6 +113,18 @@ const RemotionPreviewComponent = forwardRef<PreviewHandle, RemotionPreviewProps>
       compositionHeight: Math.max(1, height),
     };
   }, [deferredConfig.clips, deferredConfig.output.fps, deferredConfig.output.resolution]);
+
+  // Live edits can shrink the timeline mid-playback; park the playhead on the
+  // last frame instead of running past (or looping past) the new end.
+  useEffect(() => {
+    if (!isPlaying) {
+      return;
+    }
+    const player = playerRef.current;
+    if (player && player.getCurrentFrame() >= metadata.durationInFrames) {
+      player.seekTo(Math.max(0, metadata.durationInFrames - 1));
+    }
+  }, [isPlaying, metadata.durationInFrames]);
 
   useEffect(() => {
     markEventsEffect();
