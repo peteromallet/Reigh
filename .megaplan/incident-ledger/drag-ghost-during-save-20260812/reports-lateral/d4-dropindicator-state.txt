@@ -1,0 +1,21 @@
+## Verdict: `refuted` — `show()` has no guard that can no-op on drag #2
+
+**The guard the lens predicts does not exist.** `DropIndicator.show` (DropIndicator.tsx:51–53) is:
+
+```ts
+show(nextPosition) { setPosition(nextPosition); }
+```
+
+No null/unchanged-position check, no already-visible check, no `isNewTrack` logic, no `editAreaRef` check. React's only bail-out — `Object.is` equality with the prior state — is impossible because `toIndicatorPosition` (useDragCoordinator.ts:66–86) allocates a fresh object on every `update`.
+
+**What drag #1's end leaves:** `hide()` (57–60) sets `position(null)` + `secondaryGhosts([])`. `show` reads nothing that `hide` sets or unsets. `end()` (111–120) also nulls `frameRef`, `pendingIndicatorRef`, and `lastPositionRef` — a fully clean slate; nothing survives to trip drag #2.
+
+**`useLayoutEffect` (63–89)** only toggles `drop-target-new-track` classes and the label; it never gates ghost visibility. `editAreaRef` null (99–105) only suppresses the new-track edge, not the ghost — and the ghost portals to `document.body` regardless. CSS `.drop-indicator-ghost` (timeline-overrides.css:87–96) has no display/visibility rules; nothing class-based can leave it hidden.
+
+**Coordinator equality/throttle:** none. `update` (122–161) unconditionally sets `pendingIndicatorRef` and, if `frameRef.current === null`, schedules one rAF `flushIndicator` (155–158) — coalescing batches moves, never drops the show. Even the fallback path (131–135) returns a position.
+
+**The only genuine silent no-ops:** `indicatorRef.current?.show(pending)` (useDragCoordinator.ts:108) — optional chaining when the ref is null (DropIndicator unmounted; it renders unconditionally at TimelineEditorCore.tsx:818, so this needs a full editor remount, e.g. a save-triggered key/remount — a different mechanism than a guard) — or `pending` null if `end()` ran between `update` and the rAF (a drag-end, not this symptom).
+
+**Negative search:** evidence pack `drag-ghost-during-save-20260812` not present in repo (searched workspace root, docs, `.megaplan`); analysis is code-only.
+
+**Confidence:** high that the guard hypothesis is refuted. If drag #2 shows no ghost while the drop commits, the cause is ref nulling/unmount (stale `indicatorRef`), not an internal `show()` guard — every call with a fresh object re-renders.

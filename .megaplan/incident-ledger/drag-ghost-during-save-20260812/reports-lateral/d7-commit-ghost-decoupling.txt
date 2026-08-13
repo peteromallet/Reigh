@@ -1,0 +1,18 @@
+## Verdict
+
+**The fork is inside `coordinator.update()` in `useDragCoordinator.ts` — the fallback branch at lines 130–135 vs. the full branch at 137–160.** The commit and ghost read *different outputs of the same `update()` call*, and the fallback sets only the commit's output.
+
+**What the commit reads** (`useClipDrag.ts:367–370`, pointerup):
+- `coordinator.lastPosition` → `lastPositionRef.current`, set in **both** branches: line 133 (fallback) and line 152 (full).
+- `actionDragStateRef.current.latestStart` (line 368), set in `updateDragState` (line 206) from the return value of `update()` — which the fallback also returns (a `buildFallbackPosition`, line 47).
+- Hard fallback `intent.clipOffsets…initialStart` (line 369) + `session.sourceRowId` — pure drag-machine state, coordinator-free.
+
+**What the ghost reads** (`useDragCoordinator.ts:153–158 → 101–109 → DropIndicator.tsx:51–52`):
+- `pendingIndicatorRef` — set **only** in the full branch (line 153).
+- The rAF `flushIndicator` → `indicatorRef.current?.show()` → `setPosition` → `.drop-indicator-ghost` DOM. Scheduled **only** in the full branch (lines 155–158). The fallback skips both lines — no pending, no rAF, no shadow. The ghost has *no* fallback path.
+
+**Why the commit survives drag #2:** When `update()` takes the fallback — `editAreaRef.current?.closest('.timeline-wrapper')` returns null (line 130) — it still writes `lastPositionRef` and returns a position, so `latestStart` gets snapped and the commit fires `moveClipToRow` (helpers.ts:467) — the clip visibly moves (jumps to snapped `time:0`). The commit is ref/state-driven and DOM-independent; even if `update()` never ran, it degrades to `initialStart` + `sourceRowId`, still "committing." The ghost is DOM-driven: it needs the wrapper → `computeDropPosition` → pending → rAF flush chain to execute, and on drag #2 (after drag #1's commit + save replaced the edit-area DOM) the stale `editAreaRef.current` makes `wrapper` null, silently routing every update into the fallback.
+
+**Confidence:** High on the fork mechanics and the commit/ghost state asymmetry (line-precise, both paths traced end-to-end). Medium on the *trigger* (why the wrapper lookup fails post-save) — that's D3/D4's DOM-anchor evidence, not this file's.
+
+**Negative search:** commit does **not** recompute `computeDropPosition` at drop (no second call site); it reuses `lastPosition`/`latestStart` from the same `update()`; `snapDrag` is shared, not divergent; `DropIndicator` is unconditionally mounted (TimelineEditorCore.tsx:818), so `indicatorRef` isn't null; `RafLoopDetector` is inert without the diagnostics flag; `end()` correctly nulls frame/pending/lastPosition between drags, ruling out stale-cache carryover.

@@ -1,0 +1,15 @@
+**Verdict.** The e2e route-interception test is most likely to settle it: the symptom is a real-session, real-geometry report, and jsdom geometry is fake. A unit/integration test settles "never mounts vs mounts-then-clears" cheaply; the e2e reproduces the exact user sequence deterministically by holding the save open. Do both, e2e first.
+
+**Existing coverage (what it already tells us).**
+- `useClipDrag.test.tsx` — injects a **mock** coordinator via `createTimelineStore` + `syncSlices`; asserts only that `interactionStateRef.drag` flips after 4px. Ghost mounting is never asserted.
+- `DropIndicator.test.tsx` — asserts `.drop-indicator-ghost` renders on `show({isNewTrack:false})`, and (implicitly) is absent for `isNewTrack:true` (new-track zone renders only row/edge).
+- `useTimelinePersistence.test.tsx:192-265` — save deferral while `drag/resize === true`, flush-on-idle. One direction only; no test starts a drag with a save pending.
+- No `drop-position.test.ts`; no e2e drags a clip during in-flight save (`desktop-interaction.spec.ts` selects/zooms only; `extension-overlays.spec.ts` drags markers, never asserts the ghost).
+
+**Repro design.**
+1. *Integration* (`src/tools/video-editor/hooks/dragDuringSave.test.tsx`): compose the proven seams — `renderHook(useDragCoordinator)` with real `DropIndicator` + real `computeDropPosition` over `setupDom`-style geometry, inject the real coordinator into the store, mount the persistence harness's `scheduleSave`. Sequence: `dataRef.current = makeData()` → `scheduleSave(data)` → `vi.advanceTimersByTime(500)` (debounce pending, POST unsettled) → `pointerdown` + `pointermove >4px` → flush rAF → assert `document.body.querySelector('.drop-indicator-ghost')` non-null and `ghostWidth > 0` (rejects fallback zeros). Reuse the deferral assertion until `pointerup`.
+2. *e2e* (`desktop-interaction.spec.ts`): `page.route` the save POST with a 2s-delayed fulfill; make an edit; immediately `mouse.down/move` on a clip; assert `.drop-indicator-ghost` count === 1; release route.
+
+**Live probe (read-only).** Log in: `updateDragState` (`[probe] move`, `editAreaRef null?`), `useDragCoordinator.update` (fallback path taken?), `flushIndicator`/`DropIndicator.show` (isNewTrack, ghostLeft/Width), `DropIndicator.hide` + `coordinator.end()` call sites, `enterDragging`. Disambiguation: enterDragging+update logged, show never → *never mounts*; show then hide → *mounts-then-clears* (log who called end); show with 0/NaN coords → *mispositioned*.
+
+**Confidence.** High on seam feasibility (all harnesses exist in tests); medium-high that the e2e reproduces (depends on stub route interception). The static gap is confirmed: no drag→save coupling exists, so the test must simulate observable save-in-flight conditions, not a nonexistent `isSavingRef` gate.

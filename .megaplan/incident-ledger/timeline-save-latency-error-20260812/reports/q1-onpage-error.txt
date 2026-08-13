@@ -1,0 +1,31 @@
+## Verdict
+
+- **(a) Real transient failure, retried with backoff — supported** (toolbar badge, low-visibility)
+- **(b) Watchdog false alarm on a slow/in-flight save — supported as the primary visible surface**
+- **(c) Conflict banner requiring user action — refuted** (a conflict never auto-succeeds; diverged state freezes autosave until Reload / Save-as-copy)
+
+## The exact UI surfaces
+
+1. **Toolbar save badge** — `components/TimelineEditorShellToolbar.tsx:64-68`: `<Badge variant={STATUS_VARIANT[chrome.saveStatus]}>` with literal text `chrome.saveStatus`. `error` → `destructive` variant (`:12-17`). No testid. Same badge shows `saving`/`saved`/`dirty`. `CompactPreview.tsx:60` also prints the raw word (`Timeline {id} · {saveStatus}`).
+2. **Write-ack watchdog banner** — `components/TimelineEditorShellCore.tsx:501-515`, `role="alert"`, no testid. Timeout: *"Your changes have not been saved: the save never got a confirmation."* + **Retry save** button. Lost-edit: *"Your edits could not be applied — the timeline is not loaded yet…"* + **Dismiss**.
+3. **Conflict banner** — `TimelineEditorShellCore.tsx:519-534`: *"This timeline changed elsewhere. Reload, or save your work as a copy."* + Reload / Save as copy. (User-action surface — not this incident.)
+4. **No save-failure toast exists.** Bounded: `toast.error` call sites are only asset/registry/timeline-CRUD (`VideoEditorProvider.tsx:190-214,462-481`, `VideoEditorPage.tsx:320,614`, `useExternalDrop.ts:565`). Persistence emits none.
+5. Off-page: `VideoEditorPage.tsx:471-472` confirm *"The last timeline save failed. Switch editors anyway?"* on provider switch.
+
+## Mechanism (from `useTimelinePersistence.ts`)
+
+`SaveStatus = 'saved'|'saving'|'dirty'|'error'` (`:18`; no `idle`/`conflict`). Transport catch (`:332-363`): `setSaveStatus('error')` + `scheduleErrorRetry` — exponential backoff `500ms·2ⁿ` capped `8_000ms` (`:31-32,240`), unbounded attempts. Watchdog: `scheduleSave` arms once per edit (`armWatchdog`, `:417`, grace `5_000ms` `:38`); **not re-armed by retries** (`:243-256` calls `doSave` directly). Cleared only by `saveSuccess` → `clearWatchdog` (`:575`), reload (`:500`), or Retry save (`:466-477`).
+
+## saveStatus + watchdog timeline (one cycle)
+
+1. edit → `scheduleSave`: `dirty` (`:431`), watchdog armed (fires t+5s)
+2. +500ms debounce → `doSave`: `saving` (`:277`)
+3. transport failure → `error` (`:359`), backoff timer
+4. retry fires → `saving` again; badge error clears at retry start
+5. ack → `clearErrorRetry`, `saved` (`:304,327`), emit `saveSuccess` → banner (if tripped) clears
+
+So the error badge shows **during backoff windows** (transient), while the banner trips at 5s if a slow in-flight save (or still-failing retries) hasn't acked — and both auto-clear when the save later succeeds. That matches "error before save eventually succeeds" without user action → fix category: **b** (watchdog false alarm), with **a** as the real-but-transient badge.
+
+## Confidence + bounded negative search
+
+High on surfaces/state machine (all code read); medium on which surface the user saw (timing-dependent). Negatives: `docs/timeline-save-sync-incident-20260811.md` **does not exist** in this repo or git history (only `docs/realtime_dead_mode_incident.md`); no `*incident*` files; no toast on failure; no testids on badge/banners. Read-only; no edits.

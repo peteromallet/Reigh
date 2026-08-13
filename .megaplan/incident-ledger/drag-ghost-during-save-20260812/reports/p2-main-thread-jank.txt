@@ -1,0 +1,38 @@
+All artifacts examined. Compiling the lens report.
+
+---
+
+## P2 — Main-thread jank lens: verdict **REFUTED**
+
+**Claim:** save-path synchronous work starves `pointermove`, so the ghost never updates. The evidence does not support it.
+
+### Inventory of synchronous work per save (payload ~4–10KB)
+
+| Step | Sync cost |
+|---|---|
+| `doSave` preamble: `setSaveStatus('saving')` | µs (React dispatch) |
+| `saveTimeline`: `fetchTimelinePayload` (cache hit — no clone; `registry` passed in, so `normalizeRegistry` skipped) | ~0 |
+| `JSON.stringify({config, registry, expected_version})` | ~20–60µs |
+| `fetch()` body + `AbortSignal.timeout` | ~µs (body is a pre-built string) |
+| `parseBridgePayload` (zod parse of response) | ~0.1–1ms — largest single item |
+| `cachePayload`: `normalizeConfig` + `normalizeRegistry` clones (JSON round-trips) + `rebuildAssetMaps` | ~10–150µs |
+| `onSuccess` → `commitData` → `setData` → **full TimelineEditor re-render** | **5–50ms, one-shot** |
+| `finally` drain of `pendingSaveRef` | re-invokes `doSave`; no re-serialization at drain itself |
+
+Total non-render sync per save: **<2ms**. The POST round trip — the entire "saving" window — is async; the main thread is idle while it's in flight.
+
+### Pointermove path
+- The drag does **not** commit on pointermove. `updateDragState` → `coordinator.update` → `computeDropPosition` (pure math, reads `dataRef` only) + `snapDrag` + rAF-batched imperative ghost DOM (`flushIndicator`). No React state churn, no save coupling — confirmed zero `isSavingRef`/`saveStatus`/`scheduleSave` references in the whole drag chain.
+- `compileTimelinePatch` has **no production callers** (test-only) — not on the save or drag path.
+- IndexedDB draft writes/clears are promise-based IDB, fire-and-forget, only on conflict/success paths — never synchronous.
+
+### Why starvation can't produce the symptom
+1. Serialization is sub-millisecond — imperceptible even as a microtask chain.
+2. Pointer events coalesce to the **latest coordinates**: a janked frame set delivers the newest position, so a delayed ghost *jumps*, it doesn't stay absent.
+3. The only real cost — the save-success re-render — is one-shot and happens *when the save settles*; it cannot freeze the ghost "until the save is done" (that render *is* the settle event).
+4. `materializeGenerationAssets` confirmed no-op on the HTTP path (`localTimelineFiles === null` early return; unreachable in the local branch's guard anyway).
+
+### Confidence
+**0.75** — high on mechanism (code-level), moderate on absolute costs (estimated from payload size; read-only, no perf runs). Negative search: no sync IDB, no patch compile, no drag/save gate in either direction.
+
+The missing ghost is more likely render-batching (P1) or gesture-arbitration (P3) territory, not main-thread jank.

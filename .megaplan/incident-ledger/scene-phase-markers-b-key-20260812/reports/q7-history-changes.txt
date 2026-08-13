@@ -1,0 +1,26 @@
+## Verdict
+
+**"The render path is unchanged in the working tree vs HEAD" → REFUTED.** The working tree is a massive uncommitted src/ change (81 src files modified + 14 untracked), not a docs-only tree. And the "press B → visible marker" path was **never completed** — no commit broke it, because the entire path exists only as uncommitted/untracked work.
+
+## Commit history per artifact
+
+- `src/tools/video-editor/dev/scene-phase-markers/` — **no commits** (untracked, not in ls-files, empty log incl. `--all`).
+- `TimelineExtensionOverlayHost.tsx`, `TimelineMarkerLayer.tsx` (+ `.test.tsx`, `useTimelineMarkerDrag.ts`) — **untracked, zero commits**.
+- `useKeyboardShortcuts.ts` — tracked, clean vs HEAD; last commit `7d3a1fb48` (refactor: one name per concept). **Contains no `KeyB`/`'b'`/marker binding at all** — the "press B" dispatch never existed.
+- `VideoEditorPage.tsx` — tracked; last commit `e10c97b01` (B5). Uncommitted diff adds `timelineOverlaysEnabled = import.meta.env.DEV && ?timelineOverlayCanary=1` (T9.1 gate) and wires it into both provider branches.
+- No scene-phase-marker/overlay/B9 commit exists anywhere (checked `--all`).
+
+## `git status --short` classification
+
+- **Untracked src/** (the whole canary): `dev/scene-phase-markers/`, `TimelineExtensionOverlayHost.tsx`(+2 tests), `TimelineMarkerLayer.tsx`(+test), `useTimelineMarkerDrag.ts`, `lib/timeline-overlay-stores.ts`, `runtime/families/projectors/timelineOverlayProjector.ts`, `dev/devExtensionEnablement.ts`, `sdk/ui.ts`, `sdk/video/families/timelineOverlays.ts`, `runtime/VideoEditorDialogHost.test.tsx`.
+- **Modified src/**: 81 files (overlay host wiring, render surface, extension manager, timeline canvas/lib, providers, deleted Canary/ components, etc.) — ~5,300 changed lines.
+- **Docs/config/scripts/tests-e2e**: ~31 files (docs/video-editor/*, config/contracts|extensions|governance, scripts/quality/*). Docs are **not** the only category.
+
+## Prior incident / planned-not-implemented contradiction
+
+- Ledger: no prior incident — only this incident's own dir (`scene-phase-markers-b-key-20260812`); `incidents.json`/`problems.json` have zero scene-phase/overlay/B9 matches.
+- **Contradiction found:** docs *in this same working tree* (extension-platform-supported-deferred.md S-171, contract-recheck X-014, extensions-quickstart) say `?timelineOverlayCanary=1` is "planned for B9, **not yet implemented**" — but the uncommitted `VideoEditorPage.tsx` *does* implement it. Docs are stale relative to the uncommitted code; both are uncommitted.
+
+## Decision input
+
+Not a fresh regression from committed code — the overlay path is entirely uncommitted work-in-progress (B9 slice). The fix must consider the uncommitted tree (it *is* the feature), and the "B" binding must be added — it exists nowhere. Confidence: **high** (direct evidence: trackedness, empty logs, keybinding grep, docs quotes).

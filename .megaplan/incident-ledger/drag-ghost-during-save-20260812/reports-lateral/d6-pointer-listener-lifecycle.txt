@@ -1,0 +1,15 @@
+## Verdict: **refuted** — listener/capture lifecycle does not break drag #2's move stream. Drag #2's ghost failure has a different, stateful cause (below).
+
+### Add/remove symmetry (all symmetric)
+- **Mount-once effect** (`useClipDrag.ts:127`, deps `[dataRef, timelineWrapperRef, pixelsPerSecondRef]` — all stable: `createMutableRef` at `timelineStore.ts:146-148`, `useRef` at `useTimelineScale.ts:12`; a save re-render does **not** re-run the effect, so no mid-sequence re-install). Installs `document pointerdown` (`:451`) + `window blur` (`:452`); cleanup `effectController.abort()` (`:455`) + `endSession()` (`:454`).
+- **Per-drag listeners** (`:441-443`): `pointermove`/`pointerup`/`pointercancel` all share one per-session `AbortController` signal; removed atomically by `controller.abort()` inside `endSession` (`:156`). `endSession` is reached on **every** exit path: pointerup (`:388`, `:413`), pointercancel (`:421`), blur (`:447`), unmount (`:454`), and defensively at the start of the next pointerdown (`:307`). `enterDragging` adds no listeners; auto-scroller stopped at `:143`. No asymmetry exists.
+- **Pointer capture:** none in the clip-drag path (grep of 41 hits: only lightbox, TimeRuler, MarkerDrag, OverlayEditor, TrimTimelineBar, strokeOverlay). The shell's `capture:true` listener (`TimelineEditorShellCore.tsx:166`) is **keydown-only** — cannot touch pointer events.
+
+### Drop and ghost share one path
+`handlePointerMove` feeds both: it creates/updates the ghost (`:211-219`) **and** updates `coordinator.lastPosition` (`:180`), which `handlePointerUp` uses to commit (`:367`). Both listeners die together (same signal). A dead move stream would therefore also break the drop's position — the observed "drop works" proves the move stream is alive.
+
+### Actual cause of "no ghost on drag #2+"
+`createFloatingGhost` is called only when `!crossTrackActiveRef.current && |dy| ≥ 10px` (`:211-215`). Cross-track commits return `deferDeactivate:true` (`helpers:370,464`), which defers the reset of `crossTrackActiveRef` behind a rAF that only clears it `if (stateRef.current.phase === 'idle')` (`:167-175`). If drag #2's pointerdown lands while phase is already `pending` (fast successive drags, e.g. around a save), `crossTrackActiveRef` stays `true` permanently (each cross-track commit re-defers), so the ghost is never recreated — while `updateFloatingGhostPosition` no-ops on the null `floatingGhostEl` (`helpers:155`) and the drop still commits.
+
+### Confidence
+High. Negative search: all 19 `addEventListener('pointer*')` sites in video-editor use bubble-phase window/document targets; none `stopPropagation` clip-drag events; deps are stable refs.

@@ -1,0 +1,23 @@
+## Verdict: **supported**
+
+`primitives.markerLayer` renders visible DOM on the ruler strip when the host is mounted with data. No height/overflow/z-index/color defect in the pipeline.
+
+**DOM trace**
+- `ScenePhaseMarkersOverlay.tsx:100-109` → `primitives.markerLayer({ markers: [...label: String(index+1)], placement: 'ruler', interactive: true, snap: true, onChange })`. No `renderMarker`; uses `DefaultMarker` (colored rotated square + label, `TimelineMarkerLayer.tsx:118-131`).
+- Primitive factory: `TimelineExtensionOverlayHost.tsx:103-118` — `createPortal(<TimelineMarkerLayer .../>, rulerStripRoot)`. `placement !== 'ruler'` returns null (`TimelineMarkerLayer.tsx:295-297`); ScenePhaseMarkers passes `'ruler'`, so it renders.
+- Layer: `data-testid="timeline-marker-layer"`, `pointer-events-none absolute inset-x-0 top-0 h-5 overflow-visible` (`TimelineMarkerLayer.tsx:299-306`). Non-zero height (h-5 = 20px), overflow visible.
+- Markers: `<button data-testid="timeline-marker-{id}" data-marker-id=...>` absolute, `z-10`, `h-5`, `translateX(timeToPixel(time))` (`:188-219`). Color defaults to `#38bdf8` (non-transparent) since `readMarkers` returns only `{id, time}` (`extension.ts:274-277`).
+- Strip: `data-testid="timeline-extension-ruler-overlay-strip"`, `absolute left-0 top-0 h-full` (30px), `width: totalWidth` (`TimelineCanvas.tsx:852-857`); root is `z-20 h-[30px] overflow-hidden` (`:850`). Host translates strip by `-scrollLeft` (`TimelineExtensionOverlayHost.tsx:254-257`), so markers stay viewport-fixed.
+
+**Geometry**: `timeToPixel = startLeft + t * pixelsPerSecond` (`timelineOverlays.ts:152-153`); pixelsPerSecond = scaleWidth/scale. Markers within extent land inside `[0, totalWidth]` and inside the 30px strip. Culling only engages at ≥200 markers and keeps the viewport window (`TimelineMarkerLayer.tsx:80-99`).
+
+**Non-issues found**
+- Zero height: refuted — root/strip 30px, layer 20px.
+- Clipping: layer `overflow-visible`; root clips only markers beyond `totalWidth` (time > extentEnd) — data-scope, not a render bug.
+- Transparency: no.
+- Pointer: root/strip/layer are `pointer-events-none` but enabled marker buttons set inline `pointerEvents: 'auto'` (`:191`) — interactive markers are clickable/draggable; `interactive:true` without `onActivate` affects only click action, never visibility.
+- Z-index: root z-20 above ruler; no occlusion by tracks.
+
+**Confidence**: high. Negative search scope: `src/styles` and CSS modules contain no `.timeline-marker-layer` rules (all Tailwind inline); no other `markerLayer` factory exists (`src/sdk/video/families/timelineOverlays.ts` + host are the only definitions). Tests corroborate: marker asserted present in `rulerStripRoot` (`TimelineExtensionOverlayHost.integration.test.tsx:396,442`).
+
+**Implication**: "markers written but invisible" is not explained by the render pipeline — a gating/host-mount fix is the right target, not strip geometry.

@@ -1,0 +1,19 @@
+**Verdict: `supported`** — in a fresh DEV session (no localStorage), `com.reigh.scene-phase-markers` is in the dev list, enabled by default, and activated by the runtime.
+
+**Trace**
+1. **In list** — `dev/localExtensions.ts:23-25`: `devLocalExtensions = [scenePhaseMarkersExtension]` (manifest id `com.reigh.scene-phase-markers`, `dev/scene-phase-markers/extension.ts:57`).
+2. **Enabled by default** — `devExtensionEnablement.ts:32` stores only *disabled* ids under `reigh.dev-extensions.disabled`; `parseDisabled` (`:49-63`) maps absent/null/malformed storage to an empty Set. Fresh browser → empty disabled set → not filtered out. Test contract: `devExtensionEnablement.test.ts:90-110` (corrupt/non-array → empty snapshot), `:247` (no localStorage → empty, writes no-op).
+3. **DEV-only guard** — `VideoEditorPage.tsx:507-509`: `import.meta.env.DEV ? devLocalExtensions.filter(ext => !disabled.has(...)) : []` (literal guard, dropped in production). `ExtensionManager.tsx:313` same guard for the Local section.
+4. **Assembly → activate** — `VideoEditorPage.tsx:496-512` (`smokeDirectExtensions`) → `useExtensionLoaderWiring` with `repository: null` (fast path `runtime/useExtensionLoaderWiring.ts:363-389`, direct passthrough) → `extensions={resolvedExtensions}` (`VideoEditorPage.tsx:846`, `:912`) → `editorRuntimeAssembly.tsx:286-288` (`normalizeExtensionRuntime`), effect `:640-668` ingests command/keybinding contributions then `host.synchronize(...)` → `extensionLifecycle.ts:563+` creates lifecycles and calls `activate(ctx)` (`:235-319`).
+5. **Registrations** — `extension.ts:598-659`: `ctx.commands.registerCommand(MARK_PHASE_COMMAND, …)` (`:602`), `ctx.ui.registerRenderer` ×2 — footer (`:627`), timeline overlay (`:636`) — plus ready toast (`:645`).
+
+**Failure modes**
+- Thrown error in `activate()`: caught by the host → state `failed`, `lifecycle/activation-failed` diagnostic, and `console.error` under the `[Extension lifecycle]` group (`extensionLifecycle.ts:303-313`). Not a crash; the drawer surfaces extension diagnostics (the manager's Local section also shows the row as "Inactive", `ExtensionManager.tsx:140`).
+- Command-run errors: caught → `ctx.services.diagnostics.report` + error toast (`extension.ts:607-614`).
+- Note: activation failure is **not** silent — console + diagnostic at minimum; the "B does nothing" symptom is only silent if the failure is missed.
+
+**UI verification** — ExtensionManager → "Local extensions" (dev) section lists the canary with id, Enabled/Disabled toggle (`ExtensionManager.tsx:196-215`, `data-video-editor-dev-local-extension`), summary "Active"/"Inactive" (`:124-141`). Toggle writes `reigh.dev-extensions.disabled` via `setDevExtensionEnabled` (`:198`).
+
+**Caveats** — Production build: both guards are literal, so the extension is entirely absent (no B command). Activation-failed state persists per lifecycle until re-synchronize. Negative scope: searched `devLocalExtensions`, loader, lifecycle, and manager paths; did not audit `ExtensionStatusDrawer` rendering internals or the keybinding dispatch path (B key → command).
+
+Confidence: **high** for the fresh-DEV claim; "extension not active" is a plausible root cause only if the user ran production, disabled it, or activation failed (visible in console).

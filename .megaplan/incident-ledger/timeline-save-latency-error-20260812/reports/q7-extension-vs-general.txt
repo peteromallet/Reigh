@@ -1,0 +1,17 @@
+## Verdict: GENERAL persistence/bridge-layer problem — NOT extension-specific
+
+The code shows no cost differential that could make marker writes slow while clip/track edits stay fast. Every edit funnels through the same path, and the dominant cost is full-timeline serialization, independent of op type.
+
+**Evidence**
+
+1. **Same commit/save trigger.** `TimelineOps.apply` (useTimelineOps.ts:169–223) → `compileTimelinePatch` → `commitData(compiled.nextData, {save: true})` — identical for clip.move, zoom, and `project-data.write`. `commitData` (useTimelineCommit.ts:295–298) emits `scheduleSave` with the *full* `nextData` for every op. No project-data special-casing anywhere in the commit layer.
+2. **Compile cost is payload-independent.** After any op, compileTimelinePatch re-materializes the WHOLE config via `configToRows` + `rowsToConfig` + `assembleTimelineData` (timeline-patch.ts:1759–1800). A clip.move pays the same full rebuild as a marker write.
+3. **The bridge handler scales with total config, not markers.** Astrid's `append_config_replaced` (timeline_io.py:329–339) ships `config=dict(config)` — entire config per save, fired for every edit type.
+4. **Project-data.write-specific extras (all negligible):** validator `JSON.stringify(payload)` for the 64 KiB check (timeline-patch.ts:455); compile-time extension-total-bytes loop over the extension's entries (1636–1645). At ~21 markers both are microseconds. `deepMergeObject` only runs in `merge` mode; the extension uses `replace`.
+5. **Client side:** `normalizeMarkers`/`measureMarkersPayloadBytes` are O(n) on ≤21 items — trivial per press.
+
+**Marker payload size.** No session artifact exists in the workspace: bounded negative search — no `assembly.jsonl`, no `*.jsonl` in reigh-timeline-main, no jsonl containing `sceneMarkers`/`config_replaced`, no `*20260812*` files. Computed instead: per marker ≈ `{"id":"<uuid36>","time":<≤8 chars>}` ≈ 57–63 B → **12–21 markers ≈ 0.7–1.3 KB**, ~2% of the 64 KiB ceiling (800-marker worst case 49,601 B). Payload size is categorically NOT the cause.
+
+**Correlational check (same-log clip edits):** cannot be run — log absent.
+
+**Confidence: High (code-path), Limited (session evidence).** The only marker-write-specific costs are ~µs-scale; anything slow enough to error must live in the shared serialize→bridge/supabase path that every edit traverses. Fix targeting: **persistence/bridge layer**, not the extension's write pattern.

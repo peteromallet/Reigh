@@ -1,0 +1,34 @@
+## Verdict
+
+**"Error on-page then success" = Path A (transport retry), not the 409 path.** In the observed session both fired: early transient failures retried to success; then the 0-marker save at exp_ver 191 succeeded (clobbering markers), the next POST with expectedVersion 191 hit 409 vs remote 193 → diverged → saves stopped. Recovery 195→205 was a **fresh session** (reload), not in-place.
+
+## Branch map (`useTimelinePersistence.ts`, current post-B4 code)
+
+`doSave` POSTs `expectedVersion = configVersionRef.current`; `saveMutation` has `retry: false`. On **success**: `configVersionRef = nextVersion`, `clearErrorRetry()`, `setIsConflictExhausted(false)`. The `catch` block splits:
+
+- **409** (`isTimelineVersionConflictError`) → log `version conflict — entering diverged state {expectedVersion}` → `handleConflictExhausted` → `isConflictExhausted=true`, status `error`. **No retry, no re-POST** — the B4 comment confirms the reload-and-repost is deleted. The only re-save after a 409 is the single `pendingSaveRef` drain in `finally`, which re-POSTs the stale 191 → guaranteed second 409 → stops. It is a queued-edit drain, not a retry policy.
+- **404** → same `handleConflictExhausted` (`missing_local_data`).
+- **Anything else** (network timeout, 5xx) → status `error` + `scheduleErrorRetry`: logs `save failed, retrying {attempt, delayMs}`, backoff 500ms·2^N capped 8s, **unbounded attempts**, fires `doSave` directly (bypasses the `scheduleSave` gate), same frozen expectedVersion → eventual success advances `configVersionRef`.
+
+## Poll (`usePollSync`)
+
+First preflight gate: `isConflictExhaustedRef` → reject `'diverged'`; remote data is **not** adopted and `configVersionRef` is **not** updated — the poll cannot resolve diverged state; it freezes it. Only when not diverged does acceptance update `configVersionRef` to the remote version (normal remote-tracking; also rejects `own echo`/`unsaved edits`/`saving`).
+
+## What clears `isConflictExhausted`
+
+`reloadFromServer()`; `retrySaveAfterConflict()` (draft → reload); a fresh mount (`useTimeline.ts` queryFn line 22 sets `configVersionRef = timeline.configVersion`); `doSave` success (unreachable while diverged — the drain's re-POST 409s again). `scheduleSave` while diverged only stashes an IndexedDB draft.
+
+## Decision table
+
+| Error | Branch | On-page effect | Recovery |
+|---|---|---|---|
+| 409 | handleConflictExhausted | `version conflict — diverged`, banner, autosave frozen → drafts | Reload / Save-as-copy / new session only |
+| 404 | handleConflictExhausted | same | same |
+| timeout/5xx/other | scheduleErrorRetry | `save failed, retrying`, backoff 0.5→8s | **automatic** — timer re-POSTs until success |
+| unacked write (5s) | watchdog | persistent write-ack error | retryWatchdog → scheduleSave (frozen if diverged) |
+
+**"Error → success without reload" is possible in current code, only via Path A** (non-409, self-healing backoff). A 409 deliberately refuses to auto-heal.
+
+## Confidence
+
+High for branch mapping (full file + callers read). Bounded negative search: no other `configVersionRef` writers, no 409 retry anywhere; `useTimelineSync.ts` is unrelated (cursor playback). Caveat: commit a821af08d verified via in-code comments only, not git history.

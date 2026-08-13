@@ -1,0 +1,26 @@
+## Verdict: **supported** — with one nuance
+
+The clip-shaped shadow is inherently cross-track-only, and the 10px gate is save-independent. **Supported** for "save timing is not the cause"; the caveat is that same-track drags are not visualess — they get a dashed placeholder rect, just no cursor-following clone.
+
+### Exact visual contract (from code, not docs)
+
+**Same-track drag** (`|dy| < 10px` from drag start): no clip clone at all. The user sees, via `DropIndicator` (rAF-throttled `coordinator.show()` on every move — `useDragCoordinator.ts:153-158`):
+- `.drop-indicator-row` — accent-tinted row overlay
+- `.drop-indicator-line` — 2px insertion line at `ghostCenter`
+- `.drop-indicator-ghost` — **dashed-border rect at the target slot** (`DropIndicator.tsx:138-149`, `.drop-indicator-ghost` bg accent + dashed border), not following the cursor
+- a text label (`"Track · 2.5s"`)
+
+**Cross-track** (`|dy| >= CROSS_TRACK_THRESHOLD_PX = 10`, `useClipDrag.ts:41,210-219`): additionally `createFloatingGhost` clones the clip into `.cross-track-ghost` (opacity 0.8, cursor-following, `useClipDrag.helpers.ts:161-168`; `timeline-overrides.css:57-61`). That clone is **the only** clip-shaped shadow, and it is gated solely by vertical displacement.
+
+### Save coupling: none
+- `useClipDrag.ts` never reads `saveStatus`; the drag machine only touches `dataRef`/coordinator. Optimistic commit (`useTimelineCommit.ts` `applyEdit`) happens on pointerup, not during the drag.
+- The `saveStatus` badge ('saving'/'dirty'/'retrying') is page chrome (`VideoEditorPage.tsx`) — no drag-path coupling, no text change that cues a different drag visual.
+- A same-track drag during a save renders identically to one outside a save: dashed slot rect + line, no clone. The save badge is a perceptual distraction, not a cause.
+
+### Docs
+No product doc defines the drag-preview contract. `docs/structure_detail/tool_video_editor.md:76` documents the DropIndicator *mechanism* ("portaled and imperative; grep the class names") but no thresholds or the cross-track-only clone. `docs/video-editor/*` covers extension/proposal "ghost-render" — unrelated. `useTimelineCommit.ts` comments cover commit/save semantics only, never previews.
+
+### Confidence + negative search
+High (code-level, all gating constants read directly). Negative search: no `saveStatus` reference anywhere in `useClipDrag.ts`/`DropIndicator`/`useDragCoordinator`; no doc describing drag previews under persistence.
+
+**Implication:** the "fix" is UX clarification, not code — either document that the clone is cross-track-only, or (product call) add a same-track cursor-following ghost.

@@ -1,0 +1,16 @@
+## Verdict: `expectedVersion` does NOT structurally lag — it is head-0 in steady state. No 2-behind counting bug.
+
+**Version bookkeeping (every writer, exact ordering):**
+- Seed: `useTimelineSave.ts:44` — `configVersionRef = useRef(0)`. The editor's live path is `useTimelineState:477 useTimelineQueries` (no seeding) → `useTimelineSave` → this ref. The seeding in `useTimeline.ts:22` belongs to a different hook, not the editor's save path.
+- Poll: `usePollSync.ts:284` updates `configVersionRef` ONLY on accepted polls (idle gates + `setTimeout(0)`); `latestObservedRemoteConfigVersionRef` (line 163) updates unconditionally, but `doSave` reads `configVersionRef` (`useTimelinePersistence.ts:280`).
+- Save onSuccess: `configVersionRef = nextVersion` (line 301). Reload: line 504.
+
+**Why head-0, not head-2:** the bridge is the version authority. `save_bridge_timeline` appends config+registry atomically (`local_bridge.py:330–382`, `local_fs.py:177` strict-equality CAS under flock) and returns `config_version=backend.head().version` — the post-batch head (N+2 after pair@N). The editor stores it verbatim. It never *counts* events; registry bumps are counted implicitly.
+
+**assembly.jsonl (read-only, 207 events):** from 131 onward every save is an atomic pair at N, pairs at N, N+2, …; incident window: 191→193→195→…→205. Pair members land 0–0.7s apart, pairs 5–180s apart (human pacing), head = 207 = last pair + 2. Every CAS target matched head — zero even-numbered events, zero skipped versions, zero retry artifacts. All first-attempt successes. The "counts only config events" hypothesis predicts 192/194/196 — contradicted.
+
+**The real race (startup-only, not per-save):** ref seeded 0. If the first poll acceptance is rejected (unsaved edits/interaction/pending ops — gate at `usePollSync:256–264` and re-checked in `setTimeout(0)` at 269), the next chance is the 30s refetch (`useTimelineQueries.ts:15`). Any save before acceptance POSTs `expected_version: 0` → guaranteed 409 → diverged → B4 blocks → Reload seeds the ref → steady state. This yields exactly "error → reload → success" — but only for the first save after a cold mount, not every save.
+
+**Bounded negative search:** bridge CAS strict (`local_fs.py:177`); FSA sub-mode's +1 bump (`AstridBridgeDataProvider.ts:361`) is a separate path; poll gates ('own echo', 'stale version') never regress the ref; no other `configVersionRef` writers exist.
+
+**Confidence:** High (code + log agree on head-0). Medium-high on the startup race's incident role — the log cannot show rejected saves, so a cold-mount 409 can't be excluded, but the 191→205 run is pure steady state.

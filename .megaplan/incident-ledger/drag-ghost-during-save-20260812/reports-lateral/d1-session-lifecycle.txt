@@ -1,0 +1,17 @@
+## Verdict: **refuted** — no drag-session state from #1 leaks into #2 to skip ghost creation.
+
+Verified statically and empirically (4 scratch two-drag reproductions, all pass: ghost appears on drag #2 in every ordering — defer→immediate, rAF firing mid-pending, missed pointerup, same-track #1→cross-track #2).
+
+**Why each candidate self-heals:**
+
+- **`crossTrackActiveRef` (useClipDrag.ts:98)** — the *only* gate on ghost creation (`!crossTrackActiveRef.current && |dy| ≥ 10`, line 211). Set true at :212. Reset paths: :151 (endSession `!currentState` branch), :174 (normal end), :168-172 (deferred rAF, guarded by `phase === 'idle'`, only ever sets *false*). Critically, **every** drag-#2 pointerdown runs `endSession()` at line 307 *before* `buildPendingDragSession`, synchronously clearing it. It cannot be stale-true when drag #2's moves run.
+- **`interactionStateRef.current.drag`** — set :253, cleared :159. Only two production writers exist (grep-confirmed). It is **never read** by the drag machine; `enterDragging` (:245-260) guards solely on per-session `session.hasMoved`, which is freshly `false` each `buildPendingDragSession` (helpers.ts:340). A stale `drag=true` would only block save/poll — not ghost creation. (Its readers are the save scheduler — out of scope per instruction.)
+- **`gestureOwner`** — set `'clip'` :254, cleared `'none'` :161-163 for claimed sessions; and pointerdown *permits* `'clip'` anyway (:292).
+- **DOM ghost/count badge** — per-session refs (`floatingGhostEl: null`, helpers.ts:338), removed in `endSession` :157-158. `createFloatingGhost` (helpers.ts:161) does no stale-node lookup; it unconditionally clones.
+- **Threshold origin** — `startClientX/Y` are per-pointerdown (helpers.ts:310-311); never stale.
+
+**Ordering hazards — checked, none skip cleanup:** pointerup-before-enterDragging → pending branch (:392-413) does selection + `endSession`, no commit. pointercancel (:416), blur (:446), unmount (:454), and next pointerdown (:307) all funnel into `endSession`, which is idempotent (the `!currentState` branch still clears `actionDragStateRef` and `crossTrackActiveRef`). The commit *does* run whenever `phase === 'dragging'` regardless of `floatingGhostEl` (:366-389) — but the phase can't be reached without a clean session.
+
+**The design behavior that mimics the report:** the floating clone only exists for cross-track drags (`|dy| ≥ 10`, `CROSS_TRACK_THRESHOLD_PX`). Any drag with `|dy| < 10` commits with no shadow — by design, on every drag, not just subsequent ones.
+
+**Confidence:** high (80%). Caveats: the evidence pack isn't on disk (only the inline operator correction), and the repro used the mocked `DragCoordinator`. Negative search: no other writers of `drag`/`crossTrackActiveRef`; the only leak-shaped mechanism found (`deferDeactivate` rAF) is guarded and empirically harmless.

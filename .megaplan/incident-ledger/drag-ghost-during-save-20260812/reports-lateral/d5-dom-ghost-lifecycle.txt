@@ -1,0 +1,17 @@
+## Verdict: `refuted` — drag #2 does not reuse drag #1's ghost node
+
+**Lifecycle (file:line):**
+
+- **Create** — `createFloatingGhost` (`useClipDrag.helpers.ts:161-169`): `clipEl.cloneNode(true)`, adds `.cross-track-ghost`, `document.body.appendChild(el)`. **Unconditional fresh clone every call** — no existence check, no cache.
+- **Lookup** — none. `session.floatingGhostEl` is per-session (`helpers.ts:62`), initialized `null` in `buildPendingDragSession` (`helpers.ts:338`), and a new session object is built on every pointerdown (`helpers.ts:333-342`). Grep confirms `.cross-track-ghost` exists only at `helpers.ts:164` and `timeline-overrides.css:57` — zero `querySelector`/module-level refs anywhere.
+- **Attach** — body append (`helpers.ts:167`); positioned via `style.left/top` (`helpers.ts:157-158`), `position: fixed` CSS.
+- **Remove** — `endSession` (`useClipDrag.ts:142-176`): `floatingGhostEl?.remove()` (line 157), **synchronous, no rAF/timeout**. Runs on pointerup (388, 413), pointercancel (421), blur (447), effect cleanup (454), and — decisively — at the *start* of every subsequent pointerdown (`endSession()` at line 307), which removes any leftover from a prior drag.
+- **Persistence** — none at module scope. Only `crossTrackActiveRef`/`stateRef` are `useRef`s (per hook instance); the node itself lives only in the per-drag session.
+
+**Why the hypothesis fails:** drag #2 cannot find drag #1's node (no lookup mechanism), and creation has no "exists → skip" path. Even in a worst-case leak, line 307's `endSession()` purges it before the new session builds.
+
+**Source clip detachment:** `clipEl` is `eventTarget.closest(CLIP_ACTION_SELECTOR)` at pointerdown (`useClipDrag.ts:278`), or `findClipElement` by `data-clip-id` for label anchors (line 281) — resolved fresh from **live DOM each drag**. A save re-render *between* drags cannot detach drag #2's source. However, a save re-render *during* an active drag **can** detach `session.clipEl` (React replaces row nodes); the ghost then clones a detached node → `getBoundingClientRect()` = 0×0 → invisible zero-size ghost, while the commit path (`helpers.ts:346-470`) reads only store data, so the drop still commits. That reproduces the symptom but via mid-drag detachment, not reuse.
+
+**Alternative suspect:** `crossTrackActiveRef` stuck `true` would skip creation entirely (gate at `useClipDrag.ts:211`) — but line 307's `endSession()` resets it, so this needs a missed pointerdown; unconfirmed.
+
+**Confidence:** high on lifecycle (code unambiguous). Evidence pack `drag-ghost-during-save-20260812` not found in repo (searched `*20260812*`, `drag-ghost`); relied on the incident description in the prompt.

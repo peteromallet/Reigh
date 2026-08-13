@@ -1,0 +1,25 @@
+All chains verified. Writing the verdict:
+
+---
+
+## Verdict: **refuted** — save/poll responses cannot mutate drag-read data mid-gesture
+
+### Why the data is drag-stable
+
+`dataRef.current` is written by exactly one path: `commitData` (`useTimelineCommit.ts:262`). `computeDropPosition` reads `dataRef.current.rows` per pointermove (`drop-position.ts:92,103`). The only commitData writers reachable from a save/poll round trip:
+
+1. **Save ack** — `doSave` onSuccess (`useTimelinePersistence.ts:296-344`): commits `{...latestDataRef.current, configVersion}` — same row references, only the version field changes — and only when `signature === nextData.signature` (line 318). No row swap, no refetch, no `reloadFromServer` on ack. `saveSuccess` listeners: `clearWatchdog` (`:601`) and `setRenderDirty` (`useTimelineState.ts:646`) — neither touches data. `reloadFromServer` is user-triggered (diverged banner) only.
+
+2. **Poll acceptance** — `usePollSync.ts:240-304` gates every commit on `isTimelinePollIdle`, which returns false when `interactionActive` (`:60-63`); a mid-drag poll is rejected `'interaction active'` and *deferred* (`:258-261`), committed only after gesture end. The registry effect (`:306-361`) re-checks the idle gate inside its setTimeout too. The 30s `refetchInterval` (`useTimelineQueries.ts:15,22`) only updates the react-query cache; it cannot reach `dataRef` while the gate holds.
+
+3. **Save POST itself** — `scheduleSave` defers while `drag=true` (`useTimelinePersistence.ts:443-450`); the transport retry re-gates (`:256-262`). `drag` is set at gesture start (`useClipDrag.ts:253`) and cleared on end (`:159-160`).
+
+### Schema tolerance (new head fields)
+
+`log_size`/`last_event_offset` live **only** in `EventLogHead` metadata (`local_fs.py:472-596`) — `_bridge_timeline_payload` (`local_bridge.py:439-460`) emits exactly `timeline_id/ulid/slug/name/is_default/config/registry/config_version`. Even if present, `z.looseObject` tolerates unknown keys and `parseBridgePayload` returns the raw input (`bridgeContract.ts:135-145`) — no stripping, no throw. Required `config` is always included. The save→UI path cannot break on the new fields.
+
+### Negative search
+
+`invalidateQueries` on timeline keys exists only in `useTimeline.ts:56` (a separate non-bridge mutation) and `useTimelineRealtime.ts:40-58` (remote-writer events) — neither fires on bridge save ack; and any resulting refetch is still poll-gated during drag.
+
+**Confidence: high** (all five artifacts + bridge tree read; no evidence pack on disk — searched workspace). Only theoretical edge: a save that *started before* a drag resolving mid-gesture — still commits identical rows, so the ghost is unaffected.

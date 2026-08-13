@@ -1,0 +1,18 @@
+## Verdict: **Coalesced — single-slot pipeline (1 in-flight + 1 pending), not N serialized**
+
+**Mechanism (exact):**
+- **Commit layer (no dirty-flag):** every `save: true` commit increments `editSeqRef` and emits one `scheduleSave` event (`useTimelineCommit.ts:295-298`). No coalescing here.
+- **Bus:** fan-out to all listeners (`useTimelineEventBus.ts:51-60`); persistence subscribes once (`useTimelineSave.ts:67-69`). Every press reaches `scheduleSave`.
+- **Persistence coalescing** (`useTimelinePersistence.ts`):
+  - Trailing debounce: `SAVE_DEBOUNCE_MS = 500` (line 21); `scheduleSave` clears/re-arms the timer per call (447-449) — rapid presses within 500 ms collapse to one `doSave`.
+  - In-flight guard: `pendingSaveRef` is a **single slot** (line 106), overwritten last-write-wins at 455-457 and 267-270.
+  - `finally` drains **at most one** pending save (`pendingSave.seq > completedSeqRef.current`, lines 368-374).
+- **Extension:** `markPhaseAtPlayhead` → one `timeline.apply` per press (`extension.ts:484+`); `buildMarkersPatch` = exactly one `project-data.write`, mode `'replace'`, full marker list (267-288). Confirmed: one press = one full-list write.
+
+**Total time for N rapid presses:** not N×T. While a save is in flight, all presses overwrite the one pending slot; when it lands, one save (latest data) fires. Worst case is waves of `debounce-window/ in-flight` saves ≈ ⌈N/window⌉ × T, bounded at 2 round trips deep — never a growing queue.
+
+**The log (195→197→…→205):** each `configVersionRef updated {source:'save'}` line (line 300) is **one acknowledged bridge round trip** (mutation onSuccess). 6 lines = 6 saves; the +2 is bridge-side version advancement per save (`AstridBridgeDataProvider.ts:361` local `+1`; remote POST returns the bridge's own `config_version` — a save spans config + registry/project-data events). It is **not** per-press: one press never yields +2; 6 saves means the presses coalesced into 6 waves.
+
+**Mid-queue error:** yes, possible and self-clearing. `setSaveStatus('saving')` (277), `'error'` on transport failure (359) with backoff retry (`scheduleErrorRetry`, 229-257), and `'saved'` only when `seq >= editSeqRef.current` (327). A stale-snapshot save can fail while the latest pending one later succeeds — error appears mid-queue, then clears. The watchdog (`WATCHDOG_GRACE_MS = 5_000`, line 38) can also trip `error` during a long save and clear on ack.
+
+**Confidence: High.** Bounded search covered persistence, commit, bus, wiring, provider, tests (coalescing asserted in `useTimelinePersistence.test.tsx:218-246`), and extension. Not verified: bridge POST version arithmetic (out of repo) — but irrelevant to queue semantics. Read-only; no edits.

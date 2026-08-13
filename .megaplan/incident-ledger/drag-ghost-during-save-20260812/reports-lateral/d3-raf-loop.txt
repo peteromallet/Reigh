@@ -1,0 +1,29 @@
+All rAF paths traced. Here's the verdict.
+
+---
+
+## Verdict: `refuted` — the rAF lifecycle cannot strand drag #2's ghost updates
+
+The evidence pack isn't in the repo (searched, 0 hits), but every rAF id in the drag path is accounted for, and the state machine is self-healing.
+
+### Exact rAF id lifecycle (`useDragCoordinator.ts`)
+- **Ref**: `frameRef` (useRef, :99) — survives drags and re-renders.
+- **Schedule**: `update()` (:155–158) — only when `frameRef.current === null`; otherwise coalesces by overwriting `pendingIndicatorRef` (:153). Single-flight.
+- **Flush**: `flushIndicator` (:101–109) — *first* statement nulls `frameRef`; then unconditional `show(pending)`. No visibility gate.
+- **Cancel**: `end()` (:111–120) — cancels **and** nulls the id, clears `pendingIndicatorRef`/`lastPositionRef`, calls `hide()`.
+- **Restart**: every exit path (flush or end) nulls `frameRef`, so drag #2's first `update()` sees `null` and schedules a fresh frame. A dead-rAF state (non-null id with dead callback) is unreachable: cancel is always paired with nulling, and a fired frame nulls before `show`.
+
+### Can a save re-render cancel the frame? No.
+The only cleanup effect that calls `end()` is `useEffect(() => () => end(), [end])` (:167–171); `end` is a stable `useCallback([])` → the effect re-runs only on unmount, not on `commitData → setData` re-renders. `coordinator` is a stable `useMemo` (:173–181), so the store's seeded coordinator (`useTimelineState.ts:183`) keeps identity; `latestRef` in `useClipDrag` is refreshed every render.
+
+### Cross-track ghost: not rAF-batched at all
+`createFloatingGhost` (helpers:161–167) per-drag; `updateFloatingGhostPosition` (helpers:150–159) is imperative per pointermove (`useClipDrag.ts:213–219`); removed in `endSession` (:157). No rAF id survives between drags.
+
+### Stale-flag gating: refuted
+`DropIndicator.show/hide` are unconditional `setState` (:50–61); `position === null` only gates render output. Drag #2's flush calls `show()` with fresh data — nothing gates on drag #1's `hide()`.
+
+### Negative search
+Only other cancels: `auto-scroll.ts:72` (per-drag closure, `stop()` nulls, new instance per drag at `useClipDrag.ts:424`), `useClipDrag.ts:168` (fire-and-forget defer), `useExternalDrop.ts:457` / `external-drop-utils.ts:705` (external-drop feature). `RafLoopDetector.track` is a no-op unless diagnostics enabled.
+
+### Confidence: high (~0.8)
+Refutation is solid within the inspected files; `end()` runs on every exit path (up/cancel/blur/next-down/unmount — `useClipDrag.ts:388,413,421,447,307,454`). Caveat: the real "no shadow" cause likely lives outside this lens (e.g., stale `session.clipEl`/`editAreaRef` after the save re-render, or a remounted `DropIndicator`), which the incident's rAF framing does not cover.

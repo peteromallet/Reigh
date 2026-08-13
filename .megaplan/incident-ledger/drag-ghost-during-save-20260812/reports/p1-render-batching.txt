@@ -1,0 +1,19 @@
+All artifacts examined. Here is the lens report.
+
+---
+
+## Verdict: **refuted** — save-driven re-renders cannot drop/reset the ghost
+
+### The re-render → ghost chain does not exist
+The ghost (`DropIndicator`) is **render-isolated**:
+
+- **Position is imperative, local state.** `DropIndicator.tsx:47` — `position` is `useState`, mutated only via the `useImperativeHandle` (`show`/`hide`, `DropIndicator.tsx:50-61`, deps `[]` → stable). No prop change, no effect dependency clears it. The `useLayoutEffect` (`:63-89`, deps `editAreaRef`/`onNewTrackLabel`/position fields) only toggles CSS classes + label; `editAreaRef` and `onNewTrackLabel` (`setNewTrackDropLabel`, a stable state setter, `TimelineEditorCore.tsx:223`) never change identity. Not `React.memo` — so it *does* re-render on save, but state survives re-render.
+- **No unmount path on save.** DropIndicator mounts unconditionally at `TimelineEditorCore.tsx:818` (always after `<TimelineCanvas>`). It unmounts only if `data` goes null (`:750`), the error boundary catches a render throw (none occurs on save), or a layout-branch switch. The save round trip (`useTimelinePersistence.ts:285-343`) only does `setSaveStatus`, `commitData` (new object identity — the source of the 4× TimelineCanvas renders), `configVersionRef` write, `saveSuccess` event, `clearWatchdog`. `data` is never nulled; no reload. `commitData` with new `rows` re-renders but reconciles (same keys) — no clip-element recreation.
+- **Drag machine is render-proof.** `useClipDrag.ts:459` — effect deps `[dataRef, timelineWrapperRef, pixelsPerSecondRef]` are all refs; the effect never re-runs on save re-renders, so `enterDragging`/`updateDragState`/document listeners persist mid-drag. Every `pointermove` re-calls `coordinator.update` → `show(position)` imperatively, independent of React renders.
+
+### Layout/z-index
+- **No occlusion.** Ghost classes are `position: fixed` with `pointer-events: none`, portaled to `document.body` at z-index 99997–100000 (`DropIndicator.tsx:107-174`; `timeline-overrides.css:66-96`). Watchdog/conflict/recovery banners (`TimelineEditorShellCore.tsx:501-556`) are in-flow siblings above the timeline — a layout shift only moves the shell's content, never a viewport-fixed portal, and they cannot stack above it.
+- **`useRenderBudget.ts` is telemetry only** (`:95-152`) — counts and `console.warn`s; it gates nothing, so 4× vs budget 3 cannot drop a layer.
+
+### Confidence
+High (~90%). **Negative search scope:** DropIndicator (full), useClipDrag (full), TimelineCanvas (DropIndicator absent — it lives in TimelineEditorCore), TimelineEditorCore/ReighTimelineEditor (memo + guard), ShellCore (banners/timelineRegion), TimelineErrorBoundary, useRenderBudget, useTimelinePersistence save path, drop-indicator CSS. Not deep-read: `commitData` internals, `useTimelineRealtime`, dialog z-index CSS (all < 99998). Static gate absence from the scout + render isolation here means the live mechanism must lie elsewhere (pointer-capture, threshold, or the cross-track DOM clone).

@@ -1,0 +1,21 @@
+All evidence gathered. The chain is fully traced.
+
+---
+
+## Verdict: **refuted** — drag #2 cannot call `show()` on a stale/remounted DropIndicator handle
+
+### Handle lifecycle across a save-triggered re-render
+
+1. **Handle creation** — `DropIndicator.tsx:50-61`: `useImperativeHandle(ref, factory, [])`. The handle object is created **once per mount**; empty deps mean React never recreates it on re-render, and does not re-fire the ref when the parent re-renders (child instance unchanged). It is recreated **only on remount**, at which point React sets `ref.current` to the new handle (and null on unmount).
+2. **Ref object** — `useDragCoordinator.ts:95`: `indicatorRef = useRef(null)` — one stable object for the hook's lifetime. It is published into the zustand store (`useTimelineState.ts:184`) and selected by `TimelineEditorCore.tsx:238/256`, then passed at `:818` as `<DropIndicator ref={indicatorRef} />`. **One shared ref object** — no callback refs, no recreation, no capture of the handle value anywhere.
+3. **Handle is re-read per call, never captured** — `flushIndicator` (`useDragCoordinator.ts:108`), `end` (`:119`), `showSecondaryGhosts` (`:164`) all read `indicatorRef.current` **at call time**, inside the rAF flush. `useClipDrag.ts:145/180/240` calls `coordinator.*` through `latestRef`, and the coordinator is a stable `useMemo` object (`useDragCoordinator.ts:173-181`) whose methods read the ref live.
+
+### Does the save remount DropIndicator? No.
+
+- Save ack: `useTimelinePersistence.ts:317-327` — `commitData({...latestDataRef.current, configVersion})`. New **top-level** object identity (so `TimelineEditorCore` re-renders via its store subscription), but `rows` keeps the same array reference, and **`nextData` is never null** (`useTimelineCommit.ts:263`; initial `useState(null)` at `:185` only pre-load).
+- `DropIndicator` has **no `key`** and a stable tree position (`TimelineEditorCore.tsx:818`), so it is **reconciled, not remounted**. The `!data → null` guard at `:750` is the only unmount path; `data` goes null only during initial load, not between drags.
+- Even in a hypothetical remount, React would null then repopulate `indicatorRef.current` with the new handle — the next `show()` hits the new handle, never a stale one. A stale handle requires the value to be captured once; no such capture exists (negative search: no other `indicatorRef.current =` assignment; `useExternalDrop.ts:464/499/520` uses the same live coordinator; no `key` on DropIndicator).
+
+### Confidence: high
+
+The entire theory chain fails: handle stable, ref shared and live-read, no remount on save. Caveat: the incident's missing "shadow" is likely the floating ghost (`createFloatingGhost`, `useClipDrag.helpers`) — a separate DOM path — so this handle theory doesn't explain drag #2's symptom regardless.

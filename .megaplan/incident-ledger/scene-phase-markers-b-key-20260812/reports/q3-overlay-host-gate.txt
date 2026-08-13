@@ -1,0 +1,16 @@
+## Verdict: **supported** — the host is NOT mounted in the default dev flow (no canary param)
+
+### Condition graph (page → providers → TimelineCanvas gate)
+1. **`npm run dev`** = `vite --config config/vite/vite.config.ts`; **`npm run dev:editor`** = `node scripts/dev-editor.mjs` → spawns bridge stub (port 17334) + `npm run dev -- --host 127.0.0.1 --port 2222`, printing `http://127.0.0.1:2222/tools/video-editor?localProject=demo-project&localTimeline=demo-timeline` — **no `timelineOverlayCanary=1`**. Git diff confirms the URL line is untouched (only bridge port 17333→17334 changed).
+2. `VideoEditorPage.tsx:482-483`: `timelineOverlaysEnabled = import.meta.env.DEV && searchParams.get('timelineOverlayCanary') === '1'` → passed as prop to `VideoEditorProvider` in **both** mount branches (lines 847, 913).
+3. Providers are pure pass-throughs, each defaulting `false`: `VideoEditorProvider.tsx:452` → `EditorRuntimeProvider.tsx:148` (forwarded 375/399) → `BrowserVideoEditorProvider.tsx:77` (forwarded 205) → runtime value.
+4. `TimelineCanvas.tsx:1015`: `runtime?.timelineOverlaysEnabled === true && ops && <TimelineExtensionOverlayHost/>`.
+5. **No other path flips it**: repo-wide grep for `timelineOverlaysEnabled` (52 hits) shows the only assignments are the page computation and the three provider defaults; everything else is pass-through/test. E2e confirms: `openEditor` (no param) → `timeline-marker-layer` count 0; `openCanaryEditor` (`CANARY_URL` with `timelineOverlayCanary=1`) → layer visible, `data-marker-count=3`.
+
+### Docs-vs-code discrepancy: the param **is** honored in current code
+`git blame` on lines 482-483 shows **"Not Committed Yet 2026-08-12 13:03"**; `git status` shows the entire canary slice is uncommitted working-tree state: page gate, canvas host gate, and all three providers are `M`; `TimelineExtensionOverlayHost.tsx` and `tests/e2e/timeline/extension-overlays.spec.ts` are untracked (`??`). `git show HEAD:` of the page/canvas contains **zero** `timelineOverlay` references. So the docs ("planned for B9, not yet implemented," last committed 2026-07-07) were accurate for HEAD and are **stale vs. the uncommitted feature** — the tests test it because they ship alongside it. Not a code bug.
+
+### Dev-script reality
+Default flow = port **2222** (dev:editor) or vite default (plain `npm run dev`), `VITE_APP_ENV=web`, bridge stub on 17334, URL without canary → host never mounts → markers invisible even if written (project marker count can still increment).
+
+**Confidence: high** (all code read directly; negative scope = repo-wide greps + HEAD comparison). No edits made.

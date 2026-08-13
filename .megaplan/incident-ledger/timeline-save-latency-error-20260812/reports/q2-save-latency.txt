@@ -1,0 +1,32 @@
+All evidence gathered — no mutating POST was performed (read-only; save-side timings below are code-inferred + simulated, recorded explicitly).
+
+## Verdicts
+
+**Client-side serialization — supported, negligible.** `saveTimeline` always `JSON.stringify`s the **full** config + registry (no diff) — every B-press re-serializes everything. But the payload is tiny (below), so this is ~1ms.
+
+**GET-before-POST — refuted (as a network cost).** `fetchTimelinePayload` is called **without** `{fresh:true}` → served from `cachedPayload` (populated by `loadTimeline`). Steady-state saves do **zero** network GETs; only the first save or a cache miss hits the bridge.
+
+**Payload size — refuted.** `assembly.json` = 2,277 B, `registry.json` = 1,445 B (5 assets, 5 clips). POST body ≈ 4–10 KB. Not payload-driven.
+
+**Proxy — refuted.** `config/vite/vite.config.ts` `/api/astrid` → 127.0.0.1:17333 is a plain `changeOrigin` + prefix-rewrite pass-through; no buffering/limits.
+
+**`materializeGenerationAssets` — refuted (HTTP path).** Real-bridge path is HTTP: `localTimelineFiles === null` unless the user picks a local project folder, so materialize returns the registry unchanged (no-op); `normalizeRegistry` is a `clone()` of 1.4 KB.
+
+**Bridge write path — supported (dominant).** Per save (`save_bridge_timeline` → `LocalFsBackend.append_prebuilt_events` → `regenerate_projection`): under flock it (1) full-scans + parses **all** `assembly.jsonl` events in `_rebuild_head_locked` (**twice** — pre/post append), (2) `os.fsync`s the JSONL per append (`_append_line_locked`), (3) `read_events(after=…)` full-parses the log a **third** time, (4) atomically writes `assembly.head.json` + `assembly.json` + `assembly.checkpoint.json` + `registry.json` (≈8 fsyncs). Plus `find_bridge_timeline`: after the first load the client POSTs the canonical **UUID**, forcing a project-wide `timelines/*/assembly.identity.json` scan (O(N timelines)).
+
+**Timeout/retry — supported (amplifier).** `BRIDGE_REQUEST_TIMEOUT_MS = 10_000` (`AbortSignal.timeout` on GET+POST). A bridge stall >10 s aborts → transport-retry ladder (0.5→8 s backoff, `useTimelinePersistence`) multiplies latency; the 5 s watchdog trips the UI first. A 409 no longer auto-retries (B4 → diverged state).
+
+## Per-stage estimate (desert-plant-growth, 207 events / 709 KB log)
+
+| Stage | Est. | Evidence |
+|---|---|---|
+| Serialize | <1 ms | 4–10 KB body, no diff |
+| GET | 0 ms (cache) | `fetchTimelinePayload` non-fresh |
+| POST transport | ~40–55 ms fixed | measured GET 40–113 ms (5 runs, no POST) |
+| Bridge writes | ~35–80 ms | measured 3× full parse = 33.7 ms; fsync 709 KB = 0.6 ms; 4 atomic writes + UUID scan |
+| **Round trip** | **~80–150 ms** | code + simulation (no POST measured) |
+
+## Dominant cost
+**Bridge-side event-log handling** — but not fsync or payload: it's the **O(log-bytes) triple full re-read/parse of `assembly.jsonl` per append** (×3 ≈ 34 ms at 709 KB, ~3.4 KB/event growth) plus ~40–55 ms fixed per-request overhead. At ~2,000+ events it becomes seconds and the 10 s abort/retry ladder engages — matching "saving takes a LONG time."
+
+**Confidence:** high (all code read directly; GET measured). Negative scope: no POST timed (read-only), no client-side `performance.now` profiling, one workspace's log sizes.

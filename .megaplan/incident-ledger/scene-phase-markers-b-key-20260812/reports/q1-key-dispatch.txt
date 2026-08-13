@@ -1,0 +1,26 @@
+## Verdict: **supported** — an unmodified `B` reaches and invokes `com.reigh.scene-phase-markers.markPhase` in a normal (DEV, enabled) editor session.
+
+### Producer → listener → registry → invocation
+- **Contribution**: `dev/scene-phase-markers/extension.ts:565-571` — `key: 'B'` → command `MARK_PHASE_COMMAND`; handler registered in `activate()` (`extension.ts:602-621`).
+- **Ingestion**: `contexts/editorRuntimeAssembly.tsx:647-665` — synchronize effect calls `ingestKeybindingContribution`; `normalizeKeybinding('B')` → `'b'` (`commandRegistry.ts:592,208-242`). Reserved check passes — bare `b` is **not** in `BUILT_IN_RESERVED_KEYBINDINGS` (`commandRegistry.ts:124-151`). `host.synchronize` then activates the extension; its `ctx.commands.registerCommand` wraps the **same** registry (`editorRuntimeAssembly.tsx:681-687`).
+- **Listener**: mounted in `TimelineEditorShellCore.tsx:188` → `useKeyboardShortcuts.ts:334` (bubble-phase window keydown). Built-ins (`:217-301`: z/a/m/s/arrows/space/backspace/delete/escape) — none match bare `b`. Normalize (`:307`) → `'b'`; palette guard (`:313`) no; `getKeybinding('b')` hits (`:316`); no `when` clause → predicate block (`:320-326`) skipped; `preventDefault` + `executeCommand` (`:329-331`).
+- **Registry identity**: one `createCommandRegistry()` per provider mount (`editorRuntimeAssembly.tsx:306-309`), exposed as `runtimeValue.commandRegistry` (`VideoEditorProvider.tsx:522`), read by the hook via `VideoEditorRuntimeContext` (`useKeyboardShortcuts.ts:202-203`). **Shared** — ingestion, activation, and dispatch all use `commandRegistryRef.current`. Mount chain: `VideoEditorPage.tsx:838-854` → `VideoEditorProvider` (`extensions={resolvedExtensions}`) → `ReighVideoEditorShell` → `TimelineEditorShellCore`.
+
+### Skip conditions for B
+1. **Editable target** — `isEditableTarget` (`coordinate-utils.ts:9-15`): input/textarea/select/contenteditable (hook `:208`; test contract `test.tsx:258-275`). Open command-palette input qualifies → skipped (palette has no own `b` handler).
+2. **Extension disabled/not DEV** — filtered at `VideoEditorPage.tsx:507-509` → no ingestion, no `activate()`, no registration.
+3. **Keybinding conflict** — first-registered-wins (`commandRegistry.ts:615-626`); no other extension in `src` binds `b` (bounded search: `key === 'b'`, `keyCode 66`, `toLowerCase()==='b'`, `'b'` matches — only test fixtures).
+4. **Handler missing** — contribution ingested but `activate()` never ran → `executeCommand` returns false with `invoke-no-handler` (`commandRegistry.ts:792-799`).
+5. **No registry** — only outside the provider (`:305`).
+6. **`when`** — none declared, so dispatch is **global**; no timeline-focus requirement.
+
+### Other listeners (negative scope)
+AgentChat (`Cmd/Ctrl+Shift+R` only), OverlayEditor (Escape), ClipAction/TrackLabel/TimelineCanvas (Escape), shell capture listener (`Cmd/Ctrl+Shift+P` only, `TimelineEditorShellCore.tsx:149-165`). None consume `b`.
+
+### Evidence of registration in the running shell
+`devLocalExtensions` = `[scenePhaseMarkersExtension]` (`dev/localExtensions.ts:23-25`), enabled by default in DEV; `activate()` toasts `mark.ready` (`extension.ts:645`) and registers the handler. Activation is logged under `[Extension lifecycle]`.
+
+### Symptom read
+Command **fires**; the failure mode is "fires but nothing renders": handler toasts `Scene phase marked at Xs (N total)` on success (`extension.ts:536-539`), `playhead unavailable — open the editor preview first` when `latestPlayheadSeconds` is null (`:501-507`, written only by the panel/overlay renderers via `setLatestPlayheadSeconds`), plus 800-marker/64 KiB gates.
+
+**Confidence: high** (full static trace, tests corroborate dispatch contract). Bounded to `src/tools/video-editor` keydown listeners + registry wiring; no runtime instrumentation performed.

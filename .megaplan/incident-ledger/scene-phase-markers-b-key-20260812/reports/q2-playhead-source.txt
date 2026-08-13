@@ -1,0 +1,19 @@
+All artifacts traced. Read-only investigation complete.
+
+## Verdict: **supported** — the panel mounts unconditionally in the dev flow, so `latestPlayheadSeconds` is non-null when B is pressed.
+
+**statusBar slot host → panel mount trace:**
+1. `VideoEditorPage.tsx:898-920` (and 837-854) — dev page renders `<ReighVideoEditorShell mode="full">` whenever a timeline is selected (both localProject and remote flows); no flag gates it.
+2. `ReighVideoEditorShell.tsx:34` → `<TimelineEditorShellCore>` (only `timelineId` gated).
+3. `TimelineEditorShellCore.tsx:768` → `{statusBarSlot}` sits **outside** the layout conditional (after all three `main` branches: full/condensed/mobile) — rendered unconditionally on every shell render.
+4. `useVideoEditorShellSlots.tsx:174-184` → `statusBarSlot = slotRenderers.statusBar ? … : null` — gated only on renderer registration, nothing else.
+5. `useVideoEditorRenderContext.ts:60-62` → slots come from `useVideoEditorExtensionRuntime().slots`, built in `extensionRenderSurface.ts:168-191` from `config.slots` + registered renderers — **no `timelineOverlaysEnabled` dependency**.
+6. Extension wiring: `localExtensions.ts:21-25` registers `scenePhaseMarkersExtension`; `extension.ts:572-579` (slot contribution) + `extension.ts:627-634` (`registerRenderer(FOOTER_RENDER_ID)`).
+
+**Panel does NOT require the overlay canary.** `timelineOverlaysEnabled` (DEV + `?timelineOverlayCanary=1`, `VideoEditorPage.tsx:482-483`) gates *only* `TimelineExtensionOverlayHost` at `TimelineCanvas.tsx:1015` — the overlay renderer. The footer panel mounts with or without it. `ScenePhaseMarkersPanel.tsx:44` calls `setLatestPlayheadSeconds(playback.currentTime)` before the snapshot guard (line 44 precedes line 52), so it writes even in the "Timeline not ready" branch; `resolvePlaybackFromRenderContext` (`extension.ts:663-678`) falls back to `{currentTime: 0}`, so the module value can never stay null once the panel renders once. The playhead source is the live `useTimelinePlaybackContext()` slice (`useVideoEditorRenderContext.ts:40`).
+
+**Tests:** Both `ScenePhaseMarkersOverlay.test.tsx` and `panel-transition.test.tsx` render components directly with a harness/`playback={{currentTime: 1.5}}` — they assume direct mount, model no host gating, and (per grep) never assert a canary requirement.
+
+**Negative search scope:** grepped `statusBar` across `components/` and `runtime/` (only hosts: `useVideoEditorShellSlots.tsx`, `TimelineEditorShellCore.tsx`, `ExtensionHarnessPage.tsx` — a different page), `timelineOverlaysEnabled` across the tree, and `TimelineEditorShellCore`/`ReighVideoEditorShell` usages. Not exhaustively read: `VideoEditorShell.tsx` (alternate shell, unused by `VideoEditorPage`), `flagship-local` example.
+
+**Confidence: high** for the DEV flow (the extension is DEV-only by construction); the "nothing visible" failure cannot be attributed to a null playhead — the playhead is live.
