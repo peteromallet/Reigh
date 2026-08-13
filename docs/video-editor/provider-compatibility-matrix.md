@@ -50,7 +50,7 @@ Extension requirements are a property of the timeline config, not the provider. 
 |---|---|---|---|---|
 | **InMemory** | Monotonic integer, incremented on every `saveTimeline` | **Yes** — `TimelineVersionConflictError` thrown on mismatch | **Yes** — `useTimelineOps.apply()` compares `patch.version` against current `configVersion` before any mutation | **Yes** — `ProposalRuntime.accept()` revalidates `baseVersion` against `reader.snapshot().baseVersion` |
 | **Supabase** | Monotonic integer from append service `config_version` | **Yes** — 409 Conflict from append service → `TimelineVersionConflictError` | **Yes** — same local guard as InMemory (catches stale patches before network round-trip) | **Yes** — same revalidation path |
-| **Astrid Bridge** | Monotonic integer from bridge payload `config_version` | **Partial** — no server-side CAS; version is incremented locally after save but concurrent writes from another bridge instance would silently overwrite | **Yes** — same local guard | **Yes** — revalidation against current snapshot version works, but the snapshot version may not reflect external concurrent writes |
+| **Astrid Bridge** | Monotonic integer from bridge payload `config_version` | **Yes** — server-side CAS since 2026-08-11: combined `POST /save` + guarded `PUT /registry` with `expected_version`, stale → 409 | **Yes** — same local guard | **Yes** — revalidation against current snapshot version works; stale snapshots now fail server-side instead of silently overwriting |
 
 **Key invariant:** When `patch.version === 0`, the base-version check is bypassed (treated as "no expectation"). This is intended for initial state seeding.
 
@@ -104,7 +104,7 @@ Missing extension references are detected at **export-guard time**, not at provi
 ### 4.3 AstridBridgeDataProvider
 
 - **Read-only for uploads.** `onUpload()` throws `AstridBridgeReadOnlyError`. Asset uploads through the standard `uploadAsset` path are not supported.
-- **No server-side CAS.** Concurrent writes from different bridge instances are not detected — the bridge increments its local version but does not compare against a remote head.
+- **Server-side CAS enforced (2026-08-11).** `saveTimeline` sends one combined `POST /save` with `{config, registry, expected_version}`; `registerAsset` PUTs `/registry` with `expected_version`. Stale versions return `409 timeline_version_conflict` (mapped to `TimelineVersionConflictError` → reload-and-retry). See the Astrid bridge contract doc §14.1.
 - **No checkpoint persistence.** `saveCheckpoint` returns a synthetic ID; `loadCheckpoints` returns an empty array.
 - **No waveform/profile loading.** `loadWaveform` and `loadAssetProfile` return `null`.
 - **Local-filesystem-dependent.** Requires the File System Access API and user-granted directory permissions.

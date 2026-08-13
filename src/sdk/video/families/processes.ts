@@ -110,7 +110,7 @@ export interface ProcessManifestEntry {
 }
 
 /** M12: Host-side process descriptor used by the runtime process manager. */
-export interface ProcessSpec extends ProcessManifestEntry {}
+export type ProcessSpec = ProcessManifestEntry;
 
 // ---------------------------------------------------------------------------
 // M12: Process contribution (manifest)

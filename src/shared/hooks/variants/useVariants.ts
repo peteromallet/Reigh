@@ -105,7 +105,7 @@ export const useVariants = ({
     if (affectedIds.includes(generationId)) {
       refetch();
     }
-  }, [generationId, enabled, refetch]);
+  }, [generationId, enabled, isAuthenticated, refetch]);
 
   useAppEventListener('realtime:variant-change-batch', handleVariantChange);
 

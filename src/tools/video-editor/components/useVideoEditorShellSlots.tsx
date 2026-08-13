@@ -14,7 +14,6 @@ import { useOptionalVideoEditorRuntime } from '@/tools/video-editor/contexts/Vid
 import type { VideoEditorSlotName, VideoEditorOutputFormatDescriptor } from '@/tools/video-editor/runtime/extensionSurface';
 import {
   InertReservedPlaceholder,
-  RESERVED_SLOT_CANARY,
   RESERVED_SLOT_NAMES,
 } from './TimelineEditorShellReservedSlots.tsx';
 
@@ -80,10 +79,10 @@ export function useVideoEditorShellSlots() {
   }, []);
 
   /**
-   * Resolve a surface slot renderer or return a canary for reserved slots.
+   * Resolve a surface slot renderer or return an inert placeholder for
+   * reserved slots.
    * - If a renderer is registered → wrap in HostContributionErrorBoundary
-   * - If the slot is reserved with a canary → render the canary
-   * - If the slot is reserved without a canary → render inert placeholder
+   * - If the slot is reserved → render InertReservedPlaceholder
    * - Otherwise → null (slot is unclaimed)
    */
   const resolveSurfaceSlot = useCallback(
@@ -103,16 +102,7 @@ export function useVideoEditorShellSlots() {
           </HostContributionErrorBoundary>
         );
       }
-      if (RESERVED_SLOT_NAMES.has(slotName)) {
-        const CanaryComponent = RESERVED_SLOT_CANARY[slotName];
-        if (CanaryComponent) {
-          return (
-            <CanaryComponent
-              key={slotName}
-              context={renderContext}
-            />
-          );
-        }
+      if (RESERVED_SLOT_NAMES[slotName]) {
         return <InertReservedPlaceholder key={slotName} slotName={slotName} />;
       }
       return null;

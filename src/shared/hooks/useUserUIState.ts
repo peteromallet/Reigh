@@ -39,6 +39,35 @@ interface SettingsCacheEntry {
 const settingsCache = new Map<string, SettingsCacheEntry>();
 const CACHE_DURATION = 30000; // 30 seconds
 
+// In-flight-only dedupe for the auth `getUser()` burst.
+//
+// WHY THIS EXISTS: ~18 `useUserUIState` instances mount concurrently (one per
+// UI setting key), and every mount used to fire its own
+// `supabase().auth.getUser()`. That burst trips Supabase's lock-steal
+// protection (each call opens a session lock and steals it from the previous
+// call). We share ONE in-flight promise so the burst resolves to a single
+// `getUser()` call.
+//
+// WHY NOT CACHE THE RESULT: auth state can change while the hook stays
+// mounted (login/logout), and the resolved user is cheap to re-fetch. Only the
+// in-flight promise is shared; once it settles the next mount does a fresh
+// auth check. Callers still read the session through the shared Supabase
+// client afterward.
+interface GetUserResult {
+  data: { user: { id: string } | null };
+  error: unknown;
+}
+let pendingUserCheck: Promise<GetUserResult> | null = null;
+
+function dedupeGetUser(): Promise<GetUserResult> {
+  if (!pendingUserCheck) {
+    pendingUserCheck = supabase().auth.getUser().finally(() => {
+      pendingUserCheck = null;
+    });
+  }
+  return pendingUserCheck;
+}
+
 interface UISettings {
   defaultTool: {
     toolId: string;
@@ -375,7 +404,7 @@ export function useUserUIState<K extends keyof UISettings>(
   useEffect(() => {
     const loadUserSettings = async () => {
       try {
-        const { data: { user } } = await supabase().auth.getUser();
+        const { data: { user } } = await dedupeGetUser();
         if (!user) {
           // Skip loading for unauthenticated users (e.g., on public share pages)
           setIsLoading(false);
@@ -501,4 +530,5 @@ export function useUserUIState<K extends keyof UISettings>(
 /** @internal Only for test isolation — do not call in production code. */
 export function _resetUserUIStateCacheForTesting(): void {
   settingsCache.clear();
+  pendingUserCheck = null;
 }

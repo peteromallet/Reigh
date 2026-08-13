@@ -10,14 +10,15 @@ import {
 import { Badge } from '@/shared/components/ui/badge.tsx';
 import { cn } from '@/shared/components/ui/contracts/cn.ts';
 import type { TimelineConfig } from '@/tools/video-editor/types/index.ts';
+import { INSTALLED_TIMELINE_THEMES } from '@/tools/video-editor/compositions/installed-themes.ts';
 
 /**
  * Read-only Theme chip (SD-018, SD-019). Renders:
  *
  *   - `Theme: <id>` when the timeline has a theme and the theme registry
  *     contains it.
- *   - `Theme: <id> (not installed)` when a theme slug is set but no
- *     `@banodoco/timeline-theme-<id>` peer-dep is registered.
+ *   - `Theme: <id> (not installed)` when a theme slug is set but the
+ *     registry (default: `INSTALLED_TIMELINE_THEMES`) has no entry for it.
  *   - Nothing when `timeline.theme` is undefined.
  *
  * Click expands a JSON view of the resolved theme (overrides + base when
@@ -25,22 +26,23 @@ import type { TimelineConfig } from '@/tools/video-editor/types/index.ts';
  * edit form, NO theme switching — those are agent-via-chat surfaces only
  * (SD-018).
  *
- * Sprint 3 ships an empty registry; the not-installed branch is the live
- * one. Sprint 5 wires `@banodoco/timeline-theme-<id>` peer-dep packages.
+ * The registry defaults to the editor's installed timeline themes — the same
+ * set the render pipeline resolves against — so the chip reports exactly what
+ * the editor can render. `banodoco-default` is registered (it is the vendor
+ * default theme); unknown slugs report "(not installed)".
  */
 
 interface ThemeChipProps {
   timeline: Pick<TimelineConfig, 'theme' | 'theme_overrides'> | null | undefined;
   /**
-   * Theme registry. Sprint 3 default is empty — when Sprint 5 ships
-   * `@banodoco/timeline-theme-<id>` peer-deps, the host will pass them in
-   * here.
+   * Theme registry. Defaults to the editor's installed timeline themes
+   * (compositions/installed-themes.ts) — the same registry the render
+   * pipeline resolves against, so the chip reports what the editor can
+   * actually render. A host may pass a different registry to override.
    */
   registry?: ThemeRegistry;
   className?: string;
 }
-
-const EMPTY_REGISTRY: ThemeRegistry = {};
 
 interface ResolvedView {
   installed: boolean;
@@ -79,7 +81,11 @@ function resolveView(
   }
 }
 
-export const ThemeChip: FC<ThemeChipProps> = ({ timeline, registry = EMPTY_REGISTRY, className }) => {
+export const ThemeChip: FC<ThemeChipProps> = ({
+  timeline,
+  registry = INSTALLED_TIMELINE_THEMES as unknown as ThemeRegistry,
+  className,
+}) => {
   const [isOpen, setIsOpen] = useState(false);
   const themeId = timeline?.theme;
   const themeOverrides = timeline?.theme_overrides;

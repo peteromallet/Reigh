@@ -26,14 +26,18 @@ import {
   getVideoFamilyDefinition,
   getVideoFamilyConformanceReport,
   getVideoFamilyLegacyBridgeStatus,
+  KNOWN_CONTRIBUTION_KINDS,
 } from '@/sdk/index';
 import { createExtensionContext } from '@/tools/video-editor/runtime/extensionContextFactory';
+import { INTERNAL_EXTENSION_RENDER_SURFACE } from '@/sdk/internalExtensionRenderSurface';
 import * as sdkStar from '@/sdk/index';
 import type {
   ReighExtension,
   ExtensionManifest,
   ExtensionContribution,
   ExtensionContext,
+  ExtensionRenderer,
+  ExtensionUiService,
   DisposeHandle,
   ExtensionDiagnostic,
   ExportDiagnostic,
@@ -387,8 +391,10 @@ describe('ExtensionContext — no internal members exposed', () => {
   // ---- exactly the approved surface ---------------------------------------
 
   it('has exactly the expected own property names', () => {
-    const keys = Object.keys(ctx).sort();
-    expect(keys).toEqual([
+    // The declared ExtensionContext surface is exactly these 12 members.
+    // `ui` (T1.1) is part of the contract: a complete context literal must
+    // include it, and ExtensionUiService exposes only registerRenderer.
+    const declaredKeys = [
       'agentTools',
       'apiVersion',
       'chrome',
@@ -400,7 +406,57 @@ describe('ExtensionContext — no internal members exposed', () => {
       'services',
       'shaders',
       'transitions',
-    ]);
+      'ui',
+    ];
+
+    // Contract-level pin: a full context literal enumerates exactly the
+    // declared surface, including `ui`.
+    const ui: ExtensionUiService = {
+      registerRenderer: <Props,>(_renderId: string, _renderer: ExtensionRenderer<Props>) => ({
+        dispose() {},
+      }),
+    };
+    const fullContext = {
+      apiVersion: 1,
+      extension: {
+        id: 'com.boundary.test',
+        version: '1.0.0',
+        label: 'Boundary Test Extension',
+        manifest: {} as never,
+      },
+      chrome: {
+        toast() {},
+        progress() {},
+        subscribe() {
+          return { dispose() {} };
+        },
+        focus() {},
+        announce() {},
+      },
+      services: {
+        settings: {} as never,
+        i18n: { t: (key: string) => key },
+        diagnostics: {} as never,
+      },
+      creative: createCreativeContextStubs(),
+      commands: {} as never,
+      ui,
+      effects: {} as never,
+      transitions: {} as never,
+      clipTypes: {} as never,
+      shaders: {} as never,
+      agentTools: {} as never,
+    } satisfies ExtensionContext;
+    expect(Object.keys(fullContext).sort()).toEqual([...declaredKeys].sort());
+
+    // The host-wired factory context must not expose anything outside the
+    // declared surface (today it wires the non-ui subset; when the host
+    // wires `ui`, the subset check still holds).
+    const runtimeKeys = Object.keys(ctx).sort();
+    for (const key of runtimeKeys) {
+      expect(declaredKeys).toContain(key);
+    }
+    expect(declaredKeys).toEqual(expect.arrayContaining(runtimeKeys));
   });
 
   it('has no extra enumerable properties', () => {
@@ -416,10 +472,36 @@ describe('ExtensionContext — no internal members exposed', () => {
       'transitions',
       'clipTypes',
       'shaders',
+      'ui',
     ]);
     for (const key of Object.keys(ctx)) {
       expect(allowed.has(key)).toBe(true);
     }
+  });
+
+  // ---- ui exposes only registerRenderer (T1.1) ----------------------------
+
+  it('ctx.ui exposes only registerRenderer', () => {
+    const ui: ExtensionUiService = {
+      registerRenderer: <Props,>(_renderId: string, _renderer: ExtensionRenderer<Props>) => ({
+        dispose() {},
+      }),
+    };
+    // Runtime pin: the service exposes exactly one member.
+    expect(Object.keys(ui).sort()).toEqual(['registerRenderer']);
+    expect(typeof ui.registerRenderer).toBe('function');
+    expect(ui.registerRenderer('render/overlay', () => null).dispose).toBeTypeOf('function');
+
+    // Compile-time pin: no other member may be added to ExtensionUiService.
+    type _UiKeys = keyof ExtensionUiService;
+    type _UiOnlyRegisterRenderer =
+      'registerRenderer' extends _UiKeys
+        ? Exclude<_UiKeys, 'registerRenderer'> extends never
+          ? true
+          : never
+        : never;
+    const _uiOnlyRegisterRenderer: _UiOnlyRegisterRenderer = true;
+    expect(_uiOnlyRegisterRenderer).toBe(true);
   });
 
   // ---- no DataProvider -----------------------------------------------------
@@ -500,7 +582,7 @@ describe('ExtensionContext — no internal members exposed', () => {
 
   // ---- creative stubs are present but no real internals --------------------
 
-  it('creative has exactly 10 reserved stubs, all frozen', () => {
+  it('creative has exactly 11 reserved stubs, all frozen', () => {
     const creativeKeys = Object.keys(ctx.creative).sort();
     expect(creativeKeys).toEqual([
       'assets',
@@ -512,6 +594,7 @@ describe('ExtensionContext — no internal members exposed', () => {
       'sessions',
       'stage',
       'timeline',
+      'timelineView',
       'writing',
     ]);
     expect(Object.isFrozen(ctx.creative)).toBe(true);
@@ -552,12 +635,18 @@ describe('ExtensionContext — no internal members exposed', () => {
 
   // ---- no Symbol-keyed internal escape hatches (other than dispose) --------
 
-  it('has only the approved dispose Symbol (non-enumerable)', () => {
+  it('has only the approved host symbols (dispose + internal render surface), all non-enumerable', () => {
     const symbols = Object.getOwnPropertySymbols(ctx);
-    // CONTEXT_DISPOSE_SYMBOL is the only symbol attached
-    expect(symbols.length).toBeLessThanOrEqual(1);
-    if (symbols.length === 1) {
-      expect(symbols[0]).toBe(CONTEXT_DISPOSE_SYMBOL);
+    // CONTEXT_DISPOSE_SYMBOL and INTERNAL_EXTENSION_RENDER_SURFACE are the
+    // only symbols attached — both non-enumerable, host-owned, and never
+    // visible through any extension-facing enumeration.
+    expect(symbols.length).toBe(2);
+    expect(symbols).toEqual(expect.arrayContaining([
+      CONTEXT_DISPOSE_SYMBOL,
+      INTERNAL_EXTENSION_RENDER_SURFACE,
+    ]));
+    for (const symbol of symbols) {
+      expect(Object.prototype.propertyIsEnumerable.call(ctx, symbol)).toBe(false);
     }
   });
 
@@ -616,10 +705,15 @@ describe('ExtensionContext — type safety guard', () => {
       'transitions',
       'clipTypes',
       'shaders',
+      'ui',
     ];
 
     const actualKeys = Object.keys(ctx).sort();
-    expect(actualKeys.sort()).toEqual(declaredKeys.sort());
+    // The host-wired factory context must only expose declared members; the
+    // full declared surface (including `ui`) is asserted exactly in the
+    // "has exactly the expected own property names" test above.
+    expect(declaredKeys).toEqual(expect.arrayContaining(actualKeys));
+    expect(declaredKeys).toContain('ui');
 
     // No extra keys present
     for (const key of actualKeys) {
@@ -680,6 +774,49 @@ describe('M6: contribution kind bridging (parser M6-delegated, output/search typ
     expect(contributionKindNotYetBridged('command')).toBeNull();
     expect(contributionKindNotYetBridged('keybinding')).toBeNull();
     expect(contributionKindNotYetBridged('contextMenuItem')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T2.1: Exact 21-kind count and no timelineMarker kind
+// ---------------------------------------------------------------------------
+
+describe('T2.1: exact contribution-kind count and no timelineMarker kind', () => {
+  it('KNOWN_CONTRIBUTION_KINDS has exactly 21 kinds (no 22nd kind)', () => {
+    expect(KNOWN_CONTRIBUTION_KINDS.length).toBe(21);
+    expect(new Set(KNOWN_CONTRIBUTION_KINDS).size).toBe(21);
+  });
+
+  it('no timelineMarker contribution kind exists', () => {
+    expect(KNOWN_CONTRIBUTION_KINDS).not.toContain('timelineMarker');
+    expect(Object.keys(CONTRIBUTION_KIND_MILESTONE)).not.toContain('timelineMarker');
+  });
+
+  it('timelineOverlay remains one of the 21 kinds', () => {
+    expect(KNOWN_CONTRIBUTION_KINDS).toContain('timelineOverlay');
+    expect(CONTRIBUTION_KIND_MILESTONE.timelineOverlay).toMatch(/^M\d+$/);
+  });
+
+  it('ExtensionManifest accepts a governed timelineOverlay contribution with render', () => {
+    const ext = defineExtension({
+      manifest: {
+        id: 'com.t21.overlay-test' as any,
+        version: '1.0.0',
+        label: 'T2.1 Overlay Test',
+        contributions: [
+          {
+            id: 'phase-markers' as any,
+            kind: 'timelineOverlay',
+            render: 'render/phase-markers',
+            order: 10,
+            label: 'Phase markers',
+          } as any,
+        ],
+      },
+    });
+    const overlay = ext.manifest.contributions![0] as Record<string, unknown>;
+    expect(overlay.kind).toBe('timelineOverlay');
+    expect(overlay.render).toBe('render/phase-markers');
   });
 });
 
@@ -1980,6 +2117,7 @@ describe('M11: CreativeContext sessions is typed as LiveSessionsService', () => 
       export: {} as any,
       stage: {},
       writing: {},
+      timelineView: {} as any,
     };
     expect(ctx.sessions).toBe(sessionsSvc);
     expect(typeof ctx.sessions.registerSource).toBe('function');

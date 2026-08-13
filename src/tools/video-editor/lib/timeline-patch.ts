@@ -1172,6 +1172,7 @@ export function compileTimelinePatch(
               || key === 'effects' || key === 'params' || key === 'pool_id' || key === 'clip_order'
               || key === 'source_uuid' || key === 'generation' || key === 'cropTop' || key === 'cropBottom'
               || key === 'cropLeft' || key === 'cropRight' || key === 'asset' || key === 'app'
+              || key === 'label'
             ) {
                
               (existingMeta as unknown as Record<string, unknown>)[key] = value;

@@ -5,13 +5,13 @@
 //   npm run test:e2e:timeline:bridge
 //
 // Env:
-//   ASTRID_BRIDGE_PORT  port to listen on            (default 17333)
+//   ASTRID_BRIDGE_PORT  port to listen on            (default 17334)
 //   BASE_URL            dev-server origin the asset  (default http://127.0.0.1:2222)
 //                       `src` URLs point at
 import fs from 'node:fs';
 import http from 'node:http';
 
-const PORT = Number(process.env.ASTRID_BRIDGE_PORT || 17333);
+const PORT = Number(process.env.ASTRID_BRIDGE_PORT || 17334);
 const BASE_URL = (process.env.BASE_URL || 'http://127.0.0.1:2222').replace(/\/+$/, '');
 const PROJECT = { slug: 'demo-project', name: 'Demo Project' };
 const TIMELINE_ID = 'demo-timeline';

@@ -44,6 +44,7 @@ import {
   shouldShowTimelineModeSwitcher,
   shouldTapTimelineToolButtons,
   type TimelineDeviceClass,
+  type TimelineGestureOwner,
   type TimelineInteractionMode,
   type TimelineShellLayout,
 } from '@/tools/video-editor/lib/mobile-interaction-model.ts';
@@ -342,6 +343,7 @@ function renderCanvasFor(
   deviceClass: TimelineDeviceClass,
   interactionMode: TimelineInteractionMode,
   onScaleWidthChange?: (next: number) => void,
+  gestureOwner: TimelineGestureOwner = 'none',
 ) {
   const result = render(
     <TimelineCanvas
@@ -352,7 +354,7 @@ function renderCanvasFor(
       // predicates that key on modality are asked with the same value.
       inputModality="touch"
       interactionMode={interactionMode}
-      gestureOwner="none"
+      gestureOwner={gestureOwner}
       scale={1}
       scaleWidth={100}
       scaleSplitCount={1}
@@ -414,11 +416,13 @@ function dispatchPinch(target: HTMLElement, from: number, to: number) {
       ],
     });
     target.dispatchEvent(event);
+    return event;
   };
 
-  send('touchstart', from);
-  send('touchmove', to);
+  const start = send('touchstart', from);
+  const move = send('touchmove', to);
   send('touchend', 0);
+  return { start, move };
 }
 
 afterEach(() => {
@@ -615,6 +619,19 @@ describe.each(DEVICE_CLASSES)('pinch zoom — %s', (deviceClass) => {
     dispatchPinch(editArea, 100, 220);
 
     expect(onScaleWidthChange.mock.calls.length > 0).toBe(shouldEnableTimelinePinchZoom(deviceClass));
+  });
+});
+
+describe.each(TOUCH_DEVICE_CLASSES)('overlay-owned pinch — %s', (deviceClass) => {
+  it('declines acquisition without preventing the native event', () => {
+    const onScaleWidthChange = vi.fn();
+    const { editArea } = renderCanvasFor(deviceClass, 'browse', onScaleWidthChange, 'overlay');
+
+    const { start, move } = dispatchPinch(editArea, 100, 220);
+
+    expect(onScaleWidthChange).not.toHaveBeenCalled();
+    expect(start.defaultPrevented).toBe(false);
+    expect(move.defaultPrevented).toBe(false);
   });
 });
 

@@ -4,16 +4,18 @@
  *
  * Spawns the committed Astrid bridge stub (demo project/timeline/assets, saves
  * held in memory) plus the Vite dev server, and prints the local-mode URL that
- * the e2e device specs use. The placeholder `VITE_SUPABASE_*` values mirror the
+ * the e2e device specs use. The URL carries `timelineOverlayCanary=1` (DEV-only
+ * rollout gate for the timelineOverlay family) so the scene-phase-markers canary
+ * is visible out of the box; production never honors the query parameter. The placeholder `VITE_SUPABASE_*` values mirror the
  * ones `playwright.config.ts` injects: the Supabase env getters are lazy, so
  * local mode only needs them to exist.
  */
 import { spawn } from 'node:child_process';
 
 const PORT = process.env.PORT ?? '2222';
-const BRIDGE_PORT = process.env.VITE_ASTRID_BRIDGE_PORT ?? '17333';
+const BRIDGE_PORT = process.env.VITE_ASTRID_BRIDGE_PORT ?? '17334';
 const EDITOR_URL =
-  `http://127.0.0.1:${PORT}/tools/video-editor?localProject=demo-project&localTimeline=demo-timeline`;
+  `http://127.0.0.1:${PORT}/tools/video-editor?localProject=demo-project&localTimeline=demo-timeline&timelineOverlayCanary=1`;
 
 const env = {
   ...process.env,

@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  createMobileInteractionPolicy,
   resolveTimelineDeviceClass,
   shouldEnableTimelinePinchZoom,
   shouldPinHoverAffordances,
   shouldTapTimelineToolButtons,
   type TimelineDeviceClass,
+  type TimelineGestureOwner,
+  type TimelineInteractionTarget,
 } from '@/tools/video-editor/lib/mobile-interaction-model';
 
 const TOUCH_DEVICES: TimelineDeviceClass[] = ['phone', 'tablet'];
@@ -86,5 +89,46 @@ describe('touch affordance policies', () => {
     TOUCH_DEVICES.forEach((deviceClass) => {
       expect(shouldEnableTimelinePinchZoom(deviceClass)).toBe(true);
     });
+  });
+});
+
+describe('gesture owner', () => {
+  it('accepts overlay as a host-internal gesture owner', () => {
+    // Overlay contributions own the pointer while they hold the host claim;
+    // the owner value has to exist before the claim record can set it.
+    const owner: TimelineGestureOwner = 'overlay';
+    expect(owner).toBe('overlay');
+  });
+
+  it('accepts an overlay interaction target alongside the overlay owner', () => {
+    // The host points context/inspector targets at the claimed overlay.
+    const target: TimelineInteractionTarget = {
+      kind: 'overlay',
+      extensionId: 'com.example.overlay',
+      contributionId: 'ov.markers',
+    };
+    expect(target.kind).toBe('overlay');
+    expect(target.extensionId).toBe('com.example.overlay');
+    expect(target.contributionId).toBe('ov.markers');
+  });
+
+  it('does not expose a public gesture-owner setter or lease model', async () => {
+    // The host assigns overlay ownership through its internal claim record;
+    // there must be no exported mutator or lease API for extensions to reach.
+    const mod = await import('@/tools/video-editor/lib/mobile-interaction-model');
+    const exportedNames = Object.keys(mod);
+    expect(
+      exportedNames.some((name) =>
+        /setGestureOwner|leaseGesture|claimGesture|grantGesture|acquireGesture/i.test(name),
+      ),
+    ).toBe(false);
+  });
+
+  it('starts every policy with no gesture owner', () => {
+    // Ownership begins unclaimed; only a host gesture (or a later overlay
+    // claim) may change it.
+    expect(createMobileInteractionPolicy('desktop').gestureOwner).toBe('none');
+    expect(createMobileInteractionPolicy('tablet').gestureOwner).toBe('none');
+    expect(createMobileInteractionPolicy('phone').gestureOwner).toBe('none');
   });
 });

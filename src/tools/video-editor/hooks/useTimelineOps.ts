@@ -54,6 +54,15 @@ export interface UseTimelineOpsArgs {
   /** Mutable ref holding the current canonical TimelineData. */
   dataRef: { current: TimelineData | null };
 
+  /**
+   * Live source for the canonical timeline version (e.g. the store's
+   * ack-tracked `configVersion` field, which advances on save acknowledgment
+   * WITHOUT committing a new data object). Canonical-state comparisons
+   * (stale-base-version checks) and patch versioning must use this channel.
+   * When omitted, falls back to `dataRef.current.configVersion`.
+   */
+  getConfigVersion?: () => number;
+
   /** Host checkpoint creation (async fire-and-forget). */
   createManualCheckpoint: (label?: string) => Promise<void>;
 
@@ -79,9 +88,11 @@ export interface UseTimelineOpsArgs {
  * ## Base-version semantics
  *
  * Every `apply()` call compares the patch's `version` field (the base version
- * the patch was built against) with the current `dataRef.current.configVersion`.
- * If they differ the patch is stale and a {@link TimelineVersionConflictError}
- * is thrown before any mutation occurs.
+ * the patch was built against) with the current canonical version — the live
+ * `getConfigVersion()` channel when provided (it advances on save
+ * acknowledgment without committing a new data object), else
+ * `dataRef.current.configVersion`. If they differ the patch is stale and a
+ * {@link TimelineVersionConflictError} is thrown before any mutation occurs.
  *
  * This is the **local monotonic invalidation** layer: it catches stale patches
  * before they reach the provider, which is essential when the provider does
@@ -94,6 +105,7 @@ export interface UseTimelineOpsArgs {
 export function useTimelineOps({
   commitData,
   dataRef,
+  getConfigVersion,
   createManualCheckpoint,
   jumpToCheckpoint,
   checkpoints,
@@ -102,6 +114,16 @@ export function useTimelineOps({
   // against the latest list without re-creating the adapter on every change.
   const checkpointsRef = useRef(checkpoints);
   checkpointsRef.current = checkpoints;
+
+  // The canonical-version getter is deliberately read through a ref so the
+  // stable adapter below does not re-create itself when the host's getter
+  // identity changes between renders.
+  const getConfigVersionRef = useRef(getConfigVersion);
+  getConfigVersionRef.current = getConfigVersion;
+  const getCanonicalVersion = useCallback(
+    () => getConfigVersionRef.current?.() ?? dataRef.current?.configVersion ?? 0,
+    [dataRef],
+  );
 
   // Map client-generated checkpoint IDs to labels so rollback can resolve
   // them against the backend-populated checkpoints list.
@@ -139,10 +161,13 @@ export function useTimelineOps({
 
       // Attach a stale-base-version warning when the patch was built against
       // a different version than the current canonical state.  Preview is
-      // read-only, so we warn rather than block.
+      // read-only, so we warn rather than block. The canonical version comes
+      // from the live channel (which advances on receipt-only acks without a
+      // new data object), not from `current.configVersion`.
+      const canonicalVersion = getCanonicalVersion();
       if (
         patch.version !== 0 &&
-        patch.version !== current.configVersion &&
+        patch.version !== canonicalVersion &&
         result.fullyPreviewable
       ) {
         result.diagnostics = [
@@ -152,7 +177,7 @@ export function useTimelineOps({
             code: 'timeline-patch/stale-base-version' as const,
             message:
               `Preview: patch baseVersion (${patch.version}) does not match ` +
-              `current timeline version (${current.configVersion}). ` +
+              `current timeline version (${canonicalVersion}). ` +
               `The preview may not reflect the current state. Re-snapshot ` +
               `to get an accurate preview.`,
           },
@@ -161,7 +186,7 @@ export function useTimelineOps({
 
       return result;
     },
-    [dataRef],
+    [dataRef, getCanonicalVersion],
   );
 
   // ---- apply --------------------------------------------------------------
@@ -178,17 +203,21 @@ export function useTimelineOps({
       //
       //     The patch.version is the base version the caller observed when
       //     building the patch.  If it doesn't match the current canonical
-      //     configVersion the timeline has been modified since the patch was
-      //     created — the patch is stale and must be rejected.
+      //     version the timeline has been modified since the patch was
+      //     created — the patch is stale and must be rejected. The canonical
+      //     version comes from the live channel (which advances on
+      //     receipt-only acks without a new data object), so a snapshot's
+      //     baseVersion always compares against the same source.
       //
       //     Version 0 is treated as "no base-version expectation" (e.g.
       //     initial patches before the first provider load or patches from
       //     extensions that intentionally bypass version gating).
-      if (patch.version !== 0 && patch.version !== current.configVersion) {
+      const canonicalVersion = getCanonicalVersion();
+      if (patch.version !== 0 && patch.version !== canonicalVersion) {
         throw new TimelineVersionConflictError(
           `TimelineOps.apply: stale baseVersion — ` +
           `patch created at version ${patch.version} but timeline is at ` +
-          `version ${current.configVersion}. ` +
+          `version ${canonicalVersion}. ` +
           `Re-read the current snapshot and rebuild the patch.`,
         );
       }
@@ -227,7 +256,7 @@ export function useTimelineOps({
       // 4. Return the semantic diff
       return compiled.diff;
     },
-    [commitData, dataRef],
+    [commitData, dataRef, getCanonicalVersion],
   );
 
   // ---- checkpoint ---------------------------------------------------------
@@ -332,19 +361,23 @@ export function useTimelineOps({
       // Find all audio tracks
       const audioTracks = current.tracks.filter((t) => t.kind === 'audio');
 
+      // The patch base version must match the CANONICAL version (the live
+      // channel) or apply()'s stale-base check would reject it.
+      const canonicalVersion = getCanonicalVersion();
+
       if (audioTracks.length === 0) {
         return {
-          version: current.configVersion,
+          version: canonicalVersion,
           entries: [],
           affectedObjectIds: [],
         };
       }
 
       // Build a patch with track.update for each audio track.
-      // The version is set to current.configVersion so the base-version
+      // The version is set to the canonical version so the base-version
       // check in apply() will pass.
       const patch: TimelinePatch = {
-        version: current.configVersion,
+        version: canonicalVersion,
         operations: audioTracks.map((track) => ({
           op: 'track.update' as const,
           target: track.id,
@@ -356,7 +389,7 @@ export function useTimelineOps({
       // Re-use apply which validates, compiles, and commits
       return apply(patch);
     },
-    [apply, dataRef],
+    [apply, dataRef, getCanonicalVersion],
   );
 
   // ---- assemble stable adapter --------------------------------------------

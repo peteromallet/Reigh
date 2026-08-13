@@ -220,7 +220,7 @@ test.describe('timeline layout geometry', () => {
       });
 
       test(`${ctx.name}: geometry snapshot ${REGENERATE ? '(regenerating baseline)' : 'matches baseline'}`, async (
-        { context, page },
+        { page },
       ) => {
         test.setTimeout(120_000);
 

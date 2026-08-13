@@ -404,7 +404,7 @@ export function useTimelineCommit({
         commandHistory: options?.commandHistory,
       },
     );
-  }, [commitData, materializeData, withPinnedShotGroups]);
+  }, [commitData, materializeData, withPinnedShotGroups, eventBus]);
 
   const patchRegistry = useCallback((assetId: string, entry: AssetRegistryEntry, src?: string) => {
     const current = dataRef.current;

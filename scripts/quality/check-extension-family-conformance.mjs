@@ -37,6 +37,19 @@
  *   7. **Deterministic generated order** — `family-maturity.json` rows
  *      MUST be sorted by `kind` string ascending.
  *
+ *   8. **UI integration evidence** — every family whose
+ *      `requirements.uiIntegration` is `true` MUST name a non-empty
+ *      `uiIntegrationTest` host-consumer test with a `.test.ts`,
+ *      `.test.tsx`, or `.spec.ts` extension.  The path MUST resolve to a
+ *      regular file under the repository root (no `..` escapes, absolute
+ *      paths, symlink escapes, or `node_modules` locations) and its
+ *      content MUST contain test-runner constructs (`describe(` / `it(` /
+ *      `test(` / `render(` / `renderHook(`) so a registry-unit test
+ *      cannot satisfy a UI-integration claim by suffix alone.  Missing
+ *      evidence, unsupported extensions, out-of-repo / node_modules
+ *      paths, non-file paths, nonexistent paths, and non-test content
+ *      are violations.
+ *
  * ## Modes
  *
  *   --audit     (default)  Report all violations as warnings.  Only exit
@@ -47,15 +60,45 @@
  *   --release              Every checklist violation is a hard error.
  *                          Use this in CI / `quality:check` pre-commit.
  *
+ * ## Test hooks
+ *
+ *   --repo-root=<dir>         Resolve schema / generated-JSON / runtime
+ *                             file checks against <dir> instead of the
+ *                             repository root (used by the test suite to
+ *                             exercise the filesystem validator against
+ *                             temporary fixtures).
+ *
+ *   --registry-override=<mjs> Load `VIDEO_FAMILY_REGISTRY` from a
+ *                             standalone .mjs fixture module instead of
+ *                             the checked-in family definitions.  This is
+ *                             a test-only hook for enumerating missing /
+ *                             nonexistent / invalid-extension evidence
+ *                             fixtures without mutating the real registry.
+ *
  * ## Dependencies
  *
  *   Imports `VIDEO_FAMILY_REGISTRY` and conformance helpers through the
- *   `tsx` TypeScript runtime.  Reads the schema from disk directly.
+ *   `tsx` TypeScript runtime (unless `--registry-override` is given).
+ *   Reads the schema from disk directly.
  */
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import {
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  existsSync,
+  readdirSync,
+  statSync,
+  realpathSync,
+} from 'node:fs';
+import {
+  resolve,
+  dirname,
+  relative,
+  isAbsolute,
+  sep,
+} from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 // ---------------------------------------------------------------------------
 // Path resolution
@@ -170,16 +213,41 @@ const R = new ConformanceReport();
 // Dynamic import of TypeScript registry via tsx
 // ---------------------------------------------------------------------------
 
+/**
+ * Optional test-only hook: load the family registry from a standalone .mjs
+ * fixture module instead of the checked-in family definitions.  This lets
+ * the test suite enumerate missing / nonexistent / invalid-extension
+ * uiIntegrationTest evidence without mutating the real registry.
+ */
+const registryOverrideArg = process.argv
+  .slice(2)
+  .find((a) => a.startsWith('--registry-override='));
+const registryOverridePath = registryOverrideArg
+  ? registryOverrideArg.slice('--registry-override='.length)
+  : null;
+
 /** @type {import('@/sdk/video/families/familyDefinitions').FamilyDefinition[] | null} */
 let registry = null;
 /** @type {typeof import('@/sdk/core/families/conformance') | null} */
 let conformance = null;
 
 try {
-  const registryModule = await import(
-    '@/sdk/video/families/familyDefinitions.js'
-  );
-  registry = registryModule.VIDEO_FAMILY_REGISTRY;
+  if (registryOverridePath) {
+    const overrideModule = await import(
+      pathToFileURL(resolve(registryOverridePath)).href
+    );
+    if (!overrideModule.VIDEO_FAMILY_REGISTRY) {
+      throw new Error(
+        `Registry override module must export VIDEO_FAMILY_REGISTRY.`,
+      );
+    }
+    registry = overrideModule.VIDEO_FAMILY_REGISTRY;
+  } else {
+    const registryModule = await import(
+      '@/sdk/video/families/familyDefinitions.js'
+    );
+    registry = registryModule.VIDEO_FAMILY_REGISTRY;
+  }
 
   const conformanceModule = await import(
     '@/sdk/core/families/conformance.js'
@@ -465,6 +533,10 @@ function buildExpectedMatrix() {
       hostAdapter: def.hostAdapter,
       requiresTrustedCode: def.requiresTrustedCode,
       manifestSchemaDefinition: def.manifestSchemaDefinition,
+
+      /** Executable host-consumer test path for UI integration, if any. */
+      uiIntegrationTest: def.uiIntegrationTest ?? null,
+
       coverage,
       conformance: {
         fullyConformant,
@@ -908,6 +980,157 @@ function checkSidecarBlockerAwareness() {
 
 checkSidecarBlockerAwareness();
 
+// ---------------------------------------------------------------------------
+// 14. UI integration evidence — uiIntegrationTest host-consumer tests
+// ---------------------------------------------------------------------------
+
+console.log(`\n${LABEL} Checking UI integration evidence…`);
+
+/**
+ * Accepted host-consumer test extensions for `uiIntegrationTest` evidence:
+ * `.test.ts`, `.test.tsx`, and `.spec.ts`.
+ */
+const UI_INTEGRATION_TEST_EXTENSION = /\.(test\.ts|test\.tsx|spec\.ts)$/;
+
+/**
+ * Test-runner constructs that mark a file as a plausible host-consumer
+ * test.  Lenient by design: any of vitest `describe(` / `it(` / `test(`
+ * or Testing Library `render(` / `renderHook(` counts, so a
+ * registry-unit test cannot satisfy a UI-integration claim by suffix
+ * alone.
+ */
+const UI_TEST_RUNNER_CONSTRUCT =
+  /describe\s*\(|it\s*\(|test\s*\(|render\s*\(|renderHook\s*\(/;
+
+/**
+ * Reports an evidence violation through the shared collector — hard error
+ * in release mode, advisory warning in audit mode.
+ */
+function reportEvidenceViolation(def, msg) {
+  if (isRelease) {
+    R.error(msg);
+  } else {
+    R.warn(msg);
+  }
+}
+
+for (const def of registry) {
+  if (def.requirements.uiIntegration !== true) continue;
+
+  const evidence = def.uiIntegrationTest;
+
+  // Missing / blank evidence — the family claims UI integration but does
+  // not name a host-consumer test.
+  if (typeof evidence !== 'string' || evidence.trim() === '') {
+    const msg =
+      `Family '${def.kind}' claims requirements.uiIntegration but does not ` +
+      `name a uiIntegrationTest host-consumer test ` +
+      `(.test.ts, .test.tsx, or .spec.ts).`;
+    reportEvidenceViolation(def, msg);
+    continue;
+  }
+
+  // Unsupported extension — evidence must be a host-consumer test file.
+  if (!UI_INTEGRATION_TEST_EXTENSION.test(evidence)) {
+    const msg =
+      `Family '${def.kind}' uiIntegrationTest path has an unsupported ` +
+      `test-file extension: '${evidence}' (expected .test.ts, .test.tsx, ` +
+      `or .spec.ts).`;
+    reportEvidenceViolation(def, msg);
+    continue;
+  }
+
+  // Resolved evidence must stay inside the repository root and must not
+  // point into node_modules — an absolute path or `..` traversal cannot
+  // name a host-consumer test in this repo.  This lexical check runs
+  // before the existence check so an out-of-repo path that happens to
+  // exist cannot slip through.
+  const evidencePath = resolve(repoRoot, evidence);
+  const evidenceRelative = relative(repoRoot, evidencePath);
+  const escapesRepoRoot =
+    evidenceRelative.startsWith('..') || isAbsolute(evidenceRelative);
+  const insideNodeModules = evidenceRelative
+    .split(sep)
+    .includes('node_modules');
+  if (escapesRepoRoot || insideNodeModules) {
+    const msg =
+      `Family '${def.kind}' uiIntegrationTest path resolves outside the ` +
+      `repository (or into node_modules): '${evidence}'.`;
+    reportEvidenceViolation(def, msg);
+    continue;
+  }
+
+  // Nonexistent evidence path — the named host-consumer test must exist.
+  if (!existsSync(evidencePath)) {
+    const msg =
+      `Family '${def.kind}' uiIntegrationTest path does not exist: ` +
+      `'${evidence}'.`;
+    reportEvidenceViolation(def, msg);
+    continue;
+  }
+
+  // Regular-file check — a directory (or other non-file entry) cannot be
+  // a host-consumer test.
+  let evidenceStat;
+  try {
+    evidenceStat = statSync(evidencePath);
+  } catch {
+    evidenceStat = null;
+  }
+  if (!evidenceStat || !evidenceStat.isFile()) {
+    const msg =
+      `Family '${def.kind}' uiIntegrationTest path is not a regular ` +
+      `file: '${evidence}'.`;
+    reportEvidenceViolation(def, msg);
+    continue;
+  }
+
+  // Symlink-escape check — the evidence must resolve to a file under the
+  // repository root even after following symlinks.  Both sides are
+  // canonicalized so a symlinked repo-root prefix (e.g. /var ->
+  // /private/var on macOS) does not produce a false positive.
+  let realRepoRoot = repoRoot;
+  let realEvidencePath = evidencePath;
+  try {
+    realRepoRoot = realpathSync(repoRoot);
+  } catch {
+    // Keep the lexical repo root when it cannot be canonicalized.
+  }
+  try {
+    realEvidencePath = realpathSync(evidencePath);
+  } catch {
+    // Keep the lexical evidence path when it cannot be canonicalized.
+  }
+  const realEvidenceRelative = relative(realRepoRoot, realEvidencePath);
+  const realEscapesRepoRoot =
+    realEvidenceRelative.startsWith('..') || isAbsolute(realEvidenceRelative);
+  if (realEscapesRepoRoot) {
+    const msg =
+      `Family '${def.kind}' uiIntegrationTest path resolves outside the ` +
+      `repository (or into node_modules): '${evidence}'.`;
+    reportEvidenceViolation(def, msg);
+    continue;
+  }
+
+  // Host-consumer content check — the evidence must plausibly be a real
+  // test: the file content must contain test-runner constructs so a
+  // registry-unit test cannot satisfy a UI-integration claim by suffix
+  // alone.
+  let evidenceSource;
+  try {
+    evidenceSource = readFileSync(evidencePath, 'utf8');
+  } catch {
+    evidenceSource = '';
+  }
+  if (!UI_TEST_RUNNER_CONSTRUCT.test(evidenceSource)) {
+    const msg =
+      `Family '${def.kind}' uiIntegrationTest path does not contain ` +
+      `test-runner constructs (describe/it/test/render/renderHook): ` +
+      `'${evidence}'.`;
+    reportEvidenceViolation(def, msg);
+    continue;
+  }
+}
 // ---------------------------------------------------------------------------
 // Summary and exit
 // ---------------------------------------------------------------------------

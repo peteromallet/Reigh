@@ -253,14 +253,14 @@
     "TimelineOverlayContribution": {
       "type": "object",
       "description": "Timeline overlay contribution: renders over the timeline surface.",
-      "required": ["id", "kind"],
+      "required": ["id", "kind", "render"],
       "additionalProperties": false,
       "properties": {
         "id": { "$ref": "#/definitions/ContributionId" },
         "kind": { "const": "timelineOverlay" },
+        "render": { "type": "string", "minLength": 1, "description": "Renderer ID registered via ctx.ui.registerRenderer. Non-blank." },
         "order": { "type": "number" },
-        "label": { "type": "string" },
-        "when": { "type": "string" }
+        "label": { "type": "string" }
       }
     },
 

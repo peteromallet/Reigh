@@ -21,7 +21,9 @@ const includeTimelineDevices = process.env.PLAYWRIGHT_TIMELINE_DEVICES === '1';
 // stub, and points the Vite dev proxy at it. Run:
 //   npm run test:e2e:timeline:realbridge
 const useRealBridge = process.env.REAL_BRIDGE === '1';
-const bridgePort = Number(process.env.ASTRID_BRIDGE_PORT ?? 17333);
+// The demo stub must not share port 17333 with the real bridge; 17334
+// keeps an E2E run from squatting on the editor's live bridge.
+const bridgePort = Number(process.env.ASTRID_BRIDGE_PORT ?? 17334);
 const bridgeServeCommand = useRealBridge
   ? 'node tests/e2e/timeline/real-bridge-serve.mjs'
   : 'node tests/e2e/timeline/astrid-bridge-stub.mjs';
@@ -53,7 +55,7 @@ export default defineConfig({
         VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL ?? DEFAULT_DEV_SUPABASE_URL,
         VITE_SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY ?? 'test-anon-key',
         VITE_APP_ENV: process.env.VITE_APP_ENV ?? 'web',
-        VITE_ASTRID_BRIDGE_PORT: useRealBridge ? String(bridgePort) : '17333',
+        VITE_ASTRID_BRIDGE_PORT: String(bridgePort),
       },
     },
     ...(includeTimelineDevices

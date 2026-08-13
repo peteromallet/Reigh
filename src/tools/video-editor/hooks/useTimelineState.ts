@@ -565,9 +565,17 @@ export function useTimelineState(): UseTimelineStateResult {
   // Wire TimelineOps (M3 atomic mutation adapter) into the host runtime context.
   // The adapter is stable (memoized on its callback deps) and delegates to
   // the existing commitData/history path without replacing the command facade.
+  // The canonical version getter reads the store's ack-tracked field (outside
+  // the data object) so receipt-only acks invalidate stale patches without
+  // committing a new data object.
+  const getConfigVersion = useCallback(
+    () => store.getState().configVersion,
+    [store],
+  );
   const timelineOps = useTimelineOps({
     commitData: save.commitData,
     dataRef: save.dataRef,
+    getConfigVersion,
     createManualCheckpoint,
     jumpToCheckpoint,
     checkpoints,

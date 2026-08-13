@@ -297,7 +297,7 @@ From `config/extensions/family-maturity.json` (827 lines, 21 entries) and
 | Dialog | documented | host-integrated | No | Yes | Bridged at M1 |
 | Panel | documented | host-integrated | No | Yes | Bridged at M1 |
 | Inspector Section | documented | host-integrated | No | Yes | Bridged at M1 |
-| Timeline Overlay | documented | host-integrated | No | Yes | Bridged at M2 |
+| Timeline Overlay | documented | host-integrated | No | Yes | Live host-rendered surface (T7): required `render` id + `ctx.ui.registerRenderer()`; ruler-only `markerLayer`; canary-gated |
 | Command | documented | host-integrated | No | Yes | Bridged at M4 |
 | Keybinding | documented | host-integrated | No | Yes | Bridged at M4 |
 | Context Menu Item | documented | host-integrated | No | Yes | Bridged at M4 |
@@ -409,3 +409,44 @@ From `prep.md` Open Questions (lines 53–60):
 - How should the sequential chain handle v8 parallelization notes (M3a/M3b, M3c/M4, M7a/M6b)?
 - What repo-controlled fixture process should M6 use, and where should JSON-RPC protocol fixtures live?
 - Which governance scripts already exist vs. need to be created in M7b?
+
+---
+
+## Post-Baseline Update (T7.4, 2026-08-11)
+
+`timelineOverlay` is no longer a reserved/declarable-only family. As of T7 the
+baseline's family snapshot above should be read with these corrections, which
+this reconstruction documents so later milestones do not re-derive stale facts:
+
+- **Required-render contract.** `timelineOverlay` contributions require a
+  non-empty `render` id (no `when` clause); renderers are bound via the public
+  `ctx.ui.registerRenderer()` service and resolved by
+  `resolveRegisteredRenderers()` — overlays without a registered renderer are
+  omitted. The host (`TimelineExtensionOverlayHost` in `TimelineCanvas`)
+  renders resolved overlays into content/ruler roots, each inside a
+  `HostContributionErrorBoundary`.
+- **Ruler-only marker primitive.** `primitives.markerLayer()` accepts
+  `placement: 'ruler'` only — no `trackId`, no canvas placement — with
+  controlled markers, preview/commit intents, and frame-grid snapping at
+  commit.
+- **Gesture arbitration.** `TimelineGestureOwner` gains the host-internal
+  `'overlay'` value; arbitration is claim-based (`claimPointer()` /
+  `releasePointer()`), wrappers stay click-through until claimed, and pinch
+  declines while the overlay owns. Release criterion: all existing timeline
+  gestures behave identically when no overlay has an active claim.
+- **Storage-neutral persistence.** Marker data persists through the standard
+  `project-data.write` path; generic disposal never deletes project data —
+  extensions expose explicit Clear/Delete Data actions.
+- **Dev-local manager behavior.** A DEV-only Local extensions section in the
+  Extension Manager inventories `devLocalExtensions` (external store
+  `devExtensionEnablement.ts`) with active status from the runtime and
+  enable/disable toggles. Installed packages already have manager
+  enable/disable, settings editing, and persisted enablement (S-160–S-164);
+  installer, bundler, marketplace, discovery, and update tooling remain
+  absent (D-001, D-004, D-123).
+- **Canary gate and deferred maturity promotion.** `timelineOverlaysEnabled`
+  defaults to `false`; the DEV-only `?timelineOverlayCanary=1` query parameter
+  is implemented (enabled dev-local `timelineOverlay` extensions flip the
+  flag in DEV builds; `npm run dev:editor` appends the query param too) — production will never honor the query parameter. The family remains
+  `host-integrated` (not `public-supported`) until the release criterion
+  passes.

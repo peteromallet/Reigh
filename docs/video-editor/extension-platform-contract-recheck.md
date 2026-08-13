@@ -62,17 +62,17 @@ This matrix maps every Done Criteria claim from prior milestone briefs to concre
 |---|---|---|---|---|---|
 | M2-001 | Example extensions demonstrate every public surface class | pass | supported | `src/examples/toolbar-example.ts`, `inspector-example.ts`, `overlay-example.ts`, `status-surface-example.ts`, `code-panel-diagnostics-example.ts`, `surface-coverage.ts` | `src/examples/` |
 | M2-002 | Subscriptions have cleanup tests and avoid leaked listeners | gap | supported | `chrome.subscribe` scaffolding in SDK; `DisposeHandle` used for subscription cleanup; dedicated subscription leak tests not found as standalone file | `src/tools/video-editor/runtime/` |
-| M2-003 | Inspector and overlay contributions update on real host state changes | pass | supported | `src/examples/inspector-example.ts`, `overlay-example.ts` compile and prove contribution shapes; tests in `Canary.test.tsx` | `src/tools/video-editor/components/Canary/Canary.test.tsx` |
-| M2-004 | Accessibility labels and announcements are testable | gap | supported | `frontend-closure-checklist.md` documents a11y expectations; gaps noted for `role` and `aria-label` on Canary | `docs/video-editor/frontend-closure-checklist.md` |
+| M2-003 | Inspector and overlay contributions update on real host state changes | pass | supported | `src/examples/inspector-example.ts`, `overlay-example.ts` compile and prove contribution shapes; registered-renderer tests in `src/tools/video-editor/components/TimelineEditorShellCore.test.tsx`; overlay host rendering proven by `TimelineExtensionOverlayHost.integration.test.tsx` | `src/tools/video-editor/components/TimelineEditorShellCore.test.tsx` |
+| M2-004 | Accessibility labels and announcements are testable | gap | supported | `frontend-closure-checklist.md` documents a11y expectations; canary container role/label gaps resolved by removing the demo surfaces 2026-08-11 | `docs/video-editor/frontend-closure-checklist.md` |
 | M2-005 | Diagnostics can represent source ranges for compiler/user-authored-code errors | pass | supported | `DiagnosticSourceRange` in `src/sdk/index.ts` (1-based); `code-panel-diagnostics-example.ts` demonstrates | `src/sdk/index.ts` |
 | M2-006 | `SchemaForm` renders and validates common schema subset and reports unsupported types as diagnostics | pass | supported | `SchemaForm` host primitive referenced in M2 brief; schema capability registry; `src/sdk/index.ts` includes parameter schema types | `src/tools/video-editor/components/` |
 | M2-007 | Schema capability registry tests cover supported widgets, unsupported diagnostics, validation paths, and custom widget placeholder | gap | supported | Schema capability registry concept documented; dedicated registry tests not identified as standalone test file | `src/tools/video-editor/` |
 | M2-008 | Diagnostic fallback links open `DiagnosticPanel` filtered to failing extension/contribution | pass | supported | `ContributionErrorBoundary` with "View diagnostics" action documented in `frontend-closure-checklist.md` | `docs/video-editor/frontend-closure-checklist.md` |
 | M2-009 | Extension status drawer shows active extension IDs, contribution inventory, diagnostics, and current blockers without becoming an install/settings manager | gap | supported | Skeletal status drawer concept referenced; M14 owns full manager UI; standalone status drawer tests not identified | `docs/video-editor/frontend-closure-checklist.md` |
-| M2-010 | Code panel example publishes syntax error diagnostic and shows it in diagnostic panel | pass | supported | `src/examples/code-panel-diagnostics-example.ts` — publishes 3 structured diagnostics + export-blocker; `Canary.test.tsx` tests diagnostic banner | `src/examples/code-panel-diagnostics-example.ts` |
-| M2-011 | Code panel example proves source range diagnostics rendered in contributed editor and linked from diagnostic panel | pass | supported | `code-panel-diagnostics-example.ts` — source ranges and diagnostic codes; Canary renders wavy underline and banner | `code-panel-diagnostics-example.ts` |
-| M2-012 | Frontend closure checklist is documented and used by at least one example primitive | pass | supported | `docs/video-editor/frontend-closure-checklist.md` — applied to CodePanelCanary with [x] / [ ] marks | `docs/video-editor/frontend-closure-checklist.md` |
-| M2-013 | Reserved frontend component slots compile as inert placeholders or documented deferred rows | pass | supported | `InertReservedPlaceholder` in `TimelineEditorShellCore.tsx`; `writingPanel`, `stagePanel` canaries in `src/examples/` | `src/examples/stage-canary-example.ts`, `writing-canary-example.ts` |
+| M2-010 | Code panel example publishes syntax error diagnostic and shows it in diagnostic panel | pass | supported | `src/examples/code-panel-diagnostics-example.ts` — publishes 3 structured diagnostics + export-blocker; diagnostic panel tests in `src/tools/video-editor/components/DiagnosticPanel/DiagnosticPanel.test.tsx` | `src/examples/code-panel-diagnostics-example.ts` |
+| M2-011 | Code panel example proves source range diagnostics rendered in contributed editor and linked from diagnostic panel | pass | supported | `code-panel-diagnostics-example.ts` — source ranges and diagnostic codes; canary wavy-underline renderer removed with demo surfaces 2026-08-11 | `code-panel-diagnostics-example.ts` |
+| M2-012 | Frontend closure checklist is documented and used by at least one example primitive | pass | supported | `docs/video-editor/frontend-closure-checklist.md` — applied to frontend primitives with [x] / [ ] marks; canary application removed with demo surfaces 2026-08-11 | `docs/video-editor/frontend-closure-checklist.md` |
+| M2-013 | Reserved frontend component slots compile as inert placeholders or documented deferred rows | pass | supported | `InertReservedPlaceholder` in `TimelineEditorShellReservedSlots.tsx`; slot declarations in `src/examples/stage-canary-example.ts`, `writing-canary-example.ts` | `src/tools/video-editor/components/TimelineEditorShellReservedSlots.tsx`, `src/examples/stage-canary-example.ts`, `writing-canary-example.ts` |
 | M2-014 | Writing/script and canvas/stage canaries demonstrate non-timeline-native workflow with diagnostics | pass | supported | `src/examples/writing-canary-example.ts`, `stage-canary-example.ts` | `src/examples/` |
 
 ### 2.4 M3 — TimelinePatch, Atomic Ops, Proposals
@@ -268,8 +268,13 @@ This matrix maps every Done Criteria claim from prior milestone briefs to concre
 | X-005 | No new platform primitives added beyond what is explicitly bridged (all milestones) | pass | supported | Contribution kinds reserved until activating milestone; `contribution_kind_not_yet_bridged` diagnostics | `src/sdk/index.ts` |
 | X-006 | Marketplace, cloud loading, sandboxing, theme contributions are unsupported (all milestones) | pass | deferred | Consistently in OUT scope of every milestone brief; absence verifiable by grep | milestone briefs |
 | X-007 | Provider compatibility documented across InMemory/Supabase/Astrid (M3, M6) | pass | supported | `docs/video-editor/provider-compatibility-matrix.md` — complete matrix with limitations | `provider-compatibility-matrix.md` |
-| X-008 | Frontend closure checklist used for public primitives (M2) | pass | supported | `docs/video-editor/frontend-closure-checklist.md` — applied to CodePanelCanary; governance test asserts presence | `frontend-closure-checklist.md` |
+| X-008 | Frontend closure checklist used for public primitives (M2) | pass | supported | `docs/video-editor/frontend-closure-checklist.md` — applied to frontend primitives; governance test asserts presence | `frontend-closure-checklist.md` |
 | X-009 | V1 source-pack/package contract freeze for manifest, layout, ID/version, API compatibility (M1, M14) | pass | supported | `reigh-extension.json` format consistent across all example extensions | `src/tools/video-editor/examples/extensions/*/reigh-extension.json` |
+| X-010 | `timelineOverlay` is a live host-rendered surface, not reserved: required non-empty `render` id (no `when`), renderer bound via `ctx.ui.registerRenderer()`, unregistered overlays omitted, undeclared render ids diagnosed (T6/T7) | pass | supported | `src/sdk/ui.ts`, `src/sdk/video/families/timelineOverlays.ts`; `src/tools/video-editor/runtime/extensionRenderSurface.ts`; TEST:`TimelineExtensionOverlayHost.integration.test.tsx` | `src/sdk/video/families/timelineOverlays.ts` |
+| X-011 | Ruler-only marker primitive: `primitives.markerLayer()` with `placement: 'ruler'` only, preview/commit intents, frame-grid snapping at commit, accessible markers, culling with overscan | pass | supported | `src/tools/video-editor/components/TimelineEditor/TimelineMarkerLayer.tsx`, `useTimelineMarkerDrag.ts`; TEST:`TimelineMarkerLayer.test.tsx` | `src/tools/video-editor/components/TimelineEditor/TimelineMarkerLayer.tsx` |
+| X-012 | Passive gesture arbitration: `'overlay'` gesture owner, click-through wrappers until `claimPointer()` succeeds, foreign-owner/claimant decline, release on up/cancel/blur/error/disable/unmount, pinch refusal while overlay owns, `touch-action: none` limited to interactive marker hit targets | pass | supported | `src/tools/video-editor/lib/mobile-interaction-model.ts`, `lib/timeline-dom.ts`; TEST:`TimelineExtensionOverlayHost.integration.test.tsx` (T5.1 passive parity and ownership arbitration) | `src/tools/video-editor/lib/mobile-interaction-model.ts` |
+| X-013 | Storage-neutral persistence: overlay/project data persists through the standard `project-data.write` path; generic disposal never deletes project data (dispose also runs on unmount, HMR, reload); explicit Clear/Delete Data actions | pass | supported | `src/tools/video-editor/dev/scene-phase-markers/ScenePhaseMarkersPanel.tsx`; DOC:`timeline-patch-operations.md`§3.11; S-169 | `src/tools/video-editor/dev/scene-phase-markers/` |
+| X-014 | Canary gate and dev-local management: `timelineOverlaysEnabled` defaults false (DEV `?timelineOverlayCanary=1` implemented — flips the flag in DEV builds, production never honors it); maturity promotion deferred until the passive-gesture release criterion passes; DEV-only Local extensions manager section with enable/disable | pass | supported | `src/tools/video-editor/dev/devExtensionEnablement.ts`; `src/tools/video-editor/components/ExtensionManager/ExtensionManager.tsx`; TEST:`ExtensionManager.test.tsx` (T2.4), `BrowserVideoEditorProvider.test.tsx`; S-170, S-171 | `src/tools/video-editor/components/ExtensionManager/ExtensionManager.tsx` |
 
 ---
 
@@ -307,14 +312,14 @@ The following gaps are significant enough to warrant explicit blocker documentat
 
 | Status | Count |
 |---|---|
-| pass | 70 |
+| pass | 75 |
 | gap | 52 |
 | blocked | 0 |
-| **Total** | **122** |
+| **Total** | **127** |
 
 | Disposition | Count |
 |---|---|
-| supported | 108 |
+| supported | 113 |
 | deferred | 14 |
 | unsupported | 0 |
 | release-blocking | 0 (see § 3.1 for release-blocking gap analysis) |
@@ -326,3 +331,4 @@ The following gaps are significant enough to warrant explicit blocker documentat
 | Date | Change |
 |---|---|
 | 2026-06-20 | Initial contract-recheck matrix for M15. Covers M0–M14 Done Criteria against current `main` evidence. |
+| 2026-08-11 | T7.4: added X-010–X-014 for the timeline-overlay host (required-render + `ctx.ui`, ruler-only `markerLayer`, passive gesture arbitration, storage-neutral persistence with disposal never deleting project data, canary gate + dev-local manager seam). Updated M2-001/M2-003 evidence; totals now 127 rows (75 pass / 52 gap), 113 supported / 14 deferred. |

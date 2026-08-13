@@ -1,9 +1,15 @@
 /**
- * Internal host-owned render-registration surface for bundled extensions.
+ * Compatibility-only internal render-registration surface.
  *
- * This is intentionally not re-exported from the public SDK barrel. It lets
- * the host wire real UI renderers for statically-bundled test extensions
- * without expanding the public extension context contract.
+ * @deprecated Extensions should register renderers through the public
+ * `ctx.ui` service (`ExtensionUiService.registerRenderer`). This module is
+ * retained so that host code and older bundled extensions can keep resolving
+ * the render surface through the legacy symbol path.
+ *
+ * The context factory attaches the SAME service instance under both
+ * `ctx.ui` and {@link INTERNAL_EXTENSION_RENDER_SURFACE}; the accessor below
+ * therefore delegates to `ctx.ui` first and only falls back to the legacy
+ * symbol for contexts constructed without a public UI service.
  */
 
 import type { DisposeHandle } from './dispose';
@@ -34,9 +40,23 @@ export function attachInternalExtensionRenderSurface(
   });
 }
 
+/**
+ * Resolve the internal render surface from an extension context.
+ *
+ * Compatibility accessor: delegates to the public `ctx.ui` service (which the
+ * context factory populates with the same instance as the legacy symbol), and
+ * falls back to the legacy symbol for contexts without `ctx.ui`.
+ */
 export function getInternalExtensionRenderSurface(
   ctx: ExtensionContext,
 ): InternalExtensionRenderSurface | null {
+  // Primary path: the public ctx.ui service (same instance as the symbol).
+  const ui = (ctx as unknown as { ui?: unknown }).ui;
+  if (ui && typeof (ui as { registerRenderer?: unknown }).registerRenderer === 'function') {
+    return ui as InternalExtensionRenderSurface;
+  }
+
+  // Legacy fallback for contexts constructed without ctx.ui.
   const value = (ctx as unknown as Record<PropertyKey, unknown>)[
     INTERNAL_EXTENSION_RENDER_SURFACE
   ];

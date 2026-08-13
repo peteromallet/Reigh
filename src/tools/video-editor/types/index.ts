@@ -352,6 +352,8 @@ export type TimelineClip = {
   at: number;
   track: string;
   clipType?: ClipType;
+  /** Human-readable clip label (extension-authored "Shot N" names). */
+  label?: string;
   asset?: string;
   from?: number;
   to?: number;

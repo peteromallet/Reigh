@@ -123,6 +123,8 @@ import type {
   StableTimelineConfigSignatureInput,
   TimelineConfigSignatureInput,
   TimelineVersionConflictError,
+  TimelineViewSnapshot,
+  TimelineViewStore,
 } from '@reigh/editor-sdk';
 
 // ---------------------------------------------------------------------------
@@ -344,6 +346,22 @@ export function activateCoverageExtension(
   type _ProposalResult = ProposalImportResult;
   type _CreateDiagOptions = CreateDiagnosticCollectionOptions;
   void 0 as unknown as [_ProposalExpiry, _ProposalEnv, _ProposalStatus, _ProposalDiag, _ProposalResult, _CreateDiagOptions];
+
+  // ---- TimelineViewStore primitive (compile-time coverage only) ------------
+  // `ctx.creative.timelineView` gives renderer-independent access to the
+  // timeline's live UX state (playback, selection, viewport, geometry).
+  const _timelineViewSnapshot: TimelineViewSnapshot = {
+    playhead: { time: 0, isPlaying: false },
+    selection: { selectedClipIds: new Set<string>(), hasSelection: false },
+    viewport: null,
+    geometry: null,
+    surfaceMounted: false,
+  };
+  const _timelineViewStore: TimelineViewStore = {
+    getSnapshot: () => _timelineViewSnapshot,
+    subscribe: () => ({ dispose() {} }),
+  };
+  void _timelineViewStore;
 
   return {
     dispose(): void {

@@ -1,7 +1,7 @@
 # Extension Platform — V1 Release Checklist
 
 **Status:** Active (M15)
-**Last updated:** 2026-06-20
+**Last updated:** 2026-08-11
 **Scope:** Every evidence domain that must pass before a V1 extension-platform release can be cut.
 **Consumer:** `scripts/quality/check-extension-release-checklist.mjs` (this file is the canonical data source).
 
@@ -125,6 +125,14 @@ warnings but not fail.
 | 43 | Meta | `quality:check` aggregate passes (all audit-mode gates) | `npm run quality:check` | no |
 | 44 | Meta | All M15 success criteria (plan_v1.meta.json) have been reviewed | `.megaplan/plans/m15-hardening-compatibility-20260620-1850/plan_v1.meta.json` | no |
 
+### 2.11 Timeline Overlay Host & Gesture Arbitration
+
+| # | Domain | Check | Evidence | Release? |
+|---|---|---|---|---|
+| 45 | Overlay | `timelineOverlay` contributions are host-rendered through a required `render` id bound via `ctx.ui.registerRenderer()`; overlays without a registered renderer are omitted and undeclared render ids produce diagnostics | `src/tools/video-editor/components/TimelineEditor/TimelineExtensionOverlayHost.integration.test.tsx`; `src/sdk/ui.ts`; `src/sdk/video/families/timelineOverlays.ts` | yes |
+| 46 | Overlay | All existing timeline gestures behave identically when no overlay has an active claim (clip drag, trim, ruler scrub, marquee, selection, context menus, wheel/native scrolling, auto-scroll, drop/reorder, and pinch zoom) | S-168; `src/tools/video-editor/components/TimelineEditor/TimelineExtensionOverlayHost.integration.test.tsx` (T5.1 passive parity and ownership arbitration) | yes |
+| 47 | Overlay | Installed-package management (enable/disable, settings editing, persisted enablement) is shipped while installer, bundler, marketplace, discovery, and update tooling remain absent | S-160–S-164, S-170; D-001, D-004, D-123 | yes |
+
 ---
 
 ## 3. Gate summary
@@ -137,7 +145,7 @@ warnings but not fail.
 
 ### 3.1 Release-blocking summary
 
-All 43 checklist items marked `Release? = yes` (items 1–42) are **release-blocking**.
+All 46 checklist items marked `Release? = yes` (items 1–42 and 45–47) are **release-blocking**.
 Items 43–44 are audit-only and do not block release.
 
 A release can be cut when:

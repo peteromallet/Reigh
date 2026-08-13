@@ -333,6 +333,43 @@ describe('TimelineEditorShellCore surface slots', () => {
     expect(screen.getByTestId('timeline-editor')).toBeTruthy();
   });
 
+  // ---- navigationControls placement ----------------------------------------
+  it('renders navigationControls beside the desktop Back button', () => {
+    render(
+      <TimelineEditorShellCore
+        timelineId="test-timeline"
+        onNavigateHome={() => {}}
+        navigationControls={<div data-testid="nav-controls">Nav Controls</div>}
+      />,
+    );
+
+    const back = screen.getByRole('button', { name: '← Back' });
+    const controls = screen.getByTestId('shell-navigation-controls');
+    expect(controls).toHaveTextContent('Nav Controls');
+    // Back and the controls are siblings in the desktop header row.
+    expect(back.parentElement).toBe(controls.parentElement);
+  });
+
+  it('renders navigationControls beside the condensed Back button in the toolbar', () => {
+    // `isOnEditorPage` + `isEditorPaneLocked` drive the condensed layout, whose
+    // toolbar hosts the Back button (forceCondensed suppresses it).
+    render(
+      <TimelineEditorShellCore
+        timelineId="test-timeline"
+        isOnEditorPage
+        isEditorPaneLocked
+        onNavigateHome={() => {}}
+        navigationControls={<div data-testid="nav-controls">Nav Controls</div>}
+      />,
+    );
+
+    const back = screen.getByRole('button', { name: '← Back' });
+    const controls = screen.getByTestId('toolbar-navigation-controls');
+    expect(controls).toHaveTextContent('Nav Controls');
+    // Back and the controls are siblings in the toolbar's left group.
+    expect(back.parentElement).toBe(controls.parentElement);
+  });
+
   it('opens the host command palette for reserved CtrlOrCmd+Shift+P', async () => {
     render(<TimelineEditorShellCore timelineId="test-timeline" />);
 

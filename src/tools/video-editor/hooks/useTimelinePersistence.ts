@@ -11,11 +11,12 @@ import {
 } from '@/tools/video-editor/data/DataProvider.ts';
 import { buildTimelineData, buildTimelineDataWithResolver, type TimelineData } from '@/tools/video-editor/lib/timeline-data.ts';
 import type { AssetResolver } from '@/tools/video-editor/data/AssetResolver.ts';
+import { BRIDGE_REQUEST_TIMEOUT_MS } from '@/tools/video-editor/data/bridgeContract.ts';
 import { clearTimelineDraft, saveTimelineDraft } from '@/tools/video-editor/data/timelineDraftIndexedDb.ts';
 import type { AssetRegistry, TimelineConfig } from '@/tools/video-editor/types/index.ts';
 import type { CommitDataOptions, ScheduleSaveFn } from '@/tools/video-editor/hooks/useTimelineCommit.ts';
 
-export type SaveStatus = 'saved' | 'saving' | 'dirty' | 'error';
+export type SaveStatus = 'saved' | 'saving' | 'dirty' | 'retrying' | 'error';
 
 const TIMELINE_SYNC_LOG_TAG = '[TimelineSync]';
 const SAVE_DEBOUNCE_MS = 500;
@@ -34,8 +35,15 @@ const SAVE_ERROR_RETRY_MAX_MS = 8_000;
  * Write-ack watchdog grace: if an edit is unacknowledged (no durable save
  * receipt) for longer than this, the UI surfaces a persistent error. Covers
  * timeouts, 4xx/5xx, rejected CAS, and the null-data no-op path.
+ *
+ * Computed, not a magic constant: the clock starts at the debounce, the POST
+ * itself is valid for the full bridge request window, and one quick transport
+ * retry (at SAVE_ERROR_RETRY_BASE_MS) gets a chance to ack before the
+ * watchdog trips. A save that lands inside the valid request window must
+ * never show a false "not saved" banner.
  */
-const WATCHDOG_GRACE_MS = 5_000;
+const WATCHDOG_GRACE_MS =
+  SAVE_DEBOUNCE_MS + BRIDGE_REQUEST_TIMEOUT_MS + 2 * SAVE_ERROR_RETRY_BASE_MS;
 
 type ConfigVersionUpdateSource = 'save' | 'reload' | 'conflict-retry';
 
@@ -191,6 +199,20 @@ export function useTimelinePersistence({
   }, []);
 
   /**
+   * Cancel a pending watchdog trip WITHOUT clearing an already-tripped error.
+   * Used when a debounce-pending save becomes interaction-deferred: the
+   * watchdog armed with that debounce must not keep consuming grace while no
+   * POST is in flight (a long drag could otherwise trip a false error). The
+   * deferred flush re-arms it through `scheduleSave` when the gesture ends.
+   */
+  const disarmWatchdog = useCallback(() => {
+    if (watchdogTimer.current) {
+      clearTimeout(watchdogTimer.current);
+      watchdogTimer.current = null;
+    }
+  }, []);
+
+  /**
    * Arm the write-ack watchdog: an edit exists that has no durable save
    * receipt. If no ack arrives within the grace period the UI trips. A
    * 'lost-edit' trips immediately (the edit was already dropped).
@@ -299,6 +321,11 @@ export function useTimelinePersistence({
             }
             logConfigVersionUpdate('save', nextVersion);
             configVersionRef.current = nextVersion;
+            // Advance the canonical version channel OUTSIDE the data object:
+            // a receipt-only ack must NOT commit a new data object (that
+            // rebuilds the editor-data slice and triggers the O(n) render
+            // cascade mid-drag). Reader/ops/sync read this store field.
+            store?.getState().setConfigVersion(nextVersion);
             completedSeqRef.current = seq;
 
             clearErrorRetry();
@@ -306,26 +333,20 @@ export function useTimelinePersistence({
             // An acknowledged save clears the one-slot recovery draft.
             void clearTimelineDraft(timelineId);
 
-            const latestDataRef = getDataRef();
-            if (latestDataRef.current?.signature === nextData.signature) {
-              commitData({
-                ...latestDataRef.current,
-                configVersion: nextVersion,
-              }, {
-                save: false,
-                skipHistory: true,
-                selectedClipId: selectedClipIdRef.current,
-                selectedTrackId: selectedTrackIdRef.current,
-              });
-            }
-
             if (seq > savedSeqRef.current) {
               savedSeqRef.current = seq;
               lastSavedSignatureRef.current = nextData.stableSignature;
             }
 
             setSaveStatus(seq >= editSeqRef.current ? 'saved' : 'dirty');
-            eventBus.emit('saveSuccess');
+            // Only a receipt that covers the current edit (no newer edit
+            // pending) is an ack: an older save's success must NOT clear the
+            // sole write-ack watchdog while a newer edit is still unsaved.
+            // The queued newer save drains right after and emits its own
+            // saveSuccess when it lands.
+            if (seq >= editSeqRef.current) {
+              eventBus.emit('saveSuccess');
+            }
           },
         },
       );
@@ -356,10 +377,16 @@ export function useTimelinePersistence({
         return;
       }
 
-      setSaveStatus('error');
       const retryData = getDataRef().current ?? dataRef.current;
       if (retryData) {
+        // Recoverable transport failure (timeout, 5xx, dropped connection):
+        // the retry backoff owns recovery, so this is not a destructive
+        // error — the user sees a neutral `retrying` badge while the backend
+        // recovers. `error` is reserved for 404/409/lost-edit/unrecoverable.
+        setSaveStatus('retrying');
         scheduleErrorRetry(retryData);
+      } else {
+        setSaveStatus('error');
       }
     } finally {
       if (!options?.bypassQueue) {
@@ -411,9 +438,35 @@ export function useTimelinePersistence({
       return;
     }
 
-    // A mutation happened and a save is now pending: arm the write-ack
-    // watchdog. A durable receipt (saveSuccess) clears it; if none arrives
-    // within the grace period the UI surfaces a persistent error.
+    // Gate on the shared interaction ref. If a drag or resize gesture is in
+    // flight, stash the newest payload and defer scheduling the save timer
+    // until the gesture ends. This prevents mid-gesture save round-trips from
+    // triggering re-renders that drop pointer capture. The watchdog is armed
+    // only after this gate passes: a long drag must not consume grace before
+    // the POST even starts (the grace formula assumes the clock begins at the
+    // debounce, not mid-gesture). The deferred payload is re-flushed through
+    // this same path when the gesture ends, arming the watchdog then.
+    if (isInteractionActive(getInteractionStateRef())) {
+      deferredSaveRef.current = { data: nextData, preserveStatus: options?.preserveStatus };
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+      }
+      // The pending debounce was armed together with the write-ack watchdog
+      // (see below). That watchdog must not keep consuming grace while no
+      // POST is in flight: a long drag would trip a false on-page error
+      // mid-interaction. Disarm it here; the deferred flush re-arms it via
+      // `armWatchdog` below when the gesture ends and the save actually
+      // starts. An already-tripped error is left intact — only a receipt
+      // (saveSuccess) or an explicit retry clears it.
+      disarmWatchdog();
+      return;
+    }
+
+    // A mutation happened and a save is now pending (deferral has ended):
+    // arm the write-ack watchdog. A durable receipt (saveSuccess) clears it;
+    // if none arrives within the grace period the UI surfaces a persistent
+    // error.
     armWatchdog('timeout');
 
     // Diverged (409): autosave and remote adoption are frozen. The latest
@@ -429,19 +482,6 @@ export function useTimelinePersistence({
 
     if (!options?.preserveStatus) {
       setSaveStatus('dirty');
-    }
-
-    // Gate on the shared interaction ref. If a drag or resize gesture is in
-    // flight, stash the newest payload and defer scheduling the save timer
-    // until the gesture ends. This prevents mid-gesture save round-trips from
-    // triggering re-renders that drop pointer capture.
-    if (isInteractionActive(getInteractionStateRef())) {
-      deferredSaveRef.current = { data: nextData, preserveStatus: options?.preserveStatus };
-      if (saveTimer.current) {
-        clearTimeout(saveTimer.current);
-        saveTimer.current = null;
-      }
-      return;
     }
 
     if (saveTimer.current) {
@@ -461,7 +501,7 @@ export function useTimelinePersistence({
       saveTimer.current = null;
       void doSave(nextData, editSeqRef.current);
     }, SAVE_DEBOUNCE_MS);
-  }, [armWatchdog, cancelErrorRetryTimer, doSave, editSeqRef, getDataRef, getInteractionStateRef, isConflictExhausted, persistenceEnabled, timelineId]);
+  }, [armWatchdog, cancelErrorRetryTimer, disarmWatchdog, doSave, editSeqRef, getDataRef, getInteractionStateRef, isConflictExhausted, persistenceEnabled, timelineId]);
 
   const retryWatchdog = useCallback(() => {
     const reason = watchdogReason;
@@ -502,6 +542,7 @@ export function useTimelinePersistence({
     editSeqRef.current = savedSeqRef.current;
     logConfigVersionUpdate('reload', loadedTimeline.configVersion);
     configVersionRef.current = loadedTimeline.configVersion;
+    store?.getState().setConfigVersion(loadedTimeline.configVersion);
 
     const reloadedData = assetResolver
       ? await buildTimelineDataWithResolver(

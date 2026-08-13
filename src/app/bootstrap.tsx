@@ -17,10 +17,6 @@ import { initializeProjectSelectionStore } from '@/shared/contexts/projectSelect
 import { initializePreloadingService } from '@/shared/lib/preloading';
 import { initializeToolSettingsWriteRuntime } from '@/shared/settings';
 import { initializeNetworkStatusManager } from '@/shared/services/network/networkStatusManager';
-import {
-  hasLocalModeUrlParams,
-  writeStoredLocalModeFlag,
-} from '@/shared/dev/devSession';
 import '@/index.css';
 
 let presenterInstalled = false;
@@ -100,17 +96,9 @@ export function initializeAppEnvironment(): void {
   // no session — and crucially, no session must be created: a fake Supabase
   // login would make the app-wide providers (user settings, projects, credits)
   // fetch real data against a non-existent backend and fail. The auth gate
-  // itself exempts the local-mode editor route in DEV (`Layout.tsx`), so
-  // nothing here needs to write localStorage. See `dev/devSession.ts`.
-  if (import.meta.env.DEV && !isTestRuntimeEnvironment(env) && typeof window !== 'undefined') {
-    if (hasLocalModeUrlParams(window.location.search)) {
-      try {
-        writeStoredLocalModeFlag(window.localStorage);
-      } catch {
-        // Restricted storage — the developer just uses the full editor URL.
-      }
-    }
-  }
+  // itself exempts the local-mode editor route in DEV (`Layout.tsx`). The
+  // legacy `dev.videoEditor.localMode` storage flag has been retired — local
+  // mode is derived from the URL params alone, so nothing here writes storage.
 
   // Initialize dark mode from localStorage (prevents flash of wrong theme).
   const storedDarkMode = localStorage.getItem('dark-mode');

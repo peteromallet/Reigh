@@ -6,9 +6,11 @@ import {
   ValidationError,
   ServerError,
   SilentError,
+  TimeoutError,
   isAppError,
   isNetworkError,
   isAuthError,
+  isTimeoutError,
   categorizeError,
 } from '../errorHandling/errors';
 
@@ -61,18 +63,102 @@ describe('NetworkError', () => {
   });
 
   describe('fromError', () => {
-    it('creates timeout error from AbortError', () => {
-      const original = new Error('aborted');
+    it('flags explicit TimeoutError as timeout', () => {
+      const err = NetworkError.fromError(new TimeoutError('boom'));
+      expect(err.isTimeout).toBe(true);
+      expect(err.message).toContain('timed out');
+    });
+
+    it('flags AbortError whose cause is a TimeoutError as timeout', () => {
+      // This is how fetch surfaces AbortController.abort(reason) rejections:
+      // an AbortError DOMException whose `cause` is the abort reason.
+      const original = new Error('The operation was aborted.');
       original.name = 'AbortError';
+      original.cause = new TimeoutError('timed out');
       const err = NetworkError.fromError(original);
       expect(err.isTimeout).toBe(true);
       expect(err.cause).toBe(original);
     });
 
-    it('creates timeout error from message containing "timeout"', () => {
+    it('does NOT flag generic AbortError as timeout (lock-steal aborts)', () => {
+      const original = new Error('aborted');
+      original.name = 'AbortError';
+      const err = NetworkError.fromError(original);
+      expect(err.isTimeout).toBe(false);
+      expect(err.cause).toBe(original);
+    });
+
+    it('does NOT flag message-only "timeout" errors as timeout', () => {
       const original = new Error('request timeout occurred');
       const err = NetworkError.fromError(original);
+      expect(err.isTimeout).toBe(false);
+    });
+
+    it('flags a TimeoutError wrapped in context as timeout (Supabase wrapper shape)', () => {
+      const wrapper = new Error('fetch failed');
+      (wrapper as Error & { context?: unknown }).context = {
+        cause: new TimeoutError('timed out'),
+      };
+      const err = NetworkError.fromError(wrapper);
       expect(err.isTimeout).toBe(true);
+    });
+  });
+});
+
+describe('TimeoutError', () => {
+  it('is a plain Error marker (not an AppError)', () => {
+    const err = new TimeoutError();
+    expect(err).toBeInstanceOf(Error);
+    expect(err.name).toBe('TimeoutError');
+  });
+
+  describe('isTimeoutError', () => {
+    it('detects a TimeoutError itself', () => {
+      expect(isTimeoutError(new TimeoutError('boom'))).toBe(true);
+    });
+
+    it('detects an AbortError whose cause is a TimeoutError', () => {
+      const original = new Error('The operation was aborted.');
+      original.name = 'AbortError';
+      original.cause = new TimeoutError('timed out');
+      expect(isTimeoutError(original)).toBe(true);
+    });
+
+    it('does NOT detect generic AbortError (lock-steal aborts)', () => {
+      const original = new Error('aborted');
+      original.name = 'AbortError';
+      expect(isTimeoutError(original)).toBe(false);
+    });
+
+    it('does NOT detect unrelated errors', () => {
+      expect(isTimeoutError(new Error('request timeout occurred'))).toBe(false);
+      expect(isTimeoutError(null)).toBe(false);
+      expect(isTimeoutError(undefined)).toBe(false);
+    });
+
+    it('detects a TimeoutError nested under context (Supabase wrapper shape)', () => {
+      const wrapper = new Error('fetch failed');
+      (wrapper as Error & { context?: unknown }).context = {
+        url: 'https://example.com',
+        cause: new TimeoutError('timed out'),
+      };
+      expect(isTimeoutError(wrapper)).toBe(true);
+    });
+
+    it('detects a TimeoutError nested under originalError (storage wrapper shape)', () => {
+      const wrapper = new Error('storage upload failed');
+      (wrapper as Error & { originalError?: unknown }).originalError = {
+        cause: new TimeoutError('timed out'),
+      };
+      expect(isTimeoutError(wrapper)).toBe(true);
+    });
+
+    it('terminates on cyclic wrappers without throwing', () => {
+      const cyclic = new Error('cycle');
+      const inner = new Error('inner');
+      (inner as Error & { cause?: unknown }).cause = cyclic;
+      (cyclic as Error & { cause?: unknown }).cause = inner;
+      expect(isTimeoutError(cyclic)).toBe(false);
     });
   });
 });
@@ -185,10 +271,20 @@ describe('categorizeError', () => {
     expect(err).toBeInstanceOf(NetworkError);
   });
 
-  it('categorizes timeout errors', () => {
-    const err = categorizeError(new Error('Request timeout'));
+  it('categorizes timeout marker errors as timeouts', () => {
+    const err = categorizeError(new TimeoutError('timed out'));
     expect(err).toBeInstanceOf(NetworkError);
     expect((err as NetworkError).isTimeout).toBe(true);
+    expect((err as NetworkError).message).toContain('timed out');
+  });
+
+  it('does NOT present generic AbortError as a timeout', () => {
+    const original = new Error('aborted');
+    original.name = 'AbortError';
+    const err = categorizeError(original);
+    expect(err).toBeInstanceOf(NetworkError);
+    expect((err as NetworkError).isTimeout).toBe(false);
+    expect((err as NetworkError).message).not.toContain('timed out');
   });
 
   it('categorizes abort errors', () => {

@@ -97,6 +97,12 @@ export function useDragCoordinator({
   const lastPositionRef = useRef<DropPosition | null>(null);
   const pendingIndicatorRef = useRef<DropIndicatorPosition | null>(null);
   const frameRef = useRef<number | null>(null);
+  // First-sample latch: the FIRST position of each drag shows SYNCHRONOUSLY
+  // (no rAF) so a burst-delivered fast drag (move+up in the same tick — e.g.
+  // a save ack coalescing events) still paints the ghost before endSession
+  // cancels the pending frame. Reset in end(); subsequent samples keep the
+  // rAF coalescing so rapid moves collapse to the newest position.
+  const firstSampleShownRef = useRef(false);
 
   const flushIndicator = useCallback(() => {
     frameRef.current = null;
@@ -116,6 +122,7 @@ export function useDragCoordinator({
 
     pendingIndicatorRef.current = null;
     lastPositionRef.current = null;
+    firstSampleShownRef.current = false;
     indicatorRef.current?.hide();
   }, []);
 
@@ -150,7 +157,17 @@ export function useDragCoordinator({
     });
 
     lastPositionRef.current = nextPosition;
-    pendingIndicatorRef.current = toIndicatorPosition(nextPosition);
+    const indicatorPosition = toIndicatorPosition(nextPosition);
+    pendingIndicatorRef.current = indicatorPosition;
+
+    if (!firstSampleShownRef.current) {
+      // First sample of this drag: show SYNCHRONOUSLY so the ghost paints
+      // even when pointerup arrives in the same tick (a save landing mid-drag
+      // can coalesce move+up into one burst with no rAF in between). Later
+      // samples still coalesce via the rAF below.
+      firstSampleShownRef.current = true;
+      indicatorRef.current?.show(indicatorPosition);
+    }
 
     if (frameRef.current === null) {
       RafLoopDetector.track('dragCoordinator');

@@ -143,7 +143,7 @@ Example reference: [toolbar-example.ts](../../src/examples/toolbar-example.ts) (
 
 ### 3.2 Inspector and overlay contributions
 
-For the properties panel and timeline canvas:
+For the properties panel and the timeline canvas:
 
 ```typescript
 {
@@ -156,14 +156,24 @@ For the properties panel and timeline canvas:
 {
   id: 'my-overlay',
   kind: 'timelineOverlay',
+  render: 'my-overlay/render', // required render-id reference (see below)
   label: 'My Overlay',
   order: 100,
 }
 ```
 
-Example references: [inspector-example.ts](../../src/examples/inspector-example.ts) (docs-safe), [overlay-example.ts](../../src/examples/overlay-example.ts) (docs-safe).
+Example references: [inspector-example.ts](../../src/examples/inspector-example.ts) (docs-safe), [overlay-example.ts](../../src/examples/overlay-example.ts) (docs-safe, executable required-render + `ctx.ui` shape), and the live canary consumer `src/tools/video-editor/dev/scene-phase-markers/extension.ts` (required-render + `ctx.ui` + ruler markers; DEV-local).
 
-> **Status — `timelineOverlay` is reserved.** It is declarable and normalizes into `runtime.config.overlays`, but no host renders it yet: nothing enumerates the contributions or calls `render`. For timeline-scoped UI today use a `contextMenuItem` on a timeline target (§3.3).
+#### Timeline overlays: the required-render contract
+
+`timelineOverlay` is a **render-backed, host-rendered** contribution — it is not reserved and not unwired. The host renders resolved overlays into the timeline surface through `TimelineExtensionOverlayHost` (mounted in `TimelineCanvas`). The contract:
+
+- The manifest contribution **requires a non-empty `render` id** and has **no `when` clause**. A missing/blank render id or a `when` clause is rejected at manifest validation.
+- During `activate()` the extension **must bind a renderer** for that render id via `ctx.ui.registerRenderer(renderId, renderer)` (§4.5). Overlays whose renderer was never registered are omitted from the resolved list — there is no callable placeholder.
+- The renderer receives `TimelineOverlayRenderProps`: memoized geometry (`timeToPixel`/`pixelToTime`, scale, visible extent), stable viewport/playhead stores, the current selection, a boolean `pointerClaimed` + `claimPointer()`/`releasePointer()` arbitration API, and host-owned `primitives`.
+- V1's host-owned primitive is `primitives.markerLayer(...)`, **ruler-only**: `placement` accepts `'ruler'` only (no `trackId`, no canvas placement). Markers are controlled input; `onChange` reports `'preview'` during a drag and `'commit'` at release; commits snap to the frame grid when `snap: true`.
+- Gesture arbitration is passive: overlay wrappers are click-through until `claimPointer()` succeeds, and `claimPointer()` returns `false` while any other timeline gesture owner or a foreign overlay holds the claim. The release criterion is that **all existing timeline gestures behave identically when no overlay has an active claim**.
+- The overlay host is gated by the provider-owned **`timelineOverlaysEnabled`** flag, which defaults to `false` — overlays stay off unless a host opts in. In the DEV build, the `?timelineOverlayCanary=1` query parameter flips the flag (`npm run dev:editor` appends it); production never honors the query parameter. Maturity promotion to public-supported is deferred until the release criterion passes (see the [release checklist](./extension-platform-release-checklist.md)).
 
 ### 3.3 Commands, keybindings, and context menus (M4)
 
@@ -339,6 +349,43 @@ Diagnostics surfaces include: the diagnostic panel (code panel), status surface,
 
 Example reference: [code-panel-diagnostics-example.ts](../../src/examples/code-panel-diagnostics-example.ts) (docs-safe).
 
+### 4.5 UI renderer registration (`ctx.ui`)
+
+Render-backed contributions (today: `timelineOverlay`) declare a required `render` id in the manifest and bind the matching renderer imperatively during activation:
+
+```typescript
+import type { TimelineOverlayRenderProps } from '@reigh/editor-sdk';
+
+// In activate():
+const handle = ctx.ui.registerRenderer<TimelineOverlayRenderProps>(
+  'my-overlay/render', // must match the contribution's `render` id
+  (props) => {
+    // props.geometry, props.viewport, props.playhead, props.selection,
+    // props.pointerClaimed, props.claimPointer(), props.releasePointer(),
+    // props.primitives.markerLayer(...)
+    // The renderer must return non-null, host-renderable content — never
+    // null. Docs-safe examples return a short label string; real extensions
+    // return a React element (or `props.primitives.markerLayer(...)` ruler
+    // markers), e.g. createElement(MyOverlayView, { props }).
+    const viewport = props.viewport.getSnapshot();
+    const playhead = props.playhead.getSnapshot();
+    return [
+      `My overlay (my-overlay/render)`,
+      `scrollLeft ${Math.round(viewport.scrollLeft)}`,
+      `playhead ${playhead.time.toFixed(2)}s`,
+      props.selection.hasSelection ? 'selection' : 'no-selection',
+    ].join(' · ');
+  },
+);
+```
+
+- `ctx.ui` exposes **only** `registerRenderer`. There is no renderer lookup, no host DOM access, and no gesture-owner setter.
+- Registering a render id the extension did not declare produces an `unbound-render-id` diagnostic; the overlay is omitted from the resolved list.
+- The returned `DisposeHandle` unregisters the renderer and is idempotent; dispose it in your `activate()` disposal.
+- Renderer registration is **extension-scoped** — the host reconciles by `(extensionId, renderId)` and never lets one extension claim another's render id.
+
+Example reference: [overlay-example.ts](../../src/examples/overlay-example.ts) (docs-safe required-render + `ctx.ui` + non-null renderer); the DEV-local canary `src/tools/video-editor/dev/scene-phase-markers/extension.ts` registers both a status-bar slot renderer and a `timelineOverlay` renderer through `ctx.ui`.
+
 ---
 
 ## 5. Timeline mutation (patches and proposals)
@@ -409,7 +456,7 @@ The flagship-local extension emits this warning at activation:
 
 ### 6.2 Error containment
 
-- Contribution-level `ContributionErrorBoundary` catches React render errors within extension slots, dialogs, panels, and inspector sections
+- Contribution-level `ContributionErrorBoundary` catches React render errors within extension slots, dialogs, panels, inspector sections, and timeline overlays (an overlay error releases any active pointer claim before the fallback is shown)
 - Activation-time throws are captured as diagnostics and the extension transitions to `failed` state
 - Lifecycle teardown failures are captured as diagnostics, never thrown
 - Extensions can still throw in non-React paths (event handlers, timers) — those errors are **not** caught
@@ -448,7 +495,7 @@ The following examples passed the M15 pre-doc readiness gate and are safe to ref
 |---|---|
 | `toolbar-example.ts` | Slot contribution (toolbar) |
 | `inspector-example.ts` | Inspector section contribution |
-| `overlay-example.ts` | Timeline overlay contribution |
+| `overlay-example.ts` | Timeline overlay contribution — executable required-render + `ctx.ui.registerRenderer` pattern (host-rendered, non-null renderer, no `when` clause) |
 | `status-surface-example.ts` | Status bar slot + settings + chrome events |
 | `code-panel-diagnostics-example.ts` | Structured diagnostic reporting with source ranges |
 | `surface-coverage.ts` | Surface coverage across host slots |
@@ -483,7 +530,8 @@ These capabilities are explicitly deferred or unsupported. **Do not document the
 
 | Area | Deferral ref | Earliest milestone |
 |---|---|---|
-| Extension **install/update/delete** from the manager UI (enable/disable, settings editing and persistence are **shipped** — see the supported/deferred matrix S-160–S-164) | D-001, D-010 | M14 |
+| Extension **install/update/delete** from the manager UI (enable/disable, settings editing and persistence are **shipped** for installed packages — see the supported/deferred matrix S-160–S-164); bundler, installer, package-discovery, and update tooling remain **absent** — there is no pack builder, no install command, and no update channel | D-001, D-004, D-123 | M14 |
+| Timeline-overlay maturity promotion to `public-supported` until the passive-gesture release criterion passes ("All existing timeline gestures behave identically when no overlay has an active claim") — the host stays behind the `timelineOverlaysEnabled` gate (default false; DEV `?timelineOverlayCanary=1` implemented) | Release checklist §2.11 | After canary gate |
 | Render planner & export UI | D-020–D-027 | M12 |
 | Live data bridge frontend state coverage | D-030–D-037 | M11 |
 | Agent tool workflow validation & frontend | D-040–D-047 | M10 |
@@ -523,3 +571,4 @@ See the [supported/deferred matrix](./extension-platform-supported-deferred.md) 
 | Date | Change |
 |---|---|
 | 2026-06-20 | Initial quickstart for M15. Written after pre-doc example readiness gate passed (22 docs-safe examples, 0 failures). All referenced examples are docs-safe. Missing workflows classified as deferred or unsupported per the supported/deferred matrix. |
+| 2026-08-11 | T7.4: `timelineOverlay` documented as a live required-render contribution (host-rendered via `TimelineExtensionOverlayHost`, renderer bound through `ctx.ui.registerRenderer`, ruler-only `markerLayer` primitive, passive gesture arbitration, canary gate `timelineOverlaysEnabled` default false with DEV `?timelineOverlayCanary=1` planned for B9, deferred maturity promotion). Installed packages already have manager enable/disable (S-160–S-164); installer, bundler, marketplace, discovery, and update tooling remain absent. Generic disposal never deletes project data. |

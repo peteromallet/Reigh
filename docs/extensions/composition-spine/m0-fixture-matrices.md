@@ -40,7 +40,7 @@ point to the same authority chain instead of inventing new states.
 | `VK-02` | `dialog` | Host-integrated dialog layer contribution. | `contributionKinds.ts:53-75`; `family-maturity.json:278` |
 | `VK-03` | `panel` | Host-integrated panel placement contribution. | `contributionKinds.ts:53-75`; `family-maturity.json:514` |
 | `VK-04` | `inspectorSection` | Host-integrated inspector section contribution. | `contributionKinds.ts:53-75`; `family-maturity.json:356` |
-| `VK-05` | `timelineOverlay` | Host-integrated overlay contribution. | `contributionKinds.ts:53-75`; `family-maturity.json:750` |
+| `VK-05` | `timelineOverlay` | Host-integrated, host-rendered overlay contribution with a required `render` id (no `when` clause); renderer bound via `ctx.ui.registerRenderer()`. | `contributionKinds.ts:53-75`; `family-maturity.json:750` |
 | `VK-06` | `command` | Host-integrated command contribution. | `contributionKinds.ts:53-75`; `family-maturity.json:200` |
 | `VK-07` | `keybinding` | Host-integrated keybinding contribution. | `contributionKinds.ts:53-75`; `family-maturity.json:395` |
 | `VK-08` | `contextMenuItem` | Host-integrated context-menu contribution. | `contributionKinds.ts:53-75`; `family-maturity.json:239` |
@@ -253,3 +253,12 @@ codifies several invariants that the matrices must respect.
 4. No literals outside the cited source unions/const arrays are introduced by
    this matrix. Any future row addition requires a source-authority change
    first, then an M0-doc update.
+5. `timelineOverlay` (VK-05) is a live, host-rendered surface as of T7: the
+   manifest requires a non-empty `render` id (no `when`), the renderer is
+   bound through `ctx.ui.registerRenderer()`, and the host renders resolved
+   overlays via `TimelineExtensionOverlayHost` with a ruler-only `markerLayer`
+   primitive. The family stays `host-integrated` (not `public-supported`)
+   behind the `timelineOverlaysEnabled` canary gate until the release
+   criterion passes; installed-package management (enable/disable, settings,
+   persistence) is shipped while installer, bundler, marketplace, discovery,
+   and update tooling remain absent.

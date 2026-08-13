@@ -552,7 +552,7 @@ export function createJsonRpcStdioTransport({
       nextRequestId += 1;
       const id = nextRequestId;
 
-      return new Promise<TResult>(async (resolve, reject) => {
+      return new Promise<TResult>((resolve, reject) => {
         const timeoutHandle = setTimeoutFn(() => {
           pendingRequests.delete(id);
           reject(new JsonRpcTransportError(`Request "${method}" timed out after ${timeoutMs}ms.`, {
@@ -576,18 +576,20 @@ export function createJsonRpcStdioTransport({
           timeoutHandle,
         });
 
-        try {
-          await writeMessage({
-            jsonrpc: '2.0',
-            id,
-            method,
-            params: params ?? {},
-          });
-        } catch (error) {
-          clearTimeoutFn(timeoutHandle);
-          pendingRequests.delete(id);
-          reject(error);
-        }
+        void (async () => {
+          try {
+            await writeMessage({
+              jsonrpc: '2.0',
+              id,
+              method,
+              params: params ?? {},
+            });
+          } catch (error) {
+            clearTimeoutFn(timeoutHandle);
+            pendingRequests.delete(id);
+            reject(error);
+          }
+        })();
       });
     },
 

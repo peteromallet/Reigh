@@ -35,6 +35,8 @@ import {
   isRouteIncompatible,
   isWeakerProvenance,
   contributionRefKey,
+  createTimelineOverlayGeometry,
+  KNOWN_CONTRIBUTION_KINDS,
 } from '@/sdk/index';
 import { createExtensionContext, setEditorShellRoot, getEditorShellRoot } from '@/tools/video-editor/runtime/extensionContextFactory';
 import type {
@@ -160,6 +162,24 @@ import type {
   SidecarArtifactManifestProfile,
   PreviewArtifactManifestProfile,
   ProvenanceGap,
+  // T1.1 timeline overlay + UI contracts
+  ExtensionRenderer,
+  ExtensionUiService,
+  TimelineOverlayManifestContribution,
+  TimelineOverlayDescriptor,
+  ResolvedTimelineOverlayDescriptor,
+  TimelineOverlayGeometryInput,
+  TimelineOverlayGeometry,
+  TimelineViewportSnapshot,
+  TimelineViewportStore,
+  TimelinePlayheadSnapshot,
+  TimelinePlayheadStore,
+  TimelineOverlaySelection,
+  TimelineOverlayRenderProps,
+  TimelinePointMarker,
+  TimelineMarkerChange,
+  TimelineMarkerLayerOptions,
+  TimelineOverlayPrimitives,
 } from '@/sdk/index';
 import type { ProcessRoundtripRequest, ProcessRoundtripResult } from '@/sdk/capabilities';
 import type { ProcessOutputKind, ProcessSpec, ProcessStatus } from '@/sdk/video/families/processes';
@@ -1442,6 +1462,7 @@ describe('createExtensionContext', () => {
       'services',
       'shaders',
       'transitions',
+      'ui',
     ]);
   });
 
@@ -1575,7 +1596,7 @@ describe('createCreativeContextStubs', () => {
     }
   });
 
-  it('all 10 creative members are enumerable', () => {
+  it('all 11 creative members are enumerable', () => {
     const stubs = createCreativeContextStubs();
     const keys = Object.keys(stubs).sort();
     expect(keys).toEqual([
@@ -1588,6 +1609,7 @@ describe('createCreativeContextStubs', () => {
       'sessions',
       'stage',
       'timeline',
+      'timelineView',
       'writing',
     ]);
   });
@@ -1624,7 +1646,7 @@ describe('ExtensionNotImplementedError', () => {
 // ---------------------------------------------------------------------------
 
 describe('CREATIVE_MEMBER_MILESTONE', () => {
-  it('has entries for all 10 creative members', () => {
+  it('has entries for all 11 creative members', () => {
     const keys = Object.keys(CREATIVE_MEMBER_MILESTONE).sort();
     expect(keys).toEqual([
       'assets',
@@ -1636,6 +1658,7 @@ describe('CREATIVE_MEMBER_MILESTONE', () => {
       'sessions',
       'stage',
       'timeline',
+      'timelineView',
       'writing',
     ]);
   });
@@ -4760,6 +4783,494 @@ describe('M7a: Output-format route planning public contract', () => {
   });
 });
 
+
+// ---------------------------------------------------------------------------
+// T1.1: Timeline overlay + UI public contracts
+// ---------------------------------------------------------------------------
+
+// Compile-time pins (enforced by tsc; values referenced in the runtime test
+// below so noUnusedLocals does not flag them). Each alias resolves to `never`
+// — a compile error on `const x: Alias = true` — if a forbidden member is ever
+// added to the public contract:
+//  - no `trackId` on the marker primitive or layer options
+//  - no `when` clause on the overlay contribution or descriptor
+//  - no public `setGestureOwner` (or `gestureOwner`) on overlay render props
+//  - `ExtensionContext` requires `ui`
+//  - `ExtensionUiService` exposes only `registerRenderer`
+//  - the overlay manifest contribution requires `render`
+type _T11NoTrackIdOnMarker = 'trackId' extends keyof TimelinePointMarker<unknown> ? never : true;
+type _T11NoTrackIdOnLayer = 'trackId' extends keyof TimelineMarkerLayerOptions<unknown> ? never : true;
+type _T11NoWhenOnOverlay = 'when' extends keyof TimelineOverlayManifestContribution ? never : true;
+type _T11NoWhenOnDescriptor = 'when' extends keyof TimelineOverlayDescriptor ? never : true;
+type _T11NoSetGestureOwnerOnRenderProps = 'setGestureOwner' extends keyof TimelineOverlayRenderProps ? never : true;
+type _T11NoGestureOwnerOnRenderProps = 'gestureOwner' extends keyof TimelineOverlayRenderProps ? never : true;
+type _T11ContextRequiresUi = ExtensionContext extends { readonly ui: ExtensionUiService } ? true : never;
+type _T11UiKeys = keyof ExtensionUiService;
+type _T11UiOnlyRegisterRenderer =
+  'registerRenderer' extends _T11UiKeys
+    ? Exclude<_T11UiKeys, 'registerRenderer'> extends never
+      ? true
+      : never
+    : never;
+type _T11RenderIsRequired = TimelineOverlayManifestContribution extends { render: string } ? true : never;
+
+const _t11NoTrackIdOnMarker: _T11NoTrackIdOnMarker = true;
+const _t11NoTrackIdOnLayer: _T11NoTrackIdOnLayer = true;
+const _t11NoWhenOnOverlay: _T11NoWhenOnOverlay = true;
+const _t11NoWhenOnDescriptor: _T11NoWhenOnDescriptor = true;
+const _t11NoSetGestureOwnerOnRenderProps: _T11NoSetGestureOwnerOnRenderProps = true;
+const _t11NoGestureOwnerOnRenderProps: _T11NoGestureOwnerOnRenderProps = true;
+const _t11ContextRequiresUi: _T11ContextRequiresUi = true;
+const _t11UiOnlyRegisterRenderer: _T11UiOnlyRegisterRenderer = true;
+const _t11RenderIsRequired: _T11RenderIsRequired = true;
+
+describe('T1.1: timeline overlay public contract', () => {
+  it('compile-time contract pins are in force', () => {
+    expect([
+      _t11NoTrackIdOnMarker,
+      _t11NoTrackIdOnLayer,
+      _t11NoWhenOnOverlay,
+      _t11NoWhenOnDescriptor,
+      _t11NoSetGestureOwnerOnRenderProps,
+      _t11NoGestureOwnerOnRenderProps,
+      _t11ContextRequiresUi,
+      _t11UiOnlyRegisterRenderer,
+      _t11RenderIsRequired,
+    ]).toEqual([true, true, true, true, true, true, true, true, true]);
+  });
+
+  it('TimelineOverlayManifestContribution requires render and carries kind timelineOverlay', () => {
+    const contribution: TimelineOverlayManifestContribution = {
+      id: 'phase-markers' as any,
+      kind: 'timelineOverlay',
+      render: 'render/phase-markers',
+      order: 10,
+      label: 'Phase markers',
+    };
+    expect(contribution.kind).toBe('timelineOverlay');
+    expect(contribution.render).toBe('render/phase-markers');
+    expect(contribution.order).toBe(10);
+    expect(contribution.label).toBe('Phase markers');
+    // no `when` clause on the overlay contribution
+    expect((contribution as Record<string, unknown>).when).toBeUndefined();
+  });
+
+  it('TimelineOverlayDescriptor carries extensionId, id, renderId, and optional order', () => {
+    const descriptor: TimelineOverlayDescriptor = {
+      extensionId: 'com.reigh.scene-phase-markers',
+      id: 'phase-markers' as any,
+      renderId: 'render/phase-markers',
+      order: 5,
+    };
+    expect(descriptor.extensionId).toBe('com.reigh.scene-phase-markers');
+    expect(descriptor.id).toBe('phase-markers');
+    expect(descriptor.renderId).toBe('render/phase-markers');
+    expect(descriptor.order).toBe(5);
+  });
+
+  it('ResolvedTimelineOverlayDescriptor adds the registered renderer', () => {
+    const renderer: ExtensionRenderer<TimelineOverlayRenderProps> = (props) =>
+      props.geometry.timeToPixel(0);
+    const resolved: ResolvedTimelineOverlayDescriptor = {
+      extensionId: 'com.reigh.scene-phase-markers',
+      id: 'phase-markers' as any,
+      renderId: 'render/phase-markers',
+      render: renderer,
+    };
+    expect(typeof resolved.render).toBe('function');
+    expect(resolved.render).toBe(renderer);
+  });
+
+  it('createTimelineOverlayGeometry derives pixelsPerSecond and the time<->pixel mapping', () => {
+    const geometry = createTimelineOverlayGeometry({
+      scale: 10,
+      scaleWidth: 160,
+      startLeft: 80,
+      extentStart: 0,
+      extentEnd: 30,
+    });
+    expect(geometry.scale).toBe(10);
+    expect(geometry.scaleWidth).toBe(160);
+    expect(geometry.startLeft).toBe(80);
+    expect(geometry.extentStart).toBe(0);
+    expect(geometry.extentEnd).toBe(30);
+    expect(geometry.pixelsPerSecond).toBe(16); // scaleWidth / scale
+    expect(geometry.timeToPixel(2)).toBe(80 + 2 * 16); // startLeft + time * pps
+    expect(geometry.pixelToTime(80 + 2 * 16)).toBe(2); // inverse
+    expect(geometry.pixelToTime(80)).toBe(0);
+    expect(Object.isFrozen(geometry)).toBe(true);
+  });
+
+  it('createTimelineOverlayGeometry is deterministic for identical memoized inputs', () => {
+    const input: TimelineOverlayGeometryInput = {
+      scale: 10,
+      scaleWidth: 160,
+      startLeft: 80,
+      extentStart: 0,
+      extentEnd: 30,
+    };
+    const a = createTimelineOverlayGeometry(input);
+    const b = createTimelineOverlayGeometry(input);
+    expect(a.pixelsPerSecond).toBe(b.pixelsPerSecond);
+    expect(a.timeToPixel(7.5)).toBe(b.timeToPixel(7.5));
+    expect(a.pixelToTime(320)).toBe(b.pixelToTime(320));
+  });
+
+  it('TimelineViewportStore exposes getSnapshot and subscribe returning a DisposeHandle', () => {
+    const viewport: TimelineViewportStore = {
+      getSnapshot: () => ({
+        scrollLeft: 0,
+        scrollTop: 0,
+        viewportWidth: 1200,
+        viewportHeight: 300,
+        totalWidth: 4000,
+        totalHeight: 600,
+      }),
+      subscribe: () => ({ dispose() {} }),
+    };
+    const snapshot: TimelineViewportSnapshot = viewport.getSnapshot();
+    expect(snapshot.scrollLeft).toBe(0);
+    expect(snapshot.scrollTop).toBe(0);
+    expect(snapshot.viewportWidth).toBe(1200);
+    expect(snapshot.viewportHeight).toBe(300);
+    expect(snapshot.totalWidth).toBe(4000);
+    expect(snapshot.totalHeight).toBe(600);
+    const handle = viewport.subscribe(() => {});
+    expect(typeof handle.dispose).toBe('function');
+  });
+
+  it('TimelinePlayheadStore exposes getSnapshot and subscribe returning a DisposeHandle', () => {
+    const playhead: TimelinePlayheadStore = {
+      getSnapshot: () => ({ time: 12.5, isPlaying: true }),
+      subscribe: () => ({ dispose() {} }),
+    };
+    const snapshot: TimelinePlayheadSnapshot = playhead.getSnapshot();
+    expect(snapshot.time).toBe(12.5);
+    expect(snapshot.isPlaying).toBe(true);
+  });
+
+  it('TimelineOverlaySelection is constructable', () => {
+    const selection: TimelineOverlaySelection = {
+      selectedClipIds: new Set(['clip-1']),
+      hasSelection: true,
+    };
+    expect(selection.selectedClipIds.has('clip-1')).toBe(true);
+    expect(selection.hasSelection).toBe(true);
+  });
+
+  it('TimelineOverlayRenderProps carries geometry, stores, selection, boolean claim API, and primitives', () => {
+    const geometry = createTimelineOverlayGeometry({
+      scale: 10,
+      scaleWidth: 160,
+      startLeft: 80,
+      extentStart: 0,
+      extentEnd: 30,
+    });
+    let claimed = false;
+    const props: TimelineOverlayRenderProps = {
+      geometry,
+      viewport: {
+        getSnapshot: () => ({
+          scrollLeft: 0,
+          scrollTop: 0,
+          viewportWidth: 1200,
+          viewportHeight: 300,
+          totalWidth: 4000,
+          totalHeight: 600,
+        }),
+        subscribe: () => ({ dispose() {} }),
+      },
+      playhead: {
+        getSnapshot: () => ({ time: 0, isPlaying: false }),
+        subscribe: () => ({ dispose() {} }),
+      },
+      selection: { selectedClipIds: new Set(), hasSelection: false },
+      pointerClaimed: claimed,
+      claimPointer: () => {
+        claimed = true;
+        return true;
+      },
+      releasePointer: () => {
+        claimed = false;
+      },
+      primitives: { markerLayer: () => null },
+    };
+    expect(props.geometry).toBe(geometry);
+    expect(typeof props.viewport.getSnapshot).toBe('function');
+    expect(typeof props.playhead.subscribe).toBe('function');
+    expect(props.selection.hasSelection).toBe(false);
+    expect(props.claimPointer()).toBe(true);
+    expect(typeof props.releasePointer).toBe('function');
+    expect(typeof props.primitives.markerLayer).toBe('function');
+    // no public setGestureOwner
+    expect((props as Record<string, unknown>).setGestureOwner).toBeUndefined();
+  });
+
+  it('TimelinePointMarker carries id, time, and optional label/color/disabled/data', () => {
+    const marker: TimelinePointMarker<{ phase: string }> = {
+      id: 'm1',
+      time: 4.5,
+      label: 'Intro',
+      color: '#f59e0b',
+      disabled: false,
+      data: { phase: 'intro' },
+    };
+    expect(marker.id).toBe('m1');
+    expect(marker.time).toBe(4.5);
+    expect(marker.label).toBe('Intro');
+    expect(marker.color).toBe('#f59e0b');
+    expect(marker.disabled).toBe(false);
+    expect(marker.data?.phase).toBe('intro');
+    // no trackId member
+    expect((marker as Record<string, unknown>).trackId).toBeUndefined();
+  });
+
+  it('TimelineMarkerChange reports preview and commit phases', () => {
+    const preview: TimelineMarkerChange = { id: 'm1', time: 5, phase: 'preview' };
+    const commit: TimelineMarkerChange = { id: 'm1', time: 5.5, phase: 'commit' };
+    expect(preview.id).toBe('m1');
+    expect(preview.time).toBe(5);
+    expect(preview.phase).toBe('preview');
+    expect(commit.phase).toBe('commit');
+  });
+
+  it('TimelineMarkerLayerOptions is ruler-only in V1', () => {
+    const options: TimelineMarkerLayerOptions<{ phase: string }> = {
+      markers: [{ id: 'm1', time: 4.5, data: { phase: 'intro' } }],
+      placement: 'ruler',
+      interactive: true,
+      snap: true,
+      selectedIds: new Set(['m1']),
+      onActivate: () => {},
+      onChange: () => {},
+      renderMarker: (marker) => marker.id,
+    };
+    expect(options.placement).toBe('ruler');
+    expect(options.interactive).toBe(true);
+    expect(options.snap).toBe(true);
+    expect(options.selectedIds?.has('m1')).toBe(true);
+    expect(typeof options.onActivate).toBe('function');
+    expect(typeof options.onChange).toBe('function');
+    expect(options.renderMarker?.(options.markers[0])).toBe('m1');
+    expect(options.markers[0].data?.phase).toBe('intro');
+    // no trackId member
+    expect((options as Record<string, unknown>).trackId).toBeUndefined();
+
+    // placement defaults to ruler when omitted
+    const defaulted: TimelineMarkerLayerOptions = {
+      markers: [],
+      interactive: false,
+      snap: false,
+    };
+    expect(defaulted.placement).toBeUndefined();
+  });
+
+  it('TimelineOverlayPrimitives.markerLayer is callable with layer options', () => {
+    const received: TimelineMarkerLayerOptions[] = [];
+    const primitives: TimelineOverlayPrimitives = {
+      markerLayer: (options) => {
+        received.push(options);
+        return 'layer';
+      },
+    };
+    const result = primitives.markerLayer({
+      markers: [{ id: 'm1', time: 2 }],
+      interactive: true,
+      snap: true,
+    });
+    expect(result).toBe('layer');
+    expect(received).toHaveLength(1);
+    expect(received[0].markers[0].time).toBe(2);
+  });
+
+  it('no timelineMarker contribution kind exists', () => {
+    expect(KNOWN_CONTRIBUTION_KINDS).not.toContain('timelineMarker');
+    expect(Object.keys(CONTRIBUTION_KIND_MILESTONE)).not.toContain('timelineMarker');
+  });
+});
+
+describe('T1.1: ExtensionContext.ui contract', () => {
+  it('ExtensionContext requires ui and ExtensionUiService exposes only registerRenderer', () => {
+    const ui: ExtensionUiService = {
+      registerRenderer: <Props,>(_renderId: string, _renderer: ExtensionRenderer<Props>) => ({
+        dispose() {},
+      }),
+    };
+    // Runtime pin: the service exposes exactly one member.
+    expect(Object.keys(ui)).toEqual(['registerRenderer']);
+
+    // A complete context literal must include `ui` to satisfy ExtensionContext.
+    const ctx = {
+      apiVersion: 1,
+      extension: {
+        id: 'com.test.overlay' as any,
+        version: '1.0.0',
+        label: 'Overlay Test',
+        manifest: {} as any,
+      },
+      chrome: {
+        toast() {},
+        progress() {},
+        subscribe() {
+          return { dispose() {} };
+        },
+        focus() {},
+        announce() {},
+      },
+      services: {
+        settings: {} as any,
+        i18n: { t: (key: string) => key },
+        diagnostics: {} as any,
+      },
+      creative: createCreativeContextStubs(),
+      commands: {} as any,
+      ui,
+      effects: {} as any,
+      transitions: {} as any,
+      clipTypes: {} as any,
+      shaders: {} as any,
+      agentTools: {} as any,
+    } satisfies ExtensionContext;
+
+    expect(ctx.ui).toBe(ui);
+    expect(typeof ctx.ui.registerRenderer).toBe('function');
+  });
+
+  it('registerRenderer returns a DisposeHandle whose dispose is callable', () => {
+    const ui: ExtensionUiService = {
+      registerRenderer: <Props,>(_renderId: string, _renderer: ExtensionRenderer<Props>) => ({
+        dispose() {},
+      }),
+    };
+    const handle = ui.registerRenderer(
+      'render/overlay-a',
+      (props: TimelineOverlayRenderProps) => props.pointerClaimed,
+    );
+    expect(typeof handle.dispose).toBe('function');
+    expect(() => handle.dispose()).not.toThrow();
+  });
+
+  it('ExtensionRenderer is callable with typed props', () => {
+    const renderer: ExtensionRenderer<TimelineOverlayRenderProps> = (props) =>
+      props.geometry.timeToPixel(props.playhead.getSnapshot().time);
+    expect(typeof renderer).toBe('function');
+    const result = renderer({
+      geometry: createTimelineOverlayGeometry({
+        scale: 10,
+        scaleWidth: 160,
+        startLeft: 80,
+        extentStart: 0,
+        extentEnd: 30,
+      }),
+      viewport: {
+        getSnapshot: () => ({
+          scrollLeft: 0,
+          scrollTop: 0,
+          viewportWidth: 1200,
+          viewportHeight: 300,
+          totalWidth: 4000,
+          totalHeight: 600,
+        }),
+        subscribe: () => ({ dispose() {} }),
+      },
+      playhead: {
+        getSnapshot: () => ({ time: 5, isPlaying: false }),
+        subscribe: () => ({ dispose() {} }),
+      },
+      selection: { selectedClipIds: new Set(), hasSelection: false },
+      pointerClaimed: false,
+      claimPointer: () => true,
+      releasePointer: () => {},
+      primitives: { markerLayer: () => null },
+    });
+    expect(result).toBe(80 + 5 * 16);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T2.1: timelineOverlay manifest enforcement (runtime + type-level)
+// ---------------------------------------------------------------------------
+
+// Compile-time pins (enforced by tsc; referenced below so noUnusedLocals does
+// not flag them):
+//  - the permissive ExtensionContribution branch must NOT accept 'timelineOverlay'
+//  - TimelineOverlayManifestContribution keeps `render` required and no `when`
+type _T21NoOverlayInGenericContribution =
+  ExtensionContribution extends { kind: 'timelineOverlay' } ? never : true;
+type _T21OverlayRequiresRender = TimelineOverlayManifestContribution extends { render: string } ? true : never;
+type _T21OverlayHasNoWhen = 'when' extends keyof TimelineOverlayManifestContribution ? never : true;
+
+const _t21NoOverlayInGenericContribution: _T21NoOverlayInGenericContribution = true;
+const _t21OverlayRequiresRender: _T21OverlayRequiresRender = true;
+const _t21OverlayHasNoWhen: _T21OverlayHasNoWhen = true;
+
+describe('T2.1: timelineOverlay manifest enforcement', () => {
+  it('compile-time pins are in force', () => {
+    expect([_t21NoOverlayInGenericContribution, _t21OverlayRequiresRender, _t21OverlayHasNoWhen]).toEqual([
+      true, true, true,
+    ]);
+  });
+
+  function overlayManifest(overlay: Record<string, unknown>): ExtensionManifest {
+    return {
+      id: 'com.t21.overlay' as any,
+      version: '1.0.0',
+      label: 'T2.1 Overlay Test',
+      contributions: [overlay as never],
+    };
+  }
+
+  it('validateManifest rejects a missing overlay render id', () => {
+    const result = validateManifest(overlayManifest({ id: 'phase-markers', kind: 'timelineOverlay' }));
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.code === 'manifest/missing-overlay-render')).toBe(true);
+  });
+
+  it('validateManifest rejects a blank overlay render id', () => {
+    const result = validateManifest(
+      overlayManifest({ id: 'phase-markers', kind: 'timelineOverlay', render: '   ' }),
+    );
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.code === 'manifest/invalid-overlay-render')).toBe(true);
+  });
+
+  it('validateManifest rejects a non-string overlay render id', () => {
+    const result = validateManifest(
+      overlayManifest({ id: 'phase-markers', kind: 'timelineOverlay', render: 42 }),
+    );
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.code === 'manifest/invalid-overlay-render')).toBe(true);
+  });
+
+  it('validateManifest rejects a when clause on a timelineOverlay', () => {
+    const result = validateManifest(
+      overlayManifest({ id: 'phase-markers', kind: 'timelineOverlay', render: 'render/phase-markers', when: 'ctx.isDev' }),
+    );
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.code === 'manifest/overlay-no-when')).toBe(true);
+  });
+
+  it('validateManifest accepts a governed timelineOverlay with a non-empty render id', () => {
+    const result = validateManifest(
+      overlayManifest({ id: 'phase-markers', kind: 'timelineOverlay', render: 'render/phase-markers', order: 10 }),
+    );
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('ExtensionContribution (generic branch) no longer permits kind timelineOverlay', () => {
+    // Type-level: the generic branch excludes timelineOverlay (compile-time pin
+    // above). Runtime: a governed overlay contribution is still expressible via
+    // TimelineOverlayManifestContribution, which requires render.
+    const contribution: TimelineOverlayManifestContribution = {
+      id: 'phase-markers' as any,
+      kind: 'timelineOverlay',
+      render: 'render/phase-markers',
+    };
+    expect(contribution.kind).toBe('timelineOverlay');
+    expect(contribution.render).toBe('render/phase-markers');
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Helper

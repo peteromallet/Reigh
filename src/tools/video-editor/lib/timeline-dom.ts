@@ -40,6 +40,18 @@ export const SHOT_GROUP_DRAG_ANCHOR_CLIP_ID_ATTR = 'data-shot-group-drag-anchor-
 export const SHOT_GROUP_DRAG_ANCHOR_ROW_ID_ATTR = 'data-shot-group-drag-anchor-row-id';
 export const SHELL_REGION_ATTR = 'data-video-editor-shell-region';
 
+/**
+ * Host-owned marker on the one timeline-overlay wrapper that is interactive
+ * while it holds the pointer claim. Marquee and the empty-canvas context menu
+ * treat any element bearing it as interactive and ignore pointerdowns on it,
+ * so an overlay drag can never start a marquee or open a menu on the same
+ * event. Every other overlay wrapper stays click-through and must not carry it.
+ *
+ * Set by the overlay host (see `TimelineExtensionOverlayHost`), never by
+ * extension code; the literal string is not part of the extension contract.
+ */
+export const OVERLAY_INTERACTIVE_ATTR = 'data-overlay-interactive';
+
 /** `data-action-id` value marking a pinned shot-group label. */
 export const SHOT_GROUP_LABEL_ACTION_ID = 'shot-group-label';
 
@@ -56,6 +68,7 @@ export const TIMELINE_DOM = {
   shotGroupDragAnchorClipId: SHOT_GROUP_DRAG_ANCHOR_CLIP_ID_ATTR,
   shotGroupDragAnchorRowId: SHOT_GROUP_DRAG_ANCHOR_ROW_ID_ATTR,
   shellRegion: SHELL_REGION_ATTR,
+  overlayInteractive: OVERLAY_INTERACTIVE_ATTR,
 } as const;
 
 // ── Selectors (mirroring the queries the gesture layer actually issues) ─────
@@ -68,12 +81,19 @@ export const SELECTED_CLIP_SELECTOR = `[${CLIP_ID_ATTR}][${CLIP_SELECTED_ATTR}="
 export const RESIZE_EDGE_SELECTOR = `[${RESIZE_EDGE_ATTR}]` as const;
 export const SHOT_GROUP_DRAG_ANCHOR_SELECTOR = `[${SHOT_GROUP_DRAG_ANCHOR_CLIP_ID_ATTR}]` as const;
 
-/** Marquee ignores pointerdowns that land on a clip or any positioned action slot. */
-export const MARQUEE_IGNORE_SELECTOR = `${CLIP_ACTION_SELECTOR}, [${ACTION_ID_ATTR}]` as const;
+/**
+ * Marquee ignores pointerdowns that land on a clip, any positioned action
+ * slot, or the host-owned overlay-interactive wrapper holding a pointer claim.
+ */
+export const MARQUEE_IGNORE_SELECTOR =
+  `${CLIP_ACTION_SELECTOR}, [${ACTION_ID_ATTR}], [${OVERLAY_INTERACTIVE_ATTR}]` as const;
 
-/** The empty-canvas context menu only opens away from clips, tracks and controls. */
+/**
+ * The empty-canvas context menu only opens away from clips, tracks, controls
+ * and host-owned overlay-interactive elements.
+ */
 export const TIMELINE_AREA_CONTEXT_MENU_IGNORE_SELECTOR =
-  `[${ACTION_ID_ATTR}], [${TRACK_ID_ATTR}], [${SHOT_GROUP_DRAG_ANCHOR_CLIP_ID_ATTR}], button, input, textarea, select, [role="menuitem"]` as const;
+  `[${ACTION_ID_ATTR}], [${TRACK_ID_ATTR}], [${SHOT_GROUP_DRAG_ANCHOR_CLIP_ID_ATTR}], [${OVERLAY_INTERACTIVE_ATTR}], button, input, textarea, select, [role="menuitem"]` as const;
 
 // ── dataset keys ───────────────────────────────────────────────────────────
 // `element.dataset.<key>` is the read side of the attributes above; the test
@@ -85,6 +105,7 @@ export const ROW_ID_DATASET_KEY = 'rowId';
 export const RESIZE_EDGE_DATASET_KEY = 'resizeEdge';
 export const SHOT_GROUP_DRAG_ANCHOR_CLIP_ID_DATASET_KEY = 'shotGroupDragAnchorClipId';
 export const SHOT_GROUP_DRAG_ANCHOR_ROW_ID_DATASET_KEY = 'shotGroupDragAnchorRowId';
+export const OVERLAY_INTERACTIVE_DATASET_KEY = 'overlayInteractive';
 
 /** `data-shot-group-drag-anchor-row-id` → `shotGroupDragAnchorRowId`. */
 export const datasetKeyForAttribute = (attribute: string): string =>

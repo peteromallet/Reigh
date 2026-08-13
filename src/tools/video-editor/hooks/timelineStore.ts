@@ -84,11 +84,22 @@ export interface ProposalImportDiagnosticsState {
 
 export interface TimelineStoreState extends TimelineStoreBootstrap {
   availability: TimelineAvailabilityState;
+  /**
+   * Canonical timeline version, tracked OUTSIDE the `data` object. The
+   * persistence layer advances it on save acknowledgment (and reload / poll
+   * acceptance) WITHOUT committing a new data object, so a receipt-only ack
+   * never rebuilds the editor-data slice. Consumers that classify against the
+   * server head or build versioned patches (TimelineReader baseVersion,
+   * TimelineOps stale-base checks, editor sync) read this field instead of
+   * `data.configVersion`, which only describes the committed document.
+   */
+  configVersion: number;
   timelineOps: TimelineOps | null;
   proposalRuntime: ProposalRuntime | null;
   managedObjectGuard: ManagedObjectGuard | null;
   proposalImportDiagnostics: ProposalImportDiagnosticsState | null;
   setMounted: (mounted: boolean) => void;
+  setConfigVersion: (version: number) => void;
   syncDataSlice: (data: TimelineEditorDataContextValue) => void;
   syncOpsSlice: (ops: TimelineEditorOpsContextValue) => void;
   syncChromeSlice: (chrome: TimelineChromeContextValue) => void;
@@ -409,12 +420,18 @@ export function createTimelineStore(bootstrap?: Partial<TimelineStoreBootstrap>)
   return createStore<TimelineStoreState>((set) => ({
     availability: getTimelineAvailabilityState(initialMounted),
     ...seededSlices,
+    configVersion: 0,
     proposalImportDiagnostics: null,
     setMounted: (mounted) => {
       set((state) => (
         state.availability.mounted === mounted
           ? state
           : { availability: getTimelineAvailabilityState(mounted) }
+      ));
+    },
+    setConfigVersion: (version) => {
+      set((state) => (
+        state.configVersion === version ? state : { configVersion: version }
       ));
     },
     syncDataSlice: (data) => {
@@ -506,6 +523,7 @@ export function createTimelineStore(bootstrap?: Partial<TimelineStoreBootstrap>)
       set(() => ({
         availability: UNMOUNTED_TIMELINE_AVAILABILITY,
         ...createInitialSlices(),
+        configVersion: 0,
         proposalImportDiagnostics: null,
       }));
     },
@@ -606,6 +624,16 @@ export function useTimelineStoreLifecycle() {
 /** Read the whole `data` slice: resolved config, clips, refs, zoom, device class, interaction mode. */
 export function useTimelineEditorData(): TimelineEditorDataContextValue {
   return useBoundTimelineStore((state) => state.data, shallow);
+}
+
+/**
+ * Read the canonical timeline version — the ack-tracked revision kept OUTSIDE
+ * the `data` object (see `TimelineStoreState.configVersion`). Consumers that
+ * classify against the server head or build versioned patches must read this,
+ * not `data.configVersion` (which does not advance on receipt-only acks).
+ */
+export function useTimelineConfigVersion(): number {
+  return useBoundTimelineStore((state) => state.configVersion);
 }
 
 /** Read one derived value out of the `data` slice; re-renders only when that value changes. */

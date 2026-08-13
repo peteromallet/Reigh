@@ -1,28 +1,17 @@
-import type { ReactNode } from 'react';
-import { CodePanelCanary } from '@/tools/video-editor/components/Canary/CodePanelCanary';
-import { WritingPanelCanary } from '@/tools/video-editor/components/Canary/WritingPanelCanary';
-import { StagePanelCanary } from '@/tools/video-editor/components/Canary/StagePanelCanary';
-import type { VideoEditorSlotName, VideoEditorRenderContext } from '@/tools/video-editor/runtime/extensionSurface';
+import type { VideoEditorSlotName } from '@/tools/video-editor/runtime/extensionSurface';
 
-/** Slots reserved for future milestones — rendered as canaries. */
-export const RESERVED_SLOT_NAMES: ReadonlySet<VideoEditorSlotName> = new Set([
-  'codePanel',
-  'writingPanel',
-  'stagePanel',
-]);
+/** Slots reserved for future milestones — rendered as inert placeholders. */
+export const RESERVED_SLOT_NAMES: Readonly<Partial<Record<VideoEditorSlotName, true>>> = {
+  codePanel: true,
+  writingPanel: true,
+  stagePanel: true,
+};
 
 /** Milestone labels for reserved slots. */
 const RESERVED_SLOT_MILESTONE: Readonly<Partial<Record<VideoEditorSlotName, string>>> = {
   codePanel: 'M4',
   writingPanel: 'M4',
   stagePanel: 'M3',
-};
-
-/** Canary component for each reserved slot. */
-export const RESERVED_SLOT_CANARY: Partial<Record<VideoEditorSlotName, (props: { context: VideoEditorRenderContext }) => ReactNode>> = {
-  codePanel: CodePanelCanary,
-  writingPanel: WritingPanelCanary,
-  stagePanel: StagePanelCanary,
 };
 
 /**

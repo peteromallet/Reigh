@@ -9,13 +9,9 @@ import type { AudioBindingValue } from '@/tools/video-editor/types/index.ts';
 
 export function useAudioReactive(): AudioAnalysisData {
   const frame = useCurrentFrame();
-  const analysisFrames = useContext(AudioAnalysisContext);
+  const analysis = useContext(AudioAnalysisContext);
 
-  if (!analysisFrames) {
-    return SILENT_AUDIO_DATA;
-  }
-
-  return analysisFrames[frame] ?? analysisFrames[analysisFrames.length - 1] ?? SILENT_AUDIO_DATA;
+  return analysis?.getFrame(frame) ?? SILENT_AUDIO_DATA;
 }
 
 export function useAudioParam(binding: AudioBindingValue | undefined | null): number {

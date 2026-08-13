@@ -36,7 +36,12 @@ const MANIFEST: HostAdapterManifest = Object.freeze({
     'Normalizes process contributions into VideoEditorProcessDescriptor ' +
     'records for the runtime.  Owns spec/operation projection, capability ' +
     'enumeration, route scoping, and host-supplied ProcessStatus overlay.',
-  metadata: Object.freeze({ classification: 'real' }),
+  metadata: Object.freeze({
+    classification: 'real',
+    owner: 'reigh-app:video-editor',
+    reason: 'Process contributions normalize to trusted-local descriptors; runtime execution is reserved for M12.',
+    expiration: 'M12',
+  }),
 });
 
 // ---------------------------------------------------------------------------

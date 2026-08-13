@@ -388,7 +388,7 @@ export function useTimelineTrackManagement({
       },
       clipOrderOverride: nextClipOrder,
     }, { transactionId });
-  }, [applyEdit, dataRef]);
+  }, [applyEdit, dataRef, eventBus]);
 
   const createTrackAndMoveClip = useCallback((clipId: string, kind: TrackKind, newStartTime?: number, insertAtTop = false) => {
     const current = dataRef.current;

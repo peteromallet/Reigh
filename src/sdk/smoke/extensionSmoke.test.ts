@@ -23,7 +23,7 @@ import {
   EXTENSION_SMOKE_ACTIVE_VALUE,
   EXTENSION_SMOKE_CONTRIBUTION_ID,
 } from '@/sdk/smoke/extensionSmoke';
-import { INTERNAL_EXTENSION_RENDER_SURFACE } from '@/sdk/internalExtensionRenderSurface';
+import { getInternalExtensionRenderSurface } from '@/sdk/internalExtensionRenderSurface';
 import type { ReighExtension, ExtensionContribution } from '@reigh/editor-sdk';
 
 // ---------------------------------------------------------------------------
@@ -226,7 +226,7 @@ describe('getExtensionSmokeExtension — manifest validation', () => {
       return { dispose: disposeRenderer };
     });
     const handle = ext.activate!({
-      [INTERNAL_EXTENSION_RENDER_SURFACE]: { registerRenderer },
+      ui: { registerRenderer },
     } as any);
 
     expect(handle).toBeDefined();
@@ -247,6 +247,34 @@ describe('getExtensionSmokeExtension — manifest validation', () => {
     expect(handle).toBeDefined();
     expect(typeof handle.dispose).toBe('function');
     expect(() => handle.dispose()).not.toThrow();
+  });
+
+  it('the compatibility accessor delegates to the same ctx.ui service', () => {
+    const sp = makeSearchParams({ [EXTENSION_SMOKE_QUERY_PARAM]: EXTENSION_SMOKE_ACTIVE_VALUE });
+    const ext = getExtensionSmokeExtension(sp)!;
+    const ui = {
+      registerRenderer: vi.fn((_renderId: string, renderer: () => ReactNode) => {
+        render(createElement('div', null, renderer()));
+        return { dispose: vi.fn() };
+      }),
+    };
+
+    // Compatibility accessor resolves the exact service exposed as ctx.ui.
+    const surface = getInternalExtensionRenderSurface({ ui } as any);
+    expect(surface).toBe(ui);
+
+    // Activating with ctx.ui drives the same service the accessor resolves.
+    const handle = ext.activate!({ ui } as any);
+    expect(ui.registerRenderer).toHaveBeenCalledWith(
+      EXTENSION_SMOKE_CONTRIBUTION_ID,
+      expect.any(Function),
+    );
+    expect(screen.getByTestId(EXTENSION_SMOKE_CONTRIBUTION_ID)).toHaveTextContent('Extension smoke active');
+    expect(() => handle.dispose()).not.toThrow();
+  });
+
+  it('the compatibility accessor returns null without a ui service', () => {
+    expect(getInternalExtensionRenderSurface({} as any)).toBeNull();
   });
 
   it('extension manifest has no permissions (inert)', () => {

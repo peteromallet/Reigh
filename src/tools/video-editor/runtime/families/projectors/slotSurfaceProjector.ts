@@ -13,7 +13,6 @@ import type {
   VideoEditorDialogDescriptor,
   VideoEditorPanelDescriptor,
   VideoEditorInspectorSectionDescriptor,
-  VideoEditorOverlayDescriptor,
 } from '../../extensionSurface';
 import type { CollectedContribution } from '../FamilyContributionSequence';
 import { sortFamilyContributions, freezeDescriptor } from '../familyAdapterUtils';
@@ -23,7 +22,9 @@ export interface SlotSurfaceDescriptor<T> {
   readonly slot?: VideoEditorSlotName;
 }
 
-export type SlotSurfaceKind = 'slot' | 'dialog' | 'panel' | 'inspectorSection' | 'timelineOverlay';
+// timelineOverlay is projected by the dedicated timelineOverlayProjector and
+// is intentionally not part of the slot-surface kind set.
+export type SlotSurfaceKind = 'slot' | 'dialog' | 'panel' | 'inspectorSection';
 
 const PLACEMENT_DEFAULT = 'after-default' as const;
 
@@ -36,7 +37,6 @@ export function buildSlotSurfaceDescriptors(
   | VideoEditorDialogDescriptor
   | VideoEditorPanelDescriptor
   | VideoEditorInspectorSectionDescriptor
-  | VideoEditorOverlayDescriptor
 >[] {
   const sorted = sortFamilyContributions(contributions, extensionOrder);
   return sorted.map(({ contribution }) => {
@@ -75,14 +75,6 @@ export function buildSlotSurfaceDescriptors(
           descriptor: freezeDescriptor({
             id,
             placement: (contribution as { placement?: 'before-default' | 'after-default' }).placement ?? PLACEMENT_DEFAULT,
-            order: contribution.order,
-            render: null as unknown as VideoEditorSlotRenderer,
-          }),
-        };
-      case 'timelineOverlay':
-        return {
-          descriptor: freezeDescriptor({
-            id,
             order: contribution.order,
             render: null as unknown as VideoEditorSlotRenderer,
           }),

@@ -1,6 +1,7 @@
 import { useCallback, useContext, useRef, useState } from 'react';
 import { VideoEditorRuntimeContext } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import { useTimelineEditorData } from '@/tools/video-editor/hooks/timelineStore.ts';
+import { useTimelineConfigVersion } from '@/tools/video-editor/hooks/timelineStore.ts';
 import { useTimelineChromeContext } from '@/tools/video-editor/hooks/timelineStore.ts';
 import { SupabaseDataProvider } from '@/tools/video-editor/data/SupabaseDataProvider.ts';
 import type { SyncTimelineResult } from '@/tools/video-editor/data/SupabaseDataProvider.ts';
@@ -41,6 +42,9 @@ export function useEditorSync(): {
   const runtime = useContext(VideoEditorRuntimeContext);
   const editorData = useTimelineEditorData();
   const chrome = useTimelineChromeContext();
+  // Canonical version channel: advances on save acknowledgment WITHOUT a new
+  // data object, so sync classification compares against the acked head.
+  const configVersion = useTimelineConfigVersion();
 
   if (!runtime) {
     return {
@@ -68,9 +72,11 @@ export function useEditorSync(): {
     const supabaseProvider = provider as SupabaseDataProvider;
     const timelineId = runtime.timelineId;
     const config = editorData.data?.config;
-    const configVersion = editorData.data?.configVersion ?? 1;
     const registry = editorData.data?.registry;
-    const hasUnsavedEdits = chrome.saveStatus === 'dirty' || chrome.saveStatus === 'error';
+    const hasUnsavedEdits =
+      chrome.saveStatus === 'dirty'
+      || chrome.saveStatus === 'retrying'
+      || chrome.saveStatus === 'error';
 
     if (!config) {
       setSyncState('error');
@@ -133,7 +139,7 @@ export function useEditorSync(): {
     } finally {
       syncingRef.current = false;
     }
-  }, [isSyncAvailable, provider, runtime.timelineId, editorData.data, chrome]);
+  }, [isSyncAvailable, provider, runtime.timelineId, editorData.data, chrome, configVersion]);
 
   return {
     isSyncAvailable,

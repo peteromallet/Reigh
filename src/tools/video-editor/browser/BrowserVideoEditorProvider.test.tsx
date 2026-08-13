@@ -448,4 +448,49 @@ describe('BrowserVideoEditorProvider', () => {
       expect(smokeExt.manifest.dependsOn).toBeUndefined();
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // T22: Provider-owned timeline-overlay flag threading
+  // ---------------------------------------------------------------------------
+
+  describe('timelineOverlaysEnabled flag', () => {
+    it('defaults to false when no value is supplied', () => {
+      render(
+        <BrowserVideoEditorProvider dataProvider={provider} timelineId="timeline-flag-default" userId={null}>
+          <div data-testid="flag-default">Default</div>
+        </BrowserVideoEditorProvider>,
+      );
+
+      expect(screen.getByTestId('flag-default')).toHaveTextContent('Default');
+      expect(runtimeProviderSpy).toHaveBeenCalledWith(expect.objectContaining({
+        timelineOverlaysEnabled: false,
+      }));
+    });
+
+    it('forwards an explicit true value unchanged', () => {
+      render(
+        <BrowserVideoEditorProvider dataProvider={provider} timelineId="timeline-flag-true" userId={null} timelineOverlaysEnabled>
+          <div data-testid="flag-true">True</div>
+        </BrowserVideoEditorProvider>,
+      );
+
+      expect(screen.getByTestId('flag-true')).toHaveTextContent('True');
+      expect(runtimeProviderSpy).toHaveBeenCalledWith(expect.objectContaining({
+        timelineOverlaysEnabled: true,
+      }));
+    });
+
+    it('forwards an explicit false value unchanged', () => {
+      render(
+        <BrowserVideoEditorProvider dataProvider={provider} timelineId="timeline-flag-false" userId={null} timelineOverlaysEnabled={false}>
+          <div data-testid="flag-false">False</div>
+        </BrowserVideoEditorProvider>,
+      );
+
+      expect(screen.getByTestId('flag-false')).toHaveTextContent('False');
+      expect(runtimeProviderSpy).toHaveBeenCalledWith(expect.objectContaining({
+        timelineOverlaysEnabled: false,
+      }));
+    });
+  });
 });

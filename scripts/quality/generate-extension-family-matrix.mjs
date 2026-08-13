@@ -98,6 +98,9 @@ function buildRow(def) {
     requiresTrustedCode: def.requiresTrustedCode,
     manifestSchemaDefinition: def.manifestSchemaDefinition,
 
+    /** Executable host-consumer test path for UI integration, if any. */
+    uiIntegrationTest: def.uiIntegrationTest ?? null,
+
     /** Requirement checklist as boolean flags (undefined → null). */
     coverage,
 

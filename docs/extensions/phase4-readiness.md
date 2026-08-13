@@ -207,10 +207,10 @@ are:
 | M5-007 | Recovery | extensionLifecycle.ts | cleared | src/tools/video-editor/runtime/extensionLifecycle.test.ts:ExtensionLifecycleHost — recovery-key registry (T2) → incrementRecoveryKey bumps the key for a managed extension | src/tools/video-editor/runtime/extensionLifecycle.ts:createExtensionLifecycleHost | incrementRecoveryKey() returns a strictly larger string key and getRecoveryKey() reflects the bump. | Explicit retry from error boundaries. |
 | M5-008 | Recovery | extensionLifecycle.ts | cleared | src/tools/video-editor/runtime/extensionLifecycle.test.ts:ExtensionLifecycleHost — recovery-key registry (T2) → recovery keys are independent across extensions | src/tools/video-editor/runtime/extensionLifecycle.ts:createExtensionLifecycleHost | Changing one extension's recovery key does not affect any other extension's key. | Isolation prevents cascading remounts. |
 | M5-009 | Recovery | extensionLifecycle.ts | cleared | src/tools/video-editor/runtime/extensionLifecycle.test.ts:ExtensionLifecycleHost — recovery-key registry (T2) → recovery keys are monotonic and never decrement | src/tools/video-editor/runtime/extensionLifecycle.ts:createExtensionLifecycleHost | No operation on the lifecycle host can decrease a recovery key. | Monotonicity guarantees boundary reset propagation. |
-| M5-010 | Containment | ContributionErrorBoundary.tsx | cleared | src/tools/video-editor/runtime/ContributionErrorBoundary.test.tsx:HostContributionErrorBoundary → with real DataProviderWrapper context | src/tools/video-editor/runtime/ContributionErrorBoundary.tsx:HostContributionErrorBoundary | HostContributionErrorBoundary reads recovery keys from VideoEditorRuntimeContextValue, passes them to ContributionErrorBoundary, and exposes a visible user-initiated bounded retry action. | Wrapper preserves legacy fallback UI; retry button is shown only when owning extension is known and is debounced/bounded to prevent infinite loops. |
+| M5-010 | Containment | ContributionErrorBoundary.tsx | cleared | src/tools/video-editor/runtime/ContributionErrorBoundary.test.tsx:ContributionErrorBoundary → shows retry button when onRetry is provided | src/tools/video-editor/runtime/ContributionErrorBoundary.tsx:HostContributionErrorBoundary | HostContributionErrorBoundary reads recovery keys from VideoEditorRuntimeContextValue, passes them to ContributionErrorBoundary, and exposes a visible user-initiated bounded retry action. | Wrapper preserves legacy fallback UI; retry button is shown only when owning extension is known and is debounced/bounded to prevent infinite loops. |
 | M5-011 | Containment | TimelineEditorShellCore.tsx | cleared | src/tools/video-editor/components/TimelineEditorShellCore.test.tsx:TimelineEditorShellCore — HostContributionErrorBoundary recovery keys → resolves extensionId for slot boundaries from extensionRuntime contributions | src/tools/video-editor/components/TimelineEditorShellCore.tsx:TimelineEditorShellCore | All 14 slot boundaries use HostContributionErrorBoundary with extensionId resolved from slotOwnerMap. | Slots with no owning extension fall back to legacy children-change reset. |
 | M5-012 | Containment | PropertiesPanel.tsx | cleared | src/tools/video-editor/components/PropertiesPanel/PropertiesPanel.test.tsx:HostContributionErrorBoundary — inspector sections → renders inspector sections through HostContributionErrorBoundary | src/tools/video-editor/components/PropertiesPanel/PropertiesPanel.tsx:PropertiesPanel | Inspector sections and asset panels use HostContributionErrorBoundary with extensionId from contributionOwnerMap. | Owner metadata threaded through inspector and panel descriptors. |
-| M5-013 | Containment | ClipPanel.tsx | cleared | src/tools/video-editor/runtime/ContributionErrorBoundary.test.tsx:HostContributionErrorBoundary → with real DataProviderWrapper context | src/tools/video-editor/components/PropertiesPanel/ClipPanel.tsx:ClipPanel | ClipPanel uses HostContributionErrorBoundary with extensionId from clipTypeRegistryRecord.ownerExtensionId. | Clip panel had reliable owner metadata before M5. |
+| M5-013 | Containment | ClipPanel.tsx | cleared | src/tools/video-editor/runtime/ContributionErrorBoundary.test.tsx:ContributionErrorBoundary → renders fallback UI when child throws | src/tools/video-editor/components/PropertiesPanel/ClipPanel.tsx:ClipPanel | ClipPanel uses HostContributionErrorBoundary with extensionId from clipTypeRegistryRecord.ownerExtensionId. | Clip panel had reliable owner metadata before M5. |
 | M5-014 | Inventory | extensionSurface.ts | cleared | src/tools/video-editor/runtime/extensionSurface.test.ts:computePackageContributionSummary → computes declared count and kinds from manifest contributions | src/tools/video-editor/runtime/extensionSurface.ts:computePackageContributionSummary | computePackageContributionSummary() returns frozen PackageContributionSummary with declaredCount, activeCount, inactiveCount, kinds, and contributionIds. | Survives without active runtime descriptors; pure function of manifest data. |
 | M5-015 | Inventory | extensionSurface.ts | cleared | src/tools/video-editor/runtime/extensionSurface.test.ts:normalizeExtensionRuntime — package contribution summaries → can produce declared counts, kind labels, and contribution IDs for manifest-only entries without active runtime descriptors | src/tools/video-editor/runtime/extensionSurface.ts:normalizeExtensionRuntime | normalizeExtensionRuntime() precomputes contributionSummary for both active and non-active packages from manifest data. | Disabled/error entries remain inspectable. |
 | M5-016 | Inventory | useExtensionLoaderWiring.ts | cleared | src/tools/video-editor/contexts/VideoEditorProvider.test.tsx:VideoEditorProvider → synthesizes loaded packageStateEntries for direct host-supplied extensions | src/tools/video-editor/runtime/useExtensionLoaderWiring.ts:useExtensionLoaderWiring | No-repository fast path synthesizes PackageStateInventoryEntry[] with packageState=loaded, stateReason=Direct host-supplied extension, manifestContributions, and contributionSummary. | Direct extensions visible in manager inventory without a repository. |
@@ -268,6 +268,81 @@ M4 closed the pristine SDK boundary:
 | Search Provider | typed | delegated | No | Yes | `searchProviderAdapter.ts` | Search provider contributions supply asset/material search results to the host search surface. The provider owns indexing, model choice, and refresh; the host owns query dispatch, result merge, and source labeling. Typed but execution is reserved (declarable, not yet bridged for runtime). Evidence: SearchProviderContribution interface; contributionKindNotYetBridged returns M6. |
 | Shader | schema-backed | delegated | No | Yes | `shaderAdapter.ts` | Shader contributions declare WebGL materializer descriptors. Descriptor projection is delegated to a placeholder adapter while materializer requirements remain validated at export time. |
 | Slot | documented | public-supported | No | Yes | `slotAdapter.ts` | Slot contributions are the original extension surface. Fully bridged with lifecycle, diagnostics, UI, persistence, examples, and tests. |
-| Timeline Overlay | documented | host-integrated | No | Yes | `timelineOverlayAdapter.ts` | Timeline overlay contributions render over the timeline surface with order control and when-clause filtering. Bridged at M2. Evidence: dedicated overlay-example.ts. |
+| Timeline Overlay | documented | host-integrated | No | Yes | `timelineOverlayAdapter.ts` | Timeline overlay contributions render into the timeline surface through TimelineExtensionOverlayHost, mounted by TimelineCanvas. Overlays declare a required render id bound imperatively via ctx.ui.registerRenderer(); resolved descriptors are exposed through useVideoEditorTimelineOverlays with no conditional filtering. Pointer arbitration (claimPointer/releasePointer), viewport/playhead stores, geometry, and the host-owned ruler markerLayer primitive are exercised end-to-end by TimelineExtensionOverlayHost.integration.test.tsx. Persistence is storage-neutral: extensions own their data through project-data.write into their app-scoped namespace; the host defines no marker storage. |
 | Transition | schema-backed | delegated | No | Yes | `transitionAdapter.ts` | Transition contributions are trusted local browser-preview renderers for cross-clip transitions. Extensions register transition renderers imperatively via ctx.transitions. Descriptor projection is delegated to a placeholder adapter while runtime registration remains host-mediated. Evidence: TransitionContribution interface, TransitionRegistrationService, manifest schema oneOf coverage, and kind enum inclusion. |
 <!-- family-maturity-table-end -->
+
+---
+
+## Timeline Overlay Host (T7) — Post-Gate State
+
+The family-maturity table above is machine-generated from
+`config/extensions/family-maturity.json` (regenerate with
+`scripts/quality/check-docs-maturity-sync.mjs`). This section records the T7
+state of the `timelineOverlay` family and the dev-local manager seam, which the
+generated rows summarize as `host-integrated`.
+
+### Required-render contract and `ctx.ui`
+
+`timelineOverlay` is now a live, host-rendered, **required-render** contribution
+— it is not reserved and not unwired:
+
+- The manifest contribution requires a non-empty `render` id and has **no
+  `when` clause**; validation rejects missing/blank render ids and `when`.
+- The owning extension binds the renderer imperatively via
+  `ctx.ui.registerRenderer(renderId, renderer)` during `activate()` (`ctx.ui`
+  exposes only `registerRenderer`). Registration is scoped by
+  `(extensionId, renderId)`; undeclared render ids produce diagnostics.
+- The runtime reconciles via `resolveRegisteredRenderers()`; overlays whose
+  renderer was never registered are omitted from the resolved list — there is
+  no callable/null placeholder.
+- `TimelineExtensionOverlayHost` (mounted by `TimelineCanvas`) renders each
+  renderer through React component semantics inside `HostContributionErrorBoundary`
+  (an overlay error releases any active pointer claim before the fallback).
+
+### Ruler-only marker primitive and gesture arbitration
+
+- The V1 host-owned primitive is `primitives.markerLayer(...)`, **ruler-only**
+  (`placement: 'ruler'` only — no `trackId`, no canvas placement). Markers are
+  controlled input with preview/commit intents; commits snap to the frame grid.
+  Per-marker memo and a time-sorted culling index keep scroll/playback at zero
+  per-marker React renders.
+- Gesture arbitration is passive and claim-based: unclaimed wrappers stay
+  click-through; `claimPointer()` returns `false` for any foreign owner or
+  foreign overlay claimant; release happens on up, cancel, blur, visibility
+  loss, error, descriptor removal, flag disable, extension disable, and host
+  unmount. `lib/mobile-interaction-model.ts` adds the host-internal `'overlay'`
+  gesture owner; pinch refuses to initialize or continue while the overlay
+  owns, without `preventDefault()` in the declined path.
+- Release criterion: **All existing timeline gestures behave identically when
+  no overlay has an active claim.** Maturity promotion to `public-supported`
+  is deferred until that criterion passes.
+
+### Storage-neutral persistence
+
+Marker/project data persists through the standard storage-neutral
+`project-data.write` path (`TimelineConfig.app[extensionId]`). **Generic
+disposal never deletes project data** — dispose also runs on provider unmount,
+HMR, and reload — so extensions provide explicit, user-triggered Clear/Delete
+Data actions. Automatic deletion is wired only when a reason-aware uninstall
+lifecycle exists.
+
+### Dev-local manager behavior and canary gate
+
+- The Extension Manager gained a DEV-only **Local extensions** section:
+  inventory comes from `devLocalExtensions` (via the `devExtensionEnablement.ts`
+  external store), active status and contribution summaries come from
+  `extensionRuntime.extensions`, and toggles call `setDevExtensionEnabled`.
+  Disabled local extensions stay visible and re-enableable; the section is
+  never routed through `PackageCard` or the installed-package repository.
+- Installed packages already have manager enable/disable, settings editing,
+  and persisted enablement (S-160–S-164); installer, bundler, marketplace,
+  discovery, and update tooling remain absent (D-001, D-004, D-123).
+- The overlay host is gated by the provider-owned `timelineOverlaysEnabled`
+  flag, which defaults to `false`. The DEV-only `?timelineOverlayCanary=1`
+  query parameter is planned (B9) and not yet implemented — the overlay host
+  stays default-off until it lands (production must not honor the query
+  parameter). The phase-marker canary
+  (`src/tools/video-editor/dev/scene-phase-markers/`)
+  is the living consumer (800-marker ceiling, measured below the 64 KB hard
+  entry limit for project-data values).

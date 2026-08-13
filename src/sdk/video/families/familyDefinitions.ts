@@ -251,6 +251,8 @@ export const VIDEO_FAMILY_REGISTRY: readonly FamilyDefinition<VideoContributionK
       examples: true,
       tests: true,
     },
+    uiIntegrationTest:
+      'src/tools/video-editor/components/CommandPalette/CommandPalette.test.tsx',
     legacyMilestone: 'M4',
     label: 'Command',
     description:
@@ -287,6 +289,8 @@ export const VIDEO_FAMILY_REGISTRY: readonly FamilyDefinition<VideoContributionK
       examples: true,
       tests: true,
     },
+    uiIntegrationTest:
+      'src/tools/video-editor/components/TimelineEditor/ClipAction.test.tsx',
     legacyMilestone: 'M4',
     label: 'Context Menu Item',
     description:
@@ -321,6 +325,8 @@ export const VIDEO_FAMILY_REGISTRY: readonly FamilyDefinition<VideoContributionK
       examples: false,
       tests: false,
     },
+    uiIntegrationTest:
+      'src/tools/video-editor/runtime/VideoEditorDialogHost.test.tsx',
     legacyMilestone: 'M1',
     label: 'Dialog',
     description:
@@ -393,6 +399,8 @@ export const VIDEO_FAMILY_REGISTRY: readonly FamilyDefinition<VideoContributionK
       examples: true,
       tests: true,
     },
+    uiIntegrationTest:
+      'src/tools/video-editor/components/PropertiesPanel/PropertiesPanel.test.tsx',
     legacyMilestone: 'M1',
     label: 'Inspector Section',
     description:
@@ -536,6 +544,8 @@ export const VIDEO_FAMILY_REGISTRY: readonly FamilyDefinition<VideoContributionK
       examples: false,
       tests: true,
     },
+    uiIntegrationTest:
+      'src/tools/video-editor/components/PropertiesPanel/PropertiesPanel.test.tsx',
     legacyMilestone: 'M1',
     label: 'Panel',
     description:
@@ -717,6 +727,8 @@ export const VIDEO_FAMILY_REGISTRY: readonly FamilyDefinition<VideoContributionK
       examples: true,
       tests: true,
     },
+    uiIntegrationTest:
+      'src/tools/video-editor/components/TimelineEditorShellCore.test.tsx',
     legacyMilestone: 'M1',
     label: 'Slot',
     description:
@@ -731,13 +743,21 @@ export const VIDEO_FAMILY_REGISTRY: readonly FamilyDefinition<VideoContributionK
     declarationMaturity: 'documented',
     executionMaturity: 'host-integrated',
     hostIntegrationNotes:
-      'Timeline overlay contributions render over the timeline surface ' +
-      'with order control and when-clause filtering. Bridged at M2. ' +
-      'Evidence: dedicated overlay-example.ts.',
+      'Timeline overlay contributions render into the timeline surface ' +
+      'through TimelineExtensionOverlayHost, mounted by TimelineCanvas. ' +
+      'Overlays declare a required render id bound imperatively via ' +
+      'ctx.ui.registerRenderer(); resolved descriptors are exposed through ' +
+      'useVideoEditorTimelineOverlays with no conditional filtering. ' +
+      'Pointer arbitration (claimPointer/releasePointer), viewport/playhead ' +
+      'stores, geometry, and the host-owned ruler markerLayer primitive are ' +
+      'exercised end-to-end by ' +
+      'TimelineExtensionOverlayHost.integration.test.tsx. Persistence is ' +
+      'storage-neutral: extensions own their data through project-data.write ' +
+      'into their app-scoped namespace; the host defines no marker storage.',
     requiresTrustedCode: false,
     manifestSchemaDefinition: 'TimelineOverlayContribution',
     sdkModules: [
-      'src/sdk/manifest.ts',
+      'src/sdk/video/families/timelineOverlays.ts',
     ],
     hostAdapter: 'src/tools/video-editor/runtime/families/timelineOverlayAdapter.ts',
     requirements: {
@@ -746,17 +766,20 @@ export const VIDEO_FAMILY_REGISTRY: readonly FamilyDefinition<VideoContributionK
       registrationApi: true,
       lifecycleCleanup: true,
       diagnostics: true,
-      hostCapabilityProjection: false,
+      hostCapabilityProjection: true,
       uiIntegration: true,
-      persistencePosture: false,
+      persistencePosture: true,
       examples: true,
       tests: true,
     },
+    uiIntegrationTest:
+      'src/tools/video-editor/components/TimelineEditor/TimelineExtensionOverlayHost.integration.test.tsx',
     legacyMilestone: 'M2',
     label: 'Timeline Overlay',
     description:
-      'Timeline overlay contributions render over the timeline surface ' +
-      'with order control and when-clause filtering. Bridged at M2.',
+      'Timeline overlay contributions render over the timeline surface with ' +
+      'required render-id bindings, order control, and pointer-claim ' +
+      'arbitration. Bridged at M2; host-integrated, not yet public-supported.',
   },
 
   // ---- Transition (M8) ----

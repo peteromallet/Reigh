@@ -3522,4 +3522,60 @@ describe('VideoEditorProvider clip-type registry scoped cleanup', () => {
     expect(disposeA).toHaveBeenCalled();
     expect(disposeB).not.toHaveBeenCalled();
   });
+
+  describe('timeline-overlay flag', () => {
+    function TimelineOverlayFlagConsumer() {
+      const runtime = useVideoEditorRuntime();
+      return <span data-testid="timeline-overlays-enabled">{String(runtime.timelineOverlaysEnabled)}</span>;
+    }
+
+    function renderWithFlag(flag?: boolean) {
+      const provider: DataProvider = {
+        loadTimeline: vi.fn(),
+        saveTimeline: vi.fn(),
+        loadAssetRegistry: vi.fn(),
+        resolveAssetUrl: vi.fn(),
+      };
+      const queryClient = new QueryClient({
+        defaultOptions: {
+          queries: {
+            retry: false,
+          },
+        },
+      });
+
+      return render(
+        <MemoryRouter>
+          <QueryClientProvider client={queryClient}>
+            <AgentChatProvider>
+              <VideoEditorProvider
+                dataProvider={provider}
+                projectId="project-1"
+                timelineId="timeline-1"
+                userId="user-1"
+                timelineOverlaysEnabled={flag}
+              >
+                <TimelineOverlayFlagConsumer />
+              </VideoEditorProvider>
+            </AgentChatProvider>
+          </QueryClientProvider>
+        </MemoryRouter>,
+      );
+    }
+
+    it('observes false when no value is supplied', () => {
+      renderWithFlag();
+      expect(screen.getByTestId('timeline-overlays-enabled')).toHaveTextContent('false');
+    });
+
+    it('observes false when explicitly disabled', () => {
+      renderWithFlag(false);
+      expect(screen.getByTestId('timeline-overlays-enabled')).toHaveTextContent('false');
+    });
+
+    it('reaches the runtime consumer unchanged when explicitly enabled', () => {
+      renderWithFlag(true);
+      expect(screen.getByTestId('timeline-overlays-enabled')).toHaveTextContent('true');
+    });
+  });
 });

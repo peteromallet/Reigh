@@ -50,7 +50,10 @@ export interface RendererRegistry {
    * If the combination is already registered, the previous renderer is
    * replaced and a duplicate diagnostic is emitted.
    *
-   * @returns A DisposeHandle that removes this single binding.
+   * @returns A DisposeHandle that removes this single binding. If a newer
+   *   renderer is later registered under the same extension + render ID,
+   *   disposing this (now stale) handle is a no-op: a handle only removes
+   *   the binding while the registry still holds that exact registration.
    */
   register(
     extensionId: string,
@@ -58,7 +61,10 @@ export interface RendererRegistry {
     renderer: RegisteredExtensionRenderer,
   ): DisposeHandle;
 
-  /** Remove a single binding (called by DisposeHandle or host). */
+  /**
+   * Remove a single binding unconditionally.
+   * Host-level removal API; registration handles are identity-guarded instead.
+   */
   unregister(extensionId: string, renderId: string): void;
 
   /** Look up a renderer. */
@@ -88,6 +94,12 @@ interface InternalEntry {
   extensionId: string;
   renderId: string;
   renderer: RegisteredExtensionRenderer;
+  /**
+   * Unique identity of this specific registration call. Dispose handles
+   * compare against it so a stale handle can never remove a newer
+   * registration registered under the same extensionId + renderId.
+   */
+  readonly registrationId: object;
 }
 
 function freezeEntry(e: InternalEntry): RendererRegistryEntry {
@@ -124,8 +136,8 @@ function emitDiagnostic(
 }
 
 export function createRendererRegistry(): RendererRegistry {
-  // extensionId → (renderId → renderer)
-  const map = new Map<string, Map<string, RegisteredExtensionRenderer>>();
+  // extensionId → (renderId → registration entry)
+  const map = new Map<string, Map<string, InternalEntry>>();
   const diagnostics: ExtensionDiagnostic[] = [];
   const subscribers = new Set<RendererRegistrySubscriber>();
 
@@ -142,7 +154,7 @@ export function createRendererRegistry(): RendererRegistry {
     });
   }
 
-  function ensureExtMap(extensionId: string): Map<string, RegisteredExtensionRenderer> {
+  function ensureExtMap(extensionId: string): Map<string, InternalEntry> {
     let extMap = map.get(extensionId);
     if (!extMap) {
       extMap = new Map();
@@ -153,9 +165,9 @@ export function createRendererRegistry(): RendererRegistry {
 
   function buildEntries(): InternalEntry[] {
     const result: InternalEntry[] = [];
-    map.forEach((extMap, extensionId) => {
-      extMap.forEach((renderer, renderId) => {
-        result.push({ extensionId, renderId, renderer });
+    map.forEach((extMap) => {
+      extMap.forEach((entry) => {
+        result.push(entry);
       });
     });
     return sortEntries(result);
@@ -181,7 +193,8 @@ export function createRendererRegistry(): RendererRegistry {
       );
     }
 
-    extMap.set(renderId, renderer);
+    const registrationId: object = {};
+    extMap.set(renderId, { extensionId, renderId, renderer, registrationId });
     invalidateSnapshot();
     notifySubscribers();
 
@@ -191,10 +204,14 @@ export function createRendererRegistry(): RendererRegistry {
         if (disposed) return;
         disposed = true;
         const ext = map.get(extensionId);
-        if (ext) {
-          ext.delete(renderId);
-          if (ext.size === 0) map.delete(extensionId);
-        }
+        if (!ext) return;
+        const current = ext.get(renderId);
+        // Identity guard: only remove this exact registration. If a newer
+        // renderer was registered under the same key, this stale handle is
+        // harmless and must leave the replacement in place.
+        if (!current || current.registrationId !== registrationId) return;
+        ext.delete(renderId);
+        if (ext.size === 0) map.delete(extensionId);
         invalidateSnapshot();
         notifySubscribers();
       },
@@ -214,7 +231,7 @@ export function createRendererRegistry(): RendererRegistry {
     extensionId: string,
     renderId: string,
   ): RegisteredExtensionRenderer | undefined {
-    return map.get(extensionId)?.get(renderId);
+    return map.get(extensionId)?.get(renderId)?.renderer;
   }
 
   function subscribe(subscriber: RendererRegistrySubscriber): DisposeHandle {
@@ -232,7 +249,7 @@ export function createRendererRegistry(): RendererRegistry {
     const entries = Object.freeze(buildEntries().map(freezeEntry));
 
     const get = (extensionId: string, renderId: string) => {
-      return map.get(extensionId)?.get(renderId);
+      return map.get(extensionId)?.get(renderId)?.renderer;
     };
 
     frozenSnapshot = Object.freeze({

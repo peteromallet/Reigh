@@ -1730,7 +1730,7 @@ export function collectMaterialRuntimeDiagnostics(
   return Object.freeze(diagnostics);
 }
 
-function attachBoundaryNextAction(
+function _attachBoundaryNextAction(
   entry: HostMaterialRuntimeEntry,
   routeScope?: RenderRoute,
 ): Record<string, unknown> | undefined {

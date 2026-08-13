@@ -1072,15 +1072,15 @@ function clipTypeReferenceState(record: ClipTypeRegistryRecord | undefined): Ref
 function clipTypeDiagnosticMessage(refKey: string, state: ReferenceState, clipTypeId: string): string {
   switch (state) {
     case 'missing':
-      return `Clip type \"${clipTypeId}\" ref \"${refKey}\" has no registered clip type record.`;
+      return `Clip type "${clipTypeId}" ref "${refKey}" has no registered clip type record.`;
     case 'disabled':
-      return `Clip type \"${clipTypeId}\" ref \"${refKey}\" has renderability blockers.`;
+      return `Clip type "${clipTypeId}" ref "${refKey}" has renderability blockers.`;
     case 'runtime-error':
-      return `Clip type \"${clipTypeId}\" ref \"${refKey}\" is in error state.`;
+      return `Clip type "${clipTypeId}" ref "${refKey}" is in error state.`;
     case 'inactive-reserved':
-      return `Clip type \"${clipTypeId}\" ref \"${refKey}\" is inactive.`;
+      return `Clip type "${clipTypeId}" ref "${refKey}" is inactive.`;
     default:
-      return `Clip type \"${clipTypeId}\" ref \"${refKey}\" is ${state}.`;
+      return `Clip type "${clipTypeId}" ref "${refKey}" is ${state}.`;
   }
 }
 

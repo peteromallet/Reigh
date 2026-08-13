@@ -468,3 +468,52 @@ describe('timeline data sequence clip persistence', () => {
     expect(roundTripped.clips[0].params).toEqual({ color: '#ff0000' });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Extension project data + extension-authored clip fields must survive the
+// config → rows → config round trip (scene-phase-markers writes config.app,
+// track.app, and clip.label; a plain rows edit must not drop them).
+// ---------------------------------------------------------------------------
+
+describe('timeline data extension project data round trip', () => {
+  it('preserves config.app, track.app, and clip.label through buildTimelineData and rowsToConfig', async () => {
+    const extensionId = 'com.reigh.scene-phase-markers';
+    const config: TimelineConfig = {
+      output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
+      tracks: [
+        { id: 'V1', kind: 'visual', label: 'V1', app: { scaleAppliesToPositionedClips: true } },
+      ],
+      clips: [
+        {
+          id: 'shot-1',
+          at: 0,
+          track: 'V1',
+          clipType: 'hold',
+          hold: 2,
+          label: 'Shot 1',
+          app: { managedBy: extensionId },
+        },
+      ],
+      app: { [extensionId]: { sceneMarkers: [{ id: 'm1', time: 1.5 }] } },
+    };
+
+    const data = await buildTimelineData(config, registry);
+    expect(data.config.app).toEqual(config.app);
+    expect(data.config.tracks[0].app).toEqual({ scaleAppliesToPositionedClips: true });
+    expect(data.meta['shot-1']).toMatchObject({ label: 'Shot 1', app: { managedBy: extensionId }, hold: 2 });
+
+    const roundTripped = rowsToConfig(
+      data.rows,
+      data.meta,
+      data.output,
+      data.clipOrder,
+      data.tracks,
+      data.config.pinnedShotGroups,
+      data.config,
+    );
+
+    expect(roundTripped.app).toEqual(config.app);
+    expect(roundTripped.tracks[0].app).toEqual({ scaleAppliesToPositionedClips: true });
+    expect(roundTripped.clips[0]).toMatchObject({ id: 'shot-1', label: 'Shot 1', hold: 2, app: { managedBy: extensionId } });
+  });
+});

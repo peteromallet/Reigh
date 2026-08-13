@@ -2,9 +2,9 @@
  * ContributionErrorBoundary — Host-owned React error boundary for extension
  * contributions.
  *
- * Each boundary is scoped to a single contribution (slot, dialog, panel, or
- * inspector section) so that one misbehaving extension cannot break other
- * contributions or the built-in editor chrome.
+ * Each boundary is scoped to a single contribution (slot, dialog, panel,
+ * inspector section, or timeline overlay) so that one misbehaving extension
+ * cannot break other contributions or the built-in editor chrome.
  *
  * When an error is caught:
  *  1. A compact, contribution-only fallback UI is rendered in place of the
@@ -12,6 +12,9 @@
  *  2. A structured diagnostic is emitted to the console.
  *  3. The optional `onError` callback is invoked so the host can aggregate
  *     diagnostics into a shared diagnostics sink.
+ *  4. The optional `onHostFailure` callback is invoked so the host can take
+ *     ownership action — for a `timelineOverlay` contribution that means
+ *     releasing any active pointer claim before the fallback is displayed.
  *
  * The boundary preserves existing built-in fallback behaviour: if no extension
  * contribution declares a given slot/panel/section, the built-in content
@@ -31,7 +34,8 @@ export type ErrorBoundaryContributionKind =
   | 'slot'
   | 'dialog'
   | 'panel'
-  | 'inspectorSection';
+  | 'inspectorSection'
+  | 'timelineOverlay';
 
 export interface ContributionErrorInfo {
   contributionId: string;
@@ -67,6 +71,14 @@ export interface ContributionErrorBoundaryProps {
   /** Called when the boundary catches an error. */
   onError?: (info: ContributionErrorInfo) => void;
   /**
+   * Host-owned failure callback, invoked exactly once per caught error, after
+   * `onError`. The host uses it to take ownership action — for a
+   * `timelineOverlay` contribution that means releasing any active pointer
+   * claim before the fallback is displayed, so the overlay cannot keep the
+   * gesture after it has crashed.
+   */
+  onHostFailure?: (info: ContributionErrorInfo) => void;
+  /**
    * User-visible retry callback.  When provided, the fallback UI renders a
    * "Retry" button that invokes this callback.  The host wrapper uses this
    * to implement bounded, debounced retry via the lifecycle-host recovery
@@ -94,6 +106,13 @@ export interface HostContributionErrorBoundaryProps {
   label?: string;
   /** Called when the boundary catches an error. */
   onError?: (info: ContributionErrorInfo) => void;
+  /**
+   * Host-owned failure callback, invoked exactly once per caught error, after
+   * `onError`. The host uses it to take ownership action — for a
+   * `timelineOverlay` contribution that means releasing any active pointer
+   * claim before the fallback is displayed.
+   */
+  onHostFailure?: (info: ContributionErrorInfo) => void;
   children: ReactNode;
   /**
    * Maximum number of user-initiated retry attempts when the owning extension
@@ -140,10 +159,13 @@ function ContributionErrorFallback({
     dialog: 'Dialog',
     panel: 'Panel',
     inspectorSection: 'Inspector section',
+    timelineOverlay: 'Timeline overlay',
   }[kind];
 
-  // For the compact "inspectorSection" fallback, render even smaller.
-  const isInline = kind === 'inspectorSection';
+  // For the compact "inspectorSection" / "timelineOverlay" fallbacks, render
+  // even smaller: they appear inside the host's own chrome (inspector pane,
+  // timeline overlay root) where a full-size card would fight the layout.
+  const isInline = kind === 'inspectorSection' || kind === 'timelineOverlay';
 
   return (
     <div
@@ -234,7 +256,7 @@ export class ContributionErrorBoundary extends Component<
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
-    const { contributionId, extensionId, kind, onError } = this.props;
+    const { contributionId, extensionId, kind, onError, onHostFailure } = this.props;
     const componentStack = errorInfo.componentStack ?? null;
 
     // Emit structured diagnostic to the console (host-owned diagnostics path).
@@ -248,14 +270,20 @@ export class ContributionErrorBoundary extends Component<
       );
     }
 
-    // Notify host diagnostics sink.
-    onError?.({
+    const info: ContributionErrorInfo = {
       contributionId,
       extensionId,
       kind,
       error,
       componentStack,
-    });
+    };
+
+    // Notify host diagnostics sink.
+    onError?.(info);
+
+    // Notify the host for ownership action (e.g. releasing an overlay pointer
+    // claim). Exactly one invocation per caught error.
+    onHostFailure?.(info);
   }
 
   componentDidUpdate(
@@ -337,6 +365,7 @@ export function HostContributionErrorBoundary({
   kind,
   label,
   onError,
+  onHostFailure,
   children,
   maxRetries = 3,
   retryDebounceMs = 5000,
@@ -428,6 +457,7 @@ export function HostContributionErrorBoundary({
       label={label}
       recoveryKey={recoveryKey}
       onError={handleError}
+      onHostFailure={onHostFailure}
       onRetry={onRetry}
       retryDisabled={retryDisabled}
       retriesRemaining={retriesRemaining}

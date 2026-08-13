@@ -138,6 +138,86 @@ describe('createRendererRegistry — DisposeHandle cleanup', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Identity-guarded replacement disposal
+// ---------------------------------------------------------------------------
+
+describe('createRendererRegistry — identity-guarded replacement disposal', () => {
+  it('disposing a replaced handle leaves the replacement registered', () => {
+    const reg = createRendererRegistry();
+    const handleA = reg.register('com.example.ext', 'r1', noopRenderer);
+    reg.register('com.example.ext', 'r1', noopRenderer2);
+
+    handleA.dispose();
+
+    // The old handle must not remove the newer registration.
+    expect(reg.resolve('com.example.ext', 'r1')).toBe(noopRenderer2);
+  });
+
+  it('disposing the current replacement handle removes it and notifies subscribers', () => {
+    const reg = createRendererRegistry();
+    const handleA = reg.register('com.example.ext', 'r1', noopRenderer);
+    const handleB = reg.register('com.example.ext', 'r1', noopRenderer2);
+    const listener = vi.fn();
+    reg.subscribe(listener);
+
+    // Stale handle: no mutation, no notification.
+    handleA.dispose();
+    expect(listener).not.toHaveBeenCalled();
+    expect(reg.resolve('com.example.ext', 'r1')).toBe(noopRenderer2);
+
+    // Current handle: removes the registration and notifies once.
+    handleB.dispose();
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener.mock.calls[0][0].entries).toHaveLength(0);
+    expect(reg.resolve('com.example.ext', 'r1')).toBeUndefined();
+  });
+
+  it('tracks registration identity even when the same renderer function is re-registered', () => {
+    const reg = createRendererRegistry();
+    const handleA = reg.register('com.example.ext', 'r1', noopRenderer);
+    const handleB = reg.register('com.example.ext', 'r1', noopRenderer);
+
+    handleA.dispose(); // same function, but a distinct registration
+    expect(reg.resolve('com.example.ext', 'r1')).toBe(noopRenderer);
+
+    handleB.dispose();
+    expect(reg.resolve('com.example.ext', 'r1')).toBeUndefined();
+  });
+
+  it('stale handles remain harmless after unregisterAll', () => {
+    const reg = createRendererRegistry();
+    const handleA = reg.register('com.example.ext', 'r1', noopRenderer);
+    const handleB = reg.register('com.example.ext', 'r1', noopRenderer2);
+    const listener = vi.fn();
+    reg.subscribe(listener);
+
+    reg.unregisterAll('com.example.ext');
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(reg.resolve('com.example.ext', 'r1')).toBeUndefined();
+
+    handleA.dispose();
+    handleB.dispose();
+    // No further notifications from stale handles.
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('unregisterAll behavior is unchanged after a replacement', () => {
+    const reg = createRendererRegistry();
+    const handleA = reg.register('com.example.a', 'r1', noopRenderer);
+    reg.register('com.example.a', 'r1', noopRenderer2);
+    reg.register('com.example.b', 'r1', noopRenderer);
+
+    handleA.dispose(); // stale no-op
+
+    reg.unregisterAll('com.example.a');
+
+    expect(reg.resolve('com.example.a', 'r1')).toBeUndefined();
+    // Other extension unaffected
+    expect(reg.resolve('com.example.b', 'r1')).toBe(noopRenderer);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // unregisterAll — extension disposal
 // ---------------------------------------------------------------------------
 

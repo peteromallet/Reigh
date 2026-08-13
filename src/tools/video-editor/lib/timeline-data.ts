@@ -12,6 +12,9 @@ import {
 } from '@/tools/video-editor/lib/config-utils.ts';
 import { TIMELINE_CLIP_FIELDS } from '@/tools/video-editor/lib/serialize.ts';
 import type { DataProvider } from '@/tools/video-editor/data/DataProvider.ts';
+import {
+  withDefaultTimelineOutput,
+} from '@/tools/video-editor/lib/defaults.ts';
 import type {
   AssetMissingRequest,
   AssetResolver,
@@ -36,6 +39,7 @@ export interface ClipMeta {
   asset?: string;
   track: string;
   clipType?: ClipType;
+  label?: string;
   from?: number;
   to?: number;
   speed?: number;
@@ -133,6 +137,7 @@ const getDefaultClipMeta = (clip: TimelineClip): ClipMeta => {
     asset: clip.asset,
     track: clip.track,
     clipType: clip.clipType,
+    label: clip.label,
     from: clip.from,
     to: clip.to,
     speed: clip.speed,
@@ -237,7 +242,7 @@ export const rowsToConfig = (
   clipOrder: ClipOrderMap,
   tracks: TrackDefinition[],
   pinnedShotGroups?: TimelineConfig['pinnedShotGroups'],
-  extras?: Pick<TimelineConfig, 'theme' | 'theme_overrides' | 'generation_defaults'>,
+  extras?: Pick<TimelineConfig, 'theme' | 'theme_overrides' | 'generation_defaults' | 'app'>,
 ): TimelineConfig => {
   const actionMap = new Map<string, TimelineAction>();
   const trackActionIds: Record<string, string[]> = Object.fromEntries(tracks.map((track) => [track.id, []]));
@@ -282,6 +287,7 @@ export const rowsToConfig = (
         at: roundedStart,
         track: track.id,
         clipType: clipMeta.clipType,
+        label: clipMeta.label,
         asset: clipMeta.asset,
         from: clipMeta.from,
         to: clipMeta.to,
@@ -366,6 +372,11 @@ export const rowsToConfig = (
   if (extras?.generation_defaults !== undefined) {
     config.generation_defaults = extras.generation_defaults;
   }
+  if (extras?.app !== undefined) {
+    // Extension project-data (project-data.write) must survive ordinary rows
+    // edits; it is not render state and must not be dropped on rebuild.
+    config.app = extras.app;
+  }
   return serializeTimelineConfigSnapshot(config).config;
 };
 
@@ -387,25 +398,41 @@ export const assembleTimelineData = ({
   configVersion,
   registry,
   resolvedConfig,
-  output,
   assetMap,
 }: AssembleTimelineDataParams): TimelineData => {
-  const rowData = configToRows(config);
+  // `serializeForDisk` intentionally strips `output` (it is derived render
+  // state, not persisted), and the provider load path re-materializes it via
+  // `withDefaultTimelineOutput`. Rebuild paths (commits, poll sync, save
+  // recovery) assemble TimelineData directly and MUST apply the same defaults
+  // when `output` is absent: otherwise `output` collapses to `{}` and
+  // consumers like `useDerivedTimeline`'s `parseResolution(output.resolution)`
+  // crash on `undefined` (or a JSON `null` from a partial payload). Filling
+  // defaults also keeps `config`'s stable signature consistent with the
+  // bridge-normalized config, preventing phantom poll diffs ("fake edits")
+  // and spurious 409 version conflicts. Configs that already carry a valid
+  // `resolution` pass through verbatim (identity preserved).
+  const outputMissingResolution = config.output?.resolution == null;
+  const canonicalConfig = outputMissingResolution ? withDefaultTimelineOutput(config) : config;
+  const canonicalOutput = outputMissingResolution ? canonicalConfig.output : resolvedConfig.output;
+  const canonicalResolvedConfig = outputMissingResolution
+    ? { ...resolvedConfig, output: canonicalOutput }
+    : resolvedConfig;
+  const rowData = configToRows(canonicalConfig);
 
   return {
-    config,
+    config: canonicalConfig,
     configVersion,
     registry,
-    resolvedConfig,
+    resolvedConfig: canonicalResolvedConfig,
     rows: rowData.rows,
     meta: rowData.meta,
     effects: rowData.effects,
     assetMap,
-    output,
+    output: canonicalOutput,
     tracks: rowData.tracks,
     clipOrder: rowData.clipOrder,
-    signature: getConfigSignature(resolvedConfig),
-    stableSignature: getStableConfigSignature(config, registry),
+    signature: getConfigSignature(canonicalResolvedConfig),
+    stableSignature: getStableConfigSignature(canonicalConfig, registry),
   };
 };
 

@@ -29,13 +29,13 @@ export function useTimelineSave(
   store: TimelineStoreApi,
 ) {
   const { timelineId, assetResolver } = useVideoEditorRuntime();
-  const resolveAssetUrl = (file: string) => {
+  const resolveAssetUrl = useCallback((file: string) => {
     if (assetResolver) {
       return Promise.resolve(assetResolver.resolveAssetUrl(file));
     }
 
     return provider.resolveAssetUrl(file);
-  };
+  }, [assetResolver, provider]);
   const lastSavedSignatureRef = useRef('');
   const savedSeqRef = useRef(0);
   // Start at 0 so a fresh bridge timeline (config_version 0) is not rejected

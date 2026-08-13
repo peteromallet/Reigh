@@ -6,6 +6,7 @@ import {
   useTimelineEditorOps,
   useTimelinePlaybackContext,
 } from '@/tools/video-editor/hooks/timelineStore.ts';
+import type { ResolvedTimelineOverlayDescriptor } from '@reigh/editor-sdk';
 import type {
   ResolvedVideoEditorPanelRegistry,
   VideoEditorExtensionRuntimeConfig,
@@ -58,6 +59,18 @@ export function useVideoEditorRenderContext(): VideoEditorRenderContext {
 
 export function useVideoEditorSlotRenderers() {
   return useVideoEditorExtensionRuntime().slots;
+}
+
+/**
+ * Resolved timeline overlays for the active extension runtime.
+ *
+ * Returns only descriptors whose owning extension registered a renderer via
+ * `ctx.ui.registerRenderer()` (reconciled by `resolveRegisteredRenderers`);
+ * overlays without a registered renderer are omitted. Manifest `when` clauses
+ * are not evaluated here — the overlay contract has no `when`.
+ */
+export function useVideoEditorTimelineOverlays(): readonly ResolvedTimelineOverlayDescriptor[] {
+  return useVideoEditorExtensionRuntime().overlays as readonly ResolvedTimelineOverlayDescriptor[];
 }
 
 export function useVideoEditorDialogDescriptors() {

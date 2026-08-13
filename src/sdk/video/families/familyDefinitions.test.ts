@@ -28,7 +28,10 @@ import {
   checkFamilyCoherence,
 } from '@/sdk/core/families/conformance';
 
-import type { FamilyDefinition } from '@/sdk/core/families/maturity';
+import {
+  DECLARATION_MATURITY_LEVELS,
+  type FamilyDefinition,
+} from '@/sdk/core/families/maturity';
 import type { VideoContributionKind } from '@/sdk/video/families/contributionKinds';
 import { VIDEO_CONTRIBUTION_KINDS } from '@/sdk/video/families/contributionKinds';
 
@@ -61,6 +64,11 @@ describe('VIDEO_FAMILY_REGISTRY shape', () => {
       // requirements is an object
       expect(typeof def.requirements).toBe('object');
       expect(def.requirements).not.toBeNull();
+      // uiIntegrationTest is optional but must be a non-empty string when set
+      if (def.uiIntegrationTest !== undefined) {
+        expect(typeof def.uiIntegrationTest).toBe('string');
+        expect(def.uiIntegrationTest.length).toBeGreaterThan(0);
+      }
     }
   });
 
@@ -246,6 +254,22 @@ describe('registry does not contain liveSource', () => {
   it('no entry has kind liveSource', () => {
     const kinds = VIDEO_FAMILY_REGISTRY.map((def) => def.kind);
     expect(kinds).not.toContain('liveSource');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// No timelineMarker entry (exact-count pin)
+// ---------------------------------------------------------------------------
+
+describe('registry does not contain timelineMarker', () => {
+  it('timelineMarker is not in the VideoContributionKind union', () => {
+    const validKinds = new Set(VIDEO_CONTRIBUTION_KINDS);
+    expect(validKinds.has('timelineMarker' as VideoContributionKind)).toBe(false);
+  });
+
+  it('no entry has kind timelineMarker', () => {
+    const kinds = VIDEO_FAMILY_REGISTRY.map((def) => def.kind);
+    expect(kinds).not.toContain('timelineMarker');
   });
 });
 
@@ -601,6 +625,7 @@ describe('generated JSON completeness', () => {
       'hostAdapter',
       'requiresTrustedCode',
       'manifestSchemaDefinition',
+      'uiIntegrationTest',
       'coverage',
       'conformance',
       'legacyCompatibility',
@@ -793,6 +818,19 @@ describe('round-trip comparison', () => {
     }
   });
 
+  it('JSON uiIntegrationTest matches registry (string or null)', () => {
+    for (const row of jsonRows) {
+      const def = getVideoFamily(row.kind as VideoContributionKind);
+      expect(def).toBeDefined();
+      const jsonValue = row.uiIntegrationTest;
+      if (def!.uiIntegrationTest === undefined) {
+        expect(jsonValue).toBeNull();
+      } else {
+        expect(jsonValue).toBe(def!.uiIntegrationTest);
+      }
+    }
+  });
+
   it('JSON legacyMilestone matches registry', () => {
     for (const row of jsonRows) {
       const def = getVideoFamily(row.kind as VideoContributionKind);
@@ -800,6 +838,95 @@ describe('round-trip comparison', () => {
       const lc = row.legacyCompatibility as { milestone: string };
       expect(lc.milestone).toBe(def!.legacyMilestone);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// UI integration evidence (uiIntegrationTest)
+// ---------------------------------------------------------------------------
+
+describe('UI integration evidence', () => {
+  const uiIntegrated = VIDEO_FAMILY_REGISTRY.filter(
+    (def) => def.requirements.uiIntegration === true,
+  );
+  const uiTestKinds = new Set(
+    VIDEO_FAMILY_REGISTRY.filter((def) => def.uiIntegrationTest !== undefined).map(
+      (def) => def.kind,
+    ),
+  );
+
+  it('exactly the seven current UI-integrated families are inventoried', () => {
+    const kinds = uiIntegrated.map((def) => def.kind).sort();
+    expect(kinds).toEqual([
+      'command',
+      'contextMenuItem',
+      'dialog',
+      'inspectorSection',
+      'panel',
+      'slot',
+      'timelineOverlay',
+    ]);
+    expect(uiIntegrated.length).toBe(7);
+  });
+
+  it('every UI-integrated family has a non-empty uiIntegrationTest', () => {
+    for (const def of uiIntegrated) {
+      expect(
+        typeof def.uiIntegrationTest === 'string' && def.uiIntegrationTest.length > 0,
+        `family "${def.kind}" claims uiIntegration but has no uiIntegrationTest`,
+      ).toBe(true);
+    }
+  });
+
+  it('no family outside the UI-integrated set declares uiIntegrationTest', () => {
+    for (const def of VIDEO_FAMILY_REGISTRY) {
+      if (def.requirements.uiIntegration !== true) {
+        expect(
+          def.uiIntegrationTest,
+          `family "${def.kind}" is not UI-integrated but declares uiIntegrationTest`,
+        ).toBeUndefined();
+      }
+    }
+  });
+
+  it('every uiIntegrationTest path resolves to an existing file', () => {
+    for (const def of uiIntegrated) {
+      const rel = def.uiIntegrationTest as string;
+      const abs = path.join(REPO_ROOT, rel);
+      expect(fs.existsSync(abs), `missing evidence file for "${def.kind}": ${rel}`).toBe(
+        true,
+      );
+    }
+  });
+
+  it('timelineOverlay cites the canonical host integration test', () => {
+    const overlay = getVideoFamily('timelineOverlay');
+    expect(overlay).toBeDefined();
+    expect(overlay!.uiIntegrationTest).toBe(
+      'src/tools/video-editor/components/TimelineEditor/TimelineExtensionOverlayHost.integration.test.tsx',
+    );
+  });
+
+  it('timelineOverlay carries no manifest when claim', () => {
+    const overlay = getVideoFamily('timelineOverlay');
+    expect(overlay).toBeDefined();
+    const text = `${overlay!.hostIntegrationNotes ?? ''} ${overlay!.description ?? ''}`;
+    expect(text).not.toMatch(/when-clause|when clause/i);
+    expect(text).not.toMatch(/\bwhen\b/);
+  });
+
+  it('timelineOverlay is host-integrated but not public-supported', () => {
+    const overlay = getVideoFamily('timelineOverlay');
+    expect(overlay).toBeDefined();
+    expect(overlay!.executionMaturity).toBe('host-integrated');
+    expect(overlay!.executionMaturity).not.toBe('public-supported');
+  });
+
+  it('timelineOverlay declaration maturity is the honest final level', () => {
+    const overlay = getVideoFamily('timelineOverlay');
+    expect(overlay).toBeDefined();
+    const finalLevel = DECLARATION_MATURITY_LEVELS[DECLARATION_MATURITY_LEVELS.length - 1];
+    expect(overlay!.declarationMaturity).toBe(finalLevel);
   });
 });
 

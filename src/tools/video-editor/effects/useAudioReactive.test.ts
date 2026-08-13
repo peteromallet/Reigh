@@ -15,13 +15,26 @@ vi.mock('remotion', async (importOriginal) => {
   };
 });
 
-import { AudioAnalysisContext, SILENT_AUDIO_DATA, type AudioAnalysisData } from '@/tools/video-editor/compositions/AudioAnalysisProvider';
+import {
+  AudioAnalysisContext,
+  SILENT_AUDIO_DATA,
+  type AudioAnalysisData,
+  type AudioAnalysisFrameSource,
+} from '@/tools/video-editor/compositions/AudioAnalysisProvider';
 import { useAudioParam, useAudioReactive } from '@/tools/video-editor/effects/useAudioReactive';
 import type { AudioBindingValue } from '@/tools/video-editor/types';
 
+function createFrameSource(frames: AudioAnalysisData[]): AudioAnalysisFrameSource {
+  return {
+    length: frames.length,
+    getFrame: (frame: number) => frames[frame] ?? SILENT_AUDIO_DATA,
+  };
+}
+
 function createWrapper(frames: AudioAnalysisData[] | null) {
   return function Wrapper({ children }: { children: ReactNode }) {
-    return React.createElement(AudioAnalysisContext.Provider, { value: frames }, children);
+    const value = frames ? createFrameSource(frames) : null;
+    return React.createElement(AudioAnalysisContext.Provider, { value }, children);
   };
 }
 

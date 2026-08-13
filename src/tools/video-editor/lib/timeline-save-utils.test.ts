@@ -711,8 +711,7 @@ describe('timeline save utils regression coverage', () => {
       output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
       tracks: [makeTrack('V1')],
       clips: [{ id: 'clip-1', at: 0, track: 'V1', clipType: 'hold', asset: 'asset-1', hold: 2 }],
-    };
-    const registry: AssetRegistry = {
+    };    const registry: AssetRegistry = {
       assets: {
         'asset-1': { file: 'video.mp4', duration: 2 },
       },
@@ -772,6 +771,77 @@ describe('timeline save utils regression coverage', () => {
   it('rejects polled data while asset operations are pending', () => {
     expect(shouldAcceptPolledData(4, 4, 1, 'polled', 'saved')).toBe(false);
     expect(shouldAcceptPolledData(4, 4, 0, 'polled', 'saved')).toBe(true);
+  });
+
+  it('re-materializes output defaults when rebuilding from a serializeForDisk-stripped config', () => {
+    // serializeForDisk strips `output` (derived render state). A rebuild from
+    // such a config must re-apply the same defaults the provider load path
+    // applies — otherwise `output.resolution` is undefined and
+    // `parseResolution` throws (drag-ghost incident follow-up: "Cannot read
+    // properties of undefined (reading 'toLowerCase')").
+    const strippedConfig: TimelineConfig = {
+      output: {} as TimelineConfig['output'],
+      tracks: [makeTrack('V1')],
+      clips: [{ id: 'clip-1', at: 0, track: 'V1', clipType: 'hold', asset: 'asset-1', hold: 2 }],
+    };
+    const registry: AssetRegistry = {
+      assets: { 'asset-1': { file: 'a.mp4', duration: 2 } },
+    };
+    const resolvedRegistry = buildResolvedRegistry(registry);
+
+    const rebuilt = buildDataFromCurrentRegistry(
+      strippedConfig,
+      assembleTimelineData({
+        config: strippedConfig,
+        configVersion: 1,
+        registry,
+        resolvedConfig: buildResolvedConfig(strippedConfig, resolvedRegistry),
+        output: {} as TimelineConfig['output'],
+        assetMap: makeAssetMap(registry),
+      }),
+    );
+
+    expect(rebuilt.output.resolution).toBe('1280x720');
+    expect(rebuilt.output.fps).toBe(30);
+    expect(rebuilt.resolvedConfig.output.resolution).toBe('1280x720');
+    // The defaults must match what the provider load path produces so the
+    // stable signature is consistent (no phantom poll diff / fake edit).
+    expect(rebuilt.config.output.resolution).toBe('1280x720');
+    expect(rebuilt.stableSignature).toBe(
+      getStableConfigSignature(
+        { ...strippedConfig, output: rebuilt.config.output },
+        registry,
+      ),
+    );
+  });
+
+  it('re-materializes output when resolution is JSON null (not just absent)', () => {
+    // A partial payload can carry `output: { resolution: null }` — the
+    // identity gate must treat null like undefined, else parseResolution(null)
+    // throws (Grok adversarial finding).
+    const nullConfig: TimelineConfig = {
+      output: { resolution: null as unknown as TimelineConfig['output']['resolution'] },
+      tracks: [makeTrack('V1')],
+      clips: [{ id: 'clip-1', at: 0, track: 'V1', clipType: 'hold', asset: 'asset-1', hold: 2 }],
+    };
+    const registry: AssetRegistry = {
+      assets: { 'asset-1': { file: 'a.mp4', duration: 2 } },
+    };
+
+    const rebuilt = buildDataFromCurrentRegistry(
+      nullConfig,
+      assembleTimelineData({
+        config: nullConfig,
+        configVersion: 1,
+        registry,
+        resolvedConfig: buildResolvedConfig(nullConfig, buildResolvedRegistry(registry)),
+        output: {} as TimelineConfig['output'],
+        assetMap: makeAssetMap(registry),
+      }),
+    );
+
+    expect(rebuilt.output.resolution).toBe('1280x720');
+    expect(rebuilt.output.fps).toBe(30);
   });
 
   it('rejects polled data while drag is in progress (pendingOps incremented by drag)', () => {

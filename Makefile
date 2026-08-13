@@ -6,7 +6,7 @@ PUBLIC_VITE_ENV := \
 	VITE_API_TARGET_URL=https://example.com \
 	VITE_APP_ENV=web
 
-.PHONY: help install-hooks dockerfile-check build-context-check build docker-build deploy-check quality test extensions-check extensions-production-smoke slot-first-unit slot-first-edge slot-first-db slot-first-e2e slot-first-health slot-first-schema-drift slot-first-test-fixture-legacy slot-first-audit release-check prepush ci
+.PHONY: help install-hooks dockerfile-check build-context-check build docker-build deploy-check quality test extensions-check extensions-production-smoke bridge-latency-check slot-first-unit slot-first-edge slot-first-db slot-first-e2e slot-first-health slot-first-schema-drift slot-first-test-fixture-legacy slot-first-audit release-check prepush ci
 
 help:
 	@printf '%s\n' \
@@ -20,6 +20,7 @@ help:
 		'  make test                 Run the Vitest suite.' \
 		'  make extensions-check     Run extension contract gates (schema validation, drift, export freeze, packagability, unit tests).  Local-only — no Docker required.' \
 		'  make extensions-production-smoke  Run the production-bundled smoke extension tests (opt-in, statically bundled).  Local-only.' \
+		'  make bridge-latency-check  Run the GET + warm-save p95 bridge latency gate (self-contained fixture; requires astrid python).' \
 		'  make slot-first-audit     Run M0 slot-first audit-mode tests and gates.' \
 		'  make release-check        Run the full release gate before cutting a deployment.' \
 		'  make prepush              Run the lightweight gate before pushing.' \
@@ -79,6 +80,16 @@ extensions-check:
 # This verifies the ?extensionSmoke=1 trigger without a sandbox or loader.
 extensions-production-smoke:
 	npm run test:extensions:production-smoke
+
+# ---------------------------------------------------------------------------
+# Bridge latency gate (GET + warm-save p95 vs the 500ms SLO + 10s hard deadline)
+# ---------------------------------------------------------------------------
+# Self-contained: seeds a disposable 2,000-event fixture under a temp projects
+# root, spawns its own `astrid serve`, measures GET p95 + save p95 (CAS
+# expected_version advancing per POST), and tears everything down. Requires the
+# astrid python package importable (ASTRID_PYTHON, default 'python3').
+bridge-latency-check:
+	ASTRID_PYTHON=$${ASTRID_PYTHON:-python3} node scripts/bridge-latency-report.mjs
 
 # ---------------------------------------------------------------------------
 # Release gate

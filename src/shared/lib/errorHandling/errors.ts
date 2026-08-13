@@ -33,6 +33,63 @@ export class AppError extends Error {
 }
 
 /**
+ * Marker error raised by our fetch timeout wrappers.
+ *
+ * This is NOT a user-facing AppError — it is a transport-level marker that
+ * travels as the abort reason (or as the `cause` of the resulting
+ * `AbortError`) so classifiers can distinguish "we timed the request out"
+ * from unrelated aborts (e.g. Supabase's lock-steal protection aborting a
+ * session refresh). Use `NetworkError.fromError` / `categorizeError` to
+ * present it to users.
+ */
+export class TimeoutError extends Error {
+  constructor(message = 'The request timed out.') {
+    super(message);
+    this.name = 'TimeoutError';
+  }
+}
+
+/**
+ * Returns true only for the explicit timeout marker: either the error IS a
+ * `TimeoutError`, or it wraps one via `cause`, `context`, or `originalError`
+ * (Supabase wraps fetch rejections in `AuthRetryableFetchError`/storage
+ * errors that surface the underlying error through those fields; `fetch`
+ * itself surfaces `AbortController.abort(reason)` as an `AbortError` whose
+ * `cause` is the reason).
+ *
+ * A generic `AbortError` (lock-steal aborts, caller-cancelled requests) is
+ * deliberately NOT a timeout — it must not be presented as "Request timed out".
+ */
+const TIMEOUT_WRAPPER_KEYS = ['cause', 'context', 'originalError'] as const;
+
+export function isTimeoutError(error: unknown): boolean {
+  return isTimeoutErrorDeep(error, new Set<object>());
+}
+
+function isTimeoutErrorDeep(error: unknown, seen: Set<object>): boolean {
+  if (error instanceof TimeoutError) {
+    return true;
+  }
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+  // Guard against wrapper cycles (e.g. an error whose cause points back at
+  // itself) so classification always terminates.
+  if (seen.has(error)) {
+    return false;
+  }
+  seen.add(error);
+
+  const record = error as Record<string, unknown>;
+  for (const key of TIMEOUT_WRAPPER_KEYS) {
+    if (isTimeoutErrorDeep(record[key], seen)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Network-related errors (fetch failures, timeouts, offline)
  * These are often transient and may benefit from retry
  */
@@ -58,7 +115,10 @@ export class NetworkError extends AppError {
   }
 
   static fromError(error: Error, context?: Record<string, unknown>): NetworkError {
-    const isTimeout = error.name === 'AbortError' || error.message.includes('timeout');
+    // ONLY the explicit timeout marker counts as a timeout. A generic
+    // AbortError (lock-steal aborts, caller-cancelled requests) must not be
+    // presented as "Request timed out".
+    const isTimeout = isTimeoutError(error);
     const isOffline = !navigator.onLine;
 
     let message = 'Network request failed';
@@ -201,10 +261,10 @@ export function categorizeError(error: unknown, context?: Record<string, unknown
 
   // Network errors
   if (
+    isTimeoutError(err) ||
     err.name === 'AbortError' ||
     message.includes('network') ||
     message.includes('fetch') ||
-    message.includes('timeout') ||
     message.includes('failed to fetch') ||
     !navigator.onLine
   ) {

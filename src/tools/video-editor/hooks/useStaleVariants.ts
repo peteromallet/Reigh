@@ -101,7 +101,7 @@ export function useStaleVariants({ registry, patchRegistry, registerAsset }: Use
     }, POLL_INTERVAL_MS);
 
     return () => clearInterval(interval);
-  }, [generationAssetMap, fetchPrimaryLocations]);
+  }, [generationAssetMap, fetchPrimaryLocations, runtime.auth.userId]);
 
   // Subscribe to realtime variant/generation changes for instant updates
   useEffect(() => {
@@ -129,7 +129,7 @@ export function useStaleVariants({ registry, patchRegistry, registerAsset }: Use
         }
       }
     });
-  }, [generationAssetMap, fetchPrimaryLocations]);
+  }, [generationAssetMap, fetchPrimaryLocations, runtime.auth.userId]);
 
   // Build the set of stale asset keys (compare by file URL)
   const staleAssetKeys = useMemo(() => {

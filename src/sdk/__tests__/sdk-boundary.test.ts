@@ -108,6 +108,7 @@ import {
   getVideoFamilyDefinition,
   getVideoFamilyConformanceReport,
   getVideoFamilyLegacyBridgeStatus,
+  KNOWN_CONTRIBUTION_KINDS,
 } from '@reigh/editor-sdk';
 import type {
   // M4 commands / keybindings / context menus
@@ -237,6 +238,8 @@ import type {
   ExtensionId,
   ExtensionManifest,
   ExtensionContext,
+  ExtensionRenderer,
+  ExtensionUiService,
   ExtensionDiagnostic,
   DisposeHandle,
   // M1a: Composition reference identity
@@ -3846,6 +3849,105 @@ describe('semver-sensitive SDK export snapshot', () => {
     // Updated ceiling to account for expanded legitimate public surface
     expect(valueCount).toBeLessThan(200);
     expect(valueCount).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T2.1: Exact 21-kind count, no timelineMarker, governed overlay + ctx.ui
+// ---------------------------------------------------------------------------
+
+describe('T2.1: exact contribution-kind count and no timelineMarker kind', () => {
+  it('KNOWN_CONTRIBUTION_KINDS has exactly 21 kinds (no 22nd kind)', () => {
+    expect(KNOWN_CONTRIBUTION_KINDS.length).toBe(21);
+    expect(new Set(KNOWN_CONTRIBUTION_KINDS).size).toBe(21);
+  });
+
+  it('no timelineMarker contribution kind exists', () => {
+    expect(KNOWN_CONTRIBUTION_KINDS).not.toContain('timelineMarker');
+    expect(Object.keys(CONTRIBUTION_KIND_MILESTONE)).not.toContain('timelineMarker');
+  });
+
+  it('timelineOverlay remains one of the 21 kinds', () => {
+    expect(KNOWN_CONTRIBUTION_KINDS).toContain('timelineOverlay');
+    expect(CONTRIBUTION_KIND_MILESTONE.timelineOverlay).toMatch(/^M\d+$/);
+  });
+});
+
+describe('T2.1: exact ExtensionContext keys include ui; ui exposes only registerRenderer', () => {
+  it('a complete ExtensionContext literal enumerates exactly the 12 declared keys including ui', () => {
+    const ui: ExtensionUiService = {
+      registerRenderer: <Props,>(_renderId: string, _renderer: ExtensionRenderer<Props>) => ({
+        dispose() {},
+      }),
+    };
+    const ctx = {
+      apiVersion: 1,
+      extension: {
+        id: 'com.boundary.overlay',
+        version: '1.0.0',
+        label: 'Boundary Overlay Test',
+        manifest: {} as ExtensionManifest,
+      },
+      chrome: {
+        toast() {},
+        progress() {},
+        subscribe() {
+          return { dispose() {} };
+        },
+        focus() {},
+        announce() {},
+      },
+      services: {
+        settings: {} as never,
+        i18n: { t: (key: string) => key },
+        diagnostics: {} as never,
+      },
+      creative: createCreativeContextStubs(),
+      commands: {} as never,
+      ui,
+      effects: {} as never,
+      transitions: {} as never,
+      clipTypes: {} as never,
+      shaders: {} as never,
+      agentTools: {} as never,
+    } satisfies ExtensionContext;
+
+    expect(Object.keys(ctx).sort()).toEqual([
+      'agentTools',
+      'apiVersion',
+      'chrome',
+      'clipTypes',
+      'commands',
+      'creative',
+      'effects',
+      'extension',
+      'services',
+      'shaders',
+      'transitions',
+      'ui',
+    ]);
+    expect(ctx.ui).toBe(ui);
+  });
+
+  it('ExtensionUiService exposes only registerRenderer', () => {
+    const ui: ExtensionUiService = {
+      registerRenderer: <Props,>(_renderId: string, _renderer: ExtensionRenderer<Props>) => ({
+        dispose() {},
+      }),
+    };
+    expect(Object.keys(ui).sort()).toEqual(['registerRenderer']);
+    expect(typeof ui.registerRenderer).toBe('function');
+
+    // Compile-time pin: no other member may be added to ExtensionUiService.
+    type _UiKeys = keyof ExtensionUiService;
+    type _UiOnlyRegisterRenderer =
+      'registerRenderer' extends _UiKeys
+        ? Exclude<_UiKeys, 'registerRenderer'> extends never
+          ? true
+          : never
+        : never;
+    const _uiOnlyRegisterRenderer: _UiOnlyRegisterRenderer = true;
+    expect(_uiOnlyRegisterRenderer).toBe(true);
   });
 });
 

@@ -69,11 +69,11 @@ This document is the downstream consumer of the [M15 Contract-Recheck Matrix](./
 | Row ID | Behavior | Classification | Evidence |
 |---|---|---|---|
 | S-020 | Public surface classes: toolbar, inspector, overlay, status, code panel, dialogs | **supported** | CR:M2-001; EX:toolbar-example.ts, toolbar-extension.ts, inspector-example.ts, overlay-example.ts, status-surface-example.ts, code-panel-diagnostics-example.ts, surface-coverage.ts |
-| S-021 | Inspector and overlay contributions update on host state changes | **supported** | CR:M2-003; EX:inspector-example.ts, overlay-example.ts; TEST:Canary.test.tsx |
+| S-021 | Inspector and overlay contributions update on host state changes | **supported** | CR:M2-003; EX:inspector-example.ts, overlay-example.ts; TEST:TimelineEditorShellCore.test.tsx, TimelineExtensionOverlayHost.integration.test.tsx |
 | S-022 | `SchemaForm` renders and validates common schema subset; ExtensionManager falls back to raw key-value editing only for schemaless/legacy packages (intentional) | **supported** | CR:M2-006; `SchemaForm` host primitive; `src/sdk/index.ts` parameter schema types; T10 |
 | S-023 | Diagnostic fallback links open `DiagnosticPanel` filtered to failing extension | **supported** | CR:M2-008; DOC:frontend-closure-checklist.md§3.2 |
-| S-024 | Code panel canary publishes structured diagnostics with source ranges | **supported** | CR:M2-010, CR:M2-011; EX:code-panel-diagnostics-example.ts; TEST:Canary.test.tsx |
-| S-025 | Reserved frontend component slots compile as inert placeholders | **supported** | CR:M2-013; `InertReservedPlaceholder` in `TimelineEditorShellCore.tsx` |
+| S-024 | Code panel example publishes structured diagnostics with source ranges | **supported** | CR:M2-010, CR:M2-011; EX:code-panel-diagnostics-example.ts; TEST:DiagnosticPanel.test.tsx |
+| S-025 | Reserved frontend component slots compile as inert placeholders | **supported** | CR:M2-013; `InertReservedPlaceholder` in `TimelineEditorShellReservedSlots.tsx` |
 | S-026 | Writing/script and canvas/stage canaries demonstrate non-timeline-native workflows | **supported** | CR:M2-014; EX:writing-canary-example.ts, stage-canary-example.ts |
 | S-027 | Frontend closure checklist documented and applied to at least one primitive | **supported** | CR:M2-012, CR:X-008; DOC:frontend-closure-checklist.md |
 
@@ -206,7 +206,7 @@ This document is the downstream consumer of the [M15 Contract-Recheck Matrix](./
 
 ### 2.16 Extension Manager, Persistence & Cleanup
 
-*Delivered as proof points across T5 (cleanup), T9 (enable/disable cycle with persistence), and T10 (SchemaForm settings editing). The manager UI, persisted enablement, persisted settings, and lifecycle cleanup are supported; installation, update, and deletion remain deferred (see D-001).*
+*Delivered as proof points across T5 (cleanup), T9 (enable/disable cycle with persistence), T10 (SchemaForm settings editing), and T11/T7 (dev-local manager seam). The manager UI, persisted enablement, persisted settings, and lifecycle cleanup are supported for installed packages; installation, update, and deletion remain deferred (see D-001), and the DEV-only Local extensions section adds enable/disable for direct dev-local extensions (S-170). Installer, bundler, marketplace, discovery, and update tooling remain absent.*
 
 | Row ID | Behavior | Classification | Evidence |
 |---|---|---|---|
@@ -216,6 +216,20 @@ This document is the downstream consumer of the [M15 Contract-Recheck Matrix](./
 | S-163 | Persisted extension settings via `InMemoryDataProvider` and `SupabaseDataProvider` persistence services | **supported** | CR:M14-003 (partial); TEST:InMemoryDataProvider.extensionPersistence.test.ts; TEST:SupabaseDataProvider.test.ts (persistence); `DataProvider.createExtensionPersistenceService` |
 | S-164 | Activation lifecycle cleanup disposes renderer registrations and never mutates stale state | **supported** | CR:M5-011, M5-012 (partial); TEST:extensionSmoke.test.ts (T5 — disposal on deactivation); TEST:extensionRenderSurface.test.ts (T5 — renderer unregistration); `internalExtensionRenderSurface.ts` |
 
+### 2.17 Timeline Overlay Host, Markers & Dev-Local Manager (T7)
+
+*Delivered as the T6/T7 timeline-overlay completion slice. `timelineOverlay` is now a live, host-rendered, required-render contribution. The host is gated by the provider-owned `timelineOverlaysEnabled` flag (default false; the DEV-only `?timelineOverlayCanary=1` query parameter is implemented and flips the flag in DEV builds — production will never honor it). Maturity promotion to `public-supported` is deferred until the passive-gesture release criterion passes (see the release checklist §2.11).*
+
+| Row ID | Behavior | Classification | Evidence |
+|---|---|---|---|
+| S-165 | `timelineOverlay` contributions are host-rendered through a required non-empty `render` id bound via `ctx.ui.registerRenderer()`; overlays without a registered renderer are omitted (no callable/null placeholder); undeclared render ids produce diagnostics | **supported** | TEST:TimelineExtensionOverlayHost.integration.test.tsx; `src/sdk/ui.ts`, `src/sdk/video/families/timelineOverlays.ts`; runtime/extensionRenderSurface.ts |
+| S-166 | Overlay renderers receive `TimelineOverlayRenderProps` (memoized geometry, stable viewport/playhead stores, selection, boolean `pointerClaimed`/`claimPointer()`/`releasePointer()`, `primitives`) and render through React component semantics inside `HostContributionErrorBoundary` (error releases any active claim) | **supported** | TEST:TimelineExtensionOverlayHost.integration.test.tsx, TimelineExtensionOverlayHost.test.tsx; `src/sdk/video/families/timelineOverlays.ts` |
+| S-167 | Ruler-only marker primitive: `primitives.markerLayer()` accepts `placement: 'ruler'` only (no `trackId`, no canvas placement), controlled markers with preview/commit intents, frame-grid snapping at commit, accessible marker buttons, culling with overscan | **supported** | TEST:TimelineMarkerLayer.test.tsx; `components/TimelineEditor/TimelineMarkerLayer.tsx`, `useTimelineMarkerDrag.ts` |
+| S-168 | Passive gesture arbitration: unclaimed overlay wrappers are click-through, `claimPointer()` declines for foreign owners/foreign overlay claimants, release on up/cancel/blur/visibility/error/disable/unmount, pinch refuses while `'overlay'` owns, `touch-action: none` limited to interactive marker hit targets | **supported** | TEST:TimelineExtensionOverlayHost.integration.test.tsx (T5.1 passive parity and ownership arbitration); `lib/mobile-interaction-model.ts` (`'overlay'` owner); `lib/timeline-dom.ts` |
+| S-169 | Storage-neutral persistence: marker/project data persists through the standard `project-data.write` path; generic disposal never deletes project data (dispose also runs on provider unmount, HMR, and reload); explicit user-triggered Clear/Delete Data actions | **supported** | `dev/scene-phase-markers/ScenePhaseMarkersPanel.tsx` (Clear/Delete Data); `dev/scene-phase-markers/extension.ts` (800-marker ceiling measured below the 64 KB hard entry limit); DOC:timeline-patch-operations.md§3.11 |
+| S-170 | DEV-only Local extensions manager section: inventory from `devLocalExtensions`, active status/contribution summaries from `extensionRuntime.extensions`, stable external-store snapshots, toggles via `setDevExtensionEnabled`; disabled local extensions stay visible and re-enableable | **supported** | TEST:ExtensionManager.test.tsx (T2.4 DEV-only Local extensions section), devExtensionEnablement.test.ts, VideoEditorPage.test.tsx; `dev/devExtensionEnablement.ts`, `components/ExtensionManager/ExtensionManager.tsx` |
+| S-171 | Canary gate and deferred maturity promotion: `timelineOverlaysEnabled` defaults false and is provider-owned; the DEV-only `?timelineOverlayCanary=1` query parameter is implemented (flips the flag in DEV builds; production will not honor the query parameter); promotion to `public-supported` deferred until the release criterion passes | **supported** | TEST:BrowserVideoEditorProvider.test.tsx (timelineOverlaysEnabled flag), VideoEditorProvider.test.tsx; provider flag plumbing in `contexts/` + `browser/BrowserVideoEditorProvider.tsx`; DOC:extension-platform-release-checklist.md§2.11 |
+
 ---
 
 ## 3. Deferred / Unsupported V1 Behavior Matrix
@@ -224,7 +238,7 @@ This document is the downstream consumer of the [M15 Contract-Recheck Matrix](./
 
 | Row ID | Behavior | Classification | Evidence |
 |---|---|---|---|
-| D-001 | Extension installation, update, and deletion from manager UI | **deferred** | CR:M14-001; BLOCKER:B-001; ABSENCE:grep -rE 'installExtension|uninstallExtension|deleteExtension|removeExtension' src/tools/video-editor/components/ExtensionManager/ |
+| D-001 | Extension installation, update, and deletion from manager UI (enable/disable, settings editing, and persistence are shipped — S-160–S-164) | **deferred** | CR:M14-001; BLOCKER:B-001; ABSENCE:grep -rE 'installExtension|uninstallExtension|deleteExtension|removeExtension' src/tools/video-editor/components/ExtensionManager/ |
 | D-002 | Failed extension load recovery and automated diagnostic triage | **deferred** | CR:M14-003; BLOCKER:B-001 |
 | D-003 | Integrity mismatch prevents installation/activation | **deferred** | CR:M14-004; BLOCKER:B-001; DOC:extensions-trust-envelope.md§6 (planned M4–M5) |
 | D-004 | Extension state persistence, workspace pack load, bundle pack validation | **deferred** | CR:M14-005; BLOCKER:B-001 |
@@ -407,7 +421,8 @@ These behaviors are documented as unsupported across all milestones and have no 
 | Provider Compatibility | 4 |
 | Cross-Cutting Guarantees | 6 |
 | Extension Manager, Persistence & Cleanup | 5 |
-| **Total supported** | **96** |
+| Timeline Overlay Host, Markers & Dev-Local Manager | 7 |
+| **Total supported** | **103** |
 
 ### 5.2 Deferred V1 behaviors
 
@@ -470,3 +485,4 @@ Each deferred row maps to the contract-recheck row(s) where the gap was identifi
 | Date | Change |
 |---|---|
 | 2026-07-07 | Reconciled matrix with final foundation state (T11): narrowed D-001 to install/update/delete only, narrowed D-002 to failed-load recovery; added S-160–S-164 for delivered manager UI, persisted enablement/settings, and lifecycle cleanup; updated D-134 to credit M5/M14 cross-delivery while keeping composition-spine expansion staged; D-136 standalone npm publishing deferral confirmed. |
+| 2026-08-11 | T7.4: added §2.17 (S-165–S-171) for the live timeline-overlay host — required-render + `ctx.ui` resolution, render props, ruler-only `markerLayer`, passive gesture arbitration, storage-neutral persistence (generic disposal never deletes project data), DEV-only Local extensions manager section, and the canary gate with deferred maturity promotion. Updated S-021 evidence, the §2.16 preamble, and D-001 wording; totals now 103 supported / 70 deferred. |

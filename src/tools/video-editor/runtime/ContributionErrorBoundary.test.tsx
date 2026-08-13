@@ -230,6 +230,76 @@ describe('ContributionErrorBoundary', () => {
       );
       expect(screen.getByText(/Inspector section error/)).toBeDefined();
     });
+
+    it('renders "Timeline overlay error" for kind=timelineOverlay', () => {
+      render(
+        <ContributionErrorBoundary
+          contributionId="ov1"
+          kind="timelineOverlay"
+          label="My overlay"
+        >
+          <ThrowingSlot />
+        </ContributionErrorBoundary>,
+      );
+      expect(screen.getByText(/Timeline overlay error/)).toBeDefined();
+    });
+  });
+
+  describe('timelineOverlay failure isolation', () => {
+    it('accepts timelineOverlay identity and invokes its host failure callback once', () => {
+      const onHostFailure = vi.fn();
+      const onError = vi.fn();
+
+      render(
+        <ContributionErrorBoundary
+          contributionId="test.overlay"
+          extensionId="com.example.overlay"
+          kind="timelineOverlay"
+          label="Marker layer"
+          onError={onError}
+          onHostFailure={onHostFailure}
+        >
+          <ThrowingSlot message="Overlay crash" />
+        </ContributionErrorBoundary>,
+      );
+
+      // Fallback UI is contribution-scoped and labelled for the overlay kind.
+      expect(screen.getByRole('alert')).toBeDefined();
+      expect(screen.getByText(/Timeline overlay error/)).toBeDefined();
+      expect(screen.getByText(/Marker layer/)).toBeDefined();
+      expect(screen.getByText('Overlay crash')).toBeDefined();
+
+      // The host failure callback fires exactly once per caught error, with the
+      // full structured info so the host can release the overlay pointer claim.
+      expect(onHostFailure).toHaveBeenCalledTimes(1);
+      const info: ContributionErrorInfo = onHostFailure.mock.calls[0][0];
+      expect(info.contributionId).toBe('test.overlay');
+      expect(info.extensionId).toBe('com.example.overlay');
+      expect(info.kind).toBe('timelineOverlay');
+      expect(info.error.message).toBe('Overlay crash');
+      expect(info.componentStack).toBeTruthy();
+
+      // The diagnostics channel still fires exactly once as well.
+      expect(onError).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not invoke the host failure callback when the overlay renders normally', () => {
+      const onHostFailure = vi.fn();
+
+      render(
+        <ContributionErrorBoundary
+          contributionId="test.overlay.ok"
+          kind="timelineOverlay"
+          onHostFailure={onHostFailure}
+        >
+          <NormalSlot label="Overlay fine" />
+        </ContributionErrorBoundary>,
+      );
+
+      expect(screen.getByTestId('normal-slot')).toBeDefined();
+      expect(screen.getByText('Overlay fine')).toBeDefined();
+      expect(onHostFailure).not.toHaveBeenCalled();
+    });
   });
 
   describe('isolation', () => {
@@ -619,6 +689,56 @@ describe('HostContributionErrorBoundary', () => {
 
       // Now incrementRecoveryKey should have been called (user-initiated retry)
       expect(incrementRecoveryKey).toHaveBeenCalledWith('com.example.broken');
+    });
+
+    it('forwards the host failure callback for a timelineOverlay contribution', () => {
+      const getRecoveryKey = vi.fn(() => '1');
+      const incrementRecoveryKey = vi.fn(() => '2');
+      const onHostFailure = vi.fn();
+
+      const runtime: VideoEditorRuntimeContextValue = {
+        provider: null as unknown as VideoEditorRuntimeContextValue['provider'],
+        assetResolver: null as unknown as VideoEditorRuntimeContextValue['assetResolver'],
+        auth: null as unknown as VideoEditorRuntimeContextValue['auth'],
+        project: null as unknown as VideoEditorRuntimeContextValue['project'],
+        shots: null as unknown as VideoEditorRuntimeContextValue['shots'],
+        mediaLightbox: null as unknown as VideoEditorRuntimeContextValue['mediaLightbox'],
+        agentChat: null as unknown as VideoEditorRuntimeContextValue['agentChat'],
+        toast: null as unknown as VideoEditorRuntimeContextValue['toast'],
+        telemetry: null as unknown as VideoEditorRuntimeContextValue['telemetry'],
+        timelineId: 'test-timeline',
+        userId: 'test-user',
+        extensions: null as unknown as VideoEditorRuntimeContextValue['extensions'],
+        getRecoveryKey,
+        incrementRecoveryKey,
+      };
+
+      render(
+        <VideoEditorRuntimeProvider value={runtime}>
+          <HostContributionErrorBoundary
+            contributionId="test.host.overlay"
+            extensionId="com.example.overlay"
+            kind="timelineOverlay"
+            label="Host marker layer"
+            onHostFailure={onHostFailure}
+          >
+            <HostThrowingSlot message="Host overlay crash" />
+          </HostContributionErrorBoundary>
+        </VideoEditorRuntimeProvider>,
+      );
+
+      // Fallback shown with the timelineOverlay label, and the host failure
+      // callback fired exactly once through the wrapper.
+      expect(screen.getByRole('alert')).toBeDefined();
+      expect(screen.getByText(/Timeline overlay error/)).toBeDefined();
+      expect(screen.getByText(/Host marker layer/)).toBeDefined();
+
+      expect(onHostFailure).toHaveBeenCalledTimes(1);
+      const info: ContributionErrorInfo = onHostFailure.mock.calls[0][0];
+      expect(info.kind).toBe('timelineOverlay');
+      expect(info.contributionId).toBe('test.host.overlay');
+      expect(info.extensionId).toBe('com.example.overlay');
+      expect(info.error.message).toBe('Host overlay crash');
     });
 
     it('falls back to legacy boundary behavior when no extensionId is provided (no retry button)', () => {

@@ -16,6 +16,16 @@ vi.mock('@/tools/video-editor/contexts/VideoEditorRuntimeContext', () => ({
   useVideoEditorRuntime: () => mockUseVideoEditorRuntime(),
 }));
 
+// The dev-local scratchpad is empty on main; the T2.4 describe pushes fixture
+// extensions into the shared hoisted array so the manager's Local extensions
+// section has inventory to render (and to prove inventory does not come from
+// the runtime's enabled-extension list).
+const devLocalState = vi.hoisted(() => ({ extensions: [] as any[] }));
+
+vi.mock('@/tools/video-editor/dev/localExtensions', () => ({
+  devLocalExtensions: devLocalState.extensions,
+}));
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -3470,5 +3480,228 @@ describe('ExtensionManager — empty, error, and mixed states (T11)', () => {
         ),
       ).toBeInTheDocument();
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T2.4: DEV-only Local extensions section
+// ---------------------------------------------------------------------------
+
+describe('ExtensionManager — dev-local extensions section (T2.4)', () => {
+  const LOCAL_ID = 'com.reigh.dev.local-fixture';
+  const DISABLED_LOCAL_ID = 'com.reigh.dev.local-disabled';
+  const DISABLED_STORAGE_KEY = 'reigh.dev-extensions.disabled';
+  const originalDEV = import.meta.env.DEV;
+
+  function makeLocalExtension(id: string, label: string, description?: string) {
+    return {
+      manifest: {
+        id,
+        version: '0.1.0',
+        label,
+        description: description ?? `Dev-local ${label}`,
+        apiVersion: 1,
+        contributions: [
+          {
+            id: `${id}-status`,
+            kind: 'slot',
+            slot: 'statusBar',
+            render: `${id}-status`,
+            label: `${label} Status`,
+          },
+        ],
+      },
+      activate: vi.fn(() => ({ dispose: vi.fn() })),
+    };
+  }
+
+  function localRow(id: string): HTMLElement | null {
+    return document.querySelector(
+      `[data-video-editor-dev-local-extension="${id}"]`,
+    );
+  }
+
+  beforeEach(() => {
+    mockUseVideoEditorRuntime.mockReset();
+    devLocalState.extensions.length = 0;
+    window.localStorage.clear();
+  });
+
+  afterEach(() => {
+    (import.meta.env as Record<string, unknown>).DEV = originalDEV;
+    window.localStorage.clear();
+  });
+
+  it('renders a Local extensions section with inventory from devLocalExtensions', () => {
+    devLocalState.extensions.push(makeLocalExtension(LOCAL_ID, 'Local Fixture'));
+    mockUseVideoEditorRuntime.mockReturnValue({
+      extensionRuntime: makeRuntime([], [
+        { manifest: makeLocalExtension(LOCAL_ID, 'Local Fixture').manifest },
+      ]),
+      extensionStateRepository: null,
+      triggerExtensionRefresh: undefined,
+    });
+
+    render(<ExtensionManager />);
+
+    const section = screen.getByTestId('dev-local-extensions');
+    expect(section).toBeInTheDocument();
+    expect(screen.getByText('Local extensions')).toBeInTheDocument();
+
+    const row = localRow(LOCAL_ID);
+    expect(row).toBeInTheDocument();
+    expect(row).toHaveTextContent('Local Fixture');
+    expect(row).toHaveTextContent('v0.1.0');
+    expect(row).toHaveTextContent('Direct');
+
+    // Active state derives from the runtime's enabled-extension list.
+    const toggle = screen.getByRole('button', {
+      name: /disable com\.reigh\.dev\.local-fixture/i,
+    });
+    expect(toggle).toHaveTextContent('Enabled');
+  });
+
+  it('derives the contribution summary from the runtime for an active local', () => {
+    devLocalState.extensions.push(makeLocalExtension(LOCAL_ID, 'Local Fixture'));
+    mockUseVideoEditorRuntime.mockReturnValue({
+      extensionRuntime: makeRuntime([], [
+        { manifest: makeLocalExtension(LOCAL_ID, 'Local Fixture').manifest },
+      ]),
+      extensionStateRepository: null,
+      triggerExtensionRefresh: undefined,
+    });
+
+    render(<ExtensionManager />);
+
+    expect(localRow(LOCAL_ID)).toHaveTextContent('1 contribution');
+  });
+
+  it('keeps a disabled local extension listed even when the runtime omits it, and re-enables it', async () => {
+    const user = userEvent.setup();
+    devLocalState.extensions.push(
+      makeLocalExtension(LOCAL_ID, 'Local Fixture'),
+      makeLocalExtension(DISABLED_LOCAL_ID, 'Local Disabled'),
+    );
+    // The runtime omits the disabled extension entirely — it was torn down.
+    mockUseVideoEditorRuntime.mockReturnValue({
+      extensionRuntime: makeRuntime([], [
+        { manifest: makeLocalExtension(LOCAL_ID, 'Local Fixture').manifest },
+      ]),
+      extensionStateRepository: null,
+      triggerExtensionRefresh: undefined,
+    });
+    window.localStorage.setItem(
+      DISABLED_STORAGE_KEY,
+      JSON.stringify([DISABLED_LOCAL_ID]),
+    );
+
+    render(<ExtensionManager />);
+
+    // Disabled local stays listed, sourced from devLocalExtensions, with a
+    // Disabled toggle and an explicit inactive summary.
+    const disabledRow = localRow(DISABLED_LOCAL_ID);
+    expect(disabledRow).toBeInTheDocument();
+    expect(disabledRow).toHaveTextContent('Local Disabled');
+    expect(disabledRow).toHaveTextContent('Inactive (disabled)');
+
+    const enableToggle = screen.getByRole('button', {
+      name: /enable com\.reigh\.dev\.local-disabled/i,
+    });
+    expect(enableToggle).toHaveTextContent('Disabled');
+
+    // The enabled local is still listed as active alongside it.
+    expect(localRow(LOCAL_ID)).toHaveTextContent('Enabled');
+
+    // Re-enable through the dev store.
+    await user.click(enableToggle);
+
+    await waitFor(() => {
+      // The store no longer marks it disabled, so the toggle flips to "Disable".
+      expect(
+        screen.getByRole('button', {
+          name: /disable com\.reigh\.dev\.local-disabled/i,
+        }),
+      ).toBeInTheDocument();
+    });
+    expect(
+      JSON.parse(window.localStorage.getItem(DISABLED_STORAGE_KEY)!),
+    ).toEqual([]);
+  });
+
+  it('toggles through setDevExtensionEnabled when disabling an active local', async () => {
+    const user = userEvent.setup();
+    devLocalState.extensions.push(makeLocalExtension(LOCAL_ID, 'Local Fixture'));
+    mockUseVideoEditorRuntime.mockReturnValue({
+      extensionRuntime: makeRuntime([], [
+        { manifest: makeLocalExtension(LOCAL_ID, 'Local Fixture').manifest },
+      ]),
+      extensionStateRepository: null,
+      triggerExtensionRefresh: undefined,
+    });
+
+    render(<ExtensionManager />);
+
+    const disableToggle = screen.getByRole('button', {
+      name: /disable com\.reigh\.dev\.local-fixture/i,
+    });
+    await user.click(disableToggle);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', {
+          name: /enable com\.reigh\.dev\.local-fixture/i,
+        }),
+      ).toBeInTheDocument();
+    });
+    expect(
+      JSON.parse(window.localStorage.getItem(DISABLED_STORAGE_KEY)!),
+    ).toEqual([LOCAL_ID]);
+  });
+
+  it('renders the local section even when the package inventory is empty', () => {
+    devLocalState.extensions.push(makeLocalExtension(LOCAL_ID, 'Local Fixture'));
+    mockUseVideoEditorRuntime.mockReturnValue({
+      extensionRuntime: makeRuntime([]),
+      extensionStateRepository: null,
+      triggerExtensionRefresh: undefined,
+    });
+
+    render(<ExtensionManager />);
+
+    // Both the dev-local inventory and the package empty state are visible.
+    expect(screen.getByTestId('dev-local-extensions')).toBeInTheDocument();
+    expect(localRow(LOCAL_ID)).toBeInTheDocument();
+    expect(screen.getByText('No packages in inventory.')).toBeInTheDocument();
+  });
+
+  it('shows an empty note when devLocalExtensions has no entries', () => {
+    mockUseVideoEditorRuntime.mockReturnValue({
+      extensionRuntime: makeRuntime([]),
+      extensionStateRepository: null,
+      triggerExtensionRefresh: undefined,
+    });
+
+    render(<ExtensionManager />);
+
+    expect(screen.getByTestId('dev-local-extensions')).toHaveTextContent(
+      'No local extensions in this workspace.',
+    );
+  });
+
+  it('hides the Local extensions section when DEV is off', () => {
+    devLocalState.extensions.push(makeLocalExtension(LOCAL_ID, 'Local Fixture'));
+    (import.meta.env as Record<string, unknown>).DEV = false;
+    mockUseVideoEditorRuntime.mockReturnValue({
+      extensionRuntime: makeRuntime([], [
+        { manifest: makeLocalExtension(LOCAL_ID, 'Local Fixture').manifest },
+      ]),
+      extensionStateRepository: null,
+      triggerExtensionRefresh: undefined,
+    });
+
+    render(<ExtensionManager />);
+
+    expect(screen.queryByTestId('dev-local-extensions')).not.toBeInTheDocument();
+    expect(localRow(LOCAL_ID)).toBeNull();
   });
 });

@@ -1,0 +1,56 @@
+name: Bridge Latency Gate
+
+# GET + warm-save p95 regression gate (incident timeline-save-latency-error-20260812, T2.4).
+# Runs scripts/bridge-latency-report.mjs against a disposable 2,000-event
+# fixture under a temp projects root:
+#   - GET p95  <= 500ms (existing B7 warm GET SLO)
+#   - save p95 <= 500ms (NEW warm-save SLO — prior doc's save was ~1s; its
+#     500ms gate was GET-only)
+#   - 10s hard deadline (BRIDGE_REQUEST_TIMEOUT_MS) retained
+# Until the astrid incremental-log fix (T2.1) lands, the save gate is expected
+# to FAIL here — that is the recorded pre-fix baseline, not a weakened SLO.
+
+on:
+  schedule:
+    # Nightly (04:17 UTC) — the 20260811 doc's "nightly Linux job" home for the
+    # performance contract.
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/bridge-latency.yml"
+      - "Makefile"
+      - "package.json"
+      - "scripts/bridge-latency-report.mjs"
+      - "scripts/bridge-latency-seed.py"
+
+jobs:
+  bridge-latency:
+    name: GET + save p95 gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: banodoco/reigh-app
+          path: reigh-timeline-main
+      - uses: actions/checkout@v4
+        with:
+          repository: peteromallet/Astrid
+          path: astrid
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.19.0"
+      - name: Install shared timeline schema
+        working-directory: reigh-timeline-main
+        run: pip install -e vendor/timeline-schema/python
+      - name: Install astrid
+        working-directory: astrid
+        run: pip install -e .
+      - name: Run bridge latency gate
+        working-directory: reigh-timeline-main
+        env:
+          ASTRID_PYTHON: python3
+        run: make bridge-latency-check

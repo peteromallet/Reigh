@@ -1,4 +1,4 @@
-import { memo, useCallback } from 'react';
+import { memo, useCallback, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useHomeNavigation } from '@/shared/hooks/useHomeNavigation.ts';
 import { usePanesStore } from '@/shared/state/panesStore.ts';
@@ -9,9 +9,11 @@ interface ReighVideoEditorShellProps {
   mode: 'full' | 'compact';
   timelineId?: string | null;
   onCreateTimeline?: () => void;
+  /** Host controls rendered beside the Back button (e.g. project/timeline selectors). */
+  navigationControls?: ReactNode;
 }
 
-function ReighVideoEditorShellComponent({ mode, timelineId, onCreateTimeline }: ReighVideoEditorShellProps) {
+function ReighVideoEditorShellComponent({ mode, timelineId, onCreateTimeline, navigationControls }: ReighVideoEditorShellProps) {
   const { navigateHome } = useHomeNavigation();
   const isEditorPaneLocked = usePanesStore((state) => state.isEditorPaneLocked);
   const isGenerationsPaneLocked = usePanesStore((state) => state.isGenerationsPaneLocked);
@@ -40,6 +42,7 @@ function ReighVideoEditorShellComponent({ mode, timelineId, onCreateTimeline }: 
       onSetGenerationsPaneLocked={setIsGenerationsPaneLocked}
       onNavigateHome={navigateHome}
       onOpenEditorRoute={openEditorRoute}
+      navigationControls={navigationControls}
     />
   );
 }

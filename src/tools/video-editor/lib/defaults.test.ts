@@ -137,6 +137,46 @@ describe('withDefaultTimelineOutput', () => {
     expect(result.theme).toBe('dark-cinema');
   });
 
+  it('derives resolution and fps from theme_overrides.visual.canvas when output is absent', () => {
+    const result = withDefaultTimelineOutput({
+      theme: 'banodoco-default',
+      theme_overrides: {
+        visual: {
+          canvas: { width: 1280, height: 720, fps: 24 },
+        },
+      },
+    });
+    expect(result.output.resolution).toBe('1280x720');
+    expect(result.output.fps).toBe(24);
+  });
+
+  it('derives resolution and fps from the installed theme canvas when no overrides', () => {
+    // `2rp` is the only installed timeline theme; its canvas is 1920x1080@30.
+    const result = withDefaultTimelineOutput({ theme: '2rp' });
+    expect(result.output.resolution).toBe('1920x1080');
+    expect(result.output.fps).toBe(30);
+  });
+
+  it('prefers explicit output over the theme canvas', () => {
+    const result = withDefaultTimelineOutput({
+      theme: 'banodoco-default',
+      theme_overrides: {
+        visual: {
+          canvas: { width: 1280, height: 720, fps: 24 },
+        },
+      },
+      output: { resolution: '1920x1080', fps: 30 },
+    });
+    expect(result.output.resolution).toBe('1920x1080');
+    expect(result.output.fps).toBe(30);
+  });
+
+  it('keeps DEFAULT_OUTPUT when no theme is bound (no geometry change)', () => {
+    const result = withDefaultTimelineOutput({});
+    expect(result.output.resolution).toBe(DEFAULT_OUTPUT.resolution);
+    expect(result.output.fps).toBe(DEFAULT_OUTPUT.fps);
+  });
+
   it('omits theme when absent', () => {
     const result = withDefaultTimelineOutput({});
     expect(result).not.toHaveProperty('theme');

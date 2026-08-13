@@ -117,5 +117,51 @@
         { "name": "getCapabilityRequirements", "kind": "function", "namespace": "value", "change": "inline→reexport" }
       ]
     }
+  },
+  "_t11SdkAdditionRecord": {
+    "milestone": "T1.1/T2.1 — Timeline overlay + UI renderer public contracts",
+    "baselineUpdatedAt": "2026-08-11T20:40:54.916Z",
+    "changeKind": "addition",
+    "compatibility": "source-compatible",
+    "description": "18 intentional exports added to @reigh/editor-sdk for the governed timeline-overlay family and the ctx.ui renderer service: ExtensionRenderer and ExtensionUiService (src/sdk/ui.ts), plus TimelineOverlayManifestContribution, TimelineOverlayDescriptor, ResolvedTimelineOverlayDescriptor, TimelineOverlayGeometryInput, TimelineOverlayGeometry, TimelineViewportSnapshot, TimelineViewportStore, TimelinePlayheadSnapshot, TimelinePlayheadStore, TimelineOverlaySelection, TimelineOverlayRenderProps, TimelinePointMarker, TimelineMarkerChange, TimelineMarkerLayerOptions, TimelineOverlayPrimitives and createTimelineOverlayGeometry (src/sdk/video/families/timelineOverlays.ts). The baseline manifest was rewritten with --write-baseline to accept these additions; no existing export changed shape or source. TimelineOverlayManifestContribution requires a non-empty render id and forbids when, and the generic ExtensionContribution branch now excludes kind 'timelineOverlay' so TypeScript enforces the governed shape.",
+    "changedExportCount": 18,
+    "addedExportsByModule": {
+      "src/sdk/ui.ts": [
+        { "name": "ExtensionRenderer", "kind": "type", "namespace": "type" },
+        { "name": "ExtensionUiService", "kind": "interface", "namespace": "type" }
+      ],
+      "src/sdk/video/families/timelineOverlays.ts": [
+        { "name": "TimelineOverlayManifestContribution", "kind": "interface", "namespace": "type" },
+        { "name": "TimelineOverlayDescriptor", "kind": "interface", "namespace": "type" },
+        { "name": "ResolvedTimelineOverlayDescriptor", "kind": "interface", "namespace": "type" },
+        { "name": "TimelineOverlayGeometryInput", "kind": "interface", "namespace": "type" },
+        { "name": "TimelineOverlayGeometry", "kind": "interface", "namespace": "type" },
+        { "name": "TimelineViewportSnapshot", "kind": "interface", "namespace": "type" },
+        { "name": "TimelineViewportStore", "kind": "interface", "namespace": "type" },
+        { "name": "TimelinePlayheadSnapshot", "kind": "interface", "namespace": "type" },
+        { "name": "TimelinePlayheadStore", "kind": "interface", "namespace": "type" },
+        { "name": "TimelineOverlaySelection", "kind": "interface", "namespace": "type" },
+        { "name": "TimelineOverlayRenderProps", "kind": "interface", "namespace": "type" },
+        { "name": "TimelinePointMarker", "kind": "interface", "namespace": "type" },
+        { "name": "TimelineMarkerChange", "kind": "interface", "namespace": "type" },
+        { "name": "TimelineMarkerLayerOptions", "kind": "interface", "namespace": "type" },
+        { "name": "TimelineOverlayPrimitives", "kind": "interface", "namespace": "type" },
+        { "name": "createTimelineOverlayGeometry", "kind": "function", "namespace": "value" }
+      ]
+    }
+  },
+  "_timelineViewPrimitiveRecord": {
+    "milestone": "T7.5 — Provider-owned TimelineViewStore primitive (ctx.creative.timelineView)",
+    "baselineUpdatedAt": "2026-08-12T00:00:00.000Z",
+    "changeKind": "addition-plus-interface-extension",
+    "compatibility": "source-breaking-for-context-literals",
+    "description": "2 intentional exports added to @reigh/editor-sdk for the renderer-independent timeline observation primitive: TimelineViewSnapshot and TimelineViewStore (src/sdk/video/timeline/viewState.ts), surfaced as a NEW REQUIRED member CreativeContext.timelineView (milestone M2). The CreativeContext interface gained a required member, so existing typed context literals that construct CreativeContext exhaustively must add timelineView (see src/sdk/boundary.test.ts literal). Extensions read playback, selection, viewport, and geometry from commands/keybindings without a mounted timelineOverlay renderer. The baseline manifest was rewritten with --write-baseline to accept the two new exports; the CreativeContext shape change is not captured by the shallow manifest and is recorded here. The scene-phase-markers canary's module-level playhead cache was removed in the same change; its B-key command now reads ctx.creative.timelineView.",
+    "changedExportCount": 2,
+    "addedExportsByModule": {
+      "src/sdk/video/timeline/viewState.ts": [
+        { "name": "TimelineViewSnapshot", "kind": "interface", "namespace": "type" },
+        { "name": "TimelineViewStore", "kind": "interface", "namespace": "type" }
+      ]
+    }
   }
 }

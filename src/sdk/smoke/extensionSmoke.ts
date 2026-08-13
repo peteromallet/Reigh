@@ -9,14 +9,13 @@
  *
  * This module is intentionally free of dynamic imports, sandbox promises,
  * loaders, permission enforcement, or timeline mutation — it is a pure,
- * statically-bundled opt-in test hook with host-owned UI registration only.
+ * statically-bundled opt-in test hook with `ctx.ui` renderer registration only.
  *
  * @publicContract
  */
 
 import { defineExtension, type ReighExtension } from '../lifecycle';
 import type { ContributionId, ExtensionId } from '../ids';
-import { getInternalExtensionRenderSurface } from '../internalExtensionRenderSurface';
 import { createElement } from 'react';
 
 // ---------------------------------------------------------------------------
@@ -60,12 +59,11 @@ function createSmokeExtension(): ReighExtension {
       ],
     },
     activate(ctx) {
-      const renderSurface = getInternalExtensionRenderSurface(ctx);
-      if (!renderSurface) {
+      if (!ctx.ui) {
         return { dispose() {} };
       }
 
-      return renderSurface.registerRenderer(
+      return ctx.ui.registerRenderer(
         EXTENSION_SMOKE_CONTRIBUTION_ID,
         () => createElement(
           'div',

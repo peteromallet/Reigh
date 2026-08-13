@@ -230,6 +230,25 @@ export class AstridBridgeDataProvider implements DataProvider {
 
   private selectedTimelineRef: string;
   private canonicalTimelineId: string | null;
+  /**
+   * The identity the caller supplied at construction (`options.timelineId`):
+   * either the canonical UUID or its ULID alias. It is a *candidate*, never a
+   * trusted canonical — the first bridge payload must confirm it (its
+   * `timeline_id` or `timeline_ulid` must equal the supplied value) before it
+   * is adopted, otherwise a wrong timeline's payload would silently become
+   * this provider's identity (the hole that let a mismatched first response
+   * through and later redirected callers to the cached ULID).
+   */
+  private callerTimelineId: string | null;
+  /**
+   * Routable address captured from the first bridge payload's
+   * `timeline_ulid` (when present). The bridge resolves the ULID directly to
+   * the timeline directory — addressing requests with the canonical UUID
+   * instead forces a project-wide identity scan per save. This stays an
+   * address, never an identity: `canonicalTimelineId` remains the only
+   * identity check.
+   */
+  private timelineUlidRef: string | null = null;
   private cachedPayload: BridgeTimelinePayload | null = null;
   /** In-flight `fresh` read, shared by concurrent callers (see fetchTimelinePayload). */
   private inFlightFreshFetch: Promise<BridgeTimelinePayload> | null = null;
@@ -249,7 +268,15 @@ export class AstridBridgeDataProvider implements DataProvider {
     // explicit assetBaseUrl is supplied.
     this.assetBaseUrl = trimTrailingSlash(options.assetBaseUrl ?? this.apiBaseUrl);
     this.selectedTimelineRef = options.timelineRef;
-    this.canonicalTimelineId = options.timelineId ?? null;
+    // Capture the caller-supplied identity (canonical UUID or its ULID alias)
+    // as a *candidate*: the first bridge payload must confirm it (its
+    // `timeline_id` or `timeline_ulid` must equal this value) before it is
+    // adopted as canonical. Seeding `canonicalTimelineId` here would make the
+    // identity guard reject the very first (legitimate) ULID-keyed load,
+    // whose payload's canonical `timeline_id` is a distinct UUID.
+    this.callerTimelineId = options.timelineId ?? null;
+    this.canonicalTimelineId = null;
+    this.timelineUlidRef = null;
     this.projectSlug = options.projectSlug;
     this.registeredParsers = options.registeredParsers;
   }
@@ -377,7 +404,8 @@ export class AstridBridgeDataProvider implements DataProvider {
       await saveResponse.json(),
       'save response',
     );
-    return this.cachePayload(payload, timelineId).configVersion;
+    const cached = this.cachePayload(payload, timelineId);
+    return cached.configVersion;
   }
 
   async saveCheckpoint(
@@ -479,7 +507,11 @@ export class AstridBridgeDataProvider implements DataProvider {
     if (
       options?.fresh !== true
       && this.cachedPayload !== null
-      && (this.canonicalTimelineId === null || timelineId === this.canonicalTimelineId)
+      && (
+        this.canonicalTimelineId === null
+        || timelineId === this.canonicalTimelineId
+        || timelineId === this.timelineUlidRef
+      )
     ) {
       return this.cachedPayload;
     }
@@ -525,8 +557,16 @@ export class AstridBridgeDataProvider implements DataProvider {
     return this.cachePayload(payload, timelineId).payload;
   }
 
-  private getTimelineRequestRef(timelineId: string): string {
-    return this.canonicalTimelineId ?? timelineId ?? this.selectedTimelineRef;
+  /**
+   * Resolve the address used on the wire for every timeline route (GET/POST/
+   * asset). The cached `timeline_ulid` wins once known — the bridge resolves
+   * it to the timeline directory directly, avoiding the per-save project-wide
+   * identity scan that addressing by the canonical UUID triggers. The UUID is
+   * kept as the *identity* (`canonicalTimelineId`) and is only used as an
+   * address when the payload never carried a ULID.
+   */
+  private getTimelineRequestRef(timelineId?: string): string {
+    return this.timelineUlidRef ?? this.canonicalTimelineId ?? timelineId ?? this.selectedTimelineRef;
   }
 
   private cachePayload(
@@ -539,8 +579,47 @@ export class AstridBridgeDataProvider implements DataProvider {
     configVersion: number;
   } {
     const payloadTimelineId = typeof payload.timeline_id === 'string' ? payload.timeline_id : null;
-    if (this.canonicalTimelineId !== null && payloadTimelineId !== null && timelineId !== this.canonicalTimelineId) {
-      throw new Error(`Astrid bridge timeline mismatch: expected ${this.canonicalTimelineId}, got ${timelineId}`);
+    const payloadUlid = typeof payload.timeline_ulid === 'string' && payload.timeline_ulid.length > 0
+      ? payload.timeline_ulid
+      : null;
+    // The caller's `timelineId` key may be a ULID/slug that differs from the
+    // bridge's canonical id (real Astrid timelines live under a ULID directory
+    // with a distinct canonical identity). Identity is verified by comparing
+    // the CANONICAL ids — the payload's timeline_id against the known
+    // canonical — never the caller's address key.
+    if (
+      this.canonicalTimelineId !== null
+      && payloadTimelineId !== null
+      && payloadTimelineId !== this.canonicalTimelineId
+    ) {
+      throw new Error(`Astrid bridge timeline mismatch: expected ${this.canonicalTimelineId}, got ${payloadTimelineId}`);
+    }
+
+    // First payload: the caller-supplied identity (if any) must be confirmed
+    // before it is adopted as canonical. The page-level selection validates
+    // the URL key against both the canonical id and its ULID alias, so the
+    // provider mirrors that: either field matching the supplied value is a
+    // confirmation. A payload matching NEITHER belongs to a different
+    // timeline — reject instead of silently adopting it (the constructor used
+    // to discard the supplied identity, so a wrong UUID in the first response
+    // was accepted and a later caller could be redirected to the cached ULID).
+    if (
+      this.canonicalTimelineId === null
+      && this.callerTimelineId !== null
+      && payloadTimelineId !== this.callerTimelineId
+      && payloadUlid !== this.callerTimelineId
+    ) {
+      throw new Error(
+        `Astrid bridge timeline identity mismatch: requested ${this.callerTimelineId}, `
+        + `got timeline_id ${payloadTimelineId ?? '(none)'} / timeline_ulid ${payloadUlid ?? '(none)'}`,
+      );
+    }
+
+    // The ULID is an address (routing) key, not an identity: remember the
+    // first known value and never overwrite it with a different one —
+    // identity verification stays canonical-UUID based above.
+    if (payloadUlid !== null && (this.timelineUlidRef === null || payloadUlid === this.timelineUlidRef)) {
+      this.timelineUlidRef = payloadUlid;
     }
 
     const normalizedConfig = normalizeConfig(payload.config);
@@ -742,7 +821,7 @@ export class AstridBridgeDataProvider implements DataProvider {
   }
 
   private buildAssetUrl(assetKey: string): string {
-    return `${this.assetBaseUrl}/projects/${encodeURIComponent(this.projectSlug)}/timelines/${encodeURIComponent(this.selectedTimelineRef)}/assets/${encodeURIComponent(assetKey)}`;
+    return `${this.assetBaseUrl}/projects/${encodeURIComponent(this.projectSlug)}/timelines/${encodeURIComponent(this.getTimelineRequestRef())}/assets/${encodeURIComponent(assetKey)}`;
   }
 
   private async getProjectRootHandle(): Promise<FileSystemDirectoryHandleLike> {

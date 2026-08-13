@@ -34,8 +34,12 @@ import {
   buildAutomationClipParams,
   canaryApplyAutomationOverrides,
 } from '../examples/automation-recording-canary';
-import { overlayExample } from '../examples/overlay-example';
+import { overlayExample, OVERLAY_RENDER_ID } from '../examples/overlay-example';
 import { stageCanaryExample } from '../examples/stage-canary-example';
+import {
+  createTimelineOverlayGeometry,
+  validateManifest,
+} from '@reigh/editor-sdk';
 import type {
   AssetMetadata,
   AutomationClipParams,
@@ -48,6 +52,8 @@ import type {
   DeferredEnrichmentRecord,
   ExtensionContext,
   ExtensionDiagnostic,
+  ExtensionManifest,
+  ExtensionRenderer,
   KeybindingContribution,
   Keyframe,
   OutputFormatContribution,
@@ -57,6 +63,8 @@ import type {
   ParserInput,
   ReighExtension,
   TimelineOps,
+  TimelineOverlayManifestContribution,
+  TimelineOverlayRenderProps,
   TimelineProposalInput,
 } from '@reigh/editor-sdk';
 
@@ -101,6 +109,7 @@ function walkTsFiles(dir: string): string[] {
 function createExampleContext(messages?: Record<string, string>) {
   const diagnostics: ExtensionDiagnostic[] = [];
   const toasts: Array<{ message: string; severity: string }> = [];
+  const registeredRenderers = new Map<string, unknown>();
   const interpolate = (template: string, params?: Record<string, unknown>) =>
     template.replace(/\{\{(\w+)\}\}/g, (_match, key: string) =>
       String(params?.[key] ?? ''),
@@ -125,9 +134,19 @@ function createExampleContext(messages?: Record<string, string>) {
         toasts.push({ message, severity });
       },
     },
+    ui: {
+      registerRenderer(renderId: string, renderer: unknown) {
+        registeredRenderers.set(renderId, renderer);
+        return {
+          dispose(): void {
+            registeredRenderers.delete(renderId);
+          },
+        };
+      },
+    },
   } as unknown as ExtensionContext;
 
-  return { ctx, diagnostics, toasts };
+  return { ctx, diagnostics, toasts, registeredRenderers };
 }
 
 /** Check if a specifier resolves into src/tools/video-editor internals. */
@@ -628,27 +647,159 @@ describe('M2 stage and overlay example contract', () => {
     ]);
   });
 
-  it('overlay example reports active registry status without milestone-authority wording', () => {
-    const { ctx, diagnostics, toasts } = createExampleContext(
-      overlayExample.manifest.messages,
+  describe('overlay example required-render contract', () => {
+    const OVERLAY_EXAMPLE_PATH = path.join(
+      REPO_ROOT,
+      'src',
+      'examples',
+      'overlay-example.ts',
+    );
+    const source = fs.readFileSync(OVERLAY_EXAMPLE_PATH, 'utf8');
+    const contributions = overlayExample.manifest.contributions ?? [];
+    const overlayContribution = contributions.find(
+      (contribution): contribution is TimelineOverlayManifestContribution =>
+        contribution.kind === 'timelineOverlay',
     );
 
-    const handle = overlayExample.activate(ctx);
-    handle.dispose();
+    it('declares a timelineOverlay contribution with a non-blank render id', () => {
+      expect(overlayExample.manifest.id).toBe('com.reigh.examples.overlay-m2');
+      expect(typeof overlayExample.activate).toBe('function');
 
-    expect(diagnostics).toHaveLength(1);
-    expect(diagnostics[0]).toMatchObject({
-      severity: 'info',
-      code: 'overlay/family-status',
+      expect(overlayContribution).toBeDefined();
+      expect(overlayContribution?.kind).toBe('timelineOverlay');
+      expect(typeof overlayContribution?.render).toBe('string');
+      expect(overlayContribution?.render.trim().length).toBeGreaterThan(0);
+      expect(overlayContribution?.render).toBe(OVERLAY_RENDER_ID);
     });
-    expect(diagnostics[0].message).toContain('timelineOverlay is active');
-    expect(diagnostics[0].message).toContain('host-integrated');
-    expect(diagnostics[0].message).toContain('legacy milestone M2 is compatibility metadata');
-    expect(diagnostics[0].message).not.toContain('bridged at milestone');
-    expect(toasts.map((toast) => toast.message)).toEqual([
-      'M2 Timeline Overlay example activated.',
-      'M2 Timeline Overlay example disposed.',
-    ]);
+
+    it('introduces no new contribution kind (stays on the timelineOverlay family)', () => {
+      expect(contributions).toHaveLength(1);
+      expect(contributions[0].kind).toBe('timelineOverlay');
+    });
+
+    it('registers the exact declared render id through ctx.ui', () => {
+      const { ctx, registeredRenderers, toasts } = createExampleContext(
+        overlayExample.manifest.messages,
+      );
+
+      const handle = overlayExample.activate(ctx);
+      expect(registeredRenderers.has(OVERLAY_RENDER_ID)).toBe(true);
+      expect(typeof registeredRenderers.get(OVERLAY_RENDER_ID)).toBe('function');
+
+      handle.dispose();
+      expect(registeredRenderers.has(OVERLAY_RENDER_ID)).toBe(false);
+
+      expect(toasts.map((toast) => toast.message)).toEqual([
+        'M2 Timeline Overlay example activated.',
+        'M2 Timeline Overlay example disposed.',
+      ]);
+    });
+
+    it('binds the renderer through the public ctx.ui service (no internal surface, no null render)', () => {
+      expect(source).toContain('ctx.ui.registerRenderer');
+      expect(source).toContain('render: OVERLAY_RENDER_ID');
+      expect(source).not.toMatch(/internalExtensionRenderSurface/);
+      expect(source).not.toMatch(/registerInternalRenderer/);
+      expect(source).not.toMatch(/render:\s*null/);
+      expect(source).not.toMatch(/render:\s*['"]\s*['"]/);
+      expect(source).not.toMatch(/['"]@\/tools\/video-editor/);
+    });
+
+    it('renderer is executable against host-owned overlay props', () => {
+      const { ctx, registeredRenderers } = createExampleContext(
+        overlayExample.manifest.messages,
+      );
+      const handle = overlayExample.activate(ctx);
+      const renderer = registeredRenderers.get(
+        OVERLAY_RENDER_ID,
+      ) as ExtensionRenderer<TimelineOverlayRenderProps> | undefined;
+      expect(renderer).toBeTypeOf('function');
+
+      const props: TimelineOverlayRenderProps = {
+        geometry: createTimelineOverlayGeometry({
+          scale: 10,
+          scaleWidth: 160,
+          startLeft: 72,
+          extentStart: 0,
+          extentEnd: 10,
+        }),
+        viewport: {
+          getSnapshot: () => ({
+            scrollLeft: 0,
+            scrollTop: 0,
+            viewportWidth: 800,
+            viewportHeight: 400,
+            totalWidth: 2000,
+            totalHeight: 400,
+          }),
+          subscribe: () => ({ dispose() {} }),
+        },
+        playhead: {
+          getSnapshot: () => ({ time: 1.5, isPlaying: false }),
+          subscribe: () => ({ dispose() {} }),
+        },
+        selection: { selectedClipIds: new Set<string>(), hasSelection: false },
+        pointerClaimed: false,
+        claimPointer: () => false,
+        releasePointer: () => {},
+        primitives: { markerLayer: () => null },
+      };
+
+      const output = renderer(props);
+      expect(typeof output).toBe('string');
+      expect((output as string).length).toBeGreaterThan(0);
+
+      handle.dispose();
+    });
+
+    it('rejects the old placeholder pattern: timelineOverlay without render fails validation', () => {
+      const placeholderManifest = {
+        id: 'com.reigh.examples.placeholder-overlay' as any,
+        version: '1.0.0',
+        label: 'Placeholder Overlay',
+        apiVersion: 1,
+        contributions: [
+          {
+            id: 'placeholder-overlay' as any,
+            kind: 'timelineOverlay',
+            label: 'Placeholder Overlay',
+            order: 100,
+            // No render id — the pre-T1.1 placeholder shape.
+          },
+        ],
+      } as unknown as ExtensionManifest;
+
+      const result = validateManifest(placeholderManifest);
+      expect(result.valid).toBe(false);
+      expect(
+        result.errors.some(
+          (error) => error.code === 'manifest/missing-overlay-render',
+        ),
+      ).toBe(true);
+    });
+
+    it('overlay example reports active registry status without milestone-authority wording', () => {
+      const { ctx, diagnostics, toasts } = createExampleContext(
+        overlayExample.manifest.messages,
+      );
+
+      const handle = overlayExample.activate(ctx);
+      handle.dispose();
+
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0]).toMatchObject({
+        severity: 'info',
+        code: 'overlay/family-status',
+      });
+      expect(diagnostics[0].message).toContain('timelineOverlay is active');
+      expect(diagnostics[0].message).toContain('host-integrated');
+      expect(diagnostics[0].message).toContain('legacy milestone M2 is compatibility metadata');
+      expect(diagnostics[0].message).not.toContain('bridged at milestone');
+      expect(toasts.map((toast) => toast.message)).toEqual([
+        'M2 Timeline Overlay example activated.',
+        'M2 Timeline Overlay example disposed.',
+      ]);
+    });
   });
 });
 

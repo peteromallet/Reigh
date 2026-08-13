@@ -690,7 +690,25 @@
         "isActiveBake",
         "isLiveOnly",
         "isRouteIncompatible",
-        "isWeakerProvenance"
+        "isWeakerProvenance",
+        "ExtensionRenderer",
+        "ExtensionUiService",
+        "TimelineOverlayManifestContribution",
+        "TimelineOverlayDescriptor",
+        "ResolvedTimelineOverlayDescriptor",
+        "TimelineOverlayGeometryInput",
+        "TimelineOverlayGeometry",
+        "TimelineViewportSnapshot",
+        "TimelineViewportStore",
+        "TimelinePlayheadSnapshot",
+        "TimelinePlayheadStore",
+        "TimelineOverlaySelection",
+        "TimelineOverlayRenderProps",
+        "TimelinePointMarker",
+        "TimelineMarkerChange",
+        "TimelineMarkerLayerOptions",
+        "TimelineOverlayPrimitives",
+        "createTimelineOverlayGeometry"
       ]
     },
     {

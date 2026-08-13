@@ -1415,3 +1415,58 @@ describe('opaque app bags — extension parse failure is absence (plan-v5 B3)', 
     expect(getTimelineClipShader(rawClip as never)).toBeUndefined();
   });
 });
+
+// Codex sense-check MUST-FIX 1: the reader exposes cheap live-version and
+// document-identity getters so extension snapshot caches can invalidate on
+// receipt-only acks (version advances, data untouched) and on document
+// replacement (undo/reload/poll adoption) without building a full snapshot.
+describe('createTimelineReader — live version + document revision getters', () => {
+  it('configVersion() reports the LIVE getter when provided (same source snapshot().baseVersion uses)', async () => {
+    let liveVersion = 4;
+    const config = makeBaseConfig();
+    const data = await buildTimelineData(config, emptyRegistry);
+    const reader = createTimelineReader({
+      data,
+      configVersion: () => liveVersion,
+    });
+
+    expect(reader.configVersion()).toBe(4);
+    expect(reader.snapshot().baseVersion).toBe(4);
+    expect(reader.snapshot().currentVersion).toBe(4);
+
+    // A receipt-only ack advances the live channel WITHOUT a new data object.
+    liveVersion = 5;
+    expect(reader.configVersion()).toBe(5);
+    expect(reader.snapshot().baseVersion).toBe(5);
+  });
+
+  it('configVersion() falls back to the data object version when no live getter is provided', async () => {
+    const config = makeBaseConfig();
+    const data = await buildTimelineData(config, emptyRegistry);
+    const reader = createTimelineReader({ data });
+
+    expect(reader.configVersion()).toBe(data.configVersion);
+    expect(reader.snapshot().baseVersion).toBe(data.configVersion);
+  });
+
+  it('documentRevision() is the backing document identity and changes when the getter returns a new object', async () => {
+    let data = await buildTimelineData(makeBaseConfig(), emptyRegistry);
+    const reader = createTimelineReader({ data: () => data });
+
+    const before = reader.documentRevision();
+    expect(before).toBe(data);
+
+    // Undo/reload replaces the document object even when the version is
+    // unchanged; the revision must change so caches keyed on it rebuild.
+    data = await buildTimelineData(makeBaseConfig(), emptyRegistry);
+    expect(reader.documentRevision()).not.toBe(before);
+    expect(reader.documentRevision()).toBe(data);
+  });
+
+  it('documentRevision() is stable for a static data object', async () => {
+    const data = await buildTimelineData(makeBaseConfig(), emptyRegistry);
+    const reader = createTimelineReader({ data });
+    expect(reader.documentRevision()).toBe(data);
+    expect(reader.documentRevision()).toBe(data);
+  });
+});

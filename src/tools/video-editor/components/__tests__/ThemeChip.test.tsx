@@ -14,14 +14,30 @@ describe('ThemeChip (Sprint 3, SD-019 read-only)', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('renders Theme: <id> (not installed) when registry is empty', () => {
+  it('renders Theme: <id> (no suffix) for an installed theme with the default registry', () => {
     render(<ThemeChip timeline={{ theme: '2rp' }} />);
     const chip = screen.getByTestId('theme-chip');
-    expect(chip.getAttribute('data-theme-installed')).toBe('false');
-    expect(chip.textContent).toContain('Theme: 2rp (not installed)');
+    expect(chip.getAttribute('data-theme-installed')).toBe('true');
+    expect(chip.textContent).toContain('Theme: 2rp');
+    expect(chip.textContent).not.toContain('not installed');
   });
 
-  it('renders Theme: <id> (no suffix) when theme is in registry', () => {
+  it('renders Theme: <id> (not installed) when theme is absent from the registry', () => {
+    render(<ThemeChip timeline={{ theme: 'cinema-noir' }} />);
+    const chip = screen.getByTestId('theme-chip');
+    expect(chip.getAttribute('data-theme-installed')).toBe('false');
+    expect(chip.textContent).toContain('Theme: cinema-noir (not installed)');
+  });
+
+  it('renders banodoco-default as installed (it is the vendor default theme)', () => {
+    render(<ThemeChip timeline={{ theme: 'banodoco-default' }} />);
+    const chip = screen.getByTestId('theme-chip');
+    expect(chip.getAttribute('data-theme-installed')).toBe('true');
+    expect(chip.textContent).toContain('Theme: banodoco-default');
+    expect(chip.textContent).not.toContain('not installed');
+  });
+
+  it('renders Theme: <id> (no suffix) when theme is in a custom registry', () => {
     render(
       <ThemeChip
         timeline={{ theme: '2rp' }}
@@ -51,9 +67,9 @@ describe('ThemeChip (Sprint 3, SD-019 read-only)', () => {
   });
 
   it('shows a fallback message when not installed and no overrides', () => {
-    render(<ThemeChip timeline={{ theme: '2rp' }} />);
+    render(<ThemeChip timeline={{ theme: 'cinema-noir' }} />);
     fireEvent.click(screen.getByTestId('theme-chip'));
-    expect(screen.getByText(/install @banodoco\/timeline-theme-2rp/)).toBeTruthy();
+    expect(screen.getByText(/install @banodoco\/timeline-theme-cinema-noir/)).toBeTruthy();
   });
 
   it('shows raw overrides when not installed but overrides present', () => {

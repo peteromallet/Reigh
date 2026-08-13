@@ -1,5 +1,6 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -7,14 +8,17 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { continueRender, delayRender } from 'remotion';
+import { continueRender, delayRender, useRemotionEnvironment } from 'remotion';
 import type { ResolvedTimelineClip } from '@/tools/video-editor/types/index.ts';
-
-const FFT_SIZE = 1024;
-const HALF_FFT_SIZE = FFT_SIZE / 2;
-const MIX_SAMPLE_RATE = 44_100;
-const BASS_MAX_HZ = 250;
-const MID_MAX_HZ = 4_000;
+import { AUDIO_HALF_FFT_SIZE, type PackedAudioAnalysis } from './audio-analysis/audioAnalysis.protocol.ts';
+import {
+  acquireAudioAnalysis,
+  buildAudioMixRequest,
+  hasCachedAudioAnalysis,
+  hasInFlightAudioAnalysis,
+  internAudioMixRequest,
+  type AudioAnalysisSubscription,
+} from './audio-analysis/audioAnalysisClient.ts';
 
 export type AudioAnalysisData = {
   amplitude: number;
@@ -31,246 +35,67 @@ export const SILENT_AUDIO_DATA: AudioAnalysisData = {
   mid: 0,
   treble: 0,
   isBeat: false,
-  frequencyBins: Array.from({ length: HALF_FFT_SIZE }, () => 0),
+  frequencyBins: Array.from({ length: AUDIO_HALF_FFT_SIZE }, () => 0),
 };
 
-export const AudioAnalysisContext = createContext<AudioAnalysisData[] | null>(null);
+export type AudioAnalysisFrameSource = {
+  length: number;
+  getFrame: (frame: number) => AudioAnalysisData;
+};
+
+export const AudioAnalysisContext = createContext<AudioAnalysisFrameSource | null>(null);
+
+/**
+ * Lazy frame source over a packed analysis. `frequencyBins` is materialized
+ * only for the requested frame and the most recent frame/value is cached so
+ * multiple consumers during one render reuse it. Frames outside the packed
+ * audio range return `SILENT_AUDIO_DATA`.
+ */
+export function createFrameSource(
+  packed: PackedAudioAnalysis | null,
+  totalDurationInFrames: number,
+): AudioAnalysisFrameSource {
+  const length = Math.max(1, totalDurationInFrames);
+
+  if (!packed || packed.frameCount <= 0) {
+    return {
+      length,
+      getFrame: () => SILENT_AUDIO_DATA,
+    };
+  }
+
+  const { frameCount, binsPerFrame, amplitude, bass, mid, treble, beats, frequencyBins } = packed;
+  let cachedFrame = -1;
+  let cachedValue: AudioAnalysisData | null = null;
+
+  return {
+    length,
+    getFrame: (frame: number) => {
+      if (frame < 0 || frame >= frameCount) {
+        return SILENT_AUDIO_DATA;
+      }
+      if (frame === cachedFrame && cachedValue) {
+        return cachedValue;
+      }
+
+      cachedFrame = frame;
+      const binOffset = frame * binsPerFrame;
+      cachedValue = {
+        amplitude: amplitude[frame] ?? 0,
+        bass: bass[frame] ?? 0,
+        mid: mid[frame] ?? 0,
+        treble: treble[frame] ?? 0,
+        isBeat: (beats[frame] ?? 0) !== 0,
+        frequencyBins: Array.from(frequencyBins.subarray(binOffset, binOffset + binsPerFrame)),
+      };
+      return cachedValue;
+    },
+  };
+}
+
+const INTERACTIVE_DEBOUNCE_MS = 120;
 
 const clamp01 = (value: number): number => Math.min(1, Math.max(0, value));
-
-const getSilentFrames = (durationInFrames: number): AudioAnalysisData[] => {
-  return Array.from({ length: Math.max(1, durationInFrames) }, () => SILENT_AUDIO_DATA);
-};
-
-const getFrameWindow = (samples: Float32Array, start: number, end: number): Float32Array => {
-  const frameWindow = new Float32Array(FFT_SIZE);
-  const available = Math.max(0, Math.min(samples.length, end) - start);
-  const copyLength = Math.min(FFT_SIZE, available);
-
-  for (let index = 0; index < copyLength; index += 1) {
-    const sample = samples[start + index] ?? 0;
-    const window = 0.5 - 0.5 * Math.cos((2 * Math.PI * index) / (FFT_SIZE - 1));
-    frameWindow[index] = sample * window;
-  }
-
-  return frameWindow;
-};
-
-const runFft = (input: Float32Array): Float32Array => {
-  const real = new Float32Array(FFT_SIZE);
-  const imaginary = new Float32Array(FFT_SIZE);
-  real.set(input.subarray(0, FFT_SIZE));
-
-  for (let index = 1, bit = 0; index < FFT_SIZE; index += 1) {
-    let mask = FFT_SIZE >> 1;
-    while (bit & mask) {
-      bit ^= mask;
-      mask >>= 1;
-    }
-    bit ^= mask;
-    if (index < bit) {
-      [real[index], real[bit]] = [real[bit], real[index]];
-    }
-  }
-
-  for (let size = 2; size <= FFT_SIZE; size <<= 1) {
-    const halfSize = size >> 1;
-    const step = (-2 * Math.PI) / size;
-    for (let offset = 0; offset < FFT_SIZE; offset += size) {
-      for (let index = 0; index < halfSize; index += 1) {
-        const even = offset + index;
-        const odd = even + halfSize;
-        const angle = step * index;
-        const cosine = Math.cos(angle);
-        const sine = Math.sin(angle);
-        const oddReal = real[odd] * cosine - imaginary[odd] * sine;
-        const oddImaginary = real[odd] * sine + imaginary[odd] * cosine;
-        real[odd] = real[even] - oddReal;
-        imaginary[odd] = imaginary[even] - oddImaginary;
-        real[even] += oddReal;
-        imaginary[even] += oddImaginary;
-      }
-    }
-  }
-
-  const magnitudes = new Float32Array(HALF_FFT_SIZE);
-  for (let index = 0; index < HALF_FFT_SIZE; index += 1) {
-    magnitudes[index] = Math.hypot(real[index], imaginary[index]);
-  }
-  return magnitudes;
-};
-
-const getBandAverage = (
-  magnitudes: Float32Array,
-  sampleRate: number,
-  minHz: number,
-  maxHz: number | null,
-): number => {
-  const binSize = sampleRate / FFT_SIZE;
-  const startBin = Math.max(0, Math.floor(minHz / binSize));
-  const endBin = Math.min(
-    magnitudes.length - 1,
-    maxHz === null ? magnitudes.length - 1 : Math.floor(maxHz / binSize),
-  );
-
-  if (endBin < startBin) {
-    return 0;
-  }
-
-  let total = 0;
-  for (let index = startBin; index <= endBin; index += 1) {
-    total += magnitudes[index] ?? 0;
-  }
-
-  return total / Math.max(1, endBin - startBin + 1);
-};
-
-const toMonoSamples = (buffer: AudioBuffer): Float32Array => {
-  const mono = new Float32Array(buffer.length);
-  const channelCount = Math.max(1, buffer.numberOfChannels);
-
-  for (let channel = 0; channel < channelCount; channel += 1) {
-    const data = buffer.getChannelData(channel);
-    for (let index = 0; index < buffer.length; index += 1) {
-      mono[index] += (data[index] ?? 0) / channelCount;
-    }
-  }
-
-  return mono;
-};
-
-const analyzeMixedBuffer = (
-  buffer: AudioBuffer,
-  fps: number,
-  totalDurationInFrames: number,
-): AudioAnalysisData[] => {
-  const samples = toMonoSamples(buffer);
-  const samplesPerFrame = buffer.sampleRate / fps;
-  const frames = Math.max(1, totalDurationInFrames);
-  const rawFrames: Array<AudioAnalysisData & { rawBass: number }> = [];
-  let maxMagnitude = 0;
-
-  for (let frame = 0; frame < frames; frame += 1) {
-    const start = Math.floor(frame * samplesPerFrame);
-    const end = Math.floor((frame + 1) * samplesPerFrame);
-    if (start >= samples.length) {
-      rawFrames.push({ ...SILENT_AUDIO_DATA, rawBass: 0 });
-      continue;
-    }
-
-    let squareSum = 0;
-    const sampleCount = Math.max(1, Math.min(samples.length, end) - start);
-    for (let index = start; index < Math.min(samples.length, end); index += 1) {
-      const sample = samples[index] ?? 0;
-      squareSum += sample * sample;
-    }
-
-    const magnitudes = runFft(getFrameWindow(samples, start, end));
-    let framePeak = 0;
-    for (const magnitude of magnitudes) {
-      framePeak = Math.max(framePeak, magnitude);
-    }
-    maxMagnitude = Math.max(maxMagnitude, framePeak);
-
-    rawFrames.push({
-      amplitude: clamp01(Math.sqrt(squareSum / sampleCount)),
-      bass: 0,
-      mid: 0,
-      treble: 0,
-      isBeat: false,
-      frequencyBins: Array.from(magnitudes),
-      rawBass: getBandAverage(magnitudes, buffer.sampleRate, 0, BASS_MAX_HZ),
-    });
-    rawFrames[frame].mid = getBandAverage(magnitudes, buffer.sampleRate, BASS_MAX_HZ, MID_MAX_HZ);
-    rawFrames[frame].treble = getBandAverage(magnitudes, buffer.sampleRate, MID_MAX_HZ, null);
-  }
-
-  const magnitudeScale = maxMagnitude > 0 ? maxMagnitude : 1;
-  const rollingWindow = Math.max(1, Math.round(fps * 0.75));
-  const beatCooldownFrames = Math.max(1, Math.ceil(fps * 0.3));
-  const normalizedBass = rawFrames.map((frame) => clamp01(frame.rawBass / magnitudeScale));
-  let lastBeatFrame = -beatCooldownFrames;
-
-  return rawFrames.map((frame, index) => {
-    const windowStart = Math.max(0, index - rollingWindow);
-    const history = normalizedBass.slice(windowStart, index);
-    const rollingAverage = history.length > 0
-      ? history.reduce((total, value) => total + value, 0) / history.length
-      : normalizedBass[index];
-    const bass = normalizedBass[index];
-    const isBeat = (
-      index - lastBeatFrame >= beatCooldownFrames
-      && rollingAverage > 0.01
-      && bass > rollingAverage * 1.5
-    );
-    if (isBeat) {
-      lastBeatFrame = index;
-    }
-
-    return {
-      amplitude: frame.amplitude,
-      bass,
-      mid: clamp01(frame.mid / magnitudeScale),
-      treble: clamp01(frame.treble / magnitudeScale),
-      isBeat,
-      frequencyBins: frame.frequencyBins.map((value) => clamp01(value / magnitudeScale)),
-    };
-  });
-};
-
-const analyzeAudioClips = async (
-  clips: ResolvedTimelineClip[],
-  fps: number,
-  totalDurationInFrames: number,
-): Promise<AudioAnalysisData[]> => {
-  const validClips = clips.filter((clip) => clip.assetEntry?.src);
-  if (validClips.length === 0 || typeof OfflineAudioContext === 'undefined') {
-    return getSilentFrames(totalDurationInFrames);
-  }
-
-  const decoderContext = new OfflineAudioContext(1, 1, MIX_SAMPLE_RATE);
-  const decodeCache = new Map<string, Promise<AudioBuffer>>();
-  const getDecodedBuffer = (src: string): Promise<AudioBuffer> => {
-    if (!decodeCache.has(src)) {
-      decodeCache.set(src, fetch(src)
-        .then(async (response) => {
-          if (!response.ok) {
-            throw new Error(`Failed to fetch audio source: ${response.status}`);
-          }
-          return decoderContext.decodeAudioData((await response.arrayBuffer()).slice(0));
-        }));
-    }
-    return decodeCache.get(src)!;
-  };
-
-  const totalSamples = Math.max(1, Math.ceil((totalDurationInFrames / fps) * MIX_SAMPLE_RATE));
-  const mixContext = new OfflineAudioContext(2, totalSamples, MIX_SAMPLE_RATE);
-  const decodedClips = await Promise.all(validClips.map(async (clip) => ({
-    clip,
-    buffer: await getDecodedBuffer(clip.assetEntry!.src),
-  })));
-
-  for (const { clip, buffer } of decodedClips) {
-    const speed = clip.speed && clip.speed > 0 ? clip.speed : 1;
-    const clipFrom = Math.max(0, clip.from ?? 0);
-    const clipTo = Math.min(typeof clip.to === 'number' ? clip.to : buffer.duration, buffer.duration);
-    const sourceDuration = Math.max(0, clipTo - clipFrom);
-    if (sourceDuration <= 0) {
-      continue;
-    }
-
-    const source = mixContext.createBufferSource();
-    const gain = mixContext.createGain();
-    source.buffer = buffer;
-    source.playbackRate.value = speed;
-    gain.gain.value = clip.volume ?? 1;
-    source.connect(gain);
-    gain.connect(mixContext.destination);
-    source.start(Math.max(0, clip.at), clipFrom, sourceDuration);
-  }
-
-  return analyzeMixedBuffer(await mixContext.startRendering(), fps, totalDurationInFrames);
-};
 
 const createSyntheticFrame = (frame: number, fps: number): AudioAnalysisData => {
   const seconds = frame / fps;
@@ -289,8 +114,8 @@ const createSyntheticFrame = (frame: number, fps: number): AudioAnalysisData => 
     mid,
     treble,
     isBeat: beatPulse > 0.9,
-    frequencyBins: Array.from({ length: HALF_FFT_SIZE }, (_, index) => {
-      const ratio = index / HALF_FFT_SIZE;
+    frequencyBins: Array.from({ length: AUDIO_HALF_FFT_SIZE }, (_, index) => {
+      const ratio = index / AUDIO_HALF_FFT_SIZE;
       const bassBand = Math.max(0, 1 - Math.abs(ratio - 0.04) / 0.05) * bass;
       const midBand = Math.max(0, 1 - Math.abs(ratio - 0.18) / 0.08) * mid;
       const trebleBand = Math.max(0, 1 - Math.abs(ratio - 0.62) / 0.12) * treble;
@@ -314,50 +139,95 @@ export function AudioAnalysisProvider({
 }: AudioAnalysisProviderProps) {
   const handle = useState(() => delayRender('Audio analysis'))[0];
   const renderReleasedRef = useRef(false);
-  const silentFrames = useMemo(() => getSilentFrames(totalDurationInFrames), [totalDurationInFrames]);
-  const [analysisFrames, setAnalysisFrames] = useState<AudioAnalysisData[]>(silentFrames);
+  const releaseRender = useCallback(() => {
+    if (!renderReleasedRef.current) {
+      renderReleasedRef.current = true;
+      continueRender(handle);
+    }
+  }, [handle]);
+
+  const candidateRequest = useMemo(() => buildAudioMixRequest(clips, fps), [clips, fps]);
+  const stableRequest = useMemo(() => internAudioMixRequest(candidateRequest), [candidateRequest]);
+  const [packed, setPacked] = useState<PackedAudioAnalysis | null>(null);
+  const frameSource = useMemo(
+    () => createFrameSource(packed, totalDurationInFrames),
+    [packed, totalDurationInFrames],
+  );
+
+  const environment = useRemotionEnvironment();
+  const startImmediately = environment.isRendering || environment.isClientSideRendering;
+
+  // Unmount-only safety release. The analysis effect below must NOT call
+  // `continueRender` on every dependency change — that could release Remotion
+  // while a replacement analysis is still running.
+  useEffect(() => {
+    return () => {
+      releaseRender();
+    };
+  }, [releaseRender]);
 
   useEffect(() => {
-    let cancelled = false;
-    const releaseRender = () => {
-      if (!renderReleasedRef.current) {
-        renderReleasedRef.current = true;
-        continueRender(handle);
-      }
-    };
-
-    if (clips.length === 0) {
-      setAnalysisFrames(silentFrames);
+    if (stableRequest.spec.clips.length === 0) {
+      setPacked(null);
       releaseRender();
-      return () => {
-        releaseRender();
-      };
+      return;
     }
 
-    analyzeAudioClips(clips, fps, totalDurationInFrames)
-      .then((frames) => {
-        if (!cancelled) {
-          setAnalysisFrames(frames);
-        }
-      })
-      .catch((error) => {
-        console.warn('Audio analysis failed, falling back to silent data.', error);
-        if (!cancelled) {
-          setAnalysisFrames(silentFrames);
-        }
-      })
-      .finally(() => {
-        releaseRender();
-      });
+    let disposed = false;
+    let subscription: AudioAnalysisSubscription | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const start = () => {
+      if (disposed) {
+        return;
+      }
+      // Pass the FRESH candidate (current `sources`) rather than the interned
+      // stable request: cache/in-flight lookups are keyed by `request.key`, so
+      // key identity is preserved, but a fetch/decode retry must see refreshed
+      // URLs (e.g. re-signed asset URLs) instead of the first-seen ones frozen
+      // in the interned object.
+      subscription = acquireAudioAnalysis(candidateRequest);
+      subscription.promise
+        .then((result) => {
+          // Preserve the previous result while a legitimately changed mix
+          // recomputes; commit only when this effect is still current.
+          if (!disposed) {
+            setPacked(result);
+          }
+        })
+        .catch((error: unknown) => {
+          console.warn('Audio analysis failed, falling back to silent data.', error);
+          if (!disposed) {
+            setPacked(null);
+          }
+        })
+        .finally(() => {
+          if (!disposed) {
+            releaseRender();
+          }
+        });
+    };
+
+    // Cache hits and in-flight shares start immediately; Remotion rendering
+    // always starts immediately. Only uncached interactive-preview misses get
+    // a short trailing debounce to coalesce load/save bursts.
+    if (startImmediately || hasCachedAudioAnalysis(stableRequest) || hasInFlightAudioAnalysis(stableRequest)) {
+      start();
+    } else {
+      timer = setTimeout(start, INTERACTIVE_DEBOUNCE_MS);
+    }
 
     return () => {
-      cancelled = true;
-      releaseRender();
+      disposed = true;
+      if (timer !== null) {
+        clearTimeout(timer);
+      }
+      subscription?.release();
     };
-  }, [clips, fps, handle, silentFrames, totalDurationInFrames]);
+  }, [stableRequest, releaseRender, startImmediately]);
 
   return (
-    <AudioAnalysisContext.Provider value={analysisFrames}>
+    <AudioAnalysisContext.Provider value={frameSource}>
       {children}
     </AudioAnalysisContext.Provider>
   );
@@ -372,16 +242,20 @@ export function SyntheticAudioProvider({
   fps: number;
   durationInFrames: number;
 }) {
-  const frames = useMemo(
-    () => Array.from({ length: Math.max(1, durationInFrames) }, (_, frame) => createSyntheticFrame(frame, fps)),
-    [durationInFrames, fps],
-  );
+  const frameSource = useMemo(() => {
+    const length = Math.max(1, durationInFrames);
+    const frames = Array.from({ length }, (_, frame) => createSyntheticFrame(frame, fps));
+    return {
+      length,
+      getFrame: (frame: number) => frames[frame] ?? SILENT_AUDIO_DATA,
+    } satisfies AudioAnalysisFrameSource;
+  }, [durationInFrames, fps]);
 
   return (
-    <AudioAnalysisContext.Provider value={frames}>
+    <AudioAnalysisContext.Provider value={frameSource}>
       {children}
     </AudioAnalysisContext.Provider>
   );
 }
 
-export const useAudioAnalysisContext = (): AudioAnalysisData[] | null => useContext(AudioAnalysisContext);
+export const useAudioAnalysisContext = (): AudioAnalysisFrameSource | null => useContext(AudioAnalysisContext);

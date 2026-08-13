@@ -12,9 +12,14 @@
  * any problem is in your extension. Activation is logged under the
  * `[Extension lifecycle]` console group (`docs/video-editor/extensions-debugging.md` §2.1).
  *
- * **Keep this array empty on `main`.** Entries here are a local scratchpad; a
- * committed entry ships a developer's work-in-progress into every dev build.
+ * The scene-phase-markers canary is registered here (DEV-only scratchpad). It
+ * exercises the `timelineOverlay` family end-to-end: ruler markers rendered
+ * through the host-owned `markerLayer`, playhead-store subscription, and
+ * commit-time fresh-snapshot `project-data.write`.
  */
 import type { ReighExtension } from '@reigh/editor-sdk';
+import { scenePhaseMarkersExtension } from './scene-phase-markers/extension';
 
-export const devLocalExtensions: ReighExtension[] = [];
+export const devLocalExtensions: ReighExtension[] = [
+  scenePhaseMarkersExtension,
+];

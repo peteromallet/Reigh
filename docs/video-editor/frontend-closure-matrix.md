@@ -230,49 +230,54 @@ This matrix classifies every public frontend primitive that is part of the Reigh
 
 ---
 
-## 5. Reserved / Canary Surfaces (Deferred to future milestones)
+## 5. Reserved Surface Slots (Inert Placeholders)
 
-### 5.1 CodePanelCanary
+Reserved slots render `InertReservedPlaceholder` until an extension claims the
+slot. The M3/M4 canary demo surfaces (`CodePanelCanary`, `WritingPanelCanary`,
+`StagePanelCanary`) were removed on 2026-08-11; the slots remain reserved via
+`RESERVED_SLOT_NAMES` and render the inert placeholder (see § 3.1).
 
-- **Host affordance:** `'codePanel'` slot (M4 reserved). Rendered via `RESERVED_SLOT_CANARY` → `CodePanelCanary`.
+### 5.1 codePanel
+
+- **Host affordance:** `'codePanel'` slot (M4 reserved). Rendered via `RESERVED_SLOT_NAMES` → `InertReservedPlaceholder` when no extension contributes.
 - **UI states:**
-  - **Empty:** ■ Canary renders demo source + diagnostic always; production empty state deferred to M4.
-  - **Loading:** □ Production loading state (skeleton/spinner) deferred to M4; canary does not load data.
-  - **Error:** ■ `ContributionErrorBoundary` wrapping in shell catches render errors.
-  - **Disabled:** ■ Slot renders `InertReservedPlaceholder` when no canary is active. `aria-hidden="true"`, `role="presentation"`, `tabIndex={-1}`.
-- **Accessibility:** Canary missing explicit `role` and `aria-label` (gap noted in checklist). Diagnostic banner missing `role="alert"`. `InertReservedPlaceholder` satisfies disabled/inert requirements.
-- **Evidence:** `src/tools/video-editor/components/Canary/CodePanelCanary.tsx`; `src/tools/video-editor/components/Canary/Canary.test.tsx` (268 lines, 7 tests); `src/examples/code-panel-diagnostics-example.ts`.
-- **Status:** `gap`
-- **Disposition:** `deferred`
-- **Contract-recheck:** CR:M2-004 (a11y gap), CR:M2-010, CR:M2-011, CR:M2-012
+  - **Empty:** ■ Slot renders `InertReservedPlaceholder` (`aria-hidden="true"`, `role="presentation"`, `tabIndex={-1}`).
+  - **Loading:** — No loading state; slot is inert until an extension claims it.
+  - **Error:** ■ `ContributionErrorBoundary` wraps a registered renderer when an extension claims the slot.
+  - **Disabled:** ■ Inert placeholder is the default disabled state.
+- **Accessibility:** Inert placeholder: `aria-hidden="true"`, `role="presentation"`, `tabIndex={-1}`.
+- **Evidence:** `src/tools/video-editor/components/TimelineEditorShellReservedSlots.tsx`; `src/tools/video-editor/components/TimelineEditorShellCore.test.tsx`.
+- **Status:** `pass`
+- **Disposition:** `supported`
+- **Contract-recheck:** CR:M2-013
 
-### 5.2 WritingPanelCanary
+### 5.2 writingPanel
 
-- **Host affordance:** `'writingPanel'` slot (M4 reserved). Rendered via `RESERVED_SLOT_CANARY` → `WritingPanelCanary`.
+- **Host affordance:** `'writingPanel'` slot (M4 reserved). Rendered via `RESERVED_SLOT_NAMES` → `InertReservedPlaceholder` when no extension contributes.
 - **UI states:**
-  - **Empty:** ■ Canary renders M4 milestone placeholder content.
-  - **Loading:** □ Production loading deferred to M4.
-  - **Error:** ■ `ContributionErrorBoundary` wraps slot renderer.
-  - **Disabled:** ■ `InertReservedPlaceholder` when no canary active.
-- **Accessibility:** Canary uses `data-video-editor-slot="writingPanel"` and `data-video-editor-canary="true"`. Missing explicit `role` and `aria-label` (gap).
-- **Evidence:** `src/tools/video-editor/components/Canary/WritingPanelCanary.tsx`; `src/tools/video-editor/components/Canary/Canary.test.tsx`; `src/examples/writing-canary-example.ts`.
-- **Status:** `gap`
-- **Disposition:** `deferred`
-- **Contract-recheck:** CR:M2-004, CR:M2-014
+  - **Empty:** ■ Slot renders `InertReservedPlaceholder`.
+  - **Loading:** — No loading state; slot is inert until an extension claims it.
+  - **Error:** ■ `ContributionErrorBoundary` wraps a registered renderer when an extension claims the slot.
+  - **Disabled:** ■ Inert placeholder is the default disabled state.
+- **Accessibility:** Inert placeholder: `aria-hidden="true"`, `role="presentation"`, `tabIndex={-1}`.
+- **Evidence:** `src/tools/video-editor/components/TimelineEditorShellReservedSlots.tsx`; `src/tools/video-editor/components/TimelineEditorShellCore.test.tsx`.
+- **Status:** `pass`
+- **Disposition:** `supported`
+- **Contract-recheck:** CR:M2-013, CR:M2-014
 
-### 5.3 StagePanelCanary
+### 5.3 stagePanel
 
-- **Host affordance:** `'stagePanel'` slot (M3 reserved). Rendered via `RESERVED_SLOT_CANARY` → `StagePanelCanary`.
+- **Host affordance:** `'stagePanel'` slot (M3 reserved). Rendered via `RESERVED_SLOT_NAMES` → `InertReservedPlaceholder` when no extension contributes.
 - **UI states:**
-  - **Empty:** ■ Canary renders M3 milestone placeholder content.
-  - **Loading:** □ Production loading deferred to M3+.
-  - **Error:** ■ `ContributionErrorBoundary` wraps slot renderer.
-  - **Disabled:** ■ `InertReservedPlaceholder` when no canary active.
-- **Accessibility:** Canary uses `data-video-editor-slot="stagePanel"` and `data-video-editor-canary="true"`. Missing explicit `role` and `aria-label` (gap).
-- **Evidence:** `src/tools/video-editor/components/Canary/StagePanelCanary.tsx`; `src/tools/video-editor/components/Canary/Canary.test.tsx`; `src/examples/stage-canary-example.ts`.
-- **Status:** `gap`
-- **Disposition:** `deferred`
-- **Contract-recheck:** CR:M2-004, CR:M2-014
+  - **Empty:** ■ Slot renders `InertReservedPlaceholder`.
+  - **Loading:** — No loading state; slot is inert until an extension claims it.
+  - **Error:** ■ `ContributionErrorBoundary` wraps a registered renderer when an extension claims the slot.
+  - **Disabled:** ■ Inert placeholder is the default disabled state.
+- **Accessibility:** Inert placeholder: `aria-hidden="true"`, `role="presentation"`, `tabIndex={-1}`.
+- **Evidence:** `src/tools/video-editor/components/TimelineEditorShellReservedSlots.tsx`; `src/tools/video-editor/components/TimelineEditorShellCore.test.tsx`.
+- **Status:** `pass`
+- **Disposition:** `supported`
+- **Contract-recheck:** CR:M2-013, CR:M2-014
 
 ---
 
@@ -300,9 +305,9 @@ This matrix classifies every public frontend primitive that is part of the Reigh
   - **Loading:** — Not applicable.
   - **Error:** ■ Error diagnostics render as red banners with code and message.
   - **Disabled:** — Not applicable.
-- **Accessibility:** Error/warning banners use `role="alert"` or `role="status"` (gap: CodePanelCanary diagnostic banner missing `role="alert"`). Source ranges should be announced.
-- **Evidence:** `src/tools/video-editor/components/Canary/Canary.test.tsx` (diagnostic banner tests); diagnostic rendering patterns in `src/examples/code-panel-diagnostics-example.ts`.
-- **Status:** `gap` (a11y role gap on CodePanelCanary banner)
+- **Accessibility:** Error/warning banners use `role="alert"` or `role="status"` (gap: no host-owned inline banner primitive yet; the canary demo banner was removed 2026-08-11). Source ranges should be announced.
+- **Evidence:** `src/tools/video-editor/components/DiagnosticPanel/DiagnosticPanel.tsx`; `src/tools/video-editor/components/DiagnosticPanel/DiagnosticPanel.test.tsx`; `src/examples/code-panel-diagnostics-example.ts`.
+- **Status:** `gap` (no host-owned inline banner primitive yet)
 - **Disposition:** `supported`
 - **Contract-recheck:** CR:M2-004, CR:M2-005, CR:M2-010
 
@@ -485,8 +490,8 @@ The following accessibility gaps span multiple primitives and are documented for
 
 | Gap ID | Description | Affected Primitives | Resolution |
 |---|---|---|---|
-| A11Y-001 | Missing explicit `role` and `aria-label` on canary containers | CodePanelCanary, WritingPanelCanary, StagePanelCanary | Add `role="region"` and descriptive `aria-label` (deferred to M4) |
-| A11Y-002 | Diagnostic banner missing `role="alert"` | CodePanelCanary, DiagnosticBadges | Add `role="alert"` to diagnostic banners |
+| A11Y-001 | Missing explicit `role` and `aria-label` on canary containers | — (canary demo containers removed 2026-08-11) | Resolved: canary surfaces deleted; reserved slots render `InertReservedPlaceholder` with `aria-hidden="true"`, `role="presentation"` |
+| A11Y-002 | Diagnostic banner missing `role="alert"` | DiagnosticBadges | Add `role="alert"` to diagnostic banners |
 | A11Y-003 | Sparse loading-state skeletons/spinners across panels | Inspector, Asset Panel, ProposalPanel | Add loading skeletons deferred per panel milestone |
 | A11Y-004 | Deferred primitives not verified for ARIA compliance | All § 13 deferred primitives | Verify on activation milestone |
 
@@ -500,6 +505,7 @@ The following accessibility gaps span multiple primitives and are documented for
 |---|---|---|
 | Core Shell | 3 | 3 pass |
 | Active Host Surfaces | 10 | 10 pass |
+| Reserved Surface Slots | 3 | 3 pass |
 | Diagnostic System | 2 | 1 pass, 1 gap |
 | Form & Parameter | 1 | 1 pass |
 | Command & Palette | 1 | 1 gap |
@@ -507,22 +513,21 @@ The following accessibility gaps span multiple primitives and are documented for
 | Inspector & Properties | 3 | 3 pass |
 | Confirmation | 1 | 1 pass |
 | Preview & Export | 2 | 2 pass |
-| **Total supported** | **24** | **21 pass, 3 gap** |
+| **Total supported** | **27** | **24 pass, 3 gap** |
 
 ### 15.2 Deferred primitives
 
 | Category | Count | Status |
 |---|---|---|
-| Reserved / Canary | 3 | 3 gap (deferred to M3–M4) |
 | Deferred Frontend | 12 | 12 gap (deferred per contract-recheck) |
-| **Total deferred** | **15** | **15 gap** |
+| **Total deferred** | **12** | **12 gap** |
 
 ### 15.3 Disposition summary
 
 | Disposition | Count |
 |---|---|
-| `supported` | 21 |
-| `deferred` | 18 |
+| `supported` | 24 |
+| `deferred` | 15 |
 | `unsupported` | 0 |
 | `release-blocking` | 0 |
 
@@ -555,3 +560,4 @@ Supported primitives map to rows S-020–S-027, S-050–S-051, S-060–S-065 in 
 | Date | Change |
 |---|---|
 | 2026-06-20 | Initial frontend closure matrix for M15. Replaces the checklist format (§ 2–3 of `docs/video-editor/frontend-closure-checklist.md`) with a comprehensive matrix covering 39 public primitives across core shell, active surfaces, canary surfaces, diagnostic system, forms, commands, proposals, inspectors, confirmation, preview/export, and deferred primitives. |
+| 2026-08-11 | Removed canary demo surfaces (CodePanelCanary, WritingPanelCanary, StagePanelCanary). Reserved slots codePanel/writingPanel/stagePanel now render `InertReservedPlaceholder`; § 5 moved from deferred/gap to supported/pass. |

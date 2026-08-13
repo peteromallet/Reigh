@@ -33,11 +33,14 @@
 | Pattern | Becomes | Flags |
 |---------|---------|-------|
 | `"failed to fetch"` | `NetworkError` | |
-| `"timeout"` | `NetworkError` | `isTimeout: true` |
+| `TimeoutError` marker (or wrapped via `cause`/`context`/`originalError`) | `NetworkError` | `isTimeout: true` |
+| `AbortError` without the timeout marker (lock-steal, caller cancel) | `NetworkError` | `isTimeout: false` |
 | `navigator.onLine === false` | `NetworkError` | `isOffline: true` |
 | `"unauthorized"` | `AuthError` | `needsLogin: true` |
 | `"forbidden"` | `AuthError` | `needsLogin: false` |
 | `"required"` / `"invalid"` | `ValidationError` | |
+
+Timeout classification is **marker-based only** (see `TimeoutError` / `isTimeoutError` in `src/shared/lib/errorHandling/errors.ts`): our fetch timeout wrapper aborts with a `TimeoutError` reason, and only that marker (directly or wrapped) sets `isTimeout: true`. Generic `AbortError`s are network errors but are **not** presented as "Request timed out".
 
 ## Helper Functions
 

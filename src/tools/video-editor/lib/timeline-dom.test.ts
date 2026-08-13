@@ -11,6 +11,9 @@ import {
   CLIP_SELECTED_ATTR,
   EDIT_AREA_CLASS,
   EDIT_AREA_SELECTOR,
+  MARQUEE_IGNORE_SELECTOR,
+  OVERLAY_INTERACTIVE_ATTR,
+  OVERLAY_INTERACTIVE_DATASET_KEY,
   RESIZE_EDGE_ATTR,
   RESIZE_EDGE_DATASET_KEY,
   ROW_ID_ATTR,
@@ -20,6 +23,7 @@ import {
   SHOT_GROUP_DRAG_ANCHOR_CLIP_ID_DATASET_KEY,
   SHOT_GROUP_DRAG_ANCHOR_ROW_ID_ATTR,
   SHOT_GROUP_DRAG_ANCHOR_ROW_ID_DATASET_KEY,
+  TIMELINE_AREA_CONTEXT_MENU_IGNORE_SELECTOR,
   TOUCH_GESTURE_MODE_ATTR,
   TRACK_ID_ATTR,
   TIMELINE_DOM,
@@ -42,6 +46,7 @@ const TOKENS = [
   SHOT_GROUP_DRAG_ANCHOR_CLIP_ID_ATTR,
   SHOT_GROUP_DRAG_ANCHOR_ROW_ID_ATTR,
   SHELL_REGION_ATTR,
+  OVERLAY_INTERACTIVE_ATTR,
 ];
 
 function stripComments(css: string): string {
@@ -69,10 +74,27 @@ describe('timeline DOM contract', () => {
       .toBe(SHOT_GROUP_DRAG_ANCHOR_CLIP_ID_DATASET_KEY);
     expect(datasetKeyForAttribute(SHOT_GROUP_DRAG_ANCHOR_ROW_ID_ATTR))
       .toBe(SHOT_GROUP_DRAG_ANCHOR_ROW_ID_DATASET_KEY);
+    expect(datasetKeyForAttribute(OVERLAY_INTERACTIVE_ATTR))
+      .toBe(OVERLAY_INTERACTIVE_DATASET_KEY);
   });
 
   it('exposes every token through TIMELINE_DOM', () => {
     expect([...Object.values(TIMELINE_DOM)].sort()).toEqual([...TOKENS].sort());
+  });
+
+  it('ignores an element bearing the exported overlay-interactive attribute in marquee and context-menu exclusions', () => {
+    // The host sets OVERLAY_INTERACTIVE_ATTR on the one claimed overlay
+    // wrapper, so an overlay drag can never start a marquee or open the
+    // empty-canvas context menu on the same pointerdown. Both exclusion
+    // selectors must carry the exported contract as their own selector term:
+    // any element with the attribute matches `[attr]` and is therefore ignored.
+    const selectorTerms = (selector: string) =>
+      selector.split(',').map((term) => term.trim());
+
+    expect(selectorTerms(MARQUEE_IGNORE_SELECTOR))
+      .toContain(`[${OVERLAY_INTERACTIVE_ATTR}]`);
+    expect(selectorTerms(TIMELINE_AREA_CONTEXT_MENU_IGNORE_SELECTOR))
+      .toContain(`[${OVERLAY_INTERACTIVE_ATTR}]`);
   });
 
   // CSS cannot import TypeScript, so the stylesheet repeats these tokens as

@@ -469,6 +469,17 @@ export interface TimelineReaderOptions {
    * project-level manifest).
    */
   extensionRequirements?: readonly ProjectExtensionRequirement[];
+
+  /**
+   * Live source for the canonical timeline version, when the host tracks it
+   * separately from the data object (e.g. the persistence layer's
+   * `configVersionRef`, which advances on save acknowledgment WITHOUT
+   * committing a new data object). When provided, `snapshot().baseVersion`
+   * and `currentVersion` come from this getter so extension CAS writes stay
+   * correct even though the data object's `configVersion` is not bumped on
+   * receipt-only acks. Defaults to reading `data.configVersion`.
+   */
+  configVersion?: () => number;
 }
 
 /**
@@ -496,7 +507,11 @@ export function createTimelineReader(
   return {
     snapshot(): TimelineSnapshot {
       const data = getData();
-      const { config, configVersion, registry, meta: metaMap } = data;
+      const { config, registry, meta: metaMap } = data;
+      // The canonical version may be tracked separately from the data object
+      // (persistence's configVersionRef advances on receipt-only acks without
+      // committing a new data object). Prefer the live source when provided.
+      const configVersion = options.configVersion ? options.configVersion() : data.configVersion;
 
       // ── Clips ──────────────────────────────────────────────────────
       const clipSummaries: TimelineClipSummary[] = [];
@@ -917,6 +932,21 @@ export function createTimelineReader(
         outputMetadata: output,
       };
     },
+    /**
+     * Live canonical version — the same source `snapshot().baseVersion` /
+     * `currentVersion` use, without the O(clips) projection cost. Extensions
+     * key snapshot caches on this so receipt-only acks invalidate them.
+     */
+    configVersion: (): number => (
+      options.configVersion ? options.configVersion() : getData().configVersion
+    ),
+    /**
+     * Identity of the document backing this reader: the current data object
+     * itself. Undo / reload / poll adoption replace that object (even when
+     * `configVersion` is unchanged), so this changes exactly when a snapshot
+     * cache keyed on it must rebuild.
+     */
+    documentRevision: (): unknown => getData(),
   };
 }
 

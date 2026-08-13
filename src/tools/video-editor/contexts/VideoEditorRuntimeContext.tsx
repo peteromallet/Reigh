@@ -21,6 +21,7 @@ import type {
 import type { CommandRegistry } from '@/tools/video-editor/runtime/commandRegistry.ts';
 import type { AgentToolRegistry } from '@/tools/video-editor/runtime/agentToolRegistry.ts';
 import type { DiagnosticCollection } from '@reigh/editor-sdk';
+import type { TimelineViewStoreApi } from '@/tools/video-editor/lib/timeline-view-store.ts';
 import type { LiveDataRegistry } from '@/tools/video-editor/runtime/liveDataRegistry.ts';
 import type { LivePermissionService } from '@/tools/video-editor/runtime/livePermissions.ts';
 import type { ExtensionStateRepository } from '@/tools/video-editor/runtime/extensionStateRepository';
@@ -80,6 +81,14 @@ export interface VideoEditorRuntimeContextValue {
   processResultAttachRecords?: readonly ProcessResultAttachRecord[];
   /** M6b: Record a process result attach record for the current editor session. */
   recordProcessResultAttach?: (record: ProcessResultAttachRecord) => void;
+  /** T22: Provider-owned timeline-overlay feature flag. Explicitly defaults
+   *  to false; hosts opt in by supplying `true`. No provider inspects a query
+   *  string, and no environment enables it yet. */
+  timelineOverlaysEnabled?: boolean;
+  /** Provider-owned TimelineViewStore for `ctx.creative.timelineView`.
+   *  The canvas publishes layout/playback state into it regardless of the
+   *  overlay flag; extensions read it renderer-independently. */
+  timelineViewStore?: TimelineViewStoreApi;
 }
 
 export const VideoEditorRuntimeContext = createContext<VideoEditorRuntimeContextValue | null>(null);

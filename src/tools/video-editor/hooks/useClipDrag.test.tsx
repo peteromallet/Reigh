@@ -375,6 +375,14 @@ function setupDom(clipId = 'clip-1', rowId = 'V1') {
   };
 }
 
+function createSvgPath(parent: Element): SVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  svg.appendChild(path);
+  parent.appendChild(svg);
+  return path;
+}
+
 function setupPinnedGroupLabelDom(anchorClipId = 'clip-1', rowId = 'V1') {
   const base = setupDom(anchorClipId, rowId);
   const label = document.createElement('div');
@@ -1342,6 +1350,166 @@ describe('useClipDrag', () => {
         clipIds: ['clip-1', 'clip-2'],
         mode: 'images',
       })]);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('starts a drag from a pointerdown on an SVG path inside a clip and commits it', () => {
+    const interactionStateRef = { current: createInteractionState() };
+    const moveClipToRow = vi.fn();
+    const setGestureOwner = vi.fn();
+    const { clip, wrapper, cleanup } = setupDom();
+    const timelineWrapperRef = { current: wrapper };
+    const dataRef = { current: makeData() };
+    const svgPath = createSvgPath(clip);
+
+    try {
+      renderClipDrag({
+        timelineWrapperRef,
+        dataRef,
+        interactionStateRef,
+        deviceClass: 'desktop',
+        interactionMode: 'select',
+        gestureOwner: 'none',
+        setGestureOwner,
+        setInputModalityFromPointerType: vi.fn(() => 'mouse'),
+        moveClipToRow,
+        createTrackAndMoveClip: vi.fn(),
+        selectClip: vi.fn(),
+        selectClips: vi.fn(),
+        selectedClipIdsRef: { current: new Set<string>() },
+        additiveSelectionRef: { current: false },
+        applyEdit: vi.fn(),
+        coordinator: makeCoordinator(),
+        scale: 1,
+        scaleWidth: 100,
+      });
+
+      act(() => {
+        fireEvent.pointerDown(svgPath, {
+          button: 0,
+          pointerId: 21,
+          clientX: 24,
+          clientY: 12,
+        });
+      });
+
+      act(() => {
+        fireEvent.pointerMove(window, {
+          pointerId: 21,
+          clientX: 40,
+          clientY: 12,
+        });
+      });
+
+      expect(interactionStateRef.current.drag).toBe(true);
+      expect(setGestureOwner).toHaveBeenCalledWith('clip');
+
+      act(() => {
+        fireEvent.pointerUp(window, {
+          pointerId: 21,
+          clientX: 40,
+          clientY: 12,
+        });
+      });
+
+      expect(interactionStateRef.current.drag).toBe(false);
+      expect(moveClipToRow).toHaveBeenCalledTimes(1);
+      expect(moveClipToRow).toHaveBeenCalledWith('clip-1', 'V1', expect.any(Number), expect.any(String));
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('does not start a drag from an SVG path inside a button or a no-drag element', () => {
+    const interactionStateRef = { current: createInteractionState() };
+    const moveClipToRow = vi.fn();
+    const { clip, wrapper, cleanup } = setupDom();
+    const timelineWrapperRef = { current: wrapper };
+    const dataRef = { current: makeData() };
+
+    const button = document.createElement('button');
+    clip.appendChild(button);
+    const buttonPath = createSvgPath(button);
+
+    const noDragSlot = document.createElement('div');
+    noDragSlot.dataset.noClipDrag = 'true';
+    clip.appendChild(noDragSlot);
+    const noDragPath = createSvgPath(noDragSlot);
+
+    try {
+      renderClipDrag({
+        timelineWrapperRef,
+        dataRef,
+        interactionStateRef,
+        deviceClass: 'desktop',
+        interactionMode: 'select',
+        gestureOwner: 'none',
+        setGestureOwner: vi.fn(),
+        setInputModalityFromPointerType: vi.fn(() => 'mouse'),
+        moveClipToRow,
+        createTrackAndMoveClip: vi.fn(),
+        selectClip: vi.fn(),
+        selectClips: vi.fn(),
+        selectedClipIdsRef: { current: new Set<string>() },
+        additiveSelectionRef: { current: false },
+        applyEdit: vi.fn(),
+        coordinator: makeCoordinator(),
+        scale: 1,
+        scaleWidth: 100,
+      });
+
+      act(() => {
+        fireEvent.pointerDown(buttonPath, {
+          button: 0,
+          pointerId: 22,
+          clientX: 24,
+          clientY: 12,
+        });
+      });
+      act(() => {
+        fireEvent.pointerMove(window, {
+          pointerId: 22,
+          clientX: 40,
+          clientY: 12,
+        });
+      });
+      act(() => {
+        fireEvent.pointerUp(window, {
+          pointerId: 22,
+          clientX: 40,
+          clientY: 12,
+        });
+      });
+
+      expect(interactionStateRef.current.drag).toBe(false);
+
+      act(() => {
+        fireEvent.pointerDown(noDragPath, {
+          button: 0,
+          pointerId: 23,
+          clientX: 24,
+          clientY: 12,
+        });
+      });
+      act(() => {
+        fireEvent.pointerMove(window, {
+          pointerId: 23,
+          clientX: 40,
+          clientY: 12,
+        });
+      });
+      act(() => {
+        fireEvent.pointerUp(window, {
+          pointerId: 23,
+          clientX: 40,
+          clientY: 12,
+        });
+      });
+
+      expect(interactionStateRef.current.drag).toBe(false);
+      expect(moveClipToRow).not.toHaveBeenCalled();
     } finally {
       cleanup();
     }

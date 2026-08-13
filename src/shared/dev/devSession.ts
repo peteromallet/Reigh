@@ -8,11 +8,12 @@
  * non-existent backend and fail. This module only carries the constants those
  * DEV paths share.
  *
+ * The legacy `dev.videoEditor.localMode` localStorage flag has been retired:
+ * local mode is now derived solely from the `localProject`/`localTimeline`
+ * URL params. Existing stored values are left in place and are inert.
+ *
  * Keep this module free of `import.meta.env` and of React/DOM-typed imports.
  */
-
-/** localStorage flag that puts `VideoEditorPage` in Local mode. */
-export const LOCAL_MODE_STORAGE_KEY = 'dev.videoEditor.localMode';
 
 /** URL params that mean "open the local-mode editor" (see `VideoEditorPage`). */
 export const LOCAL_MODE_URL_PARAMS = ['localProject', 'localTimeline'] as const;
@@ -49,15 +50,4 @@ export function devSessionStorageKey(supabaseUrl: string): string {
 export function hasLocalModeUrlParams(search: string): boolean {
   const params = new URLSearchParams(search);
   return LOCAL_MODE_URL_PARAMS.some((name) => params.has(name));
-}
-
-/**
- * Persist the local-mode flag so a later visit to the editor (without the URL
- * params) still opens in local mode. Writes only the flag — never a session:
- * local mode needs no login, and a fake session would make the app-wide
- * providers fetch against a non-existent backend. See the auth gate's DEV
- * exemption in `Layout.tsx`.
- */
-export function writeStoredLocalModeFlag(storage: Pick<Storage, 'setItem'>): void {
-  storage.setItem(LOCAL_MODE_STORAGE_KEY, '1');
 }

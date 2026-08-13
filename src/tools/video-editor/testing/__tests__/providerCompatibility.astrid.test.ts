@@ -6,9 +6,9 @@
  * bridge API via fetch; this test mocks that bridge to validate provider
  * contract behavior without a running bridge instance.
  *
- * NOTE: Astrid's saveTimeline ignores expectedVersion (soft conflict mode),
- * so conflict tests use versionConflictIsSoft=true. Full integration tests
- * live in AstridBridgeDataProvider.test.ts.
+ * NOTE: The mock enforces the full CAS contract — save rejects stale
+ * expected_version with a 409. The provider participates in CAS and
+ * the conflict-retry ladder in useTimelinePersistence handles it.
  */
 
 import { beforeEach, describe, vi } from 'vitest';
@@ -95,7 +95,7 @@ function createAstridFetchMock() {
       return new Response(JSON.stringify(payload), { status: 200 });
     }
 
-    // Registry PUT
+    // Registry PUT — CAS-guarded
     if (url.endsWith('/registry')) {
       const timelineIdFromUrl = url.split('/timelines/')[1]?.split('/registry')[0];
       if (timelineIdFromUrl && !seededTimelines.has(timelineIdFromUrl)) {
@@ -104,12 +104,19 @@ function createAstridFetchMock() {
           detail: 'timeline missing',
         }), { status: 404 });
       }
-      const body = JSON.parse(String(init?.body ?? '{}'));
-      storedState!.registry = body;
-      return new Response(JSON.stringify(body), { status: 200 });
+      const body = JSON.parse(String(init?.body ?? '{}')) as { registry?: AssetRegistry; expected_version?: number };
+      if (typeof body.expected_version === 'number' && body.expected_version !== storedState!.configVersion) {
+        return new Response(JSON.stringify({
+          error: 'timeline_version_conflict',
+          detail: `expected_version ${body.expected_version} does not match config_version ${storedState!.configVersion}`,
+          config_version: storedState!.configVersion,
+        }), { status: 409 });
+      }
+      storedState!.registry = body.registry ?? body;
+      return new Response(JSON.stringify(storedState!.registry), { status: 200 });
     }
 
-    // Save POST
+    // Save POST — CAS-guarded
     if (url.endsWith('/save')) {
       const timelineIdFromUrl = url.split('/timelines/')[1]?.split('/save')[0];
       if (timelineIdFromUrl && !seededTimelines.has(timelineIdFromUrl)) {
@@ -118,8 +125,22 @@ function createAstridFetchMock() {
           detail: 'timeline missing',
         }), { status: 404 });
       }
-      const body = JSON.parse(String(init?.body ?? '{}'));
+      const body = JSON.parse(String(init?.body ?? '{}')) as {
+        config?: TimelineConfig;
+        registry?: AssetRegistry;
+        expected_version?: number;
+      };
+      if (typeof body.expected_version === 'number' && body.expected_version !== storedState!.configVersion) {
+        return new Response(JSON.stringify({
+          error: 'timeline_version_conflict',
+          detail: `expected_version ${body.expected_version} does not match config_version ${storedState!.configVersion}`,
+          config_version: storedState!.configVersion,
+        }), { status: 409 });
+      }
       storedState!.config = body.config ?? storedState!.config;
+      if (body.registry) {
+        storedState!.registry = body.registry;
+      }
       storedState!.configVersion = storedState!.configVersion + 1;
 
       const payload = makePayload(storedState!.config, storedState!.configVersion, storedState!.registry);
@@ -140,6 +161,9 @@ const astridFactory: ProviderFactory = (seed) => {
   if (seed?.timelineId) {
     seededTimelines.add(seed.timelineId);
   }
+  // The provider addresses post-load requests through the cached
+  // timeline_ulid; the mock bridge must accept that alias like the real one.
+  seededTimelines.add('01JM4K5N7P0000000000000017');
   vi.stubGlobal('fetch', createAstridFetchMock());
 
   return new AstridBridgeDataProvider({
@@ -159,7 +183,6 @@ describe('AstridBridgeDataProvider compatibility (mocked)', () => {
 
   runProviderCompatibilitySuite(astridFactory, {
     skipCheckpoints: true,
-    versionConflictIsSoft: true,
     timelineId: '11111111-1111-1111-1111-111111111111',
     skipRegisterAsset: false,
     skipMissingTimelineTests: true,

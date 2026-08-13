@@ -15,7 +15,7 @@ This document defines the **developer contract** between extension authors and t
 2. What extension authors **must** do (import boundary, dispose contract, diagnostic conventions).
 3. What is **explicitly deferred** or **unsupported** in V1.
 
-This contract is backed by the [supported/deferred matrix](./extension-platform-supported-deferred.md) (91 supported rows, 69 deferred rows) and the [trust envelope](./extensions-trust-envelope.md). Every supported claim is traceable to concrete evidence — tests, examples, absence checks, or contract-recheck rows.
+This contract is backed by the [supported/deferred matrix](./extension-platform-supported-deferred.md) (103 supported rows, 70 deferred rows) and the [trust envelope](./extensions-trust-envelope.md). Every supported claim is traceable to concrete evidence — tests, examples, absence checks, or contract-recheck rows.
 
 ---
 
@@ -53,6 +53,9 @@ This contract is backed by the [supported/deferred matrix](./extension-platform-
 |---|---|
 | Host slots: header, toolbar, leftPanel, rightPanel, codePanel, writingPanel, stagePanel, timelineFooter, statusBar, dialogs, assetPanel, inspectorPanel | S-020 |
 | Inspector and overlay contributions update on host state changes | S-021 |
+| Timeline overlay contributions are host-rendered through a required `render` id bound via `ctx.ui.registerRenderer()`; overlays without a registered renderer are omitted (no callable placeholder) | S-165 |
+| Timeline overlay renderers receive geometry, viewport/playhead stores, selection, a boolean pointer-claim API, and the host-owned ruler-only `markerLayer` primitive | S-166, S-167 |
+| Overlay gesture arbitration is passive: unclaimed wrappers are click-through, `claimPointer()` declines for foreign owners/claimants, and all existing timeline gestures behave identically when no overlay has an active claim | S-168 |
 | `SchemaForm` renders and validates common schema subset | S-022 |
 | `ExtensionManager` settings editing uses `SchemaForm` when a `settingsSchema` is declared in the manifest; falls back to raw key-value editing only for schemaless or legacy packages (intentional, not a missing implementation) | T10 |
 | Diagnostic fallback links open `DiagnosticPanel` filtered to failing extension | S-023 |
@@ -100,7 +103,30 @@ This contract is backed by the [supported/deferred matrix](./extension-platform-
 | Clip types (renderer + inspector registration) | `ctx.clipTypes` | S-100–S-105 |
 | Shaders (WebGL source + uniform registration) | `ctx.shaders` | S-130–S-135 |
 | Agent tools (tool handler + process stubs) | `ctx.agentTools` | S-110–S-112 |
+| UI renderer registration (bind renderers for render-backed contributions) | `ctx.ui` | S-165 |
 | Creative context (timeline reader/patch, source map, proposal runtime) | `ctx.creative` | S-030–S-040 |
+| Timeline view store (playback, selection, viewport, geometry — renderer-independent) | `ctx.creative.timelineView` | S-171 |
+
+### 2.7 Render-backed contributions (timeline overlays)
+
+`timelineOverlay` is the platform's render-backed contribution: the manifest declares a **required non-empty `render` id** (no `when` clause is accepted), and the extension binds the renderer imperatively through `ctx.ui.registerRenderer(renderId, renderer)` during `activate()`.
+
+| Guarantee | Evidence |
+|---|---|
+| Host renders resolved overlays into the timeline surface (`TimelineExtensionOverlayHost`); overlays whose renderer was never registered are omitted, never stubbed | S-165 |
+| Renderer registration is scoped to the owning extension by `(extensionId, renderId)`; an undeclared render id produces a diagnostic | S-165 |
+| Renderers receive `TimelineOverlayRenderProps`: memoized geometry, stable viewport/playhead stores, selection, boolean `pointerClaimed`/`claimPointer()`/`releasePointer()`, and `primitives` | S-166 |
+| V1 marker primitive is ruler-only: `primitives.markerLayer()` accepts `placement: 'ruler'` only, with preview/commit intents, frame-grid snapping at commit, and accessible marker buttons | S-167 |
+| Gesture arbitration is passive and claim-based; the release criterion is that all existing timeline gestures behave identically when no overlay has an active claim | S-168 |
+| The host is gated by `timelineOverlaysEnabled` (default false); the DEV-only `?timelineOverlayCanary=1` query parameter flips the flag in DEV builds (`npm run dev:editor` appends it) and production never honors it; maturity promotion to `public-supported` is deferred until the release criterion passes | S-171 |
+| Marker/project data persists through the standard storage-neutral `project-data.write` path; **generic disposal never deletes project data** — extensions expose explicit Clear/Delete Data actions instead | S-169 |
+
+**Author obligations:**
+
+1. Declare a non-empty `render` id on every `timelineOverlay` contribution and bind the renderer via `ctx.ui.registerRenderer()` in `activate()`; dispose the returned handle in your dispose function.
+2. Treat overlay state as controlled: the extension owns the marker array and persists on `'commit'` intents only. Preview intents must never be written.
+3. Do not call `releasePointer()` for a claim you do not own — it is a no-op unless this overlay still holds the claim. There is no public `setGestureOwner`; ownership is host-assigned.
+4. Do not delete project data from generic `DisposeHandle.dispose()` — dispose also runs on provider unmount, HMR, and reload. Provide explicit Clear/Delete Data behavior; automatic deletion is wired only when a reason-aware uninstall lifecycle exists.
 
 ---
 
@@ -209,11 +235,12 @@ The platform provides `ContributionErrorBoundary` for React-rendered slots, dial
 
 ### 5.4 Service cleanup
 
-The platform cleans up host-owned services (settings localStorage keys, chrome event subscribers) on dispose via `CONTEXT_DISPOSE_SYMBOL`. Authors must:
+The platform cleans up host-owned services (settings localStorage keys, chrome event subscribers, registered renderers) on dispose via `CONTEXT_DISPOSE_SYMBOL`. Authors must:
 
 1. Return a `DisposeHandle` from `activate()` that cleans up extension-owned resources.
-2. Call `.dispose()` on any handles received from service registrations (`ctx.commands.registerCommand()`, `ctx.clipTypes.registerClipType()`, etc.).
+2. Call `.dispose()` on any handles received from service registrations (`ctx.commands.registerCommand()`, `ctx.clipTypes.registerClipType()`, `ctx.ui.registerRenderer()`, etc.).
 3. Not rely on host service cleanup order — dispose handles are called before host services.
+4. **Never delete project data from dispose.** Generic disposal also runs on provider unmount, HMR, and reload; deleting extension project data there would destroy user content on a reload. Project data (e.g. `project-data.write` payloads such as scene markers) is deleted only through an explicit user-triggered Clear/Delete Data action until a reason-aware uninstall lifecycle exists.
 
 ---
 
@@ -255,26 +282,30 @@ Before render, `runExportGuard()` (S-062) scans the timeline for unknown clip ty
 
 ## 7. Packaging and distribution
 
-### 7.1 V1: Source-local only
+### 7.1 V1: Source-local and repository-loaded packages
 
-In V1, extensions are **statically bundled** with the host application. There is no dynamic package loading, no CDN fetching, no `import()` for extension code, and no marketplace.
+In V1, extensions are **statically bundled** with the host application. There is no dynamic package loading, no CDN fetching, no `import()` for extension code, and no marketplace. Packages are either direct host-supplied modules (DEV-local or first-party) or repository-loaded installed packages; both flow through the provider-scoped extension runtime.
+
+**Installed-package management is shipped.** The Extension Manager already provides enable/disable toggles with immediate contribution visibility, schema-backed settings editing, and repository-backed persistence of enablement and settings (S-160–S-164). What remains absent is **packaging and install tooling**: there is no pack builder/bundler, no install command or install UI, no package discovery channel, no update mechanism, and no marketplace or registry (D-001, D-004, D-123). Distinguish these two facts in any documentation: *managing* an installed package (enable/disable, settings) works today; *producing, installing, discovering, or updating* packages does not exist yet.
 
 ### 7.2 What is deferred
 
-The entire extension packaging and manager system (M14) is deferred:
+The M14 packaging milestone — everything that creates, installs, verifies, migrates, and updates packs — is deferred:
 
 | Deferred capability | Deferral ref |
 |---|---|
-| User-facing extension manager UI | D-001 |
-| Persisted enablement, settings, failed load handling | D-002 |
-| Integrity verification prevents installation | D-003 |
-| Extension state persistence, workspace pack load | D-004 |
+| Extension install, update, and deletion from manager UI (enable/disable and settings editing are shipped — S-160–S-164) | D-001 |
+| Failed-load recovery and automated diagnostic triage | D-002 |
+| Integrity verification prevents installation/activation | D-003 |
+| Workspace pack load and bundle pack validation | D-004 |
 | Migration diagnostics for older metadata shapes | D-005 |
 | Local-source-to-installed-pack migration | D-006 |
-| Manager trust warnings and requirements/lock metadata | D-007 |
+| Manager trust warnings and requirements/lock metadata for installed packs | D-007 |
 | Provider-backed extension state repository | D-008 |
 | Extension dependency diagnostics | D-009 |
 | Conflict override UI, dependency tree badges | D-010 |
+
+**Author obligation:** Do not document install, bundler, marketplace, discovery, or update workflows as available. Installed packages are managed (enable/disable, settings, persistence) but are not yet installable, bundleable, discoverable, or updatable through any tooling.
 
 ### 7.3 What is unsupported
 
@@ -380,7 +411,7 @@ The gate outputs a JSON record of docs-safe example IDs. At the time of this doc
 | Document | Purpose |
 |---|---|
 | [extensions-quickstart.md](./extensions-quickstart.md) | Getting-started guide for new extension authors |
-| [extension-platform-supported-deferred.md](./extension-platform-supported-deferred.md) | Canonical supported/deferred matrix (91 supported, 69 deferred) |
+| [extension-platform-supported-deferred.md](./extension-platform-supported-deferred.md) | Canonical supported/deferred matrix (103 supported, 70 deferred) |
 | [extension-platform-contract-recheck.md](./extension-platform-contract-recheck.md) | Complete M0–M14 Done Criteria evidence matrix |
 | [extensions-trust-envelope.md](./extensions-trust-envelope.md) | V1 trusted-local execution model and permission posture |
 | [provider-compatibility-matrix.md](./provider-compatibility-matrix.md) | DataProvider compatibility across InMemory/Supabase/Astrid |
@@ -395,3 +426,4 @@ The gate outputs a JSON record of docs-safe example IDs. At the time of this doc
 | Date | Change |
 |---|---|
 | 2026-06-20 | Initial author contract for M15. Written after pre-doc example readiness gate passed. All referenced examples are docs-safe. Deferred and unsupported classifications match the supported/deferred matrix. Trust envelope obligations included. Renderability, packaging, and compatibility promises codified. |
+| 2026-08-11 | T7.4: added §2.7 render-backed contributions (required-render `timelineOverlay`, `ctx.ui.registerRenderer`, ruler-only `markerLayer`, passive gesture arbitration, canary gate, deferred maturity promotion). §5.4 now states generic disposal never deletes project data (explicit Clear/Delete Data only). §7 distinguishes shipped installed-package management (enable/disable, settings, persistence — S-160–S-164) from absent installer, bundler, marketplace, discovery, and update tooling. |

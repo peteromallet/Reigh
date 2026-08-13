@@ -265,11 +265,13 @@ export const useClipDrag = (): UseClipDragResult => {
       if (event.button !== 0) return;
 
       const wrapper = timelineWrapperRef.current;
-      if (!wrapper || !wrapper.contains(event.target as Node)) return;
+      if (!wrapper || !wrapper.contains(event.target as Node)) {
+        return;
+      }
 
-      const eventTarget = event.target instanceof HTMLElement ? event.target : null;
+      const eventTarget = event.target instanceof Element ? event.target : null;
       const labelTarget = eventTarget?.closest<HTMLElement>(SHOT_GROUP_DRAG_ANCHOR_SELECTOR) ?? null;
-      if (labelTarget && eventTarget?.closest('button')) {
+      if (eventTarget?.closest('button')) {
         return;
       }
 
@@ -284,12 +286,16 @@ export const useClipDrag = (): UseClipDragResult => {
       if (
         !clipTarget
         || (eventTarget && eventTarget.closest("[data-delete-clip='true'], [data-no-clip-drag]"))
-      ) return;
+      ) {
+        return;
+      }
 
       const clipId = clipTarget.dataset[CLIP_ID_DATASET_KEY];
       const rowId = clipTarget.dataset[ROW_ID_DATASET_KEY];
       if (!clipId || !rowId) return;
-      if (latestRef.current.gestureOwner !== 'none' && latestRef.current.gestureOwner !== 'clip') return;
+      if (latestRef.current.gestureOwner !== 'none' && latestRef.current.gestureOwner !== 'clip') {
+        return;
+      }
 
       const inputModality = latestRef.current.setInputModalityFromPointerType(event.pointerType);
       const dragAllowed = shouldAllowTouchClipDrag(
@@ -302,7 +308,9 @@ export const useClipDrag = (): UseClipDragResult => {
       const sourceTrack = current?.tracks.find((track) => track.id === rowId);
       const sourceRow = current?.rows.find((row) => row.id === rowId);
       const sourceAction = sourceRow?.actions.find((action) => action.id === clipId);
-      if (!current || !sourceTrack || !sourceAction) return;
+      if (!current || !sourceTrack || !sourceAction) {
+        return;
+      }
 
       endSession();
       const editArea = wrapper.querySelector<HTMLElement>(EDIT_AREA_SELECTOR);

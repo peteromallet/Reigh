@@ -272,7 +272,7 @@ describe('AstridBridgeDataProvider', () => {
 
     expect(registry.assets['asset-video'].file).toBe('clips/demo.mp4');
     await expect(provider.resolveAssetUrl('clips/demo.mp4')).resolves.toBe(
-      'http://127.0.0.1:17333/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111/assets/asset-video',
+      'http://127.0.0.1:17333/projects/ados-talks/timelines/01JM4K5N7P0000000000000017/assets/asset-video',
     );
     await expect(provider.resolveAssetUrl('https://cdn.example/test.mp4')).resolves.toBe('https://cdn.example/test.mp4');
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
@@ -303,7 +303,7 @@ describe('AstridBridgeDataProvider', () => {
       file: 'shared/file.mp4',
       assetId: 'asset-b',
     })).resolves.toBe(
-      'http://127.0.0.1:17333/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111/assets/asset-b',
+      'http://127.0.0.1:17333/projects/ados-talks/timelines/01JM4K5N7P0000000000000017/assets/asset-b',
     );
   });
 
@@ -364,14 +364,65 @@ describe('AstridBridgeDataProvider', () => {
     });
 
     expect(nextVersion).toBe(7);
+    // The pre-save GET used the caller's UUID key (ULID not yet known); the
+    // POST is addressed by the cached timeline_ulid, which the bridge resolves
+    // without a project-wide identity scan.
     expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
       '/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111',
-      '/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111/save',
+      '/api/astrid/projects/ados-talks/timelines/01JM4K5N7P0000000000000017/save',
     ]);
     await expect(provider.resolveAssetUrl('clips/saved.mp4')).resolves.toBe(
-      '/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111/assets/asset-save',
+      '/api/astrid/projects/ados-talks/timelines/01JM4K5N7P0000000000000017/assets/asset-save',
     );
     expect(getSupabaseClient).not.toHaveBeenCalled();
+  });
+
+  it('accepts a ULID/slug caller key when the payload carries a distinct canonical timeline_id', async () => {
+    // Real Astrid timelines live under a ULID directory (01JM4K5N7P...)
+    // while the bridge reports a canonical UUID as `timeline_id`. The
+    // identity guard must compare canonical ids, not the caller's address
+    // key — otherwise every load/save round trip throws "timeline mismatch"
+    // after the POST has already persisted, wedging the save pipeline.
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (
+        url.endsWith('/timelines/11111111-1111-1111-1111-111111111111')
+        || url.endsWith('/timelines/01JM4K5N7P0000000000000017')
+      ) {
+        return new Response(JSON.stringify(makePayload()), { status: 200 });
+      }
+      if (url.endsWith('/save')) {
+        return new Response(JSON.stringify({
+          ...makePayload(),
+          config_version: 5,
+        }), { status: 200 });
+      }
+      throw new Error(`Unexpected bridge request: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const provider = new AstridBridgeDataProvider({
+      projectSlug: 'ados-talks',
+      timelineRef: '01JM4K5N7P0000000000000017',
+      timelineId: '01JM4K5N7P0000000000000017',
+    });
+
+    // Load through the ULID key: canonical becomes 11111111-...
+    await provider.loadTimeline('01JM4K5N7P0000000000000017');
+
+    // Save through the same ULID key must NOT throw a mismatch.
+    const nextVersion = await provider.saveTimeline('01JM4K5N7P0000000000000017', {
+      clips: [],
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+    }, 4);
+
+    expect(nextVersion).toBe(5);
+    // The save reuses the cached payload (no pre-save GET) and POSTs to the
+    // cached ULID ref — the bridge resolves it without a project-wide scan.
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
+      '/api/astrid/projects/ados-talks/timelines/01JM4K5N7P0000000000000017',
+      '/api/astrid/projects/ados-talks/timelines/01JM4K5N7P0000000000000017/save',
+    ]);
   });
 
   it('fails the whole save when the save endpoint returns an error', async () => {
@@ -505,7 +556,7 @@ describe('AstridBridgeDataProvider', () => {
     expect(saveBodies.map((b) => b.expected_version)).toEqual([1, 2]);
     expect(saveBodies.every((b) => 'config' in b)).toBe(true);
     await expect(provider.resolveAssetUrl('audio/voice.wav')).resolves.toBe(
-      '/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111/assets/asset-audio',
+      '/api/astrid/projects/ados-talks/timelines/01JM4K5N7P0000000000000017/assets/asset-audio',
     );
   });
 
@@ -1389,10 +1440,14 @@ describe('AstridBridgeDataProvider', () => {
     const TIMELINE_ID = '11111111-1111-1111-1111-111111111111';
 
     it('re-fetches on every loadTimeline/loadAssetRegistry so polling can observe remote changes', async () => {
+      const TIMELINE_ULID = '01JM4K5N7P0000000000000017';
       let head = 1;
       const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
-        if (url.endsWith(`/api/astrid/projects/ados-talks/timelines/${TIMELINE_ID}`)) {
+        if (
+          url.endsWith(`/api/astrid/projects/ados-talks/timelines/${TIMELINE_ID}`)
+          || url.endsWith(`/api/astrid/projects/ados-talks/timelines/${TIMELINE_ULID}`)
+        ) {
           return new Response(JSON.stringify({
             ...makePayload(),
             config_version: head,
@@ -1411,6 +1466,11 @@ describe('AstridBridgeDataProvider', () => {
 
       const first = await provider.loadTimeline(TIMELINE_ID);
       expect(first.configVersion).toBe(1);
+      // The first load goes through the caller's key (ULID not known yet);
+      // every fresh load after that is addressed by the cached timeline_ulid.
+      expect(String(fetchMock.mock.calls[0][0])).toBe(
+        `/api/astrid/projects/ados-talks/timelines/${TIMELINE_ID}`,
+      );
 
       head = 2;
       const second = await provider.loadTimeline(TIMELINE_ID);
@@ -1420,6 +1480,10 @@ describe('AstridBridgeDataProvider', () => {
       head = 3;
       await provider.loadAssetRegistry(TIMELINE_ID);
       expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(fetchMock.mock.calls.slice(1).map(([input]) => String(input))).toEqual([
+        `/api/astrid/projects/ados-talks/timelines/${TIMELINE_ULID}`,
+        `/api/astrid/projects/ados-talks/timelines/${TIMELINE_ULID}`,
+      ]);
     });
 
     it('coalesces the poll\'s concurrent timeline+registry loads onto one request', async () => {
@@ -1465,11 +1529,209 @@ describe('AstridBridgeDataProvider', () => {
       await provider.saveTimeline(TIMELINE_ID, { output: {}, clips: [], tracks: [] }, 1);
 
       // One GET for the load; the save reuses the cached payload for its
-      // registry default and sends everything in one POST.
+      // registry default and sends everything in one POST — addressed by the
+      // cached timeline_ulid, not the canonical UUID.
+      expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
+        `/api/astrid/projects/ados-talks/timelines/${TIMELINE_ID}`,
+        `/api/astrid/projects/ados-talks/timelines/01JM4K5N7P0000000000000017/save`,
+      ]);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // T2.3: the cached timeline_ulid is the routable address; the canonical
+  // UUID is identity only
+  // -------------------------------------------------------------------------
+  describe('ULID request addressing', () => {
+    const TIMELINE_ID = '11111111-1111-1111-1111-111111111111';
+    const TIMELINE_ULID = '01JM4K5N7P0000000000000017';
+
+    it('routes post-load save/load/asset requests through the cached timeline_ulid, never the canonical UUID', async () => {
+      const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        // The first load goes through the caller's UUID key (ULID not known
+        // yet); every route after that uses the cached ULID.
+        if (
+          url.endsWith(`/api/astrid/projects/ados-talks/timelines/${TIMELINE_ID}`)
+          || url.endsWith(`/api/astrid/projects/ados-talks/timelines/${TIMELINE_ULID}`)
+        ) {
+          return new Response(JSON.stringify(makePayload()), { status: 200 });
+        }
+        if (url.endsWith('/save')) {
+          return new Response(JSON.stringify({ ...makePayload(), config_version: 4 }), { status: 200 });
+        }
+        throw new Error(`Unexpected bridge request: ${url}`);
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const provider = new AstridBridgeDataProvider({
+        projectSlug: 'ados-talks',
+        timelineRef: TIMELINE_ID,
+        timelineId: TIMELINE_ID,
+      });
+
+      await provider.loadTimeline(TIMELINE_ID);
+
+      // Save: the cached payload is reused (no pre-save GET) and the POST is
+      // addressed by the ULID — no per-save project-wide identity scan.
+      const version = await provider.saveTimeline(TIMELINE_ID, { clips: [], tracks: [] }, 3);
+      expect(version).toBe(4);
+
+      // Fresh loads (the shell poll) are addressed by the ULID too.
+      await provider.loadAssetRegistry(TIMELINE_ID);
+
+      // Asset URLs travel the same ULID route.
+      await expect(provider.resolveAssetUrl('clips/demo.mp4')).resolves.toBe(
+        `/api/astrid/projects/ados-talks/timelines/${TIMELINE_ULID}/assets/asset-video`,
+      );
+
+      const urls = fetchMock.mock.calls.map(([input]) => String(input));
+      expect(urls).toEqual([
+        `/api/astrid/projects/ados-talks/timelines/${TIMELINE_ID}`,
+        `/api/astrid/projects/ados-talks/timelines/${TIMELINE_ULID}/save`,
+        `/api/astrid/projects/ados-talks/timelines/${TIMELINE_ULID}`,
+      ]);
+      // After the load, no request is addressed by the canonical UUID.
+      expect(urls.slice(1).join(' ')).not.toContain(TIMELINE_ID);
+    });
+
+    it('falls back to the canonical UUID when the payload carries no timeline_ulid', async () => {
+      const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith(`/api/astrid/projects/ados-talks/timelines/${TIMELINE_ID}`)) {
+          return new Response(JSON.stringify({ ...makePayload(), timeline_ulid: undefined }), { status: 200 });
+        }
+        if (url.endsWith('/save')) {
+          return new Response(JSON.stringify({ ...makePayload(), timeline_ulid: undefined, config_version: 2 }), { status: 200 });
+        }
+        throw new Error(`Unexpected bridge request: ${url}`);
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const provider = new AstridBridgeDataProvider({
+        projectSlug: 'ados-talks',
+        timelineRef: TIMELINE_ID,
+        timelineId: TIMELINE_ID,
+      });
+
+      await provider.loadTimeline(TIMELINE_ID);
+      const version = await provider.saveTimeline(TIMELINE_ID, { clips: [], tracks: [] }, 1);
+      expect(version).toBe(2);
+
       expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
         `/api/astrid/projects/ados-talks/timelines/${TIMELINE_ID}`,
         `/api/astrid/projects/ados-talks/timelines/${TIMELINE_ID}/save`,
       ]);
+      await expect(provider.resolveAssetUrl('clips/demo.mp4')).resolves.toBe(
+        `/api/astrid/projects/ados-talks/timelines/${TIMELINE_ID}/assets/asset-video`,
+      );
+    });
+
+    it('still throws on identity mismatch (canonical UUID) even when the ULID alias matches', async () => {
+      let head = 0;
+      const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes(`/timelines/${TIMELINE_ULID}`)) {
+          head += 1;
+          return new Response(JSON.stringify(
+            head === 1
+              ? makePayload()
+              : { ...makePayload(), timeline_id: '33333333-3333-3333-3333-333333333333' },
+          ), { status: 200 });
+        }
+        throw new Error(`Unexpected bridge request: ${url}`);
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const provider = new AstridBridgeDataProvider({
+        projectSlug: 'ados-talks',
+        timelineRef: TIMELINE_ULID,
+        timelineId: TIMELINE_ULID,
+      });
+
+      await provider.loadTimeline(TIMELINE_ULID);
+      // The ULID alias is unchanged, but the canonical identity differs — the
+      // UUID-based identity guard must still reject the payload.
+      await expect(provider.loadTimeline(TIMELINE_ULID)).rejects.toThrow(
+        'Astrid bridge timeline mismatch: expected 11111111-1111-1111-1111-111111111111, got 33333333-3333-3333-3333-333333333333',
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Caller-supplied identity must be confirmed by the FIRST payload (the
+  // constructor used to discard it entirely, so a wrong UUID in the first
+  // response was silently adopted and a later caller could be redirected to
+  // the cached ULID).
+  // -------------------------------------------------------------------------
+  describe('caller-supplied identity validation', () => {
+    const SUPPLIED_ID = '11111111-1111-1111-1111-111111111111';
+    const OTHER_ULID = '01JX4K5N7P0000000000000099';
+
+    it('accepts a first payload whose timeline_ulid confirms the supplied identity and keys subsequent requests off the established ref', async () => {
+      // A payload that echoes the caller's identity into its routable ULID —
+      // as the local sub-mode synthesis does (timeline_id = timeline_ulid =
+      // caller key) — confirms the supplied identity and must load. After
+      // that, the first-payload ULID is the authoritative request ref.
+      const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (
+          url.endsWith(`/api/astrid/projects/ados-talks/timelines/${SUPPLIED_ID}`)
+          || url.endsWith(`/api/astrid/projects/ados-talks/timelines/${SUPPLIED_ID}/save`)
+        ) {
+          return new Response(JSON.stringify({
+            ...makePayload(),
+            timeline_id: SUPPLIED_ID,
+            timeline_ulid: SUPPLIED_ID,
+            config_version: 3,
+          }), { status: 200 });
+        }
+        throw new Error(`Unexpected bridge request: ${url}`);
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const provider = new AstridBridgeDataProvider({
+        projectSlug: 'ados-talks',
+        timelineRef: SUPPLIED_ID,
+        timelineId: SUPPLIED_ID,
+      });
+
+      const loaded = await provider.loadTimeline(SUPPLIED_ID);
+      expect(loaded.configVersion).toBe(3);
+
+      // Subsequent requests key off the established ref (the first-payload
+      // ULID, which here equals the supplied identity).
+      const version = await provider.saveTimeline(SUPPLIED_ID, { clips: [], tracks: [] }, 2);
+      expect(version).toBe(3);
+
+      expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
+        `/api/astrid/projects/ados-talks/timelines/${SUPPLIED_ID}`,
+        `/api/astrid/projects/ados-talks/timelines/${SUPPLIED_ID}/save`,
+      ]);
+      expect(getSupabaseClient).not.toHaveBeenCalled();
+    });
+
+    it('rejects a first payload whose timeline_id AND timeline_ulid both mismatch the supplied identity', async () => {
+      // The regression: before the fix the constructor discarded the supplied
+      // identity, so this wrong-UUID first response was silently adopted as
+      // canonical. It must reject with a clear error instead.
+      vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+        ...makePayload(),
+        timeline_id: '22222222-2222-2222-2222-222222222222',
+        timeline_ulid: OTHER_ULID,
+      }), { status: 200 })));
+
+      const provider = new AstridBridgeDataProvider({
+        projectSlug: 'ados-talks',
+        timelineRef: SUPPLIED_ID,
+        timelineId: SUPPLIED_ID,
+      });
+
+      await expect(provider.loadTimeline(SUPPLIED_ID)).rejects.toThrow(
+        `Astrid bridge timeline identity mismatch: requested ${SUPPLIED_ID}, `
+        + `got timeline_id 22222222-2222-2222-2222-222222222222 / timeline_ulid ${OTHER_ULID}`,
+      );
+      expect(getSupabaseClient).not.toHaveBeenCalled();
     });
   });
 

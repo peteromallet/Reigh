@@ -1,5 +1,5 @@
 // Layer map & invariants: docs/structure_detail/tool_video_editor.md
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { CommandPalette } from '@/tools/video-editor/components/CommandPalette/CommandPalette.tsx';
 import { Eye, Maximize2, Settings, SlidersHorizontal } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/shared/components/ui/alert-dialog.tsx';
@@ -71,6 +71,8 @@ export interface TimelineEditorShellCoreProps {
   onSetGenerationsPaneLocked?: (locked: boolean) => void;
   onNavigateHome?: () => void;
   onOpenEditorRoute?: (timelineId: string) => void;
+  /** Host controls rendered beside the Back button (e.g. project/timeline selectors). */
+  navigationControls?: ReactNode;
 }
 
 function getInspectorTargetForSelection(
@@ -101,6 +103,7 @@ function TimelineEditorShellCoreComponent({
   onSetGenerationsPaneLocked,
   onNavigateHome,
   onOpenEditorRoute,
+  navigationControls,
 }: TimelineEditorShellCoreProps) {
   useRenderDiagnostic('TimelineEditorShellCore');
   const editorData = useTimelineEditorData();
@@ -374,6 +377,7 @@ function TimelineEditorShellCoreComponent({
       forceCondensed={forceCondensed}
       onNavigateHome={onNavigateHome}
       toolbarModeSwitcher={toolbarModeSwitcher}
+      navigationControls={navigationControls}
       onDividerMouseDown={onDividerMouseDown}
       isTimelineMaximized={isTimelineMaximized}
       setIsTimelineMaximized={setIsTimelineMaximized}
@@ -594,6 +598,11 @@ function TimelineEditorShellCoreComponent({
               >
                 ← Back
               </button>
+            )}
+            {navigationControls && (
+              <div className="flex shrink-0 items-center gap-2" data-testid="shell-navigation-controls">
+                {navigationControls}
+              </div>
             )}
             <div className="truncate text-foreground">{chrome.timelineName ?? 'Untitled timeline'}</div>
             <Button

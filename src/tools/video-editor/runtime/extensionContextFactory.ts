@@ -21,9 +21,9 @@ import type {
   CreativeContext,
 } from '@/sdk/context';
 import { createCreativeContext, CONTEXT_DISPOSE_SYMBOL } from '@/sdk/context';
+import type { ExtensionUiService } from '@/sdk/ui';
 import {
   attachInternalExtensionRenderSurface,
-  type InternalExtensionRenderSurface,
 } from '@/sdk/internalExtensionRenderSurface';
 import type { CommandHandler, CommandRegistrationOptions } from '@/sdk/commands';
 import type {
@@ -132,7 +132,7 @@ export function createExtensionContext(
   agentTools?: AgentToolRegistrationService,
   shaders?: ShaderRegistrationService,
   settingsServiceOptions?: CreateExtensionSettingsServiceOptions,
-  internalRenderSurface?: InternalExtensionRenderSurface,
+  uiService?: ExtensionUiService,
 ): ExtensionContext {
   const extensionId = extension.manifest.id as string;
   const manifest = extension.manifest; // Already frozen by defineExtension
@@ -411,6 +411,22 @@ export function createExtensionContext(
     },
   };
 
+  // ---- ui service (render-backed contribution registration) ----------------
+  // When no host-wired service is provided, registerRenderer reports a
+  // structured diagnostic and returns a no-op handle (same pattern as the
+  // commands/effects/transitions fallbacks above).
+  const uiServiceInstance: ExtensionUiService = uiService ?? {
+    registerRenderer(renderId: string, _renderer: unknown): DisposeHandle {
+      diagnosticsService.report({
+        severity: 'error',
+        code: 'render/not-wired',
+        message: `Cannot register renderer "${renderId}" — the UI render surface has not been wired by the host provider.`,
+      });
+      return { dispose() {} };
+    },
+  };
+  Object.freeze(uiServiceInstance);
+
   // ---- assemble, attach dispose, then freeze -------------------------------
   const ctx = {
     apiVersion: 1,
@@ -434,15 +450,17 @@ export function createExtensionContext(
     clipTypes: clipTypesService,
     shaders: shadersService,
     agentTools: agentToolsService,
+    ui: uiServiceInstance,
   } as ExtensionContext;
 
   // Attach host-service disposal so the lifecycle can clean up settings
   // (localStorage keys) and chrome subscriptions without the extension
   // author needing to know about internal service state.
   // Must be attached BEFORE freezing.
-  if (internalRenderSurface) {
-    attachInternalExtensionRenderSurface(ctx, internalRenderSurface);
-  }
+  // The legacy internal render surface symbol is attached with the SAME
+  // service instance as `ctx.ui` so compatibility accessors delegate to the
+  // public service.
+  attachInternalExtensionRenderSurface(ctx, uiServiceInstance);
 
   Object.defineProperty(ctx, CONTEXT_DISPOSE_SYMBOL, {
     value: function disposeHostServices(): void {
@@ -458,6 +476,7 @@ export function createExtensionContext(
   const frozenCtx: ExtensionContext = Object.freeze(ctx);
   Object.freeze(frozenCtx.extension);
   Object.freeze(frozenCtx.services);
+  Object.freeze(frozenCtx.ui);
 
   return frozenCtx;
 }

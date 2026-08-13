@@ -62,6 +62,29 @@ describe('useUserUIState', () => {
     expect(typeof result.current.update).toBe('function');
   });
 
+  it('deduplicates concurrent getUser() calls across simultaneous mounts', async () => {
+    let resolveGetUser!: (value: { data: { user: { id: string } | null } }) => void;
+    mockGetUser.mockReturnValue(new Promise((resolve) => {
+      resolveGetUser = resolve;
+    }));
+
+    const fallback = { darkMode: true };
+    const { result: first } = renderHook(() => useUserUIState('theme', fallback));
+    const { result: second } = renderHook(() => useUserUIState('theme', fallback));
+
+    // getUser() is still pending — both mounts must share the single in-flight call.
+    expect(mockGetUser).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveGetUser({ data: { user: { id: 'user-1' } } });
+      await vi.runAllTimersAsync();
+    });
+
+    expect(mockGetUser).toHaveBeenCalledTimes(1);
+    expect(first.current.isLoading).toBe(false);
+    expect(second.current.isLoading).toBe(false);
+  });
+
   it('loads value from database', async () => {
     const fallback = { darkMode: false };
     const { result } = renderHook(() => useUserUIState('theme', fallback));

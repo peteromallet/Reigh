@@ -72,6 +72,44 @@ M4 finalized the split between the portable extension SDK and the host runtime:
 | Search Provider | typed | delegated | No | Yes | `searchProviderAdapter.ts` | Search provider contributions supply asset/material search results to the host search surface. The provider owns indexing, model choice, and refresh; the host owns query dispatch, result merge, and source labeling. Typed but execution is reserved (declarable, not yet bridged for runtime). Evidence: SearchProviderContribution interface; contributionKindNotYetBridged returns M6. |
 | Shader | schema-backed | delegated | No | Yes | `shaderAdapter.ts` | Shader contributions declare WebGL materializer descriptors. Descriptor projection is delegated to a placeholder adapter while materializer requirements remain validated at export time. |
 | Slot | documented | public-supported | No | Yes | `slotAdapter.ts` | Slot contributions are the original extension surface. Fully bridged with lifecycle, diagnostics, UI, persistence, examples, and tests. |
-| Timeline Overlay | documented | host-integrated | No | Yes | `timelineOverlayAdapter.ts` | Timeline overlay contributions render over the timeline surface with order control and when-clause filtering. Bridged at M2. Evidence: dedicated overlay-example.ts. |
+| Timeline Overlay | documented | host-integrated | No | Yes | `timelineOverlayAdapter.ts` | Timeline overlay contributions render into the timeline surface through TimelineExtensionOverlayHost, mounted by TimelineCanvas. Overlays declare a required render id bound imperatively via ctx.ui.registerRenderer(); resolved descriptors are exposed through useVideoEditorTimelineOverlays with no conditional filtering. Pointer arbitration (claimPointer/releasePointer), viewport/playhead stores, geometry, and the host-owned ruler markerLayer primitive are exercised end-to-end by TimelineExtensionOverlayHost.integration.test.tsx. Persistence is storage-neutral: extensions own their data through project-data.write into their app-scoped namespace; the host defines no marker storage. |
 | Transition | schema-backed | delegated | No | Yes | `transitionAdapter.ts` | Transition contributions are trusted local browser-preview renderers for cross-clip transitions. Extensions register transition renderers imperatively via ctx.transitions. Descriptor projection is delegated to a placeholder adapter while runtime registration remains host-mediated. Evidence: TransitionContribution interface, TransitionRegistrationService, manifest schema oneOf coverage, and kind enum inclusion. |
 <!-- family-maturity-table-end -->
+
+---
+
+## Timeline Overlay Host (T7) — Closure Update
+
+The family-maturity table above is machine-generated from
+`config/extensions/family-maturity.json`. This section records the T7 closure
+state for `timelineOverlay`, which the generated rows summarize as
+`host-integrated`:
+
+- **Required-render contract.** `timelineOverlay` contributions require a
+  non-empty `render` id (no `when` clause) and are host-rendered by
+  `TimelineExtensionOverlayHost`. Renderers are bound via
+  `ctx.ui.registerRenderer()`; overlays without a registered renderer are
+  omitted. `ctx.ui` is part of the frozen `ExtensionContext`.
+- **Ruler-only marker primitive.** `primitives.markerLayer()` accepts
+  `placement: 'ruler'` only — no `trackId`, no canvas placement — with
+  controlled markers, preview/commit intents, frame-grid snapping at commit,
+  and accessible marker buttons.
+- **Gesture arbitration.** The `'overlay'` gesture owner is host-internal;
+  unclaimed wrappers are click-through, `claimPointer()` declines for foreign
+  owners/claimants, and the release criterion is that all existing timeline
+  gestures behave identically when no overlay has an active claim.
+- **Storage-neutral persistence.** Marker data persists via the standard
+  `project-data.write` path; **generic disposal never deletes project data** —
+  extensions provide explicit Clear/Delete Data actions.
+- **Dev-local manager behavior.** A DEV-only Local extensions section in the
+  Extension Manager inventories `devLocalExtensions` while reading active
+  status from the runtime; toggles go through `setDevExtensionEnabled`.
+  Installed packages already have manager enable/disable, settings editing,
+  and persisted enablement (S-160–S-164); installer, bundler, marketplace,
+  discovery, and update tooling remain absent (D-001, D-004, D-123).
+- **Canary gate and deferred maturity promotion.** `timelineOverlaysEnabled`
+  defaults to `false`; the DEV-only `?timelineOverlayCanary=1` query parameter
+  is implemented (enabled dev-local `timelineOverlay` extensions flip the
+  flag in DEV builds; `npm run dev:editor` appends the query param too) — production will never honor the query parameter. Promotion to
+  `public-supported` remains deferred until the release criterion passes (see
+  `docs/video-editor/extension-platform-release-checklist.md` §2.11).

@@ -1,4 +1,4 @@
-import { fireEvent, render, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useEffect } from 'react';
 import type { FC, ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -2483,5 +2483,39 @@ describe('M1: proposal persistence provider lifecycle', () => {
     await waitFor(() => {
       expect(secondService.initialize).toHaveBeenCalled();
     });
+  });
+});
+
+describe('EditorRuntimeProvider timeline-overlay flag', () => {
+  function TimelineOverlayFlagConsumer() {
+    const runtime = useVideoEditorRuntime();
+    return <span data-testid="timeline-overlays-enabled">{String(runtime.timelineOverlaysEnabled)}</span>;
+  }
+
+  it('observes false when no value is supplied', () => {
+    render(
+      <EditorRuntimeProvider dataProvider={{} as DataProvider} timelineId="timeline-1" userId="user-1">
+        <TimelineOverlayFlagConsumer />
+      </EditorRuntimeProvider>,
+    );
+    expect(screen.getByTestId('timeline-overlays-enabled')).toHaveTextContent('false');
+  });
+
+  it('observes false when explicitly disabled', () => {
+    render(
+      <EditorRuntimeProvider dataProvider={{} as DataProvider} timelineId="timeline-1" userId="user-1" timelineOverlaysEnabled={false}>
+        <TimelineOverlayFlagConsumer />
+      </EditorRuntimeProvider>,
+    );
+    expect(screen.getByTestId('timeline-overlays-enabled')).toHaveTextContent('false');
+  });
+
+  it('reaches the runtime consumer unchanged when explicitly enabled', () => {
+    render(
+      <EditorRuntimeProvider dataProvider={{} as DataProvider} timelineId="timeline-1" userId="user-1" timelineOverlaysEnabled>
+        <TimelineOverlayFlagConsumer />
+      </EditorRuntimeProvider>,
+    );
+    expect(screen.getByTestId('timeline-overlays-enabled')).toHaveTextContent('true');
   });
 });

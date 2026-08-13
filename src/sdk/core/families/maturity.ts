@@ -152,6 +152,16 @@ export interface FamilyDefinition<Kind extends string = string> {
   readonly requirements: FamilyRequirementChecklist;
 
   /**
+   * Machine-readable UI-integration evidence: a repository-relative path to
+   * an existing executable host-consumer test (`.test.ts(x)` / `.spec.ts`)
+   * that exercises this family's UI integration inside the host.
+   *
+   * Required (non-empty) whenever `requirements.uiIntegration` is `true`;
+   * optional otherwise. Paths are relative to the repository root.
+   */
+  readonly uiIntegrationTest?: string;
+
+  /**
    * Optional compatibility metadata for legacy milestone bridging.
    * Populated only for families that previously relied on
    * `CONTRIBUTION_KIND_MILESTONE`.

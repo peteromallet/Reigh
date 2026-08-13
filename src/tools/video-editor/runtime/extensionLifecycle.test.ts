@@ -18,6 +18,7 @@ import {
   CREATIVE_MEMBER_MILESTONE,
 } from '@reigh/editor-sdk';
 import { createExtensionContext } from './extensionContextFactory';
+import { getInternalExtensionRenderSurface } from '@/sdk/internalExtensionRenderSurface';
 import type {
   TimelineOps,
   TimelinePatch,
@@ -101,6 +102,10 @@ function makeCtx(overrides?: Partial<ExtensionContext>): ExtensionContext {
       stage: {},
       writing: {},
       ...overrides?.creative,
+    },
+    ui: {
+      registerRenderer: () => ({ dispose: () => {} }),
+      ...overrides?.ui,
     },
   };
 }
@@ -3587,5 +3592,96 @@ describe('ExtensionLifecycleHost — recovery-key registry (T2)', () => {
     expect(key2).toBe('2');
     // String comparison works for recovery-key change detection
     expect(key1 !== key2).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T3.1: ctx.ui render surface (createExtensionContext wiring)
+// ---------------------------------------------------------------------------
+
+describe('ExtensionContext — ctx.ui render surface', () => {
+  it('exposes a frozen ui service with registerRenderer on factory-created contexts', () => {
+    const extension = ext('com.example.ui-frozen');
+    const ctx = createExtensionContext(extension);
+
+    expect(ctx.ui).toBeDefined();
+    expect(typeof ctx.ui.registerRenderer).toBe('function');
+    expect(Object.isFrozen(ctx.ui)).toBe(true);
+  });
+
+  it('ctx.ui.registerRenderer reports render/not-wired when no host surface is provided', () => {
+    const extension = ext('com.example.ui-unwired');
+    const ctx = createExtensionContext(extension);
+
+    const handle = ctx.ui.registerRenderer('some-render-id', () => null);
+    const diags = ctx.services.diagnostics.diagnostics.filter(
+      (d) => d.code === 'render/not-wired',
+    );
+    expect(diags).toHaveLength(1);
+    expect(diags[0].extensionId).toBe('com.example.ui-unwired');
+    expect(() => handle.dispose()).not.toThrow();
+  });
+
+  it('ctx.ui delegates to the host-wired ui service and the compatibility accessor resolves the same instance', () => {
+    const extension = ext('com.example.ui-wired');
+    const registerRenderer = vi.fn((_renderId: string) => ({ dispose: vi.fn() }));
+    const uiService = { registerRenderer };
+
+    const ctx = createExtensionContext(
+      extension,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      uiService as never,
+    );
+
+    // ctx.ui is the exact host-wired service instance.
+    expect(ctx.ui).toBe(uiService);
+
+    // The compatibility accessor delegates to the same service.
+    const surface = getInternalExtensionRenderSurface(ctx);
+    expect(surface).toBe(uiService);
+
+    // Registering through ctx.ui reaches the host service.
+    ctx.ui.registerRenderer('declared-render-id', () => null);
+    expect(registerRenderer).toHaveBeenCalledWith(
+      'declared-render-id',
+      expect.any(Function),
+    );
+  });
+
+  it('activation receives ctx.ui and can register renderers through it', () => {
+    const registerRenderer = vi.fn(() => ({ dispose: vi.fn() }));
+    const activateFn = vi.fn((ctx: ExtensionContext) => {
+      const handle = ctx.ui.registerRenderer('render-id', () => null);
+      expect(typeof handle.dispose).toBe('function');
+      return handle;
+    });
+
+    const extension = ext('com.example.ui-activate', { activate: activateFn });
+    const ctx = createExtensionContext(
+      extension,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { registerRenderer } as never,
+    );
+
+    const lc = createExtensionLifecycle(extension);
+    lc.activate(ctx);
+
+    expect(activateFn).toHaveBeenCalledTimes(1);
+    expect(registerRenderer).toHaveBeenCalledWith('render-id', expect.any(Function));
+    expect(lc.state).toBe('active');
   });
 });

@@ -5374,3 +5374,34 @@ describe('previewTimelinePatchGraphDiagnostics — graph preview routing', () =>
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Extension-authored clip fields — label/hold must survive compile
+// (scene-phase-markers creates shots via clip.add + clip.update{hold,label}).
+// ---------------------------------------------------------------------------
+
+describe('compileTimelinePatch — extension-authored clip label and hold', () => {
+  const data = makeMinimalTimelineData({
+    tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+    clips: [],
+  });
+
+  it('persists label and hold on a clip created by clip.add + clip.update', () => {
+    const compiled = compileTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('clip.add', 'scene-phase-shot-1', { track: 'V1', at: 0, clipType: 'hold' }, 0),
+          makeOp('clip.update', 'scene-phase-shot-1', { hold: 2, label: 'Shot 1', mode: 'merge' }, 1),
+        ],
+      }),
+      data,
+    );
+    expect(compiled.valid).toBe(true);
+    const clip = compiled.nextData!.config.clips.find((c: { id: string }) => c.id === 'scene-phase-shot-1');
+    expect(clip).toBeDefined();
+    expect(clip!.label).toBe('Shot 1');
+    expect(clip!.hold).toBe(2);
+    // The clip meta must carry label so rows-based rebuilds keep it.
+    expect((compiled.nextData!.meta as Record<string, Record<string, unknown>>)['scene-phase-shot-1']?.label).toBe('Shot 1');
+  });
+});

@@ -1142,26 +1142,61 @@ describe('normalizeExtensionRuntime — multiple extensions', () => {
 // ---------------------------------------------------------------------------
 
 describe('normalizeExtensionRuntime — timelineOverlay', () => {
-  it('bridges timelineOverlay contributions into config.overlays', () => {
+  it('bridges timelineOverlay contributions into config.overlays with SDK-owned descriptors', () => {
     const overlayExt = ext('com.example.overlay', {
       manifest: {
         contributions: [
-          { id: 'my-overlay' as any, kind: 'timelineOverlay', order: 5 },
+          { id: 'my-overlay' as any, kind: 'timelineOverlay', order: 5, render: 'render/my-overlay' },
         ],
       },
     });
     const rt = normalizeExtensionRuntime([overlayExt]);
     expect(rt.config.overlays).toHaveLength(1);
-    expect(rt.config.overlays[0].id).toBe('my-overlay');
-    expect(rt.config.overlays[0].order).toBe(5);
+    const overlay = rt.config.overlays[0];
+    expect(overlay.id).toBe('my-overlay');
+    expect(overlay.extensionId).toBe('com.example.overlay');
+    expect(overlay.renderId).toBe('render/my-overlay');
+    expect(overlay.order).toBe(5);
+  });
+
+  it('does not fabricate callable renderers or null placeholder renderers', () => {
+    const overlayExt = ext('com.example.overlay', {
+      manifest: {
+        contributions: [
+          { id: 'my-overlay' as any, kind: 'timelineOverlay', render: 'render/my-overlay' },
+        ],
+      },
+    });
+    const rt = normalizeExtensionRuntime([overlayExt]);
+    const overlay = rt.config.overlays[0];
+    // Unresolved descriptors carry only the render-id reference — no
+    // callable `render` function and no `render: null` placeholder.
+    expect('render' in overlay).toBe(false);
+    expect((overlay as { render?: unknown }).render).toBeUndefined();
+    expect((overlay as { render?: unknown }).render).not.toBeNull();
+    expect(typeof (overlay as { render?: unknown }).render).not.toBe('function');
+  });
+
+  it('does not carry a when clause on normalized overlay descriptors', () => {
+    const overlayExt = ext('com.example.overlay', {
+      manifest: {
+        contributions: [
+          { id: 'my-overlay' as any, kind: 'timelineOverlay', render: 'render/my-overlay' },
+        ],
+      },
+    });
+    const rt = normalizeExtensionRuntime([overlayExt]);
+    const overlay = rt.config.overlays[0];
+    expect('when' in overlay).toBe(false);
+    expect((overlay as { when?: unknown }).when).toBeUndefined();
   });
 
   it('orders multiple timelineOverlay contributions deterministically', () => {
     const extA = ext('com.example.a', {
       manifest: {
         contributions: [
-          { id: 'zzz-overlay' as any, kind: 'timelineOverlay', order: 10 },
-          { id: 'aaa-overlay' as any, kind: 'timelineOverlay', order: 10 },
+          { id: 'zzz-overlay' as any, kind: 'timelineOverlay', order: 10, render: 'render/zzz' },
+          { id: 'aaa-overlay' as any, kind: 'timelineOverlay', order: 10, render: 'render/aaa' },
         ],
       },
     });
@@ -1169,14 +1204,16 @@ describe('normalizeExtensionRuntime — timelineOverlay', () => {
     expect(rt.config.overlays).toHaveLength(2);
     // Same order → alphabetical by ID
     expect(rt.config.overlays[0].id).toBe('aaa-overlay');
+    expect(rt.config.overlays[0].renderId).toBe('render/aaa');
     expect(rt.config.overlays[1].id).toBe('zzz-overlay');
+    expect(rt.config.overlays[1].renderId).toBe('render/zzz');
   });
 
   it('does NOT mark timelineOverlay as inactive reserved', () => {
     const overlayExt = ext('com.example.overlay', {
       manifest: {
         contributions: [
-          { id: 'my-overlay' as any, kind: 'timelineOverlay' },
+          { id: 'my-overlay' as any, kind: 'timelineOverlay', render: 'render/my-overlay' },
         ],
       },
     });
@@ -1197,6 +1234,20 @@ describe('normalizeExtensionRuntime — timelineOverlay', () => {
     });
     const rt = normalizeExtensionRuntime([extA]);
     expect(rt.config.overlays).toEqual([]);
+  });
+
+  it('exposes no timelineMarker runtime field', () => {
+    const overlayExt = ext('com.example.overlay', {
+      manifest: {
+        contributions: [
+          { id: 'my-overlay' as any, kind: 'timelineOverlay', render: 'render/my-overlay' },
+        ],
+      },
+    });
+    const rt = normalizeExtensionRuntime([overlayExt]);
+    expect('timelineMarker' in rt.config).toBe(false);
+    expect('timelineMarkers' in rt.config).toBe(false);
+    expect('timelineMarker' in rt).toBe(false);
   });
 });
 
@@ -3268,7 +3319,7 @@ describe('normalizeExtensionRuntime — mixed all-families', () => {
           { id: 'all-dialog' as any, kind: 'dialog', order: 5 },
           { id: 'all-panel' as any, kind: 'panel', order: 10 },
           { id: 'all-inspector' as any, kind: 'inspectorSection', placement: 'before-default' as const, order: 3 },
-          { id: 'all-overlay' as any, kind: 'timelineOverlay', order: 7 },
+          { id: 'all-overlay' as any, kind: 'timelineOverlay', order: 7, render: 'render/all-overlay' },
           // Bridged M6 runtime-bridged
           { id: 'all-parser' as any, kind: 'parser', label: 'All Parser', order: 0 },
           { id: 'all-metadataFacet' as any, kind: 'metadataFacet', fieldPath: 'test.field', displayName: 'Test Field', valueKind: 'string' as const, order: 0 },
@@ -3299,6 +3350,8 @@ describe('normalizeExtensionRuntime — mixed all-families', () => {
     expect(rt.config.registry.inspectorSections[0].id).toBe('all-inspector');
     expect(rt.config.overlays).toHaveLength(1);
     expect(rt.config.overlays[0].id).toBe('all-overlay');
+    expect(rt.config.overlays[0].extensionId).toBe('com.example.all-families');
+    expect(rt.config.overlays[0].renderId).toBe('render/all-overlay');
 
     // M6 bridged
     expect(rt.config.assetParsers).toHaveLength(1);

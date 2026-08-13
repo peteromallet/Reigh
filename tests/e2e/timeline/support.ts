@@ -16,7 +16,7 @@
  * dev:editor:bridge` if one is already listening.
  *
  * Both endpoints are env-parameterized: `BASE_URL` (default
- * `http://127.0.0.1:2222`) and `ASTRID_BRIDGE_PORT` (default `17333`).
+ * `http://127.0.0.1:2222`) and `ASTRID_BRIDGE_PORT` (default `17334`).
  */
 import type { BrowserContext, Page } from '@playwright/test';
 import {
@@ -25,8 +25,10 @@ import {
   SELECTED_CLIP_SELECTOR,
 } from '../../../src/tools/video-editor/lib/timeline-dom.ts';
 
+export { CLIP_ACTION_WITH_ID_SELECTOR } from '../../../src/tools/video-editor/lib/timeline-dom.ts';
+
 export const BASE_URL = (process.env.BASE_URL ?? 'http://127.0.0.1:2222').replace(/\/+$/, '');
-export const BRIDGE_PORT = Number(process.env.ASTRID_BRIDGE_PORT ?? 17333);
+export const BRIDGE_PORT = Number(process.env.ASTRID_BRIDGE_PORT ?? 17334);
 export const BRIDGE_ORIGIN = `http://127.0.0.1:${BRIDGE_PORT}`;
 
 export const PROJECT_SLUG = 'demo-project';

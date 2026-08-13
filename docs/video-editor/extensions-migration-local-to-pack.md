@@ -1,7 +1,7 @@
 # Extension Migration: Local Source → Installed Pack — Reigh Video Editor V1
 
 **Status:** Active (M15)
-**Last updated:** 2026-06-20
+**Last updated:** 2026-08-11
 **Audience:** Extension authors migrating from a statically-bundled local extension to an installed-pack workflow, and developers planning for the deferred M14 packaging milestone.
 **Prerequisite:** [Extension Author Contract](./extension-author-contract.md), [Supported/Deferred Matrix](./extension-platform-supported-deferred.md).
 
@@ -36,17 +36,19 @@ import { flagshipLocalExtension } from '@/tools/video-editor/examples/extensions
 </VideoEditorProvider>
 ```
 
-**Evidence:** [Author Contract §7.1](./extension-author-contract.md#71-v1-source-local-only); [Trust Envelope §2](./extensions-trust-envelope.md#2-capability-visibility-table) (Package loading row); [Contract-Recheck CR:X-006](./extension-platform-contract-recheck.md#216-cross-milestone--structural-claims).
+**Evidence:** [Author Contract §7.1](./extension-author-contract.md#71-v1-source-local-and-repository-loaded-packages); [Trust Envelope §2](./extensions-trust-envelope.md#2-capability-visibility-table) (Package loading row); [Contract-Recheck CR:X-006](./extension-platform-contract-recheck.md#216-cross-milestone--structural-claims).
 
 ### 2.2 What you cannot do today
+
+Installed packages **can** already be managed (enable/disable, settings editing, persisted enablement — S-160–S-164), and DEV-local extensions get a DEV-only Local extensions section in the manager (S-170). What remains unavailable is the **packaging and install tooling** around packages:
 
 | Action | Status | Reference |
 |---|---|---|
 | Install an extension from a URL or marketplace | Unsupported | D-123, CR:X-006 |
 | Load an extension dynamically via `import()` | Deferred | Trust Envelope §2 |
 | Verify extension integrity with a content hash | Deferred | D-003, B-001 |
-| Manage installed extensions through a UI | Deferred | D-001, B-001 |
-| Persist extension enablement/disablement across sessions | Deferred | D-002, B-001 |
+| Install, update, or delete an installed pack through the manager UI (enable/disable and settings editing are shipped — S-160–S-164) | Deferred | D-001, B-001 |
+| Build/bundle a pack, discover packages, or receive updates through tooling | Deferred | D-004, D-123 |
 | Resolve extension dependencies at runtime | Deferred | D-009, B-001 |
 
 ---
@@ -62,7 +64,7 @@ import { flagshipLocalExtension } from '@/tools/video-editor/examples/extensions
 | **Persistence** | localStorage (`reigh.ext.<id>.*` keys), cleaned up on dispose | Provider-backed state repository with enablement, settings, and lifecycle event persistence |
 | **Integrity** | Human review of source | Content hash + signature verification (deferred) |
 | **Updates** | Git pull + rebuild | Pack version comparison + migration handlers |
-| **Discovery** | Known only to the developer | Extension manager UI (deferred) |
+| **Discovery** | Known only to the developer | Extension manager UI lists installed packages today (enable/disable, settings — S-160–S-164); DEV-local extensions appear in the DEV-only Local extensions section (S-170). Package discovery/install tooling remains absent. |
 
 ### 3.2 Settings preservation across migration
 
@@ -214,15 +216,13 @@ The following pieces of the migration workflow are **deferred** to M14. Do not a
 
 ### 6.1 Extension manager UI (D-001)
 
-No user-facing UI exists for installing, enabling, disabling, or removing extensions. Extension management is done through code (provider props).
+The manager UI for **installed packages is shipped**: enable/disable toggles with immediate contribution visibility, schema-backed settings editing, and repository-backed persistence (S-160–S-164). DEV-local extensions get a DEV-only Local extensions section (S-170). What remains deferred is **installing, updating, or deleting** packs through the manager (D-001) — there is no install command, no update channel, and no uninstall flow. Extension management through code (provider props) remains the load path for direct extensions.
 
-**Evidence:** [Supported/Deferred Matrix D-001–D-011](./extension-platform-supported-deferred.md#31-extension-packaging--manager-m14); Blocker B-001.
+**Evidence:** [Supported/Deferred Matrix D-001, S-160–S-170](./extension-platform-supported-deferred.md#31-extension-packaging--manager-m14); Blocker B-001.
 
 ### 6.2 Persisted enablement and state (D-002, D-004)
 
-Extension enablement/disablement is not persisted across sessions. When the page reloads, all extensions start in their initial state (as defined by provider props).
-
-**Evidence:** [Contract-Recheck CR:M14-003, CR:M14-005](./extension-platform-contract-recheck.md#215-m14--packaging-runtime-loader-extension-manager).
+Persisted enablement for **installed packages is shipped** via repository-backed persistence (`DataProvider.createExtensionPersistenceService`, S-162). What remains deferred is failed-load recovery and automated diagnostic triage (D-002), workspace pack load and bundle pack validation (D-004), and the provider-backed state repository (D-008). DEV-local extensions keep their enablement in the dev-local external store (`devExtensionEnablement.ts`), not the provider repository.
 
 ### 6.3 Integrity verification (D-003)
 
@@ -318,10 +318,11 @@ What you can do **today** to prepare for the M14 installed-pack migration:
 ### 8.4 What not to do
 
 - [ ] Do not implement a custom extension loader — the M14 `ExtensionLoader` will handle this.
-- [ ] Do not build an extension manager UI — this is deferred (D-001).
+- [ ] Do not build an extension manager UI — install/update/delete is deferred (D-001); enable/disable and settings editing for installed packages are already shipped (S-160–S-164).
 - [ ] Do not implement integrity hashing — `defineExtension()` does not yet accept hashes (D-003).
 - [ ] Do not depend on `dependsOn` resolution — it's validated but not executed (D-009).
 - [ ] Do not assume cloud loading or a marketplace will be available — they are unsupported (D-123).
+- [ ] Do not delete project data from generic `DisposeHandle.dispose()` — dispose also runs on provider unmount, HMR, and reload. Provide an explicit Clear/Delete Data action; automatic deletion waits for a reason-aware uninstall lifecycle.
 
 ---
 
@@ -389,7 +390,7 @@ Checks that migration-related contract-recheck rows (CR:M14-001 through CR:M14-0
 |---|---|
 | [extensions-quickstart.md](./extensions-quickstart.md) | Getting-started guide; V1 extension patterns |
 | [extension-author-contract.md](./extension-author-contract.md) | Complete developer obligations and platform guarantees |
-| [extension-platform-supported-deferred.md](./extension-platform-supported-deferred.md) | Full supported/deferred classification (84 supported, 69 deferred) |
+| [extension-platform-supported-deferred.md](./extension-platform-supported-deferred.md) | Full supported/deferred classification (103 supported, 70 deferred) |
 | [extension-platform-contract-recheck.md](./extension-platform-contract-recheck.md) | Complete M0–M14 Done Criteria evidence |
 | [extensions-trust-envelope.md](./extensions-trust-envelope.md) | V1 trusted-local execution model; sandboxing deferral |
 | [provider-compatibility-matrix.md](./provider-compatibility-matrix.md) | Settings persistence across providers; migration compatibility |
@@ -409,3 +410,4 @@ Checks that migration-related contract-recheck rows (CR:M14-001 through CR:M14-0
 | Date | Change |
 |---|---|
 | 2026-06-20 | Initial migration guide for M15. Covers V1 source-local posture, settings migration infrastructure (T10), manifest format continuity, reference continuity, deferred M14 packaging pieces (D-001–D-010, B-001), unsupported cloud/export/marketplace paths, provider compatibility for migration, pre-M14 preparation checklist, and automated quality checks. All workflows linked to tests, examples, matrix rows, absence checks, and blockers. |
+| 2026-08-11 | T7.4: corrected manager/persistence claims — installed packages already have enable/disable, settings editing, and persisted enablement (S-160–S-164); install/update/delete, bundler, marketplace, discovery, and update tooling remain absent (D-001, D-004, D-123). DEV-local extensions use the DEV-only Local extensions manager section (S-170). Added explicit guidance that generic disposal never deletes project data. |

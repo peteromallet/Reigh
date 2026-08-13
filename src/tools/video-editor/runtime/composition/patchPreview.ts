@@ -1379,7 +1379,7 @@ export function applyGraphPreviewOperations(
  * This is the standard factory for the `CompositionGraph.preview` field.
  */
 export function createGraphPreview(
-  input: CompositionGraphInput,
+  _input: CompositionGraphInput,
 ): () => CompositionGraphPreviewResult | undefined {
   return (): CompositionGraphPreviewResult | undefined => {
     // The preview closure is invoked without arguments — the caller is

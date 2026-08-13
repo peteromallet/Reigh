@@ -20,7 +20,7 @@ import type {
 } from '@/tools/video-editor/lib/browser-runtime.ts';
 import type { DataProvider } from '@/tools/video-editor/data/DataProvider.ts';
 
-export type VideoEditorSaveStatus = 'saved' | 'saving' | 'dirty' | 'error';
+export type VideoEditorSaveStatus = 'saved' | 'saving' | 'dirty' | 'retrying' | 'error';
 export type VideoEditorRenderStatus = 'idle' | 'rendering' | 'done' | 'error';
 
 export interface VideoEditorHost {

@@ -29,6 +29,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObjec
 import { useEffects } from '@/tools/video-editor/hooks/useEffects.ts';
 import { createTimelineReader } from '@/tools/video-editor/lib/timeline-reader.ts';
 import {
+  createTimelineViewStore,
+  type TimelineViewStoreApi,
+} from '@/tools/video-editor/lib/timeline-view-store.ts';
+import {
   createProposalRuntime,
   type ProposalPersistenceProvider,
 } from '@/tools/video-editor/lib/proposal-runtime.ts';
@@ -83,8 +87,8 @@ import {
 import { createExtensionContext } from '@/tools/video-editor/runtime/extensionContextFactory';
 import { createRendererRegistry } from '@/tools/video-editor/runtime/extensionRendererRegistry';
 import {
-  createInternalExtensionRenderSurface,
-  resolveRegisteredSlotRenderers,
+  createExtensionUiService,
+  resolveRegisteredRenderers,
 } from '@/tools/video-editor/runtime/extensionRenderSurface';
 import {
   createCommandRegistry,
@@ -260,6 +264,8 @@ export interface EditorRuntimeAssembly {
   rendererRegistryRef: MutableRefObject<RendererRegistry>;
   liveDataRegistryRef: MutableRefObject<LiveDataRegistry | null>;
   diagnosticCollectionRef: MutableRefObject<DiagnosticCollection | null>;
+  /** Provider-owned TimelineViewStore (one per mount) for `ctx.creative.timelineView`. */
+  timelineViewStoreRef: MutableRefObject<TimelineViewStoreApi | null>;
   processManagerRef: MutableRefObject<ProcessManager | null>;
   /** M6b: Read-only snapshot of process statuses (reactive on attach records). */
   processStatuses: readonly ProcessStatus[] | undefined;
@@ -334,6 +340,18 @@ export function useEditorRuntimeAssembly({
     diagnosticCollectionRef.current = createDiagnosticCollection();
   }
 
+  // ---- TimelineViewStore (one per provider mount) --------------------------
+  // The provider-owned, renderer-independent timeline observation primitive
+  // exposed as `ctx.creative.timelineView`. The canvas publishes layout and
+  // playback state into it regardless of whether the overlay host is
+  // enabled; extensions read it from commands/keybindings without a mounted
+  // renderer. Kept in a ref (never recreated) so both the creative context
+  // and the canvas share one identity per provider.
+  const timelineViewStoreRef = useRef<TimelineViewStoreApi | null>(null);
+  if (!timelineViewStoreRef.current) {
+    timelineViewStoreRef.current = createTimelineViewStore();
+  }
+
   useEffect(() => {
     const registry = rendererRegistryRef.current;
     const handle = registry.subscribe(setRendererRegistrySnapshot);
@@ -400,12 +418,14 @@ export function useEditorRuntimeAssembly({
     return () => {
       host?.disposeAll();
       liveDataRegistryRef.current?.dispose();
+      timelineViewStoreRef.current?.dispose();
+      timelineViewStoreRef.current = null;
       onUnmountRef.current?.();
     };
   }, []);
 
   const resolvedExtensionsConfig = useMemo(
-    () => resolveRegisteredSlotRenderers(extensionRuntime, rendererRegistrySnapshot),
+    () => resolveRegisteredRenderers(extensionRuntime, rendererRegistrySnapshot),
     [extensionRuntime, rendererRegistrySnapshot],
   );
 
@@ -433,6 +453,7 @@ export function useEditorRuntimeAssembly({
     rendererRegistryRef,
     liveDataRegistryRef,
     diagnosticCollectionRef,
+    timelineViewStoreRef,
     processManagerRef,
     processStatuses,
     processResultAttachRecords,
@@ -534,6 +555,9 @@ export function useEditorRuntimeSync({
 
   // ---- M3: live creative context for extensions ----------------------------
   // Create stable TimelineReader from the data ref (always reads latest data).
+  // The canonical version comes from the store's ack-tracked field (outside
+  // the data object), so snapshot().baseVersion reflects receipt-only acks
+  // without those acks ever committing a new data object.
   const timelineReader = useMemo(
     () =>
       createTimelineReader({
@@ -544,6 +568,7 @@ export function useEditorRuntimeSync({
           }
           return data;
         },
+        configVersion: () => store.getState().configVersion,
         projectId,
         extensionRequirements: extensionRuntime.requirements,
       }),
@@ -634,6 +659,7 @@ export function useEditorRuntimeSync({
       timeline: ops as unknown as CreativeContext['timeline'],
       reader: timelineReader,
       proposals: proposals as unknown as CreativeContext['proposals'],
+      timelineView: assembly.timelineViewStoreRef.current as unknown as CreativeContext['timelineView'],
     };
   }, [timelineReader, store]);
 
@@ -776,7 +802,7 @@ export function useEditorRuntimeSync({
           agentToolsService,
           shadersService,
           settingsOptions,
-          createInternalExtensionRenderSurface({
+          createExtensionUiService({
             extension: ext,
             diagnosticsService,
             rendererRegistry: rendererRegistryRef.current,

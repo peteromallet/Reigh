@@ -47,6 +47,12 @@ const THEME_2RP: Theme = {
 
 export const INSTALLED_TIMELINE_THEMES: ThemeRegistry = {
   '2rp': THEME_2RP,
+  // `banodoco-default` is the vendor fallback theme (DEFAULT_THEME). It is
+  // always resolvable — resolveTimelineRenderTheme uses it as the base for
+  // uninstalled slugs and theme_overrides-only configs — so it must be
+  // registered here too, or the ThemeChip would report the editor's own
+  // default theme as "not installed".
+  'banodoco-default': DEFAULT_THEME,
 };
 
 export const AVAILABLE_TIMELINE_THEME_IDS = Object.keys(

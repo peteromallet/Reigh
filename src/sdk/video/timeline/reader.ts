@@ -355,6 +355,23 @@ export interface TimelineShaderSummary {
 export interface TimelineReader {
   /** Take a point-in-time snapshot of the current timeline state. */
   snapshot(): TimelineSnapshot;
+  /**
+   * Live canonical timeline version. When the host tracks the version
+   * outside the data object (e.g. persistence acks advance it WITHOUT
+   * committing a new data object), this reports the live value that
+   * `snapshot().baseVersion`/`currentVersion` also use. Optional for
+   * backward compatibility with static reader mocks; when absent, the
+   * version only changes when the data object is replaced.
+   */
+  configVersion?(): number;
+  /**
+   * Identity of the document backing this reader. Changes when the
+   * document is replaced (undo / reload / poll adoption) even when
+   * `configVersion` is unchanged, so snapshot caches keyed on it cannot
+   * serve stale projections. Optional for backward compatibility with
+   * static reader mocks; when absent, callers cannot detect replacement.
+   */
+  documentRevision?(): unknown;
 }
 
 // ---------------------------------------------------------------------------

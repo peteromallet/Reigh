@@ -90,9 +90,15 @@ test('real bridge serves the 3-route OpenAPI surface', async ({ request }) => {
   const conflictBody = await conflicted.json();
   expect(conflictBody.error).toBe('timeline_version_conflict');
 
-  // The removed routes must 404: no /projects list, no /timelines list.
-  expect((await request.get(`${BRIDGE_ORIGIN}/projects`)).status()).toBe(404);
-  expect((await request.get(`${BRIDGE_ORIGIN}/projects/demo-project/timelines`)).status()).toBe(404);
+  // Discovery routes are served again (restored after B5): list endpoints
+  // return the envelope with at least the seeded project.
+  const projects = await request.get(`${BRIDGE_ORIGIN}/projects`);
+  expect(projects.status()).toBe(200);
+  const projectsBody = await projects.json();
+  expect(Array.isArray(projectsBody.projects)).toBe(true);
+  expect(projectsBody.projects.length).toBeGreaterThan(0);
+  const timelines = await request.get(`${BRIDGE_ORIGIN}/projects/demo-project/timelines`);
+  expect(timelines.status()).toBe(200);
 });
 
 /**

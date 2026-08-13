@@ -17,6 +17,7 @@ import { effectAdapter } from './effectAdapter';
 import { outputFormatAdapter } from './outputFormatAdapter';
 import { metadataFacetAdapter } from './metadataFacetAdapter';
 import { commandAdapter } from './commandAdapter';
+import { timelineOverlayAdapter } from './timelineOverlayAdapter';
 import { buildParserDescriptors } from './projectors/parserProjector';
 
 import type { HostFamilyAdapter } from '@/sdk/core/families/familyAdapter';
@@ -75,6 +76,11 @@ describe('VIDEO_EDITOR_FAMILY_ADAPTER_REGISTRY', () => {
 
   it('marks agent as known-unavailable (null)', () => {
     expect(VIDEO_EDITOR_FAMILY_ADAPTER_REGISTRY.get('agent')).toBeNull();
+  });
+
+  it('has no timelineMarker contribution kind', () => {
+    expect(VIDEO_EDITOR_FAMILY_ADAPTER_REGISTRY.has('timelineMarker')).toBe(false);
+    expect(VIDEO_EDITOR_FAMILY_ADAPTER_KINDS).not.toContain('timelineMarker');
   });
 
   it('every registered adapter satisfies the HostFamilyAdapter contract', () => {
@@ -254,5 +260,70 @@ describe('commandAdapter', () => {
     const result = commandAdapter.normalize({ contributions: [] });
     expect(result.descriptors).toEqual([]);
     expect(Object.isFrozen(result.descriptors)).toBe(true);
+  });
+});
+
+describe('timelineOverlayAdapter', () => {
+  it('is a real adapter registered for the timelineOverlay kind', () => {
+    expect(timelineOverlayAdapter.classification).toBe('real');
+    expect(timelineOverlayAdapter.kind).toBe('timelineOverlay');
+    expect(VIDEO_EDITOR_FAMILY_ADAPTER_REGISTRY.get('timelineOverlay')).toBe(
+      timelineOverlayAdapter,
+    );
+  });
+
+  it('projects extensionId, id, renderId, and order through the dedicated projector', () => {
+    const result = timelineOverlayAdapter.normalize({
+      contributions: [
+        {
+          contribution: {
+            id: 'ruler-overlay',
+            kind: 'timelineOverlay',
+            order: 4,
+            render: 'render/ruler-overlay',
+          } as unknown as Parameters<typeof timelineOverlayAdapter.normalize>[0]['contributions'][number]['contribution'],
+          extensionId: 'ext-overlay-1',
+        },
+      ],
+      extensionOrder: new Map([['ext-overlay-1', 0]]),
+    });
+
+    expect(result.descriptors).toHaveLength(1);
+    const descriptor = result.descriptors[0];
+    expect(descriptor.extensionId).toBe('ext-overlay-1');
+    expect(descriptor.id).toBe('ruler-overlay');
+    expect(descriptor.renderId).toBe('render/ruler-overlay');
+    expect(descriptor.order).toBe(4);
+    expect(Object.isFrozen(result.descriptors)).toBe(true);
+    expect(Object.isFrozen(descriptor)).toBe(true);
+  });
+
+  it('never emits callable or null placeholder renderers', () => {
+    const result = timelineOverlayAdapter.normalize({
+      contributions: [
+        {
+          contribution: {
+            id: 'ruler-overlay',
+            kind: 'timelineOverlay',
+            render: 'render/ruler-overlay',
+          } as unknown as Parameters<typeof timelineOverlayAdapter.normalize>[0]['contributions'][number]['contribution'],
+          extensionId: 'ext-overlay-1',
+        },
+      ],
+    });
+
+    const descriptor = result.descriptors[0];
+    expect('render' in descriptor).toBe(false);
+    expect((descriptor as { render?: unknown }).render).toBeUndefined();
+    expect((descriptor as { render?: unknown }).render).not.toBeNull();
+    expect(typeof (descriptor as { render?: unknown }).render).not.toBe('function');
+    expect('when' in descriptor).toBe(false);
+    expect((descriptor as { when?: unknown }).when).toBeUndefined();
+  });
+
+  it('reports conformance for the host-integrated timeline overlay family', () => {
+    const report = timelineOverlayAdapter.buildConformanceReport();
+    expect(report.kind).toBe('timelineOverlay');
+    expect(report.executionMaturity).toBe('host-integrated');
   });
 });

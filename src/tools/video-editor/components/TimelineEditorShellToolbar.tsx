@@ -13,6 +13,8 @@ const STATUS_VARIANT = {
   saved: 'default',
   saving: 'secondary',
   dirty: 'outline',
+  // Recoverable transport backoff — NOT a destructive error.
+  retrying: 'secondary',
   error: 'destructive',
 } as const;
 const CHECKPOINT_TRIGGER_LABELS = {
@@ -41,6 +43,7 @@ export function TimelineEditorShellToolbar({
   forceCondensed,
   onNavigateHome,
   toolbarModeSwitcher,
+  navigationControls,
   onDividerMouseDown,
   isTimelineMaximized,
   setIsTimelineMaximized,
@@ -52,6 +55,7 @@ export function TimelineEditorShellToolbar({
   forceCondensed: boolean;
   onNavigateHome?: () => void;
   toolbarModeSwitcher: ReactNode;
+  navigationControls?: ReactNode;
   onDividerMouseDown: (event: ReactMouseEvent) => void;
   isTimelineMaximized: boolean;
   setIsTimelineMaximized: Dispatch<SetStateAction<boolean>>;
@@ -188,6 +192,11 @@ export function TimelineEditorShellToolbar({
           >
             ← Back
           </button>
+        )}
+        {condensed && navigationControls && (
+          <div className="mr-2 flex shrink-0 items-center gap-2" data-testid="toolbar-navigation-controls">
+            {navigationControls}
+          </div>
         )}
         {saveBadge}
         {syncButton}

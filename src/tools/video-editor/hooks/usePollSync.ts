@@ -282,6 +282,9 @@ export function usePollSync({
       latestObservedRemoteConfigVersionRef.current = resolvedPolledData.configVersion;
       logConfigVersionUpdate('poll', resolvedPolledData.configVersion);
       configVersionRef.current = resolvedPolledData.configVersion;
+      // Mirror into the store's canonical version channel (outside the data
+      // object) so reader/ops/sync see the adopted version.
+      store?.getState().setConfigVersion(resolvedPolledData.configVersion);
       const currentData = getDataRef().current;
       commitDataRef.current(
         currentData ? preserveUploadingClips(currentData, resolvedPolledData) : resolvedPolledData,

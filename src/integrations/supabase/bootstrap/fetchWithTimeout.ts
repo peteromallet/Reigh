@@ -1,3 +1,5 @@
+import { TimeoutError } from '@/shared/lib/errorHandling/errors';
+
 const EDGE_FUNCTION_TIMEOUT_MS = 60_000;
 const STORAGE_UPLOAD_TIMEOUT_MS = 30_000;
 
@@ -30,7 +32,11 @@ export function composeAbortSignals(timeoutSignal: AbortSignal, callerSignal?: A
   const composedController = new AbortController();
   const abort = () => {
     if (!composedController.signal.aborted) {
-      composedController.abort();
+      // Propagate the abort reason so a timeout abort stays identifiable as a
+      // TimeoutError (fetch rejects with an AbortError whose `cause` is this
+      // reason). Caller aborts keep their own reason; if neither has one the
+      // composed abort carries no reason, exactly as before.
+      composedController.abort(timeoutSignal.reason ?? callerSignal.reason);
     }
   };
 
@@ -130,7 +136,11 @@ export function fetchWithTimeout(input: URL | RequestInfo, init: RequestInit = {
 
   const controller = new AbortController();
   const timeoutMs = isEdgeFunction ? EDGE_FUNCTION_TIMEOUT_MS : STORAGE_UPLOAD_TIMEOUT_MS;
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  // Abort with an explicit TimeoutError marker so classifiers can distinguish
+  // "we timed this request out" from unrelated aborts (lock-steal, caller
+  // cancellation). `fetch` rejects with an AbortError whose `cause` is this
+  // reason.
+  const timeoutId = setTimeout(() => controller.abort(new TimeoutError(`Request timed out after ${timeoutMs}ms`)), timeoutMs);
   const { signal, cleanup } = composeAbortSignals(
     controller.signal,
     callerSignal,

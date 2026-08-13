@@ -15,7 +15,7 @@ import {
 test.describe('timeline desktop interaction', () => {
   test.use({ viewport: { width: 1600, height: 1000 } });
 
-  test('renders and responds to mouse interaction on desktop', async ({ context, page }, testInfo) => {
+  test('renders and responds to mouse interaction on desktop', async ({ page }, testInfo) => {
     test.setTimeout(180_000);
 
     const logs: string[] = [];

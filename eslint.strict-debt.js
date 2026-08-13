@@ -63,7 +63,6 @@ export const strictLintDebtFiles = [
   "src/tools/video-editor/clip-types/ClipTypeRegistry.ts",
   "src/tools/video-editor/clip-types/registry.ts",
   "src/tools/video-editor/components/AgentToolsPanel/AgentToolsPanel.tsx",
-  "src/tools/video-editor/components/Canary/StagePanelCanary.tsx",
   "src/tools/video-editor/components/CommandPalette/CommandPalette.tsx",
   "src/tools/video-editor/components/CopilotPrompt/CopilotPrompt.tsx",
   "src/tools/video-editor/components/KeyframeInspector.tsx",

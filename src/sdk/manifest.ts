@@ -35,6 +35,8 @@ import type { TransitionContribution } from './video/families/transitions';
 import type { ClipTypeContribution } from './video/families/clipTypeContributions';
 import type { ShaderContribution } from './video/families/shaders';
 import type { AgentToolContribution } from './video/families/agentTools';
+// T1.1: required-render timeline overlay contribution (governed, not permissive)
+import type { TimelineOverlayManifestContribution } from './video/families/timelineOverlays';
 
 // ---------------------------------------------------------------------------
 // Contribution kind and slot name contracts
@@ -63,11 +65,18 @@ export type VideoEditorSlotName =
   | 'assetPanel'
   | 'inspectorPanel';
 
-/** A single contribution declaration inside an extension manifest. */
+/**
+ * A single contribution declaration inside an extension manifest.
+ *
+ * This is the permissive generic branch. `timelineOverlay` is deliberately
+ * excluded from `kind` here: overlays declare a required `render` id and
+ * forbid `when`, so they are governed by the dedicated
+ * {@link TimelineOverlayManifestContribution} type instead of this branch.
+ */
 export interface ExtensionContribution {
   /** Unique within the extension. */
   id: ContributionId;
-  kind: ContributionKind;
+  kind: Exclude<ContributionKind, 'timelineOverlay'>;
   /** Lower values sort first. Default 0. */
   order?: number;
   /** Slot name — required when kind === 'slot'. */
@@ -216,6 +225,8 @@ export interface ExtensionManifest {
   /** Contribution declarations. */
   contributions?: readonly (
     | ExtensionContribution
+    // T1.1: timeline overlays require a non-empty `render` id and forbid `when`
+    | TimelineOverlayManifestContribution
     | CommandContribution
     | KeybindingContribution
     | ContextMenuItemContribution
@@ -470,6 +481,32 @@ export function validateManifest(
           pushErr(
             'manifest/invalid-asset-detail-placement',
             `AssetDetailSection contribution "${cId}" must specify placement as one of: ${ASSET_DETAIL_SECTION_PLACEMENTS.join(', ')}, got "${String(adsContribution.placement ?? 'undefined')}"`,
+            cId,
+          );
+        }
+      }
+
+      // TimelineOverlay: required non-blank string render id, no `when` clause
+      if (cKind === 'timelineOverlay') {
+        const overlayContribution = contribution as unknown as Record<string, unknown>;
+        const renderValue = overlayContribution.render;
+        if (renderValue === undefined || renderValue === null || renderValue === '') {
+          pushErr(
+            'manifest/missing-overlay-render',
+            `TimelineOverlay contribution "${cId}" must include a non-empty render id (bound via ctx.ui.registerRenderer)`,
+            cId,
+          );
+        } else if (typeof renderValue !== 'string' || renderValue.trim().length === 0) {
+          pushErr(
+            'manifest/invalid-overlay-render',
+            `TimelineOverlay contribution "${cId}" render must be a non-blank string, got ${typeof renderValue === 'string' ? 'blank string' : JSON.stringify(renderValue)}`,
+            cId,
+          );
+        }
+        if (Object.prototype.hasOwnProperty.call(overlayContribution, 'when')) {
+          pushErr(
+            'manifest/overlay-no-when',
+            `TimelineOverlay contribution "${cId}" must not declare a "when" clause`,
             cId,
           );
         }

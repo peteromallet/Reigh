@@ -66,6 +66,9 @@ export interface EditorRuntimeProviderProps {
    *  ProcessManager is created from the extension runtime's declared process
    *  specs. */
   processManager?: ProcessManager;
+  /** T22: Provider-owned timeline-overlay feature flag. Explicitly defaults
+   *  to false; hosts opt in by supplying `true`. */
+  timelineOverlaysEnabled?: boolean;
   children: ReactNode;
 }
 
@@ -142,6 +145,7 @@ export function EditorRuntimeProvider({
   extensionStateRepository,
   triggerExtensionRefresh,
   processManager: hostProcessManager,
+  timelineOverlaysEnabled = false,
   children,
 }: EditorRuntimeProviderProps) {
   // ---- M11: live permission service (one per provider mount) ------------------
@@ -368,6 +372,8 @@ export function EditorRuntimeProvider({
       ? assembly.processResultAttachRecords
       : undefined,
     recordProcessResultAttach: assembly.recordProcessResultAttach,
+    timelineOverlaysEnabled,
+    timelineViewStore: assembly.timelineViewStoreRef.current ?? undefined,
   }), [
     dataProvider,
     runtime?.assetResolver,
@@ -391,6 +397,7 @@ export function EditorRuntimeProvider({
     assembly.recordProcessResultAttach,
     assembly.getRecoveryKey,
     assembly.incrementRecoveryKey,
+    timelineOverlaysEnabled,
   ]);
 
   return (

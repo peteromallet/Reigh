@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   useTimelineChromeContext: vi.fn(),
   useTimelinePlaybackContext: vi.fn(),
   useTimelineEditorOps: vi.fn(),
+  useTimelineConfigVersion: vi.fn(),
 }));
 
 vi.mock('@/tools/video-editor/hooks/timelineStore', () => ({
@@ -19,6 +20,7 @@ vi.mock('@/tools/video-editor/hooks/timelineStore', () => ({
   useTimelineChromeContext: () => mocks.useTimelineChromeContext(),
   useTimelinePlaybackContext: () => mocks.useTimelinePlaybackContext(),
   useTimelineEditorOps: () => mocks.useTimelineEditorOps(),
+  useTimelineConfigVersion: () => mocks.useTimelineConfigVersion(),
 }));
 
 // We import SupabaseDataProvider just for its prototype, then mock its module.
@@ -153,6 +155,10 @@ beforeEach(() => {
   vi.clearAllMocks();
 
   mockReloadFromServer.mockReset();
+
+  // Canonical version channel (advances on save ACK without a new data
+  // object); mirrors the editor data's configVersion by default.
+  mocks.useTimelineConfigVersion.mockReturnValue(7);
 
   mocks.useTimelineEditorData.mockReturnValue({
     data: {
@@ -874,7 +880,8 @@ describe('useEditorSync', () => {
       }
     });
 
-    it('passes configVersion from editor data to syncTimeline', async () => {
+    it('passes the canonical configVersion to syncTimeline', async () => {
+      mocks.useTimelineConfigVersion.mockReturnValue(12);
       mocks.useTimelineEditorData.mockReturnValue({
         ...mocks.useTimelineEditorData(),
         data: {
@@ -903,7 +910,8 @@ describe('useEditorSync', () => {
       );
     });
 
-    it('defaults configVersion to 1 when not present in editor data', async () => {
+    it('defaults configVersion to 1 when the canonical channel is not advanced', async () => {
+      mocks.useTimelineConfigVersion.mockReturnValue(1);
       mocks.useTimelineEditorData.mockReturnValue({
         ...mocks.useTimelineEditorData(),
         data: {

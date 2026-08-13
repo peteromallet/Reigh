@@ -45,6 +45,7 @@
     "test:watch": "npm run check:no-smoke-tests && vitest --config config/testing/vitest.config.ts",
     "test:coverage": "vitest run --coverage --config config/testing/vitest.config.ts",
     "check:edge-budget": "node scripts/edge/quality-budget.mjs --check",
+    "check:bridge-latency": "node scripts/bridge-latency-report.mjs",
     "check:no-smoke-tests": "node scripts/quality/check-no-smoke-tests.mjs",
     "check:core-shim-usage": "node scripts/quality/check-core-shim-usage.mjs",
     "check:video-editor-sdk-imports": "node scripts/quality/check-video-editor-sdk-imports.mjs",

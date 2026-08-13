@@ -38,6 +38,9 @@ export interface BrowserVideoEditorProviderProps {
   refreshKey?: number;
   queryClient?: QueryClient;
   initialEntries?: string[];
+  /** T22: Provider-owned timeline-overlay feature flag. Explicitly defaults
+   *  to false; hosts opt in by supplying `true`. */
+  timelineOverlaysEnabled?: boolean;
   children: ReactNode;
 }
 
@@ -71,6 +74,7 @@ export function BrowserVideoEditorProvider({
   refreshKey,
   queryClient,
   initialEntries,
+  timelineOverlaysEnabled = false,
   children,
 }: BrowserVideoEditorProviderProps) {
   const [ownedQueryClient] = useState(() => queryClient ?? createDefaultQueryClient());
@@ -198,6 +202,7 @@ export function BrowserVideoEditorProvider({
           packageStateEntries={packageStateEntries}
           extensionStateRepository={effectiveRepository ?? null}
           triggerExtensionRefresh={triggerExtensionRefresh}
+          timelineOverlaysEnabled={timelineOverlaysEnabled}
         >
           {children}
         </EditorRuntimeProvider>

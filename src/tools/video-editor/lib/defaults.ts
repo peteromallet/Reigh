@@ -1,4 +1,5 @@
 import type { TimelineConfig, TrackDefinition } from '@/tools/video-editor/types/index.ts';
+import { resolveTimelineRenderTheme } from '@/tools/video-editor/compositions/installed-themes.ts';
 
 export const DEFAULT_VIDEO_TRACKS: TrackDefinition[] = [
   {
@@ -48,22 +49,42 @@ export function createDefaultTimelineConfig(): TimelineConfig {
  * preserving all existing values and non-output fields (clips, tracks,
  * theme, theme_overrides, generation_defaults, pinnedShotGroups, app, etc.).
  *
- * Only absent or null-ish output fields are filled from defaults. Existing
- * output values — even empty strings or zero — are left untouched because
- * they represent explicit user choices.
+ * Only absent or null-ish output fields are filled. Existing output values —
+ * even empty strings or zero — are left untouched because they represent
+ * explicit user choices.
  *
- * This is useful when the bridge loads a timeline that was authored with
- * a partial output block, or when a fixture needs to guarantee a complete
- * output shape without overwriting a caller's actual data.
+ * Geometry precedence (mirrors Astrid's render contract — Remotion
+ * `getCanvas` in Root.tsx and the ffmpeg `_timeline_canvas` both prefer
+ * `theme_overrides.visual.canvas`, then the resolved theme canvas, then a
+ * hardcoded default):
+ *   1. explicit `output.resolution` / `output.fps` (persisted, Supabase path)
+ *   2. `theme_overrides.visual.canvas` (per-timeline declared geometry)
+ *   3. the installed theme's `visual.canvas` (via `resolveTimelineRenderTheme`)
+ *   4. `DEFAULT_OUTPUT` (1280x720@30) — unchanged for timelines that declare
+ *      no geometry, preserving current editor behavior byte-for-byte.
+ * The resolved theme canvas is consulted ONLY when the config binds a theme
+ * (slug or overrides); otherwise nothing changes.
  */
 export function withDefaultTimelineOutput(
   config: Partial<TimelineConfig> & { output?: Partial<TimelineConfig['output']> },
 ): TimelineConfig {
   const existingOutput = config.output ?? ({} as Partial<TimelineConfig['output']>);
 
+  const themeBound = config.theme !== undefined || config.theme_overrides !== undefined;
+  const themeCanvas = themeBound ? resolveTimelineRenderTheme(config as TimelineConfig).visual?.canvas : undefined;
+  const canvasResolution = (
+    themeCanvas
+    && typeof themeCanvas.width === 'number'
+    && typeof themeCanvas.height === 'number'
+  ) ? `${themeCanvas.width}x${themeCanvas.height}` : undefined;
+  const canvasFps = (
+    themeCanvas
+    && typeof themeCanvas.fps === 'number'
+  ) ? themeCanvas.fps : undefined;
+
   const output: TimelineConfig['output'] = {
-    resolution: existingOutput.resolution ?? DEFAULT_OUTPUT.resolution,
-    fps: existingOutput.fps ?? DEFAULT_OUTPUT.fps,
+    resolution: existingOutput.resolution ?? canvasResolution ?? DEFAULT_OUTPUT.resolution,
+    fps: existingOutput.fps ?? canvasFps ?? DEFAULT_OUTPUT.fps,
     file: existingOutput.file ?? DEFAULT_OUTPUT.file,
     background: existingOutput.background !== undefined ? existingOutput.background : DEFAULT_OUTPUT.background,
     background_scale:

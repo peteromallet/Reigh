@@ -63,9 +63,11 @@ per-primitive rows with status, disposition, and evidence.
 
 ---
 
-## 3. Application: Code Panel Canary
+## 3. Application: Reserved Surface Slots
 
-*Superseded by the [frontend closure matrix](./frontend-closure-matrix.md) § 5.1.*
+*Superseded by the [frontend closure matrix](./frontend-closure-matrix.md) § 5.
+The canary demo surfaces (CodePanelCanary, WritingPanelCanary, StagePanelCanary)
+were removed 2026-08-11; reserved slots now render `InertReservedPlaceholder`.*
 
 ---
 
@@ -84,3 +86,4 @@ suite (`npx vitest run … examples-governance.test.ts`).
 |---|---|
 | 2026-06-19 | Initial checklist. Created for M2 Surfaces / Inspectors / Overlays. |
 | 2026-06-20 | M15: Superseded by [frontend-closure-matrix.md](./frontend-closure-matrix.md). This file becomes a transitional bridge preserving governance assertion headers. |
+| 2026-08-11 | Canary demo surfaces removed; § 3 application updated to Reserved Surface Slots. |

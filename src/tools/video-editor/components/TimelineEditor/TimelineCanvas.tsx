@@ -43,6 +43,7 @@ import type { TimelineGhostEntry } from '@/tools/video-editor/types/timeline-can
 import { useClipResizeGesture } from '@/tools/video-editor/hooks/useClipResizeGesture.ts';
 import type { ShotGroup } from '@/tools/video-editor/hooks/useShotGroups.ts';
 import { useTimelineMutableAdapters } from '@/tools/video-editor/hooks/timelineStore.ts';
+import { useTimelineSelectionStore } from '@/shared/state/selectionStore.ts';
 import { LABEL_WIDTH } from '@/tools/video-editor/lib/coordinate-utils.ts';
 import {
   EDIT_AREA_CLASS,
@@ -64,6 +65,8 @@ import {
   computeTimelineExtent,
   maxClipEndSeconds,
 } from '@/tools/video-editor/lib/timeline-scale.ts';
+import { createTimelineOverlayGeometry } from '@reigh/editor-sdk';
+import { createTimelineOverlayStores } from '@/tools/video-editor/lib/timeline-overlay-stores.ts';
 import {
   type ResizeDir,
 } from '@/tools/video-editor/lib/resize-math.ts';
@@ -83,6 +86,7 @@ import type { DragSession } from '@/tools/video-editor/hooks/useClipDrag.ts';
 import type { ClipEdgeResizeEndTarget } from '@/tools/video-editor/hooks/useClipResize.ts';
 import type { MarqueeRect } from '@/tools/video-editor/hooks/useMarqueeSelect.ts';
 import type { TargetContextPayload } from '@reigh/editor-sdk';
+import { TimelineExtensionOverlayHost } from './TimelineExtensionOverlayHost.tsx';
 import {
   ACTION_VERTICAL_MARGIN,
   CURSOR_WIDTH,
@@ -303,8 +307,13 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
   onSelectPostprocessShader,
 }: TimelineCanvasProps, ref) {
   useRenderBudget('TimelineCanvas', 3);
-  const { dataRef } = useTimelineMutableAdapters();
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const { dataRef, selectedClipIdsRef, ops, previewRef } = useTimelineMutableAdapters();
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const [overlayScrollContainer, setOverlayScrollContainer] = useState<HTMLDivElement | null>(null);
+  const [contentOverlayRoot, setContentOverlayRoot] = useState<HTMLDivElement | null>(null);
+  const [rulerOverlayRoot, setRulerOverlayRoot] = useState<HTMLDivElement | null>(null);
+  const [rulerOverlayStrip, setRulerOverlayStrip] = useState<HTMLDivElement | null>(null);
+  const [overlayStores] = useState(createTimelineOverlayStores);
   const cursorRef = useRef<HTMLDivElement>(null);
   const timeRef = useRef(0);
   const playRateRef = useRef(1);
@@ -319,6 +328,23 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
   const commandRegistry = runtime?.commandRegistry;
   const extensions = runtime?.extensionRuntime?.extensions ?? [];
   useRenderDiagnostic('TimelineCanvas');
+
+  const setScrollContainer = useCallback((node: HTMLDivElement | null) => {
+    scrollContainerRef.current = node;
+    setOverlayScrollContainer(node);
+  }, []);
+
+  useEffect(() => () => {
+    overlayStores.viewport.dispose();
+    overlayStores.playhead.dispose();
+    // The timeline surface is gone: extensions reading the provider-owned
+    // store must observe surfaceMounted=false instead of stale layout.
+    runtime?.timelineViewStore?.publish({
+      surfaceMounted: false,
+      viewport: null,
+      geometry: null,
+    });
+  }, [overlayStores, runtime]);
 
   usePortalMousedownGuard(shotGroupMenuRef, Boolean(shotGroupMenu));
 
@@ -395,6 +421,64 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
     minScaleCount,
     maxScaleCount,
   });
+  const overlayGeometry = useMemo(() => createTimelineOverlayGeometry({
+    scale,
+    scaleWidth,
+    startLeft,
+    extentStart: 0,
+    extentEnd: Math.max(0, pixelToTime(totalWidth)),
+  }), [pixelToTime, scale, scaleWidth, startLeft, totalWidth]);
+  // Reactive selection from the module-level selection store (the adapter's
+  // selectedClipIdsRef is a render-lagging mirror updated in a layout effect;
+  // reading it during render would publish stale selection).
+  const timelineSelection = useTimelineSelectionStore();
+  const overlaySelectedClipIds = selectedClipIdsRef.current;
+  const overlaySelection = useMemo(() => Object.freeze({
+    selectedClipIds: overlaySelectedClipIds,
+    hasSelection: overlaySelectedClipIds.size > 0,
+  }), [overlaySelectedClipIds]);
+  const overlayFps = dataRef.current?.output?.fps ?? 24;
+
+  // Publish selection changes into the provider-owned TimelineViewStore so
+  // `ctx.creative.timelineView` reflects live selection for commands. Keyed
+  // on the reactive store value, not the ref, so it cannot lag.
+  useEffect(() => {
+    const ids = timelineSelection.selectedClipIds;
+    runtime?.timelineViewStore?.publish({
+      selection: Object.freeze({
+        selectedClipIds: ids,
+        hasSelection: ids.size > 0,
+      }),
+    });
+  }, [runtime, timelineSelection.selectedClipIds]);
+
+  useLayoutEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) {
+      return;
+    }
+    const viewportSnapshot = {
+      scrollLeft: container.scrollLeft,
+      scrollTop: container.scrollTop,
+      viewportWidth: container.clientWidth,
+      viewportHeight: container.clientHeight,
+      totalWidth,
+      totalHeight: scrollContentHeight,
+    };
+    overlayStores.viewport.update(viewportSnapshot);
+    overlayStores.frameTime.publish({
+      timestamp: typeof performance === 'undefined' ? Date.now() : performance.now(),
+      scrollLeft: container.scrollLeft,
+      scrollTop: container.scrollTop,
+    });
+    // Provider-owned TimelineViewStore: publish layout regardless of the
+    // overlay flag so `ctx.creative.timelineView` stays live for commands.
+    runtime?.timelineViewStore?.publish({
+      viewport: viewportSnapshot,
+      geometry: overlayGeometry,
+      surfaceMounted: true,
+    });
+  }, [overlayScrollContainer, overlayStores, runtime, scrollContentHeight, totalWidth, overlayGeometry]);
   const rowResizePreview = useMemo(
     () => rows.map<Readonly<Record<string, ResizeOverride>>>((row) => {
       let previewForRow: Record<string, ResizeOverride> | null = null;
@@ -596,7 +680,15 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
   const handleSetTime = useCallback((time: number) => {
     timeRef.current = Math.max(0, time);
     syncCursor(timeRef.current);
-  }, [syncCursor]);
+    overlayStores.playhead.set(timeRef.current, false);
+    // Provider-owned TimelineViewStore: keep `ctx.creative.timelineView`
+    // playhead fresh for renderer-independent commands (B key etc.). The
+    // playback flag comes from the live player handle, not a hardcode.
+    const isPlaying = previewRef.current?.isPlaying ?? false;
+    runtime?.timelineViewStore?.publish({
+      playhead: { time: timeRef.current, isPlaying },
+    });
+  }, [overlayStores.playhead, previewRef, runtime, syncCursor]);
 
   useEffect(() => {
     syncCursor();
@@ -660,6 +752,8 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
   const pinchAnchorRef = useRef<{ time: number; offsetX: number } | null>(null);
   const pinchInputsRef = useRef({ scaleWidth, pixelsPerSecond, startLeft, onScaleWidthChange });
   pinchInputsRef.current = { scaleWidth, pixelsPerSecond, startLeft, onScaleWidthChange };
+  const pinchGestureOwnerRef = useRef(gestureOwner);
+  pinchGestureOwnerRef.current = gestureOwner;
   const pinchEnabled = shouldEnableTimelinePinchZoom(deviceClass) && Boolean(onScaleWidthChange);
 
   useEffect(() => {
@@ -674,6 +768,10 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
     );
 
     const handleTouchStart = (event: TouchEvent) => {
+      if (pinchGestureOwnerRef.current === 'overlay') {
+        pinchSessionRef.current = null;
+        return;
+      }
       if (event.touches.length !== 2) {
         pinchSessionRef.current = null;
         return;
@@ -693,6 +791,10 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
     };
 
     const handleTouchMove = (event: TouchEvent) => {
+      if (pinchGestureOwnerRef.current === 'overlay') {
+        pinchSessionRef.current = null;
+        return;
+      }
       const session = pinchSessionRef.current;
       if (!session || event.touches.length !== 2) {
         return;
@@ -750,6 +852,28 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
     if (nextMetrics.scrollTop !== scrollTop) {
       setScrollTop(nextMetrics.scrollTop);
     }
+    overlayStores.viewport.update({
+      ...nextMetrics,
+      viewportWidth: event.currentTarget.clientWidth,
+      viewportHeight: event.currentTarget.clientHeight,
+      totalWidth,
+      totalHeight: scrollContentHeight,
+    });
+    overlayStores.frameTime.publish({
+      timestamp: typeof performance === 'undefined' ? Date.now() : performance.now(),
+      ...nextMetrics,
+    });
+    // Keep the provider-owned TimelineViewStore viewport live on scroll
+    // (the layout effect only publishes initial/zoom layout).
+    runtime?.timelineViewStore?.publish({
+      viewport: {
+        ...nextMetrics,
+        viewportWidth: event.currentTarget.clientWidth,
+        viewportHeight: event.currentTarget.clientHeight,
+        totalWidth,
+        totalHeight: scrollContentHeight,
+      },
+    });
     syncCursor();
   };
 
@@ -771,6 +895,18 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
         onClearUnusedTracks={onClearUnusedTracks}
         labelRightInsetPx={rulerLabelRightInsetPx}
       />
+      <div
+        ref={setRulerOverlayRoot}
+        data-testid="timeline-extension-ruler-overlay-root"
+        className="pointer-events-none absolute inset-x-0 top-0 z-20 h-[30px] overflow-hidden"
+      >
+        <div
+          ref={setRulerOverlayStrip}
+          data-testid="timeline-extension-ruler-overlay-strip"
+          className="pointer-events-none absolute left-0 top-0 h-full"
+          style={{ width: totalWidth }}
+        />
+      </div>
       {postprocessShader && onSelectPostprocessShader && (
         <button
           type="button"
@@ -800,7 +936,7 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
         onShotGroupNavigate={onShotGroupNavigate}
       />
       <div
-        ref={scrollContainerRef}
+        ref={setScrollContainer}
         className={`${EDIT_AREA_CLASS} timeline-scroll relative min-h-0 flex-1 overflow-auto overscroll-contain bg-background/70`}
         {...touchGestureModeAttrs(touchGestureMode)}
         style={{ '--label-width': `${LABEL_WIDTH}px` } as React.CSSProperties}
@@ -878,6 +1014,11 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
             onTrackDragEnd={onTrackDragEnd}
             trackSensors={trackSensors}
           />
+          <div
+            ref={setContentOverlayRoot}
+            data-testid="timeline-extension-content-overlay-root"
+            className="pointer-events-none absolute inset-0 z-20"
+          />
         </div>
         {/* Footer: + Video / + Audio split buttons and draggable text tool — outside the grid background div */}
         <div className="relative flex border-t border-border bg-background/70" style={{ height: rowHeight, width: totalWidth }}>
@@ -922,6 +1063,22 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
           }}
         />
       </div>
+      {runtime?.timelineOverlaysEnabled === true && ops && (
+        <TimelineExtensionOverlayHost
+          contentPortalRoot={contentOverlayRoot}
+          rulerPortalRoot={rulerOverlayRoot}
+          rulerStripRoot={rulerOverlayStrip}
+          scrollContainer={overlayScrollContainer}
+          geometry={overlayGeometry}
+          stores={overlayStores}
+          selection={overlaySelection}
+          fps={overlayFps}
+          gestureOwner={gestureOwner}
+          setGestureOwner={setGestureOwner}
+          setContextTarget={ops.setContextTarget}
+          setInspectorTarget={ops.setInspectorTarget}
+        />
+      )}
       {/* Floating tool buttons — bottom-left of timeline viewport. Touch-sized
           buttons would blank out a whole 36px track row down there, so on touch
           the cluster docks to the ruler strip at top-right instead. */}

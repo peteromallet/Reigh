@@ -1,7 +1,11 @@
 /**
  * Timeline overlay real compatibility adapter.
  *
- * Preserves M2 host-integrated timeline overlay behavior.
+ * Preserves M2 host-integrated timeline overlay behavior through the
+ * dedicated {@link buildTimelineOverlayDescriptors} projector: it projects
+ * `{ extensionId, id, renderId, order }` directly from collected
+ * contributions and never fabricates callable renderers or `render: null`
+ * placeholders.
  *
  * @module families/timelineOverlayAdapter
  */
@@ -13,10 +17,10 @@ import type {
   FamilyNormalizeResult,
   FamilyConformanceReport,
   ExecutionMaturity,
+  TimelineOverlayDescriptor,
 } from '@reigh/editor-sdk';
 import { getVideoFamilyDefinition } from '@reigh/editor-sdk';
-import type { VideoEditorOverlayDescriptor } from '../extensionSurface';
-import { buildSlotSurfaceDescriptors } from './projectors/slotSurfaceProjector';
+import { buildTimelineOverlayDescriptors } from './projectors/timelineOverlayProjector';
 import { buildConformanceReport } from '@/sdk/core/families/conformance';
 
 const MANIFEST: HostAdapterManifest = Object.freeze({
@@ -24,14 +28,14 @@ const MANIFEST: HostAdapterManifest = Object.freeze({
   kind: 'timelineOverlay',
   version: '1.0.0',
   maturity: 'host-integrated' as ExecutionMaturity,
-  description: 'Compatibility adapter for M2 timeline overlay contributions.',
+  description: 'Compatibility adapter for M2 timeline overlay contributions (dedicated projector).',
   metadata: Object.freeze({ classification: 'real' }),
 });
 
 export const timelineOverlayAdapter: HostFamilyAdapter<
   'timelineOverlay',
   unknown,
-  VideoEditorOverlayDescriptor
+  TimelineOverlayDescriptor
 > = Object.freeze({
   kind: 'timelineOverlay' as const,
   classification: 'real',
@@ -39,12 +43,13 @@ export const timelineOverlayAdapter: HostFamilyAdapter<
 
   normalize(
     input: NormalizeFamilyInput<unknown>,
-  ): FamilyNormalizeResult<VideoEditorOverlayDescriptor> {
-    const wrapped = buildSlotSurfaceDescriptors('timelineOverlay', input.contributions, input.extensionOrder);
+  ): FamilyNormalizeResult<TimelineOverlayDescriptor> {
+    const descriptors = buildTimelineOverlayDescriptors(
+      input.contributions,
+      input.extensionOrder,
+    );
     return {
-      descriptors: Object.freeze(
-        wrapped.map((item) => item.descriptor as VideoEditorOverlayDescriptor),
-      ),
+      descriptors,
     };
   },
 

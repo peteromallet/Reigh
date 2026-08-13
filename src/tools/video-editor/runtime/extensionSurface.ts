@@ -21,6 +21,7 @@ import type {
   ShaderSourceDescriptor,
   ShaderTextureSchema,
   ShaderUniformSchema,
+  TimelineOverlayDescriptor,
   ToolResultFamily,
   RenderRoute,
   DeterminismStatus,
@@ -35,7 +36,6 @@ import type { ProcessOperationSpec, ProcessSpec } from '@/sdk/video/families/pro
 import { buildFamilyContributionSequence } from '@/tools/video-editor/runtime/families/FamilyContributionSequence.ts';
 import { assembleExtensionRuntime } from '@/tools/video-editor/runtime/families/FamilyRuntimeAssembly.ts';
 import { VIDEO_EDITOR_FAMILY_ADAPTER_REGISTRY } from '@/tools/video-editor/runtime/families/familyAdapterRegistry.ts';
-import type { TimelineGestureOwner } from '@/tools/video-editor/lib/mobile-interaction-model';
 import type {
   PackageState,
   PackageMetadata,
@@ -105,12 +105,14 @@ export interface VideoEditorInspectorSectionDescriptor {
   render: VideoEditorSlotRenderer;
 }
 
-export interface VideoEditorOverlayDescriptor {
-  id: string;
-  order?: number;
-  when?: VideoEditorVisibilityPredicate;
-  render: VideoEditorSlotRenderer;
-}
+/**
+ * @deprecated Compatibility alias for the SDK-owned
+ * {@link TimelineOverlayDescriptor}. The runtime overlay contract is no
+ * longer duplicated here: `timelineOverlay` contributions project through
+ * `families/projectors/timelineOverlayProjector.ts` into SDK descriptor
+ * types. New code should use `TimelineOverlayDescriptor` directly.
+ */
+export type VideoEditorOverlayDescriptor = TimelineOverlayDescriptor;
 
 export interface VideoEditorPanelRegistryConfig {
   panels?: readonly VideoEditorPanelDescriptor[];
@@ -125,7 +127,7 @@ export interface VideoEditorExtensionConfig {
   slots?: Partial<Record<VideoEditorSlotName, VideoEditorSlotRenderer>>;
   dialogHost?: VideoEditorDialogHostConfig;
   registry?: VideoEditorPanelRegistryConfig;
-  overlays?: readonly VideoEditorOverlayDescriptor[];
+  overlays?: readonly TimelineOverlayDescriptor[];
 }
 
 export interface VideoEditorExtensionRuntimeConfig {
@@ -137,7 +139,7 @@ export interface VideoEditorExtensionRuntimeConfig {
     panels: readonly VideoEditorPanelDescriptor[];
     inspectorSections: readonly VideoEditorInspectorSectionDescriptor[];
   };
-  overlays: readonly VideoEditorOverlayDescriptor[];
+  overlays: readonly TimelineOverlayDescriptor[];
   /** M6: Normalized asset parser descriptors, provider-scoped and deterministically ordered. */
   assetParsers: readonly VideoEditorAssetParserDescriptor[];
   /** M6: Normalized output format descriptors (disabled diagnostics for render-dependent). */
@@ -651,7 +653,7 @@ export type ExtensionHost = (extensions: readonly ReighExtension[]) => Extension
 
 const EMPTY_SLOTS: Partial<Record<VideoEditorSlotName, VideoEditorSlotRenderer>> = Object.freeze({});
 const EMPTY_DIALOGS: readonly VideoEditorDialogDescriptor[] = Object.freeze([]);
-const EMPTY_OVERLAYS: readonly VideoEditorOverlayDescriptor[] = Object.freeze([]);
+const EMPTY_OVERLAYS: readonly TimelineOverlayDescriptor[] = Object.freeze([]);
 const EMPTY_PANELS: readonly VideoEditorPanelDescriptor[] = Object.freeze([]);
 const EMPTY_INSPECTOR_SECTIONS: readonly VideoEditorInspectorSectionDescriptor[] = Object.freeze([]);
 const EMPTY_ASSET_PARSERS: readonly VideoEditorAssetParserDescriptor[] = Object.freeze([]);
@@ -663,7 +665,6 @@ const EMPTY_ASSET_DETAIL_SECTIONS: readonly VideoEditorAssetDetailSectionDescrip
 const EMPTY_EFFECTS: readonly VideoEditorEffectDescriptor[] = Object.freeze([]);
 const EMPTY_TRANSITIONS: readonly VideoEditorTransitionDescriptor[] = Object.freeze([]);
 
-const EMPTY_TRANSITION_MATERIAL_SLOTS: readonly VideoEditorTransitionMaterialSlotDescriptor[] = Object.freeze([]);
 const EMPTY_SHADERS: readonly VideoEditorShaderDescriptor[] = Object.freeze([]);
 const EMPTY_AGENT_TOOLS: readonly VideoEditorAgentToolDescriptor[] = Object.freeze([]);
 
@@ -917,80 +918,15 @@ export function getInspectorContributions(
 const EMPTY_INSPECTOR_CONTRIBUTIONS: readonly InspectorContribution[] = Object.freeze([]);
 
 // ---------------------------------------------------------------------------
-// Timeline overlay — RESERVED contract (declarable, not host-wired)
+// Timeline overlay — SDK-owned contracts
 // ---------------------------------------------------------------------------
 //
-// Reserved the same way reserved *slots* are (`RESERVED_SLOT_CANARY` in
-// `TimelineEditorShellCore.tsx`): the shape stays exported so authors can
-// declare against it and so a future host can adopt it without a breaking
-// change — but no host code renders it today. The previous scaffolding
-// (`getTimelineOverlayContributions`) built a render-props object, dropped it,
-// and returned renderers that ignored their props; `TimelineEditorCore`
-// maintained overlay scroll state on the hot scroll path for that discarded
-// object. Both were removed rather than left as a trap for extension authors.
-//
-// Wiring this up is a product decision, not a cleanup: a host that adopts it
-// owns the overlay mount point, the pointer-claim arbitration against the three
-// drag systems (§3 of `docs/structure_detail/tool_video_editor.md`), and the
-// `HostContributionErrorBoundary` wrapper every other contribution surface has.
-
-/**
- * Viewport and interaction policy props a host would pass to each overlay
- * renderer.
- *
- * **Reserved — not yet wired.** No host currently constructs this.
- */
-export interface TimelineOverlayRenderProps {
-  /** Current horizontal scroll offset (px). */
-  readonly scrollLeft: number;
-  /** Current vertical scroll offset (px). */
-  readonly scrollTop: number;
-  /** Width of the visible viewport (px). */
-  readonly viewportWidth: number;
-  /** Height of the visible viewport (px). */
-  readonly viewportHeight: number;
-  /** Total scrollable width (px). */
-  readonly totalWidth: number;
-  /** Total scrollable height (px). */
-  readonly totalHeight: number;
-  /** Pixels per second of timeline (scale-derived). */
-  readonly pixelsPerSecond: number;
-  /** Left offset where timeline content begins (px). */
-  readonly startLeft: number;
-  /** Current playhead position in seconds. */
-  readonly playheadTime: number;
-  /** Whether playback is active. */
-  readonly isPlaying: boolean;
-  /** Currently selected clip IDs. */
-  readonly selectedClipIds: ReadonlySet<string>;
-  /** Currently selected track ID (null if none). */
-  readonly selectedTrackId: string | null;
-  /** Which subsystem currently owns the gesture. */
-  readonly gestureOwner: TimelineGestureOwner;
-  /** Callback to request gesture ownership. */
-  readonly setGestureOwner: (owner: TimelineGestureOwner) => void;
-  /** Whether this overlay currently claims pointer events. */
-  readonly pointerClaimed: boolean;
-  /** Claim pointer events for this overlay (makes it pointer-events-auto). */
-  readonly claimPointer: () => void;
-  /** Release pointer events for this overlay (reverts to pointer-events-none). */
-  readonly releasePointer: () => void;
-}
-
-/**
- * A timeline overlay contribution as a host would resolve it.
- *
- * **Reserved — not yet wired.** `timelineOverlay` contributions normalize into
- * `VideoEditorOverlayDescriptor` (see `families/timelineOverlayAdapter.ts`) and
- * are reachable from `runtime.config.overlays`, but nothing in the timeline
- * enumerates them or calls `render`. Declaring one is valid; expecting it to
- * paint is not. Use a `contextMenuItem` on a timeline target for timeline-scoped
- * UI today (`ExtensionContextMenuItems`, wired in `TimelineCanvas.tsx`).
- */
-export interface TimelineOverlayContribution {
-  readonly id: string;
-  readonly extensionId: string;
-  readonly order?: number;
-  /** Render the overlay with host-supplied viewport and interaction policy props. */
-  readonly render: (props: TimelineOverlayRenderProps) => ReactNode;
-}
+// The timelineOverlay family contracts (manifest contribution, unresolved
+// `TimelineOverlayDescriptor`, resolved descriptor, render props, geometry,
+// stores, and primitives) are owned by the SDK in
+// `src/sdk/video/families/timelineOverlays.ts` and re-exported through
+// `@reigh/editor-sdk`. Runtime projection of `timelineOverlay` contributions
+// lives in `families/projectors/timelineOverlayProjector.ts` and produces
+// SDK-owned unresolved descriptors (`config.overlays`); renderers are resolved
+// only after the owning extension registers them via `ctx.ui`, so no callable
+// or `null` placeholder renderer is ever fabricated at projection time.

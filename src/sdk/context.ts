@@ -19,8 +19,10 @@ import type { CommandHandler, CommandRegistrationOptions } from './commands';
 import type { DisposeHandle } from './dispose';
 import type { ExtensionId } from './ids';
 import type { ExtensionChromeService } from './chrome';
+import type { ExtensionUiService } from './ui';
 import type { ExtensionSettingsService } from './settings';
 import type { TimelineReader } from '@/sdk/video/timeline/reader.ts';
+import type { TimelineViewStore } from '@/sdk/video/timeline/viewState.ts';
 import type {
   AssetReadSurface,
   MaterialReadSurface,
@@ -71,6 +73,13 @@ export interface CreativeContext {
   readonly timeline: TimelineOps;
   /** Read-only snapshot projection of the current timeline state (M3). */
   readonly reader: TimelineReader;
+  /**
+   * Provider-owned live view of timeline UX state (playback, selection,
+   * viewport, geometry). Renderer-independent: available from commands,
+   * keybindings, and any contribution surface, with or without a mounted
+   * `timelineOverlay` renderer (M2).
+   */
+  readonly timelineView: TimelineViewStore;
   /** Provider-scoped proposal lifecycle manager (M3). */
   readonly proposals: ProposalRuntime;
   /** Read-only asset metadata surface (M6). */
@@ -90,6 +99,7 @@ export const CREATIVE_MEMBER_MILESTONE: Record<keyof CreativeContext, string> = 
   project: 'M2',
   timeline: 'M3',
   reader: 'M3',
+  timelineView: 'M2',
   proposals: 'M3',
   assets: 'M6',
   materials: 'M6',
@@ -236,6 +246,8 @@ export interface ExtensionContext {
   readonly creative: CreativeContext;
   /** M4: Command registration service for imperative handler binding. */
   readonly commands: ExtensionCommandService;
+  /** UI renderer registration service for render-backed contributions. */
+  readonly ui: ExtensionUiService;
   /** M7: Effect registration service for trusted component effects. */
   readonly effects: EffectRegistrationService;
   /** M8: Transition registration service for trusted component transitions. */

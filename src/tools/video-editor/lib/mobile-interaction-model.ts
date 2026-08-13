@@ -13,6 +13,16 @@ export type TimelineInteractionMode = 'browse' | 'select' | 'move' | 'trim' | 'p
  */
 export type TimelineTouchGestureMode = 'move' | 'trim' | 'marquee';
 
+/**
+ * The gesture-ownership values the host and stylesheet key on.
+ *
+ * `overlay` is **host-internal**: while a timeline-overlay contribution holds
+ * the pointer claim, the host sets the owner to `'overlay'` so marquee, pinch,
+ * and other timeline gestures decline. There is deliberately no public setter
+ * or lease model here — ownership is assigned by the host's claim record (see
+ * `TimelineExtensionOverlayHost`), never by extension code, so an extension
+ * cannot seize or inspect the gesture.
+ */
 export type TimelineGestureOwner =
   | 'none'
   | 'timeline'
@@ -21,7 +31,8 @@ export type TimelineGestureOwner =
   | 'trim'
   | 'preview'
   | 'inspector'
-  | 'shell';
+  | 'shell'
+  | 'overlay';
 
 export type TimelineInteractionTargetKind =
   | 'clip'

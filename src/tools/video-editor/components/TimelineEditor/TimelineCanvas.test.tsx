@@ -18,7 +18,11 @@ import {
 import { createCommandRegistry, type CommandRegistry } from '@/tools/video-editor/runtime/commandRegistry';
 import type { TimelinePostprocessShaderMetadata, TrackDefinition } from '@/tools/video-editor/types';
 import type { TimelineAction, TimelineRow } from '@/tools/video-editor/types/timeline-canvas';
-import type { ReighExtension } from '@reigh/editor-sdk';
+import type {
+  ReighExtension,
+  ResolvedTimelineOverlayDescriptor,
+  TimelineOverlayRenderProps,
+} from '@reigh/editor-sdk';
 
 const useTimelineMutableAdaptersMock = vi.fn();
 
@@ -69,7 +73,11 @@ const pinnedShotGroup: NonNullable<React.ComponentProps<typeof TimelineCanvas>['
 const setGestureOwner = vi.fn();
 const setInputModalityFromPointerType = vi.fn(() => 'mouse');
 
-function buildRuntime(commandRegistry: CommandRegistry): VideoEditorRuntimeContextValue {
+function buildRuntime(
+  commandRegistry: CommandRegistry,
+  overlays: readonly ResolvedTimelineOverlayDescriptor[] = [],
+  timelineOverlaysEnabled = false,
+): VideoEditorRuntimeContextValue {
   const extension = {
     manifest: {
       id: 'ext.timeline',
@@ -103,13 +111,14 @@ function buildRuntime(commandRegistry: CommandRegistry): VideoEditorRuntimeConte
       slots: {},
       dialogHost: { dialogs: [] },
       registry: { panels: [], inspectorSections: [] },
-      overlays: [],
+      overlays,
     },
     extensionRuntime: {
       extensions: [extension],
       byId: new Map([['ext.timeline', extension]]),
     } as VideoEditorRuntimeContextValue['extensionRuntime'],
     commandRegistry,
+    timelineOverlaysEnabled,
   };
 }
 
@@ -337,6 +346,16 @@ function renderCanvas(params?: {
   onAddEffectLayerAt?: React.ComponentProps<typeof TimelineCanvas>['onAddEffectLayerAt'];
   onOpenSequenceCreator?: React.ComponentProps<typeof TimelineCanvas>['onOpenSequenceCreator'];
   commandRegistry?: CommandRegistry;
+  overlays?: readonly ResolvedTimelineOverlayDescriptor[];
+  timelineOverlaysEnabled?: boolean;
+  ops?: {
+    setContextTarget: ReturnType<typeof vi.fn>;
+    setInspectorTarget: ReturnType<typeof vi.fn>;
+  };
+  onSelectTrack?: React.ComponentProps<typeof TimelineCanvas>['onSelectTrack'];
+  onCursorDrag?: React.ComponentProps<typeof TimelineCanvas>['onCursorDrag'];
+  onClickTimeArea?: React.ComponentProps<typeof TimelineCanvas>['onClickTimeArea'];
+  onEditAreaPointerDown?: React.ComponentProps<typeof TimelineCanvas>['onEditAreaPointerDown'];
   postprocessShader?: TimelinePostprocessShaderMetadata;
   onSelectPostprocessShader?: React.ComponentProps<typeof TimelineCanvas>['onSelectPostprocessShader'];
 }) {
@@ -349,11 +368,13 @@ function renderCanvas(params?: {
     interactionStateRef: params?.interactionStateRef ?? { current: createInteractionState() },
     selectedClipIdsRef: { current: new Set<string>() },
     additiveSelectionRef: { current: false },
+    ops: params?.ops,
   });
 
   const onActionResizeStart = params?.onActionResizeStart ?? vi.fn();
   const onClipEdgeResizeEnd = params?.onClipEdgeResizeEnd ?? vi.fn();
   const getActionRender = params?.getActionRender ?? vi.fn(() => <div>clip</div>);
+  const runtimeCommandRegistry = params?.commandRegistry ?? createCommandRegistry();
 
   const canvas = (
     <TimelineCanvas
@@ -372,13 +393,13 @@ function renderCanvas(params?: {
       maxScaleCount={10}
       selectedTrackId={null}
       getActionRender={getActionRender}
-      onSelectTrack={vi.fn()}
+      onSelectTrack={params?.onSelectTrack ?? vi.fn()}
       onTrackChange={vi.fn()}
       onRemoveTrack={vi.fn()}
       onTrackDragEnd={vi.fn()}
       trackSensors={[] as never}
-      onCursorDrag={vi.fn()}
-      onClickTimeArea={vi.fn()}
+      onCursorDrag={params?.onCursorDrag ?? vi.fn()}
+      onClickTimeArea={params?.onClickTimeArea ?? vi.fn()}
       setInputModalityFromPointerType={setInputModalityFromPointerType}
       setGestureOwner={setGestureOwner}
       onActionResizeStart={onActionResizeStart}
@@ -397,13 +418,23 @@ function renderCanvas(params?: {
       onOpenSequenceCreator={params?.onOpenSequenceCreator}
       postprocessShader={params?.postprocessShader}
       onSelectPostprocessShader={params?.onSelectPostprocessShader}
+      onEditAreaPointerDown={params?.onEditAreaPointerDown}
       dragSessionRef={{ current: null }}
     />
   );
 
   const renderResult = render(
-    params?.commandRegistry
-      ? <VideoEditorRuntimeProvider value={buildRuntime(params.commandRegistry)}>{canvas}</VideoEditorRuntimeProvider>
+    params?.commandRegistry || params?.overlays || params?.timelineOverlaysEnabled
+      ? (
+          <VideoEditorRuntimeProvider value={buildRuntime(
+            runtimeCommandRegistry,
+            params?.overlays ?? [],
+            params?.timelineOverlaysEnabled ?? false,
+          )}
+          >
+            {canvas}
+          </VideoEditorRuntimeProvider>
+        )
       : canvas,
   );
 
@@ -472,6 +503,106 @@ describe('TimelineCanvas DOM contract', () => {
     expect(container.querySelector(`[${ROW_ID_ATTR}='${row.id}']`)).toBeTruthy();
     expect(container.querySelector(`[${TRACK_ID_ATTR}='${track.id}']`)).toBeTruthy();
   });
+
+  it('keeps clip drag, marquee, context menu, native scroll, ruler, and selection live under a passive overlay', async () => {
+    const registry = createCommandRegistry();
+    const contextCommand = vi.fn();
+    registerTimelineAreaMenuCommand(registry, contextCommand);
+    const clipDragEvents: string[] = [];
+    const selectClip = vi.fn();
+    const onMarqueePointerDown = vi.fn();
+    const onSelectTrack = vi.fn();
+    const onClickTimeArea = vi.fn();
+    const PassiveOverlay = (_props: TimelineOverlayRenderProps) => (
+      <div data-testid="canvas-passive-overlay">passive overlay</div>
+    );
+    const passiveDescriptor: ResolvedTimelineOverlayDescriptor = {
+      extensionId: 'ext.timeline',
+      id: 'passive' as never,
+      renderId: 'passive/render',
+      render: PassiveOverlay,
+    };
+
+    const { container } = renderCanvas({
+      commandRegistry: registry,
+      overlays: [passiveDescriptor],
+      timelineOverlaysEnabled: true,
+      ops: {
+        setContextTarget: vi.fn(),
+        setInspectorTarget: vi.fn(),
+      },
+      getActionRender: vi.fn(() => (
+        <button
+          type="button"
+          data-testid="passive-overlay-clip"
+          onPointerDown={(event) => {
+            event.stopPropagation();
+            clipDragEvents.push('down');
+          }}
+          onPointerMove={() => clipDragEvents.push('move')}
+          onPointerUp={() => clipDragEvents.push('up')}
+          onClick={selectClip}
+        >
+          clip
+        </button>
+      )),
+      onEditAreaPointerDown: onMarqueePointerDown,
+      onSelectTrack,
+      onClickTimeArea,
+    });
+
+    const contentRoot = screen.getByTestId('timeline-extension-content-overlay-root');
+    const wrapper = screen.getByTestId('timeline-extension-overlay-ext.timeline-passive');
+    expect(screen.getByTestId('canvas-passive-overlay')).toBeInTheDocument();
+    expect(contentRoot).toHaveStyle({ pointerEvents: 'none' });
+    expect(wrapper).toHaveStyle({ pointerEvents: 'none' });
+    expect(wrapper).not.toHaveAttribute('data-overlay-interactive');
+
+    const clip = screen.getByTestId('passive-overlay-clip');
+    fireEvent.pointerDown(clip, { button: 0, pointerId: 31, clientX: 120 });
+    fireEvent.pointerMove(clip, { pointerId: 31, clientX: 145 });
+    fireEvent.pointerUp(clip, { pointerId: 31, clientX: 145 });
+    fireEvent.click(clip);
+    expect(clipDragEvents).toEqual(['down', 'move', 'up']);
+    expect(selectClip).toHaveBeenCalledTimes(1);
+
+    const editArea = container.querySelector(EDIT_AREA_SELECTOR);
+    const background = container.querySelector('.timeline-canvas-edit-area > .relative');
+    if (!(editArea instanceof HTMLElement) || !(background instanceof HTMLElement)) {
+      throw new Error('expected timeline edit area and background');
+    }
+    fireEvent.pointerDown(background, { button: 0, pointerId: 32, clientX: 300, clientY: 100 });
+    expect(onMarqueePointerDown).toHaveBeenCalledTimes(1);
+
+    fireEvent.contextMenu(background, { clientX: 300, clientY: 100 });
+    fireEvent.click(screen.getByText('Open timeline command'));
+    await waitFor(() => expect(contextCommand).toHaveBeenCalledTimes(1));
+
+    const wheel = new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: 40 });
+    editArea.dispatchEvent(wheel);
+    expect(wheel.defaultPrevented).toBe(false);
+    editArea.scrollLeft = 64;
+    editArea.scrollTop = 12;
+    fireEvent.scroll(editArea);
+    expect(screen.getByTestId('timeline-extension-ruler-overlay-strip')).toHaveStyle({
+      transform: 'translateX(-64px)',
+    });
+
+    fireEvent.click(screen.getByText(track.label));
+    expect(onSelectTrack).toHaveBeenCalledWith(track.id);
+
+    const ruler = screen.getByTestId('timeline-ruler');
+    const rulerHit = ruler.lastElementChild;
+    if (!(rulerHit instanceof HTMLElement)) {
+      throw new Error('expected ruler pointer surface');
+    }
+    rulerHit.setPointerCapture = vi.fn();
+    rulerHit.hasPointerCapture = vi.fn(() => false);
+    fireEvent.pointerDown(rulerHit, { button: 0, pointerId: 33, clientX: 100 });
+    fireEvent.pointerUp(rulerHit, { button: 0, pointerId: 33, clientX: 100 });
+    expect(onClickTimeArea).toHaveBeenCalledTimes(1);
+  });
+
 });
 
 describe('TimelineCanvas floating tools', () => {

@@ -18,7 +18,7 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import Ajv from 'ajv';
-import { RENDER_ROUTES, DETERMINISM_STATUSES } from '@/sdk/index.ts';
+import { RENDER_ROUTES, DETERMINISM_STATUSES, validateManifest } from '@/sdk/index.ts';
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -275,6 +275,93 @@ describe('T5: Manifest schema validation (Ajv-backed)', () => {
           ?? (error as { dataPath?: string }).dataPath
           ?? '').includes('spec.operations[0].routes'),
       )).toBe(true);
+    });
+  });
+
+  // -- TimelineOverlay: required render id, no when -------------------------
+
+  describe('T2.1: TimelineOverlay contribution — required render, no when', () => {
+    function overlayManifest(overlay: Record<string, unknown>): Record<string, unknown> {
+      return {
+        ...baseValidManifest(),
+        contributions: [overlay],
+      };
+    }
+
+    const validOverlay: Record<string, unknown> = {
+      id: 'phase-markers',
+      kind: 'timelineOverlay',
+      render: 'render/phase-markers',
+      order: 10,
+      label: 'Phase markers',
+    };
+
+    describe('schema (Ajv)', () => {
+      it('accepts a timelineOverlay with a non-empty render id', () => {
+        expect(validateFn(overlayManifest(validOverlay))).toBe(true);
+      });
+
+      it('rejects a timelineOverlay missing render', () => {
+        const missing = { ...validOverlay };
+        delete missing.render;
+        expect(validateFn(overlayManifest(missing))).toBe(false);
+      });
+
+      it('rejects an empty (blank) render id', () => {
+        // Schema enforces non-empty via minLength: 1; whitespace-only render
+        // ids are additionally rejected by runtime validation (trim check).
+        expect(validateFn(overlayManifest({ ...validOverlay, render: '' }))).toBe(false);
+      });
+
+      it('rejects a non-string render id', () => {
+        expect(validateFn(overlayManifest({ ...validOverlay, render: 42 }))).toBe(false);
+      });
+
+      it('rejects a when clause on a timelineOverlay', () => {
+        expect(validateFn(overlayManifest({ ...validOverlay, when: 'ctx.isDev' }))).toBe(false);
+      });
+    });
+
+    describe('runtime validateManifest', () => {
+      it('accepts a timelineOverlay with a non-empty render id', () => {
+        const result = validateManifest(overlayManifest(validOverlay) as never);
+        expect(result.valid).toBe(true);
+        expect(result.errors).toEqual([]);
+      });
+
+      it('rejects a missing render id', () => {
+        const missing = { ...validOverlay };
+        delete missing.render;
+        const result = validateManifest(overlayManifest(missing) as never);
+        expect(result.valid).toBe(false);
+        expect(result.errors.some((e) => e.code === 'manifest/missing-overlay-render')).toBe(true);
+      });
+
+      it('rejects a blank render id', () => {
+        const result = validateManifest(overlayManifest({ ...validOverlay, render: '   ' }) as never);
+        expect(result.valid).toBe(false);
+        expect(result.errors.some((e) => e.code === 'manifest/invalid-overlay-render')).toBe(true);
+      });
+
+      it('rejects a non-string render id', () => {
+        const result = validateManifest(overlayManifest({ ...validOverlay, render: 42 }) as never);
+        expect(result.valid).toBe(false);
+        expect(result.errors.some((e) => e.code === 'manifest/invalid-overlay-render')).toBe(true);
+      });
+
+      it('rejects a when clause on a timelineOverlay', () => {
+        const result = validateManifest(overlayManifest({ ...validOverlay, when: 'ctx.isDev' }) as never);
+        expect(result.valid).toBe(false);
+        expect(result.errors.some((e) => e.code === 'manifest/overlay-no-when')).toBe(true);
+      });
+
+      it('rejects an explicit null when clause on a timelineOverlay', () => {
+        // An own `when` property must be rejected regardless of its value
+        // (including null) so `{when: null}` cannot bypass validation.
+        const result = validateManifest(overlayManifest({ ...validOverlay, when: null }) as never);
+        expect(result.valid).toBe(false);
+        expect(result.errors.some((e) => e.code === 'manifest/overlay-no-when')).toBe(true);
+      });
     });
   });
 
