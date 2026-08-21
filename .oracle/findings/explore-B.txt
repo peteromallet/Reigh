@@ -1,0 +1,22 @@
+Working...
+Research complete. Findings:
+
+## Contract-surface governance
+
+1. **SDK export manifest must be regenerated** — `check-sdk-api-manifest.mjs:491-508` fails any barrel export absent from baseline; new `dataKind.ts` exports → run `node scripts/quality/check-sdk-api-manifest.mjs --write-baseline` to rewrite `config/governance/sdk-public-api-manifest.json` (generated file, header :382). Not wired into any npm script (package.json has no `api-manifest` entry) — manual/release-time. Alternative: hand-add entries to `config/governance/sdk-public-api-approvals.json` keyed by name + `approvedDeclarationHash`.
+
+2. **Export allowlist: no change needed** — `sdk-public-export-allowlist.json` gates only re-exports from *outside* `src/sdk/` (`check-sdk-public-exports.mjs:114-122`); currently empty. `src/sdk/video/families/dataKind.ts` re-export via `src/sdk/index.ts:96-105` pattern = sibling re-export. Constraints: avoid FORBIDDEN_EXPORTS process vocab (:370-418) and `/Sidecar/i` (:434-443); release mode bans inline declarations (:757-775).
+
+3. **Every public export needs an example consumer** — `examples-governance.test.ts:496-515` requires each barrel export imported by ≥1 `src/examples/*`, else add to hand-listed `INTERNAL_EXPORTS` (:462-490) or classify deferred per contract-recheck matrix.
+
+4. **Family roster pinned at exactly 21** — `familyDefinitions.test.ts:45-46` (`toBeLessThanOrEqual(21)` both bounds), kinds sorted ascending (:88-92). New family → add kind to `contributionKinds.ts:53+`, registry entry, bump tests. `check-extension-family-conformance.mjs:337+` requires schema `Contribution.oneOf` definition per kind; `check-extension-drift.mjs:450+` cross-checks SDK↔schema↔docs kinds. `contract-surface-map.json:34-40` pins the five conformance files (additive OK).
+
+5. **ExtensionContext pinned to 12 keys** — `boundary.test.ts:393-450`: exhaustive `satisfies ExtensionContext` literal + `Object.keys` equality. `ctx.dataKinds` → update `declaredKeys`, literal, and `extensionContextFactory`. `registry.json:850-869` expectedExports are subset-only (additive safe).
+
+## Dev-example governance
+
+6. **Readiness gate does NOT scan dev/** — doc-driven only: parses supported-deferred matrix, verifies EX:/EXT: refs (`check-extension-example-readiness.mjs:953-1145`). EXT: dirs need `index.ts`+`reigh-extension.json` (:460-475) — scene-phase-markers has neither (`extension.ts`, no manifest), cited as plain paths in S-169/X-013/X-014, escaping checks. Precedent for transcript-lane: `extension.ts` + components, `__tests__/` (3 files), one entry in `dev/localExtensions.ts:23-25`, docs rows citing real paths, SDK-only imports.
+
+**Unknowns:** CI wiring of api-manifest check outside npm scripts; whether dataKinds ships as contribution family vs plain context service (affects #4).
+
+**Risks:** forgetting #3/#5 breaks `test:extensions`/boundary tests despite clean quality checks.

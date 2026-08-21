@@ -1,0 +1,272 @@
+Working...
+All claims grounded. Composing the revised plan.
+
+---
+
+# Plan — dataKind V1: Typed Data Lanes in the Reigh Editor (rev 2, Phase-3 revision)
+
+Worktree: `reigh-app-oracle` @ `6c02bd3ba` (branch `oracle-run`, clean except `.oracle/`). All line numbers verified against this checkout on 2026-08-22 (Phase 2 verification + Phase 3 spot-verification of every finding claim that changes the plan).
+
+**Revision summary:** 8 exploration areas resolved into edits E1–E6. Two are material corrections to the prior plan: **E1** (the design's `schema-backed`+`host-integrated` maturity combo fails the release coherence gate — verified) and **E2/E5** (projector/descriptor-array machinery and in-function transcript fetching are cut — both proven unnecessary or unreachable in this checkout). Batch count unchanged (9); Batch 2 and Batch 4–6 restructured.
+
+---
+
+## 0. VERIFICATION — design claims vs this checkout
+
+Phase-2 table stands unchanged (corrections C1–C5 folded). Phase-3 adds:
+
+| Claim (from findings) | This checkout | Verdict |
+|---|---|---|
+| Coherence gate: `host-integrated` requires declaration ≥ `documented` | `conformance.ts:184-195`; ordering `maturity.ts:26-30` is `typed` < `schema-backed` < `documented`. No existing family pairs `schema-backed`+`host-integrated` (clipType is `schema-backed`+`runtime-bridged` :194-196; command is `documented`+`host-integrated` :230-232) | ⚠️ **E1: design's combo is a release-gate hard fail. Use `documented`.** `manifestSchema: true` still required (documented ≥ schema-backed per `conformance.ts:289-296`) |
+| Compatibility-adapter precedent | `compatibilityAdapterFactory.ts:32-67`: real-classification, frozen empty descriptors, `buildConformanceReport` throws if SDK definition missing; `clipTypeAdapter.ts` = 14-line wrapper | ✅ **E2: dataKindAdapter copies this exactly** |
+| `ADAPTER_DISPATCH` is a closed per-family map | `FamilyRuntimeAssembly.ts:199-237`: `ConfigField` union + `ADAPTER_DISPATCH` record; `clipType` absent by design (binds via ctx service); loop (:751-796) iterates dispatch-map keys only | ✅ **E2: dataKind must NOT be added — zero FamilyRuntimeAssembly changes. `ConfigField` is assembly-local, not TimelineConfig — non-goal intact** |
+| Assembly wiring anchors | `editorRuntimeAssembly.tsx`: once-per-mount refs :298-315 (commandRegistryRef :312-315 is the creation precedent); dispose effect :416-425; per-extension service built at :740-747 (clipTypes); `createExtensionContext` 10 positional args at :795-810; deps :827-844 | ✅ **E4 anchors confirmed** |
+| New public exports need example coverage or exemption | `examples-governance.test.ts:462-490` `INTERNAL_EXPORTS` hand-list; coverage loop :496-515 (scans `src/examples/` only — `dev/transcript-lane` does not count) | ✅ **E3: Batch 1 adds INTERNAL_EXPORTS entries** |
+| SDK api-manifest gate | `check-sdk-api-manifest.mjs:491-508` fails un-baselined barrel exports; `--write-baseline` regenerates `config/governance/sdk-public-api-manifest.json`; not wired into npm scripts | ✅ **E3: baseline regen in Batch 1, audit in Batch 9** |
+| Clip → asset resolution | `TimelineClip.asset?` (types/index.ts:357); resolved clips carry `assetEntry` attached at `commands/timelineData.ts:31-34`; media filter `getClipAssetMediaType` at `clip-types/runtime.ts:388-402` | ✅ assembleDataLanes iterates `resolvedConfig.clips`, keys on `clip.asset` |
+| Transcript reachability | No production assembly site holds an AssetResolver; `assembleTimelineData` (:396) is sync; prod providers return null profiles (`SupabaseDataProvider.ts:1133-1135`); resolver path exercised only by tests/embed (`EditorRuntimeProvider.tsx:344`); React-tree escape hatch `VideoEditorRuntimeContext.tsx:33-35` exposes `provider`/`assetResolver` | ⚠️ **E5: `assembleDataLanes` must be pure with injected segments; fetching moves to a host hook** |
+| `legacyMilestone` optional | `maturity.ts:164-169` (optional, milestone-era only); gate never checks; absent → matrix `null`, bridge falls back `'unknown'` (`familyBridge.ts:75`); vocab is `M1…M12` | ✅ **OQ5 resolved: omit the field** |
+| `uiIntegration: true` forces evidence | `check-extension-family-conformance.mjs:1017-1133` release-mode hard error unless a real test file exists; docs tables ignore requirement flags entirely (`check-docs-maturity-sync.mjs:134-149`) | ✅ **OQ3 resolved: `false`** |
+| Dev-example governance | `check-extension-example-readiness.mjs` does not scan `dev/`; scene-phase-markers precedent: `extension.ts` + components + `__tests__/`, one `dev/localExtensions.ts:23-25` entry, SDK-only imports | ✅ no gate work; acceptance adds "SDK public imports only" |
+| Docs-maturity claim risk | Claim triggers need specific vocab (sandbox/marketplace/headless-renderer/webgpu/visual-graph-editor/physical-device/machine-path/output-format/sidecar); denial words exempt; `--write` escalates claim issues to hard failures | ✅ **item 7 resolved: avoid trigger vocab in dataKind doc rows; no other phrasing constraints** |
+
+Corrections C1–C5 from rev 1 remain folded (enum position after `'agentTool'`; mount anchor :1016→:1017; duration helper from `lib/timeline-domain`; docs row-not-count; `npx tsc --noEmit`).
+
+---
+
+## 1. TASKLIST
+
+### Batch 1 — Kind + manifest contract, fail-closed proven
+Seam: `kind: "dataProviders"` is rejected by schema AND validator; `dataKind` validates; new public surface is governance-registered.
+
+Tasks:
+1. `src/sdk/video/families/contributionKinds.ts` — add `'dataKind'` to union + array **after `'agentTool'`, before reserved `'agent'`** (C1).
+2. New `src/sdk/video/families/dataKind.ts` — types only: `DataKindContribution`, `DataShape` (`'point'|'interval'|'series'`), `DataCoordinateDomain` (closed V1 set), `KNOWN_DATA_SHAPES`/`KNOWN_DATA_DOMAINS` sets, `DataLaneRendererProps`, `DataItemInspectorProps`, `DataKindRegistrationService` interface. All closed enums here, flagged `[CONVERGE-WITH-M1]`.
+3. `config/contracts/reigh-extension.schema.json` — `"dataKind"` in `ContributionKind.enum` (same position as TS), `DataKindContribution` in `Contribution.oneOf`, definition per design §V1 (required id/kind/kindId/schemaRef, `additionalProperties: false`, open-string shape/domain, optional inspectorRender/label/order).
+4. `src/sdk/manifest.ts` — import type; extend contribution union; new rule block before :514: required non-blank `kindId`/`schemaRef` (`manifest/missing-data-kind-id`, `manifest/missing-data-schema-ref`), shape/domain membership when present (`manifest/invalid-data-shape`, `manifest/invalid-data-domain`), `when` forbidden (`dataKind/no-when`, mirror :506-512).
+5. `src/sdk/index.ts` — barrel-export the new types/sets.
+6. **Governance (E3):** add every new barrel export to `INTERNAL_EXPORTS` in `src/sdk/examples-governance.test.ts:462-490` with a `// dataKind V1 — consumer examples land with M1` comment; run `node scripts/quality/check-sdk-api-manifest.mjs --write-baseline`.
+
+Files: the five source/config files above + `examples-governance.test.ts` + regenerated `config/governance/sdk-public-api-manifest.json`; tests: `src/sdk/boundary.test.ts` (:785-787 two assertions 21→22, :795 title), `src/sdk/manifest-schema-validation.test.ts` (add `toContain('dataKind')` + oneOf ref + new cases), `src/sdk/examples-governance.test.ts`.
+
+Acceptance:
+- `kind: "dataKind"` manifest passes Ajv + `validateManifest` with zero errors; missing kindId/schemaRef, bad shape/domain, and `when` each produce the named error codes.
+- `kind: "dataProviders"` → `manifest/unknown-contribution-kind`; top-level `"dataProviders": []` → Ajv additionalProperties failure (test proves both).
+- `KNOWN_CONTRIBUTION_KINDS.length === 22`.
+- `examples-governance` and `check-sdk-api-manifest` (audit mode) green.
+
+Classification: `normal` — mechanical enum/schema/validator extension following clipType/shader precedents.
+Traceability: goal done-1, done-3; NS fail-closed model, anti-pattern "dataProviders root".
+Validate: `npx vitest run --config config/testing/vitest.config.ts src/sdk/boundary.test.ts src/sdk/manifest-schema-validation.test.ts src/sdk/index.test.ts src/sdk/examples-governance.test.ts`
+
+### Batch 2 — Family registration surface (entry, adapter, maturity artifacts)
+Seam: dataKind is a first-class family that passes the **release-mode** conformance gate, with binding owned by the ctx service — no descriptor plumbing.
+
+Tasks:
+1. `src/sdk/video/families/familyDefinitions.ts` — append `dataKind` entry modeled on command (:229-262), not clipType, for the maturity axes: `declarationMaturity: 'documented'`, `executionMaturity: 'host-integrated'` (**E1** — design's `schema-backed` fails `conformance.ts:184-195`; execution axis must stay `host-integrated` because export-guard silence depends on it). `requiresTrustedCode: false`, `manifestSchemaDefinition: 'DataKindContribution'`, `hostAdapter: 'src/tools/video-editor/runtime/families/dataKindAdapter.ts'`, all 10 requirement keys explicit (`manifestSchema/normalizedDescriptor/registrationApi/lifecycleCleanup/tests: true`; rest false), `uiIntegration: false`, **omit `legacyMilestone`** (OQ5), label/description per design.
+2. New `src/tools/video-editor/runtime/families/dataKindAdapter.ts` — 14-line wrapper: `createCompatibilityAdapter({ adapterId: 'dataKind-default', kind: 'dataKind', maturity: 'host-integrated', description: … })` (exact `clipTypeAdapter.ts` shape; **E2**: frozen empty descriptors; no projector file, no `ConfigField`/`ADAPTER_DISPATCH`/descriptor-array changes in `FamilyRuntimeAssembly.ts` — the dispatch map is closed per-family and `clipType` is absent from it by design; a descriptor array would duplicate registry state = second-vocabulary smell).
+3. `src/tools/video-editor/runtime/families/familyAdapterRegistry.ts` — `registry.register({ adapter: dataKindAdapter })` with the real adapters.
+4. Regenerate: `npx tsx scripts/quality/generate-extension-family-matrix.mjs`; then `node scripts/quality/check-docs-maturity-sync.mjs --write`.
+5. Pins: `familyDefinitions.test.ts:45-46` 21→22 (kinds-sorted assertion :88-92 keeps holding); `familyAdapterRegistry.test.ts:36-38` 21→22.
+
+Acceptance:
+- Both registries report 22; every registry kind has an adapter entry (dataKind → real adapter, not null).
+- `dataKindAdapter.normalize` returns frozen `[]`; `buildConformanceReport` reads the SDK definition (throws if missing — guards Batch-2 ordering).
+- `family-maturity.json` contains 22 rows incl. `dataKind` with `legacyMilestone: null`; regenerated output byte-stable on re-run.
+- Release-gate items pre-cleared: enum↔registry bidirectional completeness, schema name `DataKindContribution`, coherence (`documented`+`host-integrated`), manifestSchema true, all requirement keys present, hostAdapter file exists.
+
+Classification: `normal` — one data-table entry + one 14-line adapter file copying the clipType precedent.
+Traceability: goal done-1, done-5; NS "one vocabulary" (generated maturity; no second descriptor database).
+Validate: `npx vitest run --config config/testing/vitest.config.ts src/sdk/video/families/familyDefinitions.test.ts src/tools/video-editor/runtime/families/familyAdapterRegistry.test.ts && node scripts/quality/check-extension-family-conformance.mjs && node scripts/quality/check-extension-family-conformance.mjs --release`
+
+### Batch 3 — Host registry + `ctx.dataKinds` (the single bind path)
+Seam: an extension can activate and bind a lane renderer through `ctx.dataKinds.register(...)`; undeclared kinds no-op with a diagnostic.
+
+Tasks:
+1. New `src/tools/video-editor/data-kinds/DataKindRegistry.ts` — per design §Public API (record carries renderer + copied contribution fields; duplicate kindId → replace + `data-kind-registry/duplicate-kind`; `unregisterOwner`; frozen snapshot; dispose).
+2. New `src/tools/video-editor/data-kinds/DataKindRegistryContext.tsx` (template: `clip-types/ClipTypeRegistryContext.tsx`).
+3. New `src/tools/video-editor/runtime/dataKindRegistrationService.ts` — gate on declared `dataKind` contributions **by kindId**; miss → `dataKinds/undeclared-kind` + no-op handle (template: `clipTypeRegistrationService.ts:172-238`, contribution index at :156-159).
+4. `src/sdk/context.ts` — 13th key `readonly dataKinds: DataKindRegistrationService`.
+5. `src/tools/video-editor/runtime/extensionContextFactory.ts` — 11th positional param `dataKinds?` after `uiService`; wire into returned context.
+6. `src/tools/video-editor/contexts/editorRuntimeAssembly.tsx` (E4 anchors): create `dataKindRegistryRef` once-per-mount next to `commandRegistryRef` (:312-315 pattern); dispose in the unmount effect at :416-425; build the per-extension service beside the clipTypes block (:740-747 pattern, gated on `dataKindRegistryRef.current`); pass positionally at :795-810; add ref to deps :827-844.
+7. Pins: `boundary.test.ts:397-412` + `:696-711` declaredKeys gain `'dataKinds'`; `sdk-boundary.test.ts:1522/:1812/:2093` ctx literals gain the member.
+
+Acceptance:
+- Duplicate register replaces prior record, disposes it, warns `data-kind-registry/duplicate-kind`; `unregisterOwner` drops all of an owner's records; snapshot frozen.
+- Undeclared kindId → no-op + `dataKinds/undeclared-kind`; declared → record carries schemaRef/shape/domain/label/order + renderer (+optional inspector).
+- `Object.keys(ctx)` on a factory-built context ⊆ {13 declared keys}; all three sdk-boundary literals compile.
+- `RENDER_BACKED_KINDS` untouched (extensionRenderSurface tests green unmodified).
+
+Classification: `normal` — direct structural copy of the clipType trio with renamed symbols.
+Traceability: goal done-1; settled "single bind model"; NS anti-pattern "hybridizing bind models".
+Validate: `npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/data-kinds/DataKindRegistry.test.ts src/tools/video-editor/runtime/dataKindRegistrationService.test.ts src/sdk/boundary.test.ts src/sdk/__tests__/sdk-boundary.test.ts`
+
+### Batch 4 — Envelope + pure data plane (injected segments)
+Seam: `TranscriptSegment[]` → frozen envelope items → `DataLaneView[]`; pure synchronous functions, fully unit-tested. **No IO inside the data plane (E5).**
+
+Tasks:
+1. New `src/tools/video-editor/data/typed/envelope.ts` `[CONVERGE-WITH-M1]` — `DataExtent` (half-open), `DataProvenance`, `TimelineEntityRef`, `FrozenDataItem`, `DataLaneItemView`, `DataLaneView` per design §Envelope types.
+2. New `src/tools/video-editor/data/typed/adaptTranscript.ts` — `adaptTranscript(segments, {assetId, clipId?})`: `id = ${assetId}:${i}`, `sourceItemId = ${assetId}:src:${i}`, interval/source_seconds, `schemaRef='reigh.transcript_segment/v1'`, payload `{text}` only, provenance `{adapterId:'reigh.adaptTranscript', adapterVersion:'1'}`, entityRef when mapped.
+3. New `src/tools/video-editor/data/typed/assembleDataLanes.ts` — **pure, sync**; inputs `{ kinds: registered-kind snapshot, clips: ResolvedTimelineConfig['clips'], segmentsByAsset: Record<assetKey, TranscriptSegment[]> }`. Iterate `clips`, media filter via `getClipAssetMediaType` (`clip-types/runtime.ts:388`), key on `clip.asset` (+`assetEntry`, attached at `commands/timelineData.ts:31-34`); adapt; map source→timeline via the `getSourceTime` inverse (`timeline-data.ts:591`); unknown schemaRef → lane listed with `opaque: true`; one segment on two clips → two views, same `sourceItemId`, distinct ids/timelineStart. Also export `mergeDataLanes(base: TimelineData, views): TimelineData` — shallow clone, `dataLanes` replaced (frozen).
+   - **Why injected segments (E5):** no production assembly site holds an AssetResolver (initial load, poll sync, recovery all use the legacy urlResolver-only path; `useTimelineSave.ts:50-65` drops `assetResolver`), and `assembleTimelineData` is sync while transcript fetches are async. Fetching moves to the host hook in Batch 6; the data plane stays testable and provider-agnostic. Prod providers return null profiles today (`SupabaseDataProvider.ts:1133-1135`) — empty lanes in prod is the expected V1 posture, documented in Batch 8.
+
+Acceptance:
+- adaptTranscript: exact mapping; extra segment fields dropped; empty → `[]`.
+- assembleDataLanes: two-clip sharing case exact; lanes carry renderer refs only for registered kinds; unknown-kind lanes flagged opaque; **no IO, no async** (type-level: no Promise in signature).
+- mergeDataLanes: replaces `dataLanes`, preserves all other TimelineData fields by reference.
+- All modules flagged `[CONVERGE-WITH-M1]`.
+
+Classification: `normal` — pure functions over existing seams.
+Traceability: goal objective (envelope convergence); NS "source identity ≠ occurrence identity", "relations by authored IDs", "evidence is not an edit".
+Validate: `npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/data/typed/adaptTranscript.test.ts src/tools/video-editor/data/typed/assembleDataLanes.test.ts`
+
+### Batch 5 — `TimelineData.dataLanes` + duration/export neutrality proven
+Seam: lanes exist on TimelineData and are provably inert to duration, rows, and export scanning.
+
+Tasks:
+1. `src/tools/video-editor/lib/timeline-data.ts` — `TimelineData.dataLanes: DataLaneView[]`; default frozen `EMPTY_DATA_LANES` set in `assembleTimelineData` (:396). `configToRows`/duration helpers untouched.
+2. `src/tools/video-editor/lib/timeline-data.test.ts` — config with lanes vs without: identical `getConfigTimelineDuration` (import from `lib/timeline-domain`, C3) and identical `configToRows` end values.
+3. `src/tools/video-editor/runtime/exportGuard.test.ts` — editorial-lane scenario: `scanExportConfig` diagnostics identical with/without lanes; no dataKind IDs in `inactiveExtensionIds` (`collectExtensionDeclaredIds` untouched — silence guaranteed via `host-integrated` maturity → `isBridged` → skip, verified §0).
+
+Acceptance:
+- Duration invariant test green (goal done-2).
+- Export-guard silence test green; `exportGuard.ts` diff empty.
+- Existing TimelineData consumers unaffected (default empty array).
+
+Classification: `normal` — additive field + invariant tests.
+Traceability: goal done-2, done-3 (adjacent), done-6; NS "duration neutrality", "evidence ≠ editorial intent ≠ frozen automation".
+Validate: `npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/lib/timeline-data.test.ts src/tools/video-editor/runtime/exportGuard.test.ts`
+
+### Batch 6 — Host lane pipeline + TimelineCanvas mount
+Seam: in the running editor, lanes flow from segments to visible rows under the tracks, sharing ruler/scale/playhead, provably unable to distort scroll math.
+
+Tasks:
+1. **Pin-up (first, bounded ≤15 min):** locate the exact TimelineData→TimelineCanvas prop path from the mount site (expected single consumer chain; escalate if more than one consumer). Fallback anchor if the chain is unclear: wire at `editorRuntimeAssembly.tsx` where host-wired extension data already lives (creativeOverrides :766-772, ctx build :795-810).
+2. New `src/tools/video-editor/data-kinds/useDataLanes.ts` — thin host hook: inputs = base TimelineData, registry snapshot, `loadSegments(assetKey) => TranscriptSegment[] | Promise<…> | null`; effect assembles via `assembleDataLanes` + `mergeDataLanes`, returns the patched TimelineData. Default loader: provider-backed attempt via `useVideoEditorRuntime()` (`VideoEditorRuntimeContext.tsx:33-35` — `provider`/`assetResolver`; embed/test path; current prod providers return null → empty lanes, expected). Re-merges when base identity or kinds snapshot changes; last-write-wins (dev-only visibility in V1, documented).
+3. New `.../TimelineEditor/DataLaneList.tsx` — reads lanes from TimelineData + registry snapshot; kind without laneRenderer → lane absent (host cannot paint).
+4. New `.../TimelineEditor/DataLaneRow.tsx` — label gutter + `HostContributionErrorBoundary` around laneRenderer; opaque lanes get host extent-bar fallback paint.
+5. `.../TimelineEditor/TimelineCanvas.tsx` — mount `<DataLaneList>` between :1016 and :1017 (C2): same scroller, shared `startLeft`/`pixelsPerSecond`, outside `TimelineExtensionOverlayHost`, not gated by `timelineOverlaysEnabled`; fold `sum(dataLanes.height)` into `scrollContentHeight` (:411) — playhead (:1061) and max-scroll (:566) follow automatically; before footer.
+
+Acceptance:
+- Hook test: stub loader → patched TimelineData carries expected `DataLaneView[]`; null loader → base identity semantics (empty lanes).
+- Registered kind with renderer renders rows; renderer-less kind renders nothing.
+- Lanes render below track rows; playhead element height includes lane heights (assert style/geometry).
+- Opaque lane shows extent bars; renderer crash contained by boundary.
+
+Classification: `normal` — one thin hook + additive mount + one arithmetic fold in an existing component. (Watch item: TimelineCanvas is 1166 lines — keep the diff to mount point + height expression.)
+Traceability: goal done-1 (display), done-4 (visual path); NS "lanes inform, they do not render" (host chrome owns paint fallback).
+Validate: `npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/data-kinds/useDataLanes.test.tsx src/tools/video-editor/components/TimelineEditor/TimelineCanvas.test.tsx src/tools/video-editor/components/TimelineEditor/DataLaneList.test.tsx`
+
+### Batch 7 — Interaction targets + inspector dispatch with opaque fallback
+Seam: clicking a lane item selects the data item (not the clip underneath); unknown payloads inspect opaquely.
+
+Tasks:
+1. `src/tools/video-editor/lib/mobile-interaction-model.ts` — add `'dataLane' | 'dataItem'` after `'overlay'` (:44); `laneId?`/`itemId?` on `TimelineInteractionTarget` (:47-56). No new gesture owner.
+2. `src/tools/video-editor/components/PropertiesPanel/PropertiesPanel.tsx` — in `inspectorSelectionTarget` (:149-178), branch between :167 and :169 reading `inspectorTarget?.kind === 'dataItem' | 'dataLane'` (mirror shader pattern :150-163); lane-item click also clears clip/track selection (D-risk: ClipPanel would otherwise keep painting under the data selection).
+3. New `.../PropertiesPanel/OpaqueDataItemInspector.tsx` — id, shape, schemaRef, extent, domain, provenance.adapterId, truncated payload JSON.
+4. PropertiesPanel body: render branch for `dataItem`/`dataLane` adjacent to the shader block (:400-416; card ternary at :318 untouched); kind inspector inside error boundary (in-file precedent :28-31/:77-87; fallback-key pattern from `ClipExtensionInspectorSection.tsx:37-59`), else `OpaqueDataItemInspector`.
+
+Acceptance:
+- dataItem target beats selectedClip (branch order test).
+- Missing inspector → OpaqueDataItemInspector renders the six facts.
+- Target equality includes laneId/itemId; new kinds are valid target kinds; lane click clears clip/track selection (regression test).
+
+Classification: `normal` — branch insertion + one leaf component.
+Traceability: goal objective (interaction + inspector dispatch with opaque fallback); NS "unknown payload schemas round-trip opaque".
+Validate: `npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/lib/mobile-interaction-model.test.ts src/tools/video-editor/components/PropertiesPanel/PropertiesPanel.test.tsx src/tools/video-editor/components/PropertiesPanel/OpaqueDataItemInspector.test.tsx`
+
+### Batch 8 — Working dev example + docs rewrite
+Seam: a developer can see a transcript lane in a mounted editor run; docs describe kinded contributions only.
+
+Tasks:
+1. New `src/tools/video-editor/dev/transcript-lane/extension.ts` — `defineExtension` + `dataKind` contribution; binds via `ctx.dataKinds.register(kindId, laneRenderer, inspector?)`; **no `loadTranscript` inside the renderer** (design #28). SDK public imports only (scene-phase-markers precedent; `dev/` is outside the examples-governance scan — verified).
+2. Register in `dev/localExtensions.ts` `devLocalExtensions` (:23-25 pattern, DEV-only).
+3. Done-4 evidence (OQ2, revised per E5): **primary** — jsdom integration test (`transcriptLane.test.tsx`) mounting the canvas path with a stub `loadSegments` fixture: manifest validates, activation registers through the real gate, and a lane row renders under the tracks. **Secondary** — documented manual step: embed-host/dev run with a resolver-backed fixture (`EditorRuntimeProvider.tsx:344` exercises the resolver branch); plain prod-backed dev pages show no lane until a provider implements `onProfileLoad` (current providers return null — stated as known V1 posture, not a defect). `?extensionSmoke=1` sanity path noted per `localExtensions.ts` header.
+4. Docs: rewrite `docs/extensions/authoring.md` (:39 stale string apiVersion → integer; :110/:289/:336-337 collection-object matrix → kinded `contributions[]`; add dataKind section); `docs/extensions/compatibility.md` (:65-75 matrix; replace Data/Live Providers row posture; keep `dataProviders` in rejected list); `docs/extensions/foundation-contracts.md` (:364-372 add `ctx.dataKinds` row — C4); `docs/extensions/composition-spine/m0-fixture-matrices.md` (add VK-22 row, "21 kind values" → 22 at :61, refresh `contributionKinds.ts` range at :23). **Phrasing guard:** avoid claim-trigger vocab (sandbox, marketplace, headless-renderer, webgpu, visual-graph-editor, physical-device, machine-path, output-format, sidecar) in dataKind rows — `--write` escalates claim issues to hard failures; generated maturity tables ignore requirement flags, so no positive-capability phrasing pressure exists.
+
+Acceptance:
+- Integration test renders a visible lane from fixture segments through the real registration path.
+- Docs contain no collection-object contribution syntax; grep for `contributions.settings`-style matrices returns nothing stale in the four files.
+- VK census says 22 everywhere it census-es.
+
+Classification: `normal` — one example module copying scene-phase-markers structure + prose updates.
+Traceability: goal done-4, done-5; NS "third data kind should be unremarkable: declare, bind, display".
+Validate: `npx vitest run --config config/testing/vitest.config.ts src/tools/video-editor/dev/transcript-lane && node scripts/quality/check-docs-maturity-sync.mjs --audit`
+
+### Batch 9 — Broad validation, evidence matrix, North Star disposition (host-run)
+Seam: the run's completion gate.
+
+Tasks:
+1. Run the broad scoped suite (§5) once, host-side.
+2. `npx tsc --noEmit -p tsconfig.json` (C5; `npm run typecheck:strict-probe` covers strict islands only).
+3. Quality audits: `npm run check:docs-maturity-sync`, `npm run check:extension-family-conformance`, `npm run check:sdk-public-exports`, `npm run check:contracts`, `npm run check:contract-surface-map` (additive-safe, verified), `node scripts/quality/check-sdk-api-manifest.mjs` (audit; baseline already regenerated in Batch 1), `node scripts/quality/check-extension-drift.mjs` (SDK↔schema↔docs kind cross-check), and `test:extensions` release-mode conformance (exercises the E1 coherence + UI-evidence gates for real).
+4. Evidence matrix: every done criterion 1-7 → command + result + reviewer disposition; North Star alignment disposition.
+
+Acceptance: all suites green; audits clean or findings fixed; matrix complete.
+
+Classification: `normal`.
+Traceability: goal done-6, done-7.
+Validate: see §5.
+
+Commit policy: one commit per batch on `oracle-run`; push/merge only with explicit user approval.
+
+---
+
+## 2. EXPLORATION RESOLUTIONS (Phase 3 — was "additional areas")
+
+| # | Area | Resolution | Plan edit |
+|---|---|---|---|
+| 1 | Post-M family conformance | `FamilyDefinition` required fields confirmed; `legacyMilestone` optional (omit); `uiIntegration: true` forces release-gate test evidence (stay `false`); **coherence gate forbids design's `schema-backed`+`host-integrated`** | E1, OQ3, OQ5; Batch 2 |
+| 2 | Contract-surface governance | Api-manifest baseline regen required; `INTERNAL_EXPORTS` entries required (dev/ doesn't count as consumer); export allowlist + `contract-surface-map.json` + `registry.json` untouched (additive-safe) | E3; Batch 1, Batch 9 |
+| 3 | Projector descriptor contract | Adapter must be real + `buildConformanceReport`-backed, but descriptors land only via closed `ADAPTER_DISPATCH`; `clipType` precedent = empty-descriptor compatibility adapter, absent from dispatch map | E2; Batch 2 (projector cut) |
+| 4 | editorRuntimeAssembly wiring | Once-per-mount ref (:298-315), dispose in :416-425 effect, service at :740-747, positional arg :795-810, deps :827-844; ref pattern = hot-reload-safe | E4; Batch 3 task 6 |
+| 5 | Per-clip transcript availability | No production assembly site holds an AssetResolver; sync/async mismatch; prod providers return null; escape hatches: `useVideoEditorRuntime().provider/.assetResolver` (React tree) and embed-host resolver branch | E5; Batch 4 (pure), Batch 6 (hook), Batch 8 (honest manual step) |
+| 6 | Dev-example governance | Readiness gate does not scan `dev/`; no gate work; SDK-only-import acceptance added | Batch 8 |
+| 7 | Docs-maturity `--write` behavior | Tables ignore requirement flags; claim triggers are specific vocab; avoid trigger terms; `--write` escalates claim issues | Batch 8 task 4 |
+| 8 | PropertiesPanel render body | Body insertion adjacent to shader block :400-416 (memo :179-185, card ternary :318 untouched); boundary precedent :28-31/:77-87; fallback-key pattern ClipExtensionInspectorSection.tsx:37-59 | Batch 7 tasks 2/4 |
+
+## 3. OPEN QUESTIONS — final defaults
+
+1. **Enum/array position for `'dataKind'`** — **FINAL: after `'agentTool'`, before reserved `'agent'`, in both TS and JSON.** Gate checks bidirectional completeness, not order.
+2. **Done-4 evidence form** — **FINAL (revised): jsdom mounted-canvas integration test with a stub segment source (primary) + documented manual step via the embed-host resolver path (secondary).** Upgrade from rev 1's activation-only test: E5 made the display seam pure, so full-path render evidence is now cheap, and "renders a lane" deserves render proof.
+3. **`uiIntegration` flag** — **FINAL: `false`.** `true` would hard-fail release mode without a real integration-test file; docs tables ignore the flag either way.
+4. **`KNOWN_DATA_SHAPES`/`KNOWN_DATA_DOMAINS` location** — **FINAL: `dataKind.ts`**, manifest imports (M1 renames stay inside `[CONVERGE-WITH-M1]` modules).
+5. **`legacyMilestone`** — **FINAL (revised): omit the field.** Optional, never gate-checked; absent → `null` matrix / `'unknown'` bridge value; a `'V1'` placeholder would fake a milestone vocabulary the family never had.
+
+## 4. NORTH STAR CHECK
+
+Advances the North Star (first duration-neutral typed-data lane via the ordinary extension system, converging on the epic envelope). Named anti-patterns, each explicitly rejected:
+
+- **`dataProviders` root / `TrackKind: 'data'`** — Batch 1 proves rejection by Ajv and validator; hard non-goal keeps TimelineConfig/TrackKind untouched.
+- **Hybridizing bind models** — single clipType-analog bind (`ctx.dataKinds.register`); `RENDER_BACKED_KINDS`, `ExtensionUiService`, manifest render fields frozen (Batch 3 acceptance asserts the surface stays unchanged).
+- **`analysisLanes` on TimelineConfig / lanes lengthening the cut** — lanes live on TimelineData, not config; Batch 5 proves bit-identical duration and rows; export guard provably silent.
+- **Lane renderers parsing SRT/MIDI/CSV or running analysis** — parsing is host-side once in `adaptTranscript`; renderers receive pre-mapped `timelineStart/End`; the dev example binds a renderer only.
+- **Second timeline database / forked data vocabulary** — reinforced by E2: no descriptor array duplicating registry state; no `ADAPTER_DISPATCH`/`ConfigField` growth; zero persistence; envelope types flagged `[CONVERGE-WITH-M1]`.
+- **Scope creep (keyframes, WebGL series, streaming)** — enumerated hard non-goals; no batch touches them. E5 deliberately routes transcript *acquisition* through one thin host hook rather than new provider/ctx surface — that surface is M1/persistence territory and stays out.
+- **(New, from E1) Maturity-theater** — the family claims exactly what exists: `documented`+`host-integrated` with a real adapter and real tests; no placeholder milestone, no `uiIntegration` flag without evidence.
+
+## 5. VALIDATION PLAN
+
+Per-batch: the `Validate:` command in each batch (`npx vitest run --config config/testing/vitest.config.ts <touched test paths>`, plus the named audit scripts in Batches 2 and 8).
+
+Broad host-run, once at completion (done-6):
+
+```bash
+npx vitest run --config config/testing/vitest.config.ts \
+  src/sdk/boundary.test.ts src/sdk/__tests__/sdk-boundary.test.ts \
+  src/sdk/manifest-schema-validation.test.ts src/sdk/index.test.ts \
+  src/sdk/examples-governance.test.ts \
+  src/sdk/video/families/familyDefinitions.test.ts \
+  src/tools/video-editor/runtime \
+  src/tools/video-editor/data-kinds \
+  src/tools/video-editor/data/typed \
+  src/tools/video-editor/lib/timeline-data.test.ts \
+  src/tools/video-editor/lib/mobile-interaction-model.test.ts \
+  src/tools/video-editor/components/TimelineEditor \
+  src/tools/video-editor/components/PropertiesPanel \
+  src/tools/video-editor/dev/transcript-lane
+```
+
+Typecheck (C5): `npx tsc --noEmit -p tsconfig.json` (+ `npm run typecheck:strict-probe` if strict-island files touched).
+
+Quality audits after family/ctx changes: `npm run check:docs-maturity-sync`, `npm run check:extension-family-conformance` (+ `--release`), `npm run check:sdk-public-exports`, `npm run check:contracts`, `npm run check:contract-surface-map`, `node scripts/quality/check-sdk-api-manifest.mjs`, `node scripts/quality/check-extension-drift.mjs`.

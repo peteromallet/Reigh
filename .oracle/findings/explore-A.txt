@@ -1,0 +1,24 @@
+Working...
+Research complete. All claims below verified in-repo this session.
+
+## Findings (ranked)
+
+**1. Required fields for a new registry entry** (`FamilyDefinition`, src/sdk/core/families/maturity.ts:117-181): `kind`, `declarationMaturity` ('typed'|'schema-backed'|'documented', :23), `executionMaturity` ('absent'|'delegated'|'runtime-bridged'|'host-integrated'|'public-supported', :50-55), `requiresTrustedCode`, `manifestSchemaDefinition`, `sdkModules`, `hostAdapter: string|null` (:149), `requirements`. Optional: `uiIntegrationTest`, `legacyMilestone`, `label`, `description`.
+
+**2. `legacyMilestone` NOT mandatory.** Optional free-string (:164-169: "only for families that previously relied on CONTRIBUTION_KIND_MILESTONE"). Gate never checks it. Existing vocabulary is `'M1'…'M12'`; absent → matrix `null` (check-extension-family-conformance.mjs:551), bridge falls back to `'unknown'` (src/sdk/familyBridge.ts:75).
+
+**3. `uiIntegration:true` forces evidence — via the gate, not `buildConformanceReport`.** check-extension-family-conformance.mjs:1017-1133: non-empty `.test.ts(x)`/`.spec.ts` path (:993), in-repo, not node_modules, exists, regular file, content matching `/describe\(|it\(|test\(|render\(|renderHook\(/` (:1002). Release mode: hard error (:1009-1015).
+
+**4. Gate failure modes.** Always-fail errors: structural load failures; release-mode UI-evidence/hostAdapter-missing-or-nonexistent (:662-684); runtime-bridged placeholder adapters unconditionally (:687-697). Warnings→fail only in `--release` (:173-207): bidirectional enum↔registry completeness (:343-359), conventional schema name `<Kind>Contribution` (:371-415), coherence (:459-471; runtime-bridged+ needs schema-backed, host-integrated+ needs documented — conformance.ts:164-215), `schema-backed`+ requires `manifestSchema===true` (:481-491), byte-exact regenerated `family-maturity.json` (:582-610), all 10 requirement keys present (:878-884). `quality:check` runs audit; `test:extensions` runs release (package.json:84,38).
+
+**5. Docs tables ignore requirement flags entirely.** Columns: Family|Declaration|Execution|Trusted|Bridged|Host Adapter|Notes (check-docs-maturity-sync.mjs:134-149). Mostly-false flags change nothing visible; `Bridged`=Yes for host-integrated regardless. `--write` rewrites between markers or appends section if missing (:164-193). Rows are scanned as claim units (tables unfenced, :255-264).
+
+**6. Claim regexes don't penalize positivity per se.** Trigger requires termPattern: sandbox/marketplace/headless-renderer/webgpu/visual-graph-editor/physical-device/machine-path/output-format/sidecar vocab (+capabilityPattern for last two) (:47-90). `POSITIVE_CLAIM_RE` only labels (:277-279). Any denial word in the unit exempts it — broad `\bno\b`,`\bnot\b`,"not yet","out of scope" (:42-43,:298-300). Multi-line paragraphs merge into one unit (:241-271), so one denial token per paragraph suffices. **Gotcha:** `--write` escalates claim issues to hard failures (:105-111).
+
+## Risks
+- Design doc targets `schema-backed`+`host-integrated` ⇒ manifestSchema must be true and real (non-placeholder) adapter file must exist before registry lands, else release gate fails.
+- `undefined` vs `false` requirements both pass gates; only differ as gap counts in matrix JSON (conformance.ts:258-274).
+
+## Unknowns
+- `generate-extension-family-matrix.mjs` vs gate's inline rebuild equivalence assumed (gate comment :500-503); not diffed.
+- `check-docs-maturity-sync.test.mjs` expectations unread; `m0-release-examples.md` current content unscanned.
