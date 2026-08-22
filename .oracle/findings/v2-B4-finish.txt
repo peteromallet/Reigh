@@ -1,0 +1,21 @@
+Working...
+Batch 4 finish pass complete. Not committed, per brief.
+
+## Per checklist item
+
+**1. G2 migrated to `sourceItemsBySchemaRef`** — `assembleDataLanes.test.ts` rewritten: hand-fed SOURCE-domain items (`beat-1` point @ source 3s; `opaque-1` series frames [0,10], both `sourceArtifactRef.assetId: 'a'`) now remap onto CLIP_C1 through the assembly algebra. Assertions prove the mapper is assembly, not the caller: `timelineStart` 11 (10 + (3−2)/1), occurrence ids `beat-1@c1` / `opaque-1@c1`, opaque lane still maps ([8,18]). Lane ordering (beats < transcript, opaque last) unchanged.
+
+**2. Test contract fixed** — the deleted `extraItemsBySchemaRef` seam references removed; stale occurrence-id expectations updated to `${sourceItemId}@${clipId}`:
+- `maps one source segment on two clips` → `['a:src:08c434a0b926@c2', 'a:src:08c434a0b926@c1']`
+- `filters to sound-bearing media` → `['a:src:617e98ebbb3f@c2', 'm:src:67732ef0615a@aud']` (tie-break comment updated)
+- `useDataLanes.test.tsx` merges test → `'a:src:74b32fcb340a@c1'`
+
+**3. Single-authority wiring — no production code was missing.** The prior executor had already landed the delegation: both `TimelineCanvas.tsx:319` and `PropertiesPanel.tsx:227` call `useDataLanes({ base })` with no explicit loader → `loaderSource = runtime`, so co-mounted surfaces share one `(runtime, timelineId)` cache key. What was unfinished was the proof: added a co-mount test in `useDataLanes.test.tsx` rendering **two consumers in one tree inside a real `VideoEditorRuntimeProvider`** with a spy `onProfileLoad` — asserts exactly ONE host fetch for asset `'a'` across both mounts, per-consumer patched bases (distinct objects, config preserved by reference), and neither base's `dataLanes` written (store-write neutrality). The authority's synchronous `requested` set makes simultaneous first-mount requests dedupe, which this test exercises.
+
+**4. Transcript producer path green** — `dev/transcript-lane` suite passed.
+
+**5. Full brief suite**: `477 tests / 28 files → 473 passed, 4 failed` — failures are exactly the 4 known pre-existing `TimelineEditorCore.test.tsx` cases (left alone, per brief). Data plane alone (`data/typed` + `data-kinds`): 71/71 passing, including the new co-mount authority test.
+
+## Deviations
+- None of substance. Only surprise: item 3's "dual-mount caches" were already gone from production code — the incomplete part was verification, not wiring. I did not rewire anything that worked.
+- Files touched: `assembleDataLanes.test.ts`, `useDataLanes.test.tsx` only. Zero production-source changes.
