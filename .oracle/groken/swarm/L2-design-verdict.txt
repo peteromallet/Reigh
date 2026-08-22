@@ -1,0 +1,36 @@
+I'll compare the shipped dataKind delta against the design doc section by section, starting with the design authority and the git range.I'll now read the shipped files against each design section so I can flag divergences with file:line evidence.**dataKind V1 is architecturally on-spec (clipType analog, open manifest strings, 22/13 pins). Fidelity misses are leftover matrix honesty plus a few unspec’d extras — not a second bind model.**
+
+### HIGH
+1. **Family matrix still claims the pre-B8 family.** Design §file 6 + DoD want a regenerated `family-maturity.json` after the example/docs land. Shipped `familyDefinitions.ts:325-336` still has `declarationMaturity: 'schema-backed'`, `examples: false`, `diagnostics: false` while `dev/transcript-lane/extension.ts`, authoring/compatibility rewrites, and `dataKinds/*` diagnostics exist. `familyAdapterRegistry.test.ts:287-293` even pins `coherent: false` as “until examples/docs close the gap.” **Fix:** bump declaration to `documented`, set `examples`/`diagnostics` true, regenerate maturity. Do not add a projector to paper over this.
+
+### MEDIUM
+2. **`dataKindProjector.ts` never shipped.** Design files 8–9 and the adapter test promise (“projector emits unresolved descriptors”). Shipped `dataKindAdapter.ts:9-16` is `createCompatibilityAdapter` projecting `[]` (`familyAdapterRegistry.test.ts:278-281`). This *better* matches the locked clipType analog (renderer lives on `DataKindRegistry`, no second descriptor DB) and the 2026-08-22 amendment does **not** record it. **Fix:** amend the design; do not add a projector.
+
+3. **`extraItemsBySchemaRef` is unspec’d ingest.** `assembleDataLanes.ts:52-58,108-114` lets callers inject already-mapped views, skipping host `adaptTranscript` mapping. Design V1 is snapshot + per-clip `loadTranscript` → adapt → map. Only tests + `useDataLanes.ts:54-57` touch it. **Fix:** delete the seam or document it as the V2 kind-agnostic ingest and keep it test-only until a real adapter exists.
+
+4. **Occurrence ids diverge from the mapping formula.** Design: `id = ${assetId}:${i}`. Shipped `adaptTranscript.ts:37` uses `${assetId}:${clipId}:${index}` when mapped. That is the only way “two clips → distinct ids, same `sourceItemId`” (`adaptTranscript.ts:5-10`) can hold; the literal formula would collide React keys in `DataLaneRow.tsx:117`. **Fix:** amend the design formula; do not revert.
+
+### LOW
+5. Manifest enum is after `agentTool` (`reigh-extension.schema.json:137`), not after `contextMenuItem`; `dataKind` is array entry 21 (`contributionKinds.ts:76`), census `VK-22` (`m0-fixture-matrices.md:60`).
+6. Closed vocabularies duplicated SDK vs envelope (`dataKind.ts:36-53`, `envelope.ts:9-23`); drift-tested, but an M1 rename now touches `@publicContract`.
+7. Shipped beyond the file list (needed): `DataLaneView.domain` (`envelope.ts:85`), `onSelectItem` (`dataKind.ts:173`), `DataLaneSummarySection` (`PropertiesPanel.tsx:141-161`), `useDataLanes`/`visibleDataLanes`/`fixtureProvider`, gutter-in-flow so renderers get `startLeft: 0` (`DataLaneRow.tsx:81`) instead of sharing canvas `startLeft`.
+8. Lane error boundary uses `kind="slot"` (`DataLaneRow.tsx:97`).
+9. Locked-decision parenthetical “project-data markers” has no adapter (DoD is transcript-only — leave).
+
+### Section match (compressed)
+| Design | Shipped |
+|---|---|
+| Manifest fragment | Matches amendment: no `inspectorRender`, open `shape`/`domain`, `dataKind/no-when` (`manifest.ts:533-577`) |
+| Registry API | Full clipType analog (`DataKindRegistry.ts:39-91,271-276`) |
+| `ctx.dataKinds` gate | `kindId` + `dataKinds/undeclared-kind` (`dataKindRegistrationService.ts:135-144`); 11th factory arg (`extensionContextFactory.ts:141-142`); 13th ctx key (`context.ts:264`) |
+| Envelope `[CONVERGE-WITH-M1]` | Types match; extra `domain`/`freezeDataItem` |
+| adaptTranscript | Mapping rules hold except id formula (#4) |
+| assemble bucket/sort/opaque | schemaRef bucket, registered-by-order then opaque, `opaque:true` on unknown ref; plus #3 |
+| List/Row/Canvas | After `TrackListRenderer` (`TimelineCanvas.tsx:1029-1038`), not overlay-gated; heights via `visibleDataLanes` |
+| Interaction | `'dataLane'\|'dataItem'` + `laneId`/`itemId` (`mobile-interaction-model.ts:45-58`); no new gesture owner |
+| PropertiesPanel | data branches **before** `selectedClip` (`PropertiesPanel.tsx:243-267`); click clears clip/track (`275-286`); missing inspector → `OpaqueDataItemInspector` |
+| Dev example / docs | `ctx.dataKinds.register`, no `loadTranscript` in renderer; collection-object matrix rewritten |
+
+**Verdict: FIX-FIRST** (HIGH #1; treat #2 as a design amendment, not a projector).
+
+**Insight:** The code is *more* clipType-analog than the file list (zero-descriptor adapter, renderer-on-registry, `kindId` gate). The live lie is the family still advertising a pre-example, incoherent `schema-backed` + `host-integrated` pair after B8 closed that gap.

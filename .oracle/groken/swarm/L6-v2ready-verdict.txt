@@ -1,0 +1,31 @@
+I'll audit V1 against the V2 TimelineBundle design: envelope stability, `assembleDataLanes` persistence seam, and which current choices would lock in drift.Design doc is locked; next I’ll read envelope, assembly, and fetch-cache seams against the V2 `{config, registry, bundle}` CAS plan.**Verdict: FIX-FIRST.** V1 is correctly ephemeral (`LoadedTimeline` is still `{config, configVersion}` at `DataProvider.ts:15-17`; `assembleTimelineData` always writes `EMPTY_DATA_LANES` at `timeline-data.ts:452`). Envelope types are not persist-ready. The in-memory seam is close, but the wrong shape for a sibling `{config, registry, bundle}` CAS.
+
+## Findings
+
+**HIGH — Occurrence IDs are positional.** `adaptTranscript.ts:37-38` stamps `id = ${assetId}:${clipId}:${index}` and `sourceItemId = ${assetId}:src:${index}`. Insert/re-transcribe → every later ID shifts. Interaction targets store that `itemId` (`mobile-interaction-model.ts:58`). Persisting this locks a migration onto every transcript refresh.
+
+**HIGH — `FrozenDataItem` is an occurrence hybrid, not a source record.** With `clipId`, the item carries `entityRef` and a clip-scoped `id` (`adaptTranscript.ts:46-48`). M1 persists source items; occurrences are derived via clip maps. Persisting V1 items would freeze trim/speed into the bundle, contradicting `assembleDataLanes.ts:7-9` which remaps every assembly. `sourceArtifactRef` exists (`envelope.ts:55`) and is never written.
+
+**HIGH — Ingest seam is not persisted-source compatible.** Transcript path always re-adapts from `segmentsByAsset` (`assembleDataLanes.ts:85-105`). The only extension seam, `extraItemsBySchemaRef` (`:58, :108-115`), takes **already-mapped** `DataLaneItemView`s (timeline coordinates). A bundle of source-domain items would skip remapping or double-map. Add a `sourceItems` input; do not reuse `extraItems`.
+
+**HIGH — `DataLaneView` mixes chrome + function refs into the data plane.** `envelope.ts:79-92` puts `laneRenderer`, `inspector`, `hidden`, `height`, `opaque` on the same object as `items`. `laneId` is `kind.kindId` or `opaque:${schemaRef}` (`assembleDataLanes.ts:127,143`): one lane per kind globally; opaque IDs embed `schemaRef` (an M1 rename mutates IDs); opaque `kindId: ''`. Do not persist views.
+
+**MEDIUM — Per-mount fetch cache.** `requestedRef` never invalidates (`useDataLanes.ts:94-99,107-108`). Two mounts (`TimelineCanvas.tsx:317`, `PropertiesPanel.tsx:226`) = two caches, two fetches. Persisted-source mode stuffed here would duplicate CAS reads and race live `loadTranscript`. V2 needs one assembly authority keyed by bundle version.
+
+**MEDIUM — CamelCase vs M1 `schema_ref`.** Envelope uses `schemaRef`/`entityRef`/`sourceItemId`. M1 freezes `schema_ref` / `timeline_entity_ref`. The drift test (`envelopeVocabDrift.test.ts`) only pins shape/domain unions, not field names. No `schema_version` header. `[CONVERGE-WITH-M1]` only holds while types stay in-memory.
+
+**LOW — First-schemaRef-wins** (`assembleDataLanes.ts:80-81`) silently drops a second kind sharing a schema. Bundle identity is schema-keyed, not kind-keyed.
+
+**LOW — No Zod at the persist boundary.** Fine for V1; required the day anything hits CAS.
+
+## Must land in V2 vs defer
+
+**Must:** `schema_version` header; persist source items (not views/occurrences); content-stable source IDs; `assembleDataLanes({ sourceItems })` remap; `LoadedTimeline.bundle?`; `{config, registry, bundle}` CAS + `bundle_replaced`; single fetch/assembly authority; populate `sourceArtifactRef`; Zod/JSON schema.
+
+**Defer:** MIDI/CSV adapters; `@banodoco/timeline-bundle` until M1 freeze; lane chrome (`hidden`/`height`); bake/export; snake_case rename if versioned. Never persist renderer fns.
+
+## Reigh-without-Astrid
+
+Sound for V1: open-string manifest, local closed enums, `TimelineConfig` untouched, lanes off the save path. Drift risk is the envelope *looking* persistable. Persist-before-M1 would bake camelCase + index IDs as a competing wire format. Keep V1 strictly derived until M1 freezes names.
+
+**Insight:** The persistable unit is a source `FrozenDataItem` in native domain with a durable `sourceItemId`. Everything V1 hands the UI — clip-scoped `id`, `timelineStart/End`, renderer refs, `laneId === kindId` — is a **view**. V2 fails if that view is what CAS writes.

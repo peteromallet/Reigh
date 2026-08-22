@@ -1,0 +1,61 @@
+I'll audit the extension core contract independently: design authority first, then the schema, validator, loader, and governance pins against `6c02bd3ba..HEAD`.I'll pull the schema, validator, loader, and governance pins next so I can check fail-closedness against the design.Next I’ll read the validator, loader, context, and pin tests so I can check fail-closed coverage against the schema.**Verdict: FIX-FIRST**
+
+Core load/lifecycle is fail-closed for *kinds* and dispose. The advertised frozen schema is not the load-time contract.
+
+---
+
+### HIGH
+
+**1. Schema is test-only; loader never fail-closes unknown collections.**  
+Ajv `additionalProperties: false` lives in `manifest-schema-validation.test.ts` (`validateFn` ~50–51, `dataProviders` ~524–536). Load path is only `validateManifest` (`extensionPackageManifest.ts:247`, `extensionLoader.ts:1086–1127`). `validateManifest` never walks unknown keys (`manifest.ts:321–768`). So `{ dataProviders: [] }` **loads**. Design’s fail-closed proof is a unit-test ghost.  
+**Fix:** run compiled schema at `validate()` (or reject unknown keys in `validateManifest`); add a loader test that a top-level `dataProviders` pack is `valid: false`.
+
+**2. Permission contracts are mutually incompatible.**  
+TS: `{ reason, posture?: { network, filesystem, env, processes } }` (`manifest.ts:216–226`). Schema: `{ permission?, reason? }`, no `posture`, `additionalProperties: false` (`reigh-extension.schema.json:997–1004`). `validateManifest` ignores `permissions`. Runtime never consults them (`ExtensionTrustWarningBanner.tsx:16`). Wiring Ajv into the loader (finding 1) would **reject** real TS-shaped permissions.  
+**Fix:** one shape (keep `posture`, drop stray `permission`); validate in both Ajv and `validateManifest`; keep the banner.
+
+**3. `apiVersion` is optional and unenforced.**  
+Schema: optional integer ≥1 (`schema.json:31–35`). Validator only checks if present (`manifest.ts:390–394`). Host always stamps `ctx.apiVersion: 1` (`extensionContextFactory.ts:459`). No host/extension compatibility gate.  
+**Fix:** require `apiVersion` in installed mode; reject ≠ host version.
+
+---
+
+### MEDIUM
+
+**4. `createExtensionContext` is an 11-arg positional pile.**  
+`extensionContextFactory.ts:131–143`; live call `editorRuntimeAssembly.tsx:826–842`; tests skip with `undefined` (`boundary.test.ts:1478–1486`). Next family is a silent swap.  
+**Fix:** one options object.
+
+**5. Schema holes under `additionalProperties: false` theater.**  
+`renderability` / `settingsDefaults` are open objects (`schema.json:72–79`); `migrations` has no `items` (`56–60`); `ExtensionSettingsSchema.additionalProperties: true` (`1024`). Version pattern `^\d+\.\d+\.\d+` is unanchored (`20`).  
+**Fix:** close those objects; anchor semver.
+
+**6. `defineExtension` is a second, weaker gate.**  
+Only ID uniqueness (`lifecycle.ts:64–92`); no `validateManifest`. In-process activate can skip the loader.  
+**Fix:** call `validateManifest` (or document loader-only).
+
+**7. Governance pins are duplicated handwritten lists.**  
+13-key exact pin is real (`index.test.ts:1451–1468`; `sdk-boundary.test.ts:3926–3940`). `boundary.test.ts:457–461,715–719` is **subset-only**. Stale 21-kind `mandatoryKinds` omits `dataKind` and requires `/^M\d+$/` (`sdk-boundary.test.ts:3839–3851`); dataKind has no `legacyMilestone` (`familyDefinitions.ts:301–344`).  
+**Fix:** one `EXTENSION_CONTEXT_KEYS` / `VIDEO_CONTRIBUTION_KINDS` source; drop the 21-kind list.
+
+---
+
+### LOW
+
+**8. Asymmetric freeze:** `ctx.ui` frozen, `dataKinds`/`commands`/`effects` not (`extensionContextFactory.ts:505–507`).  
+**9. Surface labels miss `dataKind`/`clipType`/`command`** (`FamilyRuntimeAssembly.ts:68–84`).  
+**10. No duplicate `kindId`/`clipTypeId` check** — only scoped contribution `id` (`manifest.ts:420–426`).
+
+---
+
+### What is solid
+
+- Kind enum + oneOf + `DataKindContribution.additionalProperties: false` (`schema.json:113–140,161–185,966–981`); drift script exists.  
+- Runtime unknown kind → `manifest/unknown-contribution-kind` (`manifest.ts:427–434`).  
+- `RENDER_BACKED_KINDS` still five chrome kinds (`extensionRenderSurface.ts:44–50`).  
+- Context 13 keys include `dataKinds`; missing-service fallbacks emit `*/not-wired` no-ops (`extensionContextFactory.ts:437–455`).  
+- Lifecycle dispose is idempotent + `CONTEXT_DISPOSE_SYMBOL` (`extensionLifecycle.ts:162–223,377–410`).  
+- Census 22 on registry/adapter (`familyDefinitions.test.ts:45–46,521`; `familyAdapterRegistry.test.ts:37–39`).  
+- Trust posture is honest: declarative-only, unsandboxed.
+
+**Insight:** The JSON schema is a *test fixture*, not the trust boundary. Load-time truth is handwritten `validateManifest`, which does not implement the `additionalProperties` story the dataKind design hangs fail-closedness on. Unify those two validators before the next family.
