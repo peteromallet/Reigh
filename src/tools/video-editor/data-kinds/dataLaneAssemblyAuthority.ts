@@ -15,6 +15,8 @@
 
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
 
+import type { TranscriptSegment } from '@/tools/video-editor/lib/timeline-data.ts';
+
 /** Fetches the transcript segments for one asset (host-injected IO seam). */
 export type LoadDataSegments = (
   assetId: string,

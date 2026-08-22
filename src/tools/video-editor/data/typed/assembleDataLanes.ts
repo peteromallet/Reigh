@@ -87,7 +87,7 @@ const toSourceItem = (item: FrozenDataItem): SourceFrozenDataItem => ({
   extent: item.extent,
   schemaRef: item.schemaRef,
   payload: item.payload,
-  sourceArtifactRef: item.sourceArtifactRef ?? { assetId: '' },
+  sourceArtifactRef: { assetId: item.sourceArtifactRef?.assetId ?? '' },
   provenance: item.provenance,
 });
 

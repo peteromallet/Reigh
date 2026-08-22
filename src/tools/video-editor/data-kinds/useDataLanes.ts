@@ -91,7 +91,7 @@ export function useDataLanes({ base, kinds, loadSegments }: UseDataLanesArgs): T
   // one fetch per asset. The default loader's identity source is the runtime
   // object (stable per editor mount); an explicit loader keys under itself.
   const loaderSource: object | undefined =
-    loadSegments !== undefined ? (loadSegments ?? undefined) : runtime;
+    loadSegments !== undefined ? (loadSegments ?? undefined) : (runtime ?? undefined);
   const segmentsByAsset = useLaneSegments({
     loaderSource,
     timelineId: runtime?.timelineId,

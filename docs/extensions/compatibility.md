@@ -94,6 +94,35 @@ declaration. Runtime duplicate registrations (for example a repeated
 `dataKind` kindId) replace the previous record and emit a
 `data-kind-registry/duplicate-kind` warning rather than crashing the host.
 
+## Persistence Compatibility
+
+The TimelineBundle (`data/typed/timelineBundle.ts`) parses fail-closed
+everywhere: a corrupt or unknown-version bundle produces named diagnostics,
+never silently empty lanes — empty lanes that round-trip through the next
+save would turn a read quirk into data loss.
+
+Bridge tolerance: on the Astrid local-bridge wire (`data/bridgeContract.ts`,
+the contract artifact for this section), `bundle` is an optional additive
+field of `bridgeTimelinePayloadSchema`. Bridges that ignore it behave exactly
+as before the field existed; a present-but-invalid bundle fails the whole
+payload parse closed with `BridgeContractError`. Astrid-side *serving* of
+bundles (an `astrid serve` that writes and returns them) is an explicitly
+out-of-scope follow-up outside this repo.
+
+Supabase posture (two halves proven): the client sends the bundle inside the
+config-replaced POST body on save (`SupabaseDataProvider.saveTimeline`) and
+parses the row's `data_bundle` column fail-closed to `null` plus a warning on
+load. The SQL side is shipped: migration
+`supabase/migrations/20260822000000_add_timeline_data_bundle.sql` adds the
+nullable `data_bundle` column and materializes it from `timeline.bundle_replaced`
+events in the append RPCs, with pre-bundle function signatures kept live as
+wrappers so existing callers behave exactly as before. Activation of the
+Python append service middle hop remains a documented follow-up outside this
+repo.
+
+Upgrade policy: writers always emit the current `TIMELINE_BUNDLE_SCHEMA_VERSION`;
+readers reject newer versions rather than guessing.
+
 ## Release Gates
 
 Current concrete gates for this compatibility contract:

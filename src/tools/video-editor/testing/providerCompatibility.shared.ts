@@ -553,7 +553,7 @@ export function runProviderCompatibilitySuite(
         });
 
         await provider.saveTimeline(tid, config2, 1, registry2, bundleA);
-        await provider.saveTimeline(tid, buildConfig(), 3, undefined, null);
+        await provider.saveTimeline(tid, buildConfig(), 2, undefined, null);
 
         const loaded = await provider.loadTimeline(tid);
         expect(loaded.bundle ?? null).toBeNull();

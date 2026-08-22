@@ -34,6 +34,11 @@ import {
   expectUnsupportedExtensionPersistenceDiagnostics,
 } from '@/tools/video-editor/data/conformance/extensionPersistenceConformance';
 import {
+  TIMELINE_BUNDLE_SCHEMA_VERSION,
+  TimelineBundleParseError,
+  type TimelineBundleEnvelope,
+} from '@/tools/video-editor/data/typed/timelineBundle.ts';
+import {
   ensurePermission,
   getDirectoryHandle,
   saveDirectoryHandle,
@@ -1797,6 +1802,200 @@ describe('AstridBridgeDataProvider', () => {
       expect(loaded.config.clips[0]).toMatchObject({ extensionAuthored: { keep: true } });
       expect(loaded.config.tracks[0]).toMatchObject({ vendorField: 7 });
       expect(registry.assets['asset-video']).toMatchObject({ vendorField: 'kept' });
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // dataKind V2: TimelineBundle passthrough (contract field + provider)
+  // -------------------------------------------------------------------------
+  describe('dataKind V2: bundle passthrough', () => {
+    const BUNDLE_TIMELINE_ID = '11111111-1111-1111-1111-111111111111';
+    const LOCAL_TIMELINE_REF = '01JM4K5N7P0000000000000017';
+
+    const createProvider = () => new AstridBridgeDataProvider({
+      projectSlug: 'ados-talks',
+      timelineRef: BUNDLE_TIMELINE_ID,
+      timelineId: BUNDLE_TIMELINE_ID,
+    });
+
+    const makeLocalProvider = () => new AstridBridgeDataProvider({
+      projectSlug: 'ados-talks',
+      timelineRef: LOCAL_TIMELINE_REF,
+      timelineId: LOCAL_TIMELINE_REF,
+    });
+
+    const makeBundle = (overrides: Record<string, unknown> = {}) => ({
+      schema_version: TIMELINE_BUNDLE_SCHEMA_VERSION,
+      itemsBySchemaRef: {
+        'reigh.transcript_segment/v1': [{
+          id: 'assetA:src:9a03b4c1d2e4',
+          shape: 'interval',
+          domain: 'source_seconds',
+          extent: { start: 0, end: 1.5 },
+          schemaRef: 'reigh.transcript_segment/v1',
+          payload: { text: 'hello' },
+          sourceArtifactRef: { assetId: 'assetA' },
+          provenance: { adapterId: 'reigh.adaptTranscript', adapterVersion: '1' },
+        }],
+      },
+      ...overrides,
+    });
+
+    const makeLocalTree = () => createFileSystemHandleTree({
+      'project.json': JSON.stringify({ slug: 'ados-talks' }),
+      [`timelines/${LOCAL_TIMELINE_REF}/assembly.json`]: JSON.stringify({
+        clips: [],
+        tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      }),
+      [`timelines/${LOCAL_TIMELINE_REF}/registry.json`]: JSON.stringify({
+        assets: { 'asset-video': { file: 'clips/demo.mp4', type: 'video/mp4' } },
+      }),
+    });
+
+    /** Fetch mock splitting GET (payload) from POST /save, capturing save bodies. */
+    function stubBridgeSavingBodies(saveBodies: Array<Record<string, unknown>>, responseOverrides: Record<string, unknown> = {}) {
+      const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        // The save POST is addressed by the cached timeline_ulid, not the
+        // caller's UUID key (see the addressing tests above) — match /save.
+        if (String(input).endsWith('/save')) {
+          saveBodies.push(JSON.parse(String(init?.body)));
+          return new Response(JSON.stringify({ ...makePayload(), config_version: 4, ...responseOverrides }), { status: 200 });
+        }
+        return new Response(JSON.stringify(makePayload()), { status: 200 });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+      return fetchMock;
+    }
+
+    it('loads a declared bundle through to LoadedTimeline.bundle', async () => {
+      const bundle = makeBundle();
+      vi.stubGlobal('fetch', vi.fn(async () => new Response(
+        JSON.stringify({ ...makePayload(), bundle }),
+        { status: 200 },
+      )));
+
+      const loaded = await createProvider().loadTimeline(BUNDLE_TIMELINE_ID);
+
+      expect(loaded.bundle).toEqual(bundle);
+      // The rest of the payload loads exactly as before the field existed.
+      expect(loaded.config.tracks[0]).toMatchObject({ id: 'V1' });
+    });
+
+    it('reports bundle: null when the head carries none (provider has adopted bundles)', async () => {
+      vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(makePayload()), { status: 200 })));
+
+      const loaded = await createProvider().loadTimeline(BUNDLE_TIMELINE_ID);
+
+      // Explicit null, not undefined: callers must be able to distinguish
+      // "nothing persisted" from a provider that ignores bundles entirely.
+      expect(loaded.bundle).toBeNull();
+    });
+
+    it('fails the whole load closed when the head declares an unparsable bundle', async () => {
+      vi.stubGlobal('fetch', vi.fn(async () => new Response(
+        JSON.stringify({ ...makePayload(), bundle: makeBundle({ schema_version: 99 }) }),
+        { status: 200 },
+      )));
+
+      let error: unknown = null;
+      try {
+        await createProvider().loadTimeline(BUNDLE_TIMELINE_ID);
+      } catch (caught) {
+        error = caught;
+      }
+
+      expect(error).toBeInstanceOf(BridgeContractError);
+      expect((error as Error).message).toMatch(/bundle\.schema_version/);
+    });
+
+    it('sends the bundle in the save POST body and tolerates a bridge that ignores it', async () => {
+      const bundle = makeBundle();
+      const saveBodies: Array<Record<string, unknown>> = [];
+      stubBridgeSavingBodies(saveBodies);
+
+      const provider = createProvider();
+      const nextVersion = await provider.saveTimeline(BUNDLE_TIMELINE_ID, {
+        clips: [],
+        tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      }, 3, undefined, bundle);
+
+      expect(saveBodies).toHaveLength(1);
+      expect(saveBodies[0].bundle).toEqual(bundle);
+      expect(saveBodies[0].expected_version).toBe(3);
+      // Ignoring-field tolerance: the mock bridge answers 200 without echoing
+      // or storing the bundle; the save succeeds and adopts its head version.
+      expect(nextVersion).toBe(4);
+    });
+
+    it('omits the bundle key when saving without one and sends null for an explicit clear', async () => {
+      const saveBodies: Array<Record<string, unknown>> = [];
+      stubBridgeSavingBodies(saveBodies);
+
+      const config = { clips: [], tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }] };
+      const provider = createProvider();
+      await provider.saveTimeline(BUNDLE_TIMELINE_ID, config, 1);
+      await provider.saveTimeline(BUNDLE_TIMELINE_ID, config, 2, undefined, null);
+
+      expect('bundle' in saveBodies[0]).toBe(false);
+      expect(saveBodies[1].bundle).toBeNull();
+    });
+
+    it('rejects an invalid bundle before any network call', async () => {
+      const fetchMock = stubBridgeSavingBodies([]);
+      const invalid = makeBundle({ schema_version: 99 }) as unknown as TimelineBundleEnvelope;
+
+      let error: unknown = null;
+      try {
+        await createProvider().saveTimeline(BUNDLE_TIMELINE_ID, { clips: [], tracks: [] }, 1, undefined, invalid);
+      } catch (caught) {
+        error = caught;
+      }
+
+      expect(error).toBeInstanceOf(TimelineBundleParseError);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('persists a data-bundle.json sibling in local mode and round-trips it through a reload', async () => {
+      const localTree = makeLocalTree();
+      vi.mocked(getDirectoryHandle).mockResolvedValue(localTree.projectRootHandle);
+      const bundle = makeBundle();
+
+      await makeLocalProvider().saveTimeline(LOCAL_TIMELINE_REF, {
+        clips: [],
+        tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      }, 1, undefined, bundle);
+
+      const persistedPath = `timelines/${LOCAL_TIMELINE_REF}/data-bundle.json`;
+      expect(typeof localTree.files[persistedPath]).toBe('string');
+      const persisted = JSON.parse(localTree.files[persistedPath] as string);
+      expect(persisted.schema_version).toBe(TIMELINE_BUNDLE_SCHEMA_VERSION);
+
+      // A fresh provider instance reads only what hit disk.
+      const loaded = await makeLocalProvider().loadTimeline(LOCAL_TIMELINE_REF);
+      expect(loaded.bundle).toEqual(bundle);
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+    });
+
+    it('leaves an existing sibling untouched when a local save passes no bundle, and clears it on explicit null', async () => {
+      const localTree = makeLocalTree();
+      vi.mocked(getDirectoryHandle).mockResolvedValue(localTree.projectRootHandle);
+      const bundle = makeBundle();
+      const persistedPath = `timelines/${LOCAL_TIMELINE_REF}/data-bundle.json`;
+      const provider = makeLocalProvider();
+
+      await provider.saveTimeline(LOCAL_TIMELINE_REF, { clips: [], tracks: [] }, 1, undefined, bundle);
+      await provider.saveTimeline(LOCAL_TIMELINE_REF, {
+        clips: [],
+        tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      }, 2);
+
+      expect(JSON.parse(localTree.files[persistedPath] as string)).toEqual(bundle);
+
+      await provider.saveTimeline(LOCAL_TIMELINE_REF, { clips: [], tracks: [] }, 3, undefined, null);
+
+      expect(localTree.removed).toContain(persistedPath);
+      const loaded = await makeLocalProvider().loadTimeline(LOCAL_TIMELINE_REF);
+      expect(loaded.bundle).toBeNull();
     });
   });
 

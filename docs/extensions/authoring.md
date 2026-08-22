@@ -220,6 +220,36 @@ targets and a lane summary for `dataLane` ones. Lanes also render opaque
 whenever no provider/registration path is wired — the lane plane fails open
 to "no lanes" without a loader.
 
+### Persistence
+
+What persists is SOURCE data only: a TimelineBundle envelope
+(`TimelineBundleEnvelope`, `data/typed/timelineBundle.ts`) whose
+`itemsBySchemaRef` maps each qualified `schemaRef` to an array of
+`SourceFrozenDataItem`s. Occurrences, lane views, and renderer wiring are all
+derived at assembly time and never persisted — a bundle carries nothing a
+renderer needs beyond source coordinates.
+
+Item contract (the Zod item schema is `strictObject`, so violations fail at
+parse):
+
+- `id` IS the durable content-derived `sourceItemId`
+  (`${assetId}:src:<fnv1a64Hex>` over the canonical form of the item content,
+  see `adaptTranscript.ts`) — positional ids must never be persisted.
+- `sourceArtifactRef.assetId` is required; assembly remaps each item onto
+  every clip referencing that asset.
+- `entityRef`, timeline coordinates, and renderer references are rejected at
+  parse time — those belong to the view plane.
+
+Version policy: the `schema_version` header starts at
+`TIMELINE_BUNDLE_SCHEMA_VERSION` (`1`). `parseTimelineBundle` fails closed on
+unknown versions with a diagnostic naming the found version. Within a known
+version, the envelope itself is loose: unknown top-level fields round-trip
+untouched so a newer writer's extras survive an older reader.
+
+Bundles ride the timeline's normal save path — no separate persistence API.
+Providers persist `{config, registry, bundle}` atomically where their backend
+supports it; see `docs/extensions/compatibility.md` for per-provider posture.
+
 ## Settings Schema
 
 Settings use the top-level `settingsSchema` manifest field:

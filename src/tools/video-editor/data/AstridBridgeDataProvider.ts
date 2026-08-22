@@ -20,6 +20,10 @@ import {
   bridgeTimelinePayloadSchema,
   parseBridgePayload,
 } from '@/tools/video-editor/data/bridgeContract.ts';
+import {
+  parseTimelineBundle,
+  type TimelineBundleEnvelope,
+} from '@/tools/video-editor/data/typed/timelineBundle.ts';
 import type {
   AssetProfile,
   AssetResolveRequest,
@@ -54,6 +58,7 @@ type BridgeTimelinePayload = {
   config?: unknown;
   config_version?: unknown;
   registry?: unknown;
+  bundle?: unknown;
 };
 
 type AstridBridgeDataProviderOptions = {
@@ -74,6 +79,7 @@ const LOCAL_ASSETS_DIRECTORY_NAME = 'assets';
 const LOCAL_INCOMING_DIRECTORY_NAME = '.incoming';
 const ASSEMBLY_JSON_FILENAME = 'assembly.json';
 const REGISTRY_JSON_FILENAME = 'registry.json';
+const DATA_BUNDLE_JSON_FILENAME = 'data-bundle.json';
 
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
@@ -288,6 +294,14 @@ export class AstridBridgeDataProvider implements DataProvider {
     return {
       config: normalizeConfig(payload.config),
       configVersion: normalizeConfigVersion(payload.config_version),
+      // Both payload paths validate bundles before caching (the wire contract
+      // schema for bridge reads, `parseTimelineBundle` for local siblings), so
+      // this re-parse is a cheap fail-closed backstop for any path that stuffs
+      // an unvalidated value into the cache. `null` = nothing persisted —
+      // never a silently dropped lane set.
+      bundle: payload.bundle === undefined || payload.bundle === null
+        ? null
+        : parseTimelineBundle(payload.bundle),
     };
   }
 
@@ -358,17 +372,34 @@ export class AstridBridgeDataProvider implements DataProvider {
    * which becomes a {@link TimelineVersionConflictError} and engages the
    * reload-and-retry ladder in `useTimelinePersistence`.
    *
-   * **Backward compatibility contract:** a bridge that ignores the extra field
-   * behaves exactly as it does today — last write wins, no conflict is ever
-   * reported. Nothing here depends on the bridge understanding the field, so
-   * `astrid serve` can adopt it independently of this repo.
+   * **Backward compatibility contract:** a bridge that ignores the extra
+   * fields behaves exactly as it does today — last write wins, no conflict is
+   * ever reported. Nothing here depends on the bridge understanding
+   * `expected_version` or `bundle`, so `astrid serve` can adopt them
+   * independently of this repo.
+   *
+   * dataKind V2 `bundle?` semantics:
+   * - an invalid envelope throws BEFORE any disk/network mutation;
+   * - an envelope persists atomically-after-config in local mode (the
+   *   `data-bundle.json` sibling, written last so a mid-save disk failure
+   *   degrades to a stale-but-valid bundle, never a lost one) and rides the
+   *   POST body in HTTP mode;
+   * - explicit `null` clears (local mode removes the sibling, HTTP sends
+   *   `bundle: null`);
+   * - `undefined` leaves whatever is stored untouched (key omitted).
    */
   async saveTimeline(
     timelineId: string,
     config: TimelineConfig,
     expectedVersion: number,
     registry?: AssetRegistry,
+    bundle?: TimelineBundleEnvelope | null,
   ): Promise<number> {
+    // Fail closed before the pre-read or any IO: an invalid bundle must never
+    // leave a half-applied save behind (DataProvider CAS contract).
+    if (bundle !== undefined && bundle !== null) {
+      parseTimelineBundle(bundle);
+    }
     const existingPayload = await this.fetchTimelinePayload(timelineId);
     const nextRegistry = registry ?? normalizeRegistry(existingPayload.registry);
     const timelineRef = this.getTimelineRequestRef(timelineId);
@@ -377,10 +408,18 @@ export class AstridBridgeDataProvider implements DataProvider {
       const materializedRegistry = await this.materializeGenerationAssets(timelineId, nextRegistry);
       await this.writeLocalJson(this.localTimelineFiles.timelineHandle, REGISTRY_JSON_FILENAME, materializedRegistry);
       await this.writeLocalJson(this.localTimelineFiles.timelineHandle, ASSEMBLY_JSON_FILENAME, config);
+      if (bundle !== undefined) {
+        if (bundle === null) {
+          await this.removeEntryBestEffort(this.localTimelineFiles.timelineHandle, DATA_BUNDLE_JSON_FILENAME);
+        } else {
+          await this.writeLocalJson(this.localTimelineFiles.timelineHandle, DATA_BUNDLE_JSON_FILENAME, bundle);
+        }
+      }
       this.cachePayload({
         ...existingPayload,
         config,
         registry: materializedRegistry,
+        ...(bundle !== undefined ? { bundle } : {}),
         config_version: normalizeConfigVersion(existingPayload.config_version) + 1,
       }, timelineId);
       return normalizeConfigVersion(this.cachedPayload?.config_version);
@@ -391,7 +430,15 @@ export class AstridBridgeDataProvider implements DataProvider {
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config, registry: nextRegistry, expected_version: expectedVersion }),
+        body: JSON.stringify({
+          config,
+          registry: nextRegistry,
+          expected_version: expectedVersion,
+          // Additive field (see backward-compatibility contract above):
+          // explicit `null` clears, `undefined` omits the key entirely so a
+          // bridge-side bundle the client never saw stays untouched.
+          ...(bundle !== undefined ? { bundle } : {}),
+        }),
         signal: AbortSignal.timeout(BRIDGE_REQUEST_TIMEOUT_MS),
       },
     );
@@ -713,6 +760,12 @@ export class AstridBridgeDataProvider implements DataProvider {
         ? { assets: {} }
         : parseBridgePayload(bridgeAssetRegistrySchema, registryOnDisk, `local ${REGISTRY_JSON_FILENAME}`),
     );
+    // Same posture as the registry sibling: a missing/unreadable
+    // `data-bundle.json` is "nothing persisted" (`null`), but a file that IS
+    // readable and fails the envelope schema fails the load closed — never a
+    // silent empty-lane save waiting one write away.
+    const bundleOnDisk = await this.readOptionalLocalJson(localFiles.timelineHandle, DATA_BUNDLE_JSON_FILENAME);
+    const bundle = bundleOnDisk === null ? null : parseTimelineBundle(bundleOnDisk);
     const beforeMaterialization = JSON.stringify(normalizedRegistry);
     const materializedRegistry = await this.materializeGenerationAssets(timelineId, normalizedRegistry);
     if (JSON.stringify(materializedRegistry) !== beforeMaterialization) {
@@ -726,6 +779,7 @@ export class AstridBridgeDataProvider implements DataProvider {
       name: this.selectedTimelineRef,
       config,
       registry: materializedRegistry,
+      bundle,
       // Disk has no version counter, so it is synthesized here. Now that loads
       // are `fresh`, re-reading must not walk the version backwards: keep the
       // one this provider already handed out (saves bump it) instead of

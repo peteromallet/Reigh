@@ -22,6 +22,8 @@
  */
 import { z } from 'zod';
 
+import { timelineBundleEnvelopeSchema } from '@/tools/video-editor/data/typed/timelineBundle.ts';
+
 /**
  * Transport deadline for every bridge request. A hung (as opposed to dead)
  * bridge used to park the save badge on `saving` forever, which also disabled
@@ -66,7 +68,17 @@ export const bridgeAssetRegistrySchema = z.looseObject({
   assets: z.record(z.string(), bridgeAssetRegistryEntrySchema),
 });
 
-/** `GET /projects/:slug/timelines/:ref` and the `POST …/save` response. */
+/**
+ * `GET /projects/:slug/timelines/:ref` and the `POST …/save` response.
+ *
+ * dataKind V2: an optional `bundle` — the schema-versioned TimelineBundle of
+ * SOURCE data items (`data/typed/timelineBundle.ts`, the single parse
+ * authority) — may ride the payload. Absent is legal. Present-but-invalid
+ * fails the whole parse closed: a head that declares a bundle it cannot
+ * explain must never load as if lanes were empty, because the next save would
+ * persist that emptiness (the same read-side-quirk-becomes-data-loss rule as
+ * the registry below).
+ */
 export const bridgeTimelinePayloadSchema = z.looseObject({
   timeline_id: z.string().optional(),
   timeline_ulid: z.string().optional(),
@@ -75,6 +87,7 @@ export const bridgeTimelinePayloadSchema = z.looseObject({
   config: bridgeTimelineConfigSchema,
   config_version: z.number().optional(),
   registry: bridgeAssetRegistrySchema.optional(),
+  bundle: timelineBundleEnvelopeSchema.optional(),
 });
 
 export const bridgeHealthSchema = z.looseObject({
