@@ -25,6 +25,10 @@ import {
   type SyncBookmarkRecord,
 } from '@/tools/video-editor/data/syncLedgerIndexedDb.ts';
 import type { AssetRegistry, AssetRegistryEntry, TimelineConfig } from '@/tools/video-editor/types/index.ts';
+import {
+  parseTimelineBundle,
+  type TimelineBundleEnvelope,
+} from '@/tools/video-editor/data/typed/timelineBundle.ts';
 import type { Checkpoint } from '@/tools/video-editor/types/history.ts';
 
 import type { ExtensionDiagnostic } from '@reigh/editor-sdk';
@@ -769,7 +773,7 @@ export class SupabaseDataProvider implements DataProvider {
     const [{ data, error }, dbHead] = await Promise.all([
       supabase
         .from('timelines')
-        .select('config, config_version')
+        .select('config, config_version, data_bundle')
         .eq('id', timelineId)
         .maybeSingle(),
       this.loadDbHead(timelineId),
@@ -777,6 +781,20 @@ export class SupabaseDataProvider implements DataProvider {
 
     if (error) {
       throw error;
+    }
+
+    // dataKind V2: the sibling TimelineBundle rides the same row; unparsable
+    // payloads fail closed to `bundle: null` with a diagnostic, never break
+    // config load.
+    const rawBundle = (data as { data_bundle?: unknown } | null)?.data_bundle;
+    let bundle: TimelineBundleEnvelope | null = null;
+    if (rawBundle !== null && rawBundle !== undefined) {
+      try {
+        bundle = parseTimelineBundle(rawBundle);
+      } catch (error) {
+        bundle = null;
+        console.warn('[SupabaseDataProvider] ignoring unparsable data_bundle', error);
+      }
     }
 
     const config = (data?.config ?? createDefaultTimelineConfig()) as TimelineConfig;
@@ -787,6 +805,10 @@ export class SupabaseDataProvider implements DataProvider {
       configVersion: typeof (data as { config_version?: unknown } | null)?.config_version === 'number'
         ? (data as { config_version: number }).config_version
         : 1,
+      // Explicit null (not omitted): callers distinguish "no bundle" from
+      // "bundle present but failed closed" via the diagnostic, and both
+      // states observe `bundle == null`.
+      bundle,
     };
     await this.saveLocalBookmark(buildBookmarkFromDbHead(timelineId, dbHead));
     return loadedTimeline;
@@ -797,7 +819,11 @@ export class SupabaseDataProvider implements DataProvider {
     config: TimelineConfig,
     expectedVersion: number,
     registry?: AssetRegistry,
+    bundle?: TimelineBundleEnvelope | null,
   ): Promise<number> {
+    if (bundle !== undefined && bundle !== null) {
+      parseTimelineBundle(bundle);
+    }
     const pairSerialized = registry !== undefined ? serializeTimelinePair(config, registry) : null;
     const configSerialized = pairSerialized ?? serializeTimelineConfigSnapshot(config);
     const response = await fetch(
@@ -817,6 +843,7 @@ export class SupabaseDataProvider implements DataProvider {
             id: this.options.userId,
           },
           source: 'editor_save',
+          ...(bundle !== undefined && bundle !== null ? { bundle } : {}),
         }),
       },
     );

@@ -32,6 +32,10 @@ import {
 import type { ExtensionDiagnostic } from '@reigh/editor-sdk';
 import type { ExtensionPersistenceScope } from './DataProvider';
 import {
+  parseTimelineBundle,
+  TimelineBundleParseError,
+} from './typed/timelineBundle';
+import {
   listKeepBothArtifacts,
   loadSyncBookmark,
   saveSyncBookmark,
@@ -1320,6 +1324,121 @@ describe('SupabaseDataProvider', () => {
       for (const status of ['draft', 'submitted', 'accepted', 'rejected', 'cancelled', 'expired']) {
         expect(allowedStatuses).toContain(status);
       }
+    });
+  });
+
+  describe('data bundle persistence', () => {
+    const makeItem = (overrides: Record<string, unknown> = {}) => ({
+      id: 'assetA:src:0',
+      shape: 'interval',
+      domain: 'source_seconds',
+      extent: { start: 0, end: 1.5 },
+      schemaRef: 'reigh.transcript_segment/v1',
+      payload: { text: 'hello' },
+      sourceArtifactRef: { assetId: 'assetA' },
+      provenance: { adapterId: 'reigh.adaptTranscript', adapterVersion: '1' },
+      ...overrides,
+    });
+    const makeEnvelope = (overrides: Record<string, unknown> = {}) => ({
+      schema_version: 1,
+      itemsBySchemaRef: { 'reigh.transcript_segment/v1': [makeItem()] },
+      ...overrides,
+    });
+
+    function mockLoadTimelineTables(timelinesRow: { data: unknown; error: null }) {
+      const timelinesQuery = mockTimelinesSelect(timelinesRow);
+      const timelineHeadQuery = mockTimelineHeadSelect({
+        data: buildHead(7, 'a'.repeat(64), '01ARZ3NDEKTSV4RRFFQ69G5FAB'),
+        error: null,
+      });
+      mocks.from.mockImplementation((table: string) => {
+        if (table === 'timelines') {
+          return { select: timelinesQuery.select };
+        }
+        if (table === 'timeline_events') {
+          return { select: timelineHeadQuery.select };
+        }
+        throw new Error(`Unexpected table: ${table}`);
+      });
+    }
+
+    it('loadTimeline parses a persisted data_bundle into LoadedTimeline.bundle', async () => {
+      mockLoadTimelineTables({
+        data: {
+          config: buildConfig(),
+          config_version: 7,
+          data_bundle: makeEnvelope(),
+        },
+        error: null,
+      });
+      const provider = new SupabaseDataProvider({ projectId: 'project-1', userId: 'user-1' });
+
+      const timeline = await provider.loadTimeline('timeline-1');
+
+      expect(timeline.bundle).toEqual(parseTimelineBundle(makeEnvelope()));
+      expect(timeline.configVersion).toBe(7);
+    });
+
+    it('loadTimeline survives a corrupt data_bundle with a diagnostic and keeps config', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      mockLoadTimelineTables({
+        data: {
+          config: buildConfig(),
+          config_version: 7,
+          data_bundle: { garbage: true },
+        },
+        error: null,
+      });
+      const provider = new SupabaseDataProvider({ projectId: 'project-1', userId: 'user-1' });
+
+      const timeline = await provider.loadTimeline('timeline-1');
+
+      expect(timeline.config).toBeDefined();
+      expect(timeline.configVersion).toBe(7);
+      expect(timeline.bundle).toBeNull();
+      expect(warnSpy).toHaveBeenCalledWith('[SupabaseDataProvider] ignoring unparsable data_bundle', expect.anything());
+      warnSpy.mockRestore();
+    });
+
+    it('saveTimeline posts the bundle alongside config and registry', async () => {
+      vi.mocked(globalThis.fetch).mockResolvedValue(new Response(JSON.stringify({
+        config_version: 9,
+        db_head: {
+          version: 9,
+          hash: 'b'.repeat(64),
+          event_id: '01ARZ3NDEKTSV4RRFFQ69G5FBB',
+        },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }));
+      const provider = new SupabaseDataProvider({ projectId: 'project-1', userId: 'user-123' });
+      const registry = { assets: { 'asset-1': { file: 'clips/demo.mp4', type: 'video/mp4' } } };
+
+      const nextVersion = await provider.saveTimeline('timeline-1', buildConfig(), 8, registry, makeEnvelope());
+
+      expect(nextVersion).toBe(9);
+      const [, init] = vi.mocked(globalThis.fetch).mock.calls[0];
+      expect(JSON.parse(String(init?.body))).toEqual({
+        config: canonicalConfig(),
+        asset_registry: registry,
+        expected_version: 8,
+        actor: {
+          type: 'human',
+          id: 'user-123',
+        },
+        source: 'editor_save',
+        bundle: makeEnvelope(),
+      });
+    });
+
+    it('saveTimeline rejects a malformed bundle before any network call', async () => {
+      const provider = new SupabaseDataProvider({ projectId: 'project-1', userId: 'user-123' });
+
+      await expect(
+        provider.saveTimeline('timeline-1', buildConfig(), 8, undefined, { ...makeEnvelope(), schema_version: 99 }),
+      ).rejects.toBeInstanceOf(TimelineBundleParseError);
+      expect(globalThis.fetch).not.toHaveBeenCalled();
     });
   });
 

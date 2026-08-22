@@ -13,6 +13,7 @@ import { buildTimelineData, buildTimelineDataWithResolver, type TimelineData } f
 import type { AssetResolver } from '@/tools/video-editor/data/AssetResolver.ts';
 import { BRIDGE_REQUEST_TIMEOUT_MS } from '@/tools/video-editor/data/bridgeContract.ts';
 import { clearTimelineDraft, saveTimelineDraft } from '@/tools/video-editor/data/timelineDraftIndexedDb.ts';
+import type { TimelineBundleEnvelope } from '@/tools/video-editor/data/typed/timelineBundle.ts';
 import type { AssetRegistry, TimelineConfig } from '@/tools/video-editor/types/index.ts';
 import type { CommitDataOptions, ScheduleSaveFn } from '@/tools/video-editor/hooks/useTimelineCommit.ts';
 
@@ -90,6 +91,14 @@ export interface UseTimelinePersistenceResult {
   watchdogReason: 'timeout' | 'lost-edit' | null;
   /** Re-attempt the save (timeout) or dismiss the notice (lost-edit). */
   retryWatchdog: () => void;
+  /**
+   * The bundle carried by the most recent server reload (`reloadFromServer`).
+   * [V2-B4 handoff] the assembly authority supersedes this ref as the
+   * save-side producer once source items become editor-mutable; until then a
+   * reloaded bundle is re-persisted verbatim so edits that don't touch lanes
+   * can't silently drop it.
+   */
+  loadedBundleRef: MutableRefObject<TimelineBundleEnvelope | null>;
 }
 
 export function useTimelinePersistence({
@@ -116,6 +125,14 @@ export function useTimelinePersistence({
   // Flushed on gesture end by the onInteractionEnd listener below.
   const deferredSaveRef = useRef<{ data: TimelineData; preserveStatus?: boolean } | null>(null);
   const isSavingRef = useRef(false);
+  /**
+   * The bundle carried by the most recent server reload (`reloadFromServer`).
+   * [V2-B4 handoff] the assembly authority supersedes this ref as the
+   * save-side producer once source items become editor-mutable; until then a
+   * reloaded bundle is re-persisted verbatim so edits that don't touch lanes
+   * can't silently drop it.
+   */
+  const loadedBundleRef = useRef<TimelineBundleEnvelope | null>(null);
   // Transport-failure retry: attempt counter + its own timer, so a failing
   // backend is retried on a backoff instead of as fast as it can answer.
   const errorRetryRef = useRef(0);
@@ -168,12 +185,15 @@ export function useTimelinePersistence({
       config,
       expectedVersion,
       registry,
+      bundle,
     }: {
       config: TimelineConfig;
       expectedVersion: number;
       registry?: AssetRegistry;
+      /** `undefined` keeps the stored bundle; `null` clears it. */
+      bundle?: TimelineBundleEnvelope | null;
     }) => {
-      return provider.saveTimeline(timelineId, config, expectedVersion, registry);
+      return provider.saveTimeline(timelineId, config, expectedVersion, registry, bundle);
     },
     retry: false,
   });
@@ -305,6 +325,9 @@ export function useTimelinePersistence({
           config: nextData.config,
           expectedVersion,
           registry: nextData.registry,
+          // Preserve a reloaded bundle across saves (see loadedBundleRef).
+          // `?? undefined`: a null ref must NOT clear a stored bundle.
+          bundle: loadedBundleRef.current ?? undefined,
         },
         {
           onSuccess: (nextVersion) => {
@@ -543,6 +566,10 @@ export function useTimelinePersistence({
     logConfigVersionUpdate('reload', loadedTimeline.configVersion);
     configVersionRef.current = loadedTimeline.configVersion;
     store?.getState().setConfigVersion(loadedTimeline.configVersion);
+    // E4 seam 3: keep the reloaded bundle reachable downstream instead of
+    // dropping it — saves re-persist it; [V2-B4] the assembly authority
+    // consumes this ref for repaint.
+    loadedBundleRef.current = loadedTimeline.bundle ?? null;
 
     const reloadedData = assetResolver
       ? await buildTimelineDataWithResolver(
@@ -654,5 +681,7 @@ export function useTimelinePersistence({
     watchdogTripped,
     watchdogReason,
     retryWatchdog,
+    /** Bundle from the last server reload; consumed downstream ([V2-B4]). */
+    loadedBundleRef,
   };
 }

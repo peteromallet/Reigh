@@ -71,7 +71,7 @@ describe('useDataLanes', () => {
     expect(lane.inspector).toBe(kind.inspector);
     const [view] = lane.items;
     expect(view.item.id).toBe('a:c1:0');
-    expect(view.item.sourceItemId).toBe('a:src:0');
+    expect(view.item.sourceItemId).toBe('a:src:74b32fcb340a'); // content-derived FNV-1a/64 slice
     expect(view.item.payload).toEqual({ text: 'hello' });
     expect(view.timelineStart).toBe(10); // clip.at + (2 − 2)/1
     expect(view.timelineEnd).toBe(12);

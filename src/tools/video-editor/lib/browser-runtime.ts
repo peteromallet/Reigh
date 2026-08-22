@@ -6,6 +6,10 @@ import {
   type DataProvider,
 } from '@/tools/video-editor/data/DataProvider.ts';
 import { TimelineVersionConflictError } from '@/sdk/video/timeline/errors.ts';
+import {
+  parseTimelineBundle,
+  type TimelineBundleEnvelope,
+} from '@/tools/video-editor/data/typed/timelineBundle.ts';
 import type { AssetRegistry, AssetRegistryEntry, TimelineConfig } from '@/tools/video-editor/types/index.ts';
 import type { Checkpoint } from '@/tools/video-editor/types/history.ts';
 
@@ -56,6 +60,7 @@ export interface InMemoryTimelineSeed {
   config: TimelineConfig;
   configVersion?: number;
   registry?: AssetRegistry;
+  bundle?: TimelineBundleEnvelope | null;
   checkpoints?: Checkpoint[];
 }
 
@@ -67,6 +72,7 @@ export interface InMemoryDataProviderOptions {
 type InMemoryTimelineRecord = Required<Pick<InMemoryTimelineSeed, 'config'>> & {
   configVersion: number;
   registry: AssetRegistry;
+  bundle: TimelineBundleEnvelope | null;
   checkpoints: Checkpoint[];
 };
 
@@ -82,6 +88,8 @@ export class InMemoryDataProvider implements DataProvider {
         config: seed.config,
         configVersion: seed.configVersion ?? 1,
         registry: seed.registry ?? emptyRegistry(),
+        // Same fail-closed parse as a real load — a bad seed throws here.
+        bundle: seed.bundle == null ? null : parseTimelineBundle(seed.bundle),
         checkpoints: seed.checkpoints ?? [],
       });
     }
@@ -98,6 +106,7 @@ export class InMemoryDataProvider implements DataProvider {
     return {
       config: record.config,
       configVersion: record.configVersion,
+      bundle: record.bundle,
     };
   }
 
@@ -106,10 +115,17 @@ export class InMemoryDataProvider implements DataProvider {
     config: TimelineConfig,
     expectedVersion: number,
     registry?: AssetRegistry,
+    bundle?: TimelineBundleEnvelope | null,
   ) {
     const current = this.timelines.get(timelineId);
     if (!current) {
       throw new TimelineNotFoundError(timelineId);
+    }
+
+    // Validate BEFORE the version check and any mutation so a malformed
+    // bundle fails the save atomically (config/registry/version untouched).
+    if (bundle !== undefined && bundle !== null) {
+      parseTimelineBundle(bundle);
     }
 
     if (current.configVersion !== expectedVersion) {
@@ -122,6 +138,8 @@ export class InMemoryDataProvider implements DataProvider {
       config,
       configVersion: nextVersion,
       registry: registry ?? current.registry,
+      // `undefined` preserves the stored bundle; explicit `null` clears it.
+      bundle: bundle === undefined ? current.bundle : bundle,
     });
 
     return nextVersion;

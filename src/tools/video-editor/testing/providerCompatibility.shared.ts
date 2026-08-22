@@ -31,6 +31,11 @@ import {
   TimelineNotFoundError,
 } from '@/tools/video-editor/data/DataProvider';
 import type { AssetRegistry, TimelineConfig } from '@/tools/video-editor/types/index';
+import {
+  parseTimelineBundle,
+  TimelineBundleParseError,
+} from '@/tools/video-editor/data/typed/timelineBundle';
+import type { TimelineBundleEnvelope } from '@/tools/video-editor/data/typed/timelineBundle';
 
 // ---------------------------------------------------------------------------
 // Minimal config builders
@@ -86,7 +91,8 @@ export function runProviderCompatibilitySuite(
     timelineId?: string;
     /** If true, provider doesn't support registerAsset. */
     skipRegisterAsset?: boolean;
-    /** If true, skip tests that try to load nonexistent timelines (e.g. single-timeline bridge providers). */
+    /** If true, the provider does not persist data-lane bundles yet (e.g. bridge until V2-B6). */
+    skipBundles?: boolean;
     skipMissingTimelineTests?: boolean;
   } = {},
 ): void {
@@ -95,7 +101,8 @@ export function runProviderCompatibilitySuite(
     versionConflictIsSoft = false,
     timelineId: defaultTimelineId = 'compat-test-timeline',
     skipRegisterAsset = false,
-    skipMissingTimelineTests = false,
+    skipMissingTimelineTests = false, // legacy alias removed; see skipBundles
+    skipBundles = false,
   } = options;
 
   const tid = defaultTimelineId;
@@ -468,11 +475,141 @@ export function runProviderCompatibilitySuite(
       });
 
       const loaded = await provider.loadTimeline(tid);
+
       expect(loaded.config.tracks).toHaveLength(2);
       expect(loaded.config.tracks![0].id).toBe('V1');
       expect(loaded.config.tracks![1].id).toBe('A1');
     });
   });
+
+  if (!skipBundles) {
+    const makeBundleItem = (overrides: Record<string, unknown> = {}) => ({
+      id: 'assetA:src:0',
+      shape: 'interval',
+      domain: 'source_seconds',
+      extent: { start: 0, end: 1.5 },
+      schemaRef: 'reigh.transcript_segment/v1',
+      payload: { text: 'hello' },
+      sourceArtifactRef: { assetId: 'assetA' },
+      provenance: { adapterId: 'reigh.adaptTranscript', adapterVersion: '1' },
+      ...overrides,
+    });
+    const makeBundleEnvelope = (
+      overrides: Record<string, unknown> = {},
+    ): TimelineBundleEnvelope => ({
+      schema_version: 1,
+      itemsBySchemaRef: {
+        'reigh.transcript_segment/v1': [makeBundleItem()],
+      },
+      ...overrides,
+    }) as TimelineBundleEnvelope;
+
+    const bundleA = makeBundleEnvelope();
+    const bundleB = makeBundleEnvelope({
+      itemsBySchemaRef: {
+        'reigh.transcript_segment/v1': [
+          makeBundleItem({ payload: { text: 'second' } }),
+        ],
+      },
+    });
+
+    describe('data bundle persistence (optional contract)', () => {
+      it('saveTimeline with a bundle persists it atomically and reloads deep-equal', async () => {
+        const provider = await factory({
+          timelineId: tid,
+          config: config1,
+          configVersion: 1,
+        });
+
+        parseTimelineBundle(bundleA); // fixture sanity: must be a valid envelope
+        const v2 = await provider.saveTimeline(tid, config2, 1, registry2, bundleA);
+        expect(v2).toBe(2);
+
+        const loaded = await provider.loadTimeline(tid);
+        expect(loaded.configVersion).toBe(2);
+        // `?? null`: providers may normalize an absent bundle to null.
+        expect(loaded.bundle ?? null).toEqual(bundleA);
+      });
+
+      it('saving WITHOUT a bundle argument preserves the previously persisted bundle', async () => {
+        const provider = await factory({
+          timelineId: tid,
+          config: config1,
+          configVersion: 1,
+        });
+
+        await provider.saveTimeline(tid, config2, 1, registry2, bundleA);
+        await provider.saveTimeline(tid, config3, 2);
+
+        const loaded = await provider.loadTimeline(tid);
+        expect(loaded.bundle ?? null).toEqual(bundleA);
+      });
+
+      it('an explicit null bundle clears the persisted bundle', async () => {
+        const provider = await factory({
+          timelineId: tid,
+          config: config1,
+          configVersion: 1,
+        });
+
+        await provider.saveTimeline(tid, config2, 1, registry2, bundleA);
+        await provider.saveTimeline(tid, buildConfig(), 3, undefined, null);
+
+        const loaded = await provider.loadTimeline(tid);
+        expect(loaded.bundle ?? null).toBeNull();
+      });
+
+      it('a malformed bundle fails the whole save atomically (CAS)', async () => {
+        const provider = await factory({
+          timelineId: tid,
+          config: config1,
+          configVersion: 1,
+          registry: registry1,
+        });
+
+        const before = await provider.loadTimeline(tid);
+        const registryBefore = await provider.loadAssetRegistry(tid);
+
+        await expect(
+          provider.saveTimeline(
+            tid,
+            buildConfig({
+              clips: [{ id: 'clip-x', clipType: 'hold', track: 'V1', at: 0, hold: 9 }] as any,
+            }),
+            1,
+            { assets: {} } as AssetRegistry,
+            { ...bundleA, schema_version: 99 } as unknown as TimelineBundleEnvelope,
+          ),
+        ).rejects.toBeInstanceOf(TimelineBundleParseError);
+
+        const after = await provider.loadTimeline(tid);
+        expect(after.configVersion).toBe(1);
+        expect(after.config).toMatchObject(before.config);
+        expect(after.bundle ?? null).toEqual(before.bundle ?? null);
+        expect(await provider.loadAssetRegistry(tid)).toEqual(registryBefore);
+      });
+
+      if (!versionConflictIsSoft) {
+        it('stale expectedVersion conflicts even when a valid bundle is attached', async () => {
+          const provider = await factory({
+            timelineId: tid,
+            config: config1,
+            configVersion: 1,
+          });
+
+          await provider.saveTimeline(tid, config2, 1, registry2, bundleA);
+
+          await expect(
+            provider.saveTimeline(tid, config3, 1, undefined, bundleB),
+          ).rejects.toBeInstanceOf(TimelineVersionConflictError);
+
+          const loaded = await provider.loadTimeline(tid);
+          expect(loaded.bundle ?? null).toEqual(bundleA);
+        });
+      }
+    });
+  }
+
 
   // ── Extension requirements (stored via config) ────────────────────────────
 

@@ -11,6 +11,11 @@ import {
   TimelineNotFoundError,
   type TimelineConfig,
 } from '@/tools/video-editor';
+import {
+  TimelineBundleParseError,
+  parseTimelineBundle,
+  type TimelineBundleEnvelope,
+} from '@/tools/video-editor/data/typed/timelineBundle';
 
 function buildConfig(): TimelineConfig {
   return {
@@ -292,5 +297,130 @@ describe('InMemoryDataProvider', () => {
       expect(finalLoaded.configVersion).toBe(5);
     });
   });
+  // -------------------------------------------------------------------------
+  // dataKind V2 Batch 3: bundle persistence on the save path
+  // -------------------------------------------------------------------------
+
+  describe('data bundle persistence', () => {
+    const makeItem = (overrides: Record<string, unknown> = {}) => ({
+      id: 'assetA:src:0',
+      shape: 'interval',
+      domain: 'source_seconds',
+      extent: { start: 0, end: 1.5 },
+      schemaRef: 'reigh.transcript_segment/v1',
+      payload: { text: 'hello' },
+      sourceArtifactRef: { assetId: 'assetA' },
+      provenance: { adapterId: 'reigh.adaptTranscript', adapterVersion: '1' },
+      ...overrides,
+    });
+    const makeEnvelope = (): TimelineBundleEnvelope => ({
+      schema_version: 1,
+      itemsBySchemaRef: { 'reigh.transcript_segment/v1': [makeItem()] },
+    });
+
+    it('seeds and loads a bundle', async () => {
+      const provider = new InMemoryDataProvider({
+        timelines: {
+          'timeline-1': {
+            config: buildConfig(),
+            bundle: makeEnvelope(),
+          },
+        },
+      });
+
+      const loaded = await provider.loadTimeline('timeline-1');
+      expect(loaded.bundle).toEqual(makeEnvelope());
+    });
+
+    it('save → load round-trips a bundle and advances the version', async () => {
+      const provider = new InMemoryDataProvider({
+        timelines: {
+          'timeline-1': {
+            config: buildConfig(),
+          },
+        },
+      });
+
+      const nextVersion = await provider.saveTimeline(
+        'timeline-1',
+        buildConfig(),
+        1,
+        { assets: {} },
+        makeEnvelope(),
+      );
+      expect(nextVersion).toBe(2);
+
+      const loaded = await provider.loadTimeline('timeline-1');
+      expect(loaded.bundle).toEqual(makeEnvelope());
+      expect(loaded.configVersion).toBe(2);
+    });
+
+    it('a malformed bundle fails the save atomically', async () => {
+      const provider = new InMemoryDataProvider({
+        timelines: {
+          'timeline-1': {
+            config: buildConfig(),
+          },
+        },
+      });
+
+      const initial = await provider.loadTimeline('timeline-1');
+      const malformed = { ...makeEnvelope(), schema_version: 99 };
+      expect(() => parseTimelineBundle(malformed)).toThrow(TimelineBundleParseError);
+
+      await expect(
+        provider.saveTimeline('timeline-1', buildConfig(), 1, { assets: {} }, malformed),
+      ).rejects.toBeInstanceOf(TimelineBundleParseError);
+
+      const reloaded = await provider.loadTimeline('timeline-1');
+      expect(reloaded.configVersion).toBe(1);
+      expect(reloaded.config).toEqual(initial.config);
+      expect(reloaded.bundle ?? null).toBeNull();
+    });
+
+    it('undefined preserves and null clears the stored bundle', async () => {
+      const provider = new InMemoryDataProvider({
+        timelines: {
+          'timeline-1': {
+            config: buildConfig(),
+          },
+        },
+      });
+
+      await provider.saveTimeline('timeline-1', buildConfig(), 1, { assets: {} }, makeEnvelope());
+
+      let loaded = await provider.loadTimeline('timeline-1');
+      expect(loaded.bundle).toEqual(makeEnvelope());
+
+      await provider.saveTimeline('timeline-1', buildConfig(), 2, { assets: {} });
+      loaded = await provider.loadTimeline('timeline-1');
+      expect(loaded.bundle).toEqual(makeEnvelope());
+
+      await provider.saveTimeline('timeline-1', buildConfig(), 3, { assets: {} }, null);
+      loaded = await provider.loadTimeline('timeline-1');
+      expect(loaded.bundle ?? null).toBeNull();
+    });
+
+    it('stale expectedVersion still conflicts with a valid bundle attached', async () => {
+      const provider = new InMemoryDataProvider({
+        timelines: {
+          'timeline-1': {
+            config: buildConfig(),
+          },
+        },
+      });
+
+      await provider.saveTimeline('timeline-1', buildConfig(), 1, { assets: {} }, makeEnvelope());
+
+      await expect(
+        provider.saveTimeline('timeline-1', buildConfig(), 1, undefined, makeEnvelope()),
+      ).rejects.toBeInstanceOf(TimelineVersionConflictError);
+
+      const reloaded = await provider.loadTimeline('timeline-1');
+      expect(reloaded.bundle).toEqual(makeEnvelope());
+      expect(reloaded.configVersion).toBe(2);
+    });
+  });
 
 });
+

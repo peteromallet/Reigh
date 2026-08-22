@@ -5,6 +5,7 @@ export {
 import type { AssetRegistry, TimelineConfig } from '@/tools/video-editor/types/index.ts';
 import type { Checkpoint } from '@/tools/video-editor/types/history.ts';
 import type { AssetResolver } from '@/tools/video-editor/data/AssetResolver.ts';
+import type { TimelineBundleEnvelope } from '@/tools/video-editor/data/typed/timelineBundle.ts';
 export type {
   AssetProfile,
   SilenceRegion,
@@ -15,6 +16,13 @@ export type {
 export interface LoadedTimeline {
   config: TimelineConfig;
   configVersion: number;
+  /**
+   * Persisted data-lane source items ([CONVERGE-WITH-M1] TimelineBundle),
+   * parsed fail-closed by the provider on load. `null` = nothing persisted;
+   * `undefined` = provider has not adopted bundles yet. Views/occurrences are
+   * derived at assembly — this carries SOURCE items only.
+   */
+  bundle?: TimelineBundleEnvelope | null;
 }
 
 export class TimelineNotFoundError extends Error {
@@ -323,6 +331,13 @@ export interface DataProvider extends AssetResolver {
     config: TimelineConfig,
     expectedVersion: number,
     registry?: AssetRegistry,
+    /**
+     * Optional data-lane bundle to persist atomically with config+registry.
+     * `undefined` leaves any stored bundle untouched; explicit `null` clears
+     * it. Implementors MUST validate a provided envelope (fail-closed) before
+     * mutating any state or issuing a network call.
+     */
+    bundle?: TimelineBundleEnvelope | null,
   ): Promise<number>;
   saveCheckpoint?(timelineId: string, checkpoint: Omit<Checkpoint, 'id'>): Promise<string>;
   loadCheckpoints?(timelineId: string): Promise<Checkpoint[]>;

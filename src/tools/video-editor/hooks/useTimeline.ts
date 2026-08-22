@@ -43,6 +43,9 @@ export function useTimeline(provider: DataProvider | null, timelineId: string | 
       queryClient.setQueryData<LoadedTimeline>(timelineQueryKey(timelineId), {
         config,
         configVersion: configVersionRef.current,
+        // An optimistic config save never touches lane source items: carry
+        // the loaded bundle through so a refetch race can't blank it.
+        bundle: previous?.bundle ?? null,
       });
       return { previous };
     },

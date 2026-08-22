@@ -183,6 +183,7 @@ describe('AstridBridgeDataProvider compatibility (mocked)', () => {
 
   runProviderCompatibilitySuite(astridFactory, {
     skipCheckpoints: true,
+    skipBundles: true, // bridge bundle passthrough lands in V2-B6
     timelineId: '11111111-1111-1111-1111-111111111111',
     skipRegisterAsset: false,
     skipMissingTimelineTests: true,

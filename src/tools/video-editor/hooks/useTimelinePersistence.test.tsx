@@ -548,7 +548,9 @@ describe('useTimelinePersistence — interaction gating', () => {
     });
 
     expect(harness.saveTimeline).toHaveBeenCalledTimes(1);
-    expect(harness.saveTimeline).toHaveBeenCalledWith('timeline-1', nextData.config, 1, registry);
+    // 5th slot is the optional data-bundle arg (V2): undefined until a
+    // reload populates loadedBundleRef.
+    expect(harness.saveTimeline).toHaveBeenCalledWith('timeline-1', nextData.config, 1, registry, undefined);
   });
 
   it('a 409 enters diverged: no version reload, no re-POST (CAS-defeating retry removed)', async () => {
@@ -662,6 +664,52 @@ describe('useTimelinePersistence — interaction gating', () => {
       timelineId: 'timeline-1',
     });
   });
+
+  it('reloadFromServer captures a persisted bundle and the next save re-persists it', async () => {
+    const bundle = {
+      schema_version: 1 as const,
+      itemsBySchemaRef: {
+        'reigh.transcript_segment/v1': [{
+          id: 'assetA:src:0',
+          shape: 'interval' as const,
+          domain: 'source_seconds' as const,
+          extent: { start: 0, end: 1.5 },
+          schemaRef: 'reigh.transcript_segment/v1',
+          payload: { text: 'hello' },
+          sourceArtifactRef: { assetId: 'assetA' },
+          provenance: { adapterId: 'reigh.adaptTranscript', adapterVersion: '1' },
+        }],
+      },
+    };
+    const harness = setup({
+      initialData: makeTimelineData('bundle-reload'),
+      loadTimelineImpl: async () => ({
+        config: createDefaultTimelineConfig(),
+        configVersion: 3,
+        bundle,
+      }),
+    });
+
+    await act(async () => {
+      await harness.reloadFromServer();
+    });
+    expect(harness.result.current.loadedBundleRef.current).toEqual(bundle);
+
+    harness.scheduleSave(makeTimelineData('after-bundle-reload'));
+    await act(async () => {
+      vi.advanceTimersByTime(600);
+      await Promise.resolve();
+    });
+
+    expect(harness.saveTimeline).toHaveBeenCalledWith(
+      'timeline-1',
+      expect.anything(),
+      3,
+      expect.anything(),
+      bundle,
+    );
+  });
+
 });
 
 describe('useTimelinePersistence — write-ack watchdog', () => {

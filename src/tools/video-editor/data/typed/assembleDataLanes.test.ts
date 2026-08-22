@@ -68,8 +68,10 @@ describe('assembleDataLanes', () => {
     // Sorted by timelineStart: c2 maps [2,4]s at speed 2 → [1,2]; c1 → [10,12].
     expect(lane.items.map((view) => view.item.id)).toEqual(['a:c2:0', 'a:c1:0']);
     const [onC2, onC1] = lane.items;
-    expect(onC2.item.sourceItemId).toBe('a:src:0');
-    expect(onC1.item.sourceItemId).toBe('a:src:0');
+    // Content-derived source id: FNV-1a/64 slice over
+    // {"end":4,"start":2,"text":"shared"} -> 08c434a0b926…
+    expect(onC2.item.sourceItemId).toBe('a:src:08c434a0b926');
+    expect(onC1.item.sourceItemId).toBe('a:src:08c434a0b926');
     expect(onC2.timelineStart).toBe(1);
     expect(onC2.timelineEnd).toBe(2);
     expect(onC2.clipId).toBe('c2');

@@ -5,6 +5,10 @@ import {
   type DataProvider,
   type LoadedTimeline,
 } from '@/tools/video-editor/data/DataProvider.ts';
+import {
+  parseTimelineBundle,
+  type TimelineBundleEnvelope,
+} from '@/tools/video-editor/data/typed/timelineBundle.ts';
 import { TimelineVersionConflictError } from '@/sdk/video/timeline/errors.ts';
 import type { ExtensionDiagnostic } from '@reigh/editor-sdk';
 import {
@@ -18,12 +22,14 @@ type TimelineSeed = {
   config?: TimelineConfig;
   configVersion?: number;
   registry?: AssetRegistry;
+  bundle?: TimelineBundleEnvelope | null;
 };
 
 type InMemoryTimelineRecord = {
   config: TimelineConfig;
   configVersion: number;
   registry: AssetRegistry;
+  bundle: TimelineBundleEnvelope | null;
 };
 
 class InMemoryExtensionSnapshotStore implements FullSnapshotStore {
@@ -54,6 +60,9 @@ const normalizeTimelineSeed = (seed?: TimelineSeed): InMemoryTimelineRecord => {
     config: clone(seed?.config ?? createDefaultTimelineConfig()),
     configVersion: seed?.configVersion ?? 1,
     registry: clone(seed?.registry ?? { assets: {} }),
+    // Seeds go through the same fail-closed parse as a real load, so a test
+    // can never silently stage a bundle the persistence contract would reject.
+    bundle: seed?.bundle == null ? null : clone(parseTimelineBundle(seed.bundle)),
   };
 };
 
@@ -88,6 +97,7 @@ export class InMemoryDataProvider implements DataProvider {
     return {
       config: clone(existing.config),
       configVersion: existing.configVersion,
+      bundle: existing.bundle ? clone(existing.bundle) : null,
     };
   }
 
@@ -96,10 +106,17 @@ export class InMemoryDataProvider implements DataProvider {
     config: TimelineConfig,
     expectedVersion: number,
     registry?: AssetRegistry,
+    bundle?: TimelineBundleEnvelope | null,
   ): Promise<number> {
     const existing = this.timelines.get(timelineId);
     if (!existing) {
       throw new TimelineNotFoundError(timelineId);
+    }
+    // Validate BEFORE the version check and any mutation: a malformed bundle
+    // must fail the whole save atomically — config, registry, and version
+    // stay untouched (CAS atomicity).
+    if (bundle !== undefined && bundle !== null) {
+      parseTimelineBundle(bundle);
     }
     if (existing.configVersion !== expectedVersion) {
       throw new TimelineVersionConflictError();
@@ -110,6 +127,8 @@ export class InMemoryDataProvider implements DataProvider {
       config: clone(config),
       configVersion: nextVersion,
       registry: clone(registry ?? existing.registry),
+      // `undefined` preserves the stored bundle; explicit `null` clears it.
+      bundle: clone(bundle === undefined ? existing.bundle : bundle),
     });
     return nextVersion;
   }
