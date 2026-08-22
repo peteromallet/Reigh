@@ -119,6 +119,24 @@ describe('assembleDataLanes', () => {
     expect(lane.items).toHaveLength(1);
   });
 
+  it('stamps domain on lanes at assembly time from the kind record / item domain', () => {
+    const registered = assembleDataLanes({
+      kinds: [transcriptKind({ domain: 'source_seconds' })],
+      clips: clips([CLIP_C2]),
+      segmentsByAsset: { a: [SEGMENT] },
+    });
+    expect(registered[0].domain).toBe('source_seconds');
+    const opaque = assembleDataLanes({
+      kinds: [],
+      clips: clips([CLIP_C2]),
+      segmentsByAsset: { a: [SEGMENT] },
+    });
+    // Opaque lanes keep their items' declared domain (adaptTranscript stamps
+    // 'source_seconds'; assembleDataLanes' explicit `?? 'timeline_seconds'`
+    // fallback covers a future adapter that omits it).
+    expect(opaque[0].domain).toBe('source_seconds');
+  });
+
   it('filters to sound-bearing media and clips with assets', () => {
     const lanes = assembleDataLanes({
       kinds: [transcriptKind()],

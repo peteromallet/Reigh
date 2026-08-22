@@ -368,6 +368,7 @@ Extensions do not interact with providers directly. The public `TimelineReader.s
 | Register effects, transitions, clip types | `ctx.effects`, `ctx.transitions`, `ctx.clipTypes` |
 | Register shaders | `ctx.shaders` |
 | Register agent tools | `ctx.agentTools` |
+| Bind typed-data lane renderers | `ctx.dataKinds.register(kindId, laneRenderer, inspector?)` — kindId must match a declared `dataKind` contribution; miss emits `dataKinds/undeclared-kind` and no-ops |
 | Read/manipulate timeline | `ctx.creative` (TimelineReader, TimelineOps, proposals) |
 | Read i18n messages | `ctx.services.i18n` |
 | Access browser APIs | Unrestricted (same origin) |

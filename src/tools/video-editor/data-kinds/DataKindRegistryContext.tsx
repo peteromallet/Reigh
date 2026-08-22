@@ -29,12 +29,23 @@ const DataKindRegistryContext = createContext<DataKindRegistryContextValue | nul
 
 export interface DataKindRegistryProviderProps {
   children: ReactNode;
+  /**
+   * dataKind V1 bridge (Wave-3 ruling): an externally-owned registry — the
+   * editor runtime assembly's `dataKindRegistryRef` instance. When provided,
+   * the provider exposes that instance instead of creating its own, so
+   * `ctx.dataKinds.register(...)` writes and `useDataKindRegistrySnapshot()`
+   * reads hit the same registry. The provider never disposes an injected
+   * registry; disposal stays with the owner.
+   */
+  registry?: DataKindRegistry;
 }
 
 export function DataKindRegistryProvider({
   children,
+  registry: bridgedRegistry,
 }: DataKindRegistryProviderProps) {
-  const registry = useMemo(() => createDataKindRegistry(), []);
+  const ownedRegistry = useMemo(() => createDataKindRegistry(), []);
+  const registry = bridgedRegistry ?? ownedRegistry;
   const subscribe = useCallback((onStoreChange: () => void) => {
     const handle = registry.subscribe(() => onStoreChange());
     return () => handle.dispose();
@@ -42,9 +53,12 @@ export function DataKindRegistryProvider({
   const getSnapshot = useCallback(() => registry.getSnapshot(), [registry]);
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
-  useEffect(() => () => {
-    registry.dispose();
-  }, [registry]);
+  useEffect(() => {
+    if (bridgedRegistry) return undefined; // Owner (runtime assembly) disposes it.
+    return () => {
+      ownedRegistry.dispose();
+    };
+  }, [bridgedRegistry, ownedRegistry]);
 
   const value = useMemo<DataKindRegistryContextValue>(
     () => ({ registry, snapshot }),

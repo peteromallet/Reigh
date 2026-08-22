@@ -5,6 +5,7 @@ import { ClipPanel, getVisibleClipTabs, NO_EFFECT } from '@/tools/video-editor/c
 import { OpaqueDataItemInspector } from '@/tools/video-editor/components/PropertiesPanel/OpaqueDataItemInspector';
 import type { DataItemInspectorProps } from '@/sdk/video/families/dataKind';
 import type { DataLaneItemView, DataLaneView } from '@/tools/video-editor/data/typed/envelope';
+import { useDataLanes } from '@/tools/video-editor/data-kinds/useDataLanes';
 import { ShaderInspector } from '@/tools/video-editor/components/ShaderInspector/ShaderInspector.tsx';
 import {
   useTimelineEditorData,
@@ -190,6 +191,11 @@ function PropertiesPanelComponent() {
   const { addVariantAsGenerationAfterClip, isPending: isAddingVariantAsGenerationPending } = useAddVariantAsGeneration();
   const prevClipIdRef = useRef(selectedClip?.id);
   const selectedClipIdsList = useMemo(() => [...selectedClipIds], [selectedClipIds]);
+  // dataKind V1 (rework R1): resolve lane items from the SAME patched lane
+  // plane the canvas renders — the render-side `useDataLanes` merge — never
+  // the store's frozen-empty `dataLanes` default. No store writes here:
+  // duration/rows/export neutrality is untouched.
+  const lanePlane = useDataLanes({ base: data });
   const inspectorSelectionTarget = useMemo(() => {
     if (
       inspectorTarget?.kind === 'shader'
@@ -261,14 +267,16 @@ function PropertiesPanelComponent() {
     }
 
     const { laneId, itemId } = target;
-    const lane = (data?.dataLanes ?? []).find((candidate) => candidate.laneId === laneId);
+    // Read from the patched lane plane (see `lanePlane` above), not the
+    // store's TimelineData: the store never carries assembled lanes.
+    const lane = (lanePlane?.dataLanes ?? []).find((candidate) => candidate.laneId === laneId);
     if (!lane) {
       return undefined;
     }
 
     const view = lane.items.find((candidate) => candidate.item.id === itemId);
     return view ? { lane, view } : undefined;
-  }, [inspectorSelectionTarget, data]);
+  }, [inspectorSelectionTarget, lanePlane]);
   const bulkSelectedClips = resolvedConfig?.clips.filter((clip) => selectedClipIds.has(clip.id)) ?? [];
   const bulkVisibleTabs = getBulkVisibleTabs(bulkSelectedClips, data?.resolvedConfig?.tracks ?? []);
   const bulkEntrance = getSharedNestedValue(bulkSelectedClips, (clip) => clip.entrance);

@@ -1840,6 +1840,7 @@ const laneFixture = (overrides: Record<string, unknown> = {}) => ({
   label: 'Transcript',
   schemaRef: 'reigh.transcript_segment/v1',
   shape: 'interval',
+  domain: 'source_seconds',
   items: [],
   hidden: false,
   height: 24,
@@ -1894,5 +1895,27 @@ describe('TimelineCanvas — dataKind V1 lane strip', () => {
     expect(screen.queryByTestId('data-lane-list')).toBeNull();
     // (rows + 1) * rowHeight = 96px, exactly as before Batch 6.
     expect(screen.getByTestId('timeline-playhead')).toHaveStyle({ height: '96px' });
+  });
+
+  it('dispatches lane interaction targets through the store ops (rework R1)', () => {
+    const setContextTarget = vi.fn();
+    const setInspectorTarget = vi.fn();
+    useDataLanesMock.mockReturnValue({
+      config: {},
+      dataLanes: [laneFixture({
+        opaque: true,
+        kindId: '',
+        laneId: 'opaque:x/v1',
+        laneRenderer: undefined,
+        items: [{ item: { id: 'a:c1:0' }, timelineStart: 0, timelineEnd: 1 }],
+      })],
+    });
+    renderCanvas({ rows: [row], tracks: [track], ops: { setContextTarget, setInspectorTarget } });
+
+    fireEvent.click(screen.getByTestId('data-lane-extent-bar'));
+
+    const expected = { kind: 'dataItem', laneId: 'opaque:x/v1', itemId: 'a:c1:0' };
+    expect(setContextTarget).toHaveBeenCalledWith(expect.objectContaining(expected));
+    expect(setInspectorTarget).toHaveBeenCalledWith(expect.objectContaining(expected));
   });
 });

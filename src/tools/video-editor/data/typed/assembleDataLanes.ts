@@ -112,6 +112,7 @@ export function assembleDataLanes(input: AssembleDataLanesInput): readonly DataL
           label: kind.label ?? kind.kindId,
           schemaRef: kind.schemaRef,
           shape: kind.shape,
+          domain: kind.domain,
           items,
           hidden: false,
           height: DEFAULT_DATA_LANE_HEIGHT,
@@ -127,6 +128,9 @@ export function assembleDataLanes(input: AssembleDataLanesInput): readonly DataL
         label: schemaRef,
         schemaRef,
         shape: bucket[0].item.shape,
+        // Opaque lanes keep their items' declared domain; the explicit
+        // fallback covers a malformed adapter item at runtime.
+        domain: bucket[0].item.domain ?? 'timeline_seconds',
         items,
         hidden: false,
         height: DEFAULT_DATA_LANE_HEIGHT,

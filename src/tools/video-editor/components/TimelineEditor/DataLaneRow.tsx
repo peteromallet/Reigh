@@ -8,13 +8,15 @@
 // Renderer containment: a registered kind's laneRenderer runs inside a
 // `HostContributionErrorBoundary` keyed to its owning extension; an opaque
 // lane (unknown schemaRef) gets the host's extent-bar fallback paint.
+//
+// Interaction (dataKind V1 rework): host-painted chrome participates in the
+// timeline interaction model — an extent-bar click dispatches a `dataItem`
+// target, any other part of the row a `dataLane` target. Renderer-painted
+// content stays display-only in V1 and falls through to the lane target.
 
 import { type ComponentType, type ReactNode } from 'react';
 import { HostContributionErrorBoundary } from '@/tools/video-editor/runtime/ContributionErrorBoundary.tsx';
-import type {
-  DataCoordinateDomain,
-  DataLaneRendererProps,
-} from '@reigh/editor-sdk';
+import type { DataLaneRendererProps } from '@reigh/editor-sdk';
 import type { DataLaneView } from '@/tools/video-editor/data/typed/envelope.ts';
 import { LABEL_WIDTH } from '@/tools/video-editor/lib/coordinate-utils.ts';
 
@@ -26,13 +28,15 @@ export interface DataLaneRowProps {
   readonly pixelsPerSecond: number;
   /** Owning extension of the registered kind, for boundary recovery keys. */
   readonly extensionId?: string;
-  /** Declared coordinate domain of the registered kind (renderer prop). */
-  readonly domain?: DataCoordinateDomain;
+  /** Empty lane chrome pressed → dispatch a `dataLane` target upstream. */
+  readonly onSelectLane?: () => void;
+  /** Host-painted extent bar pressed → dispatch a `dataItem` target upstream. */
+  readonly onSelectItem?: (itemId: string) => void;
 }
 
 const EXTENT_BAR_MIN_WIDTH_PX = 2;
 
-export function DataLaneRow({ lane, startLeft, pixelsPerSecond, extensionId, domain }: DataLaneRowProps) {
+export function DataLaneRow({ lane, startLeft, pixelsPerSecond, extensionId, onSelectLane, onSelectItem }: DataLaneRowProps) {
   return (
     <div
       data-testid="data-lane-row"
@@ -40,6 +44,7 @@ export function DataLaneRow({ lane, startLeft, pixelsPerSecond, extensionId, dom
       data-lane-kind={lane.opaque ? 'opaque' : lane.kindId}
       className="relative flex border-t border-border/40"
       style={{ height: lane.height }}
+      onClick={onSelectLane}
     >
       <div
         className="sticky left-0 z-20 flex shrink-0 items-center overflow-hidden bg-card px-2 text-[10px] font-medium text-muted-foreground"
@@ -47,27 +52,30 @@ export function DataLaneRow({ lane, startLeft, pixelsPerSecond, extensionId, dom
       >
         <span className="truncate" title={lane.label}>{lane.label}</span>
       </div>
-      <div className="relative min-w-0 flex-1">{paintLane(lane, startLeft, pixelsPerSecond, extensionId, domain)}</div>
+      <div className="relative min-w-0 flex-1">
+        {paintLane(lane, startLeft, pixelsPerSecond, extensionId, onSelectItem)}
+      </div>
     </div>
   );
 }
+
 
 function paintLane(
   lane: DataLaneView,
   startLeft: number,
   pixelsPerSecond: number,
   extensionId: string | undefined,
-  domain: DataCoordinateDomain | undefined,
+  onSelectItem: ((itemId: string) => void) | undefined,
 ): ReactNode {
   // Opaque lane (unknown schemaRef): the host paints extent bars itself.
   if (lane.opaque || typeof lane.laneRenderer !== 'function') {
-    return extentBars(lane, startLeft, pixelsPerSecond);
+    return extentBars(lane, startLeft, pixelsPerSecond, onSelectItem);
   }
   const rendererProps: DataLaneRendererProps = {
     kindId: lane.kindId,
     schemaRef: lane.schemaRef,
     shape: lane.shape,
-    domain: domain ?? 'timeline_seconds',
+    domain: lane.domain,
     items: lane.items.map((view) => ({
       id: view.item.id,
       timelineStart: view.timelineStart,
@@ -89,7 +97,12 @@ function paintLane(
   );
 }
 
-function extentBars(lane: DataLaneView, startLeft: number, pixelsPerSecond: number): ReactNode {
+function extentBars(
+  lane: DataLaneView,
+  startLeft: number,
+  pixelsPerSecond: number,
+  onSelectItem: ((itemId: string) => void) | undefined,
+): ReactNode {
   return lane.items.map((view) => {
     const left = startLeft + view.timelineStart * pixelsPerSecond;
     const spanSeconds = Math.max(0, view.timelineEnd - view.timelineStart);
@@ -105,8 +118,13 @@ function extentBars(lane: DataLaneView, startLeft: number, pixelsPerSecond: numb
           width: Math.max(EXTENT_BAR_MIN_WIDTH_PX, spanSeconds * pixelsPerSecond),
           height: Math.max(6, Math.round(lane.height * 0.5)),
         }}
+        onClick={(event) => {
+          // The bar is the item, not empty lane chrome: keep the row's
+          // dataLane handler from also firing.
+          event.stopPropagation();
+          onSelectItem?.(view.item.id);
+        }}
       />
     );
   });
 }
-

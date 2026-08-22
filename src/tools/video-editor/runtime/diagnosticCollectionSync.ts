@@ -17,6 +17,7 @@ export type DiagnosticCollectionSource =
   | 'transition-registry'
   | 'shader-effect-registry'
   | 'clip-type-registry'
+  | 'data-kind-registry'
   | 'live-registry'
   | 'export-guard'
   | 'render-planner';

@@ -1,292 +1,202 @@
 # Video Editor Extension Authoring
 
-This guide documents the public video editor extension package shape. It is
-aligned with the canonical family fixtures in
-`src/tools/video-editor/testing/extensions/family-fixtures/index.tsx` and the
-public API entrypoint in `src/tools/video-editor/extension.ts`.
+This guide documents the public video editor extension shape. It describes
+kinded manifest contributions declared through `defineExtension` and bound at
+activation through `ctx.*` services. The canonical working example lives in
+`src/tools/video-editor/dev/transcript-lane/extension.ts` (dataKind) and
+`src/tools/video-editor/dev/scene-phase-markers/extension.ts` (commands,
+slots, overlays).
 
 ## Public Imports
 
-Extension packages must import extension types and loader helpers from the
-public extension entrypoint:
+Extensions import everything from the public SDK entrypoint:
 
 ```ts
-import type { ExtensionPackage } from '@/tools/video-editor/extension';
-import { defineExtension } from '@/tools/video-editor/extension';
+import { defineExtension } from '@reigh/editor-sdk';
+import type {
+  ContributionId,
+  ExtensionContext,
+  ExtensionId,
+  ReighExtension,
+} from '@reigh/editor-sdk';
 ```
 
-Do not import from `runtime/*`, `contexts/*`, `components/*`, `testing/*`, or
-other internal video editor modules in authored extension code. Those modules
-may change without preserving extension compatibility. The public extension
-entrypoint exports the supported descriptor types, manifest/package/state
-types, settings helpers, loader, state repositories, contribution-family
-metadata, and validation helpers.
+Do not import from `runtime/*`, `contexts/*`, `components/*`, or other
+internal video editor modules in extension code. Those modules may change
+without preserving compatibility. The SDK entrypoint exports the manifest and
+contribution types, `defineExtension`, `validateManifest`, settings helpers,
+contribution-family metadata, and validation helpers.
 
-## Package Shape
+## Extension Shape
 
-An extension package is a manifest plus a runtime config:
+An extension is a frozen manifest plus an optional activation function:
 
-```tsx
-import React from 'react';
-import type { ExtensionPackage } from '@/tools/video-editor/extension';
-import { defineExtension } from '@/tools/video-editor/extension';
+```ts
+import { defineExtension } from '@reigh/editor-sdk';
+import type {
+  ContributionId,
+  DisposeHandle,
+  ExtensionContext,
+  ExtensionId,
+  ReighExtension,
+} from '@reigh/editor-sdk';
 
-export const familySurfacePackage: ExtensionPackage = {
+export const myExtension: ReighExtension = defineExtension({
   manifest: {
-    id: 'com.example.family-surfaces',
-    name: 'Family Surface Fixtures',
+    id: 'com.example.my-extension' as ExtensionId,
     version: '1.0.0',
-    apiVersion: '1.0.0',
-    description: 'Deterministic positive surface contribution fixture package.',
-    permissions: ['read:timeline', 'read:assets'],
-    contributions: {
-      slots: [
-        { slot: 'toolbar', id: 'family.surface.toolbar', order: 10 },
-        { slot: 'statusBar', id: 'family.surface.status', order: 20 },
-      ],
-      dialogs: [{ id: 'family.surface.dialog', layer: 'modal', order: 10 }],
-      panels: [
-        { id: 'family.surface.asset-panel', placement: 'asset-panel', order: 10 },
-      ],
-      inspectorSections: [
-        { id: 'family.surface.inspector', placement: 'before-default', order: 10 },
-      ],
-    },
+    label: 'My Extension',
+    description: 'What the extension does.',
+    apiVersion: 1,
+    license: 'MIT',
+    contributions: [
+      // Kinded entries — every contribution carries a `kind`.
+      {
+        id: 'greet-command' as ContributionId,
+        kind: 'command',
+        command: 'myExtension.greet',
+        label: 'Greet',
+        order: 10,
+      },
+    ],
   },
-  config: defineExtension({
-    slots: {
-      toolbar: () => <div>Family Toolbar</div>,
-      statusBar: () => <div>Family Status</div>,
-    },
-    dialogHost: {
-      dialogs: [
-        {
-          id: 'family.surface.dialog',
-          layer: 'modal',
-          render: () => <div>Family Dialog</div>,
-        },
-      ],
-    },
-    registry: {
-      panels: [
-        {
-          id: 'family.surface.asset-panel',
-          placement: 'asset-panel',
-          order: 10,
-          render: () => <div>Family Asset Panel</div>,
-        },
-      ],
-      inspectorSections: [
-        {
-          id: 'family.surface.inspector',
-          placement: 'before-default',
-          order: 10,
-          render: () => <div>Family Inspector</div>,
-        },
-      ],
-    },
-  }),
-};
+
+  activate(ctx: ExtensionContext): DisposeHandle {
+    const handle = ctx.commands.registerCommand(
+      'myExtension.greet',
+      () => ctx.chrome.toast('Hello'),
+      { label: 'Greet' },
+    );
+    return { dispose: () => handle.dispose() };
+  },
+});
 ```
 
-The manifest declares what the package contributes. The config supplies the
-renderers and registry descriptors used at runtime. Loader validation compares
-declared contribution IDs with runtime config IDs, so keep the manifest and
-config in lockstep.
+The manifest declares what the extension contributes; `activate()` binds the
+runtime pieces (renderers, handlers) through the `ctx` services. Registration
+handles compose into the returned dispose so disable, HMR, and unmount unwind
+cleanly.
 
 ## Manifest Fields
 
-Every manifest requires:
-
 | Field | Contract |
 | --- | --- |
-| `id` | Stable extension identifier, usually reverse-DNS such as `com.example.family-surfaces`. |
-| `name` | Human-readable package name. |
-| `version` | Semver package version. |
-| `apiVersion` | Semver runtime API version; current public runtime is `1.0.0`. |
+| `id` | Stable extension identifier, usually reverse-DNS such as `com.example.my-extension`. |
+| `version` | Semver package version string. |
+| `label` | Required non-empty display name (`manifest/missing-label`). |
 | `description` | Optional prose summary. |
-| `permissions` | Optional list of allowed permission strings. |
-| `settingsSchema` | Optional top-level JSON Schema object for extension settings. |
-| `contributions` | Optional supported contribution collections. |
+| `apiVersion` | Positive integer targeting one API generation; currently `1`. Non-integers fail `manifest/invalid-api-version`. |
+| `license` | SPDX identifier; recommended for any shared extension. |
+| `contributions` | Kinded array of contribution entries (see below). |
+| `permissions` | Descriptive permission strings only; not enforced. |
+| `settingsSchema` | Optional top-level JSON Schema for extension settings. |
 
-Supported permissions are:
+Contributions are NOT grouped into per-family collections. There is no
+`contributions.slots`, `contributions.panels`, or similar object anywhere in
+the contract; unknown kinds fail closed with `manifest/unknown-contribution-kind`,
+and unknown root-level keys fail JSON Schema validation.
 
-```ts
-[
-  'read:timeline',
-  'write:timeline',
-  'read:assets',
-  'write:assets',
-  'read:effects',
-  'write:effects',
-  'read:sequences',
-  'write:sequences',
-  'network:fetch',
-  'storage:local',
-]
-```
+## Declaring And Binding
 
-Use the `action:resource` form shown above. Strings such as `timeline:read` are
-not part of the public contract.
+Every family follows the same rhythm — declare in the manifest, bind in
+`activate()`:
 
-## Supported Contribution Types
+1. **Declare** the contribution entry with its `kind` and required ids.
+2. **Bind** the runtime implementation through the matching `ctx` service.
+3. The host gates each bind against the declaring manifest; an unmatched id
+   emits a named diagnostic and no-ops instead of crashing.
 
-### Slots
+Renderers bound through `ctx.ui.registerRenderer(renderId, factory)` must match
+the `render` ids of declared slot/dialog/overlay contributions. Commands bind
+through `ctx.commands.registerCommand`.
 
-Slots replace or fill named editor chrome regions. Public slot names are:
+## Data Kinds
 
-```ts
-type VideoEditorSlotName =
-  | 'header'
-  | 'toolbar'
-  | 'leftPanel'
-  | 'rightPanel'
-  | 'timelineFooter'
-  | 'statusBar'
-  | 'dialogs'
-  | 'assetPanel'
-  | 'inspectorPanel';
-```
-
-Declare slots in `manifest.contributions.slots`:
+The `dataKind` family contributes typed data — transcript segments, notes,
+telemetry intervals, annotations — as duration-neutral lanes under the timeline
+tracks. One kind, three steps:
 
 ```ts
-slots: [
-  { slot: 'toolbar', id: 'family.surface.toolbar', order: 10 },
-  { slot: 'statusBar', id: 'family.surface.status', order: 20 },
-],
+export const TRANSCRIPT_KIND_ID = 'reigh.transcript';
+export const TRANSCRIPT_SCHEMA_REF = 'reigh.transcript_segment/v1';
+
+export const transcriptLaneExtension: ReighExtension = defineExtension({
+  manifest: {
+    id: 'com.reigh.transcript-lane' as ExtensionId,
+    version: '1.0.0',
+    label: 'Transcript Lane',
+    apiVersion: 1,
+    license: 'MIT',
+    contributions: [
+      {
+        id: 'transcript-lane-kind' as ContributionId,
+        kind: 'dataKind',            // declare
+        kindId: TRANSCRIPT_KIND_ID,
+        schemaRef: TRANSCRIPT_SCHEMA_REF,
+        shape: 'interval',           // host-validated open strings:
+        domain: 'source_seconds',    // point|interval|series / known domains
+        label: 'Transcript',
+        order: 10,
+      },
+    ],
+  },
+
+  activate(ctx: ExtensionContext): DisposeHandle {
+    // bind — kindId must match the declaration above
+    const handle = ctx.dataKinds.register(
+      TRANSCRIPT_KIND_ID,
+      renderTranscriptLane,          // (props: DataLaneRendererProps) => node
+      renderTranscriptItemInspector, // optional item inspector
+    );
+    return { dispose: () => handle.dispose() };
+  },
+});
 ```
 
-Provide matching renderers in `config.slots` keyed by slot name:
+Contract details:
 
-```tsx
-slots: {
-  toolbar: () => <div>Family Toolbar</div>,
-  statusBar: () => <div>Family Status</div>,
-},
-```
+- **One bind model.** Renderers live on the host registry record created by
+  `ctx.dataKinds.register(kindId, laneRenderer, inspector?)`; there are no
+  renderer module paths or loader fields on the manifest. Registering an
+  undeclared `kindId` emits `dataKinds/undeclared-kind` and returns a no-op
+  handle.
+- **Host maps coordinates.** Lane renderers receive pre-mapped items
+  (`DataLaneRendererProps.items` with timeline-space `timelineStart` /
+  `timelineEnd`). Renderers never fetch data, never reimplement trim/speed
+  algebra, and never touch duration.
+- **Unknown payloads round-trip opaque.** Items whose `schemaRef` matches no
+  registered kind list as an opaque lane with host extent-bar paint and an
+  opaque item inspector showing id, shape, schemaRef, extent, domain,
+  provenance, and truncated payload.
+- **Duplicate registration replaces** the previous record with a
+  `data-kind-registry/duplicate-kind` warning.
+- A complete runnable example lives at
+  `src/tools/video-editor/dev/transcript-lane/extension.ts` (registered
+  DEV-only through `dev/localExtensions.ts`).
 
-Slot renderers receive a `VideoEditorRenderContext` with public runtime slices
-for data, operations, chrome state, playback state, provider access, timeline
-metadata, user ID, and resolved extensions. Treat that context as read/write
-only through the public fields it exposes; do not reach into editor internals.
+### Seeing a lane
 
-### Dialogs
+Lanes assemble from host-adapted transcript segments. In dev, the embed host's
+resolver branch (`EditorRuntimeProvider.tsx`) forwards your `assetResolver`;
+a resolver whose `onProfileLoad` returns `{ transcript: { segments } }` feeds
+the lane pipeline for sound-bearing media clips. Plain prod-backed pages show
+no lanes yet because current providers return null profiles — that null-provider
+posture is documented V1 behavior, not a defect. Sanity path: load the editor
+with `?extensionSmoke=1` first to confirm host wiring, then check the
+`[Extension lifecycle]` console group for your extension's activation.
 
-Dialogs are registered through `manifest.contributions.dialogs` and
-`config.dialogHost.dialogs`.
+### Interaction posture (V1)
 
-```ts
-dialogs: [{ id: 'family.surface.dialog', layer: 'modal', order: 10 }],
-```
+Lane items are display-only today. No user-reachable interaction produces a
+`dataItem`/`dataLane` inspector target yet: host-painted bars carry no click
+handler and `DataLaneRendererProps` exposes no selection callback, so inspector
+dispatch is exercised by tests rather than pointer input. Lanes also render
+opaque whenever no provider/registration path is wired — the lane plane fails
+open to "no lanes" without a loader.
 
-```tsx
-dialogHost: {
-  dialogs: [
-    {
-      id: 'family.surface.dialog',
-      layer: 'modal',
-      render: () => <div>Family Dialog</div>,
-    },
-  ],
-},
-```
+## Settings Schema
 
-`layer` may be `modal` or `overlay`. Runtime dialog descriptors also support an
-optional `when(context)` predicate. If a predicate or renderer throws, the
-runtime owns the resulting diagnostic and fallback behavior.
-
-### Panels
-
-Panels currently support the `asset-panel` placement only:
-
-```ts
-panels: [
-  { id: 'family.surface.asset-panel', placement: 'asset-panel', order: 10 },
-],
-```
-
-```tsx
-registry: {
-  panels: [
-    {
-      id: 'family.surface.asset-panel',
-      placement: 'asset-panel',
-      order: 10,
-      render: () => <div>Family Asset Panel</div>,
-    },
-  ],
-},
-```
-
-Duplicate runtime descriptor IDs are excluded fail-closed by the runtime. The
-first descriptor wins, and the duplicate produces a runtime diagnostic.
-
-### Inspector Sections
-
-Inspector sections render before or after the built-in inspector:
-
-```ts
-inspectorSections: [
-  { id: 'family.surface.inspector', placement: 'before-default', order: 10 },
-],
-```
-
-```tsx
-registry: {
-  inspectorSections: [
-    {
-      id: 'family.surface.inspector',
-      placement: 'before-default',
-      order: 10,
-      render: () => <div>Family Inspector</div>,
-    },
-  ],
-},
-```
-
-`placement` must be `before-default` or `after-default`. Runtime descriptors
-also support optional `when(context)` visibility predicates.
-
-### Commands
-
-Commands are declared in `manifest.contributions.commands`. They do not require
-matching render config. The loader namespaces each local command ID as
-`${manifest.id}.${localCommandId}`.
-
-```ts
-contributions: {
-  commands: [
-    {
-      id: 'inspect-selection',
-      title: 'Inspect Family Selection',
-      description: 'Open a deterministic inspection command for E2E command selectors.',
-      proposal: false,
-      keybinding: { key: 'Ctrl+Alt+I', mac: 'Cmd+Alt+I' },
-    },
-    {
-      id: 'normalize-selection',
-      title: 'Normalize Family Selection',
-      description: 'Queue a deterministic proposal command from the clip context menu.',
-      proposal: true,
-      menu: { context: 'clip-context', group: 'family', order: 10 },
-    },
-  ],
-},
-```
-
-Command IDs must match `^[a-z0-9]+(?:[.-][a-z0-9]+)*$`. Supported menu
-contexts are `timeline-context`, `clip-context`, `track-context`,
-`clip-selection-context`, and `canvas-context`.
-
-Duplicate fully-qualified command IDs are excluded fail-closed. Duplicate
-keybindings produce warnings, but both commands remain registered so users can
-resolve the conflict.
-
-### Settings Schema
-
-Settings use the top-level `settingsSchema` manifest field. There is no
-`contributions.settings` collection.
+Settings use the top-level `settingsSchema` manifest field:
 
 ```ts
 settingsSchema: {
@@ -294,68 +204,54 @@ settingsSchema: {
   additionalProperties: false,
   properties: {
     theme: { type: 'string', enum: ['light', 'dark'], default: 'dark' },
-    showRulers: { type: 'boolean', default: true },
   },
 },
 ```
 
-The loader resolves settings by collecting defaults from the JSON Schema,
-deep-merging persisted `settingsOverrides`, and validating the merged result
-against the schema. Invalid overrides produce loader diagnostics and fall back
-to manifest defaults. Package-loaded runtime configs receive resolved settings
-as `config.settings`.
+The host resolves settings by collecting defaults from the JSON Schema,
+deep-merging persisted overrides, and validating the merged result against the
+schema. Invalid overrides produce diagnostics and fall back to manifest
+defaults. Read resolved values through `ctx.services.settings`.
 
 ## Diagnostics Ownership
 
-Diagnostics are owned by the loader, runtime, provider, materialization, render,
-and related editor infrastructure. Public extension packages can cause
-diagnostics through invalid manifests, incompatible API versions, rejected
-permissions, duplicate package IDs, contribution ID mismatches, duplicate
-descriptor IDs, duplicate command IDs, duplicate keybindings, settings override
-failures, and renderer or visibility exceptions.
+Diagnostics are owned by the loader, runtime, and editor infrastructure.
+Extensions cause diagnostics through invalid manifests, incompatible API
+versions, duplicate ids, gate misses (for example `dataKinds/undeclared-kind`),
+and renderer exceptions. Extension-authored diagnostic reporting is not a
+public API; surface user-facing status through your own slot, panel, or command
+UI. Inside `activate()`, `ctx.services.diagnostics.report(...)` is available
+for structured reporting of the extension's own failures.
 
-Extension-authored diagnostic reporting is not a public API. Do not document or
-ship extension code that imports diagnostic stores, constructs
-`VideoEditorDiagnostic` objects, or writes directly to the diagnostics stream.
-If an extension needs to surface user-facing status, render that status in its
-own supported slot, dialog, panel, inspector section, or command UI.
+## Supported Families Summary
 
-## Supported And Deferred Families
-
-The public supported families are:
-
-| Family | Manifest contract | Status |
+| Family | Kind(s) | Bind path |
 | --- | --- | --- |
-| Surfaces | `contributions.slots`, `contributions.dialogs`, `contributions.panels`, `contributions.inspectorSections` | Supported |
-| Commands | `contributions.commands` | Supported |
-| Settings | `settingsSchema` | Supported |
-| Diagnostics | None | Loader/runtime only |
+| Surfaces | `slot`, `dialog`, `panel`, `inspectorSection` | `ctx.ui.registerRenderer` |
+| Commands | `command`, `keybinding`, `contextMenuItem` | `ctx.commands` |
+| Timeline overlays | `timelineOverlay` | `ctx.ui.registerRenderer` |
+| Clip types | `clipType` | `ctx.clipTypes` |
+| Data kinds | `dataKind` | `ctx.dataKinds.register(kindId, laneRenderer, inspector?)` |
+| Trusted registries | `effect`, `transition`, `shader`, `automation` | Host-owned/trusted only |
+| Reserved vocabularies | `parser`, `outputFormat`, `searchProvider`, `metadataFacet`, `assetDetailSection`, `process`, `agentTool`, `agent` | Per-milestone services |
 
-Effects, transitions, clip types, agent tools, data/live providers, render
-materials/capabilities, and keyframes are not public third-party contribution
-families. Do not add placeholder manifest collections for deferred families.
-Unknown contribution collection keys fail closed during manifest validation.
+Effects, transitions, shaders, and automation require trusted code and reject
+third-party declarations. Unknown kinds never validate.
 
 ## Import-Boundary Rules
 
-Extension package code may use:
+Extension code uses:
 
-- `@/tools/video-editor/extension` for extension manifests, packages, configs,
-  settings, loader helpers, state repositories, contribution family metadata,
-  and validation helpers.
-- `@/tools/video-editor/browser` and `@/tools/video-editor/browser-provider`
-  when building browser-host examples or custom shells around the public editor
-  host.
+- `@reigh/editor-sdk` for manifests, types, `defineExtension`,
+  `validateManifest`, settings helpers, and family metadata.
 
-Extension package code must not use:
+Extension code does not use:
 
 - `@/tools/video-editor/runtime/*`
 - `@/tools/video-editor/contexts/*`
 - `@/tools/video-editor/components/*`
 - `@/tools/video-editor/testing/*`
-- Deep imports that are not documented as public browser or extension
-  entrypoints.
+- Deep imports that are not documented as public entrypoints.
 
 Tests and internal fixtures can deep-import internals as part of repository
-validation, but authored extension examples and docs should model the public
-import boundary.
+validation, but authored extensions and docs model the public import boundary.

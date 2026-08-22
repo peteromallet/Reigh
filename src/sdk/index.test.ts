@@ -1457,6 +1457,7 @@ describe('createExtensionContext', () => {
       'clipTypes',
       'commands',
       'creative',
+      'dataKinds',
       'effects',
       'extension',
       'services',

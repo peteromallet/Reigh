@@ -3,9 +3,12 @@
 // the data-kind registry snapshot. Registered kind renders rows; a
 // renderer-less registered kind renders nothing (the host cannot paint it);
 // opaque lanes paint host extent bars; renderer crashes stay contained.
-import { useEffect } from 'react';
-import { render, screen, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+//
+// Rework R1: host-painted chrome dispatches timeline interaction targets —
+// extent-bar press → `dataItem` target (laneId/itemId + registry-resolved
+// extension/contribution ids), empty lane chrome → `dataLane` target.
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import { useCallback, useEffect, useMemo } from 'react';
 import type { TimelineData } from '@/tools/video-editor/lib/timeline-data.ts';
 import type { FrozenDataItem } from '@/tools/video-editor/data/typed/envelope.ts';
 import type {
@@ -38,6 +41,7 @@ const laneView = (overrides: Record<string, unknown> = {}) => ({
   label: 'Transcript',
   schemaRef: 'reigh.transcript_segment/v1',
   shape: 'interval',
+  domain: 'source_seconds',
   items: [],
   hidden: false,
   height: 24,
@@ -48,12 +52,16 @@ const laneView = (overrides: Record<string, unknown> = {}) => ({
 const buildData = (lanes: unknown[]): TimelineData =>
   ({ dataLanes: lanes }) as unknown as TimelineData;
 
-function renderList(props: Partial<DataLaneListProps> & { data: TimelineData | null }) {
+function renderList(
+  props: Partial<DataLaneListProps> & { data: TimelineData | null },
+) {
   return render(
     <DataLaneList
       data={props.data}
       startLeft={props.startLeft ?? START_LEFT}
       pixelsPerSecond={props.pixelsPerSecond ?? PPS}
+      setContextTarget={props.setContextTarget}
+      setInspectorTarget={props.setInspectorTarget}
     />,
   );
 }
@@ -184,11 +192,14 @@ describe('DataLaneList', () => {
     expect(screen.getAllByTestId('data-lane-row')).toHaveLength(2);
   });
 
-  it('resolves the owning extension id and declared domain through the registry snapshot', () => {
+  it('resolves the owning extension id through the registry snapshot; domain comes from the lane view', () => {
     const seen: DataLaneRendererProps[] = [];
-    const record = registryRecord();
+    // The record declares a DIFFERENT domain than the assembled view: paint
+    // must trust the view (assembly-time copy), never re-lookup the registry.
+    const record = registryRecord({ domain: 'frames' });
     const data = buildData([
       laneView({
+        domain: 'source_seconds',
         laneRenderer: (props: DataLaneRendererProps) => {
           seen.push(props);
           return null;
@@ -204,7 +215,97 @@ describe('DataLaneList', () => {
     );
 
     expect(seen.length).toBeGreaterThanOrEqual(1);
-    // Domain comes from the registry record, not the (domain-less) lane view.
+    // Domain is the view's assembly-time copy, not the registry's.
     expect(seen[seen.length - 1].domain).toBe('source_seconds');
+  });
+
+  it('dispatches a dataItem target when an extent bar is pressed', () => {
+    const setContextTarget = vi.fn();
+    const setInspectorTarget = vi.fn();
+    const data = buildData([
+      laneView({
+        laneId: 'opaque:unknown.schema/v1',
+        kindId: '',
+        label: 'unknown.schema/v1',
+        opaque: true,
+        items: [{ item: item('a:c1:0'), timelineStart: 1, timelineEnd: 3, clipId: 'c1' }],
+      }),
+    ]);
+
+    renderList({ data, setContextTarget, setInspectorTarget });
+
+    fireEvent.click(screen.getByTestId('data-lane-extent-bar'));
+
+    const expected = {
+      kind: 'dataItem',
+      laneId: 'opaque:unknown.schema/v1',
+      itemId: 'a:c1:0',
+      extensionId: undefined,
+      contributionId: undefined,
+    };
+    expect(setContextTarget).toHaveBeenCalledTimes(1);
+    expect(setContextTarget).toHaveBeenCalledWith(expected);
+    expect(setInspectorTarget).toHaveBeenCalledTimes(1);
+    expect(setInspectorTarget).toHaveBeenCalledWith(expected);
+  });
+
+  it('dispatches a dataLane target from empty lane chrome with registry-resolved provenance', () => {
+    const setContextTarget = vi.fn();
+    const setInspectorTarget = vi.fn();
+    const record = registryRecord();
+    const data = buildData([
+      laneView({
+        items: [{ item: item('a:c1:0'), timelineStart: 1, timelineEnd: 3, clipId: 'c1' }],
+        laneRenderer: () => <div data-testid="lane-renderer-body">body</div>,
+      }),
+    ]);
+
+    render(
+      <DataKindRegistryProvider>
+        <RegisterProbe record={record} />
+        <DataLaneList
+          data={data}
+          startLeft={START_LEFT}
+          pixelsPerSecond={PPS}
+          setContextTarget={setContextTarget}
+          setInspectorTarget={setInspectorTarget}
+        />
+      </DataKindRegistryProvider>,
+    );
+
+    // A registered lane's renderer paints the items, so the row chrome (the
+    // label gutter here) is the empty part of the row.
+    fireEvent.click(within(screen.getByTestId('data-lane-row')).getByTitle('Transcript'));
+
+    const expected = {
+      kind: 'dataLane',
+      laneId: 'transcript',
+      extensionId: 'ext.transcript',
+      contributionId: 'ext.transcript.contrib',
+    };
+    expect(setContextTarget).toHaveBeenCalledTimes(1);
+    expect(setContextTarget).toHaveBeenCalledWith(expected);
+    expect(setInspectorTarget).toHaveBeenCalledTimes(1);
+    expect(setInspectorTarget).toHaveBeenCalledWith(expected);
+  });
+
+  it('keeps an extent-bar press from also firing the row-level dataLane target', () => {
+    const setInspectorTarget = vi.fn();
+    const data = buildData([
+      laneView({
+        laneId: 'opaque:unknown.schema/v1',
+        kindId: '',
+        label: 'unknown.schema/v1',
+        opaque: true,
+        items: [{ item: item('a:c1:0'), timelineStart: 1, timelineEnd: 3, clipId: 'c1' }],
+      }),
+    ]);
+
+    renderList({ data, setInspectorTarget });
+
+    fireEvent.click(screen.getByTestId('data-lane-extent-bar'));
+
+    expect(setInspectorTarget).toHaveBeenCalledTimes(1);
+    expect(setInspectorTarget.mock.calls[0][0]).toMatchObject({ kind: 'dataItem' });
   });
 });

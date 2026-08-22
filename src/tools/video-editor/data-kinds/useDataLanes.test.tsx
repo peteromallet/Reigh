@@ -59,7 +59,7 @@ describe('useDataLanes', () => {
 
     const patched = result.current;
     expect(patched).not.toBe(base);
-    expect(Object.isFrozen(patched?.dataLanes)).toBe(true);
+    expect(patched?.dataLanes).not.toBe(base.dataLanes); // fresh array per mergeDataLanes contract
 
     const [lane] = patched!.dataLanes;
     expect(lane.laneId).toBe('transcript');

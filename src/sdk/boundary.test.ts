@@ -786,7 +786,7 @@ describe('M6: contribution kind bridging (parser M6-delegated, output/search typ
 // ---------------------------------------------------------------------------
 
 describe('T2.1: exact contribution-kind count and no timelineMarker kind', () => {
-  it('KNOWN_CONTRIBUTION_KINDS has exactly 22 kinds (dataKind is kind 22)', () => {
+  it('KNOWN_CONTRIBUTION_KINDS has exactly 22 kinds (dataKind is entry 21 of 22; reserved \'agent\' is 22nd)', () => {
     expect(KNOWN_CONTRIBUTION_KINDS.length).toBe(22);
     expect(new Set(KNOWN_CONTRIBUTION_KINDS).size).toBe(22);
   });

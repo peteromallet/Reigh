@@ -82,6 +82,7 @@ export interface DataLaneView {
   label: string;
   schemaRef: string;
   shape: DataShape;
+  domain: DataCoordinateDomain;
   items: readonly DataLaneItemView[];
   hidden: boolean;
   height: number;

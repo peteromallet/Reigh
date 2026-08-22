@@ -110,6 +110,10 @@ import {
   type DataKindRegistry,
 } from '@/tools/video-editor/data-kinds/DataKindRegistry.ts';
 import {
+  DataKindRegistryProvider,
+  useDataKindRegistryContext,
+} from '@/tools/video-editor/data-kinds/DataKindRegistryContext.tsx';
+import {
   createAgentToolRegistry,
   type AgentToolRegistry,
 } from '@/tools/video-editor/runtime/agentToolRegistry.ts';
@@ -1113,6 +1117,52 @@ function RuntimeClipTypeRegistryLifecycle({
   return null;
 }
 
+/**
+ * dataKind V1 (Wave-3 ruling): bridges the assembly-owned data-kind registry
+ * into the provider context so there is exactly ONE registry instance per
+ * editor mount — `ctx.dataKinds.register(...)` (wired from
+ * `dataKindRegistryRef` in the synchronize effect) and
+ * `useDataKindRegistrySnapshot()` consumers (`useDataLanes` → DataLaneList)
+ * observe the same records. Mirrors RuntimeClipTypeRegistryLifecycle.
+ */
+function RuntimeDataKindRegistryLifecycle({
+  lifecycleHostRef,
+  dataKindRegistryRef,
+  activeExtensionIds,
+}: {
+  lifecycleHostRef: MutableRefObject<ExtensionLifecycleHost | null>;
+  dataKindRegistryRef: MutableRefObject<DataKindRegistry | null>;
+  activeExtensionIds: ReadonlySet<string>;
+}) {
+  const { registry: dataKindRegistry, snapshot: dataKindRegistrySnapshot } = useDataKindRegistryContext();
+  // Expose the provider-exposed registry to the outer synchronize effect via
+  // ref. With the bridged provider this is the assembly's own instance; the
+  // assignment keeps the ref↔context identity invariant unconditional.
+  dataKindRegistryRef.current = dataKindRegistry;
+  const diagnosticCollection = useVideoEditorRuntime().diagnosticCollection;
+
+  useEffect(() => {
+    const host = lifecycleHostRef.current;
+    if (!host) return;
+    const handle = host.onLifecycleDisposed((extensionId: string) => {
+      dataKindRegistry.unregisterOwner(extensionId);
+      removeExtensionDiagnosticsFromCollection(diagnosticCollection, extensionId);
+    });
+    return () => handle.dispose();
+  }, [diagnosticCollection, dataKindRegistry, lifecycleHostRef]);
+
+  useEffect(() => {
+    syncExtensionDiagnosticsToCollection(
+      diagnosticCollection,
+      'data-kind-registry',
+      dataKindRegistrySnapshot.diagnostics,
+      { activeExtensionIds },
+    );
+  }, [activeExtensionIds, diagnosticCollection, dataKindRegistrySnapshot]);
+
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Scaffold: registry providers + lifecycle bridges + catalog/store providers
 // ---------------------------------------------------------------------------
@@ -1157,6 +1207,11 @@ export function EditorRuntimeScaffold({
         clipTypeRegistryRef={assembly.clipTypeRegistryRef}
         activeExtensionIds={sync.activeExtensionIds}
       />
+      <RuntimeDataKindRegistryLifecycle
+        lifecycleHostRef={assembly.lifecycleHostRef}
+        dataKindRegistryRef={assembly.dataKindRegistryRef}
+        activeExtensionIds={sync.activeExtensionIds}
+      />
       <SequenceComponentCatalogProvider value={sync.sequenceComponentResources}>
         <SequenceComponentRegistryProvider components={sync.sequenceComponentResources.components}>
           <TimelineStoreProvider store={sync.store}>
@@ -1167,7 +1222,16 @@ export function EditorRuntimeScaffold({
     </EffectCatalogProvider>
   );
 
-  const withClipTypes = <ClipTypeRegistryProvider>{inner}</ClipTypeRegistryProvider>;
+  // dataKind V1: the provider exposes the ASSEMBLY-OWNED registry instance
+  // (Wave-3 ruling) — one registry per editor mount, shared by ctx.dataKinds
+  // writes and useDataLanes reads. Disposal stays with the assembly.
+  const withDataKinds = (
+    <DataKindRegistryProvider registry={assembly.dataKindRegistryRef.current ?? undefined}>
+      {inner}
+    </DataKindRegistryProvider>
+  );
+
+  const withClipTypes = <ClipTypeRegistryProvider>{withDataKinds}</ClipTypeRegistryProvider>;
 
   return (
     <EffectRegistryProvider>

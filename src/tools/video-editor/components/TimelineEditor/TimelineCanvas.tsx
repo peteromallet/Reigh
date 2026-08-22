@@ -1027,7 +1027,13 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
           {/* dataKind V1: duration-neutral lane rows below the track rows —
               same scroller and startLeft/pixelsPerSecond mapping, outside the
               overlay host, never gated by timelineOverlaysEnabled. */}
-          <DataLaneList data={laneData} startLeft={startLeft} pixelsPerSecond={pixelsPerSecond} />
+          <DataLaneList
+            data={laneData}
+            startLeft={startLeft}
+            pixelsPerSecond={pixelsPerSecond}
+            setContextTarget={ops?.setContextTarget}
+            setInspectorTarget={ops?.setInspectorTarget}
+          />
           <div
             ref={setContentOverlayRoot}
             data-testid="timeline-extension-content-overlay-root"

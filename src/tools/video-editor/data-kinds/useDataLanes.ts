@@ -85,8 +85,11 @@ export function useDataLanes({ base, kinds, loadSegments }: UseDataLanesArgs): T
     return [...ids].sort();
   }, [base]);
 
-  // Per-mount fetch dedupe: each asset is requested at most once per mount;
-  // results land in `segmentsByAsset` last-write-wins.
+  // Per-mount fetch dedupe: `requestedRef` is created per hook mount, so each
+  // asset is requested at most once per mount — the cache deliberately does
+  // NOT invalidate when `effectiveLoader`'s identity changes (a mid-mount
+  // resolver swap never refetches already-requested assets; documented V1
+  // posture). Results land in `segmentsByAsset` last-write-wins.
   const requestedRef = useRef<Set<string>>(new Set());
   const [segmentsByAsset, setSegmentsByAsset] = useState<
     Readonly<Record<string, readonly TranscriptSegment[]>>

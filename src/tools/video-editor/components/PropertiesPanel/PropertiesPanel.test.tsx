@@ -12,7 +12,14 @@ const useVideoEditorPanelRegistryMock = vi.fn();
 const getInspectorContributionsMock = vi.fn();
 const useVideoEditorAssetPanelsMock = vi.fn();
 const useShaderEffectRegistrySnapshotMock = vi.fn();
+const useDataLanesMock = vi.fn((args?: { base?: unknown }) => args?.base ?? null);
 
+// Rework R1: the panel resolves lane items from the patched lane plane this
+// hook returns, never from the store's frozen-empty `dataLanes`. Default
+// implementation mirrors identity semantics (no lanes → base passthrough).
+vi.mock('@/tools/video-editor/data-kinds/useDataLanes', () => ({
+  useDataLanes: (args?: { base?: unknown }) => useDataLanesMock(args),
+}));
 vi.mock('@/tools/video-editor/hooks/timelineStore', () => ({
   useTimelineEditorData: () => useTimelineEditorDataMock(),
   useTimelineEditorOps: () => useTimelineEditorOpsMock(),
@@ -919,6 +926,7 @@ function createDataLaneFixture(overrides: Partial<DataLaneView> = {}): DataLaneV
     label: 'Transcript',
     schemaRef: 'reigh.transcript_segment/v1',
     shape: 'interval',
+    domain: 'source_seconds',
     items: [{ item: createDataItemFixture(), timelineStart: 2, timelineEnd: 4, clipId: 'clip-1' }],
     hidden: false,
     height: 24,
@@ -960,6 +968,8 @@ describe('PropertiesPanel — data item inspector dispatch', () => {
       afterDefault: [],
     });
     useOptionalVideoEditorRuntimeMock.mockReturnValue(null);
+    // Default: identity semantics (no assembled lanes → base passthrough).
+    useDataLanesMock.mockImplementation((args?: { base?: unknown }) => args?.base ?? null);
   });
 
   afterEach(() => {
@@ -982,6 +992,27 @@ describe('PropertiesPanel — data item inspector dispatch', () => {
       expect.objectContaining({ kind: 'dataItem', laneId: 'transcript', itemId: 'asset-1:0' }),
     );
     expect(screen.getByTestId('mock-clip-panel')).toBeInTheDocument();
+  });
+
+  it('resolves lane items from the patched lane plane, not the store dataLanes (R1)', () => {
+    // Store: frozen-empty `dataLanes` default. Only the render-side plane
+    // — the same one the canvas renders via useDataLanes — carries lanes.
+    const base = createBaseEditorData();
+    useTimelineEditorDataMock.mockReturnValue({
+      ...base,
+      data: { ...base.data, dataLanes: Object.freeze([]) },
+      inspectorTarget: { kind: 'dataItem', laneId: 'transcript', itemId: 'asset-1:0' },
+    });
+    useDataLanesMock.mockReturnValue({
+      ...base.data,
+      dataLanes: [createDataLaneFixture()],
+    });
+
+    render(<PropertiesPanel />);
+
+    expect(useDataLanesMock).toHaveBeenCalledWith({ base: expect.objectContaining({ dataLanes: [] }) as never });
+    expect(screen.getByTestId('opaque-data-item-inspector')).toBeInTheDocument();
+    expect(screen.getByTestId('opaque-data-item-id')).toHaveTextContent('asset-1:0');
   });
 
   it('renders OpaqueDataItemInspector with the six facts when no inspector is bound', () => {

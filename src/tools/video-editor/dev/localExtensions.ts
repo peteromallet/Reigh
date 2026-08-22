@@ -16,10 +16,18 @@
  * exercises the `timelineOverlay` family end-to-end: ruler markers rendered
  * through the host-owned `markerLayer`, playhead-store subscription, and
  * commit-time fresh-snapshot `project-data.write`.
+ *
+ * The transcript-lane example is also registered here (DEV-only). It
+ * exercises the `dataKind` family end-to-end: declare a dataKind
+ * contribution, bind renderers via `ctx.dataKinds.register()` at activation,
+ * and see host-adapted transcript segments painted as a duration-neutral
+ * lane under the timeline tracks.
  */
 import type { ReighExtension } from '@reigh/editor-sdk';
 import { scenePhaseMarkersExtension } from './scene-phase-markers/extension';
+import { transcriptLaneExtension } from './transcript-lane/extension';
 
 export const devLocalExtensions: ReighExtension[] = [
   scenePhaseMarkersExtension,
+  transcriptLaneExtension,
 ];

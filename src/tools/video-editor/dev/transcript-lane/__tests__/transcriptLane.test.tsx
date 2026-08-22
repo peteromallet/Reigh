@@ -1,0 +1,358 @@
+// @vitest-environment jsdom
+// dataKind V1 (Batch 8) — done-4 PRIMARY evidence: the transcript-lane dev
+// example renders a visible lane from fixture segments through the REAL
+// registration path:
+//
+//   validateManifest (real gate 1)
+//     → activate(ctx) → ctx.dataKinds.register (real gate 2:
+//       DataKindRegistrationService, kindId-gated)
+//       → bridged DataKindRegistryProvider (Wave-3 ruling: the provider
+//         exposes the assembly-owned registry instance, so registration
+//         writes and DataLaneList snapshot reads hit ONE registry)
+//       → useDataLanes default loader over a resolver-backed fixture
+//       → TimelineCanvas lane row under the tracks with RENDERER OUTPUT
+//         (transcript chips), not host extent bars.
+//
+// Secondary/manual evidence (embed-host resolver path) and the prod
+// null-provider posture are documented in docs/extensions/authoring.md
+// ("Data Kinds" section).
+import { render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { TimelineCanvas } from '@/tools/video-editor/components/TimelineEditor/TimelineCanvas';
+import {
+  VideoEditorRuntimeProvider,
+  type VideoEditorRuntimeContextValue,
+} from '@/tools/video-editor/contexts/VideoEditorRuntimeContext';
+import {
+  DataKindRegistryProvider,
+  useOptionalDataKindRegistryContext,
+} from '@/tools/video-editor/data-kinds/DataKindRegistryContext';
+import { createDataKindRegistry } from '@/tools/video-editor/data-kinds/DataKindRegistry';
+import type { DataKindRegistry } from '@/tools/video-editor/data-kinds/DataKindRegistry';
+import type { TimelineData } from '@/tools/video-editor/lib/timeline-data';
+import type { TrackDefinition } from '@/tools/video-editor/types';
+import type { TimelineAction, TimelineRow } from '@/tools/video-editor/types/timeline-canvas';
+import { validateManifest } from '@reigh/editor-sdk';
+import { createExtensionContext } from '@/tools/video-editor/runtime/extensionContextFactory';
+import { createDataKindRegistrationService } from '@/tools/video-editor/runtime/dataKindRegistrationService';
+import {
+  TRANSCRIPT_KIND_ID,
+  TRANSCRIPT_SCHEMA_REF,
+  transcriptLaneExtension,
+} from '../extension';
+
+// ---------------------------------------------------------------------------
+// Harness state (hoisted for vi.mock)
+// ---------------------------------------------------------------------------
+
+const harness = vi.hoisted(() => ({
+  editorData: { current: null as unknown },
+  adapters: { current: null as unknown },
+}));
+
+vi.mock('@/tools/video-editor/hooks/timelineStore', async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import('@/tools/video-editor/hooks/timelineStore')
+  >();
+  return {
+    ...actual,
+    useTimelineEditorDataSafe: () => harness.editorData.current,
+    useTimelineMutableAdapters: () => harness.adapters.current,
+  };
+});
+
+afterEach(() => {
+  harness.editorData.current = null;
+  harness.adapters.current = null;
+});
+
+// ---------------------------------------------------------------------------
+// Fixtures
+// ---------------------------------------------------------------------------
+
+/** Transcript segments the stub resolver serves for `asset-a`. */
+const FIXTURE_SEGMENTS = [
+  { start: 0.5, end: 1.5, text: 'Hello from the fixture' },
+  { start: 2, end: 3.25, text: 'Second fixture segment' },
+];
+
+const track: TrackDefinition = { id: 'V1', kind: 'visual', label: 'V1' };
+const action: TimelineAction = { id: 'clip-1', start: 0, end: 4, effectId: 'effect-clip-1' };
+const row: TimelineRow = { id: 'V1', actions: [action] };
+
+/**
+ * Base TimelineData with one sound-bearing media clip whose asset is the
+ * fixture asset. `assetEntry.type` drives `getClipAssetMediaType` → `video`,
+ * the same filter assembleDataLanes applies.
+ */
+function buildBaseData(): TimelineData {
+  return {
+    resolvedConfig: {
+      clips: [
+        {
+          id: 'clip-1',
+          asset: 'asset-a',
+          at: 0,
+          from: 0,
+          speed: 1,
+          end: 4,
+          assetEntry: { type: 'video/mp4' },
+        },
+      ],
+    },
+    rows: [],
+    meta: {},
+    dataLanes: [],
+  } as unknown as TimelineData;
+}
+
+function buildRuntimeValue(): VideoEditorRuntimeContextValue {
+  const extension = transcriptLaneExtension;
+  return {
+    provider: {} as VideoEditorRuntimeContextValue['provider'],
+    // Resolver-backed fixture: onProfileLoad is the seam useDataLanes'
+    // default loader reads (loadTranscript prefers it). This mirrors the
+    // embed-host resolver path; plain prod providers return null profiles.
+    assetResolver: {
+      resolveAssetUrl: async (file: string) => file,
+      onProfileLoad: async () => ({ transcript: { segments: FIXTURE_SEGMENTS } }),
+    },
+    auth: { userId: 'user-1' },
+    project: { projectId: null },
+    shots: {} as VideoEditorRuntimeContextValue['shots'],
+    mediaLightbox: {} as VideoEditorRuntimeContextValue['mediaLightbox'],
+    agentChat: {} as VideoEditorRuntimeContextValue['agentChat'],
+    toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn(), info: vi.fn() },
+    telemetry: { log: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    timelineId: 'timeline-1',
+    userId: 'user-1',
+    extensions: {
+      slots: {},
+      dialogHost: { dialogs: [] },
+      registry: { panels: [], inspectorSections: [] },
+      overlays: [],
+    },
+    extensionRuntime: {
+      extensions: [extension],
+      byId: new Map([[extension.manifest.id as string, extension]]),
+    } as VideoEditorRuntimeContextValue['extensionRuntime'],
+    commandRegistry: undefined,
+    timelineOverlaysEnabled: false,
+  };
+}
+
+function buildCanvasProps() {
+  return {
+    rows: [row],
+    tracks: [track],
+    deviceClass: 'desktop',
+    inputModality: 'mouse',
+    interactionMode: 'select',
+    gestureOwner: 'none',
+    scale: 1,
+    scaleWidth: 100,
+    scaleSplitCount: 1,
+    startLeft: 0,
+    rowHeight: 48,
+    minScaleCount: 1,
+    maxScaleCount: 10,
+    selectedTrackId: null,
+    getActionRender: () => <div>clip</div>,
+    onSelectTrack: vi.fn(),
+    onTrackChange: vi.fn(),
+    onRemoveTrack: vi.fn(),
+    onTrackDragEnd: vi.fn(),
+    trackSensors: [] as never,
+    onCursorDrag: vi.fn(),
+    onClickTimeArea: vi.fn(),
+    setInputModalityFromPointerType: vi.fn(() => 'mouse' as const),
+    setGestureOwner: vi.fn(),
+    dragSessionRef: { current: null },
+  };
+}
+
+/** Records which registry instance the provider actually exposed. */
+function BridgeIdentityProbe({ onRegistry }: { onRegistry: (registry: DataKindRegistry | null) => void }) {
+  const value = useOptionalDataKindRegistryContext();
+  onRegistry(value?.registry ?? null);
+  return null;
+}
+
+/**
+ * Activate the dev extension through the REAL host path: manifest gate via
+ * validateManifest, then a real extension context whose ctx.dataKinds is the
+ * production registration service bound to `assemblyRegistry` — the same
+ * wiring editorRuntimeAssembly.tsx builds per extension.
+ */
+function activateThroughRealGate(assemblyRegistry: DataKindRegistry) {
+  const validation = validateManifest(transcriptLaneExtension.manifest);
+  expect(validation.errors).toEqual([]);
+
+  const diagnosticsList: Array<Record<string, unknown>> = [];
+  const diagnosticsService = {
+    report(diagnostic: Record<string, unknown>): void {
+      diagnosticsList.push({ ...diagnostic });
+    },
+    get diagnostics(): readonly Record<string, unknown>[] {
+      return diagnosticsList;
+    },
+  };
+
+  const dataKindsService = createDataKindRegistrationService({
+    extension: transcriptLaneExtension,
+    dataKindRegistry: assemblyRegistry,
+    diagnosticsService: diagnosticsService as Parameters<
+      typeof createDataKindRegistrationService
+    >[0]['diagnosticsService'],
+  });
+
+  const ctx = createExtensionContext(
+    transcriptLaneExtension,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    dataKindsService,
+  );
+
+  const disposeHandle = transcriptLaneExtension.activate?.(ctx);
+  expect(typeof disposeHandle?.dispose).toBe('function');
+  return diagnosticsService;
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+describe('transcript-lane dev example (dataKind V1 done-4)', () => {
+  it('declares a valid dataKind contribution through the real manifest gate', () => {
+    const validation = validateManifest(transcriptLaneExtension.manifest);
+    expect(validation.errors).toEqual([]);
+    // Dev-mode warnings (settingsSchema recommendation) are non-blocking; the
+    // gate this example must clear is the error set.
+
+
+    const contribution = transcriptLaneExtension.manifest.contributions?.find(
+      (entry) => entry.kind === 'dataKind',
+    );
+    expect(contribution).toMatchObject({
+      kind: 'dataKind',
+      kindId: TRANSCRIPT_KIND_ID,
+      schemaRef: TRANSCRIPT_SCHEMA_REF,
+      shape: 'interval',
+      domain: 'source_seconds',
+    });
+  });
+
+  it('renders renderer output under the tracks through the bridged provider', async () => {
+    // The assembly-style registry instance — in the running editor this is
+    // `editorRuntimeAssembly`'s `dataKindRegistryRef.current`.
+    const assemblyRegistry = createDataKindRegistry();
+
+    harness.editorData.current = { data: buildBaseData() };
+    harness.adapters.current = {
+      dataRef: { current: null },
+      selectedClipIdsRef: { current: new Set<string>() },
+      ops: {},
+      previewRef: { current: null },
+    };
+
+    const seenBridged: Array<DataKindRegistry | null> = [];
+    // Real gate 2: activate BEFORE mount so registration precedes the lane
+    // pipeline's first snapshot read — exactly the editor's ordering.
+    activateThroughRealGate(assemblyRegistry);
+
+
+    render(
+      <DataKindRegistryProvider registry={assemblyRegistry}>
+        <BridgeIdentityProbe onRegistry={(registry) => seenBridged.push(registry)} />
+        <VideoEditorRuntimeProvider value={buildRuntimeValue()}>
+          <TimelineCanvas {...buildCanvasProps()} />
+        </VideoEditorRuntimeProvider>
+      </DataKindRegistryProvider>,
+    );
+
+    // Bridge invariant (Wave-3 ruling): the provider exposed exactly the
+    // assembly-owned instance — not its own creation.
+    expect(seenBridged.length).toBeGreaterThan(0);
+    expect(seenBridged.every((registry) => registry === assemblyRegistry)).toBe(true);
+
+    const record = assemblyRegistry.getSnapshot().records.find((r) => r.kindId === TRANSCRIPT_KIND_ID);
+    expect(record).toBeDefined();
+    expect(record?.ownerExtensionId).toBe('com.reigh.transcript-lane');
+    expect(record?.schemaRef).toBe(TRANSCRIPT_SCHEMA_REF);
+    expect(record?.provenance).toBe('bundled-extension');
+
+    // The lane renders from fixture segments once the loader resolves…
+    await waitFor(() => {
+      expect(screen.getByTestId('data-lane-row')).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('transcript-lane-renderer')).toBeTruthy();
+    });
+
+    // …with RENDERER OUTPUT (chips carrying fixture text), not host extent bars.
+    const laneRow = screen.getByTestId('data-lane-row');
+    expect(laneRow.getAttribute('data-lane-kind')).toBe(TRANSCRIPT_KIND_ID);
+    expect(within(laneRow).queryByTestId('data-lane-extent-bar')).toBeNull();
+    const chips = within(laneRow).getAllByTestId('transcript-lane-chip');
+    expect(chips.length).toBe(FIXTURE_SEGMENTS.length);
+    expect(chips[0].textContent).toContain('Hello from the fixture');
+    expect(chips[1].textContent).toContain('Second fixture segment');
+
+    // Row sits below the track rows inside the SAME scroller.
+    const scroller = document.querySelector('.timeline-scroll');
+    expect(scroller).toBeTruthy();
+    const trackRow = scroller?.querySelector('[data-row-id]');
+    const laneList = scroller?.querySelector('[data-testid="data-lane-list"]');
+    expect(trackRow).toBeTruthy();
+    expect(laneList).toBeTruthy();
+    // DOCUMENT_POSITION_PRECEDING: the track row precedes the lane list.
+    expect(
+      (laneList as Node).compareDocumentPosition(trackRow as Node)
+        & Node.DOCUMENT_POSITION_PRECEDING,
+    ).toBeTruthy();
+  });
+
+  it('registers through the gated service and emits the registered diagnostic', () => {
+    const assemblyRegistry = createDataKindRegistry();
+    const diagnosticsService = activateThroughRealGate(assemblyRegistry);
+
+    const codes = diagnosticsService.diagnostics.map((d) => d.code);
+    expect(codes).toContain('dataKinds/registered');
+    expect(assemblyRegistry.getSnapshot().has(TRANSCRIPT_KIND_ID)).toBe(true);
+
+    // Cleanup rides the returned handle.
+    const handle = transcriptLaneExtension.activate?.(
+      (() => {
+        const dataKindsService = createDataKindRegistrationService({
+          extension: transcriptLaneExtension,
+          dataKindRegistry: assemblyRegistry,
+          diagnosticsService: diagnosticsService as Parameters<
+            typeof createDataKindRegistrationService
+          >[0]['diagnosticsService'],
+        });
+        return createExtensionContext(
+          transcriptLaneExtension,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          dataKindsService,
+        );
+      })(),
+    );
+    handle?.dispose();
+    expect(assemblyRegistry.getSnapshot().has(TRANSCRIPT_KIND_ID)).toBe(false);
+  });
+});

@@ -20,7 +20,7 @@ point to the same authority chain instead of inventing new states.
 
 | Domain | Authority | Why it is authoritative |
 |---|---|---|
-| Contribution kinds | `src/sdk/video/families/contributionKinds.ts:17-75` | Defines `VideoContributionKind` and `VIDEO_CONTRIBUTION_KINDS`. |
+| Contribution kinds | `src/sdk/video/families/contributionKinds.ts:17-78` | Defines `VideoContributionKind` and `VIDEO_CONTRIBUTION_KINDS`. |
 | Maturity axes | `src/sdk/core/families/maturity.ts:23-64` | Defines `DECLARATION_MATURITY_LEVELS` and `EXECUTION_MATURITY_LEVELS`. |
 | Family cross-check | `config/extensions/family-maturity.json:1-826` | Confirms every contribution kind is represented in the maturity snapshot without extras. |
 | Package state inventory | `src/tools/video-editor/runtime/extensionLoader.ts:582-652` | Defines host runtime `PackageState` literals and package-state inventory semantics. |
@@ -36,29 +36,30 @@ point to the same authority chain instead of inventing new states.
 
 | Row | Literal | Fixture intent | Authority |
 |---|---|---|---|
-| `VK-01` | `slot` | Baseline fully supported host surface contribution. | `contributionKinds.ts:53-75`; `family-maturity.json:711` |
-| `VK-02` | `dialog` | Host-integrated dialog layer contribution. | `contributionKinds.ts:53-75`; `family-maturity.json:278` |
-| `VK-03` | `panel` | Host-integrated panel placement contribution. | `contributionKinds.ts:53-75`; `family-maturity.json:514` |
-| `VK-04` | `inspectorSection` | Host-integrated inspector section contribution. | `contributionKinds.ts:53-75`; `family-maturity.json:356` |
-| `VK-05` | `timelineOverlay` | Host-integrated, host-rendered overlay contribution with a required `render` id (no `when` clause); renderer bound via `ctx.ui.registerRenderer()`. | `contributionKinds.ts:53-75`; `family-maturity.json:750` |
-| `VK-06` | `command` | Host-integrated command contribution. | `contributionKinds.ts:53-75`; `family-maturity.json:200` |
-| `VK-07` | `keybinding` | Host-integrated keybinding contribution. | `contributionKinds.ts:53-75`; `family-maturity.json:395` |
-| `VK-08` | `contextMenuItem` | Host-integrated context-menu contribution. | `contributionKinds.ts:53-75`; `family-maturity.json:239` |
-| `VK-09` | `parser` | Delegated parser contribution with schema-backed declaration. | `contributionKinds.ts:53-75`; `family-maturity.json:553` |
-| `VK-10` | `outputFormat` | Delegated output-format contribution reserved for route planning. | `contributionKinds.ts:53-75`; `family-maturity.json:474` |
-| `VK-11` | `searchProvider` | Delegated search-provider contribution. | `contributionKinds.ts:53-75`; `family-maturity.json:632` |
-| `VK-12` | `metadataFacet` | Runtime-bridged metadata-facet contribution. | `contributionKinds.ts:53-75`; `family-maturity.json:434` |
-| `VK-13` | `assetDetailSection` | Delegated asset-detail-section contribution. | `contributionKinds.ts:53-75`; `family-maturity.json:81` |
-| `VK-14` | `process` | Trusted process contribution with declaration-only runtime posture. | `contributionKinds.ts:53-75`; `family-maturity.json:593` |
-| `VK-15` | `effect` | Delegated effect contribution that starts preview-first. | `contributionKinds.ts:53-75`; `family-maturity.json:317` |
-| `VK-16` | `transition` | Delegated transition contribution that starts preview-first. | `contributionKinds.ts:53-75`; `family-maturity.json:789` |
-| `VK-17` | `clipType` | Runtime-bridged clip-type contribution. | `contributionKinds.ts:53-75`; `family-maturity.json:160` |
-| `VK-18` | `shader` | Delegated shader/materializer contribution. | `contributionKinds.ts:53-75`; `family-maturity.json:671` |
-| `VK-19` | `automation` | Runtime-bridged automation contribution. | `contributionKinds.ts:53-75`; `family-maturity.json:120` |
-| `VK-20` | `agentTool` | Delegated host-mediated agent-tool contribution. | `contributionKinds.ts:53-75`; `family-maturity.json:42` |
-| `VK-21` | `agent` | Reserved delegated agent contribution. | `contributionKinds.ts:53-75`; `family-maturity.json:3` |
+| `VK-01` | `slot` | Baseline fully supported host surface contribution. | `contributionKinds.ts:55-78`; `family-maturity.json:711` |
+| `VK-02` | `dialog` | Host-integrated dialog layer contribution. | `contributionKinds.ts:55-78`; `family-maturity.json:278` |
+| `VK-03` | `panel` | Host-integrated panel placement contribution. | `contributionKinds.ts:55-78`; `family-maturity.json:514` |
+| `VK-04` | `inspectorSection` | Host-integrated inspector section contribution. | `contributionKinds.ts:55-78`; `family-maturity.json:356` |
+| `VK-05` | `timelineOverlay` | Host-integrated, host-rendered overlay contribution with a required `render` id (no `when` clause); renderer bound via `ctx.ui.registerRenderer()`. | `contributionKinds.ts:55-78`; `family-maturity.json:750` |
+| `VK-06` | `command` | Host-integrated command contribution. | `contributionKinds.ts:55-78`; `family-maturity.json:200` |
+| `VK-07` | `keybinding` | Host-integrated keybinding contribution. | `contributionKinds.ts:55-78`; `family-maturity.json:395` |
+| `VK-08` | `contextMenuItem` | Host-integrated context-menu contribution. | `contributionKinds.ts:55-78`; `family-maturity.json:239` |
+| `VK-09` | `parser` | Delegated parser contribution with schema-backed declaration. | `contributionKinds.ts:55-78`; `family-maturity.json:553` |
+| `VK-10` | `outputFormat` | Delegated output-format contribution reserved for route planning. | `contributionKinds.ts:55-78`; `family-maturity.json:474` |
+| `VK-11` | `searchProvider` | Delegated search-provider contribution. | `contributionKinds.ts:55-78`; `family-maturity.json:632` |
+| `VK-12` | `metadataFacet` | Runtime-bridged metadata-facet contribution. | `contributionKinds.ts:55-78`; `family-maturity.json:434` |
+| `VK-13` | `assetDetailSection` | Delegated asset-detail-section contribution. | `contributionKinds.ts:55-78`; `family-maturity.json:81` |
+| `VK-14` | `process` | Trusted process contribution with declaration-only runtime posture. | `contributionKinds.ts:55-78`; `family-maturity.json:593` |
+| `VK-15` | `effect` | Delegated effect contribution that starts preview-first. | `contributionKinds.ts:55-78`; `family-maturity.json:317` |
+| `VK-16` | `transition` | Delegated transition contribution that starts preview-first. | `contributionKinds.ts:55-78`; `family-maturity.json:789` |
+| `VK-17` | `clipType` | Runtime-bridged clip-type contribution. | `contributionKinds.ts:55-78`; `family-maturity.json:160` |
+| `VK-18` | `shader` | Delegated shader/materializer contribution. | `contributionKinds.ts:55-78`; `family-maturity.json:671` |
+| `VK-19` | `automation` | Runtime-bridged automation contribution. | `contributionKinds.ts:55-78`; `family-maturity.json:120` |
+| `VK-20` | `agentTool` | Delegated host-mediated agent-tool contribution. | `contributionKinds.ts:55-78`; `family-maturity.json:42` |
+| `VK-21` | `agent` | Reserved delegated agent contribution. | `contributionKinds.ts:55-78`; `family-maturity.json:3` |
+| `VK-22` | `dataKind` | Duration-neutral typed-data lane kind: stable `kindId`, qualified `schemaRef`, host-validated open-string shape/domain; renderers bind at activation via `ctx.dataKinds.register(kindId, laneRenderer, inspector?)` and unknown payloads list opaquely with host fallback paint. | `contributionKinds.ts:55-78`; `family-maturity.json:285` |
 
-Cross-check: `family-maturity.json` contains exactly the same 21 `kind` values
+Cross-check: `family-maturity.json` contains exactly the same 22 `kind` values
 as `VIDEO_CONTRIBUTION_KINDS`; this document adds no extra kind literals.
 
 ### Declaration Maturity Fixture Rows
