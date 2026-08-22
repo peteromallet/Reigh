@@ -487,6 +487,17 @@ describe('Extension example import governance', () => {
       // the registry-derived family helpers over milestone-oriented APIs.
       'CONTRIBUTION_KIND_MILESTONE',
       'contributionKindNotYetBridged',
+      // dataKind V1 — consumer examples land with M1
+      'DataKindContribution',
+      'DataShape',
+      'DataCoordinateDomain',
+      'DataLaneRenderItem',
+      'DataLaneRendererProps',
+      'DataItemInspectorProps',
+      'DataKindRegistrationOptions',
+      'DataKindRegistrationService',
+      'KNOWN_DATA_SHAPES',
+      'KNOWN_DATA_DOMAINS',
     ]);
 
     it('has SDK exports to validate', () => {

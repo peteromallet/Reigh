@@ -42,6 +42,8 @@ export type VideoContributionKind =
   | 'automation'
   // M10: agent tool contributions (host-mediated, proposal-backed)
   | 'agentTool'
+  // dataKind V1: duration-neutral typed-data lanes (single bind model: ctx.dataKinds.register)
+  | 'dataKind'
   // Reserved — not yet bridged
   | 'agent';
 
@@ -71,6 +73,7 @@ export const VIDEO_CONTRIBUTION_KINDS: readonly VideoContributionKind[] = [
   'shader',
   'automation',
   'agentTool',
+  'dataKind',
   'agent',
 ] as const;
 

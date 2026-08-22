@@ -35,6 +35,13 @@ import type { TransitionContribution } from './video/families/transitions';
 import type { ClipTypeContribution } from './video/families/clipTypeContributions';
 import type { ShaderContribution } from './video/families/shaders';
 import type { AgentToolContribution } from './video/families/agentTools';
+// dataKind V1: duration-neutral typed-data lanes ([CONVERGE-WITH-M1] vocabularies live in-module)
+import type {
+  DataKindContribution,
+  DataShape,
+  DataCoordinateDomain,
+} from './video/families/dataKind';
+import { KNOWN_DATA_SHAPES, KNOWN_DATA_DOMAINS } from './video/families/dataKind';
 // T1.1: required-render timeline overlay contribution (governed, not permissive)
 import type { TimelineOverlayManifestContribution } from './video/families/timelineOverlays';
 
@@ -111,6 +118,14 @@ export interface ExtensionContribution {
   assetDetailSectionId?: string;
   /** M10: Agent tool identifier declared by the extension. */
   agentToolId?: string;
+  /** dataKind: stable kind identifier registered via ctx.dataKinds.register(). */
+  kindId?: string;
+  /** dataKind: qualified schema reference for the kind's payload. */
+  schemaRef?: string;
+  /** dataKind: host-validated shape name (open string on the public schema). */
+  shape?: string;
+  /** dataKind: host-validated coordinate-domain name (open string on the public schema). */
+  domain?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -248,6 +263,8 @@ export interface ExtensionManifest {
     | ShaderContribution
     // M10: agent tool contributions
     | AgentToolContribution
+    // dataKind V1: duration-neutral typed-data lanes
+    | DataKindContribution
   )[];
   /** Descriptive permission metadata. */
   permissions?: readonly ExtensionPermissionDeclaration[];
@@ -507,6 +524,54 @@ export function validateManifest(
           pushErr(
             'manifest/overlay-no-when',
             `TimelineOverlay contribution "${cId}" must not declare a "when" clause`,
+            cId,
+          );
+        }
+      }
+      // DataKind: required non-blank kindId/schemaRef, host-validated
+      // shape/domain (open strings on the public schema), no `when` clause
+      if (cKind === 'dataKind') {
+        const dataContribution = contribution as unknown as Record<string, unknown>;
+        const kindIdValue = dataContribution.kindId;
+        if (typeof kindIdValue !== 'string' || kindIdValue.trim().length === 0) {
+          pushErr(
+            'manifest/missing-data-kind-id',
+            `DataKind contribution "${cId}" must include a non-empty kindId (the registration gate key for ctx.dataKinds.register)`,
+            cId,
+          );
+        }
+        const schemaRefValue = dataContribution.schemaRef;
+        if (typeof schemaRefValue !== 'string' || schemaRefValue.trim().length === 0) {
+          pushErr(
+            'manifest/missing-data-schema-ref',
+            `DataKind contribution "${cId}" must include a non-empty schemaRef`,
+            cId,
+          );
+        }
+        const shapeValue = dataContribution.shape;
+        if (shapeValue !== undefined && shapeValue !== null) {
+          if (typeof shapeValue !== 'string' || !KNOWN_DATA_SHAPES.includes(shapeValue as DataShape)) {
+            pushErr(
+              'manifest/invalid-data-shape',
+              `DataKind contribution "${cId}" has unknown shape ${JSON.stringify(shapeValue)}; must be one of: ${KNOWN_DATA_SHAPES.join(', ')}`,
+              cId,
+            );
+          }
+        }
+        const domainValue = dataContribution.domain;
+        if (domainValue !== undefined && domainValue !== null) {
+          if (typeof domainValue !== 'string' || !KNOWN_DATA_DOMAINS.includes(domainValue as DataCoordinateDomain)) {
+            pushErr(
+              'manifest/invalid-data-domain',
+              `DataKind contribution "${cId}" has unknown domain ${JSON.stringify(domainValue)}; must be one of: ${KNOWN_DATA_DOMAINS.join(', ')}`,
+              cId,
+            );
+          }
+        }
+        if (Object.prototype.hasOwnProperty.call(dataContribution, 'when')) {
+          pushErr(
+            'dataKind/no-when',
+            `DataKind contribution "${cId}" must not declare a "when" clause`,
             cId,
           );
         }

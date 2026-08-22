@@ -782,9 +782,9 @@ describe('M6: contribution kind bridging (parser M6-delegated, output/search typ
 // ---------------------------------------------------------------------------
 
 describe('T2.1: exact contribution-kind count and no timelineMarker kind', () => {
-  it('KNOWN_CONTRIBUTION_KINDS has exactly 21 kinds (no 22nd kind)', () => {
-    expect(KNOWN_CONTRIBUTION_KINDS.length).toBe(21);
-    expect(new Set(KNOWN_CONTRIBUTION_KINDS).size).toBe(21);
+  it('KNOWN_CONTRIBUTION_KINDS has exactly 22 kinds (dataKind is kind 22)', () => {
+    expect(KNOWN_CONTRIBUTION_KINDS.length).toBe(22);
+    expect(new Set(KNOWN_CONTRIBUTION_KINDS).size).toBe(22);
   });
 
   it('no timelineMarker contribution kind exists', () => {
@@ -792,7 +792,7 @@ describe('T2.1: exact contribution-kind count and no timelineMarker kind', () =>
     expect(Object.keys(CONTRIBUTION_KIND_MILESTONE)).not.toContain('timelineMarker');
   });
 
-  it('timelineOverlay remains one of the 21 kinds', () => {
+  it('timelineOverlay remains one of the 22 kinds', () => {
     expect(KNOWN_CONTRIBUTION_KINDS).toContain('timelineOverlay');
     expect(CONTRIBUTION_KIND_MILESTONE.timelineOverlay).toMatch(/^M\d+$/);
   });
@@ -3204,9 +3204,12 @@ describe('T6: family adapter manifest (boundary)', () => {
     expect(result.missingFromRegistry).toEqual([]);
     expect(result.missingFromManifest).toEqual([]);
     expect(result.kindsNeedingAdapter).toEqual([]);
-    expect(result.contributionKindsNotInManifest).toEqual([]);
+    // dataKind joins the kind union (V1) before its family entry lands in
+    // VIDEO_FAMILY_REGISTRY (family-registration batch); both invariants
+    // return to [] / true once that entry registers.
+    expect(result.contributionKindsNotInManifest).toEqual(['dataKind']);
     expect(result.manifestKindsNotInContributionKinds).toEqual([]);
-    expect(result.isFullyAligned).toBe(true);
+    expect(result.isFullyAligned).toBe(false);
   });
 
   it('crossReferenceManifest detects kinds missing from registry', () => {
@@ -3248,8 +3251,9 @@ describe('T6: family adapter manifest (boundary)', () => {
 
     const result = crossReferenceManifest(manifest, registry);
 
-    // The manifest should cover all VIDEO_CONTRIBUTION_KINDS
-    expect(result.contributionKindsNotInManifest).toEqual([]);
+    // The manifest should cover every VIDEO_CONTRIBUTION_KIND except
+    // dataKind pending its family entry (see alignment note above).
+    expect(result.contributionKindsNotInManifest).toEqual(['dataKind']);
 
     // And should not have kinds outside VIDEO_CONTRIBUTION_KINDS
     expect(result.manifestKindsNotInContributionKinds).toEqual([]);

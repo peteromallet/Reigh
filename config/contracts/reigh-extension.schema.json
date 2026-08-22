@@ -134,6 +134,7 @@
         "shader",
         "automation",
         "agentTool",
+        "dataKind",
         "agent"
       ]
     },
@@ -179,6 +180,7 @@
         { "$ref": "#/definitions/ShaderContribution" },
         { "$ref": "#/definitions/AutomationContribution" },
         { "$ref": "#/definitions/AgentToolContribution" },
+        { "$ref": "#/definitions/DataKindContribution" },
         { "$ref": "#/definitions/AgentContribution" }
       ]
     },
@@ -958,6 +960,23 @@
         },
         "order": { "type": "number" },
         "when": { "type": "string" }
+      }
+    },
+
+    "DataKindContribution": {
+      "type": "object",
+      "description": "Duration-neutral typed-data kind: stable kindId, qualified schemaRef, and shape/domain names. Renderer binds at activation via ctx.dataKinds.register(kindId, laneRenderer, inspector?).",
+      "required": ["id", "kind", "kindId", "schemaRef"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/definitions/ContributionId" },
+        "kind": { "const": "dataKind" },
+        "kindId": { "type": "string", "minLength": 1 },
+        "schemaRef": { "type": "string", "minLength": 1 },
+        "shape": { "type": "string", "minLength": 1 },
+        "domain": { "type": "string", "minLength": 1 },
+        "label": { "type": "string" },
+        "order": { "type": "number" }
       }
     },
 

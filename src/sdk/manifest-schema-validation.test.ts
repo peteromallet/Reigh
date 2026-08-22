@@ -364,6 +364,177 @@ describe('T5: Manifest schema validation (Ajv-backed)', () => {
       });
     });
   });
+  // -- dataKind V1: typed-data lane kind + fail-closed dataProviders --------
+
+  describe('dataKind V1: accepted kind, host-validated vocabulary, no when', () => {
+    function dataManifest(contribution: Record<string, unknown>): Record<string, unknown> {
+      return {
+        ...baseValidManifest(),
+        contributions: [contribution],
+      };
+    }
+
+    const validDataKind: Record<string, unknown> = {
+      id: 'transcript-segments',
+      kind: 'dataKind',
+      kindId: 'transcript.segments',
+      schemaRef: 'reigh.transcript_segment/v1',
+      shape: 'interval',
+      domain: 'source_seconds',
+      label: 'Transcript segments',
+      order: 10,
+    };
+
+    describe('schema (Ajv)', () => {
+      it('accepts a fully-specified dataKind contribution', () => {
+        expect(validateFn(dataManifest(validDataKind))).toBe(true);
+      });
+
+      it('accepts a dataKind with only required fields', () => {
+        const minimal = { id: 'dk-min', kind: 'dataKind', kindId: 'k.min', schemaRef: 'reigh.min/v1' };
+        expect(validateFn(dataManifest(minimal))).toBe(true);
+      });
+
+      it('rejects a dataKind missing kindId', () => {
+        const missing = { ...validDataKind };
+        delete missing.kindId;
+        expect(validateFn(dataManifest(missing))).toBe(false);
+      });
+
+      it('rejects a dataKind missing schemaRef', () => {
+        const missing = { ...validDataKind };
+        delete missing.schemaRef;
+        expect(validateFn(dataManifest(missing))).toBe(false);
+      });
+
+      it('rejects an empty (blank) kindId', () => {
+        // Schema enforces non-empty via minLength: 1; whitespace-only kindIds
+        // are additionally rejected by runtime validation (trim check).
+        expect(validateFn(dataManifest({ ...validDataKind, kindId: '' }))).toBe(false);
+      });
+
+      it('rejects an unknown property on a dataKind (additionalProperties)', () => {
+        expect(validateFn(dataManifest({ ...validDataKind, renderers: [] }))).toBe(false);
+      });
+    });
+
+    describe('runtime validateManifest', () => {
+      it('accepts a valid dataKind contribution with zero errors', () => {
+        const result = validateManifest(dataManifest(validDataKind) as never);
+        expect(result.valid).toBe(true);
+        expect(result.errors).toEqual([]);
+      });
+
+      it('rejects a missing kindId with manifest/missing-data-kind-id', () => {
+        const missing = { ...validDataKind };
+        delete missing.kindId;
+        const result = validateManifest(dataManifest(missing) as never);
+        expect(result.valid).toBe(false);
+        expect(result.errors.some((e) => e.code === 'manifest/missing-data-kind-id')).toBe(true);
+      });
+
+      it('rejects a blank kindId with manifest/missing-data-kind-id', () => {
+        const result = validateManifest(dataManifest({ ...validDataKind, kindId: '   ' }) as never);
+        expect(result.valid).toBe(false);
+        expect(result.errors.some((e) => e.code === 'manifest/missing-data-kind-id')).toBe(true);
+      });
+
+      it('rejects a non-string kindId with manifest/missing-data-kind-id', () => {
+        const result = validateManifest(dataManifest({ ...validDataKind, kindId: 42 }) as never);
+        expect(result.valid).toBe(false);
+        expect(result.errors.some((e) => e.code === 'manifest/missing-data-kind-id')).toBe(true);
+      });
+
+      it('rejects a missing schemaRef with manifest/missing-data-schema-ref', () => {
+        const missing = { ...validDataKind };
+        delete missing.schemaRef;
+        const result = validateManifest(dataManifest(missing) as never);
+        expect(result.valid).toBe(false);
+        expect(result.errors.some((e) => e.code === 'manifest/missing-data-schema-ref')).toBe(true);
+      });
+
+      it('rejects a blank schemaRef with manifest/missing-data-schema-ref', () => {
+        const result = validateManifest(dataManifest({ ...validDataKind, schemaRef: '' }) as never);
+        expect(result.valid).toBe(false);
+        expect(result.errors.some((e) => e.code === 'manifest/missing-data-schema-ref')).toBe(true);
+      });
+
+      it('rejects an unknown shape with manifest/invalid-data-shape', () => {
+        const result = validateManifest(dataManifest({ ...validDataKind, shape: 'grid' }) as never);
+        expect(result.valid).toBe(false);
+        expect(result.errors.some((e) => e.code === 'manifest/invalid-data-shape')).toBe(true);
+      });
+
+      it('rejects an unknown domain with manifest/invalid-data-domain', () => {
+        const result = validateManifest(dataManifest({ ...validDataKind, domain: 'parsecs' }) as never);
+        expect(result.valid).toBe(false);
+        expect(result.errors.some((e) => e.code === 'manifest/invalid-data-domain')).toBe(true);
+      });
+
+      it('accepts every known shape and domain value', () => {
+        for (const shape of ['point', 'interval', 'series']) {
+          for (const domain of ['timeline_seconds', 'source_seconds', 'frames', 'samples', 'ticks', 'ordinal', 'char_offset', 'token_offset']) {
+            const result = validateManifest(
+              dataManifest({ ...validDataKind, shape, domain }) as never,
+            );
+            expect(result.valid).toBe(true);
+          }
+        }
+      });
+
+      it('rejects a when clause with dataKind/no-when', () => {
+        const result = validateManifest(dataManifest({ ...validDataKind, when: 'ctx.isDev' }) as never);
+        expect(result.valid).toBe(false);
+        expect(result.errors.some((e) => e.code === 'dataKind/no-when')).toBe(true);
+      });
+
+      it('rejects an explicit null when clause with dataKind/no-when', () => {
+        // An own `when` property must be rejected regardless of its value
+        // (including null) so `{when: null}` cannot bypass validation.
+        const result = validateManifest(dataManifest({ ...validDataKind, when: null }) as never);
+        expect(result.valid).toBe(false);
+        expect(result.errors.some((e) => e.code === 'dataKind/no-when')).toBe(true);
+      });
+    });
+  });
+
+  describe('dataProviders remains rejected (fail-closed)', () => {
+    function manifestWith(contribution: Record<string, unknown>): Record<string, unknown> {
+      return {
+        ...baseValidManifest(),
+        contributions: [contribution],
+      };
+    }
+
+    it('schema rejects a contribution with kind "dataProviders"', () => {
+      // No Contribution oneOf branch matches — the kind was deliberately
+      // never added (collides with the host DataProvider port).
+      const manifest = manifestWith({ id: 'providers', kind: 'dataProviders' });
+      expect(validateFn(manifest)).toBe(false);
+    });
+
+    it('runtime rejects kind "dataProviders" with manifest/unknown-contribution-kind', () => {
+      const result = validateManifest(
+        manifestWith({ id: 'providers', kind: 'dataProviders' }) as never,
+      );
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e) => e.code === 'manifest/unknown-contribution-kind')).toBe(true);
+    });
+
+    it('schema rejects a top-level "dataProviders" array via additionalProperties', () => {
+      const manifest = {
+        ...baseValidManifest(),
+        dataProviders: [{ id: 'p1' }],
+      };
+      const valid = validateFn(manifest);
+      expect(valid).toBe(false);
+      const messages = (validateFn.errors ?? []).map((e) => e.message);
+      expect(messages.some((m) =>
+        m.includes('additional properties') ||
+        m.includes('additionalProperties'),
+      )).toBe(true);
+    });
+  });
 
   // -- Rejection of unknown top-level collections (schema-level) ------------
 
@@ -519,6 +690,7 @@ describe('T5: Manifest schema validation (Ajv-backed)', () => {
       expect(kindEnum).toContain('shader');
       expect(kindEnum).toContain('clipType');
       expect(kindEnum).toContain('parser');
+      expect(kindEnum).toContain('dataKind');
     });
 
     it('defines Contribution oneOf with all expected contribution variants', () => {
@@ -531,6 +703,7 @@ describe('T5: Manifest schema validation (Ajv-backed)', () => {
       expect(refs.some((r) => r.includes('TransitionContribution'))).toBe(true);
       expect(refs.some((r) => r.includes('AgentToolContribution'))).toBe(true);
       expect(refs.some((r) => r.includes('ShaderContribution'))).toBe(true);
+      expect(refs.some((r) => r.includes('DataKindContribution'))).toBe(true);
     });
 
     it('defines allowed top-level properties matching the frozen contract', () => {
