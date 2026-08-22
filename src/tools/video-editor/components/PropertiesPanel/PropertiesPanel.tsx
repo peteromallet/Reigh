@@ -133,6 +133,34 @@ function DataItemInspectorSection({ lane, view }: { lane: DataLaneView; view: Da
   );
 }
 
+/**
+ * Host summary for a selected lane (dataKind V1 rework R3d): the frozen
+ * envelope facts the host owns — label, schemaRef, shape, item count.
+ * Styling mirrors OpaqueDataItemInspector; payloads are never interpreted.
+ */
+function DataLaneSummarySection({ lane }: { lane: DataLaneView }) {
+  return (
+    <div
+      data-testid="data-lane-summary"
+      className="rounded-xl border bg-card/80 p-3 text-xs"
+    >
+      <div className="mb-2 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+        Data lane
+      </div>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+        <dt className="text-muted-foreground">label</dt>
+        <dd data-testid="data-lane-summary-label">{lane.label}</dd>
+        <dt className="text-muted-foreground">schemaRef</dt>
+        <dd className="break-all font-mono" data-testid="data-lane-summary-schema-ref">{lane.schemaRef}</dd>
+        <dt className="text-muted-foreground">shape</dt>
+        <dd data-testid="data-lane-summary-shape">{lane.shape}</dd>
+        <dt className="text-muted-foreground">items</dt>
+        <dd className="font-mono" data-testid="data-lane-summary-item-count">{lane.items.length}</dd>
+      </dl>
+    </div>
+  );
+}
+
 function PropertiesPanelComponent() {
   useRenderDiagnostic('PropertiesPanel');
   const [activePanelTab, setActivePanelTab] = useState<'inspector' | 'extensions' | 'processes'>('inspector');
@@ -212,10 +240,9 @@ function PropertiesPanelComponent() {
       };
     }
 
-    if (selectedClipIdsList.length > 1) {
-      return { kind: 'selection' as const, clipIds: selectedClipIdsList };
-    }
-
+    // Rework round-2 F4: an explicit dataItem/dataLane target wins over a
+    // bulk clip selection — data inspection must not be masked by whatever
+    // clips happen to be multi-selected when the lane is pressed.
     if (inspectorTarget?.kind === 'dataItem') {
       return {
         kind: 'dataItem' as const,
@@ -229,6 +256,10 @@ function PropertiesPanelComponent() {
         kind: 'dataLane' as const,
         laneId: inspectorTarget.laneId ?? undefined,
       };
+    }
+
+    if (selectedClipIdsList.length > 1) {
+      return { kind: 'selection' as const, clipIds: selectedClipIdsList };
     }
 
     if (selectedClip) {
@@ -276,6 +307,16 @@ function PropertiesPanelComponent() {
 
     const view = lane.items.find((candidate) => candidate.item.id === itemId);
     return view ? { lane, view } : undefined;
+  }, [inspectorSelectionTarget, lanePlane]);
+  const selectedDataLaneView = useMemo(() => {
+    const target = inspectorSelectionTarget;
+    if (target.kind !== 'dataLane' || !target.laneId) {
+      return undefined;
+    }
+
+    // Same patched lane plane as the dataItem path (see `lanePlane` above).
+    const lane = (lanePlane?.dataLanes ?? []).find((candidate) => candidate.laneId === target.laneId);
+    return lane ?? undefined;
   }, [inspectorSelectionTarget, lanePlane]);
   const bulkSelectedClips = resolvedConfig?.clips.filter((clip) => selectedClipIds.has(clip.id)) ?? [];
   const bulkVisibleTabs = getBulkVisibleTabs(bulkSelectedClips, data?.resolvedConfig?.tracks ?? []);
@@ -409,7 +450,17 @@ function PropertiesPanelComponent() {
       )}
       <InspectorRegistrySections placement="before-default" selection={inspectorSelectionTarget} />
       <div className={`min-h-0 flex-1 overflow-auto rounded-xl border bg-card/80 p-3 transition-colors ${hasSelection ? 'border-[color:var(--video-editor-accent-border)] ring-1 ring-[var(--video-editor-accent-ring)]' : 'border-border'}`}>
-        {selectedClipIds.size > 1 ? (
+        {/* dataKind V1 rework R3c: a data target owns the body — the data
+            inspector / lane summary renders INSTEAD of the clip panels. The
+            multi-select check deliberately comes after this branch. */}
+        {selectedDataItemView ? (
+          <DataItemInspectorSection
+            lane={selectedDataItemView.lane}
+            view={selectedDataItemView.view}
+          />
+        ) : selectedDataLaneView ? (
+          <DataLaneSummarySection lane={selectedDataLaneView} />
+        ) : selectedClipIds.size > 1 ? (
           <BulkClipPanel
             clips={bulkSelectedClips}
             visibleTabs={bulkVisibleTabs}
@@ -506,12 +557,6 @@ function PropertiesPanelComponent() {
           resolvedConfig={resolvedConfig}
           shaderSnapshot={shaderSnapshot}
           applyEdit={applyEdit}
-        />
-      )}
-      {selectedDataItemView && (
-        <DataItemInspectorSection
-          lane={selectedDataItemView.lane}
-          view={selectedDataItemView.view}
         />
       )}
       <InspectorRegistrySections placement="after-default" selection={inspectorSelectionTarget} />

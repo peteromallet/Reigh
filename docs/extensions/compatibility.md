@@ -67,10 +67,10 @@ Host posture for V1 (documented behavior, not defects):
 - No production provider serves transcript profiles yet (`onProfileLoad`
   returns null), so plain prod-backed runs assemble zero lanes; dev runs see
   lanes through resolver-backed fixtures (see `docs/extensions/authoring.md`).
-- Lane items are display-only today: no user-reachable interaction produces a
-  `dataItem`/`dataLane` selection target yet (host-painted bars carry no click
-  handler and the renderer prop contract has no selection callback), so
-  inspector dispatch is exercised by tests, not yet by pointer input.
+- Lane interaction is host-dispatched: extent-bar presses and empty lane
+  chrome produce `dataItem`/`dataLane` targets directly, and renderers receive
+  an optional `onSelectItem(itemId)` prop to forward item presses into the
+  same `dataItem` dispatch (bound inspector or host fallback renders for it).
 
 Live-data providers remain out of scope for extensions: there is no live
 subscription contribution family.

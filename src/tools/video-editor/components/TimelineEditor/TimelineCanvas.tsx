@@ -37,6 +37,7 @@ import {
   TimelineRulerAndGrid,
 } from '@/tools/video-editor/components/TimelineEditor/TimelineRulerAndGrid.tsx';
 import { DataLaneList } from '@/tools/video-editor/components/TimelineEditor/DataLaneList.tsx';
+import { visibleDataLanes } from '@/tools/video-editor/data-kinds/visibleDataLanes.ts';
 import { TrackListRenderer } from '@/tools/video-editor/components/TimelineEditor/TrackListRenderer.tsx';
 import { TimelineGhostLayer } from '@/tools/video-editor/components/TimelineEditor/TimelineGhostLayer.tsx';
 import { VideoEditorRuntimeContext } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
@@ -415,9 +416,10 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
     minDuration,
   });
   const actionHeight = Math.max(12, rowHeight - ACTION_VERTICAL_MARGIN * 2);
-  // dataKind V1: lane rows extend the scrollable content; their heights join
-  // the playhead/viewport height math only — width/scale math is untouched.
-  const dataLanesHeight = laneData?.dataLanes.reduce((sum, lane) => sum + lane.height, 0) ?? 0;
+  // dataKind V1: lane rows extend the scrollable content; only VISIBLE lanes
+  // (shared visibleDataLanes filter — the same set DataLaneList mounts) fold
+  // into the playhead/viewport height math. Width/scale math is untouched.
+  const dataLanesHeight = visibleDataLanes(laneData?.dataLanes).reduce((sum, lane) => sum + lane.height, 0);
   const scrollContentHeight = (rows.length + 1) * rowHeight + dataLanesHeight;
   const maxEnd = useMemo(() => maxClipEndSeconds(rows), [rows]);
   // Content-only derivation: the trailing runway is the owner's call and reaches

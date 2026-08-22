@@ -22,7 +22,7 @@ point to the same authority chain instead of inventing new states.
 |---|---|---|
 | Contribution kinds | `src/sdk/video/families/contributionKinds.ts:17-78` | Defines `VideoContributionKind` and `VIDEO_CONTRIBUTION_KINDS`. |
 | Maturity axes | `src/sdk/core/families/maturity.ts:23-64` | Defines `DECLARATION_MATURITY_LEVELS` and `EXECUTION_MATURITY_LEVELS`. |
-| Family cross-check | `config/extensions/family-maturity.json:1-826` | Confirms every contribution kind is represented in the maturity snapshot without extras. |
+| Family cross-check | `config/extensions/family-maturity.json:1-892` | Confirms every contribution kind is represented in the maturity snapshot without extras. |
 | Package state inventory | `src/tools/video-editor/runtime/extensionLoader.ts:582-652` | Defines host runtime `PackageState` literals and package-state inventory semantics. |
 | Package state consumers | `src/tools/video-editor/components/ExtensionManager/ExtensionManager.tsx:112-124`, `src/tools/video-editor/runtime/ExtensionStatusDrawer.tsx:315-321`, `src/tools/video-editor/components/ExtensionManager/ExtensionManager.test.tsx:504-514` | Confirms the seven package states are rendered and severity-grouped without hidden extras. |
 | Render routes, determinism, blocker reasons | `src/sdk/video/rendering/renderability.ts:1-63` | Defines `RENDER_ROUTES`, `DETERMINISM_STATUSES`, and `RENDER_BLOCKER_REASONS`. |

@@ -373,6 +373,11 @@ Extensions do not interact with providers directly. The public `TimelineReader.s
 | Read i18n messages | `ctx.services.i18n` |
 | Access browser APIs | Unrestricted (same origin) |
 
+The V1 `ExtensionContext` carries exactly 13 keys — `apiVersion`, `extension`,
+`chrome`, `services`, `creative`, `commands`, `ui`, `effects`, `transitions`,
+`clipTypes`, `shaders`, `agentTools`, `dataKinds` — pinned exhaustively by
+`src/sdk/__tests__/sdk-boundary.test.ts`.
+
 ### 12.2 Not available (deferred or unsupported)
 
 | Capability | Posture |

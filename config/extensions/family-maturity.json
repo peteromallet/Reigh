@@ -285,7 +285,7 @@
     "kind": "dataKind",
     "label": "Data Kind",
     "description": "Data kinds define duration-neutral typed-data lanes rendered from typed envelope items. Renderers bind via ctx.dataKinds.register(); unknown payloads round-trip opaquely with host fallback paint.",
-    "declarationMaturity": "documented",
+    "declarationMaturity": "schema-backed",
     "executionMaturity": "host-integrated",
     "sdkModules": [
       "src/sdk/video/families/dataKind.ts"
@@ -293,7 +293,7 @@
     "hostAdapter": "src/tools/video-editor/runtime/families/dataKindAdapter.ts",
     "requiresTrustedCode": false,
     "manifestSchemaDefinition": "DataKindContribution",
-    "uiIntegrationTest": null,
+    "uiIntegrationTest": "src/tools/video-editor/components/TimelineEditor/TimelineCanvas.test.tsx",
     "coverage": {
       "manifestSchema": true,
       "normalizedDescriptor": true,
@@ -301,7 +301,7 @@
       "lifecycleCleanup": true,
       "diagnostics": false,
       "hostCapabilityProjection": false,
-      "uiIntegration": false,
+      "uiIntegration": true,
       "persistencePosture": false,
       "examples": false,
       "tests": true
@@ -309,10 +309,10 @@
     "conformance": {
       "fullyConformant": false,
       "gapCount": 5,
-      "coherent": true,
+      "coherent": false,
       "schemaCovered": true,
-      "metRequirementCount": 5,
-      "unmetRequirementCount": 5,
+      "metRequirementCount": 6,
+      "unmetRequirementCount": 4,
       "unassessedRequirementCount": 0
     },
     "legacyCompatibility": {

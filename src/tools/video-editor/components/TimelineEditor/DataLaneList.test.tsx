@@ -118,6 +118,12 @@ describe('DataLaneList', () => {
     expect(props.items).toEqual([
       { id: 'a:c1:0', timelineStart: 10, timelineEnd: 12, clipId: 'c1', payload: { text: 'a:c1:0' } },
     ]);
+    // Rework R1/R3: the host-supplied viewport geometry and item-selection
+    // callback ride the same SDK props contract. Rows are timeline-zero-
+    // origin, so renderer props always carry startLeft: 0.
+    expect(props.startLeft).toBe(0);
+    expect(props.pixelsPerSecond).toBe(PPS);
+    expect(typeof props.onSelectItem).toBe('function');
     // Hidden lanes never render.
     expect(container.querySelectorAll('[data-testid="data-lane-row"]')).toHaveLength(1);
   });
@@ -160,8 +166,8 @@ describe('DataLaneList', () => {
 
     const bars = within(row).getAllByTestId('data-lane-extent-bar');
     expect(bars).toHaveLength(2);
-    // left = startLeft + timelineStart * pixelsPerSecond
-    expect(bars[0].style.left).toBe(`${START_LEFT + 1 * PPS}px`);
+    // left = timelineStart * pixelsPerSecond (row canvas origin IS t=0)
+    expect(bars[0].style.left).toBe(`${1 * PPS}px`);
     expect(bars[0].style.width).toBe(`${2 * PPS}px`);
     // Sub-minimum spans clamp to the 2px floor.
     expect((bars[1] as HTMLElement).style.width).toBe('2px');
@@ -307,5 +313,53 @@ describe('DataLaneList', () => {
 
     expect(setInspectorTarget).toHaveBeenCalledTimes(1);
     expect(setInspectorTarget.mock.calls[0][0]).toMatchObject({ kind: 'dataItem' });
+  });
+
+  it('forwards renderer item presses through onSelectItem into the dataItem dispatch (rework R3, G5: no dataLane double-fire)', () => {
+    const setContextTarget = vi.fn();
+    const setInspectorTarget = vi.fn();
+    const data = buildData([
+      laneView({
+        items: [
+          { item: item('a:c1:0'), timelineStart: 10, timelineEnd: 12, clipId: 'c1' },
+          { item: item('b:c2:0'), timelineStart: 20, timelineEnd: 22, clipId: 'c2' },
+        ],
+        laneRenderer: (props: DataLaneRendererProps) => (
+          <div data-testid="lane-renderer-body">
+            {props.items.map((renderItem) => (
+              <button
+                key={renderItem.id}
+                type="button"
+                data-testid="renderer-item"
+                // Same discipline as the host extent bars: swallow the event
+                // so the row's dataLane handler cannot overwrite the target.
+                onClick={(event) => {
+                  event.stopPropagation();
+                  props.onSelectItem?.(renderItem.id);
+                }}
+              >
+                {renderItem.id}
+              </button>
+            ))}
+          </div>
+        ),
+      }),
+    ]);
+
+    renderList({ data, setContextTarget, setInspectorTarget });
+
+    fireEvent.click(within(screen.getByTestId('lane-renderer-body')).getAllByTestId('renderer-item')[1]);
+
+    const expected = {
+      kind: 'dataItem',
+      laneId: 'transcript',
+      itemId: 'b:c2:0',
+      extensionId: undefined,
+      contributionId: undefined,
+    };
+    expect(setContextTarget).toHaveBeenCalledTimes(1);
+    expect(setContextTarget).toHaveBeenCalledWith(expected);
+    expect(setInspectorTarget).toHaveBeenCalledTimes(1);
+    expect(setInspectorTarget).toHaveBeenCalledWith(expected);
   });
 });

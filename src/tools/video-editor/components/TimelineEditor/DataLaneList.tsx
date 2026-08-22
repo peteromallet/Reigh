@@ -1,6 +1,6 @@
 // dataKind V1 (Batch 6): the duration-neutral lane strip mounted under the
 // timeline's track rows (inside the same scroller, sharing the ruler's
-// `startLeft`/`pixelsPerSecond` mapping, outside the extension overlay host
+// `pixelsPerSecond` scale — lane rows themselves are timeline-zero-origin,
 // and never gated by `timelineOverlaysEnabled`).
 //
 // Reads lanes from the (patched) TimelineData plus the data-kind registry
@@ -23,14 +23,19 @@ import type {
   TimelineInspectorTarget,
   TimelineContextTarget,
 } from '@/tools/video-editor/lib/mobile-interaction-model.ts';
+import { visibleDataLanes } from '@/tools/video-editor/data-kinds/visibleDataLanes.ts';
 import { useDataKindRegistrySnapshot } from '@/tools/video-editor/data-kinds/DataKindRegistryContext.tsx';
 import { DataLaneRow } from './DataLaneRow.tsx';
 
 export interface DataLaneListProps {
   /** Patched TimelineData whose `dataLanes` carry the assembled views. */
   readonly data: TimelineData | null;
-  /** Shared timeline x-offset of t=0 (px) — same value TrackListRenderer uses. */
-  readonly startLeft: number;
+  /**
+   * Optional call-site symmetry with the track rows; lane rows never consume
+   * it (their gutter sits in-flow, so the canvas origin IS t=0) and renderer
+   * props always carry `startLeft: 0` (rework round-2 F1). Defaults to 0.
+   */
+  readonly startLeft?: number;
   /** Shared px-per-second scale — same value the ruler and tracks use. */
   readonly pixelsPerSecond: number;
   /** Timeline interaction-model setters, shared with the overlay host. */
@@ -38,7 +43,7 @@ export interface DataLaneListProps {
   readonly setInspectorTarget?: (target: TimelineInspectorTarget) => void;
 }
 
-export function DataLaneList({ data, startLeft, pixelsPerSecond, setContextTarget, setInspectorTarget }: DataLaneListProps) {
+export function DataLaneList({ data, pixelsPerSecond, setContextTarget, setInspectorTarget }: DataLaneListProps) {
   const kindRecords = useDataKindRegistrySnapshot();
 
   const dispatch = useCallback((target: TimelineInteractionTarget) => {
@@ -47,10 +52,7 @@ export function DataLaneList({ data, startLeft, pixelsPerSecond, setContextTarge
   }, [setContextTarget, setInspectorTarget]);
 
   const lanes = useMemo(
-    () => (data?.dataLanes ?? []).filter((lane) =>
-      // Hidden lanes are skipped; a renderer-less registered kind cannot be
-      // painted, so its lane is absent; opaque lanes use the host fallback.
-      !lane.hidden && (lane.opaque || typeof lane.laneRenderer === 'function')),
+    () => visibleDataLanes(data?.dataLanes),
     [data],
   );
 
@@ -64,7 +66,6 @@ export function DataLaneList({ data, startLeft, pixelsPerSecond, setContextTarge
         <DataLaneRow
           key={lane.laneId}
           lane={lane}
-          startLeft={startLeft}
           pixelsPerSecond={pixelsPerSecond}
           extensionId={lane.kindId ? kindRecords.get(lane.kindId)?.ownerExtensionId : undefined}
           onSelectLane={() => dispatch({

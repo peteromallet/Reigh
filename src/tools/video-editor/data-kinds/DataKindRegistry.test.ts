@@ -77,6 +77,24 @@ describe('createDataKindRegistry', () => {
     expect(snapshot.get('missing')).toBeUndefined();
   });
 
+  it('snapshot.get()/has() are bound to the frozen set — later registers stay invisible to a held snapshot', () => {
+    registry.register(makeRecord());
+    const held = registry.getSnapshot();
+    expect(held.get('transcript_segment')).toBeDefined();
+
+    registry.register(makeRecord({ kindId: 'later_kind', schemaRef: 'reigh.later/v1' }));
+
+    // The held snapshot predates the second registration: its records array
+    // AND its get/has view are frozen at the same instant (rework R6).
+    expect(held.records.map((record) => record.kindId)).toEqual(['transcript_segment']);
+    expect(held.get('later_kind')).toBeUndefined();
+    expect(held.has('later_kind')).toBe(false);
+
+    // A fresh snapshot sees both kinds.
+    expect(registry.getSnapshot().get('later_kind')).toBeDefined();
+    expect(registry.getSnapshot().has('transcript_segment')).toBe(true);
+  });
+
   it('carries optional inspector, label, and order on the record', () => {
     const inspector = () => null;
     registry.register(makeRecord({ inspector, label: 'Transcript', order: 3 }));
@@ -167,6 +185,60 @@ describe('createDataKindRegistry', () => {
       registry.getSnapshot().diagnostics.some((d) => d.code === 'data-kind-registry/update-kind-id-mismatch'),
     ).toBe(true);
     expect(registry.resolve('transcript_segment')).toBeDefined();
+  });
+
+  // ---- held snapshots survive mutations (rework round-2 F6) -----------------
+
+  it('updateRecord leaves a held snapshot pinned to the previous record', () => {
+    registry.register(makeRecord({ label: 'before' }));
+    const held = registry.getSnapshot();
+    expect(held.get('transcript_segment')!.label).toBe('before');
+
+    registry.updateRecord('transcript_segment', (current) => ({ ...current, label: 'after' }));
+
+    // The held snapshot still resolves the kind, with the PRE-update record.
+    expect(held.has('transcript_segment')).toBe(true);
+    expect(held.get('transcript_segment')!.label).toBe('before');
+    expect(registry.getSnapshot().get('transcript_segment')!.label).toBe('after');
+  });
+
+  it('unregister leaves a held snapshot resolving the removed kind', () => {
+    registry.register(makeRecord());
+    const held = registry.getSnapshot();
+    expect(held.get('transcript_segment')).toBeDefined();
+
+    registry.unregister('transcript_segment');
+
+    expect(held.get('transcript_segment')).toBeDefined();
+    expect(held.has('transcript_segment')).toBe(true);
+    expect(registry.getSnapshot().get('transcript_segment')).toBeUndefined();
+    expect(registry.getSnapshot().has('transcript_segment')).toBe(false);
+  });
+
+  it('unregisterOwner leaves a held snapshot resolving the dropped kinds', () => {
+    registry.register(makeRecord({ kindId: 'kind-a', ownerExtensionId: 'ext-a' }));
+    registry.register(makeRecord({ kindId: 'kind-b', ownerExtensionId: 'ext-a' }));
+    const held = registry.getSnapshot();
+
+    registry.unregisterOwner('ext-a');
+
+    expect(held.get('kind-a')).toBeDefined();
+    expect(held.get('kind-b')).toBeDefined();
+    const fresh = registry.getSnapshot();
+    expect(fresh.get('kind-a')).toBeUndefined();
+    expect(fresh.get('kind-b')).toBeUndefined();
+  });
+
+  it('dispose leaves a held snapshot resolving the released kinds', () => {
+    registry.register(makeRecord());
+    const held = registry.getSnapshot();
+    expect(held.get('transcript_segment')).toBeDefined();
+
+    registry.dispose();
+
+    expect(held.get('transcript_segment')).toBeDefined();
+    expect(held.has('transcript_segment')).toBe(true);
+    expect(registry.getSnapshot().records).toHaveLength(0);
   });
 
   // ---- snapshots / subscription / lifecycle ---------------------------------

@@ -34,6 +34,10 @@ import { VideoEditorProvider } from '@/tools/video-editor/contexts/VideoEditorPr
 import { getExtensionSmokeExtension } from '@/sdk/smoke/extensionSmoke';
 import { devLocalExtensions } from '@/tools/video-editor/dev/localExtensions.ts';
 import {
+  TRANSCRIPT_LANE_FIXTURE_PARAM,
+  withTranscriptFixture,
+} from '@/tools/video-editor/dev/transcript-lane/fixtureProvider.ts';
+import {
   getSnapshot as getDevDisabledSnapshot,
   subscribe as subscribeDevDisabled,
 } from '@/tools/video-editor/dev/devExtensionEnablement.ts';
@@ -453,6 +457,18 @@ export default function VideoEditorPage() {
     localTimelineName,
   });
 
+  // dataKind V1 golden path (groken round 4): DEV-only fixture provider so the
+  // transcript-lane example paints on any project with a media clip. Opt-in
+  // via `?transcriptLaneFixture=1`; production builds drop the branch.
+  const pageDataProvider = useMemo(() => {
+    if (!providerSelection) return null;
+    if (!import.meta.env.DEV) return providerSelection.dataProvider;
+    const fixtureRequested = new URLSearchParams(window.location.search).has(TRANSCRIPT_LANE_FIXTURE_PARAM);
+    return fixtureRequested
+      ? withTranscriptFixture(providerSelection.dataProvider)
+      : providerSelection.dataProvider;
+  }, [providerSelection]);
+
   useEffect(() => {
     setMountedSaveStatus('saved');
   }, [providerSelection?.remountKey]);
@@ -712,7 +728,7 @@ export default function VideoEditorPage() {
           <div className="min-h-0 flex-1 overflow-hidden">
             <VideoEditorProvider
               key={providerSelection.remountKey}
-              dataProvider={providerSelection.dataProvider}
+              dataProvider={pageDataProvider ?? providerSelection.dataProvider}
               projectId={providerSelection.projectId}
               timelineId={providerSelection.timelineId}
               timelineName={providerSelection.timelineName}
@@ -834,7 +850,7 @@ export default function VideoEditorPage() {
       <div className="min-h-0 flex-1 overflow-hidden">
         <VideoEditorProvider
           key={providerSelection.remountKey}
-          dataProvider={providerSelection.dataProvider}
+          dataProvider={pageDataProvider ?? providerSelection.dataProvider}
           projectId={providerSelection.projectId}
           timelineId={providerSelection.timelineId}
           timelineName={providerSelection.timelineName}

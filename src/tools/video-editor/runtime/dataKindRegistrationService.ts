@@ -23,7 +23,7 @@ import type {
   ExtensionDiagnosticsService,
   ReighExtension,
 } from '@reigh/editor-sdk';
-import { KNOWN_DATA_SHAPES, KNOWN_DATA_DOMAINS } from '@reigh/editor-sdk';
+import { KNOWN_DATA_SHAPES, KNOWN_DATA_DOMAINS } from '@/sdk/video/families/dataKind';
 import type { DataKindRegistry } from '@/tools/video-editor/data-kinds/DataKindRegistry.ts';
 import type {
   DataKindProvenance,

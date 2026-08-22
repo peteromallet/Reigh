@@ -991,7 +991,9 @@ describe('PropertiesPanel — data item inspector dispatch', () => {
       expect.anything(),
       expect.objectContaining({ kind: 'dataItem', laneId: 'transcript', itemId: 'asset-1:0' }),
     );
-    expect(screen.getByTestId('mock-clip-panel')).toBeInTheDocument();
+    // R3c: a resolvable data target owns the body — the clip panel is replaced,
+    // not appended alongside.
+    expect(screen.queryByTestId('mock-clip-panel')).not.toBeInTheDocument();
   });
 
   it('resolves lane items from the patched lane plane, not the store dataLanes (R1)', () => {
@@ -1052,6 +1054,12 @@ describe('PropertiesPanel — data item inspector dispatch', () => {
     expect(ops.clearSelection).toHaveBeenCalled();
     expect(ops.setSelectedTrackId).toHaveBeenCalledWith(null);
     expect(screen.queryByTestId('opaque-data-item-inspector')).not.toBeInTheDocument();
+    // Rework R3d: a dataLane target renders the host lane summary — label,
+    // schemaRef, shape, item count — in place of the clip panel body.
+    expect(screen.getByTestId('data-lane-summary')).toBeInTheDocument();
+    expect(screen.queryByTestId('mock-clip-panel')).not.toBeInTheDocument();
+    expect(screen.getByTestId('data-lane-summary-schema-ref')).toHaveTextContent('reigh.transcript_segment/v1');
+    expect(screen.getByTestId('data-lane-summary-item-count')).toHaveTextContent('1');
   });
 
   it('renders the bound kind inspector inside the host boundary when registered', () => {
@@ -1083,7 +1091,7 @@ describe('PropertiesPanel — data item inspector dispatch', () => {
     render(<PropertiesPanel />);
 
     expect(document.querySelector('[data-video-editor-contribution-error="true"]')).not.toBeNull();
-    expect(screen.getByTestId('mock-clip-panel')).toBeInTheDocument();
+    expect(screen.queryByTestId('mock-clip-panel')).not.toBeInTheDocument();
     expect(consoleErrorSpy).toHaveBeenCalled();
   });
 

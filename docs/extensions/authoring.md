@@ -176,23 +176,39 @@ Contract details:
 
 ### Seeing a lane
 
-Lanes assemble from host-adapted transcript segments. In dev, the embed host's
-resolver branch (`EditorRuntimeProvider.tsx`) forwards your `assetResolver`;
-a resolver whose `onProfileLoad` returns `{ transcript: { segments } }` feeds
-the lane pipeline for sound-bearing media clips. Plain prod-backed pages show
-no lanes yet because current providers return null profiles — that null-provider
-posture is documented V1 behavior, not a defect. Sanity path: load the editor
-with `?extensionSmoke=1` first to confirm host wiring, then check the
+Lanes assemble from host-adapted transcript segments. The fastest way to see
+one: run the DEV editor with `?transcriptLaneFixture=1` in the URL. That
+installs a fixture provider (DEV-only, `dev/transcript-lane/fixtureProvider.ts`)
+that answers every media asset with two fixture transcript segments — any
+project with a sound-bearing media clip paints the transcript lane, and chips
+are clickable.
+
+Without the flag, lanes assemble only from real profiles: the embed host's
+resolver branch (`EditorRuntimeProvider.tsx`) forwards your `assetResolver`,
+and a resolver whose `onProfileLoad` returns `{ transcript: { segments } }`
+feeds the lane pipeline for sound-bearing media clips. Stock prod-backed
+providers return null profiles today — that null-provider posture is
+documented V1 behavior, not a defect. Sanity path: load the editor with
+`?extensionSmoke=1` first to confirm host wiring, then check the
 `[Extension lifecycle]` console group for your extension's activation.
+
+Non-transcript kinds feed items through `useDataLanes`'
+`extraItemsBySchemaRef` (caller-mapped, timeline-resolved views keyed by
+qualified schemaRef) — the same merge, provenance, and opaque-fallback rules
+as transcript items.
 
 ### Interaction posture (V1)
 
-Lane items are display-only today. No user-reachable interaction produces a
-`dataItem`/`dataLane` inspector target yet: host-painted bars carry no click
-handler and `DataLaneRendererProps` exposes no selection callback, so inspector
-dispatch is exercised by tests rather than pointer input. Lanes also render
-opaque whenever no provider/registration path is wired — the lane plane fails
-open to "no lanes" without a loader.
+Lane interaction is host-dispatched. Host-painted extent bars dispatch a
+`dataItem` target on click, and empty lane chrome dispatches a `dataLane`
+target through the same interaction setters the overlay host uses.
+Renderer-painted items join the same model: the host passes an optional
+`onSelectItem(itemId)` on `DataLaneRendererProps`, so a renderer can forward
+item presses into the identical `dataItem` dispatch. The properties panel
+renders the kind's bound inspector (or the opaque fallback) for `dataItem`
+targets and a lane summary for `dataLane` ones. Lanes also render opaque
+whenever no provider/registration path is wired — the lane plane fails open
+to "no lanes" without a loader.
 
 ## Settings Schema
 

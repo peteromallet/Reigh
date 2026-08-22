@@ -858,18 +858,19 @@ describe('UI integration evidence', () => {
     ),
   );
 
-  it('exactly the seven current UI-integrated families are inventoried', () => {
+  it('exactly the eight current UI-integrated families are inventoried', () => {
     const kinds = uiIntegrated.map((def) => def.kind).sort();
     expect(kinds).toEqual([
       'command',
       'contextMenuItem',
+      'dataKind',
       'dialog',
       'inspectorSection',
       'panel',
       'slot',
       'timelineOverlay',
     ]);
-    expect(uiIntegrated.length).toBe(7);
+    expect(uiIntegrated.length).toBe(8);
   });
 
   it('every UI-integrated family has a non-empty uiIntegrationTest', () => {

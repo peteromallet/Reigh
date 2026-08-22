@@ -1,5 +1,5 @@
 /**
- * DataKind family module (kind 22).
+ * DataKind family module (entry 21 of 22; reserved 'agent' is 22nd).
  *
  * Houses the data-kind family contracts for duration-neutral typed-data
  * lanes: the `DataKindContribution` manifest interface, the closed V1
@@ -154,6 +154,23 @@ export interface DataLaneRendererProps {
   readonly domain: DataCoordinateDomain;
   /** Frozen items mapped onto the timeline for this lane. */
   readonly items: readonly DataLaneRenderItem[];
+  /**
+   * Pixel offset of timeline zero within the renderer's box; host lane rows
+   * are timeline-zero-origin, so the host passes 0 and renderers never add a
+   * gutter correction themselves.
+   */
+  readonly startLeft: number;
+  /** Shared px-per-second scale — same value the ruler and tracks use. */
+  readonly pixelsPerSecond: number;
+  /**
+   * Optional item-selection callback wired by the host to its interaction
+   * model: invoking it dispatches a `dataItem` target for `itemId`. A
+   * renderer forwarding a pointer press must stop propagation first (as the
+   * host's own extent bars do) so the row's empty-chrome `dataLane` handler
+   * cannot overwrite the target. Absent in isolated renders (tests) where
+   * rows stay display-only.
+   */
+  readonly onSelectItem?: (itemId: string) => void;
 }
 
 /**

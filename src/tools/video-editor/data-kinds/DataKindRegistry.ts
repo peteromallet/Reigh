@@ -59,7 +59,12 @@ export interface DataKindRegistryRecord {
   readonly dispose?: DisposeHandle['dispose'];
 }
 
-/** Immutable snapshot of registry state for consumers. */
+/**
+ * Immutable snapshot of registry state for consumers. `records`,
+ * `diagnostics`, AND the `get`/`has` lookups are bound to the same frozen
+ * instant: a snapshot held across a later register/unregister never sees the
+ * newer registry state (rework R6).
+ */
 export interface DataKindRegistrySnapshot {
   readonly records: readonly DataKindRegistryRecord[];
   readonly diagnostics: readonly ExtensionDiagnostic[];
@@ -201,15 +206,22 @@ export function createDataKindRegistry(): DataKindRegistry {
   function getSnapshot(): DataKindRegistrySnapshot {
     if (frozenSnapshot) return frozenSnapshot;
 
-    const snapshotRecords = Object.freeze(
-      sortEntries([...records.values()]).map((entry) => entry.record),
-    );
+    const entries = sortEntries([...records.values()]);
+    // Null-prototype Record: string-keyed snapshot lookup without prototype
+    // hazards (`in`/index stay honest for adversarial kind ids).
+    const byKindId = Object.create(null) as Record<string, DataKindRegistryRecord>;
+    for (const entry of entries) {
+      byKindId[entry.record.kindId] = entry.record;
+    }
 
+    // Freeze the lookup table too — a held snapshot must not expose a
+    // mutable index a later caller could corrupt (rework round-2 F7).
+    const frozenByKindId = Object.freeze(byKindId);
     frozenSnapshot = Object.freeze({
-      records: snapshotRecords,
+      records: Object.freeze(entries.map((entry) => entry.record)),
       diagnostics: Object.freeze([...diagnostics]),
-      get: (kindId: string) => records.get(kindId)?.record,
-      has: (kindId: string) => records.has(kindId),
+      get: (kindId: string) => frozenByKindId[kindId],
+      has: (kindId: string) => kindId in frozenByKindId,
     });
 
     return frozenSnapshot;

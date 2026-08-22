@@ -1,5 +1,5 @@
 /**
- * transcript-lane — dev-local dataKind example (dataKind V1, kind 22).
+ * transcript-lane — dev-local dataKind example (dataKind V1, entry 21 of 22).
  *
  * The smallest complete typed-data extension: DECLARE a `dataKind`
  * contribution in the manifest, BIND a lane renderer (+ item inspector) at

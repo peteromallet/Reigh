@@ -49,8 +49,14 @@ export interface AssembleDataLanesInput {
   clips: ResolvedTimelineConfig['clips'];
   /** Injected per-asset segments; the host fetched them (no IO here). */
   segmentsByAsset: Readonly<Record<string, readonly TranscriptSegment[] | null | undefined>>;
+  /**
+   * Kind-agnostic ingest seam — fully mapped views (timeline coordinates
+   * already resolved by the caller) merged alongside transcript-derived items
+   * under the matching registered kind. Same occurrence/provenance/sort
+   * rules; unknown schemaRefs stay opaque.
+   */
+  extraItemsBySchemaRef?: Readonly<Record<string, readonly DataLaneItemView[]>>;
 }
-
 /** Inverse of `getSourceTime`: source seconds → timeline seconds. */
 const timelineTimeForSourceTime = (
   clip: { readonly at: number; readonly from?: number; readonly speed?: number },
@@ -64,9 +70,10 @@ const compareStrings = (a: string, b: string): number => (a < b ? -1 : a > b ? 1
  * to sound-bearing media only (`video` | `audio` via getClipAssetMediaType);
  * clips without an asset, and assets no clip references, contribute nothing.
  * Items whose schemaRef matches no registered kind land in an opaque lane.
+ * `extraItemsBySchemaRef` merges caller-mapped views for other kinds.
  */
 export function assembleDataLanes(input: AssembleDataLanesInput): readonly DataLaneView[] {
-  const { kinds, clips, segmentsByAsset } = input;
+  const { kinds, clips, segmentsByAsset, extraItemsBySchemaRef } = input;
 
   const kindBySchemaRef = new Map<string, DataKindSnapshotRecord>();
   for (const kind of kinds) {
@@ -94,6 +101,16 @@ export function assembleDataLanes(input: AssembleDataLanesInput): readonly DataL
       const bucket = viewsBySchemaRef.get(item.schemaRef);
       if (bucket) bucket.push(view);
       else viewsBySchemaRef.set(item.schemaRef, [view]);
+    }
+  }
+  // Kind-agnostic ingest: caller-mapped views join the same buckets and obey
+  // the identical sort/dedup rules as transcript-derived occurrences.
+  if (extraItemsBySchemaRef) {
+    for (const [schemaRef, views] of Object.entries(extraItemsBySchemaRef)) {
+      if (!views?.length) continue;
+      const bucket = viewsBySchemaRef.get(schemaRef);
+      if (bucket) bucket.push(...views);
+      else viewsBySchemaRef.set(schemaRef, [...views]);
     }
   }
 

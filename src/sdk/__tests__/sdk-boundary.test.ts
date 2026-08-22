@@ -3867,7 +3867,7 @@ describe('semver-sensitive SDK export snapshot', () => {
 // ---------------------------------------------------------------------------
 
 describe('T2.1: exact contribution-kind count and no timelineMarker kind', () => {
-  it('KNOWN_CONTRIBUTION_KINDS has exactly 22 kinds (dataKind is kind 22)', () => {
+  it('KNOWN_CONTRIBUTION_KINDS has exactly 22 kinds (dataKind is entry 21 of 22; reserved \'agent\' is 22nd)', () => {
     expect(KNOWN_CONTRIBUTION_KINDS.length).toBe(22);
     expect(new Set(KNOWN_CONTRIBUTION_KINDS).size).toBe(22);
   });
@@ -3877,14 +3877,14 @@ describe('T2.1: exact contribution-kind count and no timelineMarker kind', () =>
     expect(Object.keys(CONTRIBUTION_KIND_MILESTONE)).not.toContain('timelineMarker');
   });
 
-  it('timelineOverlay remains one of the 21 kinds', () => {
+  it('timelineOverlay remains one of the 22 kinds', () => {
     expect(KNOWN_CONTRIBUTION_KINDS).toContain('timelineOverlay');
     expect(CONTRIBUTION_KIND_MILESTONE.timelineOverlay).toMatch(/^M\d+$/);
   });
 });
 
 describe('T2.1: exact ExtensionContext keys include ui; ui exposes only registerRenderer', () => {
-  it('a complete ExtensionContext literal enumerates exactly the 12 declared keys including ui', () => {
+  it('a complete ExtensionContext literal enumerates exactly the 13 declared keys including ui', () => {
     const ui: ExtensionUiService = {
       registerRenderer: <Props,>(_renderId: string, _renderer: ExtensionRenderer<Props>) => ({
         dispose() {},
@@ -3920,6 +3920,7 @@ describe('T2.1: exact ExtensionContext keys include ui; ui exposes only register
       clipTypes: {} as never,
       shaders: {} as never,
       agentTools: {} as never,
+      dataKinds: {} as never,
     } satisfies ExtensionContext;
 
     expect(Object.keys(ctx).sort()).toEqual([
@@ -3929,6 +3930,7 @@ describe('T2.1: exact ExtensionContext keys include ui; ui exposes only register
       'clipTypes',
       'commands',
       'creative',
+      'dataKinds',
       'effects',
       'extension',
       'services',
@@ -4017,8 +4019,10 @@ describe('registry-derived family helpers', () => {
     expect(CONTRIBUTION_KIND_MILESTONE.agent).toBe('M10');
     expect(CONTRIBUTION_KIND_MILESTONE.process).toBe('M12');
     expect(CONTRIBUTION_KIND_MILESTONE.shader).toBe('M13');
-    // All 21 kinds must be present
-    expect(Object.keys(CONTRIBUTION_KIND_MILESTONE).length).toBeGreaterThanOrEqual(21);
+    // All 22 kinds must be present, including the dataKind family (entry 21
+    // of 22; reserved 'agent' is 22nd)
+    expect(Object.keys(CONTRIBUTION_KIND_MILESTONE).length).toBe(22);
+    expect(Object.keys(CONTRIBUTION_KIND_MILESTONE)).toContain('dataKind');
   });
 
   it('contributionKindNotYetBridged uses execution maturity from registry', () => {

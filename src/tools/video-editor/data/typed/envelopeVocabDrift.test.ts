@@ -15,7 +15,7 @@ import {
   KNOWN_DATA_SHAPES,
   type DataCoordinateDomain as SdkDataCoordinateDomain,
   type DataShape as SdkDataShape,
-} from '@reigh/editor-sdk';
+} from '@/sdk/video/families/dataKind';
 import type {
   DataCoordinateDomain,
   DataShape,

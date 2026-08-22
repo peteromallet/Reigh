@@ -782,7 +782,7 @@ describe('M6: contribution kind bridging (parser M6-delegated, output/search typ
 });
 
 // ---------------------------------------------------------------------------
-// T2.1: Exact 21-kind count and no timelineMarker kind
+// T2.1: Exact 22-kind count and no timelineMarker kind
 // ---------------------------------------------------------------------------
 
 describe('T2.1: exact contribution-kind count and no timelineMarker kind', () => {
@@ -2236,9 +2236,9 @@ describe('registry-derived family helpers', () => {
     expect(CONTRIBUTION_KIND_MILESTONE.shader).toBe('M13');
     expect(CONTRIBUTION_KIND_MILESTONE.agent).toBe('M10');
     expect(CONTRIBUTION_KIND_MILESTONE.process).toBe('M12');
-    // All 21 kinds should have entries
+    // All 22 kinds should have entries
     const allKinds = Object.keys(CONTRIBUTION_KIND_MILESTONE);
-    expect(allKinds.length).toBeGreaterThanOrEqual(21);
+    expect(allKinds.length).toBe(22);
   });
 
   it('contributionKindNotYetBridged is execution-maturity-derived', () => {
@@ -3078,14 +3078,14 @@ describe('T6: family adapter manifest (boundary)', () => {
 
   it('manifest contains every family kind from the known contribution kinds', () => {
     const manifest = buildFamilyAdapterManifest();
-    // All 21 kinds from VIDEO_CONTRIBUTION_KINDS must be present
+    // All 22 kinds from VIDEO_CONTRIBUTION_KINDS must be present
     const knownKinds = [
       'agent', 'agentTool', 'assetDetailSection', 'automation',
-      'clipType', 'command', 'contextMenuItem', 'dialog',
-      'effect', 'inspectorSection', 'keybinding', 'metadataFacet',
-      'outputFormat', 'panel', 'parser', 'process',
-      'searchProvider', 'shader', 'slot', 'timelineOverlay',
-      'transition',
+      'clipType', 'command', 'contextMenuItem', 'dataKind',
+      'dialog', 'effect', 'inspectorSection', 'keybinding',
+      'metadataFacet', 'outputFormat', 'panel', 'parser',
+      'process', 'searchProvider', 'shader', 'slot',
+      'timelineOverlay', 'transition',
     ];
 
     for (const kind of knownKinds) {

@@ -301,7 +301,7 @@ export const VIDEO_FAMILY_REGISTRY: readonly FamilyDefinition<VideoContributionK
   // ---- Data Kind (V1) ----
   {
     kind: 'dataKind',
-    declarationMaturity: 'documented',
+    declarationMaturity: 'schema-backed',
     executionMaturity: 'host-integrated',
     hostIntegrationNotes:
       'Data-kind contributions declare duration-neutral typed-data lanes: a ' +
@@ -329,11 +329,13 @@ export const VIDEO_FAMILY_REGISTRY: readonly FamilyDefinition<VideoContributionK
       lifecycleCleanup: true,
       diagnostics: false,
       hostCapabilityProjection: false,
-      uiIntegration: false,
+      uiIntegration: true,
       persistencePosture: false,
       examples: false,
       tests: true,
     },
+    uiIntegrationTest:
+      'src/tools/video-editor/components/TimelineEditor/TimelineCanvas.test.tsx',
     label: 'Data Kind',
     description:
       'Data kinds define duration-neutral typed-data lanes rendered from ' +

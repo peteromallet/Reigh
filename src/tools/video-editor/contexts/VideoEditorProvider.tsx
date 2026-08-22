@@ -488,6 +488,11 @@ export function VideoEditorProvider({
     provider: dataProvider,
     assetResolver: {
       resolveAssetUrl: dataProvider.resolveAssetUrl.bind(dataProvider),
+      // dataKind V1 golden path: the lane plane's default transcript loader
+      // reads the profile surface (`loadTranscript` → loadAssetProfile).
+      ...(dataProvider.loadAssetProfile
+        ? { loadAssetProfile: dataProvider.loadAssetProfile.bind(dataProvider) }
+        : {}),
     },
     auth: {
       userId,

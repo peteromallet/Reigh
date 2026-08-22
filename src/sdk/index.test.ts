@@ -492,7 +492,7 @@ describe('registry-derived family helpers', () => {
     expect(CONTRIBUTION_KIND_MILESTONE.agent).toBe('M10');
     // All known kinds should have entries
     const allKinds = Object.keys(CONTRIBUTION_KIND_MILESTONE);
-    expect(allKinds.length).toBeGreaterThanOrEqual(21); // all 21 video contribution kinds
+    expect(allKinds.length).toBe(22); // all 22 video contribution kinds incl dataKind
   });
 
   it('contributionKindNotYetBridged uses execution maturity from registry', () => {

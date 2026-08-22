@@ -496,8 +496,6 @@ describe('Extension example import governance', () => {
       'DataItemInspectorProps',
       'DataKindRegistrationOptions',
       'DataKindRegistrationService',
-      'KNOWN_DATA_SHAPES',
-      'KNOWN_DATA_DOMAINS',
     ]);
 
     it('has SDK exports to validate', () => {

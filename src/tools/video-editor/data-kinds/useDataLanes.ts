@@ -27,6 +27,7 @@ import {
   assembleDataLanes,
   mergeDataLanes,
   type DataKindSnapshotRecord,
+  type DataLaneItemView,
 } from '@/tools/video-editor/data/typed/assembleDataLanes.ts';
 import { useDataKindRegistrySnapshot } from '@/tools/video-editor/data-kinds/DataKindRegistryContext.tsx';
 
@@ -49,13 +50,18 @@ export interface UseDataLanesArgs {
    * `null` disables fetching (lanes stay empty → `base` identity).
    */
   readonly loadSegments?: LoadDataSegments | null;
+  /**
+   * Kind-agnostic ingest seam (assembleDataLanes `extraItemsBySchemaRef`):
+   * caller-mapped views merged alongside transcript-derived items.
+   */
+  readonly extraItemsBySchemaRef?: Readonly<Record<string, readonly DataLaneItemView[]>>;
 }
 
 /**
  * Assemble duration-neutral data lanes for `base` and return the patched
  * TimelineData (`base` identity when no lanes assemble).
  */
-export function useDataLanes({ base, kinds, loadSegments }: UseDataLanesArgs): TimelineData | null {
+export function useDataLanes({ base, kinds, loadSegments, extraItemsBySchemaRef }: UseDataLanesArgs): TimelineData | null {
   const contextRecords = useDataKindRegistrySnapshot().records;
   const effectiveKinds = kinds ?? contextRecords;
 
@@ -123,9 +129,10 @@ export function useDataLanes({ base, kinds, loadSegments }: UseDataLanesArgs): T
       kinds: effectiveKinds,
       clips: base.resolvedConfig.clips,
       segmentsByAsset,
+      extraItemsBySchemaRef,
     });
     // Base identity when nothing assembles: no clone churn, empty lanes.
     return views.length > 0 ? mergeDataLanes(base, views) : base;
-  }, [base, effectiveKinds, segmentsByAsset]);
+  }, [base, effectiveKinds, segmentsByAsset, extraItemsBySchemaRef]);
 }
 

@@ -200,6 +200,70 @@ describe('assembleDataLanes', () => {
   });
 });
 
+describe('assembleDataLanes — kind-agnostic ingest (G2)', () => {
+  it('merges caller-mapped items for a second kind via extraItemsBySchemaRef', () => {
+    const beatsKind: DataKindSnapshotRecord = {
+      kindId: 'beats',
+      schemaRef: 'example.beats/v1',
+      shape: 'point',
+      domain: 'timeline_seconds',
+      label: 'Beats',
+    };
+    const lanes = assembleDataLanes({
+      kinds: [transcriptKind(), beatsKind],
+      clips: clips([CLIP_C1]),
+      segmentsByAsset: { a: [SEGMENT] },
+      extraItemsBySchemaRef: {
+        'example.beats/v1': [
+          {
+            item: {
+              id: 'beat-1',
+              shape: 'point',
+              domain: 'timeline_seconds',
+              extent: { start: 3 },
+              schemaRef: 'example.beats/v1',
+              payload: { velocity: 1 },
+              provenance: { adapterId: 'test.beats', adapterVersion: '1' },
+            },
+            timelineStart: 3,
+            timelineEnd: 3,
+          },
+        ],
+        'unknown.opaque/v1': [
+          {
+            item: {
+              id: 'opaque-1',
+              shape: 'series',
+              domain: 'samples',
+              extent: { start: 0, end: 10 },
+              schemaRef: 'unknown.opaque/v1',
+              payload: null,
+              provenance: { adapterId: 'test.unknown', adapterVersion: '1' },
+            },
+            timelineStart: 0,
+            timelineEnd: 10,
+          },
+        ],
+      },
+    });
+
+    // Sorted by (order ?? MAX) then kindId: beats < transcript; opaque last.
+    expect(lanes.map((lane) => lane.schemaRef)).toEqual([
+      'example.beats/v1',
+      TRANSCRIPT_SCHEMA_REF,
+      'unknown.opaque/v1',
+    ]);
+    const beats = lanes[0];
+    expect(beats.kindId).toBe('beats');
+    expect(beats.opaque).toBe(false);
+    expect(beats.items).toHaveLength(1);
+    expect(beats.items[0].item.id).toBe('beat-1');
+    const opaqueLane = lanes[2];
+    expect(opaqueLane.opaque).toBe(true);
+    expect(opaqueLane.items[0].item.schemaRef).toBe('unknown.opaque/v1');
+  });
+});
+
 describe('mergeDataLanes', () => {
   const rowsRef = [{ id: 'r1' }] as TimelineData['rows'];
   const metaRef = { c1: { track: 'v1' } } as TimelineData['meta'];

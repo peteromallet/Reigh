@@ -16,7 +16,7 @@
 // Secondary/manual evidence (embed-host resolver path) and the prod
 // null-provider posture are documented in docs/extensions/authoring.md
 // ("Data Kinds" section).
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TimelineCanvas } from '@/tools/video-editor/components/TimelineEditor/TimelineCanvas';
 import {
@@ -32,7 +32,8 @@ import type { DataKindRegistry } from '@/tools/video-editor/data-kinds/DataKindR
 import type { TimelineData } from '@/tools/video-editor/lib/timeline-data';
 import type { TrackDefinition } from '@/tools/video-editor/types';
 import type { TimelineAction, TimelineRow } from '@/tools/video-editor/types/timeline-canvas';
-import { validateManifest } from '@reigh/editor-sdk';
+import type { ReactElement } from 'react';
+import { validateManifest, type DataLaneRendererProps } from '@reigh/editor-sdk';
 import { createExtensionContext } from '@/tools/video-editor/runtime/extensionContextFactory';
 import { createDataKindRegistrationService } from '@/tools/video-editor/runtime/dataKindRegistrationService';
 import {
@@ -40,6 +41,7 @@ import {
   TRANSCRIPT_SCHEMA_REF,
   transcriptLaneExtension,
 } from '../extension';
+import { renderTranscriptLane } from '../TranscriptLaneView';
 
 // ---------------------------------------------------------------------------
 // Harness state (hoisted for vi.mock)
@@ -354,5 +356,41 @@ describe('transcript-lane dev example (dataKind V1 done-4)', () => {
     );
     handle?.dispose();
     expect(assemblyRegistry.getSnapshot().has(TRANSCRIPT_KIND_ID)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Rework round-2 F3: chips are selectable — a press dispatches onSelectItem
+// (with propagation stopped, so the row's dataLane chrome cannot overwrite
+// the dataItem target).
+// ---------------------------------------------------------------------------
+
+describe('transcript lane chips (rework round-2 F3)', () => {
+  it('chip click dispatches onSelectItem with the item id', () => {
+    const onSelectItem = vi.fn();
+    const props: DataLaneRendererProps = {
+      kindId: TRANSCRIPT_KIND_ID,
+      schemaRef: TRANSCRIPT_SCHEMA_REF,
+      shape: 'interval',
+      domain: 'source_seconds',
+      // Rows are timeline-zero-origin: the host always passes 0 here.
+      startLeft: 0,
+      pixelsPerSecond: 50,
+      onSelectItem,
+      items: [
+        { id: 'a:c1:0', timelineStart: 1, timelineEnd: 2, clipId: 'c1', payload: { text: 'first' } },
+        { id: 'b:c2:0', timelineStart: 3, timelineEnd: 4, clipId: 'c2', payload: { text: 'second' } },
+      ],
+    };
+
+    const { container } = render(renderTranscriptLane(props) as ReactElement);
+    const chips = container.querySelectorAll('[data-testid="transcript-lane-chip"]');
+    expect(chips).toHaveLength(2);
+    expect((chips[0] as HTMLElement).style.cursor).toBe('pointer');
+
+    fireEvent.click(chips[1]!);
+
+    expect(onSelectItem).toHaveBeenCalledTimes(1);
+    expect(onSelectItem).toHaveBeenCalledWith('b:c2:0');
   });
 });

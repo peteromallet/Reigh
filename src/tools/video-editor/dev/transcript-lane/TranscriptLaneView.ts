@@ -11,7 +11,7 @@
  * scene-phase-markers precedent for `dev/` scratchpad extensions.
  */
 
-import { createElement } from 'react';
+import { createElement, type MouseEvent } from 'react';
 import type {
   DataItemInspectorProps,
   DataLaneRendererProps,
@@ -26,18 +26,19 @@ function truncate(text: string): string {
 
 /**
  * Lane renderer for the `reigh.transcript` data kind: one labeled chip per
- * interval item, in the order the host mapped them. Items arrive with
- * timeline-space `timelineStart`/`timelineEnd` already applied by the host;
- * this V1 example paints sequence-order chips (the SDK renderer props do not
- * yet carry the viewport scale) — the point of the example is the bind path,
- * not pixel-exact painting.
+ * interval item, painted on the shared host scale — each chip sits at
+ * `timelineStart * pixelsPerSecond` with width
+ * `(timelineEnd - timelineStart) * pixelsPerSecond`, the exact mapping the
+ * host's own extent bars use (the renderer box's origin IS timeline zero —
+ * rework round-2 F1). Chips are selectable: a press stops propagation and
+ * dispatches `onSelectItem` so the kind inspector is reachable from pointer.
  */
 export function renderTranscriptLane(props: DataLaneRendererProps): unknown {
   return createElement(
     'div',
     {
       'data-testid': 'transcript-lane-renderer',
-      style: { display: 'flex', alignItems: 'center', gap: 4, height: '100%', padding: '0 4px', overflow: 'hidden' },
+      style: { position: 'relative', height: '100%', overflow: 'hidden' },
     },
     ...props.items.map((item) =>
       createElement(
@@ -47,8 +48,11 @@ export function renderTranscriptLane(props: DataLaneRendererProps): unknown {
           'data-testid': 'transcript-lane-chip',
           title: `${item.id} · ${props.schemaRef}`,
           style: {
-            flexShrink: 0,
-            maxWidth: 220,
+            position: 'absolute',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            left: item.timelineStart * props.pixelsPerSecond,
+            width: (item.timelineEnd - item.timelineStart) * props.pixelsPerSecond,
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
@@ -58,6 +62,14 @@ export function renderTranscriptLane(props: DataLaneRendererProps): unknown {
             borderRadius: 4,
             background: 'var(--video-editor-accent-bg-strong)',
             color: 'var(--video-editor-accent-fg)',
+            cursor: 'pointer',
+          },
+          onClick: (event: MouseEvent<HTMLElement>) => {
+            // The chip IS the item, not empty lane chrome: swallow the
+            // event so the row's dataLane handler cannot overwrite the
+            // target (same discipline as the host's extent bars).
+            event.stopPropagation();
+            props.onSelectItem?.(item.id);
           },
         },
         truncate(readChipText(item.payload)),

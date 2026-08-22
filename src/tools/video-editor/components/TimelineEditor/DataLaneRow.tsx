@@ -1,8 +1,9 @@
 // dataKind V1 (Batch 6): one duration-neutral lane row on the timeline.
 //
 // Layout mirrors the host's track-row vocabulary: a sticky label gutter
-// (LABEL_WIDTH) plus a relative canvas area sharing the scroller's
-// `startLeft`/`pixelsPerSecond` mapping. Lanes inform — they never edit, and
+// (LABEL_WIDTH) plus a relative canvas area whose origin IS timeline zero
+// (the gutter sits in-flow before it), scaled by the scroller's shared
+// `pixelsPerSecond`. Lanes inform — they never edit, and
 // their heights are the only quantity the canvas folds into scroll math.
 //
 // Renderer containment: a registered kind's laneRenderer runs inside a
@@ -12,7 +13,8 @@
 // Interaction (dataKind V1 rework): host-painted chrome participates in the
 // timeline interaction model — an extent-bar click dispatches a `dataItem`
 // target, any other part of the row a `dataLane` target. Renderer-painted
-// content stays display-only in V1 and falls through to the lane target.
+// items join through the optional `onSelectItem` renderer prop (same
+// `dataItem` dispatch); renderers that ignore it stay display-only.
 
 import { type ComponentType, type ReactNode } from 'react';
 import { HostContributionErrorBoundary } from '@/tools/video-editor/runtime/ContributionErrorBoundary.tsx';
@@ -22,8 +24,6 @@ import { LABEL_WIDTH } from '@/tools/video-editor/lib/coordinate-utils.ts';
 
 export interface DataLaneRowProps {
   readonly lane: DataLaneView;
-  /** Shared timeline x-offset of t=0 (px) — same value TrackListRenderer uses. */
-  readonly startLeft: number;
   /** Shared px-per-second scale — same value the ruler and tracks use. */
   readonly pixelsPerSecond: number;
   /** Owning extension of the registered kind, for boundary recovery keys. */
@@ -36,7 +36,7 @@ export interface DataLaneRowProps {
 
 const EXTENT_BAR_MIN_WIDTH_PX = 2;
 
-export function DataLaneRow({ lane, startLeft, pixelsPerSecond, extensionId, onSelectLane, onSelectItem }: DataLaneRowProps) {
+export function DataLaneRow({ lane, pixelsPerSecond, extensionId, onSelectLane, onSelectItem }: DataLaneRowProps) {
   return (
     <div
       data-testid="data-lane-row"
@@ -53,7 +53,7 @@ export function DataLaneRow({ lane, startLeft, pixelsPerSecond, extensionId, onS
         <span className="truncate" title={lane.label}>{lane.label}</span>
       </div>
       <div className="relative min-w-0 flex-1">
-        {paintLane(lane, startLeft, pixelsPerSecond, extensionId, onSelectItem)}
+        {paintLane(lane, pixelsPerSecond, extensionId, onSelectItem)}
       </div>
     </div>
   );
@@ -62,20 +62,25 @@ export function DataLaneRow({ lane, startLeft, pixelsPerSecond, extensionId, onS
 
 function paintLane(
   lane: DataLaneView,
-  startLeft: number,
   pixelsPerSecond: number,
   extensionId: string | undefined,
   onSelectItem: ((itemId: string) => void) | undefined,
 ): ReactNode {
   // Opaque lane (unknown schemaRef): the host paints extent bars itself.
   if (lane.opaque || typeof lane.laneRenderer !== 'function') {
-    return extentBars(lane, startLeft, pixelsPerSecond, onSelectItem);
+    return extentBars(lane, pixelsPerSecond, onSelectItem);
   }
   const rendererProps: DataLaneRendererProps = {
     kindId: lane.kindId,
     schemaRef: lane.schemaRef,
     shape: lane.shape,
     domain: lane.domain,
+    // Pixel offset of timeline zero within the renderer's box; host lane
+    // rows are timeline-zero-origin, so the renderer box needs no gutter
+    // correction (rework round-2 F1).
+    startLeft: 0,
+    pixelsPerSecond,
+    onSelectItem,
     items: lane.items.map((view) => ({
       id: view.item.id,
       timelineStart: view.timelineStart,
@@ -99,12 +104,13 @@ function paintLane(
 
 function extentBars(
   lane: DataLaneView,
-  startLeft: number,
   pixelsPerSecond: number,
   onSelectItem: ((itemId: string) => void) | undefined,
 ): ReactNode {
   return lane.items.map((view) => {
-    const left = startLeft + view.timelineStart * pixelsPerSecond;
+    // The canvas box's origin IS timeline zero (the label gutter sits
+    // in-flow before it): bar left is time × scale, no startLeft term.
+    const left = view.timelineStart * pixelsPerSecond;
     const spanSeconds = Math.max(0, view.timelineEnd - view.timelineStart);
     return (
       <div

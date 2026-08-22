@@ -1882,6 +1882,28 @@ describe('TimelineCanvas — dataKind V1 lane strip', () => {
     expect(screen.getByTestId('timeline-playhead')).toHaveStyle({ height: '126px' });
   });
 
+  it('excludes hidden lanes from the folded scrollContentHeight (rework R5)', () => {
+    useDataLanesMock.mockReturnValue({
+      config: {},
+      dataLanes: [
+        laneFixture({ height: 30 }),
+        laneFixture({
+          laneId: 'ghost',
+          kindId: 'ghost',
+          label: 'Ghost',
+          hidden: true,
+          height: 40,
+        }),
+      ],
+    });
+    renderCanvas({ rows: [row], tracks: [track] });
+
+    // Only the visible 30px lane folds in: 96 + 30 = 126px, not 166px.
+    expect(screen.getByTestId('timeline-playhead')).toHaveStyle({ height: '126px' });
+    // The shared filter means the hidden lane mounts no row either.
+    expect(screen.getAllByTestId('data-lane-row')).toHaveLength(1);
+  });
+
   it('renders lanes while timeline overlays are disabled', () => {
     useDataLanesMock.mockReturnValue({ config: {}, dataLanes: [laneFixture()] });
     renderCanvas({ rows: [row], tracks: [track], timelineOverlaysEnabled: false });
