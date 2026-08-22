@@ -310,9 +310,11 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
   onSelectPostprocessShader,
 }: TimelineCanvasProps, ref) {
   useRenderBudget('TimelineCanvas', 3);
-  // dataKind V1: reactive base TimelineData → assembled duration-neutral
+  // dataKind V2: reactive base TimelineData → assembled duration-neutral
   // lanes (render-side merge via useDataLanes; the store's data is never
-  // written, so lanes stay inert to duration/rows/export).
+  // written, so lanes stay inert to duration/rows/export). Segment fetches
+  // run through the single assembly authority shared with PropertiesPanel —
+  // co-mounting both surfaces triggers one fetch per asset.
   const mountedEditorData = useTimelineEditorDataSafe();
   const laneData = useDataLanes({ base: mountedEditorData?.data ?? null });
   const { dataRef, selectedClipIdsRef, ops, previewRef } = useTimelineMutableAdapters();

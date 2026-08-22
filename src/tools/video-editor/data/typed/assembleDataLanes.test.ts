@@ -66,7 +66,9 @@ describe('assembleDataLanes', () => {
     expect(lane.hidden).toBe(false);
 
     // Sorted by timelineStart: c2 maps [2,4]s at speed 2 → [1,2]; c1 → [10,12].
-    expect(lane.items.map((view) => view.item.id)).toEqual(['a:c2:0', 'a:c1:0']);
+    expect(lane.items.map((view) => view.item.id)).toEqual([
+      'a:src:08c434a0b926@c2', 'a:src:08c434a0b926@c1',
+    ]);
     const [onC2, onC1] = lane.items;
     // Content-derived source id: FNV-1a/64 slice over
     // {"end":4,"start":2,"text":"shared"} -> 08c434a0b926…
@@ -154,9 +156,11 @@ describe('assembleDataLanes', () => {
         pic: [{ start: 0, end: 9, text: 'never shown' }],
       },
     });
-    // Tie at timelineStart 0 broken by item id: 'a:c2:0' < 'm:aud:0'.
+    // Tie at timelineStart 0 broken by item id: 'a:src:…@c2' < 'm:src:…@aud'.
     expect(lanes[0].items.map((view) => view.clipId)).toEqual(['c2', 'aud']);
-    expect(lanes[0].items.map((view) => view.item.id)).toEqual(['a:c2:0', 'm:aud:0']);
+    expect(lanes[0].items.map((view) => view.item.id)).toEqual([
+      'a:src:617e98ebbb3f@c2', 'm:src:67732ef0615a@aud',
+    ]);
   });
 
   it('returns [] when nothing maps', () => {
@@ -203,47 +207,43 @@ describe('assembleDataLanes', () => {
 });
 
 describe('assembleDataLanes — kind-agnostic ingest (G2)', () => {
-  it('merges caller-mapped items for a second kind via extraItemsBySchemaRef', () => {
+  it('joins hand-fed SOURCE items for a second kind via sourceItemsBySchemaRef and remaps them per clip', () => {
     const beatsKind: DataKindSnapshotRecord = {
       kindId: 'beats',
       schemaRef: 'example.beats/v1',
       shape: 'point',
-      domain: 'timeline_seconds',
+      domain: 'source_seconds',
       label: 'Beats',
     };
     const lanes = assembleDataLanes({
       kinds: [transcriptKind(), beatsKind],
       clips: clips([CLIP_C1]),
       segmentsByAsset: { a: [SEGMENT] },
-      extraItemsBySchemaRef: {
+      // Callers feed SOURCE-domain items; ASSEMBLY owns the remap onto each
+      // referencing clip — callers never pre-map positions.
+      sourceItemsBySchemaRef: {
         'example.beats/v1': [
           {
-            item: {
-              id: 'beat-1',
-              shape: 'point',
-              domain: 'timeline_seconds',
-              extent: { start: 3 },
-              schemaRef: 'example.beats/v1',
-              payload: { velocity: 1 },
-              provenance: { adapterId: 'test.beats', adapterVersion: '1' },
-            },
-            timelineStart: 3,
-            timelineEnd: 3,
+            id: 'beat-1',
+            shape: 'point',
+            domain: 'source_seconds',
+            extent: { start: 3 },
+            schemaRef: 'example.beats/v1',
+            payload: { velocity: 1 },
+            sourceArtifactRef: { assetId: 'a' },
+            provenance: { adapterId: 'test.beats', adapterVersion: '1' },
           },
         ],
         'unknown.opaque/v1': [
           {
-            item: {
-              id: 'opaque-1',
-              shape: 'series',
-              domain: 'samples',
-              extent: { start: 0, end: 10 },
-              schemaRef: 'unknown.opaque/v1',
-              payload: null,
-              provenance: { adapterId: 'test.unknown', adapterVersion: '1' },
-            },
-            timelineStart: 0,
-            timelineEnd: 10,
+            id: 'opaque-1',
+            shape: 'series',
+            domain: 'frames',
+            extent: { start: 0, end: 10 },
+            schemaRef: 'unknown.opaque/v1',
+            payload: null,
+            sourceArtifactRef: { assetId: 'a' },
+            provenance: { adapterId: 'test.unknown', adapterVersion: '1' },
           },
         ],
       },
@@ -259,10 +259,22 @@ describe('assembleDataLanes — kind-agnostic ingest (G2)', () => {
     expect(beats.kindId).toBe('beats');
     expect(beats.opaque).toBe(false);
     expect(beats.items).toHaveLength(1);
-    expect(beats.items[0].item.id).toBe('beat-1');
+    // CLIP_C1 at=10, from=2, speed=1 → source 3s lands at timeline 11;
+    // occurrence id derives per clip from the durable sourceItemId.
+    expect(beats.items[0].item.sourceItemId).toBe('beat-1');
+    expect(beats.items[0].item.id).toBe('beat-1@c1');
+    expect(beats.items[0].timelineStart).toBe(11);
+    expect(beats.items[0].timelineEnd).toBe(11);
+    expect(beats.items[0].clipId).toBe('c1');
+
+    // Unknown schemaRefs stay opaque yet still map through the same algebra
+    // (source frames [0,10] → timeline [8,18]).
     const opaqueLane = lanes[2];
     expect(opaqueLane.opaque).toBe(true);
     expect(opaqueLane.items[0].item.schemaRef).toBe('unknown.opaque/v1');
+    expect(opaqueLane.items[0].item.id).toBe('opaque-1@c1');
+    expect(opaqueLane.items[0].timelineStart).toBe(8);
+    expect(opaqueLane.items[0].timelineEnd).toBe(18);
   });
 });
 

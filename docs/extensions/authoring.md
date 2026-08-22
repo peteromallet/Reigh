@@ -192,10 +192,20 @@ documented V1 behavior, not a defect. Sanity path: load the editor with
 `?extensionSmoke=1` first to confirm host wiring, then check the
 `[Extension lifecycle]` console group for your extension's activation.
 
-Non-transcript kinds feed items through `useDataLanes`'
-`extraItemsBySchemaRef` (caller-mapped, timeline-resolved views keyed by
-qualified schemaRef) — the same merge, provenance, and opaque-fallback rules
-as transcript items.
+Non-transcript kinds feed items through the same source-item seam transcripts
+use: `sourceItemsBySchemaRef` on `assembleDataLanes` accepts persisted SOURCE
+items (`SourceFrozenDataItem`, native source domain, keyed by qualified
+schemaRef, `id` already the durable content-stable sourceItemId). Assembly
+remaps every source item per referencing clip through the inverse
+trim/speed algebra and derives view-only occurrence ids
+(``${`${sourceItemId}@${clipId}`}``) at render time — views are never
+persisted. The seam is fed two ways today: the transcript adapter over
+host-fetched segments, and the TimelineBundle persistence plane
+(`TimelineData.sourceItemsBySchemaRef`, populated from `LoadedTimeline.bundle`
+on load and saved back with the timeline). Unknown schemaRefs still land in
+opaque lanes under the same merge, sort, provenance, and fallback rules.
+The former caller-mapped `extraItemsBySchemaRef` view seam was removed in
+dataKind V2 — prebuilt views can no longer be ingested anywhere.
 
 ### Interaction posture (V1)
 

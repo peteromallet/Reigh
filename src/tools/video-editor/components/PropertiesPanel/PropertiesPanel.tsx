@@ -219,10 +219,11 @@ function PropertiesPanelComponent() {
   const { addVariantAsGenerationAfterClip, isPending: isAddingVariantAsGenerationPending } = useAddVariantAsGeneration();
   const prevClipIdRef = useRef(selectedClip?.id);
   const selectedClipIdsList = useMemo(() => [...selectedClipIds], [selectedClipIds]);
-  // dataKind V1 (rework R1): resolve lane items from the SAME patched lane
-  // plane the canvas renders — the render-side `useDataLanes` merge — never
-  // the store's frozen-empty `dataLanes` default. No store writes here:
-  // duration/rows/export neutrality is untouched.
+  // dataKind V2: resolve lane items from the SAME patched lane plane the
+  // canvas renders — the render-side `useDataLanes` merge — never the
+  // store's frozen-empty `dataLanes` default. Fetching goes through the
+  // single assembly authority shared with TimelineCanvas (no second cache);
+  // no store writes here, so duration/rows/export neutrality is untouched.
   const lanePlane = useDataLanes({ base: data });
   const inspectorSelectionTarget = useMemo(() => {
     if (

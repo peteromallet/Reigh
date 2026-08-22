@@ -19,7 +19,7 @@ import type {
   AssetMissingRequest,
   AssetResolver,
 } from '@/tools/video-editor/data/AssetResolver.ts';
-import type { DataLaneView } from '@/tools/video-editor/data/typed/envelope.ts';
+import type { DataLaneView, SourceFrozenDataItem } from '@/tools/video-editor/data/typed/envelope.ts';
 import type {
   AssetRegistry,
   ClipType,
@@ -100,6 +100,15 @@ export interface TimelineData {
    * the frozen `EMPTY_DATA_LANES`; producers swap it via `mergeDataLanes`.
    */
   dataLanes: DataLaneView[];
+  /**
+   * V2 persistence plane ([CONVERGE-WITH-M1]): persisted SOURCE items
+   * carried from `LoadedTimeline.bundle.itemsBySchemaRef` so lanes can
+   * repaint after reload. Derived state — never serialized with configs and
+   * never an input to duration computation; render-side assembly
+   * (`useDataLanes`) remaps them into `dataLanes`. Absent when the provider
+   * loaded no bundle.
+   */
+  sourceItemsBySchemaRef?: Readonly<Record<string, readonly SourceFrozenDataItem[]>>;
 }
 
 const ASSET_COLORS: Record<string, string> = {
@@ -403,6 +412,8 @@ interface AssembleTimelineDataParams {
   resolvedConfig: ResolvedTimelineConfig;
   output: TimelineOutput;
   assetMap: Record<string, string>;
+  /** Bundle-sourced SOURCE items to carry onto the assembled TimelineData. */
+  sourceItemsBySchemaRef?: Readonly<Record<string, readonly SourceFrozenDataItem[]>>;
 }
 
 /**
@@ -415,6 +426,7 @@ export const assembleTimelineData = ({
   registry,
   resolvedConfig,
   assetMap,
+  sourceItemsBySchemaRef,
 }: AssembleTimelineDataParams): TimelineData => {
   // `serializeForDisk` intentionally strips `output` (it is derived render
   // state, not persisted), and the provider load path re-materializes it via
@@ -450,6 +462,9 @@ export const assembleTimelineData = ({
     signature: getConfigSignature(canonicalResolvedConfig),
     stableSignature: getStableConfigSignature(canonicalConfig, registry),
     dataLanes: EMPTY_DATA_LANES,
+    // Persisted-source plane rides as DATA (never prebuilt lanes — views
+    // derive at assembly, render-side). `dataLanes` stays frozen-empty here.
+    ...(sourceItemsBySchemaRef ? { sourceItemsBySchemaRef } : {}),
   };
 };
 
@@ -458,6 +473,7 @@ export const buildTimelineData = async (
   registry: AssetRegistry,
   urlResolver?: UrlResolver,
   configVersion = 1,
+  sourceItemsBySchemaRef?: Readonly<Record<string, readonly SourceFrozenDataItem[]>>,
 ): Promise<TimelineData> => {
   const canonical = canonicalizeTimelinePair(config, registry);
   const resolvedConfig = await resolveTimelineConfig(canonical.config, canonical.registry, urlResolver);
@@ -469,6 +485,7 @@ export const buildTimelineData = async (
     resolvedConfig,
     output: { ...canonical.config.output },
     assetMap: buildAssetMap(canonical.registry),
+    sourceItemsBySchemaRef,
   });
 };
 
@@ -492,6 +509,7 @@ export const buildTimelineDataWithResolver = async (
   resolver: AssetResolver,
   configVersion = 1,
   timelineId?: string,
+  sourceItemsBySchemaRef?: Readonly<Record<string, readonly SourceFrozenDataItem[]>>,
 ): Promise<TimelineData> => {
   const canonical = canonicalizeTimelinePair(config, registry);
 
@@ -534,6 +552,7 @@ export const buildTimelineDataWithResolver = async (
     resolvedConfig,
     output: { ...canonical.config.output },
     assetMap: buildAssetMap(canonical.registry),
+    sourceItemsBySchemaRef,
   });
 };
 
@@ -552,12 +571,15 @@ export function loadTimelineJsonFromProvider(
         provider.loadTimeline(timelineId),
         provider.loadAssetRegistry(timelineId),
       ]);
+      // E4 seam 4/5: the loaded bundle's SOURCE items ride into assembly
+      // data so lanes repaint after reload (views still derive render-side).
       return buildTimelineDataWithResolver(
         loadedTimeline.config,
         registry,
         assetResolver,
         loadedTimeline.configVersion,
         timelineId,
+        loadedTimeline.bundle?.itemsBySchemaRef,
       );
     })();
   }
@@ -577,6 +599,7 @@ export function loadTimelineJsonFromProvider(
       registry,
       urlResolver,
       loadedTimeline.configVersion,
+      loadedTimeline.bundle?.itemsBySchemaRef,
     );
   })();
 }

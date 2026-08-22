@@ -571,6 +571,8 @@ export function useTimelinePersistence({
     // consumes this ref for repaint.
     loadedBundleRef.current = loadedTimeline.bundle ?? null;
 
+    // E4 seam 3 → B4: the reloaded bundle's SOURCE items ride into the
+    // rebuilt TimelineData so lanes repaint from persisted state.
     const reloadedData = assetResolver
       ? await buildTimelineDataWithResolver(
           loadedTimeline.config,
@@ -578,12 +580,14 @@ export function useTimelinePersistence({
           assetResolver,
           loadedTimeline.configVersion,
           timelineId,
+          loadedBundleRef.current?.itemsBySchemaRef,
         )
       : await buildTimelineData(
           loadedTimeline.config,
           registry,
           resolveAssetUrl ?? ((file) => provider.resolveAssetUrl(file)),
           loadedTimeline.configVersion,
+          loadedBundleRef.current?.itemsBySchemaRef,
         );
 
     commitData(reloadedData, {

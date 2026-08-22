@@ -1,8 +1,9 @@
-// [CONVERGE-WITH-M1] Host-side lane pipeline hook (dataKind V1, Batch 6).
-// Thin glue only: takes a base TimelineData, the registered-kind snapshot
-// records, and a per-asset segment loader; fetches segments for every
-// sound-bearing media clip's asset, then re-runs the pure data plane
-// (`assembleDataLanes` + `mergeDataLanes`) to produce a patched TimelineData.
+// [CONVERGE-WITH-M1] Host-side lane pipeline hook (dataKind V2).
+// Thin glue only: takes a base TimelineData and the registered-kind snapshot
+// records; delegates segment fetching to the single assembly authority
+// (`dataLaneAssemblyAuthority.ts` — one shared cache for every co-mounted
+// consumer), then re-runs the pure data plane (`assembleDataLanes` +
+// `mergeDataLanes`) to produce a patched TimelineData.
 //
 // Invariants:
 // - The store's TimelineData is never written — the patched object is a
@@ -10,17 +11,18 @@
 //   (Batch 5). Lanes inform, they do not render pixels and never edit.
 // - No loader (or no runtime) → the hook returns `base` identity with empty
 //   lanes: the lane plane is additive and fails open to "no lanes".
-// - Last-write-wins: segment fetches are keyed per asset id and cached for
-//   the mount; base or kinds changes re-merge with the freshest cached
-//   segments instead of refetching.
+// - Last-write-wins: segment fetches are keyed per (loader source,
+//   timelineId) in the authority and shared across mounts; base or kinds
+//   changes re-merge with the freshest cached segments instead of refetching.
+// - Persisted SOURCE items (`base.sourceItemsBySchemaRef`, V2 bundle plane)
+//   join host-fetched transcript segments as inputs to the same assembly.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo } from 'react';
 import { useOptionalVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import { getClipAssetMediaType } from '@/tools/video-editor/clip-types/runtime.ts';
 import {
   loadTranscript,
   type TimelineData,
-  type TranscriptSegment,
 } from '@/tools/video-editor/lib/timeline-data.ts';
 import type { DataProvider } from '@/tools/video-editor/data/DataProvider.ts';
 import {
@@ -28,13 +30,10 @@ import {
   mergeDataLanes,
   type DataKindSnapshotRecord,
 } from '@/tools/video-editor/data/typed/assembleDataLanes.ts';
-import type { DataLaneItemView } from '@/tools/video-editor/data/typed/envelope.ts';
-import { useDataKindRegistrySnapshot } from '@/tools/video-editor/data-kinds/DataKindRegistryContext.tsx';
+import { useLaneSegments, type LoadDataSegments } from './dataLaneAssemblyAuthority.ts';
+import { useDataKindRegistrySnapshot } from './DataKindRegistryContext.tsx';
 
-/** Fetches the transcript segments for one asset (host-injected IO seam). */
-export type LoadDataSegments = (
-  assetId: string,
-) => Promise<readonly TranscriptSegment[] | null | undefined>;
+export type { LoadDataSegments };
 
 export interface UseDataLanesArgs {
   /** Base TimelineData from the timeline store (`null` → `null` out). */
@@ -50,18 +49,13 @@ export interface UseDataLanesArgs {
    * `null` disables fetching (lanes stay empty → `base` identity).
    */
   readonly loadSegments?: LoadDataSegments | null;
-  /**
-   * Kind-agnostic ingest seam (assembleDataLanes `extraItemsBySchemaRef`):
-   * caller-mapped views merged alongside transcript-derived items.
-   */
-  readonly extraItemsBySchemaRef?: Readonly<Record<string, readonly DataLaneItemView[]>>;
 }
 
 /**
  * Assemble duration-neutral data lanes for `base` and return the patched
  * TimelineData (`base` identity when no lanes assemble).
  */
-export function useDataLanes({ base, kinds, loadSegments, extraItemsBySchemaRef }: UseDataLanesArgs): TimelineData | null {
+export function useDataLanes({ base, kinds, loadSegments }: UseDataLanesArgs): TimelineData | null {
   const contextRecords = useDataKindRegistrySnapshot().records;
   const effectiveKinds = kinds ?? contextRecords;
 
@@ -91,37 +85,19 @@ export function useDataLanes({ base, kinds, loadSegments, extraItemsBySchemaRef 
     return [...ids].sort();
   }, [base]);
 
-  // Per-mount fetch dedupe: `requestedRef` is created per hook mount, so each
-  // asset is requested at most once per mount — the cache deliberately does
-  // NOT invalidate when `effectiveLoader`'s identity changes (a mid-mount
-  // resolver swap never refetches already-requested assets; documented V1
-  // posture). Results land in `segmentsByAsset` last-write-wins.
-  const requestedRef = useRef<Set<string>>(new Set());
-  const [segmentsByAsset, setSegmentsByAsset] = useState<
-    Readonly<Record<string, readonly TranscriptSegment[]>>
-  >({});
-
-  const neededKey = neededAssets.join('\u0000');
-  useEffect(() => {
-    if (typeof effectiveLoader !== 'function') return;
-    for (const assetId of neededAssets) {
-      if (requestedRef.current.has(assetId)) continue;
-      requestedRef.current.add(assetId);
-      void Promise.resolve()
-        .then(() => effectiveLoader(assetId))
-        .then((segments) => {
-          const normalized = segments ?? [];
-          setSegmentsByAsset((prev) => (prev[assetId] === normalized ? prev : { ...prev, [assetId]: normalized }));
-        })
-        .catch(() => {
-          // A failed fetch contributes no segments; the lane plane stays empty.
-          setSegmentsByAsset((prev) => ({ ...prev, [assetId]: [] }));
-        });
-    }
-    // Re-runs when the asset set or the loader identity changes; the
-    // requested-set ref makes it idempotent per asset per mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveLoader, neededKey]);
+  // Single assembly authority (L6 #6): fetching is owned by the module store
+  // keyed by (loader identity source, timelineId). Co-mounted surfaces —
+  // TimelineCanvas AND PropertiesPanel — share one cache and trigger exactly
+  // one fetch per asset. The default loader's identity source is the runtime
+  // object (stable per editor mount); an explicit loader keys under itself.
+  const loaderSource: object | undefined =
+    loadSegments !== undefined ? (loadSegments ?? undefined) : runtime;
+  const segmentsByAsset = useLaneSegments({
+    loaderSource,
+    timelineId: runtime?.timelineId,
+    neededAssets,
+    loader: effectiveLoader ?? undefined,
+  });
 
   return useMemo(() => {
     if (!base) return null;
@@ -129,10 +105,11 @@ export function useDataLanes({ base, kinds, loadSegments, extraItemsBySchemaRef 
       kinds: effectiveKinds,
       clips: base.resolvedConfig.clips,
       segmentsByAsset,
-      extraItemsBySchemaRef,
+      // V2 bundle plane: persisted SOURCE items ride on the base data and
+      // feed the same assembly pass as freshly fetched transcript segments.
+      sourceItemsBySchemaRef: base.sourceItemsBySchemaRef,
     });
     // Base identity when nothing assembles: no clone churn, empty lanes.
     return views.length > 0 ? mergeDataLanes(base, views) : base;
-  }, [base, effectiveKinds, segmentsByAsset, extraItemsBySchemaRef]);
+  }, [base, effectiveKinds, segmentsByAsset]);
 }
-

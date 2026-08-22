@@ -2,13 +2,19 @@
 // dataKind V1 (Batch 6): useDataLanes — the host lane pipeline hook.
 // Stub loaders prove the assembly/merge contract; the null loader proves the
 // additive fail-open posture (base identity, empty lanes).
-import { renderHook, waitFor } from '@testing-library/react';
+import { render, renderHook, waitFor } from '@testing-library/react';
+import { useEffect } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { TimelineData, TranscriptSegment } from '@/tools/video-editor/lib/timeline-data.ts';
 import type { ResolvedTimelineConfig } from '@/tools/video-editor/types/index.ts';
 import { TRANSCRIPT_SCHEMA_REF } from '@/tools/video-editor/data/typed/adaptTranscript.ts';
 import type { DataKindSnapshotRecord } from '@/tools/video-editor/data/typed/assembleDataLanes.ts';
 import { useDataLanes, type LoadDataSegments } from './useDataLanes.ts';
+import {
+  VideoEditorRuntimeProvider,
+  type VideoEditorRuntimeContextValue,
+} from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
+import { resetLaneAssemblyAuthorityForTests } from './dataLaneAssemblyAuthority.ts';
 
 const SEGMENT: TranscriptSegment = { start: 2, end: 4, text: 'hello' };
 
@@ -70,7 +76,7 @@ describe('useDataLanes', () => {
     expect(lane.laneRenderer).toBe(kind.laneRenderer);
     expect(lane.inspector).toBe(kind.inspector);
     const [view] = lane.items;
-    expect(view.item.id).toBe('a:c1:0');
+    expect(view.item.id).toBe('a:src:74b32fcb340a@c1'); // `${sourceItemId}@${clipId}`
     expect(view.item.sourceItemId).toBe('a:src:74b32fcb340a'); // content-derived FNV-1a/64 slice
     expect(view.item.payload).toEqual({ text: 'hello' });
     expect(view.timelineStart).toBe(10); // clip.at + (2 − 2)/1
@@ -171,5 +177,61 @@ describe('useDataLanes', () => {
     await waitFor(() => expect(loadSegments).toHaveBeenCalled());
     await waitFor(() => expect(result.current).toBe(base));
     expect(result.current?.dataLanes).toEqual([]);
+  });
+
+  it('single assembly authority across co-mounted surfaces: ONE fetch per asset', async () => {
+    resetLaneAssemblyAuthorityForTests();
+    const onProfileLoad = vi.fn(async () => ({ transcript: { segments: [SEGMENT] } }));
+    // Production wiring: each surface derives its default loader from the
+    // SHARED runtime object, so the authority's (loaderSource, timelineId)
+    // key matches across both mounts and the cache is common.
+    const runtime = {
+      assetResolver: {
+        resolveAssetUrl: async (file: string) => file,
+        onProfileLoad,
+      },
+      timelineId: 'timeline-shared',
+    } as unknown as VideoEditorRuntimeContextValue;
+
+    const baseA = buildBase([VIDEO_CLIP]);
+    const baseB = buildBase([VIDEO_CLIP]);
+    const consumerA: { current: TimelineData | null } = { current: null };
+    const consumerB: { current: TimelineData | null } = { current: null };
+
+    function Consumer({ base, onResult }: {
+      base: TimelineData;
+      onResult: (patched: TimelineData | null) => void;
+    }) {
+      const patched = useDataLanes({ base });
+      useEffect(() => { onResult(patched); }, [onResult, patched]);
+      return null;
+    }
+
+    render(
+      <VideoEditorRuntimeProvider value={runtime}>
+        <Consumer base={baseA} onResult={(d) => { consumerA.current = d; }} />
+        <Consumer base={baseB} onResult={(d) => { consumerB.current = d; }} />
+      </VideoEditorRuntimeProvider>,
+    );
+
+    await waitFor(() => expect(consumerA.current?.dataLanes).toHaveLength(1));
+    await waitFor(() => expect(consumerB.current?.dataLanes).toHaveLength(1));
+
+    // Both surfaces mounted against the same asset; exactly ONE host fetch.
+    expect(onProfileLoad).toHaveBeenCalledTimes(1);
+    expect(onProfileLoad).toHaveBeenCalledWith({ assetId: 'a', timelineId: 'timeline-shared' });
+
+    // Assembly stays per-consumer pure compute over each mount's own base:
+    // distinct patched objects, no cross-surface leakage, and neither base's
+    // dataLanes written (store-write neutrality holds under co-mounting).
+    expect(consumerA.current).not.toBe(baseA);
+    expect(consumerB.current).not.toBe(baseB);
+    expect(consumerA.current).not.toBe(consumerB.current);
+    expect(consumerA.current?.config).toBe(baseA.config);
+    expect(consumerB.current?.config).toBe(baseB.config);
+    expect(baseA.dataLanes).toEqual([]);
+    expect(baseB.dataLanes).toEqual([]);
+    expect(consumerA.current!.dataLanes[0]?.items[0]?.clipId).toBe('c1');
+    expect(consumerB.current!.dataLanes[0]?.items[0]?.timelineStart).toBe(10);
   });
 });
