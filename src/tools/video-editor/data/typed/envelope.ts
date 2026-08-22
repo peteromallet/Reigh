@@ -58,6 +58,25 @@ export interface FrozenDataItem {
 }
 
 /**
+ * A persisted source item: a `FrozenDataItem` in its native domain with all
+ * view/occurrence chrome stripped — no `entityRef`, no timeline coords, no
+ * renderer refs. `id` IS the durable, content-stable `sourceItemId`
+ * (occurrences are re-derived at assembly), and `sourceArtifactRef.assetId`
+ * is required so every persisted item names its origin artifact.
+ * [CONVERGE-WITH-M1] Serialized by TimelineBundle (./timelineBundle.ts).
+ */
+export interface SourceFrozenDataItem {
+  id: string;
+  shape: DataShape;
+  domain: DataCoordinateDomain;
+  extent: DataExtent;
+  schemaRef: string;
+  payload: unknown;
+  sourceArtifactRef: { assetId: string; artifactHash?: string };
+  provenance: DataProvenance;
+}
+
+/**
  * Props-agnostic stand-ins for the SDK renderer types
  * (`DataLaneRendererProps` / `DataItemInspectorProps` on
  * src/sdk/video/families/dataKind.ts — outside this batch). A function whose
