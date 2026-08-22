@@ -71,6 +71,12 @@ import type {
   ToolProcessResult,
 } from '@/sdk/video/families/agentTools';
 import type { ProcessSpawnConfig } from '@/sdk/video/families/processes';
+import type {
+  DataItemInspectorProps,
+  DataKindRegistrationOptions,
+  DataKindRegistrationService,
+  DataLaneRendererProps,
+} from '@/sdk/video/families/dataKind';
 
 // ---------------------------------------------------------------------------
 // Editor shell root registry (module-level, set by host shell on mount)
@@ -133,6 +139,7 @@ export function createExtensionContext(
   shaders?: ShaderRegistrationService,
   settingsServiceOptions?: CreateExtensionSettingsServiceOptions,
   uiService?: ExtensionUiService,
+  dataKinds?: DataKindRegistrationService,
 ): ExtensionContext {
   const extensionId = extension.manifest.id as string;
   const manifest = extension.manifest; // Already frozen by defineExtension
@@ -427,6 +434,26 @@ export function createExtensionContext(
   };
   Object.freeze(uiServiceInstance);
 
+  // ---- dataKinds service (optional, wired by provider) ----------------------
+  // dataKind V1: single bind path for typed-data lanes. When no host-wired
+  // service is provided, register reports a structured diagnostic and returns
+  // a no-op handle (same pattern as the clipTypes/shaders fallbacks above).
+  const dataKindsService: DataKindRegistrationService = dataKinds ?? {
+    register(
+      _kindId: string,
+      _laneRenderer: (props: DataLaneRendererProps) => unknown,
+      _inspector?: (props: DataItemInspectorProps) => unknown,
+      _options?: DataKindRegistrationOptions,
+    ): DisposeHandle {
+      diagnosticsService.report({
+        severity: 'error',
+        code: 'dataKinds/not-wired',
+        message: `Cannot register data kind "${_kindId}" — the DataKindRegistry has not been wired by the host provider.`,
+      });
+      return { dispose() {} };
+    },
+  };
+
   // ---- assemble, attach dispose, then freeze -------------------------------
   const ctx = {
     apiVersion: 1,
@@ -451,6 +478,7 @@ export function createExtensionContext(
     shaders: shadersService,
     agentTools: agentToolsService,
     ui: uiServiceInstance,
+    dataKinds: dataKindsService,
   } as ExtensionContext;
 
   // Attach host-service disposal so the lifecycle can clean up settings

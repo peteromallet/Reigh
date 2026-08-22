@@ -42,8 +42,8 @@ import { VIDEO_CONTRIBUTION_KINDS } from '@/sdk/video/families/contributionKinds
 describe('VIDEO_FAMILY_REGISTRY shape', () => {
   it('is a non-empty readonly array', () => {
     expect(Array.isArray(VIDEO_FAMILY_REGISTRY)).toBe(true);
-    expect(VIDEO_FAMILY_REGISTRY.length).toBeGreaterThanOrEqual(21);
-    expect(VIDEO_FAMILY_REGISTRY.length).toBeLessThanOrEqual(21);
+    expect(VIDEO_FAMILY_REGISTRY.length).toBeGreaterThanOrEqual(22);
+    expect(VIDEO_FAMILY_REGISTRY.length).toBeLessThanOrEqual(22);
   });
 
   it('every entry has the required FamilyDefinition fields', () => {
@@ -517,10 +517,10 @@ describe('exact registry membership', () => {
     expect(registryKindSet.size).toBe(unionKindSet.size);
   });
 
-  it('registry has exactly 21 kinds (current VideoContributionKind count)', () => {
-    expect(VIDEO_FAMILY_REGISTRY.length).toBe(21);
-    expect(unionKindSet.size).toBe(21);
-    expect(registryKindSet.size).toBe(21);
+  it('registry has exactly 22 kinds (current VideoContributionKind count)', () => {
+    expect(VIDEO_FAMILY_REGISTRY.length).toBe(22);
+    expect(unionKindSet.size).toBe(22);
+    expect(registryKindSet.size).toBe(22);
   });
 });
 
@@ -695,7 +695,9 @@ describe('generated JSON completeness', () => {
       expect(typeof lc).toBe('object');
       expect('milestone' in lc).toBe(true);
       expect('bridged' in lc).toBe(true);
-      expect(typeof lc.milestone).toBe('string');
+      expect(lc.milestone === null || typeof lc.milestone === 'string').toBe(
+        true,
+      );
       expect(typeof lc.bridged).toBe('boolean');
     }
   });
@@ -835,8 +837,9 @@ describe('round-trip comparison', () => {
     for (const row of jsonRows) {
       const def = getVideoFamily(row.kind as VideoContributionKind);
       expect(def).toBeDefined();
-      const lc = row.legacyCompatibility as { milestone: string };
-      expect(lc.milestone).toBe(def!.legacyMilestone);
+      const lc = row.legacyCompatibility as { milestone: string | null };
+      // Registry entries without a legacyMilestone serialize as null
+      expect(lc.milestone).toBe(def!.legacyMilestone ?? null);
     }
   });
 });

@@ -302,6 +302,7 @@ describe('M3: value exports are importable from @reigh/editor-sdk', () => {
       'sessions',
       'stage',
       'timeline',
+      'timelineView',
       'writing',
     ]);
   });
@@ -1557,6 +1558,9 @@ describe('M7: ExtensionContext includes effects registration service', () => {
       effects: {
         registerComponent: () => ({ dispose: () => {} }),
       },
+      dataKinds: {
+        register: () => ({ dispose: () => {} }),
+      },
     };
     expect(ctx.effects).toBeDefined();
     expect(typeof ctx.effects.registerComponent).toBe('function');
@@ -1850,6 +1854,9 @@ describe('M8: ExtensionContext includes transitions registration service', () =>
       transitions: {
         registerRenderer: () => ({ dispose: () => {} }),
       },
+      dataKinds: {
+        register: () => ({ dispose: () => {} }),
+      },
     };
     expect(ctx.transitions).toBeDefined();
     expect(typeof ctx.transitions.registerRenderer).toBe('function');
@@ -2133,6 +2140,9 @@ describe('M9: ExtensionContext includes clipTypes registration service', () => {
       },
       clipTypes: {
         registerClipType: () => ({ dispose: () => {} }),
+      },
+      dataKinds: {
+        register: () => ({ dispose: () => {} }),
       },
     };
     expect(ctx.clipTypes).toBeDefined();
@@ -3853,13 +3863,13 @@ describe('semver-sensitive SDK export snapshot', () => {
 });
 
 // ---------------------------------------------------------------------------
-// T2.1: Exact 21-kind count, no timelineMarker, governed overlay + ctx.ui
+// T2.1: Exact 22-kind count, no timelineMarker, governed overlay + ctx.ui
 // ---------------------------------------------------------------------------
 
 describe('T2.1: exact contribution-kind count and no timelineMarker kind', () => {
-  it('KNOWN_CONTRIBUTION_KINDS has exactly 21 kinds (no 22nd kind)', () => {
-    expect(KNOWN_CONTRIBUTION_KINDS.length).toBe(21);
-    expect(new Set(KNOWN_CONTRIBUTION_KINDS).size).toBe(21);
+  it('KNOWN_CONTRIBUTION_KINDS has exactly 22 kinds (dataKind is kind 22)', () => {
+    expect(KNOWN_CONTRIBUTION_KINDS.length).toBe(22);
+    expect(new Set(KNOWN_CONTRIBUTION_KINDS).size).toBe(22);
   });
 
   it('no timelineMarker contribution kind exists', () => {
@@ -4657,9 +4667,9 @@ describe('T6: family adapter manifest (sdk-boundary)', () => {
     expect(manifest.entries.length).toBe(manifest.size);
   });
 
-  it('manifest has 21 entries (one per family kind)', () => {
+  it('manifest has 22 entries (one per family kind)', () => {
     const manifest = buildFamilyAdapterManifest();
-    expect(manifest.size).toBe(21);
+    expect(manifest.size).toBe(22);
   });
 
   it('manifest entries are sorted alphabetically by kind', () => {

@@ -81,6 +81,7 @@ import {
   type AgentToolHandler,
   type ShaderRegistrationService,
   type CreateExtensionSettingsServiceOptions,
+  type DataKindRegistrationService,
   type SettingsPersistenceError,
   type ProcessSpawnConfig,
 } from '@reigh/editor-sdk';
@@ -103,6 +104,11 @@ import { createShaderRegistrationService } from '@/tools/video-editor/runtime/sh
 import type { ShaderEffectRegistry } from '@/tools/video-editor/shaders/registry/types.ts';
 import { createClipTypeRegistrationService } from '@/tools/video-editor/runtime/clipTypeRegistrationService.ts';
 import type { ClipTypeRegistry } from '@/tools/video-editor/clip-types/ClipTypeRegistry.ts';
+import { createDataKindRegistrationService } from '@/tools/video-editor/runtime/dataKindRegistrationService.ts';
+import {
+  createDataKindRegistry,
+  type DataKindRegistry,
+} from '@/tools/video-editor/data-kinds/DataKindRegistry.ts';
 import {
   createAgentToolRegistry,
   type AgentToolRegistry,
@@ -260,6 +266,8 @@ export interface EditorRuntimeAssembly {
   transitionRegistryRef: MutableRefObject<TransitionRegistry | null>;
   shaderRegistryRef: MutableRefObject<ShaderEffectRegistry | null>;
   clipTypeRegistryRef: MutableRefObject<ClipTypeRegistry | null>;
+  /** dataKind V1: assembly-owned data-kind registry (single bind path). */
+  dataKindRegistryRef: MutableRefObject<DataKindRegistry | null>;
   agentToolRegistryRef: MutableRefObject<AgentToolRegistry | null>;
   rendererRegistryRef: MutableRefObject<RendererRegistry>;
   liveDataRegistryRef: MutableRefObject<LiveDataRegistry | null>;
@@ -312,6 +320,12 @@ export function useEditorRuntimeAssembly({
   const commandRegistryRef = useRef<CommandRegistry | null>(null);
   if (!commandRegistryRef.current) {
     commandRegistryRef.current = createCommandRegistry();
+  }
+
+  // ---- dataKind V1: data-kind registry (one per provider mount) ------------
+  const dataKindRegistryRef = useRef<DataKindRegistry | null>(null);
+  if (!dataKindRegistryRef.current) {
+    dataKindRegistryRef.current = createDataKindRegistry();
   }
 
   // ---- M7/M8/M9/M13: registry refs (registries are created by their
@@ -409,7 +423,7 @@ export function useEditorRuntimeAssembly({
     registry.setCallbacks(commandRegistryCallbacksRef.current);
   }, []);
 
-  // Dispose the lifecycle host (and assembly-owned live registry) on unmount,
+  // Dispose the lifecycle host (and assembly-owned registries) on unmount,
   // then run any host-owned extra disposal.
   const onUnmountRef = useRef(onUnmount);
   onUnmountRef.current = onUnmount;
@@ -418,6 +432,7 @@ export function useEditorRuntimeAssembly({
     return () => {
       host?.disposeAll();
       liveDataRegistryRef.current?.dispose();
+      dataKindRegistryRef.current?.dispose();
       timelineViewStoreRef.current?.dispose();
       timelineViewStoreRef.current = null;
       onUnmountRef.current?.();
@@ -449,6 +464,7 @@ export function useEditorRuntimeAssembly({
     transitionRegistryRef,
     shaderRegistryRef,
     clipTypeRegistryRef,
+    dataKindRegistryRef,
     agentToolRegistryRef,
     rendererRegistryRef,
     liveDataRegistryRef,
@@ -531,6 +547,7 @@ export function useEditorRuntimeSync({
     transitionRegistryRef,
     shaderRegistryRef,
     clipTypeRegistryRef,
+    dataKindRegistryRef,
     agentToolRegistryRef,
     rendererRegistryRef,
     liveDataRegistryRef,
@@ -699,6 +716,7 @@ export function useEditorRuntimeSync({
         const transitionRegistry = transitionRegistryRef.current;
         const shaderRegistry = shaderRegistryRef.current;
         const clipTypeRegistry = clipTypeRegistryRef.current;
+        const dataKindRegistry = dataKindRegistryRef.current;
         const agentToolRegistry = agentToolRegistryRef.current;
         const diagnosticsService =
           host.lifecycles.get(extId)?.diagnosticsService ??
@@ -742,6 +760,15 @@ export function useEditorRuntimeSync({
           ? createClipTypeRegistrationService({
               extension: ext,
               clipTypeRegistry,
+              diagnosticsService,
+            })
+          : undefined;
+        // dataKind V1: per-extension dataKinds service backed by the shared
+        // DataKindRegistry (single bind path for typed-data lanes).
+        const dataKindsService: DataKindRegistrationService | undefined = dataKindRegistry
+          ? createDataKindRegistrationService({
+              extension: ext,
+              dataKindRegistry,
               diagnosticsService,
             })
           : undefined;
@@ -807,6 +834,7 @@ export function useEditorRuntimeSync({
             diagnosticsService,
             rendererRegistry: rendererRegistryRef.current,
           }),
+          dataKindsService,
         );
 
         // Register the settings service for explicit local-only listeners.
@@ -829,6 +857,7 @@ export function useEditorRuntimeSync({
     agentToolRegistryRef,
     clipTypeRegistryRef,
     commandRegistryRef,
+    dataKindRegistryRef,
     diagnosticCollection,
     effectRegistryRef,
     extensionRuntime,

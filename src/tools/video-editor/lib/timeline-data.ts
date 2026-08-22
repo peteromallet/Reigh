@@ -19,6 +19,7 @@ import type {
   AssetMissingRequest,
   AssetResolver,
 } from '@/tools/video-editor/data/AssetResolver.ts';
+import type { DataLaneView } from '@/tools/video-editor/data/typed/envelope.ts';
 import type {
   AssetRegistry,
   ClipType,
@@ -91,6 +92,14 @@ export interface TimelineData {
   clipOrder: ClipOrderMap;
   signature: string;
   stableSignature: string;
+  /**
+   * Duration-neutral typed-data lanes ([CONVERGE-WITH-M1], dataKind V1).
+   * Evidence/visualization state only — never an input to duration
+   * computation, `configToRows`, or export scanning (design:
+   * decisions/reigh-editor-data-lanes.md §Three-layer split). Default is
+   * the frozen `EMPTY_DATA_LANES`; producers swap it via `mergeDataLanes`.
+   */
+  dataLanes: DataLaneView[];
 }
 
 const ASSET_COLORS: Record<string, string> = {
@@ -380,6 +389,13 @@ export const rowsToConfig = (
   return serializeTimelineConfigSnapshot(config).config;
 };
 
+/**
+ * Shared frozen-empty lane plane. Every assembled TimelineData starts here;
+ * lane producers replace it wholesale (never mutate) via `mergeDataLanes`.
+ */
+const EMPTY_DATA_LANES: DataLaneView[] = [];
+Object.freeze(EMPTY_DATA_LANES);
+
 interface AssembleTimelineDataParams {
   config: TimelineConfig;
   configVersion: number;
@@ -433,6 +449,7 @@ export const assembleTimelineData = ({
     clipOrder: rowData.clipOrder,
     signature: getConfigSignature(canonicalResolvedConfig),
     stableSignature: getStableConfigSignature(canonicalConfig, registry),
+    dataLanes: EMPTY_DATA_LANES,
   };
 };
 

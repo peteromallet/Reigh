@@ -391,7 +391,7 @@ describe('ExtensionContext — no internal members exposed', () => {
   // ---- exactly the approved surface ---------------------------------------
 
   it('has exactly the expected own property names', () => {
-    // The declared ExtensionContext surface is exactly these 12 members.
+    // The declared ExtensionContext surface is exactly these 13 members.
     // `ui` (T1.1) is part of the contract: a complete context literal must
     // include it, and ExtensionUiService exposes only registerRenderer.
     const declaredKeys = [
@@ -401,6 +401,7 @@ describe('ExtensionContext — no internal members exposed', () => {
       'clipTypes',
       'commands',
       'creative',
+      'dataKinds',
       'effects',
       'extension',
       'services',
@@ -446,6 +447,7 @@ describe('ExtensionContext — no internal members exposed', () => {
       clipTypes: {} as never,
       shaders: {} as never,
       agentTools: {} as never,
+      dataKinds: {} as never,
     } satisfies ExtensionContext;
     expect(Object.keys(fullContext).sort()).toEqual([...declaredKeys].sort());
 
@@ -472,6 +474,7 @@ describe('ExtensionContext — no internal members exposed', () => {
       'transitions',
       'clipTypes',
       'shaders',
+      'dataKinds',
       'ui',
     ]);
     for (const key of Object.keys(ctx)) {
@@ -705,6 +708,7 @@ describe('ExtensionContext — type safety guard', () => {
       'transitions',
       'clipTypes',
       'shaders',
+      'dataKinds',
       'ui',
     ];
 
@@ -3204,12 +3208,12 @@ describe('T6: family adapter manifest (boundary)', () => {
     expect(result.missingFromRegistry).toEqual([]);
     expect(result.missingFromManifest).toEqual([]);
     expect(result.kindsNeedingAdapter).toEqual([]);
-    // dataKind joins the kind union (V1) before its family entry lands in
-    // VIDEO_FAMILY_REGISTRY (family-registration batch); both invariants
-    // return to [] / true once that entry registers.
-    expect(result.contributionKindsNotInManifest).toEqual(['dataKind']);
+    // dataKind's family entry has landed in VIDEO_FAMILY_REGISTRY, so the
+    // adapter manifest covers every contribution kind and the two surfaces
+    // are fully aligned again.
+    expect(result.contributionKindsNotInManifest).toEqual([]);
     expect(result.manifestKindsNotInContributionKinds).toEqual([]);
-    expect(result.isFullyAligned).toBe(false);
+    expect(result.isFullyAligned).toBe(true);
   });
 
   it('crossReferenceManifest detects kinds missing from registry', () => {
@@ -3251,9 +3255,9 @@ describe('T6: family adapter manifest (boundary)', () => {
 
     const result = crossReferenceManifest(manifest, registry);
 
-    // The manifest should cover every VIDEO_CONTRIBUTION_KIND except
-    // dataKind pending its family entry (see alignment note above).
-    expect(result.contributionKindsNotInManifest).toEqual(['dataKind']);
+    // The manifest covers every VIDEO_CONTRIBUTION_KIND now that the
+    // dataKind family entry has registered.
+    expect(result.contributionKindsNotInManifest).toEqual([]);
 
     // And should not have kinds outside VIDEO_CONTRIBUTION_KINDS
     expect(result.manifestKindsNotInContributionKinds).toEqual([]);
@@ -3284,8 +3288,8 @@ describe('T6: family adapter manifest (boundary)', () => {
     }
   });
 
-  it('manifest size equals VIDEO_FAMILY_REGISTRY length (21 families)', () => {
+  it('manifest size equals VIDEO_FAMILY_REGISTRY length (22 families)', () => {
     const manifest = buildFamilyAdapterManifest();
-    expect(manifest.size).toBe(21);
+    expect(manifest.size).toBe(22);
   });
 });

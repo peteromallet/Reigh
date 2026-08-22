@@ -2548,6 +2548,65 @@ describe('scanExportConfig — composition graph M5 diagnostics', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Export config scan — dataKind editorial lanes (duration-neutral V1)
+// ---------------------------------------------------------------------------
+
+describe('scanExportConfig — dataKind editorial lanes', () => {
+  const builtIn = collectBuiltInKnownIds();
+
+  const dataKindContribution = {
+    id: 'contrib.transcript-lane',
+    kind: 'dataKind',
+    kindId: 'transcript-segment',
+    schemaRef: 'reigh.transcript_segment/v1',
+    shape: 'interval',
+    domain: 'source_seconds',
+  } as ExtensionContribution;
+
+  it('collects no inactive IDs for dataKind contributions', () => {
+    const extIds = collectExtensionDeclaredIds([dataKindContribution]);
+    expect(extIds.effectIds.size).toBe(0);
+    expect(extIds.transitionIds.size).toBe(0);
+    expect(extIds.clipTypeIds.size).toBe(0);
+  });
+
+  it('leaves scanExportConfig diagnostics unchanged when an editorial lane contribution is declared', () => {
+    // Editorial scenario (design §Tests): a transcript lane plus no new
+    // clips — the scan must see the config identically with and without
+    // the lane declaration. Lanes never feed export scanning.
+    const config = makeConfig([makeClip('c1', { clipType: 'media' })]);
+    const withoutLanes = scanExportConfig(config, builtIn, collectExtensionDeclaredIds([]));
+    const withLanes = scanExportConfig(config, builtIn, collectExtensionDeclaredIds([dataKindContribution]));
+
+    expect(withLanes.diagnostics).toEqual(withoutLanes.diagnostics);
+    expect(withLanes.findings).toEqual(withoutLanes.findings);
+    expect(withLanes.blockers).toEqual(withoutLanes.blockers);
+    expect(withLanes.hasBlockingErrors).toBe(withoutLanes.hasBlockingErrors);
+    expect(withLanes.unknownClipTypes).toEqual(withoutLanes.unknownClipTypes);
+    expect(withLanes.unknownEffects).toEqual(withoutLanes.unknownEffects);
+    expect(withLanes.unknownTransitions).toEqual(withoutLanes.unknownTransitions);
+  });
+
+  it('keeps dataKind IDs out of the scanned result inactiveExtensionIds', () => {
+    const result = scanExportConfig(
+      makeConfig([makeClip('c1', { clipType: 'media' })]),
+      builtIn,
+      collectExtensionDeclaredIds([
+        dataKindContribution,
+        { id: 'contrib.e', kind: 'effect', effectId: 'my-custom-effect' } as ExtensionContribution,
+      ]),
+    );
+
+    expect(result.inactiveExtensionIds.effectIds.has('transcript-segment')).toBe(false);
+    expect(result.inactiveExtensionIds.effectIds.has('contrib.transcript-lane')).toBe(false);
+    // Control: inactive-ID collection still works for bridged-metadata kinds.
+    expect(result.inactiveExtensionIds.effectIds.has('my-custom-effect')).toBe(true);
+    expect(result.inactiveExtensionIds.transitionIds.size).toBe(0);
+    expect(result.inactiveExtensionIds.clipTypeIds.size).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Edge cases
 // ---------------------------------------------------------------------------
 

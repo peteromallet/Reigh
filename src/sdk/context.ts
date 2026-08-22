@@ -40,6 +40,8 @@ import type { TimelineOps } from './video/timeline/timelineOps';
 import type { TransitionRegistrationService } from './video/families/transitions';
 import type { ExtensionManifest } from './manifest';
 import type { AgentToolRegistrationService } from './video/families/agentTools';
+// dataKind V1: duration-neutral typed-data lanes ([CONVERGE-WITH-M1] vocabularies)
+import type { DataKindRegistrationService } from './video/families/dataKind';
 
 // ---------------------------------------------------------------------------
 // Context service contracts (pure interfaces)
@@ -258,6 +260,8 @@ export interface ExtensionContext {
   readonly shaders: ShaderRegistrationService;
   /** M10: Agent tool registration service for host-mediated agent tools. */
   readonly agentTools: AgentToolRegistrationService;
+  /** dataKind V1: single bind path for typed-data lanes (clipType analog). */
+  readonly dataKinds: DataKindRegistrationService;
 }
 
 // ---------------------------------------------------------------------------

@@ -298,6 +298,49 @@ export const VIDEO_FAMILY_REGISTRY: readonly FamilyDefinition<VideoContributionK
       'clip, track, and timeline-area surfaces with target filtering.',
   },
 
+  // ---- Data Kind (V1) ----
+  {
+    kind: 'dataKind',
+    declarationMaturity: 'documented',
+    executionMaturity: 'host-integrated',
+    hostIntegrationNotes:
+      'Data-kind contributions declare duration-neutral typed-data lanes: a ' +
+      'stable kindId, qualified schemaRef, and shape/domain names. Renderers ' +
+      'bind imperatively at activation via ctx.dataKinds.register(kindId, ' +
+      'laneRenderer, inspector?) into the host DataKindRegistry — the single ' +
+      'runtime vocabulary for lane state. Registration gates on the ' +
+      "extension's declared dataKind contributions and emits " +
+      'dataKinds/undeclared-kind on a miss; cleanup rides the registry ' +
+      'dispose path. The compatibility adapter intentionally projects zero ' +
+      'descriptors so registry state is never duplicated as a second ' +
+      'descriptor database. Evidence: DataKindContribution manifest schema ' +
+      'definition, validateManifest data rules, DataKindRegistrationService, ' +
+      'and dataKindAdapter.',
+    requiresTrustedCode: false,
+    manifestSchemaDefinition: 'DataKindContribution',
+    sdkModules: [
+      'src/sdk/video/families/dataKind.ts',
+    ],
+    hostAdapter: 'src/tools/video-editor/runtime/families/dataKindAdapter.ts',
+    requirements: {
+      manifestSchema: true,
+      normalizedDescriptor: true,
+      registrationApi: true,
+      lifecycleCleanup: true,
+      diagnostics: false,
+      hostCapabilityProjection: false,
+      uiIntegration: false,
+      persistencePosture: false,
+      examples: false,
+      tests: true,
+    },
+    label: 'Data Kind',
+    description:
+      'Data kinds define duration-neutral typed-data lanes rendered from ' +
+      'typed envelope items. Renderers bind via ctx.dataKinds.register(); ' +
+      'unknown payloads round-trip opaquely with host fallback paint.',
+  },
+
   // ---- Dialog (M1) ----
   {
     kind: 'dialog',

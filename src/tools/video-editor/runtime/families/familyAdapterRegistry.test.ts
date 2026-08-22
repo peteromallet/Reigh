@@ -17,6 +17,7 @@ import { effectAdapter } from './effectAdapter';
 import { outputFormatAdapter } from './outputFormatAdapter';
 import { metadataFacetAdapter } from './metadataFacetAdapter';
 import { commandAdapter } from './commandAdapter';
+import { dataKindAdapter } from './dataKindAdapter';
 import { timelineOverlayAdapter } from './timelineOverlayAdapter';
 import { buildParserDescriptors } from './projectors/parserProjector';
 
@@ -33,9 +34,9 @@ describe('VIDEO_EDITOR_FAMILY_ADAPTER_REGISTRY', () => {
     expect(Object.isFrozen(VIDEO_EDITOR_FAMILY_ADAPTER_REGISTRY)).toBe(true);
   });
 
-  it('registers exactly 21 video contribution kinds', () => {
-    expect(VIDEO_EDITOR_FAMILY_ADAPTER_REGISTRY.size).toBe(21);
-    expect(VIDEO_EDITOR_FAMILY_ADAPTER_KINDS.length).toBe(21);
+  it('registers exactly 22 video contribution kinds', () => {
+    expect(VIDEO_EDITOR_FAMILY_ADAPTER_REGISTRY.size).toBe(22);
+    expect(VIDEO_EDITOR_FAMILY_ADAPTER_KINDS.length).toBe(22);
   });
 
   it('exposes kinds in sorted order', () => {
@@ -53,6 +54,7 @@ describe('VIDEO_EDITOR_FAMILY_ADAPTER_REGISTRY', () => {
       'clipType',
       'command',
       'contextMenuItem',
+      'dataKind',
       'dialog',
       'effect',
       'inspectorSection',
@@ -112,6 +114,7 @@ describe('VIDEO_EDITOR_FAMILY_ADAPTER_REGISTRY', () => {
       'keybinding',
       'automation',
       'clipType',
+      'dataKind',
     ];
     for (const kind of realKinds) {
       const adapter = VIDEO_EDITOR_FAMILY_ADAPTER_REGISTRY.get(
@@ -260,6 +263,30 @@ describe('commandAdapter', () => {
     const result = commandAdapter.normalize({ contributions: [] });
     expect(result.descriptors).toEqual([]);
     expect(Object.isFrozen(result.descriptors)).toBe(true);
+  });
+});
+
+describe('dataKindAdapter', () => {
+  it('is a real compatibility adapter registered for the dataKind kind', () => {
+    expect(dataKindAdapter.classification).toBe('real');
+    expect(dataKindAdapter.kind).toBe('dataKind');
+    expect(
+      VIDEO_EDITOR_FAMILY_ADAPTER_REGISTRY.get('dataKind'),
+    ).toBe(dataKindAdapter);
+  });
+
+  it('projects zero frozen descriptors (lane state binds via the registry)', () => {
+    const result = dataKindAdapter.normalize({ contributions: [] });
+    expect(result.descriptors).toEqual([]);
+    expect(Object.isFrozen(result.descriptors)).toBe(true);
+  });
+
+  it('buildConformanceReport reads the SDK family definition', () => {
+    const report = dataKindAdapter.buildConformanceReport();
+    expect(report.kind).toBe('dataKind');
+    expect(report.declarationMaturity).toBe('documented');
+    expect(report.executionMaturity).toBe('host-integrated');
+    expect(report.coherent).toBe(true);
   });
 });
 

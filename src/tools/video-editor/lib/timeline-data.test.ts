@@ -12,6 +12,11 @@ import { serializeForDisk, validateSerializedConfig } from '@/tools/video-editor
 import type { AssetResolver } from '@/tools/video-editor/data/AssetResolver';
 import type { DataProvider } from '@/tools/video-editor/data/DataProvider';
 import type { AssetRegistry, TimelineConfig } from '@/tools/video-editor/types';
+import { getConfigTimelineDuration } from '@/tools/video-editor/lib/timeline-domain';
+import {
+  assembleDataLanes,
+  mergeDataLanes,
+} from '@/tools/video-editor/data/typed/assembleDataLanes';
 
 const registry: AssetRegistry = { assets: {} };
 
@@ -515,5 +520,75 @@ describe('timeline data extension project data round trip', () => {
     expect(roundTripped.app).toEqual(config.app);
     expect(roundTripped.tracks[0].app).toEqual({ scaleAppliesToPositionedClips: true });
     expect(roundTripped.clips[0]).toMatchObject({ id: 'shot-1', label: 'Shot 1', hold: 2, app: { managedBy: extensionId } });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Data lanes (dataKind V1): TimelineData.dataLanes defaults to a frozen empty
+// array and is provably inert to duration and configToRows (goal done-2).
+// Lanes attach via the typed pipeline (assembleDataLanes + mergeDataLanes);
+// config, rows, and export scanning never see them.
+// ---------------------------------------------------------------------------
+
+const buildLaneConfig = (): TimelineConfig => ({
+  output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
+  tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+  clips: [
+    {
+      id: 'clip-interview',
+      at: 2,
+      track: 'V1',
+      clipType: 'media',
+      asset: 'interview',
+      from: 10,
+      to: 14,
+      speed: 2,
+    },
+  ],
+});
+
+describe('timeline data lanes duration neutrality', () => {
+  const laneRegistry: AssetRegistry = { assets: { interview: { file: 'interview.mp4' } } };
+  const transcript = [
+    { start: 10.5, end: 12, text: 'Hello' },
+    { start: 12.5, end: 13.5, text: 'World' },
+  ];
+
+  it('defaults dataLanes to a frozen empty array on assembled timeline data', async () => {
+    const data = await buildTimelineData(buildLaneConfig(), laneRegistry, (file) => `/assets/${file}`);
+    expect(data.dataLanes).toEqual([]);
+    expect(Object.isFrozen(data.dataLanes)).toBe(true);
+  });
+
+  it('attaching lanes leaves getConfigTimelineDuration and configToRows ends identical', async () => {
+    const base = await buildTimelineData(buildLaneConfig(), laneRegistry, (file) => `/assets/${file}`);
+
+    // Real lane path: the resolved clip carries interview.mp4 (video), so its
+    // transcript adapts into a registered transcript-segment lane.
+    const views = assembleDataLanes({
+      kinds: [{
+        kindId: 'transcript-segment',
+        schemaRef: 'reigh.transcript_segment/v1',
+        shape: 'interval',
+        domain: 'source_seconds',
+      }],
+      clips: base.resolvedConfig.clips,
+      segmentsByAsset: { interview: transcript },
+    });
+    expect(views).toHaveLength(1);
+    expect(views[0].items).toHaveLength(2); // guard: lanes genuinely attached
+
+    const withLanes = mergeDataLanes(base, views);
+    expect(withLanes.config).toBe(base.config); // pure patch — config object untouched
+    expect(Object.isFrozen(withLanes.dataLanes)).toBe(true);
+
+    // Duration invariant (done-2): identical with and without lanes.
+    expect(getConfigTimelineDuration(base.config.clips)).toBe(4); // 2 + (14 − 10) / 2
+    expect(getConfigTimelineDuration(withLanes.config.clips)).toBe(getConfigTimelineDuration(base.config.clips));
+
+    // Rows invariant (done-2): configToRows end values unchanged by lanes.
+    const baseEnds = configToRows(base.config).rows.flatMap((row) => row.actions.map((action) => action.end));
+    const withLanesEnds = configToRows(withLanes.config).rows.flatMap((row) => row.actions.map((action) => action.end));
+    expect(withLanesEnds).toEqual(baseEnds);
   });
 });

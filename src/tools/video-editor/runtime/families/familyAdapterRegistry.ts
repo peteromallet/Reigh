@@ -34,6 +34,7 @@ import { contextMenuItemAdapter } from './contextMenuItemAdapter';
 import { keybindingAdapter } from './keybindingAdapter';
 import { automationAdapter } from './automationAdapter';
 import { clipTypeAdapter } from './clipTypeAdapter';
+import { dataKindAdapter } from './dataKindAdapter';
 
 const registry = new FamilyAdapterRegistryImpl();
 
@@ -62,6 +63,7 @@ registry.register({ adapter: contextMenuItemAdapter });
 registry.register({ adapter: keybindingAdapter });
 registry.register({ adapter: automationAdapter });
 registry.register({ adapter: clipTypeAdapter });
+registry.register({ adapter: dataKindAdapter });
 
 // Agent is delegated with no host adapter yet — register as known-unavailable
 registry.register({ adapter: null, metadata: { kind: 'agent' } });
