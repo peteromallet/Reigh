@@ -27,8 +27,8 @@ import {
   assembleDataLanes,
   mergeDataLanes,
   type DataKindSnapshotRecord,
-  type DataLaneItemView,
 } from '@/tools/video-editor/data/typed/assembleDataLanes.ts';
+import type { DataLaneItemView } from '@/tools/video-editor/data/typed/envelope.ts';
 import { useDataKindRegistrySnapshot } from '@/tools/video-editor/data-kinds/DataKindRegistryContext.tsx';
 
 /** Fetches the transcript segments for one asset (host-injected IO seam). */
