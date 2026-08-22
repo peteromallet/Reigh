@@ -1,0 +1,38 @@
+Batch 8 comBatch 8 complete. Full report in `.oracle/findings/exec-B8.txt`.
+
+**Delivered**
+
+1. **Provider bridge (Wave-3 ruling)** — `DataKindRegistryProvider` gained an optional `registry` prop; `EditorRuntimeScaffold` now mounts `<DataKindRegistryProvider registry={assembly.dataKindRegistryRef.current}>` plus `RuntimeDataKindRegistryLifecycle` (mirrors `RuntimeClipTypeRegistryLifecycle`: ref bridge, `unregisterOwner` on lifecycle disposal, diagnostics sync). One registry per editor mount: `ctx.dataKinds.register` writes and `useDataLanes` reads hit the same instance.
+2. **Dev example** — `dev/transcript-lane/extension.ts` (+`TranscriptLaneView.ts`): declares one `dataKind` contribution, binds via `ctx.dataKinds.register(kindId, laneRenderer, inspector)`; no `loadTranscript`; SDK-public imports only. Registered DEV-only in `devLocalExtensions`.
+3. **Done-4 evidence** — `transcriptLane.test.tsx` (3/3): real `validateManifest` → real registration service → bridged-provider identity asserted → TimelineCanvas renders fixture-segment lane under tracks with renderer chips, not extent bars. Manual embed-host resolver step + prod null-provider posture documented in authoring.md.
+4. **Docs rewritten** — authoring.md and compatibility.md fully rewritten to kinded contributions/integer apiVersion/named error codes; `dataProviders` kept explicitly rejected; both posture notes stated; foundation-contracts gained the `ctx.dataKinds` row; m0-fixture-matrices gained VK-22 with census 22 and refreshed ranges.
+
+**Validate**: brief's command green (3/3 + docs-maturity audit PASSED); typecheck probe clean on touched files.
+
+**Deviations for reviewer disposition**
+- `diagnosticCollectionSync.ts`: `'data-kind-registry'` union member added (TS-required by the new sync; additive).
+- **Pre-existing red surfaced, not fixed**: `useDataLanes.test.tsx:62` asserts frozen `dataLanes`, but committed `mergeDataLanes` returns unfrozen. Verified pre-existing by stashing my overlapping file — left per "your touched files only" mandate; needs an oracle ruling (freeze vs relax).
+
+Not committed, per contract. Checkpoint message suggested: `feat(dev): transcript-lane example; docs rewritten for kinded contributions`.
+d` → `unregisterOwner` + diagnostics removal, snapshot-diagnostics sync); scaffold mounts it beside the clipType lifecycle and wraps inner in `<DataKindRegistryProvider registry={assembly.dataKindRegistryRef.current}>` so the assembly-owned instance IS the provider's registry — ctx.dataKinds writes and useDataLanes reads hit ONE registry
+- `src/tools/video-editor/runtime/diagnosticCollectionSync.ts` — **deviation 1**: `'data-kind-registry'` added to `DiagnosticCollectionSource` (required by the new sync call; additive union member)
+- Docs rewritten (kinded contributions only): `docs/extensions/authoring.md` (full rewrite: defineExtension shape, integer apiVersion, declare/bind rhythm, **Data Kinds section** with example code, "Seeing a lane" manual step via embed-host resolver branch (`EditorRuntimeProvider.tsx`) + prod null-provider posture stated + `?extensionSmoke=1` sanity, interaction posture note); `docs/extensions/compatibility.md` (full rewrite: integer apiVersion, kinded family matrix incl. dataKind row, Data/Live Providers replaced — live providers stay out of scope, **`kind: "dataProviders"` and root `"dataProviders"` kept explicitly fail-closed** with named codes, named-error table, release gates repointed at real files/tests); `docs/extensions/foundation-contracts.md` (:12.1 gained `ctx.dataKinds.register(kindId, laneRenderer, inspector?)` row with undeclared-kind gate); `docs/extensions/composition-spine/m0-fixture-matrices.md` (VK-22 dataKind row added, census 21→22, authority ranges refreshed to `contributionKinds.ts:17-78` / array `:55-78`)
+- Posture notes (mandatory addition 2) stated in BOTH authoring.md and compatibility.md: (a) no user-reachable producer of dataItem/dataLane targets exists yet — host-painted bars carry no click handler, `DataLaneRendererProps` has no selection callback, inspector dispatch is test-evidenced only; (b) lanes render opaque when no provider/registration path is wired.
+
+**Test counts**
+- Brief's validate command: transcript-lane suite **3/3 passed** + `check-docs-maturity-sync --audit` **PASSED**
+- Regression: data-kinds (useDataLanes/DataKindRegistry) + DataLaneList + TranscriptLane = 9/9 passed in touched-surface run; TimelineCanvas.test.tsx green (74/75 across the 4-file regression run — see deviation 2 for the 1)
+- Typecheck probe (`tsc --noEmit -p tsconfig.app.json`): zero errors in batch-touched files
+
+**Deviations**
+1. **`runtime/diagnosticCollectionSync.ts` touched (outside named list)** — `RuntimeDataKindRegistryLifecycle` syncs registry diagnostics into the collection under source `'data-kind-registry'`; the union lacked that member (TS2345). Additive one-line union growth, same pattern as the accepted B7 `extensionSurface.ts` widening. Flagged for reviewer disposition.
+2. **Pre-existing red surfaced, NOT fixed (mandate item 3 boundary)**: `useDataLanes.test.tsx:62` asserts `Object.isFrozen(patched.dataLanes)` but committed `mergeDataLanes` returns unfrozen `{ ...base, dataLanes: [...views] }`. Verified pre-existing at HEAD by stashing my only overlapping file (DataKindRegistryContext) and re-running: still fails. Both files have empty B8 diffs. Per "fix within YOUR touched files only", left for oracle disposition: either freeze in `mergeDataLanes` (needs a cast — `TimelineData.dataLanes` is mutable-typed, the exact friction R1 removed) or relax the B6 assertion.
+3. **Deliberate negative mentions**: authoring.md and compatibility.md each contain one sentence of the form "there is no `contributions.slots`…" as an explicit anti-syntax guard (foundation-contracts.md keeps its pre-existing "no `contributions.settings` wrapper" style). If acceptance is read as zero literal occurrences rather than zero stale usage, these two sentences need rephrasing — flagged instead of silently weakened.
+4. Dev example manifest declares `license: 'MIT'`; `settingsSchema` omitted (the dev-mode recommendation warning is non-blocking; an empty schema would be maturity theater). Test asserts errors-only accordingly.
+
+**Acceptance**
+- [x] Integration test renders a visible lane from fixture segments through the real registration path (validateManifest + production registration service + bridged provider identity asserted via probe)
+- [x] No collection-object contribution syntax remains in the four files (see deviation 3 for two intentional negation sentences)
+- [x] VK census reports 22 everywhere it census-es (m0 cross-check updated; no "21" remains in docs/extensions)
+
+Not committed, per contract. Suggested checkpoint message: `feat(dev): transcript-lane example; docs rewritten for kinded contributions`.

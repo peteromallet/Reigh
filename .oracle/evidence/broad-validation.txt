@@ -1,0 +1,49 @@
+Both esbuild and oxc options were set. oxc options will be used and esbuild options will be ignored. The following esbuild options were set: `{
+  jsx: 'automatic',
+  jsxImportSource: 'react',
+  include: [ /\.[jt]sx?$/, /banodoco-workspace\/.*\.[jt]sx?$/ ],
+  loader: 'tsx'
+}`
+
+ RUN  v4.1.5 /Users/peteromalley/Documents/reigh-workspace/reigh-app-oracle
+
+ ❯ src/sdk/index.test.ts (360 tests | 1 failed) 277ms
+     × has exactly the expected own property names 36ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/sdk/index.test.ts > createExtensionContext > has exactly the expected own property names
+AssertionError: expected [ 'agentTools', 'apiVersion', …(11) ] to deeply equal [ 'agentTools', 'apiVersion', …(10) ]
+
+- Expected
++ Received
+
+@@ -3,10 +3,11 @@
+    "apiVersion",
+    "chrome",
+    "clipTypes",
+    "commands",
+    "creative",
++   "dataKinds",
+    "effects",
+    "extension",
+    "services",
+    "shaders",
+    "transitions",
+
+ ❯ src/sdk/index.test.ts:1453:18
+    1451|   it('has exactly the expected own property names', () => {
+    1452|     const keys = Object.keys(ctx).sort();
+    1453|     expect(keys).toEqual([
+       |                  ^
+    1454|       'agentTools',
+    1455|       'apiVersion',
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 17 passed (18)
+      Tests  1 failed | 1972 passed (1973)
+   Start at  04:18:26
+   Duration  6.59s (transform 8.59s, setup 4.93s, import 13.00s, tests 2.03s, environment 19.01s)
+
