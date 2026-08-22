@@ -1,0 +1,843 @@
+diff --git a/config/extensions/family-maturity.json b/config/extensions/family-maturity.json
+index 288b04000..056f9bf0b 100644
+--- a/config/extensions/family-maturity.json
++++ b/config/extensions/family-maturity.json
+@@ -281,6 +281,46 @@
+     },
+     "hostIntegrationNotes": "Context menu item contributions add items to clip, track, and timeline-area context menus. Fully bridged at M4 through the command dispatch system. Evidence: command-extension.ts example includes a clip-target context menu item."
+   },
++  {
++    "kind": "dataKind",
++    "label": "Data Kind",
++    "description": "Data kinds define duration-neutral typed-data lanes rendered from typed envelope items. Renderers bind via ctx.dataKinds.register(); unknown payloads round-trip opaquely with host fallback paint.",
++    "declarationMaturity": "documented",
++    "executionMaturity": "host-integrated",
++    "sdkModules": [
++      "src/sdk/video/families/dataKind.ts"
++    ],
++    "hostAdapter": "src/tools/video-editor/runtime/families/dataKindAdapter.ts",
++    "requiresTrustedCode": false,
++    "manifestSchemaDefinition": "DataKindContribution",
++    "uiIntegrationTest": null,
++    "coverage": {
++      "manifestSchema": true,
++      "normalizedDescriptor": true,
++      "registrationApi": true,
++      "lifecycleCleanup": true,
++      "diagnostics": false,
++      "hostCapabilityProjection": false,
++      "uiIntegration": false,
++      "persistencePosture": false,
++      "examples": false,
++      "tests": true
++    },
++    "conformance": {
++      "fullyConformant": false,
++      "gapCount": 5,
++      "coherent": true,
++      "schemaCovered": true,
++      "metRequirementCount": 5,
++      "unmetRequirementCount": 5,
++      "unassessedRequirementCount": 0
++    },
++    "legacyCompatibility": {
++      "milestone": null,
++      "bridged": true
++    },
++    "hostIntegrationNotes": "Data-kind contributions declare duration-neutral typed-data lanes: a stable kindId, qualified schemaRef, and shape/domain names. Renderers bind imperatively at activation via ctx.dataKinds.register(kindId, laneRenderer, inspector?) into the host DataKindRegistry — the single runtime vocabulary for lane state. Registration gates on the extension's declared dataKind contributions and emits dataKinds/undeclared-kind on a miss; cleanup rides the registry dispose path. The compatibility adapter intentionally projects zero descriptors so registry state is never duplicated as a second descriptor database. Evidence: DataKindContribution manifest schema definition, validateManifest data rules, DataKindRegistrationService, and dataKindAdapter."
++  },
+   {
+     "kind": "dialog",
+     "label": "Dialog",
+diff --git a/docs/extensions/foundation-closure-assessment.md b/docs/extensions/foundation-closure-assessment.md
+index 4da91379d..ffeab3db5 100644
+--- a/docs/extensions/foundation-closure-assessment.md
++++ b/docs/extensions/foundation-closure-assessment.md
+@@ -60,6 +60,7 @@ M4 finalized the split between the portable extension SDK and the host runtime:
+ | Clip Type | schema-backed | runtime-bridged | No | Yes | `clipTypeAdapter.ts` | Clip-type contributions are dispatched through the timeline composition registry. The host adapter normalizes clip-type descriptors and owns lifecycle. Keyframe interpolation is host-owned. |
+ | Command | documented | host-integrated | No | Yes | `commandAdapter.ts` | Commands are fully bridged with palette, context-menu dispatch, keybinding wiring, and export-scoped guard participation. |
+ | Context Menu Item | documented | host-integrated | No | Yes | `contextMenuItemAdapter.ts` | Context menu item contributions add items to clip, track, and timeline-area context menus. Fully bridged at M4 through the command dispatch system. Evidence: command-extension.ts example includes a clip-target context menu item. |
++| Data Kind | documented | host-integrated | No | Yes | `dataKindAdapter.ts` | Data-kind contributions declare duration-neutral typed-data lanes: a stable kindId, qualified schemaRef, and shape/domain names. Renderers bind imperatively at activation via ctx.dataKinds.register(kindId, laneRenderer, inspector?) into the host DataKindRegistry — the single runtime vocabulary for lane state. Registration gates on the extension's declared dataKind contributions and emits dataKinds/undeclared-kind on a miss; cleanup rides the registry dispose path. The compatibility adapter intentionally projects zero descriptors so registry state is never duplicated as a second descriptor database. Evidence: DataKindContribution manifest schema definition, validateManifest data rules, DataKindRegistrationService, and dataKindAdapter. |
+ | Dialog | documented | host-integrated | No | Yes | `dialogAdapter.ts` | Dialog contributions render into named dialog layers (modal, overlay). Bridged at M1 through the slot extension surface. Schema: DialogContribution with layer enum validation. |
+ | Effect | schema-backed | delegated | No | Yes | `effectAdapter.ts` | Effect contributions are trusted local browser-preview components. Extensions register effect components imperatively via ctx.effects. Descriptor projection is delegated to a placeholder adapter while runtime registration remains host-mediated. Evidence: EffectContribution interface, EffectRegistrationService, manifest schema oneOf coverage, and kind enum inclusion. |
+ | Inspector Section | documented | host-integrated | No | Yes | `inspectorSectionAdapter.ts` | Inspector section contributions add custom sections to the inspector panel. Placement can be before-default or after-default. Evidence: dedicated inspector-example.ts with both placement values. |
+diff --git a/docs/extensions/phase4-readiness.md b/docs/extensions/phase4-readiness.md
+index 2982085c3..eea2814c3 100644
+--- a/docs/extensions/phase4-readiness.md
++++ b/docs/extensions/phase4-readiness.md
+@@ -256,6 +256,7 @@ M4 closed the pristine SDK boundary:
+ | Clip Type | schema-backed | runtime-bridged | No | Yes | `clipTypeAdapter.ts` | Clip-type contributions are dispatched through the timeline composition registry. The host adapter normalizes clip-type descriptors and owns lifecycle. Keyframe interpolation is host-owned. |
+ | Command | documented | host-integrated | No | Yes | `commandAdapter.ts` | Commands are fully bridged with palette, context-menu dispatch, keybinding wiring, and export-scoped guard participation. |
+ | Context Menu Item | documented | host-integrated | No | Yes | `contextMenuItemAdapter.ts` | Context menu item contributions add items to clip, track, and timeline-area context menus. Fully bridged at M4 through the command dispatch system. Evidence: command-extension.ts example includes a clip-target context menu item. |
++| Data Kind | documented | host-integrated | No | Yes | `dataKindAdapter.ts` | Data-kind contributions declare duration-neutral typed-data lanes: a stable kindId, qualified schemaRef, and shape/domain names. Renderers bind imperatively at activation via ctx.dataKinds.register(kindId, laneRenderer, inspector?) into the host DataKindRegistry — the single runtime vocabulary for lane state. Registration gates on the extension's declared dataKind contributions and emits dataKinds/undeclared-kind on a miss; cleanup rides the registry dispose path. The compatibility adapter intentionally projects zero descriptors so registry state is never duplicated as a second descriptor database. Evidence: DataKindContribution manifest schema definition, validateManifest data rules, DataKindRegistrationService, and dataKindAdapter. |
+ | Dialog | documented | host-integrated | No | Yes | `dialogAdapter.ts` | Dialog contributions render into named dialog layers (modal, overlay). Bridged at M1 through the slot extension surface. Schema: DialogContribution with layer enum validation. |
+ | Effect | schema-backed | delegated | No | Yes | `effectAdapter.ts` | Effect contributions are trusted local browser-preview components. Extensions register effect components imperatively via ctx.effects. Descriptor projection is delegated to a placeholder adapter while runtime registration remains host-mediated. Evidence: EffectContribution interface, EffectRegistrationService, manifest schema oneOf coverage, and kind enum inclusion. |
+ | Inspector Section | documented | host-integrated | No | Yes | `inspectorSectionAdapter.ts` | Inspector section contributions add custom sections to the inspector panel. Placement can be before-default or after-default. Evidence: dedicated inspector-example.ts with both placement values. |
+diff --git a/src/sdk/__tests__/sdk-boundary.test.ts b/src/sdk/__tests__/sdk-boundary.test.ts
+index 5d632d7c4..93b64cc6b 100644
+--- a/src/sdk/__tests__/sdk-boundary.test.ts
++++ b/src/sdk/__tests__/sdk-boundary.test.ts
+@@ -302,6 +302,7 @@ describe('M3: value exports are importable from @reigh/editor-sdk', () => {
+       'sessions',
+       'stage',
+       'timeline',
++      'timelineView',
+       'writing',
+     ]);
+   });
+@@ -1557,6 +1558,9 @@ describe('M7: ExtensionContext includes effects registration service', () => {
+       effects: {
+         registerComponent: () => ({ dispose: () => {} }),
+       },
++      dataKinds: {
++        register: () => ({ dispose: () => {} }),
++      },
+     };
+     expect(ctx.effects).toBeDefined();
+     expect(typeof ctx.effects.registerComponent).toBe('function');
+@@ -1850,6 +1854,9 @@ describe('M8: ExtensionContext includes transitions registration service', () =>
+       transitions: {
+         registerRenderer: () => ({ dispose: () => {} }),
+       },
++      dataKinds: {
++        register: () => ({ dispose: () => {} }),
++      },
+     };
+     expect(ctx.transitions).toBeDefined();
+     expect(typeof ctx.transitions.registerRenderer).toBe('function');
+@@ -2134,6 +2141,9 @@ describe('M9: ExtensionContext includes clipTypes registration service', () => {
+       clipTypes: {
+         registerClipType: () => ({ dispose: () => {} }),
+       },
++      dataKinds: {
++        register: () => ({ dispose: () => {} }),
++      },
+     };
+     expect(ctx.clipTypes).toBeDefined();
+     expect(typeof ctx.clipTypes.registerClipType).toBe('function');
+@@ -3853,13 +3863,13 @@ describe('semver-sensitive SDK export snapshot', () => {
+ });
+ 
+ // ---------------------------------------------------------------------------
+-// T2.1: Exact 21-kind count, no timelineMarker, governed overlay + ctx.ui
++// T2.1: Exact 22-kind count, no timelineMarker, governed overlay + ctx.ui
+ // ---------------------------------------------------------------------------
+ 
+ describe('T2.1: exact contribution-kind count and no timelineMarker kind', () => {
+-  it('KNOWN_CONTRIBUTION_KINDS has exactly 21 kinds (no 22nd kind)', () => {
+-    expect(KNOWN_CONTRIBUTION_KINDS.length).toBe(21);
+-    expect(new Set(KNOWN_CONTRIBUTION_KINDS).size).toBe(21);
++  it('KNOWN_CONTRIBUTION_KINDS has exactly 22 kinds (dataKind is kind 22)', () => {
++    expect(KNOWN_CONTRIBUTION_KINDS.length).toBe(22);
++    expect(new Set(KNOWN_CONTRIBUTION_KINDS).size).toBe(22);
+   });
+ 
+   it('no timelineMarker contribution kind exists', () => {
+@@ -4657,9 +4667,9 @@ describe('T6: family adapter manifest (sdk-boundary)', () => {
+     expect(manifest.entries.length).toBe(manifest.size);
+   });
+ 
+-  it('manifest has 21 entries (one per family kind)', () => {
++  it('manifest has 22 entries (one per family kind)', () => {
+     const manifest = buildFamilyAdapterManifest();
+-    expect(manifest.size).toBe(21);
++    expect(manifest.size).toBe(22);
+   });
+ 
+   it('manifest entries are sorted alphabetically by kind', () => {
+diff --git a/src/sdk/boundary.test.ts b/src/sdk/boundary.test.ts
+index 897922c20..42fa45720 100644
+--- a/src/sdk/boundary.test.ts
++++ b/src/sdk/boundary.test.ts
+@@ -391,7 +391,7 @@ describe('ExtensionContext — no internal members exposed', () => {
+   // ---- exactly the approved surface ---------------------------------------
+ 
+   it('has exactly the expected own property names', () => {
+-    // The declared ExtensionContext surface is exactly these 12 members.
++    // The declared ExtensionContext surface is exactly these 13 members.
+     // `ui` (T1.1) is part of the contract: a complete context literal must
+     // include it, and ExtensionUiService exposes only registerRenderer.
+     const declaredKeys = [
+@@ -401,6 +401,7 @@ describe('ExtensionContext — no internal members exposed', () => {
+       'clipTypes',
+       'commands',
+       'creative',
++      'dataKinds',
+       'effects',
+       'extension',
+       'services',
+@@ -446,6 +447,7 @@ describe('ExtensionContext — no internal members exposed', () => {
+       clipTypes: {} as never,
+       shaders: {} as never,
+       agentTools: {} as never,
++      dataKinds: {} as never,
+     } satisfies ExtensionContext;
+     expect(Object.keys(fullContext).sort()).toEqual([...declaredKeys].sort());
+ 
+@@ -472,6 +474,7 @@ describe('ExtensionContext — no internal members exposed', () => {
+       'transitions',
+       'clipTypes',
+       'shaders',
++      'dataKinds',
+       'ui',
+     ]);
+     for (const key of Object.keys(ctx)) {
+@@ -705,6 +708,7 @@ describe('ExtensionContext — type safety guard', () => {
+       'transitions',
+       'clipTypes',
+       'shaders',
++      'dataKinds',
+       'ui',
+     ];
+ 
+@@ -3204,12 +3208,12 @@ describe('T6: family adapter manifest (boundary)', () => {
+     expect(result.missingFromRegistry).toEqual([]);
+     expect(result.missingFromManifest).toEqual([]);
+     expect(result.kindsNeedingAdapter).toEqual([]);
+-    // dataKind joins the kind union (V1) before its family entry lands in
+-    // VIDEO_FAMILY_REGISTRY (family-registration batch); both invariants
+-    // return to [] / true once that entry registers.
+-    expect(result.contributionKindsNotInManifest).toEqual(['dataKind']);
++    // dataKind's family entry has landed in VIDEO_FAMILY_REGISTRY, so the
++    // adapter manifest covers every contribution kind and the two surfaces
++    // are fully aligned again.
++    expect(result.contributionKindsNotInManifest).toEqual([]);
+     expect(result.manifestKindsNotInContributionKinds).toEqual([]);
+-    expect(result.isFullyAligned).toBe(false);
++    expect(result.isFullyAligned).toBe(true);
+   });
+ 
+   it('crossReferenceManifest detects kinds missing from registry', () => {
+@@ -3251,9 +3255,9 @@ describe('T6: family adapter manifest (boundary)', () => {
+ 
+     const result = crossReferenceManifest(manifest, registry);
+ 
+-    // The manifest should cover every VIDEO_CONTRIBUTION_KIND except
+-    // dataKind pending its family entry (see alignment note above).
+-    expect(result.contributionKindsNotInManifest).toEqual(['dataKind']);
++    // The manifest covers every VIDEO_CONTRIBUTION_KIND now that the
++    // dataKind family entry has registered.
++    expect(result.contributionKindsNotInManifest).toEqual([]);
+ 
+     // And should not have kinds outside VIDEO_CONTRIBUTION_KINDS
+     expect(result.manifestKindsNotInContributionKinds).toEqual([]);
+@@ -3284,8 +3288,8 @@ describe('T6: family adapter manifest (boundary)', () => {
+     }
+   });
+ 
+-  it('manifest size equals VIDEO_FAMILY_REGISTRY length (21 families)', () => {
++  it('manifest size equals VIDEO_FAMILY_REGISTRY length (22 families)', () => {
+     const manifest = buildFamilyAdapterManifest();
+-    expect(manifest.size).toBe(21);
++    expect(manifest.size).toBe(22);
+   });
+ });
+diff --git a/src/sdk/context.ts b/src/sdk/context.ts
+index af9b32357..a6e9f703a 100644
+--- a/src/sdk/context.ts
++++ b/src/sdk/context.ts
+@@ -40,6 +40,8 @@ import type { TimelineOps } from './video/timeline/timelineOps';
+ import type { TransitionRegistrationService } from './video/families/transitions';
+ import type { ExtensionManifest } from './manifest';
+ import type { AgentToolRegistrationService } from './video/families/agentTools';
++// dataKind V1: duration-neutral typed-data lanes ([CONVERGE-WITH-M1] vocabularies)
++import type { DataKindRegistrationService } from './video/families/dataKind';
+ 
+ // ---------------------------------------------------------------------------
+ // Context service contracts (pure interfaces)
+@@ -258,6 +260,8 @@ export interface ExtensionContext {
+   readonly shaders: ShaderRegistrationService;
+   /** M10: Agent tool registration service for host-mediated agent tools. */
+   readonly agentTools: AgentToolRegistrationService;
++  /** dataKind V1: single bind path for typed-data lanes (clipType analog). */
++  readonly dataKinds: DataKindRegistrationService;
+ }
+ 
+ // ---------------------------------------------------------------------------
+diff --git a/src/sdk/video/families/familyDefinitions.test.ts b/src/sdk/video/families/familyDefinitions.test.ts
+index 261d36924..0957ae43e 100644
+--- a/src/sdk/video/families/familyDefinitions.test.ts
++++ b/src/sdk/video/families/familyDefinitions.test.ts
+@@ -42,8 +42,8 @@ import { VIDEO_CONTRIBUTION_KINDS } from '@/sdk/video/families/contributionKinds
+ describe('VIDEO_FAMILY_REGISTRY shape', () => {
+   it('is a non-empty readonly array', () => {
+     expect(Array.isArray(VIDEO_FAMILY_REGISTRY)).toBe(true);
+-    expect(VIDEO_FAMILY_REGISTRY.length).toBeGreaterThanOrEqual(21);
+-    expect(VIDEO_FAMILY_REGISTRY.length).toBeLessThanOrEqual(21);
++    expect(VIDEO_FAMILY_REGISTRY.length).toBeGreaterThanOrEqual(22);
++    expect(VIDEO_FAMILY_REGISTRY.length).toBeLessThanOrEqual(22);
+   });
+ 
+   it('every entry has the required FamilyDefinition fields', () => {
+@@ -517,10 +517,10 @@ describe('exact registry membership', () => {
+     expect(registryKindSet.size).toBe(unionKindSet.size);
+   });
+ 
+-  it('registry has exactly 21 kinds (current VideoContributionKind count)', () => {
+-    expect(VIDEO_FAMILY_REGISTRY.length).toBe(21);
+-    expect(unionKindSet.size).toBe(21);
+-    expect(registryKindSet.size).toBe(21);
++  it('registry has exactly 22 kinds (current VideoContributionKind count)', () => {
++    expect(VIDEO_FAMILY_REGISTRY.length).toBe(22);
++    expect(unionKindSet.size).toBe(22);
++    expect(registryKindSet.size).toBe(22);
+   });
+ });
+ 
+@@ -695,7 +695,9 @@ describe('generated JSON completeness', () => {
+       expect(typeof lc).toBe('object');
+       expect('milestone' in lc).toBe(true);
+       expect('bridged' in lc).toBe(true);
+-      expect(typeof lc.milestone).toBe('string');
++      expect(lc.milestone === null || typeof lc.milestone === 'string').toBe(
++        true,
++      );
+       expect(typeof lc.bridged).toBe('boolean');
+     }
+   });
+@@ -835,8 +837,9 @@ describe('round-trip comparison', () => {
+     for (const row of jsonRows) {
+       const def = getVideoFamily(row.kind as VideoContributionKind);
+       expect(def).toBeDefined();
+-      const lc = row.legacyCompatibility as { milestone: string };
+-      expect(lc.milestone).toBe(def!.legacyMilestone);
++      const lc = row.legacyCompatibility as { milestone: string | null };
++      // Registry entries without a legacyMilestone serialize as null
++      expect(lc.milestone).toBe(def!.legacyMilestone ?? null);
+     }
+   });
+ });
+diff --git a/src/sdk/video/families/familyDefinitions.ts b/src/sdk/video/families/familyDefinitions.ts
+index cec355c37..c9ccae5ac 100644
+--- a/src/sdk/video/families/familyDefinitions.ts
++++ b/src/sdk/video/families/familyDefinitions.ts
+@@ -298,6 +298,49 @@ export const VIDEO_FAMILY_REGISTRY: readonly FamilyDefinition<VideoContributionK
+       'clip, track, and timeline-area surfaces with target filtering.',
+   },
+ 
++  // ---- Data Kind (V1) ----
++  {
++    kind: 'dataKind',
++    declarationMaturity: 'documented',
++    executionMaturity: 'host-integrated',
++    hostIntegrationNotes:
++      'Data-kind contributions declare duration-neutral typed-data lanes: a ' +
++      'stable kindId, qualified schemaRef, and shape/domain names. Renderers ' +
++      'bind imperatively at activation via ctx.dataKinds.register(kindId, ' +
++      'laneRenderer, inspector?) into the host DataKindRegistry — the single ' +
++      'runtime vocabulary for lane state. Registration gates on the ' +
++      "extension's declared dataKind contributions and emits " +
++      'dataKinds/undeclared-kind on a miss; cleanup rides the registry ' +
++      'dispose path. The compatibility adapter intentionally projects zero ' +
++      'descriptors so registry state is never duplicated as a second ' +
++      'descriptor database. Evidence: DataKindContribution manifest schema ' +
++      'definition, validateManifest data rules, DataKindRegistrationService, ' +
++      'and dataKindAdapter.',
++    requiresTrustedCode: false,
++    manifestSchemaDefinition: 'DataKindContribution',
++    sdkModules: [
++      'src/sdk/video/families/dataKind.ts',
++    ],
++    hostAdapter: 'src/tools/video-editor/runtime/families/dataKindAdapter.ts',
++    requirements: {
++      manifestSchema: true,
++      normalizedDescriptor: true,
++      registrationApi: true,
++      lifecycleCleanup: true,
++      diagnostics: false,
++      hostCapabilityProjection: false,
++      uiIntegration: false,
++      persistencePosture: false,
++      examples: false,
++      tests: true,
++    },
++    label: 'Data Kind',
++    description:
++      'Data kinds define duration-neutral typed-data lanes rendered from ' +
++      'typed envelope items. Renderers bind via ctx.dataKinds.register(); ' +
++      'unknown payloads round-trip opaquely with host fallback paint.',
++  },
++
+   // ---- Dialog (M1) ----
+   {
+     kind: 'dialog',
+diff --git a/src/tools/video-editor/contexts/editorRuntimeAssembly.tsx b/src/tools/video-editor/contexts/editorRuntimeAssembly.tsx
+index a600bb7fc..0af6065b3 100644
+--- a/src/tools/video-editor/contexts/editorRuntimeAssembly.tsx
++++ b/src/tools/video-editor/contexts/editorRuntimeAssembly.tsx
+@@ -81,6 +81,7 @@ import {
+   type AgentToolHandler,
+   type ShaderRegistrationService,
+   type CreateExtensionSettingsServiceOptions,
++  type DataKindRegistrationService,
+   type SettingsPersistenceError,
+   type ProcessSpawnConfig,
+ } from '@reigh/editor-sdk';
+@@ -103,6 +104,11 @@ import { createShaderRegistrationService } from '@/tools/video-editor/runtime/sh
+ import type { ShaderEffectRegistry } from '@/tools/video-editor/shaders/registry/types.ts';
+ import { createClipTypeRegistrationService } from '@/tools/video-editor/runtime/clipTypeRegistrationService.ts';
+ import type { ClipTypeRegistry } from '@/tools/video-editor/clip-types/ClipTypeRegistry.ts';
++import { createDataKindRegistrationService } from '@/tools/video-editor/runtime/dataKindRegistrationService.ts';
++import {
++  createDataKindRegistry,
++  type DataKindRegistry,
++} from '@/tools/video-editor/data-kinds/DataKindRegistry.ts';
+ import {
+   createAgentToolRegistry,
+   type AgentToolRegistry,
+@@ -260,6 +266,8 @@ export interface EditorRuntimeAssembly {
+   transitionRegistryRef: MutableRefObject<TransitionRegistry | null>;
+   shaderRegistryRef: MutableRefObject<ShaderEffectRegistry | null>;
+   clipTypeRegistryRef: MutableRefObject<ClipTypeRegistry | null>;
++  /** dataKind V1: assembly-owned data-kind registry (single bind path). */
++  dataKindRegistryRef: MutableRefObject<DataKindRegistry | null>;
+   agentToolRegistryRef: MutableRefObject<AgentToolRegistry | null>;
+   rendererRegistryRef: MutableRefObject<RendererRegistry>;
+   liveDataRegistryRef: MutableRefObject<LiveDataRegistry | null>;
+@@ -314,6 +322,12 @@ export function useEditorRuntimeAssembly({
+     commandRegistryRef.current = createCommandRegistry();
+   }
+ 
++  // ---- dataKind V1: data-kind registry (one per provider mount) ------------
++  const dataKindRegistryRef = useRef<DataKindRegistry | null>(null);
++  if (!dataKindRegistryRef.current) {
++    dataKindRegistryRef.current = createDataKindRegistry();
++  }
++
+   // ---- M7/M8/M9/M13: registry refs (registries are created by their
+   //      providers in the scaffold, exposed via context, and stored here for
+   //      the synchronize effect) ---------------------------------------------
+@@ -409,7 +423,7 @@ export function useEditorRuntimeAssembly({
+     registry.setCallbacks(commandRegistryCallbacksRef.current);
+   }, []);
+ 
+-  // Dispose the lifecycle host (and assembly-owned live registry) on unmount,
++  // Dispose the lifecycle host (and assembly-owned registries) on unmount,
+   // then run any host-owned extra disposal.
+   const onUnmountRef = useRef(onUnmount);
+   onUnmountRef.current = onUnmount;
+@@ -418,6 +432,7 @@ export function useEditorRuntimeAssembly({
+     return () => {
+       host?.disposeAll();
+       liveDataRegistryRef.current?.dispose();
++      dataKindRegistryRef.current?.dispose();
+       timelineViewStoreRef.current?.dispose();
+       timelineViewStoreRef.current = null;
+       onUnmountRef.current?.();
+@@ -449,6 +464,7 @@ export function useEditorRuntimeAssembly({
+     transitionRegistryRef,
+     shaderRegistryRef,
+     clipTypeRegistryRef,
++    dataKindRegistryRef,
+     agentToolRegistryRef,
+     rendererRegistryRef,
+     liveDataRegistryRef,
+@@ -531,6 +547,7 @@ export function useEditorRuntimeSync({
+     transitionRegistryRef,
+     shaderRegistryRef,
+     clipTypeRegistryRef,
++    dataKindRegistryRef,
+     agentToolRegistryRef,
+     rendererRegistryRef,
+     liveDataRegistryRef,
+@@ -699,6 +716,7 @@ export function useEditorRuntimeSync({
+         const transitionRegistry = transitionRegistryRef.current;
+         const shaderRegistry = shaderRegistryRef.current;
+         const clipTypeRegistry = clipTypeRegistryRef.current;
++        const dataKindRegistry = dataKindRegistryRef.current;
+         const agentToolRegistry = agentToolRegistryRef.current;
+         const diagnosticsService =
+           host.lifecycles.get(extId)?.diagnosticsService ??
+@@ -745,6 +763,15 @@ export function useEditorRuntimeSync({
+               diagnosticsService,
+             })
+           : undefined;
++        // dataKind V1: per-extension dataKinds service backed by the shared
++        // DataKindRegistry (single bind path for typed-data lanes).
++        const dataKindsService: DataKindRegistrationService | undefined = dataKindRegistry
++          ? createDataKindRegistrationService({
++              extension: ext,
++              dataKindRegistry,
++              diagnosticsService,
++            })
++          : undefined;
+         // Create per-extension agent tools service backed by the shared AgentToolRegistry.
+         const agentToolsService: AgentToolRegistrationService | undefined = agentToolRegistry
+           ? {
+@@ -807,6 +834,7 @@ export function useEditorRuntimeSync({
+             diagnosticsService,
+             rendererRegistry: rendererRegistryRef.current,
+           }),
++          dataKindsService,
+         );
+ 
+         // Register the settings service for explicit local-only listeners.
+@@ -829,6 +857,7 @@ export function useEditorRuntimeSync({
+     agentToolRegistryRef,
+     clipTypeRegistryRef,
+     commandRegistryRef,
++    dataKindRegistryRef,
+     diagnosticCollection,
+     effectRegistryRef,
+     extensionRuntime,
+diff --git a/src/tools/video-editor/lib/timeline-data.test.ts b/src/tools/video-editor/lib/timeline-data.test.ts
+index 7a74b295c..f383a6667 100644
+--- a/src/tools/video-editor/lib/timeline-data.test.ts
++++ b/src/tools/video-editor/lib/timeline-data.test.ts
+@@ -12,6 +12,11 @@ import { serializeForDisk, validateSerializedConfig } from '@/tools/video-editor
+ import type { AssetResolver } from '@/tools/video-editor/data/AssetResolver';
+ import type { DataProvider } from '@/tools/video-editor/data/DataProvider';
+ import type { AssetRegistry, TimelineConfig } from '@/tools/video-editor/types';
++import { getConfigTimelineDuration } from '@/tools/video-editor/lib/timeline-domain';
++import {
++  assembleDataLanes,
++  mergeDataLanes,
++} from '@/tools/video-editor/data/typed/assembleDataLanes';
+ 
+ const registry: AssetRegistry = { assets: {} };
+ 
+@@ -517,3 +522,73 @@ describe('timeline data extension project data round trip', () => {
+     expect(roundTripped.clips[0]).toMatchObject({ id: 'shot-1', label: 'Shot 1', hold: 2, app: { managedBy: extensionId } });
+   });
+ });
++
++// ---------------------------------------------------------------------------
++// Data lanes (dataKind V1): TimelineData.dataLanes defaults to a frozen empty
++// array and is provably inert to duration and configToRows (goal done-2).
++// Lanes attach via the typed pipeline (assembleDataLanes + mergeDataLanes);
++// config, rows, and export scanning never see them.
++// ---------------------------------------------------------------------------
++
++const buildLaneConfig = (): TimelineConfig => ({
++  output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
++  tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
++  clips: [
++    {
++      id: 'clip-interview',
++      at: 2,
++      track: 'V1',
++      clipType: 'media',
++      asset: 'interview',
++      from: 10,
++      to: 14,
++      speed: 2,
++    },
++  ],
++});
++
++describe('timeline data lanes duration neutrality', () => {
++  const laneRegistry: AssetRegistry = { assets: { interview: { file: 'interview.mp4' } } };
++  const transcript = [
++    { start: 10.5, end: 12, text: 'Hello' },
++    { start: 12.5, end: 13.5, text: 'World' },
++  ];
++
++  it('defaults dataLanes to a frozen empty array on assembled timeline data', async () => {
++    const data = await buildTimelineData(buildLaneConfig(), laneRegistry, (file) => `/assets/${file}`);
++    expect(data.dataLanes).toEqual([]);
++    expect(Object.isFrozen(data.dataLanes)).toBe(true);
++  });
++
++  it('attaching lanes leaves getConfigTimelineDuration and configToRows ends identical', async () => {
++    const base = await buildTimelineData(buildLaneConfig(), laneRegistry, (file) => `/assets/${file}`);
++
++    // Real lane path: the resolved clip carries interview.mp4 (video), so its
++    // transcript adapts into a registered transcript-segment lane.
++    const views = assembleDataLanes({
++      kinds: [{
++        kindId: 'transcript-segment',
++        schemaRef: 'reigh.transcript_segment/v1',
++        shape: 'interval',
++        domain: 'source_seconds',
++      }],
++      clips: base.resolvedConfig.clips,
++      segmentsByAsset: { interview: transcript },
++    });
++    expect(views).toHaveLength(1);
++    expect(views[0].items).toHaveLength(2); // guard: lanes genuinely attached
++
++    const withLanes = mergeDataLanes(base, views);
++    expect(withLanes.config).toBe(base.config); // pure patch — config object untouched
++    expect(Object.isFrozen(withLanes.dataLanes)).toBe(true);
++
++    // Duration invariant (done-2): identical with and without lanes.
++    expect(getConfigTimelineDuration(base.config.clips)).toBe(4); // 2 + (14 − 10) / 2
++    expect(getConfigTimelineDuration(withLanes.config.clips)).toBe(getConfigTimelineDuration(base.config.clips));
++
++    // Rows invariant (done-2): configToRows end values unchanged by lanes.
++    const baseEnds = configToRows(base.config).rows.flatMap((row) => row.actions.map((action) => action.end));
++    const withLanesEnds = configToRows(withLanes.config).rows.flatMap((row) => row.actions.map((action) => action.end));
++    expect(withLanesEnds).toEqual(baseEnds);
++  });
++});
+diff --git a/src/tools/video-editor/lib/timeline-data.ts b/src/tools/video-editor/lib/timeline-data.ts
+index a56ac0834..498ca88db 100644
+--- a/src/tools/video-editor/lib/timeline-data.ts
++++ b/src/tools/video-editor/lib/timeline-data.ts
+@@ -19,6 +19,7 @@ import type {
+   AssetMissingRequest,
+   AssetResolver,
+ } from '@/tools/video-editor/data/AssetResolver.ts';
++import type { DataLaneView } from '@/tools/video-editor/data/typed/envelope.ts';
+ import type {
+   AssetRegistry,
+   ClipType,
+@@ -91,6 +92,14 @@ export interface TimelineData {
+   clipOrder: ClipOrderMap;
+   signature: string;
+   stableSignature: string;
++  /**
++   * Duration-neutral typed-data lanes ([CONVERGE-WITH-M1], dataKind V1).
++   * Evidence/visualization state only — never an input to duration
++   * computation, `configToRows`, or export scanning (design:
++   * decisions/reigh-editor-data-lanes.md §Three-layer split). Default is
++   * the frozen `EMPTY_DATA_LANES`; producers swap it via `mergeDataLanes`.
++   */
++  dataLanes: DataLaneView[];
+ }
+ 
+ const ASSET_COLORS: Record<string, string> = {
+@@ -380,6 +389,13 @@ export const rowsToConfig = (
+   return serializeTimelineConfigSnapshot(config).config;
+ };
+ 
++/**
++ * Shared frozen-empty lane plane. Every assembled TimelineData starts here;
++ * lane producers replace it wholesale (never mutate) via `mergeDataLanes`.
++ */
++const EMPTY_DATA_LANES: DataLaneView[] = [];
++Object.freeze(EMPTY_DATA_LANES);
++
+ interface AssembleTimelineDataParams {
+   config: TimelineConfig;
+   configVersion: number;
+@@ -433,6 +449,7 @@ export const assembleTimelineData = ({
+     clipOrder: rowData.clipOrder,
+     signature: getConfigSignature(canonicalResolvedConfig),
+     stableSignature: getStableConfigSignature(canonicalConfig, registry),
++    dataLanes: EMPTY_DATA_LANES,
+   };
+ };
+ 
+diff --git a/src/tools/video-editor/runtime/exportGuard.test.ts b/src/tools/video-editor/runtime/exportGuard.test.ts
+index edcf08d25..993e7838e 100644
+--- a/src/tools/video-editor/runtime/exportGuard.test.ts
++++ b/src/tools/video-editor/runtime/exportGuard.test.ts
+@@ -2547,6 +2547,65 @@ describe('scanExportConfig — composition graph M5 diagnostics', () => {
+   });
+ });
+ 
++// ---------------------------------------------------------------------------
++// Export config scan — dataKind editorial lanes (duration-neutral V1)
++// ---------------------------------------------------------------------------
++
++describe('scanExportConfig — dataKind editorial lanes', () => {
++  const builtIn = collectBuiltInKnownIds();
++
++  const dataKindContribution = {
++    id: 'contrib.transcript-lane',
++    kind: 'dataKind',
++    kindId: 'transcript-segment',
++    schemaRef: 'reigh.transcript_segment/v1',
++    shape: 'interval',
++    domain: 'source_seconds',
++  } as ExtensionContribution;
++
++  it('collects no inactive IDs for dataKind contributions', () => {
++    const extIds = collectExtensionDeclaredIds([dataKindContribution]);
++    expect(extIds.effectIds.size).toBe(0);
++    expect(extIds.transitionIds.size).toBe(0);
++    expect(extIds.clipTypeIds.size).toBe(0);
++  });
++
++  it('leaves scanExportConfig diagnostics unchanged when an editorial lane contribution is declared', () => {
++    // Editorial scenario (design §Tests): a transcript lane plus no new
++    // clips — the scan must see the config identically with and without
++    // the lane declaration. Lanes never feed export scanning.
++    const config = makeConfig([makeClip('c1', { clipType: 'media' })]);
++    const withoutLanes = scanExportConfig(config, builtIn, collectExtensionDeclaredIds([]));
++    const withLanes = scanExportConfig(config, builtIn, collectExtensionDeclaredIds([dataKindContribution]));
++
++    expect(withLanes.diagnostics).toEqual(withoutLanes.diagnostics);
++    expect(withLanes.findings).toEqual(withoutLanes.findings);
++    expect(withLanes.blockers).toEqual(withoutLanes.blockers);
++    expect(withLanes.hasBlockingErrors).toBe(withoutLanes.hasBlockingErrors);
++    expect(withLanes.unknownClipTypes).toEqual(withoutLanes.unknownClipTypes);
++    expect(withLanes.unknownEffects).toEqual(withoutLanes.unknownEffects);
++    expect(withLanes.unknownTransitions).toEqual(withoutLanes.unknownTransitions);
++  });
++
++  it('keeps dataKind IDs out of the scanned result inactiveExtensionIds', () => {
++    const result = scanExportConfig(
++      makeConfig([makeClip('c1', { clipType: 'media' })]),
++      builtIn,
++      collectExtensionDeclaredIds([
++        dataKindContribution,
++        { id: 'contrib.e', kind: 'effect', effectId: 'my-custom-effect' } as ExtensionContribution,
++      ]),
++    );
++
++    expect(result.inactiveExtensionIds.effectIds.has('transcript-segment')).toBe(false);
++    expect(result.inactiveExtensionIds.effectIds.has('contrib.transcript-lane')).toBe(false);
++    // Control: inactive-ID collection still works for bridged-metadata kinds.
++    expect(result.inactiveExtensionIds.effectIds.has('my-custom-effect')).toBe(true);
++    expect(result.inactiveExtensionIds.transitionIds.size).toBe(0);
++    expect(result.inactiveExtensionIds.clipTypeIds.size).toBe(0);
++  });
++});
++
+ // ---------------------------------------------------------------------------
+ // Edge cases
+ // ---------------------------------------------------------------------------
+diff --git a/src/tools/video-editor/runtime/extensionContextFactory.ts b/src/tools/video-editor/runtime/extensionContextFactory.ts
+index 4240b678a..7edc6d66c 100644
+--- a/src/tools/video-editor/runtime/extensionContextFactory.ts
++++ b/src/tools/video-editor/runtime/extensionContextFactory.ts
+@@ -71,6 +71,12 @@ import type {
+   ToolProcessResult,
+ } from '@/sdk/video/families/agentTools';
+ import type { ProcessSpawnConfig } from '@/sdk/video/families/processes';
++import type {
++  DataItemInspectorProps,
++  DataKindRegistrationOptions,
++  DataKindRegistrationService,
++  DataLaneRendererProps,
++} from '@/sdk/video/families/dataKind';
+ 
+ // ---------------------------------------------------------------------------
+ // Editor shell root registry (module-level, set by host shell on mount)
+@@ -133,6 +139,7 @@ export function createExtensionContext(
+   shaders?: ShaderRegistrationService,
+   settingsServiceOptions?: CreateExtensionSettingsServiceOptions,
+   uiService?: ExtensionUiService,
++  dataKinds?: DataKindRegistrationService,
+ ): ExtensionContext {
+   const extensionId = extension.manifest.id as string;
+   const manifest = extension.manifest; // Already frozen by defineExtension
+@@ -427,6 +434,26 @@ export function createExtensionContext(
+   };
+   Object.freeze(uiServiceInstance);
+ 
++  // ---- dataKinds service (optional, wired by provider) ----------------------
++  // dataKind V1: single bind path for typed-data lanes. When no host-wired
++  // service is provided, register reports a structured diagnostic and returns
++  // a no-op handle (same pattern as the clipTypes/shaders fallbacks above).
++  const dataKindsService: DataKindRegistrationService = dataKinds ?? {
++    register(
++      _kindId: string,
++      _laneRenderer: (props: DataLaneRendererProps) => unknown,
++      _inspector?: (props: DataItemInspectorProps) => unknown,
++      _options?: DataKindRegistrationOptions,
++    ): DisposeHandle {
++      diagnosticsService.report({
++        severity: 'error',
++        code: 'dataKinds/not-wired',
++        message: `Cannot register data kind "${_kindId}" — the DataKindRegistry has not been wired by the host provider.`,
++      });
++      return { dispose() {} };
++    },
++  };
++
+   // ---- assemble, attach dispose, then freeze -------------------------------
+   const ctx = {
+     apiVersion: 1,
+@@ -451,6 +478,7 @@ export function createExtensionContext(
+     shaders: shadersService,
+     agentTools: agentToolsService,
+     ui: uiServiceInstance,
++    dataKinds: dataKindsService,
+   } as ExtensionContext;
+ 
+   // Attach host-service disposal so the lifecycle can clean up settings
+diff --git a/src/tools/video-editor/runtime/families/familyAdapterRegistry.test.ts b/src/tools/video-editor/runtime/families/familyAdapterRegistry.test.ts
+index afde84167..20caf914f 100644
+--- a/src/tools/video-editor/runtime/families/familyAdapterRegistry.test.ts
++++ b/src/tools/video-editor/runtime/families/familyAdapterRegistry.test.ts
+@@ -17,6 +17,7 @@ import { effectAdapter } from './effectAdapter';
+ import { outputFormatAdapter } from './outputFormatAdapter';
+ import { metadataFacetAdapter } from './metadataFacetAdapter';
+ import { commandAdapter } from './commandAdapter';
++import { dataKindAdapter } from './dataKindAdapter';
+ import { timelineOverlayAdapter } from './timelineOverlayAdapter';
+ import { buildParserDescriptors } from './projectors/parserProjector';
+ 
+@@ -33,9 +34,9 @@ describe('VIDEO_EDITOR_FAMILY_ADAPTER_REGISTRY', () => {
+     expect(Object.isFrozen(VIDEO_EDITOR_FAMILY_ADAPTER_REGISTRY)).toBe(true);
+   });
+ 
+-  it('registers exactly 21 video contribution kinds', () => {
+-    expect(VIDEO_EDITOR_FAMILY_ADAPTER_REGISTRY.size).toBe(21);
+-    expect(VIDEO_EDITOR_FAMILY_ADAPTER_KINDS.length).toBe(21);
++  it('registers exactly 22 video contribution kinds', () => {
++    expect(VIDEO_EDITOR_FAMILY_ADAPTER_REGISTRY.size).toBe(22);
++    expect(VIDEO_EDITOR_FAMILY_ADAPTER_KINDS.length).toBe(22);
+   });
+ 
+   it('exposes kinds in sorted order', () => {
+@@ -53,6 +54,7 @@ describe('VIDEO_EDITOR_FAMILY_ADAPTER_REGISTRY', () => {
+       'clipType',
+       'command',
+       'contextMenuItem',
++      'dataKind',
+       'dialog',
+       'effect',
+       'inspectorSection',
+@@ -112,6 +114,7 @@ describe('VIDEO_EDITOR_FAMILY_ADAPTER_REGISTRY', () => {
+       'keybinding',
+       'automation',
+       'clipType',
++      'dataKind',
+     ];
+     for (const kind of realKinds) {
+       const adapter = VIDEO_EDITOR_FAMILY_ADAPTER_REGISTRY.get(
+@@ -263,6 +266,30 @@ describe('commandAdapter', () => {
+   });
+ });
+ 
++describe('dataKindAdapter', () => {
++  it('is a real compatibility adapter registered for the dataKind kind', () => {
++    expect(dataKindAdapter.classification).toBe('real');
++    expect(dataKindAdapter.kind).toBe('dataKind');
++    expect(
++      VIDEO_EDITOR_FAMILY_ADAPTER_REGISTRY.get('dataKind'),
++    ).toBe(dataKindAdapter);
++  });
++
++  it('projects zero frozen descriptors (lane state binds via the registry)', () => {
++    const result = dataKindAdapter.normalize({ contributions: [] });
++    expect(result.descriptors).toEqual([]);
++    expect(Object.isFrozen(result.descriptors)).toBe(true);
++  });
++
++  it('buildConformanceReport reads the SDK family definition', () => {
++    const report = dataKindAdapter.buildConformanceReport();
++    expect(report.kind).toBe('dataKind');
++    expect(report.declarationMaturity).toBe('documented');
++    expect(report.executionMaturity).toBe('host-integrated');
++    expect(report.coherent).toBe(true);
++  });
++});
++
+ describe('timelineOverlayAdapter', () => {
+   it('is a real adapter registered for the timelineOverlay kind', () => {
+     expect(timelineOverlayAdapter.classification).toBe('real');
+diff --git a/src/tools/video-editor/runtime/families/familyAdapterRegistry.ts b/src/tools/video-editor/runtime/families/familyAdapterRegistry.ts
+index 0f107fc45..477196750 100644
+--- a/src/tools/video-editor/runtime/families/familyAdapterRegistry.ts
++++ b/src/tools/video-editor/runtime/families/familyAdapterRegistry.ts
+@@ -34,6 +34,7 @@ import { contextMenuItemAdapter } from './contextMenuItemAdapter';
+ import { keybindingAdapter } from './keybindingAdapter';
+ import { automationAdapter } from './automationAdapter';
+ import { clipTypeAdapter } from './clipTypeAdapter';
++import { dataKindAdapter } from './dataKindAdapter';
+ 
+ const registry = new FamilyAdapterRegistryImpl();
+ 
+@@ -62,6 +63,7 @@ registry.register({ adapter: contextMenuItemAdapter });
+ registry.register({ adapter: keybindingAdapter });
+ registry.register({ adapter: automationAdapter });
+ registry.register({ adapter: clipTypeAdapter });
++registry.register({ adapter: dataKindAdapter });
+ 
+ // Agent is delegated with no host adapter yet — register as known-unavailable
+ registry.register({ adapter: null, metadata: { kind: 'agent' } });
