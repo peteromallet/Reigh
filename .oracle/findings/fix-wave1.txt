@@ -1,0 +1,27 @@
+Working...
+All rework items applied and verified.
+
+## Edits made
+
+**R1 — `inspectorRender` removed (3 surfaces):**
+- `config/contracts/reigh-extension.schema.json` — dropped `"inspectorRender"` property from `DataKindContribution.properties`; description sentence now reads "…qualified schemaRef, and shape/domain names" (inspector phrase removed, bind-at-activation sentence kept)
+- `src/sdk/video/families/dataKind.ts` — removed `inspectorRender?: string` + its 5-line doc block from `DataKindContribution`
+- `src/sdk/manifest.ts` — removed `inspectorRender?: string` + doc from `ExtensionContribution`
+- Kept per instruction: `DataItemInspectorProps` and `register(kindId, laneRenderer, inspector?)`
+
+**R2 — `assetDetailSectionId?: string`** restored to `ExtensionContribution` (`src/sdk/manifest.ts:117-118`) with original doc `/** M6: Asset detail section identifier declared by the extension. */`, at its HEAD position between `metadataFacetId` and `agentToolId` (verified against `git show HEAD`).
+
+**R3 —** amendment note appended to `.oracle/rework/wave-1-attempt-1.md` (mapped/unmapped occurrence-id scheme vs `sourceItemId`).
+
+## Verification
+
+| Check | Result |
+|---|---|
+| `grep inspectorRender` in `src/` + `config/contracts/` | 0 matches |
+| `assetDetailSectionId` present | manifest.ts:118 |
+| Vitest (boundary, manifest-schema-validation, index, examples-governance) | **1196 passed** / 4 files |
+| `npm run check:sdk-public-exports` | **AUDIT PASSED** — 440 exports, 0 violations, 0 obsolete allowlist entries |
+
+Baseline not regenerated: export count unchanged (440) — field removals don't touch the export surface, and the audit confirms zero drift.
+
+Nothing committed, per brief.

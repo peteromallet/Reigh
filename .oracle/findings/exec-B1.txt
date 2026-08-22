@@ -1,0 +1,27 @@
+Working...
+## Batch 1 — Executor Report
+
+**Files changed**
+- `src/sdk/video/families/contributionKinds.ts` — `'dataKind'` in union + `VIDEO_CONTRIBUTION_KINDS` array (after `'agentTool'`, before reserved `'agent'`); 22 entries
+- `src/sdk/video/families/dataKind.ts` — **new**, types only: `DataKindContribution`, `DataShape`, `DataCoordinateDomain`, `KNOWN_DATA_SHAPES`/`KNOWN_DATA_DOMAINS`, `DataLaneRendererProps`, `DataItemInspectorProps`, `DataKindRegistrationService`; `[CONVERGE-WITH-M1]` flags on the closed vocabularies
+- `config/contracts/reigh-extension.schema.json` — `"dataKind"` in `ContributionKind.enum`, `$ref` in `Contribution.oneOf`, `DataKindContribution` definition (required id/kind/kindId/schemaRef, `additionalProperties: false`, open-string shape/domain, optional inspectorRender/label/order)
+- `src/sdk/manifest.ts` — imports, `DataKindContribution` in contributions union, reserved fields on `ExtensionContribution`, rule block after the overlay block: `manifest/missing-data-kind-id`, `manifest/missing-data-schema-ref`, `manifest/invalid-data-shape`, `manifest/invalid-data-domain`, `dataKind/no-when` (hasOwnProperty check)
+- `src/sdk/index.ts` — barrel: 8 types + `KNOWN_DATA_SHAPES`/`KNOWN_DATA_DOMAINS`
+- `src/sdk/examples-governance.test.ts` — all 10 new exports in `INTERNAL_EXPORTS` with `// dataKind V1 — consumer examples land with M1`
+- `src/sdk/boundary.test.ts` — pins 21→22 (:785-788) + title (:795); two `crossReferenceManifest` assertions adjusted (below)
+- `src/sdk/manifest-schema-validation.test.ts` — `dataKind` enum/oneOf structural assertions + two new describes (dataKind Ajv/runtime incl. all-shape×domain matrix; dataProviders fail-closed both paths)
+- `config/governance/sdk-public-api-manifest.json` — regenerated baseline (440 exports)
+
+**Test results**
+- Validate command: **4 files, 1196/1196 passed** (`boundary`, `manifest-schema-validation`, `index`, `examples-governance`)
+- `check-sdk-api-manifest` audit: **PASSED** (440 exports match baseline)
+- `check-extension-drift`: **0 errors, 0 warnings** (22 SDK kinds ↔ 22 enum values ↔ 22 definitions; dataKind defaults to reserved until Batch 2 regenerates family-maturity.json)
+- Typecheck: `tsc -p tsconfig.app.json --noEmit` error set **byte-identical to pristine baseline** (1938 pre-existing repo errors; only "… 11 more …"→"… 12 more …" union-display text changed). Root `tsconfig.json` is solution-style (`files: []`) so bare `tsc --noEmit` is a no-op — used the app project.
+
+**Deviations**
+1. **`inspectorRender` included in schema/type** — brief line listed only "optional label/order"; design §V1 JSON fragment and plan-rev2 task 3 both include it. Followed the design.
+2. **`DataLaneRenderItem` exported** — supporting item-view type required by `DataLaneRendererProps`/`DataItemInspectorProps`; registered in `INTERNAL_EXPORTS` + baseline.
+3. **Two `crossReferenceManifest` assertions in boundary.test.ts** (:3210, :3257) now expect `['dataKind']` / `isFullyAligned === false` with Batch-2 comments — the union grew one kind ahead of its `VIDEO_FAMILY_REGISTRY` entry (Batch 2); both revert to `[]`/`true` when that entry lands. Not in the brief's named line list, but required for validate-command green.
+4. **Mid-run repair** — a mis-numbered array edit briefly dropped `'shader'`/`'automation'` from `VIDEO_CONTRIBUTION_KINDS`; restored and verified (runtime probe: 22 entries, correct order).
+
+Not committed, per contract. Out-of-scope 21-pins remaining for Batch 2: `sdk-boundary.test.ts:3860-3862/:3870`, `familyDefinitions.test.ts:520-523`, `familyAdapterRegistry.test.ts:36-38`.
