@@ -144,13 +144,12 @@ export function assembleDataLanes(input: AssembleDataLanesInput): readonly DataL
  * Pure TimelineData patch: replace `dataLanes`, preserve every other field by
  * reference. Shallow clone — the base is left untouched.
  *
- * The return type keeps `dataLanes` explicit until Batch 5 adds the field to
- * `TimelineData` itself; the intersection stays valid (if redundant) after
- * that field lands.
+ * Batch 5 made `TimelineData.dataLanes` a required field, so the former
+ * readonly-intersection return is redundant (and no longer typechecks).
  */
 export function mergeDataLanes(
   base: TimelineData,
   views: readonly DataLaneView[],
-): TimelineData & { readonly dataLanes: readonly DataLaneView[] } {
-  return { ...base, dataLanes: Object.freeze([...views]) };
+): TimelineData {
+  return { ...base, dataLanes: [...views] };
 }

@@ -36,13 +36,15 @@ import {
   buildGridBackground,
   TimelineRulerAndGrid,
 } from '@/tools/video-editor/components/TimelineEditor/TimelineRulerAndGrid.tsx';
+import { DataLaneList } from '@/tools/video-editor/components/TimelineEditor/DataLaneList.tsx';
 import { TrackListRenderer } from '@/tools/video-editor/components/TimelineEditor/TrackListRenderer.tsx';
 import { TimelineGhostLayer } from '@/tools/video-editor/components/TimelineEditor/TimelineGhostLayer.tsx';
 import { VideoEditorRuntimeContext } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import type { TimelineGhostEntry } from '@/tools/video-editor/types/timeline-canvas.ts';
 import { useClipResizeGesture } from '@/tools/video-editor/hooks/useClipResizeGesture.ts';
 import type { ShotGroup } from '@/tools/video-editor/hooks/useShotGroups.ts';
-import { useTimelineMutableAdapters } from '@/tools/video-editor/hooks/timelineStore.ts';
+import { useTimelineEditorDataSafe, useTimelineMutableAdapters } from '@/tools/video-editor/hooks/timelineStore.ts';
+import { useDataLanes } from '@/tools/video-editor/data-kinds/useDataLanes.ts';
 import { useTimelineSelectionStore } from '@/shared/state/selectionStore.ts';
 import { LABEL_WIDTH } from '@/tools/video-editor/lib/coordinate-utils.ts';
 import {
@@ -307,6 +309,11 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
   onSelectPostprocessShader,
 }: TimelineCanvasProps, ref) {
   useRenderBudget('TimelineCanvas', 3);
+  // dataKind V1: reactive base TimelineData → assembled duration-neutral
+  // lanes (render-side merge via useDataLanes; the store's data is never
+  // written, so lanes stay inert to duration/rows/export).
+  const mountedEditorData = useTimelineEditorDataSafe();
+  const laneData = useDataLanes({ base: mountedEditorData?.data ?? null });
   const { dataRef, selectedClipIdsRef, ops, previewRef } = useTimelineMutableAdapters();
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const [overlayScrollContainer, setOverlayScrollContainer] = useState<HTMLDivElement | null>(null);
@@ -408,7 +415,10 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
     minDuration,
   });
   const actionHeight = Math.max(12, rowHeight - ACTION_VERTICAL_MARGIN * 2);
-  const scrollContentHeight = (rows.length + 1) * rowHeight;
+  // dataKind V1: lane rows extend the scrollable content; their heights join
+  // the playhead/viewport height math only — width/scale math is untouched.
+  const dataLanesHeight = laneData?.dataLanes.reduce((sum, lane) => sum + lane.height, 0) ?? 0;
+  const scrollContentHeight = (rows.length + 1) * rowHeight + dataLanesHeight;
   const maxEnd = useMemo(() => maxClipEndSeconds(rows), [rows]);
   // Content-only derivation: the trailing runway is the owner's call and reaches
   // us as minScaleCount/maxScaleCount (TimelineEditorCore pins both to one value).
@@ -1014,6 +1024,10 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
             onTrackDragEnd={onTrackDragEnd}
             trackSensors={trackSensors}
           />
+          {/* dataKind V1: duration-neutral lane rows below the track rows —
+              same scroller and startLeft/pixelsPerSecond mapping, outside the
+              overlay host, never gated by timelineOverlaysEnabled. */}
+          <DataLaneList data={laneData} startLeft={startLeft} pixelsPerSecond={pixelsPerSecond} />
           <div
             ref={setContentOverlayRoot}
             data-testid="timeline-extension-content-overlay-root"

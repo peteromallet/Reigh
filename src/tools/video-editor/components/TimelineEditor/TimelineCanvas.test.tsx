@@ -37,6 +37,11 @@ vi.mock('@/tools/video-editor/hooks/timelineStore', async () => {
   };
 });
 
+const useDataLanesMock = vi.fn((args?: { base?: unknown }) => args?.base ?? null);
+vi.mock('@/tools/video-editor/data-kinds/useDataLanes', () => ({
+  useDataLanes: (args?: { base?: unknown }) => useDataLanesMock(args),
+}));
+
 const track: TrackDefinition = { id: 'V1', kind: 'visual', label: 'V1' };
 const action: TimelineAction = { id: 'clip-1', start: 0, end: 2, effectId: 'effect-clip-1' };
 const row: TimelineRow = { id: 'V1', actions: [action] };
@@ -1825,3 +1830,69 @@ describe('TimelineCanvas resize pending ops', () => {
       dispatchSpy.mockRestore();
     });
   });
+// ---------------------------------------------------------------------------
+// dataKind V1 (Batch 6): duration-neutral DataLaneList mount
+// ---------------------------------------------------------------------------
+
+const laneFixture = (overrides: Record<string, unknown> = {}) => ({
+  laneId: 'transcript',
+  kindId: 'transcript',
+  label: 'Transcript',
+  schemaRef: 'reigh.transcript_segment/v1',
+  shape: 'interval',
+  items: [],
+  hidden: false,
+  height: 24,
+  opaque: false,
+  laneRenderer: () => <div data-testid="lane-renderer-body">body</div>,
+  ...overrides,
+});
+
+describe('TimelineCanvas — dataKind V1 lane strip', () => {
+  afterEach(() => {
+    useDataLanesMock.mockImplementation((args?: { base?: unknown }) => args?.base ?? null);
+  });
+
+  it('renders lane rows below the track rows inside the shared scroller', () => {
+    useDataLanesMock.mockReturnValue({ config: {}, dataLanes: [laneFixture()] });
+    const { container } = renderCanvas({ rows: [row], tracks: [track] });
+
+    const laneList = screen.getByTestId('data-lane-list');
+    const trackRow = container.querySelector(`[${ROW_ID_ATTR}='V1']`);
+    expect(trackRow).toBeTruthy();
+    // The lane strip follows the track row in document order (below tracks).
+    expect(
+      Boolean(trackRow!.compareDocumentPosition(laneList) & Node.DOCUMENT_POSITION_FOLLOWING),
+    ).toBe(true);
+    // Same scroller as the tracks — lanes share the scroll container.
+    expect(laneList.closest('.timeline-scroll')).toBeTruthy();
+    expect(screen.getByTestId('data-lane-row')).toBeTruthy();
+    expect(screen.getByTestId('lane-renderer-body')).toBeTruthy();
+  });
+
+  it('folds lane heights into the playhead element height', () => {
+    useDataLanesMock.mockReturnValue({
+      config: {},
+      dataLanes: [laneFixture({ height: 30 })],
+    });
+    renderCanvas({ rows: [row], tracks: [track] });
+
+    // One track row + footer at rowHeight 48, plus one 30px lane.
+    expect(screen.getByTestId('timeline-playhead')).toHaveStyle({ height: '126px' });
+  });
+
+  it('renders lanes while timeline overlays are disabled', () => {
+    useDataLanesMock.mockReturnValue({ config: {}, dataLanes: [laneFixture()] });
+    renderCanvas({ rows: [row], tracks: [track], timelineOverlaysEnabled: false });
+
+    expect(screen.getByTestId('data-lane-list')).toBeTruthy();
+  });
+
+  it('leaves geometry untouched when no lanes assemble', () => {
+    renderCanvas({ rows: [row], tracks: [track] });
+
+    expect(screen.queryByTestId('data-lane-list')).toBeNull();
+    // (rows + 1) * rowHeight = 96px, exactly as before Batch 6.
+    expect(screen.getByTestId('timeline-playhead')).toHaveStyle({ height: '96px' });
+  });
+});

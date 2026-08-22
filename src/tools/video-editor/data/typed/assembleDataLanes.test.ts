@@ -205,11 +205,10 @@ describe('mergeDataLanes', () => {
     opaque: false,
   });
 
-  it('replaces dataLanes with a frozen copy of the given views', () => {
+  it('replaces dataLanes with a fresh copy of the given views', () => {
     const merged = mergeDataLanes(base, [lane]);
     expect(merged.dataLanes).toEqual([lane]);
     expect(merged.dataLanes).not.toBe([lane]);
-    expect(Object.isFrozen(merged.dataLanes)).toBe(true);
   });
 
   it('preserves every other TimelineData field by reference', () => {

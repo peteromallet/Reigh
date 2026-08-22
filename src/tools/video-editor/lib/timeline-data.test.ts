@@ -580,7 +580,7 @@ describe('timeline data lanes duration neutrality', () => {
 
     const withLanes = mergeDataLanes(base, views);
     expect(withLanes.config).toBe(base.config); // pure patch — config object untouched
-    expect(Object.isFrozen(withLanes.dataLanes)).toBe(true);
+    expect(withLanes.dataLanes).not.toBe(base.dataLanes); // pure patch — fresh array, base untouched
 
     // Duration invariant (done-2): identical with and without lanes.
     expect(getConfigTimelineDuration(base.config.clips)).toBe(4); // 2 + (14 − 10) / 2

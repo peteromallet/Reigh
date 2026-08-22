@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { PropertiesPanel } from '@/tools/video-editor/components/PropertiesPanel/PropertiesPanel';
 import { VideoEditorAssetPanelSurface } from '@/tools/video-editor/components/PropertiesPanel/VideoEditorAssetPanelSurface';
+import type { DataLaneView, FrozenDataItem } from '@/tools/video-editor/data/typed/envelope';
 
 const useTimelineEditorDataMock = vi.fn();
 const useTimelineEditorOpsMock = vi.fn();
@@ -202,6 +203,7 @@ function createEditorOps() {
     setContextTarget: vi.fn(),
     setActiveClipTab: vi.fn(),
     setInspectorTarget: vi.fn(),
+    setSelectedTrackId: vi.fn(),
     setInteractionMode: vi.fn(),
     setPrecisionEnabled: vi.fn(),
     patchRegistry: vi.fn(),
@@ -892,5 +894,176 @@ describe('HostContributionErrorBoundary — asset panels', () => {
 
     expect(screen.getByTestId('panel-orphan')).toBeInTheDocument();
     expect(getRecoveryKeySpy).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Data item inspector dispatch (dataKind V1, Batch 7) ───────────────────
+
+function createDataItemFixture(overrides: Partial<FrozenDataItem> = {}): FrozenDataItem {
+  return {
+    id: 'asset-1:0',
+    shape: 'interval',
+    domain: 'source_seconds',
+    extent: { start: 2, end: 4 },
+    schemaRef: 'reigh.transcript_segment/v1',
+    payload: { text: 'hello world' },
+    provenance: { adapterId: 'reigh.adaptTranscript', adapterVersion: '1' },
+    ...overrides,
+  };
+}
+
+function createDataLaneFixture(overrides: Partial<DataLaneView> = {}): DataLaneView {
+  return {
+    laneId: 'transcript',
+    kindId: 'transcript',
+    label: 'Transcript',
+    schemaRef: 'reigh.transcript_segment/v1',
+    shape: 'interval',
+    items: [{ item: createDataItemFixture(), timelineStart: 2, timelineEnd: 4, clipId: 'clip-1' }],
+    hidden: false,
+    height: 24,
+    opaque: false,
+    ...overrides,
+  };
+}
+
+function createDataTargetEditorData(overrides: {
+  inspectorTarget?: unknown;
+  lanes?: DataLaneView[];
+} = {}) {
+  const base = createBaseEditorData();
+  return {
+    ...base,
+    data: {
+      ...base.data,
+      dataLanes: overrides.lanes ?? [createDataLaneFixture()],
+    },
+    inspectorTarget: overrides.inspectorTarget ?? null,
+  };
+}
+
+describe('PropertiesPanel — data item inspector dispatch', () => {
+  let consoleErrorSpy: MockInstance;
+  let consoleWarnSpy: MockInstance;
+
+  beforeEach(() => {
+    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    useVideoEditorRenderContextMock.mockReturnValue({ timelineId: 'timeline-1' });
+    useTimelineEditorOpsMock.mockReturnValue(createEditorOps());
+    useVideoEditorPanelRegistryMock.mockReturnValue({ panels: [], inspectorSections: [] });
+    useVideoEditorAssetPanelsMock.mockReturnValue([]);
+    useShaderEffectRegistrySnapshotMock.mockReturnValue(createShaderSnapshot());
+    getInspectorContributionsMock.mockReturnValue({
+      all: [],
+      beforeDefault: [],
+      afterDefault: [],
+    });
+    useOptionalVideoEditorRuntimeMock.mockReturnValue(null);
+  });
+
+  afterEach(() => {
+    consoleErrorSpy.mockRestore();
+    consoleWarnSpy.mockRestore();
+  });
+
+  it('dispatches the dataItem target over the selected clip underneath the lane', () => {
+    useTimelineEditorDataMock.mockReturnValue(createDataTargetEditorData({
+      inspectorTarget: { kind: 'dataItem', laneId: 'transcript', itemId: 'asset-1:0' },
+    }));
+
+    render(<PropertiesPanel />);
+
+    // Branch-order contract: the dataItem target wins even though clip-1 is
+    // still the selected clip.
+    expect(getInspectorContributionsMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ kind: 'dataItem', laneId: 'transcript', itemId: 'asset-1:0' }),
+    );
+    expect(screen.getByTestId('mock-clip-panel')).toBeInTheDocument();
+  });
+
+  it('renders OpaqueDataItemInspector with the six facts when no inspector is bound', () => {
+    useTimelineEditorDataMock.mockReturnValue(createDataTargetEditorData({
+      inspectorTarget: { kind: 'dataItem', laneId: 'transcript', itemId: 'asset-1:0' },
+    }));
+
+    render(<PropertiesPanel />);
+
+    expect(screen.getByTestId('opaque-data-item-inspector')).toBeInTheDocument();
+    expect(screen.getByTestId('opaque-data-item-id')).toHaveTextContent('asset-1:0');
+    expect(screen.getByTestId('opaque-data-item-shape')).toHaveTextContent('interval');
+    expect(screen.getByTestId('opaque-data-item-schema-ref')).toHaveTextContent('reigh.transcript_segment/v1');
+    expect(screen.getByTestId('opaque-data-item-extent')).toHaveTextContent('[2, 4)');
+    expect(screen.getByTestId('opaque-data-item-domain')).toHaveTextContent('source_seconds');
+    expect(screen.getByTestId('opaque-data-item-adapter')).toHaveTextContent('reigh.adaptTranscript');
+    expect(screen.getByTestId('opaque-data-item-payload')).toHaveTextContent('hello world');
+  });
+
+  it('clears clip and track selection when a lane target arrives (regression)', () => {
+    const ops = createEditorOps();
+    useTimelineEditorOpsMock.mockReturnValue(ops);
+    useTimelineEditorDataMock.mockReturnValue({
+      ...createDataTargetEditorData({
+        inspectorTarget: { kind: 'dataLane', laneId: 'transcript' },
+      }),
+      selectedTrackId: 'track-1',
+    });
+
+    render(<PropertiesPanel />);
+
+    expect(getInspectorContributionsMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ kind: 'dataLane', laneId: 'transcript' }),
+    );
+    expect(ops.clearSelection).toHaveBeenCalled();
+    expect(ops.setSelectedTrackId).toHaveBeenCalledWith(null);
+    expect(screen.queryByTestId('opaque-data-item-inspector')).not.toBeInTheDocument();
+  });
+
+  it('renders the bound kind inspector inside the host boundary when registered', () => {
+    const lane = createDataLaneFixture({
+      inspector: (() => <div data-testid="kind-inspector">kind</div>) as DataLaneView['inspector'],
+    });
+    useTimelineEditorDataMock.mockReturnValue(createDataTargetEditorData({
+      inspectorTarget: { kind: 'dataItem', laneId: 'transcript', itemId: 'asset-1:0' },
+      lanes: [lane],
+    }));
+
+    render(<PropertiesPanel />);
+
+    expect(screen.getByTestId('kind-inspector')).toBeInTheDocument();
+    expect(screen.queryByTestId('opaque-data-item-inspector')).not.toBeInTheDocument();
+  });
+
+  it('contains a crashing kind inspector in the contribution error boundary', () => {
+    const lane = createDataLaneFixture({
+      inspector: (() => {
+        throw new Error('inspector exploded');
+      }) as DataLaneView['inspector'],
+    });
+    useTimelineEditorDataMock.mockReturnValue(createDataTargetEditorData({
+      inspectorTarget: { kind: 'dataItem', laneId: 'transcript', itemId: 'asset-1:0' },
+      lanes: [lane],
+    }));
+
+    render(<PropertiesPanel />);
+
+    expect(document.querySelector('[data-video-editor-contribution-error="true"]')).not.toBeNull();
+    expect(screen.getByTestId('mock-clip-panel')).toBeInTheDocument();
+    expect(consoleErrorSpy).toHaveBeenCalled();
+  });
+
+  it('renders nothing extra for stale lane/item ids instead of crashing', () => {
+    useTimelineEditorDataMock.mockReturnValue(createDataTargetEditorData({
+      inspectorTarget: { kind: 'dataItem', laneId: 'gone-lane', itemId: 'asset-1:0' },
+    }));
+
+    render(<PropertiesPanel />);
+
+    expect(screen.queryByTestId('opaque-data-item-inspector')).not.toBeInTheDocument();
+    expect(screen.getByTestId('mock-clip-panel')).toBeInTheDocument();
   });
 });

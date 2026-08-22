@@ -1,7 +1,10 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
 import { Button } from '@/shared/components/ui/button.tsx';
 import { BulkClipPanel } from '@/tools/video-editor/components/PropertiesPanel/BulkClipPanel.tsx';
 import { ClipPanel, getVisibleClipTabs, NO_EFFECT } from '@/tools/video-editor/components/PropertiesPanel/ClipPanel.tsx';
+import { OpaqueDataItemInspector } from '@/tools/video-editor/components/PropertiesPanel/OpaqueDataItemInspector';
+import type { DataItemInspectorProps } from '@/sdk/video/families/dataKind';
+import type { DataLaneItemView, DataLaneView } from '@/tools/video-editor/data/typed/envelope';
 import { ShaderInspector } from '@/tools/video-editor/components/ShaderInspector/ShaderInspector.tsx';
 import {
   useTimelineEditorData,
@@ -90,9 +93,49 @@ function InspectorRegistrySections({
   );
 }
 
+type DataKindInspectorComponent = ComponentType<DataItemInspectorProps>;
+
+/**
+ * Inspector body for a selected lane item: the kind's bound inspector when
+ * one is registered (contained by the host boundary), otherwise the opaque
+ * fallback that renders only frozen envelope facts.
+ */
+function DataItemInspectorSection({ lane, view }: { lane: DataLaneView; view: DataLaneItemView }) {
+  const { item } = view;
+
+  if (!lane.inspector) {
+    return <OpaqueDataItemInspector item={item} />;
+  }
+
+  const KindInspector = lane.inspector as unknown as DataKindInspectorComponent;
+
+  return (
+    <HostContributionErrorBoundary
+      contributionId={`dataItem:${item.id}`}
+      kind="inspectorSection"
+      label={`Data item (${lane.kindId}): ${item.id}`}
+    >
+      <KindInspector
+        kindId={lane.kindId}
+        schemaRef={item.schemaRef}
+        shape={item.shape}
+        domain={item.domain}
+        item={{
+          id: item.id,
+          timelineStart: view.timelineStart,
+          timelineEnd: view.timelineEnd,
+          clipId: view.clipId,
+          payload: item.payload,
+        }}
+      />
+    </HostContributionErrorBoundary>
+  );
+}
+
 function PropertiesPanelComponent() {
   useRenderDiagnostic('PropertiesPanel');
   const [activePanelTab, setActivePanelTab] = useState<'inspector' | 'extensions' | 'processes'>('inspector');
+
   const handleManagerError = (_info: ManagerErrorInfo) => {
     // Error already logged by the boundary; could aggregate to diagnostics sink in future.
   };
@@ -134,6 +177,7 @@ function PropertiesPanelComponent() {
     setInteractionMode,
     setPrecisionEnabled,
     patchRegistry,
+    setSelectedTrackId,
     registerAsset,
     applyEdit,
   } = useTimelineEditorOps();
@@ -166,6 +210,21 @@ function PropertiesPanelComponent() {
       return { kind: 'selection' as const, clipIds: selectedClipIdsList };
     }
 
+    if (inspectorTarget?.kind === 'dataItem') {
+      return {
+        kind: 'dataItem' as const,
+        laneId: inspectorTarget.laneId ?? undefined,
+        itemId: inspectorTarget.itemId ?? undefined,
+      };
+    }
+
+    if (inspectorTarget?.kind === 'dataLane') {
+      return {
+        kind: 'dataLane' as const,
+        laneId: inspectorTarget.laneId ?? undefined,
+      };
+    }
+
     if (selectedClip) {
       return { kind: 'clip' as const, clipId: selectedClip.id };
     }
@@ -176,6 +235,18 @@ function PropertiesPanelComponent() {
 
     return { kind: 'timeline' as const };
   }, [inspectorTarget, selectedClip, selectedClipIdsList, selectedTrackId]);
+  const dataInspectorTargetKind = inspectorTarget?.kind;
+  useEffect(() => {
+    if (dataInspectorTargetKind !== 'dataItem' && dataInspectorTargetKind !== 'dataLane') {
+      return;
+    }
+
+    // A lane selection replaces clip/track selection — otherwise the clip
+    // underneath the lane wins forever. clearSelection leaves the inspector
+    // target untouched, so lane dispatch converges instead of fighting.
+    clearSelection();
+    setSelectedTrackId(null);
+  }, [dataInspectorTargetKind, clearSelection, setSelectedTrackId]);
   const selectedPostprocessShader = useMemo(() => {
     if (inspectorSelectionTarget.kind !== 'shader' || inspectorSelectionTarget.shaderScope !== 'postprocess') {
       return undefined;
@@ -183,6 +254,21 @@ function PropertiesPanelComponent() {
 
     return resolvedConfig ? getTimelinePostprocessShader(resolvedConfig) : undefined;
   }, [inspectorSelectionTarget, resolvedConfig]);
+  const selectedDataItemView = useMemo(() => {
+    const target = inspectorSelectionTarget;
+    if (target.kind !== 'dataItem' || !target.laneId || !target.itemId) {
+      return undefined;
+    }
+
+    const { laneId, itemId } = target;
+    const lane = (data?.dataLanes ?? []).find((candidate) => candidate.laneId === laneId);
+    if (!lane) {
+      return undefined;
+    }
+
+    const view = lane.items.find((candidate) => candidate.item.id === itemId);
+    return view ? { lane, view } : undefined;
+  }, [inspectorSelectionTarget, data]);
   const bulkSelectedClips = resolvedConfig?.clips.filter((clip) => selectedClipIds.has(clip.id)) ?? [];
   const bulkVisibleTabs = getBulkVisibleTabs(bulkSelectedClips, data?.resolvedConfig?.tracks ?? []);
   const bulkEntrance = getSharedNestedValue(bulkSelectedClips, (clip) => clip.entrance);
@@ -412,6 +498,12 @@ function PropertiesPanelComponent() {
           resolvedConfig={resolvedConfig}
           shaderSnapshot={shaderSnapshot}
           applyEdit={applyEdit}
+        />
+      )}
+      {selectedDataItemView && (
+        <DataItemInspectorSection
+          lane={selectedDataItemView.lane}
+          view={selectedDataItemView.view}
         />
       )}
       <InspectorRegistrySections placement="after-default" selection={inspectorSelectionTarget} />

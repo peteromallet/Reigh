@@ -42,6 +42,8 @@ export type TimelineInteractionTargetKind =
   | 'selection'
   | 'preview'
   | 'overlay'
+  | 'dataLane'
+  | 'dataItem'
   | 'shell';
 
 export interface TimelineInteractionTarget {
@@ -52,6 +54,8 @@ export interface TimelineInteractionTarget {
   shaderScope?: 'clip' | 'postprocess';
   shaderId?: string | null;
   extensionId?: string | null;
+  laneId?: string | null;
+  itemId?: string | null;
   contributionId?: string | null;
 }
 
@@ -352,7 +356,13 @@ export function areTimelineInteractionTargetsEqual(
     return false;
   }
 
-  if (left.kind !== right.kind || left.clipId !== right.clipId || left.trackId !== right.trackId) {
+  if (
+    left.kind !== right.kind
+    || left.clipId !== right.clipId
+    || left.trackId !== right.trackId
+    || left.laneId !== right.laneId
+    || left.itemId !== right.itemId
+  ) {
     return false;
   }
 

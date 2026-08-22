@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  areTimelineInteractionTargetsEqual,
   createMobileInteractionPolicy,
   resolveTimelineDeviceClass,
   shouldEnableTimelinePinchZoom,
@@ -130,5 +131,38 @@ describe('gesture owner', () => {
     expect(createMobileInteractionPolicy('desktop').gestureOwner).toBe('none');
     expect(createMobileInteractionPolicy('tablet').gestureOwner).toBe('none');
     expect(createMobileInteractionPolicy('phone').gestureOwner).toBe('none');
+  });
+});
+
+describe('data lane interaction targets', () => {
+  it('accepts dataLane and dataItem as valid target kinds', () => {
+    const laneTarget: TimelineInteractionTarget = { kind: 'dataLane', laneId: 'transcript' };
+    const itemTarget: TimelineInteractionTarget = {
+      kind: 'dataItem',
+      laneId: 'transcript',
+      itemId: 'asset-1:0',
+    };
+
+    expect(laneTarget.kind).toBe('dataLane');
+    expect(itemTarget.kind).toBe('dataItem');
+  });
+
+  it('adds no gesture owner for the data target kinds', () => {
+    expect(createMobileInteractionPolicy('desktop').gestureOwner).toBe('none');
+  });
+
+  it('treats targets differing only by laneId or itemId as distinct', () => {
+    const base = { kind: 'dataItem' as const, laneId: 'transcript', itemId: 'asset-1:0' };
+
+    expect(areTimelineInteractionTargetsEqual(base, { ...base })).toBe(true);
+    expect(areTimelineInteractionTargetsEqual(base, { ...base, itemId: 'asset-1:1' })).toBe(false);
+    expect(areTimelineInteractionTargetsEqual(base, { ...base, laneId: 'notes' })).toBe(false);
+    expect(areTimelineInteractionTargetsEqual(base, { kind: 'dataItem', itemId: 'asset-1:0' })).toBe(false);
+  });
+
+  it('keeps absent optional lane ids equal on both sides', () => {
+    expect(areTimelineInteractionTargetsEqual({ kind: 'dataLane' }, { kind: 'dataLane' })).toBe(true);
+    expect(areTimelineInteractionTargetsEqual({ kind: 'dataLane', laneId: 'a' }, { kind: 'dataLane' })).toBe(false);
+    expect(areTimelineInteractionTargetsEqual({ kind: 'clip', clipId: 'c1' }, { kind: 'clip', clipId: 'c1' })).toBe(true);
   });
 });
