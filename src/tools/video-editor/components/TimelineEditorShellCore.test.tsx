@@ -46,6 +46,8 @@ const __editorOps = {
 // Mock dependencies
 // ---------------------------------------------------------------------------
 
+let __liveInspectorTarget = { value: { kind: 'timeline' as const } };
+
 vi.mock('@/tools/video-editor/hooks/timelineStore.ts', () => ({
   useTimelineEditorData: () => ({
     dataRef: { current: null },
@@ -57,7 +59,11 @@ vi.mock('@/tools/video-editor/hooks/timelineStore.ts', () => ({
     precisionEnabled: false,
     interactionMode: __interactionMode,
     gestureOwner: null,
-    inspectorTarget: { kind: 'timeline' as const },
+    // Live store value; tests mutate `__liveInspectorTarget.value` to prove
+    // the shell's snap-back guard (groken LIVE-1).
+    get inspectorTarget() {
+      return __liveInspectorTarget.value;
+    },
   }),
   useTimelineEditorOps: () => __editorOps,
   useTimelineChromeContext: () => ({
@@ -277,6 +283,10 @@ import { TimelineEditorShellCore } from '@/tools/video-editor/components/Timelin
 // ---------------------------------------------------------------------------
 
 describe('TimelineEditorShellCore surface slots', () => {
+  beforeEach(() => {
+    __liveInspectorTarget.value = { kind: 'timeline' as const };
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     __clearSlotRenderers();
@@ -1253,3 +1263,16 @@ describe('TimelineEditorShellCore — recovery draft banner', () => {
     expect(screen.queryByText(/recovered unsaved changes/i)).toBeNull();
   });
 });
+  it('does not snap a live dataItem target back to the timeline placeholder (groken LIVE-1)', () => {
+    __liveInspectorTarget.value = {
+      kind: 'dataItem' as const,
+      laneId: 'transcript',
+      itemId: 'a:c1:0',
+    };
+    render(<TimelineEditorShellCore timelineId="test-timeline" />);
+
+    // Empty selection derives {kind:'timeline'}; the host-owned-kind guard
+    // must NOT write that placeholder over the extension's live target.
+    expect(__editorOps.setInspectorTarget).not.toHaveBeenCalledWith({ kind: 'timeline' });
+  });
+

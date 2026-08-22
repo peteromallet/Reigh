@@ -134,6 +134,40 @@ describe('createDataKindRegistrationService', () => {
     expect(record!.order).toBe(-1);
   });
 
+  // ---- schemaRef ownership (groken swarm L5-H1) -------------------------------
+
+  it('rejects a second extension registering an already-owned schemaRef', () => {
+    const registry = createDataKindRegistry();
+    const reportedA: ExtensionDiagnostic[] = [];
+    const extA = { ...makeExtension([TRANSCRIPT_CONTRIBUTION]) };
+    (extA.manifest as { id: string }).id = 'ext.a';
+    const extB = { ...makeExtension([TRANSCRIPT_CONTRIBUTION]) };
+    (extB.manifest as { id: string }).id = 'ext.b';
+    const reportedB: ExtensionDiagnostic[] = [];
+    const serviceA = createDataKindRegistrationService({
+      extension: extA,
+      dataKindRegistry: registry,
+      diagnosticsService: { report: (d) => reportedA.push(d) },
+    });
+    const serviceB = createDataKindRegistrationService({
+      extension: extB,
+      dataKindRegistry: registry,
+      diagnosticsService: { report: (d) => reportedB.push(d) },
+    });
+    serviceA.register('transcript_segment', noopLaneRenderer);
+
+    const handle = serviceB.register('transcript_segment', noopLaneRenderer);
+
+    // First owner keeps the plane; the hijack attempt is a no-op.
+    expect(registry.getSnapshot().records).toHaveLength(1);
+    expect(registry.getSnapshot().records[0].ownerExtensionId).toBe('ext.a');
+    const diag = reportedB.find((d) => d.code === 'dataKinds/schema-ref-taken');
+    expect(diag).toBeDefined();
+    expect(diag!.severity).toBe('error');
+    expect(reportedA.some((d) => d.code === 'dataKinds/registered')).toBe(true);
+    handle.dispose();
+  });
+
   // ---- undeclared kindId gate -------------------------------------------------
 
   it('undeclared kindId emits dataKinds/undeclared-kind and returns a no-op handle', () => {

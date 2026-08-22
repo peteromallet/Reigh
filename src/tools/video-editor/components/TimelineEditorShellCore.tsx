@@ -75,6 +75,19 @@ export interface TimelineEditorShellCoreProps {
   navigationControls?: ReactNode;
 }
 
+/**
+ * Kinds whose LIVE target owns the inspector until the user picks real
+ * content (groken round-4 LIVE-1): extension dispatches (`dataItem` /
+ * `dataLane`) and host preview/shader/overlay targets must not be snapped
+ * back to the selection-derived placeholder when the selection is empty.
+ */
+const INSPECTOR_HOST_OWNED_KINDS: ReadonlySet<string> = new Set([
+  'dataItem',
+  'dataLane',
+  'shader',
+  'preview',
+  'overlay',
+]);
 function getInspectorTargetForSelection(
   selectedClipIds: string[],
   selectedTrackId: string | null,
@@ -269,6 +282,18 @@ function TimelineEditorShellCoreComponent({
   ].join(' ');
 
   useEffect(() => {
+    // groken LIVE-1: when a host-owned target (extension dataItem/dataLane,
+    // shader, preview, overlay) is live, an empty selection's derived
+    // `{kind:'timeline'}` placeholder must NOT overwrite it. Real content
+    // picks (clip/selection/track) still write through.
+    const liveKind = editorData.inspectorTarget?.kind;
+    if (
+      typeof liveKind === 'string'
+      && INSPECTOR_HOST_OWNED_KINDS.has(liveKind)
+      && inspectorTarget?.kind === 'timeline'
+    ) {
+      return;
+    }
     if (!areTimelineInteractionTargetsEqual(editorData.inspectorTarget, inspectorTarget)) {
       editorOps.setInspectorTarget(inspectorTarget);
     }

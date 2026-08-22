@@ -177,6 +177,26 @@ export function createDataKindRegistrationService(
       return { dispose() {} };
     }
 
+    // ---- schemaRef ownership (groken swarm L5-H1) --------------------------
+    // Lane assembly binds items to kinds by schemaRef (first snapshot record
+    // wins). A second extension declaring the same schemaRef would hijack
+    // every payload that schema describes, so ownership is exclusive: the
+    // first extension to REGISTER a schemaRef owns it for this registry.
+    const existingOwner = dataKindRegistry
+      .getSnapshot()
+      .records.find((record) => record.schemaRef === contrib.schemaRef);
+    if (existingOwner && existingOwner.ownerExtensionId !== extensionId) {
+      emit(
+        'error',
+        'dataKinds/schema-ref-taken',
+        `Schema ref "${contrib.schemaRef}" is already owned by data kind ` +
+          `"${existingOwner.kindId}" (extension "${existingOwner.ownerExtensionId ?? '(built-in)'}"). ` +
+          `Extension "${extensionId}" must declare a distinct qualified schemaRef.`,
+        { kindId, extensionId, schemaRef: contrib.schemaRef, owner: existingOwner.ownerExtensionId ?? null },
+      );
+      return { dispose() {} };
+    }
+
     // ---- Build the DataKindRegistryRecord ----------------------------------
     const label = options?.label ?? contrib.label ?? kindId;
     const order = options?.order ?? contrib.order;
