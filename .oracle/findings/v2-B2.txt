@@ -1,0 +1,20 @@
+Working...
+Batch 2 complete and green.
+
+## Files changed
+
+**Batch scope**
+- `data/typed/adaptTranscript.ts` — `sourceItemId` replaced: positional `${assetId}:src:${i}` → `${assetId}:src:` + first 12 hex chars of `fnv1a64Hex(canonicalJsonStringify({ start, end, text }))`, consuming B1 exports per REV 3 note 1 (sync adapter ⇒ sync FNV-1a/64; WebCrypto untouched as bundle-digest-only). Every item now carries `sourceArtifactRef: { assetId }` (L6 #5). Occurrence `id` unchanged — header comment documents it as assembly-derived view-only data, plus the identical-content collision semantic.
+- `data/typed/adaptTranscript.test.ts` — expected literals are pinned vectors computed with a standalone FNV-1a/64 implementation (not repo code), pinning algorithm + offset basis + slice length (`8a096f08c88f` / `44b25eadba0b`). New tests cover all acceptance criteria: reorder → identical `sourceItemId` set; text or timing edit → exactly that item's id moves; `sourceArtifactRef.assetId === options.assetId`; duplicate-content segments share `sourceItemId` but keep distinct occurrence ids; `sourceArtifactRef` deep-frozen.
+
+**Deviation (outside batch files, assertion-only)**
+- `data/typed/assembleDataLanes.test.ts:71-74`, `data-kinds/useDataLanes.test.tsx:74` — these exercise the real `adaptTranscript` path and asserted the old positional ids (`'a:src:0'`). Validate-to-green forced literal updates to the new pinned values (`08c434a0b926` / `74b32fcb340a`) with derivation comments. No logic touched; flagging for the evidence matrix.
+
+## Validation
+
+| Check | Result |
+|---|---|
+| `vitest run` adaptTranscript + assembleDataLanes + useDataLanes + timelineBundle | **48/48 passed**, 4 files |
+| `npx tsc --noEmit -p tsconfig.app.json` | **854 errors == baseline**, zero in touched files |
+
+Not committed, per contract.
