@@ -1,0 +1,35 @@
+Working...
+# Verdict: PASS
+
+Adversarial data-integrity review of `ff5b71f5d..HEAD` (read-only; 7 touched suites re-run: 138/138 green).
+
+## Findings (ranked)
+
+**F1 (P1, rollout gate — not a code defect): Supabase bundle *write* is unproven against the real append service.**
+`SupabaseDataProvider.saveTimeline` (:846) now POSTs `bundle` to `/v1/timelines/:id/config-replaced`, but that service is external (`supabase/functions/_shared/reighAppendService.ts` models only `{config, asset_registry, expected_version, actor, source}` and is unchanged; no `bundle_replaced` construction anywhere in-repo). Provider test asserts body carries `bundle` against a **mocked fetch**. Failure direction is safe either way — a service that ignores the field leaves `data_bundle` untouched (stale, never lost); one that strict-validates bodies would 4xx every save that carries a reloaded bundle. Deploy service support before/with this client and gate on one real round-trip.
+
+**F2 (P2): SQL layer trusts projected bundle shape.**
+Append/create RPCs validate only `jsonb_typeof(p_projected_bundle)='object'` (migration :81-85); `schema_version`/item validation is TS-only (writer-side `parseTimelineBundle`, reader-side fail-closed-to-null+warn). A rogue service-role writer can park a nonconforming bundle; readers degrade to `bundle:null`, config unaffected. Acceptable for a service-role-only surface; consider a `data_bundle->'schema_version'` CHECK at M1 convergence.
+
+**F3 (P3): `bundle_replaced` event with null projection silently keeps the stale column** (migration :251-255) — log/projection divergence instead of an exception. The inverse case (projection without event) *does* raise. Writer-bug guard only; should raise symmetrically.
+
+**F4 (P4, accepted-by-design): identical-content segments collapse.** Content-stable ids mean duplicate `{start,end,text}` segments share one `sourceItemId`; pool keep-first yields one occurrence per clip (across-clip occurrences unaffected). Overlapping exact duplicates render identically; documented in `adaptTranscript.ts` header. No collision vector across assets/projects: id embeds `assetId`; bundles are per-timeline rows.
+
+**F5 (P5, pre-existing posture carried forward): failed segment fetch caches `[]` permanently per (runtime, timelineId)** (`requestLaneSegments` catch) — transient network error blanks fetched-transcript evidence until remount; persisted bundle items still paint. Same as V1, documented.
+
+**F6 (P6, theoretical): same-version nested-key erosion.** `provenance`/`extent`/`sourceArtifactRef` sub-schemas are non-strict, so hypothetical future same-version extras inside them are stripped at parse, and saves re-persist the *parsed* object (`loadedBundleRef`). Current v1 vocabulary makes this unreachable; payload is `z.unknown()` (opaque round-trip ✓).
+
+## Verified clean
+- **CAS atomicity:** InMemory/browser providers validate before version-check/mutation; Supabase path is one plpgsql RPC — `FOR UPDATE` lock, CAS check, event inserts, single UPDATE materializing `{config, registry, bundle, version}` (:243-259). No bundle-after-config window.
+- **Fail-closed everywhere:** unknown/missing `schema_version` throws with diagnostic; bridge head declaring an invalid bundle fails the whole parse (no read-quirk-becomes-data-loss); unparsable stored column → `null`+warn while the row keeps the payload; saves use `?? undefined` so a null ref never clears a stored bundle.
+- **Rollback symmetry:** rollback function bodies byte-match `20260612100000` definitions (verified programmatically); column dropped, event-log history intentionally preserved.
+- **Single authority:** module store keyed `(loaderSource, timelineId)`; synchronous requested-set dedupes concurrent mounts; canvas+panel share the runtime-derived loader → one fetch per asset (spy-tested).
+- **No fixture leakage:** fixtures confined to tests; dev-runtime seeds pass the same fail-closed parse.
+
+## NS disposition
+1. Source-domain persistence: strict `SourceFrozenDataItem` — no views/coords/chrome/renderer refs; occurrences derived at assembly. Aligned.
+2. Fail-closed + versioned: `schema_version=1` header, unknown rejected at every entry point. Aligned.
+3. One database, one wire format: bundle rides `timelines.data_bundle` + `timeline_events` via existing CAS RPC. Aligned.
+4. Duration neutrality intact: assembly additive, store `dataLanes` frozen-empty, no trim/speed algebra outside the pinned inverse. Aligned.
+
+Ship gate: F1 service deployment must precede client rollout.
