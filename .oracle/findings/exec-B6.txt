@@ -1,0 +1,61 @@
+# exec-B6 findings — Host lane pipeline + TimelineCanvas mount
+
+STATUS: COMPLETE — batch validate green (60/60 tests, 3 files).
+
+## Pin-up result
+TimelineData → TimelineCanvas chain: exactly ONE production consumer —
+`TimelineEditorCore.tsx:763` (`rows={data.rows}` from the bound store's data
+slice `data.data`). No escalation needed; fallback anchor unused.
+
+## Files changed (all inside batch scope)
+- NEW `src/tools/video-editor/data-kinds/useDataLanes.ts` — thin hook
+  `(base, kinds?, loadSegments?)` → patched TimelineData; default loader =
+  `loadTranscript(runtime.assetResolver, assetId, timelineId)` via
+  `useOptionalVideoEditorRuntime`; explicit `null` loader disables; per-mount
+  per-asset fetch dedupe (requestedRef Set), last-write-wins re-merge on
+  base/kinds change; base identity when nothing assembles.
+- NEW `.../TimelineEditor/DataLaneRow.tsx` — sticky label gutter
+  (LABEL_WIDTH) + shared startLeft/pps mapping; registered laneRenderer
+  invoked as a component inside HostContributionErrorBoundary
+  (contributionId `dataLane:<laneId>`, extensionId from registry record);
+  opaque lanes get host extent-bar paint (left = startLeft + t*pps, 2px floor).
+- NEW `.../TimelineEditor/DataLaneList.tsx` — reads lanes from TimelineData +
+  registry snapshot; filters hidden and renderer-less registered kinds;
+  resolves ownerExtensionId/domain per kindId for the row.
+- `.../TimelineEditor/TimelineCanvas.tsx` (+16/−2): imports, reactive base via
+  `useTimelineEditorDataSafe()?.data`, one useDataLanes call, mount between
+  TrackListRenderer and the content overlay root, `sum(dataLanes.height)`
+  folded into scrollContentHeight (:417). Width/scale math untouched.
+- Tests: NEW `useDataLanes.test.tsx` (7), NEW `DataLaneList.test.tsx` (6),
+  `TimelineCanvas.test.tsx` +4 (lane strip describe; module mock of
+  useDataLanes with passthrough default so all pre-existing cases unaffected).
+
+## Validate
+`npx vitest run --config config/testing/vitest.config.ts <batch paths>` →
+Test Files 3 passed, Tests 60 passed (49 pre-existing canvas + 11 new).
+Adjacent regression probe: TimelineEditorShellCore.test.tsx PASS.
+`tsc --noEmit -p tsconfig.app.json`: zero errors in batch files.
+
+## Deviations / observations for oracle
+1. useDataLanes uses `useOptionalVideoEditorRuntime()` (null-safe) rather than
+   the throwing `useVideoEditorRuntime()` — same runtime source, but bare-canvas
+   test environments and non-editor mounts fail open to empty lanes.
+2. DataLaneRow passes boundary `kind="slot"` (no `dataLane` member exists in
+   ErrorBoundaryContributionKind; that union lives in ContributionErrorBoundary,
+   outside batch scope).
+3. FOUND DEFECT (pre-existing, NOT fixed — assembleDataLanes.ts is Batch 4's
+   file): `mergeDataLanes` return type `TimelineData & { readonly dataLanes:
+   readonly DataLaneView[] }` no longer typechecks after B5 made
+   `TimelineData.dataLanes` mutable — TS2322 at assembleDataLanes.ts:155.
+   One-line fix for the rework flow: return type plain `TimelineData`
+   (intersection is now redundant). Flagged for B9's typecheck gate.
+4. Registry context gap (wave-level, not batch-level): DataKindRegistryProvider
+   is not mounted anywhere in the tree (editorRuntimeAssembly owns the registry
+   instance via dataKindRegistryRef; no lifecycle component bridges it into
+   context the way RuntimeClipTypeRegistryLifecycle does for clipTypes).
+   Consequence: in the running editor today every assembled lane renders OPAQUE
+   (host extent bars); registered-kind renderer lanes display only under a
+   provider (tests prove that path). B8's done-4 dev example will need the
+   provider mounted + bridged to dataKindRegistryRef to show renderer output.
+5. mobile-interaction-conformance.test.tsx fails identically (77) on
+   pre-batch HEAD — pre-existing selectionStore mock gap, unrelated.
