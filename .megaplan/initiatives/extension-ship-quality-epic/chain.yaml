@@ -1,0 +1,54 @@
+base_branch: codex/extension-ship-quality
+anchors:
+  north_star: NORTHSTAR.md
+milestones:
+  - label: m1-integration-baseline
+    idea: .megaplan/initiatives/extension-ship-quality-epic/briefs/m1-integration-baseline.md
+    branch: codex/extension-ship-quality-m1
+    profile: partnered-5
+    vendor: codex
+    robustness: thorough
+    depth: high
+    notes: Lock the clean paired-repository base and make all inherited gates green.
+  - label: m2-contracts-durability
+    idea: .megaplan/initiatives/extension-ship-quality-epic/briefs/m2-contracts-durability.md
+    branch: codex/extension-ship-quality-m2
+    profile: partnered-5
+    vendor: codex
+    robustness: thorough
+    depth: high
+    notes: Provenance, transcript conflict policy, bridge hardening, migration and rollback.
+  - label: m3-scale-test-security
+    idea: .megaplan/initiatives/extension-ship-quality-epic/briefs/m3-scale-test-security.md
+    branch: codex/extension-ship-quality-m3
+    profile: partnered-5
+    vendor: codex
+    robustness: thorough
+    depth: high
+    notes: Virtualization, deterministic mode, matrices, budgets, recovery and trusted-code boundary.
+  - label: m4-e2e-render-acceptance
+    idea: .megaplan/initiatives/extension-ship-quality-epic/briefs/m4-e2e-render-acceptance.md
+    branch: codex/extension-ship-quality-m4
+    profile: partnered-5
+    vendor: codex
+    robustness: thorough
+    depth: high
+    notes: Real-browser, multi-engine, render/export and independent persona acceptance evidence.
+  - label: m5-release-freeze
+    idea: .megaplan/initiatives/extension-ship-quality-epic/briefs/m5-release-freeze.md
+    branch: codex/extension-ship-quality-m5
+    profile: partnered-5
+    vendor: codex
+    robustness: thorough
+    depth: high
+    notes: Flags, observability, runbooks, reproducible RC and final clean-machine gate.
+on_failure:
+  abort: stop_chain
+on_escalate:
+  abort: stop_chain
+merge_policy: auto
+driver:
+  robustness: thorough
+  auto_approve: true
+  max_iterations: 80
+  poll_sleep: 8.0
