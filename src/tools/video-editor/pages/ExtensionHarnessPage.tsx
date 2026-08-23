@@ -5,7 +5,7 @@
  * package-error, and repaired-settings states using mock VideoEditorRuntimeContextValue
  * injected through VideoEditorRuntimeProvider. Also exposes a dedicated manager-cycle
  * scenario backed by the real BrowserVideoEditorProvider, persistence
- * repository, loader re-resolution, and smoke contribution rendering.
+ * repository, loader re-resolution, and installed-extension activation.
  *
  * Usage: /tools/video-editor/harness?scenario=populated|empty|package-error|repaired-settings|manager-cycle|all
  *
@@ -22,12 +22,6 @@ import {
 } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext';
 import { ExtensionManager } from '@/tools/video-editor/components/ExtensionManager/ExtensionManager';
 import { ExtensionActivityRegion, type ExtensionStatusEvent } from '@/tools/video-editor/components/ExtensionActivityRegion';
-import {
-  EXTENSION_SMOKE_ACTIVE_VALUE,
-  EXTENSION_SMOKE_QUERY_PARAM,
-  getExtensionSmokeExtension,
-} from '@/sdk/smoke/extensionSmoke';
-import { useVideoEditorRenderContext, useVideoEditorSlotRenderers } from '@/tools/video-editor/runtime/useVideoEditorRenderContext';
 import { InMemoryDataProvider } from '@/tools/video-editor/testing/InMemoryDataProvider';
 import type { DataProvider } from '@/tools/video-editor/data/DataProvider';
 import type {
@@ -37,7 +31,12 @@ import type {
   ExtensionDiagnostic,
 } from '@reigh/editor-sdk';
 import type { PackageStateInventoryEntry, ExtensionRuntime } from '@/tools/video-editor/runtime/extensionSurface';
-import type { ExtensionStateRepository } from '@/tools/video-editor/runtime/extensionStateRepository';
+import type {
+  ExtensionPackRecord,
+  ExtensionStateRepository,
+} from '@/tools/video-editor/runtime/extensionStateRepository';
+import type { BundleContentStore } from '@/tools/video-editor/runtime/useExtensionLoaderWiring';
+import { generateIntegrityHash } from '@/tools/video-editor/runtime/extensionIntegrity';
 
 // ---------------------------------------------------------------------------
 // Scenario type
@@ -66,6 +65,8 @@ const MANAGER_CYCLE_TIMELINE_ID = 'extension-harness-manager-cycle';
 const MANAGER_CYCLE_USER_ID = 'extension-harness-user';
 const MANAGER_CYCLE_PROJECT_ID = 'extension-harness-project';
 const MANAGER_CYCLE_EXTENSION_ID = 'com.reigh.smoke.extension-smoke';
+const MANAGER_CYCLE_BUNDLE_REF = 'extension-harness-manager-cycle-bundle';
+const MANAGER_CYCLE_BUNDLE = 'export function activate() { return { dispose() {} }; }';
 
 // ---------------------------------------------------------------------------
 // Mock DiagnosticCollection
@@ -420,14 +421,15 @@ const ScenarioCard: FC<{
 
 function ManagerCycleContributionProbe() {
   const { extensionRuntime, extensionStateRepository } = useVideoEditorRuntime();
-  const renderContext = useVideoEditorRenderContext();
-  const slotRenderers = useVideoEditorSlotRenderers();
   const [persistedEnablement, setPersistedEnablement] = useState('loading');
 
   const packageState =
     extensionRuntime?.packageStateInventory.find(
       (entry) => entry.extensionId === MANAGER_CYCLE_EXTENSION_ID,
     )?.packageState ?? 'missing';
+  const isActive = extensionRuntime?.extensions.some(
+    (extension) => extension.manifest.id === MANAGER_CYCLE_EXTENSION_ID,
+  ) ?? false;
 
   useEffect(() => {
     let cancelled = false;
@@ -484,16 +486,10 @@ function ManagerCycleContributionProbe() {
 
       <div className="rounded-lg border border-border bg-card/30 p-3">
         <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          Status Bar Surface
+          Runtime Activation
         </div>
-        <div className="mt-2" data-testid="extension-manager-cycle-status-surface">
-          {slotRenderers.statusBar
-            ? slotRenderers.statusBar(renderContext)
-            : (
-              <span data-testid="extension-manager-cycle-no-contribution">
-                No active status-bar contribution
-              </span>
-            )}
+        <div className="mt-2" data-testid="extension-manager-cycle-active-extension">
+          {isActive ? 'active' : 'inactive'}
         </div>
       </div>
     </div>
@@ -504,17 +500,11 @@ function ManagerCycleScenarioCard() {
   const [dataProvider] = useState(
     () => new InMemoryDataProvider({ [MANAGER_CYCLE_TIMELINE_ID]: {} }),
   );
-  const [repository, setRepository] = useState<ExtensionStateRepository | null | undefined>(
+  const [repository, setRepository] = useState<ExtensionStateRepository | undefined>(
     undefined,
   );
+  const [bundleStore, setBundleStore] = useState<BundleContentStore | undefined>(undefined);
   const [initializationError, setInitializationError] = useState<string | null>(null);
-  const smokeExtension = useMemo(
-    () =>
-      getExtensionSmokeExtension(
-        `?${EXTENSION_SMOKE_QUERY_PARAM}=${EXTENSION_SMOKE_ACTIVE_VALUE}`,
-      ),
-    [],
-  );
 
   useEffect(() => {
     const diagnostics: ExtensionDiagnostic[] = [];
@@ -528,13 +518,43 @@ function ManagerCycleScenarioCard() {
 
     let disposed = false;
 
-    service.initialize().then(() => {
+    service.initialize().then(async () => {
       if (disposed) {
         service.dispose().catch(() => {});
         return;
       }
-
-      setRepository(service.stateRepository);
+      const stateRepository = service.stateRepository;
+      if (!stateRepository) {
+        throw new Error('Extension persistence repository is unavailable.');
+      }
+      if (!await stateRepository.getPackRecord(MANAGER_CYCLE_EXTENSION_ID)) {
+        const pack: ExtensionPackRecord = {
+          extensionId: MANAGER_CYCLE_EXTENSION_ID,
+          version: '1.0.0',
+          apiVersion: 1,
+          integrity: await generateIntegrityHash(MANAGER_CYCLE_BUNDLE),
+          installedAt: '2026-08-23T00:00:00.000Z',
+          bundleContentRef: MANAGER_CYCLE_BUNDLE_REF,
+          manifestSnapshot: {
+            id: MANAGER_CYCLE_EXTENSION_ID as never,
+            version: '1.0.0',
+            label: 'Managed Smoke Extension',
+            publisher: 'Reigh',
+            license: 'MIT',
+            contributions: [],
+          },
+          publisher: 'Reigh',
+          license: 'MIT',
+        };
+        await stateRepository.putPackRecord(pack);
+      }
+      if (disposed) return;
+      setBundleStore({
+        getBundleContent: async (ref) => ref === MANAGER_CYCLE_BUNDLE_REF
+          ? MANAGER_CYCLE_BUNDLE
+          : null,
+      });
+      setRepository(stateRepository);
     }).catch((error) => {
       if (!disposed) {
         setInitializationError(
@@ -549,14 +569,6 @@ function ManagerCycleScenarioCard() {
     };
   }, [dataProvider]);
 
-  if (!smokeExtension) {
-    return (
-      <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">
-        Smoke extension is unavailable.
-      </div>
-    );
-  }
-
   if (initializationError) {
     return (
       <div
@@ -568,7 +580,7 @@ function ManagerCycleScenarioCard() {
     );
   }
 
-  if (repository === undefined) {
+  if (repository === undefined || bundleStore === undefined) {
     return (
       <div className="rounded-lg border border-border bg-card/30 p-3 text-sm text-muted-foreground">
         Initializing real extension manager harness…
@@ -584,7 +596,8 @@ function ManagerCycleScenarioCard() {
       userId={MANAGER_CYCLE_USER_ID}
       hostContext={{ projectId: MANAGER_CYCLE_PROJECT_ID }}
       repository={repository}
-      extensions={[smokeExtension]}
+      bundleStore={bundleStore}
+      extensions={[]}
     >
       <div className="space-y-4 rounded-xl border-2 border-border bg-card/40 p-4">
         <div className="border-b border-border pb-2">

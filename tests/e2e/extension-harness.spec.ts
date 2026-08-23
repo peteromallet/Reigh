@@ -29,7 +29,10 @@ const HARNESS_BASE = '/tools/video-editor/harness';
 
 /** Navigate to a harness scenario and wait for DOM content loaded. */
 async function goToScenario(page: Page, scenario: string) {
-  await page.goto(`${HARNESS_BASE}?scenario=${scenario}`, { waitUntil: 'domcontentloaded' });
+  await page.goto(
+    `${HARNESS_BASE}?scenario=${scenario}&localTest=1&localProject=extension-harness&localTimeline=extension-harness`,
+    { waitUntil: 'domcontentloaded' },
+  );
 }
 
 /**
@@ -274,7 +277,7 @@ test.describe('Extension Harness — Repaired Settings', () => {
 // ---------------------------------------------------------------------------
 
 test.describe('Extension Harness — Integrated Manager Cycle', () => {
-  test('disable/enable persists through the repository and re-renders the smoke contribution without page refresh', async ({ page }) => {
+  test('disable/enable persists and re-renders installed-extension activation without page refresh', async ({ page }) => {
     await goToScenario(page, 'manager-cycle');
 
     const extensionId = 'com.reigh.smoke.extension-smoke';
@@ -282,14 +285,14 @@ test.describe('Extension Harness — Integrated Manager Cycle', () => {
     const toggle = page.locator(`[data-video-editor-extension-toggle="${extensionId}"]`);
     const persistedEnablement = page.getByTestId('extension-manager-cycle-persisted-enablement');
     const packageState = page.getByTestId('extension-manager-cycle-package-state');
-    const smokeContribution = page.getByTestId('extension-smoke-status');
+    const activeExtension = page.getByTestId('extension-manager-cycle-active-extension');
 
     await expect(packageCard).toBeVisible();
     await expect(packageCard).toHaveAttribute('data-video-editor-extension-package-state', 'loaded');
     await expect(packageState).toHaveText('loaded');
     await expect(persistedEnablement).toHaveText('enabled');
     await expect(toggle).toHaveAttribute('aria-label', `Disable ${extensionId}`);
-    await expect(smokeContribution).toBeVisible();
+    await expect(activeExtension).toHaveText('active');
 
     await toggle.click();
 
@@ -297,7 +300,7 @@ test.describe('Extension Harness — Integrated Manager Cycle', () => {
     await expect(packageState).toHaveText('disabled-by-user');
     await expect(persistedEnablement).toHaveText('disabled');
     await expect(toggle).toHaveAttribute('aria-label', `Enable ${extensionId}`);
-    await expect(smokeContribution).toHaveCount(0);
+    await expect(activeExtension).toHaveText('inactive');
 
     await toggle.click();
 
@@ -305,7 +308,7 @@ test.describe('Extension Harness — Integrated Manager Cycle', () => {
     await expect(packageState).toHaveText('loaded');
     await expect(persistedEnablement).toHaveText('enabled');
     await expect(toggle).toHaveAttribute('aria-label', `Disable ${extensionId}`);
-    await expect(smokeContribution).toBeVisible();
+    await expect(activeExtension).toHaveText('active');
   });
 });
 

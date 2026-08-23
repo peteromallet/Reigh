@@ -32,6 +32,7 @@ vi.mock('@/tools/video-editor/dev/localExtensions', () => ({
 
 interface PackageEntryInput {
   extensionId: string;
+  packageSource?: 'direct' | 'installed';
   packageState: string;
   stateReason?: string;
   label?: string;
@@ -43,6 +44,7 @@ interface PackageEntryInput {
 function makeEntry(input: PackageEntryInput) {
   return {
     extensionId: input.extensionId,
+    packageSource: input.packageSource,
     packageState: input.packageState,
     stateReason: input.stateReason ?? '',
     packageMetadata: input.label
@@ -2644,6 +2646,30 @@ describe('ExtensionManager — direct entry read-only (T11)', () => {
       expect(
         screen.queryByRole('button', { name: /ext\.direct/i }),
       ).not.toBeInTheDocument();
+    });
+
+    it('uses explicit source provenance instead of mutable reason text', () => {
+      const repo = makeRepository();
+      mockUseVideoEditorRuntime.mockReturnValue({
+        extensionRuntime: makeRuntime([
+          {
+            extensionId: 'ext.direct-provenance',
+            packageSource: 'direct',
+            packageState: 'loaded',
+            label: 'Direct Provenance Package',
+            stateReason: 'Loaded successfully.',
+          },
+        ]),
+        extensionStateRepository: repo,
+        triggerExtensionRefresh: vi.fn(),
+      });
+
+      render(<ExtensionManager />);
+
+      expect(screen.getByText('Direct Provenance Package')).toBeInTheDocument();
+      expect(screen.getByText('Direct')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /ext\.direct-provenance/i })).not.toBeInTheDocument();
+      expect(repo.putEnablementState).not.toHaveBeenCalled();
     });
 
     it('does NOT show toggle for direct entries even when disabled-by-user state (edge case)', () => {

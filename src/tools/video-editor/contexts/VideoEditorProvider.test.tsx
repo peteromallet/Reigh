@@ -1986,6 +1986,72 @@ describe('VideoEditorProvider', () => {
     )).toBe(true);
   });
 
+  it('preserves direct source provenance through repository-backed resolution', async () => {
+    const extensionId = 'com.t14.direct-repository';
+    const extension = defineExtension({
+      manifest: {
+        id: extensionId as never,
+        version: '1.0.0',
+        label: 'Direct Repository Extension',
+        contributions: [],
+      },
+    });
+
+    const { result } = renderHook(() => useExtensionLoaderWiring({
+      directExtensions: [extension],
+      repository: makeWiringRepository(emptyExtensionState()),
+    }));
+
+    await waitFor(() => {
+      expect(result.current.isResolving).toBe(false);
+    });
+
+    expect(result.current.packageStateEntries).toEqual([
+      expect.objectContaining({
+        extensionId,
+        packageSource: 'direct',
+        packageState: 'loaded',
+      }),
+    ]);
+  });
+
+  it('keeps a schemaless package loadable after a durable settings snapshot', async () => {
+    const extensionId = 'com.t14.schemaless-snapshot';
+    const extension = defineExtension({
+      manifest: {
+        id: extensionId as never,
+        version: '1.0.0',
+        label: 'Schemaless Snapshot Extension',
+      },
+    });
+    const fullState = {
+      ...emptyExtensionState(),
+      settings: {
+        [extensionId]: {
+          extensionId,
+          schemaVersion: 1,
+          values: { legacyKey: 'preserved' },
+          lastWrittenAt: '2026-08-23T00:00:00.000Z',
+        },
+      },
+    };
+
+    const { result } = renderHook(() => useExtensionLoaderWiring({
+      directExtensions: [extension],
+      repository: makeWiringRepository(fullState),
+    }));
+
+    await waitFor(() => expect(result.current.isResolving).toBe(false));
+
+    expect(result.current.resolvedExtensions).toHaveLength(1);
+    expect(result.current.packageStateEntries).toEqual([
+      expect.objectContaining({
+        extensionId,
+        packageState: 'loaded',
+      }),
+    ]);
+  });
+
   it('surfaces settings snapshot schema failures in packageStateEntries', async () => {
     const extensionId = 'com.t14.settings-error';
     const extension: ReighExtension = defineExtension({
@@ -2035,6 +2101,7 @@ describe('VideoEditorProvider', () => {
     expect(result.current.packageStateEntries).toEqual([
       expect.objectContaining({
         extensionId,
+        packageSource: 'direct',
         packageState: 'settings-error',
         stateReason: expect.stringContaining('Missing required setting "mode".'),
         packageMetadata: expect.objectContaining({

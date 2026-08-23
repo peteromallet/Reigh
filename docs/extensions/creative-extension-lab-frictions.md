@@ -738,3 +738,51 @@ evidence and a concrete improvement direction.
   reviewed-extension dimensions, and documents a distributed gateway quota as
   a rollout blocker. Authentication and payload privacy are separate controls;
   both are required.
+
+### Package provenance cannot be inferred from human-readable status text
+
+- The manager decided that a package was a read-only, host-supplied extension
+  by comparing its mutable `stateReason` with one exact English sentence. A
+  direct workspace extension that passed through repository-backed resolution
+  could therefore acquire a normal loaded reason and incorrectly expose an
+  enable/disable control whose repository write could never unload it.
+- Package inventory now carries explicit `direct` or `installed` provenance
+  through validation, conflict resolution, settings failures, and successful
+  activation. Manager affordances use that host-owned field, with the old
+  sentence retained only as a compatibility fallback. Control authority must
+  be machine-readable and end-to-end; presentation strings are not policy.
+
+### A lifecycle test is only meaningful when it controls the real package form
+
+- The original browser manager-cycle scenario displayed a direct smoke
+  extension while toggling an installed-package repository record. Its visible
+  contribution looked convincing, but the two objects were governed by
+  different authorities, so the scenario could not prove disable and re-enable
+  of an installed extension.
+- The harness now seeds a valid, integrity-checked installed pack and bundle,
+  then asserts the active runtime inventory and durable enablement state across
+  both transitions without refreshing. Browser acceptance fixtures should be
+  rejected when the control under test and the observed object do not share an
+  identity and authority path.
+
+### Schemaless settings snapshots must survive a disable/re-enable cycle
+
+- Extension disposal durably writes a settings snapshot, including an empty or
+  legacy key-value object for packages with no declared JSON schema. The loader
+  previously sent that snapshot through schema validation with an undefined
+  schema and reclassified the package as `settings-error` on reactivation.
+- An absent settings schema is now an intentional raw-settings path; validation
+  runs only when the manifest actually declares a schema. A regression test
+  preserves a legacy value and proves the package still loads. Persistence
+  tests must cover state written during teardown, not only initial hydration.
+
+### Deterministic local-test mode must short-circuit global application chrome
+
+- The editor harness correctly selected its local provider, but the global
+  header still initialized Supabase authentication. A test URL could therefore
+  fail before reaching the editor when production credentials were absent,
+  making a supposedly hermetic browser gate depend on unrelated infrastructure.
+- Global-header authentication and referral effects now no-op in explicit
+  local-test mode, with a unit test proving that no Supabase surface is touched.
+  Deterministic mode is an application-shell contract, not a feature-local
+  flag; every global side effect must honor it.

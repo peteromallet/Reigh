@@ -372,6 +372,7 @@ export function useExtensionLoaderWiring(
       const summary = computePackageContributionSummary(contribs);
       return {
         extensionId,
+        packageSource: 'direct' as const,
         packageState: 'loaded' as const,
         stateReason: 'Direct host-supplied extension',
         packageMetadata: metadata,
@@ -555,6 +556,7 @@ export function useExtensionLoaderWiring(
             const manifestContribs = contributionsFromInput(entry.input);
             return {
               extensionId: extId,
+              packageSource: entry.input.kind === 'direct' ? 'direct' as const : 'installed' as const,
               packageState: 'invalid' as const,
               stateReason: diagnosticMessage(entry.errors, 'Manifest validation failed.'),
               packageMetadata: metadataFromInput(entry.input),
@@ -588,6 +590,7 @@ export function useExtensionLoaderWiring(
                 const manifestContribs = contributionsFromManifest(manifest);
                 settingsErrorEntries.push({
                   extensionId,
+                  packageSource: pkg.form === 'workspace-source' ? 'direct' : 'installed',
                   packageState: 'settings-error' as const,
                   stateReason: diagnostic.message,
                   packageMetadata: metadataFromManifest(manifest),
@@ -600,10 +603,13 @@ export function useExtensionLoaderWiring(
               return false;
             }
 
-            const validationError = validateSettingsValuesAgainstSchema(
-              snapshot.values,
-              manifest.settingsSchema?.schema,
-            );
+            // Schemaless/legacy packages intentionally use the manager's raw
+            // key-value path. Their dispose-time snapshot is still durable and
+            // must not turn the package into settings-error on reactivation.
+            const declaredSchema = manifest.settingsSchema?.schema;
+            const validationError = declaredSchema === undefined
+              ? null
+              : validateSettingsValuesAgainstSchema(snapshot.values, declaredSchema);
             if (validationError) {
               const diagnostic = createSettingsErrorDiagnostic(extensionId, validationError);
               settingsDiagnostics.push(diagnostic);
@@ -611,6 +617,7 @@ export function useExtensionLoaderWiring(
                 const manifestContribs = contributionsFromManifest(manifest);
                 settingsErrorEntries.push({
                   extensionId,
+                  packageSource: pkg.form === 'workspace-source' ? 'direct' : 'installed',
                   packageState: 'settings-error' as const,
                   stateReason: diagnostic.message,
                   packageMetadata: metadataFromManifest(manifest),
@@ -632,6 +639,7 @@ export function useExtensionLoaderWiring(
               const manifestContribs = contributionsFromManifest(manifest);
               settingsErrorEntries.push({
                 extensionId,
+                packageSource: pkg.form === 'workspace-source' ? 'direct' : 'installed',
                 packageState: 'settings-error' as const,
                 stateReason: diagnostic.message,
                 packageMetadata: metadataFromManifest(manifest),
@@ -662,13 +670,18 @@ export function useExtensionLoaderWiring(
         function resolveContributionsForLoadEntry(
           extId: string,
           packageState: string,
-        ): { manifestContributions: readonly ExtensionContribution[] | null; contributionSummary: PackageContributionSummary | null } {
+        ): {
+          manifestContributions: readonly ExtensionContribution[] | null;
+          contributionSummary: PackageContributionSummary | null;
+          packageSource: 'direct' | 'installed';
+        } {
           const meta = inputMetaByExtId.get(extId);
           const conflictEntry = loadResult.conflictResolution?.entries.find(
             (ce) => ce.extensionId === extId,
           );
 
           let manifestContributions: readonly ExtensionContribution[] | null = null;
+          let packageSource: 'direct' | 'installed' = meta?.direct ? 'direct' : 'installed';
 
           if (meta) {
             if (conflictEntry && conflictEntry.hasConflict) {
@@ -676,11 +689,13 @@ export function useExtensionLoaderWiring(
               // For loser entries (duplicate, disabled-by-user): use the opposite form.
               if (packageState === 'duplicate' || packageState === 'disabled-by-user') {
                 // Loser: opposite of winner
+                packageSource = conflictEntry.winner === 'local' ? 'installed' : 'direct';
                 manifestContributions = conflictEntry.winner === 'local'
                   ? meta.installed?.manifestContributions ?? null
                   : meta.direct?.manifestContributions ?? null;
               } else {
                 // Winner (loaded, incompatible, runtime-error)
+                packageSource = conflictEntry.winner === 'local' ? 'direct' : 'installed';
                 manifestContributions = conflictEntry.winner === 'local'
                   ? meta.direct?.manifestContributions ?? null
                   : meta.installed?.manifestContributions ?? null;
@@ -695,6 +710,7 @@ export function useExtensionLoaderWiring(
 
           return {
             manifestContributions,
+            packageSource,
             contributionSummary: manifestContributions && manifestContributions.length > 0
               ? computePackageContributionSummary(manifestContributions)
               : null,
@@ -710,6 +726,7 @@ export function useExtensionLoaderWiring(
               const resolved = resolveContributionsForLoadEntry(entry.extensionId, entry.packageState);
               return {
                 extensionId: entry.extensionId,
+                packageSource: resolved.packageSource,
                 packageState: entry.packageState,
                 stateReason: entry.stateReason,
                 packageMetadata: entry.packageMetadata,

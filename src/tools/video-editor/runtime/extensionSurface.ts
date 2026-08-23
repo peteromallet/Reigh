@@ -630,6 +630,8 @@ export interface ExtensionRuntime {
  */
 export interface PackageStateInventoryEntry {
   readonly extensionId: string;
+  /** Host-owned provenance; direct workspace code is never repository-toggleable. */
+  readonly packageSource?: 'direct' | 'installed';
   readonly packageState: PackageState;
   readonly stateReason: string;
   readonly packageMetadata: PackageMetadata | null;

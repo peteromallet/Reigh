@@ -4,6 +4,7 @@ import { getAuthStateManager } from '@/integrations/supabase/auth/AuthStateManag
 import type { Session } from '@supabase/supabase-js';
 import type { ReferralStats, GlobalHeaderAuthState } from './types';
 import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
+import { isLocalTestMode } from '@/app/localTestRuntime';
 
 /** Fetch username for a given user ID */
 async function fetchUsername(userId: string): Promise<string | null> {
@@ -25,12 +26,14 @@ async function fetchUsername(userId: string): Promise<string | null> {
  * Handles session tracking, username fetch, and referral stats.
  */
 export function useGlobalHeaderAuth(): GlobalHeaderAuthState {
+  const localTestMode = isLocalTestMode();
   const [session, setSession] = useState<Session | null>(null);
   const [username, setUsername] = useState<string | null>(null);
   const [referralStats, setReferralStats] = useState<ReferralStats | null>(null);
 
   // Track session + username
   useEffect(() => {
+    if (localTestMode) return undefined;
     const getSessionAndUserData = async () => {
       const { data: { session }, error } = await supabase().auth.getSession();
       if (error) {
@@ -73,10 +76,14 @@ export function useGlobalHeaderAuth(): GlobalHeaderAuthState {
     return () => {
       if (unsubscribe) unsubscribe();
     };
-  }, []);
+  }, [localTestMode]);
 
   // Get referral stats when username is available
   useEffect(() => {
+    if (localTestMode) {
+      setReferralStats(null);
+      return;
+    }
     const getReferralStats = async () => {
       if (!username) {
         setReferralStats(null);
@@ -111,7 +118,7 @@ export function useGlobalHeaderAuth(): GlobalHeaderAuthState {
     };
 
     getReferralStats();
-  }, [username]);
+  }, [localTestMode, username]);
 
   return { session, username, referralStats };
 }

@@ -54,7 +54,8 @@ export function PackageCard({
   const description = packageMetadata?.description;
 
   // T11: Direct host-supplied extensions are read-only (no install/update/toggle affordances).
-  const isDirectEntry = stateReason === 'Direct host-supplied extension';
+  const isDirectEntry = entry.packageSource === 'direct'
+    || stateReason === 'Direct host-supplied extension';
 
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
