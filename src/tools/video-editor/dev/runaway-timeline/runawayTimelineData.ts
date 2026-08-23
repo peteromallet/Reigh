@@ -3,12 +3,19 @@ import type { SourceFrozenDataItem } from '@/tools/video-editor/data/typed/envel
 import { freezeSourceDataItem } from '@/tools/video-editor/data/typed/envelope.ts';
 import { isLocalTestMode } from '@/app/localTestRuntime.ts';
 import { BRIDGE_REQUEST_TIMEOUT_MS } from '@/tools/video-editor/data/bridgeContract.ts';
+import {
+  ASTRID_BRIDGE_PROTOCOL_HEADER,
+  ASTRID_BRIDGE_PROTOCOL_VERSION,
+} from '@/tools/video-editor/data/astridBridgeWire.ts';
 
 export const RUNAWAY_SCHEMA_REF = 'reigh.runaway_transition/v1';
 export const RUNAWAY_KIND_ID = 'reigh.runaway.transitions';
 export const RUNAWAY_PROJECT_PARAM = 'runawayTimelineProject';
 export const DEFAULT_RUNAWAY_PROJECT = 'runaway-piano-colour-demo';
 export const RUNAWAY_SOURCE_ARTIFACT_PREFIX = 'astrid:runaway-timing:';
+export const RUNAWAY_PAGE_LIMIT = 1_000;
+export const RUNAWAY_MAX_PAGES = 100;
+export const RUNAWAY_MAX_TRANSITIONS = RUNAWAY_PAGE_LIMIT * RUNAWAY_MAX_PAGES;
 
 export interface RunawayTimingSummary {
   readonly evidenceId: string;
@@ -91,6 +98,12 @@ function finiteNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
+function nonNegativeSafeInteger(value: unknown): number | null {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+    ? value
+    : null;
+}
+
 function nonEmptyString(value: unknown): string | null {
   return typeof value === 'string' && value.trim() !== '' ? value : null;
 }
@@ -130,13 +143,14 @@ export function parseRunawayBridgeResponse(value: unknown): readonly SourceFroze
   const summary = parseSummary(root.timing_summary as RawBridgeResponse['timing_summary']);
   const seenIds = new Set<string>();
   const seenManifestIds = new Set<string>();
+  const seenOrdinals = new Set<number>();
   const items: SourceFrozenDataItem[] = [];
   for (const [index, candidate] of root.transitions.entries()) {
     const row = asRecord(candidate);
     const metadata = asRecord(row?.metadata);
     const id = nonEmptyString(row?.id);
     const runId = nonEmptyString(row?.run_id);
-    const ordinal = finiteNumber(row?.ordinal);
+    const ordinal = nonNegativeSafeInteger(row?.ordinal);
     const startMs = finiteNumber(row?.start_ms);
     const durationMs = finiteNumber(row?.duration_ms);
     const prompt = nonEmptyString(row?.prompt);
@@ -147,8 +161,10 @@ export function parseRunawayBridgeResponse(value: unknown): readonly SourceFroze
     const manifestId = nonEmptyString(metadata.manifest_id) ?? `T${String(ordinal + 1).padStart(4, '0')}`;
     if (seenIds.has(id)) throw new Error(`Duplicate Runaway transition id: ${id}`);
     if (seenManifestIds.has(manifestId)) throw new Error(`Duplicate Runaway manifest id: ${manifestId}`);
+    if (seenOrdinals.has(ordinal)) throw new Error(`Duplicate Runaway ordinal: ${ordinal}`);
     seenIds.add(id);
     seenManifestIds.add(manifestId);
+    seenOrdinals.add(ordinal);
     const start = startMs / 1000;
     const end = (startMs + durationMs) / 1000;
     const payload: RunawayTransitionPayload = Object.freeze({
@@ -190,11 +206,91 @@ export function parseRunawayBridgeResponse(value: unknown): readonly SourceFroze
     }));
   }
   items.sort((a, b) => (a.extent.start - b.extent.start) || a.id.localeCompare(b.id));
-  const advertisedCount = finiteNumber(root.count);
-  if (advertisedCount !== null && advertisedCount !== items.length) {
+  const advertisedCount = nonNegativeSafeInteger(root.count);
+  if (advertisedCount === null) {
+    throw new Error('Runaway bridge response must contain a non-negative integer count');
+  }
+  if (advertisedCount !== items.length) {
     throw new Error(`Runaway bridge count mismatch: advertised ${advertisedCount}, received ${items.length}`);
   }
   return Object.freeze(items);
+}
+
+interface ValidatedRunawayPage {
+  readonly project: string;
+  readonly count: number;
+  readonly totalCount: number;
+  readonly snapshot: string;
+  readonly nextCursor: string | null;
+  readonly timingSummary: RawBridgeResponse['timing_summary'];
+  readonly timingSummaryFingerprint: string;
+  readonly transitions: readonly RawTransition[];
+}
+
+function canonicalJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalJsonValue);
+  const record = asRecord(value);
+  if (!record) return value;
+  return Object.fromEntries(
+    Object.keys(record).sort().map((key) => [key, canonicalJsonValue(record[key])]),
+  );
+}
+
+function validateRunawayPage(
+  value: unknown,
+  expectedProject: string,
+): ValidatedRunawayPage {
+  const root = asRecord(value);
+  if (!root || root.api_version !== ASTRID_BRIDGE_PROTOCOL_VERSION) {
+    throw new Error(
+      `Runaway bridge protocol mismatch: expected ${ASTRID_BRIDGE_PROTOCOL_VERSION}`,
+    );
+  }
+  const project = nonEmptyString(root.project);
+  if (project !== expectedProject) {
+    throw new Error(`Runaway bridge project mismatch: expected ${expectedProject}`);
+  }
+  if (!Array.isArray(root.transitions)) {
+    throw new Error('Runaway bridge response must contain transitions[]');
+  }
+  const count = nonNegativeSafeInteger(root.count);
+  if (count === null || count !== root.transitions.length) {
+    throw new Error(
+      `Runaway bridge page count mismatch: advertised ${String(root.count)}, received ${root.transitions.length}`,
+    );
+  }
+  const totalCount = nonNegativeSafeInteger(root.total_count);
+  if (totalCount === null || totalCount > RUNAWAY_MAX_TRANSITIONS) {
+    throw new Error(
+      `Runaway bridge total_count must be between 0 and ${RUNAWAY_MAX_TRANSITIONS}`,
+    );
+  }
+  const snapshot = nonEmptyString(root.snapshot);
+  if (!snapshot) throw new Error('Runaway bridge response must contain a snapshot');
+  const page = asRecord(root.page);
+  const pageLimit = nonNegativeSafeInteger(page?.limit);
+  if (!page || pageLimit !== RUNAWAY_PAGE_LIMIT || count > pageLimit
+    || !Object.prototype.hasOwnProperty.call(page, 'next_cursor')) {
+    throw new Error(`Runaway bridge page must declare limit ${RUNAWAY_PAGE_LIMIT}`);
+  }
+  const nextCursor = page.next_cursor === null ? null : nonEmptyString(page.next_cursor);
+  if (page.next_cursor !== null && !nextCursor) {
+    throw new Error('Runaway bridge page.next_cursor must be a non-empty string or null');
+  }
+  const timingSummary = root.timing_summary;
+  if (timingSummary !== null && !asRecord(timingSummary)) {
+    throw new Error('Runaway bridge timing_summary must be an object or null');
+  }
+  return {
+    project,
+    count,
+    totalCount,
+    snapshot,
+    nextCursor,
+    timingSummary: timingSummary as RawBridgeResponse['timing_summary'],
+    timingSummaryFingerprint: JSON.stringify(canonicalJsonValue(timingSummary)),
+    transitions: root.transitions as RawTransition[],
+  };
 }
 
 const requestCache = new Map<string, Promise<readonly SourceFrozenDataItem[]>>();
@@ -251,6 +347,131 @@ function statusItem(
   });
 }
 
+class RunawayBridgeInvalidResponseError extends Error {
+  readonly cause: unknown;
+
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause));
+    this.name = 'RunawayBridgeInvalidResponseError';
+    this.cause = cause;
+  }
+}
+
+function invalidResponse(cause: unknown): never {
+  throw cause instanceof RunawayBridgeInvalidResponseError
+    ? cause
+    : new RunawayBridgeInvalidResponseError(cause);
+}
+
+async function fetchRunawaySnapshot(
+  projectSlug: string,
+  signal: AbortSignal,
+): Promise<readonly SourceFrozenDataItem[]> {
+  const transitions: RawTransition[] = [];
+  const seenCursors = new Set<string>();
+  let cursor: string | null = null;
+  let expectedSnapshot: string | null = null;
+  let expectedTotalCount: number | null = null;
+  let expectedTimingSummaryFingerprint: string | null = null;
+  let timingSummary: RawBridgeResponse['timing_summary'] = null;
+
+  for (let pageIndex = 0; pageIndex < RUNAWAY_MAX_PAGES; pageIndex += 1) {
+    const query = new URLSearchParams({ limit: String(RUNAWAY_PAGE_LIMIT) });
+    if (cursor) query.set('cursor', cursor);
+    const response = await fetch(
+      `/api/astrid/v1/projects/${encodeURIComponent(projectSlug)}/runaway-transitions?${query}`,
+      { signal },
+    );
+    if (response.headers.get(ASTRID_BRIDGE_PROTOCOL_HEADER) !== ASTRID_BRIDGE_PROTOCOL_VERSION) {
+      invalidResponse(new Error(
+        `Runaway bridge protocol mismatch: expected ${ASTRID_BRIDGE_PROTOCOL_VERSION}`,
+      ));
+    }
+    if (!response.ok) {
+      let body: unknown;
+      try {
+        body = await response.json();
+      } catch {
+        body = undefined;
+      }
+      const detail = asRecord(body);
+      throw new Error(
+        nonEmptyString(detail?.detail)
+        ?? nonEmptyString(detail?.message)
+        ?? nonEmptyString(detail?.error)
+        ?? `Astrid bridge returned ${response.status}`,
+      );
+    }
+
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch (cause) {
+      invalidResponse(cause);
+    }
+
+    let page: ValidatedRunawayPage;
+    try {
+      page = validateRunawayPage(body, projectSlug);
+    } catch (cause) {
+      invalidResponse(cause);
+    }
+
+    if (expectedSnapshot === null) {
+      expectedSnapshot = page.snapshot;
+      expectedTotalCount = page.totalCount;
+      expectedTimingSummaryFingerprint = page.timingSummaryFingerprint;
+      timingSummary = page.timingSummary;
+    } else if (page.snapshot !== expectedSnapshot
+      || page.totalCount !== expectedTotalCount
+      || page.timingSummaryFingerprint !== expectedTimingSummaryFingerprint) {
+      invalidResponse(new Error('Runaway bridge snapshot metadata changed between pages'));
+    }
+
+    transitions.push(...page.transitions);
+    if (transitions.length > page.totalCount) {
+      invalidResponse(new Error(
+        `Runaway bridge total_count mismatch: expected ${page.totalCount}, received more rows`,
+      ));
+    }
+
+    if (page.nextCursor === null) {
+      if (transitions.length !== page.totalCount) {
+        invalidResponse(new Error(
+          `Runaway bridge traversal truncated: expected ${page.totalCount}, received ${transitions.length}`,
+        ));
+      }
+      try {
+        return parseRunawayBridgeResponse({
+          project: page.project,
+          count: transitions.length,
+          timing_summary: timingSummary,
+          transitions,
+        });
+      } catch (cause) {
+        invalidResponse(cause);
+      }
+    }
+
+    if (page.count === 0) {
+      invalidResponse(new Error('Runaway bridge cursor page made no progress'));
+    }
+    if (transitions.length === page.totalCount) {
+      invalidResponse(new Error('Runaway bridge returned a cursor after the declared total_count'));
+    }
+    if (seenCursors.has(page.nextCursor)) {
+      invalidResponse(new Error(`Runaway bridge repeated cursor: ${page.nextCursor}`));
+    }
+    if (pageIndex + 1 >= RUNAWAY_MAX_PAGES) {
+      invalidResponse(new Error(`Runaway bridge exceeded ${RUNAWAY_MAX_PAGES} pages`));
+    }
+    seenCursors.add(page.nextCursor);
+    cursor = page.nextCursor;
+  }
+
+  return invalidResponse(new Error(`Runaway bridge exceeded ${RUNAWAY_MAX_PAGES} pages`));
+}
+
 export function loadRunawayTimeline(
   projectSlug: string,
   onBridgeRequest?: (observation: RunawayBridgeRequestObservation) => void,
@@ -271,50 +492,23 @@ export function loadRunawayTimeline(
       // Analytics availability must never affect source loading.
     }
   };
-  const request = fetch(
-    `/api/astrid/projects/${encodeURIComponent(projectSlug)}/runaway-transitions`,
-    { signal: AbortSignal.timeout(BRIDGE_REQUEST_TIMEOUT_MS) },
-  )
-    .then(async (response) => {
-      if (!response.ok) {
-        let body: unknown;
-        try {
-          body = await response.json();
-        } catch {
-          body = undefined;
-        }
-        const detail = asRecord(body);
-        observe({ outcome: 'failure', errorClass: 'bridge.http_error' });
-        throw new Error(
-          nonEmptyString(detail?.detail)
-          ?? nonEmptyString(detail?.message)
-          ?? nonEmptyString(detail?.error)
-          ?? `Astrid bridge returned ${response.status}`,
-        );
-      }
-      let body: unknown;
-      try {
-        body = await response.json();
-      } catch (cause) {
-        observe({ outcome: 'failure', errorClass: 'bridge.invalid_response' });
-        throw cause;
-      }
-      try {
-        const items = parseRunawayBridgeResponse(body);
-        observe({ outcome: 'success' });
-        return items;
-      } catch (cause) {
-        observe({ outcome: 'failure', errorClass: 'bridge.invalid_response' });
-        throw cause;
-      }
+  const signal = AbortSignal.timeout(BRIDGE_REQUEST_TIMEOUT_MS);
+  const request = fetchRunawaySnapshot(projectSlug, signal)
+    .then((items) => {
+      observe({ outcome: 'success' });
+      return items;
     })
     .catch((cause: unknown) => {
       if (!observed) {
         observe({
           outcome: 'failure',
-          errorClass: cause instanceof DOMException && cause.name === 'TimeoutError'
+          errorClass: (cause instanceof DOMException && cause.name === 'TimeoutError')
+            || (signal.aborted && signal.reason instanceof DOMException
+              && signal.reason.name === 'TimeoutError')
             ? 'bridge.timeout'
-            : 'bridge.http_error',
+            : cause instanceof RunawayBridgeInvalidResponseError
+              ? 'bridge.invalid_response'
+              : 'bridge.http_error',
         });
       }
       throw cause;

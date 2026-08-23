@@ -809,3 +809,46 @@ evidence and a concrete improvement direction.
   tests must assert the active modal and input mode as part of their state;
   screenshots alone cannot prove that a visible control is accessible or
   actionable.
+
+### Development and preview servers need the same bridge security boundary
+
+- The first proxy guard registered only Vite's development-server hook while
+  preview inherited the same Astrid proxy configuration. The production-like
+  `serve` path could therefore forward bridge traffic even when missing the
+  credential that made development fail closed.
+- One plugin now registers the identical guard for dev and preview, and the
+  proxy configuration is explicit in both modes. Tests invoke both hooks and
+  prove they return `503` without touching an upstream. Security controls on a
+  local proxy are deployment-mode contracts, not dev-server conveniences.
+
+### Validate an upstream address before attaching a secret header
+
+- Raw interpolation of `VITE_ASTRID_BRIDGE_PORT` produced a URL that looked
+  loopback-only in source, but values containing user-info syntax could parse
+  with a different hostname and receive the injected bearer token.
+- Startup now accepts only a canonical integer from 1 through 65535 and builds
+  the target from that number. User-info, paths, whitespace, fractional values,
+  zero, and overflow all fail before a server starts. Every component used to
+  construct a credentialed upstream must be validated before URL parsing.
+
+### The real-service harness must exercise the production auth mode by default
+
+- Enabling the real Astrid Playwright path disabled the unauthenticated stub
+  exception but did not create a token or start `astrid serve --release-mode`.
+  The named release test would therefore fail at Reigh's new guard unless the
+  caller happened to preconfigure matching secrets.
+- Playwright now creates one ephemeral token per real-bridge run, passes it to
+  both managed servers, forbids reuse of mismatched hot servers, and requires
+  Astrid release mode. A production-like test command should assemble its
+  secure topology itself, not depend on undocumented ambient state.
+
+### Protocol negotiation and deadlines apply to failures too
+
+- The Runaway client checked the version header only after a successful HTTP
+  status, so an incompatible service could supply trusted-looking error text
+  and be misclassified as an ordinary bridge failure. The browser deadline also
+  did not protect raw proxy callers from an indefinitely hung upstream socket.
+- Version validation now precedes all response-body handling, including 4xx and
+  5xx paths, while both proxy socket deadlines share the client's ten-second
+  bound. Failure envelopes are part of the wire protocol, and transport limits
+  must exist on every hop rather than only in the nicest caller.

@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { randomBytes } from 'node:crypto';
 import { DEFAULT_DEV_SUPABASE_URL } from './src/shared/dev/devSession.ts';
 
 const port = Number(process.env.PLAYWRIGHT_PORT ?? 4173);
@@ -23,6 +24,13 @@ const includeTimelineDevices = process.env.PLAYWRIGHT_TIMELINE_DEVICES === '1';
 // stub, and points the Vite dev proxy at it. Run:
 //   npm run test:e2e:timeline:realbridge
 const useRealBridge = process.env.REAL_BRIDGE === '1';
+const realBridgeToken = useRealBridge
+  ? process.env.ASTRID_BRIDGE_TOKEN?.trim() || randomBytes(32).toString('base64url')
+  : null;
+// Playwright workers inherit the config process environment, not the separate
+// webServer.env objects. Direct Astrid auth-boundary assertions need the same
+// ephemeral token that is passed to both managed servers.
+if (realBridgeToken) process.env.ASTRID_BRIDGE_TOKEN = realBridgeToken;
 // The demo stub must not share port 17333 with the real bridge; 17334
 // keeps an E2E run from squatting on the editor's live bridge.
 const bridgePort = Number(process.env.ASTRID_BRIDGE_PORT ?? 17334);
@@ -52,23 +60,30 @@ export default defineConfig({
     {
       command: `npm run dev -- --host 127.0.0.1 --port ${port}`,
       url: baseURL,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: useRealBridge ? false : !process.env.CI,
       timeout: 120_000,
       env: {
         VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL ?? DEFAULT_DEV_SUPABASE_URL,
         VITE_SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY ?? 'test-anon-key',
         VITE_APP_ENV: process.env.VITE_APP_ENV ?? 'web',
         VITE_ASTRID_BRIDGE_PORT: String(bridgePort),
+        ASTRID_BRIDGE_ALLOW_UNAUTHENTICATED_STUB: useRealBridge ? '0' : '1',
+        ...(realBridgeToken
+          ? { ASTRID_BRIDGE_TOKEN: realBridgeToken }
+          : {}),
       },
     },
     ...(includeTimelineDevices
       ? [{
           command: bridgeServeCommand,
           url: `http://127.0.0.1:${bridgePort}/health`,
-          reuseExistingServer: !process.env.CI,
+          reuseExistingServer: useRealBridge ? false : !process.env.CI,
           timeout: 30_000,
           env: {
             ASTRID_BRIDGE_PORT: String(bridgePort),
+            ...(realBridgeToken
+              ? { ASTRID_BRIDGE_TOKEN: realBridgeToken }
+              : {}),
           },
         }]
       : []),

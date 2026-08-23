@@ -66,6 +66,16 @@ with the RC. A child flag never bypasses its parent.
 | `TRANSCRIPT_CAPTION_FOUNDRY_ENABLED` | Transcript Caption Foundry registration, commands, and writes | `EXTENSION_HOST_ENABLED` | Stop Foundry commands/writes while leaving unrelated host extensions available |
 | `RUNAWAY_TYPED_TIMELINE_ENABLED` | Reigh-side Astrid Runaway source request/projection, commands, and viewer registration | `EXTENSION_HOST_ENABLED` | Stop new editor-side Runaway bridge requests, projection, commands, and viewer activation while leaving unrelated host extensions available |
 
+The Reigh server-side proxy and `astrid serve` must share one randomly generated
+`ASTRID_BRIDGE_TOKEN`; never expose it through a `VITE_` variable or browser
+code. Start Astrid with `--release-mode`, which requires bearer authentication
+and the version handshake. Both Vite dev and preview fail closed with `503` when
+the server token is absent, inject the bearer value only on the loopback
+upstream request, validate the bridge port as an integer from 1 through 65535,
+and bound both proxy sockets to the shared ten-second bridge deadline. The
+committed deterministic stub is the only unauthenticated mode and must be
+enabled explicitly by its owning test/dev launcher.
+
 `EXTENSION_HOST_ENABLED` is deliberately the shared rollback boundary for this
 reviewed 13-extension release inventory. Production selection fails closed for
 any ID not in this list:

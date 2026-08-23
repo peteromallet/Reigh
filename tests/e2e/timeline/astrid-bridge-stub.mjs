@@ -93,7 +93,7 @@ const RUNAWAY_COLORS = [
   ['coral', '#D66B5D'],
 ];
 
-function runawayFixture(project) {
+function runawayFixture(project, limit, cursor) {
   const createdAt = '2026-08-23T00:00:00Z';
   const transitions = RUNAWAY_COLORS.map(([colourName, colourHex], index) => {
     const ordinal = index;
@@ -120,9 +120,15 @@ function runawayFixture(project) {
       created_at: createdAt,
     };
   });
+  const offset = cursor === null ? 0 : Number.parseInt(cursor.replace(/^stub:/, ''), 10);
+  const pageTransitions = transitions.slice(offset, offset + limit);
+  const nextOffset = offset + pageTransitions.length;
   return {
+    api_version: 'v1',
     project,
-    count: transitions.length,
+    count: pageTransitions.length,
+    total_count: transitions.length,
+    snapshot: `runaway-v1:${project}:stub-snapshot`,
     timing_summary: {
       evidence_id: 'evidence-browser-acceptance',
       run_id: 'run-browser-acceptance',
@@ -137,7 +143,11 @@ function runawayFixture(project) {
         ),
       },
     },
-    transitions,
+    page: {
+      limit,
+      next_cursor: nextOffset < transitions.length ? `stub:${nextOffset}` : null,
+    },
+    transitions: pageTransitions,
   };
 }
 
@@ -148,6 +158,7 @@ function send(res, status, body) {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': '*',
     'Access-Control-Allow-Methods': 'GET,PUT,POST,OPTIONS',
+    'X-Astrid-Bridge-Version': 'v1',
   });
   res.end(payload);
 }
@@ -172,10 +183,24 @@ const server = http.createServer(async (req, res) => {
   if (path === '/health') return send(res, 200, { ok: true });
   if (path === '/projects') return send(res, 200, { projects: [PROJECT] });
 
-  const runawayMatch = path.match(/^\/projects\/([^/]+)\/runaway-transitions$/);
+  const runawayMatch = path.match(/^\/v1\/projects\/([^/]+)\/runaway-transitions$/);
   if (runawayMatch && req.method === 'GET') {
+    if (req.headers['x-astrid-bridge-version'] !== 'v1') {
+      return send(res, 426, {
+        error: 'bridge_protocol_mismatch',
+        detail: 'X-Astrid-Bridge-Version: v1 is required',
+      });
+    }
     const project = decodeURIComponent(runawayMatch[1]);
-    return send(res, 200, runawayFixture(project));
+    const limit = Number(url.searchParams.get('limit') ?? '1000');
+    const cursor = url.searchParams.get('cursor');
+    if (!Number.isInteger(limit) || limit < 1 || limit > 1000) {
+      return send(res, 400, { error: 'invalid_limit', detail: 'limit must be between 1 and 1000' });
+    }
+    if (cursor !== null && !/^stub:\d+$/.test(cursor)) {
+      return send(res, 400, { error: 'invalid_cursor', detail: 'invalid deterministic stub cursor' });
+    }
+    return send(res, 200, runawayFixture(project, limit, cursor));
   }
 
   const timelinesMatch = path.match(/^\/projects\/([^/]+)\/timelines$/);

@@ -3,13 +3,17 @@ import { resolve } from 'node:path';
 import { BASE_URL, PROJECT_SLUG, TIMELINE_SLUG } from './support';
 
 const PROJECT = 'runaway-browser-recovery';
-const RUNAWAY_REQUEST = `**/api/astrid/projects/${PROJECT}/runaway-transitions`;
+const RUNAWAY_REQUEST = `**/api/astrid/v1/projects/${PROJECT}/runaway-transitions?*`;
 const EDITOR_URL = `${BASE_URL}/tools/video-editor?localProject=${PROJECT_SLUG}&localTimeline=${TIMELINE_SLUG}&localTest=1&runawayTimelineProject=${PROJECT}`;
 const EVIDENCE = resolve(process.cwd(), 'docs/extensions/evidence/chrome-acceptance');
 
 const validResponse = {
+  api_version: 'v1',
   project: PROJECT,
   count: 2,
+  total_count: 2,
+  snapshot: `runaway-v1:${PROJECT}:browser-recovery`,
+  page: { limit: 1000, next_cursor: null },
   timing_summary: {
     evidence_id: 'browser-recovery-evidence',
     run_id: 'browser-recovery-run',
@@ -77,6 +81,7 @@ async function fulfillJson(route: Route, body: unknown): Promise<void> {
   await route.fulfill({
     status: 200,
     contentType: 'application/json',
+    headers: { 'X-Astrid-Bridge-Version': 'v1' },
     body: JSON.stringify(body),
   });
 }
@@ -88,7 +93,12 @@ test.describe('Runaway typed timeline degraded-state recovery', () => {
     const issues = collectIssues(page);
     await page.route(RUNAWAY_REQUEST, async (route) => {
       await new Promise((done) => setTimeout(done, 1_500));
-      await fulfillJson(route, { project: PROJECT, count: 0, transitions: [] });
+      await fulfillJson(route, {
+        ...validResponse,
+        count: 0,
+        total_count: 0,
+        transitions: [],
+      });
     });
     await openEditor(page);
 
@@ -106,7 +116,9 @@ test.describe('Runaway typed timeline degraded-state recovery', () => {
     let requests = 0;
     await page.route(RUNAWAY_REQUEST, async (route) => {
       requests += 1;
-      await fulfillJson(route, requests === 1 ? { malformed: true } : validResponse);
+      await fulfillJson(route, requests === 1
+        ? { ...validResponse, transitions: 'malformed' }
+        : validResponse);
     });
     await openEditor(page);
 

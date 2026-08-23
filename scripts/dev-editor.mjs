@@ -22,6 +22,9 @@ const env = {
   PORT,
   VITE_ASTRID_BRIDGE_PORT: BRIDGE_PORT,
   ASTRID_BRIDGE_PORT: BRIDGE_PORT,
+  // This launcher owns the committed deterministic stub, so it is the one
+  // supported unauthenticated bridge mode at the Vite proxy boundary.
+  ASTRID_BRIDGE_ALLOW_UNAUTHENTICATED_STUB: '1',
   // Must stay in step with DEFAULT_DEV_SUPABASE_URL in
   // src/shared/dev/devSession.ts — the dev session's storage key is
   // derived from this URL. (.mjs cannot import the TS module.) This is the

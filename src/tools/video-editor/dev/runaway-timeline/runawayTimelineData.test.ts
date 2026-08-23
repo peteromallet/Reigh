@@ -11,6 +11,8 @@ import {
 import {
   loadRunawayTimeline,
   parseRunawayBridgeResponse,
+  RUNAWAY_MAX_TRANSITIONS,
+  RUNAWAY_PAGE_LIMIT,
   RUNAWAY_SCHEMA_REF,
   type RunawayLoadStatusPayload,
   useRunawayTimelineItems,
@@ -21,8 +23,12 @@ import {
 } from './RunawayTimelineLaneView';
 
 const response = {
+  api_version: 'v1',
   project: 'runaway-piano-colour-demo',
   count: 2,
+  total_count: 2,
+  snapshot: 'runaway-v1:project-1:2',
+  page: { limit: 1000, next_cursor: null },
   timing_summary: {
     evidence_id: 'evidence-1',
     run_id: 'run-1',
@@ -41,12 +47,44 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function fetchResponse(body: unknown): Response {
+function fetchResponse(body: unknown, protocolVersion = 'v1'): Response {
   return {
     ok: true,
     status: 200,
+    headers: new Headers({ 'X-Astrid-Bridge-Version': protocolVersion }),
     json: async () => body,
   } as Response;
+}
+
+function transition(ordinal: number): typeof response.transitions[number] {
+  return {
+    ...response.transitions[0],
+    id: `row-${ordinal}`,
+    ordinal,
+    start_ms: ordinal * 100,
+    metadata: {
+      ...response.transitions[0].metadata,
+      manifest_id: `T${String(ordinal + 1).padStart(4, '0')}`,
+      frame: ordinal * 5,
+    },
+  };
+}
+
+function pageResponse(
+  project: string,
+  transitions: readonly typeof response.transitions[number][],
+  totalCount: number,
+  nextCursor: string | null,
+) {
+  return {
+    ...response,
+    project,
+    count: transitions.length,
+    total_count: totalCount,
+    snapshot: `runaway-v1:${project}:snapshot`,
+    page: { limit: RUNAWAY_PAGE_LIMIT, next_cursor: nextCursor },
+    transitions: [...transitions],
+  };
 }
 
 function currentStatus(
@@ -70,6 +108,9 @@ describe('Runaway timeline bridge adapter', () => {
     await expect(loadRunawayTimeline(project, observer)).resolves.toHaveLength(2);
     await expect(loadRunawayTimeline(project, cachedObserver)).resolves.toHaveLength(2);
     expect(fetchSpy).toHaveBeenCalledOnce();
+    expect(fetchSpy.mock.calls[0]?.[0]).toBe(
+      `/api/astrid/v1/projects/${project}/runaway-transitions?limit=${RUNAWAY_PAGE_LIMIT}`,
+    );
     expect(fetchSpy.mock.calls[0]?.[1]).toEqual(expect.objectContaining({
       signal: expect.any(AbortSignal),
     }));
@@ -89,6 +130,7 @@ describe('Runaway timeline bridge adapter', () => {
         ok: false,
         status: 503,
         statusText: 'Unavailable',
+        headers: new Headers({ 'X-Astrid-Bridge-Version': 'v1' }),
         json: async () => ({ detail: 'offline' }),
       } as Response),
       errorClass: 'bridge.http_error',
@@ -119,6 +161,122 @@ describe('Runaway timeline bridge adapter', () => {
     ]);
   });
 
+  it('loads more than 1000 transitions through one snapshot cursor and shared deadline', async () => {
+    const project = 'runaway-pagination-1001';
+    const allTransitions = Array.from({ length: 1001 }, (_, ordinal) => transition(ordinal));
+    const signals: AbortSignal[] = [];
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      signals.push(init?.signal as AbortSignal);
+      const url = String(input);
+      return url.includes('cursor=cursor-1000')
+        ? fetchResponse(pageResponse(project, allTransitions.slice(1000), 1001, null))
+        : fetchResponse(pageResponse(project, allTransitions.slice(0, 1000), 1001, 'cursor-1000'));
+    });
+
+    await expect(loadRunawayTimeline(project)).resolves.toHaveLength(1001);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(String(fetchSpy.mock.calls[1]?.[0])).toContain('cursor=cursor-1000');
+    expect(signals[0]).toBe(signals[1]);
+  });
+
+  it('rejects a repeated snapshot cursor', async () => {
+    const project = 'runaway-repeated-cursor';
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(fetchResponse(pageResponse(project, [transition(0)], 3, 'cursor-a')))
+      .mockResolvedValueOnce(fetchResponse(pageResponse(project, [transition(1)], 3, 'cursor-a')));
+
+    await expect(loadRunawayTimeline(project)).rejects.toThrow('repeated cursor');
+  });
+
+  it.each([
+    ['transition id', { id: 'row-0', ordinal: 1, manifestId: 'T0002' }],
+    ['manifest id', { id: 'row-1', ordinal: 1, manifestId: 'T0001' }],
+    ['ordinal', { id: 'row-1', ordinal: 0, manifestId: 'T0002' }],
+  ])('rejects duplicate %s values across pages', async (label, duplicate) => {
+    const project = `runaway-duplicate-${label.replace(' ', '-')}`;
+    const second = transition(duplicate.ordinal);
+    second.id = duplicate.id;
+    second.metadata.manifest_id = duplicate.manifestId;
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(fetchResponse(pageResponse(project, [transition(0)], 2, 'cursor-next')))
+      .mockResolvedValueOnce(fetchResponse(pageResponse(project, [second], 2, null)));
+
+    await expect(loadRunawayTimeline(project)).rejects.toThrow('Duplicate Runaway');
+  });
+
+  it.each([
+    ['page count mismatch', (project: string) => ({
+      ...pageResponse(project, [transition(0)], 1, null),
+      count: 2,
+    }), 'page count mismatch'],
+    ['truncated traversal', (project: string) => pageResponse(project, [transition(0)], 2, null), 'truncated'],
+    ['excessive total', (project: string) => pageResponse(
+      project,
+      [transition(0)],
+      RUNAWAY_MAX_TRANSITIONS + 1,
+      'cursor-next',
+    ), 'total_count'],
+  ])('rejects %s', async (label, build, message) => {
+    const project = `runaway-invalid-${label.replaceAll(' ', '-')}`;
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(fetchResponse(build(project)));
+
+    await expect(loadRunawayTimeline(project)).rejects.toThrow(message);
+  });
+
+  it.each([
+    ['snapshot', (page: ReturnType<typeof pageResponse>) => ({
+      ...page,
+      snapshot: `${page.snapshot}:changed`,
+    })],
+    ['total_count', (page: ReturnType<typeof pageResponse>) => ({
+      ...page,
+      total_count: page.total_count + 1,
+    })],
+    ['timing run', (page: ReturnType<typeof pageResponse>) => ({
+      ...page,
+      timing_summary: { ...page.timing_summary, run_id: 'changed-run' },
+    })],
+  ])('rejects changed %s metadata during a snapshot traversal', async (field, change) => {
+    const project = `runaway-changing-${field.replace(' ', '-')}`;
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(fetchResponse(pageResponse(project, [transition(0)], 2, 'cursor-next')))
+      .mockResolvedValueOnce(fetchResponse(change(pageResponse(project, [transition(1)], 2, null))));
+
+    await expect(loadRunawayTimeline(project)).rejects.toThrow(
+      'snapshot metadata changed between pages',
+    );
+  });
+
+  it.each([
+    ['response header', 'v2', { api_version: 'v1' }],
+    ['response body', 'v1', { api_version: 'v2' }],
+  ])('fails closed on a protocol mismatch in the %s', async (where, header, override) => {
+    const project = `runaway-protocol-${where.replace(' ', '-')}`;
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(fetchResponse({
+      ...pageResponse(project, [transition(0)], 1, null),
+      ...override,
+    }, header));
+
+    await expect(loadRunawayTimeline(project)).rejects.toThrow('protocol mismatch');
+  });
+
+  it.each([null, 'v2'])(
+    'rejects an HTTP error before trusting its body when protocol header is %s',
+    async (protocolVersion) => {
+      const project = `runaway-error-protocol-${protocolVersion ?? 'missing'}`;
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: false,
+        status: 400,
+        headers: new Headers(protocolVersion === null
+          ? {}
+          : { 'X-Astrid-Bridge-Version': protocolVersion }),
+        json: async () => ({ detail: 'untrusted upstream detail' }),
+      } as Response);
+
+      await expect(loadRunawayTimeline(project)).rejects.toThrow('protocol mismatch');
+    },
+  );
+
   it('performs zero bridge IO when the deployment gate is disabled', () => {
     window.history.replaceState({}, '', '/?runawayTimelineProject=runaway-piano-colour-demo');
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
@@ -144,7 +302,7 @@ describe('Runaway timeline bridge adapter', () => {
       projectSlug: project,
     });
     await act(async () => {
-      resolveFetch(fetchResponse({ project, count: 0, transitions: [] }));
+      resolveFetch(fetchResponse(pageResponse(project, [], 0, null)));
     });
     await waitFor(() => expect(currentStatus(result.current)).toMatchObject({
       status: 'empty',

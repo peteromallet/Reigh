@@ -23,6 +23,7 @@
 import { z } from 'zod';
 
 import { timelineBundleEnvelopeSchema } from '@/tools/video-editor/data/typed/timelineBundle.ts';
+import { ASTRID_BRIDGE_REQUEST_TIMEOUT_MS } from '@/tools/video-editor/data/astridBridgeWire.ts';
 
 /**
  * Transport deadline for every bridge request. A hung (as opposed to dead)
@@ -30,7 +31,7 @@ import { timelineBundleEnvelopeSchema } from '@/tools/video-editor/data/typed/ti
  * the App/Local switcher via `isSwitchBlockedBySave`. With a deadline the hang
  * becomes an ordinary transport failure and feeds the existing save backoff.
  */
-export const BRIDGE_REQUEST_TIMEOUT_MS = 10_000;
+export const BRIDGE_REQUEST_TIMEOUT_MS = ASTRID_BRIDGE_REQUEST_TIMEOUT_MS;
 
 /** Error code the bridge must return (with HTTP 409) when `expected_version` is stale. */
 export const BRIDGE_VERSION_CONFLICT_CODE = 'timeline_version_conflict';

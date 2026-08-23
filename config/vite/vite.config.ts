@@ -7,6 +7,12 @@ import {
   PREVIEW_ALLOWED_HOSTS,
   resolveVitePort,
 } from "./policy";
+import {
+  createAstridBridgeAuthPlugin,
+  createAstridBridgeProxyOptions,
+  resolveAstridBridgePort,
+  resolveAstridBridgeProxyPolicy,
+} from "./astridBridgeProxy";
 
 const logger = createLogger();
 const originalWarn = logger.warn.bind(logger);
@@ -17,7 +23,15 @@ logger.warn = (msg, options) => {
 
 export default defineConfig(() => {
   const port = resolveVitePort(process.env.PORT);
-  const astridBridgePort = process.env.VITE_ASTRID_BRIDGE_PORT ?? "17333";
+  const astridBridgePort = resolveAstridBridgePort(process.env.VITE_ASTRID_BRIDGE_PORT);
+  const astridBridgeProxyPolicy = resolveAstridBridgeProxyPolicy(process.env);
+  const astridBridgeAuthPlugin = createAstridBridgeAuthPlugin(astridBridgeProxyPolicy);
+  const astridBridgeProxy = {
+    "/api/astrid": createAstridBridgeProxyOptions(
+      astridBridgeProxyPolicy,
+      astridBridgePort,
+    ),
+  };
   const generatedRegistryPath = path.resolve(
     __dirname,
     "../../node_modules/@banodoco/timeline-composition/typescript/src/registry.generated.ts",
@@ -48,13 +62,7 @@ export default defineConfig(() => {
     server: {
       host: "::",
       port: port,
-      proxy: {
-        "/api/astrid": {
-          target: `http://127.0.0.1:${astridBridgePort}`,
-          changeOrigin: true,
-          rewrite: (incomingPath) => incomingPath.replace(/^\/api\/astrid/, ""),
-        },
-      },
+      proxy: astridBridgeProxy,
       // Sprint 5: allow Vite to read from the sibling banodoco-workspace
       // (timeline-theme-2rp file: link).
       fs: {
@@ -65,8 +73,10 @@ export default defineConfig(() => {
       host: "0.0.0.0",
       port: port,
       allowedHosts: [...PREVIEW_ALLOWED_HOSTS],
+      proxy: astridBridgeProxy,
     },
     plugins: [
+      astridBridgeAuthPlugin,
       react(),
     ].filter(Boolean),
     resolve: {
