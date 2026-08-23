@@ -35,7 +35,7 @@ export const PROJECT_SLUG = 'demo-project';
 export const TIMELINE_SLUG = 'demo-timeline';
 
 export const EDITOR_URL =
-  `${BASE_URL}/tools/video-editor?localProject=${PROJECT_SLUG}&localTimeline=${TIMELINE_SLUG}`;
+  `${BASE_URL}/tools/video-editor?localProject=${PROJECT_SLUG}&localTimeline=${TIMELINE_SLUG}&localTest=1`;
 
 const BRIDGE_TIMELINE = `${BRIDGE_ORIGIN}/projects/${PROJECT_SLUG}/timelines/${TIMELINE_SLUG}`;
 
@@ -75,19 +75,27 @@ export async function resetBridgeBaseline(): Promise<string | null> {
   }
 }
 
-/** Noise the editor emits in local mode that is not a signal about the timeline. */
-const IGNORED_CONSOLE_ERROR = /54321|Failed to load resource|MediaError|DEMUXER/;
+const pageIssues = new WeakMap<Page, string[]>();
 
-/** Collect page errors and real console errors for failure detail. */
+/** Collect every browser/page error. Local-test mode intentionally has no broad noise allowlist. */
 export function collectPageLogs(page: Page): string[] {
+  const existing = pageIssues.get(page);
+  if (existing) return existing;
   const logs: string[] = [];
+  pageIssues.set(page, logs);
   page.on('pageerror', (error) => logs.push(`[pageerror] ${error.message}`));
   page.on('console', (message) => {
-    if (message.type() === 'error' && !IGNORED_CONSOLE_ERROR.test(message.text())) {
+    if (message.type() === 'error') {
       logs.push(`[console.error] ${message.text().slice(0, 300)}`);
     }
   });
   return logs;
+}
+
+export function assertNoUnexpectedPageErrors(logs: readonly string[]): void {
+  if (logs.length > 0) {
+    throw new Error(`Unexpected browser errors:\n${[...new Set(logs)].join('\n')}`);
+  }
 }
 
 export interface TouchInput {
@@ -159,6 +167,14 @@ export async function createTouchInput(context: BrowserContext, page: Page): Pro
  * the regression where leftover project selection re-enabled queries.
  */
 export async function openEditor(page: Page): Promise<void> {
+  const issues = collectPageLogs(page);
+  const forbiddenRequests: string[] = [];
+  page.on('request', (request) => {
+    const url = request.url();
+    if (/(supabase\.co|127\.0\.0\.1:54321|localhost:54321|\/auth\/v1\/|\/rest\/v1\/|\/functions\/v1\/)/.test(url)) {
+      forbiddenRequests.push(url);
+    }
+  });
   // Pre-seed a stale project selection: local mode must not let leftover
   // project state re-enable backend queries (the regression Codex flagged).
   await page.addInitScript(() => {
@@ -170,6 +186,17 @@ export async function openEditor(page: Page): Promise<void> {
   });
   await page.goto(EDITOR_URL, { waitUntil: 'domcontentloaded', timeout: 45_000 });
   await page.waitForTimeout(EDITOR_SETTLE_MS);
+  const localTestSnapshot = await page.evaluate(() => window.__REIGH_LOCAL_TEST__);
+  if (
+    !localTestSnapshot?.enabled
+    || !Array.isArray(localTestSnapshot.diagnostics.loader)
+    || !Array.isArray(localTestSnapshot.diagnostics.runtime)
+  ) {
+    throw new Error('localTest=1 did not initialize structured window.__REIGH_LOCAL_TEST__ diagnostics');
+  }
+  if (forbiddenRequests.length > 0) {
+    throw new Error(`local-test editor made forbidden remote requests:\n${[...new Set(forbiddenRequests)].join('\n')}`);
+  }
   const backendCalls = await page.evaluate(() => {
     const urls = performance.getEntriesByType('resource')
       .map((e) => e.name)
@@ -179,6 +206,7 @@ export async function openEditor(page: Page): Promise<void> {
   if (backendCalls > 0) {
     throw new Error(`local-mode editor made ${backendCalls} backend request(s); local mode must be backend-free`);
   }
+  assertNoUnexpectedPageErrors(issues);
 }
 
 /**

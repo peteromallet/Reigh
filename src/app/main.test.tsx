@@ -51,6 +51,8 @@ describe('bootstrap.renderApp', () => {
     initializePreloadingServiceMock.mockClear();
     initializeToolSettingsWriteRuntimeMock.mockClear();
     initializeNetworkStatusManagerMock.mockClear();
+    window.history.replaceState({}, '', '/');
+    delete window.__REIGH_LOCAL_TEST__;
     localStorage.clear();
     document.documentElement.classList.remove('dark');
   });
@@ -75,6 +77,19 @@ describe('bootstrap.renderApp', () => {
     expect(initializePreloadingServiceMock.mock.calls.length).toBeGreaterThanOrEqual(1);
     expect(initializeToolSettingsWriteRuntimeMock.mock.calls.length).toBeGreaterThanOrEqual(1);
     expect(initializeNetworkStatusManagerMock.mock.calls.length).toBeGreaterThanOrEqual(1);
+  }, 15_000);
+
+  it('installs deterministic local-test state without network monitoring', async () => {
+    window.history.replaceState({}, '', '/tools/video-editor?localTest=1');
+    const { initializeAppEnvironment } = await import('@/app/bootstrap');
+
+    initializeAppEnvironment();
+
+    expect(window.__REIGH_LOCAL_TEST__).toEqual({
+      enabled: true,
+      diagnostics: { loader: [], runtime: [] },
+    });
+    expect(initializeNetworkStatusManagerMock).not.toHaveBeenCalled();
   }, 15_000);
 });
 

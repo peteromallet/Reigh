@@ -44,6 +44,7 @@ function AuthConsumer() {
 describe('AuthContext', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.history.replaceState({}, '', '/');
     getAuthStateManagerMock.mockReturnValue(null);
 
     // Default mock: no session
@@ -76,6 +77,22 @@ describe('AuthContext', () => {
   });
 
   describe('AuthProvider', () => {
+    it('is immediately anonymous and never initializes auth in localTest mode', () => {
+      window.history.replaceState({}, '', '/tools/video-editor?localTest=1');
+
+      render(
+        <AuthProvider>
+          <AuthConsumer />
+        </AuthProvider>
+      );
+
+      expect(screen.getByTestId('isLoading')).toHaveTextContent('false');
+      expect(screen.getByTestId('userId')).toHaveTextContent('null');
+      expect(mockGetSession).not.toHaveBeenCalled();
+      expect(mockOnAuthStateChange).not.toHaveBeenCalled();
+      expect(getAuthStateManagerMock).not.toHaveBeenCalled();
+    });
+
     it('renders children', async () => {
       render(
         <AuthProvider>

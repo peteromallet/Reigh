@@ -17,6 +17,7 @@ import { initializeProjectSelectionStore } from '@/shared/contexts/projectSelect
 import { initializePreloadingService } from '@/shared/lib/preloading';
 import { initializeToolSettingsWriteRuntime } from '@/shared/settings';
 import { initializeNetworkStatusManager } from '@/shared/services/network/networkStatusManager';
+import { initializeLocalTestRuntime, isLocalTestMode } from '@/app/localTestRuntime';
 import '@/index.css';
 
 let presenterInstalled = false;
@@ -64,28 +65,30 @@ export function initializeAppEnvironment(): void {
 
   initializeLoggerRuntime();
   const env = import.meta.env;
+  const localTestMode = isLocalTestMode(env);
+  initializeLocalTestRuntime();
   initializeToastManager();
   registerToastErrorPresenter();
   initializeViewportLockRuntime();
   initializeProjectSelectionStore();
   initializeToolSettingsWriteRuntime();
   initializePreloadingService();
-  if (typeof window !== 'undefined') {
+  if (typeof window !== 'undefined' && !localTestMode) {
     initializeNetworkStatusManager();
   }
 
   // Initialize autoplay monitoring in development (after console suppression check)
-  if (shouldLoadAutoplayMonitor(env)) {
+  if (!localTestMode && shouldLoadAutoplayMonitor(env)) {
     import('@/shared/lib/debug/autoplayMonitor');
   }
 
   // Attach debugConfig to window for console access in dev
-  if (shouldLoadDevDebugTools(env)) {
+  if (!localTestMode && shouldLoadDevDebugTools(env)) {
     registerDebugGlobals();
   }
 
   // Debug tooling is intentionally loaded only for local dev runtime, never test/prod.
-  if (shouldLoadDevDebugTools(env)) {
+  if (!localTestMode && shouldLoadDevDebugTools(env)) {
     import('@/shared/lib/simpleCacheValidator');
     import('@/shared/lib/debug/debugPolling');
     import('@/shared/lib/debug/mobileProjectDebug');
@@ -106,7 +109,7 @@ export function initializeAppEnvironment(): void {
     document.documentElement.classList.add('dark');
   }
 
-  if (!isTestRuntimeEnvironment(env)) {
+  if (!isTestRuntimeEnvironment(env) && !localTestMode) {
     const supabaseInitResult = initializeSupabaseResult();
     if (!supabaseInitResult.ok) {
       normalizeAndPresentError(supabaseInitResult.error, {

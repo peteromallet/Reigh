@@ -10,6 +10,7 @@ import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
 import { getAuthStateManager } from '@/integrations/supabase/auth/AuthStateManager';
 import type { Session } from '@supabase/supabase-js';
 import { requireContextValue } from './contextGuard';
+import { isLocalTestMode } from '@/app/localTestRuntime';
 
 interface AuthContextType {
   /** Current authenticated user ID, null if not logged in */
@@ -31,12 +32,19 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
  * - [FastResume] Provides immediate auth state for fast tab resume
  */
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
+  const localTestMode = isLocalTestMode();
   const [userId, setUserId] = useState<string | undefined>(undefined);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!localTestMode);
 
   // [MobileStallFix] Enhanced auth state tracking with mobile recovery
   // [AuthDebounce] Prevent cascading updates from duplicate auth events
   useEffect(() => {
+    if (localTestMode) {
+      setUserId(undefined);
+      setIsLoading(false);
+      return;
+    }
+
     let debounceTimeout: NodeJS.Timeout | null = null;
     let lastProcessedState: { event: string; userId: string | undefined } | null = null;
     let pendingAuthState: { event: string; session: Session | null } | null = null;
@@ -110,7 +118,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
       }
     };
-  }, []);
+  }, [localTestMode]);
 
   const contextValue = useMemo(
     () => ({

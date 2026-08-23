@@ -28,7 +28,7 @@ import {
   useEditorRuntimeSync,
   type EditorRuntimeAssembly,
 } from '@/tools/video-editor/contexts/editorRuntimeAssembly.tsx';
-import type { ReighExtension } from '@reigh/editor-sdk';
+import type { DiagnosticCollection, ReighExtension } from '@reigh/editor-sdk';
 import { useAgentChatRegistry } from '@/shared/contexts/AgentChatContext.tsx';
 import { clearTimelineClipData, setTimelineClipData } from '@/shared/state/selectionStore.ts';
 import { type VideoEditorEffectCatalog } from '@/tools/video-editor/hooks/useEffectResources.ts';
@@ -57,8 +57,24 @@ import { createProposalPersistenceBridge, type ProposalPersistenceProvider } fro
 import type { ProcessManager } from '@/tools/video-editor/runtime/processes/ProcessManager.ts';
 import type { SaveStatus } from '@/tools/video-editor/hooks/useTimelinePersistence.ts';
 import type { ResolvedAssetRegistryEntry } from '@/tools/video-editor/types/index.ts';
+import { publishLocalTestExtensionDiagnostics } from '@/app/localTestRuntime.ts';
 
 const log = import.meta.env.DEV ? (...args: Parameters<typeof console.log>) => console.log(...args) : () => {};
+
+function LocalTestDiagnosticsBridge({ collection }: { collection?: DiagnosticCollection }) {
+  useEffect(() => {
+    if (!collection) {
+      publishLocalTestExtensionDiagnostics('runtime', []);
+      return;
+    }
+    const publish = () => publishLocalTestExtensionDiagnostics('runtime', collection.getSnapshot());
+    publish();
+    const subscription = collection.subscribe(publish);
+    return () => subscription.dispose();
+  }, [collection]);
+
+  return null;
+}
 
 export function buildVideoEditorLightboxMedia(
   assetKey: string | null,
@@ -542,6 +558,7 @@ export function VideoEditorProvider({
 
   return (
     <VideoEditorRuntimeProvider value={runtimeValue}>
+      <LocalTestDiagnosticsBridge collection={runtimeValue.diagnosticCollection} />
       <InnerProvider
         effectCatalog={effectCatalog}
         sequenceComponentCatalog={sequenceComponentCatalog}

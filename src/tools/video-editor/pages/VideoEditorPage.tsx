@@ -51,6 +51,7 @@ import {
 import { useTimelinesList } from '@/tools/video-editor/hooks/useTimelinesList.ts';
 import type { SaveStatus } from '@/tools/video-editor/hooks/useTimelinePersistence.ts';
 import { videoEditorSettings } from '@/tools/video-editor/settings/videoEditorDefaults.ts';
+import { publishLocalTestExtensionDiagnostics } from '@/app/localTestRuntime.ts';
 
 type VideoEditorMode = 'app' | 'local';
 
@@ -406,6 +407,9 @@ export default function VideoEditorPage() {
     repository: null,
     bundleStore: null,
   });
+  useEffect(() => {
+    publishLocalTestExtensionDiagnostics('loader', loaderDiagnostics);
+  }, [loaderDiagnostics]);
   const { userId } = useAuth();
   const navigate = useNavigate();
   const { navigateHome } = useHomeNavigation();
