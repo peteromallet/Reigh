@@ -76,6 +76,71 @@ const timelineSummary = {
   is_default: true,
 };
 
+// Deterministic typed-transition fixture for the DEV-only Runaway data lane.
+// Keeping this in the in-memory bridge means the real-browser editor demo can
+// exercise Transcript + Runaway together without contacting Astrid or any
+// external service.
+const RUNAWAY_COLORS = [
+  ['rose', '#D47795'],
+  ['amber', '#D9A441'],
+  ['lime', '#8DBA58'],
+  ['teal', '#48A99A'],
+  ['cyan', '#26A7D0'],
+  ['blue', '#4A78D1'],
+  ['indigo', '#6C63C8'],
+  ['violet', '#9467BD'],
+  ['magenta', '#C75AA0'],
+  ['coral', '#D66B5D'],
+];
+
+function runawayFixture(project) {
+  const createdAt = '2026-08-23T00:00:00Z';
+  const transitions = RUNAWAY_COLORS.map(([colourName, colourHex], index) => {
+    const ordinal = index;
+    const startMs = 250 + (index * 925);
+    const segmentNumber = String(index + 1).padStart(2, '0');
+    return {
+      id: `runaway-row-${segmentNumber}`,
+      run_id: 'run-browser-acceptance',
+      task_id: index % 3 === 0 ? `task-${segmentNumber}` : null,
+      ordinal,
+      start_ms: startMs,
+      duration_ms: 700,
+      prompt: `Deterministic ${colourName} transition ${segmentNumber}`,
+      metadata: {
+        manifest_id: `T${String(index + 1).padStart(4, '0')}`,
+        segment_id: `S${segmentNumber}`,
+        segment_label: `Region ${segmentNumber}`,
+        timing_mode: index % 2 === 0 ? 'hard_cut' : 'hold',
+        colour_name: colourName,
+        colour_hex: colourHex,
+        frame: Math.round((startMs / 1000) * 48),
+        fps: 48,
+      },
+      created_at: createdAt,
+    };
+  });
+  return {
+    project,
+    count: transitions.length,
+    timing_summary: {
+      evidence_id: 'evidence-browser-acceptance',
+      run_id: 'run-browser-acceptance',
+      summary: 'Deterministic in-memory Runaway browser fixture',
+      created_at: createdAt,
+      data: {
+        frame_count: 480,
+        transition_count: transitions.length,
+        fps: 48,
+        segment_counts: Object.fromEntries(
+          transitions.map((transition) => [transition.metadata.segment_id, 1]),
+        ),
+      },
+    },
+    transitions,
+  };
+}
+
 function send(res, status, body) {
   const payload = JSON.stringify(body);
   res.writeHead(status, {
@@ -106,6 +171,12 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return send(res, 204, {});
   if (path === '/health') return send(res, 200, { ok: true });
   if (path === '/projects') return send(res, 200, { projects: [PROJECT] });
+
+  const runawayMatch = path.match(/^\/projects\/([^/]+)\/runaway-transitions$/);
+  if (runawayMatch && req.method === 'GET') {
+    const project = decodeURIComponent(runawayMatch[1]);
+    return send(res, 200, runawayFixture(project));
+  }
 
   const timelinesMatch = path.match(/^\/projects\/([^/]+)\/timelines$/);
   if (timelinesMatch) return send(res, 200, { timelines: [timelineSummary] });
