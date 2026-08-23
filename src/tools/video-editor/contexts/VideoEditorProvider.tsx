@@ -510,6 +510,16 @@ export function VideoEditorProvider({
     hostProcessManager,
     // App-shell feedback channel: registry violations surface as toasts.
     commandRegistryCallbacks: {
+      onCommandOutcome: (_commandId, extensionId, outcome, durationMs) => {
+        telemetryHost.log({
+          event: 'extension.command',
+          outcome,
+          releaseRevision: extensionReleaseRevision,
+          extensionId,
+          durationMs,
+          ...(outcome === 'failure' ? { errorClass: 'command.handler_error' } : {}),
+        });
+      },
       onCommandFailure: (commandId, error, extensionId) => {
         const msg = `Command "${commandId}" failed (${extensionId}): ${error.message}`;
         toast.error(msg);

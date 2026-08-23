@@ -339,6 +339,13 @@ function emitDiagnostic(
  * signal failures to the UI without importing React or host components.
  */
 export interface CommandRegistryCallbacks {
+  /** Called once after an installed command handler settles. */
+  onCommandOutcome?: (
+    commandId: string,
+    extensionId: string,
+    outcome: 'success' | 'failure',
+    durationMs: number,
+  ) => void;
   /** Called when a command handler throws or rejects. */
   onCommandFailure?: (commandId: string, error: Error, extensionId: string) => void;
   /** Called when a reserved command ID is rejected. */
@@ -804,6 +811,20 @@ export function createCommandRegistry(): CommandRegistry {
       extensionId: cmd.extensionId,
       ...(target ? { target } : {}),
     });
+    const startedAt = Date.now();
+
+    const notifyOutcome = (outcome: 'success' | 'failure'): void => {
+      try {
+        callbacks.onCommandOutcome?.(
+          commandId,
+          cmd.extensionId,
+          outcome,
+          Math.max(0, Date.now() - startedAt),
+        );
+      } catch {
+        // Operational reporting is isolated from command semantics.
+      }
+    };
 
     try {
       await cmd.handler(ctx);
@@ -811,6 +832,7 @@ export function createCommandRegistry(): CommandRegistry {
       status.lastRunAt = Date.now();
       status.lastRunOk = true;
       status.lastError = null;
+      notifyOutcome('success');
       return true;
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
@@ -828,6 +850,7 @@ export function createCommandRegistry(): CommandRegistry {
       );
 
       callbacks.onCommandFailure?.(commandId, error, cmd.extensionId);
+      notifyOutcome('failure');
       return false;
     }
   }

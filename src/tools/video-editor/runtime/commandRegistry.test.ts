@@ -64,6 +64,7 @@ function createCallbacks(): Required<CommandRegistryCallbacks> & { calls: Map<st
   };
   return {
     calls,
+    onCommandOutcome: vi.fn((commandId, extensionId, outcome, durationMs) => record('onCommandOutcome', commandId, extensionId, outcome, durationMs)),
     onCommandFailure: vi.fn((commandId, error, extensionId) => record('onCommandFailure', commandId, error, extensionId)),
     onReservedCommand: vi.fn((commandId, extensionId) => record('onReservedCommand', commandId, extensionId)),
     onReservedKeybinding: vi.fn((key, extensionId, commandId) => record('onReservedKeybinding', key, extensionId, commandId)),
@@ -790,6 +791,12 @@ describe('CommandRegistry — toast callback behavior', () => {
     expect(error).toBeInstanceOf(Error);
     expect(error.message).toBe('Toast me');
     expect(extensionId).toBe('ext1');
+    expect(cbs.onCommandOutcome).toHaveBeenCalledWith(
+      'ext1.cmd',
+      'ext1',
+      'failure',
+      expect.any(Number),
+    );
   });
 
   it('onCommandFailure is NOT called on successful invocation', async () => {
@@ -802,6 +809,22 @@ describe('CommandRegistry — toast callback behavior', () => {
     await registry.executeCommand('ext1.cmd');
 
     expect(cbs.onCommandFailure).not.toHaveBeenCalled();
+    expect(cbs.onCommandOutcome).toHaveBeenCalledWith(
+      'ext1.cmd',
+      'ext1',
+      'success',
+      expect.any(Number),
+    );
+  });
+
+  it('contains a failing outcome observer without changing command success', async () => {
+    const registry = createFreshRegistry();
+    registry.setCallbacks({
+      onCommandOutcome: () => { throw new Error('analytics down'); },
+    });
+    registerTestCommand(registry, 'ext1', 'ext1.cmd', vi.fn().mockResolvedValue(undefined));
+
+    await expect(registry.executeCommand('ext1.cmd')).resolves.toBe(true);
   });
 
   it('onReservedCommand callback is called for reigh.* commands', () => {
