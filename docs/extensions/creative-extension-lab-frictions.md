@@ -929,3 +929,16 @@ evidence and a concrete improvement direction.
   checks. Production-like gates should preflight every required file from the
   exact archive before expensive work and must never depend on ignored local
   state merely because it is present on the author's machine.
+
+### A configurable test server is useless when the spec hardcodes its old port
+
+- Playwright correctly started an isolated editor on the requested port, but
+  the timeline support module independently defaulted every navigation to
+  port 2222. The original browser proof passed only because its invocation
+  happened to choose that same number; a concurrent-safe rerun on 2237 failed
+  immediately with `ERR_CONNECTION_REFUSED`.
+- Timeline specs now derive their origin from `BASE_URL`,
+  `PLAYWRIGHT_BASE_URL`, or the validated `PLAYWRIGHT_PORT`, in that order, and
+  the real-bridge script no longer reintroduces a fixed origin. Parallel test
+  isolation must be verified by actually running a non-default port; merely
+  parameterizing the server command does not parameterize the client.

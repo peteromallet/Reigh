@@ -15,8 +15,10 @@
  * required: `reuseExistingServer` adopts a hot `npm run dev` / `npm run
  * dev:editor:bridge` if one is already listening.
  *
- * Both endpoints are env-parameterized: `BASE_URL` (default
- * `http://127.0.0.1:2222`) and `ASTRID_BRIDGE_PORT` (default `17334`).
+ * Both endpoints are env-parameterized. `BASE_URL` or
+ * `PLAYWRIGHT_BASE_URL` wins; otherwise the origin follows
+ * `PLAYWRIGHT_PORT` (default `2222`). `ASTRID_BRIDGE_PORT` defaults to
+ * `17334`.
  */
 import type { BrowserContext, Page } from '@playwright/test';
 import {
@@ -27,7 +29,15 @@ import {
 
 export { CLIP_ACTION_WITH_ID_SELECTOR } from '../../../src/tools/video-editor/lib/timeline-dom.ts';
 
-export const BASE_URL = (process.env.BASE_URL ?? 'http://127.0.0.1:2222').replace(/\/+$/, '');
+const editorPort = Number(process.env.PLAYWRIGHT_PORT ?? 2222);
+if (!Number.isInteger(editorPort) || editorPort < 1 || editorPort > 65_535) {
+  throw new Error(`Invalid PLAYWRIGHT_PORT: ${process.env.PLAYWRIGHT_PORT ?? ''}`);
+}
+export const BASE_URL = (
+  process.env.BASE_URL
+  ?? process.env.PLAYWRIGHT_BASE_URL
+  ?? `http://127.0.0.1:${editorPort}`
+).replace(/\/+$/, '');
 export const BRIDGE_PORT = Number(process.env.ASTRID_BRIDGE_PORT ?? 17334);
 export const BRIDGE_ORIGIN = `http://127.0.0.1:${BRIDGE_PORT}`;
 
