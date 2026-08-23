@@ -225,6 +225,10 @@ const getShowDirectoryPicker = (): ShowDirectoryPicker | null => {
 
 export class AstridBridgeDataProvider implements DataProvider {
   readonly persistenceEnabled = true;
+  /** No cloud sync in local mode: sync UI stays hidden. */
+  readonly supportsEditorSync = false;
+  /** Direct all-file asset upload is the Local provider's core surface. */
+  readonly supportsDirectAssetUpload = true;
   readonly apiBaseUrl: string;
   readonly assetBaseUrl: string;
 

@@ -57,7 +57,9 @@ export function useEditorSync(): {
   }
 
   const provider = runtime.provider;
-  const isSyncAvailable = provider instanceof SupabaseDataProvider;
+  // Declared capability, not a type sniff: a provider states whether the
+  // sync UI applies to it (plan C1-1 T2.4).
+  const isSyncAvailable = provider.supportsEditorSync === true;
 
   const [syncState, setSyncState] = useState<EditorSyncState>('idle');
   const [lastSyncResult, setLastSyncResult] = useState<SyncTimelineResult | null>(null);

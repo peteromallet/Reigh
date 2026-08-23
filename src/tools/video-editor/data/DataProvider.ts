@@ -317,6 +317,20 @@ export interface ExtensionPersistenceService {
 
 export interface DataProvider extends AssetResolver {
   persistenceEnabled?: boolean;
+
+  /**
+   * Declared capability flags (plan C1-1 T2.4). Callers branch on these
+   * booleans instead of `instanceof` type-sniffing: a provider DECLARES what
+   * it supports, so no behavioral fork hides inside a type check. Absent or
+   * `false` both mean "not supported".
+   */
+  /** Cloud-sync UI availability (`useEditorSync`). */
+  supportsEditorSync?: boolean;
+  /**
+   * Direct upload of every dropped file without per-type handlers
+   * (`useExternalDrop` → `directAssetUploadAllFiles`).
+   */
+  supportsDirectAssetUpload?: boolean;
   loadTimeline(timelineId: string): Promise<LoadedTimeline>;
   saveTimeline(
     timelineId: string,

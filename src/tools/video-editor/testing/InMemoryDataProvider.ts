@@ -58,6 +58,10 @@ const normalizeTimelineSeed = (seed?: TimelineSeed): InMemoryTimelineRecord => {
 };
 
 export class InMemoryDataProvider implements DataProvider {
+  /** Test double: neither cloud sync nor local folder drops. */
+  readonly supportsEditorSync = false;
+  readonly supportsDirectAssetUpload = false;
+
   private readonly timelines = new Map<string, InMemoryTimelineRecord>();
   private readonly extensionSnapshots = new Map<string, string>();
 

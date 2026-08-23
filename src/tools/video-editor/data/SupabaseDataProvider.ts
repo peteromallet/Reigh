@@ -604,6 +604,11 @@ export class SupabaseDataProvider implements DataProvider {
     },
   ) {}
 
+  /** Cloud sync is the Supabase provider's own surface. */
+  readonly supportsEditorSync = true;
+  /** Local folder drops are the Astrid provider's surface, not this one. */
+  readonly supportsDirectAssetUpload = false;
+
   private async loadDbHead(timelineId: string): Promise<DbHeadSnapshot> {
     const supabase = getSupabaseClient();
     const { data, error } = await supabase

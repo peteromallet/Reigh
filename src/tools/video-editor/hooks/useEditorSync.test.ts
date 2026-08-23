@@ -97,11 +97,15 @@ function buildSyncResult(
 }
 
 /**
- * Create a SupabaseDataProvider-shaped object that passes `instanceof SupabaseDataProvider`.
- * The mock's `syncTimeline` is wired to `mockSyncTimeline`.
+ * Create a SupabaseDataProvider-shaped object that declares
+ * `supportsEditorSync` (the capability gate since T2.4) and whose
+ * `syncTimeline` is wired to `mockSyncTimeline`.
  */
 function createMockSupabaseProvider() {
   const provider = Object.create(SupabaseDataProvider.prototype);
+  // Declared capability: class fields don't exist on a bare prototype, so the
+  // gate value must be stated explicitly here.
+  provider.supportsEditorSync = true;
   provider.syncTimeline = mockSyncTimeline;
   return provider as SupabaseDataProvider & { syncTimeline: typeof mockSyncTimeline };
 }
