@@ -8,8 +8,8 @@
     "baseCommit": "0fb8cda1054b9727ce1fae3a7ee33081d08b52a5"
   },
   "astrid": {
-    "branch": "oracle-unified-execution",
-    "commit": "96ad5021e4f120dbb55b7da58b8be903118f7015"
+    "branch": "codex/extension-ship-astrid",
+    "commit": "8953028fa0192a9cdf9d3fdc9b7cedcd36b088e7"
   },
   "verification": {
     "profile": "extension-ship-quality-v1",

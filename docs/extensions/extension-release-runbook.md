@@ -53,7 +53,7 @@ tag-object hash:
 ```sh
 REIGH_REF=<full-40-character-Reigh-candidate-C> \
 ASTRID_CHECKOUT=/absolute/path/to/clean/Astrid \
-ASTRID_REF=96ad5021e4f120dbb55b7da58b8be903118f7015 \
+ASTRID_REF=8953028fa0192a9cdf9d3fdc9b7cedcd36b088e7 \
 ASTRID_PYTHON=/absolute/path/to/pinned/venv/bin/python \
 npm run verify:extension-ship
 ```
@@ -79,7 +79,7 @@ source for the complete `astrid.authenticated-release-bridge.v1` capability
 (`serve --release-mode`, token enforcement, bearer validation, and the v1
 protocol header). A newer checkout cannot satisfy an older pin. The manifest is
 pinned to settled Astrid hardening commit
-`96ad5021e4f120dbb55b7da58b8be903118f7015`; the regression test retains the
+`8953028fa0192a9cdf9d3fdc9b7cedcd36b088e7`; the regression test retains the
 pre-auth `659c3dc38aad` rejection case. Do not bypass the probe or substitute
 the unauthenticated stub.
 
