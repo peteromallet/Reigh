@@ -11,7 +11,7 @@
  * scene-phase-markers precedent for `dev/` scratchpad extensions.
  */
 
-import { createElement, type MouseEvent } from 'react';
+import { createElement, type KeyboardEvent, type MouseEvent } from 'react';
 import type {
   DataLaneRenderItem,
   DataItemInspectorProps,
@@ -40,13 +40,21 @@ export function renderTranscriptLane(
   onRegenerateCaptions?: (items: readonly DataLaneRenderItem[]) => void,
   onProposeSourceUpdates?: (items: readonly DataLaneRenderItem[]) => void,
 ): unknown {
-  const chips = props.items.map((item) =>
+  const windowStartIndex = props.itemWindow?.startIndex ?? 0;
+  const totalItemCount = props.itemWindow?.totalItemCount ?? props.items.length;
+  const chips = props.items.map((item, localIndex) =>
     createElement(
-      'span',
+      'button',
       {
         key: item.id,
+        type: 'button',
         'data-testid': 'transcript-lane-chip',
+        'data-item-id': item.id,
+        'aria-label': `Transcript segment: ${readChipText(item.payload)}, ${item.timelineStart.toFixed(2)} to ${item.timelineEnd.toFixed(2)} seconds`,
+        'aria-posinset': windowStartIndex + localIndex + 1,
+        'aria-setsize': totalItemCount,
         title: `${item.id} · ${props.schemaRef}`,
+        tabIndex: item.id === props.activeItemId ? 0 : -1,
         style: {
           position: 'absolute',
           top: '50%',
@@ -60,6 +68,7 @@ export function renderTranscriptLane(
           lineHeight: '16px',
           padding: '0 6px',
           borderRadius: 4,
+          border: 0,
           background: 'var(--video-editor-accent-bg-strong)',
           color: 'var(--video-editor-accent-fg)',
           cursor: 'pointer',
@@ -67,6 +76,21 @@ export function renderTranscriptLane(
         onClick: (event: MouseEvent<HTMLElement>) => {
           event.stopPropagation();
           props.onSelectItem?.(item.id);
+        },
+        onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => {
+          const direction = event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+            ? 'previous'
+            : event.key === 'ArrowRight' || event.key === 'ArrowDown'
+              ? 'next'
+              : event.key === 'Home'
+                ? 'first'
+                : event.key === 'End'
+                  ? 'last'
+                  : null;
+          if (!direction) return;
+          event.preventDefault();
+          event.stopPropagation();
+          props.onNavigateItem?.(item.id, direction);
         },
       },
       truncate(readChipText(item.payload)),

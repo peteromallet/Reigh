@@ -381,6 +381,7 @@ describe('transcript-lane dev example (dataKind V1 done-4)', () => {
 describe('transcript lane chips (rework round-2 F3)', () => {
   it('chip click dispatches onSelectItem with the item id', () => {
     const onSelectItem = vi.fn();
+    const onNavigateItem = vi.fn();
     const props: DataLaneRendererProps = {
       kindId: TRANSCRIPT_KIND_ID,
       schemaRef: TRANSCRIPT_SCHEMA_REF,
@@ -390,6 +391,9 @@ describe('transcript lane chips (rework round-2 F3)', () => {
       startLeft: 0,
       pixelsPerSecond: 50,
       onSelectItem,
+      onNavigateItem,
+      activeItemId: 'a:c1:0',
+      itemWindow: { startIndex: 20, endIndex: 22, totalItemCount: 50 },
       items: [
         { id: 'a:c1:0', timelineStart: 1, timelineEnd: 2, clipId: 'c1', payload: { text: 'first' } },
         { id: 'b:c2:0', timelineStart: 3, timelineEnd: 4, clipId: 'c2', payload: { text: 'second' } },
@@ -400,11 +404,17 @@ describe('transcript lane chips (rework round-2 F3)', () => {
     const chips = container.querySelectorAll('[data-testid="transcript-lane-chip"]');
     expect(chips).toHaveLength(2);
     expect((chips[0] as HTMLElement).style.cursor).toBe('pointer');
+    expect(chips[0]?.tagName).toBe('BUTTON');
+    expect(chips[0]).toHaveAttribute('tabindex', '0');
+    expect(chips[0]).toHaveAttribute('aria-posinset', '21');
+    expect(chips[0]).toHaveAttribute('aria-setsize', '50');
 
     fireEvent.click(chips[1]!);
+    fireEvent.keyDown(chips[0]!, { key: 'End' });
 
     expect(onSelectItem).toHaveBeenCalledTimes(1);
     expect(onSelectItem).toHaveBeenCalledWith('b:c2:0');
+    expect(onNavigateItem).toHaveBeenCalledWith('a:c1:0', 'last');
   });
 
   it('offers a one-click caption materialization action with current mapped items', () => {
