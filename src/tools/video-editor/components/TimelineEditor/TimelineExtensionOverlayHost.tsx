@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ComponentType,
   type ReactNode,
 } from 'react';
@@ -60,6 +61,7 @@ interface OverlayContributionProps {
   fps: number;
   overlayCount: number;
   layerIndex: number;
+  markerLayerVisible: boolean;
   claimPointer: (
     claimantKey: string,
     extensionId: string,
@@ -82,6 +84,7 @@ function OverlayContribution({
   fps,
   overlayCount,
   layerIndex,
+  markerLayerVisible,
   claimPointer,
   releasePointer,
 }: OverlayContributionProps) {
@@ -106,6 +109,7 @@ function OverlayContribution({
 
   const primitives = useMemo<TimelineOverlayPrimitives>(() => Object.freeze({
     markerLayer<T = unknown>(options: TimelineMarkerLayerOptions<T>): unknown {
+      if (!markerLayerVisible) return null;
       return createPortal(
         <TimelineMarkerLayer<T>
           {...options}
@@ -123,7 +127,7 @@ function OverlayContribution({
         `${claimantKey}:marker-layer:${claimEpoch}`,
       );
     },
-  }), [claim, claimEpoch, claimantKey, fps, geometry, getScrollContainer, overlayCount, layerIndex, release, rulerStripRoot, stores.viewport]);
+  }), [claim, claimEpoch, claimantKey, fps, geometry, getScrollContainer, markerLayerVisible, overlayCount, layerIndex, release, rulerStripRoot, stores.viewport]);
 
   const renderProps = useMemo<TimelineOverlayRenderProps>(() => Object.freeze({
     geometry,
@@ -196,6 +200,28 @@ export function TimelineExtensionOverlayHost({
   settersRef.current = { setGestureOwner, setContextTarget, setInspectorTarget };
   const [claimedKey, setClaimedKey] = useState<string | null>(null);
   const [claimEpoch, setClaimEpoch] = useState(0);
+  const [markerLayerPage, setMarkerLayerPage] = useState(0);
+  const subscribeViewport = useCallback((listener: () => void) => {
+    const handle = stores.viewport.subscribe(listener);
+    return () => handle.dispose();
+  }, [stores.viewport]);
+  const viewportSnapshot = useSyncExternalStore(
+    subscribeViewport,
+    stores.viewport.getSnapshot,
+    stores.viewport.getSnapshot,
+  );
+  const markerLayerCapacity = viewportSnapshot.viewportWidth > 0 && viewportSnapshot.viewportWidth < 640
+    ? 3
+    : 6;
+  const markerLayerPageCount = Math.max(1, Math.ceil(overlays.length / markerLayerCapacity));
+  const clampedMarkerLayerPage = Math.min(markerLayerPage, markerLayerPageCount - 1);
+  const markerLayerStart = clampedMarkerLayerPage * markerLayerCapacity;
+  const markerLayerEnd = Math.min(overlays.length, markerLayerStart + markerLayerCapacity);
+  const markerLayerVisibleCount = Math.max(1, markerLayerEnd - markerLayerStart);
+
+  useEffect(() => {
+    if (markerLayerPage !== clampedMarkerLayerPage) setMarkerLayerPage(clampedMarkerLayerPage);
+  }, [clampedMarkerLayerPage, markerLayerPage]);
 
   const releasePointer = useCallback((claimantKey: string) => {
     if (claimantRef.current !== claimantKey) {
@@ -318,8 +344,9 @@ export function TimelineExtensionOverlayHost({
     return null;
   }
 
-  return overlays.map((descriptor, layerIndex) => {
+  const contributions = overlays.map((descriptor, layerIndex) => {
     const claimantKey = `${descriptor.extensionId}:${String(descriptor.id)}`;
+    const markerLayerVisible = layerIndex >= markerLayerStart && layerIndex < markerLayerEnd;
     return (
       <OverlayContribution
         key={claimantKey}
@@ -334,11 +361,53 @@ export function TimelineExtensionOverlayHost({
         stores={stores}
         selection={selection}
         fps={fps}
-        overlayCount={overlays.length}
-        layerIndex={layerIndex}
+        overlayCount={markerLayerVisibleCount}
+        layerIndex={Math.max(0, layerIndex - markerLayerStart)}
+        markerLayerVisible={markerLayerVisible}
         claimPointer={claimPointer}
         releasePointer={releasePointer}
       />
     );
-  }) as ReactNode;
+  });
+  const legend = overlays.length > markerLayerCapacity
+    ? createPortal(
+        <div
+          role="group"
+          aria-label="Marker layer pages"
+          data-testid="timeline-marker-layer-legend"
+          data-marker-layer-page={clampedMarkerLayerPage}
+          data-marker-layer-page-count={markerLayerPageCount}
+          className="pointer-events-auto absolute left-1 top-1 z-40 flex h-5 items-center gap-1 rounded border border-border bg-card/95 px-1 text-[9px] text-foreground shadow-sm"
+          title={overlays
+            .slice(markerLayerStart, markerLayerEnd)
+            .map((descriptor) => `${descriptor.extensionId}: ${String(descriptor.id)}`)
+            .join('\n')}
+        >
+          <button
+            type="button"
+            className="grid h-4 w-4 place-items-center rounded hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-35"
+            aria-label="Previous marker layers"
+            disabled={claimedKey !== null || clampedMarkerLayerPage === 0}
+            onClick={() => setMarkerLayerPage((page) => Math.max(0, page - 1))}
+          >
+            ‹
+          </button>
+          <span className="min-w-16 text-center tabular-nums">
+            Layers {markerLayerStart + 1}–{markerLayerEnd}/{overlays.length}
+          </span>
+          <button
+            type="button"
+            className="grid h-4 w-4 place-items-center rounded hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-35"
+            aria-label="Next marker layers"
+            disabled={claimedKey !== null || clampedMarkerLayerPage >= markerLayerPageCount - 1}
+            onClick={() => setMarkerLayerPage((page) => Math.min(markerLayerPageCount - 1, page + 1))}
+          >
+            ›
+          </button>
+        </div>,
+        rulerPortalRoot,
+        'timeline-marker-layer-legend',
+      )
+    : null;
+  return <>{contributions}{legend}</> as ReactNode;
 }

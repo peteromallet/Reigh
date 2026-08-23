@@ -30,6 +30,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
@@ -925,7 +926,7 @@ describe('T5.1 — geometry and cadence through the real host', () => {
     expect(host.ownerChanges.at(-1)).toBe('none');
   });
 
-  it('separates ten coincident overlay layers into discoverable lanes with independent targets', async () => {
+  it('pages ten coincident overlay layers through a bounded legend while keeping every target reachable', async () => {
     const controllers = Array.from({ length: 10 }, (_, index) => markerExtension(
       overlayManifest({
         id: `com.reigh.timeline-overlay-layer-${index}`,
@@ -936,35 +937,52 @@ describe('T5.1 — geometry and cadence through the real host', () => {
     const host = renderOverlayHost(controllers.map((controller) => controller.extension));
 
     await waitFor(() => {
-      expect(host.rulerStripRoot.querySelectorAll('[data-marker-id]')).toHaveLength(10);
+      expect(host.rulerStripRoot.querySelectorAll('[data-marker-id]')).toHaveLength(3);
     });
 
-    const layers = [...host.rulerStripRoot.querySelectorAll('[data-testid="timeline-marker-layer"]')];
-    expect(layers).toHaveLength(10);
-    expect(layers.map((layer) => layer.getAttribute('data-marker-layer-index'))).toEqual(
-      Array.from({ length: 10 }, (_, index) => String(index)),
-    );
-    expect(layers.every((layer) => layer.getAttribute('data-marker-layer-count') === '10')).toBe(true);
-    expect(new Set(layers.map((layer) => layer.getAttribute('data-marker-layer-key'))).size).toBe(10);
+    const legend = host.rulerPortalRoot.querySelector<HTMLElement>('[data-testid="timeline-marker-layer-legend"]')!;
+    expect(legend).not.toBeNull();
+    expect(legend).toHaveAttribute('data-marker-layer-page-count', '4');
+    expect(legend).toHaveTextContent('Layers 1–3/10');
+    const next = within(legend).getByRole('button', { name: 'Next marker layers' });
+    const previous = within(legend).getByRole('button', { name: 'Previous marker layers' });
+    expect(previous).toBeDisabled();
 
-    const markers = [...host.rulerStripRoot.querySelectorAll<HTMLButtonElement>('[data-marker-id]')];
-    expect(new Set(markers.map((marker) => marker.getAttribute('data-marker-layer-lane'))).size).toBe(3);
-    expect(markers.every((marker) => marker.getAttribute('aria-label')?.includes('at 4 seconds'))).toBe(true);
-    expect(markers.every((marker) => marker.textContent === '')).toBe(true);
-    expect(markers.every((marker) => marker.tabIndex !== -1)).toBe(true);
-    expect(new Set(markers.map((marker) => marker.getAttribute('data-marker-anchor-x'))).size).toBe(1);
-    expect(markers.every((marker) => marker.querySelector('[data-marker-leader]'))).toBe(true);
+    const seen = new Set<string>();
+    let pointerId = 1;
+    for (let page = 0; page < 4; page += 1) {
+      const expectedCount = page === 3 ? 1 : 3;
+      await waitFor(() => {
+        expect(host.rulerStripRoot.querySelectorAll('[data-marker-id]')).toHaveLength(expectedCount);
+      });
+      const layers = [...host.rulerStripRoot.querySelectorAll('[data-testid="timeline-marker-layer"]')];
+      expect(layers.map((layer) => layer.getAttribute('data-marker-layer-index'))).toEqual(
+        Array.from({ length: expectedCount }, (_, index) => String(index)),
+      );
+      expect(layers.every((layer) => layer.getAttribute('data-marker-layer-count') === String(expectedCount))).toBe(true);
+      const markers = [...host.rulerStripRoot.querySelectorAll<HTMLButtonElement>('[data-marker-id]')];
+      expect(markers.every((marker) => marker.getAttribute('aria-label')?.includes('at 4 seconds'))).toBe(true);
+      expect(markers.every((marker) => marker.tabIndex !== -1)).toBe(true);
+      expect(new Set(markers.map((marker) => marker.getAttribute('data-marker-anchor-x'))).size).toBe(1);
 
-    // Every layer can acquire and release the single gesture owner in turn.
-    for (const [index, markerSnapshot] of markers.entries()) {
-      const marker = host.rulerStripRoot.querySelector<HTMLButtonElement>(
-        `[data-marker-id="${markerSnapshot.dataset.markerId}"]`,
-      )!;
-      fireEvent.pointerDown(marker, { button: 0, pointerId: index + 1, clientX: 180, clientY: 10 });
-      fireEvent.pointerMove(window, { pointerId: index + 1, clientX: 188, clientY: 10 });
-      expect(host.ownerChanges.at(-1)).toBe('overlay');
-      fireEvent.pointerUp(window, { pointerId: index + 1, clientX: 188, clientY: 10 });
-      expect(host.ownerChanges.at(-1)).toBe('none');
+      // Every layer on every page can acquire and release the single owner.
+      for (const markerSnapshot of markers) {
+        const markerId = markerSnapshot.dataset.markerId!;
+        const marker = host.rulerStripRoot.querySelector<HTMLButtonElement>(`[data-marker-id="${markerId}"]`)!;
+        seen.add(markerId);
+        fireEvent.pointerDown(marker, { button: 0, pointerId, clientX: 180, clientY: 10 });
+        fireEvent.pointerMove(window, { pointerId, clientX: 188, clientY: 10 });
+        expect(host.ownerChanges.at(-1)).toBe('overlay');
+        fireEvent.pointerUp(window, { pointerId, clientX: 188, clientY: 10 });
+        expect(host.ownerChanges.at(-1)).toBe('none');
+        pointerId += 1;
+      }
+      if (page < 3) fireEvent.click(next);
     }
+    expect(seen.size).toBe(10);
+    expect(legend).toHaveTextContent('Layers 10–10/10');
+    expect(next).toBeDisabled();
+    fireEvent.click(previous);
+    expect(legend).toHaveTextContent('Layers 7–9/10');
   });
 });
