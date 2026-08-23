@@ -508,7 +508,10 @@ export default function VideoEditorPage() {
     if (!import.meta.env.DEV) return providerSelection.dataProvider;
     const fixtureMode = new URLSearchParams(window.location.search).get(TRANSCRIPT_LANE_FIXTURE_PARAM);
     return fixtureMode !== null
-      ? withTranscriptFixture(providerSelection.dataProvider, { dense: fixtureMode === 'dense' })
+      ? withTranscriptFixture(providerSelection.dataProvider, {
+          dense: fixtureMode === 'dense',
+          renderMatrix: fixtureMode === 'render-matrix',
+        })
       : providerSelection.dataProvider;
   }, [providerSelection]);
 

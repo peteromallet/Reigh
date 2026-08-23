@@ -308,6 +308,7 @@ describe('transcript-lane dev example (dataKind V1 done-4)', () => {
     expect(record?.ownerExtensionId).toBe('com.reigh.transcript-lane');
     expect(record?.schemaRef).toBe(TRANSCRIPT_SCHEMA_REF);
     expect(record?.provenance).toBe('bundled-extension');
+    expect(record?.supportsSparseItemWindows).toBe(true);
 
     // The lane renders from fixture segments once the loader resolves…
     await waitFor(() => {
@@ -432,6 +433,33 @@ describe('transcript lane chips (rework round-2 F3)', () => {
     expect(onNavigateItem).toHaveBeenCalledWith('a:c1:0', 'last');
   });
 
+  it('uses sparse absolute indices for non-contiguous ARIA positions', () => {
+    const props: DataLaneRendererProps = {
+      kindId: TRANSCRIPT_KIND_ID,
+      schemaRef: TRANSCRIPT_SCHEMA_REF,
+      shape: 'interval',
+      domain: 'source_seconds',
+      startLeft: 0,
+      pixelsPerSecond: 50,
+      itemWindow: {
+        startIndex: 2,
+        endIndex: 18,
+        totalItemCount: 30,
+        itemIndices: [2, 17],
+      },
+      items: [
+        { id: 'sparse-a', timelineStart: 1, timelineEnd: 2, payload: { text: 'first' } },
+        { id: 'sparse-b', timelineStart: 3, timelineEnd: 4, payload: { text: 'second' } },
+      ],
+    };
+
+    const { container } = render(renderTranscriptLane(props) as ReactElement);
+    const chips = container.querySelectorAll('[data-testid="transcript-lane-chip"]');
+    expect(chips[0]).toHaveAttribute('aria-posinset', '3');
+    expect(chips[1]).toHaveAttribute('aria-posinset', '18');
+    expect(chips[0]).toHaveAttribute('aria-setsize', '30');
+  });
+
   it('keeps whole-lane actions out of renderer-owned timeline coordinates', () => {
     const props: DataLaneRendererProps = {
       kindId: TRANSCRIPT_KIND_ID,
@@ -494,6 +522,149 @@ describe('transcript lane chips (rework round-2 F3)', () => {
       outputMetadata: { resolution: '1280x720', fps: 30, file: 'demo.mp4' },
     }, [items[0]]);
     expect(rerun.operations).toEqual([]);
+  });
+
+  it.each([23.976, 24, 25, 29.97, 30, 48, 60])(
+    'derives caption duration from independently rounded boundaries at %sfps',
+    (fps) => {
+      const start = 0.771;
+      const end = 1.25;
+      const item: DataLaneRendererProps['items'][number] = {
+        id: `matrix:${fps}`,
+        timelineStart: start,
+        timelineEnd: end,
+        clipId: 'clip-1',
+        payload: { text: 'Last caption' },
+      };
+      const patch = buildTranscriptCaptionPatch({
+        baseVersion: 1,
+        tracks: [{ id: 'V1', kind: 'visual', label: 'V1', muted: false }],
+        clips: [],
+        outputMetadata: { resolution: '640x360', fps, file: 'matrix.mp4' },
+      }, [item]);
+      const update = patch.operations.find((operation) => operation.op === 'clip.update');
+      const hold = Number((update?.payload as { hold?: number } | undefined)?.hold);
+
+      expect(Math.round(start * fps) + Math.round(hold * fps)).toBe(Math.round(end * fps));
+    },
+  );
+
+  it('places concurrent speakers on deterministic vertical lanes and reuses the first lane after a gap', () => {
+    const items: DataLaneRendererProps['items'] = [
+      { id: 'd', timelineStart: 0.7, timelineEnd: 1.0, clipId: 'c', payload: { text: 'Ava + 李' } },
+      { id: 'b', timelineStart: 0.2, timelineEnd: 0.5, clipId: 'c', payload: { text: 'Борис' } },
+      { id: 'c', timelineStart: 0.6, timelineEnd: 0.8, clipId: 'c', payload: { text: '李' } },
+      { id: 'a', timelineStart: 0, timelineEnd: 0.4, clipId: 'c', payload: { text: 'Ava' } },
+    ];
+    const patch = buildTranscriptCaptionPatch({
+      baseVersion: 1,
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1', muted: false }],
+      clips: [],
+      outputMetadata: { resolution: '1280x720', fps: 30, file: 'matrix.mp4' },
+    }, items);
+    const yPositions = patch.operations
+      .filter((operation) => operation.op === 'clip.update')
+      .map((operation) => Number((operation.payload as { y?: number }).y));
+
+    expect(yPositions).toEqual([418, 519, 418, 519]);
+    expect(patch.operations
+      .filter((operation) => operation.op === 'clip.update')
+      .map((operation) => operation.target)).toEqual(
+      ['a', 'b', 'c', 'd'].map(transcriptCaptionClipId),
+    );
+  });
+
+  it('allocates bounded distinct boxes for four concurrent speakers instead of bottom-clamping lanes', () => {
+    const items: DataLaneRendererProps['items'] = ['d', 'b', 'a', 'c'].map((id) => ({
+      id,
+      timelineStart: 0,
+      timelineEnd: 1,
+      clipId: 'clip-1',
+      payload: { text: `Speaker ${id}` },
+    }));
+    const patch = buildTranscriptCaptionPatch({
+      baseVersion: 1,
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1', muted: false }],
+      clips: [],
+      outputMetadata: { resolution: '1280x720', fps: 30, file: 'matrix.mp4' },
+    }, items);
+    const boxes = patch.operations
+      .filter((operation) => operation.op === 'clip.update')
+      .map((operation) => operation.payload as { y: number; height: number; text: { fontSize: number } });
+
+    expect(boxes.map(({ y, height }) => ({ y, height }))).toEqual([
+      { y: 418, height: 64 },
+      { y: 482, height: 64 },
+      { y: 546, height: 64 },
+      { y: 610, height: 64 },
+    ]);
+    expect(new Set(boxes.map((box) => box.y)).size).toBe(4);
+    expect(boxes.every((box, index) => index === 0 || boxes[index - 1]!.y + boxes[index - 1]!.height <= box.y)).toBe(true);
+    expect(boxes.at(-1)!.y + boxes.at(-1)!.height).toBeLessThan(720);
+    expect(boxes.every((box) => box.text.fontSize === 42)).toBe(true);
+  });
+
+  it('keeps the maximum 512 simultaneous captions in distinct bounded grid boxes', () => {
+    const items: DataLaneRendererProps['items'] = Array.from({ length: 512 }, (_, index) => ({
+      id: `speaker-${String(index).padStart(3, '0')}`,
+      timelineStart: 0,
+      timelineEnd: 1,
+      clipId: 'clip-1',
+      payload: { text: `Speaker ${index}` },
+    }));
+    const patch = buildTranscriptCaptionPatch({
+      baseVersion: 1,
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1', muted: false }],
+      clips: [],
+      outputMetadata: { resolution: '1280x720', fps: 30, file: 'matrix.mp4' },
+    }, items);
+    const boxes = patch.operations
+      .filter((operation) => operation.op === 'clip.update')
+      .map((operation) => operation.payload as { x: number; y: number; width: number; height: number });
+
+    expect(boxes).toHaveLength(512);
+    expect(new Set(boxes.map((box) => `${box.x}:${box.y}`)).size).toBe(512);
+    expect(boxes.every((box) => (
+      box.x >= 0
+      && box.y >= 0
+      && box.width >= 1
+      && box.height >= 1
+      && box.x + box.width <= 1280
+      && box.y + box.height <= 720
+    ))).toBe(true);
+  });
+
+  it('restores normal lower-third sizing after a high-concurrency collision group ends', () => {
+    const items: DataLaneRendererProps['items'] = [
+      ...Array.from({ length: 8 }, (_, index) => ({
+        id: `overlap-${index}`,
+        timelineStart: 0,
+        timelineEnd: 1,
+        clipId: 'clip-1',
+        payload: { text: `Speaker ${index}` },
+      })),
+      {
+        id: 'solo-after-gap',
+        timelineStart: 2,
+        timelineEnd: 3,
+        clipId: 'clip-1',
+        payload: { text: 'Solo after gap' },
+      },
+    ];
+    const patch = buildTranscriptCaptionPatch({
+      baseVersion: 1,
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1', muted: false }],
+      clips: [],
+      outputMetadata: { resolution: '1280x720', fps: 30, file: 'matrix.mp4' },
+    }, items);
+    const solo = patch.operations.find((operation) => (
+      operation.op === 'clip.update'
+      && operation.target === transcriptCaptionClipId('solo-after-gap')
+    ))!;
+    const payload = solo.payload as { y: number; height: number; text: { fontSize: number } };
+
+    expect(payload).toMatchObject({ y: 418, height: 101 });
+    expect(payload.text.fontSize).toBe(48);
   });
 
   it('treats Add missing as a successful no-op before host validation when captions exist', () => {

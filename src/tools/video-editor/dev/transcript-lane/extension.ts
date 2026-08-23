@@ -67,6 +67,23 @@ export const TRANSCRIPT_SOURCE_REVIEW_KEY_PREFIX = 'transcript-source-review:';
 const MAX_CAPTION_SEGMENTS = 512;
 const MIN_CAPTION_DURATION_SECONDS = 0.1;
 
+/**
+ * A caption interval has two independently rounded frame boundaries. Derive
+ * its duration from those boundaries so `from + duration` reaches the same
+ * frame as the source end even when the source starts between frames. Using
+ * `round((end - start) * fps)` loses the last caption frame for common
+ * fractional inputs (for example 0.771–1.250 at 23.976 and 30 fps).
+ */
+function captionDurationSeconds(start: number, end: number, fps: number | undefined): number {
+  if (typeof fps !== 'number' || !Number.isFinite(fps) || fps <= 0) {
+    return Math.max(MIN_CAPTION_DURATION_SECONDS, end - start);
+  }
+  const startFrame = Math.round(start * fps);
+  const endFrame = Math.round(end * fps);
+  const minimumFrames = Math.max(1, Math.ceil(MIN_CAPTION_DURATION_SECONDS * fps));
+  return Math.max(minimumFrames, endFrame - startFrame) / fps;
+}
+
 export function transcriptCaptionClipId(itemId: string): string {
   return `transcript-caption-${computeHostFingerprint(itemId).split(':')[1]}`;
 }
@@ -188,10 +205,58 @@ export function buildTranscriptCaptionPatch(
       && readChipText(item.payload).trim() !== ''
       && readChipText(item.payload) !== '(no text)'
     ))
+    .sort((left, right) => (
+      (left.timelineStart - right.timelineStart)
+      || left.id.localeCompare(right.id)
+    ))
     .slice(0, MAX_CAPTION_SEGMENTS);
   const existingClips = new Map(snapshot.clips.map((clip) => [clip.id, clip]));
   const desiredClipIds = new Set(normalized.map((item) => transcriptCaptionClipId(item.id)));
   const operations: TimelinePatchOperation[] = [];
+  // Interval-partition overlapping speakers into the first available vertical
+  // lane. Gaps reuse lane zero; overlaps no longer paint two strings into the
+  // same pixels. `normalized` is sorted above so direct SDK callers get the
+  // same placement even if their source items are shuffled.
+  const collisionGroups: Array<Array<{ item: DataLaneRenderItem; lane: number }>> = [];
+  let currentGroup: Array<{ item: DataLaneRenderItem; lane: number }> = [];
+  let overlapLaneEnds: number[] = [];
+  let currentGroupEnd = Number.NEGATIVE_INFINITY;
+  for (const item of normalized) {
+    // Once the next caption starts after every interval in this connected
+    // collision group, reset sizing. One pathological burst must not leave
+    // every later isolated caption permanently tiny.
+    if (currentGroup.length > 0 && item.timelineStart >= currentGroupEnd) {
+      collisionGroups.push(currentGroup);
+      currentGroup = [];
+      overlapLaneEnds = [];
+      currentGroupEnd = Number.NEGATIVE_INFINITY;
+    }
+    let lane = overlapLaneEnds.findIndex((laneEnd) => laneEnd <= item.timelineStart);
+    if (lane === -1) {
+      lane = overlapLaneEnds.length;
+      overlapLaneEnds.push(item.timelineEnd);
+    } else {
+      overlapLaneEnds[lane] = item.timelineEnd;
+    }
+    currentGroup.push({ item, lane });
+    currentGroupEnd = Math.max(currentGroupEnd, item.timelineEnd);
+  }
+  if (currentGroup.length > 0) collisionGroups.push(currentGroup);
+  const placed = collisionGroups.flatMap((group) => {
+    const groupLaneCount = Math.max(...group.map(({ lane }) => lane)) + 1;
+    return group.map((placement) => ({ ...placement, groupLaneCount }));
+  });
+  // Preserve the normal lower-third box for one or two speakers. At higher
+  // concurrency, divide all remaining safe canvas height evenly instead of
+  // clamping later lanes onto the same bottom coordinate. Font size follows
+  // the bounded row height, making extreme concurrency explicitly degraded
+  // (small) but never silently overpainted.
+  const captionBottomMargin = Math.round(compositionHeight * 0.06);
+  const availableCaptionHeight = Math.max(
+    1,
+    compositionHeight - captionBox.y - captionBottomMargin,
+  );
+  const baseCaptionFontSize = Math.max(28, Math.round(compositionHeight * 0.067));
   let order = 0;
 
   if (!snapshot.tracks.some((track) => track.id === TRANSCRIPT_CAPTION_TRACK_ID)) {
@@ -208,17 +273,41 @@ export function buildTranscriptCaptionPatch(
     });
   }
 
-  for (const item of normalized) {
+  for (const { item, lane: overlapLane, groupLaneCount } of placed) {
     const clipId = transcriptCaptionClipId(item.id);
     const text = readChipText(item.payload).trim();
-    const duration = Math.max(
-      MIN_CAPTION_DURATION_SECONDS,
-      item.timelineEnd - item.timelineStart,
+    const duration = captionDurationSeconds(
+      item.timelineStart,
+      item.timelineEnd,
+      snapshot.outputMetadata?.fps,
     );
+    const captionRows = Math.min(groupLaneCount, availableCaptionHeight);
+    const captionColumns = Math.ceil(groupLaneCount / captionRows);
+    const captionRowHeight = Math.max(
+      1,
+      Math.min(captionBox.height, Math.floor(availableCaptionHeight / captionRows)),
+    );
+    const captionColumnWidth = Math.max(1, Math.floor(captionBox.width / captionColumns));
+    const captionFontSize = Math.max(
+      1,
+      Math.min(baseCaptionFontSize, Math.floor(captionRowHeight * 0.67)),
+    );
+    const captionColumn = Math.floor(overlapLane / captionRows);
+    const captionRow = overlapLane % captionRows;
+    const captionX = captionBox.x + (captionColumn * captionColumnWidth);
+    const itemCaptionBox = {
+      ...captionBox,
+      x: captionX,
+      y: captionBox.y + (captionRow * captionRowHeight),
+      width: captionColumn === captionColumns - 1
+        ? captionBox.x + captionBox.width - captionX
+        : captionColumnWidth,
+      height: captionRowHeight,
+    };
     const label = text.length > 48 ? `${text.slice(0, 47)}…` : text;
     const textStyle = {
       content: text,
-      fontSize: Math.max(28, Math.round(compositionHeight * 0.067)),
+      fontSize: captionFontSize,
       color: '#ffffff',
       bold: true,
       align: 'center',
@@ -230,7 +319,7 @@ export function buildTranscriptCaptionPatch(
       clipType: 'text',
       label,
       text: textStyle,
-      ...captionBox,
+      ...itemCaptionBox,
     };
     const sourceItemId = item.sourceItemId ?? item.id;
     const generatedMeta = createHostGeneratedObjectMeta({
@@ -271,7 +360,7 @@ export function buildTranscriptCaptionPatch(
         track: TRANSCRIPT_CAPTION_TRACK_ID,
         at: item.timelineStart,
         hold: duration,
-        ...captionBox,
+        ...itemCaptionBox,
         text: textStyle,
         label,
         app: { __generated__: generatedMeta },
@@ -567,6 +656,7 @@ export const transcriptLaneExtension: ReighExtension = defineExtension({
       renderTranscriptLane,
       renderTranscriptItemInspector,
       {
+        supportsSparseItemWindows: true,
         actions: [
           {
             id: 'create-caption-clips',

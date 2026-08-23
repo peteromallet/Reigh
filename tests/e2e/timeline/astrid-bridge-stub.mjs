@@ -43,6 +43,13 @@ const registry = {
       duration: 5,
       generationId: 'gen-demo-clip',
     },
+    'matrix-audio': {
+      file: 'motion-output-audio.aac',
+      src: `${BASE_URL}/motion-output-audio.aac`,
+      type: 'audio/aac',
+      duration: 39.156558,
+      generationId: 'gen-render-matrix-audio',
+    },
   },
 };
 
@@ -95,17 +102,25 @@ const RUNAWAY_COLORS = [
 
 function runawayFixture(project, limit, cursor) {
   const createdAt = '2026-08-23T00:00:00Z';
-  const transitions = RUNAWAY_COLORS.map(([colourName, colourHex], index) => {
+  const exactManifest = project === 'runaway-8085';
+  const transitionCount = exactManifest ? 566 : RUNAWAY_COLORS.length;
+  const transitions = Array.from({ length: transitionCount }, (_, index) => {
+    const [colourName, colourHex] = RUNAWAY_COLORS[index % RUNAWAY_COLORS.length];
     const ordinal = index;
-    const startMs = 250 + (index * 925);
-    const segmentNumber = String(index + 1).padStart(2, '0');
+    const frame = exactManifest
+      ? Math.round((index * 8084) / (transitionCount - 1))
+      : Math.round(((250 + (index * 925)) / 1000) * 48);
+    const startMs = exactManifest
+      ? Math.round((frame / 48) * 1000)
+      : 250 + (index * 925);
+    const segmentNumber = String((index % 10) + 1).padStart(2, '0');
     return {
-      id: `runaway-row-${segmentNumber}`,
+      id: `runaway-row-${String(index + 1).padStart(4, '0')}`,
       run_id: 'run-browser-acceptance',
       task_id: index % 3 === 0 ? `task-${segmentNumber}` : null,
       ordinal,
       start_ms: startMs,
-      duration_ms: 700,
+      duration_ms: exactManifest ? Math.round(1000 / 48) : 700,
       prompt: `Deterministic ${colourName} transition ${segmentNumber}`,
       metadata: {
         manifest_id: `T${String(index + 1).padStart(4, '0')}`,
@@ -114,7 +129,7 @@ function runawayFixture(project, limit, cursor) {
         timing_mode: index % 2 === 0 ? 'hard_cut' : 'hold',
         colour_name: colourName,
         colour_hex: colourHex,
-        frame: Math.round((startMs / 1000) * 48),
+        frame,
         fps: 48,
       },
       created_at: createdAt,
@@ -135,7 +150,7 @@ function runawayFixture(project, limit, cursor) {
       summary: 'Deterministic in-memory Runaway browser fixture',
       created_at: createdAt,
       data: {
-        frame_count: 480,
+        frame_count: exactManifest ? 8085 : 480,
         transition_count: transitions.length,
         fps: 48,
         segment_counts: Object.fromEntries(

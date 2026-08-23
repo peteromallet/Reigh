@@ -21,6 +21,25 @@ const FIXTURE_SEGMENTS = [
   { start: 5, end: 8, text: 'Fixture segment two' },
 ] as const;
 
+/**
+ * Short, deterministic export fixture.  The awkward timings deliberately
+ * exercise fractional frame boundaries at every supported release rate.
+ * Speaker labels stay in the text because the v1 transcript adapter's public
+ * payload is intentionally only `{ text }`.
+ */
+const RENDER_MATRIX_FIXTURE_SEGMENTS = [
+  { start: 0, end: 0.205, text: 'Ava: café — 👩🏽‍🚀' },
+  { start: 0.167, end: 0.409, text: 'Борис: overlapping reply' },
+  { start: 0.44, end: 0.52, text: '   ' },
+  { start: 0.584, end: 0.792, text: '李: second speaker after gap' },
+  // Wider than one 23.976 fps frame so every supported release rate contains
+  // at least one encoded frame with both speakers visible.
+  { start: 0.73, end: 1.25, text: 'Ava + 李: final overlap — مرحبًا' },
+] as const;
+
+export const RENDER_MATRIX_TRANSCRIPT_CAPTION_COUNT = 4;
+export const RENDER_MATRIX_TRANSCRIPT_SEGMENT_COUNT = RENDER_MATRIX_FIXTURE_SEGMENTS.length;
+
 /** Browser-only stress fixture for viewport virtualization acceptance. */
 export const DENSE_TRANSCRIPT_FIXTURE_SEGMENT_COUNT = 500;
 
@@ -37,6 +56,7 @@ function denseFixtureSegments() {
 
 export interface TranscriptFixtureOptions {
   readonly dense?: boolean;
+  readonly renderMatrix?: boolean;
 }
 
 /**
@@ -52,11 +72,18 @@ export function withTranscriptFixture(
   options: TranscriptFixtureOptions = {},
 ): DataProvider {
   const decorated: DataProvider = Object.create(provider);
-  decorated.loadAssetProfile = async (): Promise<AssetProfile> => ({
+  decorated.loadAssetProfile = async (assetId: string): Promise<AssetProfile> => ({
     transcript: {
-      segments: options.dense
-        ? denseFixtureSegments()
-        : FIXTURE_SEGMENTS.map((segment) => ({ ...segment })),
+      segments: options.renderMatrix
+        // The matrix has a separate AAC asset.  Keep transcript evidence on
+        // its video carrier only so one source segment cannot materialize as
+        // duplicate captions merely because the audio mix is also present.
+        ? (assetId === 'demo-clip'
+          ? RENDER_MATRIX_FIXTURE_SEGMENTS.map((segment) => ({ ...segment }))
+          : [])
+        : options.dense
+          ? denseFixtureSegments()
+          : FIXTURE_SEGMENTS.map((segment) => ({ ...segment })),
     },
   });
   return decorated;

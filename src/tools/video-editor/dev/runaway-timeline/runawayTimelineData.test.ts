@@ -377,10 +377,89 @@ describe('Runaway timeline bridge adapter', () => {
     expect(Object.isFrozen(items[0])).toBe(true);
   });
 
+  it('uses sparse absolute indices for non-contiguous ARIA positions', () => {
+    const items = parseRunawayBridgeResponse(response).map((item) => ({
+      id: item.id,
+      timelineStart: item.extent.start,
+      timelineEnd: item.extent.end ?? item.extent.start,
+      payload: item.payload,
+    }));
+    const lane = renderRunawayTimelineLane({
+      kindId: 'reigh.runaway.transitions',
+      schemaRef: RUNAWAY_SCHEMA_REF,
+      shape: 'interval',
+      domain: 'timeline_seconds',
+      startLeft: 0,
+      pixelsPerSecond: 50,
+      itemWindow: {
+        startIndex: 4,
+        endIndex: 22,
+        totalItemCount: 40,
+        itemIndices: [4, 21],
+      },
+      items,
+    });
+
+    const { container } = render(lane as ReactElement);
+    const chips = container.querySelectorAll('[data-testid="runaway-transition-chip"]');
+    expect(chips[0]).toHaveAttribute('aria-posinset', '5');
+    expect(chips[1]).toHaveAttribute('aria-posinset', '22');
+    expect(chips[0]).toHaveAttribute('aria-setsize', '40');
+  });
+
   it('rejects count drift, malformed rows, and duplicate typed ids', () => {
     expect(() => parseRunawayBridgeResponse({ ...response, count: 3 })).toThrow('count mismatch');
     expect(() => parseRunawayBridgeResponse({ ...response, transitions: [{ bad: true }] })).toThrow('Invalid');
     expect(() => parseRunawayBridgeResponse({ ...response, transitions: [response.transitions[0], response.transitions[0]] })).toThrow('Duplicate');
+  });
+
+  it('pins the 566-transition Runaway manifest to frames 0..8084 of an 8085-frame 48fps composition', () => {
+    const transitions = Array.from({ length: 566 }, (_, ordinal) => {
+      const frame = Math.round((ordinal * 8084) / 565);
+      return {
+        id: `row-${ordinal}`,
+        run_id: 'run-8085',
+        task_id: null,
+        ordinal,
+        start_ms: Math.round((frame / 48) * 1000),
+        duration_ms: Math.round(1000 / 48),
+        prompt: `prompt ${ordinal}`,
+        metadata: {
+          manifest_id: `T${String(ordinal + 1).padStart(4, '0')}`,
+          segment_id: `S${String((ordinal % 10) + 1).padStart(2, '0')}`,
+          segment_label: `Region ${(ordinal % 10) + 1}`,
+          timing_mode: 'hard_cut',
+          colour_name: 'rose',
+          colour_hex: '#D47795',
+          frame,
+          fps: 48,
+        },
+        created_at: '2026-08-23T00:00:00Z',
+      };
+    });
+    const parsed = parseRunawayBridgeResponse({
+      ...response,
+      count: transitions.length,
+      timing_summary: {
+        ...response.timing_summary,
+        data: {
+          ...response.timing_summary.data,
+          frame_count: 8085,
+          transition_count: transitions.length,
+          fps: 48,
+        },
+      },
+      transitions,
+    });
+    const first = parsed[0]!.payload as any;
+    const last = parsed.at(-1)!.payload as any;
+
+    expect(parsed).toHaveLength(566);
+    expect(first.frame).toBe(0);
+    expect(last.frame).toBe(8084);
+    expect(last.timingSummary).toMatchObject({ frameCount: 8085, transitionCount: 566, fps: 48 });
+    expect(Math.round(parsed.at(-1)!.extent.start * 48)).toBe(8084);
+    expect(8085 / 48).toBe(168.4375);
   });
 
   it('falls back from invalid CSS colours and impossible frame metadata', () => {
