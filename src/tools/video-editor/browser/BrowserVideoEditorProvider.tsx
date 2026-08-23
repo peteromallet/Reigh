@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useInRouterContext } from 'react-router-dom';
 import { EditorRuntimeProvider } from '@/tools/video-editor/contexts/EditorRuntimeProvider.tsx';
 import type { DataProvider } from '@/tools/video-editor/data/DataProvider.ts';
 import type { VideoEditorEffectCatalog } from '@/tools/video-editor/hooks/useEffectResources.ts';
@@ -78,6 +78,7 @@ export function BrowserVideoEditorProvider({
   children,
 }: BrowserVideoEditorProviderProps) {
   const [ownedQueryClient] = useState(() => queryClient ?? createDefaultQueryClient());
+  const hasHostRouter = useInRouterContext();
 
   // ---- M5: Internal refresh key for extension re-resolution ----------------
   // When refreshKey prop is provided it takes precedence; otherwise we manage
@@ -190,25 +191,33 @@ export function BrowserVideoEditorProvider({
     refreshKey: effectiveRefreshKey,
   });
 
+  const runtime = (
+    <EditorRuntimeProvider
+      dataProvider={dataProvider}
+      timelineId={timelineId}
+      timelineName={timelineName}
+      userId={userId}
+      effectCatalog={effectCatalog}
+      runtime={{ assetResolver, exporter, hostContext }}
+      extensions={resolvedExtensions}
+      packageStateEntries={packageStateEntries}
+      extensionStateRepository={effectiveRepository ?? null}
+      triggerExtensionRefresh={triggerExtensionRefresh}
+      timelineOverlaysEnabled={timelineOverlaysEnabled}
+    >
+      {children}
+    </EditorRuntimeProvider>
+  );
+
   return (
     <QueryClientProvider client={ownedQueryClient}>
-      <MemoryRouter initialEntries={initialEntries ?? ['/tools/video-editor']}>
-        <EditorRuntimeProvider
-          dataProvider={dataProvider}
-          timelineId={timelineId}
-          timelineName={timelineName}
-          userId={userId}
-          effectCatalog={effectCatalog}
-          runtime={{ assetResolver, exporter, hostContext }}
-          extensions={resolvedExtensions}
-          packageStateEntries={packageStateEntries}
-          extensionStateRepository={effectiveRepository ?? null}
-          triggerExtensionRefresh={triggerExtensionRefresh}
-          timelineOverlaysEnabled={timelineOverlaysEnabled}
-        >
-          {children}
-        </EditorRuntimeProvider>
-      </MemoryRouter>
+      {hasHostRouter
+        ? runtime
+        : (
+            <MemoryRouter initialEntries={initialEntries ?? ['/tools/video-editor']}>
+              {runtime}
+            </MemoryRouter>
+          )}
     </QueryClientProvider>
   );
 }

@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
 import { BrowserVideoEditorProvider } from '@/tools/video-editor/browser/BrowserVideoEditorProvider';
 import { defineExtension } from '@reigh/editor-sdk';
 import type { ExtensionContext, DisposeHandle } from '@reigh/editor-sdk';
@@ -72,6 +73,23 @@ describe('BrowserVideoEditorProvider', () => {
         hostContext: { projectId: 'project-1' },
       }),
     }));
+  });
+
+  it('reuses an embedding host router instead of nesting a second Router', () => {
+    render(
+      <MemoryRouter initialEntries={['/host-shell']}>
+        <BrowserVideoEditorProvider
+          dataProvider={provider}
+          timelineId="timeline-embedded"
+          userId={null}
+        >
+          <div data-testid="embedded-custom-shell">Embedded shell</div>
+        </BrowserVideoEditorProvider>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId('runtime-provider')).toBeInTheDocument();
+    expect(screen.getByTestId('embedded-custom-shell')).toHaveTextContent('Embedded shell');
   });
 
   // ---------------------------------------------------------------------------

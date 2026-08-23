@@ -359,54 +359,56 @@ export function useExtensionLoaderWiring(
 
   const direct = directExtensions ?? [];
 
-  // ---- No repository → fast path (no loader needed) ---------------------
-  if (!repository) {
-    return useMemo<UseExtensionLoaderWiringResult>(() => {
-      const packageStateEntries: PackageStateInventoryEntry[] = direct.map((ext) => {
-        const manifest = ext.manifest;
-        const rawId = manifest.id;
-        const extensionId = (typeof rawId === 'string' && rawId.length > 0) ? rawId : '(unknown)';
-        const metadata = metadataFromManifest(manifest);
-        const contribs = contributionsFromManifest(manifest);
-        const summary = computePackageContributionSummary(contribs);
-        return {
-          extensionId,
-          packageState: 'loaded' as const,
-          stateReason: 'Direct host-supplied extension',
-          packageMetadata: metadata,
-          manifestContributions: contribs,
-          contributionSummary: summary,
-        };
-      });
+  // Keep the no-repository result memoized, but do not return before the hooks
+  // below. Browser providers can hydrate a repository asynchronously; an early
+  // return here changed the hook count on that transition and crashed React.
+  const directOnlyResult = useMemo<UseExtensionLoaderWiringResult>(() => {
+    const packageStateEntries: PackageStateInventoryEntry[] = direct.map((ext) => {
+      const manifest = ext.manifest;
+      const rawId = manifest.id;
+      const extensionId = (typeof rawId === 'string' && rawId.length > 0) ? rawId : '(unknown)';
+      const metadata = metadataFromManifest(manifest);
+      const contribs = contributionsFromManifest(manifest);
+      const summary = computePackageContributionSummary(contribs);
       return {
-        resolvedExtensions: direct,
-        diagnostics: [],
-        isResolving: false,
-        loaderResult: null,
-        error: null,
-        packageStateEntries: Object.freeze(packageStateEntries),
+        extensionId,
+        packageState: 'loaded' as const,
+        stateReason: 'Direct host-supplied extension',
+        packageMetadata: metadata,
+        manifestContributions: contribs,
+        contributionSummary: summary,
       };
-    }, [direct]);
-  }
+    });
+    return {
+      resolvedExtensions: direct,
+      diagnostics: [],
+      isResolving: false,
+      loaderResult: null,
+      error: null,
+      packageStateEntries: Object.freeze(packageStateEntries),
+    };
+  }, [direct]);
 
   // ---- Repository path --------------------------------------------------
   // Stabilise the repository reference with a ref to avoid re-triggering
   // the async effect when the caller passes a new object with the same
   // logical identity on every render (common with inline mock objects).
-  const repoRef = useRef<ExtensionStateRepository | null>(repository);
-  const prevRepoRef = useRef<ExtensionStateRepository | null>(repository);
+  const repoRef = useRef<ExtensionStateRepository | null>(repository ?? null);
+  const prevRepoRef = useRef<ExtensionStateRepository | null>(repository ?? null);
   if (prevRepoRef.current !== repository) {
-    prevRepoRef.current = repository;
+    prevRepoRef.current = repository ?? null;
     // Only update the loader if the repository actually changes identity
     if (repoRef.current !== repository) {
-      repoRef.current = repository;
+      repoRef.current = repository ?? null;
     }
   }
   const stableRepo = repoRef.current;
 
   const loaderRef = useRef<ExtensionLoader | null>(null);
-  if (!loaderRef.current) {
+  const loaderRepoRef = useRef<ExtensionStateRepository | null>(null);
+  if (stableRepo && loaderRepoRef.current !== stableRepo) {
     loaderRef.current = createExtensionLoader(stableRepo);
+    loaderRepoRef.current = stableRepo;
   }
 
   const [state, setState] = useState<{
@@ -423,7 +425,7 @@ export function useExtensionLoaderWiring(
     packageStateEntries: [],
   });
 
-  const [isResolving, setIsResolving] = useState(true);
+  const [isResolving, setIsResolving] = useState(Boolean(stableRepo));
 
   // Track the last resolution key to avoid duplicate resolutions
   const lastResolvedKeyRef = useRef<string>('');
@@ -437,6 +439,11 @@ export function useExtensionLoaderWiring(
   );
 
   useEffect(() => {
+    if (!stableRepo) {
+      setIsResolving(false);
+      return;
+    }
+
     const resolveKey = `${directKey}::${String(Boolean(stableRepo))}::${refreshKey}`;
     if (resolveKey === lastResolvedKeyRef.current && state.loaderResult !== null) {
       // Already resolved this combination — don't re-resolve
@@ -741,7 +748,11 @@ export function useExtensionLoaderWiring(
     return () => {
       cancelled = true;
     };
-  }, [directKey, refreshKey]);
+  }, [bundleStore, directKey, refreshKey, stableRepo]);
+
+  if (!stableRepo) {
+    return directOnlyResult;
+  }
 
   return {
     resolvedExtensions: state.resolvedExtensions,
