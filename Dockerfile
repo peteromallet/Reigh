@@ -5,7 +5,7 @@
 # Pinned to satisfy package-lock.json's ^20.19.0 || >=22.12.0 engine constraint.
 # Bumping the FROM tag is the ONLY Node-version authority for production —
 # .nvmrc and engines.node must track this value.
-FROM node:20.19.4-alpine AS build
+FROM node:20.19.4-alpine@sha256:df02558528d3d3d0d621f112e232611aecfee7cbc654f6b375765f72bb262799 AS build
 WORKDIR /app
 
 # vendor/ is copied with package*.json because devDependency fake-indexeddb
@@ -27,11 +27,12 @@ RUN VITE_SUPABASE_URL="$VITE_SUPABASE_URL" \
     VITE_SUPABASE_ANON_KEY="$VITE_SUPABASE_ANON_KEY" \
     VITE_API_TARGET_URL="$VITE_API_TARGET_URL" \
     VITE_APP_ENV="$VITE_APP_ENV" \
-    npm run build
+    NODE_OPTIONS="--max-old-space-size=4096" npm run build
 
-FROM node:20.19.4-alpine AS runtime
+FROM node:20.19.4-alpine@sha256:df02558528d3d3d0d621f112e232611aecfee7cbc654f6b375765f72bb262799 AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
+ENV PORT=8080
 
 # `npm run serve` is `vite preview`, which loads config/vite/vite.config.ts
 # at runtime. That config imports @vitejs/plugin-react-swc (a devDependency),
@@ -44,6 +45,8 @@ COPY scripts/runtime ./scripts/runtime
 COPY --chown=node:node --from=build /app/dist ./dist
 
 EXPOSE 8080
+HEALTHCHECK --interval=10s --timeout=5s --start-period=20s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+process.env.PORT+'/runtime-config/v1/extensions.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error(String(r.status))})"
 # Generate the public rollout document from runtime-only (non-VITE) variables
 # immediately before preview starts. The writer uses same-directory rename, so
 # the server can never observe a partial JSON file.

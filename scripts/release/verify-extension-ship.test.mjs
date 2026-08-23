@@ -56,11 +56,12 @@ describe('extension ship verifier', () => {
     const dockerfile = readFileSync(`${REPO_ROOT}/Dockerfile`, 'utf8');
     const nvmVersion = readFileSync(`${REPO_ROOT}/.nvmrc`, 'utf8').trim();
     const fromLines = dockerfile.match(/^FROM node:[^\n]+$/gm) ?? [];
+    const pinnedImage = `node:${manifest.verification.node}-alpine@${manifest.verification.nodeImageDigest}`;
 
     assert.equal(nvmVersion, manifest.verification.node);
     assert.deepEqual(fromLines, [
-      `FROM node:${manifest.verification.node}-alpine AS build`,
-      `FROM node:${manifest.verification.node}-alpine AS runtime`,
+      `FROM ${pinnedImage} AS build`,
+      `FROM ${pinnedImage} AS runtime`,
     ]);
 
     for (const retiredKey of [
@@ -76,6 +77,8 @@ describe('extension ship verifier', () => {
     assert.match(dockerfile, /^COPY scripts\/runtime \.\/scripts\/runtime$/m);
     assert.match(dockerfile, /^COPY --chown=node:node --from=build \/app\/dist \.\/dist$/m);
     assert.match(dockerfile, /^USER node$/m);
+    assert.match(dockerfile, /^HEALTHCHECK .*\\$/m);
+    assert.match(dockerfile, /NODE_OPTIONS="--max-old-space-size=4096" npm run build/);
     assert.match(dockerfile, /node scripts\/runtime\/write-extension-release-config\.mjs/);
     assert.match(dockerfile, /exec npm run serve/);
     assert.equal(
@@ -83,6 +86,9 @@ describe('extension ship verifier', () => {
       'node scripts/runtime/write-extension-release-config.mjs && npm run serve',
     );
     assert.doesNotMatch(packageJson.scripts['start:railway'], /npm run build/);
+    assert.deepEqual(REIGH_GATE_PROFILE[0].args, [
+      'ci', '--no-audit', '--no-fund',
+    ]);
     assert.ok(REIGH_GATE_PROFILE.some((gate) => (
       gate.id === 'runtime-rollout'
       && gate.command === 'npm'

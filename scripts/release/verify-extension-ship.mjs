@@ -36,7 +36,7 @@ export const EXPECTED_REQUIRED_GATES = Object.freeze([
  * into shell execution.
  */
 export const REIGH_GATE_PROFILE = Object.freeze([
-  { id: 'dependencies', label: 'install locked Reigh dependencies', command: 'npm', args: ['ci'] },
+  { id: 'dependencies', label: 'install locked Reigh dependencies', command: 'npm', args: ['ci', '--no-audit', '--no-fund'] },
   { id: 'contract-recheck', label: 'release contract recheck', command: 'npm', args: ['run', 'check:contract-recheck:release'] },
   { id: 'deferred-claims', label: 'release deferred-claims gate', command: 'npm', args: ['run', 'check:deferred-claims:release'] },
   { id: 'docs-maturity', label: 'release documentation maturity gate', command: 'npm', args: ['run', 'check:docs-maturity-sync:release'] },
@@ -164,6 +164,9 @@ export function validateReleaseManifest(manifest) {
   }
   if (!/^\d+\.\d+\.\d+$/.test(verification.node ?? '')) {
     errors.push('verification.node must be an exact semantic version');
+  }
+  if (!/^sha256:[0-9a-f]{64}$/.test(verification.nodeImageDigest ?? '')) {
+    errors.push('verification.nodeImageDigest must be a full sha256 OCI digest');
   }
   if (!/^\d+\.\d+\.\d+$/.test(verification.npm ?? '')) {
     errors.push('verification.npm must be an exact semantic version');

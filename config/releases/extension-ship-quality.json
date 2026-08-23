@@ -14,6 +14,7 @@
   "verification": {
     "profile": "extension-ship-quality-v1",
     "node": "20.19.4",
+    "nodeImageDigest": "sha256:df02558528d3d3d0d621f112e232611aecfee7cbc654f6b375765f72bb262799",
     "npm": "10.8.2",
     "astridPython": "3.11.11"
   },

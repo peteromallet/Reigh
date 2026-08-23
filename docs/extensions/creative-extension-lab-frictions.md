@@ -686,3 +686,15 @@ evidence and a concrete improvement direction.
   projected `consumes` edge proves actual timeline usage; otherwise planning
   and export scanning use the timeline compatibility path and fail closed.
   Graph provenance matters as much as graph shape.
+
+### A reproducible install must resolve peers without an escape hatch
+
+- The release profile had acquired `npm ci --legacy-peer-deps`, which made the
+  locked install complete by ignoring that Base UI 1.4 requires date-fns 4
+  while the app declared date-fns 3. That is not a reproducibility guarantee;
+  it is a request for npm to accept a potentially invalid tree.
+- The app uses date-fns only through compatible formatting/validation APIs, so
+  the root dependency is now pinned to 4.4.0 and the escape hatch is removed.
+  A normal locked-install dry run exits zero and the timestamp hook suites are
+  green. Release installation policy should treat peer-resolution bypasses as
+  blockers requiring a written, package-specific exception.
