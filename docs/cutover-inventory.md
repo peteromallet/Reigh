@@ -198,15 +198,15 @@ Legend: **Line** = source line (`-` = module-level types/import or test-double r
 | `integrations/supabase/jsonTypes.ts` | 4 | types | types | bridge-client | — | — |
 | `integrations/supabase/repositories/derivedItemsRepository.test.ts` | - | test-double | internal helper/test of the supabase layer being replaced | bridge-client | — | — |
 | `integrations/supabase/repositories/derivedItemsRepository.ts` | 70 | from | table `generations` | bridge-client | — | GET /projects/:slug/generations[/:generation_id] (R12/R13) |
-|  | 86 | from | table `generation_variants` | bridge-client | — | generation detail variants + pack commands (doc 27 §2.3) |
-| `integrations/supabase/repositories/generationMutationsRepository.test.ts` | - | test-double | internal helper/test of the supabase layer being replaced | bridge-client | — | — |
-| `integrations/supabase/repositories/generationMutationsRepository.ts` | 107 | from | table `generations` | bridge-client | — | GET /projects/:slug/generations[/:generation_id] (R12/R13) |
-|  | 124 | from | table `generations` | bridge-client | — | GET /projects/:slug/generations[/:generation_id] (R12/R13) |
-|  | 137 | from | table `generations` | bridge-client | — | GET /projects/:slug/generations[/:generation_id] (R12/R13) |
-|  | 153 | from | table `generation_variants` | bridge-client | — | generation detail variants + pack commands (doc 27 §2.3) |
-|  | 178 | from | table `generations` | bridge-client | — | GET /projects/:slug/generations[/:generation_id] (R12/R13) |
-|  | 194 | from | table `generations` | bridge-client | — | GET /projects/:slug/generations[/:generation_id] (R12/R13) |
-|  | 210 | from | table `generation_variants` | bridge-client | — | generation detail variants + pack commands (doc 27 §2.3) |
+|  | 86 | from | table `generation_variants` | defer | J2 | child generations (`based_on` listing) have no v1 route — variant half served via R13 detail (see .oracle/evidence/c3-b-reads.md) |
+| `integrations/supabase/repositories/generationMutationsRepository.test.ts` | - | test-double | internal helper/test of the supabase layer being replaced | defer | J2 | no v1 browser route: doc-27 §4.1 + local_bridge_server.py enumerate gallery/media READS only; star/delete/set-primary/viewed/promote await pack commands (see .oracle/evidence/c3-b-defer.md) |
+| `integrations/supabase/repositories/generationMutationsRepository.ts` | 107 | from | table `generations` | defer | J2 | no v1 browser route: doc-27 §4.1 + local_bridge_server.py enumerate gallery/media READS only; star/delete/set-primary/viewed/promote await pack commands (see .oracle/evidence/c3-b-defer.md) |
+|  | 124 | from | table `generations` | defer | J2 | J2 |
+|  | 137 | from | table `generations` | defer | J2 | no v1 browser route: doc-27 §4.1 + local_bridge_server.py enumerate gallery/media READS only; star/delete/set-primary/viewed/promote await pack commands (see .oracle/evidence/c3-b-defer.md) |
+|  | 153 | from | table `generation_variants` | defer | J2 | no v1 browser route: doc-27 §4.1 + local_bridge_server.py enumerate gallery/media READS only; star/delete/set-primary/viewed/promote await pack commands (see .oracle/evidence/c3-b-defer.md) |
+|  | 178 | from | table `generations` | defer | J2 | no v1 browser route: doc-27 §4.1 + local_bridge_server.py enumerate gallery/media READS only; star/delete/set-primary/viewed/promote await pack commands (see .oracle/evidence/c3-b-defer.md) |
+|  | 194 | from | table `generations` | defer | J2 | no v1 browser route: doc-27 §4.1 + local_bridge_server.py enumerate gallery/media READS only; star/delete/set-primary/viewed/promote await pack commands (see .oracle/evidence/c3-b-defer.md) |
+|  | 210 | from | table `generation_variants` | defer | J2 | no v1 browser route: doc-27 §4.1 + local_bridge_server.py enumerate gallery/media READS only; star/delete/set-primary/viewed/promote await pack commands (see .oracle/evidence/c3-b-defer.md) |
 | `integrations/supabase/repositories/generationRepository.ts` | 11 | types | types | bridge-client | — | — |
 |  | 14 | from | table `generations` | bridge-client | — | GET /projects/:slug/generations[/:generation_id] (R12/R13) |
 |  | 39 | from | table `generations` | bridge-client | — | GET /projects/:slug/generations[/:generation_id] (R12/R13) |
@@ -564,10 +564,10 @@ Legend: **Line** = source line (`-` = module-level types/import or test-double r
 | `shared/hooks/tasks/__tests__/useTasks.test.ts` | - | test-double | vi.mock test double of the supabase client / module under test | bridge-client | — | — |
 | `shared/hooks/tasks/paginatedTaskRepository.ts` | 49 | from | table `tasks` | bridge-client | J4 | GET /projects/:slug/tasks[/:task_id] (poll reads) |
 |  | 77 | from | table `tasks` | bridge-client | J4 | GET /projects/:slug/tasks[/:task_id] (poll reads) |
-| `shared/hooks/tasks/taskLogPipeline.ts` | 16 | from | table `credits_ledger` | bridge-client | J4 | AstridLocalClient equivalent read/command |
-|  | 127 | from | table `projects` | bridge-client | J4 | bridge project read/create routes |
+| `shared/hooks/tasks/taskLogPipeline.ts` | 16 | from | table `credits_ledger` | defer | — | no bridge ledger route (C3-A evidence c3-a-tasks.md) — cost enrichment stripped, filter degrades to no-op |
+|  | 127 | from | table `projects` | defer | — | no projects-by-user route — log scopes by active-project slug; names fall back to ids |
 |  | 168 | from | table `tasks` | bridge-client | J4 | GET /projects/:slug/tasks[/:task_id] (poll reads) |
-|  | 193 | auth | auth.getUser() | bridge-client | J4 | /api/astrid health/session probe (fixed local user) |
+|  | 193 | auth | auth.getUser() | cut | — | fixed local user — no per-request identity read (C3-A evidence c3-a-tasks.md) |
 |  | 217 | from | table `tasks` | bridge-client | J4 | GET /projects/:slug/tasks[/:task_id] (poll reads) |
 | `shared/hooks/tasks/usePendingGenerationTasks.ts` | 96 | from | table `tasks` | bridge-client | J4 | GET /projects/:slug/tasks[/:task_id] (poll reads) |
 | `shared/hooks/tasks/usePendingSegmentTasks.ts` | 83 | from | table `tasks` | bridge-client | J4 | GET /projects/:slug/tasks[/:task_id] (poll reads) |
@@ -576,13 +576,13 @@ Legend: **Line** = source line (`-` = module-level types/import or test-double r
 |  | 27 | from | table `tasks` | bridge-client | J4 | GET /projects/:slug/tasks[/:task_id] (poll reads) |
 |  | 47 | from | table `tasks` | bridge-client | J4 | GET /projects/:slug/tasks[/:task_id] (poll reads) |
 |  | 101 | from | table `tasks` | bridge-client | J4 | GET /projects/:slug/tasks[/:task_id] (poll reads) |
-| `shared/hooks/tasks/useTaskPlaceholder.ts` | 16 | invoke | edge-fn `?` | bridge-client | — | bridge route per doc 27 §4.1 |
+| `shared/hooks/tasks/useTaskPlaceholder.ts` | 16 | invoke | edge-fn `?` | bridge-client | — | C3: mid-flight cancel re-pointed at POST /projects/:slug/tasks/:task_id/cancel |
 |  | 86 | invoke | edge-fn `update-task-status` | bridge-client | — | POST /projects/:slug/tasks/:task_id/cancel |
 | `shared/hooks/tasks/useTaskStatusCounts.ts` | 182 | from | table `tasks` | bridge-client | J4 | GET /projects/:slug/tasks[/:task_id] (poll reads) |
 |  | 193 | from | table `tasks` | bridge-client | J4 | GET /projects/:slug/tasks[/:task_id] (poll reads) |
 |  | 205 | from | table `tasks` | bridge-client | J4 | GET /projects/:slug/tasks[/:task_id] (poll reads) |
-| `shared/hooks/tasks/useTaskType.ts` | 18 | from | table `task_types` | bridge-client | J4 | AstridLocalClient equivalent read/command |
-|  | 49 | from | table `task_types` | bridge-client | J4 | AstridLocalClient equivalent read/command |
+| `shared/hooks/tasks/useTaskType.ts` | 18 | from | table `task_types` | bridge-client | J4 | C3: no §4.1 route exists; re-sourced onto local `taskTypeConfigFallback` registry (single authority) |
+|  | 49 | from | table `task_types` | bridge-client | J4 | C3: same local-registry source |
 | `shared/hooks/tasks/useTasks.ts` | 84 | from | table `tasks` | bridge-client | J4 | GET /projects/:slug/tasks[/:task_id] (poll reads) |
 
 ### M. Timeline hooks (relational)
@@ -609,20 +609,20 @@ Legend: **Line** = source line (`-` = module-level types/import or test-double r
 
 | File | Line | Kind | Surface | Disp | J | Bridge target / reason |
 |---|---|---|---|---|---|---|
-| `shared/hooks/variants/useLineageChain.ts` | 130 | from | table `generation_variants` | bridge-client | J2 | generation detail variants + pack commands (doc 27 §2.3) |
-| `shared/hooks/variants/useLoadVariantImages.ts` | 176 | from | table `generation_variants` | bridge-client | J2 | generation detail variants + pack commands (doc 27 §2.3) |
-|  | 189 | from | table `generation_variants` | bridge-client | J2 | generation detail variants + pack commands (doc 27 §2.3) |
-|  | 215 | from | table `generation_variants` | bridge-client | J2 | generation detail variants + pack commands (doc 27 §2.3) |
-| `shared/hooks/variants/useMarkVariantViewed.ts` | 144 | from | table `generation_variants` | bridge-client | J2 | generation detail variants + pack commands (doc 27 §2.3) |
-|  | 180 | from | table `generation_variants` | bridge-client | J2 | generation detail variants + pack commands (doc 27 §2.3) |
-| `shared/hooks/variants/usePromoteVariantToGeneration.ts` | - | types/import | generated Database types / client module refs | bridge-client | J2 | — |
-| `shared/hooks/variants/useToggleVariantStar.ts` | 28 | from | table `generation_variants` | bridge-client | J2 | generation detail variants + pack commands (doc 27 §2.3) |
-| `shared/hooks/variants/useVariants.ts` | 82 | from | table `generation_variants` | bridge-client | J2 | generation detail variants + pack commands (doc 27 §2.3) |
-|  | 146 | from | table `generation_variants` | bridge-client | J2 | generation detail variants + pack commands (doc 27 §2.3) |
-|  | 171 | from | table `generation_variants` | bridge-client | J2 | generation detail variants + pack commands (doc 27 §2.3) |
-|  | 179 | from | table `generations` | bridge-client | J2 | GET /projects/:slug/generations[/:generation_id] (R12/R13) |
-|  | 187 | from | table `generations` | bridge-client | J2 | GET /projects/:slug/generations[/:generation_id] (R12/R13) |
-|  | 205 | from | table `generation_variants` | bridge-client | J2 | generation detail variants + pack commands (doc 27 §2.3) |
+| `shared/hooks/variants/useLineageChain.ts` | 130 | from | table `generation_variants` | defer | J2 | no v1 browser route: doc-27 §4.1 + local_bridge_server.py enumerate gallery/media READS only; star/delete/set-primary/viewed/promote await pack commands (see .oracle/evidence/c3-b-defer.md) |
+| `shared/hooks/variants/useLoadVariantImages.ts` | 176 | from | table `generation_variants` | defer | J2 | no v1 browser route: doc-27 §4.1 + local_bridge_server.py enumerate gallery/media READS only; star/delete/set-primary/viewed/promote await pack commands (see .oracle/evidence/c3-b-defer.md) |
+|  | 189 | from | table `generation_variants` | defer | J2 | no v1 browser route: doc-27 §4.1 + local_bridge_server.py enumerate gallery/media READS only; star/delete/set-primary/viewed/promote await pack commands (see .oracle/evidence/c3-b-defer.md) |
+|  | 215 | from | table `generation_variants` | defer | J2 | no v1 browser route: doc-27 §4.1 + local_bridge_server.py enumerate gallery/media READS only; star/delete/set-primary/viewed/promote await pack commands (see .oracle/evidence/c3-b-defer.md) |
+| `shared/hooks/variants/useMarkVariantViewed.ts` | 144 | from | table `generation_variants` | defer | J2 | no v1 browser route: doc-27 §4.1 + local_bridge_server.py enumerate gallery/media READS only; star/delete/set-primary/viewed/promote await pack commands (see .oracle/evidence/c3-b-defer.md) |
+|  | 180 | from | table `generation_variants` | defer | J2 | no v1 browser route: doc-27 §4.1 + local_bridge_server.py enumerate gallery/media READS only; star/delete/set-primary/viewed/promote await pack commands (see .oracle/evidence/c3-b-defer.md) |
+| `shared/hooks/variants/usePromoteVariantToGeneration.ts` | - | types/import | generated Database types / client module refs | defer | J2 | no v1 browser route: doc-27 §4.1 + local_bridge_server.py enumerate gallery/media READS only; star/delete/set-primary/viewed/promote await pack commands (see .oracle/evidence/c3-b-defer.md) |
+| `shared/hooks/variants/useToggleVariantStar.ts` | 28 | from | table `generation_variants` | defer | J2 | no v1 browser route: doc-27 §4.1 + local_bridge_server.py enumerate gallery/media READS only; star/delete/set-primary/viewed/promote await pack commands (see .oracle/evidence/c3-b-defer.md) |
+| `shared/hooks/variants/useVariants.ts` | 82 | from | table `generation_variants` | bridge-client | J2 | GET /projects/:slug/generations/:generation_id variants (R13); display URLs via bridgeMediaUrl → R9 |
+|  | 146 | from | table `generation_variants` | defer | J2 | no v1 browser route: doc-27 §4.1 + local_bridge_server.py enumerate gallery/media READS only; star/delete/set-primary/viewed/promote await pack commands (see .oracle/evidence/c3-b-defer.md) |
+|  | 171 | from | table `generation_variants` | defer | J2 | no v1 browser route: doc-27 §4.1 + local_bridge_server.py enumerate gallery/media READS only; star/delete/set-primary/viewed/promote await pack commands (see .oracle/evidence/c3-b-defer.md) |
+|  | 179 | from | table `generations` | defer | J2 | no v1 browser route: doc-27 §4.1 + local_bridge_server.py enumerate gallery/media READS only; star/delete/set-primary/viewed/promote await pack commands (see .oracle/evidence/c3-b-defer.md) |
+|  | 187 | from | table `generations` | defer | J2 | no v1 browser route: doc-27 §4.1 + local_bridge_server.py enumerate gallery/media READS only; star/delete/set-primary/viewed/promote await pack commands (see .oracle/evidence/c3-b-defer.md) |
+|  | 205 | from | table `generation_variants` | defer | J2 | no v1 browser route: doc-27 §4.1 + local_bridge_server.py enumerate gallery/media READS only; star/delete/set-primary/viewed/promote await pack commands (see .oracle/evidence/c3-b-defer.md) |
 |  | 258 | from | table `generation_variants` | bridge-client | J2 | generation detail variants + pack commands (doc 27 §2.3) |
 
 ### Y. Shared lib misc
@@ -690,7 +690,7 @@ Legend: **Line** = source line (`-` = module-level types/import or test-double r
 |---|---|---|---|---|---|---|
 | `shared/lib/taskCreation/createTask.test.ts` | - | test-double | vi.mock test double of the supabase client / module under test | bridge-client | — | — |
 | `shared/lib/taskCreation/createTask.ts` | - | types/import | generated Database types / client module refs | bridge-client | J3 | — |
-| `shared/lib/taskCreation/resolution.ts` | 8 | from | table `projects` | bridge-client | J3 | bridge project read/create routes |
+| `shared/lib/taskCreation/resolution.ts` | 8 | from | table `projects` | bridge-client | J3 | C3: no aspect-ratio route on bridge; degrades to app default (documented degradation, layout authority = timeline config) |
 
 ### Q. Tasks lib
 
