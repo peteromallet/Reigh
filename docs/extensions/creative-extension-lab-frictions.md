@@ -507,11 +507,16 @@ evidence and a concrete improvement direction.
   directly to `console.log`, `console.warn`, and `console.error`. That allowed
   extensions to emit prompts, transcripts, project IDs, paths, URLs, exception
   messages, or whole bridge payloads into production diagnostics.
-- The host now accepts one fixed operational event object, rejects unknown keys
-  and path-like/free-form tokens, contains hostile getters and failing sinks,
-  and forwards sanitized records through a browser event boundary. The schema
-  covers activation, disposal, command, bridge, persistence, migration, render,
-  and lane-density outcomes without creative content.
+- Extension-authored telemetry is no longer promoted into rollout metrics at
+  all. A host-only adapter pins the deployment revision plus exact active
+  manifest ID/version pairs, accepts only fixed event/error-class enums and
+  bounded count/duration fields, contains hostile getters and failing sinks,
+  and forwards records through a browser event boundary. The app shell now
+  emits effective host activation, real per-extension lifecycle transitions,
+  commands, persistence conflicts, browser render outcomes, and lane density.
+- Bridge, migration, and export-completion source wiring remains explicit work;
+  the typed host adapter alone is not evidence that those signals reach
+  production analytics.
 - A schema is only the construction boundary. Actual production dashboards,
   retention/access policy, alert drills, and on-call ownership still require
   human/operator evidence before rollout; the release checklist must not infer
@@ -633,3 +638,25 @@ evidence and a concrete improvement direction.
   config path bypasses interception entirely. A VM-level regression test proves
   that even a populated stale cache is never consulted. Deployment controls
   need tests at every browser cache layer, not only at the application fetch.
+
+### A package-manager guard made the locked install less reproducible
+
+- The repository's `preinstall` used `npx --yes only-allow npm`, but
+  `only-allow` was absent from both dependencies and the lockfile. Every
+  supposedly frozen `npm ci` and Docker build could therefore download and
+  execute the registry's current package before installing reviewed code.
+- The remote lifecycle guard is removed; exact package-manager versions are
+  already enforced by the release manifest and verifier. The verifier now
+  rejects `npx`, `npm exec`, `pnpx`, and `bunx` in install lifecycle scripts so
+  this class of unlocked bootstrap cannot silently return.
+
+### One-family media upgrades must move as a coherent dependency set
+
+- Updating only `@remotion/web-renderer` pulled Mediabunny encoders 1.50.8 into
+  a tree whose root Mediabunny remained 1.39.2. npm legally deduped the encoder
+  peer to that older root; fresh dev servers then crashed on an export that did
+  not exist in 1.39.2.
+- Root Remotion, player, media, web-renderer, and Mediabunny are now exact and
+  aligned. The vendor timeline package keeps its older exact media dependency
+  in a nested tree. Release validation must exercise a fresh lock install—the
+  incumbent `node_modules` tree can mask or invent compatibility outcomes.
