@@ -119,16 +119,38 @@ from expected
 left join recent using (event);
 
 create or replace view public.extension_operational_health as
+with recent as (
+  select
+    count(*)::bigint as event_count_15m,
+    count(*) filter (where outcome = 'failure')::bigint as failure_count_15m,
+    count(*) filter (where outcome = 'degraded')::bigint as degraded_count_15m,
+    count(distinct release_revision)::bigint as release_revision_count_15m
+  from public.extension_operational_events
+  where received_at >= now() - interval '15 minutes'
+), coverage as (
+  select
+    bool_and(is_healthy) as all_event_families_observed,
+    count(*) filter (where fail_closed_missing)::bigint as missing_event_family_count
+  from public.extension_operational_telemetry_health
+)
 select
   now() as checked_at,
-  count(*)::bigint as event_count_15m,
-  count(*) filter (where outcome = 'failure')::bigint as failure_count_15m,
-  count(*) filter (where outcome = 'degraded')::bigint as degraded_count_15m,
-  count(distinct release_revision)::bigint as release_revision_count_15m,
-  (count(*) > 0 and count(*) filter (where outcome in ('failure', 'degraded')) = 0) as no_failure_or_degraded,
-  bool_and(is_healthy) as telemetry_healthy,
-  count(*) filter (where fail_closed_missing)::bigint as missing_event_family_count
-from public.extension_operational_telemetry_health;
+  recent.event_count_15m,
+  recent.failure_count_15m,
+  recent.degraded_count_15m,
+  recent.release_revision_count_15m,
+  (
+    recent.event_count_15m > 0
+    and recent.failure_count_15m = 0
+    and recent.degraded_count_15m = 0
+  ) as no_failure_or_degraded,
+  (
+    recent.event_count_15m > 0
+    and coverage.all_event_families_observed
+  ) as telemetry_healthy,
+  coverage.missing_event_family_count
+from recent
+cross join coverage;
 
 revoke all on public.extension_operational_event_hourly from public, anon, authenticated;
 revoke all on public.extension_operational_health from public, anon, authenticated;
