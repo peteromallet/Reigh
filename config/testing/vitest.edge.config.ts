@@ -46,6 +46,7 @@ const EDGE_UNIT_INCLUDE = [
   'supabase/functions/stripe-webhook/**/*.test.ts',
   'supabase/functions/trigger-auto-topup/**/*.test.ts',
   'supabase/functions/update-worker-model/**/*.test.ts',
+  'supabase/functions/extension-operational-events/**/*.test.ts',
 ] as const;
 
 const EDGE_UNIT_EXCLUDE = [
