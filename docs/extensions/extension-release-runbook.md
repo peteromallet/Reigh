@@ -60,7 +60,15 @@ flag never bypasses its parent.
 | --- | --- | --- | --- |
 | `VITE_EXTENSION_HOST_ENABLED` | Activation and rendering of the bundled extension host | None | Prevent new extension activation and remove host surfaces after a safe reload |
 | `VITE_TRANSCRIPT_CAPTION_FOUNDRY_ENABLED` | Transcript Caption Foundry registration, commands, and writes | `VITE_EXTENSION_HOST_ENABLED` | Stop Foundry commands/writes while leaving unrelated host extensions available |
-| `VITE_RUNAWAY_TYPED_TIMELINE_ENABLED` | Astrid Runaway typed-lane loading, migration entry point, and viewer registration | `VITE_EXTENSION_HOST_ENABLED` | Stop Runaway loads/migrations/writes while leaving unrelated host extensions available |
+| `VITE_RUNAWAY_TYPED_TIMELINE_ENABLED` | Astrid Runaway source request/projection, migration entry point, commands, and viewer registration | `VITE_EXTENSION_HOST_ENABLED` | Stop Runaway-specific bridge requests, projection, migrations, and writes while leaving unrelated host extensions available |
+
+The Runaway child switch does not remove the shared `data_bundle` column or
+`bundle` member from the generic timeline read: that envelope can also contain
+Transcript or future typed data and is fetched atomically with the timeline.
+With Runaway disabled, its kind is not registered, persisted Runaway items are
+not projected, and the optional `/runaway-transitions` source request is never
+issued. This is the tested containment boundary; operators must not describe
+the switch as suppressing unrelated shared-envelope transport.
 
 Evaluate flags server-side or from signed deployment configuration before
 activation. Do not accept query-string or locally persisted production

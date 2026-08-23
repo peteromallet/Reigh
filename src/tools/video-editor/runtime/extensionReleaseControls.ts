@@ -108,6 +108,17 @@ export interface ExtensionOperationalEvent {
 const OUTCOMES = new Set<ExtensionOperationalOutcome>(['success', 'failure', 'cancelled', 'degraded']);
 const EVENT_NAMES = new Set<string>(EXTENSION_OPERATIONAL_EVENT_NAMES);
 const SAFE_TOKEN = /^[A-Za-z0-9._:-]{1,128}$/;
+const UUID_SHAPE = /[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i;
+const URL_OR_EMAIL_SHAPE = /(?:^[a-z][a-z0-9+.-]*:|@)/i;
+const OPAQUE_IDENTIFIER_SHAPE = /(?=[A-Za-z0-9_-]{24,})(?=[A-Za-z0-9_-]*[A-Za-z])(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]{24,}/;
+
+const isBoundedOperationalToken = (value: unknown): value is string => (
+  typeof value === 'string'
+  && SAFE_TOKEN.test(value)
+  && !UUID_SHAPE.test(value)
+  && !URL_OR_EMAIL_SHAPE.test(value)
+  && !OPAQUE_IDENTIFIER_SHAPE.test(value)
+);
 
 export const EXTENSION_OPERATIONAL_EVENT_DOM_NAME = 'reigh:extension-operational-event';
 
@@ -122,9 +133,9 @@ export function sanitizeExtensionOperationalEvent(value: unknown): ExtensionOper
     ]);
     if (Object.keys(input).some((key) => !allowed.has(key))) return null;
     if (!EVENT_NAMES.has(String(input.event)) || !OUTCOMES.has(input.outcome as ExtensionOperationalOutcome)) return null;
-    if (typeof input.releaseRevision !== 'string' || !SAFE_TOKEN.test(input.releaseRevision)) return null;
+    if (!isBoundedOperationalToken(input.releaseRevision)) return null;
     for (const key of ['extensionId', 'extensionVersion', 'schemaVersion', 'errorClass'] as const) {
-      if (input[key] !== undefined && (typeof input[key] !== 'string' || !SAFE_TOKEN.test(input[key]))) return null;
+      if (input[key] !== undefined && !isBoundedOperationalToken(input[key])) return null;
     }
     if (input.durationMs !== undefined && (
       typeof input.durationMs !== 'number' || !Number.isFinite(input.durationMs) || input.durationMs < 0

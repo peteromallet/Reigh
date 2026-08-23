@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, renderHook, screen } from '@testing-library/react';
 import { createElement, type ReactElement } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { DataItemInspectorProps, DataLaneRendererProps } from '@reigh/editor-sdk';
@@ -8,7 +8,11 @@ import {
   DATA_LANE_DOM_ITEM_BUDGET,
   DataLaneRow,
 } from '@/tools/video-editor/components/TimelineEditor/DataLaneRow';
-import { parseRunawayBridgeResponse, RUNAWAY_SCHEMA_REF } from './runawayTimelineData';
+import {
+  parseRunawayBridgeResponse,
+  RUNAWAY_SCHEMA_REF,
+  useRunawayTimelineItems,
+} from './runawayTimelineData';
 import {
   renderRunawayTimelineLane,
   renderRunawayTransitionInspector,
@@ -31,6 +35,17 @@ const response = {
 };
 
 describe('Runaway timeline bridge adapter', () => {
+  it('performs zero bridge IO when the deployment gate is disabled', () => {
+    window.history.replaceState({}, '', '/?runawayTimelineProject=runaway-piano-colour-demo');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+    const { result } = renderHook(() => useRunawayTimelineItems(false));
+
+    expect(result.current).toBeUndefined();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
+
   it('builds sorted frozen interval views with evidence-backed empty regions', () => {
     const items = parseRunawayBridgeResponse(response);
     expect(items).toHaveLength(2);

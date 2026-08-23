@@ -207,13 +207,21 @@ export function loadRunawayTimeline(projectSlug: string): Promise<readonly Sourc
   return request;
 }
 
-export function useRunawayTimelineItems(): Readonly<Record<string, readonly SourceFrozenDataItem[]>> | undefined {
+/**
+ * Load the optional DEV bridge fixture only while the deployment-owned
+ * Runaway gate is effective.  The URL parameter is an authoring selector, not
+ * an enablement override: when the gate is false this hook performs zero
+ * bridge IO even if a stale/bookmarked URL still contains the parameter.
+ */
+export function useRunawayTimelineItems(
+  releaseEnabled: boolean,
+): Readonly<Record<string, readonly SourceFrozenDataItem[]>> | undefined {
   const projectSlug = useMemo(() => {
-    if (!import.meta.env.DEV || typeof window === 'undefined') return null;
+    if (!releaseEnabled || !import.meta.env.DEV || typeof window === 'undefined') return null;
     const params = new URLSearchParams(window.location.search);
     if (!params.has(RUNAWAY_PROJECT_PARAM)) return null;
     return params.get(RUNAWAY_PROJECT_PARAM)?.trim() || DEFAULT_RUNAWAY_PROJECT;
-  }, []);
+  }, [releaseEnabled]);
   const [items, setItems] = useState<readonly SourceFrozenDataItem[] | null>(null);
 
   useEffect(() => {

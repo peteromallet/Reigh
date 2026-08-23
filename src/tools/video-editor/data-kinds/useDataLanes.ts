@@ -33,6 +33,7 @@ import {
 import { useLaneSegments, type LoadDataSegments } from './dataLaneAssemblyAuthority.ts';
 import { useDataKindRegistrySnapshot } from './DataKindRegistryContext.tsx';
 import { useRunawayTimelineItems } from '@/tools/video-editor/dev/runaway-timeline/runawayTimelineData.ts';
+import { resolveExtensionReleaseFlags } from '@/tools/video-editor/runtime/extensionReleaseControls.ts';
 
 export type { LoadDataSegments };
 
@@ -62,7 +63,10 @@ export interface UseDataLanesArgs {
 export function useDataLanes({ base, kinds, loadSegments }: UseDataLanesArgs): TimelineData | null {
   const contextRecords = useDataKindRegistrySnapshot().records;
   const effectiveKinds = kinds ?? contextRecords;
-  const runawayItems = useRunawayTimelineItems();
+  const runawayReleaseEnabled = resolveExtensionReleaseFlags(import.meta.env, {
+    development: import.meta.env.DEV,
+  }).runawayTypedTimelineEnabled;
+  const runawayItems = useRunawayTimelineItems(runawayReleaseEnabled);
   const effectiveSourceItems = useMemo(() => {
     const persisted = base?.sourceItemsBySchemaRef;
     if (!runawayItems) return persisted;

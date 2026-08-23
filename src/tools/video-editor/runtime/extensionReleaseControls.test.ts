@@ -107,6 +107,31 @@ describe('extension release controls', () => {
       releaseRevision: 'rc1',
       errorClass: '/Users/person/private/file.mp4',
     })).toBeNull();
+    for (const leakedIdentifier of [
+      'project-550e8400-e29b-41d4-a716-446655440000',
+      'timeline-01ARZ3NDEKTSV4RRFFQ69G5FAV',
+      'token-eyJhbGciOiJIUzI1NiJ9',
+      'person@example.com',
+      'https:private.example',
+    ]) {
+      expect(sanitizeExtensionOperationalEvent({
+        event: 'bridge.request',
+        outcome: 'failure',
+        releaseRevision: 'rc1',
+        extensionId: leakedIdentifier,
+      })).toBeNull();
+      expect(sanitizeExtensionOperationalEvent({
+        event: 'bridge.request',
+        outcome: 'failure',
+        releaseRevision: leakedIdentifier,
+      })).toBeNull();
+      expect(sanitizeExtensionOperationalEvent({
+        event: 'bridge.request',
+        outcome: 'failure',
+        releaseRevision: 'rc1',
+        errorClass: leakedIdentifier,
+      })).toBeNull();
+    }
   });
 
   it('drops arbitrary extension logs and forwards one sanitized event', () => {
