@@ -987,3 +987,50 @@ evidence and a concrete improvement direction.
   indices. Selection uses bounded top-k work and is tested with 50,000 concurrent
   overlaps. Host optimizations that change observable collection shape need
   capability negotiation and worst-case fixtures.
+
+### Pixel density is not semantic render evidence
+
+- The first overlap probe passed at 25fps even though its extracted frame showed
+  only one speaker. The longer single caption happened to occupy more pixels
+  than the shorter baseline, so a whole-frame density threshold certified the
+  wrong visual result.
+- The release matrix now derives overlap frames from rounded caption boundaries
+  and checks both expected vertical caption bands at every supported frame rate.
+  Visual assertions must measure the structure the user expects, not a scalar
+  proxy that unrelated text length can satisfy.
+
+### Global editor shortcuts can break otherwise accessible extension controls
+
+- Extension toggles exposed native buttons and appeared keyboard reachable, but
+  the editor's global Space handler intercepted activation before the button
+  could change state. Component semantics alone did not reproduce the host-level
+  failure.
+- The manager now contains keyboard events from its native controls, exposes
+  pressed/expanded state, retains focus through enable/disable, and runs in
+  Chromium, Firefox, and WebKit at desktop, tablet, phone, reduced-motion, and
+  deterministic 200% content zoom. Accessibility gates must execute controls
+  inside the real host shortcut stack.
+
+### Tracked build output can shadow the package source of truth
+
+- Reigh's vendored Python timeline-schema package had an ignored but still
+  tracked `build/lib` tree. Its schema hash (`44e6…`) predated the source schema
+  (`3dfe…`) and omitted extension `app` metadata. Sparse working trees hid the
+  files, while `git archive` restored them; a clean wheel build then packaged
+  the stale schema and could reject valid extension provenance.
+- Generated package build directories must never be tracked. The paired gate
+  installs hash-locked build tools, builds from the exact archive, and compares
+  the installed resource hash with the source resource before running Astrid.
+  Testing an import is insufficient when two valid-looking copies can exist.
+
+### A clean Astrid environment exposed an undeclared paired dependency
+
+- Focused Astrid tests used a developer Python environment that already
+  contained `banodoco_timeline_schema`. A clean archive installed Astrid's
+  declared runtime lock and then failed timeline validation because the shared
+  schema distribution actually lives in Reigh's vendored release input.
+- The paired verifier now provisions that distribution from the exact archived
+  Reigh commit with dependency and build isolation disabled, records its source
+  tree and installed resource hashes, and proves Astrid resolves only from the
+  pinned archive. Cross-repository dependencies need an executable install
+  contract, not a setup note or a fortunate global environment.
