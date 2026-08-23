@@ -6,7 +6,7 @@ Development URL: `http://127.0.0.1:2222/tools/video-editor?localProject=demo-pro
 
 ## Disposition
 
-**Conditional FAIL — the implementation gates are substantially green, but this is not yet a final user-Chrome release gate.** The core extension host, all 13 shipped test extensions, Transcript Caption Foundry, Astrid Runaway, persistence, keyboard navigation, degraded-data recovery, responsive lane actions, marker decluttering, the production runtime-control artifact, and a real headless-Chromium render pass. The two concrete 1200 px defects found in the first review have host-owned fixes with fresh desktop/tablet/phone evidence. The remaining conditional-fail reasons are the explicitly blocked user-Chrome relaunch checks, 200% zoom/inspector typography, actual signed-in production surface removal, and browser/device coverage outside Chromium.
+**Conditional FAIL — the implementation gates are substantially green, but this is not yet a final user-Chrome release gate.** The core extension host, all 13 shipped test extensions, Transcript Caption Foundry, Astrid Runaway, persistence, keyboard navigation, degraded-data recovery, responsive lane actions, marker decluttering, the production runtime-control artifact, a real headless-Chromium render, and the installed-Chrome/Firefox/WebKit matrix pass. The two concrete 1200 px defects found in the first review have host-owned fixes with fresh desktop/tablet/phone evidence. The remaining conditional-fail reasons are the explicitly blocked existing-session user-Chrome checks, 200% zoom/inspector typography, actual signed-in production surface removal, and missing Edge availability.
 
 Nothing below converts a pending check into a pass. This document should be amended with fresh screenshots and a final release disposition after Chrome is relaunched.
 
@@ -31,6 +31,7 @@ Nothing below converts a pending check into a pass. This document should be amen
 | Parent/child kill-switch contract | PASS for built-artifact/runtime separation; signed-in production UI pending | `node --test scripts/runtime/*.test.mjs` passed 10/10 across four suites against the optimized artifact. The exact same bundle accepted the reviewed runtime variants without changing application assets; Docker/container invariants and the service-worker exclusion also passed. Runtime reads have a 4 s abort timeout and fail closed. Actual surface-removal evidence on the production signed-in page remains blocked on the approved Chrome relaunch. |
 | Real client render and download | PASS in headless Chromium; user Chrome pending | After caption materialization, the real WebCodecs Render flow reached completion, exposed a Download link, and produced the fresh Remotion 4.0.503 [MP4](evidence/chrome-acceptance/28-headless-caption-render-remotion-4.0.503.mp4). `ffprobe` verifies H.264 + AAC, 1280×720, 30 fps, 10.581333 s, 1,173,616 bytes. Extracted representative frames visibly prove the first and last fixture captions are encoded: [first](evidence/chrome-acceptance/29-remotion-4.0.503-first-caption.png), [last](evidence/chrome-acceptance/30-remotion-4.0.503-last-caption.png). The pinned-Node-20 gate recorded zero page errors, zero `CanvasFontStretch` console warnings, and zero matching CDP log entries. One Chromium GPU-driver `ReadPixels` performance warning remains, with exact text/location in [diagnostics](evidence/chrome-acceptance/28-render-console-diagnostics.json). |
 | Runaway degraded states | PASS in headless Chromium; user Chrome pending | Typed loading, empty, error, retry, and recovery states are visible and accessible. Malformed data manually retries to two chips; offline makes one deduplicated request/error path and the `online` event automatically recovers on the second request. Strict local-test mode records zero Runaway console errors and zero page errors. See [17–21](#screenshot-ledger). |
+| Cross-browser extension gate | PASS for installed Chrome, Firefox, and WebKit; Edge blocked by availability | Under Node 20.19.4, all three ship-critical flows passed per engine (9/9 total in 3.0m): inventory/host/diagnostics, composed 11-marker + Transcript + Runaway keyboard semantics, and 390×844 overflow/pager/menu geometry. Versions: Playwright 1.60.0; Chrome 151.0.7922.170; Firefox 150.0.2; WebKit 26.4. Edge is not installed at `/Applications/Microsoft Edge.app`, so no Edge pass is claimed. See [the dedicated gate](cross-browser-release-gate.md). |
 
 ## Visual assessment at 1200 × 606
 
@@ -56,6 +57,7 @@ A headless-Chromium geometry probe against the original implementation corrobora
 | Production parent/child surface removal | Built-artifact/runtime matrix PASS; actual signed-in production surfaces remain BLOCKED on approved Chrome relaunch. Exercise the same artifact with host-off, Transcript-off, and Runaway-off same-origin configs and prove UI/commands disappear. |
 | Real Render and export in user Chrome | BLOCKED on approved Chrome relaunch. The equivalent headless-Chromium flow and encoded artifact pass, but repeat in the user-controlled Chrome, retain its download, and compare its console diagnostics. |
 | Final Chrome console/page-error audit | BLOCKED on approved Chrome relaunch. The automated strict desktop gate is clean, but a final manual-production run must also be clean. |
+| Microsoft Edge | BLOCKED by missing browser availability. Install Edge and run the opt-in `edge-stable` project; Chromium/Chrome evidence is not presented as an Edge substitute. |
 
 ## Automated evidence
 
@@ -67,6 +69,9 @@ Result: 2 files passed, 48 tests passed
 
 PLAYWRIGHT_TIMELINE_DEVICES=1 PLAYWRIGHT_PORT=2222 BASE_URL=http://127.0.0.1:2222 ASTRID_BRIDGE_PORT=17334 npx playwright test --config playwright.config.ts --project=timeline-devices --workers=1 tests/e2e/timeline/desktop-interaction.spec.ts
 Result: 1 passed (19.2 s); zero forbidden Supabase calls; zero console/page errors
+
+PATH=/Users/peteromalley/.nvm/versions/node/v20.19.4/bin:$PATH npm run test:e2e:extension-cross-browser
+Result: PASS; 9/9 in 3.0m, one worker; Chrome stable 3/3, Firefox 3/3, WebKit 3/3
 
 npm run build && node --test scripts/runtime/*.test.mjs
 Result: PASS under Node v20.19.4; 5,310 modules transformed in 4m 03s; runtime/service-worker/container/artifact suites 10/10 passed
