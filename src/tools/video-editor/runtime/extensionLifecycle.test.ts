@@ -1550,8 +1550,8 @@ describe('ExtensionLifecycle — creative.timeline with live TimelineOps (M3 pub
       timeline: ops as any,
     } as Partial<CreativeContext>);
 
-    // ctx.creative.timeline is the live TimelineOps we passed
-    expect(ctx.creative.timeline).toBe(ops);
+    // The shared host surface is wrapped in an extension-scoped capability.
+    expect(ctx.creative.timeline).not.toBe(ops);
     // It is not a throwing stub
     expect(() => ctx.creative.timeline).not.toThrow();
   });
@@ -1671,6 +1671,62 @@ describe('ExtensionLifecycle — creative.timeline with live TimelineOps (M3 pub
     expect(validation.valid).toBe(true);
   });
 
+  it('rejects project-data writes outside the extension namespace before host preview/apply', () => {
+    const ops = mockTimelineOps();
+    const extension = ext('com.example.owner');
+    const ctx = createExtensionContext(extension, {
+      timeline: ops as any,
+    } as Partial<CreativeContext>);
+    const foreignPatch: TimelinePatch = {
+      version: 1,
+      source: 'com.example.owner',
+      operations: [{
+        op: 'project-data.write',
+        target: 'com.example.victim',
+        payload: { key: 'stolen', value: true },
+      }],
+    };
+
+    const validation = ctx.creative.timeline.validate(foreignPatch);
+    expect(validation.valid).toBe(false);
+    expect(validation.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'timeline-patch/extension-namespace-violation',
+      operationIndex: 0,
+      target: 'com.example.victim',
+    }));
+
+    const preview = ctx.creative.timeline.preview(foreignPatch);
+    expect(preview.fullyPreviewable).toBe(false);
+    expect(preview.diff.entries).toEqual([]);
+    expect(ops.preview).not.toHaveBeenCalled();
+
+    expect(() => ctx.creative.timeline.apply(foreignPatch)).toThrow(
+      /cannot use "project-data\.write" in namespace "com\.example\.victim"/,
+    );
+    expect(ops.apply).not.toHaveBeenCalled();
+  });
+
+  it('rejects forged patch source attribution', () => {
+    const ops = mockTimelineOps();
+    const extension = ext('com.example.owner');
+    const ctx = createExtensionContext(extension, {
+      timeline: ops as any,
+    } as Partial<CreativeContext>);
+    const forgedPatch: TimelinePatch = {
+      version: 1,
+      source: 'com.example.victim',
+      operations: [{ op: 'clip.remove', target: 'clip-1' }],
+    };
+
+    const validation = ctx.creative.timeline.validate(forgedPatch);
+    expect(validation.valid).toBe(false);
+    expect(validation.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'timeline-patch/extension-source-mismatch',
+    }));
+    expect(() => ctx.creative.timeline.apply(forgedPatch)).toThrow(/cannot submit a patch attributed/);
+    expect(ops.apply).not.toHaveBeenCalled();
+  });
+
   it('live TimelineOps is passed to extension through ExtensionLifecycle.activate()', () => {
     const ops = mockTimelineOps();
     const capturedTimeline: TimelineOps[] = [];
@@ -1691,7 +1747,7 @@ describe('ExtensionLifecycle — creative.timeline with live TimelineOps (M3 pub
 
     expect(lc.state).toBe('active');
     expect(capturedTimeline).toHaveLength(1);
-    expect(capturedTimeline[0]).toBe(ops);
+    expect(capturedTimeline[0]).not.toBe(ops);
 
     // The extension can use the captured timeline reference
     capturedTimeline[0].validate(samplePatch);
@@ -1712,8 +1768,8 @@ describe('ExtensionLifecycle — creative.timeline with live TimelineOps (M3 pub
     const ctx1 = createExtensionContext(ext1, { timeline: ops1 as any } as Partial<CreativeContext>);
     const ctx2 = createExtensionContext(ext2, { timeline: ops2 as any } as Partial<CreativeContext>);
 
-    expect(ctx1.creative.timeline).toBe(ops1);
-    expect(ctx2.creative.timeline).toBe(ops2);
+    expect(ctx1.creative.timeline).not.toBe(ops1);
+    expect(ctx2.creative.timeline).not.toBe(ops2);
     expect(ctx1.creative.timeline).not.toBe(ctx2.creative.timeline);
   });
 

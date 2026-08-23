@@ -1245,6 +1245,97 @@ describe('validateTimelinePatch — extension data overflow diagnostics', () => 
     ).toBe(true);
   });
 
+  it('measures multibyte project data in UTF-8 bytes', () => {
+    const result = validateTimelinePatch(
+      makePatch({
+        operations: [
+          makeOp('project-data.write', 'com.example.ext', {
+            key: 'unicode',
+            value: { data: '😀'.repeat(20_000) },
+          }),
+        ],
+      }),
+    );
+
+    expect(result.valid).toBe(false);
+    const diagnostic = result.diagnostics.find(
+      (entry) => (entry.detail as any)?.code === 'project-data/entry-size-exceeded',
+    );
+    expect((diagnostic?.detail as any)?.actual).toBeGreaterThan(64 * 1024);
+  });
+
+  it.each(['__proto__', 'constructor', 'prototype'])(
+    'rejects reserved project-data key %s',
+    (key) => {
+      const result = validateTimelinePatch(
+        makePatch({
+          operations: [makeOp('project-data.write', 'com.example.ext', { key, value: true })],
+        }),
+      );
+      expect(result.valid).toBe(false);
+      expect(result.diagnostics).toContainEqual(expect.objectContaining({
+        code: 'timeline-patch/unsafe-project-data-key',
+      }));
+    },
+  );
+
+  it('rejects nested prototype keys from parsed JSON payloads', () => {
+    const value = JSON.parse('{"safe":{"__proto__":{"polluted":true}}}');
+    const result = validateTimelinePatch(
+      makePatch({
+        operations: [makeOp('project-data.write', 'com.example.ext', { key: 'nested', value })],
+      }),
+    );
+    expect(result.valid).toBe(false);
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'timeline-patch/unsafe-project-data-key',
+      detail: { path: '$.safe.__proto__' },
+    }));
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
+  it('rejects cyclic and non-JSON project data', () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    for (const value of [cyclic, 1n, () => 'not data']) {
+      const result = validateTimelinePatch(
+        makePatch({
+          operations: [makeOp('project-data.write', 'com.example.ext', { key: 'bad', value })],
+        }),
+      );
+      expect(result.valid).toBe(false);
+      expect(result.diagnostics).toContainEqual(expect.objectContaining({
+        code: 'timeline-patch/non-serializable-project-data',
+      }));
+    }
+  });
+
+  it('fails cyclic and BigInt project data atomically before any sibling mutation', () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+    });
+
+    for (const value of [cyclic, 1n]) {
+      const result = compileTimelinePatch(
+        makePatch({
+          operations: [
+            makeOp('track.add', 'must-not-commit', { kind: 'audio' }, 0),
+            makeOp('project-data.write', 'com.example.ext', { key: 'bad', value }, 1),
+          ],
+        }),
+        data,
+      );
+      expect(result.valid).toBe(false);
+      expect(result.nextData).toBeNull();
+      expect(result.mutation).toBeNull();
+      expect(result.diff.entries).toEqual([]);
+      expect(data.config.tracks.some((track) => track.id === 'must-not-commit')).toBe(false);
+    }
+  });
+
   it('does not produce overflow diagnostic when value is undefined (missing key error instead)', () => {
     const result = validateTimelinePatch(
       makePatch({
@@ -2322,6 +2413,35 @@ describe('compileTimelinePatch — merge/replace for project-data.write', () => 
 });
 
 describe('compileTimelinePatch — project-data extension total bytes overflow', () => {
+  it('enforces the total quota using UTF-8 bytes for multibyte entries', () => {
+    const existingEntries: Record<string, unknown> = {};
+    for (let i = 0; i < 21; i++) {
+      existingEntries[`key${i}`] = { data: '😀'.repeat(12_000) };
+    }
+    const data = makeMinimalTimelineData({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+      clips: [],
+      app: { 'com.example.ext': existingEntries },
+    });
+
+    const result = compileTimelinePatch(
+      makePatch({
+        operations: [makeOp('project-data.write', 'com.example.ext', {
+          key: 'overflow',
+          value: { data: '😀'.repeat(12_000) },
+        })],
+      }),
+      data,
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.nextData).toBeNull();
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'timeline-patch/project-data-overflow',
+      detail: expect.objectContaining({ code: 'project-data/extension-total-exceeded' }),
+    }));
+  });
+
   it('produces error diagnostic when projected total bytes exceed MAX_EXTENSION_TOTAL_BYTES', () => {
     // Build existing app data close to 1 MB
     const existingEntries: Record<string, unknown> = {};
@@ -2360,8 +2480,9 @@ describe('compileTimelinePatch — project-data extension total bytes overflow',
     expect(overflowDiag!.severity).toBe('error');
     expect(overflowDiag!.op).toBe('project-data.write');
     expect(overflowDiag!.target).toBe('com.example.ext');
-    // Should still be valid since overflow diagnostic is guidance
-    expect(result.valid).toBe(true);
+    expect(result.valid).toBe(false);
+    expect(result.nextData).toBeNull();
+    expect(result.mutation).toBeNull();
   });
 
   it('produces ProjectDataLimitDetail with extension-total-exceeded shape', () => {
@@ -2433,6 +2554,7 @@ describe('compileTimelinePatch — project-data extension total bytes overflow',
     );
     expect(overflowDiag).toBeUndefined();
     expect(result.valid).toBe(true);
+    expect(result.nextData).not.toBeNull();
   });
 
   it('replacing an existing entry with a smaller one does not overflow', () => {
@@ -2460,6 +2582,7 @@ describe('compileTimelinePatch — project-data extension total bytes overflow',
     );
     expect(overflowDiag).toBeUndefined();
     expect(result.valid).toBe(true);
+    expect(result.nextData).not.toBeNull();
   });
 
   it('separate extensions have independent total byte budgets', () => {
@@ -2576,7 +2699,8 @@ describe('compileTimelinePatch — project-data entry count overflow', () => {
     expect(overflowDiag!.severity).toBe('error');
     expect(overflowDiag!.op).toBe('project-data.write');
     expect(overflowDiag!.target).toBe('com.example.ext');
-    expect(result.valid).toBe(true);
+    expect(result.valid).toBe(false);
+    expect(result.nextData).toBeNull();
   });
 
   it('produces ProjectDataLimitDetail with entry-count-exceeded shape', () => {
@@ -2824,7 +2948,8 @@ describe('compileTimelinePatch — project-data entry count overflow', () => {
     );
     expect(totalDiag).toBeDefined();
     expect(countDiag).toBeDefined();
-    expect(result.valid).toBe(true);
+    expect(result.valid).toBe(false);
+    expect(result.nextData).toBeNull();
   });
 });
 
@@ -2932,9 +3057,9 @@ describe('compileTimelinePatch — project-data overflow guidance', () => {
     const appAfter = data.config.app;
     const extAfter = { ...(appAfter['com.example.ext'] as Record<string, unknown>) };
     expect(Object.keys(extAfter).length).toBe(extKeyCountBefore);
-    // The patch should still be applied to nextData
-    expect(result.valid).toBe(true);
-    expect(result.nextData).not.toBeNull();
+    // Quota failures reject the atomic batch before a mutation can escape.
+    expect(result.valid).toBe(false);
+    expect(result.nextData).toBeNull();
   });
 
   it('replayability: same patch produces same diagnostics and nextData when replayed', () => {
@@ -4685,12 +4810,10 @@ describe('compileTimelinePatch — project-data rollback safety', () => {
       data,
     );
 
-    expect(result.valid).toBe(true);
-    // Track add and clip add should have been applied to nextData
-    const nextTracks = result.nextData!.config.tracks as Array<Record<string, unknown>>;
-    expect(nextTracks.find(t => t.id === 'A1')).toBeDefined();
-    const nextClips = result.nextData!.config.clips as Array<Record<string, unknown>>;
-    expect(nextClips.find(c => c.id === 'c1')).toBeDefined();
+    expect(result.valid).toBe(false);
+    // Atomicity prevents otherwise-valid sibling operations from committing.
+    expect(result.nextData).toBeNull();
+    expect(result.mutation).toBeNull();
     
     // But the overflow diagnostic should be present
     const countDiag = result.diagnostics.find(
@@ -4952,9 +5075,9 @@ describe('compileTimelinePatch — project-data actionable overflow diagnostics'
       expect((d.detail as any).extensionId).toBe('com.ext-overflow');
     }
     
-    // com.ext-ok should have been written successfully
-    const nextApp = result.nextData!.config.app;
-    expect(nextApp['com.ext-ok']).toBeDefined();
+    // A breach in one namespace rejects the whole atomic patch.
+    expect(result.valid).toBe(false);
+    expect(result.nextData).toBeNull();
   });
 });
 

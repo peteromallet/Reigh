@@ -169,8 +169,8 @@ describe('validateWorkspaceSourcePackage', () => {
     const result = validateWorkspaceSourcePackage(
       workspaceSource({
         contributions: [
-          { id: 'cmd-a', kind: 'command', command: 'test.a', label: 'A' },
-          { id: 'cmd-b', kind: 'command', command: 'test.b', label: 'B' },
+          { id: 'cmd-a', kind: 'command', command: 'com.test.example.a', label: 'A' },
+          { id: 'cmd-b', kind: 'command', command: 'com.test.example.b', label: 'B' },
         ] as any,
       }),
     );
@@ -182,7 +182,7 @@ describe('validateWorkspaceSourcePackage', () => {
     const result = validateWorkspaceSourcePackage(
       workspaceSource({
         contributions: [
-          { id: 'shared-id', kind: 'command', command: 'test.cmd', label: 'Command' },
+          { id: 'shared-id', kind: 'command', command: 'com.test.example.cmd', label: 'Command' },
           { id: 'shared-id', kind: 'effect', effectId: 'test.effect', label: 'Effect' },
         ] as any,
       }),
@@ -351,7 +351,7 @@ describe('validateInstalledBundlePackage', () => {
       installedBundle({
         manifest: {
           contributions: [
-            { id: 'shared-id', kind: 'command', command: 'test.cmd', label: 'Command' },
+            { id: 'shared-id', kind: 'command', command: 'com.test.example.cmd', label: 'Command' },
             { id: 'shared-id', kind: 'effect', effectId: 'test.effect', label: 'Effect' },
           ] as any,
         },

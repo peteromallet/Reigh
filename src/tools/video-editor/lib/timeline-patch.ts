@@ -401,6 +401,45 @@ function validateAppUpdate(
   return diags;
 }
 
+const UNSAFE_OBJECT_KEYS: ReadonlySet<string> = new Set([
+  '__proto__',
+  'constructor',
+  'prototype',
+]);
+
+function utf8ByteLength(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
+}
+
+/** Return the UTF-8 byte length of a JSON value, or null when it cannot serialize. */
+function jsonByteLength(value: unknown): number | null {
+  try {
+    const serialized = JSON.stringify(value);
+    return typeof serialized === 'string' ? utf8ByteLength(serialized) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Detect keys that can mutate ordinary object prototypes during merge/assignment. */
+function findUnsafeObjectKeyPath(
+  value: unknown,
+  path = '$',
+  seen: WeakSet<object> = new WeakSet(),
+): string | null {
+  if (value === null || typeof value !== 'object') return null;
+  if (seen.has(value)) return null;
+  seen.add(value);
+
+  for (const key of Object.keys(value)) {
+    const nextPath = `${path}.${key}`;
+    if (UNSAFE_OBJECT_KEYS.has(key)) return nextPath;
+    const nested = findUnsafeObjectKeyPath((value as Record<string, unknown>)[key], nextPath, seen);
+    if (nested) return nested;
+  }
+  return null;
+}
+
 function validateProjectDataWrite(
   op: TimelinePatchOperation,
   idx: number,
@@ -429,13 +468,31 @@ function validateProjectDataWrite(
     );
   }
 
-  if (!p || typeof p.key !== 'string' || p.key.length === 0) {
+  if (!p || typeof p.key !== 'string' || p.key.trim().length === 0) {
     diags.push(
       diag('error', 'timeline-patch/missing-payload-key', 'project-data.write: payload.key is required (non-empty string)', {
         operationIndex: idx,
         op: op.op,
         target: op.target,
         detail: { key: 'key', required: true },
+      }),
+    );
+  } else if (utf8ByteLength(p.key) > 256) {
+    diags.push(
+      diag('error', 'timeline-patch/invalid-payload', 'project-data.write: payload.key must be 256 UTF-8 bytes or fewer', {
+        operationIndex: idx,
+        op: op.op,
+        target: op.target,
+        detail: { key: 'key', limit: 256, actual: utf8ByteLength(p.key), unit: 'bytes' },
+      }),
+    );
+  } else if (UNSAFE_OBJECT_KEYS.has(p.key)) {
+    diags.push(
+      diag('error', 'timeline-patch/unsafe-project-data-key', `project-data.write: payload.key "${p.key}" is reserved`, {
+        operationIndex: idx,
+        op: op.op,
+        target: op.target,
+        detail: { key: p.key },
       }),
     );
   }
@@ -451,26 +508,42 @@ function validateProjectDataWrite(
   }
   // ── Entry-size overflow check ─────────────────────────────────────────
   if (p && p.value !== undefined) {
-    try {
-      const serialized = JSON.stringify(p.value);
-      if (serialized.length > EXTENSION_PROJECT_DATA_LIMITS.MAX_ENTRY_BYTES) {
-        diags.push(
-          diag('error', 'timeline-patch/project-data-overflow', `project-data.write: value exceeds MAX_ENTRY_BYTES (${EXTENSION_PROJECT_DATA_LIMITS.MAX_ENTRY_BYTES})`, {
-            operationIndex: idx,
-            op: op.op,
-            target: op.target,
-            detail: {
-              code: 'project-data/entry-size-exceeded' as const,
-              extensionId: op.target,
-              limit: EXTENSION_PROJECT_DATA_LIMITS.MAX_ENTRY_BYTES,
-              actual: serialized.length,
-              unit: 'bytes' as const,
-            },
-          }),
-        );
-      }
-    } catch {
-      // Non-serializable value — already caught by higher-level checks
+    const unsafePath = findUnsafeObjectKeyPath(p.value);
+    if (unsafePath) {
+      diags.push(
+        diag('error', 'timeline-patch/unsafe-project-data-key', `project-data.write: value contains reserved object key at "${unsafePath}"`, {
+          operationIndex: idx,
+          op: op.op,
+          target: op.target,
+          detail: { path: unsafePath },
+        }),
+      );
+    }
+
+    const serializedBytes = jsonByteLength(p.value);
+    if (serializedBytes === null) {
+      diags.push(
+        diag('error', 'timeline-patch/non-serializable-project-data', 'project-data.write: payload.value must be JSON-serializable', {
+          operationIndex: idx,
+          op: op.op,
+          target: op.target,
+        }),
+      );
+    } else if (serializedBytes > EXTENSION_PROJECT_DATA_LIMITS.MAX_ENTRY_BYTES) {
+      diags.push(
+        diag('error', 'timeline-patch/project-data-overflow', `project-data.write: value exceeds MAX_ENTRY_BYTES (${EXTENSION_PROJECT_DATA_LIMITS.MAX_ENTRY_BYTES})`, {
+          operationIndex: idx,
+          op: op.op,
+          target: op.target,
+          detail: {
+            code: 'project-data/entry-size-exceeded' as const,
+            extensionId: op.target,
+            limit: EXTENSION_PROJECT_DATA_LIMITS.MAX_ENTRY_BYTES,
+            actual: serializedBytes,
+            unit: 'bytes' as const,
+          },
+        }),
+      );
     }
   }
   return diags;
@@ -491,13 +564,22 @@ function validateProjectDataDelete(
     );
   }
   const p = op.payload;
-  if (!p || typeof p.key !== 'string' || p.key.length === 0) {
+  if (!p || typeof p.key !== 'string' || p.key.trim().length === 0) {
     diags.push(
       diag('error', 'timeline-patch/missing-payload-key', 'project-data.delete: payload.key is required (non-empty string)', {
         operationIndex: idx,
         op: op.op,
         target: op.target,
         detail: { key: 'key', required: true },
+      }),
+    );
+  } else if (utf8ByteLength(p.key) > 256 || UNSAFE_OBJECT_KEYS.has(p.key)) {
+    diags.push(
+      diag('error', 'timeline-patch/unsafe-project-data-key', `project-data.delete: payload.key "${p.key}" is invalid or reserved`, {
+        operationIndex: idx,
+        op: op.op,
+        target: op.target,
+        detail: { key: p.key, limit: 256, unit: 'bytes' },
       }),
     );
   }
@@ -1643,7 +1725,7 @@ export function compileTimelinePatch(
         for (const [, entryValue] of Object.entries(projectedApp)) {
           if (entryValue !== undefined) {
             try {
-              projectedTotalBytes += JSON.stringify(entryValue).length;
+              projectedTotalBytes += jsonByteLength(entryValue) ?? 0;
             } catch {
               // Non-serializable value ─ skip
             }
@@ -1760,6 +1842,26 @@ export function compileTimelinePatch(
   }
 
   // ── Materialize nextData through existing serialization paths ──────────
+
+  // Project-data quotas are hard atomic limits. Compilation may discover the
+  // total/count overflow only after projecting earlier operations in the same
+  // batch, so fail closed before materializing or returning any mutation.
+  if (compileDiags.some((diagnostic) => (
+    diagnostic.severity === 'error'
+    && diagnostic.code === 'timeline-patch/project-data-overflow'
+  ))) {
+    return {
+      valid: false,
+      nextData: null,
+      mutation: null,
+      diff: {
+        version: patch.version,
+        entries: [],
+        affectedObjectIds: [],
+      },
+      diagnostics: Object.freeze([...compileDiags]),
+    };
+  }
 
   // Rebuild rows from the mutated clips/tracks
   const rowData = configToRows({

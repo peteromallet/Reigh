@@ -21,6 +21,12 @@ import type {
   CreativeContext,
 } from '@/sdk/context';
 import { createCreativeContext, CONTEXT_DISPOSE_SYMBOL } from '@/sdk/context';
+import type { TimelineOps } from '@/sdk/video/timeline/timelineOps';
+import type {
+  TimelinePatch,
+  TimelinePatchDiagnostic,
+  TimelinePatchValidationResult,
+} from '@/sdk/video/timeline/patch';
 import type { ExtensionUiService } from '@/sdk/ui';
 import {
   attachInternalExtensionRenderSurface,
@@ -107,6 +113,106 @@ export function setEditorShellRoot(element: HTMLElement | null): void {
  */
 export function getEditorShellRoot(): HTMLElement | null {
   return _editorShellRoot;
+}
+
+const EXTENSION_SCOPED_PATCH_OPERATIONS: ReadonlySet<string> = new Set([
+  'app.update',
+  'project-data.write',
+  'project-data.delete',
+  'extension.noop',
+]);
+
+function extensionPatchScopeDiagnostics(
+  patch: TimelinePatch,
+  extensionId: string,
+): readonly TimelinePatchDiagnostic[] {
+  const diagnostics: TimelinePatchDiagnostic[] = [];
+
+  if (patch.source !== undefined && patch.source !== extensionId) {
+    diagnostics.push(Object.freeze({
+      severity: 'error' as const,
+      code: 'timeline-patch/extension-source-mismatch' as const,
+      message: `Extension "${extensionId}" cannot submit a patch attributed to "${patch.source}".`,
+      detail: { extensionId, source: patch.source },
+    }));
+  }
+
+  if (Array.isArray(patch.operations)) {
+    patch.operations.forEach((operation, operationIndex) => {
+      if (
+        operation
+        && EXTENSION_SCOPED_PATCH_OPERATIONS.has(operation.op)
+        && operation.target !== extensionId
+      ) {
+        diagnostics.push(Object.freeze({
+          severity: 'error' as const,
+          code: 'timeline-patch/extension-namespace-violation' as const,
+          message: `Extension "${extensionId}" cannot use "${operation.op}" in namespace "${operation.target}".`,
+          operationIndex,
+          op: operation.op,
+          target: operation.target,
+          detail: { extensionId, expectedTarget: extensionId },
+        }));
+      }
+    });
+  }
+
+  return Object.freeze(diagnostics);
+}
+
+/**
+ * Bind shared TimelineOps to one extension's mutation namespace.
+ *
+ * This is authorization-in-depth for the host-mediated write surface only.
+ * It does not sandbox trusted extension code or conceal the read-only timeline
+ * snapshot already exposed through CreativeContext.reader.
+ */
+function createExtensionTimelineOps(
+  timeline: TimelineOps,
+  extensionId: string,
+): TimelineOps {
+  const validate = (patch: TimelinePatch): TimelinePatchValidationResult => {
+    const base = timeline.validate(patch);
+    const scopedDiagnostics = extensionPatchScopeDiagnostics(patch, extensionId);
+    if (scopedDiagnostics.length === 0) return base;
+    return Object.freeze({
+      valid: false,
+      diagnostics: Object.freeze([...base.diagnostics, ...scopedDiagnostics]),
+    });
+  };
+
+  return Object.freeze({
+    validate,
+    preview(patch) {
+      const scoped = validate(patch);
+      if (!scoped.valid) {
+        return Object.freeze({
+          diff: Object.freeze({
+            version: typeof patch.version === 'number' ? patch.version : 0,
+            entries: Object.freeze([]),
+            affectedObjectIds: Object.freeze([]),
+          }),
+          fullyPreviewable: false,
+          diagnostics: scoped.diagnostics,
+        });
+      }
+      return timeline.preview(patch);
+    },
+    apply(patch) {
+      const scoped = validate(patch);
+      if (!scoped.valid) {
+        const messages = scoped.diagnostics
+          .filter((diagnostic) => diagnostic.severity === 'error')
+          .map((diagnostic) => diagnostic.message)
+          .join('; ');
+        throw new Error(`Extension TimelineOps.apply: patch validation failed. ${messages}`);
+      }
+      return timeline.apply(patch);
+    },
+    checkpoint: (label) => timeline.checkpoint(label),
+    rollback: (checkpointId) => timeline.rollback(checkpointId),
+    setAllTracksMuted: (muted) => timeline.setAllTracksMuted(muted),
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -334,7 +440,16 @@ export function createExtensionContext(
   }
 
   // ---- creative context (stubs with optional live overrides) --------------
-  const creative = createCreativeContext(creativeOverrides);
+  // TimelineOps is provider-owned and shared, but extension project data is
+  // namespaced. Bind the mutation surface so an extension cannot forge source
+  // attribution or read/write another extension's app namespace.
+  const scopedCreativeOverrides = creativeOverrides?.timeline
+    ? {
+        ...creativeOverrides,
+        timeline: createExtensionTimelineOps(creativeOverrides.timeline, extensionId),
+      }
+    : creativeOverrides;
+  const creative = createCreativeContext(scopedCreativeOverrides);
 
   // ---- commands service (optional, wired by provider) -----------------------
   const commandsService: ExtensionCommandService = commands ?? {

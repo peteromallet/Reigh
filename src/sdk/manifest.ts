@@ -304,6 +304,56 @@ export interface InstalledExtensionPackage {
   bundleContent: string;
 }
 
+/** Hard parser/loader budgets for data-only extension package surfaces. */
+export const EXTENSION_PACKAGE_LIMITS = Object.freeze({
+  MAX_MANIFEST_BYTES: 256 * 1024,
+  MAX_BUNDLE_BYTES: 10 * 1024 * 1024,
+  MAX_ICON_BYTES: 32 * 1024,
+  MAX_CONTRIBUTIONS: 256,
+} as const);
+
+function utf8ByteLength(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
+}
+
+function serializedByteLength(value: unknown): number | null {
+  try {
+    const serialized = JSON.stringify(value);
+    return typeof serialized === 'string' ? utf8ByteLength(serialized) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Icons are display-only package metadata. Keep them same-origin/HTTPS or a
+ * bounded raster data URI; executable SVG, javascript:, file:, protocol-
+ * relative URLs, credentials, and traversal-like relative paths fail closed.
+ */
+function isSafeExtensionIcon(icon: string): boolean {
+  if (utf8ByteLength(icon) > EXTENSION_PACKAGE_LIMITS.MAX_ICON_BYTES) return false;
+  if (/^data:image\/(?:png|gif|webp);base64,[a-z0-9+/]+={0,2}$/i.test(icon)) return true;
+
+  if (/^https:\/\//i.test(icon)) {
+    try {
+      const parsed = new URL(icon);
+      return parsed.protocol === 'https:' && parsed.username === '' && parsed.password === '';
+    } catch {
+      return false;
+    }
+  }
+
+  if (/^[a-z][a-z0-9+.-]*:/i.test(icon) || icon.startsWith('//') || icon.includes('\\')) {
+    return false;
+  }
+  const path = icon.split(/[?#]/, 1)[0];
+  // Relative icon paths are resolved by the host. Keep the accepted grammar
+  // deliberately narrow so intermediary/server decoding cannot turn an
+  // encoded segment into traversal or a platform-specific separator.
+  if (path.length === 0 || path.includes('%')) return false;
+  return !path.split('/').some((segment) => segment === '..');
+}
+
 // ---------------------------------------------------------------------------
 // Manifest validation
 // ---------------------------------------------------------------------------
@@ -360,6 +410,25 @@ export function validateManifest(
     });
   };
 
+  const manifestBytes = serializedByteLength(manifest);
+  if (manifestBytes === null) {
+    pushErr('manifest/not-json-serializable', 'Manifest must be JSON-serializable data');
+  } else if (manifestBytes > EXTENSION_PACKAGE_LIMITS.MAX_MANIFEST_BYTES) {
+    pushErr(
+      'manifest/size-exceeded',
+      `Manifest is ${manifestBytes} bytes; maximum is ${EXTENSION_PACKAGE_LIMITS.MAX_MANIFEST_BYTES} UTF-8 bytes`,
+    );
+  }
+
+  if (manifest.icon !== undefined) {
+    if (typeof manifest.icon !== 'string' || !isSafeExtensionIcon(manifest.icon)) {
+      pushErr(
+        'manifest/unsafe-icon-url',
+        'Manifest icon must be a bounded HTTPS URL, safe relative URL, or base64 PNG/GIF/WebP data URI',
+      );
+    }
+  }
+
   // -----------------------------------------------------------------------
   // ID validation
   // -----------------------------------------------------------------------
@@ -396,17 +465,46 @@ export function validateManifest(
   // -----------------------------------------------------------------------
   // Contribution validation (ID uniqueness, kind, placement rules)
   // -----------------------------------------------------------------------
-  if (manifest.contributions && manifest.contributions.length > 0) {
+  if (manifest.contributions !== undefined && !Array.isArray(manifest.contributions)) {
+    pushErr('manifest/invalid-contributions', 'Manifest contributions must be an array');
+  }
+
+  const contributions = Array.isArray(manifest.contributions)
+    ? manifest.contributions
+    : [];
+  if (contributions.length > EXTENSION_PACKAGE_LIMITS.MAX_CONTRIBUTIONS) {
+    pushErr(
+      'manifest/contribution-count-exceeded',
+      `Manifest declares ${contributions.length} contributions; maximum is ${EXTENSION_PACKAGE_LIMITS.MAX_CONTRIBUTIONS}`,
+    );
+  }
+
+  const declaredCommandIds = new Set<string>();
+  for (const contribution of contributions) {
+    if (contribution && typeof contribution === 'object') {
+      const record = contribution as unknown as Record<string, unknown>;
+      if (record.kind === 'command' && typeof record.command === 'string') {
+        declaredCommandIds.add(record.command);
+      }
+    }
+  }
+
+  if (contributions.length > 0) {
     const seen = new Set<string>();
-    for (const contribution of manifest.contributions) {
-      const cId = (contribution as unknown as Record<string, unknown>).id as string;
+    for (const contribution of contributions) {
+      if (!contribution || typeof contribution !== 'object') {
+        pushErr('manifest/invalid-contribution', 'Every manifest contribution must be an object');
+        continue;
+      }
+      const contributionRecord = contribution as unknown as Record<string, unknown>;
+      const cId = contributionRecord.id as string;
       const cErrors = validateContributionId(cId);
       for (const msg of cErrors) {
         pushErr('manifest/invalid-contribution-id', `Contribution "${cId}": ${msg}`, cId);
       }
 
       // ---- Contribution kind validation (extract early for scoped duplicate detection) ----
-      const cKind = (contribution as unknown as Record<string, unknown>).kind as string | undefined;
+      const cKind = contributionRecord.kind as string | undefined;
       if (!cKind || typeof cKind !== 'string') {
         pushErr('manifest/missing-contribution-kind', `Contribution "${cId}" is missing a kind`, cId);
         // Duplicate detection for kindless entries still uses bare ID
@@ -431,6 +529,35 @@ export function validateManifest(
           cId,
         );
         continue; // unknown kind — skip kind-specific placement rules
+      }
+
+      // Command IDs are global registry keys. Require the declaring extension
+      // to own the namespace and require triggers to target a command declared
+      // in the same manifest, preventing cross-extension command dispatch.
+      if (cKind === 'command' || cKind === 'keybinding' || cKind === 'contextMenuItem') {
+        const commandId = contributionRecord.command;
+        if (typeof commandId !== 'string' || validateContributionId(commandId).length > 0) {
+          pushErr(
+            'manifest/invalid-command-id',
+            `Contribution "${cId}" must reference a valid command ID`,
+            cId,
+          );
+        } else {
+          if (typeof extId === 'string' && !commandId.startsWith(`${extId}.`)) {
+            pushErr(
+              'manifest/command-namespace-violation',
+              `Command "${commandId}" must be namespaced under extension "${extId}."`,
+              cId,
+            );
+          }
+          if (cKind !== 'command' && !declaredCommandIds.has(commandId)) {
+            pushErr(
+              'manifest/undeclared-command-target',
+              `${cKind} contribution "${cId}" targets command "${commandId}" that is not declared by this extension`,
+              cId,
+            );
+          }
+        }
       }
 
       // ---- Kind-specific placement rules ----
@@ -803,6 +930,24 @@ export function validateInstalledPackage(
 
   if (typeof pack.bundleContent !== 'string' || pack.bundleContent.trim().length === 0) {
     pushErr('package/missing-bundle', 'Installed package must include non-empty bundleContent');
+  } else {
+    const bundleBytes = utf8ByteLength(pack.bundleContent);
+    if (bundleBytes > EXTENSION_PACKAGE_LIMITS.MAX_BUNDLE_BYTES) {
+      pushErr(
+        'package/bundle-size-exceeded',
+        `Installed bundle is ${bundleBytes} bytes; maximum is ${EXTENSION_PACKAGE_LIMITS.MAX_BUNDLE_BYTES} UTF-8 bytes`,
+      );
+    }
+  }
+
+  if (
+    pack.metadata.icon !== undefined
+    && (typeof pack.metadata.icon !== 'string' || !isSafeExtensionIcon(pack.metadata.icon))
+  ) {
+    pushErr(
+      'package/unsafe-icon-url',
+      'Installed package icon must be a bounded HTTPS URL, safe relative URL, or base64 PNG/GIF/WebP data URI',
+    );
   }
 
   // Cross-reference: metadata.extensionId === manifest.id
