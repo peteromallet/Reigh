@@ -1,0 +1,21 @@
+{
+  "brief": "/workspace/reigh-phase-a-20260822/reigh-app/.oracle/briefs/explore/e2c1-provider-composition.md",
+  "elapsed_s": 155.878,
+  "error": null,
+  "error_class": null,
+  "finish_reason": null,
+  "finished_at": "2026-08-23T18:44:33Z",
+  "meta_file": "/workspace/reigh-phase-a-20260822/reigh-app/.oracle/findings/e2c1-provider-composition.meta.json",
+  "model": "stealth/ox-alpha",
+  "pid": 1050474,
+  "raw_result_keys": [
+    "stdout"
+  ],
+  "response_chars": 2344,
+  "response_file": "/workspace/reigh-phase-a-20260822/reigh-app/.oracle/findings/e2c1-provider-composition.txt",
+  "started_at": "2026-08-23T18:41:57Z",
+  "status": "ok",
+  "stem": "e2c1-provider-composition",
+  "task_timeout_s": 1800,
+  "tool_calls": 0
+}

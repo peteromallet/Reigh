@@ -1,0 +1,14 @@
+## e2c6-optimistic-coupling — Findings
+
+**Coupling topology (verified):** `RealtimeProvider` (`src/shared/providers/RealtimeProvider.tsx:139-141`, mounted in `AppProviders.tsx:117`) → supabase channel → `realtimeEventProcessor.process(event)` → `useRealtimeInvalidation` handlers which do two things per event: `queryClient.invalidateQueries` AND `dataFreshnessManager.onRealtimeEvent` (`src/shared/hooks/useRealtimeInvalidation.ts:156,196,229,254,303,338,351`). Freshness then gates all smart polling.
+
+**Ranked findings:**
+
+1. **Freshness is realtime-monoculture.** `useSmartPollingConfig` consumers (gallery, task log, status counts, segments, derived items — `useProjectGenerations.ts:447`, `useTasks.ts:181`, `useTaskStatusCounts.ts:251`, …) get `refetchInterval=false` only when `getPollingInterval` returns false, which requires `realtimeStatus==='connected'` + 5-min stability (`DataFreshnessManager.ts:146-173`). With realtime cut, everything falls into the disconnected branch settling at **60 s** after 5 min (`DataFreshnessManager.ts:191-203`) — functional but not C-1's 2s/10s/30s tiers, and staleTime pinned to 0 (`useSmartPolling.ts:111`).
+
+2. **Optimistic mutations are NOT realtime-coupled — they survive cutover untouched.** Star: optimistic patch/rollback keyed to mutation outcome only, no server reconcile on success (`generationStarCacheCoordinator.ts:49-116`, `useGenerationMutations.ts:211-230`). Cancel-all: manual `setQueryData` + explicit invalidate+refetch on success (`useTasksPaneCancelPending.ts:44-72`). Timeline drag: RPC + watchdog + timeout diagnostics re-read, self-healing (`timelineFrameBatchPersist.ts:132,146-149,208-222`).
+
+3. **Only push-invalidation consumers are at risk:** variant/generation caches updated by workers rely solely on realtime events; without a replacement event source they wait on finding-1's degraded 60 s poll.
+
+**Recommended approach:** Keep `RealtimeEventProcessor → useRealtimeInvalidation → DataFreshnessManager` untouched. Replace only the transport: a polling adapter mounted where `RealtimeProvider` sits that polls bridge B-routes at C-1 tiers and replays the same `ProcessedEvent`s into `realtimeEventProcessor` (and calls `onRealtimeStatusChange('connected')` so freshness logic works). Zero edits to any optimistic mutation site.
+0

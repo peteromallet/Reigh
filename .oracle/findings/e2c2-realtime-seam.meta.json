@@ -1,0 +1,21 @@
+{
+  "brief": "/workspace/reigh-phase-a-20260822/reigh-app/.oracle/briefs/explore/e2c2-realtime-seam.md",
+  "elapsed_s": 114.009,
+  "error": null,
+  "error_class": null,
+  "finish_reason": null,
+  "finished_at": "2026-08-23T18:43:51Z",
+  "meta_file": "/workspace/reigh-phase-a-20260822/reigh-app/.oracle/findings/e2c2-realtime-seam.meta.json",
+  "model": "stealth/ox-alpha",
+  "pid": 1050476,
+  "raw_result_keys": [
+    "stdout"
+  ],
+  "response_chars": 2491,
+  "response_file": "/workspace/reigh-phase-a-20260822/reigh-app/.oracle/findings/e2c2-realtime-seam.txt",
+  "started_at": "2026-08-23T18:41:57Z",
+  "status": "ok",
+  "stem": "e2c2-realtime-seam",
+  "task_timeout_s": 1800,
+  "tool_calls": 0
+}

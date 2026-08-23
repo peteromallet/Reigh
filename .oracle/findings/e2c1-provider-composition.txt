@@ -1,0 +1,17 @@
+## Findings — provider-composition
+
+**1. The cutover seam already exists and is localized.** `useVideoEditorProviderSelection` (`src/tools/video-editor/pages/VideoEditorPage.tsx:113-177`) is the sole composition point: `mode === 'local'` → `AstridBridgeDataProvider` (:139-143), else `SupabaseDataProvider` (:160). Mode comes from URL params gated by `import.meta.env.DEV` (:414-419). Flipping the app branch to a bridge-backed client is mechanical; no other site constructs either provider outside tests/harness.
+
+**2. Capability gating uses `instanceof`, not the `DataProvider` interface — this breaks silently after cutover.**
+- `useEditorSync.ts:60`: `provider instanceof SupabaseDataProvider` → sync UI disabled for any bridge provider (bridge has CAS `saveTimeline` only, `AstridBridgeDataProvider.ts:366`; no `syncTimeline`).
+- `useExternalDrop.ts:429`: `provider instanceof AstridBridgeDataProvider` enables direct asset upload — false for whatever serves App mode post-cutover unless updated.
+
+**3. The shell tree, not the editor tree, is the real supabase-js surface.** `AppProviders.tsx:111-125` composes `AuthProvider` (`AuthContext.tsx:9` imports `getSupabaseClient`), `UserSettingsProvider` (`UserSettingsContext.tsx:11`), `RealtimeProvider` (`RealtimeProvider.tsx:16` → `RealtimeConnection`), plus boot-time init (`bootstrap.tsx:8`). Per host rulings (fixed local user; per-boot token server-side via proxy/middleware), these become a static session context + polling hooks — deletion, not adaptation.
+
+**4. No `AstridLocalClient` exists anywhere** (grep over `src` + `docs-corpus`: zero hits). Pattern to generalize is already proven in `AstridBridgeDataProvider` + `bridgeContract.ts` (zod schemas, 10s timeout :31, typed error codes :34-36).
+
+**5. Bridge extension persistence stays unsupported by design** (`AstridBridgeDataProvider.test.ts:229-238`) — fine to defer under C-4.
+
+## Recommended approach
+Keep `useVideoEditorProviderSelection` as the only swap point; add bridge-backed domain clients (tasks/gallery/media/polling) selected there alongside the DataProvider; convert both `instanceof` gates (:2 above) into boolean capability flags on `DataProvider` so post-cutover behavior is explicit; replace Auth/UserSettings/Realtime providers with the fixed-local-user context per host rulings. No new abstraction layer.
+0

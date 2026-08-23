@@ -1,0 +1,17 @@
+## Boot-gating findings (ranked)
+
+**1. The covered journey has no boot path against the bridge — the gate is Supabase-session-or-nothing.**
+`Layout.tsx:91-94`: route access = `isAuthenticated || isLocalModeSession`. `isAuthenticated` is a real GoTrue session (`AuthContext.tsx:85-89`, `getSession()` from localStorage); the exemption is DEV-only URL params (`useVideoEditorRouteState.ts:25-26`, dead in prod builds). With Supabase OS-blocked and no stored session, every `/tools/*` page redirects to `/home` — C-5's browse→gallery→admit journey cannot boot. Host ruling supplies the answer: fixed local user, per-boot token delivered by proxy/middleware.
+
+**2. `AuthProvider` throws at mount when the Supabase runtime isn't initialized.**
+`AuthContext.tsx:85` calls `supabase()` = `getSupabaseClient()`, which throws if bootstrap failed (`client.ts:40-46`). Bootstrap treats init failure as non-fatal (`bootstrap.tsx:110-116`), so missing `VITE_SUPABASE_URL` → synchronous throw inside the effect → error boundary white-screen. No `hasSupabaseConfig()` guard (`env.ts:33`) anywhere in the auth chain. Clean-boot blocker.
+
+**3. Boot state is read through three divergent session probes.**
+`HomeWithAuthRedirect` → `probeStoredSessionToken()` (`routes.tsx:46`, localStorage sync read); `AuthGate` → `isLoading` (`AuthGate.tsx:4-7`); `Layout` → `isAuthenticated` (`Layout.tsx:66,74,91`). Plus unconditional Supabase client init at boot (`bootstrap.tsx:109`). All four are Supabase-shaped seams C-1 must collapse ("auth/session machinery removed", 31-forward-map.md:53).
+
+**4. Local mode is an editor-only dev affordance, not an identity seam.**
+`VideoEditorPage.tsx:414,417-419`; app-mode pages (gallery/tasks) have no sessionless path at all; `userId:null` deliberately disables catalog queries (`VideoEditorPage.tsx:147-150`).
+
+## Recommended approach
+One bridge-session boot seam: rework `AuthProvider` internals to resolve a **fixed local user** via `/api/astrid` health/session probe, with the per-boot token attached **only** by the proxy/middleware layer (doc 27 §local-trust — request capability, not login; app code never sees or stores it). Expose it through the unchanged `useAuth` contract (`userId` set, `isAuthenticated:true` after probe, `isLoading` while probing) so `AuthGate`/`Layout` gates stay structural. Delete the URL-param auth exemption and `probeStoredSessionToken` divergence; make Supabase init conditional on `hasSupabaseConfig()` as the interim unblocker before full removal. No new auth surface; no Astrid changes.
+0

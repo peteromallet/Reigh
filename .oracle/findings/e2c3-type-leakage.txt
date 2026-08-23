@@ -1,0 +1,17 @@
+## Type-Leakage Findings (ranked)
+
+**1. Generated `Json` type leaks into 17 app/domain files (highest blast radius).**
+`src/integrations/supabase/jsonTypes.ts` is a 1-line re-export of `Json` from the 2663-line generated `types.ts`. Every importer therefore transitively depends on Supabase codegen: `domains/generation/mappers/generationRowMapper.ts:1`, `shared/lib/taskRowMapper.ts:1`, `shared/lib/json/toJsonObject.ts`, `shared/services/externalApiKeys/types.ts:1`, `useShareGeneration.ts`, `usePromoteVariantToGeneration.ts`, training-data/travel/video-editor hooks, etc. Notably the leak sits **inside the intended boundary layer** (generationRowMapper).
+
+**2. `Database['public']['Tables'][…]['Row']` used directly as domain contracts (3 non-integration files).**
+`shared/lib/media/createGenerationFromFile.ts:14`, `shared/hooks/shots/externalImageDrop.ts:27,171,275`, `features/resources/hooks/useResources.ts:118,277`. These freeze Postgrest row shapes into feature logic that C-1 must re-source from bridge reads.
+
+**3. `Session` from `@supabase/supabase-js` in 16 non-integration files** (AuthContext, GlobalHeader ×3, ReferralModal, useAuthGuard, Home auth hooks ×6, `tools/video-editor/render/renderRuntime.ts`). With fixed-local-user + proxy-delivered token, this shape has no bridge counterpart.
+
+**4. Runtime `RealtimeChannel` import** — `shared/realtime/RealtimeConnection.ts`; moot once realtime → polling (C-1).
+
+Non-issue: `PostgrestError` handling in `shared/lib/tasks/generationTaskRepository.ts:11` is duck-typed on `unknown` — no type import.
+
+**Recommended approach (mechanical, no architecture change):**
+Make `jsonTypes.ts` self-contained by defining `Json` structurally there (it's just `string | number | boolean | null | { [k: string]: Json } | Json[]`) — 17 files decouple with zero call-site edits and satisfy the grep gate. For findings 2–3, extend the existing precedent (`GenerationRowDto` + `coerceGenerationRowDto` in `domains/generation`): declare local domain aliases/mappers per file, replacing `Database[…]` indexes and importing `Session` through one integration-owned type module. No new layers; mirrors what's already built.
+0

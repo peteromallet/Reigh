@@ -1,0 +1,14 @@
+## media-urls — findings
+
+**Current regimes (evidence):**
+1. **Gallery/generation display:** `location`/`thumbnail_url` are absolute Supabase public-storage URLs or relative paths; display goes through `getDisplayUrl` (`src/shared/lib/media/mediaUrl.ts:25-46`) which passes absolute URLs through untouched and rebases *relative* ones against `VITE_API_TARGET_URL`/window origin. Callers: `useStableMediaUrls.ts:43-51`, `ImageDragPreview.tsx:28`, `SegmentPreview.tsx:189,308`, `ShotsPanelContent.tsx:65`, lightbox `useEffectiveMedia.ts:49`. Code explicitly trusts DB URLs ("Don't try to construct URLs" — `useVideoGalleryPreloader.ts:112-114`).
+2. **Signed/private objects:** `parseSupabaseStorageUrl` + 1h `createSignedUrl` mint/refresh (`generationAssetResolver.ts:209,259-266`); training-data cache (`useVideoUrlCache.ts:37`).
+3. **Timeline assets (already bridged):** `AstridBridgeDataProvider.resolveAssetUrl` mints same-origin `/api/astrid/projects/:slug/timelines/:id/assets/:assetKey`, absolute pass-through (`AstridBridgeDataProvider.ts:313-333`); dev proxy strips prefix to loopback `17333` (`config/vite/vite.config.ts:52-56`).
+4. **Upload-time minting:** `getPublicUrl` baked into rows at upload (`imageUploader.ts:155-158`, `videoUploader.ts:212-215`, `videoThumbnailGenerator.ts:87-90`).
+5. **Hardcoded supabase.co GIFs:** `GenerationMethodStep.tsx:172`, `GenerationSection.tsx:73` — dead under OS-blocked networking acceptance.
+6. **Pre-upload local handles:** object URLs (`localMediaResolver.ts`).
+
+**Ranked gaps vs target (build spec §4.1):** no client helper maps gallery rows → `GET /projects/:slug/media/:media_id/content`; `getDisplayUrl`'s rebase base doesn't know `/api/astrid`; signed-URL machinery has no bridge counterpart (unneeded — Range/ETag + local trust, token arrives via middleware per ruling); hardcoded GIFs break C-5; upload-minted URLs vanish once completion creates media server-side.
+
+**Recommended approach:** one pure helper, e.g. `bridgeMediaUrl(projectSlug, mediaRef)` in `src/shared/lib/media/`, mirroring the provider's `assetBaseUrl ?? apiBaseUrl = '/api/astrid'` same-origin convention (`AstridBridgeDataProvider.ts:263-269`). Apply it at row-normalization points where `location`/`thumbnail_url` become display urls; absolute URLs stay pass-through. Cut (don't shim) signed-URL minting and upload-time `getPublicUrl` from covered modules; relocate hardcoded GIFs to local assets. No new URL authority — media_id comes from bridge reads.
+0

@@ -1,0 +1,170 @@
+{
+  "briefs_dir": ".oracle/briefs/explore",
+  "default_model": "stealth/ox-alpha",
+  "failed_count": 0,
+  "isolation": "threads",
+  "max_tokens": 65536,
+  "max_workers": 7,
+  "model_map": [],
+  "output_dir": "/workspace/reigh-phase-a-20260822/reigh-app/.oracle/findings",
+  "project_dir": "/workspace/reigh-phase-a-20260822/reigh-app",
+  "stopped_by_signal": false,
+  "succeeded_count": 7,
+  "sum_agent_seconds": 1107.445,
+  "task_timeout_s": 1800,
+  "tasks": [
+    {
+      "brief": "/workspace/reigh-phase-a-20260822/reigh-app/.oracle/briefs/explore/e2c1-provider-composition.md",
+      "elapsed_s": 155.878,
+      "error": null,
+      "error_class": null,
+      "finish_reason": null,
+      "finished_at": "2026-08-23T18:44:33Z",
+      "meta_file": "/workspace/reigh-phase-a-20260822/reigh-app/.oracle/findings/e2c1-provider-composition.meta.json",
+      "model": "stealth/ox-alpha",
+      "pid": 1050474,
+      "raw_result_keys": [
+        "stdout"
+      ],
+      "response_chars": 2344,
+      "response_file": "/workspace/reigh-phase-a-20260822/reigh-app/.oracle/findings/e2c1-provider-composition.txt",
+      "started_at": "2026-08-23T18:41:57Z",
+      "status": "ok",
+      "stem": "e2c1-provider-composition",
+      "task_timeout_s": 1800,
+      "tool_calls": 0
+    },
+    {
+      "brief": "/workspace/reigh-phase-a-20260822/reigh-app/.oracle/briefs/explore/e2c2-realtime-seam.md",
+      "elapsed_s": 114.009,
+      "error": null,
+      "error_class": null,
+      "finish_reason": null,
+      "finished_at": "2026-08-23T18:43:51Z",
+      "meta_file": "/workspace/reigh-phase-a-20260822/reigh-app/.oracle/findings/e2c2-realtime-seam.meta.json",
+      "model": "stealth/ox-alpha",
+      "pid": 1050476,
+      "raw_result_keys": [
+        "stdout"
+      ],
+      "response_chars": 2491,
+      "response_file": "/workspace/reigh-phase-a-20260822/reigh-app/.oracle/findings/e2c2-realtime-seam.txt",
+      "started_at": "2026-08-23T18:41:57Z",
+      "status": "ok",
+      "stem": "e2c2-realtime-seam",
+      "task_timeout_s": 1800,
+      "tool_calls": 0
+    },
+    {
+      "brief": "/workspace/reigh-phase-a-20260822/reigh-app/.oracle/briefs/explore/e2c3-type-leakage.md",
+      "elapsed_s": 122.777,
+      "error": null,
+      "error_class": null,
+      "finish_reason": null,
+      "finished_at": "2026-08-23T18:44:00Z",
+      "meta_file": "/workspace/reigh-phase-a-20260822/reigh-app/.oracle/findings/e2c3-type-leakage.meta.json",
+      "model": "stealth/ox-alpha",
+      "pid": 1050481,
+      "raw_result_keys": [
+        "stdout"
+      ],
+      "response_chars": 2169,
+      "response_file": "/workspace/reigh-phase-a-20260822/reigh-app/.oracle/findings/e2c3-type-leakage.txt",
+      "started_at": "2026-08-23T18:41:57Z",
+      "status": "ok",
+      "stem": "e2c3-type-leakage",
+      "task_timeout_s": 1800,
+      "tool_calls": 0
+    },
+    {
+      "brief": "/workspace/reigh-phase-a-20260822/reigh-app/.oracle/briefs/explore/e2c4-media-urls.md",
+      "elapsed_s": 170.819,
+      "error": null,
+      "error_class": null,
+      "finish_reason": null,
+      "finished_at": "2026-08-23T18:44:48Z",
+      "meta_file": "/workspace/reigh-phase-a-20260822/reigh-app/.oracle/findings/e2c4-media-urls.meta.json",
+      "model": "stealth/ox-alpha",
+      "pid": 1050480,
+      "raw_result_keys": [
+        "stdout"
+      ],
+      "response_chars": 2487,
+      "response_file": "/workspace/reigh-phase-a-20260822/reigh-app/.oracle/findings/e2c4-media-urls.txt",
+      "started_at": "2026-08-23T18:41:57Z",
+      "status": "ok",
+      "stem": "e2c4-media-urls",
+      "task_timeout_s": 1800,
+      "tool_calls": 0
+    },
+    {
+      "brief": "/workspace/reigh-phase-a-20260822/reigh-app/.oracle/briefs/explore/e2c5-boot-gating.md",
+      "elapsed_s": 220.973,
+      "error": null,
+      "error_class": null,
+      "finish_reason": null,
+      "finished_at": "2026-08-23T18:45:38Z",
+      "meta_file": "/workspace/reigh-phase-a-20260822/reigh-app/.oracle/findings/e2c5-boot-gating.meta.json",
+      "model": "stealth/ox-alpha",
+      "pid": 1050482,
+      "raw_result_keys": [
+        "stdout"
+      ],
+      "response_chars": 2544,
+      "response_file": "/workspace/reigh-phase-a-20260822/reigh-app/.oracle/findings/e2c5-boot-gating.txt",
+      "started_at": "2026-08-23T18:41:57Z",
+      "status": "ok",
+      "stem": "e2c5-boot-gating",
+      "task_timeout_s": 1800,
+      "tool_calls": 0
+    },
+    {
+      "brief": "/workspace/reigh-phase-a-20260822/reigh-app/.oracle/briefs/explore/e2c6-optimistic-coupling.md",
+      "elapsed_s": 156.617,
+      "error": null,
+      "error_class": null,
+      "finish_reason": null,
+      "finished_at": "2026-08-23T18:44:34Z",
+      "meta_file": "/workspace/reigh-phase-a-20260822/reigh-app/.oracle/findings/e2c6-optimistic-coupling.meta.json",
+      "model": "stealth/ox-alpha",
+      "pid": 1050483,
+      "raw_result_keys": [
+        "stdout"
+      ],
+      "response_chars": 2306,
+      "response_file": "/workspace/reigh-phase-a-20260822/reigh-app/.oracle/findings/e2c6-optimistic-coupling.txt",
+      "started_at": "2026-08-23T18:41:57Z",
+      "status": "ok",
+      "stem": "e2c6-optimistic-coupling",
+      "task_timeout_s": 1800,
+      "tool_calls": 0
+    },
+    {
+      "brief": "/workspace/reigh-phase-a-20260822/reigh-app/.oracle/briefs/explore/e2c7-test-doubles.md",
+      "elapsed_s": 166.372,
+      "error": null,
+      "error_class": null,
+      "finish_reason": null,
+      "finished_at": "2026-08-23T18:44:44Z",
+      "meta_file": "/workspace/reigh-phase-a-20260822/reigh-app/.oracle/findings/e2c7-test-doubles.meta.json",
+      "model": "stealth/ox-alpha",
+      "pid": 1050484,
+      "raw_result_keys": [
+        "stdout"
+      ],
+      "response_chars": 2146,
+      "response_file": "/workspace/reigh-phase-a-20260822/reigh-app/.oracle/findings/e2c7-test-doubles.txt",
+      "started_at": "2026-08-23T18:41:57Z",
+      "status": "ok",
+      "stem": "e2c7-test-doubles",
+      "task_timeout_s": 1800,
+      "tool_calls": 0
+    }
+  ],
+  "toolsets": [
+    "('file'",
+    "'web')"
+  ],
+  "total_count": 7,
+  "wall_clock_s": 220.98
+}

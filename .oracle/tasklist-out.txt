@@ -1,0 +1,285 @@
+[launch_hermes_agent] model=stealth/ox-alpha → resolved=stealth/ox-alpha toolsets=['file', 'web'] max_tokens=65536 context_budget_tokens=(auto)
+[launch_hermes_agent] NOTE: omp gives the full toolset (Bash, Read, Edit, web, …); the file/web/terminal subset is a superset here.
+[launch_hermes_agent] cwd=/workspace/reigh-phase-a-20260822/reigh-app
+Working...
+# .oracle/tasklist.md — Phase-C frozen-ready batches
+
+**Source of truth:** `.oracle/plan.md` v3 (STABLE) × `.oracle/agent_goal.md`. Batches end at natural seams (compilable, testable, committable states on branch `phase-c`). Dependency order follows plan §1 ordering line. Classification legend: **normal** = standard execution; **[XHARD]** = full exceptional-threshold evidence required before assignment (irreducible external uncertainty or load-bearing semantic risk).
+
+---
+
+## Batch B1 — Cutover inventory & cut-list (C-0)
+
+**Advances:** Done criterion 1. **Seam:** disposition table committed; no behavior change; repo untouched except `.oracle/findings/`.
+
+### Tasks
+
+| ID | Task | Files | Class |
+|---|---|---|---|
+| T1.1 | **Call-site census with dispositions.** Grep-verify all sites under `src/shared/hooks/`, `src/shared/lib/`, `src/shared/state/`, `src/shared/realtime/`, `src/integrations/supabase/`, `src/tools/{video-editor,travel-between-images,training-data-helper}/`, `src/features/`, `src/domains/`; write disposition table (`bridge-client \| cut \| defer`) to `.oracle/findings/c0-inventory.md`. | `.oracle/findings/c0-inventory.md` | normal |
+| T1.2 | **Journey cut-list** per doc-24 Q5 + doc-31 C-0. Mark cut/deferred: billing (doc 06 §8.E52–57 Stripe), sharing (`useShareGeneration.ts`, `useSharePageData.ts`), referrals (`ReferralModal.tsx`, `track_referral_*`), training-data tool (`src/tools/training-data-helper/`), PATs (`useApiTokens.ts`), LLM edge fns (`ai-*`), hardcoded `supabase.co` GIFs (`GenerationMethodStep.tsx:172`, `GenerationSection.tsx:73` → relocate to local assets). Appended to `c0-inventory.md`. | same file | normal |
+
+### Checkpoint acceptance (oracle-verified)
+- Every file from the fresh grep (`.from(` / `.rpc(` / `functions.invoke` / `.storage.` / `.channel(`) appears exactly once in `c0-inventory.md` with one of `bridge-client | cut | defer`; counts reconcile against a re-run grep.
+- Cut-list enumerates everything outside browse→gallery→admit→poll→generation-visible→placement; zero cut surfaces still imported by covered modules.
+
+### North Star
+Anti-patterns enforced up front: ceremony cut (billing/PAT/sharing/referrals/signed-URLs) rather than shimmed; inventory is the single authority for the C5 grep-gate covered-module list (no second list ever created).
+
+### Validation
+```bash
+grep -rEc "\.from\(|\.rpc\(|functions\.invoke|\.storage\.|\.channel\(" src/shared src/integrations/supabase src/tools src/features src/domains --include='*.ts' --include='*.tsx' | grep -v ':0$' | wc -l   # reconcile vs table row count
+test -f .oracle/findings/c0-inventory.md && echo OK
+```
+
+---
+
+## Batch B2 — Bridge client, wire-contract freeze, canonical fake (C1-1)
+
+**Advances:** Done criteria 2, 3 (foundation). **Seam:** contract frozen; fake router + schema tests green; no call-site cutover yet. Everything downstream fans out from here.
+
+### Tasks
+
+| ID | Task | Files | Class |
+|---|---|---|---|
+| T2.1 | **`AstridLocalClient` + route modules.** New standalone client (shares ONLY zod schemas + timeout/error-code constants with `AstridBridgeDataProvider`; no base class, no abstraction layer). Composition point stays `useVideoEditorProviderSelection` (`VideoEditorPage.tsx:113-177`). | new `src/integrations/astrid/client.ts`, `taskRoutes.ts`, `galleryRoutes.ts`, `mediaRoutes.ts` | normal |
+| T2.2 | **Wire-contract extension.** Extend `bridgeContract.ts` schemas for `POST /projects/:slug/tasks`, `GET …/tasks[/:id]`, `…/cancel`, `GET /projects/:slug/generations[/:id]`, `GET /projects/:slug/media/:media_id/content` (doc 27 §4.1; doc 18 schemas; 5-category errors `invalid_body/not_found/conflict/capability_unavailable/payload_too_large`). | `src/tools/video-editor/data/bridgeContract.ts` | normal |
+| T2.3 | **Canonical fetch-level fake router** in `src/test/`: handlers validate against extended schemas, serve seeded journey fixtures; `tests/e2e/timeline/astrid-bridge-stub.mjs:101-199` extends the same fixture module (no MSW). Fixture module = sole fixture authority. | new `src/test/fakeBridgeRouter.ts` (+ fixture module); `tests/e2e/timeline/astrid-bridge-stub.mjs` | normal |
+| T2.4 | **Capability flags replace `instanceof` gates.** Boolean capability flags on `DataProvider`: `useEditorSync.ts:60` (sync UI) and `useExternalDrop.ts:429` (asset upload) — identical behavior for both provider classes; last silent behavioral fork killed. | `src/tools/video-editor/runtime/useEditorSync.ts`, `src/tools/video-editor/hooks/useExternalDrop.ts` | normal |
+
+### Checkpoint acceptance
+- Zod schemas cover ALL doc-27 §4.1 routes incl. the 5 error categories; unit tests replay doc-18 fixtures against the fake router and pass.
+- Capability flags behave identically for `AstridBridgeDataProvider` and `AstridLocalClient` (both provider classes pass both flag paths in vitest).
+- No MSW introduced; stub e2e file imports the shared fixture module.
+
+### North Star
+Growth by declaration (capability flags, not type-sniffing forks); correctness by primitives (schema-validated fake, one fixture authority — no mirrored fixtures); anti-pattern: no speculative machinery — every new module names its journey consumer.
+
+### Validation
+```bash
+npx vitest run src/tools/video-editor/data src/test --reporter=basic
+npx tsc --noEmit -p tsconfig.json || npx vite build   # type gate if project uses tsc; else build
+node tests/e2e/timeline/astrid-bridge-stub.mjs --selfcheck 2>/dev/null || echo "stub exercised via e2e suite"
+```
+
+---
+
+## Batch B3 — Parallel cutover waves: tasks ∥ gallery/media ∥ realtime ∥ boot/auth (C1-2, C1-3, C1-4, C1-6)
+
+**Advances:** Done criteria 2, 3. **Seam:** all four slices compile and pass scoped suites independently; each slice's grep gate clean over its own files. Slices share only the frozen B2 contract — fan out one track per slice after B2 merges.
+
+### Slice A — Task admit/cancel/poll cutover (C1-2)
+
+| ID | Task | Files | Class |
+|---|---|---|---|
+| T3.A1 | **Type decoupling (mechanical first move):** make `src/integrations/supabase/jsonTypes.ts` self-contained — structural `Json = string \| number \| boolean \| null \| { [k: string]: Json } \| Json[]`; decouples 17 transitive importers of generated `types.ts` with ZERO call-site edits. | `src/integrations/supabase/jsonTypes.ts` | normal |
+| T3.A2 | **Admission cutover:** rewrite `createTask.ts:194` (edge `create-task` → R1 admission, idempotency-key preserved). | `src/shared/lib/taskCreation/createTask.ts` | normal |
+| T3.A3 | **Repository/hook cutover:** `taskRepository.ts`, `paginatedTaskRepository.ts`, `shared/hooks/tasks/{useTasks,usePendingGenerationTasks,usePendingSegmentTasks,useActiveTaskClips,useTaskCancellation,useTaskStatusCounts,useFinalVideoSectionController}.ts`, `taskLogPipeline.ts`; cadence 2 s active / 10 s idle via bridge reads. The 3 direct `Database[…]['Row']` contracts re-source from bridge reads using the `GenerationRowDto`+coercer precedent; `Session` consumers take local domain type. | `src/integrations/supabase/repositories/taskRepository.ts`, `paginatedTaskRepository.ts`; `src/shared/hooks/tasks/*` (7 files); `src/shared/lib/taskCreation/taskLogPipeline.ts` | normal |
+
+**Acceptance:** admit→poll→terminal runs against `astrid serve` test binding (fake router in vitest); idempotency key present on admit payload (asserted in fake-router handler); grep gate clean for every file in this slice.
+
+### Slice B — Gallery + media-content cutover (C1-3)
+
+| ID | Task | Files | Class |
+|---|---|---|---|
+| T3.B1 | **`bridgeMediaUrl(projectSlug, mediaRef)` pure helper** mirroring `assetBaseUrl ?? '/api/astrid'` (`AstridBridgeDataProvider.ts:263-269`); absolute URLs pass through untouched. Apply at row-normalization points where `location`/`thumbnail_url` become display URLs (`mediaUrl.ts:25-46` callers: `useStableMediaUrls.ts:43-51`, `ImageDragPreview.tsx:28`, `SegmentPreview.tsx:189,308`, `ShotsPanelContent.tsx:65`, lightbox `useEffectiveMedia.ts:49`). | new `src/shared/lib/media/bridgeMediaUrl.ts`; callers listed | normal |
+| T3.B2 | **Gallery reads/mutations → R12/R13:** `useProjectGenerations.ts:175,210,300,322`, `generationRepository.ts`, `derivedItemsRepository.ts`, `generationMutationsRepository.ts`, `shared/hooks/variants/*`, `generationAssetResolver.ts` → `/media/:id/content` Range/ETag URLs. | files listed | normal |
+| T3.B3 | **Cut signed-URL machinery outright** (no shim): `parseSupabaseStorageUrl` + signed-URL minting (`:209,259-266`), upload-time `getPublicUrl` baking (`imageUploader.ts:155-158`, `videoUploader.ts:212-215`, `videoThumbnailGenerator.ts:87-90` — completion creates media server-side), `createSignedUrl` cache (`useVideoUrlCache.ts:37`). | files listed | normal |
+
+**Acceptance:** gallery page renders from `GET /generations`; `<video>`/`<img>` stream managed bytes via R9; star/delete/make-primary go through bridge mutations; zero signed-URL code remains in covered modules.
+
+### Slice C — Realtime → honest-latency polling (C1-4)
+
+| ID | Task | Files | Class |
+|---|---|---|---|
+| T3.C1 | **Transport swap ONLY inside `RealtimeConnection.ts`:** `doConnect`/`setupEventHandlers` (:248-310) become interval diff-poller over bridge reads — tasks/generations 2 s, shot_generations/variants/timelines 10 s, others 30 s — fetching full rows, synthesizing INSERT/UPDATE/DELETE by diff (preserving `old`), emitting synthetic `RawDatabaseEvent`s. Report `status:'connected'` ONLY after first successful poll (load-bearing: `useSmartPolling.ts:140-152` sets `refetchInterval:false` when connected; preload gates on it at `preloading/service.ts:73-83`). Downstream seams untouched: `realtimeEventProcessor` → `useRealtimeInvalidation` → `DataFreshnessManager`; optimistic mutations survive untouched (mutation-outcome-keyed). Agent-session channel: poll session row ~2 s, reuse the two `invalidateQueries` calls at `useAgentSession.ts:261-262`; delete channel subscription (:250-265). | `src/shared/realtime/RealtimeConnection.ts`, `src/shared/hooks/agent/useAgentSession.ts` | **[XHARD]** |
+
+**[XHARD] evidence required:** (a) synthetic-event diff matrix proven incl. DELETE-preserving-`old` and out-of-order poll results; (b) proof that premature/non-`connected` status degrades smart-polling to 15→60 s backoff (the documented failure mode motivating first-poll-then-connected); (c) hung-bridge behavior = degradation, never false success.
+
+**Acceptance:** no `.channel(`/`getSupabaseClient()` remains in covered modules; terminal task transitions invalidate task/gallery/timeline queries within one cadence tick; vitest covers cadence switching + diff synthesis incl. deletes.
+
+### Slice D — Boot/auth seam → fixed local user (C1-6)
+
+| ID | Task | Files | Class |
+|---|---|---|---|
+| T3.D1 | **Auth rework behind UNCHANGED `useAuth` contract:** fixed local user resolved via `/api/astrid` health/session probe (`userId` set, `isAuthenticated:true` after probe, `isLoading` while probing) so `AuthGate.tsx:4-7` and `Layout.tsx:66,74,91` gates stay structural. Per-boot token attaches ONLY at vite-proxy/middleware layer (doc 27 §local-trust); app code never sees/stores it. | `src/.../AuthContext.tsx` / `AuthProvider` internals; `config/vite/vite.config.ts` proxy layer | **[XHARD]** |
+| T3.D2 | **Delete divergent auth paths:** DEV-only URL-param exemption (`useVideoEditorRouteState.ts:25-26`, `VideoEditorPage.tsx:414-419`), `probeStoredSessionToken` divergence (`routes.tsx:46`), trim `_authValue`/`_projectValue` options in `test-utils.tsx:59-60`. | files listed; `src/test/test-utils.tsx` | normal |
+| T3.D3 | **Env-guard unblocker:** guard Supabase init behind `hasSupabaseConfig()` (`env.ts:33`) — today missing `VITE_SUPABASE_URL` throws synchronously (`AuthContext.tsx:85`, `client.ts:40-46`) and white-screens. Interim until D1 lands; deleted with it. | `src/lib/env.ts`, `AuthContext.tsx`, `integrations/supabase/client.ts` | normal |
+
+**[XHARD] evidence required (D1):** (a) covered journey boots with ZERO Supabase env vars set (white-screen repro fixed and demonstrated); (b) probe-failure state renders degraded-but-alive UI, not redirect loop (`Layout.tsx:91-94` was the blocker); (c) proof no token material reaches browser code (network capture or proxy-layer assertion).
+
+**Acceptance (slice D):** journey boots env-free; `Layout` route access passes on probe alone; no session/localStorage auth reads remain in covered modules.
+
+### North Star (whole batch)
+One authority (synthetic realtime events derived FROM bridge reads — projection, not second source); honest latency (declared 2 s/10 s/30 s cadences, no adaptive guessing); correctness by primitives (idempotency keys, R9 Range/ETag); anti-patterns: signed-URL machinery CUT not shimmed; no silent executor swaps.
+
+### Validation (per slice; run all three at batch checkpoint)
+```bash
+# Slice A
+npx vitest run src/shared/hooks/tasks src/shared/lib/taskCreation src/integrations/supabase/repositories --reporter=basic
+grep -rn "\.from(\|\.rpc(" src/shared/hooks/tasks src/shared/lib/taskCreation && echo GATE-FAIL || echo GATE-OK
+# Slice B
+npx vitest run src/shared/hooks/projects src/shared/hooks/variants src/shared/lib/media --reporter=basic
+grep -rn "createSignedUrl\|getPublicUrl\|parseSupabaseStorageUrl" src/shared src/integrations/supabase/repositories && echo GATE-FAIL || echo GATE-OK
+# Slice C
+npx vitest run src/shared/realtime src/shared/hooks/agent --reporter=basic
+grep -rn "\.channel(\|getSupabaseClient()" src/shared/realtime src/shared/hooks/agent && echo GATE-FAIL || echo GATE-OK
+# Slice D
+npx vitest run src/shared/auth src/test/test-utils.test.tsx --reporter=basic   # scope to actual auth test dir per repo layout
+grep -rn "probeStoredSessionToken\|localStorage.getItem('supabase.auth.token')" src/ && echo GATE-FAIL || echo GATE-OK
+npx vite build
+```
+
+---
+
+## Batch B4 — Journey placement visible (C1-5)
+
+**Advances:** Done criterion 2 (terminal step). **Depends on:** B3 complete (C1-2+C1-3+C1-6 per plan deps). **Seam:** full covered journey demonstrable end-to-end.
+
+### Tasks
+
+| ID | Task | Files | Class |
+|---|---|---|---|
+| T4.1 | **Document-native placement wiring.** Placement authority = timeline document (doc 24 Q1 RATIFIED: `shot_generation_items` removed; placement RPC/trigger machinery deleted-not-ported). Wire completed-generation → placement through existing timeline CAS + registry merge (path proven by `providerCompatibility.astrid.test.ts`): re-point `addImageToShotHelpers.ts`, `timelineFrameBatchPersist.ts`, `useShotGenerationMutations.ts` at bridge equivalents or supersede with pack-command/document merge. NO `shot_generations` route mapping exists or is built. | `src/tools/video-editor/.../addImageToShotHelpers.ts`, `timelineFrameBatchPersist.ts`, `useShotGenerationMutations.ts` | **[XHARD]** |
+
+**[XHARD] evidence required:** (a) CAS merge path exercised against real `astrid serve` (not just fake) before declaring done; (b) explicit check that any surviving `batch_update_timeline_frames` call in a covered surface is either mapped to bridge equivalent or demoted to confirm-then-render (never shimmed — plan §2.6 watch item); (c) missing bridge route ⇒ formal BLOCKED report (stop condition), never patched Astrid-side here.
+
+### Checkpoint acceptance
+- Admitted test binding's output appears in gallery AND placed in timeline view after refresh (browser-verified, recorded).
+- No `shot_generations` writes remain in covered path.
+
+### North Star
+No second placement authority — document is it; shots pack v1 stays dormant; no mirroring (doc 24 consideration #4). Correctness by primitives: frozen CAS route untouched.
+
+### Validation
+```bash
+npx vitest run tests/e2e/timeline --reporter=basic   # plus providerCompatibility.astrid.test.ts location per repo layout
+grep -rn "shot_generation_items\|shot_generations" src/shared src/domains src/features && echo GATE-FAIL || echo GATE-OK
+npx vite build
+```
+
+---
+
+## Batch B5 — Shot mode as view (C2-1)
+
+**Advances:** C-2 exit = feature-complete vs doc 06 §3.2–3.3. **Depends on:** B4. **Seam:** shot UX fully document-derived.
+
+### Tasks
+
+| ID | Task | Files | Class |
+|---|---|---|---|
+| T5.1 | **Shot groups/pools as document view:** derive in `runtime/usePinnedShotGroups.ts`, `families/composition/graphProjector.ts`, `lib/timeline-domain.ts`. | files listed under `src/tools/video-editor/` | normal |
+| T5.2 | **Deep-copy duplicate:** copies structure + media refs + final-video assets, records `derived_from` lineage (doc 24 Q2). | same area + pack-command admit via B2 client | normal |
+| T5.3 | **Promote-primary as pack command:** family `duplicate`/`promote_primary` per doc 27 §3; view reflects primary swap. | same area | normal |
+
+### Checkpoint acceptance
+- Duplicate produces copied document nodes (no shared refs — asserted structurally in vitest).
+- Promote-primary issues pack command; view reflects primary swap after refresh.
+- No `shot_generations` writes remain in covered path.
+
+### North Star
+Shots are a VIEW over the one document authority; family pinned at admission (no silent executor swap); growth by declaration (new families appear via capability registry).
+
+### Validation
+```bash
+npx vitest run src/tools/video-editor/runtime src/tools/video-editor/families src/tools/video-editor/lib --reporter=basic
+grep -rn "shot_generations" src/tools/video-editor && echo GATE-FAIL || echo GATE-OK
+npx vite build
+```
+
+---
+
+## Batch B6 — Render/export UX on render-as-task (C3-1)
+
+**Advances:** C-3. **Depends on:** B3 Slice A (C1-2). Parallelizable with B5/B7 once contracts fixed. **Seam:** export works through common task machinery.
+
+### Tasks
+
+| ID | Task | Files | Class |
+|---|---|---|---|
+| T6.1 | **Render admission:** `renderRouter.ts:703-775` orchestrator `enqueue-task` POST → R1 `render_export` admission via B2 client. | `src/tools/video-editor/lib/renderRouter.ts` | normal |
+| T6.2 | **Runtime/UI cutover:** `renderRuntime.ts` (drop `Session` → local domain type), `components/{TimelineExportMenu,TimelineRenderControls}.tsx`, `hooks/useRenderState.ts`, `useFinalVideoAvailable.ts` → common task polling (2 s). MP4 playback via R9 Range/ETag; destination selection preserved. | files listed | normal |
+
+### Checkpoint acceptance
+- Export admits render task; progress via 2 s poll; output playable via R9 Range; cancel works through common cancel route (exercised in vitest + smoke against binding).
+
+### North Star
+Render-as-task reuses ONE admission primitive (no parallel render pipeline = no second authority); cancel rides kernel fences; honest latency (progress = declared cadence).
+
+### Validation
+```bash
+npx vitest run src/tools/video-editor/lib/renderRouter.test.tsx src/tools/video-editor/components src/tools/video-editor/hooks --reporter=basic
+grep -rn "Session" src/tools/video-editor/lib/renderRuntime.ts && echo REVIEW || echo GATE-OK
+npx vite build
+```
+
+---
+
+## Batch B7 — Ops surfaces stubbed to doctor (C4-1)
+
+**Advances:** C-4. **Depends on:** B2 only (per plan deps). Parallelizable with B4–B6. **Seam:** ops/error UX typed and doctor-backed.
+
+### Tasks
+
+| ID | Task | Files | Class |
+|---|---|---|---|
+| T7.1 | **Backup/restore hooks** calling bridge backup endpoints — or formal BLOCKED report if endpoints absent (stop condition honored, no patching Astrid here). | backup/restore hook modules per inventory | normal |
+| T7.2 | **Onboarding/model-setup re-stub to doctor availability checks:** `SetupCompleteStep.tsx` + `useOnboardingFlow`. | `src/shared/components/OnboardingModal/components/steps/SetupCompleteStep.tsx`, `useOnboardingFlow` module | normal |
+| T7.3 | **Typed error/recovery UX:** map `bridgeErrorEnvelopeSchema` categories → recovery copy. | error-mapping module (new, names its consumer: C4 recovery surfaces) | normal |
+
+### Checkpoint acceptance
+- Missing-model/capability renders doctor hint (`capability_unavailable` path).
+- Backup round-trip hook exercised in vitest against stub — OR blocked report filed with endpoint evidence.
+
+### North Star
+Invisible failure default (five public categories → explicit recovery copy, never silent failure); anti-pattern: no speculative machinery — recovery copy only for categories that can actually occur on the bridge.
+
+### Validation
+```bash
+npx vitest run src/shared/components/OnboardingModal --reporter=basic   # plus error-mapping test location
+npx vite build
+```
+
+---
+
+## Batch B8 — Acceptance gates (C5-1)
+
+**Advances:** Done criteria 3, 4, 5. **Depends on:** all above. **Seam:** phase-complete; push `phase-c`.
+
+### Tasks
+
+| ID | Task | Files | Class |
+|---|---|---|---|
+| T8.1 | **Grep gate script:** zero `@supabase/supabase-js` (type-only included) + zero `.from(`/`.rpc(`/`.channel(` across the covered-module list from B1's `c0-inventory.md`. Script checked into repo; run recorded to `.oracle/evidence/`. | new gate script; `.oracle/evidence/` | normal |
+| T8.2 | **Build + suite:** `npx vite build`; `npx vitest run --reporter=basic` minus pre-existing baseline (baseline enumerated in evidence). | — | normal |
+| T8.3 | **OS-network-blocked acceptance run:** Supabase + provider hosts unreachable, `astrid serve` up with test binding, full journey in browser (extend `tests/e2e/timeline/real-bridge.spec.ts` + `real-bridge-serve.mjs`). Scope: THIS repo's frozen done criteria (CPU box, covered journey); doc 31's hardware-tier language is Astrid-side Phase-B exit, explicitly out of scope. Failures triaged fix-or-BLOCKED. | `tests/e2e/timeline/real-bridge.spec.ts`, `tests/e2e/timeline/real-bridge-serve.mjs`, `.oracle/evidence/` | normal |
+
+### Checkpoint acceptance (= agent-goal done criteria)
+1. Gates scripted, runs recorded to `.oracle/evidence/`.
+2. Journey passes with networking blocked (browse project → gallery → admit task → poll status → generation visible → timeline placement visible).
+3. Build green; vitest green minus documented baseline.
+4. Zero supabase-js imports in covered modules (gate output attached).
+5. Push `phase-c`; never merge to main/timeline-patches.
+
+### North Star
+No cloud fallback PROVEN (OS-level block + grep gate, not asserted); honest evidence recorded; scope honesty stated in evidence artifact.
+
+### Validation
+```bash
+bash scripts/c5-grep-gates.sh            # or equivalent script produced by T8.1; must exit non-zero on any hit
+npx vite build
+npx vitest run --reporter=basic          # compare against baseline list in .oracle/evidence/
+node tests/e2e/timeline/real-bridge-serve.mjs &   # with OS firewall rules blocking supabase.co + provider hosts
+npx playwright test tests/e2e/timeline/real-bridge.spec.ts
+```
+
+---
+
+## Execution notes
+
+- **Fan-out shape (per plan §4, huge-run = YES firm):** B2 serial (freezes contract) → B3 four parallel slices → B4 serial → B5∥B6∥B7 parallel (disjoint file sets) → B8 serial.
+- **Commit discipline:** commit at each batch checkpoint on `phase-c`; push only at B8 completion.
+- **Stop conditions carried into every batch:** missing bridge route ⇒ BLOCKED report (never patch Astrid here); failed ⇒ after one rework loop; then escalate.
+- **Model policy (user-pinned):** `stealth/ox-alpha` for every task in every batch, all classes.
+[launch_hermes_agent] done in 284.0s (exit=0)
+0

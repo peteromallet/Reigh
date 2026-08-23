@@ -1,0 +1,28 @@
+[launch_hermes_agent] model=stealth/ox-alpha → resolved=stealth/ox-alpha toolsets=['file', 'web'] max_tokens=65536 context_budget_tokens=(auto)
+[launch_hermes_agent] NOTE: omp gives the full toolset (Bash, Read, Edit, web, …); the file/web/terminal subset is a superset here.
+[launch_hermes_agent] cwd=/workspace/reigh-phase-a-20260822/reigh-app
+Working...
+## Verdict: **PASS** — ready to freeze after three textual command fixes (no structural change needed).
+
+**(1) Operational completeness — OK.** Done criteria map: DC1→B1; DC2→B4 checkpoint + B8.3 journey; DC3→B8.1 grep gate; DC4→B8.2; DC5→B8.3. All five covered.
+
+**(2) North Star alignment — OK.** Each batch carries a North Star section; anti-patterns enforced structurally (signed-URLs/billing/PAT cut not shimmed; placement stays document-native; capability flags kill the last `instanceof` fork; poller reports `connected` only on evidence). B1 makes the inventory the sole covered-module authority for C5's gate — no second list.
+
+**(3) Dependencies — honest.** B2 serial → B3 four parallel slices → B4 → B5∥B6∥B7 → B8 matches plan ordering. Note: B4 declares "depends on B3 complete" though plan lists only C1-2/C1-3/C1-6 — stricter than plan, safe direction; keep it.
+
+**(4) Verifiability — 3 fixes required before freeze:**
+- **F1:** All `npx vitest run …` invocations must include `--config config/testing/vitest.config.ts` (repo test script uses it; bare runs won't resolve aliases/jsdom).
+- **F2:** B2 validation `node tests/e2e/timeline/astrid-bridge-stub.mjs --selfcheck 2>/dev/null || echo "stub exercised via e2e suite"` cannot fail — the `|| echo` swallows it. Drop the fallback or make selfcheck mandatory.
+- **F3:** Per-slice gates (`grep -rn … && echo GATE-FAIL || echo GATE-OK`) exit 0 in both branches — informational only. B8's script already mandates non-zero-on-hit; apply the same inversion (`grep -q … && exit 1`) at slice checkpoints so gates are enforceable, not decorative.
+
+Verified present: `real-bridge.spec.ts`/`real-bridge-serve.mjs`, `astrid-bridge-stub.mjs`, playwright config/scripts, branch `phase-c`, `src/shared/auth/`.
+
+**(5) [XHARD] — OK.** Three tags (T3.C1 realtime diff-poller, T3.D1 boot seam, T4.1 placement), each with concrete (a)(b)(c) evidence requirements tied to observable failure modes. None need demotion.
+
+**(6) Sync authorization — respected.** Commit per checkpoint on `phase-c`; push only at B8 completion; never merge to main/timeline-patches (execution notes + B8 acceptance #5).
+
+**(7) Host rulings — honored.** Document-native placement with no `shot_generations` routes built (T4.1/T5/B4-B5 grep gates); fixed local user behind unchanged `useAuth` contract (T3.D1); token injection proxy-layer-only with browser-exposure proof required (D1 evidence c).
+
+Apply F1–F3 to `tasklist-out.txt`, then freeze.
+[launch_hermes_agent] done in 67.4s (exit=0)
+0

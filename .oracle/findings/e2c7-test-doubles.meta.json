@@ -1,0 +1,21 @@
+{
+  "brief": "/workspace/reigh-phase-a-20260822/reigh-app/.oracle/briefs/explore/e2c7-test-doubles.md",
+  "elapsed_s": 166.372,
+  "error": null,
+  "error_class": null,
+  "finish_reason": null,
+  "finished_at": "2026-08-23T18:44:44Z",
+  "meta_file": "/workspace/reigh-phase-a-20260822/reigh-app/.oracle/findings/e2c7-test-doubles.meta.json",
+  "model": "stealth/ox-alpha",
+  "pid": 1050484,
+  "raw_result_keys": [
+    "stdout"
+  ],
+  "response_chars": 2146,
+  "response_file": "/workspace/reigh-phase-a-20260822/reigh-app/.oracle/findings/e2c7-test-doubles.txt",
+  "started_at": "2026-08-23T18:41:57Z",
+  "status": "ok",
+  "stem": "e2c7-test-doubles",
+  "task_timeout_s": 1800,
+  "tool_calls": 0
+}

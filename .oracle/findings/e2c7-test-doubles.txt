@@ -1,0 +1,15 @@
+## Test-doubles findings (ranked)
+
+**1. 114 test files hand-roll PostgREST chain mocks bound to supabase-js — all die at C-1.**
+Every hook/repo test does `vi.mock('@/integrations/supabase/client')` with ad-hoc `from().select().eq().single()` chains (e.g. `src/shared/hooks/shots/__tests__/useShotImages.test.ts:7-21`, `src/domains/generation/hooks/__tests__/useGenerationMutations.test.ts:7-16`; 114 files match). No shared builder exists; each file re-implements the chain, so cutover means ~114 rewrites unless a seam is provided first.
+
+**2. Good seam already exists for providers — reuse it.**
+`runProviderCompatibilitySuite` (`src/tools/video-editor/testing/providerCompatibility.shared.ts:78`) runs the same CAS/load/save battery against InMemory/Supabase/AstridBridge/Browser factories; `InMemoryDataProvider` + `coreTestPorts.ts:36` are clean doubles. This is the model to extend, not replace.
+
+**3. Bridge-side doubles are timeline-only; covered-journey routes absent.**
+`bridgeContract.ts` (zod, `:51-83`) covers timeline payloads only. The e2e stub `tests/e2e/timeline/astrid-bridge-stub.mjs:101-199` implements health/projects/timelines/save(CAS)/registry/assets+Range but **no tasks (B-routes), gallery (R12), or media-content (R9)** routes that the acceptance journey needs. `real-bridge-serve.mjs` boots real `astrid serve` for the same specs.
+
+**4. `src/test/test-utils.tsx` accepts auth/project context options it silently ignores** — `_authValue`/`_projectValue` assigned then unused (`:59-60`); wrapper renders only QueryClientProvider. Misleading surface; trim during cutover.
+
+**Recommendation (bounded):** one mechanical addition — a single fetch-level fake bridge router in `src/test/` whose handlers validate against `bridgeContract.ts` schemas and serve seeded journey fixtures (tasks poll/admit, gallery, timeline, media bytes). Rewrite cut-over hook tests against it via `renderHookWithProviders`; extend `astrid-bridge-stub.mjs` from the same fixture module for Playwright; prefer `real-bridge-serve.mjs` where `astrid serve` covers the route. Delete PostgREST mocks per-module at cutover; no new framework (no MSW).
+0

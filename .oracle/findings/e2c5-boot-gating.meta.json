@@ -1,0 +1,21 @@
+{
+  "brief": "/workspace/reigh-phase-a-20260822/reigh-app/.oracle/briefs/explore/e2c5-boot-gating.md",
+  "elapsed_s": 220.973,
+  "error": null,
+  "error_class": null,
+  "finish_reason": null,
+  "finished_at": "2026-08-23T18:45:38Z",
+  "meta_file": "/workspace/reigh-phase-a-20260822/reigh-app/.oracle/findings/e2c5-boot-gating.meta.json",
+  "model": "stealth/ox-alpha",
+  "pid": 1050482,
+  "raw_result_keys": [
+    "stdout"
+  ],
+  "response_chars": 2544,
+  "response_file": "/workspace/reigh-phase-a-20260822/reigh-app/.oracle/findings/e2c5-boot-gating.txt",
+  "started_at": "2026-08-23T18:41:57Z",
+  "status": "ok",
+  "stem": "e2c5-boot-gating",
+  "task_timeout_s": 1800,
+  "tool_calls": 0
+}

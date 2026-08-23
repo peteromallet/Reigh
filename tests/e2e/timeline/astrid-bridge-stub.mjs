@@ -1,6 +1,11 @@
 // Minimal stand-in for `astrid serve` so the video editor's dev "Local" mode
 // has a bridge to talk to. Serves one project with one timeline.
 //
+// All seed data comes from the shared fixture module
+// (`src/test/bridgeFixtures.mjs`) — the same authority the vitest fake router
+// consumes. Only the display `src` base and the node-http scaffolding live
+// here.
+//
 // Run it alongside the dev server before `npm run test:e2e:timeline`:
 //   npm run test:e2e:timeline:bridge
 //
@@ -11,70 +16,24 @@
 import fs from 'node:fs';
 import http from 'node:http';
 
+import {
+  createTimelineFixtures,
+  FIXTURE_PROJECT as PROJECT,
+  FIXTURE_TIMELINE_ID as TIMELINE_ID,
+} from '../../../src/test/bridgeFixtures.mjs';
+
 const PORT = Number(process.env.ASTRID_BRIDGE_PORT || 17334);
 const BASE_URL = (process.env.BASE_URL || 'http://127.0.0.1:2222').replace(/\/+$/, '');
-const PROJECT = { slug: 'demo-project', name: 'Demo Project' };
-const TIMELINE_ID = 'demo-timeline';
 
 // Asset bytes come from the repo's own `public/` directory, resolved relative to
 // this file so the stub works from any cwd.
 const PUBLIC_DIR = new URL('../../../public/', import.meta.url);
 
-const registry = {
-  assets: {
-    'demo-hero': {
-      file: 'example-image1.jpg',
-      src: `${BASE_URL}/example-image1.jpg`,
-      type: 'image/jpeg',
-      duration: 4,
-      generationId: 'gen-demo-hero',
-    },
-    'demo-detail': {
-      file: 'example-image2.jpg',
-      src: `${BASE_URL}/example-image2.jpg`,
-      type: 'image/jpeg',
-      duration: 4,
-      generationId: 'gen-demo-detail',
-    },
-    'demo-clip': {
-      file: 'example-video.mp4',
-      src: `${BASE_URL}/example-video.mp4`,
-      type: 'video/mp4',
-      duration: 5,
-      generationId: 'gen-demo-clip',
-    },
-  },
-};
-
-let config = {
-  output: {
-    resolution: '1280x720',
-    fps: 30,
-    file: 'demo.mp4',
-    background: null,
-    background_scale: null,
-  },
-  tracks: [
-    { id: 'V1', kind: 'visual', label: 'V1', scale: 1, fit: 'contain', opacity: 1, blendMode: 'normal' },
-    { id: 'V2', kind: 'visual', label: 'V2', scale: 1, fit: 'contain', opacity: 1, blendMode: 'normal' },
-    { id: 'A1', kind: 'audio', label: 'A1', scale: 1, fit: 'contain', opacity: 1, blendMode: 'normal' },
-  ],
-  clips: [
-    { id: 'clip-hero', track: 'V1', at: 0, clipType: 'media', hold: 4, asset: 'demo-hero' },
-    { id: 'clip-title', track: 'V1', at: 4, clipType: 'text', hold: 2.5, text: { content: 'Hello timeline' } },
-    { id: 'clip-detail', track: 'V1', at: 6.5, clipType: 'media', hold: 4, asset: 'demo-detail' },
-    { id: 'clip-video', track: 'V2', at: 1.5, clipType: 'media', hold: 5, asset: 'demo-clip' },
-  ],
-};
+const { registry, config: initialConfig, timelineSummary } = createTimelineFixtures({
+  assetSrcBaseUrl: BASE_URL,
+});
+let config = initialConfig;
 let configVersion = 1;
-
-const timelineSummary = {
-  timeline_id: TIMELINE_ID,
-  timeline_ulid: '01J0000000000000000000DEMO',
-  slug: TIMELINE_ID,
-  name: 'Demo Timeline',
-  is_default: true,
-};
 
 function send(res, status, body) {
   const payload = JSON.stringify(body);

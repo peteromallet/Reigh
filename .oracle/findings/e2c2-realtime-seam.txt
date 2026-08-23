@@ -1,0 +1,14 @@
+## Realtime-seam findings (ranked)
+
+**1. The seam is narrow and interface-stable — cut inside `RealtimeConnection`.**
+The entire realtime surface is two channels: `RealtimeConnection` (`task-updates:<projectId>`, 13 `postgres_changes` subs over tasks/generations/shot_generations/generation_variants/timelines — `src/shared/realtime/RealtimeConnection.ts:248-310`) and the agent-session channel (`src/tools/video-editor/hooks/useAgentSession.ts:250-265`, UPDATE on `timeline_agent_sessions`). Everything downstream is transport-agnostic: raw `RawDatabaseEvent`s → `realtimeEventProcessor.process` → `useRealtimeInvalidation` query invalidations → `dataFreshnessManager` (`RealtimeProvider.tsx:137-143`, `useRealtimeInvalidation.ts:34-73`). No consumer knows about websockets.
+
+**2. Status semantics are load-bearing — must report 'connected'.**
+When healthy, `useSmartPollingConfig` sets `refetchInterval:false` (`useSmartPolling.ts:140-152`); all freshness comes from event-driven invalidation. If the poller reports `disconnected`, everything degrades to the graduated 15s→30s→45s→60s backoff (`dataFreshness/pollingPolicy.ts:61-72`) — misses the C-1 2s/10s/30s budget and starves invalidation cascades (task-complete → segments/finalVideos/generations, `useRealtimeInvalidation.ts:110-153`). Preload service also gates on `realtimeStatus==='connected'` (`src/shared/lib/preloading/service.ts:73-83`).
+
+**3. Untyped diffs needed.** Events carry full row payloads consumed by `hydrateTaskSnapshot` and meaningful-change filters (`RealtimeProvider.tsx:89-134`; location/thumbnail/starred diff at `useRealtimeInvalidation.ts:204-215`) — a poller must fetch full rows and synthesize INSERT/UPDATE/DELETE by diffing, preserving `old`.
+
+**4. Untouched second channel.** Agent-session channel is separate; mechanical fix: poll the session row (~2s) and run the same two `invalidateQueries` already in the callback (`useAgentSession.ts:261-262`).
+
+**Recommended approach:** Replace `doConnect`/`setupEventHandlers` internals of `RealtimeConnection` with an interval diff-poller (bridge reads per table tier: tasks/generations 2s, shot_generations/variants/timelines 10s, others 30s) emitting synthetic `RawDatabaseEvent`s and reporting `status:'connected'` once the first successful poll lands. Public class API, processor, invalidation, freshness manager, tests' seams unchanged. Zero architecture license; satisfies C-1 grep gate by removing the last `getSupabaseClient().channel()` callsites.
+0
