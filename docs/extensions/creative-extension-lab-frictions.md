@@ -519,8 +519,8 @@ evidence and a concrete improvement direction.
 
 ### A reproducible cross-repository gate needs explicit executable paths
 
-- Pinning only `Python 3.11` was insufficient: the available Astrid environment
-  is Python 3.14.3, and nested `make ci` shell scripts independently fall back to
+- Pinning only `Python 3.11` was insufficient: the validated Astrid release
+  interpreter is Python 3.11.11, and nested `make ci` shell scripts independently fall back to
   `python3` unless both `PY` and `PYTHON_BIN` are carried through.
 - The verifier now requires one absolute executable with an exact patch version
   and threads it through every Astrid gate. Node and npm are also exact pins.

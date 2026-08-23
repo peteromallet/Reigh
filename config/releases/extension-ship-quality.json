@@ -14,7 +14,7 @@
     "profile": "extension-ship-quality-v1",
     "node": "20.19.4",
     "npm": "10.8.2",
-    "astridPython": "3.14.3"
+    "astridPython": "3.11.11"
   },
   "requiredGates": [
     "baseline",

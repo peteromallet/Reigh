@@ -18,7 +18,7 @@ or applies a production migration. A mismatch or failed command stops the run.
 ## Running the frozen-candidate gate
 
 Prepare fresh, separate Reigh and Astrid checkouts. Install Node `20.19.4`, npm
-`10.8.2`, Python `3.14.3` plus the dev tooling required by the pinned Astrid
+`10.8.2`, Python `3.11.11` plus the dev tooling required by the pinned Astrid
 revision, GNU Make, and
 the Playwright browsers used by the Reigh suites. Do not reuse a developer
 worktree for release evidence.
