@@ -149,6 +149,10 @@ export function installExtensionOperationalAnalyticsSink(
 
   const flush = async (): Promise<void> => {
     if (disposed || flushing || queue.length === 0) return;
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      flushTimer = undefined;
+    }
     flushing = true;
     const batch = queue.splice(0, OPERATIONAL_ANALYTICS_BATCH_SIZE);
     try {
@@ -173,6 +177,8 @@ export function installExtensionOperationalAnalyticsSink(
         if (retryAttempts >= OPERATIONAL_ANALYTICS_MAX_RETRIES) {
           queue.splice(0, batch.length);
           dropped += batch.length;
+          retryAttempts = 0;
+          if (queue.length > 0) schedule();
         } else {
           const attempts = retryAttempts;
           retryAttempts += 1;

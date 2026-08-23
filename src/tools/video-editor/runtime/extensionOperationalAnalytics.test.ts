@@ -82,6 +82,26 @@ describe('extension operational analytics browser sink', () => {
     sink.dispose();
   });
 
+  it('continues with later events after a batch exhausts its retry budget', async () => {
+    vi.useFakeTimers();
+    const invoke = vi.fn()
+      .mockRejectedValueOnce(new Error('offline-1'))
+      .mockRejectedValueOnce(new Error('offline-2'))
+      .mockRejectedValueOnce(new Error('offline-3'))
+      .mockResolvedValue(undefined);
+    const sink = installExtensionOperationalAnalyticsSink({ invoke, flushDelayMs: 0 });
+    for (let i = 0; i < OPERATIONAL_ANALYTICS_BATCH_SIZE + 1; i += 1) {
+      window.dispatchEvent(new CustomEvent(EXTENSION_OPERATIONAL_EVENT_DOM_NAME, { detail: event }));
+    }
+
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(invoke).toHaveBeenCalledTimes(4);
+    expect(invoke.mock.calls[3][0]).toHaveLength(1);
+    expect(sink.getDroppedCount()).toBe(OPERATIONAL_ANALYTICS_BATCH_SIZE);
+    sink.dispose();
+  });
+
   it('keeps the queue bounded when a failed in-flight batch is requeued', async () => {
     let rejectInvoke: ((reason?: unknown) => void) | undefined;
     const invoke = vi.fn(() => new Promise<void>((_resolve, reject) => {
