@@ -852,3 +852,15 @@ evidence and a concrete improvement direction.
   5xx paths, while both proxy socket deadlines share the client's ten-second
   bound. Failure envelopes are part of the wire protocol, and transport limits
   must exist on every hop rather than only in the nicest caller.
+
+### Timeline gesture coordinates must include the host-owned label gutter
+
+- A desktop browser test scrubbed at a fixed ruler offset, but the playhead's
+  transform includes the track-label gutter. At some layouts the pointer-down
+  landed inside that non-scrubbable gutter, so the later marker command could
+  appear to work while still reading time zero.
+- The test now reads the initial playhead transform, starts inside the
+  host-owned ruler strip relative to that boundary, and asserts the movement as
+  a delta before materializing and reloading the marker. Geometry assertions
+  should be relative to semantic layout boundaries, not convenient viewport
+  constants.
