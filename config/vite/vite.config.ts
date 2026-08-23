@@ -13,6 +13,7 @@ import {
   resolveAstridBridgePort,
   resolveAstridBridgeProxyPolicy,
 } from "./astridBridgeProxy";
+import { createBundleBudgetPlugin } from "./bundleBudget";
 
 const logger = createLogger();
 const originalWarn = logger.warn.bind(logger);
@@ -78,6 +79,7 @@ export default defineConfig(() => {
     plugins: [
       astridBridgeAuthPlugin,
       react(),
+      createBundleBudgetPlugin(),
     ].filter(Boolean),
     resolve: {
       alias: {
