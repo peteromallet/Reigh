@@ -57,6 +57,7 @@ export const REIGH_GATE_PROFILE = Object.freeze([
   { id: 'production-smoke', label: 'production extension smoke suite', command: 'npm', args: ['run', 'test:extensions:production-smoke'] },
   { id: 'runtime-rollout', label: 'runtime extension rollout suite', command: 'npm', args: ['run', 'test:extensions:runtime-rollout'] },
   { id: 'container-runtime', label: 'production container smoke and rollback', command: 'npm', args: ['run', 'verify:extension-container'] },
+  { id: 'paired-release-e2e', label: 'paired Reigh/Astrid production-like release acceptance', command: 'npm', args: ['run', 'verify:paired-release-e2e'] },
   { id: 'readiness', label: 'extension readiness suite', command: 'npm', args: ['run', 'test:readiness'] },
   { id: 'readiness-e2e', label: 'extension harness browser suite', command: 'npm', args: ['run', 'test:readiness:e2e'] },
   { id: 'cross-browser-e2e', label: 'Chrome Firefox WebKit extension suite', command: 'npm', args: ['run', 'test:e2e:extension-cross-browser'] },
@@ -92,7 +93,14 @@ const RELEASE_PATH = [
   '/usr/bin',
   '/bin',
 ].filter((entry, index, entries) => entries.indexOf(entry) === index).join(':');
-const ALLOWED_STEP_ENV = new Set(['PY', 'PYTHON_BIN']);
+const ALLOWED_STEP_ENV = new Set([
+  'ASTRID_CHECKOUT',
+  'ASTRID_PYTHON',
+  'ASTRID_REF',
+  'PY',
+  'PYTHON_BIN',
+  'REIGH_REF',
+]);
 
 export const isMakeRecipeSafeExecutablePath = (value) => (
   typeof value === 'string' && /^\/[A-Za-z0-9._/+:-]+$/.test(value)
@@ -238,11 +246,28 @@ export function validatePackageJson(packageJson, manifest) {
   }
 }
 
-export function buildExecutionPlan({ repoRoot, astridCheckout, astridPython }) {
+export function buildExecutionPlan({
+  repoRoot,
+  astridCheckout,
+  astridPython,
+  astridRef,
+  reighRef,
+}) {
   const astridCwd = astridCheckout || '<ASTRID_CHECKOUT required for execution>';
   const python = astridPython || '<ASTRID_PYTHON required for execution>';
   return [
-    ...REIGH_GATE_PROFILE.map((gate) => ({ ...gate, cwd: repoRoot })),
+    ...REIGH_GATE_PROFILE.map((gate) => ({
+      ...gate,
+      cwd: repoRoot,
+      env: gate.id === 'paired-release-e2e'
+        ? {
+            ASTRID_CHECKOUT: astridCheckout || '<ASTRID_CHECKOUT required for execution>',
+            ASTRID_PYTHON: astridPython || '<ASTRID_PYTHON required for execution>',
+            ASTRID_REF: astridRef || '<ASTRID_REF required for execution>',
+            REIGH_REF: reighRef || '<REIGH_REF required for execution>',
+          }
+        : undefined,
+    })),
     ...ASTRID_GATE_PROFILE.map(({ cwdSuffix, ...gate }) => ({
       ...gate,
       env: gate.id === 'astrid-ci'
@@ -614,6 +639,8 @@ function printPlan(manifest, packageJson, env) {
     repoRoot: REPO_ROOT,
     astridCheckout: env.ASTRID_CHECKOUT,
     astridPython: env.ASTRID_PYTHON,
+    astridRef: env.ASTRID_REF,
+    reighRef: env.REIGH_REF,
   });
 
   console.log(`${LABEL} PLAN ONLY — no commands will execute`);
@@ -682,6 +709,8 @@ export function main(argv = process.argv.slice(2), env = process.env) {
       repoRoot: REPO_ROOT,
       astridCheckout: astrid.checkout,
       astridPython,
+      astridRef: env.ASTRID_REF,
+      reighRef: env.REIGH_REF,
     });
     executeSteps(steps);
 

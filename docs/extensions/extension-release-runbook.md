@@ -41,7 +41,7 @@ committed; both the tag and `REIGH_REF` must resolve to the clean checkout's
 ```sh
 REIGH_REF=<full-40-character-Reigh-HEAD> \
 ASTRID_CHECKOUT=/absolute/path/to/clean/Astrid \
-ASTRID_REF=659c3dc38aad \
+ASTRID_REF=49122d6b4977664c4ab52477e73b192515d19b00 \
 ASTRID_PYTHON=/absolute/path/to/pinned/venv/bin/python \
 npm run verify:extension-ship
 ```
@@ -51,6 +51,56 @@ Capture complete stdout/stderr, exit status, Reigh `git rev-parse HEAD`, Reigh
 `git rev-parse HEAD`, UTC start/end times, and hashes of retained test/render
 artifacts. An exit code of zero is necessary, not sufficient: every frozen-RC
 item and both independent review slots below must also be complete.
+
+### Paired repository E2E receipt
+
+The ship verifier includes `verify:paired-release-e2e`; operators can inspect
+the same fixed plan directly with:
+
+```sh
+npm run verify:paired-release-e2e -- --plan
+```
+
+The run accepts no skip flags. It first probes the exact manifest-pinned Astrid
+source for the complete `astrid.authenticated-release-bridge.v1` capability
+(`serve --release-mode`, token enforcement, bearer validation, and the v1
+protocol header). A newer checkout cannot satisfy an older pin. The manifest is
+pinned to settled Astrid hardening commit
+`49122d6b4977664c4ab52477e73b192515d19b00`; the regression test retains the
+pre-auth `659c3dc38aad` rejection case. Do not bypass the probe or substitute
+the unauthenticated stub.
+
+After that pin is available, the gate archives the exact Reigh and Astrid
+commits into private temporary trees, installs/builds Reigh from its lockfile,
+initializes Astrid's real managed database, takes a pre-migration backup, and
+applies the Runaway migration twice. Both applications must report 566 stored
+transitions, one migration evidence receipt, and identical project/run
+identity. It then proves the built Reigh preview's enabled runtime document and
+same-origin authenticated proxy, runs the real browser editing lane, restarts
+both servers, verifies persisted edits with no duplicate captions or Runaway
+rows, renders and downloads an MP4, restores the backup, restarts both servers
+again, and verifies the pre-edit state and zero Runaway data rows.
+
+The bridge bearer token is generated per run and exists only in the Astrid and
+Vite server environments. The Playwright process receives an allowlisted
+environment without the token and fails if one is present. Runtime trees are
+removed under bounded process cleanup. Logs, screenshots, state receipts,
+render output, and a SHA-256 artifact index are retained under
+`/tmp/reigh-paired-release-evidence/`; the complete evidence directory is made
+read-only before the command returns.
+
+One boundary remains explicit: the built production app intentionally rejects
+local-bridge editor selection because that path is development-only today.
+Therefore the production build lane proves the runtime configuration and real
+authenticated proxy, while the edit/reload/restart/render browser lane is
+labelled development-only in the receipt. This is maximum real coverage of the
+current product boundary, not evidence that production local editing exists.
+PostgreSQL is not an authority in this local-bridge journey: Astrid's real
+managed SQLite database and pack SQL migrations own the timeline and Runaway
+rows, while the built Reigh preview only exercises its static/runtime and
+server-proxy boundaries. A future acceptance path that enters Reigh's app-mode
+Supabase provider must add a real PostgreSQL/Supabase migration lane rather
+than reusing this receipt.
 
 ## Production release controls
 

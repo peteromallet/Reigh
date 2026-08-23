@@ -9,7 +9,7 @@
   },
   "astrid": {
     "branch": "oracle-unified-execution",
-    "commit": "659c3dc38aad"
+    "commit": "49122d6b4977664c4ab52477e73b192515d19b00"
   },
   "verification": {
     "profile": "extension-ship-quality-v1",

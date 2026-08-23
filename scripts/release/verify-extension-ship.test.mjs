@@ -100,6 +100,11 @@ describe('extension ship verifier', () => {
       && gate.args.join(' ') === 'run verify:extension-container'
     )));
     assert.ok(REIGH_GATE_PROFILE.some((gate) => (
+      gate.id === 'paired-release-e2e'
+      && gate.command === 'npm'
+      && gate.args.join(' ') === 'run verify:paired-release-e2e'
+    )));
+    assert.ok(REIGH_GATE_PROFILE.some((gate) => (
       gate.id === 'cross-browser-e2e'
       && gate.command === 'npm'
       && gate.args.join(' ') === 'run test:e2e:extension-cross-browser'
@@ -136,7 +141,13 @@ describe('extension ship verifier', () => {
 
   it('builds only fixed argument-vector commands with Astrid last', () => {
     const astridCheckout = '/tmp/astrid-pinned-fixture';
-    const plan = buildExecutionPlan({ repoRoot: REPO_ROOT, astridCheckout });
+    const plan = buildExecutionPlan({
+      repoRoot: REPO_ROOT,
+      astridCheckout,
+      astridPython: '/tmp/astrid-python',
+      astridRef: 'a'.repeat(40),
+      reighRef: 'b'.repeat(40),
+    });
 
     assert.equal(
       plan.length,
@@ -148,11 +159,18 @@ describe('extension ship verifier', () => {
     assert.equal(plan.at(-1).command, 'make');
     assert.deepEqual(plan.at(-1).args, ['ci']);
     assert.deepEqual(plan.at(-1).env, {
-      PY: '<ASTRID_PYTHON required for execution>',
-      PYTHON_BIN: '<ASTRID_PYTHON required for execution>',
+      PY: '/tmp/astrid-python',
+      PYTHON_BIN: '/tmp/astrid-python',
     });
     assert.ok(plan.every((step) => Array.isArray(step.args)));
     assert.ok(plan.every((step) => step.command === 'npm' || step.command === 'make'));
+    const paired = plan.find((step) => step.id === 'paired-release-e2e');
+    assert.deepEqual(paired?.env, {
+      ASTRID_CHECKOUT: astridCheckout,
+      ASTRID_PYTHON: '/tmp/astrid-python',
+      ASTRID_REF: 'a'.repeat(40),
+      REIGH_REF: 'b'.repeat(40),
+    });
 
     const rendered = plan.map(formatCommand).join('\n');
     assert.doesNotMatch(
