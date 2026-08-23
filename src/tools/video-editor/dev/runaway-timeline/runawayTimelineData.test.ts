@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { fireEvent, render, renderHook, screen } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { createElement, type ReactElement } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DataItemInspectorProps, DataLaneRendererProps } from '@reigh/editor-sdk';
 import type { DataLaneView } from '@/tools/video-editor/data/typed/envelope';
 import {
@@ -11,6 +11,7 @@ import {
 import {
   parseRunawayBridgeResponse,
   RUNAWAY_SCHEMA_REF,
+  type RunawayLoadStatusPayload,
   useRunawayTimelineItems,
 } from './runawayTimelineData';
 import {
@@ -34,6 +35,27 @@ const response = {
   ],
 };
 
+afterEach(() => {
+  window.history.replaceState({}, '', '/');
+  vi.restoreAllMocks();
+});
+
+function fetchResponse(body: unknown): Response {
+  return {
+    ok: true,
+    status: 200,
+    json: async () => body,
+  } as Response;
+}
+
+function currentStatus(
+  value: Readonly<Record<string, readonly { payload: unknown }[]>> | undefined,
+): RunawayLoadStatusPayload | null {
+  const payload = value?.[RUNAWAY_SCHEMA_REF]?.[0]?.payload;
+  if (!payload || typeof payload !== 'object' || !('kind' in payload)) return null;
+  return payload as RunawayLoadStatusPayload;
+}
+
 describe('Runaway timeline bridge adapter', () => {
   it('performs zero bridge IO when the deployment gate is disabled', () => {
     window.history.replaceState({}, '', '/?runawayTimelineProject=runaway-piano-colour-demo');
@@ -43,7 +65,84 @@ describe('Runaway timeline bridge adapter', () => {
 
     expect(result.current).toBeUndefined();
     expect(fetchSpy).not.toHaveBeenCalled();
-    fetchSpy.mockRestore();
+  });
+
+  it('publishes explicit loading and empty states for a successful empty bridge response', async () => {
+    const project = 'runaway-empty-state';
+    window.history.replaceState({}, '', `/?runawayTimelineProject=${project}&localTest=1`);
+    let resolveFetch!: (value: Response) => void;
+    vi.spyOn(globalThis, 'fetch').mockReturnValue(new Promise((resolve) => {
+      resolveFetch = resolve;
+    }));
+
+    const { result } = renderHook(() => useRunawayTimelineItems(true));
+
+    expect(currentStatus(result.current)).toMatchObject({
+      status: 'loading',
+      projectSlug: project,
+    });
+    await act(async () => {
+      resolveFetch(fetchResponse({ project, count: 0, transitions: [] }));
+    });
+    await waitFor(() => expect(currentStatus(result.current)).toMatchObject({
+      status: 'empty',
+      projectSlug: project,
+    }));
+  });
+
+  it('renders a local-test-clean error with manual retry and recovery', async () => {
+    const project = 'runaway-manual-recovery';
+    window.history.replaceState({}, '', `/?runawayTimelineProject=${project}&localTest=1`);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(globalThis, 'fetch')
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValue(fetchResponse({ ...response, project }));
+
+    function HookLane(): ReactElement {
+      const sources = useRunawayTimelineItems(true);
+      const items = (sources?.[RUNAWAY_SCHEMA_REF] ?? []).map((item) => ({
+        id: item.id,
+        timelineStart: item.extent.start,
+        timelineEnd: item.extent.end ?? item.extent.start,
+        payload: item.payload,
+      }));
+      return renderRunawayTimelineLane({
+        kindId: 'reigh.runaway.transitions',
+        schemaRef: RUNAWAY_SCHEMA_REF,
+        shape: 'interval',
+        domain: 'timeline_seconds',
+        startLeft: 0,
+        pixelsPerSecond: 50,
+        items,
+      }) as ReactElement;
+    }
+
+    render(createElement(HookLane));
+    await waitFor(() => expect(screen.getByTestId('runaway-load-state')).toHaveAttribute('data-status', 'error'));
+    expect(screen.getByRole('alert')).toHaveTextContent('Failed to fetch');
+    expect(consoleError).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(screen.getAllByTestId('runaway-transition-chip')).toHaveLength(2));
+    expect(screen.queryByTestId('runaway-load-state')).toBeNull();
+    expect(consoleError).not.toHaveBeenCalled();
+  });
+
+  it('automatically retries an offline load when the browser comes online', async () => {
+    const project = 'runaway-online-recovery';
+    window.history.replaceState({}, '', `/?runawayTimelineProject=${project}&localTest=1`);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValue(fetchResponse({ ...response, project }));
+    const { result } = renderHook(() => useRunawayTimelineItems(true));
+    await waitFor(() => expect(currentStatus(result.current)?.status).toBe('error'));
+
+    act(() => window.dispatchEvent(new Event('online')));
+
+    await waitFor(() => expect(result.current?.[RUNAWAY_SCHEMA_REF]).toHaveLength(2));
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(currentStatus(result.current)).toBeNull();
   });
 
   it('builds sorted frozen interval views with evidence-backed empty regions', () => {

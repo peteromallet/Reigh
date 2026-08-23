@@ -6,11 +6,27 @@ import {
   useRef,
 } from 'react';
 import type { DataItemInspectorProps, DataLaneRendererProps } from '@reigh/editor-sdk';
-import type { RunawayTransitionPayload } from './runawayTimelineData';
+import {
+  retryRunawayTimeline,
+  type RunawayLoadStatusPayload,
+  type RunawayTransitionPayload,
+} from './runawayTimelineData';
 
 function payloadOf(value: unknown): RunawayTransitionPayload | null {
   if (!value || typeof value !== 'object' || !('manifestId' in value)) return null;
   return value as RunawayTransitionPayload;
+}
+
+function statusPayloadOf(value: unknown): RunawayLoadStatusPayload | null {
+  if (!value || typeof value !== 'object' || !('kind' in value)) return null;
+  const payload = value as Partial<RunawayLoadStatusPayload>;
+  if (
+    payload.kind !== 'runaway-load-status'
+    || !['loading', 'empty', 'error'].includes(String(payload.status))
+    || typeof payload.projectSlug !== 'string'
+    || typeof payload.message !== 'string'
+  ) return null;
+  return payload as RunawayLoadStatusPayload;
 }
 
 export function renderRunawayTimelineLane(props: DataLaneRendererProps): unknown {
@@ -42,7 +58,53 @@ function RunawayTimelineLane(props: DataLaneRendererProps) {
     if (!props.focusItemId) return;
     requestedFocusRef.current?.focus({ preventScroll: true });
   }, [props.focusItemId, props.itemWindow?.startIndex]);
-
+  const loadStatus = statusPayloadOf(props.items[0]?.payload);
+  if (loadStatus) {
+    const isError = loadStatus.status === 'error';
+    return createElement(
+      'div',
+      {
+        'data-testid': 'runaway-load-state',
+        'data-status': loadStatus.status,
+        role: isError ? 'alert' : 'status',
+        'aria-live': isError ? 'assertive' : 'polite',
+        'aria-busy': loadStatus.status === 'loading' ? 'true' : undefined,
+        style: {
+          display: 'flex',
+          height: '100%',
+          alignItems: 'center',
+          gap: 8,
+          padding: '0 8px',
+          color: isError ? 'hsl(var(--destructive))' : 'var(--video-editor-fg-muted)',
+          fontSize: 11,
+        },
+      },
+      createElement('span', null, loadStatus.status === 'error'
+        ? `Runaway transitions unavailable: ${loadStatus.message}`
+        : loadStatus.message),
+      ...(isError ? [createElement(
+        'button',
+        {
+          key: 'retry',
+          type: 'button',
+          'data-testid': 'runaway-retry',
+          style: {
+            border: '1px solid currentColor',
+            borderRadius: 4,
+            padding: '1px 7px',
+            background: 'var(--video-editor-panel-bg)',
+            color: 'var(--video-editor-fg)',
+            cursor: 'pointer',
+          },
+          onClick: (event: MouseEvent<HTMLButtonElement>) => {
+            event.stopPropagation();
+            retryRunawayTimeline(loadStatus.projectSlug);
+          },
+        },
+        'Try again',
+      )] : []),
+    );
+  }
   const regionExtents = new Map<string, { start: number; end: number; colour: string; label: string }>();
   for (const item of props.items) {
     const payload = payloadOf(item.payload);
@@ -155,6 +217,16 @@ function RunawayTimelineLane(props: DataLaneRendererProps) {
 }
 
 export function renderRunawayTransitionInspector(props: DataItemInspectorProps): unknown {
+  const loadStatus = statusPayloadOf(props.item.payload);
+  if (loadStatus) {
+    return createElement(
+      'div',
+      { 'data-testid': 'runaway-load-state-inspector' },
+      loadStatus.status === 'error'
+        ? `Runaway transitions unavailable: ${loadStatus.message}`
+        : loadStatus.message,
+    );
+  }
   const payload = payloadOf(props.item.payload);
   if (!payload) return createElement('div', null, 'Invalid Runaway transition payload');
   const summary = payload.timingSummary;

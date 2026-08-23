@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import type { SourceFrozenDataItem } from '@/tools/video-editor/data/typed/envelope.ts';
 import { freezeSourceDataItem } from '@/tools/video-editor/data/typed/envelope.ts';
+import { isLocalTestMode } from '@/app/localTestRuntime.ts';
 
 export const RUNAWAY_SCHEMA_REF = 'reigh.runaway_transition/v1';
 export const RUNAWAY_KIND_ID = 'reigh.runaway.transitions';
@@ -37,6 +38,15 @@ export interface RunawayTransitionPayload {
   readonly fps: number;
   readonly metadata: Readonly<Record<string, unknown>>;
   readonly timingSummary: RunawayTimingSummary | null;
+}
+
+export type RunawayLoadStatus = 'loading' | 'empty' | 'error';
+
+export interface RunawayLoadStatusPayload {
+  readonly kind: 'runaway-load-status';
+  readonly status: RunawayLoadStatus;
+  readonly projectSlug: string;
+  readonly message: string;
 }
 
 interface RawTransition {
@@ -181,6 +191,58 @@ export function parseRunawayBridgeResponse(value: unknown): readonly SourceFroze
 }
 
 const requestCache = new Map<string, Promise<readonly SourceFrozenDataItem[]>>();
+const retryRevisions = new Map<string, number>();
+const retryListeners = new Map<string, Set<() => void>>();
+const reportedErrors = new Set<string>();
+
+function retryRevision(projectSlug: string): number {
+  return retryRevisions.get(projectSlug) ?? 0;
+}
+
+function subscribeToRetry(projectSlug: string, listener: () => void): () => void {
+  const listeners = retryListeners.get(projectSlug) ?? new Set<() => void>();
+  listeners.add(listener);
+  retryListeners.set(projectSlug, listeners);
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) retryListeners.delete(projectSlug);
+  };
+}
+
+/** Clear the rejected request and wake every mounted viewer for this project. */
+export function retryRunawayTimeline(projectSlug: string): void {
+  requestCache.delete(projectSlug);
+  for (const key of reportedErrors) {
+    if (key.startsWith(`${projectSlug}\u0000`)) reportedErrors.delete(key);
+  }
+  retryRevisions.set(projectSlug, retryRevision(projectSlug) + 1);
+  retryListeners.get(projectSlug)?.forEach((listener) => listener());
+}
+
+function statusItem(
+  projectSlug: string,
+  status: RunawayLoadStatus,
+  message: string,
+): SourceFrozenDataItem {
+  return freezeSourceDataItem({
+    id: `runaway-status:${status}`,
+    shape: 'interval',
+    domain: 'timeline_seconds',
+    extent: { start: 0, end: 0.001 },
+    schemaRef: RUNAWAY_SCHEMA_REF,
+    payload: Object.freeze({
+      kind: 'runaway-load-status',
+      status,
+      projectSlug,
+      message,
+    } satisfies RunawayLoadStatusPayload),
+    sourceArtifactRef: { assetId: `${RUNAWAY_SOURCE_ARTIFACT_PREFIX}${projectSlug}` },
+    provenance: {
+      adapterId: 'astrid.runaway.bridge.status',
+      adapterVersion: '1',
+    },
+  });
+}
 
 export function loadRunawayTimeline(projectSlug: string): Promise<readonly SourceFrozenDataItem[]> {
   const cached = requestCache.get(projectSlug);
@@ -198,10 +260,6 @@ export function loadRunawayTimeline(projectSlug: string): Promise<readonly Sourc
         );
       }
       return parseRunawayBridgeResponse(body);
-    })
-    .catch((error) => {
-      requestCache.delete(projectSlug);
-      throw error;
     });
   requestCache.set(projectSlug, request);
   return request;
@@ -222,18 +280,73 @@ export function useRunawayTimelineItems(
     if (!params.has(RUNAWAY_PROJECT_PARAM)) return null;
     return params.get(RUNAWAY_PROJECT_PARAM)?.trim() || DEFAULT_RUNAWAY_PROJECT;
   }, [releaseEnabled]);
-  const [items, setItems] = useState<readonly SourceFrozenDataItem[] | null>(null);
+  const revision = useSyncExternalStore(
+    (listener) => projectSlug ? subscribeToRetry(projectSlug, listener) : () => {},
+    () => projectSlug ? retryRevision(projectSlug) : 0,
+    () => 0,
+  );
+  const [result, setResult] = useState<{
+    readonly projectSlug: string;
+    readonly status: 'ready' | RunawayLoadStatus;
+    readonly items: readonly SourceFrozenDataItem[];
+    readonly message: string;
+  } | null>(null);
 
   useEffect(() => {
     if (!projectSlug) return;
     let active = true;
+    setResult({
+      projectSlug,
+      status: 'loading',
+      items: [],
+      message: `Loading Runaway transitions for ${projectSlug}…`,
+    });
     void loadRunawayTimeline(projectSlug).then((next) => {
-      if (active) setItems(next);
+      if (!active) return;
+      reportedErrors.forEach((key) => {
+        if (key.startsWith(`${projectSlug}\u0000`)) reportedErrors.delete(key);
+      });
+      setResult({
+        projectSlug,
+        status: next.length === 0 ? 'empty' : 'ready',
+        items: next,
+        message: next.length === 0
+          ? `No Runaway transitions were found for ${projectSlug}.`
+          : '',
+      });
     }).catch((error: unknown) => {
-      if (active) console.error('[Runaway Timeline Viewer]', error);
+      if (!active) return;
+      const message = error instanceof Error ? error.message : String(error);
+      const errorKey = `${projectSlug}\u0000${message}`;
+      if (!isLocalTestMode() && !reportedErrors.has(errorKey)) {
+        reportedErrors.add(errorKey);
+        console.error('[Runaway Timeline Viewer]', error);
+      }
+      setResult({ projectSlug, status: 'error', items: [], message });
     });
     return () => { active = false; };
+  }, [projectSlug, revision]);
+
+  useEffect(() => {
+    if (!projectSlug || typeof window === 'undefined') return;
+    const recoverWhenOnline = () => retryRunawayTimeline(projectSlug);
+    window.addEventListener('online', recoverWhenOnline);
+    return () => window.removeEventListener('online', recoverWhenOnline);
   }, [projectSlug]);
 
-  return useMemo(() => items ? { [RUNAWAY_SCHEMA_REF]: items } : undefined, [items]);
+  return useMemo(() => {
+    if (!projectSlug) return undefined;
+    const current = result?.projectSlug === projectSlug
+      ? result
+      : {
+          projectSlug,
+          status: 'loading' as const,
+          items: [],
+          message: `Loading Runaway transitions for ${projectSlug}…`,
+        };
+    const items = current.status === 'ready'
+      ? current.items
+      : [statusItem(projectSlug, current.status, current.message)];
+    return Object.freeze({ [RUNAWAY_SCHEMA_REF]: Object.freeze(items) });
+  }, [projectSlug, result]);
 }
