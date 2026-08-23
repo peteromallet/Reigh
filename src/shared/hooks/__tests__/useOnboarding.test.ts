@@ -1,26 +1,20 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 
-const mockGetUser = vi.fn();
-const mockSelect = vi.fn();
-const mockUpdate = vi.fn();
+const {
+  mockGetUser,
+  mockSelect,
+  mockUpdate,
+  mockGetSupabaseClient,
+} = vi.hoisted(() => ({
+  mockGetUser: vi.fn(),
+  mockSelect: vi.fn(),
+  mockUpdate: vi.fn(),
+  mockGetSupabaseClient: vi.fn(),
+}));
 
 vi.mock('@/integrations/supabase/client', () => ({
-  getSupabaseClient: () => ({
-    auth: {
-      getUser: () => mockGetUser(),
-    },
-    from: vi.fn((_table: string) => ({
-      select: vi.fn(() => ({
-        eq: vi.fn(() => ({
-          single: () => mockSelect(),
-        })),
-      })),
-      update: vi.fn(() => ({
-        eq: vi.fn(() => mockUpdate()),
-      })),
-    })),
-  }),
+  getSupabaseClient: mockGetSupabaseClient,
 }));
 
 import { useOnboarding } from '../useOnboarding';
@@ -29,6 +23,22 @@ describe('useOnboarding', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
+    window.history.replaceState({}, '', '/');
+    mockGetSupabaseClient.mockReturnValue({
+      auth: {
+        getUser: () => mockGetUser(),
+      },
+      from: vi.fn((_table: string) => ({
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            single: () => mockSelect(),
+          })),
+        })),
+        update: vi.fn(() => ({
+          eq: vi.fn(() => mockUpdate()),
+        })),
+      })),
+    });
     mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
   });
 
@@ -40,6 +50,21 @@ describe('useOnboarding', () => {
     mockSelect.mockResolvedValue({ data: { onboarding_completed: true }, error: null });
     const { result } = renderHook(() => useOnboarding());
     expect(result.current.showOnboardingModal).toBe(false);
+  });
+
+  it('never initializes Supabase in deterministic local-test mode', async () => {
+    window.history.replaceState({}, '', '/tools/video-editor?localTest=1');
+    const { result } = renderHook(() => useOnboarding());
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(600);
+    });
+
+    expect(result.current.showOnboardingModal).toBe(false);
+    expect(mockGetSupabaseClient).not.toHaveBeenCalled();
+
+    act(() => result.current.closeOnboardingModal());
+    expect(mockGetSupabaseClient).not.toHaveBeenCalled();
   });
 
   it('shows modal when onboarding not completed after delay', async () => {
@@ -81,4 +106,5 @@ describe('useOnboarding', () => {
 
     expect(result.current.showOnboardingModal).toBe(false);
   });
+
 });

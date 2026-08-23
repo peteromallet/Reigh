@@ -3,41 +3,47 @@ import { renderHook, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 
+const { mockGetSupabaseClient } = vi.hoisted(() => ({
+  mockGetSupabaseClient: vi.fn(),
+}));
+
 vi.mock('@/integrations/supabase/client', () => ({
-  getSupabaseClient: () => ({
-    auth: {
-      getUser: vi.fn().mockResolvedValue({
-        data: { user: { id: 'test-user' } },
-        error: null,
-      }),
-      getSession: vi.fn().mockResolvedValue({
-        data: {
-          session: {
-            [['access', 'token'].join('_')]: 'test-token',
-            user: { id: 'test-user' },
-          },
+  getSupabaseClient: mockGetSupabaseClient,
+}));
+
+const createMockSupabaseClient = () => ({
+  auth: {
+    getUser: vi.fn().mockResolvedValue({
+      data: { user: { id: 'test-user' } },
+      error: null,
+    }),
+    getSession: vi.fn().mockResolvedValue({
+      data: {
+        session: {
+          [['access', 'token'].join('_')]: 'test-token',
+          user: { id: 'test-user' },
         },
-        error: null,
-      }),
-    },
-    from: vi.fn().mockReturnValue({
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      order: vi.fn().mockResolvedValue({
-        data: [
-          {
-            id: 'token-1',
-            user_id: 'test-user',
-            [('to' + 'ken')]: 'pat_xxx',
-            label: 'My Token',
-            created_at: '2024-01-01T00:00:00Z',
-          },
-        ],
-        error: null,
-      }),
+      },
+      error: null,
+    }),
+  },
+  from: vi.fn().mockReturnValue({
+    select: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    order: vi.fn().mockResolvedValue({
+      data: [
+        {
+          id: 'token-1',
+          user_id: 'test-user',
+          [('to' + 'ken')]: 'pat_xxx',
+          label: 'My Token',
+          created_at: '2024-01-01T00:00:00Z',
+        },
+      ],
+      error: null,
     }),
   }),
-}));
+});
 
 vi.mock('@/integrations/supabase/functions/invokeSupabaseEdgeFunction', () => ({
   invokeSupabaseEdgeFunction: vi.fn().mockResolvedValue({ [('to' + 'ken')]: 'pat_new_token' }),
@@ -45,6 +51,7 @@ vi.mock('@/integrations/supabase/functions/invokeSupabaseEdgeFunction', () => ({
 
 vi.mock('@/shared/lib/errorHandling/runtimeError', () => ({
   normalizeAndPresentError: vi.fn(),
+  normalizeAndPresentAndRethrow: vi.fn((error: unknown) => { throw error; }),
 }));
 
 vi.mock('@/shared/lib/queryKeys/api', () => ({
@@ -66,6 +73,31 @@ function createWrapper() {
 describe('useApiTokens', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.history.replaceState({}, '', '/');
+    mockGetSupabaseClient.mockReturnValue(createMockSupabaseClient());
+  });
+
+  it('does not initialize or query Supabase in deterministic local-test mode', async () => {
+    window.history.replaceState({}, '', '/tools/video-editor?localTest=1');
+    const { result } = renderHook(() => useApiTokens(), { wrapper: createWrapper() });
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.tokens).toEqual([]);
+    expect(mockGetSupabaseClient).not.toHaveBeenCalled();
+
+    act(() => {
+      result.current.generateToken('ignored');
+      result.current.revokeToken('ignored');
+      result.current.refreshToken({
+        id: 'ignored',
+        user_id: 'local',
+        token: 'not-a-token',
+        label: null,
+        created_at: '2026-08-23T00:00:00Z',
+      });
+    });
+    expect(mockGetSupabaseClient).not.toHaveBeenCalled();
   });
 
   it('fetches tokens on mount', async () => {
@@ -113,4 +145,5 @@ describe('useApiTokens', () => {
     });
     expect(result.current.generatedToken).toBeNull();
   });
+
 });

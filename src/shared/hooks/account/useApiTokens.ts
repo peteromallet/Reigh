@@ -9,6 +9,7 @@ import {
   requireSession,
   requireUserFromSession,
 } from '@/integrations/supabase/auth/ensureAuthenticatedSession';
+import { isLocalTestMode } from '@/app/localTestRuntime';
 
 interface ApiToken {
   id: string;
@@ -87,6 +88,7 @@ export const useApiTokens = () => {
   const queryClient = useQueryClient();
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedToken, setGeneratedToken] = useState<string | null>(null);
+  const localTestMode = isLocalTestMode();
   
   // Query to fetch API tokens
   const {
@@ -96,6 +98,7 @@ export const useApiTokens = () => {
   } = useQuery({
     queryKey: apiQueryKeys.tokens,
     queryFn: fetchApiTokens,
+    enabled: !localTestMode,
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
@@ -147,14 +150,17 @@ export const useApiTokens = () => {
   });
 
   const generateToken = (label: string) => {
+    if (localTestMode) return;
     generateMutation.mutate({ label });
   };
 
   const revokeToken = (tokenId: string) => {
+    if (localTestMode) return;
     revokeMutation.mutate(tokenId);
   };
 
   const refreshToken = (token: ApiToken) => {
+    if (localTestMode) return;
     refreshTokenMutation.mutate(token);
   };
 

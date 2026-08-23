@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react';
 import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
 import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
+import { isLocalTestMode } from '@/app/localTestRuntime';
 
 /**
  * Hook to check if user has completed onboarding and show modal if not
  */
 export function useOnboarding() {
   const [showModal, setShowModal] = useState(false);
+  const localTestMode = isLocalTestMode();
 
   useEffect(() => {
+    if (localTestMode) return undefined;
     let timeoutId: NodeJS.Timeout;
 
     const checkOnboardingStatus = async () => {
@@ -52,9 +55,10 @@ export function useOnboarding() {
     return () => {
       if (timeoutId) clearTimeout(timeoutId);
     };
-  }, []);
+  }, [localTestMode]);
 
   const completeOnboarding = async () => {
+    if (localTestMode) return;
     try {
       const { data: { user } } = await supabase().auth.getUser();
       if (!user) return;
