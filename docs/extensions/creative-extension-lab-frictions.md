@@ -431,6 +431,13 @@ evidence and a concrete improvement direction.
   Questions.” Extension authors need label, extension name, aliases, and command
   ID indexed consistently; otherwise browser automation and real users must know
   internal identifiers.
+- Resolved during the frozen-browser pass: the palette had a correct host-side
+  label/category/description filter followed by a second `cmdk` id-only filter.
+  The second filter is now disabled for this caller, so exact visible labels,
+  categories, tool descriptions, extension IDs, result families, and stable IDs
+  share one deterministic search result. Focused tests cover matches that cannot
+  accidentally succeed through the implementation ID, and Chrome confirmed the
+  exact “Drop Foley Cue Scaffolds” label plus its category remain visible.
 
 ### Transcript Caption Foundry exposed track and typography gaps
 
@@ -487,6 +494,12 @@ evidence and a concrete improvement direction.
   warnings. None were extension runtime failures, but they obscure the signal in
   deep browser testing. A deterministic local-fixture mode should silence remote
   services and expose extension diagnostics in a dedicated test surface.
+- The dedicated `npm run dev:editor` launcher now includes the existing
+  DEV-only `localTest=1` contract in the URL it prints. A fresh Chrome tab loaded
+  the real demo timeline with zero warning/error console entries after the
+  change, instead of repeatedly attempting the authenticated API-token query.
+  This fixes the supported deterministic launcher without weakening production
+  authentication or changing ordinary application-mode behavior.
 
 ## Ship-quality hardening findings
 

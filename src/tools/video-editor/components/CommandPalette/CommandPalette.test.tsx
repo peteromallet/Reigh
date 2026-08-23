@@ -252,6 +252,54 @@ describe('CommandPalette component', () => {
     expect(screen.getByText('Export Project')).toBeTruthy();
   });
 
+  it('keeps a command visible when the query matches only its label or category', async () => {
+    registerCommand(commandRegistry, 'ext.a', 'ext.a.first', 'Deep Inspect Timeline', {
+      category: 'Editorial Review',
+      handler: vi.fn(),
+    });
+    registerCommand(commandRegistry, 'ext.b', 'ext.b.second', 'Render Output', {
+      category: 'Delivery',
+      handler: vi.fn(),
+    });
+
+    renderPalette();
+
+    const input = screen.getByPlaceholderText('Type a command…');
+    await userEvent.type(input, 'deep inspect');
+    expect(screen.getByText('Deep Inspect Timeline')).toBeTruthy();
+    expect(screen.queryByText('Render Output')).toBeNull();
+
+    await userEvent.clear(input);
+    await userEvent.type(input, 'editorial review');
+    expect(screen.getByText('Deep Inspect Timeline')).toBeTruthy();
+    expect(screen.queryByText('Render Output')).toBeNull();
+  });
+
+  it('keeps an agent tool visible when the query matches only its description or result family', async () => {
+    registerAgentTool(agentToolRegistry, 'ext.a', 'tool.first', 'First Tool', {
+      description: 'Finds silent continuity gaps',
+      resultFamilies: ['generation/session'],
+      handler: makeHandler(makeUISummaryResult('ok')),
+    });
+    registerAgentTool(agentToolRegistry, 'ext.b', 'tool.second', 'Second Tool', {
+      description: 'Builds delivery media',
+      resultFamilies: ['render/output'],
+      handler: makeHandler(makeUISummaryResult('ok')),
+    });
+
+    renderPalette();
+
+    const input = screen.getByPlaceholderText('Type a command…');
+    await userEvent.type(input, 'silent continuity');
+    expect(screen.getByText('First Tool')).toBeTruthy();
+    expect(screen.queryByText('Second Tool')).toBeNull();
+
+    await userEvent.clear(input);
+    await userEvent.type(input, 'generation/session');
+    expect(screen.getByText('First Tool')).toBeTruthy();
+    expect(screen.queryByText('Second Tool')).toBeNull();
+  });
+
   it('filters agent tools by toolId substring in search', async () => {
     registerAgentTool(agentToolRegistry, 'ext.a', 'tool.audio', 'Audio Analyzer', {
       description: 'Analyzes audio tracks for beat detection',

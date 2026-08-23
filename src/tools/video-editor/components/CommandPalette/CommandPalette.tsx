@@ -175,7 +175,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const showSearch = allItems.length > 0;
 
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange}>
+    <CommandDialog open={open} onOpenChange={onOpenChange} commandShouldFilter={false}>
       {showSearch && (
         <CommandInput
           placeholder="Type a command…"
@@ -230,7 +230,9 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                     ? `tool:${item.entry.toolId}`
                     : item.entry.commandId;
 
-                  // Search value
+                  // Filtering is owned by `filteredItems` above. CommandDialog
+                  // has cmdk filtering disabled so label/category/description
+                  // matches cannot be hidden by a second id-only pass.
                   const searchValue = isAgentTool
                     ? item.entry.toolId
                     : item.entry.commandId;
