@@ -41,7 +41,7 @@
     "test:creative-extension": "node scripts/quality/check-creative-lab-extension.mjs",
     "test:extensions:production-smoke": "vitest run --config config/testing/vitest.config.ts src/sdk/smoke/extensionSmoke.test.ts",
     "test:extension-compatibility": "vitest run --config config/testing/vitest.config.ts src/tools/video-editor/examples/extensions/creative-lab/compatibilityMatrix.test.tsx",
-    "test:extension-ship-verifier": "node --test scripts/release/verify-extension-ship.test.mjs",
+    "test:extension-ship-verifier": "node --test scripts/release/reigh-release-provenance.test.mjs scripts/release/verify-extension-ship.test.mjs",
     "test:paired-release-e2e-gate": "node --test scripts/release/verify-paired-release-e2e.test.mjs",
     "test:extension-container-gate": "node --test scripts/runtime/verify-extension-container.test.mjs",
     "test:extensions:runtime-rollout": "npm run build && node --test scripts/runtime/write-extension-release-config.test.mjs scripts/runtime/verify-extension-runtime-rollout.test.mjs scripts/runtime/service-worker-release-config.test.mjs && vitest run --config config/testing/vitest.config.ts src/tools/video-editor/runtime/extensionReleaseControls.test.ts src/sdk/smoke/extensionSmoke.test.ts",

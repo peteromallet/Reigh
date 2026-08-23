@@ -21,6 +21,11 @@ import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import {
+  inspectCandidateController,
+  resolveAnnotatedCandidateTag,
+} from './reigh-release-provenance.mjs';
+
 const LABEL = '[paired-release-e2e]';
 const moduleDir = dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = resolve(moduleDir, '..', '..');
@@ -130,9 +135,12 @@ export function buildServerEnvironment({
   };
 }
 
-export function buildBrowserEnvironment({ baseUrl, browserExecutable, evidenceDir, phase }) {
+export function buildBrowserEnvironment({ baseUrl, browserExecutable, browserRoot, evidenceDir, phase }) {
   if (!browserExecutable || !isAbsolute(browserExecutable) || !existsSync(browserExecutable)) {
     fail('paired browser executable must be an existing absolute path');
+  }
+  if (!browserRoot || !isAbsolute(browserRoot) || !existsSync(browserRoot)) {
+    fail('paired browser root must be an existing absolute path');
   }
   return safeBaseEnvironment({
     PAIRED_RELEASE_BASE_URL: baseUrl,
@@ -144,6 +152,7 @@ export function buildBrowserEnvironment({ baseUrl, browserExecutable, evidenceDi
     PAIRED_RELEASE_EXPECTED_EXTENSIONS: String(EXPECTED_EXTENSION_COUNT),
     PAIRED_RELEASE_EXPECTED_RUNAWAY: String(EXPECTED_RUNAWAY_COUNT),
     PLAYWRIGHT_CHROMIUM_EXECUTABLE: browserExecutable,
+    PLAYWRIGHT_BROWSERS_PATH: browserRoot,
     PLAYWRIGHT_OUTPUT_DIR: resolve(evidenceDir, `playwright-${phase}`),
   });
 }
@@ -204,6 +213,13 @@ function resolveCommit(checkout, ref, label) {
   return commit;
 }
 
+export function requireFullCommitPin(ref, label) {
+  if (!/^[0-9a-f]{40}$/.test(ref ?? '')) {
+    fail(`${label} is required and must be a full 40-character lowercase commit pin`);
+  }
+  return ref;
+}
+
 function requireCleanWorktree(checkout, label) {
   const status = gitOutput(checkout, ['status', '--porcelain=v1', '--untracked-files=all']);
   if (status) {
@@ -212,9 +228,9 @@ function requireCleanWorktree(checkout, label) {
 }
 
 export function preflightPinnedRepositories({ manifest, env }) {
-  if (!/^[0-9a-f]{40}$/.test(env.REIGH_REF ?? '')) {
-    fail('REIGH_REF is required and must be the full paired Reigh candidate commit');
-  }
+  requireFullCommitPin(env.REIGH_REF, 'REIGH_REF');
+  requireFullCommitPin(manifest.astrid.commit, 'manifest astrid.commit');
+  requireFullCommitPin(env.ASTRID_REF, 'ASTRID_REF');
   const astridCheckout = env.ASTRID_CHECKOUT;
   if (!astridCheckout || !isAbsolute(astridCheckout)) {
     fail('ASTRID_CHECKOUT is required and must be absolute');
@@ -227,9 +243,22 @@ export function preflightPinnedRepositories({ manifest, env }) {
   requireCleanWorktree(resolvedAstridCheckout, 'Astrid source');
   const reighCommit = resolveCommit(REPO_ROOT, env.REIGH_REF, 'REIGH_REF');
   const reighHead = gitOutput(REPO_ROOT, ['rev-parse', 'HEAD']);
-  if (reighHead !== reighCommit) {
-    fail(`Reigh checkout HEAD ${reighHead} does not match REIGH_REF ${reighCommit}`);
+  const reighTag = resolveAnnotatedCandidateTag({
+    repoRoot: REPO_ROOT,
+    releaseTag: manifest.reigh.releaseTag,
+  });
+  if (reighTag.candidateCommit !== reighCommit) {
+    fail(
+      `Reigh release tag ${manifest.reigh.releaseTag} resolves to ${reighTag.candidateCommit}, `
+      + `not REIGH_REF candidate ${reighCommit}`,
+    );
   }
+  const reighProvenance = inspectCandidateController({
+    repoRoot: REPO_ROOT,
+    candidateCommit: reighCommit,
+    headCommit: reighHead,
+    release: manifest.release,
+  });
   const baseCommit = resolveCommit(REPO_ROOT, manifest.reigh.baseCommit, 'manifest reigh.baseCommit');
   const ancestry = capture('git', ['merge-base', '--is-ancestor', baseCommit, reighCommit], {
     cwd: REPO_ROOT,
@@ -294,7 +323,10 @@ export function preflightPinnedRepositories({ manifest, env }) {
     astridCommit: manifestAstridCommit,
     astridPython,
     capability: capability.capability,
+    reighControllerHead: reighHead,
     reighCommit,
+    reighProvenance,
+    reighTagObject: reighTag.tagObject,
   });
 }
 
@@ -329,11 +361,13 @@ function printHelp() {
 
 Run the production-like paired Reigh/Astrid release acceptance gate from clean
 temporary archives of the exact manifest-bound commits. Run mode requires:
-  REIGH_REF       full Reigh candidate commit equal to this checkout HEAD
+  REIGH_REF       full Reigh candidate commit equal to the annotated release tag
   ASTRID_CHECKOUT absolute clean Astrid checkout at the manifest pin
   ASTRID_REF      exact commit resolving to the manifest Astrid pin
   ASTRID_PYTHON   absolute pinned Python executable
 
+The clean Reigh controller HEAD must be a strict evidence-only descendant of
+REIGH_REF. The candidate archive, tests, and receipt remain bound to REIGH_REF.
 The bearer credential is generated in memory and passed only to the Astrid and
 Reigh proxy server processes. Evidence is retained beneath /tmp and sealed
 read-only. The current Reigh production build deliberately cannot enter local
@@ -361,8 +395,17 @@ function listFiles(root, current = root) {
     const path = resolve(current, entry.name);
     if (entry.isDirectory()) files.push(...listFiles(root, path));
     else if (entry.isFile()) files.push({ path: relative(root, path), bytes: statSync(path).size, sha256: sha256File(path) });
+    else fail(`evidence contains an unsupported filesystem entry: ${relative(root, path)}`);
   }
   return files.sort((left, right) => left.path.localeCompare(right.path));
+}
+
+function fileTreeSnapshot(root) {
+  const files = listFiles(root);
+  return {
+    files,
+    sha256: createHash('sha256').update(JSON.stringify(files)).digest('hex'),
+  };
 }
 
 function freezeArtifacts(path) {
@@ -438,6 +481,7 @@ function startLoggedProcess(command, args, { cwd, env, logPath }) {
 
 async function stopLoggedProcess(handle) {
   if (!handle) return;
+  if (handle.stopped) return;
   const { child, log } = handle;
   const isRunning = () => child.exitCode === null && child.signalCode === null;
   const waitForExit = async (timeoutMs) => {
@@ -468,6 +512,17 @@ async function stopLoggedProcess(handle) {
     }
   }
   await new Promise((resolvePromise) => log.end(resolvePromise));
+  handle.stopped = true;
+}
+
+async function stopLoggedProcesses(handles) {
+  const results = await Promise.allSettled(handles.filter(Boolean).map(stopLoggedProcess));
+  const failures = results
+    .filter((result) => result.status === 'rejected')
+    .map((result) => result.reason);
+  if (failures.length > 0) {
+    throw new AggregateError(failures, `failed to stop ${failures.length} server process group(s)`);
+  }
 }
 
 function runLogged(command, args, { cwd, env, logPath, parseJson = false }) {
@@ -505,7 +560,8 @@ function installLockedAstridRuntime(context) {
   const lock = resolve(context.astridSnapshot, 'requirements/runtime.lock');
   if (!existsSync(lock)) fail('pinned Astrid archive has no requirements/runtime.lock');
   runLogged(python, [
-    '-m', 'pip', 'install', '--disable-pip-version-check', '--require-hashes', '-r', lock,
+    '-m', 'pip', '--isolated', 'install', '--disable-pip-version-check', '--no-deps',
+    '--only-binary=:all:', '--require-hashes', '-r', lock,
   ], {
     cwd: context.astridSnapshot,
     env: safeBaseEnvironment({ HOME: context.home, TMPDIR: context.runtimeRoot }),
@@ -526,12 +582,24 @@ function installLockedAstridRuntime(context) {
 }
 
 function resolvePinnedBrowser(context) {
+  const playwrightCli = resolve(context.reighSnapshot, 'node_modules/playwright/cli.js');
+  const browserRoot = resolve(context.runtimeRoot, 'playwright-browsers');
+  const browserEnv = safeBaseEnvironment({
+    HOME: context.home,
+    TMPDIR: context.runtimeRoot,
+    PLAYWRIGHT_BROWSERS_PATH: browserRoot,
+  });
+  runLogged(process.execPath, [playwrightCli, 'install', 'chromium'], {
+    cwd: context.reighSnapshot,
+    env: browserEnv,
+    logPath: resolve(context.evidenceRoot, 'playwright-browser-install.log'),
+  });
   const probe = runLogged(process.execPath, ['-e', [
     "const { chromium } = require('playwright')",
     'process.stdout.write(chromium.executablePath())',
   ].join(';')], {
     cwd: context.reighSnapshot,
-    env: safeBaseEnvironment({ HOME: context.home, TMPDIR: context.runtimeRoot }),
+    env: browserEnv,
     logPath: resolve(context.evidenceRoot, 'playwright-browser-path.log'),
   });
   const executable = probe.stdout.trim();
@@ -539,9 +607,11 @@ function resolvePinnedBrowser(context) {
     fail(`lock-aligned Playwright Chromium executable is unavailable: ${executable || '<empty>'}`);
   }
   context.browserExecutable = realpathSync(executable);
+  context.browserRoot = realpathSync(browserRoot);
   return {
     executable: context.browserExecutable,
     executableSha256: sha256File(context.browserExecutable),
+    browsersPath: relative(context.runtimeRoot, context.browserRoot),
   };
 }
 
@@ -675,6 +745,51 @@ function sqliteCountSnapshot(context, logName) {
   return runLogged(context.astridPython, [
     '-c', code, resolve(context.projectsRoot, '.astrid/astrid.sqlite3'),
   ], {
+    cwd: context.astridSnapshot,
+    env: safeBaseEnvironment(),
+    logPath: resolve(context.evidenceRoot, logName),
+    parseJson: true,
+  }).payload;
+}
+
+function sqliteLogicalSnapshot(context, databasePath, logName) {
+  const code = `
+import hashlib
+import json
+import sqlite3
+import sys
+
+def encode(value):
+    if isinstance(value, bytes):
+        return {"$bytes": value.hex()}
+    return value
+
+conn = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
+schema = [tuple(row) for row in conn.execute(
+    "SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY type, name"
+)]
+tables = {}
+for (name,) in conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"):
+    quoted = '"' + name.replace('"', '""') + '"'
+    encoded_rows = [
+        json.dumps([encode(value) for value in row], ensure_ascii=False, separators=(",", ":"))
+        for row in conn.execute(f"SELECT * FROM {quoted}")
+    ]
+    encoded_rows.sort()
+    payload = "[" + ",".join(encoded_rows) + "]"
+    tables[name] = {
+        "rows": len(encoded_rows),
+        "sha256": hashlib.sha256(payload.encode("utf-8")).hexdigest(),
+    }
+snapshot = {"schema": schema, "tables": tables}
+canonical = json.dumps(snapshot, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+print(json.dumps({
+    "sha256": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+    "schemaSha256": hashlib.sha256(json.dumps(schema, ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest(),
+    "tables": tables,
+}, sort_keys=True))
+`.trim();
+  return runLogged(context.astridPython, ['-c', code, databasePath], {
     cwd: context.astridSnapshot,
     env: safeBaseEnvironment(),
     logPath: resolve(context.evidenceRoot, logName),
@@ -821,6 +936,7 @@ function runPlaywright(context, phase, port) {
     env: buildBrowserEnvironment({
       baseUrl: `http://127.0.0.1:${port}`,
       browserExecutable: context.browserExecutable,
+      browserRoot: context.browserRoot,
       evidenceDir: context.evidenceRoot,
       phase,
     }),
@@ -958,6 +1074,9 @@ async function executeGate(manifest, pins, evidenceRoot) {
     startedAt: new Date().toISOString(),
     status: 'failed',
     reighCommit: pins.reighCommit,
+    reighControllerHead: pins.reighControllerHead,
+    reighTagObject: pins.reighTagObject,
+    reighEvidencePaths: pins.reighProvenance.changedPaths,
     astridCommit: pins.astridCommit,
     capability: pins.capability,
     expected: { extensions: EXPECTED_EXTENSION_COUNT, runawayTransitions: EXPECTED_RUNAWAY_COUNT },
@@ -969,6 +1088,7 @@ async function executeGate(manifest, pins, evidenceRoot) {
   };
   let astridHandle;
   let reighHandle;
+  let cleanupError;
   const token = randomBytes(32).toString('base64url');
   try {
     archiveCommit(REPO_ROOT, pins.reighCommit, context.reighSnapshot, resolve(runtimeRoot, 'reigh.tar'));
@@ -1009,6 +1129,29 @@ async function executeGate(manifest, pins, evidenceRoot) {
       'backup', 'create', '--projects-root', context.projectsRoot, '--out', backupDir, '--json',
     ], 'astrid-backup-create.log').payload;
     if (backup?.ok !== true || !existsSync(resolve(backupDir, 'backup.json'))) fail('Astrid pre-migration backup was not published');
+    const baselineDbSnapshot = sqliteLogicalSnapshot(
+      context,
+      resolve(context.projectsRoot, '.astrid/astrid.sqlite3'),
+      'astrid-pre-migration-logical-snapshot.json',
+    );
+    const backupDbSnapshot = sqliteLogicalSnapshot(
+      context,
+      resolve(backupDir, 'astrid.sqlite3'),
+      'astrid-backup-logical-snapshot.json',
+    );
+    if (JSON.stringify(backupDbSnapshot) !== JSON.stringify(baselineDbSnapshot)) {
+      fail(`backup logical database snapshot differs from baseline: ${JSON.stringify({ baselineDbSnapshot, backupDbSnapshot })}`);
+    }
+    const baselineMediaSnapshot = fileTreeSnapshot(resolve(context.projectsRoot, '.astrid/media'));
+    const backupMediaSnapshot = fileTreeSnapshot(resolve(backupDir, 'media'));
+    writeFileSync(
+      resolve(evidenceRoot, 'astrid-backup-media-snapshots.json'),
+      `${JSON.stringify({ baseline: baselineMediaSnapshot, backup: backupMediaSnapshot }, null, 2)}\n`,
+      { flag: 'wx', mode: 0o600 },
+    );
+    if (JSON.stringify(backupMediaSnapshot) !== JSON.stringify(baselineMediaSnapshot)) {
+      fail(`backup managed-media snapshot differs from baseline: ${JSON.stringify({ baselineMediaSnapshot, backupMediaSnapshot })}`);
+    }
     const migration = runMigrationTwice(context);
     receipt.runawayFixtureHashes = migration.fixtureHashes;
     receipt.phases.push({
@@ -1025,8 +1168,9 @@ async function executeGate(manifest, pins, evidenceRoot) {
     reighHandle = await startReigh(context, 'preview', reighPort, bridgePort, token, 'preview');
     const preview = await smokeBuiltPreview(reighPort);
     receipt.phases.push({ id: 'built-preview-auth-proxy', status: 'pass', ...preview });
-    await stopLoggedProcess(reighHandle); reighHandle = undefined;
-    await stopLoggedProcess(astridHandle); astridHandle = undefined;
+    await stopLoggedProcesses([reighHandle, astridHandle]);
+    reighHandle = undefined;
+    astridHandle = undefined;
 
     bridgePort = await allocatePort();
     astridHandle = await startAstrid(context, 'browser-first', bridgePort, token);
@@ -1034,8 +1178,9 @@ async function executeGate(manifest, pins, evidenceRoot) {
     reighHandle = await startReigh(context, 'browser-first', reighPort, bridgePort, token, 'development');
     runPlaywright(context, 'first', reighPort);
     receipt.phases.push({ id: 'browser-first', status: 'pass' });
-    await stopLoggedProcess(reighHandle); reighHandle = undefined;
-    await stopLoggedProcess(astridHandle); astridHandle = undefined;
+    await stopLoggedProcesses([reighHandle, astridHandle]);
+    reighHandle = undefined;
+    astridHandle = undefined;
 
     bridgePort = await allocatePort();
     astridHandle = await startAstrid(context, 'browser-restart', bridgePort, token);
@@ -1051,8 +1196,9 @@ async function executeGate(manifest, pins, evidenceRoot) {
       videoFrames: renderVerification.video.frames,
       fullDecode: true,
     });
-    await stopLoggedProcess(reighHandle); reighHandle = undefined;
-    await stopLoggedProcess(astridHandle); astridHandle = undefined;
+    await stopLoggedProcesses([reighHandle, astridHandle]);
+    reighHandle = undefined;
+    astridHandle = undefined;
 
     astridCommand(context, [
       'backup', 'restore', backupDir, '--projects-root', context.projectsRoot, '--force', '--json',
@@ -1060,6 +1206,23 @@ async function executeGate(manifest, pins, evidenceRoot) {
     const restoredDbCounts = sqliteCountSnapshot(context, 'astrid-restored-counts.log');
     if (JSON.stringify(restoredDbCounts) !== JSON.stringify(baselineDbCounts)) {
       fail(`restore database counts differ from baseline: ${JSON.stringify({ baselineDbCounts, restoredDbCounts })}`);
+    }
+    const restoredDbSnapshot = sqliteLogicalSnapshot(
+      context,
+      resolve(context.projectsRoot, '.astrid/astrid.sqlite3'),
+      'astrid-restored-logical-snapshot.json',
+    );
+    if (JSON.stringify(restoredDbSnapshot) !== JSON.stringify(baselineDbSnapshot)) {
+      fail(`restore logical database snapshot differs from baseline: ${JSON.stringify({ baselineDbSnapshot, restoredDbSnapshot })}`);
+    }
+    const restoredMediaSnapshot = fileTreeSnapshot(resolve(context.projectsRoot, '.astrid/media'));
+    writeFileSync(
+      resolve(evidenceRoot, 'astrid-restored-media-snapshot.json'),
+      `${JSON.stringify(restoredMediaSnapshot, null, 2)}\n`,
+      { flag: 'wx', mode: 0o600 },
+    );
+    if (JSON.stringify(restoredMediaSnapshot) !== JSON.stringify(baselineMediaSnapshot)) {
+      fail(`restore managed-media snapshot differs from baseline: ${JSON.stringify({ baselineMediaSnapshot, restoredMediaSnapshot })}`);
     }
     const doctor = astridCommand(context, [
       'doctor', '--projects-root', context.projectsRoot, '--json',
@@ -1093,6 +1256,10 @@ async function executeGate(manifest, pins, evidenceRoot) {
       runawayRows: restoredRows,
       baselineDbCounts,
       restoredDbCounts,
+      baselineDbSha256: baselineDbSnapshot.sha256,
+      restoredDbSha256: restoredDbSnapshot.sha256,
+      baselineMediaSha256: baselineMediaSnapshot.sha256,
+      restoredMediaSha256: restoredMediaSnapshot.sha256,
       doctorChecks: doctor.checks.length,
     });
 
@@ -1101,8 +1268,15 @@ async function executeGate(manifest, pins, evidenceRoot) {
     receipt.error = error.message;
     throw error;
   } finally {
-    await stopLoggedProcess(reighHandle);
-    await stopLoggedProcess(astridHandle);
+    try {
+      await stopLoggedProcesses([reighHandle, astridHandle]);
+    } catch (error) {
+      cleanupError = error;
+      receipt.status = 'failed';
+      receipt.error = receipt.error
+        ? `${receipt.error}; cleanup: ${error.message}`
+        : `cleanup: ${error.message}`;
+    }
     receipt.finishedAt = new Date().toISOString();
     try {
       writeFileSync(resolve(evidenceRoot, 'receipt.json'), `${JSON.stringify(receipt, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
@@ -1117,6 +1291,7 @@ async function executeGate(manifest, pins, evidenceRoot) {
       rmSync(runtimeRoot, { recursive: true, force: true });
     }
   }
+  if (cleanupError) throw cleanupError;
   console.log(`${LABEL} PASS: exact paired release acceptance completed`);
 }
 

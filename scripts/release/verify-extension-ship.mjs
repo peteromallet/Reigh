@@ -14,6 +14,12 @@ import {
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import {
+  inspectCandidateController,
+  releaseEvidenceDirectory,
+  resolveAnnotatedCandidateTag,
+} from './reigh-release-provenance.mjs';
+
 const LABEL = '[extension-ship]';
 const moduleDir = dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = resolve(moduleDir, '..', '..');
@@ -61,6 +67,7 @@ export const REIGH_GATE_PROFILE = Object.freeze([
   { id: 'readiness', label: 'extension readiness suite', command: 'npm', args: ['run', 'test:readiness'] },
   { id: 'readiness-e2e', label: 'extension harness browser suite', command: 'npm', args: ['run', 'test:readiness:e2e'] },
   { id: 'cross-browser-e2e', label: 'Chrome Firefox WebKit extension suite', command: 'npm', args: ['run', 'test:e2e:extension-cross-browser'] },
+  { id: 'accessibility-e2e', label: 'extension accessibility and responsive suite', command: 'npm', args: ['run', 'test:e2e:extension-accessibility'] },
   { id: 'timeline-e2e', label: 'timeline browser/device suite', command: 'npm', args: ['run', 'test:e2e:timeline'] },
   { id: 'build', label: 'reproducible Reigh production build', command: 'npm', args: ['run', 'build'] },
 ]);
@@ -167,8 +174,8 @@ export function validateReleaseManifest(manifest) {
   if (typeof astrid.branch !== 'string' || astrid.branch.trim() === '') {
     errors.push('astrid.branch must be a non-empty string');
   }
-  if (!/^[0-9a-f]{12,40}$/.test(astrid.commit ?? '')) {
-    errors.push('astrid.commit must be a 12-40 character lowercase commit pin');
+  if (!/^[0-9a-f]{40}$/.test(astrid.commit ?? '')) {
+    errors.push('astrid.commit must be a full 40-character lowercase commit pin');
   }
   if (verification.profile !== 'extension-ship-quality-v1') {
     errors.push('verification.profile must be extension-ship-quality-v1');
@@ -367,8 +374,8 @@ function assertClean(checkout, name) {
 }
 
 function resolveCommit(checkout, ref, name) {
-  if (!/^[0-9a-f]{12,40}$/.test(ref)) {
-    fail(`${name} must be a 12-40 character lowercase commit pin; got ${ref}`);
+  if (!/^[0-9a-f]{40}$/.test(ref)) {
+    fail(`${name} must be a full 40-character lowercase commit pin; got ${ref}`);
   }
   return outputOf(
     'git',
@@ -377,7 +384,7 @@ function resolveCommit(checkout, ref, name) {
   );
 }
 
-function assertReighCheckout(manifest, env) {
+export function assertReighCheckout(manifest, env) {
   const branch = outputOf('git', ['branch', '--show-current'], REPO_ROOT);
   if (branch !== manifest.reigh.branch) {
     fail(`Reigh branch mismatch: expected ${manifest.reigh.branch}, got ${branch || '<detached>'}`);
@@ -388,54 +395,49 @@ function assertReighCheckout(manifest, env) {
     manifest.reigh.baseCommit,
     'manifest reigh.baseCommit',
   );
-  const ancestry = runCaptured(
-    'git',
-    ['merge-base', '--is-ancestor', baseCommit, 'HEAD'],
-    REPO_ROOT,
-    { allowFailure: true },
-  );
-  if (ancestry.error || ancestry.status !== 0) {
-    fail(`Reigh HEAD is not descended from pinned base ${manifest.reigh.baseCommit}`);
-  }
   if (!/^[0-9a-f]{40}$/.test(env.REIGH_REF ?? '')) {
     fail('REIGH_REF is required and must be a full 40-character lowercase commit');
   }
-  const expectedHead = resolveCommit(
+  const candidateCommit = resolveCommit(
     REPO_ROOT,
     env.REIGH_REF,
     'REIGH_REF',
   );
   const head = outputOf('git', ['rev-parse', 'HEAD'], REPO_ROOT);
-  if (head !== expectedHead) {
-    fail(`Reigh HEAD mismatch: expected ${expectedHead}, got ${head}`);
-  }
-  const tagRef = `refs/tags/${manifest.reigh.releaseTag}`;
-  const tagObject = runCaptured(
+  const candidateAncestry = runCaptured(
     'git',
-    ['rev-parse', '--verify', '--end-of-options', `${tagRef}^{tag}`],
+    ['merge-base', '--is-ancestor', baseCommit, candidateCommit],
     REPO_ROOT,
     { allowFailure: true },
   );
-  if (tagObject.error || tagObject.status !== 0) {
-    fail(`Reigh release tag must exist and be annotated: ${manifest.reigh.releaseTag}`);
+  if (candidateAncestry.error || candidateAncestry.status !== 0) {
+    fail(`Reigh candidate is not descended from pinned base ${manifest.reigh.baseCommit}`);
   }
-  const tagCommit = outputOf(
-    'git',
-    ['rev-parse', '--verify', '--end-of-options', `${tagRef}^{commit}`],
-    REPO_ROOT,
-  );
-  if (tagCommit !== head) {
+  const tag = resolveAnnotatedCandidateTag({
+    repoRoot: REPO_ROOT,
+    releaseTag: manifest.reigh.releaseTag,
+  });
+  if (tag.candidateCommit !== candidateCommit) {
     fail(
-      `Reigh release tag ${manifest.reigh.releaseTag} resolves to ${tagCommit}, not HEAD ${head}`,
+      `Reigh release tag ${manifest.reigh.releaseTag} resolves to ${tag.candidateCommit}, `
+      + `not REIGH_REF candidate ${candidateCommit}`,
     );
   }
+  const provenance = inspectCandidateController({
+    repoRoot: REPO_ROOT,
+    candidateCommit,
+    headCommit: head,
+    release: manifest.release,
+  });
   assertClean(REPO_ROOT, 'Reigh');
   return {
     baseCommit,
     branch,
+    candidateCommit,
     head,
+    provenance,
     releaseTag: manifest.reigh.releaseTag,
-    tagObject: tagObject.stdout.trim(),
+    tagObject: tag.tagObject,
   };
 }
 
@@ -614,8 +616,8 @@ function printHelp() {
 
 Verify the frozen extension ship-quality release candidate. The run mode:
   1. requires a frozen release manifest and pinned Node/npm toolchain;
-  2. requires clean Reigh and Astrid worktrees at the configured refs and an
-     annotated Reigh release tag resolving to the exact candidate commit;
+  2. requires an annotated Reigh tag and REIGH_REF resolving to the exact code
+     candidate, plus a clean evidence-only controller descendant;
   3. runs the code-owned Reigh release gate profile; and
   4. runs \`make ci\` in the pinned Astrid checkout.
 
@@ -624,13 +626,16 @@ Options:
   -h, --help         Show this help.
 
 Required environment for run mode:
-  REIGH_REF         Full 40-character commit equal to the candidate checkout HEAD.
+  REIGH_REF         Full 40-character commit equal to the annotated candidate tag.
   ASTRID_CHECKOUT    Absolute path to the clean Astrid checkout.
-  ASTRID_REF         12-40 character commit resolving to the manifest Astrid pin.
+  ASTRID_REF         Full 40-character commit equal to the manifest Astrid pin.
   ASTRID_PYTHON      Absolute executable matching the manifest Python pin.
 
 The verifier never fetches, checks out, resets, cleans, migrates production data,
-or rolls back a repository. It stops at the first mismatch or failed gate.`);
+or rolls back a repository. Reigh HEAD must be a strict descendant whose entire
+candidate..HEAD history changes only the ledger, the manifest status, and
+${releaseEvidenceDirectory('extension-ship-quality-rc1')} artifacts. It stops at
+the first mismatch or failed gate.`);
 }
 
 function printPlan(manifest, packageJson, env) {
@@ -658,7 +663,7 @@ function printPlan(manifest, packageJson, env) {
     `${LABEL} toolchain: node ${manifest.verification.node}, `
     + `npm ${manifest.verification.npm}, Astrid Python ${manifest.verification.astridPython}`,
   );
-  console.log(`${LABEL} preflight: exact toolchain; clean worktrees; branch/ref/ancestry checks`);
+  console.log(`${LABEL} preflight: exact toolchain; clean worktrees; candidate tag; evidence-only ancestry`);
 
   for (let index = 0; index < steps.length; index += 1) {
     const step = steps[index];
@@ -701,8 +706,10 @@ export function main(argv = process.argv.slice(2), env = process.env) {
     const astridPython = assertToolchain(manifest, env);
     const reigh = assertReighCheckout(manifest, env);
     const astrid = resolveAstridCheckout(manifest, env);
+    console.log(`${LABEL} Reigh candidate: ${reigh.candidateCommit}`);
     console.log(`${LABEL} Reigh HEAD: ${reigh.head}`);
     console.log(`${LABEL} Reigh annotated tag object: ${reigh.tagObject}`);
+    console.log(`${LABEL} Reigh evidence directory: ${reigh.provenance.evidenceDirectory}`);
     console.log(`${LABEL} Astrid HEAD: ${astrid.commit}`);
 
     const steps = buildExecutionPlan({
@@ -716,8 +723,12 @@ export function main(argv = process.argv.slice(2), env = process.env) {
 
     // Gates must not leave tracked or untracked release inputs behind.
     const finalReigh = assertReighCheckout(manifest, env);
-    if (finalReigh.head !== reigh.head || finalReigh.tagObject !== reigh.tagObject) {
-      fail('Reigh commit or annotated tag changed during verification');
+    if (
+      finalReigh.head !== reigh.head
+      || finalReigh.candidateCommit !== reigh.candidateCommit
+      || finalReigh.tagObject !== reigh.tagObject
+    ) {
+      fail('Reigh controller HEAD, candidate commit, or annotated tag changed during verification');
     }
     const finalAstrid = resolveAstridCheckout(manifest, env);
     if (finalAstrid.commit !== astrid.commit) {

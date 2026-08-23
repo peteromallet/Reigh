@@ -20,8 +20,17 @@ const evidencePath = 'scripts/quality/check-extension-ship-evidence.mjs';
 const evidenceHash = createHash('sha256')
   .update(readFileSync(`${REPO_ROOT}/${evidencePath}`))
   .digest('hex');
+const committedEvidencePath = '.nvmrc';
+const committedEvidenceHash = createHash('sha256')
+  .update(readFileSync(`${REPO_ROOT}/${committedEvidencePath}`))
+  .digest('hex');
+const largeCommittedEvidencePath = 'docs/extensions/evidence/chrome-acceptance/28-headless-caption-render-remotion-4.0.503.mp4';
+const largeCommittedEvidenceHash = createHash('sha256')
+  .update(readFileSync(`${REPO_ROOT}/${largeCommittedEvidencePath}`))
+  .digest('hex');
 const reighCommit = 'a'.repeat(40);
 const astridCommit = 'b'.repeat(40);
+const controllerCommit = 'c'.repeat(40);
 
 const requiredKind = new Map([
   [1, 'command'], [2, 'command'], [3, 'browser'], [4, 'database'],
@@ -99,7 +108,7 @@ function makeFrozenLedger() {
 const frozenManifest = {
   ...checkedInManifest,
   status: 'frozen',
-  astrid: { ...checkedInManifest.astrid, commit: astridCommit.slice(0, 12) },
+  astrid: { ...checkedInManifest.astrid, commit: astridCommit },
 };
 
 describe('extension ship evidence gate', () => {
@@ -137,10 +146,35 @@ describe('extension ship evidence gate', () => {
       releaseManifest: frozenManifest,
       repoRoot: REPO_ROOT,
       mode: 'release',
-      headCommit: reighCommit,
+      candidateCommit: reighCommit,
+      headCommit: controllerCommit,
     });
     assert.deepEqual(result.errors, []);
     assert.equal(result.counts.pass, 23);
+  });
+
+  it('verifies committed evidence bytes, including artifacts larger than the default child-process buffer', () => {
+    const ledger = makeFrozenLedger();
+    const receipts = ledger.workstreams.flatMap((workstream) => workstream.receipts);
+    for (const receipt of receipts) {
+      receipt.artifact = { path: committedEvidencePath, sha256: committedEvidenceHash };
+    }
+    receipts[0].artifact = {
+      path: largeCommittedEvidencePath,
+      sha256: largeCommittedEvidenceHash,
+    };
+
+    const result = validateLedger({
+      ledger,
+      checklistMarkdown,
+      releaseManifest: frozenManifest,
+      repoRoot: REPO_ROOT,
+      mode: 'release',
+      candidateCommit: reighCommit,
+      headCommit: controllerCommit,
+      verifyCommittedArtifacts: true,
+    });
+    assert.deepEqual(result.errors, []);
   });
 
   it('rejects altered evidence, incomplete human acceptance, and duplicate reviews', () => {
@@ -155,10 +189,42 @@ describe('extension ship evidence gate', () => {
       releaseManifest: frozenManifest,
       repoRoot: REPO_ROOT,
       mode: 'release',
-      headCommit: reighCommit,
+      candidateCommit: reighCommit,
+      headCommit: controllerCommit,
     });
     assert.match(result.errors.join('\n'), /sha256 mismatch/);
     assert.match(result.errors.join('\n'), /first-time-extension-author/);
     assert.match(result.errors.join('\n'), /two independent review receipts/);
+  });
+
+  it('binds receipts to the tagged candidate, not the evidence controller HEAD', () => {
+    const ledger = makeFrozenLedger();
+    ledger.workstreams[0].receipts[0].commit = controllerCommit;
+
+    const result = validateLedger({
+      ledger,
+      checklistMarkdown,
+      releaseManifest: frozenManifest,
+      repoRoot: REPO_ROOT,
+      mode: 'release',
+      candidateCommit: reighCommit,
+      headCommit: controllerCommit,
+    });
+    assert.match(result.errors.join('\n'), /commit does not match the frozen Reigh candidate/);
+  });
+
+  it('rejects the impossible same-commit controller and propagated provenance failures', () => {
+    const result = validateLedger({
+      ledger: makeFrozenLedger(),
+      checklistMarkdown,
+      releaseManifest: frozenManifest,
+      repoRoot: REPO_ROOT,
+      mode: 'release',
+      candidateCommit: reighCommit,
+      headCommit: reighCommit,
+      provenanceErrors: ['candidate..HEAD contains non-evidence path changes: src/app.ts'],
+    });
+    assert.match(result.errors.join('\n'), /strict evidence-only descendant/);
+    assert.match(result.errors.join('\n'), /src\/app\.ts/);
   });
 });

@@ -9,20 +9,21 @@ and the executable clean-machine gate is
 [`scripts/release/verify-extension-ship.mjs`](../../scripts/release/verify-extension-ship.mjs).
 
 The verifier is intentionally conservative. It requires the manifest-pinned
-Node/npm versions, the configured Reigh branch, a clean Reigh worktree at the
-exact candidate commit descended from the configured base, an annotated release
-tag resolving to that same commit, and an exact clean
-Astrid checkout supplied by commit
-through the environment. It never fetches, changes a Git ref, resets, cleans,
-or applies a production migration. A mismatch or failed command stops the run.
+Node/npm versions, the configured Reigh branch, an annotated tag and
+`REIGH_REF` resolving to the exact product candidate (`C`), and a clean Reigh
+controller `HEAD` (`H`) that is a strict evidence-only descendant of `C`. It
+also requires an exact clean Astrid checkout supplied by commit through the
+environment. It never fetches, changes a Git ref, resets, cleans, or applies a
+production migration. A mismatch or failed command stops the run.
 
 ## Running the frozen-candidate gate
 
 Prepare fresh, separate Reigh and Astrid checkouts. Install Node `20.19.4`, npm
 `10.8.2`, Python `3.11.11` plus the dev tooling required by the pinned Astrid
-revision, GNU Make, and
-the Playwright browsers used by the Reigh suites. Do not reuse a developer
-worktree for release evidence.
+revision, GNU Make, FFmpeg/FFprobe, and the host libraries required by Chromium.
+The paired gate installs the lock-aligned Playwright Chromium binary into its
+private runtime tree; it does not reuse a developer browser cache. Do not reuse
+a developer worktree for release evidence.
 
 Review the exact plan first; this works without an Astrid checkout and executes
 nothing:
@@ -33,13 +34,17 @@ npm run verify:extension-ship -- --plan
 
 For the blocking run, pass an absolute checkout path and an immutable commit.
 The ref must resolve to the Astrid commit in the paired manifest, and Astrid
-must be on the configured branch with `HEAD` equal to it. Create the annotated
-Reigh tag named by `reigh.releaseTag` only after every candidate change is
-committed; both the tag and `REIGH_REF` must resolve to the clean checkout's
-`HEAD`. The verifier captures the commit and annotated tag-object hashes:
+must be on the configured branch with `HEAD` equal to it. First commit all
+source, scripts, documentation, pins, and gate configuration. Create the
+annotated Reigh tag named by `reigh.releaseTag` at that candidate `C`; both the
+tag and `REIGH_REF` must resolve to `C`. Then commit the frozen ledger, the
+manifest's status-only freeze, and artifacts under
+`docs/extensions/evidence/releases/extension-ship-quality-rc1/` to produce the
+clean controller `H`. The verifier captures `C`, `H`, and the annotated
+tag-object hash:
 
 ```sh
-REIGH_REF=<full-40-character-Reigh-HEAD> \
+REIGH_REF=<full-40-character-Reigh-candidate-C> \
 ASTRID_CHECKOUT=/absolute/path/to/clean/Astrid \
 ASTRID_REF=96ad5021e4f120dbb55b7da58b8be903118f7015 \
 ASTRID_PYTHON=/absolute/path/to/pinned/venv/bin/python \
@@ -47,6 +52,7 @@ npm run verify:extension-ship
 ```
 
 Capture complete stdout/stderr, exit status, Reigh `git rev-parse HEAD`, Reigh
+candidate `git rev-parse REIGH_REF`, Reigh
 `git rev-parse refs/tags/extension-ship-quality-rc1^{tag}`, Astrid
 `git rev-parse HEAD`, UTC start/end times, and hashes of retained test/render
 artifacts. An exit code of zero is necessary, not sufficient: every frozen-RC
@@ -71,11 +77,14 @@ pre-auth `659c3dc38aad` rejection case. Do not bypass the probe or substitute
 the unauthenticated stub.
 
 After that pin is available, the gate rejects dirty controller/source trees,
-archives the exact Reigh and Astrid commits into private temporary trees,
+validates every `C..H` history edge against the same release-evidence allowlist,
+archives the exact candidate Reigh and Astrid commits into private temporary trees,
 installs/builds Reigh from its lockfile, creates a private Astrid virtual
-environment from `requirements/runtime.lock` with `pip --require-hashes`, and
-records the dependency-lock, frozen-environment, and Playwright-browser binary
-hashes. It initializes Astrid's real managed database, takes a pre-migration backup, and
+environment from `requirements/runtime.lock` with `pip --require-hashes`,
+`--no-deps`, and binary-only packages, provisions Chromium with the exact
+lockfile-installed Playwright CLI into that same private runtime, and records
+the dependency-lock, frozen-environment, and Playwright-browser binary hashes.
+It initializes Astrid's real managed database, takes a pre-migration backup, and
 applies the Runaway migration twice. Both applications must report 566 stored
 transitions, one migration evidence receipt, and identical project/run
 identity. The 566-row migration uses Astrid's independently reviewed, tracked
@@ -89,7 +98,8 @@ Runaway payload. It restarts both servers and requires byte-stable canonical
 state with no duplicate captions or Runaway rows. The downloaded MP4 is bound
 to that state hash, probed for H.264/1280x720/24 fps/frame count/duration,
 fully decoded, and sampled at two caption midpoints. Finally the gate restores
-the backup, compares exact database table counts and the complete baseline
+the backup, compares exact logical database content/schema hashes, managed-media
+file hashes, table counts, and the complete baseline
 timeline hash, runs `astrid doctor`, restarts both servers again, and requires
 zero Runaway data rows.
 

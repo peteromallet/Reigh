@@ -11,8 +11,24 @@ import {
 import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import {
+  inspectCandidateController,
+  resolveAnnotatedCandidateTag,
+} from '../release/reigh-release-provenance.mjs';
+
 const LABEL = '[extension-ship-evidence]';
 const moduleDir = dirname(fileURLToPath(import.meta.url));
+const GIT_ENV = Object.freeze({
+  PATH: [
+    dirname(realpathSync(process.execPath)),
+    '/usr/local/bin',
+    '/usr/bin',
+    '/bin',
+  ].filter((entry, index, entries) => entries.indexOf(entry) === index).join(':'),
+  LANG: 'C',
+  LC_ALL: 'C',
+  TZ: 'UTC',
+});
 export const REPO_ROOT = resolve(moduleDir, '..', '..');
 export const CHECKLIST_PATH = resolve(
   REPO_ROOT,
@@ -116,7 +132,7 @@ function sha256File(path) {
   return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
-function validateEvidenceArtifact(receipt, repoRoot, prefix, errors) {
+function validateEvidenceArtifact(receipt, repoRoot, prefix, errors, releaseMode) {
   const artifact = isPlainObject(receipt.artifact) ? receipt.artifact : {};
   if (typeof artifact.path !== 'string' || artifact.path.trim() === '') {
     errors.push(`${prefix}.artifact.path must be a non-empty repository-relative path`);
@@ -157,6 +173,53 @@ function validateEvidenceArtifact(receipt, repoRoot, prefix, errors) {
       `${prefix}.artifact.sha256 mismatch for ${artifact.path}: expected ${artifact.sha256}, got ${actualHash}`,
     );
   }
+
+  if (releaseMode) {
+    try {
+      const treeEntry = execFileSync(
+        'git',
+        ['ls-tree', '-z', 'HEAD', '--', artifact.path],
+        {
+          cwd: repoRoot,
+          encoding: 'utf8',
+          env: GIT_ENV,
+          maxBuffer: 256 * 1024 * 1024,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        },
+      );
+      const headerEnd = treeEntry.indexOf('\t');
+      const committedPath = treeEntry.slice(headerEnd + 1).replace(/\0$/, '');
+      if (
+        headerEnd === -1
+        || !treeEntry.startsWith('100644 blob ')
+        || committedPath !== artifact.path
+      ) {
+        errors.push(
+          `${prefix}.artifact.path must be a committed non-executable regular blob in release mode`,
+        );
+        return;
+      }
+      const committedBytes = execFileSync(
+        'git',
+        ['show', `HEAD:${artifact.path}`],
+        {
+          cwd: repoRoot,
+          encoding: null,
+          env: GIT_ENV,
+          maxBuffer: 256 * 1024 * 1024,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        },
+      );
+      const committedHash = createHash('sha256').update(committedBytes).digest('hex');
+      if (committedHash !== artifact.sha256) {
+        errors.push(
+          `${prefix}.artifact.sha256 does not match committed HEAD blob for ${artifact.path}`,
+        );
+      }
+    } catch (error) {
+      errors.push(`${prefix}.artifact.path is not readable from committed HEAD: ${error.message}`);
+    }
+  }
 }
 
 function validateReceipt({
@@ -165,6 +228,7 @@ function validateReceipt({
   repoRoot,
   candidate,
   releaseMode,
+  verifyCommittedArtifacts,
   errors,
 }) {
   if (!isPlainObject(receipt)) {
@@ -215,7 +279,13 @@ function validateReceipt({
     errors.push(`${prefix}.commit does not match the frozen Astrid candidate`);
   }
 
-  validateEvidenceArtifact(receipt, repoRoot, prefix, errors);
+  validateEvidenceArtifact(
+    receipt,
+    repoRoot,
+    prefix,
+    errors,
+    releaseMode && verifyCommittedArtifacts,
+  );
 }
 
 export function validateLedger({
@@ -224,7 +294,10 @@ export function validateLedger({
   releaseManifest,
   repoRoot = REPO_ROOT,
   mode = 'audit',
+  candidateCommit,
   headCommit,
+  provenanceErrors = [],
+  verifyCommittedArtifacts = false,
 }) {
   const releaseMode = mode === 'release';
   const errors = [];
@@ -279,6 +352,7 @@ export function validateLedger({
         repoRoot,
         candidate,
         releaseMode,
+        verifyCommittedArtifacts,
         errors,
       });
       if (typeof receipt?.id === 'string') {
@@ -328,6 +402,7 @@ export function validateLedger({
   });
 
   if (releaseMode) {
+    errors.push(...provenanceErrors);
     if (ledger?.status !== 'frozen') errors.push('release mode requires ledger status frozen');
     if (releaseManifest?.status !== 'frozen') {
       errors.push('release mode requires release manifest status frozen');
@@ -338,13 +413,21 @@ export function validateLedger({
     if (!/^[0-9a-f]{40}$/.test(candidate.astridCommit ?? '')) {
       errors.push('candidate.astridCommit must be a full 40-character commit');
     }
-    if (headCommit && candidate.reighCommit !== headCommit) {
-      errors.push(`candidate.reighCommit does not match HEAD ${headCommit}`);
+    if (!/^[0-9a-f]{40}$/.test(candidateCommit ?? '')) {
+      errors.push('release mode requires a resolved annotated Reigh candidate commit');
     }
-    if (
-      typeof releaseManifest?.astrid?.commit === 'string'
-      && !candidate.astridCommit?.startsWith(releaseManifest.astrid.commit)
-    ) {
+    if (!/^[0-9a-f]{40}$/.test(headCommit ?? '')) {
+      errors.push('release mode requires the full controller HEAD commit');
+    }
+    if (candidateCommit && candidate.reighCommit !== candidateCommit) {
+      errors.push(`candidate.reighCommit does not match annotated candidate ${candidateCommit}`);
+    }
+    if (candidateCommit && headCommit && candidateCommit === headCommit) {
+      errors.push('controller HEAD must be a strict evidence-only descendant of the candidate');
+    }
+    if (!/^[0-9a-f]{40}$/.test(releaseManifest?.astrid?.commit ?? '')) {
+      errors.push('release manifest astrid.commit must be a full 40-character commit');
+    } else if (candidate.astridCommit !== releaseManifest.astrid.commit) {
       errors.push('candidate.astridCommit does not match the release manifest pin');
     }
     if (counts.pass !== expected.length) {
@@ -363,6 +446,7 @@ function currentHead(repoRoot) {
   return execFileSync('git', ['rev-parse', 'HEAD'], {
     cwd: repoRoot,
     encoding: 'utf8',
+    env: GIT_ENV,
     stdio: ['ignore', 'pipe', 'pipe'],
   }).trim();
 }
@@ -375,13 +459,39 @@ export function runCli(argv = process.argv.slice(2)) {
     return 2;
   }
 
+  const ledger = readJson(LEDGER_PATH);
+  const releaseManifest = readJson(RELEASE_MANIFEST_PATH);
+  const headCommit = currentHead(REPO_ROOT);
+  let candidateCommit;
+  const provenanceErrors = [];
+  if (mode === 'release') {
+    try {
+      const tag = resolveAnnotatedCandidateTag({
+        repoRoot: REPO_ROOT,
+        releaseTag: releaseManifest.reigh.releaseTag,
+      });
+      candidateCommit = tag.candidateCommit;
+      inspectCandidateController({
+        repoRoot: REPO_ROOT,
+        candidateCommit,
+        headCommit,
+        release: releaseManifest.release,
+      });
+    } catch (error) {
+      provenanceErrors.push(`Reigh release provenance is invalid: ${error.message}`);
+    }
+  }
+
   const result = validateLedger({
-    ledger: readJson(LEDGER_PATH),
+    ledger,
     checklistMarkdown: readFileSync(CHECKLIST_PATH, 'utf8'),
-    releaseManifest: readJson(RELEASE_MANIFEST_PATH),
+    releaseManifest,
     repoRoot: REPO_ROOT,
     mode,
-    headCommit: currentHead(REPO_ROOT),
+    candidateCommit,
+    headCommit,
+    provenanceErrors,
+    verifyCommittedArtifacts: mode === 'release',
   });
 
   console.log(

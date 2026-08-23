@@ -171,4 +171,7 @@ contract checklist. The immutable receipt format, honest in-progress ledger,
 and fail-closed command are documented in
 [`extension-ship-evidence-ledger.md`](./extension-ship-evidence-ledger.md). A
 release verifier run cannot pass until that ledger reports 23/23 against the
-exact frozen Reigh/Astrid pair.
+exact frozen Reigh/Astrid candidate pair. The annotated Reigh tag identifies
+the immutable product candidate; the clean controller `HEAD` is a strict
+evidence-only descendant containing only the frozen ledger, the manifest status
+transition, and committed artifacts under the release-specific evidence root.

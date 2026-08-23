@@ -110,6 +110,11 @@ describe('extension ship verifier', () => {
       && gate.args.join(' ') === 'run test:e2e:extension-cross-browser'
     )));
     assert.ok(REIGH_GATE_PROFILE.some((gate) => (
+      gate.id === 'accessibility-e2e'
+      && gate.command === 'npm'
+      && gate.args.join(' ') === 'run test:e2e:extension-accessibility'
+    )));
+    assert.ok(REIGH_GATE_PROFILE.some((gate) => (
       gate.id === 'ship-evidence'
       && gate.command === 'npm'
       && gate.args.join(' ') === 'run check:extension-ship-evidence:release'
@@ -121,7 +126,7 @@ describe('extension ship verifier', () => {
     mutableRef.astrid.commit = 'main';
     assert.throws(
       () => validateReleaseManifest(mutableRef),
-      /astrid\.commit must be a 12-40 character lowercase commit pin/,
+      /astrid\.commit must be a full 40-character lowercase commit pin/,
     );
 
     const missingGate = structuredClone(manifest);

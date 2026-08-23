@@ -13,6 +13,7 @@ import {
   buildBrowserEnvironment,
   buildServerEnvironment,
   parseCliArgs,
+  requireFullCommitPin,
   validateAstridReleaseBridgeSources,
 } from './verify-paired-release-e2e.mjs';
 
@@ -25,6 +26,13 @@ describe('paired repository release E2E gate', () => {
     for (const bypass of ['--skip-browser', '--skip-migration', '--use-stub', '--no-restore']) {
       assert.throws(() => parseCliArgs([bypass]), /unknown option/);
     }
+  });
+
+  it('requires exact full commit pins', () => {
+    const full = 'a'.repeat(40);
+    assert.equal(requireFullCommitPin(full, 'test pin'), full);
+    assert.throws(() => requireFullCommitPin('a'.repeat(12), 'test pin'), /full 40-character/);
+    assert.throws(() => requireFullCommitPin('A'.repeat(40), 'test pin'), /full 40-character/);
   });
 
   it('rejects the old pre-auth pin and accepts the complete release capability', () => {
@@ -57,12 +65,14 @@ describe('paired repository release E2E gate', () => {
       const browser = buildBrowserEnvironment({
         baseUrl: 'http://127.0.0.1:21000',
         browserExecutable: process.execPath,
+        browserRoot: '/tmp',
         evidenceDir: '/tmp/paired-evidence',
         phase: 'first',
       });
       assert.equal(browser.ASTRID_BRIDGE_TOKEN, undefined);
       assert.equal(browser.OPENAI_API_KEY, undefined);
       assert.equal(browser.PLAYWRIGHT_CHROMIUM_EXECUTABLE, process.execPath);
+      assert.equal(browser.PLAYWRIGHT_BROWSERS_PATH, '/tmp');
 
       const server = buildServerEnvironment({
         home: '/tmp/paired-home',
@@ -128,6 +138,15 @@ describe('paired repository release E2E gate', () => {
     assert.match(source, /--require-hashes/);
     assert.match(source, /requireCleanWorktree/);
     assert.match(source, /render-full-decode\.log/);
+    assert.match(source, /playwright-browser-install\.log/);
+    assert.match(source, /PLAYWRIGHT_BROWSERS_PATH/);
+    assert.match(source, /--only-binary=:all:/);
+    assert.match(source, /astrid-restored-logical-snapshot\.json/);
+    assert.match(source, /astrid-restored-media-snapshot\.json/);
+    assert.match(source, /Promise\.allSettled/);
+    assert.match(source, /inspectCandidateController/);
+    assert.match(source, /reighControllerHead: pins\.reighControllerHead/);
+    assert.match(source, /archiveCommit\(REPO_ROOT, pins\.reighCommit/);
     assert.ok(source.indexOf("'receipt.json'") < source.indexOf("'artifact-index.json'"));
   });
 });
