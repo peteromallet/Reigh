@@ -9,7 +9,7 @@ export const EXTENSION_RELEASE_FLAG_NAMES = Object.freeze({
 });
 
 export const TRANSCRIPT_RELEASE_EXTENSION_ID = 'com.reigh.transcript-lane';
-export const RUNAWAY_RELEASE_EXTENSION_ID = 'com.reigh.runaway-timeline';
+export const RUNAWAY_RELEASE_EXTENSION_ID = 'com.reigh.astrid-runaway-timeline';
 
 export interface ExtensionReleaseFlags {
   readonly extensionHostEnabled: boolean;

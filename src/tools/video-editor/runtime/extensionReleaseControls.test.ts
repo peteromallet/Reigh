@@ -3,16 +3,25 @@ import { defineExtension } from '@reigh/editor-sdk';
 import {
   buildExtensionLifecycleOperationalEvents,
   createPrivacySafeExtensionTelemetryHost,
+  RUNAWAY_RELEASE_EXTENSION_ID,
+  TRANSCRIPT_RELEASE_EXTENSION_ID,
   resolveExtensionReleaseFlags,
   sanitizeExtensionOperationalEvent,
   selectReleaseEnabledExtensions,
 } from './extensionReleaseControls';
+import { RUNAWAY_TIMELINE_EXTENSION_ID } from '@/tools/video-editor/dev/runaway-timeline/extension';
+import { TRANSCRIPT_LANE_EXTENSION_ID } from '@/tools/video-editor/dev/transcript-lane/extension';
 
 const extension = (id: string) => defineExtension({
   manifest: { id: id as never, version: '1.0.0', apiVersion: 1, license: 'MIT', label: id },
 });
 
 describe('extension release controls', () => {
+  it('pins child rollout IDs to the actual bundled manifests', () => {
+    expect(RUNAWAY_RELEASE_EXTENSION_ID).toBe(RUNAWAY_TIMELINE_EXTENSION_ID);
+    expect(TRANSCRIPT_RELEASE_EXTENSION_ID).toBe(TRANSCRIPT_LANE_EXTENSION_ID);
+  });
+
   it('defaults closed in production and open in development', () => {
     expect(resolveExtensionReleaseFlags({}, { development: false })).toMatchObject({
       extensionHostEnabled: false,
@@ -61,8 +70,8 @@ describe('extension release controls', () => {
   it('selects independent Transcript and Runaway children from reviewed bundled extensions', () => {
     const all = [
       extension('com.reigh.creative'),
-      extension('com.reigh.transcript-lane'),
-      extension('com.reigh.runaway-timeline'),
+      extension(TRANSCRIPT_LANE_EXTENSION_ID),
+      extension(RUNAWAY_TIMELINE_EXTENSION_ID),
     ];
     expect(selectReleaseEnabledExtensions(all, {
       extensionHostEnabled: true,
@@ -71,7 +80,7 @@ describe('extension release controls', () => {
       configurationRevision: 'r1',
     }).map((item) => item.manifest.id)).toEqual([
       'com.reigh.creative',
-      'com.reigh.runaway-timeline',
+      RUNAWAY_TIMELINE_EXTENSION_ID,
     ]);
   });
 
