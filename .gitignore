@@ -65,6 +65,7 @@ temp/
 !docs/extensions/validation/artifacts/*.txt
 !docs/extensions/evidence/releases/
 !docs/extensions/evidence/releases/**
+/vendor/timeline-schema/python/build/
 !tasks/*.md
 !CLAUDE.md
 !/.megaplan/briefs/**/*.md

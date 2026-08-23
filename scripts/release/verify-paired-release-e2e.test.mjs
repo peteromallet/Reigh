@@ -1,6 +1,8 @@
 import { strict as assert } from 'node:assert';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { resolve } from 'node:path';
 import { describe, it } from 'node:test';
 
 import {
@@ -20,6 +22,86 @@ import {
 } from './verify-paired-release-e2e.mjs';
 
 describe('paired repository release E2E gate', () => {
+  it('builds the vendored timeline schema from a clean archive without stale build output', {
+    timeout: 180_000,
+  }, () => {
+    const trackedBuildOutput = spawnSync(
+      'git',
+      ['ls-files', 'vendor/timeline-schema/python/build'],
+      { cwd: REPO_ROOT, encoding: 'utf8' },
+    );
+    assert.equal(trackedBuildOutput.status, 0, trackedBuildOutput.stderr);
+    assert.equal(trackedBuildOutput.stdout.trim(), '');
+
+    const runtimeRoot = mkdtempSync(resolve(tmpdir(), 'paired-schema-package-test-'));
+    try {
+      const tree = spawnSync('git', ['write-tree'], {
+        cwd: REPO_ROOT,
+        encoding: 'utf8',
+      });
+      assert.equal(tree.status, 0, tree.stderr);
+
+      const archivePath = resolve(runtimeRoot, 'reigh.tar');
+      const archive = spawnSync('git', [
+        'archive', '--format=tar', `--output=${archivePath}`, tree.stdout.trim(),
+        'scripts/release/paired-python-build-tools.lock',
+        'vendor/timeline-schema/python',
+      ], {
+        cwd: REPO_ROOT,
+        encoding: 'utf8',
+      });
+      assert.equal(archive.status, 0, archive.stderr);
+      const extract = spawnSync('tar', ['-xf', archivePath, '-C', runtimeRoot], {
+        encoding: 'utf8',
+      });
+      assert.equal(extract.status, 0, extract.stderr);
+
+      const bootstrapPython = process.env.ASTRID_PYTHON || 'python3.11';
+      const venv = resolve(runtimeRoot, 'venv');
+      const createVenv = spawnSync(bootstrapPython, ['-m', 'venv', venv], {
+        encoding: 'utf8',
+      });
+      assert.equal(
+        createVenv.status,
+        0,
+        createVenv.error?.message || createVenv.stderr || `${bootstrapPython} could not create a venv`,
+      );
+      const python = resolve(venv, 'bin', 'python');
+      const installBuildTools = spawnSync(python, [
+        '-m', 'pip', '--isolated', 'install', '--disable-pip-version-check',
+        '--no-deps', '--only-binary=:all:', '--require-hashes',
+        '-r', resolve(runtimeRoot, 'scripts/release/paired-python-build-tools.lock'),
+      ], { encoding: 'utf8' });
+      assert.equal(installBuildTools.status, 0, installBuildTools.stderr);
+
+      const wheelDir = resolve(runtimeRoot, 'wheels');
+      const buildWheel = spawnSync(python, [
+        '-m', 'pip', '--isolated', 'wheel', '--disable-pip-version-check',
+        '--no-cache-dir', '--no-deps', '--no-build-isolation',
+        '--wheel-dir', wheelDir,
+        resolve(runtimeRoot, 'vendor/timeline-schema/python'),
+      ], { encoding: 'utf8' });
+      assert.equal(buildWheel.status, 0, buildWheel.stderr);
+
+      const wheels = readdirSync(wheelDir).filter((name) => name.endsWith('.whl'));
+      assert.equal(wheels.length, 1, `expected one timeline-schema wheel, found ${wheels.join(', ')}`);
+      const sourceSchema = resolve(
+        runtimeRoot,
+        'vendor/timeline-schema/python/banodoco_timeline_schema/timeline.schema.json',
+      );
+      const compare = spawnSync(python, ['-c', [
+        'import hashlib, pathlib, sys, zipfile',
+        'source = pathlib.Path(sys.argv[1]).read_bytes()',
+        'with zipfile.ZipFile(sys.argv[2]) as wheel:',
+        "    packaged = wheel.read('banodoco_timeline_schema/timeline.schema.json')",
+        'assert hashlib.sha256(packaged).digest() == hashlib.sha256(source).digest()',
+      ].join('\n'), sourceSchema, resolve(wheelDir, wheels[0])], { encoding: 'utf8' });
+      assert.equal(compare.status, 0, compare.stderr);
+    } finally {
+      rmSync(runtimeRoot, { recursive: true, force: true });
+    }
+  });
+
   it('accepts only run/plan/help and exposes no skip surface', () => {
     assert.deepEqual(parseCliArgs([]), { help: false, mode: 'run' });
     assert.deepEqual(parseCliArgs(['--plan']), { help: false, mode: 'plan' });
