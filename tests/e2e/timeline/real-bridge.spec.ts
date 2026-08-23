@@ -8,14 +8,20 @@
  * project root; the Vite dev server comes from the shared webServer config.
  */
 import { expect, test } from '@playwright/test';
-import { BASE_URL, EDITOR_SETTLE_MS } from './support.ts';
+import { BASE_URL, BRIDGE_ORIGIN, EDITOR_SETTLE_MS } from './support.ts';
 
 test.describe.configure({ timeout: 120_000 });
 
-// The canonical UUID identity — resolvable before AND after the legacy →
-// event-log migration that happens on the first save (the pre-migration slug
-// is not preserved by that migration, a pre-existing bridge quirk).
-const TIMELINE_ID = '11111111-1111-1111-1111-111111111111';
+const TIMELINE_REF = 'demo-timeline';
+const BRIDGE_PROTOCOL_HEADERS = { 'X-Astrid-Bridge-Version': 'v1' } as const;
+
+function directBridgeHeaders(): Record<string, string> {
+  if (process.env.REAL_BRIDGE !== '1') return {};
+  const token = process.env.ASTRID_BRIDGE_TOKEN?.trim();
+  if (!token) throw new Error('ASTRID_BRIDGE_TOKEN is required for real-bridge E2E requests');
+  return { ...BRIDGE_PROTOCOL_HEADERS, Authorization: `Bearer ${token}` };
+}
+
 async function openEditorAt(page: import('@playwright/test').Page) {
   await page.addInitScript(() => {
     try {
@@ -24,7 +30,7 @@ async function openEditorAt(page: import('@playwright/test').Page) {
       // storage unavailable
     }
   });
-  const editorUrl = `${BASE_URL}/tools/video-editor?localProject=demo-project&localTimeline=${TIMELINE_ID}`;
+  const editorUrl = `${BASE_URL}/tools/video-editor?localProject=demo-project&localTimeline=${TIMELINE_REF}`;
   await page.goto(editorUrl, { waitUntil: 'domcontentloaded', timeout: 45_000 });
   await page.waitForTimeout(EDITOR_SETTLE_MS);
   // The real timeline region renders clips as [data-clip-id] elements — wait
@@ -49,15 +55,15 @@ async function dragFirstClipRight(page: import('@playwright/test').Page) {
 }
 
 
-const BRIDGE_ORIGIN = 'http://127.0.0.1:17334';
-const TIMELINE_URL = `${BRIDGE_ORIGIN}/projects/demo-project/timelines/${TIMELINE_ID}`;
+const TIMELINE_URL = `${BRIDGE_ORIGIN}/projects/demo-project/timelines/${TIMELINE_REF}`;
 
 /**
  * OpenAPI conformance (B3 envelope) against the real bridge: GET timeline,
  * POST save with CAS, GET assets.
  */
 test('real bridge serves the 3-route OpenAPI surface', async ({ request }) => {
-  const timeline = await request.get(TIMELINE_URL);
+  const headers = directBridgeHeaders();
+  const timeline = await request.get(TIMELINE_URL, { headers });
   expect(timeline.status()).toBe(200);
   const payload = await timeline.json();
   expect(payload).toHaveProperty('config');
@@ -66,6 +72,7 @@ test('real bridge serves the 3-route OpenAPI surface', async ({ request }) => {
 
   // Save with the read version → 200 + version bump.
   const saved = await request.post(`${TIMELINE_URL}/save`, {
+    headers,
     data: {
       config: payload.config,
       registry: payload.registry,
@@ -80,8 +87,15 @@ test('real bridge serves the 3-route OpenAPI surface', async ({ request }) => {
 
   // Save with a stale version → typed 409, never a 500/connection-close.
   const conflicted = await request.post(`${TIMELINE_URL}/save`, {
+    headers,
     data: {
-      config: payload.config,
+      // A byte-identical retry is deliberately replay-safe and returns its
+      // original 200 receipt. Change the payload so this is a distinct stale
+      // command and therefore a real CAS conflict.
+      config: {
+        ...payload.config,
+        app: { ...(payload.config.app ?? {}), 'com.example.stale-writer': { note: 'stale' } },
+      },
       registry: payload.registry,
       expected_version: payload.config_version,
     },
@@ -92,13 +106,37 @@ test('real bridge serves the 3-route OpenAPI surface', async ({ request }) => {
 
   // Discovery routes are served again (restored after B5): list endpoints
   // return the envelope with at least the seeded project.
-  const projects = await request.get(`${BRIDGE_ORIGIN}/projects`);
+  const projects = await request.get(`${BRIDGE_ORIGIN}/projects`, { headers });
   expect(projects.status()).toBe(200);
   const projectsBody = await projects.json();
   expect(Array.isArray(projectsBody.projects)).toBe(true);
   expect(projectsBody.projects.length).toBeGreaterThan(0);
-  const timelines = await request.get(`${BRIDGE_ORIGIN}/projects/demo-project/timelines`);
+  const timelines = await request.get(`${BRIDGE_ORIGIN}/projects/demo-project/timelines`, { headers });
   expect(timelines.status()).toBe(200);
+});
+
+test('real Runaway bridge negotiates through the credential-injecting same-origin proxy', async ({ request }) => {
+  const response = await request.get(
+    `${BASE_URL}/api/astrid/v1/projects/demo-project/runaway-transitions?limit=1000`,
+  );
+  expect(response.status()).toBe(200);
+  expect(response.headers()['x-astrid-bridge-version']).toBe('v1');
+  expect(await response.json()).toMatchObject({
+    api_version: 'v1',
+    project: 'demo-project',
+    count: 0,
+    total_count: 0,
+    page: { limit: 1000, next_cursor: null },
+    transitions: [],
+  });
+
+  if (process.env.REAL_BRIDGE === '1') {
+    const unauthenticated = await request.get(
+      `${BRIDGE_ORIGIN}/v1/projects/demo-project/runaway-transitions?limit=1000`,
+      { headers: BRIDGE_PROTOCOL_HEADERS },
+    );
+    expect(unauthenticated.status()).toBe(401);
+  }
 });
 
 /**
@@ -109,11 +147,13 @@ test('concurrent write → 409 → diverged banner (B4/B5 live proof)', async ({
   await openEditorAt(page);
 
   // Writer 2: bump the version behind the editor's back.
-  const timeline = await request.get(TIMELINE_URL);
+  const headers = directBridgeHeaders();
+  const timeline = await request.get(TIMELINE_URL, { headers });
   expect(timeline.status()).toBe(200);
   const payload = await timeline.json();
   expect(payload.config).toBeDefined();
   const saved = await request.post(`${TIMELINE_URL}/save`, {
+    headers,
     data: {
       config: { ...payload.config, app: { ...(payload.config.app ?? {}), 'com.example.writer2': { note: 'concurrent' } } },
       registry: payload.registry,

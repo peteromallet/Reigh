@@ -95,7 +95,7 @@
     "test:e2e:extension-cross-browser": "playwright test --config playwright.extension-cross-browser.config.ts",
     "test:e2e:timeline": "PLAYWRIGHT_TIMELINE_DEVICES=1 PLAYWRIGHT_PORT=${PLAYWRIGHT_PORT:-2222} playwright test --config playwright.config.ts --project=timeline-devices --workers=1",
     "test:e2e:timeline:bridge": "node tests/e2e/timeline/astrid-bridge-stub.mjs",
-    "test:e2e:timeline:realbridge": "PLAYWRIGHT_TIMELINE_DEVICES=1 REAL_BRIDGE=1 ASTRID_BRIDGE_PORT=${ASTRID_BRIDGE_PORT:-17334} PLAYWRIGHT_PORT=${PLAYWRIGHT_PORT:-4173} BASE_URL=${BASE_URL:-http://127.0.0.1:4173} playwright test --config playwright.config.ts --project=timeline-devices --workers=1 tests/e2e/timeline/real-bridge.spec.ts"
+    "test:e2e:timeline:realbridge": "PLAYWRIGHT_TIMELINE_DEVICES=1 REAL_BRIDGE=1 ASTRID_BRIDGE_PORT=${ASTRID_BRIDGE_PORT:-17334} PLAYWRIGHT_PORT=${PLAYWRIGHT_PORT:-2222} BASE_URL=${BASE_URL:-http://127.0.0.1:2222} playwright test --config playwright.config.ts --project=timeline-devices --workers=1 tests/e2e/timeline/real-bridge.spec.ts"
   },
   "dependencies": {
     "@banodoco/timeline-composition": "file:vendor/timeline-composition",
