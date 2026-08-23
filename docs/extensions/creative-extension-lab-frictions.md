@@ -1102,3 +1102,20 @@ evidence and a concrete improvement direction.
   conflicting replay fails closed. The dev adapter remains immutable and cannot
   self-acknowledge, so local UI success is not mistaken for production source
   application.
+
+### Data-lane selection must clear stale clip ownership before inspector dispatch
+
+- Installed-Chrome testing found a one-render race after reload: selecting a
+  caption clip and then clicking a Transcript source item marked the lane item
+  active, but the Properties inspector could remain stale until another data
+  lane was selected. Component-only inspector tests had missed the host shell's
+  selection-to-inspector synchronization.
+- `DataLaneList` now clears clip and track selection synchronously before it
+  publishes the data context and inspector target. A regression exercises one
+  lane-item click with a live clip selection and asserts the ordering. The exact
+  installed-Chrome journey passes both hot and after a full page reload: the
+  per-record source/proposal inspector appears on the first click and the stale
+  clip placeholder does not reappear.
+- The broader lesson is that extension surfaces sharing an inspector must test
+  ownership handoff through the assembled host, not only the leaf renderer or
+  Properties panel in isolation.
