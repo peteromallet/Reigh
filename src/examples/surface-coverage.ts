@@ -134,6 +134,7 @@ import type {
   StableTimelineConfigSignatureInput,
   TimelineClipOutputFingerprintInput,
   TimelineConfigSignatureInput,
+  DataLaneActionDescriptor,
   TimelineVersionConflictError,
   TimelineViewSnapshot,
   TimelineViewStore,
@@ -215,6 +216,16 @@ const exampleProjectReq: ProjectExtensionRequirement = {
 /** Demonstrate ProjectExtensionRequirements container. */
 const exampleProjectReqs: ProjectExtensionRequirements = {
   requirements: [exampleProjectReq],
+};
+
+/** Demonstrate a host-rendered data-lane action descriptor. */
+export const exampleDataLaneAction: DataLaneActionDescriptor = {
+  id: 'summarize-lane',
+  label: 'Summarize lane',
+  ariaLabel: 'Summarize every item in this data lane',
+  invoke: async (items) => {
+    void items;
+  },
 };
 
 // ---------------------------------------------------------------------------

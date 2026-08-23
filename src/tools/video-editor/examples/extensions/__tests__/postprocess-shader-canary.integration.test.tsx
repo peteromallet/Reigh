@@ -533,7 +533,7 @@ describe('postprocess-shader-canary extension', () => {
         reason: 'missing-material',
         extensionId: POSTPROCESS_SHADER_CANARY_EXTENSION_ID,
         contributionId: POSTPROCESS_SHADER_CANARY_CONTRIBUTION_ID,
-        message: `Shader "${POSTPROCESS_SHADER_CANARY_SHADER_ID}" cannot export because no shader materializer produced RenderMaterial for postprocess.`,
+        message: `Shader "${POSTPROCESS_SHADER_CANARY_SHADER_ID}" cannot export because no shader materializer produced RenderMaterial for timeline postprocess.`,
       }),
     ]));
 
