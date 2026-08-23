@@ -794,6 +794,27 @@ describe('TimelineCanvas extension context menus', () => {
 });
 
 describe('TimelineCanvas resize pending ops', () => {
+  it('selects a short or overlapped clip when its trim handle is clicked without resizing', () => {
+    const onSelectClips = vi.fn();
+    const { leftHandle, onActionResizeStart, onClipEdgeResizeEnd } = renderCanvas({ onSelectClips });
+    if (!leftHandle) throw new Error('expected left handle');
+
+    fireEvent.pointerDown(leftHandle, {
+      button: 0,
+      pointerId: 6,
+      clientX: 120,
+    });
+    fireEvent.pointerUp(leftHandle, {
+      button: 0,
+      pointerId: 6,
+      clientX: 120,
+    });
+
+    expect(onSelectClips).toHaveBeenCalledWith(['clip-1']);
+    expect(onActionResizeStart).not.toHaveBeenCalled();
+    expect(onClipEdgeResizeEnd).not.toHaveBeenCalled();
+  });
+
   it('centers a requested clip in the scroll viewport', async () => {
     const secondTrack: TrackDefinition = { id: 'V2', kind: 'visual', label: 'V2' };
     const lateRow: TimelineRow = {

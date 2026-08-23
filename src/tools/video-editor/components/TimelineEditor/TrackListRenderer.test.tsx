@@ -100,6 +100,45 @@ function registerTrackMenuCommand(
 }
 
 describe('TrackListRenderer', () => {
+  it('keeps a selectable clip body between both resize handles for very short clips', () => {
+    const shortRows: TimelineRow[] = [{
+      id: 'V1',
+      actions: [{ id: 'short-caption', start: 1, end: 1.01, effectId: 'effect-caption' }],
+    }];
+    const getActionRender = vi.fn((_action, _row, width) => (
+      <div data-testid="short-caption-body" data-render-width={width}>caption</div>
+    ));
+
+    const { container } = render(
+      <TrackListRenderer
+        rows={shortRows}
+        tracks={[tracks[0]]}
+        rowHeight={48}
+        startLeft={0}
+        pixelsPerSecond={100}
+        selectedTrackId={null}
+        deviceClass="desktop"
+        resizeClampedActionId={null}
+        rowResizePreview={[{}]}
+        resizeHandleWidth={8}
+        getActionRender={getActionRender}
+        onSelectTrack={vi.fn()}
+        onTrackChange={vi.fn()}
+        onRemoveTrack={vi.fn()}
+        onTrackDragEnd={vi.fn()}
+        trackSensors={[] as never}
+      />,
+    );
+
+    const slot = container.querySelector<HTMLElement>('[data-action-id="short-caption"]');
+    const handles = slot?.querySelectorAll<HTMLElement>('[data-resize-edge]');
+    expect(slot?.style.width).toBe('24px');
+    expect(screen.getByTestId('short-caption-body')).toHaveAttribute('data-render-width', '24');
+    expect(handles).toHaveLength(2);
+    expect(handles?.[0].style.width).toBe('8px');
+    expect(handles?.[1].style.width).toBe('8px');
+  });
+
   it('keeps unaffected row action renders stable when the clamp ring changes for another row', () => {
     const getActionRender = vi.fn((_action, _row, _width) => <div>clip</div>);
     const props = {

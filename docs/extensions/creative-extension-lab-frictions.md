@@ -1059,3 +1059,26 @@ evidence and a concrete improvement direction.
   flags, and run the full Reigh profile in a fresh detached worktree at the
   verified evidence-controller commit. Exact-commit execution must be a property
   of the harness, not an operator promise about their checkout.
+
+### Short overlapping captions can lose their only selection target
+
+- At low zoom, a 210 ms caption rendered only as wide as its two trim handles;
+  when another caption overlapped it, every exposed pixel initiated a resize and
+  a mouse user could not select the caption to edit it in the inspector.
+- Clip geometry now reserves one handle-width of selectable body between both
+  handles on desktop and touch layouts. A handle press/release that never crosses
+  the resize threshold selects the clip, while a real drag remains resize-only.
+  The focused interaction tests and live Chrome probe cover both geometry and
+  selection without changing timing.
+
+### Transcript acceptance is a durable proposal, not a hidden source mutation
+
+- A real browser round-trip materialized four deterministic captions, preserved
+  a human Unicode edit across reload and repeated generation, and persisted four
+  review records through proposal and acceptance. Accepted records use
+  `accepted-for-source-update`; the transcript lane remains the immutable source
+  until an upstream owner explicitly applies them.
+- This separation makes provenance inspectable and prevents an extension action
+  from silently rewriting source data. Browser acceptance tests must inspect the
+  stored review record, the generated output, and the source lane independently;
+  checking only the visible caption would miss a policy violation.

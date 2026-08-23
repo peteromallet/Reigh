@@ -61,6 +61,7 @@ interface UseClipResizeGestureLatest {
     dir: ResizeDir;
   }) => void;
   onClipEdgeResizeEnd?: (params: ClipEdgeResizeEndTarget) => void;
+  onSelectClips?: (clipIds: string[]) => void;
   interactionStateRef?: import('@/tools/video-editor/lib/interaction-state').InteractionStateRef;
   setInputModalityFromPointerType: (
     pointerType: string | null | undefined,
@@ -92,6 +93,7 @@ export const useClipResizeGesture = ({
   onActionResizeStart,
   onActionResizing,
   onClipEdgeResizeEnd,
+  onSelectClips,
   interactionStateRef,
   setInputModalityFromPointerType,
   timeToPixel,
@@ -129,6 +131,7 @@ export const useClipResizeGesture = ({
     onActionResizeStart,
     onActionResizing,
     onClipEdgeResizeEnd,
+    onSelectClips,
     interactionStateRef: effectiveInteractionStateRef,
     setInputModalityFromPointerType: effectiveSetInputModalityFromPointerType,
     timeToPixel,
@@ -144,6 +147,7 @@ export const useClipResizeGesture = ({
     onActionResizeStart,
     onActionResizing,
     onClipEdgeResizeEnd,
+    onSelectClips,
     interactionStateRef: effectiveInteractionStateRef,
     setInputModalityFromPointerType: effectiveSetInputModalityFromPointerType,
     timeToPixel,
@@ -317,6 +321,13 @@ export const useClipResizeGesture = ({
         const currentState = getActiveState();
         if (!currentState || upEvent.pointerId !== currentState.session.pointerId) {
           return;
+        }
+        // A trim handle occupies much of a short clip and can be the only
+        // exposed mouse target when captions overlap. Treat a press/release
+        // that never crossed the resize threshold as selection; an actual
+        // resize remains owned by the resizing branch and never selects here.
+        if (currentState.phase === 'pending') {
+          latestRef.current.onSelectClips?.([currentState.session.clipId]);
         }
         endSession({ cancelled: false, clientX: upEvent.clientX });
       };

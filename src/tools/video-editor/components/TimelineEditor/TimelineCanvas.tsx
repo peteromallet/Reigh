@@ -428,6 +428,7 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
     onActionResizeStart,
     onActionResizing,
     onClipEdgeResizeEnd,
+    onSelectClips,
     interactionStateRef,
     setInputModalityFromPointerType,
     timeToPixel,

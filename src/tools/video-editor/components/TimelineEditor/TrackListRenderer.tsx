@@ -158,7 +158,14 @@ function RowActionLayer({
     const override = resizePreviewSnapshot[action.id];
     const renderedAction = override ? { ...action, ...override } : action;
     const left = startLeft + renderedAction.start * pixelsPerSecond;
-    const width = Math.max((renderedAction.end - renderedAction.start) * pixelsPerSecond, resizeHandleWidth * 2);
+    // Keep one handle-width of selectable clip body between the two trim
+    // handles. A two-handle minimum left short captions completely covered by
+    // the sibling handles, so a normal click could only begin a resize and the
+    // text clip could not be opened in the inspector at low zoom.
+    const width = Math.max(
+      (renderedAction.end - renderedAction.start) * pixelsPerSecond,
+      resizeHandleWidth * 3,
+    );
 
     return (
       <div
