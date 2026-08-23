@@ -543,3 +543,70 @@ evidence and a concrete improvement direction.
   to keep shared mocks structurally aligned with public hooks/providers. Merely
   increasing timeouts would preserve the race and make browser failures harder
   to diagnose.
+
+### The first release verifier was only hermetic at the argv boundary
+
+- Fixed command arrays and `shell: false` looked safe, but every gate inherited
+  the operator's full environment. `MAKEFLAGS=-n` made Astrid's `make ci` print
+  recipes and exit successfully without executing them; three
+  `ASTRID_CI_SKIP_*` variables could also weaken the run. The verifier tests
+  asserted argv but never inspected the spawned environment.
+- Passing `PY=/path` as a Make command-line variable crossed a second shell
+  boundary inside recipes. A path containing shell metacharacters became code
+  even though Node never invoked a shell itself. The durable gate now builds an
+  allowlisted environment from scratch, puts only validated canonical Python
+  paths in controlled step environment fields, and tests that bypass variables,
+  test selectors, language hooks, credentials, and unknown keys never cross.
+- This exposed a general release-engineering rule: hermeticity must be proved at
+  every nested process boundary, not inferred from the outer process API.
+
+### A child kill switch cannot erase a shared typed-data envelope
+
+- The Runaway switch originally filtered extension registration but a bookmarked
+  DEV URL could still issue `/runaway-transitions`. The source hook now receives
+  the effective deployment gate and performs zero bridge IO when disabled.
+- The generic timeline read still carries the shared `data_bundle`/`bundle`,
+  because Transcript and future typed kinds use that same atomic envelope.
+  Claiming that the Runaway switch stopped all bundle transport was both false
+  and architecturally undesirable. The actual containment contract is now
+  explicit: no Runaway-specific request, kind registration, projection,
+  migration, command, or write; unrelated envelope data remains available.
+
+### Idempotency has to short-circuit before validating a mutation
+
+- Transcript Caption Foundry's preserve path correctly generated an empty patch
+  when every deterministic caption already existed, then incorrectly sent that
+  empty patch through the host mutation validator. Because empty mutations are
+  invalid, a successful repeat action surfaced as an error.
+- The extension now recognizes the successful no-op first, leaves all human
+  edits untouched, and reports that captions already exist. The regression test
+  asserts that neither validation nor apply is called. Extension authoring docs
+  should make this ordering a standard idempotent-command pattern.
+
+### Composition invalidated single-surface browser assumptions
+
+- Several E2E locators counted every `[data-marker-id]` and assumed one overlay
+  layer. With all ten Creative Lab extensions plus Scene Markers mounted, those
+  selectors silently mixed host and extension markers. Tests now scope marker
+  layers by their host-owned layer key; the combined composition remains the
+  primary acceptance shape rather than an exceptional fixture.
+- Touch tests also targeted the ruler's visual midpoint. Once composed marker
+  buttons occupied that hit area, scrubs became marker clicks; at phone width a
+  clip center could be outside the actual viewport even though the timeline was
+  wider. Stable browser tests need semantic layer locators plus coordinates
+  proven inside both the element and viewport, and must distinguish a product
+  overflow from an automation miss.
+
+### Repository-wide health numbers need scoped interpretation
+
+- A fresh structural scan found strong mechanical health overall (94.0%) but
+  weaker test health (84.5%), six import cycles, 22 low-cohesion files, 40
+  overloaded directories, and hundreds of coverage/dead-export findings across
+  the whole 777K-line repository. Its 23.5 strict score is not a release score:
+  twenty subjective dimensions are still unreviewed and therefore count as
+  zero. Treating that first-scan strict number as product evidence would be as
+  misleading as ignoring the mechanical findings.
+- For this release, the actionable result is to inspect extension/editor paths,
+  security boundaries, cycles, test gaps, and large host modules explicitly,
+  while tracking broader cleanup separately. Health tooling is useful evidence
+  only when its zone, review state, and release scope are recorded.
