@@ -16,5 +16,8 @@ export function generateTaskId(taskTypePrefix: string): string {
 }
 
 export function generateRunId(): string {
-  return new Date().toISOString().replace(/[-:.TZ]/g, '');
+  // Keep the source token unambiguous for Tailwind's content scanner. The
+  // equivalent explicit punctuation character class was misread as an
+  // arbitrary utility and emitted invalid CSS during every production build.
+  return new Date().toISOString().replace(/\D/g, '');
 }

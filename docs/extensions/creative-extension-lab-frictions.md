@@ -882,3 +882,15 @@ evidence and a concrete improvement direction.
   selected extension's recovery generation and leaks no registrations. Release
   inventories need an asserted cardinality and product-surface reconciliation;
   a green combinator cannot reveal an extension it was never given.
+
+### Source-code scanners can turn an innocent regex into broken release CSS
+
+- The production build stayed green but warned about an invalid `-: .TZ;` CSS
+  declaration. Tailwind's content scanner had interpreted the timestamp cleanup
+  regex character class as an arbitrary utility and emitted a malformed rule;
+  the TypeScript behavior itself was correct, so unit-only gates could not see
+  the defect.
+- The timestamp now removes all non-digits with a scanner-safe expression and a
+  deterministic unit test locks the exact run-ID format. Production builds must
+  treat CSS parser warnings as actionable release findings, even when the
+  offending token originated in non-style source code.
