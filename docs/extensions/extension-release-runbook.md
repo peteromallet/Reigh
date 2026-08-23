@@ -75,7 +75,10 @@ commits into private temporary trees, installs/builds Reigh from its lockfile,
 initializes Astrid's real managed database, takes a pre-migration backup, and
 applies the Runaway migration twice. Both applications must report 566 stored
 transitions, one migration evidence receipt, and identical project/run
-identity. It then proves the built Reigh preview's enabled runtime document and
+identity. The 566-row migration input is generated deterministically inside the
+private runtime root because Astrid's creative demo project is deliberately not
+part of the pinned source archive; Astrid records the input hash in its migration
+provenance and receipt. It then proves the built Reigh preview's enabled runtime document and
 same-origin authenticated proxy, runs the real browser editing lane, restarts
 both servers, verifies persisted edits with no duplicate captions or Runaway
 rows, renders and downloads an MP4, restores the backup, restarts both servers

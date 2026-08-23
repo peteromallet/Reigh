@@ -10,6 +10,7 @@ import {
   RELEASE_BRIDGE_CAPABILITY,
   REPO_ROOT,
   buildBrowserEnvironment,
+  buildRunawayMigrationFixture,
   buildServerEnvironment,
   parseCliArgs,
   validateAstridReleaseBridgeSources,
@@ -91,6 +92,22 @@ describe('paired repository release E2E gate', () => {
       'backup restore, second restart, and rollback-state acceptance',
       'immutable receipt and artifact hash index publication',
     ]);
+  });
+
+  it('builds a hermetic deterministic Runaway migration input', () => {
+    const first = buildRunawayMigrationFixture();
+    const second = buildRunawayMigrationFixture();
+    assert.deepEqual(first, second);
+    assert.equal(first.manifest.transition_count, EXPECTED_RUNAWAY_COUNT);
+    assert.equal(first.manifest.transitions.length, EXPECTED_RUNAWAY_COUNT);
+    assert.equal(first.manifest.segments[0].transition_count, EXPECTED_RUNAWAY_COUNT);
+    assert.equal(first.manifest.transitions[0].frame, 0);
+    assert.equal(first.manifest.transitions.at(-1).frame, (EXPECTED_RUNAWAY_COUNT - 1) * 10);
+    assert.ok(
+      first.audioReactive.timebase.range_end_frame
+      > first.manifest.transitions.at(-1).frame,
+    );
+    assert.throws(() => buildRunawayMigrationFixture(0), /positive integer/);
   });
 
   it('prints an honest non-executing plan and documents the production boundary', () => {

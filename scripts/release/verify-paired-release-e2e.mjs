@@ -294,6 +294,34 @@ export const PAIRED_RELEASE_PHASES = Object.freeze([
   'immutable receipt and artifact hash index publication',
 ]);
 
+export function buildRunawayMigrationFixture(count = EXPECTED_RUNAWAY_COUNT) {
+  if (!Number.isInteger(count) || count < 1) fail('Runaway fixture count must be a positive integer');
+  const colours = ['rose', 'teal'];
+  const transitions = Array.from({ length: count }, (_, index) => ({
+    id: `paired-release-transition-${String(index + 1).padStart(4, '0')}`,
+    segment_id: 'S01',
+    segment_label: 'Paired release deterministic fixture',
+    timing_mode: 'literal_main_note',
+    frame: index * 10,
+    colour_index: index % 2 === 0 ? 0 : 4,
+    colour_name: colours[index % colours.length],
+    colour_hex: index % 2 === 0 ? '#D47795' : '#16B09B',
+  }));
+  return Object.freeze({
+    manifest: {
+      schema_version: 1,
+      intent: 'Hermetic paired release migration and duplicate-prevention fixture',
+      clock: { fps: 48 },
+      transition_count: count,
+      segments: [{ id: 'S01', transition_count: count }],
+      transitions,
+    },
+    audioReactive: {
+      timebase: { fps: 48, range_end_frame: count * 10 + 10 },
+    },
+  });
+}
+
 function printPlan(manifest, env) {
   console.log(`${LABEL} PLAN ONLY - no commands will execute`);
   console.log(`${LABEL} release=${manifest.release} status=${manifest.status}`);
@@ -522,8 +550,13 @@ function seedDemoProject(context) {
 
 function runMigrationTwice(context) {
   const script = resolve(context.astridSnapshot, 'scripts/migrations/runaway_v1_migrate.py');
-  const manifest = resolve(context.astridSnapshot, 'projects/runaway-piano-colour-demo/deliverables/timing-manifest.json');
-  const audio = resolve(context.astridSnapshot, 'projects/runaway-piano-colour-demo/timeline/audio-reactive-v1.json');
+  const fixtureDir = resolve(context.runtimeRoot, 'runaway-migration-fixture');
+  mkdirSync(fixtureDir, { mode: 0o700 });
+  const manifest = resolve(fixtureDir, 'timing-manifest.json');
+  const audio = resolve(fixtureDir, 'audio-reactive-v1.json');
+  const fixture = buildRunawayMigrationFixture();
+  writeFileSync(manifest, `${JSON.stringify(fixture.manifest, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
+  writeFileSync(audio, `${JSON.stringify(fixture.audioReactive, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
   const env = safeBaseEnvironment({
     HOME: context.home,
     TMPDIR: context.runtimeRoot,
