@@ -1,7 +1,8 @@
 import { useState, useCallback, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { GenerationRow } from '@/domains/generation/types';
-import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
+import { listBridgeTasks } from '@/integrations/astrid/bridgeTaskReads';
+import { taskPollingCadence } from '@/shared/hooks/tasks/taskPollingCadence';
 import { useIsMobile } from '@/shared/hooks/mobile';
 import { useSegmentOutputsForShot } from '@/shared/hooks/segments';
 import { useTaskDetails } from '@/shared/components/ShotImageManager/hooks/useTaskDetails';
@@ -203,28 +204,23 @@ export function useFinalVideoSectionController({
         return null;
       }
 
-      const { data, error } = await supabase()
-        .from('tasks')
-        .select('id, status, params')
-        .in('task_type', ['join_clips_orchestrator', 'travel_stitch'])
-        .eq('project_id', projectId)
-        .in('status', ['Queued', 'In Progress'])
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        console.error('[FinalVideoSection] Error checking for active join tasks:', error);
-        return null;
-      }
+      const processing = await listBridgeTasks(projectId);
+      const joinCandidates = processing
+        .filter((task) =>
+          (task.status === 'Queued' || task.status === 'In Progress')
+          && (task.taskType === 'join_clips_orchestrator' || task.taskType === 'travel_stitch'))
+        .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+        .map((task) => ({ id: task.id, status: task.status, params: task.params as unknown }));
 
       const parentGenerationIds = new Set(parentGenerationIdsForQuery);
       return (
-        (data || []).find((candidateTask) =>
-          matchesJoinTask(candidateTask as { params: unknown }, shotId, parentGenerationIds),
+        joinCandidates.find((candidateTask) =>
+          matchesJoinTask(candidateTask, shotId, parentGenerationIds),
         ) || null
       );
     },
     enabled: Boolean(shotId && projectId),
-    refetchInterval: 3000,
+    refetchInterval: taskPollingCadence,
     staleTime: 1000,
   });
 

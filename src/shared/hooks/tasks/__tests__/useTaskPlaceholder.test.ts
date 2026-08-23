@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { extractTaskIds, useTaskPlaceholder } from '../useTaskPlaceholder';
+import type * as projectSelectionStoreModule from '@/shared/contexts/projectSelectionStore';
+import { createFakeBridgeRouter } from '@/test/fakeBridgeRouter.ts';
+import { FIXTURE_PROJECT } from '@/test/bridgeFixtures.mjs';
+import { AstridLocalClient } from '@/integrations/astrid/client';
 
 // ---------------------------------------------------------------------------
 // extractTaskIds – pure utility, no mocks needed
@@ -93,37 +97,36 @@ vi.mock('@tanstack/react-query', () => ({
   }),
 }));
 
-const mockInvokeWithTimeout = vi.fn();
-const mockRequireSession = vi.fn().mockResolvedValue({
-  access_token: 'session-token',
-  user: { id: 'user-1' },
+const FAKE_ORIGIN = 'http://bridge.fake';
+const SLUG = FIXTURE_PROJECT.slug;
+const mockedFallback = vi.fn((): string | null => SLUG);
+
+vi.mock('@/shared/contexts/projectSelectionStore', async () => {
+  const actual = await vi.importActual<typeof projectSelectionStoreModule>(
+    '@/shared/contexts/projectSelectionStore',
+  );
+  return { ...actual, getProjectSelectionFallbackId: () => mockedFallback() };
 });
-
-vi.mock('@/integrations/supabase/client', () => ({
-  getSupabaseClient: () => ({}),
-}));
-
-vi.mock('@/integrations/supabase/auth/ensureAuthenticatedSession', () => ({
-  requireSession: (...args: unknown[]) => mockRequireSession(...args),
-}));
-
-vi.mock('@/integrations/supabase/functions/invokeSupabaseEdgeFunction', () => ({
-  invokeSupabaseEdgeFunction: (...args: unknown[]) => mockInvokeWithTimeout(...args),
-}));
 
 vi.mock('@/shared/lib/errorHandling/runtimeError', () => ({
   normalizeAndPresentError: vi.fn(),
 }));
 
+
 describe('useTaskPlaceholder', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockRequireSession.mockResolvedValue({
-      access_token: 'session-token',
-      user: { id: 'user-1' },
-    });
-    mockInvokeWithTimeout.mockResolvedValue({});
+    mockedFallback.mockReturnValue(SLUG);
   });
+
+  function stubBridge() {
+    const router = createFakeBridgeRouter();
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      return await router.handle(new Request(new URL(raw, FAKE_ORIGIN).href, init));
+    }));
+    return router;
+  }
 
   it('runs full lifecycle on success', async () => {
     const { result } = renderHook(() => useTaskPlaceholder());
@@ -235,8 +238,34 @@ describe('useTaskPlaceholder', () => {
     });
   });
 
-  it('cancels newly created tasks through the audited edge status path when the placeholder was cancelled mid-flight', async () => {
+  it('cancels newly created tasks through the bridge cancel route when the placeholder was cancelled mid-flight', async () => {
+    stubBridge();
+    // Admit a real task so the cancel route has something to fence.
+    const client = new AstridLocalClient({ projectSlug: SLUG, baseUrl: FAKE_ORIGIN + '/api/astrid' });
+    const admitted = await client.tasks.admit({ family: 'image_generation', input: {} }, 'reigh.admit:placeholder-cancel');
+
     mockWasCancelled.mockReturnValue(true);
+    const { result } = renderHook(() => useTaskPlaceholder());
+
+    await act(async () => {
+      await result.current({
+        taskType: 'image_generation',
+        label: 'Generate 1 image',
+        context: 'test',
+        toastTitle: 'Failed',
+        create: async () => ({ task_id: admitted.task.id }),
+      });
+    });
+
+    // The bridge now holds the task in a terminal cancelled state.
+    const polled = await client.tasks.get(admitted.task.id);
+    expect(polled.status).toBe('cancelled');
+    expect(mockResolveTaskIds).not.toHaveBeenCalled();
+    expect(mockAcknowledgeCancellation).toHaveBeenCalledWith('incoming-1');
+  });
+
+  it('skips mid-flight cancellation without a project scope but still cleans up', async () => {
+    mockedFallback.mockReturnValue(null);
     const { result } = renderHook(() => useTaskPlaceholder());
 
     await act(async () => {
@@ -249,12 +278,6 @@ describe('useTaskPlaceholder', () => {
       });
     });
 
-    expect(mockRequireSession).toHaveBeenCalled();
-    expect(mockInvokeWithTimeout).toHaveBeenCalledWith('update-task-status', expect.objectContaining({
-      body: { task_id: 'task-1', status: 'Cancelled' },
-      headers: { Authorization: 'Bearer session-token' },
-    }));
-    expect(mockResolveTaskIds).not.toHaveBeenCalled();
-    expect(mockAcknowledgeCancellation).toHaveBeenCalledWith('incoming-1');
+    expect(mockRemoveIncomingTask).toHaveBeenCalledWith('incoming-1');
   });
 });

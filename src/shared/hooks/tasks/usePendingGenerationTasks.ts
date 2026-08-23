@@ -1,10 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
-import { TASK_STATUS } from '@/types/tasks';
 import { taskQueryKeys } from '@/shared/lib/queryKeys/tasks';
 import { resolveTaskProjectScope } from '@/shared/lib/tasks/resolveTaskProjectScope';
+import { listBridgeTasks } from '@/integrations/astrid/bridgeTaskReads';
+import { taskPollingCadence } from './taskPollingCadence';
+import { TASK_STATUS } from '@/types/tasks';
 import {
-  seedRealtimeTasksFromRows,
   useRealtimePendingGenerationTasks,
+  upsertRealtimeTaskSnapshots,
   type PendingGenerationTaskSnapshot,
 } from '@/shared/state/realtimeStore';
 
@@ -92,21 +94,13 @@ export function usePendingGenerationTasks(
         return [];
       }
 
-      const { getSupabaseClient } = await import('@/integrations/supabase/client');
-      const { data, error } = await getSupabaseClient().from('tasks')
-        .select('id, task_type, params, status, created_at, updated_at, project_id')
-        .eq('project_id', effectiveProjectId)
-        .in('status', [TASK_STATUS.QUEUED, TASK_STATUS.IN_PROGRESS]);
-
-      if (error) {
-        console.error('[usePendingGenerationTasks] Query error:', error);
-        return [];
-      }
-
-      return seedRealtimeTasksFromRows(data || [], effectiveProjectId);
+      const processing = await listBridgeTasks(effectiveProjectId);
+      const pending = processing.filter((task) => task.status === TASK_STATUS.QUEUED
+        || task.status === TASK_STATUS.IN_PROGRESS);
+      return upsertRealtimeTaskSnapshots(pending, effectiveProjectId);
     },
     enabled: !!generationId && !!effectiveProjectId,
-    refetchInterval: 5000,
+    refetchInterval: taskPollingCadence,
     staleTime: 0,
     gcTime: 10000,
     refetchOnWindowFocus: 'always',

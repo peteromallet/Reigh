@@ -1,7 +1,6 @@
-import { Task, TaskStatus } from '@/types/tasks';
-import { getSupabaseClient } from '@/integrations/supabase/client';
+import { type Task, type TaskStatus } from '@/types/tasks';
 import { filterVisibleTasks } from '@/shared/lib/tasks/taskConfig';
-import { TaskDbRow, mapTaskDbRowToTask } from '@/shared/lib/taskRowMapper';
+import { isRootBridgeTask, listBridgeTasks } from '@/integrations/astrid/bridgeTaskReads';
 import {
   isProcessingStatusFilter,
   isSucceededOnlyStatus,
@@ -13,6 +12,8 @@ const PAGINATION_CONFIG = {
   PROCESSING_FETCH_MULTIPLIER: 2,
   PROCESSING_MAX_FETCH: 100,
   DEFAULT_LIMIT: 50,
+  /** Bridge page ceiling: the frozen route takes a bounded limit. */
+  BRIDGE_FETCH_MAX: 200,
 } as const;
 
 export interface PaginatedTaskQuery {
@@ -41,96 +42,32 @@ const EMPTY_PAGINATED_TASKS_RESPONSE: PaginatedTasksResponse = {
   totalPages: 0,
 };
 
-export const mapDbTaskToTask = (row: TaskDbRow): Task => mapTaskDbRowToTask(row);
-
-function buildCountQuery(filters: PaginatedTaskQuery) {
-  const supabase = getSupabaseClient();
-  let query = supabase
-    .from('tasks')
-    .select('*', { count: 'exact', head: true })
-    .is('params->orchestrator_task_id_ref', null)
-    .in('task_type', filters.visibleTaskTypes);
-
-  if (filters.allProjects && filters.allProjectIds) {
-    query = query.in('project_id', filters.allProjectIds);
-  } else if (filters.effectiveProjectId) {
-    query = query.eq('project_id', filters.effectiveProjectId);
-  }
-
-  if (filters.status?.length) {
-    query = query.in('status', filters.status);
-  }
-
-  if (filters.taskType) {
-    query = query.eq('task_type', filters.taskType);
-  }
-
-  return query;
-}
-
-function buildDataQuery(filters: PaginatedTaskQuery) {
-  const supabase = getSupabaseClient();
-  const needsCustomSorting = isProcessingStatusFilter(filters.status);
-  const succeededOnly = isSucceededOnlyStatus(filters.status);
-
-  let query = supabase
-    .from('tasks')
-    .select('*')
-    .is('params->orchestrator_task_id_ref', null)
-    .in('task_type', filters.visibleTaskTypes);
-
-  if (filters.allProjects && filters.allProjectIds) {
-    query = query.in('project_id', filters.allProjectIds);
-  } else if (filters.effectiveProjectId) {
-    query = query.eq('project_id', filters.effectiveProjectId);
-  }
-
-  if (succeededOnly) {
-    query = query
-      .order('generation_processed_at', { ascending: false, nullsFirst: false })
-      .order('created_at', { ascending: false });
-  } else {
-    query = query.order('created_at', { ascending: false });
-  }
-
-  if (filters.status?.length) {
-    query = query.in('status', filters.status);
-  }
-
-  if (filters.taskType) {
-    query = query.eq('task_type', filters.taskType);
-  }
-
-  if (needsCustomSorting) {
-    const effectiveBaseLimit = Math.max(filters.limit, PAGINATION_CONFIG.DEFAULT_LIMIT);
-    // Processing feeds are sorted in-memory, so fetch enough rows to cover
-    // the requested page window before slicing.
-    const requestedWindow = filters.offset + filters.limit;
-    const prefetchWindow = effectiveBaseLimit * PAGINATION_CONFIG.PROCESSING_FETCH_MULTIPLIER;
-    const fetchLimit = Math.min(
-      Math.max(prefetchWindow, requestedWindow),
-      PAGINATION_CONFIG.PROCESSING_MAX_FETCH,
-    );
-
-    return query.limit(fetchLimit);
-  }
-
-  return query.range(filters.offset, filters.offset + filters.limit - 1);
+/**
+ * The frozen task-list route is project-scoped by its slug and carries no
+ * status/type filters, so filtering that supabase-js did in SQL happens
+ * here, over one bridge read.
+ */
+function matchesFilters(task: Task, filters: PaginatedTaskQuery): boolean {
+  if (!filters.visibleTaskTypes.includes(task.taskType)) return false;
+  if (filters.status?.length && !filters.status.includes(task.status)) return false;
+  if (filters.taskType && task.taskType !== filters.taskType) return false;
+  return isRootBridgeTask(task.params);
 }
 
 function buildPaginatedTasksResponse(
   visibleTasks: Task[],
   needsCustomSorting: boolean,
-  count: number | null,
   offset: number,
   limit: number,
 ): PaginatedTasksResponse {
   const paginatedTasks = needsCustomSorting
     ? sortProcessingTasks(visibleTasks).slice(offset, offset + limit)
     : visibleTasks;
-  const total = count !== null ? count : Math.max(paginatedTasks.length, offset + paginatedTasks.length);
+  // The bridge list answers without a total count; derive it from the read
+  // window exactly like the old count-less fallback branch.
+  const total = Math.max(paginatedTasks.length, offset + paginatedTasks.length);
   const totalPages = Math.ceil(total / limit);
-  const hasMore = count !== null ? offset + limit < total : paginatedTasks.length >= limit;
+  const hasMore = paginatedTasks.length >= limit;
 
   return {
     tasks: paginatedTasks,
@@ -149,26 +86,36 @@ export async function fetchPaginatedTasks(filters: PaginatedTaskQuery): Promise<
   }
 
   const needsCustomSorting = isProcessingStatusFilter(filters.status);
-  const [countResult, { data, error: dataError }] = await Promise.all([
-    buildCountQuery(filters),
-    buildDataQuery(filters),
-  ]);
-  const { count, error: countError } = countResult;
+  const succeededOnly = isSucceededOnlyStatus(filters.status);
 
-  if (countError) {
-    throw countError;
-  }
-  if (dataError) {
-    throw dataError;
-  }
+  // Fetch enough rows to cover the requested page window before slicing —
+  // the same prefetch logic the processing feed needed against supabase-js.
+  const effectiveBaseLimit = Math.max(filters.limit, PAGINATION_CONFIG.DEFAULT_LIMIT);
+  const requestedWindow = filters.offset + filters.limit;
+  const fetchLimit = Math.min(
+    Math.max(effectiveBaseLimit * PAGINATION_CONFIG.PROCESSING_FETCH_MULTIPLIER, requestedWindow),
+    PAGINATION_CONFIG.BRIDGE_FETCH_MAX,
+  );
 
-  const allTasks = (data || []).map(mapDbTaskToTask);
-  const visibleTasks = filterVisibleTasks(allTasks);
+  const projectSlug = filters.allProjects
+    ? filters.allProjectIds![0]
+    : filters.effectiveProjectId!;
+  const allTasks = await listBridgeTasks(projectSlug);
+
+  let visibleTasks = allTasks.filter((task) => matchesFilters(task, filters));
+  if (succeededOnly) {
+    visibleTasks.sort((left, right) =>
+      new Date(right.updatedAt || right.createdAt).getTime()
+      - new Date(left.updatedAt || left.createdAt).getTime());
+  } else {
+    visibleTasks.sort((left, right) =>
+      new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime());
+  }
+  visibleTasks = filterVisibleTasks(visibleTasks);
 
   return buildPaginatedTasksResponse(
     visibleTasks,
     needsCustomSorting,
-    count,
     filters.offset,
     filters.limit,
   );

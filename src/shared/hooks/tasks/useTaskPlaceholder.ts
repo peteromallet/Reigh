@@ -11,9 +11,8 @@
 
 import { useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { requireSession } from '@/integrations/supabase/auth/ensureAuthenticatedSession';
-import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
-import { invokeSupabaseEdgeFunction } from '@/integrations/supabase/functions/invokeSupabaseEdgeFunction';
+import { getBridgeTaskClient } from '@/integrations/astrid/bridgeTaskReads';
+import { resolveTaskProjectScope } from '@/shared/lib/tasks/resolveTaskProjectScope';
 import { useIncomingTasks } from '@/shared/contexts/IncomingTasksContext';
 import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
 import { taskQueryKeys } from '@/shared/lib/queryKeys/tasks';
@@ -77,22 +76,20 @@ export function extractTaskIds(result: unknown): string[] {
   return [];
 }
 
-/** Cancel specific task IDs through the audited task-status edge path. */
+/** Cancel specific task IDs through the common bridge cancel route. */
 async function cancelTasksByIds(taskIds: string[]): Promise<void> {
   if (taskIds.length === 0) return;
 
-  const session = await requireSession(supabase(), 'useTaskPlaceholder.cancelTasksByIds');
+  const projectSlug = resolveTaskProjectScope();
+  if (!projectSlug) {
+    // No project scope → the tasks cannot be addressed on the bridge; the
+    // placeholder cleanup still proceeds (best-effort mid-flight cancel).
+    return;
+  }
+
+  const client = getBridgeTaskClient(projectSlug);
   const results = await Promise.allSettled(taskIds.map((taskId) => (
-    invokeSupabaseEdgeFunction('update-task-status', {
-      body: {
-        task_id: taskId,
-        status: 'Cancelled',
-      },
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-      },
-      timeoutMs: 20000,
-    })
+    client.tasks.cancel(taskId)
   )));
 
   const rejected = results.find(

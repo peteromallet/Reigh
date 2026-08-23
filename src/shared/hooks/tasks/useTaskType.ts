@@ -1,10 +1,35 @@
 import { useQuery } from '@tanstack/react-query';
-import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
-import { useAuthSafe } from '@/shared/contexts/AuthContext';
 import { taskQueryKeys } from '@/shared/lib/queryKeys/tasks';
 import { setTaskTypeConfigCache, type TaskTypeInfo } from '@/shared/lib/taskTypeCache';
+import {
+  getTaskTypeConfigFallback,
+  getTaskTypeFallbackEntries,
+} from '@/shared/lib/taskTypeConfigFallback';
 
-;
+/**
+ * Task-type display config is APP configuration, not bridge data: the old
+ * Supabase `task_types` table has no doc-27 §4.1 route, and the versioned
+ * local registry (`taskTypeConfigFallback`) is its single surviving source.
+ * Both hooks read that one registry — no second authority.
+ */
+
+function entryToTaskTypeInfo(
+  name: string,
+  entry: NonNullable<ReturnType<typeof getTaskTypeConfigFallback>>,
+): TaskTypeInfo {
+  return {
+    id: name,
+    name,
+    // `content_type` was live-DB-only metadata; consumers already infer
+    // image content via KNOWN_IMAGE_TASK_TYPES and handle null otherwise.
+    content_type: entry.contentType ?? null,
+    tool_type: null,
+    display_name: entry.displayName ?? name,
+    category: entry.category ?? 'utility',
+    is_visible: entry.isVisible ?? false,
+    supports_progress: entry.supportsProgress ?? false,
+  };
+}
 
 /**
  * Hook to fetch task type information including content_type
@@ -15,25 +40,11 @@ export const useTaskType = (taskType: string) => {
   return useQuery({
     queryKey: taskQueryKeys.type(taskType),
     queryFn: async (): Promise<TaskTypeInfo | null> => {
-      const { data, error } = await supabase().from('task_types')
-        .select('id, name, content_type, tool_type, display_name, category, is_visible, supports_progress')
-        .eq('name', taskType)
-        .maybeSingle();
-
-      if (error) {
-        console.warn(`Failed to fetch task type info for ${taskType}:`, error);
+      const entry = getTaskTypeConfigFallback(taskType);
+      if (!entry) {
         return null;
       }
-
-      if (!data) {
-        return null;
-      }
-
-      return {
-        ...data,
-        is_visible: data.is_visible ?? false,
-        supports_progress: data.supports_progress ?? false,
-      };
+      return entryToTaskTypeInfo(taskType, entry);
     },
     enabled: !!taskType,
     staleTime: 5 * 60 * 1000, // 5 minutes - task types don't change often
@@ -46,20 +57,8 @@ export const useTaskType = (taskType: string) => {
  * This is called once on app load to populate the cache
  */
 async function fetchAllTaskTypesConfig(): Promise<Record<string, TaskTypeInfo>> {
-  const { data, error } = await supabase().from('task_types')
-    .select('id, name, content_type, tool_type, display_name, category, is_visible, supports_progress')
-    .eq('is_active', true);
-
-  if (error) {
-    return {};
-  }
-
-  const configMap = (data || []).reduce((acc, taskType) => {
-    acc[taskType.name] = {
-      ...taskType,
-      is_visible: taskType.is_visible ?? false,
-      supports_progress: taskType.supports_progress ?? false,
-    };
+  const configMap = getTaskTypeFallbackEntries().reduce((acc, [name, entry]) => {
+    acc[name] = entryToTaskTypeInfo(name, entry);
     return acc;
   }, {} as Record<string, TaskTypeInfo>);
 
@@ -73,14 +72,11 @@ async function fetchAllTaskTypesConfig(): Promise<Record<string, TaskTypeInfo>> 
  * @returns Query result with all task type configurations
  */
 export const useAllTaskTypesConfig = () => {
-  const { isAuthenticated } = useAuthSafe();
   return useQuery({
     queryKey: taskQueryKeys.typesConfigAll,
     queryFn: fetchAllTaskTypesConfig,
-    // Task-type configs feed the app shell's task/tool surfaces; with no
-    // session (dev local-mode editor) there is nothing to warm, and the fetch
-    // would hit a backend local mode must never touch.
-    enabled: isAuthenticated,
+    // Local registry read — no session gating required (the old gate existed
+    // because the supabase table needed an authenticated client).
     staleTime: 10 * 60 * 1000, // 10 minutes - task types config rarely changes
     gcTime: 30 * 60 * 1000, // 30 minutes
     refetchOnWindowFocus: false,

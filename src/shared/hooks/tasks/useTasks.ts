@@ -1,21 +1,19 @@
 import { useEffect } from 'react';
 import { keepPreviousData, useQuery, useQueryClient, type QueryClient, type UseQueryOptions } from '@tanstack/react-query';
 import { Task, TaskStatus } from '@/types/tasks';
-import { getSupabaseClientResult } from '@/integrations/supabase/client';
 import { getVisibleTaskTypes } from '@/shared/lib/tasks/taskConfig';
 import { normalizeAndPresentAndRethrow } from '@/shared/lib/errorHandling/runtimeError';
-// Removed invalidationRouter - DataFreshnessManager handles all invalidation logic
-import { useSmartPollingConfig } from '@/shared/hooks/useSmartPolling';
 import { QUERY_PRESETS, STANDARD_RETRY, STANDARD_RETRY_DELAY } from '@/shared/lib/query/queryDefaults';
+import { taskPollingCadence } from '@/shared/hooks/tasks/taskPollingCadence';
 import { taskQueryKeys } from '@/shared/lib/queryKeys/tasks';
 import { useProcessingRefetchGuard } from '@/shared/hooks/tasks/useProcessingRefetchGuard';
+import { fetchTaskInProject } from '@/integrations/supabase/repositories/taskRepository';
 import {
   notifyPaginatedTaskFetchFailure,
   notifyPaginatedTaskFetchSuccess,
 } from '@/shared/realtime/dataFreshness/taskFetchFreshness';
 import {
   fetchPaginatedTasks,
-  mapDbTaskToTask,
   type PaginatedTaskQuery,
   type PaginatedTasksResponse as RepositoryPaginatedTasksResponse,
 } from '@/shared/hooks/tasks/paginatedTaskRepository';
@@ -56,11 +54,6 @@ function createPaginatedTasksQueryFn(filters: PaginatedTaskQuery, cacheProjectKe
     }
   };
 }
-
-// Helper to convert DB row (snake_case) to Task interface (camelCase)
-// Exported for use in prefetch utilities
-export { mapDbTaskToTask };
-
 function seedTaskSnapshot(task: Task | null | undefined, projectId?: string | null): Task | null | undefined {
   if (!task) {
     return task;
@@ -71,35 +64,12 @@ function seedTaskSnapshot(task: Task | null | undefined, projectId?: string | nu
 
 async function fetchSingleTask(taskId: string, projectId?: string | null): Promise<Task | null> {
   const effectiveProjectId = resolveTaskProjectScope(projectId);
-  const supabaseResult = getSupabaseClientResult();
-  if (!supabaseResult.ok) {
-    normalizeAndPresentAndRethrow(supabaseResult.error, {
-      context: 'useTasks.useGetTask',
-      showToast: false,
-      logData: { taskId, projectId: effectiveProjectId },
-    });
-  }
-
-  const { data, error } = await supabaseResult.client
-    .from('tasks')
-    .select('*')
-    .eq('id', taskId)
-    .eq('project_id', effectiveProjectId!)
-    .maybeSingle();
-
-  if (error) {
-    normalizeAndPresentAndRethrow(error, {
-      context: 'useTasks.useGetTask',
-      showToast: false,
-      logData: { taskId, projectId: effectiveProjectId },
-    });
-  }
-
-  if (!data) {
+  if (!taskId || !effectiveProjectId) {
     return null;
   }
 
-  return seedTaskSnapshot(mapDbTaskToTask(data), effectiveProjectId) ?? null;
+  const task = await fetchTaskInProject(taskId, effectiveProjectId);
+  return seedTaskSnapshot(task, effectiveProjectId) ?? null;
 }
 
 export function getCachedTaskSnapshot(
@@ -178,7 +148,8 @@ export const usePaginatedTasks = (params: PaginatedTasksParams) => {
   const cacheProjectKey = allProjects ? 'all' : effectiveProjectId;
   const safeCacheProjectKey = cacheProjectKey ?? '__no-project__';
   const visibleTaskTypes = getVisibleTaskTypes();
-  const smartPollingConfig = useSmartPollingConfig(taskQueryKeys.paginated(safeCacheProjectKey));
+  // Honest latency: declared 2 s active / 10 s idle cadence — the realtime
+  // health machinery (Slice C) invalidates, it does not tune this interval.
 
   const query = useQuery<PaginatedTasksResponse, Error>({
     queryKey: [...taskQueryKeys.paginated(safeCacheProjectKey), page, limit, status, taskType],
@@ -196,7 +167,7 @@ export const usePaginatedTasks = (params: PaginatedTasksParams) => {
     enabled: allProjects ? !!allProjectIds?.length : !!effectiveProjectId,
     placeholderData: keepPreviousData,
     ...QUERY_PRESETS.realtimeBacked,
-    ...smartPollingConfig,
+    refetchInterval: taskPollingCadence,
     refetchIntervalInBackground: true,
     retry: STANDARD_RETRY,
     retryDelay: STANDARD_RETRY_DELAY,

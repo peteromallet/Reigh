@@ -8,10 +8,10 @@
 
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
 import { TASK_STATUS } from '@/types/tasks';
 import { taskQueryKeys } from '@/shared/lib/queryKeys/tasks';
-import { isUuid } from '@/shared/lib/uuid.ts';
+import { listBridgeTasks } from '@/integrations/astrid/bridgeTaskReads';
+import { taskPollingCadence } from './taskPollingCadence';
 
 interface PendingSegmentTask {
   id: string;
@@ -59,10 +59,6 @@ export function usePendingSegmentTasks(
   shotId: string | null,
   projectId: string | null
 ): UsePendingSegmentTasksReturn {
-  const isUuidProjectId = isUuid(projectId);
-  if (projectId && !isUuidProjectId) {
-    console.warn('[usePendingSegmentTasks] skipping Supabase query for non-UUID projectId:', projectId);
-  }
 
   // Track optimistic pending IDs with timestamps (for immediate UI feedback before task is detected)
   // Map of pairShotGenerationId -> timestamp when added
@@ -75,39 +71,27 @@ export function usePendingSegmentTasks(
   const { data: pendingTasks, isLoading } = useQuery({
     queryKey: [...taskQueryKeys.pendingSegment(shotId!), projectId],
     queryFn: async () => {
-      console.log('[usePendingSegmentTasks] fetching for shotId:', shotId, 'projectId:', projectId, 'isUuid:', isUuid(projectId));
       if (!shotId || !projectId) return [];
 
-      // Query tasks that are Queued or In Progress
-      // Filter for travel segment task types
-      const { data, error } = await supabase().from('tasks')
-        .select('id, status, params')
-        .eq('project_id', projectId)
-        .in('status', [TASK_STATUS.QUEUED, TASK_STATUS.IN_PROGRESS])
-        .in('task_type', ['travel_segment', 'individual_travel_segment']);
-
-      if (error) {
-        // Don't log here - React Query will retry automatically.
-        // Errors are only surfaced via the query's error state after retries exhausted.
-        throw error;
-      }
+      const processing = await listBridgeTasks(projectId);
+      const segmentTasks = processing.filter((task) =>
+        (task.status === TASK_STATUS.QUEUED || task.status === TASK_STATUS.IN_PROGRESS)
+        && (task.taskType === 'travel_segment' || task.taskType === 'individual_travel_segment'));
 
       // Extract pair_shot_generation_id from each task
-      const tasks: PendingSegmentTask[] = (data || []).map(task => ({
+      return segmentTasks.map(task => ({
         id: task.id,
         status: task.status,
-        pair_shot_generation_id: extractPairShotGenId(task.params as Record<string, unknown> | null),
+        pair_shot_generation_id: extractPairShotGenId(task.params),
       }));
 
       // Filter to only tasks for this shot (by checking if pair_shot_generation_id exists)
       // Note: We can't directly filter by shot_id in the query since it's in params
       // The pair_shot_generation_id links to a shot_generations record for this shot
-
-      return tasks;
     },
-    enabled: !!shotId && !!projectId && isUuidProjectId,
+    enabled: !!shotId && !!projectId,
     // Poll frequently to catch status changes
-    refetchInterval: 3000,
+    refetchInterval: taskPollingCadence,
     // Mark as stale immediately so invalidations trigger refetch
     staleTime: 0,
     // Short cache time - don't keep stale data around

@@ -2,27 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { waitFor } from '@testing-library/react';
 import { renderHookWithProviders } from '@/test/test-utils';
 
-vi.mock('@/integrations/supabase/client', () => ({
-  getSupabaseClient: () => ({
-    from: vi.fn(() => ({
-      select: vi.fn(() => ({
-        eq: vi.fn(() => ({
-          in: vi.fn(() => ({
-            is: vi.fn(() => ({
-              in: vi.fn(() => Promise.resolve({ count: 2, error: null })),
-            })),
-            gte: vi.fn(() => ({
-              is: vi.fn(() => ({
-                in: vi.fn(() => Promise.resolve({ count: 1, error: null })),
-              })),
-            })),
-          })),
-        })),
-      })),
-    })),
-  }),
-}));
-
 vi.mock('@/shared/lib/tasks/taskConfig', () => ({
   getVisibleTaskTypes: vi.fn(() => ['video_generation', 'travel_segment']),
 }));

@@ -11,6 +11,8 @@ interface TaskTypeConfigFallbackEntry {
   canCancel?: boolean;
   category?: 'generation' | 'processing' | 'orchestration' | 'utility';
   family?: 'travel' | 'join_clips' | 'character_animate';
+  /** Wire-era `task_types.content_type`; consumers infer when absent. */
+  contentType?: 'image' | 'video';
 }
 
 const TASK_TYPE_CONFIG_FALLBACK: Record<string, TaskTypeConfigFallbackEntry> = {
@@ -19,15 +21,15 @@ const TASK_TYPE_CONFIG_FALLBACK: Record<string, TaskTypeConfigFallbackEntry> = {
   edit_video_orchestrator: { isVisible: true, displayName: 'Edit Video', supportsProgress: true, category: 'orchestration' },
   animate_character: { isVisible: true, displayName: 'Animate Character', category: 'generation', family: 'character_animate' },
   individual_travel_segment: { isVisible: true, displayName: 'Travel Segment', category: 'generation', family: 'travel' },
-  image_inpaint: { isVisible: true, displayName: 'Image Inpaint', category: 'generation' },
-  annotated_image_edit: { isVisible: true, displayName: 'Annotated Edit', category: 'generation' },
-  qwen_image: { isVisible: true, displayName: 'Qwen Image', category: 'generation' },
-  qwen_image_2512: { isVisible: true, displayName: 'Qwen Image 2512', category: 'generation' },
-  z_image_turbo: { isVisible: true, displayName: 'Z Image Turbo', category: 'generation' },
-  z_image_turbo_i2i: { isVisible: true, displayName: 'Z Image Img2Img', category: 'generation' },
-  qwen_image_style: { isVisible: true, displayName: 'Qwen w/ Reference', category: 'generation' },
-  qwen_image_edit: { isVisible: true, displayName: 'Qwen Image Edit', category: 'generation' },
-  video_enhance: { isVisible: true, displayName: 'Video Enhance', category: 'processing' },
+  image_inpaint: { isVisible: true, displayName: 'Image Inpaint', category: 'generation', contentType: 'image' },
+  annotated_image_edit: { isVisible: true, displayName: 'Annotated Edit', category: 'generation', contentType: 'image' },
+  qwen_image: { isVisible: true, displayName: 'Qwen Image', category: 'generation', contentType: 'image' },
+  qwen_image_2512: { isVisible: true, displayName: 'Qwen Image 2512', category: 'generation', contentType: 'image' },
+  z_image_turbo: { isVisible: true, displayName: 'Z Image Turbo', category: 'generation', contentType: 'image' },
+  z_image_turbo_i2i: { isVisible: true, displayName: 'Z Image Img2Img', category: 'generation', contentType: 'image' },
+  qwen_image_style: { isVisible: true, displayName: 'Qwen w/ Reference', category: 'generation', contentType: 'image' },
+  qwen_image_edit: { isVisible: true, displayName: 'Qwen Image Edit', category: 'generation', contentType: 'image' },
+  video_enhance: { isVisible: true, displayName: 'Video Enhance', category: 'processing', contentType: 'video' },
   travel_segment: { isVisible: false, category: 'processing', family: 'travel' },
   travel_stitch: { isVisible: true, displayName: 'Crossfade Join', category: 'processing' },
   single_image: { isVisible: false, category: 'generation' },

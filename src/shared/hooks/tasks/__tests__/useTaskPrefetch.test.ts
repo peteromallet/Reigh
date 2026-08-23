@@ -10,19 +10,6 @@ const mockFetchAndSeedTaskQuery = vi.fn();
 const mockGetCachedTaskSnapshot = vi.fn();
 const mockPrefetchGenerationTaskMapping = vi.fn();
 
-vi.mock('@/integrations/supabase/client', () => ({
-  getSupabaseClient: vi.fn(() => ({
-    from: vi.fn((_table: string) => ({
-      select: vi.fn(() => ({
-        eq: vi.fn(() => ({
-          maybeSingle: mockMaybeSingle,
-          single: mockSingle,
-        })),
-      })),
-    })),
-  })),
-}));
-
 vi.mock('../useTasks', () => ({
   mapDbTaskToTask: vi.fn((data: unknown) => ({ ...data as object, _mapped: true })),
   fetchAndSeedTaskQuery: (...args: unknown[]) => mockFetchAndSeedTaskQuery(...args),

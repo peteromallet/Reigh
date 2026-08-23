@@ -3,9 +3,10 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { taskReferencesGeneration } from '@/shared/hooks/tasks/usePendingGenerationTasks.ts';
 import { realtimeEventProcessor } from '@/shared/realtime/RealtimeEventProcessor.ts';
 import { TASK_STATUS } from '@/types/tasks.ts';
+import { listBridgeTasks } from '@/integrations/astrid/bridgeTaskReads.ts';
+import { taskPollingCadence } from '@/shared/hooks/tasks/taskPollingCadence.ts';
 import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import type { ResolvedAssetRegistryEntry } from '@/tools/video-editor/types/index.ts';
-import { isUuid } from '@/shared/lib/uuid.ts';
 
 interface UseActiveTaskClipsArgs {
   registry: Record<string, ResolvedAssetRegistryEntry> | undefined;
@@ -124,23 +125,16 @@ export function addOptimisticActive(assetKeys: string[]) {
 }
 
 async function fetchActiveTasks(projectId: string): Promise<ActiveTaskRow[]> {
-  const { getSupabaseClient } = await import('@/integrations/supabase/client');
-  const { data, error } = await getSupabaseClient()
-    .from('tasks')
-    .select('id, status, task_type, params')
-    .eq('project_id', projectId)
-    .in('status', [TASK_STATUS.QUEUED, TASK_STATUS.IN_PROGRESS]);
+  const processing = await listBridgeTasks(projectId);
 
-  if (error) {
-    throw error;
-  }
-
-  return (data ?? []).map((task) => ({
-    id: task.id,
-    status: task.status,
-    task_type: task.task_type,
-    params: task.params as Record<string, unknown> | null,
-  }));
+  return processing
+    .filter((task) => task.status === TASK_STATUS.QUEUED || task.status === TASK_STATUS.IN_PROGRESS)
+    .map((task) => ({
+      id: task.id,
+      status: task.status,
+      task_type: task.taskType,
+      params: task.params,
+    }));
 }
 
 export function useActiveTaskClips({ registry }: UseActiveTaskClipsArgs): UseActiveTaskClipsReturn {
@@ -178,15 +172,14 @@ export function useActiveTaskClips({ registry }: UseActiveTaskClipsArgs): UseAct
   const { data: activeTasks = [] } = useQuery({
     queryKey: activeTaskClipsQueryKey(selectedProjectId),
     queryFn: async () => {
-      console.log('[useActiveTaskClips] fetching for projectId:', selectedProjectId, 'isUuid:', isUuid(selectedProjectId));
       if (!selectedProjectId) {
         return [];
       }
 
       return fetchActiveTasks(selectedProjectId);
     },
-    enabled: !!selectedProjectId && isUuid(selectedProjectId),
-    refetchInterval: 5000,
+    enabled: !!selectedProjectId,
+    refetchInterval: taskPollingCadence,
     staleTime: 0,
     gcTime: 10000,
     refetchOnWindowFocus: 'always',

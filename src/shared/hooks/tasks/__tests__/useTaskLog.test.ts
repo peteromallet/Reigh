@@ -3,30 +3,16 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 
-// Mock supabase
-const mockSupabaseChain = () => {
-  const chain: Record<string, ReturnType<typeof vi.fn>> = {};
-  chain.select = vi.fn().mockReturnValue(chain);
-  chain.eq = vi.fn().mockReturnValue(chain);
-  chain.in = vi.fn().mockReturnValue(chain);
-  chain.not = vi.fn().mockReturnValue(chain);
-  chain.order = vi.fn().mockReturnValue(chain);
-  chain.range = vi.fn().mockResolvedValue({ data: [], error: null, count: 0 });
-  chain.single = vi.fn().mockResolvedValue({ data: null, error: null });
-  return chain;
-};
+import type * as projectSelectionStoreModule from '@/shared/contexts/projectSelectionStore';
 
-vi.mock('@/integrations/supabase/client', () => ({
-  getSupabaseClient: () => ({
-    from: vi.fn(() => mockSupabaseChain()),
-    auth: {
-      getUser: vi.fn().mockResolvedValue({
-        data: { user: { id: 'test-user-id' } },
-        error: null,
-      }),
-    },
-  }),
-}));
+const mockedFallback = vi.fn((): string | null => null);
+
+vi.mock('@/shared/contexts/projectSelectionStore', async () => {
+  const actual = await vi.importActual<typeof projectSelectionStoreModule>(
+    '@/shared/contexts/projectSelectionStore',
+  );
+  return { ...actual, getProjectSelectionFallbackId: () => mockedFallback() };
+});
 
 vi.mock('@/shared/lib/tasks/taskConfig', () => ({
   getVisibleTaskTypes: vi.fn(() => ['generate-video', 'generate-image']),
@@ -78,21 +64,9 @@ describe('useTaskLog', () => {
     expect(result.current).toBeDefined();
   });
 
-  it('returns empty tasks when user has no projects', async () => {
-    const { getSupabaseClient } = await import('@/integrations/supabase/client');
-    const client = getSupabaseClient();
-
-    vi.mocked(client.from).mockImplementation((table: string) => {
-      const chain = mockSupabaseChain();
-      if (table === 'projects') {
-        chain.select = vi.fn().mockReturnValue({
-          ...chain,
-          eq: vi.fn().mockResolvedValue({ data: [], error: null }),
-        });
-      }
-      return chain as ReturnType<typeof client.from>;
-    });
-
+  it('returns empty tasks when no project scope is resolvable', async () => {
+    // taskLogPipeline scopes every bridge read by the selected project; with
+    // no scope there is nothing to address and the page degrades to empty.
     const { result } = renderHook(() => useTaskLog(), {
       wrapper: createWrapper(),
     });
