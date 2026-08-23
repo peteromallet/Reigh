@@ -38,6 +38,8 @@ import {
   createHostGeneratedObjectMeta,
   readHostGenerationProvenance,
   validateManifest,
+  type DataKindRegistrationOptions,
+  type DataLaneActionDescriptor,
   type DataLaneRendererProps,
   type ExtensionContext,
 } from '@reigh/editor-sdk';
@@ -320,6 +322,13 @@ describe('transcript-lane dev example (dataKind V1 done-4)', () => {
     expect(chips.length).toBe(FIXTURE_SEGMENTS.length);
     expect(chips[0].textContent).toContain('Hello from the fixture');
     expect(chips[1].textContent).toContain('Second fixture segment');
+    expect(within(laneRow).getByRole('button', { name: 'Transcript actions' })).toBeVisible();
+    fireEvent.click(within(laneRow).getByRole('button', { name: 'Transcript actions' }));
+    expect(screen.getAllByRole('menuitem').map((button) => button.textContent)).toEqual([
+      'Add missing',
+      'Regenerate',
+      'Propose edits',
+    ]);
 
     // Row sits below the track rows inside the SAME scroller.
     const scroller = document.querySelector('.timeline-scroll');
@@ -418,8 +427,7 @@ describe('transcript lane chips (rework round-2 F3)', () => {
     expect(onNavigateItem).toHaveBeenCalledWith('a:c1:0', 'last');
   });
 
-  it('offers a one-click caption materialization action with current mapped items', () => {
-    const onCreateCaptions = vi.fn();
+  it('keeps whole-lane actions out of renderer-owned timeline coordinates', () => {
     const props: DataLaneRendererProps = {
       kindId: TRANSCRIPT_KIND_ID,
       schemaRef: TRANSCRIPT_SCHEMA_REF,
@@ -431,9 +439,9 @@ describe('transcript lane chips (rework round-2 F3)', () => {
         { id: 'a:c1:0', timelineStart: 1, timelineEnd: 2, clipId: 'c1', payload: { text: 'first' } },
       ],
     };
-    render(renderTranscriptLane(props, onCreateCaptions) as ReactElement);
-    fireEvent.click(screen.getByRole('button', { name: 'Render transcript as editable video text' }));
-    expect(onCreateCaptions).toHaveBeenCalledWith(props.items);
+    render(renderTranscriptLane(props) as ReactElement);
+    expect(screen.queryByRole('button', { name: /Render transcript as editable video text/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /actions/i })).toBeNull();
   });
 
   it('builds deterministic idempotent text-clip patches from mapped transcript time', () => {
@@ -495,11 +503,18 @@ describe('transcript lane chips (rework round-2 F3)', () => {
     const apply = vi.fn();
     const toast = vi.fn();
     let laneRenderer: ((props: DataLaneRendererProps) => unknown) | undefined;
+    let laneActions: readonly DataLaneActionDescriptor[] | undefined;
     const ctx = {
       extension: { id: TRANSCRIPT_LANE_EXTENSION_ID },
       dataKinds: {
-        register: (_kindId: string, renderer: (props: DataLaneRendererProps) => unknown) => {
+        register: (
+          _kindId: string,
+          renderer: (props: DataLaneRendererProps) => unknown,
+          _inspector?: unknown,
+          options?: DataKindRegistrationOptions,
+        ) => {
           laneRenderer = renderer;
+          laneActions = options?.actions;
           return { dispose: vi.fn() };
         },
       },
@@ -529,16 +544,8 @@ describe('transcript lane chips (rework round-2 F3)', () => {
 
     transcriptLaneExtension.activate?.(ctx);
     expect(laneRenderer).toBeTypeOf('function');
-    render(laneRenderer!({
-      kindId: TRANSCRIPT_KIND_ID,
-      schemaRef: TRANSCRIPT_SCHEMA_REF,
-      shape: 'interval',
-      domain: 'source_seconds',
-      startLeft: 0,
-      pixelsPerSecond: 50,
-      items: [item],
-    }) as ReactElement);
-    fireEvent.click(screen.getByRole('button', { name: 'Render transcript as editable video text' }));
+    expect(laneActions).toHaveLength(3);
+    laneActions?.find((action) => action.id === 'create-caption-clips')?.invoke([item]);
 
     expect(validate).not.toHaveBeenCalled();
     expect(apply).not.toHaveBeenCalled();

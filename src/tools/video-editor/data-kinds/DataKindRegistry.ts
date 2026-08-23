@@ -10,6 +10,7 @@
 
 import type {
   DataCoordinateDomain,
+  DataLaneActionDescriptor,
   DataItemInspectorProps,
   DataLaneRendererProps,
   DataShape,
@@ -46,6 +47,8 @@ export interface DataKindRegistryRecord {
   readonly domain: DataCoordinateDomain;
   /** Lane renderer bound at activation via `ctx.dataKinds.register()`. */
   readonly laneRenderer: (props: DataLaneRendererProps) => unknown;
+  /** Host-rendered whole-lane actions bound for this registration lifecycle. */
+  readonly laneActions?: readonly DataLaneActionDescriptor[];
   readonly inspector?: (props: DataItemInspectorProps) => unknown;
   readonly label?: string;
   /** Lower values sort first. Default 0. */
@@ -165,6 +168,9 @@ function freezeRenderability(
 function freezeRecord(record: DataKindRegistryRecord): DataKindRegistryRecord {
   return Object.freeze({
     ...record,
+    ...(record.laneActions
+      ? { laneActions: Object.freeze(record.laneActions.map((action) => Object.freeze({ ...action }))) }
+      : {}),
     renderability: freezeRenderability(record.renderability),
     ...(record.diagnostics ? { diagnostics: freezeDiagnostics(record.diagnostics) } : {}),
   });
@@ -424,4 +430,3 @@ export function createDataKindRegistry(): DataKindRegistry {
     dispose,
   };
 }
-

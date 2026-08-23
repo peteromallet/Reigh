@@ -134,6 +134,32 @@ describe('createDataKindRegistrationService', () => {
     expect(record!.order).toBe(-1);
   });
 
+  it('stores a frozen bounded lane-action contract and rejects invalid, duplicate, and excess descriptors', () => {
+    const { registry, service, reported } = makeService();
+    const invoke = vi.fn();
+    service.register('transcript_segment', noopLaneRenderer, undefined, {
+      actions: [
+        { id: 'valid', label: 'Valid', invoke },
+        { id: 'valid', label: 'Duplicate', invoke },
+        { id: 'bad id', label: 'Invalid id', invoke },
+        ...Array.from({ length: 7 }, (_, index) => ({
+          id: `extra-${index}`,
+          label: `Extra ${index}`,
+          invoke,
+        })),
+      ],
+    });
+
+    const actions = registry.resolve('transcript_segment')?.laneActions;
+    expect(actions).toHaveLength(6);
+    expect(actions?.map((action) => action.id)).toEqual([
+      'valid', 'extra-0', 'extra-1', 'extra-2', 'extra-3', 'extra-4',
+    ]);
+    expect(Object.isFrozen(actions)).toBe(true);
+    expect(actions?.every(Object.isFrozen)).toBe(true);
+    expect(reported.filter((diagnostic) => diagnostic.code === 'dataKinds/invalid-lane-action')).toHaveLength(4);
+  });
+
   // ---- schemaRef ownership (groken swarm L5-H1) -------------------------------
 
   it('rejects a second extension registering an already-owned schemaRef', () => {

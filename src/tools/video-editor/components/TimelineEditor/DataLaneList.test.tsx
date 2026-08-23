@@ -7,7 +7,7 @@
 // Rework R1: host-painted chrome dispatches timeline interaction targets —
 // extent-bar press → `dataItem` target (laneId/itemId + registry-resolved
 // extension/contribution ids), empty lane chrome → `dataLane` target.
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { useCallback, useEffect, useMemo } from 'react';
 import type { TimelineData } from '@/tools/video-editor/lib/timeline-data.ts';
 import type { FrozenDataItem } from '@/tools/video-editor/data/typed/envelope.ts';
@@ -20,7 +20,7 @@ import {
 } from '@/tools/video-editor/data-kinds/DataKindRegistryContext.tsx';
 import type { DataLaneRendererProps } from '@reigh/editor-sdk';
 import { DataLaneList, type DataLaneListProps } from './DataLaneList.tsx';
-import { DATA_LANE_DOM_ITEM_BUDGET } from './DataLaneRow.tsx';
+import { DATA_LANE_ACTION_TIMEOUT_MS, DATA_LANE_DOM_ITEM_BUDGET } from './DataLaneRow.tsx';
 
 const START_LEFT = 144;
 const PPS = 50;
@@ -438,5 +438,171 @@ describe('DataLaneList', () => {
     expect(setContextTarget).toHaveBeenCalledWith(expected);
     expect(setInspectorTarget).toHaveBeenCalledTimes(1);
     expect(setInspectorTarget).toHaveBeenCalledWith(expected);
+  });
+
+  it('renders a host-owned action menu and invokes against the complete lane, not its DOM window', async () => {
+    const invoke = vi.fn();
+    const record = registryRecord({
+      laneActions: [{
+        id: 'materialize',
+        label: 'Materialize',
+        ariaLabel: 'Materialize every transcript item',
+        invoke,
+      }],
+    });
+    const items = Array.from({ length: DATA_LANE_DOM_ITEM_BUDGET + 50 }, (_, index) => ({
+      item: item(`item-${index}`),
+      timelineStart: index,
+      timelineEnd: index + 0.5,
+    }));
+    const data = buildData([laneView({ items, laneRenderer: () => null })]);
+
+    render(
+      <DataKindRegistryProvider>
+        <RegisterProbe record={record} />
+        <DataLaneList data={data} pixelsPerSecond={1} />
+      </DataKindRegistryProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Transcript actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Materialize every transcript item' }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledTimes(1));
+    expect(invoke.mock.calls[0][0]).toHaveLength(items.length);
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('contains action failures as visible lane-menu errors and keeps keyboard recovery reachable', async () => {
+    const record = registryRecord({
+      laneActions: [{
+        id: 'fails',
+        label: 'Fail safely',
+        invoke: () => { throw new Error('contained action failure'); },
+      }],
+    });
+    const data = buildData([laneView({ laneRenderer: () => null })]);
+
+    render(
+      <DataKindRegistryProvider>
+        <RegisterProbe record={record} />
+        <DataLaneList data={data} pixelsPerSecond={1} />
+      </DataKindRegistryProvider>,
+    );
+    const trigger = screen.getByRole('button', { name: 'Transcript actions' });
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    const action = await screen.findByRole('menuitem', { name: 'Fail safely' });
+    expect(action).toHaveFocus();
+    fireEvent.click(action);
+    expect(await screen.findByRole('alert')).toHaveTextContent('contained action failure');
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(trigger).toHaveFocus();
+  });
+
+  it('implements complete menu keyboard navigation with wrapping', async () => {
+    const record = registryRecord({
+      laneActions: ['First', 'Second', 'Third'].map((label, index) => ({
+        id: `action-${index}`,
+        label,
+        invoke: vi.fn(),
+      })),
+    });
+    const data = buildData([laneView({ laneRenderer: () => null })]);
+    render(
+      <DataKindRegistryProvider>
+        <RegisterProbe record={record} />
+        <DataLaneList data={data} pixelsPerSecond={1} />
+      </DataKindRegistryProvider>,
+    );
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Transcript actions' }), { key: 'ArrowDown' });
+    const menu = await screen.findByRole('menu');
+    const [first, second, third] = within(menu).getAllByRole('menuitem');
+    expect(first).toHaveFocus();
+    fireEvent.keyDown(menu, { key: 'ArrowDown' });
+    expect(second).toHaveFocus();
+    fireEvent.keyDown(menu, { key: 'End' });
+    expect(third).toHaveFocus();
+    fireEvent.keyDown(menu, { key: 'ArrowDown' });
+    expect(first).toHaveFocus();
+    fireEvent.keyDown(menu, { key: 'ArrowUp' });
+    expect(third).toHaveFocus();
+    fireEvent.keyDown(menu, { key: 'Home' });
+    expect(first).toHaveFocus();
+  });
+
+  it('recovers from never-settling actions and bounds arbitrary displayed errors', async () => {
+    vi.useFakeTimers();
+    try {
+      const record = registryRecord({
+        laneActions: [
+          { id: 'stalls', label: 'Stalls', invoke: () => new Promise(() => {}) },
+          { id: 'long-error', label: 'Long error', invoke: () => { throw new Error(`unsafe\n${'x'.repeat(400)}`); } },
+        ],
+      });
+      const data = buildData([laneView({ laneRenderer: () => null })]);
+      render(
+        <DataKindRegistryProvider>
+          <RegisterProbe record={record} />
+          <DataLaneList data={data} pixelsPerSecond={1} />
+        </DataKindRegistryProvider>,
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Transcript actions' }));
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Stalls' }));
+      expect(screen.getByRole('menuitem', { name: 'Long error' })).toBeDisabled();
+      await act(async () => { await vi.advanceTimersByTimeAsync(DATA_LANE_ACTION_TIMEOUT_MS); });
+      expect(screen.getByRole('alert')).toHaveTextContent('Action timed out after 15 seconds. Try again.');
+      expect(screen.getByRole('menuitem', { name: 'Long error' })).not.toBeDisabled();
+
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Long error' }));
+      await act(async () => {});
+      const displayed = screen.getByRole('alert').textContent ?? '';
+      expect(displayed).not.toContain('\n');
+      expect(displayed).toHaveLength(180);
+      expect(displayed.endsWith('…')).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps actions isolated by lane kind and removes them with registration disposal', async () => {
+    const transcript = registryRecord({
+      laneActions: [{ id: 'transcript-action', label: 'Transcript action', invoke: vi.fn() }],
+    });
+    const runaway = registryRecord({
+      kindId: 'runaway',
+      contributionId: 'ext.runaway.contrib',
+      schemaRef: 'reigh.runaway_transition/v1',
+      ownerExtensionId: 'ext.runaway',
+      laneActions: [{ id: 'runaway-action', label: 'Runaway action', invoke: vi.fn() }],
+    });
+    const data = buildData([
+      laneView({ laneRenderer: () => null }),
+      laneView({
+        laneId: 'runaway',
+        kindId: 'runaway',
+        label: 'Runaway',
+        schemaRef: 'reigh.runaway_transition/v1',
+        laneRenderer: () => null,
+      }),
+    ]);
+
+    const view = render(
+      <DataKindRegistryProvider>
+        <RegisterProbe record={transcript} />
+        <RegisterProbe record={runaway} />
+        <DataLaneList data={data} pixelsPerSecond={1} />
+      </DataKindRegistryProvider>,
+    );
+    expect(screen.getAllByTestId('data-lane-actions-trigger')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Transcript actions' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Runaway actions' })).toBeVisible();
+
+    view.rerender(
+      <DataKindRegistryProvider>
+        <DataLaneList data={data} pixelsPerSecond={1} />
+      </DataKindRegistryProvider>,
+    );
+    await waitFor(() => expect(screen.queryAllByTestId('data-lane-actions-trigger')).toHaveLength(0));
   });
 });

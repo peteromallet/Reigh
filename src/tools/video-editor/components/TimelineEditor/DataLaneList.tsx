@@ -68,6 +68,7 @@ export function DataLaneList({ data, pixelsPerSecond, setContextTarget, setInspe
           lane={lane}
           pixelsPerSecond={pixelsPerSecond}
           extensionId={lane.kindId ? kindRecords.get(lane.kindId)?.ownerExtensionId : undefined}
+          laneActions={lane.kindId ? kindRecords.get(lane.kindId)?.laneActions : undefined}
           onSelectLane={() => dispatch({
             kind: 'dataLane',
             laneId: lane.laneId,

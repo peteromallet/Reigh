@@ -225,6 +225,25 @@ export interface DataLaneRendererProps {
 }
 
 /**
+ * A bounded, host-rendered action associated with an entire data lane.
+ *
+ * Extensions provide intent and behavior; the host owns placement, responsive
+ * layout, keyboard interaction, pending/error state, and event containment.
+ */
+export interface DataLaneActionDescriptor {
+  /** Stable within the registered data kind. */
+  readonly id: string;
+  /** Short visible label rendered by the host. */
+  readonly label: string;
+  /** Accessible name when the visible label is not sufficiently descriptive. */
+  readonly ariaLabel?: string;
+  /** Optional bounded explanatory tooltip. */
+  readonly title?: string;
+  /** Invoke against the complete host-frozen lane, never only its DOM window. */
+  readonly invoke: (items: readonly DataLaneRenderItem[]) => void | Promise<void>;
+}
+
+/**
  * Props passed to a registered data-item inspector.
  *
  * Inspectors render in the properties panel when a lane item is selected;
@@ -253,6 +272,8 @@ export interface DataKindRegistrationOptions {
   label?: string;
   /** Override sort order for lane stacking. Lower values sort first. */
   order?: number;
+  /** Optional whole-lane actions rendered in the host's responsive action menu. */
+  actions?: readonly DataLaneActionDescriptor[];
 }
 
 /**

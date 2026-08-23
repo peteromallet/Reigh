@@ -19,14 +19,21 @@
 import {
   type ComponentType,
   type KeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { HostContributionErrorBoundary } from '@/tools/video-editor/runtime/ContributionErrorBoundary.tsx';
-import type { DataLaneRendererProps } from '@reigh/editor-sdk';
+import type {
+  DataLaneActionDescriptor,
+  DataLaneRenderItem,
+  DataLaneRendererProps,
+} from '@reigh/editor-sdk';
 import type { DataLaneView } from '@/tools/video-editor/data/typed/envelope.ts';
 import { LABEL_WIDTH } from '@/tools/video-editor/lib/coordinate-utils.ts';
 
@@ -36,6 +43,8 @@ export interface DataLaneRowProps {
   readonly pixelsPerSecond: number;
   /** Owning extension of the registered kind, for boundary recovery keys. */
   readonly extensionId?: string;
+  /** Host-rendered whole-lane actions bound to the kind registration. */
+  readonly laneActions?: readonly DataLaneActionDescriptor[];
   /** Empty lane chrome pressed → dispatch a `dataLane` target upstream. */
   readonly onSelectLane?: () => void;
   /** Host-painted extent bar pressed → dispatch a `dataItem` target upstream. */
@@ -43,6 +52,11 @@ export interface DataLaneRowProps {
 }
 
 const EXTENT_BAR_MIN_WIDTH_PX = 2;
+
+/** Host recovery bound for extension actions that never settle. */
+export const DATA_LANE_ACTION_TIMEOUT_MS = 15_000;
+
+const DATA_LANE_ACTION_ERROR_MAX_LENGTH = 180;
 
 /** Maximum interactive item controls a lane may contribute to the DOM. */
 export const DATA_LANE_DOM_ITEM_BUDGET = 128;
@@ -72,7 +86,14 @@ function navigationDirection(event: KeyboardEvent<HTMLElement>): NavigationDirec
   }
 }
 
-export function DataLaneRow({ lane, pixelsPerSecond, extensionId, onSelectLane, onSelectItem }: DataLaneRowProps) {
+export function DataLaneRow({
+  lane,
+  pixelsPerSecond,
+  extensionId,
+  laneActions,
+  onSelectLane,
+  onSelectItem,
+}: DataLaneRowProps) {
   const rowRef = useRef<HTMLDivElement>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [focusItemId, setFocusItemId] = useState<string>();
@@ -146,21 +167,225 @@ export function DataLaneRow({ lane, pixelsPerSecond, extensionId, onSelectLane, 
           {windowItems.length}/{totalItemCount}
         </span>
       </div>
-      <div className="relative min-w-0 flex-1">
-        {paintLane({
-          lane,
-          pixelsPerSecond,
-          extensionId,
-          items: windowItems,
-          windowStartIndex,
-          windowEndIndex,
-          totalItemCount,
-          activeItemId,
-          focusItemId,
-          onSelectItem: selectWindowItem,
-          onNavigateItem: navigateWindow,
-        })}
+      <div className="relative grid min-w-0 flex-1">
+        <div className="col-start-1 row-start-1 min-w-0">
+          {paintLane({
+            lane,
+            pixelsPerSecond,
+            extensionId,
+            items: windowItems,
+            windowStartIndex,
+            windowEndIndex,
+            totalItemCount,
+            activeItemId,
+            focusItemId,
+            onSelectItem: selectWindowItem,
+            onNavigateItem: navigateWindow,
+          })}
+        </div>
+        {laneActions && laneActions.length > 0 ? (
+          <LaneActionMenu
+            laneLabel={lane.label}
+            actions={laneActions}
+            items={lane.items.map(toRenderItem)}
+          />
+        ) : null}
       </div>
+    </div>
+  );
+}
+
+interface LaneActionMenuProps {
+  readonly laneLabel: string;
+  readonly actions: readonly DataLaneActionDescriptor[];
+  readonly items: readonly DataLaneRenderItem[];
+}
+
+function LaneActionMenu({ laneLabel, actions, items }: LaneActionMenuProps) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const actionRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [runningActionId, setRunningActionId] = useState<string>();
+  const [error, setError] = useState<string>();
+  const [menuPosition, setMenuPosition] = useState({ left: 4, top: 4 });
+
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    const scroller = root?.closest<HTMLElement>('.timeline-canvas-edit-area');
+    if (!root || !scroller) return;
+    const syncViewportClamp = () => {
+      const scrollerRight = scroller.getBoundingClientRect().right;
+      const hiddenRight = Math.max(0, scrollerRight - window.innerWidth);
+      root.style.right = `${4 + hiddenRight}px`;
+    };
+    syncViewportClamp();
+    window.addEventListener('resize', syncViewportClamp);
+    const observer = typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(syncViewportClamp);
+    observer?.observe(scroller);
+    return () => {
+      window.removeEventListener('resize', syncViewportClamp);
+      observer?.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    actionRefs.current[0]?.focus({ preventScroll: true });
+    const closeFromOutside = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!rootRef.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', closeFromOutside);
+    return () => document.removeEventListener('pointerdown', closeFromOutside);
+  }, [open]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const positionMenu = () => {
+      const trigger = triggerRef.current?.getBoundingClientRect();
+      if (!trigger) return;
+      const menuWidth = Math.min(176, Math.max(1, window.innerWidth - 8));
+      const menuHeight = menuRef.current?.getBoundingClientRect().height ?? 104;
+      const left = Math.max(4, Math.min(trigger.right - menuWidth, window.innerWidth - menuWidth - 4));
+      const below = trigger.bottom + 2;
+      const top = below + menuHeight <= window.innerHeight - 4
+        ? below
+        : Math.max(4, trigger.top - menuHeight - 2);
+      setMenuPosition((current) => current.left === left && current.top === top
+        ? current
+        : { left, top });
+    };
+    positionMenu();
+    window.addEventListener('resize', positionMenu);
+    window.addEventListener('scroll', positionMenu, true);
+    return () => {
+      window.removeEventListener('resize', positionMenu);
+      window.removeEventListener('scroll', positionMenu, true);
+    };
+  }, [open, error]);
+
+  const closeAndRestoreFocus = useCallback(() => {
+    setOpen(false);
+    setError(undefined);
+    triggerRef.current?.focus({ preventScroll: true });
+  }, []);
+
+  const invoke = useCallback(async (action: DataLaneActionDescriptor) => {
+    setRunningActionId(action.id);
+    setError(undefined);
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const invocation = Promise.resolve().then(() => action.invoke(items));
+      const timeout = new Promise<never>((_resolve, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error(`Action timed out after ${DATA_LANE_ACTION_TIMEOUT_MS / 1_000} seconds. Try again.`));
+        }, DATA_LANE_ACTION_TIMEOUT_MS);
+      });
+      await Promise.race([invocation, timeout]);
+      closeAndRestoreFocus();
+    } catch (cause) {
+      const rawMessage = cause instanceof Error ? cause.message : String(cause);
+      const normalized = rawMessage.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim() || 'Action failed.';
+      setError(normalized.length > DATA_LANE_ACTION_ERROR_MAX_LENGTH
+        ? `${normalized.slice(0, DATA_LANE_ACTION_ERROR_MAX_LENGTH - 1)}…`
+        : normalized);
+    } finally {
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+      setRunningActionId(undefined);
+    }
+  }, [closeAndRestoreFocus, items]);
+
+  const stopRowSelection = (event: ReactMouseEvent<HTMLElement>) => event.stopPropagation();
+
+  return (
+    <div
+      ref={rootRef}
+      data-testid="data-lane-action-rail"
+      className="pointer-events-none sticky right-1 z-30 col-start-1 row-start-1 mr-1 flex h-full w-max items-center justify-self-end"
+      onClick={stopRowSelection}
+    >
+      <button
+        ref={triggerRef}
+        type="button"
+        data-testid="data-lane-actions-trigger"
+        className="pointer-events-auto h-5 rounded border border-border bg-card/95 px-2 text-[10px] font-medium text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        aria-label={`${laneLabel} actions`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title={`${laneLabel} actions`}
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen((current) => !current);
+          setError(undefined);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            setOpen(true);
+          }
+        }}
+      >
+        Actions ({actions.length})
+      </button>
+      {open ? createPortal(
+        <div
+          ref={menuRef}
+          role="menu"
+          aria-label={`${laneLabel} actions`}
+          data-testid="data-lane-actions-menu"
+          className="pointer-events-auto fixed z-[100] grid min-w-44 gap-1 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-lg"
+          style={{ left: menuPosition.left, top: menuPosition.top }}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              event.stopPropagation();
+              closeAndRestoreFocus();
+              return;
+            }
+            if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const currentIndex = actionRefs.current.findIndex((button) => button === document.activeElement);
+            let nextIndex = currentIndex;
+            if (event.key === 'Home') nextIndex = 0;
+            if (event.key === 'End') nextIndex = actions.length - 1;
+            if (event.key === 'ArrowDown') nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % actions.length;
+            if (event.key === 'ArrowUp') nextIndex = currentIndex < 0
+              ? actions.length - 1
+              : (currentIndex - 1 + actions.length) % actions.length;
+            actionRefs.current[nextIndex]?.focus({ preventScroll: true });
+          }}
+        >
+          {actions.map((action, index) => (
+            <button
+              key={action.id}
+              ref={(element) => { actionRefs.current[index] = element; }}
+              type="button"
+              role="menuitem"
+              data-lane-action-id={action.id}
+              className="rounded px-2 py-1 text-left text-xs hover:bg-accent focus-visible:bg-accent focus-visible:outline-none disabled:opacity-50"
+              aria-label={action.ariaLabel ?? action.label}
+              title={action.title}
+              disabled={runningActionId !== undefined}
+              onClick={(event) => {
+                event.stopPropagation();
+                void invoke(action);
+              }}
+            >
+              {runningActionId === action.id ? `${action.label}…` : action.label}
+            </button>
+          ))}
+          {error ? (
+            <div role="alert" className="max-w-64 px-2 py-1 text-[10px] leading-tight text-destructive">
+              {error}
+            </div>
+          ) : null}
+        </div>
+      , document.body) : null}
     </div>
   );
 }
@@ -177,6 +402,19 @@ interface PaintLaneArgs {
   readonly focusItemId?: string;
   readonly onSelectItem: (itemId: string) => void;
   readonly onNavigateItem: (itemId: string, direction: NavigationDirection) => void;
+}
+
+function toRenderItem(view: DataLaneView['items'][number]): DataLaneRenderItem {
+  return {
+    id: view.item.id,
+    ...(view.item.sourceItemId ? { sourceItemId: view.item.sourceItemId } : {}),
+    timelineStart: view.timelineStart,
+    timelineEnd: view.timelineEnd,
+    clipId: view.clipId,
+    ...(view.item.sourceArtifactRef ? { sourceArtifactRef: view.item.sourceArtifactRef } : {}),
+    provenance: view.item.provenance,
+    payload: view.item.payload,
+  };
 }
 
 function paintLane({
@@ -203,16 +441,6 @@ function paintLane({
       onNavigateItem,
     });
   }
-  const toRenderItem = (view: DataLaneView['items'][number]) => ({
-    id: view.item.id,
-    ...(view.item.sourceItemId ? { sourceItemId: view.item.sourceItemId } : {}),
-    timelineStart: view.timelineStart,
-    timelineEnd: view.timelineEnd,
-    clipId: view.clipId,
-    ...(view.item.sourceArtifactRef ? { sourceArtifactRef: view.item.sourceArtifactRef } : {}),
-    provenance: view.item.provenance,
-    payload: view.item.payload,
-  });
   const rendererProps: DataLaneRendererProps = {
     kindId: lane.kindId,
     schemaRef: lane.schemaRef,

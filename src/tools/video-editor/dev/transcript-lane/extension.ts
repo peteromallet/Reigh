@@ -374,13 +374,33 @@ export const transcriptLaneExtension: ReighExtension = defineExtension({
     // `dataKinds/undeclared-kind` and no-op.
     const handle = ctx.dataKinds.register(
       TRANSCRIPT_KIND_ID,
-      (props) => renderTranscriptLane(
-        props,
-        (items) => renderTranscriptAsCaptions(ctx, items, 'preserve'),
-        (items) => renderTranscriptAsCaptions(ctx, items, 'regenerate'),
-        (items) => proposeTranscriptSourceUpdates(ctx, items),
-      ),
+      renderTranscriptLane,
       renderTranscriptItemInspector,
+      {
+        actions: [
+          {
+            id: 'create-caption-clips',
+            label: 'Add missing',
+            ariaLabel: 'Render transcript as editable video text',
+            title: 'Create missing editable video text clips and preserve existing edits',
+            invoke: (items) => renderTranscriptAsCaptions(ctx, items, 'preserve'),
+          },
+          {
+            id: 'regenerate-caption-clips',
+            label: 'Regenerate',
+            ariaLabel: 'Regenerate transcript captions and replace edits',
+            title: 'Explicitly regenerate caption clips, replacing human edits',
+            invoke: (items) => renderTranscriptAsCaptions(ctx, items, 'regenerate'),
+          },
+          {
+            id: 'propose-source-updates',
+            label: 'Propose edits',
+            ariaLabel: 'Propose caption edits back to transcript source',
+            title: 'Create review proposals from human-edited caption text',
+            invoke: (items) => proposeTranscriptSourceUpdates(ctx, items),
+          },
+        ],
+      },
     );
 
     return {

@@ -13,7 +13,6 @@
 
 import { createElement, type KeyboardEvent, type MouseEvent } from 'react';
 import type {
-  DataLaneRenderItem,
   DataItemInspectorProps,
   DataLaneRendererProps,
 } from '@reigh/editor-sdk';
@@ -36,9 +35,6 @@ function truncate(text: string): string {
  */
 export function renderTranscriptLane(
   props: DataLaneRendererProps,
-  onCreateCaptions?: (items: readonly DataLaneRenderItem[]) => void,
-  onRegenerateCaptions?: (items: readonly DataLaneRenderItem[]) => void,
-  onProposeSourceUpdates?: (items: readonly DataLaneRenderItem[]) => void,
 ): unknown {
   const windowStartIndex = props.itemWindow?.startIndex ?? 0;
   const totalItemCount = props.itemWindow?.totalItemCount ?? props.items.length;
@@ -103,74 +99,6 @@ export function renderTranscriptLane(
       style: { position: 'relative', height: '100%', overflow: 'hidden' },
     },
     ...chips,
-    ...(onCreateCaptions ? [
-      createElement(
-        'div',
-        {
-          key: 'caption-actions',
-          role: 'group',
-          'aria-label': 'Transcript caption round-trip actions',
-          style: {
-            position: 'absolute',
-            right: 6,
-            top: 2,
-            zIndex: 2,
-            display: 'flex',
-            gap: 3,
-          },
-        },
-        ...[
-          {
-            key: 'create-caption-clips',
-            testId: 'transcript-create-caption-clips',
-            title: 'Create missing editable video text clips and preserve existing edits',
-            ariaLabel: 'Render transcript as editable video text',
-            label: 'Add missing',
-            action: onCreateCaptions,
-          },
-          ...(onRegenerateCaptions ? [{
-            key: 'regenerate-caption-clips',
-            testId: 'transcript-regenerate-caption-clips',
-            title: 'Explicitly regenerate caption clips, replacing human edits',
-            ariaLabel: 'Regenerate transcript captions and replace edits',
-            label: 'Regenerate',
-            action: onRegenerateCaptions,
-          }] : []),
-          ...(onProposeSourceUpdates ? [{
-            key: 'propose-source-updates',
-            testId: 'transcript-propose-source-updates',
-            title: 'Create review proposals from human-edited caption text',
-            ariaLabel: 'Propose caption edits back to transcript source',
-            label: 'Propose edits',
-            action: onProposeSourceUpdates,
-          }] : []),
-        ].map((button) => createElement(
-          'button',
-          {
-            key: button.key,
-            type: 'button',
-            'data-testid': button.testId,
-            title: button.title,
-            'aria-label': button.ariaLabel,
-            style: {
-            fontSize: 10,
-            lineHeight: '18px',
-            padding: '0 8px',
-            borderRadius: 4,
-            border: '1px solid var(--video-editor-accent-border-strong)',
-            background: 'var(--video-editor-panel-bg)',
-            color: 'var(--video-editor-fg)',
-            cursor: 'pointer',
-            },
-            onClick: (event: MouseEvent<HTMLButtonElement>) => {
-              event.stopPropagation();
-              button.action(props.getAllItems?.() ?? props.items);
-            },
-          },
-          button.label,
-        )),
-      ),
-    ] : []),
   );
 }
 

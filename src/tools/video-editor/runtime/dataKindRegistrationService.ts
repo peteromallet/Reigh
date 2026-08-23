@@ -14,6 +14,7 @@ import type {
   DataCoordinateDomain,
   DataItemInspectorProps,
   DataKindContribution,
+  DataLaneActionDescriptor,
   DataKindRegistrationOptions,
   DataKindRegistrationService,
   DataLaneRendererProps,
@@ -125,6 +126,38 @@ export function createDataKindRegistrationService(
     diagnosticsService.report({ severity, code, message, detail });
   }
 
+  function normalizeLaneActions(
+    kindId: string,
+    actions: readonly DataLaneActionDescriptor[] | undefined,
+  ): readonly DataLaneActionDescriptor[] | undefined {
+    if (!actions) return undefined;
+    const normalized: DataLaneActionDescriptor[] = [];
+    const seen = new Set<string>();
+    for (const [index, action] of actions.entries()) {
+      const valid = action
+        && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/.test(action.id)
+        && action.label.trim().length > 0
+        && action.label.length <= 40
+        && (action.ariaLabel === undefined || (action.ariaLabel.trim().length > 0 && action.ariaLabel.length <= 100))
+        && (action.title === undefined || (action.title.trim().length > 0 && action.title.length <= 160))
+        && typeof action.invoke === 'function'
+        && !seen.has(action.id)
+        && normalized.length < 6;
+      if (!valid) {
+        emit(
+          'warning',
+          'dataKinds/invalid-lane-action',
+          `Ignored invalid or excess lane action at index ${index} for data kind "${kindId}".`,
+          { kindId, extensionId, index },
+        );
+        continue;
+      }
+      seen.add(action.id);
+      normalized.push(Object.freeze({ ...action }));
+    }
+    return normalized.length > 0 ? Object.freeze(normalized) : undefined;
+  }
+
   function register(
     kindId: string,
     laneRenderer: (props: DataLaneRendererProps) => unknown,
@@ -200,6 +233,7 @@ export function createDataKindRegistrationService(
     // ---- Build the DataKindRegistryRecord ----------------------------------
     const label = options?.label ?? contrib.label ?? kindId;
     const order = options?.order ?? contrib.order;
+    const laneActions = normalizeLaneActions(kindId, options?.actions);
     const provenance: DataKindProvenance = 'bundled-extension';
     const record: DataKindRegistryRecord = {
       kindId,
@@ -208,6 +242,7 @@ export function createDataKindRegistrationService(
       shape: declaredShape,
       domain: declaredDomain,
       laneRenderer,
+      ...(laneActions ? { laneActions } : {}),
       ...(inspector ? { inspector } : {}),
       ownerExtensionId: extensionId,
       provenance,
