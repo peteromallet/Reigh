@@ -354,6 +354,8 @@ function renderCanvas(params?: {
   overlays?: readonly ResolvedTimelineOverlayDescriptor[];
   timelineOverlaysEnabled?: boolean;
   ops?: {
+    clearSelection?: ReturnType<typeof vi.fn>;
+    setSelectedTrackId?: ReturnType<typeof vi.fn>;
     setContextTarget: ReturnType<typeof vi.fn>;
     setInspectorTarget: ReturnType<typeof vi.fn>;
   };
@@ -1940,7 +1942,9 @@ describe('TimelineCanvas — dataKind V1 lane strip', () => {
     expect(screen.getByTestId('timeline-playhead')).toHaveStyle({ height: '96px' });
   });
 
-  it('dispatches lane interaction targets through the store ops (rework R1)', () => {
+  it('clears a stale clip selection before one click switches to a lane item inspector', () => {
+    const clearSelection = vi.fn();
+    const setSelectedTrackId = vi.fn();
     const setContextTarget = vi.fn();
     const setInspectorTarget = vi.fn();
     useDataLanesMock.mockReturnValue({
@@ -1953,13 +1957,22 @@ describe('TimelineCanvas — dataKind V1 lane strip', () => {
         items: [{ item: { id: 'a:c1:0' }, timelineStart: 0, timelineEnd: 1 }],
       })],
     });
-    renderCanvas({ rows: [row], tracks: [track], ops: { setContextTarget, setInspectorTarget } });
+    renderCanvas({
+      rows: [row],
+      tracks: [track],
+      ops: { clearSelection, setSelectedTrackId, setContextTarget, setInspectorTarget },
+    });
 
     fireEvent.click(screen.getByTestId('data-lane-extent-bar'));
 
     const expected = { kind: 'dataItem', laneId: 'opaque:x/v1', itemId: 'a:c1:0' };
+    expect(clearSelection).toHaveBeenCalledTimes(1);
+    expect(setSelectedTrackId).toHaveBeenCalledWith(null);
     expect(setContextTarget).toHaveBeenCalledWith(expect.objectContaining(expected));
     expect(setInspectorTarget).toHaveBeenCalledWith(expect.objectContaining(expected));
+    expect(clearSelection.mock.invocationCallOrder[0]).toBeLessThan(
+      setInspectorTarget.mock.invocationCallOrder[0],
+    );
   });
 
   it('moves the real shared scroller before focusing a virtualized End target', async () => {

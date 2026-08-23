@@ -43,6 +43,8 @@ export interface DataLaneListProps {
   /** Scroll the shared timeline viewport to a keyboard navigation target. */
   readonly onRequestItemIntoView?: (timelineStart: number, timelineEnd: number) => void;
   /** Timeline interaction-model setters, shared with the overlay host. */
+  readonly clearSelection?: () => void;
+  readonly setSelectedTrackId?: (trackId: string | null) => void;
   readonly setContextTarget?: (target: TimelineContextTarget) => void;
   readonly setInspectorTarget?: (target: TimelineInspectorTarget) => void;
 }
@@ -52,15 +54,22 @@ export function DataLaneList({
   pixelsPerSecond,
   viewport,
   onRequestItemIntoView,
+  clearSelection,
+  setSelectedTrackId,
   setContextTarget,
   setInspectorTarget,
 }: DataLaneListProps) {
   const kindRecords = useDataKindRegistrySnapshot();
 
   const dispatch = useCallback((target: TimelineInteractionTarget) => {
+    // A data target replaces clip/track selection. Clear those synchronous
+    // selection-store values before publishing the target so the shell cannot
+    // derive a stale clip inspector and overwrite the user's first lane click.
+    clearSelection?.();
+    setSelectedTrackId?.(null);
     setContextTarget?.(target);
     setInspectorTarget?.(target);
-  }, [setContextTarget, setInspectorTarget]);
+  }, [clearSelection, setContextTarget, setInspectorTarget, setSelectedTrackId]);
 
   const lanes = useMemo(
     () => visibleDataLanes(data?.dataLanes),

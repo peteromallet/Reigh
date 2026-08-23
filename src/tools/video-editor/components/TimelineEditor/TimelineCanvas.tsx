@@ -1109,6 +1109,8 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
             pixelsPerSecond={pixelsPerSecond}
             viewport={{ scrollLeft, clientWidth: viewportWidth }}
             onRequestItemIntoView={scrollDataLaneItemIntoView}
+            clearSelection={ops?.clearSelection}
+            setSelectedTrackId={ops?.setSelectedTrackId}
             setContextTarget={ops?.setContextTarget}
             setInspectorTarget={ops?.setInspectorTarget}
           />
