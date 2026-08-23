@@ -21,6 +21,7 @@ import {
 } from '@/tools/video-editor/runtime/exportGuard.ts';
 import {
   planRender,
+  runtimeTimelineCompositionGraph,
   type RenderPlannerResult,
 } from '@/tools/video-editor/runtime/renderPlanner.ts';
 import {
@@ -391,7 +392,7 @@ export function useRenderState(
     diagnosticCollection?.remove((diagnostic) => diagnostic.detail?.source === 'export-guard');
     diagnosticCollection?.remove((diagnostic) => diagnostic.detail?.source === 'render-planner');
 
-    const compositionGraph = extensionRuntime?.compositionGraph;
+    const compositionGraph = runtimeTimelineCompositionGraph(extensionRuntime);
 
     // Skip guard work only when there is no active extension/provider registry input.
     if (
@@ -473,7 +474,7 @@ export function useRenderState(
           resolvedConfig,
           undefined,
           {
-            compositionGraph: extensionRuntime?.compositionGraph,
+            compositionGraph: runtimeTimelineCompositionGraph(extensionRuntime),
             processes: extensionRuntime?.processes,
             processStatuses,
             processResultAttachRecords,
@@ -615,7 +616,7 @@ export function useRenderState(
       processStatuses,
       processResultAttachRecords,
       shaders: extensionRuntime?.shaders ?? [],
-      compositionGraph: extensionRuntime?.compositionGraph,
+      compositionGraph: runtimeTimelineCompositionGraph(extensionRuntime),
       request: {
         outputFormatId: formatId,
         routes: ['browser-export'],

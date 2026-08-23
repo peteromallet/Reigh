@@ -800,8 +800,26 @@ function stripSnapshotShaders(
   };
 }
 
+/**
+ * A graph supplied directly by the caller is a timeline projection and is
+ * therefore authoritative even when it is empty.  The graph attached to a
+ * normalized extension runtime is different: it is eagerly built before a
+ * timeline snapshot exists.  Treat that static graph as timeline authority
+ * only once it contains a `consumes` edge projected from actual timeline use.
+ *
+ * Without this distinction, the empty runtime graph suppresses legacy
+ * timeline shader metadata and can incorrectly make an unmaterializable
+ * shader appear exportable.
+ */
+export function runtimeTimelineCompositionGraph(
+  extensionRuntime: RenderPlannerInput['extensionRuntime'],
+): CompositionGraph | undefined {
+  const graph = extensionRuntime?.compositionGraph;
+  return graph?.edges.some((edge) => edge.kind === 'consumes') ? graph : undefined;
+}
+
 function plannerCompositionGraph(input: RenderPlannerInput): CompositionGraph | undefined {
-  return input.compositionGraph ?? input.extensionRuntime?.compositionGraph;
+  return input.compositionGraph ?? runtimeTimelineCompositionGraph(input.extensionRuntime);
 }
 
 function shaderRefKey(

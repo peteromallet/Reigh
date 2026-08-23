@@ -69,12 +69,24 @@ const guardMocks = vi.hoisted(() => ({
   scanExportConfig: vi.fn(),
 }));
 
+const exportMocks = vi.hoisted(() => ({
+  executeCompileOnlyOutput: vi.fn(),
+}));
+
 vi.mock('@/tools/video-editor/runtime/exportGuard', () => ({
   collectBuiltInKnownIds: guardMocks.collectBuiltInKnownIds,
   collectExtensionDeclaredIds: guardMocks.collectExtensionDeclaredIds,
   hasTimelineShaderMetadata: guardMocks.hasTimelineShaderMetadata,
   scanExportConfig: guardMocks.scanExportConfig,
 }));
+
+vi.mock('@/tools/video-editor/runtime/outputFormatRegistry', async () => {
+  const actual = await vi.importActual('@/tools/video-editor/runtime/outputFormatRegistry');
+  return {
+    ...actual,
+    executeCompileOnlyOutput: exportMocks.executeCompileOnlyOutput,
+  };
+});
 
 const buildConfig = (clip: ResolvedTimelineConfig['clips'][number]): ResolvedTimelineConfig => ({
   output: {
@@ -1882,18 +1894,6 @@ describe('useRenderState export guard', () => {
 // formats are rejected, and existing Render behavior is unchanged
 // ---------------------------------------------------------------------------
 
-const exportMocks = vi.hoisted(() => ({
-  executeCompileOnlyOutput: vi.fn(),
-}));
-
-vi.mock('@/tools/video-editor/runtime/outputFormatRegistry', async () => {
-  const actual = await vi.importActual('@/tools/video-editor/runtime/outputFormatRegistry');
-  return {
-    ...actual,
-    executeCompileOnlyOutput: exportMocks.executeCompileOnlyOutput,
-  };
-});
-
 describe('useRenderState — M6 export behavior', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -2681,7 +2681,9 @@ describe('useRenderState export guard — clip-type registry snapshot', () => {
 
     expect(renderRouterMocks.decideRenderRoute).toHaveBeenCalledTimes(1);
     expect(renderRouterMocks.decideRenderRoute.mock.calls[0]?.[2]).toMatchObject({
-      compositionGraph: extRuntime.compositionGraph,
+      // The normalized runtime graph is edge-less because no timeline has
+      // been projected into it; it must not masquerade as timeline authority.
+      compositionGraph: undefined,
       processes: extRuntime.processes,
       processStatuses: runtimeValue.processStatuses,
       processResultAttachRecords: [attachRecord],

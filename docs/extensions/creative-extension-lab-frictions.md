@@ -660,3 +660,29 @@ evidence and a concrete improvement direction.
   aligned. The vendor timeline package keeps its older exact media dependency
   in a nested tree. Release validation must exercise a fresh lock install—the
   incumbent `node_modules` tree can mask or invent compatibility outcomes.
+
+### Diagnostic callbacks need stable identity and idempotent state updates
+
+- A full serial suite appeared to freeze with one worker at sustained CPU. A
+  Node inspector profile traced it to `ShaderInspector`: an inline diagnostics
+  callback changed identity on every render, `SchemaForm` re-emitted a fresh
+  diagnostics array from an effect, and the parent unconditionally stored it.
+  The resulting render/effect loop produced no test output and looked like a
+  crashed runner.
+- The callback is now stable and the state setter preserves the current array
+  when its JSON value is unchanged. Focused coverage completes in seconds. For
+  extension UI surfaces, callbacks consumed by effects and diagnostic arrays
+  crossing component boundaries both need explicit stability contracts; test
+  timeouts alone only hide this class of failure.
+
+### A static extension graph is not a timeline composition graph
+
+- Runtime normalization eagerly creates a graph before any project timeline is
+  available. Passing that edge-less graph as authoritative caused render
+  planning to discard real shader metadata from the timeline snapshot, making
+  an unmaterializable shader appear browser-exportable.
+- Direct caller-supplied graphs remain authoritative, including intentionally
+  empty ones. An eager runtime graph becomes timeline authority only after a
+  projected `consumes` edge proves actual timeline usage; otherwise planning
+  and export scanning use the timeline compatibility path and fail closed.
+  Graph provenance matters as much as graph shape.

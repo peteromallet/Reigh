@@ -38,6 +38,11 @@ import { ShaderInspector } from '@/tools/video-editor/components/ShaderInspector
 import { projectCompositionGraph } from '@/tools/video-editor/runtime/composition/graphProjector.ts';
 import { applyGraphPreviewOperations } from '@/tools/video-editor/runtime/composition/patchPreview.ts';
 import { planRender } from '@/tools/video-editor/runtime/renderPlanner.ts';
+import {
+  collectBuiltInKnownIds,
+  collectExtensionDeclaredIds,
+  scanExportConfig,
+} from '@/tools/video-editor/runtime/exportGuard.ts';
 import { COMPOSITION_DIAGNOSTIC_CODE } from '@/tools/video-editor/runtime/composition/diagnostics.ts';
 import type { ContributionIndex } from '@/tools/video-editor/runtime/extensionSurface.ts';
 import type { ClipTypeRegistrySnapshot } from '@/tools/video-editor/clip-types/ClipTypeRegistry.ts';
@@ -724,12 +729,14 @@ describe('clip-local-shader-canary extension', () => {
     const snapshot = makeShaderSnapshot(clip);
     const runtime = normalizeExtensionRuntime([test.extension]);
 
-    // Graph-present: planRender derives shader facts from the compositionGraph.
+    // The normalized runtime graph is projected before a timeline exists. It
+    // must not suppress the shader metadata in this snapshot merely because a
+    // static, edge-less graph object is present.
     const plannerWithGraph = planRender({ snapshot, extensionRuntime: runtime });
 
-    // The graph-present planner still reports the missing-material blocker
-    // because the canary shader has no export materializer — this is derived
-    // from graph edges, not legacy snapshot shader fields.
+    // The planner still reports the missing-material blocker because the
+    // runtime graph has no timeline `consumes` edge and therefore falls back
+    // to the snapshot's shader metadata.
     expect(plannerWithGraph.canBrowserExport).toBe(false);
     expect(plannerWithGraph.blockers).toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -872,7 +879,7 @@ describe('clip-local-shader-canary extension', () => {
     test.dispose();
   });
 
-  it('emits DISABLED_REF diagnostics for a shader that is in error state (diagnostic shader)', () => {
+  it('keeps graph identity resolution distinct from shader-registry runtime validation', () => {
     const test = activateCanary({ includeDiagnosticShader: true });
     const runtime = normalizeExtensionRuntime([test.extension]);
 
@@ -936,20 +943,21 @@ describe('clip-local-shader-canary extension', () => {
       contributionIndex: runtime.contributionIndex,
     });
 
-    // The contribution ref for the diagnostic shader should be in a non-resolved state
+    // The graph resolves manifest identity. Runtime shader compilation and
+    // uniform validation remain owned by the shader registry, whose record is
+    // already asserted to be in error above.
     const diagRefState = graph.referenceStates.find(
       (entry) => entry.refKey === `shader:${CLIP_LOCAL_SHADER_CANARY_EXTENSION_ID}:${CLIP_LOCAL_SHADER_CANARY_DIAGNOSTIC_CONTRIBUTION_ID}`,
     );
     expect(diagRefState).toBeDefined();
-    // The diagnostic shader has an unsupported uniform so it's in runtime-error or disabled state
-    expect(['runtime-error', 'disabled', 'settings-error']).toContain(diagRefState!.state);
+    expect(diagRefState!.state).toBe('resolved');
 
-    // Verify a non-resolved diagnostic exists for the diagnostic shader's ref
+    // The graph must not invent a second, stale runtime-status authority.
     const nonResolvedDiags = graph.diagnostics.filter(
       (d) => d.detail?.contributionId === CLIP_LOCAL_SHADER_CANARY_DIAGNOSTIC_CONTRIBUTION_ID
         && d.code !== 'composition/resolved',
     );
-    expect(nonResolvedDiags.length).toBeGreaterThan(0);
+    expect(nonResolvedDiags).toEqual([]);
 
     test.dispose();
   });
@@ -998,9 +1006,14 @@ describe('clip-local-shader-canary extension', () => {
       shaderId: 'shader.alt',
     }));
 
-    // The original shader should still be the only one
-    expect(preview!.snapshot.shaders).toHaveLength(1);
-    expect(preview!.snapshot.shaders?.[0]?.shaderId).toBe(CLIP_LOCAL_SHADER_CANARY_SHADER_ID);
+    // Preview results intentionally expose only the projected graph. The
+    // rejected assignment leaves the source snapshot untouched and produces
+    // no consumes edge for the incoming shader.
+    expect(snapshot.shaders).toHaveLength(1);
+    expect(snapshot.shaders?.[0]?.shaderId).toBe(CLIP_LOCAL_SHADER_CANARY_SHADER_ID);
+    expect(preview!.edges.some((edge) => (
+      edge.kind === 'consumes' && edge.detail?.shaderId === 'shader.alt'
+    ))).toBe(false);
 
     test.dispose();
   });
@@ -1127,25 +1140,33 @@ describe('clip-local-shader-canary extension', () => {
       clipTypeRegistry: emptyClipTypeRegistry,
     });
 
-    // Verify MISSING_REF diagnostic for the clip type
+    // A graph cannot fabricate extension/contribution ownership for an
+    // arbitrary unknown clipType string, so it correctly emits no scoped ref.
     const missingDiag = graph.diagnostics.find(
       (d) => d.code === COMPOSITION_DIAGNOSTIC_CODE.MISSING_REF
         && d.detail?.refKey?.startsWith('clipType:'),
     );
-    expect(missingDiag).toBeDefined();
-    expect(missingDiag!.severity).toBe('warning');
-    expect(missingDiag!.detail).toEqual(expect.objectContaining({
-      refState: 'missing',
-      clipId: clip.id,
-    }));
+    expect(missingDiag).toBeUndefined();
 
-    // Verify ref state entry exists for the missing clip type
+    // Unknown string IDs are still fail-closed by the export guard, which
+    // owns built-in/registry ID validation independently of graph identity.
     const ctRefState = graph.referenceStates.find(
       (entry) => entry.refKey.startsWith('clipType:'),
     );
-    expect(ctRefState).toBeDefined();
-    expect(ctRefState!.state).toBe('missing');
-    expect(ctRefState!.nodeIds).toContain(`clip:${clip.id}`);
+    expect(ctRefState).toBeUndefined();
+
+    const config = makeConfig({ ...clip, clipType: 'com.example.nonexistent' });
+    const guard = scanExportConfig(
+      config,
+      collectBuiltInKnownIds(),
+      collectExtensionDeclaredIds([]),
+      undefined,
+      undefined,
+      emptyClipTypeRegistry,
+      graph,
+    );
+    expect(guard.hasBlockingErrors).toBe(true);
+    expect(guard.unknownClipTypes).toContain('com.example.nonexistent');
 
     test.dispose();
   });

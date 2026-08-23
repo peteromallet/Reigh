@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button } from '@/shared/components/ui/button.tsx';
 import { Switch } from '@/shared/components/ui/switch.tsx';
 import { SchemaForm } from '@/tools/video-editor/components/SchemaForm/SchemaForm.tsx';
@@ -211,6 +211,14 @@ export function ShaderInspector({
   );
   const [values, setValues] = useState<Record<string, unknown>>(initialUniforms);
   const [schemaDiagnostics, setSchemaDiagnostics] = useState<ExtensionDiagnostic[]>([]);
+  const handleSchemaDiagnostics = useCallback((nextDiagnostics: ExtensionDiagnostic[]) => {
+    const filtered = nextDiagnostics.filter(
+      (diagnostic) => diagnostic.code !== 'schema/texture-ref-unsupported',
+    );
+    setSchemaDiagnostics((current) => (
+      sameJson(current, filtered) ? current : filtered
+    ));
+  }, []);
 
   useEffect(() => {
     setValues(initialUniforms);
@@ -405,9 +413,7 @@ export function ShaderInspector({
           values={values}
           onChange={(name, value) => setValues((current) => ({ ...current, [name]: value }))}
           diagnostics={diagnostics}
-          onDiagnostics={(nextDiagnostics) => {
-            setSchemaDiagnostics(nextDiagnostics.filter((diagnostic) => diagnostic.code !== 'schema/texture-ref-unsupported'));
-          }}
+          onDiagnostics={handleSchemaDiagnostics}
           disabled={hasErrors}
         />
       ) : (
