@@ -94,13 +94,15 @@ type NavigationDirection = 'previous' | 'next' | 'first' | 'last';
 interface DataLaneTemporalIndex {
   /** Canonical order is timelineStart, then occurrence id. */
   readonly items: DataLaneView['items'];
-  /** Monotonic prefix maximum lets long overlapping intervals be found. */
-  readonly prefixMaxEnd: Float64Array;
+  /** Complete binary max-end tree for output-sensitive interval queries. */
+  readonly maxEndTree: Float64Array;
+  readonly treeLeafCount: number;
 }
 
 interface DataLaneItemWindow {
   readonly startIndex: number;
   readonly endIndex: number;
+  readonly itemIndices: readonly number[];
   readonly viewportStartSeconds: number;
   readonly viewportEndSeconds: number;
 }
@@ -128,24 +130,17 @@ function createTemporalIndex(items: DataLaneView['items']): DataLaneTemporalInde
   // assembleDataLanes guarantees this order. The fallback keeps isolated and
   // legacy callers safe without paying a sort for canonical host lanes.
   const indexedItems = ordered ? items : [...items].sort(compareLaneItems);
-  const prefixMaxEnd = new Float64Array(indexedItems.length);
-  let maximumEnd = Number.NEGATIVE_INFINITY;
+  let treeLeafCount = 1;
+  while (treeLeafCount < indexedItems.length) treeLeafCount *= 2;
+  const maxEndTree = new Float64Array(treeLeafCount * 2);
+  maxEndTree.fill(Number.NEGATIVE_INFINITY);
   for (let index = 0; index < indexedItems.length; index += 1) {
-    maximumEnd = Math.max(maximumEnd, timelineEndForIndex(indexedItems[index]));
-    prefixMaxEnd[index] = maximumEnd;
+    maxEndTree[treeLeafCount + index] = timelineEndForIndex(indexedItems[index]);
   }
-  return { items: indexedItems, prefixMaxEnd };
-}
-
-function lowerBoundPrefixEnd(prefixMaxEnd: Float64Array, target: number): number {
-  let low = 0;
-  let high = prefixMaxEnd.length;
-  while (low < high) {
-    const middle = low + Math.floor((high - low) / 2);
-    if (prefixMaxEnd[middle] < target) low = middle + 1;
-    else high = middle;
+  for (let node = treeLeafCount - 1; node > 0; node -= 1) {
+    maxEndTree[node] = Math.max(maxEndTree[node * 2], maxEndTree[node * 2 + 1]);
   }
-  return low;
+  return { items: indexedItems, maxEndTree, treeLeafCount };
 }
 
 function upperBoundStart(items: DataLaneView['items'], target: number): number {
@@ -176,6 +171,65 @@ function centeredBoundedWindow(
   return { startIndex, endIndex: startIndex + DATA_LANE_DOM_ITEM_BUDGET };
 }
 
+function contiguousIndices(startIndex: number, endIndex: number): readonly number[] {
+  return Array.from({ length: Math.max(0, endIndex - startIndex) }, (_, offset) => startIndex + offset);
+}
+
+/**
+ * Query actual temporal intersections. The max-end tree skips expired dense
+ * subtrees even when one ancient long interval keeps an overall prefix alive.
+ */
+function overlappingItemIndices(
+  index: DataLaneTemporalIndex,
+  queryStart: number,
+  queryEnd: number,
+): readonly number[] {
+  const startBound = upperBoundStart(index.items, queryEnd);
+  const matches: number[] = [];
+  const visit = (node: number, left: number, right: number) => {
+    if (left >= startBound || index.maxEndTree[node] < queryStart) return;
+    if (right - left === 1) {
+      if (left < index.items.length && timelineEndForIndex(index.items[left]) >= queryStart) {
+        matches.push(left);
+      }
+      return;
+    }
+    const middle = left + Math.floor((right - left) / 2);
+    visit(node * 2, left, middle);
+    visit(node * 2 + 1, middle, right);
+  };
+  visit(1, 0, index.treeLeafCount);
+  return matches;
+}
+
+function capOverlappingIndices(
+  index: DataLaneTemporalIndex,
+  indices: readonly number[],
+  viewportStartSeconds: number,
+  viewportEndSeconds: number,
+): readonly number[] {
+  if (indices.length <= DATA_LANE_DOM_ITEM_BUDGET) return indices;
+  const viewportMiddle = (viewportStartSeconds + viewportEndSeconds) / 2;
+  return [...indices]
+    .sort((leftIndex, rightIndex) => {
+      const left = index.items[leftIndex];
+      const right = index.items[rightIndex];
+      const leftEnd = timelineEndForIndex(left);
+      const rightEnd = timelineEndForIndex(right);
+      const leftDistance = viewportMiddle < left.timelineStart
+        ? left.timelineStart - viewportMiddle
+        : viewportMiddle > leftEnd ? viewportMiddle - leftEnd : 0;
+      const rightDistance = viewportMiddle < right.timelineStart
+        ? right.timelineStart - viewportMiddle
+        : viewportMiddle > rightEnd ? viewportMiddle - rightEnd : 0;
+      return (leftDistance - rightDistance)
+        || ((rightEnd - right.timelineStart) - (leftEnd - left.timelineStart))
+        || compareLaneItems(left, right);
+    })
+    .slice(0, DATA_LANE_DOM_ITEM_BUDGET)
+    .sort((left, right) => left - right);
+}
+
 function selectViewportWindow(
   index: DataLaneTemporalIndex,
   pixelsPerSecond: number,
@@ -193,27 +247,47 @@ function selectViewportWindow(
     (viewport.scrollLeft + canvasViewportWidth) / safePixelsPerSecond,
   );
   if (index.items.length === 0) {
-    return { startIndex: 0, endIndex: 0, viewportStartSeconds, viewportEndSeconds };
+    return { startIndex: 0, endIndex: 0, itemIndices: [], viewportStartSeconds, viewportEndSeconds };
   }
 
   if (pinnedIndex !== undefined) {
     const boundedPin = Math.max(0, Math.min(pinnedIndex, index.items.length - 1));
     const pinned = centeredBoundedWindow(0, index.items.length, boundedPin);
-    return { ...pinned, viewportStartSeconds, viewportEndSeconds };
+    return {
+      ...pinned,
+      itemIndices: contiguousIndices(pinned.startIndex, pinned.endIndex),
+      viewportStartSeconds,
+      viewportEndSeconds,
+    };
   }
 
   const overscanSeconds = DATA_LANE_VIEWPORT_OVERSCAN_PX / safePixelsPerSecond;
   const queryStart = Math.max(0, viewportStartSeconds - overscanSeconds);
   const queryEnd = viewportEndSeconds + overscanSeconds;
-  const rangeStart = lowerBoundPrefixEnd(index.prefixMaxEnd, queryStart);
-  const rangeEnd = upperBoundStart(index.items, queryEnd);
-  if (rangeStart >= rangeEnd) {
-    return { startIndex: rangeStart, endIndex: rangeStart, viewportStartSeconds, viewportEndSeconds };
+  const overlapping = overlappingItemIndices(index, queryStart, queryEnd);
+  if (overlapping.length === 0) {
+    const insertionIndex = upperBoundStart(index.items, queryEnd);
+    return {
+      startIndex: insertionIndex,
+      endIndex: insertionIndex,
+      itemIndices: [],
+      viewportStartSeconds,
+      viewportEndSeconds,
+    };
   }
-  const viewportMiddle = (viewportStartSeconds + viewportEndSeconds) / 2;
-  const anchorIndex = upperBoundStart(index.items, viewportMiddle);
-  const bounded = centeredBoundedWindow(rangeStart, rangeEnd, anchorIndex);
-  return { ...bounded, viewportStartSeconds, viewportEndSeconds };
+  const itemIndices = capOverlappingIndices(
+    index,
+    overlapping,
+    viewportStartSeconds,
+    viewportEndSeconds,
+  );
+  return {
+    startIndex: itemIndices[0],
+    endIndex: itemIndices[itemIndices.length - 1] + 1,
+    itemIndices,
+    viewportStartSeconds,
+    viewportEndSeconds,
+  };
 }
 
 function navigationDirection(event: KeyboardEvent<HTMLElement>): NavigationDirection | null {
@@ -265,14 +339,19 @@ export function DataLaneRow({
     resolvedViewport,
     pinnedWindowIndex,
   );
-  const { startIndex: windowStartIndex, endIndex: windowEndIndex } = itemWindow;
+  const {
+    startIndex: windowStartIndex,
+    endIndex: windowEndIndex,
+    itemIndices: windowItemIndices,
+  } = itemWindow;
   const windowItems = useMemo(
-    () => orderedItems.slice(windowStartIndex, windowEndIndex),
-    [orderedItems, windowEndIndex, windowStartIndex],
+    () => windowItemIndices.map((index) => orderedItems[index]),
+    [orderedItems, windowItemIndices],
   );
-  const windowActiveIndex = clampedActiveIndex >= windowStartIndex && clampedActiveIndex < windowEndIndex
+  const activeLocalIndex = windowItemIndices.indexOf(clampedActiveIndex);
+  const windowActiveIndex = activeLocalIndex >= 0
     ? clampedActiveIndex
-    : Math.min(windowEndIndex - 1, Math.max(windowStartIndex, Math.floor((windowStartIndex + windowEndIndex) / 2)));
+    : windowItemIndices[Math.floor(windowItemIndices.length / 2)];
   const activeItemId = orderedItems[windowActiveIndex]?.item.id;
   const getAllRenderItems = useMemo(() => {
     let cached: readonly DataLaneRenderItem[] | undefined;
@@ -284,8 +363,8 @@ export function DataLaneRow({
 
   const absoluteIndexInWindow = useCallback((itemId: string): number => {
     const localIndex = windowItems.findIndex((view) => view.item.id === itemId);
-    return localIndex < 0 ? -1 : windowStartIndex + localIndex;
-  }, [windowItems, windowStartIndex]);
+    return localIndex < 0 ? -1 : windowItemIndices[localIndex];
+  }, [windowItemIndices, windowItems]);
 
   const selectWindowItem = useCallback((itemId: string) => {
     const index = absoluteIndexInWindow(itemId);
@@ -339,7 +418,7 @@ export function DataLaneRow({
     const controls = rowRef.current?.querySelectorAll<HTMLElement>('[data-item-id]');
     const target = controls ? [...controls].find((element) => element.dataset.itemId === focusItemId) : undefined;
     target?.focus({ preventScroll: true });
-  }, [focusItemId, windowEndIndex, windowStartIndex]);
+  }, [focusItemId, windowItems]);
 
   return (
     <div
@@ -376,6 +455,7 @@ export function DataLaneRow({
             pixelsPerSecond,
             extensionId,
             items: windowItems,
+            itemIndices: windowItemIndices,
             windowStartIndex,
             windowEndIndex,
             totalItemCount,
@@ -594,6 +674,7 @@ interface PaintLaneArgs {
   readonly pixelsPerSecond: number;
   readonly extensionId?: string;
   readonly items: DataLaneView['items'];
+  readonly itemIndices: readonly number[];
   readonly windowStartIndex: number;
   readonly windowEndIndex: number;
   readonly totalItemCount: number;
@@ -622,6 +703,7 @@ function paintLane({
   pixelsPerSecond,
   extensionId,
   items,
+  itemIndices,
   windowStartIndex,
   windowEndIndex,
   totalItemCount,
@@ -642,6 +724,9 @@ function paintLane({
       onNavigateItem,
     });
   }
+  const indicesAreContiguous = itemIndices.every(
+    (absoluteIndex, localIndex) => absoluteIndex === windowStartIndex + localIndex,
+  );
   const rendererProps: DataLaneRendererProps = {
     kindId: lane.kindId,
     schemaRef: lane.schemaRef,
@@ -660,6 +745,7 @@ function paintLane({
       startIndex: windowStartIndex,
       endIndex: windowEndIndex,
       totalItemCount,
+      ...(!indicesAreContiguous ? { itemIndices } : {}),
     },
     items: items.map(toRenderItem),
     getAllItems: getAllRenderItems,

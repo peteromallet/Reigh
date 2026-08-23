@@ -436,12 +436,33 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
     minDuration,
   });
   const actionHeight = Math.max(12, rowHeight - ACTION_VERTICAL_MARGIN * 2);
-  // dataKind V1: lane rows extend the scrollable content; only VISIBLE lanes
-  // (shared visibleDataLanes filter — the same set DataLaneList mounts) fold
-  // into the playhead/viewport height math. Width/scale math is untouched.
-  const dataLanesHeight = visibleDataLanes(laneData?.dataLanes).reduce((sum, lane) => sum + lane.height, 0);
+  // Only the same visible lanes that DataLaneList mounts may affect viewport
+  // geometry. Their temporal extent expands scrollable canvas space without
+  // changing the project's authoritative duration or export range.
+  const mountedDataLanes = useMemo(
+    () => visibleDataLanes(laneData?.dataLanes),
+    [laneData?.dataLanes],
+  );
+  const dataLanesHeight = useMemo(
+    () => mountedDataLanes.reduce((sum, lane) => sum + lane.height, 0),
+    [mountedDataLanes],
+  );
+  const maxDataLaneEnd = useMemo(
+    () => mountedDataLanes.reduce((laneMaximum, lane) => lane.items.reduce(
+      (itemMaximum, item) => Math.max(itemMaximum, item.timelineStart, item.timelineEnd),
+      laneMaximum,
+    ), 0),
+    [mountedDataLanes],
+  );
   const scrollContentHeight = (rows.length + 1) * rowHeight + dataLanesHeight;
-  const maxEnd = useMemo(() => maxClipEndSeconds(rows), [rows]);
+  const maxClipEnd = useMemo(() => maxClipEndSeconds(rows), [rows]);
+  const maxEnd = Math.max(maxClipEnd, maxDataLaneEnd);
+  const dataLaneScaleCount = Math.ceil(
+    maxDataLaneEnd / Math.max(scale, Number.EPSILON),
+  ) + 1;
+  const effectiveMaxScaleCount = maxScaleCount === undefined
+    ? undefined
+    : Math.max(maxScaleCount, dataLaneScaleCount);
   // Content-only derivation: the trailing runway is the owner's call and reaches
   // us as minScaleCount/maxScaleCount (TimelineEditorCore pins both to one value).
   const { totalWidth } = computeTimelineExtent({
@@ -451,7 +472,7 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
     startLeft,
     trailingRunwaySeconds: 0,
     minScaleCount,
-    maxScaleCount,
+    maxScaleCount: effectiveMaxScaleCount,
   });
   const scrollDataLaneItemIntoView = useCallback((timelineStart: number, timelineEnd: number) => {
     const container = scrollContainerRef.current;

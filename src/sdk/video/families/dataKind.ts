@@ -180,13 +180,16 @@ export interface DataLaneRendererProps {
   readonly getAllItems?: () => readonly DataLaneRenderItem[];
   /**
    * Host-owned item window. `startIndex` is inclusive and `endIndex` is
-   * exclusive. Optional for compatibility with isolated/older render hosts;
-   * when absent, `items` is the complete collection.
+   * exclusive. For a non-contiguous overlap selection, `itemIndices` maps each
+   * rendered item to its absolute lane position and `startIndex`/`endIndex`
+   * bound that selection. Optional for compatibility with isolated/older
+   * render hosts; when absent, `items` is the complete collection.
    */
   readonly itemWindow?: Readonly<{
     readonly startIndex: number;
     readonly endIndex: number;
     readonly totalItemCount: number;
+    readonly itemIndices?: readonly number[];
   }>;
   /** Item owning the renderer's roving tab stop. */
   readonly activeItemId?: string;

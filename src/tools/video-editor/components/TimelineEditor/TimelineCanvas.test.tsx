@@ -1952,8 +1952,8 @@ describe('TimelineCanvas — dataKind V1 lane strip', () => {
         payload: null,
         provenance: { adapterId: 'test', adapterVersion: '1' },
       },
-      timelineStart: index * 0.02,
-      timelineEnd: index * 0.02 + 0.01,
+      timelineStart: index * 2,
+      timelineEnd: index * 2 + 0.5,
     }));
     useDataLanesMock.mockReturnValue({
       config: {},
@@ -1987,6 +1987,43 @@ describe('TimelineCanvas — dataKind V1 lane strip', () => {
     }));
     expect(Number(scrollTo.mock.calls.at(-1)?.[0].left)).toBeGreaterThan(200);
     expect(editArea.scrollLeft).toBe(Number(scrollTo.mock.calls.at(-1)?.[0].left));
+    expect(Number.parseFloat((editArea.firstElementChild as HTMLElement).style.width))
+      .toBeGreaterThan(998 * 10);
     expect(screen.queryByTitle('dense-0')).toBeNull();
+  });
+
+  it('updates the mounted lane window from an ordinary shared-scroller event', async () => {
+    const items = Array.from({ length: 500 }, (_, index) => ({
+      item: {
+        id: `scroll-${index}`,
+        shape: 'interval',
+        domain: 'timeline_seconds',
+        extent: { start: index * 2, end: index * 2 + 0.5 },
+        schemaRef: 'scroll/v1',
+        payload: null,
+        provenance: { adapterId: 'test', adapterVersion: '1' },
+      },
+      timelineStart: index * 2,
+      timelineEnd: index * 2 + 0.5,
+    }));
+    useDataLanesMock.mockReturnValue({
+      config: {},
+      dataLanes: [laneFixture({
+        laneId: 'opaque:scroll/v1',
+        kindId: '',
+        label: 'Scroll',
+        opaque: true,
+        laneRenderer: undefined,
+        items,
+      })],
+    });
+    const { container } = renderCanvas({ rows: [row], tracks: [track], startLeft: 144 });
+    const editArea = container.querySelector<HTMLElement>('.timeline-canvas-edit-area')!;
+    Object.defineProperty(editArea, 'clientWidth', { configurable: true, value: 400 });
+    fireEvent.scroll(editArea, { target: { scrollLeft: 20_000, scrollTop: 0 } });
+
+    await screen.findByTitle('scroll-100');
+    expect(screen.queryByTitle('scroll-0')).toBeNull();
+    expect(screen.getAllByTestId('data-lane-extent-bar').length).toBeLessThanOrEqual(128);
   });
 });

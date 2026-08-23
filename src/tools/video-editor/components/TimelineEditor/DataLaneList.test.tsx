@@ -338,6 +338,45 @@ describe('DataLaneList', () => {
     expect(ids).not.toContain('after-right-boundary');
   });
 
+  it('keeps an ancient spanning interval when dense expired history exceeds the DOM budget', () => {
+    const pixelsPerSecond = 10;
+    const viewportStart = 50_000;
+    const clientWidth = START_LEFT + 100;
+    const expired = Array.from({ length: 49_800 }, (_, index) => ({
+      item: item(`expired-${index}`),
+      timelineStart: index + 1,
+      timelineEnd: index + 1.01,
+    }));
+    const denseVisible = Array.from({ length: 256 }, (_, index) => ({
+      item: item(`visible-${index}`),
+      timelineStart: viewportStart - 5 + index * 0.05,
+      timelineEnd: viewportStart - 4.98 + index * 0.05,
+    }));
+    const data = buildData([laneView({
+      laneId: 'opaque:spanning.schema/v1',
+      kindId: '',
+      opaque: true,
+      items: [
+        { item: item('ancient-spanning'), timelineStart: 0, timelineEnd: 100_000 },
+        ...expired,
+        ...denseVisible,
+      ],
+    })]);
+
+    renderList({
+      data,
+      pixelsPerSecond,
+      viewport: { scrollLeft: viewportStart * pixelsPerSecond, clientWidth },
+    });
+
+    const row = screen.getByTestId('data-lane-row');
+    const bars = within(row).getAllByTestId('data-lane-extent-bar');
+    expect(bars).toHaveLength(DATA_LANE_DOM_ITEM_BUDGET);
+    expect(within(row).getByTitle('ancient-spanning')).toBeTruthy();
+    expect(bars.some((bar) => bar.getAttribute('data-item-id')?.startsWith('visible-'))).toBe(true);
+    expect(within(row).queryByTitle('expired-25000')).toBeNull();
+  });
+
   it('recomputes the temporal window for zoom and viewport resize', () => {
     const items = Array.from({ length: 300 }, (_, index) => ({
       item: item(`item-${index}`),

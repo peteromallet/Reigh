@@ -894,3 +894,38 @@ evidence and a concrete improvement direction.
   deterministic unit test locks the exact run-ID format. Production builds must
   treat CSS parser warnings as actionable release findings, even when the
   offending token originated in non-style source code.
+
+### A contiguous virtualization window is not an interval query
+
+- The first viewport implementation used a prefix maximum to locate an old
+  interval that still overlapped the viewport, then applied the 128-item budget
+  as a contiguous slice around the current time. In a 50,000-item lane, dense
+  expired history between a very long interval and the viewport could evict the
+  long interval even though it visibly spanned the screen.
+- The host now builds a max-end interval tree, queries actual intersections,
+  and applies a deterministic relevance cap. Non-contiguous selections carry
+  host-owned absolute indices so extension renderers preserve correct ARIA set
+  positions. Virtualization tests must combine adversarial overlap structure
+  with a budget overflow; a small overlap fixture cannot prove the cap is safe.
+
+### Data lanes need scroll extent without becoming duration authority
+
+- Keyboard End could select and pin a data item beyond the last clip, while the
+  shared scroller remained capped to clip-derived width. The item mounted only
+  because it was pinned, could never enter the viewport, and prevented the row
+  from returning to normal viewport virtualization.
+- Visible data-lane extents now expand canvas scroll geometry but do not change
+  project duration or export range. An integration test drives an ordinary
+  scroller event, and the keyboard test places its target far beyond clip
+  content. Duration ownership and viewport reachability are separate contracts.
+
+### Green release tests are meaningless when their inputs are ignored files
+
+- The first paired gate archived exact Git commits but addressed Runaway
+  migration inputs under Astrid's ignored `projects/` tree. Those paths existed
+  in the developer checkout and disappeared from `git archive`, guaranteeing a
+  delayed `FileNotFoundError` after the expensive dependency build.
+- Astrid now ships byte-pinned tracked release fixtures with executable SHA-256
+  checks. Production-like gates should preflight every required file from the
+  exact archive before expensive work and must never depend on ignored local
+  state merely because it is present on the author's machine.

@@ -37,6 +37,7 @@ export function renderTranscriptLane(
   props: DataLaneRendererProps,
 ): unknown {
   const windowStartIndex = props.itemWindow?.startIndex ?? 0;
+  const itemIndices = props.itemWindow?.itemIndices;
   const totalItemCount = props.itemWindow?.totalItemCount ?? props.items.length;
   const chips = props.items.map((item, localIndex) =>
     createElement(
@@ -47,7 +48,7 @@ export function renderTranscriptLane(
         'data-testid': 'transcript-lane-chip',
         'data-item-id': item.id,
         'aria-label': `Transcript segment: ${readChipText(item.payload)}, ${item.timelineStart.toFixed(2)} to ${item.timelineEnd.toFixed(2)} seconds`,
-        'aria-posinset': windowStartIndex + localIndex + 1,
+        'aria-posinset': (itemIndices?.[localIndex] ?? windowStartIndex + localIndex) + 1,
         'aria-setsize': totalItemCount,
         title: `${item.id} · ${props.schemaRef}`,
         tabIndex: item.id === props.activeItemId ? 0 : -1,

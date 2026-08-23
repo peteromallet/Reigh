@@ -137,6 +137,7 @@ function RunawayTimelineLane(props: DataLaneRendererProps) {
     },
   }));
   const windowStartIndex = props.itemWindow?.startIndex ?? 0;
+  const itemIndices = props.itemWindow?.itemIndices;
   const totalItemCount = props.itemWindow?.totalItemCount ?? props.items.length;
   const transitions = props.items.map((item, localIndex) => {
     const payload = payloadOf(item.payload);
@@ -148,7 +149,7 @@ function RunawayTimelineLane(props: DataLaneRendererProps) {
       'data-testid': 'runaway-transition-chip',
       'data-item-id': item.id,
       'aria-label': `${payload.manifestId}, ${payload.segmentId}, ${payload.colourName}, ${item.timelineStart.toFixed(3)} seconds`,
-      'aria-posinset': windowStartIndex + localIndex + 1,
+      'aria-posinset': (itemIndices?.[localIndex] ?? windowStartIndex + localIndex) + 1,
       'aria-setsize': totalItemCount,
       title: `${payload.manifestId} · ${payload.segmentId} · ${payload.colourName}\n${payload.prompt}`,
       tabIndex: item.id === props.activeItemId ? 0 : -1,
