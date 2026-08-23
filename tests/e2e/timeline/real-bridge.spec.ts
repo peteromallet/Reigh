@@ -157,6 +157,8 @@ test('concurrent write → 409 → diverged banner (B4/B5 live proof)', async ({
  * actionable banner instead of a silent "saved" badge.
  */
 test('bridge death during an edit → watchdog banner with retry', async ({ page }) => {
+  test.skip(process.env.REAL_BRIDGE !== '1', 'requires the explicit real-bridge harness and its PID file');
+
   // Kill the real bridge out from under the editor (the harness wrote the PID
   // file on spawn). The next save gets no receipt → the B1a watchdog trips.
   await openEditorAt(page);

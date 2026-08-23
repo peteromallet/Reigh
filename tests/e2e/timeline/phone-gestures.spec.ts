@@ -13,7 +13,6 @@ import {
   countSelectedClips,
   createTouchInput,
   openEditor,
-  pickFreeDraggableClip,
   resetBridgeBaseline,
 } from './support';
 
@@ -96,8 +95,11 @@ test.describe('timeline phone gestures', () => {
 
     async function setMode(label: string): Promise<boolean> {
       const button = modeButton(label);
-      const box = await button.boundingBox();
-      if (box) await touch.tap(box.x + box.width / 2, box.y + box.height / 2);
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const box = await button.boundingBox();
+        if (box) await touch.tap(box.x + box.width / 2, box.y + box.height / 2);
+        if ((await button.getAttribute('aria-pressed')) === 'true') return true;
+      }
       return (await button.getAttribute('aria-pressed')) === 'true';
     }
 
@@ -158,8 +160,20 @@ test.describe('timeline phone gestures', () => {
       expect(moveActivated).toBe(true);
     });
 
-    const beforeMove = await pickFreeDraggableClip(page);
-    expect(beforeMove, 'no draggable clip found').not.toBeNull();
+    // The right-most V1 clip can be outside the CSS viewport when the page has
+    // horizontal overflow; CDP correctly ignores a touch whose start point is
+    // outside the device viewport. Use the fixture's sole V2 clip: it is fully
+    // visible and has free space on its track, so this measures move mode.
+    const beforeMove = await page.evaluate(() => {
+      const el = document.querySelector('.clip-action[data-clip-id="clip-video"]');
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return {
+        id: 'clip-video', row: el.getAttribute('data-row-id'),
+        x: r.x, y: r.y, w: r.width, h: r.height,
+      };
+    });
+    expect(beforeMove, 'fixture clip-video is not visible').not.toBeNull();
     const moveSelector = `.clip-action[data-clip-id="${beforeMove!.id}"]`;
     const scrollBeforeMove = await scrollLeft();
     await touch.touchDrag(
@@ -231,7 +245,11 @@ test.describe('timeline phone gestures', () => {
       return { x: r.x, y: r.y, w: r.width, h: r.height };
     });
     if (ruler) {
-      await touch.touchDrag(ruler.x + 200, ruler.y + ruler.h / 2, ruler.x + 300, ruler.y + ruler.h / 2, { steps: 10 });
+      // Composed extension markers occupy the ruler's top 20px. Scrub in the
+      // host-owned bottom strip so the gesture reaches the ruler rather than a
+      // marker button while still exercising real touch arbitration.
+      const scrubY = ruler.y + ruler.h - 3;
+      await touch.touchDrag(ruler.x + 200, scrubY, ruler.x + 300, scrubY, { steps: 10 });
     }
     const playheadAfter = await boxOf(page, '[data-testid="timeline-playhead"]');
 

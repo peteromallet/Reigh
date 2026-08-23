@@ -1,0 +1,19 @@
+{
+  "node": "v20.19.4",
+  "consoleWarnings": [
+    {
+      "type": "warning",
+      "text": "[.WebGL-0x1140055e600]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+      "location": {
+        "url": "http://127.0.0.1:2233/tools/video-editor?localProject=demo-project&localTimeline=demo-timeline&localTest=1&transcriptLaneFixture=1",
+        "line": 0,
+        "column": 0,
+        "lineNumber": 0,
+        "columnNumber": 0
+      }
+    }
+  ],
+  "pageErrors": [],
+  "fontStretchWarnings": [],
+  "cdpFontStretchLogEntries": []
+}

@@ -50,6 +50,8 @@ const BRIDGE_TIMELINE = `${BRIDGE_ORIGIN}/projects/${PROJECT_SLUG}/timelines/${T
 const EDIT_AREA_SELECTOR = '.timeline-canvas-edit-area';
 const STRIP_SELECTOR = '[data-testid="timeline-extension-ruler-overlay-strip"]';
 const DISABLE_TOGGLE_SELECTOR = `[data-video-editor-dev-local-toggle="${SCENE_PHASE_EXTENSION_ID}"]`;
+const SCENE_MARKER_LAYER_SELECTOR =
+  `[data-testid="timeline-marker-layer"][data-marker-layer-key="${SCENE_PHASE_EXTENSION_ID}:scene-markers-overlay"]`;
 
 /** Stable marker fixture — the canary renders these on the ruler. */
 const MARKERS = [
@@ -57,6 +59,45 @@ const MARKERS = [
   { id: 'e2e-marker-b', time: 3 },
   { id: 'e2e-marker-c', time: 5 },
 ];
+
+function sceneMarkerLayer(page: Page) {
+  return page.locator(SCENE_MARKER_LAYER_SELECTOR);
+}
+
+async function expectMarkerLayerComposition(page: Page, expectedTotal: number): Promise<void> {
+  const legend = page.getByTestId('timeline-marker-layer-legend');
+  await expect(legend).toBeVisible();
+  await expect(legend).toContainText(`/${expectedTotal}`);
+  const previous = legend.getByRole('button', { name: 'Previous marker layers' });
+  const next = legend.getByRole('button', { name: 'Next marker layers' });
+
+  for (let guard = 0; guard < expectedTotal && !(await previous.isDisabled()); guard += 1) {
+    await previous.click();
+  }
+  await expect(previous).toBeDisabled();
+
+  const seenLayerKeys = new Set<string>();
+  for (let guard = 0; guard < expectedTotal; guard += 1) {
+    await expect(legend).toContainText(`/${expectedTotal}`);
+    const layerKeys = await page.locator('[data-testid="timeline-marker-layer"]')
+      .evaluateAll((layers) => layers.map((layer) => layer.getAttribute('data-marker-layer-key')));
+    expect(layerKeys.length).toBeGreaterThan(0);
+    for (const key of layerKeys) {
+      expect(key).not.toBeNull();
+      seenLayerKeys.add(key!);
+    }
+
+    if (await next.isDisabled()) break;
+    const oldLabel = await legend.textContent();
+    await next.click();
+    await expect.poll(() => legend.textContent()).not.toBe(oldLabel);
+  }
+
+  expect(seenLayerKeys.size).toBe(expectedTotal);
+  while (!(await previous.isDisabled())) {
+    await previous.click();
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Harness helpers
@@ -89,16 +130,20 @@ async function seedSceneMarkers(markers: Array<{ id: string; time: number }> = M
 }
 
 /**
- * Open the editor with the canary query. Also clears the dev-local
- * disable store and the editor zoom preference so each test starts from a
- * known state (a previous spec's zoom clicks or a previous disable toggle
- * must not leak into this one).
+ * Open the editor with the canary query. Clears the dev-local disable store
+ * and editor zoom preference once per page session so each test starts from a
+ * known state while a later Vite reload preserves the disabled state that the
+ * test intentionally established.
  */
 async function openCanaryEditor(page: Page): Promise<void> {
   await page.addInitScript(() => {
     try {
-      window.localStorage.removeItem('reigh.dev-extensions.disabled');
-      window.localStorage.removeItem('video-editor:preferences:demo-timeline');
+      const initializedKey = 'reigh.e2e.extension-overlays.initialized';
+      if (window.sessionStorage.getItem(initializedKey) !== '1') {
+        window.localStorage.removeItem('reigh.dev-extensions.disabled');
+        window.localStorage.removeItem('video-editor:preferences:demo-timeline');
+        window.sessionStorage.setItem(initializedKey, '1');
+      }
     } catch {
       // storage unavailable — defaults apply
     }
@@ -461,10 +506,12 @@ test.describe('timeline extension overlays (desktop)', () => {
     // DEV. Disabling that extension unmounts the host (marker layer gone).
     await openEditor(page);
     await test.step('host mounts in DEV with an enabled overlay extension (no URL param)', async () => {
-      const markerLayer = page.locator('[data-testid="timeline-marker-layer"]');
+      const markerLayer = sceneMarkerLayer(page);
       await expect(markerLayer).toBeVisible({ timeout: 20_000 });
-      // Extension enabled but no markers seeded yet.
-      await expect(markerLayer).toHaveAttribute('data-marker-count', '0');
+      await expect(markerLayer).toHaveAttribute('data-marker-count', '3');
+      // The canary owns one stable layer while the ten Creative Lab marker
+      // extensions remain independently mounted and reachable.
+      await expectMarkerLayerComposition(page, 11);
     });
 
     await test.step('disabling the overlay extension unmounts the host', async () => {
@@ -479,8 +526,9 @@ test.describe('timeline extension overlays (desktop)', () => {
         `Enable ${SCENE_PHASE_EXTENSION_ID}`,
         { timeout: 5_000 },
       );
-      await expect(page.locator('[data-testid="timeline-marker-layer"]')).toHaveCount(0, { timeout: 10_000 });
-      await expect(page.locator('[data-marker-id]')).toHaveCount(0);
+      await expect(sceneMarkerLayer(page)).toHaveCount(0, { timeout: 10_000 });
+      await expectMarkerLayerComposition(page, 10);
+      await expect(sceneMarkerLayer(page).locator('[data-marker-id]')).toHaveCount(0);
       // Re-enable so the canary-on step below starts from a known state.
       await toggle.evaluate((element) => {
         (element as HTMLElement).click();
@@ -494,7 +542,7 @@ test.describe('timeline extension overlays (desktop)', () => {
 
     // --- 2. enabled extension + seeded markers mount on the ruler ---------
     await openCanaryEditor(page);
-    const markerLayer = page.locator('[data-testid="timeline-marker-layer"]');
+    const markerLayer = sceneMarkerLayer(page);
     await expect(markerLayer).toBeVisible({ timeout: 20_000 });
     await expect(markerLayer).toHaveAttribute('data-marker-count', '3');
     await expect(page.locator('[data-marker-id="e2e-marker-a"]')).toBeVisible();
@@ -672,8 +720,9 @@ test.describe('timeline extension overlays (desktop)', () => {
       await page.mouse.move(cx + 24, cy, { steps: 3 });
       await page.mouse.up();
 
-      await expect(page.locator('[data-testid="timeline-marker-layer"]')).toHaveCount(0, { timeout: 10_000 });
-      await expect(page.locator('[data-marker-id]')).toHaveCount(0);
+      await expect(sceneMarkerLayer(page)).toHaveCount(0, { timeout: 10_000 });
+      await expectMarkerLayerComposition(page, 10);
+      await expect(sceneMarkerLayer(page).locator('[data-marker-id]')).toHaveCount(0);
       expect(logs.filter((line) => line.startsWith('[pageerror]')), [...new Set(logs)].join(' | ')).toEqual([]);
 
       // The editor itself is still interactive — the gesture owner was released.
@@ -706,7 +755,7 @@ test.describe('timeline extension overlays (desktop)', () => {
     // Start clean: the canary URL with NO seeded markers. The overlay host is
     // mounted (canary), so the marker layer exists but carries 0 markers.
     await openCanaryEditor(page);
-    const markerLayer = page.locator('[data-testid="timeline-marker-layer"]');
+    const markerLayer = sceneMarkerLayer(page);
     await expect(markerLayer).toBeVisible({ timeout: 20_000 });
     await expect(markerLayer).toHaveAttribute('data-marker-count', '0');
 
@@ -720,9 +769,12 @@ test.describe('timeline extension overlays (desktop)', () => {
     // command path, not a defaulted 0s marker.
     const ruler = await page.locator('[data-testid="timeline-ruler"]').boundingBox();
     if (!ruler) throw new Error('no ruler');
-    await page.mouse.move(ruler.x + 80, ruler.y + 15);
+    // The composed marker layers own the ruler's top 20px. Scrub through the
+    // host-owned bottom strip so the gesture reaches the playhead surface.
+    const scrubY = ruler.y + ruler.height - 3;
+    await page.mouse.move(ruler.x + 80, scrubY);
     await page.mouse.down();
-    await page.mouse.move(ruler.x + 420, ruler.y + 15, { steps: 8 });
+    await page.mouse.move(ruler.x + 420, scrubY, { steps: 8 });
     await page.mouse.up();
     await page.waitForTimeout(400);
     const scrubbedTime = await page.evaluate(() => {
@@ -738,8 +790,8 @@ test.describe('timeline extension overlays (desktop)', () => {
     // scrubbed time, NOT at 0s.
     await page.keyboard.press('b');
     await expect(markerLayer).toHaveAttribute('data-marker-count', '1', { timeout: 10_000 });
-    await expect(page.locator('[data-marker-id]')).toHaveCount(1);
-    await expect(page.locator('[data-marker-id]').first()).toBeVisible();
+    await expect(markerLayer.locator('[data-marker-id]')).toHaveCount(1);
+    await expect(markerLayer.locator('[data-marker-id]').first()).toBeVisible();
     await shot('marked');
 
     // The marker must be persisted through project-data (bridge config.app)
@@ -751,9 +803,9 @@ test.describe('timeline extension overlays (desktop)', () => {
     // Reload: the marker must survive the round trip and re-render.
     await page.reload({ waitUntil: 'domcontentloaded', timeout: 45_000 });
     await page.waitForTimeout(EDITOR_SETTLE_MS);
-    await expect(page.locator('[data-testid="timeline-marker-layer"]')).toBeVisible({ timeout: 20_000 });
-    await expect(page.locator('[data-testid="timeline-marker-layer"]')).toHaveAttribute('data-marker-count', '1');
-    await expect(page.locator('[data-marker-id]')).toHaveCount(1);
+    await expect(sceneMarkerLayer(page)).toBeVisible({ timeout: 20_000 });
+    await expect(sceneMarkerLayer(page)).toHaveAttribute('data-marker-count', '1');
+    await expect(sceneMarkerLayer(page).locator('[data-marker-id]')).toHaveCount(1);
     await shot('reloaded');
 
     expect(logs.filter((line) => line.startsWith('[pageerror]')), [...new Set(logs)].join(' | ')).toEqual([]);
@@ -793,7 +845,7 @@ test.describe('timeline extension overlays (tablet)', () => {
       timeout: 20_000,
     });
 
-    const markerLayer = page.locator('[data-testid="timeline-marker-layer"]');
+    const markerLayer = sceneMarkerLayer(page);
     await expect(markerLayer).toBeVisible({ timeout: 20_000 });
     await expect(markerLayer).toHaveAttribute('data-marker-count', '3');
     await shot('mounted');
@@ -827,31 +879,34 @@ test.describe('timeline extension overlays (tablet)', () => {
       const rect = document.querySelector(selector)?.getBoundingClientRect();
       return rect ? rect.x + rect.width / 2 : 0;
     }, EDIT_AREA_SELECTOR);
+    const clipWidth = () => page.evaluate(
+      () => document.querySelector('.clip-action[data-clip-id]')?.getBoundingClientRect().width ?? 0,
+    );
 
     await test.step('two-finger pinch zooms while no overlay owns the gesture', async () => {
-      const before = await rulerMetrics(page);
+      const before = await clipWidth();
       await touch.pinch(areaCenterX, editAreaCenterY, 50, 130, 12);
-      const after = await rulerMetrics(page);
-      expect(after.pps, `pps ${before.pps} -> ${after.pps}`).toBeGreaterThan(before.pps * 1.5);
+      const after = await clipWidth();
+      expect(after, `clip width ${before} -> ${after}`).toBeGreaterThan(before * 1.5);
     });
 
     // --- 3. pinch is refused while a marker owns the gesture ----------------
     await test.step('a second-finger pinch is refused while a marker drag owns the claim', async () => {
-      const before = await rulerMetrics(page);
+      const before = await clipWidth();
       await touchDragMarkerThenPinch(context, page, 'e2e-marker-c', editAreaCenterY);
-      const after = await rulerMetrics(page);
+      const after = await clipWidth();
       expect(
-        Math.abs(after.pps - before.pps),
-        `pps ${before.pps} -> ${after.pps} (pinch must be refused during the marker drag)`,
+        Math.abs(after - before),
+        `clip width ${before} -> ${after} (pinch must be refused during the marker drag)`,
       ).toBeLessThan(1);
     });
 
     // --- 4. releasing the claim restores pinch ------------------------------
     await test.step('pinch works again once the marker claim is released', async () => {
-      const before = await rulerMetrics(page);
+      const before = await clipWidth();
       await touch.pinch(areaCenterX, editAreaCenterY, 40, 100, 10);
-      const after = await rulerMetrics(page);
-      expect(after.pps, `pps ${before.pps} -> ${after.pps}`).toBeGreaterThan(before.pps * 1.2);
+      const after = await clipWidth();
+      expect(after, `clip width ${before} -> ${after}`).toBeGreaterThan(before * 1.2);
     });
 
     expect(logs.filter((line) => line.startsWith('[pageerror]')), [...new Set(logs)].join(' | ')).toEqual([]);
@@ -890,7 +945,7 @@ test.describe('timeline extension overlays (phone)', () => {
       timeout: 20_000,
     });
 
-    const markerLayer = page.locator('[data-testid="timeline-marker-layer"]');
+    const markerLayer = sceneMarkerLayer(page);
     await expect(markerLayer).toBeVisible({ timeout: 20_000 });
     await expect(markerLayer).toHaveAttribute('data-marker-count', '3');
     await shot('mounted');
@@ -935,16 +990,16 @@ test.describe('timeline extension overlays (phone)', () => {
         .toBe('true');
 
       // Disable while the marker owns the claim → host teardown cancels the
-      // session. The Inspector dialog now covers the marker's old coordinates,
-      // so ending the touch THERE would re-tap the toggle (re-enabling the
-      // extension). End the touch on a safe area (top-left label gutter).
+      // session. Cancel the now-orphaned browser touch stream: ending it over
+      // the Inspector can synthesize a click on the toggle and re-enable the
+      // extension, which would test click synthesis rather than host teardown.
       await disableExtensionMidDrag(page);
-      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 10, y: 10 }] });
-      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] });
       await page.waitForTimeout(400);
 
-      await expect(page.locator('[data-testid="timeline-marker-layer"]')).toHaveCount(0, { timeout: 10_000 });
-      await expect(page.locator('[data-marker-id]')).toHaveCount(0);
+      await expect(sceneMarkerLayer(page)).toHaveCount(0, { timeout: 10_000 });
+      await expectMarkerLayerComposition(page, 10);
+      await expect(sceneMarkerLayer(page).locator('[data-marker-id]')).toHaveCount(0);
       expect(logs.filter((line) => line.startsWith('[pageerror]')), [...new Set(logs)].join(' | ')).toEqual([]);
 
       // The editor is still interactive — tap a clip, it selects. The
