@@ -3,7 +3,8 @@ import { createPortal } from 'react-dom';
 import { AlertTriangle, Check, ImageOff, Loader2, Play, Trash2 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/components/ui/tooltip';
 import { VariantBadge } from '@/shared/components/VariantBadge';
-import { getDisplayUrl } from '@/shared/lib/media/mediaUrl';
+import { bridgeMediaUrl } from '@/shared/lib/media/bridgeMediaUrl';
+import { getProjectSelectionFallbackId } from '@/shared/contexts/projectSelectionStore';
 import { cn } from '@/shared/components/ui/contracts/cn';
 import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
 import type { SegmentPreviewProps } from './types';
@@ -186,7 +187,7 @@ export const SegmentPreview: React.FC<SegmentPreviewProps> = ({
       >
         {thumbUrl && !imageError ? (
           <img
-            src={getDisplayUrl(thumbUrl)}
+            src={bridgeMediaUrl(getProjectSelectionFallbackId(), thumbUrl)}
             alt={`Segment ${pairIndex + 1}`}
             className={cn('absolute inset-0 w-full h-full object-cover', isHovering && 'brightness-110')}
             onError={() => setImageError(true)}
@@ -305,7 +306,7 @@ export const SegmentPreview: React.FC<SegmentPreviewProps> = ({
               <div className="relative bg-black" style={{ width: previewStyle.width, aspectRatio: previewStyle.aspectRatio }}>
                 <video
                   ref={videoRef}
-                  src={getDisplayUrl(videoUrl)}
+                  src={bridgeMediaUrl(getProjectSelectionFallbackId(), videoUrl)}
                   className="w-full h-full object-cover"
                   muted
                   loop

@@ -69,3 +69,16 @@ export const storagePaths = {
 };
 
 export const MEDIA_BUCKET = 'image_uploads';
+
+/**
+ * Deterministic public-object address for one uploaded media path.
+ *
+ * Replaces the supabase-js storage public-URL baking cut in B3: the
+ * address form is fixed by the storage service, so minting it needs no
+ * client call. Only the deferred legacy upload surfaces still consume this —
+ * covered-journey media is created server-side and served via R9 content
+ * routes (see `bridgeMediaUrl`).
+ */
+export function publicMediaObjectUrl(storagePath: string, supabaseUrl: string): string {
+  return `${supabaseUrl.replace(/\/+$/, '')}/storage/v1/object/public/${MEDIA_BUCKET}/${storagePath.replace(/^\/+/, '')}`;
+}

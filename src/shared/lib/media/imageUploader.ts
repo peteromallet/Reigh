@@ -1,6 +1,6 @@
 import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
 import { getSupabaseUrl } from '@/integrations/supabase/config/env';
-import { storagePaths, getFileExtension, generateUniqueFilename, MEDIA_BUCKET } from '../storagePaths';
+import { storagePaths, getFileExtension, generateUniqueFilename, MEDIA_BUCKET, publicMediaObjectUrl } from '../storagePaths';
 import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
 import {
   attachUploadProgressListener,
@@ -152,16 +152,10 @@ async function uploadFileWithXhr(input: {
   });
 }
 
-function getPublicUrlFromPath(path: string): string {
-  const {
-    data: { publicUrl },
-  } = supabase().storage.from(MEDIA_BUCKET).getPublicUrl(path);
-
-  if (!publicUrl) {
-    throw new Error('Failed to obtain a public URL for the uploaded image.');
-  }
-
-  return publicUrl;
+function derivePublicObjectAddress(path: string): string {
+  // supabase-js public-URL minting is cut (B3); the address form is fixed,
+  // so derive it deterministically from the configured project origin.
+  return publicMediaObjectUrl(path, getSupabaseUrl());
 }
 
 function buildUploadFailureMessage(
@@ -222,7 +216,7 @@ export const uploadImageToStorageWithPath = async (
         onProgress: progressCallback,
       });
 
-      return { publicUrl: getPublicUrlFromPath(filePath), path: filePath };
+      return { publicUrl: derivePublicObjectAddress(filePath), path: filePath };
     } catch (error) {
       lastError = error;
       const errorMsg = error instanceof Error ? error.message : String(error);
@@ -289,5 +283,5 @@ export const uploadThumbnailBlobToStorage = async (
     throw error;
   }
 
-  return getPublicUrlFromPath(filePath);
+  return derivePublicObjectAddress(filePath);
 };

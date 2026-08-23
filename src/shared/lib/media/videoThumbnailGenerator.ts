@@ -7,7 +7,8 @@
 
 import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
 import { getDisplayUrl } from '@/shared/lib/media/mediaUrl';
-import { storagePaths, MEDIA_BUCKET } from '@/shared/lib/storagePaths';
+import { storagePaths, MEDIA_BUCKET, publicMediaObjectUrl } from '@/shared/lib/storagePaths';
+import { getSupabaseUrl } from '@/integrations/supabase/config/env';
 import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
 import { captureVideoFrameBlob } from './captureVideoFrameBlob';
 
@@ -82,12 +83,9 @@ async function uploadThumbnailToStorage(
     throw error;
   }
 
-  // Get public URL
-  const { data: urlData } = supabase().storage
-    .from(MEDIA_BUCKET)
-    .getPublicUrl(filePath);
-
-  return urlData.publicUrl;
+  // supabase-js public-URL minting is cut (B3); the public-object address
+  // form is fixed, so derive it deterministically.
+  return publicMediaObjectUrl(filePath, getSupabaseUrl());
 }
 
 /**

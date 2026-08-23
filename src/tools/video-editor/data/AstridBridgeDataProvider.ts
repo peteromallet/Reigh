@@ -1031,7 +1031,7 @@ export class AstridBridgeDataProvider implements DataProvider {
       generationId: entry.generationId,
       assetId,
       entry,
-      refresh: 'if-stale',
+      projectSlug: this.projectSlug,
     });
 
     if (!resolved.ok) {
@@ -1040,7 +1040,7 @@ export class AstridBridgeDataProvider implements DataProvider {
         diagnostic: {
           assetId,
           generationId: entry.generationId,
-          reason: resolved.diagnostic.code === 'refresh-required' ? 'refresh-required' : 'unresolvable',
+          reason: 'unresolvable',
           message: resolved.diagnostic.message,
         },
       };

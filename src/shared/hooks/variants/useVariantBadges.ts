@@ -15,7 +15,9 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
-import { calculateDerivedCountsSafe, DerivedCountsResult } from '@/shared/lib/generationTransformers';
+import { AstridLocalClient } from '@/integrations/astrid/client';
+import { getProjectSelectionFallbackId } from '@/shared/contexts/projectSelectionStore';
+import type { DerivedCountsResult } from '@/shared/lib/generationTransformers';
 import { withGenerationBadgeCount } from './variantBadgeCacheUtils';
 
 interface VariantBadgeData {
@@ -60,7 +62,33 @@ export function useVariantBadges(
       if (generationIds.length === 0) {
         return { derivedCounts: {}, hasUnviewedVariants: {}, unviewedVariantCounts: {} };
       }
-      return calculateDerivedCountsSafe(generationIds);
+
+      // R12 summary rows carry variant_count per generation. Per-variant
+      // viewed_at exists only on R13 detail, so the unviewed NEW-badge fields
+      // degrade to zero until a bulk read lands (deferred in the inventory).
+      const derivedCounts: Record<string, number> = {};
+      const pending = new Set<string>(generationIds);
+      const projectSlug = getProjectSelectionFallbackId();
+      if (!projectSlug) {
+        return { derivedCounts, hasUnviewedVariants: {}, unviewedVariantCounts: {} };
+      }
+
+      const client = new AstridLocalClient({ projectSlug });
+      let cursor: string | undefined;
+      let exhausted = false;
+      while (!exhausted && pending.size > 0) {
+        const page = await client.gallery.list({ limit: 200, cursor });
+        for (const row of page.generations) {
+          if (pending.has(row.generation_id)) {
+            derivedCounts[row.generation_id] = row.variant_count;
+            pending.delete(row.generation_id);
+          }
+        }
+        cursor = page.next_cursor ?? undefined;
+        exhausted = cursor === undefined;
+      }
+
+      return { derivedCounts, hasUnviewedVariants: {}, unviewedVariantCounts: {} };
     },
     enabled: enabled && generationIds.length > 0,
     staleTime: 30000, // Cache for 30 seconds

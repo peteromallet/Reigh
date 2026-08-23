@@ -5,6 +5,7 @@ import {
   getFileExtension,
   generateUniqueFilename,
   MEDIA_BUCKET,
+  publicMediaObjectUrl,
 } from '../storagePaths';
 import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
 import {
@@ -208,11 +209,9 @@ export async function uploadVideoToStorageWithPath(
         onProgress: progressCallback,
       });
 
-      const {
-        data: { publicUrl },
-      } = supabase().storage.from(MEDIA_BUCKET).getPublicUrl(fileName);
-
-      return { publicUrl, path: fileName };
+      // supabase-js public-URL minting is cut (B3); derive the fixed
+      // public-object address deterministically instead.
+      return { publicUrl: publicMediaObjectUrl(fileName, getSupabaseUrl()), path: fileName };
     } catch (error) {
       lastError = error instanceof Error ? error : new Error('Unknown upload error');
       normalizeAndPresentError(lastError, { context: 'VideoUploader', showToast: false });

@@ -169,7 +169,7 @@ export function GenerationMethodStep({ onNext }: OnboardingStepProps) {
         {!onComputerChecked && !inCloudChecked && (
           <div className="text-center">
             <img
-              src="https://wczysqzxlwdndgxitrvc.supabase.co/storage/v1/object/public/image_uploads/files/ds.gif"
+              src="/generation-method/ds.gif"
               alt="Choose generation method"
               className="w-[120px] h-[120px] object-contain transform scale-x-[-1] mx-auto"
             />

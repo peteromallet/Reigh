@@ -1,23 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { mockGetSession, mockStorageFrom } = vi.hoisted(() => {
-  const mockGetPublicUrl = vi.fn().mockReturnValue({
-    data: { publicUrl: 'https://storage.com/public/video.mp4' },
-  });
-  return {
-    mockGetSession: vi.fn().mockResolvedValue({
-      data: {
-        session: {
-          access_token: 'test-token',
-          user: { id: 'user-123' },
-        },
+const { mockGetSession, mockStorageFrom } = vi.hoisted(() => ({
+  mockGetSession: vi.fn().mockResolvedValue({
+    data: {
+      session: {
+        access_token: 'test-token',
+        user: { id: 'user-123' },
       },
-    }),
-    mockStorageFrom: vi.fn().mockReturnValue({
-      getPublicUrl: mockGetPublicUrl,
-    }),
-  };
-});
+    },
+  }),
+  mockStorageFrom: vi.fn().mockReturnValue({}),
+}));
 
 vi.mock('@/integrations/supabase/client', () => ({
   getSupabaseClient: () => ({
@@ -41,6 +34,7 @@ vi.mock('@/shared/lib/storagePaths', () => ({
   getFileExtension: vi.fn().mockReturnValue('mp4'),
   generateUniqueFilename: vi.fn().mockReturnValue('unique-file.mp4'),
   MEDIA_BUCKET: 'media',
+  publicMediaObjectUrl: (path: string) => `https://test.supabase.co/storage/v1/object/public/media/${path}`,
 }));
 
 import { extractVideoMetadata, extractVideoMetadataFromUrl, uploadVideoToStorage } from '../videoUploader';

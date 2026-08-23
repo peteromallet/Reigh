@@ -10,6 +10,10 @@
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { AstridLocalClient } from '@/integrations/astrid/client';
+import { BridgeRouteError } from '@/integrations/astrid/transport';
+import { getProjectSelectionFallbackId } from '@/shared/contexts/projectSelectionStore';
+import { bridgeMediaUrl } from '@/shared/lib/media/bridgeMediaUrl';
 import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
 import { useAuthSafe } from '@/shared/contexts/AuthContext';
 import { coerceVariantType, VARIANT_TYPE, type VariantType } from '@/shared/constants/variantTypes';
@@ -79,20 +83,33 @@ export const useVariants = ({
     queryFn: async () => {
       if (!generationId) return [];
 
-      const { data, error } = await supabase().from('generation_variants')
-        .select('*')
-        .eq('generation_id', generationId)
-        .order('created_at', { ascending: false });
+      const projectSlug = getProjectSelectionFallbackId();
+      if (!projectSlug) return [];
 
-      if (error) {
-        console.error('[useVariants] Error fetching variants:', error);
+      try {
+        const detail = await new AstridLocalClient({ projectSlug }).gallery.get(generationId);
+
+        // Wire order is recency-first; the content route doubles as the
+        // thumbnail address (no separate thumb media on the wire).
+        return detail.variants.map((variant) => ({
+          id: variant.id,
+          generation_id: variant.generation_id,
+          location: bridgeMediaUrl(projectSlug, variant.media_id),
+          thumbnail_url: bridgeMediaUrl(projectSlug, variant.media_id),
+          params: variant.params ?? null,
+          is_primary: variant.is_primary,
+          starred: variant.starred,
+          variant_type: coerceVariantType(variant.variant_type),
+          name: variant.name ?? null,
+          created_at: variant.created_at,
+          viewed_at: variant.viewed_at ?? null,
+        })) as GenerationVariant[];
+      } catch (error) {
+        if (error instanceof BridgeRouteError && error.status === 404) {
+          return [];
+        }
         throw error;
       }
-
-      return (data || []).map((variant) => ({
-        ...variant,
-        variant_type: coerceVariantType(variant.variant_type),
-      })) as GenerationVariant[];
     },
     enabled: enabled && !!generationId && isAuthenticated,
     staleTime: 30000, // 30 seconds
