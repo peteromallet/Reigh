@@ -10,7 +10,7 @@ import { recallPulseExtension } from './recall-pulse';
 import { soundtrackCartographerExtension } from './soundtrack-cartographer';
 import { timelineFaultlineExtension } from './timeline-faultline';
 
-/** The ten DEV-local extensions selected from the Luna persona ideation pass. */
+/** The ten reviewed bundled extensions selected from the Luna persona ideation pass. */
 export const creativeLabExtensions: readonly ReighExtension[] = Object.freeze([
   pulseMapExtension,
   soundtrackCartographerExtension,
