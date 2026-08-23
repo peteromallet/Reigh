@@ -40,13 +40,49 @@ const runawayUrl = `${baseUrl}/api/astrid/v1/projects/${runawayProject}/runaway-
 const editorUrl = `${baseUrl}/tools/video-editor?localProject=${project}&localTimeline=${timeline}&localTest=1&transcriptLaneFixture=1&runawayTimelineProject=${runawayProject}`;
 
 type TimelineConfig = {
-  clips?: Array<{ id?: string; at?: number; clipType?: string }>;
+  clips?: Array<{
+    id?: string;
+    at?: number;
+    hold?: number;
+    duration?: number;
+    clipType?: string;
+    text?: string;
+  }>;
+  output?: { fps?: number; resolution?: string; file?: string };
 };
 
 type TimelineEnvelope = {
   config: TimelineConfig;
+  registry: Record<string, unknown>;
   config_version: number;
 };
+
+type RunawaySnapshot = { count: number; hash: string };
+
+function canonicalValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalValue);
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => [key, canonicalValue(entry)]));
+  }
+  return value;
+}
+
+function canonicalJson(value: unknown): string {
+  return JSON.stringify(canonicalValue(value));
+}
+
+function sha256Text(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function timelineStateHash(timelineState: TimelineEnvelope): string {
+  return sha256Text(canonicalJson({
+    config: timelineState.config,
+    registry: timelineState.registry,
+  }));
+}
 
 async function readTimeline(request: APIRequestContext): Promise<TimelineEnvelope> {
   const response = await request.get(timelineUrl);
@@ -54,14 +90,22 @@ async function readTimeline(request: APIRequestContext): Promise<TimelineEnvelop
   return response.json() as Promise<TimelineEnvelope>;
 }
 
-async function readRunawayCount(request: APIRequestContext): Promise<number | null> {
+async function readRunawaySnapshot(request: APIRequestContext): Promise<RunawaySnapshot | null> {
   const response = await request.get(runawayUrl);
   if (response.status() === 404) return null;
   expect(response.status()).toBe(200);
   expect(response.headers()['x-astrid-bridge-version']).toBe('v1');
   const payload = await response.json() as { count?: number; total_count?: number; transitions?: unknown[] };
   expect(payload.count).toBe(payload.transitions?.length);
-  return payload.total_count ?? payload.count ?? null;
+  const count = payload.total_count ?? payload.count;
+  if (typeof count !== 'number') throw new Error('Runaway response has no total count');
+  return {
+    count,
+    hash: sha256Text(canonicalJson({
+      timingSummary: (payload as { timing_summary?: unknown }).timing_summary,
+      transitions: payload.transitions,
+    })),
+  };
 }
 
 function primaryClip(config: TimelineConfig) {
@@ -143,7 +187,11 @@ async function materializeTranscript(page: Page, request: APIRequestContext) {
   }).toBeGreaterThanOrEqual(2);
 }
 
-async function renderAndDownload(page: Page): Promise<{ bytes: number; sha256: string }> {
+async function renderAndDownload(
+  page: Page,
+  timelineState: TimelineEnvelope,
+  persistedStateHash: string,
+): Promise<{ bytes: number; sha256: string }> {
   await page.getByRole('button', { name: 'Render', exact: true }).click();
   const downloadLink = page.getByRole('link', { name: 'Download', exact: true });
   await expect(downloadLink).toBeVisible({ timeout: 240_000 });
@@ -156,20 +204,54 @@ async function renderAndDownload(page: Page): Promise<{ bytes: number; sha256: s
   expect(bytes).toBeGreaterThan(10_000);
   const body = await readFile(path);
   expect(body.subarray(4, 8).toString('ascii')).toBe('ftyp');
+  const expectedFps = timelineState.config.output?.fps;
+  expect(expectedFps).toBe(24);
+  const expectedDuration = Math.max(...(timelineState.config.clips ?? []).map((clip) => (
+    Number(clip.at ?? 0) + Number(clip.hold ?? clip.duration ?? 0)
+  )));
+  const captionMidpoints = (timelineState.config.clips ?? [])
+    .filter((clip) => clip.id?.startsWith('transcript-caption-'))
+    .map((clip) => Number(clip.at ?? 0) + Number(clip.hold ?? clip.duration ?? 0) / 2)
+    .filter(Number.isFinite);
+  expect(expectedDuration).toBeGreaterThan(0);
+  expect(captionMidpoints.length).toBeGreaterThanOrEqual(2);
+  await writeFile(
+    resolve(evidenceDir!, 'render-browser-receipt.json'),
+    `${JSON.stringify({
+      schemaVersion: 1,
+      persistedStateHash,
+      expectedDuration,
+      expectedFps,
+      captionMidpoints,
+      bytes,
+      sha256: createHash('sha256').update(body).digest('hex'),
+    }, null, 2)}\n`,
+    { encoding: 'utf8', flag: 'wx', mode: 0o600 },
+  );
   return { bytes, sha256: createHash('sha256').update(body).digest('hex') };
 }
 
 test(`paired repository acceptance phase: ${phase}`, async ({ page, request }) => {
   await mkdir(evidenceDir!, { recursive: true });
   const initial = await readTimeline(request);
+  const initialStateHash = timelineStateHash(initial);
   const initialAt = primaryClip(initial.config)?.at;
   expect(typeof initialAt).toBe('number');
-  const runawayCount = await readRunawayCount(request);
+  const runawaySnapshot = await readRunawaySnapshot(request);
   const issues = await openEditor(page);
   await proveAllExtensionLifecycles(page);
 
   if (phase === 'first') {
-    expect(runawayCount).toBe(expectedRunaway);
+    expect(runawaySnapshot?.count).toBe(expectedRunaway);
+    await writeFile(
+      resolve(evidenceDir!, 'browser-first-baseline.json'),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        timelineStateHash: initialStateHash,
+        timeline: initial,
+      }, null, 2)}\n`,
+      { encoding: 'utf8', flag: 'wx', mode: 0o600 },
+    );
     await expect(page.locator('[data-lane-kind="reigh.runaway.transitions"]')).toBeVisible();
     await dragPrimaryClip(page);
     await waitForPersistedEdit(request, initialAt!);
@@ -182,36 +264,43 @@ test(`paired repository acceptance phase: ${phase}`, async ({ page, request }) =
   } else if (phase === 'restart') {
     const firstState = JSON.parse(
       await readFile(resolve(evidenceDir!, 'browser-first-state.json'), 'utf8'),
-    ) as { primaryClipAt?: number; captionCount?: number; runawayCount?: number };
-    expect(runawayCount).toBe(expectedRunaway);
-    expect(initialAt).toBe(firstState.primaryClipAt);
-    expect(captionCount(initial.config)).toBe(firstState.captionCount);
-    expect(runawayCount).toBe(firstState.runawayCount);
+    ) as { timelineStateHash?: string; runawayHash?: string; runawayCount?: number };
+    expect(runawaySnapshot?.count).toBe(expectedRunaway);
+    expect(initialStateHash).toBe(firstState.timelineStateHash);
+    expect(runawaySnapshot?.hash).toBe(firstState.runawayHash);
+    expect(runawaySnapshot?.count).toBe(firstState.runawayCount);
     expect(initialAt).toBeGreaterThan(0);
     expect(captionCount(initial.config)).toBeGreaterThanOrEqual(2);
     await expect.poll(() => page.locator('[data-clip-id^="transcript-caption-"]').count()).toBeGreaterThanOrEqual(2);
-    const render = await renderAndDownload(page);
-    await writeFile(
-      resolve(evidenceDir!, 'render-receipt.json'),
-      `${JSON.stringify({ schemaVersion: 1, phase, ...render }, null, 2)}\n`,
-      { encoding: 'utf8', flag: 'wx', mode: 0o600 },
-    );
+    await renderAndDownload(page, initial, initialStateHash);
   } else {
-    expect(runawayCount).toBeNull();
+    const baseline = JSON.parse(
+      await readFile(resolve(evidenceDir!, 'browser-first-baseline.json'), 'utf8'),
+    ) as { timelineStateHash?: string };
+    expect(runawaySnapshot).toBeNull();
+    expect(initialStateHash).toBe(baseline.timelineStateHash);
     expect(initialAt).toBe(0);
     expect(captionCount(initial.config)).toBe(0);
   }
 
   const final = await readTimeline(request);
+  const finalStateHash = timelineStateHash(final);
   const state = {
     schemaVersion: 1,
     phase,
     configVersion: final.config_version,
+    timelineStateHash: finalStateHash,
     primaryClipAt: primaryClip(final.config)?.at,
     captionCount: captionCount(final.config),
-    runawayCount,
+    runawayCount: runawaySnapshot?.count ?? null,
+    runawayHash: runawaySnapshot?.hash ?? null,
     extensionCount: expectedExtensions,
   };
+  await writeFile(
+    resolve(evidenceDir!, `timeline-${phase}.json`),
+    `${JSON.stringify({ schemaVersion: 1, timelineStateHash: finalStateHash, timeline: final }, null, 2)}\n`,
+    { encoding: 'utf8', flag: 'wx', mode: 0o600 },
+  );
   await page.screenshot({ path: resolve(evidenceDir!, `browser-${phase}.png`), fullPage: true });
   await writeFile(
     resolve(evidenceDir!, `browser-${phase}-state.json`),

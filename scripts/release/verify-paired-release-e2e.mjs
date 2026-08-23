@@ -28,6 +28,10 @@ export const MANIFEST_PATH = resolve(REPO_ROOT, 'config/releases/extension-ship-
 export const EXPECTED_EXTENSION_COUNT = 13;
 export const EXPECTED_RUNAWAY_COUNT = 566;
 export const RELEASE_BRIDGE_CAPABILITY = 'astrid.authenticated-release-bridge.v1';
+export const RUNAWAY_RELEASE_FIXTURE_HASHES = Object.freeze({
+  'audio-reactive-v1.json': 'd7925d72b52180e206a2511a5d30cf1638c7007a962fd57d8a6eb9ffb10af886',
+  'timing-manifest.json': '44b5c0eea0aeb8b35a83e3e7620b5dbab27a106bf575fcc6e0ca6591dd4612bb',
+});
 const DEMO_PROJECT = 'paired-release-demo';
 const DEMO_TIMELINE = 'paired-release-timeline';
 const RUNAWAY_PROJECT = 'runaway-piano-colour-demo';
@@ -126,7 +130,10 @@ export function buildServerEnvironment({
   };
 }
 
-export function buildBrowserEnvironment({ baseUrl, evidenceDir, phase }) {
+export function buildBrowserEnvironment({ baseUrl, browserExecutable, evidenceDir, phase }) {
+  if (!browserExecutable || !isAbsolute(browserExecutable) || !existsSync(browserExecutable)) {
+    fail('paired browser executable must be an existing absolute path');
+  }
   return safeBaseEnvironment({
     PAIRED_RELEASE_BASE_URL: baseUrl,
     PAIRED_RELEASE_EVIDENCE_DIR: evidenceDir,
@@ -136,6 +143,7 @@ export function buildBrowserEnvironment({ baseUrl, evidenceDir, phase }) {
     PAIRED_RELEASE_RUNAWAY_PROJECT: RUNAWAY_PROJECT,
     PAIRED_RELEASE_EXPECTED_EXTENSIONS: String(EXPECTED_EXTENSION_COUNT),
     PAIRED_RELEASE_EXPECTED_RUNAWAY: String(EXPECTED_RUNAWAY_COUNT),
+    PLAYWRIGHT_CHROMIUM_EXECUTABLE: browserExecutable,
     PLAYWRIGHT_OUTPUT_DIR: resolve(evidenceDir, `playwright-${phase}`),
   });
 }
@@ -196,6 +204,13 @@ function resolveCommit(checkout, ref, label) {
   return commit;
 }
 
+function requireCleanWorktree(checkout, label) {
+  const status = gitOutput(checkout, ['status', '--porcelain=v1', '--untracked-files=all']);
+  if (status) {
+    fail(`${label} worktree must be completely clean before paired evidence is issued`);
+  }
+}
+
 export function preflightPinnedRepositories({ manifest, env }) {
   if (!/^[0-9a-f]{40}$/.test(env.REIGH_REF ?? '')) {
     fail('REIGH_REF is required and must be the full paired Reigh candidate commit');
@@ -208,6 +223,8 @@ export function preflightPinnedRepositories({ manifest, env }) {
     fail(`ASTRID_CHECKOUT is not a directory: ${astridCheckout}`);
   }
   const resolvedAstridCheckout = realpathSync(astridCheckout);
+  requireCleanWorktree(REPO_ROOT, 'Reigh controller');
+  requireCleanWorktree(resolvedAstridCheckout, 'Astrid source');
   const reighCommit = resolveCommit(REPO_ROOT, env.REIGH_REF, 'REIGH_REF');
   const reighHead = gitOutput(REPO_ROOT, ['rev-parse', 'HEAD']);
   if (reighHead !== reighCommit) {
@@ -293,34 +310,6 @@ export const PAIRED_RELEASE_PHASES = Object.freeze([
   'backup restore, second restart, and rollback-state acceptance',
   'immutable receipt and artifact hash index publication',
 ]);
-
-export function buildRunawayMigrationFixture(count = EXPECTED_RUNAWAY_COUNT) {
-  if (!Number.isInteger(count) || count < 1) fail('Runaway fixture count must be a positive integer');
-  const colours = ['rose', 'teal'];
-  const transitions = Array.from({ length: count }, (_, index) => ({
-    id: `paired-release-transition-${String(index + 1).padStart(4, '0')}`,
-    segment_id: 'S01',
-    segment_label: 'Paired release deterministic fixture',
-    timing_mode: 'literal_main_note',
-    frame: index * 10,
-    colour_index: index % 2 === 0 ? 0 : 4,
-    colour_name: colours[index % colours.length],
-    colour_hex: index % 2 === 0 ? '#D47795' : '#16B09B',
-  }));
-  return Object.freeze({
-    manifest: {
-      schema_version: 1,
-      intent: 'Hermetic paired release migration and duplicate-prevention fixture',
-      clock: { fps: 48 },
-      transition_count: count,
-      segments: [{ id: 'S01', transition_count: count }],
-      transitions,
-    },
-    audioReactive: {
-      timebase: { fps: 48, range_end_frame: count * 10 + 10 },
-    },
-  });
-}
 
 function printPlan(manifest, env) {
   console.log(`${LABEL} PLAN ONLY - no commands will execute`);
@@ -450,24 +439,32 @@ function startLoggedProcess(command, args, { cwd, env, logPath }) {
 async function stopLoggedProcess(handle) {
   if (!handle) return;
   const { child, log } = handle;
-  if (child.exitCode === null && child.pid) {
+  const isRunning = () => child.exitCode === null && child.signalCode === null;
+  const waitForExit = async (timeoutMs) => {
+    if (!isRunning()) return true;
+    return Promise.race([
+      new Promise((resolvePromise) => child.once('exit', () => resolvePromise(true))),
+      new Promise((resolvePromise) => setTimeout(() => resolvePromise(false), timeoutMs)),
+    ]);
+  };
+  if (isRunning() && child.pid) {
     try {
       if (process.platform === 'win32') child.kill('SIGTERM');
       else process.kill(-child.pid, 'SIGTERM');
     } catch {
       // It may have exited between the state check and signal.
     }
-    await Promise.race([
-      new Promise((resolvePromise) => child.once('exit', resolvePromise)),
-      new Promise((resolvePromise) => setTimeout(resolvePromise, 5_000)),
-    ]);
+    await waitForExit(5_000);
   }
-  if (child.exitCode === null && child.pid) {
+  if (isRunning() && child.pid) {
     try {
       if (process.platform === 'win32') child.kill('SIGKILL');
       else process.kill(-child.pid, 'SIGKILL');
     } catch {
       // Already gone.
+    }
+    if (!await waitForExit(5_000)) {
+      fail(`server process group ${child.pid} did not terminate after SIGKILL`);
     }
   }
   await new Promise((resolvePromise) => log.end(resolvePromise));
@@ -488,7 +485,64 @@ function runLogged(command, args, { cwd, env, logPath, parseJson = false }) {
       fail(`${command} returned invalid JSON: ${error.message}`);
     }
   }
-  return { durationMs: Date.now() - start, payload, startedAt, status: result.status };
+  return {
+    durationMs: Date.now() - start,
+    payload,
+    startedAt,
+    status: result.status,
+    stdout: result.stdout,
+  };
+}
+
+function installLockedAstridRuntime(context) {
+  const venv = resolve(context.runtimeRoot, 'astrid-venv');
+  runLogged(context.bootstrapAstridPython, ['-m', 'venv', venv], {
+    cwd: context.astridSnapshot,
+    env: safeBaseEnvironment({ HOME: context.home, TMPDIR: context.runtimeRoot }),
+    logPath: resolve(context.evidenceRoot, 'astrid-venv-create.log'),
+  });
+  const python = resolve(venv, process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+  const lock = resolve(context.astridSnapshot, 'requirements/runtime.lock');
+  if (!existsSync(lock)) fail('pinned Astrid archive has no requirements/runtime.lock');
+  runLogged(python, [
+    '-m', 'pip', 'install', '--disable-pip-version-check', '--require-hashes', '-r', lock,
+  ], {
+    cwd: context.astridSnapshot,
+    env: safeBaseEnvironment({ HOME: context.home, TMPDIR: context.runtimeRoot }),
+    logPath: resolve(context.evidenceRoot, 'astrid-runtime-lock-install.log'),
+  });
+  const freeze = runLogged(python, ['-m', 'pip', 'freeze', '--all'], {
+    cwd: context.astridSnapshot,
+    env: safeBaseEnvironment({ HOME: context.home, TMPDIR: context.runtimeRoot }),
+    logPath: resolve(context.evidenceRoot, 'astrid-runtime-freeze.log'),
+  });
+  context.astridPython = python;
+  return {
+    lock: relative(context.astridSnapshot, lock),
+    lockSha256: sha256File(lock),
+    environmentSha256: createHash('sha256').update(freeze.stdout).digest('hex'),
+    python: realpathSync(python),
+  };
+}
+
+function resolvePinnedBrowser(context) {
+  const probe = runLogged(process.execPath, ['-e', [
+    "const { chromium } = require('playwright')",
+    'process.stdout.write(chromium.executablePath())',
+  ].join(';')], {
+    cwd: context.reighSnapshot,
+    env: safeBaseEnvironment({ HOME: context.home, TMPDIR: context.runtimeRoot }),
+    logPath: resolve(context.evidenceRoot, 'playwright-browser-path.log'),
+  });
+  const executable = probe.stdout.trim();
+  if (!isAbsolute(executable) || !existsSync(executable)) {
+    fail(`lock-aligned Playwright Chromium executable is unavailable: ${executable || '<empty>'}`);
+  }
+  context.browserExecutable = realpathSync(executable);
+  return {
+    executable: context.browserExecutable,
+    executableSha256: sha256File(context.browserExecutable),
+  };
 }
 
 function astridCommand(context, args, logName, { parseJson = true } = {}) {
@@ -550,13 +604,18 @@ function seedDemoProject(context) {
 
 function runMigrationTwice(context) {
   const script = resolve(context.astridSnapshot, 'scripts/migrations/runaway_v1_migrate.py');
-  const fixtureDir = resolve(context.runtimeRoot, 'runaway-migration-fixture');
-  mkdirSync(fixtureDir, { mode: 0o700 });
+  const fixtureDir = resolve(context.astridSnapshot, 'tests/fixtures/runaway_release');
   const manifest = resolve(fixtureDir, 'timing-manifest.json');
   const audio = resolve(fixtureDir, 'audio-reactive-v1.json');
-  const fixture = buildRunawayMigrationFixture();
-  writeFileSync(manifest, `${JSON.stringify(fixture.manifest, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
-  writeFileSync(audio, `${JSON.stringify(fixture.audioReactive, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
+  const fixtureHashes = Object.fromEntries(Object.entries(RUNAWAY_RELEASE_FIXTURE_HASHES).map(
+    ([name, expected]) => {
+      const path = resolve(fixtureDir, name);
+      if (!existsSync(path)) fail(`Astrid release fixture is missing from the pinned archive: ${name}`);
+      const actual = sha256File(path);
+      if (actual !== expected) fail(`Astrid release fixture hash mismatch for ${name}: ${actual}`);
+      return [name, actual];
+    },
+  ));
   const env = safeBaseEnvironment({
     HOME: context.home,
     TMPDIR: context.runtimeRoot,
@@ -585,7 +644,7 @@ function runMigrationTwice(context) {
   if (first.project_id !== second.project_id || first.run_id !== second.run_id) {
     fail('Runaway second migration did not preserve project/run identity');
   }
-  return { first, second };
+  return { first, second, fixtureHashes };
 }
 
 function sqliteCount(context, sql, logName) {
@@ -603,6 +662,24 @@ function sqliteCount(context, sql, logName) {
     logPath: resolve(context.evidenceRoot, logName),
     parseJson: true,
   }).payload.count;
+}
+
+function sqliteCountSnapshot(context, logName) {
+  const code = [
+    'import json, sqlite3, sys',
+    'conn=sqlite3.connect(sys.argv[1])',
+    "tables=['projects','events','command_receipts','runs','tasks','evidence_items','runaway_transitions']",
+    "existing={row[0] for row in conn.execute(\"SELECT name FROM sqlite_master WHERE type='table'\")}",
+    "print(json.dumps({name:(int(conn.execute(f'SELECT COUNT(*) FROM {name}').fetchone()[0]) if name in existing else None) for name in tables}, sort_keys=True))",
+  ].join('; ');
+  return runLogged(context.astridPython, [
+    '-c', code, resolve(context.projectsRoot, '.astrid/astrid.sqlite3'),
+  ], {
+    cwd: context.astridSnapshot,
+    env: safeBaseEnvironment(),
+    logPath: resolve(context.evidenceRoot, logName),
+    parseJson: true,
+  }).payload;
 }
 
 async function startAstrid(context, suffix, port, token) {
@@ -623,11 +700,57 @@ async function startAstrid(context, suffix, port, token) {
   });
   const headers = { Authorization: `Bearer ${token}`, 'X-Astrid-Bridge-Version': 'v1' };
   await waitForUrl(`http://127.0.0.1:${port}/health`, { headers, process: handle.child });
-  const unauthorized = await fetch(`http://127.0.0.1:${port}/health`, {
-    headers: { 'X-Astrid-Bridge-Version': 'v1' },
-    redirect: 'manual',
-  });
-  if (unauthorized.status !== 401) fail(`release bridge unauthenticated health returned ${unauthorized.status}, expected 401`);
+  const assertFailure = async (label, requestHeaders, status, code) => {
+    const response = await fetch(`http://127.0.0.1:${port}/health`, {
+      headers: requestHeaders,
+      redirect: 'manual',
+    });
+    let payload;
+    try { payload = await response.json(); } catch { payload = null; }
+    if (
+      response.status !== status
+      || response.headers.get('x-astrid-bridge-version') !== 'v1'
+      || payload?.error !== code
+    ) {
+      fail(`${label} returned ${response.status}/${payload?.error ?? '<no-code>'}, expected ${status}/${code}`);
+    }
+  };
+  await assertFailure(
+    'missing bearer',
+    { 'X-Astrid-Bridge-Version': 'v1' },
+    401,
+    'unauthorized',
+  );
+  await assertFailure(
+    'wrong bearer',
+    { Authorization: 'Bearer definitely-wrong', 'X-Astrid-Bridge-Version': 'v1' },
+    401,
+    'unauthorized',
+  );
+  await assertFailure(
+    'missing protocol version',
+    { Authorization: `Bearer ${token}` },
+    426,
+    'protocol_version_mismatch',
+  );
+  await assertFailure(
+    'wrong protocol version',
+    { Authorization: `Bearer ${token}`, 'X-Astrid-Bridge-Version': 'v0' },
+    426,
+    'protocol_version_mismatch',
+  );
+  await assertFailure(
+    'disallowed origin',
+    { ...headers, Origin: 'https://attacker.invalid' },
+    403,
+    'forbidden',
+  );
+  await assertFailure(
+    'disallowed host',
+    { ...headers, Host: 'attacker.invalid' },
+    403,
+    'forbidden',
+  );
   return handle;
 }
 
@@ -671,11 +794,22 @@ async function smokeBuiltPreview(port) {
     fail(`built preview runtime config mismatch: ${JSON.stringify(config)}`);
   }
   const proxy = await fetch(`${base}/api/astrid/health`, {
-    headers: { 'X-Astrid-Bridge-Version': 'v1' },
+    headers: {
+      Authorization: 'Bearer attacker-controlled-value-must-be-replaced',
+      'X-Astrid-Bridge-Version': 'v0',
+    },
     cache: 'no-store',
   });
   if (!proxy.ok) fail(`built preview authenticated same-origin proxy returned ${proxy.status}`);
-  return { config, proxyStatus: proxy.status };
+  if (proxy.headers.get('x-astrid-bridge-version') !== 'v1') {
+    fail('built preview proxy did not preserve the authenticated upstream protocol response');
+  }
+  return {
+    config,
+    proxyStatus: proxy.status,
+    proxyReplacedClientAuthorization: true,
+    proxyReplacedClientProtocolVersion: true,
+  };
 }
 
 function runPlaywright(context, phase, port) {
@@ -686,6 +820,7 @@ function runPlaywright(context, phase, port) {
     cwd: context.reighSnapshot,
     env: buildBrowserEnvironment({
       baseUrl: `http://127.0.0.1:${port}`,
+      browserExecutable: context.browserExecutable,
       evidenceDir: context.evidenceRoot,
       phase,
     }),
@@ -693,11 +828,117 @@ function runPlaywright(context, phase, port) {
   });
 }
 
+function parseRate(value) {
+  const [numerator, denominator] = String(value ?? '').split('/').map(Number);
+  return numerator > 0 && denominator > 0 ? numerator / denominator : Number.NaN;
+}
+
+function verifyRenderedArtifact(context) {
+  const outputPath = resolve(context.evidenceRoot, 'paired-release-render.mp4');
+  const browserReceipt = JSON.parse(readFileSync(
+    resolve(context.evidenceRoot, 'render-browser-receipt.json'),
+    'utf8',
+  ));
+  const restartState = JSON.parse(readFileSync(
+    resolve(context.evidenceRoot, 'browser-restart-state.json'),
+    'utf8',
+  ));
+  if (browserReceipt.persistedStateHash !== restartState.timelineStateHash) {
+    fail('render receipt is not bound to the exact persisted restart state');
+  }
+  if (browserReceipt.sha256 !== sha256File(outputPath)) {
+    fail('downloaded render hash changed between browser and media verification');
+  }
+  const probe = runLogged('ffprobe', [
+    '-v', 'error',
+    '-show_entries', 'stream=codec_name,codec_type,width,height,avg_frame_rate,nb_frames,duration:format=duration',
+    '-of', 'json',
+    outputPath,
+  ], {
+    cwd: context.reighSnapshot,
+    env: safeBaseEnvironment(),
+    logPath: resolve(context.evidenceRoot, 'render-ffprobe.json'),
+    parseJson: true,
+  }).payload;
+  const streams = Array.isArray(probe?.streams) ? probe.streams : [];
+  const video = streams.find((stream) => stream.codec_type === 'video');
+  const audio = streams.find((stream) => stream.codec_type === 'audio');
+  const fps = parseRate(video?.avg_frame_rate);
+  const duration = Number(video?.duration ?? probe?.format?.duration);
+  const frames = Number(video?.nb_frames);
+  const expectedFps = Number(browserReceipt.expectedFps);
+  const expectedDuration = Number(browserReceipt.expectedDuration);
+  if (
+    video?.codec_name !== 'h264'
+    || video?.width !== 1280
+    || video?.height !== 720
+    || fps !== expectedFps
+    || !Number.isInteger(frames)
+    || Math.abs(frames - Math.round(expectedDuration * expectedFps)) > 1
+    || !Number.isFinite(duration)
+    || Math.abs(duration - expectedDuration) > (1 / expectedFps)
+  ) {
+    fail(`render stream contract mismatch: ${JSON.stringify({ video, expectedFps, expectedDuration })}`);
+  }
+  if (audio && audio.codec_name !== 'aac') {
+    fail(`render audio codec is not AAC: ${audio.codec_name}`);
+  }
+  runLogged('ffmpeg', ['-v', 'error', '-i', outputPath, '-f', 'null', '-'], {
+    cwd: context.reighSnapshot,
+    env: safeBaseEnvironment(),
+    logPath: resolve(context.evidenceRoot, 'render-full-decode.log'),
+  });
+  const captionMidpoints = Array.isArray(browserReceipt.captionMidpoints)
+    ? browserReceipt.captionMidpoints.slice(0, 2).map(Number)
+    : [];
+  if (captionMidpoints.length < 2 || captionMidpoints.some((value) => !Number.isFinite(value))) {
+    fail('render receipt has fewer than two caption midpoint semantic probes');
+  }
+  const frameHashes = captionMidpoints.map((seconds, index) => {
+    const framePath = resolve(context.runtimeRoot, `caption-proof-${index}.png`);
+    runLogged('ffmpeg', [
+      '-v', 'error', '-ss', String(seconds), '-i', outputPath, '-frames:v', '1', '-y', framePath,
+    ], {
+      cwd: context.reighSnapshot,
+      env: safeBaseEnvironment(),
+      logPath: resolve(context.evidenceRoot, `render-caption-frame-${index}.log`),
+    });
+    return { seconds, sha256: sha256File(framePath) };
+  });
+  if (new Set(frameHashes.map((entry) => entry.sha256)).size !== frameHashes.length) {
+    fail('caption midpoint frames are byte-identical; rendered caption semantics were not demonstrated');
+  }
+  const verification = {
+    schemaVersion: 1,
+    persistedStateHash: browserReceipt.persistedStateHash,
+    mp4Sha256: browserReceipt.sha256,
+    bytes: browserReceipt.bytes,
+    video: {
+      codec: video.codec_name,
+      width: video.width,
+      height: video.height,
+      fps,
+      frames,
+      duration,
+    },
+    audioCodec: audio?.codec_name ?? null,
+    fullDecode: true,
+    captionFrameHashes: frameHashes,
+  };
+  writeFileSync(
+    resolve(context.evidenceRoot, 'render-verification.json'),
+    `${JSON.stringify(verification, null, 2)}\n`,
+    { flag: 'wx', mode: 0o600 },
+  );
+  return verification;
+}
+
 async function executeGate(manifest, pins, evidenceRoot) {
   const runtimeRoot = mkdtempSync(resolve(tmpdir(), 'reigh-paired-release-runtime-'));
   chmodSync(runtimeRoot, 0o700);
   const context = {
     ...pins,
+    bootstrapAstridPython: pins.astridPython,
     evidenceRoot,
     runtimeRoot,
     home: resolve(runtimeRoot, 'home'),
@@ -744,6 +985,7 @@ async function executeGate(manifest, pins, evidenceRoot) {
       env: safeBaseEnvironment({ ...PUBLIC_BUILD_ENV, HOME: context.home, TMPDIR: runtimeRoot, NPM_CONFIG_USERCONFIG: npmUserConfig, NPM_CONFIG_GLOBALCONFIG: npmGlobalConfig }),
       logPath: resolve(evidenceRoot, 'reigh-build.log'),
     });
+    const browser = resolvePinnedBrowser(context);
     runLogged(process.execPath, ['scripts/runtime/write-extension-release-config.mjs'], {
       cwd: context.reighSnapshot,
       env: safeBaseEnvironment({
@@ -755,20 +997,31 @@ async function executeGate(manifest, pins, evidenceRoot) {
       }),
       logPath: resolve(evidenceRoot, 'reigh-runtime-config.log'),
     });
-    receipt.phases.push({ id: 'reigh-build', status: 'pass' });
+    receipt.phases.push({ id: 'reigh-build', status: 'pass', browser });
+
+    const astridRuntime = installLockedAstridRuntime(context);
+    receipt.phases.push({ id: 'astrid-locked-runtime', status: 'pass', ...astridRuntime });
 
     seedDemoProject(context);
+    const baselineDbCounts = sqliteCountSnapshot(context, 'astrid-pre-migration-counts.log');
     const backupDir = resolve(runtimeRoot, 'pre-migration-backup');
     const backup = astridCommand(context, [
       'backup', 'create', '--projects-root', context.projectsRoot, '--out', backupDir, '--json',
     ], 'astrid-backup-create.log').payload;
     if (backup?.ok !== true || !existsSync(resolve(backupDir, 'backup.json'))) fail('Astrid pre-migration backup was not published');
     const migration = runMigrationTwice(context);
-    receipt.phases.push({ id: 'migrate-twice', status: 'pass', storedCount: migration.second.stored_count, evidenceCount: migration.second.evidence_count });
+    receipt.runawayFixtureHashes = migration.fixtureHashes;
+    receipt.phases.push({
+      id: 'migrate-twice',
+      status: 'pass',
+      storedCount: migration.second.stored_count,
+      evidenceCount: migration.second.evidence_count,
+      fixtureHashes: migration.fixtureHashes,
+    });
 
     let bridgePort = await allocatePort();
-    let reighPort = await allocatePort();
     astridHandle = await startAstrid(context, 'preview', bridgePort, token);
+    let reighPort = await allocatePort();
     reighHandle = await startReigh(context, 'preview', reighPort, bridgePort, token, 'preview');
     const preview = await smokeBuiltPreview(reighPort);
     receipt.phases.push({ id: 'built-preview-auth-proxy', status: 'pass', ...preview });
@@ -776,8 +1029,8 @@ async function executeGate(manifest, pins, evidenceRoot) {
     await stopLoggedProcess(astridHandle); astridHandle = undefined;
 
     bridgePort = await allocatePort();
-    reighPort = await allocatePort();
     astridHandle = await startAstrid(context, 'browser-first', bridgePort, token);
+    reighPort = await allocatePort();
     reighHandle = await startReigh(context, 'browser-first', reighPort, bridgePort, token, 'development');
     runPlaywright(context, 'first', reighPort);
     receipt.phases.push({ id: 'browser-first', status: 'pass' });
@@ -785,17 +1038,35 @@ async function executeGate(manifest, pins, evidenceRoot) {
     await stopLoggedProcess(astridHandle); astridHandle = undefined;
 
     bridgePort = await allocatePort();
-    reighPort = await allocatePort();
     astridHandle = await startAstrid(context, 'browser-restart', bridgePort, token);
+    reighPort = await allocatePort();
     reighHandle = await startReigh(context, 'browser-restart', reighPort, bridgePort, token, 'development');
     runPlaywright(context, 'restart', reighPort);
-    receipt.phases.push({ id: 'restart-persistence-render', status: 'pass' });
+    const renderVerification = verifyRenderedArtifact(context);
+    receipt.phases.push({
+      id: 'restart-persistence-render',
+      status: 'pass',
+      persistedStateHash: renderVerification.persistedStateHash,
+      mp4Sha256: renderVerification.mp4Sha256,
+      videoFrames: renderVerification.video.frames,
+      fullDecode: true,
+    });
     await stopLoggedProcess(reighHandle); reighHandle = undefined;
     await stopLoggedProcess(astridHandle); astridHandle = undefined;
 
     astridCommand(context, [
       'backup', 'restore', backupDir, '--projects-root', context.projectsRoot, '--force', '--json',
     ], 'astrid-backup-restore.log');
+    const restoredDbCounts = sqliteCountSnapshot(context, 'astrid-restored-counts.log');
+    if (JSON.stringify(restoredDbCounts) !== JSON.stringify(baselineDbCounts)) {
+      fail(`restore database counts differ from baseline: ${JSON.stringify({ baselineDbCounts, restoredDbCounts })}`);
+    }
+    const doctor = astridCommand(context, [
+      'doctor', '--projects-root', context.projectsRoot, '--json',
+    ], 'astrid-restore-doctor.log').payload;
+    if (doctor?.ok !== true || !Array.isArray(doctor.checks) || doctor.checks.some((check) => check.status !== 'ok')) {
+      fail(`Astrid doctor failed after restore: ${JSON.stringify(doctor)}`);
+    }
     const restoredRunawayCount = sqliteCount(
       context,
       "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='runaway_transitions'",
@@ -812,11 +1083,18 @@ async function executeGate(manifest, pins, evidenceRoot) {
       fail(`restore did not roll Runaway data back cleanly (table=${restoredRunawayCount}, rows=${restoredRows})`);
     }
     bridgePort = await allocatePort();
-    reighPort = await allocatePort();
     astridHandle = await startAstrid(context, 'restore', bridgePort, token);
+    reighPort = await allocatePort();
     reighHandle = await startReigh(context, 'restore', reighPort, bridgePort, token, 'development');
     runPlaywright(context, 'restore', reighPort);
-    receipt.phases.push({ id: 'rollback-restore', status: 'pass', runawayRows: restoredRows });
+    receipt.phases.push({
+      id: 'rollback-restore',
+      status: 'pass',
+      runawayRows: restoredRows,
+      baselineDbCounts,
+      restoredDbCounts,
+      doctorChecks: doctor.checks.length,
+    });
 
     receipt.status = 'pass';
   } catch (error) {
@@ -827,13 +1105,14 @@ async function executeGate(manifest, pins, evidenceRoot) {
     await stopLoggedProcess(astridHandle);
     receipt.finishedAt = new Date().toISOString();
     try {
-      const preIndex = listFiles(evidenceRoot);
-      writeFileSync(resolve(evidenceRoot, 'artifact-index.json'), `${JSON.stringify({ schemaVersion: 1, files: preIndex }, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
-      receipt.artifactIndexSha256 = sha256File(resolve(evidenceRoot, 'artifact-index.json'));
       writeFileSync(resolve(evidenceRoot, 'receipt.json'), `${JSON.stringify(receipt, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
+      const indexedFiles = listFiles(evidenceRoot);
+      const indexPath = resolve(evidenceRoot, 'artifact-index.json');
+      writeFileSync(indexPath, `${JSON.stringify({ schemaVersion: 1, files: indexedFiles }, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
+      const artifactIndexSha256 = sha256File(indexPath);
       freezeArtifacts(evidenceRoot);
       console.log(`${LABEL} evidence=${evidenceRoot}`);
-      console.log(`${LABEL} artifact-index-sha256=${receipt.artifactIndexSha256}`);
+      console.log(`${LABEL} artifact-index-sha256=${artifactIndexSha256}`);
     } finally {
       rmSync(runtimeRoot, { recursive: true, force: true });
     }
@@ -857,8 +1136,6 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   try {
     pins = preflightPinnedRepositories({ manifest, env });
   } catch (error) {
-    const indexPath = resolve(evidenceRoot, 'artifact-index.json');
-    writeFileSync(indexPath, `${JSON.stringify({ schemaVersion: 1, files: [] }, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
     const receipt = {
       schemaVersion: 1,
       release: manifest.release,
@@ -870,12 +1147,15 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
       requiredCapability: RELEASE_BRIDGE_CAPABILITY,
       error: error.message,
       finishedAt: new Date().toISOString(),
-      artifactIndexSha256: sha256File(indexPath),
     };
-    writeFileSync(resolve(evidenceRoot, 'receipt.json'), `${JSON.stringify(receipt, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
+    const receiptPath = resolve(evidenceRoot, 'receipt.json');
+    writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
+    const indexPath = resolve(evidenceRoot, 'artifact-index.json');
+    writeFileSync(indexPath, `${JSON.stringify({ schemaVersion: 1, files: listFiles(evidenceRoot) }, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
+    const artifactIndexSha256 = sha256File(indexPath);
     freezeArtifacts(evidenceRoot);
     console.error(`${LABEL} evidence=${evidenceRoot}`);
-    console.error(`${LABEL} artifact-index-sha256=${receipt.artifactIndexSha256}`);
+    console.error(`${LABEL} artifact-index-sha256=${artifactIndexSha256}`);
     throw error;
   }
   await executeGate(manifest, pins, evidenceRoot);

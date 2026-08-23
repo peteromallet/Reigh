@@ -9,8 +9,8 @@ import {
   PAIRED_RELEASE_PHASES,
   RELEASE_BRIDGE_CAPABILITY,
   REPO_ROOT,
+  RUNAWAY_RELEASE_FIXTURE_HASHES,
   buildBrowserEnvironment,
-  buildRunawayMigrationFixture,
   buildServerEnvironment,
   parseCliArgs,
   validateAstridReleaseBridgeSources,
@@ -56,11 +56,13 @@ describe('paired repository release E2E gate', () => {
     try {
       const browser = buildBrowserEnvironment({
         baseUrl: 'http://127.0.0.1:21000',
+        browserExecutable: process.execPath,
         evidenceDir: '/tmp/paired-evidence',
         phase: 'first',
       });
       assert.equal(browser.ASTRID_BRIDGE_TOKEN, undefined);
       assert.equal(browser.OPENAI_API_KEY, undefined);
+      assert.equal(browser.PLAYWRIGHT_CHROMIUM_EXECUTABLE, process.execPath);
 
       const server = buildServerEnvironment({
         home: '/tmp/paired-home',
@@ -94,20 +96,11 @@ describe('paired repository release E2E gate', () => {
     ]);
   });
 
-  it('builds a hermetic deterministic Runaway migration input', () => {
-    const first = buildRunawayMigrationFixture();
-    const second = buildRunawayMigrationFixture();
-    assert.deepEqual(first, second);
-    assert.equal(first.manifest.transition_count, EXPECTED_RUNAWAY_COUNT);
-    assert.equal(first.manifest.transitions.length, EXPECTED_RUNAWAY_COUNT);
-    assert.equal(first.manifest.segments[0].transition_count, EXPECTED_RUNAWAY_COUNT);
-    assert.equal(first.manifest.transitions[0].frame, 0);
-    assert.equal(first.manifest.transitions.at(-1).frame, (EXPECTED_RUNAWAY_COUNT - 1) * 10);
-    assert.ok(
-      first.audioReactive.timebase.range_end_frame
-      > first.manifest.transitions.at(-1).frame,
-    );
-    assert.throws(() => buildRunawayMigrationFixture(0), /positive integer/);
+  it('pins the independently owned canonical Runaway release inputs', () => {
+    assert.deepEqual(RUNAWAY_RELEASE_FIXTURE_HASHES, {
+      'audio-reactive-v1.json': 'd7925d72b52180e206a2511a5d30cf1638c7007a962fd57d8a6eb9ffb10af886',
+      'timing-manifest.json': '44b5c0eea0aeb8b35a83e3e7620b5dbab27a106bf575fcc6e0ca6591dd4612bb',
+    });
   });
 
   it('prints an honest non-executing plan and documents the production boundary', () => {
@@ -131,5 +124,10 @@ describe('paired repository release E2E gate', () => {
     assert.match(source, /npm-globalconfig/);
     assert.doesNotMatch(source, /NPM_CONFIG_USERCONFIG: '\/dev\/null'/);
     assert.match(source, /freezeArtifacts\(evidenceRoot\)/);
+    assert.match(source, /requirements\/runtime\.lock/);
+    assert.match(source, /--require-hashes/);
+    assert.match(source, /requireCleanWorktree/);
+    assert.match(source, /render-full-decode\.log/);
+    assert.ok(source.indexOf("'receipt.json'") < source.indexOf("'artifact-index.json'"));
   });
 });

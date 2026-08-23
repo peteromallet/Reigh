@@ -942,3 +942,48 @@ evidence and a concrete improvement direction.
   the real-bridge script no longer reintroduces a fixed origin. Parallel test
   isolation must be verified by actually running a non-default port; merely
   parameterizing the server command does not parameterize the client.
+
+### A moving shared worktree cannot issue immutable release evidence
+
+- Long-running suites were first launched from branches that other workers were
+  still advancing. Even when every executed assertion was green, the final log
+  could not identify one source snapshot, and an external cleanup process could
+  reap a child whose command line happened to match its stale-test heuristic.
+- Release gates now reject dirty controller and dependency worktrees, archive
+  exact commits into private trees, retain their own process handles, and wait
+  through TERM/KILL completion. Broad process or temporary-directory cleanup is
+  forbidden while evidence runs. A log is admissible only when its code identity
+  and process lifetime are controlled end to end.
+
+### Synthetic migration data can prove the verifier while missing the product
+
+- A deterministic 566-row generator made the migration path hermetic, but the
+  verifier authored both the input and its expected count. It could stay green
+  while the actual Runaway segment structure, timebase, prompts, or derived audio
+  path became incompatible.
+- The paired gate now consumes Astrid-owned, tracked release fixtures with
+  independently frozen hashes and records those hashes in its receipt. Release
+  fixtures need an owner outside the assertion that consumes them and semantic
+  checks beyond a shared row-count constant.
+
+### Evidence receipts cannot hash an index that hashes the receipt
+
+- Writing the artifact index before the receipt left the final pass/fail claim
+  outside the tamper-evident set; embedding the index hash back into the receipt
+  would instead create an impossible self-reference.
+- The gate writes a canonical receipt first, then an index covering that receipt
+  and every other artifact except the index itself, and prints the detached index
+  hash for external retention. Evidence formats must define their acyclic trust
+  root before implementation.
+
+### Sparse virtualization is an SDK capability, not an invisible optimization
+
+- Non-contiguous overlap selection fixed correctness for adversarial intervals,
+  but existing renderers could still infer absolute positions as
+  `startIndex + localIndex` under the unchanged API version. Sorting all 50,000
+  simultaneous overlaps also spent tens of milliseconds to retain only 128.
+- Sparse windows now require an explicit registration opt-in; legacy renderers
+  receive a bounded contiguous window, while opted-in renderers receive absolute
+  indices. Selection uses bounded top-k work and is tested with 50,000 concurrent
+  overlaps. Host optimizations that change observable collection shape need
+  capability negotiation and worst-case fixtures.
