@@ -13,6 +13,7 @@ import type {
   BridgeProjectsPayload,
   BridgeTimelinesPayload,
 } from '@/tools/video-editor/data/bridgeContract.ts';
+import type { AstridBridgeRequestObservation } from '@/tools/video-editor/data/AstridBridgeDataProvider.ts';
 
 /**
  * Astrid local-bridge discovery: health + projects + the selected local
@@ -40,14 +41,47 @@ async function fetchBridgeJson<Schema extends ZodType>(
   path: string,
   schema: Schema,
   what: string,
+  onBridgeRequest?: (event: AstridBridgeRequestObservation) => void,
 ): Promise<z.infer<Schema>> {
-  const response = await fetch(`${LOCAL_BRIDGE_BASE_URL}${path}`, {
-    signal: AbortSignal.timeout(BRIDGE_REQUEST_TIMEOUT_MS),
-  });
+  const startedAt = performance.now();
+  let response: Response;
+  try {
+    response = await fetch(`${LOCAL_BRIDGE_BASE_URL}${path}`, {
+      signal: AbortSignal.timeout(BRIDGE_REQUEST_TIMEOUT_MS),
+    });
+  } catch (error) {
+    onBridgeRequest?.({
+      outcome: 'failure',
+      durationMs: Math.max(0, performance.now() - startedAt),
+      errorClass: error instanceof DOMException && error.name === 'TimeoutError'
+        ? 'bridge.timeout'
+        : 'bridge.http_error',
+    });
+    throw error;
+  }
   if (!response.ok) {
+    onBridgeRequest?.({
+      outcome: 'failure',
+      durationMs: Math.max(0, performance.now() - startedAt),
+      errorClass: 'bridge.http_error',
+    });
     throw new Error(`Astrid bridge request failed: ${response.status} ${response.statusText}`);
   }
-  return parseBridgePayload(schema, await response.json(), what);
+  try {
+    const payload = parseBridgePayload(schema, await response.json(), what);
+    onBridgeRequest?.({
+      outcome: 'success',
+      durationMs: Math.max(0, performance.now() - startedAt),
+    });
+    return payload;
+  } catch (error) {
+    onBridgeRequest?.({
+      outcome: 'failure',
+      durationMs: Math.max(0, performance.now() - startedAt),
+      errorClass: 'bridge.invalid_response',
+    });
+    throw error;
+  }
 }
 
 export interface UseAstridBridgeDiscoveryOptions {
@@ -57,6 +91,8 @@ export interface UseAstridBridgeDiscoveryOptions {
   currentLocal: boolean;
   /** Slug of the selected local project (drives the timelines fetch). */
   selectedProjectSlug: string | null;
+  /** Host-owned, privacy-bounded observation of actual discovery IO only. */
+  onBridgeRequest?: (event: AstridBridgeRequestObservation) => void;
 }
 
 export interface UseAstridBridgeDiscoveryResult {
@@ -75,11 +111,17 @@ export function useAstridBridgeDiscovery({
   open,
   currentLocal,
   selectedProjectSlug,
+  onBridgeRequest,
 }: UseAstridBridgeDiscoveryOptions): UseAstridBridgeDiscoveryResult {
   const healthQuery = useQuery({
     queryKey: ['astrid-bridge', 'health'],
     queryFn: async () => {
-      const payload = await fetchBridgeJson('/health', bridgeHealthSchema, 'health response');
+      const payload = await fetchBridgeJson(
+        '/health',
+        bridgeHealthSchema,
+        'health response',
+        onBridgeRequest,
+      );
       return payload.ok === true;
     },
     enabled: currentLocal || open,
@@ -98,7 +140,12 @@ export function useAstridBridgeDiscovery({
 
   const projectsQuery = useQuery({
     queryKey: ['astrid-bridge', 'projects'],
-    queryFn: async () => fetchBridgeJson('/projects', bridgeProjectsSchema, 'projects list'),
+    queryFn: async () => fetchBridgeJson(
+      '/projects',
+      bridgeProjectsSchema,
+      'projects list',
+      onBridgeRequest,
+    ),
     enabled: (currentLocal || open) && bridgeHealthy,
     staleTime: 0,
     retry: 0,
@@ -121,6 +168,7 @@ export function useAstridBridgeDiscovery({
         `/projects/${encodeURIComponent(selectedProjectSlug!)}/timelines`,
         bridgeTimelinesSchema,
         'timelines list',
+        onBridgeRequest,
       ),
     enabled: bridgeHealthy && Boolean(selectedProjectSlug),
     staleTime: 0,

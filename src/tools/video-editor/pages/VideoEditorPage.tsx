@@ -471,6 +471,7 @@ export default function VideoEditorPage() {
     open: selectorsOpen,
     currentLocal: mode === 'local',
     selectedProjectSlug: localProjectSlug,
+    onBridgeRequest,
   });
 
   const [mountedSaveStatus, setMountedSaveStatus] = useState<SaveStatus>('saved');

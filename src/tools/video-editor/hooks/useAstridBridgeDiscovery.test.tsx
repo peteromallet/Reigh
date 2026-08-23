@@ -53,6 +53,83 @@ afterEach(() => {
 });
 
 describe('useAstridBridgeDiscovery', () => {
+  it('reports privacy-bounded outcomes for discovery success and invalid payloads', async () => {
+    const onBridgeRequest = vi.fn();
+    makeBridgeFetch({
+      projects: () => new Response(JSON.stringify({ projects: 'not-a-list' }), { status: 200 }),
+    });
+
+    const { result } = renderHook(
+      () => useAstridBridgeDiscovery({
+        open: true,
+        currentLocal: true,
+        selectedProjectSlug: 'ados-talks',
+        onBridgeRequest,
+      }),
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => {
+      expect(result.current.bridgeHealthy).toBe(true);
+      expect(result.current.projectsQuery.isError).toBe(true);
+    });
+    expect(onBridgeRequest).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'success',
+      durationMs: expect.any(Number),
+    }));
+    expect(onBridgeRequest).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'failure',
+      errorClass: 'bridge.invalid_response',
+      durationMs: expect.any(Number),
+    }));
+    for (const observation of onBridgeRequest.mock.calls.flat()) {
+      expect(observation).not.toHaveProperty('path');
+      expect(observation).not.toHaveProperty('payload');
+    }
+  });
+
+  it('classifies discovery timeouts separately from HTTP failures', async () => {
+    const timeoutObserver = vi.fn();
+    makeBridgeFetch({
+      health: () => Promise.reject(new DOMException('timed out', 'TimeoutError')),
+    });
+    const timeout = renderHook(
+      () => useAstridBridgeDiscovery({
+        open: true,
+        currentLocal: true,
+        selectedProjectSlug: null,
+        onBridgeRequest: timeoutObserver,
+      }),
+      { wrapper: createWrapper() },
+    );
+    await waitFor(() => expect(timeout.result.current.healthQuery.isError).toBe(true));
+    expect(timeoutObserver).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'failure',
+      errorClass: 'bridge.timeout',
+    }));
+    timeout.unmount();
+
+    vi.unstubAllGlobals();
+    const httpObserver = vi.fn();
+    makeBridgeFetch({
+      health: () => new Response('unavailable', { status: 503 }),
+    });
+    const http = renderHook(
+      () => useAstridBridgeDiscovery({
+        open: true,
+        currentLocal: true,
+        selectedProjectSlug: null,
+        onBridgeRequest: httpObserver,
+      }),
+      { wrapper: createWrapper() },
+    );
+    await waitFor(() => expect(http.result.current.healthQuery.isError).toBe(true));
+    expect(httpObserver).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'failure',
+      errorClass: 'bridge.http_error',
+    }));
+  });
+
   it('fetches health, then projects, then timelines for the selected project', async () => {
     const calls = makeBridgeFetch();
 
