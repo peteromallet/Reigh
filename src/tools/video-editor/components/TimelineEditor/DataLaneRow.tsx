@@ -58,6 +58,17 @@ export const DATA_LANE_ACTION_TIMEOUT_MS = 15_000;
 
 const DATA_LANE_ACTION_ERROR_MAX_LENGTH = 180;
 
+function boundedActionError(cause: unknown): string {
+  const rawMessage = cause instanceof Error ? cause.message : String(cause);
+  const normalized = Array.from(rawMessage, (character) => {
+    const codePoint = character.codePointAt(0) ?? 0;
+    return codePoint < 32 || codePoint === 127 ? ' ' : character;
+  }).join('').trim() || 'Action failed.';
+  return normalized.length > DATA_LANE_ACTION_ERROR_MAX_LENGTH
+    ? `${normalized.slice(0, DATA_LANE_ACTION_ERROR_MAX_LENGTH - 1)}…`
+    : normalized;
+}
+
 /** Maximum interactive item controls a lane may contribute to the DOM. */
 export const DATA_LANE_DOM_ITEM_BUDGET = 128;
 
@@ -288,11 +299,7 @@ function LaneActionMenu({ laneLabel, actions, items }: LaneActionMenuProps) {
       await Promise.race([invocation, timeout]);
       closeAndRestoreFocus();
     } catch (cause) {
-      const rawMessage = cause instanceof Error ? cause.message : String(cause);
-      const normalized = rawMessage.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim() || 'Action failed.';
-      setError(normalized.length > DATA_LANE_ACTION_ERROR_MAX_LENGTH
-        ? `${normalized.slice(0, DATA_LANE_ACTION_ERROR_MAX_LENGTH - 1)}…`
-        : normalized);
+      setError(boundedActionError(cause));
     } finally {
       if (timeoutId !== undefined) clearTimeout(timeoutId);
       setRunningActionId(undefined);
