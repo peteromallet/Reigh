@@ -514,9 +514,13 @@ evidence and a concrete improvement direction.
   and forwards records through a browser event boundary. The app shell now
   emits effective host activation, real per-extension lifecycle transitions,
   commands, persistence conflicts, browser render outcomes, and lane density.
-- Bridge, migration, and export-completion source wiring remains explicit work;
-  the typed host adapter alone is not evidence that those signals reach
-  production analytics.
+- Core Astrid timeline load/save and the Runaway source now emit once per real
+  request through the host adapter, with bounded latency and typed
+  timeout/HTTP/invalid-response classes; cache hits do not inflate counts. The
+  Runaway request also acquired the shared fixed bridge deadline during this
+  work. Page-level discovery/listing, migration, and export-completion wiring
+  remain explicit work; the typed adapter alone is not evidence that every
+  source reaches production analytics.
 - A schema is only the construction boundary. Actual production dashboards,
   retention/access policy, alert drills, and on-call ownership still require
   human/operator evidence before rollout; the release checklist must not infer
@@ -698,3 +702,39 @@ evidence and a concrete improvement direction.
   A normal locked-install dry run exits zero and the timestamp hook suites are
   green. Release installation policy should treat peer-resolution bypasses as
   blockers requiring a written, package-specific exception.
+
+### Concurrent auto-commits can resurrect an already-fixed release defect
+
+- A background commit captured an older verifier snapshot after date-fns had
+  been aligned and the peer-resolution bypass removed. Its otherwise unrelated
+  container commit silently restored `npm ci --legacy-peer-deps`, even though a
+  normal locked install now resolves without it.
+- The bypass was removed again and the verifier regression assertion restored.
+  Shared-worktree automation needs compare-and-swap semantics (or isolated
+  worktrees plus reviewed integration) so a commit cannot overwrite a newer
+  file version merely because its task began earlier. Final gates must inspect
+  the resulting diff and rerun policy assertions after the last automated
+  commit, not assume that an earlier green result survived concurrency.
+
+### Observability migrations need executable database validation
+
+- The first telemetry migration draft looked plausible in review but one view
+  omitted its CTE join and the aggregate view referenced columns absent from
+  its source. Both defects would have failed at deployment despite green
+  TypeScript tests.
+- The views were corrected and the complete migration was applied with
+  `ON_ERROR_STOP=1` to a disposable PostgreSQL 14 cluster. Database migrations
+  that define operational release gates need a real apply test in CI; parsing
+  strings or testing only the browser emitter cannot prove the dashboard
+  contract exists.
+
+### A per-isolate telemetry counter is not production rate limiting
+
+- The edge function's fixed batch cap and 120-request runtime-minute counter
+  bound one isolate, but horizontally scaled or cold-started isolates do not
+  share that state. Leaving the ingress anonymous would also make event-volume
+  abuse unnecessarily easy.
+- Ingress now requires a valid user JWT, stores no identity, rejects unknown
+  reviewed-extension dimensions, and documents a distributed gateway quota as
+  a rollout blocker. Authentication and payload privacy are separate controls;
+  both are required.

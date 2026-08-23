@@ -87,12 +87,22 @@ describe('extension ship verifier', () => {
     );
     assert.doesNotMatch(packageJson.scripts['start:railway'], /npm run build/);
     assert.deepEqual(REIGH_GATE_PROFILE[0].args, [
-      'ci', '--no-audit', '--no-fund', '--legacy-peer-deps',
+      'ci', '--no-audit', '--no-fund',
     ]);
     assert.ok(REIGH_GATE_PROFILE.some((gate) => (
       gate.id === 'runtime-rollout'
       && gate.command === 'npm'
       && gate.args.join(' ') === 'run test:extensions:runtime-rollout'
+    )));
+    assert.ok(REIGH_GATE_PROFILE.some((gate) => (
+      gate.id === 'container-runtime'
+      && gate.command === 'npm'
+      && gate.args.join(' ') === 'run verify:extension-container'
+    )));
+    assert.ok(REIGH_GATE_PROFILE.some((gate) => (
+      gate.id === 'cross-browser-e2e'
+      && gate.command === 'npm'
+      && gate.args.join(' ') === 'run test:e2e:extension-cross-browser'
     )));
   });
 

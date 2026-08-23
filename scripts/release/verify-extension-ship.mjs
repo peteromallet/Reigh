@@ -36,7 +36,7 @@ export const EXPECTED_REQUIRED_GATES = Object.freeze([
  * into shell execution.
  */
 export const REIGH_GATE_PROFILE = Object.freeze([
-  { id: 'dependencies', label: 'install locked Reigh dependencies', command: 'npm', args: ['ci', '--no-audit', '--no-fund', '--legacy-peer-deps'] },
+  { id: 'dependencies', label: 'install locked Reigh dependencies', command: 'npm', args: ['ci', '--no-audit', '--no-fund'] },
   { id: 'contract-recheck', label: 'release contract recheck', command: 'npm', args: ['run', 'check:contract-recheck:release'] },
   { id: 'deferred-claims', label: 'release deferred-claims gate', command: 'npm', args: ['run', 'check:deferred-claims:release'] },
   { id: 'docs-maturity', label: 'release documentation maturity gate', command: 'npm', args: ['run', 'check:docs-maturity-sync:release'] },
@@ -55,8 +55,10 @@ export const REIGH_GATE_PROFILE = Object.freeze([
   { id: 'compatibility', label: 'extension compatibility matrix', command: 'npm', args: ['run', 'test:extension-compatibility'] },
   { id: 'production-smoke', label: 'production extension smoke suite', command: 'npm', args: ['run', 'test:extensions:production-smoke'] },
   { id: 'runtime-rollout', label: 'runtime extension rollout suite', command: 'npm', args: ['run', 'test:extensions:runtime-rollout'] },
+  { id: 'container-runtime', label: 'production container smoke and rollback', command: 'npm', args: ['run', 'verify:extension-container'] },
   { id: 'readiness', label: 'extension readiness suite', command: 'npm', args: ['run', 'test:readiness'] },
   { id: 'readiness-e2e', label: 'extension harness browser suite', command: 'npm', args: ['run', 'test:readiness:e2e'] },
+  { id: 'cross-browser-e2e', label: 'Chrome Firefox WebKit extension suite', command: 'npm', args: ['run', 'test:e2e:extension-cross-browser'] },
   { id: 'timeline-e2e', label: 'timeline browser/device suite', command: 'npm', args: ['run', 'test:e2e:timeline'] },
   { id: 'build', label: 'reproducible Reigh production build', command: 'npm', args: ['run', 'build'] },
 ]);
