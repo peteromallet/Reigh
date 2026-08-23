@@ -312,7 +312,7 @@ function LaneActionMenu({ laneLabel, actions, items }: LaneActionMenuProps) {
     <div
       ref={rootRef}
       data-testid="data-lane-action-rail"
-      className="pointer-events-none sticky right-1 z-30 col-start-1 row-start-1 mr-1 flex h-full w-max items-center justify-self-end"
+      className="pointer-events-none sticky right-1 z-30 col-start-1 row-start-1 mr-1 flex h-full w-20 items-center justify-self-end bg-card pl-2"
       onClick={stopRowSelection}
     >
       <button

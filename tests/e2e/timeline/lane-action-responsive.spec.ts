@@ -40,6 +40,30 @@ for (const viewport of viewports) {
     ).toBeLessThanOrEqual(
       Math.min(viewport.width, scrollerBox!.x + scrollerBox!.width) + 1,
     );
+    if (viewport.name === 'phone') {
+      const rail = row.getByTestId('data-lane-action-rail');
+      const [railBox, chipBox, railBackground] = await Promise.all([
+        rail.boundingBox(),
+        row.getByTestId('transcript-lane-chip').first().boundingBox(),
+        rail.evaluate((element) => getComputedStyle(element).backgroundColor),
+      ]);
+      expect(railBox).not.toBeNull();
+      expect(chipBox).not.toBeNull();
+      expect(railBackground).not.toBe('rgba(0, 0, 0, 0)');
+      expect(railBox!.width).toBeGreaterThanOrEqual(79);
+      expect(railBox!.x).toBeLessThanOrEqual(triggerBox!.x);
+      expect(
+        railBox!.x + railBox!.width,
+        JSON.stringify({ railBox, triggerBox, viewport }),
+      ).toBeGreaterThanOrEqual(triggerBox!.x + triggerBox!.width);
+      const visibleChipLeft = Math.max(chipBox!.x, scrollerBox!.x);
+      const visibleChipRight = Math.min(chipBox!.x + chipBox!.width, railBox!.x);
+      expect(
+        visibleChipRight - visibleChipLeft,
+        JSON.stringify({ chipBox, railBox, triggerBox, viewport }),
+      ).toBeGreaterThan(20);
+      expect(visibleChipRight).toBeLessThanOrEqual(triggerBox!.x - 1);
+    }
 
     const triggerCenter = {
       x: triggerBox!.x + triggerBox!.width / 2,
