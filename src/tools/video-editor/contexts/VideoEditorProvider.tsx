@@ -700,6 +700,7 @@ export function VideoEditorProvider({
       info: toast.info,
     },
     telemetry: telemetryHost,
+    ...(extensionHostEnabled ? { operationalEmitter } : {}),
     timelineId,
     timelineName,
     userId,
@@ -718,7 +719,7 @@ export function VideoEditorProvider({
     recordProcessResultAttach: assembly.recordProcessResultAttach,
     timelineOverlaysEnabled,
     timelineViewStore: assembly.timelineViewStoreRef.current ?? undefined,
-  }), [agentChatRegistry.register, agentChatRegistry.unregister, dataProvider, projectId, shotsHost, telemetryHost, timelineId, timelineName, userId, assembly.resolvedExtensionsConfig, assembly.extensionRuntime, assembly.processResultAttachRecords, assembly.processStatuses, assembly.recordProcessResultAttach, assembly.getRecoveryKey, assembly.incrementRecoveryKey, timelineOverlaysEnabled]);
+  }), [agentChatRegistry.register, agentChatRegistry.unregister, dataProvider, extensionHostEnabled, operationalEmitter, projectId, shotsHost, telemetryHost, timelineId, timelineName, userId, assembly.resolvedExtensionsConfig, assembly.extensionRuntime, assembly.processResultAttachRecords, assembly.processStatuses, assembly.recordProcessResultAttach, assembly.getRecoveryKey, assembly.incrementRecoveryKey, timelineOverlaysEnabled]);
 
   return (
     <VideoEditorRuntimeProvider value={runtimeValue}>

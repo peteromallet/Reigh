@@ -9,6 +9,7 @@ import {
   DataLaneRow,
 } from '@/tools/video-editor/components/TimelineEditor/DataLaneRow';
 import {
+  loadRunawayTimeline,
   parseRunawayBridgeResponse,
   RUNAWAY_SCHEMA_REF,
   type RunawayLoadStatusPayload,
@@ -57,6 +58,67 @@ function currentStatus(
 }
 
 describe('Runaway timeline bridge adapter', () => {
+  it('emits one bounded host observation per real request and not for cache hits', async () => {
+    const project = 'runaway-observation-success';
+    const observer = vi.fn();
+    const cachedObserver = vi.fn();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(fetchResponse({
+      ...response,
+      project,
+    }));
+
+    await expect(loadRunawayTimeline(project, observer)).resolves.toHaveLength(2);
+    await expect(loadRunawayTimeline(project, cachedObserver)).resolves.toHaveLength(2);
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    expect(fetchSpy.mock.calls[0]?.[1]).toEqual(expect.objectContaining({
+      signal: expect.any(AbortSignal),
+    }));
+    expect(observer).toHaveBeenCalledOnce();
+    expect(observer).toHaveBeenCalledWith({
+      outcome: 'success',
+      durationMs: expect.any(Number),
+    });
+    expect(Object.keys(observer.mock.calls[0][0]).sort()).toEqual(['durationMs', 'outcome']);
+    expect(cachedObserver).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      project: 'runaway-observation-http',
+      failure: () => Promise.resolve({
+        ok: false,
+        status: 503,
+        statusText: 'Unavailable',
+        json: async () => ({ detail: 'offline' }),
+      } as Response),
+      errorClass: 'bridge.http_error',
+    },
+    {
+      project: 'runaway-observation-invalid',
+      failure: () => Promise.resolve(fetchResponse({ invalid: true })),
+      errorClass: 'bridge.invalid_response',
+    },
+    {
+      project: 'runaway-observation-timeout',
+      failure: () => Promise.reject(new DOMException('timed out', 'TimeoutError')),
+      errorClass: 'bridge.timeout',
+    },
+  ])('classifies $errorClass without leaking payload data', async ({ project, failure, errorClass }) => {
+    const observer = vi.fn();
+    vi.spyOn(globalThis, 'fetch').mockImplementation(failure);
+
+    await expect(loadRunawayTimeline(project, observer)).rejects.toThrow();
+    expect(observer).toHaveBeenCalledOnce();
+    expect(observer).toHaveBeenCalledWith({
+      outcome: 'failure',
+      durationMs: expect.any(Number),
+      errorClass,
+    });
+    expect(Object.keys(observer.mock.calls[0][0]).sort()).toEqual([
+      'durationMs', 'errorClass', 'outcome',
+    ]);
+  });
+
   it('performs zero bridge IO when the deployment gate is disabled', () => {
     window.history.replaceState({}, '', '/?runawayTimelineProject=runaway-piano-colour-demo');
     const fetchSpy = vi.spyOn(globalThis, 'fetch');

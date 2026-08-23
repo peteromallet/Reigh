@@ -29,6 +29,7 @@ import type { ExtensionSettingsNotificationRegistry } from '@/tools/video-editor
 import type { ProcessManager } from '@/tools/video-editor/runtime/processes/ProcessManager.ts';
 import type { ProcessStatus } from '@/sdk/video/families/processes';
 import type { ProcessResultAttachRecord } from '@/tools/video-editor/runtime/composition/processResultAttach.ts';
+import type { HostOwnedExtensionOperationalEmitter } from '@/tools/video-editor/runtime/extensionReleaseControls.ts';
 
 export interface VideoEditorRuntimeContextValue {
   provider: DataProvider;
@@ -40,6 +41,8 @@ export interface VideoEditorRuntimeContextValue {
   agentChat: VideoEditorAgentChatHost;
   toast: VideoEditorToastHost;
   telemetry: VideoEditorTelemetryHost;
+  /** Internal host-only source emitter; never exposed through extension SDK context. */
+  operationalEmitter?: HostOwnedExtensionOperationalEmitter;
   timelineId: string;
   userId: string | null;
   timelineName?: string | null;

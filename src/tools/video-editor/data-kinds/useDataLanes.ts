@@ -17,7 +17,7 @@
 // - Persisted SOURCE items (`base.sourceItemsBySchemaRef`, V2 bundle plane)
 //   join host-fetched transcript segments as inputs to the same assembly.
 
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useOptionalVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import { getClipAssetMediaType } from '@/tools/video-editor/clip-types/runtime.ts';
 import {
@@ -63,8 +63,19 @@ export interface UseDataLanesArgs {
 export function useDataLanes({ base, kinds, loadSegments }: UseDataLanesArgs): TimelineData | null {
   const contextRecords = useDataKindRegistrySnapshot().records;
   const effectiveKinds = kinds ?? contextRecords;
+  const runtime = useOptionalVideoEditorRuntime();
   const runawayReleaseEnabled = getExtensionReleaseFlags().runawayTypedTimelineEnabled;
-  const runawayItems = useRunawayTimelineItems(runawayReleaseEnabled);
+  const observeRunawayBridge = useCallback((observation: {
+    readonly outcome: 'success' | 'failure';
+    readonly durationMs: number;
+    readonly errorClass?: 'bridge.timeout' | 'bridge.http_error' | 'bridge.invalid_response';
+  }) => {
+    runtime?.operationalEmitter?.emit({
+      event: 'bridge.request',
+      ...observation,
+    });
+  }, [runtime?.operationalEmitter]);
+  const runawayItems = useRunawayTimelineItems(runawayReleaseEnabled, observeRunawayBridge);
   const effectiveSourceItems = useMemo(() => {
     const persisted = base?.sourceItemsBySchemaRef;
     if (!runawayItems) return persisted;
@@ -75,7 +86,6 @@ export function useDataLanes({ base, kinds, loadSegments }: UseDataLanesArgs): T
     return Object.freeze(merged);
   }, [base?.sourceItemsBySchemaRef, runawayItems]);
 
-  const runtime = useOptionalVideoEditorRuntime();
   const defaultLoader = useMemo<LoadDataSegments | undefined>(() => {
     if (!runtime) return undefined;
     // VideoEditorAssetResolver is the profile source the host wires;

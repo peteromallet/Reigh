@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import type { SourceFrozenDataItem } from '@/tools/video-editor/data/typed/envelope.ts';
 import { freezeSourceDataItem } from '@/tools/video-editor/data/typed/envelope.ts';
 import { isLocalTestMode } from '@/app/localTestRuntime.ts';
+import { BRIDGE_REQUEST_TIMEOUT_MS } from '@/tools/video-editor/data/bridgeContract.ts';
 
 export const RUNAWAY_SCHEMA_REF = 'reigh.runaway_transition/v1';
 export const RUNAWAY_KIND_ID = 'reigh.runaway.transitions';
@@ -47,6 +48,12 @@ export interface RunawayLoadStatusPayload {
   readonly status: RunawayLoadStatus;
   readonly projectSlug: string;
   readonly message: string;
+}
+
+export interface RunawayBridgeRequestObservation {
+  readonly outcome: 'success' | 'failure';
+  readonly durationMs: number;
+  readonly errorClass?: 'bridge.timeout' | 'bridge.http_error' | 'bridge.invalid_response';
 }
 
 interface RawTransition {
@@ -244,14 +251,40 @@ function statusItem(
   });
 }
 
-export function loadRunawayTimeline(projectSlug: string): Promise<readonly SourceFrozenDataItem[]> {
+export function loadRunawayTimeline(
+  projectSlug: string,
+  onBridgeRequest?: (observation: RunawayBridgeRequestObservation) => void,
+): Promise<readonly SourceFrozenDataItem[]> {
   const cached = requestCache.get(projectSlug);
   if (cached) return cached;
-  const request = fetch(`/api/astrid/projects/${encodeURIComponent(projectSlug)}/runaway-transitions`)
+  const startedAt = performance.now();
+  let observed = false;
+  const observe = (observation: Omit<RunawayBridgeRequestObservation, 'durationMs'>) => {
+    if (observed || !onBridgeRequest) return;
+    observed = true;
+    try {
+      onBridgeRequest(Object.freeze({
+        ...observation,
+        durationMs: Math.max(0, performance.now() - startedAt),
+      }));
+    } catch {
+      // Analytics availability must never affect source loading.
+    }
+  };
+  const request = fetch(
+    `/api/astrid/projects/${encodeURIComponent(projectSlug)}/runaway-transitions`,
+    { signal: AbortSignal.timeout(BRIDGE_REQUEST_TIMEOUT_MS) },
+  )
     .then(async (response) => {
-      const body: unknown = await response.json();
       if (!response.ok) {
+        let body: unknown;
+        try {
+          body = await response.json();
+        } catch {
+          body = undefined;
+        }
         const detail = asRecord(body);
+        observe({ outcome: 'failure', errorClass: 'bridge.http_error' });
         throw new Error(
           nonEmptyString(detail?.detail)
           ?? nonEmptyString(detail?.message)
@@ -259,7 +292,32 @@ export function loadRunawayTimeline(projectSlug: string): Promise<readonly Sourc
           ?? `Astrid bridge returned ${response.status}`,
         );
       }
-      return parseRunawayBridgeResponse(body);
+      let body: unknown;
+      try {
+        body = await response.json();
+      } catch (cause) {
+        observe({ outcome: 'failure', errorClass: 'bridge.invalid_response' });
+        throw cause;
+      }
+      try {
+        const items = parseRunawayBridgeResponse(body);
+        observe({ outcome: 'success' });
+        return items;
+      } catch (cause) {
+        observe({ outcome: 'failure', errorClass: 'bridge.invalid_response' });
+        throw cause;
+      }
+    })
+    .catch((cause: unknown) => {
+      if (!observed) {
+        observe({
+          outcome: 'failure',
+          errorClass: cause instanceof DOMException && cause.name === 'TimeoutError'
+            ? 'bridge.timeout'
+            : 'bridge.http_error',
+        });
+      }
+      throw cause;
     });
   requestCache.set(projectSlug, request);
   return request;
@@ -273,6 +331,7 @@ export function loadRunawayTimeline(projectSlug: string): Promise<readonly Sourc
  */
 export function useRunawayTimelineItems(
   releaseEnabled: boolean,
+  onBridgeRequest?: (observation: RunawayBridgeRequestObservation) => void,
 ): Readonly<Record<string, readonly SourceFrozenDataItem[]>> | undefined {
   const projectSlug = useMemo(() => {
     if (!releaseEnabled || !import.meta.env.DEV || typeof window === 'undefined') return null;
@@ -301,7 +360,7 @@ export function useRunawayTimelineItems(
       items: [],
       message: `Loading Runaway transitions for ${projectSlug}…`,
     });
-    void loadRunawayTimeline(projectSlug).then((next) => {
+    void loadRunawayTimeline(projectSlug, onBridgeRequest).then((next) => {
       if (!active) return;
       reportedErrors.forEach((key) => {
         if (key.startsWith(`${projectSlug}\u0000`)) reportedErrors.delete(key);
@@ -325,7 +384,7 @@ export function useRunawayTimelineItems(
       setResult({ projectSlug, status: 'error', items: [], message });
     });
     return () => { active = false; };
-  }, [projectSlug, revision]);
+  }, [onBridgeRequest, projectSlug, revision]);
 
   useEffect(() => {
     if (!projectSlug || typeof window === 'undefined') return;
