@@ -1,12 +1,23 @@
 # Post-Epic Validation Report
 
+> **Historical snapshot — superseded for current release status.** This report
+> describes only commit `fe1468e150cbc5a4c5be0fb36af65d1d8d5e3e1b` and the
+> constrained validation environment used on 2026-06-22. Its SDK, writable
+> `node_modules`, Docker, and local-port blockers are retained as historical
+> evidence; they must not be read as the state of the current extension release.
+> Use the [ship-quality checklist](../extension-ship-quality-checklist.md),
+> [fail-closed evidence ledger](../extension-ship-evidence-ledger.md),
+> [release runbook](../extension-release-runbook.md), and
+> [current Chrome acceptance](../chrome-visual-acceptance.md) for live status and
+> release disposition.
+
 Commit: `fe1468e150cbc5a4c5be0fb36af65d1d8d5e3e1b`
 Date: `2026-06-22T05:00:46Z`
 Validator: Codex execution batch T10
 
 ## Summary
 
-Overall status: BLOCKED
+Historical overall status at the commit above: BLOCKED
 
 Pass summary: The private import search, runnable example smoke, root typecheck,
 Make extension-release dry run, and production build completed successfully.

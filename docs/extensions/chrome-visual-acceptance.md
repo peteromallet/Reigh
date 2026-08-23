@@ -4,11 +4,49 @@ Date: 2026-08-23 (Europe/Berlin)
 Browser: Google Chrome controlled through the installed Codex Chrome bridge
 Development URL: `http://127.0.0.1:2222/tools/video-editor?localProject=demo-project&localTimeline=demo-timeline&timelineOverlayCanary=1&localTest=1&transcriptLaneFixture=1&runawayTimelineProject=demo-project`
 
+Installed-Chrome follow-up URL: `http://127.0.0.1:2222/tools/video-editor?localProject=demo-project&localTimeline=demo-timeline&localTest=1&timelineOverlayCanary=1&transcriptLaneFixture=render-matrix&runawayTimelineProject=runaway-8085`
+
 ## Disposition
 
-**Conditional FAIL — the implementation gates are substantially green, but this is not yet a final user-Chrome release gate.** The core extension host, all 13 shipped test extensions, Transcript Caption Foundry, Astrid Runaway, persistence, keyboard navigation, degraded-data recovery, responsive lane actions, marker decluttering, the production runtime-control artifact, a real headless-Chromium render, the installed-Chrome/Firefox/WebKit matrix, and the isolated 200% zoom/reduced-motion gate pass. The two concrete 1200 px defects found in the first review have host-owned fixes with fresh desktop/tablet/phone evidence. The remaining conditional-fail reasons are the explicitly blocked existing-session user-Chrome and signed-in production-surface checks, human assistive-technology acceptance, and missing Edge availability.
+**Conditional FAIL — the installed user-Chrome development journey now passes, but this is not yet a frozen or production acceptance gate.** The core extension host, all 13 shipped test extensions, Transcript Caption Foundry, Astrid Runaway, lifecycle and persistence, keyboard navigation, 566-item virtualization, multi-extension composition, degraded-data recovery, responsive lane actions, marker decluttering, the production runtime-control artifact, a real headless-Chromium render, the installed-Chrome/Firefox/WebKit matrix, and the isolated 200% zoom/reduced-motion gate pass. The two concrete 1200 px defects found in the first review have host-owned fixes with fresh desktop/tablet/phone evidence. The remaining conditional-fail reasons are the signed-in production-surface checks, a real render/download repeated in user Chrome, the frozen-candidate evidence run, human assistive-technology acceptance, and missing Edge availability.
 
-Nothing below converts a pending check into a pass. This document should be amended with fresh screenshots and a final release disposition after Chrome is relaunched.
+The installed-Chrome follow-up is development-session evidence, not an immutable
+release receipt. It does not convert the older screenshot ledger into evidence
+for the eventual frozen candidate.
+
+## Installed user-Chrome follow-up
+
+The installed Codex Chrome bridge was connected to the real local editor after
+the original capture run. The following behaviors were exercised in that live
+session without touching unrelated browser tabs:
+
+- Extension Manager showed all 13 reviewed extensions. Every extension was
+  disabled and re-enabled; its contributions disappeared and returned without
+  a page reload.
+- Pulse Map disablement survived a full reload. Re-enablement also survived a
+  full reload.
+- All ten Creative Lab build commands were invoked through the real Command
+  Palette. Together with Scene Phase Markers they produced 11 independently
+  reachable marker layers across the host's two desktop pages. A later reload
+  preserved the built extension data and Scene marker.
+- The Runaway lane exposed 566 transitions at 48 fps across 8,085 frames while
+  mounting at most 128 interactive items. End selected T0566 at frame 8,084 and
+  shifted the window to 438–566; Home returned selection and the window to the
+  start. Neither journey introduced body overflow.
+- **Add missing** created one `Transcript Captions` track and four deterministic
+  video-text clips for the non-empty render-matrix source items. Repeating the
+  action did not duplicate IDs. Editing the first caption to include composed
+  Unicode and emoji survived reload and another **Add missing** invocation.
+  **Propose edits** followed by **Accept proposals** durably produced four
+  `accepted-for-source-update` records while leaving the read-only transcript
+  source separate from the editable video-text output.
+- The short overlapping-caption edge discovered in this session now retains a
+  selectable body between both trim handles; a handle click that never crosses
+  the resize threshold selects the clip without resizing it.
+
+The local follow-up recorded no unexpected editor console errors after the
+deterministic local-test bootstrap fix. No user-Chrome render/download artifact
+was retained, so the render row below remains deliberately headless-only.
 
 ## Completed acceptance matrix
 
@@ -18,17 +56,18 @@ Nothing below converts a pending check into a pass. This document should be amen
 | Extension inventory | PASS | Extension Manager listed 13 extensions: Scene Phase Markers, Transcript Caption Foundry, Astrid Runaway Timeline, and all ten Creative Lab extensions. |
 | Enable/disable lifecycle | PASS | Each of the 13 toggles was disabled and enabled in Chrome. Its extension-specific surfaces disappeared while disabled and returned after re-enable. |
 | Ordering | N/A | The current Extension Manager exposes enable/disable controls but no user reordering control. No unsupported ordering behavior was claimed or simulated. |
-| Enablement persistence | PASS | Transcript, Runaway, and Pulse Map were disabled together, the page was reloaded, and all three remained disabled. Re-enabling also persisted. |
+| Enablement persistence | PASS | The original joint Transcript/Runaway/Pulse Map cycle persisted. The installed-Chrome follow-up independently repeated Pulse Map disable → reload and enable → reload; both states persisted. |
 | Transcript alone | PASS | The 2/2 transcript lane rendered with Runaway disabled. See [05](evidence/chrome-acceptance/05-transcript-lane-alone-runaway-disabled.png). |
 | Runaway alone | PASS | The 10/10 Runaway fixture rendered with Transcript disabled. See [04](evidence/chrome-acceptance/04-runaway-lane-alone-transcript-disabled.png). |
 | Transcript + Runaway composition | PASS | Both lanes remained distinguishable and readable together; selection/focus and provenance were visible. See [06](evidence/chrome-acceptance/06-combined-stable-desktop.png) and [09](evidence/chrome-acceptance/09-runaway-provenance-inspector.png). |
-| Transcript caption materialization | PASS | **Add missing** created one `Transcript Captions` track and exactly two managed captions. A second invocation remained at two. Reload preserved the track and clips. **Regenerate** retained one track and exactly two clips. **Propose edits** was inert when no human edit existed. See [07](evidence/chrome-acceptance/07-transcript-captions-materialized.png) and [08](evidence/chrome-acceptance/08-transcript-caption-track.png). |
+| Transcript caption materialization and round trip | PASS in installed-Chrome development session | The original two-item fixture remains captured in [07](evidence/chrome-acceptance/07-transcript-captions-materialized.png) and [08](evidence/chrome-acceptance/08-transcript-caption-track.png). The follow-up render-matrix fixture created exactly four deterministic clips on one track, preserved an edited Unicode/emoji caption across reload and **Add missing**, and persisted four `accepted-for-source-update` review records without mutating the read-only source lane. This proves the current batch accept handoff, not upstream provider consumption or the still-required per-record review UI. |
 | Persisted-caption no-op | PASS after fix | A fresh render preflight exposed an uncaught empty-patch validation error when **Add missing** was pressed after captions already existed. `renderTranscriptAsCaptions` now handles the intentional zero-operation preserve result before host validation; its activation-path regression passes and the browser probe emits no error. |
 | Transcript keyboard navigation | PASS | Transcript items are buttons with roving `tabIndex`; click + End moved focus and selection to the final item and updated the inspector. Runaway Home/End navigation also selected the first/final item. See [10](evidence/chrome-acceptance/10-transcript-keyboard-focus.png). |
 | Runaway provenance | PASS | Selecting T0007 displayed manifest/segment, milliseconds, frame/FPS, colour, run/task IDs, generated prompt, and summary. The selected lane item and inspector state were visually apparent. See [09](evidence/chrome-acceptance/09-runaway-provenance-inspector.png). |
+| Runaway 566-item virtualization | PASS in installed-Chrome development session | The 48 fps / 8,085-frame lane reported 566 total transitions while mounting 128. End selected T0566 at frame 8,084 and moved the virtual window to 438–566; Home restored T0001 and the 0–128 window with no body overflow. |
 | Creative Lab commands | PASS after host decluttering fix | All ten real command-palette build commands were invoked and persisted after reload. The original fully composed state is [11](evidence/chrome-acceptance/11-all-extensions-built-composed.png). Marker contributions are now deterministically paged without disabling their extensions: six layers per desktop/tablet page, three on phone, with a visible host legend and Prev/Next controls. See [25](evidence/chrome-acceptance/25-marker-layers-page-1.png), [26](evidence/chrome-acceptance/26-marker-layers-page-2.png), and [27](evidence/chrome-acceptance/27-marker-layers-phone.png). All 11 layers remain reachable and pointer ownership was exercised across all four pages in the integration gate. |
 | Production build | PASS | A fresh pinned-Node-20 run of `npm run build` passed on the runtime-config implementation: 5,310 modules transformed and built in 4m 03s. The artifact loads `/runtime-config/v1/extensions.json`; release flags are no longer compiled into distinct bundles. Compile warnings are recorded below rather than hidden. |
-| Parent/child kill-switch contract | PASS for built-artifact/runtime separation; signed-in production UI pending | `node --test scripts/runtime/*.test.mjs` passed 10/10 across four suites against the optimized artifact. The exact same bundle accepted the reviewed runtime variants without changing application assets; Docker/container invariants and the service-worker exclusion also passed. Runtime reads have a 4 s abort timeout and fail closed. Actual surface-removal evidence on the production signed-in page remains blocked on the approved Chrome relaunch. |
+| Parent/child kill-switch contract | PASS for built-artifact/runtime separation; signed-in production UI pending | `node --test scripts/runtime/*.test.mjs` passed 10/10 across four suites against the optimized artifact. The exact same bundle accepted the reviewed runtime variants without changing application assets; Docker/container invariants and the service-worker exclusion also passed. Runtime reads have a 4 s abort timeout and fail closed. Actual surface-removal evidence still requires the signed-in production page; the local installed-Chrome journey cannot substitute for it. |
 | Real client render and download | PASS in headless Chromium; user Chrome pending | After caption materialization, the real WebCodecs Render flow reached completion, exposed a Download link, and produced the fresh Remotion 4.0.503 [MP4](evidence/chrome-acceptance/28-headless-caption-render-remotion-4.0.503.mp4). `ffprobe` verifies H.264 + AAC, 1280×720, 30 fps, and 315 H.264 packets ending exactly at the 10.500000 s composition boundary. AAC ends at 10.581333 s because of 81.333 ms encoder priming/padding, within the enforced five-block (106.667 ms) allowance. The retained artifact is 1,173,616 bytes. Extracted representative frames visibly prove the first and last fixture captions are encoded: [first](evidence/chrome-acceptance/29-remotion-4.0.503-first-caption.png), [last](evidence/chrome-acceptance/30-remotion-4.0.503-last-caption.png). The pinned-Node-20 gate recorded zero page errors, zero `CanvasFontStretch` console warnings, and zero matching CDP log entries. One Chromium GPU-driver `ReadPixels` performance warning remains, with exact text/location in [diagnostics](evidence/chrome-acceptance/28-render-console-diagnostics.json). |
 | Runaway degraded states | PASS in headless Chromium; user Chrome pending | Typed loading, empty, error, retry, and recovery states are visible and accessible. Malformed data manually retries to two chips; offline makes one deduplicated request/error path and the `online` event automatically recovers on the second request. Strict local-test mode records zero Runaway console errors and zero page errors. See [17–21](#screenshot-ledger). |
 | Cross-browser extension gate | PASS for installed Chrome, Firefox, and WebKit; Edge blocked by availability | Under Node 20.19.4, all three ship-critical flows passed per engine (9/9 total in 3.0m): inventory/host/diagnostics, composed 11-marker + Transcript + Runaway keyboard semantics, and 390×844 overflow/pager/menu geometry. Versions: Playwright 1.60.0; Chrome 151.0.7922.170; Firefox 150.0.2; WebKit 26.4. Edge is not installed at `/Applications/Microsoft Edge.app`, so no Edge pass is claimed. See [the dedicated gate](cross-browser-release-gate.md). |
@@ -55,13 +94,13 @@ The accepted shell baseline changes are intentional layout corrections rather th
 
 | Gate | Status / required evidence |
 | --- | --- |
-| Desktop, tablet, phone responsive matrix | PASS in headless Chromium for lane actions, marker density, and shell containment; BLOCKED on approved user-Chrome relaunch for the final manual matrix. |
-| 200% zoom and keyboard focus visibility | PASS in the isolated three-engine accessibility gate; existing-profile Chrome confirmation still awaits approved relaunch. |
-| Empty/loading/malformed/offline/recovery in user Chrome | PASS in headless Chromium; BLOCKED on approved Chrome relaunch for manual confirmation. |
-| Production preview UI | BLOCKED on approved Chrome relaunch. Production intentionally disables URL local mode; use the real signed-in application path and document any authentication/data prerequisite rather than adding a production backdoor. |
-| Production parent/child surface removal | Built-artifact/runtime matrix PASS; actual signed-in production surfaces remain BLOCKED on approved Chrome relaunch. Exercise the same artifact with host-off, Transcript-off, and Runaway-off same-origin configs and prove UI/commands disappear. |
-| Real Render and export in user Chrome | BLOCKED on approved Chrome relaunch. The equivalent headless-Chromium flow and encoded artifact pass, but repeat in the user-controlled Chrome, retain its download, and compare its console diagnostics. |
-| Final Chrome console/page-error audit | BLOCKED on approved Chrome relaunch. The automated strict desktop gate is clean, but a final manual-production run must also be clean. |
+| Desktop, tablet, phone responsive matrix | PASS in headless Chromium for lane actions, marker density, and shell containment; installed user Chrome passed the desktop development journey, while a frozen-candidate manual tablet/phone matrix remains pending. |
+| 200% zoom and keyboard focus visibility | PASS in the isolated three-engine accessibility gate; frozen-candidate user-Chrome confirmation remains pending. |
+| Empty/loading/malformed/offline/recovery in user Chrome | PASS in headless Chromium; manual confirmation in the frozen user-Chrome candidate remains pending. |
+| Production preview UI | BLOCKED on signed-in production access. Production intentionally disables URL local mode; use the real signed-in application path and document any authentication/data prerequisite rather than adding a production backdoor. |
+| Production parent/child surface removal | Built-artifact/runtime matrix PASS; actual signed-in production surfaces remain BLOCKED on production access. Exercise the same artifact with host-off, Transcript-off, and Runaway-off same-origin configs and prove UI/commands disappear. |
+| Real Render and export in user Chrome | PENDING. The equivalent repeatable headless-Chromium flow and encoded artifact pass, but repeat in the user-controlled frozen candidate, retain its download, and compare its console diagnostics. |
+| Final Chrome console/page-error audit | Local installed-Chrome development journey PASS; a final signed-in production run must also be clean. |
 | Microsoft Edge | BLOCKED by missing browser availability. Install Edge and run the opt-in `edge-stable` project; Chromium/Chrome evidence is not presented as an Edge substitute. |
 
 ## Automated evidence
@@ -129,7 +168,7 @@ The parent-off row intentionally retains `true` as the two raw child inputs. The
 
 ## Screenshot ledger
 
-Screenshots 06–11 are the release-candidate evidence set. Captures 06–09 were taken on baseline `097bc6ece` plus the in-flight release/bridge changes later committed in this sequence; 10 additionally contains the Transcript keyboard fix later committed as `3450bdc3c`; 11 contains the composed Creative Lab state immediately after `f1c388a56` was committed. The later commits `91a025ca3`, `42a133208`, `642a4b485`, `0c0cf73fd`, `55ae69a9c`, and `2fd5dcc4e` were reconciled through focused automated tests and the fresh production build, but need fresh Chrome captures after relaunch.
+Screenshots 06–11 are the historical pre-freeze evidence set. Captures 06–09 were taken on baseline `097bc6ece` plus the in-flight release/bridge changes later committed in this sequence; 10 additionally contains the Transcript keyboard fix later committed as `3450bdc3c`; 11 contains the composed Creative Lab state immediately after `f1c388a56` was committed. The later commits `91a025ca3`, `42a133208`, `642a4b485`, `0c0cf73fd`, `55ae69a9c`, and `2fd5dcc4e` were reconciled through focused automated tests and the fresh production build. The installed-Chrome follow-up above exercised the newer tree, but no new committed screenshot set was created; fresh captures still belong to the frozen-candidate evidence run.
 
 | Capture | Time (+02:00) | SHA-256 |
 | --- | --- | --- |
@@ -165,4 +204,4 @@ Screenshots 06–11 are the release-candidate evidence set. Captures 06–09 wer
 | [29 first encoded caption after upgrade](evidence/chrome-acceptance/29-remotion-4.0.503-first-caption.png) | 20:08 | `2b90b7153c0e8d0c827d5918d0e91e37f87f28d0fff78acf738c6ba617e887b0` |
 | [30 last encoded caption after upgrade](evidence/chrome-acceptance/30-remotion-4.0.503-last-caption.png) | 20:08 | `f102c972d2ffeb0c10f346deb459f064f39fda297d0ac33bb0c9d84c316f5001` |
 
-Captures 17–27 were produced from the reconciled shared release tree after the Runaway recovery, host lane-action, marker paging, and responsive shell changes. The exact committed bases for the two host UI fixes are `5adf31f7b` and `75d9bca8b`; capture-time follow-up keyboard/timeout hardening in `DataLaneRow.tsx` remained an unstaged review change. This distinction is intentional: the ledger records what the pixels prove and does not pretend that an in-flight shared worktree was a frozen release candidate.
+Captures 17–27 were produced from the reconciled shared release tree after the Runaway recovery, host lane-action, marker paging, and responsive shell changes. The exact committed bases for the two host UI fixes are `5adf31f7b` and `75d9bca8b`; capture-time follow-up keyboard/timeout hardening in `DataLaneRow.tsx` was still unstaged at capture time and landed later. This distinction is intentional: the ledger records what the pixels prove and does not pretend that an in-flight shared worktree was a frozen release candidate.

@@ -285,9 +285,9 @@ M1b enforces the following guardrails:
 ## Related Documents
 
 - [V8 Architecture Baseline](./v8-architecture-baseline.md) — Full epic architecture, constraints, and milestone chain.
-- [M1b Brief](/.megaplan/initiatives/reigh-extension-composition-spine-epic/m1b-shader-graph-authority.md) — M1b outcome, scope, locked decisions, and done criteria.
-- [CompositionGraph SDK Contracts](../../src/sdk/video/composition/graph.ts) — Public SDK type definitions.
-- [Graph Projector](../../src/tools/video-editor/runtime/composition/graphProjector.ts) — Host projection logic.
-- [Reference Resolver](../../src/tools/video-editor/runtime/composition/referenceResolver.ts) — Host resolver with locked precedence.
-- [Patch Preview](../../src/tools/video-editor/runtime/composition/patchPreview.ts) — Internal graph preview operations.
-- [Composition Diagnostics](../../src/tools/video-editor/runtime/composition/diagnostics.ts) — Canonical diagnostic codes.
+- [Composition-spine chain entry](../../../.megaplan/initiatives/reigh-extension-composition-spine-epic/chain.yaml) — Records the M1b brief identifier and its place in the milestone chain; the generated brief itself is not tracked in this repository.
+- [CompositionGraph SDK Contracts](../../../src/sdk/video/composition/graph.ts) — Public SDK type definitions.
+- [Graph Projector](../../../src/tools/video-editor/runtime/composition/graphProjector.ts) — Host projection logic.
+- [Reference Resolver](../../../src/tools/video-editor/runtime/composition/referenceResolver.ts) — Host resolver with locked precedence.
+- [Patch Preview](../../../src/tools/video-editor/runtime/composition/patchPreview.ts) — Internal graph preview operations.
+- [Composition Diagnostics](../../../src/tools/video-editor/runtime/composition/diagnostics.ts) — Canonical diagnostic codes.
