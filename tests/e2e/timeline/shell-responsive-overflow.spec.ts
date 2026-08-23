@@ -153,6 +153,7 @@ for (const viewport of VIEWPORTS) {
           phoneModeBar: rect('[aria-label="Phone timeline mode bar"]'),
           compactModeBar: rect('[aria-label="Timeline mode switcher"]'),
           markerPager: rect('[data-testid="timeline-marker-layer-legend"]'),
+          sceneMarkersPanel: rect('[data-testid="scene-markers-panel"]'),
           editArea: rect(".timeline-canvas-edit-area"),
           preview: rect('[data-testid="video-editor-preview-surface"]'),
           selectors: Array.from(
@@ -162,6 +163,24 @@ for (const viewport of VIEWPORTS) {
           ).map((element) => {
             const box = element.getBoundingClientRect();
             return { left: Math.round(box.left), right: Math.round(box.right) };
+          }),
+          sceneMarkerControls: Array.from(
+            document.querySelectorAll(
+              '[data-testid="scene-markers-panel"] button, [data-testid="scene-markers-panel"] select, [data-testid="scene-markers-panel"] input',
+            ),
+          ).map((element) => {
+            const box = element.getBoundingClientRect();
+            return {
+              label:
+                element.getAttribute("data-testid") ??
+                element.getAttribute("aria-label") ??
+                element.textContent?.trim() ??
+                element.tagName,
+              left: Math.round(box.left),
+              top: Math.round(box.top),
+              right: Math.round(box.right),
+              bottom: Math.round(box.bottom),
+            };
           }),
         };
       });
@@ -179,11 +198,25 @@ for (const viewport of VIEWPORTS) {
         geometry.editArea,
         geometry.preview,
         geometry.markerPager,
+        geometry.sceneMarkersPanel,
       ]) {
         expect(region, JSON.stringify(geometry)).not.toBeNull();
         expect(region!.x, JSON.stringify(geometry)).toBeGreaterThanOrEqual(0);
         expect(region!.right, JSON.stringify(geometry)).toBeLessThanOrEqual(
           viewport.width,
+        );
+      }
+      expect(geometry.sceneMarkerControls).toHaveLength(5);
+      for (const control of geometry.sceneMarkerControls) {
+        expect(control.left, JSON.stringify(geometry)).toBeGreaterThanOrEqual(
+          0,
+        );
+        expect(control.top, JSON.stringify(geometry)).toBeGreaterThanOrEqual(0);
+        expect(control.right, JSON.stringify(geometry)).toBeLessThanOrEqual(
+          viewport.width,
+        );
+        expect(control.bottom, JSON.stringify(geometry)).toBeLessThanOrEqual(
+          viewport.height,
         );
       }
       for (const selector of geometry.selectors) {
@@ -210,6 +243,11 @@ for (const viewport of VIEWPORTS) {
           geometry.compactModeBar!.right,
           JSON.stringify(geometry),
         ).toBeLessThanOrEqual(viewport.width);
+      }
+      if (viewport.name === "desktop") {
+        expect(geometry.sceneMarkersPanel!.height).toBeLessThanOrEqual(36);
+      } else {
+        expect(geometry.sceneMarkersPanel!.height).toBeGreaterThan(36);
       }
 
       const layerComposition = await auditMarkerLayerPages(page);

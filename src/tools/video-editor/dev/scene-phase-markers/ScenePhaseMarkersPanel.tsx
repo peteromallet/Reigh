@@ -15,8 +15,12 @@
  * host's render context (for the live playhead).
  */
 
-import { useState } from 'react';
-import type { ExtensionContext, TimelinePatch, TimelineSnapshot } from '@reigh/editor-sdk';
+import { useState } from "react";
+import type {
+  ExtensionContext,
+  TimelinePatch,
+  TimelineSnapshot,
+} from "@reigh/editor-sdk";
 import {
   alignShotsToTransitions,
   buildMarkersPatch,
@@ -26,58 +30,73 @@ import {
   readTimelineSnapshot,
   visualClips,
   visualTrackIds,
-} from './extension';
+} from "./extension";
 
 export interface ScenePhaseMarkersPanelProps {
   ctx: ExtensionContext;
   playback: { currentTime: number };
 }
 
-const BUTTON_CLASS = 'rounded border border-border bg-background px-2 py-0.5 text-foreground hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50';
-const SELECT_CLASS = 'rounded border border-border bg-background px-1 py-0.5 text-foreground';
-const INPUT_CLASS = 'w-16 rounded border border-border bg-background px-1 py-0.5 text-foreground';
-const LABEL_CLASS = 'flex items-center gap-1 text-muted-foreground';
+const BUTTON_CLASS =
+  "rounded border border-border bg-background px-2 py-0.5 text-foreground hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50";
+const SELECT_CLASS =
+  "rounded border border-border bg-background px-1 py-0.5 text-foreground";
+const INPUT_CLASS =
+  "w-16 rounded border border-border bg-background px-1 py-0.5 text-foreground";
+const LABEL_CLASS = "flex items-center gap-1 text-muted-foreground";
 
-export function ScenePhaseMarkersPanel({ ctx, playback }: ScenePhaseMarkersPanelProps) {
+export function ScenePhaseMarkersPanel({
+  ctx,
+  playback,
+}: ScenePhaseMarkersPanelProps) {
   // Playhead for the B-key command is read renderer-independently from the
   // provider-owned `ctx.creative.timelineView` store — no module cache.
 
   const extensionId = ctx.extension.id;
   // Hooks must be unconditional (before the snapshot guard) so the component
   // does not change hook count when the timeline transitions not-ready→ready.
-  const [selectedTrackId, setSelectedTrackId] = useState('');
-  const [durationInput, setDurationInput] = useState('');
+  const [selectedTrackId, setSelectedTrackId] = useState("");
+  const [durationInput, setDurationInput] = useState("");
 
   const snapshot = readTimelineSnapshot(ctx);
   const markers = snapshot ? readMarkers(snapshot, extensionId) : [];
   if (!snapshot) {
     return (
-      <div className="flex h-9 flex-nowrap items-center gap-3 overflow-x-auto whitespace-nowrap border-t border-border bg-card/60 px-3 text-xs text-muted-foreground">
+      <div
+        className="flex min-h-9 w-full min-w-0 max-w-full flex-wrap items-center gap-x-3 gap-y-1 overflow-x-clip border-t border-border bg-card/60 px-3 py-1 text-xs text-muted-foreground xl:h-9 xl:flex-nowrap xl:gap-y-0 xl:overflow-x-auto xl:whitespace-nowrap xl:py-0"
+        data-testid="scene-markers-panel"
+      >
         <span className="font-semibold text-foreground">Scene Markers</span>
-        <span>Timeline not ready — markers will appear here once it loads.</span>
+        <span>
+          Timeline not ready — markers will appear here once it loads.
+        </span>
       </div>
     );
   }
   const tracks = visualTrackIds(snapshot);
   const clips = visualClips(snapshot);
 
-  const effectiveTrackId = tracks.includes(selectedTrackId) ? selectedTrackId : (tracks[0] ?? 'V1');
+  const effectiveTrackId = tracks.includes(selectedTrackId)
+    ? selectedTrackId
+    : (tracks[0] ?? "V1");
   const durationSeconds = Number.parseFloat(durationInput);
-  const effectiveDuration = Number.isFinite(durationSeconds) ? durationSeconds : 0;
+  const effectiveDuration = Number.isFinite(durationSeconds)
+    ? durationSeconds
+    : 0;
 
   function runPatch(patch: TimelinePatch, okMessage: string): boolean {
     try {
       ctx.creative.timeline.apply(patch);
-      ctx.chrome.toast(okMessage, 'info');
+      ctx.chrome.toast(okMessage, "info");
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       ctx.services.diagnostics.report({
-        severity: 'error',
-        code: 'scene-phase-markers/panel-error',
+        severity: "error",
+        code: "scene-phase-markers/panel-error",
         message,
       });
-      ctx.chrome.toast(`Scene Phase Markers: ${message}`, 'error');
+      ctx.chrome.toast(`Scene Phase Markers: ${message}`, "error");
       return false;
     }
   }
@@ -100,14 +119,22 @@ export function ScenePhaseMarkersPanel({ ctx, playback }: ScenePhaseMarkersPanel
     }
     if (!fresh) {
       ctx.services.diagnostics.report({
-        severity: 'error',
-        code: 'scene-phase-markers/panel-error',
-        message: 'Timeline data is not ready — cannot clear markers.',
+        severity: "error",
+        code: "scene-phase-markers/panel-error",
+        message: "Timeline data is not ready — cannot clear markers.",
       });
-      ctx.chrome.toast('Scene Phase Markers: timeline not ready — cannot clear.', 'error');
+      ctx.chrome.toast(
+        "Scene Phase Markers: timeline not ready — cannot clear.",
+        "error",
+      );
       return;
     }
-    if (runPatch(buildMarkersPatch(extensionId, [], fresh.baseVersion), 'Cleared all scene phase markers.')) {
+    if (
+      runPatch(
+        buildMarkersPatch(extensionId, [], fresh.baseVersion),
+        "Cleared all scene phase markers.",
+      )
+    ) {
       notifyMarkersChanged();
     }
   }
@@ -122,18 +149,24 @@ export function ScenePhaseMarkersPanel({ ctx, playback }: ScenePhaseMarkersPanel
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       ctx.services.diagnostics.report({
-        severity: 'error',
-        code: 'scene-phase-markers/align-error',
+        severity: "error",
+        code: "scene-phase-markers/align-error",
         message,
       });
-      ctx.chrome.toast(`Scene Phase Markers: ${message}`, 'error');
+      ctx.chrome.toast(`Scene Phase Markers: ${message}`, "error");
     }
   }
 
   return (
-    <div className="flex h-9 flex-nowrap items-center gap-x-3 overflow-x-auto whitespace-nowrap border-t border-border bg-card/60 px-3 text-xs">
+    <div
+      className="flex min-h-9 w-full min-w-0 max-w-full flex-wrap items-center gap-x-3 gap-y-1 overflow-x-clip border-t border-border bg-card/60 px-3 py-1 text-xs xl:h-9 xl:flex-nowrap xl:gap-y-0 xl:overflow-x-auto xl:whitespace-nowrap xl:py-0"
+      data-testid="scene-markers-panel"
+    >
       <span className="font-semibold text-foreground">Scene Markers</span>
-      <span className="tabular-nums text-foreground" data-testid="scene-markers-playhead">
+      <span
+        className="tabular-nums text-foreground"
+        data-testid="scene-markers-playhead"
+      >
         Playhead {playback.currentTime.toFixed(2)}s
       </span>
       <span
@@ -141,8 +174,8 @@ export function ScenePhaseMarkersPanel({ ctx, playback }: ScenePhaseMarkersPanel
         data-testid="scene-markers-summary"
       >
         {markers.length === 0
-          ? 'No markers — press B at each phase.'
-          : `${markers.length} marker${markers.length === 1 ? '' : 's'} — drag them on the ruler.`}
+          ? "No markers — press B at each phase."
+          : `${markers.length} marker${markers.length === 1 ? "" : "s"} — drag them on the ruler.`}
       </span>
       <button
         type="button"
@@ -163,7 +196,9 @@ export function ScenePhaseMarkersPanel({ ctx, playback }: ScenePhaseMarkersPanel
           onChange={(event) => setSelectedTrackId(event.target.value)}
         >
           {tracks.map((trackId) => (
-            <option key={trackId} value={trackId}>{trackId}</option>
+            <option key={trackId} value={trackId}>
+              {trackId}
+            </option>
           ))}
         </select>
       </label>
@@ -189,15 +224,16 @@ export function ScenePhaseMarkersPanel({ ctx, playback }: ScenePhaseMarkersPanel
         data-testid="scene-markers-align-transitions"
         title={
           clips.length > 0
-            ? 'Move existing shots to their transition markers, each lasting until the next marker.'
-            : 'Create a shot between each pair of transition markers, each lasting until the next marker.'
+            ? "Move existing shots to their transition markers, each lasting until the next marker."
+            : "Create a shot between each pair of transition markers, each lasting until the next marker."
         }
       >
         Align shots to transitions
       </button>
       {clips.length === 0 && markers.length > 0 && (
         <span className="text-muted-foreground">
-          Creates {markers.length} shot{markers.length === 1 ? '' : 's'} between transitions
+          Creates {markers.length} shot{markers.length === 1 ? "" : "s"} between
+          transitions
         </span>
       )}
 
