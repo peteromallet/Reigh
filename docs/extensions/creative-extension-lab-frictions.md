@@ -377,10 +377,13 @@ evidence and a concrete improvement direction.
   built-in text clips on a Captions track. Those clips already render in preview
   and remain editable through normal text controls. The typed lane remains the
   readable source; generated clip IDs make reruns update rather than duplicate.
-- One public gap remains even on `oracle-run`: typed lanes are read-only. Editing
-  generated text clips does not update the source transcript. True round-trip
-  transcript editing needs a typed-data mutation callback/service; V1 must state
-  that source-to-caption flow is one-way.
+- **Historical V1 limitation (now superseded by the review policy):** the source
+  `reigh.transcript_segment/v1` lane was initially readable beside the generated
+  editable video-text track only. Caption edits can now create durable,
+  per-record source-update proposals with source/proposal comparison and
+  accept/reject state. The source itself remains immutable in Reigh: applying an
+  accepted correction is deliberately an upstream-owner acknowledgement bound
+  to the handoff fingerprint, not a hidden editor-side mutation.
 
 ## Final deep-browser and typed-data pass
 
@@ -405,10 +408,10 @@ evidence and a concrete improvement direction.
   time or lane assignment.
 - Responsive checks covered 1024x768 and 390x844. The tablet kept all 24 markers
   on screen; the phone kept page width at 390px with no body overflow while the
-  timeline remained intentionally horizontally scrollable. One remaining host
-  concern is aggregate virtualization: a 566-item typed interval lane makes
-  accessibility/DOM snapshots expensive even though visual interaction remains
-  responsive.
+  timeline remained intentionally horizontally scrollable. The former aggregate
+  virtualization concern is covered by bounded sparse windows: the 566-item
+  typed interval lane mounts at most 128 items, while the performance gate also
+  asserts DOM, scroll, memory, and overflow budgets.
 
 ### Global timeline versions are not source provenance
 
@@ -452,9 +455,12 @@ evidence and a concrete improvement direction.
   survived reload and a second foundry run, proving reruns do not erase human
   refinements.
 - The source `reigh.transcript_segment/v1` lane remains readable beside the
-  generated editable video-text track, but the relationship is one-way. A future
-  mutation/provenance contract should distinguish “regenerate from source,”
-  “keep local caption edit,” and “write correction back to transcript.”
+  generated editable video-text track. Caption changes are now captured as
+  explicit review proposals rather than silently mutating source; the selected
+  record exposes source/proposal comparison and per-record accept/reject. An
+  accepted proposal becomes a fingerprinted upstream-owner handoff, so the
+  remaining source-application step is auditable rather than a missing editor
+  mutation capability.
 
 ### Astrid Runaway integration exposed bridge and pack-composition drift
 
@@ -471,12 +477,14 @@ evidence and a concrete improvement direction.
   the factoring checker and registry tests. These now declare Runaway's table,
   repository, command, and bridge mount, and standard composition lazily creates
   the repository only when that pack is present. The broader factoring suite on
-  this branch still has pre-existing authority-lint and reduced-kernel failures
-  unrelated to Runaway; focused fourth-pack tests are green.
-- Rendering all 566 intervals at once is visually useful for this piano piece but
-  makes full accessibility snapshots time out. The `dataKind` host contract needs
-  viewport bounds/virtualization and a density-summary hook so large typed lanes
-  remain inspectable without mounting every interval as an interactive node.
+  this branch initially had authority-lint and reduced-kernel findings unrelated
+  to Runaway; those have been fixed. The remaining requirement is the exact
+  clean candidate-pair rerun, not a known Runaway factoring failure.
+- **Historical virtualization finding (resolved):** rendering all 566 intervals
+  at once made full accessibility snapshots time out. The `dataKind` host now
+  supplies bounded sparse windows, density summaries, keyboard navigation, and
+  performance coverage; the 566-item Runaway lane mounts 128 items rather than
+  every interval.
 
 ### Validation ergonomics and local-environment noise
 
@@ -489,11 +497,12 @@ evidence and a concrete improvement direction.
   while the checker treated a missing slug as usage error 2. No-argument
   execution now deliberately means the complete shipped set; named-slug runs
   remain available for author iteration.
-- Local editor mode still performs remote token/auth work, emits React Router
-  future warnings, skips non-UUID Supabase fixture IDs, and reports render-budget
-  warnings. None were extension runtime failures, but they obscure the signal in
-  deep browser testing. A deterministic local-fixture mode should silence remote
-  services and expose extension diagnostics in a dedicated test surface.
+- **Historical local-test finding (resolved):** local editor mode previously
+  performed remote token/auth work, emitted unrelated warnings, and obscured the
+  extension signal. Explicit deterministic local-test mode now short-circuits
+  authentication and Supabase work, exposes loader/runtime diagnostics, and the
+  strict browser gate asserts zero unexpected Supabase requests, page errors, or
+  console errors.
 - The dedicated `npm run dev:editor` launcher now includes the existing
   DEV-only `localTest=1` contract in the URL it prints. A fresh Chrome tab loaded
   the real demo timeline with zero warning/error console entries after the
@@ -898,15 +907,17 @@ evidence and a concrete improvement direction.
 
 ### Source-code scanners can turn an innocent regex into broken release CSS
 
-- The production build stayed green but warned about an invalid `-: .TZ;` CSS
+- **Historical build finding (resolved):** the production build stayed green but
+  warned about an invalid `-: .TZ;` CSS
   declaration. Tailwind's content scanner had interpreted the timestamp cleanup
   regex character class as an arbitrary utility and emitted a malformed rule;
   the TypeScript behavior itself was correct, so unit-only gates could not see
   the defect.
 - The timestamp now removes all non-digits with a scanner-safe expression and a
-  deterministic unit test locks the exact run-ID format. Production builds must
-  treat CSS parser warnings as actionable release findings, even when the
-  offending token originated in non-style source code.
+  deterministic unit test locks the exact run-ID format; the malformed generated
+  CSS warning no longer occurs. Production builds must still treat CSS parser
+  warnings as actionable release findings, even when the offending token
+  originated in non-style source code.
 
 ### A contiguous virtualization window is not an interval query
 

@@ -147,7 +147,11 @@ Result: PASS under Node v20.19.4; 1/1 in 40.1 s; prior isolated repeat also pass
 
 Test-harness friction found during the serial run: the old B-key probe treated the playhead's absolute `translateX(144px)` label-gutter origin as proof of a nonzero scrub because it only asserted `>40`. Its pointer-down also began inside that 144 px gutter, so the ruler handler could remain untouched while the assertion passed. The corrected probe starts beyond the measured zero-time transform and asserts the final-minus-initial content-position delta before checking the persisted marker. The once-failing caption-render → B-key order now passes with the stronger assertion. Per-run `PLAYWRIGHT_OUTPUT_DIR` support also prevents concurrent acceptance lanes from cleaning each other's traces.
 
-The build reports pre-existing bundle-size, mixed dynamic/static import, and malformed generated CSS warnings. They did not fail compilation, but the CSS warning (`Expected identifier but found "-"`) and 5.23 MB main chunk remain release-quality debt rather than clean-build evidence.
+The malformed generated-CSS warning found during the initial build review has
+been fixed and is retained in the frictions log as a historical finding. The
+build still reports the 5.23 MB main-chunk and mixed dynamic/static-import
+warnings; they did not fail compilation, but remain release-quality debt rather
+than clean-build evidence.
 
 The first real-render probe additionally surfaced an upstream console-noise defect in `@remotion/web-renderer` 4.0.438: its text drawing path assigned computed CSS `fontStretch` value `100%` directly to `CanvasRenderingContext2D.fontStretch`, whose enum accepts named stretch values. Remotion 4.0.503 explicitly fixes percentage font-stretch rendering (#9918) and is now pinned. The repeatable Playwright render gate listens to both page console warnings and CDP `Log.entryAdded`; it now passes with zero matching warnings/entries. No warning was suppressed. The remaining single GPU `ReadPixels` warning is browser-driver performance telemetry at line/column 0 of the editor URL, not a JavaScript exception or a `CanvasFontStretch` recurrence.
 

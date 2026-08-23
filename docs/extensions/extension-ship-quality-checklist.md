@@ -21,8 +21,9 @@ host behavior.
 ### 2. Completely green merged repository
 
 Run the full Reigh and Astrid unit, integration, type, lint, manifest-drift,
-factoring, and production-build suites. Fix the existing Astrid authority-lint
-and reduced-pack factoring failures; do not waive failures on shipped paths.
+factoring, and production-build suites. The former Astrid authority-lint and
+reduced-pack factoring findings have been fixed; rerun the exact paired suite
+at candidate freeze and do not waive failures on shipped paths.
 
 ### 3. Production-like end-to-end suite
 
@@ -72,8 +73,8 @@ Define whether edits remain local, update transcript source, or become review
 proposals. Cover regenerate/preserve/accept flows plus split, merge, deletion,
 retiming, overlapping speakers, empty text, and Unicode.
 
-The current explicit policy and its remaining per-record review/acknowledgement
-gate are recorded in
+The current explicit policy, completed per-record review surface, and remaining
+upstream-owner acknowledgement/frozen-acceptance gates are recorded in
 [`transcript-round-trip-policy.md`](./transcript-round-trip-policy.md).
 
 ## Release hardening
