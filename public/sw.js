@@ -1,4 +1,5 @@
-const CACHE_NAME = 'reigh-v2';
+const CACHE_NAME = 'reigh-v3';
+const EXTENSION_RELEASE_CONFIG_PATH = '/runtime-config/v1/extensions.json';
 
 // Only cache essential static assets, not dynamic content
 const urlsToCache = [
@@ -29,6 +30,13 @@ self.addEventListener('install', event => {
 self.addEventListener('fetch', event => {
   // Skip non-GET requests and chrome-extension requests
   if (event.request.method !== 'GET' || event.request.url.startsWith('chrome-extension://')) {
+    return;
+  }
+
+  // The extension kill switch is deployment-owned and must fail closed at the
+  // page loader. Never cache it and never provide an offline fallback: replaying
+  // an older enabled document would defeat an emergency rollback.
+  if (new URL(event.request.url).pathname === EXTENSION_RELEASE_CONFIG_PATH) {
     return;
   }
 
@@ -90,4 +98,4 @@ self.addEventListener('activate', event => {
       return self.clients.claim();
     })
   );
-}); 
+});

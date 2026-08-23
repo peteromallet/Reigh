@@ -54,6 +54,7 @@ export const REIGH_GATE_PROFILE = Object.freeze([
   { id: 'creative-lab', label: 'Creative Lab extension suite', command: 'npm', args: ['run', 'test:creative-extension'] },
   { id: 'compatibility', label: 'extension compatibility matrix', command: 'npm', args: ['run', 'test:extension-compatibility'] },
   { id: 'production-smoke', label: 'production extension smoke suite', command: 'npm', args: ['run', 'test:extensions:production-smoke'] },
+  { id: 'runtime-rollout', label: 'runtime extension rollout suite', command: 'npm', args: ['run', 'test:extensions:runtime-rollout'] },
   { id: 'readiness', label: 'extension readiness suite', command: 'npm', args: ['run', 'test:readiness'] },
   { id: 'readiness-e2e', label: 'extension harness browser suite', command: 'npm', args: ['run', 'test:readiness:e2e'] },
   { id: 'timeline-e2e', label: 'timeline browser/device suite', command: 'npm', args: ['run', 'test:e2e:timeline'] },

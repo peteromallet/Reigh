@@ -39,7 +39,7 @@ ENV NODE_ENV=production
 # is simpler and more reliable than reinstalling with pinned versions here.
 COPY package.json package-lock.json ./
 COPY --from=build /app/node_modules ./node_modules
-COPY config ./config
+COPY --chown=node:node config ./config
 COPY scripts/runtime ./scripts/runtime
 COPY --chown=node:node --from=build /app/dist ./dist
 

@@ -58,6 +58,7 @@ describe('extension ship verifier', () => {
       assert.doesNotMatch(dockerfile, new RegExp(`^ARG ${retiredKey}$`, 'm'));
       assert.doesNotMatch(dockerfile, new RegExp(`${retiredKey}="\\$${retiredKey}"`));
     }
+    assert.match(dockerfile, /^COPY --chown=node:node config \.\/config$/m);
     assert.match(dockerfile, /^COPY scripts\/runtime \.\/scripts\/runtime$/m);
     assert.match(dockerfile, /^COPY --chown=node:node --from=build \/app\/dist \.\/dist$/m);
     assert.match(dockerfile, /^USER node$/m);
@@ -68,6 +69,11 @@ describe('extension ship verifier', () => {
       'node scripts/runtime/write-extension-release-config.mjs && npm run serve',
     );
     assert.doesNotMatch(packageJson.scripts['start:railway'], /npm run build/);
+    assert.ok(REIGH_GATE_PROFILE.some((gate) => (
+      gate.id === 'runtime-rollout'
+      && gate.command === 'npm'
+      && gate.args.join(' ') === 'run test:extensions:runtime-rollout'
+    )));
   });
 
   it('fails closed on a mutable Astrid ref or incomplete gate inventory', () => {

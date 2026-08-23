@@ -41,7 +41,7 @@
     "test:extensions:production-smoke": "vitest run --config config/testing/vitest.config.ts src/sdk/smoke/extensionSmoke.test.ts",
     "test:extension-compatibility": "vitest run --config config/testing/vitest.config.ts src/tools/video-editor/examples/extensions/creative-lab/compatibilityMatrix.test.tsx",
     "test:extension-ship-verifier": "node --test scripts/release/verify-extension-ship.test.mjs",
-    "test:extensions:runtime-rollout": "npm run build && node --test scripts/runtime/write-extension-release-config.test.mjs scripts/runtime/verify-extension-runtime-rollout.test.mjs && vitest run --config config/testing/vitest.config.ts src/tools/video-editor/runtime/extensionReleaseControls.test.ts src/sdk/smoke/extensionSmoke.test.ts",
+    "test:extensions:runtime-rollout": "npm run build && node --test scripts/runtime/write-extension-release-config.test.mjs scripts/runtime/verify-extension-runtime-rollout.test.mjs scripts/runtime/service-worker-release-config.test.mjs && vitest run --config config/testing/vitest.config.ts src/tools/video-editor/runtime/extensionReleaseControls.test.ts src/sdk/smoke/extensionSmoke.test.ts",
     "test:slot:unit": "vitest run --config config/testing/vitest.config.ts src/shared/hooks/__tests__/usePromoteVariantToGeneration.test.ts src/domains/media-lightbox/hooks/useVariantPromotion.test.ts src/tools/video-editor/hooks/useAddVariantAsGeneration.test.tsx",
     "test:slot:edge": "npm run test:edge:smoke",
     "test:slot:db": "node scripts/quality/run-slot-pgtap.mjs",
