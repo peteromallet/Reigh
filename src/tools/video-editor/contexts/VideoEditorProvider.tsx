@@ -60,9 +60,12 @@ import type { ResolvedAssetRegistryEntry } from '@/tools/video-editor/types/inde
 import { publishLocalTestExtensionDiagnostics } from '@/app/localTestRuntime.ts';
 import {
   buildExtensionLifecycleOperationalEvents,
+  createHostOwnedExtensionOperationalEmitter,
   createPrivacySafeExtensionTelemetryHost,
   dispatchExtensionOperationalEvent,
+  operationalCountBucket,
   type ExtensionLifecycleObservation,
+  type HostOwnedExtensionOperationalEmitter,
   type ExtensionOperationalEventSink,
 } from '@/tools/video-editor/runtime/extensionReleaseControls.ts';
 
@@ -135,12 +138,14 @@ function InnerProvider({
   effectCatalog,
   sequenceComponentCatalog,
   onSaveStatusChange,
+  operationalEmitter,
   assembly,
 }: {
   children: React.ReactNode;
   effectCatalog?: VideoEditorEffectCatalog | null;
   sequenceComponentCatalog?: VideoEditorSequenceComponentCatalog | null;
   onSaveStatusChange?: (status: SaveStatus) => void;
+  operationalEmitter?: HostOwnedExtensionOperationalEmitter;
   assembly: EditorRuntimeAssembly;
 }) {
   useRenderDiagnostic('VideoEditorProvider');
@@ -175,6 +180,58 @@ function InnerProvider({
   useEffect(() => {
     onSaveStatusChange?.(chrome.saveStatus);
   }, [chrome.saveStatus, onSaveStatusChange]);
+
+  const conflictPreviouslyExhaustedRef = useRef(false);
+  useEffect(() => {
+    if (chrome.isConflictExhausted && !conflictPreviouslyExhaustedRef.current) {
+      operationalEmitter?.emit({
+        event: 'persistence.conflict',
+        outcome: 'failure',
+        errorClass: 'persistence.version_conflict',
+      });
+    }
+    conflictPreviouslyExhaustedRef.current = chrome.isConflictExhausted;
+  }, [chrome.isConflictExhausted, operationalEmitter]);
+
+  const renderStartedAtRef = useRef<number>();
+  const previousRenderStatusRef = useRef(chrome.renderStatus);
+  useEffect(() => {
+    const previous = previousRenderStatusRef.current;
+    if (chrome.renderStatus === 'rendering' && previous !== 'rendering') {
+      renderStartedAtRef.current = performance.now();
+    }
+    if (
+      previous === 'rendering'
+      && (chrome.renderStatus === 'done' || chrome.renderStatus === 'error')
+    ) {
+      const startedAt = renderStartedAtRef.current;
+      operationalEmitter?.emit({
+        event: 'render.outcome',
+        outcome: chrome.renderStatus === 'done' ? 'success' : 'failure',
+        ...(chrome.renderStatus === 'error' ? { errorClass: 'render.client_error' } : {}),
+        ...(startedAt === undefined ? {} : { durationMs: Math.max(0, performance.now() - startedAt) }),
+      });
+      renderStartedAtRef.current = undefined;
+    }
+    previousRenderStatusRef.current = chrome.renderStatus;
+  }, [chrome.renderStatus, operationalEmitter]);
+
+  const laneItemCount = editor.data?.dataLanes.reduce(
+    (count, lane) => count + lane.items.length,
+    0,
+  ) ?? 0;
+  const laneCountBucket = operationalCountBucket(laneItemCount);
+  const previousLaneCountBucketRef = useRef<string>();
+  useEffect(() => {
+    if (previousLaneCountBucketRef.current !== laneCountBucket) {
+      operationalEmitter?.emit({
+        event: 'lane.density',
+        outcome: 'success',
+        countBucket: laneCountBucket,
+      });
+      previousLaneCountBucketRef.current = laneCountBucket;
+    }
+  }, [laneCountBucket, operationalEmitter]);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const pendingAddGenerationId = searchParams.get(ADD_GENERATION_QUERY_PARAM);
@@ -458,6 +515,8 @@ export interface VideoEditorProviderProps {
   /** T22: Provider-owned timeline-overlay feature flag. Explicitly defaults
    *  to false; hosts opt in by supplying `true`. */
   timelineOverlaysEnabled?: boolean;
+  /** True only when the deployment-owned parent rollout switch is effective. */
+  extensionHostEnabled?: boolean;
   /** Deployment-owned revision attached to privacy-safe operational events. */
   extensionReleaseRevision?: string;
   /** Optional app analytics adapter; defaults to a sanitized browser event. */
@@ -478,31 +537,65 @@ export function VideoEditorProvider({
   packageStateEntries,
   processManager: hostProcessManager,
   timelineOverlaysEnabled = false,
+  extensionHostEnabled = false,
   extensionReleaseRevision = 'unset',
   extensionOperationalEventSink = dispatchExtensionOperationalEvent,
   children,
 }: VideoEditorProviderProps) {
   const shotsHost = useReighShotsHost(projectId);
   const agentChatRegistry = useAgentChatRegistry();
-  const telemetryHost = useMemo(
-    () => createPrivacySafeExtensionTelemetryHost(extensionOperationalEventSink),
-    [extensionOperationalEventSink],
+  const telemetryHost = useMemo(() => createPrivacySafeExtensionTelemetryHost(), []);
+  const knownExtensionVersionsRef = useRef(new Map<string, Set<string>>());
+  const extensionVersions = useMemo(
+    () => {
+      const currentVersions = new Map<string, string>();
+      for (const extension of extensions ?? []) {
+        const extensionId = extension.manifest.id as string;
+        currentVersions.set(extensionId, extension.manifest.version);
+        const knownVersions = knownExtensionVersionsRef.current.get(extensionId) ?? new Set<string>();
+        knownVersions.add(extension.manifest.version);
+        knownExtensionVersionsRef.current.set(extensionId, knownVersions);
+      }
+      return currentVersions;
+    },
+    [extensions],
+  );
+  const operationalEmitter = useMemo(
+    () => createHostOwnedExtensionOperationalEmitter({
+      releaseRevision: extensionReleaseRevision,
+      extensionVersions: new Map(
+        [...knownExtensionVersionsRef.current].map(([id, versions]) => [id, new Set(versions)]),
+      ),
+    }, extensionOperationalEventSink),
+    [extensionOperationalEventSink, extensionReleaseRevision, extensionVersions],
   );
   const lifecycleObservationsRef = useRef<readonly ExtensionLifecycleObservation[]>([]);
+  const operationalEmitterRef = useRef(operationalEmitter);
+  operationalEmitterRef.current = operationalEmitter;
+  const hostActivationObservedRef = useRef(false);
+
+  useEffect(() => () => {
+    for (const event of buildExtensionLifecycleOperationalEvents(
+      lifecycleObservationsRef.current,
+      [],
+      extensionReleaseRevision,
+    )) {
+      operationalEmitterRef.current.emit(event);
+    }
+    lifecycleObservationsRef.current = [];
+  }, [extensionReleaseRevision]);
 
   useEffect(() => {
-    telemetryHost.log({
-      event: 'host.activation',
-      outcome: 'success',
-      releaseRevision: extensionReleaseRevision,
-    });
-    return () => telemetryHost.log({
-      event: 'extension.disposal',
-      outcome: 'success',
-      releaseRevision: extensionReleaseRevision,
-      extensionId: 'host',
-    });
-  }, [extensionReleaseRevision, telemetryHost]);
+    if (extensionHostEnabled && !hostActivationObservedRef.current) {
+      operationalEmitter.emit({
+        event: 'host.activation',
+        outcome: 'success',
+      });
+      hostActivationObservedRef.current = true;
+    } else if (!extensionHostEnabled) {
+      hostActivationObservedRef.current = false;
+    }
+  }, [extensionHostEnabled, operationalEmitter]);
 
   const assembly = useEditorRuntimeAssembly({
     extensions,
@@ -511,11 +604,12 @@ export function VideoEditorProvider({
     // App-shell feedback channel: registry violations surface as toasts.
     commandRegistryCallbacks: {
       onCommandOutcome: (_commandId, extensionId, outcome, durationMs) => {
-        telemetryHost.log({
+        if (!extensionHostEnabled) return;
+        operationalEmitter.emit({
           event: 'extension.command',
           outcome,
-          releaseRevision: extensionReleaseRevision,
           extensionId,
+          extensionVersion: extensionVersions.get(extensionId),
           durationMs,
           ...(outcome === 'failure' ? { errorClass: 'command.handler_error' } : {}),
         });
@@ -544,7 +638,7 @@ export function VideoEditorProvider({
 
   useEffect(() => {
     const lifecycleHost = assembly.lifecycleHostRef.current;
-    const current = assembly.extensionRuntime.extensions.map((extension) => {
+    const current = (extensionHostEnabled ? assembly.extensionRuntime.extensions : []).map((extension) => {
       const extensionId = extension.manifest.id as string;
       const lifecycle = lifecycleHost?.lifecycles.get(extensionId);
       return {
@@ -563,14 +657,15 @@ export function VideoEditorProvider({
       current,
       extensionReleaseRevision,
     )) {
-      telemetryHost.log(event);
+      operationalEmitter.emit(event);
     }
     lifecycleObservationsRef.current = current;
   }, [
     assembly.extensionRuntime,
     assembly.lifecycleHostRef,
+    extensionHostEnabled,
     extensionReleaseRevision,
-    telemetryHost,
+    operationalEmitter,
   ]);
 
   const runtimeValue = useMemo(() => ({
@@ -632,6 +727,7 @@ export function VideoEditorProvider({
         effectCatalog={effectCatalog}
         sequenceComponentCatalog={sequenceComponentCatalog}
         onSaveStatusChange={onSaveStatusChange}
+        operationalEmitter={extensionHostEnabled ? operationalEmitter : undefined}
         assembly={assembly}
       >
         {children}

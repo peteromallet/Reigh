@@ -8,6 +8,24 @@ export const EXTENSION_RELEASE_RUNTIME_CONFIG_TIMEOUT_MS = 4_000;
 export const TRANSCRIPT_RELEASE_EXTENSION_ID = 'com.reigh.transcript-lane';
 export const RUNAWAY_RELEASE_EXTENSION_ID = 'com.reigh.astrid-runaway-timeline';
 
+/** Frozen production inventory; unknown local examples fail closed. */
+export const REVIEWED_PRODUCTION_EXTENSION_IDS = Object.freeze([
+  'com.reigh.scene-phase-markers',
+  TRANSCRIPT_RELEASE_EXTENSION_ID,
+  RUNAWAY_RELEASE_EXTENSION_ID,
+  'com.reigh.creative-lab.pulse-map',
+  'com.reigh.creative-lab.soundtrack-cartographer',
+  'com.reigh.creative-lab.caption-safe-zone-orchestra',
+  'com.reigh.creative-lab.emotional-weather-map',
+  'com.reigh.creative-lab.timeline-faultline',
+  'com.reigh.creative-lab.foley-constellation',
+  'com.reigh.creative-lab.branching-cut',
+  'com.reigh.creative-lab.chromatic-constellation',
+  'com.reigh.creative-lab.recall-pulse',
+  'com.reigh.creative-lab.lockline-inspector',
+] as const);
+const REVIEWED_PRODUCTION_EXTENSION_ID_SET = new Set<string>(REVIEWED_PRODUCTION_EXTENSION_IDS);
+
 export interface ExtensionReleaseFlags {
   readonly extensionHostEnabled: boolean;
   readonly transcriptCaptionFoundryEnabled: boolean;
@@ -168,6 +186,7 @@ export function selectReleaseEnabledExtensions(
   if (!flags.extensionHostEnabled) return Object.freeze([]);
   return Object.freeze(extensions.filter((extension) => {
     const id = extension.manifest.id as string;
+    if (!REVIEWED_PRODUCTION_EXTENSION_ID_SET.has(id)) return false;
     if (id === TRANSCRIPT_RELEASE_EXTENSION_ID) return flags.transcriptCaptionFoundryEnabled;
     if (id === RUNAWAY_RELEASE_EXTENSION_ID) return flags.runawayTypedTimelineEnabled;
     return true;
@@ -204,23 +223,54 @@ export interface ExtensionOperationalEvent {
 
 const OUTCOMES = new Set<ExtensionOperationalOutcome>(['success', 'failure', 'cancelled', 'degraded']);
 const EVENT_NAMES = new Set<string>(EXTENSION_OPERATIONAL_EVENT_NAMES);
-const SAFE_TOKEN = /^[A-Za-z0-9._:-]{1,128}$/;
-const UUID_SHAPE = /[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i;
-const URL_OR_EMAIL_SHAPE = /(?:^[a-z][a-z0-9+.-]*:|@)/i;
-const OPAQUE_IDENTIFIER_SHAPE = /(?=[A-Za-z0-9_-]{24,})(?=[A-Za-z0-9_-]*[A-Za-z])(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]{24,}/;
+const VERSION_TOKEN = /^(?:0|[1-9]\d*)(?:\.(?:0|[1-9]\d*)){0,2}(?:-[0-9A-Za-z.-]{1,32})?$/;
 
-const isBoundedOperationalToken = (value: unknown): value is string => (
-  typeof value === 'string'
-  && SAFE_TOKEN.test(value)
-  && !UUID_SHAPE.test(value)
-  && !URL_OR_EMAIL_SHAPE.test(value)
-  && !OPAQUE_IDENTIFIER_SHAPE.test(value)
-);
+export const EXTENSION_OPERATIONAL_ERROR_CLASSES = Object.freeze([
+  'activation.error',
+  'command.handler_error',
+  'bridge.timeout',
+  'bridge.http_error',
+  'bridge.invalid_response',
+  'persistence.version_conflict',
+  'persistence.unavailable',
+  'migration.validation_error',
+  'migration.write_error',
+  'render.client_error',
+  'render.export_error',
+  'render.guard_blocked',
+  'lane.budget_exceeded',
+] as const);
+
+export type ExtensionOperationalErrorClass = (typeof EXTENSION_OPERATIONAL_ERROR_CLASSES)[number];
+const ERROR_CLASSES = new Set<string>(EXTENSION_OPERATIONAL_ERROR_CLASSES);
+const EVENT_ERROR_CLASSES: Readonly<Record<ExtensionOperationalEventName, ReadonlySet<string>>> = Object.freeze({
+  'host.activation': new Set(),
+  'extension.activation': new Set(['activation.error']),
+  'extension.disposal': new Set(),
+  'extension.command': new Set(['command.handler_error']),
+  'bridge.request': new Set(['bridge.timeout', 'bridge.http_error', 'bridge.invalid_response']),
+  'persistence.conflict': new Set(['persistence.version_conflict', 'persistence.unavailable']),
+  'migration.outcome': new Set(['migration.validation_error', 'migration.write_error']),
+  'render.outcome': new Set(['render.client_error', 'render.export_error', 'render.guard_blocked']),
+  'lane.density': new Set(['lane.budget_exceeded']),
+});
+const COUNT_BUCKETS = new Set(['0', '1-10', '11-100', '101-1000', '1001-10000', '10001+']);
+const BROWSERS = new Set(['chrome', 'edge', 'firefox', 'safari', 'other']);
+const MAX_OPERATIONAL_DURATION_MS = 86_400_000;
+
+export interface ExtensionOperationalValidationPolicy {
+  readonly releaseRevision: string;
+  /** Exact manifest ID -> finite known versions owned by this host lifetime. */
+  readonly extensionVersions: ReadonlyMap<string, ReadonlySet<string>>;
+}
 
 export const EXTENSION_OPERATIONAL_EVENT_DOM_NAME = 'reigh:extension-operational-event';
 
-/** Fail closed when an extension attempts to send free-form or creative data. */
-export function sanitizeExtensionOperationalEvent(value: unknown): ExtensionOperationalEvent | null {
+/** Validate a host-constructed event against the active release and manifests. */
+export function sanitizeExtensionOperationalEvent(
+  value: unknown,
+  policy: ExtensionOperationalValidationPolicy,
+): ExtensionOperationalEvent | null {
   try {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
     const input = value as Record<string, unknown>;
@@ -230,17 +280,34 @@ export function sanitizeExtensionOperationalEvent(value: unknown): ExtensionOper
     ]);
     if (Object.keys(input).some((key) => !allowed.has(key))) return null;
     if (!EVENT_NAMES.has(String(input.event)) || !OUTCOMES.has(input.outcome as ExtensionOperationalOutcome)) return null;
-    if (!isBoundedOperationalToken(input.releaseRevision)) return null;
-    for (const key of ['extensionId', 'extensionVersion', 'schemaVersion', 'errorClass'] as const) {
-      if (input[key] !== undefined && !isBoundedOperationalToken(input[key])) return null;
+    const eventName = input.event as ExtensionOperationalEventName;
+    if (readRevision(input.releaseRevision) !== policy.releaseRevision) return null;
+    if (input.errorClass !== undefined && (
+      !ERROR_CLASSES.has(String(input.errorClass))
+      || !EVENT_ERROR_CLASSES[eventName].has(String(input.errorClass))
+    )) return null;
+    if (input.schemaVersion !== undefined && (
+      typeof input.schemaVersion !== 'string' || !VERSION_TOKEN.test(input.schemaVersion)
+    )) return null;
+    if (input.extensionId !== undefined) {
+      if (typeof input.extensionId !== 'string') return null;
+      if (typeof input.extensionVersion !== 'string') return null;
+      const ownedVersions = policy.extensionVersions.get(input.extensionId);
+      if (
+        !ownedVersions?.has(input.extensionVersion)
+        || !VERSION_TOKEN.test(input.extensionVersion)
+      ) return null;
+    } else if (input.extensionVersion !== undefined) {
+      return null;
     }
     if (input.durationMs !== undefined && (
-      typeof input.durationMs !== 'number' || !Number.isFinite(input.durationMs) || input.durationMs < 0
+      typeof input.durationMs !== 'number'
+      || !Number.isFinite(input.durationMs)
+      || input.durationMs < 0
+      || input.durationMs > MAX_OPERATIONAL_DURATION_MS
     )) return null;
-    const countBuckets = ['0', '1-10', '11-100', '101-1000', '1001-10000', '10001+'];
-    if (input.countBucket !== undefined && !countBuckets.includes(String(input.countBucket))) return null;
-    const browsers = ['chrome', 'edge', 'firefox', 'safari', 'other'];
-    if (input.browserFamily !== undefined && !browsers.includes(String(input.browserFamily))) return null;
+    if (input.countBucket !== undefined && !COUNT_BUCKETS.has(String(input.countBucket))) return null;
+    if (input.browserFamily !== undefined && !BROWSERS.has(String(input.browserFamily))) return null;
     return Object.freeze({ ...input }) as unknown as ExtensionOperationalEvent;
   } catch {
     return null;
@@ -248,6 +315,43 @@ export function sanitizeExtensionOperationalEvent(value: unknown): ExtensionOper
 }
 
 export type ExtensionOperationalEventSink = (event: ExtensionOperationalEvent) => void;
+
+export interface HostOwnedExtensionOperationalEmitter {
+  emit(event: Omit<ExtensionOperationalEvent, 'releaseRevision'>): void;
+}
+
+/**
+ * Only host code receives this adapter. It pins the release revision and exact
+ * active manifest versions before forwarding to analytics.
+ */
+export function createHostOwnedExtensionOperationalEmitter(
+  policy: ExtensionOperationalValidationPolicy,
+  sink: ExtensionOperationalEventSink,
+): HostOwnedExtensionOperationalEmitter {
+  return Object.freeze({
+    emit(event: Omit<ExtensionOperationalEvent, 'releaseRevision'>): void {
+      const sanitized = sanitizeExtensionOperationalEvent({
+        ...event,
+        releaseRevision: policy.releaseRevision,
+      }, policy);
+      if (!sanitized) return;
+      try {
+        sink(sanitized);
+      } catch {
+        // Analytics availability cannot affect editor runtime behavior.
+      }
+    },
+  });
+}
+
+export function operationalCountBucket(count: number): ExtensionOperationalEvent['countBucket'] {
+  if (!Number.isFinite(count) || count <= 0) return '0';
+  if (count <= 10) return '1-10';
+  if (count <= 100) return '11-100';
+  if (count <= 1_000) return '101-1000';
+  if (count <= 10_000) return '1001-10000';
+  return '10001+';
+}
 
 export interface ExtensionLifecycleObservation {
   readonly extensionId: string;
@@ -259,8 +363,9 @@ export interface ExtensionLifecycleObservation {
 
 /**
  * Convert host lifecycle transitions into bounded operational records. Only a
- * state/version change emits, preventing ordinary React renders from inflating
- * activation metrics. Removal is reported as successful disposal.
+ * state/version/activation identity change emits, preventing ordinary React
+ * renders from inflating metrics. A live identity is disposed before removal,
+ * disablement, replacement, or reactivation.
  */
 export function buildExtensionLifecycleOperationalEvents(
   previous: readonly ExtensionLifecycleObservation[],
@@ -273,12 +378,26 @@ export function buildExtensionLifecycleOperationalEvents(
 
   for (const item of current) {
     const prior = before.get(item.extensionId);
+    const identityChanged = Boolean(prior) && (
+      prior?.extensionVersion !== item.extensionVersion
+      || prior.activationKey !== item.activationKey
+    );
+    const stateChanged = Boolean(prior) && prior?.state !== item.state;
+    if (prior?.state === 'active' && (identityChanged || stateChanged)) {
+      events.push(Object.freeze({
+        event: 'extension.disposal',
+        outcome: 'success',
+        releaseRevision,
+        extensionId: prior.extensionId,
+        extensionVersion: prior.extensionVersion,
+      }));
+    }
     if (
       item.state !== 'inactive'
       && (
-        prior?.state !== item.state
-        || prior.extensionVersion !== item.extensionVersion
-        || prior.activationKey !== item.activationKey
+        !prior
+        || stateChanged
+        || identityChanged
       )
     ) {
       events.push(Object.freeze({
@@ -293,7 +412,7 @@ export function buildExtensionLifecycleOperationalEvents(
   }
 
   for (const item of previous) {
-    if (!after.has(item.extensionId)) {
+    if (item.state === 'active' && !after.has(item.extensionId)) {
       events.push(Object.freeze({
         event: 'extension.disposal',
         outcome: 'success',
@@ -318,22 +437,12 @@ export function dispatchExtensionOperationalEvent(event: ExtensionOperationalEve
 }
 
 /**
- * Runtime telemetry adapter exposed to extensions. Only the fixed event shape
- * is forwarded; strings, exception objects, paths, IDs, prompts, text, URLs,
- * and arbitrary payloads are dropped at construction.
+ * Runtime telemetry adapter exposed to extensions. Extension-authored logs are
+ * intentionally not promoted into operational rollout metrics: only the
+ * host-owned adapter above can attach a trusted manifest identity and revision.
  */
 export function createPrivacySafeExtensionTelemetryHost(
-  sink: ExtensionOperationalEventSink = () => {},
 ): VideoEditorTelemetryHost {
-  const forward = (...args: unknown[]): void => {
-    if (args.length !== 1) return;
-    const event = sanitizeExtensionOperationalEvent(args[0]);
-    if (!event) return;
-    try {
-      sink(event);
-    } catch {
-      // An analytics outage must never crash an extension command or render.
-    }
-  };
-  return Object.freeze({ log: forward, warn: forward, error: forward });
+  const drop = (..._args: unknown[]): void => {};
+  return Object.freeze({ log: drop, warn: drop, error: drop });
 }

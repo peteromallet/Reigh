@@ -66,6 +66,31 @@ with the RC. A child flag never bypasses its parent.
 | `TRANSCRIPT_CAPTION_FOUNDRY_ENABLED` | Transcript Caption Foundry registration, commands, and writes | `EXTENSION_HOST_ENABLED` | Stop Foundry commands/writes while leaving unrelated host extensions available |
 | `RUNAWAY_TYPED_TIMELINE_ENABLED` | Reigh-side Astrid Runaway source request/projection, commands, and viewer registration | `EXTENSION_HOST_ENABLED` | Stop new editor-side Runaway bridge requests, projection, commands, and viewer activation while leaving unrelated host extensions available |
 
+`EXTENSION_HOST_ENABLED` is deliberately the shared rollback boundary for this
+reviewed 13-extension release inventory. Production selection fails closed for
+any ID not in this list:
+
+- `com.reigh.scene-phase-markers`
+- `com.reigh.transcript-lane` (also gated by the Transcript child switch)
+- `com.reigh.astrid-runaway-timeline` (also gated by the Runaway child switch)
+- `com.reigh.creative-lab.pulse-map`
+- `com.reigh.creative-lab.soundtrack-cartographer`
+- `com.reigh.creative-lab.caption-safe-zone-orchestra`
+- `com.reigh.creative-lab.emotional-weather-map`
+- `com.reigh.creative-lab.timeline-faultline`
+- `com.reigh.creative-lab.foley-constellation`
+- `com.reigh.creative-lab.branching-cut`
+- `com.reigh.creative-lab.chromatic-constellation`
+- `com.reigh.creative-lab.recall-pulse`
+- `com.reigh.creative-lab.lockline-inspector`
+
+The ten Luna-originated Creative Lab extensions and Scene Markers do not have
+independent production switches in this candidate. Enabling the parent enables
+all eleven together; emergency containment turns the parent off and safely
+reloads. That coarse rollback is an explicit release decision, not an implied
+per-extension control. The compatibility, composition, visual, persistence,
+render, and device evidence must therefore cover the complete enabled set.
+
 The Runaway child switch does not remove the shared `data_bundle` column or
 `bundle` member from the generic timeline read: that envelope can also contain
 Transcript or future typed data and is fetched atomically with the timeline.
@@ -133,11 +158,15 @@ The minimum event families required before Stage 1 are host activation,
 extension activation/disposal, command outcome, bridge request outcome/latency,
 persistence conflict, migration outcome, render/export outcome, and
 lane-density/performance budget outcome. The checked-in host currently emits
-the first three families (host, lifecycle, and command) through the bounded
-`reigh:extension-operational-event` browser boundary. The remaining five
-emitters and a production analytics listener/dashboard adapter are release
-blockers, not assumed infrastructure. A DOM event observed only by an E2E test
-does not satisfy the dashboard/alert gate.
+effective host activation, exact per-extension activation/disposal, command,
+persistence-conflict, browser-render, and lane-density outcomes through the
+bounded `reigh:extension-operational-event` browser boundary. Host activation
+is absent while the parent switch is closed; provider teardown never invents
+an extension disposal for `host`. Bridge, migration, and export-completion
+source emitters remain release blockers (the host adapter accepts bounded
+render/export error classes, but export completion is not wired). A production
+analytics listener/dashboard adapter is also still a blocker. A DOM event
+observed only by an E2E test does not satisfy the dashboard/alert gate.
 
 Allowed fields are deliberately bounded:
 

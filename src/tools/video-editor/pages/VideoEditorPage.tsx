@@ -376,13 +376,16 @@ export default function VideoEditorPage() {
   const smokeDirectExtensions = useMemo(() => {
     const smokeExt = import.meta.env.DEV ? getExtensionSmokeExtension(searchParams) : null;
     const disabled = import.meta.env.DEV ? devDisabledIds : new Set<string>();
-    const reviewedExtensions = selectReleaseEnabledExtensions(
-      devLocalExtensions,
-      extensionReleaseFlags,
+    // Arbitrary scratchpad manifests remain usable in DEV. Production alone
+    // applies the frozen reviewed inventory in addition to the runtime flags.
+    const releaseEnabledExtensions = (
+      import.meta.env.DEV
+        ? devLocalExtensions
+        : selectReleaseEnabledExtensions(devLocalExtensions, extensionReleaseFlags)
     ).filter((extension) => !disabled.has(extension.manifest.id as string));
     const direct = [
       ...(extensionReleaseFlags.extensionHostEnabled && smokeExt ? [smokeExt] : []),
-      ...reviewedExtensions,
+      ...releaseEnabledExtensions,
     ];
     return direct.length > 0 ? direct : undefined;
   }, [
@@ -750,6 +753,7 @@ export default function VideoEditorPage() {
               onSaveStatusChange={setMountedSaveStatus}
               extensions={resolvedExtensions}
               timelineOverlaysEnabled={timelineOverlaysEnabled}
+              extensionHostEnabled={extensionReleaseFlags.extensionHostEnabled}
               extensionReleaseRevision={extensionReleaseFlags.configurationRevision}
             >
               <ReighVideoEditorShell
@@ -873,6 +877,7 @@ export default function VideoEditorPage() {
           onSaveStatusChange={setMountedSaveStatus}
           extensions={resolvedExtensions}
           timelineOverlaysEnabled={timelineOverlaysEnabled}
+          extensionHostEnabled={extensionReleaseFlags.extensionHostEnabled}
           extensionReleaseRevision={extensionReleaseFlags.configurationRevision}
         >
           <ReighVideoEditorShell

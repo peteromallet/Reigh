@@ -95,6 +95,12 @@ const mocks = {
   selectClips: vi.fn(),
 };
 
+const operationalChromeState = {
+  editorData: null as null | { dataLanes: Array<{ items: unknown[] }> },
+  isConflictExhausted: false,
+  renderStatus: 'idle' as 'idle' | 'rendering' | 'done' | 'error',
+};
+
 vi.mock('@/tools/video-editor/hooks/useEffects', () => ({
   useEffects: (...args: unknown[]) => useEffectsMock(...args),
 }));
@@ -153,7 +159,7 @@ vi.mock('@/tools/travel-between-images/hooks/video/useShotFinalVideos', () => ({
 vi.mock('@/tools/video-editor/hooks/useTimelineState', () => ({
   useTimelineState: () => {
     const editor = {
-      data: null,
+      data: operationalChromeState.editorData,
       resolvedConfig: { registry: {} },
       deviceClass: 'tablet',
       inputModality: 'mouse',
@@ -251,8 +257,8 @@ vi.mock('@/tools/video-editor/hooks/useTimelineState', () => ({
     const chrome = {
       timelineName: 'Timeline',
       saveStatus: 'saved' as const,
-      isConflictExhausted: false,
-      renderStatus: 'idle' as const,
+      isConflictExhausted: operationalChromeState.isConflictExhausted,
+      renderStatus: operationalChromeState.renderStatus,
       renderLog: '',
       renderDirty: false,
       renderProgress: null,
@@ -604,6 +610,9 @@ describe('VideoEditorProvider', () => {
     useEffectsMock.mockReturnValue({ data: [] });
     useResolvedEffectCatalogMock.mockReset();
     useResolvedEffectCatalogMock.mockReturnValue(createVideoEditorEffectCatalog());
+    operationalChromeState.editorData = null;
+    operationalChromeState.isConflictExhausted = false;
+    operationalChromeState.renderStatus = 'idle';
   });
 
   it('builds fallback lightbox media for raw video assets without a generation id', () => {
@@ -619,6 +628,187 @@ describe('VideoEditorProvider', () => {
       thumbUrl: 'https://example.com/video.jpg',
       type: 'video',
     }));
+  });
+
+  it('reports only effective host activation and real per-extension lifecycle transitions', async () => {
+    const provider: DataProvider = {
+      loadTimeline: vi.fn(),
+      saveTimeline: vi.fn(),
+      loadAssetRegistry: vi.fn(),
+      resolveAssetUrl: vi.fn(),
+    };
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const sink = vi.fn();
+    const dispose = vi.fn();
+    const extension = defineExtension({
+      manifest: {
+        id: 'com.reigh.observability-fixture' as never,
+        version: '1.0.0',
+        apiVersion: 1,
+        label: 'Observability fixture',
+      },
+      activate: () => ({ dispose }),
+    });
+    const replacement = defineExtension({
+      manifest: {
+        id: 'com.reigh.observability-fixture' as never,
+        version: '2.0.0',
+        apiVersion: 1,
+        label: 'Observability fixture replacement',
+      },
+      activate: () => ({ dispose: vi.fn() }),
+    });
+    const renderTree = (enabled: boolean, extensions: readonly ReighExtension[]) => (
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <AgentChatProvider>
+            <VideoEditorProvider
+              dataProvider={provider}
+              projectId="project-1"
+              timelineId="timeline-1"
+              userId="user-1"
+              extensions={extensions}
+              extensionHostEnabled={enabled}
+              extensionReleaseRevision="rc-observability"
+              extensionOperationalEventSink={sink}
+            >
+              <Consumer />
+            </VideoEditorProvider>
+          </AgentChatProvider>
+        </QueryClientProvider>
+      </MemoryRouter>
+    );
+
+    const view = render(renderTree(false, [extension]));
+    await Promise.resolve();
+    expect(sink).not.toHaveBeenCalled();
+
+    view.rerender(renderTree(true, [extension]));
+    await waitFor(() => {
+      expect(sink).toHaveBeenCalledWith(expect.objectContaining({
+        event: 'host.activation',
+        outcome: 'success',
+      }));
+      expect(sink).toHaveBeenCalledWith(expect.objectContaining({
+        event: 'extension.activation',
+        extensionId: 'com.reigh.observability-fixture',
+        extensionVersion: '1.0.0',
+      }));
+    });
+    expect(sink.mock.calls.filter(([event]) => event.event === 'host.activation')).toHaveLength(1);
+
+    sink.mockClear();
+    view.rerender(renderTree(true, [replacement]));
+    await waitFor(() => {
+      expect(sink).toHaveBeenCalledWith(expect.objectContaining({
+        event: 'extension.disposal',
+        extensionId: 'com.reigh.observability-fixture',
+        extensionVersion: '1.0.0',
+      }));
+      expect(sink).toHaveBeenCalledWith(expect.objectContaining({
+        event: 'extension.activation',
+        extensionId: 'com.reigh.observability-fixture',
+        extensionVersion: '2.0.0',
+      }));
+    });
+
+    view.rerender(renderTree(true, []));
+    await waitFor(() => {
+      expect(sink).toHaveBeenCalledWith(expect.objectContaining({
+        event: 'extension.disposal',
+        extensionId: 'com.reigh.observability-fixture',
+        extensionVersion: '2.0.0',
+      }));
+    });
+    view.rerender(renderTree(true, [extension]));
+    await waitFor(() => {
+      expect(sink.mock.calls.filter(([event]) => (
+        event.event === 'extension.activation'
+        && event.extensionId === 'com.reigh.observability-fixture'
+      ))).toHaveLength(2);
+    });
+    const disposalsBeforeUnmount = sink.mock.calls.filter(([event]) => (
+      event.event === 'extension.disposal'
+      && event.extensionId === 'com.reigh.observability-fixture'
+    )).length;
+    view.unmount();
+    expect(sink.mock.calls.filter(([event]) => (
+      event.event === 'extension.disposal'
+      && event.extensionId === 'com.reigh.observability-fixture'
+    ))).toHaveLength(disposalsBeforeUnmount + 1);
+    expect(sink).not.toHaveBeenCalledWith(expect.objectContaining({ extensionId: 'host' }));
+  });
+
+  it('emits bounded persistence-conflict, render, and lane-density outcomes on transitions', async () => {
+    const provider: DataProvider = {
+      loadTimeline: vi.fn(),
+      saveTimeline: vi.fn(),
+      loadAssetRegistry: vi.fn(),
+      resolveAssetUrl: vi.fn(),
+    };
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const sink = vi.fn();
+    const renderTree = () => (
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <AgentChatProvider>
+            <VideoEditorProvider
+              dataProvider={provider}
+              projectId="project-1"
+              timelineId="timeline-1"
+              userId="user-1"
+              extensions={[]}
+              extensionHostEnabled
+              extensionReleaseRevision="rc-observability"
+              extensionOperationalEventSink={sink}
+            >
+              <Consumer />
+            </VideoEditorProvider>
+          </AgentChatProvider>
+        </QueryClientProvider>
+      </MemoryRouter>
+    );
+
+    const view = render(renderTree());
+    operationalChromeState.isConflictExhausted = true;
+    operationalChromeState.renderStatus = 'rendering';
+    operationalChromeState.editorData = {
+      dataLanes: [{ items: Array.from({ length: 11 }, () => ({})) }],
+    };
+    view.rerender(renderTree());
+
+    await waitFor(() => {
+      expect(sink).toHaveBeenCalledWith(expect.objectContaining({
+        event: 'persistence.conflict',
+        outcome: 'failure',
+        errorClass: 'persistence.version_conflict',
+      }));
+      expect(sink).toHaveBeenCalledWith(expect.objectContaining({
+        event: 'lane.density',
+        outcome: 'success',
+        countBucket: '11-100',
+      }));
+    });
+
+    operationalChromeState.renderStatus = 'done';
+    view.rerender(renderTree());
+    await waitFor(() => {
+      expect(sink).toHaveBeenCalledWith(expect.objectContaining({
+        event: 'render.outcome',
+        outcome: 'success',
+        durationMs: expect.any(Number),
+      }));
+    });
+
+    const conflictEvents = sink.mock.calls.filter(([event]) => event.event === 'persistence.conflict');
+    view.rerender(renderTree());
+    expect(sink.mock.calls.filter(([event]) => event.event === 'persistence.conflict')).toHaveLength(
+      conflictEvents.length,
+    );
   });
 
   it('provides editor data, editor ops, chrome, and playback contexts together', () => {

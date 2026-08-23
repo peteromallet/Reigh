@@ -2,12 +2,15 @@ import { describe, expect, it, vi } from 'vitest';
 import { defineExtension } from '@reigh/editor-sdk';
 import {
   buildExtensionLifecycleOperationalEvents,
+  createHostOwnedExtensionOperationalEmitter,
   createPrivacySafeExtensionTelemetryHost,
   EXTENSION_RELEASE_RUNTIME_CONFIG_TIMEOUT_MS,
   getExtensionReleaseFlags,
   initializeExtensionReleaseFlags,
   loadExtensionReleaseFlags,
+  operationalCountBucket,
   parseExtensionReleaseRuntimeConfig,
+  REVIEWED_PRODUCTION_EXTENSION_IDS,
   RUNAWAY_RELEASE_EXTENSION_ID,
   TRANSCRIPT_RELEASE_EXTENSION_ID,
   sanitizeExtensionOperationalEvent,
@@ -15,15 +18,27 @@ import {
 } from './extensionReleaseControls';
 import { RUNAWAY_TIMELINE_EXTENSION_ID } from '@/tools/video-editor/dev/runaway-timeline/extension';
 import { TRANSCRIPT_LANE_EXTENSION_ID } from '@/tools/video-editor/dev/transcript-lane/extension';
+import { devLocalExtensions } from '@/tools/video-editor/dev/localExtensions';
 
 const extension = (id: string) => defineExtension({
   manifest: { id: id as never, version: '1.0.0', apiVersion: 1, license: 'MIT', label: id },
 });
 
+const operationalPolicy = {
+  releaseRevision: 'rc1',
+  extensionVersions: new Map([
+    ['com.reigh.runaway-timeline', new Set(['1.0.0'])],
+    ['com.reigh.example', new Set(['1.0.0'])],
+  ]),
+};
+
 describe('extension release controls', () => {
   it('pins child rollout IDs to the actual bundled manifests', () => {
     expect(RUNAWAY_RELEASE_EXTENSION_ID).toBe(RUNAWAY_TIMELINE_EXTENSION_ID);
     expect(TRANSCRIPT_RELEASE_EXTENSION_ID).toBe(TRANSCRIPT_LANE_EXTENSION_ID);
+    expect(new Set(REVIEWED_PRODUCTION_EXTENSION_IDS)).toEqual(new Set(
+      devLocalExtensions.map((item) => item.manifest.id as string),
+    ));
   });
 
   it('keeps DEV fast/default-open without issuing a runtime fetch', async () => {
@@ -181,7 +196,8 @@ describe('extension release controls', () => {
 
   it('selects independent Transcript and Runaway children from reviewed bundled extensions', () => {
     const all = [
-      extension('com.reigh.creative'),
+      extension('com.reigh.scene-phase-markers'),
+      extension('com.reigh.unreviewed-local-example'),
       extension(TRANSCRIPT_LANE_EXTENSION_ID),
       extension(RUNAWAY_TIMELINE_EXTENSION_ID),
     ];
@@ -191,69 +207,74 @@ describe('extension release controls', () => {
       runawayTypedTimelineEnabled: true,
       configurationRevision: 'r1',
     }).map((item) => item.manifest.id)).toEqual([
-      'com.reigh.creative',
+      'com.reigh.scene-phase-markers',
       RUNAWAY_TIMELINE_EXTENSION_ID,
     ]);
   });
 
-  it('accepts only the privacy-safe fixed operational shape', () => {
+  it('accepts only host-owned manifest identities, versions, revisions, and error classes', () => {
     expect(sanitizeExtensionOperationalEvent({
       event: 'bridge.request',
       outcome: 'failure',
       releaseRevision: 'rc1',
       extensionId: 'com.reigh.runaway-timeline',
+      extensionVersion: '1.0.0',
       errorClass: 'bridge.timeout',
       durationMs: 125,
       countBucket: '101-1000',
       browserFamily: 'chrome',
-    })).not.toBeNull();
+    }, operationalPolicy)).not.toBeNull();
     expect(sanitizeExtensionOperationalEvent({
       event: 'render.outcome',
       outcome: 'failure',
       releaseRevision: 'rc1',
       transcriptText: 'secret creative content',
-    })).toBeNull();
+    }, operationalPolicy)).toBeNull();
     expect(sanitizeExtensionOperationalEvent({
-      event: 'render.outcome',
+      event: 'extension.activation',
       outcome: 'failure',
       releaseRevision: 'rc1',
-      errorClass: '/Users/person/private/file.mp4',
-    })).toBeNull();
-    for (const leakedIdentifier of [
-      'project-550e8400-e29b-41d4-a716-446655440000',
-      'timeline-01ARZ3NDEKTSV4RRFFQ69G5FAV',
-      'token-eyJhbGciOiJIUzI1NiJ9',
-      'person@example.com',
-      'https:private.example',
-    ]) {
-      expect(sanitizeExtensionOperationalEvent({
-        event: 'bridge.request',
-        outcome: 'failure',
-        releaseRevision: 'rc1',
-        extensionId: leakedIdentifier,
-      })).toBeNull();
-      expect(sanitizeExtensionOperationalEvent({
-        event: 'bridge.request',
-        outcome: 'failure',
-        releaseRevision: leakedIdentifier,
-      })).toBeNull();
-      expect(sanitizeExtensionOperationalEvent({
-        event: 'bridge.request',
-        outcome: 'failure',
-        releaseRevision: 'rc1',
-        errorClass: leakedIdentifier,
-      })).toBeNull();
-    }
+      extensionId: 'com.reigh.example',
+      extensionVersion: '9.9.9',
+      errorClass: 'activation.error',
+    }, operationalPolicy)).toBeNull();
+    expect(sanitizeExtensionOperationalEvent({
+      event: 'extension.activation',
+      outcome: 'failure',
+      releaseRevision: 'rc1',
+      extensionId: 'com.reigh.example',
+      extensionVersion: '1.0.0',
+      errorClass: 'attacker.free_form',
+    }, operationalPolicy)).toBeNull();
+    expect(sanitizeExtensionOperationalEvent({
+      event: 'host.activation',
+      outcome: 'success',
+      releaseRevision: 'different-release',
+    }, operationalPolicy)).toBeNull();
+    expect(sanitizeExtensionOperationalEvent({
+      event: 'render.outcome',
+      outcome: 'success',
+      releaseRevision: 'rc1',
+      durationMs: 86_400_001,
+    }, operationalPolicy)).toBeNull();
   });
 
-  it('drops arbitrary extension logs and forwards one sanitized event', () => {
+  it('drops extension-authored metrics and forwards only host-owned events', () => {
     const sink = vi.fn();
-    const telemetry = createPrivacySafeExtensionTelemetryHost(sink);
+    const telemetry = createPrivacySafeExtensionTelemetryHost();
     telemetry.log('caption text', { projectId: 'private' });
     telemetry.error(new Error('contains a path'));
     telemetry.log({ event: 'host.activation', outcome: 'success', releaseRevision: 'rc1' });
-    expect(sink).toHaveBeenCalledTimes(1);
-    expect(sink).toHaveBeenCalledWith({ event: 'host.activation', outcome: 'success', releaseRevision: 'rc1' });
+    expect(sink).not.toHaveBeenCalled();
+
+    createHostOwnedExtensionOperationalEmitter(operationalPolicy, sink).emit({
+      event: 'host.activation',
+      outcome: 'success',
+    });
+    expect(sink).toHaveBeenCalledOnce();
+    expect(sink).toHaveBeenCalledWith({
+      event: 'host.activation', outcome: 'success', releaseRevision: 'rc1',
+    });
   });
 
   it('contains hostile payloads and a failing analytics sink', () => {
@@ -261,16 +282,50 @@ describe('extension release controls', () => {
       enumerable: true,
       get: () => { throw new Error('hostile getter'); },
     });
-    expect(sanitizeExtensionOperationalEvent(payload)).toBeNull();
+    expect(sanitizeExtensionOperationalEvent(payload, operationalPolicy)).toBeNull();
 
-    const telemetry = createPrivacySafeExtensionTelemetryHost(() => {
+    const emitter = createHostOwnedExtensionOperationalEmitter(operationalPolicy, () => {
       throw new Error('analytics unavailable');
     });
-    expect(() => telemetry.log({
+    expect(() => emitter.emit({
       event: 'host.activation',
       outcome: 'success',
-      releaseRevision: 'rc1',
     })).not.toThrow();
+  });
+
+  it('buckets operational counts at fixed host-owned boundaries', () => {
+    expect([0, 1, 10, 11, 100, 101, 1_000, 1_001, 10_000, 10_001].map(
+      operationalCountBucket,
+    )).toEqual([
+      '0', '1-10', '1-10', '11-100', '11-100',
+      '101-1000', '101-1000', '1001-10000', '1001-10000', '10001+',
+    ]);
+  });
+
+  it('forwards bounded host emitters for persistence, render/export, and lane density', () => {
+    const sink = vi.fn();
+    const emitter = createHostOwnedExtensionOperationalEmitter(operationalPolicy, sink);
+    emitter.emit({
+      event: 'persistence.conflict',
+      outcome: 'failure',
+      errorClass: 'persistence.version_conflict',
+    });
+    emitter.emit({
+      event: 'render.outcome',
+      outcome: 'failure',
+      errorClass: 'render.export_error',
+      durationMs: 42,
+    });
+    emitter.emit({
+      event: 'lane.density',
+      outcome: 'success',
+      countBucket: '101-1000',
+    });
+    expect(sink.mock.calls.map(([event]) => event)).toEqual([
+      expect.objectContaining({ event: 'persistence.conflict', releaseRevision: 'rc1' }),
+      expect.objectContaining({ event: 'render.outcome', errorClass: 'render.export_error' }),
+      expect.objectContaining({ event: 'lane.density', countBucket: '101-1000' }),
+    ]);
   });
 
   it('emits lifecycle transitions once and disposal on removal', () => {
@@ -291,18 +346,19 @@ describe('extension release controls', () => {
     expect(buildExtensionLifecycleOperationalEvents(active, [{
       ...active[0],
       activationKey: 'com.reigh.example:2',
-    }], 'rc1')).toEqual([expect.objectContaining({
-      event: 'extension.activation',
-      outcome: 'success',
-    })]);
+    }], 'rc1')).toEqual([
+      expect.objectContaining({ event: 'extension.disposal', outcome: 'success' }),
+      expect.objectContaining({ event: 'extension.activation', outcome: 'success' }),
+    ]);
     expect(buildExtensionLifecycleOperationalEvents(active, [{
       ...active[0],
       state: 'failed',
-    }], 'rc1')).toEqual([expect.objectContaining({
-      event: 'extension.activation',
-      outcome: 'failure',
-      errorClass: 'activation.error',
-    })]);
+    }], 'rc1')).toEqual([
+      expect.objectContaining({ event: 'extension.disposal', outcome: 'success' }),
+      expect.objectContaining({
+        event: 'extension.activation', outcome: 'failure', errorClass: 'activation.error',
+      }),
+    ]);
     expect(buildExtensionLifecycleOperationalEvents(active, [], 'rc1')).toEqual([{
       event: 'extension.disposal',
       outcome: 'success',
@@ -310,5 +366,16 @@ describe('extension release controls', () => {
       extensionId: 'com.reigh.example',
       extensionVersion: '1.0.0',
     }]);
+    expect(buildExtensionLifecycleOperationalEvents(active, [{
+      ...active[0],
+      state: 'inactive',
+    }], 'rc1')).toEqual([expect.objectContaining({
+      event: 'extension.disposal',
+      extensionId: 'com.reigh.example',
+    })]);
+    expect(buildExtensionLifecycleOperationalEvents([{
+      ...active[0],
+      state: 'failed',
+    }], [], 'rc1')).toEqual([]);
   });
 });
