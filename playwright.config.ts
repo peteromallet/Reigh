@@ -3,6 +3,8 @@ import { DEFAULT_DEV_SUPABASE_URL } from './src/shared/dev/devSession.ts';
 
 const port = Number(process.env.PLAYWRIGHT_PORT ?? 4173);
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${port}`;
+// Concurrent acceptance lanes must not clean or overwrite each other's traces.
+const outputDir = process.env.PLAYWRIGHT_OUTPUT_DIR ?? 'test-results';
 
 // Escape hatch for sandboxes with a pre-provisioned Chromium instead of
 // Playwright's downloaded one (see `npm run test:e2e:timeline`).
@@ -30,6 +32,7 @@ const bridgeServeCommand = useRealBridge
 
 export default defineConfig({
   testDir: './tests/e2e',
+  outputDir,
   timeout: 30_000,
   expect: {
     timeout: 5_000,

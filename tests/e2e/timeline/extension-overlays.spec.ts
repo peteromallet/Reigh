@@ -298,6 +298,16 @@ async function readBridgeSceneMarkers(): Promise<Array<{ id: string; time: numbe
   return Array.isArray(app?.sceneMarkers) ? app.sceneMarkers : [];
 }
 
+/** Read the playhead's ruler-content x position, including the label gutter. */
+async function readPlayheadTransformX(page: Page): Promise<number | null> {
+  return page.evaluate(() => {
+    const playhead = document.querySelector('[data-testid="timeline-playhead"]');
+    const transform = playhead?.getAttribute('style') ?? '';
+    const match = /translateX\(([\d.]+)px\)/.exec(transform);
+    return match ? Number(match[1]) : null;
+  });
+}
+
 async function waitForBridgeMarkerTime(
   markerId: string,
   expected: number,
@@ -769,21 +779,23 @@ test.describe('timeline extension overlays (desktop)', () => {
     // command path, not a defaulted 0s marker.
     const ruler = await page.locator('[data-testid="timeline-ruler"]').boundingBox();
     if (!ruler) throw new Error('no ruler');
+    const initialPlayheadX = await readPlayheadTransformX(page);
+    if (initialPlayheadX === null) throw new Error('playhead has no translateX position');
     // The composed marker layers own the ruler's top 20px. Scrub through the
-    // host-owned bottom strip so the gesture reaches the playhead surface.
+    // host-owned bottom strip so the gesture reaches the playhead surface. The
+    // pointer-down must also be right of the label gutter (the zero-time
+    // playhead transform); starting inside it never reaches the ruler handler.
     const scrubY = ruler.y + ruler.height - 3;
-    await page.mouse.move(ruler.x + 80, scrubY);
+    await page.mouse.move(ruler.x + initialPlayheadX + 40, scrubY);
     await page.mouse.down();
-    await page.mouse.move(ruler.x + 420, scrubY, { steps: 8 });
+    await page.mouse.move(ruler.x + initialPlayheadX + 380, scrubY, { steps: 8 });
     await page.mouse.up();
     await page.waitForTimeout(400);
-    const scrubbedTime = await page.evaluate(() => {
-      const playhead = document.querySelector('[data-testid="timeline-playhead"]');
-      const transform = playhead?.getAttribute('style') ?? '';
-      const match = /translateX\(([\d.]+)px\)/.exec(transform);
-      return match ? Number(match[1]) : null;
-    });
-    expect(scrubbedTime, `playhead transform px (${scrubbedTime})`).toBeGreaterThan(40);
+    const scrubbedPlayheadX = await readPlayheadTransformX(page);
+    expect(
+      scrubbedPlayheadX === null ? null : scrubbedPlayheadX - initialPlayheadX,
+      `playhead transform ${initialPlayheadX}px -> ${scrubbedPlayheadX}px`,
+    ).toBeGreaterThan(40);
 
     // Press B: the command must read the playhead from the provider-owned
     // timeline view store (renderer-independent) and write a marker at the
