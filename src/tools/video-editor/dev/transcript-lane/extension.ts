@@ -61,7 +61,7 @@ export const TRANSCRIPT_KIND_ID = 'reigh.transcript';
 export const TRANSCRIPT_SCHEMA_REF = 'reigh.transcript_segment/v1';
 export const TRANSCRIPT_CAPTION_TRACK_ID = 'transcript-caption-foundry-track';
 export const TRANSCRIPT_CAPTION_CONTRIBUTION_ID = 'transcript-caption-foundry';
-export const TRANSCRIPT_EXTENSION_VERSION = '1.1.0';
+export const TRANSCRIPT_EXTENSION_VERSION = '1.2.0';
 export const TRANSCRIPT_SOURCE_REVIEW_KEY_PREFIX = 'transcript-source-review:';
 
 const MAX_CAPTION_SEGMENTS = 512;
@@ -76,6 +76,84 @@ export type TranscriptCaptionMaterializeMode = 'preserve' | 'regenerate';
 export interface TranscriptCaptionPatchOptions {
   /** Preserve human edits by default; regeneration is always explicit. */
   mode?: TranscriptCaptionMaterializeMode;
+}
+
+export type TranscriptSourceReviewStatus =
+  | 'pending-review'
+  | 'accepted-for-source-update'
+  | 'rejected'
+  | 'source-conflict';
+
+export interface TranscriptSourceReviewRecord {
+  readonly schemaVersion: 1;
+  readonly status: TranscriptSourceReviewStatus;
+  readonly sourceSchemaRef: typeof TRANSCRIPT_SCHEMA_REF;
+  readonly sourceItemId: string;
+  readonly sourceFingerprintAtGeneration: string;
+  readonly currentSourceFingerprint: string;
+  readonly generatedOutputFingerprint: string;
+  readonly editedOutputFingerprint: string;
+  readonly proposedText: string;
+  readonly proposedTimelineStart: number;
+  readonly proposedTimelineEnd: number;
+  readonly generatorVersion: string;
+  readonly decisionRevision?: number;
+  readonly conflictReason?: 'source-item-missing' | 'source-changed-after-proposal';
+  readonly resolvedSourceFingerprint?: string;
+}
+
+export type TranscriptSourceReviewDecision = 'accept' | 'reject';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isTranscriptSourceReviewRecord(value: unknown): value is TranscriptSourceReviewRecord {
+  if (!isRecord(value)) return false;
+  return (
+    value.schemaVersion === 1
+    && typeof value.status === 'string'
+    && ['pending-review', 'accepted-for-source-update', 'rejected', 'source-conflict'].includes(value.status)
+    && value.sourceSchemaRef === TRANSCRIPT_SCHEMA_REF
+    && typeof value.sourceItemId === 'string'
+    && typeof value.sourceFingerprintAtGeneration === 'string'
+    && typeof value.currentSourceFingerprint === 'string'
+    && typeof value.generatedOutputFingerprint === 'string'
+    && typeof value.editedOutputFingerprint === 'string'
+    && typeof value.proposedText === 'string'
+    && typeof value.proposedTimelineStart === 'number'
+    && Number.isFinite(value.proposedTimelineStart)
+    && typeof value.proposedTimelineEnd === 'number'
+    && Number.isFinite(value.proposedTimelineEnd)
+    && typeof value.generatorVersion === 'string'
+  );
+}
+
+/** Read only well-formed review records owned by this extension. */
+export function readTranscriptSourceReviews(
+  snapshot: Pick<TimelineSnapshot, 'app'>,
+  extensionId: string = TRANSCRIPT_LANE_EXTENSION_ID,
+): Array<{ key: string; value: TranscriptSourceReviewRecord }> {
+  const extensionData = snapshot.app[extensionId];
+  if (!isRecord(extensionData)) return [];
+  return Object.entries(extensionData)
+    .filter(([key, value]) => (
+      key.startsWith(TRANSCRIPT_SOURCE_REVIEW_KEY_PREFIX)
+      && isTranscriptSourceReviewRecord(value)
+    ))
+    .map(([key, value]) => ({ key, value: value as TranscriptSourceReviewRecord }))
+    .sort((left, right) => left.key.localeCompare(right.key));
+}
+
+function currentTranscriptSourceValue(item: DataLaneRenderItem) {
+  const sourceItemId = item.sourceItemId ?? item.id;
+  return {
+    schemaRef: TRANSCRIPT_SCHEMA_REF,
+    sourceItemId,
+    payload: item.payload,
+    timelineStart: item.timelineStart,
+    timelineEnd: item.timelineEnd,
+  };
 }
 
 /**
@@ -251,13 +329,7 @@ export function buildTranscriptSourceReviewPatch(
     if (clip.contentFingerprint === provenance.outputFingerprint) continue;
 
     const sourceItemId = item.sourceItemId ?? item.id;
-    const currentSourceValue = {
-      schemaRef: TRANSCRIPT_SCHEMA_REF,
-      sourceItemId,
-      payload: item.payload,
-      timelineStart: item.timelineStart,
-      timelineEnd: item.timelineEnd,
-    };
+    const currentSourceValue = currentTranscriptSourceValue(item);
     operations.push({
       op: 'project-data.write',
       target: extensionId,
@@ -290,6 +362,95 @@ export function buildTranscriptSourceReviewPatch(
       sourceSchemaRef: TRANSCRIPT_SCHEMA_REF,
       policy: 'propose-source-update',
       proposalCount: operations.length,
+    },
+    operations,
+  };
+}
+
+/**
+ * Resolve pending review records without mutating the read-only transcript
+ * adapter. Acceptance is fail-closed: it produces an upstream-consumable
+ * `accepted-for-source-update` record only while the source fingerprint still
+ * matches the value inspected when the proposal was created. Missing or
+ * changed source becomes an explicit conflict. Rejection is always durable.
+ */
+export function buildTranscriptSourceReviewDecisionPatch(
+  snapshot: Pick<TimelineSnapshot, 'baseVersion' | 'app'>,
+  items: readonly DataLaneRenderItem[],
+  decision: TranscriptSourceReviewDecision,
+  extensionId: string = TRANSCRIPT_LANE_EXTENSION_ID,
+): TimelinePatch {
+  const itemBySourceId = new Map(
+    items.map((item) => [item.sourceItemId ?? item.id, item]),
+  );
+  const operations: TimelinePatchOperation[] = [];
+  let acceptedCount = 0;
+  let rejectedCount = 0;
+  let conflictCount = 0;
+
+  for (const { key, value } of readTranscriptSourceReviews(snapshot, extensionId)) {
+    if (value.status !== 'pending-review') continue;
+    let nextValue: TranscriptSourceReviewRecord;
+    if (decision === 'reject') {
+      rejectedCount += 1;
+      nextValue = {
+        ...value,
+        status: 'rejected',
+        decisionRevision: snapshot.baseVersion,
+      };
+    } else {
+      const item = itemBySourceId.get(value.sourceItemId);
+      if (!item) {
+        conflictCount += 1;
+        nextValue = {
+          ...value,
+          status: 'source-conflict',
+          conflictReason: 'source-item-missing',
+          decisionRevision: snapshot.baseVersion,
+        };
+      } else {
+        const resolvedSourceFingerprint = computeHostFingerprint(
+          currentTranscriptSourceValue(item),
+        );
+        if (resolvedSourceFingerprint !== value.currentSourceFingerprint) {
+          conflictCount += 1;
+          nextValue = {
+            ...value,
+            status: 'source-conflict',
+            conflictReason: 'source-changed-after-proposal',
+            resolvedSourceFingerprint,
+            decisionRevision: snapshot.baseVersion,
+          };
+        } else {
+          acceptedCount += 1;
+          nextValue = {
+            ...value,
+            status: 'accepted-for-source-update',
+            resolvedSourceFingerprint,
+            decisionRevision: snapshot.baseVersion,
+          };
+        }
+      }
+    }
+    operations.push({
+      op: 'project-data.write',
+      target: extensionId,
+      payload: { key, value: nextValue, mode: 'replace' },
+      order: operations.length,
+    });
+  }
+
+  return {
+    version: snapshot.baseVersion,
+    source: extensionId,
+    meta: {
+      kind: 'transcript-caption-foundry/review-decision',
+      sourceSchemaRef: TRANSCRIPT_SCHEMA_REF,
+      policy: 'upstream-consumes-accepted-records',
+      decision,
+      acceptedCount,
+      rejectedCount,
+      conflictCount,
     },
     operations,
   };
@@ -337,6 +498,35 @@ function proposeTranscriptSourceUpdates(
   }
   ctx.creative.timeline.apply(patch);
   ctx.chrome.toast(`Created ${patch.operations.length} transcript source review proposal(s).`, 'success');
+}
+
+function decideTranscriptSourceUpdates(
+  ctx: ExtensionContext,
+  items: readonly DataLaneRenderItem[],
+  decision: TranscriptSourceReviewDecision,
+): void {
+  const patch = buildTranscriptSourceReviewDecisionPatch(
+    ctx.creative.reader.snapshot(),
+    items,
+    decision,
+    ctx.extension.id as string,
+  );
+  if (patch.operations.length === 0) {
+    ctx.chrome.toast('No pending transcript source review proposals.', 'info');
+    return;
+  }
+  const validation = ctx.creative.timeline.validate(patch);
+  if (!validation.valid) {
+    throw new Error(`Transcript review decision rejected: ${validation.diagnostics.map((item) => item.message).join('; ')}`);
+  }
+  ctx.creative.timeline.apply(patch);
+  const accepted = Number(patch.meta?.acceptedCount ?? 0);
+  const rejected = Number(patch.meta?.rejectedCount ?? 0);
+  const conflicts = Number(patch.meta?.conflictCount ?? 0);
+  ctx.chrome.toast(
+    `Transcript review resolved: ${accepted} accepted, ${rejected} rejected, ${conflicts} conflict(s).`,
+    conflicts > 0 ? 'warning' : 'success',
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -398,6 +588,20 @@ export const transcriptLaneExtension: ReighExtension = defineExtension({
             ariaLabel: 'Propose caption edits back to transcript source',
             title: 'Create review proposals from human-edited caption text',
             invoke: (items) => proposeTranscriptSourceUpdates(ctx, items),
+          },
+          {
+            id: 'accept-source-updates',
+            label: 'Accept proposals',
+            ariaLabel: 'Accept pending caption edits for transcript source update',
+            title: 'Accept only proposals whose transcript source has not changed',
+            invoke: (items) => decideTranscriptSourceUpdates(ctx, items, 'accept'),
+          },
+          {
+            id: 'reject-source-updates',
+            label: 'Reject proposals',
+            ariaLabel: 'Reject pending caption edits for transcript source update',
+            title: 'Reject all pending transcript source update proposals',
+            invoke: (items) => decideTranscriptSourceUpdates(ctx, items, 'reject'),
           },
         ],
       },

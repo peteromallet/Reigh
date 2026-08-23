@@ -34,6 +34,7 @@ import type { TrackDefinition } from '@/tools/video-editor/types';
 import type { TimelineAction, TimelineRow } from '@/tools/video-editor/types/timeline-canvas';
 import type { ReactElement } from 'react';
 import {
+  computeHostFingerprint,
   computeTimelineClipOutputFingerprint,
   createHostGeneratedObjectMeta,
   readHostGenerationProvenance,
@@ -53,7 +54,9 @@ import {
   TRANSCRIPT_LANE_EXTENSION_ID,
   TRANSCRIPT_SCHEMA_REF,
   buildTranscriptCaptionPatch,
+  buildTranscriptSourceReviewDecisionPatch,
   buildTranscriptSourceReviewPatch,
+  readTranscriptSourceReviews,
   transcriptCaptionClipId,
   transcriptLaneExtension,
 } from '../extension';
@@ -328,6 +331,8 @@ describe('transcript-lane dev example (dataKind V1 done-4)', () => {
       'Add missing',
       'Regenerate',
       'Propose edits',
+      'Accept proposals',
+      'Reject proposals',
     ]);
 
     // Row sits below the track rows inside the SAME scroller.
@@ -544,7 +549,7 @@ describe('transcript lane chips (rework round-2 F3)', () => {
 
     transcriptLaneExtension.activate?.(ctx);
     expect(laneRenderer).toBeTypeOf('function');
-    expect(laneActions).toHaveLength(3);
+    expect(laneActions).toHaveLength(5);
     laneActions?.find((action) => action.id === 'create-caption-clips')?.invoke([item]);
 
     expect(validate).not.toHaveBeenCalled();
@@ -553,6 +558,82 @@ describe('transcript lane chips (rework round-2 F3)', () => {
       'Transcript caption clips already exist; existing edits were preserved.',
       'info',
     );
+  });
+
+  it.each([
+    ['accept-source-updates', 'accepted-for-source-update'],
+    ['reject-source-updates', 'rejected'],
+  ] as const)('exposes the %s decision through the real registered lane action', (actionId, expectedStatus) => {
+    const item: DataLaneRendererProps['items'][number] = {
+      id: 'source-1@clip-1',
+      sourceItemId: 'source-1',
+      timelineStart: 1,
+      timelineEnd: 2,
+      payload: { text: 'Original' },
+    };
+    const currentSourceFingerprint = computeHostFingerprint({
+      schemaRef: TRANSCRIPT_SCHEMA_REF,
+      sourceItemId: item.sourceItemId,
+      payload: item.payload,
+      timelineStart: item.timelineStart,
+      timelineEnd: item.timelineEnd,
+    });
+    const apply = vi.fn();
+    const validate = vi.fn(() => ({ valid: true, diagnostics: [] }));
+    let laneActions: readonly DataLaneActionDescriptor[] | undefined;
+    const ctx = {
+      extension: { id: TRANSCRIPT_LANE_EXTENSION_ID },
+      dataKinds: {
+        register: (
+          _kindId: string,
+          _renderer: (props: DataLaneRendererProps) => unknown,
+          _inspector?: unknown,
+          options?: DataKindRegistrationOptions,
+        ) => {
+          laneActions = options?.actions;
+          return { dispose: vi.fn() };
+        },
+      },
+      creative: {
+        reader: {
+          snapshot: () => ({
+            baseVersion: 51,
+            app: {
+              [TRANSCRIPT_LANE_EXTENSION_ID]: {
+                'transcript-source-review:source-1': {
+                  schemaVersion: 1,
+                  status: 'pending-review',
+                  sourceSchemaRef: TRANSCRIPT_SCHEMA_REF,
+                  sourceItemId: 'source-1',
+                  sourceFingerprintAtGeneration: 'fp:generation',
+                  currentSourceFingerprint,
+                  generatedOutputFingerprint: 'fp:generated',
+                  editedOutputFingerprint: 'fp:edited',
+                  proposedText: 'Human revision',
+                  proposedTimelineStart: 1,
+                  proposedTimelineEnd: 2,
+                  generatorVersion: TRANSCRIPT_EXTENSION_VERSION,
+                },
+              },
+            },
+          }),
+        },
+        timeline: { validate, apply },
+      },
+      chrome: { toast: vi.fn() },
+    } as unknown as ExtensionContext;
+
+    transcriptLaneExtension.activate?.(ctx);
+    laneActions?.find((action) => action.id === actionId)?.invoke([item]);
+
+    expect(validate).toHaveBeenCalledTimes(1);
+    expect(apply).toHaveBeenCalledWith(expect.objectContaining({
+      operations: [expect.objectContaining({
+        payload: expect.objectContaining({
+          value: expect.objectContaining({ status: expectedStatus }),
+        }),
+      })],
+    }));
   });
 
   it('stamps source, schema, generator, and output fingerprints through the host contract', () => {
@@ -711,5 +792,169 @@ describe('transcript lane chips (rework round-2 F3)', () => {
       },
     });
     expect(patch.operations.some((operation) => operation.op === 'clip.update')).toBe(false);
+  });
+
+  it('accepts Unicode, retimed, and overlapping proposals only while source fingerprints match', () => {
+    const items = [
+      { id: 'speaker-a@clip', sourceItemId: 'speaker-a', timelineStart: 1, timelineEnd: 3, payload: { text: 'こんにちは 👋' } },
+      { id: 'speaker-b@clip', sourceItemId: 'speaker-b', timelineStart: 2.5, timelineEnd: 4, payload: { text: 'مرحبا' } },
+    ];
+    const records = Object.fromEntries(items.map((item, index) => {
+      const currentSourceFingerprint = computeHostFingerprint({
+        schemaRef: TRANSCRIPT_SCHEMA_REF,
+        sourceItemId: item.sourceItemId,
+        payload: item.payload,
+        timelineStart: item.timelineStart,
+        timelineEnd: item.timelineEnd,
+      });
+      return [`transcript-source-review:${item.sourceItemId}`, {
+        schemaVersion: 1,
+        status: 'pending-review',
+        sourceSchemaRef: TRANSCRIPT_SCHEMA_REF,
+        sourceItemId: item.sourceItemId,
+        sourceFingerprintAtGeneration: `source-generation-${index}`,
+        currentSourceFingerprint,
+        generatedOutputFingerprint: `generated-${index}`,
+        editedOutputFingerprint: `edited-${index}`,
+        proposedText: `${item.payload.text} — revised`,
+        proposedTimelineStart: item.timelineStart + 0.125,
+        proposedTimelineEnd: item.timelineEnd + 0.25,
+        generatorVersion: TRANSCRIPT_EXTENSION_VERSION,
+      }];
+    }));
+    const snapshot = {
+      baseVersion: 44,
+      app: { [TRANSCRIPT_LANE_EXTENSION_ID]: records },
+    };
+
+    const patch = buildTranscriptSourceReviewDecisionPatch(snapshot, items, 'accept');
+
+    expect(patch.operations).toHaveLength(2);
+    expect(patch.meta).toMatchObject({
+      decision: 'accept',
+      acceptedCount: 2,
+      rejectedCount: 0,
+      conflictCount: 0,
+      policy: 'upstream-consumes-accepted-records',
+    });
+    for (const operation of patch.operations) {
+      expect(operation).toMatchObject({
+        op: 'project-data.write',
+        payload: {
+          value: expect.objectContaining({
+            status: 'accepted-for-source-update',
+            decisionRevision: 44,
+            resolvedSourceFingerprint: expect.any(String),
+          }),
+        },
+      });
+    }
+  });
+
+  it('fails acceptance closed when source changed or disappeared after proposal creation', () => {
+    const originalItem = {
+      id: 'source-changed@clip',
+      sourceItemId: 'source-changed',
+      timelineStart: 1,
+      timelineEnd: 2,
+      payload: { text: 'Original' },
+    };
+    const originalFingerprint = computeHostFingerprint({
+      schemaRef: TRANSCRIPT_SCHEMA_REF,
+      sourceItemId: originalItem.sourceItemId,
+      payload: originalItem.payload,
+      timelineStart: originalItem.timelineStart,
+      timelineEnd: originalItem.timelineEnd,
+    });
+    const review = (sourceItemId: string, currentSourceFingerprint: string) => ({
+      schemaVersion: 1,
+      status: 'pending-review',
+      sourceSchemaRef: TRANSCRIPT_SCHEMA_REF,
+      sourceItemId,
+      sourceFingerprintAtGeneration: 'fp:generation',
+      currentSourceFingerprint,
+      generatedOutputFingerprint: 'fp:generated',
+      editedOutputFingerprint: 'fp:edited',
+      proposedText: 'Human revision',
+      proposedTimelineStart: 1,
+      proposedTimelineEnd: 2,
+      generatorVersion: TRANSCRIPT_EXTENSION_VERSION,
+    });
+    const snapshot = {
+      baseVersion: 45,
+      app: {
+        [TRANSCRIPT_LANE_EXTENSION_ID]: {
+          'transcript-source-review:source-changed': review('source-changed', originalFingerprint),
+          'transcript-source-review:source-missing': review('source-missing', 'fp:missing'),
+        },
+      },
+    };
+    const changedItem = {
+      ...originalItem,
+      timelineStart: 1.5,
+      payload: { text: 'Upstream changed independently' },
+    };
+
+    const patch = buildTranscriptSourceReviewDecisionPatch(snapshot, [changedItem], 'accept');
+
+    expect(patch.meta).toMatchObject({ acceptedCount: 0, conflictCount: 2 });
+    expect(patch.operations.map((operation) => operation.payload)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        value: expect.objectContaining({
+          status: 'source-conflict',
+          conflictReason: 'source-changed-after-proposal',
+        }),
+      }),
+      expect.objectContaining({
+        value: expect.objectContaining({
+          status: 'source-conflict',
+          conflictReason: 'source-item-missing',
+        }),
+      }),
+    ]));
+  });
+
+  it('durably rejects pending proposals and never re-resolves terminal or malformed records', () => {
+    const pending = {
+      schemaVersion: 1,
+      status: 'pending-review',
+      sourceSchemaRef: TRANSCRIPT_SCHEMA_REF,
+      sourceItemId: 'source-1',
+      sourceFingerprintAtGeneration: 'fp:generation',
+      currentSourceFingerprint: 'fp:current',
+      generatedOutputFingerprint: 'fp:generated',
+      editedOutputFingerprint: 'fp:edited',
+      proposedText: 'Rejected edit',
+      proposedTimelineStart: 1,
+      proposedTimelineEnd: 2,
+      generatorVersion: TRANSCRIPT_EXTENSION_VERSION,
+    };
+    const snapshot = {
+      baseVersion: 46,
+      app: {
+        [TRANSCRIPT_LANE_EXTENSION_ID]: {
+          'transcript-source-review:source-1': pending,
+          'transcript-source-review:malformed': { status: 'pending-review' },
+          unrelated: pending,
+        },
+      },
+    };
+    expect(readTranscriptSourceReviews(snapshot)).toHaveLength(1);
+
+    const rejected = buildTranscriptSourceReviewDecisionPatch(snapshot, [], 'reject');
+    expect(rejected.meta).toMatchObject({ rejectedCount: 1, conflictCount: 0 });
+    const rejectedValue = rejected.operations[0]?.payload?.value;
+    expect(rejectedValue).toMatchObject({ status: 'rejected', decisionRevision: 46 });
+
+    const terminalSnapshot = {
+      baseVersion: 47,
+      app: {
+        [TRANSCRIPT_LANE_EXTENSION_ID]: {
+          'transcript-source-review:source-1': rejectedValue,
+        },
+      },
+    };
+    expect(buildTranscriptSourceReviewDecisionPatch(terminalSnapshot, [], 'reject').operations).toEqual([]);
+    expect(buildTranscriptSourceReviewDecisionPatch(terminalSnapshot, [], 'accept').operations).toEqual([]);
   });
 });

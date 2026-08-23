@@ -72,6 +72,10 @@ Define whether edits remain local, update transcript source, or become review
 proposals. Cover regenerate/preserve/accept flows plus split, merge, deletion,
 retiming, overlapping speakers, empty text, and Unicode.
 
+The current explicit policy and its remaining per-record review/acknowledgement
+gate are recorded in
+[`transcript-round-trip-policy.md`](./transcript-round-trip-policy.md).
+
 ## Release hardening
 
 ### 11. Extension compatibility matrix
