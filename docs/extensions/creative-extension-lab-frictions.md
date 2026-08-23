@@ -797,3 +797,15 @@ evidence and a concrete improvement direction.
   Timers, focus restoration, scrolling, and animation scheduled after an
   extension command must be treated as optional capabilities and included in
   unhandled-error gates, not dismissed because the primary assertion passed.
+
+### Modal state can make visually present controls semantically unreachable
+
+- A phone recovery test could see the marker-layer pager in its snapshot after
+  disabling a contribution, yet its role query waited for the full four-minute
+  timeout. The Inspector modal was still open, so the rest of the editor was
+  correctly `aria-hidden` and inert even though pixels remained visible.
+- The scenario now closes the modal before asserting pager semantics, then
+  explicitly returns to Select mode before tapping a clip. Mobile interaction
+  tests must assert the active modal and input mode as part of their state;
+  screenshots alone cannot prove that a visible control is accessible or
+  actionable.

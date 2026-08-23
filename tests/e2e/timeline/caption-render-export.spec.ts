@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test';
+import { execFile } from 'node:child_process';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { promisify } from 'node:util';
 import {
   BASE_URL,
   PROJECT_SLUG,
@@ -10,6 +12,33 @@ import {
 
 const EDITOR_URL = `${BASE_URL}/tools/video-editor?localProject=${PROJECT_SLUG}&localTimeline=${TIMELINE_SLUG}&localTest=1&transcriptLaneFixture=1`;
 const EVIDENCE = resolve(process.cwd(), 'docs/extensions/evidence/chrome-acceptance');
+const execFileAsync = promisify(execFile);
+
+type ProbeStream = {
+  codec_name?: string;
+  codec_type?: string;
+  width?: number;
+  height?: number;
+  r_frame_rate?: string;
+  nb_frames?: string;
+  duration?: string;
+  time_base?: string;
+};
+
+type ProbePacket = {
+  pts_time?: string;
+  duration_time?: string;
+};
+
+async function ffprobeJson(outputPath: string, args: string[]): Promise<Record<string, unknown>> {
+  const { stdout } = await execFileAsync('ffprobe', [
+    '-v', 'error',
+    ...args,
+    '-of', 'json',
+    outputPath,
+  ]);
+  return JSON.parse(stdout) as Record<string, unknown>;
+}
 
 test.describe('caption materialization render and export', () => {
   test.use({ viewport: { width: 1440, height: 900 }, acceptDownloads: true });
@@ -96,6 +125,42 @@ test.describe('caption materialization render and export', () => {
     await download.saveAs(outputPath);
     expect((await stat(outputPath)).size).toBeGreaterThan(100_000);
     expect((await readFile(outputPath)).subarray(4, 8).toString('ascii')).toBe('ftyp');
+
+    // Validate the encoded media, not only that the browser produced an MP4-shaped blob.
+    // 315 frames is the deterministic 10.5 s fixture horizon at 30 fps. AAC encoders
+    // may retain a handful of priming/padding blocks, so compare the packet end against
+    // the composition boundary and cap that codec allowance at five 1024-sample blocks.
+    const streamProbe = await ffprobeJson(outputPath, [
+      '-show_entries',
+      'stream=codec_name,codec_type,width,height,r_frame_rate,nb_frames,duration,time_base',
+    ]);
+    const streams = (streamProbe.streams ?? []) as ProbeStream[];
+    const video = streams.find((stream) => stream.codec_type === 'video');
+    const audio = streams.find((stream) => stream.codec_type === 'audio');
+    expect(video).toMatchObject({
+      codec_name: 'h264',
+      width: 1280,
+      height: 720,
+      r_frame_rate: '30/1',
+      nb_frames: '315',
+    });
+    expect(audio?.codec_name).toBe('aac');
+
+    const videoPacketsProbe = await ffprobeJson(outputPath, [
+      '-select_streams', 'v:0',
+      '-show_entries', 'packet=pts_time,duration_time',
+    ]);
+    const videoPackets = (videoPacketsProbe.packets ?? []) as ProbePacket[];
+    const lastVideoPacket = videoPackets.at(-1);
+    const videoPacketEnd = Number(lastVideoPacket?.pts_time) + Number(lastVideoPacket?.duration_time);
+    const nominalDuration = 315 / 30;
+    expect(videoPackets).toHaveLength(315);
+    expect(videoPacketEnd).toBeCloseTo(nominalDuration, 5);
+
+    const audioDuration = Number(audio?.duration);
+    const maxAacPaddingSeconds = (5 * 1024) / 48_000;
+    expect(audioDuration).toBeGreaterThanOrEqual(nominalDuration);
+    expect(audioDuration - nominalDuration).toBeLessThanOrEqual(maxAacPaddingSeconds);
 
     const fontStretchWarnings = consoleWarnings.filter((message) => /fontstretch|canvasfontstretch/i.test(message.text));
     await writeFile(

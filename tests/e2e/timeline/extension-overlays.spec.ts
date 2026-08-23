@@ -997,20 +997,33 @@ test.describe('timeline extension overlays (phone)', () => {
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] });
       await page.waitForTimeout(400);
 
+      // The Inspector dialog used to reach the toggle makes the timeline
+      // inert/aria-hidden on phone. Close it before querying the remaining
+      // marker pager by role or attempting any follow-up timeline input.
+      await page.evaluate(() => {
+        const trigger = Array.from(document.querySelectorAll('button'))
+          .find((button) => /Inspector/i.test((button.textContent ?? '').trim()));
+        trigger?.click();
+      });
+      await page.waitForTimeout(400);
+
       await expect(sceneMarkerLayer(page)).toHaveCount(0, { timeout: 10_000 });
       await expectMarkerLayerComposition(page, 10);
       await expect(sceneMarkerLayer(page).locator('[data-marker-id]')).toHaveCount(0);
       expect(logs.filter((line) => line.startsWith('[pageerror]')), [...new Set(logs)].join(' | ')).toEqual([]);
 
-      // The editor is still interactive — tap a clip, it selects. The
-      // Inspector dialog used to reach the toggle still covers the timeline on
-      // phone, so close it first (its trigger toggles).
-      await page.evaluate(() => {
-        const trigger = Array.from(document.querySelectorAll('button'))
-          .find((b) => /Inspector/i.test((b.textContent ?? '').trim()));
-        trigger?.click();
-      });
-      await page.waitForTimeout(400);
+      // The editor is still interactive — explicitly enter Select mode, tap a
+      // clip, and verify the selection rather than relying on the prior mode.
+      const selectMode = page
+        .locator('[aria-label="Phone timeline mode bar"] button', { hasText: /^Select$/i })
+        .first();
+      for (let attempt = 0; attempt < 2 && (await selectMode.getAttribute('aria-pressed')) !== 'true'; attempt += 1) {
+        const selectBox = await selectMode.boundingBox();
+        if (selectBox) {
+          await touch.tap(selectBox.x + selectBox.width / 2, selectBox.y + selectBox.height / 2);
+        }
+      }
+      await expect(selectMode).toHaveAttribute('aria-pressed', 'true');
       const clip = await page.locator(`${EDIT_AREA_SELECTOR} [data-clip-id]`).first().boundingBox();
       if (!clip) throw new Error('no clip to tap');
       await touch.tap(clip.x + clip.width / 2, clip.y + clip.height / 2);
