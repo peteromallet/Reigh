@@ -254,21 +254,27 @@ owner records root cause, corrective evidence, and Release DRI approval.
 The minimum event families required before Stage 1 are host activation,
 extension activation/disposal, command outcome, bridge request outcome/latency,
 persistence conflict, migration outcome, render/export outcome, and
-lane-density/performance budget outcome. The checked-in host currently emits
-effective host activation, exact per-extension activation/disposal, command,
-persistence-conflict, browser-render, lane-density, core Astrid timeline
-load/save, and Runaway-source request outcomes through the bounded
-`reigh:extension-operational-event` browser boundary. Bridge reads have a fixed
-deadline and classify timeout, HTTP/transport, and invalid-response failures;
-cached Runaway reads do not inflate request counts. Host activation is absent
-while the parent switch is closed; provider teardown never invents an extension
-disposal for `host`. Page-level bridge discovery/listing, migration, and
-export-completion source emitters remain release blockers (the host adapter
-accepts bounded migration/render/export error classes, but those sources are
-not all wired). The checked-in authenticated analytics transport, migration,
-and query views still require production deployment, a distributed edge rate
-limit, dashboard/alert wiring, and an alert drill. A DOM event observed only by
-an E2E test does not satisfy the dashboard/alert gate.
+lane-density/performance budget outcome. All of those sources are now wired
+locally through the bounded `reigh:extension-operational-event` browser
+boundary. This includes page-level bridge health/project/timeline discovery,
+core Astrid timeline load/save, Runaway-source requests, terminal
+local-to-installed migration outcomes, and browser render/export completion.
+Bridge reads have a fixed deadline and classify timeout, HTTP/transport, and
+invalid-response failures; cached Runaway reads do not inflate request counts.
+Migration telemetry reports only the current host-owned extension identity,
+target schema version, duration, a settings-count bucket, outcome, and a fixed
+validation/write error class; settings, diagnostics, exception messages,
+bundle references, and creative content never cross the event boundary. Host
+activation is absent while the parent switch is closed; provider teardown
+never invents an extension disposal for `host`.
+
+Local source wiring is necessary but does not clear the production
+observability gate. The checked-in authenticated analytics transport,
+migration, and query views still require production deployment, a distributed
+edge rate limit, dashboard/alert wiring, an RC-revision synthetic probe, and an
+alert drill. Until those external steps produce reviewed production receipts,
+Stage 1 remains blocked. A locally captured DOM event or green source test does
+not satisfy the dashboard/alert gate.
 
 Stage evidence and rolling health are deliberately separate. The retained
 `extension_operational_event_coverage` matrix is keyed by exact release

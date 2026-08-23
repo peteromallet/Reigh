@@ -40,6 +40,12 @@ import {
 import { extractContributionRefs } from '@/tools/video-editor/runtime/extensionLockMetadata';
 import { getSettingsPrefix } from '@/sdk/extensionSettingsService';
 import { getManifestSettingsSchemaVersion } from '@/sdk/extensionSettingsMigration';
+import {
+  operationalCountBucket,
+  type ExtensionOperationalErrorClass,
+  type ExtensionOperationalEvent,
+  type HostOwnedExtensionOperationalEmitter,
+} from '@/tools/video-editor/runtime/extensionReleaseControls';
 
 // ---------------------------------------------------------------------------
 // Contribution ID comparison types
@@ -113,6 +119,12 @@ export interface LocalInstalledMigrationInput {
   readonly localSettings: Record<string, unknown>;
   /** Bundle content reference key (IndexedDB key for the installed bundle bytes). */
   readonly bundleContentRef: string;
+  /**
+   * Optional host-owned, privacy-bounded operational emitter. Migration code
+   * reports one terminal outcome and never forwards settings, paths, errors,
+   * diagnostics, or other creative/user payloads.
+   */
+  readonly operationalEmitter?: HostOwnedExtensionOperationalEmitter;
 }
 
 /** Result of executing a local-to-installed migration. */
@@ -554,13 +566,36 @@ export async function executeLocalToInstalledMigration(
     repository,
     localSettings,
     bundleContentRef,
+    operationalEmitter,
   } = input;
 
   const extensionId = localManifest.id as string;
   const installedManifest = installedPack.manifest;
+  const migrationStartedAt = performance.now();
   const lifecycleEvents: ExtensionLifecycleEvent[] = [];
   const blockingDiagnostics: ExtensionDiagnostic[] = [];
   const warningDiagnostics: ExtensionDiagnostic[] = [];
+
+  function finishWithOperationalOutcome(
+    result: MigrationExecuteResult,
+    outcome: ExtensionOperationalEvent['outcome'],
+    errorClass?: ExtensionOperationalErrorClass,
+  ): MigrationExecuteResult {
+    operationalEmitter?.emit({
+      event: 'migration.outcome',
+      outcome,
+      extensionId,
+      // The current local manifest is the host-owned active identity. The
+      // target installed version may not enter the owned-version policy until
+      // the next runtime activation, so reporting it here would be dropped.
+      extensionVersion: localManifest.version,
+      schemaVersion: String(getManifestSettingsSchemaVersion(installedManifest)),
+      durationMs: Math.max(0, performance.now() - migrationStartedAt),
+      countBucket: operationalCountBucket(result.settingsKeyCount),
+      ...(errorClass ? { errorClass } : {}),
+    });
+    return result;
+  }
 
   // ---- Helper: append a lifecycle event ----
   async function appendEvent(
@@ -597,7 +632,7 @@ export async function executeLocalToInstalledMigration(
     };
     blockingDiagnostics.push(diag);
     await appendEvent('migration_failure', 'Migration blocked: extension ID mismatch.', undefined, diag);
-    return Object.freeze({
+    return finishWithOperationalOutcome(Object.freeze({
       success: false,
       extensionId,
       contributionComparison: compareContributionIds(localManifest, installedManifest),
@@ -611,7 +646,7 @@ export async function executeLocalToInstalledMigration(
       lockEntryCreated: false,
       lifecycleEvents: Object.freeze([...lifecycleEvents]),
       summary: `Migration blocked: extension ID mismatch (local "${localManifest.id as string}", installed "${installedManifest.id as string}").`,
-    });
+    }), 'failure', 'migration.validation_error');
   }
 
   // ---- Step 2: Contribution ID comparison ----
@@ -636,7 +671,7 @@ export async function executeLocalToInstalledMigration(
       `Migration blocked: ${metadataGaps.blockingGaps.length} blocking metadata gap(s).`,
       { blockingGaps: metadataGaps.blockingGaps.map((g) => ({ field: g.field, description: g.description })) },
     );
-    return Object.freeze({
+    return finishWithOperationalOutcome(Object.freeze({
       success: false,
       extensionId,
       contributionComparison,
@@ -650,7 +685,7 @@ export async function executeLocalToInstalledMigration(
       lockEntryCreated: false,
       lifecycleEvents: Object.freeze([...lifecycleEvents]),
       summary: `Migration blocked: ${metadataGaps.blockingGaps.length} blocking metadata gap(s) detected.`,
-    });
+    }), 'failure', 'migration.validation_error');
   }
 
   // Collect non-blocking diagnostics
@@ -704,7 +739,7 @@ export async function executeLocalToInstalledMigration(
     };
     blockingDiagnostics.push(diag);
     await appendEvent('migration_failure', `Failed to create pack record: ${message}`, undefined, diag);
-    return Object.freeze({
+    return finishWithOperationalOutcome(Object.freeze({
       success: false,
       extensionId,
       contributionComparison,
@@ -718,7 +753,7 @@ export async function executeLocalToInstalledMigration(
       lockEntryCreated: false,
       lifecycleEvents: Object.freeze([...lifecycleEvents]),
       summary: `Migration failed: could not create pack record (${message}).`,
-    });
+    }), 'failure', 'migration.write_error');
   }
 
   await appendEvent('install', `Pack record created for extension "${extensionId}" (installed v${installedManifest.version}).`, {
@@ -882,7 +917,7 @@ export async function executeLocalToInstalledMigration(
     gapCount: metadataGaps.gaps.length,
   });
 
-  return Object.freeze({
+  const result = Object.freeze({
     success: true,
     extensionId,
     contributionComparison,
@@ -897,6 +932,12 @@ export async function executeLocalToInstalledMigration(
     lifecycleEvents: Object.freeze([...lifecycleEvents]),
     summary,
   });
+  const degraded = !enablementTransferred || !settingsTransferred || !lockEntryCreated;
+  return finishWithOperationalOutcome(
+    result,
+    degraded ? 'degraded' : 'success',
+    degraded ? 'migration.write_error' : undefined,
+  );
 }
 
 // ---------------------------------------------------------------------------

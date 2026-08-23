@@ -42,6 +42,8 @@ import type {
   FullExtensionState,
 } from './extensionStateRepository';
 import { createLifecycleEvent } from './extensionStateRepository';
+import { createHostOwnedExtensionOperationalEmitter } from './extensionReleaseControls';
+import { toTransportSafeOperationalEvent } from './extensionOperationalAnalytics';
 import type {
   ExtensionManifest,
   InstalledExtensionPackage,
@@ -732,6 +734,145 @@ describe('checkMigrationPreconditions', () => {
 // ---------------------------------------------------------------------------
 
 describe('executeLocalToInstalledMigration', () => {
+  const operationalExtensionId = 'com.reigh.transcript-lane';
+
+  function makeOperationalEmitter(sink: ReturnType<typeof vi.fn>) {
+    return createHostOwnedExtensionOperationalEmitter({
+      releaseRevision: 'rc-migration-outcome',
+      extensionVersions: new Map([
+        [operationalExtensionId, new Set(['1.0.0'])],
+      ]),
+    }, (event) => {
+      const transportSafe = toTransportSafeOperationalEvent(event);
+      if (transportSafe) sink(transportSafe);
+    });
+  }
+
+  it('emits one transport-safe success outcome without creative migration payloads', async () => {
+    const sink = vi.fn();
+    const creativeSecrets = {
+      prompt: 'rose neon piano chord',
+      transcript: 'Ava says the private final line',
+      sourceUrl: 'https://private.example/media.mp4?token=secret',
+    };
+    const result = await executeLocalToInstalledMigration({
+      localManifest: makeLocalManifest({ id: operationalExtensionId as never }),
+      installedPack: makeInstalledPack({
+        manifest: {
+          id: operationalExtensionId as never,
+          settingsSchema: { version: 2 },
+        },
+      }),
+      repository: makeMockRepository(),
+      localSettings: creativeSecrets,
+      bundleContentRef: 'indexeddb://private/project/timeline/bundle',
+      operationalEmitter: makeOperationalEmitter(sink),
+    });
+
+    expect(result.success).toBe(true);
+    expect(sink).toHaveBeenCalledTimes(1);
+    const event = sink.mock.calls[0]![0];
+    expect(event).toEqual({
+      event: 'migration.outcome',
+      outcome: 'success',
+      releaseRevision: 'rc-migration-outcome',
+      extensionId: operationalExtensionId,
+      extensionVersion: '1.0.0',
+      schemaVersion: '2',
+      durationMs: expect.any(Number),
+      countBucket: '1-10',
+    });
+    expect(Object.isFrozen(event)).toBe(true);
+    const serialized = JSON.stringify(event);
+    for (const forbidden of [
+      ...Object.values(creativeSecrets),
+      'indexeddb://private/project/timeline/bundle',
+    ]) {
+      expect(serialized).not.toContain(forbidden);
+    }
+  });
+
+  it('classifies a repository failure without leaking its error or settings', async () => {
+    const sink = vi.fn();
+    const result = await executeLocalToInstalledMigration({
+      localManifest: makeLocalManifest({ id: operationalExtensionId as never }),
+      installedPack: makeInstalledPack({ manifest: { id: operationalExtensionId as never } }),
+      repository: makeMockRepository({
+        putPackRecord: vi.fn().mockRejectedValue(
+          new Error('disk failed while writing secret transcript payload'),
+        ),
+      }),
+      localSettings: { caption: 'secret transcript payload' },
+      bundleContentRef: '/private/user/project/bundle.js',
+      operationalEmitter: makeOperationalEmitter(sink),
+    });
+
+    expect(result.success).toBe(false);
+    expect(sink).toHaveBeenCalledTimes(1);
+    expect(sink.mock.calls[0]![0]).toEqual({
+      event: 'migration.outcome',
+      outcome: 'failure',
+      releaseRevision: 'rc-migration-outcome',
+      extensionId: operationalExtensionId,
+      extensionVersion: '1.0.0',
+      schemaVersion: '1',
+      errorClass: 'migration.write_error',
+      durationMs: expect.any(Number),
+      countBucket: '0',
+    });
+    expect(JSON.stringify(sink.mock.calls[0]![0])).not.toMatch(
+      /secret transcript payload|private\/user|caption/,
+    );
+  });
+
+  it('reports a non-blocking settings write failure as degraded, not success', async () => {
+    const sink = vi.fn();
+    const result = await executeLocalToInstalledMigration({
+      localManifest: makeLocalManifest({ id: operationalExtensionId as never }),
+      installedPack: makeInstalledPack({ manifest: { id: operationalExtensionId as never } }),
+      repository: makeMockRepository({
+        putSettingsSnapshot: vi.fn().mockRejectedValue(
+          new Error('could not write private caption value'),
+        ),
+      }),
+      localSettings: { caption: 'private caption value' },
+      bundleContentRef: 'indexeddb://reviewed-extension',
+      operationalEmitter: makeOperationalEmitter(sink),
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.settingsTransferred).toBe(false);
+    expect(sink).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'migration.outcome',
+      outcome: 'degraded',
+      errorClass: 'migration.write_error',
+      countBucket: '0',
+    }));
+    expect(JSON.stringify(sink.mock.calls[0]![0])).not.toContain('private caption value');
+  });
+
+  it('classifies an identity mismatch as a bounded validation failure', async () => {
+    const sink = vi.fn();
+    const result = await executeLocalToInstalledMigration({
+      localManifest: makeLocalManifest({ id: operationalExtensionId as never }),
+      installedPack: makeInstalledPack({
+        manifest: { id: 'com.reigh.astrid-runaway-timeline' as never },
+      }),
+      repository: makeMockRepository(),
+      localSettings: {},
+      bundleContentRef: 'indexeddb://unused',
+      operationalEmitter: makeOperationalEmitter(sink),
+    });
+
+    expect(result.success).toBe(false);
+    expect(sink).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'migration.outcome',
+      outcome: 'failure',
+      errorClass: 'migration.validation_error',
+      extensionId: operationalExtensionId,
+    }));
+  });
+
   // ---- Successful migration ----
 
   it('successfully migrates a local extension to installed with settings', async () => {
