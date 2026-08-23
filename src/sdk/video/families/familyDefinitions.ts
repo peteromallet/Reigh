@@ -301,7 +301,7 @@ export const VIDEO_FAMILY_REGISTRY: readonly FamilyDefinition<VideoContributionK
   // ---- Data Kind (V1) ----
   {
     kind: 'dataKind',
-    declarationMaturity: 'schema-backed',
+    declarationMaturity: 'documented',
     executionMaturity: 'host-integrated',
     hostIntegrationNotes:
       'Data-kind contributions declare duration-neutral typed-data lanes: a ' +
