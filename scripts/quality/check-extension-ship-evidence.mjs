@@ -4,10 +4,14 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import {
   existsSync,
+  mkdtempSync,
   readFileSync,
   realpathSync,
+  rmSync,
   statSync,
+  writeFileSync,
 } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -50,6 +54,11 @@ export const RELEASE_MANIFEST_PATH = resolve(
   REPO_ROOT,
   'config/releases/extension-ship-quality.json',
 );
+export const ATTESTATION_TRUST_PATH = resolve(
+  REPO_ROOT,
+  'config/releases/extension-ship-attestation-trust.json',
+);
+export const ATTESTATION_NAMESPACE = 'reigh-extension-ship-evidence-v1';
 
 const ALLOWED_STATUSES = new Set(['pending', 'in_progress', 'blocked', 'pass']);
 const ALLOWED_KINDS = new Set([
@@ -103,8 +112,183 @@ const REQUIRED_HUMAN_PERSONAS = new Set([
   'first-time-extension-author',
 ]);
 
+const SSH_PRINCIPAL = /^[A-Za-z0-9][A-Za-z0-9_.@+-]{0,127}$/;
+const SSH_ED25519_PUBLIC_KEY = /^ssh-ed25519 [A-Za-z0-9+/]+={0,3}$/;
+const SSH_SIGNATURE = /^-----BEGIN SSH SIGNATURE-----\n[A-Za-z0-9+/=\n]+\n-----END SSH SIGNATURE-----\n?$/;
+
 function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function ed25519KeyFingerprint(publicKey) {
+  if (!SSH_ED25519_PUBLIC_KEY.test(publicKey ?? '')) return null;
+  const encoded = publicKey.slice('ssh-ed25519 '.length);
+  const blob = Buffer.from(encoded, 'base64');
+  const normalized = blob.toString('base64').replace(/=+$/, '');
+  if (normalized !== encoded.replace(/=+$/, '') || blob.length !== 51) return null;
+  if (blob.readUInt32BE(0) !== 11 || blob.subarray(4, 15).toString() !== 'ssh-ed25519') {
+    return null;
+  }
+  if (blob.readUInt32BE(15) !== 32) return null;
+  return createHash('sha256').update(blob).digest('base64');
+}
+
+function canonicalizeJson(value) {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') {
+    return JSON.stringify(value);
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalizeJson).join(',')}]`;
+  if (isPlainObject(value)) {
+    return `{${Object.keys(value).sort().map((key) => (
+      `${JSON.stringify(key)}:${canonicalizeJson(value[key])}`
+    )).join(',')}}`;
+  }
+  throw new TypeError('attestation payload contains a non-JSON value');
+}
+
+export function canonicalReceiptPayload({ release, candidate, workstream, receipt }) {
+  if (!isPlainObject(receipt)) throw new TypeError('receipt must be an object');
+  const { attestation: _attestation, ...unsignedReceipt } = receipt;
+  return `${canonicalizeJson({
+    schema: 'reigh-extension-ship-receipt-attestation/v1',
+    release,
+    candidate,
+    workstream: {
+      id: workstream?.id,
+      title: workstream?.title,
+    },
+    receipt: unsignedReceipt,
+  })}\n`;
+}
+
+export function validateAttestationTrust({ trust, release, releaseMode = false }) {
+  const errors = [];
+  const warnings = [];
+  const identities = Array.isArray(trust?.identities) ? trust.identities : [];
+  const identityByPrincipal = new Map();
+  const keyOwners = new Map();
+  const personaOwners = new Map();
+  const reviewPrincipals = [];
+
+  if (trust?.schemaVersion !== 1) errors.push('attestation trust schemaVersion must be 1');
+  if (trust?.release !== release) errors.push('attestation trust release must match the evidence ledger');
+  if (trust?.namespace !== ATTESTATION_NAMESPACE) {
+    errors.push(`attestation trust namespace must be ${ATTESTATION_NAMESPACE}`);
+  }
+  if (!Array.isArray(trust?.identities)) errors.push('attestation trust identities must be an array');
+
+  identities.forEach((identity, index) => {
+    const prefix = `attestation trust identities[${index}]`;
+    if (!isPlainObject(identity)) {
+      errors.push(`${prefix} must be an object`);
+      return;
+    }
+    if (!SSH_PRINCIPAL.test(identity.principal ?? '')) {
+      errors.push(`${prefix}.principal must be a safe SSH principal`);
+    } else if (identityByPrincipal.has(identity.principal)) {
+      errors.push(`${prefix}.principal duplicates ${identity.principal}`);
+    } else {
+      identityByPrincipal.set(identity.principal, identity);
+    }
+    const fingerprint = ed25519KeyFingerprint(identity.publicKey);
+    if (!fingerprint) {
+      errors.push(`${prefix}.publicKey must be a valid comment-free ssh-ed25519 public key`);
+    } else if (keyOwners.has(fingerprint)) {
+      errors.push(`${prefix}.publicKey is already assigned to ${keyOwners.get(fingerprint)}`);
+    } else {
+      keyOwners.set(fingerprint, identity.principal);
+    }
+    if (identity.kind === 'human') {
+      if (!REQUIRED_HUMAN_PERSONAS.has(identity.persona)) {
+        errors.push(`${prefix}.persona must name one required human acceptance persona`);
+      } else if (personaOwners.has(identity.persona)) {
+        errors.push(`${prefix}.persona duplicates the assignment for ${identity.persona}`);
+      } else {
+        personaOwners.set(identity.persona, identity.principal);
+      }
+    } else if (identity.kind === 'review') {
+      if (Object.hasOwn(identity, 'persona')) errors.push(`${prefix}.persona is not valid for a reviewer`);
+      reviewPrincipals.push(identity.principal);
+    } else {
+      errors.push(`${prefix}.kind must be human or review`);
+    }
+  });
+
+  const missingPersonas = [...REQUIRED_HUMAN_PERSONAS]
+    .filter((persona) => !personaOwners.has(persona));
+  if (releaseMode) {
+    for (const persona of missingPersonas) {
+      errors.push(`attestation trust is missing the ${persona} human principal`);
+    }
+    if (reviewPrincipals.length < 2) {
+      errors.push('attestation trust requires at least two independent reviewer principals');
+    }
+  } else {
+    for (const persona of missingPersonas) {
+      warnings.push(`attestation trust has no ${persona} human principal yet`);
+    }
+    if (reviewPrincipals.length < 2) {
+      warnings.push('attestation trust has fewer than two independent reviewer principals');
+    }
+  }
+
+  return { errors, warnings, identityByPrincipal };
+}
+
+export function verifyReceiptAttestation({
+  attestation,
+  identity,
+  payload,
+  execFile = execFileSync,
+}) {
+  if (!isPlainObject(attestation)) return 'attestation must be an object';
+  if (attestation.namespace !== ATTESTATION_NAMESPACE) {
+    return `attestation.namespace must be ${ATTESTATION_NAMESPACE}`;
+  }
+  if (!SSH_PRINCIPAL.test(attestation.principal ?? '')) {
+    return 'attestation.principal must be a safe SSH principal';
+  }
+  if (!identity) return `attestation principal is not trusted: ${attestation.principal}`;
+  if (typeof attestation.signature !== 'string' || attestation.signature.length > 16 * 1024
+      || !SSH_SIGNATURE.test(attestation.signature)) {
+    return 'attestation.signature must be an armored SSH signature';
+  }
+
+  const directory = mkdtempSync(resolve(tmpdir(), 'reigh-extension-attestation-'));
+  const allowedSignersPath = resolve(directory, 'allowed_signers');
+  const signaturePath = resolve(directory, 'receipt.sig');
+  try {
+    writeFileSync(
+      allowedSignersPath,
+      `${identity.principal} namespaces="${ATTESTATION_NAMESPACE}" ${identity.publicKey}\n`,
+      { encoding: 'utf8', mode: 0o600 },
+    );
+    writeFileSync(signaturePath, attestation.signature, { encoding: 'utf8', mode: 0o600 });
+    execFile(
+      'ssh-keygen',
+      [
+        '-Y', 'verify',
+        '-f', allowedSignersPath,
+        '-I', identity.principal,
+        '-n', ATTESTATION_NAMESPACE,
+        '-s', signaturePath,
+      ],
+      {
+        encoding: 'utf8',
+        env: GIT_ENV,
+        input: payload,
+        maxBuffer: 1024 * 1024,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      },
+    );
+    return null;
+  } catch (error) {
+    const detail = error?.stderr?.toString().trim() || error.message;
+    return `SSH signature verification failed: ${detail}`;
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 function slugify(value) {
@@ -256,8 +440,11 @@ function validateEvidenceArtifact(
 function validateReceipt({
   receipt,
   prefix,
+  ledger,
+  workstream,
   repoRoot,
   candidate,
+  identityByPrincipal,
   releaseMode,
   verifyCommittedArtifacts,
   release,
@@ -298,8 +485,36 @@ function validateReceipt({
     if (receipt.decision !== 'approve') {
       errors.push(`${prefix}.decision must be approve`);
     }
-    if (typeof receipt.reviewerId !== 'string' || receipt.reviewerId.trim() === '') {
-      errors.push(`${prefix}.reviewerId must be non-empty`);
+    const identity = identityByPrincipal.get(receipt.attestation?.principal);
+    let attestationError;
+    try {
+      attestationError = verifyReceiptAttestation({
+        attestation: receipt.attestation,
+        identity,
+        payload: canonicalReceiptPayload({
+          release: ledger.release,
+          candidate,
+          workstream,
+          receipt,
+        }),
+      });
+    } catch (error) {
+      attestationError = `attestation payload is invalid: ${error.message}`;
+    }
+    if (attestationError) errors.push(`${prefix}.${attestationError}`);
+    if (identity && identity.kind !== receipt.kind) {
+      errors.push(`${prefix}.attestation principal is not authorized for ${receipt.kind} evidence`);
+    }
+    if (receipt.kind === 'human') {
+      if (!REQUIRED_HUMAN_PERSONAS.has(receipt.persona)) {
+        errors.push(`${prefix}.persona must name one required human acceptance persona`);
+      } else if (identity && identity.persona !== receipt.persona) {
+        errors.push(`${prefix}.attestation principal is not authorized for persona ${receipt.persona}`);
+      }
+    }
+    if (Object.hasOwn(receipt, 'reviewerId')
+        && receipt.reviewerId !== receipt.attestation?.principal) {
+      errors.push(`${prefix}.reviewerId, when present, must equal the trusted attestation principal`);
     }
   } else if (receipt.exitCode !== 0) {
     errors.push(`${prefix}.exitCode must be 0`);
@@ -328,6 +543,7 @@ export function validateLedger({
   ledger,
   checklistMarkdown,
   releaseManifest,
+  attestationTrust = {},
   repoRoot = REPO_ROOT,
   mode = 'audit',
   candidateCommit,
@@ -343,6 +559,13 @@ export function validateLedger({
   const candidate = isPlainObject(ledger?.candidate) ? ledger.candidate : {};
   const changedEvidencePaths = new Set(provenanceChangedPaths);
   const workstreams = Array.isArray(ledger?.workstreams) ? ledger.workstreams : [];
+  const trustResult = validateAttestationTrust({
+    trust: attestationTrust,
+    release: ledger?.release,
+    releaseMode,
+  });
+  errors.push(...trustResult.errors);
+  warnings.push(...trustResult.warnings);
 
   if (ledger?.schemaVersion !== 1) errors.push('schemaVersion must be 1');
   if (ledger?.release !== releaseManifest?.release) {
@@ -387,8 +610,11 @@ export function validateLedger({
       validateReceipt({
         receipt,
         prefix: receiptPrefix,
+        ledger,
+        workstream,
         repoRoot,
         candidate,
+        identityByPrincipal: trustResult.identityByPrincipal,
         releaseMode,
         verifyCommittedArtifacts,
         release: ledger?.release,
@@ -429,14 +655,21 @@ export function validateLedger({
     }
 
     if (expectedWorkstream.number === 23 && workstream.status === 'pass') {
-      const reviewers = new Set(
+      const reviewerPrincipals = new Set(
         receipts
           .filter((receipt) => receipt?.kind === 'review')
-          .map((receipt) => receipt.reviewerId)
+          .map((receipt) => receipt.attestation?.principal)
           .filter(Boolean),
       );
-      if (reviewers.size < 2) {
-        errors.push(`${prefix} requires two independent review receipts`);
+      const reviewerKeys = new Set(
+        [...reviewerPrincipals]
+          .map((principal) => trustResult.identityByPrincipal.get(principal))
+          .filter((identity) => identity?.kind === 'review')
+          .map((identity) => ed25519KeyFingerprint(identity.publicKey))
+          .filter(Boolean),
+      );
+      if (reviewerPrincipals.size < 2 || reviewerKeys.size < 2) {
+        errors.push(`${prefix} requires two independently keyed trusted review receipts`);
       }
     }
   });
@@ -510,6 +743,7 @@ export function runCli(argv = process.argv.slice(2)) {
 
   const ledger = readJson(LEDGER_PATH);
   const releaseManifest = readJson(RELEASE_MANIFEST_PATH);
+  const attestationTrust = readJson(ATTESTATION_TRUST_PATH);
   const headCommit = currentHead(REPO_ROOT);
   let candidateCommit;
   let provenanceChangedPaths = [];
@@ -537,6 +771,7 @@ export function runCli(argv = process.argv.slice(2)) {
     ledger,
     checklistMarkdown: readFileSync(CHECKLIST_PATH, 'utf8'),
     releaseManifest,
+    attestationTrust,
     repoRoot: REPO_ROOT,
     mode,
     candidateCommit,
