@@ -17,7 +17,14 @@ const MATRIX_WIDTH = 640;
 const MATRIX_HEIGHT = 360;
 const CAPTION_ROW_Y = Math.round(MATRIX_HEIGHT * 0.58);
 const CAPTION_ROW_HEIGHT = Math.round(MATRIX_HEIGHT * 0.14);
+const MIN_CAPTION_ROW_FOREGROUND_PIXELS = 100;
 const EXPECTED_CAPTIONS = 4;
+const EXPECTED_CAPTION_INTERVALS = [
+  { start: 0, end: 0.205, row: 0 },
+  { start: 0.167, end: 0.409, row: 1 },
+  { start: 0.584, end: 0.792, row: 0 },
+  { start: 0.73, end: 1.25, row: 1 },
+] as const;
 const EDITOR_URL = `${BASE_URL}/tools/video-editor?localProject=${PROJECT_SLUG}&localTimeline=${TIMELINE_SLUG}&localTest=1&transcriptLaneFixture=render-matrix&runawayTimelineProject=runaway-8085`;
 const EVIDENCE = resolve(process.env.RENDER_MATRIX_EVIDENCE ?? 'artifacts/render-export-matrix');
 const BRIDGE_TIMELINE = `${BRIDGE_ORIGIN}/projects/${PROJECT_SLUG}/timelines/${TIMELINE_SLUG}`;
@@ -51,9 +58,54 @@ type MatrixResult = {
   sha256: string;
 };
 
+type GitProvenance = {
+  commit: string | null;
+  dirty: boolean | null;
+  statusSha256: string | null;
+  capturedBeforeEvidenceWrite: true;
+};
+
 async function exec(command: string, args: string[]): Promise<string> {
   const { stdout } = await execFileAsync(command, args, { maxBuffer: 32 * 1024 * 1024 });
   return stdout.trim();
+}
+
+async function execBuffer(command: string, args: string[]): Promise<Buffer> {
+  return new Promise((resolveBuffer, rejectBuffer) => {
+    execFile(command, args, {
+      encoding: 'buffer',
+      maxBuffer: 32 * 1024 * 1024,
+    }, (error, stdout, stderr) => {
+      if (error) {
+        const detail = Buffer.isBuffer(stderr) ? stderr.toString('utf8') : stderr;
+        rejectBuffer(new Error(`${command} failed: ${detail || error.message}`));
+        return;
+      }
+      resolveBuffer(Buffer.isBuffer(stdout) ? stdout : Buffer.from(stdout));
+    });
+  });
+}
+
+async function readGitProvenance(): Promise<GitProvenance> {
+  try {
+    const commit = await exec('git', ['rev-parse', 'HEAD']);
+    const status = await exec('git', ['status', '--porcelain=v1', '--untracked-files=all']);
+    return {
+      commit,
+      dirty: status.length > 0,
+      statusSha256: createHash('sha256').update(status).digest('hex'),
+      capturedBeforeEvidenceWrite: true,
+    };
+  } catch {
+    // Source archives and packaged test runners may not have a `.git`
+    // directory. Provenance is best-effort metadata, never a local-dev gate.
+    return {
+      commit: null,
+      dirty: null,
+      statusSha256: null,
+      capturedBeforeEvidenceWrite: true,
+    };
+  }
 }
 
 async function ffprobeJson(outputPath: string, args: string[]): Promise<Record<string, unknown>> {
@@ -111,6 +163,44 @@ async function occupancy(path: string, crop?: string): Promise<number> {
   ]));
 }
 
+function expectedCaptionRowPresence(fps: number, frame: number): [boolean, boolean] {
+  return [0, 1].map((row) => EXPECTED_CAPTION_INTERVALS.some((interval) => (
+    interval.row === row
+    && frame >= Math.round(interval.start * fps)
+    && frame < Math.round(interval.end * fps)
+  ))) as [boolean, boolean];
+}
+
+async function decodedCaptionRowPresence(
+  videoPath: string,
+  expectedFrames: number,
+): Promise<Array<[boolean, boolean]>> {
+  const rawFrames = await execBuffer('ffmpeg', [
+    '-v', 'error', '-i', videoPath,
+    '-map', '0:v:0',
+    '-f', 'rawvideo',
+    '-pix_fmt', 'gray',
+    'pipe:1',
+  ]);
+  const bytesPerFrame = MATRIX_WIDTH * MATRIX_HEIGHT;
+  expect(rawFrames).toHaveLength(expectedFrames * bytesPerFrame);
+
+  return Array.from({ length: expectedFrames }, (_, frame) => {
+    const frameOffset = frame * bytesPerFrame;
+    return [0, 1].map((row) => {
+      const rowStart = CAPTION_ROW_Y + (row * CAPTION_ROW_HEIGHT);
+      let foregroundPixels = 0;
+      for (let y = rowStart; y < rowStart + CAPTION_ROW_HEIGHT; y += 1) {
+        const scanlineStart = frameOffset + (y * MATRIX_WIDTH);
+        for (let x = 0; x < MATRIX_WIDTH; x += 1) {
+          if (rawFrames[scanlineStart + x]! > 20) foregroundPixels += 1;
+        }
+      }
+      return foregroundPixels > MIN_CAPTION_ROW_FOREGROUND_PIXELS;
+    }) as [boolean, boolean];
+  });
+}
+
 async function installMatrixConfig(fps: number): Promise<void> {
   const current = await (await fetch(BRIDGE_TIMELINE)).json() as { config: Record<string, unknown> };
   const response = await fetch(`${BRIDGE_TIMELINE}/save`, {
@@ -154,6 +244,7 @@ test.describe.serial('real caption render/export release matrix', () => {
 
   test('exports and probes every release frame rate', async ({ page }) => {
     test.setTimeout(1_200_000);
+    const provenance = await readGitProvenance();
     await mkdir(EVIDENCE, { recursive: true });
     const results: MatrixResult[] = [];
 
@@ -240,6 +331,13 @@ test.describe.serial('real caption render/export release matrix', () => {
       // five 1024-sample blocks of the last video packet.
       expect(Math.abs(drift)).toBeLessThanOrEqual((5 * 1024) / 48_000);
 
+      const rowPresence = await decodedCaptionRowPresence(outputPath, expectedFrames);
+      for (const [frame, actual] of rowPresence.entries()) {
+        expect(actual, `${fps}fps encoded frame ${frame} caption-row presence`).toEqual(
+          expectedCaptionRowPresence(fps, frame),
+        );
+      }
+
       const firstPath = resolve(EVIDENCE, `caption-matrix-${label}fps-first.png`);
       const overlapPath = resolve(EVIDENCE, `caption-matrix-${label}fps-overlap.png`);
       const lateOverlapPath = resolve(EVIDENCE, `caption-matrix-${label}fps-overlap-late.png`);
@@ -303,6 +401,10 @@ test.describe.serial('real caption render/export release matrix', () => {
       node: process.version,
       npmUserAgent: process.env.npm_config_user_agent ?? null,
       chromium: page.context().browser()?.version() ?? null,
+      provenance,
+      verification: {
+        allEncodedFramesCaptionRowPresence: true,
+      },
       transcript: {
         sourceSegments: 5,
         materializedCaptions: EXPECTED_CAPTIONS,
