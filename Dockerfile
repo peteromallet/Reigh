@@ -16,25 +16,17 @@ RUN npm ci --no-audit --no-fund --legacy-peer-deps
 
 COPY . .
 
-# Vite inlines VITE_* vars into the JS bundle at build time, so they must be
-# present during `npm run build`, not just at runtime. Railway passes service
-# variables matching declared ARGs as build args automatically.
+# Vite inlines ordinary browser client config into the JS bundle. Extension
+# rollout controls are intentionally absent here; the runtime stage writes
+# those from non-VITE service variables whenever the container starts.
 ARG VITE_SUPABASE_URL
 ARG VITE_SUPABASE_ANON_KEY
 ARG VITE_API_TARGET_URL
 ARG VITE_APP_ENV
-ARG VITE_EXTENSION_HOST_ENABLED
-ARG VITE_TRANSCRIPT_CAPTION_FOUNDRY_ENABLED
-ARG VITE_RUNAWAY_TYPED_TIMELINE_ENABLED
-ARG VITE_EXTENSION_RELEASE_CONFIG_REVISION
 RUN VITE_SUPABASE_URL="$VITE_SUPABASE_URL" \
     VITE_SUPABASE_ANON_KEY="$VITE_SUPABASE_ANON_KEY" \
     VITE_API_TARGET_URL="$VITE_API_TARGET_URL" \
     VITE_APP_ENV="$VITE_APP_ENV" \
-    VITE_EXTENSION_HOST_ENABLED="$VITE_EXTENSION_HOST_ENABLED" \
-    VITE_TRANSCRIPT_CAPTION_FOUNDRY_ENABLED="$VITE_TRANSCRIPT_CAPTION_FOUNDRY_ENABLED" \
-    VITE_RUNAWAY_TYPED_TIMELINE_ENABLED="$VITE_RUNAWAY_TYPED_TIMELINE_ENABLED" \
-    VITE_EXTENSION_RELEASE_CONFIG_REVISION="$VITE_EXTENSION_RELEASE_CONFIG_REVISION" \
     npm run build
 
 FROM node:20.19.4-alpine AS runtime
@@ -48,7 +40,12 @@ ENV NODE_ENV=production
 COPY package.json package-lock.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY config ./config
-COPY --from=build /app/dist ./dist
+COPY scripts/runtime ./scripts/runtime
+COPY --chown=node:node --from=build /app/dist ./dist
 
 EXPOSE 8080
-CMD ["npm", "run", "serve"]
+# Generate the public rollout document from runtime-only (non-VITE) variables
+# immediately before preview starts. The writer uses same-directory rename, so
+# the server can never observe a partial JSON file.
+USER node
+CMD ["sh", "-c", "node scripts/runtime/write-extension-release-config.mjs && exec npm run serve"]

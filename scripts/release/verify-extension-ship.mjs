@@ -5,8 +5,10 @@ import {
   accessSync,
   constants,
   existsSync,
+  mkdirSync,
   readFileSync,
   realpathSync,
+  rmSync,
   statSync,
 } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
@@ -75,8 +77,11 @@ export const ASTRID_GATE_PROFILE = Object.freeze([
   }),
 ]);
 
-const RELEASE_HOME = '/tmp/reigh-extension-ship-home';
 const RELEASE_TMPDIR = '/tmp';
+const RELEASE_HOME = resolve(
+  RELEASE_TMPDIR,
+  `reigh-extension-ship-home-${process.pid}`,
+);
 const RELEASE_PATH = [
   dirname(realpathSync(process.execPath)),
   '/usr/local/bin',
@@ -84,6 +89,10 @@ const RELEASE_PATH = [
   '/bin',
 ].filter((entry, index, entries) => entries.indexOf(entry) === index).join(':');
 const ALLOWED_STEP_ENV = new Set(['PY', 'PYTHON_BIN']);
+
+export const isMakeRecipeSafeExecutablePath = (value) => (
+  typeof value === 'string' && /^\/[A-Za-z0-9._/+:-]+$/.test(value)
+);
 
 class UsageError extends Error {}
 
@@ -129,6 +138,16 @@ export function validateReleaseManifest(manifest) {
   }
   if (typeof reigh.branch !== 'string' || reigh.branch.trim() === '') {
     errors.push('reigh.branch must be a non-empty string');
+  }
+  if (
+    typeof reigh.releaseTag !== 'string'
+    || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/.test(reigh.releaseTag)
+    || reigh.releaseTag.includes('..')
+    || reigh.releaseTag.includes('//')
+    || reigh.releaseTag.endsWith('/')
+    || reigh.releaseTag.endsWith('.')
+  ) {
+    errors.push('reigh.releaseTag must be a safe annotated-tag name');
   }
   if (!/^[0-9a-f]{40}$/.test(reigh.baseCommit ?? '')) {
     errors.push('reigh.baseCommit must be a full 40-character lowercase commit');
@@ -243,6 +262,11 @@ export function buildSanitizedEnvironment(stepEnv = {}) {
     PATH: RELEASE_PATH,
     HOME: RELEASE_HOME,
     TMPDIR: RELEASE_TMPDIR,
+    // Never consult user- or machine-owned npm configuration. A poisoned
+    // script-shell or lifecycle setting can otherwise turn an npm gate into a
+    // successful no-op even with a private HOME.
+    NPM_CONFIG_USERCONFIG: '/dev/null',
+    NPM_CONFIG_GLOBALCONFIG: '/dev/null',
     CI: 'true',
     LANG: 'C',
     LC_ALL: 'C',
@@ -337,11 +361,33 @@ function assertReighCheckout(manifest, env) {
   if (head !== expectedHead) {
     fail(`Reigh HEAD mismatch: expected ${expectedHead}, got ${head}`);
   }
+  const tagRef = `refs/tags/${manifest.reigh.releaseTag}`;
+  const tagObject = runCaptured(
+    'git',
+    ['rev-parse', '--verify', '--end-of-options', `${tagRef}^{tag}`],
+    REPO_ROOT,
+    { allowFailure: true },
+  );
+  if (tagObject.error || tagObject.status !== 0) {
+    fail(`Reigh release tag must exist and be annotated: ${manifest.reigh.releaseTag}`);
+  }
+  const tagCommit = outputOf(
+    'git',
+    ['rev-parse', '--verify', '--end-of-options', `${tagRef}^{commit}`],
+    REPO_ROOT,
+  );
+  if (tagCommit !== head) {
+    fail(
+      `Reigh release tag ${manifest.reigh.releaseTag} resolves to ${tagCommit}, not HEAD ${head}`,
+    );
+  }
   assertClean(REPO_ROOT, 'Reigh');
   return {
     baseCommit,
     branch,
     head,
+    releaseTag: manifest.reigh.releaseTag,
+    tagObject: tagObject.stdout.trim(),
   };
 }
 
@@ -363,6 +409,12 @@ function resolveAstridCheckout(manifest, env) {
   }
 
   const checkout = realpathSync(requestedPath);
+  const branch = outputOf('git', ['branch', '--show-current'], checkout);
+  if (branch !== manifest.astrid.branch) {
+    fail(
+      `Astrid branch mismatch: expected ${manifest.astrid.branch}, got ${branch || '<detached>'}`,
+    );
+  }
   const manifestCommit = resolveCommit(
     checkout,
     manifest.astrid.commit,
@@ -387,7 +439,20 @@ function resolveAstridCheckout(manifest, env) {
   }
 
   assertClean(checkout, 'Astrid');
-  return { checkout, commit: manifestCommit };
+  return { branch, checkout, commit: manifestCommit };
+}
+
+function prepareReleaseHome() {
+  if (existsSync(RELEASE_HOME)) {
+    fail(`isolated release HOME already exists; refusing reuse: ${RELEASE_HOME}`);
+  }
+  mkdirSync(RELEASE_HOME, { mode: 0o700 });
+}
+
+function cleanupReleaseHome() {
+  if (existsSync(RELEASE_HOME)) {
+    rmSync(RELEASE_HOME, { force: false, recursive: true });
+  }
 }
 
 export function resolveAstridPython(manifest, env) {
@@ -405,6 +470,12 @@ export function resolveAstridPython(manifest, env) {
     fail(`ASTRID_PYTHON does not exist: ${requestedPath}`);
   }
   const python = realpathSync(requestedPath);
+  // GNU Make expands PY/PYTHON_BIN inside shell recipes. Shell-free spawning
+  // at the Node boundary is not sufficient, so accept only path characters
+  // that remain one inert shell word at the nested Make boundary.
+  if (!isMakeRecipeSafeExecutablePath(python)) {
+    fail('ASTRID_PYTHON canonical path contains characters unsafe for Make recipes');
+  }
   if (!statSync(python).isFile()) {
     fail(`ASTRID_PYTHON is not a file: ${python}`);
   }
@@ -495,7 +566,8 @@ function printHelp() {
 
 Verify the frozen extension ship-quality release candidate. The run mode:
   1. requires a frozen release manifest and pinned Node/npm toolchain;
-  2. requires clean Reigh and Astrid worktrees at the configured refs;
+  2. requires clean Reigh and Astrid worktrees at the configured refs and an
+     annotated Reigh release tag resolving to the exact candidate commit;
   3. runs the code-owned Reigh release gate profile; and
   4. runs \`make ci\` in the pinned Astrid checkout.
 
@@ -525,6 +597,7 @@ function printPlan(manifest, packageJson, env) {
   console.log(`${LABEL} release: ${manifest.release}`);
   console.log(`${LABEL} manifest status: ${manifest.status}`);
   console.log(`${LABEL} Reigh branch: ${manifest.reigh.branch}`);
+  console.log(`${LABEL} Reigh annotated release tag: ${manifest.reigh.releaseTag}`);
   console.log(`${LABEL} Reigh base: ${manifest.reigh.baseCommit}`);
   console.log(`${LABEL} Reigh env ref: ${env.REIGH_REF || '<required for execution>'}`);
   console.log(`${LABEL} Astrid manifest pin: ${manifest.astrid.commit}`);
@@ -573,30 +646,36 @@ export function main(argv = process.argv.slice(2), env = process.env) {
       + 'run mode requires status=frozen (use --plan during integration)',
     );
   }
-  const astridPython = assertToolchain(manifest, env);
-  const reigh = assertReighCheckout(manifest, env);
-  const astrid = resolveAstridCheckout(manifest, env);
-  console.log(`${LABEL} Reigh HEAD: ${reigh.head}`);
-  console.log(`${LABEL} Astrid HEAD: ${astrid.commit}`);
+  prepareReleaseHome();
+  try {
+    const astridPython = assertToolchain(manifest, env);
+    const reigh = assertReighCheckout(manifest, env);
+    const astrid = resolveAstridCheckout(manifest, env);
+    console.log(`${LABEL} Reigh HEAD: ${reigh.head}`);
+    console.log(`${LABEL} Reigh annotated tag object: ${reigh.tagObject}`);
+    console.log(`${LABEL} Astrid HEAD: ${astrid.commit}`);
 
-  const steps = buildExecutionPlan({
-    repoRoot: REPO_ROOT,
-    astridCheckout: astrid.checkout,
-    astridPython,
-  });
-  executeSteps(steps);
+    const steps = buildExecutionPlan({
+      repoRoot: REPO_ROOT,
+      astridCheckout: astrid.checkout,
+      astridPython,
+    });
+    executeSteps(steps);
 
-  // Gates must not leave tracked or untracked release inputs behind.
-  const finalReigh = assertReighCheckout(manifest, env);
-  if (finalReigh.head !== reigh.head) {
-    fail('Reigh commit changed during verification');
+    // Gates must not leave tracked or untracked release inputs behind.
+    const finalReigh = assertReighCheckout(manifest, env);
+    if (finalReigh.head !== reigh.head || finalReigh.tagObject !== reigh.tagObject) {
+      fail('Reigh commit or annotated tag changed during verification');
+    }
+    const finalAstrid = resolveAstridCheckout(manifest, env);
+    if (finalAstrid.commit !== astrid.commit) {
+      fail('Astrid commit changed during verification');
+    }
+
+    console.log(`\n${LABEL} PASS: ${manifest.release} passed all ${steps.length} pinned gates`);
+  } finally {
+    cleanupReleaseHome();
   }
-  const finalAstrid = resolveAstridCheckout(manifest, env);
-  if (finalAstrid.commit !== astrid.commit) {
-    fail('Astrid commit changed during verification');
-  }
-
-  console.log(`\n${LABEL} PASS: ${manifest.release} passed all ${steps.length} pinned gates`);
 }
 
 if (

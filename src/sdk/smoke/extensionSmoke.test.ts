@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Unit tests for the production-bundled smoke extension.
+ * Unit tests for the development-only smoke extension.
  *
  * Covers:
  *  - No extension returned when the query parameter is absent.
@@ -18,6 +18,7 @@ import { render, screen, cleanup } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createElement, type ReactNode } from 'react';
 import {
+  getDevelopmentExtensionSmokeExtension,
   getExtensionSmokeExtension,
   EXTENSION_SMOKE_QUERY_PARAM,
   EXTENSION_SMOKE_ACTIVE_VALUE,
@@ -295,6 +296,11 @@ describe('getExtensionSmokeExtension — manifest validation', () => {
 // ---------------------------------------------------------------------------
 
 describe('getExtensionSmokeExtension — mixed query params', () => {
+  it('cannot activate from a production query string', () => {
+    expect(getDevelopmentExtensionSmokeExtension('?extensionSmoke=1', false)).toBeNull();
+    expect(getDevelopmentExtensionSmokeExtension('?extensionSmoke=1', true)).not.toBeNull();
+  });
+
   it('returns extension when smoke=1 is present alongside other params', () => {
     const sp = makeSearchParams({
       [EXTENSION_SMOKE_QUERY_PARAM]: EXTENSION_SMOKE_ACTIVE_VALUE,

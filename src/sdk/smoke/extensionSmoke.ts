@@ -1,5 +1,5 @@
 /**
- * Production-bundled smoke extension.
+ * Development-only smoke extension.
  *
  * Returns a statically-defined ReighExtension when the inert query parameter
  * `?extensionSmoke=1` is present.  The extension registers a tiny slot/status
@@ -103,6 +103,14 @@ export function getExtensionSmokeExtension(
   }
 
   return _smokeExtension;
+}
+
+/** Production builds must never turn a query parameter into executable extension code. */
+export function getDevelopmentExtensionSmokeExtension(
+  searchParams: URLSearchParams | string | null | undefined,
+  development: boolean,
+): ReighExtension | null {
+  return development ? getExtensionSmokeExtension(searchParams) : null;
 }
 
 // ---------------------------------------------------------------------------

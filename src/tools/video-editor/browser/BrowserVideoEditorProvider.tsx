@@ -166,7 +166,9 @@ export function BrowserVideoEditorProvider({
 
   // ---- Smoke extension wiring (prepend when ?extensionSmoke=1) -------------
   const effectiveDirectExtensions = useMemo<readonly ReighExtension[] | undefined>(() => {
-    const smokeExt = getExtensionSmokeExtension(window.location.search);
+    const smokeExt = import.meta.env.DEV
+      ? getExtensionSmokeExtension(window.location.search)
+      : null;
     if (!smokeExt) {
       return extensions;
     }

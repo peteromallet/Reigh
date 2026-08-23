@@ -4,6 +4,7 @@
   "status": "integration",
   "reigh": {
     "branch": "codex/extension-ship-quality",
+    "releaseTag": "extension-ship-quality-rc1",
     "baseCommit": "0fb8cda1054b9727ce1fae3a7ee33081d08b52a5"
   },
   "astrid": {

@@ -53,7 +53,7 @@ import type { SaveStatus } from '@/tools/video-editor/hooks/useTimelinePersisten
 import { videoEditorSettings } from '@/tools/video-editor/settings/videoEditorDefaults.ts';
 import { publishLocalTestExtensionDiagnostics } from '@/app/localTestRuntime.ts';
 import {
-  resolveExtensionReleaseFlags,
+  getExtensionReleaseFlags,
   selectReleaseEnabledExtensions,
 } from '@/tools/video-editor/runtime/extensionReleaseControls.ts';
 
@@ -354,8 +354,8 @@ export default function VideoEditorPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   // ---- Reviewed extension bundle + smoke wiring ----------------------------
-  // Production defaults closed and can only be enabled by deployment-owned
-  // build configuration. DEV defaults open for authoring. URL or browser
+  // Production defaults closed and can only be enabled by the deployment-owned
+  // runtime document loaded before React mounts. DEV defaults open for authoring. URL or browser
   // storage cannot override the production rollout contract.
   //
   // Dev-local enablement is an external store (`devExtensionEnablement.ts`):
@@ -371,12 +371,10 @@ export default function VideoEditorPage() {
     getDevDisabledSnapshot,
   );
 
-  const extensionReleaseFlags = resolveExtensionReleaseFlags(import.meta.env, {
-    development: import.meta.env.DEV,
-  });
+  const extensionReleaseFlags = getExtensionReleaseFlags({ development: import.meta.env.DEV });
 
   const smokeDirectExtensions = useMemo(() => {
-    const smokeExt = getExtensionSmokeExtension(searchParams);
+    const smokeExt = import.meta.env.DEV ? getExtensionSmokeExtension(searchParams) : null;
     const disabled = import.meta.env.DEV ? devDisabledIds : new Set<string>();
     const reviewedExtensions = selectReleaseEnabledExtensions(
       devLocalExtensions,

@@ -12,6 +12,7 @@ import {
   buildSanitizedEnvironment,
   executeSteps,
   formatCommand,
+  isMakeRecipeSafeExecutablePath,
   parseCliArgs,
   resolveAstridPython,
   validatePackageJson,
@@ -37,7 +38,7 @@ describe('extension ship verifier', () => {
     assert.deepEqual(manifest.requiredGates, [...EXPECTED_REQUIRED_GATES]);
   });
 
-  it('pins the container runtime and forwards every extension build control', () => {
+  it('pins the container runtime and writes extension controls at container start', () => {
     const dockerfile = readFileSync(`${REPO_ROOT}/Dockerfile`, 'utf8');
     const nvmVersion = readFileSync(`${REPO_ROOT}/.nvmrc`, 'utf8').trim();
     const fromLines = dockerfile.match(/^FROM node:[^\n]+$/gm) ?? [];
@@ -48,15 +49,25 @@ describe('extension ship verifier', () => {
       `FROM node:${manifest.verification.node}-alpine AS runtime`,
     ]);
 
-    for (const key of [
+    for (const retiredKey of [
       'VITE_EXTENSION_HOST_ENABLED',
       'VITE_TRANSCRIPT_CAPTION_FOUNDRY_ENABLED',
       'VITE_RUNAWAY_TYPED_TIMELINE_ENABLED',
       'VITE_EXTENSION_RELEASE_CONFIG_REVISION',
     ]) {
-      assert.match(dockerfile, new RegExp(`^ARG ${key}$`, 'm'));
-      assert.match(dockerfile, new RegExp(`${key}="\\$${key}"`));
+      assert.doesNotMatch(dockerfile, new RegExp(`^ARG ${retiredKey}$`, 'm'));
+      assert.doesNotMatch(dockerfile, new RegExp(`${retiredKey}="\\$${retiredKey}"`));
     }
+    assert.match(dockerfile, /^COPY scripts\/runtime \.\/scripts\/runtime$/m);
+    assert.match(dockerfile, /^COPY --chown=node:node --from=build \/app\/dist \.\/dist$/m);
+    assert.match(dockerfile, /^USER node$/m);
+    assert.match(dockerfile, /node scripts\/runtime\/write-extension-release-config\.mjs/);
+    assert.match(dockerfile, /exec npm run serve/);
+    assert.equal(
+      packageJson.scripts['start:railway'],
+      'node scripts/runtime/write-extension-release-config.mjs && npm run serve',
+    );
+    assert.doesNotMatch(packageJson.scripts['start:railway'], /npm run build/);
   });
 
   it('fails closed on a mutable Astrid ref or incomplete gate inventory', () => {
@@ -72,6 +83,13 @@ describe('extension ship verifier', () => {
     assert.throws(
       () => validateReleaseManifest(missingGate),
       /requiredGates must exactly equal/,
+    );
+
+    const unsafeTag = structuredClone(manifest);
+    unsafeTag.reigh.releaseTag = '../mutable';
+    assert.throws(
+      () => validateReleaseManifest(unsafeTag),
+      /reigh\.releaseTag must be a safe annotated-tag name/,
     );
   });
 
@@ -130,6 +148,9 @@ describe('extension ship verifier', () => {
       PYTHONPATH: '/tmp/attacker',
       PYTEST_ADDOPTS: '-m not_release',
       NODE_OPTIONS: '--require=/tmp/attacker.cjs',
+      NPM_CONFIG_SCRIPT_SHELL: '/usr/bin/true',
+      NPM_CONFIG_USERCONFIG: '/tmp/attacker.npmrc',
+      NPM_CONFIG_GLOBALCONFIG: '/tmp/global-attacker.npmrc',
       VITEST_POOL_ID: 'attacker',
       OPENAI_API_KEY: 'secret',
       SUPABASE_SERVICE_ROLE_KEY: 'secret',
@@ -160,7 +181,11 @@ describe('extension ship verifier', () => {
         PYTHON_BIN: '/safe/python',
       });
       for (const key of Object.keys(ambientBypasses)) {
-        assert.equal(captured[key], undefined, `${key} leaked into the gate`);
+        if (key === 'NPM_CONFIG_USERCONFIG' || key === 'NPM_CONFIG_GLOBALCONFIG') {
+          assert.equal(captured[key], '/dev/null', `${key} was not neutralized`);
+        } else {
+          assert.equal(captured[key], undefined, `${key} leaked into the gate`);
+        }
       }
     } finally {
       for (const [key, value] of Object.entries(previous)) {
@@ -176,6 +201,15 @@ describe('extension ship verifier', () => {
   });
 
   it('rejects shell executables and non-absolute Astrid Python paths', () => {
+    assert.equal(isMakeRecipeSafeExecutablePath('/safe/venv/bin/python3.11'), true);
+    for (const unsafePath of [
+      '/tmp/python path/bin/python',
+      '/tmp/python;other/bin/python',
+      '/tmp/python#other/bin/python',
+      '/tmp/python$other/bin/python',
+    ]) {
+      assert.equal(isMakeRecipeSafeExecutablePath(unsafePath), false);
+    }
     assert.throws(
       () => resolveAstridPython(manifest, { ASTRID_PYTHON: 'python3' }),
       /must be absolute/,
@@ -183,6 +217,12 @@ describe('extension ship verifier', () => {
     assert.throws(
       () => resolveAstridPython(manifest, { ASTRID_PYTHON: '/bin/sh' }),
       /not a usable Python interpreter|not a Python interpreter|identity mismatch/,
+    );
+    assert.throws(
+      () => resolveAstridPython(manifest, {
+        ASTRID_PYTHON: '/tmp/python path/with spaces/bin/python',
+      }),
+      /does not exist|unsafe for Make recipes/,
     );
   });
 

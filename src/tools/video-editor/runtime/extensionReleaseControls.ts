@@ -1,12 +1,9 @@
 import type { ReighExtension } from '@reigh/editor-sdk';
 import type { VideoEditorTelemetryHost } from './ports';
 
-export const EXTENSION_RELEASE_FLAG_NAMES = Object.freeze({
-  host: 'VITE_EXTENSION_HOST_ENABLED',
-  transcript: 'VITE_TRANSCRIPT_CAPTION_FOUNDRY_ENABLED',
-  runaway: 'VITE_RUNAWAY_TYPED_TIMELINE_ENABLED',
-  revision: 'VITE_EXTENSION_RELEASE_CONFIG_REVISION',
-});
+export const EXTENSION_RELEASE_RUNTIME_CONFIG_PATH = '/runtime-config/v1/extensions.json';
+export const EXTENSION_RELEASE_RUNTIME_CONFIG_SCHEMA_VERSION = 1;
+export const EXTENSION_RELEASE_RUNTIME_CONFIG_TIMEOUT_MS = 4_000;
 
 export const TRANSCRIPT_RELEASE_EXTENSION_ID = 'com.reigh.transcript-lane';
 export const RUNAWAY_RELEASE_EXTENSION_ID = 'com.reigh.astrid-runaway-timeline';
@@ -18,49 +15,149 @@ export interface ExtensionReleaseFlags {
   readonly configurationRevision: string;
 }
 
-type DeploymentEnvironment = Readonly<Record<string, unknown>>;
-
-const readBoolean = (value: unknown): boolean => value === '1' || value === 'true';
-
 const readRevision = (value: unknown): string => {
   if (typeof value !== 'string') return 'unset';
   const normalized = value.trim();
   return /^[A-Za-z0-9._-]{1,64}$/.test(normalized) ? normalized : 'invalid';
 };
 
-/**
- * Resolve the three contract flags from deployment configuration. Production
- * defaults closed. Development defaults open so authoring remains useful, but
- * explicit false values still exercise rollback locally. Query strings and
- * browser storage are never consulted.
- */
-export function resolveExtensionReleaseFlags(
-  env: DeploymentEnvironment,
-  options: { development: boolean },
-): ExtensionReleaseFlags {
-  const defaultEnabled = options.development;
-  const hostConfigured = env[EXTENSION_RELEASE_FLAG_NAMES.host];
-  const requestedHost = hostConfigured === undefined ? defaultEnabled : readBoolean(hostConfigured);
-  const configurationRevision = readRevision(env[EXTENSION_RELEASE_FLAG_NAMES.revision]);
-  // Production activation without an attributable config revision is not an
-  // observable rollout and therefore fails closed. DEV authoring may remain
-  // open with the explicit `unset` marker.
-  const host = requestedHost && (
-    options.development
-    || (configurationRevision !== 'unset' && configurationRevision !== 'invalid')
-  );
-  const transcriptConfigured = env[EXTENSION_RELEASE_FLAG_NAMES.transcript];
-  const runawayConfigured = env[EXTENSION_RELEASE_FLAG_NAMES.runaway];
+const CLOSED_EXTENSION_RELEASE_FLAGS: ExtensionReleaseFlags = Object.freeze({
+  extensionHostEnabled: false,
+  transcriptCaptionFoundryEnabled: false,
+  runawayTypedTimelineEnabled: false,
+  configurationRevision: 'unset',
+});
+
+const DEVELOPMENT_EXTENSION_RELEASE_FLAGS: ExtensionReleaseFlags = Object.freeze({
+  extensionHostEnabled: true,
+  transcriptCaptionFoundryEnabled: true,
+  runawayTypedTimelineEnabled: true,
+  configurationRevision: 'development',
+});
+
+const hasExactKeys = (value: Record<string, unknown>, expected: readonly string[]): boolean => {
+  const keys = Object.keys(value).sort();
+  const expectedKeys = [...expected].sort();
+  return keys.length === expected.length
+    && keys.every((key, index) => key === expectedKeys[index]);
+};
+
+/** Parse the versioned, deployment-written document. Any drift fails closed. */
+export function parseExtensionReleaseRuntimeConfig(value: unknown): ExtensionReleaseFlags | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const config = value as Record<string, unknown>;
+  if (!hasExactKeys(config, ['extensions', 'revision', 'schemaVersion'])) return null;
+  if (config.schemaVersion !== EXTENSION_RELEASE_RUNTIME_CONFIG_SCHEMA_VERSION) return null;
+  const configurationRevision = readRevision(config.revision);
+  if (configurationRevision === 'unset' || configurationRevision === 'invalid') return null;
+  if (!config.extensions || typeof config.extensions !== 'object' || Array.isArray(config.extensions)) return null;
+  const extensions = config.extensions as Record<string, unknown>;
+  if (!hasExactKeys(extensions, [
+    'hostEnabled',
+    'runawayTypedTimelineEnabled',
+    'transcriptCaptionFoundryEnabled',
+  ])) return null;
+  if (
+    typeof extensions.hostEnabled !== 'boolean'
+    || typeof extensions.transcriptCaptionFoundryEnabled !== 'boolean'
+    || typeof extensions.runawayTypedTimelineEnabled !== 'boolean'
+  ) return null;
+
+  const host = extensions.hostEnabled;
   return Object.freeze({
     extensionHostEnabled: host,
-    transcriptCaptionFoundryEnabled: host && (
-      transcriptConfigured === undefined ? defaultEnabled : readBoolean(transcriptConfigured)
-    ),
-    runawayTypedTimelineEnabled: host && (
-      runawayConfigured === undefined ? defaultEnabled : readBoolean(runawayConfigured)
-    ),
+    transcriptCaptionFoundryEnabled: host && extensions.transcriptCaptionFoundryEnabled,
+    runawayTypedTimelineEnabled: host && extensions.runawayTypedTimelineEnabled,
     configurationRevision,
   });
+}
+
+export interface ExtensionReleaseRuntimeConfigLoaderOptions {
+  readonly development: boolean;
+  readonly origin?: string;
+  readonly fetchImpl?: typeof fetch;
+  readonly signal?: AbortSignal;
+}
+
+/**
+ * DEV never waits on deployment configuration. Production fetches one fixed,
+ * same-origin path and returns the closed snapshot on every transport, redirect,
+ * JSON, schema, or revision failure. Query strings and browser storage are not
+ * inputs to this boundary.
+ */
+export async function loadExtensionReleaseFlags(
+  options: ExtensionReleaseRuntimeConfigLoaderOptions,
+): Promise<ExtensionReleaseFlags> {
+  if (options.development) return DEVELOPMENT_EXTENSION_RELEASE_FLAGS;
+
+  const controller = new AbortController();
+  const abortFromCaller = (): void => controller.abort(options.signal?.reason);
+  if (options.signal?.aborted) {
+    abortFromCaller();
+  } else {
+    options.signal?.addEventListener('abort', abortFromCaller, { once: true });
+  }
+  const timeout = globalThis.setTimeout(
+    () => controller.abort(new DOMException('Runtime config request timed out', 'TimeoutError')),
+    EXTENSION_RELEASE_RUNTIME_CONFIG_TIMEOUT_MS,
+  );
+
+  try {
+    const origin = options.origin ?? window.location.origin;
+    const originUrl = new URL(origin);
+    const configUrl = new URL(EXTENSION_RELEASE_RUNTIME_CONFIG_PATH, originUrl);
+    if (configUrl.origin !== originUrl.origin) return CLOSED_EXTENSION_RELEASE_FLAGS;
+    const fetchImpl = options.fetchImpl ?? window.fetch.bind(window);
+    const request = fetchImpl(configUrl.href, {
+      cache: 'no-store',
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' },
+      redirect: 'error',
+      signal: controller.signal,
+    });
+    const aborted = new Promise<never>((_resolve, reject) => {
+      if (controller.signal.aborted) {
+        reject(controller.signal.reason);
+        return;
+      }
+      controller.signal.addEventListener('abort', () => reject(controller.signal.reason), { once: true });
+    });
+    const response = await Promise.race([request, aborted]);
+    if (!response.ok) return CLOSED_EXTENSION_RELEASE_FLAGS;
+    if (response.url && new URL(response.url).origin !== configUrl.origin) {
+      return CLOSED_EXTENSION_RELEASE_FLAGS;
+    }
+    return parseExtensionReleaseRuntimeConfig(await response.json())
+      ?? CLOSED_EXTENSION_RELEASE_FLAGS;
+  } catch {
+    return CLOSED_EXTENSION_RELEASE_FLAGS;
+  } finally {
+    globalThis.clearTimeout(timeout);
+    options.signal?.removeEventListener('abort', abortFromCaller);
+  }
+}
+
+let activeExtensionReleaseFlags: ExtensionReleaseFlags = import.meta.env.DEV
+  ? DEVELOPMENT_EXTENSION_RELEASE_FLAGS
+  : CLOSED_EXTENSION_RELEASE_FLAGS;
+
+export function getExtensionReleaseFlags(
+  options: { development?: boolean } = {},
+): ExtensionReleaseFlags {
+  // This guard also keeps component tests that simulate a production build
+  // closed unless they explicitly initialize the production runtime snapshot.
+  if (options.development === false && activeExtensionReleaseFlags.configurationRevision === 'development') {
+    return CLOSED_EXTENSION_RELEASE_FLAGS;
+  }
+  return activeExtensionReleaseFlags;
+}
+
+/** Called by the app bootstrap before React is rendered. */
+export async function initializeExtensionReleaseFlags(
+  options: ExtensionReleaseRuntimeConfigLoaderOptions,
+): Promise<ExtensionReleaseFlags> {
+  activeExtensionReleaseFlags = await loadExtensionReleaseFlags(options);
+  return activeExtensionReleaseFlags;
 }
 
 /** Apply parent/child rollout gates to the reviewed bundled extension set. */

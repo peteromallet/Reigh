@@ -3,9 +3,13 @@ import { defineExtension } from '@reigh/editor-sdk';
 import {
   buildExtensionLifecycleOperationalEvents,
   createPrivacySafeExtensionTelemetryHost,
+  EXTENSION_RELEASE_RUNTIME_CONFIG_TIMEOUT_MS,
+  getExtensionReleaseFlags,
+  initializeExtensionReleaseFlags,
+  loadExtensionReleaseFlags,
+  parseExtensionReleaseRuntimeConfig,
   RUNAWAY_RELEASE_EXTENSION_ID,
   TRANSCRIPT_RELEASE_EXTENSION_ID,
-  resolveExtensionReleaseFlags,
   sanitizeExtensionOperationalEvent,
   selectReleaseEnabledExtensions,
 } from './extensionReleaseControls';
@@ -22,49 +26,157 @@ describe('extension release controls', () => {
     expect(TRANSCRIPT_RELEASE_EXTENSION_ID).toBe(TRANSCRIPT_LANE_EXTENSION_ID);
   });
 
-  it('defaults closed in production and open in development', () => {
-    expect(resolveExtensionReleaseFlags({}, { development: false })).toMatchObject({
-      extensionHostEnabled: false,
-      transcriptCaptionFoundryEnabled: false,
-      runawayTypedTimelineEnabled: false,
-    });
-    expect(resolveExtensionReleaseFlags({}, { development: true })).toMatchObject({
+  it('keeps DEV fast/default-open without issuing a runtime fetch', async () => {
+    const fetchImpl = vi.fn();
+    await expect(loadExtensionReleaseFlags({
+      development: true,
+      fetchImpl,
+      origin: 'https://reigh.example',
+    })).resolves.toMatchObject({
       extensionHostEnabled: true,
       transcriptCaptionFoundryEnabled: true,
       runawayTypedTimelineEnabled: true,
     });
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it('enforces the host parent and exact deployment values', () => {
-    expect(resolveExtensionReleaseFlags({
-      VITE_EXTENSION_HOST_ENABLED: 'false',
-      VITE_TRANSCRIPT_CAPTION_FOUNDRY_ENABLED: 'true',
-      VITE_RUNAWAY_TYPED_TIMELINE_ENABLED: '1',
-    }, { development: true })).toEqual({
-      extensionHostEnabled: false,
-      transcriptCaptionFoundryEnabled: false,
-      runawayTypedTimelineEnabled: false,
-      configurationRevision: 'unset',
-    });
-    expect(resolveExtensionReleaseFlags({
-      VITE_EXTENSION_HOST_ENABLED: 'true',
-      VITE_TRANSCRIPT_CAPTION_FOUNDRY_ENABLED: 'false',
-      VITE_RUNAWAY_TYPED_TIMELINE_ENABLED: '1',
-      VITE_EXTENSION_RELEASE_CONFIG_REVISION: 'rc1-canary.3',
-    }, { development: false })).toEqual({
+  it('parses the exact versioned shape and enforces the host parent', () => {
+    expect(parseExtensionReleaseRuntimeConfig({
+      schemaVersion: 1,
+      revision: 'rc1-canary.3',
+      extensions: {
+        hostEnabled: true,
+        transcriptCaptionFoundryEnabled: false,
+        runawayTypedTimelineEnabled: true,
+      },
+    })).toEqual({
       extensionHostEnabled: true,
       transcriptCaptionFoundryEnabled: false,
       runawayTypedTimelineEnabled: true,
       configurationRevision: 'rc1-canary.3',
     });
-    expect(resolveExtensionReleaseFlags({
-      VITE_EXTENSION_HOST_ENABLED: 'true',
-      VITE_TRANSCRIPT_CAPTION_FOUNDRY_ENABLED: 'true',
-    }, { development: false })).toMatchObject({
+    expect(parseExtensionReleaseRuntimeConfig({
+      schemaVersion: 1,
+      revision: 'rc1-off',
+      extensions: {
+        hostEnabled: false,
+        transcriptCaptionFoundryEnabled: true,
+        runawayTypedTimelineEnabled: true,
+      },
+    })).toEqual({
       extensionHostEnabled: false,
       transcriptCaptionFoundryEnabled: false,
-      configurationRevision: 'unset',
+      runawayTypedTimelineEnabled: false,
+      configurationRevision: 'rc1-off',
     });
+  });
+
+  it('rejects invalid revisions, schema drift, and non-boolean switches', () => {
+    const valid = {
+      schemaVersion: 1,
+      revision: 'rc1',
+      extensions: {
+        hostEnabled: true,
+        transcriptCaptionFoundryEnabled: true,
+        runawayTypedTimelineEnabled: true,
+      },
+    };
+    expect(parseExtensionReleaseRuntimeConfig({ ...valid, revision: '../bad' })).toBeNull();
+    expect(parseExtensionReleaseRuntimeConfig({ ...valid, schemaVersion: 2 })).toBeNull();
+    expect(parseExtensionReleaseRuntimeConfig({ ...valid, queryOverride: true })).toBeNull();
+    expect(parseExtensionReleaseRuntimeConfig({
+      ...valid,
+      extensions: { ...valid.extensions, hostEnabled: 'true' },
+    })).toBeNull();
+  });
+
+  it('loads only the fixed same-origin path and fails closed on errors or redirects', async () => {
+    const validDocument = {
+      schemaVersion: 1,
+      revision: 'runtime-7',
+      extensions: {
+        hostEnabled: true,
+        transcriptCaptionFoundryEnabled: true,
+        runawayTypedTimelineEnabled: false,
+      },
+    };
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify(validDocument), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    await expect(loadExtensionReleaseFlags({
+      development: false,
+      origin: 'https://reigh.example/editor?extensionSmoke=1',
+      fetchImpl,
+    })).resolves.toMatchObject({
+      extensionHostEnabled: true,
+      transcriptCaptionFoundryEnabled: true,
+      runawayTypedTimelineEnabled: false,
+    });
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://reigh.example/runtime-config/v1/extensions.json',
+      expect.objectContaining({
+        cache: 'no-store',
+        credentials: 'same-origin',
+        redirect: 'error',
+      }),
+    );
+
+    await expect(loadExtensionReleaseFlags({
+      development: false,
+      origin: 'https://reigh.example',
+      fetchImpl: vi.fn(async () => { throw new Error('offline'); }),
+    })).resolves.toMatchObject({ extensionHostEnabled: false });
+    await expect(loadExtensionReleaseFlags({
+      development: false,
+      origin: 'https://reigh.example',
+      fetchImpl: vi.fn(async () => ({
+        ok: true,
+        url: 'https://attacker.example/extensions.json',
+        json: async () => validDocument,
+      } as Response)),
+    })).resolves.toMatchObject({ extensionHostEnabled: false });
+  });
+
+  it('aborts a hung production fetch and initializes the render snapshot closed', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchImpl = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+        expect(init?.signal).toBeInstanceOf(AbortSignal);
+        return new Promise<Response>(() => {});
+      });
+      const initialization = initializeExtensionReleaseFlags({
+        development: false,
+        origin: 'https://reigh.example',
+        fetchImpl,
+      });
+      await vi.advanceTimersByTimeAsync(EXTENSION_RELEASE_RUNTIME_CONFIG_TIMEOUT_MS);
+      await expect(initialization).resolves.toMatchObject({
+        extensionHostEnabled: false,
+        transcriptCaptionFoundryEnabled: false,
+        runawayTypedTimelineEnabled: false,
+      });
+      expect(getExtensionReleaseFlags({ development: false })).toMatchObject({
+        extensionHostEnabled: false,
+      });
+      expect((fetchImpl.mock.calls[0][1]?.signal as AbortSignal).aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('composes a caller abort signal and cleans up without waiting for timeout', async () => {
+    const caller = new AbortController();
+    const fetchImpl = vi.fn(() => new Promise<Response>(() => {}));
+    const loading = loadExtensionReleaseFlags({
+      development: false,
+      origin: 'https://reigh.example',
+      fetchImpl,
+      signal: caller.signal,
+    });
+    caller.abort(new DOMException('navigation stopped', 'AbortError'));
+    await expect(loading).resolves.toMatchObject({ extensionHostEnabled: false });
+    expect((fetchImpl.mock.calls[0][1]?.signal as AbortSignal).aborted).toBe(true);
   });
 
   it('selects independent Transcript and Runaway children from reviewed bundled extensions', () => {

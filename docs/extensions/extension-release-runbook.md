@@ -10,7 +10,8 @@ and the executable clean-machine gate is
 
 The verifier is intentionally conservative. It requires the manifest-pinned
 Node/npm versions, the configured Reigh branch, a clean Reigh worktree at the
-exact candidate commit descended from the configured base, and an exact clean
+exact candidate commit descended from the configured base, an annotated release
+tag resolving to that same commit, and an exact clean
 Astrid checkout supplied by commit
 through the environment. It never fetches, changes a Git ref, resets, cleans,
 or applies a production migration. A mismatch or failed command stops the run.
@@ -32,9 +33,10 @@ npm run verify:extension-ship -- --plan
 
 For the blocking run, pass an absolute checkout path and an immutable commit.
 The ref must resolve to the Astrid commit in the paired manifest, and Astrid
-`HEAD` must equal it. `REIGH_REF` is supplied as a full immutable SHA because a
-commit cannot contain its own hash; it must equal the clean Reigh checkout's
-`HEAD` and is captured in the retained verifier evidence:
+must be on the configured branch with `HEAD` equal to it. Create the annotated
+Reigh tag named by `reigh.releaseTag` only after every candidate change is
+committed; both the tag and `REIGH_REF` must resolve to the clean checkout's
+`HEAD`. The verifier captures the commit and annotated tag-object hashes:
 
 ```sh
 REIGH_REF=<full-40-character-Reigh-HEAD> \
@@ -44,23 +46,25 @@ ASTRID_PYTHON=/absolute/path/to/pinned/venv/bin/python \
 npm run verify:extension-ship
 ```
 
-Capture complete stdout/stderr, exit status, Reigh `git rev-parse HEAD`, Astrid
+Capture complete stdout/stderr, exit status, Reigh `git rev-parse HEAD`, Reigh
+`git rev-parse refs/tags/extension-ship-quality-rc1^{tag}`, Astrid
 `git rev-parse HEAD`, UTC start/end times, and hashes of retained test/render
 artifacts. An exit code of zero is necessary, not sufficient: every frozen-RC
 item and both independent review slots below must also be complete.
 
 ## Production release controls
 
-These are three independent production controls, all default-off for a new
-release. Product configuration may map these contract names to provider-specific
-keys, but the mapping and effective values must be recorded with the RC. A child
-flag never bypasses its parent.
+These are runtime-only production controls, all default-off for a new release.
+Set them as container/service variables, never as Docker build arguments and
+never with a `VITE_` prefix. Product configuration may map these contract names
+to provider-specific keys, but the mapping and effective values must be recorded
+with the RC. A child flag never bypasses its parent.
 
 | Contract flag | Controls | Dependency | Immediate rollback effect |
 | --- | --- | --- | --- |
-| `VITE_EXTENSION_HOST_ENABLED` | Activation and rendering of the bundled extension host | None | Prevent new extension activation and remove host surfaces after a safe reload |
-| `VITE_TRANSCRIPT_CAPTION_FOUNDRY_ENABLED` | Transcript Caption Foundry registration, commands, and writes | `VITE_EXTENSION_HOST_ENABLED` | Stop Foundry commands/writes while leaving unrelated host extensions available |
-| `VITE_RUNAWAY_TYPED_TIMELINE_ENABLED` | Astrid Runaway source request/projection, migration entry point, commands, and viewer registration | `VITE_EXTENSION_HOST_ENABLED` | Stop Runaway-specific bridge requests, projection, migrations, and writes while leaving unrelated host extensions available |
+| `EXTENSION_HOST_ENABLED` | Activation and rendering of the bundled extension host | None | Prevent new extension activation and remove host surfaces after a safe reload |
+| `TRANSCRIPT_CAPTION_FOUNDRY_ENABLED` | Transcript Caption Foundry registration, commands, and writes | `EXTENSION_HOST_ENABLED` | Stop Foundry commands/writes while leaving unrelated host extensions available |
+| `RUNAWAY_TYPED_TIMELINE_ENABLED` | Reigh-side Astrid Runaway source request/projection, commands, and viewer registration | `EXTENSION_HOST_ENABLED` | Stop new editor-side Runaway bridge requests, projection, commands, and viewer activation while leaving unrelated host extensions available |
 
 The Runaway child switch does not remove the shared `data_bundle` column or
 `bundle` member from the generic timeline read: that envelope can also contain
@@ -68,14 +72,40 @@ Transcript or future typed data and is fetched atomically with the timeline.
 With Runaway disabled, its kind is not registered, persisted Runaway items are
 not projected, and the optional `/runaway-transitions` source request is never
 issued. This is the tested containment boundary; operators must not describe
-the switch as suppressing unrelated shared-envelope transport.
+the switch as suppressing unrelated shared-envelope transport, stopping an
+already-running Astrid migration, or disabling Astrid service writers. Those
+service/data operations require their own Astrid-side containment procedure.
 
-Evaluate flags server-side or from signed deployment configuration before
-activation. Do not accept query-string or locally persisted production
-overrides. Log only the effective boolean snapshot and configuration revision,
-never flag targeting rules or user attributes. Reigh production builds also
-require a valid `VITE_EXTENSION_RELEASE_CONFIG_REVISION` token whenever the host
-flag is enabled; a missing or malformed revision fails the parent flag closed.
+Every container start atomically writes the public versioned document
+`dist/runtime-config/v1/extensions.json` from those three variables plus
+`EXTENSION_RELEASE_CONFIG_REVISION`. Vite preview serves it at the fixed
+same-origin URL `/runtime-config/v1/extensions.json`; the page loads it with
+redirects disabled, `no-store`, and a fixed four-second timeout before React
+mounts. A timeout renders the application with all three switches closed.
+Development does not fetch the document and defaults open for fast local
+authoring.
+
+Set booleans to exactly `true` or `1`; every other value is off. Set
+`EXTENSION_RELEASE_CONFIG_REVISION` to 1–64 ASCII letters, digits, `.`, `_`, or
+`-`. Missing or malformed revision forces the parent and both children closed.
+Malformed JSON, unknown schema versions/fields, network errors, non-2xx
+responses, and cross-origin redirects also fail closed. Query strings and
+browser storage are never consulted. In particular, production ignores
+`?extensionSmoke=1` even when the host is enabled.
+
+To change or roll back a flag, update the service variable and restart/redeploy
+the container so the runtime document is regenerated. Reuse the same image;
+do not rebuild the Vite bundle. Confirm the served document and then safely
+reload the page. Log only the effective boolean snapshot and configuration
+revision, never targeting rules or user attributes. Analytics configuration is
+separate from this runtime rollout document.
+
+The document is intentionally global to one deployed instance; it contains no
+user or project targeting data. Named-staff and percentage cohorts must be
+routed by deployment infrastructure to separately configured instances of the
+same image. If the platform cannot prove that routing and its emergency route
+change, Stage 1 and percentage rollout remain blocked rather than falling back
+to client-side identity targeting.
 
 ## Staged rollout
 
