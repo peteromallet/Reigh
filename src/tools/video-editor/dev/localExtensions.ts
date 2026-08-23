@@ -27,9 +27,11 @@ import type { ReighExtension } from '@reigh/editor-sdk';
 import { scenePhaseMarkersExtension } from './scene-phase-markers/extension';
 import { transcriptLaneExtension } from './transcript-lane/extension';
 import { creativeLabExtensions } from '../examples/extensions/creative-lab';
+import { runawayTimelineExtension } from './runaway-timeline/extension';
 
 export const devLocalExtensions: ReighExtension[] = [
   scenePhaseMarkersExtension,
   transcriptLaneExtension,
+  runawayTimelineExtension,
   ...creativeLabExtensions,
 ];

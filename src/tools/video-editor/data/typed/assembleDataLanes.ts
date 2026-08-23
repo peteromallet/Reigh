@@ -149,9 +149,35 @@ export function assembleDataLanes(input: AssembleDataLanesInput): readonly DataL
 
   // --- Remap: source items → per-clip occurrences ----------------------------
   const viewsBySchemaRef = new Map<string, DataLaneItemView[]>();
+  // Timeline-domain source items are already expressed in the canonical
+  // timeline coordinate system. They project exactly once, without inventing
+  // a carrier clip or bypassing the source-item ingest/provenance contract.
+  for (const src of pool.values()) {
+    if (src.domain !== 'timeline_seconds') continue;
+    const item: FrozenDataItem = freezeDataItem({
+      id: `${src.id}@timeline`,
+      sourceItemId: src.id,
+      shape: src.shape,
+      domain: src.domain,
+      extent: src.extent,
+      schemaRef: src.schemaRef,
+      payload: src.payload,
+      provenance: src.provenance,
+      sourceArtifactRef: src.sourceArtifactRef,
+    });
+    const view: DataLaneItemView = {
+      item,
+      timelineStart: src.extent.start,
+      timelineEnd: src.extent.end ?? src.extent.start,
+    };
+    const bucket = viewsBySchemaRef.get(src.schemaRef);
+    if (bucket) bucket.push(view);
+    else viewsBySchemaRef.set(src.schemaRef, [view]);
+  }
   for (const clip of clips) {
     if (!clip.asset) continue;
     for (const src of pool.values()) {
+      if (src.domain === 'timeline_seconds') continue;
       if (src.sourceArtifactRef.assetId !== clip.asset) continue;
       const item: FrozenDataItem = freezeDataItem({
         id: `${src.id}@${clip.id}`,

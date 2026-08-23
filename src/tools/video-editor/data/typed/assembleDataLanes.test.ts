@@ -276,6 +276,41 @@ describe('assembleDataLanes — kind-agnostic ingest (G2)', () => {
     expect(opaqueLane.items[0].timelineStart).toBe(8);
     expect(opaqueLane.items[0].timelineEnd).toBe(18);
   });
+
+  it('projects timeline-domain source items exactly once without a carrier clip', () => {
+    const runwayKind: DataKindSnapshotRecord = {
+      kindId: 'runaway',
+      schemaRef: 'reigh.runaway_transition/v1',
+      shape: 'interval',
+      domain: 'timeline_seconds',
+      label: 'Runaway',
+    };
+    const lanes = assembleDataLanes({
+      kinds: [runwayKind],
+      clips: clips([CLIP_C1, CLIP_C2]),
+      segmentsByAsset: {},
+      sourceItemsBySchemaRef: {
+        'reigh.runaway_transition/v1': [{
+          id: 'T0001',
+          shape: 'interval',
+          domain: 'timeline_seconds',
+          extent: { start: 0.292, end: 1.5 },
+          schemaRef: 'reigh.runaway_transition/v1',
+          payload: { prompt: 'rose note' },
+          sourceArtifactRef: { assetId: 'astrid:runaway-timing:demo' },
+          provenance: { adapterId: 'astrid.runaway.bridge', adapterVersion: '1' },
+        }],
+      },
+    });
+
+    expect(lanes).toHaveLength(1);
+    expect(lanes[0].items).toHaveLength(1);
+    expect(lanes[0].items[0].item.id).toBe('T0001@timeline');
+    expect(lanes[0].items[0].item.sourceItemId).toBe('T0001');
+    expect(lanes[0].items[0].timelineStart).toBe(0.292);
+    expect(lanes[0].items[0].timelineEnd).toBe(1.5);
+    expect(lanes[0].items[0].clipId).toBeUndefined();
+  });
 });
 
 describe('mergeDataLanes', () => {

@@ -1319,6 +1319,7 @@ export function compileTimelinePatch(
       case 'track.add': {
         const kind = op.payload?.kind as 'visual' | 'audio';
         const label = (op.payload?.label as string) ?? op.target;
+        const beforeTrackId = typeof op.payload?.before === 'string' ? op.payload.before : undefined;
 
         if (tracks.some((t) => t.id === op.target)) {
           compileDiags.push(
@@ -1332,7 +1333,12 @@ export function compileTimelinePatch(
         }
 
         const newTrack: TrackDefinition = { id: op.target, kind, label };
-        tracks = [...tracks, newTrack];
+        const beforeIndex = beforeTrackId
+          ? tracks.findIndex((track) => track.id === beforeTrackId)
+          : -1;
+        tracks = beforeIndex >= 0
+          ? [...tracks.slice(0, beforeIndex), newTrack, ...tracks.slice(beforeIndex)]
+          : [...tracks, newTrack];
         clipOrder[op.target] = [];
         trackAppSnapshots.set(op.target, undefined);
 
@@ -1342,7 +1348,7 @@ export function compileTimelinePatch(
           kind: 'added',
           target: op.target,
           op: family,
-          after: { id: op.target, kind, label },
+          after: { id: op.target, kind, label, ...(beforeIndex >= 0 ? { before: beforeTrackId } : {}) },
         });
         break;
       }

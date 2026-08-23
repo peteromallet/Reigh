@@ -13,6 +13,7 @@
 
 import { createElement, type MouseEvent } from 'react';
 import type {
+  DataLaneRenderItem,
   DataItemInspectorProps,
   DataLaneRendererProps,
 } from '@reigh/editor-sdk';
@@ -33,48 +34,80 @@ function truncate(text: string): string {
  * rework round-2 F1). Chips are selectable: a press stops propagation and
  * dispatches `onSelectItem` so the kind inspector is reachable from pointer.
  */
-export function renderTranscriptLane(props: DataLaneRendererProps): unknown {
+export function renderTranscriptLane(
+  props: DataLaneRendererProps,
+  onCreateCaptions?: (items: readonly DataLaneRenderItem[]) => void,
+): unknown {
+  const chips = props.items.map((item) =>
+    createElement(
+      'span',
+      {
+        key: item.id,
+        'data-testid': 'transcript-lane-chip',
+        title: `${item.id} · ${props.schemaRef}`,
+        style: {
+          position: 'absolute',
+          top: '50%',
+          transform: 'translateY(-50%)',
+          left: item.timelineStart * props.pixelsPerSecond,
+          width: (item.timelineEnd - item.timelineStart) * props.pixelsPerSecond,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          fontSize: 10,
+          lineHeight: '16px',
+          padding: '0 6px',
+          borderRadius: 4,
+          background: 'var(--video-editor-accent-bg-strong)',
+          color: 'var(--video-editor-accent-fg)',
+          cursor: 'pointer',
+        },
+        onClick: (event: MouseEvent<HTMLElement>) => {
+          event.stopPropagation();
+          props.onSelectItem?.(item.id);
+        },
+      },
+      truncate(readChipText(item.payload)),
+    ),
+  );
   return createElement(
     'div',
     {
       'data-testid': 'transcript-lane-renderer',
       style: { position: 'relative', height: '100%', overflow: 'hidden' },
     },
-    ...props.items.map((item) =>
+    ...chips,
+    ...(onCreateCaptions ? [
       createElement(
-        'span',
+        'button',
         {
-          key: item.id,
-          'data-testid': 'transcript-lane-chip',
-          title: `${item.id} · ${props.schemaRef}`,
+          key: 'create-caption-clips',
+          type: 'button',
+          'data-testid': 'transcript-create-caption-clips',
+          title: 'Create editable video text clips from every transcript segment',
+          'aria-label': 'Render transcript as editable video text',
           style: {
             position: 'absolute',
-            top: '50%',
-            transform: 'translateY(-50%)',
-            left: item.timelineStart * props.pixelsPerSecond,
-            width: (item.timelineEnd - item.timelineStart) * props.pixelsPerSecond,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
+            right: 6,
+            top: 2,
+            zIndex: 2,
             fontSize: 10,
-            lineHeight: '16px',
-            padding: '0 6px',
+            lineHeight: '18px',
+            padding: '0 8px',
             borderRadius: 4,
-            background: 'var(--video-editor-accent-bg-strong)',
-            color: 'var(--video-editor-accent-fg)',
+            border: '1px solid var(--video-editor-accent-border-strong)',
+            background: 'var(--video-editor-panel-bg)',
+            color: 'var(--video-editor-fg)',
             cursor: 'pointer',
           },
-          onClick: (event: MouseEvent<HTMLElement>) => {
-            // The chip IS the item, not empty lane chrome: swallow the
-            // event so the row's dataLane handler cannot overwrite the
-            // target (same discipline as the host's extent bars).
+          onClick: (event: MouseEvent<HTMLButtonElement>) => {
             event.stopPropagation();
-            props.onSelectItem?.(item.id);
+            onCreateCaptions(props.items);
           },
         },
-        truncate(readChipText(item.payload)),
+        'Render as video text',
       ),
-    ),
+    ] : []),
   );
 }
 
@@ -97,7 +130,7 @@ export function renderTranscriptItemInspector(props: DataItemInspectorProps): un
 }
 
 /** Payloads are opaque to the host; this kind knows its own `{ text }`. */
-function readChipText(payload: unknown): string {
+export function readChipText(payload: unknown): string {
   if (payload !== null && typeof payload === 'object' && 'text' in payload) {
     const text: unknown = payload.text;
     if (typeof text === 'string') return text;

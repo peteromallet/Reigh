@@ -1,0 +1,121 @@
+import { createElement, type MouseEvent } from 'react';
+import type { DataItemInspectorProps, DataLaneRendererProps } from '@reigh/editor-sdk';
+import type { RunawayTransitionPayload } from './runawayTimelineData';
+
+function payloadOf(value: unknown): RunawayTransitionPayload | null {
+  if (!value || typeof value !== 'object' || !('manifestId' in value)) return null;
+  return value as RunawayTransitionPayload;
+}
+
+export function renderRunawayTimelineLane(props: DataLaneRendererProps): unknown {
+  const regionExtents = new Map<string, { start: number; end: number; colour: string; label: string }>();
+  for (const item of props.items) {
+    const payload = payloadOf(item.payload);
+    if (!payload) continue;
+    const current = regionExtents.get(payload.segmentId);
+    if (!current) {
+      regionExtents.set(payload.segmentId, {
+        start: item.timelineStart,
+        end: item.timelineEnd,
+        colour: payload.colourHex,
+        label: payload.segmentLabel,
+      });
+    } else {
+      current.start = Math.min(current.start, item.timelineStart);
+      current.end = Math.max(current.end, item.timelineEnd);
+    }
+  }
+  const regions = [...regionExtents.entries()].map(([id, region]) => createElement('span', {
+    key: `region-${id}`,
+    'data-testid': 'runaway-region-band',
+    title: `${id} · ${region.label}`,
+    style: {
+      position: 'absolute',
+      insetBlock: 0,
+      left: region.start * props.pixelsPerSecond,
+      width: Math.max(1, (region.end - region.start) * props.pixelsPerSecond),
+      background: `${region.colour}16`,
+      borderInlineStart: `1px solid ${region.colour}88`,
+      pointerEvents: 'none',
+    },
+  }));
+  const transitions = props.items.map((item) => {
+    const payload = payloadOf(item.payload);
+    if (!payload) return null;
+    const width = Math.max(2, (item.timelineEnd - item.timelineStart) * props.pixelsPerSecond);
+    return createElement('button', {
+      key: item.id,
+      type: 'button',
+      'data-testid': 'runaway-transition-chip',
+      'aria-label': `${payload.manifestId}, ${payload.segmentId}, ${payload.colourName}, ${item.timelineStart.toFixed(3)} seconds`,
+      title: `${payload.manifestId} · ${payload.segmentId} · ${payload.colourName}\n${payload.prompt}`,
+      style: {
+        position: 'absolute',
+        top: 3,
+        bottom: 3,
+        left: item.timelineStart * props.pixelsPerSecond,
+        width,
+        minWidth: 2,
+        padding: 0,
+        border: '1px solid color-mix(in srgb, currentColor 35%, transparent)',
+        borderRadius: width >= 6 ? 2 : 0,
+        background: payload.colourHex,
+        cursor: 'pointer',
+        boxShadow: '0 0 0 1px rgba(0,0,0,.22)',
+      },
+      onClick: (event: MouseEvent<HTMLButtonElement>) => {
+        event.stopPropagation();
+        props.onSelectItem?.(item.id);
+      },
+    });
+  });
+  const summary = payloadOf(props.items[0]?.payload)?.timingSummary;
+  const declaredRegions = Object.keys(summary?.segmentCounts ?? {}).length;
+  const populatedRegions = [...regionExtents.keys()].length;
+  return createElement(
+    'div',
+    {
+      'data-testid': 'runaway-timeline-lane',
+      style: { position: 'relative', height: '100%', overflow: 'hidden' },
+    },
+    ...regions,
+    ...transitions,
+    createElement('span', {
+      key: 'summary',
+      'data-testid': 'runaway-lane-summary',
+      title: `${props.items.length} transitions · ${populatedRegions}/${declaredRegions || populatedRegions} populated regions`,
+      style: {
+        position: 'sticky',
+        left: 4,
+        top: 2,
+        zIndex: 3,
+        display: 'inline-block',
+        padding: '1px 5px',
+        borderRadius: 3,
+        background: 'color-mix(in srgb, var(--video-editor-panel-bg) 88%, transparent)',
+        color: 'var(--video-editor-fg)',
+        fontSize: 9,
+        lineHeight: '14px',
+        pointerEvents: 'none',
+      },
+    }, `${props.items.length} · ${populatedRegions}/${declaredRegions || populatedRegions} regions`),
+  );
+}
+
+export function renderRunawayTransitionInspector(props: DataItemInspectorProps): unknown {
+  const payload = payloadOf(props.item.payload);
+  if (!payload) return createElement('div', null, 'Invalid Runaway transition payload');
+  const summary = payload.timingSummary;
+  return createElement(
+    'div',
+    { 'data-testid': 'runaway-transition-inspector', style: { display: 'grid', gap: 5, fontSize: 11 } },
+    createElement('strong', null, `${payload.manifestId} · ${payload.segmentId}`),
+    createElement('div', null, payload.segmentLabel),
+    createElement('div', null, `${(payload.startMs / 1000).toFixed(3)}s – ${((payload.startMs + payload.durationMs) / 1000).toFixed(3)}s · frame ${payload.frame} @ ${payload.fps}fps`),
+    createElement('div', null, `${payload.colourName} · ${payload.colourHex} · ${payload.timingMode}`),
+    createElement('div', null, `run: ${payload.runId}`),
+    createElement('div', null, `task: ${payload.taskId ?? 'none'}`),
+    createElement('div', { style: { lineHeight: 1.35 } }, payload.prompt),
+    summary ? createElement('div', null, `${summary.transitionCount ?? '—'} typed transitions · ${Object.keys(summary.segmentCounts).length} declared regions`) : null,
+  );
+}

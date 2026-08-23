@@ -3616,6 +3616,32 @@ describe('compileTimelinePatch — track.add', () => {
     expect(added.kind).toBe('audio');
   });
 
+  it('can insert a new overlay track before the current top visual track', () => {
+    const data = makeMinimalTimelineData({
+      tracks: [
+        { id: 'V1', kind: 'visual', label: 'V1' },
+        { id: 'V2', kind: 'visual', label: 'V2' },
+      ],
+      clips: [],
+    });
+    const result = compileTimelinePatch(
+      makePatch({
+        operations: [makeOp('track.add', 'captions', {
+          kind: 'visual',
+          label: 'Captions',
+          before: 'V1',
+        })],
+      }),
+      data,
+    );
+    expect(result.valid).toBe(true);
+    expect(result.nextData!.config.tracks!.map((track) => track.id)).toEqual([
+      'captions', 'V1', 'V2',
+    ]);
+    expect(result.diff.entries.find((entry) => entry.target === 'captions')?.after)
+      .toMatchObject({ before: 'V1' });
+  });
+
   it('produces warning when track already exists', () => {
     const data = makeMinimalTimelineData({
       tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],

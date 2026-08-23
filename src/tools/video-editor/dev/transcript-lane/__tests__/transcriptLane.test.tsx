@@ -37,8 +37,11 @@ import { validateManifest, type DataLaneRendererProps } from '@reigh/editor-sdk'
 import { createExtensionContext } from '@/tools/video-editor/runtime/extensionContextFactory';
 import { createDataKindRegistrationService } from '@/tools/video-editor/runtime/dataKindRegistrationService';
 import {
+  TRANSCRIPT_CAPTION_TRACK_ID,
   TRANSCRIPT_KIND_ID,
   TRANSCRIPT_SCHEMA_REF,
+  buildTranscriptCaptionPatch,
+  transcriptCaptionClipId,
   transcriptLaneExtension,
 } from '../extension';
 import { renderTranscriptLane } from '../TranscriptLaneView';
@@ -392,5 +395,70 @@ describe('transcript lane chips (rework round-2 F3)', () => {
 
     expect(onSelectItem).toHaveBeenCalledTimes(1);
     expect(onSelectItem).toHaveBeenCalledWith('b:c2:0');
+  });
+
+  it('offers a one-click caption materialization action with current mapped items', () => {
+    const onCreateCaptions = vi.fn();
+    const props: DataLaneRendererProps = {
+      kindId: TRANSCRIPT_KIND_ID,
+      schemaRef: TRANSCRIPT_SCHEMA_REF,
+      shape: 'interval',
+      domain: 'source_seconds',
+      startLeft: 0,
+      pixelsPerSecond: 50,
+      items: [
+        { id: 'a:c1:0', timelineStart: 1, timelineEnd: 2, clipId: 'c1', payload: { text: 'first' } },
+      ],
+    };
+    render(renderTranscriptLane(props, onCreateCaptions) as ReactElement);
+    fireEvent.click(screen.getByRole('button', { name: 'Render transcript as editable video text' }));
+    expect(onCreateCaptions).toHaveBeenCalledWith(props.items);
+  });
+
+  it('builds deterministic idempotent text-clip patches from mapped transcript time', () => {
+    const items: DataLaneRendererProps['items'] = [
+      { id: 'asset-a:clip-1:0', timelineStart: 1.25, timelineEnd: 2.75, clipId: 'clip-1', payload: { text: 'Hello caption' } },
+      { id: 'asset-a:clip-1:1', timelineStart: 3, timelineEnd: 4, clipId: 'clip-1', payload: { text: 'Second caption' } },
+    ];
+    const firstId = transcriptCaptionClipId(items[0].id);
+    const patch = buildTranscriptCaptionPatch({
+      baseVersion: 9,
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1', muted: false }],
+      clips: [],
+      outputMetadata: { resolution: '1280x720', fps: 30, file: 'demo.mp4' },
+    }, items);
+    expect(patch.version).toBe(9);
+    expect(patch.operations[0]).toMatchObject({
+      op: 'track.add',
+      target: TRANSCRIPT_CAPTION_TRACK_ID,
+      payload: { kind: 'visual', label: 'Transcript Captions', before: 'V1' },
+    });
+    expect(patch.operations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        op: 'clip.add',
+        target: firstId,
+        payload: expect.objectContaining({ at: 1.25, clipType: 'text' }),
+      }),
+      expect.objectContaining({
+        op: 'clip.update',
+        target: firstId,
+        payload: expect.objectContaining({
+          hold: 1.5,
+          x: 128,
+          y: 418,
+          width: 1024,
+          height: 101,
+          text: expect.objectContaining({ content: 'Hello caption', fontSize: 48, bold: true }),
+        }),
+      }),
+    ]));
+
+    const rerun = buildTranscriptCaptionPatch({
+      baseVersion: 10,
+      tracks: [{ id: TRANSCRIPT_CAPTION_TRACK_ID, kind: 'visual', label: 'Transcript Captions', muted: false }],
+      clips: [{ id: firstId, track: TRANSCRIPT_CAPTION_TRACK_ID, at: 1.25, duration: 1.5, managed: false }],
+      outputMetadata: { resolution: '1280x720', fps: 30, file: 'demo.mp4' },
+    }, [items[0]]);
+    expect(rerun.operations).toEqual([]);
   });
 });

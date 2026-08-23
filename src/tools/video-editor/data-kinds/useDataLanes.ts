@@ -32,6 +32,7 @@ import {
 } from '@/tools/video-editor/data/typed/assembleDataLanes.ts';
 import { useLaneSegments, type LoadDataSegments } from './dataLaneAssemblyAuthority.ts';
 import { useDataKindRegistrySnapshot } from './DataKindRegistryContext.tsx';
+import { useRunawayTimelineItems } from '@/tools/video-editor/dev/runaway-timeline/runawayTimelineData.ts';
 
 export type { LoadDataSegments };
 
@@ -58,6 +59,16 @@ export interface UseDataLanesArgs {
 export function useDataLanes({ base, kinds, loadSegments }: UseDataLanesArgs): TimelineData | null {
   const contextRecords = useDataKindRegistrySnapshot().records;
   const effectiveKinds = kinds ?? contextRecords;
+  const runawayItems = useRunawayTimelineItems();
+  const effectiveSourceItems = useMemo(() => {
+    const persisted = base?.sourceItemsBySchemaRef;
+    if (!runawayItems) return persisted;
+    const merged = { ...persisted };
+    for (const [schemaRef, items] of Object.entries(runawayItems)) {
+      merged[schemaRef] = Object.freeze([...(persisted?.[schemaRef] ?? []), ...items]);
+    }
+    return Object.freeze(merged);
+  }, [base?.sourceItemsBySchemaRef, runawayItems]);
 
   const runtime = useOptionalVideoEditorRuntime();
   const defaultLoader = useMemo<LoadDataSegments | undefined>(() => {
@@ -107,9 +118,11 @@ export function useDataLanes({ base, kinds, loadSegments }: UseDataLanesArgs): T
       segmentsByAsset,
       // V2 bundle plane: persisted SOURCE items ride on the base data and
       // feed the same assembly pass as freshly fetched transcript segments.
-      sourceItemsBySchemaRef: base.sourceItemsBySchemaRef,
+      // Live Astrid bridge items enter as immutable SOURCE items too; the
+      // assembly authority owns their sole timeline-domain projection.
+      sourceItemsBySchemaRef: effectiveSourceItems,
     });
     // Base identity when nothing assembles: no clone churn, empty lanes.
     return views.length > 0 ? mergeDataLanes(base, views) : base;
-  }, [base, effectiveKinds, segmentsByAsset]);
+  }, [base, effectiveKinds, effectiveSourceItems, segmentsByAsset]);
 }

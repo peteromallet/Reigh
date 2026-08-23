@@ -48,7 +48,10 @@ export const TextClip: FC<TextClipProps> = ({ clip, track: _track, fps, effectRe
         textAlign: text.align ?? 'center',
         whiteSpace: 'pre-wrap',
         lineHeight: 1.1,
-        textShadow: '0 2px 18px rgba(0, 0, 0, 0.35)',
+        // Captions and other overlay copy must stay legible on both bright
+        // and dark footage. Two shadows provide a tight edge plus a softer
+        // halo without adding a schema-specific stroke/background field.
+        textShadow: '0 2px 4px rgba(0, 0, 0, 0.95), 0 2px 18px rgba(0, 0, 0, 0.8)',
         opacity: clip.opacity ?? 1,
       }}
     >

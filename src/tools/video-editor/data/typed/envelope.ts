@@ -125,3 +125,12 @@ export const freezeDataItem = (item: FrozenDataItem): FrozenDataItem => {
   if (item.payload !== null && typeof item.payload === 'object') Object.freeze(item.payload);
   return Object.freeze(item);
 };
+
+/** Freeze a persisted/source-plane item without adding occurrence chrome. */
+export const freezeSourceDataItem = (item: SourceFrozenDataItem): SourceFrozenDataItem => {
+  Object.freeze(item.extent);
+  Object.freeze(item.provenance);
+  Object.freeze(item.sourceArtifactRef);
+  if (item.payload !== null && typeof item.payload === 'object') Object.freeze(item.payload);
+  return Object.freeze(item);
+};
