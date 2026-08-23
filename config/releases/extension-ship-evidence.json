@@ -1,0 +1,151 @@
+{
+  "schemaVersion": 1,
+  "release": "extension-ship-quality-rc1",
+  "status": "integration",
+  "candidate": {
+    "reighCommit": null,
+    "astridCommit": null
+  },
+  "workstreams": [
+    {
+      "id": "1-clean-integration-branch",
+      "title": "Clean integration branch",
+      "status": "in_progress",
+      "receipts": []
+    },
+    {
+      "id": "2-completely-green-merged-repository",
+      "title": "Completely green merged repository",
+      "status": "in_progress",
+      "receipts": []
+    },
+    {
+      "id": "3-production-like-end-to-end-suite",
+      "title": "Production-like end-to-end suite",
+      "status": "in_progress",
+      "receipts": []
+    },
+    {
+      "id": "4-persistence-and-migration-durability",
+      "title": "Persistence and migration durability",
+      "status": "in_progress",
+      "receipts": []
+    },
+    {
+      "id": "5-real-rendering-and-export-verification",
+      "title": "Real rendering and export verification",
+      "status": "in_progress",
+      "receipts": []
+    },
+    {
+      "id": "6-large-lane-virtualization",
+      "title": "Large-lane virtualization",
+      "status": "in_progress",
+      "receipts": []
+    },
+    {
+      "id": "7-deterministic-local-test-mode",
+      "title": "Deterministic local-test mode",
+      "status": "in_progress",
+      "receipts": []
+    },
+    {
+      "id": "8-astrid-bridge-hardening",
+      "title": "Astrid bridge hardening",
+      "status": "in_progress",
+      "receipts": []
+    },
+    {
+      "id": "9-host-owned-provenance-contract",
+      "title": "Host-owned provenance contract",
+      "status": "in_progress",
+      "receipts": []
+    },
+    {
+      "id": "10-transcript-round-trip-policy",
+      "title": "Transcript round-trip policy",
+      "status": "in_progress",
+      "receipts": []
+    },
+    {
+      "id": "11-extension-compatibility-matrix",
+      "title": "Extension compatibility matrix",
+      "status": "in_progress",
+      "receipts": []
+    },
+    {
+      "id": "12-accessibility-gates",
+      "title": "Accessibility gates",
+      "status": "in_progress",
+      "receipts": []
+    },
+    {
+      "id": "13-browser-and-device-matrix",
+      "title": "Browser and device matrix",
+      "status": "in_progress",
+      "receipts": []
+    },
+    {
+      "id": "14-performance-and-resource-budgets",
+      "title": "Performance and resource budgets",
+      "status": "in_progress",
+      "receipts": []
+    },
+    {
+      "id": "15-visual-regression-suite",
+      "title": "Visual regression suite",
+      "status": "in_progress",
+      "receipts": []
+    },
+    {
+      "id": "16-failure-and-recovery-testing",
+      "title": "Failure and recovery testing",
+      "status": "in_progress",
+      "receipts": []
+    },
+    {
+      "id": "17-extension-security-boundary",
+      "title": "Extension security boundary",
+      "status": "in_progress",
+      "receipts": []
+    },
+    {
+      "id": "18-migration-and-rollback-policy",
+      "title": "Migration and rollback policy",
+      "status": "in_progress",
+      "receipts": []
+    },
+    {
+      "id": "19-staged-rollout",
+      "title": "Staged rollout",
+      "status": "in_progress",
+      "receipts": []
+    },
+    {
+      "id": "20-production-observability",
+      "title": "Production observability",
+      "status": "in_progress",
+      "receipts": []
+    },
+    {
+      "id": "21-rollback-and-support-runbooks",
+      "title": "Rollback and support runbooks",
+      "status": "in_progress",
+      "receipts": []
+    },
+    {
+      "id": "22-human-acceptance-testing",
+      "title": "Human acceptance testing",
+      "status": "blocked",
+      "blocker": "Four independent human persona sessions have not yet been completed on a frozen paired release candidate.",
+      "receipts": []
+    },
+    {
+      "id": "23-frozen-release-candidate",
+      "title": "Frozen release candidate",
+      "status": "blocked",
+      "blocker": "The integration worktrees are still changing and the two independent frozen-candidate approvals are not yet available.",
+      "receipts": []
+    }
+  ]
+}

@@ -104,6 +104,11 @@ describe('extension ship verifier', () => {
       && gate.command === 'npm'
       && gate.args.join(' ') === 'run test:e2e:extension-cross-browser'
     )));
+    assert.ok(REIGH_GATE_PROFILE.some((gate) => (
+      gate.id === 'ship-evidence'
+      && gate.command === 'npm'
+      && gate.args.join(' ') === 'run check:extension-ship-evidence:release'
+    )));
   });
 
   it('fails closed on a mutable Astrid ref or incomplete gate inventory', () => {

@@ -161,3 +161,10 @@ recovery, review, and human-acceptance controls in
 [`extension-release-runbook.md`](./extension-release-runbook.md). The pinned
 candidate and toolchain are recorded in
 [`config/releases/extension-ship-quality.json`](../../config/releases/extension-ship-quality.json).
+
+Ship-quality disposition is enforced separately from the narrower platform
+contract checklist. The immutable receipt format, honest in-progress ledger,
+and fail-closed command are documented in
+[`extension-ship-evidence-ledger.md`](./extension-ship-evidence-ledger.md). A
+release verifier run cannot pass until that ledger reports 23/23 against the
+exact frozen Reigh/Astrid pair.
