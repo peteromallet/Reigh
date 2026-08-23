@@ -555,6 +555,7 @@ export function useEditorRuntimeSync({
     agentToolRegistryRef,
     rendererRegistryRef,
     liveDataRegistryRef,
+    timelineViewStoreRef,
   } = assembly;
   const settingsRepository = settings?.repository ?? null;
   const settingsSnapshotsRef = settings?.snapshotsRef;
@@ -680,9 +681,9 @@ export function useEditorRuntimeSync({
       timeline: ops as unknown as CreativeContext['timeline'],
       reader: timelineReader,
       proposals: proposals as unknown as CreativeContext['proposals'],
-      timelineView: assembly.timelineViewStoreRef.current as unknown as CreativeContext['timelineView'],
+      timelineView: timelineViewStoreRef.current as unknown as CreativeContext['timelineView'],
     };
-  }, [timelineReader, store]);
+  }, [timelineReader, timelineViewStoreRef, store]);
 
   useEffect(() => {
     const host = lifecycleHostRef.current;

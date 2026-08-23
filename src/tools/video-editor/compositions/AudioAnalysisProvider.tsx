@@ -181,12 +181,11 @@ export function AudioAnalysisProvider({
       if (disposed) {
         return;
       }
-      // Pass the FRESH candidate (current `sources`) rather than the interned
-      // stable request: cache/in-flight lookups are keyed by `request.key`, so
-      // key identity is preserved, but a fetch/decode retry must see refreshed
-      // URLs (e.g. re-signed asset URLs) instead of the first-seen ones frozen
-      // in the interned object.
-      subscription = acquireAudioAnalysis(candidateRequest);
+      // `internAudioMixRequest` preserves identity only while both the
+      // semantic key and fetch sources match. A refreshed signed URL replaces
+      // the interned request, so this stable dependency always carries the
+      // current sources without retriggering for equivalent clip arrays.
+      subscription = acquireAudioAnalysis(stableRequest);
       subscription.promise
         .then((result) => {
           // Preserve the previous result while a legitimately changed mix

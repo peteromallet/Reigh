@@ -2,20 +2,11 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { createExtensionContext } from '@/tools/video-editor/runtime/extensionContextFactory';
 import type {
-  DisposeHandle,
-  ExtensionCommandService,
-  ExtensionContext,
-  ExtensionRenderer,
-  ExtensionUiService,
-  TimelineDiff,
-  TimelineOps,
   TimelineOverlayRenderProps,
-  TimelinePatch,
-  TimelineReader,
   TimelineSnapshot,
 } from '@reigh/editor-sdk';
+import { createCreativeLabExtensionHarness } from '../testing/createCreativeLabHarness';
 import {
   BUILD_CAPTION_FINDINGS_COMMAND,
   CAPTION_FINDINGS_DATA_KEY,
@@ -42,63 +33,6 @@ function snapshot(overrides: Partial<TimelineSnapshot> = {}): TimelineSnapshot {
     assetKeys: [],
     app: {},
     ...overrides,
-  };
-}
-
-function createHarness(initial: TimelineSnapshot = snapshot()): {
-  ctx: ExtensionContext;
-  command: { id: string; handler: (run: unknown) => void } | null;
-  renderer: ExtensionRenderer<TimelineOverlayRenderProps> | null;
-  patches: TimelinePatch[];
-  setSnapshot(next: TimelineSnapshot): void;
-  commandDisposals: number;
-  rendererDisposals: number;
-} {
-  let command: { id: string; handler: (run: unknown) => void } | null = null;
-  let renderer: ExtensionRenderer<TimelineOverlayRenderProps> | null = null;
-  let commandDisposals = 0;
-  let rendererDisposals = 0;
-  const patches: TimelinePatch[] = [];
-  const commands: ExtensionCommandService = {
-    registerCommand(id, handler): DisposeHandle {
-      command = { id, handler: handler as (run: unknown) => void };
-      return { dispose: () => { commandDisposals += 1; } };
-    },
-  };
-  const ui: ExtensionUiService = {
-    registerRenderer(_id, nextRenderer): DisposeHandle {
-      renderer = nextRenderer as ExtensionRenderer<TimelineOverlayRenderProps>;
-      return { dispose: () => { rendererDisposals += 1; } };
-    },
-  };
-  let current = initial;
-  const reader: TimelineReader = { snapshot: () => current };
-  const timeline = {
-    apply(patch: TimelinePatch): TimelineDiff {
-      patches.push(patch);
-      return {} as TimelineDiff;
-    },
-  } as TimelineOps;
-  const ctx = createExtensionContext(
-    captionSafeZoneOrchestraExtension,
-    { reader, timeline },
-    commands,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    ui,
-  );
-  return {
-    ctx,
-    get command() { return command; },
-    get renderer() { return renderer; },
-    patches,
-    setSnapshot(next) { current = next; },
-    get commandDisposals() { return commandDisposals; },
-    get rendererDisposals() { return rendererDisposals; },
   };
 }
 
@@ -208,14 +142,14 @@ describe('Caption Safe-Zone Orchestra extension', () => {
   });
 
   it('registers command and overlay, invokes command, and disposes both', () => {
-    const harness = createHarness(snapshot({
+    const harness = createCreativeLabExtensionHarness(captionSafeZoneOrchestraExtension, snapshot({
       clips: [{ id: 'caption-a', track: 'V1', at: 1, duration: 0.5, clipType: 'caption', managed: false }],
       tracks: [{ id: 'V1', kind: 'visual', label: 'Video', muted: false }],
     }));
     const activation = captionSafeZoneOrchestraExtension.activate?.(harness.ctx);
-    expect(harness.command?.id).toBe(BUILD_CAPTION_FINDINGS_COMMAND);
-    expect(harness.renderer).toEqual(expect.any(Function));
-    harness.command?.handler({ commandId: BUILD_CAPTION_FINDINGS_COMMAND });
+    expect(harness.getCommand(BUILD_CAPTION_FINDINGS_COMMAND)).toEqual(expect.any(Function));
+    expect(harness.getRenderer(CAPTION_OVERLAY_RENDER_ID)).toEqual(expect.any(Function));
+    harness.getCommand(BUILD_CAPTION_FINDINGS_COMMAND)?.({ commandId: BUILD_CAPTION_FINDINGS_COMMAND });
     expect(harness.patches[0].operations[0]).toMatchObject({
       op: 'project-data.write',
       target: CAPTION_SAFE_ZONE_EXTENSION_ID,
@@ -230,11 +164,11 @@ describe('Caption Safe-Zone Orchestra extension', () => {
       clips: [{ id: 'caption-a', track: 'V1', at: 1, duration: 0.5, clipType: 'caption', managed: false }],
       tracks: [{ id: 'V1', kind: 'visual', label: 'Video', muted: false }],
     });
-    const harness = createHarness(snapshot({
+    const harness = createCreativeLabExtensionHarness(captionSafeZoneOrchestraExtension, snapshot({
       app: { [CAPTION_SAFE_ZONE_EXTENSION_ID]: { [CAPTION_FINDINGS_DATA_KEY]: stored } },
     }));
     const activation = captionSafeZoneOrchestraExtension.activate?.(harness.ctx);
-    const rendered = harness.renderer?.({
+    const rendered = harness.getRenderer<TimelineOverlayRenderProps>(CAPTION_OVERLAY_RENDER_ID)?.({
       primitives: { markerLayer: (options: unknown) => options },
     } as TimelineOverlayRenderProps) as any;
     expect(rendered.markers).toHaveLength(1);

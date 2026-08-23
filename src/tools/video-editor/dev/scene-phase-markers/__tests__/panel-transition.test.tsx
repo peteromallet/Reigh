@@ -105,7 +105,7 @@ describe('ScenePhaseMarkersPanel transition', () => {
     // drops the cleared markers without a host re-render.
     let liveVersion = 1;
     let baseVersion = 1;
-    let storedMarkers: ScenePhaseMarker[] = [{ id: 'm1', time: 2 }];
+    const storedMarkers: ScenePhaseMarker[] = [{ id: 'm1', time: 2 }];
     const applied: TimelinePatch[] = [];
     const ops: TimelineOps = {
       ...makeOps(),

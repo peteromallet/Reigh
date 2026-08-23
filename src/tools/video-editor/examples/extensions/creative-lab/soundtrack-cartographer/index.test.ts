@@ -3,19 +3,10 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type {
-  DisposeHandle,
-  ExtensionCommandService,
-  ExtensionContext,
-  ExtensionRenderer,
-  ExtensionUiService,
-  TimelineDiff,
-  TimelineOps,
   TimelineOverlayRenderProps,
-  TimelinePatch,
-  TimelineReader,
   TimelineSnapshot,
 } from '@reigh/editor-sdk';
-import { createExtensionContext } from '@/tools/video-editor/runtime/extensionContextFactory';
+import { createCreativeLabExtensionHarness } from '../testing/createCreativeLabHarness';
 import {
   BUILD_TERRAIN_COMMAND,
   SOUNDTRACK_CARTOGRAPHER_EXTENSION_ID,
@@ -35,29 +26,6 @@ function snapshot(overrides: Partial<TimelineSnapshot> = {}): TimelineSnapshot {
   return {
     projectId: 'cartographer-fixture', baseVersion: 7, currentVersion: 7,
     extensionRequirements: [], clips: [], tracks: [], assetKeys: [], app: {}, ...overrides,
-  };
-}
-
-function createHarness(initial: TimelineSnapshot = snapshot()) {
-  let current = initial;
-  let command: ((run: unknown) => void) | undefined;
-  let renderer: ExtensionRenderer<TimelineOverlayRenderProps> | undefined;
-  let commandDisposals = 0;
-  let rendererDisposals = 0;
-  const patches: TimelinePatch[] = [];
-  const commands: ExtensionCommandService = {
-    registerCommand(_id, handler): DisposeHandle { command = handler as (run: unknown) => void; return { dispose: () => { commandDisposals += 1; } }; },
-  };
-  const ui: ExtensionUiService = {
-    registerRenderer(_id, nextRenderer): DisposeHandle { renderer = nextRenderer as ExtensionRenderer<TimelineOverlayRenderProps>; return { dispose: () => { rendererDisposals += 1; } }; },
-  };
-  const reader: TimelineReader = { snapshot: () => current };
-  const timeline = { apply(patch: TimelinePatch): TimelineDiff { patches.push(patch); return {} as TimelineDiff; } } as TimelineOps;
-  const ctx = createExtensionContext(soundtrackCartographerExtension, { reader, timeline }, commands, undefined, undefined, undefined, undefined, undefined, undefined, ui);
-  return {
-    ctx, patches, setSnapshot(next: TimelineSnapshot) { current = next; },
-    getCommand() { return command; }, getRenderer() { return renderer; },
-    get commandDisposals() { return commandDisposals; }, get rendererDisposals() { return rendererDisposals; },
   };
 }
 
@@ -148,9 +116,9 @@ describe('Soundtrack Cartographer extension', () => {
   });
 
   it('registers, invokes, and guardedly disposes command and renderer', () => {
-    const harness = createHarness(snapshot({ tracks: visualTracks, clips: [{ id: 'a', track: 'V1', at: 1, duration: 2, managed: false }] }));
+    const harness = createCreativeLabExtensionHarness(soundtrackCartographerExtension, snapshot({ tracks: visualTracks, clips: [{ id: 'a', track: 'V1', at: 1, duration: 2, managed: false }] }));
     const activation = soundtrackCartographerExtension.activate?.(harness.ctx);
-    harness.getCommand()?.({ commandId: BUILD_TERRAIN_COMMAND });
+    harness.getCommand(BUILD_TERRAIN_COMMAND)?.({ commandId: BUILD_TERRAIN_COMMAND });
     expect(harness.patches[0].meta).toMatchObject({ kind: 'soundtrack-cartographer-build' });
     activation?.dispose(); activation?.dispose();
     expect(harness.commandDisposals).toBe(1);
@@ -161,9 +129,9 @@ describe('Soundtrack Cartographer extension', () => {
     const tracks = [{ id: 'V1', kind: 'visual' as const, label: 'V1', muted: false }];
     const entries = deriveTerrainCues({ tracks, clips: [{ id: 'a', track: 'V1', at: 1, duration: 2, managed: false }] });
     const app = { schemaVersion: 1, generatedFromVersion: 7, entries };
-    const harness = createHarness(snapshot({ app: { [SOUNDTRACK_CARTOGRAPHER_EXTENSION_ID]: { [TERRAIN_DATA_KEY]: app } } }));
+    const harness = createCreativeLabExtensionHarness(soundtrackCartographerExtension, snapshot({ app: { [SOUNDTRACK_CARTOGRAPHER_EXTENSION_ID]: { [TERRAIN_DATA_KEY]: app } } }));
     const activation = soundtrackCartographerExtension.activate?.(harness.ctx);
-    const rendered = harness.getRenderer()?.({ primitives: { markerLayer: (options: unknown) => options } } as TimelineOverlayRenderProps) as any;
+    const rendered = harness.getRenderer<TimelineOverlayRenderProps>(TERRAIN_OVERLAY_RENDER_ID)?.({ primitives: { markerLayer: (options: unknown) => options } } as TimelineOverlayRenderProps) as any;
     expect(rendered.markers).toHaveLength(2);
     expect(rendered.markers[0].label).toContain('a');
     const custom = rendered.renderMarker(rendered.markers[0]);

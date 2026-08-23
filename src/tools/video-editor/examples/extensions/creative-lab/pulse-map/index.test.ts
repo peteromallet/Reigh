@@ -3,19 +3,10 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type {
-  DisposeHandle,
-  ExtensionCommandService,
-  ExtensionContext,
-  ExtensionRenderer,
-  ExtensionUiService,
-  TimelineDiff,
-  TimelineOps,
   TimelineOverlayRenderProps,
-  TimelinePatch,
-  TimelineReader,
   TimelineSnapshot,
 } from '@reigh/editor-sdk';
-import { createExtensionContext } from '@/tools/video-editor/runtime/extensionContextFactory';
+import { createCreativeLabExtensionHarness } from '../testing/createCreativeLabHarness';
 import {
   BUILD_PULSE_MAP_COMMAND,
   PULSE_MAP_DATA_KEY,
@@ -35,43 +26,6 @@ function snapshot(overrides: Partial<TimelineSnapshot> = {}): TimelineSnapshot {
   return {
     projectId: 'pulse-fixture', baseVersion: 7, currentVersion: 7,
     extensionRequirements: [], clips: [], tracks: [], assetKeys: [], app: {}, ...overrides,
-  };
-}
-
-function createHarness(initial: TimelineSnapshot = snapshot()): {
-  ctx: ExtensionContext;
-  patches: TimelinePatch[];
-  setSnapshot(next: TimelineSnapshot): void;
-  getCommand(): ((run: unknown) => void) | undefined;
-  getRenderer(): ExtensionRenderer<TimelineOverlayRenderProps> | undefined;
-  commandDisposals: number;
-  rendererDisposals: number;
-} {
-  let current = initial;
-  let command: ((run: unknown) => void) | undefined;
-  let renderer: ExtensionRenderer<TimelineOverlayRenderProps> | undefined;
-  let commandDisposals = 0;
-  let rendererDisposals = 0;
-  const patches: TimelinePatch[] = [];
-  const commands: ExtensionCommandService = {
-    registerCommand(_id, handler): DisposeHandle {
-      command = handler as (run: unknown) => void;
-      return { dispose: () => { commandDisposals += 1; } };
-    },
-  };
-  const ui: ExtensionUiService = {
-    registerRenderer(_id, nextRenderer): DisposeHandle {
-      renderer = nextRenderer as ExtensionRenderer<TimelineOverlayRenderProps>;
-      return { dispose: () => { rendererDisposals += 1; } };
-    },
-  };
-  const reader: TimelineReader = { snapshot: () => current };
-  const timeline = { apply(patch: TimelinePatch): TimelineDiff { patches.push(patch); return {} as TimelineDiff; } } as TimelineOps;
-  const ctx = createExtensionContext(pulseMapExtension, { reader, timeline }, commands, undefined, undefined, undefined, undefined, undefined, undefined, ui);
-  return {
-    ctx, patches, setSnapshot(next) { current = next; },
-    getCommand() { return command; }, getRenderer() { return renderer; },
-    get commandDisposals() { return commandDisposals; }, get rendererDisposals() { return rendererDisposals; },
   };
 }
 
@@ -120,9 +74,9 @@ describe('Pulse Map extension', () => {
   });
 
   it('registers, invokes, and guardedly disposes command and renderer', () => {
-    const harness = createHarness(snapshot({ clips: [{ id: 'a', track: 'V1', at: 1, duration: 2, managed: false }] }));
+    const harness = createCreativeLabExtensionHarness(pulseMapExtension, snapshot({ clips: [{ id: 'a', track: 'V1', at: 1, duration: 2, managed: false }] }));
     const activation = pulseMapExtension.activate?.(harness.ctx);
-    harness.getCommand()?.({ commandId: BUILD_PULSE_MAP_COMMAND });
+    harness.getCommand(BUILD_PULSE_MAP_COMMAND)?.({ commandId: BUILD_PULSE_MAP_COMMAND });
     expect(harness.patches[0].meta).toMatchObject({ kind: 'pulse-map-build' });
     activation?.dispose(); activation?.dispose();
     expect(harness.commandDisposals).toBe(1);
@@ -131,9 +85,9 @@ describe('Pulse Map extension', () => {
 
   it('renders intensity and source-aware labels, then moves against a fresh snapshot', () => {
     const entries = derivePulseMap({ clips: [{ id: 'a', track: 'V1', at: 1, duration: 2, managed: false }] });
-    const harness = createHarness(snapshot({ app: { [PULSE_MAP_EXTENSION_ID]: { [PULSE_MAP_DATA_KEY]: { schemaVersion: 1, generatedFromVersion: 7, entries } } } }));
+    const harness = createCreativeLabExtensionHarness(pulseMapExtension, snapshot({ app: { [PULSE_MAP_EXTENSION_ID]: { [PULSE_MAP_DATA_KEY]: { schemaVersion: 1, generatedFromVersion: 7, entries } } } }));
     const activation = pulseMapExtension.activate?.(harness.ctx);
-    const rendered = harness.getRenderer()?.({ primitives: { markerLayer: (options: unknown) => options } } as TimelineOverlayRenderProps) as any;
+    const rendered = harness.getRenderer<TimelineOverlayRenderProps>(PULSE_MAP_OVERLAY_RENDER_ID)?.({ primitives: { markerLayer: (options: unknown) => options } } as TimelineOverlayRenderProps) as any;
     expect(rendered.markers).toHaveLength(2);
     expect(rendered.markers[0].label).toContain('a');
     const custom = rendered.renderMarker(rendered.markers[0]);
@@ -154,9 +108,9 @@ describe('Pulse Map extension', () => {
     const app = { [PULSE_MAP_EXTENSION_ID]: {
       [PULSE_MAP_DATA_KEY]: { schemaVersion: 1, generatedFromVersion: 3, entries },
     } };
-    const harness = createHarness(snapshot({ app }));
+    const harness = createCreativeLabExtensionHarness(pulseMapExtension, snapshot({ app }));
     const activation = pulseMapExtension.activate?.(harness.ctx);
-    const rendered = harness.getRenderer()?.({ primitives: { markerLayer: (options: unknown) => options } } as TimelineOverlayRenderProps) as any;
+    const rendered = harness.getRenderer<TimelineOverlayRenderProps>(PULSE_MAP_OVERLAY_RENDER_ID)?.({ primitives: { markerLayer: (options: unknown) => options } } as TimelineOverlayRenderProps) as any;
     expect(rendered.markers).toHaveLength(2);
     const cluster = rendered.markers.find((marker: any) => marker.time === 1);
     expect(cluster.data.cluster.entries).toHaveLength(2);

@@ -46,7 +46,7 @@ const __editorOps = {
 // Mock dependencies
 // ---------------------------------------------------------------------------
 
-let __liveInspectorTarget = { value: { kind: 'timeline' as const } };
+const __liveInspectorTarget = { value: { kind: 'timeline' as const } };
 
 vi.mock('@/tools/video-editor/hooks/timelineStore.ts', () => ({
   useTimelineEditorData: () => ({
@@ -1275,4 +1275,3 @@ describe('TimelineEditorShellCore — recovery draft banner', () => {
     // must NOT write that placeholder over the extension's live target.
     expect(__editorOps.setInspectorTarget).not.toHaveBeenCalledWith({ kind: 'timeline' });
   });
-

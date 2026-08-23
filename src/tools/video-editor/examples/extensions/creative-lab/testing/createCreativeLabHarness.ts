@@ -88,12 +88,33 @@ export function createCreativeLabExtensionHarness(
     },
   };
   const reader: TimelineReader = { snapshot: () => currentSnapshot };
-  const timeline = {
+  const timeline: TimelineOps = {
+    validate: () => ({ valid: true, diagnostics: [] }),
+    preview: (patch) => ({
+      diff: {
+        version: patch.version,
+        entries: [],
+        affectedObjectIds: [],
+      },
+      fullyPreviewable: true,
+      diagnostics: [],
+    }),
     apply(patch: TimelinePatch): TimelineDiff {
       patches.push(patch);
-      return {} as TimelineDiff;
+      return {
+        version: patch.version,
+        entries: [],
+        affectedObjectIds: [],
+      };
     },
-  } as TimelineOps;
+    checkpoint: () => 'creative-lab-checkpoint',
+    rollback: () => null,
+    setAllTracksMuted: () => ({
+      version: currentSnapshot.currentVersion,
+      entries: [],
+      affectedObjectIds: [],
+    }),
+  };
 
   const ctx = createExtensionContext(
     extension,
