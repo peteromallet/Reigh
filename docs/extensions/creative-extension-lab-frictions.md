@@ -610,3 +610,26 @@ evidence and a concrete improvement direction.
   security boundaries, cycles, test gaps, and large host modules explicitly,
   while tracking broader cleanup separately. Health tooling is useful evidence
   only when its zone, review state, and release scope are recorded.
+
+### A non-root runtime exposed a build-tool write assumption
+
+- Switching the production container to `USER node` was correct hardening, but
+  Vite preview's TypeScript-config loader writes a timestamped `.mjs` sibling
+  beside `config/vite/vite.config.ts`. The image copied `config/` as root-owned,
+  so the hardened container could pass every source test and then fail at
+  startup with `EACCES`.
+- The runtime now owns `config/` as well as the generated `dist/` tree. Release
+  checks assert both ownership declarations. The broader lesson is that a
+  non-root image needs a real startup/health probe: static Dockerfile checks do
+  not reveal runtime writes performed by ostensibly read-only config loaders.
+
+### Service-worker fallback can silently defeat an emergency kill switch
+
+- `fetch(..., { cache: 'no-store' })` was not enough to make the rollout
+  document fail closed. The existing service worker cached every small
+  same-origin response and replayed it when the network failed, so an older
+  `hostEnabled: true` document could survive a deployment rollback or outage.
+- The service worker cache generation is bumped and the exact versioned runtime
+  config path bypasses interception entirely. A VM-level regression test proves
+  that even a populated stale cache is never consulted. Deployment controls
+  need tests at every browser cache layer, not only at the application fetch.
