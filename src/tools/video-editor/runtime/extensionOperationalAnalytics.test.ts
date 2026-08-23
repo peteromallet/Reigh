@@ -22,6 +22,24 @@ afterEach(() => {
 });
 
 describe('extension operational analytics browser sink', () => {
+  it('never installs transport in deterministic local-test mode', async () => {
+    const previousUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    window.history.replaceState({}, '', '/tools/video-editor?localTest=1');
+    try {
+      const invoke = vi.fn().mockResolvedValue(undefined);
+      const sink = installExtensionOperationalAnalyticsSink({ invoke, flushDelayMs: 0 });
+      for (let i = 0; i < OPERATIONAL_ANALYTICS_BATCH_SIZE; i += 1) {
+        window.dispatchEvent(new CustomEvent(EXTENSION_OPERATIONAL_EVENT_DOM_NAME, { detail: event }));
+      }
+      await sink.flush();
+      expect(invoke).not.toHaveBeenCalled();
+      expect(sink.getDroppedCount()).toBe(0);
+      sink.dispose();
+    } finally {
+      window.history.replaceState({}, '', previousUrl);
+    }
+  });
+
   it('rebuilds only fixed fields and rejects content-bearing DOM payloads', () => {
     expect(toTransportSafeOperationalEvent({ ...event, prompt: 'secret' })).toBeNull();
     expect(toTransportSafeOperationalEvent({ ...event, projectId: 'private' })).toBeNull();

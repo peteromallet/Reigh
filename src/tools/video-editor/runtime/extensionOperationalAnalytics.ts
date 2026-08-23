@@ -3,6 +3,7 @@ import {
   REVIEWED_PRODUCTION_EXTENSION_IDS,
   type ExtensionOperationalEvent,
 } from './extensionReleaseControls';
+import { isLocalTestMode } from '@/app/localTestRuntime';
 import { invokeSupabaseEdgeFunction } from '@/integrations/supabase/functions/invokeSupabaseEdgeFunction';
 
 /** Keep analytics work strictly out of the editor's synchronous/runtime path. */
@@ -118,7 +119,10 @@ let installedSink: ExtensionOperationalAnalyticsSink | undefined;
 export function installExtensionOperationalAnalyticsSink(
   options: ExtensionOperationalAnalyticsSinkOptions = {},
 ): ExtensionOperationalAnalyticsSink {
-  if (typeof window === 'undefined') {
+  // Deterministic local-test mode is a deliberately offline environment. Keep
+  // the release emitter active for browser assertions, but never install the
+  // network sink or let a timer manufacture a Supabase request.
+  if (typeof window === 'undefined' || isLocalTestMode()) {
     return { dispose: () => {}, flush: async () => {}, getDroppedCount: () => 0 };
   }
   if (installedSink) return installedSink;
