@@ -489,8 +489,15 @@ export function CopilotPrompt({
         setPromptText('');
       }
 
-      // Scroll to bottom after render
-      setTimeout(() => historyEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+      // Scroll after render when the host DOM implements the capability. Some
+      // embedded/test DOMs expose an element without scrollIntoView; a delayed
+      // enhancement must never become an uncaught application error.
+      setTimeout(() => {
+        const historyEnd = historyEndRef.current;
+        if (typeof historyEnd?.scrollIntoView === 'function') {
+          historyEnd.scrollIntoView({ behavior: 'smooth' });
+        }
+      }, 50);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setPendingError(message);

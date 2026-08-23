@@ -786,3 +786,14 @@ evidence and a concrete improvement direction.
   local-test mode, with a unit test proving that no Supabase surface is touched.
   Deterministic mode is an application-shell contract, not a feature-local
   flag; every global side effect must honor it.
+
+### Delayed UI enhancements must remain capability-safe after the action ends
+
+- The full serial suite found an uncaught exception after a Copilot test had
+  already completed: a delayed scroll callback saw a DOM element but assumed
+  its host implemented `scrollIntoView`. The feature result was already saved,
+  yet an optional animation could still poison the global test and error signal.
+- The callback now checks that the method is callable before invoking it.
+  Timers, focus restoration, scrolling, and animation scheduled after an
+  extension command must be treated as optional capabilities and included in
+  unhandled-error gates, not dismissed because the primary assertion passed.
