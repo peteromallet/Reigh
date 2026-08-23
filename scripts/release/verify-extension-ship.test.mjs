@@ -4,21 +4,34 @@ import { describe, it } from 'node:test';
 
 import {
   ASTRID_GATE_PROFILE,
+  ASTRID_SEPARATE_VOLUME_MIN_BYTES,
+  DISK_BUDGET_OVERRIDE_ENV,
   EXPECTED_REQUIRED_GATES,
+  HEAVY_STEP_MIN_FREE_BYTES,
   MANIFEST_PATH,
   REIGH_GATE_PROFILE,
   REPO_ROOT,
+  assertDiskRequirements,
+  assertHeavyStepDiskCapacity,
+  assertReleaseDiskCapacity,
+  availableBytesAt,
   buildExecutionPlan,
   buildSanitizedEnvironment,
+  calculateReleaseRequiredBytes,
   executeSteps,
   formatCommand,
   isMakeRecipeSafeExecutablePath,
+  nearestExistingAncestor,
   parseCliArgs,
+  parseDiskBudgetOverride,
+  parseLsTreeAllocatedBytes,
   resolveAstridPython,
   validatePackageJson,
   validateReleaseManifest,
+  volumeKeyForPath,
 } from './verify-extension-ship.mjs';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 
 const manifest = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'));
 const packageJson = JSON.parse(readFileSync(`${REPO_ROOT}/package.json`, 'utf8'));
@@ -206,6 +219,181 @@ describe('extension ship verifier', () => {
     assert.equal(calls.length, 2);
   });
 
+  it('sizes complete commit trees in bigint allocation blocks and budgets archive overlap', () => {
+    const sha = 'a'.repeat(40);
+    const tree = [
+      `100644 blob ${sha}       1\tfirst file`,
+      `100644 blob ${sha} 4097\tsecond-file`,
+      `100644 blob ${sha} 0\tempty`,
+      `160000 commit ${sha} -\tsubmodule`,
+      '',
+    ].join('\0');
+    assert.equal(parseLsTreeAllocatedBytes(tree), 4n * 4096n);
+    assert.throws(
+      () => parseLsTreeAllocatedBytes(`100644 blob ${sha} 1 missing-tab\0`),
+      /no path separator/,
+    );
+
+    const gib = 1024n ** 3n;
+    assert.equal(calculateReleaseRequiredBytes({
+      reighTreeBytes: gib,
+      astridTreeBytes: gib / 4n,
+    }), 11n * gib);
+    assert.throws(
+      () => calculateReleaseRequiredBytes({ reighTreeBytes: 1, astridTreeBytes: 1n }),
+      /reighTreeBytes must be a non-negative bigint/,
+    );
+  });
+
+  it('uses statfs bigint bavail, walks to an existing ancestor, and fails closed', () => {
+    const seen = [];
+    const exists = (candidate) => candidate === '/volume';
+    assert.equal(nearestExistingAncestor('/volume/not/yet/created', exists), '/volume');
+    const probe = availableBytesAt('/volume/not/yet/created', {
+      exists,
+      statfs: (target, options) => {
+        seen.push([target, options]);
+        return { bavail: 3n, bfree: 999n, bsize: 4096n };
+      },
+    });
+    assert.deepEqual(probe, { availableBytes: 12288n, target: '/volume' });
+    assert.deepEqual(seen, [['/volume', { bigint: true }]]);
+
+    assert.throws(
+      () => availableBytesAt('/volume', {
+        exists,
+        statfs: () => {
+          const error = new Error('not implemented');
+          error.code = 'ENOSYS';
+          throw error;
+        },
+      }),
+      /cannot measure release disk capacity.*ENOSYS/,
+    );
+    assert.throws(
+      () => availableBytesAt('/volume', { exists, statfs: () => ({ bavail: 1, bsize: 4096 }) }),
+      /invalid bigint fields/,
+    );
+  });
+
+  it('groups same-volume requirements, distinguishes volumes, and rejects unsupported platforms', () => {
+    const calls = [];
+    const dependencies = {
+      ancestor: (candidate) => candidate,
+      exists: () => true,
+      platform: 'linux',
+      realpath: (candidate) => candidate,
+      stat: (candidate) => ({ dev: candidate.startsWith('/one') ? 1n : 2n }),
+      statfs: (candidate) => {
+        calls.push(candidate);
+        return { bavail: candidate.startsWith('/one') ? 10n : 20n, bsize: 1n };
+      },
+    };
+    const result = assertDiskRequirements([
+      { path: '/one/a', requiredBytes: 5n },
+      { path: '/one/b', requiredBytes: 9n },
+      { path: '/two/a', requiredBytes: 20n },
+    ], dependencies);
+    assert.equal(result.length, 2);
+    assert.deepEqual(calls.sort(), ['/one/b', '/two/a']);
+    assert.throws(
+      () => assertDiskRequirements([{ path: '/one/a', requiredBytes: 11n }], dependencies),
+      /requires at least.*available/,
+    );
+    assert.equal(volumeKeyForPath('C:\\release\\tmp', {
+      ancestor: (candidate) => candidate,
+      platform: 'win32',
+      realpath: (candidate) => candidate,
+    }), 'win32:c:\\');
+    assert.equal(volumeKeyForPath('\\\\server\\share\\release', {
+      ancestor: (candidate) => candidate,
+      platform: 'win32',
+      realpath: (candidate) => candidate,
+    }), 'win32:\\\\server\\share\\');
+    assert.throws(
+      () => volumeKeyForPath('/volume', {
+        ancestor: (candidate) => candidate,
+        platform: 'plan9',
+        realpath: (candidate) => candidate,
+      }),
+      /does not support platform plan9/,
+    );
+  });
+
+  it('allows the disk environment override to raise but never weaken the calculated budget', () => {
+    const gib = 1024n ** 3n;
+    assert.equal(parseDiskBudgetOverride({}), null);
+    assert.equal(parseDiskBudgetOverride({ [DISK_BUDGET_OVERRIDE_ENV]: '123' }), 123n);
+    for (const invalid of ['-1', '1.5', ' 1', '+1', '01', 'abc']) {
+      assert.throws(
+        () => parseDiskBudgetOverride({ [DISK_BUDGET_OVERRIDE_ENV]: invalid }),
+        /unsigned base-10 byte count/,
+      );
+    }
+    assert.throws(
+      () => parseDiskBudgetOverride({ [DISK_BUDGET_OVERRIDE_ENV]: String(1024n ** 5n + 1n) }),
+      /1 PiB safety bound/,
+    );
+
+    const dependencies = {
+      ancestor: (candidate) => candidate,
+      exists: () => true,
+      platform: 'linux',
+      realpath: (candidate) => candidate,
+      stat: () => ({ dev: 1n }),
+      statfs: () => ({ bavail: 100n * gib, bsize: 1n }),
+    };
+    const base = assertReleaseDiskCapacity({
+      reighTreeBytes: 1n,
+      astridTreeBytes: 1n,
+      astridCheckout: '/astrid',
+      tempPath: '/tmp',
+      env: { [DISK_BUDGET_OVERRIDE_ENV]: '1' },
+    }, dependencies);
+    assert.equal(base.requiredBytes, base.calculatedBytes);
+
+    const raised = assertReleaseDiskCapacity({
+      reighTreeBytes: 1n,
+      astridTreeBytes: 1n,
+      astridCheckout: '/astrid',
+      tempPath: '/tmp',
+      env: { [DISK_BUDGET_OVERRIDE_ENV]: String(20n * gib) },
+    }, dependencies);
+    assert.equal(raised.requiredBytes, 20n * gib);
+    assert.equal(buildSanitizedEnvironment()[DISK_BUDGET_OVERRIDE_ENV], undefined);
+  });
+
+  it('rechecks disk immediately before heavy steps and closes the TOCTOU window', () => {
+    const calls = [];
+    const checks = [];
+    const steps = [
+      { id: 'light', label: 'light', command: 'npm', args: ['--version'], cwd: REPO_ROOT },
+      { id: 'dependencies', label: 'dependencies', command: 'npm', args: ['ci'], cwd: REPO_ROOT },
+      { id: 'later', label: 'later', command: 'npm', args: ['test'], cwd: REPO_ROOT },
+    ];
+    assert.throws(
+      () => executeSteps(steps, (command, args) => {
+        calls.push([command, ...args]);
+        return { status: 0 };
+      }, {
+        diskRecheck: (step) => {
+          checks.push(step.id);
+          if (step.id === 'dependencies') throw new Error('capacity stolen after initial preflight');
+        },
+      }),
+      /capacity stolen/,
+    );
+    assert.deepEqual(checks, ['light', 'dependencies']);
+    assert.deepEqual(calls, [['npm', '--version']]);
+
+    const gib = 1024n ** 3n;
+    assert.equal(HEAVY_STEP_MIN_FREE_BYTES.dependencies, 8n * gib);
+    assert.deepEqual(assertHeavyStepDiskCapacity({ id: 'light' }, {
+      astridCheckout: '/astrid', tempPath: '/tmp',
+    }), []);
+    assert.equal(ASTRID_SEPARATE_VOLUME_MIN_BYTES, 2n * gib);
+  });
+
   it('runs gates with an allowlisted environment and controlled Python overrides', () => {
     const ambientBypasses = {
       MAKEFLAGS: '-n',
@@ -320,5 +508,9 @@ describe('extension ship verifier', () => {
     assert.match(plan.stdout, /make ci/);
     assert.match(plan.stdout, /<required for execution>/);
     assert.match(plan.stdout, /ASTRID_PYTHON/);
+    assert.match(plan.stdout, /disk preflight: commit-tree archive peak/);
+    const plannedWorktree = plan.stdout.match(/fresh detached worktree (.+)$/m)?.[1].trim();
+    assert.ok(plannedWorktree, 'plan did not disclose the isolated worktree path');
+    assert.equal(existsSync(dirname(plannedWorktree)), false, 'plan created its release HOME');
   });
 });

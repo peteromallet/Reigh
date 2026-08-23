@@ -9,9 +9,11 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statfsSync,
   statSync,
 } from 'node:fs';
-import { dirname, isAbsolute, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { dirname, isAbsolute, resolve, win32 as pathWin32 } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
@@ -90,7 +92,29 @@ export const ASTRID_GATE_PROFILE = Object.freeze([
   }),
 ]);
 
-const RELEASE_TMPDIR = '/tmp';
+const GIB = 1024n ** 3n;
+const TREE_ALLOCATION_BLOCK_BYTES = 4096n;
+export const RELEASE_OPERATIONAL_ALLOWANCE_BYTES = 8n * GIB;
+export const ASTRID_SEPARATE_VOLUME_MIN_BYTES = 2n * GIB;
+export const DISK_BUDGET_OVERRIDE_ENV = 'EXTENSION_SHIP_MIN_FREE_BYTES';
+const MAX_DISK_BUDGET_OVERRIDE_BYTES = 1024n ** 5n;
+const POSIX_DISK_PLATFORMS = new Set([
+  'aix',
+  'darwin',
+  'freebsd',
+  'linux',
+  'openbsd',
+  'sunos',
+]);
+export const HEAVY_STEP_MIN_FREE_BYTES = Object.freeze({
+  dependencies: 8n * GIB,
+  'container-runtime': 6n * GIB,
+  'paired-release-e2e': 5n * GIB,
+  'astrid-remotion-dependencies': 3n * GIB,
+  'astrid-ci': 2n * GIB,
+});
+
+const RELEASE_TMPDIR = realpathSync(tmpdir());
 const RELEASE_HOME = resolve(
   RELEASE_TMPDIR,
   `reigh-extension-ship-home-${process.pid}`,
@@ -121,6 +145,198 @@ class UsageError extends Error {}
 
 function fail(message) {
   throw new Error(message);
+}
+
+function formatBytes(bytes) {
+  const whole = bytes / GIB;
+  const tenths = ((bytes % GIB) * 10n) / GIB;
+  return `${whole}.${tenths} GiB (${bytes} bytes)`;
+}
+
+function roundUp(value, unit) {
+  if (value < 0n || unit <= 0n) fail('disk budget values must be non-negative');
+  return value === 0n ? 0n : ((value + unit - 1n) / unit) * unit;
+}
+
+export function parseDiskBudgetOverride(env = process.env) {
+  const raw = env[DISK_BUDGET_OVERRIDE_ENV];
+  if (raw === undefined || raw === '') return null;
+  if (!/^(?:0|[1-9][0-9]*)$/.test(raw)) {
+    fail(`${DISK_BUDGET_OVERRIDE_ENV} must be an unsigned base-10 byte count`);
+  }
+  const bytes = BigInt(raw);
+  if (bytes > MAX_DISK_BUDGET_OVERRIDE_BYTES) {
+    fail(`${DISK_BUDGET_OVERRIDE_ENV} exceeds the 1 PiB safety bound`);
+  }
+  return bytes;
+}
+
+export function parseLsTreeAllocatedBytes(output, blockBytes = TREE_ALLOCATION_BLOCK_BYTES) {
+  if (typeof output !== 'string' || blockBytes <= 0n) {
+    fail('invalid git tree sizing input');
+  }
+  let total = 0n;
+  for (const record of output.split('\0')) {
+    if (!record) continue;
+    const separator = record.indexOf('\t');
+    if (separator < 0) fail(`git ls-tree sizing record has no path separator: ${record.slice(0, 120)}`);
+    const header = record.slice(0, separator);
+    const match = header.match(/^[0-7]{6} blob [0-9a-f]{40,64} +([0-9]+)$/);
+    if (!match) {
+      if (/^[0-7]{6} commit [0-9a-f]{40,64} +-$/.test(header)) continue;
+      fail(`could not parse git ls-tree sizing record: ${header.slice(0, 120)}`);
+    }
+    const logicalBytes = BigInt(match[1]);
+    // Include at least one allocation block for empty files and directory-entry
+    // overhead rather than assuming logical bytes equal filesystem consumption.
+    total += roundUp(logicalBytes > 0n ? logicalBytes : 1n, blockBytes);
+  }
+  return total;
+}
+
+export function measureCommitTreeBytes(checkout, commit) {
+  const result = runCaptured(
+    'git',
+    ['ls-tree', '-r', '-l', '-z', commit],
+    checkout,
+    { allowFailure: true, maxBuffer: 64 * 1024 * 1024 },
+  );
+  if (result.error || result.status !== 0) {
+    fail(`could not size release tree ${commit} in ${checkout}: ${formatFailure(result)}`);
+  }
+  return parseLsTreeAllocatedBytes(result.stdout);
+}
+
+export function calculateReleaseRequiredBytes({
+  reighTreeBytes,
+  astridTreeBytes,
+  operationalAllowanceBytes = RELEASE_OPERATIONAL_ALLOWANCE_BYTES,
+}) {
+  for (const [name, value] of Object.entries({
+    reighTreeBytes,
+    astridTreeBytes,
+    operationalAllowanceBytes,
+  })) {
+    if (typeof value !== 'bigint' || value < 0n) fail(`${name} must be a non-negative bigint`);
+  }
+  // At peak the outer Reigh worktree overlaps with the paired gate's tar and
+  // extracted snapshot. The Astrid archive has the same tar/extract overlap.
+  const archivePeak = 3n * reighTreeBytes;
+  const mixedPeak = 2n * reighTreeBytes + 2n * astridTreeBytes;
+  const treePeak = archivePeak > mixedPeak ? archivePeak : mixedPeak;
+  return roundUp(treePeak + operationalAllowanceBytes, GIB);
+}
+
+export function nearestExistingAncestor(path, exists = existsSync) {
+  let candidate = resolve(path);
+  while (!exists(candidate)) {
+    const parent = dirname(candidate);
+    if (parent === candidate) fail(`disk-capacity target has no existing ancestor: ${path}`);
+    candidate = parent;
+  }
+  return candidate;
+}
+
+export function availableBytesAt(path, {
+  exists = existsSync,
+  statfs = statfsSync,
+} = {}) {
+  const target = nearestExistingAncestor(path, exists);
+  let stats;
+  try {
+    stats = statfs(target, { bigint: true });
+  } catch (error) {
+    fail(`cannot measure release disk capacity at ${target}: ${error.code ?? error.message}`);
+  }
+  if (
+    typeof stats?.bavail !== 'bigint'
+    || typeof stats?.bsize !== 'bigint'
+    || stats.bavail < 0n
+    || stats.bsize <= 0n
+  ) {
+    fail(`filesystem capacity probe returned invalid bigint fields for ${target}`);
+  }
+  return { availableBytes: stats.bavail * stats.bsize, target };
+}
+
+export function volumeKeyForPath(path, {
+  exists = existsSync,
+  ancestor = (candidate) => nearestExistingAncestor(candidate, exists),
+  platform = process.platform,
+  realpath = realpathSync,
+  stat = statSync,
+} = {}) {
+  const target = realpath(ancestor(path));
+  if (platform === 'win32') {
+    const root = pathWin32.parse(target).root;
+    if (!root) fail(`cannot identify Windows volume for ${target}`);
+    return `win32:${root.toLowerCase()}`;
+  }
+  if (!POSIX_DISK_PLATFORMS.has(platform)) {
+    fail(`release disk-capacity preflight does not support platform ${platform}`);
+  }
+  const dev = stat(target, { bigint: true })?.dev;
+  if (typeof dev !== 'bigint' || dev < 0n) {
+    fail(`cannot identify filesystem volume for ${target}`);
+  }
+  return `dev:${dev}`;
+}
+
+export function assertDiskRequirements(requirements, dependencies = {}) {
+  const grouped = new Map();
+  for (const requirement of requirements) {
+    if (typeof requirement.requiredBytes !== 'bigint' || requirement.requiredBytes < 0n) {
+      fail('disk requirement must be a non-negative bigint');
+    }
+    const key = volumeKeyForPath(requirement.path, dependencies);
+    const prior = grouped.get(key);
+    if (!prior || requirement.requiredBytes > prior.requiredBytes) {
+      grouped.set(key, requirement);
+    }
+  }
+  const results = [];
+  for (const [volume, requirement] of grouped) {
+    const probe = availableBytesAt(requirement.path, dependencies);
+    if (probe.availableBytes < requirement.requiredBytes) {
+      fail(
+        `insufficient release disk capacity at ${probe.target}: requires at least `
+        + `${formatBytes(requirement.requiredBytes)}, available ${formatBytes(probe.availableBytes)}`,
+      );
+    }
+    results.push({ ...probe, requiredBytes: requirement.requiredBytes, volume });
+  }
+  return results;
+}
+
+export function assertReleaseDiskCapacity({
+  reighTreeBytes,
+  astridTreeBytes,
+  astridCheckout,
+  env = process.env,
+  tempPath = RELEASE_TMPDIR,
+}, dependencies = {}) {
+  const calculatedBytes = calculateReleaseRequiredBytes({ reighTreeBytes, astridTreeBytes });
+  const overrideBytes = parseDiskBudgetOverride(env);
+  const requiredBytes = overrideBytes !== null && overrideBytes > calculatedBytes
+    ? overrideBytes
+    : calculatedBytes;
+  const volumes = assertDiskRequirements([
+    { path: tempPath, requiredBytes },
+    { path: astridCheckout, requiredBytes: ASTRID_SEPARATE_VOLUME_MIN_BYTES },
+  ], dependencies);
+  return { calculatedBytes, overrideBytes, requiredBytes, volumes };
+}
+
+export function assertHeavyStepDiskCapacity(step, {
+  astridCheckout,
+  tempPath = RELEASE_TMPDIR,
+}, dependencies = {}) {
+  const requiredBytes = HEAVY_STEP_MIN_FREE_BYTES[step.id];
+  if (requiredBytes === undefined) return [];
+  return assertDiskRequirements([
+    { path: tempPath, requiredBytes },
+    { path: astridCheckout, requiredBytes: ASTRID_SEPARATE_VOLUME_MIN_BYTES },
+  ], dependencies);
 }
 
 export function parseCliArgs(argv) {
@@ -360,11 +576,15 @@ function formatFailure(result) {
   return details.join(': ') || 'process did not report an exit status';
 }
 
-function runCaptured(command, args, cwd, { allowFailure = false } = {}) {
+function runCaptured(command, args, cwd, {
+  allowFailure = false,
+  maxBuffer = 1024 * 1024,
+} = {}) {
   const result = spawnSync(command, args, {
     cwd,
     encoding: 'utf8',
     env: buildSanitizedEnvironment(),
+    maxBuffer,
     shell: false,
     stdio: 'pipe',
   });
@@ -643,9 +863,10 @@ function assertToolchain(manifest, env) {
   return resolveAstridPython(manifest, env);
 }
 
-export function executeSteps(steps, spawn = spawnSync) {
+export function executeSteps(steps, spawn = spawnSync, { diskRecheck } = {}) {
   for (let index = 0; index < steps.length; index += 1) {
     const step = steps[index];
+    if (diskRecheck) diskRecheck(step);
     console.log(`\n${LABEL} [${index + 1}/${steps.length}] ${step.label}`);
     console.log(`${LABEL} cwd: ${step.cwd}`);
     console.log(`${LABEL} $ ${formatCommand(step)}`);
@@ -669,9 +890,11 @@ Verify the frozen extension ship-quality release candidate. The run mode:
   1. requires a frozen release manifest and pinned Node/npm toolchain;
   2. requires an annotated Reigh tag and REIGH_REF resolving to the exact code
      candidate, plus a clean evidence-only controller descendant;
-  3. runs the code-owned Reigh release gate profile from a fresh detached
+  3. fails before creating its isolated HOME unless commit-sized disk capacity
+     is available, and rechecks capacity before every allocation-heavy gate;
+  4. runs the code-owned Reigh release gate profile from a fresh detached
      worktree at the verified controller commit; and
-  4. runs \`make ci\` in the pinned Astrid checkout.
+  5. runs \`make ci\` in the pinned Astrid checkout.
 
 Options:
   --plan, --dry-run  Print every gate and precondition without executing commands.
@@ -682,6 +905,10 @@ Required environment for run mode:
   ASTRID_CHECKOUT    Absolute path to the clean Astrid checkout.
   ASTRID_REF         Full 40-character commit equal to the manifest Astrid pin.
   ASTRID_PYTHON      Absolute executable matching the manifest Python pin.
+
+Optional environment for run mode:
+  ${DISK_BUDGET_OVERRIDE_ENV}  Unsigned byte count that may raise, never lower,
+                               the code-calculated disk requirement.
 
 The verifier never fetches, checks out, resets, cleans, migrates production data,
 or rolls back a repository. Reigh HEAD must be a strict descendant whose entire
@@ -717,6 +944,10 @@ function printPlan(manifest, packageJson, env) {
     + `FFmpeg ${manifest.verification.ffmpeg}, FFprobe ${manifest.verification.ffprobe}`,
   );
   console.log(`${LABEL} preflight: exact toolchain; clean worktrees; candidate tag; evidence-only ancestry`);
+  console.log(
+    `${LABEL} disk preflight: commit-tree archive peak + ${RELEASE_OPERATIONAL_ALLOWANCE_BYTES / GIB} GiB `
+    + `operational allowance; ${DISK_BUDGET_OVERRIDE_ENV} may only raise it`,
+  );
   console.log(`${LABEL} Reigh execution root: fresh detached worktree ${RELEASE_REIGH_WORKTREE}`);
 
   for (let index = 0; index < steps.length; index += 1) {
@@ -755,7 +986,7 @@ export function main(argv = process.argv.slice(2), env = process.env) {
       + 'run mode requires status=frozen (use --plan during integration)',
     );
   }
-  prepareReleaseHome();
+  let releaseHomePrepared = false;
   let releaseReighWorktree;
   try {
     const astridPython = assertToolchain(manifest, env);
@@ -766,6 +997,20 @@ export function main(argv = process.argv.slice(2), env = process.env) {
     console.log(`${LABEL} Reigh annotated tag object: ${reigh.tagObject}`);
     console.log(`${LABEL} Reigh evidence directory: ${reigh.provenance.evidenceDirectory}`);
     console.log(`${LABEL} Astrid HEAD: ${astrid.commit}`);
+    const reighTreeBytes = measureCommitTreeBytes(REPO_ROOT, reigh.head);
+    const astridTreeBytes = measureCommitTreeBytes(astrid.checkout, astrid.commit);
+    const diskBudget = assertReleaseDiskCapacity({
+      reighTreeBytes,
+      astridTreeBytes,
+      astridCheckout: astrid.checkout,
+      env,
+    });
+    console.log(
+      `${LABEL} disk capacity: requires ${formatBytes(diskBudget.requiredBytes)}; `
+      + `Reigh tree ${formatBytes(reighTreeBytes)}; Astrid tree ${formatBytes(astridTreeBytes)}`,
+    );
+    prepareReleaseHome();
+    releaseHomePrepared = true;
     releaseReighWorktree = RELEASE_REIGH_WORKTREE;
     createReleaseReighWorktree(reigh.head);
     console.log(`${LABEL} isolated Reigh controller: ${releaseReighWorktree}`);
@@ -777,7 +1022,11 @@ export function main(argv = process.argv.slice(2), env = process.env) {
       astridRef: env.ASTRID_REF,
       reighRef: env.REIGH_REF,
     });
-    executeSteps(steps);
+    executeSteps(steps, spawnSync, {
+      diskRecheck: (step) => assertHeavyStepDiskCapacity(step, {
+        astridCheckout: astrid.checkout,
+      }),
+    });
     assertClean(releaseReighWorktree, 'isolated Reigh evidence controller after gates');
 
     // Gates must not leave tracked or untracked release inputs behind.
@@ -799,7 +1048,7 @@ export function main(argv = process.argv.slice(2), env = process.env) {
     try {
       if (releaseReighWorktree) removeReleaseReighWorktree();
     } finally {
-      cleanupReleaseHome();
+      if (releaseHomePrepared) cleanupReleaseHome();
     }
   }
 }
