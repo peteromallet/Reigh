@@ -100,6 +100,9 @@ Budget startup, activation, command latency, hydration, scrolling, memory,
 project-data size, contribution count, and update frequency. Add cancellation,
 backpressure, and degraded-mode behavior.
 
+Release budgets and their executable gate are defined in
+[performance-visual-budgets.md](performance-visual-budgets.md).
+
 ### 15. Visual regression suite
 
 Cover marker density and zoom, captions over varied footage, Runaway regions,
