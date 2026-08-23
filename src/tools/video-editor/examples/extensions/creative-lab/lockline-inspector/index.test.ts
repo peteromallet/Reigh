@@ -241,6 +241,7 @@ describe('Lockline Inspector extension', () => {
       assetKeys: [],
     });
     const analysis = deriveLocklineAnalysis(source);
+    expect(analysis.sourceSignature).toMatch(/^reigh-fnv1a64-v1:[0-9a-f]{16}$/);
     const patch = buildLocklinePatch(LOCKLINE_INSPECTOR_EXTENSION_ID, source, analysis);
     const envelope = (patch.operations[0] as any).payload.value;
     expect(patch).toMatchObject({

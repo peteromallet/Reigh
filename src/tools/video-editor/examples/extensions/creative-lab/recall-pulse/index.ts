@@ -10,7 +10,7 @@
  */
 
 import { createElement } from 'react';
-import { defineExtension } from '@reigh/editor-sdk';
+import { computeHostFingerprint, defineExtension } from '@reigh/editor-sdk';
 import type {
   CommandRunContext,
   ContributionId,
@@ -32,7 +32,7 @@ export const BUILD_RECALL_PULSE_COMMAND =
   `${RECALL_PULSE_EXTENSION_ID}.buildRecallPulse`;
 export const RECALL_PULSE_DATA_KEY = 'recallPulses';
 export const RECALL_PULSE_OVERLAY_RENDER_ID = 'recall-pulse/timeline-overlay';
-export const RECALL_PULSE_SCHEMA_VERSION = 2;
+export const RECALL_PULSE_SCHEMA_VERSION = 3;
 
 /** Compatibility exports: V2 intentionally has no scan or output cap. */
 export const MAX_RECALL_PULSE_SCAN_CLIPS = Number.POSITIVE_INFINITY;
@@ -158,10 +158,7 @@ function suggestionOrder(a: RecallPulseMarker, b: RecallPulseMarker): number {
   return a.time - b.time || a.id.localeCompare(b.id);
 }
 
-/**
- * Fingerprint only the public source facts this scaffold actually reads.
- * FNV-1a keeps this deterministic and dependency-free inside an extension.
- */
+/** Fingerprint only the public source facts this scaffold actually reads. */
 export function computeRecallPulseSourceSignature(
   snapshot: Pick<TimelineSnapshot, 'clips' | 'tracks'>,
 ): string {
@@ -185,13 +182,10 @@ export function computeRecallPulseSourceSignature(
         clipType: clip.clipType ?? null,
       })),
   } : { primaryTrack: null, clips: [] };
-  const serialized = JSON.stringify(source);
-  let hash = 2166136261;
-  for (let index = 0; index < serialized.length; index += 1) {
-    hash ^= serialized.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return `fnv1a32-${(hash >>> 0).toString(16).padStart(8, '0')}`;
+  return computeHostFingerprint({
+    sourceContract: 'recall-pulse/v3',
+    ...source,
+  });
 }
 
 /**
@@ -468,7 +462,7 @@ function disposeTogether(ctx: ExtensionContext, handles: readonly DisposeHandle[
 export const recallPulseExtension: ReighExtension = defineExtension({
   manifest: {
     id: RECALL_PULSE_EXTENSION_ID,
-    version: '2.0.0',
+    version: '2.1.0',
     label: 'Structural Learning-Review Scaffold',
     description:
       'Generates explicit unassigned interrogative review suggestions from the first unmuted visual editorial track; read-only and structure-only.',

@@ -1,7 +1,7 @@
 {
   "manifest": {
     "id": "com.reigh.creative-lab.lockline-inspector",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "label": "Lockline Inspector",
     "description": "Builds a read-only, bounded registry and provenance preflight from public timeline references; it does not inspect media availability, pixels, audio, continuity, or render quality.",
     "apiVersion": 1,

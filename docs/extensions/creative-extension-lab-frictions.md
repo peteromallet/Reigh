@@ -478,6 +478,10 @@ evidence and a concrete improvement direction.
   full project TypeScript, and manifest/docs/schema drift. Serial execution was
   necessary under disk pressure; parallel transformed-test caches briefly hit
   ENOSPC even though the implementation itself was healthy.
+- The paired release verifier originally invoked that command without `--all`,
+  while the checker treated a missing slug as usage error 2. No-argument
+  execution now deliberately means the complete shipped set; named-slug runs
+  remain available for author iteration.
 - Local editor mode still performs remote token/auth work, emits React Router
   future warnings, skips non-UUID Supabase fixture IDs, and reports render-budget
   warnings. None were extension runtime failures, but they obscure the signal in

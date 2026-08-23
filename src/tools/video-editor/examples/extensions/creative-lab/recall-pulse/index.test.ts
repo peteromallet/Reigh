@@ -183,6 +183,7 @@ describe('Structural Learning-Review Scaffold', () => {
     };
     const markers = deriveRecallPulseMarkers(source);
     const sourceSignature = computeRecallPulseSourceSignature(source);
+    expect(sourceSignature).toMatch(/^reigh-fnv1a64-v1:[0-9a-f]{16}$/);
     const patch = buildRecallPulsePatch(
       RECALL_PULSE_EXTENSION_ID,
       createCreativeLabSnapshot({ baseVersion: 3 }),

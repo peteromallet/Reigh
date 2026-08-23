@@ -1,7 +1,7 @@
 {
   "manifest": {
     "id": "com.reigh.creative-lab.recall-pulse",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "label": "Structural Learning-Review Scaffold",
     "description": "Generates explicit unassigned interrogative review suggestions from the first unmuted visual editorial track; read-only and structure-only.",
     "apiVersion": 1,

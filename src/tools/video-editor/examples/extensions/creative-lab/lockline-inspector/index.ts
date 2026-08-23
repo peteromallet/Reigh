@@ -8,7 +8,7 @@
  */
 
 import { createElement } from 'react';
-import { defineExtension } from '@reigh/editor-sdk';
+import { computeHostFingerprint, defineExtension } from '@reigh/editor-sdk';
 import type {
   CommandRunContext,
   ContributionId,
@@ -31,7 +31,7 @@ export const BUILD_LOCKLINE_REPORT_COMMAND =
   `${LOCKLINE_INSPECTOR_EXTENSION_ID}.buildReport`;
 export const LOCKLINE_REPORT_DATA_KEY = 'locklineReport';
 export const LOCKLINE_INSPECTOR_OVERLAY_RENDER_ID = 'lockline-inspector/timeline-overlay';
-export const LOCKLINE_REPORT_SCHEMA_VERSION = 1;
+export const LOCKLINE_REPORT_SCHEMA_VERSION = 2;
 export const MAX_LOCKLINE_SCAN_CLIPS = 512;
 export const MAX_LOCKLINE_FINDINGS = 256;
 export const MAX_LOCKLINE_REFERENCES_PER_FINDING = 32;
@@ -147,15 +147,6 @@ function timelineOrder(a: LocklineFinding, b: LocklineFinding): number {
   return a.time - b.time || a.id.localeCompare(b.id);
 }
 
-function hashSignature(value: string): string {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `fnv1a-${(hash >>> 0).toString(16).padStart(8, '0')}`;
-}
-
 /** Fingerprint only the public registry/provenance facts used by this report. */
 export function buildLocklineSourceSignature(
   snapshot: Pick<TimelineSnapshot, 'clips' | 'tracks' | 'assetKeys'>,
@@ -181,11 +172,12 @@ export function buildLocklineSourceSignature(
         ])
         .sort((a, b) => a.join('\u0000').localeCompare(b.join('\u0000'))),
     }));
-  return hashSignature(JSON.stringify({
+  return computeHostFingerprint({
+    sourceContract: 'lockline-inspector/v2',
     assetKeys: [...snapshot.assetKeys].sort(),
     trackIds: snapshot.tracks.map((track) => track.id).sort(),
     clips,
-  }));
+  });
 }
 
 function validPreflightCandidate(clip: TimelineClipSummary, trackIds: ReadonlySet<string>): boolean {
@@ -481,7 +473,7 @@ function disposeTogether(ctx: ExtensionContext, handles: readonly DisposeHandle[
 export const locklineInspectorExtension: ReighExtension = defineExtension({
   manifest: {
     id: LOCKLINE_INSPECTOR_EXTENSION_ID,
-    version: '1.1.0',
+    version: '1.2.0',
     label: 'Lockline Inspector',
     description:
       'Builds a read-only, bounded registry and provenance preflight from public timeline references; it does not inspect media availability, pixels, audio, continuity, or render quality.',

@@ -4,6 +4,7 @@
  *
  * Usage:
  *   npm run test:creative-extension -- pulse-map
+ *   npm run test:creative-extension                 # all shipped extensions
  */
 
 import { existsSync, readdirSync } from 'node:fs';
@@ -12,13 +13,16 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const requestedSlug = process.argv[2];
+const requestedSlug = process.argv[2] ?? '--all';
 const creativeLabDirectory = resolve(
   repoRoot,
   'src/tools/video-editor/examples/extensions/creative-lab',
 );
 
-if (!requestedSlug || (requestedSlug !== '--all' && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(requestedSlug))) {
+if (
+  process.argv.length > 3
+  || (requestedSlug !== '--all' && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(requestedSlug))
+) {
   console.error('[creative-extension] Expected one kebab-case extension slug or --all.');
   process.exit(2);
 }
