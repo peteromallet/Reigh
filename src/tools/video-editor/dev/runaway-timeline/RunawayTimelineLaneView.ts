@@ -1,4 +1,10 @@
-import { createElement, type MouseEvent } from 'react';
+import {
+  createElement,
+  type KeyboardEvent,
+  type MouseEvent,
+  useEffect,
+  useRef,
+} from 'react';
 import type { DataItemInspectorProps, DataLaneRendererProps } from '@reigh/editor-sdk';
 import type { RunawayTransitionPayload } from './runawayTimelineData';
 
@@ -8,6 +14,35 @@ function payloadOf(value: unknown): RunawayTransitionPayload | null {
 }
 
 export function renderRunawayTimelineLane(props: DataLaneRendererProps): unknown {
+  return createElement(RunawayTimelineLane, props);
+}
+
+type NavigationDirection = 'previous' | 'next' | 'first' | 'last';
+
+function navigationDirection(event: KeyboardEvent<HTMLButtonElement>): NavigationDirection | null {
+  switch (event.key) {
+    case 'ArrowLeft':
+    case 'ArrowUp':
+      return 'previous';
+    case 'ArrowRight':
+    case 'ArrowDown':
+      return 'next';
+    case 'Home':
+      return 'first';
+    case 'End':
+      return 'last';
+    default:
+      return null;
+  }
+}
+
+function RunawayTimelineLane(props: DataLaneRendererProps) {
+  const requestedFocusRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!props.focusItemId) return;
+    requestedFocusRef.current?.focus({ preventScroll: true });
+  }, [props.focusItemId, props.itemWindow?.startIndex]);
+
   const regionExtents = new Map<string, { start: number; end: number; colour: string; label: string }>();
   for (const item of props.items) {
     const payload = payloadOf(item.payload);
@@ -39,7 +74,9 @@ export function renderRunawayTimelineLane(props: DataLaneRendererProps): unknown
       pointerEvents: 'none',
     },
   }));
-  const transitions = props.items.map((item) => {
+  const windowStartIndex = props.itemWindow?.startIndex ?? 0;
+  const totalItemCount = props.itemWindow?.totalItemCount ?? props.items.length;
+  const transitions = props.items.map((item, localIndex) => {
     const payload = payloadOf(item.payload);
     if (!payload) return null;
     const width = Math.max(2, (item.timelineEnd - item.timelineStart) * props.pixelsPerSecond);
@@ -47,8 +84,13 @@ export function renderRunawayTimelineLane(props: DataLaneRendererProps): unknown
       key: item.id,
       type: 'button',
       'data-testid': 'runaway-transition-chip',
+      'data-item-id': item.id,
       'aria-label': `${payload.manifestId}, ${payload.segmentId}, ${payload.colourName}, ${item.timelineStart.toFixed(3)} seconds`,
+      'aria-posinset': windowStartIndex + localIndex + 1,
+      'aria-setsize': totalItemCount,
       title: `${payload.manifestId} · ${payload.segmentId} · ${payload.colourName}\n${payload.prompt}`,
+      tabIndex: item.id === props.activeItemId ? 0 : -1,
+      ref: item.id === props.focusItemId ? requestedFocusRef : undefined,
       style: {
         position: 'absolute',
         top: 3,
@@ -67,6 +109,13 @@ export function renderRunawayTimelineLane(props: DataLaneRendererProps): unknown
         event.stopPropagation();
         props.onSelectItem?.(item.id);
       },
+      onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => {
+        const direction = navigationDirection(event);
+        if (!direction) return;
+        event.preventDefault();
+        event.stopPropagation();
+        props.onNavigateItem?.(item.id, direction);
+      },
     });
   });
   const summary = payloadOf(props.items[0]?.payload)?.timingSummary;
@@ -76,6 +125,9 @@ export function renderRunawayTimelineLane(props: DataLaneRendererProps): unknown
     'div',
     {
       'data-testid': 'runaway-timeline-lane',
+      'data-total-items': totalItemCount,
+      'data-window-start': windowStartIndex,
+      'data-window-end': props.itemWindow?.endIndex ?? props.items.length,
       style: { position: 'relative', height: '100%', overflow: 'hidden' },
     },
     ...regions,
@@ -83,7 +135,7 @@ export function renderRunawayTimelineLane(props: DataLaneRendererProps): unknown
     createElement('span', {
       key: 'summary',
       'data-testid': 'runaway-lane-summary',
-      title: `${props.items.length} transitions · ${populatedRegions}/${declaredRegions || populatedRegions} populated regions`,
+      title: `${totalItemCount} transitions · ${props.items.length} mounted · ${populatedRegions}/${declaredRegions || populatedRegions} populated regions in window`,
       style: {
         position: 'sticky',
         left: 4,
@@ -98,7 +150,7 @@ export function renderRunawayTimelineLane(props: DataLaneRendererProps): unknown
         lineHeight: '14px',
         pointerEvents: 'none',
       },
-    }, `${props.items.length} · ${populatedRegions}/${declaredRegions || populatedRegions} regions`),
+    }, `${totalItemCount} transitions · ${props.items.length} shown · ${populatedRegions}/${declaredRegions || populatedRegions} regions`),
   );
 }
 

@@ -20,6 +20,7 @@ import {
 } from '@/tools/video-editor/data-kinds/DataKindRegistryContext.tsx';
 import type { DataLaneRendererProps } from '@reigh/editor-sdk';
 import { DataLaneList, type DataLaneListProps } from './DataLaneList.tsx';
+import { DATA_LANE_DOM_ITEM_BUDGET } from './DataLaneRow.tsx';
 
 const START_LEFT = 144;
 const PPS = 50;
@@ -116,8 +117,18 @@ describe('DataLaneList', () => {
     expect(props.schemaRef).toBe('reigh.transcript_segment/v1');
     expect(props.shape).toBe('interval');
     expect(props.items).toEqual([
-      { id: 'a:c1:0', timelineStart: 10, timelineEnd: 12, clipId: 'c1', payload: { text: 'a:c1:0' } },
+      {
+        id: 'a:c1:0',
+        timelineStart: 10,
+        timelineEnd: 12,
+        clipId: 'c1',
+        provenance: { adapterId: 'reigh.adaptTranscript', adapterVersion: '1' },
+        payload: { text: 'a:c1:0' },
+      },
     ]);
+    expect(props.itemWindow).toEqual({ startIndex: 0, endIndex: 1, totalItemCount: 1 });
+    expect(props.activeItemId).toBe('a:c1:0');
+    expect(typeof props.onNavigateItem).toBe('function');
     // Rework R1/R3: the host-supplied viewport geometry and item-selection
     // callback ride the same SDK props contract. Rows are timeline-zero-
     // origin, so renderer props always carry startLeft: 0.
@@ -126,6 +137,42 @@ describe('DataLaneList', () => {
     expect(typeof props.onSelectItem).toBe('function');
     // Hidden lanes never render.
     expect(container.querySelectorAll('[data-testid="data-lane-row"]')).toHaveLength(1);
+  });
+
+  it('propagates host-authored source identity and provenance without parsing occurrence ids', () => {
+    const seen: DataLaneRendererProps[] = [];
+    const sourceAwareItem = {
+      ...item('occurrence@clip-7'),
+      sourceItemId: 'source-stable-42',
+      sourceArtifactRef: { assetId: 'asset-7', artifactHash: 'sha256:abc' },
+      provenance: {
+        adapterId: 'astrid.transcript.bridge',
+        adapterVersion: '2',
+        recordedAt: '2026-08-23T12:00:00Z',
+      },
+    } as FrozenDataItem;
+    const data = buildData([
+      laneView({
+        items: [{ item: sourceAwareItem, timelineStart: 4, timelineEnd: 5, clipId: 'clip-7' }],
+        laneRenderer: (props: DataLaneRendererProps) => {
+          seen.push(props);
+          return null;
+        },
+      }),
+    ]);
+
+    renderList({ data });
+
+    expect(seen.at(-1)?.items[0]).toMatchObject({
+      id: 'occurrence@clip-7',
+      sourceItemId: 'source-stable-42',
+      sourceArtifactRef: { assetId: 'asset-7', artifactHash: 'sha256:abc' },
+      provenance: {
+        adapterId: 'astrid.transcript.bridge',
+        adapterVersion: '2',
+        recordedAt: '2026-08-23T12:00:00Z',
+      },
+    });
   });
 
   it('renders nothing for a renderer-less registered kind (host cannot paint)', () => {
@@ -172,6 +219,36 @@ describe('DataLaneList', () => {
     // Sub-minimum spans clamp to the 2px floor.
     expect((bars[1] as HTMLElement).style.width).toBe('2px');
   });
+
+  it.each([500, 5_000, 50_000])(
+    'keeps the %i-item lane inside the constant DOM performance budget',
+    (itemCount) => {
+      const data = buildData([
+        laneView({
+          laneId: 'opaque:large.schema/v1',
+          kindId: '',
+          label: 'large.schema/v1',
+          opaque: true,
+          items: Array.from({ length: itemCount }, (_, index) => ({
+            item: item(`item-${index}`),
+            timelineStart: index,
+            timelineEnd: index + 0.25,
+          })),
+        }),
+      ]);
+
+      renderList({ data, pixelsPerSecond: 1 });
+
+      const row = screen.getByTestId('data-lane-row');
+      expect(within(row).getAllByTestId('data-lane-extent-bar')).toHaveLength(DATA_LANE_DOM_ITEM_BUDGET);
+      expect(row).toHaveAttribute('data-total-items', String(itemCount));
+      expect(row).toHaveAttribute('data-window-start', '0');
+      expect(row).toHaveAttribute('data-window-end', String(DATA_LANE_DOM_ITEM_BUDGET));
+      expect(within(row).getByTestId('data-lane-density-summary')).toHaveTextContent(
+        `${DATA_LANE_DOM_ITEM_BUDGET}/${itemCount}`,
+      );
+    },
+  );
 
   it('contains a crashing laneRenderer inside the error boundary without losing sibling lanes', () => {
     const data = buildData([

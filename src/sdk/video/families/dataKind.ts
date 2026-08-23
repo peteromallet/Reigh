@@ -127,12 +127,25 @@ export interface DataKindContribution {
 export interface DataLaneRenderItem {
   /** Occurrence id (not the source item id). */
   readonly id: string;
+  /** Durable host-authored source identity, independent of occurrence ids. */
+  readonly sourceItemId?: string;
   /** Timeline-space start, seconds. Host-mapped. */
   readonly timelineStart: number;
   /** Timeline-space end, seconds. Host-mapped. */
   readonly timelineEnd: number;
   /** Owning media clip id when the item is mapped onto a clip. */
   readonly clipId?: string;
+  /** Host-authored source artifact identity; renderers must not mutate it. */
+  readonly sourceArtifactRef?: Readonly<{
+    readonly assetId?: string;
+    readonly artifactHash?: string;
+  }>;
+  /** Adapter provenance carried by the frozen source envelope. */
+  readonly provenance?: Readonly<{
+    readonly adapterId: string;
+    readonly adapterVersion: string;
+    readonly recordedAt?: string;
+  }>;
   /** Opaque frozen payload (uninterpreted by the host). */
   readonly payload: unknown;
 }
@@ -152,8 +165,37 @@ export interface DataLaneRendererProps {
   readonly shape: DataShape;
   /** Coordinate domain from the contribution (host-validated at registration). */
   readonly domain: DataCoordinateDomain;
-  /** Frozen items mapped onto the timeline for this lane. */
+  /**
+   * Frozen items mapped onto the timeline for this lane. For large lanes the
+   * host supplies a bounded window rather than the complete collection; use
+   * {@link DataLaneRendererProps.itemWindow} for absolute positions and the
+   * total count.
+   */
   readonly items: readonly DataLaneRenderItem[];
+  /**
+   * Lazily materialize the complete lane for explicit whole-lane commands
+   * (export, caption creation, etc.). Renderers must not call this while
+   * painting; visual DOM must remain bounded to {@link items}.
+   */
+  readonly getAllItems?: () => readonly DataLaneRenderItem[];
+  /**
+   * Host-owned item window. `startIndex` is inclusive and `endIndex` is
+   * exclusive. Optional for compatibility with isolated/older render hosts;
+   * when absent, `items` is the complete collection.
+   */
+  readonly itemWindow?: Readonly<{
+    readonly startIndex: number;
+    readonly endIndex: number;
+    readonly totalItemCount: number;
+  }>;
+  /** Item owning the renderer's roving tab stop. */
+  readonly activeItemId?: string;
+  /**
+   * Item the host asks the renderer to focus after keyboard navigation moved
+   * the item window. Renderers should ignore this when they do not paint an
+   * interactive control for the item.
+   */
+  readonly focusItemId?: string;
   /**
    * Pixel offset of timeline zero within the renderer's box; host lane rows
    * are timeline-zero-origin, so the host passes 0 and renderers never add a
@@ -171,6 +213,15 @@ export interface DataLaneRendererProps {
    * rows stay display-only.
    */
   readonly onSelectItem?: (itemId: string) => void;
+  /**
+   * Host-owned navigation across the complete lane, including items outside
+   * the current window. Calling this updates the window, selection, and focus
+   * without requiring a renderer to retain the full item collection.
+   */
+  readonly onNavigateItem?: (
+    itemId: string,
+    direction: 'previous' | 'next' | 'first' | 'last',
+  ) => void;
 }
 
 /**

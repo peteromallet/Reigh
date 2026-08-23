@@ -1,8 +1,13 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen } from '@testing-library/react';
-import type { ReactElement } from 'react';
+import { createElement, type ReactElement } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { DataItemInspectorProps, DataLaneRendererProps } from '@reigh/editor-sdk';
+import type { DataLaneView } from '@/tools/video-editor/data/typed/envelope';
+import {
+  DATA_LANE_DOM_ITEM_BUDGET,
+  DataLaneRow,
+} from '@/tools/video-editor/components/TimelineEditor/DataLaneRow';
 import { parseRunawayBridgeResponse, RUNAWAY_SCHEMA_REF } from './runawayTimelineData';
 import {
   renderRunawayTimelineLane,
@@ -65,7 +70,7 @@ describe('Runaway timeline bridge adapter', () => {
     expect(payload.frame).toBe(Math.round(item.extent.start * 48));
   });
 
-  it('renders all 566 typed intervals, declared-region summary, and first/last selection', () => {
+  it('windows 566 typed intervals while preserving first/last keyboard selection and focus', () => {
     const transitions = Array.from({ length: 566 }, (_, ordinal) => ({
       id: `row-${ordinal}`,
       run_id: 'run-1',
@@ -103,30 +108,53 @@ describe('Runaway timeline bridge adapter', () => {
     });
     const onSelectItem = vi.fn();
     const items = parsed.map((item) => ({
-      ...item,
+      item,
       timelineStart: item.extent.start,
       timelineEnd: item.extent.end ?? item.extent.start,
     }));
-    const props: DataLaneRendererProps = {
+    const lane = {
+      laneId: 'runaway',
       kindId: 'reigh.runaway.transitions',
+      label: 'Runaway transitions',
       schemaRef: RUNAWAY_SCHEMA_REF,
       shape: 'interval',
       domain: 'timeline_seconds',
-      startLeft: 0,
-      pixelsPerSecond: 2,
       items,
-      onSelectItem,
-    };
+      hidden: false,
+      height: 28,
+      opaque: false,
+      laneRenderer: renderRunawayTimelineLane,
+    } as unknown as DataLaneView;
 
-    const { container } = render(renderRunawayTimelineLane(props) as ReactElement);
-    const chips = container.querySelectorAll('[data-testid="runaway-transition-chip"]');
-    expect(chips).toHaveLength(566);
+    const { container } = render(createElement(DataLaneRow, {
+      lane,
+      pixelsPerSecond: 2,
+      onSelectItem,
+    }));
+    const chips = container.querySelectorAll<HTMLElement>('[data-testid="runaway-transition-chip"]');
+    expect(chips).toHaveLength(DATA_LANE_DOM_ITEM_BUDGET);
     expect(container.querySelectorAll('[data-testid="runaway-region-band"]')).toHaveLength(10);
-    expect(screen.getByTestId('runaway-lane-summary')).toHaveTextContent('566 · 10/11 regions');
+    expect(screen.getByTestId('runaway-lane-summary')).toHaveTextContent(
+      `566 transitions · ${DATA_LANE_DOM_ITEM_BUDGET} shown · 10/11 regions`,
+    );
+    expect(screen.getByTestId('runaway-timeline-lane')).toHaveAttribute('data-window-start', '0');
 
     fireEvent.click(chips[0]!);
-    fireEvent.click(chips[565]!);
-    expect(onSelectItem.mock.calls).toEqual([['T0001'], ['T0566']]);
+    fireEvent.keyDown(chips[0]!, { key: 'End' });
+
+    const lastChip = container.querySelector<HTMLElement>('[data-item-id="T0566"]');
+    expect(lastChip).not.toBeNull();
+    expect(lastChip!).toHaveFocus();
+    expect(screen.getByTestId('runaway-timeline-lane')).toHaveAttribute(
+      'data-window-end',
+      '566',
+    );
+
+    fireEvent.keyDown(lastChip!, { key: 'Home' });
+    const firstChip = container.querySelector<HTMLElement>('[data-item-id="T0001"]');
+    expect(firstChip).not.toBeNull();
+    expect(firstChip!).toHaveFocus();
+    expect(onSelectItem.mock.calls).toEqual([['T0001'], ['T0566'], ['T0001']]);
   });
 
   it('renders selected transition provenance and timing evidence in the inspector', () => {
