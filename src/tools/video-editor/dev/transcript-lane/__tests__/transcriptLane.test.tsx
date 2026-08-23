@@ -39,10 +39,12 @@ import {
   createHostGeneratedObjectMeta,
   readHostGenerationProvenance,
   validateManifest,
+  type DataItemInspectorProps,
   type DataKindRegistrationOptions,
   type DataLaneActionDescriptor,
   type DataLaneRendererProps,
   type ExtensionContext,
+  type TimelinePatch,
 } from '@reigh/editor-sdk';
 import { createExtensionContext } from '@/tools/video-editor/runtime/extensionContextFactory';
 import { createDataKindRegistrationService } from '@/tools/video-editor/runtime/dataKindRegistrationService';
@@ -54,11 +56,15 @@ import {
   TRANSCRIPT_LANE_EXTENSION_ID,
   TRANSCRIPT_SCHEMA_REF,
   buildTranscriptCaptionPatch,
+  buildTranscriptSourceConsumptionAcknowledgementPatch,
   buildTranscriptSourceReviewDecisionPatch,
   buildTranscriptSourceReviewPatch,
   readTranscriptSourceReviews,
+  renderTranscriptSourceReviewInspector,
   transcriptCaptionClipId,
   transcriptLaneExtension,
+  transcriptSourceReviewHandoffFingerprint,
+  type TranscriptSourceReviewRecord,
 } from '../extension';
 import { renderTranscriptLane } from '../TranscriptLaneView';
 
@@ -244,6 +250,71 @@ function activateThroughRealGate(assemblyRegistry: DataKindRegistry) {
   const disposeHandle = transcriptLaneExtension.activate?.(ctx);
   expect(typeof disposeHandle?.dispose).toBe('function');
   return diagnosticsService;
+}
+
+function pendingReviewFor(
+  item: DataItemInspectorProps['item'],
+  proposedText = `${String((item.payload as { text?: unknown }).text ?? '')} revised`,
+): TranscriptSourceReviewRecord {
+  const record: TranscriptSourceReviewRecord = {
+    schemaVersion: 1,
+    status: 'pending-review',
+    sourceSchemaRef: TRANSCRIPT_SCHEMA_REF,
+    sourceItemId: item.sourceItemId ?? item.id,
+    sourceFingerprintAtGeneration: 'fp:source-at-generation',
+    currentSourceFingerprint: computeHostFingerprint({
+      schemaRef: TRANSCRIPT_SCHEMA_REF,
+      sourceItemId: item.sourceItemId ?? item.id,
+      payload: item.payload,
+      timelineStart: item.timelineStart,
+      timelineEnd: item.timelineEnd,
+    }),
+    generatedOutputFingerprint: 'fp:generated',
+    editedOutputFingerprint: computeHostFingerprint({ proposedText }),
+    proposedText,
+    proposedTimelineStart: item.timelineStart,
+    proposedTimelineEnd: item.timelineEnd,
+    generatorVersion: TRANSCRIPT_EXTENSION_VERSION,
+  };
+  return {
+    ...record,
+    handoffFingerprint: transcriptSourceReviewHandoffFingerprint(record),
+  };
+}
+
+function applyProjectDataWrites(
+  snapshot: { baseVersion: number; app: Record<string, Record<string, unknown>> },
+  patch: TimelinePatch,
+): void {
+  for (const operation of patch.operations) {
+    if (operation.op !== 'project-data.write') continue;
+    const key = operation.payload?.key;
+    if (typeof key !== 'string') continue;
+    const target = operation.target;
+    snapshot.app[target] ??= {};
+    snapshot.app[target][key] = operation.payload?.value;
+  }
+  snapshot.baseVersion += 1;
+}
+
+function reviewInspectorContext(
+  snapshot: { baseVersion: number; app: Record<string, Record<string, unknown>> },
+  appliedPatches: TimelinePatch[],
+): ExtensionContext {
+  return {
+    extension: { id: TRANSCRIPT_LANE_EXTENSION_ID },
+    creative: {
+      reader: { snapshot: () => snapshot },
+      timeline: {
+        validate: () => ({ valid: true, diagnostics: [] }),
+        apply: (patch: TimelinePatch) => {
+          appliedPatches.push(patch);
+          applyProjectDataWrites(snapshot, patch);
+        },
+      },
+    },
+    chrome: { toast: vi.fn() },
+  } as unknown as ExtensionContext;
 }
 
 // ---------------------------------------------------------------------------
@@ -1127,5 +1198,301 @@ describe('transcript lane chips (rework round-2 F3)', () => {
     };
     expect(buildTranscriptSourceReviewDecisionPatch(terminalSnapshot, [], 'reject').operations).toEqual([]);
     expect(buildTranscriptSourceReviewDecisionPatch(terminalSnapshot, [], 'accept').operations).toEqual([]);
+  });
+
+  it('accepts or rejects only the selected record and fails a selected stale source closed', () => {
+    const first = {
+      id: 'occurrence-1',
+      sourceItemId: 'source-1',
+      timelineStart: 1,
+      timelineEnd: 2,
+      payload: { text: 'First source' },
+    };
+    const second = {
+      id: 'occurrence-2',
+      sourceItemId: 'source-2',
+      timelineStart: 2,
+      timelineEnd: 3,
+      payload: { text: 'Second source' },
+    };
+    const snapshot = {
+      baseVersion: 50,
+      app: {
+        [TRANSCRIPT_LANE_EXTENSION_ID]: {
+          'transcript-source-review:source-1': pendingReviewFor(first),
+          'transcript-source-review:source-2': pendingReviewFor(second),
+        },
+      },
+    };
+
+    const selected = buildTranscriptSourceReviewDecisionPatch(
+      snapshot,
+      [first, second],
+      'accept',
+      TRANSCRIPT_LANE_EXTENSION_ID,
+      { sourceItemIds: ['source-2'] },
+    );
+    expect(selected.operations).toHaveLength(1);
+    expect(selected.meta).toMatchObject({
+      scope: 'selected-records',
+      acceptedCount: 1,
+      rejectedCount: 0,
+      conflictCount: 0,
+    });
+    expect(selected.operations[0]).toMatchObject({
+      payload: { value: expect.objectContaining({ sourceItemId: 'source-2', status: 'accepted-for-source-update' }) },
+    });
+
+    const changedFirst = { ...first, payload: { text: 'Changed upstream' } };
+    const staleSelected = buildTranscriptSourceReviewDecisionPatch(
+      snapshot,
+      [changedFirst, second],
+      'accept',
+      TRANSCRIPT_LANE_EXTENSION_ID,
+      { sourceItemIds: ['source-1'] },
+    );
+    expect(staleSelected.operations).toHaveLength(1);
+    expect(staleSelected.meta).toMatchObject({ acceptedCount: 0, conflictCount: 1 });
+    expect(staleSelected.operations[0]).toMatchObject({
+      payload: {
+        value: expect.objectContaining({
+          sourceItemId: 'source-1',
+          status: 'source-conflict',
+          conflictReason: 'source-changed-after-proposal',
+        }),
+      },
+    });
+    const terminalConflictSnapshot = {
+      baseVersion: 51,
+      app: {
+        [TRANSCRIPT_LANE_EXTENSION_ID]: {
+          'transcript-source-review:source-1': staleSelected.operations[0]?.payload?.value,
+          'transcript-source-review:source-2': pendingReviewFor(second),
+        },
+      },
+    };
+    expect(buildTranscriptSourceReviewDecisionPatch(
+      terminalConflictSnapshot,
+      [changedFirst, second],
+      'accept',
+      TRANSCRIPT_LANE_EXTENSION_ID,
+      { sourceItemIds: ['source-1'] },
+    ).operations).toEqual([]);
+
+    const rejected = buildTranscriptSourceReviewDecisionPatch(
+      snapshot,
+      [first, second],
+      'reject',
+      TRANSCRIPT_LANE_EXTENSION_ID,
+      { sourceItemIds: ['source-1'] },
+    );
+    expect(rejected.operations).toHaveLength(1);
+    expect(rejected.operations[0]).toMatchObject({
+      payload: { value: expect.objectContaining({ sourceItemId: 'source-1', status: 'rejected' }) },
+    });
+  });
+
+  it('requires an exact upstream handoff acknowledgement and persists idempotently across reload', () => {
+    const item = {
+      id: 'source-ack@clip',
+      sourceItemId: 'source-ack',
+      timelineStart: 1,
+      timelineEnd: 2,
+      payload: { text: 'Immutable transcript source' },
+    };
+    const review = pendingReviewFor(item, 'Accepted human edit');
+    const pendingSnapshot = {
+      baseVersion: 60,
+      app: {
+        [TRANSCRIPT_LANE_EXTENSION_ID]: {
+          'transcript-source-review:source-ack': review,
+        },
+      },
+    };
+    const acceptedPatch = buildTranscriptSourceReviewDecisionPatch(pendingSnapshot, [item], 'accept');
+    const acceptedRecord = acceptedPatch.operations[0]?.payload?.value as TranscriptSourceReviewRecord;
+    const acceptedSnapshot = {
+      baseVersion: 61,
+      app: {
+        [TRANSCRIPT_LANE_EXTENSION_ID]: {
+          'transcript-source-review:source-ack': acceptedRecord,
+        },
+      },
+    };
+    const acknowledgement = {
+      sourceItemId: 'source-ack',
+      ownerId: 'astrid.transcript-store',
+      handoffFingerprint: acceptedRecord.handoffFingerprint as string,
+      sourceRevision: 'transcript-rev-18',
+      appliedSourceFingerprint: computeHostFingerprint({ text: 'Accepted human edit' }),
+    };
+
+    const wrongHandoff = buildTranscriptSourceConsumptionAcknowledgementPatch(
+      acceptedSnapshot,
+      [{ ...acknowledgement, handoffFingerprint: 'fp:wrong-handoff' }],
+    );
+    expect(wrongHandoff.operations).toEqual([]);
+    expect(wrongHandoff.meta).toMatchObject({ acknowledgedCount: 0, conflictCount: 1 });
+
+    const acknowledgedPatch = buildTranscriptSourceConsumptionAcknowledgementPatch(
+      acceptedSnapshot,
+      [acknowledgement],
+    );
+    expect(acknowledgedPatch.operations).toHaveLength(1);
+    expect(acknowledgedPatch.operations.every((operation) => operation.op === 'project-data.write')).toBe(true);
+    expect(acknowledgedPatch.operations[0]).toMatchObject({
+      payload: {
+        value: expect.objectContaining({
+          status: 'acknowledged-by-source-owner',
+          acknowledgement: expect.objectContaining({
+            ownerId: 'astrid.transcript-store',
+            sourceRevision: 'transcript-rev-18',
+            acknowledgedAtRevision: 61,
+          }),
+        }),
+      },
+    });
+
+    const acknowledgedRecord = acknowledgedPatch.operations[0]?.payload?.value;
+    const reloadedSnapshot = JSON.parse(JSON.stringify({
+      baseVersion: 62,
+      app: {
+        [TRANSCRIPT_LANE_EXTENSION_ID]: {
+          'transcript-source-review:source-ack': acknowledgedRecord,
+        },
+      },
+    }));
+    expect(readTranscriptSourceReviews(reloadedSnapshot)).toHaveLength(1);
+    expect(readTranscriptSourceReviews(reloadedSnapshot)[0]?.value).toMatchObject({
+      status: 'acknowledged-by-source-owner',
+      acknowledgement: { ownerId: 'astrid.transcript-store', sourceRevision: 'transcript-rev-18' },
+    });
+    const corruptedReload = JSON.parse(JSON.stringify(reloadedSnapshot));
+    corruptedReload.app[TRANSCRIPT_LANE_EXTENSION_ID]['transcript-source-review:source-ack']
+      .acknowledgement.handoffFingerprint = 'fp:another-handoff';
+    expect(readTranscriptSourceReviews(corruptedReload)).toEqual([]);
+
+    const replay = buildTranscriptSourceConsumptionAcknowledgementPatch(reloadedSnapshot, [acknowledgement]);
+    expect(replay.operations).toEqual([]);
+    expect(replay.meta).toMatchObject({ idempotentCount: 1, conflictCount: 0 });
+    const conflictingReplay = buildTranscriptSourceConsumptionAcknowledgementPatch(
+      reloadedSnapshot,
+      [{ ...acknowledgement, sourceRevision: 'transcript-rev-19' }],
+    );
+    expect(conflictingReplay.operations).toEqual([]);
+    expect(conflictingReplay.meta).toMatchObject({ idempotentCount: 0, conflictCount: 1 });
+  });
+
+  it('reviews one proposal accessibly and never presents acceptance as applied after reload', () => {
+    const item: DataItemInspectorProps['item'] = {
+      id: 'occurrence-ui',
+      sourceItemId: 'source-ui',
+      timelineStart: 4,
+      timelineEnd: 5.5,
+      payload: { text: 'Current source words' },
+    };
+    const snapshot = {
+      baseVersion: 70,
+      app: {
+        [TRANSCRIPT_LANE_EXTENSION_ID]: {
+          'transcript-source-review:source-ui': pendingReviewFor(item, 'Proposed cleaner words'),
+        },
+      },
+    };
+    const appliedPatches: TimelinePatch[] = [];
+    const inspectorProps: DataItemInspectorProps = {
+      kindId: TRANSCRIPT_KIND_ID,
+      schemaRef: TRANSCRIPT_SCHEMA_REF,
+      shape: 'interval',
+      domain: 'source_seconds',
+      item,
+    };
+    const firstMount = render(
+      renderTranscriptSourceReviewInspector(
+        reviewInspectorContext(snapshot, appliedPatches),
+        inspectorProps,
+      ) as ReactElement,
+    );
+
+    expect(screen.getByRole('region', { name: 'Transcript proposal review for source-ui' })).toBeVisible();
+    expect(screen.getByTestId('transcript-review-source')).toHaveTextContent('Current source words');
+    expect(screen.getByTestId('transcript-review-proposed')).toHaveTextContent('Proposed cleaner words');
+    const acceptButton = screen.getByRole('button', {
+      name: 'Accept proposed transcript update for source-ui',
+    });
+    expect(screen.getByRole('button', {
+      name: 'Reject proposed transcript update for source-ui',
+    })).toBeVisible();
+    fireEvent.click(acceptButton);
+
+    expect(appliedPatches).toHaveLength(1);
+    expect(appliedPatches[0]?.meta).toMatchObject({ scope: 'selected-records', acceptedCount: 1 });
+    expect(appliedPatches[0]?.operations).toHaveLength(1);
+    expect(screen.getByTestId('transcript-review-status')).toHaveTextContent(
+      'Accepted for source update — awaiting upstream acknowledgement',
+    );
+    expect(screen.getByTestId('transcript-review-awaiting-ack')).toHaveTextContent('It is not applied');
+    expect(screen.queryByRole('button', {
+      name: 'Accept proposed transcript update for source-ui',
+    })).not.toBeInTheDocument();
+
+    firstMount.unmount();
+    const reloadedSnapshot = JSON.parse(JSON.stringify(snapshot));
+    render(
+      renderTranscriptSourceReviewInspector(
+        reviewInspectorContext(reloadedSnapshot, []),
+        inspectorProps,
+      ) as ReactElement,
+    );
+    expect(screen.getByTestId('transcript-review-status')).toHaveTextContent('awaiting upstream acknowledgement');
+    expect(screen.getByTestId('transcript-review-awaiting-ack')).toHaveTextContent('not applied');
+  });
+
+  it('shows a source-owner acknowledgement without exposing an owner-only action', () => {
+    const item: DataItemInspectorProps['item'] = {
+      id: 'occurrence-ack-ui',
+      sourceItemId: 'source-ack-ui',
+      timelineStart: 0,
+      timelineEnd: 1,
+      payload: { text: 'Applied source' },
+    };
+    const acceptedHandoff = pendingReviewFor(item, 'Applied proposal');
+    const accepted = {
+      ...acceptedHandoff,
+      status: 'acknowledged-by-source-owner' as const,
+      acknowledgement: {
+        schemaVersion: 1 as const,
+        ownerId: 'astrid.transcript-store',
+        handoffFingerprint: acceptedHandoff.handoffFingerprint as string,
+        sourceRevision: 42,
+        appliedSourceFingerprint: 'fp:applied-source',
+        acknowledgedAtRevision: 80,
+      },
+    };
+    const snapshot = {
+      baseVersion: 81,
+      app: {
+        [TRANSCRIPT_LANE_EXTENSION_ID]: {
+          'transcript-source-review:source-ack-ui': accepted,
+        },
+      },
+    };
+
+    render(renderTranscriptSourceReviewInspector(
+      reviewInspectorContext(snapshot, []),
+      {
+        kindId: TRANSCRIPT_KIND_ID,
+        schemaRef: TRANSCRIPT_SCHEMA_REF,
+        shape: 'interval',
+        domain: 'source_seconds',
+        item,
+      },
+    ) as ReactElement);
+
+    expect(screen.getByTestId('transcript-review-status')).toHaveTextContent(
+      'Applied acknowledgement received from astrid.transcript-store',
+    );
+    expect(screen.getByText('42')).toBeVisible();
+    expect(screen.queryByRole('button', { name: /acknowledge/i })).not.toBeInTheDocument();
   });
 });

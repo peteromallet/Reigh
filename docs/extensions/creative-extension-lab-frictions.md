@@ -1082,3 +1082,23 @@ evidence and a concrete improvement direction.
   from silently rewriting source data. Browser acceptance tests must inspect the
   stored review record, the generated output, and the source lane independently;
   checking only the visible caption would miss a policy violation.
+
+### “Accepted” must not visually collapse into “applied”
+
+- The first round-trip surface had durable batch accept/reject actions, but no
+  selected-record comparison and no state proving that an upstream transcript
+  owner actually consumed an accepted handoff. A user could inspect persistence
+  data, yet the editor offered no precise place to compare source and proposal
+  or understand that acceptance was still waiting on another system.
+- Transcript Caption Foundry now renders current source beside proposed
+  text/timing in the selected-item inspector, with source-specific accessible
+  accept/reject labels while preserving the batch actions. The properties host
+  also forwards stable source identity, artifact reference, and provenance;
+  dropping those fields made an occurrence id look like source identity.
+- Acceptance now creates a fingerprinted handoff and is labelled as awaiting
+  upstream acknowledgement. Only an upstream-owner contract bound to that exact
+  handoff, owner, returned revision, and applied-source fingerprint advances the
+  record to `acknowledged-by-source-owner`. Exact replay is idempotent and a
+  conflicting replay fails closed. The dev adapter remains immutable and cannot
+  self-acknowledge, so local UI success is not mistaken for production source
+  application.

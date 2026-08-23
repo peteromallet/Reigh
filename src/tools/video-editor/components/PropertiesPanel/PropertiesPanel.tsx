@@ -123,9 +123,12 @@ function DataItemInspectorSection({ lane, view }: { lane: DataLaneView; view: Da
         domain={item.domain}
         item={{
           id: item.id,
+          ...(item.sourceItemId ? { sourceItemId: item.sourceItemId } : {}),
           timelineStart: view.timelineStart,
           timelineEnd: view.timelineEnd,
           clipId: view.clipId,
+          ...(item.sourceArtifactRef ? { sourceArtifactRef: item.sourceArtifactRef } : {}),
+          provenance: item.provenance,
           payload: item.payload,
         }}
       />

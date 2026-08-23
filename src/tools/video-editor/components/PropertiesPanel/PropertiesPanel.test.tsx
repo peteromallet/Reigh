@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 import { PropertiesPanel } from '@/tools/video-editor/components/PropertiesPanel/PropertiesPanel';
 import { VideoEditorAssetPanelSurface } from '@/tools/video-editor/components/PropertiesPanel/VideoEditorAssetPanelSurface';
 import type { DataLaneView, FrozenDataItem } from '@/tools/video-editor/data/typed/envelope';
+import type { DataItemInspectorProps } from '@reigh/editor-sdk';
 
 const useTimelineEditorDataMock = vi.fn();
 const useTimelineEditorOpsMock = vi.fn();
@@ -1075,6 +1076,41 @@ describe('PropertiesPanel — data item inspector dispatch', () => {
 
     expect(screen.getByTestId('kind-inspector')).toBeInTheDocument();
     expect(screen.queryByTestId('opaque-data-item-inspector')).not.toBeInTheDocument();
+  });
+
+  it('preserves stable source identity and provenance for a bound kind inspector', () => {
+    const inspector = vi.fn((props: DataItemInspectorProps) => (
+      <div data-testid="kind-source-identity">
+        {props.item.sourceItemId}:{props.item.sourceArtifactRef?.assetId}:{props.item.provenance?.adapterId}
+      </div>
+    ));
+    const item = createDataItemFixture({
+      sourceItemId: 'transcript-segment-stable-1',
+      sourceArtifactRef: { assetId: 'asset-transcript', artifactHash: 'sha256:abc' },
+      provenance: { adapterId: 'reigh.adaptTranscript', adapterVersion: '2' },
+    });
+    const lane = createDataLaneFixture({
+      items: [{ item, timelineStart: 2, timelineEnd: 4, clipId: 'clip-1' }],
+      inspector: inspector as unknown as DataLaneView['inspector'],
+    });
+    useTimelineEditorDataMock.mockReturnValue(createDataTargetEditorData({
+      inspectorTarget: { kind: 'dataItem', laneId: 'transcript', itemId: 'asset-1:0' },
+      lanes: [lane],
+    }));
+
+    render(<PropertiesPanel />);
+
+    expect(screen.getByTestId('kind-source-identity')).toHaveTextContent(
+      'transcript-segment-stable-1:asset-transcript:reigh.adaptTranscript',
+    );
+    expect(inspector.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
+      item: expect.objectContaining({
+        id: 'asset-1:0',
+        sourceItemId: 'transcript-segment-stable-1',
+        sourceArtifactRef: { assetId: 'asset-transcript', artifactHash: 'sha256:abc' },
+        provenance: { adapterId: 'reigh.adaptTranscript', adapterVersion: '2' },
+      }),
+    }));
   });
 
   it('contains a crashing kind inspector in the contribution error boundary', () => {
