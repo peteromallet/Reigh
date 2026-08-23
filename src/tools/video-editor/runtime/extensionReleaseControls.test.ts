@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { defineExtension } from '@reigh/editor-sdk';
 import {
+  buildExtensionLifecycleOperationalEvents,
   createPrivacySafeExtensionTelemetryHost,
   resolveExtensionReleaseFlags,
   sanitizeExtensionOperationalEvent,
@@ -124,5 +125,44 @@ describe('extension release controls', () => {
       outcome: 'success',
       releaseRevision: 'rc1',
     })).not.toThrow();
+  });
+
+  it('emits lifecycle transitions once and disposal on removal', () => {
+    const active = [{
+      extensionId: 'com.reigh.example',
+      extensionVersion: '1.0.0',
+      activationKey: 'com.reigh.example:1',
+      state: 'active' as const,
+    }];
+    expect(buildExtensionLifecycleOperationalEvents([], active, 'rc1')).toEqual([{
+      event: 'extension.activation',
+      outcome: 'success',
+      releaseRevision: 'rc1',
+      extensionId: 'com.reigh.example',
+      extensionVersion: '1.0.0',
+    }]);
+    expect(buildExtensionLifecycleOperationalEvents(active, active, 'rc1')).toEqual([]);
+    expect(buildExtensionLifecycleOperationalEvents(active, [{
+      ...active[0],
+      activationKey: 'com.reigh.example:2',
+    }], 'rc1')).toEqual([expect.objectContaining({
+      event: 'extension.activation',
+      outcome: 'success',
+    })]);
+    expect(buildExtensionLifecycleOperationalEvents(active, [{
+      ...active[0],
+      state: 'failed',
+    }], 'rc1')).toEqual([expect.objectContaining({
+      event: 'extension.activation',
+      outcome: 'failure',
+      errorClass: 'activation.error',
+    })]);
+    expect(buildExtensionLifecycleOperationalEvents(active, [], 'rc1')).toEqual([{
+      event: 'extension.disposal',
+      outcome: 'success',
+      releaseRevision: 'rc1',
+      extensionId: 'com.reigh.example',
+      extensionVersion: '1.0.0',
+    }]);
   });
 });

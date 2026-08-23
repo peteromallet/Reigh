@@ -59,8 +59,10 @@ import type { SaveStatus } from '@/tools/video-editor/hooks/useTimelinePersisten
 import type { ResolvedAssetRegistryEntry } from '@/tools/video-editor/types/index.ts';
 import { publishLocalTestExtensionDiagnostics } from '@/app/localTestRuntime.ts';
 import {
+  buildExtensionLifecycleOperationalEvents,
   createPrivacySafeExtensionTelemetryHost,
   dispatchExtensionOperationalEvent,
+  type ExtensionLifecycleObservation,
   type ExtensionOperationalEventSink,
 } from '@/tools/video-editor/runtime/extensionReleaseControls.ts';
 
@@ -486,6 +488,7 @@ export function VideoEditorProvider({
     () => createPrivacySafeExtensionTelemetryHost(extensionOperationalEventSink),
     [extensionOperationalEventSink],
   );
+  const lifecycleObservationsRef = useRef<readonly ExtensionLifecycleObservation[]>([]);
 
   useEffect(() => {
     telemetryHost.log({
@@ -528,6 +531,37 @@ export function VideoEditorProvider({
       },
     },
   });
+
+  useEffect(() => {
+    const lifecycleHost = assembly.lifecycleHostRef.current;
+    const current = assembly.extensionRuntime.extensions.map((extension) => {
+      const extensionId = extension.manifest.id as string;
+      const lifecycle = lifecycleHost?.lifecycles.get(extensionId);
+      return {
+        extensionId,
+        extensionVersion: extension.manifest.version,
+        activationKey: assembly.getRecoveryKey(extensionId),
+        state: lifecycle?.state === 'active'
+          ? 'active' as const
+          : lifecycle?.state === 'inactive' || lifecycle?.state === 'activating'
+            ? 'inactive' as const
+            : 'failed' as const,
+      };
+    });
+    for (const event of buildExtensionLifecycleOperationalEvents(
+      lifecycleObservationsRef.current,
+      current,
+      extensionReleaseRevision,
+    )) {
+      telemetryHost.log(event);
+    }
+    lifecycleObservationsRef.current = current;
+  }, [
+    assembly.extensionRuntime,
+    assembly.lifecycleHostRef,
+    extensionReleaseRevision,
+    telemetryHost,
+  ]);
 
   const runtimeValue = useMemo(() => ({
     provider: dataProvider,

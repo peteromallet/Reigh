@@ -483,3 +483,63 @@ evidence and a concrete improvement direction.
   warnings. None were extension runtime failures, but they obscure the signal in
   deep browser testing. A deterministic local-fixture mode should silence remote
   services and expose extension diagnostics in a dedicated test surface.
+
+## Ship-quality hardening findings
+
+### The reviewed bundle was still a development-only scratchpad
+
+- All twelve reviewed extensions could pass unit, compatibility, and real DEV
+  browser tests while remaining impossible to stage in a production build:
+  `VideoEditorPage` placed the entire bundle behind `import.meta.env.DEV`.
+  Rollout and rollback language in a runbook was therefore not executable.
+- The page now resolves deployment-owned parent/child controls, defaults closed
+  in production, requires a valid configuration revision, and never consults a
+  query string or browser storage for production enablement. DEV keeps the fast
+  authoring loop and its local Extension Manager toggles.
+- The terminology was itself a friction: a file named `devLocalExtensions.ts`
+  became the reviewed bundled registry. A future cleanup should split reviewed
+  built-ins from the personal scratchpad so a casual experimental entry cannot
+  accidentally become rollout-eligible.
+
+### The telemetry port accepted arbitrary creative content
+
+- The app-shell provider previously forwarded all extension telemetry arguments
+  directly to `console.log`, `console.warn`, and `console.error`. That allowed
+  extensions to emit prompts, transcripts, project IDs, paths, URLs, exception
+  messages, or whole bridge payloads into production diagnostics.
+- The host now accepts one fixed operational event object, rejects unknown keys
+  and path-like/free-form tokens, contains hostile getters and failing sinks,
+  and forwards sanitized records through a browser event boundary. The schema
+  covers activation, disposal, command, bridge, persistence, migration, render,
+  and lane-density outcomes without creative content.
+- A schema is only the construction boundary. Actual production dashboards,
+  retention/access policy, alert drills, and on-call ownership still require
+  human/operator evidence before rollout; the release checklist must not infer
+  those from unit tests.
+
+### A reproducible cross-repository gate needs explicit executable paths
+
+- Pinning only `Python 3.11` was insufficient: the available Astrid environment
+  is Python 3.14.3, and nested `make ci` shell scripts independently fall back to
+  `python3` unless both `PY` and `PYTHON_BIN` are carried through.
+- The verifier now requires one absolute executable with an exact patch version
+  and threads it through every Astrid gate. Node and npm are also exact pins.
+  This turns toolchain drift into a preflight failure rather than a mysterious
+  test difference halfway through the release run.
+- Reigh cannot store its own final commit hash inside that same commit: changing
+  the stored hash creates a different commit. The gate therefore requires a
+  full immutable `REIGH_REF` equal to clean `HEAD`, records it in evidence, and
+  checks it again after all gates. Astrid, being the paired external repository,
+  remains pinned directly in the Reigh manifest.
+
+### Broad-suite mocks hid remote work and lifecycle contract drift
+
+- Deep merged-suite runs found stale public-context key inventories, SDK export
+  ceilings, missing selection-store/provider wrappers, and page tests that
+  accidentally mounted preference persistence against an uninitialized
+  Supabase client. Several failures presented as unrelated timeouts until the
+  real remote side effect was removed from the page-test boundary.
+- The durable lesson is to make local-test zero-remote behavior executable and
+  to keep shared mocks structurally aligned with public hooks/providers. Merely
+  increasing timeouts would preserve the race and make browser failures harder
+  to diagnose.

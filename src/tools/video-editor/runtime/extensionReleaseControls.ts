@@ -141,6 +141,64 @@ export function sanitizeExtensionOperationalEvent(value: unknown): ExtensionOper
 
 export type ExtensionOperationalEventSink = (event: ExtensionOperationalEvent) => void;
 
+export interface ExtensionLifecycleObservation {
+  readonly extensionId: string;
+  readonly extensionVersion: string;
+  /** Host-owned monotonic identity for reactivation of the same version. */
+  readonly activationKey: string;
+  readonly state: 'active' | 'failed' | 'inactive';
+}
+
+/**
+ * Convert host lifecycle transitions into bounded operational records. Only a
+ * state/version change emits, preventing ordinary React renders from inflating
+ * activation metrics. Removal is reported as successful disposal.
+ */
+export function buildExtensionLifecycleOperationalEvents(
+  previous: readonly ExtensionLifecycleObservation[],
+  current: readonly ExtensionLifecycleObservation[],
+  releaseRevision: string,
+): readonly ExtensionOperationalEvent[] {
+  const before = new Map(previous.map((item) => [item.extensionId, item]));
+  const after = new Map(current.map((item) => [item.extensionId, item]));
+  const events: ExtensionOperationalEvent[] = [];
+
+  for (const item of current) {
+    const prior = before.get(item.extensionId);
+    if (
+      item.state !== 'inactive'
+      && (
+        prior?.state !== item.state
+        || prior.extensionVersion !== item.extensionVersion
+        || prior.activationKey !== item.activationKey
+      )
+    ) {
+      events.push(Object.freeze({
+        event: 'extension.activation',
+        outcome: item.state === 'active' ? 'success' : 'failure',
+        releaseRevision,
+        extensionId: item.extensionId,
+        extensionVersion: item.extensionVersion,
+        ...(item.state === 'failed' ? { errorClass: 'activation.error' } : {}),
+      }));
+    }
+  }
+
+  for (const item of previous) {
+    if (!after.has(item.extensionId)) {
+      events.push(Object.freeze({
+        event: 'extension.disposal',
+        outcome: 'success',
+        releaseRevision,
+        extensionId: item.extensionId,
+        extensionVersion: item.extensionVersion,
+      }));
+    }
+  }
+
+  return Object.freeze(events);
+}
+
 /**
  * Browser boundary for the app's analytics adapter. The payload has already
  * passed the fixed privacy schema before it reaches this event, so listeners
