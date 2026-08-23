@@ -58,6 +58,11 @@ import type { ProcessManager } from '@/tools/video-editor/runtime/processes/Proc
 import type { SaveStatus } from '@/tools/video-editor/hooks/useTimelinePersistence.ts';
 import type { ResolvedAssetRegistryEntry } from '@/tools/video-editor/types/index.ts';
 import { publishLocalTestExtensionDiagnostics } from '@/app/localTestRuntime.ts';
+import {
+  createPrivacySafeExtensionTelemetryHost,
+  dispatchExtensionOperationalEvent,
+  type ExtensionOperationalEventSink,
+} from '@/tools/video-editor/runtime/extensionReleaseControls.ts';
 
 const log = import.meta.env.DEV ? (...args: Parameters<typeof console.log>) => console.log(...args) : () => {};
 
@@ -451,6 +456,10 @@ export interface VideoEditorProviderProps {
   /** T22: Provider-owned timeline-overlay feature flag. Explicitly defaults
    *  to false; hosts opt in by supplying `true`. */
   timelineOverlaysEnabled?: boolean;
+  /** Deployment-owned revision attached to privacy-safe operational events. */
+  extensionReleaseRevision?: string;
+  /** Optional app analytics adapter; defaults to a sanitized browser event. */
+  extensionOperationalEventSink?: ExtensionOperationalEventSink;
   children: React.ReactNode;
 }
 
@@ -467,10 +476,30 @@ export function VideoEditorProvider({
   packageStateEntries,
   processManager: hostProcessManager,
   timelineOverlaysEnabled = false,
+  extensionReleaseRevision = 'unset',
+  extensionOperationalEventSink = dispatchExtensionOperationalEvent,
   children,
 }: VideoEditorProviderProps) {
   const shotsHost = useReighShotsHost(projectId);
   const agentChatRegistry = useAgentChatRegistry();
+  const telemetryHost = useMemo(
+    () => createPrivacySafeExtensionTelemetryHost(extensionOperationalEventSink),
+    [extensionOperationalEventSink],
+  );
+
+  useEffect(() => {
+    telemetryHost.log({
+      event: 'host.activation',
+      outcome: 'success',
+      releaseRevision: extensionReleaseRevision,
+    });
+    return () => telemetryHost.log({
+      event: 'extension.disposal',
+      outcome: 'success',
+      releaseRevision: extensionReleaseRevision,
+      extensionId: 'host',
+    });
+  }, [extensionReleaseRevision, telemetryHost]);
 
   const assembly = useEditorRuntimeAssembly({
     extensions,
@@ -531,11 +560,7 @@ export function VideoEditorProvider({
       warning: toast.warning,
       info: toast.info,
     },
-    telemetry: {
-      log: (...args: unknown[]) => console.log(...args),
-      warn: (...args: unknown[]) => console.warn(...args),
-      error: (...args: unknown[]) => console.error(...args),
-    },
+    telemetry: telemetryHost,
     timelineId,
     timelineName,
     userId,
@@ -554,7 +579,7 @@ export function VideoEditorProvider({
     recordProcessResultAttach: assembly.recordProcessResultAttach,
     timelineOverlaysEnabled,
     timelineViewStore: assembly.timelineViewStoreRef.current ?? undefined,
-  }), [agentChatRegistry.register, agentChatRegistry.unregister, dataProvider, projectId, shotsHost, timelineId, timelineName, userId, assembly.resolvedExtensionsConfig, assembly.extensionRuntime, assembly.processResultAttachRecords, assembly.processStatuses, assembly.recordProcessResultAttach, assembly.getRecoveryKey, assembly.incrementRecoveryKey, timelineOverlaysEnabled]);
+  }), [agentChatRegistry.register, agentChatRegistry.unregister, dataProvider, projectId, shotsHost, telemetryHost, timelineId, timelineName, userId, assembly.resolvedExtensionsConfig, assembly.extensionRuntime, assembly.processResultAttachRecords, assembly.processStatuses, assembly.recordProcessResultAttach, assembly.getRecoveryKey, assembly.incrementRecoveryKey, timelineOverlaysEnabled]);
 
   return (
     <VideoEditorRuntimeProvider value={runtimeValue}>

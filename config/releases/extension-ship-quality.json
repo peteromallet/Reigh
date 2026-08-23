@@ -10,6 +10,12 @@
     "branch": "oracle-unified-execution",
     "commit": "659c3dc38aad"
   },
+  "verification": {
+    "profile": "extension-ship-quality-v1",
+    "node": "20.19.4",
+    "npm": "10.8.2",
+    "astridPython": "3.14.3"
+  },
   "requiredGates": [
     "baseline",
     "durability",

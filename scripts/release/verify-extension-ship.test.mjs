@@ -63,6 +63,11 @@ describe('extension ship verifier', () => {
     assert.equal(plan.at(-2).command, 'npm');
     assert.equal(plan.at(-1).cwd, astridCheckout);
     assert.equal(plan.at(-1).command, 'make');
+    assert.deepEqual(plan.at(-1).args, [
+      'ci',
+      'PY=<ASTRID_PYTHON required for execution>',
+      'PYTHON_BIN=<ASTRID_PYTHON required for execution>',
+    ]);
     assert.ok(plan.every((step) => Array.isArray(step.args)));
     assert.ok(plan.every((step) => step.command === 'npm' || step.command === 'make'));
 
@@ -104,11 +109,18 @@ describe('extension ship verifier', () => {
     const plan = spawnSync(process.execPath, [script, '--plan'], {
       cwd: REPO_ROOT,
       encoding: 'utf8',
-      env: { ...process.env, ASTRID_CHECKOUT: '', ASTRID_REF: '' },
+      env: {
+        ...process.env,
+        REIGH_REF: '',
+        ASTRID_CHECKOUT: '',
+        ASTRID_REF: '',
+        ASTRID_PYTHON: '',
+      },
     });
     assert.equal(plan.status, 0, plan.stderr);
     assert.match(plan.stdout, /PLAN ONLY/);
     assert.match(plan.stdout, /make ci/);
     assert.match(plan.stdout, /<required for execution>/);
+    assert.match(plan.stdout, /ASTRID_PYTHON/);
   });
 });

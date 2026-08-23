@@ -52,6 +52,10 @@ import { useTimelinesList } from '@/tools/video-editor/hooks/useTimelinesList.ts
 import type { SaveStatus } from '@/tools/video-editor/hooks/useTimelinePersistence.ts';
 import { videoEditorSettings } from '@/tools/video-editor/settings/videoEditorDefaults.ts';
 import { publishLocalTestExtensionDiagnostics } from '@/app/localTestRuntime.ts';
+import {
+  resolveExtensionReleaseFlags,
+  selectReleaseEnabledExtensions,
+} from '@/tools/video-editor/runtime/extensionReleaseControls.ts';
 
 type VideoEditorMode = 'app' | 'local';
 
@@ -349,9 +353,10 @@ export default function VideoEditorPage() {
   const { projects: appProjects, isLoadingProjects: appProjectsLoading } = useProjectCrudContext();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // ---- Smoke extension wiring (prepend when ?extensionSmoke=1) -------------
-  // `devLocalExtensions` is the author's local scratchpad (empty on main); the
-  // DEV guard is a literal so production builds drop it. See dev/localExtensions.ts.
+  // ---- Reviewed extension bundle + smoke wiring ----------------------------
+  // Production defaults closed and can only be enabled by deployment-owned
+  // build configuration. DEV defaults open for authoring. URL or browser
+  // storage cannot override the production rollout contract.
   //
   // Dev-local enablement is an external store (`devExtensionEnablement.ts`):
   // subscribing via useSyncExternalStore makes the disabled-ID snapshot part of
@@ -366,29 +371,36 @@ export default function VideoEditorPage() {
     getDevDisabledSnapshot,
   );
 
+  const extensionReleaseFlags = resolveExtensionReleaseFlags(import.meta.env, {
+    development: import.meta.env.DEV,
+  });
+
   const smokeDirectExtensions = useMemo(() => {
     const smokeExt = getExtensionSmokeExtension(searchParams);
     const disabled = import.meta.env.DEV ? devDisabledIds : new Set<string>();
+    const reviewedExtensions = selectReleaseEnabledExtensions(
+      devLocalExtensions,
+      extensionReleaseFlags,
+    ).filter((extension) => !disabled.has(extension.manifest.id as string));
     const direct = [
-      ...(smokeExt ? [smokeExt] : []),
-      ...(import.meta.env.DEV
-        ? devLocalExtensions.filter((ext) => !disabled.has(ext.manifest.id as string))
-        : []),
+      ...(extensionReleaseFlags.extensionHostEnabled && smokeExt ? [smokeExt] : []),
+      ...reviewedExtensions,
     ];
     return direct.length > 0 ? direct : undefined;
-  }, [searchParams, devDisabledIds]);
+  }, [
+    searchParams,
+    devDisabledIds,
+    extensionReleaseFlags.extensionHostEnabled,
+    extensionReleaseFlags.transcriptCaptionFoundryEnabled,
+    extensionReleaseFlags.runawayTypedTimelineEnabled,
+  ]);
 
-  // ---- T9.1: timeline-overlay host gate (DEV-only) -------------------------
-  // `timelineOverlaysEnabled` defaults to false everywhere. In DEV builds the
-  // page enables it when EITHER the explicit `?timelineOverlayCanary=1` query
-  // is present OR an enabled dev-local extension declares a `timelineOverlay`
-  // contribution — so toggling an overlay extension on in the ExtensionManager
-  // mounts the host without a magic URL. Production ignores both (the query is
-  // stripped by the literal `import.meta.env.DEV` guard and devLocalExtensions
-  // are dropped). Derived from `smokeDirectExtensions` so the enabled-extension
-  // list is the single source of truth.
-  const timelineOverlaysEnabled = import.meta.env.DEV && (
-    searchParams.get(TIMELINE_OVERLAY_CANARY_PARAM) === '1'
+  // ---- Timeline-overlay host gate -----------------------------------------
+  // An enabled, reviewed overlay contribution turns on the host in every
+  // environment. The URL canary remains DEV-only and cannot bypass the parent
+  // deployment kill switch.
+  const timelineOverlaysEnabled = extensionReleaseFlags.extensionHostEnabled && (
+    (import.meta.env.DEV && searchParams.get(TIMELINE_OVERLAY_CANARY_PARAM) === '1')
     || (smokeDirectExtensions ?? []).some((ext) => (
       ext.manifest.contributions?.some((contribution) => contribution.kind === 'timelineOverlay')
     ))
@@ -740,6 +752,7 @@ export default function VideoEditorPage() {
               onSaveStatusChange={setMountedSaveStatus}
               extensions={resolvedExtensions}
               timelineOverlaysEnabled={timelineOverlaysEnabled}
+              extensionReleaseRevision={extensionReleaseFlags.configurationRevision}
             >
               <ReighVideoEditorShell
                 mode="full"
@@ -862,6 +875,7 @@ export default function VideoEditorPage() {
           onSaveStatusChange={setMountedSaveStatus}
           extensions={resolvedExtensions}
           timelineOverlaysEnabled={timelineOverlaysEnabled}
+          extensionReleaseRevision={extensionReleaseFlags.configurationRevision}
         >
           <ReighVideoEditorShell
             mode="full"

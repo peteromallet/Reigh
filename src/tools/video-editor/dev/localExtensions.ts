@@ -1,10 +1,10 @@
 /**
- * Your in-progress extension goes here.
+ * Reviewed bundled extensions plus the local authoring entrypoint.
  *
- * `VideoEditorPage` concatenates this array into the editor's direct extensions
- * under `import.meta.env.DEV`, so the loop is: write the file → add one entry
- * here → refresh the browser. No page component to edit, no repository or bundle
- * store to stand up.
+ * `VideoEditorPage` filters this array through deployment-owned parent/child
+ * release flags. Production defaults closed; DEV defaults open and also honors
+ * the Extension Manager's local disabled-ID store. The authoring loop remains:
+ * write the file → add one entry here → refresh the browser.
  *
  * Scaffold: copy `src/examples/hello-world-extension.ts`, rename the manifest id.
  * Sanity check: `?extensionSmoke=1` on the editor URL loads the host's own smoke
@@ -12,12 +12,12 @@
  * any problem is in your extension. Activation is logged under the
  * `[Extension lifecycle]` console group (`docs/video-editor/extensions-debugging.md` §2.1).
  *
- * The scene-phase-markers canary is registered here (DEV-only scratchpad). It
+ * The scene-phase-markers canary is registered here. It
  * exercises the `timelineOverlay` family end-to-end: ruler markers rendered
  * through the host-owned `markerLayer`, playhead-store subscription, and
  * commit-time fresh-snapshot `project-data.write`.
  *
- * The transcript-lane example is also registered here (DEV-only). It
+ * The transcript-lane example is also registered here. It
  * exercises the `dataKind` family end-to-end: declare a dataKind
  * contribution, bind renderers via `ctx.dataKinds.register()` at activation,
  * and see host-adapted transcript segments painted as a duration-neutral

@@ -9,15 +9,16 @@ and the executable clean-machine gate is
 [`scripts/release/verify-extension-ship.mjs`](../../scripts/release/verify-extension-ship.mjs).
 
 The verifier is intentionally conservative. It requires the manifest-pinned
-Node/npm versions, the configured Reigh branch, a clean Reigh worktree descended
-from the configured base, and an exact clean Astrid checkout supplied by commit
+Node/npm versions, the configured Reigh branch, a clean Reigh worktree at the
+exact candidate commit descended from the configured base, and an exact clean
+Astrid checkout supplied by commit
 through the environment. It never fetches, changes a Git ref, resets, cleans,
 or applies a production migration. A mismatch or failed command stops the run.
 
 ## Running the frozen-candidate gate
 
-Prepare fresh, separate Reigh and Astrid checkouts. Install Node `20.19.0`, npm
-`10.8.2`, Python `3.11` plus the dev tooling required by the pinned Astrid
+Prepare fresh, separate Reigh and Astrid checkouts. Install Node `20.19.4`, npm
+`10.8.2`, Python `3.14.3` plus the dev tooling required by the pinned Astrid
 revision, GNU Make, and
 the Playwright browsers used by the Reigh suites. Do not reuse a developer
 worktree for release evidence.
@@ -31,11 +32,15 @@ npm run verify:extension-ship -- --plan
 
 For the blocking run, pass an absolute checkout path and an immutable commit.
 The ref must resolve to the Astrid commit in the paired manifest, and Astrid
-`HEAD` must equal it:
+`HEAD` must equal it. `REIGH_REF` is supplied as a full immutable SHA because a
+commit cannot contain its own hash; it must equal the clean Reigh checkout's
+`HEAD` and is captured in the retained verifier evidence:
 
 ```sh
+REIGH_REF=<full-40-character-Reigh-HEAD> \
 ASTRID_CHECKOUT=/absolute/path/to/clean/Astrid \
 ASTRID_REF=659c3dc38aad \
+ASTRID_PYTHON=/absolute/path/to/pinned/venv/bin/python \
 npm run verify:extension-ship
 ```
 
@@ -53,14 +58,16 @@ flag never bypasses its parent.
 
 | Contract flag | Controls | Dependency | Immediate rollback effect |
 | --- | --- | --- | --- |
-| `extension_host_enabled` | Activation and rendering of the bundled extension host | None | Prevent new extension activation and remove host surfaces after a safe reload |
-| `transcript_caption_foundry_enabled` | Transcript Caption Foundry registration, commands, and writes | `extension_host_enabled` | Stop Foundry commands/writes while leaving unrelated host extensions available |
-| `runaway_typed_timeline_enabled` | Astrid Runaway typed-lane loading, migration entry point, and viewer registration | `extension_host_enabled` | Stop Runaway loads/migrations/writes while leaving unrelated host extensions available |
+| `VITE_EXTENSION_HOST_ENABLED` | Activation and rendering of the bundled extension host | None | Prevent new extension activation and remove host surfaces after a safe reload |
+| `VITE_TRANSCRIPT_CAPTION_FOUNDRY_ENABLED` | Transcript Caption Foundry registration, commands, and writes | `VITE_EXTENSION_HOST_ENABLED` | Stop Foundry commands/writes while leaving unrelated host extensions available |
+| `VITE_RUNAWAY_TYPED_TIMELINE_ENABLED` | Astrid Runaway typed-lane loading, migration entry point, and viewer registration | `VITE_EXTENSION_HOST_ENABLED` | Stop Runaway loads/migrations/writes while leaving unrelated host extensions available |
 
 Evaluate flags server-side or from signed deployment configuration before
 activation. Do not accept query-string or locally persisted production
 overrides. Log only the effective boolean snapshot and configuration revision,
-never flag targeting rules or user attributes.
+never flag targeting rules or user attributes. Reigh production builds also
+require a valid `VITE_EXTENSION_RELEASE_CONFIG_REVISION` token whenever the host
+flag is enabled; a missing or malformed revision fails the parent flag closed.
 
 ## Staged rollout
 

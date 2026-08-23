@@ -2,6 +2,8 @@
 
 import { spawnSync } from 'node:child_process';
 import {
+  accessSync,
+  constants,
   existsSync,
   readFileSync,
   realpathSync,
@@ -136,8 +138,8 @@ export function validateReleaseManifest(manifest) {
   if (!/^\d+\.\d+\.\d+$/.test(verification.npm ?? '')) {
     errors.push('verification.npm must be an exact semantic version');
   }
-  if (!/^\d+\.\d+$/.test(verification.astridPython ?? '')) {
-    errors.push('verification.astridPython must be an exact major.minor version');
+  if (!/^\d+\.\d+\.\d+$/.test(verification.astridPython ?? '')) {
+    errors.push('verification.astridPython must be an exact semantic version');
   }
 
   const requiredGates = Array.isArray(manifest?.requiredGates)
@@ -184,12 +186,16 @@ export function validatePackageJson(packageJson, manifest) {
   }
 }
 
-export function buildExecutionPlan({ repoRoot, astridCheckout }) {
+export function buildExecutionPlan({ repoRoot, astridCheckout, astridPython }) {
   const astridCwd = astridCheckout || '<ASTRID_CHECKOUT required for execution>';
+  const python = astridPython || '<ASTRID_PYTHON required for execution>';
   return [
     ...REIGH_GATE_PROFILE.map((gate) => ({ ...gate, cwd: repoRoot })),
     ...ASTRID_GATE_PROFILE.map(({ cwdSuffix, ...gate }) => ({
       ...gate,
+      args: gate.id === 'astrid-ci'
+        ? [...gate.args, `PY=${python}`, `PYTHON_BIN=${python}`]
+        : gate.args,
       cwd: cwdSuffix && astridCheckout
         ? resolve(astridCheckout, cwdSuffix)
         : cwdSuffix
@@ -260,7 +266,7 @@ function resolveCommit(checkout, ref, name) {
   );
 }
 
-function assertReighCheckout(manifest) {
+function assertReighCheckout(manifest, env) {
   const branch = outputOf('git', ['branch', '--show-current'], REPO_ROOT);
   if (branch !== manifest.reigh.branch) {
     fail(`Reigh branch mismatch: expected ${manifest.reigh.branch}, got ${branch || '<detached>'}`);
@@ -280,11 +286,23 @@ function assertReighCheckout(manifest) {
   if (ancestry.error || ancestry.status !== 0) {
     fail(`Reigh HEAD is not descended from pinned base ${manifest.reigh.baseCommit}`);
   }
+  if (!/^[0-9a-f]{40}$/.test(env.REIGH_REF ?? '')) {
+    fail('REIGH_REF is required and must be a full 40-character lowercase commit');
+  }
+  const expectedHead = resolveCommit(
+    REPO_ROOT,
+    env.REIGH_REF,
+    'REIGH_REF',
+  );
+  const head = outputOf('git', ['rev-parse', 'HEAD'], REPO_ROOT);
+  if (head !== expectedHead) {
+    fail(`Reigh HEAD mismatch: expected ${expectedHead}, got ${head}`);
+  }
   assertClean(REPO_ROOT, 'Reigh');
   return {
     baseCommit,
     branch,
-    head: outputOf('git', ['rev-parse', 'HEAD'], REPO_ROOT),
+    head,
   };
 }
 
@@ -333,7 +351,41 @@ function resolveAstridCheckout(manifest, env) {
   return { checkout, commit: manifestCommit };
 }
 
-function assertToolchain(manifest) {
+function resolveAstridPython(manifest, env) {
+  const requestedPath = env.ASTRID_PYTHON;
+  if (!requestedPath) {
+    fail('ASTRID_PYTHON is required and must name the pinned absolute Python executable');
+  }
+  if (!isAbsolute(requestedPath)) {
+    fail(`ASTRID_PYTHON must be absolute; got ${requestedPath}`);
+  }
+  if (!existsSync(requestedPath)) {
+    fail(`ASTRID_PYTHON does not exist: ${requestedPath}`);
+  }
+  const python = realpathSync(requestedPath);
+  if (!statSync(python).isFile()) {
+    fail(`ASTRID_PYTHON is not a file: ${python}`);
+  }
+  try {
+    accessSync(python, constants.X_OK);
+  } catch {
+    fail(`ASTRID_PYTHON is not executable: ${python}`);
+  }
+  const version = outputOf(
+    python,
+    ['-c', 'import sys; print(".".join(map(str, sys.version_info[:3])))'],
+    REPO_ROOT,
+  );
+  if (version !== manifest.verification.astridPython) {
+    fail(
+      `Astrid Python version mismatch: expected ${manifest.verification.astridPython}, `
+      + `got ${version} from ${python}`,
+    );
+  }
+  return python;
+}
+
+function assertToolchain(manifest, env) {
   const nodeVersion = process.version.replace(/^v/, '');
   if (nodeVersion !== manifest.verification.node) {
     fail(
@@ -346,17 +398,7 @@ function assertToolchain(manifest) {
       `npm version mismatch: expected ${manifest.verification.npm}, got ${npmVersion}`,
     );
   }
-  const pythonVersion = outputOf(
-    'python3',
-    ['-c', 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")'],
-    REPO_ROOT,
-  );
-  if (pythonVersion !== manifest.verification.astridPython) {
-    fail(
-      `Astrid Python version mismatch: expected ${manifest.verification.astridPython}, `
-      + `got ${pythonVersion}`,
-    );
-  }
+  return resolveAstridPython(manifest, env);
 }
 
 export function executeSteps(steps, spawn = spawnSync) {
@@ -398,8 +440,10 @@ Options:
   -h, --help         Show this help.
 
 Required environment for run mode:
+  REIGH_REF         Full 40-character commit equal to the candidate checkout HEAD.
   ASTRID_CHECKOUT    Absolute path to the clean Astrid checkout.
   ASTRID_REF         12-40 character commit resolving to the manifest Astrid pin.
+  ASTRID_PYTHON      Absolute executable matching the manifest Python pin.
 
 The verifier never fetches, checks out, resets, cleans, migrates production data,
 or rolls back a repository. It stops at the first mismatch or failed gate.`);
@@ -410,6 +454,7 @@ function printPlan(manifest, packageJson, env) {
   const steps = buildExecutionPlan({
     repoRoot: REPO_ROOT,
     astridCheckout: env.ASTRID_CHECKOUT,
+    astridPython: env.ASTRID_PYTHON,
   });
 
   console.log(`${LABEL} PLAN ONLY — no commands will execute`);
@@ -417,9 +462,11 @@ function printPlan(manifest, packageJson, env) {
   console.log(`${LABEL} manifest status: ${manifest.status}`);
   console.log(`${LABEL} Reigh branch: ${manifest.reigh.branch}`);
   console.log(`${LABEL} Reigh base: ${manifest.reigh.baseCommit}`);
+  console.log(`${LABEL} Reigh env ref: ${env.REIGH_REF || '<required for execution>'}`);
   console.log(`${LABEL} Astrid manifest pin: ${manifest.astrid.commit}`);
   console.log(`${LABEL} Astrid checkout: ${env.ASTRID_CHECKOUT || '<required for execution>'}`);
   console.log(`${LABEL} Astrid env ref: ${env.ASTRID_REF || '<required for execution>'}`);
+  console.log(`${LABEL} Astrid Python: ${env.ASTRID_PYTHON || '<required for execution>'}`);
   console.log(
     `${LABEL} toolchain: node ${manifest.verification.node}, `
     + `npm ${manifest.verification.npm}, Astrid Python ${manifest.verification.astridPython}`,
@@ -462,8 +509,8 @@ export function main(argv = process.argv.slice(2), env = process.env) {
       + 'run mode requires status=frozen (use --plan during integration)',
     );
   }
-  assertToolchain(manifest);
-  const reigh = assertReighCheckout(manifest);
+  const astridPython = assertToolchain(manifest, env);
+  const reigh = assertReighCheckout(manifest, env);
   const astrid = resolveAstridCheckout(manifest, env);
   console.log(`${LABEL} Reigh HEAD: ${reigh.head}`);
   console.log(`${LABEL} Astrid HEAD: ${astrid.commit}`);
@@ -471,11 +518,12 @@ export function main(argv = process.argv.slice(2), env = process.env) {
   const steps = buildExecutionPlan({
     repoRoot: REPO_ROOT,
     astridCheckout: astrid.checkout,
+    astridPython,
   });
   executeSteps(steps);
 
   // Gates must not leave tracked or untracked release inputs behind.
-  const finalReigh = assertReighCheckout(manifest);
+  const finalReigh = assertReighCheckout(manifest, env);
   if (finalReigh.head !== reigh.head) {
     fail('Reigh commit changed during verification');
   }
