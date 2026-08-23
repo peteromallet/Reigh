@@ -11,7 +11,6 @@ import {
   TimelineVersionConflictError,
 } from '@/tools/video-editor/data/DataProvider.ts';
 import {
-  BRIDGE_REQUEST_TIMEOUT_MS,
   BRIDGE_TIMELINE_NOT_FOUND_CODE,
   BRIDGE_VERSION_CONFLICT_CODE,
   bridgeAssetRegistrySchema,
@@ -20,6 +19,7 @@ import {
   bridgeTimelinePayloadSchema,
   parseBridgePayload,
 } from '@/tools/video-editor/data/bridgeContract.ts';
+import { AstridBridgeTransport, BridgeRouteError } from '@/integrations/astrid/transport.ts';
 import type {
   AssetProfile,
   AssetResolveRequest,
@@ -258,9 +258,12 @@ export class AstridBridgeDataProvider implements DataProvider {
   private materializationStates = new Map<string, AssetMaterializationState>();
   private localTimelineFiles: LocalTimelineFiles | null = null;
   private readonly registeredParsers: readonly RegisteredParser[] | undefined;
+  /** The one shared bridge fetch pipeline (timeout + envelope parsing). */
+  private readonly transport: AstridBridgeTransport;
 
   constructor(options: AstridBridgeDataProviderOptions) {
     this.apiBaseUrl = trimTrailingSlash(options.apiBaseUrl ?? DEFAULT_API_BASE_URL);
+    this.transport = new AstridBridgeTransport({ baseUrl: this.apiBaseUrl });
     // Media asset URLs must travel the same (proxied) base as config/registry
     // requests so <video>/<img>/<audio> fetches are same-origin and reach the
     // bridge the dev proxy targets. A direct cross-origin default port (17333)
@@ -386,24 +389,22 @@ export class AstridBridgeDataProvider implements DataProvider {
       return normalizeConfigVersion(this.cachedPayload?.config_version);
     }
 
-    const saveResponse = await fetch(
-      `${this.apiBaseUrl}/projects/${encodeURIComponent(this.projectSlug)}/timelines/${encodeURIComponent(timelineRef)}/save`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config, registry: nextRegistry, expected_version: expectedVersion }),
-        signal: AbortSignal.timeout(BRIDGE_REQUEST_TIMEOUT_MS),
-      },
-    );
-    if (!saveResponse.ok) {
-      throw await this.toBridgeError(saveResponse, timelineId, 'save timeline', expectedVersion);
+    let savePayload: BridgeTimelinePayload;
+    try {
+      savePayload = await this.transport.requestJson(
+        `/projects/${encodeURIComponent(this.projectSlug)}/timelines/${encodeURIComponent(timelineRef)}/save`,
+        {
+          method: 'POST',
+          body: { config, registry: nextRegistry, expected_version: expectedVersion },
+        },
+        bridgeTimelinePayloadSchema,
+        'save timeline',
+      );
+    } catch (error) {
+      throw this.toBridgeError(error, timelineId, 'save timeline', expectedVersion);
     }
 
-    const payload = parseBridgePayload(
-      bridgeTimelinePayloadSchema,
-      await saveResponse.json(),
-      'save response',
-    );
+    const payload = savePayload;
     const cached = this.cachePayload(payload, timelineId);
     return cached.configVersion;
   }
@@ -540,21 +541,18 @@ export class AstridBridgeDataProvider implements DataProvider {
       return this.cachePayload(localPayload, timelineId).payload;
     }
 
-    const response = await fetch(
-      `${this.apiBaseUrl}/projects/${encodeURIComponent(this.projectSlug)}/timelines/${encodeURIComponent(this.getTimelineRequestRef(timelineId))}`,
-      { signal: AbortSignal.timeout(BRIDGE_REQUEST_TIMEOUT_MS) },
-    );
-
-    if (!response.ok) {
-      throw await this.toBridgeError(response, timelineId, 'load timeline');
+    let response: BridgeTimelinePayload;
+    try {
+      response = await this.transport.requestJson(
+        `/projects/${encodeURIComponent(this.projectSlug)}/timelines/${encodeURIComponent(this.getTimelineRequestRef(timelineId))}`,
+        {},
+        bridgeTimelinePayloadSchema,
+        'timeline payload',
+      );
+    } catch (error) {
+      throw this.toBridgeError(error, timelineId, 'load timeline');
     }
-
-    const payload = parseBridgePayload(
-      bridgeTimelinePayloadSchema,
-      await response.json(),
-      'timeline payload',
-    );
-    return this.cachePayload(payload, timelineId).payload;
+    return this.cachePayload(response, timelineId).payload;
   }
 
   /**
@@ -645,41 +643,35 @@ export class AstridBridgeDataProvider implements DataProvider {
     };
   }
 
-  private async toBridgeError(
-    response: Response,
+  /**
+   * Map a transport failure from the shared {@link AstridBridgeTransport}
+   * onto this provider's public error surface. Route answers with the frozen
+   * timeline codes keep their typed errors; everything else propagates as-is
+   * (the transport already produced the `Astrid bridge … failed` message).
+   */
+  private toBridgeError(
+    error: unknown,
     timelineId: string,
     action: string,
     expectedVersion?: number,
-  ): Promise<Error> {
-    let errorCode: string | undefined;
-    let detail: string | undefined;
-    let actualVersion: number | undefined;
-
-    try {
-      const payload = bridgeErrorEnvelopeSchema.safeParse(await response.json());
-      if (payload.success) {
-        errorCode = payload.data.error;
-        detail = payload.data.detail;
-        actualVersion = payload.data.config_version;
-      }
-    } catch {
-      detail = undefined;
+  ): Error {
+    if (!(error instanceof BridgeRouteError)) {
+      return error instanceof Error ? error : new Error(String(error));
     }
 
-    if (response.status === 404 && errorCode === BRIDGE_TIMELINE_NOT_FOUND_CODE) {
+    if (error.status === 404 && error.code === BRIDGE_TIMELINE_NOT_FOUND_CODE) {
       return new TimelineNotFoundError(timelineId);
     }
 
-    if (response.status === 409 && errorCode === BRIDGE_VERSION_CONFLICT_CODE) {
+    if (error.status === 409 && error.code === BRIDGE_VERSION_CONFLICT_CODE) {
       return new TimelineVersionConflictError(
-        detail ?? `Astrid bridge ${action} rejected a stale expected_version`,
+        error.detail ?? `Astrid bridge ${action} rejected a stale expected_version`,
         expectedVersion,
-        actualVersion,
+        error.envelope?.config_version,
       );
     }
 
-    const description = detail ?? `${response.status} ${response.statusText}`;
-    return new Error(`Astrid bridge ${action} failed: ${description}`);
+    return error;
   }
 
 

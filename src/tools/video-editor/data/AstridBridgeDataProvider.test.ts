@@ -248,7 +248,7 @@ describe('AstridBridgeDataProvider', () => {
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       '/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111',
-      { signal: expect.any(AbortSignal) },
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(loaded.configVersion).toBe(1);
     expect(loaded.config.output).toEqual(expect.objectContaining({
