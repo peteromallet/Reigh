@@ -5,6 +5,7 @@ import type { Json } from '@/integrations/supabase/jsonTypes';
 import { updateToolSettingsSupabase } from '@/shared/hooks/settings/useToolSettings';
 import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
 import { SETTINGS_IDS } from '@/shared/lib/settingsIds';
+import { isLocalTestMode } from '@/app/localTestRuntime';
 
 // Module-level request deduplication cache for the raw `users.settings` DB fetch.
 //
@@ -359,6 +360,10 @@ export function useUserUIState<K extends keyof UISettings>(
   key: K,
   fallback: UISettings[K]
 ) {
+  // `localTest=1` deliberately boots without Supabase. User preferences are
+  // presentation inputs in that runtime, so use the supplied defaults and
+  // keep updates local instead of touching an intentionally absent client.
+  const localTestMode = isLocalTestMode();
   // Stabilize fallback using a ref so callers can pass inline objects without causing
   // infinite render loops. The load effect reads fallbackRef.current instead of depending
   // on fallback directly, preventing re-runs when the reference changes but values don't.
@@ -368,7 +373,7 @@ export function useUserUIState<K extends keyof UISettings>(
   useRenderLogger(`UserUIState:${key}`);
 
   const [value, setValue] = useState<UISettings[K]>(fallback);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!localTestMode);
   const userIdRef = useRef<string>();
   const debounceRef = useRef<NodeJS.Timeout>();
   // Ref so that `update` can read the latest value without depending on it
@@ -402,6 +407,11 @@ export function useUserUIState<K extends keyof UISettings>(
 
   // Load initial value from database
   useEffect(() => {
+    if (localTestMode) {
+      setIsLoading(false);
+      return;
+    }
+
     const loadUserSettings = async () => {
       try {
         const { data: { user } } = await dedupeGetUser();
@@ -467,7 +477,7 @@ export function useUserUIState<K extends keyof UISettings>(
     };
 
     loadUserSettings();
-  }, [key, saveFallbackToDatabase]);
+  }, [key, localTestMode, saveFallbackToDatabase]);
 
   // Debounced update function
   // Uses the global settings write queue (via updateToolSettingsSupabase) to prevent
@@ -481,6 +491,10 @@ export function useUserUIState<K extends keyof UISettings>(
       fallbackRef.current,
     );
     setValue(normalizedPatch);
+
+    if (localTestMode) {
+      return;
+    }
 
     // Clear existing timeout
     if (debounceRef.current) {
@@ -509,7 +523,7 @@ export function useUserUIState<K extends keyof UISettings>(
         normalizeAndPresentError(error, { context: 'useUserUIState.update', showToast: false });
       }
     }, 200);
-  }, [key]);
+  }, [key, localTestMode]);
 
   // Cleanup timeout on unmount
   useEffect(() => {

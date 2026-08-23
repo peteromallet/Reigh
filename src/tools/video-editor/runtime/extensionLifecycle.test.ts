@@ -1922,6 +1922,7 @@ describe('ExtensionLifecycle — creative context internal API boundary', () => 
       'sessions',
       'stage',
       'timeline',
+      'timelineView',
       'writing',
     ]);
   });

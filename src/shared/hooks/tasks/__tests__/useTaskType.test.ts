@@ -8,6 +8,14 @@ vi.mock('@/integrations/supabase/client', () => ({
   getSupabaseClient: vi.fn(),
 }));
 
+vi.mock('@/shared/contexts/AuthContext', () => ({
+  useAuthSafe: () => ({
+    userId: 'user-1',
+    isAuthenticated: true,
+    isLoading: false,
+  }),
+}));
+
 vi.mock('@/shared/lib/taskTypeCache', async () => {
   const actual = await vi.importActual<typeof import('@/shared/lib/taskTypeCache')>(
     '@/shared/lib/taskTypeCache',

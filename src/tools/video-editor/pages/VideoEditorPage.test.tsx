@@ -104,6 +104,13 @@ vi.mock('@/shared/contexts/ProjectContext.tsx', () => ({
   useProjectCrudContext: () => state.projectCrud,
 }));
 
+// Page routing is covered by useHomeNavigation.test.ts. Keeping that hook real
+// here would mount user-preference persistence, which is outside this page
+// contract and requires an initialized Supabase runtime.
+vi.mock('@/shared/hooks/useHomeNavigation.ts', () => ({
+  useHomeNavigation: () => ({ navigateHome: vi.fn(), targetPath: '/tools/video-editor' }),
+}));
+
 vi.mock('@/shared/hooks/settings/useToolSettings.ts', () => ({
   useToolSettings: () => state.settings,
 }));
@@ -267,7 +274,10 @@ function renderPage(initialEntry: string) {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[initialEntry]}>
+      <MemoryRouter
+        initialEntries={[initialEntry]}
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
         <VideoEditorPage />
       </MemoryRouter>
     </QueryClientProvider>,

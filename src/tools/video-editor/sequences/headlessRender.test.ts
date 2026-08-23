@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createElement, type FC } from 'react';
 
-import * as compileSequenceModule from '@/tools/video-editor/sequences/compileSequenceComponent';
+import * as compileWithGlobalsModule from '@/tools/video-editor/runtime-components/compileWithGlobals';
 import { smokeRenderSequenceComponent } from '@/tools/video-editor/sequences/headlessRender';
 
 const SCHEMA = { type: 'object', properties: {} };
@@ -12,8 +12,8 @@ describe('smokeRenderSequenceComponent', () => {
   it('returns { ok: true } when the component compiles and renders one frame', async () => {
     const GoodComponent: FC = () => createElement('div', { 'data-testid': 'smoke-good' }, 'ok');
     const spy = vi
-      .spyOn(compileSequenceModule, 'compileSequenceComponentAsync')
-      .mockResolvedValue(GoodComponent as unknown as Awaited<ReturnType<typeof compileSequenceModule.compileSequenceComponentAsync>>);
+      .spyOn(compileWithGlobalsModule, 'compileWithGlobalsAsync')
+      .mockResolvedValue({ ok: true, component: GoodComponent });
 
     const result = await smokeRenderSequenceComponent({
       code: '/* fake */',
@@ -32,8 +32,8 @@ describe('smokeRenderSequenceComponent', () => {
       throw new Error('boom');
     };
     vi
-      .spyOn(compileSequenceModule, 'compileSequenceComponentAsync')
-      .mockResolvedValue(BrokenComponent as unknown as Awaited<ReturnType<typeof compileSequenceModule.compileSequenceComponentAsync>>);
+      .spyOn(compileWithGlobalsModule, 'compileWithGlobalsAsync')
+      .mockResolvedValue({ ok: true, component: BrokenComponent });
 
     const result = await smokeRenderSequenceComponent({
       code: '/* fake */',
@@ -49,7 +49,7 @@ describe('smokeRenderSequenceComponent', () => {
 
   it('returns { ok: false, error } when compilation itself fails', async () => {
     vi
-      .spyOn(compileSequenceModule, 'compileSequenceComponentAsync')
+      .spyOn(compileWithGlobalsModule, 'compileWithGlobalsAsync')
       .mockRejectedValue(new Error('compile failure'));
 
     const result = await smokeRenderSequenceComponent({

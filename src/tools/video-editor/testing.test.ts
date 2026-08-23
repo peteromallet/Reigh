@@ -27,6 +27,10 @@ vi.mock('@banodoco/timeline-composition/registry.generated', () => ({
 }));
 
 vi.mock('@banodoco/timeline-composition/theme-api', () => ({
+  DEFAULT_THEME: {
+    id: 'banodoco-default',
+    visual: { canvas: { width: 1280, height: 720, fps: 30 } },
+  },
   ThemeProvider: ({ children }: { children: ReactNode }) => children,
   useTheme: () => ({}),
 }));

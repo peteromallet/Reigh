@@ -31,13 +31,18 @@ function walkSourceFiles(dir: string): string[] {
 
 function collectRuntimeErrorAliasImporters(): string[] {
   const srcRoot = path.join(process.cwd(), 'src');
-  const importLiteral = `'${RUNTIME_ERROR_ALIAS_SPECIFIER}'`;
-  const importLiteralDouble = `"${RUNTIME_ERROR_ALIAS_SPECIFIER}"`;
+  const escapedSpecifier = RUNTIME_ERROR_ALIAS_SPECIFIER.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const aliasImport = new RegExp(
+    `(?:\\bfrom\\s+|\\bimport\\s*\\(\\s*|\\bimport\\s+)["']${escapedSpecifier}["']`,
+  );
 
   return walkSourceFiles(srcRoot)
     .filter((filePath) => {
       const content = fs.readFileSync(filePath, 'utf8');
-      return content.includes(importLiteral) || content.includes(importLiteralDouble);
+      // Match actual static, side-effect, re-export, or dynamic imports. A raw
+      // substring search counted the policy's own string constant as an alias
+      // importer once the time-based budget reached zero.
+      return aliasImport.test(content);
     })
     .map((filePath) => path.relative(process.cwd(), filePath).replace(/\\/g, '/'))
     .sort();

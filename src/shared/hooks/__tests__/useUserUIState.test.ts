@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 
-const { mockGetUser, mockSingle } = vi.hoisted(() => ({
+const { mockGetUser, mockSingle, mockUpdateToolSettings } = vi.hoisted(() => ({
   mockGetUser: vi.fn(),
   mockSingle: vi.fn(),
+  mockUpdateToolSettings: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('@/integrations/supabase/client', () => ({
@@ -22,7 +23,7 @@ vi.mock('@/integrations/supabase/client', () => ({
 }));
 
 vi.mock('@/shared/hooks/settings/useToolSettings', () => ({
-  updateToolSettingsSupabase: vi.fn().mockResolvedValue(undefined),
+  updateToolSettingsSupabase: mockUpdateToolSettings,
 }));
 
 import {
@@ -51,6 +52,27 @@ describe('useUserUIState', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    window.history.replaceState({}, '', '/');
+  });
+
+  it('keeps local-test preferences deterministic without initializing Supabase', async () => {
+    window.history.replaceState({}, '', '/tools/video-editor?localTest=1');
+    const fallback = { darkMode: true };
+    const { result } = renderHook(() => useUserUIState('theme', fallback));
+
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.value).toEqual(fallback);
+    expect(mockGetUser).not.toHaveBeenCalled();
+
+    act(() => {
+      result.current.update({ darkMode: false });
+    });
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+
+    expect(result.current.value).toEqual({ darkMode: false });
+    expect(mockUpdateToolSettings).not.toHaveBeenCalled();
   });
 
   it('returns fallback value initially', () => {

@@ -3,7 +3,12 @@
 import React, { forwardRef, useImperativeHandle } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  createTimelineStore,
+  TimelineStoreProvider,
+  type TimelineStoreApi,
+} from '@/tools/video-editor/hooks/timelineStore';
 
 const useTimelineEditorDataMock = vi.fn();
 const useTimelineEditorOpsMock = vi.fn();
@@ -24,14 +29,10 @@ let overlayEditorProps: any;
 let CompactPreviewComponent: any;
 let CustomTwoPaneVideoEditorShellComponent: any;
 let VideoEditorShellComponent: any;
+let timelineStore: TimelineStoreApi;
 
 vi.mock('@banodoco/timeline-schema', () => ({
   resolveTheme: vi.fn(() => null),
-}), { virtual: true });
-
-vi.mock('@banodoco/timeline-composition/theme-api', () => ({
-  ThemeProvider: ({ children }: any) => <>{children}</>,
-  useTheme: () => null,
 }), { virtual: true });
 
 vi.mock('@banodoco/timeline-composition/registry.generated', () => ({
@@ -266,16 +267,19 @@ vi.mock('@/tools/video-editor/runtime/useVideoEditorRenderContext', async () => 
 
 function renderShell(mode: 'compact' | 'full') {
   return render(
-    <MemoryRouter
-      initialEntries={['/tools/video-editor?timeline=timeline-1']}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-    >
-      <VideoEditorShellComponent mode={mode} timelineId="timeline-1" />
-    </MemoryRouter>,
+    <TimelineStoreProvider store={timelineStore}>
+      <MemoryRouter
+        initialEntries={['/tools/video-editor?timeline=timeline-1']}
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
+        <VideoEditorShellComponent mode={mode} timelineId="timeline-1" />
+      </MemoryRouter>
+    </TimelineStoreProvider>,
   );
 }
 
 beforeEach(() => {
+  timelineStore = createTimelineStore();
   overlayEditorProps = null;
   slotRenderersValue = {};
   useVideoEditorAssetPanelsMock.mockReset();
@@ -415,11 +419,15 @@ beforeEach(() => {
   });
 });
 
-beforeEach(async () => {
+// These modules are intentionally loaded after the hoisted mocks. Loading the
+// same dependency graph in every test made the first transform compete with
+// the default per-hook timeout on busy CI workers; the module identities never
+// vary between tests, so resolve them once for the suite.
+beforeAll(async () => {
   ({ CompactPreview: CompactPreviewComponent } = await import('@/tools/video-editor/components/CompactPreview'));
   ({ CustomTwoPaneVideoEditorShell: CustomTwoPaneVideoEditorShellComponent } = await import('@/tools/video-editor/examples/CustomTwoPaneVideoEditorExample'));
   ({ VideoEditorShell: VideoEditorShellComponent } = await import('@/tools/video-editor/components/VideoEditorShell'));
-});
+}, 30_000);
 
 describe('VideoEditorShell preview persistence', () => {
   it('uses a safe fallback fps before resolved config is available', () => {
@@ -445,12 +453,14 @@ describe('VideoEditorShell preview persistence', () => {
     expect(screen.queryByText('1280x720')).not.toBeInTheDocument();
 
     view.rerender(
-      <MemoryRouter
-        initialEntries={['/tools/video-editor?timeline=timeline-1']}
-        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-      >
-        <VideoEditorShellComponent mode="full" timelineId="timeline-1" />
-      </MemoryRouter>,
+      <TimelineStoreProvider store={timelineStore}>
+        <MemoryRouter
+          initialEntries={['/tools/video-editor?timeline=timeline-1']}
+          future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+        >
+          <VideoEditorShellComponent mode="full" timelineId="timeline-1" />
+        </MemoryRouter>
+      </TimelineStoreProvider>,
     );
 
     expect(screen.getAllByTestId('mock-player')).toHaveLength(1);

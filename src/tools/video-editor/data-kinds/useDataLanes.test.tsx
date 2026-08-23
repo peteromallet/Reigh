@@ -111,6 +111,23 @@ describe('useDataLanes', () => {
     expect(result.current?.dataLanes).toEqual([]);
   });
 
+  it('fails open while mounted store data is waiting for resolvedConfig', () => {
+    const bootstrapBase = {
+      config: CONFIG_SENTINEL,
+      dataLanes: [],
+    } as unknown as TimelineData;
+    const loadSegments = vi.fn<LoadDataSegments>();
+
+    const { result } = renderHook(() => useDataLanes({
+      base: bootstrapBase,
+      kinds: [transcriptKind()],
+      loadSegments,
+    }));
+
+    expect(result.current).toBe(bootstrapBase);
+    expect(loadSegments).not.toHaveBeenCalled();
+  });
+
   it('never fetches for non-sound-bearing media and stays at base identity', () => {
     const loadSegments = vi.fn<LoadDataSegments>();
     const imageClip = { ...VIDEO_CLIP, id: 'c2', assetEntry: mediaEntry('a.png', 'image/png') };

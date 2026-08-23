@@ -10,6 +10,14 @@ vi.mock('@/integrations/supabase/client', () => ({
   }),
 }));
 
+vi.mock('@/shared/contexts/AuthContext', () => ({
+  useAuthSafe: () => ({
+    userId: 'user-1',
+    isAuthenticated: true,
+    isLoading: false,
+  }),
+}));
+
 vi.mock('@/shared/hooks/invalidation/useGenerationInvalidation', () => ({
   enqueueVariantInvalidation: vi.fn().mockResolvedValue(undefined),
 }));

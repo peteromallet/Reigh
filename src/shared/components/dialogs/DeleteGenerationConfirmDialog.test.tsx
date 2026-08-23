@@ -31,7 +31,7 @@ describe('DeleteGenerationConfirmDialog', () => {
         'Are you sure you want to delete this generation? This action cannot be undone.',
       ),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText(/don't show this again/i)).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /don't show this again/i })).toBeInTheDocument();
   });
 
   it('does not persist the skip preference when the checkbox is left unchecked', () => {
@@ -63,7 +63,7 @@ describe('DeleteGenerationConfirmDialog', () => {
       />,
     );
 
-    fireEvent.click(screen.getByLabelText(/don't show this again/i));
+    fireEvent.click(screen.getByRole('checkbox', { name: /don't show this again/i }));
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
 
     expect(onConfirm).toHaveBeenCalledTimes(1);

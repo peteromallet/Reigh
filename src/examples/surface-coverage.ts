@@ -38,6 +38,11 @@ import {
   TIMELINE_PATCH_RESERVED_OP_FAMILIES,
   aggregateHostConformance,
   buildFamilyAdapterManifest,
+  classifyGeneratedOutputSync,
+  combineDisposeHandles,
+  computeHostFingerprint,
+  computeTimelineClipOutputFingerprint,
+  createHostGeneratedObjectMeta,
   createExtensionSettingsService,
   crossReferenceManifest,
   describeShaderMaterializerRequirementScope,
@@ -47,12 +52,14 @@ import {
   getConfigSignature,
   getSettingsPrefix,
   getStableConfigSignature,
+  HOST_GENERATION_PROVENANCE_VERSION,
   identifyDelegatedFamilies,
   isTimelineVersionConflictError,
   isValidDelegatedGap,
   listRegisteredKinds,
   normalizeAdapters,
   projectMaturityCapabilities,
+  readHostGenerationProvenance,
   shaderMissingMaterializerBlockerMessage,
 } from '@reigh/editor-sdk';
 import type {
@@ -87,6 +94,7 @@ import type {
   ConformanceGapCategory,
   ContributionRenderability,
   CreateExtensionSettingsServiceOptions,
+  CreateHostGeneratedObjectMetaInput,
   DeclarationMaturity,
   DelegatedConformanceGap,
   DeterminismStatus,
@@ -100,9 +108,12 @@ import type {
   FamilyDefinition,
   FamilyNormalizeResult,
   FamilyRequirementChecklist,
+  GeneratedOutputConflictPolicy,
+  GeneratedOutputSyncState,
   HostAdapterManifest,
   HostAdapterRegistrationDescriptor,
   HostFamilyAdapter,
+  HostGenerationProvenance,
   ManifestCrossReferenceResult,
   NormalizeFamilyInput,
   RenderBlocker,
@@ -121,6 +132,7 @@ import type {
   SettingsPersistenceSuccess,
   StableTimelineAssetRegistryInput,
   StableTimelineConfigSignatureInput,
+  TimelineClipOutputFingerprintInput,
   TimelineConfigSignatureInput,
   TimelineVersionConflictError,
   TimelineViewSnapshot,
@@ -363,10 +375,48 @@ export function activateCoverageExtension(
   };
   void _timelineViewStore;
 
-  return {
+  // ---- Host-owned generated-output provenance -----------------------------
+  // Extensions provide facts; the SDK owns canonical hashing, metadata shape,
+  // and drift classification so generated outputs interoperate.
+  const _conflictPolicy: GeneratedOutputConflictPolicy = 'preserve-output';
+  const _clipOutput: TimelineClipOutputFingerprintInput = {
+    track: 'V1',
+    at: 0,
+    duration: 2,
+    clipType: 'text',
+    text: 'Example generated caption',
+  };
+  const _metaInput: CreateHostGeneratedObjectMetaInput = {
+    extensionId: 'com.example.coverage',
+    extensionVersion: '1.0.0',
+    sourceSchemaRef: 'schema://example/transcript/v1',
+    sourceItemId: 'segment-1',
+    sourceValue: { text: 'Example generated caption' },
+    outputValue: _clipOutput,
+    conflictPolicy: _conflictPolicy,
+  };
+  const _generatedMeta = createHostGeneratedObjectMeta(_metaInput);
+  const _provenance: HostGenerationProvenance | undefined =
+    readHostGenerationProvenance(_generatedMeta);
+  const _syncState: GeneratedOutputSyncState = classifyGeneratedOutputSync({
+    meta: _generatedMeta,
+    currentSourceValue: _metaInput.sourceValue,
+    currentOutputValue: _clipOutput,
+  });
+  const _hostFingerprint = computeHostFingerprint(_metaInput.sourceValue);
+  const _clipFingerprint = computeTimelineClipOutputFingerprint(_clipOutput);
+  void [
+    HOST_GENERATION_PROVENANCE_VERSION,
+    _provenance,
+    _syncState,
+    _hostFingerprint,
+    _clipFingerprint,
+  ];
+
+  return combineDisposeHandles({
     dispose(): void {
       settings.delete('coverage.activated');
       chrome.toast('Coverage extension disposed.', 'info');
     },
-  };
+  });
 }

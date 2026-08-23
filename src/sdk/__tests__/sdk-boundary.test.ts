@@ -1079,9 +1079,12 @@ describe('M3: internal types are NOT re-exported from @reigh/editor-sdk', () => 
 
   it('total SDK value export count is within the expected public surface range', () => {
     // The public SDK surface should be a well-known, curated set.
-    // We expect fewer than 80 value exports (types don't count).
+    // Host-owned provenance and fingerprinting deliberately expanded the
+    // surface after the original M3 ceiling was set. Keep modest headroom over
+    // the governed 83-export surface so accidental barrel expansion still
+    // fails here instead of silently inheriting the much looser final guard.
     const valueCount = Object.keys(sdkStar).length;
-    expect(valueCount).toBeLessThan(80);
+    expect(valueCount).toBeLessThan(96);
     expect(valueCount).toBeGreaterThan(0);
   });
 });

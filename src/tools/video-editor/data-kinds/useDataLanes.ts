@@ -36,6 +36,9 @@ import { useRunawayTimelineItems } from '@/tools/video-editor/dev/runaway-timeli
 
 export type { LoadDataSegments };
 
+const EMPTY_RESOLVED_CLIPS: TimelineData['resolvedConfig']['clips'] = [];
+Object.freeze(EMPTY_RESOLVED_CLIPS);
+
 export interface UseDataLanesArgs {
   /** Base TimelineData from the timeline store (`null` → `null` out). */
   readonly base: TimelineData | null;
@@ -80,21 +83,24 @@ export function useDataLanes({ base, kinds, loadSegments }: UseDataLanesArgs): T
     return (assetId: string) => loadTranscript(source, assetId, runtime.timelineId);
   }, [runtime]);
   const effectiveLoader = loadSegments !== undefined ? loadSegments : defaultLoader;
+  // Store bootstrap and isolated host surfaces can briefly expose a data
+  // object before its resolved config is ready. Typed lanes are additive, so
+  // the correct fail-open input for that frame is an empty clip list.
+  const baseClips = base?.resolvedConfig?.clips ?? EMPTY_RESOLVED_CLIPS;
 
   // Sound-bearing media clips' distinct assets, in stable order. Lanes attach
   // to evidence on media clips only — the same filter assembleDataLanes
   // applies, hoisted here so we fetch exactly what assembly can map.
   const neededAssets = useMemo(() => {
-    if (!base) return [];
     const ids = new Set<string>();
-    for (const clip of base.resolvedConfig.clips) {
+    for (const clip of baseClips) {
       if (!clip.asset) continue;
       const media = getClipAssetMediaType(clip);
       if (media !== 'video' && media !== 'audio') continue;
       ids.add(clip.asset);
     }
     return [...ids].sort();
-  }, [base]);
+  }, [baseClips]);
 
   // Single assembly authority (L6 #6): fetching is owned by the module store
   // keyed by (loader identity source, timelineId). Co-mounted surfaces —
@@ -114,7 +120,7 @@ export function useDataLanes({ base, kinds, loadSegments }: UseDataLanesArgs): T
     if (!base) return null;
     const views = assembleDataLanes({
       kinds: effectiveKinds,
-      clips: base.resolvedConfig.clips,
+      clips: baseClips,
       segmentsByAsset,
       // V2 bundle plane: persisted SOURCE items ride on the base data and
       // feed the same assembly pass as freshly fetched transcript segments.
@@ -124,5 +130,5 @@ export function useDataLanes({ base, kinds, loadSegments }: UseDataLanesArgs): T
     });
     // Base identity when nothing assembles: no clone churn, empty lanes.
     return views.length > 0 ? mergeDataLanes(base, views) : base;
-  }, [base, effectiveKinds, effectiveSourceItems, segmentsByAsset]);
+  }, [base, baseClips, effectiveKinds, effectiveSourceItems, segmentsByAsset]);
 }
