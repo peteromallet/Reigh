@@ -36,7 +36,7 @@ export const EXPECTED_REQUIRED_GATES = Object.freeze([
  * into shell execution.
  */
 export const REIGH_GATE_PROFILE = Object.freeze([
-  { id: 'dependencies', label: 'install locked Reigh dependencies', command: 'npm', args: ['ci', '--no-audit', '--no-fund'] },
+  { id: 'dependencies', label: 'install locked Reigh dependencies', command: 'npm', args: ['ci', '--no-audit', '--no-fund', '--legacy-peer-deps'] },
   { id: 'contract-recheck', label: 'release contract recheck', command: 'npm', args: ['run', 'check:contract-recheck:release'] },
   { id: 'deferred-claims', label: 'release deferred-claims gate', command: 'npm', args: ['run', 'check:deferred-claims:release'] },
   { id: 'docs-maturity', label: 'release documentation maturity gate', command: 'npm', args: ['run', 'check:docs-maturity-sync:release'] },

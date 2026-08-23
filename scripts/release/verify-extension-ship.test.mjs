@@ -87,7 +87,7 @@ describe('extension ship verifier', () => {
     );
     assert.doesNotMatch(packageJson.scripts['start:railway'], /npm run build/);
     assert.deepEqual(REIGH_GATE_PROFILE[0].args, [
-      'ci', '--no-audit', '--no-fund',
+      'ci', '--no-audit', '--no-fund', '--legacy-peer-deps',
     ]);
     assert.ok(REIGH_GATE_PROFILE.some((gate) => (
       gate.id === 'runtime-rollout'
