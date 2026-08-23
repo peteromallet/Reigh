@@ -547,8 +547,8 @@ describe('Runaway timeline bridge adapter', () => {
     const chips = container.querySelectorAll<HTMLElement>('[data-testid="runaway-transition-chip"]');
     expect(chips).toHaveLength(DATA_LANE_DOM_ITEM_BUDGET);
     expect(container.querySelectorAll('[data-testid="runaway-region-band"]')).toHaveLength(10);
-    expect(screen.getByTestId('runaway-lane-summary')).toHaveTextContent(
-      `566 transitions · ${DATA_LANE_DOM_ITEM_BUDGET} shown · 10/11 regions`,
+    expect(screen.getByTestId('runaway-timeline-lane')).toHaveAccessibleName(
+      `566 transitions, ${DATA_LANE_DOM_ITEM_BUDGET} shown, 10 of 11 regions in window`,
     );
     expect(screen.getByTestId('runaway-timeline-lane')).toHaveAttribute('data-window-start', '0');
 

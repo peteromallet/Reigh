@@ -191,29 +191,13 @@ function RunawayTimelineLane(props: DataLaneRendererProps) {
       'data-total-items': totalItemCount,
       'data-window-start': windowStartIndex,
       'data-window-end': props.itemWindow?.endIndex ?? props.items.length,
+      role: 'group',
+      'aria-label': `${totalItemCount} transitions, ${props.items.length} shown, ${populatedRegions} of ${declaredRegions || populatedRegions} regions in window`,
+      title: `${totalItemCount} transitions · ${props.items.length} mounted · ${populatedRegions}/${declaredRegions || populatedRegions} populated regions in window`,
       style: { position: 'relative', height: '100%', overflow: 'hidden' },
     },
     ...regions,
     ...transitions,
-    createElement('span', {
-      key: 'summary',
-      'data-testid': 'runaway-lane-summary',
-      title: `${totalItemCount} transitions · ${props.items.length} mounted · ${populatedRegions}/${declaredRegions || populatedRegions} populated regions in window`,
-      style: {
-        position: 'sticky',
-        left: 4,
-        top: 2,
-        zIndex: 3,
-        display: 'inline-block',
-        padding: '1px 5px',
-        borderRadius: 3,
-        background: 'color-mix(in srgb, var(--video-editor-panel-bg) 88%, transparent)',
-        color: 'var(--video-editor-fg)',
-        fontSize: 9,
-        lineHeight: '14px',
-        pointerEvents: 'none',
-      },
-    }, `${totalItemCount} transitions · ${props.items.length} shown · ${populatedRegions}/${declaredRegions || populatedRegions} regions`),
   );
 }
 

@@ -97,6 +97,7 @@
     "test:e2e:extension-accessibility": "playwright test --config playwright.extension-accessibility.config.ts --workers=1",
     "test:e2e:extension-cross-browser": "playwright test --config playwright.extension-cross-browser.config.ts",
     "test:e2e:extension-performance": "PLAYWRIGHT_TIMELINE_DEVICES=1 PLAYWRIGHT_PORT=${PLAYWRIGHT_PORT:-2222} playwright test --config playwright.config.ts --project=timeline-devices --workers=1 tests/e2e/timeline/extension-performance-budget.spec.ts",
+    "test:e2e:extension-visual": "playwright test --config playwright.extension-visual.config.ts --workers=1",
     "test:e2e:timeline": "PLAYWRIGHT_TIMELINE_DEVICES=1 PLAYWRIGHT_PORT=${PLAYWRIGHT_PORT:-2222} playwright test --config playwright.config.ts --project=timeline-devices --workers=1",
     "test:e2e:timeline:bridge": "node tests/e2e/timeline/astrid-bridge-stub.mjs",
     "test:e2e:timeline:realbridge": "PLAYWRIGHT_TIMELINE_DEVICES=1 REAL_BRIDGE=1 ASTRID_BRIDGE_PORT=${ASTRID_BRIDGE_PORT:-17334} PLAYWRIGHT_PORT=${PLAYWRIGHT_PORT:-2222} playwright test --config playwright.config.ts --project=timeline-devices --workers=1 tests/e2e/timeline/real-bridge.spec.ts"
