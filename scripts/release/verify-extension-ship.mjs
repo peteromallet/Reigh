@@ -75,6 +75,16 @@ export const ASTRID_GATE_PROFILE = Object.freeze([
   }),
 ]);
 
+const RELEASE_HOME = '/tmp/reigh-extension-ship-home';
+const RELEASE_TMPDIR = '/tmp';
+const RELEASE_PATH = [
+  dirname(realpathSync(process.execPath)),
+  '/usr/local/bin',
+  '/usr/bin',
+  '/bin',
+].filter((entry, index, entries) => entries.indexOf(entry) === index).join(':');
+const ALLOWED_STEP_ENV = new Set(['PY', 'PYTHON_BIN']);
+
 class UsageError extends Error {}
 
 function fail(message) {
@@ -193,9 +203,9 @@ export function buildExecutionPlan({ repoRoot, astridCheckout, astridPython }) {
     ...REIGH_GATE_PROFILE.map((gate) => ({ ...gate, cwd: repoRoot })),
     ...ASTRID_GATE_PROFILE.map(({ cwdSuffix, ...gate }) => ({
       ...gate,
-      args: gate.id === 'astrid-ci'
-        ? [...gate.args, `PY=${python}`, `PYTHON_BIN=${python}`]
-        : gate.args,
+      env: gate.id === 'astrid-ci'
+        ? { PY: python, PYTHON_BIN: python }
+        : undefined,
       cwd: cwdSuffix && astridCheckout
         ? resolve(astridCheckout, cwdSuffix)
         : cwdSuffix
@@ -210,7 +220,35 @@ function quoteForDisplay(value) {
 }
 
 export function formatCommand(step) {
-  return [step.command, ...step.args].map(quoteForDisplay).join(' ');
+  const envPrefix = Object.entries(step.env ?? {})
+    .map(([key, value]) => `${key}=${quoteForDisplay(value)}`);
+  const command = [step.command, ...step.args].map(quoteForDisplay);
+  return [...envPrefix, ...command].join(' ');
+}
+
+/**
+ * Release gates intentionally get an allowlisted environment rather than a
+ * filtered copy of process.env. This keeps newly introduced skip flags, test
+ * overrides, credentials, language hooks, and package-manager configuration
+ * from silently crossing the release boundary.
+ */
+export function buildSanitizedEnvironment(stepEnv = {}) {
+  for (const key of Object.keys(stepEnv)) {
+    if (!ALLOWED_STEP_ENV.has(key)) {
+      fail(`release step environment key is not allowed: ${key}`);
+    }
+  }
+
+  return {
+    PATH: RELEASE_PATH,
+    HOME: RELEASE_HOME,
+    TMPDIR: RELEASE_TMPDIR,
+    CI: 'true',
+    LANG: 'C',
+    LC_ALL: 'C',
+    TZ: 'UTC',
+    ...stepEnv,
+  };
 }
 
 function formatFailure(result) {
@@ -227,6 +265,7 @@ function runCaptured(command, args, cwd, { allowFailure = false } = {}) {
   const result = spawnSync(command, args, {
     cwd,
     encoding: 'utf8',
+    env: buildSanitizedEnvironment(),
     shell: false,
     stdio: 'pipe',
   });
@@ -351,13 +390,16 @@ function resolveAstridCheckout(manifest, env) {
   return { checkout, commit: manifestCommit };
 }
 
-function resolveAstridPython(manifest, env) {
+export function resolveAstridPython(manifest, env) {
   const requestedPath = env.ASTRID_PYTHON;
   if (!requestedPath) {
     fail('ASTRID_PYTHON is required and must name the pinned absolute Python executable');
   }
   if (!isAbsolute(requestedPath)) {
     fail(`ASTRID_PYTHON must be absolute; got ${requestedPath}`);
+  }
+  if (/[\0\r\n]/.test(requestedPath)) {
+    fail('ASTRID_PYTHON contains unsafe control characters');
   }
   if (!existsSync(requestedPath)) {
     fail(`ASTRID_PYTHON does not exist: ${requestedPath}`);
@@ -371,15 +413,43 @@ function resolveAstridPython(manifest, env) {
   } catch {
     fail(`ASTRID_PYTHON is not executable: ${python}`);
   }
-  const version = outputOf(
+  const probe = runCaptured(
     python,
-    ['-c', 'import sys; print(".".join(map(str, sys.version_info[:3])))'],
+    [
+      '-c',
+      'import json, os, platform, sys; print(json.dumps({'
+        + '"executable": os.path.realpath(sys.executable), '
+        + '"implementation": platform.python_implementation(), '
+        + '"version": ".".join(map(str, sys.version_info[:3]))}))',
+    ],
     REPO_ROOT,
+    { allowFailure: true },
   );
-  if (version !== manifest.verification.astridPython) {
+  if (probe.error || probe.status !== 0) {
+    fail(`ASTRID_PYTHON is not a usable Python interpreter: ${formatFailure(probe)}`);
+  }
+
+  let identity;
+  try {
+    identity = JSON.parse(probe.stdout.trim());
+  } catch {
+    fail('ASTRID_PYTHON is not a Python interpreter (identity probe was invalid)');
+  }
+  if (
+    !isPlainObject(identity)
+    || typeof identity.implementation !== 'string'
+    || identity.implementation.trim() === ''
+    || identity.executable !== python
+  ) {
+    fail(
+      `ASTRID_PYTHON interpreter identity mismatch: expected executable ${python}, `
+      + `got ${identity?.executable ?? '<invalid>'}`,
+    );
+  }
+  if (identity.version !== manifest.verification.astridPython) {
     fail(
       `Astrid Python version mismatch: expected ${manifest.verification.astridPython}, `
-      + `got ${version} from ${python}`,
+      + `got ${identity.version ?? '<invalid>'} from ${python}`,
     );
   }
   return python;
@@ -410,13 +480,7 @@ export function executeSteps(steps, spawn = spawnSync) {
 
     const result = spawn(step.command, step.args, {
       cwd: step.cwd,
-      env: {
-        ...process.env,
-        CI: 'true',
-        LANG: 'C',
-        LC_ALL: 'C',
-        TZ: 'UTC',
-      },
+      env: buildSanitizedEnvironment(step.env),
       shell: false,
       stdio: 'inherit',
     });

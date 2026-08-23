@@ -9,9 +9,11 @@ import {
   REIGH_GATE_PROFILE,
   REPO_ROOT,
   buildExecutionPlan,
+  buildSanitizedEnvironment,
   executeSteps,
   formatCommand,
   parseCliArgs,
+  resolveAstridPython,
   validatePackageJson,
   validateReleaseManifest,
 } from './verify-extension-ship.mjs';
@@ -33,6 +35,28 @@ describe('extension ship verifier', () => {
     assert.equal(validateReleaseManifest(manifest), manifest);
     assert.doesNotThrow(() => validatePackageJson(packageJson, manifest));
     assert.deepEqual(manifest.requiredGates, [...EXPECTED_REQUIRED_GATES]);
+  });
+
+  it('pins the container runtime and forwards every extension build control', () => {
+    const dockerfile = readFileSync(`${REPO_ROOT}/Dockerfile`, 'utf8');
+    const nvmVersion = readFileSync(`${REPO_ROOT}/.nvmrc`, 'utf8').trim();
+    const fromLines = dockerfile.match(/^FROM node:[^\n]+$/gm) ?? [];
+
+    assert.equal(nvmVersion, manifest.verification.node);
+    assert.deepEqual(fromLines, [
+      `FROM node:${manifest.verification.node}-alpine AS build`,
+      `FROM node:${manifest.verification.node}-alpine AS runtime`,
+    ]);
+
+    for (const key of [
+      'VITE_EXTENSION_HOST_ENABLED',
+      'VITE_TRANSCRIPT_CAPTION_FOUNDRY_ENABLED',
+      'VITE_RUNAWAY_TYPED_TIMELINE_ENABLED',
+      'VITE_EXTENSION_RELEASE_CONFIG_REVISION',
+    ]) {
+      assert.match(dockerfile, new RegExp(`^ARG ${key}$`, 'm'));
+      assert.match(dockerfile, new RegExp(`${key}="\\$${key}"`));
+    }
   });
 
   it('fails closed on a mutable Astrid ref or incomplete gate inventory', () => {
@@ -63,11 +87,11 @@ describe('extension ship verifier', () => {
     assert.equal(plan.at(-2).command, 'npm');
     assert.equal(plan.at(-1).cwd, astridCheckout);
     assert.equal(plan.at(-1).command, 'make');
-    assert.deepEqual(plan.at(-1).args, [
-      'ci',
-      'PY=<ASTRID_PYTHON required for execution>',
-      'PYTHON_BIN=<ASTRID_PYTHON required for execution>',
-    ]);
+    assert.deepEqual(plan.at(-1).args, ['ci']);
+    assert.deepEqual(plan.at(-1).env, {
+      PY: '<ASTRID_PYTHON required for execution>',
+      PYTHON_BIN: '<ASTRID_PYTHON required for execution>',
+    });
     assert.ok(plan.every((step) => Array.isArray(step.args)));
     assert.ok(plan.every((step) => step.command === 'npm' || step.command === 'make'));
 
@@ -94,6 +118,72 @@ describe('extension ship verifier', () => {
       /gate two failed: exit 7/,
     );
     assert.equal(calls.length, 2);
+  });
+
+  it('runs gates with an allowlisted environment and controlled Python overrides', () => {
+    const ambientBypasses = {
+      MAKEFLAGS: '-n',
+      MFLAGS: '-n',
+      ASTRID_CI_SKIP_GATE: '1',
+      ASTRID_CI_SKIP_BROAD: '1',
+      ASTRID_CI_SKIP_COVERAGE: '1',
+      PYTHONPATH: '/tmp/attacker',
+      PYTEST_ADDOPTS: '-m not_release',
+      NODE_OPTIONS: '--require=/tmp/attacker.cjs',
+      VITEST_POOL_ID: 'attacker',
+      OPENAI_API_KEY: 'secret',
+      SUPABASE_SERVICE_ROLE_KEY: 'secret',
+      TEST_USER_PASSWORD: 'secret',
+    };
+    const previous = Object.fromEntries(
+      Object.keys(ambientBypasses).map((key) => [key, process.env[key]]),
+    );
+    Object.assign(process.env, ambientBypasses);
+
+    try {
+      let captured;
+      executeSteps([{
+        id: 'astrid-ci',
+        label: 'Astrid CI',
+        command: 'make',
+        args: ['ci'],
+        cwd: '/tmp',
+        env: { PY: '/safe/python', PYTHON_BIN: '/safe/python' },
+      }], (_command, _args, options) => {
+        captured = options.env;
+        return { status: 0 };
+      });
+
+      assert.deepEqual(captured, {
+        ...buildSanitizedEnvironment(),
+        PY: '/safe/python',
+        PYTHON_BIN: '/safe/python',
+      });
+      for (const key of Object.keys(ambientBypasses)) {
+        assert.equal(captured[key], undefined, `${key} leaked into the gate`);
+      }
+    } finally {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+
+    assert.throws(
+      () => buildSanitizedEnvironment({ ASTRID_CI_SKIP_GATE: '1' }),
+      /environment key is not allowed/,
+    );
+  });
+
+  it('rejects shell executables and non-absolute Astrid Python paths', () => {
+    assert.throws(
+      () => resolveAstridPython(manifest, { ASTRID_PYTHON: 'python3' }),
+      /must be absolute/,
+    );
+    assert.throws(
+      () => resolveAstridPython(manifest, { ASTRID_PYTHON: '/bin/sh' }),
+      /not a usable Python interpreter|not a Python interpreter|identity mismatch/,
+    );
   });
 
   it('prints help and a non-executing plan without Astrid environment', () => {
