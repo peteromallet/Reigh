@@ -26,6 +26,11 @@ import { useTimelineMarkerDrag } from './useTimelineMarkerDrag.ts';
 export const TIMELINE_MARKER_CULLING_THRESHOLD = 200;
 /** Four auto-scroll edge zones, enough to avoid boundary churn at 12 px/frame. */
 export const TIMELINE_MARKER_OVERSCAN_PX = 160;
+/** The ruler already reserves 30px; multi-layer markers use three 10px lanes. */
+export const TIMELINE_MARKER_MULTI_LAYER_LANE_HEIGHT_PX = 10;
+export const TIMELINE_MARKER_MULTI_LAYER_LANE_COUNT = 3;
+/** Keep same-lane touch targets side-by-side without changing their time value. */
+export const TIMELINE_MARKER_MULTI_LAYER_COLUMN_STEP_PX = 18;
 
 export interface TimelineMarkerLayerHostProps {
   geometry: TimelineOverlayGeometry;
@@ -34,6 +39,11 @@ export interface TimelineMarkerLayerHostProps {
   getScrollContainer: () => HTMLElement | null;
   claimPointer: () => boolean;
   releasePointer: () => void;
+  /** Number of simultaneously mounted overlay layers sharing this ruler. */
+  overlayCount?: number;
+  /** Stable host-assigned layer identity used for deterministic layout/testing. */
+  layerIndex?: number;
+  layerKey?: string;
 }
 
 export type TimelineMarkerLayerProps<T = unknown> =
@@ -81,9 +91,10 @@ export function selectVisibleTimelineMarkers<T>(
   sortedMarkers: readonly IndexedMarker<T>[],
   geometry: TimelineOverlayGeometry,
   viewport: TimelineViewportSnapshot,
+  overlayCount = 1,
 ): readonly IndexedMarker<T>[] {
   if (
-    sortedMarkers.length < TIMELINE_MARKER_CULLING_THRESHOLD
+    sortedMarkers.length * Math.max(1, overlayCount) < TIMELINE_MARKER_CULLING_THRESHOLD
     || viewport.viewportWidth <= 0
   ) {
     return sortedMarkers;
@@ -113,15 +124,54 @@ interface MarkerButtonProps<T> {
   onChange?: TimelineMarkerLayerOptions<T>['onChange'];
   renderMarker?: TimelineMarkerLayerOptions<T>['renderMarker'];
   onDragStateChange: (markerId: string, dragging: boolean) => void;
+  layerIndex: number;
+  layerCount: number;
+  layerKey?: string;
+  tabIndex?: number;
 }
 
-function DefaultMarker<T>({ marker }: { marker: TimelinePointMarker<T> }) {
+interface MarkerVisualLayout {
+  readonly lane: number;
+  readonly column: number;
+  readonly laneTop: number;
+  readonly horizontalOffset: number;
+}
+
+function getMarkerVisualLayout(layerIndex: number, layerCount: number): MarkerVisualLayout {
+  const compact = layerCount > 1;
+  const lane = compact ? layerIndex % TIMELINE_MARKER_MULTI_LAYER_LANE_COUNT : 0;
+  const column = compact
+    ? Math.floor(layerIndex / TIMELINE_MARKER_MULTI_LAYER_LANE_COUNT)
+    : 0;
+  const columnCount = compact
+    ? Math.ceil(layerCount / TIMELINE_MARKER_MULTI_LAYER_LANE_COUNT)
+    : 1;
+
+  return {
+    lane,
+    column,
+    laneTop: lane * TIMELINE_MARKER_MULTI_LAYER_LANE_HEIGHT_PX,
+    horizontalOffset: compact
+      ? (column - (columnCount - 1) / 2) * TIMELINE_MARKER_MULTI_LAYER_COLUMN_STEP_PX
+      : 0,
+  };
+}
+
+function DefaultMarker<T>({
+  marker,
+  compact,
+}: {
+  marker: TimelinePointMarker<T>;
+  compact: boolean;
+}) {
   return (
     <span aria-hidden="true" className="flex h-full items-start">
       <span
-        className="mt-0.5 block h-3 w-2 rotate-45 rounded-[1px] border border-current bg-current"
+        className={`${compact
+          ? 'mt-1 block h-2 w-2'
+          : 'mt-0.5 block h-3 w-2'} rotate-45 rounded-[1px] border border-current bg-current`}
       />
-      {marker.label ? (
+      {!compact && marker.label ? (
         <span className="ml-1 whitespace-nowrap text-[10px] font-medium leading-4">
           {marker.label}
         </span>
@@ -145,8 +195,14 @@ function MarkerButton<T>({
   onChange,
   renderMarker,
   onDragStateChange,
+  layerIndex,
+  layerCount,
+  layerKey,
+  tabIndex,
 }: MarkerButtonProps<T>) {
   const enabled = interactive && !marker.disabled;
+  const compact = layerCount > 1;
+  const { lane, column, laneTop, horizontalOffset } = getMarkerVisualLayout(layerIndex, layerCount);
   const { dragging, onPointerDown } = useTimelineMarkerDrag({
     marker,
     geometry,
@@ -190,7 +246,15 @@ function MarkerButton<T>({
     left: 0,
     pointerEvents: enabled ? 'auto' : 'none',
     touchAction: enabled ? 'none' : undefined,
+    // The button is the temporal anchor. Collision offsets are applied only
+    // to the visual child below, so the marker's x position remains truthful.
     transform: `translateX(${left}px)`,
+    ...(compact ? {
+      height: `${TIMELINE_MARKER_MULTI_LAYER_LANE_HEIGHT_PX}px`,
+      minWidth: '18px',
+      paddingInline: '5px',
+      zIndex: 10 + layerCount - layerIndex,
+    } : {}),
   };
 
   return (
@@ -200,12 +264,20 @@ function MarkerButton<T>({
       data-marker-id={marker.id}
       data-marker-time={marker.time}
       data-marker-dragging={dragging ? 'true' : undefined}
+      data-marker-layer-index={layerIndex}
+      data-marker-layer-count={layerCount}
+      data-marker-layer-key={layerKey}
+      data-marker-layer-lane={lane}
+      data-marker-layer-column={column}
+      data-marker-anchor-x={left}
+      data-marker-visual-offset-x={horizontalOffset}
       data-selected={selected ? 'true' : undefined}
       className="absolute top-0 z-10 h-5 min-w-3 -translate-x-1/2 cursor-ew-resize border-0 bg-transparent p-0 text-left disabled:cursor-default disabled:opacity-40"
       style={style}
       aria-label={`${marker.label ?? 'Timeline marker'} at ${marker.time} seconds`}
       aria-pressed={selected}
       aria-disabled={!enabled}
+      tabIndex={tabIndex}
       disabled={!enabled}
       onPointerDown={onPointerDown}
       onClick={(event) => {
@@ -214,7 +286,39 @@ function MarkerButton<T>({
       }}
       onKeyDown={handleKeyDown}
     >
-      {renderMarker ? (renderMarker(marker) as ReactNode) : <DefaultMarker marker={marker} />}
+      {compact ? (
+        <>
+          {(horizontalOffset !== 0 || laneTop !== 0) ? (
+            <span
+              aria-hidden="true"
+              data-marker-leader
+              className="pointer-events-none absolute left-0 top-0 border-current opacity-70"
+              style={{
+                width: `${Math.max(1, Math.abs(horizontalOffset))}px`,
+                height: `${Math.max(1, laneTop)}px`,
+                borderTopWidth: horizontalOffset === 0 ? 0 : '1px',
+                borderLeftWidth: laneTop === 0 ? 0 : '1px',
+                transform: `translateX(${Math.min(0, horizontalOffset)}px)`,
+                transformOrigin: horizontalOffset < 0 ? 'right center' : 'left center',
+              }}
+            />
+          ) : null}
+          <span
+            aria-hidden="true"
+            data-marker-visual
+            className="absolute left-0 top-0"
+            style={{
+              transform: `translateX(${horizontalOffset}px) translateY(${laneTop}px)`,
+            }}
+          >
+            {renderMarker
+              ? (renderMarker(marker) as ReactNode)
+              : <DefaultMarker marker={marker} compact />}
+          </span>
+        </>
+      ) : renderMarker ? (renderMarker(marker) as ReactNode) : (
+        <DefaultMarker marker={marker} compact={false} />
+      )}
     </button>
   );
 }
@@ -242,6 +346,10 @@ const markerButtonPropsEqual = <T,>(
   && previous.onChange === next.onChange
   && previous.renderMarker === next.renderMarker
   && previous.onDragStateChange === next.onDragStateChange
+  && previous.layerIndex === next.layerIndex
+  && previous.layerCount === next.layerCount
+  && previous.layerKey === next.layerKey
+  && previous.tabIndex === next.tabIndex
 );
 
 const MemoizedMarkerButton = memo(MarkerButton, markerButtonPropsEqual) as typeof MarkerButton;
@@ -262,6 +370,9 @@ export function TimelineMarkerLayer<T = unknown>({
   getScrollContainer,
   claimPointer,
   releasePointer,
+  overlayCount = 1,
+  layerIndex = 0,
+  layerKey,
 }: TimelineMarkerLayerProps<T>) {
   const subscribe = useCallback((listener: () => void) => {
     const handle = viewport.subscribe(listener);
@@ -280,17 +391,23 @@ export function TimelineMarkerLayer<T = unknown>({
     .sort(compareIndexedMarkers), [markers]);
 
   const visibleMarkers = useMemo(() => {
-    const visible = selectVisibleTimelineMarkers(sortedMarkers, geometry, viewportSnapshot);
+    const visible = selectVisibleTimelineMarkers(sortedMarkers, geometry, viewportSnapshot, overlayCount);
     if (!activeMarkerId || visible.some(({ marker }) => marker.id === activeMarkerId)) {
       return visible;
     }
     const active = sortedMarkers.find(({ marker }) => marker.id === activeMarkerId);
     return active ? [...visible, active].sort(compareIndexedMarkers) : visible;
-  }, [activeMarkerId, geometry, sortedMarkers, viewportSnapshot]);
+  }, [activeMarkerId, geometry, overlayCount, sortedMarkers, viewportSnapshot]);
 
   const handleDragStateChange = useCallback((markerId: string, isDragging: boolean) => {
     setActiveMarkerId((current) => isDragging ? markerId : current === markerId ? null : current);
   }, []);
+
+  const layerCount = Math.max(1, overlayCount);
+  const visibleMarkerIds = useMemo(
+    () => new Set(visibleMarkers.map(({ marker }) => marker.id)),
+    [visibleMarkers],
+  );
 
   if (placement !== 'ruler') {
     return null;
@@ -302,6 +419,9 @@ export function TimelineMarkerLayer<T = unknown>({
       aria-label="Timeline markers"
       data-testid="timeline-marker-layer"
       data-marker-count={visibleMarkers.length}
+      data-marker-layer-index={layerIndex}
+      data-marker-layer-count={layerCount}
+      data-marker-layer-key={layerKey}
       className="pointer-events-none absolute inset-x-0 top-0 h-5 overflow-visible"
     >
       {visibleMarkers.map(({ marker }) => (
@@ -317,6 +437,10 @@ export function TimelineMarkerLayer<T = unknown>({
           getScrollContainer={getScrollContainer}
           claimPointer={claimPointer}
           releasePointer={releasePointer}
+          layerIndex={layerIndex}
+          layerCount={layerCount}
+          layerKey={layerKey}
+          tabIndex={visibleMarkerIds.has(marker.id) ? undefined : -1}
           onActivate={onActivate}
           onChange={onChange}
           renderMarker={renderMarker}

@@ -1,0 +1,29 @@
+{
+  "manifest": {
+    "id": "com.reigh.creative-lab.pulse-map",
+    "version": "1.0.0",
+    "label": "Beat-Synesthesia Pulse Map",
+    "description": "Builds a deterministic VJ-style pulse map from clip boundaries and durations, then renders it on the timeline ruler.",
+    "apiVersion": 1,
+    "contributions": [
+      {
+        "id": "build-pulse-map",
+        "kind": "command",
+        "command": "com.reigh.creative-lab.pulse-map.buildPulseMap",
+        "label": "Build Pulse Map",
+        "category": "Pulse Map",
+        "order": 10
+      },
+      {
+        "id": "pulse-map-overlay",
+        "kind": "timelineOverlay",
+        "render": "pulse-map/timeline-overlay",
+        "label": "Pulse Map (timeline ruler)",
+        "order": 10
+      }
+    ],
+    "messages": {
+      "ready": "Pulse Map ready — build a deterministic map from the current clips."
+    }
+  }
+}

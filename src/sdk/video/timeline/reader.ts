@@ -299,9 +299,10 @@ export interface TimelineSnapshot {
 export interface TimelineClipSummary {
   id: string;
   track: string;
+  /** Start time in seconds from the beginning of the timeline. */
   at: number;
   clipType?: string;
-  /** Duration in frames (derived from to-from or hold). */
+  /** Duration in seconds (derived from to-from or hold). */
   duration: number;
   /** True when this clip is managed by a registered extension. */
   managed: boolean;

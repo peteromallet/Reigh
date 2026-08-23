@@ -313,21 +313,55 @@ function parseExtensionManifests() {
   /** @type {Array<{path: string, manifest: any, errors: string[], warnings: string[]}>} */
   const manifests = [];
 
-  for (const entry of readdirSync(EXTENSIONS_DIR, { withFileTypes: true })) {
-    if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === '__tests__') continue;
+  /**
+   * Discover extension directories recursively so curated collections such as
+   * `creative-lab/pulse-map` are valid. A directory is considered an authored
+   * extension (and therefore manifest-required) only when it contains an
+   * extension entrypoint. Pure grouping directories are traversed silently.
+   *
+   * @param {string} directory
+   * @param {string} relativeDirectory
+   * @returns {Array<{manifestPath: string, directoryLabel: string}>}
+   */
+  function discoverManifestPaths(directory, relativeDirectory = '') {
+    const entries = readdirSync(directory, { withFileTypes: true });
+    const manifestPath = resolve(directory, 'reigh-extension.json');
+    const directoryLabel = relativeDirectory || '.';
 
-    const manifestPath = resolve(EXTENSIONS_DIR, entry.name, 'reigh-extension.json');
-    if (!existsSync(manifestPath)) {
-      R.warn(`Extension directory '${entry.name}' has no reigh-extension.json`);
-      continue;
+    if (existsSync(manifestPath)) {
+      return [{ manifestPath, directoryLabel }];
     }
+
+    const hasEntrypoint = entries.some((entry) => (
+      entry.isFile() && /^(index|extension)\.[cm]?[jt]sx?$/.test(entry.name)
+    ));
+    const nestedManifests = entries.flatMap((entry) => {
+      if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === '__tests__') {
+        return [];
+      }
+      const childLabel = relativeDirectory
+        ? `${relativeDirectory}/${entry.name}`
+        : entry.name;
+      return discoverManifestPaths(resolve(directory, entry.name), childLabel);
+    });
+
+    // An index beside nested manifests is a collection barrel, not another
+    // extension. Only leaf entrypoints require their own manifest.
+    if (hasEntrypoint && nestedManifests.length === 0) {
+      R.warn(`Extension directory '${directoryLabel}' has no reigh-extension.json`);
+    }
+
+    return nestedManifests;
+  }
+
+  for (const { manifestPath, directoryLabel } of discoverManifestPaths(EXTENSIONS_DIR)) {
 
     /** @type {any} */
     let raw;
     try {
       raw = JSON.parse(readFileSync(manifestPath, 'utf8'));
     } catch (e) {
-      R.error(`Extension manifest parse error in '${entry.name}': ${e.message}`);
+      R.error(`Extension manifest parse error in '${directoryLabel}': ${e.message}`);
       continue;
     }
 

@@ -1,0 +1,29 @@
+{
+  "manifest": {
+    "id": "com.reigh.creative-lab.branching-cut",
+    "version": "1.0.0",
+    "label": "Sequential Clip-Link Scaffolder",
+    "description": "Creates editable, non-executable links between adjacent primary visual clips at source clip ends; it never executes branches or edits clips.",
+    "apiVersion": 1,
+    "contributions": [
+      {
+        "id": "build-choice-gates",
+        "kind": "command",
+        "command": "com.reigh.creative-lab.branching-cut.buildChoiceGates",
+        "label": "Build Sequential Clip-Link Scaffolds",
+        "category": "Sequential Clip-Link Scaffolder",
+        "order": 10
+      },
+      {
+        "id": "branching-cut-overlay",
+        "kind": "timelineOverlay",
+        "render": "branching-cut/timeline-overlay",
+        "label": "Clip-Link Scaffolds (timeline ruler)",
+        "order": 10
+      }
+    ],
+    "messages": {
+      "ready": "Sequential Clip-Link Scaffolder ready — inspect non-executable adjacent links."
+    }
+  }
+}

@@ -203,6 +203,134 @@ describe('TimelineMarkerLayer', () => {
     ]);
   });
 
+  it('lays a multi-overlay layer into a bounded ruler lane and keeps labels accessible', () => {
+    render(<TimelineMarkerLayer {...baseProps({
+      overlayCount: 10,
+      layerIndex: 7,
+      layerKey: 'ext.seven:terrain',
+      markers: [{ id: 'coincident', time: 4, label: 'Hidden visual label' }],
+    })} />);
+
+    const layer = screen.getByTestId('timeline-marker-layer');
+    const marker = screen.getByTestId('timeline-marker-coincident');
+    expect(layer).toHaveAttribute('data-marker-layer-index', '7');
+    expect(layer).toHaveAttribute('data-marker-layer-count', '10');
+    expect(layer).toHaveAttribute('data-marker-layer-key', 'ext.seven:terrain');
+    expect(marker).toHaveAttribute('data-marker-layer-lane', '1');
+    expect(marker).toHaveAttribute('data-marker-layer-column', '2');
+    expect(marker).toHaveAttribute('aria-label', 'Hidden visual label at 4 seconds');
+    expect(marker).toHaveStyle({
+      transform: 'translateX(180px)',
+      height: '10px',
+      minWidth: '18px',
+    });
+    expect(marker).toHaveAttribute('data-marker-anchor-x', '180');
+    expect(marker).toHaveAttribute('data-marker-visual-offset-x', '9');
+    expect(marker.querySelector('[data-marker-visual]')).toHaveStyle({
+      transform: 'translateX(9px) translateY(10px)',
+    });
+    expect(marker.querySelector('[data-marker-leader]')).toBeInTheDocument();
+    expect(screen.queryByText('Hidden visual label')).toBeNull();
+  });
+
+  it('keeps positive and negative collision columns visually linked to the same temporal anchor', () => {
+    const { rerender } = render(<TimelineMarkerLayer {...baseProps({
+      overlayCount: 10,
+      layerIndex: 0,
+      markers: [{ id: 'negative', time: 4 }],
+    })} />);
+    const negative = screen.getByTestId('timeline-marker-negative');
+    expect(negative).toHaveStyle({ transform: 'translateX(180px)' });
+    expect(negative).toHaveAttribute('data-marker-visual-offset-x', '-27');
+    expect(negative.querySelector('[data-marker-leader]')).toBeInTheDocument();
+
+    rerender(<TimelineMarkerLayer {...baseProps({
+      overlayCount: 10,
+      layerIndex: 9,
+      markers: [{ id: 'positive', time: 4 }],
+    })} />);
+    const positive = screen.getByTestId('timeline-marker-positive');
+    expect(positive).toHaveStyle({ transform: 'translateX(180px)' });
+    expect(positive).toHaveAttribute('data-marker-visual-offset-x', '27');
+    expect(positive.querySelector('[data-marker-leader]')).toBeInTheDocument();
+  });
+
+  it('preserves a compact visual offset through drag preview, cancel, and commit', () => {
+    const onChange = vi.fn();
+    const claim = vi.fn(() => true);
+    const release = vi.fn();
+    const props = baseProps({
+      overlayCount: 10,
+      layerIndex: 9,
+      onChange,
+      claimPointer: claim,
+      releasePointer: release,
+      markers: [{ id: 'dragged', time: 4 }],
+    });
+    const view = render(<TimelineMarkerLayer {...props} />);
+    const marker = screen.getByTestId('timeline-marker-dragged');
+    const visual = marker.querySelector('[data-marker-visual]')!;
+    const originalVisualTransform = (visual as HTMLElement).style.transform;
+
+    fireEvent.pointerDown(marker, { button: 0, pointerId: 31, clientX: 180, clientY: 10 });
+    fireEvent.pointerMove(window, { pointerId: 31, clientX: 220, clientY: 10 });
+    expect(marker).toHaveAttribute('data-marker-dragging', 'true');
+    expect(marker).toHaveStyle({ transform: 'translateX(220px)' });
+    expect((visual as HTMLElement).style.transform).toBe(originalVisualTransform);
+    expect(onChange).toHaveBeenLastCalledWith({ id: 'dragged', time: 5, phase: 'preview' });
+
+    fireEvent.pointerCancel(window, { pointerId: 31 });
+    expect(marker).not.toHaveAttribute('data-marker-dragging');
+    expect(marker).toHaveStyle({ transform: 'translateX(180px)' });
+    expect((visual as HTMLElement).style.transform).toBe(originalVisualTransform);
+
+    view.rerender(<TimelineMarkerLayer {...props} />);
+    const rerenderedMarker = screen.getByTestId('timeline-marker-dragged');
+    fireEvent.pointerDown(rerenderedMarker, { button: 0, pointerId: 32, clientX: 180, clientY: 10 });
+    fireEvent.pointerMove(window, { pointerId: 32, clientX: 220, clientY: 10 });
+    fireEvent.pointerUp(window, { pointerId: 32, clientX: 220, clientY: 10 });
+    expect(onChange).toHaveBeenLastCalledWith({
+      id: 'dragged',
+      time: 5,
+      phase: 'commit',
+    });
+    expect(rerenderedMarker).toHaveStyle({ transform: 'translateX(220px)' });
+    expect((rerenderedMarker.querySelector('[data-marker-visual]') as HTMLElement).style.transform)
+      .toBe(originalVisualTransform);
+  });
+
+  it('keeps exact-time clusters on one anchor while preserving each target', () => {
+    render(<TimelineMarkerLayer {...baseProps({
+      overlayCount: 10,
+      layerIndex: 0,
+      markers: [
+        { id: 'cluster-a', time: 4 },
+        { id: 'cluster-b', time: 4 },
+      ],
+    })} />);
+    const markers = [
+      screen.getByTestId('timeline-marker-cluster-a'),
+      screen.getByTestId('timeline-marker-cluster-b'),
+    ];
+    expect(markers.map((marker) => marker.getAttribute('data-marker-anchor-x'))).toEqual(['180', '180']);
+    expect(markers.map((marker) => marker.getAttribute('data-marker-time'))).toEqual(['4', '4']);
+    expect(markers.every((marker) => marker.querySelector('[data-marker-leader]'))).toBe(true);
+  });
+
+  it('culls against aggregate overlay work and removes offscreen markers from tab order', () => {
+    const markers = Array.from({ length: 25 }, (_, index) => ({
+      id: `spread-${index}`,
+      time: index * 100,
+      label: `Spread ${index}`,
+    }));
+    render(<TimelineMarkerLayer {...baseProps({ markers, overlayCount: 10 })} />);
+
+    const mounted = screen.getAllByRole('button');
+    expect(mounted.length).toBeLessThan(markers.length);
+    expect(screen.queryByTestId('timeline-marker-spread-24')).toBeNull();
+    expect(mounted.every((button) => button.getAttribute('tabindex') !== '-1')).toBe(true);
+  });
+
   it('adds zero per-marker renders for viewport and 60 Hz parent/playhead updates', () => {
     const viewport = createViewportStore();
     const markers = makeMarkers(100);

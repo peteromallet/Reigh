@@ -1,0 +1,29 @@
+{
+  "manifest": {
+    "id": "com.reigh.creative-lab.lockline-inspector",
+    "version": "1.1.0",
+    "label": "Lockline Inspector",
+    "description": "Builds a read-only, bounded registry and provenance preflight from public timeline references; it does not inspect media availability, pixels, audio, continuity, or render quality.",
+    "apiVersion": 1,
+    "contributions": [
+      {
+        "id": "build-lockline-report",
+        "kind": "command",
+        "command": "com.reigh.creative-lab.lockline-inspector.buildReport",
+        "label": "Build Registry & Provenance Preflight",
+        "category": "Lockline Inspector",
+        "order": 10
+      },
+      {
+        "id": "lockline-inspector-overlay",
+        "kind": "timelineOverlay",
+        "render": "lockline-inspector/timeline-overlay",
+        "label": "Registry & Provenance Preflight (read-only ruler)",
+        "order": 10
+      }
+    ],
+    "messages": {
+      "ready": "Lockline Inspector ready — scan public registry and provenance references (read-only)."
+    }
+  }
+}

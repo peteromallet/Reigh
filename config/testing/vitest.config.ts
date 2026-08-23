@@ -58,14 +58,6 @@ export default defineConfig({
       '@banodoco/timeline-theme-2rp',
     ],
   },
-  esbuild: {
-    jsx: 'automatic',
-    jsxImportSource: 'react',
-    // Sprint 5: also transform JSX in linked workspace packages so the
-    // physically-moved TimelineComposition / theme-2rp components compile.
-    include: [/\.[jt]sx?$/, /banodoco-workspace\/.*\.[jt]sx?$/],
-    loader: 'tsx',
-  },
   server: {
     fs: {
       // Allow Vite to read from sibling banodoco-workspace.

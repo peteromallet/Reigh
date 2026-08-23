@@ -1,0 +1,29 @@
+{
+  "manifest": {
+    "id": "com.reigh.creative-lab.chromatic-constellation",
+    "version": "1.0.0",
+    "label": "Structural Pacing Palette",
+    "description": "Provides read-only timing-based color suggestions from the primary unmuted visual track; no emotional, pixel, audio, or GPU analysis is claimed.",
+    "apiVersion": 1,
+    "contributions": [
+      {
+        "id": "build-chromatic-constellation",
+        "kind": "command",
+        "command": "com.reigh.creative-lab.chromatic-constellation.buildConstellation",
+        "label": "Build Timing-Based Color Suggestions",
+        "category": "Structural Pacing Palette",
+        "order": 10
+      },
+      {
+        "id": "chromatic-constellation-overlay",
+        "kind": "timelineOverlay",
+        "render": "chromatic-constellation/timeline-overlay",
+        "label": "Timing-Based Color Suggestions (read-only ruler)",
+        "order": 10
+      }
+    ],
+    "messages": {
+      "ready": "Structural Pacing Palette ready — inspect read-only timing-based color suggestions."
+    }
+  }
+}

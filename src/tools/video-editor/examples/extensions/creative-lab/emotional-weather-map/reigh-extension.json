@@ -1,0 +1,29 @@
+{
+  "manifest": {
+    "id": "com.reigh.creative-lab.emotional-weather-map",
+    "version": "1.0.0",
+    "label": "Structural Pacing Weather Map",
+    "description": "Maps a bounded timing metaphor from the primary unmuted visual track; no emotion, semantic, audio, or pixel analysis is used.",
+    "apiVersion": 1,
+    "contributions": [
+      {
+        "id": "build-emotional-weather-map",
+        "kind": "command",
+        "command": "com.reigh.creative-lab.emotional-weather-map.buildWeatherMap",
+        "label": "Build Structural Pacing Weather Map",
+        "category": "Structural Pacing",
+        "order": 10
+      },
+      {
+        "id": "emotional-weather-map-overlay",
+        "kind": "timelineOverlay",
+        "render": "emotional-weather-map/timeline-overlay",
+        "label": "Structural Pacing Weather (timeline ruler)",
+        "order": 10
+      }
+    ],
+    "messages": {
+      "ready": "Structural Pacing Weather ready — a timing metaphor, not emotion analysis."
+    }
+  }
+}

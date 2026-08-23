@@ -1,0 +1,29 @@
+{
+  "manifest": {
+    "id": "com.reigh.creative-lab.timeline-faultline",
+    "version": "1.0.0",
+    "label": "Timeline Faultline",
+    "description": "Read-only structural continuity proxy for the primary unmuted visual track; it does not analyze pixels, audio, or render corruption.",
+    "apiVersion": 1,
+    "contributions": [
+      {
+        "id": "build-faultline",
+        "kind": "command",
+        "command": "com.reigh.creative-lab.timeline-faultline.buildFaultline",
+        "label": "Build Timeline Faultline",
+        "category": "Timeline Faultline",
+        "order": 10
+      },
+      {
+        "id": "faultline-overlay",
+        "kind": "timelineOverlay",
+        "render": "timeline-faultline/timeline-overlay",
+        "label": "Faultline (read-only timeline ruler)",
+        "order": 10
+      }
+    ],
+    "messages": {
+      "ready": "Timeline Faultline ready — scan the primary visual continuity proxy (read-only)."
+    }
+  }
+}

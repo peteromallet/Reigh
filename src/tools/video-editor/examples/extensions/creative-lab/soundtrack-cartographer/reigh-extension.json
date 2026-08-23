@@ -1,0 +1,29 @@
+{
+  "manifest": {
+    "id": "com.reigh.creative-lab.soundtrack-cartographer",
+    "version": "1.0.0",
+    "label": "Soundtrack Cartographer",
+    "description": "Maps a deterministic structural soundtrack proxy from clip duration and unique starts on unmuted visual tracks, then renders it on the timeline ruler.",
+    "apiVersion": 1,
+    "contributions": [
+      {
+        "id": "build-terrain",
+        "kind": "command",
+        "command": "com.reigh.creative-lab.soundtrack-cartographer.buildTerrain",
+        "label": "Map Structural Soundtrack Proxy",
+        "category": "Soundtrack Cartographer",
+        "order": 10
+      },
+      {
+        "id": "terrain-overlay",
+        "kind": "timelineOverlay",
+        "render": "soundtrack-cartographer/timeline-overlay",
+        "label": "Soundtrack Terrain (timeline ruler)",
+        "order": 10
+      }
+    ],
+    "messages": {
+      "ready": "Soundtrack Cartographer ready — map a structural soundtrack proxy from current clips."
+    }
+  }
+}

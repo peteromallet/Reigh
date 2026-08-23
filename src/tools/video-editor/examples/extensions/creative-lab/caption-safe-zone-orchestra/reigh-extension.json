@@ -1,0 +1,29 @@
+{
+  "manifest": {
+    "id": "com.reigh.creative-lab.caption-safe-zone-orchestra",
+    "version": "1.0.0",
+    "label": "Caption Timing Proxy Orchestra",
+    "description": "Finds bounded caption-timing proxies from public timeline metadata and renders them on the ruler; it cannot inspect safe zones, pixels, layout, or caption text.",
+    "apiVersion": 1,
+    "contributions": [
+      {
+        "id": "build-caption-findings",
+        "kind": "command",
+        "command": "com.reigh.creative-lab.caption-safe-zone-orchestra.buildFindings",
+        "label": "Scan Caption Timing Proxies",
+        "category": "Caption Timing Proxy",
+        "order": 10
+      },
+      {
+        "id": "caption-findings-overlay",
+        "kind": "timelineOverlay",
+        "render": "caption-safe-zone-orchestra/timeline-overlay",
+        "label": "Caption Timing Proxy Findings (timeline ruler)",
+        "order": 10
+      }
+    ],
+    "messages": {
+      "ready": "Caption Timing Proxy Orchestra ready — no safe-zone or pixel analysis is claimed."
+    }
+  }
+}

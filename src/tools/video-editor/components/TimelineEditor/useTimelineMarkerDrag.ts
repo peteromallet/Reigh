@@ -19,8 +19,9 @@ interface MarkerDragSession {
   readonly pointerId: number;
   readonly startClientX: number;
   readonly startClientY: number;
-  readonly startContentPixel: number;
+  readonly startTime: number;
   readonly startScrollLeft: number;
+  readonly originalTransform: string;
   readonly controller: AbortController;
   readonly target: HTMLButtonElement;
   lastClientX: number;
@@ -101,7 +102,10 @@ export function useTimelineMarkerDrag<T>({
   const rawTimeFor = useCallback((session: MarkerDragSession, clientX: number): number => {
     const current = latestRef.current;
     const scrollLeft = current.getScrollContainer()?.scrollLeft ?? session.startScrollLeft;
-    const contentPixel = session.startContentPixel
+    // Re-derive the original anchor from time on every move. This keeps the
+    // drag truthful when zoom changes during a session instead of retaining a
+    // stale pixel from the old scale.
+    const contentPixel = current.geometry.timeToPixel(session.startTime)
       + (clientX - session.startClientX)
       + (scrollLeft - session.startScrollLeft);
     const raw = current.geometry.pixelToTime(contentPixel);
@@ -123,11 +127,19 @@ export function useTimelineMarkerDrag<T>({
         session,
         Number.isFinite(clientX) ? (clientX as number) : session.lastClientX,
       );
+      const committedTime = current.snap ? snapToFrameGrid(rawTime, current.fps) : rawTime;
+      // The button is the temporal anchor. Its visual collision offset lives
+      // in a child, so this direct preview write must contain only the anchor.
+      session.target.style.transform = `translateX(${current.geometry.timeToPixel(committedTime)}px)`;
       current.onChange?.({
         id: current.marker.id,
-        time: current.snap ? snapToFrameGrid(rawTime, current.fps) : rawTime,
+        time: committedTime,
         phase: 'commit',
       });
+    } else {
+      // A cancelled drag must not leave a preview transform behind. The
+      // visual child (including any collision-column offset) never moves.
+      session.target.style.transform = session.originalTransform;
     }
 
     session.autoScroller?.stop();
@@ -170,8 +182,9 @@ export function useTimelineMarkerDrag<T>({
       pointerId: event.pointerId,
       startClientX: event.clientX,
       startClientY: event.clientY,
-      startContentPixel: current.geometry.timeToPixel(current.marker.time),
+      startTime: current.marker.time,
       startScrollLeft: container?.scrollLeft ?? 0,
+      originalTransform: target.style.transform,
       controller,
       target,
       lastClientX: event.clientX,

@@ -58,6 +58,8 @@ interface OverlayContributionProps {
   stores: TimelineOverlayStores;
   selection: TimelineOverlaySelection;
   fps: number;
+  overlayCount: number;
+  layerIndex: number;
   claimPointer: (
     claimantKey: string,
     extensionId: string,
@@ -78,6 +80,8 @@ function OverlayContribution({
   stores,
   selection,
   fps,
+  overlayCount,
+  layerIndex,
   claimPointer,
   releasePointer,
 }: OverlayContributionProps) {
@@ -111,12 +115,15 @@ function OverlayContribution({
           getScrollContainer={getScrollContainer}
           claimPointer={claim}
           releasePointer={release}
+          overlayCount={overlayCount}
+          layerIndex={layerIndex}
+          layerKey={claimantKey}
         />,
         rulerStripRoot,
         `${claimantKey}:marker-layer:${claimEpoch}`,
       );
     },
-  }), [claim, claimEpoch, claimantKey, fps, geometry, getScrollContainer, release, rulerStripRoot, stores.viewport]);
+  }), [claim, claimEpoch, claimantKey, fps, geometry, getScrollContainer, overlayCount, layerIndex, release, rulerStripRoot, stores.viewport]);
 
   const renderProps = useMemo<TimelineOverlayRenderProps>(() => Object.freeze({
     geometry,
@@ -311,7 +318,7 @@ export function TimelineExtensionOverlayHost({
     return null;
   }
 
-  return overlays.map((descriptor) => {
+  return overlays.map((descriptor, layerIndex) => {
     const claimantKey = `${descriptor.extensionId}:${String(descriptor.id)}`;
     return (
       <OverlayContribution
@@ -327,6 +334,8 @@ export function TimelineExtensionOverlayHost({
         stores={stores}
         selection={selection}
         fps={fps}
+        overlayCount={overlays.length}
+        layerIndex={layerIndex}
         claimPointer={claimPointer}
         releasePointer={releasePointer}
       />

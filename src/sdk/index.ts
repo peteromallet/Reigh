@@ -17,7 +17,7 @@
 
 // ids & dispose
 export { type ExtensionId, type ContributionId, validateExtensionId, validateContributionId } from './ids';
-export type { DisposeHandle } from './dispose';
+export { combineDisposeHandles, type DisposeHandle } from './dispose';
 
 // commands
 export { type TargetContext, type TargetContextPayload, type CommandRunContext, type CommandHandler, type CommandRegistrationOptions } from './commands';

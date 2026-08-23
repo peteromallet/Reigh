@@ -1,0 +1,29 @@
+{
+  "manifest": {
+    "id": "com.reigh.creative-lab.foley-constellation",
+    "version": "1.0.0",
+    "label": "Foley Cue Scaffolder",
+    "description": "Creates neutral, editable Foley cue scaffolds on primary unmuted visual boundaries; it does not identify sounds, infer spatial placement, or synthesize audio.",
+    "apiVersion": 1,
+    "contributions": [
+      {
+        "id": "drop-foley-cues",
+        "kind": "command",
+        "command": "com.reigh.creative-lab.foley-constellation.dropCues",
+        "label": "Drop Foley Cue Scaffolds",
+        "category": "Foley Cue Scaffolder",
+        "order": 10
+      },
+      {
+        "id": "foley-overlay",
+        "kind": "timelineOverlay",
+        "render": "foley-constellation/timeline-overlay",
+        "label": "Foley Cue Scaffolds (timeline ruler)",
+        "order": 10
+      }
+    ],
+    "messages": {
+      "ready": "Foley Cue Scaffolder ready — drop neutral editable cues on primary visual boundaries."
+    }
+  }
+}

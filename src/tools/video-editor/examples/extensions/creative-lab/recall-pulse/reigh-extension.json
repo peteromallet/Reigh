@@ -1,0 +1,29 @@
+{
+  "manifest": {
+    "id": "com.reigh.creative-lab.recall-pulse",
+    "version": "2.0.0",
+    "label": "Structural Learning-Review Scaffold",
+    "description": "Generates explicit unassigned interrogative review suggestions from the first unmuted visual editorial track; read-only and structure-only.",
+    "apiVersion": 1,
+    "contributions": [
+      {
+        "id": "build-recall-pulse",
+        "kind": "command",
+        "command": "com.reigh.creative-lab.recall-pulse.buildRecallPulse",
+        "label": "Build Learning-Review Questions",
+        "category": "Learning Review",
+        "order": 10
+      },
+      {
+        "id": "recall-pulse-overlay",
+        "kind": "timelineOverlay",
+        "render": "recall-pulse/timeline-overlay",
+        "label": "Learning Review (read-only timeline ruler)",
+        "order": 10
+      }
+    ],
+    "messages": {
+      "ready": "Learning Review ready — build unassigned structural questions from the primary visual track."
+    }
+  }
+}

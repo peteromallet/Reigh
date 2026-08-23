@@ -36,6 +36,7 @@
     "test:edge:unit": "vitest run --config config/testing/vitest.edge.config.ts",
     "test:edge:smoke": "vitest run --config config/testing/vitest.edge.smoke.config.ts --testNamePattern=\"Smoke\"",
     "test:extensions": "npm run check:extension-drift -- --release && npm run check:extension-family-conformance -- --release && npm run check:sdk-public-exports -- --release && npm run check:video-editor-sdk-imports && vitest run --config config/testing/vitest.config.ts src/sdk/manifest-schema-validation.test.ts src/sdk/index.test.ts src/sdk/examples-governance.test.ts src/sdk/extensionSettingsService.test.ts src/sdk/extensionSettingsMigration.test.ts",
+    "test:creative-extension": "node scripts/quality/check-creative-lab-extension.mjs",
     "test:extensions:production-smoke": "vitest run --config config/testing/vitest.config.ts src/sdk/smoke/extensionSmoke.test.ts",
     "test:slot:unit": "vitest run --config config/testing/vitest.config.ts src/shared/hooks/__tests__/usePromoteVariantToGeneration.test.ts src/domains/media-lightbox/hooks/useVariantPromotion.test.ts src/tools/video-editor/hooks/useAddVariantAsGeneration.test.tsx",
     "test:slot:edge": "npm run test:edge:smoke",

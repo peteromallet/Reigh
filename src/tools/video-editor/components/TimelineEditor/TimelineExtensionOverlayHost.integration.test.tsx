@@ -924,4 +924,47 @@ describe('T5.1 — geometry and cadence through the real host', () => {
     fireEvent.pointerUp(window, { pointerId: 23, clientX: 38, clientY: 10 });
     expect(host.ownerChanges.at(-1)).toBe('none');
   });
+
+  it('separates ten coincident overlay layers into discoverable lanes with independent targets', async () => {
+    const controllers = Array.from({ length: 10 }, (_, index) => markerExtension(
+      overlayManifest({
+        id: `com.reigh.timeline-overlay-layer-${index}`,
+        contributionId: `layer-${index}`,
+      }),
+      { markers: [{ id: `coincident-${index}`, time: 4, label: `Layer ${index}` }] },
+    ));
+    const host = renderOverlayHost(controllers.map((controller) => controller.extension));
+
+    await waitFor(() => {
+      expect(host.rulerStripRoot.querySelectorAll('[data-marker-id]')).toHaveLength(10);
+    });
+
+    const layers = [...host.rulerStripRoot.querySelectorAll('[data-testid="timeline-marker-layer"]')];
+    expect(layers).toHaveLength(10);
+    expect(layers.map((layer) => layer.getAttribute('data-marker-layer-index'))).toEqual(
+      Array.from({ length: 10 }, (_, index) => String(index)),
+    );
+    expect(layers.every((layer) => layer.getAttribute('data-marker-layer-count') === '10')).toBe(true);
+    expect(new Set(layers.map((layer) => layer.getAttribute('data-marker-layer-key'))).size).toBe(10);
+
+    const markers = [...host.rulerStripRoot.querySelectorAll<HTMLButtonElement>('[data-marker-id]')];
+    expect(new Set(markers.map((marker) => marker.getAttribute('data-marker-layer-lane'))).size).toBe(3);
+    expect(markers.every((marker) => marker.getAttribute('aria-label')?.includes('at 4 seconds'))).toBe(true);
+    expect(markers.every((marker) => marker.textContent === '')).toBe(true);
+    expect(markers.every((marker) => marker.tabIndex !== -1)).toBe(true);
+    expect(new Set(markers.map((marker) => marker.getAttribute('data-marker-anchor-x'))).size).toBe(1);
+    expect(markers.every((marker) => marker.querySelector('[data-marker-leader]'))).toBe(true);
+
+    // Every layer can acquire and release the single gesture owner in turn.
+    for (const [index, markerSnapshot] of markers.entries()) {
+      const marker = host.rulerStripRoot.querySelector<HTMLButtonElement>(
+        `[data-marker-id="${markerSnapshot.dataset.markerId}"]`,
+      )!;
+      fireEvent.pointerDown(marker, { button: 0, pointerId: index + 1, clientX: 180, clientY: 10 });
+      fireEvent.pointerMove(window, { pointerId: index + 1, clientX: 188, clientY: 10 });
+      expect(host.ownerChanges.at(-1)).toBe('overlay');
+      fireEvent.pointerUp(window, { pointerId: index + 1, clientX: 188, clientY: 10 });
+      expect(host.ownerChanges.at(-1)).toBe('none');
+    }
+  });
 });
