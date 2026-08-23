@@ -5,6 +5,8 @@ import { type ReactNode } from 'react';
 import {
   defineExtension,
   type CommandHandler,
+  type CommandContribution,
+  type ContributionId,
   type DataItemInspectorProps,
   type DataKindRegistrationService,
   type DataLaneRendererProps,
@@ -26,6 +28,7 @@ import {
   createExtensionLifecycleHost,
 } from '@/tools/video-editor/runtime/extensionLifecycle';
 import { HostContributionErrorBoundary } from '@/tools/video-editor/runtime/ContributionErrorBoundary';
+import { createCommandRegistry } from '@/tools/video-editor/runtime/commandRegistry';
 import { transcriptLaneExtension } from '@/tools/video-editor/dev/transcript-lane/extension';
 import { runawayTimelineExtension } from '@/tools/video-editor/dev/runaway-timeline/extension';
 import { scenePhaseMarkersExtension } from '@/tools/video-editor/dev/scene-phase-markers/extension';
@@ -188,6 +191,93 @@ describe('Creative Lab + bundled editor-extension compatibility matrix', () => {
     expect(harness.commands.size).toBe(0);
     expect(harness.renderers.size).toBe(0);
     expect(harness.dataKinds.size).toBe(0);
+  });
+
+  it('does not serialize a healthy command behind a slow command from another extension', async () => {
+    const slowCommandId = 'com.reigh.compat.slow.wait';
+    const healthyCommandId = 'com.reigh.compat.healthy.run';
+    let releaseSlow: (() => void) | undefined;
+    const slowStarted = vi.fn();
+    const slowFinished = vi.fn();
+    const healthyRan = vi.fn();
+    const slowGate = new Promise<void>((resolve) => { releaseSlow = resolve; });
+
+    const slow = defineExtension({
+      manifest: {
+        id: 'com.reigh.compat.slow' as ExtensionId,
+        version: '1.0.0',
+        apiVersion: 1,
+        license: 'MIT',
+        label: 'Slow command probe',
+        contributions: [{
+          id: 'slow-command' as ContributionId,
+          kind: 'command',
+          command: slowCommandId,
+          label: 'Wait',
+        }],
+      },
+      activate(ctx) {
+        return ctx.commands.registerCommand(slowCommandId, async () => {
+          slowStarted();
+          await slowGate;
+          slowFinished();
+        });
+      },
+    });
+    const healthy = defineExtension({
+      manifest: {
+        id: 'com.reigh.compat.healthy' as ExtensionId,
+        version: '1.0.0',
+        apiVersion: 1,
+        license: 'MIT',
+        label: 'Healthy command probe',
+        contributions: [{
+          id: 'healthy-command' as ContributionId,
+          kind: 'command',
+          command: healthyCommandId,
+          label: 'Run',
+        }],
+      },
+      activate(ctx) {
+        return ctx.commands.registerCommand(healthyCommandId, () => { healthyRan(); });
+      },
+    });
+
+    const registry = createCommandRegistry();
+    const reader: TimelineReader = { snapshot: () => createCreativeLabSnapshot() };
+    const timeline = { apply: () => ({} as TimelineDiff) } as TimelineOps;
+    for (const extension of [slow, healthy]) {
+      const extensionId = extension.manifest.id as string;
+      for (const contribution of extension.manifest.contributions ?? []) {
+        registry.ingestCommandContribution(extensionId, contribution as CommandContribution);
+      }
+    }
+    const host = createExtensionLifecycleHost();
+    host.synchronize([slow, healthy], (extension) => {
+      const extensionId = extension.manifest.id as string;
+      const commands: ExtensionCommandService = {
+        registerCommand: (id, handler, options) => (
+          registry.registerCommand(extensionId, id, handler, options)
+        ),
+      };
+      return createExtensionContext(extension, { reader, timeline }, commands);
+    });
+
+    const slowRun = registry.executeCommand(slowCommandId);
+    await vi.waitFor(() => expect(slowStarted).toHaveBeenCalledTimes(1));
+    expect(slowFinished).not.toHaveBeenCalled();
+    await expect(registry.executeCommand(healthyCommandId)).resolves.toBe(true);
+    expect(healthyRan).toHaveBeenCalledTimes(1);
+    expect(slowFinished).not.toHaveBeenCalled();
+
+    releaseSlow?.();
+    await expect(slowRun).resolves.toBe(true);
+    expect(slowFinished).toHaveBeenCalledTimes(1);
+    expect(registry.getStatus(slowCommandId).lastRunOk).toBe(true);
+    expect(registry.getStatus(healthyCommandId).lastRunOk).toBe(true);
+
+    host.disposeAll();
+    registry.dispose();
   });
 
   it('contains a partial activation failure without blocking the healthy peer', () => {
