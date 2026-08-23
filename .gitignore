@@ -63,6 +63,8 @@ temp/
 !docs/extensions/validation/*.md
 !docs/extensions/validation/artifacts/*.log
 !docs/extensions/validation/artifacts/*.txt
+!docs/extensions/evidence/releases/
+!docs/extensions/evidence/releases/**
 !tasks/*.md
 !CLAUDE.md
 !/.megaplan/briefs/**/*.md

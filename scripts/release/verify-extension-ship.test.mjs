@@ -36,6 +36,9 @@ describe('extension ship verifier', () => {
     assert.equal(validateReleaseManifest(manifest), manifest);
     assert.doesNotThrow(() => validatePackageJson(packageJson, manifest));
     assert.deepEqual(manifest.requiredGates, [...EXPECTED_REQUIRED_GATES]);
+    const gitignore = readFileSync(`${REPO_ROOT}/.gitignore`, 'utf8');
+    assert.match(gitignore, /^!docs\/extensions\/evidence\/releases\/$/m);
+    assert.match(gitignore, /^!docs\/extensions\/evidence\/releases\/\*\*$/m);
 
     for (const command of [
       'npx --yes only-allow npm',

@@ -83,7 +83,14 @@ installs/builds Reigh from its lockfile, creates a private Astrid virtual
 environment from `requirements/runtime.lock` with `pip --require-hashes`,
 `--no-deps`, and binary-only packages, provisions Chromium with the exact
 lockfile-installed Playwright CLI into that same private runtime, and records
-the dependency-lock, frozen-environment, and Playwright-browser binary hashes.
+the dependency-lock, normalized package-inventory, and Playwright-browser
+binary hashes.
+It also installs Reigh's archived `vendor/timeline-schema/python` distribution
+with dependency/build isolation disabled after installing the separately
+hash-locked build tools. The gate records the complete source-tree hash and
+proves that `banodoco_timeline_schema` resolves from the private virtualenv,
+while Astrid itself resolves from the exact pinned source archive deliberately
+placed on `PYTHONPATH`.
 It initializes Astrid's real managed database, takes a pre-migration backup, and
 applies the Runaway migration twice. Both applications must report 566 stored
 transitions, one migration evidence receipt, and identical project/run

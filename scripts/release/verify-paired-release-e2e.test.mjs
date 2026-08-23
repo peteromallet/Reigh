@@ -10,10 +10,12 @@ import {
   RELEASE_BRIDGE_CAPABILITY,
   REPO_ROOT,
   RUNAWAY_RELEASE_FIXTURE_HASHES,
+  TIMELINE_SCHEMA_DISTRIBUTION_VERSION,
   buildBrowserEnvironment,
   buildServerEnvironment,
   parseCliArgs,
   requireFullCommitPin,
+  validateTimelineSchemaInstallation,
   validateAstridReleaseBridgeSources,
 } from './verify-paired-release-e2e.mjs';
 
@@ -33,6 +35,38 @@ describe('paired repository release E2E gate', () => {
     assert.equal(requireFullCommitPin(full, 'test pin'), full);
     assert.throws(() => requireFullCommitPin('a'.repeat(12), 'test pin'), /full 40-character/);
     assert.throws(() => requireFullCommitPin('A'.repeat(40), 'test pin'), /full 40-character/);
+  });
+
+  it('binds the shared timeline schema to the installed venv and pinned Astrid source', () => {
+    const expectedSchemaSha256 = 'b'.repeat(64);
+    assert.equal(TIMELINE_SCHEMA_DISTRIBUTION_VERSION, '0.0.2');
+    assert.deepEqual(validateTimelineSchemaInstallation({
+      probe: {
+        astridModulePath: '/tmp/astrid/astrid/__init__.py',
+        distributionVersion: '0.0.2',
+        modulePath: '/tmp/venv/lib/python3.11/site-packages/banodoco_timeline_schema/__init__.py',
+        schemaSha256: expectedSchemaSha256,
+      },
+      astridSnapshot: '/tmp/astrid',
+      expectedSchemaSha256,
+      venv: '/tmp/venv',
+    }), {
+      astridModulePath: '/tmp/astrid/astrid/__init__.py',
+      distributionVersion: '0.0.2',
+      modulePath: '/tmp/venv/lib/python3.11/site-packages/banodoco_timeline_schema/__init__.py',
+      schemaSha256: expectedSchemaSha256,
+    });
+    assert.throws(() => validateTimelineSchemaInstallation({
+      probe: {
+        astridModulePath: '/developer/astrid/__init__.py',
+        distributionVersion: '0.0.2',
+        modulePath: '/developer/site-packages/banodoco_timeline_schema/__init__.py',
+        schemaSha256: expectedSchemaSha256,
+      },
+      astridSnapshot: '/tmp/astrid',
+      expectedSchemaSha256,
+      venv: '/tmp/venv',
+    }), /outside its pinned runtime root/);
   });
 
   it('rejects the old pre-auth pin and accepts the complete release capability', () => {
@@ -95,7 +129,7 @@ describe('paired repository release E2E gate', () => {
     assert.deepEqual(PAIRED_RELEASE_PHASES, [
       'exact-ref capability preflight',
       'clean archive materialization',
-      'locked Reigh dependency install and production build',
+      'locked Reigh, Playwright, and paired Python provisioning plus production build',
       'Astrid database initialization and pre-migration backup',
       'Runaway migration first apply and idempotent second apply',
       'authenticated Astrid release bridge plus built Reigh preview smoke',
@@ -141,6 +175,12 @@ describe('paired repository release E2E gate', () => {
     assert.match(source, /playwright-browser-install\.log/);
     assert.match(source, /PLAYWRIGHT_BROWSERS_PATH/);
     assert.match(source, /--only-binary=:all:/);
+    assert.match(source, /paired-python-build-tools\.lock/);
+    assert.match(source, /timeline-schema-source-snapshot\.json/);
+    assert.match(source, /--no-build-isolation/);
+    assert.match(source, /pip', '--isolated', 'list', '--format=json/);
+    assert.match(source, /astrid-runtime-packages-normalized\.json/);
+    assert.doesNotMatch(source, /pip', 'freeze'/);
     assert.match(source, /astrid-restored-logical-snapshot\.json/);
     assert.match(source, /astrid-restored-media-snapshot\.json/);
     assert.match(source, /Promise\.allSettled/);

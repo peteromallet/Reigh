@@ -33,6 +33,7 @@ export const MANIFEST_PATH = resolve(REPO_ROOT, 'config/releases/extension-ship-
 export const EXPECTED_EXTENSION_COUNT = 13;
 export const EXPECTED_RUNAWAY_COUNT = 566;
 export const RELEASE_BRIDGE_CAPABILITY = 'astrid.authenticated-release-bridge.v1';
+export const TIMELINE_SCHEMA_DISTRIBUTION_VERSION = '0.0.2';
 export const RUNAWAY_RELEASE_FIXTURE_HASHES = Object.freeze({
   'audio-reactive-v1.json': 'd7925d72b52180e206a2511a5d30cf1638c7007a962fd57d8a6eb9ffb10af886',
   'timing-manifest.json': '44b5c0eea0aeb8b35a83e3e7620b5dbab27a106bf575fcc6e0ca6591dd4612bb',
@@ -333,7 +334,7 @@ export function preflightPinnedRepositories({ manifest, env }) {
 export const PAIRED_RELEASE_PHASES = Object.freeze([
   'exact-ref capability preflight',
   'clean archive materialization',
-  'locked Reigh dependency install and production build',
+  'locked Reigh, Playwright, and paired Python provisioning plus production build',
   'Astrid database initialization and pre-migration backup',
   'Runaway migration first apply and idempotent second apply',
   'authenticated Astrid release bridge plus built Reigh preview smoke',
@@ -549,6 +550,39 @@ function runLogged(command, args, { cwd, env, logPath, parseJson = false }) {
   };
 }
 
+export function validateTimelineSchemaInstallation({
+  probe,
+  astridSnapshot,
+  expectedSchemaSha256,
+  venv,
+}) {
+  if (probe?.distributionVersion !== TIMELINE_SCHEMA_DISTRIBUTION_VERSION) {
+    fail(
+      `timeline schema distribution mismatch: expected ${TIMELINE_SCHEMA_DISTRIBUTION_VERSION}, `
+      + `got ${probe?.distributionVersion ?? '<missing>'}`,
+    );
+  }
+  if (probe?.schemaSha256 !== expectedSchemaSha256) {
+    fail(`installed timeline schema hash mismatch: ${probe?.schemaSha256 ?? '<missing>'}`);
+  }
+  for (const [label, path, root] of [
+    ['timeline schema module', probe?.modulePath, venv],
+    ['Astrid module', probe?.astridModulePath, astridSnapshot],
+  ]) {
+    if (!path || !isAbsolute(path)) fail(`${label} probe did not return an absolute path`);
+    const scopedPath = relative(root, path);
+    if (scopedPath === '' || scopedPath === '..' || scopedPath.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`)) {
+      fail(`${label} resolved outside its pinned runtime root: ${path}`);
+    }
+  }
+  return Object.freeze({
+    astridModulePath: probe.astridModulePath,
+    distributionVersion: probe.distributionVersion,
+    modulePath: probe.modulePath,
+    schemaSha256: probe.schemaSha256,
+  });
+}
+
 function installLockedAstridRuntime(context) {
   const venv = resolve(context.runtimeRoot, 'astrid-venv');
   runLogged(context.bootstrapAstridPython, ['-m', 'venv', venv], {
@@ -567,17 +601,101 @@ function installLockedAstridRuntime(context) {
     env: safeBaseEnvironment({ HOME: context.home, TMPDIR: context.runtimeRoot }),
     logPath: resolve(context.evidenceRoot, 'astrid-runtime-lock-install.log'),
   });
-  const freeze = runLogged(python, ['-m', 'pip', 'freeze', '--all'], {
+  const buildToolsLock = resolve(
+    context.reighSnapshot,
+    'scripts/release/paired-python-build-tools.lock',
+  );
+  if (!existsSync(buildToolsLock)) fail('pinned Reigh archive has no paired Python build-tools lock');
+  runLogged(python, [
+    '-m', 'pip', '--isolated', 'install', '--disable-pip-version-check', '--no-deps',
+    '--only-binary=:all:', '--require-hashes', '-r', buildToolsLock,
+  ], {
+    cwd: context.reighSnapshot,
+    env: safeBaseEnvironment({ HOME: context.home, TMPDIR: context.runtimeRoot }),
+    logPath: resolve(context.evidenceRoot, 'paired-python-build-tools-install.log'),
+  });
+  const timelineSchemaSource = resolve(context.reighSnapshot, 'vendor/timeline-schema/python');
+  const timelineSchemaFile = resolve(
+    timelineSchemaSource,
+    'banodoco_timeline_schema/timeline.schema.json',
+  );
+  if (!existsSync(timelineSchemaFile)) {
+    fail('pinned Reigh archive has no vendored Python timeline schema package');
+  }
+  const timelineSchemaSourceSnapshot = fileTreeSnapshot(timelineSchemaSource);
+  writeFileSync(
+    resolve(context.evidenceRoot, 'timeline-schema-source-snapshot.json'),
+    `${JSON.stringify(timelineSchemaSourceSnapshot, null, 2)}\n`,
+    { flag: 'wx', mode: 0o600 },
+  );
+  runLogged(python, [
+    '-m', 'pip', '--isolated', 'install', '--disable-pip-version-check', '--no-deps',
+    '--no-build-isolation', timelineSchemaSource,
+  ], {
+    cwd: context.reighSnapshot,
+    env: safeBaseEnvironment({ HOME: context.home, TMPDIR: context.runtimeRoot }),
+    logPath: resolve(context.evidenceRoot, 'timeline-schema-install.log'),
+  });
+  const schemaProbe = runLogged(python, ['-c', `
+import hashlib
+import json
+import os
+from importlib.metadata import version
+from importlib.resources import files
+import astrid
+import banodoco_timeline_schema
+
+schema_path = files("banodoco_timeline_schema").joinpath("timeline.schema.json")
+print(json.dumps({
+    "astridModulePath": os.path.realpath(astrid.__file__),
+    "distributionVersion": version("banodoco-timeline-schema"),
+    "modulePath": os.path.realpath(banodoco_timeline_schema.__file__),
+    "schemaSha256": hashlib.sha256(schema_path.read_bytes()).hexdigest(),
+}))
+`.trim()], {
+    cwd: context.astridSnapshot,
+    env: safeBaseEnvironment({
+      HOME: context.home,
+      TMPDIR: context.runtimeRoot,
+      PYTHONPATH: context.astridSnapshot,
+    }),
+    logPath: resolve(context.evidenceRoot, 'timeline-schema-import-probe.json'),
+    parseJson: true,
+  }).payload;
+  const timelineSchema = validateTimelineSchemaInstallation({
+    probe: schemaProbe,
+    astridSnapshot: realpathSync(context.astridSnapshot),
+    expectedSchemaSha256: sha256File(timelineSchemaFile),
+    venv: realpathSync(venv),
+  });
+  const inventory = runLogged(python, ['-m', 'pip', '--isolated', 'list', '--format=json'], {
     cwd: context.astridSnapshot,
     env: safeBaseEnvironment({ HOME: context.home, TMPDIR: context.runtimeRoot }),
-    logPath: resolve(context.evidenceRoot, 'astrid-runtime-freeze.log'),
-  });
+    logPath: resolve(context.evidenceRoot, 'astrid-runtime-packages-raw.json'),
+    parseJson: true,
+  }).payload
+    .map((entry) => ({ name: String(entry.name).toLowerCase(), version: String(entry.version) }))
+    .sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
+  const inventoryJson = `${JSON.stringify(inventory, null, 2)}\n`;
+  writeFileSync(
+    resolve(context.evidenceRoot, 'astrid-runtime-packages-normalized.json'),
+    inventoryJson,
+    { flag: 'wx', mode: 0o600 },
+  );
   context.astridPython = python;
   return {
     lock: relative(context.astridSnapshot, lock),
     lockSha256: sha256File(lock),
-    environmentSha256: createHash('sha256').update(freeze.stdout).digest('hex'),
+    buildToolsLock: relative(context.reighSnapshot, buildToolsLock),
+    buildToolsLockSha256: sha256File(buildToolsLock),
+    environmentPackageCount: inventory.length,
+    environmentSha256: createHash('sha256').update(inventoryJson).digest('hex'),
     python: realpathSync(python),
+    timelineSchema: {
+      ...timelineSchema,
+      source: relative(context.reighSnapshot, timelineSchemaSource),
+      sourceTreeSha256: timelineSchemaSourceSnapshot.sha256,
+    },
   };
 }
 
