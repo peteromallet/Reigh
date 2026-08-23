@@ -27,7 +27,10 @@ import type {
   SourceMapEntry,
 } from '@/sdk/index';
 
-import { getCapabilityRequirements as sdkGetCapabilityRequirements } from '@/sdk/index';
+import {
+  computeTimelineClipOutputFingerprint,
+  getCapabilityRequirements as sdkGetCapabilityRequirements,
+} from '@/sdk/index';
 
 import type { TimelineData, ClipMeta } from '@/tools/video-editor/lib/timeline-data';
 import type {
@@ -783,6 +786,21 @@ export function createTimelineReader(
           at: clip.at,
           clipType: clip.clipType,
           duration: computeClipDuration(clipMeta),
+          ...(typeof clipMeta.text?.content === 'string'
+            ? { textContent: clipMeta.text.content }
+            : {}),
+          contentFingerprint: computeTimelineClipOutputFingerprint({
+            track: clip.track,
+            at: clip.at,
+            duration: computeClipDuration(clipMeta),
+            ...(clip.clipType !== undefined ? { clipType: clip.clipType } : {}),
+            ...(clipMeta.label !== undefined ? { label: clipMeta.label } : {}),
+            ...(clipMeta.text !== undefined ? { text: clipMeta.text } : {}),
+            ...(clipMeta.x !== undefined ? { x: clipMeta.x } : {}),
+            ...(clipMeta.y !== undefined ? { y: clipMeta.y } : {}),
+            ...(clipMeta.width !== undefined ? { width: clipMeta.width } : {}),
+            ...(clipMeta.height !== undefined ? { height: clipMeta.height } : {}),
+          }),
           managed,
           ...(managedBy !== undefined ? { managedBy } : {}),
           ...(generatedMeta !== undefined ? { generatedMeta } : {}),

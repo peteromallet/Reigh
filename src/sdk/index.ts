@@ -204,7 +204,24 @@ export type { StableTimelineAssetRegistryInput, StableTimelineConfigSignatureInp
 export type { TimelineEffectSummary, TimelineTransitionSummary, TimelineLiveBindingSummary, TimelineAutomationSummary, TimelineMaterialRefSummary, TimelineRenderPassSummary, TimelineSourceRefSummary, TimelineRenderGroupSummary, TimelineOutputMetadata, TimelineSnapshot, TimelineClipSummary, TimelineTrackSummary, TimelineShaderSummary, TimelineReader, TimelineProposalInput } from './video/timeline/reader';
 export type { TimelineOps } from './video/timeline/timelineOps';
 export type { ProposalState, ProposalExpiryDetail, TimelineProposal, ProposalListener, ProposalRuntime, ProposalPanelState, ProposalPanelAction, ProposalEnvelope, ProposalImportStatus, ProposalImportDiagnostic, ProposalImportResult } from './video/timeline/proposals';
-export type { SourceMapRuntime, SourceMapEntry, GeneratedObjectMeta } from './video/timeline/sourceMap';
+export {
+  HOST_GENERATION_PROVENANCE_VERSION,
+  classifyGeneratedOutputSync,
+  computeHostFingerprint,
+  computeTimelineClipOutputFingerprint,
+  createHostGeneratedObjectMeta,
+  readHostGenerationProvenance,
+} from './video/timeline/sourceMap';
+export type {
+  CreateHostGeneratedObjectMetaInput,
+  GeneratedObjectMeta,
+  GeneratedOutputConflictPolicy,
+  GeneratedOutputSyncState,
+  HostGenerationProvenance,
+  SourceMapEntry,
+  SourceMapRuntime,
+  TimelineClipOutputFingerprintInput,
+} from './video/timeline/sourceMap';
 
 // ===========================================================================
 // Video: Assets

@@ -25,7 +25,12 @@
  * public SDK plus React and its own sibling renderer module.
  */
 
-import { defineExtension } from '@reigh/editor-sdk';
+import {
+  computeHostFingerprint,
+  createHostGeneratedObjectMeta,
+  defineExtension,
+  readHostGenerationProvenance,
+} from '@reigh/editor-sdk';
 import type {
   ContributionId,
   DataLaneRenderItem,
@@ -37,11 +42,7 @@ import type {
   TimelinePatchOperation,
   TimelineSnapshot,
 } from '@reigh/editor-sdk';
-import {
-  readChipText,
-  renderTranscriptItemInspector,
-  renderTranscriptLane,
-} from './TranscriptLaneView';
+import { readChipText, renderTranscriptItemInspector, renderTranscriptLane } from './TranscriptLaneView';
 
 // ---------------------------------------------------------------------------
 // Identifiers
@@ -59,21 +60,22 @@ export const TRANSCRIPT_KIND_ID = 'reigh.transcript';
  */
 export const TRANSCRIPT_SCHEMA_REF = 'reigh.transcript_segment/v1';
 export const TRANSCRIPT_CAPTION_TRACK_ID = 'transcript-caption-foundry-track';
+export const TRANSCRIPT_CAPTION_CONTRIBUTION_ID = 'transcript-caption-foundry';
+export const TRANSCRIPT_EXTENSION_VERSION = '1.1.0';
+export const TRANSCRIPT_SOURCE_REVIEW_KEY_PREFIX = 'transcript-source-review:';
 
 const MAX_CAPTION_SEGMENTS = 512;
 const MIN_CAPTION_DURATION_SECONDS = 0.1;
 
-function stableHash(value: string): string {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 0).toString(36);
+export function transcriptCaptionClipId(itemId: string): string {
+  return `transcript-caption-${computeHostFingerprint(itemId).split(':')[1]}`;
 }
 
-export function transcriptCaptionClipId(itemId: string): string {
-  return `transcript-caption-${stableHash(itemId)}`;
+export type TranscriptCaptionMaterializeMode = 'preserve' | 'regenerate';
+
+export interface TranscriptCaptionPatchOptions {
+  /** Preserve human edits by default; regeneration is always explicit. */
+  mode?: TranscriptCaptionMaterializeMode;
 }
 
 /**
@@ -86,7 +88,9 @@ export function buildTranscriptCaptionPatch(
   snapshot: Pick<TimelineSnapshot, 'baseVersion' | 'tracks' | 'clips' | 'outputMetadata'>,
   items: readonly DataLaneRenderItem[],
   extensionId: string = TRANSCRIPT_LANE_EXTENSION_ID,
+  options: TranscriptCaptionPatchOptions = {},
 ): TimelinePatch {
+  const mode = options.mode ?? 'preserve';
   const resolutionMatch = snapshot.outputMetadata?.resolution.match(/^(\d+)x(\d+)$/i);
   const compositionWidth = resolutionMatch ? Number(resolutionMatch[1]) : 1280;
   const compositionHeight = resolutionMatch ? Number(resolutionMatch[2]) : 720;
@@ -107,7 +111,8 @@ export function buildTranscriptCaptionPatch(
       && readChipText(item.payload) !== '(no text)'
     ))
     .slice(0, MAX_CAPTION_SEGMENTS);
-  const existingClipIds = new Set(snapshot.clips.map((clip) => clip.id));
+  const existingClips = new Map(snapshot.clips.map((clip) => [clip.id, clip]));
+  const desiredClipIds = new Set(normalized.map((item) => transcriptCaptionClipId(item.id)));
   const operations: TimelinePatchOperation[] = [];
   let order = 0;
 
@@ -132,17 +137,55 @@ export function buildTranscriptCaptionPatch(
       MIN_CAPTION_DURATION_SECONDS,
       item.timelineEnd - item.timelineStart,
     );
-    if (existingClipIds.has(clipId)) continue;
-    operations.push({
-      op: 'clip.add',
-      target: clipId,
-      payload: {
-        track: TRANSCRIPT_CAPTION_TRACK_ID,
-        at: item.timelineStart,
-        clipType: 'text',
+    const label = text.length > 48 ? `${text.slice(0, 47)}…` : text;
+    const textStyle = {
+      content: text,
+      fontSize: Math.max(28, Math.round(compositionHeight * 0.067)),
+      color: '#ffffff',
+      bold: true,
+      align: 'center',
+    };
+    const outputValue = {
+      track: TRANSCRIPT_CAPTION_TRACK_ID,
+      at: item.timelineStart,
+      duration,
+      clipType: 'text',
+      label,
+      text: textStyle,
+      ...captionBox,
+    };
+    const sourceItemId = item.sourceItemId ?? item.id;
+    const generatedMeta = createHostGeneratedObjectMeta({
+      extensionId,
+      contributionId: TRANSCRIPT_CAPTION_CONTRIBUTION_ID,
+      extensionVersion: TRANSCRIPT_EXTENSION_VERSION,
+      sourceSchemaRef: TRANSCRIPT_SCHEMA_REF,
+      sourceItemId,
+      sourceRevision: snapshot.baseVersion,
+      sourceValue: {
+        schemaRef: TRANSCRIPT_SCHEMA_REF,
+        sourceItemId,
+        payload: item.payload,
+        timelineStart: item.timelineStart,
+        timelineEnd: item.timelineEnd,
       },
-      order: order++,
+      outputValue,
+      conflictPolicy: mode === 'regenerate' ? 'regenerate-output' : 'preserve-output',
     });
+    const existing = existingClips.get(clipId);
+    if (existing && mode === 'preserve') continue;
+    if (!existing) {
+      operations.push({
+        op: 'clip.add',
+        target: clipId,
+        payload: {
+          track: TRANSCRIPT_CAPTION_TRACK_ID,
+          at: item.timelineStart,
+          clipType: 'text',
+        },
+        order: order++,
+      });
+    }
     operations.push({
       op: 'clip.update',
       target: clipId,
@@ -151,18 +194,27 @@ export function buildTranscriptCaptionPatch(
         at: item.timelineStart,
         hold: duration,
         ...captionBox,
-        text: {
-          content: text,
-          fontSize: Math.max(28, Math.round(compositionHeight * 0.067)),
-          color: '#ffffff',
-          bold: true,
-          align: 'center',
-        },
-        label: text.length > 48 ? `${text.slice(0, 47)}…` : text,
+        text: textStyle,
+        label,
+        app: { __generated__: generatedMeta },
         mode: 'merge',
       },
       order: order++,
     });
+  }
+
+  if (mode === 'regenerate') {
+    for (const clip of snapshot.clips) {
+      const provenance = readHostGenerationProvenance(clip.generatedMeta);
+      if (
+        clip.track !== TRANSCRIPT_CAPTION_TRACK_ID
+        || clip.generatedMeta?.extensionId !== extensionId
+        || clip.generatedMeta.contributionId !== TRANSCRIPT_CAPTION_CONTRIBUTION_ID
+        || provenance?.sourceSchemaRef !== TRANSCRIPT_SCHEMA_REF
+        || desiredClipIds.has(clip.id)
+      ) continue;
+      operations.push({ op: 'clip.remove', target: clip.id, order: order++ });
+    }
   }
 
   return {
@@ -171,7 +223,73 @@ export function buildTranscriptCaptionPatch(
     meta: {
       kind: 'transcript-caption-foundry/render-as-video-text',
       sourceSchemaRef: TRANSCRIPT_SCHEMA_REF,
-      oneWaySourceToCaptions: true,
+      roundTripPolicy: mode,
+      hostProvenanceContract: 1,
+    },
+    operations,
+  };
+}
+
+/**
+ * Convert human-edited generated captions into explicit review records.
+ * This never mutates the transcript source directly: an upstream owner can
+ * accept/reject each proposal using the recorded source fingerprint.
+ */
+export function buildTranscriptSourceReviewPatch(
+  snapshot: Pick<TimelineSnapshot, 'baseVersion' | 'clips'>,
+  items: readonly DataLaneRenderItem[],
+  extensionId: string = TRANSCRIPT_LANE_EXTENSION_ID,
+): TimelinePatch {
+  const operations: TimelinePatchOperation[] = [];
+  const existingClips = new Map(snapshot.clips.map((clip) => [clip.id, clip]));
+  let order = 0;
+  for (const item of items) {
+    const clip = existingClips.get(transcriptCaptionClipId(item.id));
+    if (!clip || typeof clip.textContent !== 'string' || !clip.contentFingerprint) continue;
+    const provenance = readHostGenerationProvenance(clip.generatedMeta);
+    if (!provenance || provenance.sourceSchemaRef !== TRANSCRIPT_SCHEMA_REF) continue;
+    if (clip.contentFingerprint === provenance.outputFingerprint) continue;
+
+    const sourceItemId = item.sourceItemId ?? item.id;
+    const currentSourceValue = {
+      schemaRef: TRANSCRIPT_SCHEMA_REF,
+      sourceItemId,
+      payload: item.payload,
+      timelineStart: item.timelineStart,
+      timelineEnd: item.timelineEnd,
+    };
+    operations.push({
+      op: 'project-data.write',
+      target: extensionId,
+      payload: {
+        key: `${TRANSCRIPT_SOURCE_REVIEW_KEY_PREFIX}${encodeURIComponent(sourceItemId)}`,
+        value: {
+          schemaVersion: 1,
+          status: 'pending-review',
+          sourceSchemaRef: TRANSCRIPT_SCHEMA_REF,
+          sourceItemId,
+          sourceFingerprintAtGeneration: provenance.sourceFingerprint,
+          currentSourceFingerprint: computeHostFingerprint(currentSourceValue),
+          generatedOutputFingerprint: provenance.outputFingerprint,
+          editedOutputFingerprint: clip.contentFingerprint,
+          proposedText: clip.textContent,
+          proposedTimelineStart: clip.at,
+          proposedTimelineEnd: clip.at + clip.duration,
+          generatorVersion: provenance.generatorVersion,
+        },
+        mode: 'replace',
+      },
+      order: order++,
+    });
+  }
+  return {
+    version: snapshot.baseVersion,
+    source: extensionId,
+    meta: {
+      kind: 'transcript-caption-foundry/propose-source-updates',
+      sourceSchemaRef: TRANSCRIPT_SCHEMA_REF,
+      policy: 'propose-source-update',
+      proposalCount: operations.length,
     },
     operations,
   };
@@ -180,9 +298,10 @@ export function buildTranscriptCaptionPatch(
 function renderTranscriptAsCaptions(
   ctx: ExtensionContext,
   items: readonly DataLaneRenderItem[],
+  mode: TranscriptCaptionMaterializeMode = 'preserve',
 ): void {
   const snapshot = ctx.creative.reader.snapshot();
-  const patch = buildTranscriptCaptionPatch(snapshot, items, ctx.extension.id as string);
+  const patch = buildTranscriptCaptionPatch(snapshot, items, ctx.extension.id as string, { mode });
   const validation = ctx.creative.timeline.validate(patch);
   if (!validation.valid) {
     throw new Error(`Transcript caption patch rejected: ${validation.diagnostics.map((item) => item.message).join('; ')}`);
@@ -196,6 +315,27 @@ function renderTranscriptAsCaptions(
   ctx.chrome.toast(`Rendered ${captionCount} editable transcript caption clip(s).`, 'success');
 }
 
+function proposeTranscriptSourceUpdates(
+  ctx: ExtensionContext,
+  items: readonly DataLaneRenderItem[],
+): void {
+  const patch = buildTranscriptSourceReviewPatch(
+    ctx.creative.reader.snapshot(),
+    items,
+    ctx.extension.id as string,
+  );
+  if (patch.operations.length === 0) {
+    ctx.chrome.toast('No human-edited generated captions need transcript review.', 'info');
+    return;
+  }
+  const validation = ctx.creative.timeline.validate(patch);
+  if (!validation.valid) {
+    throw new Error(`Transcript review patch rejected: ${validation.diagnostics.map((item) => item.message).join('; ')}`);
+  }
+  ctx.creative.timeline.apply(patch);
+  ctx.chrome.toast(`Created ${patch.operations.length} transcript source review proposal(s).`, 'success');
+}
+
 // ---------------------------------------------------------------------------
 // Extension definition
 // ---------------------------------------------------------------------------
@@ -203,7 +343,7 @@ function renderTranscriptAsCaptions(
 export const transcriptLaneExtension: ReighExtension = defineExtension({
   manifest: {
     id: TRANSCRIPT_LANE_EXTENSION_ID,
-    version: '1.0.0',
+    version: TRANSCRIPT_EXTENSION_VERSION,
     apiVersion: 1,
     license: 'MIT',
     label: 'Transcript Caption Foundry',
@@ -233,7 +373,9 @@ export const transcriptLaneExtension: ReighExtension = defineExtension({
       TRANSCRIPT_KIND_ID,
       (props) => renderTranscriptLane(
         props,
-        (items) => renderTranscriptAsCaptions(ctx, items),
+        (items) => renderTranscriptAsCaptions(ctx, items, 'preserve'),
+        (items) => renderTranscriptAsCaptions(ctx, items, 'regenerate'),
+        (items) => proposeTranscriptSourceUpdates(ctx, items),
       ),
       renderTranscriptItemInspector,
     );

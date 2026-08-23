@@ -33,14 +33,24 @@ import type { TimelineData } from '@/tools/video-editor/lib/timeline-data';
 import type { TrackDefinition } from '@/tools/video-editor/types';
 import type { TimelineAction, TimelineRow } from '@/tools/video-editor/types/timeline-canvas';
 import type { ReactElement } from 'react';
-import { validateManifest, type DataLaneRendererProps } from '@reigh/editor-sdk';
+import {
+  computeTimelineClipOutputFingerprint,
+  createHostGeneratedObjectMeta,
+  readHostGenerationProvenance,
+  validateManifest,
+  type DataLaneRendererProps,
+} from '@reigh/editor-sdk';
 import { createExtensionContext } from '@/tools/video-editor/runtime/extensionContextFactory';
 import { createDataKindRegistrationService } from '@/tools/video-editor/runtime/dataKindRegistrationService';
 import {
   TRANSCRIPT_CAPTION_TRACK_ID,
+  TRANSCRIPT_CAPTION_CONTRIBUTION_ID,
+  TRANSCRIPT_EXTENSION_VERSION,
   TRANSCRIPT_KIND_ID,
+  TRANSCRIPT_LANE_EXTENSION_ID,
   TRANSCRIPT_SCHEMA_REF,
   buildTranscriptCaptionPatch,
+  buildTranscriptSourceReviewPatch,
   transcriptCaptionClipId,
   transcriptLaneExtension,
 } from '../extension';
@@ -460,5 +470,163 @@ describe('transcript lane chips (rework round-2 F3)', () => {
       outputMetadata: { resolution: '1280x720', fps: 30, file: 'demo.mp4' },
     }, [items[0]]);
     expect(rerun.operations).toEqual([]);
+  });
+
+  it('stamps source, schema, generator, and output fingerprints through the host contract', () => {
+    const item: DataLaneRendererProps['items'][number] = {
+      id: 'source-1@clip-1',
+      sourceItemId: 'source-1',
+      timelineStart: 1,
+      timelineEnd: 2,
+      clipId: 'clip-1',
+      payload: { text: 'Zażółć 🌍' },
+    };
+    const patch = buildTranscriptCaptionPatch({
+      baseVersion: 17,
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1', muted: false }],
+      clips: [],
+      outputMetadata: { resolution: '1280x720', fps: 30, file: 'demo.mp4' },
+    }, [item]);
+    const update = patch.operations.find((operation) => operation.op === 'clip.update');
+    const app = update?.payload?.app as { __generated__?: Parameters<typeof readHostGenerationProvenance>[0] };
+    expect(readHostGenerationProvenance(app.__generated__)).toMatchObject({
+      contractVersion: 1,
+      sourceSchemaRef: TRANSCRIPT_SCHEMA_REF,
+      sourceItemId: 'source-1',
+      sourceRevision: 17,
+      generatorVersion: TRANSCRIPT_EXTENSION_VERSION,
+      conflictPolicy: 'preserve-output',
+    });
+    expect(update?.payload?.text).toMatchObject({ content: 'Zażółć 🌍' });
+  });
+
+  it('filters empty text but preserves overlapping and Unicode intervals', () => {
+    const patch = buildTranscriptCaptionPatch({
+      baseVersion: 1,
+      tracks: [],
+      clips: [],
+      outputMetadata: { resolution: '1920x1080', fps: 48, file: 'demo.mp4' },
+    }, [
+      { id: 'empty', timelineStart: 0, timelineEnd: 1, payload: { text: '   ' } },
+      { id: 'speaker-a', timelineStart: 1, timelineEnd: 2.5, payload: { text: 'こんにちは' } },
+      { id: 'speaker-b', timelineStart: 2, timelineEnd: 3, payload: { text: 'مرحبا' } },
+    ]);
+    const updates = patch.operations.filter((operation) => operation.op === 'clip.update');
+    expect(updates).toHaveLength(2);
+    expect(updates.map((operation) => (operation.payload?.text as { content: string }).content)).toEqual([
+      'こんにちは',
+      'مرحبا',
+    ]);
+    expect(updates.map((operation) => operation.payload?.at)).toEqual([1, 2]);
+  });
+
+  it('regenerates existing captions and removes stale generated split/merge outputs only when explicit', () => {
+    const current = { id: 'new-source@clip-1', sourceItemId: 'new-source', timelineStart: 2, timelineEnd: 4, payload: { text: 'Merged' } };
+    const staleMeta = createHostGeneratedObjectMeta({
+      extensionId: TRANSCRIPT_LANE_EXTENSION_ID,
+      contributionId: TRANSCRIPT_CAPTION_CONTRIBUTION_ID,
+      extensionVersion: TRANSCRIPT_EXTENSION_VERSION,
+      sourceSchemaRef: TRANSCRIPT_SCHEMA_REF,
+      sourceItemId: 'old-source',
+      sourceValue: { text: 'Old split' },
+      outputValue: { text: 'Old split' },
+    });
+    const staleClip = {
+      id: 'stale-caption',
+      track: TRANSCRIPT_CAPTION_TRACK_ID,
+      at: 1,
+      duration: 1,
+      clipType: 'text',
+      managed: true,
+      managedBy: TRANSCRIPT_LANE_EXTENSION_ID,
+      generatedMeta: staleMeta,
+    };
+    const preserve = buildTranscriptCaptionPatch({
+      baseVersion: 20,
+      tracks: [{ id: TRANSCRIPT_CAPTION_TRACK_ID, kind: 'visual', label: 'Transcript Captions', muted: false }],
+      clips: [staleClip],
+    }, [current]);
+    expect(preserve.operations.some((operation) => operation.op === 'clip.remove')).toBe(false);
+
+    const regenerate = buildTranscriptCaptionPatch({
+      baseVersion: 20,
+      tracks: [{ id: TRANSCRIPT_CAPTION_TRACK_ID, kind: 'visual', label: 'Transcript Captions', muted: false }],
+      clips: [staleClip],
+    }, [current], TRANSCRIPT_LANE_EXTENSION_ID, { mode: 'regenerate' });
+    expect(regenerate.operations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ op: 'clip.remove', target: 'stale-caption' }),
+    ]));
+    expect(regenerate.meta).toMatchObject({ roundTripPolicy: 'regenerate' });
+  });
+
+  it('turns human-edited captions into review proposals without mutating transcript source', () => {
+    const item = {
+      id: 'source-1@clip-1',
+      sourceItemId: 'source-1',
+      timelineStart: 1,
+      timelineEnd: 2,
+      payload: { text: 'Original' },
+    };
+    const sourceValue = {
+      schemaRef: TRANSCRIPT_SCHEMA_REF,
+      sourceItemId: 'source-1',
+      payload: item.payload,
+      timelineStart: 1,
+      timelineEnd: 2,
+    };
+    const originalOutput = {
+      track: TRANSCRIPT_CAPTION_TRACK_ID,
+      at: 1,
+      duration: 1,
+      clipType: 'text',
+      label: 'Original',
+      text: { content: 'Original', fontSize: 48, color: '#ffffff', bold: true, align: 'center' },
+      x: 128,
+      y: 418,
+      width: 1024,
+      height: 101,
+    };
+    const generatedMeta = createHostGeneratedObjectMeta({
+      extensionId: TRANSCRIPT_LANE_EXTENSION_ID,
+      contributionId: TRANSCRIPT_CAPTION_CONTRIBUTION_ID,
+      extensionVersion: TRANSCRIPT_EXTENSION_VERSION,
+      sourceSchemaRef: TRANSCRIPT_SCHEMA_REF,
+      sourceItemId: 'source-1',
+      sourceValue,
+      outputValue: originalOutput,
+    });
+    const editedOutput = {
+      ...originalOutput,
+      label: 'Human revision',
+      text: { ...originalOutput.text, content: 'Human revision' },
+    };
+    const patch = buildTranscriptSourceReviewPatch({
+      baseVersion: 31,
+      clips: [{
+        id: transcriptCaptionClipId(item.id),
+        track: TRANSCRIPT_CAPTION_TRACK_ID,
+        at: 1,
+        duration: 1,
+        clipType: 'text',
+        managed: true,
+        textContent: 'Human revision',
+        generatedMeta,
+        contentFingerprint: computeTimelineClipOutputFingerprint(editedOutput),
+      }],
+    }, [item]);
+    expect(patch.operations).toHaveLength(1);
+    expect(patch.operations[0]).toMatchObject({
+      op: 'project-data.write',
+      target: TRANSCRIPT_LANE_EXTENSION_ID,
+      payload: {
+        key: expect.stringContaining('transcript-source-review:'),
+        value: expect.objectContaining({
+          status: 'pending-review',
+          sourceItemId: 'source-1',
+          proposedText: 'Human revision',
+        }),
+      },
+    });
+    expect(patch.operations.some((operation) => operation.op === 'clip.update')).toBe(false);
   });
 });

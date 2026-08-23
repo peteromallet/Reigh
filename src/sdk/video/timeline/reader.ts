@@ -304,12 +304,21 @@ export interface TimelineClipSummary {
   clipType?: string;
   /** Duration in seconds (derived from to-from or hold). */
   duration: number;
+  /** Current plain text content for built-in text clips, when present. */
+  textContent?: string;
   /** True when this clip is managed by a registered extension. */
   managed: boolean;
   /** Extension ID that manages this clip, if managed. */
   managedBy?: string;
   /** Generated-object metadata attached by the owning extension, if any. */
   generatedMeta?: GeneratedObjectMeta;
+  /**
+   * Host-authored fingerprint of the editable clip output (timing, text,
+   * label, and geometry). Generated extensions compare this with the
+   * fingerprint recorded in `generatedMeta` to detect human edits without
+   * receiving raw provider rows.
+   */
+  contentFingerprint?: string;
   /** M12: Effects applied to this clip. */
   effects?: readonly TimelineEffectSummary[];
   /** M12: Transition applied to this clip, if any. */
