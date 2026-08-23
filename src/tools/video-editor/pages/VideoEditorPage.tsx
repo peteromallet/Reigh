@@ -407,16 +407,12 @@ export default function VideoEditorPage() {
   const { navigateHome } = useHomeNavigation();
 
   // Local mode is derived solely from the URL params — the legacy
-  // `dev.videoEditor.localMode` storage flag has been retired. It stays a
-  // DEV-only affordance: `/api/astrid` is a development proxy, so production
-  // builds must never enter local mode from a URL (it would strand users on
-  // a dead bridge).
-  const localModeAvailable = import.meta.env.DEV;
+  // `dev.videoEditor.localMode` storage flag has been retired.
   const localProjectSlug = searchParams.get('localProject');
   const localTimelineId = searchParams.get('localTimeline');
-  const mode: VideoEditorMode = localModeAvailable && (
-    searchParams.has('localProject') || searchParams.has('localTimeline')
-  ) ? 'local' : 'app';
+  const mode: VideoEditorMode = searchParams.has('localProject') || searchParams.has('localTimeline')
+    ? 'local'
+    : 'app';
   const appTimelineId = searchParams.get('timeline');
 
   // Selector dropdown open state drives discovery refetch-on-open + polling.

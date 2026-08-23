@@ -48,6 +48,13 @@ export default defineConfig(() => {
     server: {
       host: "::",
       port: port,
+      // Astrid local bridge (development). Local trust (doc 27 §4.7):
+      // the per-boot request token is minted by `astrid serve` and delivered
+      // OUT OF BAND to server-side callers only — this proxy deliberately
+      // adds NO credential, header, or cookie, so zero token material ever
+      // reaches browser code. The browser's authority is same-origin
+      // reachability of `/api/astrid` alone; mutations from foreign origins
+      // are rejected by the bridge's own Host + token + CORS-preflight gate.
       proxy: {
         "/api/astrid": {
           target: `http://127.0.0.1:${astridBridgePort}`,

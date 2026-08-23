@@ -7,7 +7,6 @@ import { Layout } from './Layout';
 
 const state = {
   isVideoEditorShellActive: false,
-  isLocalModeSession: false,
   isAuthenticated: false,
   isLoading: false,
 };
@@ -17,7 +16,6 @@ vi.mock('@/app/hooks/useVideoEditorRouteState', () => ({
     isEditorRoute: false,
     timelineId: null,
     isVideoEditorShellActive: state.isVideoEditorShellActive,
-    isLocalModeSession: state.isLocalModeSession,
   }),
 }));
 
@@ -111,21 +109,19 @@ function renderLayout() {
   );
 }
 
-describe('Layout chrome in local mode', () => {
+describe('Layout route access', () => {
   beforeEach(() => {
     state.isVideoEditorShellActive = false;
-    state.isLocalModeSession = false;
     state.isAuthenticated = false;
     state.isLoading = false;
   });
 
-  it('renders the full app chrome in DEV local mode without a session', () => {
-    state.isLocalModeSession = true;
+  it('renders the full app chrome when the bridge probe resolved a user', () => {
+    state.isAuthenticated = true;
 
     renderLayout();
 
-    // The auth gate is exempted and the panes are unsuppressed: the user gets
-    // the same sidebar/buttons as app mode.
+    // The auth gate passes on the probe alone: all panes unsuppressed.
     expect(screen.getByTestId('tools-pane')).toBeInTheDocument();
     expect(screen.getByTestId('editor-pane')).toBeInTheDocument();
     expect(screen.getByTestId('tasks-pane')).toBeInTheDocument();
@@ -133,16 +129,17 @@ describe('Layout chrome in local mode', () => {
     expect(screen.getByTestId('settings-modal')).toBeInTheDocument();
   });
 
-  it('renders the app chrome in app mode when authenticated', () => {
-    state.isAuthenticated = true;
+  it('renders degraded-but-alive chrome while the probe is pending (no redirect loop)', () => {
+    state.isLoading = true;
 
     renderLayout();
 
-    expect(screen.getByTestId('tools-pane')).toBeInTheDocument();
-    expect(screen.getByTestId('settings-modal')).toBeInTheDocument();
+    // Loading state renders the spinner — never a <Navigate> hop.
+    expect(screen.getByTestId('reigh-loading')).toBeInTheDocument();
+    expect(screen.queryByTestId('tools-pane')).not.toBeInTheDocument();
   });
 
-  it('redirects to /home without a session and without local params', () => {
+  it('redirects to /home when the probe failed', () => {
     renderLayout();
 
     // The auth gate returns <Navigate to="/home">: none of the chrome renders.

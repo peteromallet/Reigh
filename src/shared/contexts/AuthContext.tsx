@@ -6,9 +6,7 @@ import React, {
   useEffect,
   useMemo
 } from 'react';
-import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
-import { getAuthStateManager } from '@/integrations/supabase/auth/AuthStateManager';
-import type { Session } from '@supabase/supabase-js';
+import { probeBridgeSession } from '@/shared/auth/bridgeSession';
 import { requireContextValue } from './contextGuard';
 
 interface AuthContextType {
@@ -23,102 +21,48 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 /**
- * AuthProvider handles authentication state and event debouncing.
+ * AuthProvider resolves the session by probing the Astrid local bridge.
  *
- * Features:
- * - [AuthDebounce] Debounces duplicate auth events to prevent cascading updates
- * - [MobileStallFix] Resets loading states on meaningful auth transitions
- * - [FastResume] Provides immediate auth state for fast tab resume
+ * There is no login and no credential: a healthy `/api/astrid` IS the
+ * session, and the resolved identity is the fixed local user. The probe
+ * runs once per boot — no polling, no retries, no redirects:
+ * - while probing: `isLoading: true` (`AuthGate` holds children back)
+ * - healthy bridge: `userId` set, `isAuthenticated: true`
+ * - unreachable bridge: honest failure state; the layout stays alive
+ *   (degraded) rather than looping a redirect to an auth page that
+ *   no longer exists.
  */
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [userId, setUserId] = useState<string | undefined>(undefined);
-  const [isLoading, setIsLoading] = useState(true);
+  const [authState, setAuthState] = useState<{
+    userId: string | null;
+    isLoading: boolean;
+  }>({ userId: null, isLoading: true });
 
-  // [MobileStallFix] Enhanced auth state tracking with mobile recovery
-  // [AuthDebounce] Prevent cascading updates from duplicate auth events
   useEffect(() => {
-    let debounceTimeout: NodeJS.Timeout | null = null;
-    let lastProcessedState: { event: string; userId: string | undefined } | null = null;
-    let pendingAuthState: { event: string; session: Session | null } | null = null;
+    let cancelled = false;
 
-    const processAuthChange = (event: string, session: Session | null) => {
-      const currentUserId = session?.user?.id;
-
-      // Check if this is a meaningful state transition
-      const isDuplicateEvent = lastProcessedState &&
-        lastProcessedState.event === event &&
-        lastProcessedState.userId === currentUserId;
-
-      if (isDuplicateEvent) {
+    void probeBridgeSession().then((probe) => {
+      if (cancelled) {
         return;
       }
-
-      // Update user ID
-      setUserId(currentUserId);
-
-      // Track the processed state
-      lastProcessedState = { event, userId: currentUserId };
-    };
-
-    const handleAuthStateChange = (event: string, session: Session | null) => {
-      // Store the latest auth state
-      pendingAuthState = { event, session };
-
-      // Clear existing debounce timer
-      if (debounceTimeout) {
-        clearTimeout(debounceTimeout);
-      }
-
-      // [AuthDebounce] Wait 150ms for additional auth events before processing
-      debounceTimeout = setTimeout(() => {
-        if (pendingAuthState) {
-          const { event: pendingEvent, session: pendingSession } = pendingAuthState;
-          React.startTransition(() => {
-            processAuthChange(pendingEvent, pendingSession);
-          });
-          pendingAuthState = null;
-        }
-        debounceTimeout = null;
-      }, 150);
-    };
-
-    supabase().auth.getSession().then(({ data: { session } }) => {
-      setUserId(session?.user?.id);
-      setIsLoading(false);
-      lastProcessedState = { event: 'INITIAL_SESSION', userId: session?.user?.id };
+      setAuthState({
+        userId: probe.ok ? probe.userId : null,
+        isLoading: false,
+      });
     });
 
-    // Use centralized auth manager instead of direct listener
-    const authManager = getAuthStateManager();
-    let unsubscribe: (() => void) | null = null;
-
-    if (authManager) {
-      unsubscribe = authManager.subscribe('AuthContext', handleAuthStateChange);
-    } else {
-      // Fallback to direct listener if auth manager not available
-      const { data: listener } = supabase().auth.onAuthStateChange(handleAuthStateChange);
-      unsubscribe = () => listener.subscription.unsubscribe();
-    }
-
     return () => {
-      if (unsubscribe) unsubscribe();
-      if (debounceTimeout) {
-        clearTimeout(debounceTimeout);
-        // Process final pending state on cleanup if needed
-        if (pendingAuthState) {
-          processAuthChange(pendingAuthState.event, pendingAuthState.session);
-        }
-      }
+      cancelled = true;
     };
   }, []);
 
   const contextValue = useMemo(
     () => ({
-      userId: userId ?? null,
-      isAuthenticated: !!userId,
-      isLoading,
+      userId: authState.userId,
+      isAuthenticated: !!authState.userId,
+      isLoading: authState.isLoading,
     }),
-    [userId, isLoading]
+    [authState]
   );
 
   return (

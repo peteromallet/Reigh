@@ -99,14 +99,3 @@ export function hasStoredSessionToken(): boolean {
   return readAccessTokenFromStorage() !== null;
 }
 
-export function probeStoredSessionToken(): OperationResult<boolean> {
-  const rawSessionProbe = probeRawSession();
-  if (!rawSessionProbe.ok) {
-    return rawSessionProbe;
-  }
-
-  return operationSuccess(
-    readString(rawSessionProbe.value?.access_token) !== null,
-    { policy: rawSessionProbe.policy },
-  );
-}

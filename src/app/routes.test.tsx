@@ -5,10 +5,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from './routes';
 
 const {
-  probeStoredSessionTokenMock,
   normalizeAndPresentErrorMock,
 } = vi.hoisted(() => ({
-  probeStoredSessionTokenMock: vi.fn(),
   normalizeAndPresentErrorMock: vi.fn(),
 }));
 
@@ -78,9 +76,6 @@ vi.mock('@/shared/components/ReighLoading', () => ({
 vi.mock('@/shared/components/ToolErrorBoundary', () => ({
   ToolErrorBoundary: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
-vi.mock('@/shared/lib/supabaseSession', () => ({
-  probeStoredSessionToken: probeStoredSessionTokenMock,
-}));
 vi.mock('@/shared/lib/errorHandling/runtimeError', () => ({
   normalizeAndPresentError: normalizeAndPresentErrorMock,
 }));
@@ -95,8 +90,6 @@ function renderRoute(path: string) {
 
 describe('AppRoutes', () => {
   beforeEach(() => {
-    probeStoredSessionTokenMock.mockReset();
-    probeStoredSessionTokenMock.mockReturnValue({ ok: true, value: null });
     normalizeAndPresentErrorMock.mockReset();
   });
 
@@ -106,12 +99,12 @@ describe('AppRoutes', () => {
     expect(await screen.findByTestId('home-page')).toBeInTheDocument();
   });
 
-  it('redirects / to /tools when a stored session exists', async () => {
-    probeStoredSessionTokenMock.mockReturnValue({ ok: true, value: { access_token: 'token' } });
-
+  it('renders the public home page at / without any stored-session probe', async () => {
     renderRoute('/');
 
-    expect(await screen.findByTestId('default-tool-redirect')).toBeInTheDocument();
+    // Auth no longer forks the root route: `/` renders HomePage directly
+    // (the fixed local user is resolved by the bridge probe in AuthProvider).
+    expect(await screen.findByTestId('home-page')).toBeInTheDocument();
   });
 
   it('renders nested tool routes through the layout outlet', () => {

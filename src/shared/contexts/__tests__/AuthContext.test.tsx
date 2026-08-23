@@ -1,30 +1,19 @@
 /**
- * AuthContext Tests
+ * AuthContext Tests — boot/auth seam over the bridge probe.
  *
- * Tests for authentication state management context.
+ * The provider resolves the fixed local user from a single
+ * `/api/astrid/health` probe per boot (no Supabase session machinery).
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 
-// Use vi.hoisted for variables referenced inside vi.mock factories
-const { mockGetSession, mockOnAuthStateChange, getAuthStateManagerMock } = vi.hoisted(() => ({
-  mockGetSession: vi.fn(),
-  mockOnAuthStateChange: vi.fn(),
-  getAuthStateManagerMock: vi.fn(),
+const { probeBridgeSessionMock } = vi.hoisted(() => ({
+  probeBridgeSessionMock: vi.fn(),
 }));
 
-vi.mock('@/integrations/supabase/client', () => ({
-  getSupabaseClient: () => ({
-    auth: {
-      getSession: mockGetSession,
-      onAuthStateChange: mockOnAuthStateChange,
-    },
-  }),
-}));
-
-vi.mock('@/integrations/supabase/auth/AuthStateManager', () => ({
-  getAuthStateManager: () => getAuthStateManagerMock(),
+vi.mock('@/shared/auth/bridgeSession', () => ({
+  probeBridgeSession: probeBridgeSessionMock,
 }));
 
 import { AuthProvider, useAuth } from '../AuthContext';
@@ -44,17 +33,7 @@ function AuthConsumer() {
 describe('AuthContext', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    getAuthStateManagerMock.mockReturnValue(null);
-
-    // Default mock: no session
-    mockGetSession.mockResolvedValue({
-      data: { session: null },
-    });
-    mockOnAuthStateChange.mockReturnValue({
-      data: {
-        subscription: { unsubscribe: vi.fn() },
-      },
-    });
+    probeBridgeSessionMock.mockReset();
   });
 
   describe('useAuth hook', () => {
@@ -77,20 +56,23 @@ describe('AuthContext', () => {
 
   describe('AuthProvider', () => {
     it('renders children', async () => {
+      probeBridgeSessionMock.mockResolvedValue({ ok: true, userId: 'local-user' });
+
       render(
         <AuthProvider>
           <div data-testid="child">Hello</div>
         </AuthProvider>
       );
-
       await waitFor(() => {
         expect(screen.getByTestId('child')).toHaveTextContent('Hello');
       });
     });
 
-    it('starts in loading state', () => {
-      // Make getSession hang (never resolve)
-      mockGetSession.mockReturnValue(new Promise(() => {}));
+    it('starts in loading state while probing', () => {
+      // A probe that never settles: isLoading must stay true.
+      probeBridgeSessionMock.mockReturnValue(
+        new Promise<{ ok: true; userId: string }>(() => {}),
+      );
 
       render(
         <AuthProvider>
@@ -99,12 +81,28 @@ describe('AuthContext', () => {
       );
 
       expect(screen.getByTestId('isLoading')).toHaveTextContent('true');
+      expect(screen.getByTestId('userId')).toHaveTextContent('null');
     });
 
-    it('provides null userId when no session', async () => {
-      mockGetSession.mockResolvedValue({
-        data: { session: null },
+    it('resolves the fixed local user after a healthy probe', async () => {
+      probeBridgeSessionMock.mockResolvedValue({ ok: true, userId: 'local-user' });
+
+      render(
+        <AuthProvider>
+          <AuthConsumer />
+        </AuthProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('isLoading')).toHaveTextContent('false');
       });
+
+      expect(screen.getByTestId('userId')).toHaveTextContent('local-user');
+      expect(screen.getByTestId('isAuthenticated')).toHaveTextContent('true');
+    });
+
+    it('exposes an honest failure state when the probe fails — no retry loop', async () => {
+      probeBridgeSessionMock.mockResolvedValue({ ok: false, reason: 'bridge unreachable' });
 
       render(
         <AuthProvider>
@@ -118,69 +116,11 @@ describe('AuthContext', () => {
 
       expect(screen.getByTestId('userId')).toHaveTextContent('null');
       expect(screen.getByTestId('isAuthenticated')).toHaveTextContent('false');
-    });
 
-    it('provides userId when session exists', async () => {
-      mockGetSession.mockResolvedValue({
-        data: {
-          session: { user: { id: 'user-123' } },
-        },
-      });
-
-      render(
-        <AuthProvider>
-          <AuthConsumer />
-        </AuthProvider>
-      );
-
+      // One probe per boot: failure is terminal for this mount, never retried.
       await waitFor(() => {
-        expect(screen.getByTestId('isLoading')).toHaveTextContent('false');
+        expect(probeBridgeSessionMock).toHaveBeenCalledTimes(1);
       });
-
-      expect(screen.getByTestId('userId')).toHaveTextContent('user-123');
-      expect(screen.getByTestId('isAuthenticated')).toHaveTextContent('true');
-    });
-
-    it('subscribes to auth state changes via fallback listener', async () => {
-      mockGetSession.mockResolvedValue({
-        data: { session: null },
-      });
-
-      render(
-        <AuthProvider>
-          <AuthConsumer />
-        </AuthProvider>
-      );
-
-      await waitFor(() => {
-        expect(screen.getByTestId('isLoading')).toHaveTextContent('false');
-      });
-
-      expect(mockOnAuthStateChange).toHaveBeenCalledWith(expect.any(Function));
-    });
-
-    it('uses auth manager when available', async () => {
-      const mockSubscribe = vi.fn().mockReturnValue(() => {});
-      getAuthStateManagerMock.mockReturnValue({
-        subscribe: mockSubscribe,
-      });
-
-      mockGetSession.mockResolvedValue({
-        data: { session: null },
-      });
-
-      render(
-        <AuthProvider>
-          <AuthConsumer />
-        </AuthProvider>
-      );
-
-      await waitFor(() => {
-        expect(screen.getByTestId('isLoading')).toHaveTextContent('false');
-      });
-
-      expect(mockSubscribe).toHaveBeenCalledWith('AuthContext', expect.any(Function));
-      expect(mockOnAuthStateChange).not.toHaveBeenCalled();
     });
   });
 });
