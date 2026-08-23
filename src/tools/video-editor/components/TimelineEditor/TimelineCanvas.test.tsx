@@ -1940,4 +1940,53 @@ describe('TimelineCanvas — dataKind V1 lane strip', () => {
     expect(setContextTarget).toHaveBeenCalledWith(expect.objectContaining(expected));
     expect(setInspectorTarget).toHaveBeenCalledWith(expect.objectContaining(expected));
   });
+
+  it('moves the real shared scroller before focusing a virtualized End target', async () => {
+    const items = Array.from({ length: 500 }, (_, index) => ({
+      item: {
+        id: `dense-${index}`,
+        shape: 'interval',
+        domain: 'timeline_seconds',
+        extent: { start: index * 0.02, end: index * 0.02 + 0.01 },
+        schemaRef: 'dense/v1',
+        payload: null,
+        provenance: { adapterId: 'test', adapterVersion: '1' },
+      },
+      timelineStart: index * 0.02,
+      timelineEnd: index * 0.02 + 0.01,
+    }));
+    useDataLanesMock.mockReturnValue({
+      config: {},
+      dataLanes: [laneFixture({
+        laneId: 'opaque:dense/v1',
+        kindId: '',
+        label: 'Dense',
+        opaque: true,
+        laneRenderer: undefined,
+        items,
+      })],
+    });
+    const { container } = renderCanvas({ rows: [row], tracks: [track], startLeft: 144 });
+    const editArea = container.querySelector<HTMLElement>('.timeline-canvas-edit-area')!;
+    Object.defineProperty(editArea, 'clientWidth', { configurable: true, value: 200 });
+    const scrollTo = vi.fn((options: ScrollToOptions) => {
+      editArea.scrollLeft = Number(options.left ?? 0);
+    });
+    Object.defineProperty(editArea, 'scrollTo', { configurable: true, value: scrollTo });
+    fireEvent(window, new Event('resize'));
+
+    const first = await screen.findByTitle('dense-0');
+    first.focus();
+    fireEvent.keyDown(first, { key: 'End' });
+
+    const last = await screen.findByTitle('dense-499');
+    await waitFor(() => expect(last).toHaveFocus());
+    expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({
+      left: expect.any(Number),
+      behavior: 'auto',
+    }));
+    expect(Number(scrollTo.mock.calls.at(-1)?.[0].left)).toBeGreaterThan(200);
+    expect(editArea.scrollLeft).toBe(Number(scrollTo.mock.calls.at(-1)?.[0].left));
+    expect(screen.queryByTitle('dense-0')).toBeNull();
+  });
 });

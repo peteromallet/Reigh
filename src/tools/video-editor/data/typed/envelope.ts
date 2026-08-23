@@ -102,6 +102,12 @@ export interface DataLaneView {
   schemaRef: string;
   shape: DataShape;
   domain: DataCoordinateDomain;
+  /**
+   * Canonical temporal order: ascending `timelineStart`, then ascending item
+   * id. `assembleDataLanes` establishes this once so viewport consumers can
+   * build/query an index without sorting on every scroll. Legacy direct callers
+   * are normalized defensively by DataLaneRow.
+   */
   items: readonly DataLaneItemView[];
   hidden: boolean;
   height: number;

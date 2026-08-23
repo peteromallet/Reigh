@@ -330,6 +330,7 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
   const pendingCenterClipIdRef = useRef<string | null>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
+  const [viewportWidth, setViewportWidth] = useState(0);
   const [shotGroupMenu, setShotGroupMenu] = useState<ShotGroupMenuState>(null);
   const [timelineAreaMenu, setTimelineAreaMenu] = useState<TimelineAreaContextMenuState | null>(null);
   const shotGroupMenuRef = useRef<HTMLDivElement>(null);
@@ -342,7 +343,24 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
   const setScrollContainer = useCallback((node: HTMLDivElement | null) => {
     scrollContainerRef.current = node;
     setOverlayScrollContainer(node);
+    setViewportWidth(node?.clientWidth ?? 0);
   }, []);
+
+  useLayoutEffect(() => {
+    if (!overlayScrollContainer) return;
+    const syncWidth = () => {
+      const nextWidth = overlayScrollContainer.clientWidth;
+      setViewportWidth((current) => current === nextWidth ? current : nextWidth);
+    };
+    syncWidth();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', syncWidth);
+      return () => window.removeEventListener('resize', syncWidth);
+    }
+    const observer = new ResizeObserver(syncWidth);
+    observer.observe(overlayScrollContainer);
+    return () => observer.disconnect();
+  }, [overlayScrollContainer]);
 
   useEffect(() => () => {
     overlayStores.viewport.dispose();
@@ -435,6 +453,35 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
     minScaleCount,
     maxScaleCount,
   });
+  const scrollDataLaneItemIntoView = useCallback((timelineStart: number, timelineEnd: number) => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const measuredWidth = container.clientWidth || viewportWidth;
+    const canvasViewportWidth = Math.max(1, measuredWidth - LABEL_WIDTH);
+    const itemLeft = Math.max(0, timelineStart * pixelsPerSecond);
+    const itemRight = Math.max(itemLeft + 2, timelineEnd * pixelsPerSecond);
+    const visibleLeft = container.scrollLeft;
+    const visibleRight = visibleLeft + canvasViewportWidth;
+    let nextScrollLeft = visibleLeft;
+    if (itemRight - itemLeft > canvasViewportWidth) {
+      nextScrollLeft = itemLeft + (itemRight - itemLeft - canvasViewportWidth) / 2;
+    } else if (itemLeft < visibleLeft) {
+      nextScrollLeft = itemLeft;
+    } else if (itemRight > visibleRight) {
+      nextScrollLeft = itemRight - canvasViewportWidth;
+    }
+    const maximumScrollLeft = Math.max(0, totalWidth - measuredWidth);
+    nextScrollLeft = clamp(nextScrollLeft, 0, maximumScrollLeft);
+    if (nextScrollLeft === visibleLeft) return;
+    if (typeof container.scrollTo === 'function') {
+      container.scrollTo({ left: nextScrollLeft, top: container.scrollTop, behavior: 'auto' });
+    } else {
+      container.scrollLeft = nextScrollLeft;
+    }
+    // Do not wait for the browser's scroll event: the target must mount in the
+    // same interaction turn so focus restoration cannot observe a blank lane.
+    setScrollLeft(nextScrollLeft);
+  }, [pixelsPerSecond, totalWidth, viewportWidth]);
   const overlayGeometry = useMemo(() => createTimelineOverlayGeometry({
     scale,
     scaleWidth,
@@ -863,6 +910,9 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
     if (nextMetrics.scrollLeft !== scrollLeft) {
       setScrollLeft(nextMetrics.scrollLeft);
     }
+    if (event.currentTarget.clientWidth !== viewportWidth) {
+      setViewportWidth(event.currentTarget.clientWidth);
+    }
     if (nextMetrics.scrollTop !== scrollTop) {
       setScrollTop(nextMetrics.scrollTop);
     }
@@ -1035,6 +1085,8 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
             data={laneData}
             startLeft={startLeft}
             pixelsPerSecond={pixelsPerSecond}
+            viewport={{ scrollLeft, clientWidth: viewportWidth }}
+            onRequestItemIntoView={scrollDataLaneItemIntoView}
             setContextTarget={ops?.setContextTarget}
             setInspectorTarget={ops?.setInspectorTarget}
           />

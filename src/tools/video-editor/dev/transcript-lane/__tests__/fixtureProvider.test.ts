@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { SupabaseDataProvider } from '@/tools/video-editor/data/SupabaseDataProvider.ts';
 import type { DataProvider } from '@/tools/video-editor/data/DataProvider.ts';
 import {
+  DENSE_TRANSCRIPT_FIXTURE_SEGMENT_COUNT,
   TRANSCRIPT_LANE_FIXTURE_PARAM,
   withTranscriptFixture,
 } from '../fixtureProvider.ts';
@@ -24,6 +25,14 @@ describe('withTranscriptFixture', () => {
     const profile = await wrapped.loadAssetProfile!('any-asset-id');
     expect(profile?.transcript?.segments).toHaveLength(2);
     expect(profile?.transcript?.segments?.[0]).toMatchObject({ start: 2, end: 4 });
+  });
+
+  it('provides the bounded dense browser fixture only when explicitly requested', async () => {
+    const base = new SupabaseDataProvider({ projectId: 'p1', userId: 'u1' }) as unknown as DataProvider;
+    const profile = await withTranscriptFixture(base, { dense: true }).loadAssetProfile!('any-asset-id');
+    expect(profile?.transcript?.segments).toHaveLength(DENSE_TRANSCRIPT_FIXTURE_SEGMENT_COUNT);
+    expect(profile?.transcript?.segments?.[0]).toMatchObject({ start: 0, text: 'Dense fixture segment 1' });
+    expect(profile?.transcript?.segments?.at(-1)?.end).toBeLessThanOrEqual(4.01);
   });
 
   it('exposes the opt-in flag name', () => {

@@ -21,9 +21,11 @@ import {
   type KeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -41,6 +43,10 @@ export interface DataLaneRowProps {
   readonly lane: DataLaneView;
   /** Shared px-per-second scale — same value the ruler and tracks use. */
   readonly pixelsPerSecond: number;
+  /** Actual horizontal timeline viewport, in scroll-container pixels. */
+  readonly viewport?: DataLaneViewport;
+  /** Move the real timeline scroller so a keyboard target becomes visible. */
+  readonly onRequestItemIntoView?: (timelineStart: number, timelineEnd: number) => void;
   /** Owning extension of the registered kind, for boundary recovery keys. */
   readonly extensionId?: string;
   /** Host-rendered whole-lane actions bound to the kind registration. */
@@ -72,12 +78,142 @@ function boundedActionError(cause: unknown): string {
 /** Maximum interactive item controls a lane may contribute to the DOM. */
 export const DATA_LANE_DOM_ITEM_BUDGET = 128;
 
+/** Extra timeline pixels mounted on either side of the visible canvas. */
+export const DATA_LANE_VIEWPORT_OVERSCAN_PX = 256;
+
+/** Isolated-render fallback; TimelineCanvas always supplies measured geometry. */
+export const DATA_LANE_DEFAULT_VIEWPORT_WIDTH_PX = 1_024;
+
+export interface DataLaneViewport {
+  readonly scrollLeft: number;
+  readonly clientWidth: number;
+}
+
 type NavigationDirection = 'previous' | 'next' | 'first' | 'last';
 
-function windowStartFor(activeIndex: number, totalItemCount: number): number {
-  if (totalItemCount <= DATA_LANE_DOM_ITEM_BUDGET) return 0;
-  const centered = activeIndex - Math.floor(DATA_LANE_DOM_ITEM_BUDGET / 2);
-  return Math.max(0, Math.min(centered, totalItemCount - DATA_LANE_DOM_ITEM_BUDGET));
+interface DataLaneTemporalIndex {
+  /** Canonical order is timelineStart, then occurrence id. */
+  readonly items: DataLaneView['items'];
+  /** Monotonic prefix maximum lets long overlapping intervals be found. */
+  readonly prefixMaxEnd: Float64Array;
+}
+
+interface DataLaneItemWindow {
+  readonly startIndex: number;
+  readonly endIndex: number;
+  readonly viewportStartSeconds: number;
+  readonly viewportEndSeconds: number;
+}
+
+function timelineEndForIndex(view: DataLaneView['items'][number]): number {
+  return Math.max(view.timelineStart, view.timelineEnd);
+}
+
+function compareLaneItems(
+  left: DataLaneView['items'][number],
+  right: DataLaneView['items'][number],
+): number {
+  return (left.timelineStart - right.timelineStart)
+    || (left.item.id < right.item.id ? -1 : left.item.id > right.item.id ? 1 : 0);
+}
+
+function createTemporalIndex(items: DataLaneView['items']): DataLaneTemporalIndex {
+  let ordered = true;
+  for (let index = 1; index < items.length; index += 1) {
+    if (compareLaneItems(items[index - 1], items[index]) > 0) {
+      ordered = false;
+      break;
+    }
+  }
+  // assembleDataLanes guarantees this order. The fallback keeps isolated and
+  // legacy callers safe without paying a sort for canonical host lanes.
+  const indexedItems = ordered ? items : [...items].sort(compareLaneItems);
+  const prefixMaxEnd = new Float64Array(indexedItems.length);
+  let maximumEnd = Number.NEGATIVE_INFINITY;
+  for (let index = 0; index < indexedItems.length; index += 1) {
+    maximumEnd = Math.max(maximumEnd, timelineEndForIndex(indexedItems[index]));
+    prefixMaxEnd[index] = maximumEnd;
+  }
+  return { items: indexedItems, prefixMaxEnd };
+}
+
+function lowerBoundPrefixEnd(prefixMaxEnd: Float64Array, target: number): number {
+  let low = 0;
+  let high = prefixMaxEnd.length;
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2);
+    if (prefixMaxEnd[middle] < target) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
+
+function upperBoundStart(items: DataLaneView['items'], target: number): number {
+  let low = 0;
+  let high = items.length;
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2);
+    if (items[middle].timelineStart <= target) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
+
+function centeredBoundedWindow(
+  rangeStart: number,
+  rangeEnd: number,
+  anchorIndex: number,
+): Pick<DataLaneItemWindow, 'startIndex' | 'endIndex'> {
+  const rangeLength = rangeEnd - rangeStart;
+  if (rangeLength <= DATA_LANE_DOM_ITEM_BUDGET) {
+    return { startIndex: rangeStart, endIndex: rangeEnd };
+  }
+  const desiredStart = anchorIndex - Math.floor(DATA_LANE_DOM_ITEM_BUDGET / 2);
+  const startIndex = Math.max(
+    rangeStart,
+    Math.min(desiredStart, rangeEnd - DATA_LANE_DOM_ITEM_BUDGET),
+  );
+  return { startIndex, endIndex: startIndex + DATA_LANE_DOM_ITEM_BUDGET };
+}
+
+function selectViewportWindow(
+  index: DataLaneTemporalIndex,
+  pixelsPerSecond: number,
+  viewport: DataLaneViewport,
+  pinnedIndex?: number,
+): DataLaneItemWindow {
+  const safePixelsPerSecond = Math.max(Number.EPSILON, pixelsPerSecond);
+  // The sticky LABEL_WIDTH gutter occludes the left side of the scroller. In
+  // row-canvas coordinates its right edge is exactly scrollLeft, so t=0 is
+  // visible at scrollLeft=0 and late scrolls map directly to scrollLeft / pps.
+  const canvasViewportWidth = Math.max(0, viewport.clientWidth - LABEL_WIDTH);
+  const viewportStartSeconds = Math.max(0, viewport.scrollLeft / safePixelsPerSecond);
+  const viewportEndSeconds = Math.max(
+    viewportStartSeconds,
+    (viewport.scrollLeft + canvasViewportWidth) / safePixelsPerSecond,
+  );
+  if (index.items.length === 0) {
+    return { startIndex: 0, endIndex: 0, viewportStartSeconds, viewportEndSeconds };
+  }
+
+  if (pinnedIndex !== undefined) {
+    const boundedPin = Math.max(0, Math.min(pinnedIndex, index.items.length - 1));
+    const pinned = centeredBoundedWindow(0, index.items.length, boundedPin);
+    return { ...pinned, viewportStartSeconds, viewportEndSeconds };
+  }
+
+  const overscanSeconds = DATA_LANE_VIEWPORT_OVERSCAN_PX / safePixelsPerSecond;
+  const queryStart = Math.max(0, viewportStartSeconds - overscanSeconds);
+  const queryEnd = viewportEndSeconds + overscanSeconds;
+  const rangeStart = lowerBoundPrefixEnd(index.prefixMaxEnd, queryStart);
+  const rangeEnd = upperBoundStart(index.items, queryEnd);
+  if (rangeStart >= rangeEnd) {
+    return { startIndex: rangeStart, endIndex: rangeStart, viewportStartSeconds, viewportEndSeconds };
+  }
+  const viewportMiddle = (viewportStartSeconds + viewportEndSeconds) / 2;
+  const anchorIndex = upperBoundStart(index.items, viewportMiddle);
+  const bounded = centeredBoundedWindow(rangeStart, rangeEnd, anchorIndex);
+  return { ...bounded, viewportStartSeconds, viewportEndSeconds };
 }
 
 function navigationDirection(event: KeyboardEvent<HTMLElement>): NavigationDirection | null {
@@ -100,6 +236,8 @@ function navigationDirection(event: KeyboardEvent<HTMLElement>): NavigationDirec
 export function DataLaneRow({
   lane,
   pixelsPerSecond,
+  viewport,
+  onRequestItemIntoView,
   extensionId,
   laneActions,
   onSelectLane,
@@ -108,12 +246,41 @@ export function DataLaneRow({
   const rowRef = useRef<HTMLDivElement>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [focusItemId, setFocusItemId] = useState<string>();
-  const totalItemCount = lane.items.length;
+  const [pinnedIndex, setPinnedIndex] = useState<number>();
+  const temporalIndex = useMemo(() => createTemporalIndex(lane.items), [lane.items]);
+  const orderedItems = temporalIndex.items;
+  const totalItemCount = orderedItems.length;
   const clampedActiveIndex = Math.max(0, Math.min(activeIndex, Math.max(0, totalItemCount - 1)));
-  const windowStartIndex = windowStartFor(clampedActiveIndex, totalItemCount);
-  const windowEndIndex = Math.min(totalItemCount, windowStartIndex + DATA_LANE_DOM_ITEM_BUDGET);
-  const windowItems = lane.items.slice(windowStartIndex, windowEndIndex);
-  const activeItemId = lane.items[clampedActiveIndex]?.item.id;
+  const resolvedViewport = viewport ?? {
+    scrollLeft: 0,
+    clientWidth: DATA_LANE_DEFAULT_VIEWPORT_WIDTH_PX,
+  };
+  // Isolated renderers have no real scroller to observe, so retain the legacy
+  // active-item window only for that compatibility path. TimelineCanvas always
+  // supplies viewport geometry and never takes this branch.
+  const pinnedWindowIndex = pinnedIndex ?? (viewport ? undefined : clampedActiveIndex);
+  const itemWindow = selectViewportWindow(
+    temporalIndex,
+    pixelsPerSecond,
+    resolvedViewport,
+    pinnedWindowIndex,
+  );
+  const { startIndex: windowStartIndex, endIndex: windowEndIndex } = itemWindow;
+  const windowItems = useMemo(
+    () => orderedItems.slice(windowStartIndex, windowEndIndex),
+    [orderedItems, windowEndIndex, windowStartIndex],
+  );
+  const windowActiveIndex = clampedActiveIndex >= windowStartIndex && clampedActiveIndex < windowEndIndex
+    ? clampedActiveIndex
+    : Math.min(windowEndIndex - 1, Math.max(windowStartIndex, Math.floor((windowStartIndex + windowEndIndex) / 2)));
+  const activeItemId = orderedItems[windowActiveIndex]?.item.id;
+  const getAllRenderItems = useMemo(() => {
+    let cached: readonly DataLaneRenderItem[] | undefined;
+    return () => {
+      cached ??= orderedItems.map(toRenderItem);
+      return cached;
+    };
+  }, [orderedItems]);
 
   const absoluteIndexInWindow = useCallback((itemId: string): number => {
     const localIndex = windowItems.findIndex((view) => view.item.id === itemId);
@@ -123,6 +290,7 @@ export function DataLaneRow({
   const selectWindowItem = useCallback((itemId: string) => {
     const index = absoluteIndexInWindow(itemId);
     if (index >= 0) setActiveIndex(index);
+    setPinnedIndex(undefined);
     setFocusItemId(undefined);
     onSelectItem?.(itemId);
   }, [absoluteIndexInWindow, onSelectItem]);
@@ -136,12 +304,33 @@ export function DataLaneRow({
     if (direction === 'next') nextIndex = Math.min(totalItemCount - 1, currentIndex + 1);
     if (direction === 'first') nextIndex = 0;
     if (direction === 'last') nextIndex = totalItemCount - 1;
-    const nextItemId = lane.items[nextIndex]?.item.id;
-    if (!nextItemId) return;
+    const nextItem = orderedItems[nextIndex];
+    if (!nextItem) return;
+    const nextItemId = nextItem.item.id;
     setActiveIndex(nextIndex);
+    // State and scroll updates batch in React. Pin the requested item during
+    // that hand-off so focus never lands in an empty/unmounted window.
+    setPinnedIndex(nextIndex);
     setFocusItemId(nextItemId);
+    onRequestItemIntoView?.(nextItem.timelineStart, nextItem.timelineEnd);
     onSelectItem?.(nextItemId);
-  }, [absoluteIndexInWindow, lane.items, onSelectItem, totalItemCount]);
+  }, [absoluteIndexInWindow, onRequestItemIntoView, onSelectItem, orderedItems, totalItemCount]);
+
+  useEffect(() => {
+    if (pinnedIndex === undefined) return;
+    const pinnedItem = orderedItems[pinnedIndex];
+    if (!pinnedItem) {
+      setPinnedIndex(undefined);
+      return;
+    }
+    const itemEnd = timelineEndForIndex(pinnedItem);
+    if (
+      pinnedItem.timelineStart <= itemWindow.viewportEndSeconds
+      && itemEnd >= itemWindow.viewportStartSeconds
+    ) {
+      setPinnedIndex(undefined);
+    }
+  }, [itemWindow.viewportEndSeconds, itemWindow.viewportStartSeconds, orderedItems, pinnedIndex]);
 
   // Host-painted controls and cooperative extension renderers expose their
   // item id on the focusable element. Restore focus after the window moves.
@@ -150,7 +339,7 @@ export function DataLaneRow({
     const controls = rowRef.current?.querySelectorAll<HTMLElement>('[data-item-id]');
     const target = controls ? [...controls].find((element) => element.dataset.itemId === focusItemId) : undefined;
     target?.focus({ preventScroll: true });
-  }, [focusItemId, windowStartIndex]);
+  }, [focusItemId, windowEndIndex, windowStartIndex]);
 
   return (
     <div
@@ -161,6 +350,8 @@ export function DataLaneRow({
       data-total-items={totalItemCount}
       data-window-start={windowStartIndex}
       data-window-end={windowEndIndex}
+      data-viewport-start={itemWindow.viewportStartSeconds}
+      data-viewport-end={itemWindow.viewportEndSeconds}
       className="relative flex border-t border-border/40"
       style={{ height: lane.height }}
       onClick={onSelectLane}
@@ -190,6 +381,7 @@ export function DataLaneRow({
             totalItemCount,
             activeItemId,
             focusItemId,
+            getAllRenderItems,
             onSelectItem: selectWindowItem,
             onNavigateItem: navigateWindow,
           })}
@@ -198,7 +390,7 @@ export function DataLaneRow({
           <LaneActionMenu
             laneLabel={lane.label}
             actions={laneActions}
-            items={lane.items.map(toRenderItem)}
+            getItems={getAllRenderItems}
           />
         ) : null}
       </div>
@@ -209,10 +401,10 @@ export function DataLaneRow({
 interface LaneActionMenuProps {
   readonly laneLabel: string;
   readonly actions: readonly DataLaneActionDescriptor[];
-  readonly items: readonly DataLaneRenderItem[];
+  readonly getItems: () => readonly DataLaneRenderItem[];
 }
 
-function LaneActionMenu({ laneLabel, actions, items }: LaneActionMenuProps) {
+const LaneActionMenu = memo(function LaneActionMenu({ laneLabel, actions, getItems }: LaneActionMenuProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const actionRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -290,7 +482,7 @@ function LaneActionMenu({ laneLabel, actions, items }: LaneActionMenuProps) {
     setError(undefined);
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
     try {
-      const invocation = Promise.resolve().then(() => action.invoke(items));
+      const invocation = Promise.resolve().then(() => action.invoke(getItems()));
       const timeout = new Promise<never>((_resolve, reject) => {
         timeoutId = setTimeout(() => {
           reject(new Error(`Action timed out after ${DATA_LANE_ACTION_TIMEOUT_MS / 1_000} seconds. Try again.`));
@@ -304,7 +496,7 @@ function LaneActionMenu({ laneLabel, actions, items }: LaneActionMenuProps) {
       if (timeoutId !== undefined) clearTimeout(timeoutId);
       setRunningActionId(undefined);
     }
-  }, [closeAndRestoreFocus, items]);
+  }, [closeAndRestoreFocus, getItems]);
 
   const stopRowSelection = (event: ReactMouseEvent<HTMLElement>) => event.stopPropagation();
 
@@ -395,7 +587,7 @@ function LaneActionMenu({ laneLabel, actions, items }: LaneActionMenuProps) {
       , document.body) : null}
     </div>
   );
-}
+});
 
 interface PaintLaneArgs {
   readonly lane: DataLaneView;
@@ -407,6 +599,7 @@ interface PaintLaneArgs {
   readonly totalItemCount: number;
   readonly activeItemId?: string;
   readonly focusItemId?: string;
+  readonly getAllRenderItems: () => readonly DataLaneRenderItem[];
   readonly onSelectItem: (itemId: string) => void;
   readonly onNavigateItem: (itemId: string, direction: NavigationDirection) => void;
 }
@@ -434,6 +627,7 @@ function paintLane({
   totalItemCount,
   activeItemId,
   focusItemId,
+  getAllRenderItems,
   onSelectItem,
   onNavigateItem,
 }: PaintLaneArgs): ReactNode {
@@ -468,7 +662,7 @@ function paintLane({
       totalItemCount,
     },
     items: items.map(toRenderItem),
-    getAllItems: () => lane.items.map(toRenderItem),
+    getAllItems: getAllRenderItems,
   };
   const LaneRenderer = lane.laneRenderer as unknown as ComponentType<DataLaneRendererProps>;
   return (

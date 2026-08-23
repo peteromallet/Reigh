@@ -8,9 +8,9 @@
 // extent-bar press → `dataItem` target (laneId/itemId + registry-resolved
 // extension/contribution ids), empty lane chrome → `dataLane` target.
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { TimelineData } from '@/tools/video-editor/lib/timeline-data.ts';
-import type { FrozenDataItem } from '@/tools/video-editor/data/typed/envelope.ts';
+import type { DataLaneView, FrozenDataItem } from '@/tools/video-editor/data/typed/envelope.ts';
 import type {
   DataKindRegistryRecord,
 } from '@/tools/video-editor/data-kinds/DataKindRegistry.ts';
@@ -20,7 +20,12 @@ import {
 } from '@/tools/video-editor/data-kinds/DataKindRegistryContext.tsx';
 import type { DataLaneRendererProps } from '@reigh/editor-sdk';
 import { DataLaneList, type DataLaneListProps } from './DataLaneList.tsx';
-import { DATA_LANE_ACTION_TIMEOUT_MS, DATA_LANE_DOM_ITEM_BUDGET } from './DataLaneRow.tsx';
+import {
+  DATA_LANE_ACTION_TIMEOUT_MS,
+  DATA_LANE_DOM_ITEM_BUDGET,
+  DATA_LANE_VIEWPORT_OVERSCAN_PX,
+  DataLaneRow,
+} from './DataLaneRow.tsx';
 
 const START_LEFT = 144;
 const PPS = 50;
@@ -61,6 +66,8 @@ function renderList(
       data={props.data}
       startLeft={props.startLeft ?? START_LEFT}
       pixelsPerSecond={props.pixelsPerSecond ?? PPS}
+      viewport={props.viewport}
+      onRequestItemIntoView={props.onRequestItemIntoView}
       setContextTarget={props.setContextTarget}
       setInspectorTarget={props.setInspectorTarget}
     />,
@@ -249,6 +256,244 @@ describe('DataLaneList', () => {
       );
     },
   );
+
+  it.each([500, 5_000, 50_000])(
+    'mounts late-time ids and removes early ids after a real viewport move in a %i-item lane',
+    (itemCount) => {
+      const pixelsPerSecond = 4;
+      const clientWidth = START_LEFT + 256;
+      const items = Array.from({ length: itemCount }, (_, index) => ({
+        item: item(`item-${index}`),
+        timelineStart: index * 2,
+        timelineEnd: index * 2 + 0.5,
+      }));
+      const data = buildData([laneView({
+        laneId: 'opaque:late.schema/v1',
+        kindId: '',
+        opaque: true,
+        items,
+      })]);
+      const view = renderList({
+        data,
+        pixelsPerSecond,
+        viewport: { scrollLeft: 0, clientWidth },
+      });
+
+      const row = screen.getByTestId('data-lane-row');
+      expect(within(row).getByTitle('item-0')).toBeTruthy();
+      const lateIndex = itemCount - 25;
+      const lateScrollLeft = items[lateIndex].timelineStart * pixelsPerSecond;
+      view.rerender(
+        <DataLaneList
+          data={data}
+          pixelsPerSecond={pixelsPerSecond}
+          viewport={{ scrollLeft: lateScrollLeft, clientWidth }}
+        />,
+      );
+
+      expect(within(row).getByTitle(`item-${lateIndex}`)).toBeTruthy();
+      expect(within(row).queryByTitle('item-0')).toBeNull();
+      expect(within(row).getAllByTestId('data-lane-extent-bar').length)
+        .toBeLessThanOrEqual(DATA_LANE_DOM_ITEM_BUDGET);
+      expect(Number(row.getAttribute('data-window-start'))).toBeGreaterThan(0);
+      expect(Number(row.getAttribute('data-viewport-start'))).toBe(items[lateIndex].timelineStart);
+    },
+  );
+
+  it('includes overlapping, zero-duration, and exact overscan-boundary items', () => {
+    const pixelsPerSecond = 10;
+    const viewport = { scrollLeft: 5_000, clientWidth: START_LEFT + 100 };
+    const overscanSeconds = DATA_LANE_VIEWPORT_OVERSCAN_PX / pixelsPerSecond;
+    const queryStart = viewport.scrollLeft / pixelsPerSecond - overscanSeconds;
+    const queryEnd = (viewport.scrollLeft + viewport.clientWidth - START_LEFT) / pixelsPerSecond
+      + overscanSeconds;
+    const data = buildData([laneView({
+      laneId: 'opaque:edge.schema/v1',
+      kindId: '',
+      opaque: true,
+      items: [
+        { item: item('long-overlap'), timelineStart: 0, timelineEnd: 1_000 },
+        { item: item('ends-at-left-boundary'), timelineStart: queryStart - 10, timelineEnd: queryStart },
+        { item: item('zero-at-visible-start'), timelineStart: 500, timelineEnd: 500 },
+        { item: item('overlap-visible'), timelineStart: 505, timelineEnd: 507 },
+        { item: item('zero-at-visible-end'), timelineStart: 510, timelineEnd: 510 },
+        { item: item('starts-at-right-boundary'), timelineStart: queryEnd, timelineEnd: queryEnd + 4 },
+        { item: item('after-right-boundary'), timelineStart: queryEnd + 0.01, timelineEnd: queryEnd + 1 },
+      ],
+    })]);
+
+    renderList({ data, pixelsPerSecond, viewport });
+
+    const ids = within(screen.getByTestId('data-lane-row'))
+      .getAllByTestId('data-lane-extent-bar')
+      .map((bar) => bar.getAttribute('data-item-id'));
+    expect(ids).toEqual(expect.arrayContaining([
+      'long-overlap',
+      'ends-at-left-boundary',
+      'zero-at-visible-start',
+      'overlap-visible',
+      'zero-at-visible-end',
+      'starts-at-right-boundary',
+    ]));
+    expect(ids).not.toContain('after-right-boundary');
+  });
+
+  it('recomputes the temporal window for zoom and viewport resize', () => {
+    const items = Array.from({ length: 300 }, (_, index) => ({
+      item: item(`item-${index}`),
+      timelineStart: index * 10,
+      timelineEnd: index * 10 + 1,
+    }));
+    const data = buildData([laneView({
+      laneId: 'opaque:zoom.schema/v1',
+      kindId: '',
+      opaque: true,
+      items,
+    })]);
+    const view = renderList({
+      data,
+      pixelsPerSecond: 10,
+      viewport: { scrollLeft: 10_000, clientWidth: START_LEFT + 100 },
+    });
+    const row = screen.getByTestId('data-lane-row');
+    expect(within(row).getByTitle('item-100')).toBeTruthy();
+    expect(within(row).queryByTitle('item-50')).toBeNull();
+
+    view.rerender(
+      <DataLaneList
+        data={data}
+        pixelsPerSecond={20}
+        viewport={{ scrollLeft: 10_000, clientWidth: START_LEFT + 100 }}
+      />,
+    );
+    expect(within(row).getByTitle('item-50')).toBeTruthy();
+    expect(within(row).queryByTitle('item-100')).toBeNull();
+
+    view.rerender(
+      <DataLaneList
+        data={data}
+        pixelsPerSecond={20}
+        viewport={{ scrollLeft: 10_000, clientWidth: START_LEFT + 2_100 }}
+      />,
+    );
+    expect(within(row).getByTitle('item-60')).toBeTruthy();
+  });
+
+  it('scrolls Home, End, and arrow keyboard targets into view before restoring focus', async () => {
+    const pixelsPerSecond = 4;
+    const clientWidth = START_LEFT + 64;
+    const items = Array.from({ length: 500 }, (_, index) => ({
+      item: item(`item-${index}`),
+      timelineStart: index * 2,
+      timelineEnd: index * 2 + 0.5,
+    }));
+    const lane = laneView({
+      laneId: 'opaque:keyboard.schema/v1',
+      kindId: '',
+      opaque: true,
+      items,
+    }) as unknown as DataLaneView;
+    const onSelectItem = vi.fn();
+    const requested = vi.fn();
+
+    function KeyboardHarness() {
+      const [viewport, setViewport] = useState({ scrollLeft: 0, clientWidth });
+      return (
+        <DataLaneRow
+          lane={lane}
+          pixelsPerSecond={pixelsPerSecond}
+          viewport={viewport}
+          onRequestItemIntoView={(timelineStart, timelineEnd) => {
+            requested(timelineStart, timelineEnd);
+            setViewport({ scrollLeft: timelineStart * pixelsPerSecond, clientWidth });
+          }}
+          onSelectItem={onSelectItem}
+        />
+      );
+    }
+
+    render(<KeyboardHarness />);
+    const first = screen.getByTitle('item-0');
+    first.focus();
+    fireEvent.keyDown(first, { key: 'End' });
+    const last = await screen.findByTitle('item-499');
+    expect(last).toHaveFocus();
+    expect(requested).toHaveBeenLastCalledWith(998, 998.5);
+    expect(screen.queryByTitle('item-0')).toBeNull();
+
+    fireEvent.keyDown(last, { key: 'ArrowLeft' });
+    const previous = await screen.findByTitle('item-498');
+    expect(previous).toHaveFocus();
+    fireEvent.keyDown(previous, { key: 'Home' });
+    expect(await screen.findByTitle('item-0')).toHaveFocus();
+    expect(onSelectItem.mock.calls).toEqual([['item-499'], ['item-498'], ['item-0']]);
+  });
+
+  it('bounds render work and materializes a 50k full lane once, only on action invocation', async () => {
+    const itemCount = 50_000;
+    let payloadReads = 0;
+    let rendererCalls = 0;
+    const items = Array.from({ length: itemCount }, (_, index) => {
+      const laneItem = item(`item-${index}`) as FrozenDataItem;
+      Object.defineProperty(laneItem, 'payload', {
+        configurable: true,
+        get: () => {
+          payloadReads += 1;
+          return { index };
+        },
+      });
+      return { item: laneItem, timelineStart: index, timelineEnd: index + 0.25 };
+    });
+    const lane = laneView({
+      items,
+      laneRenderer: (props: DataLaneRendererProps) => {
+        rendererCalls += 1;
+        return <div data-testid="budget-renderer">{props.items.length}</div>;
+      },
+    }) as unknown as DataLaneView;
+    const invoke = vi.fn();
+    const actions = [{ id: 'all', label: 'All', invoke }];
+    const view = render(
+      <DataLaneRow
+        lane={lane}
+        pixelsPerSecond={1}
+        viewport={{ scrollLeft: 0, clientWidth: START_LEFT + 128 }}
+        laneActions={actions}
+      />,
+    );
+    const scrollUpdates = 24;
+    for (let update = 1; update <= scrollUpdates; update += 1) {
+      view.rerender(
+        <DataLaneRow
+          lane={lane}
+          pixelsPerSecond={1}
+          viewport={{ scrollLeft: update * 500, clientWidth: START_LEFT + 128 }}
+          laneActions={actions}
+        />,
+      );
+    }
+    expect(rendererCalls).toBeLessThanOrEqual(scrollUpdates + 2);
+    expect(payloadReads).toBeLessThanOrEqual((scrollUpdates + 2) * DATA_LANE_DOM_ITEM_BUDGET);
+    expect(screen.getByTestId('budget-renderer')).toHaveTextContent(String(DATA_LANE_DOM_ITEM_BUDGET));
+
+    const readsBeforeAction = payloadReads;
+    fireEvent.click(screen.getByRole('button', { name: 'Transcript actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'All' }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledOnce());
+    expect(invoke.mock.calls[0][0]).toHaveLength(itemCount);
+    expect(payloadReads - readsBeforeAction).toBe(itemCount);
+
+    const readsAfterAction = payloadReads;
+    view.rerender(
+      <DataLaneRow
+        lane={lane}
+        pixelsPerSecond={1}
+        viewport={{ scrollLeft: 20_000, clientWidth: START_LEFT + 128 }}
+        laneActions={actions}
+      />,
+    );
+    expect(payloadReads - readsAfterAction).toBeLessThanOrEqual(DATA_LANE_DOM_ITEM_BUDGET);
+  });
 
   it('contains a crashing laneRenderer inside the error boundary without losing sibling lanes', () => {
     const data = buildData([

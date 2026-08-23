@@ -25,7 +25,7 @@ import type {
 } from '@/tools/video-editor/lib/mobile-interaction-model.ts';
 import { visibleDataLanes } from '@/tools/video-editor/data-kinds/visibleDataLanes.ts';
 import { useDataKindRegistrySnapshot } from '@/tools/video-editor/data-kinds/DataKindRegistryContext.tsx';
-import { DataLaneRow } from './DataLaneRow.tsx';
+import { DataLaneRow, type DataLaneViewport } from './DataLaneRow.tsx';
 
 export interface DataLaneListProps {
   /** Patched TimelineData whose `dataLanes` carry the assembled views. */
@@ -38,12 +38,23 @@ export interface DataLaneListProps {
   readonly startLeft?: number;
   /** Shared px-per-second scale — same value the ruler and tracks use. */
   readonly pixelsPerSecond: number;
+  /** Measured timeline scroll viewport used for time-based item virtualization. */
+  readonly viewport?: DataLaneViewport;
+  /** Scroll the shared timeline viewport to a keyboard navigation target. */
+  readonly onRequestItemIntoView?: (timelineStart: number, timelineEnd: number) => void;
   /** Timeline interaction-model setters, shared with the overlay host. */
   readonly setContextTarget?: (target: TimelineContextTarget) => void;
   readonly setInspectorTarget?: (target: TimelineInspectorTarget) => void;
 }
 
-export function DataLaneList({ data, pixelsPerSecond, setContextTarget, setInspectorTarget }: DataLaneListProps) {
+export function DataLaneList({
+  data,
+  pixelsPerSecond,
+  viewport,
+  onRequestItemIntoView,
+  setContextTarget,
+  setInspectorTarget,
+}: DataLaneListProps) {
   const kindRecords = useDataKindRegistrySnapshot();
 
   const dispatch = useCallback((target: TimelineInteractionTarget) => {
@@ -67,6 +78,8 @@ export function DataLaneList({ data, pixelsPerSecond, setContextTarget, setInspe
           key={lane.laneId}
           lane={lane}
           pixelsPerSecond={pixelsPerSecond}
+          viewport={viewport}
+          onRequestItemIntoView={onRequestItemIntoView}
           extensionId={lane.kindId ? kindRecords.get(lane.kindId)?.ownerExtensionId : undefined}
           laneActions={lane.kindId ? kindRecords.get(lane.kindId)?.laneActions : undefined}
           onSelectLane={() => dispatch({

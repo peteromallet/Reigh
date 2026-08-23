@@ -21,17 +21,43 @@ const FIXTURE_SEGMENTS = [
   { start: 5, end: 8, text: 'Fixture segment two' },
 ] as const;
 
+/** Browser-only stress fixture for viewport virtualization acceptance. */
+export const DENSE_TRANSCRIPT_FIXTURE_SEGMENT_COUNT = 500;
+
+function denseFixtureSegments() {
+  return Array.from({ length: DENSE_TRANSCRIPT_FIXTURE_SEGMENT_COUNT }, (_, index) => {
+    const start = index * (4 / DENSE_TRANSCRIPT_FIXTURE_SEGMENT_COUNT);
+    return {
+      start,
+      end: start + 0.006,
+      text: `Dense fixture segment ${index + 1}`,
+    };
+  });
+}
+
+export interface TranscriptFixtureOptions {
+  readonly dense?: boolean;
+}
+
 /**
- * Wrap any DataProvider so every asset profiles as a two-segment fixture
- * transcript while every other method (prototype or own) keeps working via
- * the original instance. Every asset answers with the same segments by
- * design: the fixture must paint a lane on ANY project that has at least one
- * sound-bearing media clip, regardless of that clip's asset id.
+ * Wrap any DataProvider so every asset profiles as the default two-segment
+ * transcript, or an explicitly requested dense browser stress fixture, while
+ * every other method (prototype or own) keeps working via the original
+ * instance. Every asset answers with the same segments by design: the fixture
+ * must paint a lane on ANY project that has at least one sound-bearing media
+ * clip, regardless of that clip's asset id.
  */
-export function withTranscriptFixture(provider: DataProvider): DataProvider {
+export function withTranscriptFixture(
+  provider: DataProvider,
+  options: TranscriptFixtureOptions = {},
+): DataProvider {
   const decorated: DataProvider = Object.create(provider);
   decorated.loadAssetProfile = async (): Promise<AssetProfile> => ({
-    transcript: { segments: FIXTURE_SEGMENTS.map((segment) => ({ ...segment })) },
+    transcript: {
+      segments: options.dense
+        ? denseFixtureSegments()
+        : FIXTURE_SEGMENTS.map((segment) => ({ ...segment })),
+    },
   });
   return decorated;
 }
