@@ -6,7 +6,7 @@
  * schema versions, and fail-closed behavior when a migration throws.
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   CachedExtensionStateRepository,
   CURRENT_SNAPSHOT_SCHEMA_VERSION,
@@ -151,4 +151,58 @@ describe('CachedExtensionStateRepository.registerMigration', () => {
 
     await repo.dispose();
   });
+});
+
+describe('CachedExtensionStateRepository write-failure recovery', () => {
+  it.each([
+    ['permission-denied', 'SecurityError'],
+    ['quota-exceeded', 'QuotaExceededError'],
+    ['write-interrupted', 'AbortError'],
+  ] as const)(
+    'keeps state dirty after %s, avoids a retry spin, and retries once after the next write',
+    async (kind, errorName) => {
+      let persisted: string | null = null;
+      let failOnce = true;
+      const saveSnapshot = vi.fn(async (serialized: string) => {
+        if (failOnce) {
+          failOnce = false;
+          throw new DOMException('private path and transcript payload', errorName);
+        }
+        persisted = serialized;
+      });
+      const diagnostics: Array<{ severity: string; code: string; message: string; milestone?: string }> = [];
+      const repo = new CachedExtensionStateRepository({
+        async loadSnapshot() { return null; },
+        saveSnapshot,
+        async deleteSnapshot() {},
+      }, diagnostics);
+      await repo.initialize();
+
+      const proposalId = await repo.createProposal({
+        extensionId: 'com.reigh.transcript-lane',
+        status: 'pending',
+        payload: { proposedText: 'private caption' },
+      });
+      await vi.waitFor(() => expect(saveSnapshot).toHaveBeenCalledTimes(1));
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(saveSnapshot).toHaveBeenCalledTimes(1);
+      expect(diagnostics).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          code: 'extension_cache_flush_failed',
+          message: expect.stringContaining(kind),
+        }),
+      ]));
+      expect(JSON.stringify(diagnostics)).not.toMatch(/private path|transcript payload|private caption/);
+
+      // A subsequent state transition is the explicit retry trigger.  The
+      // latest consolidated snapshot is saved once and retains one proposal.
+      await repo.updateProposalStatus(proposalId, 'accepted');
+      await vi.waitFor(() => expect(saveSnapshot).toHaveBeenCalledTimes(2));
+      const saved = JSON.parse(persisted!);
+      expect(Object.keys(saved.proposals)).toEqual([proposalId]);
+      expect(saved.proposals[proposalId]).toMatchObject({ status: 'accepted' });
+
+      await repo.dispose();
+    },
+  );
 });

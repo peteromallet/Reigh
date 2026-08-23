@@ -1,15 +1,14 @@
 /**
  * Browser-local FullSnapshotStore implementation (T7).
  *
- * Splits the cached extension state snapshot across two browser storage
- * mechanisms per SD2:
+ * Persists the complete snapshot atomically in IndexedDB and keeps the
+ * compact non-proposal fields mirrored in localStorage for v1 compatibility:
  *
  * - **localStorage** — carries the small parts of the snapshot (meta,
  *   packs, enablement, overrides, settings, events, lock).  Keyed by
  *   `reigh.ext-state.{userId}.{timelineId}`.
- * - **IndexedDB** — carries proposal payloads which can be large.
- *   Database `reigh.ext-proposals`, object store `proposals`, scoped
- *   by a composite `scopeKey` field.
+ * - **IndexedDB** — carries one authoritative full-snapshot record per scope.
+ *   The legacy proposal-per-record store remains readable for v1 migration.
  *
  * ## Malformed data handling
  *
@@ -36,6 +35,10 @@ import type {
 } from '../data/DataProvider';
 import type { ExtensionDiagnostic } from '@reigh/editor-sdk';
 import { createCachedExtensionPersistenceService } from './extensionPersistenceCache';
+import {
+  extensionPersistenceWriteError,
+  type ExtensionPersistenceWriteError,
+} from './extensionPersistenceFailures';
 
 // ---------------------------------------------------------------------------
 // localStorage key
@@ -55,8 +58,16 @@ function localStorageKey(scope: ExtensionPersistenceScope): string {
 // ---------------------------------------------------------------------------
 
 const PROPOSAL_DB_NAME = 'reigh.ext-proposals';
-const PROPOSAL_DB_VERSION = 1;
+const PROPOSAL_DB_VERSION = 2;
 const PROPOSAL_STORE = 'proposals';
+const SNAPSHOT_STORE = 'snapshots';
+
+interface AtomicSnapshotRecord {
+  /** Composite scope key (`userId:timelineId`). */
+  scopeKey: string;
+  /** Complete serialized snapshot, including proposal payloads. */
+  serialized: string;
+}
 
 interface ProposalRecord {
   /** Scoped record key: `{scopeKey}:{proposalId}` — used as IndexedDB keyPath. */
@@ -93,10 +104,8 @@ function getIndexedDb(): IDBFactory {
 function shouldRecover(error: unknown): boolean {
   if (error instanceof DOMException) {
     return [
-      'AbortError',
       'InvalidStateError',
       'NotFoundError',
-      'UnknownError',
       'VersionError',
     ].includes(error.name);
   }
@@ -112,6 +121,9 @@ function openProposalDatabase(): Promise<IDBDatabase> {
       const db = request.result;
       if (!db.objectStoreNames.contains(PROPOSAL_STORE)) {
         db.createObjectStore(PROPOSAL_STORE, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(SNAPSHOT_STORE)) {
+        db.createObjectStore(SNAPSHOT_STORE, { keyPath: 'scopeKey' });
       }
     });
 
@@ -160,11 +172,11 @@ async function withProposalStore<T>(
         }
       };
 
+      let requestResult: T;
+      let requestSucceeded = false;
       request.addEventListener('success', () => {
-        if (!settled) {
-          settled = true;
-          resolve(request.result);
-        }
+        requestResult = request.result;
+        requestSucceeded = true;
       });
       request.addEventListener('error', () =>
         fail(request.error ?? new Error('Proposal IndexedDB request failed')),
@@ -176,6 +188,14 @@ async function withProposalStore<T>(
         fail(transaction.error ?? new Error('Proposal IndexedDB transaction failed')),
       );
       transaction.addEventListener('complete', () => {
+        if (!settled) {
+          if (!requestSucceeded) {
+            fail(new Error('Proposal IndexedDB transaction completed before its request'));
+          } else {
+            settled = true;
+            resolve(requestResult!);
+          }
+        }
         database?.close();
         database = null;
       });
@@ -190,6 +210,87 @@ async function withProposalStore<T>(
     await deleteProposalDatabase();
     return withProposalStore(mode, execute, { allowRecovery: false });
   }
+}
+
+async function withSnapshotStore<T>(
+  mode: IDBTransactionMode,
+  execute: (store: IDBObjectStore) => IDBRequest<T>,
+): Promise<T> {
+  let database: IDBDatabase | null = null;
+  try {
+    database = await openProposalDatabase();
+    return await new Promise<T>((resolve, reject) => {
+      const transaction = database!.transaction(SNAPSHOT_STORE, mode);
+      const request = execute(transaction.objectStore(SNAPSHOT_STORE));
+      let requestResult: T;
+      let requestSucceeded = false;
+      let settled = false;
+
+      const fail = (error: unknown) => {
+        if (!settled) {
+          settled = true;
+          reject(error);
+        }
+      };
+
+      request.addEventListener('success', () => {
+        requestResult = request.result;
+        requestSucceeded = true;
+      });
+      request.addEventListener('error', () =>
+        fail(request.error ?? new Error('Extension snapshot IndexedDB request failed')),
+      );
+      transaction.addEventListener('abort', () =>
+        fail(transaction.error ?? new DOMException('Snapshot transaction aborted', 'AbortError')),
+      );
+      transaction.addEventListener('error', () =>
+        fail(transaction.error ?? new Error('Extension snapshot IndexedDB transaction failed')),
+      );
+      transaction.addEventListener('complete', () => {
+        if (!settled) {
+          if (!requestSucceeded) {
+            fail(new Error('Extension snapshot transaction completed before its request'));
+          } else {
+            settled = true;
+            resolve(requestResult!);
+          }
+        }
+        database?.close();
+        database = null;
+      });
+    });
+  } finally {
+    database?.close();
+  }
+}
+
+async function loadAtomicSnapshot(
+  scope: ExtensionPersistenceScope,
+): Promise<string | null> {
+  const record = await withSnapshotStore<AtomicSnapshotRecord | undefined>(
+    'readonly',
+    (store) => store.get(proposalScopeKey(scope)),
+  );
+  return record?.serialized ?? null;
+}
+
+async function saveAtomicSnapshot(
+  scope: ExtensionPersistenceScope,
+  serialized: string,
+): Promise<void> {
+  await withSnapshotStore(
+    'readwrite',
+    (store) => store.put({ scopeKey: proposalScopeKey(scope), serialized }),
+  );
+}
+
+async function deleteAtomicSnapshot(
+  scope: ExtensionPersistenceScope,
+): Promise<void> {
+  await withSnapshotStore(
+    'readwrite',
+    (store) => store.delete(proposalScopeKey(scope)),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -245,63 +346,6 @@ async function loadAllProposals(
   } catch {
     // IndexedDB unavailable — return empty, proposals are best-effort
     return {};
-  }
-}
-
-/**
- * Persist all proposals for the given scope to IndexedDB.
- *
- * Uses a delete-then-insert strategy for simplicity: all existing
- * proposals for this scope are removed, then the current set is
- * written.  This avoids diffing.
- *
- * On error (quota / unavailable) the operation is a silent no-op.
- * Proposal loss is acceptable because the base state in localStorage
- * remains consistent, and the cache will retry on the next flush.
- */
-async function saveAllProposals(
-  scope: ExtensionPersistenceScope,
-  proposals: Record<string, ExtensionProposal>,
-): Promise<void> {
-  try {
-    const sk = proposalScopeKey(scope);
-
-    // Delete existing proposals for this scope
-    const existing = await withProposalStore<ProposalRecord[]>(
-      'readonly',
-      (s) => s.getAll(),
-    );
-    const toDelete = existing
-      .filter((r) => r.scopeKey === sk)
-      .map((r) => r.id);
-
-    for (const id of toDelete) {
-      await withProposalStore('readwrite', (s) => s.delete(id));
-    }
-
-    // Insert current proposals (keyed by scopeKey:proposalId)
-    for (const proposal of Object.values(proposals)) {
-      const record: ProposalRecord = {
-        id: `${sk}:${proposal.id}`,
-        proposalId: proposal.id,
-        scopeKey: sk,
-        extensionId: proposal.extensionId,
-        status: proposal.status,
-        payload: proposal.payload,
-        createdAt: proposal.createdAt,
-        updatedAt: proposal.updatedAt,
-        ...(proposal.title !== undefined ? { title: proposal.title } : {}),
-        ...(proposal.label !== undefined ? { label: proposal.label } : {}),
-        ...(proposal.detail !== undefined ? { detail: proposal.detail } : {}),
-        ...(proposal.baseVersion !== undefined ? { baseVersion: proposal.baseVersion } : {}),
-        ...(proposal.expiresAt !== undefined ? { expiresAt: proposal.expiresAt } : {}),
-        ...(proposal.acceptedAt !== undefined ? { acceptedAt: proposal.acceptedAt } : {}),
-        ...(proposal.rejectedAt !== undefined ? { rejectedAt: proposal.rejectedAt } : {}),
-      };
-      await withProposalStore('readwrite', (s) => s.put(record));
-    }
-  } catch {
-    // IndexedDB unavailable — silent no-op
   }
 }
 
@@ -366,6 +410,24 @@ export class BrowserLocalFullSnapshotStore implements FullSnapshotStore {
   async loadSnapshot(): Promise<string | null> {
     const key = localStorageKey(this._scope);
 
+    // Version 2 stores the complete snapshot in one IndexedDB record.  A
+    // single readwrite transaction makes every write atomic: an interrupted
+    // transaction exposes either the previous snapshot or the next one,
+    // never a localStorage/IndexedDB hybrid.  The split stores below remain a
+    // read-compatible fallback for snapshots written by version 1.
+    try {
+      const atomicSnapshot = await loadAtomicSnapshot(this._scope);
+      if (atomicSnapshot !== null) return atomicSnapshot;
+    } catch (error) {
+      // Environments without IndexedDB retain the v1 state/settings-only
+      // fallback.  If IndexedDB exists but its read was denied/interrupted,
+      // fail closed: returning the localStorage mirror could silently omit a
+      // newer canonical proposal set.
+      if (typeof indexedDB !== 'undefined') {
+        throw extensionPersistenceWriteError(error, 'snapshot-read');
+      }
+    }
+
     // 1. Read base state from localStorage
     let baseRaw: string | null = null;
     try {
@@ -415,27 +477,56 @@ export class BrowserLocalFullSnapshotStore implements FullSnapshotStore {
       return;
     }
 
-    // Extract proposals (stored in IndexedDB)
+    // Extract proposals before attempting the legacy fallback.
     const proposals =
       (parsed.proposals as Record<string, ExtensionProposal>) ?? {};
 
     // Remove proposals from the base state (stored in localStorage)
     const { proposals: _proposals, ...base } = parsed;
 
-    // 4. Save base state to localStorage
+    // 1. Commit the complete snapshot atomically in IndexedDB.  This is the
+    // authoritative v2 write.  Waiting for transaction completion (not just
+    // request success) is essential: a later transaction abort must reject.
+    let atomicWriteError: ExtensionPersistenceWriteError | null = null;
+    try {
+      await saveAtomicSnapshot(this._scope, serialized);
+    } catch (error) {
+      atomicWriteError = extensionPersistenceWriteError(error, 'snapshot-write');
+    }
+
+    // 2. Keep the compact localStorage base as a compatibility/fallback
+    // mirror.  It is not the commit point when the atomic write succeeded.
     try {
       const baseSerialized = JSON.stringify(base);
       localStorage.setItem(localStorageKey(this._scope), baseSerialized);
-    } catch {
-      // localStorage quota exceeded or unavailable
-      // Proposals are still saved below (best-effort)
+    } catch (error) {
+      if (atomicWriteError) {
+        throw extensionPersistenceWriteError(error, 'snapshot-fallback-write');
+      }
     }
 
-    // 5. Save proposals to IndexedDB
-    await saveAllProposals(this._scope, proposals);
+    if (atomicWriteError) {
+      // A localStorage-only fallback is coherent only when there are no
+      // proposals to lose AND IndexedDB is genuinely absent.  If IndexedDB
+      // exists but denied/aborted this scope may already have an older
+      // canonical record; claiming success here would make reload prefer that
+      // stale record over the newer mirror.
+      if (
+        typeof indexedDB !== 'undefined'
+        || Object.keys(proposals).length > 0
+      ) {
+        throw atomicWriteError;
+      }
+      return;
+    }
   }
 
   async deleteSnapshot(): Promise<void> {
+    try {
+      await deleteAtomicSnapshot(this._scope);
+    } catch {
+      // Legacy/no-IndexedDB environments still clear the fallback below.
+    }
     // Clear localStorage key
     try {
       localStorage.removeItem(localStorageKey(this._scope));

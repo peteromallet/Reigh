@@ -26,6 +26,7 @@ import {
   createBrowserLocalExtensionPersistenceService,
 } from './browserLocalPersistenceStore';
 import { CURRENT_SNAPSHOT_SCHEMA_VERSION } from './extensionPersistenceCache';
+import { ExtensionPersistenceWriteError } from './extensionPersistenceFailures';
 import {
   defineExtensionPersistenceConformanceSuite,
 } from '../data/conformance/extensionPersistenceConformance';
@@ -287,6 +288,92 @@ describe('BrowserLocalFullSnapshotStore', () => {
       const loaded = await store.loadSnapshot();
       const parsed = JSON.parse(loaded!);
       expect(parsed.packs['ext.test'].version).toBe('2.0.0');
+    });
+
+    it.each([
+      ['permission-denied', 'SecurityError'],
+      ['quota-exceeded', 'QuotaExceededError'],
+      ['write-interrupted', 'AbortError'],
+    ] as const)(
+      'keeps the prior atomic snapshot after a %s IndexedDB write failure',
+      async (kind, errorName) => {
+        const store = new BrowserLocalFullSnapshotStore(SCOPE_A);
+        const before = makeFullSnapshot(
+          { packs: { stable: { extensionId: 'stable', version: '1.0.0' } } },
+          {
+            'proposal-stable': {
+              id: 'proposal-stable',
+              extensionId: 'stable',
+              status: 'pending',
+              payload: { text: 'original' },
+              createdAt: '2026-01-01T00:00:00.000Z',
+              updatedAt: '2026-01-01T00:00:00.000Z',
+            },
+          },
+        );
+        await store.saveSnapshot(before);
+
+        const workingIndexedDb = globalThis.indexedDB;
+        (globalThis as Record<string, unknown>).indexedDB = {
+          open() {
+            throw new DOMException('private browser storage detail', errorName);
+          },
+        } as unknown as IDBFactory;
+
+        const after = makeFullSnapshot(
+          { packs: { replacement: { extensionId: 'replacement', version: '2.0.0' } } },
+          {
+            'proposal-replacement': {
+              id: 'proposal-replacement',
+              extensionId: 'replacement',
+              status: 'pending',
+              payload: { text: 'replacement' },
+              createdAt: '2026-01-02T00:00:00.000Z',
+              updatedAt: '2026-01-02T00:00:00.000Z',
+            },
+          },
+        );
+
+        try {
+          await expect(store.saveSnapshot(after)).rejects.toMatchObject({
+            name: 'ExtensionPersistenceWriteError',
+            kind,
+            operation: 'snapshot-write',
+          } satisfies Partial<ExtensionPersistenceWriteError>);
+        } finally {
+          (globalThis as Record<string, unknown>).indexedDB = workingIndexedDb;
+        }
+
+        const loaded = JSON.parse((await store.loadSnapshot())!);
+        expect(loaded.packs.stable).toBeDefined();
+        expect(loaded.packs.replacement).toBeUndefined();
+        expect(Object.keys(loaded.proposals)).toEqual(['proposal-stable']);
+        expect(JSON.stringify(loaded)).not.toContain('replacement');
+      },
+    );
+
+    it('does not report a state-only fallback as durable over an older atomic snapshot', async () => {
+      const store = new BrowserLocalFullSnapshotStore(SCOPE_A);
+      await store.saveSnapshot(makeFullSnapshot({
+        settings: { stable: { extensionId: 'stable', values: { revision: 1 } } },
+      }));
+
+      const workingIndexedDb = globalThis.indexedDB;
+      (globalThis as Record<string, unknown>).indexedDB = {
+        open() {
+          throw new DOMException('denied', 'SecurityError');
+        },
+      } as unknown as IDBFactory;
+      try {
+        await expect(store.saveSnapshot(makeFullSnapshot({
+          settings: { stable: { extensionId: 'stable', values: { revision: 2 } } },
+        }))).rejects.toMatchObject({ kind: 'permission-denied' });
+      } finally {
+        (globalThis as Record<string, unknown>).indexedDB = workingIndexedDb;
+      }
+
+      const loaded = JSON.parse((await store.loadSnapshot())!);
+      expect(loaded.settings.stable.values.revision).toBe(1);
     });
   });
 

@@ -117,6 +117,7 @@ function makeInstalledPack(overrides?: {
 /** Create a mock repository with vi.fn() methods. */
 function makeMockRepository(overrides?: Partial<{
   putPackRecord: ReturnType<typeof vi.fn>;
+  getPackRecord: ReturnType<typeof vi.fn>;
   getEnablementState: ReturnType<typeof vi.fn>;
   putEnablementState: ReturnType<typeof vi.fn>;
   putSettingsSnapshot: ReturnType<typeof vi.fn>;
@@ -131,7 +132,7 @@ function makeMockRepository(overrides?: Partial<{
     isDisposed: overrides?.isDisposed ?? false,
     putPackRecord: overrides?.putPackRecord ?? vi.fn().mockResolvedValue(undefined),
     updatePackRecord: vi.fn().mockResolvedValue(undefined),
-    getPackRecord: vi.fn().mockResolvedValue(null),
+    getPackRecord: overrides?.getPackRecord ?? vi.fn().mockResolvedValue(null),
     getAllPackRecords: vi.fn().mockResolvedValue([]),
     deletePackRecord: vi.fn().mockResolvedValue(undefined),
     putEnablementState: overrides?.putEnablementState ?? vi.fn().mockResolvedValue(undefined),
@@ -1092,6 +1093,77 @@ describe('executeLocalToInstalledMigration', () => {
     expect(result.packRecord).toBeNull();
     expect(result.settingsTransferred).toBe(false);
     expect(result.blockingDiagnostics.some((d) => d.code === 'migration/pack-record-failed')).toBe(true);
+  });
+
+  it('resumes an interrupted migration without duplicating its committed pack record', async () => {
+    let persistedPack: ExtensionPackRecord | null = null;
+    let interruptEnablementOnce = true;
+    const putPackRecord = vi.fn(async (record: ExtensionPackRecord) => {
+      if (persistedPack) throw new Error('duplicate pack insert');
+      persistedPack = record;
+    });
+    const putEnablementState = vi.fn(async () => {
+      if (interruptEnablementOnce) {
+        interruptEnablementOnce = false;
+        throw new DOMException('private write details', 'AbortError');
+      }
+    });
+    const repo = makeMockRepository({
+      getPackRecord: vi.fn(async () => (
+        persistedPack ? JSON.parse(JSON.stringify(persistedPack)) as ExtensionPackRecord : null
+      )),
+      putPackRecord,
+      putEnablementState,
+    });
+    const input: LocalInstalledMigrationInput = {
+      localManifest: makeLocalManifest(),
+      installedPack: makeInstalledPack(),
+      repository: repo,
+      localSettings: { captionStyle: 'readable' },
+      bundleContentRef: 'indexeddb://com.test.migration/v1',
+    };
+
+    const interrupted = await executeLocalToInstalledMigration(input);
+    expect(interrupted.success).toBe(true);
+    expect(interrupted.warningDiagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'migration/enablement-transfer-failed',
+        message: expect.stringContaining('write-interrupted'),
+      }),
+    ]));
+    expect(JSON.stringify(interrupted)).not.toContain('private write details');
+
+    const retried = await executeLocalToInstalledMigration(input);
+    expect(retried.success).toBe(true);
+    expect(retried.warningDiagnostics).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'migration/enablement-transfer-failed' }),
+    ]));
+    expect(putPackRecord).toHaveBeenCalledTimes(1);
+    expect(putEnablementState).toHaveBeenCalledTimes(2);
+    expect(retried.lifecycleEvents).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'install', detail: expect.objectContaining({ resumed: true }) }),
+    ]));
+  });
+
+  it.each([
+    ['permission-denied', 'SecurityError'],
+    ['quota-exceeded', 'QuotaExceededError'],
+  ] as const)('classifies %s pack failures without exposing browser error text', async (kind, errorName) => {
+    const result = await executeLocalToInstalledMigration({
+      localManifest: makeLocalManifest(),
+      installedPack: makeInstalledPack(),
+      repository: makeMockRepository({
+        putPackRecord: vi.fn().mockRejectedValue(
+          new DOMException('secret transcript and local path', errorName),
+        ),
+      }),
+      localSettings: { transcript: 'private words' },
+      bundleContentRef: '/private/bundle.js',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.blockingDiagnostics[0]?.message).toContain(kind);
+    expect(JSON.stringify(result)).not.toMatch(/secret transcript|local path|private words|private\/bundle/);
   });
 
   // ---- Settings transfer failure (non-blocking) ----

@@ -67,6 +67,7 @@ import type {
   ExtensionProposalQuery,
 } from '../data/DataProvider';
 import type { ExtensionDiagnostic } from '@reigh/editor-sdk';
+import { classifyExtensionPersistenceFailure } from './extensionPersistenceFailures';
 
 // ---------------------------------------------------------------------------
 // FullSnapshotStore
@@ -681,28 +682,32 @@ export class CachedExtensionStateRepository
     // Snapshot the current state so we don't race with concurrent writes
     const snapshot = cloneState(this._state);
 
+    let flushSucceeded = false;
     try {
       const serialized = JSON.stringify(snapshot);
       await this._store.saveSnapshot(serialized);
+      flushSucceeded = true;
 
       // Only clear dirty if no writes arrived during the async save
       if (this._generation === genAtStart) {
         this._dirty = false;
       }
     } catch (error: unknown) {
-      const message =
-        error instanceof Error ? error.message : String(error);
+      const failureKind = classifyExtensionPersistenceFailure(error);
       this._diagnostics.push({
         severity: 'warning',
         code: DIAG_CODE_FLUSH_FAILED,
-        message: `Failed to flush extension state cache: ${message}`,
+        message: `Failed to flush extension state cache (${failureKind}). The latest in-memory state remains dirty and will retry after the next write.`,
         milestone: 'm2',
       });
       // Keep dirty flag set so next write will retry
     }
 
-    // If writes arrived during our flush, schedule another one
-    if (this._dirty && !this._disposed) {
+    // A successful in-flight save may have been superseded by a concurrent
+    // write, so flush again.  A failed save deliberately waits for the next
+    // write to call markDirty(); immediately rescheduling here creates an
+    // unbounded microtask loop while storage remains denied/full.
+    if (flushSucceeded && this._dirty && !this._disposed) {
       this.scheduleFlush();
     }
   }

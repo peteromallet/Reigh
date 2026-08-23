@@ -1093,6 +1093,58 @@ describe('transcript lane chips (rework round-2 F3)', () => {
     }
   });
 
+  it('retries an interrupted source-review write without partial records or duplicates', () => {
+    const item = {
+      id: 'source-retry@clip',
+      sourceItemId: 'source-retry',
+      timelineStart: 8,
+      timelineEnd: 9.5,
+      payload: { text: 'Immutable source' },
+    };
+    const persisted: Record<string, unknown> = {
+      'transcript-source-review:source-retry': pendingReviewFor(item, 'Human revision'),
+    };
+    const snapshot = () => ({
+      baseVersion: 80,
+      app: { [TRANSCRIPT_LANE_EXTENSION_ID]: { ...persisted } },
+    });
+    let interruptOnce = true;
+    const applyAtomically = (patch: TimelinePatch) => {
+      if (interruptOnce) {
+        interruptOnce = false;
+        throw new DOMException('private storage detail', 'AbortError');
+      }
+      const next = { ...persisted };
+      for (const operation of patch.operations) {
+        if (operation.op === 'project-data.write') {
+          next[operation.payload.key] = operation.payload.value;
+        }
+      }
+      Object.assign(persisted, next);
+    };
+
+    const firstAttempt = buildTranscriptSourceReviewDecisionPatch(
+      snapshot(),
+      [item],
+      'accept',
+    );
+    expect(() => applyAtomically(firstAttempt)).toThrowError(
+      expect.objectContaining({ name: 'AbortError' }),
+    );
+    expect((persisted['transcript-source-review:source-retry'] as TranscriptSourceReviewRecord).status)
+      .toBe('pending-review');
+
+    const retry = buildTranscriptSourceReviewDecisionPatch(snapshot(), [item], 'accept');
+    expect(retry.operations).toEqual(firstAttempt.operations);
+    applyAtomically(retry);
+    expect(Object.keys(persisted)).toEqual(['transcript-source-review:source-retry']);
+    expect((persisted['transcript-source-review:source-retry'] as TranscriptSourceReviewRecord).status)
+      .toBe('accepted-for-source-update');
+
+    const replay = buildTranscriptSourceReviewDecisionPatch(snapshot(), [item], 'accept');
+    expect(replay.operations).toEqual([]);
+  });
+
   it('fails acceptance closed when source changed or disappeared after proposal creation', () => {
     const originalItem = {
       id: 'source-changed@clip',

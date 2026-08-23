@@ -46,6 +46,7 @@ import {
   type ExtensionOperationalEvent,
   type HostOwnedExtensionOperationalEmitter,
 } from '@/tools/video-editor/runtime/extensionReleaseControls';
+import { classifyExtensionPersistenceFailure } from '@/tools/video-editor/runtime/extensionPersistenceFailures';
 
 // ---------------------------------------------------------------------------
 // Contribution ID comparison types
@@ -713,7 +714,7 @@ export async function executeLocalToInstalledMigration(
 
   // ---- Step 6: Create pack record ----
   const metadata: InstalledExtensionMetadata = installedPack.metadata;
-  const packRecord: ExtensionPackRecord = Object.freeze({
+  let packRecord: ExtensionPackRecord = Object.freeze({
     extensionId,
     version: installedManifest.version as string,
     apiVersion: installedManifest.apiVersion,
@@ -727,18 +728,60 @@ export async function executeLocalToInstalledMigration(
     icon: installedManifest.icon,
   });
 
+  let resumedFromPackRecord = false;
   try {
-    await repository.putPackRecord(packRecord);
+    const existingPackRecord = await repository.getPackRecord(extensionId);
+    if (existingPackRecord) {
+      const existingManifest = existingPackRecord.manifestSnapshot as ExtensionManifest;
+      const sameTarget =
+        existingPackRecord.version === packRecord.version
+        && JSON.stringify(existingPackRecord.integrity) === JSON.stringify(packRecord.integrity)
+        && existingPackRecord.bundleContentRef === packRecord.bundleContentRef
+        && existingManifest.id === installedManifest.id
+        && existingManifest.version === installedManifest.version;
+      if (!sameTarget) {
+        const diag: ExtensionDiagnostic = {
+          severity: 'error',
+          code: 'migration/pack-record-conflict',
+          message: `Migration cannot resume because extension "${extensionId}" already has a different installed pack record.`,
+          extensionId,
+        };
+        blockingDiagnostics.push(diag);
+        await appendEvent('migration_failure', 'Migration resume blocked by an installed pack conflict.', undefined, diag);
+        return finishWithOperationalOutcome(Object.freeze({
+          success: false,
+          extensionId,
+          contributionComparison,
+          metadataGaps,
+          blocked: true,
+          blockingDiagnostics: Object.freeze([...blockingDiagnostics]),
+          warningDiagnostics: Object.freeze([...warningDiagnostics]),
+          packRecord: null,
+          settingsTransferred: false,
+          settingsKeyCount: 0,
+          lockEntryCreated: false,
+          lifecycleEvents: Object.freeze([...lifecycleEvents]),
+          summary: 'Migration failed: an installed pack conflict requires manual resolution.',
+        }), 'failure', 'migration.validation_error');
+      }
+      // A prior attempt may have been interrupted after committing the pack
+      // but before settings/enablement/lock writes.  Reuse the exact persisted
+      // record and continue the remaining idempotent steps.
+      packRecord = existingPackRecord;
+      resumedFromPackRecord = true;
+    } else {
+      await repository.putPackRecord(packRecord);
+    }
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const failureKind = classifyExtensionPersistenceFailure(err);
     const diag: ExtensionDiagnostic = {
       severity: 'error',
       code: 'migration/pack-record-failed',
-      message: `Failed to create pack record for extension "${extensionId}": ${message}`,
+      message: `Failed to persist the installed pack record for extension "${extensionId}" (${failureKind}).`,
       extensionId,
     };
     blockingDiagnostics.push(diag);
-    await appendEvent('migration_failure', `Failed to create pack record: ${message}`, undefined, diag);
+    await appendEvent('migration_failure', `Failed to persist the installed pack record (${failureKind}).`, undefined, diag);
     return finishWithOperationalOutcome(Object.freeze({
       success: false,
       extensionId,
@@ -752,13 +795,14 @@ export async function executeLocalToInstalledMigration(
       settingsKeyCount: 0,
       lockEntryCreated: false,
       lifecycleEvents: Object.freeze([...lifecycleEvents]),
-      summary: `Migration failed: could not create pack record (${message}).`,
+      summary: `Migration failed: could not persist the installed pack record (${failureKind}).`,
     }), 'failure', 'migration.write_error');
   }
 
-  await appendEvent('install', `Pack record created for extension "${extensionId}" (installed v${installedManifest.version}).`, {
+  await appendEvent('install', `${resumedFromPackRecord ? 'Pack record resumed' : 'Pack record created'} for extension "${extensionId}" (installed v${installedManifest.version}).`, {
     version: installedManifest.version,
     integrity: metadata.integrity,
+    resumed: resumedFromPackRecord,
   });
 
   // ---- Step 7: Transfer enablement state ----
@@ -790,11 +834,11 @@ export async function executeLocalToInstalledMigration(
       });
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const failureKind = classifyExtensionPersistenceFailure(err);
     warningDiagnostics.push({
       severity: 'warning',
       code: 'migration/enablement-transfer-failed',
-      message: `Failed to transfer enablement state for extension "${extensionId}": ${message}`,
+      message: `Failed to transfer enablement state for extension "${extensionId}" (${failureKind}).`,
       extensionId,
     });
   }
@@ -826,11 +870,11 @@ export async function executeLocalToInstalledMigration(
         },
       );
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const failureKind = classifyExtensionPersistenceFailure(err);
       warningDiagnostics.push({
         severity: 'warning',
         code: 'migration/settings-transfer-failed',
-        message: `Failed to transfer ${settingsKeys.length} setting(s) for extension "${extensionId}": ${message}`,
+        message: `Failed to transfer ${settingsKeys.length} setting(s) for extension "${extensionId}" (${failureKind}).`,
         extensionId,
       });
     }
@@ -848,8 +892,14 @@ export async function executeLocalToInstalledMigration(
       await repository.putSettingsSnapshot(settingsSnapshot);
       settingsTransferred = true;
       settingsKeyCount = Object.keys(manifestDefaults).length;
-    } catch {
-      // Non-blocking
+    } catch (err) {
+      const failureKind = classifyExtensionPersistenceFailure(err);
+      warningDiagnostics.push({
+        severity: 'warning',
+        code: 'migration/settings-transfer-failed',
+        message: `Failed to persist default settings for extension "${extensionId}" (${failureKind}).`,
+        extensionId,
+      });
     }
   }
 
@@ -866,11 +916,11 @@ export async function executeLocalToInstalledMigration(
       contributionRefs: lockEntry.contributionRefs,
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const failureKind = classifyExtensionPersistenceFailure(err);
     warningDiagnostics.push({
       severity: 'warning',
       code: 'migration/lock-entry-failed',
-      message: `Failed to create project lock entry for extension "${extensionId}": ${message}`,
+      message: `Failed to create project lock entry for extension "${extensionId}" (${failureKind}).`,
       extensionId,
     });
   }
