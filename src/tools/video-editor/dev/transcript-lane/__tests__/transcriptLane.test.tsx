@@ -39,6 +39,7 @@ import {
   readHostGenerationProvenance,
   validateManifest,
   type DataLaneRendererProps,
+  type ExtensionContext,
 } from '@reigh/editor-sdk';
 import { createExtensionContext } from '@/tools/video-editor/runtime/extensionContextFactory';
 import { createDataKindRegistrationService } from '@/tools/video-editor/runtime/dataKindRegistrationService';
@@ -480,6 +481,71 @@ describe('transcript lane chips (rework round-2 F3)', () => {
       outputMetadata: { resolution: '1280x720', fps: 30, file: 'demo.mp4' },
     }, [items[0]]);
     expect(rerun.operations).toEqual([]);
+  });
+
+  it('treats Add missing as a successful no-op before host validation when captions exist', () => {
+    const item: DataLaneRendererProps['items'][number] = {
+      id: 'asset-a:clip-1:0',
+      timelineStart: 1.25,
+      timelineEnd: 2.75,
+      clipId: 'clip-1',
+      payload: { text: 'Hello caption' },
+    };
+    const validate = vi.fn(() => ({ valid: false, diagnostics: [{ message: 'empty patches are invalid' }] }));
+    const apply = vi.fn();
+    const toast = vi.fn();
+    let laneRenderer: ((props: DataLaneRendererProps) => unknown) | undefined;
+    const ctx = {
+      extension: { id: TRANSCRIPT_LANE_EXTENSION_ID },
+      dataKinds: {
+        register: (_kindId: string, renderer: (props: DataLaneRendererProps) => unknown) => {
+          laneRenderer = renderer;
+          return { dispose: vi.fn() };
+        },
+      },
+      creative: {
+        reader: {
+          snapshot: () => ({
+            baseVersion: 10,
+            tracks: [{
+              id: TRANSCRIPT_CAPTION_TRACK_ID,
+              kind: 'visual',
+              label: 'Transcript Captions',
+              muted: false,
+            }],
+            clips: [{
+              id: transcriptCaptionClipId(item.id),
+              track: TRANSCRIPT_CAPTION_TRACK_ID,
+              at: item.timelineStart,
+              duration: item.timelineEnd - item.timelineStart,
+              managed: false,
+            }],
+          }),
+        },
+        timeline: { validate, apply },
+      },
+      chrome: { toast },
+    } as unknown as ExtensionContext;
+
+    transcriptLaneExtension.activate?.(ctx);
+    expect(laneRenderer).toBeTypeOf('function');
+    render(laneRenderer!({
+      kindId: TRANSCRIPT_KIND_ID,
+      schemaRef: TRANSCRIPT_SCHEMA_REF,
+      shape: 'interval',
+      domain: 'source_seconds',
+      startLeft: 0,
+      pixelsPerSecond: 50,
+      items: [item],
+    }) as ReactElement);
+    fireEvent.click(screen.getByRole('button', { name: 'Render transcript as editable video text' }));
+
+    expect(validate).not.toHaveBeenCalled();
+    expect(apply).not.toHaveBeenCalled();
+    expect(toast).toHaveBeenCalledWith(
+      'Transcript caption clips already exist; existing edits were preserved.',
+      'info',
+    );
   });
 
   it('stamps source, schema, generator, and output fingerprints through the host contract', () => {

@@ -302,13 +302,16 @@ function renderTranscriptAsCaptions(
 ): void {
   const snapshot = ctx.creative.reader.snapshot();
   const patch = buildTranscriptCaptionPatch(snapshot, items, ctx.extension.id as string, { mode });
-  const validation = ctx.creative.timeline.validate(patch);
-  if (!validation.valid) {
-    throw new Error(`Transcript caption patch rejected: ${validation.diagnostics.map((item) => item.message).join('; ')}`);
-  }
+  // An idempotent preserve pass intentionally produces no operations when all
+  // deterministic captions already exist. Empty patches are invalid at the
+  // host boundary, so handle the successful no-op before asking it to validate.
   if (patch.operations.length === 0) {
     ctx.chrome.toast('Transcript caption clips already exist; existing edits were preserved.', 'info');
     return;
+  }
+  const validation = ctx.creative.timeline.validate(patch);
+  if (!validation.valid) {
+    throw new Error(`Transcript caption patch rejected: ${validation.diagnostics.map((item) => item.message).join('; ')}`);
   }
   ctx.creative.timeline.apply(patch);
   const captionCount = patch.operations.filter((operation) => operation.op === 'clip.update').length;
