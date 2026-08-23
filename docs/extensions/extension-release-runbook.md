@@ -99,9 +99,15 @@ owner records root cause, corrective evidence, and Release DRI approval.
 
 ## Observability and privacy boundary
 
-The minimum event families are host activation, extension activation/disposal,
-command outcome, bridge request outcome/latency, persistence conflict, migration
-outcome, render/export outcome, and lane-density/performance budget outcome.
+The minimum event families required before Stage 1 are host activation,
+extension activation/disposal, command outcome, bridge request outcome/latency,
+persistence conflict, migration outcome, render/export outcome, and
+lane-density/performance budget outcome. The checked-in host currently emits
+the first three families (host, lifecycle, and command) through the bounded
+`reigh:extension-operational-event` browser boundary. The remaining five
+emitters and a production analytics listener/dashboard adapter are release
+blockers, not assumed infrastructure. A DOM event observed only by an E2E test
+does not satisfy the dashboard/alert gate.
 
 Allowed fields are deliberately bounded:
 
