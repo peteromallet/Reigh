@@ -21,7 +21,10 @@ import {
 } from '@/shared/contexts/ProjectContext.tsx';
 import { useToolSettings } from '@/shared/hooks/settings/useToolSettings.ts';
 import { toast } from '@/shared/components/ui/toast.tsx';
-import { AstridBridgeDataProvider } from '@/tools/video-editor/data/AstridBridgeDataProvider.ts';
+import {
+  AstridBridgeDataProvider,
+  type AstridBridgeRequestObservation,
+} from '@/tools/video-editor/data/AstridBridgeDataProvider.ts';
 import {
   BRIDGE_REQUEST_TIMEOUT_MS,
   bridgeHealthSchema,
@@ -53,6 +56,8 @@ import type { SaveStatus } from '@/tools/video-editor/hooks/useTimelinePersisten
 import { videoEditorSettings } from '@/tools/video-editor/settings/videoEditorDefaults.ts';
 import { publishLocalTestExtensionDiagnostics } from '@/app/localTestRuntime.ts';
 import {
+  createHostOwnedExtensionOperationalEmitter,
+  dispatchExtensionOperationalEvent,
   getExtensionReleaseFlags,
   selectReleaseEnabledExtensions,
 } from '@/tools/video-editor/runtime/extensionReleaseControls.ts';
@@ -128,6 +133,7 @@ function useVideoEditorProviderSelection({
   localProjectSlug,
   localTimelineId,
   localTimelineName,
+  onBridgeRequest,
 }: {
   mode: VideoEditorMode;
   selectedProjectId: string | null;
@@ -137,6 +143,7 @@ function useVideoEditorProviderSelection({
   localProjectSlug: string | null;
   localTimelineId: string | null;
   localTimelineName: string | null;
+  onBridgeRequest?: (event: AstridBridgeRequestObservation) => void;
 }): ProviderSelection | null {
   return useMemo(() => {
     if (mode === 'local') {
@@ -149,6 +156,7 @@ function useVideoEditorProviderSelection({
           projectSlug: localProjectSlug,
           timelineRef: localTimelineId,
           timelineId: localTimelineId,
+          onBridgeRequest,
         }),
         projectId: localProjectSlug,
         timelineId: localTimelineId,
@@ -180,6 +188,7 @@ function useVideoEditorProviderSelection({
     localTimelineId,
     localTimelineName,
     mode,
+    onBridgeRequest,
     selectedProjectId,
     userId,
   ]);
@@ -372,6 +381,22 @@ export default function VideoEditorPage() {
   );
 
   const extensionReleaseFlags = getExtensionReleaseFlags({ development: import.meta.env.DEV });
+  const bridgeOperationalEmitter = useMemo(
+    () => createHostOwnedExtensionOperationalEmitter({
+      releaseRevision: extensionReleaseFlags.configurationRevision,
+      extensionVersions: new Map(),
+    }, dispatchExtensionOperationalEvent),
+    [extensionReleaseFlags.configurationRevision],
+  );
+  const onBridgeRequest = useCallback((observation: AstridBridgeRequestObservation) => {
+    if (!extensionReleaseFlags.extensionHostEnabled) return;
+    bridgeOperationalEmitter.emit({
+      event: 'bridge.request',
+      outcome: observation.outcome,
+      durationMs: observation.durationMs,
+      ...(observation.errorClass ? { errorClass: observation.errorClass } : {}),
+    });
+  }, [bridgeOperationalEmitter, extensionReleaseFlags.extensionHostEnabled]);
 
   const smokeDirectExtensions = useMemo(() => {
     const smokeExt = import.meta.env.DEV ? getExtensionSmokeExtension(searchParams) : null;
@@ -472,6 +497,7 @@ export default function VideoEditorPage() {
     localProjectSlug,
     localTimelineId,
     localTimelineName,
+    onBridgeRequest,
   });
 
   // dataKind V1 golden path (groken round 4): DEV-only fixture provider so the

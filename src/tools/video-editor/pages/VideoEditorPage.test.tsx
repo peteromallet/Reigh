@@ -386,11 +386,12 @@ describe('VideoEditorPage', () => {
     const provider = await screen.findByTestId('video-editor-provider');
 
     expect(provider).toHaveAttribute('data-kind', 'bridge');
-    expect(state.bridgeCtor).toHaveBeenCalledWith({
+    expect(state.bridgeCtor).toHaveBeenCalledWith(expect.objectContaining({
       projectSlug: 'ados-talks',
       timelineRef: '11111111-1111-1111-1111-111111111111',
       timelineId: '11111111-1111-1111-1111-111111111111',
-    });
+      onBridgeRequest: expect.any(Function),
+    }));
     expect(state.supabaseCtor).not.toHaveBeenCalled();
   });
 

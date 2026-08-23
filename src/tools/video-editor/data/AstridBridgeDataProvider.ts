@@ -68,7 +68,15 @@ type AstridBridgeDataProviderOptions = {
   apiBaseUrl?: string;
   assetBaseUrl?: string;
   registeredParsers?: readonly RegisteredParser[];
+  /** Host-owned, privacy-bounded observation of actual bridge IO only. */
+  onBridgeRequest?: (event: AstridBridgeRequestObservation) => void;
 };
+
+export type AstridBridgeRequestObservation = Readonly<{
+  outcome: 'success' | 'failure';
+  durationMs: number;
+  errorClass?: 'bridge.timeout' | 'bridge.http_error' | 'bridge.invalid_response';
+}>;
 
 const DEFAULT_API_BASE_URL = '/api/astrid';
 const DEFAULT_BRIDGE_PORT = '17333';
@@ -264,6 +272,7 @@ export class AstridBridgeDataProvider implements DataProvider {
   private materializationStates = new Map<string, AssetMaterializationState>();
   private localTimelineFiles: LocalTimelineFiles | null = null;
   private readonly registeredParsers: readonly RegisteredParser[] | undefined;
+  private readonly onBridgeRequest: AstridBridgeDataProviderOptions['onBridgeRequest'];
 
   constructor(options: AstridBridgeDataProviderOptions) {
     this.apiBaseUrl = trimTrailingSlash(options.apiBaseUrl ?? DEFAULT_API_BASE_URL);
@@ -285,6 +294,20 @@ export class AstridBridgeDataProvider implements DataProvider {
     this.timelineUlidRef = null;
     this.projectSlug = options.projectSlug;
     this.registeredParsers = options.registeredParsers;
+    this.onBridgeRequest = options.onBridgeRequest;
+  }
+
+  private observeBridgeRequest(
+    startedAt: number,
+    event: Omit<AstridBridgeRequestObservation, 'durationMs'>,
+  ): void {
+    if (!this.onBridgeRequest) return;
+    const durationMs = Math.max(0, performance.now() - startedAt);
+    try {
+      this.onBridgeRequest(Object.freeze({ ...event, durationMs }));
+    } catch {
+      // Observability availability must never change editor IO behavior.
+    }
   }
 
   private readonly projectSlug: string;
@@ -425,34 +448,53 @@ export class AstridBridgeDataProvider implements DataProvider {
       return normalizeConfigVersion(this.cachedPayload?.config_version);
     }
 
-    const saveResponse = await fetch(
-      `${this.apiBaseUrl}/projects/${encodeURIComponent(this.projectSlug)}/timelines/${encodeURIComponent(timelineRef)}/save`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          config,
-          registry: nextRegistry,
-          expected_version: expectedVersion,
-          // Additive field (see backward-compatibility contract above):
-          // explicit `null` clears, `undefined` omits the key entirely so a
-          // bridge-side bundle the client never saw stays untouched.
-          ...(bundle !== undefined ? { bundle } : {}),
-        }),
-        signal: AbortSignal.timeout(BRIDGE_REQUEST_TIMEOUT_MS),
-      },
-    );
-    if (!saveResponse.ok) {
-      throw await this.toBridgeError(saveResponse, timelineId, 'save timeline', expectedVersion);
+    const bridgeStartedAt = performance.now();
+    let saveResponse: Response;
+    try {
+      saveResponse = await fetch(
+        `${this.apiBaseUrl}/projects/${encodeURIComponent(this.projectSlug)}/timelines/${encodeURIComponent(timelineRef)}/save`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            config,
+            registry: nextRegistry,
+            expected_version: expectedVersion,
+            // Additive field (see backward-compatibility contract above):
+            // explicit `null` clears, `undefined` omits the key entirely so a
+            // bridge-side bundle the client never saw stays untouched.
+            ...(bundle !== undefined ? { bundle } : {}),
+          }),
+          signal: AbortSignal.timeout(BRIDGE_REQUEST_TIMEOUT_MS),
+        },
+      );
+    } catch (cause) {
+      this.observeBridgeRequest(bridgeStartedAt, {
+        outcome: 'failure',
+        errorClass: cause instanceof DOMException && cause.name === 'TimeoutError'
+          ? 'bridge.timeout'
+          : 'bridge.http_error',
+      });
+      throw cause;
     }
-
-    const payload = parseBridgePayload(
-      bridgeTimelinePayloadSchema,
-      await saveResponse.json(),
-      'save response',
-    );
-    const cached = this.cachePayload(payload, timelineId);
-    return cached.configVersion;
+    if (!saveResponse.ok) {
+      const error = await this.toBridgeError(saveResponse, timelineId, 'save timeline', expectedVersion);
+      this.observeBridgeRequest(bridgeStartedAt, { outcome: 'failure', errorClass: 'bridge.http_error' });
+      throw error;
+    }
+    try {
+      const payload = parseBridgePayload(
+        bridgeTimelinePayloadSchema,
+        await saveResponse.json(),
+        'save response',
+      );
+      const cached = this.cachePayload(payload, timelineId);
+      this.observeBridgeRequest(bridgeStartedAt, { outcome: 'success' });
+      return cached.configVersion;
+    } catch (cause) {
+      this.observeBridgeRequest(bridgeStartedAt, { outcome: 'failure', errorClass: 'bridge.invalid_response' });
+      throw cause;
+    }
   }
 
   async saveCheckpoint(
@@ -587,21 +629,41 @@ export class AstridBridgeDataProvider implements DataProvider {
       return this.cachePayload(localPayload, timelineId).payload;
     }
 
-    const response = await fetch(
-      `${this.apiBaseUrl}/projects/${encodeURIComponent(this.projectSlug)}/timelines/${encodeURIComponent(this.getTimelineRequestRef(timelineId))}`,
-      { signal: AbortSignal.timeout(BRIDGE_REQUEST_TIMEOUT_MS) },
-    );
-
-    if (!response.ok) {
-      throw await this.toBridgeError(response, timelineId, 'load timeline');
+    const bridgeStartedAt = performance.now();
+    let response: Response;
+    try {
+      response = await fetch(
+        `${this.apiBaseUrl}/projects/${encodeURIComponent(this.projectSlug)}/timelines/${encodeURIComponent(this.getTimelineRequestRef(timelineId))}`,
+        { signal: AbortSignal.timeout(BRIDGE_REQUEST_TIMEOUT_MS) },
+      );
+    } catch (cause) {
+      this.observeBridgeRequest(bridgeStartedAt, {
+        outcome: 'failure',
+        errorClass: cause instanceof DOMException && cause.name === 'TimeoutError'
+          ? 'bridge.timeout'
+          : 'bridge.http_error',
+      });
+      throw cause;
     }
 
-    const payload = parseBridgePayload(
-      bridgeTimelinePayloadSchema,
-      await response.json(),
-      'timeline payload',
-    );
-    return this.cachePayload(payload, timelineId).payload;
+    if (!response.ok) {
+      const error = await this.toBridgeError(response, timelineId, 'load timeline');
+      this.observeBridgeRequest(bridgeStartedAt, { outcome: 'failure', errorClass: 'bridge.http_error' });
+      throw error;
+    }
+    try {
+      const payload = parseBridgePayload(
+        bridgeTimelinePayloadSchema,
+        await response.json(),
+        'timeline payload',
+      );
+      const cached = this.cachePayload(payload, timelineId).payload;
+      this.observeBridgeRequest(bridgeStartedAt, { outcome: 'success' });
+      return cached;
+    } catch (cause) {
+      this.observeBridgeRequest(bridgeStartedAt, { outcome: 'failure', errorClass: 'bridge.invalid_response' });
+      throw cause;
+    }
   }
 
   /**
