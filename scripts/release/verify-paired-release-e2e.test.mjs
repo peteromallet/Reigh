@@ -110,6 +110,9 @@ describe('paired repository release E2E gate', () => {
     assert.doesNotMatch(source, /shell\s*:\s*true/);
     assert.doesNotMatch(source, /execSync|execFileSync/);
     assert.match(source, /git', \['archive'/);
+    assert.match(source, /npm-userconfig/);
+    assert.match(source, /npm-globalconfig/);
+    assert.doesNotMatch(source, /NPM_CONFIG_USERCONFIG: '\/dev\/null'/);
     assert.match(source, /freezeArtifacts\(evidenceRoot\)/);
   });
 });

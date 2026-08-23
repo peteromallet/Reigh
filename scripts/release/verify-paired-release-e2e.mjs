@@ -674,6 +674,10 @@ async function executeGate(manifest, pins, evidenceRoot) {
   };
   mkdirSync(context.home, { recursive: true, mode: 0o700 });
   mkdirSync(context.projectsRoot, { recursive: true, mode: 0o700 });
+  const npmUserConfig = resolve(runtimeRoot, 'npm-userconfig');
+  const npmGlobalConfig = resolve(runtimeRoot, 'npm-globalconfig');
+  writeFileSync(npmUserConfig, '', { flag: 'wx', mode: 0o600 });
+  writeFileSync(npmGlobalConfig, '', { flag: 'wx', mode: 0o600 });
   const receipt = {
     schemaVersion: 1,
     release: manifest.release,
@@ -699,12 +703,12 @@ async function executeGate(manifest, pins, evidenceRoot) {
 
     runLogged('npm', ['ci', '--no-audit', '--no-fund'], {
       cwd: context.reighSnapshot,
-      env: safeBaseEnvironment({ HOME: context.home, TMPDIR: runtimeRoot, NPM_CONFIG_USERCONFIG: '/dev/null', NPM_CONFIG_GLOBALCONFIG: '/dev/null' }),
+      env: safeBaseEnvironment({ HOME: context.home, TMPDIR: runtimeRoot, NPM_CONFIG_USERCONFIG: npmUserConfig, NPM_CONFIG_GLOBALCONFIG: npmGlobalConfig }),
       logPath: resolve(evidenceRoot, 'reigh-npm-ci.log'),
     });
     runLogged('npm', ['run', 'build'], {
       cwd: context.reighSnapshot,
-      env: safeBaseEnvironment({ ...PUBLIC_BUILD_ENV, HOME: context.home, TMPDIR: runtimeRoot, NPM_CONFIG_USERCONFIG: '/dev/null', NPM_CONFIG_GLOBALCONFIG: '/dev/null' }),
+      env: safeBaseEnvironment({ ...PUBLIC_BUILD_ENV, HOME: context.home, TMPDIR: runtimeRoot, NPM_CONFIG_USERCONFIG: npmUserConfig, NPM_CONFIG_GLOBALCONFIG: npmGlobalConfig }),
       logPath: resolve(evidenceRoot, 'reigh-build.log'),
     });
     runLogged(process.execPath, ['scripts/runtime/write-extension-release-config.mjs'], {
