@@ -90,7 +90,7 @@ export function PackageDiagnosticsSection({
       <button
         type="button"
         onClick={() => setDiagnosticsExpanded((prev) => !prev)}
-        className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+        className="inline-flex min-h-6 items-center gap-1 rounded text-[11px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 motion-reduce:transition-none"
         aria-expanded={diagnosticsExpanded}
         aria-label={`${diagnosticsExpanded ? 'Hide' : 'Show'} diagnostics for ${label}`}
         data-video-editor-extension-diagnostics-toggle={extensionId}

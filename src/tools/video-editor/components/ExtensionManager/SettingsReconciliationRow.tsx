@@ -80,7 +80,7 @@ export function SettingsReconciliationRow({
           <button
             type="button"
             onClick={() => setReconciliationExpanded((prev) => !prev)}
-            className="inline-flex items-center gap-0.5 text-[10px] underline hover:opacity-80 transition-opacity"
+            className="inline-flex min-h-6 items-center gap-0.5 rounded text-[10px] underline transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
             aria-expanded={reconciliationExpanded}
             aria-label={`${reconciliationExpanded ? 'Hide' : 'Show'} reconciliation details`}
             data-video-editor-extension-settings-reconciliation-toggle={extensionId}

@@ -166,6 +166,7 @@ describe('ExtensionManager — enable/disable controls', () => {
       const toggle = screen.getByRole('button', { name: /disable ext\.a/i });
       expect(toggle).toBeInTheDocument();
       expect(toggle).toHaveTextContent('Enabled');
+      expect(toggle).toHaveAttribute('aria-pressed', 'true');
     });
 
     it('shows toggle as Disabled for disabled-by-user packages', () => {
@@ -183,6 +184,7 @@ describe('ExtensionManager — enable/disable controls', () => {
       const toggle = screen.getByRole('button', { name: /enable ext\.a/i });
       expect(toggle).toBeInTheDocument();
       expect(toggle).toHaveTextContent('Disabled');
+      expect(toggle).toHaveAttribute('aria-pressed', 'false');
     });
 
     it('does NOT show toggle for invalid packages', () => {
@@ -3585,6 +3587,26 @@ describe('ExtensionManager — dev-local extensions section (T2.4)', () => {
       name: /disable com\.reigh\.dev\.local-fixture/i,
     });
     expect(toggle).toHaveTextContent('Enabled');
+    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('contains keyboard events so editor shortcuts cannot steal native toggle activation', () => {
+    const outerKeyDown = vi.fn();
+    devLocalState.extensions.push(makeLocalExtension(LOCAL_ID, 'Local Fixture'));
+    mockUseVideoEditorRuntime.mockReturnValue({
+      extensionRuntime: makeRuntime([], [
+        { manifest: makeLocalExtension(LOCAL_ID, 'Local Fixture').manifest },
+      ]),
+      extensionStateRepository: null,
+      triggerExtensionRefresh: undefined,
+    });
+
+    render(<div onKeyDown={outerKeyDown}><ExtensionManager /></div>);
+    fireEvent.keyDown(screen.getByRole('button', {
+      name: /disable com\.reigh\.dev\.local-fixture/i,
+    }), { key: ' ', code: 'Space' });
+
+    expect(outerKeyDown).not.toHaveBeenCalled();
   });
 
   it('derives the contribution summary from the runtime for an active local', () => {

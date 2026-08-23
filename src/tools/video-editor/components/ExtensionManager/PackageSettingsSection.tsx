@@ -353,7 +353,7 @@ export function PackageSettingsSection({
         <button
           type="button"
           onClick={handleExpand}
-          className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+          className="inline-flex min-h-6 items-center gap-1 rounded text-[11px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 motion-reduce:transition-none"
           aria-label="Show extension settings"
           data-video-editor-extension-settings-toggle={extensionId}
         >
@@ -371,7 +371,7 @@ export function PackageSettingsSection({
       {/* Loading */}
       {sectionState === 'loading' && (
         <div className="flex items-center gap-2 text-[11px] text-muted-foreground" role="status" aria-label="Loading settings">
-          <Loader2 className="h-3 w-3 animate-spin" />
+          <Loader2 className="h-3 w-3 animate-spin motion-reduce:animate-none" />
           <span>Loading settings…</span>
         </div>
       )}
@@ -394,7 +394,7 @@ export function PackageSettingsSection({
             <button
               type="button"
               onClick={handleExpand}
-              className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+              className="inline-flex min-h-6 items-center gap-1 rounded text-[11px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 motion-reduce:transition-none"
               aria-label="Hide extension settings"
             >
               <Settings className="h-3 w-3" />
@@ -415,7 +415,7 @@ export function PackageSettingsSection({
             <button
               type="button"
               onClick={handleExpand}
-              className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+              className="inline-flex min-h-6 items-center gap-1 rounded text-[11px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 motion-reduce:transition-none"
               aria-label="Hide extension settings"
             >
               <Settings className="h-3 w-3" />
@@ -427,7 +427,7 @@ export function PackageSettingsSection({
                 type="button"
                 onClick={handleStartEdit}
                 disabled={isBlocked}
-                className="text-[10px] text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                className="min-h-6 rounded px-1 text-[10px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="Edit extension settings"
                 data-video-editor-extension-settings-edit={extensionId}
               >
@@ -491,7 +491,7 @@ export function PackageSettingsSection({
               type="button"
               onClick={handleSave}
               disabled={!isDirty || isBlocked}
-              className="inline-flex items-center gap-1 rounded bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-medium text-emerald-400 hover:bg-emerald-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className="inline-flex min-h-6 items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-400 transition-colors hover:bg-emerald-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none disabled:cursor-not-allowed disabled:opacity-40"
               aria-label="Save extension settings"
               data-video-editor-extension-settings-save={extensionId}
             >
@@ -502,7 +502,7 @@ export function PackageSettingsSection({
               type="button"
               onClick={handleCancel}
               disabled={!isDirty}
-              className="inline-flex items-center gap-1 rounded bg-muted/50 border border-border px-2 py-0.5 text-[10px] font-medium text-muted-foreground hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className="inline-flex min-h-6 items-center gap-1 rounded border border-border bg-muted/50 px-2 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none disabled:cursor-not-allowed disabled:opacity-40"
               aria-label="Cancel extension settings changes"
               data-video-editor-extension-settings-cancel={extensionId}
             >
@@ -512,7 +512,7 @@ export function PackageSettingsSection({
             <button
               type="button"
               onClick={handleReset}
-              className="inline-flex items-center gap-1 rounded bg-red-500/10 border border-red-500/30 px-2 py-0.5 text-[10px] font-medium text-red-400 hover:bg-red-500/20 transition-colors"
+              className="inline-flex min-h-6 items-center gap-1 rounded border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] font-medium text-red-400 transition-colors hover:bg-red-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
               aria-label="Reset extension settings"
               data-video-editor-extension-settings-reset={extensionId}
             >
@@ -526,7 +526,7 @@ export function PackageSettingsSection({
       {/* Saving */}
       {sectionState === 'saving' && (
         <div className="flex items-center gap-2 text-[11px] text-muted-foreground" role="status" aria-label="Saving settings">
-          <Loader2 className="h-3 w-3 animate-spin" />
+          <Loader2 className="h-3 w-3 animate-spin motion-reduce:animate-none" />
           <span>Saving settings…</span>
         </div>
       )}
@@ -543,7 +543,7 @@ export function PackageSettingsSection({
             <button
               type="button"
               onClick={handleSettingsRetry}
-              className="shrink-0 text-[10px] underline hover:text-red-300 transition-colors"
+              className="min-h-6 shrink-0 rounded px-1 text-[10px] underline transition-colors hover:text-red-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
               aria-label="Retry extension settings"
               data-video-editor-extension-settings-retry={extensionId}
             >

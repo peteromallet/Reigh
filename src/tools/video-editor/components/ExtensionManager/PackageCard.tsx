@@ -175,7 +175,7 @@ export function PackageCard({
                     : handleToggle
               }
               disabled={saveState === 'saving'}
-              className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex min-h-6 shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 motion-reduce:transition-none disabled:cursor-not-allowed disabled:opacity-50"
               aria-label={
                 saveState === 'saving'
                   ? `Saving ${extensionId} enablement state`
@@ -185,11 +185,12 @@ export function PackageCard({
                       ? `Disable ${extensionId}`
                       : `Enable ${extensionId}`
               }
+              aria-pressed={isCurrentlyEnabled}
               data-video-editor-extension-toggle={extensionId}
             >
               {saveState === 'saving' ? (
                 <>
-                  <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                  <Loader2 className="h-3 w-3 animate-spin text-muted-foreground motion-reduce:animate-none" />
                   <span className="text-muted-foreground">Saving…</span>
                 </>
               ) : isCurrentlyEnabled ? (

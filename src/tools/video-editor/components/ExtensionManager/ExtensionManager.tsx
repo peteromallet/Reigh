@@ -196,8 +196,9 @@ function DevLocalExtensionsSection({
               <button
                 type="button"
                 onClick={() => setDevExtensionEnabled(row.id, row.disabled)}
-                className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors hover:bg-muted/60"
+                className="inline-flex min-h-6 shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 motion-reduce:transition-none"
                 aria-label={`${row.disabled ? 'Enable' : 'Disable'} ${row.id}`}
+                aria-pressed={!row.disabled}
                 data-video-editor-dev-local-toggle={row.id}
               >
                 {/* The toggle reflects the store state; runtime activeness is
@@ -308,7 +309,11 @@ export function ExtensionManager() {
   const hasPackages = packageStateInventory.length > 0;
 
   return (
-    <div className="flex flex-col gap-3">
+    <div
+      className="flex flex-col gap-3"
+      onKeyDown={(event) => event.stopPropagation()}
+      data-video-editor-extension-manager="true"
+    >
       <ExtensionTrustWarningBanner />
       {import.meta.env.DEV && (
         <DevLocalExtensionsSection extensionRuntime={extensionRuntime ?? null} />
