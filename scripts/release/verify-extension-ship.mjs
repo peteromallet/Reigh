@@ -210,6 +210,22 @@ export function validatePackageJson(packageJson, manifest) {
   if (typeof scripts.test !== 'string' || scripts.test.trim() === '') {
     errors.push('missing package.json script: test');
   }
+  for (const lifecycleName of [
+    'preinstall',
+    'install',
+    'postinstall',
+    'prepare',
+    'prepublish',
+    'prepublishOnly',
+  ]) {
+    const lifecycle = scripts[lifecycleName];
+    if (
+      typeof lifecycle === 'string'
+      && /(?:^|\s|[;&|])(?:npx|pnpx|bunx|npm\s+exec)(?:\s|$)/.test(lifecycle)
+    ) {
+      errors.push(`${lifecycleName} must not execute packages outside the lockfile`);
+    }
+  }
 
   if (errors.length > 0) {
     fail(`invalid release package configuration:\n- ${errors.join('\n- ')}`);

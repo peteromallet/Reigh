@@ -36,6 +36,20 @@ describe('extension ship verifier', () => {
     assert.equal(validateReleaseManifest(manifest), manifest);
     assert.doesNotThrow(() => validatePackageJson(packageJson, manifest));
     assert.deepEqual(manifest.requiredGates, [...EXPECTED_REQUIRED_GATES]);
+
+    for (const command of [
+      'npx --yes only-allow npm',
+      'npm exec only-allow npm',
+      'pnpx only-allow npm',
+      'bunx only-allow npm',
+    ]) {
+      const unpinnedLifecycle = structuredClone(packageJson);
+      unpinnedLifecycle.scripts.preinstall = command;
+      assert.throws(
+        () => validatePackageJson(unpinnedLifecycle, manifest),
+        /preinstall must not execute packages outside the lockfile/,
+      );
+    }
   });
 
   it('pins the container runtime and writes extension controls at container start', () => {
