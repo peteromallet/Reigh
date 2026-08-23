@@ -153,3 +153,11 @@ A clean machine must be able to clone the integration branch, start Astrid and
 Reigh, migrate the Runaway project, exercise every extension in a real browser,
 restart everything, render/export the result, and reproduce the same persisted
 state and visual evidence with zero unexpected errors.
+
+The executable paired-repository gate is
+[`scripts/release/verify-extension-ship.mjs`](../../scripts/release/verify-extension-ship.mjs);
+inspect it with `npm run verify:extension-ship -- --plan` and operate the rollout,
+recovery, review, and human-acceptance controls in
+[`extension-release-runbook.md`](./extension-release-runbook.md). The pinned
+candidate and toolchain are recorded in
+[`config/releases/extension-ship-quality.json`](../../config/releases/extension-ship-quality.json).

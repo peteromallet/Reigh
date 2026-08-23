@@ -27,4 +27,7 @@ result with no unexpected errors.
 - Compatibility, accessibility, browser/device, performance, visual, failure,
   recovery, security, persistence, migration, render, and export evidence.
 - Signed independent acceptance dispositions and a frozen release manifest.
-- One final clean-machine verifier that fails closed on drift or missing proof.
+- One final clean-machine verifier that fails closed on drift or missing proof:
+  `scripts/release/verify-extension-ship.mjs`, operated through
+  `docs/extensions/extension-release-runbook.md` and the paired manifest at
+  `config/releases/extension-ship-quality.json`.
