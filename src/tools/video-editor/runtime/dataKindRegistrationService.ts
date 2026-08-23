@@ -242,6 +242,7 @@ export function createDataKindRegistrationService(
       shape: declaredShape,
       domain: declaredDomain,
       laneRenderer,
+      ...(options?.supportsSparseItemWindows === true ? { supportsSparseItemWindows: true } : {}),
       ...(laneActions ? { laneActions } : {}),
       ...(inspector ? { inspector } : {}),
       ownerExtensionId: extensionId,

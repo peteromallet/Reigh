@@ -115,6 +115,18 @@ describe('createDataKindRegistrationService', () => {
     expect(registry.resolve('transcript_segment')!.inspector).toBeUndefined();
   });
 
+  it('propagates sparse item-window support only after an explicit opt-in', () => {
+    const legacy = makeService();
+    legacy.service.register('transcript_segment', noopLaneRenderer);
+    expect(legacy.registry.resolve('transcript_segment')!.supportsSparseItemWindows).toBeUndefined();
+
+    const sparse = makeService();
+    sparse.service.register('transcript_segment', noopLaneRenderer, undefined, {
+      supportsSparseItemWindows: true,
+    });
+    expect(sparse.registry.resolve('transcript_segment')!.supportsSparseItemWindows).toBe(true);
+  });
+
   it('emits an info dataKinds/registered diagnostic on success', () => {
     const { service, reported } = makeService();
     service.register('transcript_segment', noopLaneRenderer);

@@ -277,6 +277,13 @@ export interface DataKindRegistrationOptions {
   order?: number;
   /** Optional whole-lane actions rendered in the host's responsive action menu. */
   actions?: readonly DataLaneActionDescriptor[];
+  /**
+   * Opt in to non-contiguous viewport windows. When true, the host may supply
+   * `itemWindow.itemIndices` and `items` need not cover every absolute index
+   * between `startIndex` and `endIndex`. Omit this for the legacy contiguous
+   * window contract.
+   */
+  supportsSparseItemWindows?: boolean;
 }
 
 /**

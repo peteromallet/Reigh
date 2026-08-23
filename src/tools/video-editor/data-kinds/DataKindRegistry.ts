@@ -47,6 +47,8 @@ export interface DataKindRegistryRecord {
   readonly domain: DataCoordinateDomain;
   /** Lane renderer bound at activation via `ctx.dataKinds.register()`. */
   readonly laneRenderer: (props: DataLaneRendererProps) => unknown;
+  /** Renderer explicitly accepts non-contiguous `itemWindow.itemIndices`. */
+  readonly supportsSparseItemWindows?: boolean;
   /** Host-rendered whole-lane actions bound for this registration lifecycle. */
   readonly laneActions?: readonly DataLaneActionDescriptor[];
   readonly inspector?: (props: DataItemInspectorProps) => unknown;

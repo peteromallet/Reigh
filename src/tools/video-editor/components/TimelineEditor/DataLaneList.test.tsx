@@ -377,6 +377,42 @@ describe('DataLaneList', () => {
     expect(within(row).queryByTitle('expired-25000')).toBeNull();
   });
 
+  it('selects the deterministic top 128 from 50k simultaneous overlaps', () => {
+    const itemCount = 50_000;
+    const items = Array.from({ length: itemCount }, (_, index) => ({
+      item: item(`overlap-${String(index).padStart(5, '0')}`),
+      timelineStart: 0,
+      // The permutation exercises heap replacement while the repeated 257
+      // duration ranks exercise the canonical id tie-breaker.
+      timelineEnd: 1_000 + ((index * 7_919) % 257),
+    }));
+    const expectedIndices = Array.from({ length: itemCount }, (_, index) => index)
+      .sort((left, right) => (
+        (items[right].timelineEnd - items[left].timelineEnd)
+        || (items[left].item.id < items[right].item.id ? -1 : 1)
+      ))
+      .slice(0, DATA_LANE_DOM_ITEM_BUDGET)
+      .sort((left, right) => left - right);
+    const data = buildData([laneView({
+      laneId: 'opaque:all-overlap.schema/v1',
+      kindId: '',
+      opaque: true,
+      items,
+    })]);
+
+    renderList({
+      data,
+      pixelsPerSecond: 1,
+      viewport: { scrollLeft: 500, clientWidth: START_LEFT + 100 },
+    });
+
+    const bars = within(screen.getByTestId('data-lane-row')).getAllByTestId('data-lane-extent-bar');
+    expect(bars).toHaveLength(DATA_LANE_DOM_ITEM_BUDGET);
+    expect(bars.map((bar) => bar.getAttribute('data-item-id'))).toEqual(
+      expectedIndices.map((index) => `overlap-${String(index).padStart(5, '0')}`),
+    );
+  });
+
   it('recomputes the temporal window for zoom and viewport resize', () => {
     const items = Array.from({ length: 300 }, (_, index) => ({
       item: item(`item-${index}`),
@@ -584,6 +620,89 @@ describe('DataLaneList', () => {
     expect(seen.length).toBeGreaterThanOrEqual(1);
     // Domain is the view's assembly-time copy, not the registry's.
     expect(seen[seen.length - 1].domain).toBe('source_seconds');
+  });
+
+  it('gives opted-in registered renderers sparse absolute indices', () => {
+    const seen: DataLaneRendererProps[] = [];
+    const renderer = (props: DataLaneRendererProps) => {
+      seen.push(props);
+      return null;
+    };
+    const data = buildData([laneView({
+      items: [
+        { item: item('ancient-spanning'), timelineStart: 0, timelineEnd: 1_000 },
+        ...Array.from({ length: 300 }, (_, index) => ({
+          item: item(`expired-${index}`),
+          timelineStart: index + 1,
+          timelineEnd: index + 1.1,
+        })),
+        ...Array.from({ length: 160 }, (_, index) => ({
+          item: item(`current-${index}`),
+          timelineStart: 500 + index * 0.01,
+          timelineEnd: 500 + index * 0.01 + 0.005,
+        })),
+      ],
+      laneRenderer: renderer,
+    })]);
+
+    render(
+      <DataKindRegistryProvider>
+        <RegisterProbe record={registryRecord({
+          laneRenderer: renderer,
+          supportsSparseItemWindows: true,
+        })} />
+        <DataLaneList
+          data={data}
+          pixelsPerSecond={10}
+          viewport={{ scrollLeft: 5_000, clientWidth: START_LEFT + 100 }}
+        />
+      </DataKindRegistryProvider>,
+    );
+
+    const props = seen.at(-1)!;
+    expect(props.items).toHaveLength(DATA_LANE_DOM_ITEM_BUDGET);
+    expect(props.itemWindow?.itemIndices).toHaveLength(DATA_LANE_DOM_ITEM_BUDGET);
+    expect(props.itemWindow?.itemIndices?.[0]).toBe(0);
+    expect(props.itemWindow!.endIndex - props.itemWindow!.startIndex).toBeGreaterThan(props.items.length);
+    expect(props.items[0].id).toBe('ancient-spanning');
+    expect(props.items.some((renderItem) => renderItem.id.startsWith('current-'))).toBe(true);
+  });
+
+  it('preserves the contiguous window contract for legacy registered renderers', () => {
+    const seen: DataLaneRendererProps[] = [];
+    const renderer = (props: DataLaneRendererProps) => {
+      seen.push(props);
+      return null;
+    };
+    const data = buildData([laneView({
+      items: [
+        { item: item('ancient-spanning'), timelineStart: 0, timelineEnd: 1_000 },
+        ...Array.from({ length: 500 }, (_, index) => ({
+          item: item(`item-${index}`),
+          timelineStart: index + 1,
+          timelineEnd: index + 1.1,
+        })),
+      ],
+      laneRenderer: renderer,
+    })]);
+
+    render(
+      <DataKindRegistryProvider>
+        <RegisterProbe record={registryRecord({ laneRenderer: renderer })} />
+        <DataLaneList
+          data={data}
+          pixelsPerSecond={10}
+          viewport={{ scrollLeft: 4_900, clientWidth: START_LEFT + 100 }}
+        />
+      </DataKindRegistryProvider>,
+    );
+
+    const props = seen.at(-1)!;
+    expect(props.items.length).toBeLessThanOrEqual(DATA_LANE_DOM_ITEM_BUDGET);
+    expect(props.itemWindow?.itemIndices).toBeUndefined();
+    expect(props.itemWindow!.endIndex - props.itemWindow!.startIndex).toBe(props.items.length);
+    expect(props.items.some((renderItem) => renderItem.id.startsWith('item-48'))).toBe(true);
+    expect(props.items[0].id).not.toBe('ancient-spanning');
   });
 
   it('dispatches a dataItem target when an extent bar is pressed', () => {

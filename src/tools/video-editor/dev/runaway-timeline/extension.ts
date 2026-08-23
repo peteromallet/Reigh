@@ -29,6 +29,7 @@ export const runawayTimelineExtension: ReighExtension = defineExtension({
       RUNAWAY_KIND_ID,
       renderRunawayTimelineLane,
       renderRunawayTransitionInspector,
+      { supportsSparseItemWindows: true },
     );
   },
 });

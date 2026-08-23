@@ -51,6 +51,8 @@ export interface DataLaneRowProps {
   readonly extensionId?: string;
   /** Host-rendered whole-lane actions bound to the kind registration. */
   readonly laneActions?: readonly DataLaneActionDescriptor[];
+  /** Registered renderer explicitly accepts non-contiguous item windows. */
+  readonly supportsSparseItemWindows?: boolean;
   /** Empty lane chrome pressed → dispatch a `dataLane` target upstream. */
   readonly onSelectLane?: () => void;
   /** Host-painted extent bar pressed → dispatch a `dataItem` target upstream. */
@@ -210,24 +212,59 @@ function capOverlappingIndices(
 ): readonly number[] {
   if (indices.length <= DATA_LANE_DOM_ITEM_BUDGET) return indices;
   const viewportMiddle = (viewportStartSeconds + viewportEndSeconds) / 2;
-  return [...indices]
-    .sort((leftIndex, rightIndex) => {
-      const left = index.items[leftIndex];
-      const right = index.items[rightIndex];
-      const leftEnd = timelineEndForIndex(left);
-      const rightEnd = timelineEndForIndex(right);
-      const leftDistance = viewportMiddle < left.timelineStart
-        ? left.timelineStart - viewportMiddle
-        : viewportMiddle > leftEnd ? viewportMiddle - leftEnd : 0;
-      const rightDistance = viewportMiddle < right.timelineStart
-        ? right.timelineStart - viewportMiddle
-        : viewportMiddle > rightEnd ? viewportMiddle - rightEnd : 0;
-      return (leftDistance - rightDistance)
-        || ((rightEnd - right.timelineStart) - (leftEnd - left.timelineStart))
-        || compareLaneItems(left, right);
-    })
-    .slice(0, DATA_LANE_DOM_ITEM_BUDGET)
-    .sort((left, right) => left - right);
+  const comparePriority = (leftIndex: number, rightIndex: number): number => {
+    const left = index.items[leftIndex];
+    const right = index.items[rightIndex];
+    const leftEnd = timelineEndForIndex(left);
+    const rightEnd = timelineEndForIndex(right);
+    const leftDistance = viewportMiddle < left.timelineStart
+      ? left.timelineStart - viewportMiddle
+      : viewportMiddle > leftEnd ? viewportMiddle - leftEnd : 0;
+    const rightDistance = viewportMiddle < right.timelineStart
+      ? right.timelineStart - viewportMiddle
+      : viewportMiddle > rightEnd ? viewportMiddle - rightEnd : 0;
+    return (leftDistance - rightDistance)
+      || ((rightEnd - right.timelineStart) - (leftEnd - left.timelineStart))
+      || compareLaneItems(left, right)
+      || (leftIndex - rightIndex);
+  };
+
+  // Fixed-size max heap: the worst retained candidate stays at the root, so
+  // each additional overlap costs O(log DOM_ITEM_BUDGET), never a full k sort.
+  const heap: number[] = [];
+  const siftUp = (start: number) => {
+    let child = start;
+    while (child > 0) {
+      const parent = Math.floor((child - 1) / 2);
+      if (comparePriority(heap[parent], heap[child]) >= 0) break;
+      [heap[parent], heap[child]] = [heap[child], heap[parent]];
+      child = parent;
+    }
+  };
+  const siftDown = () => {
+    let parent = 0;
+    while (true) {
+      const left = parent * 2 + 1;
+      if (left >= heap.length) return;
+      const right = left + 1;
+      const worseChild = right < heap.length && comparePriority(heap[right], heap[left]) > 0
+        ? right
+        : left;
+      if (comparePriority(heap[parent], heap[worseChild]) >= 0) return;
+      [heap[parent], heap[worseChild]] = [heap[worseChild], heap[parent]];
+      parent = worseChild;
+    }
+  };
+  for (const itemIndex of indices) {
+    if (heap.length < DATA_LANE_DOM_ITEM_BUDGET) {
+      heap.push(itemIndex);
+      siftUp(heap.length - 1);
+    } else if (comparePriority(itemIndex, heap[0]) < 0) {
+      heap[0] = itemIndex;
+      siftDown();
+    }
+  }
+  return heap.sort((left, right) => left - right);
 }
 
 function selectViewportWindow(
@@ -235,6 +272,7 @@ function selectViewportWindow(
   pixelsPerSecond: number,
   viewport: DataLaneViewport,
   pinnedIndex?: number,
+  supportsSparseItemWindows = false,
 ): DataLaneItemWindow {
   const safePixelsPerSecond = Math.max(Number.EPSILON, pixelsPerSecond);
   // The sticky LABEL_WIDTH gutter occludes the left side of the scroller. In
@@ -271,6 +309,20 @@ function selectViewportWindow(
       startIndex: insertionIndex,
       endIndex: insertionIndex,
       itemIndices: [],
+      viewportStartSeconds,
+      viewportEndSeconds,
+    };
+  }
+  if (!supportsSparseItemWindows) {
+    const viewportMiddle = (viewportStartSeconds + viewportEndSeconds) / 2;
+    const bounded = centeredBoundedWindow(
+      overlapping[0],
+      overlapping[overlapping.length - 1] + 1,
+      upperBoundStart(index.items, viewportMiddle),
+    );
+    return {
+      ...bounded,
+      itemIndices: contiguousIndices(bounded.startIndex, bounded.endIndex),
       viewportStartSeconds,
       viewportEndSeconds,
     };
@@ -314,6 +366,7 @@ export function DataLaneRow({
   onRequestItemIntoView,
   extensionId,
   laneActions,
+  supportsSparseItemWindows,
   onSelectLane,
   onSelectItem,
 }: DataLaneRowProps) {
@@ -338,6 +391,7 @@ export function DataLaneRow({
     pixelsPerSecond,
     resolvedViewport,
     pinnedWindowIndex,
+    lane.opaque || supportsSparseItemWindows === true,
   );
   const {
     startIndex: windowStartIndex,

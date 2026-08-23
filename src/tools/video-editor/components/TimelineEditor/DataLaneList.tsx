@@ -82,6 +82,9 @@ export function DataLaneList({
           onRequestItemIntoView={onRequestItemIntoView}
           extensionId={lane.kindId ? kindRecords.get(lane.kindId)?.ownerExtensionId : undefined}
           laneActions={lane.kindId ? kindRecords.get(lane.kindId)?.laneActions : undefined}
+          supportsSparseItemWindows={lane.kindId
+            ? kindRecords.get(lane.kindId)?.supportsSparseItemWindows === true
+            : false}
           onSelectLane={() => dispatch({
             kind: 'dataLane',
             laneId: lane.laneId,
