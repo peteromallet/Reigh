@@ -28,11 +28,13 @@ import {
 import { HostContributionErrorBoundary } from '@/tools/video-editor/runtime/ContributionErrorBoundary';
 import { transcriptLaneExtension } from '@/tools/video-editor/dev/transcript-lane/extension';
 import { runawayTimelineExtension } from '@/tools/video-editor/dev/runaway-timeline/extension';
+import { scenePhaseMarkersExtension } from '@/tools/video-editor/dev/scene-phase-markers/extension';
 import { creativeLabExtensions } from './index';
 import { createCreativeLabSnapshot } from './testing/createCreativeLabHarness';
 
 const compatibilityCatalog = Object.freeze([
   ...creativeLabExtensions,
+  scenePhaseMarkersExtension,
   transcriptLaneExtension,
   runawayTimelineExtension,
 ]);
@@ -51,6 +53,7 @@ function createPairContextFactory() {
     renderer: (props: DataLaneRendererProps) => unknown;
     inspector?: (props: DataItemInspectorProps) => unknown;
   }>();
+  const contextCreations = new Map<string, number>();
   const reader: TimelineReader = { snapshot: () => createCreativeLabSnapshot() };
   const timeline = {
     apply(_patch: TimelinePatch): TimelineDiff { return {} as TimelineDiff; },
@@ -58,6 +61,7 @@ function createPairContextFactory() {
 
   const contextFactory = (extension: ReighExtension): ExtensionContext => {
     const owner = extension.manifest.id as string;
+    contextCreations.set(owner, (contextCreations.get(owner) ?? 0) + 1);
     const commandService: ExtensionCommandService = {
       registerCommand(id, handler): DisposeHandle {
         if (commands.has(id)) throw new Error(`duplicate command: ${id}`);
@@ -97,15 +101,32 @@ function createPairContextFactory() {
     );
   };
 
-  return { commands, renderers, dataKinds, contextFactory };
+  return { commands, renderers, dataKinds, contextCreations, contextFactory };
 }
 
-describe('Creative Lab + typed-lane all-pairs compatibility matrix', () => {
-  it('generates the complete 12-extension / 66-pair matrix', () => {
-    expect(compatibilityCatalog).toHaveLength(12);
-    expect(new Set(compatibilityCatalog.map((extension) => extension.manifest.id)).size).toBe(12);
-    expect(allPairs(compatibilityCatalog)).toHaveLength(66);
+describe('Creative Lab + bundled editor-extension compatibility matrix', () => {
+  it('generates the complete 13-extension / 78-pair matrix', () => {
+    expect(compatibilityCatalog).toHaveLength(13);
+    expect(new Set(compatibilityCatalog.map((extension) => extension.manifest.id)).size).toBe(13);
+    expect(allPairs(compatibilityCatalog)).toHaveLength(78);
   });
+
+  it.each(compatibilityCatalog)(
+    'activates and disposes %s alone without leaking registrations',
+    (extension) => {
+      const harness = createPairContextFactory();
+      const host = createExtensionLifecycleHost();
+      host.synchronize([extension], harness.contextFactory);
+
+      expect(host.lifecycles.get(extension.manifest.id as string)?.state).toBe('active');
+      expect(host.diagnostics.filter((diagnostic) => diagnostic.severity === 'error')).toEqual([]);
+
+      host.disposeAll();
+      expect(harness.commands.size).toBe(0);
+      expect(harness.renderers.size).toBe(0);
+      expect(harness.dataKinds.size).toBe(0);
+    },
+  );
 
   it.each(allPairs(compatibilityCatalog))(
     'activates and disposes %s with %s without identity collisions',
@@ -126,6 +147,48 @@ describe('Creative Lab + typed-lane all-pairs compatibility matrix', () => {
       expect(harness.dataKinds.size).toBe(0);
     },
   );
+
+  it('activates all 13 together and survives reorder, disable, and re-enable without churn or leaks', () => {
+    const harness = createPairContextFactory();
+    const host = createExtensionLifecycleHost();
+    const ids = compatibilityCatalog.map((extension) => extension.manifest.id as string);
+    const reversed = [...compatibilityCatalog].reverse();
+    const disabled = compatibilityCatalog[Math.floor(compatibilityCatalog.length / 2)];
+    const disabledId = disabled.manifest.id as string;
+
+    host.synchronize(compatibilityCatalog, harness.contextFactory);
+    expect(host.lifecycles.size).toBe(13);
+    expect([...host.lifecycles.values()].every((lifecycle) => lifecycle.state === 'active')).toBe(true);
+    expect(host.diagnostics.filter((diagnostic) => diagnostic.severity === 'error')).toEqual([]);
+    expect(Object.fromEntries(harness.contextCreations)).toEqual(
+      Object.fromEntries(ids.map((id) => [id, 1])),
+    );
+
+    // Reordering is presentation-only: it must not reactivate or dispose a
+    // stable manifest identity.
+    host.synchronize(reversed, harness.contextFactory);
+    expect(Object.fromEntries(harness.contextCreations)).toEqual(
+      Object.fromEntries(ids.map((id) => [id, 1])),
+    );
+    expect(host.getRecoveryKey(disabledId)).toBe('1');
+
+    host.synchronize(
+      compatibilityCatalog.filter((extension) => extension !== disabled),
+      harness.contextFactory,
+    );
+    expect(host.lifecycles.has(disabledId)).toBe(false);
+
+    host.synchronize(compatibilityCatalog, harness.contextFactory);
+    expect(host.lifecycles.get(disabledId)?.state).toBe('active');
+    expect(harness.contextCreations.get(disabledId)).toBe(2);
+    expect(host.getRecoveryKey(disabledId)).toBe('2');
+    expect(host.diagnostics.filter((diagnostic) => diagnostic.severity === 'error')).toEqual([]);
+
+    host.disposeAll();
+    expect(harness.commands.size).toBe(0);
+    expect(harness.renderers.size).toBe(0);
+    expect(harness.dataKinds.size).toBe(0);
+  });
 
   it('contains a partial activation failure without blocking the healthy peer', () => {
     const broken = defineExtension({

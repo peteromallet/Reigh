@@ -868,3 +868,17 @@ evidence and a concrete improvement direction.
   a delta before materializing and reloading the marker. Geometry assertions
   should be relative to semantic layout boundaries, not convenient viewport
   constants.
+
+### A pairwise matrix is incomplete when its inventory is hand-curated
+
+- The compatibility gate called itself complete but enumerated the ten Creative
+  Lab extensions plus Transcript and Runaway while omitting Scene Phase Markers,
+  even though the browser product surface ships all thirteen together. It also
+  inferred single-extension compatibility from pair activation and never
+  exercised the full live reorder/disable/re-enable sequence in one host.
+- The canonical gate now enumerates all thirteen, locks the resulting 78 unique
+  pairs, activates each extension alone, mounts all thirteen together, and
+  proves that reorder is non-churning while disable/re-enable advances only the
+  selected extension's recovery generation and leaks no registrations. Release
+  inventories need an asserted cardinality and product-surface reconciliation;
+  a green combinator cannot reveal an extension it was never given.
