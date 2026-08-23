@@ -173,6 +173,18 @@ and query views still require production deployment, a distributed edge rate
 limit, dashboard/alert wiring, and an alert drill. A DOM event observed only by
 an E2E test does not satisfy the dashboard/alert gate.
 
+Stage evidence and rolling health are deliberately separate. The retained
+`extension_operational_event_coverage` matrix is keyed by exact release
+revision and proves which required scenarios were exercised; a missing rare or
+negative event is a test-coverage gap or `not_applicable`, not a production
+page. `extension_operational_health` is also keyed by exact release revision and
+reports only 15-minute liveness plus failure/degraded outcomes. During expected
+cohort traffic or a synthetic probe, a missing target-revision row is
+`UNKNOWN/HOLD`; quiet traffic does not turn the correct absence of a conflict
+or migration into an incident. Configure the edge function's authoritative
+`EXTENSION_OPERATIONAL_RELEASE_REVISION`; client-supplied mismatches are
+rejected and must never be merged into the release rollup.
+
 Allowed fields are deliberately bounded:
 
 - Server-generated receipt timestamp and the bounded release/configuration
@@ -191,8 +203,10 @@ applicable operational policy. Observability on-call audits a sample before
 Stage 1 and again before default enablement.
 
 Every alert links to this runbook and names one primary and one backup owner.
-Missing telemetry, unknown error classes, or a broken dashboard blocks stage
-advancement; absence of data is never treated as success.
+Missing target-revision telemetry while traffic is expected, unknown error
+classes, rejection spikes, or a broken dashboard blocks stage advancement.
+UNKNOWN is a hold, never success; rare-family absence routes to release review
+instead of paging on-call.
 
 ## Rollback
 

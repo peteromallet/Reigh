@@ -10,6 +10,7 @@ import {
 
 const MAX_REQUESTS_PER_WINDOW = 120;
 const WINDOW_MS = 60_000;
+const EXPECTED_RELEASE_REVISION_ENV = 'EXTENSION_OPERATIONAL_RELEASE_REVISION';
 let windowStartedAt = 0;
 let windowRequestCount = 0;
 
@@ -40,6 +41,12 @@ serve(async (req) => {
   const { supabaseAdmin, logger, body } = bootstrap.value;
 
   try {
+    const expectedReleaseRevision = Deno.env.get(EXPECTED_RELEASE_REVISION_ENV)?.trim();
+    if (!expectedReleaseRevision) {
+      logger.error('Operational telemetry release revision is not configured');
+      await logger.flush();
+      return jsonResponse({ error: 'Telemetry unavailable' }, 503);
+    }
     const contentLength = Number(req.headers.get('content-length') ?? '0');
     if (contentLength > MAX_REQUEST_BYTES || !allowRequest(Date.now())) {
       await logger.flush();
@@ -49,6 +56,10 @@ serve(async (req) => {
     if (!events) {
       await logger.flush();
       return jsonResponse({ error: `Invalid bounded telemetry batch (maximum ${MAX_EVENTS_PER_BATCH} events)` }, 400);
+    }
+    if (events.some((event) => event.release_revision !== expectedReleaseRevision)) {
+      await logger.flush();
+      return jsonResponse({ error: 'Telemetry release revision mismatch' }, 409);
     }
     const { error } = await supabaseAdmin.from('extension_operational_events').insert(events);
     if (error) {

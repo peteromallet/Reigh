@@ -55,6 +55,13 @@ describe('extension operational telemetry edge entrypoint', () => {
         auth: { userId: 'user-1' },
       },
     });
+    vi.stubGlobal('Deno', {
+      env: {
+        get: vi.fn((name: string) => (
+          name === 'EXTENSION_OPERATIONAL_RELEASE_REVISION' ? 'rc1' : undefined
+        )),
+      },
+    });
   });
 
   it('requires authenticated JWT user access and inserts only validated fields', async () => {
@@ -143,5 +150,42 @@ describe('extension operational telemetry edge entrypoint', () => {
     expect(response.status).toBe(503);
     await expect(response.json()).resolves.toEqual({ error: 'Telemetry unavailable' });
     expect(logger.error).toHaveBeenCalledWith('Operational telemetry insert failed');
+  });
+
+  it('fails closed when the authoritative release revision is missing', async () => {
+    vi.stubGlobal('Deno', { env: { get: vi.fn(() => undefined) } });
+    const logger = createLogger();
+    mocks.bootstrapEdgeHandler.mockResolvedValue({
+      ok: true,
+      value: {
+        supabaseAdmin: createSupabaseAdmin(),
+        logger,
+        body: { events: [validEvent] },
+        auth: { userId: 'user-1' },
+      },
+    });
+    const handler = await loadHandler();
+    const response = await handler(new Request('https://edge.test/extension-operational-events', { method: 'POST' }));
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({ error: 'Telemetry unavailable' });
+    expect(logger.error).toHaveBeenCalledWith('Operational telemetry release revision is not configured');
+  });
+
+  it('rejects a client-forged release revision before persistence', async () => {
+    const supabaseAdmin = createSupabaseAdmin();
+    mocks.bootstrapEdgeHandler.mockResolvedValue({
+      ok: true,
+      value: {
+        supabaseAdmin,
+        logger: createLogger(),
+        body: { events: [{ ...validEvent, releaseRevision: 'forged-rc' }] },
+        auth: { userId: 'user-1' },
+      },
+    });
+    const handler = await loadHandler();
+    const response = await handler(new Request('https://edge.test/extension-operational-events', { method: 'POST' }));
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: 'Telemetry release revision mismatch' });
+    expect(supabaseAdmin.insert).not.toHaveBeenCalled();
   });
 });
