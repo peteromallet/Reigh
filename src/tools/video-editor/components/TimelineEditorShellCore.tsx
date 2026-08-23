@@ -608,7 +608,7 @@ function TimelineEditorShellCoreComponent({
 
   return (
     <>
-      <div ref={outerRef} className="flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground">
+      <div ref={outerRef} className="flex h-full w-full min-h-0 min-w-0 max-w-full flex-col overflow-hidden bg-background text-foreground">
         <div className="sr-only" aria-live="polite" aria-atomic="true">
           {interactionStatusLabel}
         </div>
@@ -645,10 +645,10 @@ function TimelineEditorShellCoreComponent({
 
         {mobileSinglePane ? (
           <main
-            className="grid h-full min-h-0 flex-1 animate-in fade-in duration-200 motion-reduce:animate-none motion-reduce:transition-none grid-rows-[auto_auto_auto_minmax(200px,42dvh)_minmax(140px,1fr)] gap-3 p-3 transition-opacity"
+            className="grid h-full w-full min-h-0 min-w-0 max-w-full flex-1 animate-in fade-in duration-200 motion-reduce:animate-none motion-reduce:transition-none grid-rows-[auto_auto_auto_minmax(200px,42dvh)_minmax(140px,1fr)] gap-3 overflow-x-clip p-3 transition-opacity"
             style={{ paddingInline: mainPaddingInline }}
           >
-            <div>
+            <div className="min-w-0">
               {toolbar}
             </div>
 
@@ -657,11 +657,11 @@ function TimelineEditorShellCoreComponent({
             {/* M1: Extension activity region — between toolbar and timeline.
                 Kept in its own wrapper so the row count stays constant whether
                 or not the region has anything to show. */}
-            <div>
+            <div className="min-w-0">
               {activityRegion}
             </div>
 
-            <div className="flex min-h-0 flex-col gap-3">
+            <div className="flex min-h-0 min-w-0 flex-col gap-3">
               <div className="relative min-h-0 flex-1">
                 {previewOverlay}
                 <PreviewPanel surface={previewSurface} />
@@ -677,14 +677,14 @@ function TimelineEditorShellCoreComponent({
               </div>
             </div>
 
-            <div className="relative min-h-0 overflow-hidden">
+            <div className="relative min-h-0 min-w-0 overflow-hidden">
               {timelineRegion}
             </div>
 
           </main>
         ) : condensed ? (
           <main
-            className="grid h-full min-h-0 flex-1 animate-in fade-in duration-200 motion-reduce:animate-none motion-reduce:transition-none grid-cols-[minmax(0,1fr)_320px] grid-rows-[auto_auto_minmax(0,1fr)] gap-3 p-3 transition-opacity"
+            className="grid h-full w-full min-h-0 min-w-0 max-w-full flex-1 animate-in fade-in duration-200 motion-reduce:animate-none motion-reduce:transition-none grid-cols-[minmax(0,1fr)_320px] grid-rows-[auto_auto_minmax(0,1fr)] gap-3 overflow-x-clip p-3 transition-opacity"
             style={{ paddingInline: mainPaddingInline }}
           >
             <div className="col-span-1">
@@ -806,7 +806,7 @@ function TimelineEditorShellCoreComponent({
             and as an unbounded flex item this footer took height out of the editor
             above it — collapsing the preview and clipping the timeline. */}
         <div
-          className="flex max-h-32 shrink-0 flex-wrap items-start gap-2 overflow-y-auto border-t border-border/40 px-3 py-2"
+          className="flex max-h-32 w-full min-w-0 max-w-full shrink-0 flex-wrap items-start gap-2 overflow-y-auto border-t border-border/40 px-3 py-2"
           {...shellRegionAttrs('reservedSlots')}
         >
           {codePanelSlot}

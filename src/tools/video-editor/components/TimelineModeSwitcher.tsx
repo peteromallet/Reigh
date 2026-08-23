@@ -115,7 +115,7 @@ export function TimelineModeSwitcher({
 
   return (
     <div
-      className="rounded-xl border border-border bg-card/80 p-1"
+      className="min-w-0 max-w-full rounded-xl border border-border bg-card/80 p-1"
       role="toolbar"
       aria-label="Phone timeline mode bar"
       data-shell-interaction="true"

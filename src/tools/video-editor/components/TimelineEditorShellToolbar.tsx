@@ -175,15 +175,16 @@ export function TimelineEditorShellToolbar({
   return (
     <div
       className={cn(
-        'flex items-center justify-between gap-2 rounded-lg border border-border/70 bg-card/80 px-2 text-muted-foreground',
+        'flex min-w-0 max-w-full items-center justify-between gap-2 rounded-lg border border-border/70 bg-card/80 px-2 text-muted-foreground',
         touchChrome ? 'min-h-11 py-1' : 'h-7',
+        condensed && 'h-auto flex-wrap',
         // The compact mode switcher rides in this row. It fits inline on tablet
         // landscape and wraps to a second line on portrait, which keeps the
         // preview's `1fr` intact where vertical space is tightest.
         toolbarModeSwitcher && 'h-auto flex-wrap',
       )}
     >
-      <div className="flex items-center gap-1">
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
         {condensed && !forceCondensed && onNavigateHome && (
           <button
             type="button"
@@ -194,7 +195,7 @@ export function TimelineEditorShellToolbar({
           </button>
         )}
         {condensed && navigationControls && (
-          <div className="mr-2 flex shrink-0 items-center gap-2" data-testid="toolbar-navigation-controls">
+          <div className="mr-2 flex min-w-0 max-w-full flex-1 flex-wrap items-center gap-2" data-testid="toolbar-navigation-controls">
             {navigationControls}
           </div>
         )}
@@ -211,7 +212,7 @@ export function TimelineEditorShellToolbar({
           <GripHorizontal className="h-4 w-4 text-border" />
         </div>
       )}
-      <div className="flex items-center gap-1">
+      <div className="flex shrink-0 items-center gap-1">
         {!condensed && (
           <Button
             type="button"

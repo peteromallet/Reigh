@@ -43,7 +43,7 @@ interface EditorProjectTimelineSelectorsProps {
 }
 
 const triggerClass = cn(
-  'flex h-7 items-center gap-1.5 rounded-md border border-border/70 bg-card/80 px-2 text-xs',
+  'flex h-7 min-w-0 items-center gap-1.5 rounded-md border border-border/70 bg-card/80 px-2 text-xs',
   'text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
   'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
   'disabled:pointer-events-none disabled:opacity-50',
@@ -80,7 +80,7 @@ export function EditorProjectTimelineSelectors({
   const timelineTriggerLabel = localTimelineName ?? localTimelineId ?? 'Timeline';
 
   return (
-    <div className="flex flex-wrap items-center gap-2" data-testid="editor-project-timeline-selectors">
+    <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2" data-testid="editor-project-timeline-selectors">
       <Popover open={projectOpen} onOpenChange={setProjectOpen}>
         <PopoverTrigger asChild>
           <button
