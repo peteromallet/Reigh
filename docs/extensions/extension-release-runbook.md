@@ -16,10 +16,17 @@ also requires an exact clean Astrid checkout supplied by commit through the
 environment. It never fetches, changes a Git ref, resets, cleans, or applies a
 production migration. A mismatch or failed command stops the run.
 
+After preflight, every Reigh gate runs from a newly created detached worktree at
+the verified evidence-controller commit, never from the operator checkout. This
+keeps Git ancestry available to evidence gates while excluding ignored local
+inputs such as `.env.production`, `public/files/`, and `public/uploads/`. The
+temporary worktree is removed after the run; any tracked mutation fails the
+post-gate clean check.
+
 ## Running the frozen-candidate gate
 
 Prepare fresh, separate Reigh and Astrid checkouts. Install Node `20.19.4`, npm
-`10.8.2`, Python `3.11.11` plus the dev tooling required by the pinned Astrid
+`10.8.2`, Python `3.11.11`, FFmpeg/FFprobe `7.1.1`, plus the dev tooling required by the pinned Astrid
 revision, GNU Make, FFmpeg/FFprobe, and the host libraries required by Chromium.
 The paired gate installs the lock-aligned Playwright Chromium binary into its
 private runtime tree; it does not reuse a developer browser cache. Do not reuse

@@ -22,6 +22,7 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
+  assertCleanReleaseCheckout,
   inspectCandidateController,
   resolveAnnotatedCandidateTag,
 } from './reigh-release-provenance.mjs';
@@ -96,6 +97,12 @@ function safeBaseEnvironment(overrides = {}) {
     LANG: 'C',
     LC_ALL: 'C',
     TZ: 'UTC',
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null',
+    GIT_CONFIG_COUNT: '0',
+    GIT_NO_REPLACE_OBJECTS: '1',
+    GIT_OPTIONAL_LOCKS: '0',
+    GIT_TERMINAL_PROMPT: '0',
     ...overrides,
   };
 }
@@ -222,10 +229,7 @@ export function requireFullCommitPin(ref, label) {
 }
 
 function requireCleanWorktree(checkout, label) {
-  const status = gitOutput(checkout, ['status', '--porcelain=v1', '--untracked-files=all']);
-  if (status) {
-    fail(`${label} worktree must be completely clean before paired evidence is issued`);
-  }
+  assertCleanReleaseCheckout(checkout, label);
 }
 
 export function preflightPinnedRepositories({ manifest, env }) {

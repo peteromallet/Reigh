@@ -169,6 +169,7 @@ describe('extension ship verifier', () => {
     assert.deepEqual(plan.at(-1).env, {
       PY: '/tmp/astrid-python',
       PYTHON_BIN: '/tmp/astrid-python',
+      PYTHONPATH: `${REPO_ROOT}/vendor/timeline-schema/python`,
     });
     assert.ok(plan.every((step) => Array.isArray(step.args)));
     assert.ok(plan.every((step) => step.command === 'npm' || step.command === 'make'));

@@ -1,7 +1,10 @@
 import { strict as assert } from 'node:assert';
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { describe, it } from 'node:test';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { resolve } from 'node:path';
+import { after, describe, it } from 'node:test';
 
 import {
   CHECKLIST_PATH,
@@ -16,17 +19,29 @@ const checklistMarkdown = readFileSync(CHECKLIST_PATH, 'utf8');
 const expected = parseChecklistWorkstreams(checklistMarkdown);
 const checkedInLedger = JSON.parse(readFileSync(LEDGER_PATH, 'utf8'));
 const checkedInManifest = JSON.parse(readFileSync(RELEASE_MANIFEST_PATH, 'utf8'));
-const evidencePath = 'scripts/quality/check-extension-ship-evidence.mjs';
+const release = 'extension-ship-quality-rc1';
+const fixtureRepo = mkdtempSync(resolve(tmpdir(), 'extension-ship-evidence-'));
+const evidencePath = `docs/extensions/evidence/releases/${release}/receipt.txt`;
+const largeCommittedEvidencePath = `docs/extensions/evidence/releases/${release}/large.bin`;
+mkdirSync(resolve(fixtureRepo, evidencePath, '..'), { recursive: true });
+writeFileSync(resolve(fixtureRepo, evidencePath), 'immutable release receipt\n');
+writeFileSync(resolve(fixtureRepo, largeCommittedEvidencePath), Buffer.alloc((2 * 1024 * 1024) + 1, 0x5a));
+for (const args of [
+  ['init', '-q'],
+  ['config', 'user.name', 'Evidence Test'],
+  ['config', 'user.email', 'evidence-test@example.invalid'],
+  ['add', '-A'],
+  ['commit', '-q', '-m', 'evidence fixtures'],
+]) {
+  execFileSync('git', args, { cwd: fixtureRepo, stdio: 'ignore' });
+}
+after(() => rmSync(fixtureRepo, { recursive: true, force: true }));
+
 const evidenceHash = createHash('sha256')
-  .update(readFileSync(`${REPO_ROOT}/${evidencePath}`))
+  .update(readFileSync(resolve(fixtureRepo, evidencePath)))
   .digest('hex');
-const committedEvidencePath = '.nvmrc';
-const committedEvidenceHash = createHash('sha256')
-  .update(readFileSync(`${REPO_ROOT}/${committedEvidencePath}`))
-  .digest('hex');
-const largeCommittedEvidencePath = 'docs/extensions/evidence/chrome-acceptance/28-headless-caption-render-remotion-4.0.503.mp4';
 const largeCommittedEvidenceHash = createHash('sha256')
-  .update(readFileSync(`${REPO_ROOT}/${largeCommittedEvidencePath}`))
+  .update(readFileSync(resolve(fixtureRepo, largeCommittedEvidencePath)))
   .digest('hex');
 const reighCommit = 'a'.repeat(40);
 const astridCommit = 'b'.repeat(40);
@@ -65,7 +80,7 @@ function makeReceipt(kind, id, extra = {}) {
 function makeFrozenLedger() {
   return {
     schemaVersion: 1,
-    release: 'extension-ship-quality-rc1',
+    release,
     status: 'frozen',
     candidate: { reighCommit, astridCommit },
     workstreams: expected.map((workstream) => {
@@ -144,10 +159,11 @@ describe('extension ship evidence gate', () => {
       ledger: makeFrozenLedger(),
       checklistMarkdown,
       releaseManifest: frozenManifest,
-      repoRoot: REPO_ROOT,
+      repoRoot: fixtureRepo,
       mode: 'release',
       candidateCommit: reighCommit,
       headCommit: controllerCommit,
+      provenanceChangedPaths: [evidencePath, largeCommittedEvidencePath],
     });
     assert.deepEqual(result.errors, []);
     assert.equal(result.counts.pass, 23);
@@ -157,7 +173,7 @@ describe('extension ship evidence gate', () => {
     const ledger = makeFrozenLedger();
     const receipts = ledger.workstreams.flatMap((workstream) => workstream.receipts);
     for (const receipt of receipts) {
-      receipt.artifact = { path: committedEvidencePath, sha256: committedEvidenceHash };
+      receipt.artifact = { path: evidencePath, sha256: evidenceHash };
     }
     receipts[0].artifact = {
       path: largeCommittedEvidencePath,
@@ -168,10 +184,11 @@ describe('extension ship evidence gate', () => {
       ledger,
       checklistMarkdown,
       releaseManifest: frozenManifest,
-      repoRoot: REPO_ROOT,
+      repoRoot: fixtureRepo,
       mode: 'release',
       candidateCommit: reighCommit,
       headCommit: controllerCommit,
+      provenanceChangedPaths: [evidencePath, largeCommittedEvidencePath],
       verifyCommittedArtifacts: true,
     });
     assert.deepEqual(result.errors, []);
@@ -187,10 +204,11 @@ describe('extension ship evidence gate', () => {
       ledger,
       checklistMarkdown,
       releaseManifest: frozenManifest,
-      repoRoot: REPO_ROOT,
+      repoRoot: fixtureRepo,
       mode: 'release',
       candidateCommit: reighCommit,
       headCommit: controllerCommit,
+      provenanceChangedPaths: [evidencePath, largeCommittedEvidencePath],
     });
     assert.match(result.errors.join('\n'), /sha256 mismatch/);
     assert.match(result.errors.join('\n'), /first-time-extension-author/);
@@ -205,10 +223,11 @@ describe('extension ship evidence gate', () => {
       ledger,
       checklistMarkdown,
       releaseManifest: frozenManifest,
-      repoRoot: REPO_ROOT,
+      repoRoot: fixtureRepo,
       mode: 'release',
       candidateCommit: reighCommit,
       headCommit: controllerCommit,
+      provenanceChangedPaths: [evidencePath, largeCommittedEvidencePath],
     });
     assert.match(result.errors.join('\n'), /commit does not match the frozen Reigh candidate/);
   });
@@ -218,13 +237,42 @@ describe('extension ship evidence gate', () => {
       ledger: makeFrozenLedger(),
       checklistMarkdown,
       releaseManifest: frozenManifest,
-      repoRoot: REPO_ROOT,
+      repoRoot: fixtureRepo,
       mode: 'release',
       candidateCommit: reighCommit,
       headCommit: reighCommit,
       provenanceErrors: ['candidate..HEAD contains non-evidence path changes: src/app.ts'],
+      provenanceChangedPaths: [evidencePath, largeCommittedEvidencePath],
     });
     assert.match(result.errors.join('\n'), /strict evidence-only descendant/);
     assert.match(result.errors.join('\n'), /src\/app\.ts/);
+  });
+
+  it('rejects receipts outside or absent from the controller evidence closure', () => {
+    const outside = makeFrozenLedger();
+    outside.workstreams[0].receipts[0].artifact.path = '.nvmrc';
+    let result = validateLedger({
+      ledger: outside,
+      checklistMarkdown,
+      releaseManifest: frozenManifest,
+      repoRoot: fixtureRepo,
+      mode: 'release',
+      candidateCommit: reighCommit,
+      headCommit: controllerCommit,
+      provenanceChangedPaths: [evidencePath],
+    });
+    assert.match(result.errors.join('\n'), /must be under docs\/extensions\/evidence\/releases/);
+
+    result = validateLedger({
+      ledger: makeFrozenLedger(),
+      checklistMarkdown,
+      releaseManifest: frozenManifest,
+      repoRoot: fixtureRepo,
+      mode: 'release',
+      candidateCommit: reighCommit,
+      headCommit: controllerCommit,
+      provenanceChangedPaths: [],
+    });
+    assert.match(result.errors.join('\n'), /was not committed in the candidate-to-controller evidence history/);
   });
 });

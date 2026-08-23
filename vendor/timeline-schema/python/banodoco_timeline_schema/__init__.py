@@ -13,9 +13,9 @@ from .validate import load_schema, validate_timeline
 try:  # generated.py is produced by codegen; absent in a fresh checkout.
     from .generated import (  # type: ignore[attr-defined]
         AssetEntry,
+        Clip as TimelineClip,
         Theme,
         ThemeOverrides,
-        TimelineClip,
         TimelineConfig,
         TimelineOutput,
     )

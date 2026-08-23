@@ -58,7 +58,7 @@ describe('paired repository release E2E gate', () => {
 
       const bootstrapPython = process.env.ASTRID_PYTHON || 'python3.11';
       const venv = resolve(runtimeRoot, 'venv');
-      const createVenv = spawnSync(bootstrapPython, ['-m', 'venv', venv], {
+      const createVenv = spawnSync(bootstrapPython, ['-m', 'venv', '--system-site-packages', venv], {
         encoding: 'utf8',
       });
       assert.equal(
@@ -97,6 +97,23 @@ describe('paired repository release E2E gate', () => {
         'assert hashlib.sha256(packaged).digest() == hashlib.sha256(source).digest()',
       ].join('\n'), sourceSchema, resolve(wheelDir, wheels[0])], { encoding: 'utf8' });
       assert.equal(compare.status, 0, compare.stderr);
+
+      const wheel = resolve(wheelDir, wheels[0]);
+      const installWheel = spawnSync(python, [
+        '-m', 'pip', '--isolated', 'install', '--disable-pip-version-check',
+        '--no-deps', wheel,
+      ], { encoding: 'utf8' });
+      assert.equal(installWheel.status, 0, installWheel.stderr);
+      const typeIdentity = spawnSync(python, ['-c', [
+        'import sys, types',
+        'sys.modules["jsonschema"] = types.SimpleNamespace(validate=lambda *args, **kwargs: None)',
+        'from typing import get_args, get_type_hints',
+        'from banodoco_timeline_schema import TimelineClip, TimelineConfig',
+        'from banodoco_timeline_schema.generated import Clip',
+        'assert TimelineClip is Clip',
+        'assert get_args(get_type_hints(TimelineConfig)["clips"])[0] is TimelineClip',
+      ].join('\n')], { encoding: 'utf8' });
+      assert.equal(typeIdentity.status, 0, typeIdentity.stderr);
     } finally {
       rmSync(runtimeRoot, { recursive: true, force: true });
     }

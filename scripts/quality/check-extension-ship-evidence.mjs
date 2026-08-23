@@ -12,7 +12,9 @@ import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
+  assertCleanReleaseCheckout,
   inspectCandidateController,
+  releaseEvidenceDirectory,
   resolveAnnotatedCandidateTag,
 } from '../release/reigh-release-provenance.mjs';
 
@@ -28,6 +30,12 @@ const GIT_ENV = Object.freeze({
   LANG: 'C',
   LC_ALL: 'C',
   TZ: 'UTC',
+  GIT_CONFIG_NOSYSTEM: '1',
+  GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null',
+  GIT_CONFIG_COUNT: '0',
+  GIT_NO_REPLACE_OBJECTS: '1',
+  GIT_OPTIONAL_LOCKS: '0',
+  GIT_TERMINAL_PROMPT: '0',
 });
 export const REPO_ROOT = resolve(moduleDir, '..', '..');
 export const CHECKLIST_PATH = resolve(
@@ -132,7 +140,16 @@ function sha256File(path) {
   return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
-function validateEvidenceArtifact(receipt, repoRoot, prefix, errors, releaseMode) {
+function validateEvidenceArtifact(
+  receipt,
+  repoRoot,
+  prefix,
+  errors,
+  releaseMode,
+  verifyCommittedArtifact,
+  release,
+  provenanceChangedPaths,
+) {
   const artifact = isPlainObject(receipt.artifact) ? receipt.artifact : {};
   if (typeof artifact.path !== 'string' || artifact.path.trim() === '') {
     errors.push(`${prefix}.artifact.path must be a non-empty repository-relative path`);
@@ -141,6 +158,20 @@ function validateEvidenceArtifact(receipt, repoRoot, prefix, errors, releaseMode
   if (!/^[0-9a-f]{64}$/.test(artifact.sha256 ?? '')) {
     errors.push(`${prefix}.artifact.sha256 must be a full lowercase SHA-256`);
     return;
+  }
+
+  if (releaseMode) {
+    const evidenceDirectory = releaseEvidenceDirectory(release);
+    if (!artifact.path.startsWith(evidenceDirectory) || artifact.path.length <= evidenceDirectory.length) {
+      errors.push(`${prefix}.artifact.path must be under ${evidenceDirectory} in release mode`);
+      return;
+    }
+    if (!provenanceChangedPaths.has(artifact.path)) {
+      errors.push(
+        `${prefix}.artifact.path was not committed in the candidate-to-controller evidence history`,
+      );
+      return;
+    }
   }
 
   const candidatePath = resolve(repoRoot, artifact.path);
@@ -174,7 +205,7 @@ function validateEvidenceArtifact(receipt, repoRoot, prefix, errors, releaseMode
     );
   }
 
-  if (releaseMode) {
+  if (verifyCommittedArtifact) {
     try {
       const treeEntry = execFileSync(
         'git',
@@ -229,6 +260,8 @@ function validateReceipt({
   candidate,
   releaseMode,
   verifyCommittedArtifacts,
+  release,
+  provenanceChangedPaths,
   errors,
 }) {
   if (!isPlainObject(receipt)) {
@@ -284,7 +317,10 @@ function validateReceipt({
     repoRoot,
     prefix,
     errors,
+    releaseMode,
     releaseMode && verifyCommittedArtifacts,
+    release,
+    provenanceChangedPaths,
   );
 }
 
@@ -297,6 +333,7 @@ export function validateLedger({
   candidateCommit,
   headCommit,
   provenanceErrors = [],
+  provenanceChangedPaths = [],
   verifyCommittedArtifacts = false,
 }) {
   const releaseMode = mode === 'release';
@@ -304,6 +341,7 @@ export function validateLedger({
   const warnings = [];
   const expected = parseChecklistWorkstreams(checklistMarkdown);
   const candidate = isPlainObject(ledger?.candidate) ? ledger.candidate : {};
+  const changedEvidencePaths = new Set(provenanceChangedPaths);
   const workstreams = Array.isArray(ledger?.workstreams) ? ledger.workstreams : [];
 
   if (ledger?.schemaVersion !== 1) errors.push('schemaVersion must be 1');
@@ -353,6 +391,8 @@ export function validateLedger({
         candidate,
         releaseMode,
         verifyCommittedArtifacts,
+        release: ledger?.release,
+        provenanceChangedPaths: changedEvidencePaths,
         errors,
       });
       if (typeof receipt?.id === 'string') {
@@ -459,10 +499,20 @@ export function runCli(argv = process.argv.slice(2)) {
     return 2;
   }
 
+  if (mode === 'release') {
+    try {
+      assertCleanReleaseCheckout(REPO_ROOT, 'Reigh evidence controller');
+    } catch (error) {
+      console.error(`${LABEL} failed:\n- ${error.message}`);
+      return 1;
+    }
+  }
+
   const ledger = readJson(LEDGER_PATH);
   const releaseManifest = readJson(RELEASE_MANIFEST_PATH);
   const headCommit = currentHead(REPO_ROOT);
   let candidateCommit;
+  let provenanceChangedPaths = [];
   const provenanceErrors = [];
   if (mode === 'release') {
     try {
@@ -471,12 +521,13 @@ export function runCli(argv = process.argv.slice(2)) {
         releaseTag: releaseManifest.reigh.releaseTag,
       });
       candidateCommit = tag.candidateCommit;
-      inspectCandidateController({
+      const provenance = inspectCandidateController({
         repoRoot: REPO_ROOT,
         candidateCommit,
         headCommit,
         release: releaseManifest.release,
       });
+      provenanceChangedPaths = provenance.changedPaths;
     } catch (error) {
       provenanceErrors.push(`Reigh release provenance is invalid: ${error.message}`);
     }
@@ -491,6 +542,7 @@ export function runCli(argv = process.argv.slice(2)) {
     candidateCommit,
     headCommit,
     provenanceErrors,
+    provenanceChangedPaths,
     verifyCommittedArtifacts: mode === 'release',
   });
 

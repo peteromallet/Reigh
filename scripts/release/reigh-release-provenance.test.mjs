@@ -16,6 +16,7 @@ import { describe, it } from 'node:test';
 import {
   RELEASE_LEDGER_PATH,
   RELEASE_MANIFEST_PATH,
+  assertCleanReleaseCheckout,
   inspectCandidateController,
   isAllowedReleaseEvidencePath,
   releaseEvidenceDirectory,
@@ -113,6 +114,26 @@ function withCandidateRepo(callback) {
 }
 
 describe('Reigh release candidate provenance', () => {
+  it('rejects hidden index flags that can conceal modified worktree bytes', () => {
+    withCandidateRepo(({ repoRoot }) => {
+      assert.doesNotThrow(() => assertCleanReleaseCheckout(repoRoot, 'fixture'));
+      git(repoRoot, ['update-index', '--assume-unchanged', 'src/app.js']);
+      writeFileSync(resolve(repoRoot, 'src/app.js'), 'export const concealed = true;\n');
+      assert.throws(
+        () => assertCleanReleaseCheckout(repoRoot, 'fixture'),
+        /index contains assume-unchanged.*src\/app\.js/s,
+      );
+    });
+
+    withCandidateRepo(({ repoRoot }) => {
+      git(repoRoot, ['update-index', '--skip-worktree', 'src/app.js']);
+      assert.throws(
+        () => assertCleanReleaseCheckout(repoRoot, 'fixture'),
+        /index contains assume-unchanged.*src\/app\.js/s,
+      );
+    });
+  });
+
   it('accepts an exact annotated candidate and strict evidence-only descendant', () => {
     withCandidateRepo(({ repoRoot, candidateCommit }) => {
       const headCommit = freezeEvidence(repoRoot, candidateCommit);
@@ -197,6 +218,60 @@ describe('Reigh release candidate provenance', () => {
         repoRoot,
         candidateCommit,
         headCommit,
+        release: RELEASE,
+      }), /src\/app\.js/);
+    });
+  });
+
+  it('rejects transient manifest and ledger identity drift even when later restored', () => {
+    withCandidateRepo(({ repoRoot, candidateCommit }) => {
+      const manifest = JSON.parse(readFileSync(resolve(repoRoot, RELEASE_MANIFEST_PATH), 'utf8'));
+      writeJson(repoRoot, RELEASE_MANIFEST_PATH, {
+        ...manifest,
+        astrid: { commit: 'c'.repeat(40) },
+      });
+      commitAll(repoRoot, 'transient manifest pin drift');
+      writeJson(repoRoot, RELEASE_MANIFEST_PATH, manifest);
+      const headCommit = freezeEvidence(repoRoot, candidateCommit);
+      assert.throws(() => inspectCandidateController({
+        repoRoot,
+        candidateCommit,
+        headCommit,
+        release: RELEASE,
+      }), /invalid release manifest edge.*outside the exact status freeze/s);
+    });
+
+    withCandidateRepo(({ repoRoot, candidateCommit }) => {
+      const ledger = JSON.parse(readFileSync(resolve(repoRoot, RELEASE_LEDGER_PATH), 'utf8'));
+      writeJson(repoRoot, RELEASE_LEDGER_PATH, {
+        ...ledger,
+        workstreams: [{ ...ledger.workstreams[0], title: 'Temporarily Rewritten' }],
+      });
+      commitAll(repoRoot, 'transient ledger identity drift');
+      writeJson(repoRoot, RELEASE_LEDGER_PATH, ledger);
+      const headCommit = freezeEvidence(repoRoot, candidateCommit);
+      assert.throws(() => inspectCandidateController({
+        repoRoot,
+        candidateCommit,
+        headCommit,
+        release: RELEASE,
+      }), /invalid evidence ledger edge.*identity or ordering changed/s);
+    });
+  });
+
+  it('ignores malicious local replacement refs while inspecting release history', () => {
+    withCandidateRepo(({ repoRoot, candidateCommit }) => {
+      const safeHead = freezeEvidence(repoRoot, candidateCommit);
+      git(repoRoot, ['reset', '--hard', candidateCommit]);
+      writeFileSync(resolve(repoRoot, 'src/app.js'), 'export const candidate = false;\n');
+      commitAll(repoRoot, 'malicious source drift');
+      const maliciousHead = freezeEvidence(repoRoot, candidateCommit);
+      git(repoRoot, ['replace', maliciousHead, safeHead]);
+
+      assert.throws(() => inspectCandidateController({
+        repoRoot,
+        candidateCommit,
+        headCommit: maliciousHead,
         release: RELEASE,
       }), /src\/app\.js/);
     });

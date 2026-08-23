@@ -15,6 +15,7 @@ import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
+  assertCleanReleaseCheckout,
   inspectCandidateController,
   releaseEvidenceDirectory,
   resolveAnnotatedCandidateTag,
@@ -94,8 +95,10 @@ const RELEASE_HOME = resolve(
   RELEASE_TMPDIR,
   `reigh-extension-ship-home-${process.pid}`,
 );
+const RELEASE_REIGH_WORKTREE = resolve(RELEASE_HOME, 'reigh-controller');
 const RELEASE_PATH = [
   dirname(realpathSync(process.execPath)),
+  '/opt/homebrew/bin',
   '/usr/local/bin',
   '/usr/bin',
   '/bin',
@@ -106,6 +109,7 @@ const ALLOWED_STEP_ENV = new Set([
   'ASTRID_REF',
   'PY',
   'PYTHON_BIN',
+  'PYTHONPATH',
   'REIGH_REF',
 ]);
 
@@ -191,6 +195,12 @@ export function validateReleaseManifest(manifest) {
   }
   if (!/^\d+\.\d+\.\d+$/.test(verification.astridPython ?? '')) {
     errors.push('verification.astridPython must be an exact semantic version');
+  }
+  if (!/^\d+\.\d+\.\d+$/.test(verification.ffmpeg ?? '')) {
+    errors.push('verification.ffmpeg must be an exact semantic version');
+  }
+  if (!/^\d+\.\d+\.\d+$/.test(verification.ffprobe ?? '')) {
+    errors.push('verification.ffprobe must be an exact semantic version');
   }
 
   const requiredGates = Array.isArray(manifest?.requiredGates)
@@ -278,7 +288,11 @@ export function buildExecutionPlan({
     ...ASTRID_GATE_PROFILE.map(({ cwdSuffix, ...gate }) => ({
       ...gate,
       env: gate.id === 'astrid-ci'
-        ? { PY: python, PYTHON_BIN: python }
+        ? {
+            PY: python,
+            PYTHON_BIN: python,
+            PYTHONPATH: resolve(repoRoot, 'vendor/timeline-schema/python'),
+          }
         : undefined,
       cwd: cwdSuffix && astridCheckout
         ? resolve(astridCheckout, cwdSuffix)
@@ -326,6 +340,12 @@ export function buildSanitizedEnvironment(stepEnv = {}) {
     LANG: 'C',
     LC_ALL: 'C',
     TZ: 'UTC',
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null',
+    GIT_CONFIG_COUNT: '0',
+    GIT_NO_REPLACE_OBJECTS: '1',
+    GIT_OPTIONAL_LOCKS: '0',
+    GIT_TERMINAL_PROMPT: '0',
     ...stepEnv,
   };
 }
@@ -359,18 +379,7 @@ function outputOf(command, args, cwd) {
 }
 
 function assertClean(checkout, name) {
-  const status = outputOf(
-    'git',
-    ['status', '--porcelain=v1', '--untracked-files=all'],
-    checkout,
-  );
-  if (status !== '') {
-    const preview = status.split('\n').slice(0, 20).join('\n');
-    fail(
-      `${name} checkout is not clean (${checkout}). `
-      + `The verifier will not reset or clean it:\n${preview}`,
-    );
-  }
+  assertCleanReleaseCheckout(checkout, name);
 }
 
 function resolveCommit(checkout, ref, name) {
@@ -499,6 +508,37 @@ function prepareReleaseHome() {
   mkdirSync(RELEASE_HOME, { mode: 0o700 });
 }
 
+function createReleaseReighWorktree(headCommit) {
+  const result = runCaptured(
+    'git',
+    ['worktree', 'add', '--detach', RELEASE_REIGH_WORKTREE, headCommit],
+    REPO_ROOT,
+    { allowFailure: true },
+  );
+  if (result.error || result.status !== 0) {
+    fail(`could not create isolated Reigh release worktree: ${formatFailure(result)}`);
+  }
+  const isolatedHead = outputOf('git', ['rev-parse', 'HEAD'], RELEASE_REIGH_WORKTREE);
+  if (isolatedHead !== headCommit) {
+    fail(`isolated Reigh worktree resolved to ${isolatedHead}, expected ${headCommit}`);
+  }
+  assertClean(RELEASE_REIGH_WORKTREE, 'isolated Reigh evidence controller');
+  return RELEASE_REIGH_WORKTREE;
+}
+
+function removeReleaseReighWorktree() {
+  if (!existsSync(RELEASE_REIGH_WORKTREE)) return;
+  const result = runCaptured(
+    'git',
+    ['worktree', 'remove', '--force', RELEASE_REIGH_WORKTREE],
+    REPO_ROOT,
+    { allowFailure: true },
+  );
+  if (result.error || result.status !== 0) {
+    fail(`could not remove isolated Reigh release worktree: ${formatFailure(result)}`);
+  }
+}
+
 function cleanupReleaseHome() {
   if (existsSync(RELEASE_HOME)) {
     rmSync(RELEASE_HOME, { force: false, recursive: true });
@@ -589,6 +629,17 @@ function assertToolchain(manifest, env) {
       `npm version mismatch: expected ${manifest.verification.npm}, got ${npmVersion}`,
     );
   }
+  for (const tool of ['ffmpeg', 'ffprobe']) {
+    const firstLine = outputOf(tool, ['-version'], REPO_ROOT).split('\n')[0];
+    const match = firstLine.match(new RegExp(`^${tool} version ([0-9]+\\.[0-9]+\\.[0-9]+)(?:[ -]|$)`));
+    const version = match?.[1];
+    if (version !== manifest.verification[tool]) {
+      fail(
+        `${tool} version mismatch: expected ${manifest.verification[tool]}, `
+        + `got ${version ?? '<invalid>'}`,
+      );
+    }
+  }
   return resolveAstridPython(manifest, env);
 }
 
@@ -618,7 +669,8 @@ Verify the frozen extension ship-quality release candidate. The run mode:
   1. requires a frozen release manifest and pinned Node/npm toolchain;
   2. requires an annotated Reigh tag and REIGH_REF resolving to the exact code
      candidate, plus a clean evidence-only controller descendant;
-  3. runs the code-owned Reigh release gate profile; and
+  3. runs the code-owned Reigh release gate profile from a fresh detached
+     worktree at the verified controller commit; and
   4. runs \`make ci\` in the pinned Astrid checkout.
 
 Options:
@@ -641,7 +693,7 @@ the first mismatch or failed gate.`);
 function printPlan(manifest, packageJson, env) {
   validatePackageJson(packageJson, manifest);
   const steps = buildExecutionPlan({
-    repoRoot: REPO_ROOT,
+    repoRoot: RELEASE_REIGH_WORKTREE,
     astridCheckout: env.ASTRID_CHECKOUT,
     astridPython: env.ASTRID_PYTHON,
     astridRef: env.ASTRID_REF,
@@ -661,9 +713,11 @@ function printPlan(manifest, packageJson, env) {
   console.log(`${LABEL} Astrid Python: ${env.ASTRID_PYTHON || '<required for execution>'}`);
   console.log(
     `${LABEL} toolchain: node ${manifest.verification.node}, `
-    + `npm ${manifest.verification.npm}, Astrid Python ${manifest.verification.astridPython}`,
+    + `npm ${manifest.verification.npm}, Astrid Python ${manifest.verification.astridPython}, `
+    + `FFmpeg ${manifest.verification.ffmpeg}, FFprobe ${manifest.verification.ffprobe}`,
   );
   console.log(`${LABEL} preflight: exact toolchain; clean worktrees; candidate tag; evidence-only ancestry`);
+  console.log(`${LABEL} Reigh execution root: fresh detached worktree ${RELEASE_REIGH_WORKTREE}`);
 
   for (let index = 0; index < steps.length; index += 1) {
     const step = steps[index];
@@ -702,6 +756,7 @@ export function main(argv = process.argv.slice(2), env = process.env) {
     );
   }
   prepareReleaseHome();
+  let releaseReighWorktree;
   try {
     const astridPython = assertToolchain(manifest, env);
     const reigh = assertReighCheckout(manifest, env);
@@ -711,15 +766,19 @@ export function main(argv = process.argv.slice(2), env = process.env) {
     console.log(`${LABEL} Reigh annotated tag object: ${reigh.tagObject}`);
     console.log(`${LABEL} Reigh evidence directory: ${reigh.provenance.evidenceDirectory}`);
     console.log(`${LABEL} Astrid HEAD: ${astrid.commit}`);
+    releaseReighWorktree = RELEASE_REIGH_WORKTREE;
+    createReleaseReighWorktree(reigh.head);
+    console.log(`${LABEL} isolated Reigh controller: ${releaseReighWorktree}`);
 
     const steps = buildExecutionPlan({
-      repoRoot: REPO_ROOT,
+      repoRoot: releaseReighWorktree,
       astridCheckout: astrid.checkout,
       astridPython,
       astridRef: env.ASTRID_REF,
       reighRef: env.REIGH_REF,
     });
     executeSteps(steps);
+    assertClean(releaseReighWorktree, 'isolated Reigh evidence controller after gates');
 
     // Gates must not leave tracked or untracked release inputs behind.
     const finalReigh = assertReighCheckout(manifest, env);
@@ -737,7 +796,11 @@ export function main(argv = process.argv.slice(2), env = process.env) {
 
     console.log(`\n${LABEL} PASS: ${manifest.release} passed all ${steps.length} pinned gates`);
   } finally {
-    cleanupReleaseHome();
+    try {
+      if (releaseReighWorktree) removeReleaseReighWorktree();
+    } finally {
+      cleanupReleaseHome();
+    }
   }
 }
 

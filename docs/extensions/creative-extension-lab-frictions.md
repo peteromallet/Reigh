@@ -1034,3 +1034,15 @@ evidence and a concrete improvement direction.
   tree and installed resource hashes, and proves Astrid resolves only from the
   pinned archive. Cross-repository dependencies need an executable install
   contract, not a setup note or a fortunate global environment.
+
+### Clean Git status does not mean exact release inputs
+
+- Git status ignores ignored files, but Vite consumes ignored environment files
+  and copies ignored public asset directories. A release run from an apparently
+  clean developer checkout could therefore build bytes that never existed in
+  the tagged candidate. Index flags and replacement refs created similar false
+  views of history.
+- Release gates now neutralize Git replacement/config state, reject hidden index
+  flags, and run the full Reigh profile in a fresh detached worktree at the
+  verified evidence-controller commit. Exact-commit execution must be a property
+  of the harness, not an operator promise about their checkout.
