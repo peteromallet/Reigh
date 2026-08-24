@@ -1,6 +1,6 @@
 # Extension Ship-Quality Release Runbook
 
-Date: 2026-08-23
+Date: 2026-08-24
 
 This is the operator procedure for the bundled extension host, Transcript
 Caption Foundry, and Astrid Runaway typed-timeline viewer. The paired revision
@@ -46,21 +46,21 @@ source, scripts, documentation, pins, and gate configuration. Create the
 annotated Reigh tag named by `reigh.releaseTag` at that candidate `C`; both the
 tag and `REIGH_REF` must resolve to `C`. Then commit the frozen ledger, the
 manifest's status-only freeze, and artifacts under
-`docs/extensions/evidence/releases/extension-ship-quality-rc1/` to produce the
+`docs/extensions/evidence/releases/extension-ship-quality-rc2/` to produce the
 clean controller `H`. The verifier captures `C`, `H`, and the annotated
 tag-object hash:
 
 ```sh
 REIGH_REF=<full-40-character-Reigh-candidate-C> \
 ASTRID_CHECKOUT=/absolute/path/to/clean/Astrid \
-ASTRID_REF=fb152312d3cb9b7bed5f637bfdf6845e7d638739 \
+ASTRID_REF=86153eefc14aa995402927df0c7bb178f48f8ead \
 ASTRID_PYTHON=/absolute/path/to/pinned/venv/bin/python \
 npm run verify:extension-ship
 ```
 
 Capture complete stdout/stderr, exit status, Reigh `git rev-parse HEAD`, Reigh
 candidate `git rev-parse REIGH_REF`, Reigh
-`git rev-parse refs/tags/extension-ship-quality-rc1^{tag}`, Astrid
+`git rev-parse refs/tags/extension-ship-quality-rc2^{tag}`, Astrid
 `git rev-parse HEAD`, UTC start/end times, and hashes of retained test/render
 artifacts. An exit code of zero is necessary, not sufficient: every frozen-RC
 item and both independent review slots below must also be complete.
@@ -91,8 +91,9 @@ The run accepts no skip flags. It first probes the exact manifest-pinned Astrid
 source for the complete `astrid.authenticated-release-bridge.v1` capability
 (`serve --release-mode`, token enforcement, bearer validation, and the v1
 protocol header). A newer checkout cannot satisfy an older pin. The manifest is
-pinned to settled Astrid hardening commit
-`fb152312d3cb9b7bed5f637bfdf6845e7d638739`; the regression test retains the
+pinned to the RC2 Astrid hardening commit
+`86153eefc14aa995402927df0c7bb178f48f8ead`; the failed RC1 paired receipt is
+retained under the RC1 evidence root as historical evidence only; the
 pre-auth `659c3dc38aad` rejection case. Do not bypass the probe or substitute
 the unauthenticated stub.
 

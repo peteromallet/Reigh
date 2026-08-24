@@ -9,7 +9,7 @@ active editor branches. It is an integration plan, not release evidence.
 
 | Line | Audited head | Disposition |
 |---|---|---|
-| `codex/extension-ship-quality` | `754bed998` | Stable, green integration base. |
+| `codex/extension-ship-integration` | `b4d02baea` | Stable RC1-controller ancestry; RC2 preparation is in progress. |
 | `timeline-patches` | `dbafe2cd4` | The committed Creative Lab patch was replayed as `7150085df` and subsequently hardened. Do not merge this commit again. Preserve and reconcile its uncommitted WIP separately. |
 | `exec-goal-20260822` | `8376d8231` | Direct ancestor of `exec-sqlite-20260823`; do not merge separately. |
 | `exec-sqlite-20260823` | `d21e6fc52` | Parked execution history. Do not merge wholesale: most changed paths are `.oracle` run artifacts. Forward-port reviewed product outcomes only. |
@@ -26,8 +26,8 @@ merge them automatically.
    20 untracked files have been snapshotted to a dedicated safety branch.
 2. Complete Phase C B5 shot mode, B6 render/export, B7 doctor/operations, and B8
    acceptance gates on a clean branch.
-3. Merge the completed Phase C line onto a new clean integration branch based
-   on `codex/extension-ship-quality`.
+3. Merge the completed Phase C line onto the clean extension integration branch
+   `codex/extension-ship-integration` only through reviewed product commits.
 4. Semantically review the shared bridge contract, data providers, external
    drop handling, `VideoEditorPage`, and real-bridge harness.
 5. Forward-port the net exec outcomes in functional batches: wire parity,

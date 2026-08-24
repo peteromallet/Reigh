@@ -1130,3 +1130,17 @@ evidence and a concrete improvement direction.
 - The broader lesson is that extension surfaces sharing an inspector must test
   ownership handoff through the assembled host, not only the leaf renderer or
   Properties panel in isolation.
+
+### A failed immutable candidate needs a new release line, not a retag
+
+- RC1 reached its immutable Reigh candidate and controller, but the paired
+  release probe found that a hostile `Host` request incorrectly returned `200`
+  instead of the required forbidden response. The failure is retained as a
+  typed RC1 artifact under its historical evidence root; it is not a passing
+  receipt and cannot be replayed into a later release.
+- RC2 therefore starts from the latest RC1 controller ancestry, resets the
+  release ledger to a fresh integration state, pins the corrected Astrid SHA,
+  and uses a new annotated tag. The old RC1 tag and controller remain stable
+  references for auditing. Once RC2 is tagged, its controller may change only
+  the RC2 evidence closure, ledger, and status-only manifest freeze. Release
+  tags must never be force-moved after a failed gate.

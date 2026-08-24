@@ -11,7 +11,7 @@ by the [evidence ledger](extension-ship-evidence-ledger.md).
 
 ## Current disposition
 
-`codex/extension-ship-quality` is stable as an **integration branch**, not yet a
+`codex/extension-ship-integration` is stable as an **integration branch**, not yet a
 release candidate. All known merged lint/type failures are fixed; the latest
 merged fault, persistence, Transcript, Runaway, and bundle tests pass 178/178;
 the deterministic visual gate passes 6/6; and installed Chrome passes the
@@ -27,14 +27,14 @@ from the focused runs alone.
 
 ## Phase 1 — publish and lock the integration baseline
 
-1. Push `codex/extension-ship-quality` without `scorecard.png` or the untracked
+1. Push `codex/extension-ship-integration` without `scorecard.png` or the untracked
    `artifacts/` directory.
 2. Require review of the code commits through the production startup-budget
    gate. Do not add feature work to this branch after the evidence rehearsal
    begins; fixes discovered by a gate receive a focused commit and restart the
    affected evidence phase.
 3. Keep Astrid pinned to
-   `fb152312d3cb9b7bed5f637bfdf6845e7d638739`.
+   `86153eefc14aa995402927df0c7bb178f48f8ead`.
 
 Exit: the remote branch resolves to the same clean tracked tree as the local
 integration branch and the release plan commands remain deterministic.
@@ -81,7 +81,7 @@ and all four human personas have signed receipts.
 1. Register six authenticated Ed25519 principals: the four human personas and
    two independent reviewers. Keep private keys outside the repository.
 2. Freeze product candidate `C`, create annotated tag
-   `extension-ship-quality-rc1`, and permit only evidence/ledger/status commits
+   `extension-ship-quality-rc2`, and permit only evidence/ledger/status commits
    in controller history `C..H`.
 3. Bind every receipt and artifact hash to the exact Reigh candidate, controller
    commit, annotated tag object, Astrid commit, toolchain, and dependency locks.
@@ -102,4 +102,3 @@ disposition.
 - Edge/physical-device availability or an explicit release exception.
 - Four human participants and two independent reviewers, with their Ed25519
   public identities.
-

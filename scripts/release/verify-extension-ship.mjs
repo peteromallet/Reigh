@@ -913,7 +913,7 @@ Optional environment for run mode:
 The verifier never fetches, checks out, resets, cleans, migrates production data,
 or rolls back a repository. Reigh HEAD must be a strict descendant whose entire
 candidate..HEAD history changes only the ledger, the manifest status, and
-${releaseEvidenceDirectory('extension-ship-quality-rc1')} artifacts. It stops at
+${releaseEvidenceDirectory('extension-ship-quality-rc2')} artifacts. It stops at
 the first mismatch or failed gate.`);
 }
 

@@ -27,7 +27,11 @@ const expected = parseChecklistWorkstreams(checklistMarkdown);
 const checkedInLedger = JSON.parse(readFileSync(LEDGER_PATH, 'utf8'));
 const checkedInManifest = JSON.parse(readFileSync(RELEASE_MANIFEST_PATH, 'utf8'));
 const checkedInTrust = JSON.parse(readFileSync(ATTESTATION_TRUST_PATH, 'utf8'));
-const release = 'extension-ship-quality-rc1';
+// Keep the synthetic release fixture aligned with the checked-in integration
+// manifest so the test remains valid when an immutable candidate rolls from
+// one RC tag to the next. Historical RC1 evidence is tested separately by its
+// committed artifact and is never replayed here.
+const release = checkedInManifest.release;
 const fixtureRepo = mkdtempSync(resolve(tmpdir(), 'extension-ship-evidence-'));
 const signerDirectory = resolve(fixtureRepo, 'signers');
 mkdirSync(signerDirectory, { recursive: true });
@@ -624,7 +628,7 @@ describe('extension ship evidence gate', () => {
 
   it('rejects replay of signed receipts into a different release', () => {
     const ledger = makeFrozenLedger();
-    ledger.release = 'extension-ship-quality-rc2';
+    ledger.release = 'extension-ship-quality-rc3';
     const replayManifest = { ...frozenManifest, release: ledger.release };
     const replayTrust = { ...testTrust, release: ledger.release };
 
