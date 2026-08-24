@@ -136,14 +136,6 @@ describe('useRealtimeInvalidation', () => {
 
     expect(() => {
       eventHandler({
-        type: 'shot-generations-changed',
-        affectedShotIds: [],
-        allInserts: true,
-      });
-    }).not.toThrow();
-
-    expect(() => {
-      eventHandler({
         type: 'variants-changed',
         affectedGenerationIds: [],
       });

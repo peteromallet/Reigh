@@ -48,7 +48,6 @@ type TableSnapshot = Map<string, SnapshotRow>;
 const TABLE_POLL_CADENCE_MS: Record<DatabaseTable, number> = {
   tasks: 2_000,
   generations: 2_000,
-  shot_generations: 10_000,
   generation_variants: 10_000,
   timelines: 10_000,
 };
@@ -430,7 +429,6 @@ export class RealtimeConnection {
           detail.variants.map((variant) => ({ ...variant })),
         );
       }
-      case 'shot_generations':
       case 'timelines':
       default:
         // No dedicated bridge route exists for placement/timeline change feeds.
@@ -520,7 +518,6 @@ function rowIdentity(row: SnapshotRow, keys: readonly string[]): string | null {
 const IDENTITY_KEYS: Record<DatabaseTable, readonly string[]> = {
   tasks: ['task_id', 'id'],
   generations: ['generation_id', 'id'],
-  shot_generations: ['id'],
   generation_variants: ['id'],
   timelines: ['timeline_id', 'id'],
 };

@@ -79,13 +79,13 @@ describe('diffTableSnapshots — synthetic event matrix', () => {
     const previous = buildDiffSnapshot([
       { id: 'sg-kept', shot_id: 's1', generation_id: 'g1', timeline_frame: null },
       { id: 'sg-gone', shot_id: 's2', generation_id: 'g2', timeline_frame: 3 },
-    ], 'shot_generations');
+    ], 'generation_variants');
     const next = buildDiffSnapshot([
       { id: 'sg-kept', shot_id: 's1', generation_id: 'g1', timeline_frame: 7 },
       { id: 'sg-new', shot_id: 's3', generation_id: 'g3', timeline_frame: 1 },
-    ], 'shot_generations');
+    ], 'generation_variants');
 
-    const events = diffTableSnapshots('shot_generations', previous, next);
+    const events = diffTableSnapshots('generation_variants', previous, next);
 
     const inserts = events.filter((event) => event.eventType === 'INSERT');
     const updates = events.filter((event) => event.eventType === 'UPDATE');

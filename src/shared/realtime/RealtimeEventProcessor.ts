@@ -18,13 +18,11 @@ import {
   GenerationsInsertedEvent,
   GenerationsUpdatedEvent,
   GenerationsDeletedEvent,
-  ShotGenerationsChangedEvent,
   VariantsChangedEvent,
   VariantsDeletedEvent,
   TimelinesUpdatedEvent,
   TaskRecord,
   GenerationRecord,
-  ShotGenerationRecord,
   VariantRecord,
   TimelineRecord,
   RealtimeConfig,
@@ -148,9 +146,6 @@ export class RealtimeEventProcessor {
         } else {
           return this.processGenerationUpdates(events, processedAt);
         }
-
-      case 'shot_generations':
-        return this.processShotGenerationChanges(events, processedAt);
 
       case 'generation_variants':
         if (eventType === 'DELETE') {
@@ -332,57 +327,6 @@ export class RealtimeEventProcessor {
       batchSize: events.length,
       processedAt,
       generations,
-    };
-  }
-
-  // ===========================================================================
-  // Private: Shot Generation Processing
-  // ===========================================================================
-
-  private processShotGenerationChanges(
-    events: RawDatabaseEvent[],
-    processedAt: number
-  ): ShotGenerationsChangedEvent {
-    const affectedShotIds = new Set<string>();
-    let allInserts = true;
-
-    const changes = events
-      .map((e) => {
-        const currentRecord = (e.eventType === 'DELETE' ? (e.old ?? e.new) : e.new) as Partial<ShotGenerationRecord> | null;
-        const previousRecord = e.old as Partial<ShotGenerationRecord> | null;
-        if (!currentRecord?.shot_id || !currentRecord?.generation_id) {
-          return null;
-        }
-
-        const isNowPositioned = e.eventType === 'DELETE'
-          ? false
-          : (currentRecord.timeline_frame !== null && currentRecord.timeline_frame !== undefined);
-        const wasPositioned =
-          previousRecord?.timeline_frame !== null && previousRecord?.timeline_frame !== undefined;
-
-        affectedShotIds.add(currentRecord.shot_id);
-
-        if (e.eventType !== 'INSERT') {
-          allInserts = false;
-        }
-
-        return {
-          shotId: currentRecord.shot_id,
-          generationId: currentRecord.generation_id,
-          eventType: e.eventType,
-          isNowPositioned,
-          wasPositioned,
-        };
-      })
-      .filter((change): change is ShotGenerationsChangedEvent['changes'][number] => change !== null);
-
-    return {
-      type: 'shot-generations-changed',
-      batchSize: changes.length,
-      processedAt,
-      changes,
-      affectedShotIds: Array.from(affectedShotIds),
-      allInserts,
     };
   }
 

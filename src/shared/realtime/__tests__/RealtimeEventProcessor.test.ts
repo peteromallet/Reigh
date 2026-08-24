@@ -269,56 +269,6 @@ describe('RealtimeEventProcessor', () => {
     });
   });
 
-  describe('shot generation processing', () => {
-    it('processes shot_generations changes', () => {
-      const callback = vi.fn();
-      processor.onEvent(callback);
-
-      processor.process(makeRawEvent({
-        table: 'shot_generations',
-        eventType: 'INSERT',
-        new: {
-          id: 'sg-1',
-          shot_id: 'shot-1',
-          generation_id: 'gen-1',
-          timeline_frame: 10,
-        },
-      }));
-
-      processor.flush();
-
-      const event = callback.mock.calls[0][0];
-      expect(event.type).toBe('shot-generations-changed');
-      expect(event.affectedShotIds).toContain('shot-1');
-      expect(event.allInserts).toBe(true);
-      expect(event.changes[0].isNowPositioned).toBe(true);
-    });
-
-    it('tracks allInserts correctly for mixed events', () => {
-      const callback = vi.fn();
-      processor.onEvent(callback);
-
-      processor.process(makeRawEvent({
-        table: 'shot_generations',
-        eventType: 'INSERT',
-        new: { id: 'sg-1', shot_id: 'shot-1', generation_id: 'gen-1', timeline_frame: 10 },
-      }));
-
-      processor.process(makeRawEvent({
-        table: 'shot_generations',
-        eventType: 'UPDATE',
-        new: { id: 'sg-2', shot_id: 'shot-1', generation_id: 'gen-2', timeline_frame: 20 },
-        old: { timeline_frame: null },
-      }));
-
-      processor.flush();
-
-      // INSERT and UPDATE are different queue keys, so emitted separately
-      // Both should be called
-      expect(callback).toHaveBeenCalledTimes(2);
-    });
-  });
-
   describe('variant processing', () => {
     it('processes variant INSERT/UPDATE events', () => {
       const callback = vi.fn();
