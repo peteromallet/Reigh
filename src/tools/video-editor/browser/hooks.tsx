@@ -88,6 +88,26 @@ export interface VideoEditorCommands {
   ) => Promise<ApplySequenceDraftToTimelineResult>;
 }
 
+function resolveCommandConfig(
+  config: TimelineConfig,
+  current: import('@/tools/video-editor/lib/timeline-data.ts').TimelineData,
+): ResolvedTimelineConfig {
+  const registry = current.resolvedConfig.registry;
+  return {
+    output: config.output,
+    tracks: config.tracks ?? [],
+    clips: config.clips.map((clip) => ({
+      ...clip,
+      assetEntry: clip.asset ? registry[clip.asset] : undefined,
+    })),
+    registry,
+    ...(config.theme !== undefined ? { theme: config.theme } : {}),
+    ...(config.theme_overrides !== undefined ? { theme_overrides: config.theme_overrides } : {}),
+    ...(config.generation_defaults !== undefined ? { generation_defaults: config.generation_defaults } : {}),
+    ...(config.app !== undefined ? { app: config.app } : {}),
+  };
+}
+
 /**
  * @publicContract
  * Browser-only runtime services that back the standalone editor shell.
@@ -184,7 +204,7 @@ export function useVideoEditorCommands(): VideoEditorCommands {
     }
 
     ops.applyEdit(
-      { type: 'config', resolvedConfig: nextConfig },
+      { type: 'config', resolvedConfig: resolveCommandConfig(nextConfig, data.current) },
       {
         selectedClipId: options?.selectedClipId ?? data.selectedClipId,
         selectedTrackId: options?.selectedTrackId ?? data.selectedTrackId,
@@ -243,22 +263,29 @@ export function useVideoEditorCommands(): VideoEditorCommands {
         throw new Error('useVideoEditorCommands.applySequenceDraft requires a loaded timeline.');
       }
 
+      const sequenceOptions = options?.mode === 'replace'
+        ? {
+            mode: 'replace' as const,
+            selectedClipId: options.selectedClipId ?? data.selectedClipId ?? undefined,
+            selectedClipIds: options.selectedClipIds ?? data.selectedClipIds,
+          }
+        : {
+            mode: 'insert' as const,
+            at: options?.at ?? currentTime,
+            selectedClipId: data.selectedClipId ?? undefined,
+            selectedClipIds: data.selectedClipIds,
+            selectedTrackId: options?.selectedTrackId ?? data.selectedTrackId,
+          };
       const result = await applySequenceDraftToTimeline(
         data.current.config,
         data.current.registry,
         draft,
-        {
-          at: options?.at ?? currentTime,
-          mode: options?.mode,
-          selectedClipId: options?.selectedClipId ?? data.selectedClipId ?? undefined,
-          selectedClipIds: options?.selectedClipIds ?? data.selectedClipIds,
-          selectedTrackId: options?.selectedTrackId ?? data.selectedTrackId ?? undefined,
-        },
+        sequenceOptions,
       );
 
       if (result.ok) {
         ops.applyEdit(
-          { type: 'config', resolvedConfig: result.config },
+          { type: 'config', resolvedConfig: resolveCommandConfig(result.config, data.current) },
           {
             selectedClipId: result.clipId,
             selectedTrackId: result.selectedTrackId ?? data.selectedTrackId,

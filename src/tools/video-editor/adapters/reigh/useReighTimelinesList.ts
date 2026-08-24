@@ -32,8 +32,8 @@ export function useReighTimelinesList(
     },
   });
 
-  const createTimeline = useMutation({
-    mutationFn: async (_name: string) => { throw timelineWriteUnavailable('create timeline'); },
+  const createTimeline = useMutation<{ id: string }, Error, string>({
+    mutationFn: async (_name: string): Promise<{ id: string }> => { throw timelineWriteUnavailable('create timeline'); },
   });
   const renameTimeline = useMutation({
     mutationFn: async (_input: { timelineId: string; name: string }) => { throw timelineWriteUnavailable('rename timeline'); },

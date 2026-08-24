@@ -39,11 +39,16 @@ import type {
   TimelineChromeContextValue,
   TimelineEditorCommandInput,
   TimelineEditorCommandResult,
+  TimelineEditorCommand,
   TimelineEditorContextValue,
   TimelineEditorCommands,
   TimelinePlaybackContextValue,
   UseTimelineStateResult,
 } from '@/tools/video-editor/hooks/useTimelineState.types.ts';
+import type {
+  TimelineQueuedRender,
+  TimelineRenderRequest,
+} from '@/tools/video-editor/hooks/timeline-state-types.ts';
 import {
   createMobileInteractionPolicy,
   getDefaultInteractionMode,
@@ -53,6 +58,7 @@ import {
 import type { TimelineData } from '@/tools/video-editor/lib/timeline-data.ts';
 import { useTimelineTrackManagement } from '@/tools/video-editor/hooks/useTimelineTrackManagement.ts';
 import { useTimelineOps } from '@/tools/video-editor/hooks/useTimelineOps';
+import { useFinalVideoAvailable } from '@/tools/video-editor/hooks/useFinalVideoAvailable.ts';
 
 export type { EditorPreferences } from '@/tools/video-editor/hooks/useEditorPreferences.ts';
 export type { RenderStatus } from '@/tools/video-editor/hooks/useRenderState.ts';
@@ -70,7 +76,7 @@ type ExternalDropHook = ReturnType<typeof useExternalDrop>;
 type TimelineHistoryHook = ReturnType<typeof useTimelineHistory>;
 type RenderStateHook = ReturnType<typeof useRenderState>;
 
-const editorCommandRunner = createTimelineCommandRunner([...MEDIA_COMMAND_DESCRIPTORS]);
+const editorCommandRunner = createTimelineCommandRunner<TimelineEditorCommand>(MEDIA_COMMAND_DESCRIPTORS);
 
 function useTimelineEditorContextValue({
   data,
@@ -324,6 +330,8 @@ function useTimelineChromeContextValue({
   isConflictExhausted,
   schemaIncompatible,
   render,
+  queuedRender,
+  renderRequest,
   history,
   setScaleWidth,
   trackManagement,
@@ -347,6 +355,8 @@ function useTimelineChromeContextValue({
   loadError: Error | null;
   retryLoad: () => void;
   render: Pick<RenderStateHook, 'renderStatus' | 'renderLog' | 'renderDirty' | 'renderProgress' | 'renderResultUrl' | 'renderResultFilename' | 'activeRenderTaskId' | 'renderDestination' | 'setRenderDestination' | 'cancelRender'>;
+  queuedRender: TimelineQueuedRender;
+  renderRequest: TimelineRenderRequest;
   history: Pick<TimelineHistoryHook, 'undo' | 'redo' | 'canUndo' | 'canRedo' | 'historyPausedForUploads' | 'checkpoints' | 'jumpToCheckpoint' | 'createManualCheckpoint'>;
   setScaleWidth: ReturnType<typeof useEditorPreferences>['setScaleWidth'];
   trackManagement: Pick<TimelineTrackManagementHook, 'handleAddTrack' | 'handleClearUnusedTracks' | 'unusedTrackCount'>;
@@ -370,12 +380,14 @@ function useTimelineChromeContextValue({
     renderLog: render.renderLog,
     renderDirty: render.renderDirty,
     renderProgress: render.renderProgress,
+    queuedRender,
     renderResultUrl: render.renderResultUrl,
     renderResultFilename: render.renderResultFilename,
     activeRenderTaskId: render.activeRenderTaskId,
     renderDestination: render.renderDestination,
     setRenderDestination: render.setRenderDestination,
     cancelRender: render.cancelRender,
+    renderRequest,
     undo: history.undo,
     redo: history.redo,
     canUndo: history.canUndo,
@@ -423,6 +435,8 @@ function useTimelineChromeContextValue({
     render.renderResultFilename,
     render.renderResultUrl,
     render.renderStatus,
+    queuedRender,
+    renderRequest,
     render.activeRenderTaskId,
     render.renderDestination,
     render.setRenderDestination,
@@ -466,6 +480,7 @@ function useTimelinePlaybackContextValue({
 
 export function useTimelineState(): UseTimelineStateResult {
   const runtime = useVideoEditorRuntime();
+  const { finalVideoMap } = useFinalVideoAvailable();
   const queryClient = useQueryClient();
   const isMobile = useIsMobile();
   const isTablet = useIsTablet();
@@ -740,7 +755,6 @@ export function useTimelineState(): UseTimelineStateResult {
     selectedTrackId,
     applyEdit,
     patchRegistry,
-    registerAsset,
     uploadAsset,
     invalidateAssetRegistry,
     resolveAssetUrl,
@@ -751,6 +765,7 @@ export function useTimelineState(): UseTimelineStateResult {
     handleAssetDrop: assetManagement.handleAssetDrop,
     handleAddTextAt: clipEditing.handleAddTextAt,
     onSeekToTime: playback.onClickTimeArea,
+    finalVideoMap,
   });
 
   const trackManagement = useTimelineTrackManagement({
@@ -991,6 +1006,16 @@ export function useTimelineState(): UseTimelineStateResult {
       renderDestination,
       setRenderDestination,
       cancelRender,
+    },
+    queuedRender: null,
+    renderRequest: {
+      timelineId: runtime.timelineId,
+      assetRegistry: data?.registry ?? null,
+      resolvedConfig: selection.resolvedConfig,
+      renderMetadata: derived.renderMetadata,
+      renderRuntime: {
+        projectId: selectedProjectId ?? '',
+      },
     },
     history: {
       undo,
