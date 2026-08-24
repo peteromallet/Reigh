@@ -2,11 +2,13 @@ import { strict as assert } from 'node:assert';
 import { execFileSync } from 'node:child_process';
 import {
   chmodSync,
+  copyFileSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   renameSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -53,7 +55,7 @@ function commitAll(repoRoot, message) {
   return git(repoRoot, ['rev-parse', 'HEAD']);
 }
 
-function createCandidateRepo() {
+function createCandidateRepo({ candidateEvidencePath } = {}) {
   const repoRoot = mkdtempSync(resolve(tmpdir(), 'reigh-release-provenance-'));
   git(repoRoot, ['init', '-q']);
   git(repoRoot, ['config', 'user.name', 'Release Test']);
@@ -75,12 +77,20 @@ function createCandidateRepo() {
   });
   mkdirSync(resolve(repoRoot, 'src'), { recursive: true });
   writeFileSync(resolve(repoRoot, 'src/app.js'), 'export const candidate = true;\n');
+  if (candidateEvidencePath) {
+    mkdirSync(resolve(repoRoot, candidateEvidencePath, '..'), { recursive: true });
+    writeFileSync(resolve(repoRoot, candidateEvidencePath), 'candidate-bound evidence\n');
+  }
   const candidateCommit = commitAll(repoRoot, 'candidate');
   git(repoRoot, ['tag', '-a', TAG, '-m', 'candidate tag', candidateCommit]);
   return { candidateCommit, repoRoot };
 }
 
-function freezeEvidence(repoRoot, candidateCommit, { extraManifest = {}, evidencePath } = {}) {
+function freezeEvidence(repoRoot, candidateCommit, {
+  extraManifest = {},
+  evidencePath,
+  evidenceKind = 'file',
+} = {}) {
   const manifest = JSON.parse(readFileSync(resolve(repoRoot, RELEASE_MANIFEST_PATH), 'utf8'));
   writeJson(repoRoot, RELEASE_MANIFEST_PATH, {
     ...manifest,
@@ -100,12 +110,21 @@ function freezeEvidence(repoRoot, candidateCommit, { extraManifest = {}, evidenc
   });
   const artifactPath = evidencePath ?? `${releaseEvidenceDirectory(RELEASE)}receipt.txt`;
   mkdirSync(resolve(repoRoot, artifactPath, '..'), { recursive: true });
-  writeFileSync(resolve(repoRoot, artifactPath), 'immutable release evidence\n');
+  if (evidenceKind === 'symlink') {
+    writeFileSync(resolve(repoRoot, `${artifactPath}.target`), 'symlink target\n');
+    symlinkSync(`${artifactPath.split('/').at(-1)}.target`, resolve(repoRoot, artifactPath));
+  } else {
+    writeFileSync(resolve(repoRoot, artifactPath), 'immutable release evidence\n');
+  }
   return commitAll(repoRoot, 'freeze evidence');
 }
 
 function withCandidateRepo(callback) {
-  const fixture = createCandidateRepo();
+  return withRepo({}, callback);
+}
+
+function withRepo(options, callback) {
+  const fixture = createCandidateRepo(options);
   try {
     callback(fixture);
   } finally {
@@ -202,6 +221,89 @@ describe('Reigh release candidate provenance', () => {
         headCommit,
         release: RELEASE,
       }), /non-executable regular blob/);
+    });
+  });
+
+  it('rejects mutation of evidence that already existed at the candidate commit', () => {
+    const evidencePath = `${releaseEvidenceDirectory(RELEASE)}candidate-proof.txt`;
+    withRepo({ candidateEvidencePath: evidencePath }, ({ repoRoot, candidateCommit }) => {
+      freezeEvidence(repoRoot, candidateCommit);
+      writeFileSync(resolve(repoRoot, evidencePath), 'candidate-proof rewritten\n');
+      const headCommit = commitAll(repoRoot, 'mutate candidate evidence');
+      assert.throws(
+        () => inspectCandidateController({ repoRoot, candidateCommit, headCommit, release: RELEASE }),
+        /release evidence blob must never be modified.*candidate-proof\.txt/,
+      );
+    });
+  });
+
+  it('rejects an added receipt edited, deleted, re-added, or renamed later', () => {
+    for (const operation of ['edit', 'delete', 'readd', 'rename']) {
+      withCandidateRepo(({ repoRoot, candidateCommit }) => {
+        const receipt = `${releaseEvidenceDirectory(RELEASE)}receipt.txt`;
+        const headAfterFreeze = freezeEvidence(repoRoot, candidateCommit);
+        let headCommit;
+        if (operation === 'edit') {
+          writeFileSync(resolve(repoRoot, receipt), 'edited receipt\n');
+          headCommit = commitAll(repoRoot, 'edit receipt');
+        } else if (operation === 'rename') {
+          const renamed = `${releaseEvidenceDirectory(RELEASE)}renamed-receipt.txt`;
+          renameSync(resolve(repoRoot, receipt), resolve(repoRoot, renamed));
+          headCommit = commitAll(repoRoot, 'rename receipt');
+        } else {
+          rmSync(resolve(repoRoot, receipt));
+          headCommit = commitAll(repoRoot, 'delete receipt');
+          if (operation === 'readd') {
+            writeFileSync(resolve(repoRoot, receipt), 're-added receipt\n');
+            headCommit = commitAll(repoRoot, 're-add receipt');
+          }
+        }
+        assert.notEqual(headCommit, headAfterFreeze);
+        assert.throws(
+          () => inspectCandidateController({ repoRoot, candidateCommit, headCommit, release: RELEASE }),
+          /release evidence (blob must never be modified|path must never be deleted or renamed|path was re-added)/,
+        );
+      });
+    }
+  });
+
+  it('rejects symlink evidence and accepts distinct add-once evidence files', () => {
+    withCandidateRepo(({ repoRoot, candidateCommit }) => {
+      const headCommit = freezeEvidence(repoRoot, candidateCommit, {
+        evidencePath: `${releaseEvidenceDirectory(RELEASE)}symlink.txt`,
+        evidenceKind: 'symlink',
+      });
+      assert.throws(
+        () => inspectCandidateController({ repoRoot, candidateCommit, headCommit, release: RELEASE }),
+        /non-executable regular blob/,
+      );
+    });
+
+    withCandidateRepo(({ repoRoot, candidateCommit }) => {
+      freezeEvidence(repoRoot, candidateCommit);
+      const extra = `${releaseEvidenceDirectory(RELEASE)}second-receipt.txt`;
+      writeFileSync(resolve(repoRoot, extra), 'second immutable receipt\n');
+      const headCommit = commitAll(repoRoot, 'add distinct receipt');
+      assert.doesNotThrow(() => inspectCandidateController({
+        repoRoot,
+        candidateCommit,
+        headCommit,
+        release: RELEASE,
+      }));
+    });
+
+    withCandidateRepo(({ repoRoot, candidateCommit }) => {
+      const receipt = `${releaseEvidenceDirectory(RELEASE)}receipt.txt`;
+      freezeEvidence(repoRoot, candidateCommit);
+      const copy = `${releaseEvidenceDirectory(RELEASE)}copied-receipt.txt`;
+      copyFileSync(resolve(repoRoot, receipt), resolve(repoRoot, copy));
+      const headCommit = commitAll(repoRoot, 'copy receipt into distinct artifact');
+      assert.doesNotThrow(() => inspectCandidateController({
+        repoRoot,
+        candidateCommit,
+        headCommit,
+        release: RELEASE,
+      }));
     });
   });
 

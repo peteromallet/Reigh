@@ -1,6 +1,7 @@
-import { spawnSync } from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import { dirname } from 'node:path';
+
+import { BoundedCommandError, runBoundedCommand } from './bounded-command.mjs';
 
 export const RELEASE_LEDGER_PATH = 'config/releases/extension-ship-evidence.json';
 export const RELEASE_MANIFEST_PATH = 'config/releases/extension-ship-quality.json';
@@ -8,6 +9,8 @@ export const RELEASE_MANIFEST_PATH = 'config/releases/extension-ship-quality.jso
 const FULL_COMMIT = /^[0-9a-f]{40}$/;
 const SAFE_RELEASE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const SAFE_TAG = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$/;
+export const GIT_COMMAND_TIMEOUT_MS = 60_000;
+export const GIT_COMMAND_MAX_BUFFER_BYTES = 20 * 1024 * 1024;
 const GIT_PATH = [
   dirname(realpathSync(process.execPath)),
   '/usr/local/bin',
@@ -42,19 +45,27 @@ function runGit(repoRoot, args, { allowFailure = false } = {}) {
     '-c', `core.attributesFile=${process.platform === 'win32' ? 'NUL' : '/dev/null'}`,
     ...args,
   ];
-  const result = spawnSync('git', hardenedArgs, {
-    cwd: repoRoot,
-    encoding: 'utf8',
-    env: gitEnvironment(),
-    maxBuffer: 20 * 1024 * 1024,
-    shell: false,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  if (!allowFailure && (result.error || result.status !== 0)) {
+  try {
+    const result = runBoundedCommand('git', hardenedArgs, {
+      cwd: repoRoot,
+      env: gitEnvironment(),
+      timeoutMs: GIT_COMMAND_TIMEOUT_MS,
+      maxBuffer: GIT_COMMAND_MAX_BUFFER_BYTES,
+      killSignal: 'SIGKILL',
+      allowFailure,
+      label: `git ${args.join(' ')}`,
+    });
+    if (!allowFailure && !result.ok) {
+      const detail = result.error?.message || result.stderr.trim() || `exit ${result.status}`;
+      fail(`git ${args.join(' ')} failed in ${repoRoot}: ${detail}`);
+    }
+    return result;
+  } catch (error) {
+    if (!(error instanceof BoundedCommandError)) throw error;
+    const result = error.result;
     const detail = result.error?.message || result.stderr.trim() || `exit ${result.status}`;
     fail(`git ${args.join(' ')} failed in ${repoRoot}: ${detail}`);
   }
-  return result;
 }
 
 export function assertCleanReleaseCheckout(repoRoot, label) {
@@ -265,19 +276,40 @@ function changedPathsOnEdge(repoRoot, parent, commit) {
   return output.split('\0').filter(Boolean);
 }
 
-function assertOrdinaryBlob(repoRoot, commit, path) {
-  const entry = runGit(
+function treeEntries(repoRoot, commit, paths) {
+  const output = runGit(
     repoRoot,
-    ['ls-tree', '-z', commit, '--', path],
+    ['ls-tree', '-r', '-z', '--full-tree', commit, '--', ...paths],
   ).stdout;
-  const headerEnd = entry.indexOf('\t');
-  const entryPath = entry.slice(headerEnd + 1).replace(/\0$/, '');
-  if (headerEnd === -1 || !entry.startsWith('100644 blob ') || entryPath !== path) {
+  const entries = new Map();
+  for (const record of output.split('\0').filter(Boolean)) {
+    const separator = record.indexOf('\t');
+    if (separator === -1) fail(`malformed Git tree entry at ${commit}`);
+    const [mode, type, object] = record.slice(0, separator).split(' ');
+    const path = record.slice(separator + 1);
+    entries.set(path, Object.freeze({ mode, type, object, path }));
+  }
+  return entries;
+}
+
+function assertOrdinaryBlob(entry, commit, path) {
+  if (!entry || entry.mode !== '100644' || entry.type !== 'blob') {
     fail(
       `allowed release evidence path must remain a committed non-executable regular blob: `
       + `${path} at ${commit}`,
     );
   }
+}
+
+function sameTreeEntry(left, right) {
+  return left?.mode === right?.mode
+    && left?.type === right?.type
+    && left?.object === right?.object;
+}
+
+function isEvidenceArtifactPath(path, release) {
+  const directory = releaseEvidenceDirectory(release);
+  return path.startsWith(directory) && path.length > directory.length;
 }
 
 /**
@@ -315,21 +347,30 @@ export function inspectCandidateController({
   }
 
   const changedPaths = new Set();
+  const candidateEvidenceEntries = treeEntries(repoRoot, candidateCommit, [releaseEvidenceDirectory(release)]);
+  for (const [path, entry] of candidateEvidenceEntries) {
+    assertOrdinaryBlob(entry, candidateCommit, path);
+  }
+  const everEvidencePaths = new Set(candidateEvidenceEntries.keys());
   for (const revision of revisions) {
     const [commit, ...parents] = revision.trim().split(/\s+/);
     if (parents.length === 0) fail(`release descendant ${commit} has no parent`);
+    const commitChangedPaths = new Set();
     for (const parent of parents) {
       if (parent !== candidateCommit && !isAncestor(repoRoot, candidateCommit, parent)) {
         fail(`release descendant ${commit} merges parent ${parent} from outside the candidate history`);
       }
       const edgePaths = changedPathsOnEdge(repoRoot, parent, commit);
+      for (const path of edgePaths) commitChangedPaths.add(path);
       for (const path of edgePaths) {
         changedPaths.add(path);
-        if (isAllowedReleaseEvidencePath(path, release)) {
-          assertOrdinaryBlob(repoRoot, commit, path);
-        }
       }
       if (edgePaths.includes(RELEASE_MANIFEST_PATH)) {
+        assertOrdinaryBlob(
+          treeEntries(repoRoot, commit, [RELEASE_MANIFEST_PATH]).get(RELEASE_MANIFEST_PATH),
+          commit,
+          RELEASE_MANIFEST_PATH,
+        );
         const manifestErrors = validateManifestEdge(
           readJsonAtCommit(repoRoot, parent, RELEASE_MANIFEST_PATH),
           readJsonAtCommit(repoRoot, commit, RELEASE_MANIFEST_PATH),
@@ -339,6 +380,11 @@ export function inspectCandidateController({
         }
       }
       if (edgePaths.includes(RELEASE_LEDGER_PATH)) {
+        assertOrdinaryBlob(
+          treeEntries(repoRoot, commit, [RELEASE_LEDGER_PATH]).get(RELEASE_LEDGER_PATH),
+          commit,
+          RELEASE_LEDGER_PATH,
+        );
         const ledgerErrors = validateLedgerEdge(
           readJsonAtCommit(repoRoot, parent, RELEASE_LEDGER_PATH),
           readJsonAtCommit(repoRoot, commit, RELEASE_LEDGER_PATH),
@@ -346,6 +392,52 @@ export function inspectCandidateController({
         );
         if (ledgerErrors.length > 0) {
           fail(`invalid evidence ledger edge ${parent}..${commit}:\n${ledgerErrors.join('\n')}`);
+        }
+      }
+    }
+
+    const evidencePathsChangedOnEdge = [...commitChangedPaths]
+      .filter((path) => isEvidenceArtifactPath(path, release));
+    if (evidencePathsChangedOnEdge.length > 0) {
+      const commitEntries = treeEntries(repoRoot, commit, [releaseEvidenceDirectory(release)]);
+      const parentEntries = new Map(
+        parents.map((parent) => [
+          parent,
+          treeEntries(repoRoot, parent, [releaseEvidenceDirectory(release)]),
+        ]),
+      );
+      for (const path of evidencePathsChangedOnEdge) {
+        const commitEntry = commitEntries.get(path);
+        const parentEntryList = parents.map((parent) => parentEntries.get(parent).get(path));
+        const inheritedEntry = parentEntryList.find((entry) => sameTreeEntry(entry, commitEntry));
+        const existingParentEntry = parentEntryList.find(Boolean);
+
+        if (!commitEntry && parentEntryList.some(Boolean)) {
+          for (const parentEntry of parentEntryList) {
+            if (parentEntry) {
+              fail(`release evidence path must never be deleted or renamed: ${path} at ${commit}`);
+            }
+          }
+        } else if (commitEntry && existingParentEntry && !inheritedEntry) {
+          assertOrdinaryBlob(commitEntry, commit, path);
+          fail(`release evidence blob must never be modified after it is committed: ${path} at ${commit}`);
+        } else if (commitEntry && inheritedEntry) {
+          // A merge may carry an artifact from one parent while the other
+          // parent has no copy. This is not a second addition, but every
+          // parent that already has the path must still match byte-for-byte.
+          assertOrdinaryBlob(commitEntry, commit, path);
+          for (const parentEntry of parentEntryList) {
+            if (parentEntry && !sameTreeEntry(parentEntry, commitEntry)) {
+              fail(`release evidence blob must never be modified after it is committed: ${path} at ${commit}`);
+            }
+          }
+          everEvidencePaths.add(path);
+        } else if (commitEntry) {
+          assertOrdinaryBlob(commitEntry, commit, path);
+          if (everEvidencePaths.has(path)) {
+            fail(`release evidence path was re-added after deletion: ${path} at ${commit}`);
+          }
+          everEvidencePaths.add(path);
         }
       }
     }
