@@ -17,18 +17,35 @@
     "nodeImageDigest": "sha256:df02558528d3d3d0d621f112e232611aecfee7cbc654f6b375765f72bb262799",
     "npm": "10.8.2",
     "astridPython": "3.11.11",
-    "ffmpeg": "7.1.1",
-    "ffprobe": "7.1.1",
+    "platform": {
+      "os": "darwin",
+      "arch": "arm64",
+      "release": "24.4.0"
+    },
+    "ffmpeg": {
+      "executable": "ffmpeg",
+      "version": "7.1.1",
+      "executableSha256": "sha256:7697b094387e2918821fe7480c73f5d44543817096e9d5b5fafe58ecd6912569",
+      "buildIdentity": "ffmpeg version 7.1.1 Copyright (c) 2000-2025 the FFmpeg developers\nbuilt with Apple clang version 17.0.0 (clang-1700.0.13.3)\nconfiguration: --prefix=/opt/homebrew/Cellar/ffmpeg/7.1.1_3 --enable-shared --enable-pthreads --enable-version3 --cc=clang --host-cflags= --host-ldflags='-Wl,-ld_classic' --enable-ffplay --enable-gnutls --enable-gpl --enable-libaom --enable-libaribb24 --enable-libbluray --enable-libdav1d --enable-libharfbuzz --enable-libjxl --enable-libmp3lame --enable-libopus --enable-librav1e --enable-librist --enable-librubberband --enable-libsnappy --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libtesseract --enable-libtheora --enable-libvidstab --enable-libvmaf --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxml2 --enable-libxvid --enable-lzma --enable-libfontconfig --enable-libfreetype --enable-frei0r --enable-libass --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopenjpeg --enable-libspeex --enable-libsoxr --enable-libzmq --enable-libzimg --disable-libjack --disable-indev=jack --enable-videotoolbox --enable-audiotoolbox --enable-neon"
+    },
+    "ffprobe": {
+      "executable": "ffprobe",
+      "version": "7.1.1",
+      "executableSha256": "sha256:fd670257233c93c88608a62ed8b5ddeeb812bd341dfb39bbe0e1c654b91672ad",
+      "buildIdentity": "ffprobe version 7.1.1 Copyright (c) 2007-2025 the FFmpeg developers\nbuilt with Apple clang version 17.0.0 (clang-1700.0.13.3)\nconfiguration: --prefix=/opt/homebrew/Cellar/ffmpeg/7.1.1_3 --enable-shared --enable-pthreads --enable-version3 --cc=clang --host-cflags= --host-ldflags='-Wl,-ld_classic' --enable-ffplay --enable-gnutls --enable-gpl --enable-libaom --enable-libaribb24 --enable-libbluray --enable-libdav1d --enable-libharfbuzz --enable-libjxl --enable-libmp3lame --enable-libopus --enable-librav1e --enable-librist --enable-librubberband --enable-libsnappy --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libtesseract --enable-libtheora --enable-libvidstab --enable-libvmaf --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxml2 --enable-libxvid --enable-lzma --enable-libfontconfig --enable-libfreetype --enable-frei0r --enable-libass --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopenjpeg --enable-libspeex --enable-libsoxr --enable-libzmq --enable-libzimg --disable-libjack --disable-indev=jack --enable-videotoolbox --enable-audiotoolbox --enable-neon"
+    },
     "tesseract": {
       "executable": "tesseract",
       "version": "5.5.1",
       "executableSha256": "sha256:6517c9cf1b17280201af3e48880517bbfafd24b5876aacb75d5643bafff1c414",
-      "engDataSha256": "sha256:7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2"
+      "engDataSha256": "sha256:7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2",
+      "buildIdentity": "tesseract 5.5.1\n leptonica-1.85.0\n  libgif 5.2.2 : libjpeg 8d (libjpeg-turbo 3.0.4) : libpng 1.6.56 : libtiff 4.7.1 : zlib 1.2.12 : libwebp 1.6.0 : libopenjp2 2.5.4"
     },
     "imageMagick": {
       "executable": "magick",
       "version": "7.1.2-18",
-      "executableSha256": "sha256:c98202f298bc30de84de0936b460e40a1309af7b7cef5d050cc2df769199eec4"
+      "executableSha256": "sha256:c98202f298bc30de84de0936b460e40a1309af7b7cef5d050cc2df769199eec4",
+      "buildIdentity": "Version: ImageMagick 7.1.2-18 Q16-HDRI aarch64 23822 https://imagemagick.org\nCopyright: (C) 1999 ImageMagick Studio LLC\nLicense: https://imagemagick.org/license/"
     }
   },
   "requiredGates": [

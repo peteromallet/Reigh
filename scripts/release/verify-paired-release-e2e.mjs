@@ -29,6 +29,12 @@ import {
   resolveAnnotatedCandidateTag,
 } from './reigh-release-provenance.mjs';
 import { runBoundedCommand } from './bounded-command.mjs';
+import {
+  assertPinnedPlatform,
+  attestNativeTools,
+  buildContainerBoundaryAttestation,
+  resolvePinnedExecutable,
+} from './native-tool-attestation.mjs';
 
 const LABEL = '[paired-release-e2e]';
 const moduleDir = dirname(fileURLToPath(import.meta.url));
@@ -472,7 +478,8 @@ export function preflightPinnedRepositories({ manifest, env }) {
   if (nodeVersion !== manifest.verification.node) {
     fail(`Node version mismatch: expected ${manifest.verification.node}, got ${nodeVersion}`);
   }
-  const npmVersion = capture('npm', ['--version'], { cwd: REPO_ROOT }).stdout.trim();
+  const npmExecutable = resolvePinnedExecutable('npm', { pathValue: env.PATH ?? process.env.PATH });
+  const npmVersion = capture(npmExecutable, ['--version'], { cwd: REPO_ROOT }).stdout.trim();
   if (npmVersion !== manifest.verification.npm) {
     fail(`npm version mismatch: expected ${manifest.verification.npm}, got ${npmVersion}`);
   }
@@ -503,7 +510,50 @@ export function preflightPinnedRepositories({ manifest, env }) {
     reighProvenance,
     reighTagObject: reighTag.tagObject,
     mediaFixture,
+    nodeVersion,
+    npmVersion,
+    npmExecutable,
+    astridPythonVersion: pythonIdentity.version,
   });
+}
+
+export function preflightNativeToolchain({ manifest, env = process.env, pins = {} }) {
+  const pathValue = env.PATH ?? process.env.PATH;
+  const attestation = attestNativeTools({
+    manifest,
+    pathValue,
+    run(command, args, label) {
+      return capture(command, args, {
+        cwd: REPO_ROOT,
+        env: safeBaseEnvironment({ PATH: pathValue }),
+        allowFailure: true,
+        phase: `native-toolchain:${label}`,
+      });
+    },
+  });
+  const pinnedPlatform = assertPinnedPlatform(manifest, attestation.platform);
+  const nodeExecutable = realpathSync(process.execPath);
+  const npmExecutable = pins.npmExecutable ?? resolvePinnedExecutable('npm', { pathValue });
+  const runtime = {
+    node: {
+      executable: nodeExecutable,
+      executableSha256: `sha256:${sha256File(nodeExecutable)}`,
+      version: pins.nodeVersion ?? process.version.replace(/^v/, ''),
+    },
+    npm: {
+      executable: npmExecutable,
+      executableSha256: `sha256:${sha256File(npmExecutable)}`,
+      version: pins.npmVersion ?? null,
+    },
+    astridPython: {
+      executable: pins.astridPython ? realpathSync(pins.astridPython) : null,
+      executableSha256: pins.astridPython ? `sha256:${sha256File(pins.astridPython)}` : null,
+      version: pins.astridPythonVersion ?? null,
+    },
+    platform: pinnedPlatform,
+    container: buildContainerBoundaryAttestation(manifest),
+  };
+  return Object.freeze({ ...attestation, platform: pinnedPlatform, runtime });
 }
 
 export const PAIRED_RELEASE_PHASES = Object.freeze([
@@ -950,6 +1000,27 @@ function startLoggedProcess(command, args, { cwd, env, logPath }) {
   return { child, log };
 }
 
+/**
+ * A detached process handle is deliberately not returned until its readiness
+ * contract has passed. If any readiness/security probe rejects, reap the
+ * complete process group here so callers cannot lose the handle through an
+ * awaited assignment.
+ */
+export async function startLoggedProcessUntilReady(command, args, options, readiness) {
+  const handle = startLoggedProcess(command, args, options);
+  try {
+    await readiness(handle.child);
+    return handle;
+  } catch (error) {
+    try {
+      await stopLoggedProcess(handle);
+    } catch (cleanupError) {
+      error.message = `${error.message}; readiness cleanup: ${cleanupError.message}`;
+    }
+    throw error;
+  }
+}
+
 async function stopLoggedProcess(handle) {
   if (!handle) return;
   if (handle.stopped) return;
@@ -966,7 +1037,10 @@ async function stopLoggedProcess(handle) {
       new Promise((resolvePromise) => setTimeout(() => resolvePromise(false), timeoutMs)),
     ]);
   };
-  if (isRunning() && child.pid) {
+  // The detached leader can exit while a descendant keeps the process group
+  // alive. On POSIX, signal the group even when the leader's exit event has
+  // already fired; checking only `isRunning()` would orphan that descendant.
+  if (child.pid && (isRunning() || process.platform !== 'win32')) {
     try {
       if (process.platform === 'win32') child.kill('SIGTERM');
       else process.kill(-child.pid, 'SIGTERM');
@@ -975,7 +1049,7 @@ async function stopLoggedProcess(handle) {
     }
     await waitForExit(5_000);
   }
-  if (isRunning() && child.pid) {
+  if (child.pid && (isRunning() || process.platform !== 'win32')) {
     try {
       if (process.platform === 'win32') child.kill('SIGKILL');
       else process.kill(-child.pid, 'SIGKILL');
@@ -1419,12 +1493,13 @@ print(json.dumps({
   }).payload;
 }
 
-async function startAstrid(context, suffix, port, token) {
+export async function startAstrid(context, suffix, port, token) {
   const logPath = resolve(context.evidenceRoot, `astrid-${suffix}.log`);
-  const handle = startLoggedProcess(context.astridPython, [
+  const args = [
     '-m', 'astrid', 'serve', '--release-mode', '--no-open-editor',
     '--projects-root', context.projectsRoot, '--host', '127.0.0.1', '--port', String(port),
-  ], {
+  ];
+  return startLoggedProcessUntilReady(context.astridPython, args, {
     cwd: context.astridSnapshot,
     env: buildServerEnvironment({
       home: context.home,
@@ -1434,67 +1509,37 @@ async function startAstrid(context, suffix, port, token) {
       token,
     }),
     logPath,
+  }, async (child) => {
+    const headers = { Authorization: `Bearer ${token}`, 'X-Astrid-Bridge-Version': 'v1' };
+    await waitForUrl(`http://127.0.0.1:${port}/health`, { headers, process: child });
+    const assertFailure = async (label, requestHeaders, status, code) => {
+      const response = await requestRawHttp(`http://127.0.0.1:${port}/health`, {
+        headers: requestHeaders,
+        redirect: 'manual',
+      });
+      let payload;
+      try { payload = await response.json(); } catch { payload = null; }
+      if (
+        response.status !== status
+        || response.headers.get('x-astrid-bridge-version') !== 'v1'
+        || payload?.error !== code
+      ) {
+        fail(`${label} returned ${response.status}/${payload?.error ?? '<no-code>'}, expected ${status}/${code}`);
+      }
+    };
+    await assertFailure('missing bearer', { 'X-Astrid-Bridge-Version': 'v1' }, 401, 'unauthorized');
+    await assertFailure('wrong bearer', { Authorization: 'Bearer definitely-wrong', 'X-Astrid-Bridge-Version': 'v1' }, 401, 'unauthorized');
+    await assertFailure('missing protocol version', { Authorization: `Bearer ${token}` }, 426, 'protocol_version_mismatch');
+    await assertFailure('wrong protocol version', { Authorization: `Bearer ${token}`, 'X-Astrid-Bridge-Version': 'v0' }, 426, 'protocol_version_mismatch');
+    await assertFailure('disallowed origin', { ...headers, Origin: 'https://attacker.invalid' }, 403, 'forbidden');
+    await assertFailure('disallowed host', { ...headers, Host: 'attacker.invalid' }, 403, 'forbidden');
   });
-  const headers = { Authorization: `Bearer ${token}`, 'X-Astrid-Bridge-Version': 'v1' };
-  await waitForUrl(`http://127.0.0.1:${port}/health`, { headers, process: handle.child });
-  const assertFailure = async (label, requestHeaders, status, code) => {
-    const response = await requestRawHttp(`http://127.0.0.1:${port}/health`, {
-      headers: requestHeaders,
-      redirect: 'manual',
-    });
-    let payload;
-    try { payload = await response.json(); } catch { payload = null; }
-    if (
-      response.status !== status
-      || response.headers.get('x-astrid-bridge-version') !== 'v1'
-      || payload?.error !== code
-    ) {
-      fail(`${label} returned ${response.status}/${payload?.error ?? '<no-code>'}, expected ${status}/${code}`);
-    }
-  };
-  await assertFailure(
-    'missing bearer',
-    { 'X-Astrid-Bridge-Version': 'v1' },
-    401,
-    'unauthorized',
-  );
-  await assertFailure(
-    'wrong bearer',
-    { Authorization: 'Bearer definitely-wrong', 'X-Astrid-Bridge-Version': 'v1' },
-    401,
-    'unauthorized',
-  );
-  await assertFailure(
-    'missing protocol version',
-    { Authorization: `Bearer ${token}` },
-    426,
-    'protocol_version_mismatch',
-  );
-  await assertFailure(
-    'wrong protocol version',
-    { Authorization: `Bearer ${token}`, 'X-Astrid-Bridge-Version': 'v0' },
-    426,
-    'protocol_version_mismatch',
-  );
-  await assertFailure(
-    'disallowed origin',
-    { ...headers, Origin: 'https://attacker.invalid' },
-    403,
-    'forbidden',
-  );
-  await assertFailure(
-    'disallowed host',
-    { ...headers, Host: 'attacker.invalid' },
-    403,
-    'forbidden',
-  );
-  return handle;
 }
 
-async function startReigh(context, suffix, port, bridgePort, token, mode) {
+export async function startReigh(context, suffix, port, bridgePort, token, mode) {
   const viteBin = resolve(context.reighSnapshot, 'node_modules/vite/bin/vite.js');
   const args = buildViteArgs(viteBin, mode, port);
-  const handle = startLoggedProcess(process.execPath, args, {
+  return startLoggedProcessUntilReady(process.execPath, args, {
     cwd: context.reighSnapshot,
     env: buildServerEnvironment({
       home: context.home,
@@ -1507,13 +1552,11 @@ async function startReigh(context, suffix, port, bridgePort, token, mode) {
       readinessIdentity: context.readinessIdentity,
     }),
     logPath: resolve(context.evidenceRoot, `reigh-${suffix}.log`),
-  });
-  await waitForViteReadiness(`http://127.0.0.1:${port}`, {
-    process: handle.child,
+  }, (child) => waitForViteReadiness(`http://127.0.0.1:${port}`, {
+    process: child,
     expectedIdentity: context.readinessIdentity,
     timeoutMs: 120_000,
-  });
-  return handle;
+  }));
 }
 
 async function smokeBuiltPreview(port, expectedIdentity) {
@@ -1839,12 +1882,13 @@ function recognizedCaption(words) {
   return { text, bounds: { left, top, width: right - left, height: bottom - top } };
 }
 
-function imageDifferenceMetric(framePath, controlPath, region, kind) {
+function imageDifferenceMetric(framePath, controlPath, region, kind, magickExecutable) {
+  if (!magickExecutable || !isAbsolute(magickExecutable)) fail('caption metric requires the preflight-attested absolute ImageMagick executable');
   const crop = `${Math.round(region.width)}x${Math.round(region.height)}+${Math.round(region.x)}+${Math.round(region.y)}`;
   const args = [framePath, controlPath, '-compose', 'difference', '-composite', '-crop', crop, '+repage', '-colorspace', 'gray'];
   if (kind === 'occupancy') args.push('-threshold', '8%');
   args.push('-format', kind === 'occupancy' ? '%[fx:mean]' : '%[fx:standard_deviation]', 'info:');
-  const result = capture('magick', args, { env: safeBaseEnvironment() });
+  const result = capture(magickExecutable, args, { env: safeBaseEnvironment() });
   const value = Number(result.stdout.trim());
   if (!Number.isFinite(value)) fail(`ImageMagick returned an invalid caption difference ${kind}: ${result.stdout}`);
   return value;
@@ -1877,7 +1921,14 @@ function verifyRenderedArtifact(context) {
   if (browserReceipt.sha256 !== sha256File(outputPath)) {
     fail('downloaded render hash changed between browser and media verification');
   }
-  const probe = runLogged('ffprobe', [
+  const ffprobeExecutable = context.nativeTools?.ffprobe?.executable;
+  const ffmpegExecutable = context.nativeTools?.ffmpeg?.executable;
+  const tesseractExecutable = context.nativeTools?.tesseract?.executable;
+  const magickExecutable = context.nativeTools?.imageMagick?.executable;
+  if (![ffprobeExecutable, ffmpegExecutable, tesseractExecutable, magickExecutable].every((path) => path && isAbsolute(path))) {
+    fail('render verification requires all preflight-attested native executables');
+  }
+  const probe = runLogged(ffprobeExecutable, [
     '-v', 'error',
     '-show_entries', 'stream=codec_name,codec_type,width,height,avg_frame_rate,nb_frames,duration:format=duration',
     '-of', 'json',
@@ -1911,7 +1962,7 @@ function verifyRenderedArtifact(context) {
   if (audio && audio.codec_name !== 'aac') {
     fail(`render audio codec is not AAC: ${audio.codec_name}`);
   }
-  runLogged('ffmpeg', ['-v', 'error', '-i', outputPath, '-f', 'null', '-'], {
+  runLogged(ffmpegExecutable, ['-v', 'error', '-i', outputPath, '-f', 'null', '-'], {
     cwd: context.reighSnapshot,
     env: safeBaseEnvironment(),
     logPath: resolve(context.evidenceRoot, 'render-full-decode.log'),
@@ -1935,7 +1986,7 @@ function verifyRenderedArtifact(context) {
     fail('paired render has no no-caption control interval for caption semantics');
   }
   const controlPath = resolve(context.evidenceRoot, 'render-caption-control.png');
-  runLogged('ffmpeg', [
+  runLogged(ffmpegExecutable, [
     '-v', 'error', '-ss', String(controlSeconds), '-i', outputPath, '-frames:v', '1', '-y', controlPath,
   ], {
     cwd: context.reighSnapshot,
@@ -1944,7 +1995,7 @@ function verifyRenderedArtifact(context) {
   });
   const mediaEvidence = validateRenderedMediaFrame(controlPath, context.mediaFixture);
   const controlFrameSha256 = sha256File(controlPath);
-  const tesseractLanguages = capture('tesseract', ['--list-langs'], {
+  const tesseractLanguages = capture(tesseractExecutable, ['--list-langs'], {
     cwd: context.reighSnapshot,
     env: safeBaseEnvironment(),
     allowFailure: true,
@@ -1958,7 +2009,7 @@ function verifyRenderedArtifact(context) {
     const fileStem = `render-caption-${probeEntry.kind}-${index}`;
     const framePath = resolve(context.evidenceRoot, `${fileStem}.png`);
     const logPath = resolve(context.evidenceRoot, `${fileStem}.log`);
-    runLogged('ffmpeg', [
+    runLogged(ffmpegExecutable, [
       '-v', 'error', '-ss', String(probeEntry.seconds), '-i', outputPath, '-frames:v', '1', '-y', framePath,
     ], {
       cwd: context.reighSnapshot,
@@ -1966,7 +2017,7 @@ function verifyRenderedArtifact(context) {
       logPath,
     });
     const ocrPath = resolve(context.evidenceRoot, `${fileStem}-ocr.tsv`);
-    const tesseract = capture('tesseract', [
+    const tesseract = capture(tesseractExecutable, [
       framePath, 'stdout', '--psm', '11', '-l', 'eng', 'tsv',
     ], { cwd: context.reighSnapshot, env: safeBaseEnvironment() });
     writeFileSync(ocrPath, tesseract.stdout, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
@@ -1975,8 +2026,8 @@ function verifyRenderedArtifact(context) {
     // differencing. Absolute luminance is intentionally not evidence: a
     // dark-but-present caption and a bright omitted-media frame must remain
     // distinguishable from the no-caption control.
-    const occupancy = imageDifferenceMetric(framePath, controlPath, caption.region, 'occupancy');
-    const contrast = imageDifferenceMetric(framePath, controlPath, caption.region, 'contrast');
+    const occupancy = imageDifferenceMetric(framePath, controlPath, caption.region, 'occupancy', magickExecutable);
+    const contrast = imageDifferenceMetric(framePath, controlPath, caption.region, 'contrast', magickExecutable);
     const semantics = assessCaptionProbe({
       expectedText: caption.text,
       recognizedText: recognized.text,
@@ -1985,7 +2036,7 @@ function verifyRenderedArtifact(context) {
       expectedRegion: caption.region,
       recognizedBounds: recognized.bounds,
       occupancy,
-      controlOccupancy: imageDifferenceMetric(controlPath, controlPath, caption.region, 'occupancy'),
+      controlOccupancy: imageDifferenceMetric(controlPath, controlPath, caption.region, 'occupancy', magickExecutable),
       contrast,
       frameSha256: sha256File(framePath),
       controlFrameSha256,
@@ -2064,6 +2115,8 @@ async function executeGate(manifest, pins, evidenceRoot) {
   chmodSync(runtimeRoot, 0o700);
   const context = {
     ...pins,
+    nativeTools: pins.nativeToolchain?.tools,
+    npmExecutable: pins.npmExecutable,
     bootstrapAstridPython: pins.astridPython,
     evidenceRoot,
     runtimeRoot,
@@ -2078,6 +2131,12 @@ async function executeGate(manifest, pins, evidenceRoot) {
   };
   mkdirSync(context.home, { recursive: true, mode: 0o700 });
   mkdirSync(context.projectsRoot, { recursive: true, mode: 0o700 });
+  const toolchainAttestationPath = resolve(evidenceRoot, 'toolchain-attestation.json');
+  writeFileSync(
+    toolchainAttestationPath,
+    `${JSON.stringify(pins.nativeToolchain, null, 2)}\n`,
+    { flag: 'wx', mode: 0o600 },
+  );
   const npmUserConfig = resolve(runtimeRoot, 'npm-userconfig');
   const npmGlobalConfig = resolve(runtimeRoot, 'npm-globalconfig');
   writeFileSync(npmUserConfig, '', { flag: 'wx', mode: 0o600 });
@@ -2093,6 +2152,8 @@ async function executeGate(manifest, pins, evidenceRoot) {
     reighEvidencePaths: pins.reighProvenance.changedPaths,
     astridCommit: pins.astridCommit,
     capability: pins.capability,
+    toolchainAttestation: pins.nativeToolchain,
+    toolchainAttestationPath: relative(evidenceRoot, toolchainAttestationPath),
     expected: { extensions: EXPECTED_EXTENSION_COUNT, runawayTransitions: EXPECTED_RUNAWAY_COUNT },
     runtimeModes: {
       productionPreview: 'built Vite preview plus authenticated same-origin proxy smoke',
@@ -2113,12 +2174,12 @@ async function executeGate(manifest, pins, evidenceRoot) {
     });
     receipt.phases.push({ id: 'archives', status: 'pass' });
 
-    runLogged('npm', ['ci', '--no-audit', '--no-fund'], {
+    runLogged(context.npmExecutable, ['ci', '--no-audit', '--no-fund'], {
       cwd: context.reighSnapshot,
       env: safeBaseEnvironment({ HOME: context.home, TMPDIR: runtimeRoot, NPM_CONFIG_USERCONFIG: npmUserConfig, NPM_CONFIG_GLOBALCONFIG: npmGlobalConfig }),
       logPath: resolve(evidenceRoot, 'reigh-npm-ci.log'),
     });
-    runLogged('npm', ['run', 'build'], {
+    runLogged(context.npmExecutable, ['run', 'build'], {
       cwd: context.reighSnapshot,
       env: safeBaseEnvironment({ ...PUBLIC_BUILD_ENV, HOME: context.home, TMPDIR: runtimeRoot, NPM_CONFIG_USERCONFIG: npmUserConfig, NPM_CONFIG_GLOBALCONFIG: npmGlobalConfig }),
       logPath: resolve(evidenceRoot, 'reigh-build.log'),
@@ -2309,6 +2370,7 @@ async function executeGate(manifest, pins, evidenceRoot) {
     }
     receipt.finishedAt = new Date().toISOString();
     try {
+      receipt.toolchainAttestationSha256 = `sha256:${sha256File(toolchainAttestationPath)}`;
       writeFileSync(resolve(evidenceRoot, 'receipt.json'), `${JSON.stringify(receipt, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
       const indexedFiles = listFiles(evidenceRoot);
       const indexPath = resolve(evidenceRoot, 'artifact-index.json');
@@ -2340,6 +2402,10 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   let pins;
   try {
     pins = preflightPinnedRepositories({ manifest, env });
+    pins = Object.freeze({
+      ...pins,
+      nativeToolchain: preflightNativeToolchain({ manifest, env, pins }),
+    });
   } catch (error) {
     const receipt = {
       schemaVersion: 1,
@@ -2350,6 +2416,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
       astridRef: env.ASTRID_REF || null,
       manifestAstridPin: manifest.astrid.commit,
       requiredCapability: RELEASE_BRIDGE_CAPABILITY,
+      ...(pins?.nativeToolchain ? { toolchainAttestation: pins.nativeToolchain } : {}),
       error: error.message,
       ...(error instanceof ReleaseCommandError ? {
         commandDiagnostic: commandDiagnosticSummary(error),

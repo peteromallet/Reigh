@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { createServer } from 'node:http';
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { arch, platform, release, tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { describe, it } from 'node:test';
 
@@ -38,8 +38,14 @@ import {
   verifyBridgeMediaContent,
   waitForUrl,
   waitForViteReadiness,
+  startLoggedProcessUntilReady,
 } from './verify-paired-release-e2e.mjs';
 import { runBoundedCommand } from './bounded-command.mjs';
+import {
+  assertPinnedPlatform,
+  attestNativeTools,
+  sha256File,
+} from './native-tool-attestation.mjs';
 
 const TEST_COMMAND_OPTIONS = Object.freeze({
   timeoutMs: 180_000,
@@ -267,6 +273,110 @@ describe('paired repository release E2E gate', () => {
     for (const [promise, expected] of cases) await assert.rejects(promise, expected);
     assert.ok(Date.now() - started < 1_000, 'terminal child states must not wait for readiness timeout');
     assert.match(childProcessFailure({ exitCode: 7, signalCode: null }), /exit 7/);
+  });
+
+  it('reaps a real detached process group when readiness rejects before handle return', async () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'paired-readiness-reap-'));
+    const marker = resolve(root, 'orphan-marker');
+    const childScript = resolve(root, 'detached-parent.mjs');
+    writeFileSync(childScript, [
+      "import { spawn } from 'node:child_process';",
+      "import { writeFileSync } from 'node:fs';",
+      "const marker = process.argv[2];",
+      "spawn(process.execPath, ['-e', `setTimeout(() => writeFileSync(${JSON.stringify(marker)}, 'orphan'), 900)`], { stdio: 'ignore' });",
+    ].join('\n'), { mode: 0o700 });
+    const logPath = resolve(root, 'server.log');
+    try {
+      await assert.rejects(
+        startLoggedProcessUntilReady(
+          process.execPath,
+          [childScript, marker],
+          { cwd: root, env: process.env, logPath },
+          async () => { throw new Error('readiness probe rejected'); },
+        ),
+        /readiness probe rejected/,
+      );
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 1_100));
+      assert.equal(existsSync(marker), false, 'detached descendant survived readiness cleanup');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('attests every native tool, exact build identity, traineddata bytes, and platform', () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'paired-native-attestation-'));
+    const bin = resolve(root, 'bin');
+    const tessdata = resolve(root, 'tessdata');
+    mkdirSync(bin, { recursive: true });
+    mkdirSync(tessdata, { recursive: true });
+    const build = {
+      ffmpeg: 'ffmpeg version 7.1.1\nbuilt fake\nconfiguration: fake',
+      ffprobe: 'ffprobe version 7.1.1\nbuilt fake\nconfiguration: fake',
+      tesseract: 'tesseract 5.5.1\n leptonica-1.85.0\n  fake libs',
+      imageMagick: 'Version: ImageMagick 7.1.2-18\nCopyright: fake\nFeatures: fake',
+    };
+    const executableNames = { ffmpeg: 'ffmpeg', ffprobe: 'ffprobe', tesseract: 'tesseract', imageMagick: 'magick' };
+    const paths = {};
+    for (const [name, executableName] of Object.entries(executableNames)) {
+      const path = resolve(bin, executableName);
+      writeFileSync(path, `#!/bin/sh\nexit 0\n`, { mode: 0o700 });
+      chmodSync(path, 0o700);
+      paths[name] = path;
+    }
+    const engDataPath = resolve(tessdata, 'eng.traineddata');
+    writeFileSync(engDataPath, 'deterministic-traineddata');
+    const manifest = {
+      verification: {
+        platform: { os: platform(), arch: arch(), release: release() },
+        nativeTools: Object.fromEntries(Object.entries(executableNames).map(([name, executable]) => [name, {
+            executable,
+            version: name === 'imageMagick' ? '7.1.2-18' : name === 'tesseract' ? '5.5.1' : '7.1.1',
+            executableSha256: `sha256:${sha256File(paths[name])}`,
+            buildIdentity: build[name],
+            ...(name === 'tesseract' ? { engDataSha256: `sha256:${sha256File(engDataPath)}` } : {}),
+          }])),
+      },
+    };
+    const run = (_command, args, label) => {
+      if (label.startsWith('tesseract language')) {
+        return { status: 0, stdout: `List of available languages in "${tessdata}" (1):\neng\n`, stderr: '' };
+      }
+      const name = label.split(' ')[0];
+      return { status: 0, stdout: build[name], stderr: '' };
+    };
+    try {
+      const attestation = attestNativeTools({ manifest, pathValue: bin, run });
+      assert.deepEqual(attestation.platform, { os: platform(), arch: arch(), release: release() });
+      assert.equal(attestation.tools.tesseract.engDataSha256, `sha256:${sha256File(engDataPath)}`);
+      assertPinnedPlatform(manifest, attestation.platform);
+
+      const driftCases = [
+        ['ffmpeg executable hash', (copy) => { copy.nativeTools.ffmpeg.executableSha256 = `sha256:${'0'.repeat(64)}`; }, /ffmpeg executable hash mismatch/],
+        ['ffmpeg version', (copy) => { copy.nativeTools.ffmpeg.version = '7.1.0'; }, /ffmpeg version mismatch/],
+        ['ffmpeg build', (copy) => { copy.nativeTools.ffmpeg.buildIdentity = 'drift'; }, /ffmpeg build identity mismatch/],
+        ['ffprobe executable hash', (copy) => { copy.nativeTools.ffprobe.executableSha256 = `sha256:${'0'.repeat(64)}`; }, /ffprobe executable hash mismatch/],
+        ['ffprobe version', (copy) => { copy.nativeTools.ffprobe.version = '7.1.0'; }, /ffprobe version mismatch/],
+        ['ffprobe build', (copy) => { copy.nativeTools.ffprobe.buildIdentity = 'drift'; }, /ffprobe build identity mismatch/],
+        ['tesseract executable hash', (copy) => { copy.nativeTools.tesseract.executableSha256 = `sha256:${'0'.repeat(64)}`; }, /tesseract executable hash mismatch/],
+        ['tesseract version', (copy) => { copy.nativeTools.tesseract.version = '5.5.0'; }, /tesseract version mismatch/],
+        ['tesseract build', (copy) => { copy.nativeTools.tesseract.buildIdentity = 'drift'; }, /tesseract build identity mismatch/],
+        ['traineddata hash', (copy) => { copy.nativeTools.tesseract.engDataSha256 = `sha256:${'1'.repeat(64)}`; }, /language data hash mismatch/],
+        ['ImageMagick executable hash', (copy) => { copy.nativeTools.imageMagick.executableSha256 = `sha256:${'0'.repeat(64)}`; }, /imageMagick executable hash mismatch/],
+        ['ImageMagick version', (copy) => { copy.nativeTools.imageMagick.version = '7.1.2-17'; }, /imageMagick version mismatch/],
+        ['ImageMagick build', (copy) => { copy.nativeTools.imageMagick.buildIdentity = 'drift'; }, /imageMagick build identity mismatch/],
+      ];
+      for (const [, mutate, expected] of driftCases) {
+        const copy = structuredClone(manifest.verification);
+        mutate(copy);
+        assert.throws(() => attestNativeTools({ manifest: { verification: copy }, pathValue: bin, run }), expected);
+      }
+      assert.throws(
+        () => assertPinnedPlatform(manifest, { os: 'linux', arch: 'amd64', release: 'drift' }),
+        /platform mismatch/,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('builds the vendored timeline schema from a clean archive without stale build output', {
