@@ -1,1 +1,6 @@
 *.pypeline linguist-language=Python
+
+# Immutable paired-release captures are verified byte-for-byte by their
+# artifact index. Treat them as opaque evidence so source whitespace checks do
+# not ask us to mutate captured terminal/Playwright output.
+docs/extensions/evidence/releases/extension-ship-quality-rc4/paired/raw/** -diff

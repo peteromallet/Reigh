@@ -85,4 +85,3 @@ try {
   console.error(`[rc4-paired-evidence] FAIL: ${error.message}`);
   process.exitCode = 1;
 }
-
