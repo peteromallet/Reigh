@@ -35,6 +35,7 @@ export default defineConfig(() => {
       astridBridgeProxyPolicy,
       astridBridgePort,
     ),
+  };
   const disableRemoteFonts = process.env.VITE_DISABLE_REMOTE_FONTS === "1";
   const generatedRegistryPath = path.resolve(
     __dirname,

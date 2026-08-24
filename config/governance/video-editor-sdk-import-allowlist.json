@@ -8,6 +8,174 @@
     "src/tools/video-editor/testing.ts"
   ],
   "allowlist": {
+    "src/integrations/astrid/bridgeRecovery.ts": [
+      {
+        "target": "src/tools/video-editor/data/bridgeContract.ts",
+        "classification": "host-facing",
+        "owner": "astrid-bridge",
+        "rationale": "Astrid bridge recovery validates the editor's persisted wire contract at the host boundary.",
+        "removalCondition": "Move the bridge wire contract to a shared edge-safe package.",
+        "expiration": "M5"
+      }
+    ],
+    "src/integrations/astrid/bridgeTaskReads.ts": [
+      {
+        "target": "src/tools/video-editor/data/bridgeContract.ts",
+        "classification": "host-facing",
+        "owner": "astrid-bridge",
+        "rationale": "Astrid task reads validate host bridge payloads against the editor wire contract.",
+        "removalCondition": "Move the bridge wire contract to a shared edge-safe package.",
+        "expiration": "M5"
+      }
+    ],
+    "src/integrations/astrid/capabilityCensus.ts": [
+      {
+        "target": "src/tools/video-editor/data/bridgeContract.ts",
+        "classification": "host-facing",
+        "owner": "astrid-bridge",
+        "rationale": "Astrid capability census consumes the host bridge contract to report supported editor capabilities.",
+        "removalCondition": "Move the bridge wire contract to a shared edge-safe package.",
+        "expiration": "M5"
+      }
+    ],
+    "src/integrations/astrid/galleryRoutes.ts": [
+      {
+        "target": "src/tools/video-editor/data/bridgeContract.ts",
+        "classification": "host-facing",
+        "owner": "astrid-bridge",
+        "rationale": "Astrid gallery routes validate bridge media payloads at the host boundary.",
+        "removalCondition": "Move the bridge wire contract to a shared edge-safe package.",
+        "expiration": "M5"
+      }
+    ],
+    "src/integrations/astrid/mediaRoutes.ts": [
+      {
+        "target": "src/tools/video-editor/data/bridgeContract.ts",
+        "classification": "host-facing",
+        "owner": "astrid-bridge",
+        "rationale": "Astrid media routes validate host bridge media payloads against the editor contract.",
+        "removalCondition": "Move the bridge wire contract to a shared edge-safe package.",
+        "expiration": "M5"
+      }
+    ],
+    "src/integrations/astrid/projectRoutes.ts": [
+      {
+        "target": "src/tools/video-editor/data/bridgeContract.ts",
+        "classification": "host-facing",
+        "owner": "astrid-bridge",
+        "rationale": "Astrid project routes validate host bridge project payloads against the editor contract.",
+        "removalCondition": "Move the bridge wire contract to a shared edge-safe package.",
+        "expiration": "M5"
+      }
+    ],
+    "src/integrations/astrid/taskRoutes.ts": [
+      {
+        "target": "src/tools/video-editor/data/bridgeContract.ts",
+        "classification": "host-facing",
+        "owner": "astrid-bridge",
+        "rationale": "Astrid task routes validate host bridge task payloads against the editor contract.",
+        "removalCondition": "Move the bridge wire contract to a shared edge-safe package.",
+        "expiration": "M5"
+      }
+    ],
+    "src/integrations/astrid/timelineRoutes.ts": [
+      {
+        "target": "src/tools/video-editor/data/bridgeContract.ts",
+        "classification": "host-facing",
+        "owner": "astrid-bridge",
+        "rationale": "Astrid timeline routes validate host bridge timeline payloads against the editor contract.",
+        "removalCondition": "Move the bridge wire contract to a shared edge-safe package.",
+        "expiration": "M5"
+      }
+    ],
+    "src/integrations/astrid/transport.ts": [
+      {
+        "target": "src/tools/video-editor/data/bridgeContract.ts",
+        "classification": "host-facing",
+        "owner": "astrid-bridge",
+        "rationale": "Astrid transport validates bridge responses at the host transport boundary.",
+        "removalCondition": "Move the bridge wire contract to a shared edge-safe package.",
+        "expiration": "M5"
+      }
+    ],
+    "src/integrations/supabase/repositories/derivedItemsRepository.ts": [
+      {
+        "target": "src/tools/video-editor/data/bridgeContract.ts",
+        "classification": "host-facing",
+        "owner": "astrid-bridge",
+        "rationale": "The derived-items repository uses the bridge contract for local-host media reads.",
+        "removalCondition": "Move the bridge wire contract to a shared edge-safe package.",
+        "expiration": "M5"
+      }
+    ],
+    "src/integrations/supabase/repositories/generationRepository.ts": [
+      {
+        "target": "src/tools/video-editor/data/bridgeContract.ts",
+        "classification": "host-facing",
+        "owner": "astrid-bridge",
+        "rationale": "The generation repository uses the bridge contract for local-host generation reads.",
+        "removalCondition": "Move the bridge wire contract to a shared edge-safe package.",
+        "expiration": "M5"
+      }
+    ],
+    "src/shared/auth/bridgeSession.ts": [
+      {
+        "target": "src/tools/video-editor/data/bridgeContract.ts",
+        "classification": "host-facing",
+        "owner": "astrid-bridge",
+        "rationale": "Bridge session authentication shares the host bridge contract for versioned local sessions.",
+        "removalCondition": "Move the bridge wire contract to a shared edge-safe package.",
+        "expiration": "M5"
+      }
+    ],
+    "src/shared/hooks/projects/useProjectGenerations.ts": [
+      {
+        "target": "src/tools/video-editor/data/bridgeContract.ts",
+        "classification": "host-facing",
+        "owner": "astrid-bridge",
+        "rationale": "Project generation reads consume the host bridge contract for local-editor data.",
+        "removalCondition": "Move the bridge wire contract to a shared edge-safe package.",
+        "expiration": "M5"
+      }
+    ],
+    "src/shared/lib/placement/documentPlacement.ts": [
+      {
+        "target": "src/tools/video-editor/types/index.ts",
+        "classification": "host-facing",
+        "owner": "placement",
+        "rationale": "Document placement maps host media into the editor's timeline type contract.",
+        "removalCondition": "Move portable placement types to a shared edge-safe package.",
+        "expiration": "M5"
+      }
+    ],
+    "src/shared/lib/placement/placementService.ts": [
+      {
+        "target": "src/tools/video-editor/data/generationAssetResolver.ts",
+        "classification": "host-facing",
+        "owner": "placement",
+        "rationale": "Placement resolves host generation assets through the editor's asset resolver contract.",
+        "removalCondition": "Move portable placement asset resolution to a shared edge-safe package.",
+        "expiration": "M5"
+      },
+      {
+        "target": "src/tools/video-editor/types/index.ts",
+        "classification": "host-facing",
+        "owner": "placement",
+        "rationale": "Placement maps host media into the editor's timeline type contract.",
+        "removalCondition": "Move portable placement types to a shared edge-safe package.",
+        "expiration": "M5"
+      }
+    ],
+    "src/test/fakeBridgeRouter.ts": [
+      {
+        "target": "src/tools/video-editor/data/bridgeContract.ts",
+        "classification": "host-facing",
+        "owner": "astrid-bridge-tests",
+        "rationale": "The fake bridge router mirrors the host bridge wire contract for deterministic tests.",
+        "removalCondition": "Move the bridge wire contract to a shared edge-safe package.",
+        "expiration": "M5"
+      }
+    ],
     "src/app/routes.tsx": [
       {
         "target": "src/tools/video-editor/pages/VideoEditorPage.tsx",
