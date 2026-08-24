@@ -23,6 +23,12 @@ export type WebGLShaderPreviewTextureSourceMap =
   | ReadonlyMap<string, WebGLShaderPreviewTextureImageSource>
   | Readonly<Record<string, WebGLShaderPreviewTextureImageSource | undefined>>;
 
+function isTextureSourceRecord(
+  sources: WebGLShaderPreviewTextureSourceMap,
+): sources is Readonly<Record<string, WebGLShaderPreviewTextureImageSource | undefined>> {
+  return !(sources instanceof Map);
+}
+
 export interface WebGLShaderPreviewTextureSources {
   readonly clipFrame?: WebGLShaderPreviewTextureImageSource;
   readonly clipFrames?: WebGLShaderPreviewTextureSourceMap;
@@ -175,7 +181,8 @@ function lookupTextureSource(
 ): WebGLShaderPreviewTextureImageSource | undefined {
   if (!sources || !ref) return undefined;
   if (sources instanceof Map) return sources.get(ref);
-  return sources[ref];
+  if (isTextureSourceRecord(sources)) return sources[ref];
+  return undefined;
 }
 
 function textureFilterValue(
@@ -560,7 +567,7 @@ export class WebGLShaderPreviewSurface {
       if (uniform.type === 'textureRef') continue;
       const location = this.#getUniformLocation(uniform.name);
       if (!location) continue;
-      const value = Object.hasOwn(this.#uniformValues, uniform.name)
+      const value = Object.prototype.hasOwnProperty.call(this.#uniformValues, uniform.name)
         ? this.#uniformValues[uniform.name]
         : defaultUniformValue(uniform, frame);
       uploadUniformValue(this.gl, location, uniform, value);
@@ -568,7 +575,7 @@ export class WebGLShaderPreviewSurface {
   }
 
   #textureRefForName(name: string): ShaderTextureRef | undefined {
-    const value = Object.hasOwn(this.#textureValues, name)
+    const value = Object.prototype.hasOwnProperty.call(this.#textureValues, name)
       ? this.#textureValues[name]
       : this.#uniformValues[name];
     if (isShaderTextureRef(value)) return value;

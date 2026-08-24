@@ -110,18 +110,16 @@ export const SEQUENCE_COMPONENT_REGISTRY = {
   ...LOCAL_SEQUENCE_REGISTRY,
 } as const satisfies SequenceComponentRegistryShape;
 
-export type AvailableSequenceMetadata = TrustedSequenceMetadata & {
-  clipType: keyof typeof SEQUENCE_COMPONENT_REGISTRY;
-};
+export type AvailableSequenceMetadata = TrustedSequenceMetadata;
 
 export const filterTrustedSequenceMetadataForRegistry = (
   registry: Partial<Record<string, unknown>>,
   themeRegistry: Partial<Record<string, unknown>> = INSTALLED_TIMELINE_THEMES,
 ): AvailableSequenceMetadata[] => {
-  return TRUSTED_SEQUENCE_METADATA.filter((metadata): metadata is AvailableSequenceMetadata => {
-    return Object.prototype.hasOwnProperty.call(registry, metadata.clipType)
-      && Object.prototype.hasOwnProperty.call(themeRegistry, metadata.themeId);
-  });
+  return TRUSTED_SEQUENCE_METADATA.filter((metadata) => (
+    Object.prototype.hasOwnProperty.call(registry, metadata.clipType)
+      && Object.prototype.hasOwnProperty.call(themeRegistry, metadata.themeId)
+  ));
 };
 
 export function buildSequenceClipCapabilityRegistry(
@@ -131,8 +129,8 @@ export function buildSequenceClipCapabilityRegistry(
 
   return Object.fromEntries(
     Object.entries(registry)
-      .filter(([, entry]): entry is SequenceComponentRegistryEntry => Boolean(entry))
-      .map(([clipType, entry]) => {
+      .flatMap(([clipType, entry]) => {
+        if (!entry) return [];
         const metadata = trustedMetadataByClipType[clipType];
         const isLocal = Object.prototype.hasOwnProperty.call(LOCAL_SEQUENCE_REGISTRY, clipType)
           || entry.source?.startsWith('local:') === true;
@@ -146,13 +144,13 @@ export function buildSequenceClipCapabilityRegistry(
           metadata?.capabilities,
         );
 
-        return [clipType, {
+        return [[clipType, {
           clipType,
           source,
           metadata,
           registryEntry: entry,
           capabilities,
-        } satisfies ClipCapabilityDescriptor];
+        } satisfies ClipCapabilityDescriptor] as const];
       }),
   );
 }

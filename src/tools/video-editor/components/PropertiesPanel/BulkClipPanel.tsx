@@ -15,7 +15,7 @@ import {
   TAB_COLUMNS_CLASS,
 } from '@/tools/video-editor/components/PropertiesPanel/ClipPanel.tsx';
 import { continuousEffectTypes, entranceEffectTypes, exitEffectTypes } from '@/tools/video-editor/effects/index.tsx';
-import { useEffectResources } from '@/tools/video-editor/hooks/useEffectResources.ts';
+import { useEffectResources, type EffectResource } from '@/tools/video-editor/hooks/useEffectResources.ts';
 import type { ClipTab } from '@/tools/video-editor/hooks/useEditorPreferences.ts';
 import type { ClipMeta } from '@/tools/video-editor/lib/timeline-data.ts';
 import type { ResolvedTimelineClip, ClipTransition } from '@/tools/video-editor/types/index.ts';
@@ -126,7 +126,7 @@ function getProvenanceLabel(effect: { provenance?: string }): string | null {
 }
 
 /** Returns blocked export routes for an effect's renderability. */
-function getBlockedRoutes(effect: { renderability?: { capabilities?: Array<{ route: string; status: string }> } }): string[] {
+function getBlockedRoutes(effect: EffectResource): string[] {
   if (!effect.renderability?.capabilities) return [];
   return effect.renderability.capabilities
     .filter((cap) => cap.route !== 'preview' && cap.status === 'blocked')

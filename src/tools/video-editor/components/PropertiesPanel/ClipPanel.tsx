@@ -10,7 +10,6 @@ import { Slider } from '@/shared/components/ui/slider.tsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/components/ui/tabs.tsx';
 import { Textarea } from '@/shared/components/ui/textarea.tsx';
 import {
-  clipTypeUsesHoldTiming,
   getRegisteredClipTypeDescriptor,
   getClipTypeOverlayBehavior,
   getDefaultBoxForClipType,
@@ -112,6 +111,7 @@ export function ClipPanel({
   const clipDescriptor = clip
     ? getRegisteredClipTypeDescriptor(clip.clipType)
     : undefined;
+  const holdTiming = clipDescriptor?.hold;
   const clipTypeResolution = resolveAvailableClipType(clip?.clipType);
   const isEffectLayer = clipDescriptor?.renderCapabilities.previewRoute === 'effect-layer';
   const isSequenceClip = Boolean(clipDescriptor && isSequenceParamsSchema(clipDescriptor.paramsSchema));
@@ -268,14 +268,14 @@ export function ClipPanel({
                 <FieldLabel>Start (seconds)</FieldLabel>
                 <NumberInput value={clip.at} step={0.1} onChange={(value) => { if (value !== null) onChange({ at: value }); }} />
               </div>
-              {clipTypeUsesHoldTiming(clipDescriptor) ? (
+              {holdTiming && holdTiming.kind !== 'unsupported' ? (
                 <div className="space-y-2">
                   <FieldLabel>Duration (seconds)</FieldLabel>
                   <NumberInput
-                    value={clip.hold ?? (clipDescriptor && clipDescriptor.hold.kind !== 'unsupported' ? clipDescriptor.hold.defaultSeconds : 5)}
-                    min={clipDescriptor?.hold.kind !== 'unsupported' ? clipDescriptor.hold.minSeconds : 0.1}
-                    max={clipDescriptor?.hold.kind !== 'unsupported' ? clipDescriptor.hold.maxSeconds : undefined}
-                    step={clipDescriptor?.hold.kind !== 'unsupported' ? clipDescriptor.hold.stepSeconds : 0.1}
+                    value={clip.hold ?? holdTiming.defaultSeconds}
+                    min={holdTiming.minSeconds}
+                    max={holdTiming.maxSeconds}
+                    step={holdTiming.stepSeconds}
                     onChange={(value) => { if (value !== null) onChange({ hold: value }); }}
                   />
                 </div>
