@@ -139,7 +139,11 @@ export const FinalVideoSectionControls: React.FC<FinalVideoSectionControlsProps>
             </SelectTrigger>
             <SelectContent>
               {parentGenerations.map((parent, index) => {
-                const createdAt = parent.createdAt;
+                const createdAt = parent.createdAt ?? (
+                  'created_at' in parent && typeof parent.created_at === 'string'
+                    ? parent.created_at
+                    : undefined
+                );
                 const timeAgo = createdAt
                   ? formatDistanceToNow(new Date(createdAt), { addSuffix: true })
                   : '';

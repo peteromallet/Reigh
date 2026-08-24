@@ -32,8 +32,13 @@ export function filterImageShotGenerations(rows: ShotGenRow[]): ShotGenRow[] {
     return shotGen.generation &&
            shotGen.timeline_frame != null &&
            shotGen.generation.type !== 'video' &&
+           !isVideoExtensionLocation(shotGen.generation.location) &&
            hasValidLocation;
   });
+}
+
+function isVideoExtensionLocation(location: string | null): boolean {
+  return location !== null && /\.(?:mp4|webm|mov|m4v|avi)(?:$|[?#])/i.test(location);
 }
 
 export function buildImagePayload(allShotGenerations: ShotGenRow[]): ImagePayload {

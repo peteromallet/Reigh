@@ -75,8 +75,12 @@ export function useBatchGuidanceVideoController({
   const minFrame = timelineFramePositions.length > 0 ? Math.min(...timelineFramePositions) : 0;
   const maxFrame = timelineFramePositions.length > 0 ? Math.max(...timelineFramePositions) : 0;
   const timelineFrames = maxFrame - minFrame + 1;
-  const effectiveMetadata = isCompleteVideoMetadata(videoMetadata) ? videoMetadata : null;
-  const totalVideoFrames = effectiveMetadata?.total_frames || 0;
+  const effectiveMetadata = videoMetadata &&
+    typeof videoMetadata.total_frames === 'number' &&
+    typeof videoMetadata.frame_rate === 'number'
+    ? videoMetadata
+    : null;
+  const totalVideoFrames = effectiveMetadata?.total_frames ?? 0;
 
   const videoCoversFrames = treatment === 'clip' ? Math.min(totalVideoFrames, timelineFrames) : timelineFrames;
   const lastCoveredFrame = treatment === 'clip' ? minFrame + videoCoversFrames - 1 : maxFrame;
@@ -94,10 +98,10 @@ export function useBatchGuidanceVideoController({
     if (treatment === 'adjust') {
       const timelineRange = maxFrame - minFrame;
       const normalizedPosition = timelineRange > 0 ? (timelineFrame - minFrame) / timelineRange : 0;
-      videoFrame = Math.floor(normalizedPosition * (effectiveMetadata.total_frames - 1));
+      videoFrame = Math.floor(normalizedPosition * ((effectiveMetadata.total_frames ?? 0) - 1));
     } else {
       const offsetFromStart = timelineFrame - minFrame;
-      videoFrame = Math.min(offsetFromStart, effectiveMetadata.total_frames - 1);
+      videoFrame = Math.min(offsetFromStart, (effectiveMetadata.total_frames ?? 0) - 1);
     }
 
     const fps = effectiveMetadata.frame_rate;
