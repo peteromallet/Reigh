@@ -43,8 +43,25 @@ export async function computeSha256(content: string | Uint8Array): Promise<strin
         copy.set(content);
         return copy;
       })();
-  const data = bytes.slice().buffer;
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const normalized = bytes.slice();
+  let hashBuffer: ArrayBuffer;
+  try {
+    // Typed-array input is the most interoperable BufferSource form for
+    // browsers and Node's Web Crypto. The copy above is owned by this realm,
+    // so a caller's cross-realm view cannot leak into the brand check.
+    hashBuffer = await crypto.subtle.digest('SHA-256', normalized);
+  } catch (firstError) {
+    // A few Web Crypto shims (and older Node/browser combinations) accept the
+    // equivalent ArrayBuffer but reject a typed view, while other shims do the
+    // opposite. Retry only with the alternate representation; if both forms
+    // fail, preserve the original error so genuine crypto failures are not
+    // hidden behind a compatibility retry.
+    try {
+      hashBuffer = await crypto.subtle.digest('SHA-256', normalized.buffer);
+    } catch {
+      throw firstError;
+    }
+  }
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
 }

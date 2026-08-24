@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   computeSha256,
   hexToBase64,
@@ -77,6 +77,23 @@ describe('computeSha256', () => {
     const bytes = new Uint8Array([0x00, 0x01, 0x02, 0xff, 0xfe, 0xfd]);
     const hash = await computeSha256(bytes);
     expect(hash).toHaveLength(64);
+  });
+
+  it('falls back to an ArrayBuffer when a replacement Web Crypto rejects views', async () => {
+    const originalDigest = crypto.subtle.digest.bind(crypto.subtle);
+    const digestSpy = vi.spyOn(crypto.subtle, 'digest').mockImplementation((algorithm, data) => {
+      if (ArrayBuffer.isView(data)) {
+        return Promise.reject(new TypeError('replacement rejects typed-array input'));
+      }
+      return originalDigest(algorithm, data);
+    });
+
+    try {
+      await expect(computeSha256(new TextEncoder().encode(HELLO_CONTENT))).resolves.toBe(HELLO_HEX);
+      expect(digestSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      digestSpy.mockRestore();
+    }
   });
 });
 
