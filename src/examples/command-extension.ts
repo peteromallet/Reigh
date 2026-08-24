@@ -33,6 +33,7 @@ import type {
   ProposalRuntime,
   ProposalState,
   ReighExtension,
+  ExtensionManifestContribution,
   SourceMapEntry,
   SourceMapRuntime,
   TargetContext,
@@ -97,9 +98,9 @@ function buildReviewMarkerPatch(
 }
 
 const contributions: readonly [
-  CommandContribution,
-  KeybindingContribution,
-  ContextMenuItemContribution,
+  CommandContribution & ExtensionManifestContribution,
+  KeybindingContribution & ExtensionManifestContribution,
+  ContextMenuItemContribution & ExtensionManifestContribution,
 ] = [
   {
     id: 'mark-clip-review-command' as any,

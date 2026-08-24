@@ -24,15 +24,12 @@
  */
 
 import { defineExtension } from '@reigh/editor-sdk';
-import type { ReactNode } from 'react';
 import type {
   ReighExtension,
+  ExtensionManifestContribution,
   ExtensionContext,
   DisposeHandle,
-  CommandContribution,
   CommandRunContext,
-  ContextMenuItemContribution,
-  KeybindingContribution,
   TimelinePatch,
   EffectContribution,
   EffectComponent,
@@ -54,7 +51,10 @@ const flagshipEffectRegistration: EffectComponent = (...args: unknown[]): unknow
     return null;
   }
   return FlagshipEffectComponent({
-    children: rawProps.children as ReactNode,
+    // Derive the renderer's child contract from the local component so this
+    // extension entrypoint stays SDK-only (the component itself owns its
+    // React/Remotion runtime imports).
+    children: rawProps.children as Parameters<typeof FlagshipEffectComponent>[0]['children'],
     durationInFrames: typeof rawProps.durationInFrames === 'number'
       ? rawProps.durationInFrames
       : 1,
@@ -246,11 +246,7 @@ function buildFlagshipReviewPatch(
   };
 }
 
-const commandContributions: readonly [
-  CommandContribution,
-  KeybindingContribution,
-  ContextMenuItemContribution,
-] = [
+const commandContributions: readonly ExtensionManifestContribution[] = [
   {
     id: 'flagship-mark-review-command' as any,
     kind: 'command',
