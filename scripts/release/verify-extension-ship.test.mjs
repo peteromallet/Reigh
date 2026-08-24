@@ -21,6 +21,7 @@ import {
   calculateReleaseRequiredBytes,
   executeSteps,
   formatCommand,
+  formatNativeToolPin,
   isMakeRecipeSafeExecutablePath,
   nearestExistingAncestor,
   parseCliArgs,
@@ -277,6 +278,18 @@ describe('extension ship verifier', () => {
       rendered,
       /\b(?:rm|rmdir|git\s+(?:checkout|clean|reset)|sudo)\b/,
     );
+  });
+
+  it('renders native tool versions and exact build identities readably in the plan', () => {
+    const rendered = formatNativeToolPin('FFmpeg', {
+      version: '7.1.1',
+      buildIdentity: 'ffmpeg version 7.1.1\nbuilt with fixture compiler\nconfiguration: --enable-gpl',
+    });
+    assert.equal(
+      rendered,
+      'FFmpeg 7.1.1 (build: ffmpeg version 7.1.1 | built with fixture compiler | configuration: --enable-gpl)',
+    );
+    assert.doesNotMatch(rendered, /\[object Object\]/);
   });
 
   it('stops at the first failed gate', () => {

@@ -96,6 +96,24 @@ describe('runBoundedCommand', () => {
     }
   });
 
+  it('forwards SIGTERM as the first timeout signal and reports SIGKILL only after escalation', () => {
+    const termResult = run(
+      "process.on('SIGTERM', () => process.exit(0)); setInterval(() => {}, 1_000)",
+      { timeoutMs: 50, killSignal: 'SIGTERM', allowFailure: true },
+    );
+    assert.equal(termResult.failureType, 'timeout');
+    assert.equal(termResult.killSignal, 'SIGTERM');
+    assert.equal(termResult.signal, 'SIGTERM');
+
+    const killResult = run(
+      "process.on('SIGTERM', () => {}); setInterval(() => {}, 1_000)",
+      { timeoutMs: 50, killSignal: 'SIGTERM', allowFailure: true },
+    );
+    assert.equal(killResult.failureType, 'timeout');
+    assert.equal(killResult.killSignal, 'SIGTERM');
+    assert.equal(killResult.signal, 'SIGKILL');
+  });
+
   it('kills a detached and unref grandchild before it can leave an orphan marker', async () => {
     const root = mkdtempSync(resolve(tmpdir(), 'bounded-command-grandchild-'));
     const marker = resolve(root, 'detached-grandchild-marker');

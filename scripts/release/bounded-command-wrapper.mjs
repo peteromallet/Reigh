@@ -72,18 +72,21 @@ function appendCapped(state, chunk, maxBuffer) {
   return state.bytes > maxBuffer;
 }
 
-async function terminate(child, reason) {
+async function terminate(child, reason, killSignal, state) {
   if (!child.pid || child.exitCode !== null || child.signalCode !== null) return;
   const descendants = await listDescendantPids(child.pid);
-  // The target is a detached group leader. TERM and then KILL are sent to the
-  // negative PID so grandchildren in the owned group cannot outlive it.
-  for (const pid of descendants.reverse()) signalGroup(pid, 'SIGTERM');
-  signalGroup(child.pid, 'SIGTERM');
+  // The target is a detached group leader. The requested signal is sent first,
+  // then KILL after the grace period, to the negative PID so grandchildren in
+  // the owned group cannot outlive it.
+  for (const pid of descendants.reverse()) signalGroup(pid, killSignal);
+  signalGroup(child.pid, killSignal);
+  state.signal = killSignal;
   await Promise.race([
     new Promise((resolve) => child.once('close', resolve)),
     new Promise((resolve) => setTimeout(resolve, GRACE_MS)),
   ]);
   if (child.exitCode === null && child.signalCode === null) {
+    state.signal = 'SIGKILL';
     signalGroup(child.pid, 'SIGKILL');
   }
   for (const pid of descendants.reverse()) signalGroup(pid, 'SIGKILL');
@@ -98,6 +101,7 @@ async function main() {
   let timer;
   let parentWatch;
   let child;
+  const termination = { signal: null };
 
   try {
     child = spawn(invocation.command, invocation.args, {
@@ -120,7 +124,7 @@ async function main() {
   const terminateFor = (why) => {
     if (reason) return;
     reason = why;
-    void terminate(child, why);
+    void terminate(child, why, invocation.killSignal, termination);
   };
   child.stdout.on('data', (chunk) => {
     if (appendCapped(stdout, chunk, invocation.maxBuffer)) terminateFor('output-cap');
@@ -151,7 +155,7 @@ async function main() {
 
   emit({
     status: child.spawnError ? null : child.exitCode,
-    signal: reason ? 'SIGKILL' : child.signalCode,
+    signal: child.signalCode ?? (reason ? termination.signal : null),
     error: child.spawnError
       ? { name: child.spawnError.name, code: child.spawnError.code ?? null, message: child.spawnError.message }
       : reason === 'timeout'

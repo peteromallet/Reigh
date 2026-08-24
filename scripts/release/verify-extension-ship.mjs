@@ -573,6 +573,15 @@ export function formatCommand(step) {
   return [...envPrefix, ...command].join(' ');
 }
 
+export function formatNativeToolPin(name, pin) {
+  if (!pin || typeof pin !== 'object') return `${name} <invalid pin>`;
+  const version = typeof pin.version === 'string' ? pin.version : '<unknown version>';
+  const identity = typeof pin.buildIdentity === 'string'
+    ? pin.buildIdentity.trim().replace(/\r?\n/g, ' | ')
+    : '<unknown build identity>';
+  return `${name} ${version} (build: ${identity})`;
+}
+
 /**
  * Release gates intentionally get an allowlisted environment rather than a
  * filtered copy of process.env. This keeps newly introduced skip flags, test
@@ -1009,9 +1018,10 @@ function printPlan(manifest, packageJson, env) {
   console.log(
     `${LABEL} toolchain: node ${manifest.verification.node}, `
     + `npm ${manifest.verification.npm}, Astrid Python ${manifest.verification.astridPython}, `
-    + `FFmpeg ${manifest.verification.ffmpeg}, FFprobe ${manifest.verification.ffprobe}, `
-    + `Tesseract ${manifest.verification.tesseract.version} (${manifest.verification.tesseract.executable}), `
-    + `ImageMagick ${manifest.verification.imageMagick.version} (${manifest.verification.imageMagick.executable})`,
+    + `${formatNativeToolPin('FFmpeg', manifest.verification.ffmpeg)}, `
+    + `${formatNativeToolPin('FFprobe', manifest.verification.ffprobe)}, `
+    + `${formatNativeToolPin('Tesseract', manifest.verification.tesseract)}, `
+    + `${formatNativeToolPin('ImageMagick', manifest.verification.imageMagick)}`,
   );
   console.log(`${LABEL} preflight: exact toolchain and caption image/OCR provenance; clean worktrees; candidate tag; evidence-only ancestry`);
   console.log(

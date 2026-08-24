@@ -244,6 +244,7 @@ export function runBoundedCommand(command, args, options = {}) {
       env,
       timeoutMs,
       maxBuffer,
+      killSignal,
       parentPid: process.pid,
       input: options.input === undefined
         ? undefined
