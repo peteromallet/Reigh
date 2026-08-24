@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash, randomBytes } from 'node:crypto';
+import { request as httpRequest } from 'node:http';
 import { createServer } from 'node:net';
 import { spawn, spawnSync } from 'node:child_process';
 import {
@@ -467,6 +468,54 @@ async function waitForUrl(url, { headers, process: child, timeoutMs = 60_000 } =
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 250));
   }
   fail(`timed out waiting for ${url}: ${last}`);
+}
+
+/**
+ * Issue a bounded loopback HTTP request without undici's browser-oriented
+ * header normalization. Node's global fetch silently replaces a caller's
+ * `Host` header with the URL authority, which makes a hostile-host rejection
+ * probe report a false success. The release gate must put the exact header on
+ * the wire so the Astrid server's host/origin policy is actually exercised.
+ */
+export function requestRawHttp(url, { headers = {}, timeoutMs = 10_000 } = {}) {
+  const target = new URL(url);
+  if (target.protocol !== 'http:') fail(`raw HTTP helper only supports http:// URLs: ${url}`);
+  return new Promise((resolvePromise, reject) => {
+    const request = httpRequest({
+      hostname: target.hostname,
+      port: target.port || 80,
+      path: `${target.pathname}${target.search}`,
+      method: 'GET',
+      headers,
+      // Never reuse a socket from a different probe: each request's Host is
+      // part of the security assertion and must remain independently visible.
+      agent: false,
+    }, (response) => {
+      const chunks = [];
+      response.setEncoding('utf8');
+      response.on('data', (chunk) => chunks.push(chunk));
+      response.once('end', () => {
+        const body = chunks.join('');
+        resolvePromise({
+          status: response.statusCode ?? 0,
+          headers: {
+            get(name) {
+              const value = response.headers[name.toLowerCase()];
+              return Array.isArray(value) ? value.join(', ') : value ?? null;
+            },
+          },
+          async json() {
+            return JSON.parse(body);
+          },
+        });
+      });
+    });
+    request.setTimeout(timeoutMs, () => {
+      request.destroy(new Error(`raw HTTP request timed out after ${timeoutMs}ms`));
+    });
+    request.once('error', reject);
+    request.end();
+  });
 }
 
 function startLoggedProcess(command, args, { cwd, env, logPath }) {
@@ -938,7 +987,7 @@ async function startAstrid(context, suffix, port, token) {
   const headers = { Authorization: `Bearer ${token}`, 'X-Astrid-Bridge-Version': 'v1' };
   await waitForUrl(`http://127.0.0.1:${port}/health`, { headers, process: handle.child });
   const assertFailure = async (label, requestHeaders, status, code) => {
-    const response = await fetch(`http://127.0.0.1:${port}/health`, {
+    const response = await requestRawHttp(`http://127.0.0.1:${port}/health`, {
       headers: requestHeaders,
       redirect: 'manual',
     });

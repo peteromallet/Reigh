@@ -1,4 +1,5 @@
 import { strict as assert } from 'node:assert';
+import { createServer } from 'node:http';
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -17,6 +18,7 @@ import {
   buildServerEnvironment,
   parseCliArgs,
   requireFullCommitPin,
+  requestRawHttp,
   validateTimelineSchemaInstallation,
   validateAstridReleaseBridgeSources,
 } from './verify-paired-release-e2e.mjs';
@@ -189,6 +191,38 @@ describe('paired repository release E2E gate', () => {
         'if self.server.require_auth: validate()',
       ].join('\n'),
     }), { capability: RELEASE_BRIDGE_CAPABILITY });
+  });
+
+  it('puts a hostile Host header on the wire instead of normalizing it like fetch', async () => {
+    let observedHost;
+    const server = createServer((request, response) => {
+      observedHost = request.headers.host;
+      response.setHeader('X-Astrid-Bridge-Version', 'v1');
+      const forbidden = observedHost === 'attacker.invalid';
+      response.statusCode = forbidden ? 403 : 200;
+      response.end(JSON.stringify({ error: forbidden ? 'forbidden' : 'host-normalized' }));
+    });
+    await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', resolve);
+    });
+    try {
+      const address = server.address();
+      assert.equal(typeof address, 'object');
+      const response = await requestRawHttp(`http://127.0.0.1:${address.port}/health`, {
+        headers: {
+          Authorization: 'Bearer test-token',
+          'X-Astrid-Bridge-Version': 'v1',
+          Host: 'attacker.invalid',
+        },
+      });
+      assert.equal(observedHost, 'attacker.invalid');
+      assert.equal(response.status, 403);
+      assert.equal(response.headers.get('x-astrid-bridge-version'), 'v1');
+      assert.deepEqual(await response.json(), { error: 'forbidden' });
+    } finally {
+      await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+    }
   });
 
   it('keeps the token in server environments and out of browser workers', () => {

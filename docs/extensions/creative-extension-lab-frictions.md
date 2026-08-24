@@ -1144,3 +1144,23 @@ evidence and a concrete improvement direction.
   references for auditing. Once RC2 is tagged, its controller may change only
   the RC2 evidence closure, ledger, and status-only manifest freeze. Release
   tags must never be force-moved after a failed gate.
+
+### A security probe can lie when the client normalizes forbidden headers
+
+- RC2's Astrid bridge probe used Node's global `fetch` to send
+  `Host: attacker.invalid`. Undici treated `Host` as a protected URL-derived
+  header and transmitted the loopback authority instead, so Astrid returned
+  `200` and the gate reported a false failure/success boundary rather than
+  testing host policy. A request-level security assertion is meaningless unless
+  the harness verifies what reached the server.
+- RC3 uses a bounded, non-reused `node:http` request helper for all Astrid
+  rejection probes. The regression server records the received Host and would
+  return `200` if normalization occurred; the test therefore proves the exact
+  `attacker.invalid` value, bridge-version response header, JSON error payload,
+  and expected `403`. The direct live probe against Astrid
+  `86153eefc14aa995402927df0c7bb178f48f8ead` also returned
+  `403 forbidden` with `X-Astrid-Bridge-Version: v1`.
+- RC1 and RC2 receipts stay immutable under their historical evidence roots;
+  the raw-header correction starts RC3 rather than retagging either failed
+  candidate. Future forbidden-header probes must use the raw helper and retain
+  the exact response body/header assertions.

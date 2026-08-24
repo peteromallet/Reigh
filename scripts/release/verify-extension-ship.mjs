@@ -19,7 +19,6 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   assertCleanReleaseCheckout,
   inspectCandidateController,
-  releaseEvidenceDirectory,
   resolveAnnotatedCandidateTag,
 } from './reigh-release-provenance.mjs';
 
@@ -912,9 +911,9 @@ Optional environment for run mode:
 
 The verifier never fetches, checks out, resets, cleans, migrates production data,
 or rolls back a repository. Reigh HEAD must be a strict descendant whose entire
-candidate..HEAD history changes only the ledger, the manifest status, and
-${releaseEvidenceDirectory('extension-ship-quality-rc2')} artifacts. It stops at
-the first mismatch or failed gate.`);
+candidate..HEAD history changes only the ledger, the manifest status, and the
+manifest release's evidence-directory artifacts. It stops at the first mismatch
+or failed gate.`);
 }
 
 function printPlan(manifest, packageJson, env) {

@@ -107,7 +107,7 @@ The operator CLI never accepts a private key and never marks a workstream
 ```sh
 npm run extension:evidence -- init \
   --type rollout-stage --output /tmp/rollout-stage.json \
-  --release extension-ship-quality-rc2 \
+  --release extension-ship-quality-rc3 \
   --reigh-commit <candidate-C> --astrid-commit <astrid-commit> \
   --environment production-stage-0 --tool node=20.19.4
 ```
@@ -119,18 +119,18 @@ copy under the release evidence root; `capture` refuses to overwrite a file:
 npm run extension:evidence -- validate --artifact /tmp/rollout-stage.json
 npm run extension:evidence -- capture \
   --input /tmp/rollout-stage.json \
-  --output docs/extensions/evidence/releases/extension-ship-quality-rc2/rollout/stage-0.json
+  --output docs/extensions/evidence/releases/extension-ship-quality-rc3/rollout/stage-0.json
 ```
 
 Generate the unsigned receipt for review, or append it without changing status:
 
 ```sh
 npm run extension:evidence -- receipt \
-  --artifact docs/extensions/evidence/releases/extension-ship-quality-rc2/rollout/stage-0.json \
+  --artifact docs/extensions/evidence/releases/extension-ship-quality-rc3/rollout/stage-0.json \
   --workstream 19 --id rollout-stage-0
 
 npm run extension:evidence -- receipt \
-  --artifact docs/extensions/evidence/releases/extension-ship-quality-rc2/rollout/stage-0.json \
+  --artifact docs/extensions/evidence/releases/extension-ship-quality-rc3/rollout/stage-0.json \
   --workstream 19 --id rollout-stage-0 --append-ledger
 ```
 

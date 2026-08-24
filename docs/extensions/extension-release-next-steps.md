@@ -12,12 +12,12 @@ by the [evidence ledger](extension-ship-evidence-ledger.md).
 ## Current disposition
 
 `codex/extension-ship-integration` is stable as an **integration branch**, not yet a
-release candidate. All known merged lint/type failures are fixed; the latest
-merged fault, persistence, Transcript, Runaway, and bundle tests pass 178/178;
-the deterministic visual gate passes 6/6; and installed Chrome passes the
-first-click Transcript inspector and corrected Runaway density layout. Earlier
-merged verification also passed 190 focused host/bridge/release tests and all
-206 Creative Lab tests.
+release candidate. RC2's paired receipt is retained as historical evidence: its
+hostile-Host probe was a false positive because Node `fetch` normalized the
+forbidden header. RC3 replaces that probe with a raw `http.request` helper and
+adds a regression test proving `Host: attacker.invalid` reaches the server and
+yields the expected 403 response. The pinned Astrid source remains
+`86153eefc14aa995402927df0c7bb178f48f8ead`.
 
 The formal ledger correctly remains 0/23 because no exact candidate has been
 frozen or signed. The final monolithic Reigh/Astrid run has not been repeated
@@ -34,7 +34,8 @@ from the focused runs alone.
    begins; fixes discovered by a gate receive a focused commit and restart the
    affected evidence phase.
 3. Keep Astrid pinned to
-   `86153eefc14aa995402927df0c7bb178f48f8ead`.
+   `86153eefc14aa995402927df0c7bb178f48f8ead`; the RC3 raw-host fix must be
+   included before the next candidate is tagged.
 
 Exit: the remote branch resolves to the same clean tracked tree as the local
 integration branch and the release plan commands remain deterministic.
@@ -81,7 +82,7 @@ and all four human personas have signed receipts.
 1. Register six authenticated Ed25519 principals: the four human personas and
    two independent reviewers. Keep private keys outside the repository.
 2. Freeze product candidate `C`, create annotated tag
-   `extension-ship-quality-rc2`, and permit only evidence/ledger/status commits
+   `extension-ship-quality-rc3`, and permit only evidence/ledger/status commits
    in controller history `C..H`.
 3. Bind every receipt and artifact hash to the exact Reigh candidate, controller
    commit, annotated tag object, Astrid commit, toolchain, and dependency locks.

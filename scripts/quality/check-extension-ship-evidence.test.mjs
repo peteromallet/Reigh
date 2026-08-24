@@ -628,7 +628,10 @@ describe('extension ship evidence gate', () => {
 
   it('rejects replay of signed receipts into a different release', () => {
     const ledger = makeFrozenLedger();
-    ledger.release = 'extension-ship-quality-rc3';
+    // Keep this deliberately different from the checked-in integration
+    // release. Using the current RC name here makes the fixture accidentally
+    // self-consistent and no longer exercises signature binding.
+    ledger.release = 'extension-ship-quality-replay';
     const replayManifest = { ...frozenManifest, release: ledger.release };
     const replayTrust = { ...testTrust, release: ledger.release };
 
