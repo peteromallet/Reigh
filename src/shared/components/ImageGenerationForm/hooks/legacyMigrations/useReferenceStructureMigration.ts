@@ -8,17 +8,29 @@ type ReferenceStructureMigrationInput = Pick<
   'projectImageSettings' | 'selectedProjectId' | 'effectiveShotId' | 'updateProjectImageSettings'
 >;
 
+function stringOrUndefined(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function finiteNumberOrUndefined(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function booleanOrUndefined(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
+}
+
 function buildLegacyReference(settings: ProjectImageSettings): ReferenceImage {
   return {
     id: crypto.randomUUID(),
     resourceId: '',
     name: 'Reference 1',
-    styleReferenceImage: settings.styleReferenceImage || null,
-    styleReferenceImageOriginal: settings.styleReferenceImageOriginal || null,
-    styleReferenceStrength: settings.styleReferenceStrength ?? 1.1,
-    subjectStrength: settings.subjectStrength ?? 0.0,
-    subjectDescription: settings.subjectDescription ?? '',
-    inThisScene: settings.inThisScene ?? false,
+    styleReferenceImage: stringOrUndefined(settings.styleReferenceImage),
+    styleReferenceImageOriginal: stringOrUndefined(settings.styleReferenceImageOriginal),
+    styleReferenceStrength: finiteNumberOrUndefined(settings.styleReferenceStrength) ?? 1.1,
+    subjectStrength: finiteNumberOrUndefined(settings.subjectStrength) ?? 0.0,
+    subjectDescription: typeof settings.subjectDescription === 'string' ? settings.subjectDescription : '',
+    inThisScene: booleanOrUndefined(settings.inThisScene) ?? false,
     inThisSceneStrength: 1.0,
     referenceMode: 'style',
     createdAt: new Date().toISOString(),

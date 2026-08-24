@@ -1,12 +1,24 @@
-import type { StructureGuidanceConfig } from './travelBetweenImages/taskTypes';
+import type {
+  StructureGuidanceConfig,
+  StructureGuidanceVideoConfig,
+} from './travelBetweenImages/taskTypes';
 import { asNumber, asRecord, asString, type UnknownRecord } from './taskParamParsers';
 
-const STRUCTURE_PREPROCESSING_MAP: Record<string, string> = {
+type GuidanceRecord = StructureGuidanceConfig & UnknownRecord;
+
+const STRUCTURE_PREPROCESSING_MAP: Record<string, NonNullable<StructureGuidanceConfig['preprocessing']>> = {
   flow: 'flow',
   canny: 'canny',
   depth: 'depth',
   raw: 'none',
 };
+
+function normalizeTreatment(value: unknown, fallback: string): 'adjust' | 'clip' {
+  if (value === 'clip' || fallback === 'clip') {
+    return 'clip';
+  }
+  return 'adjust';
+}
 
 export interface StructureGuidanceControls {
   structureType: 'uni3c' | 'flow' | 'canny' | 'depth';
@@ -30,9 +42,10 @@ function asRecordArray(value: unknown): UnknownRecord[] | undefined {
 function sanitizeStructureVideos(
   videos: UnknownRecord[],
   defaultVideoTreatment: string,
-): UnknownRecord[] {
+): StructureGuidanceVideoConfig[] {
+  const fallbackTreatment = defaultVideoTreatment === 'clip' ? 'clip' : 'adjust';
   return videos
-    .map((video) => {
+    .map((video): StructureGuidanceVideoConfig | null => {
       const path = asString(video.path);
       if (!path) {
         return null;
@@ -43,12 +56,12 @@ function sanitizeStructureVideos(
         path,
         start_frame: asNumber(video.start_frame) ?? 0,
         end_frame: asNumber(video.end_frame) ?? null,
-        treatment: asString(video.treatment) ?? defaultVideoTreatment,
+        treatment: asString(video.treatment) === 'clip' ? 'clip' : fallbackTreatment,
         ...(metadata ? { metadata } : {}),
         ...(resourceId ? { resource_id: resourceId } : {}),
       };
     })
-    .filter((video): video is { path: string; start_frame: number; end_frame: number | null; treatment: string } => !!video);
+    .filter((video): video is StructureGuidanceVideoConfig => video !== null);
 }
 
 function buildGuidanceFromVideos(
@@ -57,7 +70,7 @@ function buildGuidanceFromVideos(
     defaultVideoTreatment: string;
     defaultUni3cEndPercent: number;
   },
-): UnknownRecord | undefined {
+): GuidanceRecord | undefined {
   const cleanedVideos = sanitizeStructureVideos(
     videos,
     options.defaultVideoTreatment,
@@ -71,7 +84,7 @@ function buildGuidanceFromVideos(
   const structureType = asString(firstVideo.structure_type) ?? 'flow';
   const isUni3c = structureType === 'uni3c';
 
-  const guidance: UnknownRecord = {
+  const guidance: GuidanceRecord = {
     target: isUni3c ? 'uni3c' : 'vace',
     videos: cleanedVideos,
     strength: asNumber(firstVideo.motion_strength) ?? 1.0,
@@ -154,13 +167,13 @@ export function normalizeStructureGuidance(
 
   const structureType = asString(input.structureVideoType) ?? (input.useUni3c ? 'uni3c' : 'flow');
   const isUni3c = structureType === 'uni3c';
-  const guidance: UnknownRecord = {
+  const guidance: GuidanceRecord = {
     target: isUni3c ? 'uni3c' : 'vace',
     videos: [{
       path: structureVideoPath,
       start_frame: 0,
       end_frame: null,
-      treatment: asString(input.structureVideoTreatment) ?? defaultVideoTreatment,
+      treatment: normalizeTreatment(input.structureVideoTreatment, defaultVideoTreatment),
     }],
     strength: asNumber(input.structureVideoMotionStrength) ?? 1.0,
   };
@@ -237,7 +250,7 @@ export function buildStructureGuidanceFromControls(
     return undefined;
   }
 
-  const guidance: UnknownRecord = {
+  const guidance: GuidanceRecord = {
     target: input.controls.structureType === 'uni3c' ? 'uni3c' : 'vace',
     videos: cleanedVideos,
     strength: input.controls.motionStrength,
@@ -250,7 +263,7 @@ export function buildStructureGuidanceFromControls(
     ];
     guidance.frame_policy = 'fit';
     guidance.zero_empty_frames = true;
-    return guidance as StructureGuidanceConfig;
+    return guidance;
   }
 
   guidance.preprocessing = STRUCTURE_PREPROCESSING_MAP[input.controls.structureType] ?? 'flow';
@@ -261,7 +274,7 @@ export function buildStructureGuidanceFromControls(
     guidance.depth_contrast = input.controls.depthContrast;
   }
 
-  return guidance as StructureGuidanceConfig;
+  return guidance;
 }
 
 export function pickFirstStructureGuidance(...candidates: unknown[]): UnknownRecord | undefined {

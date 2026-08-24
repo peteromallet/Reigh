@@ -1,4 +1,4 @@
-import type { VideoMetadata } from '@/shared/lib/media/videoUploader';
+import type { VideoMetadata } from '@/shared/lib/media/videoMetadata';
 import { getDeprecationPolicy } from '@/shared/lib/governance/deprecationPolicy';
 import { signalPastRemovalTargetUsage } from '@/shared/lib/governance/deprecationEnforcement';
 import type { StructureVideoConfig } from './taskTypes';
@@ -82,6 +82,39 @@ function parseNumber(value: unknown): number | undefined {
 
 function parseString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
+}
+
+function parseVideoMetadata(value: unknown): VideoMetadata | null {
+  const record = asRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const durationSeconds = parseNumber(record.duration_seconds);
+  const frameRate = parseNumber(record.frame_rate);
+  const totalFrames = parseNumber(record.total_frames);
+  const width = parseNumber(record.width);
+  const height = parseNumber(record.height);
+  const fileSize = parseNumber(record.file_size);
+  if (
+    durationSeconds === undefined
+    || frameRate === undefined
+    || totalFrames === undefined
+    || width === undefined
+    || height === undefined
+    || fileSize === undefined
+  ) {
+    return null;
+  }
+
+  return {
+    duration_seconds: durationSeconds,
+    frame_rate: frameRate,
+    total_frames: totalFrames,
+    width,
+    height,
+    file_size: fileSize,
+  };
 }
 
 function hasLegacyField(
@@ -186,7 +219,7 @@ export function migrateLegacyStructureVideos(
     : null;
   if (rawStructureVideos) {
     return rawStructureVideos
-      .map((entry) => {
+      .map((entry): MigratedLegacyStructureVideo | null => {
         const record = asRecord(entry);
         if (!record) {
           return null;
@@ -197,7 +230,6 @@ export function migrateLegacyStructureVideos(
           return null;
         }
 
-        const metadata = asRecord(record.metadata);
         const resourceId = parseString(record.resource_id ?? record.resourceId);
         return {
           path,
@@ -222,7 +254,7 @@ export function migrateLegacyStructureVideos(
           ...(record.source_end_frame === null || record.sourceEndFrame === null || parseNumber(record.source_end_frame ?? record.sourceEndFrame) !== undefined
             ? { source_end_frame: parseNumber(record.source_end_frame ?? record.sourceEndFrame) ?? null }
             : {}),
-          metadata: metadata as VideoMetadata | null ?? null,
+          metadata: parseVideoMetadata(record.metadata),
           resource_id: resourceId ?? null,
         } satisfies MigratedLegacyStructureVideo;
       })
@@ -234,7 +266,6 @@ export function migrateLegacyStructureVideos(
     return [];
   }
 
-  const metadata = asRecord(settings.metadata);
   const resourceId = parseString(settings.resource_id ?? settings.resourceId);
   return [{
     path: singlePath,
@@ -253,7 +284,7 @@ export function migrateLegacyStructureVideos(
     ...(settings.source_end_frame === null || settings.sourceEndFrame === null || parseNumber(settings.source_end_frame ?? settings.sourceEndFrame) !== undefined
       ? { source_end_frame: parseNumber(settings.source_end_frame ?? settings.sourceEndFrame) ?? null }
       : {}),
-    metadata: metadata as VideoMetadata | null ?? null,
+    metadata: parseVideoMetadata(settings.metadata),
     resource_id: resourceId ?? null,
   }];
 }

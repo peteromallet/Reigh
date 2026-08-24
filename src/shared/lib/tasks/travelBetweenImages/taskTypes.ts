@@ -4,6 +4,15 @@ import type { PathLoraConfig } from '@/domains/lora/types/lora';
 /**
  * Unified structure guidance contract for vace/uni3c.
  */
+export interface StructureGuidanceVideoConfig {
+  path: string;
+  start_frame: number;
+  end_frame: number | null;
+  treatment?: 'adjust' | 'clip';
+  metadata?: Record<string, unknown>;
+  resource_id?: string;
+}
+
 export interface StructureGuidanceConfig {
   /** Target system for guidance. */
   target: 'vace' | 'uni3c';
@@ -16,6 +25,9 @@ export interface StructureGuidanceConfig {
 
   /** Unified strength parameter. */
   strength?: number;
+
+  /** Structure videos associated with this guidance configuration. */
+  videos?: StructureGuidanceVideoConfig[];
 
   /** VACE-specific: canny edge detection intensity. */
   canny_intensity?: number;
