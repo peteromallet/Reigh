@@ -11,14 +11,14 @@
  * One command: `npm run test:e2e:timeline` (after a one-time
  * `npx playwright install chromium`). Its opt-in flag makes `playwright.config.ts`
  * boot *both* live processes these specs need — the dev server and the local-mode
- * bridge stub — as `webServer` entries. A second terminal is optional, not
- * required: `reuseExistingServer` adopts a hot `npm run dev` / `npm run
- * dev:editor:bridge` if one is already listening.
+ * bridge stub — as `webServer` entries. A second terminal is unnecessary: the
+ * harness owns fresh editor and bridge ports for the run and fails loudly if
+ * an explicitly supplied port is occupied.
  *
  * Both endpoints are env-parameterized. `BASE_URL` or
- * `PLAYWRIGHT_BASE_URL` wins; otherwise the origin follows
- * `PLAYWRIGHT_PORT` (default `2222`). `ASTRID_BRIDGE_PORT` defaults to
- * `17334`.
+ * `PLAYWRIGHT_BASE_URL` wins; otherwise the origin follows the
+ * run-isolated `PLAYWRIGHT_PORT` published by `playwright.config.ts`.
+ * `ASTRID_BRIDGE_PORT` is likewise run-isolated.
  */
 import type { BrowserContext, Page } from '@playwright/test';
 import {
@@ -32,16 +32,27 @@ export {
   CLIP_ACTION_WITH_ID_SELECTOR,
 } from '../../../src/tools/video-editor/lib/timeline-dom.ts';
 
-const editorPort = Number(process.env.PLAYWRIGHT_PORT ?? 2222);
-if (!Number.isInteger(editorPort) || editorPort < 1 || editorPort > 65_535) {
-  throw new Error(`Invalid PLAYWRIGHT_PORT: ${process.env.PLAYWRIGHT_PORT ?? ''}`);
+const editorPortValue = process.env.PLAYWRIGHT_PORT;
+const editorPort = editorPortValue == null || editorPortValue === '' ? null : Number(editorPortValue);
+if (editorPort != null && (!Number.isInteger(editorPort) || editorPort < 1 || editorPort > 65_535)) {
+  throw new Error(`Invalid PLAYWRIGHT_PORT: ${editorPortValue}`);
+}
+if (!process.env.BASE_URL && !process.env.PLAYWRIGHT_BASE_URL && editorPort == null) {
+  throw new Error('PLAYWRIGHT_PORT or BASE_URL must be published by the Playwright config; refusing an implicit shared editor port');
 }
 export const BASE_URL = (
   process.env.BASE_URL
   ?? process.env.PLAYWRIGHT_BASE_URL
   ?? `http://127.0.0.1:${editorPort}`
 ).replace(/\/+$/, '');
-export const BRIDGE_PORT = Number(process.env.ASTRID_BRIDGE_PORT ?? 17334);
+const bridgePortValue = process.env.ASTRID_BRIDGE_PORT;
+if (!bridgePortValue) {
+  throw new Error('ASTRID_BRIDGE_PORT was not published by playwright.config.ts; refusing an implicit shared bridge port');
+}
+export const BRIDGE_PORT = Number(bridgePortValue);
+if (!Number.isInteger(BRIDGE_PORT) || BRIDGE_PORT < 1 || BRIDGE_PORT > 65_535) {
+  throw new Error(`Invalid ASTRID_BRIDGE_PORT: ${bridgePortValue}`);
+}
 export const BRIDGE_ORIGIN = `http://127.0.0.1:${BRIDGE_PORT}`;
 
 export const PROJECT_SLUG = 'demo-project';
@@ -69,19 +80,44 @@ export const BASELINE_CLIPS = [
 
 /** Track order is fixture state too — the touch grip makes reordering reachable. */
 export const BASELINE_TRACK_ORDER = ['V1', 'V2', 'A1'];
+export const BASELINE_TRACKS = [
+  { id: 'V1', kind: 'visual', label: 'V1', scale: 1, fit: 'contain', opacity: 1, blendMode: 'normal' },
+  { id: 'V2', kind: 'visual', label: 'V2', scale: 1, fit: 'contain', opacity: 1, blendMode: 'normal' },
+  { id: 'A1', kind: 'audio', label: 'A1', scale: 1, fit: 'contain', opacity: 1, blendMode: 'normal' },
+];
 
 /** Restore the bridge's clip layout and track order. Returns any failure text. */
 export async function resetBridgeBaseline(): Promise<string | null> {
   try {
-    const current = await (await fetch(BRIDGE_TIMELINE)).json();
-    const tracks = [...(current.config?.tracks ?? [])].sort(
-      (a, b) => BASELINE_TRACK_ORDER.indexOf(a.id) - BASELINE_TRACK_ORDER.indexOf(b.id),
-    );
-    await fetch(`${BRIDGE_TIMELINE}/save`, {
+    const healthResponse = await fetch(`${BRIDGE_ORIGIN}/health`);
+    if (!healthResponse.ok) return `[reset] bridge health returned ${healthResponse.status}`;
+    const health = await healthResponse.json();
+    if (health?.ok !== true) return '[reset] bridge health response was not {ok:true}';
+    const response = await fetch(BRIDGE_TIMELINE);
+    if (!response.ok) return `[reset] bridge fixture GET returned ${response.status}`;
+    const current = await response.json();
+    const currentAssetIds = Object.keys(current.registry?.assets ?? {}).sort();
+    const expectedAssetIds = ['demo-clip', 'demo-detail', 'demo-hero'];
+    if (currentAssetIds.join(',') !== expectedAssetIds.join(',')) {
+      return `[reset] unexpected bridge fixture assets: ${currentAssetIds.join(',')}`;
+    }
+    const config = {
+      ...(current.config ?? {}),
+      tracks: BASELINE_TRACKS,
+      clips: BASELINE_CLIPS,
+    };
+    const saveResponse = await fetch(`${BRIDGE_TIMELINE}/save`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ config: { ...current.config, tracks, clips: BASELINE_CLIPS } }),
+      body: JSON.stringify({ config }),
     });
+    if (!saveResponse.ok) return `[reset] bridge fixture save returned ${saveResponse.status}`;
+    const saved = await saveResponse.json();
+    const savedTrackIds = (saved.config?.tracks ?? []).map((track: { id?: string }) => track.id).filter(Boolean).join(',');
+    const savedClipIds = (saved.config?.clips ?? []).map((clip: { id?: string }) => clip.id).filter(Boolean).join(',');
+    if (savedTrackIds !== BASELINE_TRACK_ORDER.join(',') || savedClipIds !== BASELINE_CLIPS.map((clip) => clip.id).join(',')) {
+      return `[reset] bridge fixture identity mismatch after save: tracks=${savedTrackIds}, clips=${savedClipIds}`;
+    }
     return null;
   } catch (error) {
     return `[reset] ${(error as Error).message}`;
@@ -182,11 +218,15 @@ export async function createTouchInput(context: BrowserContext, page: Page): Pro
 export async function openEditor(page: Page): Promise<void> {
   const issues = collectPageLogs(page);
   const forbiddenRequests: string[] = [];
+  const notFoundResponses: string[] = [];
   page.on('request', (request) => {
     const url = request.url();
     if (/(supabase\.co|127\.0\.0\.1:54321|localhost:54321|\/auth\/v1\/|\/rest\/v1\/|\/functions\/v1\/)/.test(url)) {
       forbiddenRequests.push(url);
     }
+  });
+  page.on('response', (response) => {
+    if (response.status() === 404) notFoundResponses.push(response.url());
   });
   // Pre-seed a stale project selection: local mode must not let leftover
   // project state re-enable backend queries (the regression Codex flagged).
@@ -218,6 +258,21 @@ export async function openEditor(page: Page): Promise<void> {
   });
   if (backendCalls > 0) {
     throw new Error(`local-mode editor made ${backendCalls} backend request(s); local mode must be backend-free`);
+  }
+  // The local Astrid capability probe intentionally asks the bridge for a
+  // sentinel media row and receives 404. Keep that expected negative probe
+  // visible in the network audit, while refusing every other missing asset.
+  const unexpectedNotFound = notFoundResponses.filter(
+    (url) => !url.includes('/api/astrid/projects/demo-project/media/__reigh_capability_probe__/content'),
+  );
+  if (unexpectedNotFound.length > 0) {
+    throw new Error(`local-test editor made unexpected 404 request(s):\n${[...new Set(unexpectedNotFound)].join('\n')}`);
+  }
+  const expected404ConsoleText = '[console.error] Failed to load resource: the server responded with a status of 404 (Not Found)';
+  for (let i = 0; i < notFoundResponses.length - unexpectedNotFound.length; i += 1) {
+    const index = issues.indexOf(expected404ConsoleText);
+    if (index < 0) break;
+    issues.splice(index, 1);
   }
   assertNoUnexpectedPageErrors(issues);
 }

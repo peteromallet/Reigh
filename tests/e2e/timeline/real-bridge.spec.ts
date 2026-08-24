@@ -226,7 +226,15 @@ async function freezeTimelineReads(page: import('@playwright/test').Page) {
 }
 
 
-const BRIDGE_ORIGIN = `http://127.0.0.1:${process.env.ASTRID_BRIDGE_PORT ?? '17334'}`;
+const bridgePortValue = process.env.ASTRID_BRIDGE_PORT;
+if (!bridgePortValue) {
+  throw new Error('ASTRID_BRIDGE_PORT was not published by playwright.config.ts; refusing an implicit shared bridge port');
+}
+const bridgePort = Number(bridgePortValue);
+if (!Number.isInteger(bridgePort) || bridgePort < 1 || bridgePort > 65_535) {
+  throw new Error(`Invalid ASTRID_BRIDGE_PORT: ${bridgePortValue}`);
+}
+const BRIDGE_ORIGIN = `http://127.0.0.1:${bridgePort}`;
 
 /**
  * Release mode authenticates and negotiates every route. The Vite proxy

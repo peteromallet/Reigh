@@ -1,8 +1,23 @@
 import { defineConfig, devices } from '@playwright/test';
 import { randomBytes } from 'node:crypto';
 import { DEFAULT_DEV_SUPABASE_URL } from './src/shared/dev/devSession.ts';
+import { allocateIsolatedPort } from './tests/e2e/timeline/isolated-port.mjs';
 
-const port = Number(process.env.PLAYWRIGHT_PORT ?? 4173);
+const allocatedPorts = new Set<number>();
+// Timeline gates are intentionally isolated even when invoked from a shell
+// that has no CI marker.  Explicit ports are validated by the allocator;
+// omitted ports are fresh per run.
+const inheritedRunPorts = process.env.REIGH_TIMELINE_PORTS_ALLOCATED === '1';
+const readInheritedPort = (envName: string): number => {
+  const value = Number(process.env[envName]);
+  if (!Number.isInteger(value) || value < 1 || value > 65_535) {
+    throw new Error(`${envName} was marked run-allocated but is invalid: ${process.env[envName] ?? ''}`);
+  }
+  return value;
+};
+const port = inheritedRunPorts
+  ? readInheritedPort('PLAYWRIGHT_PORT')
+  : allocateIsolatedPort('PLAYWRIGHT_PORT', allocatedPorts);
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${port}`;
 // Concurrent acceptance lanes must not clean or overwrite each other's traces.
 const outputDir = process.env.PLAYWRIGHT_OUTPUT_DIR ?? 'test-results';
@@ -31,9 +46,15 @@ const realBridgeToken = useRealBridge
 // webServer.env objects. Direct Astrid auth-boundary assertions need the same
 // ephemeral token that is passed to both managed servers.
 if (realBridgeToken) process.env.ASTRID_BRIDGE_TOKEN = realBridgeToken;
-// The demo stub must not share port 17333 with the real bridge; 17334
-// keeps an E2E run from squatting on the editor's live bridge.
-const bridgePort = Number(process.env.ASTRID_BRIDGE_PORT ?? 17334);
+// The bridge port is run-isolated too, so a stale bridge from another
+// checkout cannot answer this run's requests.
+const bridgePort = inheritedRunPorts
+  ? readInheritedPort('ASTRID_BRIDGE_PORT')
+  : allocateIsolatedPort('ASTRID_BRIDGE_PORT', allocatedPorts);
+// Playwright reloads this config in worker processes after webServer starts;
+// carry the values across those reloads without probing our own live servers
+// as though they were stale external processes.
+process.env.REIGH_TIMELINE_PORTS_ALLOCATED = '1';
 const bridgeServeCommand = useRealBridge
   ? 'node tests/e2e/timeline/real-bridge-serve.mjs'
   : 'node tests/e2e/timeline/astrid-bridge-stub.mjs';
@@ -60,7 +81,10 @@ export default defineConfig({
     {
       command: `npm run dev -- --host 127.0.0.1 --port ${port}`,
       url: baseURL,
-      reuseExistingServer: useRealBridge ? false : !process.env.CI,
+      // Never adopt a hand-started process for deterministic timeline/local
+      // gates.  The allocated port is ours for this run, and a collision was
+      // already rejected above.
+      reuseExistingServer: false,
       timeout: 120_000,
       env: {
         VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL ?? DEFAULT_DEV_SUPABASE_URL,
@@ -86,7 +110,7 @@ export default defineConfig({
       ? [{
           command: bridgeServeCommand,
           url: `http://127.0.0.1:${bridgePort}/health`,
-          reuseExistingServer: useRealBridge ? false : !process.env.CI,
+          reuseExistingServer: false,
           timeout: 30_000,
           // The real-bridge harness owns a disposable Astrid root plus pid,
           // token, and provenance receipts. Give its SIGTERM handler time to
@@ -96,6 +120,9 @@ export default defineConfig({
             : {}),
           env: {
             ASTRID_BRIDGE_PORT: String(bridgePort),
+            // The stub's media URLs must follow the run-isolated editor
+            // origin; otherwise its default 2222 base yields browser 404s.
+            BASE_URL: baseURL,
             ...(realBridgeToken
               ? { ASTRID_BRIDGE_TOKEN: realBridgeToken }
               : {}),

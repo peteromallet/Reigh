@@ -36,7 +36,7 @@ import {
 } from '../../../src/tools/video-editor/lib/timeline-dom.ts';
 import {
   BASELINE_CLIPS,
-  BASELINE_TRACK_ORDER,
+  BASELINE_TRACKS,
   BRIDGE_ORIGIN,
   openEditor,
   PROJECT_SLUG,
@@ -186,25 +186,14 @@ function readBaseline(): Record<string, GeometrySnapshot> {
 }
 
 /**
- * Reset the bridge to *exactly* the known 3-track / 4-clip fixture.
- *
- * `resetBridgeBaseline` in `support.ts` reorders whatever tracks currently
- * exist but does not drop extras — fine for the interaction specs (which only
- * assert `>=` counts), but this spec asserts exact track counts and picks a
- * "first clip" by DOM order, so leftover tracks/clips from a prior run against
- * a reused (`reuseExistingServer`) bridge process would make both flaky. This
- * drops anything outside `BASELINE_TRACK_ORDER` instead of just reordering.
+ * Reset the bridge to *exactly* the known 3-track / 4-clip fixture. The shared
+ * reset owns identity validation; this helper remains local so geometry tests
+ * can fail with their own useful response if the bridge is unavailable.
  */
 async function resetGeometryFixture(): Promise<string | null> {
   try {
     const current = await (await fetch(BRIDGE_TIMELINE)).json();
-    const known = new Set<string>(BASELINE_TRACK_ORDER);
-    const tracks = [...(current.config?.tracks ?? [])]
-      .filter((track: { id: string }) => known.has(track.id))
-      .sort(
-        (a: { id: string }, b: { id: string }) =>
-          BASELINE_TRACK_ORDER.indexOf(a.id) - BASELINE_TRACK_ORDER.indexOf(b.id),
-      );
+    const tracks = BASELINE_TRACKS;
     await fetch(`${BRIDGE_TIMELINE}/save`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
