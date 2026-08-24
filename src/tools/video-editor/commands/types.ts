@@ -7,7 +7,7 @@ export type JsonObject = { [key: string]: JsonValue };
 
 export type TimelineCommand<
   TType extends string = string,
-  TPayload extends JsonObject = JsonObject,
+  TPayload extends object = object,
 > = {
   type: TType;
   payload?: TPayload;
@@ -108,14 +108,10 @@ export type TimelineCommandInvertContext<TCommand extends TimelineCommand = Time
 
 export type TimelineCommandDescriptor<TCommand extends TimelineCommand = TimelineCommand> = {
   type: TCommand['type'];
-  validate: (
-    context: TimelineCommandContext<TCommand>,
-  ) => readonly TimelineCommandValidationError[] | null | undefined;
-  dryRun: (context: TimelineCommandContext<TCommand>) => TimelineCommandEffect;
-  apply: (context: TimelineCommandContext<TCommand>) => TimelineCommandEffect;
-  invert: (
-    context: TimelineCommandInvertContext<TCommand>,
-  ) => TimelineCommandInput | null | undefined;
+  validate(context: TimelineCommandContext<TCommand>): readonly TimelineCommandValidationError[] | null | undefined;
+  dryRun(context: TimelineCommandContext<TCommand>): TimelineCommandEffect;
+  apply(context: TimelineCommandContext<TCommand>): TimelineCommandEffect;
+  invert(context: TimelineCommandInvertContext<TCommand>): TimelineCommandInput<TCommand> | null | undefined;
 };
 
 export type TimelineCommandRegistry<TCommand extends TimelineCommand = TimelineCommand> =

@@ -1,6 +1,6 @@
 import { updateClipOrder } from '@/tools/video-editor/lib/coordinate-utils.ts';
 import { getNextClipId, type TimelineData } from '@/tools/video-editor/lib/timeline-data.ts';
-import type { AssetRegistry, TimelineClip } from '@/tools/video-editor/types/index.ts';
+import type { AssetRegistry, TimelineClip, ResolvedTimelineConfig } from '@/tools/video-editor/types/index.ts';
 import { applyTimelineCommandEffect, createTimelineCommandRunner } from './runner.ts';
 import { buildTimelineCommandData } from './timelineData.ts';
 import type {
@@ -13,16 +13,24 @@ import {
   type TimelineProvisionedAsset,
 } from './provisioning.ts';
 
-export type AddMediaCommand = TimelineCommand<'add-media', {
+type AddMediaPayload = {
   trackId: string;
   at: number;
   asset: TimelineProvisionedAsset;
-}>;
+};
 
-export type SwapMediaCommand = TimelineCommand<'swap', {
+export type AddMediaCommand = Omit<TimelineCommand<'add-media', AddMediaPayload>, 'payload'> & {
+  payload: AddMediaPayload;
+};
+
+type SwapMediaPayload = {
   clipId: string;
   asset: TimelineProvisionedAsset;
-}>;
+};
+
+export type SwapMediaCommand = Omit<TimelineCommand<'swap', SwapMediaPayload>, 'payload'> & {
+  payload: SwapMediaPayload;
+};
 
 const roundSeconds = (value: number): number => Math.round(value * 1000) / 1000;
 
@@ -254,7 +262,7 @@ export const ADD_MEDIA_COMMAND_DESCRIPTOR: TimelineCommandDescriptor<AddMediaCom
   type: 'add-media',
   validate: (context) => {
     const errors = [];
-    const { trackId, at, asset } = context.command.payload ?? {};
+    const { trackId, at, asset } = context.command.payload;
     errors.push(...validateProvisionedAsset(asset, `$.commands[${context.commandIndex}].payload.asset`));
 
     if (typeof trackId !== 'string' || trackId.trim().length === 0) {
@@ -312,7 +320,7 @@ export const SWAP_MEDIA_COMMAND_DESCRIPTOR: TimelineCommandDescriptor<SwapMediaC
   type: 'swap',
   validate: (context) => {
     const errors = [];
-    const { clipId, asset } = context.command.payload ?? {};
+    const { clipId, asset } = context.command.payload;
     errors.push(...validateProvisionedAsset(asset, `$.commands[${context.commandIndex}].payload.asset`));
 
     if (typeof clipId !== 'string' || clipId.trim().length === 0) {
@@ -377,7 +385,7 @@ export const SWAP_MEDIA_COMMAND_DESCRIPTOR: TimelineCommandDescriptor<SwapMediaC
     }
 
     return {
-      type: 'swap',
+      type: 'swap' as const,
       payload: {
         clipId: clip.id,
         asset: {
@@ -385,7 +393,7 @@ export const SWAP_MEDIA_COMMAND_DESCRIPTOR: TimelineCommandDescriptor<SwapMediaC
           mediaType: getClipMediaType(context.currentData, clip),
           durationSeconds: typeof assetEntry.duration === 'number' ? assetEntry.duration : null,
           entry: { ...assetEntry },
-          source: 'registered',
+          source: 'registered' as const,
         },
       },
     };
@@ -397,7 +405,10 @@ export const MEDIA_COMMAND_DESCRIPTORS = [
   SWAP_MEDIA_COMMAND_DESCRIPTOR,
 ] as const;
 
-const mediaCommandRunner = createTimelineCommandRunner([...MEDIA_COMMAND_DESCRIPTORS]);
+const mediaCommandRunner = createTimelineCommandRunner<AddMediaCommand | SwapMediaCommand>([
+  ADD_MEDIA_COMMAND_DESCRIPTOR,
+  SWAP_MEDIA_COMMAND_DESCRIPTOR,
+]);
 
 const getFailureMessage = (
   result: ReturnType<typeof mediaCommandRunner.apply>,
