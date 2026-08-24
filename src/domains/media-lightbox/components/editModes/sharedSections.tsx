@@ -12,11 +12,24 @@ import type { LoraModel } from '@/domains/lora/types/lora';
 import type { LoraManagerState } from '@/domains/lora/types/loraManager';
 import type { EditAdvancedSettings as EditAdvancedSettingsType } from '../../hooks/useGenerationEditSettings';
 import type { EditModePanelState } from '../../hooks/useEditModePanelState';
+import type { LoraMode, QwenEditModel } from '../../model/editSettingsTypes';
 import { EditAdvancedSettings } from '../EditAdvancedSettings';
 import { GenerateButton } from './GenerateButton';
 import { getClosestOverlayContainer } from '@/shared/components/ui/overlay';
 
 const REPOSITION_DEFAULT_PROMPT = 'match existing content';
+
+function isQwenEditModel(value: string): value is QwenEditModel {
+  return value === 'qwen-edit'
+    || value === 'qwen-edit-2509'
+    || value === 'qwen-edit-2511'
+    || value === 'flux-klein-4b'
+    || value === 'flux-klein-9b';
+}
+
+function isLoraMode(value: string): value is LoraMode {
+  return value === 'none' || value === 'in-scene' || value === 'next-scene' || value === 'custom';
+}
 
 function blurActiveElement() {
   if (document.activeElement instanceof HTMLElement) {
@@ -150,7 +163,7 @@ export const ModelAndLoraSection: React.FC<ModelAndLoraSectionProps> = ({
           <Select
             value={state.qwenEditModel}
             onValueChange={(value) => {
-              if (value) {
+              if (isQwenEditModel(value)) {
                 state.setQwenEditModel(value);
               }
             }}
@@ -225,7 +238,9 @@ export const LegacyLoraSection: React.FC<LegacyLoraSectionProps> = ({ state, has
       <div className="flex items-center gap-2">
         {!state.isMobile && <label className="text-sm font-medium whitespace-nowrap">LoRA:</label>}
         <div className="flex flex-1 items-center gap-1">
-          <Select value={state.loraMode} onValueChange={(value) => value && state.setLoraMode(value)}>
+          <Select value={state.loraMode} onValueChange={(value) => {
+            if (isLoraMode(value)) state.setLoraMode(value);
+          }}>
             <SelectTrigger variant="retro" className={cn('flex-1', state.isMobile ? 'h-7 text-xs' : 'h-10')}>
               <SelectValue />
             </SelectTrigger>

@@ -290,7 +290,7 @@ export function useVideoRegenerateMode({
         },
         structure_guidance: null,
       },
-    }, 'immediate');
+    }, { mode: 'immediate' });
 
     // Refetch to update UI - await so caller knows when complete
     await Promise.all([

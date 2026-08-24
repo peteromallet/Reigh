@@ -64,6 +64,7 @@ const VideoLightboxMediaContent: React.FC<VideoLightboxPropsWithMedia> = (props)
           hasCanvasOverlay={false}
           isRepositionMode={false}
           isMobile={env.isMobile}
+          isTabletOrLarger={sharedState.layout.isTabletOrLarger}
           overlayViewport={overlayViewport}
           contentRef={env.contentRef}
           accessibilityTitle={renderModel.accessibilityTitle}
@@ -111,6 +112,7 @@ const VideoLightboxFormOnlyContent: React.FC<VideoLightboxProps> = (props) => {
       hasCanvasOverlay={false}
       isRepositionMode={false}
       isMobile={env.isMobile}
+      isTabletOrLarger={false}
       overlayViewport={overlayViewport}
       contentRef={env.contentRef}
       accessibilityTitle={`Segment ${(props.segmentSlotMode.currentIndex ?? 0) + 1} Settings`}

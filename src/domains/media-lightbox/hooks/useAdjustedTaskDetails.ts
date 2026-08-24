@@ -43,7 +43,7 @@ export function useAdjustedTaskDetails({
     return resolveAdjustedTaskDetails({
       activeVariant,
       taskDetailsData,
-      variantSourceTask,
+      variantSourceTask: variantSourceTask ?? null,
       variantSourceTaskError,
       isLoadingVariantTask,
       isLoadingVariants,

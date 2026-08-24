@@ -84,7 +84,7 @@ export const MediaDisplayWithCanvas: React.FC<MediaDisplayWithCanvasProps> = ({
   } = useRepositionGestureHandlers({
     isInpaintMode,
     editMode,
-    repositionDragHandlers,
+    repositionDragHandlers: repositionDragHandlers ?? undefined,
     onRepositionScaleChange,
     onRepositionRotationChange,
     repositionScale,

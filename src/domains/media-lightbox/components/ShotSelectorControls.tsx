@@ -8,7 +8,7 @@ import type { ShotOption } from '@/domains/generation/types';
 import { INTERACTION_TIMING } from '@/shared/lib/interactions/timing';
 import { useShotAssociationControls } from './hooks/useShotAssociationControls';
 
-interface ShotSelectorControlsProps {
+export interface ShotSelectorControlsProps {
   // Media info
   mediaId: string;
   imageUrl?: string;

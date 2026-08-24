@@ -50,6 +50,7 @@ function EditModePanelComponent({
     imageEditState,
     variantsState,
   });
+  const editLoraManager = lora?.editLoraManager;
 
   const modeSelector = (
     <ModeSelector
@@ -61,7 +62,7 @@ function EditModePanelComponent({
   const sharedPanelProps = {
     state,
     isCloudMode: upscale?.isCloudMode,
-    editLoraManager: lora?.editLoraManager,
+    editLoraManager,
     availableLoras: lora?.availableLoras ?? [],
     advancedSettings: advanced?.advancedSettings,
     setAdvancedSettings: advanced?.setAdvancedSettings,
@@ -121,16 +122,16 @@ function EditModePanelComponent({
         {renderPanel()}
       </EditPanelLayout>
 
-      {lora?.editLoraManager && (
+      {editLoraManager && (
         <Suspense fallback={null}>
           <LoraSelectorModal
-            isOpen={lora.editLoraManager.isLoraModalOpen}
-            onClose={() => lora.editLoraManager.setIsLoraModalOpen(false)}
+            isOpen={editLoraManager.isLoraModalOpen}
+            onClose={() => editLoraManager.setIsLoraModalOpen(false)}
             loras={lora.availableLoras ?? []}
-            onAddLora={lora.editLoraManager.handleAddLora}
-            onRemoveLora={lora.editLoraManager.handleRemoveLora}
-            onUpdateLoraStrength={lora.editLoraManager.handleLoraStrengthChange}
-            selectedLoras={mapSelectedLorasForModal(lora.editLoraManager.selectedLoras, lora.availableLoras ?? [])}
+            onAddLora={editLoraManager.handleAddLora}
+            onRemoveLora={editLoraManager.handleRemoveLora}
+            onUpdateLoraStrength={editLoraManager.handleLoraStrengthChange}
+            selectedLoras={mapSelectedLorasForModal(editLoraManager.selectedLoras, lora.availableLoras ?? [])}
             loraType="Qwen Edit"
           />
         </Suspense>

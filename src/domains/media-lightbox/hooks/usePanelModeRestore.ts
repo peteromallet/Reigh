@@ -54,7 +54,7 @@ export function usePanelModeRestore({
   ...modeHandlers
 }: UseVideoPanelModeRestoreProps | UseImagePanelModeRestoreProps): UsePanelModeRestoreReturn {
   const hasRestoredPanelModeRef = useRef(false);
-  const enterEditMode = isVideo
+  const enterEditMode = 'handleEnterVideoEditMode' in modeHandlers
     ? modeHandlers.handleEnterVideoEditMode
     : modeHandlers.handleEnterMagicEditMode;
 

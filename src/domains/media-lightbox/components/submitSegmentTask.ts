@@ -56,6 +56,8 @@ interface StructureVideoInputs {
     motionStrength: number;
     treatment: 'adjust' | 'clip';
     uni3cEndPercent: number;
+    cannyIntensity?: number;
+    depthContrast?: number;
   } | null;
 }
 

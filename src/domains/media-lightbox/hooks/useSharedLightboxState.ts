@@ -155,7 +155,9 @@ export function useSharedLightboxState(input: UseSharedLightboxStateInput): UseS
       },
       bottomLeft: {
         isUpscaling,
-        handleUpscale,
+        handleUpscale: async () => {
+          handleUpscale();
+        },
         localStarred: star.localStarred,
         handleToggleStar: star.handleToggleStar,
         toggleStarPending: star.toggleStarMutation.isPending,

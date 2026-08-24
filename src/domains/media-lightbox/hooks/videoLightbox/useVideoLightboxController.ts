@@ -85,7 +85,7 @@ function useVideoVariantMedia(
   regenerateFormProps: ReturnType<typeof useVideoRegenerateMode>['regenerateFormProps'],
 ) {
   const variantBadges = useLightboxVariantBadges({
-    pendingTaskGenerationId: regenerateFormProps?.pairShotGenerationId || env.actualGenerationId,
+    pendingTaskGenerationId: regenerateFormProps?.images.pairShotGenerationId || env.actualGenerationId,
     selectedProjectId: env.selectedProjectId,
     variants: sharedState.variants.list,
     variantFetchGenerationId: env.variantFetchGenerationId,

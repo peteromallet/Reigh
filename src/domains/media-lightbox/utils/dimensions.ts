@@ -39,7 +39,7 @@ export function aspectRatioToDimensions(aspectRatio: string): { width: number; h
 
 interface MediaLike {
   params?: GenerationParams | Record<string, unknown>;
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, unknown> | null;
 }
 
 /**
@@ -61,6 +61,9 @@ export function extractDimensionsFromMedia(
 
   const params = media.params as GenerationParams | undefined;
   const metadata = media.metadata as Record<string, unknown> | undefined;
+  const persistedAspectRatio = media.params && typeof media.params === 'object' && 'aspect_ratio' in media.params
+    ? media.params.aspect_ratio
+    : undefined;
 
   // Check metadata for width/height (these may exist as extended metadata fields)
   if (metadata?.width && metadata?.height && typeof metadata.width === 'number' && typeof metadata.height === 'number') {
@@ -91,7 +94,8 @@ export function extractDimensionsFromMedia(
 
   // Build aspect ratio sources
   const aspectRatioSources: unknown[] = [
-    params?.aspect_ratio,
+    params?.aspectRatio,
+    persistedAspectRatio,
     metadata?.aspect_ratio,
   ];
 

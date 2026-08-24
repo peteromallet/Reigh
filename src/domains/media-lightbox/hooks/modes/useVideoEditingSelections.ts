@@ -104,12 +104,12 @@ export function useVideoEditingSelections({
   const handleUpdateSelection = useCallback((id: string, start: number, end: number) => {
     setSelections(prev => prev.map(s => {
       if (s.id === id) {
-        const calculatedGapFrames = calculateGapFramesFromRange(start, end);
+        const calculatedGapFrames = resolveGapFrameCount(start, end);
         return { ...s, start, end, gapFrameCount: calculatedGapFrames };
       }
       return s;
     }));
-  }, [calculateGapFramesFromRange]);
+  }, [resolveGapFrameCount]);
 
   // Add new selection - 10% after last, or 10% before first if no space.
   const handleAddSelection = useCallback(() => {

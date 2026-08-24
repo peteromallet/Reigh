@@ -350,7 +350,11 @@ export function useImageEditOrchestrator({
       imageContainerRef,
       handleExitInpaintMode,
       editMode: persistedEditMode,
-      setEditMode: setPersistedEditMode,
+      setEditMode: (mode) => {
+        if (mode) {
+          setPersistedEditMode(mode);
+        }
+      },
       loraMode,
       setLoraMode,
       customLoraUrl,
