@@ -1,15 +1,31 @@
 import { defineConfig, devices } from '@playwright/test';
 import { DEFAULT_DEV_SUPABASE_URL } from './src/shared/dev/devSession.ts';
+import {
+  allocateIsolatedPort,
+  readCanonicalBaseUrl,
+  readPublishedPort,
+  resolveCanonicalBaseUrl,
+} from './tests/e2e/timeline/isolated-port.mjs';
 
 // Dedicated defaults keep this opt-in gate isolated from the ordinary timeline
 // suite and from hand-started acceptance servers.
-const port = Number(process.env.PLAYWRIGHT_PORT ?? 2244);
-const bridgePort = Number(process.env.ASTRID_BRIDGE_PORT ?? 17344);
-const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${port}`;
+const allocatedPorts = new Set<number>();
+const inheritedRunPorts = process.env.REIGH_EXTENSION_PORTS_ALLOCATED === '1';
+const configuredBaseURL = readCanonicalBaseUrl();
+if (configuredBaseURL && !process.env.PLAYWRIGHT_PORT) process.env.PLAYWRIGHT_PORT = String(configuredBaseURL.port);
+const port = inheritedRunPorts
+  ? readPublishedPort('PLAYWRIGHT_PORT')
+  : allocateIsolatedPort('PLAYWRIGHT_PORT', allocatedPorts);
+const bridgePort = inheritedRunPorts
+  ? readPublishedPort('ASTRID_BRIDGE_PORT')
+  : allocateIsolatedPort('ASTRID_BRIDGE_PORT', allocatedPorts);
+const baseURL = resolveCanonicalBaseUrl(port);
 const includeEdge = process.env.PLAYWRIGHT_INCLUDE_EDGE === '1';
 
-process.env.BASE_URL ??= baseURL;
-process.env.ASTRID_BRIDGE_PORT ??= String(bridgePort);
+process.env.BASE_URL = baseURL;
+process.env.PLAYWRIGHT_BASE_URL = baseURL;
+process.env.ASTRID_BRIDGE_PORT = String(bridgePort);
+process.env.REIGH_EXTENSION_PORTS_ALLOCATED = '1';
 
 /**
  * Bounded, opt-in release gate for extension behavior in installed Chrome and
@@ -57,7 +73,7 @@ export default defineConfig({
       url: `http://127.0.0.1:${bridgePort}/health`,
       reuseExistingServer: false,
       timeout: 30_000,
-      env: { ASTRID_BRIDGE_PORT: String(bridgePort) },
+      env: { ASTRID_BRIDGE_PORT: String(bridgePort), BASE_URL: baseURL },
     },
   ],
   projects: [

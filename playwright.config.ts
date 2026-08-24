@@ -1,13 +1,19 @@
 import { defineConfig, devices } from '@playwright/test';
 import { randomBytes } from 'node:crypto';
 import { DEFAULT_DEV_SUPABASE_URL } from './src/shared/dev/devSession.ts';
-import { allocateIsolatedPort } from './tests/e2e/timeline/isolated-port.mjs';
+import {
+  allocateIsolatedPort,
+  readCanonicalBaseUrl,
+  resolveCanonicalBaseUrl,
+} from './tests/e2e/timeline/isolated-port.mjs';
 
 const allocatedPorts = new Set<number>();
 // Timeline gates are intentionally isolated even when invoked from a shell
 // that has no CI marker.  Explicit ports are validated by the allocator;
 // omitted ports are fresh per run.
 const inheritedRunPorts = process.env.REIGH_TIMELINE_PORTS_ALLOCATED === '1';
+const configuredBaseURL = readCanonicalBaseUrl();
+if (configuredBaseURL && !process.env.PLAYWRIGHT_PORT) process.env.PLAYWRIGHT_PORT = String(configuredBaseURL.port);
 const readInheritedPort = (envName: string): number => {
   const value = Number(process.env[envName]);
   if (!Number.isInteger(value) || value < 1 || value > 65_535) {
@@ -18,7 +24,9 @@ const readInheritedPort = (envName: string): number => {
 const port = inheritedRunPorts
   ? readInheritedPort('PLAYWRIGHT_PORT')
   : allocateIsolatedPort('PLAYWRIGHT_PORT', allocatedPorts);
-const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${port}`;
+const baseURL = resolveCanonicalBaseUrl(port);
+process.env.BASE_URL = baseURL;
+process.env.PLAYWRIGHT_BASE_URL = baseURL;
 // Concurrent acceptance lanes must not clean or overwrite each other's traces.
 const outputDir = process.env.PLAYWRIGHT_OUTPUT_DIR ?? 'test-results';
 

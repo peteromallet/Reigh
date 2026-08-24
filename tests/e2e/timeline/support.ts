@@ -21,11 +21,16 @@
  * `ASTRID_BRIDGE_PORT` is likewise run-isolated.
  */
 import type { BrowserContext, Page } from '@playwright/test';
+import { isDeepStrictEqual } from 'node:util';
 import {
   CLIP_BODY_SELECTOR,
   EDIT_AREA_SELECTOR,
   SELECTED_CLIP_SELECTOR,
 } from '../../../src/tools/video-editor/lib/timeline-dom.ts';
+import {
+  readCanonicalBaseUrl,
+  resolveCanonicalBaseUrl,
+} from './isolated-port.mjs';
 
 export {
   CLIP_BODY_SELECTOR,
@@ -40,11 +45,12 @@ if (editorPort != null && (!Number.isInteger(editorPort) || editorPort < 1 || ed
 if (!process.env.BASE_URL && !process.env.PLAYWRIGHT_BASE_URL && editorPort == null) {
   throw new Error('PLAYWRIGHT_PORT or BASE_URL must be published by the Playwright config; refusing an implicit shared editor port');
 }
-export const BASE_URL = (
-  process.env.BASE_URL
-  ?? process.env.PLAYWRIGHT_BASE_URL
-  ?? `http://127.0.0.1:${editorPort}`
-).replace(/\/+$/, '');
+const configuredBaseURL = readCanonicalBaseUrl();
+if (configuredBaseURL && editorPort != null && configuredBaseURL.port !== editorPort) {
+  throw new Error(`Configured base URL port ${configuredBaseURL.port} does not match PLAYWRIGHT_PORT=${editorPort}`);
+}
+export const BASE_URL = configuredBaseURL?.url
+  ?? resolveCanonicalBaseUrl(editorPort as number);
 const bridgePortValue = process.env.ASTRID_BRIDGE_PORT;
 if (!bridgePortValue) {
   throw new Error('ASTRID_BRIDGE_PORT was not published by playwright.config.ts; refusing an implicit shared bridge port');
@@ -86,42 +92,60 @@ export const BASELINE_TRACKS = [
   { id: 'A1', kind: 'audio', label: 'A1', scale: 1, fit: 'contain', opacity: 1, blendMode: 'normal' },
 ];
 
-/** Restore the bridge's clip layout and track order. Returns any failure text. */
-export async function resetBridgeBaseline(): Promise<string | null> {
-  try {
-    const healthResponse = await fetch(`${BRIDGE_ORIGIN}/health`);
-    if (!healthResponse.ok) return `[reset] bridge health returned ${healthResponse.status}`;
-    const health = await healthResponse.json();
-    if (health?.ok !== true) return '[reset] bridge health response was not {ok:true}';
-    const response = await fetch(BRIDGE_TIMELINE);
-    if (!response.ok) return `[reset] bridge fixture GET returned ${response.status}`;
-    const current = await response.json();
-    const currentAssetIds = Object.keys(current.registry?.assets ?? {}).sort();
-    const expectedAssetIds = ['demo-clip', 'demo-detail', 'demo-hero'];
-    if (currentAssetIds.join(',') !== expectedAssetIds.join(',')) {
-      return `[reset] unexpected bridge fixture assets: ${currentAssetIds.join(',')}`;
+function resetBridgeBaselineOnce(): Promise<string | null> {
+  return (async () => {
+    try {
+      const healthResponse = await fetch(`${BRIDGE_ORIGIN}/health`);
+      if (!healthResponse.ok) return `[reset] bridge health returned ${healthResponse.status}`;
+      const health = await healthResponse.json();
+      if (health?.ok !== true) return '[reset] bridge health response was not {ok:true}';
+      const response = await fetch(BRIDGE_TIMELINE);
+      if (!response.ok) return `[reset] bridge fixture GET returned ${response.status}`;
+      const current = await response.json();
+      if (!Number.isInteger(current.config_version)) {
+        return '[reset] bridge fixture GET did not include an integer config_version';
+      }
+      const currentAssetIds = Object.keys(current.registry?.assets ?? {}).sort();
+      const expectedAssetIds = ['demo-clip', 'demo-detail', 'demo-hero'];
+      if (currentAssetIds.join(',') !== expectedAssetIds.join(',')) {
+        return `[reset] unexpected bridge fixture assets: ${currentAssetIds.join(',')}`;
+      }
+      const config = {
+        ...(current.config ?? {}),
+        tracks: BASELINE_TRACKS.map((track) => ({ ...track })),
+        clips: BASELINE_CLIPS.map((clip) => ({ ...clip, ...(clip.text ? { text: { ...clip.text } } : {}) })),
+      };
+      const saveResponse = await fetch(`${BRIDGE_TIMELINE}/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config, expected_version: current.config_version }),
+      });
+      if (!saveResponse.ok) return `[reset] bridge fixture save returned ${saveResponse.status}`;
+      const saved = await saveResponse.json();
+      if (saved.config_version !== current.config_version + 1) {
+        return `[reset] bridge fixture version mismatch after save: expected ${current.config_version + 1}, got ${saved.config_version}`;
+      }
+      if (!isDeepStrictEqual(saved.config, config)) {
+        return `[reset] bridge fixture config mismatch after save: expected ${JSON.stringify(config)}, got ${JSON.stringify(saved.config)}`;
+      }
+      if (!isDeepStrictEqual(saved.registry?.assets, current.registry?.assets)) {
+        return '[reset] bridge fixture registry changed unexpectedly during baseline reset';
+      }
+      return null;
+    } catch (error) {
+      return `[reset] ${(error as Error).message}`;
     }
-    const config = {
-      ...(current.config ?? {}),
-      tracks: BASELINE_TRACKS,
-      clips: BASELINE_CLIPS,
-    };
-    const saveResponse = await fetch(`${BRIDGE_TIMELINE}/save`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ config }),
-    });
-    if (!saveResponse.ok) return `[reset] bridge fixture save returned ${saveResponse.status}`;
-    const saved = await saveResponse.json();
-    const savedTrackIds = (saved.config?.tracks ?? []).map((track: { id?: string }) => track.id).filter(Boolean).join(',');
-    const savedClipIds = (saved.config?.clips ?? []).map((clip: { id?: string }) => clip.id).filter(Boolean).join(',');
-    if (savedTrackIds !== BASELINE_TRACK_ORDER.join(',') || savedClipIds !== BASELINE_CLIPS.map((clip) => clip.id).join(',')) {
-      return `[reset] bridge fixture identity mismatch after save: tracks=${savedTrackIds}, clips=${savedClipIds}`;
-    }
-    return null;
-  } catch (error) {
-    return `[reset] ${(error as Error).message}`;
-  }
+  })();
+}
+
+// Playwright can invoke hooks from multiple projects/pages in the same worker.
+// Queue resets so two GET → CAS-save sequences cannot interleave and silently
+// restore an intermediate fixture.
+let resetTail: Promise<void> = Promise.resolve();
+export function resetBridgeBaseline(): Promise<string | null> {
+  const result = resetTail.then(resetBridgeBaselineOnce, resetBridgeBaselineOnce);
+  resetTail = result.then(() => undefined, () => undefined);
+  return result;
 }
 
 const pageIssues = new WeakMap<Page, string[]>();
