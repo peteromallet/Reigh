@@ -23,6 +23,7 @@ import { useShotGroups } from '@/tools/video-editor/hooks/useShotGroups.ts';
 import { useSwitchToFinalVideo } from '@/tools/video-editor/hooks/useSwitchToFinalVideo.ts';
 import {
   useTimelineDataSelector,
+  useTimelineChromeSelector,
   useTimelineConfigVersion,
   useTimelineOpsSelector,
 } from '@/tools/video-editor/hooks/timelineStore.ts';
@@ -51,6 +52,7 @@ function ReighTimelineEditorComponent({ onOpenSequenceCreator }: ReighTimelineEd
   const runtime = useVideoEditorRuntime();
   const isDocumentShotMode = runtime.userId === null;
   const configVersion = useTimelineConfigVersion();
+  const reloadFromServer = useTimelineChromeSelector((chrome) => chrome.reloadFromServer);
   const {
     data,
     resolvedConfig,
@@ -70,14 +72,12 @@ function ReighTimelineEditorComponent({ onOpenSequenceCreator }: ReighTimelineEd
     unpatchRegistry,
     registerAsset,
     registerGenerationAsset,
-    reloadFromServer,
   } = useTimelineOpsSelector((ops) => ({
     applyEdit: ops.applyEdit,
     patchRegistry: ops.patchRegistry,
     unpatchRegistry: ops.unpatchRegistry,
     registerAsset: ops.registerAsset,
     registerGenerationAsset: ops.registerGenerationAsset,
-    reloadFromServer: ops.reloadFromServer,
   }), shallow);
 
   const assetGenerationMap = useMemo<Record<string, string>>(() => {

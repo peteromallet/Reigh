@@ -203,7 +203,7 @@ export function SequenceCreatorPanel({
         ? summarizeValidationErrors(selectedValidation.errors)
         : 'Generate or select a sequence first.';
     }
-    if (!selectedClipId && (!selectedClipIds || selectedClipIds.length === 0)) {
+    if (!selectedClipId && (!selectedClipIds || selectedClipIds.size === 0)) {
       return 'Select a visual clip to replace.';
     }
     if (validatedDraft) {

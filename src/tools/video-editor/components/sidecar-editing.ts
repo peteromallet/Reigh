@@ -18,7 +18,7 @@ export function createSchemaDefaults(schema: SidecarWidgetSchema): Record<string
 
   return Object.entries((schema as StandardSchema).properties).reduce<Record<string, unknown>>(
     (defaults, [name, field]) => {
-      defaults[name] = field.default ?? fallbackForType(field.type);
+      defaults[name] = field.default ?? fallbackForType(field.type ?? 'string');
       return defaults;
     },
     {},

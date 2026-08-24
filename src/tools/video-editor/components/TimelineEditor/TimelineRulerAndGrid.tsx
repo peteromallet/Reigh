@@ -54,7 +54,7 @@ export function TimelineRulerAndGrid({
 }: TimelineRulerAndGridProps) {
   return (
     <>
-      {unusedTrackCount > 0 && onClearUnusedTracks && (
+      {(unusedTrackCount ?? 0) > 0 && onClearUnusedTracks && (
         <button
           type="button"
           className="absolute left-0 top-0 z-20 flex h-[30px] items-center justify-center border-b border-r border-border bg-card/90 text-[9px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"

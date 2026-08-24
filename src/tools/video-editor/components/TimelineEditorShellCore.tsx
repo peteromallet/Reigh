@@ -551,7 +551,7 @@ function TimelineEditorShellCoreComponent({
     >
       <span>This timeline changed elsewhere. Reload, or save your work as a copy.</span>
       <div className="flex items-center gap-2">
-        <Button type="button" size="sm" variant="outline" onClick={chrome.reloadFromServer}>
+        <Button type="button" size="sm" variant="outline" onClick={() => void chrome.reloadFromServer()}>
           Reload
         </Button>
         <Button type="button" size="sm" variant="outline" onClick={chrome.retrySaveAfterConflict}>

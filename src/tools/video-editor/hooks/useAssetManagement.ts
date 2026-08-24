@@ -171,12 +171,16 @@ export function useAssetManagement({
       return null;
     }
 
+    const imageUrl = getMediaUrl(generationData);
+    if (!imageUrl) {
+      return null;
+    }
     const plan = planGenerationAssetRegistration({
       generationId: generationData.generationId,
       assetId: generationData.assetId,
       variantId: generationData.variantId,
       variantType: generationData.variantType,
-      imageUrl: getMediaUrl(generationData),
+      imageUrl,
       thumbUrl: getThumbnailUrl(generationData),
       assetDurationSeconds: generationData.durationSeconds,
       metadata: generationData.metadata,

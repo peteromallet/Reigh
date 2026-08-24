@@ -170,18 +170,21 @@ export function useTimelineOps({
         patch.version !== canonicalVersion &&
         result.fullyPreviewable
       ) {
-        result.diagnostics = [
-          ...result.diagnostics,
-          {
-            severity: 'warning' as const,
-            code: 'timeline-patch/stale-base-version' as const,
-            message:
-              `Preview: patch baseVersion (${patch.version}) does not match ` +
-              `current timeline version (${canonicalVersion}). ` +
-              `The preview may not reflect the current state. Re-snapshot ` +
-              `to get an accurate preview.`,
-          },
-        ];
+        return {
+          ...result,
+          diagnostics: [
+            ...result.diagnostics,
+            {
+              severity: 'warning' as const,
+              code: 'timeline-patch/stale-base-version' as const,
+              message:
+                `Preview: patch baseVersion (${patch.version}) does not match ` +
+                `current timeline version (${canonicalVersion}). ` +
+                `The preview may not reflect the current state. Re-snapshot ` +
+                `to get an accurate preview.`,
+            },
+          ],
+        };
       }
 
       return result;
