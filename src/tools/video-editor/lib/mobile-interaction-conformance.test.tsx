@@ -239,6 +239,13 @@ vi.mock('@/shared/state/selectionStore.ts', () => ({
   userSelectTimelineClip: vi.fn(),
   userSelectTimelineClips: vi.fn(),
   userClearAllSelection: vi.fn(),
+  useTimelineSelectionStore: () => ({
+    selectedClipId: null,
+    selectedTrackId: null,
+    selectedClipIds: new Set<string>(),
+    primaryClipId: null,
+    additiveSelection: false,
+  }),
 }));
 
 // Imported after the mocks, as the sibling suites do.
