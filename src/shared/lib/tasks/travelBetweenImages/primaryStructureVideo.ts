@@ -1,4 +1,4 @@
-import type { VideoMetadata } from '@/shared/lib/media/videoUploader';
+import type { AuthoredVideoMetadata } from '@/shared/lib/media/videoMetadata';
 import { resolveStructureGuidanceControls } from '@/shared/lib/tasks/structureGuidance';
 import {
   resolveTravelGuidanceControls,
@@ -13,7 +13,7 @@ import type { StructureVideoConfigWithLegacyGuidance, StructureVideoConfigWithMe
 
 export interface PrimaryStructureVideo {
   path: string | null;
-  metadata: VideoMetadata | null;
+  metadata: AuthoredVideoMetadata | null;
   treatment: 'adjust' | 'clip';
   motionStrength: number;
   structureType: TravelGuidanceMode;

@@ -1,11 +1,12 @@
 import type { StructureVideoConfig } from './taskTypes';
+import type { AuthoredVideoMetadata } from '@/shared/lib/media/videoMetadata';
 
 /**
  * Editor-facing structure-video model with local metadata and UI-only control
  * metadata. Guidance controls are modeled separately through canonical `travel_guidance`.
  */
 export interface StructureVideoConfigWithMetadata extends StructureVideoConfig {
-  metadata?: import('@/shared/lib/media/videoMetadata').VideoMetadata | null;
+  metadata?: AuthoredVideoMetadata | null;
   resource_id?: string | null;
 }
 

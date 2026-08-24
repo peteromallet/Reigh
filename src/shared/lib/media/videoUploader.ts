@@ -12,8 +12,12 @@ import {
   attachUploadProgressListener,
   createUploadXhrLifecycle,
 } from './uploadXhrLifecycle';
-export type { VideoMetadata } from './videoMetadata';
-export { extractVideoMetadata, extractVideoMetadataFromUrl } from './videoMetadata';
+export type { AuthoredVideoMetadata, VideoMetadata } from './videoMetadata';
+export {
+  extractVideoMetadata,
+  extractVideoMetadataFromUrl,
+  parseAuthoredVideoMetadata,
+} from './videoMetadata';
 
 const DEFAULT_VIDEO_TIMEOUT_MS = 300000;
 const STALL_TIMEOUT_MS = 30000;

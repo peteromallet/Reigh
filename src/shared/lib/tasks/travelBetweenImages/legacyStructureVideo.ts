@@ -1,4 +1,7 @@
-import type { VideoMetadata } from '@/shared/lib/media/videoMetadata';
+import {
+  parseAuthoredVideoMetadata,
+  type AuthoredVideoMetadata,
+} from '@/shared/lib/media/videoMetadata';
 import { getDeprecationPolicy } from '@/shared/lib/governance/deprecationPolicy';
 import { signalPastRemovalTargetUsage } from '@/shared/lib/governance/deprecationEnforcement';
 import type { StructureVideoConfig } from './taskTypes';
@@ -48,7 +51,7 @@ export type LegacyStructureVideoField = (typeof LEGACY_TRAVEL_STRUCTURE_VIDEO_FI
 type StructureVideoType = 'uni3c' | 'flow' | 'canny' | 'depth';
 
 interface MigratedLegacyStructureVideo extends LegacyStructureVideoConfig {
-  metadata?: VideoMetadata | null;
+  metadata?: AuthoredVideoMetadata | null;
   resource_id?: string | null;
 }
 
@@ -82,39 +85,6 @@ function parseNumber(value: unknown): number | undefined {
 
 function parseString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
-}
-
-function parseVideoMetadata(value: unknown): VideoMetadata | null {
-  const record = asRecord(value);
-  if (!record) {
-    return null;
-  }
-
-  const durationSeconds = parseNumber(record.duration_seconds);
-  const frameRate = parseNumber(record.frame_rate);
-  const totalFrames = parseNumber(record.total_frames);
-  const width = parseNumber(record.width);
-  const height = parseNumber(record.height);
-  const fileSize = parseNumber(record.file_size);
-  if (
-    durationSeconds === undefined
-    || frameRate === undefined
-    || totalFrames === undefined
-    || width === undefined
-    || height === undefined
-    || fileSize === undefined
-  ) {
-    return null;
-  }
-
-  return {
-    duration_seconds: durationSeconds,
-    frame_rate: frameRate,
-    total_frames: totalFrames,
-    width,
-    height,
-    file_size: fileSize,
-  };
 }
 
 function hasLegacyField(
@@ -254,7 +224,7 @@ export function migrateLegacyStructureVideos(
           ...(record.source_end_frame === null || record.sourceEndFrame === null || parseNumber(record.source_end_frame ?? record.sourceEndFrame) !== undefined
             ? { source_end_frame: parseNumber(record.source_end_frame ?? record.sourceEndFrame) ?? null }
             : {}),
-          metadata: parseVideoMetadata(record.metadata),
+          metadata: parseAuthoredVideoMetadata(record.metadata),
           resource_id: resourceId ?? null,
         } satisfies MigratedLegacyStructureVideo;
       })
@@ -284,7 +254,7 @@ export function migrateLegacyStructureVideos(
     ...(settings.source_end_frame === null || settings.sourceEndFrame === null || parseNumber(settings.source_end_frame ?? settings.sourceEndFrame) !== undefined
       ? { source_end_frame: parseNumber(settings.source_end_frame ?? settings.sourceEndFrame) ?? null }
       : {}),
-    metadata: parseVideoMetadata(settings.metadata),
+    metadata: parseAuthoredVideoMetadata(settings.metadata),
     resource_id: resourceId ?? null,
   }];
 }

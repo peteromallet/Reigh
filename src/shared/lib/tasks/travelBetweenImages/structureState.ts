@@ -6,7 +6,7 @@ import type {
   StructureVideoConfigWithMetadata,
 } from './uiTypes';
 import { migrateLegacyStructureVideos } from './legacyStructureVideo';
-import type { VideoMetadata } from '@/shared/lib/media/videoMetadata';
+import { parseAuthoredVideoMetadata } from '@/shared/lib/media/videoMetadata';
 
 type StructureType = 'uni3c' | 'flow' | 'canny' | 'depth';
 
@@ -39,39 +39,6 @@ function parseNumber(value: unknown): number | undefined {
 
 function parseTreatment(value: unknown): 'adjust' | 'clip' | undefined {
   return value === 'adjust' || value === 'clip' ? value : undefined;
-}
-
-function parseVideoMetadata(value: unknown): VideoMetadata | null {
-  const record = asRecord(value);
-  if (!record) {
-    return null;
-  }
-
-  const durationSeconds = parseNumber(record.duration_seconds);
-  const frameRate = parseNumber(record.frame_rate);
-  const totalFrames = parseNumber(record.total_frames);
-  const width = parseNumber(record.width);
-  const height = parseNumber(record.height);
-  const fileSize = parseNumber(record.file_size);
-  if (
-    durationSeconds === undefined
-    || frameRate === undefined
-    || totalFrames === undefined
-    || width === undefined
-    || height === undefined
-    || fileSize === undefined
-  ) {
-    return null;
-  }
-
-  return {
-    duration_seconds: durationSeconds,
-    frame_rate: frameRate,
-    total_frames: totalFrames,
-    width,
-    height,
-    file_size: fileSize,
-  };
 }
 
 function buildMigrationInput(value: Record<string, unknown>): Record<string, unknown> {
@@ -163,7 +130,7 @@ export function resolveTravelStructureState(
       const rawMatch = rawStructureVideos.find((raw) => raw.path === video.path);
       return {
         ...video,
-        metadata: parseVideoMetadata(rawMatch?.metadata),
+        metadata: parseAuthoredVideoMetadata(rawMatch?.metadata),
         resource_id: parseString(rawMatch?.resource_id) ?? null,
       };
     });

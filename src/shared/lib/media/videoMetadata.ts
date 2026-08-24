@@ -10,6 +10,47 @@ export interface VideoMetadata {
 }
 
 /**
+ * Metadata authored in a project sidecar may be incomplete. Keep that shape
+ * distinct from metadata extracted from a playable video, which is complete.
+ */
+export type AuthoredVideoMetadata = Partial<VideoMetadata>;
+
+const AUTHORED_METADATA_FIELDS = [
+  'duration_seconds',
+  'frame_rate',
+  'total_frames',
+  'width',
+  'height',
+  'file_size',
+] as const satisfies readonly (keyof VideoMetadata)[];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * Parses a project-authored metadata sidecar without requiring every field.
+ * Unknown or non-finite fields are ignored; a non-object or empty sidecar is
+ * treated as absent. This intentionally does not weaken VideoMetadata's
+ * complete extraction contract above.
+ */
+export function parseAuthoredVideoMetadata(value: unknown): AuthoredVideoMetadata | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const metadata: AuthoredVideoMetadata = {};
+  for (const field of AUTHORED_METADATA_FIELDS) {
+    const fieldValue = value[field];
+    if (typeof fieldValue === 'number' && Number.isFinite(fieldValue)) {
+      metadata[field] = fieldValue;
+    }
+  }
+
+  return Object.keys(metadata).length > 0 ? metadata : null;
+}
+
+/**
  * Extracts video metadata using HTML5 Video API
  */
 export const extractVideoMetadata = (file: File): Promise<VideoMetadata> => {

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   extractVideoMetadata,
   extractVideoMetadataFromUrl,
+  parseAuthoredVideoMetadata,
 } from '../videoMetadata';
 
 const { mockNormalizeAndPresentError } = vi.hoisted(() => ({
@@ -61,6 +62,24 @@ describe('videoMetadata', () => {
   afterEach(() => {
     document.createElement = originalCreateElement;
     vi.restoreAllMocks();
+  });
+
+  it('preserves valid partial fields from authored metadata sidecars', () => {
+    expect(parseAuthoredVideoMetadata({
+      total_frames: 90,
+      duration_seconds: 3,
+      unknown: 'ignored',
+      width: Number.NaN,
+    })).toEqual({
+      total_frames: 90,
+      duration_seconds: 3,
+    });
+  });
+
+  it('rejects non-object and empty authored metadata sidecars', () => {
+    expect(parseAuthoredVideoMetadata(null)).toBeNull();
+    expect(parseAuthoredVideoMetadata([])).toBeNull();
+    expect(parseAuthoredVideoMetadata({ unknown: 1 })).toBeNull();
   });
 
   it('extracts metadata from a File-backed video element', async () => {
