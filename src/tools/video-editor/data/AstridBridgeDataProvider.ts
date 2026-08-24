@@ -13,10 +13,7 @@ import {
 import {
   BRIDGE_TIMELINE_NOT_FOUND_CODE,
   BRIDGE_VERSION_CONFLICT_CODE,
-  bridgeAssetRegistrySchema,
-  bridgeTimelineConfigSchema,
   bridgeTimelinePayloadSchema,
-  parseBridgePayload,
 } from '@/tools/video-editor/data/bridgeContract.ts';
 import { AstridBridgeTransport, BridgeRouteError } from '@/integrations/astrid/transport.ts';
 import type {
@@ -40,10 +37,9 @@ import { withDefaultTimelineOutput } from '@/tools/video-editor/lib/defaults.ts'
 
 /**
  * The provider's internal view of a timeline payload. Deliberately looser than
- * the wire contract in `bridgeContract.ts`: locally synthesized payloads (the
- * File-System-Access sub-mode, cache patches) fill these fields with already
- * normalized values. Everything arriving from the bridge goes through
- * `parseBridgePayload` first.
+ * the wire contract in `bridgeContract.ts`: cache patches fill these fields
+ * with already normalized values. Everything arriving from the bridge is
+ * validated by the shared transport before it reaches this type.
  */
 type BridgeTimelinePayload = {
   timeline_id?: unknown;
@@ -68,11 +64,8 @@ const DEFAULT_API_BASE_URL = '/api/astrid';
 const DEFAULT_BRIDGE_PORT = '17333';
 const LOCAL_DROP_DIRECTORY_NAME = 'local-drops';
 const LOCAL_PROJECT_ROOT_HANDLE_PREFIX = 'astrid-project-root';
-const LOCAL_TIMELINES_DIRECTORY_NAME = 'timelines';
 const LOCAL_ASSETS_DIRECTORY_NAME = 'assets';
 const LOCAL_INCOMING_DIRECTORY_NAME = '.incoming';
-const ASSEMBLY_JSON_FILENAME = 'assembly.json';
-const REGISTRY_JSON_FILENAME = 'registry.json';
 
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
@@ -122,10 +115,9 @@ type FileSystemFileHandleLike = {
 
 type ShowDirectoryPicker = () => Promise<FileSystemDirectoryHandleLike>;
 
-type LocalTimelineFiles = {
+type LocalAssetHandles = {
   projectRootHandle: FileSystemDirectoryHandleLike;
   sourcesHandle: FileSystemDirectoryHandleLike;
-  timelineHandle: FileSystemDirectoryHandleLike;
 };
 
 export type AssetMaterializationState =
@@ -259,7 +251,7 @@ export class AstridBridgeDataProvider implements DataProvider {
   private fileToAssetKey = new Map<string, string>();
   private localObjectUrls = new Map<string, string>();
   private materializationStates = new Map<string, AssetMaterializationState>();
-  private localTimelineFiles: LocalTimelineFiles | null = null;
+  private localAssetHandles: LocalAssetHandles | null = null;
   private readonly registeredParsers: readonly RegisteredParser[] | undefined;
   /** The one shared bridge fetch pipeline (timeout + envelope parsing). */
   private readonly transport: AstridBridgeTransport;
@@ -325,7 +317,7 @@ export class AstridBridgeDataProvider implements DataProvider {
       return candidate;
     }
 
-    if (this.localTimelineFiles !== null) {
+    if (this.localAssetHandles !== null) {
       const resolved = await this.resolveLocalAssetUrl(candidate);
       return resolved;
     }
@@ -340,7 +332,7 @@ export class AstridBridgeDataProvider implements DataProvider {
 
   async onResolve(request: AssetResolveRequest): Promise<string> {
     const assetKey = this.getPreferredAssetKey(request);
-    if (this.localTimelineFiles !== null) {
+    if (this.localAssetHandles !== null) {
       const file = request.entry?.file ?? (assetKey ? this.assetKeyToFile.get(assetKey) : undefined) ?? request.file;
       if (file && !isHttpUrl(file)) {
         const resolved = await this.resolveLocalAssetUrl(file);
@@ -379,18 +371,11 @@ export class AstridBridgeDataProvider implements DataProvider {
     const nextRegistry = registry ?? normalizeRegistry(existingPayload.registry);
     const timelineRef = this.getTimelineRequestRef(timelineId);
 
-    if (this.localTimelineFiles !== null) {
-      const materializedRegistry = await this.materializeGenerationAssets(timelineId, nextRegistry);
-      await this.writeLocalJson(this.localTimelineFiles.timelineHandle, REGISTRY_JSON_FILENAME, materializedRegistry);
-      await this.writeLocalJson(this.localTimelineFiles.timelineHandle, ASSEMBLY_JSON_FILENAME, config);
-      this.cachePayload({
-        ...existingPayload,
-        config,
-        registry: materializedRegistry,
-        config_version: normalizeConfigVersion(existingPayload.config_version) + 1,
-      }, timelineId);
-      return normalizeConfigVersion(this.cachedPayload?.config_version);
-    }
+    // Browser File System Access is an asset-byte plane only. Materialization
+    // may write sources/assets and .incoming, but assembly/registry documents
+    // always travel through this versioned bridge save (one writer, one file).
+    await this.ensureLocalAssetHandles();
+    const materializedRegistry = await this.materializeGenerationAssets(timelineId, nextRegistry);
 
     let savePayload: BridgeTimelinePayload;
     try {
@@ -398,7 +383,7 @@ export class AstridBridgeDataProvider implements DataProvider {
         `/projects/${encodeURIComponent(this.projectSlug)}/timelines/${encodeURIComponent(timelineRef)}/save`,
         {
           method: 'POST',
-          body: { config, registry: nextRegistry, expected_version: expectedVersion },
+          body: { config, registry: materializedRegistry, expected_version: expectedVersion },
         },
         bridgeTimelinePayloadSchema,
         'save timeline',
@@ -496,9 +481,9 @@ export class AstridBridgeDataProvider implements DataProvider {
   }
 
   /**
-   * @param options.fresh bypass `cachedPayload` and go back to the bridge (or to
-   *   disk, in the local-project sub-mode). Genuine loads — `loadTimeline` /
-   *   `loadAssetRegistry`, and therefore the shell's 30s poll — must pass this:
+   * @param options.fresh bypass `cachedPayload` and go back to the bridge.
+   *   Genuine loads — `loadTimeline` / `loadAssetRegistry`, and therefore the
+   *   shell's 30s poll — must pass this:
    *   an unconditional cache made the poll a no-op, so cross-tab sync and
    *   bridge-restart detection never happened. The cache stays for the
    *   *incidental* reads (`saveTimeline`'s registry default, `registerAsset`'s
@@ -539,10 +524,10 @@ export class AstridBridgeDataProvider implements DataProvider {
   }
 
   private async fetchTimelinePayloadUncached(timelineId: string): Promise<BridgeTimelinePayload> {
-    const localPayload = await this.fetchLocalTimelinePayload(timelineId);
-    if (localPayload !== null) {
-      return this.cachePayload(localPayload, timelineId).payload;
-    }
+    // Prime persisted FSA handles only for local asset bytes. A stale
+    // assembly.json/registry.json beside those bytes must never shadow the
+    // bridge document or bypass its CAS/event history.
+    await this.ensureLocalAssetHandles();
 
     let response: BridgeTimelinePayload;
     try {
@@ -555,7 +540,11 @@ export class AstridBridgeDataProvider implements DataProvider {
     } catch (error) {
       throw this.toBridgeError(error, timelineId, 'load timeline');
     }
-    return this.cachePayload(response, timelineId).payload;
+    const materializedRegistry = await this.materializeGenerationAssets(
+      timelineId,
+      normalizeRegistry(response.registry),
+    );
+    return this.cachePayload({ ...response, registry: materializedRegistry }, timelineId).payload;
   }
 
   /**
@@ -679,58 +668,6 @@ export class AstridBridgeDataProvider implements DataProvider {
 
 
 
-  private updateCachedRegistry(timelineId: string, registry: AssetRegistry): void {
-    if (this.cachedPayload === null) {
-      throw new Error(`Astrid bridge registry update missing cached payload for ${timelineId}`);
-    }
-
-    this.cachePayload({
-      ...this.cachedPayload,
-      registry,
-    }, timelineId);
-  }
-
-  private async fetchLocalTimelinePayload(timelineId: string): Promise<BridgeTimelinePayload | null> {
-    const localFiles = await this.getLocalTimelineFiles(timelineId, { prompt: false });
-    if (localFiles === null) {
-      return null;
-    }
-
-    this.localTimelineFiles = localFiles;
-    const config = parseBridgePayload(
-      bridgeTimelineConfigSchema,
-      await this.readLocalJson(localFiles.timelineHandle, ASSEMBLY_JSON_FILENAME),
-      `local ${ASSEMBLY_JSON_FILENAME}`,
-    );
-    const registryOnDisk = await this.readOptionalLocalJson(localFiles.timelineHandle, REGISTRY_JSON_FILENAME);
-    const normalizedRegistry = normalizeRegistry(
-      registryOnDisk === null
-        ? { assets: {} }
-        : parseBridgePayload(bridgeAssetRegistrySchema, registryOnDisk, `local ${REGISTRY_JSON_FILENAME}`),
-    );
-    const beforeMaterialization = JSON.stringify(normalizedRegistry);
-    const materializedRegistry = await this.materializeGenerationAssets(timelineId, normalizedRegistry);
-    if (JSON.stringify(materializedRegistry) !== beforeMaterialization) {
-      await this.writeLocalJson(localFiles.timelineHandle, REGISTRY_JSON_FILENAME, materializedRegistry);
-    }
-
-    return {
-      timeline_id: timelineId,
-      timeline_ulid: timelineId,
-      slug: this.selectedTimelineRef,
-      name: this.selectedTimelineRef,
-      config,
-      registry: materializedRegistry,
-      // Disk has no version counter, so it is synthesized here. Now that loads
-      // are `fresh`, re-reading must not walk the version backwards: keep the
-      // one this provider already handed out (saves bump it) instead of
-      // resetting to 1, or every poll would look "stale" to the shell.
-      config_version: this.cachedPayload === null
-        ? 1
-        : normalizeConfigVersion(this.cachedPayload.config_version),
-    };
-  }
-
   private rebuildAssetMaps(registry: AssetRegistry): void {
     this.assetKeyToFile.clear();
     this.fileToAssetKey.clear();
@@ -745,8 +682,25 @@ export class AstridBridgeDataProvider implements DataProvider {
     }
   }
 
+  private async ensureLocalAssetHandles(): Promise<void> {
+    if (this.localAssetHandles !== null) {
+      return;
+    }
+    const projectRootHandle = await this.getProjectRootHandleOptional({ prompt: false });
+    if (projectRootHandle === null) {
+      return;
+    }
+    try {
+      const sourcesHandle = await this.requireProjectSourcesDirectory(projectRootHandle);
+      this.localAssetHandles = { projectRootHandle, sourcesHandle };
+    } catch {
+      // A stale persisted handle is non-authoritative. Leave the asset plane
+      // disconnected and continue through the bridge document plane.
+    }
+  }
+
   private async resolveLocalAssetUrl(file: string): Promise<string> {
-    if (this.localTimelineFiles === null) {
+    if (this.localAssetHandles === null) {
       return file;
     }
 
@@ -767,7 +721,7 @@ export class AstridBridgeDataProvider implements DataProvider {
   }
 
   private async resolveLocalAssetFileHandle(file: string): Promise<FileSystemFileHandleLike | null> {
-    if (this.localTimelineFiles === null) {
+    if (this.localAssetHandles === null) {
       return null;
     }
 
@@ -780,7 +734,7 @@ export class AstridBridgeDataProvider implements DataProvider {
       return null;
     }
 
-    let directoryHandle = this.localTimelineFiles.sourcesHandle;
+    let directoryHandle = this.localAssetHandles.sourcesHandle;
     for (const segment of segments.slice(0, -1)) {
       try {
         directoryHandle = await directoryHandle.getDirectoryHandle(segment);
@@ -880,63 +834,6 @@ export class AstridBridgeDataProvider implements DataProvider {
     }
   }
 
-  private async getLocalTimelineFiles(
-    timelineId: string,
-    options: { prompt: boolean },
-  ): Promise<LocalTimelineFiles | null> {
-    const projectRootHandle = await this.getProjectRootHandleOptional(options);
-    if (projectRootHandle === null) {
-      return null;
-    }
-
-    const sourcesHandle = await this.requireProjectSourcesDirectory(projectRootHandle);
-    const timelinesHandle = await projectRootHandle.getDirectoryHandle(LOCAL_TIMELINES_DIRECTORY_NAME);
-    const timelineHandle = await timelinesHandle.getDirectoryHandle(this.getTimelineRequestRef(timelineId));
-    return { projectRootHandle, sourcesHandle, timelineHandle };
-  }
-
-  private async readLocalJson(
-    directoryHandle: FileSystemDirectoryHandleLike,
-    filename: string,
-  ): Promise<unknown> {
-    const fileHandle = await directoryHandle.getFileHandle(filename);
-    if (typeof fileHandle.getFile !== 'function') {
-      throw new Error(`Local timeline file ${filename} cannot be read in this browser`);
-    }
-
-    const file = await fileHandle.getFile();
-    return JSON.parse(await file.text());
-  }
-
-  private async readOptionalLocalJson(
-    directoryHandle: FileSystemDirectoryHandleLike,
-    filename: string,
-  ): Promise<unknown | null> {
-    try {
-      return await this.readLocalJson(directoryHandle, filename);
-    } catch {
-      return null;
-    }
-  }
-
-  private async writeLocalJson(
-    directoryHandle: FileSystemDirectoryHandleLike,
-    filename: string,
-    value: unknown,
-  ): Promise<void> {
-    const tempFilename = `.${filename}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
-    const bytes = JSON.stringify(value, null, 2);
-
-    await this.writeFile(directoryHandle, tempFilename, bytes);
-    try {
-      await this.writeFile(directoryHandle, filename, bytes);
-    } catch (error) {
-      await this.removeEntryBestEffort(directoryHandle, tempFilename);
-      throw error;
-    }
-    await this.removeEntryBestEffort(directoryHandle, tempFilename);
-  }
-
   private async writeFile(
     directoryHandle: FileSystemDirectoryHandleLike,
     filename: string,
@@ -977,7 +874,7 @@ export class AstridBridgeDataProvider implements DataProvider {
     timelineId: string,
     registry: AssetRegistry,
   ): Promise<AssetRegistry> {
-    if (this.localTimelineFiles === null) {
+    if (this.localAssetHandles === null) {
       return registry;
     }
 
@@ -1022,8 +919,8 @@ export class AstridBridgeDataProvider implements DataProvider {
     | { ok: true; entry: AssetRegistryEntry }
     | { ok: false; diagnostic: AssetMaterializationDiagnostic }
   > {
-    if (this.localTimelineFiles === null || !entry.generationId) {
-      throw new Error('Generation materialization requires local timeline files and a generationId');
+    if (this.localAssetHandles === null || !entry.generationId) {
+      throw new Error('Generation materialization requires local asset handles and a generationId');
     }
 
     const resolved = await resolveGenerationAsset({
@@ -1085,7 +982,7 @@ export class AstridBridgeDataProvider implements DataProvider {
       };
     }
 
-    const assetsHandle = await this.localTimelineFiles.sourcesHandle.getDirectoryHandle(LOCAL_ASSETS_DIRECTORY_NAME, { create: true });
+    const assetsHandle = await this.localAssetHandles.sourcesHandle.getDirectoryHandle(LOCAL_ASSETS_DIRECTORY_NAME, { create: true });
     const incomingHandle = await assetsHandle.getDirectoryHandle(LOCAL_INCOMING_DIRECTORY_NAME, { create: true });
     const nonce = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const stageHandle = await incomingHandle.getDirectoryHandle(nonce, { create: true });
