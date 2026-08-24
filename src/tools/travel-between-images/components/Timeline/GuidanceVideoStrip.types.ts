@@ -1,8 +1,8 @@
-import type { VideoMetadata } from '@/shared/lib/media/videoUploader';
+import type { AuthoredVideoMetadata, VideoMetadata } from '@/shared/lib/media/videoUploader';
 
 export interface GuidanceVideoStripProps {
   videoUrl: string;
-  videoMetadata: VideoMetadata | null;
+  videoMetadata: AuthoredVideoMetadata | null;
   treatment: 'adjust' | 'clip';
   onTreatmentChange: (treatment: 'adjust' | 'clip') => void;
   onRemove: () => void;

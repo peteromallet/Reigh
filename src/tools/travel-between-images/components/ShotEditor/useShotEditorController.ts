@@ -478,6 +478,7 @@ export function useShotEditorController({
     isSteerableMotionEnqueuing,
     steerableMotionJustQueued,
     isGenerationDisabled,
+    enhancementProgress,
   } = useGenerationController(generationControllerInput);
 
   const applySettingsFromTask = useApplySettingsHandler({
@@ -616,6 +617,7 @@ export function useShotEditorController({
         handleBatchVideoPromptChangeWithClear,
         handleStepsChange,
         clearAllEnhancedPrompts,
+        enhancementProgress,
       },
       imageManagement: {
         handleReorderImagesInShot,

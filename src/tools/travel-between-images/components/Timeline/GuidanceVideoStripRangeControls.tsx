@@ -37,7 +37,8 @@ export const GuidanceVideoStripRangeControls: React.FC<GuidanceVideoStripRangeCo
 
         <Select
           value={treatment}
-          onValueChange={(newTreatment: 'adjust' | 'clip') => {
+          onValueChange={(newTreatment) => {
+            if (newTreatment !== 'adjust' && newTreatment !== 'clip') return;
             if (newTreatment === 'clip' && onRangeChange) {
               const currentDuration = displayOutputEnd - displayOutputStart;
               if (effectiveMetadataTotalFrames > 0 && currentDuration > effectiveMetadataTotalFrames) {

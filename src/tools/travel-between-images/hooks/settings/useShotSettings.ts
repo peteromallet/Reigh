@@ -151,7 +151,7 @@ export const useShotSettings = (
       || hasShotSettings
       || inheritedSettings
       || !settings
-      || settings.loras.length > 0
+      || (settings.loras ?? []).length > 0
       || seededLastEditedLoraShotIdRef.current === shotId
     ) {
       return;

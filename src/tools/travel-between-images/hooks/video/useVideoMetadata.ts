@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { VideoMetadata, extractVideoMetadataFromUrl } from '@/shared/lib/media/videoUploader';
+import { VideoMetadata, extractVideoMetadataFromUrl, type AuthoredVideoMetadata } from '@/shared/lib/media/videoUploader';
 import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
 
 interface UseVideoMetadataOptions {
@@ -22,7 +22,7 @@ interface UseVideoMetadataOptions {
  */
 export function useVideoMetadata(
   videoUrl: string,
-  providedMetadata: VideoMetadata | null,
+  providedMetadata: AuthoredVideoMetadata | null,
   options: UseVideoMetadataOptions = {}
 ) {
   const { onExtracted } = options;
@@ -31,11 +31,11 @@ export function useVideoMetadata(
   const [isExtracting, setIsExtracting] = useState(false);
 
   // Use provided metadata or extracted metadata
-  const metadata = providedMetadata || extractedMetadata;
+  const metadata = isCompleteVideoMetadata(providedMetadata) ? providedMetadata : extractedMetadata;
 
   // Extract metadata from URL if not provided
   useEffect(() => {
-    if (!providedMetadata && !isExtracting && !extractedMetadata) {
+    if (!isCompleteVideoMetadata(providedMetadata) && !isExtracting && !extractedMetadata) {
       let cancelled = false;
       setIsExtracting(true);
 
@@ -61,4 +61,14 @@ export function useVideoMetadata(
   }, [videoUrl, providedMetadata, isExtracting, extractedMetadata, onExtracted]);
 
   return { metadata, isExtracting };
+}
+
+export function isCompleteVideoMetadata(metadata: AuthoredVideoMetadata | null): metadata is VideoMetadata {
+  return metadata !== null &&
+    Number.isFinite(metadata.duration_seconds) &&
+    Number.isFinite(metadata.frame_rate) &&
+    Number.isFinite(metadata.total_frames) &&
+    Number.isFinite(metadata.width) &&
+    Number.isFinite(metadata.height) &&
+    Number.isFinite(metadata.file_size);
 }

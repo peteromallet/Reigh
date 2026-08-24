@@ -6,14 +6,14 @@ import { Slider } from '@/shared/components/ui/slider';
 import { Video, X, Images } from 'lucide-react';
 import { ResourceBrowserModalBase } from '@/features/resources/components/ResourceBrowserModalBase';
 import { useBatchGuidanceVideoController } from './hooks/useBatchGuidanceVideoController';
-import type { VideoMetadata } from '@/shared/lib/media/videoUploader';
+import type { AuthoredVideoMetadata, VideoMetadata } from '@/shared/lib/media/videoUploader';
 import type { TravelGuidanceMode } from '@/shared/lib/tasks/travelGuidance';
 
 interface BatchGuidanceVideoProps {
   shotId: string;
   projectId: string;
   videoUrl: string | null;
-  videoMetadata: VideoMetadata | null;
+  videoMetadata: AuthoredVideoMetadata | null;
   treatment: 'adjust' | 'clip';
   motionStrength: number;
   structureType?: TravelGuidanceMode;
@@ -207,7 +207,13 @@ export const BatchGuidanceVideo: React.FC<BatchGuidanceVideoProps> = ({
               <Label className="text-sm">How would you like to cut the guidance video to match the timeline?</Label>
               <div className="flex flex-col md:flex-row md:items-center gap-3">
                 <div className="flex-shrink-0 w-full md:w-[200px]">
-                  <Select value={treatment} onValueChange={onTreatmentChange} disabled={readOnly}>
+                  <Select
+                    value={treatment}
+                    onValueChange={(value) => {
+                      if (value === 'adjust' || value === 'clip') onTreatmentChange(value);
+                    }}
+                    disabled={readOnly}
+                  >
                     <SelectTrigger variant="retro" size="sm" className="h-9 w-full">
                       <SelectValue>
                         {treatment === 'adjust'

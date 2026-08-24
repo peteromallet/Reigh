@@ -347,7 +347,7 @@ function ModalShotImagesEditor({ shotId, projectId, images, batchVideoFrames, pr
       generationMode,
       onGenerationModeChange: setGenerationMode as (mode: 'batch' | 'timeline' | 'by-pair') => void,
       columns: 4 as const,
-      skeleton: <ImageManagerSkeleton />,
+      skeleton: <ImageManagerSkeleton isMobile={false} />,
       projectAspectRatio,
     },
     imageState: {

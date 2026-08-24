@@ -3,7 +3,7 @@ import React from 'react';
 interface GuidanceVideoUploaderProps {
   shotId: string;
   projectId: string;
-  onVideoUploaded: (videoUrl: string | null, metadata: import('@/shared/lib/videoUploader').VideoMetadata | null) => void;
+  onVideoUploaded: (videoUrl: string | null, metadata: import('@/shared/lib/media/videoUploader').VideoMetadata | null) => void;
   currentVideoUrl: string | null;
   compact?: boolean;
   zoomLevel: number;

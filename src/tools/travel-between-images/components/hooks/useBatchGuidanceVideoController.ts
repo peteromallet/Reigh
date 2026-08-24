@@ -1,15 +1,16 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { toast } from '@/shared/components/ui/runtime/sonner';
 import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
-import { uploadVideoToStorage, extractVideoMetadata, type VideoMetadata } from '@/shared/lib/media/videoUploader';
+import { uploadVideoToStorage, extractVideoMetadata, type AuthoredVideoMetadata, type VideoMetadata } from '@/shared/lib/media/videoUploader';
 import { useCreateResource, type Resource, type StructureVideoMetadata } from '@/features/resources/hooks/useResources';
 import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
 import { useUserUIState } from '@/shared/hooks/useUserUIState';
+import { isCompleteVideoMetadata } from '../../hooks/video/useVideoMetadata';
 
 interface UseBatchGuidanceVideoControllerParams {
   shotId: string;
   videoUrl: string | null;
-  videoMetadata: VideoMetadata | null;
+  videoMetadata: AuthoredVideoMetadata | null;
   treatment: 'adjust' | 'clip';
   timelineFramePositions: number[];
   onVideoUploaded: (videoUrl: string | null, metadata: VideoMetadata | null, resourceId?: string) => void;
@@ -74,7 +75,8 @@ export function useBatchGuidanceVideoController({
   const minFrame = timelineFramePositions.length > 0 ? Math.min(...timelineFramePositions) : 0;
   const maxFrame = timelineFramePositions.length > 0 ? Math.max(...timelineFramePositions) : 0;
   const timelineFrames = maxFrame - minFrame + 1;
-  const totalVideoFrames = videoMetadata?.total_frames || 0;
+  const effectiveMetadata = isCompleteVideoMetadata(videoMetadata) ? videoMetadata : null;
+  const totalVideoFrames = effectiveMetadata?.total_frames || 0;
 
   const videoCoversFrames = treatment === 'clip' ? Math.min(totalVideoFrames, timelineFrames) : timelineFrames;
   const lastCoveredFrame = treatment === 'clip' ? minFrame + videoCoversFrames - 1 : maxFrame;
@@ -86,19 +88,19 @@ export function useBatchGuidanceVideoController({
   const drawTimelineFrame = useCallback((timelineFrame: number) => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    if (!video || !canvas || !videoMetadata) return;
+    if (!video || !canvas || !effectiveMetadata) return;
 
     let videoFrame: number;
     if (treatment === 'adjust') {
       const timelineRange = maxFrame - minFrame;
       const normalizedPosition = timelineRange > 0 ? (timelineFrame - minFrame) / timelineRange : 0;
-      videoFrame = Math.floor(normalizedPosition * (videoMetadata.total_frames - 1));
+      videoFrame = Math.floor(normalizedPosition * (effectiveMetadata.total_frames - 1));
     } else {
       const offsetFromStart = timelineFrame - minFrame;
-      videoFrame = Math.min(offsetFromStart, videoMetadata.total_frames - 1);
+      videoFrame = Math.min(offsetFromStart, effectiveMetadata.total_frames - 1);
     }
 
-    const fps = videoMetadata.frame_rate;
+    const fps = effectiveMetadata.frame_rate;
     if (!fps || fps <= 0 || !isFinite(fps)) {
       console.error('[BatchGuidanceVideo] Invalid frame_rate:', fps);
       return;
@@ -124,7 +126,7 @@ export function useBatchGuidanceVideoController({
     };
 
     video.addEventListener('seeked', handleSeeked);
-  }, [videoMetadata, treatment, minFrame, maxFrame]);
+  }, [effectiveMetadata, treatment, minFrame, maxFrame]);
 
   const handleFrameChange = useCallback((value: number) => {
     setCurrentTimelineFrame(value);
