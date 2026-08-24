@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "asset": "paired-release-test-card.png",
+  "width": 1280,
+  "height": 720,
+  "mimeType": "image/png",
+  "sha256": "72ddb137c72fcb910c4acede94a76281e865fecbbd54166ae538bd3d6431dce0",
+  "probes": [
+    {
+      "name": "topLeftQuadrant",
+      "x": 100,
+      "y": 100,
+      "expectedRgba": [16, 42, 67, 255]
+    },
+    {
+      "name": "topRightQuadrant",
+      "x": 800,
+      "y": 100,
+      "expectedRgba": [255, 209, 102, 255]
+    },
+    {
+      "name": "bottomLeftQuadrant",
+      "x": 100,
+      "y": 500,
+      "expectedRgba": [239, 71, 111, 255]
+    },
+    {
+      "name": "bottomRightQuadrant",
+      "x": 800,
+      "y": 500,
+      "expectedRgba": [6, 214, 160, 255]
+    },
+    {
+      "name": "topLeftCircleMarker",
+      "x": 80,
+      "y": 70,
+      "expectedRgba": [248, 249, 250, 255]
+    },
+    {
+      "name": "topRightSquareMarker",
+      "x": 1217,
+      "y": 47,
+      "expectedRgba": [114, 9, 183, 255]
+    },
+    {
+      "name": "bottomLeftTriangleMarker",
+      "x": 30,
+      "y": 650,
+      "expectedRgba": [17, 138, 178, 255]
+    },
+    {
+      "name": "bottomRightDiamondMarker",
+      "x": 1200,
+      "y": 686,
+      "expectedRgba": [7, 59, 76, 255]
+    },
+    {
+      "name": "centerSquareMarker",
+      "x": 640,
+      "y": 360,
+      "expectedRgba": [255, 209, 102, 255]
+    },
+    {
+      "name": "centerOuterDiamond",
+      "x": 640,
+      "y": 290,
+      "expectedRgba": [255, 255, 255, 255]
+    },
+    {
+      "name": "centerInnerDiamond",
+      "x": 640,
+      "y": 320,
+      "expectedRgba": [16, 42, 67, 255]
+    }
+  ]
+}
