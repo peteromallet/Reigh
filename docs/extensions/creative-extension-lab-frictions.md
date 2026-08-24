@@ -1167,11 +1167,11 @@ evidence and a concrete improvement direction.
 
 ## RC6 browser/release hardening pass (2026-08-24–25)
 
-The current integration head is `567ce0991` on
-`codex/extension-ship-integration`; the preceding RC6 hardening commits are
-`7b01b2dc6`, `7210550c8`, `8330a98ea`, `b87720385`, `9419408f1`,
-`5a8fb96d3`, `91309d99a`, `e906a208c`, `bedcc493c`, `69c287c26`, and
-`30d5b533e`. These are integration findings, not a frozen release receipt.
+RC6 remains an integration sequence, not a frozen release receipt. The
+preceding hardening commits are historical implementation context; the exact
+source candidate will be computed from a fresh clean snapshot after the
+native-tool attestation commit, and no moving branch head is a candidate
+identity.
 
 ### Browser fixtures must share one deterministic contract
 
@@ -1236,17 +1236,19 @@ The current integration head is `567ce0991` on
   and RC6 is the current integration cycle with no RC6 tag or signed 23/23
   ledger. A source fix invalidates any future freeze and requires a new clean
   candidate/controller sequence.
-- The machine is under disk pressure but has recovered to roughly 12 GiB free
-  (recent `df` output is about 14 GiB); the paired clean verifier requires at
-  least 11 GiB. Focused local machine tests are mostly green, but this does not
-  replace a clean exact-pair run.
+- Focused local machine tests are useful diagnostics, but they do not replace a
+  clean exact-pair run. Disk headroom is an operator preflight, not a release
+  receipt, and must be measured again on the clean candidate machine.
 
 ### Product seams that remain honest blockers
 
-- The public SDK still lacks caption text semantics, caption roles, rendered
-  geometry, safe-area data, contrast, and media semantics. Caption Safe-Zone
-  Orchestra remains a structural timing proxy; semantic caption acceptance is
-  not proven.
+- The paired release path now proves its bounded caption contract: exactly two
+  persisted captions are bound by ID/text/interval/region and checked at first,
+  midpoint, and last frames, with a no-caption control containing the seeded
+  media card. This does not make the public SDK semantically complete. It still
+  lacks general caption roles/text/layout/safe-area/contrast/media APIs, so
+  Caption Safe-Zone Orchestra remains a structural timing proxy and cannot
+  claim broad caption semantics beyond the paired verifier's fixture.
 - The combined host inventory is now thirteen extensions, and all-13
   activation/reorder/disable/re-enable and browser evidence must be rerun on
   the current candidate. Local auth is a narrow editor-route/Supabase seam:
@@ -1257,3 +1259,22 @@ The current integration head is `567ce0991` on
   accessibility sessions, four human acceptance personas, and two independent
   reviewers remain open. A green focused test or agent visual review cannot
   close those human/external gates.
+
+### Release evidence needs host identity and one-shot ownership
+
+- The paired gate now resolves and byte-attests `ffmpeg`, `ffprobe`, Tesseract,
+  ImageMagick, Tesseract English traineddata, and the pinned host platform
+  before provisioning. This native-tool attestation is a prerequisite to
+  computing the exact candidate; a later source fix starts a new candidate
+  sequence.
+- Every command has a phase timeout with diagnostics. Detached server groups are
+  terminated as groups (TERM, five-second wait, KILL, five-second wait), and a
+  readiness failure reaps descendants even when a start call has not returned.
+  This closes the orphan-process failure mode that made old browser evidence
+  ambiguous.
+- Evidence is add-once: exclusive file creation, receipt before artifact index,
+  detached index hash, and read-only final evidence. Reruns/corrections use a
+  new untracked root and receipt rather than overwriting an earlier claim.
+- Dynamic editor/bridge ports are allocated per phase and included in readiness
+  identity. A fixed port, stale server, or mismatched `BASE_URL` is an explicit
+  failure, not a convenience for local testing.

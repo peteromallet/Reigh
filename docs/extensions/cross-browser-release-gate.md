@@ -30,6 +30,12 @@ The gate covers:
   action menu staying inside the viewport.
 - Browser/page errors collected as release failures.
 
+Each run allocates its editor and bridge ports at runtime, passes the selected
+origin through the browser support code, and uses strict-port/readiness checks;
+the old default port is not a valid release input. A stale server or a browser
+run pointed at another origin is a failure, not a passing shortcut. Playwright
+workers never receive the bridge bearer token.
+
 Captures are written to each test's Playwright artifact directory under
 `artifacts/extension-cross-browser/test-results/` by default. This keeps an
 ordinary or release-gate run from mutating tracked evidence. To retain a run
@@ -70,7 +76,12 @@ Environment: Node `20.19.4`, npm `10.8.2`, Playwright `1.60.0`.
 | `webkit` | WebKit `26.4` (Playwright cache revision `2287`) | 3/3 passed |
 | `edge-stable` | Not installed | Blocked before execution |
 
-The final strict command passed 9/9 tests with one worker in 1.7 minutes. No
-unexpected browser console errors or page errors were observed. The passing
-screenshots are stored in the project-named evidence directories described
-above.
+That run is historical browser evidence, not a frozen-RC receipt: it passed 9/9
+tests with one worker in 1.7 minutes and observed no unexpected browser/page
+errors. The passing screenshots are stored in the project-named evidence
+directories described above. The final candidate must rerun this gate from the
+fresh clean source snapshot computed after native-tool attestation. The paired
+caption proof is owned by the paired release verifier (two exact captions ×
+first/midpoint/last plus a no-caption seeded-media control); this cross-browser
+gate does not promote its structural marker checks into general caption
+semantics.

@@ -11,32 +11,29 @@ by the [evidence ledger](extension-ship-evidence-ledger.md).
 
 ## Current disposition
 
-`codex/extension-ship-integration` is the current RC6 **integration cycle**, not
-a frozen release candidate. Reigh's latest source head is
-`925a954b39dbe5c8e2ec667d2e9c2b3564612f73` in the
-`/Users/peteromalley/Documents/reigh-workspace/reigh-app-extension-rc`
-worktree; the tracked worktree is clean. The manifest status remains
-`integration` until the exact candidate is frozen. Astrid's
-paired bridge worktree is
-`/Users/peteromalley/Documents/reigh-workspace/Astrid-editor-bridge-integration`
-on `codex/editor-bridge-integration` at
-`97314ccee7caa7adfe04004e6854d7a8ba6b6dfd`. The manifest-pinned Astrid source
-for the release gate remains
-`86153eefc14aa995402927df0c7bb178f48f8ead`.
+`codex/extension-ship-integration` is the current RC6 **integration cycle**,
+not a frozen release candidate. The local integration checkout and its upstream
+remote are synchronization points for the hardening sequence, not a release
+identity; do not infer the candidate from a moving branch head or from a dirty
+developer checkout. The manifest-pinned Astrid source remains the required
+paired input. The exact Reigh candidate `C` will be computed from a fresh clean
+snapshot after the native-tool attestation commit lands and all source fixes are
+reviewed. Until then, the manifest status remains `integration` and no final
+SHA, tag, or controller pair is promised.
 
 RC1–RC5 tags and paired receipts remain immutable historical evidence; RC6 has
 no tag, no frozen candidate, and no signed ledger. The formal ledger is 0/23.
 The RC6 line has landed deterministic Runaway timing, clip-body selection,
-Suspense/bridge-stub contracts, isolated ports and CAS fixture resets, proxy
-Origin/Host/auth/protocol boundaries, strict-port plus nonce/commit readiness,
-tracked-evidence protection, and exact visual-baseline provenance. Local
-focused machine tests are mostly green, but that is not a release receipt.
-Current `df` output is about 14 GiB free (roughly 12 GiB in the release
-check); the clean paired verifier requires at least 11 GiB.
+Suspense/bridge-stub contracts, runtime-isolated ports and CAS fixture resets,
+proxy Origin/Host/auth/protocol boundaries, strict-port plus nonce/commit
+readiness, tracked-evidence protection, and exact visual-baseline provenance.
+The remaining integration sequence adds native-tool attestation before
+provisioning and recomputes `C` from the resulting clean snapshot. Focused
+machine tests are useful diagnostics, but they are not a release receipt.
 
 ## Phase 1 — publish and lock the integration baseline
 
-1. Finish the current focused fixes and keep `scorecard.png`, `artifacts/`, and
+1. Finish the current focused fixes and native-tool attestation commit; keep `scorecard.png`, `artifacts/`, and
    Playwright output outside the tracked release tree.
 2. Require review of the RC6 code commits through the production startup-budget
    gate. Do not add feature work to this branch after the evidence rehearsal
@@ -46,26 +43,60 @@ check); the clean paired verifier requires at least 11 GiB.
    renderer repair, `2e7f6a937` local-auth seam repair, and RC6 hardening must
    all be present before a candidate tag is created.
 
-Exit: the remote branch resolves to the same clean tracked tree as the local
-integration branch and the release plan commands remain deterministic.
+Exit: the reviewed integration sequence is ready to be materialized as a fresh
+clean candidate; the release plan commands remain deterministic. Remote/local
+branch synchronization is recorded separately from candidate identity.
 
 ## Phase 2 — recover disk and run exact-pair evidence rehearsals
 
 1. Confirm at least 11 GiB free with `df -h /System/Volumes/Data`; the machine
    currently has enough headroom, but avoid unnecessary artifact-heavy work.
-2. Use fresh clean worktrees at the exact Reigh candidate and pinned Astrid
-   commit. Run the individual local release gates, complete unit suites,
+2. Use fresh clean worktrees at the exact Reigh candidate computed after native
+   attestation and the pinned Astrid commit. Run the individual local release
+   gates, complete unit suites,
    production build, three-engine browser/device/accessibility suites, visual
    baseline provenance, container rollback, and the standalone paired
    Reigh/Astrid E2E journey.
 3. Retain complete logs, canonical database/state hashes, the decoded MP4 and
    every-frame report, screenshots, rollback hashes, dependency inventories,
-   and the detached artifact-index hash. Rerun any failing phase after its root
-   fix; do not waive a shipped-path failure.
+   native-tool/platform attestation, and the detached artifact-index hash.
+   Rerun any failing phase after its root fix; do not waive a shipped-path
+   failure. Evidence paths are add-once: a rerun uses a new untracked root and
+   a correction gets a new receipt/path rather than overwriting a captured one.
 
 Exit: the exact pair completes every locally executable gate with a clean tree,
 no unexpected errors, reproducible persisted state, and retained hash-addressed
 evidence.
+
+The paired receipt's render gate is code-owned. It requires exactly the two
+persisted captions (`Fixture segment one` at 2–4 seconds and `Fixture segment
+two` at 5–8 seconds), bound by ID, text, interval, and render region. It probes
+each caption at its first, midpoint, and last encoded frame (six probes total),
+then probes a no-caption control interval. The control must contain the
+committed 1280×720 paired-release test card with its metadata/hash and pixel
+probes; caption frames must pass exact OCR plus region, occupancy, and
+frame-vs-control contrast checks. The MP4 is fully decoded and its codec,
+dimensions, frame rate, duration, frame count, and media bytes are bound to the
+persisted state. This replaces the old shorthand of “two caption midpoints.”
+
+The Runaway/API/UI proof is likewise one chain: apply the Astrid-owned tracked
+Runaway fixtures twice (566 transitions, one evidence receipt, stable project/run
+identity); prove the release-mode bearer and `v1` bridge contract and exact
+media response; exercise the built Reigh preview's authenticated same-origin
+proxy, including hostile-header rejection; then run the development-only local
+editor journey with the 566-item lane, 48-fps/8,085-frame bounds, keyboard
+first/last navigation, inspector selection, persistence after restart, and
+render/export. Astrid and Reigh receive newly allocated ports for every phase;
+no fixed developer port is evidence.
+
+Every external command is bounded by a phase budget and writes timeout
+diagnostics. Detached server groups receive TERM and up to five seconds to
+exit, then KILL and another five seconds; readiness failure reaps the complete
+group even when the child handle has not yet been returned. Native attestation
+resolves and byte-hashes `ffmpeg`, `ffprobe`, `tesseract`, and ImageMagick,
+checks exact version/build identity and Tesseract `eng.traineddata`, and pins
+the host platform before dependency provisioning. The standalone path records
+that no container was used.
 
 ## Phase 3 — close environment and product-owner gates
 
@@ -84,7 +115,11 @@ evidence.
    release-blocking finding.
 
 Exit: production drills are captured, the upstream acknowledgement is proven,
-and all four human personas have signed receipts.
+and all four human personas have signed receipts. The paired caption path is
+now machine-proven; general SDK caption semantics and Caption Safe-Zone
+Orchestra's text/layout/contrast/media acceptance remain limited and must not
+be represented as a broader semantic-caption guarantee. Local Astrid mode does
+not authorize removing Supabase from ordinary cloud or legacy Reigh routes.
 
 ## Phase 4 — independent review and frozen RC
 

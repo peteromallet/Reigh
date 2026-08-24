@@ -23,6 +23,11 @@ inputs such as `.env.production`, `public/files/`, and `public/uploads/`. The
 temporary worktree is removed after the run; any tracked mutation fails the
 post-gate clean check.
 
+Candidate identity is deliberately deferred during integration. Compute `C`
+from a fresh clean source snapshot only after the native-tool attestation commit
+has landed and the source sequence is reviewed; a moving local/remote branch
+head is not a candidate and no final SHA should be recorded early.
+
 ## Running the frozen-candidate gate
 
 Prepare fresh, separate Reigh and Astrid checkouts. Install Node `20.19.4`, npm
@@ -31,6 +36,14 @@ revision, GNU Make, FFmpeg/FFprobe, and the host libraries required by Chromium.
 The paired gate installs the lock-aligned Playwright Chromium binary into its
 private runtime tree; it does not reuse a developer browser cache. Do not reuse
 a developer worktree for release evidence.
+
+Before dependency provisioning or the production build, the verifier attests
+the native toolchain on the host: realpaths and SHA-256 hashes for `ffmpeg`,
+`ffprobe`, `tesseract`, and ImageMagick; exact version and build identity;
+Tesseract's `eng.traineddata` bytes; and the pinned OS/architecture/release.
+Node, npm, and Astrid Python identities are recorded too. The standalone gate
+records that it runs directly on the attested host and does not use the pinned
+Node container image. A mismatch fails before expensive work begins.
 
 Review the exact plan first; this works without an Astrid checkout and executes
 nothing:
@@ -64,6 +77,13 @@ candidate `git rev-parse REIGH_REF`, Reigh
 `git rev-parse HEAD`, UTC start/end times, and hashes of retained test/render
 artifacts. An exit code of zero is necessary, not sufficient: every frozen-RC
 item and both independent review slots below must also be complete.
+
+Evidence is add-once. The gate uses exclusive file creation, writes the receipt
+before `artifact-index.json`, prints the detached index hash, and makes the
+evidence directory read-only before returning. A rerun must use a new untracked
+evidence root; correcting a captured document requires a new path and receipt.
+Do not overwrite a receipt or refresh tracked screenshots as a side effect of an
+ordinary test run.
 
 ### Typed external evidence
 
@@ -99,6 +119,16 @@ verifier's raw HTTP request and browser boot after the React server-entry,
 local-auth seam, clip-body locator, and same-origin proxy-origin repairs. Do
 not bypass either probe or substitute the unauthenticated stub.
 
+The acceptance chain is intentionally explicit. API proof is the authenticated
+release bridge (`serve --release-mode`, bearer token, `X-Astrid-Bridge-Version:
+v1`), the raw hostile-`Host` rejection, and the exact media response bytes and
+cache headers. UI proof is the real browser lane: the Runaway lane reports 566
+transitions, keyboard navigation reaches T0001 and T0566, the inspector shows
+frame 8084 at 48 fps, and the paired editor persists/reloads the caption and
+Runaway state before render/export. The built preview's same-origin proxy smoke
+is separate from the development-only local editor because production local
+bridge selection is intentionally unavailable today.
+
 After that pin is available, the gate rejects dirty controller/source trees,
 validates every `C..H` history edge against the same release-evidence allowlist,
 archives the exact candidate Reigh and Astrid commits into private temporary trees,
@@ -127,7 +157,17 @@ canonical hashes plus complete copies of the timeline config/registry and
 Runaway payload. It restarts both servers and requires byte-stable canonical
 state with no duplicate captions or Runaway rows. The downloaded MP4 is bound
 to that state hash, probed for H.264/1280x720/24 fps/frame count/duration,
-fully decoded, and sampled at two caption midpoints. Finally the gate restores
+fully decoded, and checked against exactly two persisted captions: each exact
+ID/text/interval/region is sampled at its first, midpoint, and last encoded
+frame (six probes total). A no-caption control interval must contain the
+committed `tests/e2e/fixtures/paired-release/paired-release-test-card.png` and
+its JSON metadata: 1280×720 PNG, SHA-256
+`72ddb137c72fcb910c4acede94a76281e865fecbbd54166ae538bd3d6431dce0`, and all
+declared pixel probes. Its bytes, metadata/hash, and probes are validated before
+import. OCR must match each expected caption,
+and region occupancy/contrast must differ from the control; this proves caption
+presence, absence, and media binding rather than a whole-frame brightness proxy.
+Finally the gate restores
 the backup, compares exact logical database content/schema hashes, managed-media
 file hashes, table counts, and the complete baseline
 timeline hash, runs `astrid doctor`, restarts both servers again, and requires
@@ -142,6 +182,17 @@ render output, and a SHA-256 artifact index are retained under
 so it is covered by the externally retained printed index hash; the complete
 evidence directory is made read-only before the command returns.
 
+All ports are allocated at runtime for each Astrid/Reigh phase and passed through
+the readiness identity; `strictPort` and the full commit/nonce prevent a healthy
+stale server from satisfying a new run. No fixed developer port is admissible.
+Every external command runs through a phase budget (fast probes 30 s, Git 60 s,
+archive 2 min, npm 10 min, pip 20 min, Playwright 15 min, migration/backup 5
+min, SQLite 30 s, FFmpeg 3 min, and FFprobe/Tesseract/ImageMagick 60 s), writes
+bounded timeout diagnostics, and is killed with `SIGKILL` on budget expiry.
+Detached server process groups receive `SIGTERM` and up to 5 s to exit, then
+`SIGKILL` and another 5 s; readiness failure reaps the complete group even when
+the awaited start call has not returned a handle.
+
 One boundary remains explicit: the built production app intentionally rejects
 local-bridge editor selection because that path is development-only today.
 Therefore the production build lane proves the runtime configuration and real
@@ -153,7 +204,9 @@ managed SQLite database and pack SQL migrations own the timeline and Runaway
 rows, while the built Reigh preview only exercises its static/runtime and
 server-proxy boundaries. A future acceptance path that enters Reigh's app-mode
 Supabase provider must add a real PostgreSQL/Supabase migration lane rather
-than reusing this receipt.
+than reusing this receipt. This local-bridge boundary is not a claim that
+Supabase is removed: ordinary cloud and legacy Reigh routes retain their
+existing provider and auth behavior.
 
 ## Production release controls
 
