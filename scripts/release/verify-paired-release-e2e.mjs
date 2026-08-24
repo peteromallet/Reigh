@@ -1083,6 +1083,10 @@ async function smokeBuiltPreview(port) {
   if (JSON.stringify(config) !== JSON.stringify(expected)) {
     fail(`built preview runtime config mismatch: ${JSON.stringify(config)}`);
   }
+  // The first proxy request deliberately supplies credentials and a protocol
+  // version that must never reach Astrid.  This goes through the actual Vite
+  // preview proxy (not a direct bridge request); a 200/v1 response proves the
+  // server-side policy replaced both values.
   const proxy = await fetch(`${base}/api/astrid/health`, {
     headers: {
       Authorization: 'Bearer attacker-controlled-value-must-be-replaced',
@@ -1094,11 +1098,56 @@ async function smokeBuiltPreview(port) {
   if (proxy.headers.get('x-astrid-bridge-version') !== 'v1') {
     fail('built preview proxy did not preserve the authenticated upstream protocol response');
   }
+
+  // Keep cross-origin input hostile at the proxy boundary.  The Vite proxy
+  // must not normalize an attacker origin into a trusted request; Astrid
+  // should reject it with its normal forbidden response.  Raw HTTP is used so
+  // the Origin and Host values are observed exactly as sent on the wire.
+  const hostileOrigin = await requestRawHttp(`${base}/api/astrid/health`, {
+    headers: {
+      Authorization: 'Bearer attacker-controlled-value-must-be-replaced',
+      'X-Astrid-Bridge-Version': 'v0',
+      Origin: 'https://attacker.invalid',
+      Host: `127.0.0.1:${port}`,
+    },
+  });
+  let hostileOriginPayload;
+  try { hostileOriginPayload = await hostileOrigin.json(); } catch { hostileOriginPayload = null; }
+  if (
+    hostileOrigin.status !== 403
+    || hostileOriginPayload?.error !== 'forbidden'
+    || hostileOrigin.headers.get('x-astrid-bridge-version') !== 'v1'
+  ) {
+    fail(
+      `built preview proxy did not reject hostile Origin safely: `
+      + `${hostileOrigin.status}/${hostileOriginPayload?.error ?? '<no-code>'}`,
+    );
+  }
+
+  // Vite preview's allowed-host boundary must reject a hostile Host before it
+  // can select the Astrid proxy.  A status in the documented 4xx family is
+  // accepted because Vite has changed the exact response between releases;
+  // success is never acceptable.
+  const hostileHost = await requestRawHttp(`${base}/api/astrid/health`, {
+    headers: {
+      Authorization: 'Bearer attacker-controlled-value-must-be-replaced',
+      'X-Astrid-Bridge-Version': 'v0',
+      Origin: 'https://attacker.invalid',
+      Host: 'attacker.invalid',
+    },
+  });
+  if (hostileHost.status < 400 || hostileHost.status >= 500) {
+    fail(`built preview proxy accepted hostile Host: HTTP ${hostileHost.status}`);
+  }
   return {
     config,
     proxyStatus: proxy.status,
     proxyReplacedClientAuthorization: true,
     proxyReplacedClientProtocolVersion: true,
+    hostileOriginStatus: hostileOrigin.status,
+    hostileOriginRejected: true,
+    hostileHostStatus: hostileHost.status,
+    hostileHostRejected: true,
   };
 }
 

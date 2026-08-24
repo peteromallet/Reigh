@@ -28,6 +28,5 @@ Evidence files:
 
 - `browser-first-error-context.md` and `browser-first-failure.png` — exact
   Playwright diagnostics and screenshot.
-- `raw/trace.zip` — exact Playwright trace.
+- `raw/playwright-first/paired-repository-paired-repository-acceptance-phase-first/trace.zip` — exact Playwright trace (the nested path recorded by `raw/artifact-index.json`).
 - `raw/*` — selected server and migration logs from the same run.
-
