@@ -1216,6 +1216,193 @@ function parseRate(value) {
   return numerator > 0 && denominator > 0 ? numerator / denominator : Number.NaN;
 }
 
+const CAPTION_FOREGROUND_THRESHOLD = 0.001;
+const CAPTION_CONTROL_DELTA = 0.0005;
+const CAPTION_MIN_CONTRAST = 0.04;
+
+/**
+ * OCR is deliberately normalized only for Unicode form, case, and spacing/
+ * punctuation that Tesseract cannot consistently preserve. The letters and
+ * numbers must still match exactly; a different caption cannot pass because
+ * the media frame happens to differ elsewhere.
+ */
+export function normalizeCaptionText(value) {
+  return String(value ?? '')
+    .normalize('NFKC')
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+function captionText(clip) {
+  const value = clip?.text?.content ?? clip?.text ?? clip?.content;
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function captionDuration(clip) {
+  return Number(clip?.hold ?? clip?.duration ?? 0);
+}
+
+function rectangleFromClip(clip) {
+  const values = ['x', 'y', 'width', 'height'].map((key) => Number(clip?.[key]));
+  return values.every(Number.isFinite) && values.every((value) => value >= 0)
+    ? { x: values[0], y: values[1], width: values[2], height: values[3] }
+    : null;
+}
+
+function intersectionArea(left, right) {
+  const x = Math.max(left.left, right.x);
+  const y = Math.max(left.top, right.y);
+  const rightEdge = Math.min(left.left + left.width, right.x + right.width);
+  const bottom = Math.min(left.top + left.height, right.y + right.height);
+  return Math.max(0, rightEdge - x) * Math.max(0, bottom - y);
+}
+
+/**
+ * Pure caption proof predicate. Keeping this separate from ffmpeg/ImageMagick
+ * makes the negative cases auditable without a multi-minute paired render.
+ */
+export function assessCaptionProbe({
+  expectedText,
+  recognizedText,
+  frameWidth,
+  frameHeight,
+  expectedRegion,
+  recognizedBounds,
+  occupancy,
+  controlOccupancy,
+  contrast,
+  frameSha256,
+  controlFrameSha256,
+}) {
+  const reasons = [];
+  const normalizedExpected = normalizeCaptionText(expectedText);
+  const normalizedRecognized = normalizeCaptionText(recognizedText);
+  if (!normalizedExpected) reasons.push('expected caption text is empty');
+  if (normalizedExpected !== normalizedRecognized) reasons.push('OCR text does not exactly match expected caption text');
+  if (!recognizedBounds || !expectedRegion) {
+    reasons.push('caption OCR or expected render region is missing');
+  } else {
+    const regionRight = expectedRegion.x + expectedRegion.width;
+    const regionBottom = expectedRegion.y + expectedRegion.height;
+    const recognizedRight = recognizedBounds.left + recognizedBounds.width;
+    const recognizedBottom = recognizedBounds.top + recognizedBounds.height;
+    if (
+      expectedRegion.x < 1 || expectedRegion.y < 1
+      || regionRight > frameWidth - 1 || regionBottom > frameHeight - 1
+    ) reasons.push('caption render region is clipped by the frame bounds');
+    if (
+      recognizedBounds.left < 1 || recognizedBounds.top < 1
+      || recognizedRight > frameWidth - 1 || recognizedBottom > frameHeight - 1
+      || recognizedBounds.width <= 0 || recognizedBounds.height <= 0
+    ) reasons.push('OCR bounds are clipped or empty');
+    const recognizedArea = recognizedBounds.width * recognizedBounds.height;
+    if (recognizedArea <= 0 || intersectionArea(recognizedBounds, expectedRegion) / recognizedArea < 0.25) {
+      reasons.push('OCR text is outside the persisted caption render region');
+    }
+    // A degenerate region is not a useful reference mask even if OCR happened
+    // to find the right words elsewhere in the frame.
+    if (intersectionArea(recognizedBounds, expectedRegion) <= 0 || expectedRegion.width < 2 || expectedRegion.height < 2) {
+      reasons.push('caption region has no usable text overlap');
+    }
+  }
+  if (!Number.isFinite(occupancy) || occupancy <= CAPTION_FOREGROUND_THRESHOLD) {
+    reasons.push('caption region has no visible foreground occupancy');
+  }
+  if (!Number.isFinite(controlOccupancy) || occupancy <= controlOccupancy + CAPTION_CONTROL_DELTA) {
+    reasons.push('caption occupancy does not exceed the no-caption control');
+  }
+  if (!Number.isFinite(contrast) || contrast < CAPTION_MIN_CONTRAST) {
+    reasons.push('caption region is not legible against its background');
+  }
+  if (frameSha256 && controlFrameSha256 && frameSha256 === controlFrameSha256) {
+    reasons.push('caption frame and no-caption control are byte-identical');
+  }
+  return {
+    pass: reasons.length === 0,
+    reasons,
+    expectedText,
+    recognizedText,
+    normalizedExpected,
+    normalizedRecognized,
+    occupancy,
+    controlOccupancy,
+    contrast,
+    recognizedBounds: recognizedBounds ?? null,
+    expectedRegion: expectedRegion ?? null,
+  };
+}
+
+function captionExpectations(evidenceRoot) {
+  const path = resolve(evidenceRoot, 'timeline-restart.json');
+  if (!existsSync(path)) fail('persisted restart timeline is missing; exact caption text cannot be verified');
+  const envelope = JSON.parse(readFileSync(path, 'utf8'));
+  const config = envelope?.timeline?.config ?? envelope?.config;
+  const clips = Array.isArray(config?.clips) ? config.clips : [];
+  const captions = clips
+    .filter((clip) => String(clip?.id ?? '').startsWith('transcript-caption-'))
+    .map((clip) => ({
+      id: clip.id,
+      at: Number(clip.at ?? 0),
+      duration: captionDuration(clip),
+      text: captionText(clip),
+      region: rectangleFromClip(clip),
+    }))
+    .filter((clip) => Number.isFinite(clip.at) && clip.duration > 0 && clip.text && clip.region);
+  if (captions.length < 2) fail(`persisted restart timeline has fewer than two usable caption clips: ${captions.length}`);
+  return captions;
+}
+
+function parseTesseractTsv(tsv) {
+  const lines = String(tsv ?? '').split(/\r?\n/).filter(Boolean);
+  const words = [];
+  for (const line of lines.slice(1)) {
+    const fields = line.split('\t');
+    if (fields.length < 12) continue;
+    const text = fields.slice(11).join('\t').trim();
+    const left = Number(fields[6]);
+    const top = Number(fields[7]);
+    const width = Number(fields[8]);
+    const height = Number(fields[9]);
+    const confidence = Number(fields[10]);
+    if (text && [left, top, width, height, confidence].every(Number.isFinite) && confidence >= 0) {
+      words.push({ text, left, top, width, height, confidence });
+    }
+  }
+  return words;
+}
+
+function recognizedCaption(words) {
+  if (words.length === 0) return { text: '', bounds: null };
+  const text = words.map((word) => word.text).join(' ');
+  const left = Math.min(...words.map((word) => word.left));
+  const top = Math.min(...words.map((word) => word.top));
+  const right = Math.max(...words.map((word) => word.left + word.width));
+  const bottom = Math.max(...words.map((word) => word.top + word.height));
+  return { text, bounds: { left, top, width: right - left, height: bottom - top } };
+}
+
+function imageMetric(framePath, region, kind) {
+  const crop = `${Math.round(region.width)}x${Math.round(region.height)}+${Math.round(region.x)}+${Math.round(region.y)}`;
+  const args = [framePath, '-crop', crop, '+repage', '-colorspace', 'gray'];
+  if (kind === 'occupancy') args.push('-threshold', '8%');
+  args.push('-format', kind === 'occupancy' ? '%[fx:mean]' : '%[fx:standard_deviation]', 'info:');
+  const result = capture('magick', args, { env: safeBaseEnvironment() });
+  const value = Number(result.stdout.trim());
+  if (!Number.isFinite(value)) fail(`ImageMagick returned an invalid caption ${kind}: ${result.stdout}`);
+  return value;
+}
+
+function noCaptionControlSeconds(captions, duration) {
+  const intervals = captions.map((caption) => ({ start: caption.at, end: caption.at + caption.duration }));
+  const candidates = [
+    Math.max(0, Math.min(...intervals.map((interval) => interval.start)) / 2),
+    Math.max(...intervals.map((interval) => interval.end)) + 0.05,
+  ];
+  return candidates.find((seconds) => seconds >= 0 && seconds < duration && intervals.every(
+    (interval) => seconds < interval.start || seconds >= interval.end,
+  ));
+}
+
 function verifyRenderedArtifact(context) {
   const outputPath = resolve(context.evidenceRoot, 'paired-release-render.mp4');
   const browserReceipt = JSON.parse(readFileSync(
@@ -1277,8 +1464,51 @@ function verifyRenderedArtifact(context) {
   if (captionMidpoints.length < 2 || captionMidpoints.some((value) => !Number.isFinite(value))) {
     fail('render receipt has fewer than two caption midpoint semantic probes');
   }
+  const captions = captionExpectations(context.evidenceRoot);
+  const controlSeconds = noCaptionControlSeconds(captions, expectedDuration);
+  if (!Number.isFinite(controlSeconds)) {
+    fail('paired render has no no-caption control interval for caption semantics');
+  }
+  const controlPath = resolve(context.evidenceRoot, 'render-caption-control.png');
+  runLogged('ffmpeg', [
+    '-v', 'error', '-ss', String(controlSeconds), '-i', outputPath, '-frames:v', '1', '-y', controlPath,
+  ], {
+    cwd: context.reighSnapshot,
+    env: safeBaseEnvironment(),
+    logPath: resolve(context.evidenceRoot, 'render-caption-control.log'),
+  });
+  const controlFrameSha256 = sha256File(controlPath);
+  const tesseractLanguages = capture('tesseract', ['--list-langs'], {
+    cwd: context.reighSnapshot,
+    env: safeBaseEnvironment(),
+    allowFailure: true,
+  });
+  if (tesseractLanguages.status !== 0 || !/^eng$/m.test(tesseractLanguages.stdout ?? '')) {
+    fail('deterministic caption OCR requires the Tesseract eng language data');
+  }
+  const boundarySeconds = [...new Set(captions.flatMap((caption) => [
+    caption.at,
+    Math.max(caption.at, caption.at + caption.duration - (1 / expectedFps)),
+  ]))]
+    .filter((seconds) => seconds >= 0 && seconds < expectedDuration)
+    .sort((left, right) => left - right);
+  const boundaryFrames = boundarySeconds.map((seconds, index) => {
+    const framePath = resolve(context.evidenceRoot, `render-caption-boundary-${index}.png`);
+    runLogged('ffmpeg', [
+      '-v', 'error', '-ss', String(seconds), '-i', outputPath, '-frames:v', '1', '-y', framePath,
+    ], {
+      cwd: context.reighSnapshot,
+      env: safeBaseEnvironment(),
+      logPath: resolve(context.evidenceRoot, `render-caption-boundary-${index}.log`),
+    });
+    return {
+      seconds,
+      path: relative(context.evidenceRoot, framePath),
+      sha256: sha256File(framePath),
+    };
+  });
   const frameHashes = captionMidpoints.map((seconds, index) => {
-    const framePath = resolve(context.runtimeRoot, `caption-proof-${index}.png`);
+    const framePath = resolve(context.evidenceRoot, `render-caption-frame-${index}.png`);
     runLogged('ffmpeg', [
       '-v', 'error', '-ss', String(seconds), '-i', outputPath, '-frames:v', '1', '-y', framePath,
     ], {
@@ -1286,13 +1516,54 @@ function verifyRenderedArtifact(context) {
       env: safeBaseEnvironment(),
       logPath: resolve(context.evidenceRoot, `render-caption-frame-${index}.log`),
     });
-    return { seconds, sha256: sha256File(framePath) };
+    const caption = captions.find((candidate) => seconds >= candidate.at && seconds < candidate.at + candidate.duration);
+    if (!caption) fail(`caption midpoint ${seconds}s is not inside a persisted caption interval`);
+    const tesseract = capture('tesseract', [
+      framePath, 'stdout', '--psm', '11', '-l', 'eng', 'tsv',
+    ], { cwd: context.reighSnapshot, env: safeBaseEnvironment() });
+    writeFileSync(
+      resolve(context.evidenceRoot, `render-caption-ocr-${index}.tsv`),
+      tesseract.stdout,
+      { encoding: 'utf8', flag: 'wx', mode: 0o600 },
+    );
+    const recognized = recognizedCaption(parseTesseractTsv(tesseract.stdout));
+    const occupancy = imageMetric(framePath, caption.region, 'occupancy');
+    const contrast = imageMetric(framePath, caption.region, 'contrast');
+    const semantics = assessCaptionProbe({
+      expectedText: caption.text,
+      recognizedText: recognized.text,
+      frameWidth: 1280,
+      frameHeight: 720,
+      expectedRegion: caption.region,
+      recognizedBounds: recognized.bounds,
+      occupancy,
+      controlOccupancy: imageMetric(controlPath, caption.region, 'occupancy'),
+      contrast,
+      frameSha256: sha256File(framePath),
+      controlFrameSha256,
+    });
+    if (!semantics.pass) {
+      fail(`caption semantic proof failed for ${caption.id} at ${seconds}s: ${semantics.reasons.join('; ')}`);
+    }
+    return {
+      seconds,
+      captionId: caption.id,
+      expectedText: caption.text,
+      recognizedText: recognized.text,
+      sha256: sha256File(framePath),
+      path: relative(context.evidenceRoot, framePath),
+      occupancy,
+      controlOccupancy: semantics.controlOccupancy,
+      contrast,
+      recognizedBounds: recognized.bounds,
+      expectedRegion: caption.region,
+    };
   });
   if (new Set(frameHashes.map((entry) => entry.sha256)).size !== frameHashes.length) {
-    fail('caption midpoint frames are byte-identical; rendered caption semantics were not demonstrated');
+    fail('caption midpoint frames are byte-identical; distinct persisted caption text was not demonstrated');
   }
   const verification = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     persistedStateHash: browserReceipt.persistedStateHash,
     mp4Sha256: browserReceipt.sha256,
     bytes: browserReceipt.bytes,
@@ -1306,7 +1577,15 @@ function verifyRenderedArtifact(context) {
     },
     audioCodec: audio?.codec_name ?? null,
     fullDecode: true,
-    captionFrameHashes: frameHashes,
+    captionSemantics: {
+      method: 'tesseract-ocr+persisted-region-occupancy-contrast',
+      expectedCaptionCount: captions.length,
+      controlSeconds,
+      controlFrameSha256,
+      controlFramePath: relative(context.evidenceRoot, controlPath),
+      boundaryFrames,
+      probes: frameHashes,
+    },
   };
   writeFileSync(
     resolve(context.evidenceRoot, 'render-verification.json'),

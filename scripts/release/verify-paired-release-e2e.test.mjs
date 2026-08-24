@@ -18,7 +18,9 @@ import {
   buildReadinessIdentity,
   buildServerEnvironment,
   buildViteArgs,
+  assessCaptionProbe,
   isExactViteReadiness,
+  normalizeCaptionText,
   parseCliArgs,
   requireFullCommitPin,
   requestRawHttp,
@@ -27,6 +29,67 @@ import {
 } from './verify-paired-release-e2e.mjs';
 
 describe('paired repository release E2E gate', () => {
+  it('requires exact caption text and visible region semantics, not whole-frame difference', () => {
+    const base = {
+      expectedText: 'Fixture segment one',
+      recognizedText: 'wrong caption',
+      frameWidth: 1280,
+      frameHeight: 720,
+      expectedRegion: { x: 128, y: 418, width: 1024, height: 101 },
+      recognizedBounds: { left: 160, top: 440, width: 240, height: 36 },
+      occupancy: 0.08,
+      controlOccupancy: 0,
+      contrast: 0.25,
+      frameSha256: 'a'.repeat(64),
+      controlFrameSha256: 'b'.repeat(64),
+    };
+    const result = assessCaptionProbe(base);
+    assert.equal(result.pass, false);
+    assert.match(result.reasons.join('; '), /OCR text does not exactly match/);
+    assert.equal(normalizeCaptionText('Fixture segment one'), 'fixturesegmentone');
+  });
+
+  it('rejects blank, clipped, and wrong-region caption frames', () => {
+    const shared = {
+      expectedText: 'Fixture segment one',
+      recognizedText: 'Fixture segment one',
+      frameWidth: 1280,
+      frameHeight: 720,
+      expectedRegion: { x: 128, y: 418, width: 1024, height: 101 },
+      frameSha256: 'a'.repeat(64),
+      controlFrameSha256: 'b'.repeat(64),
+    };
+    const blank = assessCaptionProbe({
+      ...shared,
+      recognizedBounds: null,
+      occupancy: 0,
+      controlOccupancy: 0,
+      contrast: 0,
+    });
+    assert.equal(blank.pass, false);
+    assert.match(blank.reasons.join('; '), /missing|foreground|legible/);
+
+    const clipped = assessCaptionProbe({
+      ...shared,
+      recognizedBounds: { left: 1270, top: 440, width: 80, height: 36 },
+      occupancy: 0.08,
+      controlOccupancy: 0,
+      contrast: 0.25,
+    });
+    assert.equal(clipped.pass, false);
+    assert.match(clipped.reasons.join('; '), /clipped/);
+
+    const wrongRegion = assessCaptionProbe({
+      ...shared,
+      recognizedBounds: { left: 200, top: 100, width: 240, height: 36 },
+      occupancy: 0.08,
+      controlOccupancy: 0,
+      contrast: 0.25,
+    });
+    assert.equal(wrongRegion.pass, false);
+    assert.match(wrongRegion.reasons.join('; '), /outside/);
+  });
+
   it('builds the vendored timeline schema from a clean archive without stale build output', {
     timeout: 180_000,
   }, () => {
