@@ -118,9 +118,15 @@ function captionCount(config: TimelineConfig): number {
 
 async function openEditor(page: Page): Promise<string[]> {
   const issues: string[] = [];
+  const consoleWarnings: string[] = [];
+  const failedRequests: string[] = [];
   page.on('pageerror', (error) => issues.push(`[pageerror] ${error.message}`));
   page.on('console', (message) => {
     if (message.type() === 'error') issues.push(`[console.error] ${message.text()}`);
+    if (message.type() === 'warning') consoleWarnings.push(`[console.warn] ${message.text()}`);
+  });
+  page.on('requestfailed', (request) => {
+    failedRequests.push(`[requestfailed] ${request.method()} ${request.url()} — ${request.failure()?.errorText ?? 'unknown'}`);
   });
   await page.addInitScript(() => {
     window.localStorage.removeItem('reigh.dev-extensions.disabled');
@@ -128,7 +134,26 @@ async function openEditor(page: Page): Promise<string[]> {
   });
   const response = await page.goto(editorUrl, { waitUntil: 'domcontentloaded', timeout: 45_000 });
   expect(response?.ok()).toBe(true);
-  await expect(page.locator('[data-clip-id="paired-release-clip"]')).toBeVisible({ timeout: 30_000 });
+  try {
+    await expect(page.locator('[data-clip-id="paired-release-clip"]')).toBeVisible({ timeout: 30_000 });
+  } catch (error) {
+    // Preserve the useful browser failure signal in the receipt. Without this
+    // context a module-evaluation crash is misreported as a missing seeded
+    // clip, because Playwright only reports the final selector timeout.
+    const bodyText = await page.locator('body').innerText().catch(() => '');
+    const rootHtml = await page.locator('#root').innerHTML().catch(() => '');
+    const compact = (value: string) => value.replace(/\s+/g, ' ').trim().slice(0, 1200);
+    const diagnostics = JSON.stringify({
+      url: page.url(),
+      issues,
+      consoleWarnings,
+      failedRequests,
+      bodyText: compact(bodyText),
+      rootHtml: compact(rootHtml),
+    });
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`${message}\nBrowser boot diagnostics: ${diagnostics}`);
+  }
   await expect(page.locator('[data-lane-kind="reigh.transcript"]')).toBeVisible();
   return issues;
 }
