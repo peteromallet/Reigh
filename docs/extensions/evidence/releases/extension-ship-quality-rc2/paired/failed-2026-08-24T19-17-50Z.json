@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "release": "extension-ship-quality-rc2",
+  "startedAt": "2026-08-24T19:17:50.730Z",
+  "status": "failed",
+  "reighCommit": "2b48933e05a7d9d40cfb6e75f70c98a0b9a6e630",
+  "reighControllerHead": "32e313701071f8030c5e03316aad97e56ffa8e70",
+  "reighTagObject": "8df3eb24d1b2f27b9a7de7d50a7a79d255f82ad9",
+  "reighEvidencePaths": [
+    "config/releases/extension-ship-evidence.json",
+    "config/releases/extension-ship-quality.json"
+  ],
+  "astridCommit": "86153eefc14aa995402927df0c7bb178f48f8ead",
+  "capability": "astrid.authenticated-release-bridge.v1",
+  "expected": {
+    "extensions": 13,
+    "runawayTransitions": 566
+  },
+  "runtimeModes": {
+    "productionPreview": "built Vite preview plus authenticated same-origin proxy smoke",
+    "browserEditing": "development-only local bridge mode; production local bridge is intentionally unavailable"
+  },
+  "phases": [
+    {
+      "id": "archives",
+      "status": "pass"
+    },
+    {
+      "id": "reigh-build",
+      "status": "pass",
+      "browser": {
+        "executable": "/private/var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-yAmCNs/playwright-browsers/chromium-1223/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+        "executableSha256": "2447c7bdea8e8ad38b52594f1ba53e18821c05445e8a07ad1cf3b0f23931d89d",
+        "browsersPath": "../../../../../../private/var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-yAmCNs/playwright-browsers"
+      }
+    },
+    {
+      "id": "astrid-locked-runtime",
+      "status": "pass",
+      "lock": "requirements/runtime.lock",
+      "lockSha256": "979fe4af91b2bd01947f94050e44e7e5818efd707999d3bf71ac46819df4f057",
+      "buildToolsLock": "scripts/release/paired-python-build-tools.lock",
+      "buildToolsLockSha256": "7345dc56736c169296e3faee81e213d3110e05c51f52ee01908743e3917233f0",
+      "environmentPackageCount": 65,
+      "environmentSha256": "1dd69e6d4eca651dd56b86e353e474f0df0aa5897c9308388932bd73f69fd58e",
+      "python": "/Users/peteromalley/.pyenv/versions/3.11.11/bin/python3.11",
+      "timelineSchema": {
+        "astridModulePath": "/private/var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-yAmCNs/astrid/astrid/__init__.py",
+        "distributionVersion": "0.0.2",
+        "modulePath": "/private/var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-yAmCNs/astrid-venv/lib/python3.11/site-packages/banodoco_timeline_schema/__init__.py",
+        "schemaSha256": "fbee605d9695f7775cebd09f87b8dac15a64a058b752ecb83be0fc6e69b2aef5",
+        "source": "vendor/timeline-schema/python",
+        "sourceTreeSha256": "e219ea79c37fc58389463a1c8115ac07b264a39a872117b8d728f0bc639f6ea7"
+      }
+    },
+    {
+      "id": "migrate-twice",
+      "status": "pass",
+      "storedCount": 566,
+      "evidenceCount": 1,
+      "fixtureHashes": {
+        "audio-reactive-v1.json": "d7925d72b52180e206a2511a5d30cf1638c7007a962fd57d8a6eb9ffb10af886",
+        "timing-manifest.json": "44b5c0eea0aeb8b35a83e3e7620b5dbab27a106bf575fcc6e0ca6591dd4612bb"
+      }
+    }
+  ],
+  "runawayFixtureHashes": {
+    "audio-reactive-v1.json": "d7925d72b52180e206a2511a5d30cf1638c7007a962fd57d8a6eb9ffb10af886",
+    "timing-manifest.json": "44b5c0eea0aeb8b35a83e3e7620b5dbab27a106bf575fcc6e0ca6591dd4612bb"
+  },
+  "error": "disallowed host returned 200/<no-code>, expected 403/forbidden",
+  "finishedAt": "2026-08-24T19:21:05.205Z"
+}
