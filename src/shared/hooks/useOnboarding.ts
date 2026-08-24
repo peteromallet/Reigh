@@ -13,9 +13,7 @@ export function useOnboarding() {
   const isLocalMode = hasLocalModeUrlParams(typeof window === 'undefined' ? '' : window.location.search);
 
   useEffect(() => {
-    if (localTestMode) return undefined;
-  useEffect(() => {
-    if (localTestMode || isLocalMode) return;
+    if (localTestMode || isLocalMode) return undefined;
     let timeoutId: NodeJS.Timeout;
 
     const checkOnboardingStatus = async () => {
@@ -61,8 +59,6 @@ export function useOnboarding() {
     };
   }, [localTestMode, isLocalMode]);
 
-  const completeOnboarding = async () => {
-    if (localTestMode) return;
   const completeOnboarding = async () => {
     if (localTestMode || isLocalMode) return;
     try {
