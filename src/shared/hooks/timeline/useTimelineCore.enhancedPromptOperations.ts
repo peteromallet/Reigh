@@ -22,7 +22,7 @@ export function useTimelineEnhancedPromptOperations(
 ): TimelineEnhancedPromptOperations {
   const getEnhancedPrompt = useCallback<TimelineCoreResult['getEnhancedPrompt']>(
     (shotGenerationId) => {
-      const item = positionedItems.find((generation) => generation.shotImageEntryId === shotGenerationId);
+      const item = positionedItems.find((generation) => generation.id === shotGenerationId);
       if (!item?.metadata) {
         return undefined;
       }
@@ -40,7 +40,7 @@ export function useTimelineEnhancedPromptOperations(
       }
 
       try {
-        const item = positionedItems.find((generation) => generation.shotImageEntryId === shotGenerationId);
+        const item = positionedItems.find((generation) => generation.id === shotGenerationId);
         if (!item) {
           return;
         }
@@ -97,7 +97,7 @@ export function useTimelineEnhancedPromptOperations(
 
       const results = await Promise.all(
         itemsWithEnhancedPrompt
-          .filter((item) => item.shotImageEntryId)
+          .filter((item) => item.id)
           .map((item) => {
             const currentMetadata = (item.metadata as Record<string, unknown>) || {};
             return supabase().from('shot_generations')
@@ -107,7 +107,7 @@ export function useTimelineEnhancedPromptOperations(
                   enhanced_prompt: '',
                 },
               })
-              .eq('id', item.shotImageEntryId!);
+              .eq('id', item.id);
           }),
       );
 

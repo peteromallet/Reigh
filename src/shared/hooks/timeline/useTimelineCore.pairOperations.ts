@@ -54,7 +54,7 @@ export function useTimelinePairOperations(
       }
 
       try {
-        const item = positionedItems.find((generation) => generation.shotImageEntryId === shotGenerationId);
+        const item = positionedItems.find((generation) => generation.id === shotGenerationId);
         if (!item) {
           throw new Error(`Item ${shotGenerationId} not found`);
         }
@@ -92,10 +92,10 @@ export function useTimelinePairOperations(
       }
 
       const firstItem = positionedItems[pairIndex];
-      if (!firstItem.shotImageEntryId) {
+      if (!firstItem.id) {
         return;
       }
-      await updatePairPrompts(firstItem.shotImageEntryId, prompt, negativePrompt);
+      await updatePairPrompts(firstItem.id, prompt, negativePrompt);
     },
     [positionedItems, updatePairPrompts],
   );
@@ -119,7 +119,7 @@ export function useTimelinePairOperations(
       }
 
       const firstItem = positionedItems[pairIndex];
-      if (!firstItem.shotImageEntryId) {
+      if (!firstItem.id) {
         return;
       }
 
@@ -131,7 +131,7 @@ export function useTimelinePairOperations(
         });
         const { error } = await supabase().from('shot_generations')
           .update({ metadata: toJson(updatedMetadata) })
-          .eq('id', firstItem.shotImageEntryId);
+          .eq('id', firstItem.id);
 
         if (error) {
           throw error;

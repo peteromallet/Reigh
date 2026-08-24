@@ -149,8 +149,7 @@ export function DesktopLightboxOverlay({
         onDelete: includeDeleteAction && !managerProps.readOnly
           ? () => {
               const activeImage = lightbox.currentImages[lightboxIndex];
-              const shotImageEntryId = activeImage.shotImageEntryId || activeImage.id;
-              managerProps.onImageDelete(shotImageEntryId);
+              managerProps.onImageDelete(activeImage.id);
             }
           : undefined,
         starred: lightbox.currentImages[lightboxIndex]?.starred || false,

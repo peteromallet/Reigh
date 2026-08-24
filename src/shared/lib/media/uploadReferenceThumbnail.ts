@@ -7,6 +7,8 @@ interface UploadReferenceThumbnailInput {
 }
 
 export class ReferenceThumbnailUploadError extends Error {
+  public readonly cause?: unknown;
+
   constructor(
     public readonly kind: 'auth' | 'upload',
     message: string,
@@ -14,9 +16,7 @@ export class ReferenceThumbnailUploadError extends Error {
   ) {
     super(message);
     this.name = 'ReferenceThumbnailUploadError';
-    if (options?.cause !== undefined) {
-      (this as Error & { cause?: unknown }).cause = options.cause;
-    }
+    this.cause = options?.cause;
   }
 }
 

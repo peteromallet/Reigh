@@ -418,8 +418,6 @@ export function transformForTimeline(
       // PRIMARY IDs: id = shot_generations.id (unique per entry), generation_id = actual generation
       id: shotGen.id,
       generation_id: shotGen.generation_id,
-      // Deprecated (backwards compat)
-      shotImageEntryId: shotGen.id,
       timeline_frame: shotGen.timeline_frame ?? undefined,
     };
   }
@@ -428,10 +426,8 @@ export function transformForTimeline(
     // PRIMARY IDs: id = shot_generations.id (unique per entry), generation_id = actual generation
     id: shotGen.id,
     generation_id: shotGen.generation_id,
-    // Deprecated (backwards compat)
-    shotImageEntryId: shotGen.id,
-    imageUrl: genData.location,
-    thumbUrl: genData.location,
+    imageUrl: genData.location ?? undefined,
+    thumbUrl: genData.location ?? undefined,
     location: genData.location,
     type: genData.type ?? undefined,
     createdAt: genData.created_at,

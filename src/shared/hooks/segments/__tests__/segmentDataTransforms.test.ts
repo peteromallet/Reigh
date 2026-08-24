@@ -78,7 +78,6 @@ describe('segmentDataTransforms', () => {
         imageUrl: '',
         thumbUrl: '',
         type: 'video',
-        created_at: '2026-03-09T12:00:00Z',
         createdAt: '2026-03-09T12:00:00Z',
         parent_generation_id: 'parent-1',
         child_order: 2,

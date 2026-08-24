@@ -215,7 +215,7 @@ function useTimelinePositionOperations(
 
     try {
       const currentOrder = positionedItems
-        .map((generation) => generation.shotImageEntryId)
+        .map((generation) => generation.id)
         .filter(Boolean) as string[];
       const { error } = await supabase().rpc('reorder_normalized', {
         p_shot_id: shotId,

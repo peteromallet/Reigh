@@ -84,7 +84,7 @@ export function useMakeMainVariant({
         .insert({
           generation_id: parentGenId,
           location: media.location,
-          thumbnail_url: media.thumbUrl || media.thumbnail_url || null,
+          thumbnail_url: media.thumbUrl || null,
           is_primary: true,
           variant_type: VARIANT_TYPE.CHILD_PROMOTED,
           name: null,
@@ -107,7 +107,7 @@ export function useMakeMainVariant({
       await supabase().from('generations')
         .update({
           location: media.location,
-          thumbnail_url: media.thumbUrl || media.thumbnail_url
+          thumbnail_url: media.thumbUrl
         })
         .eq('id', parentGenId);
 

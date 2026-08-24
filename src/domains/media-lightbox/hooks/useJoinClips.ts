@@ -51,7 +51,7 @@ export function useJoinClips({
       // 'url' is not a declared field on GenerationRow but may exist at runtime from raw DB data
       const mediaRecord = media as unknown as Record<string, unknown>;
       const videoUrl = media.location || (mediaRecord.url as string | undefined) || media.imageUrl;
-      const thumbnailUrl = media.thumbUrl || media.thumbnail_url;
+      const thumbnailUrl = media.thumbUrl;
 
       if (!videoUrl) {
         normalizeAndPresentError(new Error('No video URL found on media object'), {

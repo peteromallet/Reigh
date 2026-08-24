@@ -23,7 +23,7 @@ export function useSegmentBadge(child: GenerationRow | null) {
       return false;
     }
 
-    const createdAt = child.created_at || child.createdAt;
+    const createdAt = child.createdAt;
     if (!createdAt) {
       return false;
     }

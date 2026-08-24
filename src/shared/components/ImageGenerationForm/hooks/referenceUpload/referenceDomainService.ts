@@ -284,10 +284,7 @@ export function buildStyleReferenceMetadataFromGeneration(
 ): StyleReferenceMetadata {
   const generationId = getGenerationId(generation) ?? undefined;
   const location = generation.location?.trim();
-  const thumbnailUrl = generation.thumbUrl
-    || (generation as GenerationRow & { thumbnail_url?: string | null }).thumbnail_url
-    || location
-    || null;
+  const thumbnailUrl = generation.thumbUrl || location || null;
 
   if (!location) {
     throw new Error('Generation is missing a source image location');

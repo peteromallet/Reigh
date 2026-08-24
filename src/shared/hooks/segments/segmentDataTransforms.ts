@@ -106,7 +106,6 @@ export function transformToGenerationRow(gen: RawGenerationDbRow): GenerationRow
     imageUrl: location,
     thumbUrl: gen.thumbnail_url || location,
     type: gen.type || 'video',
-    created_at: createdAt,
     createdAt,
     params: gen.params ?? undefined,
     parent_generation_id: gen.parent_generation_id,

@@ -90,6 +90,14 @@ export function mergeGenerationsWithTaskData(
 
   return generations.map((generation) => {
     const generationId = getGenerationId(generation);
+    if (!generationId) {
+      return {
+        ...generation,
+        taskId: null,
+        taskData: null,
+        taskMappingStatus: 'not_loaded',
+      };
+    }
     const cachedMapping = queryClient.getQueryData<GenerationTaskMappingCacheEntry>(
       taskQueryKeys.generationMapping(generationId),
     );

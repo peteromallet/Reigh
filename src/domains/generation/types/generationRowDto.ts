@@ -1,4 +1,5 @@
 import type { PersistedGenerationRow } from './generationRow';
+import type { Json } from '@/integrations/supabase/jsonTypes';
 
 /**
  * Transport aliases that appear on DB/API payloads.
@@ -12,4 +13,7 @@ interface GenerationRowLegacyAliases {
   variant_name?: string;
 }
 
-export type GenerationRowDto = PersistedGenerationRow & Partial<GenerationRowLegacyAliases>;
+/** Database/API shape before JSON fields are mapped into domain contracts. */
+export type GenerationRowDto = Omit<PersistedGenerationRow, 'params'>
+  & Partial<GenerationRowLegacyAliases>
+  & { params?: Json | null };

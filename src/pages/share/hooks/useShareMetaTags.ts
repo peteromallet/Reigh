@@ -31,7 +31,7 @@ export function useShareMetaTags(shareData: SharedData | null) {
       ? `${settings.prompt.substring(0, 150)}...`
       : 'Check out this AI-generated video created with Reigh';
 
-    const ogImage = generation?.thumbnail_url || generation?.location || '/banodoco-gold.png';
+    const ogImage = generation?.thumbUrl || generation?.location || '/banodoco-gold.png';
 
     updateMetaTag('description', description, false);
     updateMetaTag('og:title', title);

@@ -7,7 +7,7 @@ import type { GenerationRow } from '@/domains/generation/types';
 interface MaybeHasGenerationId {
   generation_id?: string | null;
   id?: string | null;
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, unknown> | null;
 }
 
 const NON_PRELOADABLE_URL_MARKERS = ['_joined_frame.jpg'] as const;
