@@ -27,6 +27,7 @@ import { buildImageEditStateValue } from '@/tools/edit-images/model/buildImageEd
 import { downloadMedia } from '@/shared/lib/media/downloadMedia';
 import { useVariants } from '@/shared/hooks/variants/useVariants';
 type InpaintingHookResult = ReturnType<typeof useInpainting>;
+type UpscaleHookResult = ReturnType<typeof useUpscale>;
 type MagicEditHookResult = ReturnType<typeof useMagicEditMode>;
 type RepositionHookResult = ReturnType<typeof useRepositionMode>;
 type Img2ImgHookResult = ReturnType<typeof useImg2ImgMode>;
@@ -36,17 +37,14 @@ type PublicLorasData = ReturnType<typeof usePublicLoras>['data'];
 type ImageEditValue = ImageEditState;
 
 function resolveActualGenerationId(media: GenerationRow): string | null {
-  const isShotGenerationRecord = media.shotImageEntryId === media.id ||
-    media.shot_generation_id === media.id;
-  return media.generation_id || (!isShotGenerationRecord ? media.id : null);
+  return media.generation_id ?? media.id;
 }
 
 // Inpainting fields forwarded 1:1 from the hook
 const INPAINTING_PASSTHROUGH_KEYS = [
-  'isInpaintMode', 'editMode', 'brushStrokes', 'currentStroke', 'isDrawing',
+  'isInpaintMode', 'editMode', 'brushStrokes',
   'isEraseMode', 'brushSize', 'annotationMode', 'selectedShapeId', 'isAnnotateMode',
-  'handleKonvaPointerDown', 'handleKonvaPointerMove', 'handleKonvaPointerUp',
-  'handleShapeClick', 'strokeOverlayRef', 'getDeleteButtonPosition',
+  'strokeOverlayRef', 'getDeleteButtonPosition',
   'handleToggleFreeForm', 'handleDeleteSelected', 'handleUndo', 'handleClearMask',
   'setIsInpaintMode', 'setEditMode', 'setBrushSize', 'setIsEraseMode', 'setAnnotationMode',
 ] as const;
@@ -75,7 +73,7 @@ export interface InlineEditStateResult {
     imageDimensions: { width: number; height: number } | null;
     setImageDimensions: Dispatch<SetStateAction<{ width: number; height: number } | null>>;
     isUpscaling: boolean;
-    handleUpscale: () => Promise<void>;
+    handleUpscale: UpscaleHookResult['handleUpscale'];
   };
   inpaintingState:
     Pick<InpaintingHookResult, InpaintingPassthroughKeys> & {
@@ -180,7 +178,7 @@ export function useInlineEditState(
     annotationMode,
     inpaintPrompt: editSettings.prompt,
     inpaintNumGenerations: editSettings.numGenerations,
-    setEditMode: editSettings.setEditMode,
+    setEditMode: (mode) => editSettings.setEditMode(mode ?? 'text'),
     setAnnotationMode,
     setInpaintPrompt: editSettings.setPrompt,
     setInpaintNumGenerations: editSettings.setNumGenerations,
@@ -301,7 +299,7 @@ export function useInlineEditState(
     imageContainerRef,
     handleExitInpaintMode: () => inpainting.setIsInpaintMode(false),
     editMode: editSettings.editMode ?? 'text',
-    setEditMode: editSettings.setEditMode,
+    setEditMode: (mode) => editSettings.setEditMode(mode ?? 'text'),
     loraMode: editSettings.loraMode,
     setLoraMode: editSettings.setLoraMode,
     customLoraUrl: editSettings.customLoraUrl,
