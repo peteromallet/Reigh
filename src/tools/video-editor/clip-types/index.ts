@@ -43,6 +43,7 @@ export {
   inferLegacyClipType,
   isClipTypeCommandAvailable,
 } from './runtime.ts';
+export type { BuiltinClipType } from '@/sdk/video/timeline/clipTypes.ts';
 export type {
   ClipTypeCommandConstraint,
   ClipTypeCommandConstraintValue,
@@ -90,7 +91,6 @@ export type {
 } from './registry.ts';
 export type {
   AvailableRegisteredClipTypeRegistration,
-  BuiltinClipType,
   ClipAssetMediaType,
   ClipTypeCommandAvailability,
   ClipTypeCommandEvaluationContext,

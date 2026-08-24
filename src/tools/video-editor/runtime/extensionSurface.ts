@@ -548,6 +548,22 @@ export interface ContributionIndexEntry {
  */
 export type ContributionIndex = Readonly<Record<string, readonly ContributionIndexEntry[]>>;
 
+/** Resolve a contribution's owner from the host-owned scoped contribution index. */
+export function findContributionOwnerId(
+  contributionIndex: ContributionIndex | undefined,
+  kind: string,
+  contributionId: string,
+): string | undefined {
+  if (!contributionIndex) return undefined;
+  for (const entries of Object.values(contributionIndex)) {
+    const match = entries.find((entry) =>
+      entry.kind === kind && entry.contributionId === contributionId && entry.projectionEligible,
+    );
+    if (match) return match.extensionId;
+  }
+  return undefined;
+}
+
 /**
  * The normalized, frozen result of host-owned extension runtime normalization.
  * Produced by {@link normalizeExtensionRuntime} and scoped to a provider render.

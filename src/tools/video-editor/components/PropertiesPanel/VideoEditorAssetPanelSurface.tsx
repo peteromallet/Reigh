@@ -13,6 +13,7 @@ import {
   HostContributionErrorBoundary,
   type ContributionErrorInfo,
 } from '@/tools/video-editor/runtime/ContributionErrorBoundary.tsx';
+import { findContributionOwnerId } from '@/tools/video-editor/runtime/extensionSurface.ts';
 
 export interface VideoEditorAssetPanelSurfaceProps {
   includeBuiltIn?: boolean;
@@ -23,7 +24,7 @@ function VideoEditorAssetPanelSurfaceComponent({
 }: VideoEditorAssetPanelSurfaceProps) {
   const renderContext = useVideoEditorRenderContext();
   const runtime = useOptionalVideoEditorRuntime();
-  const ownerMap = runtime?.extensionRuntime?.contributionOwnerMap;
+  const contributionIndex = runtime?.extensionRuntime?.contributionIndex;
   const assetPanels = useVideoEditorAssetPanels();
   const { data, preferences } = useTimelineEditorData();
   const { setAssetPanelState, uploadFiles } = useTimelineEditorOps();
@@ -65,7 +66,7 @@ function VideoEditorAssetPanelSurfaceComponent({
         <HostContributionErrorBoundary
           key={panel.id}
           contributionId={panel.id}
-          extensionId={ownerMap?.get(panel.id)}
+          extensionId={findContributionOwnerId(contributionIndex, 'panel', panel.id)}
           kind="panel"
           onError={handleContributionError}
         >

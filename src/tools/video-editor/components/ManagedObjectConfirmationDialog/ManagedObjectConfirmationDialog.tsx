@@ -72,7 +72,7 @@ export function ManagedObjectConfirmationDialog({
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Managed {kindLabel}</AlertDialogTitle>
-          <AlertDialogDescription asChild>
+          <AlertDialogDescription>
             <div className="space-y-3 text-sm">
             <p>
               This {kindLabel.toLowerCase()} is managed by{' '}

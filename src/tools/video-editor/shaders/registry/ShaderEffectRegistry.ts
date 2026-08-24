@@ -230,7 +230,10 @@ export function createShaderEffectRegistry(): ShaderEffectRegistry {
         `Shader "${lookup.shaderId}" cannot be updated because it is not registered for this owner.`,
         lookup.ownerExtensionId,
         undefined,
-        lookup,
+        {
+          shaderId: lookup.shaderId,
+          ...(lookup.ownerExtensionId ? { ownerExtensionId: lookup.ownerExtensionId } : {}),
+        },
       );
       invalidateSnapshot();
       notifySubscribers();

@@ -61,6 +61,13 @@ interface KeyframeRowProps {
   disabled?: boolean;
 }
 
+function primitiveDefault(definition: ParameterDefinition): number | string | boolean | undefined {
+  const value = definition.default;
+  return typeof value === 'number' || typeof value === 'string' || typeof value === 'boolean'
+    ? value
+    : undefined;
+}
+
 function KeyframeRow({
   kf,
   definition,
@@ -443,7 +450,7 @@ export function KeyframeInspector({
           keyframes={keyframes[definition.name] ?? []}
           interpolatedValue={
             interpolatedByParam.get(definition.name) ??
-            definition.default ??
+            primitiveDefault(definition) ??
             (definition.type === 'number' ? 0 : definition.type === 'boolean' ? false : '')
           }
           currentTime={currentTime}

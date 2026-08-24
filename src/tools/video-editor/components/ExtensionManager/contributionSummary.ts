@@ -10,7 +10,7 @@ const CONTRIBUTION_KIND_LABEL: Partial<Record<ContributionKind, string>> = {
   dialog: 'Dialog',
   panel: 'Panel',
   inspectorSection: 'Inspector section',
-  overlay: 'Overlay',
+  timelineOverlay: 'Timeline overlay',
   parser: 'Parser',
   outputFormat: 'Output format',
   searchProvider: 'Search provider',

@@ -137,20 +137,18 @@ function createFakeGenerationSession(
     get cancelled(): boolean {
       return _cancelled;
     },
-    get done(): boolean {
+    get completed(): boolean {
       return _done;
     },
     get diagnostics(): readonly ToolResultDiagnostic[] {
       return _diagnostics;
     },
 
-    onProgress(listener: (progress: number, label?: string) => void): DisposeHandle {
-      progressListeners.add(listener);
-      return {
-        dispose(): void {
-          progressListeners.delete(listener);
-        },
-      };
+    updateProgress(progress: number, label?: string): void {
+      if (_cancelled || _done) return;
+      _progress = Math.max(0, Math.min(100, progress));
+      _progressLabel = label;
+      notifyProgress(_progress, label);
     },
 
     cancel(): void {
@@ -167,11 +165,6 @@ function createFakeGenerationSession(
         detail: { sessionId, toolId, extensionId, cancelledAt: Date.now() },
       });
       notifyProgress(_progress, 'Cancelled');
-    },
-
-    getSampleChannel(): string {
-      // Preview-only placeholder — no real media buffers in M10
-      return `sample-channel:${sessionId}:preview-only`;
     },
 
     complete(result?: Record<string, unknown>): void {

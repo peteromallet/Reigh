@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { CapabilityFinding, RenderMaterialRef } from '@reigh/editor-sdk';
+import type { CapabilityFinding, RenderMaterialRef, RenderRoute } from '@reigh/editor-sdk';
 import {
   BlockerActionCard,
   normalizeBlockerActionCardNextAction,
@@ -12,6 +12,17 @@ import type {
   VideoEditorPlannerNextActionDescriptor,
   VideoEditorPlannerNextActionKind,
 } from '@/tools/video-editor/runtime/extensionSurface.ts';
+
+const RENDER_ROUTES: readonly RenderRoute[] = [
+  'preview',
+  'browser-export',
+  'worker-export',
+  'sidecar-export',
+];
+
+function isRenderRoute(value: string): value is RenderRoute {
+  return RENDER_ROUTES.some((route) => route === value);
+}
 
 export interface MaterialBrowserFilters {
   producerExtensionId?: string;
@@ -121,7 +132,9 @@ function plannerActionFromRecord(
   const record = value != null && typeof value === 'object'
     ? value as Record<string, unknown>
     : undefined;
-  const route = typeof record?.route === 'string' ? record.route : fallback?.route;
+  const route = typeof record?.route === 'string' && isRenderRoute(record.route)
+    ? record.route
+    : fallback?.route;
   const allowedKinds: readonly VideoEditorPlannerNextActionKind[] = [
     'select-route',
     'materialize',
@@ -132,12 +145,13 @@ function plannerActionFromRecord(
     'enable-extension',
     'start-process',
   ];
-  if (!allowedKinds.includes(action.kind as VideoEditorPlannerNextActionKind)) {
+  const kind = allowedKinds.find((candidate) => candidate === action.kind);
+  if (!kind) {
     return fallback;
   }
 
   return {
-    kind: action.kind as VideoEditorPlannerNextActionKind,
+    kind,
     label: action.label,
     ...(action.message ? { message: action.message } : {}),
     ...(route ? { route } : {}),

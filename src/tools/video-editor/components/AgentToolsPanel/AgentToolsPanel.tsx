@@ -162,7 +162,7 @@ function resultSummary(result: ToolResult | null): string | null {
     }
     case 'generation/session': {
       const gs = result as ToolGenerationSessionResult;
-      if (gs.session?.done) return 'Generation complete';
+      if (gs.session?.completed) return 'Generation complete';
       if (gs.session?.cancelled) return 'Generation cancelled';
       return `Progress: ${gs.session?.progress ?? 0}%`;
     }

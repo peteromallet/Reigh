@@ -27,6 +27,7 @@ import {
 import { useOptionalVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import {
   getInspectorContributions,
+  findContributionOwnerId,
   type InspectorSelectionSnapshot,
 } from '@/tools/video-editor/runtime/extensionSurface.ts';
 import {
@@ -51,7 +52,7 @@ function InspectorRegistrySections({
   const renderContext = useVideoEditorRenderContext();
   const registry = useVideoEditorPanelRegistry();
   const runtime = useOptionalVideoEditorRuntime();
-  const ownerMap = runtime?.extensionRuntime?.contributionOwnerMap;
+  const contributionIndex = runtime?.extensionRuntime?.contributionIndex;
   const contributions = useMemo(
     () => getInspectorContributions(registry, renderContext, selection),
     [registry, renderContext, selection],
@@ -81,7 +82,7 @@ function InspectorRegistrySections({
         <HostContributionErrorBoundary
           key={section.id}
           contributionId={section.id}
-          extensionId={ownerMap?.get(section.id)}
+          extensionId={findContributionOwnerId(contributionIndex, 'inspectorSection', section.id)}
           kind="inspectorSection"
           onError={handleContributionError}
         >
