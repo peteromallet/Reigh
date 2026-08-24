@@ -10,11 +10,12 @@
 
 import { createPlaceholderAdapter } from './placeholderAdapterFactory';
 import { buildOutputFormatDescriptors } from './projectors/outputFormatProjector';
+import { toCollectedContributions } from './familyAdapterUtils';
 
 export const outputFormatAdapter = createPlaceholderAdapter(
   'outputFormat',
   ({ contributions, extensionOrder }) => ({
-    descriptors: buildOutputFormatDescriptors(contributions, extensionOrder),
+    descriptors: buildOutputFormatDescriptors(toCollectedContributions(contributions), extensionOrder),
   }),
   {
     description: 'Delegated placeholder for output format projection.',

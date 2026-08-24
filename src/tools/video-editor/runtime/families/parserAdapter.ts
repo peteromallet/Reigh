@@ -8,11 +8,12 @@
 
 import { createPlaceholderAdapter } from './placeholderAdapterFactory';
 import { buildParserDescriptors } from './projectors/parserProjector';
+import { toCollectedContributions } from './familyAdapterUtils';
 
 export const parserAdapter = createPlaceholderAdapter(
   'parser',
   ({ contributions, extensionOrder }) => ({
-    descriptors: buildParserDescriptors(contributions, extensionOrder),
+    descriptors: buildParserDescriptors(toCollectedContributions(contributions), extensionOrder),
   }),
   {
     description: 'Delegated placeholder for parser descriptor projection.',

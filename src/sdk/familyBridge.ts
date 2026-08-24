@@ -79,10 +79,10 @@ export function contributionKindNotYetBridged(kind: ContributionKind): string | 
  * Look up the canonical family definition for a contribution kind.
  * Returns `undefined` when the kind is not in the family registry.
  */
-export function getVideoFamilyDefinition(
-  kind: ContributionKind,
-): FamilyDefinition<ContributionKind> | undefined {
-  return getVideoFamily(kind) as FamilyDefinition<ContributionKind> | undefined;
+export function getVideoFamilyDefinition<Kind extends ContributionKind>(
+  kind: Kind,
+): FamilyDefinition<Kind> | undefined {
+  return getVideoFamily(kind) as FamilyDefinition<Kind> | undefined;
 }
 
 /**

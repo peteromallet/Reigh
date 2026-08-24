@@ -30,7 +30,7 @@ export { type ExtensionChromeService, type ChromeEvent, type ChromeToastPayload,
 export { type DiagnosticSeverity, type DiagnosticSource, DIAGNOSTIC_SOURCE_EXTENSION, type ExtensionDiagnostic, type DiagnosticSourceRange, type Diagnostic, type DiagnosticCollection, DEFAULT_DIAGNOSTIC_PER_EXTENSION_CAPACITY, type CreateDiagnosticCollectionOptions, createDiagnosticCollection, type ExportDiagnostic } from './diagnostics';
 
 // manifest & contribution kinds
-export { type ContributionKind, type VideoEditorSlotName, type ExtensionContribution, KNOWN_CONTRIBUTION_KINDS, KNOWN_CONTRIBUTION_KINDS_SET, KNOWN_SLOT_NAMES, KNOWN_SLOT_NAMES_SET, INSPECTOR_SECTION_PLACEMENTS, PANEL_PLACEMENTS, ASSET_DETAIL_SECTION_PLACEMENTS, ALL_VALID_PLACEMENTS, type ManifestValidationMode, type ManifestValidationResult, type ExtensionManifest, type ExtensionPermissionDeclaration, type InstalledExtensionPackage, validateManifest, validateInstalledPackage } from './manifest';
+export { type ContributionKind, type VideoEditorSlotName, type ExtensionContribution, type ExtensionManifestContribution, KNOWN_CONTRIBUTION_KINDS, KNOWN_CONTRIBUTION_KINDS_SET, KNOWN_SLOT_NAMES, KNOWN_SLOT_NAMES_SET, INSPECTOR_SECTION_PLACEMENTS, PANEL_PLACEMENTS, ASSET_DETAIL_SECTION_PLACEMENTS, ALL_VALID_PLACEMENTS, type ManifestValidationMode, type ManifestValidationResult, type ExtensionManifest, type ExtensionPermissionDeclaration, type InstalledExtensionPackage, validateManifest, validateInstalledPackage } from './manifest';
 
 // packaging
 export type { DependencyPosture, ExtensionDependency, IntegrityAlgorithm, IntegrityHash, MigrationHookKind, MigrationDeclaration, InstalledExtensionMetadata } from './packaging';

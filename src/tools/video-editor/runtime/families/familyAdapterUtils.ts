@@ -7,7 +7,62 @@
  * @module families/familyAdapterUtils
  */
 
-import type { FamilyContributionRef } from '@reigh/editor-sdk';
+import type {
+  ExtensionManifestContribution,
+  FamilyContributionRef,
+} from '@reigh/editor-sdk';
+import type { CollectedContribution } from './FamilyContributionSequence';
+
+interface CollectionMetadata {
+  readonly scopedKey?: unknown;
+  readonly duplicateOrdinal?: unknown;
+  readonly projectionEligible?: unknown;
+}
+
+function hasCollectionMetadata(
+  ref: FamilyContributionRef<unknown>,
+): ref is CollectedContribution {
+  const candidate: FamilyContributionRef<unknown> & CollectionMetadata = ref;
+  return (
+    typeof candidate.scopedKey === 'string' &&
+    typeof candidate.duplicateOrdinal === 'number' &&
+    typeof candidate.projectionEligible === 'boolean'
+  );
+}
+
+function isManifestContribution(value: unknown): value is ExtensionManifestContribution {
+  if (typeof value !== 'object' || value === null) return false;
+  if (!('id' in value) || !('kind' in value)) return false;
+  return typeof value.id === 'string' && typeof value.kind === 'string';
+}
+
+/**
+ * Adapt the public SDK reference shape to the host's collected shape.
+ * Runtime assembly already supplies collected records; direct adapter callers
+ * (including SDK compatibility tests) may provide plain references.
+ */
+export function toCollectedContributions(
+  contributions: readonly FamilyContributionRef<unknown>[],
+): readonly CollectedContribution[] {
+  const duplicateCounts = new Map<string, number>();
+  return contributions.map((ref) => {
+    if (hasCollectionMetadata(ref)) return ref;
+    if (!isManifestContribution(ref.contribution)) {
+      throw new TypeError('Family adapter received an invalid contribution reference.');
+    }
+    const contribution = ref.contribution;
+    const scopedKey = `${contribution.kind}:${ref.extensionId}:${contribution.id}`;
+    const duplicateOrdinal = duplicateCounts.get(scopedKey) ?? 0;
+    duplicateCounts.set(scopedKey, duplicateOrdinal + 1);
+    return {
+      contribution,
+      extensionId: ref.extensionId,
+      scopedKey,
+      duplicateOrdinal,
+      projectionEligible: duplicateOrdinal === 0,
+    };
+  });
+}
 
 /**
  * Sort family contributions using the canonical deterministic order:

@@ -21,6 +21,7 @@ import type {
 } from '@reigh/editor-sdk';
 import { getVideoFamilyDefinition } from '@reigh/editor-sdk';
 import { buildTimelineOverlayDescriptors } from './projectors/timelineOverlayProjector';
+import { toCollectedContributions } from './familyAdapterUtils';
 import { buildConformanceReport } from '@/sdk/core/families/conformance';
 
 const MANIFEST: HostAdapterManifest = Object.freeze({
@@ -45,7 +46,7 @@ export const timelineOverlayAdapter: HostFamilyAdapter<
     input: NormalizeFamilyInput<unknown>,
   ): FamilyNormalizeResult<TimelineOverlayDescriptor> {
     const descriptors = buildTimelineOverlayDescriptors(
-      input.contributions,
+      toCollectedContributions(input.contributions),
       input.extensionOrder,
     );
     return {

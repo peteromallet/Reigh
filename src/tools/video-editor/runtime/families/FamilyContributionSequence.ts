@@ -1,6 +1,6 @@
 import type {
   ReighExtension,
-  ExtensionContribution,
+  ExtensionManifestContribution,
   ExtensionDiagnostic,
   FamilyContributionRef,
   EffectContribution,
@@ -16,7 +16,7 @@ import { VIDEO_EDITOR_FAMILY_ADAPTER_REGISTRY } from '@/tools/video-editor/runti
 
 /** A contribution paired with its owning extension ID during sequencing. */
 export interface CollectedContribution
-  extends FamilyContributionRef<ExtensionContribution> {
+  extends FamilyContributionRef<ExtensionManifestContribution> {
   readonly scopedKey: string;
   readonly duplicateOrdinal: number;
   readonly projectionEligible: boolean;
@@ -77,21 +77,22 @@ function recordInactiveReservedContribution(
     contributionId: contribution.id as string,
     milestone,
   });
-  if (contribution.render) {
-    knownRenderIds.add(contribution.render);
+  const renderId = contributionRenderId(contribution);
+  if (renderId) {
+    knownRenderIds.add(renderId);
   }
 }
 
 export function contributionScopedKey(
   extensionId: string,
-  contribution: ExtensionContribution,
+  contribution: ExtensionManifestContribution,
 ): string {
   return `${contribution.kind}:${extensionId}:${contribution.id as string}`;
 }
 
 function collectContributionRecord(
   extensionId: string,
-  contribution: ExtensionContribution,
+  contribution: ExtensionManifestContribution,
   seenScopedContributionCounts: Map<string, number>,
 ): CollectedContribution {
   const scopedKey = contributionScopedKey(extensionId, contribution);
@@ -104,6 +105,12 @@ function collectContributionRecord(
     duplicateOrdinal,
     projectionEligible: duplicateOrdinal === 0,
   };
+}
+
+function contributionRenderId(contribution: ExtensionManifestContribution): string | undefined {
+  return 'render' in contribution && typeof contribution.render === 'string'
+    ? contribution.render
+    : undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -212,8 +219,9 @@ export function buildFamilyContributionSequence(
         if (effectContrib.effectId) {
           // Component-backed: treat as active
           bridged.push(collected);
-          if (contrib.render) {
-            knownRenderIds.add(contrib.render);
+          const renderId = contributionRenderId(contrib);
+          if (renderId) {
+            knownRenderIds.add(renderId);
           }
         } else {
           // Unsupported: no component metadata — inactive with diagnostic
@@ -235,8 +243,9 @@ export function buildFamilyContributionSequence(
             extensionId: extId,
             contributionId: contribId,
           });
-          if (contrib.render) {
-            knownRenderIds.add(contrib.render);
+          const renderId = contributionRenderId(contrib);
+          if (renderId) {
+            knownRenderIds.add(renderId);
           }
         }
         continue;
@@ -250,8 +259,9 @@ export function buildFamilyContributionSequence(
         if (transitionContrib.transitionId) {
           // Renderer-backed: treat as active
           bridged.push(collected);
-          if (contrib.render) {
-            knownRenderIds.add(contrib.render);
+          const renderId = contributionRenderId(contrib);
+          if (renderId) {
+            knownRenderIds.add(renderId);
           }
         } else {
           // Unsupported: no renderer metadata — inactive with diagnostic
@@ -273,8 +283,9 @@ export function buildFamilyContributionSequence(
             extensionId: extId,
             contributionId: contribId,
           });
-          if (contrib.render) {
-            knownRenderIds.add(contrib.render);
+          const renderId = contributionRenderId(contrib);
+          if (renderId) {
+            knownRenderIds.add(renderId);
           }
         }
         continue;
@@ -327,8 +338,9 @@ export function buildFamilyContributionSequence(
       bridged.push(collected);
 
       // Track known render IDs
-      if (contrib.render) {
-        knownRenderIds.add(contrib.render);
+      const renderId = contributionRenderId(contrib);
+      if (renderId) {
+        knownRenderIds.add(renderId);
       }
     }
   }

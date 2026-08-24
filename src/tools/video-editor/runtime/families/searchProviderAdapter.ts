@@ -8,11 +8,12 @@
 
 import { createPlaceholderAdapter } from './placeholderAdapterFactory';
 import { buildSearchProviderDescriptors } from './projectors/searchProviderProjector';
+import { toCollectedContributions } from './familyAdapterUtils';
 
 export const searchProviderAdapter = createPlaceholderAdapter(
   'searchProvider',
   ({ contributions, extensionOrder }) => ({
-    descriptors: buildSearchProviderDescriptors(contributions, extensionOrder),
+    descriptors: buildSearchProviderDescriptors(toCollectedContributions(contributions), extensionOrder),
   }),
   {
     description: 'Delegated placeholder for search provider projection.',

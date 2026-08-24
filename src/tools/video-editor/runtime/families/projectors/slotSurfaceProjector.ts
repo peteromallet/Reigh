@@ -33,7 +33,7 @@ export function buildSlotSurfaceDescriptors(
   contributions: readonly CollectedContribution[],
   extensionOrder?: ReadonlyMap<string, number>,
 ): readonly SlotSurfaceDescriptor<
-  | { slot: VideoEditorSlotName; render: VideoEditorSlotRenderer }
+  | { slot?: VideoEditorSlotName; render: VideoEditorSlotRenderer }
   | VideoEditorDialogDescriptor
   | VideoEditorPanelDescriptor
   | VideoEditorInspectorSectionDescriptor

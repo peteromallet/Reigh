@@ -22,6 +22,7 @@ import type {
   FamilyNormalizeResult,
   FamilyConformanceReport,
   ExecutionMaturity,
+  ContributionKind,
 } from '@reigh/editor-sdk';
 import { getVideoFamilyDefinition } from '@reigh/editor-sdk';
 import { buildConformanceReport } from '@/sdk/core/families/conformance';
@@ -78,7 +79,7 @@ export interface PlaceholderAdapterOptions {
  * @returns A frozen {@link HostFamilyAdapter} with `delegated` maturity.
  */
 export function createPlaceholderAdapter<
-  Kind extends string,
+  Kind extends ContributionKind,
   TContribution,
   TDescriptor,
 >(

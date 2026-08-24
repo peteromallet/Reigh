@@ -292,6 +292,9 @@ export interface ExtensionManifest {
   icon?: string;
 }
 
+/** Canonical union of contribution declarations accepted by an extension manifest. */
+export type ExtensionManifestContribution = NonNullable<ExtensionManifest['contributions']>[number];
+
 // ---------------------------------------------------------------------------
 // Installed extension package
 // ---------------------------------------------------------------------------

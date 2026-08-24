@@ -17,21 +17,22 @@ import type {
   FamilyNormalizeResult,
   FamilyConformanceReport,
   ExecutionMaturity,
+  ContributionKind,
 } from '@reigh/editor-sdk';
 import { getVideoFamilyDefinition } from '@reigh/editor-sdk';
 import { buildConformanceReport } from '@/sdk/core/families/conformance';
 
 export interface CompatibilityAdapterOptions {
   readonly adapterId: string;
-  readonly kind: string;
+  readonly kind: ContributionKind;
   readonly version?: string;
   readonly maturity: ExecutionMaturity;
   readonly description?: string;
 }
 
-export function createCompatibilityAdapter(
-  options: CompatibilityAdapterOptions,
-): HostFamilyAdapter<string, unknown, unknown> {
+export function createCompatibilityAdapter<Kind extends ContributionKind>(
+  options: CompatibilityAdapterOptions & { readonly kind: Kind },
+): HostFamilyAdapter<Kind, unknown, unknown> {
   const manifest: HostAdapterManifest = Object.freeze({
     adapterId: options.adapterId,
     kind: options.kind,
@@ -54,14 +55,14 @@ export function createCompatibilityAdapter(
       return { descriptors: Object.freeze([]) };
     },
 
-    buildConformanceReport(): FamilyConformanceReport<string> {
+    buildConformanceReport(): FamilyConformanceReport<Kind> {
       const definition = getVideoFamilyDefinition(options.kind);
       if (!definition) {
         throw new Error(
           `${options.adapterId}: family definition not found for kind "${options.kind}".`,
         );
       }
-      return buildConformanceReport(definition) as FamilyConformanceReport<string>;
+      return buildConformanceReport(definition);
     },
   });
 }

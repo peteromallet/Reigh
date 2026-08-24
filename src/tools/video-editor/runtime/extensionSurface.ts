@@ -9,7 +9,7 @@ import type {
 import type {
   CompositionGraph,
   ReighExtension,
-  ExtensionContribution,
+  ExtensionManifestContribution,
   ExtensionDiagnostic,
   ContributionKind,
   MetadataFacetValueKind,
@@ -640,7 +640,7 @@ export interface PackageStateInventoryEntry {
    * summaries can be derived for disabled/error packages without
    * active runtime descriptors.
    */
-  readonly manifestContributions?: readonly ExtensionContribution[] | null;
+  readonly manifestContributions?: readonly ExtensionManifestContribution[] | null;
   /**
    * Precomputed contribution summary for UI rendering.
    * Populated by {@link normalizeExtensionRuntime} so the ExtensionManager

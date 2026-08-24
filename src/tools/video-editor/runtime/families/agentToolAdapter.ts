@@ -8,11 +8,12 @@
 
 import { createPlaceholderAdapter } from './placeholderAdapterFactory';
 import { buildAgentToolDescriptors } from './projectors/agentToolProjector';
+import { toCollectedContributions } from './familyAdapterUtils';
 
 export const agentToolAdapter = createPlaceholderAdapter(
   'agentTool',
   ({ contributions, extensionOrder }) => ({
-    descriptors: buildAgentToolDescriptors(contributions, extensionOrder),
+    descriptors: buildAgentToolDescriptors(toCollectedContributions(contributions), extensionOrder),
   }),
   {
     description: 'Delegated placeholder for agent tool descriptor projection.',

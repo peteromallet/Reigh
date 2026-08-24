@@ -21,6 +21,7 @@ import { getVideoFamilyDefinition } from '@reigh/editor-sdk';
 import type { ProcessStatus } from '@/sdk/video/families/processes';
 import type { VideoEditorProcessDescriptor } from '../extensionSurface';
 import { buildProcessDescriptors } from './projectors/processProjector';
+import { toCollectedContributions } from './familyAdapterUtils';
 import { buildConformanceReport } from '@/sdk/core/families/conformance';
 
 // ---------------------------------------------------------------------------
@@ -107,7 +108,7 @@ export const processAdapter: HostFamilyAdapter<
   ): FamilyNormalizeResult<VideoEditorProcessDescriptor> {
     const processInput = input as ProcessNormalizeInput;
     const descriptors = buildProcessDescriptors(
-      processInput.contributions,
+      toCollectedContributions(processInput.contributions),
       processInput.extensionOrder,
     );
 

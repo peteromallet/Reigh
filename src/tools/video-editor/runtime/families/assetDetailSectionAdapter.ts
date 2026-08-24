@@ -9,11 +9,12 @@
 
 import { createPlaceholderAdapter } from './placeholderAdapterFactory';
 import { buildAssetDetailSectionDescriptors } from './projectors/assetDetailSectionProjector';
+import { toCollectedContributions } from './familyAdapterUtils';
 
 export const assetDetailSectionAdapter = createPlaceholderAdapter(
   'assetDetailSection',
   ({ contributions, extensionOrder }) => ({
-    descriptors: buildAssetDetailSectionDescriptors(contributions, extensionOrder),
+    descriptors: buildAssetDetailSectionDescriptors(toCollectedContributions(contributions), extensionOrder),
   }),
   {
     description: 'Delegated placeholder for asset detail section projection.',

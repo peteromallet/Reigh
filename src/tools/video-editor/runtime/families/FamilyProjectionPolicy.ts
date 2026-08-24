@@ -147,7 +147,7 @@ export function evaluateProjectionPolicy(
       isDelegated: maturity === 'delegated',
       // Adapter-owned surfacing families are treated as bridged for
       // sequencing purposes, even when the SDK maturity is delegated.
-      legacyBridgeStatus: shouldSurface ? null : undefined,
+      legacyBridgeStatus: null,
       adapterOwned: true,
       executionMaturity: maturity,
     });

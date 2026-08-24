@@ -22,6 +22,7 @@ import type {
   VideoEditorSlotRenderer,
 } from '../extensionSurface';
 import { buildSlotSurfaceDescriptors } from './projectors/slotSurfaceProjector';
+import { toCollectedContributions } from './familyAdapterUtils';
 import { buildConformanceReport } from '@/sdk/core/families/conformance';
 
 export interface VideoEditorSlotDescriptor {
@@ -50,7 +51,7 @@ export const slotAdapter: HostFamilyAdapter<
   normalize(
     input: NormalizeFamilyInput<unknown>,
   ): FamilyNormalizeResult<VideoEditorSlotDescriptor> {
-    const wrapped = buildSlotSurfaceDescriptors('slot', input.contributions, input.extensionOrder);
+    const wrapped = buildSlotSurfaceDescriptors('slot', toCollectedContributions(input.contributions), input.extensionOrder);
     const descriptors: VideoEditorSlotDescriptor[] = [];
     for (const item of wrapped) {
       const descriptor = item.descriptor as { slot?: VideoEditorSlotName };

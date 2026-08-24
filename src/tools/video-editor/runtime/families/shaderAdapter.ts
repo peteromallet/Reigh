@@ -8,10 +8,11 @@
 
 import { createPlaceholderAdapter } from './placeholderAdapterFactory';
 import { buildShaderDescriptors } from './projectors/shaderProjector';
+import { toCollectedContributions } from './familyAdapterUtils';
 
 export const shaderAdapter = createPlaceholderAdapter(
   'shader',
-  ({ contributions, extensionOrder }) => buildShaderDescriptors(contributions, extensionOrder),
+  ({ contributions, extensionOrder }) => buildShaderDescriptors(toCollectedContributions(contributions), extensionOrder),
   {
     description: 'Delegated placeholder for shader descriptor projection.',
     owner: 'video-editor-runtime',

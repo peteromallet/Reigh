@@ -14,7 +14,7 @@
 
 import type {
   TimelineSnapshot,
-  ExtensionContribution,
+  ExtensionManifestContribution,
   ExtensionDiagnostic,
 } from '@reigh/editor-sdk';
 import type {
@@ -83,7 +83,7 @@ const CONTRIBUTION_KIND_LABEL: Partial<Record<string, string>> = {
   process: 'Process',
 };
 
-function contributionRenderId(contribution: ExtensionContribution | undefined): string | undefined {
+function contributionRenderId(contribution: ExtensionManifestContribution | undefined): string | undefined {
   if (!contribution) return undefined;
   if ('effectId' in contribution && typeof contribution.effectId === 'string') {
     return contribution.effectId;
@@ -138,7 +138,7 @@ export interface PackageContributionSummary {
  * inactive count. Both are optional and default to -1 (unknown) when absent.
  */
 export function computePackageContributionSummary(
-  manifestContributions: readonly ExtensionContribution[] | undefined | null,
+  manifestContributions: readonly ExtensionManifestContribution[] | undefined | null,
   activeKeys?: ReadonlySet<string>,
   inactiveCount?: number,
   owningExtensionId?: string,
@@ -464,8 +464,8 @@ export function assembleExtensionRuntime(
     const projectedSlots = new Set(descriptors.map((descriptor) => descriptor.slot));
     const consumedSlots = new Set<string>();
     for (const item of contributions) {
-      const slotName = (item.contribution as ExtensionContribution & {
-        readonly slot?: string;
+      const slotName = (item.contribution as ExtensionManifestContribution & {
+        readonly slot?: VideoEditorSlotName;
       }).slot;
       if (slotName && projectedSlots.has(slotName) && !consumedSlots.has(slotName)) {
         consumedSlots.add(slotName);
@@ -644,9 +644,6 @@ export function assembleExtensionRuntime(
         contributionId: item.contribution.id as string,
         status: 'active',
         packageState: packageStateByExtensionId.get(item.extensionId),
-        ...(contributionRenderId(item.contribution)
-          ? { renderId: contributionRenderId(item.contribution) }
-          : {}),
         diagnostics: diagnosticsForScopedKey,
         duplicateOrdinal: item.duplicateOrdinal,
         projectionEligible: item.projectionEligible,
@@ -676,9 +673,6 @@ export function assembleExtensionRuntime(
         contributionId: item.contributionId,
         status: 'inactive-reserved',
         packageState: packageStateByExtensionId.get(item.extensionId),
-        ...(contributionRenderId(item.contribution)
-          ? { renderId: contributionRenderId(item.contribution) }
-          : {}),
         diagnostics: diagnosticsForScopedKey,
         duplicateOrdinal: item.duplicateOrdinal,
         projectionEligible: item.projectionEligible,

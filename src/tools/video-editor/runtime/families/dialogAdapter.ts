@@ -17,6 +17,7 @@ import type {
 import { getVideoFamilyDefinition } from '@reigh/editor-sdk';
 import type { VideoEditorDialogDescriptor } from '../extensionSurface';
 import { buildSlotSurfaceDescriptors } from './projectors/slotSurfaceProjector';
+import { toCollectedContributions } from './familyAdapterUtils';
 import { buildConformanceReport } from '@/sdk/core/families/conformance';
 
 const MANIFEST: HostAdapterManifest = Object.freeze({
@@ -40,7 +41,7 @@ export const dialogAdapter: HostFamilyAdapter<
   normalize(
     input: NormalizeFamilyInput<unknown>,
   ): FamilyNormalizeResult<VideoEditorDialogDescriptor> {
-    const wrapped = buildSlotSurfaceDescriptors('dialog', input.contributions, input.extensionOrder);
+    const wrapped = buildSlotSurfaceDescriptors('dialog', toCollectedContributions(input.contributions), input.extensionOrder);
     return {
       descriptors: Object.freeze(
         wrapped.map((item) => item.descriptor as VideoEditorDialogDescriptor),
