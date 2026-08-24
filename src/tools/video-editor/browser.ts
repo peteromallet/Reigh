@@ -37,6 +37,12 @@ export {
   mountVideoEditor,
 } from './browser/mountVideoEditor.tsx';
 export {
+  initializeVideoEditorExtensionRuntime,
+} from './browser/initializeVideoEditorExtensionRuntime.ts';
+export type {
+  InitializeVideoEditorExtensionRuntimeOptions,
+} from './browser/initializeVideoEditorExtensionRuntime.ts';
+export {
   createLocalAssetResolver,
   InMemoryDataProvider,
 } from './lib/browser-runtime.ts';

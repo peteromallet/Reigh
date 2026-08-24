@@ -144,6 +144,8 @@
         "useVideoEditorHost",
         "useVideoEditorTimeline",
         "mountVideoEditor",
+        "initializeVideoEditorExtensionRuntime",
+        "InitializeVideoEditorExtensionRuntimeOptions",
         "createLocalAssetResolver",
         "InMemoryDataProvider",
         "AvailableSequenceMetadata",
