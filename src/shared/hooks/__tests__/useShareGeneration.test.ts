@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 
 const supabaseMocks = vi.hoisted(() => {
@@ -69,6 +69,13 @@ vi.mock('@/shared/lib/errorHandling/runtimeError', () => ({
 import { useShareGeneration } from '../useShareGeneration';
 
 describe('useShareGeneration', () => {
+  afterEach(() => {
+    // This suite replaces the process-global crypto object for random UUID
+    // generation. Restore it so later suites retain Web Crypto's subtle
+    // implementation (notably extension integrity hashing).
+    vi.unstubAllGlobals();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     supabaseMocks.resetTableConfigs();

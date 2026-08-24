@@ -16,6 +16,7 @@ import { useReferralTracking } from '../useReferralTracking';
 
 describe('useReferralTracking', () => {
   const originalLocation = window.location;
+  const originalCrypto = globalThis.crypto;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -35,6 +36,11 @@ describe('useReferralTracking', () => {
     Object.defineProperty(window, 'location', {
       value: originalLocation,
       writable: true,
+    });
+    Object.defineProperty(globalThis, 'crypto', {
+      value: originalCrypto,
+      writable: true,
+      configurable: true,
     });
   });
 

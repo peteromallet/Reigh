@@ -80,19 +80,23 @@ describe('computeSha256', () => {
   });
 
   it('falls back to an ArrayBuffer when a replacement Web Crypto rejects views', async () => {
-    const originalDigest = crypto.subtle.digest.bind(crypto.subtle);
-    const digestSpy = vi.spyOn(crypto.subtle, 'digest').mockImplementation((algorithm, data) => {
-      if (ArrayBuffer.isView(data)) {
-        return Promise.reject(new TypeError('replacement rejects typed-array input'));
+    // Own the replacement completely instead of spying on whatever crypto
+    // object a preceding jsdom suite left behind. This keeps the regression
+    // deterministic while still exercising the production retry contract.
+    const digestBytes = Uint8Array.from(HELLO_HEX.match(/../g) ?? [], (pair) => parseInt(pair, 16));
+    const digestSpy = vi.fn(async (_algorithm: string, data: unknown) => {
+      if (ArrayBuffer.isView(data as ArrayBufferView)) {
+        throw new TypeError('replacement rejects typed-array input');
       }
-      return originalDigest(algorithm, data);
+      return digestBytes.slice().buffer;
     });
+    vi.stubGlobal('crypto', { subtle: { digest: digestSpy } });
 
     try {
       await expect(computeSha256(new TextEncoder().encode(HELLO_CONTENT))).resolves.toBe(HELLO_HEX);
       expect(digestSpy).toHaveBeenCalledTimes(2);
     } finally {
-      digestSpy.mockRestore();
+      vi.unstubAllGlobals();
     }
   });
 });
