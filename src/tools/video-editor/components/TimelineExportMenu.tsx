@@ -2,6 +2,7 @@ import { Download, FileOutput } from 'lucide-react';
 import { Button } from '@/shared/components/ui/button.tsx';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/shared/components/ui/dropdown-menu.tsx';
 import type { VideoEditorOutputFormatDescriptor } from '@/tools/video-editor/runtime/extensionSurface';
+import { useTimelineChromeContext } from '@/tools/video-editor/hooks/timelineStore.ts';
 
 /**
  * M6: Export dropdown — compile-only formats near render controls.
@@ -17,6 +18,7 @@ export function TimelineExportMenu({
   renderDependentExportFormats: VideoEditorOutputFormatDescriptor[];
   previewActionButtonClass: string;
 }) {
+  const chrome = useTimelineChromeContext();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -57,14 +59,17 @@ export function TimelineExportMenu({
         {renderDependentExportFormats.length > 0 && (
           <>
             <DropdownMenuLabel className="text-[10px] text-muted-foreground/60">
-              Reserved — Requires Render
+              Render via Astrid
             </DropdownMenuLabel>
             {renderDependentExportFormats.map((fmt) => (
               <DropdownMenuItem
                 key={fmt.id}
-                disabled
+                disabled={Boolean(fmt.disabled) || chrome.renderStatus === 'rendering'}
+                onClick={() => {
+                  if (!fmt.disabled) void chrome.startRender();
+                }}
                 className="gap-2 text-[11px] text-muted-foreground/50"
-                title={fmt.disabledReason ?? `"${fmt.label}" requires render pipeline execution. Use the Render button for video output.`}
+                title={fmt.disabledReason ?? `Render "${fmt.label}" as an Astrid task to the selected destination.`}
               >
                 <Download className="h-3 w-3" />
                 <span className="flex-1">{fmt.label}</span>

@@ -1,4 +1,5 @@
-import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { AstridLocalClient } from '@/integrations/astrid/client.ts';
 import { useClientRender } from '@/tools/video-editor/hooks/useClientRender.ts';
 import type { CompositionMetadata } from '@/tools/video-editor/hooks/useDerivedTimeline.ts';
 import type { VideoEditorExporter } from '@/tools/video-editor/lib/browser-runtime.ts';
@@ -29,6 +30,7 @@ import {
 } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import { syncPlannerDiagnosticsToCollection } from '@/tools/video-editor/runtime/diagnosticCollectionSync.ts';
 import type { PlannerBackedRenderRouteDecision } from '@/tools/video-editor/lib/renderRouter.ts';
+import type { RenderExportDestination } from '@/tools/video-editor/lib/renderRouter.ts';
 import type {
   CapabilityFinding,
   Diagnostic,
@@ -332,6 +334,11 @@ export function useRenderState(
   const [renderProgress, setRenderProgress] = useState<RenderProgress>(null);
   const [renderResultUrl, setRenderResultUrl] = useState<string | null>(null);
   const [renderResultFilename, setRenderResultFilename] = useState<string | null>(null);
+  const [activeRenderTaskId, setActiveRenderTaskId] = useState<string | null>(null);
+  const [renderDestination, setRenderDestination] = useState<RenderExportDestination>('download');
+  const renderPollGenerationRef = useRef(0);
+  const renderPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const renderClientRef = useRef<AstridLocalClient | null>(null);
   // M6: Export state
   const [exportStatus, setExportStatus] = useState<ExportStatus>('idle');
   const [exportLog, setExportLogState] = useState('');
@@ -352,8 +359,10 @@ export function useRenderState(
 
   useEffect(() => {
     return () => {
+      renderPollGenerationRef.current += 1;
+      if (renderPollTimerRef.current) clearTimeout(renderPollTimerRef.current);
       if (renderResultUrl) {
-        URL.revokeObjectURL(renderResultUrl);
+        if (renderResultUrl.startsWith('blob:')) URL.revokeObjectURL(renderResultUrl);
       }
     };
   }, [renderResultUrl]);
@@ -378,7 +387,7 @@ export function useRenderState(
         ? updater({ url: renderResultUrl, filename: renderResultFilename })
         : updater;
 
-      if (renderResultUrl && renderResultUrl !== nextValue.url) {
+      if (renderResultUrl?.startsWith('blob:') && renderResultUrl !== nextValue.url) {
         URL.revokeObjectURL(renderResultUrl);
       }
 
@@ -457,6 +466,151 @@ export function useRenderState(
     resolvedConfig,
   ]);
 
+  const pollAstridRender = useCallback(async (
+    client: AstridLocalClient,
+    taskId: string,
+    generation: number,
+  ): Promise<void> => {
+    if (generation !== renderPollGenerationRef.current) return;
+    try {
+      const task = await client.tasks.get(taskId);
+      if (generation !== renderPollGenerationRef.current) return;
+
+      if (task.status === 'succeeded') {
+        const output = (task.outputs ?? []).find((candidate) => candidate.role === 'render')
+          ?? (task.outputs ?? []).find((candidate) => candidate.is_primary)
+          ?? task.outputs?.[0];
+        if (!output) {
+          setRenderStatus('error');
+          setRenderProgress(null);
+          setRenderLog('Astrid completed the render task without a committed media output.');
+          setActiveRenderTaskId(null);
+          return;
+        }
+        setRenderResultUrl(client.media.contentUrl(output.media_id));
+        setRenderResultFilename(resolvedConfig?.output?.file ?? `timeline-${runtimeContext?.timelineId ?? taskId}.mp4`);
+        setRenderProgress({ current: 1, total: 1, percent: 100, phase: 'complete' });
+        setRenderStatus('done');
+        setRenderDirty(false);
+        setRenderLog('Render complete. Playback is streaming verified managed bytes from Astrid.');
+        setActiveRenderTaskId(null);
+        return;
+      }
+
+      if (task.status === 'failed' || task.status === 'cancelled') {
+        setRenderStatus(task.status === 'cancelled' ? 'idle' : 'error');
+        setRenderProgress(null);
+        setRenderLog(task.status === 'cancelled' ? 'Render cancelled.' : 'Astrid render failed. Open task details for executor diagnostics.');
+        setActiveRenderTaskId(null);
+        return;
+      }
+
+      const attempt = task.attempts?.at(-1) as (Record<string, unknown> & {
+        progress?: { current?: number; total?: number; percent?: number; phase?: string };
+      }) | undefined;
+      const progress = attempt?.progress;
+      const total = Math.max(1, progress?.total ?? renderMetadata?.durationInFrames ?? 1);
+      const current = Math.max(0, Math.min(total, progress?.current ?? 0));
+      const percent = Math.max(0, Math.min(100,
+        progress?.percent ?? Math.round((current / total) * 100),
+      ));
+      setRenderStatus('rendering');
+      setRenderProgress({
+        current,
+        total,
+        percent,
+        phase: progress?.phase ?? task.status,
+      });
+      setRenderLog(task.status === 'queued' ? 'Render queued in Astrid.' : 'Astrid is rendering the timeline.');
+      renderPollTimerRef.current = setTimeout(() => {
+        void pollAstridRender(client, taskId, generation);
+      }, 2_000);
+    } catch (error) {
+      if (generation !== renderPollGenerationRef.current) return;
+      setRenderStatus('error');
+      setRenderProgress(null);
+      setRenderLog(`Could not read Astrid render progress: ${error instanceof Error ? error.message : String(error)}`);
+      setActiveRenderTaskId(null);
+    }
+  }, [renderMetadata?.durationInFrames, resolvedConfig?.output?.file, runtimeContext?.timelineId]);
+
+  const startAstridRender = useCallback(async (): Promise<boolean> => {
+    const projectId = runtimeContext?.project?.projectId;
+    const timelineId = runtimeContext?.timelineId;
+    if (!projectId || !timelineId || !resolvedConfig) return false;
+
+    setRenderStatus('rendering');
+    setRenderProgress({
+      current: 0,
+      total: renderMetadata?.durationInFrames ?? 1,
+      percent: 0,
+      phase: 'admitting',
+    });
+    setRenderResultUrl((current) => {
+      if (current?.startsWith('blob:')) URL.revokeObjectURL(current);
+      return null;
+    });
+    setRenderResultFilename(null);
+    setRenderLog('Admitting render to Astrid…');
+
+    const bridgeBaseUrl = (runtimeContext.provider as { apiBaseUrl?: string }).apiBaseUrl;
+    const client = new AstridLocalClient({ projectSlug: projectId, baseUrl: bridgeBaseUrl });
+    renderClientRef.current = client;
+    const renderRouter = await import('@/tools/video-editor/lib/renderRouter.ts');
+    const request = {
+      timelineId,
+      // R1 resolves the canonical timeline document + registry itself; these
+      // legacy payload fields stay null so the browser cannot become a second
+      // render-input authority.
+      assetRegistry: null,
+      resolvedConfig,
+      renderRuntime: {
+        projectId,
+        bridgeBaseUrl,
+        destination: renderDestination,
+      },
+    };
+    const built = renderRouter.buildRenderTimelinePayload({ request });
+    if (!built.payload) {
+      setRenderStatus('error');
+      setRenderProgress(null);
+      setRenderLog(built.error ?? 'Could not build Astrid render request.');
+      return true;
+    }
+    const admission = await renderRouter.enqueueBanodocoRenderTimeline(built.payload, {
+      client,
+      destination: renderDestination,
+    });
+    if (admission.status === 'error' || !admission.task_id) {
+      setRenderStatus('error');
+      setRenderProgress(null);
+      setRenderLog(admission.message);
+      return true;
+    }
+    setActiveRenderTaskId(admission.task_id);
+    const generation = ++renderPollGenerationRef.current;
+    await pollAstridRender(client, admission.task_id, generation);
+    return true;
+  }, [pollAstridRender, renderDestination, renderMetadata?.durationInFrames, resolvedConfig, runtimeContext]);
+
+  const cancelRender = useCallback(async () => {
+    if (!activeRenderTaskId || !renderClientRef.current) return;
+    const taskId = activeRenderTaskId;
+    renderPollGenerationRef.current += 1;
+    if (renderPollTimerRef.current) clearTimeout(renderPollTimerRef.current);
+    try {
+      const renderRouter = await import('@/tools/video-editor/lib/renderRouter.ts');
+      await renderRouter.cancelAstridRenderTask(renderClientRef.current, taskId);
+      setRenderStatus('idle');
+      setRenderProgress(null);
+      setRenderLog('Render cancelled.');
+      setActiveRenderTaskId(null);
+    } catch (error) {
+      setRenderStatus('error');
+      setRenderLog(`Could not cancel render: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }, [activeRenderTaskId]);
+
   const startRender = useCallback(async () => {
     // ---- export guard: scan for unknown IDs before routing ------------------
     if (!runExportGuard()) {
@@ -515,15 +669,21 @@ export function useRenderState(
     }
 
     if (decision.route === 'worker-banodoco') {
+      if (await startAstridRender()) return;
       setRenderStatus('error');
       setRenderProgress(null);
       setRenderDirty(false);
       setRenderLog(formatRouteBlockerLog(
-        `Worker render unavailable for route "${decision.reason}". This timeline was not sent to the browser renderer.`,
+        `Worker render unavailable for route "${decision.reason}": Astrid has no project/timeline scope.`,
         'planner' in decision ? decision.planner.plannerResult.blockers : undefined,
       ));
       return;
     }
+
+    // Once an editor is project-scoped, every supported render uses the same
+    // Astrid task authority. Headless/browser-only hosts keep the WebCodecs
+    // path below as an explicit unscoped capability, not a silent fallback.
+    if (await startAstridRender()) return;
 
     if (exporter && resolvedConfig) {
       setRenderStatus('rendering');
@@ -593,6 +753,7 @@ export function useRenderState(
     renderMetadata?.durationInFrames,
     resolvedConfig,
     startClientRender,
+    startAstridRender,
     runExportGuard,
   ]);
 
@@ -750,6 +911,10 @@ export function useRenderState(
     renderProgress,
     renderResultUrl,
     renderResultFilename,
+    activeRenderTaskId,
+    renderDestination,
+    setRenderDestination,
+    cancelRender,
     setRenderStatus,
     setRenderLog,
     setRenderDirty,

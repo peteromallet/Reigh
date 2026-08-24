@@ -1,33 +1,24 @@
-import type { Session } from '@supabase/supabase-js';
+import type { RenderExportDestination } from '@/tools/video-editor/lib/renderRouter.ts';
 
 export interface RenderRuntime {
   projectId: string;
-  orchestratorBaseUrl: string;
-  getSupabaseSession: () => Promise<Session | null>;
-  getWorkerJwt: () => Promise<string | null>;
+  /** Same-origin Astrid bridge base. */
+  bridgeBaseUrl?: string;
+  destination?: RenderExportDestination;
 }
 
 export const FALLBACK_RENDER_RUNTIME: RenderRuntime = {
   projectId: '',
-  orchestratorBaseUrl: '',
-  getSupabaseSession: async () => null,
-  getWorkerJwt: async () => null,
 };
 
 export function createRenderRuntime(input: {
   projectId: string;
-  orchestratorBaseUrl: string;
-  getSupabaseSession?: () => Promise<Session | null>;
-  getWorkerJwt?: () => Promise<string | null>;
+  bridgeBaseUrl?: string;
+  destination?: RenderExportDestination;
 }): RenderRuntime {
-  const getSupabaseSession = input.getSupabaseSession ?? (async () => null);
   return {
     projectId: input.projectId,
-    orchestratorBaseUrl: input.orchestratorBaseUrl,
-    getSupabaseSession,
-    getWorkerJwt: input.getWorkerJwt ?? (async () => {
-      const session = await getSupabaseSession();
-      return session?.access_token ?? null;
-    }),
+    bridgeBaseUrl: input.bridgeBaseUrl,
+    destination: input.destination ?? 'download',
   };
 }

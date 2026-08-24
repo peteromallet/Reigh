@@ -80,28 +80,8 @@ async function executeProviderRoute({
       };
     }
     case 'worker-banodoco': {
-      let workerJwt: string | null = null;
-      try {
-        workerJwt = await request.renderRuntime.getWorkerJwt();
-      } catch (error) {
-        return {
-          status: 'error',
-          providerId: 'worker-banodoco',
-          message: `Worker render dispatch failed for route "${decision.reason}": ${error instanceof Error ? error.message : String(error)}`,
-        };
-      }
-
-      if (!workerJwt) {
-        return {
-          status: 'error',
-          providerId: 'worker-banodoco',
-          message: `Worker render dispatch failed for route "${decision.reason}": missing worker session token.`,
-        };
-      }
-
       const { payload, error } = buildRenderTimelinePayload({
         request,
-        userJwt: workerJwt,
       });
 
       if (!payload) {
@@ -113,7 +93,8 @@ async function executeProviderRoute({
       }
 
       const enqueueResult = await enqueueBanodocoRenderTimeline(payload, {
-        orchestratorBaseUrl: request.renderRuntime.orchestratorBaseUrl,
+        bridgeBaseUrl: request.renderRuntime.bridgeBaseUrl,
+        destination: request.renderRuntime.destination,
       });
 
       if (enqueueResult.status === 'error') {

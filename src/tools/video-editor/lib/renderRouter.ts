@@ -4,9 +4,8 @@
 //   * stay in the existing client-side WebCodecs path (`useClientRender`),
 //     which handles pure-media + Reigh-native clipTypes ("text",
 //     "effect-layer", "media", "hold").
-//   * delegate to the new orchestrator `banodoco_render_timeline` task,
-//     which the banodoco-worker pool services with Node + Chromium +
-//     Remotion + the @banodoco/timeline-theme-* packages.
+//   * admit an Astrid `render_export` task through the same R1 task route
+//     used by every other local capability.
 //
 // Decision rule (per sprint brief):
 //   * If ANY clip's clipType is in THEME_PACKAGE_REGISTRY → orchestrator.
@@ -26,6 +25,8 @@
 // dispatch, not theme presence.
 
 import type { TimelineRenderRequest } from '@/tools/video-editor/hooks/timeline-state-types.ts';
+import { AstridLocalClient } from '@/integrations/astrid/client.ts';
+import { BridgeRouteError } from '@/integrations/astrid/transport.ts';
 import { getRegisteredClipTypeDescriptor } from '@/tools/video-editor/clip-types/runtime.ts';
 import {
   getGeneratedRemotionModuleStatus,
@@ -78,7 +79,7 @@ export interface ContributedClipRecord {
  *
  *   * `browser-remotion`  — client-side WebCodecs / Remotion path
  *                          (`useClientRender`, native + media clips).
- *   * `worker-banodoco`   — orchestrator `banodoco_render_timeline`
+ *   * `worker-banodoco`   — Astrid `render_export` task admission
  *                          (themed + generated-remotion-module clips).
  *   * `preview-only`      — generated remotion_module clips with invalid /
  *                          missing artifact metadata. Cannot be rendered;
@@ -621,7 +622,7 @@ export function decideRenderRoute(
 }
 
 // ---------------------------------------------------------------------------
-// Orchestrator dispatch (banodoco_render_timeline)
+// Astrid render_export task admission
 // ---------------------------------------------------------------------------
 
 export interface BanodocoRenderTimelinePayload {
@@ -630,7 +631,8 @@ export interface BanodocoRenderTimelinePayload {
   assets: unknown;
   theme_id: string;
   output_filename: string;
-  user_jwt: string;
+  /** @deprecated The Astrid bridge is locally trusted and needs no user JWT. */
+  user_jwt?: string;
   project_id: string;
   correlation_id: string;
 }
@@ -644,7 +646,8 @@ export interface BuildRenderPayloadInput {
   request: Pick<TimelineRenderRequest, 'timelineId' | 'assetRegistry' | 'resolvedConfig' | 'renderRuntime'> & {
     outputFilename?: string;
   };
-  userJwt: string;
+  /** @deprecated Kept source-compatible while callers migrate off Supabase auth. */
+  userJwt?: string;
   /** Tests inject a deterministic UUID; production uses crypto.randomUUID. */
   correlationId?: string;
 }
@@ -676,7 +679,6 @@ export function buildRenderTimelinePayload(
   const { request } = input;
   if (!request?.timelineId) return { error: 'timelineId is required' };
   if (!request?.renderRuntime?.projectId) return { error: 'projectId is required' };
-  if (!input.userJwt) return { error: 'user JWT is required (SD-022)' };
   if (!request.resolvedConfig) return { error: 'resolved timeline config is required' };
 
   return {
@@ -686,7 +688,7 @@ export function buildRenderTimelinePayload(
       assets: request.assetRegistry ?? { assets: {} },
       theme_id: defaultThemeId(request.resolvedConfig),
       output_filename: request.outputFilename ?? defaultOutputFilename(request.timelineId),
-      user_jwt: input.userJwt,
+      ...(input.userJwt ? { user_jwt: input.userJwt } : {}),
       project_id: request.renderRuntime.projectId,
       correlation_id: input.correlationId ?? newCorrelationId(),
     },
@@ -700,85 +702,90 @@ export interface EnqueueRenderResult {
   message: string;
 }
 
-interface OrchestratorEnqueueResponse {
-  task_id?: string;
+export type RenderExportDestination = 'download' | 'project-media';
+
+export interface EnqueueRenderOptions {
+  /** Injected in tests; production constructs the client from the payload. */
+  client?: AstridLocalClient;
+  bridgeBaseUrl?: string;
+  idempotencyKey?: string;
+  destination?: RenderExportDestination;
+  expectedVersion?: number;
 }
 
-/** POST `banodoco_render_timeline` to the orchestrator's enqueue endpoint.
+function renderAdmissionKey(payload: BanodocoRenderTimelinePayload, options: EnqueueRenderOptions): string {
+  if (options.idempotencyKey) return options.idempotencyKey;
+  const version = options.expectedVersion ?? 'head';
+  const destination = options.destination ?? 'download';
+  return `reigh.render:v1:${payload.timeline_id}:${version}:${destination}:${payload.output_filename}`;
+}
+
+/**
+ * Admit a render through Astrid's common R1 task primitive.
  *
- * Mirrors `delegateToBanodocoAgent.enqueueBanodocoTask` to keep the
- * agent + UI dispatch on one paper trail.
+ * The deliberately retained function name keeps older render-pipeline callers
+ * source-compatible; there is no Banodoco/orchestrator request behind it.
+ * Astrid resolves and snapshots `timeline_ref` at admission, so the browser
+ * sends neither timeline document bytes nor registry bytes as a second source
+ * of truth.
  */
 export async function enqueueBanodocoRenderTimeline(
   payload: BanodocoRenderTimelinePayload,
-  options: {
-    fetchImpl?: typeof fetch;
-    orchestratorBaseUrl: string;
-  },
+  options: EnqueueRenderOptions = {},
 ): Promise<EnqueueRenderResult> {
-  if (!options.orchestratorBaseUrl) {
-    return {
-      status: 'error',
-      message: 'orchestratorBaseUrl is required for banodoco_render_timeline.',
-    };
-  }
-  const base = options.orchestratorBaseUrl.replace(/\/$/, '');
-  const enqueueUrl = base.includes('/functions/v1/')
-    ? base
-    : `${base}/functions/v1/enqueue-task`;
-
-  const fetchImpl = options.fetchImpl ?? fetch;
-
-  const body = {
-    task_type: 'banodoco_render_timeline',
-    params: payload,
-    project_id: payload.project_id,
-    run_type: 'banodoco-worker',
-    worker_pool: 'banodoco',
-  };
-
-  let resp: Response;
   try {
-    resp = await fetchImpl(enqueueUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${payload.user_jwt}`,
-      },
-      body: JSON.stringify(body),
+    const client = options.client ?? new AstridLocalClient({
+      projectSlug: payload.project_id,
+      baseUrl: options.bridgeBaseUrl,
     });
-  } catch (err) {
+    const result = await client.tasks.admit({
+      family: 'render_export',
+      input: {
+        timeline_ref: payload.timeline_id,
+        ...(options.expectedVersion !== undefined
+          ? { expected_version: options.expectedVersion }
+          : {}),
+        format: 'mp4',
+        output_filename: payload.output_filename,
+        destination: options.destination ?? 'download',
+        correlation_id: payload.correlation_id,
+      },
+    }, renderAdmissionKey(payload, options));
+    return {
+      status: 'queued',
+      task_id: result.task.id,
+      correlation_id: payload.correlation_id,
+      message: 'Render queued in Astrid. Progress and output are read from the common task ledger.',
+    };
+  } catch (error) {
     return {
       status: 'error',
-      message: `Failed to reach orchestrator: ${err instanceof Error ? err.message : String(err)}`,
+      correlation_id: payload.correlation_id,
+      message: `Astrid render admission failed: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
+}
 
-  if (resp.status >= 400) {
-    let errBody = '';
-    try {
-      errBody = (await resp.text()).slice(0, 500);
-    } catch {
-      // ignore
-    }
-    return {
-      status: 'error',
-      message: `Orchestrator rejected enqueue (HTTP ${resp.status}): ${errBody}`,
-    };
-  }
-
-  let parsed: OrchestratorEnqueueResponse | null = null;
+/** Cancel a queued/running render through the common fenced task route. */
+export async function cancelAstridRenderTask(
+  client: AstridLocalClient,
+  taskId: string,
+): Promise<void> {
   try {
-    parsed = (await resp.json()) as OrchestratorEnqueueResponse;
-  } catch {
-    // 2xx with no body is acceptable.
+    await client.tasks.cancel(taskId);
+    return;
+  } catch (error) {
+    if (!(error instanceof BridgeRouteError) || error.status !== 409) throw error;
   }
 
-  return {
-    status: 'queued',
-    task_id: parsed?.task_id,
-    correlation_id: payload.correlation_id,
-    message:
-      'Themed render queued — the editor will surface the download URL when the worker finishes.',
-  };
+  const detail = await client.tasks.get(taskId);
+  const attempt = (detail.attempts ?? []).find((candidate) => candidate.status === 'running');
+  if (!attempt) {
+    throw new Error(`Cannot cancel render ${taskId}: Astrid returned no live attempt fence.`);
+  }
+  await client.tasks.cancel(taskId, {
+    attempt_id: attempt.attempt_id,
+    lease_id: attempt.lease_id,
+    status_version: attempt.status_version,
+  });
 }

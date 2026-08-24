@@ -38,6 +38,7 @@ import type {
 } from '@/tools/video-editor/hooks/timeline-state-types.ts';
 import type { ClipTab, EditorPreferences } from '@/tools/video-editor/hooks/useEditorPreferences.ts';
 import type { RenderStatus } from '@/tools/video-editor/hooks/useRenderState.ts';
+import type { RenderExportDestination } from '@/tools/video-editor/lib/renderRouter.ts';
 import type { SaveStatus } from '@/tools/video-editor/hooks/useTimelineSave.ts';
 import type { TimelineData } from '@/tools/video-editor/lib/timeline-data.ts';
 import type { SelectClipOptions, UseTimelineMultiSelectResult } from '@/shared/state/selectionStore.ts';
@@ -202,6 +203,10 @@ export interface TimelineChromeContextValue {
   queuedRender: TimelineQueuedRender;
   renderResultUrl: string | null;
   renderResultFilename: string | null;
+  activeRenderTaskId: string | null;
+  renderDestination: RenderExportDestination;
+  setRenderDestination: (destination: RenderExportDestination) => void;
+  cancelRender: () => Promise<void>;
   renderRequest: TimelineRenderRequest;
   undo: () => void;
   redo: () => void;

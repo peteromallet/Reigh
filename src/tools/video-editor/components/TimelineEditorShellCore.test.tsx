@@ -692,9 +692,9 @@ describe('TimelineEditorShellCore — M6 export dropdown', () => {
     expect(screen.getByText('.csv')).toBeTruthy();
   });
 
-  // ---- Render-dependent format items are disabled with diagnostics ----------
+  // ---- Render-dependent formats dispatch through Astrid --------------------
 
-  it('shows render-dependent format as a disabled menu item with diagnostic tooltip', () => {
+  it('shows render-dependent format as an enabled Astrid task action', () => {
     __setExportExtensions({
       outputFormats: [
         { id: 'fmt-mp4', extensionId: 'ext-b', label: 'MP4 Video', requiresRender: true, outputExtension: 'mp4', disabled: false },
@@ -705,17 +705,15 @@ describe('TimelineEditorShellCore — M6 export dropdown', () => {
 
     fireEvent.click(screen.getByText('Export'));
 
-    // Check the "Reserved — Requires Render" label
-    expect(screen.getByText('Reserved — Requires Render')).toBeTruthy();
-    // The render-dependent format item should be present but disabled
+    expect(screen.getByText('Render via Astrid')).toBeTruthy();
+    // Registered render formats are now actionable through common task admission.
     const formatItem = screen.getByText('MP4 Video');
     expect(formatItem).toBeTruthy();
     const menuItem = formatItem.closest('[role="menuitem"]');
     expect(menuItem).toBeTruthy();
-    expect(menuItem).toHaveAttribute('aria-disabled', 'true');
-    // Should have a title tooltip with diagnostics
+    expect(menuItem).not.toHaveAttribute('aria-disabled', 'true');
     expect(menuItem).toHaveAttribute('title');
-    expect(menuItem!.getAttribute('title')).toContain('requires render pipeline execution');
+    expect(menuItem!.getAttribute('title')).toContain('Astrid task');
   });
 
   it('shows disabledReason in tooltip for disabled render-dependent formats', () => {
@@ -750,13 +748,13 @@ describe('TimelineEditorShellCore — M6 export dropdown', () => {
     // Both sections visible
     expect(screen.getByText('Metadata JSON')).toBeTruthy();
     expect(screen.getByText('MP4 Video')).toBeTruthy();
-    expect(screen.getByText('Reserved — Requires Render')).toBeTruthy();
+    expect(screen.getByText('Render via Astrid')).toBeTruthy();
     // Compile-only enabled
     const compileMenuItem = screen.getByText('Metadata JSON').closest('[role="menuitem"]');
     expect(compileMenuItem).not.toHaveAttribute('aria-disabled', 'true');
-    // Render-dependent disabled
+    // Render-dependent formats are admitted through the Astrid task ledger.
     const renderMenuItem = screen.getByText('MP4 Video').closest('[role="menuitem"]');
-    expect(renderMenuItem).toHaveAttribute('aria-disabled', 'true');
+    expect(renderMenuItem).not.toHaveAttribute('aria-disabled', 'true');
   });
 
   // ---- Render button behavior is unchanged -------------------------------
