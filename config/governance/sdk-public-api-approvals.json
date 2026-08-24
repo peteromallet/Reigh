@@ -163,5 +163,34 @@
         { "name": "TimelineViewStore", "kind": "interface", "namespace": "type" }
       ]
     }
+  },
+  "_extensionShipQualitySdkAdditionRecord": {
+    "milestone": "Extension ship quality — lifecycle composition, data-lane actions, and provenance",
+    "baselineUpdatedAt": "2026-08-24T09:13:06.538Z",
+    "changeKind": "addition",
+    "compatibility": "source-compatible",
+    "description": "13 intentional exports added to @reigh/editor-sdk: the combineDisposeHandles lifecycle helper, the DataLaneActionDescriptor author contract, and the host-owned generation provenance/version/fingerprint/synchronization contracts. The baseline manifest was rewritten after the public contract registry classified these symbols; no existing export changed shape, source, or namespace.",
+    "changedExportCount": 13,
+    "addedExportsByModule": {
+      "src/sdk/dispose.ts": [
+        { "name": "combineDisposeHandles", "kind": "function", "namespace": "value" }
+      ],
+      "src/sdk/video/families/dataKind.ts": [
+        { "name": "DataLaneActionDescriptor", "kind": "interface", "namespace": "type" }
+      ],
+      "src/sdk/video/timeline/sourceMap.ts": [
+        { "name": "HOST_GENERATION_PROVENANCE_VERSION", "kind": "const", "namespace": "value" },
+        { "name": "classifyGeneratedOutputSync", "kind": "function", "namespace": "value" },
+        { "name": "computeHostFingerprint", "kind": "function", "namespace": "value" },
+        { "name": "computeTimelineClipOutputFingerprint", "kind": "function", "namespace": "value" },
+        { "name": "createHostGeneratedObjectMeta", "kind": "function", "namespace": "value" },
+        { "name": "readHostGenerationProvenance", "kind": "function", "namespace": "value" },
+        { "name": "CreateHostGeneratedObjectMetaInput", "kind": "interface", "namespace": "type" },
+        { "name": "GeneratedOutputConflictPolicy", "kind": "type", "namespace": "type" },
+        { "name": "GeneratedOutputSyncState", "kind": "type", "namespace": "type" },
+        { "name": "HostGenerationProvenance", "kind": "interface", "namespace": "type" },
+        { "name": "TimelineClipOutputFingerprintInput", "kind": "interface", "namespace": "type" }
+      ]
+    }
   }
 }
