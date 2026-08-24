@@ -52,7 +52,10 @@ async function openEditorAt(page: import('@playwright/test').Page) {
 }
 
 /** Select the first clip and drag it right — a real edit that triggers autosave. */
-async function dragFirstClipRight(page: import('@playwright/test').Page) {
+async function dragFirstClipRight(
+  page: import('@playwright/test').Page,
+  options: { beforeMove?: () => Promise<void> } = {},
+) {
   const clip = page.locator('[data-clip-id]').first();
   await clip.waitFor({ timeout: 15_000 });
   const box = await clip.boundingBox();
@@ -63,8 +66,85 @@ async function dragFirstClipRight(page: import('@playwright/test').Page) {
   const cy = box.y + box.height / 2;
   await page.mouse.move(cx, cy);
   await page.mouse.down();
+  // A caller can hold the gesture open while a second writer commits. This
+  // makes the browser's stale expected_version deterministic instead of
+  // relying on a polling/realtime race between the two writers.
+  await options.beforeMove?.();
   await page.mouse.move(cx + 48, cy, { steps: 6 });
   await page.mouse.up();
+}
+
+type BrowserNetworkAudit = {
+  urls: string[];
+  assertAllowed: () => void;
+};
+
+/**
+ * Capture every browser-originated network endpoint for real-bridge runs.
+ * The editor's only permitted network authorities are the local Vite app and
+ * the loopback Astrid bridge; this catches accidental Supabase, Google Fonts,
+ * or other remote calls even when the request later fails.
+ */
+function installBrowserNetworkAudit(page: import('@playwright/test').Page): BrowserNetworkAudit {
+  const urls: string[] = [];
+  const record = (url: string) => {
+    if (!urls.includes(url)) urls.push(url);
+  };
+  page.on('request', (request) => record(request.url()));
+  page.on('websocket', (socket) => record(socket.url()));
+
+  const appOrigin = new URL(BASE_URL).origin;
+  const bridgeOrigin = BRIDGE_ORIGIN;
+  const allowedOrigins = new Set([appOrigin, bridgeOrigin]);
+  const allowed = (raw: string) => {
+    if (/^(about|blob|data|chrome-extension):/i.test(raw)) return true;
+    let parsed: URL;
+    try {
+      parsed = new URL(raw);
+    } catch {
+      return false;
+    }
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return allowedOrigins.has(parsed.origin);
+    }
+    if (parsed.protocol === 'ws:' || parsed.protocol === 'wss:') {
+      return allowedOrigins.has(`${parsed.protocol === 'wss:' ? 'https' : 'http'}://${parsed.host}`);
+    }
+    return true;
+  };
+
+  return {
+    urls,
+    assertAllowed: () => {
+      const unexpected = urls.filter((url) => !allowed(url));
+      expect(unexpected, 'real-bridge browser traffic must stay on local authorities').toEqual([]);
+      expect(urls.filter((url) => /(supabase\.co|54321|fonts\.googleapis\.com|fonts\.gstatic\.com)/i.test(url)),
+        'real-bridge browser traffic must not use Supabase or external fonts').toEqual([]);
+    },
+  };
+}
+
+/** Freeze timeline reads after the first browser load so a live remote write
+ * cannot silently rebase the editor before its in-flight gesture saves. The
+ * browser still makes the real save request and receives the real 409. */
+async function freezeTimelineReads(page: import('@playwright/test').Page) {
+  let snapshot: { status: number; headers: Record<string, string>; body: Buffer } | null = null;
+  await page.route('**/*', async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (request.method() !== 'GET' || !/\/projects\/demo-project\/timelines\/[^/]+$/.test(path)) {
+      await route.continue();
+      return;
+    }
+    if (!snapshot) {
+      const response = await route.fetch();
+      const headers = response.headers();
+      delete headers['content-length'];
+      delete headers['content-encoding'];
+      snapshot = { status: response.status(), headers, body: await response.body() };
+    }
+    await route.fulfill(snapshot);
+  });
 }
 
 
@@ -87,11 +167,79 @@ function bridgeHeaders(): Record<string, string> {
   }
 }
 
+test('release bridge has explicit auth/protocol negatives and atomic two-writer CAS', async ({ request }) => {
+  const url = await timelineUrl(request);
+  const validHeaders = bridgeHeaders();
+  expect(validHeaders.Authorization).toMatch(/^Bearer .+/);
+
+  const unauthenticated = await request.get(`${BRIDGE_ORIGIN}/health`);
+  expect(unauthenticated.status()).toBe(401);
+  expect((await unauthenticated.json()).error).toBe('unauthorized');
+
+  const wrongToken = await request.get(`${BRIDGE_ORIGIN}/health`, {
+    headers: { Authorization: 'Bearer definitely-not-the-release-token', 'X-Astrid-Bridge-Version': 'v1' },
+  });
+  expect(wrongToken.status()).toBe(401);
+  expect((await wrongToken.json()).error).toBe('unauthorized');
+
+  const missingProtocol = await request.get(`${BRIDGE_ORIGIN}/health`, {
+    headers: { Authorization: validHeaders.Authorization },
+  });
+  expect(missingProtocol.status()).toBe(426);
+  expect((await missingProtocol.json()).error).toBe('protocol_version_mismatch');
+
+  const wrongProtocol = await request.get(`${BRIDGE_ORIGIN}/health`, {
+    headers: { ...validHeaders, 'X-Astrid-Bridge-Version': 'v0' },
+  });
+  expect(wrongProtocol.status()).toBe(426);
+  expect((await wrongProtocol.json()).error).toBe('protocol_version_mismatch');
+
+  const initial = await request.get(url, { headers: validHeaders });
+  expect(initial.status()).toBe(200);
+  const initialPayload = await initial.json();
+  const expectedVersion = initialPayload.config_version as number;
+  const writerBodies = ['writer-a', 'writer-b'].map((marker) => ({
+    config: {
+      ...initialPayload.config,
+      app: { ...(initialPayload.config.app ?? {}), 'b8.cas.writer': marker },
+    },
+    registry: initialPayload.registry,
+    expected_version: expectedVersion,
+  }));
+
+  // Two independent writers race on the same head. Exactly one can commit;
+  // the loser must be a typed, side-effect-free 409 rather than a last-write-
+  // wins overwrite or a transient 500.
+  const attempts = await Promise.all(writerBodies.map(async (data) => {
+    const response = await request.post(`${url}/save`, { headers: validHeaders, data });
+    return { data, response, payload: await response.json() };
+  }));
+  expect(attempts.map(({ response }) => response.status()).sort()).toEqual([200, 409]);
+  const winner = attempts.find(({ response }) => response.status() === 200)!;
+  const loser = attempts.find(({ response }) => response.status() === 409)!;
+  expect(loser.payload.error).toBe('timeline_version_conflict');
+  expect(loser.payload.config_version).toBe(winner.payload.config_version);
+
+  const committed = await request.get(url, { headers: validHeaders });
+  const committedPayload = await committed.json();
+  expect(['writer-a', 'writer-b']).toContain(committedPayload.config.app['b8.cas.writer']);
+  expect(committedPayload.config_version).toBe(winner.payload.config_version);
+
+  // Replaying the exact accepted whole-document request after the head moved
+  // must return the original receipt/result, not create a second event.
+  const replay = await request.post(`${url}/save`, { headers: validHeaders, data: winner.data });
+  expect(replay.status()).toBe(200);
+  const replayPayload = await replay.json();
+  expect(replayPayload.config_version).toBe(winner.payload.config_version);
+  expect(replayPayload.config.app['b8.cas.writer']).toBe(winner.data.config.app['b8.cas.writer']);
+});
+
 /**
  * OpenAPI conformance (B3 envelope) against the real bridge: GET timeline,
  * POST save with CAS, GET assets.
  */
 test('real release bridge serves timeline, task, generation, and media surfaces', async ({ request }) => {
+  const validHeaders = bridgeHeaders();
   const url = await timelineUrl(request);
   const timelineId = url.split('/').at(-1);
   expect(timelineId).toBeTruthy();
@@ -143,6 +291,38 @@ test('real release bridge serves timeline, task, generation, and media surfaces'
   });
   expect(timelines.status()).toBe(200);
 
+  // Render admission is fenced to the exact saved timeline version. Advance
+  // the head, then prove a stale render request is rejected before a task or
+  // receipt is allocated.
+  const renderBump = await request.post(`${url}/save`, {
+    headers: validHeaders,
+    data: {
+      config: { ...savedPayload.config, app: { ...(savedPayload.config.app ?? {}), 'b8.render.bump': true } },
+      registry: savedPayload.registry,
+      expected_version: savedPayload.config_version,
+    },
+  });
+  expect(renderBump.status()).toBe(200);
+  const renderBumpPayload = await renderBump.json();
+  const staleRender = await request.post(`${BRIDGE_ORIGIN}/projects/demo-project/tasks`, {
+    headers: { ...validHeaders, 'Idempotency-Key': 'b8-real-release-stale-render-v1' },
+    data: {
+      family: 'render_export',
+      input: {
+        timeline_ref: timelineId,
+        expected_version: savedPayload.config_version,
+        format: 'mp4',
+        output_filename: 'b8-stale-render.mp4',
+        destination: 'download',
+        correlation_id: 'b8-stale-render',
+      },
+    },
+  });
+  expect(staleRender.status()).toBe(409);
+  const staleRenderPayload = await staleRender.json();
+  expect(staleRenderPayload.error).toBe('conflict');
+  expect(staleRenderPayload.config_version).toBe(renderBumpPayload.config_version);
+
   const taskAdmission = await request.post(`${BRIDGE_ORIGIN}/projects/demo-project/tasks`, {
     headers: {
       ...bridgeHeaders(),
@@ -152,7 +332,7 @@ test('real release bridge serves timeline, task, generation, and media surfaces'
       family: 'render_export',
       input: {
         timeline_ref: timelineId,
-        expected_version: savedPayload.config_version,
+        expected_version: renderBumpPayload.config_version,
         format: 'mp4',
         output_filename: 'b8-release-probe.mp4',
         destination: 'download',
@@ -163,6 +343,43 @@ test('real release bridge serves timeline, task, generation, and media surfaces'
   expect(taskAdmission.status()).toBe(201);
   const admitted = await taskAdmission.json();
   expect(admitted.task.id).toEqual(expect.any(String));
+
+  // The same task request is a receipt replay (200, same task id); reusing
+  // the key with different canonical input is a typed 409 mismatch and must
+  // not create a second task.
+  const replayedTask = await request.post(`${BRIDGE_ORIGIN}/projects/demo-project/tasks`, {
+    headers: { ...validHeaders, 'Idempotency-Key': 'b8-real-release-render-v1' },
+    data: {
+      family: 'render_export',
+      input: {
+        timeline_ref: timelineId,
+        expected_version: renderBumpPayload.config_version,
+        format: 'mp4',
+        output_filename: 'b8-release-probe.mp4',
+        destination: 'download',
+        correlation_id: 'b8-release-probe',
+      },
+    },
+  });
+  expect(replayedTask.status()).toBe(200);
+  expect((await replayedTask.json()).task.id).toBe(admitted.task.id);
+
+  const mismatchedTask = await request.post(`${BRIDGE_ORIGIN}/projects/demo-project/tasks`, {
+    headers: { ...validHeaders, 'Idempotency-Key': 'b8-real-release-render-v1' },
+    data: {
+      family: 'render_export',
+      input: {
+        timeline_ref: timelineId,
+        expected_version: renderBumpPayload.config_version,
+        format: 'mp4',
+        output_filename: 'b8-different-output.mp4',
+        destination: 'download',
+        correlation_id: 'b8-different-request',
+      },
+    },
+  });
+  expect(mismatchedTask.status()).toBe(409);
+  expect((await mismatchedTask.json()).error).toBe('idempotency_mismatch');
 
   const taskList = await request.get(`${BRIDGE_ORIGIN}/projects/demo-project/tasks?limit=1&offset=0`, {
     headers: bridgeHeaders(),
@@ -201,26 +418,48 @@ test('real release bridge serves timeline, task, generation, and media surfaces'
  * diverged state with the B4 banner — live 409 proof in the browser.
  */
 test('concurrent write → 409 → diverged banner (B4/B5 live proof)', async ({ page, request }) => {
+  const audit = installBrowserNetworkAudit(page);
+  await freezeTimelineReads(page);
+  const url = await timelineUrl(request);
+  const initialResponse = await request.get(url, { headers: bridgeHeaders() });
+  expect(initialResponse.status()).toBe(200);
+  const initialPayload = await initialResponse.json();
+  const browserSaveBodies: Array<{ expected_version?: unknown; config?: Record<string, unknown> }> = [];
+  page.on('request', (browserRequest) => {
+    if (browserRequest.method() !== 'POST' || !/\/save$/.test(new URL(browserRequest.url()).pathname)) return;
+    try {
+      const body = JSON.parse(browserRequest.postData() ?? '{}') as { expected_version?: unknown; config?: Record<string, unknown> };
+      browserSaveBodies.push(body);
+    } catch {
+      // The assertion below will fail with a useful empty-save diagnostic.
+    }
+  });
   await openEditorAt(page);
 
-  // Writer 2: bump the version behind the editor's back.
-  const url = await timelineUrl(request);
-  const timeline = await request.get(url, { headers: bridgeHeaders() });
-  expect(timeline.status()).toBe(200);
-  const payload = await timeline.json();
-  const saved = await request.post(`${url}/save`, {
+  // Writer 2 commits while writer 1 is holding an active drag. Timeline GETs
+  // are frozen to writer 1's original snapshot, so no polling/realtime update
+  // can silently replace its expected_version before the real save request.
+  const remoteWrite = request.post(`${url}/save`, {
     headers: bridgeHeaders(),
     data: {
-      config: { ...payload.config, app: { ...(payload.config.app ?? {}), 'com.example.writer2': { note: 'concurrent' } } },
-      registry: payload.registry,
-      expected_version: payload.config_version,
+      config: { ...initialPayload.config, app: { ...(initialPayload.config.app ?? {}), 'b8.browser.writer2': { note: 'concurrent' } } },
+      registry: initialPayload.registry,
+      expected_version: initialPayload.config_version,
     },
   });
-  expect(saved.status()).toBe(200);
 
   // The editor's next save carries its (now stale) expected_version → 409 →
   // diverged banner with Reload / Save as copy.
-  await dragFirstClipRight(page);
+  await dragFirstClipRight(page, {
+    beforeMove: async () => {
+      const saved = await remoteWrite;
+      expect(saved.status()).toBe(200);
+    },
+  });
+  await expect.poll(
+    () => browserSaveBodies.filter((body) => body.expected_version === initialPayload.config_version).length,
+    { timeout: 25_000 },
+  ).toBeGreaterThan(0);
 
   // The 409 puts the editor into diverged. Two surfaces present it: the B4
   // banner (Reload / Save as copy) or the pre-existing conflict dialog
@@ -246,6 +485,13 @@ test('concurrent write → 409 → diverged banner (B4/B5 live proof)', async ({
   await page.getByRole('button', { name: 'Discard' }).click();
   await expect(page.getByText(/recovered unsaved changes/i)).not.toBeVisible();
   await expect(page.locator('[data-clip-id]').first()).toBeVisible({ timeout: 20_000 });
+
+  const persisted = await request.get(url, { headers: bridgeHeaders() });
+  expect(persisted.status()).toBe(200);
+  const persistedPayload = await persisted.json();
+  expect(persistedPayload.config.app['b8.browser.writer2']).toEqual({ note: 'concurrent' });
+  expect(persistedPayload.config.clips).toEqual(initialPayload.config.clips);
+  audit.assertAllowed();
 });
 
 /**
@@ -253,6 +499,7 @@ test('concurrent write → 409 → diverged banner (B4/B5 live proof)', async ({
  * actionable banner instead of a silent "saved" badge.
  */
 test('bridge death during an edit → watchdog banner with retry', async ({ page }) => {
+  const audit = installBrowserNetworkAudit(page);
   // Kill the real bridge out from under the editor (the harness wrote the PID
   // file on spawn). The next save gets no receipt → the B1a watchdog trips.
   await openEditorAt(page);
@@ -267,4 +514,5 @@ test('bridge death during an edit → watchdog banner with retry', async ({ page
 
   await expect(page.getByText(/changes have not been saved/i)).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole('button', { name: 'Retry save' })).toBeVisible();
+  audit.assertAllowed();
 });
