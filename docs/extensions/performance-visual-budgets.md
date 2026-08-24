@@ -7,12 +7,18 @@ overlapping multilingual transcript fixture.
 | Signal | Release budget |
 | --- | ---: |
 | Editor navigation to both typed lanes ready | 30,000 ms |
+| DOM-ready to typed-lane hydration complete | 20,000 ms |
+| Serialized timeline project-data response (config, registry, bundle) | 1 MiB |
 | Extension Manager open and 13 packages visible | 3,000 ms |
+| Declared extension contributions in the manager fixture | 128 |
 | Command Palette open, label search, result visible | 1,500 ms |
 | Runaway virtual-window scroll from start to final window | 2,000 ms |
+| Bridge data requests during a 24-event scroll burst | 4 |
+| Bridge data requests during a 5-second quiescent window | 4 |
 | Total live DOM nodes after the jump | 5,000 |
 | Mounted Runaway transition controls | 128 |
 | JavaScript heap used | 256 MiB |
+| Retained heap growth after the interaction burst (forced GC where supported) | 64 MiB |
 | Horizontal document overflow | 0 px |
 
 Run the quantitative gate with:
@@ -23,7 +29,19 @@ npm run test:e2e:extension-performance
 
 The test attaches the exact observed values as
 `extension-performance-budget.json`. It fails on page/console errors and uses
-CDP heap metrics rather than a browser-specific JavaScript API.
+CDP heap metrics rather than a browser-specific JavaScript API. Project-data
+size is measured from the serialized timeline response, hydration is measured
+from `domContentLoadedEventEnd` to both typed lanes being ready, and the
+contribution count is read from the rendered package inventory. The scroll
+burst and quiet-window request budgets exercise the single-flight bridge/cache
+path: virtualization must not turn rapid viewport events into bridge work or
+allow a background poll cadence above four requests per five seconds.
+
+The same spec also aborts the Runaway bridge request and requires one failed
+request, an explicit error state, a visible retry action, and no page/console
+errors. This is the browser-level degraded/cancellation guard; the lower-level
+pagination, timeout classification, stale-reply, and retry unit suites remain
+the authoritative coverage for transport cancellation and recovery details.
 
 Visual regression uses three complementary gates:
 
@@ -47,6 +65,9 @@ Visual regression uses three complementary gates:
 
 Machine-dependent wall-clock and heap budgets are deliberately broad enough to
 survive CI variance but low enough to catch unbounded activation, accidental
-full-lane DOM materialization, command-search stalls, and runaway memory growth.
+full-lane DOM materialization, command-search stalls, excessive bridge update
+frequency, and runaway memory growth. The 1 MiB project-data budget applies to
+the deterministic local bridge fixture; production projects require a separate
+data-size profile rather than silently relaxing this gate.
 Budget changes require a release-note rationale and updated frozen-candidate
 evidence; they must not be relaxed merely to make a regression pass.
