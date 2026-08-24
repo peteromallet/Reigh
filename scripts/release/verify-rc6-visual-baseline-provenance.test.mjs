@@ -31,7 +31,10 @@ describe('RC6 visual baseline provenance verifier', () => {
     });
     assert.equal(result.release, 'extension-ship-quality-rc6');
     assert.equal(result.entries.length, 6);
-    assert.equal(result.entries[0].diff.changedPixels, 27886);
+    assert.equal(result.entries[0].diff.changedPixels, 27874);
+    assert.equal(result.entries[0].reviewedDiffArtifact.sha256, 'eed012aef1a4b0492bdbca0b40b7648f31ba35f647b354712bcd10ac7380a0ee');
+    assert.equal(result.entries[1].reviewedDiffArtifact.sha256, 'c82a1b4dbe453f1f74e8f94ddae69eb54088f0bac5402d7150d2c66b870884c5');
+    assert.equal(result.entries[2].reviewedDiffArtifact.sha256, 'c26da78f0fb12ad16f09b500633043902b7ddfe102c8f46baa2f43671247d3ee');
     assert.equal(result.entries[3].diff.pixelDiffRatio, 0);
     assert.equal(result.review.human.status, 'pending-release-owner-review');
   });
@@ -54,6 +57,17 @@ describe('RC6 visual baseline provenance verifier', () => {
       assert.throws(
         () => verifyVisualBaselineProvenance({ repoRoot: REPO_ROOT, manifestPath }),
         /current image hash does not match provenance/,
+      );
+    });
+  });
+
+  it('fails when a reviewed diff artifact is changed', () => {
+    withManifest((manifest) => {
+      manifest.entries[0].reviewedDiffArtifact.sha256 = '0'.repeat(64);
+    }, (manifestPath) => {
+      assert.throws(
+        () => verifyVisualBaselineProvenance({ repoRoot: REPO_ROOT, manifestPath }),
+        /reviewed diff artifact hash does not match/,
       );
     });
   });

@@ -3,7 +3,7 @@
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { dirname, isAbsolute, resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { inflateSync } from 'node:zlib';
 
@@ -213,6 +213,14 @@ export function verifyVisualBaselineProvenance({
   const oldCommit = resolveCommit(repoRoot, refresh.oldSourceCommit, 'refresh.oldSourceCommit');
   const newCommit = resolveCommit(repoRoot, refresh.newSourceCommit, 'refresh.newSourceCommit');
   if (oldCommit === newCommit) fail('visual baseline refresh must have distinct old/new source commits');
+  if (!Array.isArray(refresh.history) || refresh.history.length < 2) {
+    fail('refresh.history must preserve the initial refresh and final correction stages');
+  }
+  for (const [index, stage] of refresh.history.entries()) {
+    resolveCommit(repoRoot, stage?.commit, `refresh.history[${index}].commit`);
+    assertString(stage?.role, `refresh.history[${index}].role`);
+    assertString(stage?.rationale, `refresh.history[${index}].rationale`);
+  }
   if (!refresh.browser || !refresh.browser.name || !refresh.browser.version || !refresh.browser.playwrightVersion) {
     fail('refresh.browser must include name, version, and playwrightVersion');
   }
@@ -258,7 +266,32 @@ export function verifyVisualBaselineProvenance({
       fail(`${path} must include an integer viewport width/height`);
     }
     if (!entry.config || typeof entry.config !== 'string') fail(`${path} must include the visual config name`);
-    verifiedEntries.push({ path, oldSha256: oldMeta.sha256, newSha256: newMeta.sha256, diff });
+    if (diff.changedPixels > 0) {
+      const artifact = entry.reviewedDiffArtifact;
+      if (!artifact || !SHA256.test(artifact.sha256)
+        || artifact.oldSourceCommit !== oldCommit
+        || artifact.newSourceCommit !== newCommit) {
+        fail(`${path} changed pixels require a hashed reviewed diff artifact bound to both source commits`);
+      }
+      assertString(artifact.path, `${path}.reviewedDiffArtifact.path`);
+      const artifactBytes = readFileSync(resolve(repoRoot, artifact.path));
+      if (sha256(artifactBytes) !== artifact.sha256) {
+        fail(`${path} reviewed diff artifact hash does not match ${artifact.path}`);
+      }
+      const artifactImage = decodePng(artifactBytes);
+      expectEqual(
+        { width: artifactImage.width, height: artifactImage.height },
+        { width: diff.width, height: diff.height },
+        `${path}.reviewedDiffArtifact.dimensions`,
+      );
+    }
+    verifiedEntries.push({
+      path,
+      oldSha256: oldMeta.sha256,
+      newSha256: newMeta.sha256,
+      diff,
+      ...(entry.reviewedDiffArtifact ? { reviewedDiffArtifact: entry.reviewedDiffArtifact } : {}),
+    });
   }
   return Object.freeze({
     release: manifest.release,
