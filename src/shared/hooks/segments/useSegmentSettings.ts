@@ -57,6 +57,10 @@ type ClearableSegmentSettings = {
   [K in keyof SegmentSettings]: SegmentSettings[K] | null;
 };
 
+/** Form state keeps the structured SegmentSettings contract while satisfying
+ * the server-form's object-state boundary. */
+type SegmentFormSettings = SegmentSettings & Record<string, unknown>;
+
 export interface UseSegmentSettingsOptions {
   /** Shot generation ID for pair-specific settings */
   pairShotGenerationId?: string | null;
@@ -193,19 +197,19 @@ function detectOverrides(
 function buildMergedSettings(
   pairMetadata: PairMetadata | null | undefined,
   defaults: UseSegmentSettingsOptions['defaults']
-): SegmentSettings {
+): SegmentFormSettings {
   const pairOverrides = readSegmentOverrides(pairMetadata as Record<string, unknown> | null);
 
   return {
-    prompt: pairOverrides.prompt,
-    negativePrompt: pairOverrides.negativePrompt,
+    prompt: pairOverrides.prompt ?? defaults.prompt,
+    negativePrompt: pairOverrides.negativePrompt ?? defaults.negativePrompt,
     textBeforePrompts: pairOverrides.textBeforePrompts,
     textAfterPrompts: pairOverrides.textAfterPrompts,
-    motionMode: pairOverrides.motionMode as 'basic' | 'advanced' | undefined,
-    amountOfMotion: pairOverrides.amountOfMotion,
+    motionMode: pairOverrides.motionMode ?? 'basic',
+    amountOfMotion: pairOverrides.amountOfMotion ?? 50,
     phaseConfig: pairOverrides.phaseConfig,
-    selectedPhasePresetId: pairOverrides.selectedPhasePresetId,
-    loras: pairOverrides.loras,
+    selectedPhasePresetId: pairOverrides.selectedPhasePresetId ?? null,
+    loras: pairOverrides.loras ?? [],
     numFrames: defaults.numFrames ?? 25,
     randomSeed: pairOverrides.randomSeed ?? true,
     seed: pairOverrides.seed,
@@ -220,7 +224,7 @@ function buildMergedSettings(
     guidanceCannyIntensity: pairOverrides.guidanceCannyIntensity,
     guidanceDepthContrast: pairOverrides.guidanceDepthContrast,
     smoothContinuations: pairOverrides.smoothContinuations,
-  } as SegmentSettings;
+  };
 }
 
 /**
@@ -336,11 +340,11 @@ export function useSegmentSettings({
   );
 
   // 5. Use server form pattern for local edits + auto-save
-  const form = useServerForm({
+  const form = useServerForm<SegmentSettings, SegmentFormSettings>({
     serverData: mergedSettings,
     isLoading: loadingPair || loadingShot,
-    toLocal: (server) => server,
-    save: mutations.savePairMetadata,
+    toLocal: (server) => ({ ...server }),
+    save: (local) => mutations.savePairMetadata(local),
     autoSaveMs: 500,
     contextKey: pairShotGenerationId || undefined,
     validate: (updates, current) => {
@@ -372,7 +376,7 @@ export function useSegmentSettings({
     // Save cleared settings, then clear enhanced prompt.
     // ClearableSegmentSettings uses null to indicate "clear override" - the save
     // function interprets nulls correctly via buildMetadataUpdate.
-    await form.saveData(cleared as SegmentSettings);
+    await form.saveData(cleared as SegmentFormSettings);
     await mutations.clearEnhancedPrompt();
     form.reset();
   }, [form, mutations, defaults]);
@@ -502,7 +506,7 @@ export function useSegmentSettings({
   return {
     // Form state
     settings: form.data,
-    updateSettings: form.update,
+    updateSettings: (updates) => form.update({ ...updates }),
     saveSettings: form.save,
     resetSettings,
     isDirty: form.isDirty,
