@@ -372,12 +372,21 @@ export function DataLaneRow({
 }: DataLaneRowProps) {
   const rowRef = useRef<HTMLDivElement>(null);
   const [activeIndex, setActiveIndex] = useState(0);
+  // Keep the roving selection anchored to the stable item id. The absolute
+  // index is only a fallback when the selected item is removed; insertion or
+  // re-sorting must not silently move selection to a neighbouring interval.
+  const activeItemIdRef = useRef<string>();
   const [focusItemId, setFocusItemId] = useState<string>();
   const [pinnedIndex, setPinnedIndex] = useState<number>();
   const temporalIndex = useMemo(() => createTemporalIndex(lane.items), [lane.items]);
   const orderedItems = temporalIndex.items;
   const totalItemCount = orderedItems.length;
-  const clampedActiveIndex = Math.max(0, Math.min(activeIndex, Math.max(0, totalItemCount - 1)));
+  const selectedItemIndex = activeItemIdRef.current === undefined
+    ? -1
+    : orderedItems.findIndex((view) => view.item.id === activeItemIdRef.current);
+  const clampedActiveIndex = selectedItemIndex >= 0
+    ? selectedItemIndex
+    : Math.max(0, Math.min(activeIndex, Math.max(0, totalItemCount - 1)));
   const resolvedViewport = viewport ?? {
     scrollLeft: 0,
     clientWidth: DATA_LANE_DEFAULT_VIEWPORT_WIDTH_PX,
@@ -407,6 +416,15 @@ export function DataLaneRow({
     ? clampedActiveIndex
     : windowItemIndices[Math.floor(windowItemIndices.length / 2)];
   const activeItemId = orderedItems[windowActiveIndex]?.item.id;
+
+  // If the selected item disappeared, deliberately fall back to the nearest
+  // surviving index. Persist that fallback so subsequent inserts/re-sorts are
+  // again tracked by stable id rather than by a stale numeric index.
+  useEffect(() => {
+    const fallbackId = orderedItems[clampedActiveIndex]?.item.id;
+    if (activeItemIdRef.current !== fallbackId) activeItemIdRef.current = fallbackId;
+    setActiveIndex((current) => current === clampedActiveIndex ? current : clampedActiveIndex);
+  }, [clampedActiveIndex, orderedItems]);
   const getAllRenderItems = useMemo(() => {
     let cached: readonly DataLaneRenderItem[] | undefined;
     return () => {
@@ -422,7 +440,10 @@ export function DataLaneRow({
 
   const selectWindowItem = useCallback((itemId: string) => {
     const index = absoluteIndexInWindow(itemId);
-    if (index >= 0) setActiveIndex(index);
+    if (index >= 0) {
+      activeItemIdRef.current = itemId;
+      setActiveIndex(index);
+    }
     setPinnedIndex(undefined);
     setFocusItemId(undefined);
     onSelectItem?.(itemId);
@@ -440,6 +461,7 @@ export function DataLaneRow({
     const nextItem = orderedItems[nextIndex];
     if (!nextItem) return;
     const nextItemId = nextItem.item.id;
+    activeItemIdRef.current = nextItemId;
     setActiveIndex(nextIndex);
     // State and scroll updates batch in React. Pin the requested item during
     // that hand-off so focus never lands in an empty/unmounted window.

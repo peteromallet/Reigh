@@ -504,6 +504,74 @@ describe('DataLaneList', () => {
     expect(onSelectItem.mock.calls).toEqual([['item-499'], ['item-498'], ['item-0']]);
   });
 
+  it.each([5_000, 50_000])(
+    'preserves the selected interval by id across reorder and uses a nearest fallback when removed (%i items)',
+    (itemCount) => {
+      const targetIndex = Math.floor(itemCount / 2);
+      const pixelsPerSecond = 4;
+      const targetTime = targetIndex * 2;
+      const viewport = {
+        scrollLeft: targetTime * pixelsPerSecond - 32,
+        clientWidth: START_LEFT + 64,
+      };
+      const items = Array.from({ length: itemCount }, (_, index) => ({
+        item: item(`stable-${index}`),
+        timelineStart: index * 2,
+        timelineEnd: index * 2 + 0.5,
+      }));
+      const renderLane = (nextItems: typeof items) => ({
+        ...laneView({
+          laneId: 'opaque:stable-selection.schema/v1',
+          kindId: '',
+          opaque: true,
+          items: nextItems,
+        }),
+      }) as unknown as DataLaneView;
+
+      const view = render(
+        <DataLaneRow
+          lane={renderLane(items)}
+          pixelsPerSecond={pixelsPerSecond}
+          viewport={viewport}
+        />,
+      );
+      fireEvent.click(screen.getByTitle(`stable-${targetIndex}`));
+      expect(screen.getByTitle(`stable-${targetIndex}`)).toHaveAttribute('tabindex', '0');
+
+      // The host can receive the same logical lane in a new order. The
+      // selected id remains active even though its absolute index shifts.
+      const reordered = [
+        {
+          item: item('stable-inserted'),
+          timelineStart: -2,
+          timelineEnd: -1.5,
+        },
+        ...items,
+      ].reverse();
+      view.rerender(
+        <DataLaneRow
+          lane={renderLane(reordered)}
+          pixelsPerSecond={pixelsPerSecond}
+          viewport={viewport}
+        />,
+      );
+      expect(screen.getByTitle(`stable-${targetIndex}`)).toHaveAttribute('tabindex', '0');
+
+      // Once the selected id disappears, fall back to the nearest surviving
+      // item at the reconciled index rather than leaving selection stale.
+      const withoutSelected = reordered.filter((view) => view.item.id !== `stable-${targetIndex}`);
+      view.rerender(
+        <DataLaneRow
+          lane={renderLane(withoutSelected)}
+          pixelsPerSecond={pixelsPerSecond}
+          viewport={viewport}
+        />,
+      );
+      expect(screen.queryByTitle(`stable-${targetIndex}`)).toBeNull();
+      expect(screen.getByTitle(`stable-${targetIndex + 1}`)).toHaveAttribute('tabindex', '0');
+    },
+  );
+
   it('bounds render work and materializes a 50k full lane once, only on action invocation', async () => {
     const itemCount = 50_000;
     let payloadReads = 0;
