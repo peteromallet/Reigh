@@ -1,5 +1,8 @@
 import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const FAILURE_TYPES = new Set([
   'success',
@@ -10,6 +13,11 @@ const FAILURE_TYPES = new Set([
   'timeout',
   'unknown',
 ]);
+
+const moduleDir = dirname(fileURLToPath(import.meta.url));
+const WRAPPER_PATH = resolve(moduleDir, 'bounded-command-wrapper.mjs');
+const WRAPPER_PROTOCOL_BYTES = 16 * 1024;
+const TERMINATION_GRACE_MS = 250;
 
 function hasOwn(value, key) {
   return Object.prototype.hasOwnProperty.call(value, key);
@@ -133,6 +141,38 @@ function classify(result, stdout, stderr) {
   return 'unknown';
 }
 
+function encodeInvocation(value) {
+  return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
+}
+
+function wrapperOutputCap(maxBuffer) {
+  // Each bounded stream is base64-encoded by the protocol. Leave room for
+  // both streams plus the JSON envelope without weakening the target cap.
+  return Math.ceil(maxBuffer * 8 / 3) + WRAPPER_PROTOCOL_BYTES;
+}
+
+function decodeWrapperResult(raw, maxBuffer, redact, tokens) {
+  const text = String(raw?.stdout ?? '').trim();
+  const line = text.split('\n').filter(Boolean).at(-1);
+  if (!line) return null;
+  try {
+    const result = JSON.parse(line);
+    if (result?.protocol !== 1) return null;
+    return {
+      status: result.status ?? null,
+      signal: result.signal ?? null,
+      error: result.error ?? null,
+      reason: result.reason ?? null,
+      stdout: Buffer.from(result.stdout ?? '', 'base64'),
+      stderr: Buffer.from(result.stderr ?? '', 'base64'),
+      stdoutBytes: Number.isSafeInteger(result.stdoutBytes) ? result.stdoutBytes : 0,
+      stderrBytes: Number.isSafeInteger(result.stderrBytes) ? result.stderrBytes : 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function freezeResult(result) {
   return Object.freeze(result);
 }
@@ -189,27 +229,73 @@ export function runBoundedCommand(command, args, options = {}) {
     throw new TypeError('redact must be a function, string, or string array');
   }
   const tokens = normalizeRedactions(redact, env);
+  const binaryOutput = options.encoding === null;
+  if (binaryOutput && redact !== undefined) {
+    throw new TypeError('redact cannot be used with binary output');
+  }
   const startedAt = performance.now();
   let raw;
   try {
-    raw = spawnSync(command, immutableArgs, {
+    if (!existsSync(WRAPPER_PATH)) throw new Error(`bounded command wrapper is missing: ${WRAPPER_PATH}`);
+    const wrapperInput = encodeInvocation({
+      command,
+      args: immutableArgs,
       cwd,
       env,
-      encoding: 'utf8',
-      input: options.input,
+      timeoutMs,
       maxBuffer,
+      parentPid: process.pid,
+      input: options.input === undefined
+        ? undefined
+        : Buffer.from(options.input).toString('base64'),
+    });
+    // The wrapper owns the target's detached process group. Its watchdog is
+    // responsible for TERM->KILL cleanup; leave a small outer allowance for
+    // reaping and protocol serialization before the synchronous boundary.
+    raw = spawnSync(process.execPath, [WRAPPER_PATH, wrapperInput], {
+      cwd,
+      env: process.env,
+      encoding: 'utf8',
+      maxBuffer: wrapperOutputCap(maxBuffer),
       shell: false,
       stdio: ['pipe', 'pipe', 'pipe'],
-      timeout: timeoutMs,
-      killSignal,
+      detached: process.platform !== 'win32',
+      timeout: timeoutMs + TERMINATION_GRACE_MS + 1_000,
+      killSignal: 'SIGKILL',
     });
   } catch (error) {
     raw = { error, status: null, signal: null, stdout: '', stderr: '' };
   }
   const elapsedMs = Math.max(0, Math.round(performance.now() - startedAt));
-  const stdout = captureText(raw.stdout, maxBuffer, redact, tokens);
-  const stderr = captureText(raw.stderr, maxBuffer, redact, tokens);
-  const failureType = classify(raw, stdout, stderr);
+  const wrapped = decodeWrapperResult(raw, maxBuffer, redact, tokens);
+  const effectiveRaw = wrapped
+    ? {
+        status: wrapped.status,
+        signal: wrapped.signal,
+        error: wrapped.error,
+        stdout: wrapped.stdout,
+        stderr: wrapped.stderr,
+      }
+    : raw;
+  const stdout = wrapped
+    ? Object.freeze({
+        text: redactText(wrapped.stdout.subarray(0, maxBuffer).toString('utf8'), redact, tokens),
+        truncated: wrapped.stdoutBytes > maxBuffer,
+        bytes: wrapped.stdoutBytes,
+      })
+    : captureText(raw.stdout, maxBuffer, redact, tokens);
+  const stderr = wrapped
+    ? Object.freeze({
+        text: redactText(wrapped.stderr.subarray(0, maxBuffer).toString('utf8'), redact, tokens),
+        truncated: wrapped.stderrBytes > maxBuffer,
+        bytes: wrapped.stderrBytes,
+      })
+    : captureText(raw.stderr, maxBuffer, redact, tokens);
+  const failureType = wrapped?.reason === 'timeout'
+    ? 'timeout'
+    : wrapped?.reason === 'output-cap'
+      ? 'output-cap'
+      : classify(effectiveRaw, stdout, stderr);
   const result = freezeResult({
     ok: failureType === 'success',
     failureType,
@@ -221,11 +307,15 @@ export function runBoundedCommand(command, args, options = {}) {
     maxBuffer,
     killSignal,
     elapsedMs,
-    status: raw.status ?? null,
-    signal: raw.signal ?? null,
-    error: safeError(raw.error, redact, tokens),
-    stdout: stdout.text,
-    stderr: stderr.text,
+    status: effectiveRaw.status ?? null,
+    signal: effectiveRaw.signal ?? null,
+    error: safeError(effectiveRaw.error, redact, tokens),
+    stdout: binaryOutput
+      ? (wrapped ? wrapped.stdout.subarray(0, maxBuffer) : Buffer.from(raw.stdout ?? '').subarray(0, maxBuffer))
+      : stdout.text,
+    stderr: binaryOutput
+      ? (wrapped ? wrapped.stderr.subarray(0, maxBuffer) : Buffer.from(raw.stderr ?? '').subarray(0, maxBuffer))
+      : stderr.text,
     stdoutBytes: stdout.bytes,
     stderrBytes: stderr.bytes,
     stdoutTruncated: stdout.truncated,

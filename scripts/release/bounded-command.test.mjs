@@ -96,6 +96,28 @@ describe('runBoundedCommand', () => {
     }
   });
 
+  it('kills a detached and unref grandchild before it can leave an orphan marker', async () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'bounded-command-grandchild-'));
+    const marker = resolve(root, 'detached-grandchild-marker');
+    try {
+      const source = [
+        "const { spawn } = require('node:child_process');",
+        "const fs = require('node:fs');",
+        `const grandchild = spawn(process.execPath, ['-e', ${JSON.stringify(
+          `setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'orphan'), 900);`,
+        )}], { detached: true, stdio: 'ignore' });`,
+        'grandchild.unref();',
+        'setInterval(() => {}, 1_000);',
+      ].join('');
+      const result = run(source, { timeoutMs: 75, allowFailure: true });
+      assert.equal(result.failureType, 'timeout');
+      await new Promise((resolve) => setTimeout(resolve, 1_050));
+      assert.equal(existsSync(marker), false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('requires positive bounds and never permits a shell', () => {
     for (const [key, value] of [['timeoutMs', 0], ['maxBuffer', 0]]) {
       assert.throws(() => run('process.exit(0)', { [key]: value }), /positive/);

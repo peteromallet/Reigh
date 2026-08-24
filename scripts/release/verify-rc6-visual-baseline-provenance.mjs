@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
 import { lstatSync, readFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { inflateSync } from 'node:zlib';
+import { runBoundedCommand } from './bounded-command.mjs';
 
 const moduleDir = dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = resolve(moduleDir, '..', '..');
@@ -25,6 +25,8 @@ export const VISUAL_DIFF_ARTIFACT_ROOT =
   'docs/extensions/evidence/releases/extension-ship-quality-rc6/visual-diffs';
 const SHA256 = /^[0-9a-f]{64}$/;
 const COMMIT = /^[0-9a-f]{40}$/;
+const PROBE_TIMEOUT_MS = 60 * 1_000;
+const GIT_OUTPUT_MAX_BUFFER = 32 * 1024 * 1024;
 
 class ProvenanceError extends Error {}
 
@@ -37,10 +39,14 @@ function sha256(value) {
 }
 
 function readGitBlob(repoRoot, commit, path) {
-  const result = spawnSync('git', ['show', `${commit}:${path}`], {
+  const result = runBoundedCommand('git', ['show', `${commit}:${path}`], {
     cwd: repoRoot,
     encoding: null,
-    maxBuffer: 32 * 1024 * 1024,
+    timeoutMs: PROBE_TIMEOUT_MS,
+    maxBuffer: GIT_OUTPUT_MAX_BUFFER,
+    killSignal: 'SIGKILL',
+    label: `git show ${commit}:${path}`,
+    allowFailure: true,
   });
   if (result.error || result.status !== 0) {
     fail(`could not read ${commit}:${path} from Git: ${result.stderr?.toString().trim() || result.error?.message || 'unknown error'}`);
@@ -50,9 +56,13 @@ function readGitBlob(repoRoot, commit, path) {
 
 function resolveCommit(repoRoot, ref, label) {
   if (!COMMIT.test(ref ?? '')) fail(`${label} must be a full lowercase commit pin`);
-  const result = spawnSync('git', ['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`], {
+  const result = runBoundedCommand('git', ['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`], {
     cwd: repoRoot,
-    encoding: 'utf8',
+    timeoutMs: PROBE_TIMEOUT_MS,
+    maxBuffer: 64 * 1024,
+    killSignal: 'SIGKILL',
+    label: `${label} git rev-parse`,
+    allowFailure: true,
   });
   if (result.error || result.status !== 0 || result.stdout.trim() !== ref) {
     fail(`${label} is not available as the exact commit ${ref}`);

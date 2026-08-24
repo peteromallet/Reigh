@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
 import {
   accessSync,
   constants,
@@ -22,8 +21,14 @@ import {
   inspectCandidateController,
   resolveAnnotatedCandidateTag,
 } from './reigh-release-provenance.mjs';
+import { runBoundedCommand } from './bounded-command.mjs';
 
 const LABEL = '[extension-ship]';
+export const RELEASE_PHASE_TIMEOUT_MS = 30 * 60 * 1_000;
+export const RELEASE_PROBE_TIMEOUT_MS = 60 * 1_000;
+export const RELEASE_COMMAND_MAX_BUFFER_BYTES = 64 * 1024 * 1024;
+export const RELEASE_PROBE_MAX_BUFFER_BYTES = 8 * 1024 * 1024;
+const RELEASE_KILL_SIGNAL = 'SIGKILL';
 const moduleDir = dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = resolve(moduleDir, '..', '..');
 export const MANIFEST_PATH = resolve(
@@ -517,6 +522,8 @@ export function buildExecutionPlan({
   return [
     ...REIGH_GATE_PROFILE.map((gate) => ({
       ...gate,
+      timeoutMs: RELEASE_PHASE_TIMEOUT_MS,
+      maxBuffer: RELEASE_COMMAND_MAX_BUFFER_BYTES,
       cwd: repoRoot,
       env: gate.id === 'paired-release-e2e'
         ? {
@@ -529,6 +536,8 @@ export function buildExecutionPlan({
     })),
     ...ASTRID_GATE_PROFILE.map(({ cwdSuffix, ...gate }) => ({
       ...gate,
+      timeoutMs: RELEASE_PHASE_TIMEOUT_MS,
+      maxBuffer: RELEASE_COMMAND_MAX_BUFFER_BYTES,
       env: gate.id === 'astrid-ci'
         ? {
             PY: python,
@@ -594,6 +603,11 @@ export function buildSanitizedEnvironment(stepEnv = {}) {
 
 function formatFailure(result) {
   const details = [];
+  if (result.failureType === 'timeout') {
+    details.push(`timed out after ${result.timeoutMs}ms (kill=${result.killSignal})`);
+  } else if (result.failureType === 'output-cap') {
+    details.push(`exceeded output cap ${result.maxBuffer} bytes`);
+  }
   if (result.error) details.push(result.error.message);
   if (result.signal) details.push(`terminated by ${result.signal}`);
   if (typeof result.status === 'number') details.push(`exit ${result.status}`);
@@ -604,15 +618,18 @@ function formatFailure(result) {
 
 function runCaptured(command, args, cwd, {
   allowFailure = false,
-  maxBuffer = 1024 * 1024,
+  timeoutMs = RELEASE_PROBE_TIMEOUT_MS,
+  maxBuffer = RELEASE_PROBE_MAX_BUFFER_BYTES,
+  label = `${command} ${args.join(' ')}`,
 } = {}) {
-  const result = spawnSync(command, args, {
+  const result = runBoundedCommand(command, args, {
     cwd,
-    encoding: 'utf8',
     env: buildSanitizedEnvironment(),
+    timeoutMs,
     maxBuffer,
-    shell: false,
-    stdio: 'pipe',
+    killSignal: RELEASE_KILL_SIGNAL,
+    label,
+    allowFailure: true,
   });
   if (!allowFailure && (result.error || result.status !== 0)) {
     fail(`${formatCommand({ command, args })} failed in ${cwd}: ${formatFailure(result)}`);
@@ -991,7 +1008,7 @@ function assertToolchain(manifest, env) {
   return resolveAstridPython(manifest, env);
 }
 
-export function executeSteps(steps, spawn = spawnSync, { diskRecheck } = {}) {
+export function executeSteps(steps, spawn = runBoundedCommand, { diskRecheck } = {}) {
   for (let index = 0; index < steps.length; index += 1) {
     const step = steps[index];
     if (diskRecheck) diskRecheck(step);
@@ -1002,9 +1019,14 @@ export function executeSteps(steps, spawn = spawnSync, { diskRecheck } = {}) {
     const result = spawn(step.command, step.args, {
       cwd: step.cwd,
       env: buildSanitizedEnvironment(step.env),
-      shell: false,
-      stdio: 'inherit',
+      timeoutMs: step.timeoutMs ?? RELEASE_PHASE_TIMEOUT_MS,
+      maxBuffer: step.maxBuffer ?? RELEASE_COMMAND_MAX_BUFFER_BYTES,
+      killSignal: RELEASE_KILL_SIGNAL,
+      label: step.label,
+      allowFailure: true,
     });
+    if (result.stdout) process.stdout.write(result.stdout);
+    if (result.stderr) process.stderr.write(result.stderr);
     if (result.error || result.status !== 0) {
       fail(`gate ${step.id} failed: ${formatFailure(result)}`);
     }
@@ -1152,7 +1174,7 @@ export function main(argv = process.argv.slice(2), env = process.env) {
       astridRef: env.ASTRID_REF,
       reighRef: env.REIGH_REF,
     });
-    executeSteps(steps, spawnSync, {
+    executeSteps(steps, runBoundedCommand, {
       diskRecheck: (step) => assertHeavyStepDiskCapacity(step, {
         astridCheckout: astrid.checkout,
       }),
