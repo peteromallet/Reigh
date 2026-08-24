@@ -49,6 +49,7 @@ import type {
   ReferenceState,
   ReighExtension,
   RenderArtifact,
+  RenderArtifactManifest,
   RenderArtifactSidecarDescriptor,
   RenderBlocker,
   RenderDependentOutputFormatContribution,
@@ -172,6 +173,11 @@ const ex04ProcessContribution: ProcessContribution = Object.freeze({
   ...sourceProcessContribution,
   spec: ex04ProcessSpec,
 });
+
+type Ex04SidecarManifest = SidecarArtifactManifestProfile & Pick<
+  RenderArtifactManifest,
+  'processId' | 'processVersion' | 'operationId'
+>;
 
 const ex04Sidecars = Object.freeze([
   {
@@ -469,7 +475,7 @@ const ex04MetadataManifest = Object.freeze({
     routeConstraints: EX04_ROUTE_CONSTRAINTS,
     sourceExamples: EX04_SOURCE_EXAMPLES,
   },
-} as const satisfies SidecarArtifactManifestProfile);
+} as const satisfies Ex04SidecarManifest);
 
 const ex04MetadataArtifact = Object.freeze({
   id: EX04_ARTIFACT_ID,
@@ -513,7 +519,7 @@ const ex04AutomationSummaryWitness: TimelineAutomationSummary = Object.freeze({
   enabled: true,
 });
 
-const ex04ArtifactProfileBase: ArtifactManifestProfileBase = Object.freeze({
+const ex04ArtifactProfileBase = Object.freeze({
   profile: 'sidecar',
   schemaVersion: 1,
   id: 'base.ex04.sidecar',
@@ -528,7 +534,7 @@ const ex04ArtifactProfileBase: ArtifactManifestProfileBase = Object.freeze({
   },
   consumedMaterialRefs: [ex04SourceMaterial],
   sidecars: [],
-});
+} satisfies ArtifactManifestProfileBase);
 
 const ex04VideoProfileWitness: VideoArtifactManifestProfile = Object.freeze({
   ...ex04ArtifactProfileBase,
@@ -562,7 +568,7 @@ const ex04PreviewProfileWitness: PreviewArtifactManifestProfile = Object.freeze(
   outputFormatId: 'preview-witness',
 });
 
-const ex04MachinePathProfileWitness: MachinePathArtifactManifestProfile = Object.freeze({
+const ex04MachinePathProfileWitness = Object.freeze({
   ...ex04ArtifactProfileBase,
   profile: 'machine-path',
   id: 'profile.ex04.machine-path',
@@ -575,9 +581,9 @@ const ex04MachinePathProfileWitness: MachinePathArtifactManifestProfile = Object
   },
   processId: ex04ProcessSpec.id,
   operationId: ex04ExportOperation.id,
-});
+} satisfies MachinePathArtifactManifestProfile);
 
-const ex04ExecutablePackageProfileWitness: ExecutablePackageArtifactManifestProfile = Object.freeze({
+const ex04ExecutablePackageProfileWitness = Object.freeze({
   ...ex04ArtifactProfileBase,
   profile: 'executable-package',
   id: 'profile.ex04.executable-package',
@@ -590,7 +596,7 @@ const ex04ExecutablePackageProfileWitness: ExecutablePackageArtifactManifestProf
   },
   processId: ex04ProcessSpec.id,
   operationId: ex04ExportOperation.id,
-});
+} satisfies ExecutablePackageArtifactManifestProfile);
 
 const ex04ArtifactProfileWitnesses = Object.freeze([
   ex04MetadataManifest,
@@ -693,7 +699,7 @@ function createArtifactEvidence(
   routeConstraints: readonly RenderRoute[],
 ): OutputFormatSidecarArtifactEvidence {
   const manifest = artifact.manifest;
-  if (!manifest || manifest.profile !== 'sidecar') {
+  if (!isSidecarArtifactManifest(manifest)) {
     throw new Error('EX-04 artifact evidence requires a typed sidecar manifest.');
   }
   if (artifact.route !== 'sidecar-export' || manifest.route !== 'sidecar-export') {
@@ -730,6 +736,12 @@ function createArtifactEvidence(
     inputHashes: Object.freeze({ ...manifest.inputHashes }),
     provenance: Object.freeze({ ...provenance }),
   });
+}
+
+function isSidecarArtifactManifest(
+  manifest: RenderArtifact['manifest'],
+): manifest is SidecarArtifactManifestProfile {
+  return manifest?.profile === 'sidecar';
 }
 
 export const outputFormatSidecarArtifactEvidence = Object.freeze([
@@ -837,7 +849,7 @@ export const outputFormatSidecarReadyScenario: OutputFormatSidecarScenario = Obj
       issues: [],
     }],
   },
-});
+} as const satisfies OutputFormatSidecarScenario);
 
 export const outputFormatSidecarStoppedScenario: OutputFormatSidecarScenario = Object.freeze({
   processStatus: {
@@ -867,7 +879,7 @@ export const outputFormatSidecarStoppedScenario: OutputFormatSidecarScenario = O
       ],
     }],
   },
-});
+} as const satisfies OutputFormatSidecarScenario);
 
 export interface OutputFormatSidecarComposedContract {
   readonly exampleId: 'EX-04';

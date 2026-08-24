@@ -193,7 +193,7 @@ export function createFakeBridgeRouter(): FakeBridgeRouter {
           headers: { 'Content-Range': `bytes */${size}`, 'Accept-Ranges': 'bytes' },
         });
       }
-      return new Response(media.bytes.subarray(start, end + 1), {
+      return new Response(Uint8Array.from(media.bytes.subarray(start, end + 1)), {
         status: 206,
         headers: {
           'Content-Type': media.mime,
@@ -204,7 +204,7 @@ export function createFakeBridgeRouter(): FakeBridgeRouter {
         },
       });
     }
-    return new Response(media.bytes, {
+    return new Response(Uint8Array.from(media.bytes), {
       status: 200,
       headers: {
         'Content-Type': media.mime,
