@@ -21,7 +21,6 @@ import type {
   GenerationsInsertedEvent,
   GenerationsUpdatedEvent,
   GenerationsDeletedEvent,
-  ShotGenerationsChangedEvent,
   VariantsChangedEvent,
   VariantsDeletedEvent,
   TimelinesUpdatedEvent,
@@ -51,9 +50,6 @@ export function useRealtimeInvalidation(): void {
       case 'generations-deleted':
         handleGenerationsDeleted(queryClient, event);
         break;
-      case 'shot-generations-changed':
-        handleShotGenerationsChanged(queryClient, event);
-        break;
       case 'variants-changed':
         handleVariantsChanged(queryClient, event);
         break;
@@ -81,11 +77,13 @@ function handleTasksUpdated(queryClient: QueryClient, event: TasksUpdatedEvent):
   // Track affected queries for freshness manager
   const affectedQueries: Array<readonly unknown[]> = [
     queryKeys.tasks.paginatedAll,
+    queryKeys.tasks.snapshotAll,
     queryKeys.tasks.statusCountsAll,
   ];
 
   // Always invalidate task list queries
   queryClient.invalidateQueries({ queryKey: queryKeys.tasks.paginatedAll });
+  queryClient.invalidateQueries({ queryKey: queryKeys.tasks.snapshotAll });
   queryClient.invalidateQueries({ queryKey: queryKeys.tasks.statusCountsAll });
 
   // Invalidate individual task queries
@@ -160,6 +158,7 @@ function handleTasksCreated(queryClient: QueryClient, _event: TasksCreatedEvent)
 
   // Only invalidate task queries - new tasks haven't completed yet
   queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
+  queryClient.invalidateQueries({ queryKey: queryKeys.tasks.snapshotAll });
   queryClient.invalidateQueries({ queryKey: queryKeys.tasks.statusCountsAll });
 
   // Report to freshness manager
@@ -202,9 +201,9 @@ function handleGenerationsInserted(queryClient: QueryClient, event: GenerationsI
 }
 
 function handleGenerationsUpdated(queryClient: QueryClient, event: GenerationsUpdatedEvent): void {
-  // BUSINESS LOGIC: Determine if this is a "real" update or just a shot sync update
-  // Shot sync updates only change shot_id/timeline_frame/shot_data - we skip these
-  // because they're handled by shot_generations events and invalidating here causes flicker
+  // BUSINESS LOGIC: Determine if this is a "real" update or just a placement sync update.
+  // Placement-only updates (timeline_frame moves) are skipped here — the timeline
+  // document is the placement authority and its consumers invalidate on CAS save.
 
   const meaningfulUpdates = event.generations.filter(
     (g) => g.locationChanged || g.thumbnailChanged || g.starredChanged
@@ -256,51 +255,6 @@ function handleGenerationsDeleted(queryClient: QueryClient, event: GenerationsDe
     queryKeys.generations.all,
     queryKeys.generations.detailAll,
   ]);
-}
-
-function handleShotGenerationsChanged(
-  queryClient: QueryClient,
-  event: ShotGenerationsChangedEvent
-): void {
-
-  // BUSINESS LOGIC: For INSERT-only batches, skip broad invalidation to prevent flicker
-  // (optimistic updates handle these). For UPDATE/DELETE, need broader invalidation.
-
-  if (!event.allInserts) {
-    // Has UPDATE or DELETE - invalidate project-level queries
-    queryClient.invalidateQueries({
-      predicate: (query) =>
-        query.queryKey[0] === 'unified-generations' && query.queryKey[1] === 'project',
-    });
-  }
-
-  // Invalidate queries for each affected shot
-  event.affectedShotIds.forEach((shotId) => {
-    if (event.allInserts) {
-      // For INSERT-only, minimal invalidation (optimistic updates handle the rest)
-      enqueueGenerationsInvalidation(queryClient, shotId, {
-        reason: 'shot-generation-insert',
-          scope: 'images',
-      });
-      enqueueGenerationsInvalidation(queryClient, shotId, {
-        reason: 'shot-generation-insert',
-        scope: 'counts',
-      });
-    } else {
-      // For UPDATE/DELETE, full invalidation
-      enqueueGenerationsInvalidation(queryClient, shotId, {
-        reason: 'shot-generation-change',
-        scope: 'all',
-      });
-    }
-  });
-
-  // Report to freshness manager - include shot-specific queries
-  const affectedQueries: Array<readonly unknown[]> = [queryKeys.unified.all];
-  event.affectedShotIds.forEach((shotId) => {
-    affectedQueries.push(['unified-generations', 'shot', shotId]);
-  });
-  dataFreshnessManager.onRealtimeEvent('shot-generations-changed', affectedQueries);
 }
 
 /**

@@ -74,9 +74,15 @@ interface UseTimelinePersistenceOptions {
 
 export interface UseTimelinePersistenceResult {
   scheduleSave: ScheduleSaveFn;
+  /**
+   * Flush the latest editor document through the normal CAS writer and return
+   * the exact acknowledged version. Render admission uses this as a barrier so
+   * it can never snapshot an autosave-pending or unversioned `head`.
+   */
+  flushPendingSave: () => Promise<number>;
   saveStatus: SaveStatus;
   isConflictExhausted: boolean;
-  reloadFromServer: () => Promise<void>;
+  reloadFromServer: (options?: { clearDraft?: boolean; preserveDraft?: boolean }) => Promise<void>;
   retrySaveAfterConflict: () => Promise<void>;
   isSavingRef: MutableRefObject<boolean>;
   /** Mirrors isConflictExhausted for the poll gate. */
@@ -139,6 +145,11 @@ export function useTimelinePersistence({
   const errorRetryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isMountedRef = useRef(true);
   const doSaveRef = useRef<((nextData: TimelineData, seq: number) => void) | null>(null);
+  const flushWaitersRef = useRef<Array<{
+    targetSeq: number;
+    resolve: (version: number) => void;
+    reject: (error: Error) => void;
+  }>>([]);
 
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
   const [isConflictExhausted, setIsConflictExhausted] = useState(false);
@@ -216,6 +227,31 @@ export function useTimelinePersistence({
     }
     setWatchdogTripped(false);
     setWatchdogReason(null);
+  }, []);
+
+  const resolveFlushWaiters = useCallback(() => {
+    const acknowledgedSeq = savedSeqRef.current;
+    const acknowledgedVersion = configVersionRef.current;
+    const remaining: typeof flushWaitersRef.current = [];
+    for (const waiter of flushWaitersRef.current) {
+      if (waiter.targetSeq <= acknowledgedSeq) {
+        waiter.resolve(acknowledgedVersion);
+      } else {
+        remaining.push(waiter);
+      }
+    }
+    flushWaitersRef.current = remaining;
+  }, [configVersionRef, savedSeqRef]);
+
+  const rejectFlushWaiters = useCallback((error: unknown) => {
+    const normalized = error instanceof Error
+      ? error
+      : new Error(typeof error === 'string' ? error : 'Timeline save failed before render admission.');
+    const waiters = flushWaitersRef.current;
+    flushWaitersRef.current = [];
+    for (const waiter of waiters) {
+      waiter.reject(normalized);
+    }
   }, []);
 
   /**
@@ -353,13 +389,12 @@ export function useTimelinePersistence({
 
             clearErrorRetry();
             setIsConflictExhausted(false);
-            // An acknowledged save clears the one-slot recovery draft.
-            void clearTimelineDraft(timelineId);
-
             if (seq > savedSeqRef.current) {
               savedSeqRef.current = seq;
               lastSavedSignatureRef.current = nextData.stableSignature;
             }
+
+            resolveFlushWaiters();
 
             setSaveStatus(seq >= editSeqRef.current ? 'saved' : 'dirty');
             // Only a receipt that covers the current edit (no newer edit
@@ -369,6 +404,11 @@ export function useTimelinePersistence({
             // saveSuccess when it lands.
             if (seq >= editSeqRef.current) {
               eventBus.emit('saveSuccess');
+              // The recovery slot is cleared only by a durable receipt that
+              // covers the current edit. An older ACK must leave the newer
+              // mutation's draft intact. IndexedDB is best-effort (private
+              // mode/quota failures must never become unhandled rejections).
+              void clearTimelineDraft(timelineId).catch(() => {});
             }
           },
         },
@@ -381,6 +421,7 @@ export function useTimelinePersistence({
           retries: 0,
           reason: 'missing_local_data',
         });
+        rejectFlushWaiters(error);
         return;
       }
 
@@ -397,8 +438,11 @@ export function useTimelinePersistence({
           retries: 0,
           reason: 'max_retries',
         });
+        rejectFlushWaiters(error);
         return;
       }
+
+      rejectFlushWaiters(error);
 
       const retryData = getDataRef().current ?? dataRef.current;
       if (retryData) {
@@ -435,6 +479,8 @@ export function useTimelinePersistence({
     lastSavedSignatureRef,
     logConfigVersionUpdate,
     eventBus,
+    rejectFlushWaiters,
+    resolveFlushWaiters,
     saveMutation,
     savedSeqRef,
     scheduleErrorRetry,
@@ -447,6 +493,15 @@ export function useTimelinePersistence({
   doSaveRef.current = (nextData, seq) => { void doSave(nextData, seq); };
 
   const scheduleSave = useCallback<ScheduleSaveFn>((nextData, options) => {
+    // Every mutation gets the latest coalesced recovery slot before any
+    // debounce, interaction gate, or network attempt. This is deliberately
+    // best-effort so private-mode IndexedDB rejection cannot affect editing.
+    void saveTimelineDraft(
+      timelineId,
+      { config: nextData.config, registry: nextData.registry },
+      configVersionRef.current,
+    ).catch(() => {});
+
     if (!persistenceEnabled) {
       if (saveTimer.current) {
         clearTimeout(saveTimer.current);
@@ -492,14 +547,10 @@ export function useTimelinePersistence({
     // error.
     armWatchdog('timeout');
 
-    // Diverged (409): autosave and remote adoption are frozen. The latest
-    // draft goes to the one-slot recovery store instead of a doomed POST —
-    // the banner offers Reload / Save as copy.
+    // Diverged (409): autosave and remote adoption are frozen. The mutation
+    // was already coalesced into the one-slot recovery store above; the banner
+    // offers Reload / Save as copy.
     if (isConflictExhausted) {
-      const latest = dataRef.current ?? getDataRef().current;
-      if (latest) {
-        void saveTimelineDraft(timelineId, { config: latest.config, registry: latest.registry }, configVersionRef.current);
-      }
       return;
     }
 
@@ -524,7 +575,60 @@ export function useTimelinePersistence({
       saveTimer.current = null;
       void doSave(nextData, editSeqRef.current);
     }, SAVE_DEBOUNCE_MS);
-  }, [armWatchdog, cancelErrorRetryTimer, disarmWatchdog, doSave, editSeqRef, getDataRef, getInteractionStateRef, isConflictExhausted, persistenceEnabled, timelineId]);
+  }, [armWatchdog, cancelErrorRetryTimer, configVersionRef, disarmWatchdog, doSave, editSeqRef, getDataRef, getInteractionStateRef, isConflictExhausted, persistenceEnabled, timelineId]);
+
+  const flushPendingSave = useCallback((): Promise<number> => {
+    if (!persistenceEnabled) {
+      return Promise.resolve(configVersionRef.current);
+    }
+    if (isInteractionActive(getInteractionStateRef())) {
+      return Promise.reject(new Error('Finish the current timeline interaction before rendering.'));
+    }
+    if (isConflictExhaustedRef.current || isConflictExhausted) {
+      return Promise.reject(new Error('Resolve the timeline version conflict before rendering.'));
+    }
+
+    const latest = getDataRef().current ?? dataRef.current;
+    if (!latest) {
+      return Promise.reject(new Error('Timeline data is not loaded, so it cannot be saved for rendering.'));
+    }
+    const targetSeq = editSeqRef.current;
+    if (
+      savedSeqRef.current >= targetSeq
+      && !isSavingRef.current
+      && !saveTimer.current
+      && !pendingSaveRef.current
+      && !errorRetryTimer.current
+    ) {
+      return Promise.resolve(configVersionRef.current);
+    }
+
+    return new Promise<number>((resolve, reject) => {
+      flushWaitersRef.current.push({ targetSeq, resolve, reject });
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+      }
+      cancelErrorRetryTimer();
+      if (isSavingRef.current) {
+        pendingSaveRef.current = { data: latest, seq: targetSeq };
+        return;
+      }
+      void doSave(latest, targetSeq);
+    });
+  }, [
+    cancelErrorRetryTimer,
+    configVersionRef,
+    dataRef,
+    doSave,
+    editSeqRef,
+    getDataRef,
+    getInteractionStateRef,
+    isConflictExhausted,
+    isConflictExhaustedRef,
+    persistenceEnabled,
+    savedSeqRef,
+  ]);
 
   const retryWatchdog = useCallback(() => {
     const reason = watchdogReason;
@@ -552,7 +656,7 @@ export function useTimelinePersistence({
     });
   }, [getInteractionStateRef, scheduleSave]);
 
-  const reloadFromServer = useCallback(async () => {
+  const reloadFromServer = useCallback(async (options?: { clearDraft?: boolean; preserveDraft?: boolean }) => {
     const [loadedTimeline, registry] = await Promise.all([
       provider.loadTimeline(timelineId),
       provider.loadAssetRegistry(timelineId),
@@ -589,6 +693,12 @@ export function useTimelinePersistence({
           loadedTimeline.configVersion,
           loadedBundleRef.current?.itemsBySchemaRef,
         );
+
+    // Explicit server adoption discards the local recovery slot. Save-as-copy
+    // calls this same reload with preserveDraft so its intentionally stashed
+    // work survives for a later recovery offer.
+    const shouldClearDraft = options?.clearDraft ?? !options?.preserveDraft;
+    if (shouldClearDraft) await clearTimelineDraft(timelineId).catch(() => {});
 
     commitData(reloadedData, {
       save: false,
@@ -639,7 +749,7 @@ export function useTimelinePersistence({
       return;
     }
     setIsConflictExhausted(false);
-    await reloadFromServer();
+    await reloadFromServer({ preserveDraft: true });
   }, [configVersionRef, dataRef, getDataRef, reloadFromServer, timelineId]);
 
   useEffect(() => {
@@ -668,14 +778,16 @@ export function useTimelinePersistence({
       // this hook's, but nothing else stops the doSave -> retry -> doSave loop.
       isMountedRef.current = false;
       clearErrorRetry();
+      rejectFlushWaiters(new Error('Timeline closed before the save-for-render barrier completed.'));
       if (saveTimer.current) {
         clearTimeout(saveTimer.current);
       }
     };
-  }, [clearErrorRetry]);
+  }, [clearErrorRetry, rejectFlushWaiters]);
 
   return {
     scheduleSave,
+    flushPendingSave,
     saveStatus,
     isConflictExhausted,
     reloadFromServer,

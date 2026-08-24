@@ -66,11 +66,17 @@ export default defineConfig({
         VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL ?? DEFAULT_DEV_SUPABASE_URL,
         VITE_SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY ?? 'test-anon-key',
         VITE_APP_ENV: process.env.VITE_APP_ENV ?? 'web',
+        // Real-bridge acceptance is an offline/deterministic browser run:
+        // Vite removes the declarative Google Fonts links before serving the
+        // document, so the request allowlist can reject every remote-font
+        // attempt without relying on browser runtime interception.
+        VITE_DISABLE_REMOTE_FONTS: process.env.VITE_DISABLE_REMOTE_FONTS ?? (useRealBridge ? '1' : '0'),
         VITE_ASTRID_BRIDGE_PORT: String(bridgePort),
         ASTRID_BRIDGE_ALLOW_UNAUTHENTICATED_STUB: useRealBridge ? '0' : '1',
         ...(realBridgeToken
           ? { ASTRID_BRIDGE_TOKEN: realBridgeToken }
           : {}),
+        ASTRID_REQUEST_TOKEN_FILE: process.env.ASTRID_REQUEST_TOKEN_FILE ?? '/tmp/astrid-real-bridge.token',
       },
     },
     ...(includeTimelineDevices
@@ -79,11 +85,18 @@ export default defineConfig({
           url: `http://127.0.0.1:${bridgePort}/health`,
           reuseExistingServer: useRealBridge ? false : !process.env.CI,
           timeout: 30_000,
+          // The real-bridge harness owns a disposable Astrid root plus pid,
+          // token, and provenance receipts. Give its SIGTERM handler time to
+          // stop the Python child and remove those artifacts after every run.
+          ...(useRealBridge
+            ? { gracefulShutdown: { signal: 'SIGTERM' as const, timeout: 5_000 } }
+            : {}),
           env: {
             ASTRID_BRIDGE_PORT: String(bridgePort),
             ...(realBridgeToken
               ? { ASTRID_BRIDGE_TOKEN: realBridgeToken }
               : {}),
+            ASTRID_REQUEST_TOKEN_FILE: process.env.ASTRID_REQUEST_TOKEN_FILE ?? '/tmp/astrid-real-bridge.token',
           },
         }]
       : []),

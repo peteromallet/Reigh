@@ -1,6 +1,0 @@
-L6-v2ready exit=0
-L5-security exit=0
-L1-core exit=0
-L4-livegap exit=0
-L2-design exit=0
-L3-cross exit=0

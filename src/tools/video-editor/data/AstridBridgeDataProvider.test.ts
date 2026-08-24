@@ -253,7 +253,7 @@ describe('AstridBridgeDataProvider', () => {
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       '/api/astrid/projects/ados-talks/timelines/11111111-1111-1111-1111-111111111111',
-      { signal: expect.any(AbortSignal) },
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(loaded.configVersion).toBe(1);
     expect(loaded.config.output).toEqual(expect.objectContaining({
@@ -877,17 +877,17 @@ describe('AstridBridgeDataProvider', () => {
     );
   });
 
-  it('loads local assembly and registry files through the persisted project handle and resolves source-relative files', async () => {
+  it('treats the bridge GET as authoritative while using FSA only to resolve asset bytes', async () => {
     const originalCreateObjectUrl = URL.createObjectURL;
     const localTree = createFileSystemHandleTree({
       'project.json': JSON.stringify({ slug: 'ados-talks' }),
       'timelines/01JM4K5N7P0000000000000017/assembly.json': JSON.stringify({
-        clips: [],
-        tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+        clips: [{ id: 'stale-local-clip' }],
+        tracks: [{ id: 'STALE', kind: 'visual', label: 'stale' }],
       }),
       'timelines/01JM4K5N7P0000000000000017/registry.json': JSON.stringify({
         assets: {
-          'asset-video': { file: 'clips/demo.mp4', type: 'video/mp4' },
+          'stale-local-asset': { file: 'stale/local.mp4', type: 'video/mp4' },
         },
       }),
       'sources/clips/demo.mp4': new Blob(['video-bytes'], { type: 'video/mp4' }),
@@ -906,36 +906,46 @@ describe('AstridBridgeDataProvider', () => {
       const loaded = await provider.loadTimeline('01JM4K5N7P0000000000000017');
       const registry = await provider.loadAssetRegistry('01JM4K5N7P0000000000000017');
 
-      expect(loaded.config.output).toEqual(expect.objectContaining({
-        resolution: '1280x720',
-        fps: 30,
-        file: 'output.mp4',
-      }));
+      expect(loaded.config.clips).toEqual([]);
+      expect(loaded.config.tracks).toEqual([{ id: 'V1', kind: 'visual', label: 'V1' }]);
       expect(registry.assets['asset-video'].file).toBe('clips/demo.mp4');
       await expect(provider.resolveAssetUrl('clips/demo.mp4')).resolves.toBe('blob:local-demo');
       expect(createObjectUrl).toHaveBeenCalledTimes(1);
-      expect(globalThis.fetch).not.toHaveBeenCalled();
+      expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+      expect(JSON.parse(String(localTree.files['timelines/01JM4K5N7P0000000000000017/assembly.json']))).toEqual({
+        clips: [{ id: 'stale-local-clip' }],
+        tracks: [{ id: 'STALE', kind: 'visual', label: 'stale' }],
+      });
+      expect(JSON.parse(String(localTree.files['timelines/01JM4K5N7P0000000000000017/registry.json']))).toEqual({
+        assets: {
+          'stale-local-asset': { file: 'stale/local.mp4', type: 'video/mp4' },
+        },
+      });
+      expect(localTree.writes).toEqual([]);
     } finally {
       URL.createObjectURL = originalCreateObjectUrl;
     }
   });
 
-  it('materializes generation-backed assets to sources/assets and persists a consistent registry after download', async () => {
+  it('materializes bridge generation assets into FSA bytes without writing assembly or registry documents', async () => {
+    const bridgeRegistry = {
+      assets: {
+        'asset-generation': {
+          file: '',
+          type: 'video/mp4',
+          generationId: 'gen-1',
+          origin: 'refreshable-from-generation',
+        },
+      },
+    };
     const localTree = createFileSystemHandleTree({
       'project.json': JSON.stringify({ slug: 'ados-talks' }),
       'timelines/01JM4K5N7P0000000000000017/assembly.json': JSON.stringify({
-        clips: [],
-        tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+        clips: [{ id: 'stale-local-clip' }],
+        tracks: [{ id: 'STALE', kind: 'visual', label: 'stale' }],
       }),
       'timelines/01JM4K5N7P0000000000000017/registry.json': JSON.stringify({
-        assets: {
-          'asset-generation': {
-            file: '',
-            type: 'video/mp4',
-            generationId: 'gen-1',
-            origin: 'refreshable-from-generation',
-          },
-        },
+        assets: { 'stale-local-asset': { file: 'stale/local.mp4', type: 'video/mp4' } },
       }),
     });
     vi.mocked(getDirectoryHandle).mockResolvedValue(localTree.projectRootHandle);
@@ -957,7 +967,10 @@ describe('AstridBridgeDataProvider', () => {
         storage: null,
       },
     });
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/api/astrid/projects/ados-talks/timelines/01JM4K5N7P0000000000000017')) {
+        return new Response(JSON.stringify({ ...makePayload(), registry: bridgeRegistry }), { status: 200 });
+      }
       if (String(input).startsWith('https://storage.example/')) {
         return new Response('downloaded-video', {
           status: 200,
@@ -965,7 +978,8 @@ describe('AstridBridgeDataProvider', () => {
         });
       }
       throw new Error(`Unexpected fetch: ${String(input)}`);
-    }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
 
     const provider = new AstridBridgeDataProvider({
       projectSlug: 'ados-talks',
@@ -981,13 +995,15 @@ describe('AstridBridgeDataProvider', () => {
       url: 'https://storage.example/object/sign/generation-media/gen-1/demo.mp4?token=abc',
     }));
     expect((localTree.files['sources/assets/demo.mp4'] as Blob).size).toBeGreaterThan(0);
-    expect(String(localTree.files['timelines/01JM4K5N7P0000000000000017/registry.json'])).toContain('"file": "assets/demo.mp4"');
     expect(localTree.writes.map((write) => write.path)).toEqual(expect.arrayContaining([
       expect.stringMatching(/^sources\/assets\/\.incoming\/.+\/demo\.mp4$/),
       'sources/assets/demo.mp4',
-      expect.stringMatching(/^timelines\/01JM4K5N7P0000000000000017\/\.registry\.json\..+\.tmp$/),
-      'timelines/01JM4K5N7P0000000000000017/registry.json',
     ]));
+    expect(localTree.writes.map((write) => write.path).some((path) => path.includes('assembly.json') || path.includes('registry.json'))).toBe(false);
+    expect(JSON.parse(String(localTree.files['timelines/01JM4K5N7P0000000000000017/registry.json']))).toEqual({
+      assets: { 'stale-local-asset': { file: 'stale/local.mp4', type: 'video/mp4' } },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(provider.getMaterializationSummary().states['asset-generation']).toEqual({
       state: 'materialized',
       file: 'assets/demo.mp4',
@@ -1008,10 +1024,12 @@ describe('AstridBridgeDataProvider', () => {
     const localTree = createFileSystemHandleTree({
       'project.json': JSON.stringify({ slug: 'ados-talks' }),
       'timelines/01JM4K5N7P0000000000000017/assembly.json': JSON.stringify({
-        clips: [],
-        tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+        clips: [{ id: 'stale-local-clip' }],
+        tracks: [{ id: 'STALE', kind: 'visual', label: 'stale' }],
       }),
-      'timelines/01JM4K5N7P0000000000000017/registry.json': JSON.stringify(originalRegistry),
+      'timelines/01JM4K5N7P0000000000000017/registry.json': JSON.stringify({
+        assets: { 'stale-local-asset': { file: 'stale/local.mp4', type: 'video/mp4' } },
+      }),
     });
     vi.mocked(getDirectoryHandle).mockResolvedValue(localTree.projectRootHandle);
     vi.mocked(resolveGenerationAsset).mockResolvedValue({
@@ -1024,6 +1042,13 @@ describe('AstridBridgeDataProvider', () => {
         assetId: 'asset-generation',
       },
     });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/api/astrid/projects/ados-talks/timelines/01JM4K5N7P0000000000000017')) {
+        return new Response(JSON.stringify({ ...makePayload(), registry: originalRegistry }), { status: 200 });
+      }
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
 
     const provider = new AstridBridgeDataProvider({
       projectSlug: 'ados-talks',
@@ -1034,14 +1059,16 @@ describe('AstridBridgeDataProvider', () => {
     const registry = await provider.loadAssetRegistry('01JM4K5N7P0000000000000017');
 
     expect(registry.assets['asset-generation']).toEqual(originalRegistry.assets['asset-generation']);
-    expect(JSON.parse(String(localTree.files['timelines/01JM4K5N7P0000000000000017/registry.json']))).toEqual(originalRegistry);
+    expect(JSON.parse(String(localTree.files['timelines/01JM4K5N7P0000000000000017/registry.json']))).toEqual({
+      assets: { 'stale-local-asset': { file: 'stale/local.mp4', type: 'video/mp4' } },
+    });
     expect(localTree.writes).toEqual([]);
     expect(provider.getMaterializationSummary().states['asset-generation']).toEqual({
       state: 'skipped-with-diagnostic',
       diagnostic: {
         assetId: 'asset-generation',
         generationId: 'gen-1',
-        reason: 'refresh-required',
+        reason: 'unresolvable',
         message: 'bucket/path cannot be derived',
       },
     });
@@ -1067,10 +1094,12 @@ describe('AstridBridgeDataProvider', () => {
     const localTree = createFileSystemHandleTree({
       'project.json': JSON.stringify({ slug: 'ados-talks' }),
       'timelines/01JM4K5N7P0000000000000017/assembly.json': JSON.stringify({
-        clips: [],
-        tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+        clips: [{ id: 'stale-local-clip' }],
+        tracks: [{ id: 'STALE', kind: 'visual', label: 'stale' }],
       }),
-      'timelines/01JM4K5N7P0000000000000017/registry.json': JSON.stringify(originalRegistry),
+      'timelines/01JM4K5N7P0000000000000017/registry.json': JSON.stringify({
+        assets: { 'stale-local-asset': { file: 'stale/local.mp4', type: 'video/mp4' } },
+      }),
     });
     vi.mocked(getDirectoryHandle).mockResolvedValue(localTree.projectRootHandle);
     vi.mocked(resolveGenerationAsset).mockImplementation(async ({ assetId }) => {
@@ -1106,7 +1135,10 @@ describe('AstridBridgeDataProvider', () => {
         },
       };
     });
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/api/astrid/projects/ados-talks/timelines/01JM4K5N7P0000000000000017')) {
+        return new Response(JSON.stringify({ ...makePayload(), registry: originalRegistry }), { status: 200 });
+      }
       if (String(input).startsWith('https://storage.example/')) {
         return new Response('downloaded-video', {
           status: 200,
@@ -1114,7 +1146,8 @@ describe('AstridBridgeDataProvider', () => {
         });
       }
       throw new Error(`Unexpected fetch: ${String(input)}`);
-    }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
 
     const provider = new AstridBridgeDataProvider({
       projectSlug: 'ados-talks',
@@ -1123,7 +1156,6 @@ describe('AstridBridgeDataProvider', () => {
     });
 
     const registry = await provider.loadAssetRegistry('01JM4K5N7P0000000000000017');
-    const persistedRegistry = JSON.parse(String(localTree.files['timelines/01JM4K5N7P0000000000000017/registry.json']));
     const summary = provider.getMaterializationSummary();
 
     expect(registry.assets['asset-success']).toEqual(expect.objectContaining({
@@ -1131,16 +1163,10 @@ describe('AstridBridgeDataProvider', () => {
       generationId: 'gen-success',
     }));
     expect(registry.assets['asset-failure']).toEqual(originalRegistry.assets['asset-failure']);
-    expect(persistedRegistry).toEqual({
-      assets: {
-        'asset-success': expect.objectContaining({
-          file: 'assets/demo.mp4',
-          generationId: 'gen-success',
-        }),
-        'asset-failure': originalRegistry.assets['asset-failure'],
-      },
+    expect(JSON.parse(String(localTree.files['timelines/01JM4K5N7P0000000000000017/registry.json']))).toEqual({
+      assets: { 'stale-local-asset': { file: 'stale/local.mp4', type: 'video/mp4' } },
     });
-    expect(persistedRegistry.assets['asset-failure'].file).toBe('');
+    expect(localTree.writes.map((write) => write.path).some((path) => path.includes('assembly.json') || path.includes('registry.json'))).toBe(false);
     expect((localTree.files['sources/assets/demo.mp4'] as Blob).size).toBeGreaterThan(0);
     expect(localTree.files['sources/assets/failure.png']).toBeUndefined();
     expect(summary.states['asset-success']).toEqual({
@@ -1152,7 +1178,7 @@ describe('AstridBridgeDataProvider', () => {
       diagnostic: {
         assetId: 'asset-failure',
         generationId: 'gen-failure',
-        reason: 'refresh-required',
+        reason: 'unresolvable',
         message: 'signed URL can no longer be re-minted',
       },
     });
@@ -1160,28 +1186,31 @@ describe('AstridBridgeDataProvider', () => {
       {
         assetId: 'asset-failure',
         generationId: 'gen-failure',
-        reason: 'refresh-required',
+        reason: 'unresolvable',
         message: 'signed URL can no longer be re-minted',
       },
     ]);
   });
 
-  it('does not automatically retry skipped assets on local save but still materializes newly attempted ones', async () => {
+  it('does not automatically retry skipped assets on bridge save and materializes newly attempted bytes', async () => {
+    const bridgeRegistry = {
+      assets: {
+        'asset-skipped': {
+          file: '',
+          type: 'video/mp4',
+          generationId: 'gen-skipped',
+          origin: 'refreshable-from-generation',
+        },
+      },
+    };
     const localTree = createFileSystemHandleTree({
       'project.json': JSON.stringify({ slug: 'ados-talks' }),
       'timelines/01JM4K5N7P0000000000000017/assembly.json': JSON.stringify({
-        clips: [],
-        tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
+        clips: [{ id: 'stale-local-clip' }],
+        tracks: [{ id: 'STALE', kind: 'visual', label: 'stale' }],
       }),
       'timelines/01JM4K5N7P0000000000000017/registry.json': JSON.stringify({
-        assets: {
-          'asset-skipped': {
-            file: '',
-            type: 'video/mp4',
-            generationId: 'gen-skipped',
-            origin: 'refreshable-from-generation',
-          },
-        },
+        assets: { 'stale-local-asset': { file: 'stale/local.mp4', type: 'video/mp4' } },
       }),
     });
     vi.mocked(getDirectoryHandle).mockResolvedValue(localTree.projectRootHandle);
@@ -1223,7 +1252,19 @@ describe('AstridBridgeDataProvider', () => {
 
       throw new Error(`Unexpected assetId: ${assetId}`);
     });
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/astrid/projects/ados-talks/timelines/01JM4K5N7P0000000000000017')) {
+        return new Response(JSON.stringify({ ...makePayload(), config_version: 1, registry: bridgeRegistry }), { status: 200 });
+      }
+      if (url.endsWith('/save')) {
+        expect(init?.method).toBe('POST');
+        const body = JSON.parse(String(init?.body));
+        expect(body.expected_version).toBe(1);
+        expect(body.registry.assets['asset-skipped']).toEqual(bridgeRegistry.assets['asset-skipped']);
+        expect(body.registry.assets['asset-new']).toEqual(expect.objectContaining({ file: 'assets/new.wav' }));
+        return new Response(JSON.stringify({ ...makePayload(), config_version: 2, registry: body.registry }), { status: 200 });
+      }
       if (String(input).startsWith('https://storage.example/')) {
         return new Response('new-audio', {
           status: 200,
@@ -1231,7 +1272,8 @@ describe('AstridBridgeDataProvider', () => {
         });
       }
       throw new Error(`Unexpected fetch: ${String(input)}`);
-    }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
 
     const provider = new AstridBridgeDataProvider({
       projectSlug: 'ados-talks',
@@ -1245,7 +1287,7 @@ describe('AstridBridgeDataProvider', () => {
       diagnostic: {
         assetId: 'asset-skipped',
         generationId: 'gen-skipped',
-        reason: 'refresh-required',
+        reason: 'unresolvable',
         message: 'gen-skipped still cannot be refreshed',
       },
     });
@@ -1277,32 +1319,24 @@ describe('AstridBridgeDataProvider', () => {
       },
     );
 
-    const persistedRegistry = JSON.parse(String(localTree.files['timelines/01JM4K5N7P0000000000000017/registry.json']));
     const materializedAssetIds = resolveGenerationAssetMock.mock.calls.map(([request]) => request.assetId);
 
     expect(version).toBe(2);
     expect(materializedAssetIds).toEqual(['asset-new']);
-    expect(persistedRegistry.assets['asset-skipped']).toEqual({
-      file: '',
-      type: 'video/mp4',
-      generationId: 'gen-skipped',
-      origin: 'refreshable-from-generation',
+    expect(JSON.parse(String(localTree.files['timelines/01JM4K5N7P0000000000000017/registry.json']))).toEqual({
+      assets: { 'stale-local-asset': { file: 'stale/local.mp4', type: 'video/mp4' } },
     });
-    expect(persistedRegistry.assets['asset-new']).toEqual(expect.objectContaining({
-      file: 'assets/new.wav',
-      generationId: 'gen-new',
-      type: 'audio/wav',
-    }));
+    expect(localTree.writes.map((write) => write.path).some((path) => path.includes('assembly.json') || path.includes('registry.json'))).toBe(false);
     expect((localTree.files['sources/assets/new.wav'] as Blob).size).toBeGreaterThan(0);
     expect(provider.getMaterializationSummary()).toEqual({
       states: {
         'asset-skipped': {
           state: 'skipped-with-diagnostic',
-          diagnostic: {
-            assetId: 'asset-skipped',
-            generationId: 'gen-skipped',
-            reason: 'refresh-required',
-            message: 'gen-skipped still cannot be refreshed',
+        diagnostic: {
+          assetId: 'asset-skipped',
+          generationId: 'gen-skipped',
+          reason: 'unresolvable',
+          message: 'gen-skipped still cannot be refreshed',
           },
         },
         'asset-new': {
@@ -1314,7 +1348,7 @@ describe('AstridBridgeDataProvider', () => {
         {
           assetId: 'asset-skipped',
           generationId: 'gen-skipped',
-          reason: 'refresh-required',
+          reason: 'unresolvable',
           message: 'gen-skipped still cannot be refreshed',
         },
       ],
@@ -2085,1000 +2119,104 @@ describe('AstridBridgeDataProvider', () => {
   // -------------------------------------------------------------------------
   // M6: Parser-enriched metadata persistence in AstridBridgeDataProvider (T11)
   // -------------------------------------------------------------------------
-  describe('M6: parser enrichment in AstridBridgeDataProvider', () => {
-    const makeMockParser = (
-      id: string,
-      extensionId: string,
-      overrides = {},
-    ) => ({
-      descriptor: {
-        id,
-        extensionId,
-        label: 'Parser ' + id,
-        acceptMimeTypes: ['video/mp4'],
-        ...overrides,
+  it('persists parser metadata through the combined CAS POST and a fresh bridge GET while FSA remains bytes-only', async () => {
+    const timelineId = '11111111-1111-1111-1111-111111111111';
+    const timelineRef = '01JM4K5N7P0000000000000017';
+    const localTree = createFileSystemHandleTree({
+      'project.json': JSON.stringify({ slug: 'ados-talks' }),
+      [`timelines/${timelineRef}/assembly.json`]: JSON.stringify({ clips: [{ id: 'stale-local-clip' }], tracks: [] }),
+      [`timelines/${timelineRef}/registry.json`]: JSON.stringify({
+        assets: { 'stale-local-asset': { file: 'stale/local.mp4', type: 'video/mp4' } },
+      }),
+    });
+    vi.mocked(getDirectoryHandle).mockResolvedValue(localTree.projectRootHandle);
+
+    const enrichedEntry = {
+      file: 'local-drops/demo.mp4',
+      type: 'video/mp4',
+      duration: 4,
+      metadata: {
+        integrity: { algorithm: 'sha256', hash: 'parser-hash', size: 5 },
+        provenance: { source: 'parser-test' },
+        enrichment: {
+          pending: 1,
+          failed: 0,
+          claims: [{ claimId: 'claim-1', parserId: 'com.example.parser', field: 'description' }],
+        },
+        extensions: { 'com.example.parser': { parsed: true } },
       },
-      handler: vi.fn(async () => ({
-        metadata: {
-          integrity: { sha256: 'abc123' },
-          extensions: {
-            [extensionId]: { parsed: true },
-          },
-        },
-      })),
+    };
+    vi.mocked(enrichRegistryEntryWithParsers).mockResolvedValue({
+      entry: enrichedEntry,
+      diagnostics: [],
+      blocked: false,
     });
 
-    it('enriches upload entries with parser metadata when registeredParsers are configured', async () => {
-      const handleTree = createDirectoryHandleTree();
-      vi.mocked(getDirectoryHandle).mockResolvedValue(handleTree.projectRootHandle);
-
-      const parser = makeMockParser(
-        'com.example.parser.metadata-extractor',
-        'com.example.parser',
-      );
-
-      const enrichedEntry = {
-        file: 'local-drops/demo.mp4',
-        type: 'video/mp4',
-        duration: 4,
-        metadata: {
-          integrity: { sha256: 'abc123' },
-          extensions: {
-            'com.example.parser': { parsed: true },
-          },
-        },
-      };
-
-      vi.mocked(enrichRegistryEntryWithParsers).mockResolvedValue({
-        entry: enrichedEntry,
-        diagnostics: [],
-        blocked: false,
-      });
-
-      const registerAssetSpy = vi.spyOn(AstridBridgeDataProvider.prototype, 'registerAsset')
-        .mockResolvedValue(undefined);
-
-      const provider = new AstridBridgeDataProvider({
-        projectSlug: 'ados-talks',
-        timelineRef: 'intro-cut',
-        timelineId: '11111111-1111-1111-1111-111111111111',
-        registeredParsers: [parser],
-      });
-
-      const result = await provider.uploadAsset(
-        new File(['video'], 'demo.mp4', { type: 'video/mp4' }),
-        { timelineId: '11111111-1111-1111-1111-111111111111', userId: 'user-1' },
-      );
-
-      // enrichRegistryEntryWithParsers was called
-      expect(enrichRegistryEntryWithParsers).toHaveBeenCalledWith(
-        expect.any(File),
-        expect.objectContaining({
-          file: 'local-drops/demo.mp4',
-          type: 'video/mp4',
-          duration: 4,
-        }),
-        expect.any(String),
-        [parser],
-      );
-
-      // registerAsset was called with the enriched entry
-      expect(registerAssetSpy).toHaveBeenCalledWith(
-        '11111111-1111-1111-1111-111111111111',
-        expect.any(String),
-        enrichedEntry,
-      );
-
-      // The returned result has the enriched entry
-      expect(result.entry).toEqual(enrichedEntry);
-      expect(result.assetId).toEqual(expect.any(String));
+    let bridgePayload = {
+      ...makePayload(),
+      timeline_id: timelineId,
+      timeline_ulid: timelineRef,
+      config_version: 4,
+      registry: { assets: {} },
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/save')) {
+        expect(init?.method).toBe('POST');
+        const body = JSON.parse(String(init?.body)) as {
+          config: unknown;
+          registry: { assets: Record<string, unknown> };
+          expected_version: number;
+        };
+        expect(body.expected_version).toBe(4);
+        expect(Object.values(body.registry.assets)).toEqual([enrichedEntry]);
+        bridgePayload = {
+          ...bridgePayload,
+          config: body.config,
+          registry: body.registry,
+          config_version: 5,
+        };
+        return new Response(JSON.stringify(bridgePayload), { status: 200 });
+      }
+      return new Response(JSON.stringify(bridgePayload), { status: 200 });
     });
+    vi.stubGlobal('fetch', fetchMock);
 
-    it('does not call enrichRegistryEntryWithParsers when registeredParsers is undefined', async () => {
-      const handleTree = createDirectoryHandleTree();
-      vi.mocked(getDirectoryHandle).mockResolvedValue(handleTree.projectRootHandle);
-
-      const registerAssetSpy = vi.spyOn(AstridBridgeDataProvider.prototype, 'registerAsset')
-        .mockResolvedValue(undefined);
-
-      // No registeredParsers option
-      const provider = new AstridBridgeDataProvider({
-        projectSlug: 'ados-talks',
-        timelineRef: 'intro-cut',
-        timelineId: '11111111-1111-1111-1111-111111111111',
-      });
-
-      await provider.uploadAsset(
-        new File(['video'], 'demo.mp4', { type: 'video/mp4' }),
-        { timelineId: '11111111-1111-1111-1111-111111111111', userId: 'user-1' },
-      );
-
-      // enrichRegistryEntryWithParsers must NOT be called
-      expect(enrichRegistryEntryWithParsers).not.toHaveBeenCalled();
-
-      // registerAsset was called with the raw entry (no enrichment)
-      expect(registerAssetSpy).toHaveBeenCalledWith(
-        '11111111-1111-1111-1111-111111111111',
-        expect.any(String),
-        expect.objectContaining({
-          file: 'local-drops/demo.mp4',
-          type: 'video/mp4',
-          duration: 4,
-        }),
-      );
-    });
-
-    it('preserves existing upload behavior when registeredParsers is an empty array', async () => {
-      const handleTree = createDirectoryHandleTree();
-      vi.mocked(getDirectoryHandle).mockResolvedValue(handleTree.projectRootHandle);
-
-      const registerAssetSpy = vi.spyOn(AstridBridgeDataProvider.prototype, 'registerAsset')
-        .mockResolvedValue(undefined);
-
-      // Empty registeredParsers
-      const provider = new AstridBridgeDataProvider({
-        projectSlug: 'ados-talks',
-        timelineRef: 'intro-cut',
-        timelineId: '11111111-1111-1111-1111-111111111111',
-        registeredParsers: [],
-      });
-
-      const result = await provider.uploadAsset(
-        new File(['video'], 'demo.mp4', { type: 'video/mp4' }),
-        { timelineId: '11111111-1111-1111-1111-111111111111', userId: 'user-1' },
-      );
-
-      // enrichRegistryEntryWithParsers must NOT be called
-      expect(enrichRegistryEntryWithParsers).not.toHaveBeenCalled();
-
-      // The entry is the raw extracted entry (no metadata enrichment)
-      expect(result.entry).toEqual(expect.objectContaining({
-        file: 'local-drops/demo.mp4',
-        type: 'video/mp4',
-        duration: 4,
-      }));
-      // No metadata field on unenriched entries
-      expect(result.entry.metadata).toBeUndefined();
-
-      expect(registerAssetSpy).toHaveBeenCalledTimes(1);
-    });
-
-    it('persists parser-produced enrichment claims and integrity metadata through the upload return value', async () => {
-      const handleTree = createDirectoryHandleTree();
-      vi.mocked(getDirectoryHandle).mockResolvedValue(handleTree.projectRootHandle);
-
-      const parser = makeMockParser(
-        'com.example.claims.parser',
-        'com.example.claims',
-      );
-
-      const enrichedEntryWithClaims = {
-        file: 'local-drops/demo.mp4',
-        type: 'video/mp4',
-        duration: 4,
-        metadata: {
-          enrichment: {
-            pending: 1,
-            failed: 0,
-            claims: [
-              {
-                claimId: 'claim-1',
-                parserId: 'com.example.claims',
-                timestamp: '2026-06-19T00:00:00.000Z',
-                field: 'description',
-                summary: 'Analyzed with AI',
-              },
-            ],
-          },
-          integrity: { sha256: 'def456' },
-        },
-      };
-
-      const parserDiagnostics = [
-        {
-          severity: 'info',
-          code: 'parser/claim-enqueued',
-          message: 'Enqueued enrichment claim claim-1 for deferred execution.',
-          extensionId: 'com.example.claims',
-          contributionId: 'com.example.claims.parser',
-        },
-      ];
-
-      vi.mocked(enrichRegistryEntryWithParsers).mockResolvedValue({
-        entry: enrichedEntryWithClaims,
-        diagnostics: parserDiagnostics,
-        blocked: false,
-      });
-
-      const registerAssetSpy = vi.spyOn(AstridBridgeDataProvider.prototype, 'registerAsset')
-        .mockResolvedValue(undefined);
-
-      const provider = new AstridBridgeDataProvider({
-        projectSlug: 'ados-talks',
-        timelineRef: 'intro-cut',
-        timelineId: '11111111-1111-1111-1111-111111111111',
-        registeredParsers: [parser],
-      });
-
-      const result = await provider.uploadAsset(
-        new File(['video'], 'demo.mp4', { type: 'video/mp4' }),
-        { timelineId: '11111111-1111-1111-1111-111111111111', userId: 'user-1' },
-      );
-
-      // The enrichment claims are in the persisted entry
-      expect(registerAssetSpy).toHaveBeenCalledWith(
-        '11111111-1111-1111-1111-111111111111',
-        expect.any(String),
-        expect.objectContaining({
-          metadata: expect.objectContaining({
-            enrichment: expect.objectContaining({
-              claims: expect.arrayContaining([
-                expect.objectContaining({
-                  claimId: 'claim-1',
-                  parserId: 'com.example.claims',
-                }),
-              ]),
-            }),
-            integrity: expect.objectContaining({
-              sha256: 'def456',
-            }),
-          }),
-        }),
-      );
-
-      // The returned result carries the enriched metadata
-      expect(result.entry.metadata).toBeDefined();
-      expect(result.entry.metadata.enrichment).toBeDefined();
-    });
-
-    it('persists parser-enriched metadata through local save/reload cycle via fetchLocalTimelinePayload', async () => {
-      const timelineRef = '01JM4K5N7P0000000000000017';
-      const enrichedEntry = {
-        file: 'local-drops/test-image.png',
-        type: 'image/png',
-        metadata: {
-          integrity: { algorithm: 'sha256', hash: 'deadbeef1234', size: 100 },
-          provenance: { importedAt: '2026-06-19T00:00:00.000Z', source: 'astrid-local-test' },
-          enrichment: {
-            pending: 1,
-            failed: 0,
-            claims: [
-              {
-                claimId: 'claim-1',
-                parserId: 'com.example.astrid',
-                timestamp: '2026-06-19T00:00:00.000Z',
-                field: 'description',
-                summary: 'Astrid local test enrichment',
-              },
-            ],
-          },
-          extensions: {
-            'com.example.astrid': { parsedBy: 'astrid-test-parser', version: 1 },
-          },
-        },
-      };
-
-      // Build the local file system fixture with assembly.json, registry.json, and one asset file
-      const localTree = createFileSystemHandleTree({
-        'project.json': JSON.stringify({ slug: 'ados-talks' }),
-        [`timelines/${timelineRef}/assembly.json`]: JSON.stringify({
-          clips: [],
-          tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
-        }),
-        [`timelines/${timelineRef}/registry.json`]: JSON.stringify({
-          assets: {},
-        }),
-        'sources/local-drops/test-image.png': new Blob(['image-bytes'], { type: 'image/png' }),
-      });
-      vi.mocked(getDirectoryHandle).mockResolvedValue(localTree.projectRootHandle);
-
-      // Mock parser enrichment to return metadata with integrity, provenance, enrichment claims, and extension namespace
-      vi.mocked(enrichRegistryEntryWithParsers).mockResolvedValue({
-        entry: enrichedEntry,
-        diagnostics: [],
-        blocked: false,
-      });
-
-      const parser = makeMockParser(
-        'com.example.astrid.parser',
-        'com.example.astrid',
-      );
-
-      // Spy on registerAsset to prevent HTTP PUT — we want local-only persistence
-      const registerAssetSpy = vi.spyOn(AstridBridgeDataProvider.prototype, 'registerAsset')
-        .mockResolvedValue(undefined);
-
-      const provider = new AstridBridgeDataProvider({
-        projectSlug: 'ados-talks',
-        timelineRef,
-        timelineId: timelineRef,
-        registeredParsers: [parser],
-      });
-
-      // Upload an asset — enrichRegistryEntryWithParsers is called, then registerAsset (spied)
-      const uploadResult = await provider.uploadAsset(
-        new File(['image'], 'test-image.png', { type: 'image/png' }),
-        { timelineId: timelineRef, userId: 'user-1' },
-      );
-
-      // The returned entry must carry parser-enriched metadata
-      expect(uploadResult.entry.metadata).toBeDefined();
-      expect(uploadResult.entry.metadata.integrity).toBeDefined();
-      expect(uploadResult.assetId).toEqual(expect.any(String));
-
-      const assetId = uploadResult.assetId;
-
-      // Save the timeline with the enriched entry — this writes registry.json and assembly.json to local disk
-      const version = await provider.saveTimeline(
-        timelineRef,
-        {
-          output: { resolution: '1280x720', fps: 30, file: 'output.mp4' },
-          clips: [],
-          tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
-        },
-        1,
-        {
-          assets: {
-            [assetId]: enrichedEntry,
-          },
-        },
-      );
-
-      expect(version).toBeGreaterThanOrEqual(1);
-
-      // Assert registry.json on "disk" contains the enriched metadata (integrity, enrichment claims, extensions)
-      const savedRegistry = JSON.parse(
-        String(localTree.files[`timelines/${timelineRef}/registry.json`]),
-      );
-      expect(savedRegistry.assets[assetId]).toBeDefined();
-      expect(savedRegistry.assets[assetId].metadata).toBeDefined();
-      expect(savedRegistry.assets[assetId].metadata.integrity.hash).toBe('deadbeef1234');
-      expect(savedRegistry.assets[assetId].metadata.integrity.algorithm).toBe('sha256');
-      expect(savedRegistry.assets[assetId].metadata.integrity.size).toBe(100);
-      expect(savedRegistry.assets[assetId].metadata.provenance).toEqual({
-        importedAt: '2026-06-19T00:00:00.000Z',
-        source: 'astrid-local-test',
-      });
-      expect(savedRegistry.assets[assetId].metadata.enrichment.pending).toBe(1);
-      expect(savedRegistry.assets[assetId].metadata.enrichment.failed).toBe(0);
-      expect(savedRegistry.assets[assetId].metadata.enrichment.claims).toHaveLength(1);
-      expect(savedRegistry.assets[assetId].metadata.enrichment.claims[0]).toEqual(
-        expect.objectContaining({
-          claimId: 'claim-1',
-          parserId: 'com.example.astrid',
-        }),
-      );
-      expect(savedRegistry.assets[assetId].metadata.extensions['com.example.astrid']).toEqual({
-        parsedBy: 'astrid-test-parser',
-        version: 1,
-      });
-
-      // Verify assembly.json was also written
-      const savedAssembly = JSON.parse(
-        String(localTree.files[`timelines/${timelineRef}/assembly.json`]),
-      );
-      expect(savedAssembly.clips).toEqual([]);
-      expect(savedAssembly.tracks).toHaveLength(1);
-
-      // -------------------------------------------------------------------
-      // Simulate a full reload: a fresh provider instance against the same
-      // local file system that calls fetchLocalTimelinePayload() internally
-      // -------------------------------------------------------------------
-      const reloadedProvider = new AstridBridgeDataProvider({
-        projectSlug: 'ados-talks',
-        timelineRef,
-        timelineId: timelineRef,
-        // No registeredParsers on reload — the metadata should already be in registry.json
-      });
-
-      const reloadedRegistry = await reloadedProvider.loadAssetRegistry(timelineRef);
-
-      // Assert enriched metadata survived the reload via fetchLocalTimelinePayload
-      expect(reloadedRegistry.assets[assetId]).toBeDefined();
-      expect(reloadedRegistry.assets[assetId].metadata).toBeDefined();
-      expect(reloadedRegistry.assets[assetId].metadata.integrity).toEqual({
-        algorithm: 'sha256',
-        hash: 'deadbeef1234',
-        size: 100,
-      });
-      expect(reloadedRegistry.assets[assetId].metadata.provenance).toEqual({
-        importedAt: '2026-06-19T00:00:00.000Z',
-        source: 'astrid-local-test',
-      });
-      expect(reloadedRegistry.assets[assetId].metadata.enrichment.pending).toBe(1);
-      expect(reloadedRegistry.assets[assetId].metadata.enrichment.failed).toBe(0);
-      expect(reloadedRegistry.assets[assetId].metadata.enrichment.claims).toHaveLength(1);
-      expect(reloadedRegistry.assets[assetId].metadata.enrichment.claims[0]).toEqual(
-        expect.objectContaining({
-          claimId: 'claim-1',
-          parserId: 'com.example.astrid',
-          field: 'description',
-          summary: 'Astrid local test enrichment',
-        }),
-      );
-      expect(reloadedRegistry.assets[assetId].metadata.extensions['com.example.astrid']).toEqual({
-        parsedBy: 'astrid-test-parser',
-        version: 1,
-      });
-
-      // Verify the reloaded provider did NOT make any HTTP calls — it used local files exclusively
-      expect(globalThis.fetch).not.toHaveBeenCalled();
-    });
-
-    it('exercises the extension authoring loop: read, patch, save, reload — mutation persists, extension source does not', async () => {
-      const timelineRef = '01JM4K5N7P0000000000000018';
-
-      const localTree = createFileSystemHandleTree({
-        'project.json': JSON.stringify({ slug: 'ados-talks' }),
-        [`timelines/${timelineRef}/assembly.json`]: JSON.stringify({
-          clips: [],
-          tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
-        }),
-        [`timelines/${timelineRef}/registry.json`]: JSON.stringify({
-          assets: {
-            'asset-original': {
-              file: 'clips/original.mp4',
-              type: 'video/mp4',
-              duration: 3,
-            },
-          },
-        }),
-        'sources/clips/original.mp4': new Blob(['original-video'], { type: 'video/mp4' }),
-      });
-      vi.mocked(getDirectoryHandle).mockResolvedValue(localTree.projectRootHandle);
-
-      const parser = makeMockParser(
-        'com.example.authoring-loop.parser',
-        'com.example.authoring-loop',
-        {
+    const provider = new AstridBridgeDataProvider({
+      projectSlug: 'ados-talks',
+      timelineRef,
+      timelineId,
+      registeredParsers: [{
+        descriptor: {
+          id: 'com.example.parser.metadata',
+          extensionId: 'com.example.parser',
+          label: 'Parser',
           acceptMimeTypes: ['video/mp4'],
         },
-      );
-
-      const enrichedEntryPatch = {
-        file: 'clips/original.mp4',
-        type: 'video/mp4',
-        duration: 3,
-        metadata: {
-          integrity: { algorithm: 'sha256', hash: 'abcdef1234567890', size: 14 },
-          provenance: { importedAt: '2026-06-19T10:00:00.000Z', source: 'authoring-loop-test' },
-          enrichment: {
-            pending: 1,
-            failed: 0,
-            claims: [
-              {
-                claimId: 'claim-authoring-1',
-                parserId: 'com.example.authoring-loop',
-                timestamp: '2026-06-19T10:00:00.000Z',
-                field: 'description',
-                summary: 'Authoring loop enrichment claim',
-              },
-            ],
-          },
-          extensions: {
-            'com.example.authoring-loop': { analyzed: true, score: 0.95 },
-          },
-        },
-      };
-
-      vi.mocked(enrichRegistryEntryWithParsers).mockResolvedValue({
-        entry: enrichedEntryPatch,
-        diagnostics: [
-          {
-            severity: 'info',
-            code: 'parser/claim-enqueued',
-            message: 'Enqueued enrichment claim for authoring loop.',
-            extensionId: 'com.example.authoring-loop',
-            contributionId: 'com.example.authoring-loop.parser',
-          },
-        ],
-        blocked: false,
-      });
-
-      const registerAssetSpy = vi.spyOn(AstridBridgeDataProvider.prototype, 'registerAsset')
-        .mockResolvedValue(undefined);
-
-      const provider = new AstridBridgeDataProvider({
-        projectSlug: 'ados-talks',
-        timelineRef,
-        timelineId: timelineRef,
-        registeredParsers: [parser],
-      });
-
-      const loaded = await provider.loadTimeline(timelineRef);
-      const initialRegistry = await provider.loadAssetRegistry(timelineRef);
-
-      expect(loaded.config.tracks).toHaveLength(1);
-      expect(initialRegistry.assets['asset-original']).toBeDefined();
-      expect(initialRegistry.assets['asset-original'].file).toBe('clips/original.mp4');
-
-      await provider.registerAsset(timelineRef, 'asset-original', enrichedEntryPatch);
-
-      const secondAssetEntry = {
-        file: 'clips/second.mp4',
-        type: 'video/mp4',
-        duration: 5,
-        metadata: {
-          integrity: { algorithm: 'sha256', hash: 'deadbeef9999', size: 50 },
-          extensions: {
-            'com.example.authoring-loop': { analyzed: true, score: 0.8 },
-          },
-        },
-      };
-      await provider.registerAsset(timelineRef, 'asset-second', secondAssetEntry);
-
-      const patchedConfig = {
-        output: { resolution: '1920x1080', fps: 24, file: 'patched-output.mp4' },
-        clips: [
-          { id: 'clip-1', assetId: 'asset-original', trackId: 'V1', start: 0, end: 3 },
-        ],
-        tracks: [
-          { id: 'V1', kind: 'visual', label: 'V1' },
-          { id: 'A1', kind: 'audio', label: 'A1' },
-        ],
-      };
-
-      const version = await provider.saveTimeline(
-        timelineRef,
-        patchedConfig,
-        1,
-        {
-          assets: {
-            'asset-original': enrichedEntryPatch,
-            'asset-second': secondAssetEntry,
-          },
-        },
-      );
-      expect(version).toBeGreaterThanOrEqual(1);
-
-      const savedRegistryRaw = String(localTree.files[`timelines/${timelineRef}/registry.json`]);
-      const savedRegistry = JSON.parse(savedRegistryRaw);
-      const savedAssemblyRaw = String(localTree.files[`timelines/${timelineRef}/assembly.json`]);
-      const savedAssembly = JSON.parse(savedAssemblyRaw);
-
-      expect(savedRegistry.assets['asset-original']).toBeDefined();
-      expect(savedRegistry.assets['asset-original'].metadata).toBeDefined();
-      expect(savedRegistry.assets['asset-original'].metadata.integrity).toEqual({
-        algorithm: 'sha256',
-        hash: 'abcdef1234567890',
-        size: 14,
-      });
-      expect(savedRegistry.assets['asset-original'].metadata.provenance).toEqual({
-        importedAt: '2026-06-19T10:00:00.000Z',
-        source: 'authoring-loop-test',
-      });
-      expect(savedRegistry.assets['asset-original'].metadata.enrichment.pending).toBe(1);
-      expect(savedRegistry.assets['asset-original'].metadata.enrichment.claims).toHaveLength(1);
-      expect(savedRegistry.assets['asset-original'].metadata.extensions['com.example.authoring-loop']).toEqual({
-        analyzed: true,
-        score: 0.95,
-      });
-      expect(savedRegistry.assets['asset-second']).toBeDefined();
-      expect(savedRegistry.assets['asset-second'].metadata.integrity).toEqual({
-        algorithm: 'sha256',
-        hash: 'deadbeef9999',
-        size: 50,
-      });
-
-      expect(savedAssembly.output.resolution).toBe('1920x1080');
-      expect(savedAssembly.output.fps).toBe(24);
-      expect(savedAssembly.clips).toHaveLength(1);
-      expect(savedAssembly.clips[0].assetId).toBe('asset-original');
-      expect(savedAssembly.tracks).toHaveLength(2);
-      expect(savedAssembly.tracks[1].id).toBe('A1');
-
-      expect(savedRegistryRaw).not.toContain('function');
-      expect(savedRegistryRaw).not.toContain('handler');
-      expect(savedRegistryRaw).not.toContain('makeMockParser');
-      expect(savedRegistryRaw).not.toContain('vi.fn');
-      expect(savedAssemblyRaw).not.toContain('function');
-      expect(savedAssemblyRaw).not.toContain('handler');
-      expect(savedAssemblyRaw).not.toContain('registeredParsers');
-
-      expect(savedRegistryRaw).not.toContain('com.example.authoring-loop.parser');
-      expect(savedRegistryRaw).not.toContain('acceptMimeTypes');
-      expect(savedAssemblyRaw).not.toContain('com.example.authoring-loop.parser');
-      expect(savedAssemblyRaw).not.toContain('acceptMimeTypes');
-
-      expect(savedRegistryRaw).toContain('com.example.authoring-loop');
-
-      const reloadedProvider = new AstridBridgeDataProvider({
-        projectSlug: 'ados-talks',
-        timelineRef,
-        timelineId: timelineRef,
-      });
-
-      const reloadedTimeline = await reloadedProvider.loadTimeline(timelineRef);
-      const reloadedRegistry = await reloadedProvider.loadAssetRegistry(timelineRef);
-
-      expect(reloadedTimeline.config.output.resolution).toBe('1920x1080');
-      expect(reloadedTimeline.config.output.fps).toBe(24);
-      expect(reloadedTimeline.config.clips).toHaveLength(1);
-      expect(reloadedTimeline.config.tracks).toHaveLength(2);
-
-      expect(reloadedRegistry.assets['asset-original']).toBeDefined();
-      expect(reloadedRegistry.assets['asset-original'].metadata).toBeDefined();
-      expect(reloadedRegistry.assets['asset-original'].metadata.integrity).toEqual({
-        algorithm: 'sha256',
-        hash: 'abcdef1234567890',
-        size: 14,
-      });
-      expect(reloadedRegistry.assets['asset-original'].metadata.enrichment).toEqual({
-        pending: 1,
-        failed: 0,
-        claims: [
-          {
-            claimId: 'claim-authoring-1',
-            parserId: 'com.example.authoring-loop',
-            timestamp: '2026-06-19T10:00:00.000Z',
-            field: 'description',
-            summary: 'Authoring loop enrichment claim',
-          },
-        ],
-      });
-      expect(reloadedRegistry.assets['asset-original'].metadata.extensions).toEqual({
-        'com.example.authoring-loop': { analyzed: true, score: 0.95 },
-      });
-      expect(reloadedRegistry.assets['asset-second']).toBeDefined();
-      expect(reloadedRegistry.assets['asset-second'].metadata.integrity).toEqual({
-        algorithm: 'sha256',
-        hash: 'deadbeef9999',
-        size: 50,
-      });
-
-      expect(globalThis.fetch).not.toHaveBeenCalled();
+        handler: vi.fn(async () => ({ metadata: {} })),
+      }],
     });
 
-    // -----------------------------------------------------------------------
-    // T26: End-to-end M6 workflow — parser + compile-only export + stub
-    //       search provider + asset ingestion + Astrid reload + metadata/search
-    //       UI state + deterministic metadata export artifact
-    // -----------------------------------------------------------------------
-    it('registers a parser, compile-only export, and stub search provider; ingests an asset; persists metadata through Astrid reload; renders metadata/search UI state; and exports a deterministic artifact', async () => {
-      const timelineRef = '01JM4K5N7P00000000000000E2E';
+    const uploaded = await provider.uploadAsset(
+      new File(['video'], 'demo.mp4', { type: 'video/mp4' }),
+      { timelineId, userId: 'user-1' },
+    );
+    expect(uploaded.entry.metadata).toEqual(enrichedEntry.metadata);
 
-      // ---- 1. Create file system tree with assembly.json, registry.json, and assets ----
-      const localTree = createFileSystemHandleTree({
-        'project.json': JSON.stringify({ slug: 'ados-talks' }),
-        [`timelines/${timelineRef}/assembly.json`]: JSON.stringify({
-          clips: [],
-          tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
-        }),
-        [`timelines/${timelineRef}/registry.json`]: JSON.stringify({
-          assets: {
-            'asset-initial': {
-              file: 'clips/initial.mp4',
-              type: 'video/mp4',
-              duration: 3,
-            },
-          },
-        }),
-        'sources/clips/initial.mp4': new Blob(['initial-video'], { type: 'video/mp4' }),
-      });
-      vi.mocked(getDirectoryHandle).mockResolvedValue(localTree.projectRootHandle);
-
-      // ---- 2. Register a parser that produces integrity + provenance + enrichment + extensions ----
-      const parser = makeMockParser(
-        'com.example.e2e.integrity-parser',
-        'com.example.e2e',
-        {
-          acceptMimeTypes: ['video/mp4'],
-        },
-      );
-
-      const enrichedEntry = {
-        file: 'clips/initial.mp4',
-        type: 'video/mp4',
-        duration: 3,
-        metadata: {
-          integrity: { algorithm: 'sha256', hash: 'e2e-hash-abcdef1234567890', size: 14 },
-          provenance: { importedAt: '2026-06-19T12:00:00.000Z', source: 'e2e-test', importedBy: 'e2e-runner' },
-          enrichment: {
-            pending: 1,
-            failed: 0,
-            claims: [
-              {
-                claimId: 'e2e-claim-1',
-                parserId: 'com.example.e2e',
-                timestamp: '2026-06-19T12:00:00.000Z',
-                field: 'description',
-                summary: 'E2E test enrichment claim',
-              },
-            ],
-          },
-          extensions: {
-            'com.example.e2e': { parsedBy: 'e2e-parser', version: 1, tags: ['e2e', 'test'] },
-          },
-        },
-      };
-
-      vi.mocked(enrichRegistryEntryWithParsers).mockResolvedValue({
-        entry: enrichedEntry,
-        diagnostics: [
-          {
-            severity: 'info',
-            code: 'parser/claim-enqueued',
-            message: 'E2E parser produced enrichment claim.',
-            extensionId: 'com.example.e2e',
-            contributionId: 'com.example.e2e.integrity-parser',
-          },
-        ],
-        blocked: false,
-      });
-
-      const registerAssetSpy = vi.spyOn(AstridBridgeDataProvider.prototype, 'registerAsset')
-        .mockResolvedValue(undefined);
-
-      // ---- 3. Create provider with registered parsers and upload an asset ----
-      const provider = new AstridBridgeDataProvider({
-        projectSlug: 'ados-talks',
-        timelineRef,
-        timelineId: timelineRef,
-        registeredParsers: [parser],
-      });
-
-      const result = await provider.uploadAsset(
-        new File(['e2e-video-data'], 'initial.mp4', { type: 'video/mp4' }),
-        { timelineId: timelineRef, userId: 'e2e-runner' },
-      );
-
-      // ---- 4. Assert parser enrichment was called and result carries enriched metadata ----
-      expect(enrichRegistryEntryWithParsers).toHaveBeenCalled();
-      expect(result.entry.metadata).toBeDefined();
-      expect(result.entry.metadata.integrity.hash).toBe('e2e-hash-abcdef1234567890');
-      expect(result.entry.metadata.provenance.source).toBe('e2e-test');
-      expect(result.entry.metadata.enrichment.claims).toHaveLength(1);
-      expect(result.entry.metadata.extensions['com.example.e2e']).toEqual({
-        parsedBy: 'e2e-parser',
-        version: 1,
-        tags: ['e2e', 'test'],
-      });
-
-      // ---- 5. Save timeline to persist the enriched metadata ----
-      const version = await provider.saveTimeline(
-        timelineRef,
-        {
-          output: { resolution: '1920x1080', fps: 30, file: 'e2e-output.mp4' },
-          clips: [],
-          tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
-        },
-        1,
-        {
-          assets: {
-            'asset-initial': enrichedEntry,
-          },
-        },
-      );
-      expect(version).toBeGreaterThanOrEqual(1);
-
-      // Verify on-disk registry.json contains the enriched metadata
-      const savedRegistryRaw = String(localTree.files[`timelines/${timelineRef}/registry.json`]);
-      const savedRegistry = JSON.parse(savedRegistryRaw);
-      expect(savedRegistry.assets['asset-initial'].metadata.integrity.hash).toBe('e2e-hash-abcdef1234567890');
-      expect(savedRegistry.assets['asset-initial'].metadata.provenance.source).toBe('e2e-test');
-      expect(savedRegistry.assets['asset-initial'].metadata.extensions['com.example.e2e']).toEqual({
-        parsedBy: 'e2e-parser',
-        version: 1,
-        tags: ['e2e', 'test'],
-      });
-      expect(savedRegistryRaw).not.toContain('handler');
-      expect(savedRegistryRaw).not.toContain('makeMockParser');
-
-      // ---- 6. Simulate Astrid reload: fresh provider loads from local files ----
-      const reloadedProvider = new AstridBridgeDataProvider({
-        projectSlug: 'ados-talks',
-        timelineRef,
-        timelineId: timelineRef,
-      });
-
-      const reloadedRegistry = await reloadedProvider.loadAssetRegistry(timelineRef);
-
-      // Assert enriched metadata survived the reload
-      expect(reloadedRegistry.assets['asset-initial']).toBeDefined();
-      expect(reloadedRegistry.assets['asset-initial'].metadata).toBeDefined();
-      expect(reloadedRegistry.assets['asset-initial'].metadata.integrity).toEqual({
-        algorithm: 'sha256',
-        hash: 'e2e-hash-abcdef1234567890',
-        size: 14,
-      });
-      expect(reloadedRegistry.assets['asset-initial'].metadata.provenance).toEqual({
-        importedAt: '2026-06-19T12:00:00.000Z',
-        source: 'e2e-test',
-        importedBy: 'e2e-runner',
-      });
-      expect(reloadedRegistry.assets['asset-initial'].metadata.enrichment.pending).toBe(1);
-      expect(reloadedRegistry.assets['asset-initial'].metadata.enrichment.failed).toBe(0);
-      expect(reloadedRegistry.assets['asset-initial'].metadata.enrichment.claims).toHaveLength(1);
-      expect(reloadedRegistry.assets['asset-initial'].metadata.extensions['com.example.e2e']).toEqual({
-        parsedBy: 'e2e-parser',
-        version: 1,
-        tags: ['e2e', 'test'],
-      });
-      expect(globalThis.fetch).not.toHaveBeenCalled();
-
-      // ---- 7. Metadata/search UI state assertions (data-level) ----
-      // Verify hasSearchableMetadata returns true for host-owned fields
-      expect(hasSearchableMetadata(reloadedRegistry.assets['asset-initial'])).toBe(true);
-
-      // Verify shouldShowMetadataSearch returns true when registry has searchable metadata
-      expect(shouldShowMetadataSearch(reloadedRegistry.assets)).toBe(true);
-
-      // ---- 8. Stub search provider result integration ----
-      const stubProviderResult: SearchProviderResultEnvelope = {
-        providerId: 'com.example.e2e.search',
-        providerLabel: 'E2E Search Provider',
-        providerOrder: 10,
-        result: {
-          matches: [
-            { ref: 'asset-initial', kind: 'asset', score: 0.85, excerpt: 'E2E semantic match' },
-            { ref: 'mat-1', kind: 'material', score: 0.75, excerpt: 'Material match from e2e' },
-          ],
-          totalCount: 2,
-          hasMore: false,
-          diagnostics: [],
-        },
-      };
-
-      const mergedResults = mergeSearchProviderResults(
-        reloadedRegistry.assets,
-        'e2e-hash',
-        [stubProviderResult],
-      );
-
-      // Assert merge ordering: built-in metadata filter match scores highest
-      expect(mergedResults.matches.length).toBeGreaterThanOrEqual(1);
-      const assetMatch = mergedResults.matches.find(m => m.ref === 'asset-initial');
-      expect(assetMatch).toBeDefined();
-      // Built-in metadata filter matches the integrity hash text, so score should be 1.0
-      if (assetMatch) {
-        expect(assetMatch.matchSource).toBe('metadata-filter');
-        expect(assetMatch.score).toBe(1.0);
-        expect(assetMatch.sourceProviderId).toBe('__host__');
-      }
-
-      // Provider match for the same asset should be present as well
-      const providerMatches = mergedResults.matches.filter(m => m.sourceProviderId === 'com.example.e2e.search');
-      expect(providerMatches.length).toBeGreaterThanOrEqual(1);
-
-      // Material match should be present
-      const matMatch = mergedResults.matches.find(m => m.ref === 'mat-1');
-      expect(matMatch).toBeDefined();
-      if (matMatch) {
-        expect(matMatch.kind).toBe('material');
-        expect(matMatch.excerpt).toBe('Material match from e2e');
-      }
-
-      // Diagnostics should be empty (no provider errors)
-      expect(mergedResults.diagnostics).toEqual([]);
-
-      // ---- 9. Compile-only metadata export artifact ----
-      // Build a compile-only output format handler that serializes the asset metadata to JSON
-      const exportHandler: OutputFormatHandler = (ctx: OutputFormatContext): CompileOnlyOutputResult => {
-        const assetsObj: Record<string, unknown> = {};
-        ctx.assets.forEach((meta, key) => {
-          assetsObj[key] = {
-            integrity: meta.integrity ?? null,
-            provenance: meta.provenance ?? null,
-            consent: meta.consent ?? null,
-            enrichment: meta.enrichment ?? null,
-            extensions: meta.extensions ?? null,
-          };
-        });
-
-        const exportDoc = {
-          exportInfo: {
-            format: 'metadata-json',
-            version: '1.0.0',
-            extensionId: ctx.extensionId,
-            contributionId: ctx.contributionId,
-            exportedAt: '2026-06-19T12:00:00.000Z',
-          },
-          timeline: {
-            projectId: ctx.timeline.projectId,
-            baseVersion: ctx.timeline.baseVersion,
-            currentVersion: ctx.timeline.currentVersion,
-            assetKeys: ctx.timeline.assetKeys,
-          },
-          assets: assetsObj,
-        };
-
-        const json = JSON.stringify(exportDoc);
-        return {
-          data: new TextEncoder().encode(json),
-          mimeType: 'application/json',
-          filename: 'metadata-export.json',
-          hasBlockingErrors: false,
-        };
-      };
-
-      const exportContribution: OutputFormatContribution = {
-        id: 'com.example.e2e.metadata-json',
-        kind: 'outputFormat',
-        label: 'E2E Metadata JSON Export',
-        requiresRender: false,
-        outputExtension: 'json',
-        outputMimeType: 'application/json',
-        description: 'Deterministic metadata JSON export for e2e test',
-        order: 0,
-      };
-
-      const registry = createCompileOnlyOutputFormatRegistry([
-        {
-          contribution: exportContribution,
-          handler: exportHandler,
-          extensionId: 'com.example.e2e',
-          extensionVersion: '1.0.0',
-        },
-      ]);
-
-      const timelineSnapshot: TimelineSnapshot = {
-        projectId: timelineRef,
-        baseVersion: 1,
-        currentVersion: version,
-        extensionRequirements: [],
-        clips: [],
-        tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
-        assetKeys: ['asset-initial'],
-        app: {},
-      };
-
-      const assetsMap: ReadonlyMap<string, Readonly<AssetMetadata>> = new Map(
-        Object.entries(reloadedRegistry.assets).map(([key, entry]) => [key, Object.freeze(entry.metadata ?? {})]),
-      );
-
-      const exportResult = executeCompileOnlyOutputSync(registry, {
-        formatId: 'com.example.e2e.metadata-json',
-        timeline: timelineSnapshot,
-        assets: assetsMap,
-        extensionId: 'com.example.e2e',
-        extensionVersion: '1.0.0',
-      });
-
-      // Assert compile-only export succeeded
-      expect(exportResult).not.toBeNull();
-      expect(exportResult!.hasBlockingErrors).toBe(false);
-
-      // Parse the exported JSON artifact
-      const exportedJson = JSON.parse(new TextDecoder().decode(exportResult!.data));
-      expect(exportedJson.exportInfo.format).toBe('metadata-json');
-      expect(exportedJson.exportInfo.extensionId).toBe('com.example.e2e');
-      expect(exportedJson.timeline.assetKeys).toEqual(['asset-initial']);
-      expect(exportedJson.assets['asset-initial']).toBeDefined();
-
-      // Assert the enriched metadata is present in the export artifact
-      expect(exportedJson.assets['asset-initial'].integrity).toEqual({
-        algorithm: 'sha256',
-        hash: 'e2e-hash-abcdef1234567890',
-        size: 14,
-      });
-      expect(exportedJson.assets['asset-initial'].provenance).toEqual({
-        importedAt: '2026-06-19T12:00:00.000Z',
-        source: 'e2e-test',
-        importedBy: 'e2e-runner',
-      });
-      expect(exportedJson.assets['asset-initial'].enrichment.pending).toBe(1);
-      expect(exportedJson.assets['asset-initial'].enrichment.claims).toHaveLength(1);
-      expect(exportedJson.assets['asset-initial'].extensions).toEqual({
-        'com.example.e2e': { parsedBy: 'e2e-parser', version: 1, tags: ['e2e', 'test'] },
-      });
-
-      // Assert determinism: two exports produce byte-identical results
-      const exportResult2 = executeCompileOnlyOutputSync(registry, {
-        formatId: 'com.example.e2e.metadata-json',
-        timeline: timelineSnapshot,
-        assets: assetsMap,
-        extensionId: 'com.example.e2e',
-        extensionVersion: '1.0.0',
-      });
-      expect(exportResult2).not.toBeNull();
-      const json1 = new TextDecoder().decode(exportResult!.data);
-      const json2 = new TextDecoder().decode(exportResult2!.data);
-      expect(json1).toBe(json2);
-
-      // Cleanup
-      registerAssetSpy.mockRestore();
+    // This is a fresh read, not the cached POST response: metadata must come
+    // back from the bridge document plane after the CAS write.
+    const freshRegistry = await provider.loadAssetRegistry(timelineId);
+    const assetId = uploaded.assetId;
+    expect(freshRegistry.assets[assetId].metadata).toEqual(enrichedEntry.metadata);
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
+      `/api/astrid/projects/ados-talks/timelines/${timelineId}`,
+      `/api/astrid/projects/ados-talks/timelines/${timelineRef}/save`,
+      `/api/astrid/projects/ados-talks/timelines/${timelineRef}`,
+    ]);
+    expect(localTree.writes.map((write) => write.path).some((path) => path.includes('assembly.json') || path.includes('registry.json'))).toBe(false);
+    expect(JSON.parse(String(localTree.files[`timelines/${timelineRef}/registry.json`]))).toEqual({
+      assets: { 'stale-local-asset': { file: 'stale/local.mp4', type: 'video/mp4' } },
     });
-
   });
 
 });

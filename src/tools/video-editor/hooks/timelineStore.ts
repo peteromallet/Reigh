@@ -348,6 +348,10 @@ function createInitialChromeSlice(): TimelineChromeContextValue {
     queuedRender: null,
     renderResultUrl: null,
     renderResultFilename: null,
+    activeRenderTaskId: null,
+    renderDestination: 'download',
+    setRenderDestination: noop,
+    cancelRender: noopAsync,
     renderRequest: {
       timelineId: '',
       assetRegistry: null,
@@ -355,9 +359,6 @@ function createInitialChromeSlice(): TimelineChromeContextValue {
       renderMetadata: null,
       renderRuntime: {
         projectId: '',
-        orchestratorBaseUrl: '',
-        getSupabaseSession: async () => null,
-        getWorkerJwt: async () => null,
       },
     },
     undo: noop,

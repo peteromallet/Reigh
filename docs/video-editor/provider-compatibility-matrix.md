@@ -40,7 +40,7 @@ Settings are always scoped to browser `localStorage` under the `reigh.ext.<id>.`
 |---|---|---|---|
 | **InMemory** | Full — requirements are inlined in TimelineConfig and surfaced via `TimelineReader.snapshot().extensionRequirements` | `warning` (export guard) | Contribution IDs stored in `referencedContributionIds` are validated structurally but not resolved at runtime |
 | **Supabase** | Full — same shape, loaded from DB `timelines.config` | `warning` | Same as InMemory |
-| **Astrid Bridge** | Full — same shape, loaded from local `assembly.json` or bridge API | `warning` | Same as InMemory |
+| **Astrid Bridge** | Full — same shape, loaded from the bridge API; FSA is asset-bytes-only | `warning` | Same as InMemory |
 
 Extension requirements are a property of the timeline config, not the provider. The `TimelineReader` extracts `extensionRequirements` from the config shape and returns them in every snapshot. When a project references an extension that is not currently active, the export guard emits `warning`-severity diagnostics (code: `export/missing-extension`) but does not block render.
 
@@ -50,7 +50,7 @@ Extension requirements are a property of the timeline config, not the provider. 
 |---|---|---|---|---|
 | **InMemory** | Monotonic integer, incremented on every `saveTimeline` | **Yes** — `TimelineVersionConflictError` thrown on mismatch | **Yes** — `useTimelineOps.apply()` compares `patch.version` against current `configVersion` before any mutation | **Yes** — `ProposalRuntime.accept()` revalidates `baseVersion` against `reader.snapshot().baseVersion` |
 | **Supabase** | Monotonic integer from append service `config_version` | **Yes** — 409 Conflict from append service → `TimelineVersionConflictError` | **Yes** — same local guard as InMemory (catches stale patches before network round-trip) | **Yes** — same revalidation path |
-| **Astrid Bridge** | Monotonic integer from bridge payload `config_version` | **Yes** — server-side CAS since 2026-08-11: combined `POST /save` + guarded `PUT /registry` with `expected_version`, stale → 409 | **Yes** — same local guard | **Yes** — revalidation against current snapshot version works; stale snapshots now fail server-side instead of silently overwriting |
+| **Astrid Bridge** | Monotonic integer from bridge payload `config_version` | **Yes** — combined `POST /save` with `expected_version`, stale → 409 | **Yes** — same local guard | **Yes** — revalidation against current snapshot version works; stale snapshots fail server-side instead of silently overwriting |
 
 **Key invariant:** When `patch.version === 0`, the base-version check is bypassed (treated as "no expectation"). This is intended for initial state seeding.
 
@@ -80,7 +80,7 @@ Missing extension references are detected at **export-guard time**, not at provi
 |---|---|---|---|---|
 | **InMemory** | **Full** — 3× compile on identical input produces structurally equivalent output | **Reference** — InMemory is the canonical replay baseline | **Yes** — `useTimelineOps.rollback()` restores to checkpoint via existing history path | **Full** — `JSON.parse(JSON.stringify(nextData))` round-trips without loss |
 | **Supabase** | **Identical compiler output** — the pure compiler returns the same `nextData`/`diff` shapes. The append service serialization path preserves all fields | **Consistent** — compiler is provider-agnostic; `nextData` is structurally identical to InMemory for the same input | **Yes** — same history-based rollback | **Full** — `serializeTimelineConfigSnapshot` preserves all M3 fields |
-| **Astrid Bridge** | **Identical compiler output** — same pure compiler, same `nextData`/`diff` shapes | **Consistent** — compiler output is structurally identical; bridge serialization preserves config shape | **Yes** — local history path works; bridge save writes to `assembly.json` and bridge API | **Full** — local JSON write preserves all fields |
+| **Astrid Bridge** | **Identical compiler output** — same pure compiler, same `nextData`/`diff` shapes | **Consistent** — compiler output is structurally identical; bridge serialization preserves config shape | **Yes** — local history works; bridge save is versioned and bridge-authoritative | **Full** — validated bridge JSON preserves all fields |
 
 **Golden replay invariant:** For any valid `TimelinePatch` batch, `compileTimelinePatch(patch, data).nextData` produces structurally equivalent output on any provider. The pure compiler does not import or depend on any `DataProvider` implementation. Provider-specific behavior only enters at the serialization/deserialization boundary (`saveTimeline`/`loadTimeline`), and all providers use the same `serializeTimelineConfigSnapshot` helper.
 
@@ -104,10 +104,10 @@ Missing extension references are detected at **export-guard time**, not at provi
 ### 4.3 AstridBridgeDataProvider
 
 - **Read-only for uploads.** `onUpload()` throws `AstridBridgeReadOnlyError`. Asset uploads through the standard `uploadAsset` path are not supported.
-- **Server-side CAS enforced (2026-08-11).** `saveTimeline` sends one combined `POST /save` with `{config, registry, expected_version}`; `registerAsset` PUTs `/registry` with `expected_version`. Stale versions return `409 timeline_version_conflict` (mapped to `TimelineVersionConflictError` → reload-and-retry). See the Astrid bridge contract doc §14.1.
+- **Server-side CAS enforced.** `saveTimeline` sends one combined `POST /save` with `{config, registry, expected_version}`; `registerAsset` rides that same combined POST. There is no separate registry write route. Stale versions return `409 timeline_version_conflict`, mapped to `TimelineVersionConflictError`.
 - **No checkpoint persistence.** `saveCheckpoint` returns a synthetic ID; `loadCheckpoints` returns an empty array.
 - **No waveform/profile loading.** `loadWaveform` and `loadAssetProfile` return `null`.
-- **Local-filesystem-dependent.** Requires the File System Access API and user-granted directory permissions.
+- **File System Access is asset-only.** User-granted handles may read/write `sources/assets`, `local-drops`, and `.incoming`; they never read or write timeline assembly/registry documents. All document loads and saves require the Astrid bridge.
 
 ---
 
@@ -217,7 +217,7 @@ The `providerCompatibility.supabase.test.ts` suite (416 lines) does **not** use 
 
 | Requirement | Why it's needed | Unavailable in |
 |---|---|---|
-| File System Access API (`showDirectoryPicker`, `getDirectoryHandle`, `requestPermission`) | Reads/writes `assembly.json` and `registry.json` from user-granted local directory | Headless CI (Node.js, no browser); browsers without File System Access API (Firefox, Safari < 15) |
+| File System Access API (`showDirectoryPicker`, `getDirectoryHandle`, `requestPermission`) | Persists local asset bytes under `sources/assets`, `local-drops`, and `.incoming`; documents remain bridge-authoritative | Headless CI (Node.js, no browser); browsers without File System Access API (Firefox, Safari < 15) |
 | Local bridge process (HTTP server, default port `17333`) | Serves asset files and accepts save/config API calls | CI environments; dev machines without Astrid bridge installed |
 | User-granted directory permissions (`ensurePermission`, `saveDirectoryHandle`) | Persists the local project root handle across sessions | Headless environments; first-run browser contexts |
 | `localStorage` (for `PersistedLocalDirectoryHandle`) | Stores the directory handle for reconnection on reload | Environments without `localStorage` (some test runners) |
@@ -230,9 +230,9 @@ The `providerCompatibility.astrid.test.ts` suite (167 lines) uses the shared `ru
 | Flag | Value | Reason |
 |---|---|---|
 | `skipCheckpoints` | `true` | Astrid does not persist checkpoints; `saveCheckpoint` returns a synthetic ID and `loadCheckpoints` returns `[]` |
-| `versionConflictIsSoft` | `true` | Astrid has **no server-side CAS** — version is incremented locally after save; concurrent writes from another bridge instance silently overwrite |
+| `versionConflictIsSoft` | `false` | Astrid enforces server-side CAS through `POST /save` `expected_version`; stale writes return 409 |
 | `skipMissingTimelineTests` | `true` | Astrid is a **single-timeline bridge** — `loadTimeline` always returns the bridge's current timeline; "nonexistent timeline" errors are not meaningful |
-| `skipRegisterAsset` | `false` | `registerAsset` is supported via the bridge API (asset registration PUTs to bridge) |
+| `skipRegisterAsset` | `false` | `registerAsset` merges the registry and uses the combined CAS `POST /save` |
 
 All bridge API calls are mocked via `vi.stubGlobal('fetch', createAstridFetchMock())`. The mock maintains a stateful `storedState` object that simulates the bridge's in-memory config/registry. Module-level dependencies (`localHandleStore`, `mediaMetadata`, `generationAssetResolver`) are mocked via `vi.mock`.
 
@@ -240,18 +240,18 @@ All bridge API calls are mocked via `vi.stubGlobal('fetch', createAstridFetchMoc
 
 | Shared suite section | Skipped? | Reason | Coverage delegated to |
 |---|---|---|---|
-| checkpoints | Yes (`skipCheckpoints: true`) | No checkpoint persistence — `saveCheckpoint` returns synthetic ID, `loadCheckpoints` returns `[]` | `AstridBridgeDataProvider.test.ts` (22 pass / 3 pre-existing) |
+| checkpoints | Yes (`skipCheckpoints: true`) | No checkpoint persistence — `saveCheckpoint` returns synthetic ID, `loadCheckpoints` returns `[]` | `AstridBridgeDataProvider.test.ts` (45 passing) |
 | missing-timeline error types | Yes (`skipMissingTimelineTests: true`) | Single-timeline bridge — `loadTimeline` always returns the bridge's current payload; `TimelineNotFoundError` never thrown for load | Documented limitation in §4.3 |
-| strict CAS version conflict | Behaviorally adapted (`versionConflictIsSoft: true`) | No server-side CAS — version conflict tests assert soft behavior: mismatched `expectedVersion` succeeds, version is not checked against remote head | Documented limitation in §3.3 and §4.3 |
+| strict CAS version conflict | No — strict CAS enforced | Server-side `POST /save` rejects stale `expected_version` with 409 | `AstridBridgeDataProvider.test.ts` optimistic-concurrency tests |
 
 **Contract-recheck row links:**
 
 | Contract-recheck row | How Astrid satisfies it despite environment impossibility |
 |---|---|
-| [CR:M3-007](./extension-platform-contract-recheck.md#24-m3--timelinepatch-atomic-ops-proposals) — Provider version behaviors tested | `providerCompatibility.astrid.test.ts` exercises the shared suite with `versionConflictIsSoft: true`; `AstridBridgeDataProvider.test.ts` covers full integration (22 pass) |
+| [CR:M3-007](./extension-platform-contract-recheck.md#24-m3--timelinepatch-atomic-ops-proposals) — Provider version behaviors tested | `providerCompatibility.astrid.test.ts` exercises strict CAS; `AstridBridgeDataProvider.test.ts` covers full integration |
 | [CR:M3-009](./extension-platform-contract-recheck.md#24-m3--timelinepatch-atomic-ops-proposals) — Golden patch replay across providers | Listed as N/A in test coverage summary (§9); golden replay not available locally because the bridge requires File System Access API |
 | [CR:M3-010](./extension-platform-contract-recheck.md#24-m3--timelinepatch-atomic-ops-proposals) — Provider compatibility matrix updated | This document §§2–4.3 document all Astrid limitations; this section (§10.2) provides the environment-impossible audit trail |
-| [CR:M6-004](./extension-platform-contract-recheck.md#27-m6--asset-metadata-parser-contributions-astrid-loop) — Astrid local-first demo/test | `AstridBridgeDataProvider.test.ts` (22 pass) covers extension mutation and persistence |
+| [CR:M6-004](./extension-platform-contract-recheck.md#27-m6--asset-metadata-parser-contributions-astrid-loop) — Astrid local-first demo/test | `AstridBridgeDataProvider.test.ts` (45 passing) covers extension mutation and persistence |
 | [CR:X-007](./extension-platform-contract-recheck.md#216-cross-milestone--structural-claims) — Provider compatibility documented | This document + this section (§10) provide the complete environment-impossible audit trail |
 
 ### 10.3 InMemoryDataProvider — no environment restrictions
@@ -277,7 +277,7 @@ Both InMemory variants (**testing** and **browser-runtime**) have no environment
 | Provider | Environment-impossible scenario | Resolution | Skipped suite sections | Contract-recheck rows |
 |---|---|---|---|---|
 | **Supabase** | No auth, no DB, no append-service URL | Manual test subset with heavy mocking; strict CAS delegated to InMemory | version conflict (strict CAS), checkpoints, registerAsset, shared-suite versioned save loop | CR:M3-007, CR:M3-009, CR:M3-010, CR:X-007 |
-| **Astrid Bridge** | No File System Access API, no bridge process | Mocked bridge API via `vi.stubGlobal('fetch')`; shared suite with `skipCheckpoints`, `versionConflictIsSoft`, `skipMissingTimelineTests` | checkpoints, missing-timeline errors, strict CAS conflict | CR:M3-007, CR:M3-009, CR:M3-010, CR:M6-004, CR:X-007 |
+| **Astrid Bridge** | No File System Access API, no bridge process | Mocked bridge API via `vi.stubGlobal('fetch')`; asset handles are mocked separately | checkpoints and missing-timeline errors | CR:M3-007, CR:M3-009, CR:M3-010, CR:M6-004, CR:X-007 |
 | **InMemory (both)** | None | Full shared suite, no skips | None | CR:M3-007, CR:M3-009, CR:M3-010, CR:X-007 |
 
 ### 10.5 Gate semantics for environment-impossible checks

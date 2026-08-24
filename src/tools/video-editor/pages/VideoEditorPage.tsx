@@ -124,6 +124,13 @@ function useBridgeTimelineName(projectSlug: string | null, timelineRef: string |
   });
 }
 
+export function timelineFreshnessLabel(updatedAt: string | null | undefined): string {
+  if (!updatedAt) return 'Managed by Astrid';
+  const timestamp = Date.parse(updatedAt);
+  if (Number.isNaN(timestamp)) return 'Managed by Astrid';
+  return `Updated ${new Date(timestamp).toLocaleString()}`;
+}
+
 function useVideoEditorProviderSelection({
   mode,
   selectedProjectId,
@@ -194,7 +201,7 @@ function useVideoEditorProviderSelection({
   ]);
 }
 
-function TimelineList({ onSelect }: { onSelect: (timelineId: string) => void }) {
+export function TimelineList({ onSelect }: { onSelect: (timelineId: string) => void }) {
   const { selectedProjectId } = useProjectSelectionContext();
   const { userId } = useAuth();
   const { settings, update } = useToolSettings(videoEditorSettings.id, {
@@ -206,11 +213,13 @@ function TimelineList({ onSelect }: { onSelect: (timelineId: string) => void }) 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const [autoCreating, setAutoCreating] = useState(false);
+  const timelineMutationsAvailable = timelines.timelineMutationsAvailable === true;
 
   // Auto-create a default timeline if the project has none
   useEffect(() => {
     if (
       !timelines.isLoading &&
+      timelineMutationsAvailable &&
       timelines.data &&
       timelines.data.length === 0 &&
       selectedProjectId &&
@@ -229,7 +238,7 @@ function TimelineList({ onSelect }: { onSelect: (timelineId: string) => void }) 
           setAutoCreating(false);
         });
     }
-  }, [timelines.isLoading, timelines.data, selectedProjectId, userId, autoCreating, timelines.createTimeline, update, onSelect]);
+  }, [timelines.isLoading, timelines.data, selectedProjectId, userId, autoCreating, timelines.createTimeline, timelineMutationsAvailable, update, onSelect]);
 
   if (!selectedProjectId) {
     return (
@@ -247,28 +256,41 @@ function TimelineList({ onSelect }: { onSelect: (timelineId: string) => void }) 
       <Card>
         <CardHeader>
           <CardTitle>Video editor timelines</CardTitle>
-          <CardDescription>Pick a timeline or create a new one for this project.</CardDescription>
+          <CardDescription>
+            {timelineMutationsAvailable
+              ? 'Pick a timeline or create a new one for this project.'
+              : 'Pick an Astrid timeline for this project.'}
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex gap-2">
-            <Input value={newName} onChange={(event) => setNewName(event.target.value)} placeholder="Timeline name" />
-            <Button
-              type="button"
-              onClick={async () => {
-                const created = await timelines.createTimeline.mutateAsync(newName || 'Untitled timeline');
-                await update('project', { lastTimelineId: created.id });
-                onSelect(created.id);
-              }}
-              disabled={timelines.createTimeline.isPending}
-            >
-              <Plus className="mr-1 h-4 w-4" />
-              Create timeline
-            </Button>
-          </div>
+          {timelineMutationsAvailable ? (
+            <div className="flex gap-2">
+              <Input value={newName} onChange={(event) => setNewName(event.target.value)} placeholder="Timeline name" />
+              <Button
+                type="button"
+                onClick={async () => {
+                  const created = await timelines.createTimeline.mutateAsync(newName || 'Untitled timeline');
+                  await update('project', { lastTimelineId: created.id });
+                  onSelect(created.id);
+                }}
+                disabled={timelines.createTimeline.isPending}
+              >
+                <Plus className="mr-1 h-4 w-4" />
+                Create timeline
+              </Button>
+            </div>
+          ) : (
+            <div role="status" className="rounded-xl border border-border bg-muted/40 px-4 py-3">
+              <div className="text-sm font-medium text-foreground">Timeline changes are managed in Astrid</div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                Create, rename, or remove timelines in Astrid, then refresh this page.
+              </div>
+            </div>
+          )}
 
           <div className="grid gap-3">
             {timelines.isLoading && Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-20 w-full" />)}
-            {(timelines.data ?? []).map((timeline: { id: string; name: string; updated_at: string }) => {
+            {(timelines.data ?? []).map((timeline: { id: string; name: string; updated_at?: string | null }) => {
               const isEditing = editingId === timeline.id;
               const isActive = settings?.lastTimelineId === timeline.id;
 
@@ -284,12 +306,12 @@ function TimelineList({ onSelect }: { onSelect: (timelineId: string) => void }) 
                       <div className="truncate text-sm font-medium text-foreground">{timeline.name}</div>
                     )}
                     <div className="mt-1 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-                      Updated {new Date(timeline.updated_at).toLocaleString()}
+                      {timelineFreshnessLabel(timeline.updated_at)}
                       {isActive ? ' · Last opened' : ''}
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    {isEditing ? (
+                    {timelineMutationsAvailable && (isEditing ? (
                       <Button
                         type="button"
                         size="sm"
@@ -313,7 +335,7 @@ function TimelineList({ onSelect }: { onSelect: (timelineId: string) => void }) 
                         <Pencil className="mr-1 h-3.5 w-3.5" />
                         Rename
                       </Button>
-                    )}
+                    ))}
                     <Button
                       type="button"
                       size="sm"
@@ -325,10 +347,11 @@ function TimelineList({ onSelect }: { onSelect: (timelineId: string) => void }) 
                     >
                       Open
                     </Button>
-                    <Button
+                    {timelineMutationsAvailable && <Button
                       type="button"
                       size="icon"
                       variant="ghost"
+                      aria-label={`Delete ${timeline.name}`}
                       className="text-destructive hover:text-destructive"
                       onClick={async () => {
                         await timelines.deleteTimeline.mutateAsync(timeline.id);
@@ -339,7 +362,7 @@ function TimelineList({ onSelect }: { onSelect: (timelineId: string) => void }) 
                       }}
                     >
                       <Trash2 className="h-4 w-4" />
-                    </Button>
+                    </Button>}
                   </div>
                 </div>
               );
@@ -347,7 +370,11 @@ function TimelineList({ onSelect }: { onSelect: (timelineId: string) => void }) 
             {!timelines.isLoading && (timelines.data?.length ?? 0) === 0 && (
               <div className="rounded-xl border border-dashed border-border p-10 text-center">
                 <div className="text-sm font-medium text-foreground">No timelines yet</div>
-                <div className="mt-1 text-xs text-muted-foreground">Create the first timeline to open the standalone editor.</div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {timelineMutationsAvailable
+                    ? 'Create the first timeline to open the standalone editor.'
+                    : 'Create a timeline in Astrid, then refresh this page.'}
+                </div>
               </div>
             )}
           </div>
@@ -453,16 +480,12 @@ export default function VideoEditorPage() {
   const { navigateHome } = useHomeNavigation();
 
   // Local mode is derived solely from the URL params — the legacy
-  // `dev.videoEditor.localMode` storage flag has been retired. It stays a
-  // DEV-only affordance: `/api/astrid` is a development proxy, so production
-  // builds must never enter local mode from a URL (it would strand users on
-  // a dead bridge).
-  const localModeAvailable = import.meta.env.DEV;
+  // `dev.videoEditor.localMode` storage flag has been retired.
   const localProjectSlug = searchParams.get('localProject');
   const localTimelineId = searchParams.get('localTimeline');
-  const mode: VideoEditorMode = localModeAvailable && (
-    searchParams.has('localProject') || searchParams.has('localTimeline')
-  ) ? 'local' : 'app';
+  const mode: VideoEditorMode = searchParams.has('localProject') || searchParams.has('localTimeline')
+    ? 'local'
+    : 'app';
   const appTimelineId = searchParams.get('timeline');
 
   // Selector dropdown open state drives discovery refetch-on-open + polling.
@@ -658,6 +681,12 @@ export default function VideoEditorPage() {
       return;
     }
 
+    // Astrid exposes timeline list/read/save, but not create. An empty project
+    // is an actionable managed state, not a reason to retry a retired mutation.
+    if (timelines.timelineMutationsAvailable !== true) {
+      return;
+    }
+
     if (creatingRef.current || timelines.createTimeline.isPending) {
       return;
     }
@@ -688,6 +717,7 @@ export default function VideoEditorPage() {
     timelines.data,
     timelines.error,
     timelines.isLoading,
+    timelines.timelineMutationsAvailable,
     update,
     userId,
   ]);
@@ -877,6 +907,19 @@ export default function VideoEditorPage() {
               </CardHeader>
             </Card>
           </div>
+        </div>
+      );
+    }
+
+    if (userId && selectedProjectId && !appTimelineId && !timelines.isLoading && timelines.data) {
+      return (
+        <div className="flex h-full w-full flex-col bg-background">
+          {selectorsHeader}
+          <TimelineList
+            onSelect={(nextTimelineId) => {
+              setSearchParams({ timeline: nextTimelineId });
+            }}
+          />
         </div>
       );
     }

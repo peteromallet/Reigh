@@ -112,17 +112,246 @@ export const bridgeTimelinesSchema = z.looseObject({
   })).optional(),
 });
 
+// ---------------------------------------------------------------------------
+// doc-27 §4.1 route set: tasks, generations, media content. Frozen against
+// the phase-b `astrid serve` implementation (`ReighTaskBridge` DTOs), which
+// is the wire truth this contract mirrors.
+// ---------------------------------------------------------------------------
+
+/** Kernel task status vocabulary (`tasks.status`, lowercase kernel forms). */
+export const bridgeTaskStatusSchema = z.enum([
+  'queued',
+  'blocked',
+  'running',
+  'succeeded',
+  'failed',
+  'cancelled',
+]);
+
+/** The admitted spec (`spec_json` parsed): family, provenance, output policy. */
+export const bridgeTaskSpecSchema = z.looseObject({
+  schema_version: z.number().optional(),
+  family: z.string().optional(),
+  source_task_type: z.string().optional(),
+  params: jsonObject.optional(),
+  output_policy: jsonObject.optional(),
+});
+
 /**
- * Error body shared by every failing route. `config_version` is only populated
- * for the `409 timeline_version_conflict` response and carries the bridge's
- * current head version so the client can reload and retry.
+ * Bounded current-attempt read model — also the only extra a fence `409`
+ * may carry (doc-27 §4.6: minimal resync data, never the full model).
+ */
+export const bridgeTaskAttemptSchema = z.looseObject({
+  attempt_id: z.string(),
+  attempt_no: z.number(),
+  status: z.string(),
+  status_version: z.number(),
+  lease_id: z.string(),
+  lease_expires_at: z.string(),
+  heartbeat_counter: z.number(),
+  last_heartbeat_at: z.string().nullable(),
+});
+
+/**
+ * Polling task summary (`ReighTaskBridge._task_summary`): the shape returned
+ * by `GET /projects/:slug/tasks[/:task_id]` and cancel's terminal replay.
+ */
+export const bridgeTaskSummarySchema = z.looseObject({
+  task_id: z.string(),
+  project_id: z.string(),
+  capability: z.string(),
+  status: bridgeTaskStatusSchema,
+  spec: bridgeTaskSpecSchema.optional(),
+  priority: z.number(),
+  max_attempts: z.number(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  finished_at: z.string().nullable().optional(),
+  winning_attempt_id: z.string().nullable().optional(),
+});
+
+/**
+ * Admission response task: the kernel `TaskReadModel` — note it keys its
+ * identity as `id`, unlike the polling summary's `task_id`.
+ */
+export const bridgeAdmittedTaskSchema = z.looseObject({
+  id: z.string(),
+  project_id: z.string(),
+  capability: z.string(),
+  spec: bridgeTaskSpecSchema,
+  spec_hash: z.string(),
+  input_manifest: z.array(jsonObject),
+  status: bridgeTaskStatusSchema,
+  priority: z.number(),
+  available_at: z.string(),
+  max_attempts: z.number(),
+  run_id: z.string().nullable().optional(),
+  run_ordinal: z.number().nullable().optional(),
+  winning_attempt_id: z.string().nullable().optional(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  finished_at: z.string().nullable().optional(),
+});
+
+/** `POST /projects/:slug/tasks` request body (public R1 admission). */
+export const bridgeMaterializedInputSchema = z.looseObject({
+  media_id: z.string().optional(),
+  generation_id: z.string().optional(),
+  kind: z.enum(['file', 'remote']).optional(),
+  target: z.string().optional(),
+  url: z.string().optional(),
+});
+
+export const bridgeTaskAdmissionRequestSchema = z.looseObject({
+  family: z.string().min(1),
+  input: jsonObject,
+  materialized_inputs: z.array(bridgeMaterializedInputSchema).optional(),
+  priority: z.number().int().optional(),
+});
+
+/** `201` first commit / `200` idempotent replay share this body. */
+export const bridgeTaskAdmissionResponseSchema = z.looseObject({
+  task: bridgeAdmittedTaskSchema,
+});
+
+/** `GET /projects/:slug/tasks?limit&offset`. */
+export const bridgeTaskListSchema = z.looseObject({
+  tasks: z.array(bridgeTaskSummarySchema),
+  next_offset: z.number().nullable(),
+});
+
+/** One committed output row on the task detail read. */
+export const bridgeTaskOutputRowSchema = z.looseObject({
+  ordinal: z.number(),
+  role: z.string(),
+  media_id: z.string(),
+  is_primary: z.boolean().optional(),
+  params_json: z.union([z.string(), jsonObject]).optional(),
+});
+
+/** `GET /projects/:slug/tasks/:task_id` → `{task: summary + attempts + outputs}`. */
+export const bridgeTaskDetailPayloadSchema = z.looseObject({
+  task: bridgeTaskSummarySchema.extend({
+    attempts: z.array(bridgeTaskAttemptSchema).optional(),
+    outputs: z.array(bridgeTaskOutputRowSchema).optional(),
+  }),
+});
+
+/**
+ * `POST /projects/:slug/tasks/:task_id/cancel`. A fresh cancel returns the
+ * kernel read model (`id`) plus the fenced attempt; cancelling an already
+ * terminal task replays `{task: summary}` with no attempt. Either way the
+ * consumer reads `status`.
+ */
+export const bridgeCancelRequestSchema = z.looseObject({
+  attempt_id: z.string().min(1).optional(),
+  lease_id: z.string().min(1).optional(),
+  status_version: z.number().int().positive().optional(),
+});
+
+export const bridgeCancelResponseSchema = z.looseObject({
+  task: z.union([bridgeAdmittedTaskSchema, bridgeTaskSummarySchema]),
+  attempt: bridgeTaskAttemptSchema.nullable().optional(),
+});
+
+/** Gallery list row: primary-variant summary only (detail carries variants). */
+export const bridgeGenerationPrimarySchema = z.looseObject({
+  media_id: z.string(),
+  variant_type: z.string().nullable().optional(),
+});
+
+export const bridgeGenerationSummarySchema = z.looseObject({
+  generation_id: z.string(),
+  name: z.string().nullable(),
+  type: z.string(),
+  starred: z.boolean(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  primary: bridgeGenerationPrimarySchema.nullable(),
+  variant_count: z.number(),
+});
+
+/** `GET /projects/:slug/generations?limit&cursor&starred`. */
+export const bridgeGenerationListSchema = z.looseObject({
+  generations: z.array(bridgeGenerationSummarySchema),
+  next_cursor: z.string().nullable().optional(),
+});
+
+export const bridgeGenerationVariantSchema = z.looseObject({
+  id: z.string(),
+  generation_id: z.string(),
+  media_id: z.string(),
+  variant_type: z.string().nullable().optional(),
+  name: z.string().nullable().optional(),
+  params: jsonObject.optional(),
+  is_primary: z.boolean(),
+  starred: z.boolean(),
+  viewed_at: z.string().nullable().optional(),
+  created_at: z.string(),
+});
+
+/** `GET /projects/:slug/generations/:generation_id` → `{generation: …}`. */
+export const bridgeGenerationDetailPayloadSchema = z.looseObject({
+  generation: z.looseObject({
+    generation_id: z.string(),
+    project_id: z.string(),
+    task_id: z.string().nullable().optional(),
+    type: z.string(),
+    name: z.string().nullable().optional(),
+    based_on_generation_id: z.string().nullable().optional(),
+    parent_generation_id: z.string().nullable().optional(),
+    child_order: z.number().nullable().optional(),
+    params: jsonObject.optional(),
+    starred: z.boolean(),
+    deleted_at: z.string().nullable().optional(),
+    created_at: z.string(),
+    updated_at: z.string(),
+    variants: z.array(bridgeGenerationVariantSchema),
+    items: z.array(jsonObject).optional(),
+  }),
+});
+
+/**
+ * `GET|HEAD /projects/:slug/media/:media_id/content` is a byte route
+ * (Range/ETag, frozen asset-serving semantics) — there is no JSON body to
+ * parse, so the contract fixes only the address form.
+ */
+export function bridgeMediaContentUrl(baseUrl: string, projectSlug: string, mediaId: string): string {
+  return `${trimTrailingSlash(baseUrl)}/projects/${encodeURIComponent(projectSlug)}/media/${encodeURIComponent(mediaId)}/content`;
+}
+
+/** Any JSON object. Unknown keys are part of the payload, never stripped. */
+const trimTrailingSlash = (value: string): string => value.replace(/\/+$/, '');
+/**
+ * The five public error categories every *new* build-facing bridge route
+ * (doc-27 §4.1 set below) may answer with (doc-27 §4.6). The frozen timeline
+ * codes above are preserved unchanged alongside them; internal lease/fence
+ * reasons never cross the wire.
+ */
+export const BRIDGE_ERROR_CATEGORIES = [
+  'invalid_body',
+  'not_found',
+  'conflict',
+  'capability_unavailable',
+  'payload_too_large',
+] as const;
+
+export type BridgeErrorCategory = (typeof BRIDGE_ERROR_CATEGORIES)[number];
+
+/**
+ * Error body shared by every failing route. Status-specific extras:
+ * `config_version` only on `409 timeline_version_conflict` (the current head,
+ * so the client can reload and retry), `limit_bytes` only on
+ * `413 payload_too_large`, and `attempt` only on a fence `409 conflict`
+ * carrying the bounded current-attempt read model.
  */
 export const bridgeErrorEnvelopeSchema = z.looseObject({
   error: z.string().optional(),
   detail: z.string().optional(),
   config_version: z.number().optional(),
+  limit_bytes: z.number().optional(),
+  attempt: bridgeTaskAttemptSchema.optional(),
 });
-
 export type BridgeTimelinePayload = z.infer<typeof bridgeTimelinePayloadSchema>;
 export type BridgeAssetRegistryPayload = z.infer<typeof bridgeAssetRegistrySchema>;
 export type BridgeErrorEnvelope = z.infer<typeof bridgeErrorEnvelopeSchema>;
@@ -130,7 +359,24 @@ export type BridgeProjectsPayload = z.infer<typeof bridgeProjectsSchema>;
 export type BridgeTimelinesPayload = z.infer<typeof bridgeTimelinesSchema>;
 export type BridgeHealthPayload = z.infer<typeof bridgeHealthSchema>;
 
+export type BridgeTaskStatus = z.infer<typeof bridgeTaskStatusSchema>;
+export type BridgeTaskSpec = z.infer<typeof bridgeTaskSpecSchema>;
+export type BridgeTaskAttempt = z.infer<typeof bridgeTaskAttemptSchema>;
+export type BridgeTaskSummary = z.infer<typeof bridgeTaskSummarySchema>;
+export type BridgeAdmittedTask = z.infer<typeof bridgeAdmittedTaskSchema>;
+export type BridgeTaskAdmissionRequest = z.infer<typeof bridgeTaskAdmissionRequestSchema>;
+export type BridgeTaskAdmissionResponse = z.infer<typeof bridgeTaskAdmissionResponseSchema>;
+export type BridgeTaskList = z.infer<typeof bridgeTaskListSchema>;
+export type BridgeTaskDetailPayload = z.infer<typeof bridgeTaskDetailPayloadSchema>;
+export type BridgeCancelRequest = z.infer<typeof bridgeCancelRequestSchema>;
+export type BridgeCancelResponse = z.infer<typeof bridgeCancelResponseSchema>;
+export type BridgeGenerationSummary = z.infer<typeof bridgeGenerationSummarySchema>;
+export type BridgeGenerationList = z.infer<typeof bridgeGenerationListSchema>;
+export type BridgeGenerationVariant = z.infer<typeof bridgeGenerationVariantSchema>;
+export type BridgeGenerationDetailPayload = z.infer<typeof bridgeGenerationDetailPayloadSchema>;
+
 const describeIssues = (issues: readonly z.core.$ZodIssue[]): string => {
+
   return issues
     .slice(0, 3)
     .map((issue) => {

@@ -26,6 +26,14 @@ const mockedState = vi.hoisted(() => ({
   },
   mockDataFreshnessManager: {
     reset: vi.fn(),
+    onRealtimeStatusChange: vi.fn(),
+  },
+  capabilityCensus: {
+    health: 'available',
+    readiness: 'ready',
+    capabilities: { tasks: 'supported', generations: 'supported', media: 'supported' },
+    reasons: {},
+    projectSlug: 'proj-1',
   },
 }));
 
@@ -108,6 +116,10 @@ vi.mock('@/shared/hooks/useRealtimeInvalidation', () => ({
   useRealtimeInvalidation: vi.fn(),
 }));
 
+vi.mock('@/integrations/astrid/capabilityCensus.ts', () => ({
+  useAstridCapabilityCensus: () => mockedState.capabilityCensus,
+}));
+
 vi.mock('@/shared/state/realtimeStore', () => ({
   getRealtimeTaskSnapshot: vi.fn(() => null),
   upsertRealtimeTaskSnapshot: (...args: unknown[]) => mockedState.mockUpsertRealtimeTaskSnapshot(...args),
@@ -167,6 +179,11 @@ describe('RealtimeProvider', () => {
     mockedState.mockUseProject.mockReturnValue({ selectedProjectId: 'proj-1' });
     mockedState.mockGetCachedTaskSnapshot.mockReturnValue(undefined);
     mockedState.mockFetchAndSeedTaskQuery.mockResolvedValue(null);
+    mockedState.capabilityCensus.health = 'available';
+    mockedState.capabilityCensus.readiness = 'ready';
+    mockedState.capabilityCensus.capabilities.tasks = 'supported';
+    mockedState.capabilityCensus.capabilities.generations = 'supported';
+    mockedState.capabilityCensus.capabilities.media = 'supported';
   });
 
   it('renders children', () => {
@@ -204,6 +221,21 @@ describe('RealtimeProvider', () => {
     expect(mockedState.mockResetRealtimeTaskScope).toHaveBeenCalledWith('proj-1');
   });
 
+  it('makes zero connection attempts when task and gallery capabilities are permanently unavailable', () => {
+    mockedState.capabilityCensus.readiness = 'degraded';
+    mockedState.capabilityCensus.capabilities.tasks = 'unavailable';
+    mockedState.capabilityCensus.capabilities.generations = 'unavailable';
+
+    renderWithProviders(
+      <RealtimeProvider>
+        <RealtimeConsumer />
+      </RealtimeProvider>
+    );
+
+    expect(mockRealtimeConnection.connect).not.toHaveBeenCalled();
+    expect(mockRealtimeConnection.disconnect).toHaveBeenCalledTimes(1);
+  });
+
   it('subscribes to status changes', () => {
     renderWithProviders(
       <RealtimeProvider>
@@ -212,6 +244,40 @@ describe('RealtimeProvider', () => {
     );
 
     expect(mockRealtimeConnection.onStatusChange).toHaveBeenCalled();
+  });
+
+  it('publishes connection health so the bridge snapshot poller yields ownership', () => {
+    renderWithProviders(
+      <RealtimeProvider>
+        <RealtimeConsumer />
+      </RealtimeProvider>
+    );
+
+    act(() => {
+      mockedState.statusChangeCallback?.({
+        status: 'connected',
+        projectId: 'proj-1',
+        error: null,
+        statusChangedAt: Date.now(),
+        reconnectAttempt: 0,
+        nextRetryAt: null,
+      });
+    });
+    expect(mockedState.mockDataFreshnessManager.onRealtimeStatusChange)
+      .toHaveBeenLastCalledWith('connected', undefined);
+
+    act(() => {
+      mockedState.statusChangeCallback?.({
+        status: 'failed',
+        projectId: 'proj-1',
+        error: 'bridge unavailable',
+        statusChangedAt: Date.now(),
+        reconnectAttempt: 3,
+        nextRetryAt: null,
+      });
+    });
+    expect(mockedState.mockDataFreshnessManager.onRealtimeStatusChange)
+      .toHaveBeenLastCalledWith('error', 'bridge unavailable');
   });
 
   it('hydrates canonical task rows into the scoped realtime store before processing the event', async () => {

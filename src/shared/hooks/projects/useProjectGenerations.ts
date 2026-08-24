@@ -3,270 +3,86 @@
  * ================================
  *
  * This module provides hooks for querying generations at the PROJECT level.
- * Mutations live in `useGenerationMutations.ts` (re-exported here for compatibility).
- *
- * ## When to Use
- * - Displaying a gallery of generations across the project (GenerationsPane, MediaGallery)
- * - Filtering by tool type, media type, starred, search term
- * - Fetching derived items (edits based on a generation)
- *
- * ## When NOT to Use
- * - Querying images within a specific shot → use `useShotImages.ts` instead
- * - Timeline-specific data (frame positions, pair prompts) → use `useShotImages.ts`
- * - Page-level state management (filters, pagination) → use `useGalleryPageState.ts`
- * - Mutations (create, delete, star) → import from `useGenerationMutations.ts` directly
- *
- * ## Key Exports
- * - `useProjectGenerations(projectId, page, limit, filters)` - Paginated gallery data
- * - `fetchGenerations(projectId, limit, offset, filters)` - Direct fetch function
- * - `GenerationsPaginatedResponse` - Response type
+ * Mutations live in `useGenerationMutations.ts`.
  *
  * ## Data Source
- * Queries `generations` table directly (project-scoped, not shot-scoped)
+ * Bridge gallery reads (doc-27 §4.1): bounded keyset pages from
+ * `GET /projects/:slug/generations` (R12) via the frozen `AstridLocalClient`.
+ * The project id doubles as the bridge project slug — the composition point
+ * is the existing project-selection context, not a new singleton.
+ *
+ * ## Filter posture
+ * The v1 route supports only the `starred` filter server-side; `mediaType`
+ * is applied client-side on the row `type`. Tool/search/shot filters have no
+ * v1 route (summary rows carry no params/shot placement) and are accepted for
+ * API compatibility but not applied — see .oracle/evidence/c3-b-reads.md.
  *
  * @module useProjectGenerations
  */
 
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import type { GeneratedImageWithMetadata } from '@/shared/components/MediaGallery/types';
-import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
+import { AstridLocalClient } from '@/integrations/astrid/client';
+import type { BridgeGenerationSummary } from '@/tools/video-editor/data/bridgeContract';
 import { useSmartPollingConfig } from '../useSmartPolling';
 import { unifiedGenerationQueryKeys } from '@/shared/lib/queryKeys/unified';
-import { transformGeneration, transformVariant, type RawGeneration, type RawVariant } from '@/shared/lib/generationTransformers';
-import type { PostgrestFilterBuilder } from '@supabase/postgrest-js';
-import { SHOT_FILTER } from '@/shared/constants/filterConstants';
-import { TOOL_IDS } from '@/shared/lib/tooling/toolIds';
+import { transformGeneration, type RawGeneration } from '@/shared/lib/generationTransformers';
+import { bridgeMediaUrl } from '@/shared/lib/media/bridgeMediaUrl';
 import { getProjectSelectionFallbackId } from '@/shared/contexts/projectSelectionStore';
+import { useAstridCapabilityCensus } from '@/integrations/astrid/capabilityCensus.ts';
 
 /** Cache garbage collection time for paginated generation queries */
 const GENERATIONS_GC_TIME_MS = 10 * 60 * 1000; // 10 minutes
 
-type AnyPostgrestFilterBuilder = PostgrestFilterBuilder<unknown, unknown, unknown, unknown, unknown>;
+/** The bridge caps one gallery page at 200 rows (doc-27 §4.1). */
+const BRIDGE_MAX_PAGE_LIMIT = 200;
 
-/** Common filter options for generation queries */
-interface GenerationBaseFilters {
+
+export interface GenerationFilters {
   toolType?: string;
   mediaType?: 'all' | 'image' | 'video';
   shotId?: string;
   excludePositioned?: boolean;
   starredOnly?: boolean;
   searchTerm?: string;
-  editsOnly?: boolean;
 }
 
 /**
- * Apply common filters to a generations query.
- * Used by both count and data queries to ensure consistency.
- *
- * `options.mediaAvailabilityOr` lets the caller fold a "row has media available"
- * OR clause into the same combined filter so we never emit two separate `or=`
- * query-string params (PostgREST rejects that with 400 Bad Request).
+ * Map one bridge summary row into the raw record shape `transformGeneration`
+ * consumes. Display URLs are resolved here: the primary variant's managed
+ * media id becomes a same-origin R9 content-route address.
  */
-// TODO: type properly - PostgrestFilterBuilder generics are complex Supabase internals
-function applyGenerationFilters<T extends AnyPostgrestFilterBuilder>(
-  query: T,
-  filters: GenerationBaseFilters | undefined,
-  options?: { mediaAvailabilityOr?: string }
-): T {
-  // All OR clauses get accumulated and applied together at the end as a single
-  // PostgREST filter parameter. Multiple chained `.or()` calls produce duplicate
-  // `or=` query-string entries which PostgREST rejects.
-  const orClauses: string[] = [];
-
-  if (filters) {
-    // Tool type filter (skip when shot filter is active - shot filter takes precedence)
-    if (filters.toolType && !filters.shotId) {
-      if (filters.toolType === TOOL_IDS.IMAGE_GENERATION) {
-        query = query.eq('params->>tool_type', TOOL_IDS.IMAGE_GENERATION) as T;
-      } else {
-        orClauses.push(`params->>tool_type.eq.${filters.toolType},params->>tool_type.eq.${filters.toolType}-reconstructed-client`);
-      }
-    }
-
-    // Media type filter
-    if (filters.mediaType && filters.mediaType !== 'all') {
-      if (filters.mediaType === 'video') {
-        query = query.like('type', '%video%') as T;
-      } else if (filters.mediaType === 'image') {
-        query = query.not('type', 'like', '%video%') as T;
-      }
-    }
-
-    // Starred filter
-    if (filters.starredOnly) {
-      query = query.eq('starred', true) as T;
-    }
-
-    // Edits only filter (generations derived from another)
-    if (filters.editsOnly) {
-      query = query.not('based_on', 'is', null) as T;
-    }
-
-    // Search filter
-    if (filters.searchTerm?.trim()) {
-      const searchPattern = `%${filters.searchTerm.trim()}%`;
-      query = query.ilike('params->originalParams->orchestrator_details->>prompt', searchPattern) as T;
-    }
-
-    // Shot filter
-    if (filters.shotId === SHOT_FILTER.NO_SHOT) {
-      orClauses.push('shot_data.is.null,shot_data.eq.{}');
-    } else if (filters.shotId) {
-      query = query.not(`shot_data->${filters.shotId}`, 'is', null) as T;
-      if (filters.excludePositioned) {
-        orClauses.push(`shot_data->${filters.shotId}.eq.null,shot_data->${filters.shotId}.eq.-1,shot_data->${filters.shotId}.cs.[null],shot_data->${filters.shotId}.cs.[-1]`);
-      }
-    }
-  }
-
-  // Caller-supplied availability OR (e.g. location.not.is.null,storage_mode.eq.local).
-  if (options?.mediaAvailabilityOr) {
-    orClauses.push(options.mediaAvailabilityOr);
-  }
-
-  // Apply OR clauses. Single clause → plain `query.or(...)` produces `or=(...)`.
-  // Multiple clauses → combine via a top-level `and=(or(...),or(...))` param so
-  // the request stays valid:
-  //   - chaining multiple `.or()` calls would emit duplicate `or=` keys (rejected
-  //     by PostgREST with 400);
-  //   - wrapping multiple clauses inside a single `or=(and(...))` is also rejected
-  //     because PostgREST requires ≥2 comma-separated entries in an `or=()` group.
-  // supabase-js doesn't expose `.and()`, so we append the param directly to the
-  // builder's underlying URL.
-  if (orClauses.length === 1) {
-    query = query.or(orClauses[0]) as T;
-  } else if (orClauses.length > 1) {
-    const combined = orClauses.map((clause) => `or(${clause})`).join(',');
-    const url = (query as unknown as { url: URL }).url;
-    url.searchParams.append('and', `(${combined})`);
-  }
-
-  return query;
-}
-
-/**
- * Fetch edit variants from generation_variants table for a project
- * Filters by tool_type in params (set by complete_task)
- * 
- * NOTE: Requires the project_id column on generation_variants (added via migration)
- * The column is auto-populated by a trigger from the parent generation
- */
-async function fetchEditVariants(
-  projectId: string,
-  limit: number,
-  offset: number,
-  filters?: {
-    toolType?: string;
-    mediaType?: 'all' | 'image' | 'video';
-    sort?: 'newest' | 'oldest';
-    parentsOnly?: boolean; // Exclude child variants (those with parent_variant_id in params)
-  }
-): Promise<{
-  items: GeneratedImageWithMetadata[];
-  total: number;
-  hasMore: boolean;
-}> {
-  const toolType = filters?.toolType;
-  const sort = filters?.sort || 'newest';
-  const mediaType = filters?.mediaType || 'all';
-  const parentsOnly = filters?.parentsOnly ?? true;
-
-  // Build count query
-  let countQuery = supabase().from('generation_variants')
-    .select('*', { count: 'exact', head: true })
-    .eq('project_id', projectId);
-  
-  // Only filter by toolType if specified
-  if (toolType) {
-    countQuery = countQuery.eq('params->>tool_type', toolType);
-  }
-  
-  // Filter by media type - variants don't have a type column, so filter by URL extension
-  if (mediaType === 'video') {
-    countQuery = countQuery.or('location.ilike.%.mp4,location.ilike.%.webm,location.ilike.%.mov');
-  } else if (mediaType === 'image') {
-    countQuery = countQuery.not('location', 'ilike', '%.mp4').not('location', 'ilike', '%.webm').not('location', 'ilike', '%.mov');
-  }
-  
-  // Exclude child variants (those created from another variant)
-  if (parentsOnly) {
-    countQuery = countQuery.is('params->>parent_variant_id', null);
-  }
-
-  const { count, error: countError } = await countQuery;
-
-  if (countError) {
-    throw countError;
-  }
-
-  const totalCount = count || 0;
-
-  if (totalCount === 0) {
-    return { items: [], total: 0, hasMore: false };
-  }
-
-  // Data query with pagination
-  const ascending = sort === 'oldest';
-  let dataQuery = supabase().from('generation_variants')
-    .select(`
-      id,
-      generation_id,
-      location,
-      thumbnail_url,
-      params,
-      variant_type,
-      name,
-      created_at
-    `)
-    .eq('project_id', projectId);
-  
-  // Only filter by toolType if specified
-  if (toolType) {
-    dataQuery = dataQuery.eq('params->>tool_type', toolType);
-  }
-  
-  // Filter by media type in data query too
-  if (mediaType === 'video') {
-    dataQuery = dataQuery.or('location.ilike.%.mp4,location.ilike.%.webm,location.ilike.%.mov');
-  } else if (mediaType === 'image') {
-    dataQuery = dataQuery.not('location', 'ilike', '%.mp4').not('location', 'ilike', '%.webm').not('location', 'ilike', '%.mov');
-  }
-  
-  // Exclude child variants in data query too
-  if (parentsOnly) {
-    dataQuery = dataQuery.is('params->>parent_variant_id', null);
-  }
-  
-  dataQuery = dataQuery
-    .order('created_at', { ascending })
-    .range(offset, offset + limit - 1);
-
-  const { data, error } = await dataQuery;
-
-  if (error) {
-    throw error;
-  }
-
-  // Transform variants using shared transformer
-  const items: GeneratedImageWithMetadata[] = (data || []).map((variant) =>
-    transformVariant(variant as unknown as RawVariant, { toolType })
-  );
-
+function toRawGeneration(row: BridgeGenerationSummary, projectSlug: string): RawGeneration {
+  const primaryMediaUrl = row.primary ? bridgeMediaUrl(projectSlug, row.primary.media_id) : null;
   return {
-    items,
-    total: totalCount,
-    hasMore: offset + items.length < totalCount,
+    id: row.generation_id,
+    location: primaryMediaUrl,
+    thumbnail_url: primaryMediaUrl,
+    type: row.type,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    starred: row.starred,
+    name: row.name,
+    derivedCount: row.variant_count,
   };
 }
 
-export type GenerationFilters = GenerationBaseFilters & {
-  includeChildren?: boolean;
-  parentGenerationId?: string;
-  sort?: 'newest' | 'oldest';
-  editsOnly?: boolean; // Filter for images with based_on set (derived/edited images)
-  parentsOnly?: boolean; // For variants: exclude child variants (those with parent_variant_id)
-  variantsOnly?: boolean; // Fetch edit variants from generation_variants table
-};
+/**
+ * Client-side filter over mapped rows for predicates expressible on summary
+ * data. Only the media-type split is derivable (row `type`, mirroring the
+ * previous `%video%` SQL match).
+ */
+function matchesClientSideFilters(
+  item: GeneratedImageWithMetadata,
+  filters?: GenerationFilters,
+): boolean {
+  if (filters?.mediaType && filters.mediaType !== 'all') {
+    const isVideo = (item.type ?? '').includes('video');
+    if (filters.mediaType === 'video' && !isVideo) return false;
+    if (filters.mediaType === 'image' && isVideo) return false;
+  }
+  return true;
+}
 
 async function fetchGenerationsForProject(
   projectId: string,
@@ -278,124 +94,39 @@ async function fetchGenerationsForProject(
   total: number;
   hasMore: boolean;
 }> {
-  // Special path for variantsOnly - fetch from generation_variants table
-  if (filters?.variantsOnly) {
-    return fetchEditVariants(projectId, limit, offset, {
-      toolType: filters.toolType,
-      mediaType: filters.mediaType,
-      sort: filters.sort,
-      parentsOnly: filters.parentsOnly ?? true, // Default to parents only
-    });
+  const client = new AstridLocalClient({ projectSlug: projectId });
+  // Route-level filtering: R12 supports exactly `starred`.
+  const starred = filters?.starredOnly ? true : undefined;
+  const pageLimit = Math.min(Math.max(limit, 1), BRIDGE_MAX_PAGE_LIMIT);
+
+  // Walk keyset pages until the requested [offset, offset+limit) window is
+  // covered or the project is exhausted. Cursor pagination has no random
+  // access, so page N costs N sequential reads — bounded and honest.
+  const collected: GeneratedImageWithMetadata[] = [];
+  let cursor: string | undefined;
+  let exhausted = false;
+
+  while (collected.length < offset + limit && !exhausted) {
+    const page = await client.gallery.list({ limit: pageLimit, cursor, starred });
+    for (const row of page.generations) {
+      const item = transformGeneration(toRawGeneration(row, projectId));
+      if (matchesClientSideFilters(item, filters)) {
+        collected.push(item);
+      }
+    }
+    cursor = page.next_cursor ?? undefined;
+    exhausted = cursor === undefined;
   }
 
-  // "Row has media available" = location set OR stored locally. Folded into the
-  // single combined OR clause below to avoid duplicate `or=` query params (which
-  // PostgREST rejects with 400). Skipped when fetching children of a specific
-  // parent — those may still be processing and need to render as placeholders.
-  const mediaAvailabilityOr = filters?.parentGenerationId
-    ? undefined
-    : 'location.not.is.null,storage_mode.eq.local';
+  const items = collected.slice(offset, offset + limit);
+  const hasMore = !exhausted;
 
-  // Build count query
-  let countQuery = supabase().from('generations')
-    .select('*', { count: 'exact', head: true })
-    .eq('project_id', projectId);
+  // The route returns no total count. On the last page the total is exact;
+  // before that it degrades to a lower bound (one past the covered window)
+  // so "next page" stays reachable until the true end is observed.
+  const total = hasMore ? offset + items.length + 1 : offset + items.length;
 
-  // Parent/Child filtering (count query specific)
-  if (filters?.parentGenerationId) {
-    countQuery = countQuery.eq('parent_generation_id', filters.parentGenerationId);
-  } else if (!filters?.includeChildren) {
-    countQuery = countQuery.eq('is_child', false);
-  }
-
-  // Apply common filters (toolType, mediaType, starred, edits, search, shot)
-  // and the media-availability OR in a single combined call.
-  countQuery = applyGenerationFilters(countQuery, filters, { mediaAvailabilityOr });
-
-  const { count, error: countError } = await countQuery;
-  if (countError) {
-    throw countError;
-  }
-  const totalCount = count || 0;
-
-  // Select only the fields needed for the gallery view
-  let dataQuery = supabase().from('generations')
-    .select(`
-      id,
-      location,
-      thumbnail_url,
-      primary_variant_id,
-      storage_mode,
-      local_handle_id,
-      local_file_name,
-      local_file_size,
-      local_file_mime,
-      primary_variant:generation_variants!generations_primary_variant_id_fkey (
-        location,
-        thumbnail_url
-      ),
-      type,
-      created_at,
-      updated_at,
-      params,
-      starred,
-      tasks,
-      based_on,
-      shot_data,
-      name,
-      is_child,
-      parent_generation_id,
-      child_order
-    `)
-    .eq('project_id', projectId);
-
-  // Parent/Child filtering (data query specific - has ordering). The
-  // location/storage_mode availability OR is folded into applyGenerationFilters
-  // below as a single combined OR clause.
-  if (filters?.parentGenerationId) {
-    dataQuery = dataQuery.eq('parent_generation_id', filters.parentGenerationId);
-    dataQuery = dataQuery.order('child_order', { ascending: true });
-  } else if (!filters?.includeChildren) {
-    dataQuery = dataQuery.eq('is_child', false);
-  }
-
-  // Apply common filters (toolType, mediaType, starred, edits, search, shot)
-  dataQuery = applyGenerationFilters(dataQuery, filters, { mediaAvailabilityOr });
-
-
-  // Determine sort order
-  const sort = filters?.sort || 'newest';
-  const ascending = sort === 'oldest';
-
-  // Execute query with standard server-side pagination
-  const { data, error } = await dataQuery
-    .order('created_at', { ascending })
-    .range(offset, offset + limit - 1);
-
-  if (error) {
-    throw error;
-  }
-
-  if (!data) {
-    return { items: [], total: totalCount, hasMore: false };
-  }
-
-
-  const finalData = data || [];
-  const hasMore = (offset + limit) < totalCount;
-
-  // Badge data (derivedCount, hasUnviewedVariants, unviewedVariantCount) is now loaded
-  // lazily via useVariantBadges hook to avoid blocking gallery display
-
-  // Use shared transformer instead of inline transformation logic
-  const items = finalData?.map((item) => {
-    // Transform using shared function - handles all the complex logic
-    return transformGeneration(item as unknown as RawGeneration, {
-      shotId: filters?.shotId,
-    });
-  }) || [];
-
-  return { items, total: totalCount, hasMore };
+  return { items, total, hasMore };
 }
 
 export function fetchGenerations(
@@ -431,6 +162,7 @@ export function useProjectGenerations(
     disablePolling?: boolean; // Disable smart polling (useful for long-running tasks)
   }
 ) {
+  const capabilityCensus = useAstridCapabilityCensus();
   const offset = (page - 1) * limit;
   const effectiveProjectId = projectId ?? getProjectSelectionFallbackId();
   const filtersKey = filters ? JSON.stringify(filters) : null;
@@ -443,9 +175,9 @@ export function useProjectGenerations(
 
 
   // Use DataFreshnessManager for intelligent polling decisions.
-  // Can be disabled for tools with long-running tasks to prevent gallery flicker.
   const smartPollingConfig = useSmartPollingConfig(['generations', effectiveProjectId ?? '__no-project__']);
-  const pollingDisabled = Boolean(options?.disablePolling);
+  const pollingDisabled = Boolean(options?.disablePolling)
+    || capabilityCensus.capabilities.generations === 'unavailable';
   const pollingConfig: { refetchInterval: number | false; staleTime: number } = pollingDisabled
     ? { refetchInterval: false, staleTime: Infinity }
     : smartPollingConfig;
@@ -453,7 +185,8 @@ export function useProjectGenerations(
   const result = useQuery<GenerationsPaginatedResponse, Error>({
     queryKey: queryKey,
     queryFn: () => fetchGenerationsForProject(effectiveProjectId!, limit, offset, filters),
-    enabled: !!effectiveProjectId && enabled,
+    enabled: !!effectiveProjectId && enabled
+      && capabilityCensus.capabilities.generations !== 'unavailable',
     // Use `placeholderData` with `keepPreviousData` to prevent UI flashes on pagination/filter changes
     placeholderData: keepPreviousData,
     // Cache management to prevent memory leaks as pagination grows
@@ -468,9 +201,3 @@ export function useProjectGenerations(
 
   return result;
 }
-
-// ===== MUTATIONS =====
-// These hooks live in useGenerationMutations.ts — import directly from there.
-
-// ===== DERIVED ITEMS =====
-// DerivedItem and useDerivedItems live in useDerivedItems.ts — import directly from there.

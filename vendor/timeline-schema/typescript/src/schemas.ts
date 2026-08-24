@@ -107,11 +107,17 @@ export const TrackDefinition = z.object({
 
 export const PinnedShotGroup = z.object({
   shotId: z.string().optional(),
+  name: z.string().optional(),
   trackId: z.string().optional(),
   clipIds: z.array(z.string()).optional(),
   mode: z.enum(["images", "video"]).optional(),
   videoAssetKey: z.string().optional(),
   imageClipSnapshot: z.array(z.record(z.any())).optional(),
+  poolGenerationIds: z.array(z.string()).optional(),
+  derivedFrom: z.object({
+    shotId: z.string(),
+    trackId: z.string(),
+  }).optional(),
 }).partial();
 
 export const ThemeOverrides = z.object({

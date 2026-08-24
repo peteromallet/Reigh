@@ -1,2 +1,0 @@
-F2 exit=0
-F1 exit=0

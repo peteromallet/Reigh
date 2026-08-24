@@ -10,7 +10,7 @@ import {
 import { resolveProjectResolution } from '@/shared/lib/taskCreation';
 import { processStyleReferenceForAspectRatioString } from '@/shared/lib/media/styleReferenceProcessor';
 import { extractSettingsFromCache } from '@/shared/hooks/settings/useToolSettings';
-import { insertAutoPositionedShotGeneration } from '@/shared/hooks/shots/addImageToShotHelpers';
+import { placeGeneration } from '@/shared/lib/placement/placementService';
 import { settingsQueryKeys } from '@/shared/lib/queryKeys/settings';
 import {
   getOperationFailureLogData,
@@ -249,8 +249,12 @@ export async function tryCreateUploadedReferenceGeneration(
     }
 
     try {
-      const shotGeneration = await insertAutoPositionedShotGeneration(input.shotId, generationId);
-      const shotGenerationId = typeof shotGeneration.id === 'string' ? shotGeneration.id : undefined;
+      const shotGeneration = await placeGeneration({
+        projectSlug: input.currentProjectId,
+        shotId: input.shotId,
+        generationId,
+      });
+      const shotGenerationId = typeof shotGeneration.entryId === 'string' ? shotGeneration.entryId : undefined;
       return operationSuccess({ generationId, shotGenerationId }, { policy: 'best_effort' });
     } catch (error) {
       await supabase()

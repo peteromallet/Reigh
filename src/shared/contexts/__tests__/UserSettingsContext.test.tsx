@@ -4,7 +4,7 @@
  * Tests for user settings state management.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, act } from '@testing-library/react';
 import { useState } from 'react';
 
@@ -64,6 +64,11 @@ describe('UserSettingsContext', () => {
       },
       error: null,
     });
+    window.history.replaceState({}, '', '/');
+  });
+
+  afterEach(() => {
+    window.history.replaceState({}, '', '/');
   });
 
   describe('useUserSettings hook', () => {
@@ -120,6 +125,39 @@ describe('UserSettingsContext', () => {
       // Should not be loading and settings should be undefined
       expect(screen.getByTestId('isLoading')).toHaveTextContent('false');
       expect(screen.getByTestId('settings')).toHaveTextContent('undefined');
+    });
+
+    it('does not read or write Supabase in local Astrid editor mode', async () => {
+      window.history.replaceState({}, '', '/tools/video-editor?localProject=demo-project&localTimeline=demo-timeline');
+
+      function UpdateConsumer() {
+        const { updateUserSettings } = useUserSettings();
+        return (
+          <button
+            data-testid="local-update"
+            onClick={() => void updateUserSettings('user', { theme: 'light' } as Record<string, unknown>)}
+          >
+            Update
+          </button>
+        );
+      }
+
+      render(
+        <UserSettingsProvider>
+          <SettingsConsumer />
+          <UpdateConsumer />
+        </UserSettingsProvider>,
+      );
+
+      expect(screen.getByTestId('isLoading')).toHaveTextContent('false');
+      expect(screen.getByTestId('settings')).toHaveTextContent('undefined');
+
+      await act(async () => {
+        screen.getByTestId('local-update').click();
+      });
+
+      expect(mockSupabaseSelect).not.toHaveBeenCalled();
+      expect(mockUpdateToolSettings).not.toHaveBeenCalled();
     });
 
     it('sets empty settings on fetch error', async () => {

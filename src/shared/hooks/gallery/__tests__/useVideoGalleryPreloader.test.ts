@@ -1,20 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 
-vi.mock('@/integrations/supabase/client', () => ({
-  getSupabaseClient: () => ({
-    from: vi.fn(() => ({
-      select: vi.fn(() => ({
-        eq: vi.fn(() => ({
-          order: vi.fn(() => ({
-            order: vi.fn(() => ({
-              range: vi.fn(() => Promise.resolve({ data: [], error: null })),
-            })),
-          })),
-        })),
-      })),
-    })),
-  }),
+const mockFetchShotPlacementImages = vi.fn(async () => []);
+
+vi.mock('@/shared/lib/placement/placementImageRows', () => ({
+  fetchShotPlacementImages: (...args: unknown[]) => mockFetchShotPlacementImages(...args),
+  sortPlacementRowsNewestFirst: (rows: unknown[]) => [...rows],
 }));
 
 vi.mock('@/shared/contexts/ShotsContext', () => ({

@@ -1,11 +1,14 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mockDispatchAppEvent = vi.fn();
+const { checkAstridDoctorAvailabilityMock } = vi.hoisted(() => ({
+  checkAstridDoctorAvailabilityMock: vi.fn(),
+}));
 
-vi.mock('@/shared/lib/typedEvents', () => ({
-  dispatchAppEvent: (...args: unknown[]) => mockDispatchAppEvent(...args),
+vi.mock('@/integrations/astrid/doctorAvailability.ts', () => ({
+  ASTRID_DOCTOR_COMMAND: 'python3 -m astrid doctor --json',
+  checkAstridDoctorAvailability: checkAstridDoctorAvailabilityMock,
 }));
 
 vi.mock('@/shared/components/ui/dialog', () => ({
@@ -19,44 +22,76 @@ vi.mock('@/shared/components/ui/dialog', () => ({
 
 import { SetupCompleteStep } from './SetupCompleteStep';
 
-afterEach(() => {
-  vi.useRealTimers();
-  vi.clearAllMocks();
-});
+describe('SetupCompleteStep doctor availability', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    checkAstridDoctorAvailabilityMock.mockResolvedValue({ status: 'available' });
+  });
 
-describe('SetupCompleteStep', () => {
-  it('renders final setup messaging and actions', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('checks the local bridge and enables creation only after it is available', async () => {
+    let resolveCheck: ((value: { status: 'available' }) => void) | undefined;
+    checkAstridDoctorAvailabilityMock.mockReturnValue(new Promise((resolve) => {
+      resolveCheck = resolve;
+    }));
+
     render(<SetupCompleteStep onClose={vi.fn()} />);
 
-    expect(screen.getByText('One more thing')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Open Settings to Get Set Up' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Start Creating' })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Checking that Astrid');
+    expect(screen.getByRole('button', { name: 'Start Creating' })).toBeDisabled();
+
+    resolveCheck?.({ status: 'available' });
+    expect(await screen.findByText('Astrid is ready')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Start Creating' })).toBeEnabled();
   });
 
-  it('calls onClose immediately and dispatches openSettings after timeout', () => {
-    vi.useFakeTimers();
+  it('starts creating after the doctor-owned runtime is available', async () => {
     const onClose = vi.fn();
-
     render(<SetupCompleteStep onClose={onClose} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Open Settings to Get Set Up' }));
 
-    expect(onClose).toHaveBeenCalledTimes(1);
-    expect(mockDispatchAppEvent).not.toHaveBeenCalled();
-
-    vi.advanceTimersByTime(100);
-
-    expect(mockDispatchAppEvent).toHaveBeenCalledWith('openSettings', {
-      tab: 'generate-locally',
-    });
-  });
-
-  it('starts creating immediately when secondary action is clicked', () => {
-    const onClose = vi.fn();
-
-    render(<SetupCompleteStep onClose={onClose} />);
+    await screen.findByText('Astrid is ready');
     fireEvent.click(screen.getByRole('button', { name: 'Start Creating' }));
 
     expect(onClose).toHaveBeenCalledTimes(1);
-    expect(mockDispatchAppEvent).not.toHaveBeenCalled();
+  });
+
+  it('renders the capability-unavailable doctor hint and recovers on retry', async () => {
+    checkAstridDoctorAvailabilityMock
+      .mockResolvedValueOnce({ status: 'unavailable', reason: 'connection refused' })
+      .mockResolvedValueOnce({ status: 'available' });
+
+    render(<SetupCompleteStep onClose={vi.fn()} />);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('A local capability is unavailable');
+    expect(alert).toHaveTextContent('connection refused');
+    expect(alert).toHaveTextContent('python3 -m astrid doctor --json');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Check Astrid Again' }));
+
+    await waitFor(() => expect(screen.getByText('Astrid is ready')).toBeInTheDocument());
+    expect(checkAstridDoctorAvailabilityMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a healthy but incomplete bridge usable without claiming full readiness', async () => {
+    const onClose = vi.fn();
+    checkAstridDoctorAvailabilityMock.mockResolvedValue({
+      status: 'degraded',
+      unavailable: ['tasks', 'generations'],
+      unknown: ['media'],
+      reason: 'unknown route: tasks',
+    });
+
+    render(<SetupCompleteStep onClose={onClose} />);
+
+    const status = await screen.findByText('Astrid is reachable with limited features').then((node) => node.parentElement!);
+    expect(status).toHaveTextContent('Astrid is reachable with limited features');
+    expect(status).toHaveTextContent('tasks, generations support is missing');
+    expect(screen.queryByText('Astrid is ready')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue with Available Features' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

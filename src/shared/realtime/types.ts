@@ -46,7 +46,6 @@ export type DatabaseEventType = 'INSERT' | 'UPDATE' | 'DELETE';
 export type DatabaseTable =
   | 'tasks'
   | 'generations'
-  | 'shot_generations'
   | 'generation_variants'
   | 'timelines';
 
@@ -109,14 +108,6 @@ export interface GenerationRecord {
   updated_at?: string;
 }
 
-export interface ShotGenerationRecord {
-  id: string;
-  shot_id: string;
-  generation_id: string;
-  timeline_frame?: number | null;
-  metadata?: Record<string, unknown>;
-}
-
 export interface VariantRecord {
   id: string;
   generation_id: string;
@@ -150,7 +141,6 @@ type ProcessedEventType =
   | 'generations-inserted'
   | 'generations-updated'
   | 'generations-deleted'
-  | 'shot-generations-changed'
   | 'variants-changed'
   | 'variants-deleted'
   | 'timelines-updated';
@@ -208,21 +198,6 @@ export interface GenerationsUpdatedEvent extends BaseProcessedEvent {
   }>;
 }
 
-export interface ShotGenerationsChangedEvent extends BaseProcessedEvent {
-  type: 'shot-generations-changed';
-  changes: Array<{
-    shotId: string;
-    generationId: string;
-    eventType: 'INSERT' | 'UPDATE' | 'DELETE';
-    isNowPositioned: boolean;
-    wasPositioned: boolean;
-  }>;
-  /** Unique shot IDs affected */
-  affectedShotIds: string[];
-  /** True if all changes are INSERTs (for optimistic update handling) */
-  allInserts: boolean;
-}
-
 export interface VariantsChangedEvent extends BaseProcessedEvent {
   type: 'variants-changed';
   variants: Array<{
@@ -269,7 +244,6 @@ export type ProcessedEvent =
   | GenerationsInsertedEvent
   | GenerationsUpdatedEvent
   | GenerationsDeletedEvent
-  | ShotGenerationsChangedEvent
   | VariantsChangedEvent
   | VariantsDeletedEvent
   | TimelinesUpdatedEvent;

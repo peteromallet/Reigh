@@ -1,140 +1,163 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { TASK_STATUS } from '@/types/tasks';
+/**
+ * fetchPaginatedTasks over the frozen task-list route (fake bridge router).
+ * The route carries no filters, so status/type/root-task filtering and
+ * paging happen in memory over one bridge read.
+ */
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { createFakeBridgeRouter, type FakeBridgeRouter } from '@/test/fakeBridgeRouter.ts';
+import type { Task } from '@/types/tasks';
+import * as bridgeTaskReads from '@/integrations/astrid/bridgeTaskReads';
 import { fetchPaginatedTasks } from '../paginatedTaskRepository';
 
-const mocks = vi.hoisted(() => ({
-  getSupabaseClient: vi.fn(),
-}));
+const FAKE_ORIGIN = 'http://bridge.fake';
 
-vi.mock('@/integrations/supabase/client', () => ({
-  getSupabaseClient: mocks.getSupabaseClient,
-}));
+let router: FakeBridgeRouter;
 
-vi.mock('@/shared/lib/tasks/taskConfig', () => ({
-  filterVisibleTasks: <T,>(tasks: T[]): T[] => tasks,
-}));
+beforeEach(() => {
+  router = createFakeBridgeRouter();
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(input instanceof Request ? input.url : String(input), FAKE_ORIGIN);
+    return await router.handle(new Request(`${FAKE_ORIGIN}${url.pathname}${url.search}`, init));
+  }));
+});
 
-interface QueryCapture {
-  limit?: number;
-  range?: [number, number];
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+async function admitTask(): Promise<string> {
+  const response = await router.handle(new Request(`${FAKE_ORIGIN}/api/astrid/projects/demo-project/tasks`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Idempotency-Key': `k-${Math.random()}` },
+    body: JSON.stringify({ family: 'image_generation', input: {} }),
+  }));
+  expect(response.status).toBe(201);
+  const body = await response.json();
+  return body.task.id as string;
 }
 
-interface QueryResult {
-  count?: number | null;
-  data?: unknown[] | null;
-  error: Error | null;
-}
-
-function createThenableQuery(result: QueryResult, capture?: QueryCapture) {
-  const query = {
-    is: vi.fn(() => query),
-    in: vi.fn(() => query),
-    eq: vi.fn(() => query),
-    order: vi.fn(() => query),
-    limit: vi.fn((value: number) => {
-      if (capture) {
-        capture.limit = value;
-      }
-      return query;
-    }),
-    range: vi.fn((from: number, to: number) => {
-      if (capture) {
-        capture.range = [from, to];
-      }
-      return query;
-    }),
-    then: (
-      onFulfilled?: (value: QueryResult) => unknown,
-      onRejected?: (reason: unknown) => unknown,
-    ) => Promise.resolve(result).then(onFulfilled, onRejected),
-  };
-
-  return query;
-}
-
-function buildTaskRow(index: number, status = TASK_STATUS.QUEUED) {
+function baseFilters() {
   return {
-    id: `task-${index}`,
-    task_type: 'text_to_image',
-    params: {},
-    status,
-    created_at: new Date(Date.UTC(2026, 0, 1, 0, index, 0)).toISOString(),
-    project_id: 'project-1',
+    effectiveProjectId: 'demo-project',
+    visibleTaskTypes: ['qwen_image'],
+    limit: 50,
+    offset: 0,
+    page: 1,
   };
 }
 
-describe('fetchPaginatedTasks', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+describe('fetchPaginatedTasks over the fake bridge router', () => {
+  it('returns empty pages without a project scope', async () => {
+    await expect(fetchPaginatedTasks({ ...baseFilters(), effectiveProjectId: null })).resolves.toEqual({
+      tasks: [],
+      total: 0,
+      hasMore: false,
+      totalPages: 0,
+    });
   });
 
-  it('fetches enough processing rows to serve page 2 slicing', async () => {
-    const dataCapture: QueryCapture = {};
-    const countQuery = createThenableQuery({ count: 120, error: null });
-    const dataQuery = createThenableQuery(
-      {
-        data: Array.from({ length: 100 }, (_, index) => buildTaskRow(index)),
-        error: null,
-      },
-      dataCapture,
-    );
+  it('lists admitted tasks with mapped statuses and derived totals', async () => {
+    const taskId = await admitTask();
 
-    mocks.getSupabaseClient.mockReturnValue({
-      from: vi.fn(() => ({
-        select: vi.fn((_columns: string, options?: { head?: boolean }) => (
-          options?.head ? countQuery : dataQuery
-        )),
-      })),
+    const page = await fetchPaginatedTasks(baseFilters());
+    expect(page.tasks.map((task) => task.id)).toContain(taskId);
+    expect(page.tasks[0].status).toBe('Queued');
+    expect(page.total).toBeGreaterThanOrEqual(1);
+    expect(page.totalPages).toBe(1);
+    expect(page.hasMore).toBe(false);
+  });
+
+  it('filters by mapped app statuses in memory', async () => {
+    const queuedId = await admitTask();
+    await admitTask();
+    const summary = router.state.tasks.get(queuedId);
+    if (!summary) throw new Error('fixture task missing');
+    summary.status = 'running';
+
+    const page = await fetchPaginatedTasks({
+      ...baseFilters(),
+      status: ['In Progress'],
     });
+    expect(page.tasks.map((task) => task.id)).toEqual([queuedId]);
+  });
 
-    const result = await fetchPaginatedTasks({
-      allProjects: false,
-      effectiveProjectId: 'project-1',
-      status: [TASK_STATUS.QUEUED, TASK_STATUS.IN_PROGRESS],
-      taskType: null,
-      visibleTaskTypes: ['text_to_image'],
-      limit: 50,
-      offset: 50,
+  it('serves page 2 from the prefetched window when sorting applies', async () => {
+    for (let index = 0; index < 3; index += 1) {
+      await admitTask();
+    }
+
+    const pageTwo = await fetchPaginatedTasks({
+      ...baseFilters(),
+      limit: 2,
+      offset: 2,
       page: 2,
+      status: ['Queued', 'In Progress'],
     });
-
-    expect(dataCapture.limit).toBe(100);
-    expect(result.tasks).toHaveLength(50);
-    expect(result.tasks[0]?.id).toBe('task-50');
-    expect(result.hasMore).toBe(true);
+    expect(pageTwo.tasks).toHaveLength(1);
+    expect(pageTwo.total).toBe(3);
   });
 
-  it('uses server-side range pagination for non-processing filters', async () => {
-    const dataCapture: QueryCapture = {};
-    const countQuery = createThenableQuery({ count: 80, error: null });
-    const dataQuery = createThenableQuery(
-      {
-        data: Array.from({ length: 25 }, (_, index) => buildTaskRow(index, TASK_STATUS.COMPLETE)),
-        error: null,
-      },
-      dataCapture,
-    );
-
-    mocks.getSupabaseClient.mockReturnValue({
-      from: vi.fn(() => ({
-        select: vi.fn((_columns: string, options?: { head?: boolean }) => (
-          options?.head ? countQuery : dataQuery
-        )),
-      })),
+  it('applies offset and limit to completed-task pages, not only processing pages', async () => {
+    const taskIds = await Promise.all([admitTask(), admitTask(), admitTask()]);
+    taskIds.forEach((taskId, index) => {
+      const summary = router.state.tasks.get(taskId);
+      if (!summary) throw new Error('fixture task missing');
+      summary.status = 'succeeded';
+      summary.updated_at = `2026-08-22T12:0${index}:00Z`;
     });
 
-    await fetchPaginatedTasks({
-      allProjects: false,
-      effectiveProjectId: 'project-1',
-      status: [TASK_STATUS.COMPLETE],
-      taskType: null,
-      visibleTaskTypes: ['text_to_image'],
-      limit: 25,
-      offset: 50,
-      page: 3,
+    const firstPage = await fetchPaginatedTasks({
+      ...baseFilters(),
+      limit: 2,
+      status: ['Complete'],
+    });
+    expect(firstPage.tasks).toHaveLength(2);
+    expect(firstPage.total).toBe(3);
+    expect(firstPage.hasMore).toBe(true);
+    expect(firstPage.totalPages).toBe(2);
+
+    const secondPage = await fetchPaginatedTasks({
+      ...baseFilters(),
+      limit: 2,
+      offset: 2,
+      page: 2,
+      status: ['Complete'],
+    });
+    expect(secondPage.tasks).toHaveLength(1);
+    expect(secondPage.total).toBe(3);
+    expect(secondPage.hasMore).toBe(false);
+  });
+
+  it('queries every distinct project in all-projects mode before globally paging', async () => {
+    const makeTask = (id: string, projectId: string, createdAt: string): Task => ({
+      id,
+      projectId,
+      taskType: 'qwen_image',
+      status: 'Queued',
+      params: {},
+      createdAt,
+      updatedAt: createdAt,
+    });
+    const listSpy = vi.spyOn(bridgeTaskReads, 'listBridgeTasks').mockImplementation(async (projectSlug) => (
+      projectSlug === 'project-a'
+        ? [makeTask('task-a', projectSlug, '2026-08-22T12:00:00Z')]
+        : [makeTask('task-b', projectSlug, '2026-08-22T12:01:00Z')]
+    ));
+
+    const page = await fetchPaginatedTasks({
+      ...baseFilters(),
+      allProjects: true,
+      allProjectIds: ['project-a', 'project-b', 'project-a'],
+      effectiveProjectId: null,
+      limit: 1,
     });
 
-    expect(dataCapture.range).toEqual([50, 74]);
-    expect(dataCapture.limit).toBeUndefined();
+    expect(listSpy.mock.calls.map(([projectSlug]) => projectSlug)).toEqual(['project-a', 'project-b']);
+    expect(page.tasks.map((task) => task.id)).toEqual(['task-b']);
+    expect(page.total).toBe(2);
+    expect(page.hasMore).toBe(true);
   });
 });

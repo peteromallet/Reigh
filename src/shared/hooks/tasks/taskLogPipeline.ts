@@ -1,31 +1,14 @@
-import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
 import { getHiddenTaskTypes, getVisibleTaskTypes } from '@/shared/lib/tasks/taskConfig';
-
-interface TaskLogCostEntry {
-  task_id: string | null;
-  amount: number;
-  created_at: string;
-}
-
-async function fetchTaskLogCosts(taskIds: string[]): Promise<TaskLogCostEntry[]> {
-  if (taskIds.length === 0) {
-    return [];
-  }
-
-  const { data: costs } = await supabase()
-    .from('credits_ledger')
-    .select('task_id, amount, created_at')
-    .in('task_id', taskIds)
-    .eq('type', 'spend');
-
-  return costs || [];
-}
+import { resolveTaskProjectScope } from '@/shared/lib/tasks/resolveTaskProjectScope';
+import { listBridgeTasks } from '@/integrations/astrid/bridgeTaskReads';
 
 export interface TaskLogFilters {
-  costFilter?: 'all' | 'free' | 'paid';
   status?: string[];
   taskTypes?: string[];
   projectIds?: string[];
+  // `'all'` is accepted for caller compatibility (billing filter UI) and
+  // degrades to a no-op — the bridge exposes no credits_ledger route.
+  costFilter?: 'all' | 'free' | 'paid';
 }
 
 export interface TaskLogProject {
@@ -73,6 +56,17 @@ interface FetchTaskLogDataOptions {
   filters?: TaskLogFilters;
   limit?: number;
   offset?: number;
+}
+
+/**
+ * Cost entries once came from the `credits_ledger` table; the frozen bridge
+ * exposes no ledger route, so log rows carry no costs (deferred surface —
+ * see docs/cutover-inventory.md).
+ */
+interface TaskLogCostEntry {
+  task_id: string | null;
+  amount: number;
+  created_at: string;
 }
 
 function getTaskDuration(task: TaskLogTaskRecord): number | undefined {
@@ -123,126 +117,86 @@ export function applyTaskLogCostFilter(
   return tasks;
 }
 
-async function requireTaskLogProjects(userId: string): Promise<TaskLogProject[]> {
-  const { data: projects } = await supabase().from('projects')
-    .select('id, name')
-    .eq('user_id', userId);
-
-  return projects || [];
-}
-
-function applyTaskLogQueryFilters(
-  query: {
-    in: (column: string, values: string[]) => unknown;
-    not: (column: string, operator: string, value: string) => unknown;
-  } & Record<string, unknown>,
+function matchesTaskLogQueryFilters(
+  task: TaskLogTaskRecord,
   filters: TaskLogFilters,
   hiddenTaskTypes: string[],
-) {
-  let nextQuery = query;
-
-  if (hiddenTaskTypes.length > 0) {
-    nextQuery = nextQuery.not('task_type', 'in', `(${hiddenTaskTypes.join(',')})`) as typeof query;
-  }
-
-  if (filters.status && filters.status.length > 0) {
-    nextQuery = nextQuery.in('status', filters.status) as typeof query;
-  }
-
-  if (filters.taskTypes && filters.taskTypes.length > 0) {
-    nextQuery = nextQuery.in('task_type', filters.taskTypes) as typeof query;
-  }
-
-  if (filters.projectIds && filters.projectIds.length > 0) {
-    nextQuery = nextQuery.in('project_id', filters.projectIds) as typeof query;
-  }
-
-  return nextQuery;
+): boolean {
+  if (hiddenTaskTypes.includes(task.task_type)) return false;
+  if (filters.status?.length && !filters.status.includes(task.status)) return false;
+  if (filters.taskTypes?.length && !filters.taskTypes.includes(task.task_type)) return false;
+  if (filters.projectIds?.length && !filters.projectIds.includes(task.project_id)) return false;
+  return true;
 }
 
-async function fetchAvailableTaskLogFilters(
-  projectIds: string[],
-  projects: TaskLogProject[],
-  hiddenTaskTypes: string[],
-): Promise<TaskLogAvailableFilters> {
-  let availableQuery = supabase().from('tasks')
-    .select('task_type, status, project_id')
-    .in('project_id', projectIds);
-
-  if (hiddenTaskTypes.length > 0) {
-    availableQuery = availableQuery.not('task_type', 'in', `(${hiddenTaskTypes.join(',')})`);
-  }
-
-  const { data: allTasks } = await availableQuery;
-
+function toTaskLogRecord(task: {
+  id: string;
+  taskType: string;
+  status: string;
+  createdAt: string;
+  projectId: string;
+}): TaskLogTaskRecord {
+  // Bridge task summaries carry no generation timing columns; those
+  // durations are simply absent rather than guessed.
   return {
-    taskTypes: getVisibleTaskTypes().sort((left, right) => left.localeCompare(right)),
-    projects,
-    statuses: [...new Set((allTasks || []).map((task) => task.status))].sort(
-      (left, right) => left.localeCompare(right),
-    ),
+    id: task.id,
+    task_type: task.taskType,
+    status: task.status,
+    created_at: task.createdAt,
+    project_id: task.projectId,
   };
 }
 
+/**
+ * Local single-user mode: the log reads the active project's tasks through
+ * the frozen task-list route. There is no projects-by-user or
+ * credits-ledger route on the bridge, so project names fall back to ids and
+ * costs are absent.
+ */
 export async function fetchTaskLogData({
   filters = {},
   limit,
   offset,
 }: FetchTaskLogDataOptions = {}): Promise<TaskLogDataResult> {
-  const client = supabase();
-  const { data: { user }, error: authError } = await client.auth.getUser();
-
-  if (authError || !user) {
-    throw new Error('Authentication required');
-  }
-
-  const projects = await requireTaskLogProjects(user.id);
-  if (projects.length === 0) {
+  const projectSlug = resolveTaskProjectScope(null);
+  if (!projectSlug) {
     return {
-      availableFilters: {
-        taskTypes: [],
-        projects: [],
-        statuses: [],
-      },
+      availableFilters: { taskTypes: [], projects: [], statuses: [] },
       projects: [],
       tasks: [],
       total: 0,
     };
   }
 
-  const projectIds = projects.map((project) => project.id);
-  const projectLookup = Object.fromEntries(projects.map((project) => [project.id, project.name]));
   const hiddenTaskTypes = getHiddenTaskTypes();
+  const taskRows = (await listBridgeTasks(projectSlug))
+    .map(toTaskLogRecord)
+    .filter((task) => matchesTaskLogQueryFilters(task, filters, hiddenTaskTypes))
+    .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime());
 
-  let query = client.from('tasks')
-    .select('*', { count: 'exact' })
-    .in('project_id', projectIds);
+  const pagedRows = typeof limit === 'number' && typeof offset === 'number'
+    ? taskRows.slice(offset, offset + limit)
+    : taskRows;
 
-  query = applyTaskLogQueryFilters(query, filters, hiddenTaskTypes);
+  const projects: TaskLogProject[] = [...new Set(taskRows.map((task) => task.project_id))]
+    .map((projectId) => ({ id: projectId, name: projectId }));
+  const projectLookup = Object.fromEntries(projects.map((project) => [project.id, project.name]));
 
-  let orderedQuery = query.order('created_at', { ascending: false });
-  if (typeof limit === 'number' && typeof offset === 'number') {
-    orderedQuery = orderedQuery.range(offset, offset + limit - 1);
-  }
-
-  const { data: taskRows, error: tasksError, count } = await orderedQuery;
-
-  if (tasksError) {
-    throw new Error(`Failed to fetch tasks: ${tasksError.message}`);
-  }
-
-  const tasksData = (taskRows || []) as TaskLogTaskRecord[];
-  const taskIds = tasksData.map((task) => task.id);
-  const costsData = await fetchTaskLogCosts(taskIds);
   const enrichedTasks = applyTaskLogCostFilter(
-    enrichTaskLogTasks(tasksData, costsData, projectLookup),
+    enrichTaskLogTasks(pagedRows, [], projectLookup),
     filters.costFilter,
   );
 
   return {
-    availableFilters: await fetchAvailableTaskLogFilters(projectIds, projects, hiddenTaskTypes),
+    availableFilters: {
+      taskTypes: getVisibleTaskTypes().sort((left, right) => left.localeCompare(right)),
+      projects,
+      statuses: [...new Set(taskRows.map((task) => task.status))].sort(
+        (left, right) => left.localeCompare(right),
+      ),
+    },
     projects,
     tasks: enrichedTasks,
-    total: count || 0,
+    total: taskRows.length,
   };
 }

@@ -1,32 +1,21 @@
-import { getSupabaseClient } from '@/integrations/supabase/client';
 import type { Task } from '@/types/tasks';
-import { isTaskDbRow, mapTaskDbRowToTask } from '@/shared/lib/taskRowMapper';
-import {
-  createInvalidRowShapeError,
-  createRepositoryQueryError,
-  isRepositoryNoRowsError,
-} from './repositoryErrors';
+import { BridgeRouteError } from '@/integrations/astrid/transport';
+import { bridgeTaskSummaryToTask, getBridgeTaskClient } from '@/integrations/astrid/bridgeTaskReads';
 
+/**
+ * One task's poll read via the frozen `GET /projects/:slug/tasks/:task_id`
+ * route. A missing task is a `null`, never an error — same contract the
+ * supabase-js `.maybeSingle()` path had.
+ */
 export async function fetchTaskInProject(taskId: string, projectId: string): Promise<Task | null> {
-  const { data, error } = await getSupabaseClient()
-    .from('tasks')
-    .select('*')
-    .eq('id', taskId)
-    .eq('project_id', projectId)
-    .maybeSingle();
-
-  if (error) {
-    if (isRepositoryNoRowsError(error)) {
+  const client = getBridgeTaskClient(projectId);
+  try {
+    const summary = await client.tasks.get(taskId);
+    return bridgeTaskSummaryToTask(summary);
+  } catch (error) {
+    if (error instanceof BridgeRouteError && error.category === 'not_found') {
       return null;
     }
-    throw createRepositoryQueryError('task', error, { taskId, projectId });
+    throw error;
   }
-  if (!data) {
-    return null;
-  }
-  if (!isTaskDbRow(data)) {
-    throw createInvalidRowShapeError('task', { taskId, projectId });
-  }
-
-  return mapTaskDbRowToTask(data);
 }

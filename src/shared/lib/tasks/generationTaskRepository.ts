@@ -1,23 +1,7 @@
-import {
-  getSupabaseClientResult,
-} from '@/integrations/supabase/client';
+import { AstridLocalClient } from '@/integrations/astrid/client';
+import { BridgeRouteError } from '@/integrations/astrid/transport';
+import { getProjectSelectionFallbackId } from '@/shared/contexts/projectSelectionStore';
 import { isUuid } from '@/shared/lib/uuid';
-import { parseGenerationTaskId } from '@/shared/lib/tasks/generationTaskIdParser';
-
-type GetSupabaseClientResult = typeof getSupabaseClientResult;
-
-const POSTGREST_NO_ROWS_CODE = 'PGRST116';
-
-function isNoRowsPostgrestError(error: unknown): boolean {
-  if (!error || typeof error !== 'object') {
-    return false;
-  }
-  const candidate = error as { code?: unknown; message?: unknown };
-  if (candidate.code === POSTGREST_NO_ROWS_CODE) {
-    return true;
-  }
-  return typeof candidate.message === 'string' && /0 rows/i.test(candidate.message);
-}
 
 export type GenerationTaskMappingStatus =
   | 'ok'
@@ -72,168 +56,63 @@ interface VariantProjectScopeResolution {
 
 interface GenerationTaskRepositoryOptions {
   projectId?: string;
-  getSupabaseClientResult?: GetSupabaseClientResult;
+}
+
+function scopeFor(expectedProjectId?: string): string | null {
+  return expectedProjectId ?? getProjectSelectionFallbackId();
+}
+
+function isMissing(error: unknown): boolean {
+  return error instanceof BridgeRouteError && error.status === 404;
 }
 
 export async function resolveGenerationProjectScope(
   generationId: string,
   expectedProjectId?: string,
-  getClientResult: GetSupabaseClientResult = getSupabaseClientResult,
 ): Promise<GenerationProjectScopeResolution> {
-  const supabaseResult = getClientResult();
-  if (!supabaseResult.ok) {
-    return {
-      generationId,
-      projectId: null,
-      status: 'query_failed',
-      queryError: supabaseResult.error.message,
-    };
-  }
-
-  const supabase = supabaseResult.client;
-  const { data, error } = await supabase
-    .from('generations')
-    .select('id, project_id')
-    .eq('id', generationId)
-    .maybeSingle();
-
-  if (error) {
-    if (isNoRowsPostgrestError(error)) {
-      return {
-        generationId,
-        projectId: null,
-        status: 'missing_generation',
-      };
+  const projectId = scopeFor(expectedProjectId);
+  if (!projectId) return { generationId, projectId: null, status: 'missing_project_scope' };
+  try {
+    const detail = await new AstridLocalClient({ projectSlug: projectId }).gallery.get(generationId);
+    if (detail.project_id !== projectId) {
+      return { generationId, projectId: detail.project_id, status: 'scope_mismatch' };
     }
-    return {
-      generationId,
-      projectId: null,
-      status: 'query_failed',
-      queryError: error.message,
-    };
+    return { generationId, projectId: detail.project_id, status: 'ok' };
+  } catch (error) {
+    return isMissing(error)
+      ? { generationId, projectId: null, status: 'missing_generation' }
+      : { generationId, projectId: null, status: 'query_failed', queryError: error instanceof Error ? error.message : String(error) };
   }
-
-  if (!data) {
-    return {
-      generationId,
-      projectId: null,
-      status: 'missing_generation',
-    };
-  }
-
-  if (expectedProjectId && data.project_id !== expectedProjectId) {
-    return {
-      generationId,
-      projectId: data.project_id ?? null,
-      status: 'scope_mismatch',
-    };
-  }
-
-  if (!data.project_id) {
-    return {
-      generationId,
-      projectId: null,
-      status: 'missing_project_scope',
-    };
-  }
-
-  return {
-    generationId,
-    projectId: data.project_id,
-    status: 'ok',
-  };
 }
 
 export async function resolveVariantProjectScope(
   variantId: string,
   expectedProjectId?: string,
-  getClientResult: GetSupabaseClientResult = getSupabaseClientResult,
 ): Promise<VariantProjectScopeResolution> {
-  const supabaseResult = getClientResult();
-  if (!supabaseResult.ok) {
-    return {
-      variantId,
-      generationId: null,
-      projectId: null,
-      status: 'query_failed',
-      queryError: supabaseResult.error.message,
-    };
+  const projectId = scopeFor(expectedProjectId);
+  if (!projectId) return { variantId, generationId: null, projectId: null, status: 'missing_project_scope' };
+  const client = new AstridLocalClient({ projectSlug: projectId });
+  try {
+    let cursor: string | undefined;
+    do {
+      const page = await client.gallery.list({ limit: 200, cursor });
+      for (const summary of page.generations) {
+        const detail = await client.gallery.get(summary.generation_id);
+        if (detail.variants.some((variant) => variant.id === variantId)) {
+          return {
+            variantId,
+            generationId: detail.generation_id,
+            projectId: detail.project_id,
+            status: detail.project_id === projectId ? 'ok' : 'scope_mismatch',
+          };
+        }
+      }
+      cursor = page.next_cursor ?? undefined;
+    } while (cursor);
+    return { variantId, generationId: null, projectId, status: 'missing_variant' };
+  } catch (error) {
+    return { variantId, generationId: null, projectId, status: 'query_failed', queryError: error instanceof Error ? error.message : String(error) };
   }
-
-  const supabase = supabaseResult.client;
-  const { data, error } = await supabase
-    .from('generation_variants')
-    .select('id, generation_id, project_id')
-    .eq('id', variantId)
-    .maybeSingle();
-
-  if (error) {
-    if (isNoRowsPostgrestError(error)) {
-      return {
-        variantId,
-        generationId: null,
-        projectId: null,
-        status: 'missing_variant',
-      };
-    }
-    return {
-      variantId,
-      generationId: null,
-      projectId: null,
-      status: 'query_failed',
-      queryError: error.message,
-    };
-  }
-
-  if (!data) {
-    return {
-      variantId,
-      generationId: null,
-      projectId: null,
-      status: 'missing_variant',
-    };
-  }
-
-  if (!data.generation_id) {
-    return {
-      variantId,
-      generationId: null,
-      projectId: data.project_id ?? null,
-      status: 'missing_generation',
-    };
-  }
-
-  if (expectedProjectId && data.project_id && data.project_id !== expectedProjectId) {
-    return {
-      variantId,
-      generationId: data.generation_id,
-      projectId: data.project_id,
-      status: 'scope_mismatch',
-    };
-  }
-
-  const generationScope = await resolveGenerationProjectScope(
-    data.generation_id,
-    expectedProjectId,
-    getClientResult,
-  );
-
-  if (generationScope.status !== 'ok') {
-    return {
-      variantId,
-      generationId: data.generation_id,
-      projectId: generationScope.projectId,
-      status: generationScope.status,
-      queryError: generationScope.queryError,
-    };
-  }
-
-  return {
-    variantId,
-    generationId: data.generation_id,
-    projectId: generationScope.projectId,
-    status: 'ok',
-  };
 }
 
 export async function resolveGenerationTaskMapping(
@@ -241,103 +120,37 @@ export async function resolveGenerationTaskMapping(
   options?: GenerationTaskRepositoryOptions,
 ): Promise<GenerationTaskMapping> {
   const mappings = await resolveGenerationTaskMappings([generationId], options);
-  return mappings.get(generationId) ?? {
-    generationId,
-    taskId: null,
-    status: 'missing_generation',
-  };
+  return mappings.get(generationId) ?? { generationId, taskId: null, status: 'missing_generation' };
 }
 
 export async function resolveGenerationTaskMappings(
   generationIds: string[],
   options?: GenerationTaskRepositoryOptions,
 ): Promise<Map<string, GenerationTaskMapping>> {
-  if (generationIds.length === 0) {
-    return new Map();
-  }
-
   const requestedIds = Array.from(new Set(generationIds));
   const mappings = new Map<string, GenerationTaskMapping>();
-  const persistedIds = requestedIds.filter((generationId) => isUuid(generationId));
+  const projectId = scopeFor(options?.projectId);
 
-  requestedIds
-    .filter((generationId) => !isUuid(generationId))
-    .forEach((generationId) => {
-      mappings.set(generationId, {
-        generationId,
-        taskId: null,
-        status: 'not_loaded',
-      });
-    });
-
-  if (persistedIds.length === 0) {
-    return mappings;
-  }
-
-  const supabaseResult = (options?.getSupabaseClientResult ?? getSupabaseClientResult)();
-  if (!supabaseResult.ok) {
-    persistedIds.forEach((generationId) => {
-      mappings.set(generationId, {
-        generationId,
-        taskId: null,
-        status: 'query_failed',
-        queryError: supabaseResult.error.message,
-      });
-    });
-    return mappings;
-  }
-
-  const supabase = supabaseResult.client;
-  const query = supabase
-    .from('generations')
-    .select('id, tasks, project_id')
-    .in('id', persistedIds);
-
-  const { data, error } = await query;
-
-  if (error) {
-    persistedIds.forEach((generationId) => {
-      mappings.set(generationId, {
-        generationId,
-        taskId: null,
-        status: 'query_failed',
-        queryError: error.message,
-      });
-    });
-    return mappings;
-  }
-
-  const rowsById = new Map((data || []).map((row) => [row.id, row]));
-
-  for (const generationId of persistedIds) {
-    const row = rowsById.get(generationId);
-
-    if (!row) {
-      mappings.set(generationId, {
-        generationId,
-        taskId: null,
-        status: 'missing_generation',
-      });
+  for (const generationId of requestedIds) {
+    if (!isUuid(generationId)) {
+      mappings.set(generationId, { generationId, taskId: null, status: 'not_loaded' });
       continue;
     }
-
-    if (options?.projectId && row.project_id !== options.projectId) {
-      mappings.set(generationId, {
-        generationId,
-        taskId: null,
-        status: 'scope_mismatch',
-      });
+    if (!projectId) {
+      mappings.set(generationId, { generationId, taskId: null, status: 'query_failed', queryError: 'No Astrid project is selected.' });
       continue;
     }
-
-    const parsed = parseGenerationTaskId(row.tasks);
-    mappings.set(generationId, {
-      generationId,
-      taskId: parsed.taskId,
-      status: parsed.status,
-    });
+    try {
+      const detail = await new AstridLocalClient({ projectSlug: projectId }).gallery.get(generationId);
+      mappings.set(generationId, detail.project_id !== projectId
+        ? { generationId, taskId: null, status: 'scope_mismatch' }
+        : { generationId, taskId: detail.task_id ?? null, status: 'ok' });
+    } catch (error) {
+      mappings.set(generationId, isMissing(error)
+        ? { generationId, taskId: null, status: 'missing_generation' }
+        : { generationId, taskId: null, status: 'query_failed', queryError: error instanceof Error ? error.message : String(error) });
+    }
   }
-
   return mappings;
 }
 

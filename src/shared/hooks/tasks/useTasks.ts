@@ -1,24 +1,16 @@
-import { useEffect } from 'react';
-import { keepPreviousData, useQuery, useQueryClient, type QueryClient, type UseQueryOptions } from '@tanstack/react-query';
+import { useEffect, useMemo } from 'react';
+import { useQuery, useQueryClient, type QueryClient, type UseQueryOptions } from '@tanstack/react-query';
 import { Task, TaskStatus } from '@/types/tasks';
-import { getSupabaseClientResult } from '@/integrations/supabase/client';
 import { getVisibleTaskTypes } from '@/shared/lib/tasks/taskConfig';
-import { normalizeAndPresentAndRethrow } from '@/shared/lib/errorHandling/runtimeError';
-// Removed invalidationRouter - DataFreshnessManager handles all invalidation logic
-import { useSmartPollingConfig } from '@/shared/hooks/useSmartPolling';
-import { QUERY_PRESETS, STANDARD_RETRY, STANDARD_RETRY_DELAY } from '@/shared/lib/query/queryDefaults';
+import { QUERY_PRESETS } from '@/shared/lib/query/queryDefaults';
 import { taskQueryKeys } from '@/shared/lib/queryKeys/tasks';
 import { useProcessingRefetchGuard } from '@/shared/hooks/tasks/useProcessingRefetchGuard';
+import { fetchTaskInProject } from '@/integrations/supabase/repositories/taskRepository';
 import {
-  notifyPaginatedTaskFetchFailure,
-  notifyPaginatedTaskFetchSuccess,
-} from '@/shared/realtime/dataFreshness/taskFetchFreshness';
-import {
-  fetchPaginatedTasks,
-  mapDbTaskToTask,
-  type PaginatedTaskQuery,
   type PaginatedTasksResponse as RepositoryPaginatedTasksResponse,
 } from '@/shared/hooks/tasks/paginatedTaskRepository';
+import { paginateTaskSnapshot } from '@/shared/hooks/tasks/paginatedTaskRepository';
+import { useBridgeTaskSnapshot } from '@/shared/hooks/tasks/useBridgeTaskSnapshot';
 import { resolveTaskProjectScope } from '@/shared/lib/tasks/resolveTaskProjectScope';
 import {
   getRealtimeTaskSnapshot,
@@ -40,27 +32,6 @@ interface PaginatedTasksParams {
 }
 
 export type PaginatedTasksResponse = RepositoryPaginatedTasksResponse;
-function createPaginatedTasksQueryFn(filters: PaginatedTaskQuery, cacheProjectKey: string) {
-  return async (): Promise<PaginatedTasksResponse> => {
-    try {
-      const result = await fetchPaginatedTasks(filters);
-      notifyPaginatedTaskFetchSuccess(cacheProjectKey);
-      return result;
-    } catch (error) {
-      notifyPaginatedTaskFetchFailure(cacheProjectKey, error);
-      normalizeAndPresentAndRethrow(error, {
-        context: 'useTasks.fetchPaginatedTasks',
-        showToast: false,
-        logData: { cacheProjectKey },
-      });
-    }
-  };
-}
-
-// Helper to convert DB row (snake_case) to Task interface (camelCase)
-// Exported for use in prefetch utilities
-export { mapDbTaskToTask };
-
 function seedTaskSnapshot(task: Task | null | undefined, projectId?: string | null): Task | null | undefined {
   if (!task) {
     return task;
@@ -71,35 +42,12 @@ function seedTaskSnapshot(task: Task | null | undefined, projectId?: string | nu
 
 async function fetchSingleTask(taskId: string, projectId?: string | null): Promise<Task | null> {
   const effectiveProjectId = resolveTaskProjectScope(projectId);
-  const supabaseResult = getSupabaseClientResult();
-  if (!supabaseResult.ok) {
-    normalizeAndPresentAndRethrow(supabaseResult.error, {
-      context: 'useTasks.useGetTask',
-      showToast: false,
-      logData: { taskId, projectId: effectiveProjectId },
-    });
-  }
-
-  const { data, error } = await supabaseResult.client
-    .from('tasks')
-    .select('*')
-    .eq('id', taskId)
-    .eq('project_id', effectiveProjectId!)
-    .maybeSingle();
-
-  if (error) {
-    normalizeAndPresentAndRethrow(error, {
-      context: 'useTasks.useGetTask',
-      showToast: false,
-      logData: { taskId, projectId: effectiveProjectId },
-    });
-  }
-
-  if (!data) {
+  if (!taskId || !effectiveProjectId) {
     return null;
   }
 
-  return seedTaskSnapshot(mapDbTaskToTask(data), effectiveProjectId) ?? null;
+  const task = await fetchTaskInProject(taskId, effectiveProjectId);
+  return seedTaskSnapshot(task, effectiveProjectId) ?? null;
 }
 
 export function getCachedTaskSnapshot(
@@ -173,16 +121,17 @@ export const useGetTask = (taskId: string, projectId?: string | null) => {
 // Hook to list tasks with pagination - GALLERY PATTERN
 export const usePaginatedTasks = (params: PaginatedTasksParams) => {
   const { projectId, status, limit = 50, offset = 0, taskType, allProjects, allProjectIds } = params;
-  const page = Math.floor(offset / limit) + 1;
   const effectiveProjectId: string | null = projectId ?? null;
-  const cacheProjectKey = allProjects ? 'all' : effectiveProjectId;
-  const safeCacheProjectKey = cacheProjectKey ?? '__no-project__';
+  const projectIds = allProjects
+    ? [...new Set(allProjectIds ?? [])].sort()
+    : (effectiveProjectId ? [effectiveProjectId] : []);
   const visibleTaskTypes = getVisibleTaskTypes();
-  const smartPollingConfig = useSmartPollingConfig(taskQueryKeys.paginated(safeCacheProjectKey));
+  const snapshotQuery = useBridgeTaskSnapshot(projectIds);
+  const page = Math.floor(offset / limit) + 1;
 
-  const query = useQuery<PaginatedTasksResponse, Error>({
-    queryKey: [...taskQueryKeys.paginated(safeCacheProjectKey), page, limit, status, taskType],
-    queryFn: createPaginatedTasksQueryFn({
+  const paginatedData = useMemo(() => {
+    if (!snapshotQuery.data) return undefined;
+    return paginateTaskSnapshot(snapshotQuery.data, {
       allProjects,
       allProjectIds,
       effectiveProjectId,
@@ -192,15 +141,13 @@ export const usePaginatedTasks = (params: PaginatedTasksParams) => {
       limit,
       offset,
       page,
-    }, safeCacheProjectKey),
-    enabled: allProjects ? !!allProjectIds?.length : !!effectiveProjectId,
-    placeholderData: keepPreviousData,
-    ...QUERY_PRESETS.realtimeBacked,
-    ...smartPollingConfig,
-    refetchIntervalInBackground: true,
-    retry: STANDARD_RETRY,
-    retryDelay: STANDARD_RETRY_DELAY,
-  });
+    });
+  }, [allProjects, allProjectIds, effectiveProjectId, limit, offset, page, snapshotQuery.data, status, taskType, visibleTaskTypes]);
+
+  const query = {
+    ...snapshotQuery,
+    data: paginatedData,
+  };
 
   useProcessingRefetchGuard(status, query);
 

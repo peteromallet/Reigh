@@ -14,6 +14,9 @@ import {
   resolveAstridBridgeProxyPolicy,
 } from "./astridBridgeProxy";
 import { createBundleBudgetPlugin } from "./bundleBudget";
+import { createRemoteFontModePlugin } from "./remoteFonts";
+
+export { createRemoteFontModePlugin, stripRemoteFontLinks } from "./remoteFonts";
 
 const logger = createLogger();
 const originalWarn = logger.warn.bind(logger);
@@ -32,7 +35,7 @@ export default defineConfig(() => {
       astridBridgeProxyPolicy,
       astridBridgePort,
     ),
-  };
+  const disableRemoteFonts = process.env.VITE_DISABLE_REMOTE_FONTS === "1";
   const generatedRegistryPath = path.resolve(
     __dirname,
     "../../node_modules/@banodoco/timeline-composition/typescript/src/registry.generated.ts",
@@ -78,6 +81,7 @@ export default defineConfig(() => {
     },
     plugins: [
       astridBridgeAuthPlugin,
+      createRemoteFontModePlugin(disableRemoteFonts),
       react(),
       createBundleBudgetPlugin(),
     ].filter(Boolean),

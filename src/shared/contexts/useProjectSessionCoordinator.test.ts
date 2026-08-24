@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { renderHook } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useProjectSessionCoordinator } from './useProjectSessionCoordinator';
 
 const mocks = vi.hoisted(() => ({
@@ -35,6 +35,11 @@ vi.mock('../hooks/projects/useProjectDefaults', () => ({
 describe('useProjectSessionCoordinator', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.history.replaceState({}, '', '/');
+  });
+
+  afterEach(() => {
+    window.history.replaceState({}, '', '/');
   });
 
   it('wires auth, selection, crud, and defaults hooks into one coordinator model', () => {
@@ -124,6 +129,37 @@ describe('useProjectSessionCoordinator', () => {
     expect(mocks.useProjectDefaults).toHaveBeenCalledWith(
       expect.objectContaining({ userId: null, selectedProjectId: null }),
     );
+    expect(result.current.userId).toBeNull();
+  });
+
+  it('does not expose the bridge identity to cloud project orchestration in local mode', () => {
+    window.history.replaceState({}, '', '/tools/video-editor?localProject=demo-project&localTimeline=demo-timeline');
+    const selection = {
+      selectedProjectId: null,
+      handleProjectsLoaded: vi.fn(),
+      handleProjectCreated: vi.fn(),
+      handleProjectDeleted: vi.fn(),
+      applyCrossDeviceSync: vi.fn(),
+    };
+    const crud = {
+      projects: [],
+      isLoadingProjects: false,
+      fetchProjects: vi.fn(),
+    };
+    mocks.useAuth.mockReturnValue({ userId: 'astrid-local-user' });
+    mocks.useUserSettings.mockReturnValue({
+      userSettings: undefined,
+      isLoadingSettings: false,
+      updateUserSettings: vi.fn(),
+    });
+    mocks.useProjectSelection.mockReturnValue(selection);
+    mocks.useProjectCRUD.mockReturnValue(crud);
+
+    const { result } = renderHook(() => useProjectSessionCoordinator());
+
+    expect(mocks.useProjectSelection).toHaveBeenCalledWith(expect.objectContaining({ userId: null }));
+    expect(mocks.useProjectCRUD).toHaveBeenCalledWith(expect.objectContaining({ userId: null }));
+    expect(mocks.useProjectDefaults).toHaveBeenCalledWith(expect.objectContaining({ userId: null }));
     expect(result.current.userId).toBeNull();
   });
 });

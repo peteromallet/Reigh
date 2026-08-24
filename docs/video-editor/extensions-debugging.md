@@ -209,7 +209,7 @@ When a project references an extension that is not currently active, the export 
 
 **Debugging notes:**
 - `onUpload()` throws `AstridBridgeReadOnlyError` — asset uploads through `uploadAsset` are not supported.
-- No server-side CAS — concurrent writes from different bridge instances silently overwrite. The bridge increments its local version but does not compare against a remote head.
+- Server-side CAS is enforced by `POST /save` `expected_version`; stale writes return `409 timeline_version_conflict`. Browser File System Access handles asset bytes only and cannot bypass this document writer.
 - `saveCheckpoint` returns a synthetic ID; `loadCheckpoints` returns `[]`.
 - `loadWaveform` and `loadAssetProfile` return `null`.
 - If the bridge process is not running on `127.0.0.1:17333`, all fetch-based operations fail.

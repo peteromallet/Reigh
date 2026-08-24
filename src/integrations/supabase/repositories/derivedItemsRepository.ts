@@ -1,6 +1,8 @@
-import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
-import { calculateDerivedCountsSafe } from '@/shared/lib/generationTransformers';
-import { expandShotData } from '@/shared/lib/shots/shotData';
+import { AstridLocalClient } from '@/integrations/astrid/client';
+import { BridgeRouteError } from '@/integrations/astrid/transport';
+import type { BridgeGenerationDetailPayload } from '@/tools/video-editor/data/bridgeContract';
+import { getProjectSelectionFallbackId } from '@/shared/contexts/projectSelectionStore';
+import { bridgeMediaUrl } from '@/shared/lib/media/bridgeMediaUrl';
 import { EDIT_VARIANT_TYPES } from '@/shared/constants/variantTypes';
 
 export interface DerivedItem {
@@ -21,13 +23,6 @@ export interface DerivedItem {
   all_shot_associations?: Array<{ shot_id: string; timeline_frame: number | null; position: number | null }>;
 }
 
-function timelineFrameToPositionBucket(timelineFrame: number | null | undefined): number | null {
-  if (timelineFrame === null || timelineFrame === undefined) {
-    return null;
-  }
-  return Math.floor(timelineFrame / 50);
-}
-
 function normalizePrompt(params: unknown): string | undefined {
   const record = params as Record<string, unknown> | null;
   if (!record) {
@@ -43,22 +38,16 @@ function normalizePrompt(params: unknown): string | undefined {
   return typeof orchestratorDetails?.prompt === 'string' ? orchestratorDetails.prompt : undefined;
 }
 
-function throwDerivedItemsRepositoryError(error: unknown, fallbackMessage: string): never {
-  if (error instanceof Error) {
-    throw error;
-  }
-  if (
-    error
-    && typeof error === 'object'
-    && 'message' in error
-    && typeof (error as { message?: unknown }).message === 'string'
-  ) {
-    throw new Error((error as { message: string }).message);
-  }
-
-  throw new Error(fallbackMessage);
-}
-
+/**
+ * Derived items for one source generation, re-sourced onto the bridge
+ * generation-detail read (R13). The detail payload carries the full variant
+ * list; edit variants become derived items whose display URLs are same-origin
+ * R9 content routes.
+ *
+ * Child generations (rows with `based_on` = this generation) have no listing
+ * route in the doc-27 §4.1 v1 set — that half of the surface is dispositioned
+ * `defer` in docs/cutover-inventory.md.
+ */
 export async function fetchDerivedItemsFromRepository(
   sourceGenerationId: string | null,
 ): Promise<DerivedItem[]> {
@@ -66,89 +55,44 @@ export async function fetchDerivedItemsFromRepository(
     return [];
   }
 
-  const [generationsResult, variantsResult] = await Promise.all([
-    supabase().from('generations')
-      .select(`
-        id,
-        location,
-        thumbnail_url,
-        type,
-        created_at,
-        params,
-        starred,
-        tasks,
-        based_on,
-        shot_data
-      `)
-      .eq('based_on', sourceGenerationId)
-      .order('starred', { ascending: false, nullsFirst: false })
-      .order('created_at', { ascending: false }),
-    supabase().from('generation_variants')
-      .select('id, location, thumbnail_url, created_at, variant_type, name, params, is_primary, viewed_at')
-      .eq('generation_id', sourceGenerationId)
-      .in('variant_type', EDIT_VARIANT_TYPES)
-      .eq('is_primary', false)
-      .order('created_at', { ascending: false }),
-  ]);
-
-  if (generationsResult.error) {
-    throwDerivedItemsRepositoryError(generationsResult.error, 'Failed to load derived generations');
-  }
-  if (variantsResult.error) {
-    throwDerivedItemsRepositoryError(variantsResult.error, 'Failed to load derived variants');
+  const projectSlug = getProjectSelectionFallbackId();
+  if (!projectSlug) {
+    return [];
   }
 
-  const childGenerations = generationsResult.data || [];
-  const editVariants = variantsResult.data || [];
+  let detail: BridgeGenerationDetailPayload['generation'];
+  try {
+    detail = await new AstridLocalClient({ projectSlug }).gallery.get(sourceGenerationId);
+  } catch (error) {
+    if (error instanceof BridgeRouteError && error.status === 404) {
+      return [];
+    }
+    throw error;
+  }
 
-  const generationIds = childGenerations.map((row) => row.id);
-  const { derivedCounts } = await calculateDerivedCountsSafe(generationIds);
+  const variantItems: DerivedItem[] = detail.variants
+    .filter((variant) =>
+      !variant.is_primary
+      && variant.variant_type !== null
+      && variant.variant_type !== undefined
+      && EDIT_VARIANT_TYPES.includes(variant.variant_type as never))
+    .map((variant) => ({
+      id: variant.id,
+      // R9 serves the managed bytes; there is no separate thumbnail media on
+      // the wire, so the content route doubles as the thumbnail address.
+      thumbUrl: bridgeMediaUrl(projectSlug, variant.media_id),
+      url: bridgeMediaUrl(projectSlug, variant.media_id),
+      createdAt: variant.created_at,
+      derivedCount: 0,
+      starred: false,
+      prompt: normalizePrompt(variant.params),
+      itemType: 'variant',
+      variantType: variant.variant_type ?? null,
+      variantName: variant.name ?? null,
+      viewedAt: variant.viewed_at ?? null,
+    }));
 
-  const generationItems: DerivedItem[] = childGenerations.map((item) => {
-    const shotGenerations = expandShotData(
-      (item as { shot_data?: Record<string, unknown> | null }).shot_data,
-    );
-    const allAssociations = shotGenerations.length > 1
-      ? shotGenerations.map((sg) => ({
-          shot_id: sg.shot_id,
-          timeline_frame: sg.timeline_frame,
-          position: timelineFrameToPositionBucket(sg.timeline_frame),
-        }))
-      : undefined;
-
-    const primaryShot = shotGenerations[0];
-
-    return {
-      id: item.id,
-      thumbUrl: item.thumbnail_url || item.location,
-      url: item.location,
-      createdAt: item.created_at,
-      derivedCount: derivedCounts[item.id] || 0,
-      starred: item.starred || false,
-      prompt: normalizePrompt(item.params),
-      itemType: 'generation',
-      basedOn: item.based_on,
-      shot_id: primaryShot?.shot_id,
-      timeline_frame: primaryShot?.timeline_frame,
-      all_shot_associations: allAssociations,
-    };
-  });
-
-  const variantItems: DerivedItem[] = editVariants.map((variant) => ({
-    id: variant.id,
-    thumbUrl: variant.thumbnail_url || variant.location,
-    url: variant.location,
-    createdAt: variant.created_at,
-    derivedCount: 0,
-    starred: false,
-    prompt: normalizePrompt(variant.params),
-    itemType: 'variant',
-    variantType: variant.variant_type,
-    variantName: variant.name,
-    viewedAt: variant.viewed_at,
-  }));
-
-  return [...generationItems, ...variantItems].sort((a, b) => {
+  return [...variantItems].sort((a, b) => {
     if (a.starred && !b.starred) return -1;
     if (!a.starred && b.starred) return 1;
     return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();

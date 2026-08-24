@@ -45,7 +45,7 @@ function ScrollToTop() {
 }
 
 export const Layout: React.FC = () => {
-  const { isVideoEditorShellActive, isLocalModeSession } = useVideoEditorRouteState();
+  const { isVideoEditorShellActive } = useVideoEditorRouteState();
   const isTasksPaneLocked = usePanesStore((state) => state.isTasksPaneLocked);
   const tasksPaneWidth = usePanesStore((state) => state.tasksPaneWidth);
   const isShotsPaneLocked = usePanesStore((state) => state.isShotsPaneLocked);
@@ -79,17 +79,15 @@ export const Layout: React.FC = () => {
 
   // Redirect unauthenticated users to home page
   // Use /home instead of / to avoid redirect loops in non-WEB environments
-  // where / is inside Layout
+  // where / is inside Layout.
   //
-  // DEV-only exemption: local mode (`?localProject`/`?localTimeline`) renders
-  // without any session — it reads timelines from the Astrid bridge and needs
-  // no login. The params ride along on any route (Back, tool switches), so the
-  // whole app shell works sessionless: the app-wide providers no-op on a
-  // missing userId and nothing fetches against a backend. This exemption is
-  // what makes `npm run dev:editor` work without a fake Supabase session. In
-  // production the branch is dead (`import.meta.env.DEV` is statically `false`).
-  const isAuthenticatedForRoute = isAuthenticated || isLocalModeSession;
-  if (!isAuthenticatedForRoute) {
+  // Auth is decided by the bridge probe alone (`useAuth`): a healthy
+  // `/api/astrid` resolves the fixed local user, so this gate passes on the
+  // probe and never depends on URL params or stored credentials. When the
+  // probe fails the user is sent to the public home page — one hop, no loop:
+  // `/` outside Layout does not re-enter this gate (and in WEB env `/` is
+  // `HomeWithAuthRedirect`, which renders HomePage directly).
+  if (!isAuthenticated) {
     return <Navigate to="/home" replace state={{ fromProtected: true }} />;
   }
 

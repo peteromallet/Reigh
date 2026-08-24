@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
@@ -61,6 +61,11 @@ describe('useApiKeys', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSingle.mockResolvedValue({ data: { api_keys: mockApiKeys }, error: null });
+    window.history.replaceState({}, '', '/');
+  });
+
+  afterEach(() => {
+    window.history.replaceState({}, '', '/');
   });
 
   it('fetches API keys on mount', async () => {
@@ -97,6 +102,20 @@ describe('useApiKeys', () => {
   it('defaults apiKeys to empty object before load', () => {
     const { result } = renderHook(() => useApiKeys(), { wrapper: createWrapper() });
     expect(result.current.apiKeys).toEqual({});
+  });
+
+  it('does not load API keys in local Astrid editor mode', async () => {
+    window.history.replaceState({}, '', '/tools/video-editor?localProject=demo-project&localTimeline=demo-timeline');
+
+    const { result } = renderHook(() => useApiKeys(), { wrapper: createWrapper() });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    expect(result.current.apiKeys).toEqual({});
+    expect(mockRequireUserFromSession).not.toHaveBeenCalled();
+    expect(mockSingle).not.toHaveBeenCalled();
   });
 
   it('starts with isLoading true', () => {

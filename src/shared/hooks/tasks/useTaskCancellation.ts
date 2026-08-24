@@ -1,74 +1,81 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { requireSession } from '@/integrations/supabase/auth/ensureAuthenticatedSession';
-import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
-import { invokeSupabaseEdgeFunction } from '@/integrations/supabase/functions/invokeSupabaseEdgeFunction';
 import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
 import { taskQueryKeys } from '@/shared/lib/queryKeys/tasks';
+import { getBridgeTaskClient } from '@/integrations/astrid/bridgeTaskReads';
+import { BridgeRouteError } from '@/integrations/astrid/transport';
 
-async function updateTaskStatusToCancelled(taskId: string, accessToken: string): Promise<void> {
-  await invokeSupabaseEdgeFunction('update-task-status', {
-    body: {
-      task_id: taskId,
-      status: 'Cancelled',
-    },
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-    timeoutMs: 20000,
+/**
+ * Cancel one task through the frozen `POST …/tasks/:task_id/cancel` route.
+ * A running task requires the live attempt fence: the first unfenced cancel
+ * answers 409 with (or we recover it via) the current attempt read, and the
+ * fenced retry commits. Cancelling an already-terminal task replays its
+ * state without error.
+ */
+export async function cancelBridgeTask(projectSlug: string, taskId: string): Promise<void> {
+  const client = getBridgeTaskClient(projectSlug);
+  try {
+    await client.tasks.cancel(taskId);
+    return;
+  } catch (error) {
+    if (!(error instanceof BridgeRouteError) || error.status !== 409) {
+      throw error;
+    }
+  }
+
+  const detail = await client.tasks.get(taskId);
+  const liveAttempt = (detail.attempts ?? []).find((attempt) => attempt.status === 'running');
+  if (!liveAttempt) {
+    throw new Error(`Cannot cancel running task ${taskId}: no live attempt to fence with`);
+  }
+
+  await client.tasks.cancel(taskId, {
+    attempt_id: liveAttempt.attempt_id,
+    lease_id: liveAttempt.lease_id,
+    status_version: liveAttempt.status_version,
   });
 }
 
-/**
- * Cancel a task via the audited task-status edge path.
- * For orchestrator tasks (travel_orchestrator, join_clips_orchestrator, etc.), also cancels all subtasks
- */
-async function cancelTask(taskId: string): Promise<void> {
-  // First, get the task to check if it's an orchestrator
-  const { data: task, error: fetchError } = await supabase().from('tasks')
-    .select('*')
-    .eq('id', taskId)
-    .single();
 
-  if (fetchError) {
-    throw new Error(`Failed to fetch task: ${fetchError.message}`);
-  }
+async function cancelTask(projectId: string | null | undefined, taskId: string): Promise<void> {
+  const client = getBridgeTaskClient(projectId ?? '');
 
+  const summary = await client.tasks.get(taskId);
   // Already in a terminal state — treat as a no-op success
-  if (task.status !== 'Queued' && task.status !== 'In Progress') {
+  if (summary.status !== 'queued' && summary.status !== 'running') {
     return;
   }
 
-  const session = await requireSession(supabase(), 'useCancelTask.cancelTask');
-  await updateTaskStatusToCancelled(taskId, session.access_token);
+  await cancelBridgeTask(projectId ?? '', taskId);
 
-  // If it's an orchestrator task, cancel all subtasks
-  if (task && task.task_type?.includes('orchestrator')) {
-    // Find all subtasks that reference this orchestrator
-    const { data: subtasks, error: subtaskFetchError } = await supabase().from('tasks')
-      .select('id, params')
-      .eq('project_id', task.project_id)
-      .in('status', ['Queued']);
-
-    if (!subtaskFetchError && subtasks) {
-      const subtaskIds = subtasks.filter(subtask => {
-        const params = subtask.params as Record<string, unknown> | null;
-        return params?.orchestrator_task_id_ref === taskId ||
-               params?.orchestrator_task_id === taskId;
-      }).map(subtask => subtask.id);
-
-      if (subtaskIds.length > 0) {
-        await Promise.allSettled(subtaskIds.map((id) => updateTaskStatusToCancelled(id, session.access_token)));
-      }
-    }
+  if (!orchestratorTaskType(summary).includes('orchestrator')) {
+    return;
   }
+
+
+
+  // Find all queued subtasks that reference this orchestrator
+  const page = await client.tasks.list();
+  const subtasks = page.tasks.filter((task) => {
+    if (task.status !== 'queued') {
+      return false;
+    }
+    const params = task.spec?.params ?? {};
+    return params.orchestrator_task_id_ref === taskId || params.orchestrator_task_id === taskId;
+  });
+
+  await Promise.allSettled(subtasks.map((subtask) => cancelBridgeTask(projectId ?? '', subtask.task_id)));
 }
 
-// Hook to cancel a task using Supabase
-export const useCancelTask = (_projectId: string | null) => {
+/** The app-facing task type of a bridge summary (mirrors bridgeTaskReads). */
+function orchestratorTaskType(summary: { spec?: { family?: string; source_task_type?: string }; capability: string }): string {
+  return summary.spec?.family ?? summary.spec?.source_task_type ?? summary.capability;
+}
+
+export const useCancelTask = (projectId: string | null) => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: cancelTask,
+    mutationFn: (taskId: string) => cancelTask(projectId, taskId),
     onSuccess: () => {
       // Immediately invalidate tasks queries so cancelled task disappears
       queryClient.invalidateQueries({ queryKey: taskQueryKeys.paginatedAll });
@@ -93,49 +100,40 @@ interface CancelAllPendingTasksResponse {
 }
 
 /**
- * Cancel all pending tasks for a project via the audited task-status edge path.
- * For orchestrator tasks (travel_orchestrator, join_clips_orchestrator, etc.), also cancels their subtasks
+ * Cancel all pending tasks for a project. For orchestrator tasks, also
+ * cancels their subtasks.
  */
 async function cancelPendingTasks(projectId: string): Promise<CancelAllPendingTasksResponse> {
-  // Get all pending tasks with type and params in a single query
-  const { data: pendingTasks, error: fetchError } = await supabase().from('tasks')
-    .select('id, task_type, params')
-    .eq('project_id', projectId)
-    .in('status', ['Queued']);
-
-  if (fetchError) {
-    throw new Error(`Failed to fetch pending tasks: ${fetchError.message}`);
-  }
+  const client = getBridgeTaskClient(projectId);
+  const page = await client.tasks.list();
+  const pendingTasks = page.tasks.filter((task) => task.status === 'queued');
 
   // Collect all task IDs to cancel (including subtasks)
   const tasksToCancel = new Set<string>();
 
   // Add all pending tasks
-  pendingTasks?.forEach(task => tasksToCancel.add(task.id));
+  pendingTasks.forEach((task) => tasksToCancel.add(task.task_id));
 
   // Find orchestrator tasks and their subtasks
   const orchestratorIds = pendingTasks
-    ?.filter(task => task.task_type?.includes('orchestrator'))
-    .map(task => task.id) || [];
+    .filter((task) => orchestratorTaskType(task).includes('orchestrator'))
+    .map((task) => task.task_id);
 
   if (orchestratorIds.length > 0) {
-    pendingTasks?.forEach(task => {
-      const params = task.params as Record<string, unknown> | null;
-      const orchestratorRef = params?.orchestrator_task_id_ref || params?.orchestrator_task_id;
+    pendingTasks.forEach((task) => {
+      const params = task.spec?.params ?? {};
+      const orchestratorRef = params.orchestrator_task_id_ref || params.orchestrator_task_id;
 
       if (typeof orchestratorRef === 'string' && orchestratorIds.includes(orchestratorRef)) {
-        tasksToCancel.add(task.id);
+        tasksToCancel.add(task.task_id);
       }
     });
   }
 
-  // Cancel all collected tasks
   const taskIdsArray = Array.from(tasksToCancel);
-
-  if (taskIdsArray.length > 0) {
-    const session = await requireSession(supabase(), 'useCancelPendingTasks.cancelPendingTasks');
-    await Promise.allSettled(taskIdsArray.map((taskId) => updateTaskStatusToCancelled(taskId, session.access_token)));
-  }
+  await Promise.allSettled(
+    taskIdsArray.map((taskId) => cancelBridgeTask(projectId, taskId)),
+  );
 
   return {
     cancelledCount: taskIdsArray.length,
@@ -143,7 +141,7 @@ async function cancelPendingTasks(projectId: string): Promise<CancelAllPendingTa
   };
 }
 
-// Hook to cancel pending tasks using Supabase
+// Hook to cancel pending tasks
 const useCancelPendingTasks = () => {
   const queryClient = useQueryClient();
 

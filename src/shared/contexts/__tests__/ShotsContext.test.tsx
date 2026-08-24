@@ -35,7 +35,8 @@ vi.mock('@/shared/hooks/shots', () => ({
   }),
 }));
 
-import { ShotsProvider, useShots } from '../ShotsContext';
+import { AstridShotsProvider, useShots } from '../ShotsContext';
+import { DeferredCloudShotsProvider } from '../DeferredCloudShotsProvider';
 
 // Test consumer component
 function ShotsConsumer() {
@@ -64,16 +65,16 @@ describe('ShotsContext', () => {
 
       expect(() => {
         render(<BadConsumer />);
-      }).toThrow('useShots must be used within a ShotsProvider');
+      }).toThrow('useShots must be used within a shots context provider');
     });
   });
 
-  describe('ShotsProvider', () => {
+  describe('DeferredCloudShotsProvider', () => {
     it('renders children', () => {
       render(
-        <ShotsProvider>
+        <DeferredCloudShotsProvider>
           <div data-testid="child">Hello</div>
-        </ShotsProvider>
+        </DeferredCloudShotsProvider>
       );
 
       expect(screen.getByTestId('child')).toHaveTextContent('Hello');
@@ -81,9 +82,9 @@ describe('ShotsContext', () => {
 
     it('provides shots data from hooks', () => {
       render(
-        <ShotsProvider>
+        <DeferredCloudShotsProvider>
           <ShotsConsumer />
-        </ShotsProvider>
+        </DeferredCloudShotsProvider>
       );
 
       expect(screen.getByTestId('shotCount')).toHaveTextContent('2');
@@ -103,13 +104,27 @@ describe('ShotsContext', () => {
       }
 
       render(
-        <ShotsProvider>
+        <DeferredCloudShotsProvider>
           <RefetchConsumer />
-        </ShotsProvider>
+        </DeferredCloudShotsProvider>
       );
 
       screen.getByTestId('refetch').click();
       expect(mockRefetch).toHaveBeenCalled();
+    });
+  });
+
+  describe('AstridShotsProvider', () => {
+    it('provides an empty compatibility view without executing cloud hooks', () => {
+      render(
+        <AstridShotsProvider>
+          <ShotsConsumer />
+        </AstridShotsProvider>,
+      );
+
+      expect(screen.getByTestId('shotCount')).toHaveTextContent('0');
+      expect(screen.getByTestId('isLoading')).toHaveTextContent('false');
+      expect(screen.getByTestId('allImagesCount')).toHaveTextContent('0');
     });
   });
 });

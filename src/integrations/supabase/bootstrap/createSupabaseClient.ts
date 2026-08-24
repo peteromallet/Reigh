@@ -1,6 +1,5 @@
-import { createClient } from '@supabase/supabase-js';
+import { createDeferredSupabaseClient } from '@/integrations/supabase/deferredRuntime';
 import { normalizeAndLogError } from '@/shared/lib/errorHandling/runtimeErrorReporting';
-import type { Database } from '@/integrations/supabase/databasePublicTypes';
 import {
   getSupabasePublishableKey,
   getSupabaseUrl,
@@ -29,7 +28,7 @@ export function createSupabaseClient() {
     const url = getSupabaseUrl();
     const key = getSupabasePublishableKey();
 
-    const client = createClient<Database>(url, key, {
+    const client = createDeferredSupabaseClient(url, key, {
       auth: {
         autoRefreshToken: true,
         persistSession: true,

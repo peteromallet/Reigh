@@ -32,8 +32,10 @@ const isDev = Boolean(
 const CACHE_CHANNEL = 'cache' as const;
 
 const getMediaStats = () => {
-  const images = document.querySelectorAll('img[src*="supabase.co/storage"]');
-  const videos = document.querySelectorAll('video[src*="supabase.co/storage"]');
+  // Storage-host DOM probes were removed with the signed/public-URL cut;
+  // the debug stats now count rendered media generically.
+  const images = document.querySelectorAll('img');
+  const videos = document.querySelectorAll('video');
   return {
     visibleImages: images.length,
     visibleVideos: videos.length,

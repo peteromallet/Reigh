@@ -1,16 +1,10 @@
 import React, { useCallback, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
+import { bridgeCapabilityUnavailable } from '@/integrations/astrid/capability';
 import { useSmartPollingConfig } from '@/shared/hooks/useSmartPolling';
-import {
-  resolveGenerationMode,
-  extractToolSettings,
-  type GenerationModeNormalized
-} from '@/shared/lib/settingsResolution';
-import { TOOL_IDS } from '@/shared/lib/tooling/toolIds';
+import type { GenerationModeNormalized } from '@/shared/lib/settingsResolution';
 import { settingsQueryKeys } from '@/shared/lib/queryKeys/settings';
 import { ProjectScopedCache } from '@/shared/lib/cache/ProjectScopedCache';
-import { toObjectRecord } from '@/shared/lib/jsonRecord';
 
 // Global cache instance that persists across component remounts
 const globalProjectGenerationModesCache = new ProjectScopedCache<GenerationModeNormalized>();
@@ -19,53 +13,11 @@ const globalProjectGenerationModesCache = new ProjectScopedCache<GenerationModeN
  * Fetch all shot generation modes for a project
  */
 async function fetchProjectGenerationModesFromDB(projectId: string): Promise<Map<string, GenerationModeNormalized>> {
-  
-  // IMPORTANT:
-  // This cache must match the effective settings resolution used by `useToolSettings`:
-  // defaults → user → project → shot.
-  //
-  // If we only look at shots.settings, we will be wrong for shots that inherit
-  // generationMode from user/project defaults.
-  const { data: sessionData } = await supabase().auth.getSession();
-  const userId = sessionData?.session?.user?.id ?? null;
-
-  // Skip queries if user is not authenticated (e.g., on public share pages)
-  // RLS will block these queries anyway, causing 406 errors
-  if (!userId) {
-    return new Map<string, GenerationModeNormalized>();
-  }
-
-  const [userResult, projectResult, shotsResult] = await Promise.all([
-    supabase().from('users').select('settings').eq('id', userId).maybeSingle(),
-    supabase().from('projects').select('settings').eq('id', projectId).maybeSingle(),
-    supabase().from('shots').select('id, settings').eq('project_id', projectId),
-  ]);
-
-  if (shotsResult.error) {
-    console.error('[ProjectGenerationModesCache] Error fetching shot settings:', shotsResult.error);
-    throw shotsResult.error;
-  }
-
-  const toolId = TOOL_IDS.TRAVEL_BETWEEN_IMAGES;
-  const userToolSettings = extractToolSettings(toObjectRecord(userResult.data?.settings), toolId);
-  const projectToolSettings = extractToolSettings(toObjectRecord(projectResult.data?.settings), toolId);
-
-  const modes = new Map<string, GenerationModeNormalized>();
-  (shotsResult.data || []).forEach((shot) => {
-    const shotToolSettings = extractToolSettings(toObjectRecord(shot.settings), toolId);
-
-    // Use shared resolution logic (priority: shot → project → user → defaults)
-    // defaults to 'timeline' via normalizeGenerationMode
-    const effectiveMode = resolveGenerationMode({
-      shot: shotToolSettings,
-      project: projectToolSettings,
-      user: userToolSettings,
-      // defaults not needed - normalizeGenerationMode handles undefined → 'timeline'
-    });
-    modes.set(shot.id, effectiveMode);
-  });
-  
-  return modes;
+  void projectId;
+  throw bridgeCapabilityUnavailable(
+    'read per-shot generation modes',
+    'Use timeline mode; the dormant Astrid shots pack must expose shot settings before this cache can be enabled.',
+  );
 }
 
 /**

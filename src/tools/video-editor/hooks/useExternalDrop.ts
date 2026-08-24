@@ -23,7 +23,6 @@ import {
   type UseAssetManagementResult,
 } from '@/tools/video-editor/hooks/useAssetManagement.ts';
 import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
-import { AstridBridgeDataProvider } from '@/tools/video-editor/data/AstridBridgeDataProvider.ts';
 import type {
   TimelineApplyEdit,
   TimelineInvalidateAssetRegistry,
@@ -426,7 +425,9 @@ export function useExternalDrop({
   finalVideoMap,
 }: UseExternalDropArgs): UseExternalDropResult {
   const runtime = useVideoEditorRuntime();
-  const directAssetUploadAllFiles = runtime.provider instanceof AstridBridgeDataProvider;
+  // Declared capability, not a type sniff: the Astrid provider declares it,
+  // everything else (including future providers) opts in explicitly.
+  const directAssetUploadAllFiles = runtime.provider.supportsDirectAssetUpload === true;
   const externalDragFrameRef = useRef<number | null>(null);
   const autoScrollerRef = useRef<ReturnType<typeof createAutoScroller> | null>(null);
   const latestExternalDragRef = useRef<{

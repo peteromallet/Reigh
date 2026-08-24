@@ -48,6 +48,7 @@ describe('useUserUIState', () => {
       },
       error: null,
     });
+    window.history.replaceState({}, '', '/');
   });
 
   afterEach(() => {
@@ -131,6 +132,33 @@ describe('useUserUIState', () => {
 
     expect(result.current.isLoading).toBe(false);
     expect(result.current.value).toEqual(fallback);
+  });
+
+  it('is completely local and does not read or write Supabase in Astrid editor mode', async () => {
+    window.history.replaceState({}, '', '/tools/video-editor?localProject=demo-project&localTimeline=demo-timeline');
+
+    const fallback = { darkMode: true };
+    const { result } = renderHook(() => useUserUIState('theme', fallback));
+
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.value).toEqual(fallback);
+    expect(mockGetUser).not.toHaveBeenCalled();
+    expect(mockSingle).not.toHaveBeenCalled();
+
+    act(() => {
+      result.current.update({ darkMode: false });
+    });
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+
+    expect(result.current.value.darkMode).toBe(false);
+    expect(mockGetUser).not.toHaveBeenCalled();
+    expect(mockSingle).not.toHaveBeenCalled();
   });
 
   it('update changes local value immediately', async () => {

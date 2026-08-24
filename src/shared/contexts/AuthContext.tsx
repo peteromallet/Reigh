@@ -1,159 +1,88 @@
-import React, {
-  createContext,
-  useState,
-  useContext,
-  ReactNode,
-  useEffect,
-  useMemo
-} from 'react';
+import React, { createContext, useState, useContext, ReactNode, useEffect, useMemo } from 'react';
 import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
 import { getAuthStateManager } from '@/integrations/supabase/auth/AuthStateManager';
 import type { Session } from '@supabase/supabase-js';
+import { hasSupabaseConfig } from '@/integrations/supabase/config/env';
+import { probeBridgeSession } from '@/shared/auth/bridgeSession';
 import { requireContextValue } from './contextGuard';
 import { isLocalTestMode } from '@/app/localTestRuntime';
 
 interface AuthContextType {
-  /** Current authenticated user ID, null if not logged in */
   userId: string | null;
-  /** Whether the user is authenticated */
   isAuthenticated: boolean;
-  /** Whether the initial auth check is still in progress */
   isLoading: boolean;
 }
-
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-/**
- * AuthProvider handles authentication state and event debouncing.
- *
- * Features:
- * - [AuthDebounce] Debounces duplicate auth events to prevent cascading updates
- * - [MobileStallFix] Resets loading states on meaningful auth transitions
- * - [FastResume] Provides immediate auth state for fast tab resume
- */
+function isLocalBridgeRoute(): boolean {
+  if (typeof window === 'undefined') return false;
+  const params = new URLSearchParams(window.location.search);
+  return params.has('localProject') || params.has('localTimeline') || !hasSupabaseConfig();
+}
+
+/** Uses the Astrid bridge as the authority for local editor routes while
+ * retaining the existing Supabase auth lifecycle for cloud routes. */
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const localTestMode = isLocalTestMode();
-  const [userId, setUserId] = useState<string | undefined>(undefined);
-  const [isLoading, setIsLoading] = useState(!localTestMode);
+  const localMode = isLocalTestMode() || isLocalBridgeRoute();
+  const [userId, setUserId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(localMode || hasSupabaseConfig());
 
-  // [MobileStallFix] Enhanced auth state tracking with mobile recovery
-  // [AuthDebounce] Prevent cascading updates from duplicate auth events
   useEffect(() => {
-    if (localTestMode) {
-      setUserId(undefined);
+    let cancelled = false;
+    if (isLocalTestMode()) {
+      setUserId(null);
       setIsLoading(false);
-      return;
+      return () => { cancelled = true; };
+    }
+    if (localMode) {
+      void probeBridgeSession().then((probe) => {
+        if (cancelled) return;
+        setUserId(probe.ok ? probe.userId : null);
+        setIsLoading(false);
+      });
+      return () => { cancelled = true; };
     }
 
-    let debounceTimeout: NodeJS.Timeout | null = null;
-    let lastProcessedState: { event: string; userId: string | undefined } | null = null;
-    let pendingAuthState: { event: string; session: Session | null } | null = null;
-
-    const processAuthChange = (event: string, session: Session | null) => {
-      const currentUserId = session?.user?.id;
-
-      // Check if this is a meaningful state transition
-      const isDuplicateEvent = lastProcessedState &&
-        lastProcessedState.event === event &&
-        lastProcessedState.userId === currentUserId;
-
-      if (isDuplicateEvent) {
-        return;
-      }
-
-      // Update user ID
-      setUserId(currentUserId);
-
-      // Track the processed state
-      lastProcessedState = { event, userId: currentUserId };
-    };
-
-    const handleAuthStateChange = (event: string, session: Session | null) => {
-      // Store the latest auth state
-      pendingAuthState = { event, session };
-
-      // Clear existing debounce timer
-      if (debounceTimeout) {
-        clearTimeout(debounceTimeout);
-      }
-
-      // [AuthDebounce] Wait 150ms for additional auth events before processing
-      debounceTimeout = setTimeout(() => {
-        if (pendingAuthState) {
-          const { event: pendingEvent, session: pendingSession } = pendingAuthState;
-          React.startTransition(() => {
-            processAuthChange(pendingEvent, pendingSession);
-          });
-          pendingAuthState = null;
-        }
-        debounceTimeout = null;
-      }, 150);
-    };
-
-    supabase().auth.getSession().then(({ data: { session } }) => {
-      setUserId(session?.user?.id);
+    if (!hasSupabaseConfig()) {
       setIsLoading(false);
-      lastProcessedState = { event: 'INITIAL_SESSION', userId: session?.user?.id };
+      return () => { cancelled = true; };
+    }
+
+    let debounceTimeout: ReturnType<typeof setTimeout> | null = null;
+    let lastProcessed: string | null = null;
+    const process = (session: Session | null) => {
+      const next = session?.user?.id ?? null;
+      if (next === lastProcessed) return;
+      lastProcessed = next;
+      React.startTransition(() => setUserId(next));
+    };
+    const onAuth = (_event: string, session: Session | null) => {
+      if (debounceTimeout) clearTimeout(debounceTimeout);
+      debounceTimeout = setTimeout(() => process(session), 150);
+    };
+    void supabase().auth.getSession().then(({ data: { session } }) => {
+      if (cancelled) return;
+      process(session);
+      setIsLoading(false);
     });
-
-    // Use centralized auth manager instead of direct listener
-    const authManager = getAuthStateManager();
-    let unsubscribe: (() => void) | null = null;
-
-    if (authManager) {
-      unsubscribe = authManager.subscribe('AuthContext', handleAuthStateChange);
-    } else {
-      // Fallback to direct listener if auth manager not available
-      const { data: listener } = supabase().auth.onAuthStateChange(handleAuthStateChange);
-      unsubscribe = () => listener.subscription.unsubscribe();
+    const manager = getAuthStateManager();
+    let unsubscribe: (() => void) | undefined;
+    if (manager) unsubscribe = manager.subscribe('AuthContext', onAuth);
+    else {
+      const { data } = supabase().auth.onAuthStateChange(onAuth);
+      unsubscribe = () => data.subscription.unsubscribe();
     }
-
     return () => {
-      if (unsubscribe) unsubscribe();
-      if (debounceTimeout) {
-        clearTimeout(debounceTimeout);
-        // Process final pending state on cleanup if needed
-        if (pendingAuthState) {
-          processAuthChange(pendingAuthState.event, pendingAuthState.session);
-        }
-      }
+      cancelled = true;
+      if (debounceTimeout) clearTimeout(debounceTimeout);
+      unsubscribe?.();
     };
-  }, [localTestMode]);
+  }, [localMode]);
 
-  const contextValue = useMemo(
-    () => ({
-      userId: userId ?? null,
-      isAuthenticated: !!userId,
-      isLoading,
-    }),
-    [userId, isLoading]
-  );
-
-  return (
-    <AuthContext.Provider value={contextValue}>
-      {children}
-    </AuthContext.Provider>
-  );
+  const value = useMemo(() => ({ userId, isAuthenticated: !!userId, isLoading }), [userId, isLoading]);
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
-/**
- * Hook to access authentication state.
- *
- * @returns { userId, isAuthenticated }
- */
-export const useAuth = () => {
-  return requireContextValue(useContext(AuthContext), 'useAuth', 'AuthProvider');
-};
-
+export const useAuth = () => requireContextValue(useContext(AuthContext), 'useAuth', 'AuthProvider');
 const NO_AUTH = Object.freeze({ userId: null, isAuthenticated: false, isLoading: false });
-
-/**
- * Non-throwing auth read: returns a logged-out shape outside `AuthProvider`.
- *
- * For hooks that must not crash when rendered without the provider tree (e.g.
- * shared data hooks mounted in tests or host surfaces that omit it), the
- * logged-out shape disables auth-gated queries instead of throwing.
- */
-export const useAuthSafe = (): AuthContextType => {
-  return useContext(AuthContext) ?? NO_AUTH;
-};
+export const useAuthSafe = (): AuthContextType => useContext(AuthContext) ?? NO_AUTH;

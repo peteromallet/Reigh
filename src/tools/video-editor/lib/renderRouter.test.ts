@@ -9,6 +9,16 @@ import {
   enqueueBanodocoRenderTimeline,
 } from '@/tools/video-editor/lib/renderRouter';
 import { executeRenderPipeline } from '@/tools/video-editor/render/renderPipeline';
+import { AstridLocalClient } from '@/integrations/astrid/client.ts';
+import { makeAdmittedTaskReadModel } from '@/test/bridgeFixtures.mjs';
+
+const renderAdmissionResponse = (taskId = 'task-42') => ({
+  task: makeAdmittedTaskReadModel({
+    taskId,
+    family: 'render_export',
+    capability: 'rendering.timeline_visualize',
+  }),
+});
 
 describe('Sprint 8 render-button router (decideRenderRoute)', () => {
   it('routes a pure-media timeline to the client renderer', () => {
@@ -831,10 +841,11 @@ describe('Sprint 8 buildRenderTimelinePayload', () => {
     expect(payload!.theme_id).toBe('2rp');
   });
 
-  it('rejects empty user_jwt (SD-022)', () => {
+  it('does not require a Supabase JWT for local Astrid admission', () => {
     const { payload, error } = buildRenderTimelinePayload({ ...baseInput, userJwt: '' });
-    expect(payload).toBeUndefined();
-    expect(error).toContain('JWT');
+    expect(payload).toBeDefined();
+    expect(error).toBeUndefined();
+    expect(payload).not.toHaveProperty('user_jwt');
   });
 
   it('rejects empty timelineId / projectId', () => {
@@ -916,49 +927,59 @@ describe('Sprint 8 enqueueBanodocoRenderTimeline', () => {
     correlation_id: 'c',
   };
 
-  it('POSTs to /functions/v1/enqueue-task with the SD-034 envelope', async () => {
+  it('POSTs render_export through the common R1 task route', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ task_id: 'task-42' }), { status: 200 }),
+      new Response(JSON.stringify(renderAdmissionResponse()), { status: 201 }),
     );
+    vi.stubGlobal('fetch', fetchImpl);
     const result = await enqueueBanodocoRenderTimeline(payload, {
-      fetchImpl: fetchImpl as unknown as typeof fetch,
-      orchestratorBaseUrl: 'https://orchestrator.example.com',
+      client: new AstridLocalClient({ projectSlug: 'p', baseUrl: 'http://bridge.fake' }),
+      expectedVersion: 12,
+      destination: 'project-media',
     });
     expect(result.status).toBe('queued');
     expect(result.task_id).toBe('task-42');
     expect(result.correlation_id).toBe('c');
 
     const [url, init] = fetchImpl.mock.calls[0];
-    expect(url).toBe('https://orchestrator.example.com/functions/v1/enqueue-task');
+    expect(url).toBe('http://bridge.fake/projects/p/tasks');
     expect((init as RequestInit).method).toBe('POST');
     const headers = (init as RequestInit).headers as Record<string, string>;
-    expect(headers.Authorization).toBe('Bearer jwt');
+    expect(headers['Idempotency-Key']).toBe('reigh.render:v1:t:12:project-media:render.mp4');
     const body = JSON.parse((init as RequestInit).body as string);
-    expect(body.task_type).toBe('banodoco_render_timeline');
-    expect(body.worker_pool).toBe('banodoco');
-    expect(body.params.correlation_id).toBe('c');
+    expect(body.family).toBe('render_export');
+    expect(body.input).toMatchObject({
+      timeline_ref: 't',
+      expected_version: 12,
+      format: 'mp4',
+      destination: 'project-media',
+      correlation_id: 'c',
+    });
+    vi.unstubAllGlobals();
   });
 
-  it('surfaces a 4xx orchestrator response as an error result', async () => {
+  it('surfaces a rejected Astrid admission as an error result', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(
-      new Response('bad payload', { status: 400 }),
+      new Response(JSON.stringify({ error: 'invalid_body', detail: 'bad payload' }), { status: 400 }),
     );
+    vi.stubGlobal('fetch', fetchImpl);
     const result = await enqueueBanodocoRenderTimeline(payload, {
-      fetchImpl: fetchImpl as unknown as typeof fetch,
-      orchestratorBaseUrl: 'https://orchestrator.example.com',
+      client: new AstridLocalClient({ projectSlug: 'p', baseUrl: 'http://bridge.fake' }),
     });
     expect(result.status).toBe('error');
-    expect(result.message).toContain('HTTP 400');
+    expect(result.message).toContain('bad payload');
+    vi.unstubAllGlobals();
   });
 
   it('surfaces a network failure as an error result', async () => {
     const fetchImpl = vi.fn().mockRejectedValue(new Error('connection refused'));
+    vi.stubGlobal('fetch', fetchImpl);
     const result = await enqueueBanodocoRenderTimeline(payload, {
-      fetchImpl: fetchImpl as unknown as typeof fetch,
-      orchestratorBaseUrl: 'https://orchestrator.example.com',
+      client: new AstridLocalClient({ projectSlug: 'p', baseUrl: 'http://bridge.fake' }),
     });
     expect(result.status).toBe('error');
     expect(result.message).toContain('connection refused');
+    vi.unstubAllGlobals();
   });
 });
 
@@ -992,19 +1013,21 @@ describe('Sprint 8 router → enqueue integration', () => {
     });
     expect(payload).toBeDefined();
 
-    const fetchImpl = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ task_id: 'task-1' }), { status: 200 }),
-    );
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(
+      JSON.stringify(renderAdmissionResponse('task-1')),
+      { status: 201 },
+    ));
+    vi.stubGlobal('fetch', fetchImpl);
     const result = await enqueueBanodocoRenderTimeline(payload!, {
-      fetchImpl: fetchImpl as unknown as typeof fetch,
-      orchestratorBaseUrl: 'https://orchestrator.example.com',
+      client: new AstridLocalClient({ projectSlug: 'p', baseUrl: 'http://bridge.fake' }),
     });
     expect(result.status).toBe('queued');
 
-    // The dispatch hits the banodoco worker_pool, not the API pool.
+    // Dispatch uses the common Astrid task authority, not a worker pool.
     const body = JSON.parse(fetchImpl.mock.calls[0][1].body as string);
-    expect(body.task_type).toBe('banodoco_render_timeline');
-    expect(body.worker_pool).toBe('banodoco');
+    expect(body.family).toBe('render_export');
+    expect(body.input.timeline_ref).toBe('t');
+    vi.unstubAllGlobals();
   });
 
   it('pure-media timeline decision skips the orchestrator entirely', () => {
@@ -1149,16 +1172,18 @@ describe('Sprint 8 render pipeline middleware', () => {
     expect(previewEvents).toEqual(['beforeRender', 'assetMaterialized', 'renderFailed']);
   });
 
-  it('queues worker-capable routes through the banodoco provider without falling back to the browser renderer', async () => {
+  it('queues worker-capable routes through Astrid R1 without falling back to the browser renderer', async () => {
     const workerEvents: string[] = [];
     const startBrowserRender = vi.fn(async () => ({ status: 'done' as const, message: 'unexpected' }));
-    const fetchImpl = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ task_id: 'task-1' }), { status: 200 }),
-    );
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(
+      JSON.stringify(renderAdmissionResponse('task-1')),
+      { status: 201 },
+    ));
     const originalFetch = globalThis.fetch;
     vi.stubGlobal('fetch', fetchImpl);
     const workerRuntime = {
       ...runtime,
+      bridgeBaseUrl: 'http://bridge.fake',
       getSupabaseSession: vi.fn(async () => {
         throw new Error('getSupabaseSession should not be called for worker dispatch');
       }),
@@ -1209,20 +1234,24 @@ describe('Sprint 8 render pipeline middleware', () => {
     });
     expect(startBrowserRender).not.toHaveBeenCalled();
     expect(fetchImpl).toHaveBeenCalledTimes(1);
-    expect(workerRuntime.getWorkerJwt).toHaveBeenCalledTimes(1);
+    expect(workerRuntime.getWorkerJwt).not.toHaveBeenCalled();
     expect(workerRuntime.getSupabaseSession).not.toHaveBeenCalled();
     const body = JSON.parse(fetchImpl.mock.calls[0][1].body as string);
-    expect(body.params.timeline_id).toBe('timeline-fixture-worker');
-    expect(body.params.project_id).toBe('project-1');
-    expect(body.params.assets).toEqual(request.assetRegistry);
+    expect(body.family).toBe('render_export');
+    expect(body.input.timeline_ref).toBe('timeline-fixture-worker');
+    expect(body.input.output_filename).toBe('timeline-timeline-fixture-worker.mp4');
     expect(workerEvents).toEqual(['beforeRender', 'assetMaterialized', 'afterRender']);
 
     vi.stubGlobal('fetch', originalFetch);
   });
 
-  it('emits renderFailed for worker routes when no worker session token is available', async () => {
+  it('emits renderFailed when Astrid rejects render admission', async () => {
     const workerEvents: string[] = [];
     const startBrowserRender = vi.fn(async () => ({ status: 'done' as const, message: 'unexpected' }));
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      error: 'capability_unavailable',
+      detail: 'Remotion is not installed',
+    }), { status: 422 })));
     const workerResult = await executeRenderPipeline({
       decision: decideRenderRoute({ clips: [{ clipType: 'image-jump' }] }),
       request: {
@@ -1248,8 +1277,9 @@ describe('Sprint 8 render pipeline middleware', () => {
       status: 'error',
       providerId: 'worker-banodoco',
     });
-    expect(workerResult.message).toContain('missing worker session token');
+    expect(workerResult.message).toContain('Remotion is not installed');
     expect(startBrowserRender).not.toHaveBeenCalled();
     expect(workerEvents).toEqual(['beforeRender', 'assetMaterialized', 'renderFailed']);
+    vi.unstubAllGlobals();
   });
 });

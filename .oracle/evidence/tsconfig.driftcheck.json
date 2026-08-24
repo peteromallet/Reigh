@@ -1,9 +1,0 @@
-{
-  "extends": "/Users/peteromalley/Documents/reigh-workspace/reigh-app-oracle/tsconfig.app.json",
-  "compilerOptions": {
-    "noEmit": true,
-    "strict": true
-  },
-  "include": ["/Users/peteromalley/Documents/reigh-workspace/reigh-app-oracle/src/tools/video-editor/data/typed/envelopeVocabDrift.test.ts"],
-  "exclude": []
-}

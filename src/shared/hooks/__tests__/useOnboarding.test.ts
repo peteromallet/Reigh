@@ -40,10 +40,12 @@ describe('useOnboarding', () => {
       })),
     });
     mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
+    window.history.replaceState({}, '', '/');
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    window.history.replaceState({}, '', '/');
   });
 
   it('does not show modal initially', () => {
@@ -87,6 +89,20 @@ describe('useOnboarding', () => {
     });
 
     expect(result.current.showOnboardingModal).toBe(false);
+  });
+
+  it('does not probe Supabase in local Astrid editor mode', async () => {
+    window.history.replaceState({}, '', '/tools/video-editor?localProject=demo-project&localTimeline=demo-timeline');
+
+    const { result } = renderHook(() => useOnboarding());
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(600);
+    });
+
+    expect(result.current.showOnboardingModal).toBe(false);
+    expect(mockGetUser).not.toHaveBeenCalled();
+    expect(mockSelect).not.toHaveBeenCalled();
   });
 
   it('closeOnboardingModal hides modal', async () => {

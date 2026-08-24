@@ -441,11 +441,23 @@ export type PinnedShotImageClipSnapshot = {
 // `clipIds` is ordered left-to-right by each clip's live `at` and must be rebuilt whenever group membership or ordering changes.
 export type PinnedShotGroup = {
   shotId: string;
+  /** Human-readable shot name stored in the document (never joined from a second authority). */
+  name?: string;
   trackId: string;
   clipIds: string[];
   mode?: 'images' | 'video';
   videoAssetKey?: string;
   imageClipSnapshot?: PinnedShotImageClipSnapshot[];
+  /**
+   * Pooled (unpositioned) generation members — document-native placement
+   * (doc 24 Q1): members of the shot not yet placed as clips.
+   */
+  poolGenerationIds?: string[];
+  /** Source group lineage for a document-native deep-copy duplicate. */
+  derivedFrom?: {
+    shotId: string;
+    trackId: string;
+  };
 };
 
 // Sprint 2: theme overrides and generation defaults blocks. Open-shaped on

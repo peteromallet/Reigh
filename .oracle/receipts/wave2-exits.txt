@@ -1,3 +1,0 @@
-B5 exit=0
-B2 exit=0
-B3 exit=0

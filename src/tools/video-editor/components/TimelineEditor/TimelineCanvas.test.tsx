@@ -335,6 +335,8 @@ function renderCanvas(params?: {
   onSelectClips?: React.ComponentProps<typeof TimelineCanvas>['onSelectClips'];
   onShotGroupUnpin?: React.ComponentProps<typeof TimelineCanvas>['onShotGroupUnpin'];
   onShotGroupDelete?: React.ComponentProps<typeof TimelineCanvas>['onShotGroupDelete'];
+  onShotGroupDuplicate?: React.ComponentProps<typeof TimelineCanvas>['onShotGroupDuplicate'];
+  onShotGroupPromotePrimary?: React.ComponentProps<typeof TimelineCanvas>['onShotGroupPromotePrimary'];
   onShotGroupSwitchToFinalVideo?: React.ComponentProps<typeof TimelineCanvas>['onShotGroupSwitchToFinalVideo'];
   onShotGroupSwitchToImages?: React.ComponentProps<typeof TimelineCanvas>['onShotGroupSwitchToImages'];
   allowMissingHandles?: boolean;
@@ -417,6 +419,8 @@ function renderCanvas(params?: {
       onSelectClips={params?.onSelectClips}
       onShotGroupUnpin={params?.onShotGroupUnpin}
       onShotGroupDelete={params?.onShotGroupDelete}
+      onShotGroupDuplicate={params?.onShotGroupDuplicate}
+      onShotGroupPromotePrimary={params?.onShotGroupPromotePrimary}
       onShotGroupSwitchToFinalVideo={params?.onShotGroupSwitchToFinalVideo}
       onShotGroupSwitchToImages={params?.onShotGroupSwitchToImages}
       interactionStateRef={params?.interactionStateRef}
@@ -1646,6 +1650,25 @@ describe('TimelineCanvas resize pending ops', () => {
       clipIds: ['clip-1'],
       rowId: 'V1',
     });
+  });
+
+  it('exposes document-native duplicate and promote controls with the exact group locator', () => {
+    const onShotGroupDuplicate = vi.fn();
+    const onShotGroupPromotePrimary = vi.fn();
+    const { getByTitle } = renderCanvas({
+      shotGroups: [pinnedShotGroup],
+      onShotGroupDuplicate,
+      onShotGroupPromotePrimary,
+      allowMissingHandles: true,
+    });
+
+    fireEvent.contextMenu(getByTitle('Pinned Shot'));
+    fireEvent.click(screen.getByText('Duplicate shot'));
+    expect(onShotGroupDuplicate).toHaveBeenCalledWith({ shotId: 'shot-1', trackId: 'V1' });
+
+    fireEvent.contextMenu(getByTitle('Pinned Shot'));
+    fireEvent.click(screen.getByText('Promote next variant'));
+    expect(onShotGroupPromotePrimary).toHaveBeenCalledWith({ shotId: 'shot-1', trackId: 'V1' });
   });
 
   it('shows deconstruct/delete and switch-to-images actions for pinned video groups', () => {

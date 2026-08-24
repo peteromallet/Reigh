@@ -1,4 +1,0 @@
-C exit=0
-B exit=0
-A exit=0
-D exit=0

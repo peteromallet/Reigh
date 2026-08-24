@@ -23,6 +23,7 @@ import {
   upsertRealtimeTaskSnapshot,
 } from '@/shared/state/realtimeStore';
 import type { ConnectionState, ConnectionStatus, RawDatabaseEvent } from '@/shared/realtime/types';
+import { useAstridCapabilityCensus } from '@/integrations/astrid/capabilityCensus.ts';
 
 // =============================================================================
 // Context
@@ -82,6 +83,7 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
     realtimeConnection.getState()
   );
   const activeProjectIdRef = useRef<string | null>(null);
+  const capabilityCensus = useAstridCapabilityCensus();
 
   // Set up the invalidation hook (subscribes to processed events)
   useRealtimeInvalidation();
@@ -146,6 +148,14 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
   useEffect(() => {
     const unsubscribe = realtimeConnection.onStatusChange((state) => {
       setConnectionState(state);
+      dataFreshnessManager.onRealtimeStatusChange(
+        state.status === 'connected'
+          ? 'connected'
+          : state.status === 'failed'
+            ? 'error'
+            : 'disconnected',
+        state.error ?? undefined,
+      );
     });
     return unsubscribe;
   }, [realtimeConnection]);
@@ -158,7 +168,9 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
       resetRealtimeTaskScope(previousProjectId);
     }
 
-    if (!selectedProjectId) {
+    const pollableCapabilityAvailable = capabilityCensus.capabilities.tasks !== 'unavailable'
+      || capabilityCensus.capabilities.generations !== 'unavailable';
+    if (!selectedProjectId || capabilityCensus.health === 'unavailable' || !pollableCapabilityAvailable) {
       activeProjectIdRef.current = null;
       realtimeConnection.disconnect();
       dataFreshnessManager.reset();
@@ -176,7 +188,7 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
       // Don't disconnect on cleanup - let the next effect handle it
       // This prevents disconnect/reconnect when the component re-renders
     };
-  }, [selectedProjectId, realtimeConnection]);
+  }, [capabilityCensus.capabilities.generations, capabilityCensus.capabilities.tasks, capabilityCensus.health, selectedProjectId, realtimeConnection]);
 
   // Clean up on unmount
   useEffect(() => {
@@ -190,11 +202,18 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
 
   // Manual reconnect function
   const reconnect = useCallback(() => {
-    if (selectedProjectId) {
+    if (
+      selectedProjectId
+      && capabilityCensus.health !== 'unavailable'
+      && (
+        capabilityCensus.capabilities.tasks !== 'unavailable'
+        || capabilityCensus.capabilities.generations !== 'unavailable'
+      )
+    ) {
       realtimeConnection.reset();
       realtimeConnection.connect(selectedProjectId);
     }
-  }, [selectedProjectId, realtimeConnection]);
+  }, [capabilityCensus.capabilities.generations, capabilityCensus.capabilities.tasks, capabilityCensus.health, selectedProjectId, realtimeConnection]);
 
   // Derive context value from connection state
   const contextValue: RealtimeContextValue = {

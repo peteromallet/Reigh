@@ -5,7 +5,7 @@ import type { StyleReferenceMetadata } from '@/features/resources/hooks/useResou
 import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
 import { useSpecificResources } from '@/shared/hooks/useSpecificResources';
 import { invalidateShotsQueries } from '@/shared/hooks/shots/cacheUtils';
-import { insertAutoPositionedShotGeneration } from '@/shared/hooks/shots/addImageToShotHelpers';
+import { placeGeneration } from '@/shared/lib/placement/placementService';
 import { generationQueryKeys } from '@/shared/lib/queryKeys/generations';
 import { resourceQueryKeys } from '@/shared/lib/queryKeys/resources';
 import { toJson } from '@/shared/lib/supabaseTypeHelpers';
@@ -116,7 +116,11 @@ export function useGenerationBackfillMigration(input: GenerationBackfillMigratio
             }
 
             try {
-              await insertAutoPositionedShotGeneration(effectiveShotId, generationId);
+              await placeGeneration({
+                projectSlug: selectedProjectId ?? '',
+                shotId: effectiveShotId,
+                generationId,
+              });
             } catch (error) {
               await supabase()
                 .from('generations')

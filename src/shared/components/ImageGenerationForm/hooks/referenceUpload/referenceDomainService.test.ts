@@ -16,7 +16,6 @@ const processStyleReferenceForAspectRatioStringMock = vi.fn();
 const generateClientThumbnailMock = vi.fn();
 const getSessionMock = vi.fn();
 const uploadMock = vi.fn();
-const getPublicUrlMock = vi.fn();
 const extractSettingsFromCacheMock = vi.fn();
 
 vi.mock('@/shared/lib/media/fileConversion', () => ({
@@ -50,7 +49,6 @@ vi.mock('@/integrations/supabase/client', () => ({
     storage: {
       from: () => ({
         upload: (...args: unknown[]) => uploadMock(...args),
-        getPublicUrl: (...args: unknown[]) => getPublicUrlMock(...args),
       }),
     },
   }),
@@ -71,7 +69,6 @@ describe('referenceDomainService', () => {
     generateClientThumbnailMock.mockReset();
     getSessionMock.mockReset();
     uploadMock.mockReset();
-    getPublicUrlMock.mockReset();
     extractSettingsFromCacheMock.mockReset();
   });
 

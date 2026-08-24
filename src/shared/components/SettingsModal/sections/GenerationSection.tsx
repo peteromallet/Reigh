@@ -70,7 +70,7 @@ const GenerationSection: React.FC<GenerationSectionProps> = ({
           <div className="flex justify-start items-start">
             {!isLoadingGenerationMethods && !onComputerChecked && !inCloudChecked && (
               <img
-                src="https://wczysqzxlwdndgxitrvc.supabase.co/storage/v1/object/public/image_uploads/files/ds.gif"
+                src="/generation-method/ds.gif"
                 alt="Choose generation method"
                 className="w-[120px] h-[120px] object-contain transform scale-x-[-1]"
               />

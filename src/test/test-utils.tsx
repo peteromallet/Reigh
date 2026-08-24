@@ -20,44 +20,15 @@ function createTestQueryClient(): QueryClient {
   });
 }
 
-// Default mock auth context value
-const defaultAuthContext = {
-  userId: 'test-user-id',
-  isAuthenticated: true,
-  isLoading: false,
-};
-
-// Default mock project context value
-const defaultProjectContext = {
-  projects: [],
-  selectedProjectId: 'test-project-id',
-  setSelectedProjectId: () => {},
-  isLoadingProjects: false,
-  fetchProjects: async () => {},
-  addNewProject: async () => null,
-  isCreatingProject: false,
-  updateProject: async () => false,
-  isUpdatingProject: false,
-  deleteProject: async () => false,
-  isDeletingProject: false,
-  userId: 'test-user-id',
-};
-
 interface ProviderOptions {
-  authContext?: Partial<typeof defaultAuthContext>;
-  projectContext?: Partial<typeof defaultProjectContext>;
   queryClient?: QueryClient;
 }
 
 /**
- * Creates a wrapper component that provides QueryClient, Auth, and Project contexts.
- * Auth and Project are provided via simple React contexts to avoid importing the real providers
- * (which have side effects like supabase connections).
+ * Creates a wrapper component that provides the QueryClient test context.
  */
 function createWrapper(options: ProviderOptions = {}) {
   const queryClient = options.queryClient ?? createTestQueryClient();
-  const _authValue = { ...defaultAuthContext, ...options.authContext };
-  const _projectValue = { ...defaultProjectContext, ...options.projectContext };
 
   return function TestProviders({ children }: { children: React.ReactNode }) {
     return (
@@ -76,8 +47,8 @@ export function renderHookWithProviders<TResult, TProps>(
   hook: (props: TProps) => TResult,
   options: ProviderOptions & Omit<RenderHookOptions<TProps>, 'wrapper'> = {},
 ) {
-  const { authContext, projectContext, queryClient, ...hookOptions } = options;
-  const Wrapper = createWrapper({ authContext, projectContext, queryClient });
+  const { queryClient, ...hookOptions } = options;
+  const Wrapper = createWrapper({ queryClient });
   return renderHook(hook, { wrapper: Wrapper, ...hookOptions });
 }
 

@@ -1,5 +1,9 @@
-import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
-import { toJson } from '@/shared/lib/supabaseTypeHelpers';
+import { getProjectSelectionFallbackId } from '@/shared/contexts/projectSelectionStore';
+import { placementEntryId } from '@/shared/lib/placement/documentPlacement';
+import {
+  batchUpdatePlacementFrames,
+  fetchProjectPlacements,
+} from '@/shared/lib/placement/placementService';
 import {
   isTimelineWriteTimeoutError,
   runTimelineWriteWithTimeout,
@@ -19,6 +23,7 @@ interface PersistTimelineFrameBatchOptions {
   signal?: AbortSignal;
   timeoutFloorMs?: number;
   timeoutPerUpdateMs?: number;
+  projectId?: string;
   logPrefix: string;
   log: (message: string, payload: Record<string, unknown>) => void;
 }
@@ -38,42 +43,77 @@ function shortId(id: string | null | undefined): string | null {
 
 function dedupeLast(updates: TimelineFrameBatchUpdate[]): TimelineFrameBatchUpdate[] {
   const byId = new Map<string, TimelineFrameBatchUpdate>();
-  updates.forEach((update) => {
+  for (const update of updates) {
     byId.set(update.shotGenerationId, update);
-  });
+  }
   return Array.from(byId.values());
 }
 
 function formatUpdateSignature(
-  updates: Array<{ shot_generation_id: string; timeline_frame: number }>,
+  updates: TimelineFrameBatchUpdate[],
 ): string {
   return updates
-    .map((update) => `${shortId(update.shot_generation_id)}=>${update.timeline_frame}`)
+    .map((update) => `${shortId(update.shotGenerationId)}→${update.timelineFrame}`)
     .join(', ');
 }
 
 function getNetworkSnapshot(): Record<string, unknown> {
-  if (typeof window === 'undefined' || typeof navigator === 'undefined') {
-    return {};
-  }
-  const connection = (navigator as Navigator & {
-    connection?: {
-      effectiveType?: string;
-      downlink?: number;
-      rtt?: number;
-      saveData?: boolean;
-    };
+  if (typeof navigator === 'undefined') return {};
+  const connection = (navigator as unknown as {
+    connection?: { effectiveType?: string; downlink?: number; rtt?: number };
   }).connection;
   return {
     online: navigator.onLine,
-    visibilityState: typeof document !== 'undefined' ? document.visibilityState : null,
     effectiveType: connection?.effectiveType ?? null,
     downlink: connection?.downlink ?? null,
     rtt: connection?.rtt ?? null,
-    saveData: connection?.saveData ?? null,
   };
 }
 
+/**
+ * Bridge the write-timeout wrapper's abort signal into a signal-less promise
+ * (the placement service exposes no AbortSignal): rejecting on abort is what
+ * converts a hung bridge fetch into a `TimelineWriteTimeoutError` instead of
+ * an unbounded wait.
+ */
+function abortable<T>(start: () => Promise<T>): (signal: AbortSignal) => Promise<T> {
+  return (signal) =>
+    new Promise<T>((resolve, reject) => {
+      const onAbort = () => reject(new DOMException('Aborted', 'AbortError'));
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+      signal.addEventListener('abort', onAbort, { once: true });
+      start().then(
+        (value) => {
+          signal.removeEventListener('abort', onAbort);
+          resolve(value);
+        },
+        (error) => {
+          signal.removeEventListener('abort', onAbort);
+          reject(error);
+        },
+      );
+    });
+}
+
+/**
+ * Persist a batch of timeline frame updates through the document placement
+ * service (doc 24 Q1 — the timeline document is the ONLY placement authority;
+ * the retired `batch_update_timeline_frames` RPC has no successor route).
+ *
+ * Callers identify entries either by the deterministic entry id
+ * (`sg-<shotId>-<generationId>`, what placement reads surface as row id) or
+ * by a bare generation id; both resolve to the document entry.
+ *
+ * Invariants preserved from the RPC era:
+ * - last write per entry wins (`dedupeLast`);
+ * - every requested entry must come back updated exactly once, else throw
+ *   (never silently drop an update);
+ * - timeouts surface as `TimelineWriteTimeoutError` with a read-model
+ *   diagnostics snapshot, never as false success.
+ */
 export async function persistTimelineFrameBatch({
   shotId,
   updates,
@@ -82,6 +122,7 @@ export async function persistTimelineFrameBatch({
   signal,
   timeoutFloorMs = DEFAULT_TIMEOUT_FLOOR_MS,
   timeoutPerUpdateMs = DEFAULT_TIMEOUT_PER_UPDATE_MS,
+  projectId,
   logPrefix,
   log,
 }: PersistTimelineFrameBatchOptions): Promise<PersistTimelineFrameBatchResult> {
@@ -98,79 +139,88 @@ export async function persistTimelineFrameBatch({
     };
   }
 
-  const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const projectSlug = projectId || getProjectSelectionFallbackId();
+  if (!projectSlug) {
+    throw new Error('No project selected — cannot persist timeline frame updates.');
+  }
 
-  const rpcPayload = canonicalUpdates.map((update) => ({
-    shot_generation_id: update.shotGenerationId,
-    timeline_frame: update.timelineFrame,
-    metadata: update.metadata ?? {},
+  // Entry ids: accept the deterministic entry id or resolve a bare generation
+  // id against this shot (mirrors useShotGenerationMutations.resolveEntryParts).
+  const entryPrefix = `sg-${shotId}-`;
+  const docUpdates = canonicalUpdates.map((update) => ({
+    entryId: update.shotGenerationId.startsWith(entryPrefix)
+      ? update.shotGenerationId
+      : placementEntryId(shotId, update.shotGenerationId),
+    timelineFrame: update.timelineFrame,
+    metadata: update.metadata,
   }));
-  const rpcTimeoutMs = Math.max(timeoutFloorMs, rpcPayload.length * timeoutPerUpdateMs);
-  const updateSignature = formatUpdateSignature(rpcPayload);
+  const rpcTimeoutMs = Math.max(timeoutFloorMs, docUpdates.length * timeoutPerUpdateMs);
+  const updateSignature = formatUpdateSignature(canonicalUpdates);
 
-  // Validate payload before sending — invalid data causes silent hangs
+  // Validate payload before sending — invalid data must fail loudly here,
+  // not strand entries silently un-updated on the document.
   const validationIssues: string[] = [];
-  for (const update of rpcPayload) {
-    if (!update.shot_generation_id || !UUID_REGEX.test(update.shot_generation_id)) {
-      validationIssues.push(`bad_uuid: "${update.shot_generation_id}"`);
+  for (const update of docUpdates) {
+    if (!update.entryId || update.entryId === entryPrefix) {
+      validationIssues.push(`bad_entry: "${update.entryId}"`);
     }
-    if (typeof update.timeline_frame !== 'number' || !Number.isInteger(update.timeline_frame) || update.timeline_frame < 0) {
-      validationIssues.push(`bad_frame: ${update.shot_generation_id?.slice(0, 8)} → ${update.timeline_frame} (type:${typeof update.timeline_frame})`);
+    if (
+      typeof update.timelineFrame !== 'number'
+      || !Number.isInteger(update.timelineFrame)
+      || update.timelineFrame < 0
+    ) {
+      validationIssues.push(
+        `bad_frame: ${shortId(update.entryId)} → ${update.timelineFrame} (type:${typeof update.timelineFrame})`,
+      );
     }
+  }
+  if (validationIssues.length > 0) {
+    throw new Error(
+      `Timeline batch update rejected — invalid payload: ${validationIssues.join('; ')}`,
+    );
   }
 
   const startedAt = Date.now();
-  log(`${logPrefix} rpc batch_update_timeline_frames start`, {
+  log(`${logPrefix} doc placement batch update start`, {
     shotId: shortId(shotId),
     operation: operationLabel,
-    updateCount: rpcPayload.length,
+    updateCount: docUpdates.length,
     timeoutMs: rpcTimeoutMs,
     updateSignature,
     network: getNetworkSnapshot(),
   });
 
   const watchdog = setTimeout(() => {
-    log(`${logPrefix} rpc batch_update_timeline_frames still pending`, {
+    log(`${logPrefix} doc placement batch update still pending`, {
       shotId: shortId(shotId),
       operation: operationLabel,
-      updateCount: rpcPayload.length,
+      updateCount: docUpdates.length,
       pendingMs: Date.now() - startedAt,
       updateSignature,
       network: getNetworkSnapshot(),
     });
   }, 8000);
 
-  let rpcError: { code?: string; message?: string } | null = null;
-  let rpcResultRows: Array<{ shot_generation_id?: string | null; timeline_frame?: number | null }> = [];
+  let saveError: { code?: string; message?: string } | null = null;
+  let savedEntries: Array<{ entryId: string }> = [];
   try {
-    await runTimelineWriteWithTimeout(
+    savedEntries = await runTimelineWriteWithTimeout(
       timeoutOperationName,
-      async (signal) => {
-        const { data, error } = await supabase().rpc('batch_update_timeline_frames', { p_updates: toJson(rpcPayload) })
-          .abortSignal(signal);
-        if (error) throw error;
-        if (Array.isArray(data)) {
-          rpcResultRows = data as Array<{ shot_generation_id?: string | null; timeline_frame?: number | null }>;
-        } else if (data == null) {
-          rpcResultRows = [];
-        } else {
-          rpcResultRows = [];
-          log(`${logPrefix} rpc batch_update_timeline_frames returned unexpected payload`, {
-            shotId: shortId(shotId),
-            operation: operationLabel,
-            updateCount: rpcPayload.length,
-            payloadType: typeof data,
-          });
-        }
-      },
+      abortable(() =>
+        batchUpdatePlacementFrames({
+          projectSlug,
+          shotId,
+          updates: docUpdates.map(({ entryId, timelineFrame }) => ({ entryId, timelineFrame })),
+        }),
+      ),
       {
         timeoutMs: rpcTimeoutMs,
         upstreamSignal: signal,
         onTimeout: ({ pendingMs, timeoutMs }) => {
-          log(`${logPrefix} rpc batch_update_timeline_frames timed out`, {
+          log(`${logPrefix} doc placement batch update timed out`, {
             shotId: shortId(shotId),
             operation: operationLabel,
-            updateCount: rpcPayload.length,
+            updateCount: docUpdates.length,
             timeoutMs,
             pendingMs,
             updateSignature,
@@ -179,46 +229,45 @@ export async function persistTimelineFrameBatch({
         },
       },
     );
-    log(`${logPrefix} rpc batch_update_timeline_frames returned`, {
+    log(`${logPrefix} doc placement batch update returned`, {
       shotId: shortId(shotId),
       operation: operationLabel,
-      updateCount: rpcPayload.length,
+      updateCount: docUpdates.length,
       durationMs: Date.now() - startedAt,
       errorCode: null,
       errorMessage: null,
       updateSignature,
     });
   } catch (error) {
-    rpcError = error as { code?: string; message?: string };
-    log(`${logPrefix} rpc batch_update_timeline_frames returned`, {
+    saveError = error as { code?: string; message?: string };
+    log(`${logPrefix} doc placement batch update returned`, {
       shotId: shortId(shotId),
       operation: operationLabel,
-      updateCount: rpcPayload.length,
+      updateCount: docUpdates.length,
       durationMs: Date.now() - startedAt,
-      errorCode: rpcError.code ?? null,
-      errorMessage: rpcError.message ?? null,
+      errorCode: saveError.code ?? null,
+      errorMessage: saveError.message ?? null,
       updateSignature,
     });
   } finally {
     clearTimeout(watchdog);
   }
 
-  const requestedIds = new Set(rpcPayload.map((update) => update.shot_generation_id));
+  const requestedIds = new Set(docUpdates.map((update) => update.entryId));
 
-  if (rpcError) {
-    if (isTimelineWriteTimeoutError(rpcError)) {
+  if (saveError) {
+    if (isTimelineWriteTimeoutError(saveError)) {
       try {
         const diagnosticRows = await runTimelineWriteWithTimeout(
           `${timeoutOperationName}-timeout-diagnostics`,
-          async (signal) => {
-            const { data, error } = await supabase().from('shot_generations')
-              .select('id, shot_id, generation_id, timeline_frame, updated_at, metadata')
-              .in('id', Array.from(requestedIds))
-              .abortSignal(signal);
-            if (error) throw error;
-            return data ?? [];
-          },
+          abortable(async () => {
+            const { byShot } = await fetchProjectPlacements(projectSlug);
+            return byShot.get(shotId) ?? [];
+          }),
           { timeoutMs: 5000, upstreamSignal: signal },
+        );
+        const metadataByEntry = new Map(
+          docUpdates.map((update) => [update.entryId, update.metadata ?? {}]),
         );
 
         log(`${logPrefix} timeout diagnostics snapshot`, {
@@ -227,14 +276,14 @@ export async function persistTimelineFrameBatch({
           updateSignature,
           requestedCount: requestedIds.size,
           snapshotCount: diagnosticRows.length,
-          snapshot: diagnosticRows.map((row) => ({
-            shotGenerationId: shortId(row.id),
-            shotId: shortId(row.shot_id as string),
-            generationId: shortId(row.generation_id as string),
-            timelineFrame: row.timeline_frame,
-            updatedAt: row.updated_at,
-            dragSource: (row.metadata as Record<string, unknown> | null)?.drag_source ?? null,
-          })),
+          snapshot: diagnosticRows
+            .filter((row) => requestedIds.has(row.entryId))
+            .map((row) => ({
+              entryId: shortId(row.entryId),
+              generationId: shortId(row.generationId),
+              timelineFrame: row.timelineFrame,
+              dragSource: metadataByEntry.get(row.entryId)?.drag_source ?? null,
+            })),
         });
       } catch (diagnosticError) {
         log(`${logPrefix} timeout diagnostics failed`, {
@@ -246,17 +295,17 @@ export async function persistTimelineFrameBatch({
       }
     }
 
-    throw rpcError;
+    throw saveError;
   }
 
   const returnedIds = new Set(
-    rpcResultRows
-      .map((row) => row.shot_generation_id)
+    savedEntries
+      .map((row) => row.entryId)
       .filter((id): id is string => typeof id === 'string' && id.length > 0),
   );
   const missingRequestedIds = Array.from(requestedIds).filter((id) => !returnedIds.has(id));
   if (missingRequestedIds.length > 0 || returnedIds.size !== requestedIds.size) {
-    log(`${logPrefix} rpc batch_update_timeline_frames row mismatch`, {
+    log(`${logPrefix} doc placement batch update row mismatch`, {
       shotId: shortId(shotId),
       operation: operationLabel,
       requestedCount: requestedIds.size,
@@ -271,17 +320,17 @@ export async function persistTimelineFrameBatch({
     );
   }
 
-  log(`${logPrefix} rpc batch_update_timeline_frames succeeded`, {
+  log(`${logPrefix} doc placement batch update succeeded`, {
     shotId: shortId(shotId),
     operation: operationLabel,
-    updateCount: rpcPayload.length,
-    returnedFrames: rpcResultRows.slice(0, 8).map((row) => ({
-      id: shortId(row.shot_generation_id ?? null),
-      frame: row.timeline_frame,
+    updateCount: docUpdates.length,
+    returnedFrames: savedEntries.slice(0, 8).map((row) => ({
+      id: shortId(row.entryId),
+      frame: docUpdates.find((update) => update.entryId === row.entryId)?.timelineFrame ?? null,
     })),
   });
   return {
-    updateCount: rpcPayload.length,
+    updateCount: docUpdates.length,
     durationMs: Date.now() - startedAt,
     skipped: false,
   };

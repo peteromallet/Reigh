@@ -3,6 +3,8 @@ import React from 'react';
 import { act, render, renderHook } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createFakeIndexedDB, resetFakeIndexedDB } from 'fake-indexeddb';
+vi.stubGlobal('indexedDB', createFakeIndexedDB());
 import { useTimelinePersistence, type UseTimelinePersistenceResult } from './useTimelinePersistence';
 import { TimelineEventBus } from './useTimelineEventBus';
 import {
@@ -17,6 +19,7 @@ import { getConfigSignature, getStableConfigSignature } from '../lib/config-util
 import { createDefaultTimelineConfig } from '../lib/defaults';
 import type { AssetResolver } from '../data/AssetResolver';
 import { TimelineVersionConflictError, type DataProvider } from '../data/DataProvider';
+import { loadTimelineDraft, saveTimelineDraft } from '@/tools/video-editor/data/timelineDraftIndexedDb.ts';
 import type { AssetRegistry } from '../types';
 
 function makeRegistry(label: string): AssetRegistry {
@@ -192,6 +195,7 @@ function setup(options?: SetupOptions): TestHarness {
 describe('useTimelinePersistence — interaction gating', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    resetFakeIndexedDB();
   });
 
   afterEach(() => {
@@ -303,6 +307,75 @@ describe('useTimelinePersistence — interaction gating', () => {
     });
 
     expect(harness.saveTimeline).toHaveBeenCalledTimes(1);
+  });
+
+  it('coalesces a recovery draft before the debounce, so a crash cannot lose the edit', async () => {
+    const harness = setup();
+    const first = makeTimelineData('crash-before-debounce');
+    const latest = makeTimelineData('crash-latest');
+
+    harness.scheduleSave(first);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(harness.saveTimeline).not.toHaveBeenCalled();
+    expect((await loadTimelineDraft('timeline-1'))?.draft).toEqual({
+      config: first.config,
+      registry: first.registry,
+    });
+
+    // A second mutation overwrites the one slot, still before any POST.
+    harness.scheduleSave(latest);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect((await loadTimelineDraft('timeline-1'))?.draft).toEqual({
+      config: latest.config,
+      registry: latest.registry,
+    });
+  });
+
+  it('flushes a debounce-pending edit immediately and returns its acknowledged version', async () => {
+    const harness = setup();
+    harness.scheduleSave(makeTimelineData('render-barrier'));
+
+    let acknowledgedVersion: number | undefined;
+    await act(async () => {
+      acknowledgedVersion = await harness.result.current.flushPendingSave();
+    });
+
+    expect(harness.saveTimeline).toHaveBeenCalledTimes(1);
+    expect(harness.saveTimeline.mock.calls[0]?.[1].output.file).toBe('output-render-barrier.mp4');
+    expect(acknowledgedVersion).toBe(2);
+  });
+
+  it('refuses the save-for-render barrier while an interaction is active', async () => {
+    const harness = setup();
+    harness.interactionStateRef.current.drag = true;
+    harness.scheduleSave(makeTimelineData('mid-drag-render'));
+
+    await expect(harness.result.current.flushPendingSave()).rejects.toThrow(
+      'Finish the current timeline interaction before rendering.',
+    );
+    expect(harness.saveTimeline).not.toHaveBeenCalled();
+  });
+
+  it('rejects the save-for-render barrier when the durable write fails', async () => {
+    const harness = setup({
+      saveTimelineImpl: async () => {
+        throw new Error('bridge unavailable');
+      },
+    });
+    harness.scheduleSave(makeTimelineData('failed-render-save'));
+
+    await act(async () => {
+      await expect(harness.result.current.flushPendingSave()).rejects.toThrow('bridge unavailable');
+    });
+    expect(harness.saveTimeline).toHaveBeenCalledTimes(1);
+    harness.unmount();
   });
 
   it('suppresses autosave when provider persistence is disabled', async () => {
@@ -580,6 +653,59 @@ describe('useTimelinePersistence — interaction gating', () => {
     expect(harness.loadAssetRegistry).not.toHaveBeenCalled();
   });
 
+  it('retains the recovery draft after a 409 and transport failure, and clears it only after success', async () => {
+    const conflict = setup({
+      persistenceEnabled: true,
+      saveTimelineImpl: async () => {
+        throw new TimelineVersionConflictError();
+      },
+    });
+    const conflictData = makeTimelineData('draft-conflict');
+    conflict.scheduleSave(conflictData);
+    await act(async () => {
+      vi.advanceTimersByTime(600);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(await loadTimelineDraft('timeline-1')).not.toBeNull();
+    conflict.unmount();
+
+    resetFakeIndexedDB();
+    const transport = setup({
+      persistenceEnabled: true,
+      saveTimelineImpl: async () => {
+        throw new Error('bridge unavailable');
+      },
+    });
+    transport.scheduleSave(makeTimelineData('draft-transport'));
+    await act(async () => {
+      vi.advanceTimersByTime(600);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(await loadTimelineDraft('timeline-1')).not.toBeNull();
+    transport.unmount();
+
+    resetFakeIndexedDB();
+    const success = setup({ persistenceEnabled: true });
+    await saveTimelineDraft(
+      'timeline-1',
+      { config: makeTimelineData('old').config, registry: { assets: {} } },
+      1,
+    );
+    success.scheduleSave(makeTimelineData('draft-success'));
+    await act(async () => {
+      vi.advanceTimersByTime(600);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(success.saveTimeline).toHaveBeenCalledTimes(1);
+    expect(await loadTimelineDraft('timeline-1')).toBeNull();
+  });
+
   it('autosave freezes while diverged (further edits do not POST)', async () => {
     const harness = setup({
       persistenceEnabled: true,
@@ -628,6 +754,45 @@ describe('useTimelinePersistence — interaction gating', () => {
     expect(harness.result.current.isConflictExhausted).toBe(false);
     expect(harness.loadTimeline.mock.calls.length).toBeGreaterThan(loadBefore);
     expect(harness.saveTimeline).toHaveBeenCalledTimes(1);
+    // Save-as-copy deliberately preserves the just-stashed local work across
+    // the server reload.
+    expect(await loadTimelineDraft('timeline-1')).not.toBeNull();
+  });
+
+  it('direct reload adopts server state and clears a diverged recovery draft', async () => {
+    const harness = setup({ persistenceEnabled: true });
+    harness.scheduleSave(makeTimelineData('local-before-reload'));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(await loadTimelineDraft('timeline-1')).not.toBeNull();
+
+    await act(async () => {
+      await harness.reloadFromServer();
+    });
+    expect(await loadTimelineDraft('timeline-1')).toBeNull();
+  });
+
+  it('best-effort draft writes tolerate private-mode IndexedDB rejection', async () => {
+    const harness = setup({ persistenceEnabled: true });
+    const originalIndexedDb = (globalThis as Record<string, unknown>).indexedDB;
+    vi.stubGlobal('indexedDB', {
+      open: () => {
+        throw new Error('IndexedDB is blocked in private mode');
+      },
+    });
+
+    expect(() => harness.scheduleSave(makeTimelineData('private-mode'))).not.toThrow();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      vi.advanceTimersByTime(600);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(harness.saveTimeline).toHaveBeenCalledTimes(1);
+    vi.stubGlobal('indexedDB', originalIndexedDb);
   });
 
   it('reloadFromServer rebuilds timeline data through the asset resolver', async () => {
@@ -715,6 +880,7 @@ describe('useTimelinePersistence — interaction gating', () => {
 describe('useTimelinePersistence — write-ack watchdog', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    resetFakeIndexedDB();
   });
 
   // React Query defers mutationFn onto microtasks; flush them after advancing.
@@ -921,12 +1087,24 @@ describe('useTimelinePersistence — write-ack watchdog', () => {
     harness.editSeqRef.current = 2;
     harness.scheduleSave(makeTimelineData('save-b'));
     expect(harness.saveTimeline).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect((await loadTimelineDraft('timeline-1'))?.draft).toEqual({
+      config: makeTimelineData('save-b').config,
+      registry: makeTimelineData('save-b').registry,
+    });
 
     // A's ACK arrives: it does not cover the newest edit, so it must NOT
     // clear the sole watchdog. The queued save B drains and hangs.
     act(() => { settleA?.(2); });
     await advance(0);
     expect(harness.saveTimeline).toHaveBeenCalledTimes(2);
+    expect((await loadTimelineDraft('timeline-1'))?.draft).toEqual({
+      config: makeTimelineData('save-b').config,
+      registry: makeTimelineData('save-b').registry,
+    });
     // The queued newer save B drained and is now in flight — definitely not
     // 'saved', and the watchdog is still armed.
     expect(harness.result?.current.saveStatus).toBe('saving');
@@ -945,6 +1123,7 @@ describe('useTimelinePersistence — write-ack watchdog', () => {
     await advance(0);
     expect(harness.result?.current.watchdogTripped).toBe(false);
     expect(harness.result?.current.saveStatus).toBe('saved');
+    expect(await loadTimelineDraft('timeline-1')).toBeNull();
   });
 
   it('trips on a rejected CAS conflict that never resolves', async () => {

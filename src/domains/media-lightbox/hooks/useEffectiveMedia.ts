@@ -8,6 +8,8 @@
  */
 
 import { useMemo } from 'react';
+import { bridgeMediaUrl } from '@/shared/lib/media/bridgeMediaUrl';
+import { getProjectSelectionFallbackId } from '@/shared/contexts/projectSelectionStore';
 import { ASPECT_RATIO_TO_RESOLUTION } from '@/shared/lib/media/aspectRatios';
 import { resolutionToDimensions } from '../utils/dimensions';
 
@@ -37,24 +39,30 @@ export function useEffectiveMedia({
   imageDimensions,
   projectAspectRatio,
 }: UseEffectiveMediaProps): UseEffectiveMediaReturn {
+  // Variant locations are managed-media references; resolve them to the
+  // same-origin R9 content route at this display boundary.
+  const projectSlug = getProjectSelectionFallbackId();
+
   // Get the effective video URL (active variant or current media)
   const effectiveVideoUrl = useMemo(() => {
-    if (isVideo && activeVariant) {
-      return activeVariant.location ?? undefined;
+    if (isVideo && activeVariant?.location) {
+      return bridgeMediaUrl(projectSlug, activeVariant.location);
+    }
+    if (isVideo) {
+      return undefined;
     }
     return effectiveImageUrl;
-  }, [isVideo, activeVariant, effectiveImageUrl]);
+  }, [isVideo, activeVariant, effectiveImageUrl, projectSlug]);
 
   // For images, use the active variant's location when a variant is explicitly selected
   const effectiveMediaUrl = useMemo(() => {
-
     // If an active variant is set (any variant, including primary), use its location
     if (activeVariant && activeVariant.location) {
-      return activeVariant.location;
+      return bridgeMediaUrl(projectSlug, activeVariant.location);
     }
     // Otherwise use the standard effective image URL
     return effectiveImageUrl;
-  }, [activeVariant, effectiveImageUrl]);
+  }, [activeVariant, effectiveImageUrl, projectSlug]);
 
   // Compute effective dimensions that are GUARANTEED to have a value
   // This is computed synchronously during render, so there's no flicker

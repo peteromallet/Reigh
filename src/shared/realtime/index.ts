@@ -10,7 +10,6 @@ export type {
   TasksCreatedEvent,
   GenerationsInsertedEvent,
   GenerationsUpdatedEvent,
-  ShotGenerationsChangedEvent,
   VariantsChangedEvent,
   TimelinesUpdatedEvent,
   RawDatabaseEvent,

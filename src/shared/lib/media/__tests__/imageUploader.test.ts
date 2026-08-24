@@ -15,9 +15,7 @@ const mocks = vi.hoisted(() => ({
     },
     storage: {
       from: vi.fn().mockReturnValue({
-        getPublicUrl: vi.fn().mockReturnValue({
-          data: { publicUrl: 'https://storage.com/public/image.jpg' },
-        }),
+        upload: vi.fn().mockResolvedValue({ data: { path: 'user-123/uploads/x.jpg' }, error: null }),
       }),
     },
   },

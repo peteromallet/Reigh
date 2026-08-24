@@ -20,6 +20,7 @@ import {
   type SettingsScope,
 } from '@/shared/settings';
 import type { ToolDefaultsById, ToolDefaultsId } from '@/tooling/toolDefaultsRegistry';
+import { hasLocalModeUrlParams } from '@/shared/dev/devSession';
 
 export { updateToolSettingsSupabase } from '@/shared/settings';
 export type { SettingsScope } from '@/shared/settings';
@@ -185,6 +186,9 @@ export function useToolSettings<T extends Record<string, unknown>>(
 ) {
   const queryClient = useQueryClient();
   const { isAuthenticated } = useAuthSafe();
+  const isLocalMode = hasLocalModeUrlParams(
+    typeof window === 'undefined' ? '' : window.location.search,
+  );
 
   // Determine parameter shapes
   const projectIdFromRuntime = getProjectSelectionFallbackId() ?? undefined;
@@ -194,7 +198,7 @@ export function useToolSettings<T extends Record<string, unknown>>(
   // local-mode editor, or any logged-out page) they cannot resolve and the
   // callers that omit `enabled` (AgentChatContext, ToolsPane, …) must not
   // fire a backend request. This is the single choke point.
-  const fetchEnabled: boolean = (context?.enabled ?? true) && isAuthenticated;
+  const fetchEnabled: boolean = (context?.enabled ?? true) && isAuthenticated && !isLocalMode;
 
   // Refs to access current values in stable callbacks without recreating them
   const projectIdRef = useRef(projectId);
@@ -235,6 +239,8 @@ export function useToolSettings<T extends Record<string, unknown>>(
       settings: Partial<T>;
       entityId?: string;
     }) => {
+      if (isLocalMode) return null;
+
       let idForScope: string | undefined = entityId;
 
       if (!idForScope) {

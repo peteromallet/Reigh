@@ -1,12 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
-vi.mock('@/integrations/supabase/config/env', () => ({
-  getSupabaseUrl: () => 'https://example.supabase.co',
-  getSupabasePublishableKey: () => 'pk-test',
-}));
-
-vi.mock('@/shared/lib/supabaseSession', () => ({
-  readAccessTokenFromStorage: () => 'token-test',
+// createTask keeps a legacy materialization scan that reaches into the
+// generation repository; the bridge journey itself never needs it here.
+vi.mock('@/integrations/supabase/repositories/generationRepository', () => ({
+  fetchGenerationRecordById: async () => null,
 }));
 
 vi.mock('@/shared/lib/errorHandling/runtimeError', () => ({
@@ -18,26 +15,40 @@ vi.mock('@/shared/lib/errorHandling/runtimeError', () => ({
 import { createTask } from './createTask';
 import { beginLocalWorkerSession } from './localWorkerSession';
 import type { LocalWorkerSession, MaterializedInputRecord } from './localWorkerSession';
+import { createFakeBridgeRouter, type FakeBridgeRouter } from '@/test/fakeBridgeRouter.ts';
 
-const fetchMock = vi.fn();
+const FAKE_ORIGIN = 'http://bridge.fake';
+
+let router: FakeBridgeRouter;
+let fetchMock: Mock;
 
 beforeEach(() => {
-  fetchMock.mockReset();
-  fetchMock.mockResolvedValue({
-    ok: true,
-    json: async () => ({ task_id: 'created-task', status: 'queued' }),
+  router = createFakeBridgeRouter();
+  fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(input instanceof Request ? input.url : String(input), FAKE_ORIGIN);
+    return await router.handle(new Request(`${FAKE_ORIGIN}${url.pathname}${url.search}`, init));
   });
-  globalThis.fetch = fetchMock as unknown as typeof fetch;
+  vi.stubGlobal('fetch', fetchMock);
 });
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
-function lastFetchBody(): Record<string, unknown> {
-  expect(fetchMock).toHaveBeenCalled();
-  const call = fetchMock.mock.calls[fetchMock.mock.calls.length - 1];
-  const init = call[1] as RequestInit;
+function lastAdmitCall(): { url: string; init: RequestInit } {
+  const admissionCalls = fetchMock.mock.calls.filter(([input, init]) => {
+    const url = new URL(input instanceof Request ? input.url : String(input), FAKE_ORIGIN);
+    return url.pathname.endsWith('/tasks') && (init as RequestInit | undefined)?.method === 'POST';
+  });
+  expect(admissionCalls.length).toBeGreaterThan(0);
+  const [input, init] = admissionCalls[admissionCalls.length - 1] as [RequestInfo | URL, RequestInit];
+  const url = new URL(input instanceof Request ? input.url : String(input), FAKE_ORIGIN);
+  return { url: url.pathname, init };
+}
+
+function lastAdmitBody(): Record<string, unknown> {
+  const { init } = lastAdmitCall();
   return JSON.parse(init.body as string) as Record<string, unknown>;
 }
 
@@ -50,32 +61,76 @@ function fakeSessionWithRecords(records: MaterializedInputRecord[]): LocalWorker
   };
 }
 
-describe('createTask materialized_inputs body wiring', () => {
-  it('omits materialized_inputs when no session is provided', async () => {
-    await createTask({
-      family: 'image-generation',
-      project_id: 'proj-1',
+describe('createTask R1 admission over the fake bridge router', () => {
+  it('admits with a per-call Idempotency-Key header and maps the response', async () => {
+    const result = await createTask({
+      family: 'image_generation',
+      project_id: 'demo-project',
       input: { prompt: 'hi' },
     });
 
-    const body = lastFetchBody();
-    expect(body).not.toHaveProperty('materialized_inputs');
-    expect(body).toMatchObject({
-      family: 'image-generation',
-      project_id: 'proj-1',
+    const { url, init } = lastAdmitCall();
+    // Frozen R1 route + required receipt header.
+    expect(url).toBe('/api/astrid/projects/demo-project/tasks');
+    const headers = init.headers as Record<string, string>;
+    expect(headers['Idempotency-Key']).toEqual(expect.any(String));
+    expect(headers['Idempotency-Key'].length).toBeGreaterThan(0);
+
+    expect(result.task_id).toBeTruthy();
+    expect(result.status).toBe('Queued');
+  });
+
+  it('keeps one idempotency key across the transport retry of the same admission', async () => {
+    let calls = 0;
+    const idempotencyKeys: string[] = [];
+    const flakyFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      if (headers['Idempotency-Key']) {
+        idempotencyKeys.push(headers['Idempotency-Key']);
+      }
+      calls += 1;
+      if (calls === 1) {
+        throw new Error('connection reset');
+      }
+      const url = new URL(input instanceof Request ? input.url : String(input), FAKE_ORIGIN);
+      return await router.handle(new Request(`${FAKE_ORIGIN}${url.pathname}${url.search}`, init));
+    });
+    vi.stubGlobal('fetch', flakyFetch);
+
+    await createTask({
+      family: 'image_generation',
+      project_id: 'demo-project',
+      input: { prompt: 'retry' },
+    });
+
+    // Both attempts carried the SAME receipt key; only one task committed.
+    expect(idempotencyKeys.length).toBe(2);
+    expect(idempotencyKeys[0]).toBe(idempotencyKeys[1]);
+    expect(router.state.admissions).toBe(1);
+  });
+
+  it('omits materialized_inputs when no session is provided', async () => {
+    await createTask({
+      family: 'image_generation',
+      project_id: 'demo-project',
       input: { prompt: 'hi' },
     });
-    expect(body.idempotency_key).toEqual(expect.any(String));
+
+    const body = lastAdmitBody();
+    expect(body).not.toHaveProperty('materialized_inputs');
+    expect(body).toMatchObject({
+      family: 'image_generation',
+      input: { prompt: 'hi' },
+    });
   });
 
   it('omits materialized_inputs when session has no records', async () => {
     await createTask(
-      { family: 'image-generation', project_id: 'proj-1', input: { prompt: 'hi' } },
+      { family: 'image_generation', project_id: 'demo-project', input: { prompt: 'hi' } },
       { localWorkerSession: beginLocalWorkerSession() },
     );
 
-    const body = lastFetchBody();
-    expect(body).not.toHaveProperty('materialized_inputs');
+    expect(lastAdmitBody()).not.toHaveProperty('materialized_inputs');
   });
 
   it('includes materialized_inputs when session has ≥1 record', async () => {
@@ -85,11 +140,10 @@ describe('createTask materialized_inputs body wiring', () => {
     ];
 
     await createTask(
-      { family: 'travel', project_id: 'proj-2', input: { x: 1 } },
+      { family: 'image_generation', project_id: 'demo-project', input: { x: 1 } },
       { localWorkerSession: fakeSessionWithRecords(records) },
     );
 
-    const body = lastFetchBody();
-    expect(body.materialized_inputs).toEqual(records);
+    expect(lastAdmitBody().materialized_inputs).toEqual(records);
   });
 });

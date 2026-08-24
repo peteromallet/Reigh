@@ -1,9 +1,7 @@
-import React, { createContext, useContext, ReactNode, useMemo, useState, useEffect } from 'react';
-import { useListShots, useProjectImageStats } from '@/shared/hooks/shots';
-import { useProjectSelectionContext } from '@/shared/contexts/ProjectContext';
-import { Shot } from '@/domains/generation/types';
+import React, { createContext, useContext, type ReactNode } from 'react';
+import type { Shot } from '@/domains/generation/types';
 
-interface ShotsContextType {
+export interface ShotsContextType {
   shots: Shot[] | undefined;
   isLoading: boolean;
   error: Error | null;
@@ -19,65 +17,39 @@ interface ShotsProviderProps {
   children: ReactNode;
 }
 
-export const ShotsProvider: React.FC<ShotsProviderProps> = ({ children }) => {
-  const { selectedProjectId } = useProjectSelectionContext();
+const EMPTY_BRIDGE_SHOTS: ShotsContextType = Object.freeze({
+  shots: [],
+  isLoading: false,
+  error: null,
+  refetchShots: () => undefined,
+  allImagesCount: 0,
+  noShotImagesCount: 0,
+});
 
-  const [isProjectTransitioning, setIsProjectTransitioning] = useState(false);
-  const prevProjectIdRef = React.useRef<string | null>(null);
-
-  // Load all images per shot (0 = unlimited)
-  // Previously limited to 2 on mobile for performance, but this broke expand/collapse UI
-  const maxImagesPerShot = 0;
-
-  const { data: shots, isLoading: isShotsLoading, isFetching: isShotsFetching, error: shotsError, refetch } = useListShots(selectedProjectId, { maxImagesPerShot });
-
-  // Load project-wide image stats
-  const { data: projectStats, isLoading: isStatsLoading } = useProjectImageStats(selectedProjectId);
-
-  // Set transitioning flag when project changes
-  useEffect(() => {
-    if (prevProjectIdRef.current !== null && prevProjectIdRef.current !== selectedProjectId) {
-      setIsProjectTransitioning(true);
-    }
-    prevProjectIdRef.current = selectedProjectId;
-  }, [selectedProjectId]);
-
-  // Clear transitioning flag when new data arrives
-  useEffect(() => {
-    if (isProjectTransitioning && !isShotsFetching && shots !== undefined) {
-      setIsProjectTransitioning(false);
-    }
-  }, [isProjectTransitioning, isShotsFetching, shots]);
-
-  // Show loading during transition or actual loading
-  const isLoading = isShotsLoading || isStatsLoading || isProjectTransitioning;
-  const error = shotsError;
-
-  // Return undefined for shots during transition to force skeleton display
-  // This prevents showing stale data from a previously cached project
-  const effectiveShots = isProjectTransitioning ? undefined : shots;
-
-  // Memoize context value to prevent unnecessary re-renders of consumers
-  const value = useMemo<ShotsContextType>(() => ({
-    shots: effectiveShots,
-    isLoading,
-    error,
-    refetchShots: refetch,
-    allImagesCount: projectStats?.allCount,
-    noShotImagesCount: projectStats?.noShotCount,
-  }), [effectiveShots, isLoading, error, refetch, projectStats]);
-
+export function ShotsContextProvider({
+  children,
+  value,
+}: ShotsProviderProps & { value: ShotsContextType }) {
   return (
     <ShotsContext.Provider value={value}>
       {children}
     </ShotsContext.Provider>
   );
-};
+}
+
+/**
+ * Bridge authority has no relational shots read route. Supply an explicit empty
+ * compatibility view without importing or executing the deferred Supabase shot
+ * hooks. Document-native groups are owned by the editor runtime instead.
+ */
+export function AstridShotsProvider({ children }: ShotsProviderProps) {
+  return <ShotsContextProvider value={EMPTY_BRIDGE_SHOTS}>{children}</ShotsContextProvider>;
+}
 
 export const useShots = (): ShotsContextType => {
   const context = useContext(ShotsContext);
   if (context === undefined) {
-    throw new Error('useShots must be used within a ShotsProvider');
+    throw new Error('useShots must be used within a shots context provider');
   }
   return context;
 }; 

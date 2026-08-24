@@ -1,12 +1,9 @@
-import { useQuery } from '@tanstack/react-query';
-import { TASK_STATUS } from '@/types/tasks';
-import { taskQueryKeys } from '@/shared/lib/queryKeys/tasks';
 import { resolveTaskProjectScope } from '@/shared/lib/tasks/resolveTaskProjectScope';
 import {
-  seedRealtimeTasksFromRows,
   useRealtimePendingGenerationTasks,
   type PendingGenerationTaskSnapshot,
 } from '@/shared/state/realtimeStore';
+import { useBridgeTaskSnapshot } from './useBridgeTaskSnapshot';
 
 type PendingGenerationTask = PendingGenerationTaskSnapshot;
 
@@ -84,38 +81,14 @@ export function usePendingGenerationTasks(
 ): UsePendingGenerationTasksReturn {
   const effectiveProjectId = resolveTaskProjectScope(projectId);
   const pendingSelection = useRealtimePendingGenerationTasks(generationId, effectiveProjectId);
-
-  const { isLoading } = useQuery({
-    queryKey: [...taskQueryKeys.pendingGeneration(generationId ?? ''), effectiveProjectId],
-    queryFn: async () => {
-      if (!generationId || !effectiveProjectId) {
-        return [];
-      }
-
-      const { getSupabaseClient } = await import('@/integrations/supabase/client');
-      const { data, error } = await getSupabaseClient().from('tasks')
-        .select('id, task_type, params, status, created_at, updated_at, project_id')
-        .eq('project_id', effectiveProjectId)
-        .in('status', [TASK_STATUS.QUEUED, TASK_STATUS.IN_PROGRESS]);
-
-      if (error) {
-        console.error('[usePendingGenerationTasks] Query error:', error);
-        return [];
-      }
-
-      return seedRealtimeTasksFromRows(data || [], effectiveProjectId);
-    },
-    enabled: !!generationId && !!effectiveProjectId,
-    refetchInterval: 5000,
-    staleTime: 0,
-    gcTime: 10000,
-    refetchOnWindowFocus: 'always',
-  });
+  const snapshotQuery = useBridgeTaskSnapshot(
+    generationId && effectiveProjectId ? [effectiveProjectId] : [],
+  );
 
   return {
     pendingCount: pendingSelection.pendingCount,
     pendingTasks: pendingSelection.pendingTasks as PendingGenerationTask[],
-    isLoading,
+    isLoading: snapshotQuery.isLoading,
   };
 }
 

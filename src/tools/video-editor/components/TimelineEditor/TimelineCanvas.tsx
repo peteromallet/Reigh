@@ -143,6 +143,8 @@ export interface TimelineCanvasProps {
   onShotGroupUpdateToLatestVideo?: (group: { shotId: string; rowId: string }) => void;
   onShotGroupUnpin?: (group: { shotId: string; trackId: string }) => void;
   onShotGroupDelete?: (group: { shotId: string; trackId: string; clipIds: string[] }) => void;
+  onShotGroupDuplicate?: (group: { shotId: string; trackId: string }) => void;
+  onShotGroupPromotePrimary?: (group: { shotId: string; trackId: string }) => void;
   onSelectClips?: (clipIds: string[]) => void;
   dragSessionRef?: MutableRefObject<DragSession | null>;
   interactionStateRef?: import('@/tools/video-editor/lib/interaction-state').InteractionStateRef;
@@ -291,6 +293,8 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
   onShotGroupUpdateToLatestVideo,
   onShotGroupUnpin,
   onShotGroupDelete,
+  onShotGroupDuplicate,
+  onShotGroupPromotePrimary,
   onSelectClips,
   dragSessionRef,
   interactionStateRef,
@@ -1067,6 +1071,8 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
             onUpdateToLatestVideo={onShotGroupUpdateToLatestVideo}
             onUnpinGroup={onShotGroupUnpin}
             onDeleteShot={onShotGroupDelete}
+            onDuplicateGroup={onShotGroupDuplicate}
+            onPromotePrimary={onShotGroupPromotePrimary}
           />
           {timelineAreaMenu && (
             <TimelineAreaExtensionContextMenu

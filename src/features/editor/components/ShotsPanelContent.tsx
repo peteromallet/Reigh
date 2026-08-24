@@ -16,7 +16,8 @@ import { VideoGenerationModal } from '@/tools/travel-between-images/components/V
 import { useHiddenShots } from '@/tools/travel-between-images/hooks/useHiddenShots';
 import { getGenerationId } from '@/shared/lib/media/mediaTypeHelpers';
 import { isVideoGeneration, isPositioned } from '@/shared/lib/typeGuards';
-import { getDisplayUrl } from '@/shared/lib/media/mediaUrl';
+import { bridgeMediaUrl } from '@/shared/lib/media/bridgeMediaUrl';
+import { getProjectSelectionFallbackId } from '@/shared/contexts/projectSelectionStore';
 import { useAddImageToShot } from '@/shared/hooks/shots/useShotGenerationMutations';
 import { useDuplicateShot, useDeleteShot } from '@/shared/hooks/shots/useShotsCrud';
 import { useDuplicateShotWithVideos } from '@/shared/hooks/shots/useDuplicateShotWithVideos';
@@ -62,7 +63,7 @@ function ShotCard({
   const [editName, setEditName] = useState(shot.name);
 
   const thumbnailUrl = finalVideo?.thumbnailUrl
-    ?? getDisplayUrl(shot.images?.[0]?.thumbUrl ?? shot.images?.[0]?.imageUrl ?? shot.images?.[0]?.location);
+    ?? bridgeMediaUrl(getProjectSelectionFallbackId(), shot.images?.[0]?.thumbUrl ?? shot.images?.[0]?.imageUrl ?? shot.images?.[0]?.location);
   const imageCount = shot.images?.filter((img) => !isVideoGeneration(img) && isPositioned(img)).length ?? 0;
 
   const handleDragStart = (event: React.DragEvent<HTMLDivElement>) => {

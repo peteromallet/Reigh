@@ -1,21 +1,19 @@
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { getSupabaseClient } from '@/integrations/supabase/client';
 import { getVisibleTaskTypes } from '@/shared/lib/tasks/taskConfig';
-import { useSmartPollingConfig } from '@/shared/hooks/useSmartPolling';
-import { QUERY_PRESETS, STANDARD_RETRY, STANDARD_RETRY_DELAY } from '@/shared/lib/query/queryDefaults';
+import { QUERY_PRESETS } from '@/shared/lib/query/queryDefaults';
 import { taskQueryKeys } from '@/shared/lib/queryKeys/tasks';
-import { dataFreshnessManager } from '@/shared/realtime/DataFreshnessManager';
-import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
 import {
   TASK_FAILURE_STATUSES,
   TASK_PROCESSING_STATUSES,
 } from '@/shared/lib/tasks/taskStatusSemantics';
-import { applyRootTaskFilter } from '@/shared/lib/tasks/orchestratorReference';
+import { isRootBridgeTask } from '@/integrations/astrid/bridgeTaskReads';
 import {
   operationFailure,
   operationSuccess,
   type OperationResult,
 } from '@/shared/lib/operationResult';
+import { useBridgeTaskSnapshot } from './useBridgeTaskSnapshot';
 
 type TaskStatusCountsQuery = 'processing' | 'success' | 'failure';
 
@@ -31,50 +29,6 @@ interface TaskStatusCountsResult {
     recentSuccesses: number;
     recentFailures: number;
   }>;
-}
-
-function buildEmptyTaskStatusCountsResult(): TaskStatusCountsResult {
-  const zeroCounts = {
-    processing: 0,
-    recentSuccesses: 0,
-    recentFailures: 0,
-  };
-
-  return {
-    ...zeroCounts,
-    degraded: false,
-    failedQueries: [],
-    operation: operationSuccess(zeroCounts, { policy: 'best_effort' }),
-  };
-}
-
-function resolveSettledCountResult(
-  projectId: string,
-  result: PromiseSettledResult<{ count: number | null; error: unknown }>,
-  queryType: TaskStatusCountsQuery,
-): { count: number; failed: boolean } {
-  if (result.status === 'fulfilled') {
-    const { count, error } = result.value;
-    if (error) {
-      normalizeAndPresentError(error, {
-        context: `useTaskStatusCounts.${queryType}`,
-        showToast: false,
-        logData: { projectId },
-      });
-      return { count: 0, failed: true };
-    }
-    return { count: count || 0, failed: false };
-  }
-
-  normalizeAndPresentError(
-    result.reason instanceof Error ? result.reason : new Error(String(result.reason)),
-    {
-      context: `useTaskStatusCounts.${queryType}`,
-      showToast: false,
-      logData: { projectId },
-    },
-  );
-  return { count: 0, failed: true };
 }
 
 function buildTaskStatusCountsResult(
@@ -111,133 +65,36 @@ function buildTaskStatusCountsResult(
   };
 }
 
-function trackTaskStatusCountsFreshness(
+function taskTimestampMs(task: { createdAt: string; updatedAt?: string }): number {
+  return new Date(task.updatedAt || task.createdAt).getTime();
+}
+
+/**
+ * The three supabase-js head-count queries collapse into ONE bridge list
+ * read with in-memory counting — the frozen route has no aggregate form.
+ * A read failure degrades all three counters together (there are no partial
+ * failures left to mask).
+ */
+function deriveTaskStatusCounts(
+  tasks: readonly import('@/types/tasks').Task[],
   projectId: string,
-  failedQueries: TaskStatusCountsQuery[],
-  settledResults: [
-    PromiseSettledResult<{ count: number | null; error: unknown }>,
-    PromiseSettledResult<{ count: number | null; error: unknown }>,
-    PromiseSettledResult<{ count: number | null; error: unknown }>,
-  ],
-): void {
-  if (failedQueries.length === 0) {
-    dataFreshnessManager.onFetchSuccess(taskQueryKeys.statusCounts(projectId));
-    return;
-  }
-
-  const [processingResult, successResult, failureResult] = settledResults;
-  const errorReason =
-    processingResult.status === 'rejected'
-      ? processingResult.reason
-      : successResult.status === 'rejected'
-        ? successResult.reason
-        : failureResult.status === 'rejected'
-          ? failureResult.reason
-          : new Error('Query returned error');
-
-  dataFreshnessManager.onFetchFailure(
-    taskQueryKeys.statusCounts(projectId),
-    errorReason as Error,
-  );
-}
-
-interface FetchTaskStatusCountsOptions {
-  projectId: string | null;
-  allProjectIds?: string[];
-}
-
-function applyProjectScope(
-  query: ReturnType<ReturnType<typeof getSupabaseClient>['from']>['select'],
-  projectId: string | null,
-  allProjectIds?: string[],
-) {
-  if (allProjectIds && allProjectIds.length > 0) {
-    return query.in('project_id', allProjectIds);
-  }
-  if (projectId) {
-    return query.eq('project_id', projectId);
-  }
-  return query;
-}
-
-async function fetchTaskStatusCounts(options: FetchTaskStatusCountsOptions): Promise<TaskStatusCountsResult> {
-  const { projectId, allProjectIds } = options;
-  const isAllProjects = allProjectIds && allProjectIds.length > 0;
-
-  if (!projectId && !isAllProjects) {
-    return buildEmptyTaskStatusCountsResult();
-  }
-
-  // Use projectId for freshness tracking; fall back to synthetic key for all-projects mode
-  const trackingId = projectId ?? '__all-projects__';
-
+): TaskStatusCountsResult {
   const visibleTaskTypes = getVisibleTaskTypes();
-  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-  const supabase = getSupabaseClient();
-
-  const settledResults = await Promise.allSettled([
-    applyRootTaskFilter(
-      applyProjectScope(
-        supabase
-          .from('tasks')
-          .select('id', { count: 'exact', head: true }),
-        projectId,
-        allProjectIds,
-      )
-        .in('status', [...TASK_PROCESSING_STATUSES])
-        .in('task_type', visibleTaskTypes),
-    ),
-    applyRootTaskFilter(
-      applyProjectScope(
-        supabase
-          .from('tasks')
-          .select('id', { count: 'exact', head: true }),
-        projectId,
-        allProjectIds,
-      )
-        .eq('status', 'Complete')
-        .gte('generation_processed_at', oneHourAgo)
-        .in('task_type', visibleTaskTypes),
-    ),
-    applyRootTaskFilter(
-      applyProjectScope(
-        supabase
-          .from('tasks')
-          .select('id', { count: 'exact', head: true }),
-        projectId,
-        allProjectIds,
-      )
-        .in('status', [...TASK_FAILURE_STATUSES])
-        .gte('updated_at', oneHourAgo)
-        .in('task_type', visibleTaskTypes),
-    ),
-  ]) as [
-    PromiseSettledResult<{ count: number | null; error: unknown }>,
-    PromiseSettledResult<{ count: number | null; error: unknown }>,
-    PromiseSettledResult<{ count: number | null; error: unknown }>,
-  ];
-
-  const failedQueries: TaskStatusCountsQuery[] = [];
-  const processing = resolveSettledCountResult(trackingId, settledResults[0], 'processing');
-  if (processing.failed) failedQueries.push('processing');
-
-  const success = resolveSettledCountResult(trackingId, settledResults[1], 'success');
-  if (success.failed) failedQueries.push('success');
-
-  const failure = resolveSettledCountResult(trackingId, settledResults[2], 'failure');
-  if (failure.failed) failedQueries.push('failure');
-
-  trackTaskStatusCountsFreshness(trackingId, failedQueries, settledResults);
-
-  return buildTaskStatusCountsResult(
-    trackingId,
-    {
-      processing: processing.count,
-      success: success.count,
-      failure: failure.count,
-    },
-    failedQueries,
+  const oneHourAgoMs = Date.now() - 60 * 60 * 1000;
+  const inScope = tasks.filter(
+    (task) => visibleTaskTypes.includes(task.taskType) && isRootBridgeTask(task.params),
   );
+  const counts = {
+    processing: inScope.filter((task) =>
+      (TASK_PROCESSING_STATUSES as readonly string[]).includes(task.status)).length,
+    success: inScope.filter((task) =>
+      task.status === 'Complete' && taskTimestampMs(task) >= oneHourAgoMs).length,
+    failure: inScope.filter((task) =>
+      (TASK_FAILURE_STATUSES as readonly string[]).includes(task.status)
+      && taskTimestampMs(task) >= oneHourAgoMs).length,
+  };
+
+  return buildTaskStatusCountsResult(projectId, counts, []);
 }
 
 // Hook to get status counts for indicators
@@ -247,18 +104,21 @@ export const useTaskStatusCounts = (
 ) => {
   const allProjectIds = options?.allProjectIds;
   const isAllProjects = !!allProjectIds?.length;
+  const projectIds = isAllProjects
+    ? [...new Set(allProjectIds)].sort()
+    : (projectId ? [projectId] : []);
+  const snapshotQuery = useBridgeTaskSnapshot(projectIds);
   const cacheProjectId = isAllProjects ? '__all-projects__' : (projectId ?? '__no-project__');
-  const smartPollingConfig = useSmartPollingConfig(taskQueryKeys.statusCounts(cacheProjectId));
 
-  return useQuery({
-    queryKey: taskQueryKeys.statusCounts(cacheProjectId),
-    queryFn: () => fetchTaskStatusCounts({ projectId, allProjectIds }),
-    enabled: isAllProjects || !!projectId,
-    ...smartPollingConfig,
-    refetchIntervalInBackground: true,
-    retry: STANDARD_RETRY,
-    retryDelay: STANDARD_RETRY_DELAY,
-  });
+  const data = useMemo(() => {
+    if (!snapshotQuery.data) return undefined;
+    return deriveTaskStatusCounts(snapshotQuery.data, cacheProjectId);
+  }, [cacheProjectId, snapshotQuery.data]);
+
+  return {
+    ...snapshotQuery,
+    data,
+  };
 };
 
 /**
@@ -268,10 +128,7 @@ export const useTaskStatusCounts = (
 export const useAllTaskTypes = (_projectId: string | null) => {
   return useQuery({
     queryKey: taskQueryKeys.allTypes,
-    queryFn: () => {
-      const visibleTypes = getVisibleTaskTypes();
-      return visibleTypes;
-    },
+    queryFn: () => getVisibleTaskTypes(),
     ...QUERY_PRESETS.immutable,
     gcTime: Infinity,
   });

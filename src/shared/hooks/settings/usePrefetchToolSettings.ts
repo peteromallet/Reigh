@@ -8,6 +8,7 @@ import {
   fetchToolSettingsSupabase,
   type SettingsFetchResult,
 } from '@/shared/settings';
+import { hasLocalModeUrlParams } from '@/shared/dev/devSession';
 
 // Central list of tool IDs we want to preload. Update when you add more tools.
 const PREFETCH_TOOL_IDS = [
@@ -37,6 +38,9 @@ function fetchSettingsForPrefetch(
  */
 export function usePrefetchToolSettings(projectId?: string | null, shotIds: string[] = EMPTY_SHOT_IDS) {
   const queryClient = useQueryClient();
+  const isLocalMode = hasLocalModeUrlParams(
+    typeof window === 'undefined' ? '' : window.location.search,
+  );
   const shotIdsKey = shotIds.join(',');
   const shotIdsForPrefetch = useMemo(
     () => (shotIdsKey ? shotIdsKey.split(',') : EMPTY_SHOT_IDS),
@@ -44,7 +48,7 @@ export function usePrefetchToolSettings(projectId?: string | null, shotIds: stri
   );
 
   useEffect(() => {
-    if (!projectId) {
+    if (!projectId || isLocalMode) {
       return;
     }
 
@@ -72,5 +76,5 @@ export function usePrefetchToolSettings(projectId?: string | null, shotIds: stri
         });
       });
     }
-  }, [projectId, shotIdsForPrefetch, queryClient]);
+  }, [isLocalMode, projectId, shotIdsForPrefetch, queryClient]);
 }

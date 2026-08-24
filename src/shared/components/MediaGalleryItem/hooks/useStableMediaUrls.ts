@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
-import { getDisplayUrl } from '@/shared/lib/media/mediaUrl';
+import { bridgeMediaUrl } from '@/shared/lib/media/bridgeMediaUrl';
+import { getProjectSelectionFallbackId } from '@/shared/contexts/projectSelectionStore';
 import { isProgressiveLoadingEnabled } from '@/shared/settings/progressiveLoading';
 import { useProgressiveImage } from '@/shared/hooks/ui-image/useProgressiveImage';
 import type { GeneratedImageWithMetadata } from '../types';
@@ -39,16 +40,19 @@ export function useStableMediaUrls({ image, isPriority }: UseStableMediaUrlsPara
     }
   );
 
+  const projectSlug = getProjectSelectionFallbackId();
+
   // === Display URL (image thumbnail or progressive src) ===
+  // Stored refs become same-origin R9 content-route addresses here.
   const displayUrl = useMemo(() => {
     if (isVideoContent) {
-      return getDisplayUrl(image.thumbUrl || image.url);
+      return bridgeMediaUrl(projectSlug, image.thumbUrl || image.url);
     }
     if (progressiveEnabled && progressiveSrc) {
       return progressiveSrc;
     }
-    return getDisplayUrl(image.thumbUrl || image.url);
-  }, [progressiveEnabled, progressiveSrc, image.thumbUrl, image.url, isVideoContent]);
+    return bridgeMediaUrl(projectSlug, image.thumbUrl || image.url);
+  }, [progressiveEnabled, progressiveSrc, image.thumbUrl, image.url, isVideoContent, projectSlug]);
 
   // Stable display URL (only changes when underlying file changes)
   const displayUrlIdentity = image.urlIdentity || image.url || '';

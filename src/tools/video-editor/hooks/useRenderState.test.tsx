@@ -19,12 +19,16 @@ import {
   type VideoEditorRuntimeContextValue,
 } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext';
 import { createDiagnosticCollection } from '@reigh/editor-sdk';
+import { makeAdmittedTaskReadModel, taskSummaryFromReadModel } from '@/test/bridgeFixtures.mjs';
 
 const mocks = vi.hoisted(() => ({
   startClientRender: vi.fn(),
 }));
 
 const renderRouterMocks = vi.hoisted(() => ({
+  buildRenderTimelinePayload: vi.fn(),
+  enqueueBanodocoRenderTimeline: vi.fn(),
+  cancelAstridRenderTask: vi.fn(),
   decideRenderRoute: vi.fn((timeline: ResolvedTimelineConfig | null | undefined) => {
     const clip = timeline?.clips?.[0];
     if (clip?.generation?.sequence_lane === 'remotion_module' && !clip?.generation?.artifact_id) {
@@ -59,6 +63,9 @@ vi.mock('@/tools/video-editor/hooks/useClientRender', () => ({
 }));
 
 vi.mock('@/tools/video-editor/lib/renderRouter', () => ({
+  buildRenderTimelinePayload: renderRouterMocks.buildRenderTimelinePayload,
+  enqueueBanodocoRenderTimeline: renderRouterMocks.enqueueBanodocoRenderTimeline,
+  cancelAstridRenderTask: renderRouterMocks.cancelAstridRenderTask,
   decideRenderRoute: renderRouterMocks.decideRenderRoute,
 }));
 
@@ -98,6 +105,28 @@ const buildConfig = (clip: ResolvedTimelineConfig['clips'][number]): ResolvedTim
   clips: [clip],
   registry: {},
 });
+
+function renderTaskDetail(status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled') {
+  const admitted = makeAdmittedTaskReadModel({
+    taskId: 'render-task-1',
+    family: 'render_export',
+    capability: 'rendering.timeline_visualize',
+  });
+  const summary = taskSummaryFromReadModel({ ...admitted, status });
+  return {
+    task: {
+      ...summary,
+      spec: {
+        ...admitted.spec,
+        params: { timeline_ref: 'timeline-1' },
+      },
+      attempts: [],
+      outputs: status === 'succeeded'
+        ? [{ ordinal: 0, role: 'render', media_id: 'media-render-1', is_primary: true }]
+        : [],
+    },
+  };
+}
 
 function makeProcessAttachRecord() {
   return createProcessResultAttachRecord({
@@ -422,6 +451,23 @@ describe('useRenderState render routing', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.startClientRender.mockResolvedValue(undefined);
+    renderRouterMocks.buildRenderTimelinePayload.mockReturnValue({
+      payload: {
+        timeline_id: 'timeline-1',
+        timeline: {},
+        assets: {},
+        theme_id: '2rp',
+        output_filename: 'out.mp4',
+        project_id: 'demo-project',
+        correlation_id: 'render-correlation',
+      },
+    });
+    renderRouterMocks.enqueueBanodocoRenderTimeline.mockResolvedValue({
+      status: 'queued',
+      task_id: 'render-task-1',
+      message: 'queued',
+    });
+    renderRouterMocks.cancelAstridRenderTask.mockResolvedValue(undefined);
     guardMocks.collectBuiltInKnownIds.mockReturnValue({
       clipTypes: new Set(['media', 'text', 'hold', 'effect-layer']),
       effectTypes: new Set(['fade', 'slide-up']),
@@ -559,6 +605,111 @@ describe('useRenderState render routing', () => {
     expect(result.current.renderStatus).toBe('error');
     expect(result.current.renderLog).toContain('Worker render unavailable');
     expect(result.current.renderLog).toContain('generated_remotion_module');
+  });
+
+  it('admits a scoped render, polls on the declared 2s cadence, and exposes the R9 media URL', async () => {
+    vi.useFakeTimers();
+    let reads = 0;
+    const fetchMock = vi.fn(async () => {
+      reads += 1;
+      return new Response(JSON.stringify(renderTaskDetail(reads === 1 ? 'queued' : 'succeeded')), { status: 200 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const runtimeValue = {
+      project: { projectId: 'demo-project' },
+      timelineId: 'timeline-1',
+      provider: { apiBaseUrl: '/api/astrid' },
+      telemetry: { warn: vi.fn() },
+    } as unknown as VideoEditorRuntimeContextValue;
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <VideoEditorRuntimeContext.Provider value={runtimeValue}>{children}</VideoEditorRuntimeContext.Provider>
+    );
+    const flushPendingSave = vi.fn(async () => 7);
+    const { result, unmount } = renderHook(() => useRenderState(
+      buildConfig({ id: 'clip-native', clipType: 'media', track: 'V1', at: 0, hold: 1 }),
+      { fps: 30, durationInFrames: 30, compositionWidth: 1920, compositionHeight: 1080 },
+      undefined,
+      undefined,
+      flushPendingSave,
+    ), { wrapper });
+
+    await act(async () => { await result.current.startRender(); });
+    expect(flushPendingSave).toHaveBeenCalledTimes(1);
+    expect(renderRouterMocks.enqueueBanodocoRenderTimeline).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ expectedVersion: 7, destination: 'download' }),
+    );
+    expect(result.current.renderStatus).toBe('rendering');
+    expect(result.current.activeRenderTaskId).toBe('render-task-1');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_999); });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.current.renderStatus).toBe('done');
+    expect(result.current.renderProgress?.percent).toBe(100);
+    expect(result.current.renderResultUrl).toBe('/api/astrid/projects/demo-project/media/media-render-1/content');
+    expect(mocks.startClientRender).not.toHaveBeenCalled();
+
+    unmount();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it('cancels an active scoped render through the common fenced task helper', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(renderTaskDetail('queued')), { status: 200 })));
+    const runtimeValue = {
+      project: { projectId: 'demo-project' },
+      timelineId: 'timeline-1',
+      provider: { apiBaseUrl: '/api/astrid' },
+      telemetry: { warn: vi.fn() },
+    } as unknown as VideoEditorRuntimeContextValue;
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <VideoEditorRuntimeContext.Provider value={runtimeValue}>{children}</VideoEditorRuntimeContext.Provider>
+    );
+    const { result, unmount } = renderHook(() => useRenderState(
+      buildConfig({ id: 'clip-native', clipType: 'media', track: 'V1', at: 0, hold: 1 }),
+      null,
+      undefined,
+      undefined,
+      async () => 8,
+    ), { wrapper });
+
+    await act(async () => { await result.current.startRender(); });
+    await act(async () => { await result.current.cancelRender(); });
+    expect(renderRouterMocks.cancelAstridRenderTask).toHaveBeenCalledWith(expect.anything(), 'render-task-1');
+    expect(result.current.renderStatus).toBe('idle');
+    expect(result.current.activeRenderTaskId).toBeNull();
+    expect(result.current.renderLog).toBe('Render cancelled.');
+
+    unmount();
+    vi.unstubAllGlobals();
+  });
+
+  it('does not admit a scoped render when the durable save barrier fails', async () => {
+    const runtimeValue = {
+      project: { projectId: 'demo-project' },
+      timelineId: 'timeline-1',
+      provider: { apiBaseUrl: '/api/astrid' },
+      telemetry: { warn: vi.fn() },
+    } as unknown as VideoEditorRuntimeContextValue;
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <VideoEditorRuntimeContext.Provider value={runtimeValue}>{children}</VideoEditorRuntimeContext.Provider>
+    );
+    const { result } = renderHook(() => useRenderState(
+      buildConfig({ id: 'clip-native', clipType: 'media', track: 'V1', at: 0, hold: 1 }),
+      null,
+      undefined,
+      undefined,
+      async () => { throw new Error('CAS conflict'); },
+    ), { wrapper });
+
+    await act(async () => { await result.current.startRender(); });
+
+    expect(renderRouterMocks.enqueueBanodocoRenderTimeline).not.toHaveBeenCalled();
+    expect(result.current.renderStatus).toBe('error');
+    expect(result.current.renderLog).toContain('CAS conflict');
   });
 });
 

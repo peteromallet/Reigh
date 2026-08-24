@@ -6,6 +6,7 @@ import { Profiler } from 'react';
 import { App } from '@/app/App';
 import { AppErrorBoundary } from '@/app/components/error/AppErrorBoundary';
 import { initializeSupabaseResult } from '@/integrations/supabase/client';
+import { hasSupabaseConfig } from '@/integrations/supabase/config/env';
 import { toast } from '@/shared/components/ui/runtime/sonner';
 import { initializeToastManager } from '@/shared/runtime/toastRuntime';
 import { installErrorNotifier } from '@/shared/lib/errorHandling/errorNotifier';
@@ -109,7 +110,11 @@ export function initializeAppEnvironment(): void {
     document.documentElement.classList.add('dark');
   }
 
-  if (!isTestRuntimeEnvironment(env) && !localTestMode) {
+  // Local-trust boot (doc 27 §4.7): the covered journey runs against the
+  // Astrid bridge with NO Supabase environment configured. Initializing the
+  // Supabase runtime without config used to throw synchronously and
+  // white-screen the app — skip it entirely when no URL is set.
+  if (!isTestRuntimeEnvironment(env) && !localTestMode && hasSupabaseConfig()) {
     const supabaseInitResult = initializeSupabaseResult();
     if (!supabaseInitResult.ok) {
       normalizeAndPresentError(supabaseInitResult.error, {
@@ -117,7 +122,6 @@ export function initializeAppEnvironment(): void {
         showToast: false,
       });
     }
-
     if (supabaseInitResult.ok && shouldLoadDevDebugTools(env)) {
       import('@/integrations/supabase/support/debug/initializeSupabaseDebugGlobals')
         .then(({ initializeSupabaseDebugGlobals }) => {

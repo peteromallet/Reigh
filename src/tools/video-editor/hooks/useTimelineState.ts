@@ -342,7 +342,7 @@ function useTimelineChromeContextValue({
   isConflictExhausted: boolean;
   loadError: Error | null;
   retryLoad: () => void;
-  render: Pick<RenderStateHook, 'renderStatus' | 'renderLog' | 'renderDirty' | 'renderProgress' | 'renderResultUrl' | 'renderResultFilename'>;
+  render: Pick<RenderStateHook, 'renderStatus' | 'renderLog' | 'renderDirty' | 'renderProgress' | 'renderResultUrl' | 'renderResultFilename' | 'activeRenderTaskId' | 'renderDestination' | 'setRenderDestination' | 'cancelRender'>;
   history: Pick<TimelineHistoryHook, 'undo' | 'redo' | 'canUndo' | 'canRedo' | 'historyPausedForUploads' | 'checkpoints' | 'jumpToCheckpoint' | 'createManualCheckpoint'>;
   setScaleWidth: ReturnType<typeof useEditorPreferences>['setScaleWidth'];
   trackManagement: Pick<TimelineTrackManagementHook, 'handleAddTrack' | 'handleClearUnusedTracks' | 'unusedTrackCount'>;
@@ -367,6 +367,10 @@ function useTimelineChromeContextValue({
     renderProgress: render.renderProgress,
     renderResultUrl: render.renderResultUrl,
     renderResultFilename: render.renderResultFilename,
+    activeRenderTaskId: render.activeRenderTaskId,
+    renderDestination: render.renderDestination,
+    setRenderDestination: render.setRenderDestination,
+    cancelRender: render.cancelRender,
     undo: history.undo,
     redo: history.redo,
     canUndo: history.canUndo,
@@ -413,6 +417,10 @@ function useTimelineChromeContextValue({
     render.renderResultFilename,
     render.renderResultUrl,
     render.renderStatus,
+    render.activeRenderTaskId,
+    render.renderDestination,
+    render.setRenderDestination,
+    render.cancelRender,
     retrySaveAfterConflict,
     retryWatchdog,
     saveStatus,
@@ -511,7 +519,13 @@ export function useTimelineState(): UseTimelineStateResult {
     pendingOpsRef: save.pendingOpsRef,
   });
   const derived = useDerivedTimeline(save.data, save.selectedClipId, save.selectedTrackId);
-  const render = useRenderState(derived.resolvedConfig, derived.renderMetadata, runtime.exporter ?? null, runtime.extensionRuntime);
+  const render = useRenderState(
+    derived.resolvedConfig,
+    derived.renderMetadata,
+    runtime.exporter ?? null,
+    runtime.extensionRuntime,
+    save.flushPendingSave,
+  );
   const assetOperations = useAssetOperations(
     runtime.provider,
     runtime.timelineId,
@@ -546,6 +560,10 @@ export function useTimelineState(): UseTimelineStateResult {
     renderProgress,
     renderResultUrl,
     renderResultFilename,
+    activeRenderTaskId,
+    renderDestination,
+    setRenderDestination,
+    cancelRender,
     setRenderDirty,
     startRender,
   } = render;
@@ -958,6 +976,10 @@ export function useTimelineState(): UseTimelineStateResult {
       renderProgress,
       renderResultUrl,
       renderResultFilename,
+      activeRenderTaskId,
+      renderDestination,
+      setRenderDestination,
+      cancelRender,
     },
     history: {
       undo,

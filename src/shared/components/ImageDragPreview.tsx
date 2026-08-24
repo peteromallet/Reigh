@@ -3,7 +3,8 @@ import { GenerationRow } from '@/domains/generation/types';
 import { useProgressiveImage } from '@/shared/hooks/ui-image/useProgressiveImage';
 import { isProgressiveLoadingEnabled } from '@/shared/settings/progressiveLoading';
 import { cn } from '@/shared/components/ui/contracts/cn';
-import { getDisplayUrl } from '@/shared/lib/media/mediaUrl';
+import { bridgeMediaUrl } from '@/shared/lib/media/bridgeMediaUrl';
+import { getProjectSelectionFallbackId } from '@/shared/contexts/projectSelectionStore';
 
 interface ImagePreviewProps {
   image: GenerationRow;
@@ -25,7 +26,7 @@ export const SingleImagePreview: React.FC<ImagePreviewProps> = ({ image }) => {
   );
 
   // Use progressive src if available, otherwise fallback to display URL
-  const displaySrc = progressiveEnabled && progressiveSrc ? progressiveSrc : getDisplayUrl(image.thumbUrl || image.imageUrl);
+  const displaySrc = progressiveEnabled && progressiveSrc ? progressiveSrc : bridgeMediaUrl(getProjectSelectionFallbackId(), image.thumbUrl || image.imageUrl);
 
   return (
     <div className="bg-muted/50 rounded border p-1 flex flex-col items-center justify-center aspect-square overflow-hidden shadow-sm w-32 h-32">
@@ -62,7 +63,7 @@ export const MultiImagePreview: React.FC<MultiImagePreviewProps> = ({ count, ima
     }
   );
 
-  const displaySrc = progressiveEnabled && progressiveSrc ? progressiveSrc : getDisplayUrl(image.thumbUrl || image.imageUrl);
+  const displaySrc = progressiveEnabled && progressiveSrc ? progressiveSrc : bridgeMediaUrl(getProjectSelectionFallbackId(), image.thumbUrl || image.imageUrl);
 
   return (
     <div className="relative w-32 h-32">

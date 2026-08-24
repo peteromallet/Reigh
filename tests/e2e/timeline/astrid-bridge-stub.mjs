@@ -1,6 +1,11 @@
 // Minimal stand-in for `astrid serve` so the video editor's dev "Local" mode
 // has a bridge to talk to. Serves one project with one timeline.
 //
+// All seed data comes from the shared fixture module
+// (`src/test/bridgeFixtures.mjs`) — the same authority the vitest fake router
+// consumes. Only the display `src` base and the node-http scaffolding live
+// here.
+//
 // Run it alongside the dev server before `npm run test:e2e:timeline`:
 //   npm run test:e2e:timeline:bridge
 //
@@ -11,160 +16,24 @@
 import fs from 'node:fs';
 import http from 'node:http';
 
+import {
+  createTimelineFixtures,
+  FIXTURE_PROJECT as PROJECT,
+  FIXTURE_TIMELINE_ID as TIMELINE_ID,
+} from '../../../src/test/bridgeFixtures.mjs';
+
 const PORT = Number(process.env.ASTRID_BRIDGE_PORT || 17334);
 const BASE_URL = (process.env.BASE_URL || 'http://127.0.0.1:2222').replace(/\/+$/, '');
-const PROJECT = { slug: 'demo-project', name: 'Demo Project' };
-const TIMELINE_ID = 'demo-timeline';
 
 // Asset bytes come from the repo's own `public/` directory, resolved relative to
 // this file so the stub works from any cwd.
 const PUBLIC_DIR = new URL('../../../public/', import.meta.url);
 
-const registry = {
-  assets: {
-    'demo-hero': {
-      file: 'example-image1.jpg',
-      src: `${BASE_URL}/example-image1.jpg`,
-      type: 'image/jpeg',
-      duration: 4,
-      generationId: 'gen-demo-hero',
-    },
-    'demo-detail': {
-      file: 'example-image2.jpg',
-      src: `${BASE_URL}/example-image2.jpg`,
-      type: 'image/jpeg',
-      duration: 4,
-      generationId: 'gen-demo-detail',
-    },
-    'demo-clip': {
-      file: 'example-video.mp4',
-      src: `${BASE_URL}/example-video.mp4`,
-      type: 'video/mp4',
-      duration: 5,
-      generationId: 'gen-demo-clip',
-    },
-    'matrix-audio': {
-      file: 'motion-output-audio.aac',
-      src: `${BASE_URL}/motion-output-audio.aac`,
-      type: 'audio/aac',
-      duration: 39.156558,
-      generationId: 'gen-render-matrix-audio',
-    },
-  },
-};
-
-let config = {
-  output: {
-    resolution: '1280x720',
-    fps: 30,
-    file: 'demo.mp4',
-    background: null,
-    background_scale: null,
-  },
-  tracks: [
-    { id: 'V1', kind: 'visual', label: 'V1', scale: 1, fit: 'contain', opacity: 1, blendMode: 'normal' },
-    { id: 'V2', kind: 'visual', label: 'V2', scale: 1, fit: 'contain', opacity: 1, blendMode: 'normal' },
-    { id: 'A1', kind: 'audio', label: 'A1', scale: 1, fit: 'contain', opacity: 1, blendMode: 'normal' },
-  ],
-  clips: [
-    { id: 'clip-hero', track: 'V1', at: 0, clipType: 'media', hold: 4, asset: 'demo-hero' },
-    { id: 'clip-title', track: 'V1', at: 4, clipType: 'text', hold: 2.5, text: { content: 'Hello timeline' } },
-    { id: 'clip-detail', track: 'V1', at: 6.5, clipType: 'media', hold: 4, asset: 'demo-detail' },
-    { id: 'clip-video', track: 'V2', at: 1.5, clipType: 'media', hold: 5, asset: 'demo-clip' },
-  ],
-};
+const { registry, config: initialConfig, timelineSummary } = createTimelineFixtures({
+  assetSrcBaseUrl: BASE_URL,
+});
+let config = initialConfig;
 let configVersion = 1;
-
-const timelineSummary = {
-  timeline_id: TIMELINE_ID,
-  timeline_ulid: '01J0000000000000000000DEMO',
-  slug: TIMELINE_ID,
-  name: 'Demo Timeline',
-  is_default: true,
-};
-
-// Deterministic typed-transition fixture for the DEV-only Runaway data lane.
-// Keeping this in the in-memory bridge means the real-browser editor demo can
-// exercise Transcript + Runaway together without contacting Astrid or any
-// external service.
-const RUNAWAY_COLORS = [
-  ['rose', '#D47795'],
-  ['amber', '#D9A441'],
-  ['lime', '#8DBA58'],
-  ['teal', '#48A99A'],
-  ['cyan', '#26A7D0'],
-  ['blue', '#4A78D1'],
-  ['indigo', '#6C63C8'],
-  ['violet', '#9467BD'],
-  ['magenta', '#C75AA0'],
-  ['coral', '#D66B5D'],
-];
-
-function runawayFixture(project, limit, cursor) {
-  const createdAt = '2026-08-23T00:00:00Z';
-  const exactManifest = project === 'runaway-8085';
-  const transitionCount = exactManifest ? 566 : RUNAWAY_COLORS.length;
-  const transitions = Array.from({ length: transitionCount }, (_, index) => {
-    const [colourName, colourHex] = RUNAWAY_COLORS[index % RUNAWAY_COLORS.length];
-    const ordinal = index;
-    const frame = exactManifest
-      ? Math.round((index * 8084) / (transitionCount - 1))
-      : Math.round(((250 + (index * 925)) / 1000) * 48);
-    const startMs = exactManifest
-      ? Math.round((frame / 48) * 1000)
-      : 250 + (index * 925);
-    const segmentNumber = String((index % 10) + 1).padStart(2, '0');
-    return {
-      id: `runaway-row-${String(index + 1).padStart(4, '0')}`,
-      run_id: 'run-browser-acceptance',
-      task_id: index % 3 === 0 ? `task-${segmentNumber}` : null,
-      ordinal,
-      start_ms: startMs,
-      duration_ms: exactManifest ? Math.round(1000 / 48) : 700,
-      prompt: `Deterministic ${colourName} transition ${segmentNumber}`,
-      metadata: {
-        manifest_id: `T${String(index + 1).padStart(4, '0')}`,
-        segment_id: `S${segmentNumber}`,
-        segment_label: `Region ${segmentNumber}`,
-        timing_mode: index % 2 === 0 ? 'hard_cut' : 'hold',
-        colour_name: colourName,
-        colour_hex: colourHex,
-        frame,
-        fps: 48,
-      },
-      created_at: createdAt,
-    };
-  });
-  const offset = cursor === null ? 0 : Number.parseInt(cursor.replace(/^stub:/, ''), 10);
-  const pageTransitions = transitions.slice(offset, offset + limit);
-  const nextOffset = offset + pageTransitions.length;
-  return {
-    api_version: 'v1',
-    project,
-    count: pageTransitions.length,
-    total_count: transitions.length,
-    snapshot: `runaway-v1:${project}:stub-snapshot`,
-    timing_summary: {
-      evidence_id: 'evidence-browser-acceptance',
-      run_id: 'run-browser-acceptance',
-      summary: 'Deterministic in-memory Runaway browser fixture',
-      created_at: createdAt,
-      data: {
-        frame_count: exactManifest ? 8085 : 480,
-        transition_count: transitions.length,
-        fps: 48,
-        segment_counts: Object.fromEntries(
-          transitions.map((transition) => [transition.metadata.segment_id, 1]),
-        ),
-      },
-    },
-    page: {
-      limit,
-      next_cursor: nextOffset < transitions.length ? `stub:${nextOffset}` : null,
-    },
-    transitions: pageTransitions,
-  };
-}
 
 function send(res, status, body) {
   const payload = JSON.stringify(body);
@@ -173,7 +42,6 @@ function send(res, status, body) {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': '*',
     'Access-Control-Allow-Methods': 'GET,PUT,POST,OPTIONS',
-    'X-Astrid-Bridge-Version': 'v1',
   });
   res.end(payload);
 }
@@ -197,26 +65,6 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return send(res, 204, {});
   if (path === '/health') return send(res, 200, { ok: true });
   if (path === '/projects') return send(res, 200, { projects: [PROJECT] });
-
-  const runawayMatch = path.match(/^\/v1\/projects\/([^/]+)\/runaway-transitions$/);
-  if (runawayMatch && req.method === 'GET') {
-    if (req.headers['x-astrid-bridge-version'] !== 'v1') {
-      return send(res, 426, {
-        error: 'bridge_protocol_mismatch',
-        detail: 'X-Astrid-Bridge-Version: v1 is required',
-      });
-    }
-    const project = decodeURIComponent(runawayMatch[1]);
-    const limit = Number(url.searchParams.get('limit') ?? '1000');
-    const cursor = url.searchParams.get('cursor');
-    if (!Number.isInteger(limit) || limit < 1 || limit > 1000) {
-      return send(res, 400, { error: 'invalid_limit', detail: 'limit must be between 1 and 1000' });
-    }
-    if (cursor !== null && !/^stub:\d+$/.test(cursor)) {
-      return send(res, 400, { error: 'invalid_cursor', detail: 'invalid deterministic stub cursor' });
-    }
-    return send(res, 200, runawayFixture(project, limit, cursor));
-  }
 
   const timelinesMatch = path.match(/^\/projects\/([^/]+)\/timelines$/);
   if (timelinesMatch) return send(res, 200, { timelines: [timelineSummary] });
@@ -296,6 +144,11 @@ const server = http.createServer(async (req, res) => {
       });
     }
     if (body?.config) config = body.config;
+    // B4: the combined CAS save carries config + registry (asset registration
+    // rides the save — there is no separate registry write path).
+    if (body?.registry) {
+      registry.assets = { ...registry.assets, ...(body.registry.assets ?? {}) };
+    }
     configVersion += 1;
     return send(res, 200, { ...timelineSummary, config, config_version: configVersion, registry });
   }
@@ -313,3 +166,4 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`[bridge] listening on http://127.0.0.1:${PORT} (assets from ${PUBLIC_DIR.pathname})`);
 });
+

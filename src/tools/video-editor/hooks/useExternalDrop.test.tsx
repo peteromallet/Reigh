@@ -629,7 +629,7 @@ describe('useExternalDrop', () => {
   });
 
   it('uses the local bridge direct asset flow without mutating the timeline before bytes and registry succeed', async () => {
-    mockRuntime.provider = Object.create(AstridBridgeDataProvider.prototype) as AstridBridgeDataProvider;
+    mockRuntime.provider = { persistenceEnabled: true, supportsDirectAssetUpload: true } as unknown as AstridBridgeDataProvider;
 
     const dataRef = {
       current: makeDropTestData({
@@ -735,7 +735,7 @@ describe('useExternalDrop', () => {
   });
 
   it('shows a toast and leaves timeline state unchanged when local asset drop is unsupported', async () => {
-    mockRuntime.provider = Object.create(AstridBridgeDataProvider.prototype) as AstridBridgeDataProvider;
+    mockRuntime.provider = { persistenceEnabled: true, supportsDirectAssetUpload: true } as unknown as AstridBridgeDataProvider;
 
     const initialData = makeDropTestData({
       tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
