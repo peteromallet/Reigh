@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "evidenceType": "independent-review",
+  "release": "",
+  "candidate": { "reighCommit": "", "astridCommit": "" },
+  "capturedAt": "",
+  "environment": { "id": "", "toolVersions": {} },
+  "record": {
+    "slot": "",
+    "reviewer": { "principal": "", "team": "" },
+    "independence": { "statement": "", "authoredScopes": [], "conflicts": [], "disqualifyingConflict": false },
+    "scope": [],
+    "findings": [],
+    "disposition": "",
+    "evidenceIndex": { "path": "", "sha256": "" },
+    "verifiedArtifacts": [],
+    "verification": { "freshCheckout": false, "rawEvidenceInspected": false, "hashesVerified": false, "rollbackVerified": false }
+  }
+}

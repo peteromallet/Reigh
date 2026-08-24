@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "evidenceType": "transcript-owner-acknowledgement",
+  "release": "",
+  "candidate": { "reighCommit": "", "astridCommit": "" },
+  "capturedAt": "",
+  "environment": { "id": "", "toolVersions": {} },
+  "record": {
+    "handoff": {
+      "handoffId": "",
+      "ownerId": "",
+      "sourceRevision": "",
+      "returnedRevision": "",
+      "handoffFingerprint": "",
+      "appliedSourceFingerprint": "",
+      "evidence": { "path": "", "sha256": "" }
+    },
+    "acknowledgement": {
+      "handoffId": "",
+      "ownerId": "",
+      "sourceRevision": "",
+      "returnedRevision": "",
+      "handoffFingerprint": "",
+      "appliedSourceFingerprint": "",
+      "status": "acknowledged-by-source-owner",
+      "acknowledgedAt": "",
+      "evidence": { "path": "", "sha256": "" }
+    },
+    "tests": {
+      "regenerate": "",
+      "preserve": "",
+      "accept": "",
+      "split": "",
+      "merge": "",
+      "deletion": "",
+      "retiming": "",
+      "overlapping-speakers": "",
+      "empty-text": "",
+      "unicode": ""
+    }
+  }
+}

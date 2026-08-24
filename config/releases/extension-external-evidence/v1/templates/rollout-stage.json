@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "evidenceType": "rollout-stage",
+  "release": "",
+  "candidate": { "reighCommit": "", "astridCommit": "" },
+  "capturedAt": "",
+  "environment": { "id": "", "toolVersions": {} },
+  "record": {
+    "stage": null,
+    "changedFlag": "",
+    "reads": [
+      { "source": "", "capturedAt": "", "configRevision": "", "flags": { "host": false, "transcript-foundry": false, "runaway": false }, "route": { "routeId": "", "cohort": "", "percentage": null }, "evidence": { "path": "", "sha256": "" } },
+      { "source": "", "capturedAt": "", "configRevision": "", "flags": { "host": false, "transcript-foundry": false, "runaway": false }, "route": { "routeId": "", "cohort": "", "percentage": null }, "evidence": { "path": "", "sha256": "" } }
+    ],
+    "drill": { "kind": "", "startedAt": "", "completedAt": "", "expected": "", "observed": "", "outcome": "", "evidence": { "path": "", "sha256": "" } },
+    "owners": [],
+    "outcome": ""
+  }
+}

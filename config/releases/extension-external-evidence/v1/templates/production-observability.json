@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "evidenceType": "production-observability",
+  "release": "",
+  "candidate": { "reighCommit": "", "astridCommit": "" },
+  "capturedAt": "",
+  "environment": { "id": "", "toolVersions": {} },
+  "record": {
+    "deployment": "production",
+    "releaseRevision": "",
+    "syntheticProbe": { "id": "", "capturedAt": "", "eventFamilies": [], "outcome": "", "evidence": { "path": "", "sha256": "" } },
+    "dashboard": { "id": "", "revisionFilter": "", "inspectedAt": "", "targetRevisionStatus": "", "evidence": { "path": "", "sha256": "" } },
+    "rateLimit": { "distributed": true, "enforcementPoint": "", "allowedCount": null, "rejectedCount": null, "testedAt": "", "outcome": "", "evidence": { "path": "", "sha256": "" } },
+    "alertDrills": [],
+    "privacyAudit": { "inspectedAt": "", "inspectedBy": "", "forbiddenFieldsFound": null, "outcome": "", "evidence": { "path": "", "sha256": "" } },
+    "outcome": ""
+  }
+}

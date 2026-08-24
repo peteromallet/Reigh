@@ -21,12 +21,14 @@ contents of an Ed25519 `.pub` file:
     {
       "principal": "alice-video-editor",
       "publicKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA...",
+      "fingerprint": "SHA256:<verified-base64-fingerprint>",
       "kind": "human",
       "persona": "video-editor"
     },
     {
       "principal": "riley-release-reviewer",
       "publicKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA...",
+      "fingerprint": "SHA256:<verified-base64-fingerprint>",
       "kind": "review"
     }
   ]
@@ -45,13 +47,31 @@ and confirm their fingerprints with each participant out of band. Key rotation
 requires replacing the trust entry and re-signing affected receipts; old
 signatures cannot silently authorize a new key.
 
+Register a received public key through the no-private-key operator CLI. It
+normalizes the OpenSSH public key, computes its Ed25519 fingerprint, prevents a
+duplicate principal/key/persona assignment, and atomically updates trust:
+
+```sh
+npm run extension:evidence -- fingerprint --public-key /path/to/alice.pub
+npm run extension:evidence -- register-key \
+  --principal alice-video-editor --kind human --persona video-editor \
+  --public-key /path/to/alice.pub
+npm run extension:evidence -- verify-keys
+```
+
+Confirm the printed fingerprint with the participant over an authenticated
+out-of-band channel before committing it. `register-key` accepts only public
+key files; signing remains a separate participant action.
+
 ## Receipt and signing flow
 
-First add an unsigned receipt to
-`config/releases/extension-ship-evidence.json`. A human receipt includes its
-assigned `persona`; a review receipt does not. Both use `"decision": "approve"`.
-All other receipt fields and the referenced evidence artifact must be final
-before signing.
+First capture the typed human-session or independent-review document with the
+operator flow in
+[`extension-ship-evidence-ledger.md`](extension-ship-evidence-ledger.md#external-evidence-operator-flow),
+then generate or append its unsigned receipt. A human receipt includes its
+assigned `persona`; a review receipt carries the reviewer identity mirrored
+from the document. Both use `"decision": "approve"`. All other receipt fields
+and the referenced evidence artifact must be final before signing.
 
 The signer then runs this from the repository root with their private key:
 

@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "evidenceType": "human-persona-session",
+  "release": "",
+  "candidate": { "reighCommit": "", "astridCommit": "" },
+  "capturedAt": "",
+  "environment": { "id": "", "toolVersions": {} },
+  "record": {
+    "sessionId": "",
+    "persona": "",
+    "participant": { "principal": "", "consentRecordId": "" },
+    "projectFixtureId": "",
+    "browserDevice": { "browser": "", "version": "", "device": "" },
+    "assistiveTechnologies": [],
+    "inputMethods": [],
+    "taskGoals": [],
+    "tasks": [],
+    "persistedState": { "beforeSha256": "", "afterRestartSha256": "", "matchesExpected": false },
+    "renderExport": { "renderSha256": "", "exportSha256": "", "matchesExpected": false },
+    "privacy": { "capturesReviewed": false, "prohibitedContentCollected": false },
+    "findings": [],
+    "decision": ""
+  }
+}

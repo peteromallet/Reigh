@@ -65,6 +65,19 @@ candidate `git rev-parse REIGH_REF`, Reigh
 artifacts. An exit code of zero is necessary, not sufficient: every frozen-RC
 item and both independent review slots below must also be complete.
 
+### Typed external evidence
+
+Do not attach a generic test log to transcript ownership, rollout,
+observability, recovery, human acceptance, or independent review. Workstreams
+10 and 19–23 use the versioned templates and `npm run extension:evidence`
+workflow documented in
+[`extension-ship-evidence-ledger.md`](extension-ship-evidence-ledger.md#external-evidence-operator-flow).
+Initialize outside the release evidence root, fill from the real external
+session, validate, capture once, append an unsigned receipt, and obtain the
+required participant signature afterward. A captured document is immutable;
+correcting it requires a new path and receipt. The tool does not accept private
+keys, infer success, or change a ledger status.
+
 ### Paired repository E2E receipt
 
 The ship verifier includes `verify:paired-release-e2e`; operators can inspect

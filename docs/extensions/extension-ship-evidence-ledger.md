@@ -78,5 +78,64 @@ Human acceptance cannot be replaced by agent or browser automation. Workstream
 accessibility user, transcript specialist, and first-time extension author.
 Workstream 23 requires two distinct independent reviewer approvals.
 
+Workstreams 10 and 19–23 additionally require typed JSON external evidence.
+The receipt kind and a generic log are not sufficient. The checker parses the
+artifact, binds its release and both candidate commits to the ledger, rejects
+unknown fields, verifies nested evidence references, and requires a different
+top-level artifact path for every external receipt. Its workstream semantics
+are fail closed:
+
+| Workstream | Typed evidence required for `pass` |
+| --- | --- |
+| 10 | Exact transcript handoff, source owner, source/returned revisions, handoff fingerprint, applied-source fingerprint, owner acknowledgement, and the complete policy-case result set |
+| 19 | One rollout stage, two independent reads agreeing on effective flags and route, named owners, and a passing emergency-disable or route-change drill |
+| 20 | Production revision probe, all event families, revision-filtered dashboard evidence, distributed rate-limit exercise, four alert drills, and privacy audit |
+| 21 | Separate rapid-disable/rollback, corrupt-data, and failed-migration drills, each with backup, pre/backup/restored/post hashes, chronological timeline, three owner approvals, and recovery outcomes |
+| 22 | Four separate session documents, one per required persona, bound to each signing principal and containing consent, tasks, persistence, render/export, privacy, findings, and disposition |
+| 23 | Separate review documents for slots A and B, each bound to its signing principal and containing independence/conflict disclosure, scope, findings, disposition, evidence-index hash, inspected artifact hashes, and reproduction checks |
+
+The versioned, deliberately incomplete templates are under
+[`config/releases/extension-external-evidence/v1/templates/`](../../config/releases/extension-external-evidence/v1/templates/).
+They are drafts, never evidence. The closed-object validator is
+[`extension-external-evidence.mjs`](../../scripts/quality/lib/extension-external-evidence.mjs).
+
+## External-evidence operator flow
+
+The operator CLI never accepts a private key and never marks a workstream
+`pass`. Initialize a draft outside the evidence closure:
+
+```sh
+npm run extension:evidence -- init \
+  --type rollout-stage --output /tmp/rollout-stage.json \
+  --release extension-ship-quality-rc1 \
+  --reigh-commit <candidate-C> --astrid-commit <astrid-commit> \
+  --environment production-stage-0 --tool node=20.19.4
+```
+
+Fill the draft only from observed output. Validate it, then capture an immutable
+copy under the release evidence root; `capture` refuses to overwrite a file:
+
+```sh
+npm run extension:evidence -- validate --artifact /tmp/rollout-stage.json
+npm run extension:evidence -- capture \
+  --input /tmp/rollout-stage.json \
+  --output docs/extensions/evidence/releases/extension-ship-quality-rc1/rollout/stage-0.json
+```
+
+Generate the unsigned receipt for review, or append it without changing status:
+
+```sh
+npm run extension:evidence -- receipt \
+  --artifact docs/extensions/evidence/releases/extension-ship-quality-rc1/rollout/stage-0.json \
+  --workstream 19 --id rollout-stage-0
+
+npm run extension:evidence -- receipt \
+  --artifact docs/extensions/evidence/releases/extension-ship-quality-rc1/rollout/stage-0.json \
+  --workstream 19 --id rollout-stage-0 --append-ledger
+```
+
+Use `hash --artifact <path>` for any supporting file. Human/review receipts
+remain unsigned until the participant runs the separate signing helper.
+
 Do not mark a row `pass` merely because a test or document exists. Capture the
 actual output, hash it, disposition failures, and only then attach the receipt.

@@ -33,18 +33,12 @@ const signerDirectory = resolve(fixtureRepo, 'signers');
 mkdirSync(signerDirectory, { recursive: true });
 const evidencePath = `docs/extensions/evidence/releases/${release}/receipt.txt`;
 const largeCommittedEvidencePath = `docs/extensions/evidence/releases/${release}/large.bin`;
+const reighCommit = 'a'.repeat(40);
+const astridCommit = 'b'.repeat(40);
+const controllerCommit = 'c'.repeat(40);
 mkdirSync(resolve(fixtureRepo, evidencePath, '..'), { recursive: true });
 writeFileSync(resolve(fixtureRepo, evidencePath), 'immutable release receipt\n');
 writeFileSync(resolve(fixtureRepo, largeCommittedEvidencePath), Buffer.alloc((2 * 1024 * 1024) + 1, 0x5a));
-for (const args of [
-  ['init', '-q'],
-  ['config', 'user.name', 'Evidence Test'],
-  ['config', 'user.email', 'evidence-test@example.invalid'],
-  ['add', '-A'],
-  ['commit', '-q', '-m', 'evidence fixtures'],
-]) {
-  execFileSync('git', args, { cwd: fixtureRepo, stdio: 'ignore' });
-}
 after(() => rmSync(fixtureRepo, { recursive: true, force: true }));
 
 const evidenceHash = createHash('sha256')
@@ -53,9 +47,6 @@ const evidenceHash = createHash('sha256')
 const largeCommittedEvidenceHash = createHash('sha256')
   .update(readFileSync(resolve(fixtureRepo, largeCommittedEvidencePath)))
   .digest('hex');
-const reighCommit = 'a'.repeat(40);
-const astridCommit = 'b'.repeat(40);
-const controllerCommit = 'c'.repeat(40);
 
 const identitySpecs = [
   { principal: 'human-video-editor', kind: 'human', persona: 'video-editor' },
@@ -79,9 +70,188 @@ const testTrust = {
     );
     signerPathByPrincipal.set(spec.principal, privateKeyPath);
     const [type, key] = readFileSync(`${privateKeyPath}.pub`, 'utf8').trim().split(/\s+/);
-    return { ...spec, publicKey: `${type} ${key}` };
+    const publicKey = `${type} ${key}`;
+    const encoded = Buffer.from(key, 'base64');
+    const fingerprint = `SHA256:${createHash('sha256').update(encoded).digest('base64')}`;
+    return { ...spec, publicKey, fingerprint };
   }),
 };
+
+const capturedAt = '2026-08-23T12:00:00.000Z';
+const environment = { id: 'hermetic-test-fixture', toolVersions: { node: '20.19.4' } };
+const typedEvidence = new Map();
+
+function commonDocument(evidenceType, record) {
+  return {
+    schemaVersion: 1,
+    evidenceType,
+    release,
+    candidate: { reighCommit, astridCommit },
+    capturedAt,
+    environment,
+    record,
+  };
+}
+
+function writeTypedEvidence(name, document) {
+  const path = `docs/extensions/evidence/releases/${release}/typed/${name}.json`;
+  mkdirSync(resolve(fixtureRepo, path, '..'), { recursive: true });
+  writeFileSync(resolve(fixtureRepo, path), `${JSON.stringify(document, null, 2)}\n`);
+  const artifact = {
+    path,
+    sha256: createHash('sha256').update(readFileSync(resolve(fixtureRepo, path))).digest('hex'),
+  };
+  typedEvidence.set(name, { document, artifact });
+  return artifact;
+}
+
+const allPassTests = Object.fromEntries([
+  'regenerate', 'preserve', 'accept', 'split', 'merge', 'deletion', 'retiming',
+  'overlapping-speakers', 'empty-text', 'unicode',
+].map((name) => [name, 'pass']));
+const transcriptBinding = {
+  handoffId: 'handoff-1', ownerId: 'source-owner-1', sourceRevision: 'source-r1',
+  returnedRevision: 'source-r2', handoffFingerprint: '1'.repeat(64),
+  appliedSourceFingerprint: '2'.repeat(64),
+};
+writeTypedEvidence('transcript', commonDocument('transcript-owner-acknowledgement', {
+  handoff: { ...transcriptBinding, evidence: { path: evidencePath, sha256: evidenceHash } },
+  acknowledgement: {
+    ...transcriptBinding,
+    status: 'acknowledged-by-source-owner',
+    acknowledgedAt: capturedAt,
+    evidence: { path: evidencePath, sha256: evidenceHash },
+  },
+  tests: allPassTests,
+}));
+writeTypedEvidence('rollout', commonDocument('rollout-stage', {
+  stage: 0,
+  changedFlag: 'host',
+  reads: ['deployment-api', 'served-runtime-document'].map((source) => ({
+    source,
+    capturedAt,
+    configRevision: 'config-r1',
+    flags: { host: false, 'transcript-foundry': false, runaway: false },
+    route: { routeId: 'route-dark', cohort: 'none', percentage: 0 },
+    evidence: { path: evidencePath, sha256: evidenceHash },
+  })),
+  drill: {
+    kind: 'emergency-disable', startedAt: capturedAt, completedAt: capturedAt,
+    expected: 'all flags off', observed: 'all flags off', outcome: 'pass',
+    evidence: { path: evidencePath, sha256: evidenceHash },
+  },
+  owners: ['release-dri', 'reigh-on-call', 'astrid-on-call', 'observability-on-call'],
+  outcome: 'pass',
+}));
+writeTypedEvidence('observability', commonDocument('production-observability', {
+  deployment: 'production',
+  releaseRevision: reighCommit,
+  syntheticProbe: {
+    id: 'probe-1', capturedAt,
+    eventFamilies: [
+      'host-activation', 'extension-lifecycle', 'command-outcome', 'bridge-request',
+      'persistence-conflict', 'migration-outcome', 'render-export', 'lane-density',
+    ],
+    outcome: 'pass', evidence: { path: evidencePath, sha256: evidenceHash },
+  },
+  dashboard: {
+    id: 'extension-health', revisionFilter: reighCommit, inspectedAt: capturedAt,
+    targetRevisionStatus: 'healthy', evidence: { path: evidencePath, sha256: evidenceHash },
+  },
+  rateLimit: {
+    distributed: true, enforcementPoint: 'edge', allowedCount: 10, rejectedCount: 2,
+    testedAt: capturedAt, outcome: 'pass', evidence: { path: evidencePath, sha256: evidenceHash },
+  },
+  alertDrills: [
+    'missing-revision-telemetry', 'unknown-error-class', 'rejection-spike', 'broken-dashboard',
+  ].map((kind) => ({
+    kind, firedAt: capturedAt, acknowledgedBy: 'observability-on-call',
+    acknowledgedAt: capturedAt, runbookLinked: true, outcome: 'pass',
+    evidence: { path: evidencePath, sha256: evidenceHash },
+  })),
+  privacyAudit: {
+    inspectedAt: capturedAt, inspectedBy: 'privacy-reviewer',
+    forbiddenFieldsFound: 0, outcome: 'pass', evidence: { path: evidencePath, sha256: evidenceHash },
+  },
+  outcome: 'pass',
+}));
+for (const drillType of ['rapid-disable-rollback', 'corrupt-data', 'failed-migration']) {
+  writeTypedEvidence(`recovery-${drillType}`, commonDocument('recovery-drill', {
+    drillType,
+    incidentId: `drill-${drillType}`,
+    backup: { id: 'backup-1', createdAt: capturedAt, toolVersion: '1.0.0', sha256: evidenceHash, readVerified: true },
+    hashes: { preState: '3'.repeat(64), backup: evidenceHash, restoredState: '3'.repeat(64), postState: '3'.repeat(64) },
+    timeline: ['disable', 'backup', 'restore', 'verify'].map((action) => ({
+      at: capturedAt, actor: 'operator', action, outcome: action === 'disable' ? 'contained' : 'pass',
+    })),
+    approvals: [
+      ['incident-commander', 'incident-owner'], ['release-dri', 'release-owner'],
+      ['data-or-service-owner', 'data-owner'],
+    ].map(([role, principal]) => ({ role, principal, approvedAt: capturedAt, decision: 'approve' })),
+    checks: {
+      flagsOff: true, writersStopped: true, restoreVerified: true, restartVerified: true,
+      renderExportVerified: true, secondRunIdempotent: true, zeroDuplicates: true,
+    },
+    outcome: 'pass',
+  }));
+}
+for (const spec of identitySpecs.filter((entry) => entry.kind === 'human')) {
+  writeTypedEvidence(`human-${spec.persona}`, commonDocument('human-persona-session', {
+    sessionId: `session-${spec.persona}`,
+    persona: spec.persona,
+    participant: { principal: spec.principal, consentRecordId: `consent-${spec.persona}` },
+    projectFixtureId: 'fixture-safe-1',
+    browserDevice: { browser: 'Chrome', version: '128.0.0', device: 'test workstation' },
+    assistiveTechnologies: spec.persona === 'accessibility-user' ? ['VoiceOver'] : [],
+    inputMethods: ['keyboard', 'pointer'],
+    taskGoals: ['complete extension journey'],
+    tasks: ({
+      'video-editor': ['extension-journey', 'dense-lane-edit', 'reload-restart-persistence', 'safe-failure-recovery', 'render-export'],
+      'accessibility-user': ['keyboard-only', 'focus-retention', 'names-state-announcements', 'zoom-200', 'reduced-motion', 'error-recovery'],
+      'transcript-specialist': ['regenerate', 'preserve', 'accept', 'split', 'merge', 'delete', 'retime', 'overlapping-speakers', 'empty-text', 'unicode', 'source-correction-boundary'],
+      'first-time-extension-author': ['public-sdk-only', 'build-extension', 'diagnose-failure', 'enable-invoke', 'render-export'],
+    })[spec.persona].map((id) => ({
+      id, outcome: 'pass', durationSeconds: 120, observations: [],
+      evidenceRefs: [{ path: evidencePath, sha256: evidenceHash }],
+    })),
+    persistedState: { beforeSha256: '4'.repeat(64), afterRestartSha256: '5'.repeat(64), matchesExpected: true },
+    renderExport: { renderSha256: '6'.repeat(64), exportSha256: '7'.repeat(64), matchesExpected: true },
+    privacy: { capturesReviewed: true, prohibitedContentCollected: false },
+    findings: [],
+    decision: 'approve',
+  }));
+}
+for (const slot of ['A', 'B']) {
+  const principal = `independent-reviewer-${slot.toLowerCase()}`;
+  writeTypedEvidence(`review-${slot}`, commonDocument('independent-review', {
+    slot,
+    reviewer: { principal, team: `independent-team-${slot}` },
+    independence: { statement: 'No authorship or disqualifying conflict.', authoredScopes: [], conflicts: [], disqualifyingConflict: false },
+    scope: slot === 'A'
+      ? ['release-gates', 'clean-machine-reproduction', 'rollout', 'production-observability', 'rollback']
+      : ['persistence', 'recovery-migration', 'transcript-policy', 'accessibility', 'render-export', 'human-acceptance'],
+    findings: [],
+    disposition: 'approve',
+    evidenceIndex: { path: evidencePath, sha256: evidenceHash },
+    verifiedArtifacts: [{ path: evidencePath, sha256: evidenceHash }],
+    verification: { freshCheckout: true, rawEvidenceInspected: true, hashesVerified: true, rollbackVerified: true },
+  }));
+}
+
+for (const args of [
+  ['init', '-q'],
+  ['config', 'user.name', 'Evidence Test'],
+  ['config', 'user.email', 'evidence-test@example.invalid'],
+  ['add', 'docs'],
+  ['commit', '-q', '-m', 'evidence fixtures'],
+]) {
+  execFileSync('git', args, { cwd: fixtureRepo, stdio: 'ignore' });
+}
+const allEvidencePaths = [
+  evidencePath,
+  largeCommittedEvidencePath,
+  ...[...typedEvidence.values()].map(({ artifact }) => artifact.path),
+];
 
 function signReceipt(ledger, workstream, receipt, principal, privateKeyPath) {
   receipt.attestation = { namespace: ATTESTATION_NAMESPACE, principal, signature: '' };
@@ -117,12 +287,9 @@ function makeReceipt(kind, id, extra = {}) {
     kind,
     repository: 'reigh',
     commit: reighCommit,
-    capturedAt: '2026-08-23T12:00:00.000Z',
+    capturedAt,
     action: manual ? 'Signed manual acceptance protocol' : 'npm run release:test',
-    environment: {
-      id: 'hermetic-test-fixture',
-      toolVersions: { node: '20.19.4' },
-    },
+    environment,
     artifact: { path: evidencePath, sha256: evidenceHash },
     ...(manual
       ? { decision: 'approve' }
@@ -139,7 +306,25 @@ function makeFrozenLedger() {
     candidate: { reighCommit, astridCommit },
     workstreams: expected.map((workstream) => {
       let receipts;
-      if (workstream.number === 22) {
+      if (workstream.number === 10) {
+        receipts = [makeReceipt('browser', 'transcript-owner-ack', {
+          artifact: typedEvidence.get('transcript').artifact,
+        })];
+      } else if (workstream.number === 19) {
+        receipts = [makeReceipt('deployment', 'rollout-stage-0', {
+          artifact: typedEvidence.get('rollout').artifact,
+        })];
+      } else if (workstream.number === 20) {
+        receipts = [makeReceipt('observability', 'production-observability', {
+          artifact: typedEvidence.get('observability').artifact,
+        })];
+      } else if (workstream.number === 21) {
+        receipts = ['rapid-disable-rollback', 'corrupt-data', 'failed-migration'].map(
+          (drillType) => makeReceipt('recovery', `recovery-${drillType}`, {
+            artifact: typedEvidence.get(`recovery-${drillType}`).artifact,
+          }),
+        );
+      } else if (workstream.number === 22) {
         receipts = [
           'video-editor',
           'accessibility-user',
@@ -148,12 +333,12 @@ function makeFrozenLedger() {
         ].map((persona, index) => makeReceipt(
           'human',
           `human-${index}`,
-          { persona },
+          { persona, artifact: typedEvidence.get(`human-${persona}`).artifact },
         ));
       } else if (workstream.number === 23) {
         receipts = [
-          makeReceipt('review', 'review-a'),
-          makeReceipt('review', 'review-b'),
+          makeReceipt('review', 'review-a', { artifact: typedEvidence.get('review-A').artifact }),
+          makeReceipt('review', 'review-b', { artifact: typedEvidence.get('review-B').artifact }),
         ];
       } else {
         receipts = [makeReceipt(
@@ -276,7 +461,7 @@ describe('extension ship evidence gate', () => {
       mode: 'release',
       candidateCommit: reighCommit,
       headCommit: controllerCommit,
-      provenanceChangedPaths: [evidencePath, largeCommittedEvidencePath],
+      provenanceChangedPaths: allEvidencePaths,
     });
     assert.deepEqual(result.errors, []);
     assert.equal(result.counts.pass, 23);
@@ -292,7 +477,7 @@ describe('extension ship evidence gate', () => {
       mode: 'release',
       candidateCommit: reighCommit,
       headCommit: controllerCommit,
-      provenanceChangedPaths: [evidencePath, largeCommittedEvidencePath],
+      provenanceChangedPaths: allEvidencePaths,
     });
     assert.match(result.errors.join('\n'), /missing the video-editor human principal/);
     assert.match(result.errors.join('\n'), /missing the accessibility-user human principal/);
@@ -304,9 +489,6 @@ describe('extension ship evidence gate', () => {
   it('verifies committed evidence bytes, including artifacts larger than the default child-process buffer', () => {
     const ledger = makeFrozenLedger();
     const receipts = ledger.workstreams.flatMap((workstream) => workstream.receipts);
-    for (const receipt of receipts) {
-      receipt.artifact = { path: evidencePath, sha256: evidenceHash };
-    }
     receipts[0].artifact = {
       path: largeCommittedEvidencePath,
       sha256: largeCommittedEvidenceHash,
@@ -321,7 +503,7 @@ describe('extension ship evidence gate', () => {
       mode: 'release',
       candidateCommit: reighCommit,
       headCommit: controllerCommit,
-      provenanceChangedPaths: [evidencePath, largeCommittedEvidencePath],
+      provenanceChangedPaths: allEvidencePaths,
       verifyCommittedArtifacts: true,
     });
     assert.deepEqual(result.errors, []);
@@ -344,11 +526,35 @@ describe('extension ship evidence gate', () => {
       mode: 'release',
       candidateCommit: reighCommit,
       headCommit: controllerCommit,
-      provenanceChangedPaths: [evidencePath, largeCommittedEvidencePath],
+      provenanceChangedPaths: allEvidencePaths,
     });
     assert.match(result.errors.join('\n'), /sha256 mismatch/);
     assert.match(result.errors.join('\n'), /first-time-extension-author/);
     assert.match(result.errors.join('\n'), /two independently keyed trusted review receipts/);
+  });
+
+  it('rejects generic artifact reuse across external-evidence workstreams', () => {
+    const ledger = makeFrozenLedger();
+    for (const index of [9, 18]) {
+      ledger.workstreams[index].receipts[0].artifact = {
+        path: evidencePath,
+        sha256: evidenceHash,
+      };
+    }
+    const result = validateLedger({
+      ledger,
+      checklistMarkdown,
+      releaseManifest: frozenManifest,
+      attestationTrust: testTrust,
+      repoRoot: fixtureRepo,
+      mode: 'release',
+      candidateCommit: reighCommit,
+      headCommit: controllerCommit,
+      provenanceChangedPaths: allEvidencePaths,
+    });
+    const errors = result.errors.join('\n');
+    assert.match(errors, /must be a JSON external-evidence document/);
+    assert.match(errors, /reuses external evidence already owned by/);
   });
 
   it('rejects a forged principal even when reviewerId self-asserts independence', () => {
@@ -366,7 +572,7 @@ describe('extension ship evidence gate', () => {
       mode: 'release',
       candidateCommit: reighCommit,
       headCommit: controllerCommit,
-      provenanceChangedPaths: [evidencePath, largeCommittedEvidencePath],
+      provenanceChangedPaths: allEvidencePaths,
     });
     assert.match(result.errors.join('\n'), /SSH signature verification failed/);
     assert.match(result.errors.join('\n'), /reviewerId.*trusted attestation principal/);
@@ -386,7 +592,7 @@ describe('extension ship evidence gate', () => {
       mode: 'release',
       candidateCommit: reighCommit,
       headCommit: controllerCommit,
-      provenanceChangedPaths: [evidencePath, largeCommittedEvidencePath],
+      provenanceChangedPaths: allEvidencePaths,
     });
     assert.match(result.errors.join('\n'), /SSH signature verification failed/);
   });
@@ -411,7 +617,7 @@ describe('extension ship evidence gate', () => {
       mode: 'release',
       candidateCommit: reighCommit,
       headCommit: controllerCommit,
-      provenanceChangedPaths: [evidencePath, largeCommittedEvidencePath],
+      provenanceChangedPaths: allEvidencePaths,
     });
     assert.match(result.errors.join('\n'), /attestation principal is not trusted: rogue-reviewer/);
   });
@@ -431,7 +637,7 @@ describe('extension ship evidence gate', () => {
       mode: 'release',
       candidateCommit: reighCommit,
       headCommit: controllerCommit,
-      provenanceChangedPaths: [evidencePath, largeCommittedEvidencePath],
+      provenanceChangedPaths: allEvidencePaths,
     });
     assert.match(result.errors.join('\n'), /SSH signature verification failed/);
   });
@@ -449,7 +655,7 @@ describe('extension ship evidence gate', () => {
       mode: 'release',
       candidateCommit: reighCommit,
       headCommit: controllerCommit,
-      provenanceChangedPaths: [evidencePath, largeCommittedEvidencePath],
+      provenanceChangedPaths: allEvidencePaths,
     });
     assert.match(result.errors.join('\n'), /commit does not match the frozen Reigh candidate/);
   });
@@ -465,7 +671,7 @@ describe('extension ship evidence gate', () => {
       candidateCommit: reighCommit,
       headCommit: reighCommit,
       provenanceErrors: ['candidate..HEAD contains non-evidence path changes: src/app.ts'],
-      provenanceChangedPaths: [evidencePath, largeCommittedEvidencePath],
+      provenanceChangedPaths: allEvidencePaths,
     });
     assert.match(result.errors.join('\n'), /strict evidence-only descendant/);
     assert.match(result.errors.join('\n'), /src\/app\.ts/);

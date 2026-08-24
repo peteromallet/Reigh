@@ -21,6 +21,12 @@ import {
   releaseEvidenceDirectory,
   resolveAnnotatedCandidateTag,
 } from '../release/reigh-release-provenance.mjs';
+import {
+  EXTERNAL_EVIDENCE_TYPE_BY_WORKSTREAM,
+  REQUIRED_RECOVERY_DRILLS,
+  externalEvidenceReferences,
+  validateExternalEvidence,
+} from './lib/extension-external-evidence.mjs';
 
 const LABEL = '[extension-ship-evidence]';
 const moduleDir = dirname(fileURLToPath(import.meta.url));
@@ -120,7 +126,7 @@ function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function ed25519KeyFingerprint(publicKey) {
+export function ed25519KeyFingerprint(publicKey) {
   if (!SSH_ED25519_PUBLIC_KEY.test(publicKey ?? '')) return null;
   const encoded = publicKey.slice('ssh-ed25519 '.length);
   const blob = Buffer.from(encoded, 'base64');
@@ -194,6 +200,8 @@ export function validateAttestationTrust({ trust, release, releaseMode = false }
     const fingerprint = ed25519KeyFingerprint(identity.publicKey);
     if (!fingerprint) {
       errors.push(`${prefix}.publicKey must be a valid comment-free ssh-ed25519 public key`);
+    } else if (identity.fingerprint !== `SHA256:${fingerprint}`) {
+      errors.push(`${prefix}.fingerprint must exactly match the registered public key`);
     } else if (keyOwners.has(fingerprint)) {
       errors.push(`${prefix}.publicKey is already assigned to ${keyOwners.get(fingerprint)}`);
     } else {
@@ -435,6 +443,79 @@ function validateEvidenceArtifact(
       errors.push(`${prefix}.artifact.path is not readable from committed HEAD: ${error.message}`);
     }
   }
+  return realArtifact;
+}
+
+function validateExternalArtifact({
+  artifactPath,
+  expectedType,
+  ledger,
+  workstreamNumber,
+  receipt,
+  repoRoot,
+  prefix,
+  errors,
+  releaseMode,
+  verifyCommittedArtifacts,
+  release,
+  provenanceChangedPaths,
+}) {
+  if (!artifactPath) return null;
+  if (!receipt.artifact.path.endsWith('.json')) {
+    errors.push(`${prefix}.artifact.path must be a JSON external-evidence document`);
+    return null;
+  }
+  if (statSync(artifactPath).size > 1024 * 1024) {
+    errors.push(`${prefix}.artifact.path external-evidence document exceeds 1 MiB`);
+    return null;
+  }
+  let document;
+  try {
+    document = JSON.parse(readFileSync(artifactPath, 'utf8'));
+  } catch (error) {
+    errors.push(`${prefix}.artifact.path is not valid JSON: ${error.message}`);
+    return null;
+  }
+  const validation = validateExternalEvidence(document, {
+    evidenceType: expectedType,
+    release: ledger.release,
+    reighCommit: ledger.candidate?.reighCommit,
+    astridCommit: ledger.candidate?.astridCommit,
+  });
+  for (const error of validation.errors) errors.push(`${prefix}.artifact: ${error}`);
+  if (document.capturedAt !== receipt.capturedAt) {
+    errors.push(`${prefix}.capturedAt must match the external-evidence document`);
+  }
+  if (JSON.stringify(document.environment) !== JSON.stringify(receipt.environment)) {
+    errors.push(`${prefix}.environment must match the external-evidence document`);
+  }
+
+  for (const [name, reference] of externalEvidenceReferences(document)) {
+    validateEvidenceArtifact(
+      { artifact: reference },
+      repoRoot,
+      `${prefix}.artifact.document.record.${name}`,
+      errors,
+      releaseMode,
+      releaseMode && verifyCommittedArtifacts,
+      release,
+      provenanceChangedPaths,
+    );
+  }
+
+  if (workstreamNumber === 22) {
+    if (document.record?.persona !== receipt.persona) {
+      errors.push(`${prefix}.persona must match the human session document`);
+    }
+    if (document.record?.participant?.principal !== receipt.attestation?.principal) {
+      errors.push(`${prefix}.attestation principal must match the human session participant`);
+    }
+  }
+  if (workstreamNumber === 23
+      && document.record?.reviewer?.principal !== receipt.attestation?.principal) {
+    errors.push(`${prefix}.attestation principal must match the independent review document`);
+  }
+  return document;
 }
 
 function validateReceipt({
@@ -442,6 +523,7 @@ function validateReceipt({
   prefix,
   ledger,
   workstream,
+  workstreamNumber,
   repoRoot,
   candidate,
   identityByPrincipal,
@@ -527,7 +609,7 @@ function validateReceipt({
     errors.push(`${prefix}.commit does not match the frozen Astrid candidate`);
   }
 
-  validateEvidenceArtifact(
+  const artifactPath = validateEvidenceArtifact(
     receipt,
     repoRoot,
     prefix,
@@ -537,6 +619,24 @@ function validateReceipt({
     release,
     provenanceChangedPaths,
   );
+  const expectedType = EXTERNAL_EVIDENCE_TYPE_BY_WORKSTREAM.get(workstreamNumber);
+  if (expectedType && receipt.kind === REQUIRED_RECEIPT_KIND.get(workstreamNumber)) {
+    return validateExternalArtifact({
+      artifactPath,
+      expectedType,
+      ledger,
+      workstreamNumber,
+      receipt,
+      repoRoot,
+      prefix,
+      errors,
+      releaseMode,
+      verifyCommittedArtifacts,
+      release,
+      provenanceChangedPaths,
+    });
+  }
+  return null;
 }
 
 export function validateLedger({
@@ -582,6 +682,7 @@ export function validateLedger({
   }
 
   const seenReceiptIds = new Set();
+  const sensitiveArtifactOwners = new Map();
   const counts = { pending: 0, in_progress: 0, blocked: 0, pass: 0 };
 
   expected.forEach((expectedWorkstream, index) => {
@@ -605,13 +706,15 @@ export function validateLedger({
     }
 
     const receipts = Array.isArray(workstream.receipts) ? workstream.receipts : [];
+    const externalDocuments = [];
     receipts.forEach((receipt, receiptIndex) => {
       const receiptPrefix = `${prefix}.receipts[${receiptIndex}]`;
-      validateReceipt({
+      const externalDocument = validateReceipt({
         receipt,
         prefix: receiptPrefix,
         ledger,
         workstream,
+        workstreamNumber: expectedWorkstream.number,
         repoRoot,
         candidate,
         identityByPrincipal: trustResult.identityByPrincipal,
@@ -621,6 +724,21 @@ export function validateLedger({
         provenanceChangedPaths: changedEvidencePaths,
         errors,
       });
+      if (externalDocument) externalDocuments.push({ receipt, document: externalDocument });
+      if (
+        EXTERNAL_EVIDENCE_TYPE_BY_WORKSTREAM.has(expectedWorkstream.number)
+        && receipt?.kind === REQUIRED_RECEIPT_KIND.get(expectedWorkstream.number)
+        && typeof receipt?.artifact?.path === 'string'
+      ) {
+        const previousOwner = sensitiveArtifactOwners.get(receipt.artifact.path);
+        if (previousOwner) {
+          errors.push(
+            `${receiptPrefix}.artifact.path reuses external evidence already owned by ${previousOwner}`,
+          );
+        } else {
+          sensitiveArtifactOwners.set(receipt.artifact.path, receiptPrefix);
+        }
+      }
       if (typeof receipt?.id === 'string') {
         if (seenReceiptIds.has(receipt.id)) {
           errors.push(`${receiptPrefix}.id duplicates ${receipt.id}`);
@@ -637,6 +755,12 @@ export function validateLedger({
       if (requiredKind && !receipts.some((receipt) => receipt?.kind === requiredKind)) {
         errors.push(`${prefix} requires at least one ${requiredKind} receipt`);
       }
+      if (EXTERNAL_EVIDENCE_TYPE_BY_WORKSTREAM.has(expectedWorkstream.number)
+          && externalDocuments.length === 0) {
+        errors.push(
+          `${prefix} requires valid ${EXTERNAL_EVIDENCE_TYPE_BY_WORKSTREAM.get(expectedWorkstream.number)} external evidence`,
+        );
+      }
     } else {
       warnings.push(`${expectedWorkstream.id}: ${workstream.status ?? 'invalid'}`);
     }
@@ -650,6 +774,21 @@ export function validateLedger({
       for (const persona of REQUIRED_HUMAN_PERSONAS) {
         if (!personas.has(persona)) {
           errors.push(`${prefix} is missing human acceptance persona ${persona}`);
+        }
+      }
+      const documentPersonas = new Set(externalDocuments.map(({ document }) => document.record?.persona));
+      for (const persona of REQUIRED_HUMAN_PERSONAS) {
+        if (!documentPersonas.has(persona)) {
+          errors.push(`${prefix} is missing a typed human session for ${persona}`);
+        }
+      }
+    }
+
+    if (expectedWorkstream.number === 21 && workstream.status === 'pass') {
+      const drillTypes = new Set(externalDocuments.map(({ document }) => document.record?.drillType));
+      for (const drillType of REQUIRED_RECOVERY_DRILLS) {
+        if (!drillTypes.has(drillType)) {
+          errors.push(`${prefix} is missing recovery drill ${drillType}`);
         }
       }
     }
@@ -670,6 +809,10 @@ export function validateLedger({
       );
       if (reviewerPrincipals.size < 2 || reviewerKeys.size < 2) {
         errors.push(`${prefix} requires two independently keyed trusted review receipts`);
+      }
+      const slots = new Set(externalDocuments.map(({ document }) => document.record?.slot));
+      if (!slots.has('A') || !slots.has('B') || slots.size !== 2) {
+        errors.push(`${prefix} requires distinct typed independent review slots A and B`);
       }
     }
   });

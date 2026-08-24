@@ -82,6 +82,8 @@
     "check:release-checklist:release": "node scripts/quality/check-extension-release-checklist.mjs --release",
     "check:extension-ship-evidence": "node scripts/quality/check-extension-ship-evidence.mjs --audit",
     "check:extension-ship-evidence:release": "node scripts/quality/check-extension-ship-evidence.mjs --release",
+    "extension:evidence": "node scripts/quality/capture-extension-external-evidence.mjs",
+    "test:extension-evidence": "node --test scripts/quality/check-extension-ship-evidence.test.mjs scripts/quality/capture-extension-external-evidence.test.mjs",
     "check:docs-maturity-sync": "node scripts/quality/check-docs-maturity-sync.mjs --audit",
     "check:docs-maturity-sync:release": "node scripts/quality/check-docs-maturity-sync.mjs --release",
     "check:ts-ratchet": "node scripts/check-ts-ratchet.mjs",

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "evidenceType": "recovery-drill",
+  "release": "",
+  "candidate": { "reighCommit": "", "astridCommit": "" },
+  "capturedAt": "",
+  "environment": { "id": "", "toolVersions": {} },
+  "record": {
+    "drillType": "",
+    "incidentId": "",
+    "backup": { "id": "", "createdAt": "", "toolVersion": "", "sha256": "", "readVerified": false },
+    "hashes": { "preState": "", "backup": "", "restoredState": "", "postState": "" },
+    "timeline": [],
+    "approvals": [],
+    "checks": { "flagsOff": false, "writersStopped": false, "restoreVerified": false, "restartVerified": false, "renderExportVerified": false, "secondRunIdempotent": false, "zeroDuplicates": false },
+    "outcome": ""
+  }
+}
