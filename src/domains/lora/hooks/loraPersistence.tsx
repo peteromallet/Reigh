@@ -5,7 +5,7 @@ import { LoraHeaderActions } from '@/shared/components/LoraHeaderActions';
 import type { ActiveLora, LoraModel } from '@/domains/lora/types/lora';
 import { buildLoraAutoLoadStateKey } from './loraStateHelpers';
 
-interface LoraPersistenceSettings {
+interface LoraPersistenceSettings extends Record<string, unknown> {
   loras?: { id: string; strength: number }[];
   hasEverSetLoras?: boolean;
 }
