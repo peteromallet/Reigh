@@ -93,7 +93,7 @@ export function handleWorkerMessage(
 
 // Wire the real worker transport only when this module actually runs inside a
 // dedicated worker global (never in vitest/jsdom or on the window thread).
-if (typeof WorkerGlobalScope !== 'undefined') {
+if (typeof self !== 'undefined' && typeof (self as { postMessage?: unknown }).postMessage === 'function') {
   const workerScope = self as unknown as {
     onmessage: ((event: MessageEvent<AudioAnalysisWorkerRequest>) => void) | null;
     postMessage(message: unknown, options?: { transfer?: Transferable[] }): void;

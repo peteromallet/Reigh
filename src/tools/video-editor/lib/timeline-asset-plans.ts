@@ -41,7 +41,7 @@ export type PlannedAssetDropTarget =
 
 export function getPlayableAssetKind(assetEntry: AssetRegistryEntry | undefined): 'image' | 'video' | 'audio' | null {
   const mimeType = assetEntry?.type?.toLowerCase() ?? '';
-  const file = (assetEntry?.file ?? assetEntry?.src ?? '').toLowerCase();
+  const file = (assetEntry?.file ?? assetEntry?.url ?? '').toLowerCase();
 
   if (mimeType.startsWith('image/') || /\.(png|jpe?g|gif|webp|avif|svg)$/i.test(file)) {
     return 'image';

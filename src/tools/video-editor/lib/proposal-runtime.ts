@@ -297,6 +297,7 @@ export function createProposalRuntime(
     message: string;
     proposalId?: string;
     proposalIndex?: number;
+    detail?: Record<string, unknown>;
   }> = [];
 
   if (persistenceUnsupported) {

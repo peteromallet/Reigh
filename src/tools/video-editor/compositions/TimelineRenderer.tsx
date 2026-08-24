@@ -913,7 +913,12 @@ const ExtensionClipSequence: FC<ExtensionClipSequenceProps> = ({
     // Apply automation overrides
     if (clip.clipType) {
       return applyAutomationOverrides(
-        allClips,
+        allClips
+          .filter((candidate): candidate is ResolvedTimelineClip & { clipType: string } => typeof candidate.clipType === 'string')
+          .map((candidate) => ({
+            clipType: candidate.clipType,
+            params: candidate.params ? { ...candidate.params } : null,
+          })),
         clip.clipType,
         baseParams,
         timeSeconds,

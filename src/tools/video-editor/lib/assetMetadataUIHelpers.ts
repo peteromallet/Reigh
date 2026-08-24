@@ -266,7 +266,7 @@ export function resolveMetadataFacetValue(
       return typeof value === 'boolean' ? value : undefined;
     case 'enum':
       return typeof value === 'string' ? value : undefined;
-    case 'timestamp':
+    case 'date':
       return typeof value === 'string' ? value : undefined;
     default:
       return value;
@@ -973,4 +973,3 @@ export function getSearchProviderSourceLabels(
   }
   return Array.from(labels).sort();
 }
-

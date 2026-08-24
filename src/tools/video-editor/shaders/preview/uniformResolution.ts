@@ -28,7 +28,7 @@ function interpolateVector(
   to: readonly number[],
   factor: number,
   interpolation: TimelineShaderKeyframe['interpolation'],
-): readonly number[] {
+): number[] {
   if (interpolation === 'hold') {
     return [...from];
   }

@@ -23,7 +23,7 @@ export function buildVideoEditorRenderContext(
     provider: runtime.provider,
     timelineId: runtime.timelineId,
     timelineName: runtime.timelineName ?? null,
-    userId: runtime.userId,
+    userId: runtime.userId ?? '',
     extensions: runtime.extensions,
     ...slices,
   };

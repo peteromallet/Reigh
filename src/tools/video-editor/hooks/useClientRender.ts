@@ -94,7 +94,9 @@ const getBlobFromResult = async (
   }
 
   if (ArrayBuffer.isView(result)) {
-    return new Blob([result.buffer.slice(result.byteOffset, result.byteOffset + result.byteLength)], {
+    const bytes = new Uint8Array(result.byteLength);
+    bytes.set(new Uint8Array(result.buffer, result.byteOffset, result.byteLength));
+    return new Blob([bytes], {
       type: getMimeType(extension),
     });
   }

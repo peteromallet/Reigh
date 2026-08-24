@@ -156,6 +156,15 @@ function block(
   });
 }
 
+function isManifestCandidate(value: object): value is ExtensionManifest {
+  return 'id' in value
+    && 'version' in value
+    && 'label' in value
+    && typeof value.id === 'string'
+    && typeof value.version === 'string'
+    && typeof value.label === 'string';
+}
+
 /**
  * Build a non-blocking warning diagnostic for the given extension ID.
  */
@@ -244,7 +253,12 @@ export function validateWorkspaceSourcePackage(
   }
 
   // ---- Validate the manifest in dev mode ----
-  const result = validateManifest(manifest as ExtensionManifest, 'dev');
+  const result = isManifestCandidate(manifest)
+    ? validateManifest(manifest, 'dev')
+    : {
+        errors: [block(extId, 'manifest/invalid-shape', 'Manifest must include string id, version, and label fields.')],
+        warnings: [],
+      };
 
   for (const err of result.errors) {
     errors.push(err);

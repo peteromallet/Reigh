@@ -58,10 +58,10 @@ const applyRowsMutationToConfig = async (
     return result;
   }
 
-  const meta: Record<string, ClipMeta> = {
-    ...timeline.meta,
-    ...(result.mutation.metaUpdates ?? {}),
-  };
+  const meta: Record<string, ClipMeta> = Object.fromEntries(
+    Object.entries({ ...timeline.meta, ...(result.mutation.metaUpdates ?? {}) })
+      .filter((entry): entry is [string, ClipMeta] => entry[1] !== undefined),
+  );
   for (const clipId of result.mutation.metaDeletes ?? []) {
     delete meta[clipId];
   }

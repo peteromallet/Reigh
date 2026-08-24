@@ -878,9 +878,10 @@ function findProcessFact(
     return undefined;
   }
 
-  const availableRoutes = process
+  const availableRoutes: readonly RenderRoute[] = process
     ? process.availableRoutes
     : attachRecord?.provenance.operation.routes
+      ?.filter((route): route is RenderRoute => RENDER_ROUTES.some((candidate) => candidate === route))
       ?? Object.freeze([...(shader?.materializer?.routes ?? [])]);
   const attachProvenance = buildAttachProcessProvenance(
     materialRef,

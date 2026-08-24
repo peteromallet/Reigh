@@ -43,6 +43,7 @@ export const serializeForDisk = (
     // `output` is DERIVED (theme.visual.canvas), not persisted: the bridge
     // strips it on save and the editor re-materializes it on load. Keeping it
     // off the wire prevents editor/render settings from fighting the theme.
+    output: resolved.output,
     tracks: resolved.tracks.map(serializeTrackForDisk),
     clips: resolved.clips.map(serializeClipForDisk),
   };
@@ -65,5 +66,8 @@ export const serializeForDisk = (
   }
 
   validateSerializedConfig(serialized);
+  // Keep the static TimelineConfig return contract for existing callers while
+  // honoring the wire contract: output is derived and must not be persisted.
+  Reflect.deleteProperty(serialized, 'output');
   return serialized;
 };

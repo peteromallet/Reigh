@@ -34,7 +34,7 @@ const CHECKPOINT_RETENTION_MS = 24 * 60 * 60 * 1000;
 const SESSION_IDLE_MS = 5 * 60 * 1000;
 const EDIT_DISTANCE_CHECKPOINT_THRESHOLD = 30;
 const UNTRANSACTED_COLLAPSE_WINDOW_MS = 300;
-const historyCommandRunner = createTimelineCommandRunner([...MEDIA_COMMAND_DESCRIPTORS]);
+const historyCommandRunner = createTimelineCommandRunner<import('@/tools/video-editor/commands').AddMediaCommand | import('@/tools/video-editor/commands').SwapMediaCommand>(MEDIA_COMMAND_DESCRIPTORS);
 
 export interface UseTimelineHistoryArgs {
   dataRef: MutableRefObject<TimelineData | null>;

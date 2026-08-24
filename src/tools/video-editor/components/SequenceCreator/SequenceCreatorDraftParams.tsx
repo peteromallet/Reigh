@@ -63,6 +63,7 @@ export function SequenceCreatorDraftParams({
             clipType: selectedDraft.clipType,
             label: resolvedDescriptor.label ?? selectedDraft.clipType,
             description: resolvedDescriptor.description ?? '',
+            whenToUse: resolvedDescriptor.description ?? '',
             themeId: '2rp',
             hold: resolvedDescriptor.hold?.kind !== 'unsupported'
               ? {
@@ -85,8 +86,7 @@ export function SequenceCreatorDraftParams({
                   componentParam: p.componentParam,
                 }))
               : [],
-            dependsOn: [],
-          } as import('@/tools/video-editor/sequences/metadata').TrustedSequenceMetadata}
+          }}
           params={selectedDraft.params}
           registry={allowedRegistry}
           onChange={(params) => updateSelectedDraft({ params })}

@@ -1408,11 +1408,6 @@ export function createLiveDataRegistry(config: LiveDataRegistryConfig = {}): Liv
     getSteeringLineage,
     canActivateGenerationSessionLiveDelivery,
 
-    // Internal methods exposed for testing/binding scanner
-    _addBinding,
-    _removeBinding,
-    _getBinding,
-
     // Synchronous read facades
     getLatestSample,
     getSampleAt,

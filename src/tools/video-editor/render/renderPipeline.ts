@@ -1,6 +1,5 @@
 import type { TimelineRenderRequest } from '@/tools/video-editor/hooks/timeline-state-types.ts';
 import {
-  RENDER_PROVIDER_REGISTRY,
   buildRenderTimelinePayload,
   enqueueBanodocoRenderTimeline,
   type RenderProviderId,
@@ -138,7 +137,6 @@ export async function executeRenderPipeline({
   startBrowserRender,
   middlewares = [],
 }: ExecuteRenderPipelineOptions): Promise<ExecuteRenderPipelineResult> {
-  const provider = RENDER_PROVIDER_REGISTRY[decision.route];
   const baseEvent = {
     decision,
     request,
@@ -155,7 +153,7 @@ export async function executeRenderPipeline({
   });
 
   const result = await executeProviderRoute({
-    decision: { ...decision, provider },
+    decision,
     request,
     startBrowserRender,
   });
