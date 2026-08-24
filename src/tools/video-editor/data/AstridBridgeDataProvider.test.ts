@@ -32,6 +32,7 @@ import {
   TimelineVersionConflictError,
 } from '@/tools/video-editor/data/DataProvider.ts';
 import { BridgeContractError } from '@/tools/video-editor/data/bridgeContract.ts';
+import { BridgeTransportFailure } from '@/integrations/astrid/transport.ts';
 import {
   expectUnsupportedExtensionPersistenceDiagnostics,
 } from '@/tools/video-editor/data/conformance/extensionPersistenceConformance';
@@ -266,39 +267,16 @@ describe('AstridBridgeDataProvider', () => {
     expect(getSupabaseClient).not.toHaveBeenCalled();
   });
 
-  it('emits only bounded bridge request outcomes for success and invalid responses', async () => {
-    const onBridgeRequest = vi.fn();
+  it('lets shared transport own malformed-response failures', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{not-json', { status: 200 })));
     const provider = new AstridBridgeDataProvider({
       projectSlug: 'ados-talks',
       timelineRef: 'intro-cut',
-      onBridgeRequest,
     });
-
-    await provider.loadTimeline('11111111-1111-1111-1111-111111111111');
-    expect(onBridgeRequest).toHaveBeenLastCalledWith({
-      outcome: 'success',
-      durationMs: expect.any(Number),
-    });
-    expect(Object.keys(onBridgeRequest.mock.calls[0][0]).sort()).toEqual(['durationMs', 'outcome']);
-
-    vi.stubGlobal('fetch', vi.fn(async () => new Response('{not-json', { status: 200 })));
-    const malformedProvider = new AstridBridgeDataProvider({
-      projectSlug: 'ados-talks',
-      timelineRef: 'intro-cut',
-      onBridgeRequest,
-    });
-    await expect(malformedProvider.loadTimeline('11111111-1111-1111-1111-111111111111')).rejects.toThrow();
-    expect(onBridgeRequest).toHaveBeenLastCalledWith({
-      outcome: 'failure',
-      durationMs: expect.any(Number),
-      errorClass: 'bridge.invalid_response',
-    });
+    await expect(provider.loadTimeline('11111111-1111-1111-1111-111111111111')).rejects.toBeInstanceOf(BridgeContractError);
   });
 
-  it('classifies bridge HTTP and timeout failures without changing their runtime errors', async () => {
-    const onBridgeRequest = vi.fn(() => {
-      throw new Error('analytics unavailable');
-    });
+  it('maps bridge HTTP errors while preserving shared transport timeout failures', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
       error: 'timeline_not_found',
       detail: 'missing',
@@ -306,14 +284,8 @@ describe('AstridBridgeDataProvider', () => {
     const missingProvider = new AstridBridgeDataProvider({
       projectSlug: 'ados-talks',
       timelineRef: 'intro-cut',
-      onBridgeRequest,
     });
     await expect(missingProvider.loadTimeline('missing')).rejects.toBeInstanceOf(TimelineNotFoundError);
-    expect(onBridgeRequest).toHaveBeenLastCalledWith({
-      outcome: 'failure',
-      durationMs: expect.any(Number),
-      errorClass: 'bridge.http_error',
-    });
 
     vi.stubGlobal('fetch', vi.fn(async () => {
       throw new DOMException('timed out', 'TimeoutError');
@@ -321,32 +293,18 @@ describe('AstridBridgeDataProvider', () => {
     const timeoutProvider = new AstridBridgeDataProvider({
       projectSlug: 'ados-talks',
       timelineRef: 'intro-cut',
-      onBridgeRequest,
     });
-    await expect(timeoutProvider.loadTimeline('missing')).rejects.toMatchObject({ name: 'TimeoutError' });
-    expect(onBridgeRequest).toHaveBeenLastCalledWith({
-      outcome: 'failure',
-      durationMs: expect.any(Number),
-      errorClass: 'bridge.timeout',
-    });
+    await expect(timeoutProvider.loadTimeline('missing')).rejects.toBeInstanceOf(BridgeTransportFailure);
   });
 
   it('classifies an unreadable non-2xx error body as an HTTP bridge failure', async () => {
-    const onBridgeRequest = vi.fn();
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{not-json', { status: 502 })));
     const provider = new AstridBridgeDataProvider({
       projectSlug: 'ados-talks',
       timelineRef: 'intro-cut',
-      onBridgeRequest,
     });
 
     await expect(provider.loadTimeline('missing')).rejects.toThrow();
-    expect(onBridgeRequest).toHaveBeenCalledOnce();
-    expect(onBridgeRequest).toHaveBeenCalledWith({
-      outcome: 'failure',
-      durationMs: expect.any(Number),
-      errorClass: 'bridge.http_error',
-    });
   });
 
   it('loads the registry once, keeps assetKey and file maps, and resolves direct bridge asset URLs', async () => {
@@ -407,7 +365,6 @@ describe('AstridBridgeDataProvider', () => {
         expect(init?.method).toBe('POST');
         expect(init?.body).toBe(JSON.stringify({
           config: {
-            output: { resolution: '1280x720', fps: 30, file: 'output.mp4' },
             clips: [],
             tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
           },
@@ -662,7 +619,7 @@ describe('AstridBridgeDataProvider', () => {
       if (url.endsWith('/save')) {
         expect(init?.method).toBe('POST');
         expect(init?.body).toBe(JSON.stringify({
-          config: { output: {}, clips: [], tracks: [] },
+          config: { clips: [], tracks: [] },
           registry: makePayload().registry,
           expected_version: 1,
         }));
@@ -1409,7 +1366,7 @@ describe('AstridBridgeDataProvider', () => {
 
       const saveCall = fetchMock.mock.calls.find(([input]) => String(input).endsWith('/save'));
       expect(JSON.parse(String(saveCall?.[1]?.body))).toEqual({
-        config: { output: {}, clips: [], tracks: [] },
+        config: { clips: [], tracks: [] },
         registry: makePayload().registry,
         expected_version: 5,
       });
@@ -2017,7 +1974,7 @@ describe('AstridBridgeDataProvider', () => {
           saveBodies.push(JSON.parse(String(init?.body)));
           return new Response(JSON.stringify({ ...makePayload(), config_version: 4, ...responseOverrides }), { status: 200 });
         }
-        return new Response(JSON.stringify(makePayload()), { status: 200 });
+        return new Response(JSON.stringify({ ...makePayload(), ...responseOverrides }), { status: 200 });
       });
       vi.stubGlobal('fetch', fetchMock);
       return fetchMock;
@@ -2111,10 +2068,12 @@ describe('AstridBridgeDataProvider', () => {
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
-    it('persists a data-bundle.json sibling in local mode and round-trips it through a reload', async () => {
+    it('keeps FSA asset-only and persists the bundle through bridge CAS', async () => {
       const localTree = makeLocalTree();
       vi.mocked(getDirectoryHandle).mockResolvedValue(localTree.projectRootHandle);
       const bundle = makeBundle();
+      const saveBodies: Array<Record<string, unknown>> = [];
+      const fetchMock = stubBridgeSavingBodies(saveBodies, { bundle });
 
       await makeLocalProvider().saveTimeline(LOCAL_TIMELINE_REF, {
         clips: [],
@@ -2122,36 +2081,12 @@ describe('AstridBridgeDataProvider', () => {
       }, 1, undefined, bundle);
 
       const persistedPath = `timelines/${LOCAL_TIMELINE_REF}/data-bundle.json`;
-      expect(typeof localTree.files[persistedPath]).toBe('string');
-      const persisted = JSON.parse(localTree.files[persistedPath] as string);
-      expect(persisted.schema_version).toBe(TIMELINE_BUNDLE_SCHEMA_VERSION);
-
-      // A fresh provider instance reads only what hit disk.
+      expect(localTree.files[persistedPath]).toBeUndefined();
+      expect(saveBodies[0].bundle).toEqual(bundle);
+      // A fresh provider instance reads the bridge, never local documents.
       const loaded = await makeLocalProvider().loadTimeline(LOCAL_TIMELINE_REF);
       expect(loaded.bundle).toEqual(bundle);
-      expect(globalThis.fetch).not.toHaveBeenCalled();
-    });
-
-    it('leaves an existing sibling untouched when a local save passes no bundle, and clears it on explicit null', async () => {
-      const localTree = makeLocalTree();
-      vi.mocked(getDirectoryHandle).mockResolvedValue(localTree.projectRootHandle);
-      const bundle = makeBundle();
-      const persistedPath = `timelines/${LOCAL_TIMELINE_REF}/data-bundle.json`;
-      const provider = makeLocalProvider();
-
-      await provider.saveTimeline(LOCAL_TIMELINE_REF, { clips: [], tracks: [] }, 1, undefined, bundle);
-      await provider.saveTimeline(LOCAL_TIMELINE_REF, {
-        clips: [],
-        tracks: [{ id: 'V1', kind: 'visual', label: 'V1' }],
-      }, 2);
-
-      expect(JSON.parse(localTree.files[persistedPath] as string)).toEqual(bundle);
-
-      await provider.saveTimeline(LOCAL_TIMELINE_REF, { clips: [], tracks: [] }, 3, undefined, null);
-
-      expect(localTree.removed).toContain(persistedPath);
-      const loaded = await makeLocalProvider().loadTimeline(LOCAL_TIMELINE_REF);
-      expect(loaded.bundle).toBeNull();
+      expect(fetchMock).toHaveBeenCalled();
     });
   });
 

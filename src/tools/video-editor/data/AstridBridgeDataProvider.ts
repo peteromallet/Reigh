@@ -16,9 +16,14 @@ import {
   BRIDGE_TIMELINE_NOT_FOUND_CODE,
   BRIDGE_SCHEMA_INCOMPATIBLE_CODE,
   BRIDGE_VERSION_CONFLICT_CODE,
+  BridgeContractError,
   bridgeTimelinePayloadSchema,
 } from '@/tools/video-editor/data/bridgeContract.ts';
-import { AstridBridgeTransport, BridgeRouteError } from '@/integrations/astrid/transport.ts';
+import {
+  AstridBridgeTransport,
+  BridgeRouteError,
+  BridgeTransportFailure,
+} from '@/integrations/astrid/transport.ts';
 import type {
   AssetProfile,
   AssetResolveRequest,
@@ -37,6 +42,10 @@ import {
 } from '@/shared/lib/media/localHandleStore.ts';
 import { generateUUID } from '@/shared/lib/taskCreation/ids.ts';
 import { withDefaultTimelineOutput } from '@/tools/video-editor/lib/defaults.ts';
+import {
+  parseTimelineBundle,
+  type TimelineBundleEnvelope,
+} from '@/tools/video-editor/data/typed/timelineBundle.ts';
 
 /**
  * The provider's internal view of a timeline payload. Deliberately looser than
@@ -52,6 +61,7 @@ type BridgeTimelinePayload = {
   config?: unknown;
   config_version?: unknown;
   registry?: unknown;
+  bundle?: unknown;
 };
 
 type AstridBridgeDataProviderOptions = {
@@ -61,7 +71,15 @@ type AstridBridgeDataProviderOptions = {
   apiBaseUrl?: string;
   assetBaseUrl?: string;
   registeredParsers?: readonly RegisteredParser[];
+  /** Host-owned, privacy-bounded observation of actual bridge IO only. */
+  onBridgeRequest?: (event: AstridBridgeRequestObservation) => void;
 };
+
+export type AstridBridgeRequestObservation = Readonly<{
+  outcome: 'success' | 'failure';
+  durationMs: number;
+  errorClass?: 'bridge.timeout' | 'bridge.http_error' | 'bridge.invalid_response';
+}>;
 
 const DEFAULT_API_BASE_URL = '/api/astrid';
 const DEFAULT_BRIDGE_PORT = '17333';
@@ -257,6 +275,7 @@ export class AstridBridgeDataProvider implements DataProvider {
   private readonly registeredParsers: readonly RegisteredParser[] | undefined;
   /** The one shared bridge fetch pipeline (timeout + envelope parsing). */
   private readonly transport: AstridBridgeTransport;
+  private readonly onBridgeRequest: AstridBridgeDataProviderOptions['onBridgeRequest'];
 
   constructor(options: AstridBridgeDataProviderOptions) {
     this.apiBaseUrl = trimTrailingSlash(options.apiBaseUrl ?? DEFAULT_API_BASE_URL);
@@ -279,6 +298,32 @@ export class AstridBridgeDataProvider implements DataProvider {
     this.timelineUlidRef = null;
     this.projectSlug = options.projectSlug;
     this.registeredParsers = options.registeredParsers;
+    this.onBridgeRequest = options.onBridgeRequest;
+  }
+
+  private observeBridgeRequest(
+    startedAt: number,
+    event: Omit<AstridBridgeRequestObservation, 'durationMs'>,
+  ): void {
+    if (!this.onBridgeRequest) return;
+    try {
+      this.onBridgeRequest(Object.freeze({
+        ...event,
+        durationMs: Math.max(0, performance.now() - startedAt),
+      }));
+    } catch {
+      // Observability must never change editor IO behavior.
+    }
+  }
+
+  private observeBridgeFailure(startedAt: number, error: unknown): void {
+    const errorClass = error instanceof BridgeContractError
+      ? 'bridge.invalid_response'
+      : error instanceof BridgeTransportFailure && error.cause instanceof Error
+        && error.cause.name === 'TimeoutError'
+        ? 'bridge.timeout'
+        : 'bridge.http_error';
+    this.observeBridgeRequest(startedAt, { outcome: 'failure', errorClass });
   }
 
   private readonly projectSlug: string;
@@ -288,6 +333,9 @@ export class AstridBridgeDataProvider implements DataProvider {
     return {
       config: normalizeConfig(payload.config),
       configVersion: normalizeConfigVersion(payload.config_version),
+      bundle: payload.bundle === undefined || payload.bundle === null
+        ? null
+        : parseTimelineBundle(payload.bundle),
     };
   }
 
@@ -368,10 +416,19 @@ export class AstridBridgeDataProvider implements DataProvider {
     config: TimelineConfig,
     expectedVersion: number,
     registry?: AssetRegistry,
+    bundle?: TimelineBundleEnvelope | null,
   ): Promise<number> {
+    // Validate before the pre-read, materialization, or any network/FSA IO.
+    if (bundle !== undefined && bundle !== null) {
+      parseTimelineBundle(bundle);
+    }
     const existingPayload = await this.fetchTimelinePayload(timelineId);
     const nextRegistry = registry ?? normalizeRegistry(existingPayload.registry);
     const timelineRef = this.getTimelineRequestRef(timelineId);
+    // `output` is resolved render state, not authored persistence. Keep all
+    // other opaque/app fields and send the canonical source lane only.
+    const { output: _derivedOutput, ...configWithoutOutput } = config;
+    const configForWire = { ...configWithoutOutput, tracks: config.tracks ?? [] };
 
     // Browser File System Access is an asset-byte plane only. Materialization
     // may write sources/assets and .incoming, but assembly/registry documents
@@ -380,19 +437,27 @@ export class AstridBridgeDataProvider implements DataProvider {
     const materializedRegistry = await this.materializeGenerationAssets(timelineId, nextRegistry);
 
     let savePayload: BridgeTimelinePayload;
+    const bridgeStartedAt = performance.now();
     try {
       savePayload = await this.transport.requestJson(
         `/projects/${encodeURIComponent(this.projectSlug)}/timelines/${encodeURIComponent(timelineRef)}/save`,
         {
           method: 'POST',
-          body: { config, registry: materializedRegistry, expected_version: expectedVersion },
+          body: {
+            config: configForWire,
+            registry: materializedRegistry,
+            expected_version: expectedVersion,
+            ...(bundle !== undefined ? { bundle } : {}),
+          },
         },
         bridgeTimelinePayloadSchema,
         'save timeline',
       );
     } catch (error) {
+      this.observeBridgeFailure(bridgeStartedAt, error);
       throw this.toBridgeError(error, timelineId, 'save timeline', expectedVersion);
     }
+    this.observeBridgeRequest(bridgeStartedAt, { outcome: 'success' });
 
     const payload = savePayload;
     const cached = this.cachePayload(payload, timelineId);
@@ -532,6 +597,7 @@ export class AstridBridgeDataProvider implements DataProvider {
     await this.ensureLocalAssetHandles();
 
     let response: BridgeTimelinePayload;
+    const bridgeStartedAt = performance.now();
     try {
       response = await this.transport.requestJson(
         `/projects/${encodeURIComponent(this.projectSlug)}/timelines/${encodeURIComponent(this.getTimelineRequestRef(timelineId))}`,
@@ -540,8 +606,10 @@ export class AstridBridgeDataProvider implements DataProvider {
         'timeline payload',
       );
     } catch (error) {
+      this.observeBridgeFailure(bridgeStartedAt, error);
       throw this.toBridgeError(error, timelineId, 'load timeline');
     }
+    this.observeBridgeRequest(bridgeStartedAt, { outcome: 'success' });
     const materializedRegistry = await this.materializeGenerationAssets(
       timelineId,
       normalizeRegistry(response.registry),
