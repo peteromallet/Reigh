@@ -45,7 +45,7 @@ interface UseImageGenFormProps {
   initialShotId?: string | null;
 }
 
-interface PersistentImageGenState {
+type PersistentImageGenState = {
   imagesPerPrompt: number;
   selectedLoras: ActiveLora[];
   beforeEachPromptText: string;

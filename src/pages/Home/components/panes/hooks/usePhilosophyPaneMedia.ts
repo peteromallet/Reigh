@@ -27,8 +27,8 @@ interface UsePhilosophyPaneMediaInput {
 
 interface UsePhilosophyPaneMediaResult {
   philosophyVideoRef: React.RefObject<HTMLVideoElement | null>;
-  travelVideoRefs: React.RefObject<Array<HTMLVideoElement | null>>;
-  loraVideosRef: React.RefObject<Array<HTMLVideoElement | null>>;
+  travelVideoRefs: React.MutableRefObject<Array<HTMLVideoElement | null>>;
+  loraVideosRef: React.MutableRefObject<Array<HTMLVideoElement | null>>;
   selectedTravelExample: number;
   loraPlaying: boolean;
   loadedImages: Set<string>;

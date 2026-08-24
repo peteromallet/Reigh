@@ -29,6 +29,7 @@ import { useSegmentSettings, UseSegmentSettingsOptions } from './segments';
 import type { SegmentSettingsFormProps } from '@/shared/components/SegmentSettingsForm/types';
 import type { StructureVideoConfigWithMetadata } from '@/shared/lib/tasks/travelBetweenImages';
 import type { TravelGuidanceMode } from '@/shared/lib/tasks/travelGuidance';
+import type { SelectedModel } from '@/tools/travel-between-images/modelCapabilities';
 
 interface StructureVideoDefaultsValue {
   mode?: TravelGuidanceMode;
