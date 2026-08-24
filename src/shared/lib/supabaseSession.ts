@@ -25,7 +25,6 @@ import {
 function getProjectRef(): string {
   return new URL(getSupabaseUrl()).hostname.split('.')[0];
 }
-
 /**
  * Read the raw Supabase session JSON from localStorage.
  * Returns null if no session exists or if running in a non-browser environment.
@@ -98,4 +97,3 @@ export function readUserIdFromStorage(): string | null {
 export function hasStoredSessionToken(): boolean {
   return readAccessTokenFromStorage() !== null;
 }
-

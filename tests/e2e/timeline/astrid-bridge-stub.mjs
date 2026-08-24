@@ -162,8 +162,6 @@ const server = http.createServer(async (req, res) => {
 
   return send(res, 404, { error: 'not_found', detail: `No bridge route for ${path}` });
 });
-
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`[bridge] listening on http://127.0.0.1:${PORT} (assets from ${PUBLIC_DIR.pathname})`);
 });
-

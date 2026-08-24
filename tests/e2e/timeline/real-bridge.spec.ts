@@ -311,7 +311,6 @@ test('release bridge has explicit auth/protocol negatives and atomic two-writer 
   expect(replayPayload.config_version).toBe(winner.payload.config_version);
   expect(replayPayload.config.app['b8.cas.writer']).toBe(winner.data.config.app['b8.cas.writer']);
 });
-
 /**
  * OpenAPI conformance (B3 envelope) against the real bridge: GET timeline,
  * POST save with CAS, GET assets.
@@ -600,6 +599,79 @@ test('concurrent write → 409 → diverged banner (B4/B5 live proof)', async ({
   ]);
 });
 
+/** B9 positive path: a persisted one-slot draft retries with its original
+ * CAS base version, then the acknowledgement clears the recovery slot. */
+test('B9 recovery Retry re-POSTs the draft at its base version and clears the slot', async ({ page, request }) => {
+  const url = await timelineUrl(request);
+  const timeline = await (await request.get(url, { headers: bridgeHeaders() })).json();
+  const baseVersion = timeline.config_version as number;
+  const timelineId = url.split('/').at(-1)!;
+  const draftConfig = {
+    ...timeline.config,
+    clips: (timeline.config.clips ?? []).map((clip: { at?: number }, index: number) =>
+      index === 0 ? { ...clip, at: (clip.at ?? 0) + 2 } : clip),
+  };
+
+  await openEditorAt(page);
+  await page.evaluate(async ({ timelineId: id, draftConfig: config, registry, baseVersion: version }) => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const open = indexedDB.open('reigh.timeline-drafts', 1);
+      open.addEventListener('upgradeneeded', () => {
+        if (!open.result.objectStoreNames.contains('timeline-drafts')) {
+          open.result.createObjectStore('timeline-drafts', { keyPath: 'key' });
+        }
+      });
+      open.addEventListener('success', () => resolve(open.result));
+      open.addEventListener('error', () => reject(open.error));
+    });
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction('timeline-drafts', 'readwrite');
+      transaction.objectStore('timeline-drafts').put({
+        key: id, timelineId: id, draft: { config, registry }, baseVersion: version,
+        updatedAt: new Date().toISOString(),
+      });
+      transaction.addEventListener('complete', () => resolve());
+      transaction.addEventListener('error', () => reject(transaction.error));
+    });
+    database.close();
+  }, { timelineId, draftConfig, registry: timeline.registry, baseVersion });
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.getByText(/recovered unsaved changes/i)).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(CLIP_ACTION_WITH_ID_SELECTOR).first()).toBeVisible({ timeout: 20_000 });
+
+  const retryPost = page.waitForRequest((browserRequest) =>
+    browserRequest.method() === 'POST' && /\/save$/.test(new URL(browserRequest.url()).pathname), { timeout: 20_000 });
+  const retryResponse = page.waitForResponse((response) =>
+    response.request().method() === 'POST' && /\/save$/.test(new URL(response.url()).pathname), { timeout: 20_000 });
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  const post = await retryPost;
+  const response = await retryResponse;
+  expect(post.postDataJSON().expected_version).toBe(baseVersion);
+  expect(response.status()).toBe(200);
+
+  await expect(page.getByText(/recovered unsaved changes/i)).not.toBeVisible({ timeout: 15_000 });
+  const draftSlot = await page.evaluate(async (id) => {
+    const database = await new Promise<IDBDatabase | null>((resolve) => {
+      const open = indexedDB.open('reigh.timeline-drafts', 1);
+      open.addEventListener('success', () => resolve(open.result));
+      open.addEventListener('error', () => resolve(null));
+    });
+    if (!database) return 'no-db';
+    const record = await new Promise<unknown>((resolve) => {
+      const transaction = database.transaction('timeline-drafts', 'readonly');
+      const get = transaction.objectStore('timeline-drafts').get(id);
+      get.addEventListener('success', () => resolve(get.result));
+      get.addEventListener('error', () => resolve('read-error'));
+    });
+    database.close();
+    return record ?? null;
+  }, timelineId);
+  expect(draftSlot).toBeNull();
+  const after = await (await request.get(url, { headers: bridgeHeaders() })).json();
+  expect(after.config.clips[0].at).toBeGreaterThan(timeline.config.clips[0].at);
+});
+
 /**
  * Watchdog (B1a): with the bridge dead, an edit must surface a persistent
  * actionable banner instead of a silent "saved" badge.
@@ -630,4 +702,3 @@ test('bridge death during an edit → watchdog banner with retry', async ({ page
     /proxy.*astrid/i,
   ]);
 });
-

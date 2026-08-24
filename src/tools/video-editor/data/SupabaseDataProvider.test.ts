@@ -78,4 +78,3 @@ describe('SupabaseDataProvider Phase C compatibility wrapper', () => {
     await expect(provider.resolveAssetUrl('https://example.test/a.mp4')).resolves.toBe('https://example.test/a.mp4');
   });
 });
-

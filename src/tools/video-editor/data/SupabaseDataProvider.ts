@@ -42,7 +42,6 @@ export interface SyncTimelineOptions {
   hasUnsavedEdits: boolean;
   registry?: AssetRegistry;
 }
-
 export interface SyncTimelineResult {
   state: AppSyncState;
   action: SyncTimelineAction;
@@ -129,4 +128,3 @@ export class SupabaseDataProvider implements DataProvider {
     );
   }
 }
-
