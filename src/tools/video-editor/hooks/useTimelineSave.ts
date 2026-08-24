@@ -142,10 +142,16 @@ export function useTimelineSave(
       resolveAssetUrl ?? ((file) => provider.resolveAssetUrl(file)),
       record.baseVersion,
     );
-    await clearTimelineDraft(timelineId);
+    // Retry against the version captured with the draft. Using a newer
+    // polled version here would turn a stale recovery into an unconditional
+    // overwrite instead of an honest CAS conflict.
+    configVersionRef.current = record.baseVersion;
+    // Keep the slot until the retry receives a durable ACK. A 409 or
+    // transport failure must leave the recovered work available for another
+    // reload/recovery attempt.
     setRecoveryDraft(null);
     commit.commitData(recovered, { save: true });
-  }, [commit, provider, resolveAssetUrl, timelineId]);
+  }, [commit, configVersionRef, provider, resolveAssetUrl, timelineId]);
 
   const discardRecoveredDraft = useCallback(async () => {
     try {

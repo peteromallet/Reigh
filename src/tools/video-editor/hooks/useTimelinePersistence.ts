@@ -81,7 +81,7 @@ export interface UseTimelinePersistenceResult {
   flushPendingSave: () => Promise<number>;
   saveStatus: SaveStatus;
   isConflictExhausted: boolean;
-  reloadFromServer: () => Promise<void>;
+  reloadFromServer: (options?: { clearDraft?: boolean; preserveDraft?: boolean }) => Promise<void>;
   retrySaveAfterConflict: () => Promise<void>;
   isSavingRef: MutableRefObject<boolean>;
   /** Mirrors isConflictExhausted for the poll gate. */
@@ -366,9 +366,6 @@ export function useTimelinePersistence({
 
             clearErrorRetry();
             setIsConflictExhausted(false);
-            // An acknowledged save clears the one-slot recovery draft.
-            void clearTimelineDraft(timelineId);
-
             if (seq > savedSeqRef.current) {
               savedSeqRef.current = seq;
               lastSavedSignatureRef.current = nextData.stableSignature;
@@ -384,6 +381,11 @@ export function useTimelinePersistence({
             // saveSuccess when it lands.
             if (seq >= editSeqRef.current) {
               eventBus.emit('saveSuccess');
+              // The recovery slot is cleared only by a durable receipt that
+              // covers the current edit. An older ACK must leave the newer
+              // mutation's draft intact. IndexedDB is best-effort (private
+              // mode/quota failures must never become unhandled rejections).
+              void clearTimelineDraft(timelineId).catch(() => {});
             }
           },
         },
@@ -468,6 +470,15 @@ export function useTimelinePersistence({
   doSaveRef.current = (nextData, seq) => { void doSave(nextData, seq); };
 
   const scheduleSave = useCallback<ScheduleSaveFn>((nextData, options) => {
+    // Every mutation gets the latest coalesced recovery slot before any
+    // debounce, interaction gate, or network attempt. This is deliberately
+    // best-effort so private-mode IndexedDB rejection cannot affect editing.
+    void saveTimelineDraft(
+      timelineId,
+      { config: nextData.config, registry: nextData.registry },
+      configVersionRef.current,
+    ).catch(() => {});
+
     if (!persistenceEnabled) {
       if (saveTimer.current) {
         clearTimeout(saveTimer.current);
@@ -513,14 +524,10 @@ export function useTimelinePersistence({
     // error.
     armWatchdog('timeout');
 
-    // Diverged (409): autosave and remote adoption are frozen. The latest
-    // draft goes to the one-slot recovery store instead of a doomed POST —
-    // the banner offers Reload / Save as copy.
+    // Diverged (409): autosave and remote adoption are frozen. The mutation
+    // was already coalesced into the one-slot recovery store above; the banner
+    // offers Reload / Save as copy.
     if (isConflictExhausted) {
-      const latest = dataRef.current ?? getDataRef().current;
-      if (latest) {
-        void saveTimelineDraft(timelineId, { config: latest.config, registry: latest.registry }, configVersionRef.current);
-      }
       return;
     }
 
@@ -545,7 +552,7 @@ export function useTimelinePersistence({
       saveTimer.current = null;
       void doSave(nextData, editSeqRef.current);
     }, SAVE_DEBOUNCE_MS);
-  }, [armWatchdog, cancelErrorRetryTimer, disarmWatchdog, doSave, editSeqRef, getDataRef, getInteractionStateRef, isConflictExhausted, persistenceEnabled, timelineId]);
+  }, [armWatchdog, cancelErrorRetryTimer, configVersionRef, disarmWatchdog, doSave, editSeqRef, getDataRef, getInteractionStateRef, isConflictExhausted, persistenceEnabled, timelineId]);
 
   const flushPendingSave = useCallback((): Promise<number> => {
     if (!persistenceEnabled) {
@@ -626,7 +633,7 @@ export function useTimelinePersistence({
     });
   }, [getInteractionStateRef, scheduleSave]);
 
-  const reloadFromServer = useCallback(async () => {
+  const reloadFromServer = useCallback(async (options?: { clearDraft?: boolean; preserveDraft?: boolean }) => {
     const [loadedTimeline, registry] = await Promise.all([
       provider.loadTimeline(timelineId),
       provider.loadAssetRegistry(timelineId),
@@ -653,8 +660,16 @@ export function useTimelinePersistence({
           loadedTimeline.config,
           registry,
           resolveAssetUrl ?? ((file) => provider.resolveAssetUrl(file)),
-          loadedTimeline.configVersion,
-        );
+        loadedTimeline.configVersion,
+      );
+
+    // Explicit server adoption discards the local recovery slot. Save-as-copy
+    // calls this same reload with preserveDraft so its intentionally stashed
+    // work survives for a later recovery offer.
+    const shouldClearDraft = options?.clearDraft ?? !options?.preserveDraft;
+    if (shouldClearDraft) {
+      await clearTimelineDraft(timelineId).catch(() => {});
+    }
 
     commitData(reloadedData, {
       save: false,
@@ -705,7 +720,7 @@ export function useTimelinePersistence({
       return;
     }
     setIsConflictExhausted(false);
-    await reloadFromServer();
+    await reloadFromServer({ preserveDraft: true });
   }, [configVersionRef, dataRef, getDataRef, reloadFromServer, timelineId]);
 
   useEffect(() => {
