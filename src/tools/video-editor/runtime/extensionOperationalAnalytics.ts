@@ -12,7 +12,7 @@ export const OPERATIONAL_ANALYTICS_QUEUE_LIMIT = 100;
 export const OPERATIONAL_ANALYTICS_FLUSH_DELAY_MS = 5_000;
 export const OPERATIONAL_ANALYTICS_MAX_RETRIES = 2;
 
-const EVENT_NAMES = new Set([
+const EVENT_NAMES = new Set<string>([
   'host.activation',
   'extension.activation',
   'extension.disposal',
@@ -25,9 +25,9 @@ const EVENT_NAMES = new Set([
 ]);
 const OUTCOMES = new Set(['success', 'failure', 'cancelled', 'degraded']);
 const EVENT_ERROR_CLASSES: Readonly<Record<ExtensionOperationalEvent['event'], ReadonlySet<string>>> = Object.freeze({
-  'host.activation': new Set(),
+  'host.activation': new Set<string>(),
   'extension.activation': new Set(['activation.error']),
-  'extension.disposal': new Set(),
+  'extension.disposal': new Set<string>(),
   'extension.command': new Set(['command.handler_error']),
   'bridge.request': new Set(['bridge.timeout', 'bridge.http_error', 'bridge.invalid_response']),
   'persistence.conflict': new Set(['persistence.version_conflict', 'persistence.unavailable']),
@@ -41,6 +41,10 @@ const VERSION_TOKEN = /^(?:0|[1-9]\d*)(?:\.(?:0|[1-9]\d*)){0,2}(?:-[0-9A-Za-z.-]
 const REVISION_TOKEN = /^[A-Za-z0-9._-]{1,64}$/;
 const EXTENSION_ID_TOKEN = /^com\.reigh\.[a-z0-9.-]{1,100}$/;
 const REVIEWED_EXTENSION_IDS = new Set<string>(REVIEWED_PRODUCTION_EXTENSION_IDS);
+
+function isOperationalEventName(value: unknown): value is ExtensionOperationalEvent['event'] {
+  return typeof value === 'string' && EVENT_NAMES.has(value);
+}
 
 /**
  * The DOM boundary is public browser state. Re-check its flat, fixed schema
@@ -56,7 +60,7 @@ export function toTransportSafeOperationalEvent(value: unknown): ExtensionOperat
       'schemaVersion', 'errorClass', 'durationMs', 'countBucket', 'browserFamily',
     ]);
     if (Object.keys(input).some((key) => !allowed.has(key))) return null;
-    if (typeof input.event !== 'string' || !EVENT_NAMES.has(input.event)) return null;
+    if (!isOperationalEventName(input.event)) return null;
     if (typeof input.outcome !== 'string' || !OUTCOMES.has(input.outcome)) return null;
     if (typeof input.releaseRevision !== 'string' || !REVISION_TOKEN.test(input.releaseRevision)) return null;
     if (input.extensionId !== undefined) {

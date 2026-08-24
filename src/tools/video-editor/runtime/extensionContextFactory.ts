@@ -183,7 +183,7 @@ function createExtensionTimelineOps(
 
   return Object.freeze({
     validate,
-    preview(patch) {
+    preview(patch: TimelinePatch) {
       const scoped = validate(patch);
       if (!scoped.valid) {
         return Object.freeze({
@@ -198,7 +198,7 @@ function createExtensionTimelineOps(
       }
       return timeline.preview(patch);
     },
-    apply(patch) {
+    apply(patch: TimelinePatch) {
       const scoped = validate(patch);
       if (!scoped.valid) {
         const messages = scoped.diagnostics
@@ -209,9 +209,9 @@ function createExtensionTimelineOps(
       }
       return timeline.apply(patch);
     },
-    checkpoint: (label) => timeline.checkpoint(label),
-    rollback: (checkpointId) => timeline.rollback(checkpointId),
-    setAllTracksMuted: (muted) => timeline.setAllTracksMuted(muted),
+    checkpoint: (label?: string) => timeline.checkpoint(label),
+    rollback: (checkpointId: string) => timeline.rollback(checkpointId),
+    setAllTracksMuted: (muted: boolean) => timeline.setAllTracksMuted(muted),
   });
 }
 

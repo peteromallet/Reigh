@@ -15,16 +15,18 @@ export type ExtensionPersistenceFailureKind =
 export class ExtensionPersistenceWriteError extends Error {
   readonly kind: ExtensionPersistenceFailureKind;
   readonly operation: string;
+  readonly cause?: unknown;
 
   constructor(
     kind: ExtensionPersistenceFailureKind,
     operation: string,
     options: { cause?: unknown } = {},
   ) {
-    super(`Extension persistence ${operation} failed (${kind}).`, options);
+    super(`Extension persistence ${operation} failed (${kind}).`);
     this.name = 'ExtensionPersistenceWriteError';
     this.kind = kind;
     this.operation = operation;
+    this.cause = options.cause;
   }
 }
 

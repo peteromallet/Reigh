@@ -244,9 +244,9 @@ export const EXTENSION_OPERATIONAL_ERROR_CLASSES = Object.freeze([
 export type ExtensionOperationalErrorClass = (typeof EXTENSION_OPERATIONAL_ERROR_CLASSES)[number];
 const ERROR_CLASSES = new Set<string>(EXTENSION_OPERATIONAL_ERROR_CLASSES);
 const EVENT_ERROR_CLASSES: Readonly<Record<ExtensionOperationalEventName, ReadonlySet<string>>> = Object.freeze({
-  'host.activation': new Set(),
+  'host.activation': new Set<string>(),
   'extension.activation': new Set(['activation.error']),
-  'extension.disposal': new Set(),
+  'extension.disposal': new Set<string>(),
   'extension.command': new Set(['command.handler_error']),
   'bridge.request': new Set(['bridge.timeout', 'bridge.http_error', 'bridge.invalid_response']),
   'persistence.conflict': new Set(['persistence.version_conflict', 'persistence.unavailable']),

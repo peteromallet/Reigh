@@ -13,7 +13,11 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from '@/shared/components/ui/runtime/sonner.tsx';
-import { MediaLightbox } from '@/domains/media-lightbox/MediaLightbox.tsx';
+import { MediaLightbox, type MediaLightboxProps } from '@/domains/media-lightbox/MediaLightbox.tsx';
+import type {
+  LightboxFeatureFlags,
+  LightboxNavigationProps,
+} from '@/domains/media-lightbox/types.ts';
 import type { GenerationRow } from '@/domains/generation/types/index.ts';
 import { VideoEditorLightboxOverlay } from '@/tools/video-editor/components/VideoEditorLightboxOverlay.tsx';
 import { useReighShotsHost } from '@/tools/video-editor/adapters/reigh/useReighShotsHost.ts';
@@ -70,6 +74,110 @@ import {
 } from '@/tools/video-editor/runtime/extensionReleaseControls.ts';
 
 const log = import.meta.env.DEV ? (...args: Parameters<typeof console.log>) => console.log(...args) : () => {};
+
+type VideoEditorMediaLightboxProps = Pick<
+  MediaLightboxProps,
+  'features' | 'initialVariantId' | 'media' | 'navigation' | 'onClose'
+>;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function hasOptionalFieldsOfType(
+  value: Record<string, unknown>,
+  fields: readonly string[],
+  expectedType: 'boolean' | 'function',
+): boolean {
+  return fields.every((field) => value[field] === undefined || typeof value[field] === expectedType);
+}
+
+function isLightboxNavigation(value: unknown): value is LightboxNavigationProps {
+  return isRecord(value) && hasOptionalFieldsOfType(
+    value,
+    ['onNext', 'onPrevious'],
+    'function',
+  ) && hasOptionalFieldsOfType(
+    value,
+    ['showNavigation', 'hasNext', 'hasPrevious'],
+    'boolean',
+  );
+}
+
+function isLightboxFeatures(value: unknown): value is LightboxFeatureFlags {
+  return isRecord(value) && hasOptionalFieldsOfType(
+    value,
+    [
+      'showImageEditTools',
+      'showDownload',
+      'showMagicEdit',
+      'initialEditActive',
+      'showTaskDetails',
+    ],
+    'boolean',
+  );
+}
+
+function isGenerationRow(value: unknown): value is GenerationRow {
+  if (!isRecord(value) || typeof value.id !== 'string') return false;
+  const nullableStrings = [
+    'variant_fetch_generation_id',
+    'location',
+    'type',
+    'name',
+    'based_on',
+    'parent_generation_id',
+    'pair_shot_generation_id',
+    'primary_variant_id',
+    'source_task_id',
+  ];
+  const strings = ['generation_id', 'createdAt', 'imageUrl', 'thumbUrl', 'contentType'];
+  const nullableNumbers = ['timeline_frame', 'child_order'];
+  const numbers = ['derivedCount', 'unviewedVariantCount'];
+  const booleans = ['starred', 'is_child', 'hasUnviewedVariants'];
+  return nullableStrings.every((field) => (
+    value[field] === undefined || value[field] === null || typeof value[field] === 'string'
+  )) && strings.every((field) => (
+    value[field] === undefined || typeof value[field] === 'string'
+  )) && nullableNumbers.every((field) => (
+    value[field] === undefined || value[field] === null || typeof value[field] === 'number'
+  )) && numbers.every((field) => (
+    value[field] === undefined || typeof value[field] === 'number'
+  )) && booleans.every((field) => (
+    value[field] === undefined || typeof value[field] === 'boolean'
+  )) && (
+    value.metadata === undefined || value.metadata === null || isRecord(value.metadata)
+  ) && (
+    value.params === undefined || isRecord(value.params)
+  );
+}
+
+function isVideoEditorMediaLightboxProps(
+  value: Record<string, unknown>,
+): value is Record<string, unknown> & VideoEditorMediaLightboxProps {
+  return typeof value.onClose === 'function'
+    && (value.media === undefined || isGenerationRow(value.media))
+    && (value.initialVariantId === undefined || typeof value.initialVariantId === 'string')
+    && (value.navigation === undefined || isLightboxNavigation(value.navigation))
+    && (value.features === undefined || isLightboxFeatures(value.features));
+}
+
+/** Checked adapter from the deliberately generic host port to Reigh's lightbox. */
+function VideoEditorMediaLightbox(props: Record<string, unknown>) {
+  if (!isVideoEditorMediaLightboxProps(props)) {
+    log('[video-editor] Invalid media lightbox host props');
+    return null;
+  }
+  return (
+    <MediaLightbox
+      media={props.media}
+      navigation={props.navigation}
+      initialVariantId={props.initialVariantId}
+      onClose={props.onClose}
+      features={props.features}
+    />
+  );
+}
 
 function LocalTestDiagnosticsBridge({ collection }: { collection?: DiagnosticCollection }) {
   useEffect(() => {
@@ -156,10 +264,12 @@ function InnerProvider({
   // embed host's async initialize() gate.
   const proposalPersistenceRef = useRef<ProposalPersistenceProvider | null | undefined>(undefined);
   if (proposalPersistenceRef.current === undefined) {
-    const svc = runtime.provider.createExtensionPersistenceService?.({
-      userId: runtime.auth.userId,
-      timelineId: runtime.timelineId,
-    }, []);
+    const svc = runtime.auth.userId
+      ? runtime.provider.createExtensionPersistenceService?.({
+          userId: runtime.auth.userId,
+          timelineId: runtime.timelineId,
+        }, [])
+      : undefined;
     proposalPersistenceRef.current = svc?.capabilities.proposals
       ? createProposalPersistenceBridge(svc)
       : null;
@@ -452,6 +562,7 @@ function InnerProvider({
     createTrackAndMoveClip: editor.createTrackAndMoveClip,
     uploadFiles: editor.uploadFiles,
     applyEdit: editor.applyEdit,
+    commands: editor.commands,
     patchRegistry: editor.patchRegistry,
     unpatchRegistry: editor.unpatchRegistry,
     registerAsset: editor.registerAsset,
@@ -686,7 +797,7 @@ export function VideoEditorProvider({
     },
     shots: shotsHost,
     mediaLightbox: {
-      Lightbox: MediaLightbox,
+      Lightbox: VideoEditorMediaLightbox,
       loadGenerationForLightbox,
     },
     agentChat: {

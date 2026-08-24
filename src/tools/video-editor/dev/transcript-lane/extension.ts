@@ -519,7 +519,7 @@ export function buildTranscriptSourceReviewPatch(
 
     const sourceItemId = item.sourceItemId ?? item.id;
     const currentSourceValue = currentTranscriptSourceValue(item);
-    const proposedRecord = {
+    const proposedRecord: TranscriptSourceReviewRecord = {
       schemaVersion: 1 as const,
       status: 'pending-review' as const,
       sourceSchemaRef: TRANSCRIPT_SCHEMA_REF,
@@ -792,7 +792,7 @@ function renderTranscriptAsCaptions(
   }
   ctx.creative.timeline.apply(patch);
   const captionCount = patch.operations.filter((operation) => operation.op === 'clip.update').length;
-  ctx.chrome.toast(`Rendered ${captionCount} editable transcript caption clip(s).`, 'success');
+  ctx.chrome.toast(`Rendered ${captionCount} editable transcript caption clip(s).`, 'info');
 }
 
 function proposeTranscriptSourceUpdates(
@@ -813,7 +813,7 @@ function proposeTranscriptSourceUpdates(
     throw new Error(`Transcript review patch rejected: ${validation.diagnostics.map((item) => item.message).join('; ')}`);
   }
   ctx.creative.timeline.apply(patch);
-  ctx.chrome.toast(`Created ${patch.operations.length} transcript source review proposal(s).`, 'success');
+  ctx.chrome.toast(`Created ${patch.operations.length} transcript source review proposal(s).`, 'info');
 }
 
 function decideTranscriptSourceUpdates(
@@ -843,7 +843,7 @@ function decideTranscriptSourceUpdates(
   const conflicts = Number(patch.meta?.conflictCount ?? 0);
   ctx.chrome.toast(
     `Transcript review resolved: ${accepted} accepted, ${rejected} rejected, ${conflicts} conflict(s).`,
-    conflicts > 0 ? 'warning' : 'success',
+    conflicts > 0 ? 'warning' : 'info',
   );
   return patch;
 }
