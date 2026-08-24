@@ -59,7 +59,7 @@ export function fetchToolSettingsScopes(
   return Promise.all([userQuery, projectQuery, shotQuery]) as Promise<[SettingsRow, SettingsRow, SettingsRow]>;
 }
 
-export function mergeToolSettingsScopes<T extends Record<string, unknown>>(
+export function mergeToolSettingsScopes<T extends object>(
   userResult: SettingsRow,
   projectResult: SettingsRow,
   shotResult: SettingsRow,
@@ -94,7 +94,7 @@ export function mergeToolSettingsScopes<T extends Record<string, unknown>>(
   const userSettings = (userSettingsData?.[toolId] as Record<string, unknown>) ?? {};
   const projectSettings = (projectSettingsData?.[toolId] as Record<string, unknown>) ?? {};
   const shotSettings = (shotSettingsData?.[toolId] as Record<string, unknown>) ?? {};
-  const defaultSettings = (getToolDefaults(toolId) ?? {}) as T;
+  const defaultSettings = getToolDefaults(toolId) ?? {};
   const hasShotSettings = Object.keys(shotSettings).length > 0;
 
   return {

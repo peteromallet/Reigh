@@ -1,4 +1,5 @@
 import type { Session } from '@supabase/supabase-js';
+import type { DeferredSupabaseClient } from '@/integrations/supabase/deferredRuntime';
 
 export type ToolSettingsErrorCode =
   | 'auth_required'
@@ -14,28 +15,8 @@ export interface ToolSettingsErrorOptions {
   metadata?: Record<string, unknown>;
 }
 
-export interface ToolSettingsSupabaseClient {
-  from: (table: string) => {
-    select: (columns: string) => {
-      eq: (column: string, value: string) => {
-        maybeSingle: () => Promise<unknown>;
-        abortSignal?: <T>(signal: AbortSignal) => T;
-      };
-    };
-  };
-  auth: {
-    getSession: () => Promise<{ data: { session: Session | null } }>;
-    onAuthStateChange?: (
-      callback: AuthStateCallback,
-    ) => {
-      data?: {
-        subscription?: {
-          unsubscribe?: () => void;
-        };
-      };
-    };
-  };
-}
+/** The settings boundary runs against the app's deferred Supabase client. */
+export type ToolSettingsSupabaseClient = DeferredSupabaseClient;
 
 export interface ToolSettingsContext {
   projectId?: string;

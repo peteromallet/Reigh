@@ -55,7 +55,7 @@ export function extractSettingsFromCache<T>(cacheData: unknown): T | undefined {
  * @param prev - The previous cache value (may be wrapper or flat format)
  * @param updater - Either an object of updates, or a function that receives prevSettings and returns updates
  */
-export function updateSettingsCache<T extends Record<string, unknown>>(
+export function updateSettingsCache<T extends object>(
   prev: unknown,
   updater: Partial<T> | ((prevSettings: T) => Partial<T>)
 ): SettingsFetchResult<T> {
@@ -152,7 +152,7 @@ export function useToolSettings<TToolId extends ToolDefaultsId>(toolId: TToolId,
   isUpdating: boolean;
   hasShotSettings: boolean;
 };
-export function useToolSettings<T extends Record<string, unknown>>(toolId: string, context?: { projectId?: string; shotId?: string; enabled?: boolean }): {
+export function useToolSettings<T extends object>(toolId: string, context?: { projectId?: string; shotId?: string; enabled?: boolean }): {
   settings: T | undefined;
   isLoading: boolean;
   error: Error | null;
@@ -180,7 +180,7 @@ export function useToolSettings<T extends Record<string, unknown>>(toolId: strin
  *
  * @see docs/structure_detail/settings_system.md for the full settings hook decision tree
  */
-export function useToolSettings<T extends Record<string, unknown>>(
+export function useToolSettings<T extends object>(
   toolId: string,
   context?: { projectId?: string; shotId?: string; enabled?: boolean }
 ) {
