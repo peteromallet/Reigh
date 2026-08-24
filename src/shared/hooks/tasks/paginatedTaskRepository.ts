@@ -51,14 +51,15 @@ function buildPaginatedTasksResponse(
   offset: number,
   limit: number,
 ): PaginatedTasksResponse {
-  const paginatedTasks = needsCustomSorting
-    ? sortProcessingTasks(visibleTasks).slice(offset, offset + limit)
+  const safeOffset = Math.max(0, offset);
+  const safeLimit = Math.max(1, limit);
+  const orderedTasks = needsCustomSorting
+    ? sortProcessingTasks(visibleTasks)
     : visibleTasks;
-  // The bridge list answers without a total count; derive it from the read
-  // window exactly like the old count-less fallback branch.
-  const total = Math.max(paginatedTasks.length, offset + paginatedTasks.length);
-  const totalPages = Math.ceil(total / limit);
-  const hasMore = paginatedTasks.length >= limit;
+  const total = orderedTasks.length;
+  const paginatedTasks = orderedTasks.slice(safeOffset, safeOffset + safeLimit);
+  const totalPages = total === 0 ? 0 : Math.ceil(total / safeLimit);
+  const hasMore = safeOffset + paginatedTasks.length < total;
 
   return {
     tasks: paginatedTasks,
@@ -79,10 +80,10 @@ export async function fetchPaginatedTasks(filters: PaginatedTaskQuery): Promise<
   const needsCustomSorting = isProcessingStatusFilter(filters.status);
   const succeededOnly = isSucceededOnlyStatus(filters.status);
 
-  const projectSlug = filters.allProjects
-    ? filters.allProjectIds![0]
-    : filters.effectiveProjectId!;
-  const allTasks = await listBridgeTasks(projectSlug);
+  const projectSlugs = filters.allProjects
+    ? [...new Set(filters.allProjectIds)]
+    : [filters.effectiveProjectId!];
+  const allTasks = (await Promise.all(projectSlugs.map((projectSlug) => listBridgeTasks(projectSlug)))).flat();
 
   let visibleTasks = allTasks.filter((task) => matchesFilters(task, filters));
   if (succeededOnly) {

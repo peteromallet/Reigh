@@ -147,12 +147,22 @@ export const usePaginatedTasks = (params: PaginatedTasksParams) => {
   const effectiveProjectId: string | null = projectId ?? null;
   const cacheProjectKey = allProjects ? 'all' : effectiveProjectId;
   const safeCacheProjectKey = cacheProjectKey ?? '__no-project__';
+  const allProjectScopeKey = allProjects
+    ? [...new Set(allProjectIds ?? [])].sort()
+    : [];
   const visibleTaskTypes = getVisibleTaskTypes();
   // Honest latency: declared 2 s active / 10 s idle cadence — the realtime
   // health machinery (Slice C) invalidates, it does not tune this interval.
 
   const query = useQuery<PaginatedTasksResponse, Error>({
-    queryKey: [...taskQueryKeys.paginated(safeCacheProjectKey), page, limit, status, taskType],
+    queryKey: [
+      ...taskQueryKeys.paginated(safeCacheProjectKey),
+      page,
+      limit,
+      status,
+      taskType,
+      allProjectScopeKey,
+    ],
     queryFn: createPaginatedTasksQueryFn({
       allProjects,
       allProjectIds,

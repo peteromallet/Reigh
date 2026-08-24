@@ -7,6 +7,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createFakeBridgeRouter, type FakeBridgeRouter } from '@/test/fakeBridgeRouter.ts';
+import type { Task } from '@/types/tasks';
+import * as bridgeTaskReads from '@/integrations/astrid/bridgeTaskReads';
 import { fetchPaginatedTasks } from '../paginatedTaskRepository';
 
 const FAKE_ORIGIN = 'http://bridge.fake';
@@ -96,5 +98,66 @@ describe('fetchPaginatedTasks over the fake bridge router', () => {
     });
     expect(pageTwo.tasks).toHaveLength(1);
     expect(pageTwo.total).toBe(3);
+  });
+
+  it('applies offset and limit to completed-task pages, not only processing pages', async () => {
+    const taskIds = await Promise.all([admitTask(), admitTask(), admitTask()]);
+    taskIds.forEach((taskId, index) => {
+      const summary = router.state.tasks.get(taskId);
+      if (!summary) throw new Error('fixture task missing');
+      summary.status = 'succeeded';
+      summary.updated_at = `2026-08-22T12:0${index}:00Z`;
+    });
+
+    const firstPage = await fetchPaginatedTasks({
+      ...baseFilters(),
+      limit: 2,
+      status: ['Complete'],
+    });
+    expect(firstPage.tasks).toHaveLength(2);
+    expect(firstPage.total).toBe(3);
+    expect(firstPage.hasMore).toBe(true);
+    expect(firstPage.totalPages).toBe(2);
+
+    const secondPage = await fetchPaginatedTasks({
+      ...baseFilters(),
+      limit: 2,
+      offset: 2,
+      page: 2,
+      status: ['Complete'],
+    });
+    expect(secondPage.tasks).toHaveLength(1);
+    expect(secondPage.total).toBe(3);
+    expect(secondPage.hasMore).toBe(false);
+  });
+
+  it('queries every distinct project in all-projects mode before globally paging', async () => {
+    const makeTask = (id: string, projectId: string, createdAt: string): Task => ({
+      id,
+      projectId,
+      taskType: 'qwen_image',
+      status: 'Queued',
+      params: {},
+      createdAt,
+      updatedAt: createdAt,
+    });
+    const listSpy = vi.spyOn(bridgeTaskReads, 'listBridgeTasks').mockImplementation(async (projectSlug) => (
+      projectSlug === 'project-a'
+        ? [makeTask('task-a', projectSlug, '2026-08-22T12:00:00Z')]
+        : [makeTask('task-b', projectSlug, '2026-08-22T12:01:00Z')]
+    ));
+
+    const page = await fetchPaginatedTasks({
+      ...baseFilters(),
+      allProjects: true,
+      allProjectIds: ['project-a', 'project-b', 'project-a'],
+      effectiveProjectId: null,
+      limit: 1,
+    });
+
+    expect(listSpy.mock.calls.map(([projectSlug]) => projectSlug)).toEqual(['project-a', 'project-b']);
+    expect(page.tasks.map((task) => task.id)).toEqual(['task-b']);
+    expect(page.total).toBe(2);
+    expect(page.hasMore).toBe(true);
   });
 });
