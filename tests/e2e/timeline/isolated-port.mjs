@@ -36,15 +36,24 @@ function canonicalizeBaseUrl(value, name = 'BASE_URL') {
   } catch {
     throw new Error(`Invalid ${name}: ${value}`);
   }
-  if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.search || parsed.hash) {
-    throw new Error(`${name} must be an http(s) URL without credentials, query, or hash: ${value}`);
+  if (
+    parsed.protocol !== 'http:'
+    || parsed.hostname !== '127.0.0.1'
+    || !parsed.port
+    || parsed.pathname !== '/'
+    || parsed.username
+    || parsed.password
+    || parsed.search
+    || parsed.hash
+  ) {
+    throw new Error(`${name} must be an exact http://127.0.0.1:<port> root URL without credentials, query, or hash: ${value}`);
   }
-  // A base URL is an origin plus an optional path. Normalize it before
-  // comparing aliases so a trailing slash cannot hide a disagreement.
-  parsed.pathname = parsed.pathname.replace(/\/+$/, '') || '/';
+  // Configured extension gates always start a fresh loopback server. Keep the
+  // canonical form independent of URL serialization (notably a trailing '/').
+  const port = Number(parsed.port);
   return {
-    url: parsed.href.replace(/\/$/, ''),
-    port: parsed.port ? Number(parsed.port) : (parsed.protocol === 'https:' ? 443 : 80),
+    url: `http://127.0.0.1:${port}`,
+    port,
   };
 }
 
@@ -102,23 +111,38 @@ function reservationPath(port) {
 function reserve(port) {
   mkdirSync(RESERVATION_DIR, { recursive: true });
   const path = reservationPath(port);
-  try {
-    const fd = openSync(path, 'wx');
-    writeFileSync(fd, JSON.stringify({ pid: process.pid, host: hostname(), port, createdAt: Date.now() }));
-    closeSync(fd);
-    reservations.set(port, path);
-    return true;
-  } catch (error) {
-    if (error?.code !== 'EEXIST') throw error;
+  // A stale lock may be left by a process that exited between the bind probe
+  // and webServer startup. Reclaim it and retry the same candidate; callers
+  // should not need to win a second random draw after safe cleanup.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      const stale = JSON.parse(readFileSync(path, 'utf8'));
-      if (!processIsAlive(Number(stale.pid))) unlinkSync(path);
-    } catch {
-      // A partially written/dead lock is safe to reclaim only when the file
-      // owner is definitely gone. Leave unreadable locks for this run.
+      const fd = openSync(path, 'wx');
+      writeFileSync(fd, JSON.stringify({ pid: process.pid, host: hostname(), port, createdAt: Date.now() }));
+      closeSync(fd);
+      reservations.set(port, path);
+      return true;
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error;
+      let stale = false;
+      try {
+        const owner = JSON.parse(readFileSync(path, 'utf8'));
+        const pid = Number(owner.pid);
+        stale = Number.isSafeInteger(pid) && pid > 0 && !processIsAlive(pid);
+      } catch {
+        // A partially written/unreadable lock is safe to reclaim only when
+        // ownership cannot be disproved. Leave it for a later run to inspect.
+      }
+      if (!stale) return false;
+      try {
+        unlinkSync(path);
+      } catch (unlinkError) {
+        // Another allocator may have reclaimed/replaced it. Retry the atomic
+        // open so we never delete a lock that belongs to that allocator.
+        if (unlinkError?.code !== 'ENOENT') return false;
+      }
     }
-    return false;
   }
+  return false;
 }
 
 function release(port) {
