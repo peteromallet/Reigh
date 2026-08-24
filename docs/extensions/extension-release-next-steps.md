@@ -18,8 +18,11 @@ evidence only. RC2's hostile-Host probe was a false positive because Node
 `http.request` helper and added a regression test proving
 `Host: attacker.invalid` reaches the server and yields the expected 403
 response. RC3 then exposed a browser-entry regression: the editor eagerly
-loaded React's Node server renderer and crashed before mounting. RC4 repairs
-that import boundary and adds a source-level guard. The pinned Astrid source remains
+loaded React's Node server renderer and crashed before mounting. RC4 repaired
+that import boundary and added a source-level guard, then the RC4 paired run
+exposed a local-editor route/auth redirect seam. Commit `2e7f6a937` repairs that
+seam without weakening unrelated protected routes. RC5 is the current
+integration cycle. The pinned Astrid source remains
 `86153eefc14aa995402927df0c7bb178f48f8ead`.
 
 The formal ledger correctly remains 0/23 because no exact candidate has been
@@ -37,8 +40,9 @@ from the focused runs alone.
    begins; fixes discovered by a gate receive a focused commit and restart the
    affected evidence phase.
 3. Keep Astrid pinned to
-   `86153eefc14aa995402927df0c7bb178f48f8ead`; the RC3 raw-host fix and RC4
-   browser-entry repair must be included before the next candidate is tagged.
+   `86153eefc14aa995402927df0c7bb178f48f8ead`; the RC3 raw-host fix, RC4
+   browser-entry repair, and `2e7f6a937` local-auth seam repair must be included
+   before the next candidate is tagged.
 
 Exit: the remote branch resolves to the same clean tracked tree as the local
 integration branch and the release plan commands remain deterministic.
@@ -85,7 +89,7 @@ and all four human personas have signed receipts.
 1. Register six authenticated Ed25519 principals: the four human personas and
    two independent reviewers. Keep private keys outside the repository.
 2. Freeze product candidate `C`, create annotated tag
-   `extension-ship-quality-rc4`, and permit only evidence/ledger/status commits
+   `extension-ship-quality-rc5`, and permit only evidence/ledger/status commits
    in controller history `C..H`.
 3. Bind every receipt and artifact hash to the exact Reigh candidate, controller
    commit, annotated tag object, Astrid commit, toolchain, and dependency locks.
