@@ -9,7 +9,7 @@ interface ShotPrimaryActionButtonProps {
   isLoading: boolean;
   showTick: boolean;
   isAlreadyPositionedInSelectedShot: boolean;
-  onClick: () => void;
+  onClick: (event: React.MouseEvent<HTMLButtonElement>) => void;
   className?: string;
 }
 

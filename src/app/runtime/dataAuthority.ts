@@ -15,9 +15,13 @@ export interface DataAuthorityEnvironment {
   VITE_DATA_AUTHORITY?: string;
 }
 
+const runtimeDataAuthorityEnvironment: DataAuthorityEnvironment = {
+  VITE_DATA_AUTHORITY: import.meta.env.VITE_DATA_AUTHORITY,
+};
+
 export function resolveAppDataAuthority(
   search: string,
-  env: DataAuthorityEnvironment = import.meta.env,
+  env: DataAuthorityEnvironment = runtimeDataAuthorityEnvironment,
 ): AppDataAuthority {
   if (hasLocalModeUrlParams(search)) return 'astrid';
   return env.VITE_DATA_AUTHORITY === 'supabase-deferred'
@@ -27,7 +31,7 @@ export function resolveAppDataAuthority(
 
 export function isDeferredCloudDataAuthority(
   search: string = typeof window === 'undefined' ? '' : window.location.search,
-  env: DataAuthorityEnvironment = import.meta.env,
+  env: DataAuthorityEnvironment = runtimeDataAuthorityEnvironment,
 ): boolean {
   return resolveAppDataAuthority(search, env) === 'supabase-deferred';
 }

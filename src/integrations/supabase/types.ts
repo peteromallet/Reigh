@@ -615,6 +615,7 @@ export type Database = {
       resources: {
         Row: {
           created_at: string
+          generation_id: string | null
           id: string
           is_public: boolean
           metadata: Json
@@ -623,6 +624,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          generation_id?: string | null
           id?: string
           is_public?: boolean
           metadata: Json
@@ -631,6 +633,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          generation_id?: string | null
           id?: string
           is_public?: boolean
           metadata?: Json
@@ -638,6 +641,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "resources_generation_id_fkey"
+            columns: ["generation_id"]
+            isOneToOne: false
+            referencedRelation: "generations"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "resources_user_id_users_id_fk"
             columns: ["user_id"]
@@ -2011,6 +2021,14 @@ export type Database = {
           success: boolean
         }[]
       }
+      create_shot_with_generations: {
+        Args: {
+          p_generation_ids: string[]
+          p_project_id: string
+          p_shot_name: string
+        }
+        Returns: Json
+      }
       create_user_record_if_not_exists: { Args: never; Returns: undefined }
       debug_timeline_update: {
         Args: {
@@ -2037,6 +2055,16 @@ export type Database = {
       duplicate_shot: {
         Args: { original_shot_id: string; project_id: string }
         Returns: string
+      }
+      duplicate_as_new_generation: {
+        Args: {
+          p_generation_id: string
+          p_next_timeline_frame?: number
+          p_project_id: string
+          p_shot_id: string
+          p_timeline_frame: number
+        }
+        Returns: Json
       }
       duplicate_shot_with_videos: {
         Args: { original_shot_id: string; project_id: string }

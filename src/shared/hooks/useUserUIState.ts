@@ -405,7 +405,7 @@ export function useUserUIState<K extends keyof UISettings>(
         id: userId,
         toolId: SETTINGS_IDS.USER_UI_STATE,
         patch: { [key]: fallbackToSave },
-      }, 'immediate');
+      }, { mode: 'immediate' });
 
       // Invalidate cache so other components see the backfilled values
       const cacheKey = `user_settings_${userId}`;
@@ -462,7 +462,7 @@ export function useUserUIState<K extends keyof UISettings>(
               id: user.id,
               toolId: SETTINGS_IDS.USER_UI_STATE,
               patch: { [key]: normalizedValue },
-            }, 'immediate').then(() => {
+            }, { mode: 'immediate' }).then(() => {
               const cacheKey = `user_settings_${user.id}`;
               settingsCache.delete(cacheKey);
             }).catch(e => {

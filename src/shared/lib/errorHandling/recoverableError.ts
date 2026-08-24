@@ -32,3 +32,15 @@ export function reportErrorBoundaryCatch(input: ErrorBoundaryReportInput): void 
     },
   });
 }
+
+export async function withRecoverableHandling<T>(
+  operation: () => Promise<T> | T,
+  options: RecoverableErrorOptions,
+): Promise<T | undefined> {
+  try {
+    return await operation();
+  } catch (error) {
+    reportRecoverableError(error, options);
+    return undefined;
+  }
+}

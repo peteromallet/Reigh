@@ -100,10 +100,13 @@ export async function createGenerationForUploadedImage(
   });
 
   const generationParams: GenerationParams = {
-    source: 'upload',
-    original_filename: imageFile.name,
-    file_type: imageFile.type,
-    file_size: imageFile.size,
+    prompt: '',
+    extra: {
+      source: 'external_upload',
+      original_filename: imageFile.name,
+      file_type: imageFile.type,
+      file_size: imageFile.size,
+    },
   };
 
   return insertUploadedGeneration({
@@ -137,10 +140,13 @@ export async function createGenerationForUploadedVideo(
   }
 
   const generationParams: GenerationParams = {
-    source: 'upload',
-    original_filename: videoFile.name,
-    file_type: videoFile.type,
-    file_size: videoFile.size,
+    prompt: '',
+    extra: {
+      source: 'external_upload',
+      original_filename: videoFile.name,
+      file_type: videoFile.type,
+      file_size: videoFile.size,
+    },
   };
 
   return insertUploadedGeneration({

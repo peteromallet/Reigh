@@ -110,7 +110,7 @@ export function AddCreditsSection({
             <NumberInput
               value={localAutoTopupThreshold}
               onChange={(val) => {
-                const clamped = Math.min(Math.max(1, val), Math.max(1, purchaseAmount - 1));
+                const clamped = Math.min(Math.max(1, val ?? 1), Math.max(1, purchaseAmount - 1));
                 onAutoTopupThresholdChange(clamped);
               }}
               min={1}

@@ -108,7 +108,7 @@ export function useTaskItemDisplay({
     extraImageCount,
     shouldShowPromptPreview,
     promptPreviewText,
-    variantName,
+    variantName: variantName ?? undefined,
     statusBadgeClass: STATUS_BADGE_CLASS[task.status] || 'bg-gray-500 text-gray-100',
   };
 }

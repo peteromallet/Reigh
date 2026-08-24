@@ -163,7 +163,7 @@ export const ShotActions: React.FC<ShotActionsProps> = ({
             isLoading={addingToShotImageId === image.id}
             showTick={showTickForImageId === image.id}
             isAlreadyPositionedInSelectedShot={isAlreadyPositionedInSelectedShot}
-            onClick={handleAddToShotIntent}
+            onClick={(event) => { void handleAddToShotIntent(event); }}
             className={`h-7 w-7 p-0 rounded-full bg-black/50 hover:bg-black/70 text-white ${
               showTickForImageId === image.id
                 ? 'bg-emerald-500 hover:bg-emerald-600'
@@ -185,7 +185,7 @@ export const ShotActions: React.FC<ShotActionsProps> = ({
                       ? 'bg-black/40 hover:bg-black/60 text-white'
                       : 'bg-black/60 hover:bg-black/80 text-white'
                   }`}
-                  onClick={handleAddWithoutPositionIntent}
+                  onClick={(event) => { void handleAddWithoutPositionIntent(event); }}
                   disabled={!selectedShotId || addingToShotWithoutPositionImageId === image.id || addingToShotImageId === image.id}
                   aria-label={
                     isAlreadyAssociatedWithoutPosition

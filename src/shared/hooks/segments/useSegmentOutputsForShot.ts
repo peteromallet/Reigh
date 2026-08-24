@@ -107,17 +107,18 @@ function derivePreloadedTimelineData(
   }
 
   return preloadedGenerations
-    .filter((generation) => (
-      generation.timeline_frame !== null
-      && generation.timeline_frame !== undefined
-      && generation.timeline_frame >= 0
-    ))
-    .sort((a, b) => (a.timeline_frame ?? 0) - (b.timeline_frame ?? 0))
-    .map((generation) => ({
-      id: generation.id,
-      generation_id: generation.generation_id,
-      timeline_frame: generation.timeline_frame,
-    }));
+    .flatMap((generation) => {
+      const timelineFrame = generation.timeline_frame;
+      if (timelineFrame === null || timelineFrame === undefined || timelineFrame < 0) {
+        return [];
+      }
+      return [{
+        id: generation.id,
+        generation_id: generation.generation_id ?? generation.id,
+        timeline_frame: timelineFrame,
+      }];
+    })
+    .sort((a, b) => a.timeline_frame - b.timeline_frame);
 }
 
 function buildPositionMap(timelineData: LiveTimelineRow[] | undefined): Map<string, number> {

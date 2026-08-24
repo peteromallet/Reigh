@@ -1,7 +1,7 @@
 import { useQueries } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
-import type { Resource } from '@/features/resources/hooks/useResources';
+import { mapResourceRow, type Resource } from '@/features/resources/hooks/useResources';
 import { isNotFoundError } from '@/shared/constants/supabaseErrors';
 import { resourceQueryKeys } from '@/shared/lib/queryKeys/resources';
 
@@ -45,7 +45,11 @@ const fetchResourceById = async (id: string): Promise<SpecificResource | null> =
     throw error;
   }
   
-  return data as SpecificResource;
+  const resource = mapResourceRow(data);
+  return {
+    ...resource,
+    generation: data.generation,
+  };
 };
 
 /**

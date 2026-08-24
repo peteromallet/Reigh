@@ -475,9 +475,11 @@ export function createEntityStore<T extends object>(
       },
 
       updateField: (entityId, key, value, options) => {
+        const patch: Partial<T> = {};
+        patch[key] = value;
         get().updateFields(
           entityId,
-          { [key]: value } as Partial<T>,
+          patch,
           options?.deferPersistence ? { deferKeys: [key] } : undefined
         );
       },
@@ -487,7 +489,9 @@ export function createEntityStore<T extends object>(
       },
 
       updateTextField: (entityId, key, value) => {
-        get().updateFields(entityId, { [key]: value } as Partial<T>, { deferKeys: [key] });
+        const patch: Partial<T> = {};
+        patch[key] = value;
+        get().updateFields(entityId, patch, { deferKeys: [key] });
       },
 
       flushTextFields: async (entityId) => {

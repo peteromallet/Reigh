@@ -84,7 +84,7 @@ interface UseMediaGalleryViewInteractionsParams {
   isDeleting?: string | boolean | null;
   currentViewingShotId?: string;
   activeLightboxMediaId?: string;
-  downloadingImageId?: string | null;
+  downloadingImageId?: string | null | undefined;
 }
 
 export function useMediaGalleryViewInteractions(params: UseMediaGalleryViewInteractionsParams) {
@@ -199,7 +199,7 @@ export function useMediaGalleryViewInteractions(params: UseMediaGalleryViewInter
     onDelete: actionsHook.handleOptimisticDelete,
     onDownloadImage: actionsHook.handleDownloadImage,
     activeLightboxMediaId,
-    downloadingImageId,
+    downloadingImageId: downloadingImageId ?? null,
   });
 
   return {

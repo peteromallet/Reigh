@@ -10,6 +10,11 @@ interface TaskLogFilterOption {
   label: string;
 }
 
+interface TaskLogRadioFilterOption {
+  value: TaskLogFilters['costFilter'];
+  label: string;
+}
+
 interface TaskLogDescriptorBase<K extends keyof TaskLogFilters> {
   key: K;
   label: string;
@@ -22,7 +27,7 @@ interface TaskLogDescriptorBase<K extends keyof TaskLogFilters> {
 interface TaskLogRadioFilterDescriptor extends TaskLogDescriptorBase<'costFilter'> {
   kind: 'radio';
   widthClass: string;
-  options: TaskLogFilterOption[];
+  options: TaskLogRadioFilterOption[];
 }
 
 interface TaskLogMultiFilterDescriptor extends TaskLogDescriptorBase<TaskLogArrayFilterKey> {

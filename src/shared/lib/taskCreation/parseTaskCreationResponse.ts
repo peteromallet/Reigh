@@ -27,7 +27,7 @@ export function parseTaskCreationResponse(
 ): TaskCreationResult {
   if (!isRecord(payload)) {
     throw new ServerError('Task creation returned an invalid response', {
-      context,
+      context: { ...context },
     });
   }
 

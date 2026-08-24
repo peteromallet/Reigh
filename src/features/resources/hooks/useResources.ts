@@ -115,9 +115,7 @@ export interface SequenceComponentMetadata {
 
 export type ResourceType = 'lora' | 'phase-config' | 'style-reference' | 'structure-video' | 'effect' | 'sequence-component';
 export type ResourceMetadata = LoraModel | PhaseConfigMetadata | StyleReferenceMetadata | StructureVideoMetadata | EffectMetadata | SequenceComponentMetadata;
-type ResourceRow = Database['public']['Tables']['resources']['Row'] & {
-    generation_id?: string | null;
-};
+type ResourceRow = Database['public']['Tables']['resources']['Row'];
 
 export interface Resource {
     id: string;
@@ -136,7 +134,7 @@ function isResourceType(type: string): type is ResourceType {
     return type === 'lora' || type === 'phase-config' || type === 'style-reference' || type === 'structure-video' || type === 'effect' || type === 'sequence-component';
 }
 
-function mapResourceRow(row: ResourceRow, fallbackType?: ResourceType): Resource {
+export function mapResourceRow(row: ResourceRow, fallbackType?: ResourceType): Resource {
     const resolvedType = isResourceType(row.type) ? row.type : fallbackType;
     if (!resolvedType) {
         throw new Error(`Unknown resource type: ${row.type}`);
@@ -268,13 +266,13 @@ export const useCreateResource = () => {
             // Extract is_public from metadata for the column
             const isPublic = 'is_public' in metadata ? Boolean((metadata as Record<string, unknown>).is_public) : false;
 
-            const insertPayload = {
+            const insertPayload: Database['public']['Tables']['resources']['Insert'] = {
                 type,
                 metadata: toJson(metadata),
                 user_id: user.id,
                 is_public: isPublic,
                 ...(generation_id !== undefined ? { generation_id } : {}),
-            } as Database['public']['Tables']['resources']['Insert'] & { generation_id?: string | null };
+            };
             
             const { data, error } = await supabase().from('resources')
                     .insert(insertPayload)

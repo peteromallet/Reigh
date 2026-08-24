@@ -12,7 +12,7 @@ import {
  */
 export function useResolveGenerationTaskMapping() {
   return useMutation<GenerationTaskMapping, Error, string>({
-    mutationFn: resolveGenerationTaskMapping,
+    mutationFn: (generationId) => resolveGenerationTaskMapping(generationId),
     onError: (error: Error) => {
       normalizeAndPresentError(error, { context: 'GenerationTaskMapping', showToast: false });
     },

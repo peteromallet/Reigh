@@ -73,6 +73,7 @@ export function TaskLogPanel({
       <TaskLogFilters
         filters={filters}
         availableFilters={availableFilters}
+        filterCount={filterCount}
         onUpdateFilter={onUpdateFilter}
         onToggleArrayFilter={onToggleArrayFilter}
         onClearFilters={onClearFilters}

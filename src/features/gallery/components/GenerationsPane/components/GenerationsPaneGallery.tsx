@@ -52,7 +52,7 @@ interface GenerationsPaneGalleryModel {
 }
 
 interface GenerationsPaneGalleryProps {
-  containerRef: React.RefObject<HTMLDivElement | null>;
+  containerRef: React.Ref<HTMLDivElement>;
   projectAspectRatio?: string;
   layout: GenerationsPaneLayoutModel;
   loading: GenerationsPaneLoadingModel;

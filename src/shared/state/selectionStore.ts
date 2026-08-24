@@ -325,7 +325,7 @@ function computeTimelineSingleSelection(
   const currentPrimary = timeline.primaryClipId;
 
   let nextSelection: ReadonlySet<string>;
-  let nextPrimary = clipId;
+  let nextPrimary: string | null = clipId;
 
   if (!options?.toggle) {
     nextSelection = new Set([clipId]);

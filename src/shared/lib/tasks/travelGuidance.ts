@@ -80,7 +80,7 @@ function sanitizeVideos(
         ? null
         : asNumber(record.source_end_frame);
 
-      return {
+      const video: TravelGuidanceVideoConfig = {
         path,
         ...(asNumber(record.start_frame) !== undefined ? { start_frame: asNumber(record.start_frame) } : {}),
         ...(endFrame !== undefined || record.end_frame === null ? { end_frame: endFrame ?? null } : {}),
@@ -91,7 +91,8 @@ function sanitizeVideos(
         ...(sourceEndFrame !== undefined || record.source_end_frame === null
           ? { source_end_frame: sourceEndFrame ?? null }
           : {}),
-      } satisfies TravelGuidanceVideoConfig;
+      };
+      return video;
     })
     .filter((entry): entry is TravelGuidanceVideoConfig => entry !== null);
 }

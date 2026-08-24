@@ -168,7 +168,7 @@ function GenerationsPaneSurface({ controller }: { controller: GenerationsPaneCon
             items: gallery.paginatedData.items,
             onDelete: gallery.handleDeleteGeneration,
             onToggleStar: gallery.handleToggleStar,
-            isDeleting: gallery.isDeleting,
+            isDeleting: !!gallery.isDeleting,
             allShots: gallery.shotsData || [],
             lastShotId: gallery.lastAffectedShotId || undefined,
             filters: filters.galleryFilters,

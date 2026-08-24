@@ -46,7 +46,7 @@ interface UseAddToShotWithRetryOptions {
  */
 async function executeWithRetry(
   options: UseAddToShotWithRetryOptions,
-  toast: typeof toast
+  toastHandler: typeof toast
 ): Promise<void> {
   const {
     generationId,
@@ -84,7 +84,7 @@ async function executeWithRetry(
 
         if (retryCount < maxRetries && isRetryableNetworkError(error)) {
           if (retryCount === 1) {
-            toast({
+            toastHandler({
               title: "Retrying...",
               description: "Network issue detected, trying again.",
             });
@@ -94,7 +94,7 @@ async function executeWithRetry(
           await new Promise(resolve => setTimeout(resolve, waitTime));
         } else {
           const errorDesc = error instanceof Error ? error.message : 'Unknown error';
-          toast({
+          toastHandler({
             title: "Network Error",
             description: `${errorMessage} ${isMobile ? 'Please check your connection and try again.' : errorDesc}`,
             variant: "destructive"

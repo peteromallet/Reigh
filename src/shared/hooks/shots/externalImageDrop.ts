@@ -6,6 +6,17 @@ import { cropImageToProjectAspectRatio } from '@/shared/lib/media/imageCropper';
 import { parseRatio } from '@/shared/lib/media/aspectRatios';
 import { createGenerationForLocalFile, createGenerationForUploadedImage } from '@/shared/lib/media/createGenerationFromFile';
 import { IMAGE_INLINE_UPLOAD_LIMIT_BYTES } from '@/shared/lib/media/dropToGenerationConfig';
+import type { PersistedLocalMediaHandle } from '@/shared/lib/media/localHandleStore';
+
+function isPersistedLocalFileHandle(
+  handle: FileSystemFileHandle,
+): handle is PersistedLocalMediaHandle & FileSystemFileHandle {
+  return 'queryPermission' in handle
+    && typeof handle.queryPermission === 'function'
+    && 'requestPermission' in handle
+    && typeof handle.requestPermission === 'function'
+    && typeof handle.getFile === 'function';
+}
 
 export interface ExternalImageDropVariables {
   imageFiles: File[];
@@ -274,7 +285,7 @@ async function processSingleDroppedImage(input: {
 
   let generation: Database['public']['Tables']['generations']['Row'];
   try {
-    if (imageFile.size >= IMAGE_INLINE_UPLOAD_LIMIT_BYTES && handle != null) {
+    if (imageFile.size >= IMAGE_INLINE_UPLOAD_LIMIT_BYTES && handle != null && isPersistedLocalFileHandle(handle)) {
       generation = await createGenerationForLocalFile({
         file: imageFile,
         projectId,

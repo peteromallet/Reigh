@@ -37,7 +37,7 @@ export function useGenerationDetails({
   const { data: fetchedTask, isLoading, isError } = useGetTask(taskId || '', projectId);
 
   // Use provided task or fetched task
-  const task = taskProp || fetchedTask;
+  const task = taskProp ?? fetchedTask ?? undefined;
 
   // Derive input images from task if not explicitly provided
   const { inputImages, nonfatalWarning } = useMemo(() => {

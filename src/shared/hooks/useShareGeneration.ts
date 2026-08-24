@@ -252,9 +252,12 @@ async function insertShareWithRetry({
     const candidateSlug = generateShareSlug(10);
     const creator = creatorRow ?? null;
     const normalizedTaskId = typeof taskId === 'string' && taskId.length > 0 ? taskId : null;
+    if (!normalizedTaskId) {
+      throw new Error('A task is required to share a generation');
+    }
     const sharedGenerationInsert = {
       share_slug: candidateSlug,
-      ...(normalizedTaskId ? { task_id: normalizedTaskId } : {}),
+      task_id: normalizedTaskId,
       generation_id: generationId,
       creator_id: userId,
       creator_username: creator?.username ?? null,

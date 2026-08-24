@@ -61,12 +61,10 @@ type SettableMediaGalleryFields = {
 };
 
 type SetFieldAction = {
-  [Field in keyof SettableMediaGalleryFields]: {
-    type: 'SET_FIELD';
-    field: Field;
-    payload: SettableMediaGalleryFields[Field];
-  };
-}[keyof SettableMediaGalleryFields];
+  type: 'SET_FIELD';
+  field: keyof SettableMediaGalleryFields;
+  payload: SettableMediaGalleryFields[keyof SettableMediaGalleryFields];
+};
 
 // Action types for the reducer
 type MediaGalleryStateAction =

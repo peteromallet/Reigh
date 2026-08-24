@@ -236,7 +236,7 @@ export function useImageGenerationDetailsViewModel({
       isQwenImageEdit,
       qwenSourceImage: qwenSourceImage ?? undefined,
       styleReference,
-      userProvidedImageFilename: deriveUserProvidedImageFilename(metadata.userProvidedImageUrl),
+      userProvidedImageFilename: deriveUserProvidedImageFilename(metadata.userProvidedImageUrl ?? undefined),
     };
   }, [isMobile, metadata, variant]);
 }

@@ -16,7 +16,7 @@ import {
 } from "@/shared/components/ai-input/aiInputButton.visuals"
 
 interface PopoverFormContentProps {
-  inputRef: React.RefObject<HTMLTextAreaElement | null>
+  inputRef: React.Ref<HTMLTextAreaElement>
   inputValue: string
   setInputValue: (value: string) => void
   handleKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void

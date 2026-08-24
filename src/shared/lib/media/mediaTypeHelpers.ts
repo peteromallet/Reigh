@@ -104,9 +104,11 @@ export function variantToGenerationRow(
     createdAt: media.createdAt,
     params: {
       prompt: media.metadata?.prompt,
-      tool_type: media.metadata?.tool_type,
-      variant_type: media.metadata?.variant_type,
-      variant_id: media.id,
+      extra: {
+        tool_type: media.metadata?.tool_type,
+        variant_type: media.metadata?.variant_type,
+        variant_id: media.id,
+      },
     },
     starred: media.starred ?? false,
   };

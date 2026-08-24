@@ -130,7 +130,7 @@ export function readResolvedTravelStructure(
 
   return {
     present: Object.keys(source).length > 0,
-    structureGuidance: resolved.structureGuidance,
+    structureGuidance: asRecord(resolved.structureGuidance),
     structureVideos: resolved.structureVideos,
     primaryStructureVideo: resolvePrimaryStructureVideo(
       resolved.structureVideos,

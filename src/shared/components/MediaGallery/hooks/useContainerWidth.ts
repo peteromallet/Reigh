@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, RefObject } from 'react';
+import { useState, useEffect, useRef, useCallback, RefCallback, RefObject } from 'react';
 
 /**
  * Hook to measure a container's width using ResizeObserver.
@@ -9,8 +9,11 @@ import { useState, useEffect, useRef, RefObject } from 'react';
  *
  * @returns [ref, width] - Attach ref to container, width updates on resize
  */
-export function useContainerWidth(): [RefObject<HTMLDivElement | null>, number] {
+export function useContainerWidth(): [RefCallback<HTMLDivElement>, number] {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const setContainerRef = useCallback<RefCallback<HTMLDivElement>>((node) => {
+    containerRef.current = node;
+  }, []);
   // Start with window width as estimate to avoid 0 on first render
   const initialEstimate = typeof window !== 'undefined'
     ? Math.floor(window.innerWidth * 0.9)
@@ -60,7 +63,7 @@ export function useContainerWidth(): [RefObject<HTMLDivElement | null>, number] 
     };
   }, [initialEstimate]);
 
-  return [containerRef, width];
+  return [setContainerRef, width];
 }
 
 interface ContainerDimensions {

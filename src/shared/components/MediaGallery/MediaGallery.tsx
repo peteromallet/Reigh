@@ -384,7 +384,7 @@ const MediaGallery: React.FC<MediaGalleryProps> = React.memo((props) => {
   return (
     <TooltipProvider>
       <div
-        ref={galleryContainerRef as React.RefObject<HTMLDivElement>}
+        ref={galleryContainerRef}
         className={cn(
           'space-y-6',
           isMobile && !hidePagination ? 'pb-16' : (reducedSpacing ? 'pb-0' : ((!hidePagination && !hideBottomPagination) ? 'pb-[62px]' : 'pb-0')),

@@ -1,6 +1,6 @@
 import React from 'react';
 import { VariantBadge } from '@/shared/components/VariantBadge';
-import type { GeneratedImageWithMetadata, SimplifiedShotOption } from '../types';
+import type { GeneratedImageWithMetadata, SimplifiedShotOption } from '../../MediaGallery/types';
 
 interface ItemShotBadgesProps {
   image: GeneratedImageWithMetadata;
