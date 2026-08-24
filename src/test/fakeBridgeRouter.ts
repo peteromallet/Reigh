@@ -253,6 +253,7 @@ export function createFakeBridgeRouter(): FakeBridgeRouter {
         });
       }
       if (body.config !== undefined) state.config = body.config as FakeBridgeState['config'];
+      if (body.registry !== undefined) state.registry = body.registry as FakeBridgeState['registry'];
       state.configVersion += 1;
       return json(200, timelinePayload());
     }

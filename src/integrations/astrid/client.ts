@@ -4,16 +4,18 @@
  *
  * It shares ONLY the wire contract (`bridgeContract.ts`) and the transport
  * pipeline (`transport.ts`) with `AstridBridgeDataProvider`: no base class,
- * no abstraction layer. The provider keeps owning timeline load/save CAS;
- * this client owns everything that does not exist on the three-route
- * provider surface. The composition point stays
- * `useVideoEditorProviderSelection` (VideoEditorPage).
+ * no abstraction layer. Since B4 (C1-5) it also exposes the frozen timeline
+ * CAS routes so document-native placement (doc 24 Q1) works on surfaces
+ * outside the editor page; the provider keeps owning editor-session CAS
+ * (cached-payload merges, local materialization). The composition point
+ * stays `useVideoEditorProviderSelection` (VideoEditorPage).
  */
 
 import { AstridBridgeTransport } from './transport.ts';
 import { AstridLocalTaskRoutes } from './taskRoutes.ts';
 import { AstridLocalGalleryRoutes } from './galleryRoutes.ts';
 import { AstridLocalMediaRoutes } from './mediaRoutes.ts';
+import { AstridLocalTimelineRoutes } from './timelineRoutes.ts';
 
 export type AstridLocalClientOptions = {
   projectSlug: string;
@@ -25,6 +27,7 @@ export class AstridLocalClient {
   readonly tasks: AstridLocalTaskRoutes;
   readonly gallery: AstridLocalGalleryRoutes;
   readonly media: AstridLocalMediaRoutes;
+  readonly timelines: AstridLocalTimelineRoutes;
 
   private readonly transport: AstridBridgeTransport;
 
@@ -34,5 +37,6 @@ export class AstridLocalClient {
     this.tasks = new AstridLocalTaskRoutes(this.transport, scope);
     this.gallery = new AstridLocalGalleryRoutes(this.transport, scope);
     this.media = new AstridLocalMediaRoutes(this.transport, scope);
+    this.timelines = new AstridLocalTimelineRoutes(this.transport, scope);
   }
 }

@@ -446,6 +446,11 @@ export type PinnedShotGroup = {
   mode?: 'images' | 'video';
   videoAssetKey?: string;
   imageClipSnapshot?: PinnedShotImageClipSnapshot[];
+  /**
+   * Pooled (unpositioned) generation members — document-native placement
+   * (doc 24 Q1): members of the shot not yet placed as clips.
+   */
+  poolGenerationIds?: string[];
 };
 
 // Sprint 2: theme overrides and generation defaults blocks. Open-shaped on
