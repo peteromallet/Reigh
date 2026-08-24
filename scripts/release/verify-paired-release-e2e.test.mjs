@@ -1,7 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { createServer } from 'node:http';
-import { copyFileSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { describe, it } from 'node:test';
@@ -10,6 +9,8 @@ import {
   EXPECTED_EXTENSION_COUNT,
   EXPECTED_PERSISTED_CAPTIONS,
   EXPECTED_RUNAWAY_COUNT,
+  COMMAND_BUDGETS_MS,
+  COMMAND_MAX_BUFFER_BYTES,
   PAIRED_RELEASE_MEDIA_FIXTURE,
   PAIRED_RELEASE_MEDIA_METADATA,
   PAIRED_RELEASE_PHASES,
@@ -38,6 +39,18 @@ import {
   waitForUrl,
   waitForViteReadiness,
 } from './verify-paired-release-e2e.mjs';
+import { runBoundedCommand } from './bounded-command.mjs';
+
+const TEST_COMMAND_OPTIONS = Object.freeze({
+  timeoutMs: 180_000,
+  maxBuffer: COMMAND_MAX_BUFFER_BYTES,
+  killSignal: 'SIGKILL',
+  allowFailure: true,
+});
+
+function runTestCommand(command, args, options = {}) {
+  return runBoundedCommand(command, args, { ...TEST_COMMAND_OPTIONS, ...options });
+}
 
 describe('paired repository release E2E gate', () => {
   it('fails closed for altered fixture bytes and wrong committed probes', () => {
@@ -71,7 +84,7 @@ describe('paired repository release E2E gate', () => {
         metadataPath: resolve(REPO_ROOT, PAIRED_RELEASE_MEDIA_METADATA),
       });
       assert.doesNotThrow(() => validateRenderedMediaFrame(fixture.path, fixture));
-      const blackResult = spawnSync('magick', [fixture.path, '-fill', 'black', '-colorize', '100%', '-define', 'png:color-type=6', black], { encoding: 'utf8' });
+      const blackResult = runTestCommand('magick', [fixture.path, '-fill', 'black', '-colorize', '100%', '-define', 'png:color-type=6', black]);
       assert.equal(blackResult.status, 0, blackResult.stderr);
       assert.throws(() => validateRenderedMediaFrame(black, fixture), /does not contain the seeded test card/);
     } finally {
@@ -259,62 +272,56 @@ describe('paired repository release E2E gate', () => {
   it('builds the vendored timeline schema from a clean archive without stale build output', {
     timeout: 180_000,
   }, () => {
-    const trackedBuildOutput = spawnSync(
+    const trackedBuildOutput = runTestCommand(
       'git',
       ['ls-files', 'vendor/timeline-schema/python/build'],
-      { cwd: REPO_ROOT, encoding: 'utf8' },
+      { cwd: REPO_ROOT },
     );
     assert.equal(trackedBuildOutput.status, 0, trackedBuildOutput.stderr);
     assert.equal(trackedBuildOutput.stdout.trim(), '');
 
     const runtimeRoot = mkdtempSync(resolve(tmpdir(), 'paired-schema-package-test-'));
     try {
-      const tree = spawnSync('git', ['write-tree'], {
+      const tree = runTestCommand('git', ['write-tree'], {
         cwd: REPO_ROOT,
-        encoding: 'utf8',
       });
       assert.equal(tree.status, 0, tree.stderr);
 
       const archivePath = resolve(runtimeRoot, 'reigh.tar');
-      const archive = spawnSync('git', [
+      const archive = runTestCommand('git', [
         'archive', '--format=tar', `--output=${archivePath}`, tree.stdout.trim(),
         'scripts/release/paired-python-build-tools.lock',
         'vendor/timeline-schema/python',
       ], {
         cwd: REPO_ROOT,
-        encoding: 'utf8',
       });
       assert.equal(archive.status, 0, archive.stderr);
-      const extract = spawnSync('tar', ['-xf', archivePath, '-C', runtimeRoot], {
-        encoding: 'utf8',
-      });
+      const extract = runTestCommand('tar', ['-xf', archivePath, '-C', runtimeRoot]);
       assert.equal(extract.status, 0, extract.stderr);
 
       const bootstrapPython = process.env.ASTRID_PYTHON || 'python3.11';
       const venv = resolve(runtimeRoot, 'venv');
-      const createVenv = spawnSync(bootstrapPython, ['-m', 'venv', '--system-site-packages', venv], {
-        encoding: 'utf8',
-      });
+      const createVenv = runTestCommand(bootstrapPython, ['-m', 'venv', '--system-site-packages', venv]);
       assert.equal(
         createVenv.status,
         0,
         createVenv.error?.message || createVenv.stderr || `${bootstrapPython} could not create a venv`,
       );
       const python = resolve(venv, 'bin', 'python');
-      const installBuildTools = spawnSync(python, [
+      const installBuildTools = runTestCommand(python, [
         '-m', 'pip', '--isolated', 'install', '--disable-pip-version-check',
         '--no-deps', '--only-binary=:all:', '--require-hashes',
         '-r', resolve(runtimeRoot, 'scripts/release/paired-python-build-tools.lock'),
-      ], { encoding: 'utf8' });
+      ]);
       assert.equal(installBuildTools.status, 0, installBuildTools.stderr);
 
       const wheelDir = resolve(runtimeRoot, 'wheels');
-      const buildWheel = spawnSync(python, [
+      const buildWheel = runTestCommand(python, [
         '-m', 'pip', '--isolated', 'wheel', '--disable-pip-version-check',
         '--no-cache-dir', '--no-deps', '--no-build-isolation',
         '--wheel-dir', wheelDir,
         resolve(runtimeRoot, 'vendor/timeline-schema/python'),
-      ], { encoding: 'utf8' });
+      ]);
       assert.equal(buildWheel.status, 0, buildWheel.stderr);
 
       const wheels = readdirSync(wheelDir).filter((name) => name.endsWith('.whl'));
@@ -323,22 +330,22 @@ describe('paired repository release E2E gate', () => {
         runtimeRoot,
         'vendor/timeline-schema/python/banodoco_timeline_schema/timeline.schema.json',
       );
-      const compare = spawnSync(python, ['-c', [
+      const compare = runTestCommand(python, ['-c', [
         'import hashlib, pathlib, sys, zipfile',
         'source = pathlib.Path(sys.argv[1]).read_bytes()',
         'with zipfile.ZipFile(sys.argv[2]) as wheel:',
         "    packaged = wheel.read('banodoco_timeline_schema/timeline.schema.json')",
         'assert hashlib.sha256(packaged).digest() == hashlib.sha256(source).digest()',
-      ].join('\n'), sourceSchema, resolve(wheelDir, wheels[0])], { encoding: 'utf8' });
+      ].join('\n'), sourceSchema, resolve(wheelDir, wheels[0])]);
       assert.equal(compare.status, 0, compare.stderr);
 
       const wheel = resolve(wheelDir, wheels[0]);
-      const installWheel = spawnSync(python, [
+      const installWheel = runTestCommand(python, [
         '-m', 'pip', '--isolated', 'install', '--disable-pip-version-check',
         '--no-deps', wheel,
-      ], { encoding: 'utf8' });
+      ]);
       assert.equal(installWheel.status, 0, installWheel.stderr);
-      const typeIdentity = spawnSync(python, ['-c', [
+      const typeIdentity = runTestCommand(python, ['-c', [
         'import sys, types',
         'sys.modules["jsonschema"] = types.SimpleNamespace(validate=lambda *args, **kwargs: None)',
         'from typing import get_args, get_type_hints',
@@ -346,7 +353,7 @@ describe('paired repository release E2E gate', () => {
         'from banodoco_timeline_schema.generated import Clip',
         'assert TimelineClip is Clip',
         'assert get_args(get_type_hints(TimelineConfig)["clips"])[0] is TimelineClip',
-      ].join('\n')], { encoding: 'utf8' });
+      ].join('\n')]);
       assert.equal(typeIdentity.status, 0, typeIdentity.stderr);
     } finally {
       rmSync(runtimeRoot, { recursive: true, force: true });
@@ -564,9 +571,8 @@ describe('paired repository release E2E gate', () => {
 
   it('prints an honest non-executing plan and documents the production boundary', () => {
     const script = `${REPO_ROOT}/scripts/release/verify-paired-release-e2e.mjs`;
-    const plan = spawnSync(process.execPath, [script, '--plan'], {
+    const plan = runTestCommand(process.execPath, [script, '--plan'], {
       cwd: REPO_ROOT,
-      encoding: 'utf8',
       env: { PATH: process.env.PATH },
     });
     assert.equal(plan.status, 0, plan.stderr);
@@ -603,5 +609,44 @@ describe('paired repository release E2E gate', () => {
     assert.match(source, /reighControllerHead: pins\.reighControllerHead/);
     assert.match(source, /archiveCommit\(REPO_ROOT, pins\.reighCommit/);
     assert.ok(source.indexOf("'receipt.json'") < source.indexOf("'artifact-index.json'"));
+  });
+
+  it('routes every synchronous external command through the bounded helper and owns phase budgets', () => {
+    const source = readFileSync(resolve(REPO_ROOT, 'scripts/release/verify-paired-release-e2e.mjs'), 'utf8');
+    assert.doesNotMatch(source, /\bspawnSync\s*\(|\bexecSync\s*\(|\bexecFileSync\s*\(/);
+    assert.match(source, /runBoundedCommand\(command, args/);
+    assert.deepEqual(Object.keys(COMMAND_BUDGETS_MS), [
+      'fastProbe', 'git', 'archive', 'npm', 'pip', 'playwright', 'migration',
+      'backup', 'sqlite', 'ffmpeg', 'ffprobe', 'tesseract', 'magick',
+    ]);
+    for (const [phase, budgetMs] of Object.entries(COMMAND_BUDGETS_MS)) {
+      assert.ok(Number.isSafeInteger(budgetMs) && budgetMs > 0, `${phase} budget must be positive`);
+    }
+    assert.match(source, /failureType: result\.failureType/);
+    assert.match(source, /commandDiagnostic/);
+    assert.match(source, /kill=\$\{result\.killSignal\}/);
+  });
+
+  it('fails a bounded release probe closed without leaving a timed-out child behind', () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'paired-command-timeout-'));
+    const marker = resolve(root, 'orphan-marker');
+    try {
+      const result = runBoundedCommand(process.execPath, ['-e', [
+        'setTimeout(() => require("node:fs").writeFileSync(process.argv[1], "orphan"), 500)',
+        'process.argv[1] = process.argv[1]',
+      ].join(';'), marker], {
+        timeoutMs: 40,
+        maxBuffer: 1024,
+        killSignal: 'SIGKILL',
+        allowFailure: true,
+        label: 'paired-timeout-negative',
+      });
+      assert.equal(result.failureType, 'timeout');
+      assert.equal(result.signal, 'SIGKILL');
+      assert.equal(result.error?.code, 'ETIMEDOUT');
+      assert.equal(existsSync(marker), false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

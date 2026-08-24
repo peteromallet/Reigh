@@ -4,7 +4,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { inflateSync } from 'node:zlib';
 import { request as httpRequest } from 'node:http';
 import { createServer } from 'node:net';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import {
   chmodSync,
   createWriteStream,
@@ -28,6 +28,7 @@ import {
   inspectCandidateController,
   resolveAnnotatedCandidateTag,
 } from './reigh-release-provenance.mjs';
+import { runBoundedCommand } from './bounded-command.mjs';
 
 const LABEL = '[paired-release-e2e]';
 const moduleDir = dirname(fileURLToPath(import.meta.url));
@@ -44,15 +45,34 @@ export const RUNAWAY_RELEASE_FIXTURE_HASHES = Object.freeze({
 export const PAIRED_RELEASE_MEDIA_FIXTURE = 'tests/e2e/fixtures/paired-release/paired-release-test-card.png';
 export const PAIRED_RELEASE_MEDIA_METADATA = 'tests/e2e/fixtures/paired-release/paired-release-test-card.json';
 export const DEFAULT_COMMAND_TIMEOUT_MS = 120_000;
-export const COMMAND_TIMEOUTS_MS = Object.freeze({
-  'npm ci': 10 * 60_000,
-  'npm run build': 10 * 60_000,
-  'playwright install': 10 * 60_000,
-  'ffmpeg': 120_000,
-  'ffprobe': 60_000,
-  'magick': 60_000,
-  'tesseract': 60_000,
+export const COMMAND_BUDGETS_MS = Object.freeze({
+  fastProbe: 30_000,
+  git: 60_000,
+  archive: 2 * 60_000,
+  npm: 10 * 60_000,
+  pip: 20 * 60_000,
+  playwright: 15 * 60_000,
+  migration: 5 * 60_000,
+  backup: 5 * 60_000,
+  sqlite: 30_000,
+  ffmpeg: 3 * 60_000,
+  ffprobe: 60_000,
+  tesseract: 60_000,
+  magick: 60_000,
 });
+// Backwards-compatible command-family view for release tooling that consumed
+// the pre-helper timeout export. New call sites should use phase budgets.
+export const COMMAND_TIMEOUTS_MS = Object.freeze({
+  npm: COMMAND_BUDGETS_MS.npm,
+  'npm ci': COMMAND_BUDGETS_MS.npm,
+  'npm run build': COMMAND_BUDGETS_MS.npm,
+  'playwright install': COMMAND_BUDGETS_MS.playwright,
+  ffmpeg: COMMAND_BUDGETS_MS.ffmpeg,
+  ffprobe: COMMAND_BUDGETS_MS.ffprobe,
+  magick: COMMAND_BUDGETS_MS.magick,
+  tesseract: COMMAND_BUDGETS_MS.tesseract,
+});
+export const COMMAND_MAX_BUFFER_BYTES = 20 * 1024 * 1024;
 const DEMO_PROJECT = 'paired-release-demo';
 const DEMO_TIMELINE = 'paired-release-timeline';
 const RUNAWAY_PROJECT = 'runaway-piano-colour-demo';
@@ -82,19 +102,66 @@ const BASE_ENV_KEYS = Object.freeze([
   'PATHEXT',
 ]);
 
-function commandName(command, args = []) {
+function commandBudgetKey(command, args = [], requested) {
+  if (typeof requested === 'string' && Object.hasOwn(COMMAND_BUDGETS_MS, requested)) return requested;
   const base = String(command).split(/[\\/]/).at(-1) ?? String(command);
-  if (base === 'npm' && args[0]) return `npm ${args[0]}`;
-  if (base.includes('playwright') || (base === process.execPath && args.some((arg) => String(arg).includes('playwright')))) return 'playwright install';
-  return base;
+  const joined = args.map(String).join(' ');
+  if (base === 'npm') return 'npm';
+  if (base === 'ffmpeg') return 'ffmpeg';
+  if (base === 'ffprobe') return 'ffprobe';
+  if (base === 'magick' || base === 'convert') return 'magick';
+  if (base === 'tesseract') return 'tesseract';
+  if (base === 'tar' || (base === 'git' && /\barchive\b/.test(joined))) return 'archive';
+  if (base === 'git') return 'git';
+  if (/playwright|@playwright|playwright\.config/i.test(joined)) return 'playwright';
+  if (/(^|\s)-m\s+pip\b/.test(joined)) return 'pip';
+  if (/\b(runaway_v1_migrate|migrate|migration)\b/i.test(joined)) return 'migration';
+  if (/\bbackup\b|\brestore\b/i.test(joined)) return 'backup';
+  if (/sqlite|sqlite3/i.test(joined)) return 'sqlite';
+  return 'fastProbe';
 }
 
-function commandTimeout(command, args, requested) {
+export function commandTimeout(command, args, requested) {
   if (Number.isFinite(requested) && requested > 0) return requested;
-  return COMMAND_TIMEOUTS_MS[commandName(command, args)] ?? DEFAULT_COMMAND_TIMEOUT_MS;
+  const budgetKey = commandBudgetKey(command, args, requested);
+  return COMMAND_BUDGETS_MS[budgetKey] ?? DEFAULT_COMMAND_TIMEOUT_MS;
 }
 
 class UsageError extends Error {}
+
+class ReleaseCommandError extends Error {
+  constructor(message, result, diagnosticsPath) {
+    super(message);
+    this.name = 'ReleaseCommandError';
+    this.result = result;
+    this.diagnosticsPath = diagnosticsPath ?? null;
+  }
+}
+
+function commandDiagnosticSummary(error) {
+  const result = error.result;
+  return {
+    failureType: result.failureType,
+    label: result.label,
+    command: result.command,
+    args: result.args,
+    cwd: result.cwd,
+    timeoutMs: result.timeoutMs,
+    maxBuffer: result.maxBuffer,
+    killSignal: result.killSignal,
+    elapsedMs: result.elapsedMs,
+    status: result.status,
+    signal: result.signal,
+    error: result.error,
+    stdoutTail: String(result.stdout ?? '').slice(-3_000),
+    stderrTail: String(result.stderr ?? '').slice(-3_000),
+    stdoutBytes: result.stdoutBytes,
+    stderrBytes: result.stderrBytes,
+    stdoutTruncated: result.stdoutTruncated,
+    stderrTruncated: result.stderrTruncated,
+    diagnosticsPath: error.diagnosticsPath,
+  };
+}
 
 function fail(message) {
   throw new Error(message);
@@ -241,9 +308,18 @@ export function validateAstridReleaseBridgeSources({ dispatchSource, serverSourc
   return Object.freeze({ capability: RELEASE_BRIDGE_CAPABILITY });
 }
 
-function commandFailure(command, args, result) {
+function commandFailure(command, args, result, diagnosticsPath) {
   const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim();
-  return `${command} ${args.join(' ')} failed with exit ${result.status ?? 'unknown'}${output ? `: ${output.slice(-3000)}` : ''}`;
+  const detail = result.failureType === 'timeout'
+    ? `timed out after ${result.timeoutMs}ms; kill=${result.killSignal}`
+    : result.failureType === 'output-cap'
+      ? `exceeded output cap ${result.maxBuffer} bytes`
+      : result.failureType === 'signal'
+        ? `terminated by ${result.signal ?? 'unknown signal'}`
+        : result.failureType === 'spawn-error'
+          ? `failed to spawn${result.error?.code ? ` (${result.error.code})` : ''}`
+      : result.error?.message ?? `failed with exit ${result.status ?? 'unknown'}`;
+  return `${command} ${args.join(' ')} ${detail}${output ? `: ${output.slice(-3000)}` : ''}${diagnosticsPath ? `; diagnostics=${diagnosticsPath}` : ''}`;
 }
 
 export function capture(command, args, {
@@ -254,43 +330,44 @@ export function capture(command, args, {
   timeoutMs,
   phase = 'unscoped-command',
   diagnosticsPath,
+  budgetKey,
 } = {}) {
-  const budget = commandTimeout(command, args, timeoutMs);
-  const result = spawnSync(command, args, {
+  const budget = commandTimeout(command, args, timeoutMs ?? budgetKey);
+  const result = runBoundedCommand(command, args, {
     cwd,
     env: env ?? safeBaseEnvironment(),
-    encoding: 'utf8',
     input,
-    maxBuffer: 20 * 1024 * 1024,
-    shell: false,
-    stdio: ['pipe', 'pipe', 'pipe'],
-    timeout: budget,
-    // spawnSync sends this signal when its bounded wait expires. A process
-    // group cannot be left running by a release verifier; SIGKILL is the
-    // final escalation supported by the synchronous child-process API.
+    maxBuffer: COMMAND_MAX_BUFFER_BYTES,
+    timeoutMs: budget,
     killSignal: 'SIGKILL',
+    allowFailure: true,
+    label: phase,
   });
-  const timedOut = result.error?.code === 'ETIMEDOUT'
-    || (result.status === null && result.signal === 'SIGKILL');
-  if (timedOut) {
+  const failed = !result.ok;
+  if (failed && diagnosticsPath) {
     const diagnostic = `${JSON.stringify({
-      command,
-      args,
+      schemaVersion: 1,
+      kind: 'bounded-command-diagnostic',
+      command: result.command,
+      args: result.args,
       phase,
       timeoutMs: budget,
+      maxBuffer: COMMAND_MAX_BUFFER_BYTES,
+      failureType: result.failureType,
       signal: result.signal ?? null,
-      error: result.error?.message ?? null,
+      error: result.error ?? null,
+      elapsedMs: result.elapsedMs,
+      stdoutBytes: result.stdoutBytes,
+      stderrBytes: result.stderrBytes,
+      stdoutTruncated: result.stdoutTruncated,
+      stderrTruncated: result.stderrTruncated,
+      stdoutTail: String(result.stdout ?? '').slice(-3_000),
+      stderrTail: String(result.stderr ?? '').slice(-3_000),
     })}\n`;
-    if (diagnosticsPath) {
-      writeFileSync(diagnosticsPath, diagnostic, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
-    }
-    if (!allowFailure) {
-      fail(`${command} ${args.join(' ')} timed out after ${budget}ms during ${phase}; kill escalation completed; diagnostics=${diagnosticsPath ?? '<inline>'}`);
-    }
+    writeFileSync(diagnosticsPath, diagnostic, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
   }
-  if (!allowFailure && (result.error || result.status !== 0)) {
-    if (result.error) throw result.error;
-    fail(commandFailure(command, args, result));
+  if (!allowFailure && failed) {
+    throw new ReleaseCommandError(commandFailure(command, args, result, diagnosticsPath), result, diagnosticsPath);
   }
   return result;
 }
@@ -923,7 +1000,14 @@ async function stopLoggedProcesses(handles) {
   }
 }
 
-function runLogged(command, args, { cwd, env, logPath, parseJson = false }) {
+function runLogged(command, args, {
+  cwd,
+  env,
+  logPath,
+  parseJson = false,
+  phase = logPath,
+  budgetKey,
+} = {}) {
   const startedAt = new Date().toISOString();
   const start = Date.now();
   const timeoutDiagnosticsPath = `${logPath}.timeout.json`;
@@ -931,19 +1015,23 @@ function runLogged(command, args, { cwd, env, logPath, parseJson = false }) {
     cwd,
     env,
     allowFailure: true,
-    phase: logPath,
+    phase,
+    budgetKey,
     diagnosticsPath: timeoutDiagnosticsPath,
   });
   const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
-  const timeoutDiagnostic = result.error?.code === 'ETIMEDOUT'
-    || (result.status === null && result.signal === 'SIGKILL')
-    ? `\n${LABEL} command timed out; kill escalation completed; timeout diagnostics: ${timeoutDiagnosticsPath}\n`
+  const diagnostic = !result.ok
+    ? `\n${LABEL} bounded command failure=${result.failureType}; timeoutMs=${result.timeoutMs}; `
+      + `kill=${result.killSignal}; maxBuffer=${result.maxBuffer}; diagnostics=${timeoutDiagnosticsPath}\n`
     : '';
-  writeFileSync(logPath, `${output}${timeoutDiagnostic}`, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
-  if (result.error?.code === 'ETIMEDOUT' || (result.status === null && result.signal === 'SIGKILL')) {
-    fail(`${command} ${args.join(' ')} timed out; see ${timeoutDiagnosticsPath}`);
+  writeFileSync(logPath, `${output}${diagnostic}`, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+  if (!result.ok) {
+    throw new ReleaseCommandError(
+      commandFailure(command, args, result, timeoutDiagnosticsPath),
+      result,
+      timeoutDiagnosticsPath,
+    );
   }
-  if (result.error || result.status !== 0) fail(commandFailure(command, args, result));
   let payload;
   if (parseJson) {
     try {
@@ -2205,6 +2293,9 @@ async function executeGate(manifest, pins, evidenceRoot) {
     receipt.status = 'pass';
   } catch (error) {
     receipt.error = error.message;
+    if (error instanceof ReleaseCommandError) {
+      receipt.commandDiagnostic = commandDiagnosticSummary(error);
+    }
     throw error;
   } finally {
     try {
@@ -2260,6 +2351,9 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
       manifestAstridPin: manifest.astrid.commit,
       requiredCapability: RELEASE_BRIDGE_CAPABILITY,
       error: error.message,
+      ...(error instanceof ReleaseCommandError ? {
+        commandDiagnostic: commandDiagnosticSummary(error),
+      } : {}),
       finishedAt: new Date().toISOString(),
     };
     const receiptPath = resolve(evidenceRoot, 'receipt.json');
