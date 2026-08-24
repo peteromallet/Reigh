@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 import {
   BASE_URL,
   BRIDGE_ORIGIN,
+  CLIP_BODY_SELECTOR,
   PROJECT_SLUG,
   TIMELINE_SLUG,
 } from './support.ts';
@@ -278,10 +279,10 @@ test.describe.serial('real caption render/export release matrix', () => {
       });
       await actions.click();
       await page.getByRole('menuitem', { name: 'Render transcript as editable video text' }).click();
-      await expect.poll(async () => page.evaluate(() => new Set(
-        Array.from(document.querySelectorAll('[data-clip-id^="transcript-caption-"]'))
+      await expect.poll(async () => page.evaluate((clipBodySelector) => new Set(
+        Array.from(document.querySelectorAll(`${clipBodySelector}[data-clip-id^="transcript-caption-"]`))
           .map((element) => element.getAttribute('data-clip-id')),
-      ).size), { timeout: 20_000 }).toBe(EXPECTED_CAPTIONS);
+      ).size, CLIP_BODY_SELECTOR), { timeout: 20_000 }).toBe(EXPECTED_CAPTIONS);
 
       await page.getByRole('button', { name: 'Render', exact: true }).click();
       const downloadLink = page.getByRole('link', { name: /download/i });
