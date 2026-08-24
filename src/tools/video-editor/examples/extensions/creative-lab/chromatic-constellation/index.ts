@@ -245,10 +245,13 @@ function coverageFor(entries: readonly ChromaticConstellationMarker[]): Chromati
 
 function readEnvelopeValue(value: unknown): ChromaticConstellationEnvelope | null {
   const legacyArray = Array.isArray(value);
-  const rawEntries = legacyArray
+  const candidateEntries = value !== null && typeof value === 'object' && !legacyArray
+    ? (value as Record<string, unknown>).entries
+    : undefined;
+  const rawEntries = Array.isArray(value)
     ? value
-    : value !== null && typeof value === 'object' && Array.isArray((value as Record<string, unknown>).entries)
-      ? (value as Record<string, unknown>).entries
+    : Array.isArray(candidateEntries)
+      ? candidateEntries
       : null;
   if (!rawEntries) return null;
   const entries = rawEntries.filter(isChromaticConstellationMarker).map(normalizeMarker);

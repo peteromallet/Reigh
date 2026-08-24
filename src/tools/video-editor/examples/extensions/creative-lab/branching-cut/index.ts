@@ -149,7 +149,10 @@ export function rebuildClipLinks(
   const previousById = new Map(previous.map((link) => [link.id, link]));
   return deriveClipLinks(snapshot).map((link) => {
     const prior = previousById.get(link.id);
-    const offset = Number.isFinite(prior?.offset) ? prior.offset : 0;
+    const priorOffset = prior?.offset;
+    const offset = priorOffset !== undefined && Number.isFinite(priorOffset)
+      ? priorOffset
+      : 0;
     return {
       ...link,
       label: prior?.label ?? link.label,
@@ -203,10 +206,13 @@ function migrateLegacyChoiceGate(value: unknown): ClipLink | null {
 
 function readClipLinkEnvelopeValue(value: unknown): ClipLinkEnvelope | null {
   const legacyArray = Array.isArray(value);
-  const rawEntries = legacyArray
+  const candidateEntries = value !== null && typeof value === 'object' && !legacyArray
+    ? (value as Record<string, unknown>).entries
+    : undefined;
+  const rawEntries = Array.isArray(value)
     ? value
-    : value !== null && typeof value === 'object' && Array.isArray((value as Record<string, unknown>).entries)
-      ? (value as Record<string, unknown>).entries
+    : Array.isArray(candidateEntries)
+      ? candidateEntries
       : null;
   if (!rawEntries) return null;
   const objectValue = !legacyArray && value !== null && typeof value === 'object'

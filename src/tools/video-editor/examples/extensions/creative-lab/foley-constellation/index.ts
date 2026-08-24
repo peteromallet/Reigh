@@ -240,10 +240,13 @@ function isPersistedFoleyCue(value: unknown): value is FoleyCue {
 }
 
 function readFoleyEnvelopeValue(value: unknown): FoleyEnvelope | null {
+  const candidateEntries = value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>).entries
+    : undefined;
   const rawEntries = Array.isArray(value)
     ? value
-    : value !== null && typeof value === 'object' && Array.isArray((value as Record<string, unknown>).entries)
-      ? (value as Record<string, unknown>).entries
+    : Array.isArray(candidateEntries)
+      ? candidateEntries
       : null;
   if (!rawEntries) return null;
   const generatedFromVersion = !Array.isArray(value)

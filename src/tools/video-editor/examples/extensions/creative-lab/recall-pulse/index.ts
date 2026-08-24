@@ -81,7 +81,7 @@ export interface RecallPulseReadResult extends RecallPulseEnvelope {
 }
 
 type RecallPulseAppSnapshot = Pick<TimelineSnapshot, 'app'>
-  & Partial<Pick<TimelineSnapshot, 'baseVersion' | 'currentVersion'>>;
+  & Partial<Pick<TimelineSnapshot, 'baseVersion' | 'currentVersion' | 'clips' | 'tracks'>>;
 
 const QUESTION_BY_CATEGORY: Record<RecallPulseCategory, string> = {
   concept: 'What is the central idea introduced at this point?',
@@ -284,10 +284,13 @@ function normalizeRecallPulseMarker(value: unknown): RecallPulseMarker | null {
 }
 
 function readRawEnvelope(value: unknown): Omit<RecallPulseEnvelope, 'stale'> | null {
+  const candidateSuggestions = value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>).suggestions
+    : undefined;
   const entries = Array.isArray(value)
     ? value
-    : value !== null && typeof value === 'object' && Array.isArray((value as Record<string, unknown>).suggestions)
-      ? (value as Record<string, unknown>).suggestions
+    : Array.isArray(candidateSuggestions)
+      ? candidateSuggestions
       : null;
   if (!entries) return null;
   const candidate = value !== null && typeof value === 'object' && !Array.isArray(value)
