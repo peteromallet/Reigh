@@ -129,7 +129,7 @@ function installBrowserNetworkAudit(page: import('@playwright/test').Page): Brow
  * browser still makes the real save request and receives the real 409. */
 async function freezeTimelineReads(page: import('@playwright/test').Page) {
   let snapshot: { status: number; headers: Record<string, string>; body: Buffer } | null = null;
-  await page.route('**/*', async (route) => {
+  const routeHandler = async (route: import('@playwright/test').Route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (request.method() !== 'GET' || !/\/projects\/demo-project\/timelines\/[^/]+$/.test(path)) {
@@ -144,7 +144,11 @@ async function freezeTimelineReads(page: import('@playwright/test').Page) {
       snapshot = { status: response.status(), headers, body: await response.body() };
     }
     await route.fulfill(snapshot);
-  });
+  };
+  await page.route('**/*', routeHandler);
+  return async () => {
+    await page.unroute('**/*', routeHandler);
+  };
 }
 
 
@@ -419,12 +423,13 @@ test('real release bridge serves timeline, task, generation, and media surfaces'
  */
 test('concurrent write → 409 → diverged banner (B4/B5 live proof)', async ({ page, request }) => {
   const audit = installBrowserNetworkAudit(page);
-  await freezeTimelineReads(page);
+  const unfreezeTimelineReads = await freezeTimelineReads(page);
   const url = await timelineUrl(request);
   const initialResponse = await request.get(url, { headers: bridgeHeaders() });
   expect(initialResponse.status()).toBe(200);
   const initialPayload = await initialResponse.json();
   const browserSaveBodies: Array<{ expected_version?: unknown; config?: Record<string, unknown> }> = [];
+  const browserSaveStatuses: number[] = [];
   page.on('request', (browserRequest) => {
     if (browserRequest.method() !== 'POST' || !/\/save$/.test(new URL(browserRequest.url()).pathname)) return;
     try {
@@ -432,6 +437,11 @@ test('concurrent write → 409 → diverged banner (B4/B5 live proof)', async ({
       browserSaveBodies.push(body);
     } catch {
       // The assertion below will fail with a useful empty-save diagnostic.
+    }
+  });
+  page.on('response', (browserResponse) => {
+    if (browserResponse.request().method() === 'POST' && /\/save$/.test(new URL(browserResponse.url()).pathname)) {
+      browserSaveStatuses.push(browserResponse.status());
     }
   });
   await openEditorAt(page);
@@ -460,6 +470,12 @@ test('concurrent write → 409 → diverged banner (B4/B5 live proof)', async ({
     () => browserSaveBodies.filter((body) => body.expected_version === initialPayload.config_version).length,
     { timeout: 25_000 },
   ).toBeGreaterThan(0);
+  await expect.poll(() => browserSaveStatuses.includes(409), { timeout: 25_000 }).toBe(true);
+
+  // The browser has now received the real stale-save response. Remove the
+  // deterministic read freeze before any recovery action so the subsequent
+  // reload must fetch and adopt writer 2's remote head.
+  await unfreezeTimelineReads();
 
   // The 409 puts the editor into diverged. Two surfaces present it: the B4
   // banner (Reload / Save as copy) or the pre-existing conflict dialog
@@ -473,11 +489,21 @@ test('concurrent write → 409 → diverged banner (B4/B5 live proof)', async ({
   ]);
 
   const keepLocal = page.getByRole('button', { name: 'Keep local draft' });
+  const reloadResponsePromise = page.waitForResponse((response) => {
+    const path = new URL(response.url()).pathname;
+    return response.request().method() === 'GET'
+      && /\/projects\/demo-project\/timelines\/[^/]+$/.test(path)
+      && response.status() === 200;
+  }, { timeout: 25_000 });
   if (await keepLocal.isVisible().catch(() => false)) {
     await keepLocal.click();
   } else {
     await page.getByRole('button', { name: 'Save as copy' }).click();
   }
+  const reloaded = await reloadResponsePromise;
+  const reloadedPayload = await reloaded.json();
+  expect(reloadedPayload.config.app['b8.browser.writer2']).toEqual({ note: 'concurrent' });
+  expect(reloadedPayload.config_version).toBeGreaterThan(initialPayload.config_version);
 
   // Both actions stash the local draft and reload → the B9 recovery banner
   // offers Retry / Discard.
