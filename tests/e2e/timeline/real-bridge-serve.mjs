@@ -21,7 +21,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 const PORT = Number(process.env.ASTRID_BRIDGE_PORT ?? 17334);
-const PINNED_ASTRID_SHA = '19eee0ec065e7a393b025bfadf4be9867e60fbd2';
+const PINNED_ASTRID_SHA = 'a15cd44174a58ac7253cf01d67afbd1a566b1423';
 const DEFAULT_ASTRID_CHECKOUT = '/Users/peteromalley/Documents/reigh-workspace/Astrid-editor-bridge-integration';
 const astrid = resolveAstridCommand();
 const OWNS_SEED_ROOT = !process.env.ASTRID_SEED_ROOT;
