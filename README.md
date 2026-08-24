@@ -41,7 +41,7 @@ GPU task processing requires **[Reigh-Worker](https://github.com/banodoco/Reigh-
 | Contract Surface | Canonical Path | Compatibility Status | Removal Target |
 |---|---|---|---|
 | Supabase runtime accessor | `src/integrations/supabase/client.ts` | Stable canonical | N/A |
-| Runtime error normalization | `src/shared/lib/errorHandling/runtimeError.ts` (`normalizeAndPresentError`) | Deprecated aliases live in `src/shared/lib/errorHandling/handleError.ts` | 2026-06-30 |
+| Runtime error normalization | `src/shared/lib/errorHandling/runtimeError.ts` (`normalizeAndPresentError`) | Legacy `handleError.ts` aliases retired; zero-use guard remains | Complete |
 | UI button entrypoint | `src/shared/components/ui/button.tsx` | Stable canonical for app imports | N/A |
 | UI button primitive (base-only) | `src/shared/components/ui/contracts/button.tsx` | Canonical primitive contract behind `ui/button` | N/A |
 | UI themed button wrapper | `src/shared/components/ui/theme/button.tsx` | App layer wrapper over base primitive | N/A |
@@ -51,9 +51,9 @@ GPU task processing requires **[Reigh-Worker](https://github.com/banodoco/Reigh-
 | Video editor browser provider | `src/tools/video-editor/browser-provider.ts` | Stable custom-shell browser contract | N/A |
 | Video editor testing helpers | `src/tools/video-editor/testing.ts` | Stable testing contract | N/A |
 
-Compatibility shims that remain for legacy imports:
-
-- `src/shared/components/ui/primitives/cn.ts` -> re-export shim to `ui/contracts/cn.ts`
+The authoritative inventory of live compatibility paths, temporary host import
+exceptions, and zero-use tombstones is
+[`docs/governance/contracts/compatibility-shims.md`](docs/governance/contracts/compatibility-shims.md).
 
 ### Governance Test Gates
 
