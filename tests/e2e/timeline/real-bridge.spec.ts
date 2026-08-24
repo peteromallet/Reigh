@@ -19,7 +19,9 @@ test.describe.configure({ mode: 'serial', timeout: 120_000 });
 // timeline identity — resolve it from the discovery route instead of assuming
 // a fixed UUID.
 async function defaultTimelineId(request: import('@playwright/test').APIRequestContext): Promise<string> {
-  const response = await request.get(`${BRIDGE_ORIGIN}/projects/demo-project/timelines`);
+  const response = await request.get(`${BRIDGE_ORIGIN}/projects/demo-project/timelines`, {
+    headers: bridgeHeaders(),
+  });
   const body = await response.json();
   const rows = (body.timelines ?? []) as Array<{ timeline_id: string; is_default?: boolean }>;
   const chosen = rows.find((row) => row.is_default) ?? rows[0];
@@ -69,14 +71,17 @@ async function dragFirstClipRight(page: import('@playwright/test').Page) {
 const BRIDGE_ORIGIN = `http://127.0.0.1:${process.env.ASTRID_BRIDGE_PORT ?? '17334'}`;
 
 /**
- * The bridge validates the per-boot request token on mutations; the vite
- * proxy injects it for /api/astrid traffic, but direct bridge-origin callers
- * read the copy the harness publishes next to its pid file.
+ * Release mode authenticates and negotiates every route. The Vite proxy
+ * injects these server-side for browser `/api/astrid` traffic; direct
+ * bridge-origin Playwright requests read the owner-only harness token file.
  */
-function mutationHeaders(): Record<string, string> {
+function bridgeHeaders(): Record<string, string> {
   try {
     const token = readFileSync(process.env.ASTRID_REQUEST_TOKEN_FILE ?? '/tmp/astrid-real-bridge.token', 'utf8').trim();
-    return { 'X-Astrid-Request-Token': token };
+    return {
+      Authorization: `Bearer ${token}`,
+      'X-Astrid-Bridge-Version': 'v1',
+    };
   } catch {
     return {};
   }
@@ -86,9 +91,11 @@ function mutationHeaders(): Record<string, string> {
  * OpenAPI conformance (B3 envelope) against the real bridge: GET timeline,
  * POST save with CAS, GET assets.
  */
-test('real bridge serves the 3-route OpenAPI surface', async ({ request }) => {
+test('real release bridge serves timeline, task, generation, and media surfaces', async ({ request }) => {
   const url = await timelineUrl(request);
-  const timeline = await request.get(url);
+  const timelineId = url.split('/').at(-1);
+  expect(timelineId).toBeTruthy();
+  const timeline = await request.get(url, { headers: bridgeHeaders() });
   const payload = await timeline.json();
   expect(payload).toHaveProperty('config');
   expect(payload).toHaveProperty('registry');
@@ -96,7 +103,7 @@ test('real bridge serves the 3-route OpenAPI surface', async ({ request }) => {
 
   // Save with the read version → 200 + version bump.
   const saved = await request.post(`${url}/save`, {
-    headers: mutationHeaders(),
+    headers: bridgeHeaders(),
     data: {
       config: payload.config,
       registry: payload.registry,
@@ -113,7 +120,7 @@ test('real bridge serves the 3-route OpenAPI surface', async ({ request }) => {
   // The body must DIFFER from the accepted save: an identical body under the
   // same expected_version is an idempotent replay, not a conflict.
   const conflicted = await request.post(`${url}/save`, {
-    headers: mutationHeaders(),
+    headers: bridgeHeaders(),
     data: {
       config: payload.config,
       registry: { ...payload.registry, assets: { ...payload.registry.assets, 'stale-cas-probe': { file: 'probe' } } },
@@ -126,13 +133,67 @@ test('real bridge serves the 3-route OpenAPI surface', async ({ request }) => {
 
   // Discovery routes are served again (restored after B5): list endpoints
   // return the envelope with at least the seeded project.
-  const projects = await request.get(`${BRIDGE_ORIGIN}/projects`);
+  const projects = await request.get(`${BRIDGE_ORIGIN}/projects`, { headers: bridgeHeaders() });
   expect(projects.status()).toBe(200);
   const projectsBody = await projects.json();
   expect(Array.isArray(projectsBody.projects)).toBe(true);
   expect(projectsBody.projects.length).toBeGreaterThan(0);
-  const timelines = await request.get(`${BRIDGE_ORIGIN}/projects/demo-project/timelines`);
+  const timelines = await request.get(`${BRIDGE_ORIGIN}/projects/demo-project/timelines`, {
+    headers: bridgeHeaders(),
+  });
   expect(timelines.status()).toBe(200);
+
+  const taskAdmission = await request.post(`${BRIDGE_ORIGIN}/projects/demo-project/tasks`, {
+    headers: {
+      ...bridgeHeaders(),
+      'Idempotency-Key': 'b8-real-release-render-v1',
+    },
+    data: {
+      family: 'render_export',
+      input: {
+        timeline_ref: timelineId,
+        expected_version: savedPayload.config_version,
+        format: 'mp4',
+        output_filename: 'b8-release-probe.mp4',
+        destination: 'download',
+        correlation_id: 'b8-release-probe',
+      },
+    },
+  });
+  expect(taskAdmission.status()).toBe(201);
+  const admitted = await taskAdmission.json();
+  expect(admitted.task.id).toEqual(expect.any(String));
+
+  const taskList = await request.get(`${BRIDGE_ORIGIN}/projects/demo-project/tasks?limit=1&offset=0`, {
+    headers: bridgeHeaders(),
+  });
+  expect(taskList.status()).toBe(200);
+  expect((await taskList.json()).tasks).toHaveLength(1);
+
+  const taskDetail = await request.get(
+    `${BRIDGE_ORIGIN}/projects/demo-project/tasks/${admitted.task.id}`,
+    { headers: bridgeHeaders() },
+  );
+  expect(taskDetail.status()).toBe(200);
+
+  const taskCancel = await request.post(
+    `${BRIDGE_ORIGIN}/projects/demo-project/tasks/${admitted.task.id}/cancel`,
+    { headers: bridgeHeaders(), data: {} },
+  );
+  expect(taskCancel.status()).toBe(200);
+
+  const generations = await request.get(`${BRIDGE_ORIGIN}/projects/demo-project/generations?limit=1`, {
+    headers: bridgeHeaders(),
+  });
+  expect(generations.status()).toBe(200);
+  expect(Array.isArray((await generations.json()).generations)).toBe(true);
+
+  const missingMedia = await request.get(
+    `${BRIDGE_ORIGIN}/projects/demo-project/media/01UNKNOWN/content`,
+    { headers: bridgeHeaders() },
+  );
+  expect(missingMedia.status()).toBe(404);
+  expect((await missingMedia.json()).error).toBe('media_not_found');
 });
 
 /**
@@ -144,11 +205,11 @@ test('concurrent write → 409 → diverged banner (B4/B5 live proof)', async ({
 
   // Writer 2: bump the version behind the editor's back.
   const url = await timelineUrl(request);
-  const timeline = await request.get(url);
+  const timeline = await request.get(url, { headers: bridgeHeaders() });
   expect(timeline.status()).toBe(200);
   const payload = await timeline.json();
   const saved = await request.post(`${url}/save`, {
-    headers: mutationHeaders(),
+    headers: bridgeHeaders(),
     data: {
       config: { ...payload.config, app: { ...(payload.config.app ?? {}), 'com.example.writer2': { note: 'concurrent' } } },
       registry: payload.registry,

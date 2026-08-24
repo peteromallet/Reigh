@@ -18,6 +18,19 @@ logger.warn = (msg, options) => {
 export default defineConfig(() => {
   const port = resolveVitePort(process.env.PORT);
   const astridBridgePort = process.env.VITE_ASTRID_BRIDGE_PORT ?? "17333";
+  const astridBridgeTokenFile = process.env.ASTRID_REQUEST_TOKEN_FILE
+    ?? "/tmp/astrid-real-bridge.token";
+  const astridBridgeProtocolVersion = process.env.ASTRID_BRIDGE_PROTOCOL_VERSION ?? "v1";
+  const readAstridBridgeToken = (): string | null => {
+    const configured = process.env.ASTRID_BRIDGE_TOKEN?.trim();
+    if (configured) return configured;
+    try {
+      const fromFile = fs.readFileSync(astridBridgeTokenFile, "utf8").trim();
+      return fromFile.length > 0 ? fromFile : null;
+    } catch {
+      return null;
+    }
+  };
   const generatedRegistryPath = path.resolve(
     __dirname,
     "../../node_modules/@banodoco/timeline-composition/typescript/src/registry.generated.ts",
@@ -48,18 +61,24 @@ export default defineConfig(() => {
     server: {
       host: "::",
       port: port,
-      // Astrid local bridge (development). Local trust (doc 27 §4.7):
-      // the per-boot request token is minted by `astrid serve` and delivered
-      // OUT OF BAND to server-side callers only — this proxy deliberately
-      // adds NO credential, header, or cookie, so zero token material ever
-      // reaches browser code. The browser's authority is same-origin
-      // reachability of `/api/astrid` alone; mutations from foreign origins
-      // are rejected by the bridge's own Host + token + CORS-preflight gate.
+      // Astrid local bridge. The browser receives same-origin `/api/astrid`
+      // only; the server-side proxy reads the operator/per-run secret and
+      // injects release authentication + protocol negotiation downstream.
+      // Token bytes never enter browser JS, storage, cookies, URLs, or logs.
       proxy: {
         "/api/astrid": {
           target: `http://127.0.0.1:${astridBridgePort}`,
           changeOrigin: true,
           rewrite: (incomingPath) => incomingPath.replace(/^\/api\/astrid/, ""),
+          configure: (proxy) => {
+            proxy.on("proxyReq", (proxyRequest) => {
+              const token = readAstridBridgeToken();
+              if (token) {
+                proxyRequest.setHeader("Authorization", `Bearer ${token}`);
+              }
+              proxyRequest.setHeader("X-Astrid-Bridge-Version", astridBridgeProtocolVersion);
+            });
+          },
         },
       },
       // Sprint 5: allow Vite to read from the sibling banodoco-workspace

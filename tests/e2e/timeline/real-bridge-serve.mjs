@@ -15,13 +15,14 @@
  * existing `tests/e2e/timeline/support.ts` URLs work against the real bridge.
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 const PORT = Number(process.env.ASTRID_BRIDGE_PORT ?? 17334);
-const PINNED_ASTRID_SHA = 'fb152312d3cb9b7bed5f637bfdf6845e7d638739';
-const DEFAULT_ASTRID_CHECKOUT = '/Users/peteromalley/Documents/reigh-workspace/Astrid-extension-rc';
+const PINNED_ASTRID_SHA = '19eee0ec065e7a393b025bfadf4be9867e60fbd2';
+const DEFAULT_ASTRID_CHECKOUT = '/Users/peteromalley/Documents/reigh-workspace/Astrid-editor-bridge-integration';
 const astrid = resolveAstridCommand();
 const OWNS_SEED_ROOT = !process.env.ASTRID_SEED_ROOT;
 const SEED_ROOT = process.env.ASTRID_SEED_ROOT ? resolve(process.env.ASTRID_SEED_ROOT) : mkdtempSync(join(tmpdir(), 'astrid-real-bridge-'));
@@ -29,6 +30,7 @@ const SEED_ROOT = process.env.ASTRID_SEED_ROOT ? resolve(process.env.ASTRID_SEED
 const TIMELINE_ID = '11111111-1111-1111-1111-111111111111';
 const TIMELINE_ULID = '01JM4K5N7P0000000000000017';
 const PROJECT = { slug: 'demo-project', name: 'Demo Project' };
+const BRIDGE_TOKEN = process.env.ASTRID_BRIDGE_TOKEN ?? randomBytes(32).toString('hex');
 
 function seed() {
   const projectDir = join(SEED_ROOT, PROJECT.slug);
@@ -170,12 +172,21 @@ seed();
 console.error(`[real-bridge] seeding ${SEED_ROOT}`);
 console.error(`[real-bridge] Astrid provenance ${astrid.provenance}`);
 registerInBridgeRegistry(astrid);
-const serveArgs = [...astrid.prefix, 'serve', '--no-open-editor', '--projects-root', SEED_ROOT, '--port', String(PORT)];
+const serveArgs = [
+  ...astrid.prefix,
+  'serve',
+  '--release-mode',
+  '--no-open-editor',
+  '--projects-root',
+  SEED_ROOT,
+  '--port',
+  String(PORT),
+];
 console.error(`[real-bridge] spawning ${astrid.command} ${serveArgs.join(' ')}`);
 const child = spawn(astrid.command, serveArgs, {
   stdio: 'inherit',
   cwd: astrid.cwd,
-  env: astrid.env,
+  env: { ...astrid.env, ASTRID_BRIDGE_TOKEN: BRIDGE_TOKEN },
 });
 
 const pidFile = process.env.ASTRID_BRIDGE_PID_FILE || '/tmp/astrid-real-bridge.pid';
@@ -190,19 +201,12 @@ writeFileSync(metadataFile, JSON.stringify({
   bridge_pid: child.pid,
 }, null, 2));
 
-// Serve mints the per-boot mutation token into <root>/.astrid/request-token
-// (mode 0600). The vite proxy injects it server-side; direct API callers
-// (specs hitting the bridge origin) read it here instead.
-function publishToken(attempt = 0) {
-  try {
-    writeFileSync(tokenFile, readFileSync(join(SEED_ROOT, '.astrid', 'request-token'), 'utf8'));
-    console.error(`[real-bridge] request token published to ${tokenFile}`);
-  } catch {
-    if (attempt < 20) setTimeout(() => publishToken(attempt + 1), 250);
-    else console.error('[real-bridge] request token never appeared; mutations will 403');
-  }
-}
-publishToken();
+// Release mode requires an operator-supplied token and deliberately does not
+// mint one on disk. Publish the harness-generated secret with owner-only
+// permissions so the Vite proxy and direct API specs share the exact token
+// without weakening the production server posture.
+writeFileSync(tokenFile, BRIDGE_TOKEN, { mode: 0o600 });
+console.error(`[real-bridge] request token published to ${tokenFile}`);
 
 function cleanup() {
   try {

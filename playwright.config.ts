@@ -56,6 +56,7 @@ export default defineConfig({
         VITE_SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY ?? 'test-anon-key',
         VITE_APP_ENV: process.env.VITE_APP_ENV ?? 'web',
         VITE_ASTRID_BRIDGE_PORT: String(bridgePort),
+        ASTRID_REQUEST_TOKEN_FILE: process.env.ASTRID_REQUEST_TOKEN_FILE ?? '/tmp/astrid-real-bridge.token',
       },
     },
     ...(includeTimelineDevices
@@ -72,6 +73,7 @@ export default defineConfig({
             : {}),
           env: {
             ASTRID_BRIDGE_PORT: String(bridgePort),
+            ASTRID_REQUEST_TOKEN_FILE: process.env.ASTRID_REQUEST_TOKEN_FILE ?? '/tmp/astrid-real-bridge.token',
           },
         }]
       : []),
