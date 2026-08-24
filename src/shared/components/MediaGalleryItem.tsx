@@ -224,8 +224,8 @@ export const MediaGalleryItem: React.FC<MediaGalleryItemProps> = ({
   } = useQuickShotCreate({
     generationId: generationIdForActions,
     generationPreview: {
-      imageUrl: image.url,
-      thumbUrl: image.thumbUrl,
+      imageUrl: image.url ?? undefined,
+      thumbUrl: image.thumbUrl ?? undefined,
       type: image.type,
       location: image.location,
     },
@@ -265,9 +265,9 @@ export const MediaGalleryItem: React.FC<MediaGalleryItemProps> = ({
   const { addToShot, addToShotWithoutPosition } = useMediaGalleryItemShotActions({
     imageId: image.id,
     generationId: generationIdForActions,
-    imageUrl: image.url,
-    thumbUrl: image.thumbUrl ?? image.url,
-    displayUrl: displayUrl || image.url,
+    imageUrl: image.url ?? displayUrl ?? '',
+    thumbUrl: image.thumbUrl ?? image.url ?? displayUrl ?? '',
+    displayUrl: displayUrl ?? image.url ?? '',
     selectedShotId: selectedShotIdLocal,
     isMobile,
     onAddToLastShot,
@@ -541,7 +541,7 @@ export const MediaGalleryItem: React.FC<MediaGalleryItemProps> = ({
             setIsInfoOpen={setIsInfoOpen}
             showShare={showShare}
             taskId={taskId}
-            handleShare={handleShare}
+            handleShare={(event) => { void handleShare(event); }}
             isCreatingShare={isCreatingShare}
             shareCopied={shareCopied}
             shareSlug={shareSlug}

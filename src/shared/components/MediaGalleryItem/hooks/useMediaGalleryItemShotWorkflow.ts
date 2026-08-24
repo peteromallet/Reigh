@@ -45,8 +45,8 @@ export function useMediaGalleryItemShotWorkflow({
   } = useQuickShotCreate({
     generationId: generationIdForActions,
     generationPreview: {
-      imageUrl: image.url,
-      thumbUrl: image.thumbUrl,
+      imageUrl: image.url ?? undefined,
+      thumbUrl: image.thumbUrl ?? undefined,
       type: image.type,
       location: image.location,
     },
@@ -62,9 +62,9 @@ export function useMediaGalleryItemShotWorkflow({
   const { addToShot, addToShotWithoutPosition } = useMediaGalleryItemShotActions({
     imageId: image.id,
     generationId: generationIdForActions,
-    imageUrl: image.url,
-    thumbUrl: image.thumbUrl ?? image.url,
-    displayUrl: image.url,
+    imageUrl: image.url ?? '',
+    thumbUrl: image.thumbUrl ?? image.url ?? '',
+    displayUrl: image.url ?? '',
     selectedShotId: selectedShotIdLocal,
     isMobile,
     onAddToLastShot,

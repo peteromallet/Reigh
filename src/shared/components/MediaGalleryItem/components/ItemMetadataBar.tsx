@@ -6,19 +6,20 @@ import { VariantBadge } from '@/shared/components/VariantBadge';
 import { cn } from '@/shared/components/ui/contracts/cn';
 import { InfoTooltip } from './InfoTooltip';
 import type { GeneratedImageWithMetadata } from '../types';
+import type { Task } from '@/types/tasks';
 
 interface ItemMetadataBarProps {
   image: GeneratedImageWithMetadata;
   isVideoContent: boolean;
   isMobile: boolean;
-  taskData: unknown;
+  taskData: Task | null | undefined;
   inputImages: string[];
   shouldShowMetadata: boolean;
   shouldShowTaskDetails: boolean;
   setIsInfoOpen: (isOpen: boolean) => void;
   showShare: boolean;
   taskId: string | null;
-  handleShare: () => void;
+  handleShare: (event: React.MouseEvent<HTMLButtonElement>) => void | Promise<void>;
   isCreatingShare: boolean;
   shareCopied: boolean;
   shareSlug: string | null;
