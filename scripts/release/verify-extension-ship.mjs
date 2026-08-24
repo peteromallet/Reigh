@@ -56,6 +56,7 @@ export const REIGH_GATE_PROFILE = Object.freeze([
   { id: 'example-readiness', label: 'release example-readiness gate', command: 'npm', args: ['run', 'check:example-readiness:release'] },
   { id: 'release-checklist', label: 'release evidence-checklist gate', command: 'npm', args: ['run', 'check:release-checklist:release'] },
   { id: 'ship-evidence', label: 'ship-quality immutable evidence gate', command: 'npm', args: ['run', 'check:extension-ship-evidence:release'] },
+  { id: 'visual-baseline-provenance', label: 'RC6 visual baseline provenance gate', command: 'npm', args: ['run', 'verify:rc6-visual-baseline-provenance'] },
   { id: 'lint', label: 'Reigh lint', command: 'npm', args: ['run', 'lint'] },
   { id: 'typecheck', label: 'Reigh strict-island typecheck', command: 'npm', args: ['run', 'typecheck:strict-probe'] },
   { id: 'unit', label: 'complete Reigh unit suite', command: 'npm', args: ['test'] },

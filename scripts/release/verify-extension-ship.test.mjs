@@ -135,6 +135,11 @@ describe('extension ship verifier', () => {
       && gate.command === 'npm'
       && gate.args.join(' ') === 'run check:extension-ship-evidence:release'
     )));
+    assert.ok(REIGH_GATE_PROFILE.some((gate) => (
+      gate.id === 'visual-baseline-provenance'
+      && gate.command === 'npm'
+      && gate.args.join(' ') === 'run verify:rc6-visual-baseline-provenance'
+    )));
   });
 
   it('explicitly permits only the committed Astrid stub in browser release lanes', () => {

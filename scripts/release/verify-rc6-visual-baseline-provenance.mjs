@@ -13,6 +13,14 @@ export const DEFAULT_MANIFEST_PATH = resolve(
   REPO_ROOT,
   'docs/extensions/evidence/releases/extension-ship-quality-rc6/visual-baseline-provenance.json',
 );
+export const EXPECTED_BASELINE_PATHS = Object.freeze([
+  'tests/e2e/visual-snapshots/composed-desktop.png',
+  'tests/e2e/visual-snapshots/composed-tablet.png',
+  'tests/e2e/visual-snapshots/composed-phone.png',
+  'tests/e2e/visual-snapshots/runaway-loading.png',
+  'tests/e2e/visual-snapshots/runaway-empty.png',
+  'tests/e2e/visual-snapshots/runaway-error.png',
+]);
 const SHA256 = /^[0-9a-f]{64}$/;
 const COMMIT = /^[0-9a-f]{40}$/;
 
@@ -133,28 +141,38 @@ function decodePng(buffer) {
     }
   }
   const rgb = Buffer.alloc(width * height * 3);
+  const rgba = Buffer.alloc(width * height * 4);
   let outputOffset = 0;
+  let rgbaOffset = 0;
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const source = y * rowBytes + x * bytesPerPixel;
       let red;
       let green;
       let blue;
+      let alpha = 255;
       if (colourType === 0 || colourType === 4) {
         red = green = blue = rows[source];
+        if (colourType === 4) alpha = rows[source + 1];
       } else if (colourType === 2 || colourType === 6) {
         red = rows[source]; green = rows[source + 1]; blue = rows[source + 2];
+        if (colourType === 6) alpha = rows[source + 3];
       } else {
         const index = rows[source];
         if (!palette || index * 3 + 2 >= palette.length) fail('indexed baseline PNG has no valid palette entry');
         red = palette[index * 3]; green = palette[index * 3 + 1]; blue = palette[index * 3 + 2];
+        if (transparency && index < transparency.length) alpha = transparency[index];
       }
       rgb[outputOffset++] = red;
       rgb[outputOffset++] = green;
       rgb[outputOffset++] = blue;
+      rgba[rgbaOffset++] = red;
+      rgba[rgbaOffset++] = green;
+      rgba[rgbaOffset++] = blue;
+      rgba[rgbaOffset++] = alpha;
     }
   }
-  return { width, height, rgb, channels: 3, transparency: Boolean(transparency) };
+  return { width, height, rgb, rgba, channels: 3, transparency: Boolean(transparency) };
 }
 
 function calculateDiff(oldImage, newImage) {
@@ -199,6 +217,46 @@ function assertString(value, path, pattern = /.+/) {
   if (typeof value !== 'string' || !pattern.test(value)) fail(`${path} must be a valid string`);
 }
 
+function deriveDiffMask(oldImage, newImage) {
+  const expected = Buffer.alloc(newImage.width * newImage.height * 4);
+  let outputOffset = 0;
+  for (let index = 0; index < oldImage.rgb.length; index += 3) {
+    const changed = oldImage.rgb[index] !== newImage.rgb[index]
+      || oldImage.rgb[index + 1] !== newImage.rgb[index + 1]
+      || oldImage.rgb[index + 2] !== newImage.rgb[index + 2];
+    if (changed) {
+      expected[outputOffset++] = 255;
+      expected[outputOffset++] = 0;
+      expected[outputOffset++] = 0;
+    } else {
+      // This is the canonical mask rendering used for the retained review
+      // artifacts: unchanged final-baseline pixels are blended 20% over white.
+      expected[outputOffset++] = Math.round(204 + newImage.rgb[index] * 0.2);
+      expected[outputOffset++] = Math.round(204 + newImage.rgb[index + 1] * 0.2);
+      expected[outputOffset++] = Math.round(204 + newImage.rgb[index + 2] * 0.2);
+    }
+    expected[outputOffset++] = 255;
+  }
+  return expected;
+}
+
+function assertDiffMaskPixels(actualImage, oldImage, newImage, path) {
+  const expected = deriveDiffMask(oldImage, newImage);
+  if (actualImage.rgba.length !== expected.length) {
+    fail(`${path} reviewed diff artifact pixel buffer length mismatch`);
+  }
+  for (let index = 0; index < expected.length; index += 1) {
+    if (actualImage.rgba[index] !== expected[index]) {
+      const pixel = Math.floor(index / 4);
+      fail(
+        `${path} reviewed diff artifact pixels mismatch at pixel ${pixel}: `
+        + `expected ${Array.from(expected.subarray(pixel * 4, pixel * 4 + 4)).join(',')}, `
+        + `got ${Array.from(actualImage.rgba.subarray(pixel * 4, pixel * 4 + 4)).join(',')}`,
+      );
+    }
+  }
+}
+
 export function verifyVisualBaselineProvenance({
   repoRoot = REPO_ROOT,
   manifestPath = DEFAULT_MANIFEST_PATH,
@@ -209,6 +267,29 @@ export function verifyVisualBaselineProvenance({
   const refresh = manifest.refresh;
   if (!refresh || !Array.isArray(manifest.entries) || manifest.entries.length === 0) {
     fail('visual baseline provenance must include refresh metadata and entries');
+  }
+  if (manifest.entries.length !== EXPECTED_BASELINE_PATHS.length) {
+    fail(
+      `visual baseline provenance must contain exactly ${EXPECTED_BASELINE_PATHS.length} entries, `
+      + `got ${manifest.entries.length}`,
+    );
+  }
+  const expectedPathSet = new Set(EXPECTED_BASELINE_PATHS);
+  const declaredPaths = [];
+  for (const [index, entry] of manifest.entries.entries()) {
+    const path = entry?.path;
+    assertString(path, `entries[${index}].path`);
+    if (declaredPaths.includes(path)) fail(`duplicate visual baseline path: ${path}`);
+    declaredPaths.push(path);
+  }
+  const missingPaths = EXPECTED_BASELINE_PATHS.filter((path) => !declaredPaths.includes(path));
+  const unexpectedPaths = declaredPaths.filter((path) => !expectedPathSet.has(path));
+  if (missingPaths.length > 0 || unexpectedPaths.length > 0) {
+    fail(
+      `visual baseline paths must exactly match the RC6 set; `
+      + `missing: ${missingPaths.join(', ') || '<none>'}; `
+      + `unexpected: ${unexpectedPaths.join(', ') || '<none>'}`,
+    );
   }
   const oldCommit = resolveCommit(repoRoot, refresh.oldSourceCommit, 'refresh.oldSourceCommit');
   const newCommit = resolveCommit(repoRoot, refresh.newSourceCommit, 'refresh.newSourceCommit');
@@ -284,6 +365,7 @@ export function verifyVisualBaselineProvenance({
         { width: diff.width, height: diff.height },
         `${path}.reviewedDiffArtifact.dimensions`,
       );
+      assertDiffMaskPixels(artifactImage, decodePng(oldBytes), decodePng(newBytes), path);
     }
     verifiedEntries.push({
       path,

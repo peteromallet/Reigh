@@ -71,4 +71,52 @@ describe('RC6 visual baseline provenance verifier', () => {
       );
     });
   });
+
+  it('fails when a baseline is omitted from the exact RC6 path set', () => {
+    withManifest((manifest) => {
+      manifest.entries.pop();
+    }, (manifestPath) => {
+      assert.throws(
+        () => verifyVisualBaselineProvenance({ repoRoot: REPO_ROOT, manifestPath }),
+        /exactly 6 entries/,
+      );
+    });
+  });
+
+  it('fails when a same-size but substituted diff artifact is retained', () => {
+    withManifest((manifest) => {
+      const artifact = manifest.entries[0].reviewedDiffArtifact;
+      // The composed baseline has the same dimensions as its diff artifact,
+      // but its pixels are not the canonical red/white diff mask.
+      artifact.path = 'tests/e2e/visual-snapshots/composed-desktop.png';
+      artifact.sha256 = manifest.entries[0].new.sha256;
+    }, (manifestPath) => {
+      assert.throws(
+        () => verifyVisualBaselineProvenance({ repoRoot: REPO_ROOT, manifestPath }),
+        /reviewed diff artifact pixels mismatch/,
+      );
+    });
+  });
+
+  it('fails when baseline paths are duplicated', () => {
+    withManifest((manifest) => {
+      manifest.entries[1].path = manifest.entries[0].path;
+    }, (manifestPath) => {
+      assert.throws(
+        () => verifyVisualBaselineProvenance({ repoRoot: REPO_ROOT, manifestPath }),
+        /duplicate visual baseline path/,
+      );
+    });
+  });
+
+  it('fails when an extra unexpected baseline path replaces an expected one', () => {
+    withManifest((manifest) => {
+      manifest.entries[5].path = 'tests/e2e/visual-snapshots/unexpected.png';
+    }, (manifestPath) => {
+      assert.throws(
+        () => verifyVisualBaselineProvenance({ repoRoot: REPO_ROOT, manifestPath }),
+        /unexpected: tests\/e2e\/visual-snapshots\/unexpected\.png/,
+      );
+    });
+  });
 });
