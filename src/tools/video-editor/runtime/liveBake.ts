@@ -142,7 +142,7 @@ const TARGET_TO_REF_KIND: Record<LiveBakeTarget['kind'], TimelineLiveDeterminist
   'deterministic-capture': 'deterministic-capture',
 };
 
-const VISUAL_CHANNEL_KINDS = new Set<LiveChannelKind>(['video', 'image']);
+const VISUAL_CHANNEL_KINDS = new Set<LiveChannelKind>(['video']);
 const AUDIO_OR_CONTROL_CHANNEL_KINDS = new Set<LiveChannelKind>(['audio', 'control', 'data']);
 
 function sameStringArray(
@@ -739,7 +739,6 @@ function createRenderMaterialRef(
 function inferRenderMaterialMediaKind(channels: readonly LiveBakeChannelInput[]): RenderMaterialMediaKind {
   const kinds = new Set(channels.map((channel) => channel.metadata.kind));
   if (kinds.has('video')) return 'video';
-  if (kinds.has('image')) return 'image';
   if (kinds.has('audio')) return 'audio';
   if (kinds.has('control')) return 'json';
   return 'json';

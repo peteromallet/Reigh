@@ -378,7 +378,7 @@ function extractShaderKeyframes(
       continue;
     }
 
-    const keyframes = entries.flatMap((entry) => {
+    const keyframes: TimelineShaderKeyframe[] = entries.flatMap((entry) => {
       if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
         return [];
       }
@@ -395,10 +395,13 @@ function extractShaderKeyframes(
         return [];
       }
 
+      const keyframeInterpolation: TimelineShaderKeyframe['interpolation'] =
+        interpolation === 'linear' ? 'linear' : 'hold';
+
       return [{
         time,
         value: Array.isArray(value) ? [...value] : value,
-        interpolation,
+        interpolation: keyframeInterpolation,
       }];
     });
 
@@ -496,8 +499,10 @@ export interface TimelineReaderOptions {
 export function createTimelineReader(
   options: TimelineReaderOptions,
 ): TimelineReader {
-  const getData: () => TimelineData =
-    typeof options.data === 'function' ? options.data : () => options.data;
+  const dataSource = options.data;
+  const getData: () => TimelineData = typeof dataSource === 'function'
+    ? dataSource
+    : () => dataSource;
 
   const projectId = options.projectId ?? null;
   const extensionRequirements: readonly ProjectExtensionRequirement[] =

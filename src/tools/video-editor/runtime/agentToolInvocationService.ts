@@ -34,6 +34,7 @@ import type {
   RenderArtifact,
   RenderMaterialMediaKind,
   RenderMaterialRef,
+  RenderLocatorKind,
   RenderStorageLocator,
 } from '@/sdk/video/rendering/artifacts';
 import type {
@@ -118,6 +119,15 @@ const VALID_MEDIA_KINDS = new Set<RenderMaterialMediaKind>([
   'binary',
   'sidecar',
   'unknown',
+]);
+
+const VALID_LOCATOR_KINDS = new Set<RenderLocatorKind>([
+  'asset-registry',
+  'artifact-store',
+  'url',
+  'local-file',
+  'inline',
+  'provider',
 ]);
 
 type PromotionProducer = {
@@ -611,7 +621,7 @@ function normalizeLocator(
       : undefined;
 
   return {
-    kind: String(locator.kind),
+    kind: isValidLocatorKind(locator.kind) ? locator.kind : 'provider',
     uri: String(locator.uri),
     mimeType: isNonEmptyString(locator.mimeType) ? locator.mimeType : undefined,
     contentSha256,
@@ -622,7 +632,7 @@ function normalizeLocator(
 function hasValidLocator(evidence: ToolArtifactPromotionEvidence): boolean {
   const locator = normalizeRecord(evidence.locator);
   if (!locator) return false;
-  if (!isNonEmptyString(locator.kind) || !isNonEmptyString(locator.uri)) {
+  if (!isValidLocatorKind(locator.kind) || !isNonEmptyString(locator.uri)) {
     return false;
   }
   return isNonEmptyString(locator.contentSha256) || isNonEmptyString(evidence.outputHash);
@@ -727,13 +737,16 @@ function normalizeConsumedMaterialRefs(
 
   return refs.flatMap((ref) => {
     const record = normalizeRecord(ref);
+    const locator = normalizeRecord(record?.locator);
     if (!record) return [];
     if (
       !isNonEmptyString(record.id)
       || !isValidMediaKind(record.mediaKind)
-      || !normalizeRecord(record.locator)
+      || !locator
+      || !isValidLocatorKind(locator.kind)
+      || !isNonEmptyString(locator.uri)
       || !isValidDeterminism(record.determinism)
-      || !isNonEmptyString(record.replacementPolicy)
+      || !isValidReplacementPolicy(record.replacementPolicy)
     ) {
       return [];
     }
@@ -741,16 +754,16 @@ function normalizeConsumedMaterialRefs(
       id: record.id,
       mediaKind: record.mediaKind,
       locator: {
-        kind: String((record.locator as Record<string, unknown>).kind),
-        uri: String((record.locator as Record<string, unknown>).uri),
-        mimeType: isNonEmptyString((record.locator as Record<string, unknown>).mimeType)
-          ? String((record.locator as Record<string, unknown>).mimeType)
+        kind: locator.kind,
+        uri: locator.uri,
+        mimeType: isNonEmptyString(locator.mimeType)
+          ? locator.mimeType
           : undefined,
-        contentSha256: isNonEmptyString((record.locator as Record<string, unknown>).contentSha256)
-          ? String((record.locator as Record<string, unknown>).contentSha256)
+        contentSha256: isNonEmptyString(locator.contentSha256)
+          ? locator.contentSha256
           : undefined,
-        expiresAt: isNonEmptyString((record.locator as Record<string, unknown>).expiresAt)
-          ? String((record.locator as Record<string, unknown>).expiresAt)
+        expiresAt: isNonEmptyString(locator.expiresAt)
+          ? locator.expiresAt
           : undefined,
       },
       producerExtensionId: isNonEmptyString(record.producerExtensionId)
@@ -761,7 +774,7 @@ function normalizeConsumedMaterialRefs(
         : undefined,
       provenance: normalizeRecord(record.provenance) ?? undefined,
       determinism: record.determinism,
-      replacementPolicy: record.replacementPolicy as RenderMaterialRef['replacementPolicy'],
+      replacementPolicy: record.replacementPolicy,
     }];
   });
 }
@@ -812,6 +825,18 @@ function createPromotionDiagnostic(
 
 function isValidRenderRoute(value: unknown): value is RenderRoute {
   return typeof value === 'string' && VALID_RENDER_ROUTES.has(value as RenderRoute);
+}
+
+function isValidLocatorKind(value: unknown): value is RenderLocatorKind {
+  return typeof value === 'string' && VALID_LOCATOR_KINDS.has(value as RenderLocatorKind);
+}
+
+function isValidReplacementPolicy(
+  value: unknown,
+): value is RenderMaterialRef['replacementPolicy'] {
+  return value === 'replace-live-ref'
+    || value === 'preserve-live-ref'
+    || value === 'materialize-on-export';
 }
 
 function isValidDeterminism(value: unknown): value is DeterminismStatus {

@@ -121,7 +121,13 @@ export class ProcessResultAttachError extends Error {
       cause?: unknown;
     },
   ) {
-    super(message, { cause: options.cause });
+    super(message);
+    if (options.cause !== undefined) {
+      Object.defineProperty(this, 'cause', {
+        configurable: true,
+        value: options.cause,
+      });
+    }
     this.name = 'ProcessResultAttachError';
     this.code = options.code;
     this.processId = options.processId;
@@ -334,9 +340,11 @@ function normalizeKind(kind: unknown): ProcessResultAttachInputKind {
   });
 }
 
-export function assertNoTimelinePlacementMutation(value: Record<string, unknown>): void {
+export function assertNoTimelinePlacementMutation(value: unknown): void {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return;
+  const record = value as Record<string, unknown>;
   for (const field of FORBIDDEN_TIMELINE_MUTATION_FIELDS) {
-    if (!(field in value) || value[field] === undefined) continue;
+    if (!(field in record) || record[field] === undefined) continue;
     throw new ProcessResultAttachError(
       `Process result attach does not accept direct timeline placement mutation via "${field}".`,
       { code: 'timeline-mutation-forbidden' },
@@ -347,7 +355,7 @@ export function assertNoTimelinePlacementMutation(value: Record<string, unknown>
 export function createProcessResultAttachRecord(
   options: CreateProcessResultAttachRecordOptions,
 ): ProcessResultAttachRecord {
-  assertNoTimelinePlacementMutation(options as Record<string, unknown>);
+  assertNoTimelinePlacementMutation(options);
 
   const kind = normalizeKind(options.kind);
   const descriptor = options.processDescriptor;

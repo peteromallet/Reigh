@@ -72,6 +72,12 @@ export interface ContributionInventoryEntry {
   readonly diagnostics: readonly Diagnostic[];
 }
 
+function readOptionalContributionString(value: unknown, key: 'label' | 'slot'): string | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const candidate = (value as Record<string, unknown>)[key];
+  return typeof candidate === 'string' ? candidate : undefined;
+}
+
 /** A single extension entry in the inventory. */
 export interface ExtensionInventoryEntry {
   readonly extensionId: string;
@@ -289,10 +295,10 @@ export function useExtensionStatusInventory(): ExtensionStatusInventory {
         return {
           contributionId: contribId,
           kind: contrib.kind,
-          label: contrib.label,
+          label: readOptionalContributionString(contrib, 'label'),
           status,
           milestone: inactiveEntry?.milestone,
-          slot: contrib.slot,
+          slot: readOptionalContributionString(contrib, 'slot'),
           diagnostics: Object.freeze(contribDiags),
         };
       });

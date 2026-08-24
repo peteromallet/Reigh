@@ -343,7 +343,11 @@ const asComparableArray = (
   if (Array.isArray(value)) {
     return value;
   }
-  return value === undefined ? [] : [value];
+  return value === undefined
+    ? []
+    : typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+      ? [value]
+      : [];
 };
 
 const inferSelectionCardinality = (
@@ -388,15 +392,14 @@ export const inferLegacyClipType = (
 export const getClipAssetMediaType = (
   clip: Pick<ResolvedTimelineClip, 'assetEntry'> | Pick<TimelineClip, 'asset'> | null | undefined,
 ): ClipAssetMediaType => {
-  const assetEntryValue = 'assetEntry' in (clip ?? {}) ? clip?.assetEntry : undefined;
-  if (assetEntryValue?.type) {
-    return inferAssetMediaTypeFromString(assetEntryValue.type);
+  if (clip && 'assetEntry' in clip) {
+    const assetEntry = clip.assetEntry;
+    if (assetEntry?.type) return inferAssetMediaTypeFromString(assetEntry.type);
+    if (assetEntry?.file) return inferAssetMediaTypeFromString(assetEntry.file);
+    if (assetEntry?.src) return inferAssetMediaTypeFromString(assetEntry.src);
   }
-  if (assetEntryValue?.file) {
-    return inferAssetMediaTypeFromString(assetEntryValue.file);
-  }
-  if (assetEntryValue?.src) {
-    return inferAssetMediaTypeFromString(assetEntryValue.src);
+  if (clip && 'asset' in clip && typeof clip.asset === 'string') {
+    return inferAssetMediaTypeFromString(clip.asset);
   }
   return 'unknown';
 };

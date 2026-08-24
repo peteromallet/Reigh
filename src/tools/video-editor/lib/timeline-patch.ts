@@ -1241,7 +1241,7 @@ export function compileTimelinePatch(
           if (mode === 'replace') {
             // In replace mode, wipe meta and rebuild from current clip state
             for (const k of Object.keys(existingMeta)) {
-              delete existingMeta[k];
+              Reflect.deleteProperty(existingMeta, k);
             }
           }
           for (const [key, value] of Object.entries(payload)) {
@@ -2117,7 +2117,7 @@ export function previewTimelinePatchGraphDiagnostics(
       message: diag.message,
       detail: {
         kind: 'composition-graph' as const,
-        ...(diag as Record<string, unknown>),
+        ...Object.fromEntries(Object.entries(diag)),
       },
     })) as TimelinePatchDiagnostic[],
   );

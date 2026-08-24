@@ -88,6 +88,7 @@ const normalizeCommand = (
 
   const errors: TimelineCommandValidationError[] = [];
   const type = input.type;
+  const normalizedType = typeof type === 'string' ? type.trim() : '';
   if (typeof type !== 'string' || type.trim().length === 0) {
     errors.push({
       path: `$.commands[${commandIndex}].type`,
@@ -128,7 +129,7 @@ const normalizeCommand = (
 
   return {
     command: {
-      type: type.trim(),
+      type: normalizedType,
       payload: payload ?? {},
       ...(typeof input.commandId === 'string' ? { commandId: input.commandId } : {}),
       ...(input.metadata !== undefined ? { metadata: input.metadata as JsonObject } : {}),
@@ -312,6 +313,12 @@ export const createTimelineCommandRegistry = <
 
   return registry;
 };
+
+function isTimelineCommandRegistry<TCommand extends TimelineCommand>(
+  value: TimelineCommandRegistry<TCommand> | readonly TimelineCommandDescriptor<TCommand>[],
+): value is TimelineCommandRegistry<TCommand> {
+  return value instanceof Map;
+}
 
 type RunTimelineCommandInternalArgs<TCommand extends TimelineCommand = TimelineCommand> = {
   data: TimelineData;
@@ -585,7 +592,7 @@ export const createTimelineCommandRunner = <
 >(
   registryInput: TimelineCommandRegistry<TCommand> | readonly TimelineCommandDescriptor<TCommand>[],
 ): TimelineCommandRunner<TCommand> => {
-  const registry = registryInput instanceof Map
+  const registry = isTimelineCommandRegistry(registryInput)
     ? registryInput
     : createTimelineCommandRegistry(registryInput);
 

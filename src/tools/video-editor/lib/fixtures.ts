@@ -22,14 +22,12 @@ const EMBED_DEMO_REGISTRY: AssetRegistry = {
   assets: {
     'demo-hero': {
       file: 'example-image1.jpg',
-      src: '/example-image1.jpg',
       type: 'image/jpeg',
       duration: 4,
       generationId: 'gen-demo-hero',
     },
     'demo-detail': {
       file: 'example-image2.jpg',
-      src: '/example-image2.jpg',
       type: 'image/jpeg',
       duration: 4,
       generationId: 'gen-demo-detail',
