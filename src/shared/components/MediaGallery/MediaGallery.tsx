@@ -27,7 +27,9 @@ import { useMediaGalleryViewInteractions } from '@/shared/components/MediaGaller
 import type {
   MediaGalleryProps,
   GalleryConfig,
+  NavigableShot,
 } from '@/shared/components/MediaGallery/types';
+import type { GenerationMetadata } from '@/domains/generation/types';
 import { DEFAULT_GALLERY_CONFIG } from '@/shared/components/MediaGallery/types';
 import { getGenerationId } from '@/shared/lib/media/mediaTypeHelpers';
 import { GRID_COLUMN_CLASSES, calculateGalleryLayout } from '@/shared/components/MediaGallery/utils';
@@ -145,6 +147,15 @@ const MediaGallery: React.FC<MediaGalleryProps> = React.memo((props) => {
     isMobile,
   });
   const { navigateToShot } = useShotNavigation();
+  const navigateToGalleryShot = useCallback((shot: NavigableShot) => {
+    const fullShot = allShots.find((candidate) => candidate.id === shot.id);
+    if (fullShot) {
+      navigateToShot(fullShot);
+    }
+  }, [allShots, navigateToShot]);
+  const handleApplySettingsForLightbox = useCallback((metadata: GenerationMetadata | null | undefined) => {
+    onApplySettings?.(metadata ?? undefined);
+  }, [onApplySettings]);
   const {
     effectiveColumnsPerRow,
     actualItemsPerPage,
@@ -317,9 +328,9 @@ const MediaGallery: React.FC<MediaGalleryProps> = React.memo((props) => {
   } = useMediaGalleryViewInteractions({
     allShots,
     simplifiedShotOptions,
-    navigateToShot,
+    navigateToShot: navigateToGalleryShot,
     actionsHook,
-    formAssociatedShotId,
+    formAssociatedShotId: formAssociatedShotId ?? undefined,
     onSwitchToAssociatedShot,
     filtersHook,
     stateHook,
@@ -336,7 +347,7 @@ const MediaGallery: React.FC<MediaGalleryProps> = React.memo((props) => {
     enableSingleClick,
     videosAsThumbnails,
     onToggleStar,
-    onApplySettings,
+    onApplySettings: handleApplySettingsForLightbox,
     onImageClick,
     onContextMenu,
     isDeleting,
@@ -354,7 +365,7 @@ const MediaGallery: React.FC<MediaGalleryProps> = React.memo((props) => {
     handlePreviousImage,
     handleSetActiveLightboxIndex,
     lightboxDeletingId,
-    onApplySettings,
+    onApplySettings: handleApplySettingsForLightbox,
     simplifiedShotOptions,
     onAddToLastShot,
     onAddToLastShotWithoutPosition,

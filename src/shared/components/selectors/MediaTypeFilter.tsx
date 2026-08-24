@@ -37,7 +37,7 @@ const MediaTypeFilterComponent: React.FC<MediaTypeFilterProps> = ({
     <Select
       value={value}
       onValueChange={(val) => {
-        if (val) {
+        if (val === 'all' || val === 'image' || val === 'video') {
           onChange?.(val);
         }
       }}

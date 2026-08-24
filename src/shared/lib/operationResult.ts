@@ -18,7 +18,7 @@ export interface OperationFailure {
 
 export type OperationResult<T> = OperationSuccess<T> | OperationFailure;
 
-interface OperationFailureLogData {
+interface OperationFailureLogData extends Record<string, unknown> {
   operationMessage: string;
   operationErrorCode: string;
   operationPolicy: OperationFailurePolicy;

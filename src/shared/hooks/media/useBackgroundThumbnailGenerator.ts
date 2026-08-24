@@ -15,8 +15,8 @@ interface UseBackgroundThumbnailGeneratorOptions {
   videos: Array<{
     id: string;
     location?: string | null;
-    url?: string;
-    thumbUrl?: string;
+    url?: string | null;
+    thumbUrl?: string | null;
     isVideo?: boolean;
   }>;
   projectId: string | null;

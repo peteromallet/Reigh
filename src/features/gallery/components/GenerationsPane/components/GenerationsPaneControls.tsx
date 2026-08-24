@@ -4,6 +4,7 @@ import { Button } from '@/shared/components/ui/button';
 import { Checkbox } from '@/shared/components/ui/checkbox';
 import { Label } from '@/shared/components/ui/primitives/label';
 import { ShotFilter } from '@/shared/components/selectors/ShotFilter';
+import { MediaTypeFilter } from '@/shared/components/selectors/MediaTypeFilter';
 import { SHOT_FILTER } from '@/shared/constants/filterConstants';
 import { ChevronLeft, ChevronRight, Search, Star, X } from 'lucide-react';
 import {
@@ -24,8 +25,8 @@ interface GenerationsPaneFiltersModel {
   excludePositioned: ShotFilterProps['excludePositioned'];
   onExcludePositionedChange: NonNullable<ShotFilterProps['onExcludePositionedChange']>;
   isMobile: boolean;
-  shotFilterContentRef: React.RefObject<HTMLDivElement | null>;
-  mediaTypeFilterContentRef: React.RefObject<HTMLDivElement | null>;
+  shotFilterContentRef: React.MutableRefObject<HTMLDivElement>;
+  mediaTypeFilterContentRef: React.RefObject<HTMLDivElement>;
   shotFilterOpen: boolean;
   onShotFilterOpenChange: (open: boolean) => void;
   mediaTypeFilter: MediaTypeFilterProps['value'];
@@ -36,7 +37,7 @@ interface GenerationsPaneFiltersModel {
   onSearchTermChange: (value: string) => void;
   isSearchOpen: boolean;
   onSearchOpenChange: (open: boolean) => void;
-  searchInputRef: React.RefObject<HTMLInputElement | null>;
+  searchInputRef: React.MutableRefObject<HTMLInputElement>;
   starredOnly: boolean;
   onStarredOnlyChange: (value: boolean) => void;
   currentShotId: string | null;
@@ -66,6 +67,7 @@ export function GenerationsPaneControls({
   interaction,
 }: GenerationsPaneControlsProps): React.ReactElement {
   const totalPages = Math.ceil(pagination.totalCount / pagination.perPage);
+  const currentShotId = filters.currentShotId;
 
   return (
     <div className="px-2 pt-3 pb-2 space-y-2">
@@ -99,8 +101,8 @@ export function GenerationsPaneControls({
             }}
           />
 
-          {filters.currentShotId &&
-            (filters.selectedShotFilter === filters.currentShotId ? (
+          {currentShotId &&
+            (filters.selectedShotFilter === currentShotId ? (
               <Button
                 variant="ghost"
                 size="sm"
@@ -114,7 +116,7 @@ export function GenerationsPaneControls({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => filters.onSelectedShotFilterChange(filters.currentShotId)}
+                onClick={() => filters.onSelectedShotFilterChange(currentShotId)}
                 className="h-7 px-2 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 whitespace-nowrap hidden sm:flex"
               >
                 <ChevronLeft className="h-3 w-3 -mr-0.5" />
@@ -140,7 +142,9 @@ export function GenerationsPaneControls({
               <div className="flex items-center gap-x-1 border rounded-md px-2 py-1 h-7 bg-zinc-800 border-zinc-600">
                 <Search className="h-3.5 w-3.5 text-zinc-400" />
                 <input
-                  ref={filters.searchInputRef}
+                  ref={(node) => {
+                    if (node) filters.searchInputRef.current = node;
+                  }}
                   type="text"
                   placeholder="Search..."
                   value={filters.searchTerm}

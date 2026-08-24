@@ -46,7 +46,9 @@ export const PromptInputRow: React.FC<PromptInputRowProps> = React.memo(({
 
   return (
     <div
-      ref={controller.promptContainerRef}
+      ref={(node) => {
+        if (node) controller.promptContainerRef.current = node;
+      }}
       className={`group pt-2 px-4 pb-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-600 transition-colors ${forceExpanded ? 'mt-0' : ''}`}
     >
       <div className="flex justify-between items-center mb-2">
@@ -115,7 +117,9 @@ export const PromptInputRow: React.FC<PromptInputRowProps> = React.memo(({
       <div>
         {(!controller.isMobile || controller.isEditingFullPrompt) ? (
           <Textarea
-            ref={controller.textareaRef}
+            ref={(node) => {
+              if (node) controller.textareaRef.current = node;
+            }}
             id={`fullPrompt-${promptEntry.id}`}
             value={controller.displayText}
             onChange={controller.handleFullPromptChange}
@@ -135,7 +139,7 @@ export const PromptInputRow: React.FC<PromptInputRowProps> = React.memo(({
           <div
             onTouchStart={controller.handleTouchStart}
             onPointerDown={controller.handlePointerDown}
-            onClick={controller.handleClick}
+            onClick={controller.handlePromptRowClick}
             className={`mt-1 resize-none border border-input bg-background px-3 py-2 text-base lg:text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${rowHeightClasses} rounded-md`}
             style={{
               whiteSpace: 'pre-wrap',

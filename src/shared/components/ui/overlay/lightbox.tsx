@@ -25,7 +25,7 @@ const LightboxDialog = ({
   modal = true,
   ...props
 }: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Root>) => (
-  <LightboxDialogModalContext.Provider value={modal}>
+  <LightboxDialogModalContext.Provider value={modal !== false}>
     <DialogPrimitive.Root modal={modal} {...props} />
   </LightboxDialogModalContext.Provider>
 );
@@ -35,7 +35,7 @@ const LightboxDialogPortal = ({
   ...props
 }: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Portal>) => {
   const modal = React.useContext(LightboxDialogModalContext);
-  const bridge = useOverlayBridge({ type: 'lightbox', modal });
+  const bridge = useOverlayBridge({ type: 'lightbox', modal: modal ?? true });
   const layer = useOverlayLayer(bridge.handle.id);
   const contextValue = React.useMemo(
     () => ({ layer, registerElement: bridge.registerElement }),
@@ -66,7 +66,12 @@ const LightboxDialogBackdrop = React.forwardRef<
   return (
     <DialogPrimitive.Backdrop
       ref={backdropRef}
-      style={getOverlayLayerStyle(layer, 'backdrop', style, { baseZIndex: LIGHTBOX_BASE_Z_INDEX })}
+      style={(state) => getOverlayLayerStyle(
+        layer,
+        'backdrop',
+        typeof style === 'function' ? style(state) : style,
+        { baseZIndex: LIGHTBOX_BASE_Z_INDEX },
+      )}
       {...props}
     />
   );
@@ -86,7 +91,12 @@ const LightboxDialogPopup = React.forwardRef<
   return (
     <DialogPrimitive.Popup
       ref={popupRef}
-      style={getOverlayLayerStyle(layer, 'popup', style, { baseZIndex: LIGHTBOX_BASE_Z_INDEX })}
+      style={(state) => getOverlayLayerStyle(
+        layer,
+        'popup',
+        typeof style === 'function' ? style(state) : style,
+        { baseZIndex: LIGHTBOX_BASE_Z_INDEX },
+      )}
       {...props}
     />
   );

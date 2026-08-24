@@ -15,8 +15,8 @@ interface PromptInputRowController {
   handleVoiceResult: (result: { prompt?: string; transcription?: string }) => void;
   isEditingFullPrompt: boolean;
   isMobile: boolean;
-  promptContainerRef: React.RefObject<HTMLDivElement | null>;
-  textareaRef: React.RefObject<HTMLTextAreaElement | null>;
+  promptContainerRef: React.MutableRefObject<HTMLDivElement>;
+  textareaRef: React.MutableRefObject<HTMLTextAreaElement>;
   clearPrompt: () => void;
 }
 
@@ -38,8 +38,8 @@ export const usePromptInputRowController = ({
   | 'onUpdate'
   | 'promptEntry'
 >): PromptInputRowController => {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const promptContainerRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null!);
+  const promptContainerRef = useRef<HTMLDivElement>(null!);
   const [isEditingFullPrompt, setIsEditingFullPrompt] = useState(false);
   const [localFullPrompt, setLocalFullPrompt] = useState(promptEntry.fullPrompt);
   const isMobile = useIsMobile();

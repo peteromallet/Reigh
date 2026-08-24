@@ -118,9 +118,9 @@ const useGenerationFilters = ({
   const [mediaTypeFilterOpen, setMediaTypeFilterOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
 
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  const shotFilterContentRef = useRef<HTMLDivElement>(null);
-  const mediaTypeContentRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null!);
+  const shotFilterContentRef = useRef<HTMLDivElement>(null!);
+  const mediaTypeContentRef = useRef<HTMLDivElement>(null!);
 
   const generationFilters = useStableObject(() => ({
     mediaType: mediaTypeFilter,
@@ -177,8 +177,8 @@ interface PaneLifecycleParams {
   setIsGenerationsPaneLocked: BooleanStateSetter;
   setIsGenerationsPaneOpen: BooleanStateSetter;
   isOnImageGenerationPage: boolean;
-  shotFilterContentRef: RefObject<HTMLDivElement | null>;
-  mediaTypeContentRef: RefObject<HTMLDivElement | null>;
+  shotFilterContentRef: RefObject<HTMLDivElement>;
+  mediaTypeContentRef: RefObject<HTMLDivElement>;
   setShotFilterOpen: BooleanStateSetter;
   setMediaTypeFilterOpen: BooleanStateSetter;
 }
