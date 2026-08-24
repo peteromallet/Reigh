@@ -7,6 +7,9 @@ import {
   PREVIEW_ALLOWED_HOSTS,
   resolveVitePort,
 } from "./policy";
+import { createRemoteFontModePlugin } from "./remoteFonts";
+
+export { createRemoteFontModePlugin, stripRemoteFontLinks } from "./remoteFonts";
 
 const logger = createLogger();
 const originalWarn = logger.warn.bind(logger);
@@ -17,6 +20,7 @@ logger.warn = (msg, options) => {
 
 export default defineConfig(() => {
   const port = resolveVitePort(process.env.PORT);
+  const disableRemoteFonts = process.env.VITE_DISABLE_REMOTE_FONTS === "1";
   const astridBridgePort = process.env.VITE_ASTRID_BRIDGE_PORT ?? "17333";
   const astridBridgeTokenFile = process.env.ASTRID_REQUEST_TOKEN_FILE
     ?? "/tmp/astrid-real-bridge.token";
@@ -93,6 +97,7 @@ export default defineConfig(() => {
       allowedHosts: [...PREVIEW_ALLOWED_HOSTS],
     },
     plugins: [
+      createRemoteFontModePlugin(disableRemoteFonts),
       react(),
     ].filter(Boolean),
     resolve: {
