@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "release": "extension-ship-quality-rc3",
-  "status": "integration",
+  "status": "frozen",
   "candidate": {
-    "reighCommit": null,
+    "reighCommit": "19bdde3ceff5e62041e705e9172c6dc73db1b739",
     "astridCommit": "86153eefc14aa995402927df0c7bb178f48f8ead"
   },
   "workstreams": [
