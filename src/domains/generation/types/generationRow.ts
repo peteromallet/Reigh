@@ -8,6 +8,8 @@ import type { PersistedGenerationParams } from './generationParams';
  */
 export interface PersistedGenerationRow {
   id: string;
+  /** Stable shot_generations identifier when the transport's id is a generation id. */
+  shot_generation_id?: string | null;
   generation_id?: string;
   variant_fetch_generation_id?: string | null;
   location?: string | null;

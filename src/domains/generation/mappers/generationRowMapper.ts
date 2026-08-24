@@ -27,6 +27,10 @@ export function coerceGenerationRowDto(
 
   return {
     id: record.id,
+    ...(asNullableString(record.shot_generation_id) !== undefined ? { shot_generation_id: asNullableString(record.shot_generation_id) } : {}),
+    ...(asNullableString(record.shotImageEntryId) !== undefined && asNullableString(record.shot_generation_id) === undefined
+      ? { shot_generation_id: asNullableString(record.shotImageEntryId) }
+      : {}),
     ...(typeof record.generation_id === 'string' ? { generation_id: record.generation_id } : {}),
     ...(asNullableString(record.location) !== undefined ? { location: asNullableString(record.location) } : {}),
     ...(asNullableString(record.thumbnail_url) !== undefined ? { thumbnail_url: asNullableString(record.thumbnail_url) } : {}),
@@ -53,6 +57,7 @@ export function mapGenerationRowDtoToRow(
 ): GenerationRow {
   return {
     id: dto.id,
+    shot_generation_id: dto.shot_generation_id ?? dto.shotImageEntryId ?? null,
     generation_id: dto.generation_id,
     location: dto.location ?? null,
     imageUrl: dto.location ?? undefined,

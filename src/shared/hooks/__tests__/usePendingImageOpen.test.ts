@@ -7,9 +7,9 @@ describe('usePendingImageOpen', () => {
   const mockOpenLightbox = vi.fn();
   const mockOnClear = vi.fn();
   const mockImages = [
-    { id: 'img-1', generation_id: 'gen-1', shotImageEntryId: 'entry-1' },
-    { id: 'img-2', generation_id: 'gen-2', shotImageEntryId: 'entry-2' },
-    { id: 'img-3', generation_id: 'gen-3', shotImageEntryId: 'entry-3' },
+    { id: 'img-1', generation_id: 'gen-1', shot_generation_id: 'entry-1' },
+    { id: 'img-2', generation_id: 'gen-2', shot_generation_id: 'entry-2' },
+    { id: 'img-3', generation_id: 'gen-3', shot_generation_id: 'entry-3' },
   ] as unknown as GenerationRow[];
 
   beforeEach(() => {
@@ -83,7 +83,7 @@ describe('usePendingImageOpen', () => {
     expect(mockOpenLightbox).toHaveBeenCalledWith(2);
   });
 
-  it('opens lightbox when matching by shotImageEntryId', () => {
+  it('opens lightbox when matching by normalized shot_generation_id', () => {
     renderHook(() =>
       usePendingImageOpen({
         pendingImageToOpen: 'entry-1',
