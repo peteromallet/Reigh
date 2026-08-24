@@ -71,6 +71,12 @@ export interface StandardSchema {
 /** Union of schema formats accepted by SchemaForm. */
 export type SchemaFormSchema = ParameterSchema | StandardSchema | ShaderUniformSchema;
 
+type SchemaArray = ParameterSchema | ShaderUniformSchema;
+
+function isSchemaArray(schema: SchemaFormSchema): schema is SchemaArray {
+  return Array.isArray(schema);
+}
+
 /** Props for SchemaForm.  Mirrors ParameterControlsProps + extensions. */
 export interface SchemaFormProps {
   /** Parameter schema (array) or minimal StandardSchema object. */
@@ -375,11 +381,14 @@ function normalizeSchema(
   schema: SchemaFormSchema,
   registry: SchemaCapabilityRegistry,
 ): NormalizedField[] {
-  if (Array.isArray(schema)) {
+  if (isSchemaArray(schema)) {
     // ParameterSchema / ShaderUniformSchema — arrays of field definitions
     return schema.map((param) => {
       const capability = registry.resolve(param.type);
       const type = param.type;
+      const minLength = 'minLength' in param ? param.minLength : undefined;
+      const maxLength = 'maxLength' in param ? param.maxLength : undefined;
+      const pattern = 'pattern' in param ? param.pattern : undefined;
       const isShader = (
         type === 'float'
         || type === 'int'
@@ -404,9 +413,9 @@ function normalizeSchema(
         step: param.step,
         options: param.options ? Array.from(param.options) : undefined,
         isRequired: true,
-        minLength: param.minLength,
-        maxLength: param.maxLength,
-        pattern: param.pattern,
+        minLength,
+        maxLength,
+        pattern,
         _source: isShader ? 'shader' as const : 'parameter' as const,
         _capability: capability,
       };
