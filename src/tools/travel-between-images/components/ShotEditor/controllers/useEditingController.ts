@@ -72,7 +72,7 @@ export function useEditingController({
     setStructureVideos,
     updateStructureGuidanceControls,
   } = useStructureVideo({
-    projectId: core.projectId,
+    projectId: core.projectId ?? '',
     shotId: core.selectedShot?.id,
     selectedModel: generationType.selectedModel,
   });
@@ -100,7 +100,7 @@ export function useEditingController({
     handleAudioChange,
     isLoading: isAudioSettingsLoading,
   } = useAudio({
-    projectId: core.projectId,
+    projectId: core.projectId ?? '',
     shotId: core.selectedShot?.id,
   });
 
@@ -111,7 +111,7 @@ export function useEditingController({
     handleNameCancel,
     handleNameKeyDown,
   } = useNameEditing({
-    selectedShot: core.selectedShot,
+    selectedShot: core.selectedShot ?? undefined,
     state: nameEditing.state,
     actions: {
       ...nameEditing.actions,
@@ -124,7 +124,7 @@ export function useEditingController({
   // Join segments setup
   const joinSetup = useJoinSegmentsSetup({
     selectedShotId: core.selectedShotId,
-    projectId: core.projectId,
+    projectId: core.projectId ?? '',
     swapButtonRef: core.swapButtonRef,
   });
 
@@ -141,8 +141,8 @@ export function useEditingController({
     handleJoinSegments,
     handleRestoreJoinDefaults,
   } = useJoinSegmentsHandler({
-    projectId: core.projectId,
-    selectedProjectId: core.selectedProjectId,
+    projectId: core.projectId ?? undefined,
+    selectedProjectId: core.selectedProjectId ?? undefined,
     selectedShotId: core.selectedShotId,
     effectiveAspectRatio: core.effectiveAspectRatio,
     audioUrl,

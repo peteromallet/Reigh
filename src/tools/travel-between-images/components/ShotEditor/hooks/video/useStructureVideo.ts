@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef } from 'react';
 import { useAutoSaveSettings } from '@/shared/settings/hooks/useAutoSaveSettings';
-import type { VideoMetadata } from '@/shared/lib/media/videoUploader';
+import type { AuthoredVideoMetadata } from '@/shared/lib/media/videoUploader';
 import {
   DEFAULT_STRUCTURE_GUIDANCE_CONTROLS,
   DEFAULT_STRUCTURE_VIDEO,
@@ -60,7 +60,7 @@ export interface UseStructureVideoReturn {
 
   // Primary video accessors (derived from structureVideos[0])
   structureVideoPath: string | null;
-  structureVideoMetadata: VideoMetadata | null;
+  structureVideoMetadata: AuthoredVideoMetadata | null;
   structureVideoTreatment: 'adjust' | 'clip';
   structureVideoMotionStrength: number;
   structureVideoType: 'uni3c' | 'flow' | 'canny' | 'depth' | 'raw' | 'pose' | 'video' | 'cameraman';
@@ -96,12 +96,18 @@ function parseTreatment(value: unknown): 'adjust' | 'clip' | undefined {
   return value === 'adjust' || value === 'clip' ? value : undefined;
 }
 
+function isStructureVideoConfig(
+  video: StructureVideoConfigWithMetadata | null,
+): video is StructureVideoConfigWithMetadata {
+  return video !== null;
+}
+
 function sanitizeEditableStructureVideos(
   videos: StructureVideoConfigWithMetadata[],
   defaultEndFrame: number,
 ): StructureVideoConfigWithMetadata[] {
   return videos
-    .map((video) => {
+    .map((video): StructureVideoConfigWithMetadata | null => {
       const path = parseString(video.path);
       if (!path) {
         return null;
@@ -120,9 +126,9 @@ function sanitizeEditableStructureVideos(
           : {}),
         metadata: video.metadata ?? null,
         resource_id: video.resource_id ?? null,
-      } satisfies StructureVideoConfigWithMetadata;
+      };
     })
-    .filter((video): video is StructureVideoConfigWithMetadata => video !== null);
+    .filter(isStructureVideoConfig);
 }
 
 /**
@@ -231,7 +237,7 @@ export function useStructureVideo({
         acc[model] = {
           mode: controls.mode,
           motionStrength: controls.strength,
-          treatment: firstStructureVideo.treatment,
+          treatment: firstStructureVideo.treatment ?? DEFAULT_STRUCTURE_VIDEO.treatment,
           uni3cEndPercent: controls.uni3cEndPercent,
           cannyIntensity: controls.cannyIntensity,
           depthContrast: controls.depthContrast,

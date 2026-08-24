@@ -2,6 +2,11 @@ import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
 import { buildTaskPayloadSnapshot } from '@/shared/lib/tasks/taskPayloadSnapshot';
 import { buildTravelStructureSource, readResolvedTravelStructure } from '@/shared/lib/tasks/travelContractData';
 import {
+  DEFAULT_STRUCTURE_GUIDANCE_CONTROLS,
+  DEFAULT_STRUCTURE_VIDEO,
+  resolveTravelStructureState,
+} from '@/shared/lib/tasks/travelBetweenImages';
+import {
   collectTravelStructureLegacyUsage,
   enforceTravelStructureLegacyPolicy,
 } from '@/shared/lib/tasks/travelBetweenImages/legacyStructureVideo';
@@ -12,6 +17,16 @@ import type {
   FetchTaskResult,
   TaskData,
 } from './types';
+
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function asStringArray(value: unknown): string[] | undefined {
+  return Array.isArray(value) && value.every((entry) => typeof entry === 'string')
+    ? value
+    : undefined;
+}
 
 export const fetchTask = async (taskId: string): Promise<FetchTaskResult> => {
   try {
@@ -61,17 +76,29 @@ function extractStructureSettings(taskData: TaskData): ExtractedStructureVideoSe
   );
 
   const resolvedStructure = readResolvedTravelStructure(snapshot);
+  const canonicalStructure = resolveTravelStructureState({
+    structure_guidance: resolvedStructure.structureGuidance,
+    structure_videos: resolvedStructure.structureVideos,
+  }, {
+    defaultEndFrame: 0,
+    defaultVideoTreatment: DEFAULT_STRUCTURE_VIDEO.treatment,
+    defaultMotionStrength: DEFAULT_STRUCTURE_GUIDANCE_CONTROLS.motionStrength,
+    defaultStructureType: DEFAULT_STRUCTURE_GUIDANCE_CONTROLS.structureType,
+    defaultUni3cEndPercent: DEFAULT_STRUCTURE_GUIDANCE_CONTROLS.uni3cEndPercent,
+  });
+
+  const structureGuidance = canonicalStructure.structureGuidance;
 
   return {
     presentInTask:
       resolvedStructure.present
       || legacyUsage.topLevelFields.length > 0
       || legacyUsage.structureVideoFields.length > 0,
-    ...(resolvedStructure.structureGuidance
-      ? { structureGuidance: resolvedStructure.structureGuidance }
+    ...(structureGuidance
+      ? { structureGuidance }
       : {}),
-    ...(resolvedStructure.structureVideos.length > 0
-      ? { structureVideos: resolvedStructure.structureVideos }
+    ...(canonicalStructure.structureVideos.length > 0
+      ? { structureVideos: canonicalStructure.structureVideos }
       : {}),
   };
 }
@@ -93,16 +120,20 @@ export const extractSettings = (taskData: TaskData): ExtractedSettings => {
       && legacyFrameOverlap > 0
     );
 
+  const expandedPrompts = asStringArray(orchestrator.base_prompts_expanded);
+  const basePrompt = asString(orchestrator.base_prompt);
+  const paramsPrompt = asString(params.prompt);
+
   // Extract all settings with fallbacks
   return {
     prompts: {
       prompt: (
-        (orchestrator.base_prompts_expanded?.[0] && orchestrator.base_prompts_expanded[0].trim()) ||
-        (orchestrator.base_prompt && orchestrator.base_prompt.trim()) ||
-        (params.prompt && params.prompt.trim()) ||
+        (expandedPrompts?.[0] && expandedPrompts[0].trim()) ||
+        (basePrompt && basePrompt.trim()) ||
+        (paramsPrompt && paramsPrompt.trim()) ||
         undefined
       ),
-      prompts: orchestrator.base_prompts_expanded as string[] | undefined,
+      prompts: expandedPrompts,
       negativePrompt: (orchestrator.negative_prompts_expanded as string[] | undefined)?.[0] ?? (params.negative_prompt as string | undefined),
       negativePrompts: orchestrator.negative_prompts_expanded as string[] | undefined,
     },
