@@ -187,5 +187,6 @@ describe('AstridBridgeDataProvider compatibility (mocked)', () => {
     timelineId: '11111111-1111-1111-1111-111111111111',
     skipRegisterAsset: false,
     skipMissingTimelineTests: true,
+    derivedOutputOnSave: true,
   });
 });

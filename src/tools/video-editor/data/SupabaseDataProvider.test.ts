@@ -62,7 +62,16 @@ describe('SupabaseDataProvider Phase C compatibility wrapper', () => {
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
       '/api/astrid/projects/demo/timelines/tl-1/save',
-      expect.objectContaining({ method: 'POST', body: JSON.stringify({ config, registry, expected_version: 3 }) }),
+      expect.objectContaining({
+        method: 'POST',
+        // Astrid persists the authored source lane only. Render output is
+        // host-derived and is re-materialized from defaults on load.
+        body: JSON.stringify({
+          config: { tracks: config.tracks, clips: config.clips },
+          registry,
+          expected_version: 3,
+        }),
+      }),
     );
   });
 

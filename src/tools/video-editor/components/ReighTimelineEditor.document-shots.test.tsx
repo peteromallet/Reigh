@@ -63,6 +63,9 @@ vi.mock('@/tools/video-editor/hooks/timelineStore.ts', () => ({
     registerGenerationAsset: vi.fn(),
     reloadFromServer: mocks.reloadFromServer,
   }),
+  useTimelineChromeSelector: (selector: (value: unknown) => unknown) => selector({
+    reloadFromServer: mocks.reloadFromServer,
+  }),
 }));
 vi.mock('@/tools/video-editor/hooks/usePinnedShotGroups.ts', () => ({
   usePinnedShotGroups: () => ({ pinGroup: vi.fn(), unpinGroup: vi.fn() }),

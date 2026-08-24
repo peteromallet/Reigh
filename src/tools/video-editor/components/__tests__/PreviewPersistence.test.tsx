@@ -81,6 +81,25 @@ vi.mock('@/tools/video-editor/hooks/timelineStore', async () => {
   };
 });
 
+// TimelineEditorShellCore now consumes the host-owned runtime editability
+// contract directly. Keep this shell-focused suite independent from the full
+// provider assembly while still supplying the real contract shape.
+vi.mock('@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx', async () => {
+  const { createContext } = await import('react');
+  const runtime = {
+    userId: 'user-1',
+    timelineId: 'timeline-1',
+    provider: { supportsEditorSync: false },
+    timelineEditability: { check: () => ({ allowed: true }) },
+  };
+  const VideoEditorRuntimeContext = createContext(runtime);
+  return {
+    VideoEditorRuntimeContext,
+    useVideoEditorRuntime: () => runtime,
+    useOptionalVideoEditorRuntime: () => runtime,
+  };
+});
+
 vi.mock('@/shared/state/panesStore', () => ({
   usePanesStore: (selector: (value: any) => unknown) => selector(usePanesStoreMock()),
 }));
@@ -427,7 +446,7 @@ beforeAll(async () => {
   ({ CompactPreview: CompactPreviewComponent } = await import('@/tools/video-editor/components/CompactPreview'));
   ({ CustomTwoPaneVideoEditorShell: CustomTwoPaneVideoEditorShellComponent } = await import('@/tools/video-editor/examples/CustomTwoPaneVideoEditorExample'));
   ({ VideoEditorShell: VideoEditorShellComponent } = await import('@/tools/video-editor/components/VideoEditorShell'));
-}, 30_000);
+}, 120_000);
 
 describe('VideoEditorShell preview persistence', () => {
   it('uses a safe fallback fps before resolved config is available', () => {

@@ -206,6 +206,20 @@ vi.mock('@/tools/video-editor/runtime/useVideoEditorRenderContext.ts', () => ({
   }),
   useVideoEditorInspectorSections: () => [],
 }));
+vi.mock('@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx', async () => {
+  const { createContext } = await import('react');
+  const runtime = {
+    userId: 'user-1',
+    timelineId: 'test-timeline',
+    timelineEditability: { check: () => ({ allowed: true }) },
+  };
+  const VideoEditorRuntimeContext = createContext(runtime);
+  return {
+    VideoEditorRuntimeContext,
+    useVideoEditorRuntime: () => runtime,
+    useOptionalVideoEditorRuntime: () => runtime,
+  };
+});
 vi.mock('@/tools/video-editor/components/PreviewPanel/PreviewPanel.tsx', () => ({
   PreviewPanel: () => <div data-testid="preview-panel">Preview</div>,
   default: () => <div data-testid="preview-panel">Preview</div>,

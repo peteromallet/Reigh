@@ -91,6 +91,12 @@ export function runProviderCompatibilitySuite(
     timelineId?: string;
     /** If true, provider doesn't support registerAsset. */
     skipRegisterAsset?: boolean;
+    /**
+     * If true, save/load comparisons ignore `config.output`: Astrid treats
+     * render output as host-derived state and intentionally omits it from the
+     * persisted source lane, then re-materializes defaults on load.
+     */
+    derivedOutputOnSave?: boolean;
     /** If true, the provider does not persist data-lane bundles yet (e.g. bridge until V2-B6). */
     skipBundles?: boolean;
     skipMissingTimelineTests?: boolean;
@@ -101,6 +107,7 @@ export function runProviderCompatibilitySuite(
     versionConflictIsSoft = false,
     timelineId: defaultTimelineId = 'compat-test-timeline',
     skipRegisterAsset = false,
+    derivedOutputOnSave = false,
     skipMissingTimelineTests = false, // legacy alias removed; see skipBundles
     skipBundles = false,
   } = options;
@@ -135,6 +142,12 @@ export function runProviderCompatibilitySuite(
       type: 'image/png',
     },
   });
+
+  const persistedConfigForAssertion = (config: TimelineConfig): Partial<TimelineConfig> => {
+    if (!derivedOutputOnSave) return config;
+    const { output: _derivedOutput, ...persistedConfig } = config;
+    return persistedConfig;
+  };
 
   // ── Versioned load/save ────────────────────────────────────────────────────
 
@@ -393,7 +406,7 @@ export function runProviderCompatibilitySuite(
       // Use toMatchObject (subset) rather than toEqual (deep equality)
       // because some providers add normalization fields (e.g. background: null).
       // The provider must at least contain all fields that were saved.
-      expect(loaded.config).toMatchObject(config2);
+      expect(loaded.config).toMatchObject(persistedConfigForAssertion(config2));
     });
 
     it('loaded config preserves clip data after multiple saves', async () => {
@@ -408,7 +421,7 @@ export function runProviderCompatibilitySuite(
 
       const loaded = await provider.loadTimeline(tid);
       expect(loaded.configVersion).toBe(3);
-      expect(loaded.config).toMatchObject(config3);
+      expect(loaded.config).toMatchObject(persistedConfigForAssertion(config3));
       expect((loaded.config as any).clips?.[0]?.id).toBe('clip-2');
     });
 

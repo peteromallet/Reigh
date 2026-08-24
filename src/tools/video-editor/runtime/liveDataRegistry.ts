@@ -278,6 +278,11 @@ export interface LiveDataRegistry extends LiveSessionsService {
    * and mark the registry disposed. Idempotent. Hosts call this on unmount.
    */
   dispose(): void;
+
+  /** Host-owned persisted binding hydration hooks (not an extension mutation surface). */
+  _addBinding(binding: LiveBinding): void;
+  _removeBinding(bindingId: string): boolean;
+  _getBinding(bindingId: string): LiveBinding | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -1352,8 +1357,17 @@ export function createLiveDataRegistry(config: LiveDataRegistryConfig = {}): Liv
 
   // ---- Internal binding management (for use by scanner in T5) --------------
 
-  function _addBinding(binding: InternalBinding): void {
-    bindings.set(binding.bindingId, binding);
+  function _addBinding(binding: LiveBinding): void {
+    bindings.set(binding.bindingId, {
+      bindingId: binding.bindingId,
+      sourceId: binding.sourceId,
+      channelId: binding.channelId,
+      targetClipId: binding.targetClipId,
+      targetEffectId: binding.targetEffectId,
+      targetParamName: binding.targetParamName,
+      status: binding.status,
+      diagnostic: binding.diagnostic,
+    });
     invalidateSnapshot();
     notifyListeners();
   }
@@ -1367,8 +1381,9 @@ export function createLiveDataRegistry(config: LiveDataRegistryConfig = {}): Liv
     return result;
   }
 
-  function _getBinding(bindingId: string): InternalBinding | undefined {
-    return bindings.get(bindingId);
+  function _getBinding(bindingId: string): LiveBinding | undefined {
+    const binding = bindings.get(bindingId);
+    return binding ? { ...binding } : undefined;
   }
 
   // ---- Return the registry ------------------------------------------------
@@ -1419,6 +1434,11 @@ export function createLiveDataRegistry(config: LiveDataRegistryConfig = {}): Liv
 
     // Full dispose
     dispose: registryDispose,
+
+    // Host-owned persisted binding hydration hooks.
+    _addBinding,
+    _removeBinding,
+    _getBinding,
   };
 
   return registry;
