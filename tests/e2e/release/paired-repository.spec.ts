@@ -41,6 +41,7 @@ const runawayUrl = `${baseUrl}/api/astrid/v1/projects/${runawayProject}/runaway-
 const editorUrl = `${baseUrl}/tools/video-editor?localProject=${project}&localTimeline=${timeline}&localTest=1&transcriptLaneFixture=1&runawayTimelineProject=${runawayProject}`;
 
 type TimelineConfig = {
+  app?: Record<string, Record<string, unknown>>;
   clips?: Array<{
     id?: string;
     at?: number;
@@ -128,6 +129,99 @@ function captionCount(config: TimelineConfig): number {
   return config.clips?.filter((clip) => clip.id?.startsWith('transcript-caption-')).length ?? 0;
 }
 
+type ExtensionProbe = {
+  id: string;
+  commandId?: string;
+  projectDataKey?: string;
+  contribution: 'command' | 'transcript-lane' | 'runaway-lane';
+};
+
+/**
+ * This is intentionally a reviewed, explicit inventory rather than a count
+ * assertion. A row can exist while its command, lane, or persisted output is
+ * missing, so each entry below has a real host contribution to exercise.
+ */
+const EXTENSION_PROBES: readonly ExtensionProbe[] = [
+  {
+    id: 'com.reigh.scene-phase-markers',
+    commandId: 'com.reigh.scene-phase-markers.markPhase',
+    projectDataKey: 'sceneMarkers',
+    contribution: 'command',
+  },
+  {
+    id: 'com.reigh.transcript-lane',
+    contribution: 'transcript-lane',
+  },
+  {
+    id: 'com.reigh.astrid-runaway-timeline',
+    contribution: 'runaway-lane',
+  },
+  {
+    id: 'com.reigh.creative-lab.pulse-map',
+    commandId: 'com.reigh.creative-lab.pulse-map.buildPulseMap',
+    projectDataKey: 'pulseMap',
+    contribution: 'command',
+  },
+  {
+    id: 'com.reigh.creative-lab.soundtrack-cartographer',
+    commandId: 'com.reigh.creative-lab.soundtrack-cartographer.buildTerrain',
+    projectDataKey: 'terrainCues',
+    contribution: 'command',
+  },
+  {
+    id: 'com.reigh.creative-lab.caption-safe-zone-orchestra',
+    commandId: 'com.reigh.creative-lab.caption-safe-zone-orchestra.buildFindings',
+    projectDataKey: 'captionSafetyFindings',
+    contribution: 'command',
+  },
+  {
+    id: 'com.reigh.creative-lab.emotional-weather-map',
+    commandId: 'com.reigh.creative-lab.emotional-weather-map.buildWeatherMap',
+    projectDataKey: 'weatherMap',
+    contribution: 'command',
+  },
+  {
+    id: 'com.reigh.creative-lab.timeline-faultline',
+    commandId: 'com.reigh.creative-lab.timeline-faultline.buildFaultline',
+    projectDataKey: 'faultlineFindings',
+    contribution: 'command',
+  },
+  {
+    id: 'com.reigh.creative-lab.foley-constellation',
+    commandId: 'com.reigh.creative-lab.foley-constellation.dropCues',
+    projectDataKey: 'foleyCues',
+    contribution: 'command',
+  },
+  {
+    id: 'com.reigh.creative-lab.branching-cut',
+    commandId: 'com.reigh.creative-lab.branching-cut.buildChoiceGates',
+    projectDataKey: 'choiceGates',
+    contribution: 'command',
+  },
+  {
+    id: 'com.reigh.creative-lab.chromatic-constellation',
+    commandId: 'com.reigh.creative-lab.chromatic-constellation.buildConstellation',
+    projectDataKey: 'constellation',
+    contribution: 'command',
+  },
+  {
+    id: 'com.reigh.creative-lab.recall-pulse',
+    commandId: 'com.reigh.creative-lab.recall-pulse.buildRecallPulse',
+    projectDataKey: 'recallPulses',
+    contribution: 'command',
+  },
+  {
+    id: 'com.reigh.creative-lab.lockline-inspector',
+    commandId: 'com.reigh.creative-lab.lockline-inspector.buildReport',
+    projectDataKey: 'locklineReport',
+    contribution: 'command',
+  },
+];
+
+if (EXTENSION_PROBES.length !== 13) {
+  throw new Error(`paired release extension probe inventory must contain 13 entries, got ${EXTENSION_PROBES.length}`);
+}
+
 async function openEditor(page: Page): Promise<string[]> {
   const issues: string[] = [];
   const consoleWarnings: string[] = [];
@@ -206,28 +300,127 @@ async function openEditor(page: Page): Promise<string[]> {
   return issues;
 }
 
-async function proveAllExtensionLifecycles(page: Page) {
-  await page.getByRole('tab', { name: 'Extensions' }).click();
-  const rows = page.locator('[data-video-editor-dev-local-extension]');
-  await expect(rows).toHaveCount(expectedExtensions);
-  for (let index = 0; index < expectedExtensions; index += 1) {
-    await expect(rows.nth(index)).toContainText('Active');
-  }
+async function openCommandPalette(page: Page) {
+  await page.keyboard.press('Control+Shift+P');
+  const palette = page.locator('[role="dialog"]').last();
+  await expect(palette).toBeVisible({ timeout: 8_000 });
+  return palette;
+}
 
-  // Drive every reviewed extension through its real DEV lifecycle control.
-  // The gate returns each one to enabled immediately so later surface checks
-  // still exercise the complete inventory.
+async function commandPaletteItemCount(page: Page, commandId: string): Promise<number> {
+  return page.locator(`[data-command-palette-item][data-command-id="${commandId}"]`).count();
+}
+
+async function expectCommandAvailability(page: Page, commandId: string, available: boolean) {
+  const palette = await openCommandPalette(page);
+  try {
+    await expect.poll(
+      () => commandPaletteItemCount(page, commandId),
+      { timeout: 15_000, message: `command ${commandId} availability did not become ${available}` },
+    ).toBe(available ? 1 : 0);
+  } finally {
+    await page.keyboard.press('Escape');
+    await expect(palette).toBeHidden({ timeout: 5_000 }).catch(() => undefined);
+  }
+}
+
+async function invokeCommand(page: Page, commandId: string) {
+  const palette = await openCommandPalette(page);
+  const item = palette.locator(`[data-command-palette-item][data-command-id="${commandId}"]`);
+  await expect(item).toHaveCount(1, { timeout: 8_000 });
+  await item.click();
+  await expect(palette).toBeHidden({ timeout: 8_000 });
+}
+
+async function persistedProjectData(
+  request: APIRequestContext,
+  extensionId: string,
+  key: string,
+): Promise<unknown> {
+  const timeline = await readTimeline(request);
+  return timeline.config.app?.[extensionId]?.[key];
+}
+
+async function expectPersistedProjectData(
+  request: APIRequestContext,
+  extensionId: string,
+  key: string,
+) {
+  await expect.poll(
+    () => persistedProjectData(request, extensionId, key),
+    { timeout: 30_000, message: `${extensionId} did not persist app.${key}` },
+  ).not.toBeUndefined();
+}
+
+async function proveAllExtensionLifecycles(page: Page, request: APIRequestContext) {
+  await page.getByRole('tab', { name: 'Extensions' }).click();
+  const inventory = page.getByRole('region', { name: 'Local extensions' });
+  const rows = inventory.locator('[data-video-editor-dev-local-extension]');
+  await expect(rows).toHaveCount(EXTENSION_PROBES.length, { timeout: 15_000 });
+  await expect(expectedExtensions).toBe(EXTENSION_PROBES.length);
+
   const ids = await rows.evaluateAll((elements) => elements.map((element) => (
     element.getAttribute('data-video-editor-dev-local-extension')
   )));
-  expect(new Set(ids).size).toBe(expectedExtensions);
-  for (const id of ids) {
-    expect(id).toBeTruthy();
-    const toggle = page.locator(`[data-video-editor-dev-local-toggle="${id}"]`);
-    await toggle.click();
-    await expect(toggle).toHaveAccessibleName(`Enable ${id}`);
-    await toggle.click();
-    await expect(toggle).toHaveAccessibleName(`Disable ${id}`);
+  expect(new Set(ids).size).toBe(EXTENSION_PROBES.length);
+  expect(ids).toEqual(expect.arrayContaining(EXTENSION_PROBES.map((probe) => probe.id)));
+
+  // First phase performs one safe action per extension. Restart verifies that
+  // the resulting project data is already present before touching the control;
+  // restore intentionally leaves the restored baseline untouched.
+  const executeActions = phase === 'first';
+  for (const probe of EXTENSION_PROBES) {
+    try {
+      const row = inventory.locator(`[data-video-editor-dev-local-extension="${probe.id}"]`);
+      const toggle = inventory.locator(`[data-video-editor-dev-local-toggle="${probe.id}"]`);
+      await expect(row).toContainText('Active', { timeout: 8_000 });
+      await expect(toggle).toHaveAccessibleName(`Disable ${probe.id}`);
+
+      if (probe.contribution === 'command') {
+        await expectCommandAvailability(page, probe.commandId!, true);
+        if (executeActions) {
+          await invokeCommand(page, probe.commandId!);
+          await expectPersistedProjectData(request, probe.id, probe.projectDataKey!);
+        } else if (phase === 'restart') {
+          await expectPersistedProjectData(request, probe.id, probe.projectDataKey!);
+        }
+      } else if (probe.contribution === 'transcript-lane') {
+        await expect(page.locator('[data-lane-kind="reigh.transcript"]')).toBeVisible({ timeout: 15_000 });
+        if (executeActions || phase === 'restart') {
+          await materializeTranscript(page, request);
+        }
+      } else {
+        const chip = page.getByTestId('runaway-transition-chip').first();
+        await expect(chip).toBeVisible({ timeout: 30_000 });
+        // Selection is the lane's meaningful safe action: it opens the real
+        // provenance inspector without mutating the timeline or bridge data.
+        await chip.click();
+        await expect(page.getByTestId('runaway-transition-inspector')).toBeVisible({ timeout: 8_000 });
+      }
+
+      await toggle.click();
+      await expect(toggle).toHaveAccessibleName(`Enable ${probe.id}`, { timeout: 8_000 });
+      if (probe.contribution === 'command') {
+        await expectCommandAvailability(page, probe.commandId!, false);
+      } else if (probe.contribution === 'transcript-lane') {
+        await expect(page.locator('[data-lane-kind="reigh.transcript"]')).toHaveCount(0, { timeout: 15_000 });
+      } else {
+        await expect(page.getByTestId('runaway-transition-chip')).toHaveCount(0, { timeout: 15_000 });
+      }
+
+      await toggle.click();
+      await expect(toggle).toHaveAccessibleName(`Disable ${probe.id}`, { timeout: 8_000 });
+      if (probe.contribution === 'command') {
+        await expectCommandAvailability(page, probe.commandId!, true);
+      } else if (probe.contribution === 'transcript-lane') {
+        await expect(page.locator('[data-lane-kind="reigh.transcript"]')).toBeVisible({ timeout: 15_000 });
+      } else {
+        await expect(page.getByTestId('runaway-transition-chip').first()).toBeVisible({ timeout: 30_000 });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`extension lifecycle failed for ${probe.id}: ${message}`);
+    }
   }
 }
 
@@ -312,7 +505,7 @@ test(`paired repository acceptance phase: ${phase}`, async ({ page, request }) =
   expect(typeof initialAt).toBe('number');
   const runawaySnapshot = await readRunawaySnapshot(request);
   const issues = await openEditor(page);
-  await proveAllExtensionLifecycles(page);
+  await proveAllExtensionLifecycles(page, request);
 
   if (phase === 'first') {
     expect(runawaySnapshot?.count).toBe(expectedRunaway);
