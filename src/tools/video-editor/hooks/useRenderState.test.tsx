@@ -612,12 +612,21 @@ describe('useRenderState render routing', () => {
     const wrapper = ({ children }: { children: ReactNode }) => (
       <VideoEditorRuntimeContext.Provider value={runtimeValue}>{children}</VideoEditorRuntimeContext.Provider>
     );
+    const flushPendingSave = vi.fn(async () => 7);
     const { result, unmount } = renderHook(() => useRenderState(
       buildConfig({ id: 'clip-native', clipType: 'media', track: 'V1', at: 0, hold: 1 }),
       { fps: 30, durationInFrames: 30, compositionWidth: 1920, compositionHeight: 1080 },
+      undefined,
+      undefined,
+      flushPendingSave,
     ), { wrapper });
 
     await act(async () => { await result.current.startRender(); });
+    expect(flushPendingSave).toHaveBeenCalledTimes(1);
+    expect(renderRouterMocks.enqueueBanodocoRenderTimeline).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ expectedVersion: 7, destination: 'download' }),
+    );
     expect(result.current.renderStatus).toBe('rendering');
     expect(result.current.activeRenderTaskId).toBe('render-task-1');
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -650,6 +659,9 @@ describe('useRenderState render routing', () => {
     const { result, unmount } = renderHook(() => useRenderState(
       buildConfig({ id: 'clip-native', clipType: 'media', track: 'V1', at: 0, hold: 1 }),
       null,
+      undefined,
+      undefined,
+      async () => 8,
     ), { wrapper });
 
     await act(async () => { await result.current.startRender(); });
@@ -661,6 +673,31 @@ describe('useRenderState render routing', () => {
 
     unmount();
     vi.unstubAllGlobals();
+  });
+
+  it('does not admit a scoped render when the durable save barrier fails', async () => {
+    const runtimeValue = {
+      project: { projectId: 'demo-project' },
+      timelineId: 'timeline-1',
+      provider: { apiBaseUrl: '/api/astrid' },
+      telemetry: { warn: vi.fn() },
+    } as unknown as VideoEditorRuntimeContextValue;
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <VideoEditorRuntimeContext.Provider value={runtimeValue}>{children}</VideoEditorRuntimeContext.Provider>
+    );
+    const { result } = renderHook(() => useRenderState(
+      buildConfig({ id: 'clip-native', clipType: 'media', track: 'V1', at: 0, hold: 1 }),
+      null,
+      undefined,
+      undefined,
+      async () => { throw new Error('CAS conflict'); },
+    ), { wrapper });
+
+    await act(async () => { await result.current.startRender(); });
+
+    expect(renderRouterMocks.enqueueBanodocoRenderTimeline).not.toHaveBeenCalled();
+    expect(result.current.renderStatus).toBe('error');
+    expect(result.current.renderLog).toContain('CAS conflict');
   });
 });
 

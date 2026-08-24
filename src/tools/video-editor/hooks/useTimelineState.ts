@@ -519,7 +519,13 @@ export function useTimelineState(): UseTimelineStateResult {
     pendingOpsRef: save.pendingOpsRef,
   });
   const derived = useDerivedTimeline(save.data, save.selectedClipId, save.selectedTrackId);
-  const render = useRenderState(derived.resolvedConfig, derived.renderMetadata, runtime.exporter ?? null, runtime.extensionRuntime);
+  const render = useRenderState(
+    derived.resolvedConfig,
+    derived.renderMetadata,
+    runtime.exporter ?? null,
+    runtime.extensionRuntime,
+    save.flushPendingSave,
+  );
   const assetOperations = useAssetOperations(
     runtime.provider,
     runtime.timelineId,

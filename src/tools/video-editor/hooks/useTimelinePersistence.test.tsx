@@ -305,6 +305,46 @@ describe('useTimelinePersistence — interaction gating', () => {
     expect(harness.saveTimeline).toHaveBeenCalledTimes(1);
   });
 
+  it('flushes a debounce-pending edit immediately and returns its acknowledged version', async () => {
+    const harness = setup();
+    harness.scheduleSave(makeTimelineData('render-barrier'));
+
+    let acknowledgedVersion: number | undefined;
+    await act(async () => {
+      acknowledgedVersion = await harness.result.current.flushPendingSave();
+    });
+
+    expect(harness.saveTimeline).toHaveBeenCalledTimes(1);
+    expect(harness.saveTimeline.mock.calls[0]?.[1].output.file).toBe('output-render-barrier.mp4');
+    expect(acknowledgedVersion).toBe(2);
+  });
+
+  it('refuses the save-for-render barrier while an interaction is active', async () => {
+    const harness = setup();
+    harness.interactionStateRef.current.drag = true;
+    harness.scheduleSave(makeTimelineData('mid-drag-render'));
+
+    await expect(harness.result.current.flushPendingSave()).rejects.toThrow(
+      'Finish the current timeline interaction before rendering.',
+    );
+    expect(harness.saveTimeline).not.toHaveBeenCalled();
+  });
+
+  it('rejects the save-for-render barrier when the durable write fails', async () => {
+    const harness = setup({
+      saveTimelineImpl: async () => {
+        throw new Error('bridge unavailable');
+      },
+    });
+    harness.scheduleSave(makeTimelineData('failed-render-save'));
+
+    await act(async () => {
+      await expect(harness.result.current.flushPendingSave()).rejects.toThrow('bridge unavailable');
+    });
+    expect(harness.saveTimeline).toHaveBeenCalledTimes(1);
+    harness.unmount();
+  });
+
   it('suppresses autosave when provider persistence is disabled', async () => {
     const harness = setup({ persistenceEnabled: false });
 

@@ -73,6 +73,12 @@ interface UseTimelinePersistenceOptions {
 
 export interface UseTimelinePersistenceResult {
   scheduleSave: ScheduleSaveFn;
+  /**
+   * Flush the latest editor document through the normal CAS writer and return
+   * the exact acknowledged version. Render admission uses this as a barrier so
+   * it can never snapshot an autosave-pending or unversioned `head`.
+   */
+  flushPendingSave: () => Promise<number>;
   saveStatus: SaveStatus;
   isConflictExhausted: boolean;
   reloadFromServer: () => Promise<void>;
@@ -122,6 +128,11 @@ export function useTimelinePersistence({
   const errorRetryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isMountedRef = useRef(true);
   const doSaveRef = useRef<((nextData: TimelineData, seq: number) => void) | null>(null);
+  const flushWaitersRef = useRef<Array<{
+    targetSeq: number;
+    resolve: (version: number) => void;
+    reject: (error: Error) => void;
+  }>>([]);
 
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
   const [isConflictExhausted, setIsConflictExhausted] = useState(false);
@@ -196,6 +207,31 @@ export function useTimelinePersistence({
     }
     setWatchdogTripped(false);
     setWatchdogReason(null);
+  }, []);
+
+  const resolveFlushWaiters = useCallback(() => {
+    const acknowledgedSeq = savedSeqRef.current;
+    const acknowledgedVersion = configVersionRef.current;
+    const remaining: typeof flushWaitersRef.current = [];
+    for (const waiter of flushWaitersRef.current) {
+      if (waiter.targetSeq <= acknowledgedSeq) {
+        waiter.resolve(acknowledgedVersion);
+      } else {
+        remaining.push(waiter);
+      }
+    }
+    flushWaitersRef.current = remaining;
+  }, [configVersionRef, savedSeqRef]);
+
+  const rejectFlushWaiters = useCallback((error: unknown) => {
+    const normalized = error instanceof Error
+      ? error
+      : new Error(typeof error === 'string' ? error : 'Timeline save failed before render admission.');
+    const waiters = flushWaitersRef.current;
+    flushWaitersRef.current = [];
+    for (const waiter of waiters) {
+      waiter.reject(normalized);
+    }
   }, []);
 
   /**
@@ -338,6 +374,8 @@ export function useTimelinePersistence({
               lastSavedSignatureRef.current = nextData.stableSignature;
             }
 
+            resolveFlushWaiters();
+
             setSaveStatus(seq >= editSeqRef.current ? 'saved' : 'dirty');
             // Only a receipt that covers the current edit (no newer edit
             // pending) is an ack: an older save's success must NOT clear the
@@ -358,6 +396,7 @@ export function useTimelinePersistence({
           retries: 0,
           reason: 'missing_local_data',
         });
+        rejectFlushWaiters(error);
         return;
       }
 
@@ -374,8 +413,11 @@ export function useTimelinePersistence({
           retries: 0,
           reason: 'max_retries',
         });
+        rejectFlushWaiters(error);
         return;
       }
+
+      rejectFlushWaiters(error);
 
       const retryData = getDataRef().current ?? dataRef.current;
       if (retryData) {
@@ -412,6 +454,8 @@ export function useTimelinePersistence({
     lastSavedSignatureRef,
     logConfigVersionUpdate,
     eventBus,
+    rejectFlushWaiters,
+    resolveFlushWaiters,
     saveMutation,
     savedSeqRef,
     scheduleErrorRetry,
@@ -502,6 +546,59 @@ export function useTimelinePersistence({
       void doSave(nextData, editSeqRef.current);
     }, SAVE_DEBOUNCE_MS);
   }, [armWatchdog, cancelErrorRetryTimer, disarmWatchdog, doSave, editSeqRef, getDataRef, getInteractionStateRef, isConflictExhausted, persistenceEnabled, timelineId]);
+
+  const flushPendingSave = useCallback((): Promise<number> => {
+    if (!persistenceEnabled) {
+      return Promise.resolve(configVersionRef.current);
+    }
+    if (isInteractionActive(getInteractionStateRef())) {
+      return Promise.reject(new Error('Finish the current timeline interaction before rendering.'));
+    }
+    if (isConflictExhaustedRef.current || isConflictExhausted) {
+      return Promise.reject(new Error('Resolve the timeline version conflict before rendering.'));
+    }
+
+    const latest = getDataRef().current ?? dataRef.current;
+    if (!latest) {
+      return Promise.reject(new Error('Timeline data is not loaded, so it cannot be saved for rendering.'));
+    }
+    const targetSeq = editSeqRef.current;
+    if (
+      savedSeqRef.current >= targetSeq
+      && !isSavingRef.current
+      && !saveTimer.current
+      && !pendingSaveRef.current
+      && !errorRetryTimer.current
+    ) {
+      return Promise.resolve(configVersionRef.current);
+    }
+
+    return new Promise<number>((resolve, reject) => {
+      flushWaitersRef.current.push({ targetSeq, resolve, reject });
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+      }
+      cancelErrorRetryTimer();
+      if (isSavingRef.current) {
+        pendingSaveRef.current = { data: latest, seq: targetSeq };
+        return;
+      }
+      void doSave(latest, targetSeq);
+    });
+  }, [
+    cancelErrorRetryTimer,
+    configVersionRef,
+    dataRef,
+    doSave,
+    editSeqRef,
+    getDataRef,
+    getInteractionStateRef,
+    isConflictExhausted,
+    isConflictExhaustedRef,
+    persistenceEnabled,
+    savedSeqRef,
+  ]);
 
   const retryWatchdog = useCallback(() => {
     const reason = watchdogReason;
@@ -637,14 +734,16 @@ export function useTimelinePersistence({
       // this hook's, but nothing else stops the doSave -> retry -> doSave loop.
       isMountedRef.current = false;
       clearErrorRetry();
+      rejectFlushWaiters(new Error('Timeline closed before the save-for-render barrier completed.'));
       if (saveTimer.current) {
         clearTimeout(saveTimer.current);
       }
     };
-  }, [clearErrorRetry]);
+  }, [clearErrorRetry, rejectFlushWaiters]);
 
   return {
     scheduleSave,
+    flushPendingSave,
     saveStatus,
     isConflictExhausted,
     reloadFromServer,

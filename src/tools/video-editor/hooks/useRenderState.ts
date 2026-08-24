@@ -327,6 +327,7 @@ export function useRenderState(
   renderMetadata: CompositionMetadata | null,
   exporter?: VideoEditorExporter | null,
   extensionRuntime?: ExtensionRuntime,
+  flushPendingSave?: () => Promise<number>,
 ) {
   const [renderStatus, setRenderStatus] = useState<RenderStatus>('idle');
   const [renderLog, setRenderLog] = useState('');
@@ -539,6 +540,29 @@ export function useRenderState(
     const timelineId = runtimeContext?.timelineId;
     if (!projectId || !timelineId || !resolvedConfig) return false;
 
+    if (!flushPendingSave) {
+      setRenderStatus('error');
+      setRenderProgress(null);
+      setRenderLog('Render admission is unavailable because the host did not provide a durable timeline save barrier.');
+      return true;
+    }
+
+    let expectedVersion: number;
+    try {
+      expectedVersion = await flushPendingSave();
+    } catch (error) {
+      setRenderStatus('error');
+      setRenderProgress(null);
+      setRenderLog(`Could not save the exact timeline version for rendering: ${error instanceof Error ? error.message : String(error)}`);
+      return true;
+    }
+    if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 0) {
+      setRenderStatus('error');
+      setRenderProgress(null);
+      setRenderLog('Could not render because the timeline save did not return a valid acknowledged version.');
+      return true;
+    }
+
     setRenderStatus('rendering');
     setRenderProgress({
       current: 0,
@@ -580,6 +604,7 @@ export function useRenderState(
     const admission = await renderRouter.enqueueBanodocoRenderTimeline(built.payload, {
       client,
       destination: renderDestination,
+      expectedVersion,
     });
     if (admission.status === 'error' || !admission.task_id) {
       setRenderStatus('error');
@@ -591,7 +616,7 @@ export function useRenderState(
     const generation = ++renderPollGenerationRef.current;
     await pollAstridRender(client, admission.task_id, generation);
     return true;
-  }, [pollAstridRender, renderDestination, renderMetadata?.durationInFrames, resolvedConfig, runtimeContext]);
+  }, [flushPendingSave, pollAstridRender, renderDestination, renderMetadata?.durationInFrames, resolvedConfig, runtimeContext]);
 
   const cancelRender = useCallback(async () => {
     if (!activeRenderTaskId || !renderClientRef.current) return;

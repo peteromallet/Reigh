@@ -934,6 +934,8 @@ describe('Sprint 8 enqueueBanodocoRenderTimeline', () => {
     vi.stubGlobal('fetch', fetchImpl);
     const result = await enqueueBanodocoRenderTimeline(payload, {
       client: new AstridLocalClient({ projectSlug: 'p', baseUrl: 'http://bridge.fake' }),
+      expectedVersion: 12,
+      destination: 'project-media',
     });
     expect(result.status).toBe('queued');
     expect(result.task_id).toBe('task-42');
@@ -943,10 +945,16 @@ describe('Sprint 8 enqueueBanodocoRenderTimeline', () => {
     expect(url).toBe('http://bridge.fake/projects/p/tasks');
     expect((init as RequestInit).method).toBe('POST');
     const headers = (init as RequestInit).headers as Record<string, string>;
-    expect(headers['Idempotency-Key']).toContain('reigh.render:v1:t');
+    expect(headers['Idempotency-Key']).toBe('reigh.render:v1:t:12:project-media:render.mp4');
     const body = JSON.parse((init as RequestInit).body as string);
     expect(body.family).toBe('render_export');
-    expect(body.input).toMatchObject({ timeline_ref: 't', format: 'mp4', correlation_id: 'c' });
+    expect(body.input).toMatchObject({
+      timeline_ref: 't',
+      expected_version: 12,
+      format: 'mp4',
+      destination: 'project-media',
+      correlation_id: 'c',
+    });
     vi.unstubAllGlobals();
   });
 
