@@ -253,12 +253,21 @@ vi.mock('@/shared/state/selectionStore.ts', () => ({
 
 let __runtimeContext: any = null;
 
+const __defaultRuntimeContext = {
+  timelineEditability: {
+    check: () => ({ allowed: true }),
+  },
+};
+
 function __setRuntimeContext(ctx: any) {
   __runtimeContext = ctx;
 }
 
 function __clearRuntimeContext() {
-  __runtimeContext = null;
+  // TimelineEditorShellCore requires the host runtime for editability checks.
+  // Keep the shell tests focused on their own surfaces while supplying the
+  // minimal host-owned context required by that contract.
+  __runtimeContext = __defaultRuntimeContext;
 }
 
 vi.mock('@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx', () => ({
@@ -290,6 +299,7 @@ describe('TimelineEditorShellCore surface slots', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     __clearSlotRenderers();
+    __clearRuntimeContext();
     __deviceClass = 'desktop';
   });
 

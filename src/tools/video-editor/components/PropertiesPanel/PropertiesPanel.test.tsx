@@ -589,6 +589,29 @@ describe('PropertiesPanel — processes tab', () => {
 
 const useOptionalVideoEditorRuntimeMock = vi.fn();
 
+function createContributionIndex(
+  entries: Array<{ kind: 'inspectorSection' | 'panel'; contributionId: string; extensionId: string }>,
+) {
+  return {
+    fixture: entries.map(({ kind, contributionId, extensionId }) => ({
+      scopedKey: `${kind}:${extensionId}:${contributionId}`,
+      kind,
+      extensionId,
+      contributionId,
+      status: 'active' as const,
+      diagnostics: [],
+      duplicateOrdinal: 0,
+      projectionEligible: true,
+      projection: {
+        duplicateOrdinal: 0,
+        eligible: true,
+        projected: true,
+        source: 'descriptor-array' as const,
+      },
+    })),
+  };
+}
+
 vi.mock('@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx', async () => {
   const actual = await vi.importActual<
     typeof import('@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx')
@@ -627,17 +650,16 @@ describe('HostContributionErrorBoundary — inspector sections', () => {
     expect(wrappers.length).toBe(3);
   });
 
-  it('passes extensionId from contributionOwnerMap to HostContributionErrorBoundary', () => {
-    // Build a runtime with a contributionOwnerMap that maps section IDs to extension IDs
-    const ownerMap = new Map<string, string>([
-      ['before-alpha', 'ext.alpha'],
-      ['before-beta', 'ext.beta'],
-      ['after-alpha', 'ext.gamma'],
-    ]);
+  it('passes extensionId from contributionIndex to HostContributionErrorBoundary', () => {
+    // Build a runtime with the host-owned contribution index.
 
     useOptionalVideoEditorRuntimeMock.mockReturnValue({
       extensionRuntime: {
-        contributionOwnerMap: ownerMap,
+        contributionIndex: createContributionIndex([
+          { kind: 'inspectorSection', contributionId: 'before-alpha', extensionId: 'ext.alpha' },
+          { kind: 'inspectorSection', contributionId: 'before-beta', extensionId: 'ext.beta' },
+          { kind: 'inspectorSection', contributionId: 'after-alpha', extensionId: 'ext.gamma' },
+        ]),
       },
       getRecoveryKey: vi.fn((extId: string) => {
         if (extId === 'ext.alpha') return '1';
@@ -658,8 +680,8 @@ describe('HostContributionErrorBoundary — inspector sections', () => {
     expect(screen.getByTestId('section-after-alpha')).toBeInTheDocument();
   });
 
-  it('falls back to undefined extensionId when contributionOwnerMap is unavailable', () => {
-    // Runtime exists but without extensionRuntime or contributionOwnerMap
+  it('falls back to undefined extensionId when contributionIndex is unavailable', () => {
+    // Runtime exists but without extensionRuntime or contributionIndex
     useOptionalVideoEditorRuntimeMock.mockReturnValue({
       getRecoveryKey: vi.fn(() => '0'),
       incrementRecoveryKey: vi.fn(() => '0'),
@@ -704,7 +726,9 @@ describe('HostContributionErrorBoundary — inspector sections', () => {
 
     useOptionalVideoEditorRuntimeMock.mockReturnValue({
       extensionRuntime: {
-        contributionOwnerMap: new Map([['before-tracked', 'ext.tracked']]),
+        contributionIndex: createContributionIndex([
+          { kind: 'inspectorSection', contributionId: 'before-tracked', extensionId: 'ext.tracked' },
+        ]),
       },
       getRecoveryKey: getRecoveryKeyMock,
       incrementRecoveryKey: incrementRecoveryKeyMock,
@@ -735,14 +759,14 @@ describe('HostContributionErrorBoundary — inspector sections', () => {
     expect(getRecoveryKeyMock).toHaveBeenCalledWith('ext.tracked');
   });
 
-  it('threads extensionId from contributionOwnerMap to HostContributionErrorBoundary with getRecoveryKey', () => {
+  it('threads extensionId from contributionIndex to HostContributionErrorBoundary with getRecoveryKey', () => {
     const getRecoveryKeySpy = vi.fn(() => '1');
     const incrementRecoveryKeySpy = vi.fn(() => '2');
 
     useOptionalVideoEditorRuntimeMock.mockReturnValue({
       extensionRuntime: {
-        contributionOwnerMap: new Map([
-          ['before-once', 'ext.once'],
+        contributionIndex: createContributionIndex([
+          { kind: 'inspectorSection', contributionId: 'before-once', extensionId: 'ext.once' },
         ]),
       },
       getRecoveryKey: getRecoveryKeySpy,
@@ -769,7 +793,7 @@ describe('HostContributionErrorBoundary — inspector sections', () => {
     expect(screen.getByTestId('section-single-render')).toBeInTheDocument();
 
     // getRecoveryKey should be called with the correct extensionId
-    // resolved from contributionOwnerMap
+    // resolved from contributionIndex
     expect(getRecoveryKeySpy).toHaveBeenCalledWith('ext.once');
   });
 
@@ -778,7 +802,7 @@ describe('HostContributionErrorBoundary — inspector sections', () => {
 
     useOptionalVideoEditorRuntimeMock.mockReturnValue({
       extensionRuntime: {
-        contributionOwnerMap: new Map<string, string>(), // empty map
+        contributionIndex: createContributionIndex([]), // empty index
       },
       getRecoveryKey: getRecoveryKeySpy,
       incrementRecoveryKey: vi.fn(),
@@ -804,7 +828,7 @@ describe('HostContributionErrorBoundary — inspector sections', () => {
 
     // getRecoveryKey should NOT be called for an unknown extension
     // (HostContributionErrorBoundary falls back to legacy when extensionId
-    // resolves to undefined via ownerMap.get returning undefined)
+    // resolves to undefined via the empty contribution index.)
     expect(getRecoveryKeySpy).not.toHaveBeenCalled();
   });
 });
@@ -828,7 +852,9 @@ describe('HostContributionErrorBoundary — asset panels', () => {
   it('renders extension asset panels through HostContributionErrorBoundary with extensionId from ownerMap', () => {
     useOptionalVideoEditorRuntimeMock.mockReturnValue({
       extensionRuntime: {
-        contributionOwnerMap: new Map([['asset-panel-extra', 'ext.panels']]),
+        contributionIndex: createContributionIndex([
+          { kind: 'panel', contributionId: 'asset-panel-extra', extensionId: 'ext.panels' },
+        ]),
       },
       getRecoveryKey: vi.fn(() => '1'),
       incrementRecoveryKey: vi.fn(() => '2'),
@@ -849,13 +875,15 @@ describe('HostContributionErrorBoundary — asset panels', () => {
     expect(screen.getByTestId('panel-asset-panel-extra')).toBeInTheDocument();
   });
 
-  it('threads extensionId from contributionOwnerMap for asset panel HostContributionErrorBoundary', () => {
+  it('threads extensionId from contributionIndex for asset panel HostContributionErrorBoundary', () => {
     const getRecoveryKeySpy = vi.fn(() => '1');
     const incrementRecoveryKeySpy = vi.fn(() => '2');
 
     useOptionalVideoEditorRuntimeMock.mockReturnValue({
       extensionRuntime: {
-        contributionOwnerMap: new Map([['asset-panel-tracked', 'ext.tracked']]),
+        contributionIndex: createContributionIndex([
+          { kind: 'panel', contributionId: 'asset-panel-tracked', extensionId: 'ext.tracked' },
+        ]),
       },
       getRecoveryKey: getRecoveryKeySpy,
       incrementRecoveryKey: incrementRecoveryKeySpy,
@@ -882,7 +910,7 @@ describe('HostContributionErrorBoundary — asset panels', () => {
 
     useOptionalVideoEditorRuntimeMock.mockReturnValue({
       extensionRuntime: {
-        contributionOwnerMap: new Map<string, string>(),
+        contributionIndex: createContributionIndex([]),
       },
       getRecoveryKey: getRecoveryKeySpy,
       incrementRecoveryKey: vi.fn(),
