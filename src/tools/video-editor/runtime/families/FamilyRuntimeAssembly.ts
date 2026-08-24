@@ -644,6 +644,9 @@ export function assembleExtensionRuntime(
         contributionId: item.contribution.id as string,
         status: 'active',
         packageState: packageStateByExtensionId.get(item.extensionId),
+        ...(contributionRenderId(item.contribution)
+          ? { renderId: contributionRenderId(item.contribution) }
+          : {}),
         diagnostics: diagnosticsForScopedKey,
         duplicateOrdinal: item.duplicateOrdinal,
         projectionEligible: item.projectionEligible,
