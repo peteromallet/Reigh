@@ -105,6 +105,38 @@ export interface ExtensionReferenceReport {
   readonly scanIsComplete: boolean;
 }
 
+interface MutableExtensionReferenceReport {
+  extensionId: string;
+  totalReferenceCount: number;
+  referencesByKind: Record<ReferenceKind, readonly ExtensionReference[]>;
+  hasReferences: boolean;
+  scanIsComplete: boolean;
+}
+
+function createEmptyReferencesByKind(): Record<ReferenceKind, ExtensionReference[]> {
+  return {
+    contribution: [],
+    effect: [],
+    transition: [],
+    shader: [],
+    'clip-type': [],
+    'agent-tool': [],
+    'live-data-source': [],
+    settings: [],
+    'lock-entry': [],
+    other: [],
+  };
+}
+
+function finalizeReferenceReport(
+  entry: MutableExtensionReferenceReport,
+): ExtensionReferenceReport {
+  return Object.freeze({
+    ...entry,
+    referencesByKind: Object.freeze({ ...entry.referencesByKind }),
+  });
+}
+
 /** Aggregate reference report for all scanned extensions. */
 export interface ReferenceReportResult {
   /** Per-extension reports. */
@@ -202,7 +234,7 @@ export function scanProjectReferences(
   scan: ProjectReferenceScan,
   extensionIds: readonly string[] = [],
 ): ReferenceReportResult {
-  const entries: ExtensionReferenceReport[] = [];
+  const entries: MutableExtensionReferenceReport[] = [];
   const diagnostics: ExtensionDiagnostic[] = [];
   const extensionIdsWithRefs: string[] = [];
   let totalRefCount = 0;
@@ -331,7 +363,7 @@ export function scanProjectReferences(
   }
 
   return {
-    entries: Object.freeze([...entries]),
+    entries: Object.freeze(entries.map(finalizeReferenceReport)),
     extensionIdsWithReferences: Object.freeze([...extensionIdsWithRefs]),
     diagnostics: Object.freeze([...diagnostics]),
     totalReferenceCount: totalRefCount,
@@ -341,7 +373,7 @@ export function scanProjectReferences(
 
 /** Helper: add references to a per-extension report entry, creating if needed. */
 function addToReport(
-  entries: ExtensionReferenceReport[],
+  entries: MutableExtensionReferenceReport[],
   seenExtensionIds: Set<string>,
   extensionId: string,
   kind: ReferenceKind,
@@ -353,7 +385,7 @@ function addToReport(
     entry = {
       extensionId,
       totalReferenceCount: 0,
-      referencesByKind: {},
+      referencesByKind: createEmptyReferencesByKind(),
       hasReferences: false,
       scanIsComplete,
     };
@@ -390,13 +422,14 @@ export function checkUninstallPreconditions(
   extensionId: string,
 ): UninstallPreconditionResult {
   const report = scanProjectReferences(scan, [extensionId]);
-  const extReport = report.entries.find((e) => e.extensionId === extensionId) ?? {
-    extensionId,
-    totalReferenceCount: 0,
-    referencesByKind: {},
-    hasReferences: false,
-    scanIsComplete: scan.isComplete,
-  };
+  const extReport = report.entries.find((e) => e.extensionId === extensionId)
+    ?? finalizeReferenceReport({
+      extensionId,
+      totalReferenceCount: 0,
+      referencesByKind: createEmptyReferencesByKind(),
+      hasReferences: false,
+      scanIsComplete: scan.isComplete,
+    });
 
   const blockingDiagnostics: ExtensionDiagnostic[] = [];
   const warningDiagnostics: ExtensionDiagnostic[] = [];
