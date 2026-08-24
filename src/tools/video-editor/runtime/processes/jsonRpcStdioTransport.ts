@@ -56,8 +56,10 @@ export type JsonRpcTransportNotification =
 export interface JsonRpcReadableStreamLike {
   on(event: 'data', listener: (chunk: string | Uint8Array) => void): unknown;
   on(event: 'close' | 'end', listener: () => void): unknown;
-  off?(event: 'data' | 'close' | 'end', listener: (...args: unknown[]) => void): unknown;
-  removeListener?(event: 'data' | 'close' | 'end', listener: (...args: unknown[]) => void): unknown;
+  off?(event: 'data', listener: (chunk: string | Uint8Array) => void): unknown;
+  off?(event: 'close' | 'end', listener: () => void): unknown;
+  removeListener?(event: 'data', listener: (chunk: string | Uint8Array) => void): unknown;
+  removeListener?(event: 'close' | 'end', listener: () => void): unknown;
   setEncoding?(encoding: BufferEncoding): unknown;
 }
 
@@ -76,14 +78,10 @@ export interface JsonRpcProcessLike {
   readonly pid?: number;
   on(event: 'exit', listener: (code: number | null, signal: NodeJS.Signals | null) => void): unknown;
   on(event: 'error', listener: (error: Error) => void): unknown;
-  off?(
-    event: 'exit' | 'error',
-    listener: ((code: number | null, signal: NodeJS.Signals | null) => void) | ((error: Error) => void),
-  ): unknown;
-  removeListener?(
-    event: 'exit' | 'error',
-    listener: ((code: number | null, signal: NodeJS.Signals | null) => void) | ((error: Error) => void),
-  ): unknown;
+  off?(event: 'exit', listener: (code: number | null, signal: NodeJS.Signals | null) => void): unknown;
+  off?(event: 'error', listener: (error: Error) => void): unknown;
+  removeListener?(event: 'exit', listener: (code: number | null, signal: NodeJS.Signals | null) => void): unknown;
+  removeListener?(event: 'error', listener: (error: Error) => void): unknown;
 }
 
 export interface JsonRpcStdioTransportOptions {
@@ -112,7 +110,7 @@ interface PendingRequest {
   readonly method: string;
   readonly correlation?: JsonRpcTransportCorrelation;
   readonly reject: (reason: unknown) => void;
-  readonly resolve: (value: unknown) => void;
+  resolve(value: unknown): void;
   readonly timeoutHandle?: ReturnType<typeof globalThis.setTimeout>;
 }
 
@@ -133,6 +131,10 @@ type JsonRpcIncomingMessage =
       readonly params?: unknown;
     };
 
+type JsonRpcIncomingResponse =
+  | Extract<JsonRpcIncomingMessage, { readonly result: unknown }>
+  | Extract<JsonRpcIncomingMessage, { readonly error: JsonRpcErrorObject }>;
+
 export class JsonRpcTransportError extends Error {
   readonly code: number;
   readonly errorClass: JsonRpcTransportErrorClass;
@@ -146,6 +148,7 @@ export class JsonRpcTransportError extends Error {
   readonly signal?: NodeJS.Signals | null;
   readonly detail?: string;
   readonly rawMessage?: unknown;
+  readonly cause?: unknown;
 
   constructor(
     message: string,
@@ -165,7 +168,7 @@ export class JsonRpcTransportError extends Error {
       cause?: unknown;
     },
   ) {
-    super(message, { cause: options.cause });
+    super(message);
     this.name = 'JsonRpcTransportError';
     this.code = options.code;
     this.errorClass = options.errorClass;
@@ -179,6 +182,7 @@ export class JsonRpcTransportError extends Error {
     this.signal = options.signal;
     this.detail = options.detail;
     this.rawMessage = options.rawMessage;
+    this.cause = options.cause;
   }
 }
 
@@ -218,21 +222,6 @@ export function createJsonRpcStdioTransport({
       request.reject(makeError(request));
     }
     pendingRequests.clear();
-  };
-
-  const detach = (
-    target: {
-      off?: (event: string, listener: (...args: unknown[]) => void) => unknown;
-      removeListener?: (event: string, listener: (...args: unknown[]) => void) => unknown;
-    },
-    event: string,
-    listener: (...args: unknown[]) => void,
-  ) => {
-    if (target.off) {
-      target.off(event, listener);
-      return;
-    }
-    target.removeListener?.(event, listener);
   };
 
   const emitProtocolError = (error: JsonRpcTransportError) => {
@@ -301,7 +290,7 @@ export function createJsonRpcStdioTransport({
     return { processId, operationId, taskId };
   };
 
-  const handleResponse = (message: JsonRpcIncomingMessage & { readonly id: JsonRpcId | null }) => {
+  const handleResponse = (message: JsonRpcIncomingResponse) => {
     if (message.id === null) {
       emitProtocolError(new JsonRpcTransportError('Response id must not be null for host-initiated requests.', {
         code: -32600,
@@ -490,6 +479,25 @@ export function createJsonRpcStdioTransport({
     onExit(null, null);
   };
 
+  const detachListeners = () => {
+    if (stdout.off) {
+      stdout.off('data', onData);
+      stdout.off('end', onStreamClosed);
+      stdout.off('close', onStreamClosed);
+    } else {
+      stdout.removeListener?.('data', onData);
+      stdout.removeListener?.('end', onStreamClosed);
+      stdout.removeListener?.('close', onStreamClosed);
+    }
+    if (process.off) {
+      process.off('exit', onExit);
+      process.off('error', onProcessError);
+    } else {
+      process.removeListener?.('exit', onExit);
+      process.removeListener?.('error', onProcessError);
+    }
+  };
+
   stdout.on('data', onData);
   stdout.on('end', onStreamClosed);
   stdout.on('close', onStreamClosed);
@@ -620,11 +628,7 @@ export function createJsonRpcStdioTransport({
         operationId: request.correlation?.operationId,
         taskId: request.correlation?.taskId,
       }));
-      detach(stdout, 'data', onData as (...args: unknown[]) => void);
-      detach(stdout, 'end', onStreamClosed as (...args: unknown[]) => void);
-      detach(stdout, 'close', onStreamClosed as (...args: unknown[]) => void);
-      detach(process, 'exit', onExit as (...args: unknown[]) => void);
-      detach(process, 'error', onProcessError as (...args: unknown[]) => void);
+      detachListeners();
     },
   };
 }
