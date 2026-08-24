@@ -94,7 +94,7 @@ protocol header). A newer checkout cannot satisfy an older pin. The manifest is
 pinned to the RC4 Astrid hardening commit
 `86153eefc14aa995402927df0c7bb178f48f8ead`. The failed RC1, RC2, and RC3
 paired receipts remain under their respective evidence roots as historical evidence
-only; neither is a passing receipt. RC4 reruns the hostile-Host probe with the
+only; none is a passing receipt. RC4 reruns the hostile-Host probe with the
 verifier's raw HTTP request and reruns browser boot after the React server-entry
 repair. Do not bypass either probe or substitute the unauthenticated stub.
 
