@@ -1,56 +1,53 @@
-import { getSupabaseClient } from '@/integrations/supabase/client.ts';
+import { AstridLocalClient } from '@/integrations/astrid/client.ts';
+import { bridgeCapabilityUnavailable } from '@/integrations/astrid/capability.ts';
+import { BridgeRouteError } from '@/integrations/astrid/transport.ts';
+import { getProjectSelectionFallbackId } from '@/shared/contexts/projectSelectionStore.ts';
+import { bridgeMediaUrl } from '@/shared/lib/media/bridgeMediaUrl.ts';
 
 export interface PrimaryVariantInfo {
   location: string;
   variant_id: string;
 }
 
-export async function fetchPrimaryVariantLocations(generationIds: string[]): Promise<Record<string, PrimaryVariantInfo | null>> {
-  if (generationIds.length === 0) {
-    return {};
+function clientForSelectedProject(): { client: AstridLocalClient; projectSlug: string } {
+  const projectSlug = getProjectSelectionFallbackId();
+  if (!projectSlug) {
+    throw bridgeCapabilityUnavailable(
+      'read primary generation variants',
+      'Select an Astrid project before checking timeline assets.',
+    );
   }
+  return { client: new AstridLocalClient({ projectSlug }), projectSlug };
+}
 
-  const { data, error } = await getSupabaseClient()
-    .from('generations')
-    .select(`
-      id,
-      primary_variant:generation_variants!generations_primary_variant_id_fkey (
-        id,
-        location
-      )
-    `)
-    .in('id', generationIds);
-
-  if (error) {
+async function readPrimaryVariant(generationId: string): Promise<PrimaryVariantInfo | null> {
+  const { client, projectSlug } = clientForSelectedProject();
+  try {
+    const detail = await client.gallery.get(generationId);
+    const primary = detail.variants.find((variant) => variant.is_primary) ?? null;
+    return primary
+      ? { variant_id: primary.id, location: bridgeMediaUrl(projectSlug, primary.media_id) }
+      : null;
+  } catch (error) {
+    if (error instanceof BridgeRouteError && error.status === 404) {
+      return null;
+    }
     throw error;
   }
+}
 
-  const map: Record<string, PrimaryVariantInfo | null> = {};
-  for (const row of data ?? []) {
-    const primaryVariant = row.primary_variant as { id: string; location: string } | null;
-    map[row.id] = primaryVariant ? { location: primaryVariant.location, variant_id: primaryVariant.id } : null;
-  }
-
-  return map;
+export async function fetchPrimaryVariantLocations(
+  generationIds: string[],
+): Promise<Record<string, PrimaryVariantInfo | null>> {
+  const entries = await Promise.all(
+    generationIds.map(async (generationId) => [generationId, await readPrimaryVariant(generationId)] as const),
+  );
+  return Object.fromEntries(entries);
 }
 
 export async function fetchCurrentPrimaryVariant(generationId: string) {
-  const { data, error } = await getSupabaseClient()
-    .from('generations')
-    .select(`
-      primary_variant_id,
-      primary_variant:generation_variants!generations_primary_variant_id_fkey (
-        id,
-        location,
-        thumbnail_url
-      )
-    `)
-    .eq('id', generationId)
-    .single();
-
-  if (error || !data?.primary_variant) {
-    return null;
-  }
-
-  return data.primary_variant as { id: string; location: string; thumbnail_url: string | null };
+  const primary = await readPrimaryVariant(generationId);
+  return primary
+    ? { id: primary.variant_id, location: primary.location, thumbnail_url: primary.location }
+    : null;
 }

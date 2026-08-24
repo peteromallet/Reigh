@@ -30,10 +30,10 @@ vi.mock('@/integrations/supabase/client.ts', () => ({
  * declaration per class and prove one consumption path end-to-end.
  */
 describe('provider capability flags', () => {
-  it('declares sync=true/upload=false for SupabaseDataProvider', () => {
+  it('declares Astrid capabilities for the retired Supabase compatibility name', () => {
     const provider = new SupabaseDataProvider({ projectId: 'p', userId: 'u' });
-    expect(provider.supportsEditorSync).toBe(true);
-    expect(provider.supportsDirectAssetUpload).toBe(false);
+    expect(provider.supportsEditorSync).toBe(false);
+    expect(provider.supportsDirectAssetUpload).toBe(true);
   });
 
   it('declares sync=false/upload=true for AstridBridgeDataProvider', () => {
@@ -53,7 +53,7 @@ describe('provider capability flags', () => {
 
   it('both flag paths drive useEditorSync identically across provider classes', () => {
     const cases: Array<[DataProvider, boolean]> = [
-      [new SupabaseDataProvider({ projectId: 'p', userId: 'u' }), true],
+      [new SupabaseDataProvider({ projectId: 'p', userId: 'u' }), false],
       [
         new AstridBridgeDataProvider({
           projectSlug: 'demo-project',
