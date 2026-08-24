@@ -164,7 +164,15 @@ export class ProcessManagerError extends Error {
       cause?: unknown;
     },
   ) {
-    super(message, { cause: options.cause });
+    super(message);
+    if (options.cause !== undefined) {
+      Object.defineProperty(this, 'cause', {
+        configurable: true,
+        enumerable: false,
+        value: options.cause,
+        writable: false,
+      });
+    }
     this.name = 'ProcessManagerError';
     this.code = options.code;
     this.processId = options.processId;
@@ -424,6 +432,8 @@ function normalizeCapabilityFinding(
     });
   }
 
+  const detail = asObject(record.detail);
+
   return Object.freeze({
     id: record.id,
     severity: record.severity,
@@ -434,7 +444,7 @@ function normalizeCapabilityFinding(
     ...(typeof record.contributionId === 'string' ? { contributionId: record.contributionId } : {}),
     ...(typeof record.clipId === 'string' ? { clipId: record.clipId } : {}),
     ...(typeof record.materialRefId === 'string' ? { materialRefId: record.materialRefId } : {}),
-    ...(asObject(record.detail) ? { detail: Object.freeze({ ...record.detail }) } : {}),
+    ...(detail ? { detail: Object.freeze({ ...detail }) } : {}),
   });
 }
 
@@ -444,12 +454,11 @@ function extractCorrelation(
   const record = asObject(rawMessage);
   if (!record) return undefined;
 
-  const nested = (
-    ('result' in record && asObject(record.result))
-    || ('params' in record && asObject(record.params))
-    || ('error' in record && asObject(record.error) && asObject(record.error.data))
-    || record
-  );
+  const result = 'result' in record ? asObject(record.result) : null;
+  const params = 'params' in record ? asObject(record.params) : null;
+  const error = 'error' in record ? asObject(record.error) : null;
+  const errorData = error && 'data' in error ? asObject(error.data) : null;
+  const nested = result ?? params ?? errorData ?? record;
   if (!nested) return undefined;
 
   const processId = readOptionalString(nested.processId);
@@ -556,15 +565,19 @@ function normalizeExecuteResult(
     : undefined;
 
   const normalizedLogs = Array.isArray(record.logs)
-    ? freezeLogs(record.logs.filter((item): item is ProcessLogSummary => {
+    ? freezeLogs(record.logs.flatMap((item): ProcessLogSummary[] => {
       const candidate = asObject(item);
-      return Boolean(candidate && isLogLevel(candidate.level) && typeof candidate.message === 'string');
-    }).map((item) => ({
-      level: item.level === 'warn' ? 'warning' : item.level,
-      message: item.message,
-      ...(typeof item.at === 'string' ? { at: item.at } : {}),
-      ...(asObject(item.detail) ? { detail: item.detail } : {}),
-    })))
+      if (!candidate || !isLogLevel(candidate.level) || typeof candidate.message !== 'string') {
+        return [];
+      }
+      const detail = asObject(candidate.detail);
+      return [{
+        level: candidate.level === 'warn' ? 'warning' : candidate.level,
+        message: candidate.message,
+        ...(typeof candidate.at === 'string' ? { at: candidate.at } : {}),
+        ...(detail ? { detail } : {}),
+      }];
+    }))
     : (logs.length > 0 ? freezeLogs(logs) : undefined);
 
   const progressRecord = asObject(record.progress);
@@ -582,6 +595,8 @@ function normalizeExecuteResult(
     })
     : progress;
 
+  const metadata = asObject(record.metadata);
+
   return Object.freeze({
     requestId: request.id,
     processId: request.processId,
@@ -596,7 +611,7 @@ function normalizeExecuteResult(
     ...(Array.isArray(record.availableActions)
       ? { availableActions: Object.freeze([...record.availableActions]) as ProcessRoundtripResult['availableActions'] }
       : {}),
-    ...(asObject(record.metadata) ? { metadata: Object.freeze({ ...record.metadata }) } : {}),
+    ...(metadata ? { metadata: Object.freeze({ ...metadata }) } : {}),
   });
 }
 

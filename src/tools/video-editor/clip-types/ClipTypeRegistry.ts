@@ -33,6 +33,16 @@ import type {
 /** Record status, matching the EffectRegistry vocabulary. */
 export type ClipTypeRegistryRecordStatus = 'active' | 'inactive' | 'error';
 
+export type ClipTypeRegistryProvenance =
+  | 'built-in'
+  | 'bundled-extension'
+  | 'external-catalog'
+  | 'local-storage-draft'
+  | 'legacy-db-clip-type'
+  | 'db-resource'
+  | 'ai-generated'
+  | 'trusted-loader';
+
 export interface ClipRendererLiveBinding {
   readonly bindingId: string;
   readonly sourceId: string;
@@ -111,6 +121,7 @@ export interface ClipTypeRegistryRecord {
   readonly contributionId: string;
   readonly renderer: Record<string, unknown> | ((...args: unknown[]) => unknown);
   readonly inspector?: Record<string, unknown> | ((...args: unknown[]) => unknown);
+  readonly provenance?: ClipTypeRegistryProvenance;
   readonly schema?: ReadonlyArray<{
     readonly name: string;
     readonly label: string;

@@ -147,6 +147,20 @@ export interface LivePermissionServiceConfig {
   readonly defaultDeviceLabel?: string;
 }
 
+interface MidiAccessLike {
+  readonly inputs?: unknown;
+}
+
+interface SerialRequestOptions {
+  readonly filters?: readonly Record<string, unknown>[];
+}
+
+interface BluetoothRequestOptions {
+  readonly acceptAllDevices?: boolean;
+  readonly filters?: readonly Record<string, unknown>[];
+  readonly optionalServices?: readonly (string | number)[];
+}
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
@@ -225,13 +239,14 @@ function makePermission(
   reason?: string,
   deviceLabel?: string,
 ): LiveSourcePermission {
-  const perm: LiveSourcePermission = { state };
-  if (reason !== undefined) (perm as Record<string, unknown>).reason = reason;
-  if (deviceLabel !== undefined) (perm as Record<string, unknown>).deviceLabel = deviceLabel;
-  if (state === 'granted' || state === 'denied') {
-    (perm as Record<string, unknown>).requestedAt = new Date().toISOString();
-  }
-  return perm;
+  return {
+    state,
+    ...(reason !== undefined ? { reason } : {}),
+    ...(deviceLabel !== undefined ? { deviceLabel } : {}),
+    ...(state === 'granted' || state === 'denied'
+      ? { requestedAt: new Date().toISOString() }
+      : {}),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -372,7 +387,7 @@ export function createLivePermissionService(
 
         case 'midi': {
           const access = await (navigator as Navigator & {
-            requestMIDIAccess?: (opts?: MIDIOptions) => Promise<WebMidi.MIDIAccess>;
+            requestMIDIAccess?: (opts?: MIDIOptions) => Promise<MidiAccessLike>;
           }).requestMIDIAccess?.({ sysex: false });
           if (!access) {
             throw new Error('MIDI access returned null');
@@ -390,7 +405,7 @@ export function createLivePermissionService(
         case 'serial': {
           // Requesting a port triggers the permission prompt
           const port = await (navigator as Navigator & {
-            serial?: { requestPort?: (opts?: SerialPortRequestOptions) => Promise<unknown> };
+            serial?: { requestPort?: (opts?: SerialRequestOptions) => Promise<unknown> };
           }).serial?.requestPort?.();
           if (!port) {
             throw new Error('Serial port request returned null');
@@ -406,7 +421,7 @@ export function createLivePermissionService(
 
         case 'bluetooth': {
           const device = await (navigator as Navigator & {
-            bluetooth?: { requestDevice?: (opts?: RequestDeviceOptions) => Promise<unknown> };
+            bluetooth?: { requestDevice?: (opts?: BluetoothRequestOptions) => Promise<unknown> };
           }).bluetooth?.requestDevice?.({ acceptAllDevices: true });
           if (!device) {
             throw new Error('Bluetooth device request returned null');
@@ -505,16 +520,6 @@ export function createLivePermissionService(
     };
   }
 
-  // ---- dispose -------------------------------------------------------------
-
-  function dispose(): void {
-    if (disposed) return;
-    disposed = true;
-    releaseAll();
-  }
-
-  // ---------------------------------------------------------------------------
-
   return {
     probe,
     request,
@@ -524,7 +529,6 @@ export function createLivePermissionService(
     get isDisposed() {
       return disposed;
     },
-    dispose,
   };
 }
 

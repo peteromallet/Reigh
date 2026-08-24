@@ -622,7 +622,7 @@ function scanCompositionGraphTargetExportBlockers(
 /**
  * Map an M5 composition diagnostic code to a canonical export diagnostic code.
  */
-function m5CompositionExportCode(code: string): string | undefined {
+function m5CompositionExportCode(code: string): ExportDiagnostic['code'] | undefined {
   if (isEffectDiagnosticCode(code)) {
     return 'export/effect-unresolved-ref';
   }
