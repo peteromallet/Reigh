@@ -1,12 +1,12 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type {
-  DataProvider,
   RenderArtifact,
   RenderArtifactSidecarDescriptor,
   RenderMaterial,
   RenderRoute,
 } from '@reigh/editor-sdk';
+import type { DataProvider } from '@/tools/video-editor/data/DataProvider.ts';
 import type { ProcessRoundtripRequest, ProcessRoundtripResult } from '@/sdk/capabilities';
 import type { ProcessStatus } from '@/sdk/video/families/processes';
 import {
@@ -29,8 +29,10 @@ import {
 import type {
   VideoEditorOutputFormatDescriptor,
   VideoEditorPlannerNextActionDescriptor,
+  VideoEditorRouteScopeDescriptor,
   VideoEditorProcessDescriptor,
 } from '@/tools/video-editor/runtime/extensionSurface.ts';
+import { normalizeExtensionRuntime } from '@/tools/video-editor/runtime/extensionSurface.ts';
 import type { ProcessManager } from '@/tools/video-editor/runtime/processes/ProcessManager.ts';
 import { planRender } from '@/tools/video-editor/runtime/renderPlanner.ts';
 
@@ -62,6 +64,17 @@ const SIDECAR_OUTPUT_FORMAT_ID = 'metadata-json-sidecar';
 const SIDECAR_OUTPUT_EXT_ID = 'ext.sidecar.fixture.process';
 
 const EMPTY_PROVIDER = null as unknown as DataProvider;
+
+function createRouteScope(
+  routes: readonly RenderRoute[],
+  source: VideoEditorRouteScopeDescriptor['source'],
+): VideoEditorRouteScopeDescriptor {
+  return {
+    source,
+    mode: routes.length > 0 ? 'explicit-routes' : 'missing-routes',
+    routes,
+  };
+}
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -119,6 +132,7 @@ function createHarnessDescriptor(): VideoEditorProcessDescriptor {
           id: OPERATION_ID,
           label: 'Fixture Execute',
           outputKinds: ['material', 'artifact', 'sidecar', 'diagnostic', 'tool-result'],
+          routes: [PROCESS_ROUTE],
         },
       ],
     },
@@ -130,6 +144,7 @@ function createHarnessDescriptor(): VideoEditorProcessDescriptor {
         routes: [PROCESS_ROUTE],
         outputKinds: ['material', 'artifact', 'sidecar', 'diagnostic', 'tool-result'],
         requiredCapabilities: [PROCESS_ROUTE],
+        routeScope: createRouteScope([PROCESS_ROUTE], 'process-operation'),
       },
     ],
     availableRoutes: [PROCESS_ROUTE],
@@ -173,7 +188,7 @@ function returnedArtifact(material: RenderMaterial): RenderArtifact {
     mediaKind: 'json',
     determinism: 'process-dependent',
     boundary: {
-      source: 'browser-fixture',
+      source: 'browser',
       target: 'artifact-store',
       route: PROCESS_ROUTE,
       failureBehavior: 'emit-diagnostic',
@@ -194,7 +209,7 @@ function returnedSidecar(): RenderArtifactSidecarDescriptor {
       mimeType: 'text/plain',
     },
     provenance: {
-      source: 'browser-fixture',
+      source: 'browser',
     },
   };
 }
@@ -315,6 +330,7 @@ function processOutputFormat(
       {
         routes: [PROCESS_ROUTE],
         requiredCapabilities: [PROCESS_ROUTE],
+        routeScope: createRouteScope([PROCESS_ROUTE], 'output-format-render'),
         processId: descriptor.processId,
         operationId: OPERATION_ID,
         determinism: 'process-dependent',
@@ -325,6 +341,7 @@ function processOutputFormat(
       {
         processId: descriptor.processId,
         operationId: OPERATION_ID,
+        routeScope: createRouteScope([PROCESS_ROUTE], 'output-format-process'),
         requiredCapabilities: [PROCESS_ROUTE],
       },
     ],
@@ -401,6 +418,7 @@ function createSidecarDescriptor(): VideoEditorProcessDescriptor {
           id: SIDECAR_OPERATION_ID,
           label: 'Sidecar Export',
           outputKinds: ['artifact', 'sidecar', 'diagnostic'],
+          routes: [SIDECAR_ROUTE],
         },
       ],
     },
@@ -412,6 +430,7 @@ function createSidecarDescriptor(): VideoEditorProcessDescriptor {
         routes: [SIDECAR_ROUTE],
         outputKinds: ['artifact', 'sidecar', 'diagnostic'],
         requiredCapabilities: [SIDECAR_ROUTE],
+        routeScope: createRouteScope([SIDECAR_ROUTE], 'process-operation'),
       },
     ],
     availableRoutes: [SIDECAR_ROUTE],
@@ -444,6 +463,7 @@ function createSidecarOutputFormat(
       {
         routes: [SIDECAR_ROUTE],
         requiredCapabilities: [SIDECAR_ROUTE],
+        routeScope: createRouteScope([SIDECAR_ROUTE], 'output-format-render'),
         processId: descriptor.processId,
         operationId: SIDECAR_OPERATION_ID,
         determinism: 'process-dependent',
@@ -455,6 +475,7 @@ function createSidecarOutputFormat(
       {
         processId: descriptor.processId,
         operationId: SIDECAR_OPERATION_ID,
+        routeScope: createRouteScope([SIDECAR_ROUTE], 'output-format-process'),
         requiredCapabilities: [SIDECAR_ROUTE],
       },
     ],
@@ -575,8 +596,11 @@ function createRuntimeValue(args: {
   statuses: readonly ProcessStatus[];
   attachRecords: readonly ProcessResultAttachRecord[];
 }): VideoEditorRuntimeContextValue {
+  const emptyRuntime = normalizeExtensionRuntime([]);
   const extensionRuntime = {
+    ...emptyRuntime,
     config: {
+      ...emptyRuntime.config,
       processes: [args.descriptor],
     },
     processes: [args.descriptor],
@@ -585,7 +609,7 @@ function createRuntimeValue(args: {
         endpoint: 'browser-fixture',
       },
     },
-  } as VideoEditorRuntimeContextValue['extensionRuntime'];
+  };
 
   return {
     provider: EMPTY_PROVIDER,
@@ -621,7 +645,7 @@ function createRuntimeValue(args: {
     },
     timelineId: 'timeline-process-harness',
     userId: 'process-harness-user',
-    extensions: extensionRuntime.config as VideoEditorRuntimeContextValue['extensions'],
+    extensions: extensionRuntime.config,
     extensionRuntime,
     processManager: args.manager,
     processStatuses: args.statuses,
