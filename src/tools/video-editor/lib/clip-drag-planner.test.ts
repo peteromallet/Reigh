@@ -74,7 +74,6 @@ describe('pointer anchoring', () => {
     expect(plan.snapEdgeType).toBe('timeline-start');
   });
 });
-
 // ── Timeline-start snap to 0 ──────────────────────────────────────────
 
 describe('timeline-start snap to 0', () => {
@@ -640,4 +639,3 @@ describe('ADOS-shaped long-clip (~1590s) regression', () => {
     expect(plan.rejectReason).toBeNull();
   });
 });
-
