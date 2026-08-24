@@ -700,6 +700,12 @@ const getDefaultTracks = (config: TimelineConfig): TrackDefinition[] => {
 
 const migrateLegacyEffects = (clip: TimelineClip): TimelineClip => {
   const nextClip: TimelineClip = { ...clip };
+  // Array effects are the current contributed-effect representation.  Only
+  // the legacy record form is consumed into entrance/exit/continuous fields;
+  // dropping an array here would erase extension-owned effects on load.
+  if (Array.isArray(clip.effects)) {
+    return nextClip;
+  }
   const fadeIn = clip.effects && !Array.isArray(clip.effects) ? clip.effects.fade_in : undefined;
   const fadeOut = clip.effects && !Array.isArray(clip.effects) ? clip.effects.fade_out : undefined;
   const fallback = clip.asset ? LEGACY_ASSET_EFFECTS[clip.asset] : undefined;
