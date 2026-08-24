@@ -301,7 +301,10 @@ export const VIDEO_FAMILY_REGISTRY: readonly FamilyDefinition<VideoContributionK
   // ---- Data Kind (V1) ----
   {
     kind: 'dataKind',
-    declarationMaturity: 'schema-backed',
+    // Host-integrated execution requires the author-facing contract to be
+    // documented.  The manifest schema is covered as well, but schema
+    // coverage alone is intentionally not sufficient for this axis pair.
+    declarationMaturity: 'documented',
     executionMaturity: 'host-integrated',
     hostIntegrationNotes:
       'Data-kind contributions declare duration-neutral typed-data lanes: a ' +

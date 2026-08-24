@@ -106,6 +106,15 @@ describe('representative entries', () => {
     expect(cmd!.hostAdapter).not.toBeNull();
   });
 
+  it('contains dataKind (V1) — documented, host-integrated', () => {
+    const dataKind = getVideoFamily('dataKind');
+    expect(dataKind).toBeDefined();
+    expect(dataKind!.declarationMaturity).toBe('documented');
+    expect(dataKind!.executionMaturity).toBe('host-integrated');
+    expect(dataKind!.requirements.manifestSchema).toBe(true);
+    expect(dataKind!.requirements.registrationApi).toBe(true);
+  });
+
   it('contains parser (M6) — schema-backed, delegated', () => {
     const parser = getVideoFamily('parser');
     expect(parser).toBeDefined();
