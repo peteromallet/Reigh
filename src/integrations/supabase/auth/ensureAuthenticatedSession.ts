@@ -5,7 +5,16 @@ import type {
 } from '@/integrations/supabase/deferredRuntime';
 
 function buildAuthError(message: string, context: string, cause?: unknown): Error {
-  return new Error(`${context}: ${message}`, cause ? { cause } : undefined);
+  const error = new Error(`${context}: ${message}`);
+  if (cause !== undefined) {
+    Object.defineProperty(error, 'cause', {
+      configurable: true,
+      enumerable: false,
+      value: cause,
+      writable: true,
+    });
+  }
+  return error;
 }
 
 export async function requireSession(

@@ -1,4 +1,5 @@
 import { getSupabaseClient } from '@/integrations/supabase/client';
+import { toJson } from '@/shared/lib/supabaseTypeHelpers';
 
 export async function findChildGenerationIdByPair(
   parentGenerationId: string,
@@ -60,7 +61,7 @@ export async function updateShotGenerationMetadata(
 ): Promise<void> {
   const { error } = await getSupabaseClient()
     .from('shot_generations')
-    .update({ metadata })
+    .update({ metadata: toJson(metadata) })
     .eq('id', shotGenerationId);
 
   if (error) {

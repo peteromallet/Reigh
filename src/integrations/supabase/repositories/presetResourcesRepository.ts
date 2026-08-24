@@ -10,7 +10,7 @@ interface PresetResourceRecord<TMetadata = unknown> {
   metadata: TMetadata;
 }
 
-function isPresetResourceRecord(value: unknown): value is PresetResourceRecord {
+function isPresetResourceRecord<TMetadata>(value: unknown): value is PresetResourceRecord<TMetadata> {
   if (!value || typeof value !== 'object') {
     return false;
   }
@@ -37,9 +37,9 @@ export async function fetchPresetResourceById<TMetadata = unknown>(
   if (!data) {
     return null;
   }
-  if (!isPresetResourceRecord(data)) {
+  if (!isPresetResourceRecord<TMetadata>(data)) {
     throw createInvalidRowShapeError('preset resource', { presetId });
   }
 
-  return data as PresetResourceRecord<TMetadata>;
+  return data;
 }

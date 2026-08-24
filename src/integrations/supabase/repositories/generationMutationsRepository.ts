@@ -31,7 +31,7 @@ interface CreateExternalUploadGenerationInput {
   generationParams: ExternalUploadGenerationParams;
 }
 
-type ScopedMutationRowsResult<Row extends { id: string }> = Promise<{
+type ScopedMutationRowsResult<Row extends { id: string }> = PromiseLike<{
   data: Row[] | null;
   error: unknown;
 }>;

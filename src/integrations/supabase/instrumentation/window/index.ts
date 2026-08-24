@@ -39,15 +39,15 @@ function installCorruptionTracePatchers(instrumentedWindow: InstrumentedWindow):
             corruptionTimeline: [...__CORRUPTION_TIMELINE__],
           },
         });
-        addCorruptionEvent('SUPABASE_ERROR_2372', errorInfo);
+        addCorruptionEvent('SUPABASE_ERROR_2372', { ...errorInfo });
       } else if (isSupabaseRealtimeRelated(message)) {
-        addCorruptionEvent('RELATED_ERROR', errorInfo);
+        addCorruptionEvent('RELATED_ERROR', { ...errorInfo });
       }
     },
     onUnhandledRejection: (event) => {
       const rejectionInfo = collectUnhandledRejectionInfo(event);
       if (isSupabaseRealtimeRelated(event.reason)) {
-        addCorruptionEvent('UNHANDLED_REJECTION', rejectionInfo);
+        addCorruptionEvent('UNHANDLED_REJECTION', { ...rejectionInfo });
       }
     },
   });
@@ -60,7 +60,7 @@ function installWebSocketInstrumentation(instrumentedWindow: InstrumentedWindow)
       try {
         const parsed = parsePhoenixMessage(event.data);
         if (parsed) {
-          addCorruptionEvent('PHOENIX_MESSAGE', parsed);
+          addCorruptionEvent('PHOENIX_MESSAGE', { ...parsed });
         }
 
         const snapshot = instrumentedWindow.__REALTIME_SNAPSHOT__ || {};
