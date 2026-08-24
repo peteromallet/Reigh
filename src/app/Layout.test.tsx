@@ -10,8 +10,11 @@ const state = {
   isAuthenticated: false,
   isLoading: false,
 };
+let locationSearch = '';
+let locationPathname = '/tools/travel-between-images';
 
 vi.mock('@/app/hooks/useVideoEditorRouteState', () => ({
+  isVideoEditorRoute: (pathname: string) => pathname === '/tools/video-editor' || pathname.startsWith('/tools/video-editor/'),
   useVideoEditorRouteState: () => ({
     isEditorRoute: false,
     timelineId: null,
@@ -97,7 +100,7 @@ vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
   return {
     ...actual,
-    useLocation: () => ({ pathname: '/tools/travel-between-images', search: '', hash: '' }),
+    useLocation: () => ({ pathname: locationPathname, search: locationSearch, hash: '' }),
   };
 });
 
@@ -114,6 +117,8 @@ describe('Layout route access', () => {
     state.isVideoEditorShellActive = false;
     state.isAuthenticated = false;
     state.isLoading = false;
+    locationSearch = '';
+    locationPathname = '/tools/travel-between-images';
   });
 
   it('renders the full app chrome when the bridge probe resolved a user', () => {
@@ -146,5 +151,34 @@ describe('Layout route access', () => {
     expect(screen.queryByTestId('tools-pane')).not.toBeInTheDocument();
     expect(screen.queryByTestId('editor-pane')).not.toBeInTheDocument();
     expect(screen.queryByTestId('main-content')).not.toBeInTheDocument();
+  });
+
+  it('keeps the deterministic localTest editor route sessionless without redirecting to Home', () => {
+    locationPathname = '/tools/video-editor';
+    locationSearch = '?localProject=demo-project&localTimeline=demo-timeline&localTest=1';
+
+    renderLayout();
+
+    expect(screen.getByTestId('main-content')).toBeInTheDocument();
+    expect(screen.getByTestId('tools-pane')).toBeInTheDocument();
+  });
+
+  it('does not let localTest bypass auth on another protected route', () => {
+    locationSearch = '?localTest=1';
+
+    renderLayout();
+
+    expect(screen.queryByTestId('main-content')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('tools-pane')).not.toBeInTheDocument();
+  });
+
+  it('does not let an incomplete local editor URL bypass auth', () => {
+    locationPathname = '/tools/video-editor';
+    locationSearch = '?localTest=1&localProject=demo-project&localTimeline=';
+
+    renderLayout();
+
+    expect(screen.queryByTestId('main-content')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('tools-pane')).not.toBeInTheDocument();
   });
 });

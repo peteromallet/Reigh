@@ -250,6 +250,28 @@ describe('paired repository release E2E gate', () => {
       });
       assert.equal(server.ASTRID_BRIDGE_TOKEN, 'generated-server-secret');
       assert.equal(server.OPENAI_API_KEY, undefined);
+
+      const development = buildServerEnvironment({
+        home: '/tmp/paired-home',
+        projectsRoot: '/tmp/paired-projects',
+        pythonPath: '/tmp/paired-astrid',
+        bridgePort: 21001,
+        token: 'generated-server-secret',
+        reighMode: 'development',
+        reighPort: 21002,
+      });
+      assert.equal(development.VITE_DISABLE_REMOTE_FONTS, '1');
+
+      const preview = buildServerEnvironment({
+        home: '/tmp/paired-home',
+        projectsRoot: '/tmp/paired-projects',
+        pythonPath: '/tmp/paired-astrid',
+        bridgePort: 21001,
+        token: 'generated-server-secret',
+        reighMode: 'preview',
+        reighPort: 21003,
+      });
+      assert.equal(preview.VITE_DISABLE_REMOTE_FONTS, '0');
     } finally {
       if (previous === undefined) delete process.env.ASTRID_BRIDGE_TOKEN;
       else process.env.ASTRID_BRIDGE_TOKEN = previous;

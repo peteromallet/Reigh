@@ -70,7 +70,10 @@ export default defineConfig({
         // Vite removes the declarative Google Fonts links before serving the
         // document, so the request allowlist can reject every remote-font
         // attempt without relying on browser runtime interception.
-        VITE_DISABLE_REMOTE_FONTS: process.env.VITE_DISABLE_REMOTE_FONTS ?? (useRealBridge ? '1' : '0'),
+        // Every Playwright server is a deterministic localTest surface. Strip
+        // remote-font links before the browser sees HTML; production preview
+        // keeps its normal font policy because this env is dev-server-only.
+        VITE_DISABLE_REMOTE_FONTS: process.env.VITE_DISABLE_REMOTE_FONTS ?? '1',
         VITE_ASTRID_BRIDGE_PORT: String(bridgePort),
         ASTRID_BRIDGE_ALLOW_UNAUTHENTICATED_STUB: useRealBridge ? '0' : '1',
         ...(realBridgeToken

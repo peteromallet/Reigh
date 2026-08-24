@@ -137,6 +137,10 @@ export function buildServerEnvironment({
     VITE_ASTRID_BRIDGE_PORT: String(bridgePort),
     ASTRID_BRIDGE_ALLOW_UNAUTHENTICATED_STUB: '0',
     ASTRID_BRIDGE_TOKEN: token,
+    // Paired browser phases are the deterministic localTest journey.  Keep
+    // remote-font requests out of that route at the HTML transform boundary;
+    // the built preview remains byte-for-byte production-configured.
+    VITE_DISABLE_REMOTE_FONTS: reighMode === 'development' ? '1' : '0',
     EXTENSION_HOST_ENABLED: 'true',
     TRANSCRIPT_CAPTION_FOUNDRY_ENABLED: 'true',
     RUNAWAY_TYPED_TIMELINE_ENABLED: 'true',

@@ -34,6 +34,10 @@ const env = {
   VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL ?? 'http://127.0.0.1:54321',
   VITE_SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY ?? 'test-anon-key',
   VITE_APP_ENV: process.env.VITE_APP_ENV ?? 'web',
+  // The localTest contract is offline/deterministic.  Remove the declarative
+  // Google Fonts links at Vite transform time so the browser cannot even
+  // initiate a remote-font request before React bootstraps.
+  VITE_DISABLE_REMOTE_FONTS: '1',
 };
 
 const children = [
