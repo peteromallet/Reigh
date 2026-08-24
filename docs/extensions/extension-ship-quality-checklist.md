@@ -8,6 +8,9 @@ turns the exploratory implementation into a measurable production release.
 
 For the implementation history and concrete frictions already found, see
 [`creative-extension-lab-frictions.md`](./creative-extension-lab-frictions.md).
+The ordered path from the stable integration branch to the frozen candidate is
+tracked in
+[`extension-release-next-steps.md`](./extension-release-next-steps.md).
 
 ## Required before shipping
 
