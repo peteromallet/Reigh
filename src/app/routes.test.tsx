@@ -43,6 +43,9 @@ vi.mock('@/tools/edit-video/pages/EditVideoPage', () => ({
 vi.mock('@/tools/video-editor/pages/VideoEditorPage', () => ({
   default: () => <div data-testid="video-editor-page" />,
 }));
+vi.mock('@/tools/video-editor/pages/ExtensionHarnessPage', () => ({
+  default: () => <div data-testid="extension-harness-page" />,
+}));
 vi.mock('@/tools/edit-images/pages/EditImagesPage', () => ({
   default: () => <div data-testid="edit-images-page" />,
 }));
@@ -111,6 +114,12 @@ describe('AppRoutes', () => {
     renderRoute('/tools/video-editor');
 
     expect(screen.getByTestId('video-editor-page')).toBeInTheDocument();
+  });
+
+  it('renders the dev extension harness route through a Suspense boundary', async () => {
+    renderRoute('/tools/video-editor/harness?scenario=populated&localTest=1');
+
+    expect(await screen.findByTestId('extension-harness-page')).toBeInTheDocument();
   });
 
   it('renders public routes outside the layout tree', () => {

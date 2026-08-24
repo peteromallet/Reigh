@@ -8,9 +8,29 @@ const EXTENSION_COUNT = 13;
 
 function collectIssues(page: Page): string[] {
   const issues: string[] = [];
+  const expectedCapabilityProbe = (url: string, status: number) => {
+    const parsed = new URL(url);
+    return status === 404
+      && /^\/api\/astrid\/projects\/[^/]+\/media\/__reigh_capability_probe__\/content$/.test(parsed.pathname);
+  };
   page.on('pageerror', (error) => issues.push(`[pageerror] ${error.message}`));
   page.on('console', (message) => {
-    if (message.type() === 'error') issues.push(`[console.error] ${message.text()}`);
+    // Failed-resource console messages do not carry a reliable URL across
+    // browser engines. Classify them from response/request events below;
+    // preserve application-level console errors here.
+    if (message.type() === 'error' && !message.text().startsWith('Failed to load resource:')) {
+      issues.push(`[console.error] ${message.text()}`);
+    }
+  });
+  page.on('response', (response) => {
+    if (response.status() >= 400 && !expectedCapabilityProbe(response.url(), response.status())) {
+      issues.push(`[http ${response.status()}] ${response.url()}`);
+    }
+  });
+  page.on('requestfailed', (request) => {
+    if (!expectedCapabilityProbe(request.url(), 404)) {
+      issues.push(`[requestfailed] ${request.url()} — ${request.failure()?.errorText ?? 'unknown'}`);
+    }
   });
   return issues;
 }

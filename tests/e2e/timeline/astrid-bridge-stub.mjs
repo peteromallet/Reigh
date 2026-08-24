@@ -35,10 +35,101 @@ const { registry, config: initialConfig, timelineSummary } = createTimelineFixtu
 let config = initialConfig;
 let configVersion = 1;
 
+const RUNAWAY_TOTAL_COUNT = 566;
+const RUNAWAY_PAGE_LIMIT = 1_000;
+const RUNAWAY_FPS = 48;
+const RUNAWAY_FRAME_COUNT = 8_085;
+const RUNAWAY_SNAPSHOT = 'runaway-v1:deterministic-browser-stub';
+
+/**
+ * Deterministic Runaway rows for browser gates.  The real bridge's typed lane
+ * contract is paginated even when this fixture fits in one page; retaining
+ * that envelope here catches protocol/header regressions instead of letting a
+ * browser gate silently fall back to an empty lane.
+ */
+const runawayTransitions = Array.from({ length: RUNAWAY_TOTAL_COUNT }, (_, index) => {
+  const ordinal = index;
+  const frame = Math.min(RUNAWAY_FRAME_COUNT - 1, index * 14 + (index > 0 ? Math.floor(index / 7) : 0));
+  const startMs = Math.round((frame * 1000) / RUNAWAY_FPS);
+  const nextFrame = index + 1 < RUNAWAY_TOTAL_COUNT
+    ? Math.min(RUNAWAY_FRAME_COUNT, (index + 1) * 14 + Math.floor((index + 1) / 7))
+    : RUNAWAY_FRAME_COUNT;
+  const durationMs = Math.max(1, Math.round(((nextFrame - frame) * 1000) / RUNAWAY_FPS));
+  const segmentNumber = Math.min(10, Math.floor(index / 57) + 1);
+  const isRose = index % 2 === 0;
+  return {
+    id: `runaway-stub-row-${String(index + 1).padStart(4, '0')}`,
+    run_id: 'runaway-stub-run-v1',
+    task_id: null,
+    ordinal,
+    start_ms: startMs,
+    duration_ms: durationMs,
+    prompt: `${isRose ? 'rose' : 'teal'} neon piano chord, deterministic browser fixture`,
+    metadata: {
+      manifest_id: `T${String(index + 1).padStart(4, '0')}`,
+      segment_id: `S${String(segmentNumber).padStart(2, '0')}`,
+      segment_label: `Runaway fixture region ${String(segmentNumber).padStart(2, '0')}`,
+      timing_mode: index % 5 === 0 ? 'hard_cut' : 'hold',
+      colour_name: isRose ? 'rose' : 'teal',
+      colour_hex: isRose ? '#D47795' : '#26A7D0',
+      frame,
+      fps: RUNAWAY_FPS,
+    },
+    created_at: '2026-08-24T00:00:00Z',
+  };
+});
+
+function runawayPage(url) {
+  const requestedLimit = Number(url.searchParams.get('limit') || RUNAWAY_PAGE_LIMIT);
+  const limit = Number.isSafeInteger(requestedLimit) && requestedLimit > 0
+    ? Math.min(requestedLimit, RUNAWAY_PAGE_LIMIT)
+    : RUNAWAY_PAGE_LIMIT;
+  const requestedCursor = url.searchParams.get('cursor');
+  const start = requestedCursor === null ? 0 : Number(requestedCursor);
+  const offset = Number.isSafeInteger(start) && start >= 0 && start <= RUNAWAY_TOTAL_COUNT
+    ? start
+    : 0;
+  const transitions = runawayTransitions.slice(offset, offset + limit);
+  const nextOffset = offset + transitions.length;
+  return {
+    api_version: 'v1',
+    project: url.pathname.split('/')[3] ?? 'runaway-browser-stub',
+    count: transitions.length,
+    total_count: RUNAWAY_TOTAL_COUNT,
+    snapshot: RUNAWAY_SNAPSHOT,
+    page: {
+      // The client contract fixes the bridge page limit at 1000.  A smaller
+      // request is only a useful harness convenience; it must not change the
+      // declared wire contract.
+      limit: RUNAWAY_PAGE_LIMIT,
+      next_cursor: nextOffset < RUNAWAY_TOTAL_COUNT ? String(nextOffset) : null,
+    },
+    timing_summary: {
+      evidence_id: 'runaway-stub-evidence-v1',
+      run_id: 'runaway-stub-run-v1',
+      summary: 'Deterministic Runaway browser fixture',
+      created_at: '2026-08-24T00:00:00Z',
+      data: {
+        frame_count: RUNAWAY_FRAME_COUNT,
+        transition_count: RUNAWAY_TOTAL_COUNT,
+        fps: RUNAWAY_FPS,
+        segment_counts: Object.fromEntries(
+          Array.from({ length: 10 }, (_, index) => [
+            `S${String(index + 1).padStart(2, '0')}`,
+            index === 9 ? RUNAWAY_TOTAL_COUNT - 9 * 57 : 57,
+          ]),
+        ),
+      },
+    },
+    transitions,
+  };
+}
+
 function send(res, status, body) {
   const payload = JSON.stringify(body);
   res.writeHead(status, {
     'Content-Type': 'application/json',
+    'X-Astrid-Bridge-Version': 'v1',
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': '*',
     'Access-Control-Allow-Methods': 'GET,PUT,POST,OPTIONS',
@@ -65,6 +156,23 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return send(res, 204, {});
   if (path === '/health') return send(res, 200, { ok: true });
   if (path === '/projects') return send(res, 200, { projects: [PROJECT] });
+
+  const runawayMatch = path.match(/^\/v1\/projects\/([^/]+)\/runaway-transitions$/);
+  if (runawayMatch && req.method === 'GET') {
+    return send(res, 200, runawayPage(url));
+  }
+
+  // Discovery probes are optional capabilities in local mode.  Returning the
+  // valid empty envelopes keeps a deterministic editor session free of
+  // avoidable 404 console noise while preserving the bridge's real schemas.
+  const tasksMatch = path.match(/^\/projects\/([^/]+)\/tasks$/);
+  if (tasksMatch && req.method === 'GET') {
+    return send(res, 200, { tasks: [], next_offset: null });
+  }
+  const generationsMatch = path.match(/^\/projects\/([^/]+)\/generations$/);
+  if (generationsMatch && req.method === 'GET') {
+    return send(res, 200, { generations: [], next_cursor: null });
+  }
 
   const timelinesMatch = path.match(/^\/projects\/([^/]+)\/timelines$/);
   if (timelinesMatch) return send(res, 200, { timelines: [timelineSummary] });

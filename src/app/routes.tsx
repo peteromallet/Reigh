@@ -125,7 +125,13 @@ export function AppRoutes() {
         {import.meta.env.DEV && ExtensionHarnessPage ? (
           <Route
             path="/tools/video-editor/harness"
-            element={<ToolErrorBoundary toolName="Extension Harness"><ExtensionHarnessPage /></ToolErrorBoundary>}
+            element={(
+              <ToolErrorBoundary toolName="Extension Harness">
+                <Suspense fallback={<LazyLoadingFallback />}>
+                  <ExtensionHarnessPage />
+                </Suspense>
+              </ToolErrorBoundary>
+            )}
           />
         ) : null}
         <Route
