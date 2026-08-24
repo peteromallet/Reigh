@@ -20,7 +20,11 @@
 // Caller (SequenceCreatorPanel Save) treats `{ ok: false }` as a hard gate:
 // the resource is NOT persisted on failure; the error message surfaces inline.
 
-import { renderToString } from 'react-dom/server';
+// `react-dom/server` resolves to React's Node entry under Vite's browser
+// condition set when it is pre-bundled. That pulls `stream`/`util` into the
+// editor's browser closure and crashes before React can mount. The explicit
+// browser subpath is the only safe entry for this client-side smoke gate.
+import { renderToString } from 'react-dom/server.browser';
 import React, {
   Component,
   createElement,
