@@ -1,29 +1,22 @@
-import { useEffect } from 'react';
-import { keepPreviousData, useQuery, useQueryClient, type QueryClient, type UseQueryOptions } from '@tanstack/react-query';
+import { useEffect, useMemo } from 'react';
+import { useQuery, useQueryClient, type QueryClient, type UseQueryOptions } from '@tanstack/react-query';
 import { Task, TaskStatus } from '@/types/tasks';
 import { getVisibleTaskTypes } from '@/shared/lib/tasks/taskConfig';
-import { normalizeAndPresentAndRethrow } from '@/shared/lib/errorHandling/runtimeError';
-import { QUERY_PRESETS, STANDARD_RETRY, STANDARD_RETRY_DELAY } from '@/shared/lib/query/queryDefaults';
-import { taskPollingCadence } from '@/shared/hooks/tasks/taskPollingCadence';
+import { QUERY_PRESETS } from '@/shared/lib/query/queryDefaults';
 import { taskQueryKeys } from '@/shared/lib/queryKeys/tasks';
 import { useProcessingRefetchGuard } from '@/shared/hooks/tasks/useProcessingRefetchGuard';
 import { fetchTaskInProject } from '@/integrations/supabase/repositories/taskRepository';
 import {
-  notifyPaginatedTaskFetchFailure,
-  notifyPaginatedTaskFetchSuccess,
-} from '@/shared/realtime/dataFreshness/taskFetchFreshness';
-import {
-  fetchPaginatedTasks,
-  type PaginatedTaskQuery,
   type PaginatedTasksResponse as RepositoryPaginatedTasksResponse,
 } from '@/shared/hooks/tasks/paginatedTaskRepository';
+import { paginateTaskSnapshot } from '@/shared/hooks/tasks/paginatedTaskRepository';
+import { useBridgeTaskSnapshot } from '@/shared/hooks/tasks/useBridgeTaskSnapshot';
 import { resolveTaskProjectScope } from '@/shared/lib/tasks/resolveTaskProjectScope';
 import {
   getRealtimeTaskSnapshot,
   useRealtimeTask,
   upsertRealtimeTaskSnapshot,
 } from '@/shared/state/realtimeStore';
-import { useAstridCapabilityCensus } from '@/integrations/astrid/capabilityCensus.ts';
 
 // Types for API responses and request bodies
 // Ensure these align with your server-side definitions and Task type in @/types/tasks.ts
@@ -39,22 +32,6 @@ interface PaginatedTasksParams {
 }
 
 export type PaginatedTasksResponse = RepositoryPaginatedTasksResponse;
-function createPaginatedTasksQueryFn(filters: PaginatedTaskQuery, cacheProjectKey: string) {
-  return async (): Promise<PaginatedTasksResponse> => {
-    try {
-      const result = await fetchPaginatedTasks(filters);
-      notifyPaginatedTaskFetchSuccess(cacheProjectKey);
-      return result;
-    } catch (error) {
-      notifyPaginatedTaskFetchFailure(cacheProjectKey, error);
-      normalizeAndPresentAndRethrow(error, {
-        context: 'useTasks.fetchPaginatedTasks',
-        showToast: false,
-        logData: { cacheProjectKey },
-      });
-    }
-  };
-}
 function seedTaskSnapshot(task: Task | null | undefined, projectId?: string | null): Task | null | undefined {
   if (!task) {
     return task;
@@ -143,29 +120,18 @@ export const useGetTask = (taskId: string, projectId?: string | null) => {
 
 // Hook to list tasks with pagination - GALLERY PATTERN
 export const usePaginatedTasks = (params: PaginatedTasksParams) => {
-  const capabilityCensus = useAstridCapabilityCensus();
   const { projectId, status, limit = 50, offset = 0, taskType, allProjects, allProjectIds } = params;
-  const page = Math.floor(offset / limit) + 1;
   const effectiveProjectId: string | null = projectId ?? null;
-  const cacheProjectKey = allProjects ? 'all' : effectiveProjectId;
-  const safeCacheProjectKey = cacheProjectKey ?? '__no-project__';
-  const allProjectScopeKey = allProjects
+  const projectIds = allProjects
     ? [...new Set(allProjectIds ?? [])].sort()
-    : [];
+    : (effectiveProjectId ? [effectiveProjectId] : []);
   const visibleTaskTypes = getVisibleTaskTypes();
-  // Honest latency: declared 2 s active / 10 s idle cadence — the realtime
-  // health machinery (Slice C) invalidates, it does not tune this interval.
+  const snapshotQuery = useBridgeTaskSnapshot(projectIds);
+  const page = Math.floor(offset / limit) + 1;
 
-  const query = useQuery<PaginatedTasksResponse, Error>({
-    queryKey: [
-      ...taskQueryKeys.paginated(safeCacheProjectKey),
-      page,
-      limit,
-      status,
-      taskType,
-      allProjectScopeKey,
-    ],
-    queryFn: createPaginatedTasksQueryFn({
+  const paginatedData = useMemo(() => {
+    if (!snapshotQuery.data) return undefined;
+    return paginateTaskSnapshot(snapshotQuery.data, {
       allProjects,
       allProjectIds,
       effectiveProjectId,
@@ -175,16 +141,13 @@ export const usePaginatedTasks = (params: PaginatedTasksParams) => {
       limit,
       offset,
       page,
-    }, safeCacheProjectKey),
-    enabled: (allProjects ? !!allProjectIds?.length : !!effectiveProjectId)
-      && capabilityCensus.capabilities.tasks !== 'unavailable',
-    placeholderData: keepPreviousData,
-    ...QUERY_PRESETS.realtimeBacked,
-    refetchInterval: taskPollingCadence,
-    refetchIntervalInBackground: true,
-    retry: STANDARD_RETRY,
-    retryDelay: STANDARD_RETRY_DELAY,
-  });
+    });
+  }, [allProjects, allProjectIds, effectiveProjectId, limit, offset, page, snapshotQuery.data, status, taskType, visibleTaskTypes]);
+
+  const query = {
+    ...snapshotQuery,
+    data: paginatedData,
+  };
 
   useProcessingRefetchGuard(status, query);
 

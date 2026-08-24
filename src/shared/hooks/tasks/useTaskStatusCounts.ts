@@ -1,20 +1,19 @@
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getVisibleTaskTypes } from '@/shared/lib/tasks/taskConfig';
-import { QUERY_PRESETS, STANDARD_RETRY, STANDARD_RETRY_DELAY } from '@/shared/lib/query/queryDefaults';
+import { QUERY_PRESETS } from '@/shared/lib/query/queryDefaults';
 import { taskQueryKeys } from '@/shared/lib/queryKeys/tasks';
-import { dataFreshnessManager } from '@/shared/realtime/DataFreshnessManager';
 import {
   TASK_FAILURE_STATUSES,
   TASK_PROCESSING_STATUSES,
 } from '@/shared/lib/tasks/taskStatusSemantics';
-import { isRootBridgeTask, listBridgeTasks } from '@/integrations/astrid/bridgeTaskReads';
-import { taskPollingCadence } from './taskPollingCadence';
+import { isRootBridgeTask } from '@/integrations/astrid/bridgeTaskReads';
 import {
   operationFailure,
   operationSuccess,
   type OperationResult,
 } from '@/shared/lib/operationResult';
-import { useAstridCapabilityCensus } from '@/integrations/astrid/capabilityCensus.ts';
+import { useBridgeTaskSnapshot } from './useBridgeTaskSnapshot';
 
 type TaskStatusCountsQuery = 'processing' | 'success' | 'failure';
 
@@ -30,21 +29,6 @@ interface TaskStatusCountsResult {
     recentSuccesses: number;
     recentFailures: number;
   }>;
-}
-
-function buildEmptyTaskStatusCountsResult(): TaskStatusCountsResult {
-  const zeroCounts = {
-    processing: 0,
-    recentSuccesses: 0,
-    recentFailures: 0,
-  };
-
-  return {
-    ...zeroCounts,
-    degraded: false,
-    failedQueries: [],
-    operation: operationSuccess(zeroCounts, { policy: 'best_effort' }),
-  };
 }
 
 function buildTaskStatusCountsResult(
@@ -81,26 +65,6 @@ function buildTaskStatusCountsResult(
   };
 }
 
-function trackTaskStatusCountsFreshness(
-  projectId: string,
-  error?: unknown,
-): void {
-  if (error === undefined) {
-    dataFreshnessManager.onFetchSuccess(taskQueryKeys.statusCounts(projectId));
-    return;
-  }
-
-  dataFreshnessManager.onFetchFailure(
-    taskQueryKeys.statusCounts(projectId),
-    error instanceof Error ? error : new Error(String(error)),
-  );
-}
-
-interface FetchTaskStatusCountsOptions {
-  projectId: string | null;
-  allProjectIds?: string[];
-}
-
 function taskTimestampMs(task: { createdAt: string; updatedAt?: string }): number {
   return new Date(task.updatedAt || task.createdAt).getTime();
 }
@@ -111,32 +75,12 @@ function taskTimestampMs(task: { createdAt: string; updatedAt?: string }): numbe
  * A read failure degrades all three counters together (there are no partial
  * failures left to mask).
  */
-async function fetchTaskStatusCounts(options: FetchTaskStatusCountsOptions): Promise<TaskStatusCountsResult> {
-  const { projectId, allProjectIds } = options;
-  const isAllProjects = !!allProjectIds?.length;
-
-  if (!projectId && !isAllProjects) {
-    return buildEmptyTaskStatusCountsResult();
-  }
-
-  // Use projectId for freshness tracking; fall back to synthetic key for all-projects mode
-  const trackingId = projectId ?? '__all-projects__';
-
+function deriveTaskStatusCounts(
+  tasks: readonly import('@/types/tasks').Task[],
+  projectId: string,
+): TaskStatusCountsResult {
   const visibleTaskTypes = getVisibleTaskTypes();
   const oneHourAgoMs = Date.now() - 60 * 60 * 1000;
-
-  let tasks;
-  try {
-    tasks = await listBridgeTasks(isAllProjects ? allProjectIds![0] : projectId!);
-  } catch (error) {
-    trackTaskStatusCountsFreshness(trackingId, error);
-    return buildTaskStatusCountsResult(
-      trackingId,
-      { processing: 0, success: 0, failure: 0 },
-      ['processing', 'success', 'failure'],
-    );
-  }
-
   const inScope = tasks.filter(
     (task) => visibleTaskTypes.includes(task.taskType) && isRootBridgeTask(task.params),
   );
@@ -150,9 +94,7 @@ async function fetchTaskStatusCounts(options: FetchTaskStatusCountsOptions): Pro
       && taskTimestampMs(task) >= oneHourAgoMs).length,
   };
 
-  trackTaskStatusCountsFreshness(trackingId);
-
-  return buildTaskStatusCountsResult(trackingId, counts, []);
+  return buildTaskStatusCountsResult(projectId, counts, []);
 }
 
 // Hook to get status counts for indicators
@@ -160,22 +102,23 @@ export const useTaskStatusCounts = (
   projectId: string | null,
   options?: { allProjectIds?: string[] },
 ) => {
-  const capabilityCensus = useAstridCapabilityCensus();
   const allProjectIds = options?.allProjectIds;
   const isAllProjects = !!allProjectIds?.length;
+  const projectIds = isAllProjects
+    ? [...new Set(allProjectIds)].sort()
+    : (projectId ? [projectId] : []);
+  const snapshotQuery = useBridgeTaskSnapshot(projectIds);
   const cacheProjectId = isAllProjects ? '__all-projects__' : (projectId ?? '__no-project__');
 
-  return useQuery({
-    queryKey: taskQueryKeys.statusCounts(cacheProjectId),
-    queryFn: () => fetchTaskStatusCounts({ projectId, allProjectIds }),
-    enabled: (isAllProjects || !!projectId)
-      && capabilityCensus.capabilities.tasks !== 'unavailable',
-    refetchInterval: taskPollingCadence,
-    refetchIntervalInBackground: true,
-    retry: STANDARD_RETRY,
-    retryDelay: STANDARD_RETRY_DELAY,
-    ...QUERY_PRESETS.realtimeBacked,
-  });
+  const data = useMemo(() => {
+    if (!snapshotQuery.data) return undefined;
+    return deriveTaskStatusCounts(snapshotQuery.data, cacheProjectId);
+  }, [cacheProjectId, snapshotQuery.data]);
+
+  return {
+    ...snapshotQuery,
+    data,
+  };
 };
 
 /**

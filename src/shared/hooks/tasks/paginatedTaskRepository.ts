@@ -69,23 +69,15 @@ function buildPaginatedTasksResponse(
   };
 }
 
-export async function fetchPaginatedTasks(filters: PaginatedTaskQuery): Promise<PaginatedTasksResponse> {
-  if (filters.allProjects && (!filters.allProjectIds || filters.allProjectIds.length === 0)) {
-    return EMPTY_PAGINATED_TASKS_RESPONSE;
-  }
-  if (!filters.allProjects && !filters.effectiveProjectId) {
-    return EMPTY_PAGINATED_TASKS_RESPONSE;
-  }
-
+/** Derive a paginated task-pane view from the canonical project snapshot. */
+export function paginateTaskSnapshot(
+  allTasks: readonly Task[],
+  filters: PaginatedTaskQuery,
+): PaginatedTasksResponse {
   const needsCustomSorting = isProcessingStatusFilter(filters.status);
   const succeededOnly = isSucceededOnlyStatus(filters.status);
-
-  const projectSlugs = filters.allProjects
-    ? [...new Set(filters.allProjectIds)]
-    : [filters.effectiveProjectId!];
-  const allTasks = (await Promise.all(projectSlugs.map((projectSlug) => listBridgeTasks(projectSlug)))).flat();
-
   let visibleTasks = allTasks.filter((task) => matchesFilters(task, filters));
+
   if (succeededOnly) {
     visibleTasks.sort((left, right) =>
       new Date(right.updatedAt || right.createdAt).getTime()
@@ -102,4 +94,20 @@ export async function fetchPaginatedTasks(filters: PaginatedTaskQuery): Promise<
     filters.offset,
     filters.limit,
   );
+}
+
+export async function fetchPaginatedTasks(filters: PaginatedTaskQuery): Promise<PaginatedTasksResponse> {
+  if (filters.allProjects && (!filters.allProjectIds || filters.allProjectIds.length === 0)) {
+    return EMPTY_PAGINATED_TASKS_RESPONSE;
+  }
+  if (!filters.allProjects && !filters.effectiveProjectId) {
+    return EMPTY_PAGINATED_TASKS_RESPONSE;
+  }
+
+  const projectSlugs = filters.allProjects
+    ? [...new Set(filters.allProjectIds)]
+    : [filters.effectiveProjectId!];
+  const allTasks = (await Promise.all(projectSlugs.map((projectSlug) => listBridgeTasks(projectSlug)))).flat();
+
+  return paginateTaskSnapshot(allTasks, filters);
 }

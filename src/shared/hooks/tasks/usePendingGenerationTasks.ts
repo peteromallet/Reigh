@@ -1,15 +1,9 @@
-import { useQuery } from '@tanstack/react-query';
-import { taskQueryKeys } from '@/shared/lib/queryKeys/tasks';
 import { resolveTaskProjectScope } from '@/shared/lib/tasks/resolveTaskProjectScope';
-import { listBridgeTasks } from '@/integrations/astrid/bridgeTaskReads';
-import { taskPollingCadence } from './taskPollingCadence';
-import { TASK_STATUS } from '@/types/tasks';
 import {
   useRealtimePendingGenerationTasks,
-  upsertRealtimeTaskSnapshots,
   type PendingGenerationTaskSnapshot,
 } from '@/shared/state/realtimeStore';
-import { useAstridCapabilityCensus } from '@/integrations/astrid/capabilityCensus.ts';
+import { useBridgeTaskSnapshot } from './useBridgeTaskSnapshot';
 
 type PendingGenerationTask = PendingGenerationTaskSnapshot;
 
@@ -85,34 +79,16 @@ export function usePendingGenerationTasks(
   generationId: string | null | undefined,
   projectId: string | null | undefined
 ): UsePendingGenerationTasksReturn {
-  const capabilityCensus = useAstridCapabilityCensus();
   const effectiveProjectId = resolveTaskProjectScope(projectId);
   const pendingSelection = useRealtimePendingGenerationTasks(generationId, effectiveProjectId);
-
-  const { isLoading } = useQuery({
-    queryKey: [...taskQueryKeys.pendingGeneration(generationId ?? ''), effectiveProjectId],
-    queryFn: async () => {
-      if (!generationId || !effectiveProjectId) {
-        return [];
-      }
-
-      const processing = await listBridgeTasks(effectiveProjectId);
-      const pending = processing.filter((task) => task.status === TASK_STATUS.QUEUED
-        || task.status === TASK_STATUS.IN_PROGRESS);
-      return upsertRealtimeTaskSnapshots(pending, effectiveProjectId);
-    },
-    enabled: !!generationId && !!effectiveProjectId
-      && capabilityCensus.capabilities.tasks !== 'unavailable',
-    refetchInterval: taskPollingCadence,
-    staleTime: 0,
-    gcTime: 10000,
-    refetchOnWindowFocus: 'always',
-  });
+  const snapshotQuery = useBridgeTaskSnapshot(
+    generationId && effectiveProjectId ? [effectiveProjectId] : [],
+  );
 
   return {
     pendingCount: pendingSelection.pendingCount,
     pendingTasks: pendingSelection.pendingTasks as PendingGenerationTask[],
-    isLoading,
+    isLoading: snapshotQuery.isLoading,
   };
 }
 

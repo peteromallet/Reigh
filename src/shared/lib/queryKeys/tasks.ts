@@ -3,6 +3,9 @@ export const taskQueryKeys = {
   list: (projectId: string) => ['tasks', projectId] as const,
   paginated: (projectId: string) => ['tasks', 'paginated', projectId] as const,
   paginatedAll: ['tasks', 'paginated'] as const,
+  /** Canonical bridge-backed task snapshot shared by every task consumer. */
+  snapshot: (scope: string) => ['tasks', 'snapshot', scope] as const,
+  snapshotAll: ['tasks', 'snapshot'] as const,
   detail: (taskId: string) => ['tasks', taskId] as const,
   single: (taskId: string, projectId: string | null) => ['tasks', 'single', taskId, projectId ?? '__no-project__'] as const,
   statusCounts: (projectId: string) => ['task-status-counts', projectId] as const,

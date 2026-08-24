@@ -77,11 +77,13 @@ function handleTasksUpdated(queryClient: QueryClient, event: TasksUpdatedEvent):
   // Track affected queries for freshness manager
   const affectedQueries: Array<readonly unknown[]> = [
     queryKeys.tasks.paginatedAll,
+    queryKeys.tasks.snapshotAll,
     queryKeys.tasks.statusCountsAll,
   ];
 
   // Always invalidate task list queries
   queryClient.invalidateQueries({ queryKey: queryKeys.tasks.paginatedAll });
+  queryClient.invalidateQueries({ queryKey: queryKeys.tasks.snapshotAll });
   queryClient.invalidateQueries({ queryKey: queryKeys.tasks.statusCountsAll });
 
   // Invalidate individual task queries
@@ -156,6 +158,7 @@ function handleTasksCreated(queryClient: QueryClient, _event: TasksCreatedEvent)
 
   // Only invalidate task queries - new tasks haven't completed yet
   queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
+  queryClient.invalidateQueries({ queryKey: queryKeys.tasks.snapshotAll });
   queryClient.invalidateQueries({ queryKey: queryKeys.tasks.statusCountsAll });
 
   // Report to freshness manager
