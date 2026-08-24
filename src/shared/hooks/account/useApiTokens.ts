@@ -9,6 +9,7 @@ import {
   requireSession,
   requireUserFromSession,
 } from '@/integrations/supabase/auth/ensureAuthenticatedSession';
+import { hasLocalModeUrlParams } from '@/shared/dev/devSession';
 
 interface ApiToken {
   id: string;
@@ -85,6 +86,9 @@ const revokeApiToken = async (tokenId: string): Promise<void> => {
 
 export const useApiTokens = () => {
   const queryClient = useQueryClient();
+  const isLocalMode = hasLocalModeUrlParams(
+    typeof window === 'undefined' ? '' : window.location.search,
+  );
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedToken, setGeneratedToken] = useState<string | null>(null);
   
@@ -96,12 +100,20 @@ export const useApiTokens = () => {
   } = useQuery({
     queryKey: apiQueryKeys.tokens,
     queryFn: fetchApiTokens,
+    // API tokens are account credentials, not Astrid document data. The local
+    // editor must not even attempt the auth probe that precedes this query.
+    enabled: !isLocalMode,
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
   // Mutation to generate a new API token
   const generateMutation = useMutation({
-    mutationFn: generateApiToken,
+    mutationFn: (params: { label: string }) => {
+      if (isLocalMode) {
+        throw new Error('API tokens are unavailable in local editor mode');
+      }
+      return generateApiToken(params);
+    },
     onMutate: () => {
       setIsGenerating(true);
     },
@@ -119,7 +131,12 @@ export const useApiTokens = () => {
 
   // Mutation to revoke an API token
   const revokeMutation = useMutation({
-    mutationFn: revokeApiToken,
+    mutationFn: (tokenId: string) => {
+      if (isLocalMode) {
+        throw new Error('API tokens are unavailable in local editor mode');
+      }
+      return revokeApiToken(tokenId);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: apiQueryKeys.tokens });
       
@@ -131,6 +148,9 @@ export const useApiTokens = () => {
 
   const refreshTokenMutation = useMutation({
     mutationFn: async (tokenToRefresh: ApiToken) => {
+      if (isLocalMode) {
+        throw new Error('API tokens are unavailable in local editor mode');
+      }
       await revokeApiToken(tokenToRefresh.id);
       return generateApiToken({
         label: tokenToRefresh.label || "Local Generator",

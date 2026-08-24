@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
@@ -54,6 +54,7 @@ vi.mock('@/shared/lib/queryKeys/api', () => ({
 }));
 
 import { useApiTokens } from '../useApiTokens';
+import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -66,6 +67,11 @@ function createWrapper() {
 describe('useApiTokens', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.history.replaceState({}, '', '/');
+  });
+
+  afterEach(() => {
+    window.history.replaceState({}, '', '/');
   });
 
   it('fetches tokens on mount', async () => {
@@ -82,6 +88,21 @@ describe('useApiTokens', () => {
   it('starts with empty tokens array', () => {
     const { result } = renderHook(() => useApiTokens(), { wrapper: createWrapper() });
     expect(result.current.tokens).toEqual([]);
+  });
+
+  it('does not probe Supabase in local Astrid editor mode', async () => {
+    window.history.replaceState({}, '', '/tools/video-editor?localProject=demo-project&localTimeline=demo-timeline');
+
+    const { result } = renderHook(() => useApiTokens(), { wrapper: createWrapper() });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    expect(result.current.tokens).toEqual([]);
+    // The auth/session mock is the first Supabase boundary; local mode must
+    // stop before it, rather than merely swallowing a failed request.
+    expect(normalizeAndPresentError).not.toHaveBeenCalled();
   });
 
   it('has no generated token initially', () => {

@@ -15,6 +15,7 @@ import { useMobileTimeoutFallback } from '@/shared/hooks/useMobileTimeoutFallbac
 import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
 import { SETTINGS_IDS } from '@/shared/lib/settingsIds';
 import { ToolSettingsError } from '@/shared/settings';
+import { hasLocalModeUrlParams } from '@/shared/dev/devSession';
 import { useAuth } from './AuthContext';
 import { requireContextValue } from './contextGuard';
 
@@ -42,6 +43,9 @@ const UserSettingsContext = createContext<UserSettingsContextType | undefined>(u
  */
 export const UserSettingsProvider = ({ children }: { children: ReactNode }) => {
   const { userId } = useAuth();
+  const isLocalMode = hasLocalModeUrlParams(
+    typeof window === 'undefined' ? '' : window.location.search,
+  );
 
   const [userSettings, setUserSettings] = useState<UserPreferences | undefined>(undefined);
   const [isLoadingSettings, setIsLoadingSettings] = useState(false);
@@ -49,7 +53,7 @@ export const UserSettingsProvider = ({ children }: { children: ReactNode }) => {
 
   // Settings fetching
   const fetchUserSettings = useCallback(async () => {
-    if (!userId) return;
+    if (!userId || isLocalMode) return;
 
     setIsLoadingSettings(true);
 
@@ -73,10 +77,12 @@ export const UserSettingsProvider = ({ children }: { children: ReactNode }) => {
     } finally {
       setIsLoadingSettings(false);
     }
-  }, [userId]);
+  }, [isLocalMode, userId]);
 
   // Update user settings directly using the global write queue
   const updateUserSettings = useCallback(async (_scope: 'user', patch: Partial<UserPreferences>) => {
+    if (isLocalMode) return;
+
     if (!userId) {
       const authError = new ToolSettingsError(
         'auth_required',
@@ -108,18 +114,22 @@ export const UserSettingsProvider = ({ children }: { children: ReactNode }) => {
       normalizeAndPresentError(error, { context: 'UserSettingsContext', showToast: false });
       throw error;
     }
-  }, [userId]);
+  }, [isLocalMode, userId]);
 
   // Fetch settings when user changes
   useEffect(() => {
-    if (userId) {
+    if (isLocalMode) {
+      setUserSettings(undefined);
+      userSettingsRef.current = undefined;
+      setIsLoadingSettings(false);
+    } else if (userId) {
       fetchUserSettings();
     } else {
       setUserSettings(undefined);
       userSettingsRef.current = undefined;
       setIsLoadingSettings(false);
     }
-  }, [userId, fetchUserSettings]);
+  }, [fetchUserSettings, isLocalMode, userId]);
 
   // [MobileStallFix] Fallback recovery: set empty defaults if settings loading stalls
   const handleSettingsTimeout = useCallback(() => {
@@ -133,7 +143,7 @@ export const UserSettingsProvider = ({ children }: { children: ReactNode }) => {
     onTimeout: handleSettingsTimeout,
     mobileTimeoutMs: 10000,
     desktopTimeoutMs: 5000,
-    enabled: !!userId,
+    enabled: !!userId && !isLocalMode,
   });
 
   const contextValue = useMemo(

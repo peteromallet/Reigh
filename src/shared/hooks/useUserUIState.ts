@@ -5,6 +5,7 @@ import type { Json } from '@/integrations/supabase/jsonTypes';
 import { updateToolSettingsSupabase } from '@/shared/hooks/settings/useToolSettings';
 import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
 import { SETTINGS_IDS } from '@/shared/lib/settingsIds';
+import { hasLocalModeUrlParams } from '@/shared/dev/devSession';
 
 // Module-level request deduplication cache for the raw `users.settings` DB fetch.
 //
@@ -359,6 +360,14 @@ export function useUserUIState<K extends keyof UISettings>(
   key: K,
   fallback: UISettings[K]
 ) {
+  // Local Astrid editor mode is a bridge-owned surface.  The app shell still
+  // mounts a number of preference consumers around it, but none of those
+  // consumers may probe or write the Supabase `users.settings` row.  Keep the
+  // check at this shared boundary so a newly-mounted shell consumer cannot
+  // accidentally reintroduce a remote request.
+  const isLocalMode = hasLocalModeUrlParams(
+    typeof window === 'undefined' ? '' : window.location.search,
+  );
   // Stabilize fallback using a ref so callers can pass inline objects without causing
   // infinite render loops. The load effect reads fallbackRef.current instead of depending
   // on fallback directly, preventing re-runs when the reference changes but values don't.
@@ -380,6 +389,8 @@ export function useUserUIState<K extends keyof UISettings>(
   // IMPORTANT: Only runs when the key is completely missing from database (undefined)
   // Does NOT override explicit user choices (including both options set to false)
   const saveFallbackToDatabase = useCallback(async (userId: string) => {
+    if (isLocalMode) return;
+
     try {
       const fallbackToSave = normalizeUserUISetting(key, fallbackRef.current, fallbackRef.current);
 
@@ -398,10 +409,16 @@ export function useUserUIState<K extends keyof UISettings>(
     } catch (error) {
       normalizeAndPresentError(error, { context: 'useUserUIState.saveFallbackToDatabase', showToast: false });
     }
-  }, [key]);
+  }, [isLocalMode, key]);
 
   // Load initial value from database
   useEffect(() => {
+    if (isLocalMode) {
+      userIdRef.current = undefined;
+      setIsLoading(false);
+      return;
+    }
+
     const loadUserSettings = async () => {
       try {
         const { data: { user } } = await dedupeGetUser();
@@ -467,7 +484,7 @@ export function useUserUIState<K extends keyof UISettings>(
     };
 
     loadUserSettings();
-  }, [key, saveFallbackToDatabase]);
+  }, [isLocalMode, key, saveFallbackToDatabase]);
 
   // Debounced update function
   // Uses the global settings write queue (via updateToolSettingsSupabase) to prevent
@@ -486,6 +503,11 @@ export function useUserUIState<K extends keyof UISettings>(
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
     }
+
+    // Preference changes inside local mode are intentionally ephemeral.  The
+    // caller still gets an immediate local update for responsive UI, but no
+    // timer is armed and therefore no Supabase write can happen later.
+    if (isLocalMode) return;
 
     // Debounce the database write via the global settings write queue
     debounceRef.current = setTimeout(async () => {
@@ -509,7 +531,7 @@ export function useUserUIState<K extends keyof UISettings>(
         normalizeAndPresentError(error, { context: 'useUserUIState.update', showToast: false });
       }
     }, 200);
-  }, [key]);
+  }, [isLocalMode, key]);
 
   // Cleanup timeout on unmount
   useEffect(() => {
