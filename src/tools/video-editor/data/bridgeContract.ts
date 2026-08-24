@@ -37,6 +37,8 @@ export const BRIDGE_REQUEST_TIMEOUT_MS = ASTRID_BRIDGE_REQUEST_TIMEOUT_MS;
 export const BRIDGE_VERSION_CONFLICT_CODE = 'timeline_version_conflict';
 /** Error code the bridge must return (with HTTP 404) for an unknown timeline. */
 export const BRIDGE_TIMELINE_NOT_FOUND_CODE = 'timeline_not_found';
+/** Error code the bridge returns with HTTP 422 for schema incompatibility. */
+export const BRIDGE_SCHEMA_INCOMPATIBLE_CODE = 'schema_incompatible';
 
 /** Thrown when a bridge response does not match this contract. */
 export class BridgeContractError extends Error {
@@ -351,6 +353,11 @@ export const bridgeErrorEnvelopeSchema = z.looseObject({
   config_version: z.number().optional(),
   limit_bytes: z.number().optional(),
   attempt: bridgeTaskAttemptSchema.optional(),
+  issues: z.array(z.looseObject({
+    pointer: z.string().optional(),
+    code: z.string().optional(),
+    message: z.string().optional(),
+  })).optional(),
 });
 export type BridgeTimelinePayload = z.infer<typeof bridgeTimelinePayloadSchema>;
 export type BridgeAssetRegistryPayload = z.infer<typeof bridgeAssetRegistrySchema>;

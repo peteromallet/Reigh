@@ -173,6 +173,7 @@ function RealtimeConsumer() {
 
 describe('RealtimeProvider', () => {
   beforeEach(() => {
+    window.history.replaceState({}, '', `${window.location.pathname}`);
     vi.clearAllMocks();
     mockedState.statusChangeCallback = null;
     mockedState.rawEventCallback = null;
@@ -432,6 +433,45 @@ describe('RealtimeProvider', () => {
 
     expect(mockRealtimeConnection.reset).toHaveBeenCalled();
     expect(mockRealtimeConnection.connect).toHaveBeenCalledWith('proj-1');
+  });
+
+  it('disconnects reactively when the URL enters local mode', () => {
+    const view = renderWithProviders(
+      <RealtimeProvider>
+        <RealtimeConsumer />
+      </RealtimeProvider>
+    );
+    expect(mockRealtimeConnection.connect).toHaveBeenCalledWith('proj-1');
+    vi.clearAllMocks();
+
+    act(() => {
+      window.history.replaceState({}, '', `${window.location.pathname}?localProject=demo&localTimeline=tl`);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+
+    expect(mockRealtimeConnection.disconnect).toHaveBeenCalledTimes(1);
+    expect(mockedState.mockResetRealtimeTaskScope).toHaveBeenCalledWith('proj-1');
+    expect(mockRealtimeConnection.connect).not.toHaveBeenCalled();
+    view.unmount();
+  });
+
+  it('reconnects reactively when the URL leaves local mode', () => {
+    window.history.replaceState({}, '', `${window.location.pathname}?localProject=demo&localTimeline=tl`);
+    const view = renderWithProviders(
+      <RealtimeProvider>
+        <RealtimeConsumer />
+      </RealtimeProvider>
+    );
+    expect(mockRealtimeConnection.connect).not.toHaveBeenCalled();
+    vi.clearAllMocks();
+
+    act(() => {
+      window.history.replaceState({}, '', window.location.pathname);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+
+    expect(mockRealtimeConnection.connect).toHaveBeenCalledWith('proj-1');
+    view.unmount();
   });
 
   describe('useRealtime hook', () => {

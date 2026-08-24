@@ -1,7 +1,10 @@
 export {
   TimelineVersionConflictError,
   isTimelineVersionConflictError,
+  TimelineSchemaIncompatibleError,
+  isTimelineSchemaIncompatibleError,
 } from '@/sdk/video/timeline/errors.ts';
+export type { TimelineSchemaIssue } from '@/sdk/video/timeline/errors.ts';
 import type { AssetRegistry, TimelineConfig } from '@/tools/video-editor/types/index.ts';
 import type { Checkpoint } from '@/tools/video-editor/types/history.ts';
 import type { AssetResolver } from '@/tools/video-editor/data/AssetResolver.ts';

@@ -188,6 +188,7 @@ export interface TimelineChromeContextValue {
   timelineName: string | null;
   saveStatus: SaveStatus;
   isConflictExhausted: boolean;
+  schemaIncompatible: ReadonlyArray<{ pointer?: string; code?: string; message?: string }> | null;
   /**
    * The timeline load query's error, or null. A load failure never reaches
    * `TimelineErrorBoundary` (it happens before any render), so without this the

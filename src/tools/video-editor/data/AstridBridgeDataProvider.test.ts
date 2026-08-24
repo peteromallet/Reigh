@@ -25,8 +25,10 @@ import {
   defaultAstridBridgeAssetBaseUrl,
 } from '@/tools/video-editor/data/AstridBridgeDataProvider.ts';
 import {
+  isTimelineSchemaIncompatibleError,
   isTimelineVersionConflictError,
   TimelineNotFoundError,
+  TimelineSchemaIncompatibleError,
   TimelineVersionConflictError,
 } from '@/tools/video-editor/data/DataProvider.ts';
 import { BridgeContractError } from '@/tools/video-editor/data/bridgeContract.ts';
@@ -1430,6 +1432,43 @@ describe('AstridBridgeDataProvider', () => {
 
       expect(isTimelineVersionConflictError(error)).toBe(true);
       expect(error).toMatchObject({ expectedVersion: 3, actualVersion: 7 });
+    });
+
+    it('throws TimelineSchemaIncompatibleError with typed issues for a 422 save rejection', async () => {
+      const issues = [
+        { pointer: '/config/output', code: 'invalid_type', message: 'expected object, got null' },
+        { pointer: '/config/tracks/0/id', code: 'invalid_type', message: 'expected string, got number' },
+      ];
+      vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith(`/api/astrid/projects/ados-talks/timelines/${TIMELINE_ID}`)) {
+          return new Response(JSON.stringify(makePayload()), { status: 200 });
+        }
+        if (url.endsWith('/save')) {
+          return new Response(JSON.stringify({
+            error: 'schema_incompatible',
+            detail: 'payload failed schema validation',
+            issues,
+          }), { status: 422 });
+        }
+        throw new Error(`Unexpected bridge request: ${url}`);
+      }));
+
+      const provider = new AstridBridgeDataProvider({
+        projectSlug: 'ados-talks',
+        timelineRef: 'intro-cut',
+        timelineId: TIMELINE_ID,
+      });
+      const error = await provider.saveTimeline(
+        TIMELINE_ID,
+        { output: {}, clips: [], tracks: [] },
+        1,
+      ).catch((thrown: unknown) => thrown);
+
+      expect(isTimelineSchemaIncompatibleError(error)).toBe(true);
+      expect(error).toBeInstanceOf(TimelineSchemaIncompatibleError);
+      expect(error).toMatchObject({ issues });
+      expect((error as Error).message).toContain('schema validation');
     });
 
     it('succeeds once the caller retries with the version the conflict reported', async () => {

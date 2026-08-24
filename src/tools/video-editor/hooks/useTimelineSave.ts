@@ -169,6 +169,7 @@ export function useTimelineSave(
     selectedClipId: commit.selectedClipId,
     selectedTrackId: commit.selectedTrackId,
     saveStatus: persistence.saveStatus,
+    schemaIncompatible: persistence.schemaIncompatible,
     flushPendingSave: persistence.flushPendingSave,
     setSelectedTrackId: commit.setSelectedTrackId,
     applyEdit: commit.applyEdit,

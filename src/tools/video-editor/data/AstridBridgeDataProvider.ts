@@ -8,10 +8,13 @@ import {
   type DataProvider,
   type LoadedTimeline,
   TimelineNotFoundError,
+  TimelineSchemaIncompatibleError,
   TimelineVersionConflictError,
+  type TimelineSchemaIssue,
 } from '@/tools/video-editor/data/DataProvider.ts';
 import {
   BRIDGE_TIMELINE_NOT_FOUND_CODE,
+  BRIDGE_SCHEMA_INCOMPATIBLE_CODE,
   BRIDGE_VERSION_CONFLICT_CODE,
   bridgeTimelinePayloadSchema,
 } from '@/tools/video-editor/data/bridgeContract.ts';
@@ -91,7 +94,6 @@ export class AstridBridgeReadOnlyError extends Error {
     this.name = 'AstridBridgeReadOnlyError';
   }
 }
-
 type FileSystemDirectoryHandleLike = PersistedLocalDirectoryHandle & {
   getDirectoryHandle: (
     name: string,
@@ -663,6 +665,13 @@ export class AstridBridgeDataProvider implements DataProvider {
       );
     }
 
+    if (error.status === 422 && error.code === BRIDGE_SCHEMA_INCOMPATIBLE_CODE) {
+      return new TimelineSchemaIncompatibleError(
+        error.detail ?? `Astrid bridge ${action} rejected the payload against the schema`,
+        (error.envelope?.issues ?? []) as readonly TimelineSchemaIssue[],
+      );
+    }
+
     return error;
   }
 
@@ -1052,4 +1061,3 @@ export class AstridBridgeDataProvider implements DataProvider {
     return `${baseName}-${Date.now()}${extension}`;
   }
 }
-

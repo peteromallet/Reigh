@@ -6,8 +6,10 @@ import type { TimelineStoreApi } from '@/tools/video-editor/hooks/timelineStore.
 import {
   isDataProviderPersistenceEnabled,
   isTimelineNotFoundError,
+  isTimelineSchemaIncompatibleError,
   isTimelineVersionConflictError,
   type DataProvider,
+  type TimelineSchemaIssue,
 } from '@/tools/video-editor/data/DataProvider.ts';
 import { buildTimelineData, buildTimelineDataWithResolver, type TimelineData } from '@/tools/video-editor/lib/timeline-data.ts';
 import type { AssetResolver } from '@/tools/video-editor/data/AssetResolver.ts';
@@ -82,6 +84,7 @@ export interface UseTimelinePersistenceResult {
   flushPendingSave: () => Promise<number>;
   saveStatus: SaveStatus;
   isConflictExhausted: boolean;
+  schemaIncompatible: ReadonlyArray<TimelineSchemaIssue> | null;
   reloadFromServer: (options?: { clearDraft?: boolean; preserveDraft?: boolean }) => Promise<void>;
   retrySaveAfterConflict: () => Promise<void>;
   isSavingRef: MutableRefObject<boolean>;
@@ -153,12 +156,14 @@ export function useTimelinePersistence({
 
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
   const [isConflictExhausted, setIsConflictExhausted] = useState(false);
+  const [schemaIncompatible, setSchemaIncompatible] = useState<ReadonlyArray<TimelineSchemaIssue> | null>(null);
   const [watchdogTripped, setWatchdogTripped] = useState(false);
   const [watchdogReason, setWatchdogReason] = useState<'timeout' | 'lost-edit' | null>(null);
   const watchdogTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Mirrors isConflictExhausted for the poll gate (usePollSync) — a diverged
   // timeline must not adopt remote data over local edits.
   const isConflictExhaustedRef = useRef(false);
+  const isSchemaIncompatibleRef = useRef(false);
   const getDataRef = useCallback(() => {
     const storeDataRef = store?.getState().data.dataRef;
     return storeDataRef && storeDataRef.current !== null ? storeDataRef : dataRef;
@@ -308,6 +313,9 @@ export function useTimelinePersistence({
     if (!isMountedRef.current) {
       return;
     }
+    if (isConflictExhaustedRef.current || isSchemaIncompatibleRef.current) {
+      return;
+    }
 
     if (errorRetryTimer.current) {
       clearTimeout(errorRetryTimer.current);
@@ -321,6 +329,9 @@ export function useTimelinePersistence({
     errorRetryTimer.current = setTimeout(() => {
       errorRetryTimer.current = null;
       if (!isMountedRef.current) {
+        return;
+      }
+      if (isConflictExhaustedRef.current || isSchemaIncompatibleRef.current) {
         return;
       }
       if (isInteractionActive(getInteractionStateRef())) {
@@ -389,6 +400,8 @@ export function useTimelinePersistence({
 
             clearErrorRetry();
             setIsConflictExhausted(false);
+            setSchemaIncompatible(null);
+            isSchemaIncompatibleRef.current = false;
             if (seq > savedSeqRef.current) {
               savedSeqRef.current = seq;
               lastSavedSignatureRef.current = nextData.stableSignature;
@@ -442,6 +455,16 @@ export function useTimelinePersistence({
         return;
       }
 
+      if (isTimelineSchemaIncompatibleError(error)) {
+        isSchemaIncompatibleRef.current = true;
+        setSchemaIncompatible(error.issues);
+        setSaveStatus('error');
+        cancelErrorRetryTimer();
+        disarmWatchdog();
+        rejectFlushWaiters(error);
+        return;
+      }
+
       rejectFlushWaiters(error);
 
       const retryData = getDataRef().current ?? dataRef.current;
@@ -463,7 +486,9 @@ export function useTimelinePersistence({
         if (pendingSave) {
           pendingSaveRef.current = null;
           if (completedSeqRef.current === null || pendingSave.seq > completedSeqRef.current) {
-            void doSave(pendingSave.data, pendingSave.seq);
+            if (!isConflictExhaustedRef.current && !isSchemaIncompatibleRef.current) {
+              void doSave(pendingSave.data, pendingSave.seq);
+            }
           }
         }
       }
@@ -553,6 +578,9 @@ export function useTimelinePersistence({
     if (isConflictExhausted) {
       return;
     }
+    if (schemaIncompatible) {
+      return;
+    }
 
     if (!options?.preserveStatus) {
       setSaveStatus('dirty');
@@ -575,7 +603,7 @@ export function useTimelinePersistence({
       saveTimer.current = null;
       void doSave(nextData, editSeqRef.current);
     }, SAVE_DEBOUNCE_MS);
-  }, [armWatchdog, cancelErrorRetryTimer, configVersionRef, disarmWatchdog, doSave, editSeqRef, getDataRef, getInteractionStateRef, isConflictExhausted, persistenceEnabled, timelineId]);
+  }, [armWatchdog, cancelErrorRetryTimer, configVersionRef, disarmWatchdog, doSave, editSeqRef, getDataRef, getInteractionStateRef, isConflictExhausted, persistenceEnabled, schemaIncompatible, timelineId]);
 
   const flushPendingSave = useCallback((): Promise<number> => {
     if (!persistenceEnabled) {
@@ -666,6 +694,8 @@ export function useTimelinePersistence({
     clearErrorRetry();
     clearWatchdog();
     setIsConflictExhausted(false);
+    setSchemaIncompatible(null);
+    isSchemaIncompatibleRef.current = false;
     editSeqRef.current = savedSeqRef.current;
     logConfigVersionUpdate('reload', loadedTimeline.configVersion);
     configVersionRef.current = loadedTimeline.configVersion;
@@ -790,6 +820,7 @@ export function useTimelinePersistence({
     flushPendingSave,
     saveStatus,
     isConflictExhausted,
+    schemaIncompatible,
     reloadFromServer,
     retrySaveAfterConflict,
     isSavingRef,

@@ -320,6 +320,7 @@ function useTimelineChromeContextValue({
   timelineName,
   saveStatus,
   isConflictExhausted,
+  schemaIncompatible,
   render,
   history,
   setScaleWidth,
@@ -340,6 +341,7 @@ function useTimelineChromeContextValue({
   timelineName: string | null;
   saveStatus: ReturnType<typeof useTimelineSave>['saveStatus'];
   isConflictExhausted: boolean;
+  schemaIncompatible: ReturnType<typeof useTimelineSave>['schemaIncompatible'];
   loadError: Error | null;
   retryLoad: () => void;
   render: Pick<RenderStateHook, 'renderStatus' | 'renderLog' | 'renderDirty' | 'renderProgress' | 'renderResultUrl' | 'renderResultFilename' | 'activeRenderTaskId' | 'renderDestination' | 'setRenderDestination' | 'cancelRender'>;
@@ -361,6 +363,7 @@ function useTimelineChromeContextValue({
     timelineName,
     saveStatus,
     isConflictExhausted,
+    schemaIncompatible,
     renderStatus: render.renderStatus,
     renderLog: render.renderLog,
     renderDirty: render.renderDirty,
@@ -410,6 +413,7 @@ function useTimelineChromeContextValue({
     history.redo,
     history.undo,
     isConflictExhausted,
+    schemaIncompatible,
     reloadFromServer,
     render.renderDirty,
     render.renderLog,
@@ -969,6 +973,7 @@ export function useTimelineState(): UseTimelineStateResult {
     timelineName: runtime.timelineName ?? null,
     saveStatus,
     isConflictExhausted,
+    schemaIncompatible: save.schemaIncompatible,
     render: {
       renderStatus,
       renderLog,

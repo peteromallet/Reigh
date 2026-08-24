@@ -178,6 +178,7 @@ async function dispatchTimelineDrop({
         return;
       }
 
+      const priorDataRef = dataRef.current;
       dataRef.current = resolvedTarget.preparedCurrent;
       const assetKey = registerGenerationAsset({
         assetId: registrationPlan.assetId,
@@ -193,6 +194,7 @@ async function dispatchTimelineDrop({
         },
       });
       if (!assetKey) {
+        dataRef.current = priorDataRef;
         return;
       }
       const nextData: TimelineData = {
@@ -246,6 +248,7 @@ async function dispatchTimelineDrop({
       return;
     }
 
+    const priorDataRef = dataRef.current;
     let workingData = resolvedTarget.preparedCurrent;
     const metaUpdates: Record<string, TimelineData['meta'][string]> = {};
     const createdClipIds: string[] = [];
@@ -314,6 +317,7 @@ async function dispatchTimelineDrop({
     }
 
     if (createdClipIds.length === 0) {
+      dataRef.current = priorDataRef;
       return;
     }
     const nextPinnedShotGroups = buildPinnedShotGroupsOverride(workingData, {

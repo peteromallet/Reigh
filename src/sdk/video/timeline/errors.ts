@@ -25,3 +25,27 @@ export function isTimelineVersionConflictError(error: unknown): error is Timelin
   return error instanceof TimelineVersionConflictError
     || (error instanceof Error && error.name === 'TimelineVersionConflictError');
 }
+
+export type TimelineSchemaIssue = {
+  pointer?: string;
+  code?: string;
+  message?: string;
+};
+
+export class TimelineSchemaIncompatibleError extends Error {
+  code = 'schema_incompatible' as const;
+
+  constructor(
+    message = 'Timeline payload rejected by the schema',
+    readonly issues: readonly TimelineSchemaIssue[] = [],
+  ) {
+    super(message);
+    this.name = 'TimelineSchemaIncompatibleError';
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+
+export function isTimelineSchemaIncompatibleError(error: unknown): error is TimelineSchemaIncompatibleError {
+  return error instanceof TimelineSchemaIncompatibleError
+    || (error instanceof Error && error.name === 'TimelineSchemaIncompatibleError');
+}

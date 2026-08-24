@@ -341,6 +341,7 @@ function createInitialChromeSlice(): TimelineChromeContextValue {
     timelineName: null,
     saveStatus: 'saved',
     isConflictExhausted: false,
+    schemaIncompatible: null,
     renderStatus: 'idle',
     renderLog: '',
     renderDirty: false,

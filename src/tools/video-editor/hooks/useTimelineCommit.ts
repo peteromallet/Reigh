@@ -409,6 +409,7 @@ export function useTimelineCommit({
   const patchRegistry = useCallback((assetId: string, entry: AssetRegistryEntry, src?: string) => {
     const current = dataRef.current;
     if (!current) {
+      eventBus.emit('lostEdit');
       return;
     }
 
@@ -458,11 +459,12 @@ export function useTimelineCommit({
       selectedClipId: selectedClipIdRef.current,
       selectedTrackId: selectedTrackIdRef.current,
     });
-  }, [commitData]);
+  }, [commitData, eventBus]);
 
   const unpatchRegistry = useCallback((assetId: string) => {
     const current = dataRef.current;
     if (!current) {
+      eventBus.emit('lostEdit');
       return;
     }
 
@@ -505,7 +507,7 @@ export function useTimelineCommit({
       selectedClipId: selectedClipIdRef.current,
       selectedTrackId: selectedTrackIdRef.current,
     });
-  }, [commitData]);
+  }, [commitData, eventBus]);
 
   return {
     data,

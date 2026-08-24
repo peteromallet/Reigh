@@ -8,9 +8,10 @@
  *
  */
 
-import React, { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef, useSyncExternalStore } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useProjectSelectionContext } from '@/shared/contexts/ProjectContext';
+import { hasLocalModeUrlParams } from '@/shared/dev/devSession';
 import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
 import { isTaskDbRow, mapTaskDbRowToTask } from '@/shared/lib/taskRowMapper';
 import { getRealtimeConnection } from '@/shared/realtime/RealtimeConnection';
@@ -58,6 +59,42 @@ const RealtimeContext = createContext<RealtimeContextValue>({
 
 export const useRealtime = () => useContext(RealtimeContext);
 
+const urlSearchSubscribers = new Set<() => void>();
+let urlSearchPatched = false;
+
+function ensureUrlSearchPatch(): void {
+  if (urlSearchPatched || typeof window === 'undefined') return;
+  urlSearchPatched = true;
+  const originalPushState = window.history.pushState.bind(window.history);
+  const originalReplaceState = window.history.replaceState.bind(window.history);
+  const notify = () => urlSearchSubscribers.forEach((subscriber) => subscriber());
+  window.history.pushState = ((...args: Parameters<typeof window.history.pushState>) => {
+    const result = originalPushState(...args);
+    notify();
+    return result;
+  }) as typeof window.history.pushState;
+  window.history.replaceState = ((...args: Parameters<typeof window.history.replaceState>) => {
+    const result = originalReplaceState(...args);
+    notify();
+    return result;
+  }) as typeof window.history.replaceState;
+  window.addEventListener('popstate', notify);
+}
+
+function subscribeUrlSearch(callback: () => void): () => void {
+  ensureUrlSearchPatch();
+  urlSearchSubscribers.add(callback);
+  return () => urlSearchSubscribers.delete(callback);
+}
+
+function getUrlSearchSnapshot(): string {
+  return typeof window === 'undefined' ? '' : window.location.search;
+}
+
+function useUrlSearch(): string {
+  return useSyncExternalStore(subscribeUrlSearch, getUrlSearchSnapshot, getUrlSearchSnapshot);
+}
+
 // =============================================================================
 // Provider
 // =============================================================================
@@ -84,6 +121,7 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
   );
   const activeProjectIdRef = useRef<string | null>(null);
   const capabilityCensus = useAstridCapabilityCensus();
+  const urlSearch = useUrlSearch();
 
   // Set up the invalidation hook (subscribes to processed events)
   useRealtimeInvalidation();
@@ -164,6 +202,16 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
   useEffect(() => {
     const previousProjectId = activeProjectIdRef.current;
 
+    if (hasLocalModeUrlParams(urlSearch)) {
+      if (activeProjectIdRef.current) {
+        resetRealtimeTaskScope(activeProjectIdRef.current);
+        activeProjectIdRef.current = null;
+      }
+      realtimeConnection.disconnect();
+      dataFreshnessManager.reset();
+      return;
+    }
+
     if (previousProjectId && previousProjectId !== selectedProjectId) {
       resetRealtimeTaskScope(previousProjectId);
     }
@@ -188,7 +236,7 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
       // Don't disconnect on cleanup - let the next effect handle it
       // This prevents disconnect/reconnect when the component re-renders
     };
-  }, [capabilityCensus.capabilities.generations, capabilityCensus.capabilities.tasks, capabilityCensus.health, selectedProjectId, realtimeConnection]);
+  }, [capabilityCensus.capabilities.generations, capabilityCensus.capabilities.tasks, capabilityCensus.health, selectedProjectId, realtimeConnection, urlSearch]);
 
   // Clean up on unmount
   useEffect(() => {
@@ -202,6 +250,9 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
 
   // Manual reconnect function
   const reconnect = useCallback(() => {
+    if (hasLocalModeUrlParams(urlSearch)) {
+      return;
+    }
     if (
       selectedProjectId
       && capabilityCensus.health !== 'unavailable'
@@ -213,7 +264,7 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
       realtimeConnection.reset();
       realtimeConnection.connect(selectedProjectId);
     }
-  }, [capabilityCensus.capabilities.generations, capabilityCensus.capabilities.tasks, capabilityCensus.health, selectedProjectId, realtimeConnection]);
+  }, [capabilityCensus.capabilities.generations, capabilityCensus.capabilities.tasks, capabilityCensus.health, selectedProjectId, realtimeConnection, urlSearch]);
 
   // Derive context value from connection state
   const contextValue: RealtimeContextValue = {

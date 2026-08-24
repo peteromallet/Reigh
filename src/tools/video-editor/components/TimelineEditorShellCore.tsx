@@ -558,6 +558,31 @@ function TimelineEditorShellCoreComponent({
     </div>
   ) : null;
 
+  /** Schema rejection banner: the server could not validate the payload.
+   *  Freeze autosave until the user explicitly adopts the server version. */
+  const incompatibleBanner = chrome.schemaIncompatible ? (
+    <div
+      role="alert"
+      className="flex items-center justify-between gap-3 border-b border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+    >
+      <span>
+        The timeline could not be saved because the payload is incompatible with the server schema.
+        {chrome.schemaIncompatible.length > 0 && (
+          <span className="ml-2 text-xs opacity-80">
+            {chrome.schemaIncompatible.map((issue) => {
+              const location = issue.pointer ? ` at ${issue.pointer}` : '';
+              const detail = issue.message ? `: ${issue.message}` : '';
+              return `${issue.code ?? 'schema_error'}${location}${detail}`;
+            }).join('; ')}
+          </span>
+        )}
+      </span>
+      <Button type="button" size="sm" variant="outline" onClick={() => void chrome.reloadFromServer()}>
+        Reload
+      </Button>
+    </div>
+  ) : null;
+
   /** Recovery draft banner (B9): a previous session left unsaved work in the
    *  one-slot draft. Offer Retry (re-POST the draft) or Discard. */
   const recoveryBanner = chrome.recoveryDraft ? (
@@ -592,6 +617,7 @@ function TimelineEditorShellCoreComponent({
   const timelineRegion = (
     <>
       {conflictBanner}
+      {incompatibleBanner}
       {watchdogBanner}
       {recoveryBanner}
       {chrome.loadError ? (

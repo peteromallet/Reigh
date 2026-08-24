@@ -18,7 +18,7 @@ import { configToRows, type TimelineData } from '../lib/timeline-data';
 import { getConfigSignature, getStableConfigSignature } from '../lib/config-utils';
 import { createDefaultTimelineConfig } from '../lib/defaults';
 import type { AssetResolver } from '../data/AssetResolver';
-import { TimelineVersionConflictError, type DataProvider } from '../data/DataProvider';
+import { TimelineSchemaIncompatibleError, TimelineVersionConflictError, type DataProvider } from '../data/DataProvider';
 import { loadTimelineDraft, saveTimelineDraft } from '@/tools/video-editor/data/timelineDraftIndexedDb.ts';
 import type { AssetRegistry } from '../types';
 
@@ -875,6 +875,49 @@ describe('useTimelinePersistence — interaction gating', () => {
     );
   });
 
+});
+
+describe('useTimelinePersistence — schema incompatibility', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    resetFakeIndexedDB();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('surfaces typed 422 issues and freezes autosave retries until reload', async () => {
+    const issues = [{ pointer: '/config/output', code: 'invalid_type', message: 'expected object' }];
+    const harness = setup({
+      saveTimelineImpl: async () => {
+        throw new TimelineSchemaIncompatibleError('payload failed schema validation', issues);
+      },
+    });
+    harness.scheduleSave(makeTimelineData('schema-rejected'));
+
+    await act(async () => {
+      vi.advanceTimersByTime(600);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(harness.saveTimeline).toHaveBeenCalledTimes(1);
+    expect(harness.result.current.schemaIncompatible).toEqual(issues);
+    expect(harness.result.current.saveStatus).toBe('error');
+
+    harness.scheduleSave(makeTimelineData('schema-rejected-edit'));
+    await act(async () => {
+      vi.advanceTimersByTime(10_000);
+      await Promise.resolve();
+    });
+    expect(harness.saveTimeline).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await harness.reloadFromServer();
+    });
+    expect(harness.result.current.schemaIncompatible).toBeNull();
+    expect(harness.result.current.saveStatus).toBe('saved');
+  });
 });
 
 describe('useTimelinePersistence — write-ack watchdog', () => {
