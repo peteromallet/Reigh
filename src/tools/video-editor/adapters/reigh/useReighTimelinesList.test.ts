@@ -36,6 +36,7 @@ describe('useReighTimelinesList — Astrid cutover', () => {
       name: 'Main',
       is_default: true,
     })]);
+    expect(result.current.timelineMutationsAvailable).toBe(false);
   });
 
   it('does not issue a route without a project', () => {

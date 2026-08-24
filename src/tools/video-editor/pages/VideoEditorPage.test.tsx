@@ -4,7 +4,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import VideoEditorPage from '@/tools/video-editor/pages/VideoEditorPage.tsx';
+import VideoEditorPage, { TimelineList, timelineFreshnessLabel } from '@/tools/video-editor/pages/VideoEditorPage.tsx';
 import { setDevExtensionEnabled } from '@/tools/video-editor/dev/devExtensionEnablement.ts';
 
 const state = vi.hoisted(() => ({
@@ -24,9 +24,14 @@ const state = vi.hoisted(() => ({
     update: vi.fn(async () => undefined),
   },
   timelines: {
-    data: [{ id: 'timeline-1', name: 'Main timeline', updated_at: '2026-06-11T10:00:00Z' }],
+    data: [{ id: 'timeline-1', name: 'Main timeline', updated_at: '2026-06-11T10:00:00Z' }] as Array<{
+      id: string;
+      name: string;
+      updated_at?: string | null;
+    }>,
     isLoading: false,
     error: null as Error | null,
+    timelineMutationsAvailable: false,
     createTimeline: {
       isPending: false,
       mutateAsync: vi.fn(async () => ({ id: 'created-timeline' })),
@@ -297,6 +302,7 @@ describe('VideoEditorPage', () => {
     state.timelines.data = [{ id: 'timeline-1', name: 'Main timeline', updated_at: '2026-06-11T10:00:00Z' }];
     state.timelines.isLoading = false;
     state.timelines.error = null;
+    state.timelines.timelineMutationsAvailable = false;
     state.timelines.createTimeline.isPending = false;
     state.timelines.createTimeline.mutateAsync.mockClear();
     state.timelines.renameTimeline.mutateAsync.mockClear();
@@ -355,6 +361,47 @@ describe('VideoEditorPage', () => {
     expect(state.supabaseCtor).toHaveBeenCalledWith({ projectId: 'project-1', userId: 'user-1' });
     expect(state.bridgeCtor).not.toHaveBeenCalled();
     expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('formats missing or invalid timeline update metadata as Astrid-managed', () => {
+    expect(timelineFreshnessLabel(undefined)).toBe('Managed by Astrid');
+    expect(timelineFreshnessLabel(null)).toBe('Managed by Astrid');
+    expect(timelineFreshnessLabel('not-a-date')).toBe('Managed by Astrid');
+  });
+
+  it('keeps Astrid timelines openable while hiding unavailable mutations and tolerating missing metadata', async () => {
+    state.timelines.data = [{ id: 'timeline-1', name: 'Main timeline', updated_at: undefined }];
+
+    render(<TimelineList onSelect={vi.fn()} />);
+
+    expect(await screen.findByText(/Managed by Astrid/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Create timeline' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Rename' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Delete Main timeline' })).toBeNull();
+  });
+
+  it('does not loop timeline creation when Astrid returns an empty list', async () => {
+    state.settings.settings = { lastTimelineId: undefined };
+    state.timelines.data = [];
+    state.timelines.timelineMutationsAvailable = false;
+
+    const view = renderPage('/tools/video-editor');
+    expect(await screen.findByText('Timeline changes are managed in Astrid')).toBeInTheDocument();
+    expect(await screen.findByText('Create a timeline in Astrid, then refresh this page.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Create timeline' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Rename' })).toBeNull();
+    view.rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter initialEntries={['/tools/video-editor']}>
+          <VideoEditorPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(state.timelines.createTimeline.mutateAsync).not.toHaveBeenCalled();
+    expect(state.timelines.renameTimeline.mutateAsync).not.toHaveBeenCalled();
+    expect(state.timelines.deleteTimeline.mutateAsync).not.toHaveBeenCalled();
   });
 
   it('uses AstridBridgeDataProvider in Local mode with bridge persistence enabled', async () => {
@@ -574,16 +621,18 @@ describe('VideoEditorPage', () => {
     expect(window.localStorage.getItem('dev.videoEditor.localMode')).toBeNull();
   });
 
-  it('ignores local-mode URL params when DEV is off (production cannot reach the bridge proxy)', async () => {
+  it('honors explicit local-mode URL params when DEV is off', async () => {
     (import.meta.env as Record<string, unknown>).DEV = false;
+    setupBridgeFetch();
 
     renderPage('/tools/video-editor?timeline=timeline-1&localProject=ados-talks&localTimeline=11111111-1111-1111-1111-111111111111');
 
     const provider = await screen.findByTestId('video-editor-provider');
-    // `/api/astrid` is a development proxy: production must never enter local
-    // mode from a URL, or users would be stranded on a dead bridge.
-    expect(provider).toHaveAttribute('data-kind', 'supabase');
-    expect(state.bridgeCtor).not.toHaveBeenCalled();
+    // Desktop production serves the same-origin Astrid bridge middleware; the
+    // explicit URL remains the sole mode signal in every environment.
+    expect(provider).toHaveAttribute('data-kind', 'bridge');
+    expect(state.bridgeCtor).toHaveBeenCalledTimes(1);
+    expect(state.supabaseCtor).not.toHaveBeenCalled();
   });
 
   it('switches Local→App via the selectors, preserving the app timeline', async () => {

@@ -7,7 +7,14 @@ import { useAgentChatBridge, useAgentChatActionsRegistry, type AgentChatActionsH
 import { composerClearAttachments, composerRemoveAttachment } from '@/shared/state/selectionStore.ts';
 import { useCurrentAttachmentSet } from '@/shared/state/currentAttachmentSet.ts';
 import { usePanesStore } from '@/shared/state/panesStore.ts';
-import { useAgentSession, useAgentSessions, useCancelSession, useCreateSession, useSendMessage } from '@/tools/video-editor/hooks/useAgentSession.ts';
+import {
+  isTimelineAgentSessionsAvailable,
+  useAgentSession,
+  useAgentSessions,
+  useCancelSession,
+  useCreateSession,
+  useSendMessage,
+} from '@/tools/video-editor/hooks/useAgentSession.ts';
 import { useAgentVoice } from '@/tools/video-editor/hooks/useAgentVoice.ts';
 import { useRenderDiagnostic } from '@/tools/video-editor/hooks/usePerfDiagnostics.ts';
 import { loadGenerationForLightbox } from '@/tools/video-editor/lib/generation-utils.ts';
@@ -100,6 +107,28 @@ function getTurnTimestampMs(turn: AgentTurn) {
 
 export function AgentChatPanel() {
   useRenderDiagnostic('AgentChatPanel');
+
+  if (!isTimelineAgentSessionsAvailable()) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
+        <img
+          src="/astrid-avatar.png"
+          alt=""
+          aria-hidden="true"
+          className="h-8 w-8 rounded-full object-cover"
+        />
+        <p className="text-sm font-medium text-foreground">Timeline agent chat is managed in Astrid</p>
+        <p className="max-w-sm text-xs text-muted-foreground">
+          Run the agent workflow in Astrid, then refresh this editor to load the updated timeline.
+        </p>
+      </div>
+    );
+  }
+
+  return <AvailableAgentChatPanel />;
+}
+
+function AvailableAgentChatPanel() {
 
   const { timelineId } = useAgentChatBridge();
   const sessions = useAgentSessions(timelineId);

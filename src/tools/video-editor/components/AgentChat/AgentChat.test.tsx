@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   composerClearAttachments: vi.fn(),
   useAgentVoice: vi.fn(),
   loadGenerationForLightbox: vi.fn(),
+  agentSessionsAvailable: true,
   // Mutable so individual tests can flip isTasksPaneLocked to satisfy the
   // engagement gate that drives auto-create.
   panesState: { isTasksPaneLocked: false },
@@ -33,6 +34,7 @@ vi.mock('@/tools/video-editor/contexts/VideoEditorRuntimeContext', () => ({
 }));
 
 vi.mock('@/tools/video-editor/hooks/useAgentSession', () => ({
+  isTimelineAgentSessionsAvailable: () => mocks.agentSessionsAvailable,
   useAgentSessions: (...args: unknown[]) => mocks.useAgentSessions(...args),
   useCreateSession: (...args: unknown[]) => mocks.useCreateSession(...args),
   useAgentSession: (...args: unknown[]) => mocks.useAgentSession(...args),
@@ -221,6 +223,7 @@ function getQueuedTexts() {
 describe('AgentChat', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.agentSessionsAvailable = true;
     // Default: pane is locked so the engagement gate is satisfied and the
     // existing auto-create assertions still hold. Tests that need the unengaged
     // baseline flip this back to false.
@@ -244,6 +247,23 @@ describe('AgentChat', () => {
       primary_variant_id: null,
       name: 'Shared image',
     });
+  });
+
+  it('renders one Astrid-managed notice and never starts unavailable session work', async () => {
+    mocks.agentSessionsAvailable = false;
+    const state = createState();
+    state.sessionsData = [];
+    mockFromState(state);
+
+    const view = renderAgentChat();
+    expect(await screen.findByText('Timeline agent chat is managed in Astrid')).toBeInTheDocument();
+    expect(screen.getByText(/Run the agent workflow in Astrid/)).toBeInTheDocument();
+
+    view.rerender(<AgentChatPanel />);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mocks.useAgentSessions).not.toHaveBeenCalled();
+    expect(mocks.useCreateSession).not.toHaveBeenCalled();
+    expect(state.createSession.mutate).not.toHaveBeenCalled();
   });
 
   it('shows a no-timeline prompt and does not auto-create a session even when engaged', async () => {

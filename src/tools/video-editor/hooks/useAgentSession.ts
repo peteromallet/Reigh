@@ -11,6 +11,11 @@ const unavailable = () => bridgeCapabilityUnavailable(
   'Run the agent workflow in Astrid; the ai-timeline-agent edge function and session table are not part of the local bridge.',
 );
 
+/** Frozen Phase C capability flag consumed before the legacy panel mounts. */
+export function isTimelineAgentSessionsAvailable(): boolean {
+  return false;
+}
+
 export const agentSessionsQueryKey = (timelineId: string | null | undefined) =>
   ['timeline-agent-sessions', timelineId] as const;
 export const agentSessionQueryKey = (sessionId: string | null | undefined) =>

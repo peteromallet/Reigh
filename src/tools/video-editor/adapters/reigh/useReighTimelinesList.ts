@@ -4,6 +4,9 @@ import { bridgeCapabilityUnavailable } from '@/integrations/astrid/capability.ts
 
 export const timelineListQueryKey = (projectId: string | null | undefined) => ['timelines', projectId] as const;
 
+/** Timeline list reads exist; create/rename/delete routes do not. */
+export const ASTRID_TIMELINE_MUTATIONS_AVAILABLE: boolean = false;
+
 const timelineWriteUnavailable = (operation: string) => bridgeCapabilityUnavailable(
   operation,
   'Create, rename, or remove the timeline in Astrid, then refresh the editor.',
@@ -39,5 +42,11 @@ export function useReighTimelinesList(
     mutationFn: async (_timelineId: string) => { throw timelineWriteUnavailable('delete timeline'); },
   });
 
-  return { ...timelinesQuery, createTimeline, renameTimeline, deleteTimeline };
+  return {
+    ...timelinesQuery,
+    timelineMutationsAvailable: ASTRID_TIMELINE_MUTATIONS_AVAILABLE,
+    createTimeline,
+    renameTimeline,
+    deleteTimeline,
+  };
 }

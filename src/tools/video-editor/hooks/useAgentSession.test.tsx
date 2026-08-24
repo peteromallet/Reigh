@@ -8,6 +8,7 @@ import {
   useCancelSession,
   useCreateSession,
   useSendMessage,
+  isTimelineAgentSessionsAvailable,
 } from './useAgentSession.ts';
 
 function wrapper({ children }: { children: React.ReactNode }) {
@@ -16,6 +17,9 @@ function wrapper({ children }: { children: React.ReactNode }) {
 }
 
 describe('timeline agent Phase C cut', () => {
+  it('publishes the unavailable capability before any session hook mounts', () => {
+    expect(isTimelineAgentSessionsAvailable()).toBe(false);
+  });
   it('surfaces capability_unavailable for session reads', async () => {
     const list = renderHook(() => useAgentSessions('tl-1'), { wrapper });
     await waitFor(() => expect(list.result.current.isError).toBe(true));
