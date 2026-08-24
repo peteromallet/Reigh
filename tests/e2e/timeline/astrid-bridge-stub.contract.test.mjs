@@ -52,8 +52,35 @@ test('deterministic Astrid stub serves the typed Runaway contract', async () => 
     assert.equal(body.page.limit, 1000);
     assert.equal(body.page.next_cursor, null);
     assert.equal(body.transitions.length, 566);
+    assert.equal(body.timing_summary.data.frame_count, 8085);
+    assert.equal(body.timing_summary.data.transition_count, 566);
+    assert.equal(body.timing_summary.data.fps, 48);
     assert.equal(body.transitions[0].metadata.manifest_id, 'T0001');
     assert.equal(body.transitions.at(-1).metadata.manifest_id, 'T0566');
+
+    const frames = body.transitions.map((transition) => transition.metadata.frame);
+    const durations = body.transitions.map((transition) => transition.duration_ms);
+    assert.equal(frames[0], 0);
+    assert.equal(frames.at(-1), 8084);
+    assert.ok(frames.every((frame, index) => index === 0 || frame > frames[index - 1]));
+    assert.ok(durations.every((duration) => duration > 0));
+    for (const [index, transition] of body.transitions.entries()) {
+      const frame = frames[index];
+      const nextFrame = index + 1 < frames.length ? frames[index + 1] : 8085;
+      const expectedStartMs = Math.round((frame * 1000) / 48);
+      const expectedDurationMs = Math.max(1, Math.round((nextFrame * 1000) / 48) - expectedStartMs);
+      assert.equal(transition.start_ms, expectedStartMs);
+      assert.equal(transition.duration_ms, expectedDurationMs);
+    }
+    const totalEnvelopeMs = Math.round((8085 * 1000) / 48);
+    assert.equal(
+      body.transitions.reduce((total, transition) => total + transition.duration_ms, 0),
+      totalEnvelopeMs,
+    );
+    assert.equal(
+      body.transitions.at(-1).start_ms + body.transitions.at(-1).duration_ms,
+      totalEnvelopeMs,
+    );
 
     const firstPage = await fetch(`${origin}/v1/projects/cross-browser-release-gate/runaway-transitions?limit=3`);
     assert.equal(firstPage.status, 200);

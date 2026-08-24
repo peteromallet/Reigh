@@ -41,6 +41,10 @@ const RUNAWAY_FPS = 48;
 const RUNAWAY_FRAME_COUNT = 8_085;
 const RUNAWAY_SNAPSHOT = 'runaway-v1:deterministic-browser-stub';
 
+function frameToMs(frame) {
+  return Math.round((frame * 1000) / RUNAWAY_FPS);
+}
+
 /**
  * Deterministic Runaway rows for browser gates.  The real bridge's typed lane
  * contract is paginated even when this fixture fits in one page; retaining
@@ -49,12 +53,22 @@ const RUNAWAY_SNAPSHOT = 'runaway-v1:deterministic-browser-stub';
  */
 const runawayTransitions = Array.from({ length: RUNAWAY_TOTAL_COUNT }, (_, index) => {
   const ordinal = index;
-  const frame = Math.min(RUNAWAY_FRAME_COUNT - 1, index * 14 + (index > 0 ? Math.floor(index / 7) : 0));
-  const startMs = Math.round((frame * 1000) / RUNAWAY_FPS);
+  // Spread the typed rows across the complete composition envelope.  Keeping
+  // the endpoints explicit matters: the 566th row is the final visible frame
+  // (8084), while the composition itself contains 8085 frames (0..8084).
+  const frame = Math.round(
+    (index * (RUNAWAY_FRAME_COUNT - 1)) / (RUNAWAY_TOTAL_COUNT - 1),
+  );
+  const startMs = frameToMs(frame);
   const nextFrame = index + 1 < RUNAWAY_TOTAL_COUNT
-    ? Math.min(RUNAWAY_FRAME_COUNT, (index + 1) * 14 + Math.floor((index + 1) / 7))
+    ? Math.round(
+      ((index + 1) * (RUNAWAY_FRAME_COUNT - 1)) / (RUNAWAY_TOTAL_COUNT - 1),
+    )
     : RUNAWAY_FRAME_COUNT;
-  const durationMs = Math.max(1, Math.round(((nextFrame - frame) * 1000) / RUNAWAY_FPS));
+  // Derive each duration from the same rounded frame-time endpoints as the
+  // start. This keeps every duration positive and makes the sum exactly span
+  // the declared composition envelope instead of accumulating per-row drift.
+  const durationMs = Math.max(1, frameToMs(nextFrame) - startMs);
   const segmentNumber = Math.min(10, Math.floor(index / 57) + 1);
   const isRose = index % 2 === 0;
   return {

@@ -122,6 +122,8 @@ function clipBody(page: Page, clipId: string) {
   return page.locator(`${CLIP_BODY_SELECTOR}[data-clip-id="${clipId}"]`);
 }
 
+const transcriptCaptionBodySelector = `${CLIP_BODY_SELECTOR}[data-clip-id^="transcript-caption-"]`;
+
 function captionCount(config: TimelineConfig): number {
   return config.clips?.filter((clip) => clip.id?.startsWith('transcript-caption-')).length ?? 0;
 }
@@ -330,7 +332,7 @@ test(`paired repository acceptance phase: ${phase}`, async ({ page, request }) =
     const saved = await readTimeline(request);
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(clipBody(page, 'paired-release-clip')).toBeVisible({ timeout: 30_000 });
-    await expect.poll(() => page.locator('[data-clip-id^="transcript-caption-"]').count()).toBeGreaterThanOrEqual(2);
+    await expect.poll(() => page.locator(transcriptCaptionBodySelector).count()).toBeGreaterThanOrEqual(2);
     expect(primaryClip(saved.config)?.at).not.toBe(initialAt);
   } else if (phase === 'restart') {
     const firstState = JSON.parse(
@@ -342,7 +344,7 @@ test(`paired repository acceptance phase: ${phase}`, async ({ page, request }) =
     expect(runawaySnapshot?.count).toBe(firstState.runawayCount);
     expect(initialAt).toBeGreaterThan(0);
     expect(captionCount(initial.config)).toBeGreaterThanOrEqual(2);
-    await expect.poll(() => page.locator('[data-clip-id^="transcript-caption-"]').count()).toBeGreaterThanOrEqual(2);
+    await expect.poll(() => page.locator(transcriptCaptionBodySelector).count()).toBeGreaterThanOrEqual(2);
     await renderAndDownload(page, initial, initialStateHash);
   } else {
     const baseline = JSON.parse(

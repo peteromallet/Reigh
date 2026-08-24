@@ -5,12 +5,14 @@ import { resolve } from 'node:path';
 import { promisify } from 'node:util';
 import {
   BASE_URL,
+  CLIP_BODY_SELECTOR,
   PROJECT_SLUG,
   TIMELINE_SLUG,
   resetBridgeBaseline,
 } from './support';
 
 const EDITOR_URL = `${BASE_URL}/tools/video-editor?localProject=${PROJECT_SLUG}&localTimeline=${TIMELINE_SLUG}&localTest=1&transcriptLaneFixture=1`;
+const TRANSCRIPT_CAPTION_BODY_SELECTOR = `${CLIP_BODY_SELECTOR}[data-clip-id^="transcript-caption-"]`;
 const EVIDENCE = resolve(process.cwd(), 'docs/extensions/evidence/chrome-acceptance');
 const execFileAsync = promisify(execFile);
 
@@ -106,7 +108,7 @@ test.describe('caption materialization render and export', () => {
     // Each logical caption can appear in several synchronized editor surfaces;
     // assert materialization, not an implementation-specific DOM multiplier.
     await expect.poll(
-      () => page.locator('[data-clip-id^="transcript-caption-"]').count(),
+      () => page.locator(TRANSCRIPT_CAPTION_BODY_SELECTOR).count(),
       { timeout: 20_000 },
     ).toBeGreaterThanOrEqual(2);
     await page.getByRole('button', { name: 'Render', exact: true }).click();
