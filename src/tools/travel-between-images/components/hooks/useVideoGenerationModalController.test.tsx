@@ -185,8 +185,7 @@ describe('useVideoGenerationModalController', () => {
     mocks.isVideoGeneration.mockImplementation((generation: { type?: string | null }) => generation.type === 'video');
     mocks.findClosestAspectRatio.mockReturnValue('16:9');
     mocks.resolveTravelStructureState.mockReturnValue({
-      travelGuidance: { kind: 'none' },
-      structureGuidance: { mode: 'none' },
+      structureGuidance: undefined,
       structureVideos: [],
     });
     mocks.buildBasicModePhaseConfig.mockReturnValue({
@@ -256,12 +255,10 @@ describe('useVideoGenerationModalController', () => {
 
   it('derives guidanceKind from canonical travel guidance state', () => {
     mocks.resolveTravelStructureState.mockReturnValueOnce({
-      travelGuidance: {
-        kind: 'vace',
-        mode: 'depth',
-        videos: [{ path: '/guide.mp4' }],
+      structureGuidance: {
+        target: 'vace',
+        preprocessing: 'depth',
       },
-      structureGuidance: { mode: 'none' },
       structureVideos: [{ path: '/guide.mp4' }],
     });
 

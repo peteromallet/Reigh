@@ -172,6 +172,7 @@ export function useEditingController({
     removeStructureVideo,
     clearAllStructureVideos,
     setStructureVideos,
+    updateStructureGuidanceControls,
     handleUni3cEndPercentChange,
     handleStructureVideoMotionStrengthChange,
     handleStructureTypeChangeFromMotionControl,

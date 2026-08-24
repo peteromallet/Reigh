@@ -12,6 +12,28 @@ import { GuidanceVideoUploader } from '../../GuidanceVideoUploader';
 import { GuidanceVideosContainer } from '../../GuidanceVideosContainer';
 import { SegmentOutputStrip } from '../../SegmentOutputStrip';
 import { PENDING_POSITION_KEY, sortPositionEntries } from '../../utils/timeline-utils';
+import type { AuthoredVideoMetadata, VideoMetadata } from '@/shared/lib/media/videoMetadata';
+
+function toCompleteVideoMetadata(metadata: AuthoredVideoMetadata | null): VideoMetadata | null {
+  if (!metadata
+    || metadata.duration_seconds === undefined
+    || metadata.frame_rate === undefined
+    || metadata.total_frames === undefined
+    || metadata.width === undefined
+    || metadata.height === undefined
+    || metadata.file_size === undefined) {
+    return null;
+  }
+
+  return {
+    duration_seconds: metadata.duration_seconds,
+    frame_rate: metadata.frame_rate,
+    total_frames: metadata.total_frames,
+    width: metadata.width,
+    height: metadata.height,
+    file_size: metadata.file_size,
+  };
+}
 
 interface TimelinePairInfo {
   index: number;
@@ -224,11 +246,11 @@ export const TimelineTrackPrelude: React.FC<TimelineTrackPreludeProps> = ({
           guidance.primaryStructureVideo.path ? (
             <GuidanceVideoStrip
               videoUrl={guidance.primaryStructureVideo.path}
-              videoMetadata={guidance.primaryStructureVideo.metadata || null}
+              videoMetadata={toCompleteVideoMetadata(guidance.primaryStructureVideo.metadata)}
               treatment={guidance.primaryStructureVideo.treatment}
               onTreatmentChange={(treatment) => guidance.onPrimaryStructureVideoInputChange?.({
                 videoPath: guidance.primaryStructureVideo.path,
-                metadata: guidance.primaryStructureVideo.metadata ?? null,
+                metadata: toCompleteVideoMetadata(guidance.primaryStructureVideo.metadata),
                 treatment,
                 motionStrength: guidance.primaryStructureVideo.motionStrength,
                 structureType: guidance.primaryStructureVideo.structureType,

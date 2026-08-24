@@ -86,6 +86,7 @@ interface UseShotEditorLayoutModelParams {
       handleBatchVideoPromptChangeWithClear: UseShotSettingsValueProps['generationHandlers']['handleBatchVideoPromptChangeWithClear'];
       handleStepsChange: UseShotSettingsValueProps['generationHandlers']['handleStepsChange'];
       clearAllEnhancedPrompts: UseShotSettingsValueProps['generationHandlers']['clearAllEnhancedPrompts'];
+      enhancementProgress: UseShotSettingsValueProps['generationMode']['enhancementProgress'];
     };
     imageManagement: {
       handleReorderImagesInShot: UseShotSettingsValueProps['handleImageReorder'];
@@ -220,6 +221,7 @@ export function buildShotEditorContextInput({
       removeStructureVideo: controllers.mediaEditing.removeStructureVideo,
       clearAllStructureVideos: controllers.mediaEditing.clearAllStructureVideos,
       setStructureVideos: controllers.mediaEditing.setStructureVideos,
+      updateStructureGuidanceControls: controllers.mediaEditing.updateStructureGuidanceControls,
     },
     structureVideoHandlers: {
       handleStructureVideoMotionStrengthChange:

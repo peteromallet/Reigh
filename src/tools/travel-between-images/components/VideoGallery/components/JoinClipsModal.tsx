@@ -108,7 +108,9 @@ export function JoinClipsModal({
                 step={1}
                 value={Math.max(1, joinGapFrames)}
                 onValueChange={(value) => {
-                  setJoinGapFrames(Math.max(1, value));
+                  if (value !== null) {
+                    setJoinGapFrames(Math.max(1, value));
+                  }
                 }}
               />
               <p className="text-xs text-muted-foreground">Frames to generate in each transition</p>
@@ -124,9 +126,10 @@ export function JoinClipsModal({
                 max={30}
                 value={joinContextFrames}
                 onChange={(val) => {
-                  const maxGap = Math.max(1, 81 - (val * 2));
+                  const contextFrames = val ?? 0;
+                  const maxGap = Math.max(1, 81 - (contextFrames * 2));
                   const newGapFrames = joinGapFrames > maxGap ? maxGap : joinGapFrames;
-                  setJoinContextFrames(val);
+                  setJoinContextFrames(contextFrames);
                   setJoinGapFrames(newGapFrames);
                 }}
               />

@@ -72,13 +72,13 @@ export const TimelineControls: React.FC<TimelineControlsProps> = ({
         />
 
         {!audio.audioUrl && audio.onAudioChange && !timeline.readOnly && (
-          <AddAudioButton projectId={timeline.projectId} shotId={timeline.shotId} onAudioChange={audio.onAudioChange} />
+          <AddAudioButton projectId={timeline.projectId ?? undefined} shotId={timeline.shotId} onAudioChange={audio.onAudioChange} />
         )}
 
         {(guidance.structureVideos ? true : !guidance.primaryStructureVideo.path) && (
           <GuidanceVideoControls
             shotId={timeline.shotId}
-            projectId={timeline.projectId}
+            projectId={timeline.projectId ?? undefined}
             readOnly={timeline.readOnly}
             hasNoImages={timeline.hasNoImages}
             primaryStructureVideo={guidance.primaryStructureVideo}

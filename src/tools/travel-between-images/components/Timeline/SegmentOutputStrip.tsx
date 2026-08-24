@@ -20,6 +20,8 @@ import { useSegmentOutputStrip } from './hooks/segment/useSegmentOutputStrip';
 
 interface PairInfo {
   index: number;
+  startId: string;
+  endId: string;
   startFrame: number;
   endFrame: number;
   frames: number;
@@ -141,7 +143,7 @@ export const SegmentOutputStrip: React.FC<SegmentOutputStripProps> = ({
       <DesktopScrubbingPreview
         activeScrubbingIndex={activeScrubbingIndex}
         activeSegmentSlot={activeSegmentSlot}
-        activeSegmentVideoUrl={activeSegmentVideoUrl}
+        activeSegmentVideoUrl={activeSegmentVideoUrl ?? null}
         clampedPreviewX={clampedPreviewX}
         previewY={previewPosition.y}
         previewDimensions={previewDimensions}

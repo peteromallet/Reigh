@@ -17,7 +17,10 @@ import {
   DEFAULT_STRUCTURE_VIDEO,
   resolveTravelStructureState,
 } from '@/shared/lib/tasks/travelBetweenImages';
-import type { TravelGuidance } from '@/shared/lib/tasks/travelBetweenImages/taskTypes';
+import type {
+  StructureGuidanceConfig,
+  TravelGuidance,
+} from '@/shared/lib/tasks/travelBetweenImages/taskTypes';
 import type { TravelGuidanceMode } from '@/shared/lib/tasks/travelGuidance';
 import {
   BUILTIN_DEFAULT_I2V_ID,
@@ -32,7 +35,17 @@ const knownPresetIds = [
   ...FEATURED_PRESET_IDS,
 ];
 
-function resolveGuidanceKind(travelGuidance?: TravelGuidance): TravelGuidanceMode | undefined {
+function resolveGuidanceKind(
+  guidance?: TravelGuidance | StructureGuidanceConfig,
+): TravelGuidanceMode | undefined {
+  if (guidance && 'target' in guidance) {
+    if (guidance.target === 'uni3c') {
+      return 'uni3c';
+    }
+    return guidance.preprocessing === 'none' ? 'raw' : guidance.preprocessing;
+  }
+
+  const travelGuidance = guidance;
   if (!travelGuidance || travelGuidance.kind === 'none') {
     return undefined;
   }
@@ -229,8 +242,8 @@ export function useVideoGenerationModalController({ isOpen, onClose, shot }: {
   );
   const hasStructureVideo = structureState.structureVideos.length > 0;
   const guidanceKind = useMemo(
-    () => resolveGuidanceKind(structureState.travelGuidance),
-    [structureState.travelGuidance],
+    () => resolveGuidanceKind(structureState.structureGuidance),
+    [structureState.structureGuidance],
   );
 
   const validPresetId = useMemo(() => {
