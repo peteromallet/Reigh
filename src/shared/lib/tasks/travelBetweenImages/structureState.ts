@@ -6,6 +6,7 @@ import type {
   StructureVideoConfigWithMetadata,
 } from './uiTypes';
 import { migrateLegacyStructureVideos } from './legacyStructureVideo';
+import type { VideoMetadata } from '@/shared/lib/media/videoMetadata';
 
 type StructureType = 'uni3c' | 'flow' | 'canny' | 'depth';
 
@@ -40,6 +41,39 @@ function parseTreatment(value: unknown): 'adjust' | 'clip' | undefined {
   return value === 'adjust' || value === 'clip' ? value : undefined;
 }
 
+function parseVideoMetadata(value: unknown): VideoMetadata | null {
+  const record = asRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const durationSeconds = parseNumber(record.duration_seconds);
+  const frameRate = parseNumber(record.frame_rate);
+  const totalFrames = parseNumber(record.total_frames);
+  const width = parseNumber(record.width);
+  const height = parseNumber(record.height);
+  const fileSize = parseNumber(record.file_size);
+  if (
+    durationSeconds === undefined
+    || frameRate === undefined
+    || totalFrames === undefined
+    || width === undefined
+    || height === undefined
+    || fileSize === undefined
+  ) {
+    return null;
+  }
+
+  return {
+    duration_seconds: durationSeconds,
+    frame_rate: frameRate,
+    total_frames: totalFrames,
+    width,
+    height,
+    file_size: fileSize,
+  };
+}
+
 function buildMigrationInput(value: Record<string, unknown>): Record<string, unknown> {
   const structureVideos = value.structure_videos ?? value.structureVideos;
   if (Array.isArray(structureVideos)) {
@@ -62,15 +96,16 @@ function mergeStructureVideos(
   structureGuidance: StructureGuidanceConfig | undefined,
   options: ResolveTravelStructureStateOptions,
 ): StructureVideoConfigWithMetadata[] {
-  const guidanceVideos = Array.isArray(structureGuidance?.videos)
-    ? structureGuidance.videos
+  const guidanceRecord = asRecord(structureGuidance);
+  const guidanceVideos = Array.isArray(guidanceRecord?.videos)
+    ? guidanceRecord.videos
         .map((video) => asRecord(video))
         .filter((video): video is Record<string, unknown> => !!video)
     : [];
   const sourceVideos = guidanceVideos.length > 0 ? guidanceVideos : rawVideos;
 
   return sourceVideos
-    .map((video, index) => {
+    .map((video, index): StructureVideoConfigWithMetadata | null => {
       const path = parseString(video.path);
       if (!path) {
         return null;
@@ -120,14 +155,16 @@ export function resolveTravelStructureState(
     // Merge metadata/resource_id from the raw structure_videos array back onto
     // the travel-guidance-derived videos (travel_guidance strips these fields).
     const rawStructureVideos = Array.isArray(settings.structure_videos)
-      ? settings.structure_videos as StructureVideoConfigWithMetadata[]
+      ? settings.structure_videos
+          .map((video) => asRecord(video))
+          .filter((video): video is Record<string, unknown> => !!video)
       : [];
     const enrichedVideos: StructureVideoConfigWithMetadata[] = directTravelState.structureVideos.map((video) => {
       const rawMatch = rawStructureVideos.find((raw) => raw.path === video.path);
       return {
         ...video,
-        metadata: rawMatch?.metadata ?? null,
-        resource_id: rawMatch?.resource_id ?? null,
+        metadata: parseVideoMetadata(rawMatch?.metadata),
+        resource_id: parseString(rawMatch?.resource_id) ?? null,
       };
     });
 

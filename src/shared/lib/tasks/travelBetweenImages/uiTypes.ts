@@ -5,7 +5,7 @@ import type { StructureVideoConfig } from './taskTypes';
  * metadata. Guidance controls are modeled separately through canonical `travel_guidance`.
  */
 export interface StructureVideoConfigWithMetadata extends StructureVideoConfig {
-  metadata?: import('@/shared/lib/videoUploader').VideoMetadata | null;
+  metadata?: import('@/shared/lib/media/videoMetadata').VideoMetadata | null;
   resource_id?: string | null;
 }
 
