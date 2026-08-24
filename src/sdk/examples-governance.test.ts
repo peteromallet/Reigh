@@ -1101,7 +1101,9 @@ describe('M6 metadata-json output example contract', () => {
     expect(json.exportInfo.version).toBe('1.0.0');
     expect(json.exportInfo.extensionId).toBe(context.extensionId);
     expect(json.exportInfo.contributionId).toBe(context.contributionId);
-    expect(typeof json.exportInfo.exportedAt).toBe('string');
+    // Compile-only output is deterministic by contract; volatile wall-clock
+    // metadata must not be embedded in the artifact.
+    expect(json.exportInfo).not.toHaveProperty('exportedAt');
 
     // timeline section
     expect(json.timeline.projectId).toBe('test-project');
@@ -1177,6 +1179,7 @@ describe('M6 metadata-json output example contract', () => {
 
     expect(result1.data).toEqual(result2.data);
     expect(result1.filename).toBe(result2.filename);
+    expect(result1.filename).toBe('metadata-export_test.ext_det-test_v1.json');
   });
 
   it('handler output JSON has keys in stable ascending alphabetical order', () => {

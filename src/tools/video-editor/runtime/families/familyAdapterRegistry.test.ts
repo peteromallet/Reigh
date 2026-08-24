@@ -284,13 +284,12 @@ describe('dataKindAdapter', () => {
   it('buildConformanceReport reads the SDK family definition', () => {
     const report = dataKindAdapter.buildConformanceReport();
     expect(report.kind).toBe('dataKind');
-    // Rework R4: declaration maturity is the honest schema-backed level. The
-    // gate flags schema-backed + host-integrated as incoherent (host-
-    // integrated requires declaration >= documented) — an advisory audit
-    // warning until examples/docs coverage closes the gap.
-    expect(report.declarationMaturity).toBe('schema-backed');
+    // Host-integrated execution requires the canonical author-facing contract
+    // to be documented. The registry and generated maturity matrix must agree
+    // so this adapter report remains coherent with the release gate.
+    expect(report.declarationMaturity).toBe('documented');
     expect(report.executionMaturity).toBe('host-integrated');
-    expect(report.coherent).toBe(false);
+    expect(report.coherent).toBe(true);
   });
 });
 

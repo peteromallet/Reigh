@@ -232,7 +232,7 @@ function serializeTimelineIdentity(
  * Build the complete metadata JSON payload.
  *
  * Top-level keys are emitted in a fixed order:
- *   1. exportInfo — identifies the export format, extension, and timestamp
+ *   1. exportInfo — identifies the export format and extension
  *   2. timeline — timeline identity metadata
  *   3. assets — asset registry metadata keyed by asset key
  *   4. enrichment — global enrichment summary across all assets
@@ -247,7 +247,6 @@ function buildMetadataPayload(context: OutputFormatContext): Record<string, unkn
     version: '1.0.0',
     extensionId,
     contributionId,
-    exportedAt: new Date().toISOString(),
   };
 
   // Timeline identity
@@ -327,16 +326,18 @@ const metadataJsonHandler: OutputFormatHandler = (
   const encoder = new TextEncoder();
   const data = encoder.encode(json);
 
-  const timestamp = new Date()
-    .toISOString()
-    .replace(/[:.]/g, '-')
-    .replace('T', '_')
-    .slice(0, 19); // YYYY-MM-DD_HH-mm-ss
+  // Filenames are part of the compile-only result and therefore must be
+  // derived only from the read-only input snapshot.  Wall-clock timestamps
+  // would make repeated exports of the same snapshot byte-different.
+  const extensionToken = context.extensionId.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const projectToken = String(context.timeline.projectId ?? 'project')
+    .replace(/[^a-zA-Z0-9._-]/g, '_');
+  const versionToken = String(context.timeline.currentVersion);
 
   return {
     data,
     mimeType: 'application/json',
-    filename: `metadata-export_${context.extensionId}_${timestamp}.json`,
+    filename: `metadata-export_${extensionToken}_${projectToken}_v${versionToken}.json`,
     hasBlockingErrors: false,
     diagnostics: [],
   };
