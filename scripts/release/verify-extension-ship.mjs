@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import { createHash } from 'node:crypto';
 import {
   accessSync,
   constants,
@@ -13,7 +12,7 @@ import {
   statSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, dirname, isAbsolute, resolve, win32 as pathWin32 } from 'node:path';
+import { dirname, isAbsolute, resolve, win32 as pathWin32 } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
@@ -22,6 +21,11 @@ import {
   resolveAnnotatedCandidateTag,
 } from './reigh-release-provenance.mjs';
 import { runBoundedCommand } from './bounded-command.mjs';
+import {
+  assertPinnedPlatform,
+  attestNativeTools,
+  resolvePinnedExecutable,
+} from './native-tool-attestation.mjs';
 
 const LABEL = '[extension-ship]';
 export const RELEASE_PHASE_TIMEOUT_MS = 30 * 60 * 1_000;
@@ -421,17 +425,18 @@ export function validateReleaseManifest(manifest) {
   if (!/^\d+\.\d+\.\d+$/.test(verification.astridPython ?? '')) {
     errors.push('verification.astridPython must be an exact semantic version');
   }
-  if (!/^\d+\.\d+\.\d+$/.test(verification.ffmpeg ?? '')) {
-    errors.push('verification.ffmpeg must be an exact semantic version');
+  if (!isPlainObject(verification.platform)) {
+    errors.push('verification.platform must be an object');
+  } else {
+    for (const key of ['os', 'arch', 'release']) {
+      if (typeof verification.platform[key] !== 'string' || verification.platform[key].trim() === '') {
+        errors.push(`verification.platform.${key} must be a non-empty string`);
+      }
+    }
   }
-  if (!/^\d+\.\d+\.\d+$/.test(verification.ffprobe ?? '')) {
-    errors.push('verification.ffprobe must be an exact semantic version');
-  }
-
-  for (const [toolName, tool] of [
-    ['tesseract', verification.tesseract],
-    ['imageMagick', verification.imageMagick],
-  ]) {
+  const nativeToolNames = ['ffmpeg', 'ffprobe', 'tesseract', 'imageMagick'];
+  for (const toolName of nativeToolNames) {
+    const tool = verification[toolName];
     if (!isPlainObject(tool)) {
       errors.push(`verification.${toolName} must be an object`);
       continue;
@@ -444,6 +449,9 @@ export function validateReleaseManifest(manifest) {
     }
     if (!/^sha256:[0-9a-f]{64}$/.test(tool.executableSha256 ?? '')) {
       errors.push(`verification.${toolName}.executableSha256 must be a full sha256 digest`);
+    }
+    if (typeof tool.buildIdentity !== 'string' || tool.buildIdentity.trim() === '') {
+      errors.push(`verification.${toolName}.buildIdentity must be a non-empty identity string`);
     }
   }
   if (!/^sha256:[0-9a-f]{64}$/.test(verification.tesseract?.engDataSha256 ?? '')) {
@@ -879,105 +887,25 @@ export function resolveAstridPython(manifest, env) {
   return python;
 }
 
-function sha256File(path) {
-  return createHash('sha256').update(readFileSync(path)).digest('hex');
-}
-
-function resolvePinnedExecutable(command) {
-  const pathEntries = buildSanitizedEnvironment().PATH.split(delimiter);
-  for (const entry of pathEntries) {
-    const candidate = resolve(entry, command);
-    if (!existsSync(candidate) || !statSync(candidate).isFile()) continue;
-    try {
-      accessSync(candidate, constants.X_OK);
-    } catch {
-      continue;
-    }
-    return realpathSync(candidate);
-  }
-  fail(`pinned tool executable is missing from the release PATH: ${command}`);
-}
-
-function assertPinnedExecutable({ toolName, config, args, parseVersion }) {
-  const executable = resolvePinnedExecutable(config.executable);
-  const executableSha256 = sha256File(executable);
-  if (`sha256:${executableSha256}` !== config.executableSha256) {
-    fail(
-      `${toolName} executable hash mismatch: expected ${config.executableSha256}, `
-      + `got sha256:${executableSha256} (${executable})`,
-    );
-  }
-  const probe = runCaptured(executable, args, REPO_ROOT, { allowFailure: true });
-  if (probe.error || probe.status !== 0) {
-    fail(`${toolName} identity probe failed: ${formatFailure(probe)}`);
-  }
-  const version = parseVersion(probe.stdout);
-  if (version !== config.version) {
-    fail(
-      `${toolName} version mismatch: expected ${config.version}, `
-      + `got ${version ?? '<invalid>'} from ${executable}`,
-    );
-  }
-  return { executable, version, executableSha256: `sha256:${executableSha256}`, stdout: probe.stdout };
-}
-
 /**
- * Paired caption semantics invoke Tesseract for exact text/region OCR and
- * ImageMagick's `magick` command for caption occupancy and contrast. Resolve
- * commands through the verifier's fixed PATH, then bind both executable bytes
- * and the English trained-data bytes before any release gate can run.
+ * Attest every native executable through the same helper used by the paired
+ * release gate. This keeps the outer release boundary bound to executable
+ * bytes, exact version/build identity, and Tesseract's trained-data bytes.
  */
 export function assertCaptionSemanticsToolchain(manifest) {
-  const tesseract = assertPinnedExecutable({
-    toolName: 'Tesseract',
-    config: manifest.verification.tesseract,
-    args: ['--version'],
-    parseVersion: (output) => output.match(/(?:^|\n)tesseract ([^\s]+)/)?.[1],
-  });
-  const languages = runCaptured(
-    tesseract.executable,
-    ['--list-langs'],
-    REPO_ROOT,
-    { allowFailure: true },
-  );
-  if (languages.error || languages.status !== 0 || !/^eng$/m.test(languages.stdout ?? '')) {
-    fail('deterministic caption OCR requires the pinned Tesseract eng language data');
-  }
-  const dataDirectory = languages.stdout.match(/List of available languages in "([^"]+)"/)?.[1];
-  if (!dataDirectory || !isAbsolute(dataDirectory)) {
-    fail('Tesseract did not disclose an absolute language-data directory');
-  }
-  const engDataPath = resolve(dataDirectory, 'eng.traineddata');
-  if (!existsSync(engDataPath) || !statSync(engDataPath).isFile()) {
-    fail(`Tesseract eng language data is missing: ${engDataPath}`);
-  }
-  const engDataSha256 = sha256File(engDataPath);
-  if (`sha256:${engDataSha256}` !== manifest.verification.tesseract.engDataSha256) {
-    fail(
-      `Tesseract eng language data hash mismatch: expected ${manifest.verification.tesseract.engDataSha256}, `
-      + `got sha256:${engDataSha256} (${realpathSync(engDataPath)})`,
-    );
-  }
-
-  const imageMagick = assertPinnedExecutable({
-    toolName: 'ImageMagick',
-    config: manifest.verification.imageMagick,
-    args: ['-version'],
-    parseVersion: (output) => output.match(/^Version: ImageMagick ([^\s]+)/m)?.[1],
-  });
-  return {
-    tesseract: {
-      executable: tesseract.executable,
-      version: tesseract.version,
-      executableSha256: tesseract.executableSha256,
-      engDataSha256: `sha256:${engDataSha256}`,
+  const pathValue = buildSanitizedEnvironment().PATH;
+  const attestation = attestNativeTools({
+    manifest,
+    pathValue,
+    run(executable, args, label) {
+      return runCaptured(executable, args, REPO_ROOT, {
+        allowFailure: true,
+        label: `native-toolchain:${label}`,
+      });
     },
-    imageMagick: {
-      executable: imageMagick.executable,
-      version: imageMagick.version,
-      executableSha256: imageMagick.executableSha256,
-    },
-  };
+  });
+  assertPinnedPlatform(manifest, attestation.platform);
+  return attestation;
 }
 
 function assertToolchain(manifest, env) {
@@ -987,22 +915,12 @@ function assertToolchain(manifest, env) {
       `Node version mismatch: expected ${manifest.verification.node}, got ${nodeVersion}`,
     );
   }
-  const npmVersion = outputOf('npm', ['--version'], REPO_ROOT);
-  if (npmVersion !== manifest.verification.npm) {
-    fail(
-      `npm version mismatch: expected ${manifest.verification.npm}, got ${npmVersion}`,
-    );
-  }
-  for (const tool of ['ffmpeg', 'ffprobe']) {
-    const firstLine = outputOf(tool, ['-version'], REPO_ROOT).split('\n')[0];
-    const match = firstLine.match(new RegExp(`^${tool} version ([0-9]+\\.[0-9]+\\.[0-9]+)(?:[ -]|$)`));
-    const version = match?.[1];
-    if (version !== manifest.verification[tool]) {
-      fail(
-        `${tool} version mismatch: expected ${manifest.verification[tool]}, `
-        + `got ${version ?? '<invalid>'}`,
-      );
-    }
+  const npmExecutable = resolvePinnedExecutable('npm', {
+    pathValue: buildSanitizedEnvironment().PATH,
+  });
+  const pinnedNpmVersion = outputOf(npmExecutable, ['--version'], REPO_ROOT);
+  if (pinnedNpmVersion !== manifest.verification.npm) {
+    fail(`npm version mismatch: expected ${manifest.verification.npm}, got ${pinnedNpmVersion}`);
   }
   assertCaptionSemanticsToolchain(manifest);
   return resolveAstridPython(manifest, env);

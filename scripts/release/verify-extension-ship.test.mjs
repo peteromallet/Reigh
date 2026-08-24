@@ -80,6 +80,10 @@ describe('extension ship verifier', () => {
       `FROM ${pinnedImage} AS build`,
       `FROM ${pinnedImage} AS runtime`,
     ]);
+    assert.match(
+      dockerfile,
+      new RegExp(`^LABEL org\\.opencontainers\\.image\\.base\\.digest="${manifest.verification.nodeImageDigest}"$`, 'm'),
+    );
 
     for (const retiredKey of [
       'VITE_EXTENSION_HOST_ENABLED',
@@ -150,7 +154,36 @@ describe('extension ship verifier', () => {
     assert.ok(!REIGH_GATE_PROFILE[visualGateIndex].args.includes('--update-snapshots'));
     assert.equal(manifest.verification.tesseract.executable, 'tesseract');
     assert.equal(manifest.verification.imageMagick.executable, 'magick');
+    for (const toolName of ['ffmpeg', 'ffprobe', 'tesseract', 'imageMagick']) {
+      assert.match(manifest.verification[toolName].executableSha256, /^sha256:[0-9a-f]{64}$/);
+      assert.match(manifest.verification[toolName].buildIdentity, /\S/);
+    }
     assert.match(manifest.verification.tesseract.engDataSha256, /^sha256:[0-9a-f]{64}$/);
+  });
+
+  it('rejects native pin drift, missing pins, and PATH substitutions', () => {
+    for (const toolName of ['ffmpeg', 'ffprobe', 'tesseract', 'imageMagick']) {
+      const drifted = structuredClone(manifest);
+      drifted.verification[toolName].executableSha256 = 'sha256:not-a-digest';
+      assert.throws(() => validateReleaseManifest(drifted), new RegExp(`verification\\.${toolName}\\.executableSha256`));
+      const missing = structuredClone(manifest);
+      delete missing.verification[toolName].buildIdentity;
+      assert.throws(() => validateReleaseManifest(missing), new RegExp(`verification\\.${toolName}\\.buildIdentity`));
+    }
+    const substituted = structuredClone(manifest);
+    assert.throws(
+      () => assertCaptionSemanticsToolchain({
+        ...substituted,
+        verification: {
+          ...substituted.verification,
+          tesseract: {
+            ...substituted.verification.tesseract,
+            executable: 'missing-tesseract-path-substitution',
+          },
+        },
+      }),
+      /pinned native executable is missing from PATH|pinned tool executable is missing from the release PATH/,
+    );
   });
 
   it('fails closed when a pinned caption-semantic executable is unavailable', () => {
@@ -158,7 +191,7 @@ describe('extension ship verifier', () => {
     missingTool.verification.tesseract.executable = 'missing-tesseract-for-release-test';
     assert.throws(
       () => assertCaptionSemanticsToolchain(missingTool),
-      /pinned tool executable is missing from the release PATH/,
+      /pinned native executable is missing from PATH/,
     );
   });
 

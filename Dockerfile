@@ -33,6 +33,7 @@ FROM node:20.19.4-alpine@sha256:df02558528d3d3d0d621f112e232611aecfee7cbc654f6b3
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=8080
+LABEL org.opencontainers.image.base.digest="sha256:df02558528d3d3d0d621f112e232611aecfee7cbc654f6b375765f72bb262799"
 
 # `npm run serve` is `vite preview`, which loads config/vite/vite.config.ts
 # at runtime. That config imports @vitejs/plugin-react-swc (a devDependency),

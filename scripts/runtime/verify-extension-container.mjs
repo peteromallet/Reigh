@@ -11,6 +11,7 @@ export const DOCKERFILE_PATH = resolve(REPO_ROOT, 'Dockerfile');
 export const DOCKER_COMMAND = 'docker';
 export const CONTAINER_PORT = 8080;
 export const RUNTIME_CONFIG_PATH = '/runtime-config/v1/extensions.json';
+export const NODE_IMAGE_LABEL = 'org.opencontainers.image.base.digest';
 export const POLL_INTERVAL_MS = 500;
 export const POLL_TIMEOUT_MS = 90_000;
 
@@ -114,7 +115,10 @@ export function buildDockerArgv(imageTag = IMAGE_TAG) {
   return args;
 }
 
-export function validateDigestPinnedDockerfile(source = readFileSync(DOCKERFILE_PATH, 'utf8')) {
+export function validateDigestPinnedDockerfile(
+  source = readFileSync(DOCKERFILE_PATH, 'utf8'),
+  expectedDigest = null,
+) {
   const fromLines = source.match(/^FROM node:[^\n]+$/gm) ?? [];
   if (fromLines.length !== 2) {
     throw new Error('Dockerfile must have exactly two pinned Node FROM lines');
@@ -122,6 +126,17 @@ export function validateDigestPinnedDockerfile(source = readFileSync(DOCKERFILE_
   const digests = fromLines.map((line) => line.match(/@sha256:[0-9a-f]{64}/)?.[0]);
   if (digests.some((digest) => !digest) || digests[0] !== digests[1]) {
     throw new Error('Dockerfile build/runtime stages must use the same full sha256-pinned image');
+  }
+  const configuredDigest = expectedDigest ?? digests[0].replace(/^@/, '');
+  if (!/^sha256:[0-9a-f]{64}$/.test(configuredDigest)) {
+    throw new Error('configured Node image digest must be a full sha256 OCI digest');
+  }
+  if (digests[0] !== `@${configuredDigest}`) {
+    throw new Error(`Dockerfile Node image digest ${digests[0]} does not match configured ${configuredDigest}`);
+  }
+  const label = source.match(new RegExp(`^LABEL ${NODE_IMAGE_LABEL}="(sha256:[0-9a-f]{64})"$`, 'm'))?.[1];
+  if (label !== configuredDigest) {
+    throw new Error(`Dockerfile base-image metadata label does not attest configured digest ${configuredDigest}`);
   }
   if (!/^USER node$/m.test(source)) {
     throw new Error('Dockerfile runtime stage must run as the node user');
@@ -160,10 +175,16 @@ export function assertRuntimeConfig(actual, expected) {
   return actual;
 }
 
-function inspectImage(imageTag) {
+function inspectImage(imageTag, expectedDigest) {
   const [image] = parseJsonOutput(['image', 'inspect', imageTag]);
   if (!image) throw new Error(`Docker image ${imageTag} was not found after build`);
   assertNonRootConfigUser(image.Config?.User);
+  const attestedDigest = image.Config?.Labels?.[NODE_IMAGE_LABEL];
+  if (attestedDigest !== expectedDigest) {
+    throw new Error(
+      `built image metadata did not attest configured Node image digest: expected ${expectedDigest}, got ${attestedDigest ?? '<missing>'}`,
+    );
+  }
   return image;
 }
 
@@ -271,12 +292,14 @@ function printImageEvidence(imageTag, image) {
 }
 
 export async function runContainerGate() {
-  const digestPin = validateDigestPinnedDockerfile();
+  const manifest = JSON.parse(readFileSync(resolve(REPO_ROOT, 'config/releases/extension-ship-quality.json'), 'utf8'));
+  const expectedDigest = manifest?.verification?.nodeImageDigest;
+  const digestPin = validateDigestPinnedDockerfile(undefined, expectedDigest);
   runDocker(['version', '--format', '{{.Server.Version}}']);
   console.log(`[extension-container] digest-pinned base=${digestPin.baseImage}`);
 
   runDocker(buildDockerArgv());
-  const image = inspectImage(IMAGE_TAG);
+  const image = inspectImage(IMAGE_TAG, expectedDigest);
   printImageEvidence(IMAGE_TAG, image);
   const createdContainers = new Set();
 

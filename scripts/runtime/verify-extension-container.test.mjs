@@ -18,10 +18,24 @@ const scriptPath = resolve(REPO_ROOT, 'scripts/runtime/verify-extension-containe
 describe('production extension container gate', () => {
   it('uses a digest-pinned, non-root production Dockerfile', async () => {
     const dockerfile = await readFile(resolve(REPO_ROOT, 'Dockerfile'), 'utf8');
-    const pin = validateDigestPinnedDockerfile(dockerfile);
+    const manifest = JSON.parse(await readFile(resolve(REPO_ROOT, 'config/releases/extension-ship-quality.json'), 'utf8'));
+    const pin = validateDigestPinnedDockerfile(dockerfile, manifest.verification.nodeImageDigest);
     assert.match(pin.digest.replace(/^@/, ''), /^sha256:[0-9a-f]{64}$/);
     assert.match(dockerfile, /^HEALTHCHECK .*\\$/m);
     assert.match(dockerfile, /USER node/);
+  });
+
+  it('fails closed when the configured digest or built-image attestation drifts', async () => {
+    const dockerfile = await readFile(resolve(REPO_ROOT, 'Dockerfile'), 'utf8');
+    const manifest = JSON.parse(await readFile(resolve(REPO_ROOT, 'config/releases/extension-ship-quality.json'), 'utf8'));
+    assert.throws(
+      () => validateDigestPinnedDockerfile(dockerfile, `sha256:${'0'.repeat(64)}`),
+      /does not match configured/,
+    );
+    assert.throws(
+      () => validateDigestPinnedDockerfile(dockerfile.replace(/org\.opencontainers\.image\.base\.digest="[^"]+"/, 'org.opencontainers.image.base.digest="sha256:' + '0'.repeat(64) + '"'), manifest.verification.nodeImageDigest),
+      /metadata label does not attest/,
+    );
   });
 
   it('builds with fixed safe argv and no rollout build controls', () => {
