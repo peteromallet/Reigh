@@ -5,6 +5,7 @@ import {
   type QueuedWrite,
 } from '@/shared/lib/settingsWriteQueue';
 import { deepMerge } from '@/shared/lib/utils/deepEqual';
+import { toJsonObject } from '@/shared/lib/json/toJsonObject';
 import { isCancellationError } from '@/shared/lib/errorHandling/errorUtils';
 import { ToolSettingsError } from './toolSettingsService';
 
@@ -51,7 +52,7 @@ function callUpdateToolSettingsAtomicRpc(
     p_table_name: tableName,
     p_id: id,
     p_tool_id: toolId,
-    p_settings: settings,
+    p_settings: toJsonObject(settings),
   });
 }
 
