@@ -9,7 +9,7 @@
  */
 import { expect, test } from '@playwright/test';
 import { readFileSync } from 'node:fs';
-import { BASE_URL, EDITOR_SETTLE_MS } from './support';
+import { BASE_URL, CLIP_ACTION_WITH_ID_SELECTOR, EDITOR_SETTLE_MS } from './support';
 
 // The final watchdog case intentionally kills the one harness-owned bridge.
 // Serial mode guarantees it cannot race an otherwise independent acceptance.
@@ -46,9 +46,15 @@ async function openEditorAt(page: import('@playwright/test').Page) {
   const editorUrl = `${BASE_URL}/tools/video-editor?localProject=demo-project&localTimeline=${await defaultTimelineId(page.request)}&localTest=1`;
   await page.goto(editorUrl, { waitUntil: 'domcontentloaded', timeout: 45_000 });
   await page.waitForTimeout(EDITOR_SETTLE_MS);
-  // The real timeline region renders clips as [data-clip-id] elements — wait
-  // for one (there is no data-testid in production DOM).
-  await expect(page.locator('[data-clip-id]').first()).toBeVisible({ timeout: 20_000 });
+  await expect.poll(() => page.evaluate(async () => ({
+    registrations: 'serviceWorker' in navigator
+      ? (await navigator.serviceWorker.getRegistrations()).length
+      : 0,
+    caches: 'caches' in window ? (await caches.keys()).length : 0,
+  })), { timeout: 10_000 }).toEqual({ registrations: 0, caches: 0 });
+  // Renderer previews and diagnostic placeholders also carry data-clip-id.
+  // The interactive production clip root is the named clip-action contract.
+  await expect(page.locator(CLIP_ACTION_WITH_ID_SELECTOR).first()).toBeVisible({ timeout: 20_000 });
 }
 
 /**
@@ -61,20 +67,35 @@ async function editFirstClipStart(
   page: import('@playwright/test').Page,
   options: { beforeCommit?: () => Promise<void> } = {},
 ) {
-  const clip = page.locator('[data-clip-id]').first();
+  const clip = page.locator(CLIP_ACTION_WITH_ID_SELECTOR).first();
   await clip.waitFor({ timeout: 15_000 });
-  await clip.click();
+  // Caption clips can be narrower than a resize handle and may be overlapped
+  // by the neighboring clip's edge control. ClipAction is a real keyboard
+  // button, so use its production accessibility path instead of force-clicking
+  // through another interactive control.
+  await clip.focus();
+  await expect(clip).toBeFocused();
+  await clip.press('Enter');
   await expect(clip).toHaveAttribute('data-selected', 'true');
 
   const timingTab = page.getByRole('tab', { name: 'Timing', exact: true });
   await expect(timingTab).toBeVisible({ timeout: 10_000 });
   await timingTab.click();
 
-  const startInput = page.locator('input[type="number"]').first();
+  // Base UI NumberField renders a visible text editor plus a hidden native
+  // number input used for form semantics. Scope to the selected Timing panel
+  // and operate the user-facing textbox, never the synchronization control.
+  const timingPanel = page.getByRole('tabpanel', { name: 'Timing' });
+  const startInput = timingPanel.getByRole('textbox').first();
   await expect(startInput).toBeVisible({ timeout: 10_000 });
   const current = Number(await startInput.inputValue());
   const next = (Number.isFinite(current) ? current + 0.25 : 0.25).toFixed(2);
-  await startInput.fill(next);
+  // NumberField is controlled and does not accept an intermediate empty value;
+  // `fill()` therefore re-inserts the old zero before the replacement text.
+  // Select-all + typing is the same real keyboard replacement a user performs.
+  await startInput.focus();
+  await startInput.press('ControlOrMeta+A');
+  await startInput.pressSequentially(next);
   // Prove the browser control accepted the edit before any network wait. The
   // callback is deliberately immediately before the final commit gesture so
   // the remote writer cannot be hidden by an editor refresh.
@@ -87,7 +108,12 @@ async function editFirstClipStart(
 
 type BrowserNetworkAudit = {
   urls: string[];
+  taskListRequests: string[];
+  consoleErrors: string[];
+  pageErrors: string[];
   assertAllowed: () => void;
+  assertSingleTaskPollingOwner: () => void;
+  assertNoUnexpectedBrowserErrors: (allowed?: RegExp[]) => void;
 };
 
 /**
@@ -98,11 +124,31 @@ type BrowserNetworkAudit = {
  */
 function installBrowserNetworkAudit(page: import('@playwright/test').Page): BrowserNetworkAudit {
   const urls: string[] = [];
+  const taskListRequests: string[] = [];
+  const consoleErrors: string[] = [];
+  const pageErrors: string[] = [];
   const record = (url: string) => {
     if (!urls.includes(url)) urls.push(url);
   };
-  page.on('request', (request) => record(request.url()));
+  page.on('request', (request) => {
+    record(request.url());
+    const parsed = new URL(request.url());
+    if (
+      request.method() === 'GET'
+      && parsed.pathname === '/api/astrid/projects/demo-project/tasks'
+      && parsed.searchParams.get('limit') === '200'
+    ) {
+      taskListRequests.push(request.url());
+    }
+  });
   page.on('websocket', (socket) => record(socket.url()));
+  page.on('console', (message) => {
+    if (message.type() === 'error') {
+      const location = message.location().url;
+      consoleErrors.push(location ? `${message.text()} (${location})` : message.text());
+    }
+  });
+  page.on('pageerror', (error) => pageErrors.push(error.message));
 
   const appOrigin = new URL(BASE_URL).origin;
   const bridgeOrigin = BRIDGE_ORIGIN;
@@ -126,11 +172,28 @@ function installBrowserNetworkAudit(page: import('@playwright/test').Page): Brow
 
   return {
     urls,
+    taskListRequests,
+    consoleErrors,
+    pageErrors,
     assertAllowed: () => {
       const unexpected = urls.filter((url) => !allowed(url));
       expect(unexpected, 'real-bridge browser traffic must stay on local authorities').toEqual([]);
       expect(urls.filter((url) => /(supabase\.co|54321|fonts\.googleapis\.com|fonts\.gstatic\.com)/i.test(url)),
         'real-bridge browser traffic must not use Supabase or external fonts').toEqual([]);
+    },
+    assertSingleTaskPollingOwner: () => {
+      const fallbackSnapshotPolls = taskListRequests.filter((raw) =>
+        new URL(raw).searchParams.has('offset'));
+      expect(
+        fallbackSnapshotPolls.length,
+        `the fallback snapshot owner must yield after realtime connects; saw ${taskListRequests.join(', ')}`,
+      ).toBeLessThanOrEqual(2);
+    },
+    assertNoUnexpectedBrowserErrors: (allowed = []) => {
+      const unexpectedConsole = consoleErrors.filter((message) =>
+        !allowed.some((pattern) => pattern.test(message)));
+      expect(unexpectedConsole, 'real-bridge browser console errors').toEqual([]);
+      expect(pageErrors, 'real-bridge uncaught page errors').toEqual([]);
     },
   };
 }
@@ -520,9 +583,9 @@ test('concurrent write → 409 → diverged banner (B4/B5 live proof)', async ({
   // Both actions stash the local draft and reload → the B9 recovery banner
   // offers Retry / Discard.
   await expect(page.getByText(/recovered unsaved changes/i)).toBeVisible({ timeout: 20_000 });
-  await page.getByRole('button', { name: 'Discard' }).click();
+  await page.getByRole('button', { name: 'Discard', exact: true }).click();
   await expect(page.getByText(/recovered unsaved changes/i)).not.toBeVisible();
-  await expect(page.locator('[data-clip-id]').first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(CLIP_ACTION_WITH_ID_SELECTOR).first()).toBeVisible({ timeout: 20_000 });
 
   const persisted = await request.get(url, { headers: bridgeHeaders() });
   expect(persisted.status()).toBe(200);
@@ -530,6 +593,11 @@ test('concurrent write → 409 → diverged banner (B4/B5 live proof)', async ({
   expect(persistedPayload.config.app['b8.browser.writer2']).toEqual({ note: 'concurrent' });
   expect(persistedPayload.config.clips).toEqual(initialPayload.config.clips);
   audit.assertAllowed();
+  audit.assertSingleTaskPollingOwner();
+  audit.assertNoUnexpectedBrowserErrors([
+    /404.*\/media\/__reigh_capability_probe__\/content/i,
+    /409.*\/save/i,
+  ]);
 });
 
 /**
@@ -553,4 +621,12 @@ test('bridge death during an edit → watchdog banner with retry', async ({ page
   await expect(page.getByText(/changes have not been saved/i)).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole('button', { name: 'Retry save' })).toBeVisible();
   audit.assertAllowed();
+  audit.assertSingleTaskPollingOwner();
+  audit.assertNoUnexpectedBrowserErrors([
+    /404.*\/media\/__reigh_capability_probe__\/content/i,
+    /failed to load resource.*\/api\/astrid\//i,
+    /fetch.*astrid/i,
+    /network.*astrid/i,
+    /proxy.*astrid/i,
+  ]);
 });

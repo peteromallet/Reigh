@@ -14,6 +14,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   diffTableSnapshots,
   buildDiffSnapshot,
+  TASK_POLL_ACTIVE_MS,
+  TASK_POLL_IDLE_MS,
+  taskPollCadenceMs,
 } from '../RealtimeConnection';
 
 // =============================================================================
@@ -21,6 +24,13 @@ import {
 // =============================================================================
 
 describe('diffTableSnapshots — synthetic event matrix', () => {
+  it('uses one adaptive task owner: fast while active and bounded while idle', () => {
+    expect(taskPollCadenceMs([])).toBe(TASK_POLL_IDLE_MS);
+    expect(taskPollCadenceMs([{ status: 'succeeded' }])).toBe(TASK_POLL_IDLE_MS);
+    expect(taskPollCadenceMs([{ status: 'queued' }])).toBe(TASK_POLL_ACTIVE_MS);
+    expect(taskPollCadenceMs([{ status: 'running' }])).toBe(TASK_POLL_ACTIVE_MS);
+  });
+
   it('synthesizes INSERT for a row absent from the previous snapshot', () => {
     const next = buildDiffSnapshot([
       { task_id: 't1', status: 'queued', project_id: 'p' },
@@ -219,10 +229,11 @@ describe('RealtimeConnection — first-poll-then-connected (evidence b/c)', () =
     connection.onEvent((event) => events.push(event));
 
     // Mutate the fake bridge state directly (the poller's source of truth),
-    // then advance one 2 s tasks cadence tick.
+    // then advance one bounded idle cadence tick. Once the task is observed,
+    // the sole owner switches to the active 2 s cadence.
     const readModel = makeAdmittedTaskReadModel({ taskId: fixtureUlid('000042') });
     router.state.tasks.set(readModel.id, taskSummaryFromReadModel(readModel));
-    await vi.advanceTimersByTimeAsync(2_000);
+    await vi.advanceTimersByTimeAsync(TASK_POLL_IDLE_MS);
 
     expect(events.some((event) =>
       event.table === 'tasks' && event.eventType === 'INSERT' && event.new.task_id === readModel.id,
@@ -232,7 +243,7 @@ describe('RealtimeConnection — first-poll-then-connected (evidence b/c)', () =
     const summary = router.state.tasks.get(readModel.id)!;
     summary.status = 'succeeded';
     events.length = 0;
-    await vi.advanceTimersByTimeAsync(2_000);
+    await vi.advanceTimersByTimeAsync(TASK_POLL_ACTIVE_MS);
 
     const update = events.find((event) =>
       event.table === 'tasks' && event.eventType === 'UPDATE' && event.new.task_id === readModel.id,
@@ -244,7 +255,7 @@ describe('RealtimeConnection — first-poll-then-connected (evidence b/c)', () =
     // Row vanishes → DELETE preserving the full removed record in `old`.
     router.state.tasks.delete(readModel.id);
     events.length = 0;
-    await vi.advanceTimersByTimeAsync(2_000);
+    await vi.advanceTimersByTimeAsync(TASK_POLL_IDLE_MS);
 
     const del = events.find((event) =>
       event.table === 'tasks' && event.eventType === 'DELETE',

@@ -1,11 +1,7 @@
 import { useEffect, useMemo, useSyncExternalStore } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { taskReferencesGeneration } from '@/shared/hooks/tasks/usePendingGenerationTasks.ts';
-import { realtimeEventProcessor } from '@/shared/realtime/RealtimeEventProcessor.ts';
-import { useAstridCapabilityCensus } from '@/integrations/astrid/capabilityCensus.ts';
-import { TASK_STATUS } from '@/types/tasks.ts';
-import { listBridgeTasks } from '@/integrations/astrid/bridgeTaskReads.ts';
-import { taskPollingCadence } from '@/shared/hooks/tasks/taskPollingCadence.ts';
+import { TASK_STATUS, type Task } from '@/types/tasks.ts';
+import { useBridgeTaskSnapshot } from '@/shared/hooks/tasks/useBridgeTaskSnapshot.ts';
 import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import type { ResolvedAssetRegistryEntry } from '@/tools/video-editor/types/index.ts';
 
@@ -24,16 +20,11 @@ interface ActiveTaskRow {
   params: Record<string, unknown> | null;
 }
 
-const ACTIVE_TASK_CLIPS_QUERY_KEY = 'active-task-clips';
 const OPTIMISTIC_TIMEOUT_MS = 8000;
 
 const optimisticListeners = new Set<() => void>();
 const optimisticTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 let optimisticActiveAssetKeysSnapshot = new Set<string>();
-
-function activeTaskClipsQueryKey(projectId: string | null) {
-  return [ACTIVE_TASK_CLIPS_QUERY_KEY, projectId ?? '__no-project__'] as const;
-}
 
 function emitOptimisticChange() {
   optimisticListeners.forEach((listener) => listener());
@@ -125,10 +116,8 @@ export function addOptimisticActive(assetKeys: string[]) {
   emitOptimisticChange();
 }
 
-async function fetchActiveTasks(projectId: string): Promise<ActiveTaskRow[]> {
-  const processing = await listBridgeTasks(projectId);
-
-  return processing
+function selectActiveTasks(tasks: readonly Task[]): ActiveTaskRow[] {
+  return tasks
     .filter((task) => task.status === TASK_STATUS.QUEUED || task.status === TASK_STATUS.IN_PROGRESS)
     .map((task) => ({
       id: task.id,
@@ -139,9 +128,8 @@ async function fetchActiveTasks(projectId: string): Promise<ActiveTaskRow[]> {
 }
 
 export function useActiveTaskClips({ registry }: UseActiveTaskClipsArgs): UseActiveTaskClipsReturn {
-  const capabilityCensus = useAstridCapabilityCensus();
   const selectedProjectId = useVideoEditorRuntime().project.projectId;
-  const queryClient = useQueryClient();
+  const taskSnapshot = useBridgeTaskSnapshot(selectedProjectId ? [selectedProjectId] : []);
   const optimisticActiveAssetKeys = useSyncExternalStore(
     subscribeOptimisticActive,
     getOptimisticActiveSnapshot,
@@ -171,22 +159,10 @@ export function useActiveTaskClips({ registry }: UseActiveTaskClipsArgs): UseAct
     return map;
   }, [registry]);
 
-  const { data: activeTasks = [] } = useQuery({
-    queryKey: activeTaskClipsQueryKey(selectedProjectId),
-    queryFn: async () => {
-      if (!selectedProjectId) {
-        return [];
-      }
-
-      return fetchActiveTasks(selectedProjectId);
-    },
-    enabled: !!selectedProjectId
-      && capabilityCensus.capabilities.tasks !== 'unavailable',
-    refetchInterval: taskPollingCadence,
-    staleTime: 0,
-    gcTime: 10000,
-    refetchOnWindowFocus: 'always',
-  });
+  const activeTasks = useMemo(
+    () => selectActiveTasks(taskSnapshot.data ?? []),
+    [taskSnapshot.data],
+  );
 
   const queriedActiveAssetKeys = useMemo(() => {
     const activeAssetKeys = new Set<string>();
@@ -215,29 +191,6 @@ export function useActiveTaskClips({ registry }: UseActiveTaskClipsArgs): UseAct
 
     removeOptimisticActive(queriedActiveAssetKeys);
   }, [queriedActiveAssetKeys]);
-
-  useEffect(() => {
-    if (!selectedProjectId) {
-      return;
-    }
-
-    return realtimeEventProcessor.onEvent((event) => {
-      if (event.type === 'tasks-created') {
-        const projectMatch = event.tasks.some((task) => task.projectId === selectedProjectId);
-        if (projectMatch) {
-          void queryClient.invalidateQueries({ queryKey: activeTaskClipsQueryKey(selectedProjectId) });
-        }
-        return;
-      }
-
-      if (event.type === 'tasks-updated') {
-        const projectMatch = event.tasks.some((task) => task.projectId === selectedProjectId);
-        if (projectMatch) {
-          void queryClient.invalidateQueries({ queryKey: activeTaskClipsQueryKey(selectedProjectId) });
-        }
-      }
-    });
-  }, [queryClient, selectedProjectId]);
 
   const activeTaskAssetKeys = useMemo(() => {
     if (queriedActiveAssetKeys.size === 0) {

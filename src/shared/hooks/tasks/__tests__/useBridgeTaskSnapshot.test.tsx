@@ -15,23 +15,21 @@ vi.mock('@/integrations/astrid/capabilityCensus.ts', () => ({
   }),
 }));
 
-vi.mock('@/shared/realtime/DataFreshnessManager', () => ({
-  dataFreshnessManager: {
-    subscribe: () => () => {},
-    getDiagnostics: () => ({ realtimeStatus: 'disconnected' }),
-  },
+vi.mock('@/shared/realtime/RealtimeConnection', () => ({
+  getRealtimeConnection: () => ({
+    getState: () => ({ status: 'disconnected' }),
+    onStatusChange: (callback: (state: { status: string }) => void) => {
+      callback({ status: 'disconnected' });
+      return () => {};
+    },
+  }),
 }));
 
 vi.mock('@/shared/state/realtimeStore', () => ({
   upsertRealtimeTaskSnapshot: vi.fn((task: unknown) => task),
 }));
 
-import {
-  TASK_SNAPSHOT_ACTIVE_MS,
-  TASK_SNAPSHOT_IDLE_MS,
-  taskSnapshotPollingInterval,
-  useBridgeTaskSnapshot,
-} from '../useBridgeTaskSnapshot';
+import { useBridgeTaskSnapshot } from '../useBridgeTaskSnapshot';
 
 const activeTask = {
   id: 'task-1',
@@ -76,25 +74,5 @@ describe('useBridgeTaskSnapshot', () => {
     });
     expect(listBridgeTasks).toHaveBeenCalledTimes(2);
 
-    vi.useFakeTimers();
-    let idlePolls = 0;
-    setTimeout(() => { idlePolls += 1; }, TASK_SNAPSHOT_IDLE_MS);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(TASK_SNAPSHOT_IDLE_MS - 1);
-    });
-    expect(idlePolls).toBe(0);
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1);
-    });
-    expect(idlePolls).toBe(1);
-  });
-
-  it('pins the active/idle cadence and lets the realtime owner disable it', () => {
-    expect(taskSnapshotPollingInterval([activeTask], 'disconnected', false))
-      .toBe(TASK_SNAPSHOT_ACTIVE_MS);
-    expect(taskSnapshotPollingInterval([], 'disconnected', false))
-      .toBe(TASK_SNAPSHOT_IDLE_MS);
-    expect(taskSnapshotPollingInterval([activeTask], 'connected', false)).toBe(false);
   });
 });

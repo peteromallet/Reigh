@@ -26,6 +26,7 @@ const mockedState = vi.hoisted(() => ({
   },
   mockDataFreshnessManager: {
     reset: vi.fn(),
+    onRealtimeStatusChange: vi.fn(),
   },
   capabilityCensus: {
     health: 'available',
@@ -243,6 +244,40 @@ describe('RealtimeProvider', () => {
     );
 
     expect(mockRealtimeConnection.onStatusChange).toHaveBeenCalled();
+  });
+
+  it('publishes connection health so the bridge snapshot poller yields ownership', () => {
+    renderWithProviders(
+      <RealtimeProvider>
+        <RealtimeConsumer />
+      </RealtimeProvider>
+    );
+
+    act(() => {
+      mockedState.statusChangeCallback?.({
+        status: 'connected',
+        projectId: 'proj-1',
+        error: null,
+        statusChangedAt: Date.now(),
+        reconnectAttempt: 0,
+        nextRetryAt: null,
+      });
+    });
+    expect(mockedState.mockDataFreshnessManager.onRealtimeStatusChange)
+      .toHaveBeenLastCalledWith('connected', undefined);
+
+    act(() => {
+      mockedState.statusChangeCallback?.({
+        status: 'failed',
+        projectId: 'proj-1',
+        error: 'bridge unavailable',
+        statusChangedAt: Date.now(),
+        reconnectAttempt: 3,
+        nextRetryAt: null,
+      });
+    });
+    expect(mockedState.mockDataFreshnessManager.onRealtimeStatusChange)
+      .toHaveBeenLastCalledWith('error', 'bridge unavailable');
   });
 
   it('hydrates canonical task rows into the scoped realtime store before processing the event', async () => {

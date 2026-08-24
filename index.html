@@ -53,8 +53,18 @@
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js')
-            .catch(() => { /* silent */ });
+          const deterministicLocalTest = new URLSearchParams(window.location.search).get('localTest') === '1';
+          if (deterministicLocalTest) {
+            Promise.all([
+              navigator.serviceWorker.getRegistrations()
+                .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister()))),
+              'caches' in window
+                ? caches.keys().then((names) => Promise.all(names.map((name) => caches.delete(name))))
+                : Promise.resolve(),
+            ]).catch(() => { /* test isolation is also asserted in-browser */ });
+            return;
+          }
+          navigator.serviceWorker.register('/sw.js').catch(() => { /* silent */ });
         });
       }
     </script>

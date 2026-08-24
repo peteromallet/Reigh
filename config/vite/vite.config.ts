@@ -8,6 +8,7 @@ import {
   resolveVitePort,
 } from "./policy";
 import { createRemoteFontModePlugin } from "./remoteFonts";
+import { isSameOriginLoopbackRequest } from "./astridProxySecurity";
 
 export { createRemoteFontModePlugin, stripRemoteFontLinks } from "./remoteFonts";
 
@@ -75,7 +76,13 @@ export default defineConfig(() => {
           changeOrigin: true,
           rewrite: (incomingPath) => incomingPath.replace(/^\/api\/astrid/, ""),
           configure: (proxy) => {
-            proxy.on("proxyReq", (proxyRequest) => {
+            proxy.on("proxyReq", (proxyRequest, incomingRequest) => {
+              const incomingOrigin = typeof incomingRequest.headers.origin === "string"
+                ? incomingRequest.headers.origin
+                : undefined;
+              if (isSameOriginLoopbackRequest(incomingOrigin, incomingRequest.headers.host)) {
+                proxyRequest.removeHeader("Origin");
+              }
               const token = readAstridBridgeToken();
               if (token) {
                 proxyRequest.setHeader("Authorization", `Bearer ${token}`);

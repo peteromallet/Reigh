@@ -45,12 +45,22 @@ type TableSnapshot = Map<string, SnapshotRow>;
  * variant projections, and timelines change rarely; anything else is a
  * safety net at 30 s.
  */
+export const TASK_POLL_ACTIVE_MS = 2_000;
+export const TASK_POLL_IDLE_MS = 10_000;
+
 const TABLE_POLL_CADENCE_MS: Record<DatabaseTable, number> = {
-  tasks: 2_000,
+  tasks: TASK_POLL_ACTIVE_MS,
   generations: 2_000,
   generation_variants: 10_000,
   timelines: 10_000,
 };
+
+export function taskPollCadenceMs(rows: Iterable<Record<string, unknown>>): number {
+  for (const row of rows) {
+    if (row.status === 'queued' || row.status === 'running') return TASK_POLL_ACTIVE_MS;
+  }
+  return TASK_POLL_IDLE_MS;
+}
 
 export class RealtimeConnection {
   private state: ConnectionState = { ...INITIAL_CONNECTION_STATE };
@@ -314,13 +324,16 @@ export class RealtimeConnection {
     if (!this.isCurrentConnectAttempt(connectSequence) || !this.isTableCapabilityAvailable(table)) {
       return;
     }
+    const cadenceMs = table === 'tasks'
+      ? taskPollCadenceMs(this.snapshots.get('tasks')?.values() ?? [])
+      : TABLE_POLL_CADENCE_MS[table];
     const timer = setTimeout(() => {
       this.pollTimers.delete(table);
       if (!this.isCurrentConnectAttempt(connectSequence)) {
         return;
       }
       void this.pollTable(table, projectId, connectSequence);
-    }, TABLE_POLL_CADENCE_MS[table]);
+    }, cadenceMs);
     this.pollTimers.set(table, timer);
   }
 

@@ -148,6 +148,14 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
   useEffect(() => {
     const unsubscribe = realtimeConnection.onStatusChange((state) => {
       setConnectionState(state);
+      dataFreshnessManager.onRealtimeStatusChange(
+        state.status === 'connected'
+          ? 'connected'
+          : state.status === 'failed'
+            ? 'error'
+            : 'disconnected',
+        state.error ?? undefined,
+      );
     });
     return unsubscribe;
   }, [realtimeConnection]);

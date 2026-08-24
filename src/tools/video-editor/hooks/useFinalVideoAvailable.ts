@@ -2,33 +2,31 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AstridLocalClient } from '@/integrations/astrid/client.ts';
 import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import type { ShotFinalVideo } from '@/tools/travel-between-images/hooks/video/useShotFinalVideos.ts';
-import { useAstridCapabilityCensus } from '@/integrations/astrid/capabilityCensus.ts';
+import { useBridgeTaskSnapshot } from '@/shared/hooks/tasks/useBridgeTaskSnapshot.ts';
 
 export type { ShotFinalVideo };
 
 export function useFinalVideoAvailable() {
   const runtime = useVideoEditorRuntime();
-  const capabilityCensus = useAstridCapabilityCensus();
   const { shots } = runtime;
   const [taskVideos, setTaskVideos] = useState<Map<string, ShotFinalVideo>>(new Map());
   const [dismissedTaskOutputs, setDismissedTaskOutputs] = useState<ReadonlySet<string>>(new Set());
+  const projectSlug = runtime.project.projectId;
+  const taskSnapshot = useBridgeTaskSnapshot(projectSlug ? [projectSlug] : []);
 
   useEffect(() => {
-    const projectSlug = runtime.project.projectId;
-    if (!projectSlug || capabilityCensus.capabilities.tasks === 'unavailable') return;
+    if (!projectSlug || !taskSnapshot.data) return;
     let disposed = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
     const bridgeBaseUrl = (runtime.provider as { apiBaseUrl?: string }).apiBaseUrl;
     const client = new AstridLocalClient({ projectSlug, baseUrl: bridgeBaseUrl });
 
-    const poll = async () => {
+    const hydrateOutputs = async () => {
       try {
-        const page = await client.tasks.list({ limit: 200 });
-        const renderTasks = page.tasks.filter((task) =>
-          task.capability === 'rendering.timeline_visualize'
-          || task.spec?.family === 'render_export',
+        const renderTasks = taskSnapshot.data.filter((task) =>
+          task.taskType === 'rendering.timeline_visualize'
+          || task.taskType === 'render_export',
         );
-        const details = await Promise.all(renderTasks.map((task) => client.tasks.get(task.task_id)));
+        const details = await Promise.all(renderTasks.map((task) => client.tasks.get(task.id)));
         if (disposed) return;
         const next = new Map<string, ShotFinalVideo>();
         for (const detail of details) {
@@ -53,18 +51,15 @@ export function useFinalVideoAvailable() {
         }
         setTaskVideos(next);
       } catch (error) {
-        runtime.telemetry.warn('[useFinalVideoAvailable] Astrid render poll failed', error);
-      } finally {
-        if (!disposed) timer = setTimeout(() => void poll(), 2_000);
+        runtime.telemetry.warn('[useFinalVideoAvailable] Astrid render hydration failed', error);
       }
     };
 
-    void poll();
+    void hydrateOutputs();
     return () => {
       disposed = true;
-      if (timer) clearTimeout(timer);
     };
-  }, [capabilityCensus.capabilities.tasks, runtime.project.projectId, runtime.provider, runtime.telemetry]);
+  }, [projectSlug, runtime.provider, runtime.telemetry, taskSnapshot.data]);
 
   const finalVideoMap = useMemo(() => {
     const merged = new Map(shots.finalVideoMap);
