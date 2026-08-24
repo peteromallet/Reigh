@@ -3,13 +3,13 @@
   "release": "extension-ship-quality-rc1",
   "status": "integration",
   "reigh": {
-    "branch": "codex/extension-ship-quality",
+    "branch": "codex/extension-ship-integration",
     "releaseTag": "extension-ship-quality-rc1",
     "baseCommit": "0fb8cda1054b9727ce1fae3a7ee33081d08b52a5"
   },
   "astrid": {
-    "branch": "codex/extension-ship-astrid",
-    "commit": "fb152312d3cb9b7bed5f637bfdf6845e7d638739"
+    "branch": "codex/extension-ship-astrid-integration",
+    "commit": "b0b57ae51ed2dda58f28b57499c9b671b1b99649"
   },
   "verification": {
     "profile": "extension-ship-quality-v1",

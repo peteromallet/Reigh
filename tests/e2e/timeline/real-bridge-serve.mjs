@@ -4,7 +4,7 @@
  * seeded project root, for the Playwright CAS/watchdog/draft specs.
  *
  *   ASTRID_CHECKOUT    clean checkout at the release pin (default: the local
- *                      Astrid-extension-rc worktree)
+ *                      Astrid-extension-integration worktree)
  *   ASTRID_PYTHON      Python used for `<python> -m astrid` (default: python3)
  *   ASTRID_SERVE_BIN   explicit executable override (not provenance-checked)
  *   ASTRID_BRIDGE_PORT port to listen on (default 17334)
@@ -21,8 +21,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 const PORT = Number(process.env.ASTRID_BRIDGE_PORT ?? 17334);
-const PINNED_ASTRID_SHA = '97314ccee7caa7adfe04004e6854d7a8ba6b6dfd';
-const DEFAULT_ASTRID_CHECKOUT = '/Users/peteromalley/Documents/reigh-workspace/Astrid-editor-bridge-integration';
+const PINNED_ASTRID_SHA = 'b0b57ae51ed2dda58f28b57499c9b671b1b99649';
+const DEFAULT_ASTRID_CHECKOUT = '/Users/peteromalley/Documents/reigh-workspace/Astrid-extension-integration';
 const astrid = resolveAstridCommand();
 const OWNS_SEED_ROOT = !process.env.ASTRID_SEED_ROOT;
 const SEED_ROOT = process.env.ASTRID_SEED_ROOT ? resolve(process.env.ASTRID_SEED_ROOT) : mkdtempSync(join(tmpdir(), 'astrid-real-bridge-'));
