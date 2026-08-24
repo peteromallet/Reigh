@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "release": "extension-ship-quality-rc3",
+  "startedAt": "2026-08-24T19:45:51.579Z",
+  "status": "failed",
+  "reighCommit": "19bdde3ceff5e62041e705e9172c6dc73db1b739",
+  "reighControllerHead": "b36efedd703dfefd38de8c90221f8acb183a4927",
+  "reighTagObject": "c9e0d825851bbfa544ba36e4446336f9574cb5d3",
+  "reighEvidencePaths": [
+    "config/releases/extension-ship-evidence.json",
+    "config/releases/extension-ship-quality.json"
+  ],
+  "astridCommit": "86153eefc14aa995402927df0c7bb178f48f8ead",
+  "capability": "astrid.authenticated-release-bridge.v1",
+  "expected": {
+    "extensions": 13,
+    "runawayTransitions": 566
+  },
+  "runtimeModes": {
+    "productionPreview": "built Vite preview plus authenticated same-origin proxy smoke",
+    "browserEditing": "development-only local bridge mode; production local bridge is intentionally unavailable"
+  },
+  "phases": [
+    {
+      "id": "archives",
+      "status": "pass"
+    },
+    {
+      "id": "reigh-build",
+      "status": "pass",
+      "browser": {
+        "executable": "/private/var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-D0yKEe/playwright-browsers/chromium-1223/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+        "executableSha256": "2447c7bdea8e8ad38b52594f1ba53e18821c05445e8a07ad1cf3b0f23931d89d",
+        "browsersPath": "../../../../../../private/var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-D0yKEe/playwright-browsers"
+      }
+    },
+    {
+      "id": "astrid-locked-runtime",
+      "status": "pass",
+      "lock": "requirements/runtime.lock",
+      "lockSha256": "979fe4af91b2bd01947f94050e44e7e5818efd707999d3bf71ac46819df4f057",
+      "buildToolsLock": "scripts/release/paired-python-build-tools.lock",
+      "buildToolsLockSha256": "7345dc56736c169296e3faee81e213d3110e05c51f52ee01908743e3917233f0",
+      "environmentPackageCount": 65,
+      "environmentSha256": "1dd69e6d4eca651dd56b86e353e474f0df0aa5897c9308388932bd73f69fd58e",
+      "python": "/Users/peteromalley/.pyenv/versions/3.11.11/bin/python3.11",
+      "timelineSchema": {
+        "astridModulePath": "/private/var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-D0yKEe/astrid/astrid/__init__.py",
+        "distributionVersion": "0.0.2",
+        "modulePath": "/private/var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-D0yKEe/astrid-venv/lib/python3.11/site-packages/banodoco_timeline_schema/__init__.py",
+        "schemaSha256": "fbee605d9695f7775cebd09f87b8dac15a64a058b752ecb83be0fc6e69b2aef5",
+        "source": "vendor/timeline-schema/python",
+        "sourceTreeSha256": "e219ea79c37fc58389463a1c8115ac07b264a39a872117b8d728f0bc639f6ea7"
+      }
+    },
+    {
+      "id": "migrate-twice",
+      "status": "pass",
+      "storedCount": 566,
+      "evidenceCount": 1,
+      "fixtureHashes": {
+        "audio-reactive-v1.json": "d7925d72b52180e206a2511a5d30cf1638c7007a962fd57d8a6eb9ffb10af886",
+        "timing-manifest.json": "44b5c0eea0aeb8b35a83e3e7620b5dbab27a106bf575fcc6e0ca6591dd4612bb"
+      }
+    },
+    {
+      "id": "built-preview-auth-proxy",
+      "status": "pass",
+      "config": {
+        "schemaVersion": 1,
+        "revision": "paired-preview",
+        "extensions": {
+          "hostEnabled": true,
+          "transcriptCaptionFoundryEnabled": true,
+          "runawayTypedTimelineEnabled": true
+        }
+      },
+      "proxyStatus": 200,
+      "proxyReplacedClientAuthorization": true,
+      "proxyReplacedClientProtocolVersion": true
+    }
+  ],
+  "runawayFixtureHashes": {
+    "audio-reactive-v1.json": "d7925d72b52180e206a2511a5d30cf1638c7007a962fd57d8a6eb9ffb10af886",
+    "timing-manifest.json": "44b5c0eea0aeb8b35a83e3e7620b5dbab27a106bf575fcc6e0ca6591dd4612bb"
+  },
+  "error": "/Users/peteromalley/.nvm/versions/node/v20.19.4/bin/node /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-D0yKEe/reigh/node_modules/@playwright/test/cli.js test --config playwright.paired-release.config.ts --workers=1 failed with exit 1: ect \"toBeVisible\" with timeout 30000ms\u001b[22m\n    \u001b[2m  - waiting for locator('[data-clip-id=\"paired-release-clip\"]')\u001b[22m\n\n\n      129 |   const response = await page.goto(editorUrl, { waitUntil: 'domcontentloaded', timeout: 45_000 });\n      130 |   expect(response?.ok()).toBe(true);\n    > 131 |   await expect(page.locator('[data-clip-id=\"paired-release-clip\"]')).toBeVisible({ timeout: 30_000 });\n          |                                                                      ^\n      132 |   await expect(page.locator('[data-lane-kind=\"reigh.transcript\"]')).toBeVisible();\n      133 |   return issues;\n      134 | }\n        at openEditor (/private/var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-D0yKEe/reigh/tests/e2e/release/paired-repository.spec.ts:131:70)\n        at /private/var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-D0yKEe/reigh/tests/e2e/release/paired-repository.spec.ts:241:18\n\n    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────\n    ../../../../../../../../var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-evidence/extension-ship-quality-rc3-2026-08-24T19-45-50-614Z-45464/playwright-first/paired-repository-paired-repository-acceptance-phase-first/test-failed-1.png\n    ────────────────────────────────────────────────────────────────────────────────────────────────\n\n    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────\n    ../../../../../../../../var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-evidence/extension-ship-quality-rc3-2026-08-24T19-45-50-614Z-45464/playwright-first/paired-repository-paired-repository-acceptance-phase-first/video.webm\n    ────────────────────────────────────────────────────────────────────────────────────────────────\n\n    Error Context: ../../../../../../../../var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-evidence/extension-ship-quality-rc3-2026-08-24T19-45-50-614Z-45464/playwright-first/paired-repository-paired-repository-acceptance-phase-first/error-context.md\n\n    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────\n    ../../../../../../../../var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-evidence/extension-ship-quality-rc3-2026-08-24T19-45-50-614Z-45464/playwright-first/paired-repository-paired-repository-acceptance-phase-first/trace.zip\n    Usage:\n\n        npx playwright show-trace ../../../../../../../../var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-evidence/extension-ship-quality-rc3-2026-08-24T19-45-50-614Z-45464/playwright-first/paired-repository-paired-repository-acceptance-phase-first/trace.zip\n\n    ────────────────────────────────────────────────────────────────────────────────────────────────\n\n  1 failed\n    tests/e2e/release/paired-repository.spec.ts:234:1 › paired repository acceptance phase: first ──",
+  "finishedAt": "2026-08-24T19:48:45.488Z"
+}
