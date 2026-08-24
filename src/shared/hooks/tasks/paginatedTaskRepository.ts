@@ -7,15 +7,6 @@ import {
   sortProcessingTasks,
 } from '@/shared/hooks/tasks/taskFetchPolicy';
 
-// Pagination configuration constants
-const PAGINATION_CONFIG = {
-  PROCESSING_FETCH_MULTIPLIER: 2,
-  PROCESSING_MAX_FETCH: 100,
-  DEFAULT_LIMIT: 50,
-  /** Bridge page ceiling: the frozen route takes a bounded limit. */
-  BRIDGE_FETCH_MAX: 200,
-} as const;
-
 export interface PaginatedTaskQuery {
   allProjects?: boolean;
   allProjectIds?: string[];
@@ -87,15 +78,6 @@ export async function fetchPaginatedTasks(filters: PaginatedTaskQuery): Promise<
 
   const needsCustomSorting = isProcessingStatusFilter(filters.status);
   const succeededOnly = isSucceededOnlyStatus(filters.status);
-
-  // Fetch enough rows to cover the requested page window before slicing —
-  // the same prefetch logic the processing feed needed against supabase-js.
-  const effectiveBaseLimit = Math.max(filters.limit, PAGINATION_CONFIG.DEFAULT_LIMIT);
-  const requestedWindow = filters.offset + filters.limit;
-  const fetchLimit = Math.min(
-    Math.max(effectiveBaseLimit * PAGINATION_CONFIG.PROCESSING_FETCH_MULTIPLIER, requestedWindow),
-    PAGINATION_CONFIG.BRIDGE_FETCH_MAX,
-  );
 
   const projectSlug = filters.allProjects
     ? filters.allProjectIds![0]

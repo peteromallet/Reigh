@@ -27,7 +27,6 @@ import {
   ConnectionStatusCallback,
   RawDatabaseEvent,
   DatabaseTable,
-  DatabaseEventType,
   RealtimeConfig,
   DEFAULT_REALTIME_CONFIG,
   INITIAL_CONNECTION_STATE
@@ -51,7 +50,6 @@ const TABLE_POLL_CADENCE_MS: Record<DatabaseTable, number> = {
   generation_variants: 10_000,
   timelines: 10_000,
 };
-const DEFAULT_POLL_CADENCE_MS = 30_000;
 
 export class RealtimeConnection {
   private state: ConnectionState = { ...INITIAL_CONNECTION_STATE };
@@ -535,7 +533,6 @@ export function diffTableSnapshots(
   previous: TableSnapshot,
   next: TableSnapshot,
 ): RawDatabaseEvent[] {
-  const keys = IDENTITY_KEYS[table];
   const events: RawDatabaseEvent[] = [];
   const receivedAt = Date.now();
 

@@ -224,7 +224,7 @@ export function AudioAnalysisProvider({
       }
       subscription?.release();
     };
-  }, [stableRequest, releaseRender, startImmediately]);
+  }, [candidateRequest, stableRequest, releaseRender, startImmediately]);
 
   return (
     <AudioAnalysisContext.Provider value={frameSource}>

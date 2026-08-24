@@ -14,7 +14,6 @@ import {
   BRIDGE_TIMELINE_NOT_FOUND_CODE,
   BRIDGE_VERSION_CONFLICT_CODE,
   bridgeAssetRegistrySchema,
-  bridgeErrorEnvelopeSchema,
   bridgeTimelineConfigSchema,
   bridgeTimelinePayloadSchema,
   parseBridgePayload,

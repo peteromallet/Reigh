@@ -304,6 +304,7 @@ export function usePollSync({
     getDataRef,
     isConflictExhaustedRef,
     queries.timelineQuery.data,
+    store,
   ]);
 
   useEffect(() => {

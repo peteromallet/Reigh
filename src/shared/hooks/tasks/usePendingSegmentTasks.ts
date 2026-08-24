@@ -13,12 +13,6 @@ import { taskQueryKeys } from '@/shared/lib/queryKeys/tasks';
 import { listBridgeTasks } from '@/integrations/astrid/bridgeTaskReads';
 import { taskPollingCadence } from './taskPollingCadence';
 
-interface PendingSegmentTask {
-  id: string;
-  status: string;
-  pair_shot_generation_id: string | null;
-}
-
 interface UsePendingSegmentTasksReturn {
   /** Check if a pair_shot_generation_id has a pending task (real or optimistic) */
   hasPendingTask: (pairShotGenerationId: string | null | undefined) => boolean;

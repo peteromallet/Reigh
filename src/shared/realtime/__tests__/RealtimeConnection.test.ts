@@ -122,7 +122,7 @@ describe('out-of-order poll application', () => {
     const snapshotA = buildDiffSnapshot(rowsA, 'tasks');
 
     // Baseline currently holds B (applied at generation 2).
-    let baseline = snapshotB;
+    const baseline = snapshotB;
 
     // Poll A's diff against its own view would "delete" r1@new → but the
     // guard rejects applying an out-of-generation result before any diffing

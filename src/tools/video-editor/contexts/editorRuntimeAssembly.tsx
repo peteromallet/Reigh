@@ -661,7 +661,7 @@ export function useEditorRuntimeSync({
       proposals: proposals as unknown as CreativeContext['proposals'],
       timelineView: assembly.timelineViewStoreRef.current as unknown as CreativeContext['timelineView'],
     };
-  }, [timelineReader, store]);
+  }, [assembly.timelineViewStoreRef, timelineReader, store]);
 
   useEffect(() => {
     const host = lifecycleHostRef.current;
