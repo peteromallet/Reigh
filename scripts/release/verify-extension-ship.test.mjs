@@ -137,6 +137,26 @@ describe('extension ship verifier', () => {
     )));
   });
 
+  it('explicitly permits only the committed Astrid stub in browser release lanes', () => {
+    for (const configName of [
+      'playwright.extension-cross-browser.config.ts',
+      'playwright.extension-accessibility.config.ts',
+      'playwright.extension-visual.config.ts',
+    ]) {
+      const config = readFileSync(`${REPO_ROOT}/${configName}`, 'utf8');
+      assert.match(
+        config,
+        /ASTRID_BRIDGE_ALLOW_UNAUTHENTICATED_STUB:\s*'1'/,
+        `${configName} must explicitly permit its committed bridge stub`,
+      );
+      assert.match(
+        config,
+        /command:\s*'node tests\/e2e\/timeline\/astrid-bridge-stub\.mjs'/,
+        `${configName} must start the committed bridge stub`,
+      );
+    }
+  });
+
   it('fails closed on a mutable Astrid ref or incomplete gate inventory', () => {
     const mutableRef = structuredClone(manifest);
     mutableRef.astrid.commit = 'main';

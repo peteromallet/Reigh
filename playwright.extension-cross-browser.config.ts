@@ -46,6 +46,10 @@ export default defineConfig({
         VITE_SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY ?? 'test-anon-key',
         VITE_APP_ENV: process.env.VITE_APP_ENV ?? 'web',
         VITE_ASTRID_BRIDGE_PORT: String(bridgePort),
+        // This isolated release lane always starts the committed local stub below.
+        // Do not infer this from an ambient token: real bridge requests must
+        // continue to fail closed under their dedicated authenticated harness.
+        ASTRID_BRIDGE_ALLOW_UNAUTHENTICATED_STUB: '1',
       },
     },
     {

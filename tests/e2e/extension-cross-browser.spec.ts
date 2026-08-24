@@ -91,8 +91,20 @@ test('combined extension surfaces compose and expose keyboard semantics', async 
   await page.keyboard.press('ArrowDown');
   const menu = page.getByRole('menu', { name: 'Transcript actions' });
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole('menuitem')).toHaveCount(3);
-  await expect(menu.getByRole('menuitem').first()).toBeFocused();
+  const transcriptMenuItems = menu.getByRole('menuitem');
+  await expect(transcriptMenuItems).toHaveText([
+    'Add missing',
+    'Regenerate',
+    'Propose edits',
+    'Accept proposals',
+    'Reject proposals',
+  ]);
+  await expect(transcriptMenuItems.nth(0)).toHaveAccessibleName('Render transcript as editable video text');
+  await expect(transcriptMenuItems.nth(1)).toHaveAccessibleName('Regenerate transcript captions and replace edits');
+  await expect(transcriptMenuItems.nth(2)).toHaveAccessibleName('Propose caption edits back to transcript source');
+  await expect(transcriptMenuItems.nth(3)).toHaveAccessibleName('Accept pending caption edits for transcript source update');
+  await expect(transcriptMenuItems.nth(4)).toHaveAccessibleName('Reject pending caption edits for transcript source update');
+  await expect(transcriptMenuItems.first()).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(menu).toHaveCount(0);
   await expect(transcriptActions).toBeFocused();
