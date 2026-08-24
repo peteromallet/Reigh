@@ -144,6 +144,11 @@ const server = http.createServer(async (req, res) => {
       });
     }
     if (body?.config) config = body.config;
+    // B4: the combined CAS save carries config + registry (asset registration
+    // rides the save — there is no separate registry write path).
+    if (body?.registry) {
+      registry.assets = { ...registry.assets, ...(body.registry.assets ?? {}) };
+    }
     configVersion += 1;
     return send(res, 200, { ...timelineSummary, config, config_version: configVersion, registry });
   }

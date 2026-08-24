@@ -1,6 +1,7 @@
 import { Task } from '@/types/tasks';
 import { TASK_NAME_ABBREVIATIONS } from '../constants';
-import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
+import { getProjectSelectionFallbackId } from '@/shared/contexts/projectSelectionStore';
+import { fetchProjectPlacements } from '@/shared/lib/placement/placementService';
 import {
   asRecord,
   asString,
@@ -112,20 +113,32 @@ export const checkSegmentConnection = async (
     return { ok: true, connected: false };
   }
 
-  const { data, error } = await supabase().from('shot_generations')
-    .select('id, shot_id, timeline_frame')
-    .eq('id', pairShotGenerationId)
-    .maybeSingle();
-
-  if (error) {
-    return {
-      ok: false,
-      error: error.message || 'Failed to verify segment connection',
-    };
+  const projectSlug = getProjectSelectionFallbackId();
+  if (!projectSlug) {
+    return { ok: false, error: 'No project selected — cannot verify segment connection' };
   }
 
-  return {
-    ok: true,
-    connected: !!data && data.shot_id === shotId && (data.timeline_frame ?? -1) >= 0,
-  };
+  try {
+    const { byShot } = await fetchProjectPlacements(projectSlug);
+    // Callers identify the pair either by the deterministic entry id or by a
+    // bare generation id; connected = placed with a real frame (not pooled).
+    const entry = (byShot.get(shotId) ?? []).find(
+      (placement) =>
+        placement.entryId === pairShotGenerationId
+        || placement.generationId === pairShotGenerationId,
+    );
+
+    return {
+      ok: true,
+      connected: !!entry && (entry.timelineFrame ?? -1) >= 0,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof Error && error.message
+          ? error.message
+          : 'Failed to verify segment connection',
+    };
+  }
 };

@@ -8,14 +8,28 @@
  * project root; the Vite dev server comes from the shared webServer config.
  */
 import { expect, test } from '@playwright/test';
-import { BASE_URL, EDITOR_SETTLE_MS } from './support.ts';
+import { readFileSync } from 'node:fs';
 
 test.describe.configure({ timeout: 120_000 });
 
-// The canonical UUID identity — resolvable before AND after the legacy →
-// event-log migration that happens on the first save (the pre-migration slug
-// is not preserved by that migration, a pre-existing bridge quirk).
-const TIMELINE_ID = '11111111-1111-1111-1111-111111111111';
+// The harness registers the project through the astrid CLI, which mints the
+// timeline identity — resolve it from the discovery route instead of assuming
+// a fixed UUID.
+async function defaultTimelineId(request: import('@playwright/test').APIRequestContext): Promise<string> {
+  const response = await request.get(`${BRIDGE_ORIGIN}/projects/demo-project/timelines`);
+  const body = await response.json();
+  const rows = (body.timelines ?? []) as Array<{ timeline_id: string; is_default?: boolean }>;
+  const chosen = rows.find((row) => row.is_default) ?? rows[0];
+  if (!chosen) {
+    throw new Error('real bridge registered no timelines for demo-project');
+  }
+  return chosen.timeline_id;
+}
+
+async function timelineUrl(request: import('@playwright/test').APIRequestContext): Promise<string> {
+  return `${BRIDGE_ORIGIN}/projects/demo-project/timelines/${await defaultTimelineId(request)}`;
+}
+
 async function openEditorAt(page: import('@playwright/test').Page) {
   await page.addInitScript(() => {
     try {
@@ -24,7 +38,7 @@ async function openEditorAt(page: import('@playwright/test').Page) {
       // storage unavailable
     }
   });
-  const editorUrl = `${BASE_URL}/tools/video-editor?localProject=demo-project&localTimeline=${TIMELINE_ID}`;
+  const editorUrl = `${BASE_URL}/tools/video-editor?localProject=demo-project&localTimeline=${await defaultTimelineId(page.request)}`;
   await page.goto(editorUrl, { waitUntil: 'domcontentloaded', timeout: 45_000 });
   await page.waitForTimeout(EDITOR_SETTLE_MS);
   // The real timeline region renders clips as [data-clip-id] elements — wait
@@ -50,22 +64,36 @@ async function dragFirstClipRight(page: import('@playwright/test').Page) {
 
 
 const BRIDGE_ORIGIN = 'http://127.0.0.1:17334';
-const TIMELINE_URL = `${BRIDGE_ORIGIN}/projects/demo-project/timelines/${TIMELINE_ID}`;
+
+/**
+ * The bridge validates the per-boot request token on mutations; the vite
+ * proxy injects it for /api/astrid traffic, but direct bridge-origin callers
+ * read the copy the harness publishes next to its pid file.
+ */
+function mutationHeaders(): Record<string, string> {
+  try {
+    const token = readFileSync('/tmp/astrid-real-bridge.token', 'utf8').trim();
+    return { 'X-Astrid-Request-Token': token };
+  } catch {
+    return {};
+  }
+}
 
 /**
  * OpenAPI conformance (B3 envelope) against the real bridge: GET timeline,
  * POST save with CAS, GET assets.
  */
 test('real bridge serves the 3-route OpenAPI surface', async ({ request }) => {
-  const timeline = await request.get(TIMELINE_URL);
-  expect(timeline.status()).toBe(200);
+  const url = await timelineUrl(request);
+  const timeline = await request.get(url);
   const payload = await timeline.json();
   expect(payload).toHaveProperty('config');
   expect(payload).toHaveProperty('registry');
   expect(typeof payload.config_version).toBe('number');
 
   // Save with the read version → 200 + version bump.
-  const saved = await request.post(`${TIMELINE_URL}/save`, {
+  const saved = await request.post(`${url}/save`, {
+    headers: mutationHeaders(),
     data: {
       config: payload.config,
       registry: payload.registry,
@@ -79,10 +107,13 @@ test('real bridge serves the 3-route OpenAPI surface', async ({ request }) => {
   expect(savedPayload.config_version).toBeGreaterThan(payload.config_version);
 
   // Save with a stale version → typed 409, never a 500/connection-close.
-  const conflicted = await request.post(`${TIMELINE_URL}/save`, {
+  // The body must DIFFER from the accepted save: an identical body under the
+  // same expected_version is an idempotent replay, not a conflict.
+  const conflicted = await request.post(`${url}/save`, {
+    headers: mutationHeaders(),
     data: {
       config: payload.config,
-      registry: payload.registry,
+      registry: { ...payload.registry, assets: { ...payload.registry.assets, 'stale-cas-probe': { file: 'probe' } } },
       expected_version: payload.config_version,
     },
   });
@@ -109,11 +140,12 @@ test('concurrent write → 409 → diverged banner (B4/B5 live proof)', async ({
   await openEditorAt(page);
 
   // Writer 2: bump the version behind the editor's back.
-  const timeline = await request.get(TIMELINE_URL);
+  const url = await timelineUrl(request);
+  const timeline = await request.get(url);
   expect(timeline.status()).toBe(200);
   const payload = await timeline.json();
-  expect(payload.config).toBeDefined();
-  const saved = await request.post(`${TIMELINE_URL}/save`, {
+  const saved = await request.post(`${url}/save`, {
+    headers: mutationHeaders(),
     data: {
       config: { ...payload.config, app: { ...(payload.config.app ?? {}), 'com.example.writer2': { note: 'concurrent' } } },
       registry: payload.registry,

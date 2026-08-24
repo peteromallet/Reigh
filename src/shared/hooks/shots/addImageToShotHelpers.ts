@@ -1,6 +1,5 @@
-import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
-import { isNotFoundError } from '@/shared/constants/supabaseErrors';
-import { ensureUniqueFrame } from '@/shared/lib/timelinePositionCalculator';
+import { getProjectSelectionFallbackId } from '@/shared/contexts/projectSelectionStore';
+import { placeGeneration } from '@/shared/lib/placement/placementService';
 import { isQuotaOrServerError } from './shotMutationHelpers';
 
 export interface AddImageToShotVariables {
@@ -21,93 +20,39 @@ export const withVariableMetadata = (data: Record<string, unknown>, variables: A
   thumbUrl: variables.thumbUrl,
 });
 
-async function insertUnpositionedShotGeneration(
-  shotId: string,
-  generationId: string,
+/**
+ * Place a generation into a shot on the timeline document (the only
+ * placement authority — doc 24 Q1 RATIFIED).
+ *
+ * - timelineFrame: null     → pooled membership (no clip)
+ * - timelineFrame: undefined → auto-position after the shot's last clip
+ * - timelineFrame: number    → explicit frame
+ */
+export async function runAddImageMutation(
+  variables: AddImageToShotVariables,
 ): Promise<Record<string, unknown>> {
-  const { data, error } = await supabase().from('shot_generations')
-    .insert({
-      shot_id: shotId,
-      generation_id: generationId,
-      timeline_frame: null,
-    })
-    .select()
-    .single();
-
-  if (error) {
-    throw error;
-  }
-
-  return data as Record<string, unknown>;
-}
-
-export async function insertAutoPositionedShotGeneration(
-  shotId: string,
-  generationId: string,
-): Promise<Record<string, unknown>> {
-  const { data: rpcResult, error: rpcError } = await supabase().rpc('add_generation_to_shot', {
-    p_shot_id: shotId,
-    p_generation_id: generationId,
-    p_with_position: true,
-  });
-
-  if (rpcError) {
-    throw rpcError;
-  }
-
-  const result = Array.isArray(rpcResult) ? rpcResult[0] : rpcResult;
-  return (result || {}) as Record<string, unknown>;
-}
-
-async function fetchResolvedTimelineFrame(shotId: string, requestedFrame: number): Promise<number> {
-  const { data: existingGens, error: fetchError } = await supabase().from('shot_generations')
-    .select('timeline_frame')
-    .eq('shot_id', shotId)
-    .not('timeline_frame', 'is', null);
-
-  if (fetchError && !isNotFoundError(fetchError)) {
-    // Non-critical fetch failure: fall through with empty frame list.
-  }
-
-  const existingFrames = (existingGens || [])
-    .map((generation) => generation.timeline_frame)
-    .filter((frame): frame is number => frame != null && frame !== -1);
-
-  return ensureUniqueFrame(requestedFrame, existingFrames);
-}
-
-async function insertExplicitlyPositionedShotGeneration(
-  shotId: string,
-  generationId: string,
-  timelineFrame: number,
-): Promise<Record<string, unknown>> {
-  const resolvedFrame = await fetchResolvedTimelineFrame(shotId, timelineFrame);
-  const { data, error } = await supabase().from('shot_generations')
-    .insert({
-      shot_id: shotId,
-      generation_id: generationId,
-      timeline_frame: resolvedFrame,
-    })
-    .select()
-    .single();
-
-  if (error) {
-    throw error;
-  }
-
-  return data as Record<string, unknown>;
-}
-
-export function runAddImageMutation(variables: AddImageToShotVariables): Promise<Record<string, unknown>> {
   const { shot_id, generation_id, timelineFrame } = variables;
 
-  if (timelineFrame === null) {
-    return insertUnpositionedShotGeneration(shot_id, generation_id);
+  const projectSlug = variables.project_id || getProjectSelectionFallbackId();
+  if (!projectSlug) {
+    throw new Error('No project selected — cannot place image into shot.');
   }
-  if (timelineFrame === undefined) {
-    return insertAutoPositionedShotGeneration(shot_id, generation_id);
-  }
-  return insertExplicitlyPositionedShotGeneration(shot_id, generation_id, timelineFrame);
+
+  const placement = await placeGeneration({
+    projectSlug,
+    shotId: shot_id,
+    generationId: generation_id,
+    timelineFrame,
+  });
+
+  // Record-like row shape keeps withVariableMetadata/consumers compatible;
+  // `id` is the deterministic placement entry id.
+  return {
+    id: placement.entryId,
+    shot_id: placement.shotId,
+    generation_id: placement.generationId,
+    timeline_frame: placement.timelineFrame,
+  };
 }
 
 export function toAddImageErrorMessage(error: Error): string {

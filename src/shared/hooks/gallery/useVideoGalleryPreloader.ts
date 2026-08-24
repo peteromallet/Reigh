@@ -1,5 +1,5 @@
 import { useRef, useEffect, useMemo, useCallback } from 'react';
-import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
+import { fetchShotPlacementImages, sortPlacementRowsNewestFirst } from '@/shared/lib/placement/placementImageRows';
 import { useShots } from '@/shared/contexts/ShotsContext';
 import { useProjectSelectionContext } from "@/shared/contexts/ProjectContext";
 import { useToolSettings } from '@/shared/hooks/settings/useToolSettings';
@@ -81,41 +81,19 @@ export const useVideoGalleryPreloader = (options?: {
     if (!selectedProjectId) return [];
 
     const startIndex = pageIndex * GALLERY_PAGE_SIZE;
-    const endIndex = startIndex + GALLERY_PAGE_SIZE - 1;
 
     try {
-      // Fetch thumbnail URLs for the specific page using the same query as VideoGallery
-      const { data, error } = await supabase().from('shot_generations')
-        .select(`
-          generation:generations!shot_generations_generation_id_generations_id_fk(
-            id,
-            thumbnail_url,
-            location
-          )
-        `)
-        .eq('shot_id', shotId)
-        // IMPORTANT: Match gallery sort (newest first)
-        .order('created_at', { ascending: false })
-        .order('timeline_frame', { ascending: true })
-        .range(startIndex, endIndex);
+      // Document-derived image rows for the shot (placement read model merged
+      // with bridge gallery rows). Gallery-recency ordering matches the sort
+      // the retired shot_generations junction query used.
+      const rows = sortPlacementRowsNewestFirst(
+        await fetchShotPlacementImages(selectedProjectId, shotId),
+      );
 
-      if (error) {
-        return [];
-      }
-
-      const urls = (data || [])
-        .filter(sg => sg.generation)
-        .map(sg => {
-          const thumbUrl = sg.generation.thumbnail_url;
-          const mainUrl = sg.generation.location;
-
-          // Use exact same logic as useUnifiedGenerations: thumbnail_url || location
-          // Don't try to construct URLs - trust what the database returns
-          return thumbUrl || mainUrl;
-        })
+      return rows
+        .slice(startIndex, startIndex + GALLERY_PAGE_SIZE)
+        .map(row => row.thumbUrl || row.imageUrl)
         .filter((url): url is string => typeof url === 'string' && url.length > 0);
-
-      return urls;
     } catch {
       return [];
     }

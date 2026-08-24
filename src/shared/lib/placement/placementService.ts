@@ -18,7 +18,7 @@
 import { AstridLocalClient } from '@/integrations/astrid/client';
 import { TimelineVersionConflictError, isTimelineVersionConflictError } from '@/sdk/video/timeline/errors';
 import { resolveGenerationAsset } from '@/tools/video-editor/data/generationAssetResolver';
-import type { TimelineConfig } from '@/tools/video-editor/types/index';
+import type { AssetRegistry, TimelineConfig } from '@/tools/video-editor/types/index';
 import {
   batchUpdateFramesInDocument,
   placeGenerationInDocument,
@@ -157,7 +157,7 @@ export async function unplaceGeneration(request: UnplaceGenerationRequest): Prom
       shotId: request.shotId,
       generationId: request.generationId,
       mediaRef: asset.file,
-      displaySrc: asset.src,
+      displaySrc: asset.url,
       registryEntry: asset,
       timelineFrame: null,
     });
@@ -196,7 +196,7 @@ export async function fetchProjectPlacements(projectSlug: string): Promise<Proje
   const ref = await resolveDefaultTimelineRef(client, projectSlug);
   const payload = await client.timelines.get(ref);
   const config = payload.config as TimelineConfig;
-  const registry = payload.registry ?? { assets: {} };
+  const registry = (payload.registry ?? { assets: {} }) as AssetRegistry;
   return {
     byShot: readPlacements(config, registry),
     config,

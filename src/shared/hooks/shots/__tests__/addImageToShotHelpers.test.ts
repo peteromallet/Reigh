@@ -1,51 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const mockInsert = vi.fn();
-const mockSelect = vi.fn();
-const mockSingle = vi.fn();
-const mockEq = vi.fn();
-const mockNot = vi.fn();
-const mockRpc = vi.fn();
+const mockPlaceGeneration = vi.fn();
 
-vi.mock('@/integrations/supabase/client', () => ({
-  getSupabaseClient: () => ({
-    from: () => ({
-      insert: (...args: unknown[]) => {
-        mockInsert(...args);
-        return {
-          select: (...selectArgs: unknown[]) => {
-            mockSelect(...selectArgs);
-            return {
-              single: (...singleArgs: unknown[]) => {
-                mockSingle(...singleArgs);
-                return mockSingle();
-              },
-            };
-          },
-        };
-      },
-      select: () => ({
-        eq: (...eqArgs: unknown[]) => {
-          mockEq(...eqArgs);
-          return {
-            not: (...notArgs: unknown[]) => {
-              mockNot(...notArgs);
-              return mockNot();
-            },
-          };
-        },
-      }),
-    }),
-    rpc: (...args: unknown[]) => mockRpc(...args),
-  }),
+vi.mock('@/shared/lib/placement/placementService', () => ({
+  placeGeneration: (...args: unknown[]) => mockPlaceGeneration(...args),
 }));
 
-vi.mock('@/shared/constants/supabaseErrors', () => ({
-  isNotFoundError: () => false,
-}));
-
-vi.mock('@/shared/lib/timelinePositionCalculator', () => ({
-  ensureUniqueFrame: vi.fn().mockImplementation((frame: number) => frame),
+vi.mock('@/shared/contexts/projectSelectionStore', () => ({
+  getProjectSelectionFallbackId: vi.fn(() => 'fallback-project'),
 }));
 
 vi.mock('../shotMutationHelpers', () => ({
@@ -59,7 +21,7 @@ import {
   type AddImageToShotVariables,
 } from '../addImageToShotHelpers';
 import { isQuotaOrServerError } from '../shotMutationHelpers';
-import { ensureUniqueFrame } from '@/shared/lib/timelinePositionCalculator';
+import { getProjectSelectionFallbackId } from '@/shared/contexts/projectSelectionStore';
 
 function makeVariables(overrides: Partial<AddImageToShotVariables> = {}): AddImageToShotVariables {
   return {
@@ -75,7 +37,6 @@ function makeVariables(overrides: Partial<AddImageToShotVariables> = {}): AddIma
 describe('addImageToShotHelpers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(ensureUniqueFrame).mockImplementation((frame: number) => frame);
   });
 
   describe('withVariableMetadata', () => {
@@ -100,7 +61,7 @@ describe('addImageToShotHelpers', () => {
 
       expect(result.id).toBe('sg-1');
       expect(result.timeline_frame).toBe(50);
-      expect(result.extra).toBe(true);
+      expect((result as Record<string, unknown>).extra).toBe(true);
       expect(result.project_id).toBe('project-1');
     });
 
@@ -115,105 +76,116 @@ describe('addImageToShotHelpers', () => {
       expect(result.project_id).toBe('project-1');
     });
 
-    it('overrides data properties with the same name', () => {
+    it('does not override data properties with variable metadata', () => {
       const result = withVariableMetadata(
         { id: 'sg-1', project_id: 'old-project' },
         makeVariables({ project_id: 'new-project' }),
       );
 
+      // Spread order: metadata wins only for its own keys.
       expect(result.project_id).toBe('new-project');
     });
   });
 
   describe('runAddImageMutation', () => {
-    it('calls insertUnpositionedShotGeneration when timelineFrame is null', async () => {
-      const insertResult = { id: 'sg-new', generation_id: 'gen-new', timeline_frame: null };
-      mockSingle.mockResolvedValue({ data: insertResult, error: null });
+    it('places pooled (null timelineFrame) through the document placement service', async () => {
+      mockPlaceGeneration.mockResolvedValue({
+        entryId: 'sg-shot-1-gen-new',
+        shotId: 'shot-1',
+        generationId: 'gen-new',
+        timelineFrame: null,
+        assetKey: 'gen:gen-new',
+      });
 
       const result = await runAddImageMutation(makeVariables({ timelineFrame: null }));
 
-      expect(mockInsert).toHaveBeenCalledWith({
+      expect(mockPlaceGeneration).toHaveBeenCalledWith({
+        projectSlug: 'project-1',
+        shotId: 'shot-1',
+        generationId: 'gen-new',
+        timelineFrame: null,
+      });
+      expect(result).toEqual({
+        id: 'sg-shot-1-gen-new',
         shot_id: 'shot-1',
         generation_id: 'gen-new',
         timeline_frame: null,
       });
-      expect(result).toEqual(insertResult);
     });
 
-    it('calls insertAutoPositionedShotGeneration when timelineFrame is undefined', async () => {
-      const rpcResult = { id: 'sg-new', generation_id: 'gen-new', timeline_frame: 100 };
-      mockRpc.mockResolvedValue({ data: rpcResult, error: null });
+    it('auto-positions (undefined timelineFrame) after the shot\'s last clip', async () => {
+      mockPlaceGeneration.mockResolvedValue({
+        entryId: 'sg-shot-1-gen-new',
+        shotId: 'shot-1',
+        generationId: 'gen-new',
+        timelineFrame: 100,
+        assetKey: 'gen:gen-new',
+      });
 
       const result = await runAddImageMutation(makeVariables({ timelineFrame: undefined }));
 
-      expect(mockRpc).toHaveBeenCalledWith('add_generation_to_shot', {
-        p_shot_id: 'shot-1',
-        p_generation_id: 'gen-new',
-        p_with_position: true,
+      expect(mockPlaceGeneration).toHaveBeenCalledWith(
+        expect.objectContaining({ timelineFrame: undefined }),
+      );
+      expect(result).toEqual({
+        id: 'sg-shot-1-gen-new',
+        shot_id: 'shot-1',
+        generation_id: 'gen-new',
+        timeline_frame: 100,
       });
-      expect(result).toEqual(rpcResult);
     });
 
-    it('calls insertExplicitlyPositionedShotGeneration when timelineFrame is a number', async () => {
-      mockNot.mockResolvedValue({ data: [{ timeline_frame: 0 }, { timeline_frame: 50 }], error: null });
-      const insertResult = { id: 'sg-new', generation_id: 'gen-new', timeline_frame: 75 };
-      mockSingle.mockResolvedValue({ data: insertResult, error: null });
+    it('passes an explicit frame through untouched', async () => {
+      mockPlaceGeneration.mockResolvedValue({
+        entryId: 'sg-shot-1-gen-new',
+        shotId: 'shot-1',
+        generationId: 'gen-new',
+        timelineFrame: 75,
+        assetKey: 'gen:gen-new',
+      });
 
       const result = await runAddImageMutation(makeVariables({ timelineFrame: 75 }));
 
-      expect(ensureUniqueFrame).toHaveBeenCalledWith(75, [0, 50]);
-      expect(mockInsert).toHaveBeenCalledWith({
+      expect(mockPlaceGeneration).toHaveBeenCalledWith(
+        expect.objectContaining({ timelineFrame: 75 }),
+      );
+      expect(result).toEqual({
+        id: 'sg-shot-1-gen-new',
         shot_id: 'shot-1',
         generation_id: 'gen-new',
         timeline_frame: 75,
       });
-      expect(result).toEqual(insertResult);
     });
 
-    it('throws when unpositioned insert fails', async () => {
-      mockSingle.mockResolvedValue({ data: null, error: new Error('DB error') });
-
-      await expect(runAddImageMutation(makeVariables({ timelineFrame: null }))).rejects.toThrow('DB error');
-    });
-
-    it('throws when RPC call fails', async () => {
-      mockRpc.mockResolvedValue({ data: null, error: new Error('RPC failed') });
-
-      await expect(runAddImageMutation(makeVariables({ timelineFrame: undefined }))).rejects.toThrow('RPC failed');
-    });
-
-    it('handles RPC returning an array', async () => {
-      const rpcResult = [{ id: 'sg-new', generation_id: 'gen-new', timeline_frame: 100 }];
-      mockRpc.mockResolvedValue({ data: rpcResult, error: null });
-
-      const result = await runAddImageMutation(makeVariables({ timelineFrame: undefined }));
-
-      expect(result).toEqual(rpcResult[0]);
-    });
-
-    it('returns empty object when RPC returns null result', async () => {
-      mockRpc.mockResolvedValue({ data: null, error: null });
-
-      const result = await runAddImageMutation(makeVariables({ timelineFrame: undefined }));
-
-      expect(result).toEqual({});
-    });
-
-    it('filters out null and -1 frames when resolving explicit position', async () => {
-      mockNot.mockResolvedValue({
-        data: [
-          { timeline_frame: 0 },
-          { timeline_frame: null },
-          { timeline_frame: -1 },
-          { timeline_frame: 50 },
-        ],
-        error: null,
+    it('falls back to the project selection store when project_id is empty', async () => {
+      mockPlaceGeneration.mockResolvedValue({
+        entryId: 'sg-shot-1-gen-new',
+        shotId: 'shot-1',
+        generationId: 'gen-new',
+        timelineFrame: null,
+        assetKey: 'gen:gen-new',
       });
-      mockSingle.mockResolvedValue({ data: { id: 'sg-new', timeline_frame: 75 }, error: null });
 
-      await runAddImageMutation(makeVariables({ timelineFrame: 75 }));
+      await runAddImageMutation(makeVariables({ project_id: '' }));
 
-      expect(ensureUniqueFrame).toHaveBeenCalledWith(75, [0, 50]);
+      expect(mockPlaceGeneration).toHaveBeenCalledWith(
+        expect.objectContaining({ projectSlug: 'fallback-project' }),
+      );
+    });
+
+    it('throws when no project is selected at all', async () => {
+      vi.mocked(getProjectSelectionFallbackId).mockReturnValueOnce(null);
+
+      await expect(runAddImageMutation(makeVariables({ project_id: '' }))).rejects.toThrow(
+        'No project selected',
+      );
+      expect(mockPlaceGeneration).not.toHaveBeenCalled();
+    });
+
+    it('propagates placement failures (conflict, missing media, network)', async () => {
+      mockPlaceGeneration.mockRejectedValue(new Error('timeline_version_conflict'));
+
+      await expect(runAddImageMutation(makeVariables())).rejects.toThrow('timeline_version_conflict');
     });
   });
 

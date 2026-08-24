@@ -1,19 +1,13 @@
 import { describe, it, expect, vi } from 'vitest';
 
-const mockFrom = vi.fn(() => ({
-  select: vi.fn(() => ({
-    eq: vi.fn(() => ({
-      maybeSingle: vi.fn(() => ({ data: null })),
-    })),
-  })),
+const mockFetchProjectPlacements = vi.fn();
+
+vi.mock('@/shared/lib/placement/placementService', () => ({
+  fetchProjectPlacements: (...args: unknown[]) => mockFetchProjectPlacements(...args),
 }));
 
-const mockSupabaseClient = {
-  from: mockFrom,
-};
-
-vi.mock('@/integrations/supabase/client', () => ({
-  getSupabaseClient: vi.fn(() => mockSupabaseClient),
+vi.mock('@/shared/contexts/projectSelectionStore', () => ({
+  getProjectSelectionFallbackId: vi.fn(() => 'demo-project'),
 }));
 
 import {
@@ -28,7 +22,6 @@ import {
   checkSegmentConnection,
 } from '../task-utils';
 import type { Task } from '@/types/tasks';
-import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
 
 const makeTask = (overrides: Partial<Task> = {}): Task => ({
   id: 'task-1',
@@ -316,7 +309,9 @@ describe('checkSegmentConnection', () => {
     });
   });
 
-  it('calls supabase and returns disconnected result when no data returned', async () => {
+  it('returns disconnected result when the shot has no such placement', async () => {
+    mockFetchProjectPlacements.mockResolvedValue({ byShot: new Map([['shot-1', []]]) });
+
     const result = await checkSegmentConnection('pair-1', 'shot-1');
     expect(result).toEqual({
       ok: true,
@@ -324,13 +319,12 @@ describe('checkSegmentConnection', () => {
     });
   });
 
-  it('returns connected result when data matches shot and has valid timeline_frame', async () => {
-    const mockMaybeSingle = vi.fn(() => ({
-      data: { id: 'pair-1', shot_id: 'shot-1', timeline_frame: 5 },
-    }));
-    const mockEq = vi.fn(() => ({ maybeSingle: mockMaybeSingle }));
-    const mockSelect = vi.fn(() => ({ eq: mockEq }));
-    vi.mocked(supabase().from).mockReturnValueOnce({ select: mockSelect } as unknown);
+  it('returns connected result when the entry id matches with a valid frame', async () => {
+    mockFetchProjectPlacements.mockResolvedValue({
+      byShot: new Map([
+        ['shot-1', [{ entryId: 'pair-1', generationId: 'gen-1', timelineFrame: 5 }]],
+      ]),
+    });
 
     const result = await checkSegmentConnection('pair-1', 'shot-1');
     expect(result).toEqual({
@@ -339,13 +333,26 @@ describe('checkSegmentConnection', () => {
     });
   });
 
-  it('returns disconnected result when shot_id does not match', async () => {
-    const mockMaybeSingle = vi.fn(() => ({
-      data: { id: 'pair-1', shot_id: 'different-shot', timeline_frame: 5 },
-    }));
-    const mockEq = vi.fn(() => ({ maybeSingle: mockMaybeSingle }));
-    const mockSelect = vi.fn(() => ({ eq: mockEq }));
-    vi.mocked(supabase().from).mockReturnValueOnce({ select: mockSelect } as unknown);
+  it('also matches a bare generation id', async () => {
+    mockFetchProjectPlacements.mockResolvedValue({
+      byShot: new Map([
+        ['shot-1', [{ entryId: 'sg-shot-1-gen-9', generationId: 'gen-9', timelineFrame: null }]],
+      ]),
+    });
+
+    const result = await checkSegmentConnection('gen-9', 'shot-1');
+    expect(result).toEqual({
+      ok: true,
+      connected: false, // pooled (null frame) is not a connected segment
+    });
+  });
+
+  it('returns disconnected result when the placement lives in another shot', async () => {
+    mockFetchProjectPlacements.mockResolvedValue({
+      byShot: new Map([
+        ['different-shot', [{ entryId: 'pair-1', generationId: 'gen-1', timelineFrame: 5 }]],
+      ]),
+    });
 
     const result = await checkSegmentConnection('pair-1', 'shot-1');
     expect(result).toEqual({
@@ -354,14 +361,8 @@ describe('checkSegmentConnection', () => {
     });
   });
 
-  it('returns error result when query fails', async () => {
-    const mockMaybeSingle = vi.fn(() => ({
-      data: null,
-      error: { message: 'query failed' },
-    }));
-    const mockEq = vi.fn(() => ({ maybeSingle: mockMaybeSingle }));
-    const mockSelect = vi.fn(() => ({ eq: mockEq }));
-    vi.mocked(supabase().from).mockReturnValueOnce({ select: mockSelect } as unknown);
+  it('returns error result when the read model fails', async () => {
+    mockFetchProjectPlacements.mockRejectedValue(new Error('query failed'));
 
     const result = await checkSegmentConnection('pair-1', 'shot-1');
     expect(result).toEqual({
