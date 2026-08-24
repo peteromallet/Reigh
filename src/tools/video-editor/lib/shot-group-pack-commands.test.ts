@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type {
   BridgeGenerationDetailPayload,
@@ -7,12 +7,15 @@ import type {
 } from '@/tools/video-editor/data/bridgeContract.ts';
 import type { PlacementDocument } from '@/shared/lib/placement/documentPlacement.ts';
 import { deriveTimelineShotGroupViews } from '@/tools/video-editor/lib/timeline-domain.ts';
+import { createFakeBridgeRouter } from '@/test/fakeBridgeRouter.ts';
 import {
   DUPLICATE_SHOT_GROUP_FAMILY,
   PROMOTE_PRIMARY_FAMILY,
   admitDuplicateShotGroupPackCommand,
   admitPromotePrimaryPackCommand,
   deepCopyShotGroupInDocument,
+  duplicateShotGroup,
+  promotePrimaryVariant,
   refreshGenerationPrimaryInDocument,
   waitForShotPackCommand,
   type ShotPackCommandClient,
@@ -119,6 +122,8 @@ function commandClient(overrides: Partial<ShotPackCommandClient> = {}): ShotPack
 }
 
 describe('shot-group pack commands', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
   it('deep-copies document nodes and registry refs with final-video lineage and no shared objects', () => {
     const document = documentFixture();
     const sourceGroup = document.config.pinnedShotGroups![0]!;
@@ -254,5 +259,86 @@ describe('shot-group pack commands', () => {
       variantId: 'variant-b',
       mediaRef: '/api/astrid/projects/p/media/media-b/content',
     });
+  });
+
+  it('duplicates only the explicitly active non-default timeline and never touches relational storage', async () => {
+    const router = createFakeBridgeRouter();
+    const seed = documentFixture();
+    delete seed.config.pinnedShotGroups![0]!.videoAssetKey;
+    router.state.config = seed.config;
+    router.state.registry = seed.registry;
+    router.state.configVersion = 7;
+    const paths: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const raw = input instanceof Request ? input.url : String(input);
+      const url = raw.startsWith('http') ? raw : `http://bridge.fake${raw}`;
+      const request = new Request(url, init);
+      paths.push(`${request.method} ${new URL(url).pathname}`);
+      if (request.method === 'POST' && new URL(url).pathname.endsWith('/tasks')) {
+        return new Response(JSON.stringify(admissionResponse()), { status: 201, headers: { 'Content-Type': 'application/json' } });
+      }
+      if (request.method === 'GET' && new URL(url).pathname.endsWith('/tasks/task-1')) {
+        return new Response(JSON.stringify({ task: { ...taskDetail('succeeded'), outputs: [] } }), { headers: { 'Content-Type': 'application/json' } });
+      }
+      return await router.handle(request);
+    }));
+
+    const copied = await duplicateShotGroup({
+      projectSlug: 'demo-project',
+      timelineRef: 'active-non-default',
+      configVersion: 7,
+      source: { shotId: 'shot-source', trackId: 'V1' },
+      destinationShotId: 'shot-copy',
+    }, { wait: async () => undefined });
+
+    expect(copied.group.derivedFrom).toEqual({ shotId: 'shot-source', trackId: 'V1' });
+    expect(router.state.config.pinnedShotGroups?.map((group) => group.shotId))
+      .toEqual(['shot-source', 'shot-copy']);
+    expect(paths).toContain('GET /api/astrid/projects/demo-project/timelines/active-non-default');
+    expect(paths).toContain('POST /api/astrid/projects/demo-project/timelines/active-non-default/save');
+    expect(paths.some((path) => /\/timelines$/.test(path))).toBe(false);
+    expect(paths.some((path) => path.includes('shot_generations') || path.includes('supabase'))).toBe(false);
+  });
+
+  it('promotes and refreshes only the explicit active timeline document', async () => {
+    const router = createFakeBridgeRouter();
+    const seed = documentFixture();
+    const generation = router.state.galleryDetails[0]!;
+    const currentPrimary = generation.variants.find((variant) => variant.is_primary)!;
+    const alternative = generation.variants.find((variant) => !variant.is_primary)!;
+    seed.registry.assets['asset-a']!.generationId = generation.generation_id;
+    seed.registry.assets['asset-a']!.variantId = currentPrimary.id;
+    router.state.config = seed.config;
+    router.state.registry = seed.registry;
+    router.state.configVersion = 11;
+    const paths: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const raw = input instanceof Request ? input.url : String(input);
+      const url = raw.startsWith('http') ? raw : `http://bridge.fake${raw}`;
+      const request = new Request(url, init);
+      paths.push(`${request.method} ${new URL(url).pathname}`);
+      if (request.method === 'POST' && new URL(url).pathname.endsWith('/tasks')) {
+        for (const variant of generation.variants) variant.is_primary = variant.id === alternative.id;
+        return new Response(JSON.stringify(admissionResponse()), { status: 201, headers: { 'Content-Type': 'application/json' } });
+      }
+      if (request.method === 'GET' && new URL(url).pathname.endsWith('/tasks/task-1')) {
+        return new Response(JSON.stringify({ task: { ...taskDetail('succeeded'), outputs: [] } }), { headers: { 'Content-Type': 'application/json' } });
+      }
+      return await router.handle(request);
+    }));
+
+    const views = await promotePrimaryVariant({
+      projectSlug: 'demo-project',
+      timelineRef: 'active-non-default',
+      configVersion: 11,
+      generationId: generation.generation_id,
+      variantId: alternative.id,
+    }, { wait: async () => undefined });
+
+    expect(views[0]?.members.find((member) => member.generationId === generation.generation_id)?.variantId)
+      .toBe(alternative.id);
+    expect(paths).toContain('POST /api/astrid/projects/demo-project/timelines/active-non-default/save');
+    expect(paths.some((path) => /\/timelines$/.test(path))).toBe(false);
+    expect(paths.some((path) => path.includes('shot_generations') || path.includes('supabase'))).toBe(false);
   });
 });

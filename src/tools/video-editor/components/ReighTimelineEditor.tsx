@@ -8,6 +8,8 @@ import { useShots } from '@/shared/contexts/ShotsContext.tsx';
 import { useShotCreation } from '@/shared/hooks/shotCreation/useShotCreation.ts';
 import { useShotNavigation } from '@/shared/hooks/shots/useShotNavigation.ts';
 import { VideoGenerationModal } from '@/tools/travel-between-images/components/VideoGenerationModal.tsx';
+import { AstridLocalClient } from '@/integrations/astrid/client.ts';
+import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import { TimelineEditorCore, resolveSelectedGenerationIdsForShotCreation } from '@/tools/video-editor/components/TimelineEditor/TimelineEditorCore.tsx';
 import { useActiveTaskClips } from '@/tools/video-editor/hooks/useActiveTaskClips.ts';
 import { useFinalVideoAvailable } from '@/tools/video-editor/hooks/useFinalVideoAvailable.ts';
@@ -21,10 +23,15 @@ import { useShotGroups } from '@/tools/video-editor/hooks/useShotGroups.ts';
 import { useSwitchToFinalVideo } from '@/tools/video-editor/hooks/useSwitchToFinalVideo.ts';
 import {
   useTimelineDataSelector,
+  useTimelineConfigVersion,
   useTimelineOpsSelector,
 } from '@/tools/video-editor/hooks/timelineStore.ts';
 import { buildDuplicateClipEdit } from '@/tools/video-editor/lib/duplicate-clip.ts';
 import { duplicateGenerationAsset } from '@/tools/video-editor/lib/generation-utils.ts';
+import {
+  duplicateShotGroup,
+  promotePrimaryVariant,
+} from '@/tools/video-editor/lib/shot-group-pack-commands.ts';
 import type { ClipMeta } from '@/tools/video-editor/lib/timeline-data.ts';
 
 interface ReighTimelineEditorProps {
@@ -41,6 +48,9 @@ function ReighTimelineEditorComponent({ onOpenSequenceCreator }: ReighTimelineEd
   const { navigateToShot } = useShotNavigation();
   const { selectedProjectId } = useProjectSelectionContext();
   const { shots } = useShots();
+  const runtime = useVideoEditorRuntime();
+  const isDocumentShotMode = runtime.userId === null;
+  const configVersion = useTimelineConfigVersion();
   const {
     data,
     resolvedConfig,
@@ -60,12 +70,14 @@ function ReighTimelineEditorComponent({ onOpenSequenceCreator }: ReighTimelineEd
     unpatchRegistry,
     registerAsset,
     registerGenerationAsset,
+    reloadFromServer,
   } = useTimelineOpsSelector((ops) => ({
     applyEdit: ops.applyEdit,
     patchRegistry: ops.patchRegistry,
     unpatchRegistry: ops.unpatchRegistry,
     registerAsset: ops.registerAsset,
     registerGenerationAsset: ops.registerGenerationAsset,
+    reloadFromServer: ops.reloadFromServer,
   }), shallow);
 
   const assetGenerationMap = useMemo<Record<string, string>>(() => {
@@ -137,6 +149,16 @@ function ReighTimelineEditorComponent({ onOpenSequenceCreator }: ReighTimelineEd
     return null;
   }, [createShot, data?.meta, pinGroup, selectedClipIds, selectionShotCreationState]);
 
+  const handleCreateDocumentShotFromSelection = useCallback(async (): Promise<Shot | null> => {
+    if (!selectionShotCreationState.canCreateShot) return null;
+    const selectedClipId = [...selectedClipIds][0];
+    const trackId = selectedClipId ? data?.meta[selectedClipId]?.track : undefined;
+    if (!trackId) return null;
+    const suffix = globalThis.crypto?.randomUUID?.().slice(0, 8) ?? String(Date.now());
+    pinGroup(`shot-${suffix}`, trackId, [...selectedClipIds], 'New shot');
+    return null;
+  }, [data?.meta, pinGroup, selectedClipIds, selectionShotCreationState.canCreateShot]);
+
   const handleGenerateVideoFromSelection = useCallback(async () => {
     if (!selectionShotCreationState.canCreateShot) {
       return;
@@ -180,6 +202,79 @@ function ReighTimelineEditorComponent({ onOpenSequenceCreator }: ReighTimelineEd
     data?.rows ?? [],
     documentShotGroups,
   );
+
+  const handleDuplicateDocumentShotGroup = useCallback(async (locator: { shotId: string; trackId: string }) => {
+    const projectSlug = runtime.project.projectId;
+    if (!projectSlug) {
+      toast.error('Select an Astrid project before duplicating a shot.');
+      return;
+    }
+    const suffix = globalThis.crypto?.randomUUID?.().slice(0, 8) ?? String(Date.now());
+    try {
+      await duplicateShotGroup({
+        projectSlug,
+        timelineRef: runtime.timelineId,
+        configVersion,
+        source: locator,
+        destinationShotId: `${locator.shotId}-copy-${suffix}`,
+        destinationTrackId: locator.trackId,
+      });
+      await reloadFromServer();
+      toast.success('Shot duplicated');
+    } catch (error) {
+      normalizeAndPresentError(error, {
+        context: 'video-editor:duplicate-shot-group',
+        toastTitle: 'Failed to duplicate shot',
+      });
+    }
+  }, [configVersion, reloadFromServer, runtime.project.projectId, runtime.timelineId]);
+
+  const handlePromoteDocumentShotGroupPrimary = useCallback(async (locator: { shotId: string; trackId: string }) => {
+    const projectSlug = runtime.project.projectId;
+    const group = shotGroups.find((candidate) => (
+      candidate.shotId === locator.shotId && candidate.rowId === locator.trackId
+    ));
+    if (!projectSlug || !group) {
+      toast.error('The active Astrid shot is unavailable.');
+      return;
+    }
+    try {
+      const client = new AstridLocalClient({
+        projectSlug,
+        baseUrl: (runtime.provider as { apiBaseUrl?: string }).apiBaseUrl,
+      });
+      const generationIds = Array.from(new Set([
+        ...Object.keys(group.variantIdsByGenerationId),
+        ...group.poolGenerationIds,
+      ]));
+      let candidate: { generationId: string; variantId: string } | null = null;
+      for (const generationId of generationIds) {
+        const detail = await client.gallery.get(generationId);
+        const alternative = detail.variants.find((variant) => !variant.is_primary);
+        if (alternative) {
+          candidate = { generationId, variantId: alternative.id };
+          break;
+        }
+      }
+      if (!candidate) {
+        toast.info('This shot has no alternate variant to promote.');
+        return;
+      }
+      await promotePrimaryVariant({
+        projectSlug,
+        timelineRef: runtime.timelineId,
+        configVersion,
+        ...candidate,
+      });
+      await reloadFromServer();
+      toast.success('Primary variant promoted');
+    } catch (error) {
+      normalizeAndPresentError(error, {
+        context: 'video-editor:promote-shot-primary',
+        toastTitle: 'Failed to promote primary variant',
+      });
+    }
+  }, [configVersion, reloadFromServer, runtime.project.projectId, runtime.provider, runtime.timelineId, shotGroups]);
   const {
     switchToFinalVideo,
     updateToLatestVideo,
@@ -204,7 +299,7 @@ function ReighTimelineEditorComponent({ onOpenSequenceCreator }: ReighTimelineEd
     handleShotGroupSwitchToFinalVideo,
     handleShotGroupSwitchToImages,
   } = useShotGroupHandlers({
-    shots,
+    shots: isDocumentShotMode ? undefined : shots,
     shotGroups,
     data,
     resolvedRegistry: resolvedConfig?.registry,
@@ -229,7 +324,7 @@ function ReighTimelineEditorComponent({ onOpenSequenceCreator }: ReighTimelineEd
     data,
     dataRef,
     applyEdit,
-    shots,
+    shots: isDocumentShotMode ? undefined : shots,
     registerGenerationAsset,
     isInteractionActive,
   });
@@ -324,26 +419,28 @@ function ReighTimelineEditorComponent({ onOpenSequenceCreator }: ReighTimelineEd
         staleShotGroupIds={staleShotGroupIds}
         activeTaskClipIds={activeTaskClipIds}
         shotGroupClipIds={shotGroupClipIds}
-        onShotGroupNavigate={handleShotGroupNavigate}
-        onShotGroupGenerateVideo={handleShotGroupGenerateVideo}
+        onShotGroupNavigate={isDocumentShotMode ? undefined : handleShotGroupNavigate}
+        onShotGroupGenerateVideo={isDocumentShotMode ? undefined : handleShotGroupGenerateVideo}
+        onShotGroupDuplicate={isDocumentShotMode ? handleDuplicateDocumentShotGroup : undefined}
+        onShotGroupPromotePrimary={isDocumentShotMode ? handlePromoteDocumentShotGroupPrimary : undefined}
         onShotGroupUnpin={handleShotGroupUnpin}
         onShotGroupDelete={handleDeleteShotGroup}
         onShotGroupSwitchToFinalVideo={handleShotGroupSwitchToFinalVideo}
         onShotGroupSwitchToImages={handleShotGroupSwitchToImages}
         onShotGroupUpdateToLatestVideo={handleUpdateToLatestVideo}
         canCreateShotFromSelection={selectionShotCreationState.canCreateShot}
-        existingShots={existingShotsForSelection}
-        onCreateShotFromSelection={handleCreateShotFromSelection}
-        onGenerateVideoFromSelection={handleGenerateVideoFromSelection}
-        onNavigateToShot={handleNavigateToShot}
-        onOpenGenerateVideo={handleOpenGenerateVideo}
-        isCreatingShot={isCreating}
+        existingShots={isDocumentShotMode ? [] : existingShotsForSelection}
+        onCreateShotFromSelection={isDocumentShotMode ? handleCreateDocumentShotFromSelection : handleCreateShotFromSelection}
+        onGenerateVideoFromSelection={isDocumentShotMode ? undefined : handleGenerateVideoFromSelection}
+        onNavigateToShot={isDocumentShotMode ? undefined : handleNavigateToShot}
+        onOpenGenerateVideo={isDocumentShotMode ? undefined : handleOpenGenerateVideo}
+        isCreatingShot={isDocumentShotMode ? false : isCreating}
         duplicatingClipId={duplicatingClipId}
         onDuplicateGenerationClip={handleDuplicateGenerationClip}
-        onOpenShotVideoModal={handleOpenShotVideoModal}
+        onOpenShotVideoModal={isDocumentShotMode ? undefined : handleOpenShotVideoModal}
       />
 
-      {videoModalShot && (
+      {!isDocumentShotMode && videoModalShot && (
         <VideoGenerationModal
           isOpen={true}
           onClose={() => { setVideoModalShot(null); setVideoModalShowImages(false); }}

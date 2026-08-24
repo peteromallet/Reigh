@@ -1,6 +1,6 @@
 import { useLayoutEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowRight, Clapperboard, RefreshCw, Scissors, Trash2, Video } from 'lucide-react';
+import { ArrowRight, Clapperboard, Copy, RefreshCw, Scissors, Sparkles, Trash2, Video } from 'lucide-react';
 
 const VIEWPORT_MARGIN = 8;
 
@@ -28,6 +28,8 @@ interface ShotGroupContextMenuProps {
   onUpdateToLatestVideo?: (group: { shotId: string; rowId: string }) => void;
   onUnpinGroup?: (group: { shotId: string; trackId: string }) => void;
   onDeleteShot?: (group: { shotId: string; trackId: string; clipIds: string[] }) => void;
+  onDuplicateGroup?: (group: { shotId: string; trackId: string }) => void;
+  onPromotePrimary?: (group: { shotId: string; trackId: string }) => void;
 }
 
 export function ShotGroupContextMenu({
@@ -41,6 +43,8 @@ export function ShotGroupContextMenu({
   onUpdateToLatestVideo,
   onUnpinGroup,
   onDeleteShot,
+  onDuplicateGroup,
+  onPromotePrimary,
 }: ShotGroupContextMenuProps) {
   const [adjustedPosition, setAdjustedPosition] = useState<{ left: number; top: number } | null>(null);
 
@@ -130,6 +134,12 @@ export function ShotGroupContextMenu({
     ].filter((action): action is { key: string; label: string; icon: typeof Video; onClick: () => void } => Boolean(action))
     : [];
   const defaultActions = [
+    onDuplicateGroup
+      ? { key: 'duplicate-shot-group', label: 'Duplicate shot', icon: Copy, onClick: () => onDuplicateGroup({ shotId: menu.shotId, trackId: menu.trackId }) }
+      : null,
+    onPromotePrimary
+      ? { key: 'promote-primary-variant', label: 'Promote next variant', icon: Sparkles, onClick: () => onPromotePrimary({ shotId: menu.shotId, trackId: menu.trackId }) }
+      : null,
     onNavigate
       ? { key: 'jump-to-shot', label: 'Jump to Shot', icon: ArrowRight, onClick: () => onNavigate(menu.shotId) }
       : null,

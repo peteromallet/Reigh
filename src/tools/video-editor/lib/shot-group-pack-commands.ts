@@ -379,14 +379,20 @@ function sourceFinalVideo(document: PlacementDocument, source: ShotGroupLocator)
 
 /** End-to-end duplicate: pack-copy final bytes, then CAS-copy document nodes. */
 export async function duplicateShotGroup(
-  input: Omit<DeepCopyShotGroupInput, 'finalVideoReplacement' | 'mediaContentUrl'> & { projectSlug: string },
+  input: Omit<DeepCopyShotGroupInput, 'finalVideoReplacement' | 'mediaContentUrl'> & {
+    projectSlug: string;
+    timelineRef: string;
+    configVersion: number;
+  },
   options: WaitForShotPackCommandOptions = {},
 ): Promise<DeepCopyShotGroupResult> {
   const client = new AstridLocalClient({ projectSlug: input.projectSlug });
-  const timelines = (await client.timelines.list()).timelines ?? [];
-  const chosen = timelines.find((timeline) => timeline.is_default === true) ?? timelines[0];
-  if (!chosen) throw new Error(`No default timeline found for project ${input.projectSlug}`);
-  const head = await client.timelines.get(chosen.slug ?? chosen.timeline_id);
+  const head = await client.timelines.get(input.timelineRef);
+  if (head.config_version !== input.configVersion) {
+    throw new Error(
+      `Timeline ${input.timelineRef} is at version ${head.config_version}; expected active editor version ${input.configVersion}`,
+    );
+  }
   const source = sourceFinalVideo({
     config: head.config as TimelineConfig,
     registry: (head.registry ?? { assets: {} }) as AssetRegistry,
@@ -402,7 +408,11 @@ export async function duplicateShotGroup(
   if (source.entry && !replacement) {
     throw new Error('Duplicate pack command succeeded without a copied final-video output');
   }
-  return (await mutateTimelineDocument(input.projectSlug, (document) => deepCopyShotGroupInDocument(document, {
+  return (await mutateTimelineDocument({
+    projectSlug: input.projectSlug,
+    timelineRef: input.timelineRef,
+    configVersion: input.configVersion,
+  }, (document) => deepCopyShotGroupInDocument(document, {
     ...input,
     finalVideoReplacement: replacement,
     mediaContentUrl: (mediaId) => client.media.contentUrl(mediaId),
@@ -434,10 +444,22 @@ export function refreshGenerationPrimaryInDocument(
 
 /** End-to-end promote: admit pack command, await it, refresh R13, then CAS registry. */
 export async function promotePrimaryVariant(
-  input: Readonly<{ projectSlug: string; generationId: string; variantId: string }>,
+  input: Readonly<{
+    projectSlug: string;
+    timelineRef: string;
+    configVersion: number;
+    generationId: string;
+    variantId: string;
+  }>,
   options: WaitForShotPackCommandOptions = {},
 ): Promise<readonly TimelineShotGroupView[]> {
   const client = new AstridLocalClient({ projectSlug: input.projectSlug });
+  const head = await client.timelines.get(input.timelineRef);
+  if (head.config_version !== input.configVersion) {
+    throw new Error(
+      `Timeline ${input.timelineRef} is at version ${head.config_version}; expected active editor version ${input.configVersion}`,
+    );
+  }
   const admitted = await admitPromotePrimaryPackCommand(client, input);
   await waitForShotPackCommand(client, admitted.task.id, options);
   const generation = await client.gallery.get(input.generationId);
@@ -445,7 +467,11 @@ export async function promotePrimaryVariant(
   if (primary?.id !== input.variantId) {
     throw new Error(`Promote-primary completed but ${input.variantId} is not primary`);
   }
-  return (await mutateTimelineDocument(input.projectSlug, (document) => {
+  return (await mutateTimelineDocument({
+    projectSlug: input.projectSlug,
+    timelineRef: input.timelineRef,
+    configVersion: input.configVersion,
+  }, (document) => {
     refreshGenerationPrimaryInDocument(document, generation, (mediaId) => client.media.contentUrl(mediaId));
     return deriveTimelineShotGroupViews(document.config, document.registry);
   })).result;

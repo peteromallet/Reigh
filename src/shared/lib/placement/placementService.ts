@@ -43,6 +43,15 @@ export class PlacementProjectMissingError extends Error {
   }
 }
 
+/** Explicit document head selected by the editor. Mutations must never infer it. */
+export interface ActiveTimelineTarget {
+  projectSlug: string;
+  timelineRef: string;
+  configVersion: number;
+  /** Transitional non-editor placement callers may retain bounded CAS rebase. */
+  allowVersionRebase?: boolean;
+}
+
 interface LoadedDocument extends PlacementDocument {
   expectedVersion: number;
 }
@@ -64,14 +73,19 @@ async function loadDocument(client: AstridLocalClient, ref: string): Promise<Loa
 }
 
 export async function mutateTimelineDocument<T>(
-  projectSlug: string,
+  target: ActiveTimelineTarget,
   mutate: (document: PlacementDocument) => T,
 ): Promise<{ result: T; configVersion: number }> {
-  const client = new AstridLocalClient({ projectSlug });
-  const ref = await resolveDefaultTimelineRef(client, projectSlug);
+  const client = new AstridLocalClient({ projectSlug: target.projectSlug });
+  const ref = target.timelineRef;
 
   for (let attempt = 0; attempt < CAS_SAVE_ATTEMPTS; attempt += 1) {
     const document = await loadDocument(client, ref);
+    if (!target.allowVersionRebase && document.expectedVersion !== target.configVersion) {
+      throw new TimelineVersionConflictError(
+        `Timeline ${ref} is at version ${document.expectedVersion}; expected active editor version ${target.configVersion}`,
+      );
+    }
     const result = mutate(document);
     try {
       const saved = await client.timelines.save(ref, {
@@ -93,6 +107,13 @@ export async function mutateTimelineDocument<T>(
   throw new TimelineVersionConflictError(
     `Timeline placement save conflicted ${CAS_SAVE_ATTEMPTS} consecutive times`,
   );
+}
+
+async function resolveLegacyPlacementTarget(projectSlug: string): Promise<ActiveTimelineTarget> {
+  const client = new AstridLocalClient({ projectSlug });
+  const timelineRef = await resolveDefaultTimelineRef(client, projectSlug);
+  const document = await loadDocument(client, timelineRef);
+  return { projectSlug, timelineRef, configVersion: document.expectedVersion, allowVersionRebase: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -120,7 +141,8 @@ export async function placeGeneration(request: PlaceGenerationRequest): Promise<
     throw new Error(resolution.diagnostic.message);
   }
 
-  return (await mutateTimelineDocument(request.projectSlug, (document) =>
+  const target = await resolveLegacyPlacementTarget(request.projectSlug);
+  return (await mutateTimelineDocument(target, (document) =>
     placeGenerationInDocument(document, {
       shotId: request.shotId,
       generationId: request.generationId,
@@ -147,7 +169,8 @@ export interface UnplaceGenerationRequest {
 }
 
 export async function unplaceGeneration(request: UnplaceGenerationRequest): Promise<void> {
-  await mutateTimelineDocument(request.projectSlug, (document) => {
+  const target = await resolveLegacyPlacementTarget(request.projectSlug);
+  await mutateTimelineDocument(target, (document) => {
     const asset = document.registry.assets[`gen:${request.generationId}`];
     removeEntryFromDocument(document, request.entryId);
     // Pooling without managed media would strand a member nothing can render;
@@ -172,7 +195,8 @@ export interface BatchFrameUpdateRequest {
 
 /** Document equivalent of the retired `batch_update_timeline_frames` RPC. */
 export async function batchUpdatePlacementFrames(request: BatchFrameUpdateRequest): Promise<ShotPlacement[]> {
-  return (await mutateTimelineDocument(request.projectSlug, (document) =>
+  const target = await resolveLegacyPlacementTarget(request.projectSlug);
+  return (await mutateTimelineDocument(target, (document) =>
     batchUpdateFramesInDocument(document, request.shotId, request.updates),
   )).result;
 }
