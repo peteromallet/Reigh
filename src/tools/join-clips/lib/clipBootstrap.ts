@@ -27,6 +27,18 @@ interface LegacyJoinClipsSettingsShape {
 
 type JoinClipsBootstrapSettings = JoinClipsSettings | LegacyJoinClipsSettingsShape;
 
+function isLegacyJoinClipsSettings(
+  settings: JoinClipsBootstrapSettings,
+): settings is LegacyJoinClipsSettingsShape {
+  return (
+    'startingVideoUrl' in settings
+    || 'startingVideoPosterUrl' in settings
+    || 'endingVideoUrl' in settings
+    || 'endingVideoPosterUrl' in settings
+    || 'prompt' in settings
+  );
+}
+
 function normalizeLegacyJoinClipsSettings(
   settings: JoinClipsBootstrapSettings,
 ): Pick<JoinClipsSettings, 'clips' | 'transitionPrompts'> {
@@ -37,22 +49,27 @@ function normalizeLegacyJoinClipsSettings(
     };
   }
 
+  const legacySettings = isLegacyJoinClipsSettings(settings) ? settings : undefined;
   const clips: CanonicalJoinClip[] = [];
-  if (settings.startingVideoUrl) {
+  if (legacySettings?.startingVideoUrl) {
     clips.push({
-      url: settings.startingVideoUrl,
-      ...(settings.startingVideoPosterUrl ? { posterUrl: settings.startingVideoPosterUrl } : {}),
+      url: legacySettings.startingVideoUrl,
+      ...(legacySettings.startingVideoPosterUrl
+        ? { posterUrl: legacySettings.startingVideoPosterUrl }
+        : {}),
     });
   }
-  if (settings.endingVideoUrl) {
+  if (legacySettings?.endingVideoUrl) {
     clips.push({
-      url: settings.endingVideoUrl,
-      ...(settings.endingVideoPosterUrl ? { posterUrl: settings.endingVideoPosterUrl } : {}),
+      url: legacySettings.endingVideoUrl,
+      ...(legacySettings.endingVideoPosterUrl
+        ? { posterUrl: legacySettings.endingVideoPosterUrl }
+        : {}),
     });
   }
 
-  const transitionPrompts = clips.length >= 2 && settings.prompt
-    ? [{ clipIndex: 1, prompt: settings.prompt }]
+  const transitionPrompts = clips.length >= 2 && legacySettings?.prompt
+    ? [{ clipIndex: 1, prompt: legacySettings.prompt }]
     : [];
 
   return { clips, transitionPrompts };
