@@ -1,6 +1,6 @@
 # Extension Release: Next Steps
 
-Date: 2026-08-24
+Date: 2026-08-25
 
 This is the execution plan from the stable integration branch to a signed,
 frozen extension release candidate. The detailed requirements remain in the
@@ -11,53 +11,52 @@ by the [evidence ledger](extension-ship-evidence-ledger.md).
 
 ## Current disposition
 
-`codex/extension-ship-integration` is stable as an **integration branch**, not yet a
-release candidate. RC1, RC2, and RC3 paired receipts are retained as historical
-evidence only. RC2's hostile-Host probe was a false positive because Node
-`fetch` normalized the forbidden header. RC3 replaced that probe with a raw
-`http.request` helper and added a regression test proving
-`Host: attacker.invalid` reaches the server and yields the expected 403
-response. RC3 then exposed a browser-entry regression: the editor eagerly
-loaded React's Node server renderer and crashed before mounting. RC4 repaired
-that import boundary and added a source-level guard, then the RC4 paired run
-exposed a local-editor route/auth redirect seam. Commit `2e7f6a937` repairs that
-seam without weakening unrelated protected routes. RC6 is the current
-integration cycle. RC5's paired selector/origin failure is preserved under
-`docs/extensions/evidence/releases/extension-ship-quality-rc5/`. The pinned
-Astrid source remains
+`codex/extension-ship-integration` is the current RC6 **integration cycle**, not
+a frozen release candidate. Reigh's latest source head is
+`567ce0991456fb4361912d307705602ed46831ff` in the
+`/Users/peteromalley/Documents/reigh-workspace/reigh-app-extension-rc`
+worktree; the worktree still has a release-spec edit and is not clean. Astrid's
+paired bridge worktree is
+`/Users/peteromalley/Documents/reigh-workspace/Astrid-editor-bridge-integration`
+on `codex/editor-bridge-integration` at
+`97314ccee7caa7adfe04004e6854d7a8ba6b6dfd`. The manifest-pinned Astrid source
+for the release gate remains
 `86153eefc14aa995402927df0c7bb178f48f8ead`.
 
-The formal ledger correctly remains 0/23 because no exact candidate has been
-frozen or signed. The final monolithic Reigh/Astrid run has not been repeated
-after the last fixes because the clean verifier requires at least 11 GiB free;
-the machine currently has about 5.3 GiB. No release claim may infer green status
-from the focused runs alone.
+RC1–RC5 tags and paired receipts remain immutable historical evidence; RC6 has
+no tag, no frozen candidate, and no signed ledger. The formal ledger is 0/23.
+The RC6 line has landed deterministic Runaway timing, clip-body selection,
+Suspense/bridge-stub contracts, isolated ports and CAS fixture resets, proxy
+Origin/Host/auth/protocol boundaries, strict-port plus nonce/commit readiness,
+tracked-evidence protection, and exact visual-baseline provenance. Local
+focused machine tests are mostly green, but that is not a release receipt.
+Current `df` output is about 14 GiB free (roughly 12 GiB in the release
+check); the clean paired verifier requires at least 11 GiB.
 
 ## Phase 1 — publish and lock the integration baseline
 
-1. Push `codex/extension-ship-integration` without `scorecard.png` or the untracked
-   `artifacts/` directory.
-2. Require review of the code commits through the production startup-budget
+1. Finish the current focused fixes and keep `scorecard.png`, `artifacts/`, and
+   Playwright output outside the tracked release tree.
+2. Require review of the RC6 code commits through the production startup-budget
    gate. Do not add feature work to this branch after the evidence rehearsal
    begins; fixes discovered by a gate receive a focused commit and restart the
    affected evidence phase.
-3. Keep Astrid pinned to
-   `86153eefc14aa995402927df0c7bb178f48f8ead`; the RC3 raw-host fix, RC4
-   browser-entry repair, and `2e7f6a937` local-auth seam repair must be included
-   before the next candidate is tagged.
+3. Keep the exact Astrid pin above; the RC3 raw-Host fix, RC4 browser React
+   renderer repair, `2e7f6a937` local-auth seam repair, and RC6 hardening must
+   all be present before a candidate tag is created.
 
 Exit: the remote branch resolves to the same clean tracked tree as the local
 integration branch and the release plan commands remain deterministic.
 
 ## Phase 2 — recover disk and run exact-pair evidence rehearsals
 
-1. With explicit owner approval, remove only the surveyed unused Docker build
-   cache and the two regenerable Reigh test images. Confirm at least 11 GiB free
-   with `df -h /System/Volumes/Data` before starting.
-2. Use fresh worktrees at the exact Reigh commit and pinned Astrid commit. Run
-   the individual local release gates, complete unit suites, production build,
-   three-engine browser/device/accessibility suites, visual baselines, container
-   rollback, and the standalone paired Reigh/Astrid E2E journey.
+1. Confirm at least 11 GiB free with `df -h /System/Volumes/Data`; the machine
+   currently has enough headroom, but avoid unnecessary artifact-heavy work.
+2. Use fresh clean worktrees at the exact Reigh candidate and pinned Astrid
+   commit. Run the individual local release gates, complete unit suites,
+   production build, three-engine browser/device/accessibility suites, visual
+   baseline provenance, container rollback, and the standalone paired
+   Reigh/Astrid E2E journey.
 3. Retain complete logs, canonical database/state hashes, the decoded MP4 and
    every-frame report, screenshots, rollback hashes, dependency inventories,
    and the detached artifact-index hash. Rerun any failing phase after its root

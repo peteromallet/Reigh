@@ -1164,3 +1164,96 @@ evidence and a concrete improvement direction.
   the raw-header correction starts RC3 rather than retagging either failed
   candidate. Future forbidden-header probes must use the raw helper and retain
   the exact response body/header assertions.
+
+## RC6 browser/release hardening pass (2026-08-24–25)
+
+The current integration head is `567ce0991` on
+`codex/extension-ship-integration`; the preceding RC6 hardening commits are
+`7b01b2dc6`, `7210550c8`, `8330a98ea`, `b87720385`, `9419408f1`,
+`5a8fb96d3`, `91309d99a`, `e906a208c`, `bedcc493c`, `69c287c26`, and
+`30d5b533e`. These are integration findings, not a frozen release receipt.
+
+### Browser fixtures must share one deterministic contract
+
+- The Runaway stub's generated rows previously used a local spacing heuristic
+  that did not exactly span the declared 8,085-frame, 48-fps envelope. The
+  fixture now derives frame, start, and duration from one rounded frame-time
+  function, asserts monotonic frames and exact total duration, and exposes the
+  typed `v1` protocol/version header in its contract test.
+- Short overlapping caption clips could expose only their two trim handles,
+  making the selection target ambiguous. Clip geometry now reserves a
+  selectable body between handles; a press/release that never crosses the
+  resize threshold selects, while a real drag still resizes. The browser
+  journey covers the 210 ms case.
+- The development extension-harness route was lazy-loaded without its own
+  `Suspense` boundary. It now has an explicit loading fallback and a route
+  regression test. The stub's incomplete protocol/version envelope is likewise
+  covered by a direct contract command (`npm run test:e2e:timeline-harness`),
+  rather than remaining an orphaned test file.
+
+### Isolated browser runs need an owned target and reset
+
+- A configurable server was still unsafe when clients retained a fixed port,
+  when `BASE_URL` and `PLAYWRIGHT_BASE_URL` disagreed, or when a stale process
+  survived on the default port. The harness now canonicalizes exact loopback
+  roots, rejects false/stale targets, allocates separate editor and bridge
+  ports, uses atomic reservations with stale-lock reclamation, closes locks on
+  early exit, and refuses occupied explicit ports. The bind probe is only a
+  check; the lock covers its TOCTOU gap.
+- Fixture reset now performs a health check, validates registry identity,
+  sends `expected_version` for CAS, checks the incremented version, compares
+  the complete saved config and registry with deep equality, and serializes
+  concurrent resets. Tests must prove post-reset identity, not merely a 200.
+- The browser evidence path defaults to untracked Playwright artifacts. A
+  deliberate `PLAYWRIGHT_REFRESH_TRACKED_EVIDENCE=1` is required before a
+  release owner refreshes tracked screenshots; ordinary release tests must not
+  mutate committed evidence.
+
+### Proxy and paired-server identity are security boundaries
+
+- The Vite Astrid proxy now has one explicit boundary for loopback `Origin`,
+  `Host`, bearer auth, and `X-Astrid-Bridge-Version`: same-origin loopback
+  requests may have their browser Origin consumed at the trusted proxy, while
+  cross-origin values remain visible and rejected. Dev and preview install the
+  same fail-closed auth middleware. The RC3 raw `http.request` probe remains
+  necessary because Node `fetch` normalizes `Host` and can make a forbidden
+  request look valid.
+- Paired Vite dev and preview now require `--strictPort`. Readiness is an
+  exact per-run identity containing a fresh nonce and the full Reigh commit;
+  an HTTP 200 with the wrong revision is not readiness. Browser workers never
+  receive the bridge token. These checks prevent a healthy stale server from
+  satisfying a new candidate's gate.
+
+### Visual evidence and release progression must be immutable
+
+- RC6 visual provenance binds the exact six-image inventory, old/new source
+  commits, source-file hashes, browser/tool versions, viewport/config metadata,
+  image hashes and metrics, human/agent review metadata, and the three retained
+  red diff-mask PNGs. The verifier decodes pixels and checks each mask, so a
+  plausible screenshot or missing state cannot silently enter the ledger
+  (`docs/extensions/evidence/releases/extension-ship-quality-rc6/`).
+- Failed candidates remain historical: RC1–RC5 tags/receipts are not retagged,
+  and RC6 is the current integration cycle with no RC6 tag or signed 23/23
+  ledger. A source fix invalidates any future freeze and requires a new clean
+  candidate/controller sequence.
+- The machine is under disk pressure but has recovered to roughly 12 GiB free
+  (recent `df` output is about 14 GiB); the paired clean verifier requires at
+  least 11 GiB. Focused local machine tests are mostly green, but this does not
+  replace a clean exact-pair run.
+
+### Product seams that remain honest blockers
+
+- The public SDK still lacks caption text semantics, caption roles, rendered
+  geometry, safe-area data, contrast, and media semantics. Caption Safe-Zone
+  Orchestra remains a structural timing proxy; semantic caption acceptance is
+  not proven.
+- The combined host inventory is now thirteen extensions, and all-13
+  activation/reorder/disable/re-enable and browser evidence must be rerun on
+  the current candidate. Local auth is a narrow editor-route/Supabase seam:
+  local Astrid mode must stay backend-free, while ordinary cloud/legacy Reigh
+  routes retain Supabase. No global Supabase removal is authorized.
+- Exact paired evidence, production/observability and rollback drills, a real
+  upstream transcript-owner acknowledgement, Edge/physical-device and
+  accessibility sessions, four human acceptance personas, and two independent
+  reviewers remain open. A green focused test or agent visual review cannot
+  close those human/external gates.
