@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { createServer } from 'node:http';
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
@@ -10,6 +10,8 @@ import {
   EXPECTED_EXTENSION_COUNT,
   EXPECTED_PERSISTED_CAPTIONS,
   EXPECTED_RUNAWAY_COUNT,
+  PAIRED_RELEASE_MEDIA_FIXTURE,
+  PAIRED_RELEASE_MEDIA_METADATA,
   PAIRED_RELEASE_PHASES,
   RELEASE_BRIDGE_CAPABILITY,
   REPO_ROOT,
@@ -30,11 +32,113 @@ import {
   validateTimelineSchemaInstallation,
   validateAstridReleaseBridgeSources,
   validateCaptionExpectations,
+  validateMediaFixture,
+  validateRenderedMediaFrame,
+  verifyBridgeMediaContent,
   waitForUrl,
   waitForViteReadiness,
 } from './verify-paired-release-e2e.mjs';
 
 describe('paired repository release E2E gate', () => {
+  it('fails closed for altered fixture bytes and wrong committed probes', () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'paired-media-fixture-negative-'));
+    const fixture = resolve(root, 'paired-release-test-card.png');
+    const metadata = resolve(root, 'paired-release-test-card.json');
+    copyFileSync(resolve(REPO_ROOT, PAIRED_RELEASE_MEDIA_FIXTURE), fixture);
+    copyFileSync(resolve(REPO_ROOT, PAIRED_RELEASE_MEDIA_METADATA), metadata);
+    try {
+      const altered = readFileSync(fixture);
+      altered[altered.length - 1] ^= 1;
+      writeFileSync(fixture, altered);
+      assert.throws(() => validateMediaFixture({ fixturePath: fixture, metadataPath: metadata }), /metadata\/hash mismatch/);
+
+      copyFileSync(resolve(REPO_ROOT, PAIRED_RELEASE_MEDIA_FIXTURE), fixture);
+      const changedMetadata = JSON.parse(readFileSync(metadata, 'utf8'));
+      changedMetadata.probes[0].expectedRgba = [0, 0, 0, 255];
+      writeFileSync(metadata, `${JSON.stringify(changedMetadata)}\n`);
+      assert.throws(() => validateMediaFixture({ fixturePath: fixture, metadataPath: metadata }), /probe .* mismatch/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects omitted or black rendered media and accepts the exact transformed control geometry', () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'paired-media-render-negative-'));
+    const black = resolve(root, 'black.png');
+    try {
+      const fixture = validateMediaFixture({
+        fixturePath: resolve(REPO_ROOT, PAIRED_RELEASE_MEDIA_FIXTURE),
+        metadataPath: resolve(REPO_ROOT, PAIRED_RELEASE_MEDIA_METADATA),
+      });
+      assert.doesNotThrow(() => validateRenderedMediaFrame(fixture.path, fixture));
+      const blackResult = spawnSync('magick', [fixture.path, '-fill', 'black', '-colorize', '100%', '-define', 'png:color-type=6', black], { encoding: 'utf8' });
+      assert.equal(blackResult.status, 0, blackResult.stderr);
+      assert.throws(() => validateRenderedMediaFrame(black, fixture), /does not contain the seeded test card/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a bridge media byte/header mismatch', async () => {
+    const fixture = validateMediaFixture({
+      fixturePath: resolve(REPO_ROOT, PAIRED_RELEASE_MEDIA_FIXTURE),
+      metadataPath: resolve(REPO_ROOT, PAIRED_RELEASE_MEDIA_METADATA),
+    });
+    const server = createServer((_request, response) => {
+      const body = Buffer.from('omitted-media');
+      response.writeHead(200, {
+        'Content-Type': fixture.mimeType,
+        'Content-Length': String(body.length),
+        'Accept-Ranges': 'bytes',
+        'Cache-Control': 'private, no-cache',
+        'X-Astrid-Bridge-Version': 'v1',
+        ETag: '"negative"',
+        'Last-Modified': new Date(0).toUTCString(),
+      });
+      response.end(body);
+    });
+    await new Promise((resolvePromise, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', resolvePromise);
+    });
+    try {
+      const address = server.address();
+      assert.equal(typeof address, 'object');
+      await assert.rejects(
+        verifyBridgeMediaContent({
+          baseUrl: `http://127.0.0.1:${address.port}`,
+          projectSlug: 'paired-release-demo',
+          mediaId: 'media-test',
+          fixture,
+          token: 'test-token',
+        }),
+        /content-length mismatch|bytes do not exactly match/,
+      );
+    } finally {
+      await new Promise((resolvePromise, reject) => server.close((error) => (error ? reject(error) : resolvePromise())));
+    }
+  });
+
+  it('uses frame-vs-control difference metrics so dark captions are not rejected by absolute brightness', () => {
+    const result = assessCaptionProbe({
+      expectedText: 'Fixture segment one',
+      recognizedText: 'Fixture segment one',
+      frameWidth: 1280,
+      frameHeight: 720,
+      expectedRegion: { x: 128, y: 418, width: 1024, height: 101 },
+      recognizedBounds: { left: 160, top: 440, width: 240, height: 36 },
+      occupancy: 0.02,
+      controlOccupancy: 0,
+      contrast: 0.05,
+      frameSha256: 'a'.repeat(64),
+      controlFrameSha256: 'b'.repeat(64),
+    });
+    assert.equal(result.pass, true);
+    const source = readFileSync(resolve(REPO_ROOT, 'scripts/release/verify-paired-release-e2e.mjs'), 'utf8');
+    assert.match(source, /imageDifferenceMetric\(framePath, controlPath/);
+    assert.doesNotMatch(source, /imageMetric\(/);
+  });
+
   it('requires exact caption text and visible region semantics, not whole-frame difference', () => {
     const base = {
       expectedText: 'Fixture segment one',

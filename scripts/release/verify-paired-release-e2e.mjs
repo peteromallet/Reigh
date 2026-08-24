@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash, randomBytes } from 'node:crypto';
+import { inflateSync } from 'node:zlib';
 import { request as httpRequest } from 'node:http';
 import { createServer } from 'node:net';
 import { spawn, spawnSync } from 'node:child_process';
@@ -40,13 +41,25 @@ export const RUNAWAY_RELEASE_FIXTURE_HASHES = Object.freeze({
   'audio-reactive-v1.json': 'd7925d72b52180e206a2511a5d30cf1638c7007a962fd57d8a6eb9ffb10af886',
   'timing-manifest.json': '44b5c0eea0aeb8b35a83e3e7620b5dbab27a106bf575fcc6e0ca6591dd4612bb',
 });
+export const PAIRED_RELEASE_MEDIA_FIXTURE = 'tests/e2e/fixtures/paired-release/paired-release-test-card.png';
+export const PAIRED_RELEASE_MEDIA_METADATA = 'tests/e2e/fixtures/paired-release/paired-release-test-card.json';
+export const DEFAULT_COMMAND_TIMEOUT_MS = 120_000;
+export const COMMAND_TIMEOUTS_MS = Object.freeze({
+  'npm ci': 10 * 60_000,
+  'npm run build': 10 * 60_000,
+  'playwright install': 10 * 60_000,
+  'ffmpeg': 120_000,
+  'ffprobe': 60_000,
+  'magick': 60_000,
+  'tesseract': 60_000,
+});
 const DEMO_PROJECT = 'paired-release-demo';
 const DEMO_TIMELINE = 'paired-release-timeline';
 const RUNAWAY_PROJECT = 'runaway-piano-colour-demo';
 const TIMELINE_CONFIG = Object.freeze({
   output: { resolution: '1280x720', fps: 24, file: 'paired-release-output.mp4' },
   clips: [
-    { id: 'paired-release-clip', track: 'V1', at: 0, clipType: 'media', hold: 4, asset: 'paired-release.jpg' },
+    { id: 'paired-release-clip', track: 'V1', at: 0, clipType: 'media', hold: 4, asset: 'paired-release-test-card.png' },
   ],
   tracks: [
     { id: 'V1', kind: 'visual', label: 'Video' },
@@ -68,6 +81,18 @@ const BASE_ENV_KEYS = Object.freeze([
   'ComSpec',
   'PATHEXT',
 ]);
+
+function commandName(command, args = []) {
+  const base = String(command).split(/[\\/]/).at(-1) ?? String(command);
+  if (base === 'npm' && args[0]) return `npm ${args[0]}`;
+  if (base.includes('playwright') || (base === process.execPath && args.some((arg) => String(arg).includes('playwright')))) return 'playwright install';
+  return base;
+}
+
+function commandTimeout(command, args, requested) {
+  if (Number.isFinite(requested) && requested > 0) return requested;
+  return COMMAND_TIMEOUTS_MS[commandName(command, args)] ?? DEFAULT_COMMAND_TIMEOUT_MS;
+}
 
 class UsageError extends Error {}
 
@@ -221,7 +246,16 @@ function commandFailure(command, args, result) {
   return `${command} ${args.join(' ')} failed with exit ${result.status ?? 'unknown'}${output ? `: ${output.slice(-3000)}` : ''}`;
 }
 
-function capture(command, args, { cwd, env, allowFailure = false, input } = {}) {
+export function capture(command, args, {
+  cwd,
+  env,
+  allowFailure = false,
+  input,
+  timeoutMs,
+  phase = 'unscoped-command',
+  diagnosticsPath,
+} = {}) {
+  const budget = commandTimeout(command, args, timeoutMs);
   const result = spawnSync(command, args, {
     cwd,
     env: env ?? safeBaseEnvironment(),
@@ -230,7 +264,30 @@ function capture(command, args, { cwd, env, allowFailure = false, input } = {}) 
     maxBuffer: 20 * 1024 * 1024,
     shell: false,
     stdio: ['pipe', 'pipe', 'pipe'],
+    timeout: budget,
+    // spawnSync sends this signal when its bounded wait expires. A process
+    // group cannot be left running by a release verifier; SIGKILL is the
+    // final escalation supported by the synchronous child-process API.
+    killSignal: 'SIGKILL',
   });
+  const timedOut = result.error?.code === 'ETIMEDOUT'
+    || (result.status === null && result.signal === 'SIGKILL');
+  if (timedOut) {
+    const diagnostic = `${JSON.stringify({
+      command,
+      args,
+      phase,
+      timeoutMs: budget,
+      signal: result.signal ?? null,
+      error: result.error?.message ?? null,
+    })}\n`;
+    if (diagnosticsPath) {
+      writeFileSync(diagnosticsPath, diagnostic, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+    }
+    if (!allowFailure) {
+      fail(`${command} ${args.join(' ')} timed out after ${budget}ms during ${phase}; kill escalation completed; diagnostics=${diagnosticsPath ?? '<inline>'}`);
+    }
+  }
   if (!allowFailure && (result.error || result.status !== 0)) {
     if (result.error) throw result.error;
     fail(commandFailure(command, args, result));
@@ -277,6 +334,12 @@ export function preflightPinnedRepositories({ manifest, env }) {
   requireCleanWorktree(REPO_ROOT, 'Reigh controller');
   requireCleanWorktree(resolvedAstridCheckout, 'Astrid source');
   const reighCommit = resolveCommit(REPO_ROOT, env.REIGH_REF, 'REIGH_REF');
+  const mediaFixture = validateMediaFixture({
+    fixturePath: resolve(REPO_ROOT, PAIRED_RELEASE_MEDIA_FIXTURE),
+    metadataPath: resolve(REPO_ROOT, PAIRED_RELEASE_MEDIA_METADATA),
+    gitCheckout: REPO_ROOT,
+    gitRef: reighCommit,
+  });
   const reighHead = gitOutput(REPO_ROOT, ['rev-parse', 'HEAD']);
   const reighTag = resolveAnnotatedCandidateTag({
     repoRoot: REPO_ROOT,
@@ -362,6 +425,7 @@ export function preflightPinnedRepositories({ manifest, env }) {
     reighCommit,
     reighProvenance,
     reighTagObject: reighTag.tagObject,
+    mediaFixture,
   });
 }
 
@@ -416,6 +480,202 @@ function archiveCommit(checkout, commit, destination, archivePath) {
   capture('git', ['archive', '--format=tar', '--output', archivePath, commit], { cwd: checkout });
   capture('tar', ['-xf', archivePath, '-C', destination], { cwd: destination });
   rmSync(archivePath, { force: true });
+}
+
+function decodePng(path) {
+  const bytes = readFileSync(path);
+  if (bytes.subarray(0, 8).compare(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) !== 0) {
+    fail(`media fixture is not a PNG: ${path}`);
+  }
+  let offset = 8;
+  let width;
+  let height;
+  let bitDepth;
+  let colorType;
+  let interlace;
+  const idat = [];
+  while (offset < bytes.length) {
+    const length = bytes.readUInt32BE(offset);
+    const type = bytes.toString('ascii', offset + 4, offset + 8);
+    const data = bytes.subarray(offset + 8, offset + 8 + length);
+    offset += 12 + length;
+    if (type === 'IHDR') {
+      width = data.readUInt32BE(0);
+      height = data.readUInt32BE(4);
+      bitDepth = data[8];
+      colorType = data[9];
+      interlace = data[12];
+    } else if (type === 'IDAT') idat.push(data);
+    else if (type === 'IEND') break;
+  }
+  if (width === undefined || height === undefined || bitDepth !== 8 || ![2, 6].includes(colorType) || interlace !== 0) {
+    fail(`unsupported RGB/RGBA PNG shape in ${path}`);
+  }
+  const bytesPerPixel = colorType === 6 ? 4 : 3;
+  const rowBytes = width * bytesPerPixel;
+  const inflated = inflateSync(Buffer.concat(idat));
+  const decoded = Buffer.alloc(rowBytes * height);
+  let sourceOffset = 0;
+  for (let y = 0; y < height; y += 1) {
+    const filter = inflated[sourceOffset++];
+    const rowStart = y * rowBytes;
+    for (let x = 0; x < rowBytes; x += 1) {
+      const raw = inflated[sourceOffset++];
+      const left = x >= bytesPerPixel ? decoded[rowStart + x - bytesPerPixel] : 0;
+      const above = y > 0 ? decoded[rowStart - rowBytes + x] : 0;
+      const upperLeft = y > 0 && x >= bytesPerPixel ? decoded[rowStart - rowBytes + x - bytesPerPixel] : 0;
+      let value = raw;
+      if (filter === 1) value = raw + left;
+      else if (filter === 2) value = raw + above;
+      else if (filter === 3) value = raw + Math.floor((left + above) / 2);
+      else if (filter === 4) {
+        const estimate = left + above - upperLeft;
+        const pa = Math.abs(estimate - left);
+        const pb = Math.abs(estimate - above);
+        const pc = Math.abs(estimate - upperLeft);
+        value = raw + (pa <= pb && pa <= pc ? left : pb <= pc ? above : upperLeft);
+      } else if (filter !== 0) fail(`unsupported PNG filter ${filter} in ${path}`);
+      decoded[rowStart + x] = value & 0xff;
+    }
+  }
+  const pixels = Buffer.alloc(width * height * 4);
+  for (let index = 0; index < width * height; index += 1) {
+    pixels[index * 4] = decoded[index * bytesPerPixel];
+    pixels[index * 4 + 1] = decoded[index * bytesPerPixel + 1];
+    pixels[index * 4 + 2] = decoded[index * bytesPerPixel + 2];
+    pixels[index * 4 + 3] = bytesPerPixel === 4 ? decoded[index * bytesPerPixel + 3] : 255;
+  }
+  return { width, height, pixels };
+}
+
+function rgbaAt(image, x, y) {
+  if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= image.width || y >= image.height) {
+    fail(`PNG probe is outside image bounds: ${x},${y} for ${image.width}x${image.height}`);
+  }
+  const index = (y * image.width + x) * 4;
+  return [...image.pixels.subarray(index, index + 4)];
+}
+
+export function validateMediaFixture({ fixturePath, metadataPath, gitCheckout, gitRef } = {}) {
+  if (!fixturePath || !metadataPath || !existsSync(fixturePath) || !existsSync(metadataPath)) {
+    fail(`paired media fixture and metadata are required: ${fixturePath}, ${metadataPath}`);
+  }
+  const metadata = JSON.parse(readFileSync(metadataPath, 'utf8'));
+  const image = decodePng(fixturePath);
+  const actualSha256 = sha256File(fixturePath);
+  if (metadata.schemaVersion !== 1 || metadata.asset !== PAIRED_RELEASE_MEDIA_FIXTURE.split('/').at(-1)
+    || metadata.mimeType !== 'image/png' || metadata.sha256 !== actualSha256
+    || !Number.isInteger(metadata.width) || metadata.width <= 0
+    || !Number.isInteger(metadata.height) || metadata.height <= 0) {
+    fail(`paired media fixture metadata/hash mismatch: ${JSON.stringify({ metadata, actualSha256 })}`);
+  }
+  if (metadata.width !== image.width || metadata.height !== image.height) {
+    fail(`paired media fixture dimensions mismatch: metadata=${metadata.width}x${metadata.height}, actual=${image.width}x${image.height}`);
+  }
+  if (!Array.isArray(metadata.probes) || metadata.probes.length < 4) fail('paired media fixture has insufficient pixel probes');
+  const probeNames = new Set();
+  for (const probe of metadata.probes) {
+    if (typeof probe.name !== 'string' || probeNames.has(probe.name)) fail(`paired media fixture probe name is missing or duplicated: ${probe.name}`);
+    probeNames.add(probe.name);
+    if (!Array.isArray(probe.expectedRgba) || probe.expectedRgba.length !== 4
+      || !probe.expectedRgba.every((value) => Number.isInteger(value) && value >= 0 && value <= 255)) {
+      fail(`paired media fixture probe ${probe.name} has invalid RGBA bytes`);
+    }
+    const actual = rgbaAt(image, probe.x, probe.y);
+    if (JSON.stringify(actual) !== JSON.stringify(probe.expectedRgba)) {
+      fail(`paired media fixture probe ${probe.name} mismatch: expected ${probe.expectedRgba}, got ${actual}`);
+    }
+  }
+  let gitBlobSha;
+  let metadataGitBlobSha;
+  if (gitCheckout && gitRef) {
+    const checkoutRoot = realpathSync(gitCheckout);
+    const fixtureRealPath = realpathSync(fixturePath);
+    const metadataRealPath = realpathSync(metadataPath);
+    const relativePath = relative(checkoutRoot, fixtureRealPath);
+    const metadataRelativePath = relative(checkoutRoot, metadataRealPath);
+    if (relativePath.startsWith('..') || isAbsolute(relativePath) || metadataRelativePath.startsWith('..') || isAbsolute(metadataRelativePath)) {
+      fail(`paired media fixture is outside controller checkout: ${fixturePath}`);
+    }
+    gitBlobSha = gitOutput(gitCheckout, ['rev-parse', `${gitRef}:${relativePath}`]);
+    const workingTreeBlobSha = gitOutput(gitCheckout, ['hash-object', '--', relativePath]);
+    if (workingTreeBlobSha !== gitBlobSha) fail('working-tree paired media fixture bytes do not match the exact pinned Git blob');
+    metadataGitBlobSha = gitOutput(gitCheckout, ['rev-parse', `${gitRef}:${metadataRelativePath}`]);
+    const workingTreeMetadataBlobSha = gitOutput(gitCheckout, ['hash-object', '--', metadataRelativePath]);
+    if (workingTreeMetadataBlobSha !== metadataGitBlobSha) fail('working-tree paired media metadata does not match the exact pinned Git blob');
+  }
+  return Object.freeze({
+    path: fixturePath,
+    metadataPath,
+    sha256: actualSha256,
+    gitBlobSha,
+    metadataGitBlobSha,
+    mimeType: metadata.mimeType,
+    width: image.width,
+    height: image.height,
+    probes: metadata.probes,
+  });
+}
+
+export async function verifyBridgeMediaContent({
+  baseUrl,
+  projectSlug,
+  mediaId,
+  fixture,
+  token,
+} = {}) {
+  if (!baseUrl || !projectSlug || !mediaId || !fixture?.path) fail('bridge media verification requires base URL, project, media ID, and fixture');
+  const url = `${String(baseUrl).replace(/\/+$/, '')}/projects/${encodeURIComponent(projectSlug)}/media/${encodeURIComponent(mediaId)}/content`;
+  const response = await requestRawHttp(url, {
+    headers: {
+      Authorization: `Bearer ${token ?? ''}`,
+      'X-Astrid-Bridge-Version': 'v1',
+    },
+  });
+  if (response.status !== 200) fail(`bridge media content returned HTTP ${response.status}, expected 200`);
+  const bytes = Buffer.from(await response.arrayBuffer());
+  const expectedBytes = readFileSync(fixture.path);
+  const requiredHeaders = {
+    'content-type': fixture.mimeType,
+    'content-length': String(expectedBytes.length),
+    'accept-ranges': 'bytes',
+    'cache-control': 'private, no-cache',
+    'x-astrid-bridge-version': 'v1',
+  };
+  for (const [name, expected] of Object.entries(requiredHeaders)) {
+    if (response.headers.get(name) !== expected) fail(`bridge media content ${name} mismatch: expected ${expected}, got ${response.headers.get(name) ?? '<missing>'}`);
+  }
+  if (!response.headers.get('etag') || !response.headers.get('last-modified')) fail('bridge media content omitted cache validators');
+  if (!bytes.equals(expectedBytes) || createHash('sha256').update(bytes).digest('hex') !== fixture.sha256) {
+    fail('bridge media content bytes do not exactly match the committed fixture');
+  }
+  return Object.freeze({
+    url,
+    status: response.status,
+    bytes: bytes.length,
+    sha256: fixture.sha256,
+    mimeType: response.headers.get('content-type'),
+    contentLength: response.headers.get('content-length'),
+    acceptRanges: response.headers.get('accept-ranges'),
+    cacheControl: response.headers.get('cache-control'),
+    etag: response.headers.get('etag'),
+    lastModified: response.headers.get('last-modified'),
+  });
+}
+
+export function validateRenderedMediaFrame(framePath, fixture, tolerance = 40) {
+  const frame = decodePng(framePath);
+  if (frame.width !== fixture.width || frame.height !== fixture.height) {
+    fail(`rendered media frame geometry mismatch: expected ${fixture.width}x${fixture.height}, got ${frame.width}x${frame.height}`);
+  }
+  const checks = fixture.probes.map((probe) => {
+    const actual = rgbaAt(frame, probe.x, probe.y);
+    const error = Math.max(...actual.map((value, index) => Math.abs(value - probe.expectedRgba[index])));
+    return { name: probe.name, x: probe.x, y: probe.y, expectedRgba: probe.expectedRgba, actualRgba: actual, maxChannelError: error };
+  });
+  const failed = checks.filter((probe) => probe.maxChannelError > tolerance);
+  if (failed.length > 0) fail(`rendered no-caption media frame does not contain the seeded test card: ${JSON.stringify(failed.slice(0, 3))}`);
+  return Object.freeze({ width: frame.width, height: frame.height, tolerance, probes: checks });
 }
 
 function sha256File(path) {
@@ -567,10 +827,9 @@ export function requestRawHttp(url, { headers = {}, timeoutMs = 10_000 } = {}) {
       agent: false,
     }, (response) => {
       const chunks = [];
-      response.setEncoding('utf8');
-      response.on('data', (chunk) => chunks.push(chunk));
+      response.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
       response.once('end', () => {
-        const body = chunks.join('');
+        const body = Buffer.concat(chunks);
         resolvePromise({
           status: response.statusCode ?? 0,
           headers: {
@@ -579,8 +838,11 @@ export function requestRawHttp(url, { headers = {}, timeoutMs = 10_000 } = {}) {
               return Array.isArray(value) ? value.join(', ') : value ?? null;
             },
           },
+          async arrayBuffer() {
+            return body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength);
+          },
           async json() {
-            return JSON.parse(body);
+            return JSON.parse(body.toString('utf8'));
           },
         });
       });
@@ -664,9 +926,23 @@ async function stopLoggedProcesses(handles) {
 function runLogged(command, args, { cwd, env, logPath, parseJson = false }) {
   const startedAt = new Date().toISOString();
   const start = Date.now();
-  const result = capture(command, args, { cwd, env, allowFailure: true });
+  const timeoutDiagnosticsPath = `${logPath}.timeout.json`;
+  const result = capture(command, args, {
+    cwd,
+    env,
+    allowFailure: true,
+    phase: logPath,
+    diagnosticsPath: timeoutDiagnosticsPath,
+  });
   const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
-  writeFileSync(logPath, output, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+  const timeoutDiagnostic = result.error?.code === 'ETIMEDOUT'
+    || (result.status === null && result.signal === 'SIGKILL')
+    ? `\n${LABEL} command timed out; kill escalation completed; timeout diagnostics: ${timeoutDiagnosticsPath}\n`
+    : '';
+  writeFileSync(logPath, `${output}${timeoutDiagnostic}`, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+  if (result.error?.code === 'ETIMEDOUT' || (result.status === null && result.signal === 'SIGKILL')) {
+    fail(`${command} ${args.join(' ')} timed out; see ${timeoutDiagnosticsPath}`);
+  }
   if (result.error || result.status !== 0) fail(commandFailure(command, args, result));
   let payload;
   if (parseJson) {
@@ -885,11 +1161,15 @@ function astridCommand(context, args, logName, { parseJson = true } = {}) {
 function seedDemoProject(context) {
   const sourceDir = resolve(context.projectsRoot, 'seed-sources');
   mkdirSync(sourceDir, { recursive: true, mode: 0o700 });
-  const imagePath = resolve(sourceDir, 'paired-release.jpg');
-  writeFileSync(imagePath, Buffer.from(
-    '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAH/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAEFAqf/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAEDAQE/AV//xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAECAQE/AV//2Q==',
-    'base64',
-  ), { mode: 0o600 });
+  const fixturePath = resolve(context.reighSnapshot, PAIRED_RELEASE_MEDIA_FIXTURE);
+  const imagePath = resolve(sourceDir, 'paired-release-test-card.png');
+  writeFileSync(imagePath, readFileSync(fixturePath), { mode: 0o600 });
+  if (sha256File(imagePath) !== context.mediaFixture.sha256) fail('seeded media bytes changed before import');
+  writeFileSync(resolve(context.evidenceRoot, 'seed-media-fixture.json'), `${JSON.stringify({
+    ...context.mediaFixture,
+    source: relative(context.reighSnapshot, fixturePath),
+    seeded: relative(context.projectsRoot, imagePath),
+  }, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
   astridCommand(context, [
     'projects', 'create', DEMO_PROJECT,
     '--name', 'Paired Release Demo',
@@ -912,10 +1192,10 @@ function seedDemoProject(context) {
     '--config', JSON.stringify(TIMELINE_CONFIG),
     '--registry', JSON.stringify({
       assets: {
-        'paired-release.jpg': {
-          file: 'paired-release.jpg',
+        'paired-release-test-card.png': {
+          file: 'paired-release-test-card.png',
           media_id: mediaId,
-          type: 'image/jpeg',
+          type: 'image/png',
         },
       },
     }),
@@ -923,6 +1203,7 @@ function seedDemoProject(context) {
     '--idempotency-key', 'paired-release-timeline-v1',
     '--json',
   ], 'astrid-timeline-create.log');
+  return Object.freeze({ mediaId });
 }
 
 function runMigrationTwice(context) {
@@ -1470,14 +1751,14 @@ function recognizedCaption(words) {
   return { text, bounds: { left, top, width: right - left, height: bottom - top } };
 }
 
-function imageMetric(framePath, region, kind) {
+function imageDifferenceMetric(framePath, controlPath, region, kind) {
   const crop = `${Math.round(region.width)}x${Math.round(region.height)}+${Math.round(region.x)}+${Math.round(region.y)}`;
-  const args = [framePath, '-crop', crop, '+repage', '-colorspace', 'gray'];
+  const args = [framePath, controlPath, '-compose', 'difference', '-composite', '-crop', crop, '+repage', '-colorspace', 'gray'];
   if (kind === 'occupancy') args.push('-threshold', '8%');
   args.push('-format', kind === 'occupancy' ? '%[fx:mean]' : '%[fx:standard_deviation]', 'info:');
   const result = capture('magick', args, { env: safeBaseEnvironment() });
   const value = Number(result.stdout.trim());
-  if (!Number.isFinite(value)) fail(`ImageMagick returned an invalid caption ${kind}: ${result.stdout}`);
+  if (!Number.isFinite(value)) fail(`ImageMagick returned an invalid caption difference ${kind}: ${result.stdout}`);
   return value;
 }
 
@@ -1573,6 +1854,7 @@ function verifyRenderedArtifact(context) {
     env: safeBaseEnvironment(),
     logPath: resolve(context.evidenceRoot, 'render-caption-control.log'),
   });
+  const mediaEvidence = validateRenderedMediaFrame(controlPath, context.mediaFixture);
   const controlFrameSha256 = sha256File(controlPath);
   const tesseractLanguages = capture('tesseract', ['--list-langs'], {
     cwd: context.reighSnapshot,
@@ -1601,8 +1883,12 @@ function verifyRenderedArtifact(context) {
     ], { cwd: context.reighSnapshot, env: safeBaseEnvironment() });
     writeFileSync(ocrPath, tesseract.stdout, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
     const recognized = recognizedCaption(parseTesseractTsv(tesseract.stdout));
-    const occupancy = imageMetric(framePath, caption.region, 'occupancy');
-    const contrast = imageMetric(framePath, caption.region, 'contrast');
+    // Caption foreground and contrast are measured from frame-vs-control
+    // differencing. Absolute luminance is intentionally not evidence: a
+    // dark-but-present caption and a bright omitted-media frame must remain
+    // distinguishable from the no-caption control.
+    const occupancy = imageDifferenceMetric(framePath, controlPath, caption.region, 'occupancy');
+    const contrast = imageDifferenceMetric(framePath, controlPath, caption.region, 'contrast');
     const semantics = assessCaptionProbe({
       expectedText: caption.text,
       recognizedText: recognized.text,
@@ -1611,7 +1897,7 @@ function verifyRenderedArtifact(context) {
       expectedRegion: caption.region,
       recognizedBounds: recognized.bounds,
       occupancy,
-      controlOccupancy: imageMetric(controlPath, caption.region, 'occupancy'),
+      controlOccupancy: imageDifferenceMetric(controlPath, controlPath, caption.region, 'occupancy'),
       contrast,
       frameSha256: sha256File(framePath),
       controlFrameSha256,
@@ -1659,6 +1945,7 @@ function verifyRenderedArtifact(context) {
     },
     audioCodec: audio?.codec_name ?? null,
     fullDecode: true,
+    mediaEvidence,
     captionSemantics: {
       method: 'tesseract-ocr+persisted-region-occupancy-contrast',
       expectedCaptionCount: captions.length,
@@ -1732,6 +2019,10 @@ async function executeGate(manifest, pins, evidenceRoot) {
   try {
     archiveCommit(REPO_ROOT, pins.reighCommit, context.reighSnapshot, resolve(runtimeRoot, 'reigh.tar'));
     archiveCommit(pins.astridCheckout, pins.astridCommit, context.astridSnapshot, resolve(runtimeRoot, 'astrid.tar'));
+    context.mediaFixture = validateMediaFixture({
+      fixturePath: resolve(context.reighSnapshot, PAIRED_RELEASE_MEDIA_FIXTURE),
+      metadataPath: resolve(context.reighSnapshot, PAIRED_RELEASE_MEDIA_METADATA),
+    });
     receipt.phases.push({ id: 'archives', status: 'pass' });
 
     runLogged('npm', ['ci', '--no-audit', '--no-fund'], {
@@ -1761,7 +2052,8 @@ async function executeGate(manifest, pins, evidenceRoot) {
     const astridRuntime = installLockedAstridRuntime(context);
     receipt.phases.push({ id: 'astrid-locked-runtime', status: 'pass', ...astridRuntime });
 
-    seedDemoProject(context);
+    const seededMedia = seedDemoProject(context);
+    context.mediaId = seededMedia.mediaId;
     const baselineDbCounts = sqliteCountSnapshot(context, 'astrid-pre-migration-counts.log');
     const backupDir = resolve(runtimeRoot, 'pre-migration-backup');
     const backup = astridCommand(context, [
@@ -1803,10 +2095,17 @@ async function executeGate(manifest, pins, evidenceRoot) {
 
     let bridgePort = await allocatePort();
     astridHandle = await startAstrid(context, 'preview', bridgePort, token);
+    const bridgeMedia = await verifyBridgeMediaContent({
+      baseUrl: `http://127.0.0.1:${bridgePort}`,
+      projectSlug: DEMO_PROJECT,
+      mediaId: context.mediaId,
+      fixture: context.mediaFixture,
+      token,
+    });
     let reighPort = await allocatePort();
     reighHandle = await startReigh(context, 'preview', reighPort, bridgePort, token, 'preview');
     const preview = await smokeBuiltPreview(reighPort, context.readinessIdentity);
-    receipt.phases.push({ id: 'built-preview-auth-proxy', status: 'pass', ...preview });
+    receipt.phases.push({ id: 'built-preview-auth-proxy', status: 'pass', ...preview, bridgeMedia });
     await stopLoggedProcesses([reighHandle, astridHandle]);
     reighHandle = undefined;
     astridHandle = undefined;
@@ -1834,6 +2133,7 @@ async function executeGate(manifest, pins, evidenceRoot) {
       mp4Sha256: renderVerification.mp4Sha256,
       videoFrames: renderVerification.video.frames,
       fullDecode: true,
+      mediaEvidence: renderVerification.mediaEvidence,
     });
     await stopLoggedProcesses([reighHandle, astridHandle]);
     reighHandle = undefined;
