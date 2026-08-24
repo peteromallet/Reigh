@@ -526,6 +526,9 @@ export function useTimelineTrackManagement({
     }
 
     if (enclosingGroup) {
+      if (!sourceTrackId) {
+        return;
+      }
       const previewCurrent: TimelineData = {
         ...current,
         tracks: nextResolvedConfigBase.tracks.map((track) => ({ ...track })),

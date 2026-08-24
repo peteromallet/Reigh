@@ -138,7 +138,7 @@ export const runSequenceGenerationRequest = async ({
     }
 
     const validDrafts: EditableSequenceDraft[] = [];
-    const invalidCountFromClient = (response.drafts ?? []).reduce((count, rawDraft) => {
+    const invalidCountFromClient = (response.drafts ?? []).reduce((count: number, rawDraft) => {
       const validation = validateSequenceDraft(rawDraft, {
         metadata: AVAILABLE_SEQUENCE_METADATA,
         allowedClipTypes: AVAILABLE_SEQUENCE_CLIP_TYPES,

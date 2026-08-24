@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/shared/components/ui/button.tsx';
 import { Input } from '@/shared/components/ui/input.tsx';
 import { Textarea } from '@/shared/components/ui/textarea.tsx';
@@ -15,15 +15,26 @@ interface CustomEffectEditorProps {
   onApply: (slug: string, category: NonNullable<CustomEffectEntry['category']>) => void;
 }
 
+type LegacyEffectRecord = {
+  id: string;
+  name?: string;
+  slug: string;
+  description?: string | null;
+  code: string;
+};
+
+function loadLegacyEffect(_slug: string | undefined): LegacyEffectRecord | null {
+  return null;
+}
+
 const TEMPLATE = `export default function Effect({ children, durationInFrames, effectFrames = 20, intensity = 0.5 }) {\n  const frame = useCurrentFrame();\n  const opacity = interpolate(frame, [0, effectFrames], [0, 1], { extrapolateRight: 'clamp' });\n\n  return (\n    <AbsoluteFill style={{ opacity }}>\n      {children}\n    </AbsoluteFill>\n  );\n}`;
 
 export function CustomEffectEditor({ category, initialSlug, onApply }: CustomEffectEditorProps) {
   const { userId } = useVideoEditorRuntime();
   const effects = useEffects(userId);
-  const existingEffect = useMemo(
-    () => effects.data?.find((effect) => effect.slug === initialSlug) ?? null,
-    [effects.data, initialSlug],
-  );
+  // The legacy effect catalog is no longer exposed by the Astrid bridge. Draft
+  // editing remains local; persisted catalog lookups are intentionally absent.
+  const existingEffect = loadLegacyEffect(initialSlug);
   const [name, setName] = useState(existingEffect?.name ?? initialSlug ?? '');
   const [slug, setSlug] = useState(existingEffect?.slug ?? initialSlug ?? '');
   const [description, setDescription] = useState(existingEffect?.description ?? '');

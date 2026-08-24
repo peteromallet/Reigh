@@ -1,4 +1,4 @@
-import type { RenderBlocker } from '@reigh/editor-sdk';
+import type { RenderBlocker, RenderRoute } from '@reigh/editor-sdk';
 import type { ProcessStatus } from '@/sdk/video/families/processes';
 import {
   BlockerActionCard,
@@ -18,6 +18,17 @@ import type {
   VideoEditorPlannerNextActionDescriptor,
   VideoEditorPlannerNextActionKind,
 } from '@/tools/video-editor/runtime/extensionSurface.ts';
+
+const RENDER_ROUTES = new Set<RenderRoute>([
+  'preview',
+  'browser-export',
+  'worker-export',
+  'sidecar-export',
+]);
+
+function isRenderRoute(value: string): value is RenderRoute {
+  return RENDER_ROUTES.has(value as RenderRoute);
+}
 
 export interface RouteCompletionDashboardProps {
   readonly routePlan: RenderRoutePlan;
@@ -72,7 +83,9 @@ function plannerActionFromValue(
   const record = value != null && typeof value === 'object'
     ? value as Record<string, unknown>
     : undefined;
-  const route = typeof record?.route === 'string' ? record.route : fallback?.route;
+  const route = typeof record?.route === 'string' && isRenderRoute(record.route)
+    ? record.route
+    : fallback?.route;
   const allowedKinds: readonly VideoEditorPlannerNextActionKind[] = [
     'select-route',
     'materialize',
@@ -87,8 +100,11 @@ function plannerActionFromValue(
     return fallback;
   }
 
+  const kind = allowedKinds.find((candidate) => candidate === nextAction.kind);
+  if (!kind) return fallback;
+
   return {
-    kind: nextAction.kind as VideoEditorPlannerNextActionKind,
+    kind,
     label: nextAction.label,
     ...(route ? { route } : {}),
     ...(typeof record?.processId === 'string'

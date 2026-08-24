@@ -50,7 +50,8 @@ export interface ProcessDashboardEntry {
 
 function readStatusString(status: ProcessStatus | undefined, key: string): string | undefined {
   if (!status) return undefined;
-  const value = (status as Record<string, unknown>)[key];
+  const statusRecord: Record<string, unknown> = Object.fromEntries(Object.entries(status));
+  const value = statusRecord[key];
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
@@ -78,7 +79,7 @@ function statusForCancelTask(
 }
 
 function collectDeclaredProcesses(
-  extensionRuntime: ExtensionRuntime | undefined,
+  extensionRuntime: Pick<ExtensionRuntime, 'config' | 'processes'> | undefined,
 ): readonly VideoEditorProcessDescriptor[] {
   if (!extensionRuntime) {
     return [];
@@ -114,7 +115,7 @@ function formatConfigStatus(process: VideoEditorProcessDescriptor): string {
 
 function formatSettingsStatus(
   process: VideoEditorProcessDescriptor,
-  extensionRuntime: ExtensionRuntime | undefined,
+  extensionRuntime: Pick<ExtensionRuntime, 'settingsDefaults'> | undefined,
 ): string {
   const defaults = extensionRuntime?.settingsDefaults?.[process.extensionId];
   const defaultKeys = defaults ? Object.keys(defaults) : [];
@@ -162,7 +163,7 @@ export function isTransientProcessState(status: ProcessStatus | undefined): bool
 }
 
 export function deriveProcessDashboardEntries(args: {
-  readonly extensionRuntime: ExtensionRuntime | undefined;
+  readonly extensionRuntime: Pick<ExtensionRuntime, 'config' | 'processes' | 'settingsDefaults'> | undefined;
   readonly statuses: readonly ProcessStatus[];
   readonly attachRecords: readonly ProcessResultAttachRecord[];
 }): readonly ProcessDashboardEntry[] {

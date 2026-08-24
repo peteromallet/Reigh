@@ -24,6 +24,7 @@
  */
 
 import { defineExtension } from '@reigh/editor-sdk';
+import type { ReactNode } from 'react';
 import type {
   ReighExtension,
   ExtensionContext,
@@ -34,6 +35,7 @@ import type {
   KeybindingContribution,
   TimelinePatch,
   EffectContribution,
+  EffectComponent,
   EffectParameterSchema,
   TransitionContribution,
   TransitionParameterSchema,
@@ -41,6 +43,26 @@ import type {
 } from '@reigh/editor-sdk';
 
 import { FlagshipEffectComponent } from './FlagshipEffectComponent';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+const flagshipEffectRegistration: EffectComponent = (...args: unknown[]): unknown => {
+  const rawProps = args[0];
+  if (!isRecord(rawProps) || !('children' in rawProps)) {
+    return null;
+  }
+  return FlagshipEffectComponent({
+    children: rawProps.children as ReactNode,
+    durationInFrames: typeof rawProps.durationInFrames === 'number'
+      ? rawProps.durationInFrames
+      : 1,
+    ...(typeof rawProps.effectFrames === 'number' ? { effectFrames: rawProps.effectFrames } : {}),
+    ...(typeof rawProps.intensity === 'number' ? { intensity: rawProps.intensity } : {}),
+    ...(isRecord(rawProps.params) ? { params: rawProps.params } : {}),
+  });
+};
 
 const FLAGSHIP_EXTENSION_ID = 'com.reigh.examples.flagship-local';
 const FLAGSHIP_MARK_REVIEW_COMMAND =
@@ -139,12 +161,11 @@ const FLAGSHIP_WIPE_SCHEMA: TransitionParameterSchema = [
  * Returns CSS properties for a directional wipe based on progress and params.
  * This is a simple pure function — no React, no Remotion imports needed.
  */
-function flagshipWipeRenderer(
-  progress: number,
-  params?: Record<string, unknown>,
-): Record<string, unknown> {
-  const direction = (params?.direction as string) ?? 'right';
-  const softness = (params?.softness as number) ?? 0;
+function flagshipWipeRenderer(...args: unknown[]): Record<string, unknown> {
+  const progress = typeof args[0] === 'number' ? args[0] : 0;
+  const params = isRecord(args[1]) ? args[1] : undefined;
+  const direction = typeof params?.direction === 'string' ? params.direction : 'right';
+  const softness = typeof params?.softness === 'number' ? params.softness : 0;
 
   const clipPercent = (1 - progress) * 100;
   const blurPx = softness > 0 ? softness * progress * 20 : 0;
@@ -440,7 +461,7 @@ export const flagshipLocalExtension: ReighExtension = defineExtension({
     // --- M7: Trusted component-effect registration ----------------------
     const effectHandle = ctx.effects.registerComponent(
       'com.reigh.flagship.effect.glow',
-      FlagshipEffectComponent,
+      flagshipEffectRegistration,
       {
         label: 'Flagship Glow',
         parameterSchema: FLAGSHIP_GLOW_SCHEMA,
