@@ -99,6 +99,8 @@ describe('useApiTokens', () => {
       });
     });
     expect(mockGetSupabaseClient).not.toHaveBeenCalled();
+  });
+
   afterEach(() => {
     window.history.replaceState({}, '', '/');
   });
