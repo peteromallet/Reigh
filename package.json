@@ -17,6 +17,7 @@
     "build:dev": "vite build --mode development --config config/vite/vite.config.ts",
     "verify:extension-ship": "node scripts/release/verify-extension-ship.mjs",
     "verify:paired-release-e2e": "node scripts/release/verify-paired-release-e2e.mjs",
+    "verify:rc4-paired-evidence": "node scripts/release/verify-rc4-paired-evidence.mjs",
     "verify:extension-container": "node scripts/runtime/verify-extension-container.mjs",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "lint:edge": "eslint supabase/functions --ext ts --max-warnings 0",

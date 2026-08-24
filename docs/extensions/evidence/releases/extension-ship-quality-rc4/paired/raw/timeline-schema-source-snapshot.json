@@ -1,0 +1,40 @@
+{
+  "files": [
+    {
+      "path": "banodoco_timeline_schema/__init__.py",
+      "bytes": 1368,
+      "sha256": "d78665b551660abfd6dadb2580a0061c1bf6d46e174819cbd44e065ae70c0c96"
+    },
+    {
+      "path": "banodoco_timeline_schema/generated.py",
+      "bytes": 6791,
+      "sha256": "39aab0deae77ad4613bade03667a77a34f7d55375bb44980bac7c72551afb34b"
+    },
+    {
+      "path": "banodoco_timeline_schema/materialize.py",
+      "bytes": 1892,
+      "sha256": "41651567e2e29b565a2854210c146ecb450c49c815504ede375775eb020bde38"
+    },
+    {
+      "path": "banodoco_timeline_schema/theme.py",
+      "bytes": 2595,
+      "sha256": "b713f1e61c8c63b1ce957d7a6c4b1f1c5c1700d4fd6336f99f97ba7e964f4dcb"
+    },
+    {
+      "path": "banodoco_timeline_schema/timeline.schema.json",
+      "bytes": 20562,
+      "sha256": "fbee605d9695f7775cebd09f87b8dac15a64a058b752ecb83be0fc6e69b2aef5"
+    },
+    {
+      "path": "banodoco_timeline_schema/validate.py",
+      "bytes": 1265,
+      "sha256": "ef953e644cbaee6919397571a00966c45cddf9e55f4d83636e9a037afb187059"
+    },
+    {
+      "path": "pyproject.toml",
+      "bytes": 486,
+      "sha256": "f3813e5f8a0ca0a08ccf4664f19a00d6d641b30d0dc95f45516f3a62efcdaddc"
+    }
+  ],
+  "sha256": "e219ea79c37fc58389463a1c8115ac07b264a39a872117b8d728f0bc639f6ea7"
+}

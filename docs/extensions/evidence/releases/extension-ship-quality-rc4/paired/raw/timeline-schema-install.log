@@ -1,0 +1,11 @@
+Processing /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-XE9nVO/reigh/vendor/timeline-schema/python
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Building wheels for collected packages: banodoco-timeline-schema
+  Building wheel for banodoco-timeline-schema (pyproject.toml): started
+  Building wheel for banodoco-timeline-schema (pyproject.toml): finished with status 'done'
+  Created wheel for banodoco-timeline-schema: filename=banodoco_timeline_schema-0.0.2-py3-none-any.whl size=8374 sha256=75f945a0b814371a5f6c8a12d27f006d433ec88e77edf47fffa5debc914a0093
+  Stored in directory: /private/var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-XE9nVO/pip-ephem-wheel-cache-gohkpibk/wheels/97/5d/89/adc5832484acfb7e74b7f2c1b032830a36e29ca7a3be1c0472
+Successfully built banodoco-timeline-schema
+Installing collected packages: banodoco-timeline-schema
+Successfully installed banodoco-timeline-schema-0.0.2

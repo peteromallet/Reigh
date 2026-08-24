@@ -1,0 +1,23 @@
+
+added 548 packages in 12s
+npm warn ERESOLVE overriding peer dependency
+npm warn While resolving: @vitest/mocker@4.1.5
+npm warn Found: vite@5.4.21
+npm warn node_modules/vite
+npm warn   dev vite@"^5.4.1" from the root project
+npm warn   1 more (@vitejs/plugin-react-swc)
+npm warn
+npm warn Could not resolve dependency:
+npm warn peerOptional vite@"^6.0.0 || ^7.0.0 || ^8.0.0" from @vitest/mocker@4.1.5
+npm warn node_modules/@vitest/mocker
+npm warn   @vitest/mocker@"4.1.5" from vitest@4.1.5
+npm warn   node_modules/vitest
+npm warn
+npm warn Conflicting peer dependency: vite@8.2.2
+npm warn node_modules/vite
+npm warn   peerOptional vite@"^6.0.0 || ^7.0.0 || ^8.0.0" from @vitest/mocker@4.1.5
+npm warn   node_modules/@vitest/mocker
+npm warn     @vitest/mocker@"4.1.5" from vitest@4.1.5
+npm warn     node_modules/vitest
+npm warn deprecated deep-diff@1.0.2: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+npm warn deprecated popper.js@1.16.1: You can find the new Popper v2 at @popperjs/core, this package is dedicated to the legacy v1
