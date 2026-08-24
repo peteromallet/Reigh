@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import {
   accessSync,
@@ -13,7 +14,7 @@ import {
   statSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, isAbsolute, resolve, win32 as pathWin32 } from 'node:path';
+import { delimiter, dirname, isAbsolute, resolve, win32 as pathWin32 } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
@@ -56,6 +57,9 @@ export const REIGH_GATE_PROFILE = Object.freeze([
   { id: 'example-readiness', label: 'release example-readiness gate', command: 'npm', args: ['run', 'check:example-readiness:release'] },
   { id: 'release-checklist', label: 'release evidence-checklist gate', command: 'npm', args: ['run', 'check:release-checklist:release'] },
   { id: 'ship-evidence', label: 'ship-quality immutable evidence gate', command: 'npm', args: ['run', 'check:extension-ship-evidence:release'] },
+  // Keep the live pixel gate immediately before static provenance verification.
+  // Its fixed argument vector intentionally has no snapshot-update switch.
+  { id: 'visual-e2e', label: 'extension visual regression gate', command: 'npm', args: ['run', 'test:e2e:extension-visual'] },
   { id: 'visual-baseline-provenance', label: 'RC6 visual baseline provenance gate', command: 'npm', args: ['run', 'verify:rc6-visual-baseline-provenance'] },
   { id: 'lint', label: 'Reigh lint', command: 'npm', args: ['run', 'lint'] },
   { id: 'typecheck', label: 'Reigh strict-island typecheck', command: 'npm', args: ['run', 'typecheck:strict-probe'] },
@@ -417,6 +421,28 @@ export function validateReleaseManifest(manifest) {
   }
   if (!/^\d+\.\d+\.\d+$/.test(verification.ffprobe ?? '')) {
     errors.push('verification.ffprobe must be an exact semantic version');
+  }
+
+  for (const [toolName, tool] of [
+    ['tesseract', verification.tesseract],
+    ['imageMagick', verification.imageMagick],
+  ]) {
+    if (!isPlainObject(tool)) {
+      errors.push(`verification.${toolName} must be an object`);
+      continue;
+    }
+    if (!/^[A-Za-z0-9][A-Za-z0-9._+-]*$/.test(tool.executable ?? '')) {
+      errors.push(`verification.${toolName}.executable must be a safe command name`);
+    }
+    if (!/^\d+\.\d+\.\d+(?:-[0-9]+)?$/.test(tool.version ?? '')) {
+      errors.push(`verification.${toolName}.version must be an exact tool version`);
+    }
+    if (!/^sha256:[0-9a-f]{64}$/.test(tool.executableSha256 ?? '')) {
+      errors.push(`verification.${toolName}.executableSha256 must be a full sha256 digest`);
+    }
+  }
+  if (!/^sha256:[0-9a-f]{64}$/.test(verification.tesseract?.engDataSha256 ?? '')) {
+    errors.push('verification.tesseract.engDataSha256 must be a full sha256 digest');
   }
 
   const requiredGates = Array.isArray(manifest?.requiredGates)
@@ -836,6 +862,107 @@ export function resolveAstridPython(manifest, env) {
   return python;
 }
 
+function sha256File(path) {
+  return createHash('sha256').update(readFileSync(path)).digest('hex');
+}
+
+function resolvePinnedExecutable(command) {
+  const pathEntries = buildSanitizedEnvironment().PATH.split(delimiter);
+  for (const entry of pathEntries) {
+    const candidate = resolve(entry, command);
+    if (!existsSync(candidate) || !statSync(candidate).isFile()) continue;
+    try {
+      accessSync(candidate, constants.X_OK);
+    } catch {
+      continue;
+    }
+    return realpathSync(candidate);
+  }
+  fail(`pinned tool executable is missing from the release PATH: ${command}`);
+}
+
+function assertPinnedExecutable({ toolName, config, args, parseVersion }) {
+  const executable = resolvePinnedExecutable(config.executable);
+  const executableSha256 = sha256File(executable);
+  if (`sha256:${executableSha256}` !== config.executableSha256) {
+    fail(
+      `${toolName} executable hash mismatch: expected ${config.executableSha256}, `
+      + `got sha256:${executableSha256} (${executable})`,
+    );
+  }
+  const probe = runCaptured(executable, args, REPO_ROOT, { allowFailure: true });
+  if (probe.error || probe.status !== 0) {
+    fail(`${toolName} identity probe failed: ${formatFailure(probe)}`);
+  }
+  const version = parseVersion(probe.stdout);
+  if (version !== config.version) {
+    fail(
+      `${toolName} version mismatch: expected ${config.version}, `
+      + `got ${version ?? '<invalid>'} from ${executable}`,
+    );
+  }
+  return { executable, version, executableSha256: `sha256:${executableSha256}`, stdout: probe.stdout };
+}
+
+/**
+ * Paired caption semantics invoke Tesseract for exact text/region OCR and
+ * ImageMagick's `magick` command for caption occupancy and contrast. Resolve
+ * commands through the verifier's fixed PATH, then bind both executable bytes
+ * and the English trained-data bytes before any release gate can run.
+ */
+export function assertCaptionSemanticsToolchain(manifest) {
+  const tesseract = assertPinnedExecutable({
+    toolName: 'Tesseract',
+    config: manifest.verification.tesseract,
+    args: ['--version'],
+    parseVersion: (output) => output.match(/(?:^|\n)tesseract ([^\s]+)/)?.[1],
+  });
+  const languages = runCaptured(
+    tesseract.executable,
+    ['--list-langs'],
+    REPO_ROOT,
+    { allowFailure: true },
+  );
+  if (languages.error || languages.status !== 0 || !/^eng$/m.test(languages.stdout ?? '')) {
+    fail('deterministic caption OCR requires the pinned Tesseract eng language data');
+  }
+  const dataDirectory = languages.stdout.match(/List of available languages in "([^"]+)"/)?.[1];
+  if (!dataDirectory || !isAbsolute(dataDirectory)) {
+    fail('Tesseract did not disclose an absolute language-data directory');
+  }
+  const engDataPath = resolve(dataDirectory, 'eng.traineddata');
+  if (!existsSync(engDataPath) || !statSync(engDataPath).isFile()) {
+    fail(`Tesseract eng language data is missing: ${engDataPath}`);
+  }
+  const engDataSha256 = sha256File(engDataPath);
+  if (`sha256:${engDataSha256}` !== manifest.verification.tesseract.engDataSha256) {
+    fail(
+      `Tesseract eng language data hash mismatch: expected ${manifest.verification.tesseract.engDataSha256}, `
+      + `got sha256:${engDataSha256} (${realpathSync(engDataPath)})`,
+    );
+  }
+
+  const imageMagick = assertPinnedExecutable({
+    toolName: 'ImageMagick',
+    config: manifest.verification.imageMagick,
+    args: ['-version'],
+    parseVersion: (output) => output.match(/^Version: ImageMagick ([^\s]+)/m)?.[1],
+  });
+  return {
+    tesseract: {
+      executable: tesseract.executable,
+      version: tesseract.version,
+      executableSha256: tesseract.executableSha256,
+      engDataSha256: `sha256:${engDataSha256}`,
+    },
+    imageMagick: {
+      executable: imageMagick.executable,
+      version: imageMagick.version,
+      executableSha256: imageMagick.executableSha256,
+    },
+  };
+}
+
 function assertToolchain(manifest, env) {
   const nodeVersion = process.version.replace(/^v/, '');
   if (nodeVersion !== manifest.verification.node) {
@@ -860,6 +987,7 @@ function assertToolchain(manifest, env) {
       );
     }
   }
+  assertCaptionSemanticsToolchain(manifest);
   return resolveAstridPython(manifest, env);
 }
 
@@ -941,9 +1069,11 @@ function printPlan(manifest, packageJson, env) {
   console.log(
     `${LABEL} toolchain: node ${manifest.verification.node}, `
     + `npm ${manifest.verification.npm}, Astrid Python ${manifest.verification.astridPython}, `
-    + `FFmpeg ${manifest.verification.ffmpeg}, FFprobe ${manifest.verification.ffprobe}`,
+    + `FFmpeg ${manifest.verification.ffmpeg}, FFprobe ${manifest.verification.ffprobe}, `
+    + `Tesseract ${manifest.verification.tesseract.version} (${manifest.verification.tesseract.executable}), `
+    + `ImageMagick ${manifest.verification.imageMagick.version} (${manifest.verification.imageMagick.executable})`,
   );
-  console.log(`${LABEL} preflight: exact toolchain; clean worktrees; candidate tag; evidence-only ancestry`);
+  console.log(`${LABEL} preflight: exact toolchain and caption image/OCR provenance; clean worktrees; candidate tag; evidence-only ancestry`);
   console.log(
     `${LABEL} disk preflight: commit-tree archive peak + ${RELEASE_OPERATIONAL_ALLOWANCE_BYTES / GIB} GiB `
     + `operational allowance; ${DISK_BUDGET_OVERRIDE_ENV} may only raise it`,

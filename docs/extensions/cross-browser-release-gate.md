@@ -3,7 +3,7 @@
 The opt-in release gate exercises a deliberately small set of ship-critical
 extension behaviors in the installed stable Chrome channel plus Playwright's
 Firefox and WebKit engines. It does not add three browsers to the ordinary test
-loop. The gate owns dedicated ports (`2244` and `17344`) and refuses to reuse an
+loop. The gate allocates isolated ports at runtime and refuses to reuse an
 existing server, so a stale acceptance server cannot produce a false pass.
 
 ```sh

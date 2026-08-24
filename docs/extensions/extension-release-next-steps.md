@@ -13,9 +13,10 @@ by the [evidence ledger](extension-ship-evidence-ledger.md).
 
 `codex/extension-ship-integration` is the current RC6 **integration cycle**, not
 a frozen release candidate. Reigh's latest source head is
-`567ce0991456fb4361912d307705602ed46831ff` in the
+`925a954b39dbe5c8e2ec667d2e9c2b3564612f73` in the
 `/Users/peteromalley/Documents/reigh-workspace/reigh-app-extension-rc`
-worktree; the worktree still has a release-spec edit and is not clean. Astrid's
+worktree; the tracked worktree is clean. The manifest status remains
+`integration` until the exact candidate is frozen. Astrid's
 paired bridge worktree is
 `/Users/peteromalley/Documents/reigh-workspace/Astrid-editor-bridge-integration`
 on `codex/editor-bridge-integration` at

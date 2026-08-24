@@ -12,6 +12,7 @@ import {
   REIGH_GATE_PROFILE,
   REPO_ROOT,
   assertDiskRequirements,
+  assertCaptionSemanticsToolchain,
   assertHeavyStepDiskCapacity,
   assertReleaseDiskCapacity,
   availableBytesAt,
@@ -140,6 +141,25 @@ describe('extension ship verifier', () => {
       && gate.command === 'npm'
       && gate.args.join(' ') === 'run verify:rc6-visual-baseline-provenance'
     )));
+    const visualGateIndex = REIGH_GATE_PROFILE.findIndex((gate) => gate.id === 'visual-e2e');
+    const provenanceGateIndex = REIGH_GATE_PROFILE.findIndex((gate) => gate.id === 'visual-baseline-provenance');
+    assert.ok(visualGateIndex >= 0 && visualGateIndex < provenanceGateIndex);
+    assert.deepEqual(REIGH_GATE_PROFILE[visualGateIndex].args, [
+      'run', 'test:e2e:extension-visual',
+    ]);
+    assert.ok(!REIGH_GATE_PROFILE[visualGateIndex].args.includes('--update-snapshots'));
+    assert.equal(manifest.verification.tesseract.executable, 'tesseract');
+    assert.equal(manifest.verification.imageMagick.executable, 'magick');
+    assert.match(manifest.verification.tesseract.engDataSha256, /^sha256:[0-9a-f]{64}$/);
+  });
+
+  it('fails closed when a pinned caption-semantic executable is unavailable', () => {
+    const missingTool = structuredClone(manifest);
+    missingTool.verification.tesseract.executable = 'missing-tesseract-for-release-test';
+    assert.throws(
+      () => assertCaptionSemanticsToolchain(missingTool),
+      /pinned tool executable is missing from the release PATH/,
+    );
   });
 
   it('explicitly permits only the committed Astrid stub in browser release lanes', () => {
