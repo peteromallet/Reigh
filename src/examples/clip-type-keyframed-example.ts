@@ -118,11 +118,9 @@ const KEYFRAMED_CLIP_SCHEMA: ClipParameterSchema = [
  * args (clipId, clipTypeId, time, params, width, height) and returns
  * rendering instructions.
  */
-const proceduralRenderer: ClipRenderer = (
-  _props: Record<string, unknown>,
-): Record<string, unknown> => {
+const proceduralRenderer: ClipRenderer = (...args: unknown[]): unknown => {
   // Resolve params with schema defaults
-  const props = _props as {
+  const props = args[0] as {
     clipId: string;
     clipTypeId: string;
     time: number;
@@ -167,10 +165,8 @@ const proceduralRenderer: ClipRenderer = (
  * Optional clip inspector — a callback-style inspector that receives
  * current params and an onParamsChange handler.
  */
-const proceduralInspector: ClipInspector = (
-  _props: Record<string, unknown>,
-): Record<string, unknown> => {
-  const props = _props as {
+const proceduralInspector: ClipInspector = (...args: unknown[]): unknown => {
+  const props = args[0] as {
     clipId: string;
     clipTypeId: string;
     params: Record<string, unknown>;

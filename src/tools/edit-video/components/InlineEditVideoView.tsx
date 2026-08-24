@@ -101,7 +101,7 @@ export function InlineEditVideoView({
   }, [media.id, media.params, variants, setActiveVariantId]);
 
   const sourceVideoUrl = media.location || media.imageUrl || null;
-  const sourceThumbnailUrl = media.thumbnail_url || media.thumbUrl;
+  const sourceThumbnailUrl = media.thumbUrl || media.imageUrl;
   const videoUrl = activeVariant?.location || sourceVideoUrl;
   const thumbnailUrl = activeVariant?.thumbnail_url || sourceThumbnailUrl;
   const activeVariantId = activeVariant?.id || null;

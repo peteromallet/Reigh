@@ -27,7 +27,7 @@ import { requireProjectAndUserId } from '@/shared/editMedia/uploadGuards';
 // Preload video poster helper - warm up the browser cache
 const preloadedVideoRef = { current: null as string | null };
 const preloadVideoPoster = (gen: GenerationRow) => {
-  const urlToPreload = gen.thumbnail_url || gen.location;
+  const urlToPreload = gen.thumbUrl || gen.imageUrl || gen.location;
   if (!urlToPreload || preloadedVideoRef.current === urlToPreload) return;
   const img = new Image();
   img.src = urlToPreload;

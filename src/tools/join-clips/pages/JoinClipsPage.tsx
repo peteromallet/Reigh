@@ -31,8 +31,8 @@ import {
   useSyncJoinClipsLoras,
   type ClipManagerState,
   type JoinSettingsState,
-  type LoraManagerState,
 } from './hooks/useJoinClipsPageHelpers';
+import type { LoraManagerState } from '@/domains/lora/types/loraManager';
 import { JoinClipsGrid } from './components/JoinClipsGrid';
 import { JoinClipsResults } from './components/JoinClipsResults';
 

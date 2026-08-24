@@ -32,7 +32,6 @@ import type {
   AgentToolRegistrationService,
   ToolResult,
   ToolUISummaryResult,
-  ToolResultFamily,
 } from '@reigh/editor-sdk';
 
 // ---------------------------------------------------------------------------
@@ -83,9 +82,9 @@ export const exampleToolHandler: AgentToolHandler = (
   const { toolId, extensionId, input } = request;
 
   const result: ToolUISummaryResult = {
-    family: 'ui' as ToolResultFamily,
+    family: 'ui/summary',
     summary: `Tool "${toolId}" invoked by "${extensionId}" with action "${String(input?.action ?? 'unknown')}" on clip "${String(input?.targetClipId ?? 'none')}".`,
-    proposalData: {
+    detail: {
       toolId,
       extensionId,
       input: input ?? {},
@@ -116,7 +115,7 @@ export const agentToolExample: ReighExtension = defineExtension({
         label: 'Clip Analyzer',
         description: 'Analyzes a clip and produces a labeled proposal.',
         inputSchema: EXAMPLE_TOOL_INPUT_SCHEMA,
-        resultFamilies: ['ui'] as readonly ToolResultFamily[],
+        resultFamilies: ['ui/summary'],
         order: 10,
       } as AgentToolContribution,
     ],

@@ -94,7 +94,7 @@ const deepMerge = <T extends Record<string, unknown>>(base: T, overlay: Record<s
 };
 
 const toRuntimeTheme = (theme: Theme | RuntimeTheme | null | undefined): RuntimeTheme => {
-  if (isRecord(theme) && isRecord(theme.visual)) {
+  if (isRecord(theme) && 'visual' in theme && isRecord(theme.visual)) {
     return deepMerge(DEFAULT_RUNTIME_THEME, theme.visual);
   }
   if (isRecord(theme)) {

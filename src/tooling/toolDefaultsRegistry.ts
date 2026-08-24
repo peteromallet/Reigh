@@ -24,7 +24,7 @@ export interface ToolDefaultsById {
   [userPreferencesSettings.id]: UserPreferences;
 }
 
-export type ToolDefaultsId = keyof ToolDefaultsById;
+export type ToolDefaultsId = Extract<keyof ToolDefaultsById, string>;
 
 export const toolDefaultsRegistry: ToolDefaultsById = {
   [videoTravelSettings.id]: videoTravelSettings.defaults,

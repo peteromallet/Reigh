@@ -36,7 +36,7 @@ const ImageGenerationToolPage: React.FC = React.memo(() => {
   } = useGallerySelection();
 
   const buildSelectionMeta = useCallback((image: GeneratedImageWithMetadata) => ({
-    url: image.url,
+    url: image.url ?? '',
     type: image.type ?? image.contentType ?? (image.isVideo ? 'video/mp4' : 'image/png'),
     generationId: image.generation_id ?? image.id,
     variantId: image.primary_variant_id,
@@ -46,6 +46,7 @@ const ImageGenerationToolPage: React.FC = React.memo(() => {
     image: GeneratedImageWithMetadata,
     modifiers?: { multiSelect: boolean },
   ) => {
+    if (!image.url) return;
     userSelectGalleryItem({
       id: image.id,
       ...buildSelectionMeta(image),

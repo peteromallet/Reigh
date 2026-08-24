@@ -29,7 +29,7 @@ import { requireProjectAndUserId } from '@/shared/editMedia/uploadGuards';
 // Preload image helper - warm up the browser cache
 const preloadedImageRef = { current: null as string | null };
 const preloadImage = (gen: GenerationRow) => {
-  const imageUrl = gen.location || gen.thumbnail_url;
+  const imageUrl = gen.location || gen.imageUrl || gen.thumbUrl;
   if (!imageUrl || preloadedImageRef.current === imageUrl) return;
   const img = new Image();
   img.src = imageUrl;

@@ -102,7 +102,7 @@ function InlineEditCanvas({ variant, model, media }: InlineEditCanvasProps) {
     <ImageEditProvider value={model.imageEditValue}>
       <MediaDisplayWithCanvas
         effectiveImageUrl={model.media.effectiveImageUrl}
-        thumbUrl={media.thumbnail_url || media.thumbUrl}
+        thumbUrl={media.thumbUrl || media.imageUrl}
         isVideo={model.media.isVideo}
         onImageLoad={model.media.setImageDimensions}
         variant={isMobileVariant ? "mobile-stacked" : "desktop-side-panel"}
