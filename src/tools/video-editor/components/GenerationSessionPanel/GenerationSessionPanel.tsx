@@ -169,7 +169,7 @@ export function GenerationSessionPanel({
           >
             <div className="flex items-start gap-2">
               <Loader2
-                className={`mt-0.5 h-3 w-3 shrink-0 text-blue-400 ${s.done || cancelled ? '' : 'animate-spin'}`}
+                className={`mt-0.5 h-3 w-3 shrink-0 text-blue-400 ${s.completed || cancelled ? '' : 'animate-spin'}`}
                 aria-hidden="true"
               />
               <div className="min-w-0 flex-1">
@@ -204,11 +204,11 @@ export function GenerationSessionPanel({
                 <div className="mt-0.5 text-[9px] text-zinc-500">
                   {progress}%
                   {s.progressLabel ? ` — ${s.progressLabel}` : ''}
-                  {s.done && ' (complete)'}
+                  {s.completed && ' (complete)'}
                   {cancelled && ' (cancelled)'}
                 </div>
               </div>
-              {!s.done && !cancelled && (
+              {!s.completed && !cancelled && (
                 <button
                   type="button"
                   onClick={() => s.cancel()}

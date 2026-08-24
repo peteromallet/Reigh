@@ -128,12 +128,10 @@ export function runParserPreflight(
     };
   }
 
-  const hasMimeTypes =
-    parser.acceptMimeTypes !== undefined &&
-    parser.acceptMimeTypes.length > 0;
-  const hasExtensions =
-    parser.acceptExtensions !== undefined &&
-    parser.acceptExtensions.length > 0;
+  const acceptMimeTypes = parser.acceptMimeTypes ?? [];
+  const acceptExtensions = parser.acceptExtensions ?? [];
+  const hasMimeTypes = acceptMimeTypes.length > 0;
+  const hasExtensions = acceptExtensions.length > 0;
 
   // If no accept filters are declared, accept everything.
   if (!hasMimeTypes && !hasExtensions) {
@@ -146,7 +144,7 @@ export function runParserPreflight(
   // -- MIME check -----------------------------------------------------------
   let mimePassed = !hasMimeTypes;
   if (hasMimeTypes) {
-    for (const accepted of parser.acceptMimeTypes) {
+    for (const accepted of acceptMimeTypes) {
       if (mimeTypeMatches(normalizedInputMime, normalizeMimeType(accepted))) {
         mimePassed = true;
         break;
@@ -157,7 +155,7 @@ export function runParserPreflight(
   // -- Extension check ------------------------------------------------------
   let extensionPassed = !hasExtensions;
   if (hasExtensions) {
-    for (const accepted of parser.acceptExtensions) {
+    for (const accepted of acceptExtensions) {
       if (normalizeExtension(accepted) === normalizedInputExt) {
         extensionPassed = true;
         break;
@@ -171,12 +169,12 @@ export function runParserPreflight(
     const reasons: string[] = [];
     if (hasMimeTypes && !mimePassed) {
       reasons.push(
-        `MIME type "${input.mimeType}" does not match [${parser.acceptMimeTypes!.join(', ')}]`,
+        `MIME type "${input.mimeType}" does not match [${acceptMimeTypes.join(', ')}]`,
       );
     }
     if (hasExtensions && !extensionPassed) {
       reasons.push(
-        `extension ".${input.extension}" does not match [${parser.acceptExtensions!.join(', ')}]`,
+        `extension ".${input.extension}" does not match [${acceptExtensions.join(', ')}]`,
       );
     }
     return {
@@ -188,8 +186,8 @@ export function runParserPreflight(
       detail: {
         mimeType: input.mimeType,
         extension: input.extension,
-        acceptMimeTypes: parser.acceptMimeTypes,
-        acceptExtensions: parser.acceptExtensions,
+        acceptMimeTypes,
+        acceptExtensions,
         parserId: parser.id,
       },
     };
@@ -727,9 +725,10 @@ export async function runAllParsers(
       }
 
       // Collect parser's own diagnostics
-      if (result.diagnostics && result.diagnostics.length > 0) {
-        for (let di = 0; di < result.diagnostics.length; di++) {
-          const d = result.diagnostics[di];
+      const resultDiagnostics = result.diagnostics ?? [];
+      if (resultDiagnostics.length > 0) {
+        for (let di = 0; di < resultDiagnostics.length; di++) {
+          const d = resultDiagnostics[di];
           diagnostics.push({
             ...d,
             assetKey: d.assetKey ?? assetKey,
@@ -740,9 +739,7 @@ export async function runAllParsers(
       }
 
       // Check for blocking errors from the parser itself
-      const hasBlockingError =
-        result.diagnostics &&
-        result.diagnostics.some((d) => d.severity === 'error');
+      const hasBlockingError = resultDiagnostics.some((d) => d.severity === 'error');
       if (hasBlockingError && descriptor.required) {
         blocked = true;
         diagnostics.push({
@@ -756,7 +753,7 @@ export async function runAllParsers(
           contributionId: descriptor.id,
           detail: {
             reason: 'blocking-diagnostic',
-            errorCount: result.diagnostics.filter((d) => d.severity === 'error').length,
+            errorCount: resultDiagnostics.filter((d) => d.severity === 'error').length,
           },
         });
       }

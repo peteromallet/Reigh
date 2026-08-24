@@ -48,7 +48,7 @@ export function registerProcessOperationCommands({
 }: RegisterProcessCommandsOptions) {
   const statuses = new Map(processStatuses.map((status) => [status.processId, status]));
   const descriptorByProcessId = new Map(processes.map((d) => [d.processId, d]));
-  const handles = [];
+  const handles: Array<ReturnType<CommandRegistry['registerCommand']>> = [];
   for (const process of processes) {
     for (const operation of process.operations) {
       const commandId = processCommandId(process.processId, operation.id);
@@ -84,13 +84,14 @@ export function registerProcessOperationCommands({
             });
             recordProcessResultAttach(attachRecord);
           }
-          return result;
+          return;
         }
 
         // Fallback: legacy execution bridge for callers that haven't wired
         // the process manager yet.
         if (services) {
-          return services.invokeProcess(request);
+          await services.invokeProcess(request);
+          return;
         }
 
         throw new Error(

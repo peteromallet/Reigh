@@ -65,6 +65,12 @@ export interface EmitGeneratedFrameOptions {
 export interface LiveGeneratedFrameSession extends GenerationSession {
   readonly sourceId: string;
   readonly producerChannelId: LiveChannelDescriptor;
+  readonly finalRefs: readonly string[];
+  readonly bakedRefs: readonly string[];
+  onProgress(listener: (progress: number, label?: string) => void): DisposeHandle;
+  onSample(listener: (sample: LiveSample) => void): DisposeHandle;
+  getSampleChannel(): LiveChannelDescriptor;
+  getSteeringLineage(): SteeringDecision['lineage'];
   emitFrame(options: EmitGeneratedFrameOptions): boolean;
   emitPending(frameIndex?: number): boolean;
   emitRefining(frameIndex?: number): boolean;
@@ -274,7 +280,7 @@ function createGeneratedFrameSession(options: {
     get cancelled() {
       return cancelled;
     },
-    get done() {
+    get completed() {
       return done;
     },
     get diagnostics() {
@@ -283,7 +289,7 @@ function createGeneratedFrameSession(options: {
     liveDelivery: options.liveDelivery,
     finalRefs: [`${createRefBase(options.sessionId, options.takeId)}:final-frame`],
     bakedRefs: [],
-    onProgress(listener) {
+    onProgress(listener: (progress: number, label?: string) => void) {
       progressListeners.add(listener);
       return {
         dispose() {
@@ -306,13 +312,21 @@ function createGeneratedFrameSession(options: {
     getSampleChannel() {
       return options.producerChannelId;
     },
-    onSample(listener) {
+    onSample(listener: (sample: LiveSample) => void) {
       sampleListeners.add(listener);
       return {
         dispose() {
           sampleListeners.delete(listener);
         },
       };
+    },
+    updateProgress(nextProgress: number, label?: string) {
+      if (cancelled || done) return;
+      progress = Math.max(0, Math.min(100, nextProgress));
+      if (label !== undefined) {
+        progressLabel = label;
+      }
+      notifyProgress();
     },
     getSteeringLineage() {
       return options.liveDelivery.steeringDecision.lineage;
@@ -494,7 +508,6 @@ export function startLiveGeneratedFrameCanary(
   const handler: AgentToolHandler = (request) => {
     if (disposed) {
       return {
-        family: 'generation/session',
         ...createSession(request),
         diagnostics: [
           report(

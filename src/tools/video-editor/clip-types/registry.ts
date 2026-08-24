@@ -148,13 +148,16 @@ export const TRUSTED_CLIP_TYPES = TRUSTED_CLIP_TYPE_REGISTRATIONS.map(
 export const isTrustedClipType = (
   value: unknown,
 ): value is TrustedSequenceClipType => {
-  return typeof value === 'string' && TRUSTED_CLIP_TYPE_REGISTRATION_MAP.has(value);
+  return typeof value === 'string'
+    && (TRUSTED_CLIP_TYPES as readonly string[]).includes(value);
 };
 
 export const getTrustedClipTypeRegistration = (
   clipType: string,
 ): TrustedClipTypeRegistration | undefined => {
-  return TRUSTED_CLIP_TYPE_REGISTRATION_MAP.get(clipType);
+  return isTrustedClipType(clipType)
+    ? TRUSTED_CLIP_TYPE_REGISTRATION_MAP.get(clipType)
+    : undefined;
 };
 
 export const getTrustedClipTypeDescriptor = (
@@ -208,7 +211,7 @@ export const createAvailableClipTypeRegistry = (
   registry: Partial<Record<string, unknown>>,
 ): AvailableClipTypeRegistryView => {
   const registrations = filterTrustedClipTypeRegistrationsForRegistry(registry);
-  const registrationMap = new Map(
+  const registrationMap = new Map<string, AvailableClipTypeRegistration>(
     registrations.map((registration) => [registration.id, registration]),
   );
 
