@@ -9,16 +9,14 @@
  */
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { AstridLocalClient } from '@/integrations/astrid/client';
 import { BridgeRouteError } from '@/integrations/astrid/transport';
 import { getProjectSelectionFallbackId } from '@/shared/contexts/projectSelectionStore';
 import { bridgeMediaUrl } from '@/shared/lib/media/bridgeMediaUrl';
-import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
+import { bridgeCapabilityUnavailable } from '@/integrations/astrid/capability';
 import { useAuthSafe } from '@/shared/contexts/AuthContext';
-import { coerceVariantType, VARIANT_TYPE, type VariantType } from '@/shared/constants/variantTypes';
-import { enqueueVariantInvalidation } from '@/shared/hooks/invalidation/useGenerationInvalidation';
-import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
+import { coerceVariantType, type VariantType } from '@/shared/constants/variantTypes';
 import { generationQueryKeys } from '@/shared/lib/queryKeys/generations';
 import { useAppEventListener } from '@/shared/lib/typedEvents';
 
@@ -63,7 +61,6 @@ export const useVariants = ({
   generationId,
   enabled = true,
 }: UseVariantsProps): UseVariantsReturn => {
-  const queryClient = useQueryClient();
   const { isAuthenticated } = useAuthSafe();
   const [activeVariantId, setActiveVariantIdInternal] = useState<string | null>(null);
   
@@ -154,160 +151,26 @@ export const useVariants = ({
     }
   }, [primaryVariant, variants, activeVariantId]);
 
-  // Mutation to set a variant as primary
-  const setPrimaryMutation = useMutation({
-    mutationFn: async (variantId: string) => {
-
-      // Update the variant to be primary
-      // The database trigger will handle unsetting the old primary
-      const { error } = await supabase().from('generation_variants')
-        .update({ is_primary: true })
-        .eq('id', variantId);
-
-      if (error) {
-        console.error('[useVariants] Error setting primary variant:', error);
-        throw error;
-      }
-
-      return variantId;
-    },
-    onSuccess: async (variantId) => {
-
-      // Invalidate caches using centralized function
-      if (generationId) {
-        await enqueueVariantInvalidation(queryClient, {
-          generationId,
-          reason: 'set-primary-variant',
-        });
-      }
-
-      // SINGLE-SEGMENT PROPAGATION: If this is a child of a single-segment parent,
-      // also create a variant on the parent so the main generation updates
-      try {
-        // Get the promoted variant's location and thumbnail
-        const { data: promotedVariant } = await supabase().from('generation_variants')
-          .select('location, thumbnail_url, params')
-          .eq('id', variantId)
-          .single();
-
-        if (!promotedVariant || !generationId) return;
-
-        // Check if this generation is a child with a parent
-        const { data: generation } = await supabase().from('generations')
-          .select('is_child, parent_generation_id')
-          .eq('id', generationId)
-          .single();
-
-        if (!generation?.is_child || !generation?.parent_generation_id) return;
-
-        // Count how many children the parent has
-        const { count: childCount } = await supabase().from('generations')
-          .select('id', { count: 'exact', head: true })
-          .eq('parent_generation_id', generation.parent_generation_id)
-          .eq('is_child', true);
-
-        // Only propagate for single-segment parents
-        if (childCount !== 1) {
-          return;
-        }
-
-        // Create a new variant on the parent with the promoted video
-        // Exclude task-specific fields that shouldn't propagate to parent
-        const {
-          source_task_id: _sourceTaskId,
-          child_generation_id: _childGenId,
-          ...paramsToPropagate
-        } = (promotedVariant.params || {}) as Record<string, unknown>;
-
-        const { error: insertError } = await supabase().from('generation_variants')
-          .insert({
-            generation_id: generation.parent_generation_id,
-            location: promotedVariant.location,
-            thumbnail_url: promotedVariant.thumbnail_url,
-            is_primary: true, // DB trigger will unset old primary
-            variant_type: VARIANT_TYPE.TRAVEL_SEGMENT,
-            params: {
-              ...paramsToPropagate,
-              propagated_from_child: generationId,
-              propagated_from_variant: variantId,
-            },
-          });
-
-        if (insertError) {
-          normalizeAndPresentError(insertError, { context: 'useVariants', showToast: false });
-        } else {
-          // Invalidate parent's variant cache
-          await enqueueVariantInvalidation(queryClient, {
-            generationId: generation.parent_generation_id,
-            reason: 'single-segment-propagation',
-          });
-        }
-      } catch (err) {
-        console.error('[useVariants] Error in single-segment propagation:', err);
-        // Don't throw - this is a nice-to-have, not critical
-      }
-    },
-    onError: (error) => {
-      normalizeAndPresentError(error, { context: 'useVariants.setPrimaryVariant', toastTitle: 'Failed to set primary variant' });
-    },
-  });
-
   const setPrimaryVariant = useCallback(
     async (variantId: string) => {
-      await setPrimaryMutation.mutateAsync(variantId);
+      void variantId;
+      throw bridgeCapabilityUnavailable(
+        'set primary generation variant',
+        'Use an Astrid pack command after variant mutation routes are installed.',
+      );
     },
-    [setPrimaryMutation]
+    []
   );
-
-  // Mutation to delete a variant
-  const deleteVariantMutation = useMutation({
-    mutationFn: async (variantId: string) => {
-
-      // Check if variant is primary or original - don't allow deleting either
-      const variant = variants.find(v => v.id === variantId);
-      if (variant?.is_primary) {
-        throw new Error('Cannot delete the primary variant');
-      }
-      if (variant?.variant_type === 'original') {
-        throw new Error('Cannot delete the original variant');
-      }
-
-      const { error } = await supabase().from('generation_variants')
-        .delete()
-        .eq('id', variantId);
-
-      if (error) {
-        console.error('[useVariants] Error deleting variant:', error);
-        throw error;
-      }
-
-      return variantId;
-    },
-    onSuccess: async (variantId) => {
-
-      // If deleted variant was active, switch to primary
-      if (activeVariantId === variantId) {
-        setActiveVariantId(primaryVariant?.id || null);
-      }
-
-      // Invalidate caches
-      if (generationId) {
-        await enqueueVariantInvalidation(queryClient, {
-          generationId,
-          reason: 'delete-variant',
-        });
-      }
-    },
-    onError: (error) => {
-      normalizeAndPresentError(error, { context: 'useVariants.deleteVariant', toastTitle: 'Failed to delete variant' });
-    },
-  });
 
   const deleteVariant = useCallback(
     async (variantId: string) => {
-      await deleteVariantMutation.mutateAsync(variantId);
+      void variantId;
+      throw bridgeCapabilityUnavailable(
+        'delete generation variant',
+        'Use an Astrid pack command after variant mutation routes are installed.',
+      );
     },
-    [deleteVariantMutation]
+    []
   );
 
   return {

@@ -1,11 +1,3 @@
-interface VariantRow {
-  id: string;
-  generation_id: string;
-  location: string;
-  thumbnail_url: string | null;
-  is_primary: boolean;
-}
-
 type GenerationRecord = Record<string, unknown> & {
   id: string;
   thumbnail_url?: string | null;
@@ -17,53 +9,35 @@ interface VariantGenerationLookupResult {
   variantIsPrimary: boolean;
 }
 
-interface SupabaseLike {
-  from: (table: string) => unknown;
-}
-
 export async function findGenerationByVariantLocation(
   outputLocation: string,
-  supabaseClient: SupabaseLike,
+  projectSlug: string,
 ): Promise<VariantGenerationLookupResult | null> {
-  const { data: variantByLocation, error: variantError } = await (supabaseClient.from('generation_variants') as {
-    select: (columns: string) => {
-      eq: (column: string, value: string) => {
-        limit: (count: number) => Promise<{ data: VariantRow[] | null; error: unknown }>;
+  const client = new AstridLocalClient({ projectSlug });
+  let cursor: string | undefined;
+  do {
+    const page = await client.gallery.list({ limit: 200, cursor });
+    for (const summary of page.generations) {
+      const detail = await client.gallery.get(summary.generation_id);
+      const variant = detail.variants.find(
+        (candidate) => bridgeMediaUrl(projectSlug, candidate.media_id) === outputLocation,
+      );
+      if (!variant) continue;
+      const generation = bridgeDetailToGenerationRecord(detail, projectSlug) as GenerationRecord;
+      return {
+        generation: {
+          ...generation,
+          location: outputLocation,
+          thumbnail_url: outputLocation,
+        },
+        variantId: variant.id,
+        variantIsPrimary: variant.is_primary,
       };
-    };
-  })
-    .select('id, generation_id, location, thumbnail_url, is_primary')
-    .eq('location', outputLocation)
-    .limit(1);
-
-  if (variantError || !variantByLocation || variantByLocation.length === 0) {
-    return null;
-  }
-
-  const variant = variantByLocation[0];
-  const { data: parentGen, error: parentError } = await (supabaseClient.from('generations') as {
-    select: (columns: string) => {
-      eq: (column: string, value: string) => {
-        single: () => Promise<{ data: GenerationRecord | null; error: unknown }>;
-      };
-    };
-  })
-    .select('*')
-    .eq('id', variant.generation_id)
-    .single();
-
-  if (parentError || !parentGen) {
-    return null;
-  }
-
-  const generation = parentGen;
-  return {
-    generation: {
-      ...generation,
-      location: variant.location,
-      thumbnail_url: variant.thumbnail_url || generation.thumbnail_url,
-    },
-    variantId: variant.id,
-    variantIsPrimary: variant.is_primary,
-  };
+    }
+    cursor = page.next_cursor ?? undefined;
+  } while (cursor);
+  return null;
 }
+import { AstridLocalClient } from '@/integrations/astrid/client';
+import { bridgeMediaUrl } from '@/shared/lib/media/bridgeMediaUrl';
+import { bridgeDetailToGenerationRecord } from '@/integrations/supabase/repositories/generationRepository';

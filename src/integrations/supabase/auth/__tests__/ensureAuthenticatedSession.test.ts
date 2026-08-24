@@ -1,21 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { Session, SupabaseClient } from '@supabase/supabase-js';
-
-import type { Database } from '@/integrations/supabase/databasePublicTypes';
+import type { DeferredSession, DeferredSupabaseClient } from '@/integrations/supabase/deferredRuntime';
 import {
   requireSession,
   requireUserFromSession,
 } from '../ensureAuthenticatedSession';
 
 function createClient(sessionResult: {
-  data: { session: Session | null };
+  data: { session: DeferredSession | null };
   error: { message: string } | null;
-}): SupabaseClient<Database> {
+}): DeferredSupabaseClient {
   return {
     auth: {
       getSession: vi.fn().mockResolvedValue(sessionResult),
     },
-  } as unknown as SupabaseClient<Database>;
+  } as unknown as DeferredSupabaseClient;
 }
 
 describe('ensureAuthenticatedSession', () => {
@@ -26,7 +24,7 @@ describe('ensureAuthenticatedSession', () => {
       expires_in: 3600,
       refresh_token: 'refresh-token',
       user: { id: 'user-1' },
-    } as unknown as Session;
+    } as unknown as DeferredSession;
     const client = createClient({ data: { session }, error: null });
 
     await expect(requireSession(client, 'test-auth')).resolves.toBe(session);
@@ -50,7 +48,7 @@ describe('ensureAuthenticatedSession', () => {
       expires_in: 3600,
       refresh_token: 'refresh-token',
       user: null,
-    } as unknown as Session;
+    } as unknown as DeferredSession;
     const client = createClient({ data: { session: sessionWithoutUser }, error: null });
 
     await expect(requireUserFromSession(client, 'test-auth')).rejects.toThrow(

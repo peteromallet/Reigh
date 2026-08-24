@@ -34,6 +34,13 @@ describe('AstridLocalClient', () => {
     return { family: 'image_generation', input: { prompt: 'a lighthouse' } };
   }
 
+  it('discovers projects through the one shared transport', async () => {
+    const client = makeClient();
+    await expect(client.projects.list()).resolves.toEqual([
+      expect.objectContaining({ slug: 'demo-project' }),
+    ]);
+  });
+
   // -- Admission ------------------------------------------------------------
 
   it('admits a task with the required Idempotency-Key header', async () => {

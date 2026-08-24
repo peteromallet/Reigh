@@ -1,15 +1,11 @@
 import { useState, useCallback } from 'react';
-import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
+import { AstridLocalClient } from '@/integrations/astrid/client';
+import { bridgeCapabilityUnavailable } from '@/integrations/astrid/capability';
 import { toast } from '@/shared/components/ui/runtime/sonner';
 import { Project } from '@/types/project';
 import { UserPreferences } from '@/shared/settings/userPreferences';
 import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
-import { fetchInheritableProjectSettings, buildShotSettingsForNewProject } from '@/shared/lib/projectSettingsInheritance';
-import { toJsonObject } from '@/shared/lib/json/toJsonObject';
-import {
-  createDefaultShotWithRollback,
-  ensureUserRecordExists,
-} from '@/features/projects/services/projectSetupService';
+import { ensureUserRecordExists } from '@/features/projects/services/projectSetupService';
 
 // Type for updating projects
 interface ProjectUpdate {
@@ -25,15 +21,6 @@ const mapDbProjectToProject = (row: Record<string, unknown>): Project => ({
   aspectRatio: (row.aspect_ratio as string) ?? undefined,
   createdAt: (row.created_at as string) ?? undefined,
 });
-
-// Helper to sort projects by creation date (newest first)
-const sortProjectsByCreatedAt = (projects: Project[]): Project[] => {
-  return [...projects].sort((a, b) => {
-    if (!a.createdAt) return 1;
-    if (!b.createdAt) return -1;
-    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-  });
-};
 
 export const determineProjectIdToSelect = (
   projects: Project[],
@@ -70,9 +57,9 @@ export function useProjectCRUD({
   userId,
   selectedProjectId,
   onProjectsLoaded,
-  onProjectCreated,
-  onProjectDeleted,
-  updateUserSettings,
+  onProjectCreated: _onProjectCreated,
+  onProjectDeleted: _onProjectDeleted,
+  updateUserSettings: _updateUserSettings,
 }: UseProjectCRUDOptions) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
@@ -87,34 +74,14 @@ export function useProjectCRUD({
 
       await ensureUserRecordExists(user.id);
 
-      const { data: projectsData, error } = await supabase().from('projects')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-
-      if (!projectsData || projectsData.length === 0) {
-        const { data: newProject, error: createError } = await supabase().from('projects')
-          .insert({
-            name: 'Sample Project',
-            user_id: user.id,
-            aspect_ratio: '16:9',
-          })
-          .select()
-          .single();
-
-        if (createError) throw createError;
-        await createDefaultShotWithRollback(newProject.id, user.id, { isFirstProject: true });
-
-        const mappedProject = mapDbProjectToProject(newProject);
-        setProjects([mappedProject]);
-        onProjectsLoaded([mappedProject], true);
-      } else {
-        const mappedProjects = projectsData.map(mapDbProjectToProject);
-        setProjects(mappedProjects);
-        onProjectsLoaded(mappedProjects, false);
-      }
+      const projectsData = await new AstridLocalClient({ projectSlug: '__discovery__' }).projects.list();
+      const mappedProjects = projectsData.map((project) => mapDbProjectToProject({
+        id: project.slug,
+        name: project.name,
+        user_id: user.id,
+      }));
+      setProjects(mappedProjects);
+      onProjectsLoaded(mappedProjects, false);
     } catch (error: unknown) {
       normalizeAndPresentError(error, { context: 'ProjectContext', toastTitle: 'Failed to load projects' });
       setProjects([]);
@@ -135,48 +102,18 @@ export function useProjectCRUD({
     setIsCreatingProject(true);
     try {
       if (!userId) throw new Error('Not authenticated');
-      const user = { id: userId };
-
-      await ensureUserRecordExists(user.id);
-
-      const settingsToInherit = selectedProjectId
-        ? toJsonObject(await fetchInheritableProjectSettings(selectedProjectId))
-        : {};
-
-      const { data: newProject, error } = await supabase().from('projects')
-        .insert({
-          name: projectData.name,
-          user_id: user.id,
-          aspect_ratio: projectData.aspectRatio,
-          settings: settingsToInherit,
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      const shotSettingsToInherit = selectedProjectId
-        ? toJsonObject(await buildShotSettingsForNewProject(selectedProjectId, settingsToInherit))
-        : {};
-
-      await createDefaultShotWithRollback(newProject.id, user.id, {
-        initialSettings: shotSettingsToInherit,
-      });
-
-      const mappedProject = mapDbProjectToProject(newProject);
-      setProjects(prevProjects => sortProjectsByCreatedAt([...prevProjects, mappedProject]));
-      onProjectCreated(mappedProject);
-
-      updateUserSettings('user', { lastOpenedProjectId: mappedProject.id });
-
-      return mappedProject;
+      void selectedProjectId;
+      throw bridgeCapabilityUnavailable(
+        'create project',
+        'Create the project with the Astrid CLI, then refresh this page.',
+      );
     } catch (err: unknown) {
       normalizeAndPresentError(err, { context: 'ProjectContext', toastTitle: 'Failed to create project' });
       return null;
     } finally {
       setIsCreatingProject(false);
     }
-  }, [userId, selectedProjectId, onProjectCreated, updateUserSettings]);
+  }, [userId, selectedProjectId]);
 
   const updateProject = useCallback(async (projectId: string, updates: ProjectUpdate): Promise<boolean> => {
     if (!updates.name?.trim() && !updates.aspectRatio) {
@@ -186,29 +123,12 @@ export function useProjectCRUD({
     setIsUpdatingProject(true);
     try {
       if (!userId) throw new Error('Not authenticated');
-      const user = { id: userId };
-
-      const dbUpdates: Record<string, string | undefined> = {};
-      if (updates.name !== undefined) dbUpdates.name = updates.name;
-      if (updates.aspectRatio !== undefined) dbUpdates.aspect_ratio = updates.aspectRatio;
-
-      const { data: updatedProject, error } = await supabase().from('projects')
-        .update(dbUpdates)
-        .eq('id', projectId)
-        .eq('user_id', user.id)
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      const mappedProject = mapDbProjectToProject(updatedProject);
-
-      setProjects(prevProjects =>
-        sortProjectsByCreatedAt(
-          prevProjects.map(p => p.id === projectId ? mappedProject : p)
-        )
+      void projectId;
+      void updates;
+      throw bridgeCapabilityUnavailable(
+        'update project',
+        'Update the project with the Astrid CLI, then refresh this page.',
       );
-      return true;
     } catch (err: unknown) {
       normalizeAndPresentError(err, { context: 'ProjectContext', toastTitle: 'Failed to update project' });
       return false;
@@ -217,32 +137,22 @@ export function useProjectCRUD({
     }
   }, [userId]);
 
-  const deleteProject = useCallback(async (projectId: string): Promise<boolean> => {
+  const deleteProject = useCallback(async (_projectId: string): Promise<boolean> => {
     setIsDeletingProject(true);
     try {
       if (!userId) throw new Error('Not authenticated');
 
-      const { data, error } = await supabase().functions.invoke('delete-project', {
-        body: { projectId },
-      });
-
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-
-      // Filter outside updater so we can call the side-effect callback separately
-      // (React state updaters must be pure — no side effects)
-      const updated = projects.filter(p => p.id !== projectId);
-      setProjects(updated);
-      onProjectDeleted(updated);
-
-      return true;
+      throw bridgeCapabilityUnavailable(
+        'delete project',
+        'Delete the project with the Astrid CLI, then refresh this page.',
+      );
     } catch (err: unknown) {
       normalizeAndPresentError(err, { context: 'ProjectContext', toastTitle: 'Failed to delete project' });
       return false;
     } finally {
       setIsDeletingProject(false);
     }
-  }, [onProjectDeleted, projects, userId]);
+  }, [userId]);
 
   return {
     projects,

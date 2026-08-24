@@ -1,9 +1,8 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Database } from '@/integrations/supabase/databasePublicTypes';
+import type { DeferredSupabaseClient } from '@/integrations/supabase/deferredRuntime';
 import { createSupabaseClient } from '@/integrations/supabase/bootstrap/createSupabaseClient';
 import { initializeSupabaseRuntime } from '@/integrations/supabase/bootstrap/initializeSupabaseRuntime';
 
-type SupabaseClientInstance = SupabaseClient<Database>;
+type SupabaseClientInstance = DeferredSupabaseClient;
 const SUPABASE_RUNTIME_NOT_INITIALIZED_MESSAGE =
   'Supabase runtime is not initialized. Call initializeSupabaseClientRuntime() during app bootstrap.';
 

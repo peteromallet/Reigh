@@ -1,4 +1,6 @@
-import type { Session } from '@supabase/supabase-js';
+export interface HeaderSession {
+  user: { id: string };
+}
 
 export interface GlobalHeaderProps {
   contentOffsetRight?: number;
@@ -12,7 +14,7 @@ export interface ReferralStats {
 }
 
 export interface GlobalHeaderAuthState {
-  session: Session | null;
+  session: HeaderSession | null;
   username: string | null;
   referralStats: ReferralStats | null;
 }
@@ -32,7 +34,7 @@ export const getDarkIconStyle = (color: string, darkMode: boolean) => darkMode ?
 } : undefined;
 
 /** Generate dynamic referral button text based on stats */
-export function getReferralButtonText(session: Session | null, referralStats: ReferralStats | null): string {
+export function getReferralButtonText(session: HeaderSession | null, referralStats: ReferralStats | null): string {
   if (!session || !referralStats) {
     return "You've referred 0 visitors :(";
   }

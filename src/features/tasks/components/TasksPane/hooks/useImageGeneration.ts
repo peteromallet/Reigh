@@ -1,12 +1,11 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
+import { readBridgeTaskOutputs } from '@/integrations/astrid/bridgeTaskOutputs';
 import { Task } from '@/types/tasks';
 import { GenerationRow } from '@/domains/generation/types';
 import { extractSourceGenerationId } from '../utils/task-utils';
 import { generationQueryKeys } from '@/shared/lib/queryKeys/generations';
 import { expandShotData } from '@/shared/lib/shots/shotData';
-import { findGenerationByVariantLocation } from '../utils/findGenerationByVariantLocation';
 
 interface UseImageGenerationOptions {
   task: Task;
@@ -32,41 +31,15 @@ export function useImageGeneration({
   const { data: generationResult, isLoading: isLoadingGeneration, error: generationError } = useQuery({
     queryKey: [...generationQueryKeys.forTask(task.id), task.outputLocation],
     queryFn: async () => {
-      if (!task.outputLocation) return null;
-
-      // First try: Look up by location in generations table
-      const { data: genByLocation, error: genError } = await supabase().from('generations')
-        .select('*')
-        .eq('location', task.outputLocation)
-        .eq('project_id', task.projectId)
-        .maybeSingle();
-
-      if (!genError && genByLocation) {
-        return { generation: genByLocation, variantId: null };
-      }
-
-      // Second try: Check generation_variants by location (for edit tasks that create variants)
-      const variantGeneration = await findGenerationByVariantLocation(task.outputLocation, supabase());
-      if (variantGeneration) {
-        return {
-          generation: variantGeneration.generation,
-          variantId: variantGeneration.variantId,
-          variantIsPrimary: variantGeneration.variantIsPrimary,
-        };
-      }
-
-      // Fallback: Search by task ID in the tasks JSONB array
-      const { data: byTaskId, error: taskIdError } = await supabase().from('generations')
-        .select('*')
-        .filter('tasks', 'cs', JSON.stringify([task.id]))
-        .eq('project_id', task.projectId)
-        .maybeSingle();
-
-      if (!taskIdError && byTaskId) {
-        return { generation: byTaskId, variantId: null };
-      }
-
-      return null;
+      const outputs = await readBridgeTaskOutputs(task);
+      const generation = outputs.find((output) => output.type.includes('image')) ?? outputs[0] ?? null;
+      return generation
+        ? {
+            generation,
+            variantId: generation._variant_id,
+            variantIsPrimary: generation._variant_is_primary,
+          }
+        : null;
     },
     enabled: hasGeneratedImage && !!task.outputLocation,
     staleTime: 10 * 60 * 1000, // 10 minutes

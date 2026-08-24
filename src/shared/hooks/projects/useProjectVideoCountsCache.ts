@@ -1,10 +1,9 @@
 import React, { useCallback, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
+import { bridgeCapabilityUnavailable } from '@/integrations/astrid/capability';
 import { useSmartPollingConfig } from '@/shared/hooks/useSmartPolling';
 import { projectStatsQueryKeys } from '@/shared/lib/queryKeys/projectStats';
 import { ProjectScopedCache } from '@/shared/lib/cache/ProjectScopedCache';
-import { SETTINGS_IDS } from '@/shared/lib/settingsIds';
 
 /** Counts stored per shot */
 interface ShotCounts {
@@ -20,80 +19,15 @@ const globalProjectVideoCountsCache = new ProjectScopedCache<ShotCounts>();
  * Check if a shot's settings contain structure video configuration.
  * Handles both new array format and legacy single-video format.
  */
-function shotSettingsHaveStructureVideo(settings: Record<string, unknown> | null): boolean {
-  if (!settings) return false;
-  const svSettings = settings[SETTINGS_IDS.TRAVEL_STRUCTURE_VIDEO] as Record<string, unknown> | undefined;
-  if (!svSettings) return false;
-
-  // New array format
-  const videos = svSettings.structure_videos as unknown[] | undefined;
-  if (Array.isArray(videos)) return videos.length > 0;
-
-  const travelGuidance = svSettings.travel_guidance as Record<string, unknown> | undefined;
-  if (travelGuidance && Array.isArray(travelGuidance.videos)) {
-    return travelGuidance.videos.length > 0;
-  }
-
-  // Legacy single-video format
-  const path = svSettings.structure_video_path;
-  if (path && path !== null) return true;
-
-  return false;
-}
-
 /**
  * Fetch all shot video counts + structure video presence for a project
  */
 async function fetchProjectShotDataFromDB(projectId: string): Promise<Map<string, ShotCounts>> {
-  // Parallel fetch: shot statistics (from view) + structure video presence (from shots table)
-  const [statsResult, shotsResult] = await Promise.all([
-    supabase().from('shot_statistics')
-      .select('shot_id, video_count, final_video_count')
-      .eq('project_id', projectId),
-    supabase().from('shots')
-      .select('id, settings')
-      .eq('project_id', projectId),
-  ]);
-
-  if (statsResult.error) {
-    console.error('[ProjectVideoCountsCache] Error fetching shot statistics:', statsResult.error);
-    throw statsResult.error;
-  }
-
-  // Build structure video presence set
-  const structureVideoShots = new Set<string>();
-  if (!shotsResult.error && shotsResult.data) {
-    for (const shot of shotsResult.data) {
-      if (shotSettingsHaveStructureVideo(shot.settings as Record<string, unknown> | null)) {
-        structureVideoShots.add(shot.id);
-      }
-    }
-  }
-
-  const counts = new Map<string, ShotCounts>();
-  statsResult.data?.forEach(row => {
-    if (!row.shot_id) {
-      return;
-    }
-    counts.set(row.shot_id, {
-      videoCount: row.video_count || 0,
-      finalVideoCount: row.final_video_count || 0,
-      hasStructureVideo: structureVideoShots.has(row.shot_id),
-    });
-  });
-
-  // Include shots that have structure videos but no statistics entry
-  for (const shotId of structureVideoShots) {
-    if (!counts.has(shotId)) {
-      counts.set(shotId, {
-        videoCount: 0,
-        finalVideoCount: 0,
-        hasStructureVideo: true,
-      });
-    }
-  }
-
-  return counts;
+  void projectId;
+  throw bridgeCapabilityUnavailable(
+    'read per-shot video counts',
+    'Open the project timeline; shot statistics require the dormant Astrid shots pack.',
+  );
 }
 
 /**

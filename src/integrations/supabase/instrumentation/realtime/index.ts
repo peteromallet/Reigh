@@ -4,7 +4,7 @@ import {
 } from '@/integrations/supabase/config/env';
 import { captureRealtimeSnapshot } from '@/integrations/supabase/utils/snapshot';
 import { normalizeAndLogError } from '@/shared/lib/errorHandling/runtimeErrorReporting';
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { DeferredSupabaseClient } from '@/integrations/supabase/deferredRuntime';
 import {
   getCorruptionTimelineSnapshot,
   recordRealtimeCorruptionEvent,
@@ -18,7 +18,7 @@ interface RealtimeClientWithInstrumentation {
   __REFERENCE_TRACKING_INSTALLED__?: boolean;
 }
 
-export function installRealtimeInstrumentation(supabase: SupabaseClient) {
+export function installRealtimeInstrumentation(supabase: DeferredSupabaseClient) {
   if (!isCorruptionTraceEnabled() && !isRealtimeDownFixEnabled()) {
     return;
   }

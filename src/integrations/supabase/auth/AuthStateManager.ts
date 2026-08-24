@@ -1,8 +1,8 @@
 import { normalizeAndLogError } from '@/shared/lib/errorHandling/runtimeErrorReporting';
 import { initializeReconnectScheduler } from '@/integrations/supabase/support/reconnect/ReconnectScheduler';
-import type { SupabaseClient, Session } from '@supabase/supabase-js';
+import type { DeferredSession, DeferredSupabaseClient } from '@/integrations/supabase/deferredRuntime';
 
-type AuthCallback = (event: string, session: Session | null) => void;
+type AuthCallback = (event: string, session: DeferredSession | null) => void;
 type ReconnectRequester = {
   requestReconnect: (intent: {
     source: string;
@@ -19,7 +19,7 @@ export class AuthStateManager {
   private __LAST_AUTH_HEAL_AT__ = 0;
 
   constructor(
-    private supabase: SupabaseClient,
+    private supabase: DeferredSupabaseClient,
     private reconnectScheduler: ReconnectRequester,
   ) {}
 
@@ -30,7 +30,7 @@ export class AuthStateManager {
     };
   }
 
-  private notifyListeners(event: string, session: Session | null) {
+  private notifyListeners(event: string, session: DeferredSession | null) {
     this.listeners.forEach(({ callback }) => {
       try {
         callback(event, session);
@@ -40,7 +40,7 @@ export class AuthStateManager {
     });
   }
 
-  private handleCoreAuth(event: string, session: Session | null) {
+  private handleCoreAuth(event: string, session: DeferredSession | null) {
     try {
       this.supabase?.realtime?.setAuth?.(session?.access_token ?? null);
 
@@ -88,11 +88,11 @@ export class AuthStateManager {
 }
 
 let authStateManager: AuthStateManager | null = null;
-let authStateManagerClient: SupabaseClient | null = null;
+let authStateManagerClient: DeferredSupabaseClient | null = null;
 let authStateManagerReconnectScheduler: ReconnectRequester | null = null;
 
 export function initAuthStateManager(
-  supabase: SupabaseClient,
+  supabase: DeferredSupabaseClient,
   reconnectScheduler: ReconnectRequester = initializeReconnectScheduler(),
 ): AuthStateManager {
   if (authStateManager) {

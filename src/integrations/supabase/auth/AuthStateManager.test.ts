@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Session } from '@supabase/supabase-js';
+import type { DeferredSession } from '@/integrations/supabase/deferredRuntime';
 import {
   AuthStateManager,
   getAuthStateManager,
@@ -36,10 +36,10 @@ describe('AuthStateManager', () => {
 
   it('subscribes and notifies listeners from auth state callbacks', () => {
     const setAuthMock = vi.fn();
-    let authCallback: ((event: string, session: Session | null) => void) | undefined;
+    let authCallback: ((event: string, session: DeferredSession | null) => void) | undefined;
     const supabase = {
       auth: {
-        onAuthStateChange: (callback: (event: string, session: Session | null) => void) => {
+        onAuthStateChange: (callback: (event: string, session: DeferredSession | null) => void) => {
           authCallback = callback;
           return { data: { subscription: { unsubscribe: vi.fn() } } };
         },
@@ -61,17 +61,17 @@ describe('AuthStateManager', () => {
     expect(setAuthMock).toHaveBeenCalledWith(null);
 
     unsubscribe();
-    authCallback?.('SIGNED_IN', { access_token: 'token' } as Session);
+    authCallback?.('SIGNED_IN', { access_token: 'token' } as DeferredSession);
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
   it('schedules reconnect healing on SIGNED_IN with debounce', async () => {
     vi.useFakeTimers();
     const setAuthMock = vi.fn();
-    let authCallback: ((event: string, session: Session | null) => void) | undefined;
+    let authCallback: ((event: string, session: DeferredSession | null) => void) | undefined;
     const supabase = {
       auth: {
-        onAuthStateChange: (callback: (event: string, session: Session | null) => void) => {
+        onAuthStateChange: (callback: (event: string, session: DeferredSession | null) => void) => {
           authCallback = callback;
           return { data: { subscription: { unsubscribe: vi.fn() } } };
         },
@@ -86,12 +86,12 @@ describe('AuthStateManager', () => {
     });
     manager.init();
 
-    authCallback?.('SIGNED_IN', { access_token: 'token-1' } as Session);
+    authCallback?.('SIGNED_IN', { access_token: 'token-1' } as DeferredSession);
     await vi.advanceTimersByTimeAsync(1000);
     expect(setAuthMock).toHaveBeenCalledWith('token-1');
     expect(requestReconnectMock).toHaveBeenCalledTimes(1);
 
-    authCallback?.('SIGNED_IN', { access_token: 'token-2' } as Session);
+    authCallback?.('SIGNED_IN', { access_token: 'token-2' } as DeferredSession);
     await vi.advanceTimersByTimeAsync(1000);
     expect(requestReconnectMock).toHaveBeenCalledTimes(1);
     expect(handleErrorMock).not.toHaveBeenCalled();

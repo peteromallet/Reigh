@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
+import { getBridgeTaskClient } from '@/integrations/astrid/bridgeTaskReads';
+import { asRecord } from '@/shared/lib/typeCoercion';
 import { Task } from '@/types/tasks';
 import { taskQueryKeys } from '@/shared/lib/queryKeys/tasks';
 
@@ -34,12 +35,14 @@ export function useTaskErrorDisplay(task: Task): TaskErrorDisplay {
     queryKey: taskQueryKeys.cascadedError(cascadedTaskId!),
     queryFn: async () => {
       if (!cascadedTaskId) return null;
-      const { data, error } = await supabase().from('tasks')
-        .select('error_message, task_type')
-        .eq('id', cascadedTaskId)
-        .single();
-      if (error) return null;
-      return data as CascadedTaskInfo;
+      const detail = await getBridgeTaskClient(task.projectId).tasks.get(cascadedTaskId);
+      const spec = asRecord(detail.spec);
+      return {
+        error_message: typeof spec?.error_message === 'string' ? spec.error_message : null,
+        task_type: typeof spec?.source_task_type === 'string'
+          ? spec.source_task_type
+          : detail.capability,
+      } satisfies CascadedTaskInfo;
     },
     enabled: !!cascadedTaskId && task.status === 'Failed',
   });

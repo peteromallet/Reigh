@@ -2,13 +2,12 @@ import React from 'react';
 import { Button } from '@/shared/components/ui/button';
 import { Palette, Crown, Star, Wrench, PlusCircle, Settings } from 'lucide-react';
 import { cn } from '@/shared/components/ui/contracts/cn';
-import type { Session } from '@supabase/supabase-js';
-import { darkIconColors, getDarkIconStyle, getReferralButtonText } from './types';
+import { darkIconColors, getDarkIconStyle, getReferralButtonText, type HeaderSession } from './types';
 import type { ReferralStats } from './types';
 
 export interface GlobalHeaderSharedActionsProps {
   onOpenSettings?: () => void;
-  session: Session | null;
+  session: HeaderSession | null;
   referralStats: ReferralStats | null;
   isBrandFlash: boolean;
   triggerBrandFlash: () => void;
@@ -174,7 +173,7 @@ export const GlobalHeaderProjectButtons: React.FC<GlobalHeaderProjectButtonsProp
 
 interface GlobalHeaderReferralButtonProps {
   density: HeaderDensity;
-  session: Session | null;
+  session: HeaderSession | null;
   referralStats: ReferralStats | null;
   onOpenReferralModal: () => void;
 }

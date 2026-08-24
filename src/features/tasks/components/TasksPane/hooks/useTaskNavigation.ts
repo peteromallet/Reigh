@@ -6,7 +6,7 @@ import { usePanesStore } from '@/shared/state/panesStore';
 import { toast } from '@/shared/components/ui/runtime/sonner';
 import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
 import { parseTaskParams } from '@/shared/lib/taskTypeUtils';
-import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
+import { listBridgeTasks } from '@/integrations/astrid/bridgeTaskReads';
 import { Task } from '@/types/tasks';
 import { GenerationRow } from '@/domains/generation/types';
 import { isSegmentVideoTask, extractPairShotGenerationId, checkSegmentConnection } from '../utils/task-utils';
@@ -159,31 +159,22 @@ export function useTaskNavigation({
       (params.orchestrator_run_id as string);
 
     try {
-      // Build query filters - match the backend's findSiblingSegments logic
-      const filters: string[] = [
-        `params->>orchestrator_task_id_ref.eq.${orchestratorId}`,
-        `params->>orchestrator_task_id.eq.${orchestratorId}`,
-        `params->orchestrator_details->>orchestrator_task_id.eq.${orchestratorId}`,
-      ];
-
-      if (runId) {
-        filters.push(
-          `params->>run_id.eq.${runId}`,
-          `params->>orchestrator_run_id.eq.${runId}`,
-          `params->orchestrator_details->>run_id.eq.${runId}`,
-        );
-      }
-
-      const { data: subtasks, error } = await supabase().from('tasks')
-        .select('id, status')
-        .eq('project_id', taskProjectId)
-        .neq('id', task.id)
-        .or(filters.join(','));
-
-      if (error) throw error;
+      const subtasks = (await listBridgeTasks(taskProjectId)).filter((candidate) => {
+        if (candidate.id === task.id) return false;
+        const candidateParams = parseTaskParams(candidate.params);
+        const details = (candidateParams.orchestrator_details ?? {}) as Record<string, unknown>;
+        const sameOrchestrator = candidateParams.orchestrator_task_id_ref === orchestratorId
+          || candidateParams.orchestrator_task_id === orchestratorId
+          || details.orchestrator_task_id === orchestratorId;
+        if (!sameOrchestrator) return false;
+        if (!runId) return true;
+        return candidateParams.run_id === runId
+          || candidateParams.orchestrator_run_id === runId
+          || details.run_id === runId;
+      });
 
       const total = subtasks?.length || 0;
-      const completed = subtasks?.filter((t) => t.status === 'Complete').length || 0;
+      const completed = subtasks.filter((t) => t.status === 'Complete').length;
       const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
 
       setProgressPercent(percent);

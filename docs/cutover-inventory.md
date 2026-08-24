@@ -31,8 +31,8 @@ Bridge rows carry a **J** column tagging which step(s) they serve. `—` on a br
 |---|---|---|
 | bridge-client | 159 | 309 |
 | cut | 96 | 189 |
-| defer | 120 | 237 |
-| **Total** | **488** (375 supabase-coupled + 113 raw-grep FP) | **848** |
+| defer | 121 | 238 |
+| **Total** | **489** (376 supabase-coupled + 113 raw-grep FP) | **849** |
 
 Covered-journey-marked rows: 148. Census method: imports of `@/integrations/supabase*` / `@supabase/supabase-js` / `SupabaseDataProvider`, `vi.mock('@/integrations/supabase/client')` test doubles, call patterns `.from('…')`, `.rpc(`, `functions.invoke`/`invokeSupabaseEdgeFunction`, storage URL minting (`.storage.from/getPublicUrl/createSignedUrl/.upload(`), `.channel(`, `.auth.*()`, generated-type refs, hardcoded `supabase.co` URLs — plus a full file sweep of `src/integrations/supabase/**`. Raw-pattern false positives (`Array.from(`, non-supabase `.channel(`/`.storage.`) excluded by inspection.
 
@@ -152,6 +152,7 @@ Legend: **Line** = source line (`-` = module-level types/import or test-double r
 
 | File | Line | Kind | Surface | Disp | J | Bridge target / reason |
 |---|---|---|---|---|---|---|
+| `integrations/supabase/deferredRuntime.ts` | - | types/import | explicit Supabase SDK boundary | defer | — | Cloud-only surfaces retained by this phase's stated defer policy; never imported by a covered-journey module |
 | `integrations/supabase/__tests__/clientContracts.test.ts` | - | test-double | internal helper/test of the supabase layer being replaced | bridge-client | — | — |
 | `integrations/supabase/__tests__/clientFacadeBehavior.test.ts` | - | test-double | internal helper/test of the supabase layer being replaced | bridge-client | — | — |
 | `integrations/supabase/__tests__/legacySupabaseFacade.contract.test.ts` | - | test-double | internal helper/test of the supabase layer being replaced | bridge-client | — | — |

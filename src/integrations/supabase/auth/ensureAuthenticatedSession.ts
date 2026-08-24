@@ -1,14 +1,17 @@
-import type { Session, SupabaseClient, User } from '@supabase/supabase-js';
-import type { Database } from '@/integrations/supabase/databasePublicTypes';
+import type {
+  DeferredSession,
+  DeferredSupabaseClient,
+  DeferredUser,
+} from '@/integrations/supabase/deferredRuntime';
 
 function buildAuthError(message: string, context: string, cause?: unknown): Error {
   return new Error(`${context}: ${message}`, cause ? { cause } : undefined);
 }
 
 export async function requireSession(
-  client: SupabaseClient<Database>,
+  client: DeferredSupabaseClient,
   context = 'auth',
-): Promise<Session> {
+): Promise<DeferredSession> {
   const { data, error } = await client.auth.getSession();
   if (error) {
     throw buildAuthError('Failed to get session', context, error);
@@ -20,9 +23,9 @@ export async function requireSession(
 }
 
 export async function requireUserFromSession(
-  client: SupabaseClient<Database>,
+  client: DeferredSupabaseClient,
   context = 'auth',
-): Promise<User> {
+): Promise<DeferredUser> {
   const session = await requireSession(client, context);
   if (!session.user) {
     throw buildAuthError('Authenticated session has no user', context);

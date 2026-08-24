@@ -1,7 +1,6 @@
-import { getSupabaseClient } from '@/integrations/supabase/client';
+import { bridgeCapabilityUnavailable } from '@/integrations/astrid/capability';
 import { fetchGenerationRecordById } from '@/integrations/supabase/repositories/generationRepository';
 import { toast } from '@/shared/components/ui/runtime/sonner';
-import { VARIANT_TYPE } from '@/shared/constants/variantTypes';
 import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
 import {
   ensurePermission,
@@ -15,7 +14,8 @@ export type MaterializeLocalGenerationErrorCode =
   | 'permission-denied'
   | 'handle-missing'
   | 'network-failure'
-  | 'generation-not-found';
+  | 'generation-not-found'
+  | 'capability-unavailable';
 
 export interface MaterializeLocalGenerationOptions {
   signal?: AbortSignal;
@@ -69,60 +69,23 @@ function buildMaterializationError(
 }
 
 async function updateGeneration(generationId: string, patch: Record<string, unknown>): Promise<void> {
-  const client = getSupabaseClient() as unknown as {
-    from: (table: string) => {
-      update: (payload: Record<string, unknown>) => {
-        eq: (column: string, value: string) => {
-          select: (columns: string) => {
-            maybeSingle: () => Promise<{ data: { id: string } | null; error: unknown }>;
-          };
-        };
-      };
-    };
-  };
-
-  const { error } = await client
-    .from('generations')
-    .update(patch)
-    .eq('id', generationId)
-    .select('id')
-    .maybeSingle();
-
-  if (error) {
-    throw error instanceof Error ? error : new Error('Failed to update generation');
-  }
+  void generationId;
+  void patch;
+  const unavailable = bridgeCapabilityUnavailable(
+    'materialize browser-local media',
+    'Import the file through an Astrid task after the media-registration route is installed.',
+  );
+  throw new MaterializeLocalGenerationError('capability-unavailable', unavailable.message, unavailable);
 }
 
 async function insertPrimaryVariant(generation: RawGenerationRecord, location: string): Promise<string> {
-  const client = getSupabaseClient() as unknown as {
-    from: (table: string) => {
-      insert: (payload: Record<string, unknown>) => {
-        select: (columns: string) => {
-          single: () => Promise<{ data: { id: string } | null; error: unknown }>;
-        };
-      };
-    };
-  };
-
-  const { data, error } = await client
-    .from('generation_variants')
-    .insert({
-      generation_id: generation.id,
-      location,
-      thumbnail_url: generation.thumbnail_url ?? location,
-      is_primary: true,
-      variant_type: VARIANT_TYPE.ORIGINAL,
-      name: 'Original',
-      params: generation.params ?? null,
-    })
-    .select('id')
-    .single();
-
-  if (error || !data?.id) {
-    throw error instanceof Error ? error : new Error('Failed to create primary variant');
-  }
-
-  return data.id;
+  void generation;
+  void location;
+  const unavailable = bridgeCapabilityUnavailable(
+    'create a primary variant during local-media materialization',
+    'Import the file through an Astrid task after variant mutation routes are installed.',
+  );
+  throw new MaterializeLocalGenerationError('capability-unavailable', unavailable.message, unavailable);
 }
 
 async function revertToLocal(generation: RawGenerationRecord): Promise<void> {

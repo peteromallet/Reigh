@@ -86,6 +86,14 @@ export function isRootBridgeTask(params: Record<string, unknown>): boolean {
 /** All current tasks of a project as app `Task`s (one bounded list read). */
 export async function listBridgeTasks(projectSlug: string): Promise<Task[]> {
   const client = getBridgeTaskClient(projectSlug);
-  const page = await client.tasks.list();
-  return page.tasks.map(bridgeTaskSummaryToTask);
+  const tasks: Task[] = [];
+  let offset = 0;
+  let hasMore = true;
+  while (hasMore) {
+    const page = await client.tasks.list({ limit: 200, offset });
+    tasks.push(...page.tasks.map(bridgeTaskSummaryToTask));
+    hasMore = page.next_offset !== null;
+    if (page.next_offset !== null) offset = page.next_offset;
+  }
+  return tasks;
 }

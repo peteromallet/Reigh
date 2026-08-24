@@ -1,11 +1,10 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
+import { readBridgeTaskOutputs } from '@/integrations/astrid/bridgeTaskOutputs';
 import { Task } from '@/types/tasks';
 import { GenerationRow } from '@/domains/generation/types';
 import { extractTaskParentGenerationId } from '../utils/task-utils';
 import { generationQueryKeys } from '@/shared/lib/queryKeys/generations';
-import { findGenerationByVariantLocation } from '../utils/findGenerationByVariantLocation';
 
 interface UseVideoGenerationsOptions {
   task: Task;
@@ -48,73 +47,9 @@ export function useVideoGenerations({
         return null;
       }
 
-      // For individual_travel_segment tasks with child_generation_id, fetch that generation directly
-      const childGenerationId =
-        typeof taskParams.parsed?.child_generation_id === 'string'
-          ? taskParams.parsed.child_generation_id
-          : null;
-      if (task.taskType === 'individual_travel_segment' && childGenerationId) {
-        const { data: childGen, error: childError } = await supabase().from('generations')
-          .select('*, generation_variants(*)')
-          .eq('id', childGenerationId)
-          .single();
-
-        if (!childError && childGen) {
-          const variants = ((childGen as Record<string, unknown>).generation_variants as Array<{ id: string; location: string; thumbnail_url: string | null; is_primary: boolean; params: Record<string, unknown> | null }>) || [];
-          const taskVariant = variants.find((v) => v.params?.source_task_id === task.id);
-          const primaryVariant = variants.find((v) => v.is_primary);
-          const targetVariant = taskVariant || primaryVariant;
-
-          if (targetVariant) {
-            return [{
-              ...childGen,
-              location: targetVariant.location,
-              thumbnail_url: targetVariant.thumbnail_url || childGen.thumbnail_url,
-              _variant_id: targetVariant.id,
-              _variant_is_primary: targetVariant.is_primary,
-            }];
-          }
-          return [childGen];
-        }
-      }
-
-      // Try to find generation by output location first (most reliable)
-      if (task.outputLocation) {
-        const { data: byLocation, error: locError } = await supabase().from('generations')
-          .select('*')
-          .eq('location', task.outputLocation)
-          .eq('project_id', task.projectId);
-
-        if (!locError && byLocation && byLocation.length > 0) {
-          return byLocation;
-        }
-
-        // If not found in generations, check generation_variants by location
-        const variantGeneration = await findGenerationByVariantLocation(task.outputLocation, supabase());
-        if (variantGeneration) {
-          return [{
-            ...variantGeneration.generation,
-            _variant_id: variantGeneration.variantId,
-            _variant_is_primary: variantGeneration.variantIsPrimary,
-          }];
-        }
-      }
-
-      // Fallback: Search by task ID in the tasks JSONB array
-      const { data, error } = await supabase().from('generations')
-        .select('*')
-        .filter('tasks', 'cs', JSON.stringify([task.id]))
-        .eq('project_id', task.projectId)
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        console.error('[useVideoGenerations] Error fetching video generations:', error);
-        throw error;
-      }
-
-      if (data && data.length > 0) {
-        return data;
-      }
+      const outputs = await readBridgeTaskOutputs(task);
+      const videoOutputs = outputs.filter((output) => output.type.includes('video'));
+      if (videoOutputs.length > 0) return videoOutputs;
 
       // FINAL FALLBACK: If no generation record exists but task has outputLocation,
       // create a minimal pseudo-generation from the task data
@@ -132,7 +67,7 @@ export function useVideoGenerations({
         }];
       }
 
-      return [];
+      return outputs;
     },
     enabled: shouldFetchVideo && isVideoTask && task.status === 'Complete',
   });
