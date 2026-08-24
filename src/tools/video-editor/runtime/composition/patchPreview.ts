@@ -330,7 +330,12 @@ function applyShaderRemove(
   }
 }
 
-type MutablePreviewClip = TimelineSnapshot['clips'][number] & {
+type PreviewClipSummary = TimelineSnapshot['clips'][number];
+
+type MutablePreviewClip = Omit<
+  PreviewClipSummary,
+  'automation' | 'effects' | 'transition' | 'materialRefs'
+> & {
   automation?: MutablePreviewAutomation[];
   keyframes?: Record<string, ClipKeyframe[]>;
   effects?: MutablePreviewEffect[];
@@ -360,14 +365,20 @@ type MutablePreviewTrack = TimelineSnapshot['tracks'][number] & {
   app?: Record<string, unknown>;
 };
 
-type MutablePreviewSnapshot = TimelineSnapshot & {
+type MutablePreviewSnapshot = Omit<
+  TimelineSnapshot,
+  'clips' | 'tracks' | 'shaders' | 'materialRefs'
+> & {
   clips: MutablePreviewClip[];
   tracks: MutablePreviewTrack[];
   shaders?: TimelineShaderSummary[];
   materialRefs?: MutablePreviewMaterialRefSummary[];
 };
 
-type MutableGraphPreviewInput = CompositionGraphInput & {
+type MutableGraphPreviewInput = Omit<
+  CompositionGraphInput,
+  'snapshot' | 'materialSlotBindings' | 'mediaTrackBindings'
+> & {
   snapshot: MutablePreviewSnapshot;
   materialSlotBindings?: CompositionGraphMaterialSlotBinding[];
   mediaTrackBindings?: CompositionGraphMediaTrackBinding[];
@@ -1260,19 +1271,20 @@ function applyMediaRemove(
   }
 }
 
-function cloneInput(input: CompositionGraphInput): CompositionGraphInput {
+function cloneInput(input: CompositionGraphInput): MutableGraphPreviewInput {
   return {
     snapshot: {
       ...input.snapshot,
       clips: input.snapshot.clips.map((clip) => {
-        const clone: MutablePreviewClip = { ...clip };
-        clone.automation = cloneAutomation(clip.automation);
         const clipWithKeyframes = clip as MutablePreviewClip;
-        clone.keyframes = cloneKeyframeRecord(clipWithKeyframes.keyframes);
-        clone.effects = cloneEffects(clip.effects);
-        clone.transition = cloneTransition(clip.transition);
-        clone.materialRefs = cloneMaterialRefs(clip.materialRefs);
-        return clone;
+        return {
+          ...clip,
+          automation: cloneAutomation(clip.automation),
+          keyframes: cloneKeyframeRecord(clipWithKeyframes.keyframes),
+          effects: cloneEffects(clip.effects),
+          transition: cloneTransition(clip.transition),
+          materialRefs: cloneMaterialRefs(clip.materialRefs),
+        };
       }),
       tracks: cloneTracks(input.snapshot.tracks),
       shaders: input.snapshot.shaders ? cloneShaders(input.snapshot.shaders) : [],
@@ -1313,7 +1325,7 @@ export function applyGraphPreviewOperations(
     return undefined;
   }
 
-  const clone = cloneInput(input) as MutableGraphPreviewInput;
+  const clone = cloneInput(input);
   const operationDiagnostics: ExtensionDiagnostic[] = [];
 
   for (const op of operations) {
@@ -1340,21 +1352,21 @@ export function applyGraphPreviewOperations(
         if (op.shaderId) {
           applyShaderKeyframeAdd(clone.snapshot.shaders ?? [], op);
         } else {
-          applyKeyframeAdd(clone.snapshot.clips as MutablePreviewClip[], op);
+          applyKeyframeAdd(clone.snapshot.clips, op);
         }
         break;
       case 'keyframe.update':
         if (op.shaderId) {
           applyShaderKeyframeUpdate(clone.snapshot.shaders ?? [], op);
         } else {
-          applyKeyframeUpdate(clone.snapshot.clips as MutablePreviewClip[], op);
+          applyKeyframeUpdate(clone.snapshot.clips, op);
         }
         break;
       case 'keyframe.remove':
         if (op.shaderId) {
           applyShaderKeyframeRemove(clone.snapshot.shaders ?? [], op);
         } else {
-          applyKeyframeRemove(clone.snapshot.clips as MutablePreviewClip[], op);
+          applyKeyframeRemove(clone.snapshot.clips, op);
         }
         break;
     }

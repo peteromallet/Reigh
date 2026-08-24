@@ -248,6 +248,10 @@ export interface CompositionDiagnosticDetail {
   interpolation?: string;
   /** Material ref ID when the diagnostic relates to a material. */
   materialRefId?: string;
+  /** Final artifact ID when the diagnostic relates to a material-backed artifact. */
+  artifactId?: string;
+  /** Media kind observed at a material or artifact attachment boundary. */
+  mediaKind?: string;
   /** Render route scope when the diagnostic is route-sensitive. */
   routeScope?: string;
 

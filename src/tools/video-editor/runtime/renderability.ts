@@ -79,7 +79,7 @@ export function inferRenderArtifactManifestProfile(params: {
   if (params.route === 'preview') return 'preview';
   if (params.mediaKind === 'audio') return 'audio';
   if (params.mediaKind === 'video' && isNonEmptyString(params.outputFormatId)) return 'video';
-  if (params.route === 'sidecar-export' || (params.mediaKind !== 'audio' && params.mediaKind !== 'video')) {
+  if (params.route === 'sidecar-export' || params.mediaKind !== 'video') {
     return 'sidecar';
   }
   return null;

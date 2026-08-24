@@ -29,6 +29,7 @@ import {
   createRenderArtifactManifest,
   createRenderArtifactManifestSidecar,
   inferRequiredRenderArtifactManifestProfile,
+  inferRenderArtifactManifestProfile,
   normalizeRenderArtifactSidecars,
   resolveStrictRenderArtifactManifestProfile,
   resolveRenderArtifactManifestProfile,
@@ -260,6 +261,34 @@ describe('shared renderability contracts', () => {
 });
 
 describe('render artifact manifest helpers', () => {
+  it('infers explicit artifact profiles across preview, audio, video, and sidecar media', () => {
+    expect(inferRenderArtifactManifestProfile({
+      route: 'preview',
+      mediaKind: 'video',
+    })).toBe('preview');
+    expect(inferRenderArtifactManifestProfile({
+      route: 'worker-export',
+      mediaKind: 'audio',
+    })).toBe('audio');
+    expect(inferRenderArtifactManifestProfile({
+      route: 'browser-export',
+      mediaKind: 'video',
+      outputFormatId: 'video.mp4',
+    })).toBe('video');
+    expect(inferRenderArtifactManifestProfile({
+      route: 'sidecar-export',
+      mediaKind: 'video',
+    })).toBe('sidecar');
+    expect(inferRenderArtifactManifestProfile({
+      route: 'worker-export',
+      mediaKind: 'json',
+    })).toBe('sidecar');
+    expect(inferRenderArtifactManifestProfile({
+      route: 'worker-export',
+      mediaKind: 'video',
+    })).toBeNull();
+  });
+
   it('serializes manifests stably across object key, material, sidecar, and diagnostic order', () => {
     const sidecarA: RenderArtifactSidecarDescriptor = {
       filename: 'labels.json',

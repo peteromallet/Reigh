@@ -8,6 +8,8 @@
  * Sprint 4 keep compiling without churn.
  */
 
+/// <reference path="./workspace-aliases.d.ts" />
+
 // effects-types — type surface for EffectProps, AnimationReferenceList,
 // transition types, animation kinds, etc.
 export type {
