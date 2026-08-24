@@ -43,7 +43,7 @@ async function openEditorAt(page: import('@playwright/test').Page) {
       // storage unavailable
     }
   });
-  const editorUrl = `${BASE_URL}/tools/video-editor?localProject=demo-project&localTimeline=${await defaultTimelineId(page.request)}`;
+  const editorUrl = `${BASE_URL}/tools/video-editor?localProject=demo-project&localTimeline=${await defaultTimelineId(page.request)}&localTest=1`;
   await page.goto(editorUrl, { waitUntil: 'domcontentloaded', timeout: 45_000 });
   await page.waitForTimeout(EDITOR_SETTLE_MS);
   // The real timeline region renders clips as [data-clip-id] elements — wait
