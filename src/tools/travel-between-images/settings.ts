@@ -15,6 +15,7 @@ import {
   DEFAULT_STRUCTURE_VIDEO,
 } from '@/shared/lib/tasks/travelBetweenImages/defaults';
 import { migrateLegacyStructureVideos } from '@/shared/lib/tasks/travelBetweenImages/legacyStructureVideo';
+import { parseAuthoredVideoMetadata, type AuthoredVideoMetadata } from '@/shared/lib/media/videoMetadata';
 
 // Import for local use
 import {
@@ -108,14 +109,7 @@ export interface VideoTravelSettings {
   // Structure video settings (per-shot basis)
   structureVideo?: {
     path: string;
-    metadata: {
-      duration_seconds: number;
-      frame_rate: number;
-      total_frames: number;
-      width: number;
-      height: number;
-      file_size: number;
-    };
+    metadata: AuthoredVideoMetadata | null;
     treatment: 'adjust' | 'clip';
     motionStrength: number;
     structureType?: TravelGuidanceMode;
@@ -222,9 +216,6 @@ function cloneVideoTravelDefaults(): VideoTravelSettings {
     ...(videoTravelSettings.defaults.phaseConfig
       ? { phaseConfig: videoTravelSettings.defaults.phaseConfig }
       : {}),
-    ...(videoTravelSettings.defaults.structureVideo
-      ? { structureVideo: { ...videoTravelSettings.defaults.structureVideo } }
-      : {}),
     modelSettingsByModel: {
       'wan-2.2': {
         batchVideoFrames: MODEL_DEFAULTS['wan-2.2'].frames,
@@ -309,7 +300,7 @@ function normalizeStructureVideo(value: unknown): VideoTravelSettings['structure
     if (path) {
       return {
         path,
-        metadata: asRecord(record.metadata) as VideoTravelSettings['structureVideo']['metadata'],
+        metadata: parseAuthoredVideoMetadata(record.metadata),
         treatment: asEnum(record.treatment, ['adjust', 'clip']) ?? DEFAULT_STRUCTURE_VIDEO.treatment,
         motionStrength: asFiniteNumber(record.motionStrength) ?? DEFAULT_STRUCTURE_GUIDANCE_CONTROLS.motionStrength,
         ...(asEnum(record.structureType, structureTypeOptions)
@@ -332,7 +323,7 @@ function normalizeStructureVideo(value: unknown): VideoTravelSettings['structure
 
   return {
     path: migrated.path,
-    metadata: migrated.metadata as VideoTravelSettings['structureVideo']['metadata'],
+    metadata: migrated.metadata ?? null,
     treatment: migrated.treatment ?? DEFAULT_STRUCTURE_VIDEO.treatment,
     motionStrength: migrated.motion_strength ?? DEFAULT_STRUCTURE_GUIDANCE_CONTROLS.motionStrength,
     ...(migrated.structure_type ? { structureType: migrated.structure_type } : {}),

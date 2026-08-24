@@ -7,6 +7,7 @@ import type { LoraModel } from '@/domains/lora/types/lora';
 import type { VideoMetadata } from '@/shared/lib/media/videoUploader';
 import type { SelectedModel } from '@/tools/travel-between-images/settings';
 import type { TravelGuidanceMode } from '@/shared/lib/tasks/travelGuidance';
+import type { PresetMetadata } from '@/shared/types/presetMetadata';
 
 export interface TaskData {
   params: Record<string, unknown>;
@@ -119,7 +120,7 @@ export interface ApplyModeContext {
 
 export interface ApplyAdvancedContext {
   onPhaseConfigChange: (config: PhaseConfig) => void;
-  onPhasePresetSelect?: (presetId: string, config: PhaseConfig, presetMetadata?: unknown) => void;
+  onPhasePresetSelect?: (presetId: string, config: PhaseConfig, presetMetadata?: PresetMetadata) => void;
   onPhasePresetRemove?: () => void;
   onTurboModeChange?: (turbo: boolean) => void;
   onEnhancePromptChange?: (enhance: boolean) => void;

@@ -7,6 +7,8 @@ import { useSteerableMotionHandlers } from '../hooks/actions/useSteerableMotionH
 import type { BatchGenerationRequest, StitchAfterGenerateConfig } from '../hooks/actions/useGenerateBatch';
 import type { SelectedModel } from '@/tools/travel-between-images/settings';
 import type { TravelGuidance } from '@/shared/lib/tasks/travelBetweenImages';
+import type { useJoinSegmentsSetup } from '../hooks/actions/useJoinSegmentsSetup';
+import type { useStructureVideo } from '../hooks/video/useStructureVideo';
 
 interface GenerationControllerCore {
   projectId: string | null;
@@ -32,8 +34,8 @@ interface GenerationControllerMotionSettings {
   amountOfMotion: number;
   motionMode: 'basic' | 'advanced' | 'presets';
   advancedMode: boolean;
-  phaseConfig: ReturnType<typeof import('../hooks').useJoinSegmentsSetup>['joinPhaseConfig'];
-  selectedPhasePresetId: string | null;
+  phaseConfig: ReturnType<typeof useJoinSegmentsSetup>['joinPhaseConfig'];
+  selectedPhasePresetId: string | null | undefined;
   selectedModel: SelectedModel;
   guidanceScale?: number;
   ltxHdResolution?: boolean;
@@ -46,8 +48,8 @@ interface GenerationControllerMotionSettings {
   batchVideoSteps: number;
   selectedLoras: Array<{ id: string; path: string; strength: number }>;
   travelGuidance: TravelGuidance | undefined;
-  structureGuidance: ReturnType<typeof import('../hooks/video/useStructureVideo').useStructureVideo>['structureGuidance'];
-  structureVideos: ReturnType<typeof import('../hooks').useStructureVideo>['structureVideos'];
+  structureGuidance: ReturnType<typeof useStructureVideo>['structureGuidance'];
+  structureVideos: ReturnType<typeof useStructureVideo>['structureVideos'];
   selectedOutputId: string | null;
 }
 
@@ -66,8 +68,8 @@ interface GenerationControllerJoinSettings {
   joinSeed: number;
   joinRandomSeed: boolean;
   joinMotionMode: 'basic' | 'advanced';
-  joinPhaseConfig: ReturnType<typeof import('../hooks').useJoinSegmentsSetup>['joinPhaseConfig'];
-  joinSelectedPhasePresetId: string | null;
+  joinPhaseConfig: ReturnType<typeof useJoinSegmentsSetup>['joinPhaseConfig'];
+  joinSelectedPhasePresetId: string | null | undefined;
   joinSelectedLoras: Array<{ id: string; path: string; strength: number }>;
   joinPriority: number;
   joinUseInputVideoResolution: boolean;

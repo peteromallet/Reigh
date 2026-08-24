@@ -5,7 +5,7 @@ import { useIsMobile } from "@/shared/hooks/mobile";
 import { Shot } from '@/domains/generation/types';
 import { useToolSettings } from '@/shared/hooks/settings/useToolSettings';
 import { useCurrentShot } from '@/shared/state/selectionStore';
-import { usePanesStore } from '@/shared/state/panesStore';
+import { usePanesStore, type PanesStoreState } from '@/shared/state/panesStore';
 import { useShotNavigation } from '@/shared/hooks/shots/useShotNavigation';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -88,7 +88,7 @@ interface ShotEditorBootstrapResult {
   isMobile: ReturnType<typeof useIsMobile>;
   isPhone: boolean;
   aspectAdjustedColumns: number;
-  setIsGenerationsPaneLocked: ReturnType<typeof usePanes>['setIsGenerationsPaneLocked'];
+  setIsGenerationsPaneLocked: PanesStoreState['setIsGenerationsPaneLocked'];
   lastVideoGeneration: ReturnType<typeof useLastVideoGeneration>;
 }
 

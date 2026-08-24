@@ -52,6 +52,7 @@ import type {
 import type {
   StructureVideoConfigWithMetadata,
   StitchConfig,
+  TravelGuidance,
 } from '@/shared/lib/tasks/travelBetweenImages';
 
 export type { StitchConfig };
@@ -265,6 +266,7 @@ export async function generateVideo(params: GenerateVideoParams): Promise<Genera
     structureGuidance,
     structureVideos,
   } = params;
+  const resolvedStructureVideos = structureVideos ?? [];
 
   if (!projectId) {
     return failureResult(
@@ -279,7 +281,7 @@ export async function generateVideo(params: GenerateVideoParams): Promise<Genera
     smoothContinuations: modelConfig.smoothContinuations ?? false,
     requestedExecutionMode: modelConfig.generation_type_mode ?? 'i2v',
     guidanceKind: resolveGuidanceKind(travelGuidance),
-    hasStructureVideo: structureVideos.length > 0,
+    hasStructureVideo: resolvedStructureVideos.length > 0,
   });
   const useLtxHd = spec.modelFamily === 'ltx' && modelConfig.ltxHdResolution !== false;
   const resolution = resolveGenerationResolution(selectedShot, effectiveAspectRatio, useLtxHd);
@@ -288,7 +290,7 @@ export async function generateVideo(params: GenerateVideoParams): Promise<Genera
     smoothContinuations: modelConfig.smoothContinuations ?? false,
     requestedExecutionMode: modelConfig.generation_type_mode ?? 'i2v',
     guidanceKind: resolveGuidanceKind(travelGuidance),
-    hasStructureVideo: structureVideos.length > 0,
+    hasStructureVideo: resolvedStructureVideos.length > 0,
   });
 
   let allShotGenerations: ShotGenRow[];

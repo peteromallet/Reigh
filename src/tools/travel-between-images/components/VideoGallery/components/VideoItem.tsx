@@ -434,7 +434,7 @@ export const VideoItem = React.memo<VideoItemProps>(({
         {/* Top Overlay - Timestamp in top-left (always visible on mobile, hover-only on desktop) */}
         <div className="absolute top-0 left-0 p-3 transition-opacity duration-300 z-20 pointer-events-none">
           <div className="pointer-events-auto inline-flex whitespace-nowrap">
-            <TimeStamp createdAt={video.created_at} showOnHover={!isMobile} />
+            <TimeStamp createdAt={video.createdAt} showOnHover={!isMobile} />
           </div>
         </div>
 
@@ -442,9 +442,9 @@ export const VideoItem = React.memo<VideoItemProps>(({
         <div className="absolute bottom-0 left-0 right-0 pb-2 pl-3 pr-3 pt-6 flex justify-between items-end bg-gradient-to-t from-black/80 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-20 pointer-events-none">
           <div className="flex flex-col items-start gap-2 pointer-events-auto">
             {/* Variant Name Display */}
-            {video.variant_name && (
+            {video.name && (
               <div className="text-[10px] font-medium text-white/90 bg-black/40 px-1.5 py-0.5 rounded backdrop-blur-sm border border-white/10 max-w-[120px] truncate preserve-case">
-                {video.variant_name}
+                {video.name}
               </div>
             )}
           </div>
