@@ -244,11 +244,11 @@ export const VideoTravelSettingsProvider: React.FC<VideoTravelSettingsProviderPr
     const currentModel = coerceSelectedModel(currentSettings.selectedModel);
     const spec = getModelSpec(currentModel);
     const requestedExecutionMode = currentSettings.generationTypeMode ?? 'i2v';
-    const nextSmoothContinuations = currentSettings.smoothContinuations
+    const nextSmoothContinuations = Boolean(currentSettings.smoothContinuations
       && resolveGenerationPolicy(spec, {
         smoothContinuations: true,
         requestedExecutionMode,
-      }).continuation.enabled;
+      }).continuation.enabled);
     const normalizedFrames = clampFrameCountToPolicy(
       currentSettings.batchVideoFrames ?? MODEL_DEFAULTS[currentModel].frames,
       spec,
@@ -485,14 +485,15 @@ export function useFrameSettings() {
 export function useModelSettings() {
   const settings = useVideoTravelSettingsData();
   const handlers = useVideoTravelSettingsHandlers();
+  const { updateField } = useVideoTravelSettingsStatus();
   return useMemo(() => ({
     selectedModel: coerceSelectedModel(settings.selectedModel),
     guidanceScale: settings.guidanceScale,
     ltxHdResolution: settings.ltxHdResolution ?? true,
     setSelectedModel: handlers.handleSelectedModelChange,
     setGuidanceScale: handlers.handleGuidanceScaleChange,
-    setLtxHdResolution: (value: boolean) => handlers.updateField('ltxHdResolution', value),
-  }), [settings.selectedModel, settings.guidanceScale, settings.ltxHdResolution, handlers]);
+    setLtxHdResolution: (value: boolean) => updateField('ltxHdResolution', value),
+  }), [settings.selectedModel, settings.guidanceScale, settings.ltxHdResolution, handlers, updateField]);
 }
 
 /**
@@ -532,6 +533,7 @@ export function useSteerableMotionSettings() {
 export function useLoraSettings() {
   const settings = useVideoTravelSettingsData();
   const handlers = useVideoTravelSettingsHandlers();
+  const { updateField } = useVideoTravelSettingsStatus();
   const availableLoras = useVideoTravelSettingsLoras();
   return useMemo(() => {
     const handleAddLora = (lora: LoraModel) => {
@@ -546,19 +548,19 @@ export function useLoraSettings() {
 
       const currentLoras = settings.loras || [];
       if (!currentLoras.some((existingLora) => existingLora.id === newLora.id)) {
-        handlers.updateField('loras', [...currentLoras, newLora]);
+        updateField('loras', [...currentLoras, newLora]);
       }
     };
 
     const handleRemoveLora = (loraId: string) => {
-      handlers.updateField(
+      updateField(
         'loras',
         (settings.loras || []).filter((lora) => lora.id !== loraId),
       );
     };
 
     const handleLoraStrengthChange = (loraId: string, strength: number) => {
-      handlers.updateField(
+      updateField(
         'loras',
         (settings.loras || []).map((lora) =>
           lora.id === loraId ? { ...lora, strength } : lora,
@@ -570,7 +572,7 @@ export function useLoraSettings() {
       const currentPrompt = settings.prompt || '';
       if (!currentPrompt.includes(word)) {
         const newPrompt = currentPrompt ? `${currentPrompt}, ${word}` : word;
-        handlers.updateField('prompt', newPrompt);
+        updateField('prompt', newPrompt);
       }
     };
 
@@ -583,7 +585,7 @@ export function useLoraSettings() {
       handleLoraStrengthChange,
       handleAddTriggerWord,
     };
-  }, [settings.loras, settings.prompt, availableLoras, handlers]);
+  }, [settings.loras, settings.prompt, availableLoras, handlers, updateField]);
 }
 
 /**
