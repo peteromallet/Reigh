@@ -34,6 +34,7 @@ import type {
   GenerationSession,
   GenerationSessionLiveDelivery,
   LiveChannelDescriptor,
+  LiveSample,
   LiveSourceDiagnostic,
 } from '@reigh/editor-sdk';
 import {
@@ -181,6 +182,11 @@ interface InternalSessionEntry {
   extensionId: string;
   createdAt: number;
   liveDelivery?: InternalSessionLiveDeliveryState;
+}
+
+interface LegacyLiveDeliverySession extends GenerationSession {
+  onProgress: (listener: (progress: number, label?: string) => void) => DisposeHandle;
+  onSample: (listener: (sample: LiveSample) => void) => DisposeHandle;
 }
 
 export interface AgentToolRegistryConfig {
@@ -757,9 +763,10 @@ export function createAgentToolRegistry(config: AgentToolRegistryConfig = {}): A
     };
 
     if (entry.liveDelivery) {
+      const liveDelivery = entry.liveDelivery;
       const originalCancel = session.cancel.bind(session);
       session.cancel = () => {
-        entry.liveDelivery.cancelled = true;
+        liveDelivery.cancelled = true;
         originalCancel();
       };
     }
@@ -801,7 +808,7 @@ export function createAgentToolRegistry(config: AgentToolRegistryConfig = {}): A
     if (!delivery) return;
 
     const sessionId = entry.session.id;
-    const initialChannels = collectInitialChannels(entry.session, delivery);
+    const initialChannels = collectInitialChannels(delivery);
     const state: InternalSessionLiveDeliveryState = {
       origin: isNonEmptyString(delivery.origin) ? delivery.origin : 'agent-tool',
       sourceId: delivery.sourceId,
@@ -812,8 +819,8 @@ export function createAgentToolRegistry(config: AgentToolRegistryConfig = {}): A
       generationIndex: delivery.steeringDecision?.lineage?.generationIndex,
       steerHash: delivery.steeringDecision?.lineage?.steerHash,
       parentRefs: delivery.steeringDecision?.lineage?.parentRefs,
-      finalRefs: delivery.finalRefs ?? entry.session.finalRefs,
-      bakedRefs: delivery.bakedRefs ?? entry.session.bakedRefs,
+      finalRefs: delivery.finalRefs,
+      bakedRefs: delivery.bakedRefs,
       sampleCount: 0,
       canActivate: false,
       diagnostics: [],
@@ -891,47 +898,49 @@ export function createAgentToolRegistry(config: AgentToolRegistryConfig = {}): A
     });
     state.activeChannels = [...new Set([...state.activeChannels, hostChannelId])];
 
-    try {
-      const progressHandle = entry.session.onProgress((progress) => {
-        state.progress = progress;
-        invalidateSnapshot();
-        reportProgress(entry.toolId, entry.extensionId, progress, entry.session.progressLabel);
-      });
-      addSessionDisposer(sessionId, progressHandle);
-    } catch (error) {
-      recordLiveDeliveryDiagnostic(entry, state, 'live/generation-session-progress-subscribe-failed', error);
-    }
-
-    try {
-      const sampleHandle = entry.session.onSample((sample) => {
-        if (state.cancelled || entry.session.cancelled || entry.session.done) return;
-        liveRegistry.pushSample(hostChannelId, {
-          ...sample.frame,
-          metadata: {
-            ...sample.frame.metadata,
-            origin: state.origin,
-            sessionId,
-            toolId: entry.toolId,
-            extensionId: entry.extensionId,
-            sourceChannelId: sample.channelId,
-            sourceSequenceNumber: sample.sequenceNumber,
-            generationIndex: state.generationIndex,
-            steerHash: state.steerHash,
-            parentRefs: state.parentRefs,
-            finalRefs: state.finalRefs,
-            bakedRefs: state.bakedRefs,
-            steeringDecision: delivery.steeringDecision.kind,
-          },
+    if (isLegacyLiveDeliverySession(entry.session)) {
+      try {
+        const progressHandle = entry.session.onProgress((progress) => {
+          state.progress = progress;
+          invalidateSnapshot();
+          reportProgress(entry.toolId, entry.extensionId, progress, entry.session.progressLabel);
         });
-        state.sampleCount += 1;
-        if (!state.activeChannels.includes(sample.channelId)) {
-          state.activeChannels = [...state.activeChannels, sample.channelId];
-        }
-        invalidateSnapshot();
-      });
-      addSessionDisposer(sessionId, sampleHandle);
-    } catch (error) {
-      recordLiveDeliveryDiagnostic(entry, state, 'live/generation-session-sample-subscribe-failed', error);
+        addSessionDisposer(sessionId, progressHandle);
+      } catch (error) {
+        recordLiveDeliveryDiagnostic(entry, state, 'live/generation-session-progress-subscribe-failed', error);
+      }
+
+      try {
+        const sampleHandle = entry.session.onSample((sample) => {
+          if (state.cancelled || entry.session.cancelled || entry.session.completed) return;
+          liveRegistry.pushSample(hostChannelId, {
+            ...sample.frame,
+            metadata: {
+              ...sample.frame.metadata,
+              origin: state.origin,
+              sessionId,
+              toolId: entry.toolId,
+              extensionId: entry.extensionId,
+              sourceChannelId: sample.channelId,
+              sourceSequenceNumber: sample.sequenceNumber,
+              generationIndex: state.generationIndex,
+              steerHash: state.steerHash,
+              parentRefs: state.parentRefs,
+              finalRefs: state.finalRefs,
+              bakedRefs: state.bakedRefs,
+              steeringDecision: delivery.steeringDecision.kind,
+            },
+          });
+          state.sampleCount += 1;
+          if (!state.activeChannels.includes(sample.channelId)) {
+            state.activeChannels = [...state.activeChannels, sample.channelId];
+          }
+          invalidateSnapshot();
+        });
+        addSessionDisposer(sessionId, sampleHandle);
+      } catch (error) {
+        recordLiveDeliveryDiagnostic(entry, state, 'live/generation-session-sample-subscribe-failed', error);
+      }
     }
   }
 
@@ -953,21 +962,19 @@ export function createAgentToolRegistry(config: AgentToolRegistryConfig = {}): A
     addDiagnostic(diagnostic.severity, diagnostic.code, diagnostic.message, entry.extensionId, undefined, diagnostic.detail);
   }
 
-  function collectInitialChannels(
-    session: GenerationSession,
-    delivery: GenerationSessionLiveDelivery,
-  ): LiveChannelDescriptor[] {
+  function collectInitialChannels(delivery: GenerationSessionLiveDelivery): LiveChannelDescriptor[] {
     const channels: LiveChannelDescriptor[] = [];
     for (const channel of delivery.activeChannels ?? []) {
       if (isNonEmptyString(channel)) channels.push(channel);
     }
-    try {
-      const channel = session.getSampleChannel();
-      if (isNonEmptyString(channel)) channels.push(channel);
-    } catch {
-      // getSampleChannel is part of the typed contract, but legacy sessions may throw.
-    }
     return [...new Set(channels)];
+  }
+
+  function isLegacyLiveDeliverySession(session: GenerationSession): session is LegacyLiveDeliverySession {
+    return 'onProgress' in session
+      && typeof session.onProgress === 'function'
+      && 'onSample' in session
+      && typeof session.onSample === 'function';
   }
 
   function readStringArray(value: unknown): readonly string[] | undefined {
