@@ -23,6 +23,7 @@ import {
   useRealtimeTask,
   upsertRealtimeTaskSnapshot,
 } from '@/shared/state/realtimeStore';
+import { useAstridCapabilityCensus } from '@/integrations/astrid/capabilityCensus.ts';
 
 // Types for API responses and request bodies
 // Ensure these align with your server-side definitions and Task type in @/types/tasks.ts
@@ -142,6 +143,7 @@ export const useGetTask = (taskId: string, projectId?: string | null) => {
 
 // Hook to list tasks with pagination - GALLERY PATTERN
 export const usePaginatedTasks = (params: PaginatedTasksParams) => {
+  const capabilityCensus = useAstridCapabilityCensus();
   const { projectId, status, limit = 50, offset = 0, taskType, allProjects, allProjectIds } = params;
   const page = Math.floor(offset / limit) + 1;
   const effectiveProjectId: string | null = projectId ?? null;
@@ -174,7 +176,8 @@ export const usePaginatedTasks = (params: PaginatedTasksParams) => {
       offset,
       page,
     }, safeCacheProjectKey),
-    enabled: allProjects ? !!allProjectIds?.length : !!effectiveProjectId,
+    enabled: (allProjects ? !!allProjectIds?.length : !!effectiveProjectId)
+      && capabilityCensus.capabilities.tasks !== 'unavailable',
     placeholderData: keepPreviousData,
     ...QUERY_PRESETS.realtimeBacked,
     refetchInterval: taskPollingCadence,

@@ -5,6 +5,7 @@
  */
 
 import type { AstridBridgeTransport } from './transport.ts';
+import { observeAstridCapabilityFailure } from './capabilityCensus.ts';
 import {
   bridgeGenerationDetailPayloadSchema,
   bridgeGenerationListSchema,
@@ -30,6 +31,15 @@ export class AstridLocalGalleryRoutes {
     return `/projects/${encodeURIComponent(this.projectSlug)}/generations`;
   }
 
+  private async request<T>(operation: () => Promise<T>): Promise<T> {
+    try {
+      return await operation();
+    } catch (error) {
+      observeAstridCapabilityFailure('generations', error);
+      throw error;
+    }
+  }
+
   /**
    * One bounded gallery page (`limit`, opaque `cursor`, optional `starred`
    * filter). Ordered `created_at DESC, id ASC` by the bridge.
@@ -40,17 +50,22 @@ export class AstridLocalGalleryRoutes {
     if (options.cursor !== undefined) params.set('cursor', options.cursor);
     if (options.starred !== undefined) params.set('starred', String(options.starred));
     const query = params.size > 0 ? `?${params.toString()}` : '';
-    return await this.transport.requestJson(this.base() + query, {}, bridgeGenerationListSchema, 'generation list');
+    return await this.request(() => this.transport.requestJson(
+      this.base() + query,
+      {},
+      bridgeGenerationListSchema,
+      'generation list',
+    ));
   }
 
   /** Generation detail including its full variant rows. */
   async get(generationId: string): Promise<BridgeGenerationDetailPayload['generation']> {
-    const payload = await this.transport.requestJson(
+    const payload = await this.request(() => this.transport.requestJson(
       `${this.base()}/${encodeURIComponent(generationId)}`,
       {},
       bridgeGenerationDetailPayloadSchema,
       'generation detail',
-    );
+    ));
     return payload.generation;
   }
 }

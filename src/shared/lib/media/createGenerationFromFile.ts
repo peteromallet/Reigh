@@ -5,7 +5,7 @@ import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeErro
 import { uploadBlobToStorage, uploadImageToStorage } from '@/shared/lib/media/imageUploader';
 import { extractVideoPosterFrame } from '@/shared/lib/media/videoPosterExtractor';
 import { uploadVideoToStorage } from '@/shared/lib/media/videoUploader';
-import { saveHandle, type PersistedLocalMediaHandle } from '@/shared/lib/media/localHandleStore';
+import type { PersistedLocalMediaHandle } from '@/shared/lib/media/localHandleStore';
 import {
   generateClientThumbnail,
   uploadImageWithThumbnail,
@@ -78,58 +78,17 @@ async function insertUploadedGeneration(input: {
   return generation as unknown as GenerationRow;
 }
 
-async function uploadThumbnailOnly(input: {
-  file: File;
-  mediaType: 'image' | 'video';
-}): Promise<string> {
-  if (input.mediaType === 'image') {
-    const thumbnail = await generateClientThumbnail(input.file, 300, 0.8);
-    return uploadBlobToStorage(thumbnail.thumbnailBlob, `${input.file.name}-thumbnail.jpg`, 'image/jpeg');
-  }
-
-  const posterBlob = await extractVideoPosterFrame(input.file);
-  return uploadBlobToStorage(posterBlob, `${input.file.name}-poster.jpg`, 'image/jpeg');
-}
-
-async function insertLocalMediaHandle(projectId: string): Promise<string> {
-  void projectId;
-  throw bridgeCapabilityUnavailable(
-    'register a browser-local media handle',
-    'Import media through an Astrid task after the media-registration route is installed.',
-  );
-}
-
-async function insertLocalGeneration(input: {
-  file: File;
-  projectId: string;
-  mediaType: 'image' | 'video';
-  thumbnailUrl: string;
-  localHandleId: string;
-}): Promise<GenerationRow> {
+export async function createGenerationForLocalFile(
+  input: CreateLocalGenerationInput,
+): Promise<GenerationRow> {
+  // This route is unavailable in the frozen bridge contract. Fail before
+  // thumbnail generation, handle persistence, storage upload, or any other
+  // externally visible work. Capability errors must be side-effect free.
   void input;
   throw bridgeCapabilityUnavailable(
     'create a generation from a browser-local file',
     'Import media through an Astrid task after the media-registration route is installed.',
   );
-}
-
-export async function createGenerationForLocalFile(
-  input: CreateLocalGenerationInput,
-): Promise<GenerationRow> {
-  const thumbnailUrl = await uploadThumbnailOnly({
-    file: input.file,
-    mediaType: input.mediaType,
-  });
-  const localHandleId = await insertLocalMediaHandle(input.projectId);
-  await saveHandle(localHandleId, input.handle);
-
-  return insertLocalGeneration({
-    file: input.file,
-    projectId: input.projectId,
-    mediaType: input.mediaType,
-    thumbnailUrl,
-    localHandleId,
-  });
 }
 
 export async function createGenerationForUploadedImage(

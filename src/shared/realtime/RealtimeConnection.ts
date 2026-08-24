@@ -22,6 +22,7 @@ import { AstridLocalClient } from '@/integrations/astrid/client.ts';
 import { dataFreshnessManager } from './DataFreshnessManager';
 import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
 import { listenAppEvent } from '@/shared/lib/typedEvents';
+import { getAstridCapabilityCensus } from '@/integrations/astrid/capabilityCensus.ts';
 import {
   ConnectionState,
   ConnectionStatusCallback,
@@ -310,7 +311,7 @@ export class RealtimeConnection {
   }
 
   private scheduleTablePoll(table: DatabaseTable, projectId: string, connectSequence: number): void {
-    if (!this.isCurrentConnectAttempt(connectSequence)) {
+    if (!this.isCurrentConnectAttempt(connectSequence) || !this.isTableCapabilityAvailable(table)) {
       return;
     }
     const timer = setTimeout(() => {
@@ -335,6 +336,7 @@ export class RealtimeConnection {
    *   liveness.
    */
   private async pollTable(table: DatabaseTable, projectId: string, connectSequence: number): Promise<void> {
+    if (!this.isTableCapabilityAvailable(table)) return;
     if (this.pollsInFlight.has(table)) {
       this.scheduleTablePoll(table, projectId, connectSequence);
       return;
@@ -361,6 +363,9 @@ export class RealtimeConnection {
       if (!this.isCurrentConnectAttempt(connectSequence)) {
         return;
       }
+      // Route wrappers record permanent capability absence in the shared
+      // census. Do not report or schedule another poll for that table.
+      if (!this.isTableCapabilityAvailable(table)) return;
       const message = error instanceof Error ? error.message : String(error);
       console.warn(`[RealtimeConnection] Poll failed (${table}): ${message}`);
       normalizeAndPresentError(new Error(`Poll failed (${table})`), {
@@ -383,6 +388,7 @@ export class RealtimeConnection {
   private async runPollCycle(connectSequence: number): Promise<void> {
     const tables = Object.keys(TABLE_POLL_CADENCE_MS) as DatabaseTable[];
     for (const table of tables) {
+      if (!this.isTableCapabilityAvailable(table)) continue;
       if (!this.isCurrentConnectAttempt(connectSequence)) {
         return;
       }
@@ -395,11 +401,21 @@ export class RealtimeConnection {
         this.snapshots.set(table, buildTaggedSnapshot(rows, table));
         this.snapshotGenerations.set(table, startedGeneration);
       } catch (error) {
+        if (!this.isTableCapabilityAvailable(table)) continue;
         const message = error instanceof Error ? error.message : String(error);
         console.warn(`[RealtimeConnection] Initial poll failed (${table}): ${message}`);
         throw error;
       }
     }
+  }
+
+  private isTableCapabilityAvailable(table: DatabaseTable): boolean {
+    const capabilities = getAstridCapabilityCensus().capabilities;
+    if (table === 'tasks') return capabilities.tasks !== 'unavailable';
+    if (table === 'generations' || table === 'generation_variants') {
+      return capabilities.generations !== 'unavailable';
+    }
+    return true;
   }
 
   /**

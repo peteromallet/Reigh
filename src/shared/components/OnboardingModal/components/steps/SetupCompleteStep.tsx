@@ -66,6 +66,21 @@ export function SetupCompleteStep({ onClose }: OnboardingStepProps) {
           </div>
         )}
 
+        {availability.status === 'degraded' && (
+          <div role="status" className="space-y-2 text-left rounded-md border border-amber-500/40 bg-amber-500/5 p-4">
+            <p className="font-medium">Astrid is reachable with limited features</p>
+            <p className="text-sm text-muted-foreground">
+              Timeline editing is available, but {availability.unavailable.length > 0
+                ? `${availability.unavailable.join(', ')} support is missing`
+                : `${availability.unknown.join(', ')} support could not be verified`}.
+              {' '}{availability.reason}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Run <code>{ASTRID_DOCTOR_COMMAND}</code> to upgrade or repair those capabilities.
+            </p>
+          </div>
+        )}
+
         {availability.status === 'unavailable' && (
           <div role="alert" className="space-y-2 text-left rounded-md border border-destructive/40 bg-destructive/5 p-4">
             <p className="font-medium">{unavailableRecovery.title}</p>
@@ -92,7 +107,7 @@ export function SetupCompleteStep({ onClose }: OnboardingStepProps) {
             disabled={availability.status === 'checking'}
             className="w-full"
           >
-            Start Creating
+            {availability.status === 'degraded' ? 'Continue with Available Features' : 'Start Creating'}
           </Button>
         )}
       </div>

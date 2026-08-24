@@ -12,6 +12,7 @@ import { TASK_STATUS } from '@/types/tasks';
 import { taskQueryKeys } from '@/shared/lib/queryKeys/tasks';
 import { listBridgeTasks } from '@/integrations/astrid/bridgeTaskReads';
 import { taskPollingCadence } from './taskPollingCadence';
+import { useAstridCapabilityCensus } from '@/integrations/astrid/capabilityCensus.ts';
 
 interface UsePendingSegmentTasksReturn {
   /** Check if a pair_shot_generation_id has a pending task (real or optimistic) */
@@ -53,6 +54,7 @@ export function usePendingSegmentTasks(
   shotId: string | null,
   projectId: string | null
 ): UsePendingSegmentTasksReturn {
+  const capabilityCensus = useAstridCapabilityCensus();
 
   // Track optimistic pending IDs with timestamps (for immediate UI feedback before task is detected)
   // Map of pairShotGenerationId -> timestamp when added
@@ -83,7 +85,8 @@ export function usePendingSegmentTasks(
       // Note: We can't directly filter by shot_id in the query since it's in params
       // The pair_shot_generation_id links to a shot_generations record for this shot
     },
-    enabled: !!shotId && !!projectId,
+    enabled: !!shotId && !!projectId
+      && capabilityCensus.capabilities.tasks !== 'unavailable',
     // Poll frequently to catch status changes
     refetchInterval: taskPollingCadence,
     // Mark as stale immediately so invalidations trigger refetch

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import type { ReactNode } from 'react';
 import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { useAgentChatBridge } from '@/shared/contexts/AgentChatContext';
 import { useGallerySelectionOptional } from '@/shared/state/selectionStore';
@@ -48,8 +49,12 @@ vi.mock('@/shared/providers/RealtimeProvider', () => ({
   RealtimeProvider: passthroughProvider('RealtimeProvider'),
 }));
 
+vi.mock('@/integrations/astrid/AstridCapabilityBootstrap.tsx', () => ({
+  AstridCapabilityBootstrap: passthroughProvider('AstridCapabilityBootstrap'),
+}));
+
 vi.mock('@/shared/contexts/ShotsContext', () => ({
-  ShotsProvider: passthroughProvider('ShotsProvider'),
+  AstridShotsProvider: passthroughProvider('AstridShotsProvider'),
 }));
 
 vi.mock('@/shared/contexts/GenerationTaskContext', () => ({
@@ -100,14 +105,18 @@ function AgentChatBridgeConsumer() {
 describe('AppProviders', () => {
   it('mounts the selection-store boundary and the default AgentChat bridge inside the provider tree', () => {
     render(
-      <AppProviders>
-        <GallerySelectionConsumer />
-        <AgentChatBridgeConsumer />
-      </AppProviders>,
+      <MemoryRouter>
+        <AppProviders>
+          <GallerySelectionConsumer />
+          <AgentChatBridgeConsumer />
+        </AppProviders>
+      </MemoryRouter>,
     );
 
     expect(screen.getByTestId('gallery-selection-context')).toHaveTextContent('available');
     expect(screen.getByTestId('agent-chat-timeline-id')).toHaveTextContent('timeline-from-settings');
     expect(screen.getByTestId('PanesStoreBootstrapBoundary')).toBeInTheDocument();
+    expect(screen.getByTestId('AstridShotsProvider')).toBeInTheDocument();
+    expect(screen.getByTestId('AstridCapabilityBootstrap')).toBeInTheDocument();
   });
 });

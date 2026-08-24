@@ -27,6 +27,13 @@ const mockedState = vi.hoisted(() => ({
   mockDataFreshnessManager: {
     reset: vi.fn(),
   },
+  capabilityCensus: {
+    health: 'available',
+    readiness: 'ready',
+    capabilities: { tasks: 'supported', generations: 'supported', media: 'supported' },
+    reasons: {},
+    projectSlug: 'proj-1',
+  },
 }));
 
 const mockRealtimeConnection = {
@@ -108,6 +115,10 @@ vi.mock('@/shared/hooks/useRealtimeInvalidation', () => ({
   useRealtimeInvalidation: vi.fn(),
 }));
 
+vi.mock('@/integrations/astrid/capabilityCensus.ts', () => ({
+  useAstridCapabilityCensus: () => mockedState.capabilityCensus,
+}));
+
 vi.mock('@/shared/state/realtimeStore', () => ({
   getRealtimeTaskSnapshot: vi.fn(() => null),
   upsertRealtimeTaskSnapshot: (...args: unknown[]) => mockedState.mockUpsertRealtimeTaskSnapshot(...args),
@@ -167,6 +178,11 @@ describe('RealtimeProvider', () => {
     mockedState.mockUseProject.mockReturnValue({ selectedProjectId: 'proj-1' });
     mockedState.mockGetCachedTaskSnapshot.mockReturnValue(undefined);
     mockedState.mockFetchAndSeedTaskQuery.mockResolvedValue(null);
+    mockedState.capabilityCensus.health = 'available';
+    mockedState.capabilityCensus.readiness = 'ready';
+    mockedState.capabilityCensus.capabilities.tasks = 'supported';
+    mockedState.capabilityCensus.capabilities.generations = 'supported';
+    mockedState.capabilityCensus.capabilities.media = 'supported';
   });
 
   it('renders children', () => {
@@ -202,6 +218,21 @@ describe('RealtimeProvider', () => {
 
     expect(mockRealtimeConnection.connect).toHaveBeenCalledWith('proj-1');
     expect(mockedState.mockResetRealtimeTaskScope).toHaveBeenCalledWith('proj-1');
+  });
+
+  it('makes zero connection attempts when task and gallery capabilities are permanently unavailable', () => {
+    mockedState.capabilityCensus.readiness = 'degraded';
+    mockedState.capabilityCensus.capabilities.tasks = 'unavailable';
+    mockedState.capabilityCensus.capabilities.generations = 'unavailable';
+
+    renderWithProviders(
+      <RealtimeProvider>
+        <RealtimeConsumer />
+      </RealtimeProvider>
+    );
+
+    expect(mockRealtimeConnection.connect).not.toHaveBeenCalled();
+    expect(mockRealtimeConnection.disconnect).toHaveBeenCalledTimes(1);
   });
 
   it('subscribes to status changes', () => {

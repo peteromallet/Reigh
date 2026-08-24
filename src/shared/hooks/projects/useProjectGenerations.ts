@@ -29,6 +29,7 @@ import { unifiedGenerationQueryKeys } from '@/shared/lib/queryKeys/unified';
 import { transformGeneration, type RawGeneration } from '@/shared/lib/generationTransformers';
 import { bridgeMediaUrl } from '@/shared/lib/media/bridgeMediaUrl';
 import { getProjectSelectionFallbackId } from '@/shared/contexts/projectSelectionStore';
+import { useAstridCapabilityCensus } from '@/integrations/astrid/capabilityCensus.ts';
 
 /** Cache garbage collection time for paginated generation queries */
 const GENERATIONS_GC_TIME_MS = 10 * 60 * 1000; // 10 minutes
@@ -161,6 +162,7 @@ export function useProjectGenerations(
     disablePolling?: boolean; // Disable smart polling (useful for long-running tasks)
   }
 ) {
+  const capabilityCensus = useAstridCapabilityCensus();
   const offset = (page - 1) * limit;
   const effectiveProjectId = projectId ?? getProjectSelectionFallbackId();
   const filtersKey = filters ? JSON.stringify(filters) : null;
@@ -174,7 +176,8 @@ export function useProjectGenerations(
 
   // Use DataFreshnessManager for intelligent polling decisions.
   const smartPollingConfig = useSmartPollingConfig(['generations', effectiveProjectId ?? '__no-project__']);
-  const pollingDisabled = Boolean(options?.disablePolling);
+  const pollingDisabled = Boolean(options?.disablePolling)
+    || capabilityCensus.capabilities.generations === 'unavailable';
   const pollingConfig: { refetchInterval: number | false; staleTime: number } = pollingDisabled
     ? { refetchInterval: false, staleTime: Infinity }
     : smartPollingConfig;
@@ -182,7 +185,8 @@ export function useProjectGenerations(
   const result = useQuery<GenerationsPaginatedResponse, Error>({
     queryKey: queryKey,
     queryFn: () => fetchGenerationsForProject(effectiveProjectId!, limit, offset, filters),
-    enabled: !!effectiveProjectId && enabled,
+    enabled: !!effectiveProjectId && enabled
+      && capabilityCensus.capabilities.generations !== 'unavailable',
     // Use `placeholderData` with `keepPreviousData` to prevent UI flashes on pagination/filter changes
     placeholderData: keepPreviousData,
     // Cache management to prevent memory leaks as pagination grows

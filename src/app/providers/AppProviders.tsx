@@ -1,11 +1,12 @@
-import React, { useEffect, useRef } from 'react';
+import React, { Suspense, lazy, useEffect, useRef } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
+import { useLocation } from 'react-router-dom';
 import { AuthProvider } from '@/shared/contexts/AuthContext';
 import { AuthGate } from '@/shared/auth/components/AuthGate';
 import { UserSettingsProvider } from '@/shared/contexts/UserSettingsContext';
 import { ProjectProvider, useProjectSelectionContext } from '@/shared/contexts/ProjectContext';
 import { RealtimeProvider } from '@/shared/providers/RealtimeProvider';
-import { ShotsProvider } from '@/shared/contexts/ShotsContext';
+import { AstridShotsProvider } from '@/shared/contexts/ShotsContext';
 import { GenerationTaskProvider } from '@/shared/contexts/GenerationTaskContext';
 import { IncomingTasksProvider } from '@/shared/contexts/IncomingTasksContext';
 import { AgentChatProvider } from '@/shared/contexts/AgentChatContext';
@@ -21,12 +22,31 @@ import {
   useLastAffectedShot,
 } from '@/shared/state/selectionStore';
 import { queryClient } from '@/app/providers/queryClient';
+import { resolveAppDataAuthority } from '@/app/runtime/dataAuthority.ts';
+import { AstridCapabilityBootstrap } from '@/integrations/astrid/AstridCapabilityBootstrap.tsx';
 
 interface AppProvidersProps {
   children: React.ReactNode;
 }
 
 type TreeProvider = React.ComponentType<{ children: React.ReactNode }>;
+
+const DeferredCloudShotsProvider = lazy(async () => {
+  const module = await import('@/shared/contexts/DeferredCloudShotsProvider.tsx');
+  return { default: module.DeferredCloudShotsProvider };
+});
+
+export function AuthorityAwareShotsProvider({ children }: { children: React.ReactNode }) {
+  const { search } = useLocation();
+  if (resolveAppDataAuthority(search) !== 'supabase-deferred') {
+    return <AstridShotsProvider>{children}</AstridShotsProvider>;
+  }
+  return (
+    <Suspense fallback={<AstridShotsProvider>{children}</AstridShotsProvider>}>
+      <DeferredCloudShotsProvider>{children}</DeferredCloudShotsProvider>
+    </Suspense>
+  );
+}
 
 function composeProviders(providers: TreeProvider[]): TreeProvider {
   return function ProviderTree({ children }: { children: React.ReactNode }) {
@@ -114,8 +134,9 @@ const AppProviderTree = composeProviders([
   TaskTypeConfigInitializer,
   UserSettingsProvider,
   ProjectProvider,
+  AstridCapabilityBootstrap,
   RealtimeProvider,
-  ShotsProvider,
+  AuthorityAwareShotsProvider,
   GenerationTaskProvider,
   IncomingTasksProvider,
   PanesStoreBootstrapBoundary,

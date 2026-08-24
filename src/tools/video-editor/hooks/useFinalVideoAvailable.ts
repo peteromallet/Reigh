@@ -2,18 +2,20 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AstridLocalClient } from '@/integrations/astrid/client.ts';
 import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import type { ShotFinalVideo } from '@/tools/travel-between-images/hooks/video/useShotFinalVideos.ts';
+import { useAstridCapabilityCensus } from '@/integrations/astrid/capabilityCensus.ts';
 
 export type { ShotFinalVideo };
 
 export function useFinalVideoAvailable() {
   const runtime = useVideoEditorRuntime();
+  const capabilityCensus = useAstridCapabilityCensus();
   const { shots } = runtime;
   const [taskVideos, setTaskVideos] = useState<Map<string, ShotFinalVideo>>(new Map());
   const [dismissedTaskOutputs, setDismissedTaskOutputs] = useState<ReadonlySet<string>>(new Set());
 
   useEffect(() => {
     const projectSlug = runtime.project.projectId;
-    if (!projectSlug) return;
+    if (!projectSlug || capabilityCensus.capabilities.tasks === 'unavailable') return;
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const bridgeBaseUrl = (runtime.provider as { apiBaseUrl?: string }).apiBaseUrl;
@@ -62,7 +64,7 @@ export function useFinalVideoAvailable() {
       disposed = true;
       if (timer) clearTimeout(timer);
     };
-  }, [runtime.project.projectId, runtime.provider, runtime.telemetry]);
+  }, [capabilityCensus.capabilities.tasks, runtime.project.projectId, runtime.provider, runtime.telemetry]);
 
   const finalVideoMap = useMemo(() => {
     const merged = new Map(shots.finalVideoMap);

@@ -153,6 +153,10 @@ import { dataFreshnessManager } from '../DataFreshnessManager';
 import { createFakeBridgeRouter, type FakeBridgeRouter } from '@/test/fakeBridgeRouter';
 import { fixtureUlid, makeAdmittedTaskReadModel, taskSummaryFromReadModel } from '@/test/bridgeFixtures.mjs';
 import type { RawDatabaseEvent } from '../types';
+import {
+  getAstridCapabilityCensus,
+  resetAstridCapabilityCensusForTesting,
+} from '@/integrations/astrid/capabilityCensus.ts';
 
 const FAKE_ORIGIN = 'http://bridge.fake';
 function installRouter(router: FakeBridgeRouter): void {
@@ -166,6 +170,7 @@ function installRouter(router: FakeBridgeRouter): void {
 describe('RealtimeConnection — first-poll-then-connected (evidence b/c)', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    resetAstridCapabilityCensusForTesting();
     vi.spyOn(dataFreshnessManager, 'onRealtimeStatusChange').mockImplementation(() => {});
   });
 
@@ -339,6 +344,34 @@ describe('RealtimeConnection — first-poll-then-connected (evidence b/c)', () =
     expect(vi.mocked(dataFreshnessManager.onRealtimeStatusChange).mock.calls.some(
       ([status]) => status !== 'connected',
     )).toBe(true);
+    connection.destroy();
+  });
+
+  it('permanent task route absence is recorded once and never polled again', async () => {
+    const router = createFakeBridgeRouter();
+    let taskRequests = 0;
+    installRouter({
+      ...router,
+      handle: async (request) => {
+        const pathname = new URL(request.url).pathname;
+        if (pathname.endsWith('/tasks')) {
+          taskRequests += 1;
+          return Response.json(
+            { error: 'not_found', detail: `unknown route: ${pathname}` },
+            { status: 404 },
+          );
+        }
+        return router.handle(request);
+      },
+    });
+
+    const connection = freshConnection();
+    await expect(connection.connect('demo-project')).resolves.toBe(true);
+    expect(getAstridCapabilityCensus().capabilities.tasks).toBe('unavailable');
+    expect(taskRequests).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(taskRequests).toBe(1);
     connection.destroy();
   });
 

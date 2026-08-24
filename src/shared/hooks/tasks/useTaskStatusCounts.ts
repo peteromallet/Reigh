@@ -14,6 +14,7 @@ import {
   operationSuccess,
   type OperationResult,
 } from '@/shared/lib/operationResult';
+import { useAstridCapabilityCensus } from '@/integrations/astrid/capabilityCensus.ts';
 
 type TaskStatusCountsQuery = 'processing' | 'success' | 'failure';
 
@@ -159,6 +160,7 @@ export const useTaskStatusCounts = (
   projectId: string | null,
   options?: { allProjectIds?: string[] },
 ) => {
+  const capabilityCensus = useAstridCapabilityCensus();
   const allProjectIds = options?.allProjectIds;
   const isAllProjects = !!allProjectIds?.length;
   const cacheProjectId = isAllProjects ? '__all-projects__' : (projectId ?? '__no-project__');
@@ -166,7 +168,8 @@ export const useTaskStatusCounts = (
   return useQuery({
     queryKey: taskQueryKeys.statusCounts(cacheProjectId),
     queryFn: () => fetchTaskStatusCounts({ projectId, allProjectIds }),
-    enabled: isAllProjects || !!projectId,
+    enabled: (isAllProjects || !!projectId)
+      && capabilityCensus.capabilities.tasks !== 'unavailable',
     refetchInterval: taskPollingCadence,
     refetchIntervalInBackground: true,
     retry: STANDARD_RETRY,

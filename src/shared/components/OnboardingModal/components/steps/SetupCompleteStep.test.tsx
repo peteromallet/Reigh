@@ -75,4 +75,23 @@ describe('SetupCompleteStep doctor availability', () => {
     await waitFor(() => expect(screen.getByText('Astrid is ready')).toBeInTheDocument());
     expect(checkAstridDoctorAvailabilityMock).toHaveBeenCalledTimes(2);
   });
+
+  it('keeps a healthy but incomplete bridge usable without claiming full readiness', async () => {
+    const onClose = vi.fn();
+    checkAstridDoctorAvailabilityMock.mockResolvedValue({
+      status: 'degraded',
+      unavailable: ['tasks', 'generations'],
+      unknown: ['media'],
+      reason: 'unknown route: tasks',
+    });
+
+    render(<SetupCompleteStep onClose={onClose} />);
+
+    const status = await screen.findByText('Astrid is reachable with limited features').then((node) => node.parentElement!);
+    expect(status).toHaveTextContent('Astrid is reachable with limited features');
+    expect(status).toHaveTextContent('tasks, generations support is missing');
+    expect(screen.queryByText('Astrid is ready')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue with Available Features' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
 });

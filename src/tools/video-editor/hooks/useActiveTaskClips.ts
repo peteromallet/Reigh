@@ -2,6 +2,7 @@ import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { taskReferencesGeneration } from '@/shared/hooks/tasks/usePendingGenerationTasks.ts';
 import { realtimeEventProcessor } from '@/shared/realtime/RealtimeEventProcessor.ts';
+import { useAstridCapabilityCensus } from '@/integrations/astrid/capabilityCensus.ts';
 import { TASK_STATUS } from '@/types/tasks.ts';
 import { listBridgeTasks } from '@/integrations/astrid/bridgeTaskReads.ts';
 import { taskPollingCadence } from '@/shared/hooks/tasks/taskPollingCadence.ts';
@@ -138,6 +139,7 @@ async function fetchActiveTasks(projectId: string): Promise<ActiveTaskRow[]> {
 }
 
 export function useActiveTaskClips({ registry }: UseActiveTaskClipsArgs): UseActiveTaskClipsReturn {
+  const capabilityCensus = useAstridCapabilityCensus();
   const selectedProjectId = useVideoEditorRuntime().project.projectId;
   const queryClient = useQueryClient();
   const optimisticActiveAssetKeys = useSyncExternalStore(
@@ -178,7 +180,8 @@ export function useActiveTaskClips({ registry }: UseActiveTaskClipsArgs): UseAct
 
       return fetchActiveTasks(selectedProjectId);
     },
-    enabled: !!selectedProjectId,
+    enabled: !!selectedProjectId
+      && capabilityCensus.capabilities.tasks !== 'unavailable',
     refetchInterval: taskPollingCadence,
     staleTime: 0,
     gcTime: 10000,

@@ -9,8 +9,12 @@ export const TASK_POLL_ACTIVE_MS = 2_000;
 export const TASK_POLL_IDLE_MS = 10_000;
 
 /** React Query `refetchInterval` callback: re-evaluated on every tick. */
-export function taskPollingCadence(): number {
+export function taskPollingCadence(): number | false {
+  if (getAstridCapabilityCensus().capabilities.tasks === 'unavailable') {
+    return false;
+  }
   return typeof document !== 'undefined' && document.hidden
     ? TASK_POLL_IDLE_MS
     : TASK_POLL_ACTIVE_MS;
 }
+import { getAstridCapabilityCensus } from '@/integrations/astrid/capabilityCensus.ts';

@@ -9,6 +9,7 @@ import {
   upsertRealtimeTaskSnapshots,
   type PendingGenerationTaskSnapshot,
 } from '@/shared/state/realtimeStore';
+import { useAstridCapabilityCensus } from '@/integrations/astrid/capabilityCensus.ts';
 
 type PendingGenerationTask = PendingGenerationTaskSnapshot;
 
@@ -84,6 +85,7 @@ export function usePendingGenerationTasks(
   generationId: string | null | undefined,
   projectId: string | null | undefined
 ): UsePendingGenerationTasksReturn {
+  const capabilityCensus = useAstridCapabilityCensus();
   const effectiveProjectId = resolveTaskProjectScope(projectId);
   const pendingSelection = useRealtimePendingGenerationTasks(generationId, effectiveProjectId);
 
@@ -99,7 +101,8 @@ export function usePendingGenerationTasks(
         || task.status === TASK_STATUS.IN_PROGRESS);
       return upsertRealtimeTaskSnapshots(pending, effectiveProjectId);
     },
-    enabled: !!generationId && !!effectiveProjectId,
+    enabled: !!generationId && !!effectiveProjectId
+      && capabilityCensus.capabilities.tasks !== 'unavailable',
     refetchInterval: taskPollingCadence,
     staleTime: 0,
     gcTime: 10000,
