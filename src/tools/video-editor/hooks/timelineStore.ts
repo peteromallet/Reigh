@@ -192,6 +192,7 @@ function createInitialDataSlice(): TimelineEditorDataContextValue {
       showSecondaryGhosts: noop,
       end: noop,
       lastPosition: null,
+      lastPlan: null,
       editAreaRef,
     },
     indicatorRef: createMutableRef(null),
