@@ -776,7 +776,9 @@ function projectSnapshotShaderRefs(
     return snapshot;
   }
 
-  const shaders = projectShaderRefs(snapshot.shaders, contributionIndex, compositionGraph);
+  const shaders = compositionGraph
+    ? projectShaderRefs(snapshot.shaders, contributionIndex, compositionGraph)
+    : projectShaderRefs(snapshot.shaders, contributionIndex);
   if (shaders === snapshot.shaders) {
     return snapshot;
   }
@@ -1812,8 +1814,8 @@ function snapshotRouteScopeFindings(
   requirement: CapabilityRequirement,
 ): readonly CapabilityFinding[] {
   const validation = validateRenderRouteScope({
-    extensionId: requirement.sourceRef.extensionId,
-    contributionId: requirement.sourceRef.contributionId,
+    extensionId: requirement.sourceRef.extensionId ?? requirement.id,
+    contributionId: requirement.sourceRef.contributionId ?? requirement.id,
     routes: requirement.route ? [requirement.route] : [],
     missingMessage:
       `Capability requirement "${requirement.id}" must declare a non-empty explicit route scope.`,
@@ -2063,7 +2065,7 @@ function collectRequestedOutputRouteSupport(
 
   for (const route of routes) {
     if (available.has(route)) continue;
-    const blocker: RenderBlocker = {
+    const finding: CapabilityFinding = {
       id: `planner.outputFormat.${outputFormat.extensionId}.${outputFormat.id}.${route}.route-unsupported`,
       severity: 'error',
       route,
@@ -2078,8 +2080,8 @@ function collectRequestedOutputRouteSupport(
         availableRoutes: [...availableRoutes].sort(),
       },
     };
-    acc.findings.push(blocker);
-    acc.blockers.push(blocker);
+    acc.findings.push(finding);
+    acc.blockers.push({ ...finding, severity: 'error', route, reason: 'route-unsupported' });
   }
 }
 
@@ -2317,7 +2319,7 @@ function collectMaterialRef(
 
     const reason = routeBlocker.reason;
     const message = materialPlannerMessage(material);
-    const blocker: RenderBlocker = {
+    const finding: CapabilityFinding = {
       id: `planner.material.${materialRef.id}.${routeScope.route}.${reason}`,
       severity: routeBlocker.severity,
       route: routeScope.route,
@@ -2343,8 +2345,10 @@ function collectMaterialRef(
           : {}),
       },
     };
-    acc.findings.push(blocker);
-    acc.blockers.push(blocker);
+    acc.findings.push(finding);
+    if (routeBlocker.severity === 'error') {
+      acc.blockers.push({ ...finding, severity: 'error', route: routeScope.route, reason });
+    }
 
     const nextAction = buildMaterialPlannerAction(material, routeScope);
     if (nextAction) {

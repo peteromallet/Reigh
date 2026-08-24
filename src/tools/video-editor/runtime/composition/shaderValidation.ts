@@ -125,7 +125,7 @@ function shaderContributionScopedKey(
 export function projectShaderRefs(
   shaderSummaries: readonly TimelineShaderSummary[] | undefined,
   contributionIndex: ContributionIndex | undefined,
-  compositionGraph: CompositionGraph,
+  compositionGraph?: CompositionGraph,
 ): readonly TimelineShaderSummary[] | undefined;
 export function projectShaderRefs(
   shaderSummaries: readonly TimelineShaderSummary[] | undefined,

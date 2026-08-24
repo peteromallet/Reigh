@@ -35,6 +35,8 @@ import type { RenderExportDestination } from '@/tools/video-editor/lib/renderRou
 import type {
   CapabilityFinding,
   Diagnostic,
+  ExtensionContribution,
+  ExtensionManifestContribution,
   ExportDiagnostic,
   RenderBlocker,
   RenderBlockerReason,
@@ -108,14 +110,22 @@ function isExtensionRuntimeEmpty(extRuntime: ExtensionRuntime | undefined): bool
 }
 
 function buildExtensionContributions(extRuntime: ExtensionRuntime) {
-  const allContributions: import('@reigh/editor-sdk').ExtensionContribution[] = [];
+  const allContributions: ExtensionContribution[] = [];
   for (const ext of extRuntime.extensions) {
     const contribs = ext.manifest.contributions ?? [];
     for (const c of contribs) {
-      allContributions.push(c);
+      if (isExtensionContribution(c)) {
+        allContributions.push(c);
+      }
     }
   }
   return allContributions;
+}
+
+function isExtensionContribution(
+  contribution: ExtensionManifestContribution,
+): contribution is ExtensionContribution {
+  return contribution.kind !== 'timelineOverlay';
 }
 
 /**
@@ -730,7 +740,7 @@ export function useRenderState(
 
       const job = await exporter.render({
         timeline: resolvedConfig,
-        registry: resolvedConfig.registry,
+        registry: { assets: resolvedConfig.registry },
         output: {
           file: resolvedConfig.output.file,
           fps: resolvedConfig.output.fps,
@@ -904,14 +914,20 @@ export function useRenderState(
 
       // Create a downloadable blob from the artifact data
       const mimeType = fmt.outputMimeType ?? 'application/octet-stream';
-      const blob = new Blob([result.data], { type: mimeType });
+      const blobData = new Uint8Array(result.data.byteLength);
+      blobData.set(result.data);
+      const blob = new Blob([blobData.buffer], { type: mimeType });
       const url = URL.createObjectURL(blob);
       const filename = `export.${fmt.outputExtension}`;
 
       setExportResultUrl(url);
       setExportResultFilename(filename);
       setExportStatus('done');
-      const diagCount = result.artifact.diagnostics?.length ?? 0;
+      const diagCount = (
+        'diagnostics' in result.artifact && Array.isArray(result.artifact.diagnostics)
+          ? result.artifact.diagnostics.length
+          : result.artifact.findings?.length ?? 0
+      );
       setExportLogState(
         `Export complete: "${fmt.label}" → ${filename}` +
         (result.hasBlockingErrors ? ' (with blocking errors)' : '') +

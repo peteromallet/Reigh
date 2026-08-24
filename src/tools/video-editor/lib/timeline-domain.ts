@@ -637,9 +637,15 @@ const stripDupSuffix = (id: string): string => id.replace(/(-dup-\d+)+$/, '');
 
 const isHoldLikeClip = (clip: TimelineClip): boolean => clip.clipType === 'hold' || typeof clip.hold === 'number';
 
-const hasValidNonHoldTrim = (clip: Pick<TimelineClip, 'from' | 'to'>): boolean => {
+const hasValidNonHoldTrim = (
+  clip: Pick<TimelineClip, 'from' | 'to'>,
+): clip is Pick<TimelineClip, 'from' | 'to'> & { from: number; to: number } => {
   return isFiniteNumber(clip.from) && isFiniteNumber(clip.to) && clip.to > clip.from;
 };
+
+const isRecordValue = (value: unknown): value is Record<string, unknown> => (
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+);
 
 const getClipAssetDurationSeconds = (registry: AssetRegistry, assetId?: string): number | null => {
   if (!assetId) {
@@ -2355,7 +2361,7 @@ export function repairTimelineClipTransitions(
         message: `Clip "${clip.id}": ${diag.message}`,
         clipId: clip.id,
         path: `clips.${clip.id}.transition`,
-        repairApplied: repair.action !== 'no-op',
+        repairApplied: true,
         details: {
           transitionType: transition.type,
           repairAction: repair.action,
@@ -2434,7 +2440,13 @@ export const sanitizeTimelineClipSnapshot = (clip: TimelineClip): TimelineClip =
 
     const value = clip[field];
     if (value !== undefined) {
-      serializedClip[field] = field === 'app' ? cloneAppExtension(value) : value;
+      if (field === 'app') {
+        if (isRecordValue(value)) {
+          serializedClip.app = cloneAppExtension(value);
+        }
+      } else {
+        serializedClip[field] = value;
+      }
     }
   }
 
@@ -2455,7 +2467,13 @@ export const sanitizeTrackDefinitionSnapshot = (track: TrackDefinition): TrackDe
 
     const value = track[field];
     if (value !== undefined) {
-      serializedTrack[field] = field === 'app' ? cloneAppExtension(value) : value;
+      if (field === 'app') {
+        if (isRecordValue(value)) {
+          serializedTrack.app = cloneAppExtension(value);
+        }
+      } else {
+        serializedTrack[field] = value;
+      }
     }
   }
 
@@ -2463,7 +2481,7 @@ export const sanitizeTrackDefinitionSnapshot = (track: TrackDefinition): TrackDe
 };
 
 export const sanitizeAssetRegistryEntry = (entry: AssetRegistryEntry): AssetRegistryEntry => {
-  const sanitized: Partial<AssetRegistryEntry> = {};
+  const sanitizedEntries: [string, unknown][] = [];
   for (const field of ASSET_REGISTRY_ENTRY_FIELDS) {
     const value = entry[field];
     if (value === undefined) {
@@ -2472,13 +2490,13 @@ export const sanitizeAssetRegistryEntry = (entry: AssetRegistryEntry): AssetRegi
     if (field === 'metadata') {
       const validated = validateAssetMetadata(value);
       if (validated) {
-        sanitized.metadata = validated;
+        sanitizedEntries.push([field, validated]);
       }
     } else {
-      sanitized[field] = value;
+      sanitizedEntries.push([field, value]);
     }
   }
-  return sanitized as AssetRegistryEntry;
+  return Object.fromEntries(sanitizedEntries) as AssetRegistryEntry;
 };
 
 const validateSerializedConfig = (
