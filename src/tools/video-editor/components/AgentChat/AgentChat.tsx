@@ -18,7 +18,11 @@ import {
 import { useAgentVoice } from '@/tools/video-editor/hooks/useAgentVoice.ts';
 import { useRenderDiagnostic } from '@/tools/video-editor/hooks/usePerfDiagnostics.ts';
 import { loadGenerationForLightbox } from '@/tools/video-editor/lib/generation-utils.ts';
-import type { AgentTurn, AgentTurnAttachment } from '@/tools/video-editor/types/agent-session.ts';
+import type {
+  AgentSessionStatus,
+  AgentTurn,
+  AgentTurnAttachment,
+} from '@/tools/video-editor/types/agent-session.ts';
 import { AgentChatAttachmentStrip, AgentChatMessage, AgentChatToolGroup, type AgentChatAttachmentPreviewItem } from './AgentChatMessage.tsx';
 
 export type ToolCallPair = {
@@ -40,6 +44,74 @@ type OptimisticMessage = QueuedMessage & {
   sentAtMs: number;
   priorTurnCount: number;
 };
+
+type AgentSessionView = {
+  id: string;
+  status: AgentSessionStatus;
+  turns: AgentTurn[];
+};
+
+type AgentSessionOption = Pick<AgentSessionView, 'id' | 'status'>;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isAgentSessionStatus(value: unknown): value is AgentSessionStatus {
+  switch (value) {
+    case 'waiting_user':
+    case 'processing':
+    case 'continue':
+    case 'done':
+    case 'cancelled':
+    case 'error':
+      return true;
+    default:
+      return false;
+  }
+}
+
+function isAgentTurn(value: unknown): value is AgentTurn {
+  if (!isRecord(value) || typeof value.content !== 'string' || typeof value.timestamp !== 'string') {
+    return false;
+  }
+
+  switch (value.role) {
+    case 'user':
+    case 'assistant':
+    case 'tool_call':
+    case 'tool_result':
+      return true;
+    default:
+      return false;
+  }
+}
+
+function isAgentSessionView(value: unknown): value is AgentSessionView {
+  return isRecord(value)
+    && typeof value.id === 'string'
+    && isAgentSessionStatus(value.status)
+    && Array.isArray(value.turns)
+    && value.turns.every(isAgentTurn);
+}
+
+function isAgentSessionOption(value: unknown): value is AgentSessionOption {
+  return isRecord(value)
+    && typeof value.id === 'string'
+    && isAgentSessionStatus(value.status);
+}
+
+function readAgentSessions(value: unknown): AgentSessionOption[] {
+  return Array.isArray(value) ? value.filter(isAgentSessionOption) : [];
+}
+
+function readAgentSession(value: unknown): AgentSessionView | undefined {
+  return isAgentSessionView(value) ? value : undefined;
+}
+
+function readSessionId(value: unknown): string | undefined {
+  return isRecord(value) && typeof value.id === 'string' ? value.id : undefined;
+}
 
 function buildRenderedTurns(turns: AgentTurn[]): RenderedTurn[] {
   const items: RenderedTurn[] = [];
@@ -156,7 +228,8 @@ function AvailableAgentChatPanel() {
   const activeSession = useAgentSession(activeSessionId);
   const sendMessage = useSendMessage(activeSessionId, timelineId);
   const cancelSession = useCancelSession(activeSessionId);
-  const sessionOptions = useMemo(() => sessions.data ?? [], [sessions.data]);
+  const sessionOptions = useMemo(() => readAgentSessions(sessions.data), [sessions.data]);
+  const activeSessionData = readAgentSession(activeSession.data);
   const { clips, summary } = useCurrentAttachmentSet();
 
   const voice = useAgentVoice({
@@ -170,10 +243,10 @@ function AvailableAgentChatPanel() {
   voiceRef.current = voice;
 
   const renderedTurns = useMemo(
-    () => buildRenderedTurns(activeSession.data?.turns ?? []),
-    [activeSession.data?.turns],
+    () => buildRenderedTurns(activeSessionData?.turns ?? []),
+    [activeSessionData?.turns],
   );
-  const activeStatus = activeSession.data?.status;
+  const activeStatus = activeSessionData?.status;
   const isCancelled = activeStatus === 'cancelled';
   const isProcessing = activeStatus === 'processing' || activeStatus === 'continue';
   const showKillSwitch = activeStatus === 'processing' || activeStatus === 'continue';
@@ -318,7 +391,10 @@ function AvailableAgentChatPanel() {
     hasAutoCreatedSessionRef.current = true;
     createSession.mutate(undefined, {
       onError: () => { hasAutoCreatedSessionRef.current = false; },
-      onSuccess: (session) => { setActiveSessionId(session.id); },
+      onSuccess: (session) => {
+        const sessionId = readSessionId(session);
+        if (sessionId) setActiveSessionId(sessionId);
+      },
     });
   }, [createSession, hasTimeline, sessionOptions.length, sessions.isLoading, isEngaged]);
 
@@ -371,10 +447,10 @@ function AvailableAgentChatPanel() {
 
   // Clear optimistic message only when the matching turn appears in real data
   useEffect(() => {
-    if (!optimisticMessage || !activeSession.data?.turns) return;
-    if (activeSession.data.turns.length <= optimisticMessage.priorTurnCount) return;
+    if (!optimisticMessage || !activeSessionData?.turns) return;
+    if (activeSessionData.turns.length <= optimisticMessage.priorTurnCount) return;
 
-    const hasRealTurn = activeSession.data.turns.some((turn, index) => (
+    const hasRealTurn = activeSessionData.turns.some((turn, index) => (
       index >= optimisticMessage.priorTurnCount
       && turn.role === 'user'
       && turn.content === optimisticMessage.text
@@ -384,7 +460,7 @@ function AvailableAgentChatPanel() {
     if (hasRealTurn) {
       setOptimisticMessage(null);
     }
-  }, [activeSession.data?.turns, optimisticMessage]);
+  }, [activeSessionData?.turns, optimisticMessage]);
 
   const sendingRef = useRef(false);
   const sendNow = useCallback(async (item: QueuedMessage) => {
@@ -392,7 +468,7 @@ function AvailableAgentChatPanel() {
       return;
     }
 
-    const priorTurnCount = activeSession.data?.turns.length ?? 0;
+    const priorTurnCount = activeSessionData?.turns.length ?? 0;
     const sentAtMs = Date.now();
 
     sendingRef.current = true;
@@ -417,7 +493,7 @@ function AvailableAgentChatPanel() {
     } finally {
       sendingRef.current = false;
     }
-  }, [activeSession.data?.turns.length, activeSessionId, sendMessage, timelineId]);
+  }, [activeSessionData?.turns.length, activeSessionId, sendMessage, timelineId]);
 
   const handleSend = useCallback(async (rawText?: string) => {
     const text = (rawText ?? draft).trim();
@@ -495,7 +571,8 @@ function AvailableAgentChatPanel() {
     setPausedQueueHeadId(null);
     setOptimisticMessage(null);
     const session = await createSession.mutateAsync();
-    setActiveSessionId(session.id);
+    const sessionId = readSessionId(session);
+    if (sessionId) setActiveSessionId(sessionId);
     setDraft('');
   }, [createSession, hasTimeline]);
 
