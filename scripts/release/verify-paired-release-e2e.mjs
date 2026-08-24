@@ -477,11 +477,28 @@ async function allocatePort() {
   });
 }
 
-async function waitForUrl(url, { headers, process: child, timeoutMs = 60_000 } = {}) {
+/** Return a terminal child failure before a readiness loop attempts I/O. */
+export function childProcessFailure(child, label = 'child') {
+  if (!child) return null;
+  const spawnError = child.pairedSpawnError;
+  if (spawnError) {
+    return `${label} failed to spawn: ${spawnError.message ?? String(spawnError)}`;
+  }
+  if (child.signalCode) {
+    return `${label} exited before readiness via ${child.signalCode}`;
+  }
+  if (child.exitCode !== null && child.exitCode !== undefined) {
+    return `${label} exited before readiness (exit ${child.exitCode})`;
+  }
+  return null;
+}
+
+export async function waitForUrl(url, { headers, process: child, timeoutMs = 60_000 } = {}) {
   const deadline = Date.now() + timeoutMs;
   let last = 'no response';
   while (Date.now() < deadline) {
-    if (child?.exitCode !== null) fail(`server exited before readiness (${child.exitCode})`);
+    const failure = childProcessFailure(child, 'server');
+    if (failure) fail(failure);
     try {
       const response = await fetch(url, {
         headers,
@@ -494,17 +511,20 @@ async function waitForUrl(url, { headers, process: child, timeoutMs = 60_000 } =
     } catch (error) {
       last = error.message;
     }
+    const failureAfterProbe = childProcessFailure(child, 'server');
+    if (failureAfterProbe) fail(failureAfterProbe);
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 250));
   }
   fail(`timed out waiting for ${url}: ${last}`);
 }
 
-async function waitForViteReadiness(baseUrl, { expectedIdentity, process: child, timeoutMs = 120_000 } = {}) {
+export async function waitForViteReadiness(baseUrl, { expectedIdentity, process: child, timeoutMs = 120_000 } = {}) {
   const readinessUrl = `${baseUrl}/runtime-config/v1/extensions.json?readiness=${encodeURIComponent(expectedIdentity ?? '')}`;
   const deadline = Date.now() + timeoutMs;
   let last = 'no response';
   while (Date.now() < deadline) {
-    if (child?.exitCode !== null) fail(`Vite server exited before readiness (${child.exitCode})`);
+    const failure = childProcessFailure(child, 'Vite server');
+    if (failure) fail(failure);
     try {
       const response = await fetch(readinessUrl, {
         cache: 'no-store',
@@ -518,6 +538,8 @@ async function waitForViteReadiness(baseUrl, { expectedIdentity, process: child,
     } catch (error) {
       last = error.message;
     }
+    const failureAfterProbe = childProcessFailure(child, 'Vite server');
+    if (failureAfterProbe) fail(failureAfterProbe);
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 250));
   }
   fail(`timed out waiting for exact Vite readiness at ${readinessUrl}: ${last}`);
@@ -582,7 +604,10 @@ function startLoggedProcess(command, args, { cwd, env, logPath }) {
   });
   child.stdout.pipe(log, { end: false });
   child.stderr.pipe(log, { end: false });
-  child.once('error', (error) => log.write(`\n${LABEL} spawn error: ${error.message}\n`));
+  child.once('error', (error) => {
+    child.pairedSpawnError = error;
+    log.write(`\n${LABEL} spawn error: ${error.message}\n`);
+  });
   return { child, log };
 }
 
@@ -590,7 +615,11 @@ async function stopLoggedProcess(handle) {
   if (!handle) return;
   if (handle.stopped) return;
   const { child, log } = handle;
-  const isRunning = () => child.exitCode === null && child.signalCode === null;
+  const isRunning = () => (
+    !child.pairedSpawnError
+    && child.exitCode === null
+    && child.signalCode === null
+  );
   const waitForExit = async (timeoutMs) => {
     if (!isRunning()) return true;
     return Promise.race([
@@ -1219,6 +1248,24 @@ function parseRate(value) {
 const CAPTION_FOREGROUND_THRESHOLD = 0.001;
 const CAPTION_CONTROL_DELTA = 0.0005;
 const CAPTION_MIN_CONTRAST = 0.04;
+const CAPTION_FRAME_WIDTH = 1280;
+const CAPTION_FRAME_HEIGHT = 720;
+export const EXPECTED_PERSISTED_CAPTIONS = Object.freeze([
+  Object.freeze({
+    id: 'transcript-caption-94f8d62cad776aca',
+    text: 'Fixture segment one',
+    at: 2,
+    duration: 2,
+    region: Object.freeze({ x: 128, y: 418, width: 1024, height: 101 }),
+  }),
+  Object.freeze({
+    id: 'transcript-caption-5b0feed951226a00',
+    text: 'Fixture segment two',
+    at: 5,
+    duration: 3,
+    region: Object.freeze({ x: 128, y: 418, width: 1024, height: 101 }),
+  }),
+]);
 
 /**
  * OCR is deliberately normalized only for Unicode form, case, and spacing/
@@ -1332,6 +1379,34 @@ export function assessCaptionProbe({
   };
 }
 
+export function validateCaptionExpectations(captions, expected = EXPECTED_PERSISTED_CAPTIONS) {
+  if (!Array.isArray(captions) || captions.length !== expected.length) {
+    fail(`persisted caption count mismatch: expected ${expected.length}, got ${captions?.length ?? 0}`);
+  }
+  const ids = captions.map((caption) => caption.id);
+  if (new Set(ids).size !== ids.length) fail('persisted caption IDs contain duplicates');
+  const expectedById = new Map(expected.map((caption) => [caption.id, caption]));
+  for (const caption of captions) {
+    const wanted = expectedById.get(caption.id);
+    if (!wanted) fail(`unexpected persisted caption ID: ${caption.id}`);
+    if (caption.text !== wanted.text) fail(`persisted caption ${caption.id} text mismatch`);
+    if (caption.at !== wanted.at || caption.duration !== wanted.duration) {
+      fail(`persisted caption ${caption.id} interval mismatch: expected ${wanted.at}-${wanted.at + wanted.duration}s`);
+    }
+    if (JSON.stringify(caption.region) !== JSON.stringify(wanted.region)) {
+      fail(`persisted caption ${caption.id} render geometry mismatch`);
+    }
+  }
+  const ordered = [...captions].sort((left, right) => left.at - right.at || left.id.localeCompare(right.id));
+  for (let index = 1; index < ordered.length; index += 1) {
+    const previous = ordered[index - 1];
+    if (ordered[index].at < previous.at + previous.duration) {
+      fail(`persisted caption intervals overlap: ${previous.id} and ${ordered[index].id}`);
+    }
+  }
+  return Object.freeze(ordered);
+}
+
 function captionExpectations(evidenceRoot) {
   const path = resolve(evidenceRoot, 'timeline-restart.json');
   if (!existsSync(path)) fail('persisted restart timeline is missing; exact caption text cannot be verified');
@@ -1348,8 +1423,22 @@ function captionExpectations(evidenceRoot) {
       region: rectangleFromClip(clip),
     }))
     .filter((clip) => Number.isFinite(clip.at) && clip.duration > 0 && clip.text && clip.region);
-  if (captions.length < 2) fail(`persisted restart timeline has fewer than two usable caption clips: ${captions.length}`);
-  return captions;
+  return validateCaptionExpectations(captions);
+}
+
+export function captionProbePlan(captions, fps) {
+  if (!Number.isFinite(fps) || fps <= 0) fail(`caption probe FPS is invalid: ${fps}`);
+  return captions.flatMap((caption) => {
+    const firstFrame = Math.round(caption.at * fps);
+    const endFrame = Math.round((caption.at + caption.duration) * fps);
+    const lastFrame = endFrame - 1;
+    if (lastFrame < firstFrame) fail(`caption ${caption.id} has no encoded frames`);
+    return [
+      { captionId: caption.id, kind: 'first', frame: firstFrame, seconds: firstFrame / fps },
+      { captionId: caption.id, kind: 'midpoint', frame: (firstFrame + lastFrame) / 2, seconds: caption.at + (caption.duration / 2) },
+      { captionId: caption.id, kind: 'last', frame: lastFrame, seconds: lastFrame / fps },
+    ];
+  });
 }
 
 function parseTesseractTsv(tsv) {
@@ -1458,13 +1547,20 @@ function verifyRenderedArtifact(context) {
     env: safeBaseEnvironment(),
     logPath: resolve(context.evidenceRoot, 'render-full-decode.log'),
   });
-  const captionMidpoints = Array.isArray(browserReceipt.captionMidpoints)
-    ? browserReceipt.captionMidpoints.slice(0, 2).map(Number)
-    : [];
-  if (captionMidpoints.length < 2 || captionMidpoints.some((value) => !Number.isFinite(value))) {
-    fail('render receipt has fewer than two caption midpoint semantic probes');
-  }
   const captions = captionExpectations(context.evidenceRoot);
+  const expectedProbes = captionProbePlan(captions, expectedFps);
+  const expectedMidpoints = expectedProbes
+    .filter((probeEntry) => probeEntry.kind === 'midpoint')
+    .map((probeEntry) => probeEntry.seconds);
+  const receiptMidpoints = Array.isArray(browserReceipt.captionMidpoints)
+    ? browserReceipt.captionMidpoints.map(Number)
+    : [];
+  if (
+    receiptMidpoints.length !== expectedMidpoints.length
+    || receiptMidpoints.some((value, index) => !Number.isFinite(value) || Math.abs(value - expectedMidpoints[index]) > (1 / expectedFps))
+  ) {
+    fail(`render receipt caption midpoint set mismatch: expected ${expectedMidpoints.join(', ')}, got ${receiptMidpoints.join(', ')}`);
+  }
   const controlSeconds = noCaptionControlSeconds(captions, expectedDuration);
   if (!Number.isFinite(controlSeconds)) {
     fail('paired render has no no-caption control interval for caption semantics');
@@ -1486,54 +1582,32 @@ function verifyRenderedArtifact(context) {
   if (tesseractLanguages.status !== 0 || !/^eng$/m.test(tesseractLanguages.stdout ?? '')) {
     fail('deterministic caption OCR requires the Tesseract eng language data');
   }
-  const boundarySeconds = [...new Set(captions.flatMap((caption) => [
-    caption.at,
-    Math.max(caption.at, caption.at + caption.duration - (1 / expectedFps)),
-  ]))]
-    .filter((seconds) => seconds >= 0 && seconds < expectedDuration)
-    .sort((left, right) => left - right);
-  const boundaryFrames = boundarySeconds.map((seconds, index) => {
-    const framePath = resolve(context.evidenceRoot, `render-caption-boundary-${index}.png`);
+  const probeEvidence = expectedProbes.map((probeEntry, index) => {
+    const caption = captions.find((candidate) => candidate.id === probeEntry.captionId);
+    if (!caption) fail(`caption probe references missing persisted ID ${probeEntry.captionId}`);
+    const fileStem = `render-caption-${probeEntry.kind}-${index}`;
+    const framePath = resolve(context.evidenceRoot, `${fileStem}.png`);
+    const logPath = resolve(context.evidenceRoot, `${fileStem}.log`);
     runLogged('ffmpeg', [
-      '-v', 'error', '-ss', String(seconds), '-i', outputPath, '-frames:v', '1', '-y', framePath,
+      '-v', 'error', '-ss', String(probeEntry.seconds), '-i', outputPath, '-frames:v', '1', '-y', framePath,
     ], {
       cwd: context.reighSnapshot,
       env: safeBaseEnvironment(),
-      logPath: resolve(context.evidenceRoot, `render-caption-boundary-${index}.log`),
+      logPath,
     });
-    return {
-      seconds,
-      path: relative(context.evidenceRoot, framePath),
-      sha256: sha256File(framePath),
-    };
-  });
-  const frameHashes = captionMidpoints.map((seconds, index) => {
-    const framePath = resolve(context.evidenceRoot, `render-caption-frame-${index}.png`);
-    runLogged('ffmpeg', [
-      '-v', 'error', '-ss', String(seconds), '-i', outputPath, '-frames:v', '1', '-y', framePath,
-    ], {
-      cwd: context.reighSnapshot,
-      env: safeBaseEnvironment(),
-      logPath: resolve(context.evidenceRoot, `render-caption-frame-${index}.log`),
-    });
-    const caption = captions.find((candidate) => seconds >= candidate.at && seconds < candidate.at + candidate.duration);
-    if (!caption) fail(`caption midpoint ${seconds}s is not inside a persisted caption interval`);
+    const ocrPath = resolve(context.evidenceRoot, `${fileStem}-ocr.tsv`);
     const tesseract = capture('tesseract', [
       framePath, 'stdout', '--psm', '11', '-l', 'eng', 'tsv',
     ], { cwd: context.reighSnapshot, env: safeBaseEnvironment() });
-    writeFileSync(
-      resolve(context.evidenceRoot, `render-caption-ocr-${index}.tsv`),
-      tesseract.stdout,
-      { encoding: 'utf8', flag: 'wx', mode: 0o600 },
-    );
+    writeFileSync(ocrPath, tesseract.stdout, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
     const recognized = recognizedCaption(parseTesseractTsv(tesseract.stdout));
     const occupancy = imageMetric(framePath, caption.region, 'occupancy');
     const contrast = imageMetric(framePath, caption.region, 'contrast');
     const semantics = assessCaptionProbe({
       expectedText: caption.text,
       recognizedText: recognized.text,
-      frameWidth: 1280,
-      frameHeight: 720,
+      frameWidth: CAPTION_FRAME_WIDTH,
+      frameHeight: CAPTION_FRAME_HEIGHT,
       expectedRegion: caption.region,
       recognizedBounds: recognized.bounds,
       occupancy,
@@ -1543,15 +1617,19 @@ function verifyRenderedArtifact(context) {
       controlFrameSha256,
     });
     if (!semantics.pass) {
-      fail(`caption semantic proof failed for ${caption.id} at ${seconds}s: ${semantics.reasons.join('; ')}`);
+      fail(`caption semantic proof failed for ${caption.id} ${probeEntry.kind} frame ${probeEntry.seconds}s: ${semantics.reasons.join('; ')}`);
     }
     return {
-      seconds,
+      kind: probeEntry.kind,
+      frame: probeEntry.frame,
+      seconds: probeEntry.seconds,
       captionId: caption.id,
       expectedText: caption.text,
       recognizedText: recognized.text,
       sha256: sha256File(framePath),
       path: relative(context.evidenceRoot, framePath),
+      logPath: relative(context.evidenceRoot, logPath),
+      ocrPath: relative(context.evidenceRoot, ocrPath),
       occupancy,
       controlOccupancy: semantics.controlOccupancy,
       contrast,
@@ -1559,7 +1637,11 @@ function verifyRenderedArtifact(context) {
       expectedRegion: caption.region,
     };
   });
-  if (new Set(frameHashes.map((entry) => entry.sha256)).size !== frameHashes.length) {
+  const midpointEvidence = probeEvidence.filter((entry) => entry.kind === 'midpoint');
+  if (new Set(midpointEvidence.map((entry) => entry.captionId)).size !== captions.length) {
+    fail('caption midpoint probes did not cover every distinct persisted caption ID');
+  }
+  if (new Set(midpointEvidence.map((entry) => entry.sha256)).size !== midpointEvidence.length) {
     fail('caption midpoint frames are byte-identical; distinct persisted caption text was not demonstrated');
   }
   const verification = {
@@ -1580,11 +1662,18 @@ function verifyRenderedArtifact(context) {
     captionSemantics: {
       method: 'tesseract-ocr+persisted-region-occupancy-contrast',
       expectedCaptionCount: captions.length,
+      expectedCaptions: captions.map((caption) => ({
+        id: caption.id,
+        text: caption.text,
+        at: caption.at,
+        duration: caption.duration,
+        region: caption.region,
+      })),
       controlSeconds,
       controlFrameSha256,
       controlFramePath: relative(context.evidenceRoot, controlPath),
-      boundaryFrames,
-      probes: frameHashes,
+      boundaryFrames: probeEvidence.filter((entry) => entry.kind !== 'midpoint'),
+      probes: probeEvidence,
     },
   };
   writeFileSync(

@@ -8,6 +8,7 @@ import { describe, it } from 'node:test';
 
 import {
   EXPECTED_EXTENSION_COUNT,
+  EXPECTED_PERSISTED_CAPTIONS,
   EXPECTED_RUNAWAY_COUNT,
   PAIRED_RELEASE_PHASES,
   RELEASE_BRIDGE_CAPABILITY,
@@ -19,6 +20,8 @@ import {
   buildServerEnvironment,
   buildViteArgs,
   assessCaptionProbe,
+  captionProbePlan,
+  childProcessFailure,
   isExactViteReadiness,
   normalizeCaptionText,
   parseCliArgs,
@@ -26,6 +29,9 @@ import {
   requestRawHttp,
   validateTimelineSchemaInstallation,
   validateAstridReleaseBridgeSources,
+  validateCaptionExpectations,
+  waitForUrl,
+  waitForViteReadiness,
 } from './verify-paired-release-e2e.mjs';
 
 describe('paired repository release E2E gate', () => {
@@ -88,6 +94,62 @@ describe('paired repository release E2E gate', () => {
     });
     assert.equal(wrongRegion.pass, false);
     assert.match(wrongRegion.reasons.join('; '), /outside/);
+  });
+
+  it('binds the exact persisted caption set and probes every ID at first, midpoint, and last frame', () => {
+    const captions = validateCaptionExpectations(EXPECTED_PERSISTED_CAPTIONS.map((caption) => ({
+      ...caption,
+      region: { ...caption.region },
+    })));
+    assert.deepEqual(captions.map((caption) => caption.id), EXPECTED_PERSISTED_CAPTIONS.map((caption) => caption.id));
+    const probes = captionProbePlan(captions, 24);
+    assert.deepEqual(probes.map((probe) => [probe.captionId, probe.kind]), [
+      [EXPECTED_PERSISTED_CAPTIONS[0].id, 'first'],
+      [EXPECTED_PERSISTED_CAPTIONS[0].id, 'midpoint'],
+      [EXPECTED_PERSISTED_CAPTIONS[0].id, 'last'],
+      [EXPECTED_PERSISTED_CAPTIONS[1].id, 'first'],
+      [EXPECTED_PERSISTED_CAPTIONS[1].id, 'midpoint'],
+      [EXPECTED_PERSISTED_CAPTIONS[1].id, 'last'],
+    ]);
+    assert.equal(probes[0].frame, 48);
+    assert.equal(probes[2].frame, 95);
+    assert.equal(probes[3].frame, 120);
+    assert.equal(probes[5].frame, 191);
+  });
+
+  it('fails duplicate, overlapping, wrong-ID, wrong-text, and wrong-interval persistence', () => {
+    const copy = () => EXPECTED_PERSISTED_CAPTIONS.map((caption) => ({ ...caption, region: { ...caption.region } }));
+    const duplicate = copy();
+    duplicate[1].id = duplicate[0].id;
+    assert.throws(() => validateCaptionExpectations(duplicate), /duplicate/);
+
+    const overlap = copy();
+    overlap[1].at = 3;
+    const overlapExpected = copy();
+    overlapExpected[1].at = 3;
+    assert.throws(() => validateCaptionExpectations(overlap, overlapExpected), /intervals overlap/);
+    assert.throws(() => validateCaptionExpectations(copy().map((caption, index) => (
+      index === 1 ? { ...caption, id: 'transcript-caption-unexpected' } : caption
+    ))), /unexpected persisted caption ID/);
+    assert.throws(() => validateCaptionExpectations(copy().map((caption, index) => (
+      index === 1 ? { ...caption, text: 'Wrong text' } : caption
+    ))), /text mismatch/);
+    assert.throws(() => validateCaptionExpectations(copy().map((caption, index) => (
+      index === 1 ? { ...caption, duration: 2 } : caption
+    ))), /interval mismatch/);
+  });
+
+  it('fails readiness immediately for exit, signal, and spawn-error children', async () => {
+    const cases = [
+      [waitForUrl('http://127.0.0.1:1/health', { process: { exitCode: null, signalCode: 'SIGTERM' }, timeoutMs: 60_000 }), /SIGTERM/],
+      [waitForViteReadiness('http://127.0.0.1:1', { expectedIdentity: 'paired-test', process: { exitCode: null, signalCode: 'SIGKILL' }, timeoutMs: 120_000 }), /SIGKILL/],
+      [waitForUrl('http://127.0.0.1:1/health', { process: { exitCode: null, signalCode: 'SIGABRT' }, timeoutMs: 60_000 }), /SIGABRT/],
+      [waitForUrl('http://127.0.0.1:1/health', { process: { exitCode: null, signalCode: null, pairedSpawnError: new Error('ENOENT') }, timeoutMs: 60_000 }), /failed to spawn.*ENOENT/],
+    ];
+    const started = Date.now();
+    for (const [promise, expected] of cases) await assert.rejects(promise, expected);
+    assert.ok(Date.now() - started < 1_000, 'terminal child states must not wait for readiness timeout');
+    assert.match(childProcessFailure({ exitCode: 7, signalCode: null }), /exit 7/);
   });
 
   it('builds the vendored timeline schema from a clean archive without stale build output', {
