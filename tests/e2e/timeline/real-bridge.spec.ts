@@ -51,27 +51,38 @@ async function openEditorAt(page: import('@playwright/test').Page) {
   await expect(page.locator('[data-clip-id]').first()).toBeVisible({ timeout: 20_000 });
 }
 
-/** Select the first clip and drag it right — a real edit that triggers autosave. */
-async function dragFirstClipRight(
+/**
+ * Change a real inspector field through the production UI. The old B8 probe
+ * dragged a clip in a seeded one-clip timeline, but that geometry can snap
+ * back without producing a mutation. The timing field is explicit, visible,
+ * and its value is asserted before we wait for persistence.
+ */
+async function editFirstClipStart(
   page: import('@playwright/test').Page,
-  options: { beforeMove?: () => Promise<void> } = {},
+  options: { beforeCommit?: () => Promise<void> } = {},
 ) {
   const clip = page.locator('[data-clip-id]').first();
   await clip.waitFor({ timeout: 15_000 });
-  const box = await clip.boundingBox();
-  if (!box) {
-    throw new Error('clip has no bounding box');
-  }
-  const cx = box.x + box.width / 2;
-  const cy = box.y + box.height / 2;
-  await page.mouse.move(cx, cy);
-  await page.mouse.down();
-  // A caller can hold the gesture open while a second writer commits. This
-  // makes the browser's stale expected_version deterministic instead of
-  // relying on a polling/realtime race between the two writers.
-  await options.beforeMove?.();
-  await page.mouse.move(cx + 48, cy, { steps: 6 });
-  await page.mouse.up();
+  await clip.click();
+  await expect(clip).toHaveAttribute('data-selected', 'true');
+
+  const timingTab = page.getByRole('tab', { name: 'Timing', exact: true });
+  await expect(timingTab).toBeVisible({ timeout: 10_000 });
+  await timingTab.click();
+
+  const startInput = page.locator('input[type="number"]').first();
+  await expect(startInput).toBeVisible({ timeout: 10_000 });
+  const current = Number(await startInput.inputValue());
+  const next = (Number.isFinite(current) ? current + 0.25 : 0.25).toFixed(2);
+  await startInput.fill(next);
+  // Prove the browser control accepted the edit before any network wait. The
+  // callback is deliberately immediately before the final commit gesture so
+  // the remote writer cannot be hidden by an editor refresh.
+  await expect(startInput).toHaveValue(next);
+  await options.beforeCommit?.();
+  await startInput.press('Enter');
+  await startInput.blur();
+  await expect(startInput).toHaveValue(next);
 }
 
 type BrowserNetworkAudit = {
@@ -446,10 +457,11 @@ test('concurrent write → 409 → diverged banner (B4/B5 live proof)', async ({
   });
   await openEditorAt(page);
 
-  // Writer 2 commits while writer 1 is holding an active drag. Timeline GETs
-  // are frozen to writer 1's original snapshot, so no polling/realtime update
-  // can silently replace its expected_version before the real save request.
-  const remoteWrite = request.post(`${url}/save`, {
+  // Writer 2 commits immediately after writer 1's visible inspector edit,
+  // but before its final Enter/blur. Timeline GETs are frozen to writer 1's
+  // original snapshot, so no polling/realtime update can silently replace its
+  // expected_version before the real save request.
+  const commitRemoteWriter = () => request.post(`${url}/save`, {
     headers: bridgeHeaders(),
     data: {
       config: { ...initialPayload.config, app: { ...(initialPayload.config.app ?? {}), 'b8.browser.writer2': { note: 'concurrent' } } },
@@ -460,9 +472,9 @@ test('concurrent write → 409 → diverged banner (B4/B5 live proof)', async ({
 
   // The editor's next save carries its (now stale) expected_version → 409 →
   // diverged banner with Reload / Save as copy.
-  await dragFirstClipRight(page, {
-    beforeMove: async () => {
-      const saved = await remoteWrite;
+  await editFirstClipStart(page, {
+    beforeCommit: async () => {
+      const saved = await commitRemoteWriter();
       expect(saved.status()).toBe(200);
     },
   });
@@ -536,7 +548,7 @@ test('bridge death during an edit → watchdog banner with retry', async ({ page
   process.kill(pid, 'SIGKILL');
 
   // Edit → autosave → no ack → persistent watchdog banner (5s grace).
-  await dragFirstClipRight(page);
+  await editFirstClipStart(page);
 
   await expect(page.getByText(/changes have not been saved/i)).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole('button', { name: 'Retry save' })).toBeVisible();
