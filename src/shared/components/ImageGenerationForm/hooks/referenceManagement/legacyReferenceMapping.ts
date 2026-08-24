@@ -55,5 +55,5 @@ export function hydrateLegacyReference(pointer: ReferenceImage): HydratedReferen
     updatedAt: pointer.updatedAt || new Date().toISOString(),
     isPublic: false,
     isOwner: true,
-  } as HydratedReferenceImage;
+  };
 }
