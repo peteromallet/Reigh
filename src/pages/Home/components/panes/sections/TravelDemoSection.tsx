@@ -123,8 +123,8 @@ interface TravelDemoSectionProps {
   selectedTravelExample: number;
   autoAdvance: PhilosophyAutoAdvance;
   loadedImages: Set<string>;
-  philosophyVideoRef: React.RefObject<HTMLVideoElement | null>;
-  travelVideoRefs: React.RefObject<Array<HTMLVideoElement | null>>;
+  philosophyVideoRef: React.MutableRefObject<HTMLVideoElement | null>;
+  travelVideoRefs: React.MutableRefObject<Array<HTMLVideoElement | null>>;
   handleImageLoad: (src: string) => void;
   handleImageRef: (img: HTMLImageElement | null, src: string) => void;
   handleSelectExample: (idx: number) => void;

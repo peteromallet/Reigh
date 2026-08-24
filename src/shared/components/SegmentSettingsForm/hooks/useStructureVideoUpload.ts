@@ -76,15 +76,6 @@ function buildStructureVideoConfig(input: {
     start_frame: frameRange.segmentStart,
     end_frame: frameRange.segmentEnd,
     treatment: settings.guidanceTreatment ?? structureVideoDefaults?.treatment ?? 'adjust',
-    motion_strength: settings.guidanceStrength ?? structureVideoDefaults?.motionStrength ?? 1.2,
-    structure_type: settings.guidanceMode ?? structureVideoDefaults?.mode ?? 'uni3c',
-    uni3c_end_percent: settings.guidanceUni3cEndPercent ?? structureVideoDefaults?.uni3cEndPercent ?? 0.1,
-    ...(settings.guidanceCannyIntensity !== undefined || structureVideoDefaults?.cannyIntensity !== undefined
-      ? { canny_intensity: settings.guidanceCannyIntensity ?? structureVideoDefaults?.cannyIntensity }
-      : {}),
-    ...(settings.guidanceDepthContrast !== undefined || structureVideoDefaults?.depthContrast !== undefined
-      ? { depth_contrast: settings.guidanceDepthContrast ?? structureVideoDefaults?.depthContrast }
-      : {}),
     metadata: input.metadata,
     resource_id: input.resourceId,
   };

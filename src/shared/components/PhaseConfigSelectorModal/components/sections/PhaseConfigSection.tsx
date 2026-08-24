@@ -264,7 +264,7 @@ export const PhaseConfigSection: React.FC<PhaseConfigSectionProps> = ({
                     max={10}
                     step={0.1}
                     value={phase.guidance_scale}
-                    onChange={(val) => updatePhase(phaseIdx, { guidance_scale: val })}
+                    onChange={(val) => updatePhase(phaseIdx, { guidance_scale: val ?? editablePhaseConfig.phases[phaseIdx].guidance_scale })}
                   />
                 </div>
               </div>

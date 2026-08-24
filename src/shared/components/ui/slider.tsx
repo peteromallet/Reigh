@@ -8,12 +8,12 @@ interface SliderProps extends Omit<React.ComponentPropsWithoutRef<typeof SliderP
   className?: string;
 }
 
-const toScalarValue = (value: number | number[]): number => {
+const toScalarValue = (value: number | readonly number[]): number => {
   if (Array.isArray(value)) {
     return value[0] ?? 0;
   }
 
-  return value;
+  return typeof value === 'number' ? value : (value[0] ?? 0);
 };
 
 const Slider = React.forwardRef<

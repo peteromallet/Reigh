@@ -64,6 +64,7 @@ const ShotsPage: React.FC = () => {
           <h1 className="text-3xl font-light mb-6">All Shots</h1>
           <ShotListDisplay
             shots={shots}
+            projectId={selectedProjectId ?? ''}
             onSelectShot={handleSelectShot}
           />
         </>

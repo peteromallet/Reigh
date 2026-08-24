@@ -92,7 +92,7 @@ export const PerPhaseCard: React.FC<PerPhaseCardProps> = ({
                 onChange={(value) => {
                   const updatedPhases = phaseConfig.phases.map((currentPhase, index) =>
                     index === phaseIdx
-                      ? { ...currentPhase, guidance_scale: value }
+                      ? { ...currentPhase, guidance_scale: value ?? currentPhase.guidance_scale }
                       : currentPhase,
                   );
                   onPhaseConfigChange({

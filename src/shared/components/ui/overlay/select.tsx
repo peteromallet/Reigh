@@ -22,7 +22,7 @@ const Select = ({ onValueChange, modal = true, ...props }: SelectRootProps) => (
       {...props}
       modal={modal}
       onValueChange={(value) => {
-        onValueChange?.(value);
+        if (typeof value === 'string') onValueChange?.(value);
       }}
     />
   </SelectModalContext.Provider>

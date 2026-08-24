@@ -86,7 +86,11 @@ const PromptEditorModal: React.FC<PromptEditorModalProps> = React.memo(({
     generatePromptId,
     onGenerateAndQueue,
     aiGeneratePrompts: generatePrompts,
-    aiEditPrompt: editPromptWithAI,
+    aiEditPrompt: (params) => editPromptWithAI({
+      originalPromptText: params.originalPromptText,
+      editInstructions: params.editInstructions,
+      modelType: params.modelType === 'smart' ? 'smart' : 'standard',
+    }),
     aiGenerateSummary: generateSummary,
   });
 

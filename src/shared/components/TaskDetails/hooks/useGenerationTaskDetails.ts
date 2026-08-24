@@ -164,7 +164,7 @@ export function useGenerationTaskDetails({
 
   return {
     taskDetailsData: buildTaskDetailsData({
-      task: task ?? null,
+      task: task ?? undefined,
       isLoading,
       status: taskDetailsStatus,
       error: combinedTaskError,
@@ -176,7 +176,7 @@ export function useGenerationTaskDetails({
     taskDetailsStatus,
     taskMapping,
     taskId,
-    task,
+    task: task ?? undefined,
     inputImages,
     isLoadingTask: isLoadingTaskData,
     taskError: combinedTaskError,

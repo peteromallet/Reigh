@@ -10,7 +10,7 @@ interface LoraStyleSectionProps {
   loraPlaying: boolean;
   loadedImages: Set<string>;
   loadedVideos: Set<string>;
-  loraVideosRef: React.RefObject<Array<HTMLVideoElement | null>>;
+  loraVideosRef: React.MutableRefObject<Array<HTMLVideoElement | null>>;
   handleImageLoad: (src: string) => void;
   handleImageRef: (img: HTMLImageElement | null, src: string) => void;
   handleVideoLoad: (src: string) => void;

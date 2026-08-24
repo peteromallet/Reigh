@@ -24,7 +24,8 @@ export const getVariantIcon = (variantType: string | null) => {
   if (!variantType) {
     return Film;
   }
-  return VARIANT_ICON_BY_TYPE[variantType] ?? Film;
+  const knownType = Object.values(VARIANT_TYPE).find((type) => type === variantType);
+  return (knownType ? VARIANT_ICON_BY_TYPE[knownType] : undefined) ?? Film;
 };
 
 export const getVariantLabel = (variant: GenerationVariant): string => {

@@ -133,7 +133,6 @@ export function useGenerationBackfillMigration(input: GenerationBackfillMigratio
             const { error: resourceError } = await supabase()
               .from('resources')
               .update({
-                generation_id: generationId,
                 metadata: toJson({
                   ...metadata,
                   generationId,

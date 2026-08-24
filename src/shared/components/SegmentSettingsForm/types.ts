@@ -104,7 +104,7 @@ export interface StructureVideoDragHandlers {
 }
 
 interface SegmentStructureVideoHandlers {
-  onAddSegmentStructureVideo?: (video: unknown) => void;
+  onAddSegmentStructureVideo?: (video: StructureVideoConfigWithMetadata) => void;
   onRemoveSegmentStructureVideo?: () => void;
 }
 

@@ -109,7 +109,7 @@ async function createLineageGif(
   blobUrls.forEach(url => URL.revokeObjectURL(url));
   gif.finish();
   const gifBytes = gif.bytes();
-  const blob = new Blob([gifBytes], { type: 'image/gif' });
+  const blob = new Blob([new Uint8Array(gifBytes)], { type: 'image/gif' });
   onProgress?.({ stage: 'complete', current: images.length, total: images.length, message: 'Complete!' });
   return blob;
 }

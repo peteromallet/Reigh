@@ -6,7 +6,7 @@ import type { LoraModel } from '@/domains/lora/types/lora';
 import { FieldDefaultControls } from '@/shared/components/SegmentSettingsForm/components/FieldDefaultControls';
 
 interface MotionPresetSectionProps {
-  builtinPreset: { metadata: { phaseConfig: PhaseConfig } };
+  builtinPreset: { id: string; metadata: { phaseConfig: PhaseConfig; name: string; description: string; generationTypeMode: 'i2v' | 'vace' } };
   featuredPresetIds: string[];
   generationMode: 'vace' | 'i2v';
   settings: SegmentSettings;
@@ -24,7 +24,7 @@ interface MotionPresetSectionProps {
   onRemoveLora: (loraId: string) => void;
   onLoraStrengthChange: (loraId: string, strength: number) => void;
   onSaveFieldAsDefault?: SegmentSettingsFormProps['onSaveFieldAsDefault'];
-  handleSaveFieldAsDefault: (field: keyof SegmentSettings, value: unknown) => Promise<void>;
+  handleSaveFieldAsDefault: (field: keyof SegmentSettings, value: SegmentSettings[keyof SegmentSettings]) => Promise<void>;
   savingField: string | null;
   isUsingMotionDefaults: boolean;
   isUsingLorasDefault: boolean;

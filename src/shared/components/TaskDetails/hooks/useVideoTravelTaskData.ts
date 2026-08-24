@@ -137,7 +137,7 @@ export function useVideoTravelTaskData({
 
     const additionalLoras = asRecord(individualSegmentParams.additional_loras)
       || travelContractData.additionalLoras;
-    const prompt = travelContractData.prompt || derivePrompt(rawParams);
+    const prompt = travelContractData.prompt || derivePrompt(rawParams) || undefined;
     const orchestratorNegativePrompts = asStringArray(payloadSnapshot.orchestratorDetails.negative_prompts_expanded);
     const negativePrompt = asString(individualSegmentParams.negative_prompt)
       || travelContractData.negativePrompt
@@ -153,7 +153,7 @@ export function useVideoTravelTaskData({
       asString(rawParams.enhanced_prompt),
     );
 
-    const structureGuidance = structureData.structureGuidance;
+    const structureGuidance = structureData.structureGuidance ?? undefined;
     const hasStructureVideo = Boolean(structureData.primaryStructureVideo.path);
     const videoPath = structureData.primaryStructureVideo.path ?? undefined;
     const videoTreatment = hasStructureVideo

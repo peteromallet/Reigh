@@ -17,7 +17,7 @@ interface DesktopScrubbingPreviewProps {
     width: number;
     height: number;
   };
-  previewVideoRef: React.RefObject<HTMLVideoElement | null>;
+  previewVideoRef: React.MutableRefObject<HTMLVideoElement | null>;
   scrubbing: VideoScrubbingState;
 }
 
