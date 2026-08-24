@@ -336,7 +336,9 @@ describe('paired repository release E2E gate', () => {
       "import { spawn } from 'node:child_process';",
       "import { writeFileSync } from 'node:fs';",
       "const marker = process.argv[2];",
-      "spawn(process.execPath, ['-e', `setTimeout(() => writeFileSync(${JSON.stringify(marker)}, 'orphan'), 900)`], { stdio: 'ignore' });",
+      "const grandchild = spawn(process.execPath, ['-e', `setTimeout(() => writeFileSync(${JSON.stringify(marker)}, 'orphan'), 900)`], { detached: true, stdio: 'ignore' });",
+      'grandchild.unref();',
+      'setTimeout(() => {}, 1_500);',
     ].join('\n'), { mode: 0o700 });
     const logPath = resolve(root, 'server.log');
     try {

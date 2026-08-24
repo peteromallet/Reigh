@@ -1039,31 +1039,138 @@ async function stopLoggedProcess(handle) {
       new Promise((resolvePromise) => setTimeout(() => resolvePromise(false), timeoutMs)),
     ]);
   };
-  // The detached leader can exit while a descendant keeps the process group
-  // alive. On POSIX, signal the group even when the leader's exit event has
-  // already fired; checking only `isRunning()` would orphan that descendant.
-  if (child.pid && (isRunning() || process.platform !== 'win32')) {
-    try {
-      if (process.platform === 'win32') child.kill('SIGTERM');
-      else process.kill(-child.pid, 'SIGTERM');
-    } catch {
-      // It may have exited between the state check and signal.
-    }
+  const processTable = child.pid && process.platform !== 'win32'
+    ? await readProcessTable()
+    : [];
+  const rootIdentity = child.pid && process.platform !== 'win32'
+    ? processTable.find((entry) => entry.pid === child.pid)
+    : null;
+  // Detached descendants have their own process group, so capture the whole
+  // tree before terminating the leader. Each identity is re-validated before
+  // signalling; a PID that was reused for an unrelated process is skipped.
+  const processTree = rootIdentity ? await snapshotProcessTree(rootIdentity.pid, [], processTable) : [];
+  if (child.pid && process.platform === 'win32') {
+    if (isRunning()) child.kill('SIGTERM');
     await waitForExit(5_000);
-  }
-  if (child.pid && (isRunning() || process.platform !== 'win32')) {
-    try {
-      if (process.platform === 'win32') child.kill('SIGKILL');
-      else process.kill(-child.pid, 'SIGKILL');
-    } catch {
-      // Already gone.
-    }
-    if (!await waitForExit(5_000)) {
-      fail(`server process group ${child.pid} did not terminate after SIGKILL`);
+    if (isRunning()) child.kill('SIGKILL');
+    if (!await waitForExit(5_000)) fail(`server process ${child.pid} did not terminate after SIGKILL`);
+  } else if (rootIdentity) {
+    await signalProcessTree(processTree, 'SIGTERM');
+    await signalOwnedProcessGroup(rootIdentity, 'SIGTERM');
+    await waitForExit(5_000);
+
+    // Re-scan immediately before KILL so children created during the TERM
+    // grace period are included while their parent identity is still valid.
+    const refreshedTree = await snapshotProcessTree(rootIdentity.pid, processTree);
+    await signalProcessTree(refreshedTree, 'SIGKILL');
+    await signalOwnedProcessGroup(rootIdentity, 'SIGKILL');
+    if (!await waitForExit(5_000) || (await waitForProcessIdentitiesGone(refreshedTree, 5_000)) === false) {
+      fail(`server process tree rooted at ${rootIdentity.pid} did not terminate after SIGKILL`);
     }
   }
   await new Promise((resolvePromise) => log.end(resolvePromise));
   handle.stopped = true;
+}
+
+/**
+ * Read stable POSIX process identities. `lstart` plus the full command line
+ * protects the targeted PID from being reused during bounded cleanup.
+ */
+function readProcessTable() {
+  if (process.platform === 'win32') return Promise.resolve([]);
+  return new Promise((resolvePromise) => {
+    const ps = spawn('ps', ['-axo', 'pid=,ppid=,lstart=,command='], {
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const chunks = [];
+    let settled = false;
+    const finish = (entries) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolvePromise(entries);
+    };
+    const timer = setTimeout(() => {
+      try { ps.kill('SIGKILL'); } catch { /* already exited */ }
+      finish([]);
+    }, 1_000);
+    ps.stdout.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+    ps.once('error', () => finish([]));
+    ps.once('close', () => {
+      const output = Buffer.concat(chunks).toString('utf8');
+      finish(output.split('\n').flatMap((line) => {
+        const match = line.match(/^\s*(\d+)\s+(\d+)\s+(.{24})\s+(.*)$/);
+        if (!match) return [];
+        return [{
+          pid: Number(match[1]),
+          ppid: Number(match[2]),
+          startTime: match[3].trim(),
+          command: match[4].trim(),
+          depth: 0,
+        }];
+      }));
+    });
+  });
+}
+
+function sameProcess(left, right) {
+  return Boolean(left && right)
+    && left.pid === right.pid
+    && left.startTime === right.startTime
+    && left.command === right.command;
+}
+
+async function snapshotProcessTree(rootPid, previous = [], table = null) {
+  table ??= await readProcessTable();
+  const root = table.find((entry) => entry.pid === rootPid);
+  const prior = new Map(previous.map((entry) => [entry.pid, entry]));
+  if (!root && !prior.has(rootPid)) return previous;
+  const byParent = new Map();
+  for (const entry of table) {
+    const siblings = byParent.get(entry.ppid) ?? [];
+    siblings.push(entry);
+    byParent.set(entry.ppid, siblings);
+  }
+  const found = new Map();
+  const visit = (entry, depth) => {
+    const existing = found.get(entry.pid);
+    if (existing && existing.depth <= depth) return;
+    found.set(entry.pid, { ...entry, depth });
+    for (const child of byParent.get(entry.pid) ?? []) visit(child, depth + 1);
+  };
+  if (root) visit(root, 0);
+  // Preserve descendants that have already been reparented after their
+  // leader exited; their captured identity remains safe to target.
+  for (const entry of prior.values()) {
+    if (!found.has(entry.pid)) found.set(entry.pid, entry);
+  }
+  return [...found.values()].sort((left, right) => right.depth - left.depth || right.pid - left.pid);
+}
+
+async function waitForProcessIdentitiesGone(identities, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const table = await readProcessTable();
+    if (!identities.some((entry) => table.some((current) => sameProcess(entry, current)))) return true;
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 50));
+  }
+  const table = await readProcessTable();
+  return !identities.some((entry) => table.some((current) => sameProcess(entry, current)));
+}
+
+async function signalProcessTree(identities, signal) {
+  const current = await readProcessTable();
+  for (const identity of [...identities].sort((left, right) => right.depth - left.depth || right.pid - left.pid)) {
+    const match = current.find((entry) => sameProcess(entry, identity));
+    if (!match) continue;
+    try { process.kill(identity.pid, signal); } catch { /* exited between scan and signal */ }
+  }
+}
+
+async function signalOwnedProcessGroup(rootIdentity, signal) {
+  const current = (await readProcessTable()).find((entry) => sameProcess(entry, rootIdentity));
+  if (!current) return;
+  try { process.kill(-rootIdentity.pid, signal); } catch { /* group already gone */ }
 }
 
 async function stopLoggedProcesses(handles) {

@@ -40,6 +40,7 @@ import {
   isDeferred,
   isUnsupported,
 } from './lib/extension-contract-matrix.mjs';
+import { filterSemanticPresenceMatches } from './lib/deferred-claim-scanner.mjs';
 
 // ---------------------------------------------------------------------------
 // Path resolution
@@ -148,10 +149,10 @@ function grep(pattern, searchPath) {
         timeout: 30_000,
       },
     );
-    return result
+    return filterSemanticPresenceMatches(result
       .trim()
       .split('\n')
-      .filter((line) => line.length > 0);
+      .filter((line) => line.length > 0), pattern);
   } catch (err) {
     // rg exits 1 when no matches — that's the expected success case.
     if (err.status === 1 && !err.stdout && !err.stderr) {
