@@ -16,6 +16,7 @@ import {
 import type { TimelineApplyEdit } from '@/tools/video-editor/hooks/timeline-state-types.ts';
 import type { TimelineEventBus } from '@/tools/video-editor/hooks/useTimelineEventBus.ts';
 import type { TimelineRow } from '@/tools/video-editor/types/timeline-canvas.ts';
+import { allowTimelineEdits, type TimelineEditability } from '@/tools/video-editor/lib/timeline-editability.ts';
 
 export interface UseTimelineTrackManagementArgs {
   dataRef: React.MutableRefObject<TimelineData | null>;
@@ -29,6 +30,7 @@ export interface UseTimelineTrackManagementArgs {
    * don't construct a bus keep working.
    */
   eventBus?: TimelineEventBus;
+  editability?: TimelineEditability;
 }
 
 export interface UseTimelineTrackManagementResult {
@@ -38,6 +40,14 @@ export interface UseTimelineTrackManagementResult {
   handleRemoveTrack: (trackId: string) => void;
   handleClearUnusedTracks: () => void;
   unusedTrackCount: number;
+  applyResolvedClipMove: (
+    clipId: string,
+    targetRowId: string,
+    targetTrackId: string | null,
+    start: number,
+    needsNewTrack: boolean,
+    transactionId?: string,
+  ) => void;
   moveClipToRow: (clipId: string, targetRowId: string, newStartTime?: number, transactionId?: string) => void;
   createTrackAndMoveClip: (clipId: string, kind: TrackKind, newStartTime?: number, insertAtTop?: boolean) => void;
   moveSelectedClipToTrack: (direction: 'up' | 'down') => void;
@@ -203,6 +213,20 @@ function getLiveGroupEnd(current: Pick<TimelineData, 'rows'>, group: PinnedShotG
   return Math.max(...actionEnds);
 }
 
+function appendTrackForResolvedMove(current: TimelineData, kind: TrackKind): { nextState: TimelineData; trackId: string } {
+  const prefix = kind === 'audio' ? 'A' : 'V';
+  const trackId = `${prefix}${getTrackIndex(current.tracks, prefix) + 1}`;
+  const track = { id: trackId, kind, label: trackId };
+  return {
+    nextState: {
+      ...current,
+      tracks: [...current.tracks, track],
+      rows: [...current.rows, { id: trackId, actions: [] }],
+    },
+    trackId,
+  };
+}
+
 export function useTimelineTrackManagement({
   dataRef,
   resolvedConfig,
@@ -210,7 +234,80 @@ export function useTimelineTrackManagement({
   setSelectedTrackId,
   applyEdit,
   eventBus,
+  editability = allowTimelineEdits,
 }: UseTimelineTrackManagementArgs): UseTimelineTrackManagementResult {
+  const applyResolvedClipMove = useCallback((
+    clipId: string,
+    targetRowId: string,
+    targetTrackId: string | null,
+    start: number,
+    needsNewTrack: boolean,
+    transactionId?: string,
+  ) => {
+    let current = dataRef.current;
+    if (!current) return;
+    const enclosingGroup = findEnclosingPinnedGroup(current.config, clipId);
+    const sourceTrackId = enclosingGroup
+      ? resolveGroupTrackId(enclosingGroup.group, current.rows)
+      : current.rows.find((row) => row.actions.some((action) => action.id === clipId))?.id ?? null;
+    const editabilityResult = editability.check({ clipId, sourceTrackId, targetTrackId: targetTrackId ?? targetRowId });
+    if (!editabilityResult.allowed) return;
+    if (enclosingGroup) {
+      const sourceTrackId = resolveGroupTrackId(enclosingGroup.group, current.rows);
+      const sourceTrack = current.tracks.find((track) => track.id === sourceTrackId);
+      const groupStart = getLiveGroupStart(current, { ...enclosingGroup.group, trackId: sourceTrackId });
+      const destinationId = targetTrackId ?? targetRowId;
+      const targetTrack = current.tracks.find((track) => track.id === destinationId);
+      if (!sourceTrack || groupStart == null || (!needsNewTrack && !targetTrack) || (targetTrack && targetTrack.kind !== sourceTrack.kind)) return;
+      let finalTrackId = targetTrackId;
+      if (needsNewTrack || !finalTrackId) {
+        const appended = appendTrackForResolvedMove(current, sourceTrack.kind);
+        current = appended.nextState;
+        finalTrackId = appended.trackId;
+        dataRef.current = current;
+      }
+      const translated = translateGroupMembers({
+        current,
+        group: { ...enclosingGroup.group, trackId: sourceTrackId },
+        targetRowId: finalTrackId,
+        deltaTime: start - groupStart,
+      });
+      applyEdit({
+        type: 'rows',
+        rows: translated.nextRows,
+        metaUpdates: Object.keys(translated.metaUpdates).length ? translated.metaUpdates : undefined,
+        clipOrderOverride: translated.nextClipOrder,
+        pinnedShotGroupsOverride: translated.pinnedShotGroupsOverride,
+      }, { transactionId });
+      return;
+    }
+    const sourceRow = current.rows.find((row) => row.actions.some((action) => action.id === clipId));
+    const action = sourceRow?.actions.find((candidate) => candidate.id === clipId);
+    const sourceTrack = sourceRow ? current.tracks.find((track) => track.id === sourceRow.id) : null;
+    const destinationId = targetTrackId ?? targetRowId;
+    const targetTrack = current.tracks.find((track) => track.id === destinationId);
+    if (!sourceRow || !action || !sourceTrack || (!needsNewTrack && !targetTrack) || (targetTrack && targetTrack.kind !== sourceTrack.kind)) return;
+    let finalTrackId = targetTrackId;
+    if (needsNewTrack || !finalTrackId) {
+      const appended = appendTrackForResolvedMove(current, sourceTrack.kind);
+      current = appended.nextState;
+      finalTrackId = appended.trackId;
+      dataRef.current = current;
+    }
+    const nextAction = { ...action, start, end: start + (action.end - action.start) };
+    const nextRows = current.rows.map((row) => {
+      if (row.id === sourceRow.id && row.id === finalTrackId) return { ...row, actions: row.actions.map((candidate) => candidate.id === clipId ? nextAction : candidate) };
+      if (row.id === sourceRow.id) return { ...row, actions: row.actions.filter((candidate) => candidate.id !== clipId) };
+      if (row.id === finalTrackId) return { ...row, actions: [...row.actions, nextAction] };
+      return row;
+    });
+    applyEdit({
+      type: 'rows',
+      rows: nextRows,
+      metaUpdates: { [clipId]: { track: finalTrackId } },
+      clipOrderOverride: moveClipBetweenTracks(current.clipOrder, clipId, sourceRow.id, finalTrackId),
+    }, { transactionId });
+  }, [applyEdit, dataRef, editability]);
   /**
    * Move a clip to `targetRowId`, optionally landing it at `newStartTime`.
    *
@@ -239,6 +336,16 @@ export function useTimelineTrackManagement({
     }
 
     const enclosingGroup = findEnclosingPinnedGroup(current.config, clipId);
+    const sourceTrackForEditability = enclosingGroup
+      ? resolveGroupTrackId(enclosingGroup.group, current.rows)
+      : current.rows.find((row) => row.actions.some((action) => action.id === clipId))?.id ?? null;
+    if (!editability.check({
+      clipId,
+      sourceTrackId: sourceTrackForEditability,
+      targetTrackId: targetRowId,
+    }).allowed) {
+      return;
+    }
     if (enclosingGroup) {
       const resolvedTrackId = resolveGroupTrackId(enclosingGroup.group, current.rows);
       const resolvedGroup = resolvedTrackId === enclosingGroup.group.trackId
@@ -388,13 +495,15 @@ export function useTimelineTrackManagement({
       },
       clipOrderOverride: nextClipOrder,
     }, { transactionId });
-  }, [applyEdit, dataRef, eventBus]);
+  }, [applyEdit, dataRef, editability, eventBus]);
 
   const createTrackAndMoveClip = useCallback((clipId: string, kind: TrackKind, newStartTime?: number, insertAtTop = false) => {
     const current = dataRef.current;
     if (!current) {
       return;
     }
+    const sourceTrackIdForEditability = current.rows.find((row) => row.actions.some((action) => action.id === clipId))?.id ?? null;
+    if (!editability.check({ clipId, sourceTrackId: sourceTrackIdForEditability, targetTrackId: null }).allowed) return;
 
     const enclosingGroup = findEnclosingPinnedGroup(current.config, clipId);
     const sourceClip = current.resolvedConfig.clips.find((clip) => clip.id === clipId);
@@ -489,7 +598,7 @@ export function useTimelineTrackManagement({
       selectedClipId: clipId,
       selectedTrackId: newTrack.id,
     });
-  }, [applyEdit, dataRef]);
+  }, [applyEdit, dataRef, editability]);
 
   const moveSelectedClipToTrack = useCallback((direction: 'up' | 'down') => {
     const current = dataRef.current;
@@ -873,6 +982,7 @@ export function useTimelineTrackManagement({
     handleRemoveTrack,
     handleClearUnusedTracks,
     unusedTrackCount,
+    applyResolvedClipMove,
     moveClipToRow,
     createTrackAndMoveClip,
     moveSelectedClipToTrack,

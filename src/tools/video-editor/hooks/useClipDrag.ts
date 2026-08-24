@@ -21,7 +21,6 @@ import {
   SHOT_GROUP_DRAG_ANCHOR_ROW_ID_DATASET_KEY,
   SHOT_GROUP_DRAG_ANCHOR_SELECTOR,
 } from '@/tools/video-editor/lib/timeline-dom.ts';
-import { snapDrag } from '@/tools/video-editor/lib/snap-edges.ts';
 import { useTimelineScale } from '@/tools/video-editor/hooks/useTimelineScale.ts';
 import {
   useTimelineDataSelector,
@@ -35,14 +34,13 @@ import type { ActionDragState, DragMachineState, DragSession, InternalDragSessio
 import { buildPendingDragSession, commitDraggingSession, createFloatingGhost, ensureCountBadge, findClipElement, updateFloatingGhostPosition } from '@/tools/video-editor/hooks/useClipDrag.helpers.ts';
 
 const DRAG_THRESHOLD_PX = 4;
-/** Snap threshold in pixels — converted to seconds based on current zoom. */
-const SNAP_THRESHOLD_PX = 8;
 /** Vertical pixel threshold before activating cross-track mode. */
 const CROSS_TRACK_THRESHOLD_PX = 10;
 
 interface UseClipDragLatest {
   coordinator: TimelineEditorDataContextValue['coordinator'];
   moveClipToRow: TimelineEditorOpsContextValue['moveClipToRow'];
+  applyResolvedClipMove: TimelineEditorOpsContextValue['applyResolvedClipMove'];
   createTrackAndMoveClip: TimelineEditorOpsContextValue['createTrackAndMoveClip'];
   selectClip: TimelineEditorOpsContextValue['selectClip'];
   selectClips: TimelineEditorOpsContextValue['selectClips'];
@@ -108,6 +106,7 @@ export const useClipDrag = (): UseClipDragResult => {
   const latest: UseClipDragLatest = {
     coordinator,
     moveClipToRow: ops.moveClipToRow,
+    applyResolvedClipMove: ops.applyResolvedClipMove,
     createTrackAndMoveClip: ops.createTrackAndMoveClip,
     selectClip: ops.selectClip,
     selectClips: ops.selectClips,
@@ -181,24 +180,14 @@ export const useClipDrag = (): UseClipDragResult => {
         clientX,
         clientY: adjustedClientY,
         sourceKind: session.sourceKind,
+        clipId: session.clipId,
         clipDuration: session.clipDuration,
         clipOffsetX: session.pointerOffsetX,
         excludeClipIds: new Set(session.draggedClipIds),
       });
 
       const pixelsPerSecond = pixelsPerSecondRef.current;
-      const snapThresholdS = SNAP_THRESHOLD_PX / pixelsPerSecond;
-      const targetRowId = nextPosition.trackId ?? session.sourceRowId;
-      const targetRow = dataRef.current?.rows.find((row) => row.id === targetRowId);
-      const siblings = targetRow?.actions ?? [];
-      const { start: snappedStart } = snapDrag(
-        nextPosition.time,
-        session.clipDuration,
-        siblings,
-        session.clipId,
-        snapThresholdS,
-        session.draggedClipIds,
-      );
+      const snappedStart = nextPosition.plan?.resolvedStart ?? nextPosition.time;
 
       const dragState = actionDragStateRef.current;
       if (dragState) {
@@ -385,8 +374,10 @@ export const useClipDrag = (): UseClipDragResult => {
             dropPosition,
             crossTrackActive: crossTrackActiveRef.current,
             liveData: dataRef.current,
+            lastPlan: latestRef.current.coordinator.lastPlan,
             callbacks: {
               moveClipToRow: latestRef.current.moveClipToRow,
+              applyResolvedClipMove: latestRef.current.applyResolvedClipMove,
               createTrackAndMoveClip: latestRef.current.createTrackAndMoveClip,
               selectClip: latestRef.current.selectClip,
               selectClips: latestRef.current.selectClips,

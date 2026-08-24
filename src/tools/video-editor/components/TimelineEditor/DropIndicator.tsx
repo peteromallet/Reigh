@@ -7,6 +7,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import type { GhostRect } from '@/tools/video-editor/lib/multi-drag-utils.ts';
+import type { ClipDragPlan } from '@/tools/video-editor/lib/clip-drag-planner.ts';
 import { VIDEO_EDITOR_THEME_VARS } from '@/tools/video-editor/lib/themeTokens.ts';
 
 export interface DropIndicatorPosition {
@@ -27,6 +28,7 @@ export interface DropIndicatorPosition {
   /** When non-null, describes the kind of track that will be created. */
   newTrackKind: string | null;
   reject: boolean;
+  plan?: ClipDragPlan;
 }
 
 export interface DropIndicatorHandle {
@@ -94,6 +96,7 @@ export const DropIndicator = forwardRef<DropIndicatorHandle, DropIndicatorProps>
 
   const labelLeft = position.lineLeft - 30;
   const labelTop = position.rowTop - 16;
+  const isReject = position.plan?.rejectReason != null || position.reject;
 
   // New-track edge indicator: glow along top or bottom of the timeline
   const editArea = editAreaRef.current;
@@ -119,7 +122,7 @@ export const DropIndicator = forwardRef<DropIndicatorHandle, DropIndicatorProps>
       )}
       {!showNewTrackEdge && (
         <div
-          className={position.reject ? 'drop-indicator-row drop-indicator-row--reject' : 'drop-indicator-row'}
+          className={isReject ? 'drop-indicator-row drop-indicator-row--reject' : 'drop-indicator-row'}
           style={{
             left: position.rowLeft,
             top: position.rowTop,

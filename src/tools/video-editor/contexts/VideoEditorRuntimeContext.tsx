@@ -30,6 +30,7 @@ import type { ProcessManager } from '@/tools/video-editor/runtime/processes/Proc
 import type { ProcessStatus } from '@/sdk/video/families/processes';
 import type { ProcessResultAttachRecord } from '@/tools/video-editor/runtime/composition/processResultAttach.ts';
 import type { HostOwnedExtensionOperationalEmitter } from '@/tools/video-editor/runtime/extensionReleaseControls.ts';
+import type { TimelineEditability } from '@/tools/video-editor/lib/timeline-editability.ts';
 
 export interface VideoEditorRuntimeContextValue {
   provider: DataProvider;
@@ -92,6 +93,8 @@ export interface VideoEditorRuntimeContextValue {
    *  The canvas publishes layout/playback state into it regardless of the
    *  overlay flag; extensions read it renderer-independently. */
   timelineViewStore?: TimelineViewStoreApi;
+  /** Host-owned runtime lock/read-only state; never serialized in timeline data. */
+  timelineEditability?: TimelineEditability;
 }
 
 export const VideoEditorRuntimeContext = createContext<VideoEditorRuntimeContextValue | null>(null);

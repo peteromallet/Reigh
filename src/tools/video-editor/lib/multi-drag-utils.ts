@@ -201,6 +201,7 @@ export function planMultiDragMoves(
     originStart: number;
     originTrackId: string;
   },
+  snapThresholdS?: number,
 ): MultiDragResult {
   const rowIds = data.rows.map((r) => r.id);
   const trackById = new Map(data.tracks.map((t) => [t.id, t]));
@@ -274,6 +275,8 @@ export function planMultiDragMoves(
       anchorTargetRowId,
       groupStart,
       groupDuration,
+      undefined,
+      snapThresholdS,
     );
     const effectiveGroupStart = snapResult.snapped ? snapResult.time : groupStart;
 

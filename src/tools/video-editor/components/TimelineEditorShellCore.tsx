@@ -61,6 +61,7 @@ import {
   useTimelineShellDividerDrag,
 } from './useTimelineShellDividerDrag.ts';
 import { useVideoEditorShellSlots } from './useVideoEditorShellSlots.tsx';
+import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 
 export interface TimelineEditorShellCoreProps {
   timelineId: string;
@@ -119,6 +120,7 @@ function TimelineEditorShellCoreComponent({
   navigationControls,
 }: TimelineEditorShellCoreProps) {
   useRenderDiagnostic('TimelineEditorShellCore');
+  const runtime = useVideoEditorRuntime();
   const editorData = useTimelineEditorData();
   const editorOps = useTimelineEditorOps();
   const chrome = useTimelineChromeContext();
@@ -195,6 +197,7 @@ function TimelineEditorShellCoreComponent({
       editorData.dataRef.current,
       editorData.selectedClipIds,
       deltaSeconds,
+      runtime.timelineEditability,
     );
     if (mutation) {
       editorOps.applyEdit(mutation, { semantic: true });

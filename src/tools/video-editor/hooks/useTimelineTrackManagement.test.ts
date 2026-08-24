@@ -12,6 +12,7 @@ import type {
   TrackDefinition,
   TrackKind,
 } from '@/tools/video-editor/types';
+import { createTimelineEditability } from '@/tools/video-editor/lib/timeline-editability.ts';
 
 const makePinnedGroup = (args: {
   shotId: string;
@@ -88,6 +89,35 @@ describe('reorderTracksByDirection', () => {
     expect(getTrackOrder(reorderTracksByDirection(tracks, 'V1', 1))).toEqual(['V2', 'V1', 'V3']);
     expect(getTrackOrder(reorderTracksByDirection(tracks, 'V2', 1))).toEqual(['V1', 'V3', 'V2']);
     expect(getTrackOrder(reorderTracksByDirection(tracks, 'V3', -1))).toEqual(['V1', 'V3', 'V2']);
+  });
+});
+
+describe('runtime editability at commit', () => {
+  it('rechecks a lock after the drag plan was produced', () => {
+    const tracks = [makeTrack('V1', 'visual'), makeTrack('V2', 'visual')];
+    const dataRef = { current: {
+      rows: [
+        { id: 'V1', actions: [{ id: 'clip-1', start: 0, end: 10, effectId: 'effect-clip-1' }] },
+        { id: 'V2', actions: [] },
+      ],
+      tracks,
+      meta: { 'clip-1': { track: 'V1', clipType: 'hold', hold: 10 } },
+      clipOrder: { V1: ['clip-1'], V2: [] },
+      config: { output: { resolution: '1280x720', fps: 30, file: 'out.mp4' }, tracks, clips: [{ id: 'clip-1', at: 0, track: 'V1', clipType: 'hold', hold: 10 }] },
+      resolvedConfig: makeResolvedConfig(tracks),
+    } } as any;
+    const applyEdit = vi.fn();
+    const { result } = renderHook(() => useTimelineTrackManagement({
+      dataRef,
+      resolvedConfig: dataRef.current.resolvedConfig,
+      selectedClipId: null,
+      setSelectedTrackId: vi.fn(),
+      applyEdit,
+      editability: createTimelineEditability({ lockedClipIds: ['clip-1'] }),
+    }));
+
+    act(() => result.current.applyResolvedClipMove('clip-1', 'V2', 'V2', 20, false, 'txn-stale-lock'));
+    expect(applyEdit).not.toHaveBeenCalled();
   });
 });
 

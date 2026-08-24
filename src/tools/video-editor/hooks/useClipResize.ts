@@ -12,6 +12,7 @@ import { ensureGroupContiguity } from '@/tools/video-editor/lib/shot-group-conti
 import type { TimelineApplyEdit } from '@/tools/video-editor/hooks/timeline-state-types.ts';
 import type { TrackKind } from '@/tools/video-editor/types/index.ts';
 import type { TimelineAction, TimelineRow } from '@/tools/video-editor/types/timeline-canvas.ts';
+import { allowTimelineEdits, type TimelineEditability } from '@/tools/video-editor/lib/timeline-editability.ts';
 
 interface ResizeStartTarget {
   action: TimelineAction;
@@ -48,6 +49,7 @@ interface ResizeStartState {
 export interface UseClipResizeArgs {
   dataRef: React.MutableRefObject<TimelineData | null>;
   applyEdit: TimelineApplyEdit;
+  editability?: TimelineEditability;
 }
 
 export interface UseClipResizeResult {
@@ -199,6 +201,7 @@ const getResizeOrigin = (
 export function useClipResize({
   dataRef,
   applyEdit,
+  editability = allowTimelineEdits,
 }: UseClipResizeArgs): UseClipResizeResult {
   const resizeStartRef = useRef<Record<string, ResizeStartState>>({});
   const resizeTransactionIdRef = useRef<Record<string, string>>({});
@@ -211,6 +214,7 @@ export function useClipResize({
   const onActionResizeStart = useCallback(({ action, row, dir }: ResizeStartTarget) => {
     if (action.id.startsWith('uploading-')) return;
     const current = dataRef.current;
+    if (current && !editability.check({ clipId: action.id, sourceTrackId: row.id, targetTrackId: row.id }).allowed) return;
     const clipMeta = current?.meta[action.id];
     if (!current || !clipMeta || typeof clipMeta.hold === 'number') {
       resizeTransactionIdRef.current[action.id] = crypto.randomUUID();
@@ -229,7 +233,7 @@ export function useClipResize({
     resizeStartRef.current[action.id] = getResizeStartState(current, action, row.id, clipMeta);
     resizeTransactionIdRef.current[action.id] = crypto.randomUUID();
     void dir;
-  }, [dataRef]);
+  }, [dataRef, editability]);
 
   const onClipEdgeResizeEnd = useCallback(({
     session,
@@ -242,6 +246,10 @@ export function useClipResize({
     }
     const current = dataRef.current;
     if (!current) {
+      clearResizeTracking(session.clipId);
+      return;
+    }
+    if (!editability.check({ clipId: session.clipId, sourceTrackId: session.rowId, targetTrackId: session.rowId }).allowed) {
       clearResizeTracking(session.clipId);
       return;
     }
@@ -361,7 +369,7 @@ export function useClipResize({
     }, { transactionId });
 
     clearResizeTracking(session.clipId);
-  }, [applyEdit, clearResizeTracking, dataRef]);
+  }, [applyEdit, clearResizeTracking, dataRef, editability]);
 
   return {
     onActionResizeStart,

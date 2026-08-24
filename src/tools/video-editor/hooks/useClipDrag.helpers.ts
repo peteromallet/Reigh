@@ -1,6 +1,7 @@
 import type { TimelineApplyEdit } from '@/tools/video-editor/hooks/timeline-state-types.ts';
 import { userSelectTimelineClip, userSelectTimelineClips } from '@/shared/state/selectionStore.ts';
 import type { DropPosition } from '@/tools/video-editor/lib/drop-position.ts';
+import type { ClipDragPlan } from '@/tools/video-editor/lib/clip-drag-planner.ts';
 import type { TimelineInputModality } from '@/tools/video-editor/lib/mobile-interaction-model.ts';
 import {
   CLIP_ACTION_SELECTOR,
@@ -122,6 +123,7 @@ interface DragCommitCallbacks {
   selectClip: (clipId: string) => void;
   selectClips: (clipIds: Iterable<string>) => void;
   applyEdit: TimelineApplyEdit;
+  applyResolvedClipMove?: (clipId: string, targetRowId: string, targetTrackId: string | null, start: number, needsNewTrack: boolean, transactionId?: string) => void;
 }
 
 interface CommitDraggingSessionArgs {
@@ -130,6 +132,7 @@ interface CommitDraggingSessionArgs {
   dropPosition: DropPosition | null;
   crossTrackActive: boolean;
   liveData: TimelineData | null;
+  lastPlan?: ClipDragPlan | null;
   callbacks: DragCommitCallbacks;
 }
 
@@ -350,10 +353,24 @@ export function commitDraggingSession({
   crossTrackActive,
   liveData,
   callbacks,
+  lastPlan,
 }: CommitDraggingSessionArgs): { deferDeactivate: boolean } {
   const isGroupDrag = session.groupDragEntry !== null;
+  const resolvedPlan = lastPlan?.valid && !lastPlan.rejectReason ? lastPlan : null;
 
   if (!isGroupDrag && crossTrackActive && session.draggedClipIds.length === 1) {
+    if (resolvedPlan && callbacks.applyResolvedClipMove) {
+      callbacks.applyResolvedClipMove(
+        session.clipId,
+        resolvedPlan.targetTrackId ?? session.sourceRowId,
+        resolvedPlan.targetTrackId,
+        resolvedPlan.resolvedStart,
+        resolvedPlan.needsNewTrack,
+        session.transactionId,
+      );
+      userSelectTimelineClip(session.clipId, { additive: false });
+      return { deferDeactivate: true };
+    }
     if (dropPosition?.isNewTrack) {
       callbacks.createTrackAndMoveClip(
         session.clipId,
@@ -391,6 +408,7 @@ export function commitDraggingSession({
             session.sourceRowId,
             timeDelta,
             session.groupDragEntry ?? undefined,
+            lastPlan?.snapThresholdS,
           );
 
           if (canMove && moves.length > 0) {
@@ -435,6 +453,7 @@ export function commitDraggingSession({
           session.sourceRowId,
           timeDelta,
           session.groupDragEntry ?? undefined,
+          lastPlan?.snapThresholdS,
         );
 
         if (canMove && moves.length > 0) {
@@ -464,7 +483,18 @@ export function commitDraggingSession({
     return { deferDeactivate: crossTrackActive };
   }
 
-  callbacks.moveClipToRow(session.clipId, session.sourceRowId, nextStart, session.transactionId);
+  if (resolvedPlan && callbacks.applyResolvedClipMove) {
+    callbacks.applyResolvedClipMove(
+      session.clipId,
+      resolvedPlan.targetTrackId ?? session.sourceRowId,
+      resolvedPlan.targetTrackId,
+      resolvedPlan.resolvedStart,
+      resolvedPlan.needsNewTrack,
+      session.transactionId,
+    );
+  } else {
+    callbacks.moveClipToRow(session.clipId, session.sourceRowId, nextStart, session.transactionId);
+  }
   userSelectTimelineClip(session.clipId, { additive: false });
   return { deferDeactivate: false };
 }

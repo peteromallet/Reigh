@@ -8,10 +8,12 @@ import {
   computeDropPosition,
   type DropPosition,
 } from '@/tools/video-editor/lib/drop-position.ts';
+import type { ClipDragPlan } from '@/tools/video-editor/lib/clip-drag-planner.ts';
 import type { GhostRect } from '@/tools/video-editor/lib/multi-drag-utils.ts';
 import { RafLoopDetector } from '@/tools/video-editor/lib/perf-diagnostics.ts';
 import type { TimelineData } from '@/tools/video-editor/lib/timeline-data.ts';
 import type { TrackKind } from '@/tools/video-editor/types/index.ts';
+import type { TimelineEditability } from '@/tools/video-editor/lib/timeline-editability.ts';
 
 export interface DragCoordinator {
   update(params: {
@@ -21,11 +23,13 @@ export interface DragCoordinator {
     clipDuration?: number;
     clipOffsetX?: number;
     excludeClipIds?: Set<string>;
+    clipId?: string;
   }): DropPosition;
   /** Show ghost outlines for secondary clips (non-anchor) during multi-drag. */
   showSecondaryGhosts(ghosts: GhostRect[]): void;
   end(): void;
   lastPosition: DropPosition | null;
+  lastPlan: ClipDragPlan | null;
   editAreaRef: MutableRefObject<HTMLElement | null>;
 }
 
@@ -35,6 +39,7 @@ interface UseDragCoordinatorArgs {
   scaleWidth: number;
   startLeft: number;
   rowHeight: number;
+  editability?: TimelineEditability;
 }
 
 interface UseDragCoordinatorResult {
@@ -82,6 +87,7 @@ const toIndicatorPosition = (position: DropPosition): DropIndicatorPosition => {
     trackId: position.trackId,
     newTrackKind: position.newTrackKind,
     reject: position.isReject,
+    plan: position.plan,
   };
 };
 
@@ -91,10 +97,12 @@ export function useDragCoordinator({
   scaleWidth,
   startLeft,
   rowHeight,
+  editability,
 }: UseDragCoordinatorArgs): UseDragCoordinatorResult {
   const indicatorRef = useRef<DropIndicatorHandle | null>(null);
   const editAreaRef = useRef<HTMLElement | null>(null);
   const lastPositionRef = useRef<DropPosition | null>(null);
+  const lastPlanRef = useRef<ClipDragPlan | null>(null);
   const pendingIndicatorRef = useRef<DropIndicatorPosition | null>(null);
   const frameRef = useRef<number | null>(null);
   // First-sample latch: the FIRST position of each drag shows SYNCHRONOUSLY
@@ -122,6 +130,7 @@ export function useDragCoordinator({
 
     pendingIndicatorRef.current = null;
     lastPositionRef.current = null;
+    lastPlanRef.current = null;
     firstSampleShownRef.current = false;
     indicatorRef.current?.hide();
   }, []);
@@ -133,11 +142,13 @@ export function useDragCoordinator({
     clipDuration?: number;
     clipOffsetX?: number;
     excludeClipIds?: Set<string>;
+    clipId?: string;
   }): DropPosition => {
     const wrapper = editAreaRef.current?.closest<HTMLDivElement>('.timeline-wrapper');
     if (!wrapper) {
       const fallback = lastPositionRef.current ?? buildFallbackPosition(rowHeight, params.sourceKind);
       lastPositionRef.current = fallback;
+      lastPlanRef.current = fallback.plan ?? lastPlanRef.current ?? null;
       return fallback;
     }
 
@@ -154,9 +165,12 @@ export function useDragCoordinator({
       clipDuration: params.clipDuration,
       clipOffsetX: params.clipOffsetX,
       excludeClipIds: params.excludeClipIds,
+      clipId: params.clipId,
+      editability,
     });
 
     lastPositionRef.current = nextPosition;
+    lastPlanRef.current = nextPosition.plan ?? null;
     const indicatorPosition = toIndicatorPosition(nextPosition);
     pendingIndicatorRef.current = indicatorPosition;
 
@@ -175,7 +189,7 @@ export function useDragCoordinator({
     }
 
     return nextPosition;
-  }, [dataRef, flushIndicator, rowHeight, scale, scaleWidth, startLeft]);
+  }, [dataRef, editability, flushIndicator, rowHeight, scale, scaleWidth, startLeft]);
 
   const showSecondaryGhosts = useCallback((ghosts: GhostRect[]) => {
     indicatorRef.current?.showSecondaryGhosts(ghosts);
@@ -194,6 +208,9 @@ export function useDragCoordinator({
     editAreaRef,
     get lastPosition() {
       return lastPositionRef.current;
+    },
+    get lastPlan() {
+      return lastPlanRef.current;
     },
   }), [editAreaRef, end, showSecondaryGhosts, update]);
 

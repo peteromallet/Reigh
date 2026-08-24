@@ -6,6 +6,7 @@ import {
 } from '@/tools/video-editor/lib/multi-drag-utils.ts';
 import type { TimelineEditMutation } from '@/tools/video-editor/hooks/useTimelineCommit.ts';
 import type { TimelineData } from '@/tools/video-editor/lib/timeline-data.ts';
+import { allowTimelineEdits, type TimelineEditability } from '@/tools/video-editor/lib/timeline-editability.ts';
 
 /**
  * Time-axis step for a keyboard nudge without precision. Coarse on purpose: the
@@ -54,6 +55,7 @@ export function buildKeyboardTimeNudgeMutation(
   currentData: TimelineData | null,
   selectedClipIds: Iterable<string>,
   requestedDeltaSeconds: number,
+  editability: TimelineEditability = allowTimelineEdits,
 ): TimelineEditMutation | null {
   if (!currentData || !Number.isFinite(requestedDeltaSeconds) || requestedDeltaSeconds === 0) {
     return null;
@@ -66,6 +68,10 @@ export function buildKeyboardTimeNudgeMutation(
   ]);
   if (movedClipIds.size === 0) {
     return null;
+  }
+  for (const clipId of movedClipIds) {
+    const sourceTrackId = currentData.rows.find((row) => row.actions.some((action) => action.id === clipId))?.id ?? null;
+    if (!editability.check({ clipId, sourceTrackId, targetTrackId: sourceTrackId }).allowed) return null;
   }
 
   const clipOffsets: ClipOffset[] = [];

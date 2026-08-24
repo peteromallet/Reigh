@@ -261,6 +261,7 @@ function createInitialOpsSlice(): TimelineEditorOpsContextValue {
   const moveSelectedClipToTrack: TimelineEditorOpsContextValue['moveSelectedClipToTrack'] = opsUnavailable('moveSelectedClipToTrack');
   const moveSelectedClipsToTrack: TimelineEditorOpsContextValue['moveSelectedClipsToTrack'] = opsUnavailable('moveSelectedClipsToTrack');
   const moveClipToRow: TimelineEditorOpsContextValue['moveClipToRow'] = opsUnavailable('moveClipToRow');
+  const applyResolvedClipMove: TimelineEditorOpsContextValue['applyResolvedClipMove'] = opsUnavailable('applyResolvedClipMove');
   const createTrackAndMoveClip: TimelineEditorOpsContextValue['createTrackAndMoveClip'] = opsUnavailable('createTrackAndMoveClip');
   const uploadFiles: TimelineEditorOpsContextValue['uploadFiles'] = opsUnavailable('uploadFiles');
   const applyEdit: TimelineEditorOpsContextValue['applyEdit'] = opsUnavailable('applyEdit');
@@ -326,6 +327,7 @@ function createInitialOpsSlice(): TimelineEditorOpsContextValue {
     moveSelectedClipToTrack,
     moveSelectedClipsToTrack,
     moveClipToRow,
+    applyResolvedClipMove,
     createTrackAndMoveClip,
     uploadFiles,
     applyEdit,

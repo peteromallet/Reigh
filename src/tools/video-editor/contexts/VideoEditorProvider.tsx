@@ -62,6 +62,7 @@ import type { ProcessManager } from '@/tools/video-editor/runtime/processes/Proc
 import type { SaveStatus } from '@/tools/video-editor/hooks/useTimelinePersistence.ts';
 import type { ResolvedAssetRegistryEntry } from '@/tools/video-editor/types/index.ts';
 import { publishLocalTestExtensionDiagnostics } from '@/app/localTestRuntime.ts';
+import type { TimelineEditability } from '@/tools/video-editor/lib/timeline-editability.ts';
 import {
   buildExtensionLifecycleOperationalEvents,
   createHostOwnedExtensionOperationalEmitter,
@@ -559,6 +560,7 @@ function InnerProvider({
     moveSelectedClipToTrack: editor.moveSelectedClipToTrack,
     moveSelectedClipsToTrack: editor.moveSelectedClipsToTrack,
     moveClipToRow: editor.moveClipToRow,
+    applyResolvedClipMove: editor.applyResolvedClipMove,
     createTrackAndMoveClip: editor.createTrackAndMoveClip,
     uploadFiles: editor.uploadFiles,
     applyEdit: editor.applyEdit,
@@ -626,6 +628,7 @@ export interface VideoEditorProviderProps {
   /** T22: Provider-owned timeline-overlay feature flag. Explicitly defaults
    *  to false; hosts opt in by supplying `true`. */
   timelineOverlaysEnabled?: boolean;
+  timelineEditability?: TimelineEditability;
   /** True only when the deployment-owned parent rollout switch is effective. */
   extensionHostEnabled?: boolean;
   /** Deployment-owned revision attached to privacy-safe operational events. */
@@ -648,6 +651,7 @@ export function VideoEditorProvider({
   packageStateEntries,
   processManager: hostProcessManager,
   timelineOverlaysEnabled = false,
+  timelineEditability,
   extensionHostEnabled = false,
   extensionReleaseRevision = 'unset',
   extensionOperationalEventSink = dispatchExtensionOperationalEvent,
@@ -830,6 +834,7 @@ export function VideoEditorProvider({
     recordProcessResultAttach: assembly.recordProcessResultAttach,
     timelineOverlaysEnabled,
     timelineViewStore: assembly.timelineViewStoreRef.current ?? undefined,
+    timelineEditability,
   }), [agentChatRegistry.register, agentChatRegistry.unregister, dataProvider, extensionHostEnabled, operationalEmitter, projectId, shotsHost, telemetryHost, timelineId, timelineName, userId, assembly.resolvedExtensionsConfig, assembly.extensionRuntime, assembly.processResultAttachRecords, assembly.processStatuses, assembly.recordProcessResultAttach, assembly.getRecoveryKey, assembly.incrementRecoveryKey, timelineOverlaysEnabled]);
 
   return (

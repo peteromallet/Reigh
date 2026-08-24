@@ -233,6 +233,7 @@ function useTimelineEditorContextValue({
     moveSelectedClipToTrack: trackManagement.moveSelectedClipToTrack,
     moveSelectedClipsToTrack: trackManagement.moveSelectedClipsToTrack,
     moveClipToRow: trackManagement.moveClipToRow,
+    applyResolvedClipMove: trackManagement.applyResolvedClipMove,
     createTrackAndMoveClip: trackManagement.createTrackAndMoveClip,
     uploadFiles,
     applyEdit,
@@ -308,6 +309,7 @@ function useTimelineEditorContextValue({
     trackManagement.handleRemoveTrack,
     trackManagement.handleTrackPopoverChange,
     trackManagement.moveClipToRow,
+    trackManagement.applyResolvedClipMove,
     trackManagement.moveSelectedClipToTrack,
     trackManagement.moveSelectedClipsToTrack,
     trackScaleMap,
@@ -693,6 +695,7 @@ export function useTimelineState(): UseTimelineStateResult {
     scaleWidth,
     startLeft: TIMELINE_START_LEFT,
     rowHeight: ROW_HEIGHT,
+    editability: runtime.timelineEditability,
   });
 
   const assetManagement = useAssetManagement({
@@ -714,6 +717,7 @@ export function useTimelineState(): UseTimelineStateResult {
   const clipResize = useClipResize({
     dataRef,
     applyEdit,
+    editability: runtime.timelineEditability,
   });
 
   const clipEditing = useClipEditing({
@@ -756,6 +760,7 @@ export function useTimelineState(): UseTimelineStateResult {
     setSelectedTrackId,
     applyEdit,
     eventBus: save.eventBus,
+    editability: runtime.timelineEditability,
   });
 
   const timelineCommands = useMemo<TimelineEditorCommands>(() => {
@@ -960,6 +965,7 @@ export function useTimelineState(): UseTimelineStateResult {
     moveSelectedClipToTrack: editor.moveSelectedClipToTrack,
     moveSelectedClipsToTrack: editor.moveSelectedClipsToTrack,
     moveClipToRow: editor.moveClipToRow,
+    applyResolvedClipMove: editor.applyResolvedClipMove,
     createTrackAndMoveClip: editor.createTrackAndMoveClip,
     uploadFiles: editor.uploadFiles,
     applyEdit: editor.applyEdit,

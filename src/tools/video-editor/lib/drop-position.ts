@@ -1,10 +1,13 @@
 import type { DragEvent as ReactDragEvent, MutableRefObject } from 'react';
 import { getDragType } from '@/shared/lib/dnd/dragDrop.ts';
-import { findNearestFreeTrack, rawRowIndexFromY, trySnapToEdge } from '@/tools/video-editor/lib/coordinate-utils.ts';
+import { rawRowIndexFromY } from '@/tools/video-editor/lib/coordinate-utils.ts';
+import { planClipDrag, type ClipDragPlan } from '@/tools/video-editor/lib/clip-drag-planner.ts';
 import { createTimelineScale } from '@/tools/video-editor/lib/timeline-scale.ts';
-import { EDIT_AREA_SELECTOR } from '@/tools/video-editor/lib/timeline-dom.ts';
 import type { TimelineData } from '@/tools/video-editor/lib/timeline-data.ts';
 import type { TrackKind } from '@/tools/video-editor/types/index.ts';
+import type { TimelineEditability } from '@/tools/video-editor/lib/timeline-editability.ts';
+
+const EDGE_SNAP_THRESHOLD_PX = 8;
 
 interface TimelineDomNodes {
   wrapper: HTMLDivElement;
@@ -35,6 +38,13 @@ export interface DropPosition {
   /** When non-null, dropping here will create a new track of this kind. */
   newTrackKind: TrackKind | null;
   screenCoords: DropScreenCoords;
+  /**
+   * The underlying planner result that `computeDropPosition` resolved.
+   * Carries snap threshold, collision resolution, and other plan-level
+   * details so downstream commit paths can consume the same `ClipDragPlan`
+   * used by the preview without recomputing snap or track resolution.
+   */
+  plan?: ClipDragPlan;
 }
 
 export interface ComputeDropPositionParams {
@@ -50,13 +60,14 @@ export interface ComputeDropPositionParams {
   clipDuration?: number;
   clipOffsetX?: number;
   excludeClipIds?: Set<string>;
+  editability?: TimelineEditability;
+  clipId?: string;
 }
 
 const timelineDomNodeCache = new WeakMap<HTMLDivElement, Omit<TimelineDomNodes, 'wrapper'>>();
 const isValidNode = (wrapper: HTMLDivElement, node: HTMLElement | null): boolean => {
   return node === null || (node.isConnected && wrapper.contains(node));
 };
-
 export const getTimelineDomNodes = (wrapper: HTMLDivElement): TimelineDomNodes => {
   const cached = timelineDomNodeCache.get(wrapper);
   if (
@@ -67,7 +78,7 @@ export const getTimelineDomNodes = (wrapper: HTMLDivElement): TimelineDomNodes =
     return { wrapper, ...cached };
   }
 
-  const editArea = wrapper.querySelector<HTMLElement>(EDIT_AREA_SELECTOR);
+  const editArea = wrapper.querySelector<HTMLElement>('.timeline-canvas-edit-area');
   // In TimelineCanvas the edit area IS the scroll container (grid).
   const grid = editArea;
   const nextNodes = { editArea, grid };
@@ -87,7 +98,9 @@ export const computeDropPosition = ({
   sourceKind = null,
   clipDuration = 5,
   clipOffsetX,
-  excludeClipIds,
+    excludeClipIds,
+  editability,
+  clipId = '__drop-preview__',
 }: ComputeDropPositionParams): DropPosition => {
   const current = dataRef.current;
   const { editArea, grid } = getTimelineDomNodes(wrapper);
@@ -105,130 +118,76 @@ export const computeDropPosition = ({
   const isNewTrackBottom = rowCount === 0 || rawRowIndex >= rowCount;
   // Only show top drop zone when fully scrolled up — otherwise auto-scroll handles it
   const isNewTrackTop = rawRowIndex < 0 && rowCount > 0 && scrollTop < 2;
-  const isNewTrack = isNewTrackBottom || isNewTrackTop;
-  const rowIndex = rowCount === 0
-    ? 0
-    : isNewTrackBottom
-      ? rowCount
-      : isNewTrackTop
-        ? 0
-        : Math.min(Math.max(rawRowIndex, 0), rowCount - 1);
+  const requestedNewTrackPlacement = isNewTrackTop ? 'top' : isNewTrackBottom ? 'bottom' : null;
+  const plan = planClipDrag({
+    pointerTime: time,
+    clipDuration,
+    clipId,
+    excludeClipIds,
+    sourceKind: sourceKind ?? 'visual',
+    tracks: current?.tracks ?? [],
+    rows: current?.rows ?? [],
+    pointerRowIndex: rawRowIndex,
+    pixelSnapThreshold: EDGE_SNAP_THRESHOLD_PX,
+    pixelsPerSecond,
+    requestedNewTrackPlacement,
+    editability,
+  });
+  const rowIndex = plan.targetRowIndex;
   const visualRowIndex = rowCount > 0 ? Math.min(rowIndex, rowCount - 1) : -1;
-  const targetRow = visualRowIndex >= 0 ? current?.rows[visualRowIndex] : undefined;
-  const targetTrack = visualRowIndex >= 0 ? current?.tracks[visualRowIndex] : undefined;
+  const targetTrack = rowIndex >= 0 && rowIndex < (current?.tracks.length ?? 0)
+    ? current?.tracks[rowIndex]
+    : undefined;
   const rowTop = visualRowIndex >= 0
     ? editRect.top + visualRowIndex * rowHeight - scrollTop
     : editRect.top;
-  const clipLeft = editRect.left + timeToPixel(time) - scrollLeft;
-  const clipWidth = Math.max(0, Math.min(clipDuration * pixelsPerSecond, editRect.right - clipLeft));
-  const ghostCenter = clipLeft + clipWidth / 2;
-  const kindMismatch = !isNewTrack && sourceKind !== null && targetTrack?.kind !== undefined && sourceKind !== targetTrack.kind;
+  // Viewport-aware long-clip ghost clipping using true rectangle math.
+  // trueLeft / trueRight = the full clip extent in screen pixels (may extend
+  // beyond the visible viewport). The ghost visual is clamped to the visible
+  // viewport; the line/label anchors to trueLeft so the time label stays
+  // accurate when the ghost rectangle is clipped offscreen.
+  const trueLeft = editRect.left + timeToPixel(plan.resolvedStart) - scrollLeft;
+  const trueRight = trueLeft + clipDuration * pixelsPerSecond;
+  const visibleLeft = editRect.left;
+  const visibleRight = editRect.right;
+  const intersects = trueLeft < visibleRight && trueRight > visibleLeft;
 
-  // When kind doesn't match, silently resolve to the first compatible track.
-  // Only create a new track if no compatible one exists at all.
-  let resolvedTrackId = targetRow?.id;
-  let resolvedTrackName = targetTrack?.label ?? targetTrack?.id ?? '';
-  let resolvedTrackKind = targetTrack?.kind ?? null;
-  let needsNewTrack = isNewTrack;
-  let newTrackKind: TrackKind | null = isNewTrack ? sourceKind : null;
-
-  if (kindMismatch && current && sourceKind) {
-    // Find the nearest compatible track to the hovered row
-    const compatibleTracks = current.tracks
-      .map((t, i) => ({ track: t, index: i }))
-      .filter(({ track }) => track.kind === sourceKind);
-    const nearest = compatibleTracks.length > 0
-      ? compatibleTracks.reduce((best, candidate) =>
-          Math.abs(candidate.index - rowIndex) < Math.abs(best.index - rowIndex) ? candidate : best)
-      : null;
-    if (nearest) {
-      const compatible = nearest.track;
-      resolvedTrackId = compatible.id;
-      resolvedTrackName = compatible.label ?? compatible.id;
-      resolvedTrackKind = compatible.kind;
-      const compatibleIndex = nearest.index;
-      const compatibleRowTop = compatibleIndex >= 0
-        ? editRect.top + compatibleIndex * rowHeight - scrollTop
-        : rowTop;
-      return {
-        time,
-        rowIndex: compatibleIndex,
-        trackId: resolvedTrackId,
-        trackKind: resolvedTrackKind,
-        trackName: resolvedTrackName,
-        isNewTrack: false,
-        isReject: false,
-        newTrackKind: null,
-        screenCoords: {
-          rowTop: compatibleRowTop,
-          rowLeft: wrapperRect.left,
-          rowWidth: wrapperRect.width,
-          rowHeight,
-          clipLeft,
-          clipWidth,
-          ghostCenter,
-        },
-      };
-    }
-    // No compatible track exists — will create one silently on drop
-    needsNewTrack = true;
-    newTrackKind = sourceKind;
-    resolvedTrackId = undefined;
-    resolvedTrackKind = sourceKind;
-    resolvedTrackName = '';
+  let ghostLeft: number;
+  let ghostWidth: number;
+  if (intersects) {
+    ghostLeft = Math.max(trueLeft, visibleLeft);
+    ghostWidth = Math.min(trueRight, visibleRight) - ghostLeft;
+  } else {
+    ghostLeft = visibleLeft;
+    ghostWidth = 0;
   }
 
-  // Overlap resolution: prefer snapping to a sibling edge on the same track
-  // before falling back to another track.
-  let resolvedTime = time;
-  let finalRowTop = rowTop;
-  if (!needsNewTrack && current && resolvedTrackId && resolvedTrackKind) {
-    const snapResult = trySnapToEdge(
-      current.rows,
-      resolvedTrackId,
-      time,
-      clipDuration,
-      excludeClipIds,
-    );
-    if (snapResult.snapped) {
-      resolvedTime = snapResult.time;
-    } else {
-      const freeTrackId = findNearestFreeTrack(
-        current.tracks, current.rows, resolvedTrackId, resolvedTrackKind,
-        time, clipDuration, excludeClipIds,
-      );
-      if (freeTrackId && freeTrackId !== resolvedTrackId) {
-        const freeIndex = current.tracks.findIndex((t) => t.id === freeTrackId);
-        const freeTrack = current.tracks[freeIndex];
-        if (freeTrack) {
-          resolvedTrackId = freeTrackId;
-          resolvedTrackName = freeTrack.label ?? freeTrack.id;
-          resolvedTrackKind = freeTrack.kind;
-          finalRowTop = editRect.top + freeIndex * rowHeight - scrollTop;
-        }
-      } else if (!freeTrackId) {
-        needsNewTrack = true;
-        newTrackKind = resolvedTrackKind;
-        resolvedTrackId = undefined;
-        resolvedTrackName = '';
-      }
-    }
-  }
+  // Line/label anchors to the planned start (trueLeft), not the ghost center.
+  const clipLeft = ghostLeft;
+  const clipWidth = ghostWidth;
+  const ghostCenter = trueLeft;
 
-  const finalClipLeft = editRect.left + timeToPixel(resolvedTime) - scrollLeft;
-  const finalClipWidth = Math.max(0, Math.min(clipDuration * pixelsPerSecond, editRect.right - finalClipLeft));
-  const finalGhostCenter = finalClipLeft + finalClipWidth / 2;
+  const resolvedTrack = plan.targetTrackId
+    ? current?.tracks.find((track) => track.id === plan.targetTrackId) ?? targetTrack
+    : undefined;
+  const resolvedTrackName = resolvedTrack?.label ?? resolvedTrack?.id ?? '';
+  const finalRowTop = rowIndex >= 0 && rowIndex < rowCount
+    ? editRect.top + rowIndex * rowHeight - scrollTop
+    : rowTop;
+  const finalClipLeft = clipLeft;
+  const finalClipWidth = clipWidth;
+  const finalGhostCenter = ghostCenter;
 
   return {
-    time: resolvedTime,
+    time: plan.resolvedStart,
     rowIndex,
-    trackId: needsNewTrack ? undefined : resolvedTrackId,
-    trackKind: needsNewTrack ? sourceKind : resolvedTrackKind,
+    trackId: plan.targetTrackId ?? undefined,
+    trackKind: plan.needsNewTrack ? (sourceKind ?? plan.trackKind) : plan.trackKind,
     trackName: resolvedTrackName,
-    isNewTrack: needsNewTrack,
-    isNewTrackTop: needsNewTrack && isNewTrackTop,
-    isReject: false,
-    newTrackKind,
+    isNewTrack: plan.needsNewTrack,
+    isNewTrackTop: plan.needsNewTrack && plan.newTrackPlacement === 'top',
+    isReject: plan.rejectReason !== null,
+    newTrackKind: plan.needsNewTrack ? plan.trackKind : null,
     screenCoords: {
       rowTop: finalRowTop,
       rowLeft: wrapperRect.left,
@@ -238,6 +197,7 @@ export const computeDropPosition = ({
       clipWidth: finalClipWidth,
       ghostCenter: finalGhostCenter,
     },
+    plan,
   };
 };
 
