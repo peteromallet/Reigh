@@ -5,10 +5,45 @@ const EDITOR_URL = '/tools/video-editor?localProject=demo-project&localTimeline=
   + '&localTest=1&timelineOverlayCanary=1&transcriptLaneFixture=render-matrix'
   + '&runawayTimelineProject=runaway-8085';
 const RUNAWAY_REQUEST = '**/api/astrid/v1/projects/runaway-8085/runaway-transitions?*';
-const PROJECT_DATA_PATH = /\/api\/astrid\/v1\/projects\/demo-project\/timelines\/demo-timeline(?:\/registry)?$/;
+// The local proxy accepts both the legacy v1 route and the current bridge
+// route; timeline hydration uses the latter after the Astrid cutover.
+const PROJECT_DATA_PATH = /\/api\/astrid(?:\/v1)?\/projects\/demo-project\/timelines\/demo-timeline(?:\/registry)?$/;
 const BRIDGE_DATA_PATH = new RegExp(
   `${PROJECT_DATA_PATH.source}|/api/astrid/v1/projects/[^/]+/runaway-transitions$`,
 );
+const CAPABILITY_PROBE_PATH = /^\/api\/astrid\/projects\/[^/]+\/media\/__reigh_capability_probe__\/content$/;
+const ABORTED_RUNAWAY_PATH = /^\/api\/astrid\/v1\/projects\/runaway-8085\/runaway-transitions$/;
+
+function collectIssues(page: import('@playwright/test').Page, options: { allowRunawayAbort?: boolean } = {}): string[] {
+  const issues: string[] = [];
+  const expectedCapabilityProbe = (url: string, status: number) => (
+    status === 404 && CAPABILITY_PROBE_PATH.test(new URL(url).pathname)
+  );
+  page.on('pageerror', (error) => issues.push(`[pageerror] ${error.message}`));
+  page.on('console', (message) => {
+    // Failed-resource console messages have no portable URL. HTTP and failed
+    // request events below perform the URL-aware classification.
+    if (message.type() === 'error' && !message.text().startsWith('Failed to load resource:')) {
+      issues.push(`[console.error] ${message.text()}`);
+    }
+  });
+  page.on('response', (response) => {
+    if (response.status() >= 400 && !expectedCapabilityProbe(response.url(), response.status())) {
+      issues.push(`[http ${response.status()}] ${response.url()}`);
+    }
+  });
+  page.on('requestfailed', (request) => {
+    const pathname = new URL(request.url()).pathname;
+    const failure = request.failure()?.errorText ?? 'unknown';
+    const intentionalAbort = options.allowRunawayAbort
+      && ABORTED_RUNAWAY_PATH.test(pathname)
+      && /ERR_INTERNET_DISCONNECTED|internetdisconnected/i.test(failure);
+    if (!intentionalAbort && !CAPABILITY_PROBE_PATH.test(pathname)) {
+      issues.push(`[requestfailed] ${request.url()} — ${failure}`);
+    }
+  });
+  return issues;
+}
 
 const BUDGET = {
   readyMs: 30_000,
@@ -52,13 +87,9 @@ test.describe('extension performance and resource budgets', () => {
     expect(await resetBridgeBaseline()).toBeNull();
     await page.addInitScript(() => localStorage.removeItem('reigh.dev-extensions.disabled'));
 
-    const issues: string[] = [];
+    const issues = collectIssues(page);
     const bridgeDataRequests: string[] = [];
     const projectDataBodies: Promise<number>[] = [];
-    page.on('pageerror', (error) => issues.push(`[pageerror] ${error.message}`));
-    page.on('console', (message) => {
-      if (message.type() === 'error') issues.push(`[console.error] ${message.text()}`);
-    });
     page.on('request', (request) => {
       if (BRIDGE_DATA_PATH.test(new URL(request.url()).pathname)) {
         bridgeDataRequests.push(request.url());
@@ -76,7 +107,10 @@ test.describe('extension performance and resource budgets', () => {
     expect(response?.ok()).toBe(true);
     await expect(page.locator('[data-lane-kind="reigh.transcript"]')).toBeVisible({ timeout: 20_000 });
     await expect(page.locator('[data-lane-kind="reigh.runaway.transitions"]')).toBeVisible();
-    await expect(page.getByText(/566 transitions/).first()).toBeVisible();
+    // The lane announces its total through the accessible group name; the
+    // visible chip list is virtualized, so there is no standalone text node
+    // containing the total for `getByText` to match reliably.
+    await expect(page.getByRole('group', { name: /566 transitions/ })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Transcript actions' })).toBeVisible();
     await expect(page.getByTestId('runaway-timeline-lane')).toHaveAttribute('data-total-items', '566');
     const readyMs = Date.now() - readyStartedAt;
@@ -121,7 +155,10 @@ test.describe('extension performance and resource budgets', () => {
     const commandSearchMs = Date.now() - commandStartedAt;
     await page.keyboard.press('Escape');
 
-    const contributionCount = (await page.locator('[data-video-editor-extension-package-id]').allTextContents())
+    // The manager's package-card data attribute is intentionally an internal
+    // implementation hook; the rendered contribution badge is the stable
+    // user-facing contract and remains present across manager layouts.
+    const contributionCount = (await page.getByText(/\b\d+ contributions?\b/).allTextContents())
       .reduce((total, text) => total + [...text.matchAll(/\b(\d+) contributions?\b/g)]
         .reduce((subtotal, match) => subtotal + Number(match[1]), 0), 0);
     expect(contributionCount).toBeGreaterThan(0);
@@ -201,11 +238,7 @@ test.describe('extension performance and resource budgets', () => {
   test('bounds an aborted bridge load and exposes a recoverable degraded state', async ({ page }) => {
     test.setTimeout(60_000);
     let requests = 0;
-    const issues: string[] = [];
-    page.on('pageerror', (error) => issues.push(`[pageerror] ${error.message}`));
-    page.on('console', (message) => {
-      if (message.type() === 'error') issues.push(`[console.error] ${message.text()}`);
-    });
+    const issues = collectIssues(page, { allowRunawayAbort: true });
     await page.route(RUNAWAY_REQUEST, async (route) => {
       requests += 1;
       await route.abort('internetdisconnected');
