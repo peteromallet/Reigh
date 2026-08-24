@@ -321,6 +321,9 @@
               "shotId": {
                 "type": "string"
               },
+              "name": {
+                "type": "string"
+              },
               "trackId": {
                 "type": "string"
               },
@@ -346,6 +349,28 @@
                   "type": "object",
                   "additionalProperties": {}
                 }
+              },
+              "poolGenerationIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "derivedFrom": {
+                "type": "object",
+                "properties": {
+                  "shotId": {
+                    "type": "string"
+                  },
+                  "trackId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "shotId",
+                  "trackId"
+                ],
+                "additionalProperties": false
               }
             },
             "additionalProperties": false

@@ -11,7 +11,11 @@ import { VideoGenerationModal } from '@/tools/travel-between-images/components/V
 import { TimelineEditorCore, resolveSelectedGenerationIdsForShotCreation } from '@/tools/video-editor/components/TimelineEditor/TimelineEditorCore.tsx';
 import { useActiveTaskClips } from '@/tools/video-editor/hooks/useActiveTaskClips.ts';
 import { useFinalVideoAvailable } from '@/tools/video-editor/hooks/useFinalVideoAvailable.ts';
-import { usePinnedGroupSync, usePinnedShotGroups } from '@/tools/video-editor/hooks/usePinnedShotGroups.ts';
+import {
+  usePinnedGroupSync,
+  usePinnedShotGroups,
+  usePinnedShotGroupViews,
+} from '@/tools/video-editor/hooks/usePinnedShotGroups.ts';
 import { useShotGroupHandlers } from '@/tools/video-editor/hooks/useShotGroupHandlers.ts';
 import { useShotGroups } from '@/tools/video-editor/hooks/useShotGroups.ts';
 import { useSwitchToFinalVideo } from '@/tools/video-editor/hooks/useSwitchToFinalVideo.ts';
@@ -125,7 +129,7 @@ function ReighTimelineEditorComponent({ onOpenSequenceCreator }: ReighTimelineEd
 
     const result = await createShot({ generationIds: selectionShotCreationState.generationIds });
     if (result?.shot && trackId) {
-      pinGroup(result.shot.id, trackId, [...selectedClipIds]);
+      pinGroup(result.shot.id, trackId, [...selectedClipIds], result.shot.name);
     }
     if (result?.shot) {
       return result.shot;
@@ -152,7 +156,7 @@ function ReighTimelineEditorComponent({ onOpenSequenceCreator }: ReighTimelineEd
     }
 
     if (trackId) {
-      pinGroup(result.shotId, trackId, [...selectedClipIds]);
+      pinGroup(result.shotId, trackId, [...selectedClipIds], result.shot?.name);
     }
 
     const createdShot = result.shot ?? shots?.find((shot) => shot.id === result.shotId) ?? null;
@@ -171,10 +175,10 @@ function ReighTimelineEditorComponent({ onOpenSequenceCreator }: ReighTimelineEd
 
   const { activeTaskAssetKeys } = useActiveTaskClips({ registry: resolvedConfig?.registry });
   const { finalVideoMap, dismissFinalVideo } = useFinalVideoAvailable();
+  const documentShotGroups = usePinnedShotGroupViews(data);
   const shotGroups = useShotGroups(
     data?.rows ?? [],
-    shots,
-    data?.config.pinnedShotGroups,
+    documentShotGroups,
   );
   const {
     switchToFinalVideo,

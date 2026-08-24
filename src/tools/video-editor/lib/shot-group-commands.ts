@@ -15,10 +15,13 @@ type ShotGroupLocator = {
 };
 
 type ShotGroupModeInput = ShotGroupLocator & {
+  name?: string;
   clipIds: string[];
   mode?: PinnedShotGroup['mode'];
   videoAssetKey?: string;
   imageClipSnapshot?: PinnedShotGroup['imageClipSnapshot'];
+  poolGenerationIds?: PinnedShotGroup['poolGenerationIds'];
+  derivedFrom?: PinnedShotGroup['derivedFrom'];
 };
 
 type ShotGroupUpdates = Partial<Omit<PinnedShotGroup, 'shotId' | 'trackId'>>;
@@ -37,6 +40,8 @@ export function clonePinnedShotGroup(group: PinnedShotGroup): PinnedShotGroup {
     ...group,
     clipIds: [...group.clipIds],
     imageClipSnapshot: cloneImageClipSnapshot(group.imageClipSnapshot),
+    poolGenerationIds: group.poolGenerationIds ? [...group.poolGenerationIds] : undefined,
+    derivedFrom: group.derivedFrom ? { ...group.derivedFrom } : undefined,
   };
 }
 
@@ -44,15 +49,19 @@ function buildPinnedShotGroupEntry(
   currentData: TimelineData,
   {
     shotId,
+    name,
     trackId,
     clipIds,
     mode = 'images',
     videoAssetKey,
     imageClipSnapshot,
+    poolGenerationIds,
+    derivedFrom,
   }: ShotGroupModeInput,
 ): PinnedShotGroup {
   return {
     shotId,
+    ...(name ? { name } : {}),
     trackId,
     clipIds: orderClipIdsByAt(clipIds, {
       clips: currentData.config.clips,
@@ -61,6 +70,8 @@ function buildPinnedShotGroupEntry(
     mode,
     ...(videoAssetKey ? { videoAssetKey } : {}),
     ...(imageClipSnapshot ? { imageClipSnapshot: cloneImageClipSnapshot(imageClipSnapshot) } : {}),
+    ...(poolGenerationIds ? { poolGenerationIds: [...poolGenerationIds] } : {}),
+    ...(derivedFrom ? { derivedFrom: { ...derivedFrom } } : {}),
   };
 }
 
@@ -153,11 +164,14 @@ export function buildUpdatePinnedShotGroupMutation(
 
       return buildPinnedShotGroupEntry(currentData, {
         shotId,
+        name: updates.name ?? group.name,
         trackId: resolvedTrackId,
         clipIds: updates.clipIds ?? group.clipIds,
         mode: updates.mode ?? group.mode,
         videoAssetKey: updates.videoAssetKey ?? group.videoAssetKey,
         imageClipSnapshot: updates.imageClipSnapshot ?? group.imageClipSnapshot,
+        poolGenerationIds: updates.poolGenerationIds ?? group.poolGenerationIds,
+        derivedFrom: updates.derivedFrom ?? group.derivedFrom,
       });
     }),
   };

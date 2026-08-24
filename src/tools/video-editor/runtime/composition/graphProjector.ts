@@ -1197,7 +1197,17 @@ export function projectCompositionGraph(input: CompositionGraphInput): Compositi
   const edges: CompositionGraphEdge[] = [];
   const contributionNodeByRefKey = new Map<string, CompositionGraphNode>();
 
+  const shotGroupsByClipId = new Map<string, NonNullable<TimelineSnapshot['renderGroups']>[number][]>();
+  for (const group of input.snapshot.renderGroups ?? []) {
+    for (const clipId of group.clipIds) {
+      const groups = shotGroupsByClipId.get(clipId) ?? [];
+      groups.push(group);
+      shotGroupsByClipId.set(clipId, groups);
+    }
+  }
+
   for (const clip of input.snapshot.clips) {
+    const shotGroups = shotGroupsByClipId.get(clip.id) ?? [];
     nodes.push(Object.freeze({
       id: clipNodeId(clip.id),
       kind: 'clip',
@@ -1207,6 +1217,17 @@ export function projectCompositionGraph(input: CompositionGraphInput): Compositi
         at: clip.at,
         clipType: clip.clipType,
         duration: clip.duration,
+        ...(shotGroups.length > 0 ? {
+          shotGroups: Object.freeze(shotGroups.map((group) => Object.freeze({
+            id: group.id,
+            shotId: group.shotId,
+            trackId: group.trackId,
+            poolGenerationIds: Object.freeze([...(group.poolGenerationIds ?? [])]),
+            variantIdsByGenerationId: Object.freeze({ ...(group.variantIdsByGenerationId ?? {}) }),
+            ...(group.finalVideoAssetKey ? { finalVideoAssetKey: group.finalVideoAssetKey } : {}),
+            ...(group.derivedFrom ? { derivedFrom: Object.freeze({ ...group.derivedFrom }) } : {}),
+          }))),
+        } : {}),
       }),
     }));
   }
@@ -1214,7 +1235,20 @@ export function projectCompositionGraph(input: CompositionGraphInput): Compositi
   nodes.push(Object.freeze({
     id: TIMELINE_POSTPROCESS_NODE_ID,
     kind: 'timeline-postprocess',
-    detail: Object.freeze({ scope: 'postprocess' }),
+    detail: Object.freeze({
+      scope: 'postprocess',
+      shotGroups: Object.freeze((input.snapshot.renderGroups ?? []).map((group) => Object.freeze({
+        id: group.id,
+        shotId: group.shotId,
+        name: group.name,
+        trackId: group.trackId,
+        clipIds: Object.freeze([...group.clipIds]),
+        poolGenerationIds: Object.freeze([...(group.poolGenerationIds ?? [])]),
+        variantIdsByGenerationId: Object.freeze({ ...(group.variantIdsByGenerationId ?? {}) }),
+        ...(group.finalVideoAssetKey ? { finalVideoAssetKey: group.finalVideoAssetKey } : {}),
+        ...(group.derivedFrom ? { derivedFrom: Object.freeze({ ...group.derivedFrom }) } : {}),
+      }))),
+    }),
   }));
 
   const contributionIndex = input.contributionIndex;

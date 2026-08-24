@@ -40,6 +40,7 @@ import type {
   TimelineLiveSourceStatus,
 } from '@/tools/video-editor/types/index';
 import {
+  deriveTimelineShotGroupViews,
   scanTimelineLiveBindings,
   scanTimelineLiveUniformBindings,
   type TimelineLiveBindingRecord,
@@ -870,26 +871,29 @@ export function createTimelineReader(
       }
 
       // ── Render groups ─────────────────────────────────────────────
-      const renderGroups: TimelineRenderGroupSummary[] = [];
-      const pinnedGroups = config.pinnedShotGroups;
-      if (pinnedGroups && Array.isArray(pinnedGroups)) {
-        for (const group of pinnedGroups) {
-          if (!group || typeof group !== 'object') continue;
-          const clipIds: string[] = [];
-          if (Array.isArray(group.clipIds)) {
-            for (const cid of group.clipIds) {
-              if (typeof cid === 'string') clipIds.push(cid);
-            }
-          }
-          if (clipIds.length > 0) {
-            renderGroups.push({
-              id: `${group.shotId}:${group.trackId}`,
-              clipIds,
-              groupType: group.mode ?? 'pinned-shot-group',
-            });
-          }
-        }
-      }
+      const renderGroups: TimelineRenderGroupSummary[] = deriveTimelineShotGroupViews(config, registry)
+        .map((group) => ({
+          id: group.id,
+          shotId: group.shotId,
+          name: group.name,
+          trackId: group.trackId,
+          clipIds: group.placedMembers
+            .map((member) => member.clipId)
+            .filter((clipId): clipId is string => clipId !== null),
+          groupType: group.mode,
+          poolGenerationIds: group.pooledMembers
+            .map((member) => member.generationId)
+            .filter((generationId): generationId is string => generationId !== null),
+          variantIdsByGenerationId: Object.freeze(Object.fromEntries(
+            group.members.flatMap((member) => (
+              member.generationId && member.variantId
+                ? [[member.generationId, member.variantId] as const]
+                : []
+            )),
+          )),
+          ...(group.finalVideo ? { finalVideoAssetKey: group.finalVideo.assetKey } : {}),
+          ...(group.derivedFrom ? { derivedFrom: group.derivedFrom } : {}),
+        }));
 
       // ── Output metadata ───────────────────────────────────────────
       const output: TimelineOutputMetadata | undefined = config.output

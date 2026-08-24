@@ -212,6 +212,20 @@ export interface TimelineRenderGroupSummary {
   clipIds: readonly string[];
   /** Type of the render group, when known. */
   groupType?: string;
+  /** Document-native shot identity; present for pinned shot groups. */
+  shotId?: string;
+  /** Document-native display name. */
+  name?: string;
+  /** Track that owns the placed members. */
+  trackId?: string;
+  /** Unpositioned generation members from the same document group. */
+  poolGenerationIds?: readonly string[];
+  /** Current primary variant id by generation, derived from the registry. */
+  variantIdsByGenerationId?: Readonly<Record<string, string>>;
+  /** Final-video registry key, when the group has one. */
+  finalVideoAssetKey?: string;
+  /** Source group lineage for deep-copy duplicates. */
+  derivedFrom?: Readonly<{ shotId: string; trackId: string }>;
   /** Required and optional passes that make up this render group. */
   passes?: readonly TimelineRenderPassSummary[];
   /** Required pass names, mirrored for compact planner checks. */

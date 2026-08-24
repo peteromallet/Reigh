@@ -118,6 +118,7 @@ const clonePinnedShotGroups = (
   pinnedShotGroups: TimelineConfig['pinnedShotGroups'],
 ): TimelineConfig['pinnedShotGroups'] => pinnedShotGroups?.map((group) => ({
   shotId: group.shotId,
+  name: group.name,
   trackId: group.trackId,
   clipIds: [...group.clipIds],
   mode: group.mode,
@@ -126,6 +127,8 @@ const clonePinnedShotGroups = (
     ...snapshot,
     meta: { ...snapshot.meta },
   })),
+  poolGenerationIds: group.poolGenerationIds ? [...group.poolGenerationIds] : undefined,
+  derivedFrom: group.derivedFrom ? { ...group.derivedFrom } : undefined,
 }));
 
 const getClipDurationSeconds = (clip: TimelineClip): number => {

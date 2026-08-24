@@ -1,7 +1,5 @@
 import { useMemo } from 'react';
-import type { Shot } from '@/domains/generation/types/index.ts';
-import { resolveGroupTrackId } from '@/tools/video-editor/lib/pinned-group-projection.ts';
-import type { TimelineConfig } from '@/tools/video-editor/types/index.ts';
+import type { TimelineShotGroupView } from '@/tools/video-editor/lib/timeline-domain.ts';
 import type { TimelineRow } from '@/tools/video-editor/types/timeline-canvas.ts';
 
 const SHOT_COLORS = ['#a855f7', '#ef4444', '#22c55e', '#3b82f6', '#f59e0b', '#14b8a6', '#ec4899', '#84cc16'];
@@ -16,6 +14,10 @@ export interface ShotGroup {
   children: Array<{ clipId: string; offset: number; duration: number }>;
   color: string;
   mode?: 'images' | 'video';
+  poolGenerationIds: string[];
+  variantIdsByGenerationId: Readonly<Record<string, string>>;
+  finalVideoAssetKey?: string;
+  derivedFrom?: Readonly<{ shotId: string; trackId: string }>;
 }
 
 export function getShotColor(shotId: string): string {
@@ -28,16 +30,20 @@ export function getShotColor(shotId: string): string {
 
 export function useShotGroups(
   rows: TimelineRow[],
-  shots: Shot[] | undefined,
-  pinnedShotGroups?: TimelineConfig['pinnedShotGroups'],
+  documentGroups: readonly TimelineShotGroupView[],
 ): ShotGroup[] {
   return useMemo(() => {
     const rowIndexById = new Map(rows.map((row, rowIndex) => [row.id, rowIndex]));
-    const shotNameById = new Map((shots ?? []).map((shot) => [shot.id, shot.name]));
 
     const result: ShotGroup[] = [];
-    for (const group of pinnedShotGroups ?? []) {
-      const resolvedTrackId = resolveGroupTrackId(group, rows);
+    for (const group of documentGroups) {
+      const placedClipIds = group.placedMembers
+        .map((member) => member.clipId)
+        .filter((clipId): clipId is string => clipId !== null);
+      const resolvedTrackId = rowIndexById.has(group.trackId)
+        ? group.trackId
+        : rows.find((row) => placedClipIds.some((clipId) => row.actions.some((action) => action.id === clipId)))?.id;
+      if (!resolvedTrackId) continue;
       const rowIndex = rowIndexById.get(resolvedTrackId);
       if (typeof rowIndex !== 'number') continue;
 
@@ -48,14 +54,14 @@ export function useShotGroups(
       const actionsById = new Map(
         row.actions.map((action) => [action.id, action] as const),
       );
-      const liveClipIds = group.clipIds.filter((clipId) => actionsById.has(clipId));
-      if (liveClipIds.length === 0) continue;
+      const liveClipIds = placedClipIds.filter((clipId) => actionsById.has(clipId));
+      if (liveClipIds.length === 0 && group.pooledMembers.length === 0) continue;
 
       const liveActions = liveClipIds
         .map((clipId) => actionsById.get(clipId)!)
         .sort((a, b) => a.start - b.start);
-      const firstAction = liveActions[0]!;
-      const groupStart = firstAction.start;
+      const firstAction = liveActions[0];
+      const groupStart = firstAction?.start ?? 0;
       const children = liveActions.map((action) => ({
         clipId: action.id,
         offset: action.start - groupStart,
@@ -64,7 +70,7 @@ export function useShotGroups(
 
       result.push({
         shotId: group.shotId,
-        shotName: shotNameById.get(group.shotId) ?? group.shotId,
+        shotName: group.name,
         rowId: resolvedTrackId,
         rowIndex,
         start: groupStart,
@@ -72,8 +78,20 @@ export function useShotGroups(
         children,
         color: getShotColor(group.shotId),
         mode: group.mode,
+        poolGenerationIds: group.pooledMembers
+          .map((member) => member.generationId)
+          .filter((generationId): generationId is string => generationId !== null),
+        variantIdsByGenerationId: Object.freeze(Object.fromEntries(
+          group.members.flatMap((member) => (
+            member.generationId && member.variantId
+              ? [[member.generationId, member.variantId] as const]
+              : []
+          )),
+        )),
+        ...(group.finalVideo ? { finalVideoAssetKey: group.finalVideo.assetKey } : {}),
+        ...(group.derivedFrom ? { derivedFrom: group.derivedFrom } : {}),
       });
     }
     return result;
-  }, [rows, shots, pinnedShotGroups]);
+  }, [documentGroups, rows]);
 }

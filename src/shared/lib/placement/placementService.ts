@@ -63,7 +63,7 @@ async function loadDocument(client: AstridLocalClient, ref: string): Promise<Loa
   };
 }
 
-async function mutateDocument<T>(
+export async function mutateTimelineDocument<T>(
   projectSlug: string,
   mutate: (document: PlacementDocument) => T,
 ): Promise<{ result: T; configVersion: number }> {
@@ -120,7 +120,7 @@ export async function placeGeneration(request: PlaceGenerationRequest): Promise<
     throw new Error(resolution.diagnostic.message);
   }
 
-  return (await mutateDocument(request.projectSlug, (document) =>
+  return (await mutateTimelineDocument(request.projectSlug, (document) =>
     placeGenerationInDocument(document, {
       shotId: request.shotId,
       generationId: request.generationId,
@@ -147,7 +147,7 @@ export interface UnplaceGenerationRequest {
 }
 
 export async function unplaceGeneration(request: UnplaceGenerationRequest): Promise<void> {
-  await mutateDocument(request.projectSlug, (document) => {
+  await mutateTimelineDocument(request.projectSlug, (document) => {
     const asset = document.registry.assets[`gen:${request.generationId}`];
     removeEntryFromDocument(document, request.entryId);
     // Pooling without managed media would strand a member nothing can render;
@@ -172,7 +172,7 @@ export interface BatchFrameUpdateRequest {
 
 /** Document equivalent of the retired `batch_update_timeline_frames` RPC. */
 export async function batchUpdatePlacementFrames(request: BatchFrameUpdateRequest): Promise<ShotPlacement[]> {
-  return (await mutateDocument(request.projectSlug, (document) =>
+  return (await mutateTimelineDocument(request.projectSlug, (document) =>
     batchUpdateFramesInDocument(document, request.shotId, request.updates),
   )).result;
 }

@@ -285,12 +285,155 @@ export const clonePinnedShotGroups = (
   pinnedShotGroups: TimelineConfig['pinnedShotGroups'],
 ): TimelineConfig['pinnedShotGroups'] => pinnedShotGroups?.map((group) => ({
   shotId: group.shotId,
+  name: group.name,
   trackId: group.trackId,
   clipIds: [...group.clipIds],
   mode: group.mode,
   videoAssetKey: group.videoAssetKey,
   imageClipSnapshot: clonePinnedShotImageSnapshots(group.imageClipSnapshot),
+  poolGenerationIds: group.poolGenerationIds ? [...group.poolGenerationIds] : undefined,
+  derivedFrom: group.derivedFrom ? { ...group.derivedFrom } : undefined,
 }));
+
+/** One positioned or pooled generation derived from the timeline document. */
+export interface TimelineShotGroupMemberView {
+  readonly generationId: string | null;
+  readonly clipId: string | null;
+  readonly assetKey: string | null;
+  readonly variantId: string | null;
+  readonly mediaRef: string | null;
+  readonly at: number | null;
+  readonly duration: number | null;
+  readonly pooled: boolean;
+  readonly stale: boolean;
+}
+
+/**
+ * Document-derived shot-group read model. This is a projection only: group,
+ * pool, timing, primary-variant and final-video facts all come from the
+ * CAS-versioned `{config, registry}` pair and never from `shots` or
+ * relational shot-placement rows.
+ */
+export interface TimelineShotGroupView {
+  readonly id: string;
+  readonly shotId: string;
+  readonly name: string;
+  readonly trackId: string;
+  readonly mode: 'images' | 'video';
+  readonly members: readonly TimelineShotGroupMemberView[];
+  readonly placedMembers: readonly TimelineShotGroupMemberView[];
+  readonly pooledMembers: readonly TimelineShotGroupMemberView[];
+  readonly finalVideo: Readonly<{
+    assetKey: string;
+    generationId: string | null;
+    variantId: string | null;
+    mediaRef: string | null;
+    stale: boolean;
+  }> | null;
+  readonly derivedFrom: Readonly<{ shotId: string; trackId: string }> | null;
+}
+
+const shotGroupViewId = (group: Pick<PinnedShotGroup, 'shotId' | 'trackId'>): string => (
+  `${group.shotId}:${group.trackId}`
+);
+
+/** Build the shot-mode view from the one document authority. */
+export const deriveTimelineShotGroupViews = (
+  config: TimelineConfig,
+  registry: AssetRegistry,
+): readonly TimelineShotGroupView[] => {
+  const clipById = new Map(config.clips.map((clip) => [clip.id, clip] as const));
+  const assetKeyByGenerationId = new Map<string, string>();
+  for (const [assetKey, entry] of Object.entries(registry.assets ?? {})) {
+    if (entry.generationId && !assetKeyByGenerationId.has(entry.generationId)) {
+      assetKeyByGenerationId.set(entry.generationId, assetKey);
+    }
+  }
+
+  return (config.pinnedShotGroups ?? []).map((group) => {
+    const placedMembers = group.clipIds
+      .map((clipId): TimelineShotGroupMemberView | null => {
+        const clip = clipById.get(clipId);
+        if (!clip) {
+          return {
+            generationId: null,
+            clipId,
+            assetKey: null,
+            variantId: null,
+            mediaRef: null,
+            at: null,
+            duration: null,
+            pooled: false,
+            stale: true,
+          };
+        }
+        const entry = clip.asset ? registry.assets[clip.asset] : undefined;
+        return {
+          generationId: entry?.generationId ?? null,
+          clipId,
+          assetKey: clip.asset ?? null,
+          variantId: entry?.variantId ?? null,
+          mediaRef: entry?.file ?? null,
+          at: clip.at,
+          duration: getConfigTimelineClipDuration(clip),
+          pooled: false,
+          stale: !clip.asset || !entry,
+        };
+      })
+      .filter((member): member is TimelineShotGroupMemberView => member !== null)
+      .sort((left, right) => (left.at ?? Number.POSITIVE_INFINITY) - (right.at ?? Number.POSITIVE_INFINITY));
+
+    const placedGenerationIds = new Set(
+      placedMembers
+        .map((member) => member.generationId)
+        .filter((generationId): generationId is string => generationId !== null),
+    );
+    const pooledMembers = [...new Set(group.poolGenerationIds ?? [])]
+      .filter((generationId) => !placedGenerationIds.has(generationId))
+      .map((generationId): TimelineShotGroupMemberView => {
+        const canonicalKey = `gen:${generationId}`;
+        const assetKey = registry.assets[canonicalKey]
+          ? canonicalKey
+          : assetKeyByGenerationId.get(generationId) ?? null;
+        const entry = assetKey ? registry.assets[assetKey] : undefined;
+        return {
+          generationId,
+          clipId: null,
+          assetKey,
+          variantId: entry?.variantId ?? null,
+          mediaRef: entry?.file ?? null,
+          at: null,
+          duration: null,
+          pooled: true,
+          stale: !entry,
+        };
+      });
+
+    const finalEntry = group.videoAssetKey ? registry.assets[group.videoAssetKey] : undefined;
+    const finalVideo = group.videoAssetKey
+      ? {
+          assetKey: group.videoAssetKey,
+          generationId: finalEntry?.generationId ?? null,
+          variantId: finalEntry?.variantId ?? null,
+          mediaRef: finalEntry?.file ?? null,
+          stale: !finalEntry,
+        }
+      : null;
+
+    return Object.freeze({
+      id: shotGroupViewId(group),
+      shotId: group.shotId,
+      name: group.name?.trim() || group.shotId,
+      trackId: group.trackId,
+      mode: group.mode ?? 'images',
+      members: Object.freeze([...placedMembers, ...pooledMembers]),
+      placedMembers: Object.freeze(placedMembers),
+      pooledMembers: Object.freeze(pooledMembers),
+      finalVideo: finalVideo ? Object.freeze(finalVideo) : null,
+      derivedFrom: group.derivedFrom ? Object.freeze({ ...group.derivedFrom }) : null,
+    });
+  });
+};
 
 export const cloneAssetRegistry = (registry: AssetRegistry): AssetRegistry => ({
   assets: Object.fromEntries(
@@ -730,11 +873,14 @@ export const repairConfig = (
 
     return {
       shotId: group.shotId,
+      name: group.name,
       trackId: group.trackId,
       clipIds: derivedClipIds,
       mode: group.mode,
       videoAssetKey: group.videoAssetKey,
       imageClipSnapshot: clonePinnedShotImageSnapshots(group.imageClipSnapshot),
+      poolGenerationIds: group.poolGenerationIds ? [...group.poolGenerationIds] : undefined,
+      derivedFrom: group.derivedFrom ? { ...group.derivedFrom } : undefined,
     };
   });
 

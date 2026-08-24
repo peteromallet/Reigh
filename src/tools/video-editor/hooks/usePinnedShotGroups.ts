@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { Shot } from '@/domains/generation/types/index.ts';
 import { getMediaUrl, getThumbnailUrl } from '@/shared/lib/media/mediaTypeHelpers.ts';
 import { selectTimelineImages } from '@/shared/lib/shotImageSelectors.ts';
@@ -13,6 +13,10 @@ import {
 import { orderClipIdsByAt, resolveGroupTrackId } from '@/tools/video-editor/lib/pinned-group-projection.ts';
 import { ensureGroupContiguity } from '@/tools/video-editor/lib/shot-group-contiguity.ts';
 import type { ClipMeta, TimelineData } from '@/tools/video-editor/lib/timeline-data.ts';
+import {
+  deriveTimelineShotGroupViews,
+  type TimelineShotGroupView,
+} from '@/tools/video-editor/lib/timeline-domain.ts';
 import type { PinnedShotGroup } from '@/tools/video-editor/types/index.ts';
 import type { TimelineAction } from '@/tools/video-editor/types/timeline-canvas.ts';
 
@@ -30,6 +34,18 @@ interface UsePinnedGroupSyncArgs extends UsePinnedShotGroupsArgs {
 }
 
 type PinnedShotGroupUpdates = Partial<Omit<PinnedShotGroup, 'shotId' | 'trackId'>>;
+
+/**
+ * Shot mode is a read-only projection of the current CAS document pair.
+ * Keeping this next to the mutation hook makes it difficult for a caller to
+ * accidentally re-introduce a relational shot-placement join as authority.
+ */
+export function usePinnedShotGroupViews(data: TimelineData | null): readonly TimelineShotGroupView[] {
+  return useMemo(
+    () => data ? deriveTimelineShotGroupViews(data.config, data.registry) : [],
+    [data?.config, data?.registry],
+  );
+}
 
 function getPinnedShotGroups(dataRef: TimelineDataRef) {
   return dataRef.current?.config.pinnedShotGroups;
@@ -89,10 +105,11 @@ export function usePinnedShotGroups({
   dataRef,
   applyEdit,
 }: UsePinnedShotGroupsArgs) {
-  const pinGroup = useCallback((shotId: string, trackId: string, clipIds: string[]) => {
+  const pinGroup = useCallback((shotId: string, trackId: string, clipIds: string[], name?: string) => {
     const current = dataRef.current;
     const mutation = buildPinShotGroupMutation(current, {
       shotId,
+      name,
       trackId,
       clipIds,
       mode: 'images',

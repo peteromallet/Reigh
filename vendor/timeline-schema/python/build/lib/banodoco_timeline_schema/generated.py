@@ -120,11 +120,14 @@ class Track(TypedDict, closed=True):
 
 class PinnedShotGroup(TypedDict, closed=True):
     shotId: NotRequired[str]
+    name: NotRequired[str]
     trackId: NotRequired[str]
     clipIds: NotRequired[list[str]]
     mode: NotRequired[Literal["images", "video"]]
     videoAssetKey: NotRequired[str]
     imageClipSnapshot: NotRequired[list[dict[str, Any]]]
+    poolGenerationIds: NotRequired[list[str]]
+    derivedFrom: NotRequired[dict[str, str]]
 
 
 class ThemeOverrides(TypedDict, closed=True):

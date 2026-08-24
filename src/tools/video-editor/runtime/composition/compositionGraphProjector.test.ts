@@ -278,6 +278,45 @@ function outputMaterialRuntime(contributionIdx: ContributionIndex) {
 }
 
 describe('compositionGraphProjector', () => {
+  it('projects document-derived shot groups and pools without adding a second graph authority', () => {
+    const graph = project({
+      snapshot: timelineSnapshot({
+        renderGroups: [{
+          id: 'shot-copy:V1',
+          shotId: 'shot-copy',
+          name: 'Source shot copy',
+          trackId: 'V1',
+          clipIds: ['clip-1'],
+          groupType: 'images',
+          poolGenerationIds: ['gen-pool'],
+          variantIdsByGenerationId: { 'gen-placed': 'variant-primary', 'gen-pool': 'variant-pool' },
+          finalVideoAssetKey: 'asset-final-copy',
+          derivedFrom: { shotId: 'shot-source', trackId: 'V1' },
+        }],
+      }),
+    });
+
+    expect(graph.nodes.find((node) => node.id === 'clip:clip-1')?.detail).toMatchObject({
+      shotGroups: [{
+        id: 'shot-copy:V1',
+        poolGenerationIds: ['gen-pool'],
+        variantIdsByGenerationId: { 'gen-pool': 'variant-pool' },
+        finalVideoAssetKey: 'asset-final-copy',
+        derivedFrom: { shotId: 'shot-source', trackId: 'V1' },
+      }],
+    });
+    expect(graph.nodes.find((node) => node.id === TIMELINE_POSTPROCESS_NODE_ID)?.detail).toMatchObject({
+      shotGroups: [{
+        id: 'shot-copy:V1',
+        clipIds: ['clip-1'],
+        poolGenerationIds: ['gen-pool'],
+      }],
+    });
+    expect(new Set(graph.nodes.map((node) => node.kind))).toEqual(
+      new Set(['clip', 'timeline-postprocess', 'contribution']),
+    );
+  });
+
   it('projects clip, timeline-postprocess, and contribution nodes plus shader consumes edges', () => {
     const graph = project();
 
