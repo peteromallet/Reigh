@@ -188,6 +188,7 @@ export function useShotSettingsValue({
       structureVideoResourceId: structureVideo.structureVideoResourceId,
       structureVideoUni3cEndPercent: structureVideo.structureVideoUni3cEndPercent,
       structureVideoDefaultsByModel: structureVideo.structureVideoDefaultsByModel,
+      updateStructureGuidanceControls: structureVideo.updateStructureGuidanceControls,
     }),
     [structureVideo]
   );

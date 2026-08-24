@@ -3,6 +3,7 @@ import type { GenerationRow } from '@/domains/generation/types';
 import type { GenerationRowDto } from '@/domains/generation/types/generationRowDto';
 import { mapGenerationRowDtoToRow } from '@/domains/generation/mappers/generationRowMapper';
 import { getGenerationId } from '@/shared/lib/media/mediaTypeHelpers';
+import { toJson } from '@/shared/lib/supabaseTypeHelpers';
 import {
   DEFAULT_STRUCTURE_GUIDANCE_CONTROLS,
   DEFAULT_STRUCTURE_VIDEO,
@@ -40,7 +41,7 @@ export function transformGenerationToParentRow(
     thumbnail_url: typeof rawGeneration.thumbnail_url === 'string'
       ? rawGeneration.thumbnail_url
       : (typeof rawGeneration.thumbUrl === 'string' ? rawGeneration.thumbUrl : undefined),
-    params: rawGeneration.params as GenerationRow['params'],
+    params: toJson(rawGeneration.params),
   };
 
   return mapGenerationRowDtoToRow(dto);

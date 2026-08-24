@@ -4,7 +4,7 @@ import type {
 } from '@/shared/lib/tasks/travelBetweenImages';
 import type { PhaseConfig } from '@/shared/types/phaseConfig';
 import type { LoraModel } from '@/domains/lora/types/lora';
-import type { VideoMetadata } from '@/shared/lib/media/videoUploader';
+import type { AuthoredVideoMetadata } from '@/shared/lib/media/videoUploader';
 import type { SelectedModel } from '@/tools/travel-between-images/settings';
 import type { TravelGuidanceMode } from '@/shared/lib/tasks/travelGuidance';
 import type { PresetMetadata } from '@/shared/types/presetMetadata';
@@ -138,7 +138,7 @@ export interface ApplyMotionContext {
 export interface ApplyStructureVideoContext {
   onStructureVideoInputChange: (
     videoPath: string | null,
-    metadata: VideoMetadata | null,
+    metadata: AuthoredVideoMetadata | null,
     treatment: 'adjust' | 'clip',
     motionStrength: number,
     structureType: TravelGuidanceMode,

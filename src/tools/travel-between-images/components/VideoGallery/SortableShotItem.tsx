@@ -37,7 +37,7 @@ interface SortableShotItemProps {
   initialPendingBaselineNonVideoCount?: number;
   onInitialPendingUploadsConsumed?: () => void;
   dataTour?: string;
-  finalVideo?: import('../hooks/useShotFinalVideos').ShotFinalVideo;
+  finalVideo?: import('../../hooks/video/useShotFinalVideos').ShotFinalVideo;
 }
 
 export const SortableShotItem: React.FC<SortableShotItemProps> = ({

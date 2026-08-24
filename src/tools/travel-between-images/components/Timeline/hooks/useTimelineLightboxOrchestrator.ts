@@ -129,7 +129,6 @@ export function useTimelineLightboxOrchestrator({
     handleOpenExternalGeneration: externalGens.handleOpenExternalGeneration,
     goNext,
     goPrev,
-    logPrefix: "[Timeline:DerivedNav]",
   });
 
   const currentLightboxImage = lightboxIndex !== null ? currentImages[lightboxIndex] : null;

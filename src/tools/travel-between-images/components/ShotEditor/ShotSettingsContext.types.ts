@@ -2,7 +2,7 @@ import { QueryClient } from '@tanstack/react-query';
 import { Shot, GenerationRow } from '@/domains/generation/types';
 import type { Project } from '@/types/project';
 import type { LoraModel } from '@/domains/lora/types/lora';
-import type { VideoMetadata } from '@/shared/lib/media/videoUploader';
+import type { AuthoredVideoMetadata } from '@/shared/lib/media/videoUploader';
 import type { ShotEditorDimensionProps, ShotEditorState } from './state/types';
 import { ShotEditorActions } from './state/useShotEditorState';
 import { LoraManagerReturn } from './hooks/editor-state/useLoraSync';
@@ -104,7 +104,7 @@ export interface StructureVideoHandlers {
   handleUni3cEndPercentChange: (value: number) => void;
   handleStructureVideoInputChange: (
     videoPath: string | null,
-    metadata: VideoMetadata | null,
+    metadata: AuthoredVideoMetadata | null,
     treatment: 'adjust' | 'clip',
     motionStrength: number,
     structureType: TravelGuidanceMode,

@@ -53,7 +53,7 @@ export const FinalVideoSection: React.FC<FinalVideoSectionProps> = (props) => {
             badgeData={badgeData}
             onMarkAllVariantsViewed={handleMarkAllVariantsViewed}
             selectedParentId={selectedParentId}
-            onShare={handleShare}
+            onShare={(event) => { void handleShare(event); }}
             isCreatingShare={isCreatingShare}
             shareCopied={shareCopied}
             shareSlug={shareSlug}

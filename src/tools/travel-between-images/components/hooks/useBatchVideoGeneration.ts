@@ -141,7 +141,6 @@ export function useBatchVideoGeneration({
           generation_type_mode: settings.generationTypeMode || 'i2v',
           ltxHdResolution: settings.ltxHdResolution ?? true,
         },
-        travelGuidance: structureState.travelGuidance,
         structureGuidance: structureState.structureGuidance,
         structureVideos: structureState.structureVideos,
         batchVideoFrames: settings.batchVideoFrames || 61,

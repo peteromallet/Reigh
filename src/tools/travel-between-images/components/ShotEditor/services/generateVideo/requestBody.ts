@@ -115,7 +115,7 @@ export function buildTravelRequestBodyV2(params: BuildTravelRequestBodyParams): 
     frame_overlap: pairConfig.frameOverlap,
     ...(continuationConfig ? { continuation_config: continuationConfig } : {}),
     negative_prompts: pairConfig.negativePrompts,
-    ...(hasValidEnhancedPrompts ? { enhanced_prompts: pairConfig.enhancedPromptsArray } : {}),
+    ...(hasValidEnhancedPrompts ? { enhanced_prompts: pairConfig.enhancedPromptsArray.map((prompt) => prompt ?? '') } : {}),
     ...(pairPhaseConfigsArray.some(config => config !== null) ? { pair_phase_configs: pairPhaseConfigsArray } : {}),
     ...(pairConfig.pairLorasArray.some(loras => loras !== null) ? { pair_loras: pairConfig.pairLorasArray } : {}),
     ...(pairConfig.pairMotionSettingsArray.some(settings => settings !== null) ? { pair_motion_settings: pairConfig.pairMotionSettingsArray } : {}),

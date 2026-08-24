@@ -166,7 +166,7 @@ export const GuidanceVideoStrip: React.FC<GuidanceVideoStripProps> = ({
       setIsStripActive((prev) => !prev);
       tapPreview.hide();
     }, [tapPreview]),
-    onSingleTap: useCallback((touch: Touch) => {
+    onSingleTap: useCallback((touch: React.Touch) => {
       const rect = stripContainerRef.current?.getBoundingClientRect();
       if (rect && effectiveMetadata) {
         const cursorX = touch.clientX - rect.left;

@@ -23,7 +23,7 @@ interface FinalVideoSectionControlsProps {
   badgeData: FinalVideoVariantBadgeData | null;
   onMarkAllVariantsViewed: () => void;
   selectedParentId: string | null;
-  onShare: () => void;
+  onShare: (event: React.MouseEvent<HTMLButtonElement>) => void;
   isCreatingShare: boolean;
   shareCopied: boolean;
   shareSlug?: string | null;

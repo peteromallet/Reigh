@@ -1,5 +1,4 @@
 import { getDisplayUrl } from '@/shared/lib/media/mediaUrl';
-import { isVideoAny } from '@/shared/lib/typeGuards';
 import {
   readSegmentOverrides,
   type SegmentOverrides,
@@ -32,7 +31,7 @@ export function filterImageShotGenerations(rows: ShotGenRow[]): ShotGenRow[] {
     const hasValidLocation = shotGen.generation?.location && shotGen.generation.location !== '/placeholder.svg';
     return shotGen.generation &&
            shotGen.timeline_frame != null &&
-           !isVideoAny(shotGen) &&
+           shotGen.generation.type !== 'video' &&
            hasValidLocation;
   });
 }

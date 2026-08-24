@@ -41,7 +41,7 @@ interface UseTabletEndpointSelectionOptions {
   /** Called on double-tap on the strip body */
   onDoubleTap: () => void;
   /** Called on single-tap on the strip body (for frame preview) */
-  onSingleTap: (touch: Touch) => void;
+  onSingleTap: (touch: React.Touch) => void;
 }
 
 interface UseTabletEndpointSelectionReturn {

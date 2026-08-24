@@ -192,7 +192,16 @@ export const MotionControl: React.FC<MotionControlProps> = ({
         <PhaseConfigSelectorModal
           isOpen={isPresetModalOpen}
           onClose={closePresetModal}
-          onSelectPreset={handlePresetSelect}
+          onSelectPreset={(preset) => {
+            handlePresetSelect({
+              id: preset.id,
+              metadata: {
+                description: preset.metadata.description,
+                phaseConfig: preset.metadata.phaseConfig,
+                phase_config: preset.metadata.phaseConfig,
+              },
+            });
+          }}
           onRemovePreset={onPhasePresetRemove}
           selectedPresetId={selectedPhasePresetId || null}
           currentPhaseConfig={phaseConfig}

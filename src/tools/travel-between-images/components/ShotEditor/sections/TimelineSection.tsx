@@ -145,7 +145,16 @@ export const TimelineSection: React.FC<TimelineSectionProps> = ({
               await imageHandlers.onBatchFileDrop(files);
             }
           },
-          onPrimaryStructureVideoInputChange: structureVideoHandlers.handleStructureVideoInputChange,
+          onPrimaryStructureVideoInputChange: (input) => {
+            structureVideoHandlers.handleStructureVideoInputChange(
+              input.videoPath,
+              input.metadata,
+              input.treatment,
+              input.motionStrength,
+              input.structureType,
+              input.resourceId,
+            );
+          },
           onUni3cEndPercentChange: structureVideoHandlers.handleUni3cEndPercentChange,
           onAddStructureVideo: structureVideo.addStructureVideo,
           onUpdateStructureVideo: structureVideo.updateStructureVideo,

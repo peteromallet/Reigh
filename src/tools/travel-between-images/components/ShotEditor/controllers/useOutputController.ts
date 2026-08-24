@@ -24,7 +24,7 @@ export function useOutputController({
     setSelectedOutputId,
     isReady: outputSelectionReady,
   } = useOutputSelection({
-    projectId: selectedProjectId,
+    projectId: selectedProjectId ?? undefined,
     shotId: selectedShot?.id,
   });
 

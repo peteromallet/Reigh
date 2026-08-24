@@ -24,7 +24,7 @@ interface ReorderUpdate {
 interface UseImageManagementOptions {
   queryClient: QueryClient;
   selectedShotRef: React.MutableRefObject<Shot | undefined>;
-  projectIdRef: React.MutableRefObject<string>;
+  projectIdRef: React.MutableRefObject<string | null>;
   allShotImagesRef: React.MutableRefObject<GenerationRow[]>;
   batchVideoFramesRef: React.MutableRefObject<number>;
   updateShotImageOrderMutation: {
@@ -103,7 +103,7 @@ export function useImageManagement({
 
       // Invalidate queries to refresh the UI
       if (selectedShot?.id) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.segments.parents(selectedShot.id, projectId) });
+        queryClient.invalidateQueries({ queryKey: queryKeys.segments.parents(selectedShot.id, projectId ?? undefined) });
       }
       queryClient.invalidateQueries({ queryKey: queryKeys.generations.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.projectStats.videos(projectId!) });

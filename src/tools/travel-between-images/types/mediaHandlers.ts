@@ -1,4 +1,4 @@
-import type { VideoMetadata } from '@/shared/lib/media/videoUploader';
+import type { AuthoredVideoMetadata } from '@/shared/lib/media/videoUploader';
 import type { StructureVideoConfigWithMetadata } from '@/shared/lib/tasks/travelBetweenImages';
 import type { TravelGuidanceMode } from '@/shared/lib/tasks/travelGuidance';
 
@@ -6,7 +6,7 @@ export type StructureVideoType = TravelGuidanceMode;
 
 export interface PrimaryStructureVideoInput {
   videoPath: string | null;
-  metadata: VideoMetadata | null;
+  metadata: AuthoredVideoMetadata | null;
   treatment: 'adjust' | 'clip';
   motionStrength: number;
   structureType: StructureVideoType;

@@ -58,7 +58,12 @@ export function useTimelinePositions({
     isLockedRef,
     isUpdatingRef,
     writeInFlightRef,
-    invalidateGenerations,
+    invalidateGenerations: (id, options) => {
+      const scope = options.scope === 'images' || options.scope === 'metadata' || options.scope === 'counts'
+        ? options.scope
+        : 'all';
+      invalidateGenerations(id, { reason: options.reason, scope, delayMs: options.delayMs });
+    },
   });
 
   const lockPositions = useCallback(() => {

@@ -66,7 +66,7 @@ export const useEnhancedShotImageReorder = (
       const currentImages = getImagesForMode('batch');
       const currentOrder = currentImages.map((img) => img.id);
       const normalizedDraggedItemId = draggedItemId
-        ? (currentImages.find((img) => img.id === draggedItemId || img.shotImageEntryId === draggedItemId)?.id ?? draggedItemId)
+        ? (currentImages.find((img) => img.id === draggedItemId)?.id ?? draggedItemId)
         : undefined;
 
       log(`${REORDER_LOG_PREFIX} reorder requested`, {

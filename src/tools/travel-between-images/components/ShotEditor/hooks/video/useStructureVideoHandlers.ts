@@ -6,7 +6,7 @@
  */
 
 import { useCallback, useEffect, useRef } from 'react';
-import type { VideoMetadata } from '@/shared/lib/media/videoUploader';
+import type { AuthoredVideoMetadata } from '@/shared/lib/media/videoUploader';
 import type { StructureVideoConfigWithMetadata } from '@/shared/lib/tasks/travelBetweenImages';
 import type { TravelGuidanceMode } from '@/shared/lib/tasks/travelGuidance';
 import type { UseStructureVideoReturn } from './useStructureVideo';
@@ -28,7 +28,7 @@ interface UseStructureVideoHandlersReturn {
   handleStructureTypeChangeFromMotionControl: (type: TravelGuidanceMode) => void;
   handleStructureVideoInputChange: (
     videoPath: string | null,
-    metadata: VideoMetadata | null,
+    metadata: AuthoredVideoMetadata | null,
     treatment: 'adjust' | 'clip',
     motionStrength: number,
     structureType: TravelGuidanceMode,
@@ -74,7 +74,7 @@ export function useStructureVideoHandlers({
 
   const handleStructureVideoInputChange = useCallback((
     videoPath: string | null,
-    metadata: VideoMetadata | null,
+    metadata: AuthoredVideoMetadata | null,
     treatment: 'adjust' | 'clip',
     motionStrength: number,
     structureType: TravelGuidanceMode,
