@@ -23,6 +23,7 @@ import {
   buildServerEnvironment,
   buildViteArgs,
   assessCaptionProbe,
+  assessNoCaptionControl,
   captionProbePlan,
   childProcessFailure,
   isExactViteReadiness,
@@ -217,6 +218,58 @@ describe('paired repository release E2E gate', () => {
     });
     assert.equal(wrongRegion.pass, false);
     assert.match(wrongRegion.reasons.join('; '), /outside/);
+  });
+
+  it('proves the no-caption control against the independent clean card and rejects stray OCR or foreground', () => {
+    const region = { x: 128, y: 418, width: 1024, height: 101 };
+    const clean = assessNoCaptionControl({
+      recognizedText: '',
+      recognizedBounds: null,
+      recognizedWords: [],
+      frameWidth: 1280,
+      frameHeight: 720,
+      codeOwnedRegions: [region, { ...region, y: 200 }],
+      foregroundByRegion: [0.0004, 0.0004],
+      contrastByRegion: [0.001, 0.001],
+      expectedCleanFrameSha256: 'a'.repeat(64),
+      controlFrameSha256: 'b'.repeat(64),
+    });
+    assert.equal(clean.pass, true);
+
+    const strayOcr = assessNoCaptionControl({
+      recognizedText: 'stray',
+      recognizedBounds: { left: 200, top: 440, width: 40, height: 18 },
+      recognizedWords: [{ text: 'stray', left: 200, top: 440, width: 40, height: 18, confidence: 92 }],
+      frameWidth: 1280,
+      frameHeight: 720,
+      codeOwnedRegions: [region],
+      foregroundByRegion: [0.0004],
+      contrastByRegion: [0.001],
+      expectedCleanFrameSha256: 'a'.repeat(64),
+      controlFrameSha256: 'b'.repeat(64),
+    });
+    assert.equal(strayOcr.pass, false);
+    assert.match(strayOcr.reasons.join('; '), /OCR recognized text/);
+
+    const sparseForeground = assessNoCaptionControl({
+      recognizedText: '',
+      recognizedBounds: null,
+      frameWidth: 1280,
+      frameHeight: 720,
+      codeOwnedRegions: [region],
+      foregroundByRegion: [0.01],
+      contrastByRegion: [0.08],
+      expectedCleanFrameSha256: 'a'.repeat(64),
+      controlFrameSha256: 'b'.repeat(64),
+    });
+    assert.equal(sparseForeground.pass, false);
+    assert.match(sparseForeground.reasons.join('; '), /caption-like foreground|caption-like contrast/);
+
+    const source = readFileSync(resolve(REPO_ROOT, 'scripts/release/verify-paired-release-e2e.mjs'), 'utf8');
+    assert.match(source, /imageDifferenceMetric\(\s*controlPath,\s*context\.mediaFixture\.path/);
+    assert.match(source, /render-caption-control-ocr\.tsv/);
+    assert.match(source, /assessNoCaptionControl/);
+    assert.doesNotMatch(source, /controlOccupancy:\s*imageDifferenceMetric\(controlPath,\s*controlPath/);
   });
 
   it('binds the exact persisted caption set and probes every ID at first, midpoint, and last frame', () => {
@@ -719,6 +772,32 @@ describe('paired repository release E2E gate', () => {
     assert.match(source, /reighControllerHead: pins\.reighControllerHead/);
     assert.match(source, /archiveCommit\(REPO_ROOT, pins\.reighCommit/);
     assert.ok(source.indexOf("'receipt.json'") < source.indexOf("'artifact-index.json'"));
+  });
+
+  it('makes pinned ffmpeg -xerror reject an actually truncated bitstream', { timeout: 180_000 }, () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'paired-full-decode-corruption-'));
+    const valid = resolve(root, 'valid.mp4');
+    const truncated = resolve(root, 'truncated.mp4');
+    try {
+      const encoded = runTestCommand('ffmpeg', [
+        '-v', 'error', '-loop', '1', '-i', resolve(REPO_ROOT, PAIRED_RELEASE_MEDIA_FIXTURE),
+        '-frames:v', '24', '-an', '-c:v', 'mpeg4', '-y', valid,
+      ], { cwd: root });
+      assert.equal(encoded.status, 0, encoded.stderr);
+      const bytes = readFileSync(valid);
+      assert.ok(bytes.length > 256, 'fixture video must be large enough to truncate');
+      writeFileSync(truncated, bytes.subarray(0, bytes.length - 256));
+      const decoded = runTestCommand('ffmpeg', [
+        '-xerror', '-v', 'error', '-i', truncated, '-f', 'null', '-',
+      ], { cwd: root });
+      assert.notEqual(decoded.status, 0, 'strict full decode must fail for a truncated bitstream');
+      assert.notEqual(decoded.failureType, 'success');
+      const source = readFileSync(resolve(REPO_ROOT, 'scripts/release/verify-paired-release-e2e.mjs'), 'utf8');
+      assert.match(source, /'-xerror', '-v', 'error', '-i', outputPath/);
+      assert.match(source, /strictStderr: true/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('routes every synchronous external command through the bounded helper and owns phase budgets', () => {

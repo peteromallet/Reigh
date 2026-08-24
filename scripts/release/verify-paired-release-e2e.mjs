@@ -322,9 +322,11 @@ function commandFailure(command, args, result, diagnosticsPath) {
       ? `exceeded output cap ${result.maxBuffer} bytes`
       : result.failureType === 'signal'
         ? `terminated by ${result.signal ?? 'unknown signal'}`
+        : result.failureType === 'stderr'
+          ? 'wrote unexpected stderr'
         : result.failureType === 'spawn-error'
           ? `failed to spawn${result.error?.code ? ` (${result.error.code})` : ''}`
-      : result.error?.message ?? `failed with exit ${result.status ?? 'unknown'}`;
+          : result.error?.message ?? `failed with exit ${result.status ?? 'unknown'}`;
   return `${command} ${args.join(' ')} ${detail}${output ? `: ${output.slice(-3000)}` : ''}${diagnosticsPath ? `; diagnostics=${diagnosticsPath}` : ''}`;
 }
 
@@ -1079,6 +1081,7 @@ function runLogged(command, args, {
   env,
   logPath,
   parseJson = false,
+  strictStderr = false,
   phase = logPath,
   budgetKey,
 } = {}) {
@@ -1094,15 +1097,17 @@ function runLogged(command, args, {
     diagnosticsPath: timeoutDiagnosticsPath,
   });
   const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
-  const diagnostic = !result.ok
-    ? `\n${LABEL} bounded command failure=${result.failureType}; timeoutMs=${result.timeoutMs}; `
+  const unexpectedStderr = strictStderr && String(result.stderr ?? '').trim().length > 0;
+  const failedResult = unexpectedStderr ? { ...result, ok: false, failureType: 'stderr' } : result;
+  const diagnostic = !failedResult.ok
+    ? `\n${LABEL} bounded command failure=${failedResult.failureType}; timeoutMs=${result.timeoutMs}; `
       + `kill=${result.killSignal}; maxBuffer=${result.maxBuffer}; diagnostics=${timeoutDiagnosticsPath}\n`
     : '';
   writeFileSync(logPath, `${output}${diagnostic}`, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
-  if (!result.ok) {
+  if (!failedResult.ok) {
     throw new ReleaseCommandError(
-      commandFailure(command, args, result, timeoutDiagnosticsPath),
-      result,
+      commandFailure(command, args, failedResult, timeoutDiagnosticsPath),
+      failedResult,
       timeoutDiagnosticsPath,
     );
   }
@@ -1120,6 +1125,7 @@ function runLogged(command, args, {
     startedAt,
     status: result.status,
     stdout: result.stdout,
+    stderr: result.stderr,
   };
 }
 
@@ -1660,6 +1666,11 @@ function parseRate(value) {
 const CAPTION_FOREGROUND_THRESHOLD = 0.001;
 const CAPTION_CONTROL_DELTA = 0.0005;
 const CAPTION_MIN_CONTRAST = 0.04;
+// The no-caption frame is compared with the independently committed clean
+// test-card PNG. These limits allow the expected video colour conversion while
+// still rejecting a caption-sized foreground, including a sparse stray mark.
+const CONTROL_MAX_FOREGROUND = 0.0015;
+const CONTROL_MAX_CONTRAST = 0.02;
 const CAPTION_FRAME_WIDTH = 1280;
 const CAPTION_FRAME_HEIGHT = 720;
 export const EXPECTED_PERSISTED_CAPTIONS = Object.freeze([
@@ -1714,6 +1725,88 @@ function intersectionArea(left, right) {
   const rightEdge = Math.min(left.left + left.width, right.x + right.width);
   const bottom = Math.min(left.top + left.height, right.y + right.height);
   return Math.max(0, rightEdge - x) * Math.max(0, bottom - y);
+}
+
+function wordOverlapsRegion(word, region) {
+  if (!word || !region) return false;
+  return intersectionArea(
+    { left: Number(word.left), top: Number(word.top), width: Number(word.width), height: Number(word.height) },
+    region,
+  ) > 0;
+}
+
+/**
+ * Pure no-caption control proof. The control must be OCR-clean in every
+ * persisted caption region and its pixels must remain close to the
+ * independently expected clean test-card frame. A control-vs-itself metric is
+ * deliberately not accepted: it is always zero, even when a stray caption is
+ * present.
+ */
+export function assessNoCaptionControl({
+  recognizedText = '',
+  recognizedBounds = null,
+  recognizedWords = [],
+  frameWidth,
+  frameHeight,
+  codeOwnedRegions = [],
+  foregroundByRegion = [],
+  contrastByRegion = [],
+  expectedCleanFrameSha256,
+  controlFrameSha256,
+}) {
+  const reasons = [];
+  if (!expectedCleanFrameSha256 || !controlFrameSha256) {
+    reasons.push('no-caption control is missing an independently expected clean frame');
+  }
+  if (!Array.isArray(codeOwnedRegions) || codeOwnedRegions.length === 0) {
+    reasons.push('no-caption control has no code-owned caption regions');
+  }
+  for (const region of codeOwnedRegions) {
+    const right = Number(region?.x) + Number(region?.width);
+    const bottom = Number(region?.y) + Number(region?.height);
+    if (
+      !region || ![region.x, region.y, region.width, region.height].every(Number.isFinite)
+      || region.x < 1 || region.y < 1 || region.width < 2 || region.height < 2
+      || right > frameWidth - 1 || bottom > frameHeight - 1
+    ) {
+      reasons.push('code-owned no-caption region is clipped or empty');
+    }
+  }
+  const words = Array.isArray(recognizedWords) ? recognizedWords : [];
+  const overlappingWords = words.filter((word) => codeOwnedRegions.some((region) => wordOverlapsRegion(word, region)));
+  if (overlappingWords.length > 0) {
+    reasons.push(`no-caption control OCR recognized text in a caption region: ${overlappingWords.map((word) => word.text).join(' ')}`);
+  } else if (recognizedText && recognizedBounds && codeOwnedRegions.some((region) => wordOverlapsRegion(recognizedBounds, region))) {
+    // Keep this fallback for callers that only have the aggregate OCR bounds.
+    reasons.push('no-caption control OCR recognized text in a caption region');
+  }
+  if (!Array.isArray(foregroundByRegion) || foregroundByRegion.length !== codeOwnedRegions.length) {
+    reasons.push('no-caption control foreground metrics are incomplete');
+  }
+  if (!Array.isArray(contrastByRegion) || contrastByRegion.length !== codeOwnedRegions.length) {
+    reasons.push('no-caption control contrast metrics are incomplete');
+  }
+  foregroundByRegion.forEach((value, index) => {
+    if (!Number.isFinite(value) || value > CONTROL_MAX_FOREGROUND) {
+      reasons.push(`no-caption control has caption-like foreground in region ${index + 1}`);
+    }
+  });
+  contrastByRegion.forEach((value, index) => {
+    if (!Number.isFinite(value) || value > CONTROL_MAX_CONTRAST) {
+      reasons.push(`no-caption control has caption-like contrast in region ${index + 1}`);
+    }
+  });
+  return {
+    pass: reasons.length === 0,
+    reasons,
+    recognizedText,
+    recognizedBounds,
+    overlappingWords,
+    foregroundByRegion,
+    contrastByRegion,
+    expectedCleanFrameSha256: expectedCleanFrameSha256 ?? null,
+    controlFrameSha256: controlFrameSha256 ?? null,
+  };
 }
 
 /**
@@ -1962,11 +2055,16 @@ function verifyRenderedArtifact(context) {
   if (audio && audio.codec_name !== 'aac') {
     fail(`render audio codec is not AAC: ${audio.codec_name}`);
   }
-  runLogged(ffmpegExecutable, ['-v', 'error', '-i', outputPath, '-f', 'null', '-'], {
+  const fullDecodeResult = runLogged(ffmpegExecutable, [
+    '-xerror', '-v', 'error', '-i', outputPath, '-f', 'null', '-',
+  ], {
     cwd: context.reighSnapshot,
     env: safeBaseEnvironment(),
     logPath: resolve(context.evidenceRoot, 'render-full-decode.log'),
+    strictStderr: true,
   });
+  const fullDecode = fullDecodeResult.status === 0;
+  if (!fullDecode) fail('full render decode did not exit successfully');
   const captions = captionExpectations(context.evidenceRoot);
   const expectedProbes = captionProbePlan(captions, expectedFps);
   const expectedMidpoints = expectedProbes
@@ -2003,6 +2101,42 @@ function verifyRenderedArtifact(context) {
   if (tesseractLanguages.status !== 0 || !/^eng$/m.test(tesseractLanguages.stdout ?? '')) {
     fail('deterministic caption OCR requires the Tesseract eng language data');
   }
+  const controlOcrPath = resolve(context.evidenceRoot, 'render-caption-control-ocr.tsv');
+  const controlTesseract = capture(tesseractExecutable, [
+    controlPath, 'stdout', '--psm', '11', '-l', 'eng', 'tsv',
+  ], { cwd: context.reighSnapshot, env: safeBaseEnvironment() });
+  writeFileSync(controlOcrPath, controlTesseract.stdout, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+  const controlRecognized = recognizedCaption(parseTesseractTsv(controlTesseract.stdout));
+  const controlRegions = captions.map((caption) => caption.region);
+  const controlForegroundByRegion = controlRegions.map((region) => imageDifferenceMetric(
+    controlPath,
+    context.mediaFixture.path,
+    region,
+    'occupancy',
+    magickExecutable,
+  ));
+  const controlContrastByRegion = controlRegions.map((region) => imageDifferenceMetric(
+    controlPath,
+    context.mediaFixture.path,
+    region,
+    'contrast',
+    magickExecutable,
+  ));
+  const controlSemantics = assessNoCaptionControl({
+    recognizedText: controlRecognized.text,
+    recognizedBounds: controlRecognized.bounds,
+    recognizedWords: parseTesseractTsv(controlTesseract.stdout),
+    frameWidth: CAPTION_FRAME_WIDTH,
+    frameHeight: CAPTION_FRAME_HEIGHT,
+    codeOwnedRegions: controlRegions,
+    foregroundByRegion: controlForegroundByRegion,
+    contrastByRegion: controlContrastByRegion,
+    expectedCleanFrameSha256: context.mediaFixture.sha256,
+    controlFrameSha256,
+  });
+  if (!controlSemantics.pass) {
+    fail(`no-caption control semantic proof failed at ${controlSeconds}s: ${controlSemantics.reasons.join('; ')}`);
+  }
   const probeEvidence = expectedProbes.map((probeEntry, index) => {
     const caption = captions.find((candidate) => candidate.id === probeEntry.captionId);
     if (!caption) fail(`caption probe references missing persisted ID ${probeEntry.captionId}`);
@@ -2036,7 +2170,7 @@ function verifyRenderedArtifact(context) {
       expectedRegion: caption.region,
       recognizedBounds: recognized.bounds,
       occupancy,
-      controlOccupancy: imageDifferenceMetric(controlPath, controlPath, caption.region, 'occupancy', magickExecutable),
+      controlOccupancy: imageDifferenceMetric(controlPath, context.mediaFixture.path, caption.region, 'occupancy', magickExecutable),
       contrast,
       frameSha256: sha256File(framePath),
       controlFrameSha256,
@@ -2083,7 +2217,7 @@ function verifyRenderedArtifact(context) {
       duration,
     },
     audioCodec: audio?.codec_name ?? null,
-    fullDecode: true,
+    fullDecode,
     mediaEvidence,
     captionSemantics: {
       method: 'tesseract-ocr+persisted-region-occupancy-contrast',
@@ -2098,6 +2232,9 @@ function verifyRenderedArtifact(context) {
       controlSeconds,
       controlFrameSha256,
       controlFramePath: relative(context.evidenceRoot, controlPath),
+      controlOcrPath: relative(context.evidenceRoot, controlOcrPath),
+      controlForegroundByRegion,
+      controlContrastByRegion,
       boundaryFrames: probeEvidence.filter((entry) => entry.kind !== 'midpoint'),
       probes: probeEvidence,
     },
@@ -2281,7 +2418,7 @@ async function executeGate(manifest, pins, evidenceRoot) {
       persistedStateHash: renderVerification.persistedStateHash,
       mp4Sha256: renderVerification.mp4Sha256,
       videoFrames: renderVerification.video.frames,
-      fullDecode: true,
+      fullDecode: renderVerification.fullDecode,
       mediaEvidence: renderVerification.mediaEvidence,
     });
     await stopLoggedProcesses([reighHandle, astridHandle]);
