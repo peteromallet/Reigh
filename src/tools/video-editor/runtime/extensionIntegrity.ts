@@ -30,13 +30,20 @@ export const SUPPORTED_ALGORITHM = 'sha256' as const;
  * @returns Hex-encoded SHA-256 digest (lowercase, 64 hex chars).
  */
 export async function computeSha256(content: string | Uint8Array): Promise<string> {
-  const data = typeof content === 'string'
+  // Always hand Web Crypto an owning ArrayBuffer, rather than a typed-array
+  // view. Browser realms and Node's Web Crypto implementation do not all
+  // agree on whether a Uint8Array created by another realm is a valid
+  // BufferSource. A fresh copy also removes byte offsets and pooled-buffer
+  // tails (notably for Node Buffer/subarray inputs), so the digest covers
+  // exactly the caller's bytes in every supported runtime.
+  const bytes = typeof content === 'string'
     ? new TextEncoder().encode(content)
     : (() => {
-        const bytes = new Uint8Array(content.byteLength);
-        bytes.set(content);
-        return bytes.buffer;
+        const copy = new Uint8Array(content.byteLength);
+        copy.set(content);
+        return copy;
       })();
+  const data = bytes.slice().buffer;
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
