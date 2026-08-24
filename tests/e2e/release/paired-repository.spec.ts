@@ -7,7 +7,9 @@ import { transcriptCaptionClipId } from '../../../src/tools/video-editor/dev/tra
 import {
   meaningfulChange,
   validateExtensionOutput,
+  validateRunawayResponse,
   validateTranscriptCaptions,
+  RUNAWAY_FIXTURE_FACTS,
   type ExpectedCaption,
   type ValidationResult,
 } from './paired-repository.validators.ts';
@@ -39,6 +41,9 @@ if (!Number.isInteger(expectedExtensions) || expectedExtensions < 1) {
 }
 if (!Number.isInteger(expectedRunaway) || expectedRunaway < 1) {
   throw new Error('PAIRED_RELEASE_EXPECTED_RUNAWAY must be a positive integer');
+}
+if (expectedRunaway !== RUNAWAY_FIXTURE_FACTS.count) {
+  throw new Error(`PAIRED_RELEASE_EXPECTED_RUNAWAY must be exactly ${RUNAWAY_FIXTURE_FACTS.count}`);
 }
 if (process.env.ASTRID_BRIDGE_TOKEN) {
   throw new Error('ASTRID_BRIDGE_TOKEN leaked into the browser acceptance process');
@@ -74,7 +79,13 @@ type RunawaySnapshot = {
   runId: string;
   firstManifestId: string;
   lastManifestId: string;
+  firstFrame: number;
   lastFrame: number;
+};
+
+type RunawayUiProof = {
+  firstManifestId: string;
+  lastManifestId: string;
 };
 
 function canonicalValue(value: unknown): unknown {
@@ -114,22 +125,17 @@ async function readRunawaySnapshot(request: APIRequestContext): Promise<RunawayS
   expect(response.status()).toBe(200);
   expect(response.headers()['x-astrid-bridge-version']).toBe('v1');
   const payload = await response.json() as {
-    count?: number;
-    total_count?: number;
-    transitions?: unknown[];
-    timing_summary?: { evidence_id?: unknown; run_id?: unknown; data?: { frame_count?: unknown; transition_count?: unknown; fps?: unknown } };
+    count: number;
+    total_count: number;
+    transitions: unknown[];
+    timing_summary: { evidence_id?: unknown; run_id?: unknown; data?: { frame_count?: unknown; transition_count?: unknown; fps?: unknown } };
   };
-  expect(payload.count).toBe(payload.transitions?.length);
-  const count = payload.total_count ?? payload.count;
-  if (count !== expectedRunaway || payload.count !== expectedRunaway || !Array.isArray(payload.transitions)) {
-    throw new Error(`Runaway response must contain exactly ${expectedRunaway} transitions`);
-  }
-  const summary = payload.timing_summary;
-  if (typeof summary?.evidence_id !== 'string' || summary.evidence_id.length === 0
-    || typeof summary.run_id !== 'string' || summary.run_id.length === 0
-    || summary.data?.frame_count !== 8085 || summary.data.transition_count !== expectedRunaway || summary.data.fps !== 48) {
-    throw new Error('Runaway response is missing typed timing provenance');
-  }
+  const validation = validateRunawayResponse(payload);
+  if (!validation.valid) throw new Error(`Runaway response failed fixture validation: ${validation.reason}`);
+  const count = payload.count;
+  expect(payload.count).toBe(RUNAWAY_FIXTURE_FACTS.count);
+  expect(payload.transitions.length).toBe(RUNAWAY_FIXTURE_FACTS.count);
+  expect(payload.total_count).toBe(RUNAWAY_FIXTURE_FACTS.count);
   const first = payload.transitions[0];
   const last = payload.transitions.at(-1);
   if (first === null || typeof first !== 'object' || last === null || typeof last !== 'object') {
@@ -139,8 +145,8 @@ async function readRunawaySnapshot(request: APIRequestContext): Promise<RunawayS
   const lastRecord = last as Record<string, unknown>;
   const firstMetadata = firstRecord.metadata as Record<string, unknown> | undefined;
   const lastMetadata = lastRecord.metadata as Record<string, unknown> | undefined;
-  if (firstRecord.ordinal !== 0 || firstMetadata?.frame !== 0 || firstMetadata?.manifest_id !== 'T0001'
-    || lastRecord.ordinal !== expectedRunaway - 1 || lastMetadata?.frame !== 8084 || lastMetadata?.manifest_id !== 'T0566'
+  if (firstRecord.ordinal !== 0 || firstMetadata?.frame !== RUNAWAY_FIXTURE_FACTS.firstFrame || firstMetadata?.manifest_id !== RUNAWAY_FIXTURE_FACTS.firstManifestId
+    || lastRecord.ordinal !== RUNAWAY_FIXTURE_FACTS.count - 1 || lastMetadata?.frame !== RUNAWAY_FIXTURE_FACTS.lastFrame || lastMetadata?.manifest_id !== RUNAWAY_FIXTURE_FACTS.lastManifestId
     || typeof lastRecord.run_id !== 'string' || lastRecord.run_id.length === 0) {
     throw new Error('Runaway response lost first/last manifest or frame semantics');
   }
@@ -150,13 +156,11 @@ async function readRunawaySnapshot(request: APIRequestContext): Promise<RunawayS
   const lastFrame = lastMetadata?.frame as number;
   return {
     count,
-    hash: sha256Text(canonicalJson({
-      timingSummary: (payload as { timing_summary?: unknown }).timing_summary,
-      transitions: payload.transitions,
-    })),
+    hash: validation.fingerprint!,
     runId,
     firstManifestId,
     lastManifestId,
+    firstFrame: firstMetadata?.frame as number,
     lastFrame,
   };
 }
@@ -347,6 +351,46 @@ async function openEditor(page: Page): Promise<string[]> {
   expect(expectedFailedRequests).toHaveLength(1);
   expect(failedRequests).toEqual([]);
   return issues;
+}
+
+async function proveRunawayLane(page: Page): Promise<RunawayUiProof> {
+  const lane = page.getByTestId('runaway-timeline-lane');
+  await expect(lane).toBeVisible({ timeout: 30_000 });
+  await expect(lane).toHaveAttribute('data-total-items', String(RUNAWAY_FIXTURE_FACTS.count));
+  await expect.poll(() => page.getByTestId('runaway-transition-chip').count(), {
+    timeout: 30_000,
+    message: 'Runaway lane did not mount any virtualized transition chips',
+  }).toBeGreaterThan(0);
+  const mountedCount = await page.getByTestId('runaway-transition-chip').count();
+  expect(mountedCount).toBeLessThanOrEqual(128);
+
+  const firstMounted = page.getByTestId('runaway-transition-chip').first();
+  await firstMounted.click();
+  await firstMounted.press('Home');
+  const first = page.getByRole('button', { name: /^T0001,/ });
+  await expect(first).toBeFocused();
+  const inspector = page.getByTestId('runaway-transition-inspector');
+  await expect(inspector).toContainText('T0001 · S01');
+  await expect(inspector).toContainText('Runaway fixture region 01');
+  await expect(inspector).toContainText('frame 0 @ 48fps');
+  await expect(inspector).toContainText(`run: ${RUNAWAY_FIXTURE_FACTS.runId}`);
+  await expect(inspector).toContainText('task: none');
+  await expect(inspector).toContainText('566 typed transitions · 10 declared regions');
+
+  await first.press('End');
+  const last = page.getByRole('button', { name: /^T0566,/ });
+  await expect(last).toBeFocused();
+  await expect(inspector).toContainText('T0566 · S10');
+  await expect(inspector).toContainText('Runaway fixture region 10');
+  await expect(inspector).toContainText('frame 8084 @ 48fps');
+  await expect(inspector).toContainText(`run: ${RUNAWAY_FIXTURE_FACTS.runId}`);
+  await expect(inspector).toContainText('task: none');
+  await expect(inspector).toContainText('566 typed transitions · 10 declared regions');
+
+  const remountedCount = await page.getByTestId('runaway-transition-chip').count();
+  expect(remountedCount).toBeGreaterThan(0);
+  expect(remountedCount).toBeLessThanOrEqual(128);
+  return { firstManifestId: 'T0001', lastManifestId: 'T0566' };
 }
 
 async function openCommandPalette(page: Page) {
@@ -642,6 +686,7 @@ test(`paired repository acceptance phase: ${phase}`, async ({ page, request }) =
   expect(typeof initialAt).toBe('number');
   const runawaySnapshot = await readRunawaySnapshot(request);
   const issues = await openEditor(page);
+  const runawayUi = phase === 'restore' ? null : await proveRunawayLane(page);
   const extensionFingerprints = await proveAllExtensionLifecycles(page, request);
 
   if (phase === 'first') {
@@ -667,15 +712,18 @@ test(`paired repository acceptance phase: ${phase}`, async ({ page, request }) =
   } else if (phase === 'restart') {
     const firstState = JSON.parse(
       await readFile(resolve(evidenceDir!, 'browser-first-state.json'), 'utf8'),
-    ) as { timelineStateHash?: string; runawayHash?: string; runawayCount?: number; runawayRunId?: string; runawayFirstManifestId?: string; runawayLastManifestId?: string; runawayLastFrame?: number; extensionFingerprints?: Record<string, string> };
+    ) as { timelineStateHash?: string; runawayHash?: string; runawayCount?: number; runawayRunId?: string; runawayFirstManifestId?: string; runawayLastManifestId?: string; runawayFirstFrame?: number; runawayLastFrame?: number; runawayUiFirstManifestId?: string; runawayUiLastManifestId?: string; extensionFingerprints?: Record<string, string> };
     expect(runawaySnapshot?.count).toBe(expectedRunaway);
     expect(initialStateHash).toBe(firstState.timelineStateHash);
     expect(runawaySnapshot?.hash).toBe(firstState.runawayHash);
     expect(runawaySnapshot?.count).toBe(firstState.runawayCount);
     expect(runawaySnapshot?.runId).toBe(firstState.runawayRunId);
     expect(runawaySnapshot?.firstManifestId).toBe(firstState.runawayFirstManifestId);
+    expect(runawaySnapshot?.firstFrame).toBe(firstState.runawayFirstFrame);
     expect(runawaySnapshot?.lastManifestId).toBe(firstState.runawayLastManifestId);
     expect(runawaySnapshot?.lastFrame).toBe(firstState.runawayLastFrame);
+    expect(runawayUi?.firstManifestId).toBe(firstState.runawayUiFirstManifestId);
+    expect(runawayUi?.lastManifestId).toBe(firstState.runawayUiLastManifestId);
     expect(firstState.extensionFingerprints).toBeDefined();
     expect(extensionFingerprints).toEqual(firstState.extensionFingerprints);
     expect(initialAt).toBeGreaterThan(0);
@@ -707,8 +755,11 @@ test(`paired repository acceptance phase: ${phase}`, async ({ page, request }) =
     runawayHash: runawaySnapshot?.hash ?? null,
     runawayRunId: runawaySnapshot?.runId ?? null,
     runawayFirstManifestId: runawaySnapshot?.firstManifestId ?? null,
+    runawayFirstFrame: runawaySnapshot?.firstFrame ?? null,
     runawayLastManifestId: runawaySnapshot?.lastManifestId ?? null,
     runawayLastFrame: runawaySnapshot?.lastFrame ?? null,
+    runawayUiFirstManifestId: runawayUi?.firstManifestId ?? null,
+    runawayUiLastManifestId: runawayUi?.lastManifestId ?? null,
     extensionFingerprints,
     extensionCount: expectedExtensions,
   };

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   meaningfulChange,
   validateExtensionOutput,
+  validateRunawayResponse,
   validateTranscriptCaptions,
 } from './paired-repository.validators';
 
@@ -67,5 +68,54 @@ describe('paired release semantic validators', () => {
       { id: 'transcript-caption-a', at: 1, duration: 1, text: { content: 'Wrong' } },
       { id: 'transcript-caption-b', at: 3, duration: 1, text: { content: 'Second' } },
     ], expected).valid).toBe(false);
+  });
+
+  it('rejects a partial response that forges total_count=566', () => {
+    expect(validateRunawayResponse({
+      count: 566,
+      total_count: 566,
+      page: { limit: 1000, next_cursor: null },
+      transitions: [],
+      timing_summary: {},
+    }).valid).toBe(false);
+  });
+
+  it('rejects a stable-but-wrong response with 566 rows', () => {
+    const wrongRows = Array.from({ length: 566 }, (_, ordinal) => ({
+      id: `wrong-${ordinal}`,
+      ordinal,
+      run_id: 'wrong-run',
+      task_id: null,
+      start_ms: ordinal,
+      duration_ms: 1,
+      prompt: 'wrong but stable',
+      metadata: {
+        manifest_id: `T${String(ordinal + 1).padStart(4, '0')}`,
+        segment_id: 'S01',
+        segment_label: 'Wrong fixture',
+        timing_mode: 'hold',
+        colour_name: 'rose',
+        colour_hex: '#D47795',
+        frame: ordinal,
+        fps: 48,
+      },
+      created_at: '2026-08-24T00:00:00Z',
+    }));
+    expect(validateRunawayResponse({
+      count: 566,
+      total_count: 566,
+      page: { limit: 1000, next_cursor: null },
+      transitions: wrongRows,
+      timing_summary: { evidence_id: 'wrong', run_id: 'wrong-run', summary: 'wrong', data: { frame_count: 8085, transition_count: 566, fps: 48, segment_counts: {} } },
+    }).valid).toBe(false);
+  });
+
+  it('rejects missing cursor and provenance even when counts are correct', () => {
+    expect(validateRunawayResponse({
+      count: 566,
+      total_count: 566,
+      transitions: Array.from({ length: 566 }, () => ({})),
+      timing_summary: { evidence_id: 'evidence', run_id: 'run', data: { frame_count: 8085, transition_count: 566, fps: 48 } },
+    }).valid).toBe(false);
   });
 });

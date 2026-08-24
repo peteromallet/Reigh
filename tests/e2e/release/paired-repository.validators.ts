@@ -21,6 +21,45 @@ export type ValidationResult = {
   count: number;
 };
 
+/**
+ * The release Runaway fixture is deliberately owned by this test contract.
+ * Keeping these facts here means a restart receipt cannot bless a changed,
+ * but internally stable, 566-row response.
+ */
+export const RUNAWAY_FIXTURE_FACTS = Object.freeze({
+  count: 566,
+  frameCount: 8_085,
+  fps: 48,
+  runId: 'runaway-stub-run-v1',
+  firstManifestId: 'T0001',
+  lastManifestId: 'T0566',
+  firstFrame: 0,
+  lastFrame: 8_084,
+  segmentCounts: Object.freeze({
+    S01: 57,
+    S02: 57,
+    S03: 57,
+    S04: 57,
+    S05: 57,
+    S06: 57,
+    S07: 57,
+    S08: 57,
+    S09: 57,
+    S10: 53,
+  }),
+  // SHA-256 of canonical { timingSummary, transitions } for the pinned
+  // browser fixture. This is intentionally not obtained from a restart.
+  canonicalHash: '9de2262222abc1cb9021ab7f792eb001f2bf4f541a98482ba33908a1a6e7c405',
+});
+
+type RunawayResponse = {
+  count?: unknown;
+  total_count?: unknown;
+  transitions?: unknown;
+  page?: unknown;
+  timing_summary?: unknown;
+};
+
 function canonical(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonical);
   if (value !== null && typeof value === 'object') {
@@ -58,6 +97,75 @@ function nonEmpty(value: unknown): value is string {
 
 function bounded(value: unknown, min = 0, max = Number.POSITIVE_INFINITY): boolean {
   return finite(value) && value >= min && value <= max;
+}
+
+function runawaySegment(index: number): string {
+  return `S${String(Math.min(10, Math.floor(index / 57) + 1)).padStart(2, '0')}`;
+}
+
+function runawayFrame(index: number): number {
+  return Math.round((index * (RUNAWAY_FIXTURE_FACTS.frameCount - 1)) / (RUNAWAY_FIXTURE_FACTS.count - 1));
+}
+
+/** Validate the complete, single-page Runaway release response. */
+export function validateRunawayResponse(value: unknown): ValidationResult {
+  if (!record(value)) return invalid('expected a Runaway response object');
+  const response = value as RunawayResponse;
+  if (response.count !== RUNAWAY_FIXTURE_FACTS.count) return invalid('count must be exactly 566');
+  if (response.total_count !== RUNAWAY_FIXTURE_FACTS.count) return invalid('total_count must be exactly 566');
+  if (!Array.isArray(response.transitions)) return invalid('transitions must be an array');
+  if (response.transitions.length !== RUNAWAY_FIXTURE_FACTS.count) return invalid('transitions.length must be exactly 566');
+
+  if (!record(response.page) || response.page.limit !== 1_000
+    || !Object.prototype.hasOwnProperty.call(response.page, 'next_cursor')
+    || response.page.next_cursor !== null) {
+    return invalid('page must declare limit=1000 and no next cursor');
+  }
+
+  const summary = response.timing_summary;
+  if (!record(summary) || !nonEmpty(summary.evidence_id) || summary.run_id !== RUNAWAY_FIXTURE_FACTS.runId
+    || !nonEmpty(summary.summary) || !record(summary.data)) {
+    return invalid('timing summary is missing typed provenance');
+  }
+  const data = summary.data;
+  if (data.frame_count !== RUNAWAY_FIXTURE_FACTS.frameCount
+    || data.transition_count !== RUNAWAY_FIXTURE_FACTS.count
+    || data.fps !== RUNAWAY_FIXTURE_FACTS.fps
+    || !record(data.segment_counts)
+    || canonicalFingerprint(data.segment_counts) !== canonicalFingerprint(RUNAWAY_FIXTURE_FACTS.segmentCounts)) {
+    return invalid('timing summary does not match the pinned manifest facts');
+  }
+
+  for (const [index, candidate] of response.transitions.entries()) {
+    if (!record(candidate) || !record(candidate.metadata)) return invalid(`transition ${index} is missing provenance`);
+    const metadata = candidate.metadata;
+    const expectedColour = index % 2 === 0 ? 'rose' : 'teal';
+    const expectedHex = index % 2 === 0 ? '#D47795' : '#26A7D0';
+    if (candidate.id !== `runaway-stub-row-${String(index + 1).padStart(4, '0')}`
+      || candidate.run_id !== RUNAWAY_FIXTURE_FACTS.runId
+      || candidate.task_id !== null
+      || candidate.ordinal !== index
+      || !finite(candidate.start_ms) || (candidate.start_ms as number) < 0
+      || !finite(candidate.duration_ms) || (candidate.duration_ms as number) <= 0
+      || !nonEmpty(candidate.prompt)
+      || metadata.manifest_id !== `T${String(index + 1).padStart(4, '0')}`
+      || metadata.segment_id !== runawaySegment(index)
+      || metadata.segment_label !== `Runaway fixture region ${String(runawaySegment(index).slice(1)).padStart(2, '0')}`
+      || metadata.timing_mode !== (index % 5 === 0 ? 'hard_cut' : 'hold')
+      || metadata.colour_name !== expectedColour
+      || metadata.colour_hex !== expectedHex
+      || metadata.frame !== runawayFrame(index)
+      || metadata.fps !== RUNAWAY_FIXTURE_FACTS.fps
+      || !nonEmpty(candidate.created_at)) {
+      return invalid(`transition ${index} does not match the pinned manifest row`);
+    }
+  }
+
+  const fingerprint = canonicalFingerprint({ timingSummary: summary, transitions: response.transitions });
+  if (fingerprint !== RUNAWAY_FIXTURE_FACTS.canonicalHash) {
+    return invalid(`canonical Runaway fixture hash mismatch: ${fingerprint}`);
+  }
+  return { valid: true, reason: '', fingerprint, count: response.transitions.length };
 }
 
 function entries(value: unknown, fields: Record<string, (entry: Record<string, unknown>) => boolean>): ValidationResult {
