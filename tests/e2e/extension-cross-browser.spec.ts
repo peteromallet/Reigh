@@ -1,15 +1,13 @@
-import { mkdirSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import {
   PROJECT_SLUG,
   TIMELINE_SLUG,
+  browserEvidencePath,
   resetBridgeBaseline,
 } from './timeline/support';
 
 const RUNAWAY_PROJECT = 'cross-browser-release-gate';
 const EDITOR_URL = `/tools/video-editor?localProject=${PROJECT_SLUG}&localTimeline=${TIMELINE_SLUG}&localTest=1&timelineOverlayCanary=1&transcriptLaneFixture=1&runawayTimelineProject=${RUNAWAY_PROJECT}`;
-const EVIDENCE_ROOT = resolve(process.cwd(), 'docs/extensions/evidence/cross-browser');
 
 function collectIssues(page: Page): string[] {
   const issues: string[] = [];
@@ -43,9 +41,7 @@ function collectIssues(page: Page): string[] {
 }
 
 function evidencePath(testInfo: TestInfo, fileName: string): string {
-  const directory = resolve(EVIDENCE_ROOT, testInfo.project.name);
-  mkdirSync(directory, { recursive: true });
-  return resolve(directory, fileName);
+  return browserEvidencePath(testInfo, `cross-browser/${testInfo.project.name}/${fileName}`);
 }
 
 async function openCombinedEditor(page: Page): Promise<string[]> {

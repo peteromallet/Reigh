@@ -30,11 +30,14 @@ The gate covers:
   action menu staying inside the viewport.
 - Browser/page errors collected as release failures.
 
-Passing screenshots are written per project under
-`docs/extensions/evidence/cross-browser/`; projects therefore cannot overwrite
-each other's evidence. Failure screenshots and traces stay under
-`artifacts/extension-cross-browser/test-results/`, outside the ordinary
-Playwright output directory.
+Captures are written to each test's Playwright artifact directory under
+`artifacts/extension-cross-browser/test-results/` by default. This keeps an
+ordinary or release-gate run from mutating tracked evidence. To retain a run
+under another untracked root, set `PLAYWRIGHT_EVIDENCE_ROOT=/tmp/...`. Refresh
+the committed evidence ledger only as an explicit action with
+`PLAYWRIGHT_REFRESH_TRACKED_EVIDENCE=1`; that opt-in writes the project-named
+captures under `docs/extensions/evidence/cross-browser/`. Failure screenshots
+and traces remain in the Playwright artifact directory.
 
 ## Browser contract
 

@@ -15,7 +15,10 @@ import {
   RUNAWAY_RELEASE_FIXTURE_HASHES,
   TIMELINE_SCHEMA_DISTRIBUTION_VERSION,
   buildBrowserEnvironment,
+  buildReadinessIdentity,
   buildServerEnvironment,
+  buildViteArgs,
+  isExactViteReadiness,
   parseCliArgs,
   requireFullCommitPin,
   requestRawHttp,
@@ -136,6 +139,34 @@ describe('paired repository release E2E gate', () => {
     assert.equal(requireFullCommitPin(full, 'test pin'), full);
     assert.throws(() => requireFullCommitPin('a'.repeat(12), 'test pin'), /full 40-character/);
     assert.throws(() => requireFullCommitPin('A'.repeat(40), 'test pin'), /full 40-character/);
+  });
+
+  it('requires the exact per-run candidate identity for Vite readiness', () => {
+    const identity = buildReadinessIdentity({
+      nonce: 'deadbeef',
+      reighCommit: 'a'.repeat(40),
+    });
+    const expected = {
+      schemaVersion: 1,
+      revision: identity,
+      extensions: {
+        hostEnabled: true,
+        transcriptCaptionFoundryEnabled: true,
+        runawayTypedTimelineEnabled: true,
+      },
+    };
+    assert.equal(isExactViteReadiness(expected, identity), true);
+    assert.equal(isExactViteReadiness({ ...expected, revision: 'paired-preview' }, identity), false);
+    assert.equal(isExactViteReadiness({ status: 200 }, identity), false);
+    assert.throws(() => buildReadinessIdentity({ nonce: 'ambient', reighCommit: 'a'.repeat(40) }), /nonce/);
+  });
+
+  it('passes strictPort for both Vite dev and preview servers', () => {
+    for (const mode of ['development', 'preview']) {
+      const args = buildViteArgs('/snapshot/node_modules/vite/bin/vite.js', mode, 4173);
+      assert.ok(args.includes('--strictPort'), `${mode} Vite server must reject port fallback`);
+      assert.equal(args[args.indexOf('--port') + 1], '4173');
+    }
   });
 
   it('binds the shared timeline schema to the installed venv and pinned Astrid source', () => {

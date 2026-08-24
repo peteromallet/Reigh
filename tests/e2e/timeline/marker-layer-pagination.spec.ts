@@ -1,11 +1,9 @@
 import { expect, test } from '@playwright/test';
-import { resolve } from 'node:path';
-import { BASE_URL, PROJECT_SLUG, TIMELINE_SLUG } from './support';
+import { BASE_URL, PROJECT_SLUG, TIMELINE_SLUG, browserEvidencePath } from './support';
 
 const EDITOR_URL = `${BASE_URL}/tools/video-editor?localProject=${PROJECT_SLUG}&localTimeline=${TIMELINE_SLUG}&localTest=1&timelineOverlayCanary=1`;
-const EVIDENCE = resolve(process.cwd(), 'docs/extensions/evidence/chrome-acceptance');
 
-test('declutters composed marker layers into deterministic accessible pages', async ({ page }) => {
+test('declutters composed marker layers into deterministic accessible pages', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1200, height: 800 });
   const issues: string[] = [];
   page.on('pageerror', (error) => issues.push(`[pageerror] ${error.message}`));
@@ -26,7 +24,7 @@ test('declutters composed marker layers into deterministic accessible pages', as
   const legendBox = await legend.boundingBox();
   expect(legendBox).not.toBeNull();
   expect(legendBox!.x + legendBox!.width).toBeLessThanOrEqual(1200);
-  await page.screenshot({ path: resolve(EVIDENCE, '25-marker-layers-page-1.png'), fullPage: true });
+  await page.screenshot({ path: browserEvidencePath(testInfo, 'chrome-acceptance/25-marker-layers-page-1.png'), fullPage: true });
 
   await page.getByRole('button', { name: 'Next marker layers' }).click();
   await expect(legend).toHaveAttribute('data-marker-layer-page', '1');
@@ -35,11 +33,11 @@ test('declutters composed marker layers into deterministic accessible pages', as
   expect(secondKeys.length).toBeGreaterThan(0);
   expect(secondKeys.length).toBeLessThanOrEqual(6);
   expect(secondKeys.some((key) => firstKeys.includes(key))).toBe(false);
-  await page.screenshot({ path: resolve(EVIDENCE, '26-marker-layers-page-2.png'), fullPage: true });
+  await page.screenshot({ path: browserEvidencePath(testInfo, 'chrome-acceptance/26-marker-layers-page-2.png'), fullPage: true });
   expect(issues).toEqual([]);
 });
 
-test('uses the three-layer ruler budget on a phone viewport', async ({ page }) => {
+test('uses the three-layer ruler budget on a phone viewport', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.addInitScript(() => localStorage.removeItem('reigh.dev-extensions.disabled'));
   await page.goto(EDITOR_URL, { waitUntil: 'domcontentloaded', timeout: 45_000 });
@@ -47,5 +45,5 @@ test('uses the three-layer ruler budget on a phone viewport', async ({ page }) =
   await expect(legend).toBeVisible({ timeout: 20_000 });
   await expect(legend).toContainText(/Layers 1–3\/\d+/);
   await expect(page.locator('[data-testid="timeline-marker-layer"]')).toHaveCount(3);
-  await page.screenshot({ path: resolve(EVIDENCE, '27-marker-layers-phone.png'), fullPage: true });
+  await page.screenshot({ path: browserEvidencePath(testInfo, 'chrome-acceptance/27-marker-layers-phone.png'), fullPage: true });
 });

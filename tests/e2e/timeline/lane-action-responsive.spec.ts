@@ -1,9 +1,7 @@
 import { expect, test } from '@playwright/test';
-import { resolve } from 'node:path';
-import { BASE_URL, PROJECT_SLUG, TIMELINE_SLUG } from './support';
+import { BASE_URL, PROJECT_SLUG, TIMELINE_SLUG, browserEvidencePath } from './support';
 
 const EDITOR_URL = `${BASE_URL}/tools/video-editor?localProject=${PROJECT_SLUG}&localTimeline=${TIMELINE_SLUG}&localTest=1&transcriptLaneFixture=1`;
-const EVIDENCE = resolve(process.cwd(), 'docs/extensions/evidence/chrome-acceptance');
 
 const viewports = [
   { name: 'desktop', width: 1440, height: 900, screenshot: '22-lane-actions-desktop.png' },
@@ -12,7 +10,7 @@ const viewports = [
 ] as const;
 
 for (const viewport of viewports) {
-  test(`keeps the host lane-action affordance visible at ${viewport.name} width`, async ({ page }) => {
+  test(`keeps the host lane-action affordance visible at ${viewport.name} width`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     const issues: string[] = [];
     page.on('pageerror', (error) => issues.push(`[pageerror] ${error.message}`));
@@ -85,7 +83,7 @@ for (const viewport of viewports) {
     expect(menuBox).not.toBeNull();
     expect(menuBox!.x).toBeGreaterThanOrEqual(0);
     expect(menuBox!.x + menuBox!.width).toBeLessThanOrEqual(viewport.width + 1);
-    await page.screenshot({ path: resolve(EVIDENCE, viewport.screenshot), fullPage: true });
+    await page.screenshot({ path: browserEvidencePath(testInfo, `chrome-acceptance/${viewport.screenshot}`), fullPage: true });
     expect(issues).toEqual([]);
   });
 }

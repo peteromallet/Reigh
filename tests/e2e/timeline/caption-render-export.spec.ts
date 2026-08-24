@@ -1,19 +1,18 @@
 import { expect, test } from '@playwright/test';
 import { execFile } from 'node:child_process';
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { readFile, stat, writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import {
   BASE_URL,
   CLIP_BODY_SELECTOR,
   PROJECT_SLUG,
   TIMELINE_SLUG,
+  browserEvidencePath,
   resetBridgeBaseline,
 } from './support';
 
 const EDITOR_URL = `${BASE_URL}/tools/video-editor?localProject=${PROJECT_SLUG}&localTimeline=${TIMELINE_SLUG}&localTest=1&transcriptLaneFixture=1`;
 const TRANSCRIPT_CAPTION_BODY_SELECTOR = `${CLIP_BODY_SELECTOR}[data-clip-id^="transcript-caption-"]`;
-const EVIDENCE = resolve(process.cwd(), 'docs/extensions/evidence/chrome-acceptance');
 const execFileAsync = promisify(execFile);
 
 type ProbeStream = {
@@ -45,9 +44,8 @@ async function ffprobeJson(outputPath: string, args: string[]): Promise<Record<s
 test.describe('caption materialization render and export', () => {
   test.use({ viewport: { width: 1440, height: 900 }, acceptDownloads: true });
 
-  test('renders the materialized transcript into a downloadable MP4 without font-stretch warning flood', async ({ page }) => {
+  test('renders the materialized transcript into a downloadable MP4 without font-stretch warning flood', async ({ page }, testInfo) => {
     test.setTimeout(300_000);
-    await mkdir(EVIDENCE, { recursive: true });
     expect(await resetBridgeBaseline()).toBeNull();
 
     const consoleWarnings: Array<{
@@ -116,14 +114,14 @@ test.describe('caption materialization render and export', () => {
     const downloadLink = page.getByRole('link', { name: /download/i });
     await expect(downloadLink).toBeVisible({ timeout: 240_000 });
     await page.screenshot({
-      path: resolve(EVIDENCE, '28-headless-remotion-4.0.503-render-complete.png'),
+      path: browserEvidencePath(testInfo, 'chrome-acceptance/28-headless-remotion-4.0.503-render-complete.png'),
       fullPage: true,
     });
 
     const downloadPromise = page.waitForEvent('download', { timeout: 30_000 });
     await downloadLink.click();
     const download = await downloadPromise;
-    const outputPath = resolve(EVIDENCE, '28-headless-caption-render-remotion-4.0.503.mp4');
+    const outputPath = browserEvidencePath(testInfo, 'chrome-acceptance/28-headless-caption-render-remotion-4.0.503.mp4');
     await download.saveAs(outputPath);
     expect((await stat(outputPath)).size).toBeGreaterThan(100_000);
     expect((await readFile(outputPath)).subarray(4, 8).toString('ascii')).toBe('ftyp');
@@ -166,7 +164,7 @@ test.describe('caption materialization render and export', () => {
 
     const fontStretchWarnings = consoleWarnings.filter((message) => /fontstretch|canvasfontstretch/i.test(message.text));
     await writeFile(
-      resolve(EVIDENCE, '28-render-console-diagnostics.json'),
+      browserEvidencePath(testInfo, 'chrome-acceptance/28-render-console-diagnostics.json'),
       `${JSON.stringify({
         node: process.version,
         consoleWarnings,

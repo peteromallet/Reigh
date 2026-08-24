@@ -20,8 +20,10 @@
  * run-isolated `PLAYWRIGHT_PORT` published by `playwright.config.ts`.
  * `ASTRID_BRIDGE_PORT` is likewise run-isolated.
  */
-import type { BrowserContext, Page } from '@playwright/test';
+import type { BrowserContext, Page, TestInfo } from '@playwright/test';
+import { mkdirSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
+import { dirname, resolve } from 'node:path';
 import {
   CLIP_BODY_SELECTOR,
   EDIT_AREA_SELECTOR,
@@ -66,6 +68,26 @@ export const TIMELINE_SLUG = 'demo-timeline';
 
 export const EDITOR_URL =
   `${BASE_URL}/tools/video-editor?localProject=${PROJECT_SLUG}&localTimeline=${TIMELINE_SLUG}&localTest=1`;
+
+/**
+ * Browser captures are run artifacts by default. Tracked acceptance evidence
+ * is deliberately opt-in so ordinary and release-gate runs cannot rewrite the
+ * repository while still retaining every capture under Playwright's output.
+ * Set PLAYWRIGHT_EVIDENCE_ROOT for an external run directory, or set
+ * PLAYWRIGHT_REFRESH_TRACKED_EVIDENCE=1 when intentionally refreshing the
+ * committed evidence ledger.
+ */
+export function browserEvidencePath(testInfo: TestInfo, relativePath: string): string {
+  const tracked = process.env.PLAYWRIGHT_REFRESH_TRACKED_EVIDENCE === '1';
+  const externalRoot = process.env.PLAYWRIGHT_EVIDENCE_ROOT;
+  const destination = tracked
+    ? resolve(process.cwd(), 'docs/extensions/evidence', relativePath)
+    : externalRoot
+      ? resolve(externalRoot, relativePath)
+      : testInfo.outputPath(relativePath);
+  mkdirSync(dirname(destination), { recursive: true });
+  return destination;
+}
 
 const BRIDGE_TIMELINE = `${BRIDGE_ORIGIN}/projects/${PROJECT_SLUG}/timelines/${TIMELINE_SLUG}`;
 

@@ -1,11 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { resolve } from "node:path";
-import { openEditor, resetBridgeBaseline } from "./support";
-
-const EVIDENCE_DIR = resolve(
-  process.cwd(),
-  "docs/extensions/evidence/chrome-acceptance",
-);
+import { browserEvidencePath, openEditor, resetBridgeBaseline } from "./support";
 
 const VIEWPORTS = [
   {
@@ -121,7 +115,7 @@ for (const viewport of VIEWPORTS) {
 
     test(`keeps composed editor shell inside the ${viewport.name} viewport`, async ({
       page,
-    }) => {
+    }, testInfo) => {
       test.setTimeout(120_000);
       await resetBridgeBaseline();
       await openEditor(page);
@@ -254,7 +248,7 @@ for (const viewport of VIEWPORTS) {
       expect(layerComposition.total).toBe(11);
 
       await page.screenshot({
-        path: resolve(EVIDENCE_DIR, viewport.screenshot),
+        path: browserEvidencePath(testInfo, `chrome-acceptance/${viewport.screenshot}`),
         fullPage: true,
         animations: "disabled",
       });

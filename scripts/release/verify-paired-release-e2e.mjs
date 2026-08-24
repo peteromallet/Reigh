@@ -116,6 +116,7 @@ export function buildServerEnvironment({
   token,
   reighMode,
   reighPort,
+  readinessIdentity,
 }) {
   if (!token || typeof token !== 'string') fail('server token must be non-empty');
   const shared = safeBaseEnvironment({
@@ -144,8 +145,32 @@ export function buildServerEnvironment({
     EXTENSION_HOST_ENABLED: 'true',
     TRANSCRIPT_CAPTION_FOUNDRY_ENABLED: 'true',
     RUNAWAY_TYPED_TIMELINE_ENABLED: 'true',
-    EXTENSION_RELEASE_CONFIG_REVISION: `paired-${reighMode}`,
+    EXTENSION_RELEASE_CONFIG_REVISION: readinessIdentity ?? `paired-${reighMode}`,
   };
+}
+
+export function buildReadinessIdentity({ nonce, reighCommit }) {
+  if (!/^[0-9a-f]{8}$/.test(nonce ?? '')) fail('readiness nonce must be eight lowercase hexadecimal characters');
+  if (!/^[0-9a-f]{40}$/.test(reighCommit ?? '')) fail('readiness candidate must be a full commit pin');
+  return `paired-${nonce}-${reighCommit}`;
+}
+
+export function isExactViteReadiness(payload, expectedIdentity) {
+  return JSON.stringify(payload) === JSON.stringify({
+    schemaVersion: 1,
+    revision: expectedIdentity,
+    extensions: {
+      hostEnabled: true,
+      transcriptCaptionFoundryEnabled: true,
+      runawayTypedTimelineEnabled: true,
+    },
+  });
+}
+
+export function buildViteArgs(viteBin, mode, port) {
+  return mode === 'preview'
+    ? [viteBin, 'preview', '--config', 'config/vite/vite.config.ts', '--host', '127.0.0.1', '--port', String(port), '--strictPort']
+    : [viteBin, '--config', 'config/vite/vite.config.ts', '--host', '127.0.0.1', '--port', String(port), '--strictPort'];
 }
 
 export function buildBrowserEnvironment({ baseUrl, browserExecutable, browserRoot, evidenceDir, phase }) {
@@ -472,6 +497,30 @@ async function waitForUrl(url, { headers, process: child, timeoutMs = 60_000 } =
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 250));
   }
   fail(`timed out waiting for ${url}: ${last}`);
+}
+
+async function waitForViteReadiness(baseUrl, { expectedIdentity, process: child, timeoutMs = 120_000 } = {}) {
+  const readinessUrl = `${baseUrl}/runtime-config/v1/extensions.json?readiness=${encodeURIComponent(expectedIdentity ?? '')}`;
+  const deadline = Date.now() + timeoutMs;
+  let last = 'no response';
+  while (Date.now() < deadline) {
+    if (child?.exitCode !== null) fail(`Vite server exited before readiness (${child.exitCode})`);
+    try {
+      const response = await fetch(readinessUrl, {
+        cache: 'no-store',
+        redirect: 'manual',
+        signal: AbortSignal.timeout(2_000),
+      });
+      let payload;
+      try { payload = await response.json(); } catch { payload = null; }
+      if (response.ok && isExactViteReadiness(payload, expectedIdentity)) return response;
+      last = `HTTP ${response.status} with non-matching runtime identity`;
+    } catch (error) {
+      last = error.message;
+    }
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 250));
+  }
+  fail(`timed out waiting for exact Vite readiness at ${readinessUrl}: ${last}`);
 }
 
 /**
@@ -1046,9 +1095,7 @@ async function startAstrid(context, suffix, port, token) {
 
 async function startReigh(context, suffix, port, bridgePort, token, mode) {
   const viteBin = resolve(context.reighSnapshot, 'node_modules/vite/bin/vite.js');
-  const args = mode === 'preview'
-    ? [viteBin, 'preview', '--config', 'config/vite/vite.config.ts', '--host', '127.0.0.1', '--port', String(port)]
-    : [viteBin, '--config', 'config/vite/vite.config.ts', '--host', '127.0.0.1', '--port', String(port)];
+  const args = buildViteArgs(viteBin, mode, port);
   const handle = startLoggedProcess(process.execPath, args, {
     cwd: context.reighSnapshot,
     env: buildServerEnvironment({
@@ -1059,28 +1106,24 @@ async function startReigh(context, suffix, port, bridgePort, token, mode) {
       token,
       reighMode: mode,
       reighPort: port,
+      readinessIdentity: context.readinessIdentity,
     }),
     logPath: resolve(context.evidenceRoot, `reigh-${suffix}.log`),
   });
-  await waitForUrl(`http://127.0.0.1:${port}/`, { process: handle.child, timeoutMs: 120_000 });
+  await waitForViteReadiness(`http://127.0.0.1:${port}`, {
+    process: handle.child,
+    expectedIdentity: context.readinessIdentity,
+    timeoutMs: 120_000,
+  });
   return handle;
 }
 
-async function smokeBuiltPreview(port) {
+async function smokeBuiltPreview(port, expectedIdentity) {
   const base = `http://127.0.0.1:${port}`;
   const configResponse = await fetch(`${base}/runtime-config/v1/extensions.json`, { cache: 'no-store' });
   if (!configResponse.ok) fail(`built preview runtime config returned ${configResponse.status}`);
   const config = await configResponse.json();
-  const expected = {
-    schemaVersion: 1,
-    revision: 'paired-preview',
-    extensions: {
-      hostEnabled: true,
-      transcriptCaptionFoundryEnabled: true,
-      runawayTypedTimelineEnabled: true,
-    },
-  };
-  if (JSON.stringify(config) !== JSON.stringify(expected)) {
+  if (!isExactViteReadiness(config, expectedIdentity)) {
     fail(`built preview runtime config mismatch: ${JSON.stringify(config)}`);
   }
   // The first proxy request deliberately supplies credentials and a protocol
@@ -1285,6 +1328,10 @@ async function executeGate(manifest, pins, evidenceRoot) {
     projectsRoot: resolve(runtimeRoot, 'projects'),
     reighSnapshot: resolve(runtimeRoot, 'reigh'),
     astridSnapshot: resolve(runtimeRoot, 'astrid'),
+    readinessIdentity: buildReadinessIdentity({
+      nonce: randomBytes(4).toString('hex'),
+      reighCommit: pins.reighCommit,
+    }),
   };
   mkdirSync(context.home, { recursive: true, mode: 0o700 });
   mkdirSync(context.projectsRoot, { recursive: true, mode: 0o700 });
@@ -1337,7 +1384,7 @@ async function executeGate(manifest, pins, evidenceRoot) {
         EXTENSION_HOST_ENABLED: 'true',
         TRANSCRIPT_CAPTION_FOUNDRY_ENABLED: 'true',
         RUNAWAY_TYPED_TIMELINE_ENABLED: 'true',
-        EXTENSION_RELEASE_CONFIG_REVISION: 'paired-preview',
+        EXTENSION_RELEASE_CONFIG_REVISION: context.readinessIdentity,
       }),
       logPath: resolve(evidenceRoot, 'reigh-runtime-config.log'),
     });
@@ -1390,7 +1437,7 @@ async function executeGate(manifest, pins, evidenceRoot) {
     astridHandle = await startAstrid(context, 'preview', bridgePort, token);
     let reighPort = await allocatePort();
     reighHandle = await startReigh(context, 'preview', reighPort, bridgePort, token, 'preview');
-    const preview = await smokeBuiltPreview(reighPort);
+    const preview = await smokeBuiltPreview(reighPort, context.readinessIdentity);
     receipt.phases.push({ id: 'built-preview-auth-proxy', status: 'pass', ...preview });
     await stopLoggedProcesses([reighHandle, astridHandle]);
     reighHandle = undefined;

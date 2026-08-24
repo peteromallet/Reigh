@@ -1,11 +1,9 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
-import { resolve } from 'node:path';
-import { BASE_URL, PROJECT_SLUG, TIMELINE_SLUG } from './support';
+import { BASE_URL, PROJECT_SLUG, TIMELINE_SLUG, browserEvidencePath } from './support';
 
 const PROJECT = 'runaway-browser-recovery';
 const RUNAWAY_REQUEST = `**/api/astrid/v1/projects/${PROJECT}/runaway-transitions?*`;
 const EDITOR_URL = `${BASE_URL}/tools/video-editor?localProject=${PROJECT_SLUG}&localTimeline=${TIMELINE_SLUG}&localTest=1&runawayTimelineProject=${PROJECT}`;
-const EVIDENCE = resolve(process.cwd(), 'docs/extensions/evidence/chrome-acceptance');
 
 const validResponse = {
   api_version: 'v1',
@@ -62,9 +60,21 @@ const validResponse = {
 
 function collectIssues(page: Page): string[] {
   const issues: string[] = [];
+  const expectedCapabilityProbe = (url: string, status: number) => {
+    const parsed = new URL(url);
+    return status === 404
+      && /^\/api\/astrid\/projects\/[^/]+\/media\/__reigh_capability_probe__\/content$/.test(parsed.pathname);
+  };
   page.on('pageerror', (error) => issues.push(`[pageerror] ${error.message}`));
   page.on('console', (message) => {
-    if (message.type() === 'error') issues.push(`[console.error] ${message.text()}`);
+    if (message.type() === 'error' && !message.text().startsWith('Failed to load resource:')) {
+      issues.push(`[console.error] ${message.text()}`);
+    }
+  });
+  page.on('response', (response) => {
+    if (response.status() >= 400 && !expectedCapabilityProbe(response.url(), response.status())) {
+      issues.push(`[http ${response.status()}] ${response.url()}`);
+    }
   });
   return issues;
 }
@@ -89,7 +99,7 @@ async function fulfillJson(route: Route, body: unknown): Promise<void> {
 test.describe('Runaway typed timeline degraded-state recovery', () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test('shows loading then an explicit empty state without console/page errors', async ({ page }) => {
+  test('shows loading then an explicit empty state without console/page errors', async ({ page }, testInfo) => {
     const issues = collectIssues(page);
     await page.route(RUNAWAY_REQUEST, async (route) => {
       await new Promise((done) => setTimeout(done, 1_500));
@@ -104,14 +114,14 @@ test.describe('Runaway typed timeline degraded-state recovery', () => {
 
     const state = page.getByTestId('runaway-load-state');
     await expect(state).toHaveAttribute('data-status', 'loading');
-    await page.screenshot({ path: resolve(EVIDENCE, '17-runaway-loading.png'), fullPage: true });
+    await page.screenshot({ path: browserEvidencePath(testInfo, 'chrome-acceptance/17-runaway-loading.png'), fullPage: true });
     await expect(state).toHaveAttribute('data-status', 'empty', { timeout: 10_000 });
     await expect(state).toContainText(`No Runaway transitions were found for ${PROJECT}.`);
-    await page.screenshot({ path: resolve(EVIDENCE, '18-runaway-empty.png'), fullPage: true });
+    await page.screenshot({ path: browserEvidencePath(testInfo, 'chrome-acceptance/18-runaway-empty.png'), fullPage: true });
     expect(issues).toEqual([]);
   });
 
-  test('shows malformed-data error once and manually retries cleanly', async ({ page }) => {
+  test('shows malformed-data error once and manually retries cleanly', async ({ page }, testInfo) => {
     const issues = collectIssues(page);
     let requests = 0;
     await page.route(RUNAWAY_REQUEST, async (route) => {
@@ -126,7 +136,7 @@ test.describe('Runaway typed timeline degraded-state recovery', () => {
     await expect(state).toHaveAttribute('data-status', 'error');
     await expect(state).toContainText('Runaway bridge response must contain transitions[]');
     await expect(page.getByTestId('runaway-retry')).toBeVisible();
-    await page.screenshot({ path: resolve(EVIDENCE, '19-runaway-malformed-retry.png'), fullPage: true });
+    await page.screenshot({ path: browserEvidencePath(testInfo, 'chrome-acceptance/19-runaway-malformed-retry.png'), fullPage: true });
     expect(requests).toBe(1);
     expect(issues).toEqual([]);
 
@@ -137,7 +147,7 @@ test.describe('Runaway typed timeline degraded-state recovery', () => {
     expect(issues).toEqual([]);
   });
 
-  test('deduplicates an offline failure and automatically recovers on online', async ({ page }) => {
+  test('deduplicates an offline failure and automatically recovers on online', async ({ page }, testInfo) => {
     const issues = collectIssues(page);
     let requests = 0;
     await page.route(RUNAWAY_REQUEST, async (route) => {
@@ -153,7 +163,7 @@ test.describe('Runaway typed timeline degraded-state recovery', () => {
     const state = page.getByTestId('runaway-load-state');
     await expect(state).toHaveAttribute('data-status', 'error');
     await expect(page.getByTestId('runaway-retry')).toBeVisible();
-    await page.screenshot({ path: resolve(EVIDENCE, '20-runaway-offline.png'), fullPage: true });
+    await page.screenshot({ path: browserEvidencePath(testInfo, 'chrome-acceptance/20-runaway-offline.png'), fullPage: true });
     expect(requests).toBe(1);
     expect(issues.filter((issue) => issue.includes('[Runaway Timeline Viewer]'))).toEqual([]);
     expect(issues.filter((issue) => issue.startsWith('[pageerror]'))).toEqual([]);
@@ -161,7 +171,7 @@ test.describe('Runaway typed timeline degraded-state recovery', () => {
     await page.evaluate(() => window.dispatchEvent(new Event('online')));
     await expect(page.getByTestId('runaway-transition-chip')).toHaveCount(2);
     await expect(state).toHaveCount(0);
-    await page.screenshot({ path: resolve(EVIDENCE, '21-runaway-online-recovered.png'), fullPage: true });
+    await page.screenshot({ path: browserEvidencePath(testInfo, 'chrome-acceptance/21-runaway-online-recovered.png'), fullPage: true });
     expect(requests).toBe(2);
     expect(issues.filter((issue) => issue.includes('[Runaway Timeline Viewer]'))).toEqual([]);
     expect(issues.filter((issue) => issue.startsWith('[pageerror]'))).toEqual([]);
