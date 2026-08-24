@@ -5,6 +5,7 @@
  * See `support.ts` for what this covers that the jsdom conformance suite cannot.
  */
 import { expect, test } from '@playwright/test';
+import { CLIP_BODY_SELECTOR } from '../../../src/tools/video-editor/lib/timeline-dom.ts';
 import {
   collectPageLogs,
   countSelectedClips,
@@ -25,7 +26,7 @@ test.describe('timeline desktop interaction', () => {
 
     await openEditor(page);
 
-    const geom = await page.evaluate(() => {
+    const geom = await page.evaluate((clipBodySelector) => {
       const q = (s: string) => document.querySelector(s);
       const rect = (el: Element | null) => (el
         ? (({ x, y, width, height }) => ({
@@ -39,12 +40,12 @@ test.describe('timeline desktop interaction', () => {
         playhead: rect(q('[data-testid="timeline-playhead"]')),
         tracks: Array.from(document.querySelectorAll('[data-track-id]'))
           .map((el) => ({ id: el.getAttribute('data-track-id'), ...rect(el)! })),
-        clips: Array.from(document.querySelectorAll('[data-clip-id]'))
+        clips: Array.from(document.querySelectorAll(clipBodySelector))
           .map((el) => ({ id: el.getAttribute('data-clip-id'), ...rect(el)! })),
         rulerTicks: Array.from(document.querySelectorAll('main.grid *'))
           .filter((el) => /^\d:\d\d\.\d\d$/.test(el.textContent?.trim() ?? '')).length,
       };
-    });
+    }, CLIP_BODY_SELECTOR as string);
 
     await test.step('preview surface has non-zero height', async () => {
       expect(geom.preview?.h ?? 0, JSON.stringify(geom.preview)).toBeGreaterThan(200);
@@ -84,7 +85,7 @@ test.describe('timeline desktop interaction', () => {
     });
 
     // --- interaction: select a clip ---------------------------------------
-    const firstClip = page.locator('[data-clip-id]').first();
+    const firstClip = page.locator(CLIP_BODY_SELECTOR).first();
     const clipId = await firstClip.getAttribute('data-clip-id');
     await firstClip.click({ timeout: 8_000 });
     await page.waitForTimeout(1_500);
@@ -114,7 +115,8 @@ test.describe('timeline desktop interaction', () => {
 
     // --- interaction: zoom -------------------------------------------------
     const clipWidth = () => page.evaluate(
-      () => document.querySelector('[data-clip-id]')?.getBoundingClientRect().width ?? 0,
+      (clipBodySelector) => document.querySelector(clipBodySelector)?.getBoundingClientRect().width ?? 0,
+      CLIP_BODY_SELECTOR as string,
     );
     const beforeZoom = await clipWidth();
     await page.locator('button[aria-label="Zoom in timeline"]').first().click({ timeout: 5_000 });

@@ -1,0 +1,53 @@
+
+Running 1 test using 1 worker
+
+  ✘  1 tests/e2e/release/paired-repository.spec.ts:259:1 › paired repository acceptance phase: first (23.2s)
+
+
+  1) tests/e2e/release/paired-repository.spec.ts:259:1 › paired repository acceptance phase: first ─
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: locator('[data-clip-id="paired-release-clip"]')
+    Expected: visible
+    Error: strict mode violation: locator('[data-clip-id="paired-release-clip"]') resolved to 3 elements:
+        1) <div tabindex="0" role="button" data-row-id="V1" data-clip-id="paired-release-clip" class="clip-action group relative flex h-full w-full select-none overflow-hidden rounded-md border text-left outline-none border-border bg-card/90 text-foreground hover:border-accent">…</div> aka getByRole('button', { name: 'paired-release.jpg' })
+        2) <div data-row-id="V1" data-resize-edge="left" data-clip-id="paired-release-clip" class="absolute inset-y-0 left-0 z-10 cursor-ew-resize rounded-l-sm border-l border-[color:var(--video-editor-accent-ring)] bg-transparent transition-colors group-hover:bg-[var(--video-editor-accent-bg)]"></div> aka locator('.absolute.inset-y-0.left-0.z-10')
+        3) <div data-row-id="V1" data-resize-edge="right" data-clip-id="paired-release-clip" class="absolute inset-y-0 right-0 z-10 cursor-ew-resize rounded-r-sm border-r border-[color:var(--video-editor-accent-ring)] bg-transparent transition-colors group-hover:bg-[var(--video-editor-accent-bg)]"></div> aka locator('.absolute.inset-y-0.right-0')
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 30000ms[22m
+    [2m  - waiting for locator('[data-clip-id="paired-release-clip"]')[22m
+
+    Browser boot diagnostics: {"url":"http://127.0.0.1:54734/tools/video-editor?localProject=paired-release-demo&localTimeline=f5tx523nt7e2jxq6ckp2y024vk&localTest=1&transcriptLaneFixture=1&runawayTimelineProject=runaway-piano-colour-demo","issues":["[console.error] Failed to load resource: the server responded with a status of 404 (Not Found)","[console.error] Failed to load resource: the server responded with a status of 404 (Not Found)","[console.error] Failed to load resource: the server responded with a status of 403 (Forbidden)"],"consoleWarnings":[],"failedRequests":["[requestfailed] HEAD http://127.0.0.1:54734/api/astrid/projects/paired-release-demo/media/__reigh_capability_probe__/content — net::ERR_ABORTED"],"bodyText":"timeline mode select. precision disabled. desktop pointer controls are active. ← back paired-release-demo paired release timeline paired release timeline 0:00.00 live sources export clear render destination Download Project media render preview overlay transforms are available in the preview. mode select. precision disabled. 1280x720 inspector extensions processes select a clip to edit timing, position, audio, text, or effects. saved clear 1 unused 0:00.00 0:05.00 0:10.00 0:15.00 0:20.00 0:25.00 0:30.00 0:35.00 0:40.00 ‹ layers 1–6/11 › video paired-release.jpg video 2 audio runaway transitions 116/566 + video + audio new text new effect create animation sequence scene markers playhead 0.00s no markers — press b at each phase. mark (b) track V1 V2 tail duration align shots to transitions clear/delete data codepanel — m4 writingpanel — m4 stagepanel — m3 select a project to browse shots 0 action cancel all processing (0) succeeded (0) failed (0) all current no tasks processing timeline agent chat is managed in astrid run the agent workflow in astrid, then refresh this editor to load the updated timeline. tools main tools generate images structure, loras + prompt control. travel betw","rootHtml":"<div class=\"flex flex-col h-screen overflow-hidden\"><div class=\"fixed inset-0 bg-gradient-to-br from-background via-secondary/10 to-accent/5 opacity-40 dark:opacity-0 pointer-events-none\"></div><div class=\"relative z-10 content-container h-screen overflow-hidden transition-[margin,padding] duration-300 ease-smooth\" data-video-editor-route=\"true\" data-video-editor-shell-active=\"true\" style=\"margin-right: 0px; margin-left: 0px; padding-top: 0px; padding-bottom: 0px; --content-width: 1280px; --content-height: 720px; --content-sm: 1; --content-md: 1; --content-lg: 1; --content-xl: 1; --content-2xl: 0; will-change: margin, padding;\"><main class=\"h-full w-full overflow-hidden\"><div class=\"flex h-full w-full flex-col overflow-hidden bg-background\"><div class=\"min-h-0 flex-1 overflow-hidden\"><div class=\"flex h-full w-full min-h-0 min-w-0 max-w-full flex-col overflow-hidden bg-background text-foreground\"><div class=\"sr-only\" aria-live=\"polite\" aria-atomic=\"true\">Timeline mode select. Precision disabled. Desktop pointer controls are active.</div><div class=\"flex h-10 items-center gap-3 border-b border-border bg-background px-3 text-sm text-muted-foreground\"><button type=\"button\" class=\"shrin"}
+
+      153 |     });
+      154 |     const message = error instanceof Error ? error.message : String(error);
+    > 155 |     throw new Error(`${message}\nBrowser boot diagnostics: ${diagnostics}`);
+          |           ^
+      156 |   }
+      157 |   await expect(page.locator('[data-lane-kind="reigh.transcript"]')).toBeVisible();
+      158 |   return issues;
+        at openEditor (/private/var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/reigh/tests/e2e/release/paired-repository.spec.ts:155:11)
+        at /private/var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/reigh/tests/e2e/release/paired-repository.spec.ts:266:18
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../../var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-evidence/extension-ship-quality-rc5-2026-08-24T20-57-49-795Z-15835/playwright-first/paired-repository-paired-repository-acceptance-phase-first/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    ../../../../../../../../var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-evidence/extension-ship-quality-rc5-2026-08-24T20-57-49-795Z-15835/playwright-first/paired-repository-paired-repository-acceptance-phase-first/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../../var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-evidence/extension-ship-quality-rc5-2026-08-24T20-57-49-795Z-15835/playwright-first/paired-repository-paired-repository-acceptance-phase-first/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../../var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-evidence/extension-ship-quality-rc5-2026-08-24T20-57-49-795Z-15835/playwright-first/paired-repository-paired-repository-acceptance-phase-first/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../../var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-evidence/extension-ship-quality-rc5-2026-08-24T20-57-49-795Z-15835/playwright-first/paired-repository-paired-repository-acceptance-phase-first/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    tests/e2e/release/paired-repository.spec.ts:259:1 › paired repository acceptance phase: first ──

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { CLIP_BODY_SELECTOR } from '../../../src/tools/video-editor/lib/timeline-dom.ts';
 
 const phase = process.env.PAIRED_RELEASE_PHASE;
 const evidenceDir = process.env.PAIRED_RELEASE_EVIDENCE_DIR;
@@ -112,6 +113,15 @@ function primaryClip(config: TimelineConfig) {
   return config.clips?.find((clip) => clip.id === 'paired-release-clip');
 }
 
+/**
+ * The trim handles intentionally carry the same data-clip-id as their owner.
+ * Scope the locator to the interactive clip body so a handle cannot make a
+ * strict-mode assertion or geometry read ambiguous.
+ */
+function clipBody(page: Page, clipId: string) {
+  return page.locator(`${CLIP_BODY_SELECTOR}[data-clip-id="${clipId}"]`);
+}
+
 function captionCount(config: TimelineConfig): number {
   return config.clips?.filter((clip) => clip.id?.startsWith('transcript-caption-')).length ?? 0;
 }
@@ -120,13 +130,39 @@ async function openEditor(page: Page): Promise<string[]> {
   const issues: string[] = [];
   const consoleWarnings: string[] = [];
   const failedRequests: string[] = [];
+  const expectedFailedRequests: string[] = [];
+  const capabilityProbeResponses: string[] = [];
+  const capabilityProbePath = `/api/astrid/projects/${encodeURIComponent(project!)}/media/__reigh_capability_probe__/content`;
   page.on('pageerror', (error) => issues.push(`[pageerror] ${error.message}`));
   page.on('console', (message) => {
-    if (message.type() === 'error') issues.push(`[console.error] ${message.text()}`);
+    if (message.type() === 'error') {
+      const sourceUrl = message.location().url;
+      const isExpectedCapabilityProbe = sourceUrl.endsWith(capabilityProbePath)
+        && message.text() === 'Failed to load resource: the server responded with a status of 404 (Not Found)';
+      if (!isExpectedCapabilityProbe) {
+        issues.push(`[console.error] ${message.text()}`);
+      }
+    }
     if (message.type() === 'warning') consoleWarnings.push(`[console.warn] ${message.text()}`);
   });
+  page.on('response', (response) => {
+    if (!response.url().includes('__reigh_capability_probe__')) return;
+    const method = response.request().method();
+    capabilityProbeResponses.push(`${method}:${response.status()}`);
+    if (response.status() !== 404) {
+      issues.push(`[capability-probe] ${method} ${response.url()} returned ${response.status()}`);
+    }
+  });
   page.on('requestfailed', (request) => {
-    failedRequests.push(`[requestfailed] ${request.method()} ${request.url()} — ${request.failure()?.errorText ?? 'unknown'}`);
+    const failure = request.failure()?.errorText ?? 'unknown';
+    const isExpectedCapabilityAbort = request.url().endsWith(capabilityProbePath)
+      && request.method() === 'HEAD'
+      && failure === 'net::ERR_ABORTED';
+    if (isExpectedCapabilityAbort) {
+      expectedFailedRequests.push(`[requestfailed] ${request.method()} ${request.url()} — ${failure}`);
+    } else {
+      failedRequests.push(`[requestfailed] ${request.method()} ${request.url()} — ${failure}`);
+    }
   });
   await page.addInitScript(() => {
     window.localStorage.removeItem('reigh.dev-extensions.disabled');
@@ -135,7 +171,7 @@ async function openEditor(page: Page): Promise<string[]> {
   const response = await page.goto(editorUrl, { waitUntil: 'domcontentloaded', timeout: 45_000 });
   expect(response?.ok()).toBe(true);
   try {
-    await expect(page.locator('[data-clip-id="paired-release-clip"]')).toBeVisible({ timeout: 30_000 });
+    await expect(clipBody(page, 'paired-release-clip')).toBeVisible({ timeout: 30_000 });
   } catch (error) {
     // Preserve the useful browser failure signal in the receipt. Without this
     // context a module-evaluation crash is misreported as a missing seeded
@@ -154,7 +190,17 @@ async function openEditor(page: Page): Promise<string[]> {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`${message}\nBrowser boot diagnostics: ${diagnostics}`);
   }
+  await expect.poll(async () => {
+    const image = clipBody(page, 'paired-release-clip').locator('img').first();
+    return image.evaluate((element) => {
+      const candidate = element as HTMLImageElement;
+      return candidate.complete && candidate.naturalWidth > 0;
+    });
+  }, { timeout: 30_000 }).toBe(true);
   await expect(page.locator('[data-lane-kind="reigh.transcript"]')).toBeVisible();
+  expect(capabilityProbeResponses).toEqual(expect.arrayContaining(['HEAD:404', 'GET:404']));
+  expect(expectedFailedRequests).toHaveLength(1);
+  expect(failedRequests).toEqual([]);
   return issues;
 }
 
@@ -184,7 +230,7 @@ async function proveAllExtensionLifecycles(page: Page) {
 }
 
 async function dragPrimaryClip(page: Page) {
-  const clip = page.locator('[data-clip-id="paired-release-clip"]');
+  const clip = clipBody(page, 'paired-release-clip');
   const box = await clip.boundingBox();
   if (!box) throw new Error('primary clip has no browser geometry');
   const x = box.x + box.width / 2;
@@ -283,7 +329,7 @@ test(`paired repository acceptance phase: ${phase}`, async ({ page, request }) =
     await materializeTranscript(page, request);
     const saved = await readTimeline(request);
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await expect(page.locator('[data-clip-id="paired-release-clip"]')).toBeVisible({ timeout: 30_000 });
+    await expect(clipBody(page, 'paired-release-clip')).toBeVisible({ timeout: 30_000 });
     await expect.poll(() => page.locator('[data-clip-id^="transcript-caption-"]').count()).toBeGreaterThanOrEqual(2);
     expect(primaryClip(saved.config)?.at).not.toBe(initialAt);
   } else if (phase === 'restart') {

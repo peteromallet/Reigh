@@ -7,6 +7,7 @@
  * rather than independent tests.
  */
 import { expect, test } from '@playwright/test';
+import { CLIP_BODY_SELECTOR } from '../../../src/tools/video-editor/lib/timeline-dom.ts';
 import {
   boxOf,
   collectPageLogs,
@@ -42,7 +43,7 @@ test.describe('timeline phone gestures', () => {
     });
 
     // --- 0. structural: phone layout, mode bar -----------------------------
-    const structure = await page.evaluate(() => {
+    const structure = await page.evaluate((clipBodySelector) => {
       const rect = (el: Element) => {
         const r = el.getBoundingClientRect();
         return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
@@ -55,7 +56,7 @@ test.describe('timeline phone gestures', () => {
           ? Array.from(bar.querySelectorAll('button'))
             .map((b) => ({ label: b.textContent?.trim(), ...rect(b), pressed: b.getAttribute('aria-pressed') }))
           : [],
-        clips: Array.from(document.querySelectorAll('[data-clip-id]'))
+        clips: Array.from(document.querySelectorAll(clipBodySelector))
           .map((el) => ({ id: el.getAttribute('data-clip-id'), ...rect(el) })),
         editArea: editArea
           ? {
@@ -68,7 +69,7 @@ test.describe('timeline phone gestures', () => {
             }
           : null,
       };
-    });
+    }, CLIP_BODY_SELECTOR as string);
 
     await test.step('phone mode bar present', async () => {
       expect(structure.modeBar, JSON.stringify(structure.modeBar)).not.toBeNull();
@@ -117,10 +118,10 @@ test.describe('timeline phone gestures', () => {
       );
     }
     const editAfter = await scrollLeft();
-    const browsePos = await page.evaluate(() => {
-      const el = document.querySelector('[data-clip-id]');
+    const browsePos = await page.evaluate((clipBodySelector) => {
+      const el = document.querySelector(clipBodySelector);
       return el ? Math.round(el.getBoundingClientRect().x) : null;
-    });
+    }, CLIP_BODY_SELECTOR as string);
 
     await test.step('browse: pan over clip scrolls timeline (no accidental clip move)', async () => {
       expect(editAfter, `scrollLeft ${editBefore} -> ${editAfter}, clip x now ${browsePos}`)
@@ -139,7 +140,7 @@ test.describe('timeline phone gestures', () => {
       expect(selectActivated).toBe(true);
     });
 
-    const c1 = await boxOf(page, '[data-clip-id]');
+    const c1 = await boxOf(page, CLIP_BODY_SELECTOR);
     if (c1) await touch.tap(c1.cx, c1.cy);
     const selCount1 = await countSelectedClips(page);
     await test.step('select: tap selects clip', async () => {
@@ -164,17 +165,17 @@ test.describe('timeline phone gestures', () => {
     // horizontal overflow; CDP correctly ignores a touch whose start point is
     // outside the device viewport. Use the fixture's sole V2 clip: it is fully
     // visible and has free space on its track, so this measures move mode.
-    const beforeMove = await page.evaluate(() => {
-      const el = document.querySelector('.clip-action[data-clip-id="clip-video"]');
+    const beforeMove = await page.evaluate((clipBodySelector) => {
+      const el = document.querySelector(`${clipBodySelector}[data-clip-id="clip-video"]`);
       if (!el) return null;
       const r = el.getBoundingClientRect();
       return {
         id: 'clip-video', row: el.getAttribute('data-row-id'),
         x: r.x, y: r.y, w: r.width, h: r.height,
       };
-    });
+    }, CLIP_BODY_SELECTOR as string);
     expect(beforeMove, 'fixture clip-video is not visible').not.toBeNull();
-    const moveSelector = `.clip-action[data-clip-id="${beforeMove!.id}"]`;
+    const moveSelector = `${CLIP_BODY_SELECTOR}[data-clip-id="${beforeMove!.id}"]`;
     const scrollBeforeMove = await scrollLeft();
     await touch.touchDrag(
       beforeMove!.x + beforeMove!.w / 2, beforeMove!.y + beforeMove!.h / 2,
@@ -204,12 +205,12 @@ test.describe('timeline phone gestures', () => {
     });
     await page.waitForTimeout(300);
 
-    const trimGeom = await page.evaluate(() => {
-      const el = document.querySelector('[data-clip-id]');
+    const trimGeom = await page.evaluate((clipBodySelector) => {
+      const el = document.querySelector(clipBodySelector);
       if (!el) return null;
       const r = el.getBoundingClientRect();
       return { x: r.x, y: r.y, w: r.width, h: r.height };
-    });
+    }, CLIP_BODY_SELECTOR as string);
     expect(trimGeom, 'no clip found').not.toBeNull();
     await touch.touchDrag(
       trimGeom!.x + trimGeom!.w - 6, trimGeom!.y + trimGeom!.h / 2,
@@ -217,7 +218,8 @@ test.describe('timeline phone gestures', () => {
       { steps: 16 },
     );
     const afterTrimWidth = await page.evaluate(
-      () => document.querySelector('[data-clip-id]')!.getBoundingClientRect().width,
+      (clipBodySelector) => document.querySelector(clipBodySelector)!.getBoundingClientRect().width,
+      CLIP_BODY_SELECTOR as string,
     );
 
     await test.step('trim: dragging right edge resizes clip', async () => {
@@ -314,7 +316,8 @@ test.describe('timeline phone gestures', () => {
 
     // --- 9. tapping "New text" adds a clip ---------------------------------
     const clipCount = () => page.evaluate(
-      () => document.querySelectorAll('.clip-action[data-clip-id]').length,
+      (clipBodySelector) => document.querySelectorAll(clipBodySelector).length,
+      CLIP_BODY_SELECTOR as string,
     );
     const clipsBeforeText = await clipCount();
     const textTool = await boxOf(page, '[aria-label="New text at playhead"]');
@@ -336,9 +339,9 @@ test.describe('timeline phone gestures', () => {
     // Anchor probe: remember which clip sits under the midpoint and where in
     // that clip the midpoint falls, so we can prove the same timeline instant is
     // still under the fingers afterwards (rather than the area having scrolled).
-    const measurePinch = (midX: number) => page.evaluate((mid) => {
+    const measurePinch = (midX: number) => page.evaluate(({ clipBodySelector, mid }) => {
       const area = document.querySelector('.timeline-canvas-edit-area');
-      const clips = Array.from(document.querySelectorAll('.clip-action[data-clip-id]')).map((el) => {
+      const clips = Array.from(document.querySelectorAll(clipBodySelector)).map((el) => {
         const r = el.getBoundingClientRect();
         return { id: el.getAttribute('data-clip-id')!, x: r.x, w: r.width };
       });
@@ -348,7 +351,7 @@ test.describe('timeline phone gestures', () => {
         scrollLeft: area?.scrollLeft ?? 0,
         under: clips.find((c) => c.x <= mid && mid <= c.x + c.w) ?? clips[0] ?? null,
       };
-    }, midX);
+    }, { clipBodySelector: CLIP_BODY_SELECTOR as string, mid: midX });
 
     const pinchBefore = await measurePinch(pinchMidX);
     const anchorFraction = pinchBefore.under
@@ -359,12 +362,12 @@ test.describe('timeline phone gestures', () => {
 
     const sameClip = pinchBefore.under && pinchAfter.under && pinchBefore.under.id === pinchAfter.under.id
       ? pinchAfter.under
-      : await page.evaluate((id) => {
-        const el = document.querySelector(`.clip-action[data-clip-id="${id}"]`);
+      : await page.evaluate(({ clipBodySelector, id }) => {
+        const el = document.querySelector(`${clipBodySelector}[data-clip-id="${id}"]`);
         if (!el) return null;
         const r = el.getBoundingClientRect();
         return { id, x: r.x, w: r.width };
-      }, pinchBefore.under?.id ?? '');
+      }, { clipBodySelector: CLIP_BODY_SELECTOR as string, id: pinchBefore.under?.id ?? '' });
     const anchorDrift = sameClip && anchorFraction !== null
       ? Math.abs((sameClip.x + anchorFraction * sameClip.w) - pinchMidX)
       : Number.POSITIVE_INFINITY;

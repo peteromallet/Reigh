@@ -21,8 +21,10 @@ response. RC3 then exposed a browser-entry regression: the editor eagerly
 loaded React's Node server renderer and crashed before mounting. RC4 repaired
 that import boundary and added a source-level guard, then the RC4 paired run
 exposed a local-editor route/auth redirect seam. Commit `2e7f6a937` repairs that
-seam without weakening unrelated protected routes. RC5 is the current
-integration cycle. The pinned Astrid source remains
+seam without weakening unrelated protected routes. RC6 is the current
+integration cycle. RC5's paired selector/origin failure is preserved under
+`docs/extensions/evidence/releases/extension-ship-quality-rc5/`. The pinned
+Astrid source remains
 `86153eefc14aa995402927df0c7bb178f48f8ead`.
 
 The formal ledger correctly remains 0/23 because no exact candidate has been
@@ -89,7 +91,7 @@ and all four human personas have signed receipts.
 1. Register six authenticated Ed25519 principals: the four human personas and
    two independent reviewers. Keep private keys outside the repository.
 2. Freeze product candidate `C`, create annotated tag
-   `extension-ship-quality-rc5`, and permit only evidence/ledger/status commits
+   `extension-ship-quality-rc6`, and permit only evidence/ledger/status commits
    in controller history `C..H`.
 3. Bind every receipt and artifact hash to the exact Reigh candidate, controller
    commit, annotated tag object, Astrid commit, toolchain, and dependency locks.

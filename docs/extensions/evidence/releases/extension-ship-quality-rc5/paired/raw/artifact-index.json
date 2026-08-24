@@ -1,0 +1,175 @@
+{
+  "schemaVersion": 1,
+  "files": [
+    {
+      "path": "astrid-backup-create.log",
+      "bytes": 1452,
+      "sha256": "27769eeb86b00c2bef5a8250edefe199697632ecb0c5c7669c2d5377ab05bc3e"
+    },
+    {
+      "path": "astrid-backup-logical-snapshot.json",
+      "bytes": 2647,
+      "sha256": "0c1b011b63dd59d27c6d7c6cbfa3da2a74d99f93e91a70a2bcc6fe11d6ae701f"
+    },
+    {
+      "path": "astrid-backup-media-snapshots.json",
+      "bytes": 689,
+      "sha256": "fc9e8dde8d0ad8b7cce3605f95f5fcd739c984d331b8182842d304be6bdfb4ec"
+    },
+    {
+      "path": "astrid-browser-first.log",
+      "bytes": 88,
+      "sha256": "0a4977bb50d2d7fd2123437587baf7d6c8001eda0874378dfdb59a527eca0f58"
+    },
+    {
+      "path": "astrid-media-import.log",
+      "bytes": 2118,
+      "sha256": "cfe0dd15aab09cc77e72c16e488063195ea1a2317794edb74d42f1d768cf882d"
+    },
+    {
+      "path": "astrid-pre-migration-counts.log",
+      "bytes": 122,
+      "sha256": "f052b520b8e1d589c4cc6c1fa4194002d9851a151f61da001f3ef614e23e4288"
+    },
+    {
+      "path": "astrid-pre-migration-logical-snapshot.json",
+      "bytes": 2647,
+      "sha256": "0c1b011b63dd59d27c6d7c6cbfa3da2a74d99f93e91a70a2bcc6fe11d6ae701f"
+    },
+    {
+      "path": "astrid-preview.log",
+      "bytes": 88,
+      "sha256": "3750e429612d3a5dec9826bdd86c253dab148fe53169dd7635aae37f94fad03b"
+    },
+    {
+      "path": "astrid-project-create.log",
+      "bytes": 922,
+      "sha256": "5d919fcc504b49c558c883928eeed02601de9dd7d21a8239ce903930178e5975"
+    },
+    {
+      "path": "astrid-runtime-lock-install.log",
+      "bytes": 22379,
+      "sha256": "14f075cd3d260d979bfbf04d85a1ca60579d81b6e29b4e204c3322d9d2b4ed53"
+    },
+    {
+      "path": "astrid-runtime-packages-normalized.json",
+      "bytes": 3797,
+      "sha256": "1dd69e6d4eca651dd56b86e353e474f0df0aa5897c9308388932bd73f69fd58e"
+    },
+    {
+      "path": "astrid-runtime-packages-raw.json",
+      "bytes": 3107,
+      "sha256": "91594f11aa29fd6fee1efa0f3f87ef1ee96b297f17b819636b16bacb7afe9444"
+    },
+    {
+      "path": "astrid-timeline-create.log",
+      "bytes": 1870,
+      "sha256": "5b5f8fc13c786f00fbc09a7a9de49e63b7ced9bce0752398d9ac5aadbc068605"
+    },
+    {
+      "path": "astrid-venv-create.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "paired-python-build-tools-install.log",
+      "bytes": 911,
+      "sha256": "acb89b90e7e1e35e494cb246c010c83545273f20aacb85fe28b1825ef859f54b"
+    },
+    {
+      "path": "playwright-browser-install.log",
+      "bytes": 7003,
+      "sha256": "576fa693f1e6d313ce3922db9c5a16afd9cf0161a7f54a18a4a341a32ae1ac54"
+    },
+    {
+      "path": "playwright-browser-path.log",
+      "bytes": 206,
+      "sha256": "cb229356481c0280f6cd29640ef1b8b04a630880cdf107e27a2af674ef540075"
+    },
+    {
+      "path": "playwright-first.log",
+      "bytes": 8620,
+      "sha256": "4cd29d521d9ff921e75da2c62d424a5699d60f33126bfc2a172cf412c5437e16"
+    },
+    {
+      "path": "playwright-first/.last-run.json",
+      "bytes": 96,
+      "sha256": "1a026485f68174158736592da963a118b809d92e1e4b88223e47144929c8a96e"
+    },
+    {
+      "path": "playwright-first/paired-repository-paired-repository-acceptance-phase-first/error-context.md",
+      "bytes": 40422,
+      "sha256": "523f1889c1df895a7615f39a26a34746a552f6b9b06685de1c9455872558428d"
+    },
+    {
+      "path": "playwright-first/paired-repository-paired-repository-acceptance-phase-first/test-failed-1.png",
+      "bytes": 76983,
+      "sha256": "4a5818f2e066674045a37a9d8f48753a9f8b298768db6357cb262c63a0ea5417"
+    },
+    {
+      "path": "playwright-first/paired-repository-paired-repository-acceptance-phase-first/trace.zip",
+      "bytes": 2041869,
+      "sha256": "c7b53230533225eb07853c8455b84f2db06fca283eb21317f2a1716c7f3bce68"
+    },
+    {
+      "path": "playwright-first/paired-repository-paired-repository-acceptance-phase-first/video.webm",
+      "bytes": 96993,
+      "sha256": "303dae38334f5562dcd8ba8456c9e4a20bd015ae583391f5a58142eb0a9c4617"
+    },
+    {
+      "path": "receipt.json",
+      "bytes": 8131,
+      "sha256": "1b1ded13bc87b945d48232ff9408bca000bd98fb1eec43eaf780f4169dbb6477"
+    },
+    {
+      "path": "reigh-browser-first.log",
+      "bytes": 161,
+      "sha256": "e6ccd0bfc1b8873f538ed9eef4e1da8c8f0c3ebed8d40adfa1cdd8f776f635fb"
+    },
+    {
+      "path": "reigh-build.log",
+      "bytes": 29238,
+      "sha256": "ba17910fe39746be5502f4c79ff494f176998c2c64541f58a634ad9152092507"
+    },
+    {
+      "path": "reigh-npm-ci.log",
+      "bytes": 1076,
+      "sha256": "1e21321d8e21567c2acd3f3be1e6e9281bf645b01ebac453b41eb7e1dd1e6cd6"
+    },
+    {
+      "path": "reigh-preview.log",
+      "bytes": 78,
+      "sha256": "4ac052fb744db92d9309e7931400bf0445ea2e2ae7208c7ec7a5d2d472eaaa78"
+    },
+    {
+      "path": "reigh-runtime-config.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "runaway-migration-first.log",
+      "bytes": 2932,
+      "sha256": "a8af989f4fb960d97f199967a0763768202ff59f8de51ec7119f60b181c0201e"
+    },
+    {
+      "path": "runaway-migration-second.log",
+      "bytes": 2932,
+      "sha256": "a8af989f4fb960d97f199967a0763768202ff59f8de51ec7119f60b181c0201e"
+    },
+    {
+      "path": "timeline-schema-import-probe.json",
+      "bytes": 447,
+      "sha256": "46444805e4b26e37db69a6e2d8cb44ac81e36077756790763f0bfa12b78c792b"
+    },
+    {
+      "path": "timeline-schema-install.log",
+      "bytes": 1028,
+      "sha256": "d943c13d30ce67c12751488494bc2528847241c7ea0c5c7f5b72d6d5d25e0bc1"
+    },
+    {
+      "path": "timeline-schema-source-snapshot.json",
+      "bytes": 1285,
+      "sha256": "63221f2ce7c8441a242a09d1f938b98c4ced87f1e5f1f6eeb3dea733e752115a"
+    }
+  ]
+}

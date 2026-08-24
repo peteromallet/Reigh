@@ -9,7 +9,7 @@ active editor branches. It is an integration plan, not release evidence.
 
 | Line | Audited head | Disposition |
 |---|---|---|
-| `codex/extension-ship-integration` | `2e7f6a937` plus RC5 transition work | RC5 integration in progress; the RC4 paired failure receipt and forensic diagnosis, plus RC1/RC2/RC3 evidence, remain immutable historical evidence. |
+| `codex/extension-ship-integration` | RC6 selector/proxy hardening in progress | RC6 integration in progress; the RC1–RC5 paired receipts and forensic diagnoses remain immutable historical evidence. |
 | `timeline-patches` | `dbafe2cd4` | The committed Creative Lab patch was replayed as `7150085df` and subsequently hardened. Do not merge this commit again. Preserve and reconcile its uncommitted WIP separately. |
 | `exec-goal-20260822` | `8376d8231` | Direct ancestor of `exec-sqlite-20260823`; do not merge separately. |
 | `exec-sqlite-20260823` | `d21e6fc52` | Parked execution history. Do not merge wholesale: most changed paths are `.oracle` run artifacts. Forward-port reviewed product outcomes only. |

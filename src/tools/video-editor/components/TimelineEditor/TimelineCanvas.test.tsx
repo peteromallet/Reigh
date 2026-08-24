@@ -9,6 +9,7 @@ import { requestCenterTimelineClip } from '@/tools/video-editor/lib/timeline-vie
 import { resolveTouchGestureMode } from '@/tools/video-editor/lib/mobile-interaction-model';
 import {
   CLIP_ID_ATTR,
+  CLIP_BODY_SELECTOR,
   EDIT_AREA_SELECTOR,
   RESIZE_EDGE_ATTR,
   ROW_ID_ATTR,
@@ -802,8 +803,20 @@ describe('TimelineCanvas extension context menus', () => {
 describe('TimelineCanvas resize pending ops', () => {
   it('selects a short or overlapped clip when its trim handle is clicked without resizing', () => {
     const onSelectClips = vi.fn();
-    const { leftHandle, onActionResizeStart, onClipEdgeResizeEnd } = renderCanvas({ onSelectClips });
+    const { actionElement, leftHandle, onActionResizeStart, onClipEdgeResizeEnd } = renderCanvas({
+      onSelectClips,
+      getActionRender: vi.fn((renderedAction) => (
+        <div className="clip-action" data-clip-id={renderedAction.id} role="button" tabIndex={0}>
+          clip body
+        </div>
+      )),
+    });
     if (!leftHandle) throw new Error('expected left handle');
+
+    // The trim handles mirror data-clip-id for the document-native resize
+    // machine. Only the interactive body may satisfy a clip-body locator.
+    expect(actionElement.querySelectorAll(`[${CLIP_ID_ATTR}="clip-1"]`)).toHaveLength(3);
+    expect(actionElement.querySelectorAll(`${CLIP_BODY_SELECTOR}[${CLIP_ID_ATTR}="clip-1"]`)).toHaveLength(1);
 
     fireEvent.pointerDown(leftHandle, {
       button: 0,

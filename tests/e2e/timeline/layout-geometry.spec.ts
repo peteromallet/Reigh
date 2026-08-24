@@ -30,7 +30,10 @@ import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
-import { EDIT_AREA_SELECTOR } from '../../../src/tools/video-editor/lib/timeline-dom.ts';
+import {
+  CLIP_BODY_SELECTOR,
+  EDIT_AREA_SELECTOR,
+} from '../../../src/tools/video-editor/lib/timeline-dom.ts';
 import {
   BASELINE_CLIPS,
   BASELINE_TRACK_ORDER,
@@ -85,7 +88,7 @@ const CONTEXTS: Context[] = [
 
 /** Collect the geometry snapshot from a settled, live editor page. */
 async function collectGeometry(page: Page): Promise<GeometrySnapshot> {
-  return page.evaluate(({ editAreaSelector, grid }) => {
+  return page.evaluate(({ clipBodySelector, editAreaSelector, grid }) => {
     const snapValue = (value: number) => Math.round(value / grid) * grid;
     const rect = (el: Element | null) => {
       if (!el) return null;
@@ -98,7 +101,7 @@ async function collectGeometry(page: Page): Promise<GeometrySnapshot> {
     const modeSwitcher = document.querySelector('[data-timeline-mode-switcher]');
     const trackLabelColumn = document.querySelector('[data-track-id]');
     const ruler = document.querySelector('[data-testid="timeline-ruler"]');
-    const firstClip = document.querySelector('[data-clip-id]');
+    const firstClip = document.querySelector(clipBodySelector);
     const phoneBar = document.querySelector('[aria-label="Phone timeline mode bar"]');
 
     const gutterPadding = editArea
@@ -124,7 +127,11 @@ async function collectGeometry(page: Page): Promise<GeometrySnapshot> {
         gutterPadding,
       },
     };
-  }, { editAreaSelector: EDIT_AREA_SELECTOR as string, grid: GRID });
+  }, {
+    clipBodySelector: CLIP_BODY_SELECTOR as string,
+    editAreaSelector: EDIT_AREA_SELECTOR as string,
+    grid: GRID,
+  });
 }
 
 /** ±8px per dimension for rects/viewport; exact match for counts and flags. */

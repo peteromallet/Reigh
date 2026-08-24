@@ -8,6 +8,7 @@
  * would be measuring `about:blank`.
  */
 import { expect, test } from '@playwright/test';
+import { CLIP_BODY_SELECTOR } from '../../../src/tools/video-editor/lib/timeline-dom.ts';
 import {
   collectPageLogs,
   countSelectedClips,
@@ -53,7 +54,7 @@ for (const orientation of ORIENTATIONS) {
       });
 
       // --- structural audit ------------------------------------------------
-      const structure = await page.evaluate(() => {
+      const structure = await page.evaluate((clipBodySelector) => {
         const rect = (el: Element) => {
           const r = el.getBoundingClientRect();
           return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
@@ -64,12 +65,12 @@ for (const orientation of ORIENTATIONS) {
         return {
           viewport: { w: window.innerWidth, h: window.innerHeight },
           phoneBar: Boolean(q('[aria-label="Phone timeline mode bar"]')),
-          clips: Array.from(document.querySelectorAll('[data-clip-id]'))
+          clips: Array.from(document.querySelectorAll(clipBodySelector))
             .map((el) => ({ id: el.getAttribute('data-clip-id'), ...rect(el) })),
           editArea: editArea ? rect(editArea) : null,
           preview: preview ? rect(preview) : null,
         };
-      });
+      }, CLIP_BODY_SELECTOR as string);
 
       testInfo.annotations.push({ type: 'viewport', description: JSON.stringify(structure.viewport) });
       testInfo.annotations.push({
@@ -159,7 +160,7 @@ for (const orientation of ORIENTATIONS) {
       const afterMove = await page.evaluate((sel) => {
         const el = document.querySelector(sel);
         return el ? { x: el.getBoundingClientRect().x } : null;
-      }, `.clip-action[data-clip-id="${beforeMove!.id}"]`);
+      }, `${CLIP_BODY_SELECTOR}[data-clip-id="${beforeMove!.id}"]`);
       const scrollAfter = await scrollLeft();
 
       await test.step('tablet move mode: touch drag moves clip', async () => {

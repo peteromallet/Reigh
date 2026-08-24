@@ -1,0 +1,168 @@
+Ignoring colorama: markers 'sys_platform == "win32"' don't match your environment
+Ignoring httpx2-jsfetch: markers 'python_full_version >= "3.12" and sys_platform == "emscripten"' don't match your environment
+Ignoring jeepney: markers 'sys_platform == "linux"' don't match your environment
+Ignoring numpy: markers 'python_full_version >= "3.12"' don't match your environment
+Ignoring pywin32-ctypes: markers 'sys_platform == "win32"' don't match your environment
+Ignoring secretstorage: markers 'sys_platform == "linux"' don't match your environment
+Collecting aiofiles==25.1.0 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 3))
+  Downloading aiofiles-25.1.0-py3-none-any.whl (14 kB)
+Collecting annotated-types==0.8.0 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 6))
+  Downloading annotated_types-0.8.0-py3-none-any.whl (13 kB)
+Collecting anthropic==1.0.0 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 9))
+  Downloading anthropic-1.0.0-py3-none-any.whl (1.2 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.2/1.2 MB 8.7 MB/s eta 0:00:00
+Collecting anyio==4.14.2 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 12))
+  Downloading anyio-4.14.2-py3-none-any.whl (125 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 125.8/125.8 kB 10.2 MB/s eta 0:00:00
+Collecting asyncstdlib==3.14.0 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 15))
+  Downloading asyncstdlib-3.14.0-py3-none-any.whl (44 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 44.3/44.3 kB 134.0 kB/s eta 0:00:00
+Collecting attrs==26.1.0 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 18))
+  Downloading attrs-26.1.0-py3-none-any.whl (67 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 67.5/67.5 kB 5.0 MB/s eta 0:00:00
+Collecting backports-tarfile==1.2.0 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 21))
+  Downloading backports.tarfile-1.2.0-py3-none-any.whl (30 kB)
+Collecting certifi==2026.7.22 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 24))
+  Downloading certifi-2026.7.22-py3-none-any.whl (136 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 137.0/137.0 kB 7.9 MB/s eta 0:00:00
+Collecting cffi==2.1.1 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 27))
+  Downloading cffi-2.1.1-cp311-cp311-macosx_11_0_arm64.whl (184 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 184.2/184.2 kB 10.6 MB/s eta 0:00:00
+Collecting charset-normalizer==3.5.1 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 128))
+  Downloading charset_normalizer-3.5.1-cp311-cp311-macosx_10_9_universal2.whl (363 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 363.6/363.6 kB 8.0 MB/s eta 0:00:00
+Collecting click==8.4.2 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 301))
+  Downloading click-8.4.2-py3-none-any.whl (119 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 119.2/119.2 kB 7.1 MB/s eta 0:00:00
+Collecting cryptography==50.0.0 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 307))
+  Downloading cryptography-50.0.0-cp311-abi3-macosx_11_0_arm64.whl (4.0 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4.0/4.0 MB 3.5 MB/s eta 0:00:00
+Collecting distro==1.9.0 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 354))
+  Downloading distro-1.9.0-py3-none-any.whl (20 kB)
+Collecting docstring-parser==0.18.0 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 357))
+  Downloading docstring_parser-0.18.0-py3-none-any.whl (22 kB)
+Collecting fal-client==1.0.1 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 360))
+  Downloading fal_client-1.0.1-py3-none-any.whl (26 kB)
+Collecting filelock==3.32.4 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 363))
+  Downloading filelock-3.32.4-py3-none-any.whl (99 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 99.9/99.9 kB 2.0 MB/s eta 0:00:00
+Collecting google-auth==2.56.3 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 366))
+  Downloading google_auth-2.56.3-py3-none-any.whl (259 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 259.1/259.1 kB 1.4 MB/s eta 0:00:00
+Collecting google-genai==2.19.0 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 369))
+  Downloading google_genai-2.19.0-py3-none-any.whl (1.1 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.1/1.1 MB 2.6 MB/s eta 0:00:00
+Collecting h11==0.16.0 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 372))
+  Downloading h11-0.16.0-py3-none-any.whl (37 kB)
+Collecting httpcore==1.0.9 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 375))
+  Downloading httpcore-1.0.9-py3-none-any.whl (78 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 78.8/78.8 kB 1.9 MB/s eta 0:00:00
+Collecting httpcore2==2.12.0 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 378))
+  Downloading httpcore2-2.12.0-py3-none-any.whl (83 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 83.1/83.1 kB 2.1 MB/s eta 0:00:00
+Collecting httpx==0.28.1 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 381))
+  Downloading httpx-0.28.1-py3-none-any.whl (73 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 73.5/73.5 kB 2.1 MB/s eta 0:00:00
+Collecting httpx-sse==0.4.3 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 384))
+  Downloading httpx_sse-0.4.3-py3-none-any.whl (9.0 kB)
+Collecting httpx2==2.12.0 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 387))
+  Downloading httpx2-2.12.0-py3-none-any.whl (95 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 95.4/95.4 kB 2.0 MB/s eta 0:00:00
+Collecting idna==3.19 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 393))
+  Downloading idna-3.19-py3-none-any.whl (68 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 68.5/68.5 kB 1.7 MB/s eta 0:00:00
+Collecting importlib-metadata==9.0.0 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 396))
+  Downloading importlib_metadata-9.0.0-py3-none-any.whl (27 kB)
+Collecting jaraco-classes==3.4.0 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 399))
+  Downloading jaraco.classes-3.4.0-py3-none-any.whl (6.8 kB)
+Collecting jaraco-context==6.1.2 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 402))
+  Downloading jaraco_context-6.1.2-py3-none-any.whl (7.9 kB)
+Collecting jaraco-functools==4.6.0 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 405))
+  Downloading jaraco_functools-4.6.0-py3-none-any.whl (11 kB)
+Collecting jiter==0.16.0 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 411))
+  Downloading jiter-0.16.0-cp311-cp311-macosx_11_0_arm64.whl (315 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 315.2/315.2 kB 3.3 MB/s eta 0:00:00
+Collecting jsonschema==4.26.0 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 517))
+  Downloading jsonschema-4.26.0-py3-none-any.whl (90 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 90.6/90.6 kB 3.4 MB/s eta 0:00:00
+Collecting jsonschema-specifications==2025.9.1 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 520))
+  Downloading jsonschema_specifications-2025.9.1-py3-none-any.whl (18 kB)
+Collecting keyring==25.7.0 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 523))
+  Downloading keyring-25.7.0-py3-none-any.whl (39 kB)
+Collecting more-itertools==11.1.0 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 526))
+  Downloading more_itertools-11.1.0-py3-none-any.whl (72 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 72.2/72.2 kB 2.4 MB/s eta 0:00:00
+Collecting msgpack==1.2.1 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 529))
+  Downloading msgpack-1.2.1-cp311-cp311-macosx_11_0_arm64.whl (82 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 82.7/82.7 kB 2.6 MB/s eta 0:00:00
+Collecting numpy==2.4.6 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 596))
+  Downloading numpy-2.4.6-cp311-cp311-macosx_14_0_arm64.whl (5.5 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 5.5/5.5 MB 2.6 MB/s eta 0:00:00
+Collecting openai==2.54.0 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 736))
+  Downloading openai-2.54.0-py3-none-any.whl (1.7 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.7/1.7 MB 2.1 MB/s eta 0:00:00
+Collecting opencv-python-headless==5.0.0.93 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 739))
+  Downloading opencv_python_headless-5.0.0.93-cp37-abi3-macosx_13_0_arm64.whl (48.3 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 48.3/48.3 MB 2.4 MB/s eta 0:00:00
+Collecting pillow==12.3.0 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 749))
+  Downloading pillow-12.3.0-cp311-cp311-macosx_11_0_arm64.whl (4.8 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4.8/4.8 MB 3.5 MB/s eta 0:00:00
+Collecting platformdirs==4.11.3 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 837))
+  Downloading platformdirs-4.11.3-py3-none-any.whl (23 kB)
+Collecting pyasn1==0.6.4 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 840))
+  Downloading pyasn1-0.6.4-py3-none-any.whl (84 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 84.4/84.4 kB 4.3 MB/s eta 0:00:00
+Collecting pyasn1-modules==0.4.2 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 843))
+  Downloading pyasn1_modules-0.4.2-py3-none-any.whl (181 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 181.3/181.3 kB 4.0 MB/s eta 0:00:00
+Collecting pycparser==3.0 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 846))
+  Downloading pycparser-3.0-py3-none-any.whl (48 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 48.2/48.2 kB 9.4 MB/s eta 0:00:00
+Collecting pydantic==2.13.4 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 849))
+  Downloading pydantic-2.13.4-py3-none-any.whl (472 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 472.3/472.3 kB 4.3 MB/s eta 0:00:00
+Collecting pydantic-core==2.46.4 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 852))
+  Downloading pydantic_core-2.46.4-cp311-cp311-macosx_11_0_arm64.whl (1.9 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.9/1.9 MB 4.3 MB/s eta 0:00:00
+Collecting pyjwt==2.13.0 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 973))
+  Downloading pyjwt-2.13.0-py3-none-any.whl (31 kB)
+Collecting pyyaml==6.0.3 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 979))
+  Downloading pyyaml-6.0.3-cp311-cp311-macosx_11_0_arm64.whl (175 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 175.6/175.6 kB 4.5 MB/s eta 0:00:00
+Collecting referencing==0.37.0 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 1053))
+  Downloading referencing-0.37.0-py3-none-any.whl (26 kB)
+Collecting requests==2.34.2 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 1056))
+  Downloading requests-2.34.2-py3-none-any.whl (73 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 73.1/73.1 kB 5.0 MB/s eta 0:00:00
+Collecting rpds-py==2026.6.3 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 1059))
+  Downloading rpds_py-2026.6.3-cp311-cp311-macosx_11_0_arm64.whl (345 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 345.5/345.5 kB 1.1 MB/s eta 0:00:00
+Collecting scenedetect==0.6.4 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 1176))
+  Downloading scenedetect-0.6.4-py3-none-any.whl (121 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 122.0/122.0 kB 2.1 MB/s eta 0:00:00
+Collecting sniffio==1.3.1 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 1182))
+  Downloading sniffio-1.3.1-py3-none-any.whl (10 kB)
+Collecting tenacity==9.1.4 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 1185))
+  Downloading tenacity-9.1.4-py3-none-any.whl (28 kB)
+Collecting tqdm==4.70.0 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 1188))
+  Downloading tqdm-4.70.0-py3-none-any.whl (80 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 80.2/80.2 kB 2.9 MB/s eta 0:00:00
+Collecting truststore==0.10.4 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 1191))
+  Downloading truststore-0.10.4-py3-none-any.whl (18 kB)
+Collecting typing-extensions==4.16.0 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 1194))
+  Downloading typing_extensions-4.16.0-py3-none-any.whl (45 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 45.6/45.6 kB 3.6 MB/s eta 0:00:00
+Collecting typing-inspection==0.4.4 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 1197))
+  Downloading typing_inspection-0.4.4-py3-none-any.whl (14 kB)
+Collecting urllib3==2.7.0 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 1200))
+  Downloading urllib3-2.7.0-py3-none-any.whl (131 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 131.1/131.1 kB 3.3 MB/s eta 0:00:00
+Collecting websockets==16.1.1 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 1203))
+  Downloading websockets-16.1.1-cp311-cp311-macosx_11_0_arm64.whl (177 kB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 177.5/177.5 kB 3.6 MB/s eta 0:00:00
+Collecting xxhash==4.0.1 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 1313))
+  Downloading xxhash-4.0.1-cp311-cp311-macosx_11_0_arm64.whl (36 kB)
+Collecting zipp==4.1.0 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/astrid/requirements/runtime.lock (line 1528))
+  Downloading zipp-4.1.0-py3-none-any.whl (10 kB)
+Installing collected packages: zipp, xxhash, websockets, urllib3, typing-inspection, typing-extensions, truststore, tqdm, tenacity, sniffio, scenedetect, rpds-py, requests, referencing, pyyaml, pyjwt, pydantic-core, pydantic, pycparser, pyasn1-modules, pyasn1, platformdirs, pillow, opencv-python-headless, openai, numpy, msgpack, more-itertools, keyring, jsonschema-specifications, jsonschema, jiter, jaraco-functools, jaraco-context, jaraco-classes, importlib-metadata, idna, httpx2, httpx-sse, httpx, httpcore2, httpcore, h11, google-genai, google-auth, filelock, fal-client, docstring-parser, distro, cryptography, click, charset-normalizer, cffi, certifi, backports-tarfile, attrs, asyncstdlib, anyio, anthropic, annotated-types, aiofiles
+Successfully installed aiofiles-25.1.0 annotated-types-0.8.0 anthropic-1.0.0 anyio-4.14.2 asyncstdlib-3.14.0 attrs-26.1.0 backports-tarfile-1.2.0 certifi-2026.7.22 cffi-2.1.1 charset-normalizer-3.5.1 click-8.4.2 cryptography-50.0.0 distro-1.9.0 docstring-parser-0.18.0 fal-client-1.0.1 filelock-3.32.4 google-auth-2.56.3 google-genai-2.19.0 h11-0.16.0 httpcore-1.0.9 httpcore2-2.12.0 httpx-0.28.1 httpx-sse-0.4.3 httpx2-2.12.0 idna-3.19 importlib-metadata-9.0.0 jaraco-classes-3.4.0 jaraco-context-6.1.2 jaraco-functools-4.6.0 jiter-0.16.0 jsonschema-4.26.0 jsonschema-specifications-2025.9.1 keyring-25.7.0 more-itertools-11.1.0 msgpack-1.2.1 numpy-2.4.6 openai-2.54.0 opencv-python-headless-5.0.0.93 pillow-12.3.0 platformdirs-4.11.3 pyasn1-0.6.4 pyasn1-modules-0.4.2 pycparser-3.0 pydantic-2.13.4 pydantic-core-2.46.4 pyjwt-2.13.0 pyyaml-6.0.3 referencing-0.37.0 requests-2.34.2 rpds-py-2026.6.3 scenedetect-0.6.4 sniffio-1.3.1 tenacity-9.1.4 tqdm-4.70.0 truststore-0.10.4 typing-extensions-4.16.0 typing-inspection-0.4.4 urllib3-2.7.0 websockets-16.1.1 xxhash-4.0.1 zipp-4.1.0

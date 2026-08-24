@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   ACTION_ID_ATTR,
+  CLIP_BODY_SELECTOR,
   CLIP_ACTION_CLASS,
   CLIP_ACTION_SELECTOR,
   CLIP_ID_ATTR,
@@ -66,6 +67,10 @@ function cssFilesUnderVideoEditor(): string[] {
 }
 
 describe('timeline DOM contract', () => {
+  it('provides a unique clip-body selector distinct from trim handles', () => {
+    expect(CLIP_BODY_SELECTOR).toBe(`${CLIP_ACTION_SELECTOR}[${CLIP_ID_ATTR}]`);
+  });
+
   it('keeps every dataset reader in step with its attribute name', () => {
     expect(datasetKeyForAttribute(CLIP_ID_ATTR)).toBe(CLIP_ID_DATASET_KEY);
     expect(datasetKeyForAttribute(ROW_ID_ATTR)).toBe(ROW_ID_DATASET_KEY);

@@ -1,0 +1,63 @@
+{
+  "manifest_path": "external/timing-manifest.json",
+  "manifest_sha256": "44b5c0eea0aeb8b35a83e3e7620b5dbab27a106bf575fcc6e0ca6591dd4612bb",
+  "project_slug": "runaway-piano-colour-demo",
+  "run_id": "01j5runawaytimingv1000000000000",
+  "run_kind": "runaway:timing-v1",
+  "run_title": "Runaway timing v1",
+  "transition_count": 566,
+  "frame_count": 8085,
+  "fps": 48,
+  "sample_prompts": [
+    "rose neon piano chord, hard cut, 48fps, complementary colour teal, literal_main_note, S01",
+    "teal neon piano chord, hard cut, 48fps, complementary colour rose, literal_main_note, S01",
+    "rose neon piano chord, hard cut, 48fps, complementary colour teal, literal_main_note, S01",
+    "teal neon piano chord, hard cut, 48fps, complementary colour rose, literal_main_note, S01",
+    "rose neon piano chord, hard cut, 48fps, complementary colour teal, literal_main_note, S01",
+    "teal neon piano chord, hard cut, 48fps, complementary colour rose, literal_main_note, S01",
+    "rose neon piano chord, hard cut, 48fps, complementary colour teal, literal_main_note, S01",
+    "teal neon piano chord, hard cut, 48fps, complementary colour rose, literal_main_note, S01",
+    "rose neon piano chord, hard cut, 48fps, complementary colour teal, literal_main_note, S01",
+    "teal neon piano chord, hard cut, 48fps, complementary colour rose, literal_main_note, S01"
+  ],
+  "segment_counts": {
+    "S01": 16,
+    "S02": 125,
+    "S03": 0,
+    "S04": 211,
+    "S05": 12,
+    "S06A": 21,
+    "S06B": 11,
+    "S07": 24,
+    "S08": 140,
+    "S09": 4,
+    "S10": 2
+  },
+  "apply": true,
+  "dry_run": false,
+  "stored_count": 566,
+  "stored_sample_prompts": [
+    "rose neon piano chord, hard cut, 48fps, complementary colour teal, literal_main_note, S01",
+    "teal neon piano chord, hard cut, 48fps, complementary colour rose, literal_main_note, S01",
+    "rose neon piano chord, hard cut, 48fps, complementary colour teal, literal_main_note, S01",
+    "teal neon piano chord, hard cut, 48fps, complementary colour rose, literal_main_note, S01",
+    "rose neon piano chord, hard cut, 48fps, complementary colour teal, literal_main_note, S01",
+    "teal neon piano chord, hard cut, 48fps, complementary colour rose, literal_main_note, S01",
+    "rose neon piano chord, hard cut, 48fps, complementary colour teal, literal_main_note, S01",
+    "teal neon piano chord, hard cut, 48fps, complementary colour rose, literal_main_note, S01",
+    "rose neon piano chord, hard cut, 48fps, complementary colour teal, literal_main_note, S01",
+    "teal neon piano chord, hard cut, 48fps, complementary colour rose, literal_main_note, S01"
+  ],
+  "evidence_count": 1,
+  "event_count": 1,
+  "receipt_count": 1,
+  "mutated": true,
+  "project_id": "e94c704d0cdec4a279c7196de4",
+  "migration_outcome": {
+    "schema": "astrid.migration_outcome.v1",
+    "migration": "runaway_v1",
+    "mode": "apply",
+    "outcome": "success",
+    "error_kind": "none"
+  }
+}

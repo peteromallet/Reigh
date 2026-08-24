@@ -1,0 +1,22 @@
+{
+  "baseline": {
+    "files": [
+      {
+        "path": "sha256/10/1a/101a660618144e43daeef2ce8f2eb95900c16f50fd48b7fe6a89272f8813942e",
+        "bytes": 337,
+        "sha256": "101a660618144e43daeef2ce8f2eb95900c16f50fd48b7fe6a89272f8813942e"
+      }
+    ],
+    "sha256": "176783d6ccf373fbe78a735cca5e7724d6874dc12936c5ab1bcafee8756bc3c5"
+  },
+  "backup": {
+    "files": [
+      {
+        "path": "sha256/10/1a/101a660618144e43daeef2ce8f2eb95900c16f50fd48b7fe6a89272f8813942e",
+        "bytes": 337,
+        "sha256": "101a660618144e43daeef2ce8f2eb95900c16f50fd48b7fe6a89272f8813942e"
+      }
+    ],
+    "sha256": "176783d6ccf373fbe78a735cca5e7724d6874dc12936c5ab1bcafee8756bc3c5"
+  }
+}

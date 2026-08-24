@@ -74,8 +74,11 @@ export const TIMELINE_DOM = {
 // ── Selectors (mirroring the queries the gesture layer actually issues) ─────
 
 export const CLIP_ACTION_SELECTOR = `.${CLIP_ACTION_CLASS}` as const;
+/** The unique, interactive clip body; trim handles intentionally mirror clip id. */
+export const CLIP_BODY_SELECTOR = `${CLIP_ACTION_SELECTOR}[${CLIP_ID_ATTR}]` as const;
 export const EDIT_AREA_SELECTOR = `.${EDIT_AREA_CLASS}` as const;
-export const CLIP_ACTION_WITH_ID_SELECTOR = `.${CLIP_ACTION_CLASS}[${CLIP_ID_ATTR}]` as const;
+/** @deprecated Use CLIP_BODY_SELECTOR when naming a clip body explicitly. */
+export const CLIP_ACTION_WITH_ID_SELECTOR = CLIP_BODY_SELECTOR;
 /** Every currently selected clip. The out-of-React read of selection state. */
 export const SELECTED_CLIP_SELECTOR = `[${CLIP_ID_ATTR}][${CLIP_SELECTED_ATTR}="true"]` as const;
 export const RESIZE_EDGE_SELECTOR = `[${RESIZE_EDGE_ATTR}]` as const;

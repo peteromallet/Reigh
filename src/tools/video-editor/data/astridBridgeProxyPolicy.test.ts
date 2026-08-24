@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
+import { EventEmitter } from 'node:events';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createServer } from 'node:http';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
@@ -91,6 +92,32 @@ describe('Astrid bridge server-side auth boundary', () => {
       timeout: ASTRID_BRIDGE_REQUEST_TIMEOUT_MS,
       proxyTimeout: ASTRID_BRIDGE_REQUEST_TIMEOUT_MS,
     });
+  });
+
+  it('strips only the exact same-origin app Origin before the loopback hop', () => {
+    const policy = resolveAstridBridgeProxyPolicy({ ASTRID_BRIDGE_TOKEN: 'secret' });
+    const options = createAstridBridgeProxyOptions(policy, resolveAstridBridgePort('17333'));
+    const proxy = new EventEmitter();
+    if (typeof options.configure !== 'function') throw new Error('proxy configure hook is required');
+    options.configure(proxy as never);
+
+    const sameOriginRequest = { removeHeader: vi.fn(), setHeader: vi.fn() };
+    proxy.emit('proxyReq', sameOriginRequest, {
+      headers: {
+        origin: 'http://127.0.0.1:4181',
+        host: '127.0.0.1:4181',
+      },
+    });
+    expect(sameOriginRequest.removeHeader).toHaveBeenCalledWith('Origin');
+
+    const crossOriginRequest = { removeHeader: vi.fn(), setHeader: vi.fn() };
+    proxy.emit('proxyReq', crossOriginRequest, {
+      headers: {
+        origin: 'https://attacker.invalid',
+        host: '127.0.0.1:4181',
+      },
+    });
+    expect(crossOriginRequest.removeHeader).not.toHaveBeenCalled();
   });
 
   it.each(['configureServer', 'configurePreviewServer'] as const)(

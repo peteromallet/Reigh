@@ -22,12 +22,15 @@
  */
 import type { BrowserContext, Page } from '@playwright/test';
 import {
-  CLIP_ACTION_WITH_ID_SELECTOR,
+  CLIP_BODY_SELECTOR,
   EDIT_AREA_SELECTOR,
   SELECTED_CLIP_SELECTOR,
 } from '../../../src/tools/video-editor/lib/timeline-dom.ts';
 
-export { CLIP_ACTION_WITH_ID_SELECTOR } from '../../../src/tools/video-editor/lib/timeline-dom.ts';
+export {
+  CLIP_BODY_SELECTOR,
+  CLIP_ACTION_WITH_ID_SELECTOR,
+} from '../../../src/tools/video-editor/lib/timeline-dom.ts';
 
 const editorPort = Number(process.env.PLAYWRIGHT_PORT ?? 2222);
 if (!Number.isInteger(editorPort) || editorPort < 1 || editorPort > 65_535) {
@@ -270,5 +273,5 @@ export function pickFreeDraggableClip(page: Page) {
       (other) => other.id !== c.id && other.row === c.row && other.x > c.x && other.x < c.x + c.w + 140,
     ));
     return free ?? onScreen[0] ?? clips[0] ?? null;
-  }, { editArea: EDIT_AREA_SELECTOR as string, clipWithId: CLIP_ACTION_WITH_ID_SELECTOR as string });
+  }, { editArea: EDIT_AREA_SELECTOR as string, clipWithId: CLIP_BODY_SELECTOR as string });
 }

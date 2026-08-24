@@ -1,0 +1,11 @@
+Collecting setuptools==80.9.0 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/reigh/scripts/release/paired-python-build-tools.lock (line 4))
+  Downloading setuptools-80.9.0-py3-none-any.whl (1.2 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.2/1.2 MB 7.1 MB/s eta 0:00:00
+Collecting wheel==0.46.3 (from -r /var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/reigh/scripts/release/paired-python-build-tools.lock (line 6))
+  Downloading wheel-0.46.3-py3-none-any.whl (30 kB)
+Installing collected packages: wheel, setuptools
+  Attempting uninstall: setuptools
+    Found existing installation: setuptools 65.5.0
+    Uninstalling setuptools-65.5.0:
+      Successfully uninstalled setuptools-65.5.0
+Successfully installed setuptools-80.9.0 wheel-0.46.3

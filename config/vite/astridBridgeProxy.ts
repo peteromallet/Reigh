@@ -5,6 +5,7 @@ import {
   ASTRID_BRIDGE_PROTOCOL_VERSION,
   ASTRID_BRIDGE_REQUEST_TIMEOUT_MS,
 } from '../../src/tools/video-editor/data/astridBridgeWire';
+import { isSameOriginLoopbackRequest } from './astridProxySecurity';
 
 export const ASTRID_BRIDGE_STUB_OPT_IN_ENV = 'ASTRID_BRIDGE_ALLOW_UNAUTHENTICATED_STUB';
 export const ASTRID_BRIDGE_TOKEN_ENV = 'ASTRID_BRIDGE_TOKEN';
@@ -57,6 +58,22 @@ export function createAstridBridgeProxyOptions(
     timeout: ASTRID_BRIDGE_REQUEST_TIMEOUT_MS,
     proxyTimeout: ASTRID_BRIDGE_REQUEST_TIMEOUT_MS,
     rewrite: (incomingPath) => incomingPath.replace(/^\/api\/astrid/, ''),
+    configure: (proxy) => {
+      proxy.on('proxyReq', (proxyRequest, incomingRequest) => {
+        // A browser same-origin request can carry its app origin even though
+        // it is being sent through this trusted loopback proxy. Astrid's
+        // direct-origin allowlist quite correctly does not include arbitrary
+        // Vite ports, so consume that header only after proving it names the
+        // exact loopback app listener. Cross-origin origins remain intact and
+        // are rejected by Astrid; this is not an allowlist relaxation.
+        const incomingOrigin = typeof incomingRequest.headers.origin === 'string'
+          ? incomingRequest.headers.origin
+          : undefined;
+        if (isSameOriginLoopbackRequest(incomingOrigin, incomingRequest.headers.host)) {
+          proxyRequest.removeHeader('Origin');
+        }
+      });
+    },
   };
 }
 

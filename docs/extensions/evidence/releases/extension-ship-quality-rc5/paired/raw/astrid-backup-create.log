@@ -1,0 +1,52 @@
+{
+  "created_at": "2026-08-24T21:00:36.981410+00:00",
+  "dest_path": "/var/folders/_w/b3tthv192m77c760dbyzvk200000gn/T/reigh-paired-release-runtime-UsyGyc/pre-migration-backup",
+  "media_files": 1,
+  "ok": true,
+  "packs": [
+    {
+      "checksum": "0c39b31ea23a2d74d6f0beb75789d9accc56d56d35073e4c8a4615643044c388",
+      "name": "initial",
+      "pack": "core",
+      "version": 1
+    },
+    {
+      "checksum": "1174cfd233deb63534fd359a75a48056991afaa0782b325f7dc8da6bea18b87d",
+      "name": "initial",
+      "pack": "references",
+      "version": 1
+    },
+    {
+      "checksum": "86aa0ffd210b54366cebdf8b0d3242401002d64aeb59d3137352ca971e893eb7",
+      "name": "initial",
+      "pack": "runaway",
+      "version": 1
+    },
+    {
+      "checksum": "3e717f76589774e1b791a116a26760cf23a8bee5ec8b5382f813945d8ea996b6",
+      "name": "initial",
+      "pack": "shots",
+      "version": 1
+    },
+    {
+      "checksum": "8a69d3cfe9eac772d76f33e445316bce66ffde5dda74d04bd72e2697028e84a8",
+      "name": "generations",
+      "pack": "shots",
+      "version": 2
+    },
+    {
+      "checksum": "41241db1756c1ae20752308d6797d17cd7e37273d84183fbc4a0c071cf3601c2",
+      "name": "initial",
+      "pack": "timeline",
+      "version": 1
+    },
+    {
+      "checksum": "1f1d21caf183de4faeb020b599ecf70d8cc28c695f7b4d921b645454ba7e74d9",
+      "name": "project-data",
+      "pack": "timeline",
+      "version": 2
+    }
+  ],
+  "sqlite_pages": 107,
+  "version": 1
+}

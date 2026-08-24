@@ -23,6 +23,7 @@
  * stub via `playwright.config.ts` webServer entries).
  */
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
+import { CLIP_BODY_SELECTOR } from '../../../src/tools/video-editor/lib/timeline-dom.ts';
 import {
   BASE_URL,
   BRIDGE_ORIGIN,
@@ -32,7 +33,6 @@ import {
   collectPageLogs,
   countSelectedClips,
   createTouchInput,
-  CLIP_ACTION_WITH_ID_SELECTOR,
   openEditor,
   pickFreeDraggableClip,
   resetBridgeBaseline,
@@ -562,7 +562,7 @@ test.describe('timeline extension overlays (desktop)', () => {
 
     // --- 3. passive parity: no overlay claim, gestures unchanged ----------
     await test.step('clip select works while overlays are mounted but unclaimed', async () => {
-      await page.locator(`${EDIT_AREA_SELECTOR} [data-clip-id]`).first().click({ timeout: 8_000 });
+      await page.locator(`${EDIT_AREA_SELECTOR} ${CLIP_BODY_SELECTOR}`).first().click({ timeout: 8_000 });
       expect(await countSelectedClips(page)).toBeGreaterThanOrEqual(1);
     });
 
@@ -572,7 +572,7 @@ test.describe('timeline extension overlays (desktop)', () => {
       // a packed neighbour would measure the packing rule, not the gesture.
       const freeClip = await pickFreeDraggableClip(page);
       expect(freeClip, 'expected a draggable clip').not.toBeNull();
-      const clip = page.locator(`${EDIT_AREA_SELECTOR} ${CLIP_ACTION_WITH_ID_SELECTOR}[data-clip-id="${freeClip!.id}"]`);
+      const clip = page.locator(`${EDIT_AREA_SELECTOR} ${CLIP_BODY_SELECTOR}[data-clip-id="${freeClip!.id}"]`);
       const before = await clip.boundingBox();
       if (!before) throw new Error('no clip to drag');
       await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2);
@@ -736,7 +736,7 @@ test.describe('timeline extension overlays (desktop)', () => {
       expect(logs.filter((line) => line.startsWith('[pageerror]')), [...new Set(logs)].join(' | ')).toEqual([]);
 
       // The editor itself is still interactive — the gesture owner was released.
-      await page.locator(`${EDIT_AREA_SELECTOR} [data-clip-id]`).first().click({ timeout: 8_000 });
+      await page.locator(`${EDIT_AREA_SELECTOR} ${CLIP_BODY_SELECTOR}`).first().click({ timeout: 8_000 });
       expect(await countSelectedClips(page)).toBeGreaterThanOrEqual(1);
     });
     await shot('disabled');
@@ -771,7 +771,7 @@ test.describe('timeline extension overlays (desktop)', () => {
 
     // Focus a non-editable timeline surface so the B keybinding is not
     // swallowed by an editable target.
-    await page.locator(`${EDIT_AREA_SELECTOR} [data-clip-id]`).first().click({ timeout: 8_000 });
+    await page.locator(`${EDIT_AREA_SELECTOR} ${CLIP_BODY_SELECTOR}`).first().click({ timeout: 8_000 });
 
     // Scrub the ruler to a NONZERO playhead: the canvas publishes it into
     // the provider-owned timeline view store through handleSetTime. The B
@@ -892,7 +892,8 @@ test.describe('timeline extension overlays (tablet)', () => {
       return rect ? rect.x + rect.width / 2 : 0;
     }, EDIT_AREA_SELECTOR);
     const clipWidth = () => page.evaluate(
-      () => document.querySelector('.clip-action[data-clip-id]')?.getBoundingClientRect().width ?? 0,
+      (clipBodySelector) => document.querySelector(clipBodySelector)?.getBoundingClientRect().width ?? 0,
+      CLIP_BODY_SELECTOR as string,
     );
 
     await test.step('two-finger pinch zooms while no overlay owns the gesture', async () => {
@@ -1036,7 +1037,7 @@ test.describe('timeline extension overlays (phone)', () => {
         }
       }
       await expect(selectMode).toHaveAttribute('aria-pressed', 'true');
-      const clip = await page.locator(`${EDIT_AREA_SELECTOR} [data-clip-id]`).first().boundingBox();
+      const clip = await page.locator(`${EDIT_AREA_SELECTOR} ${CLIP_BODY_SELECTOR}`).first().boundingBox();
       if (!clip) throw new Error('no clip to tap');
       await touch.tap(clip.x + clip.width / 2, clip.y + clip.height / 2);
       expect(await countSelectedClips(page)).toBeGreaterThanOrEqual(1);
