@@ -3,6 +3,14 @@ import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { CLIP_BODY_SELECTOR } from '../../../src/tools/video-editor/lib/timeline-dom.ts';
+import { transcriptCaptionClipId } from '../../../src/tools/video-editor/dev/transcript-lane/extension.ts';
+import {
+  meaningfulChange,
+  validateExtensionOutput,
+  validateTranscriptCaptions,
+  type ExpectedCaption,
+  type ValidationResult,
+} from './paired-repository.validators.ts';
 
 const phase = process.env.PAIRED_RELEASE_PHASE;
 const evidenceDir = process.env.PAIRED_RELEASE_EVIDENCE_DIR;
@@ -42,6 +50,7 @@ const editorUrl = `${baseUrl}/tools/video-editor?localProject=${project}&localTi
 
 type TimelineConfig = {
   app?: Record<string, Record<string, unknown>>;
+  tracks?: Array<{ id?: string; kind?: string; muted?: boolean }>;
   clips?: Array<{
     id?: string;
     at?: number;
@@ -59,7 +68,14 @@ type TimelineEnvelope = {
   config_version: number;
 };
 
-type RunawaySnapshot = { count: number; hash: string };
+type RunawaySnapshot = {
+  count: number;
+  hash: string;
+  runId: string;
+  firstManifestId: string;
+  lastManifestId: string;
+  lastFrame: number;
+};
 
 function canonicalValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalValue);
@@ -97,16 +113,51 @@ async function readRunawaySnapshot(request: APIRequestContext): Promise<RunawayS
   if (response.status() === 404) return null;
   expect(response.status()).toBe(200);
   expect(response.headers()['x-astrid-bridge-version']).toBe('v1');
-  const payload = await response.json() as { count?: number; total_count?: number; transitions?: unknown[] };
+  const payload = await response.json() as {
+    count?: number;
+    total_count?: number;
+    transitions?: unknown[];
+    timing_summary?: { evidence_id?: unknown; run_id?: unknown; data?: { frame_count?: unknown; transition_count?: unknown; fps?: unknown } };
+  };
   expect(payload.count).toBe(payload.transitions?.length);
   const count = payload.total_count ?? payload.count;
-  if (typeof count !== 'number') throw new Error('Runaway response has no total count');
+  if (count !== expectedRunaway || payload.count !== expectedRunaway || !Array.isArray(payload.transitions)) {
+    throw new Error(`Runaway response must contain exactly ${expectedRunaway} transitions`);
+  }
+  const summary = payload.timing_summary;
+  if (typeof summary?.evidence_id !== 'string' || summary.evidence_id.length === 0
+    || typeof summary.run_id !== 'string' || summary.run_id.length === 0
+    || summary.data?.frame_count !== 8085 || summary.data.transition_count !== expectedRunaway || summary.data.fps !== 48) {
+    throw new Error('Runaway response is missing typed timing provenance');
+  }
+  const first = payload.transitions[0];
+  const last = payload.transitions.at(-1);
+  if (first === null || typeof first !== 'object' || last === null || typeof last !== 'object') {
+    throw new Error('Runaway response has no first/last transition objects');
+  }
+  const firstRecord = first as Record<string, unknown>;
+  const lastRecord = last as Record<string, unknown>;
+  const firstMetadata = firstRecord.metadata as Record<string, unknown> | undefined;
+  const lastMetadata = lastRecord.metadata as Record<string, unknown> | undefined;
+  if (firstRecord.ordinal !== 0 || firstMetadata?.frame !== 0 || firstMetadata?.manifest_id !== 'T0001'
+    || lastRecord.ordinal !== expectedRunaway - 1 || lastMetadata?.frame !== 8084 || lastMetadata?.manifest_id !== 'T0566'
+    || typeof lastRecord.run_id !== 'string' || lastRecord.run_id.length === 0) {
+    throw new Error('Runaway response lost first/last manifest or frame semantics');
+  }
+  const runId = lastRecord.run_id as string;
+  const firstManifestId = firstMetadata?.manifest_id as string;
+  const lastManifestId = lastMetadata?.manifest_id as string;
+  const lastFrame = lastMetadata?.frame as number;
   return {
     count,
     hash: sha256Text(canonicalJson({
       timingSummary: (payload as { timing_summary?: unknown }).timing_summary,
       transitions: payload.transitions,
     })),
+    runId,
+    firstManifestId,
+    lastManifestId,
+    lastFrame,
   };
 }
 
@@ -122,8 +173,6 @@ function primaryClip(config: TimelineConfig) {
 function clipBody(page: Page, clipId: string) {
   return page.locator(`${CLIP_BODY_SELECTOR}[data-clip-id="${clipId}"]`);
 }
-
-const transcriptCaptionBodySelector = `${CLIP_BODY_SELECTOR}[data-clip-id^="transcript-caption-"]`;
 
 function captionCount(config: TimelineConfig): number {
   return config.clips?.filter((clip) => clip.id?.startsWith('transcript-caption-')).length ?? 0;
@@ -341,18 +390,40 @@ async function persistedProjectData(
   return timeline.config.app?.[extensionId]?.[key];
 }
 
-async function expectPersistedProjectData(
+async function readValidatedProjectData(
   request: APIRequestContext,
   extensionId: string,
   key: string,
-) {
-  await expect.poll(
-    () => persistedProjectData(request, extensionId, key),
-    { timeout: 30_000, message: `${extensionId} did not persist app.${key}` },
-  ).not.toBeUndefined();
+  config: TimelineConfig,
+): Promise<{ value: unknown; validation: ValidationResult }> {
+  const value = await persistedProjectData(request, extensionId, key);
+  return { value, validation: validateExtensionOutput(extensionId, value, config) };
 }
 
-async function proveAllExtensionLifecycles(page: Page, request: APIRequestContext) {
+async function expectValidatedProjectData(
+  request: APIRequestContext,
+  extensionId: string,
+  key: string,
+  config: TimelineConfig,
+  before: ValidationResult | null,
+  requireChange: boolean,
+): Promise<ValidationResult> {
+  let latest: { value: unknown; validation: ValidationResult } = {
+    value: undefined,
+    validation: { valid: false, reason: 'not read', fingerprint: null, count: 0 },
+  };
+  await expect.poll(async () => {
+    latest = await readValidatedProjectData(request, extensionId, key, config);
+    return latest.validation.valid;
+  }, { timeout: 30_000, message: `${extensionId} did not persist a valid ${key}: ${latest.validation.reason}` }).toBe(true);
+  if (requireChange && before && !meaningfulChange(before, latest.validation)) {
+    throw new Error(`${extensionId} command did not create a meaningful new ${key} output`);
+  }
+  return latest.validation;
+}
+
+async function proveAllExtensionLifecycles(page: Page, request: APIRequestContext): Promise<Record<string, string>> {
+  const fingerprints: Record<string, string> = {};
   await page.getByRole('tab', { name: 'Extensions' }).click();
   const inventory = page.getByRole('region', { name: 'Local extensions' });
   const rows = inventory.locator('[data-video-editor-dev-local-extension]');
@@ -378,16 +449,36 @@ async function proveAllExtensionLifecycles(page: Page, request: APIRequestContex
 
       if (probe.contribution === 'command') {
         await expectCommandAvailability(page, probe.commandId!, true);
+        const beforeTimeline = await readTimeline(request);
+        const beforeValue = beforeTimeline.config.app?.[probe.id]?.[probe.projectDataKey!];
+        const beforeValidation = validateExtensionOutput(probe.id, beforeValue, beforeTimeline.config);
         if (executeActions) {
           await invokeCommand(page, probe.commandId!);
-          await expectPersistedProjectData(request, probe.id, probe.projectDataKey!);
+          const after = await expectValidatedProjectData(
+            request,
+            probe.id,
+            probe.projectDataKey!,
+            (await readTimeline(request)).config,
+            beforeValidation,
+            true,
+          );
+          fingerprints[probe.id] = after.fingerprint!;
         } else if (phase === 'restart') {
-          await expectPersistedProjectData(request, probe.id, probe.projectDataKey!);
+          const after = await expectValidatedProjectData(
+            request,
+            probe.id,
+            probe.projectDataKey!,
+            (await readTimeline(request)).config,
+            null,
+            false,
+          );
+          fingerprints[probe.id] = after.fingerprint!;
         }
       } else if (probe.contribution === 'transcript-lane') {
         await expect(page.locator('[data-lane-kind="reigh.transcript"]')).toBeVisible({ timeout: 15_000 });
         if (executeActions || phase === 'restart') {
-          await materializeTranscript(page, request);
+          const transcript = await materializeTranscript(page, request);
+          fingerprints[probe.id] = transcript.fingerprint!;
         }
       } else {
         const chip = page.getByTestId('runaway-transition-chip').first();
@@ -396,6 +487,9 @@ async function proveAllExtensionLifecycles(page: Page, request: APIRequestContex
         // provenance inspector without mutating the timeline or bridge data.
         await chip.click();
         await expect(page.getByTestId('runaway-transition-inspector')).toBeVisible({ timeout: 8_000 });
+        const runaway = await readRunawaySnapshot(request);
+        if (!runaway) throw new Error('Runaway lane action lost the typed bridge output');
+        fingerprints[probe.id] = runaway.hash;
       }
 
       await toggle.click();
@@ -422,6 +516,7 @@ async function proveAllExtensionLifecycles(page: Page, request: APIRequestContex
       throw new Error(`extension lifecycle failed for ${probe.id}: ${message}`);
     }
   }
+  return fingerprints;
 }
 
 async function dragPrimaryClip(page: Page) {
@@ -443,14 +538,56 @@ async function waitForPersistedEdit(request: APIRequestContext, previousAt: numb
   }, { timeout: 30_000 }).not.toBe(previousAt);
 }
 
-async function materializeTranscript(page: Page, request: APIRequestContext) {
+async function expectedTranscriptCaptions(page: Page): Promise<ExpectedCaption[]> {
+  await expect.poll(() => page.getByTestId('transcript-lane-chip').count(), {
+    timeout: 30_000,
+    message: 'paired transcript fixture did not expose its exact two source segments',
+  }).toBe(2);
+  return page.getByTestId('transcript-lane-chip').evaluateAll((chips) => chips.map((chip) => {
+    const title = chip.getAttribute('title') ?? '';
+    const itemId = title.split(' · ', 1)[0];
+    const aria = chip.getAttribute('aria-label') ?? '';
+    const match = aria.match(/^Transcript segment: (.*), ([0-9]+(?:\.[0-9]+)?) to ([0-9]+(?:\.[0-9]+)?) seconds$/);
+    if (!itemId || !match) throw new Error(`transcript chip has malformed identity/timing: ${aria}`);
+    const at = Number(match[2]);
+    const end = Number(match[3]);
+    return {
+      id: transcriptCaptionClipId(itemId),
+      text: match[1],
+      at,
+      duration: end - at,
+    };
+  }));
+}
+
+async function materializeTranscript(page: Page, request: APIRequestContext): Promise<ValidationResult> {
+  const expected = await expectedTranscriptCaptions(page);
+  if (expected.length !== 2) throw new Error(`paired transcript fixture must expose exactly two segments, got ${expected.length}`);
+  const before = await readTimeline(request);
+  const beforeValidation = validateTranscriptCaptions(before.config.clips ?? [], expected);
   const actions = page.getByRole('button', { name: 'Transcript actions' });
   await actions.scrollIntoViewIfNeeded();
   await actions.click();
   await page.getByRole('menuitem', { name: 'Render transcript as editable video text' }).click();
-  await expect.poll(async () => captionCount((await readTimeline(request)).config), {
-    timeout: 30_000,
-  }).toBeGreaterThanOrEqual(2);
+  let latest: ValidationResult = beforeValidation;
+  await expect.poll(async () => {
+    latest = validateTranscriptCaptions((await readTimeline(request)).config.clips ?? [], expected);
+    return latest.valid;
+  }, { timeout: 30_000, message: `transcript materialization did not produce exact captions: ${latest.reason}` }).toBe(true);
+  if (phase === 'first' && !meaningfulChange(beforeValidation, latest)) {
+    throw new Error('transcript Add missing did not create a meaningful new caption output');
+  }
+
+  // The same Add missing action is intentionally rerun. It must be a true
+  // idempotent no-op: exact IDs, text and frame-safe timings remain stable.
+  const stableFingerprint = latest.fingerprint;
+  await actions.click();
+  await page.getByRole('menuitem', { name: 'Render transcript as editable video text' }).click();
+  await expect.poll(async () => {
+    latest = validateTranscriptCaptions((await readTimeline(request)).config.clips ?? [], expected);
+    return latest.valid && latest.fingerprint === stableFingerprint;
+  }, { timeout: 30_000, message: `transcript idempotent rerun did not preserve exact captions: ${latest.reason}` }).toBe(true);
+  return latest;
 }
 
 async function renderAndDownload(
@@ -505,7 +642,7 @@ test(`paired repository acceptance phase: ${phase}`, async ({ page, request }) =
   expect(typeof initialAt).toBe('number');
   const runawaySnapshot = await readRunawaySnapshot(request);
   const issues = await openEditor(page);
-  await proveAllExtensionLifecycles(page, request);
+  const extensionFingerprints = await proveAllExtensionLifecycles(page, request);
 
   if (phase === 'first') {
     expect(runawaySnapshot?.count).toBe(expectedRunaway);
@@ -521,23 +658,31 @@ test(`paired repository acceptance phase: ${phase}`, async ({ page, request }) =
     await expect(page.locator('[data-lane-kind="reigh.runaway.transitions"]')).toBeVisible();
     await dragPrimaryClip(page);
     await waitForPersistedEdit(request, initialAt!);
-    await materializeTranscript(page, request);
     const saved = await readTimeline(request);
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(clipBody(page, 'paired-release-clip')).toBeVisible({ timeout: 30_000 });
-    await expect.poll(() => page.locator(transcriptCaptionBodySelector).count()).toBeGreaterThanOrEqual(2);
+    const expected = await expectedTranscriptCaptions(page);
+    await expect.poll(async () => validateTranscriptCaptions((await readTimeline(request)).config.clips ?? [], expected).valid).toBe(true);
     expect(primaryClip(saved.config)?.at).not.toBe(initialAt);
   } else if (phase === 'restart') {
     const firstState = JSON.parse(
       await readFile(resolve(evidenceDir!, 'browser-first-state.json'), 'utf8'),
-    ) as { timelineStateHash?: string; runawayHash?: string; runawayCount?: number };
+    ) as { timelineStateHash?: string; runawayHash?: string; runawayCount?: number; runawayRunId?: string; runawayFirstManifestId?: string; runawayLastManifestId?: string; runawayLastFrame?: number; extensionFingerprints?: Record<string, string> };
     expect(runawaySnapshot?.count).toBe(expectedRunaway);
     expect(initialStateHash).toBe(firstState.timelineStateHash);
     expect(runawaySnapshot?.hash).toBe(firstState.runawayHash);
     expect(runawaySnapshot?.count).toBe(firstState.runawayCount);
+    expect(runawaySnapshot?.runId).toBe(firstState.runawayRunId);
+    expect(runawaySnapshot?.firstManifestId).toBe(firstState.runawayFirstManifestId);
+    expect(runawaySnapshot?.lastManifestId).toBe(firstState.runawayLastManifestId);
+    expect(runawaySnapshot?.lastFrame).toBe(firstState.runawayLastFrame);
+    expect(firstState.extensionFingerprints).toBeDefined();
+    expect(extensionFingerprints).toEqual(firstState.extensionFingerprints);
     expect(initialAt).toBeGreaterThan(0);
-    expect(captionCount(initial.config)).toBeGreaterThanOrEqual(2);
-    await expect.poll(() => page.locator(transcriptCaptionBodySelector).count()).toBeGreaterThanOrEqual(2);
+    const expected = await expectedTranscriptCaptions(page);
+    expect(captionCount(initial.config)).toBe(expected.length);
+    expect(validateTranscriptCaptions(initial.config.clips ?? [], expected).valid).toBe(true);
+    await expect.poll(async () => validateTranscriptCaptions((await readTimeline(request)).config.clips ?? [], expected).valid).toBe(true);
     await renderAndDownload(page, initial, initialStateHash);
   } else {
     const baseline = JSON.parse(
@@ -560,6 +705,11 @@ test(`paired repository acceptance phase: ${phase}`, async ({ page, request }) =
     captionCount: captionCount(final.config),
     runawayCount: runawaySnapshot?.count ?? null,
     runawayHash: runawaySnapshot?.hash ?? null,
+    runawayRunId: runawaySnapshot?.runId ?? null,
+    runawayFirstManifestId: runawaySnapshot?.firstManifestId ?? null,
+    runawayLastManifestId: runawaySnapshot?.lastManifestId ?? null,
+    runawayLastFrame: runawaySnapshot?.lastFrame ?? null,
+    extensionFingerprints,
     extensionCount: expectedExtensions,
   };
   await writeFile(
