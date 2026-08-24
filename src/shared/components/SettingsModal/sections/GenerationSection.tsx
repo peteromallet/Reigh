@@ -147,7 +147,6 @@ const GenerationSection: React.FC<GenerationSectionProps> = ({
                   setWindowsShell: launchSetters.setWindowsShell,
                   setShowDebugLogs: launchSetters.setShowDebugLogs,
                   setIdleReleaseMinutes: launchSetters.setIdleReleaseMinutes,
-                  setWorkerRepoPath: launchSetters.setWorkerRepoPath,
                   setActiveInstallTab,
                   updateGenerationMethodsWithNotification,
                 }}

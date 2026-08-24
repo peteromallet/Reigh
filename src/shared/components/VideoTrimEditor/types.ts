@@ -17,7 +17,7 @@ export interface TrimControlsPanelProps {
   variant: 'desktop' | 'mobile';
   videoUrl?: string;
   currentTime?: number;
-  videoRef?: RefObject<HTMLVideoElement>;
+  videoRef?: RefObject<HTMLVideoElement | null>;
   hideHeader?: boolean;
 }
 
@@ -29,6 +29,6 @@ export interface TrimTimelineBarProps {
   onEndTrimChange: (seconds: number) => void;
   currentTime?: number;
   disabled?: boolean;
-  videoRef?: RefObject<HTMLVideoElement>;
+  videoRef?: RefObject<HTMLVideoElement | null>;
   onSeek?: (time: number) => void;
 }

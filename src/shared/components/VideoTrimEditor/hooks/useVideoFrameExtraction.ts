@@ -13,7 +13,9 @@ interface UseVideoFrameExtractionParams {
 
 interface UseVideoFrameExtractionResult {
   frameExtractionVideoRef: React.RefObject<HTMLVideoElement | null>;
+  frameExtractionVideoElementRef: React.RefCallback<HTMLVideoElement>;
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
+  canvasElementRef: React.RefCallback<HTMLCanvasElement>;
   startFrame: string | null;
   endFrame: string | null;
   isVideoReady: boolean;
@@ -37,6 +39,12 @@ export function useVideoFrameExtraction({
 }: UseVideoFrameExtractionParams): UseVideoFrameExtractionResult {
   const frameExtractionVideoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const frameExtractionVideoElementRef = useCallback((node: HTMLVideoElement | null) => {
+    frameExtractionVideoRef.current = node;
+  }, []);
+  const canvasElementRef = useCallback((node: HTMLCanvasElement | null) => {
+    canvasRef.current = node;
+  }, []);
 
   const [startFrame, setStartFrame] = useState<string | null>(null);
   const [endFrame, setEndFrame] = useState<string | null>(null);
@@ -282,7 +290,9 @@ export function useVideoFrameExtraction({
 
   return {
     frameExtractionVideoRef,
+    frameExtractionVideoElementRef,
     canvasRef,
+    canvasElementRef,
     startFrame,
     endFrame,
     isVideoReady,

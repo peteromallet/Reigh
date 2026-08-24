@@ -13,6 +13,7 @@ import {
   VIDEO_INLINE_UPLOAD_LIMIT_BYTES,
 } from '@/shared/lib/media/dropToGenerationConfig';
 import { unifiedGenerationQueryKeys } from '@/shared/lib/queryKeys/unified';
+import type { PersistedLocalMediaHandle } from '@/shared/lib/media/localHandleStore';
 
 function isImageFile(file: File): boolean {
   return file.type.startsWith('image/');
@@ -32,6 +33,8 @@ type FileDropHandleItem = DataTransferItem & {
 
 type FileSystemHandleLike = FileSystemHandle & {
   getFile?: () => Promise<File>;
+  queryPermission?: PersistedLocalMediaHandle['queryPermission'];
+  requestPermission?: PersistedLocalMediaHandle['requestPermission'];
 };
 
 interface DropToGenerationOptions {
@@ -43,8 +46,14 @@ function supportsLocalFileHandles(): boolean {
     && typeof (DataTransferItem.prototype as FileDropHandleItem).getAsFileSystemHandle === 'function';
 }
 
-function isReadableFileHandle(handle: FileSystemHandleLike | null): handle is FileSystemFileHandle {
-  return !!handle && handle.kind === 'file' && typeof handle.getFile === 'function';
+type ReadableLocalFileHandle = FileSystemFileHandle & PersistedLocalMediaHandle;
+
+function isReadableFileHandle(handle: FileSystemHandleLike | null): handle is ReadableLocalFileHandle {
+  return !!handle
+    && handle.kind === 'file'
+    && typeof handle.getFile === 'function'
+    && typeof handle.queryPermission === 'function'
+    && typeof handle.requestPermission === 'function';
 }
 
 export function useDropToGeneration(): (files: File[], options?: DropToGenerationOptions) => Promise<void> {

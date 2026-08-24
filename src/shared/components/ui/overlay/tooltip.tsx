@@ -15,7 +15,7 @@ const TooltipProvider: React.FC<{
 const Tooltip = TooltipPrimitive.Root;
 
 const TooltipTrigger = React.forwardRef<
-  React.ElementRef<typeof TooltipPrimitive.Trigger>,
+  HTMLButtonElement,
   React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Trigger> & {
     asChild?: boolean;
   }

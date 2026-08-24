@@ -43,7 +43,11 @@ const AlertDialogOverlay = React.forwardRef<
       'fixed inset-0 bg-black/80 data-[open]:animate-in data-[ending-style]:animate-out data-[ending-style]:fade-out-0 data-[open]:fade-in-0',
       className,
     )}
-    style={getOverlayLayerStyle(layer ?? null, 'backdrop', style)}
+    style={(state) => getOverlayLayerStyle(
+      layer ?? null,
+      'backdrop',
+      typeof style === 'function' ? style(state) : style,
+    )}
     {...props}
   />
 ));
@@ -74,7 +78,11 @@ const AlertDialogContent = React.forwardRef<
             'fixed left-[50%] top-[50%] grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 data-[open]:animate-in data-[ending-style]:animate-out data-[ending-style]:fade-out-0 data-[open]:fade-in-0 data-[ending-style]:zoom-out-95 data-[open]:zoom-in-95 data-[ending-style]:slide-out-to-left-1/2 data-[ending-style]:slide-out-to-top-[48%] data-[open]:slide-in-from-left-1/2 data-[open]:slide-in-from-top-[48%] sm:rounded-lg',
             className,
           )}
-          style={getOverlayLayerStyle(layer, 'popup', style)}
+          style={(state) => getOverlayLayerStyle(
+            layer,
+            'popup',
+            typeof style === 'function' ? style(state) : style,
+          )}
           {...props}
         />
       </OverlayInstanceProvider>

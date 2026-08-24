@@ -1061,12 +1061,15 @@ const ExtensionRow: React.FC<ExtensionRowProps> = ({ ext, isMobile, onToggleEnab
             <DependencyBadge deps={ext.dependencies} />
           )}
           {ext.trustWarning && (
-            <Shield
-              className="h-3.5 w-3.5 text-amber-500 flex-shrink-0"
-              title={
-                ext.trustWarningReason ?? "Publisher or license information is missing"
-              }
-            />
+            <span
+              title={ext.trustWarningReason ?? "Publisher or license information is missing"}
+              className="inline-flex"
+            >
+              <Shield
+                className="h-3.5 w-3.5 text-amber-500 flex-shrink-0"
+                aria-label="Extension trust warning"
+              />
+            </span>
           )}
         </div>
 

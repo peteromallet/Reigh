@@ -261,7 +261,7 @@ export function ShotsPanelContent({ projectId }: ShotsPanelContentProps) {
   const [newShotDropState, setNewShotDropState] = useState<'idle' | 'loading' | 'success'>('idle');
   const [showHidden, setShowHidden] = useState(false);
 
-  const { hiddenIds, toggle: toggleHidden } = useHiddenShots(selectedProjectId);
+  const { hiddenIds, toggle: toggleHidden } = useHiddenShots(projectId);
 
   const filteredShots = useMemo(() => {
     if (!shots) return [];
@@ -461,7 +461,7 @@ export function ShotsPanelContent({ projectId }: ShotsPanelContentProps) {
                 onDelete={() => void handleDelete(shot.id)}
                 onRename={(name) => void handleRename(shot.id, name)}
                 onToggleHidden={() => toggleHidden(shot.id)}
-                onGenerationDrop={(...args) => void handleGenerationDrop(...args)}
+                onGenerationDrop={handleGenerationDrop}
               />
             </div>
           ))}

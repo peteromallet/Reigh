@@ -242,6 +242,8 @@ export interface ExtensionsSectionProps {
   allLifecycleEvents?: readonly (LifecycleEventDisplayInfo & { extensionId: string; extensionName: string })[];
   /** Callback when user updates a settings value. */
   onUpdateSettings?: (extensionId: string, key: string, value: unknown) => void | Promise<void>;
+  /** Whether extension settings controls are currently saving. */
+  isSavingSettings?: boolean;
   /** Callback when user requests to uninstall an extension. */
   onUninstallExtension?: (extensionId: string) => void | Promise<void>;
   /** Reference report for an extension pending uninstall. */

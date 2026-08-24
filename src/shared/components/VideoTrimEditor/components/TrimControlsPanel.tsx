@@ -35,8 +35,8 @@ export const TrimControlsPanel: React.FC<TrimControlsPanelProps> = ({
   const labelSize = isMobile ? 'text-xs' : 'text-sm';
 
   const {
-    frameExtractionVideoRef,
-    canvasRef,
+    frameExtractionVideoElementRef,
+    canvasElementRef,
     startFrame,
     endFrame,
     handleVideoLoaded,
@@ -49,7 +49,7 @@ export const TrimControlsPanel: React.FC<TrimControlsPanelProps> = ({
     <div className="w-full">
       {videoUrl && (
         <video
-          ref={frameExtractionVideoRef}
+          ref={frameExtractionVideoElementRef}
           src={videoUrl}
           crossOrigin="anonymous"
           preload="auto"
@@ -59,7 +59,7 @@ export const TrimControlsPanel: React.FC<TrimControlsPanelProps> = ({
           onLoadedMetadata={handleVideoLoaded}
         />
       )}
-      <canvas ref={canvasRef} className="hidden" />
+      <canvas ref={canvasElementRef} className="hidden" />
 
       <div className="p-4 space-y-4">
         {!hideHeader && (
