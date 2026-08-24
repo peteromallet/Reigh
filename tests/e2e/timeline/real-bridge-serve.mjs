@@ -3,20 +3,27 @@
  * B5 harness: boot the REAL Astrid bridge (`astrid serve`) against a temp
  * seeded project root, for the Playwright CAS/watchdog/draft specs.
  *
- *   ASTRID_SERVE_BIN   astrid executable (default: resolves `astrid` on PATH,
- *                      or `~/.pyenv/versions/3.11.11/bin/astrid`)
+ *   ASTRID_CHECKOUT    clean checkout at the release pin (default: the local
+ *                      Astrid-extension-rc worktree)
+ *   ASTRID_PYTHON      Python used for `<python> -m astrid` (default: python3)
+ *   ASTRID_SERVE_BIN   explicit executable override (not provenance-checked)
  *   ASTRID_BRIDGE_PORT port to listen on (default 17334)
  *   ASTRID_SEED_ROOT   reuse a pre-seeded projects root (default: temp dir)
+ *   ASTRID_BRIDGE_METADATA_FILE provenance receipt path (default: /tmp)
  *
  * The seeded project mirrors the stub's `demo-project/demo-timeline` so the
  * existing `tests/e2e/timeline/support.ts` URLs work against the real bridge.
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 const PORT = Number(process.env.ASTRID_BRIDGE_PORT ?? 17334);
+const PINNED_ASTRID_SHA = 'fb152312d3cb9b7bed5f637bfdf6845e7d638739';
+const DEFAULT_ASTRID_CHECKOUT = '/Users/peteromalley/Documents/reigh-workspace/Astrid-extension-rc';
+const astrid = resolveAstridCommand();
+const OWNS_SEED_ROOT = !process.env.ASTRID_SEED_ROOT;
 const SEED_ROOT = process.env.ASTRID_SEED_ROOT ? resolve(process.env.ASTRID_SEED_ROOT) : mkdtempSync(join(tmpdir(), 'astrid-real-bridge-'));
 // B1 identity-first: the canonical id must be a UUID for the bridge's save validation.
 const TIMELINE_ID = '11111111-1111-1111-1111-111111111111';
@@ -68,38 +75,69 @@ function seed() {
   ));
 }
 
-function resolveAstridBin() {
-  if (process.env.ASTRID_SERVE_BIN) {
-    return resolve(process.env.ASTRID_SERVE_BIN);
-  }
-  const candidates = [
-    'astrid',
-    resolve(process.env.HOME ?? '', '.pyenv/versions/3.11.11/bin/astrid'),
-  ];
-  for (const candidate of candidates) {
-    try {
-      const result = spawnSyncSafe(candidate, ['--version']);
-      if (result !== null) {
-        return candidate;
-      }
-    } catch {
-      // keep looking
-    }
-  }
-  return candidates[0];
+function commandSucceeded(command, args, options = {}) {
+  const result = spawnSync(command, args, { stdio: 'pipe', env: process.env, ...options });
+  return result.status === 0 ? result : null;
 }
 
-function spawnSyncSafe(bin, args) {
-  const result = spawnSync(bin, args, { stdio: 'pipe', env: process.env });
-  return result.status === 0 ? result : null;
+function resolveAstridCommand() {
+  if (process.env.ASTRID_SERVE_BIN) {
+    const bin = resolve(process.env.ASTRID_SERVE_BIN);
+    const result = commandSucceeded(bin, ['--version']);
+    if (!result) {
+      throw new Error(`ASTRID_SERVE_BIN is not runnable: ${bin}`);
+    }
+    return { command: bin, prefix: [], cwd: undefined, env: process.env, provenance: `binary:${bin}` };
+  }
+
+  const checkout = resolve(process.env.ASTRID_CHECKOUT ?? DEFAULT_ASTRID_CHECKOUT);
+  if (!existsSync(join(checkout, '.git'))) {
+    throw new Error(
+      `Pinned Astrid checkout is unavailable at ${checkout}; set ASTRID_CHECKOUT or ASTRID_SERVE_BIN explicitly`,
+    );
+  }
+  const head = commandSucceeded('git', ['rev-parse', 'HEAD'], { cwd: checkout });
+  const sha = head?.stdout?.toString().trim();
+  if (sha !== PINNED_ASTRID_SHA) {
+    throw new Error(`Astrid checkout HEAD ${sha ?? '<unreadable>'} does not match pinned ${PINNED_ASTRID_SHA}`);
+  }
+  const status = commandSucceeded('git', ['status', '--porcelain'], { cwd: checkout });
+  if (!status || status.stdout.toString().trim() !== '') {
+    throw new Error(`Pinned Astrid checkout must be clean: ${checkout}`);
+  }
+
+  const python = process.env.ASTRID_PYTHON ?? 'python3';
+  const env = {
+    ...process.env,
+    PYTHONPATH: [checkout, process.env.PYTHONPATH].filter(Boolean).join(':'),
+  };
+  const runnable = commandSucceeded(python, ['-m', 'astrid', '--version'], { cwd: checkout, env });
+  if (!runnable) {
+    throw new Error(`Pinned Astrid is not runnable with ${python} -m astrid from ${checkout}`);
+  }
+  return {
+    command: python,
+    prefix: ['-m', 'astrid'],
+    cwd: checkout,
+    env,
+    provenance: `git:${sha}`,
+  };
 }
 
 // The bridge discovers projects/timelines from its SQLite registry, not the
 // filesystem layout — register the seeded project through the astrid CLI
 // (which opens and closes its own writer BEFORE `serve` takes the exclusive
 // lock), otherwise every route answers project_not_found.
-function registerInBridgeRegistry(bin) {
-  const cliEnv = { ...process.env, ASTRID_PROJECTS_ROOT: SEED_ROOT };
+function runAstridSync(astrid, args, env) {
+  return spawnSync(astrid.command, [...astrid.prefix, ...args], {
+    stdio: 'pipe',
+    cwd: astrid.cwd,
+    env,
+  });
+}
+
+function registerInBridgeRegistry(astrid) {
+  const cliEnv = { ...astrid.env, ASTRID_PROJECTS_ROOT: SEED_ROOT };
   const config = {
     output: { resolution: '1920x1080', fps: 24, file: 'output.mp4' },
     clips: [
@@ -112,15 +150,15 @@ function registerInBridgeRegistry(bin) {
     ],
   };
   const steps = [
-    [bin, ['projects', 'create', PROJECT.slug, '--name', PROJECT.name]],
-    [bin, ['timelines', 'create', 'demo-timeline', '--project', PROJECT.slug,
+    ['projects', 'create', PROJECT.slug, '--name', PROJECT.name],
+    ['timelines', 'create', 'demo-timeline', '--project', PROJECT.slug,
       '--name', 'Demo Timeline', '--default',
-      '--config', JSON.stringify(config), '--registry', '{"assets":{}}']],
+      '--config', JSON.stringify(config), '--registry', '{"assets":{}}'],
   ];
-  for (const [cmd, args] of steps) {
-    const result = spawnSync(cmd, args, { stdio: 'pipe', env: cliEnv });
+  for (const args of steps) {
+    const result = runAstridSync(astrid, args, cliEnv);
     if (result.status !== 0) {
-      console.error(`[real-bridge] registry step failed: ${cmd} ${args.join(' ')}`);
+      console.error(`[real-bridge] registry step failed: ${astrid.command} ${[...astrid.prefix, ...args].join(' ')}`);
       console.error(result.stderr?.toString() ?? '');
       process.exit(1);
     }
@@ -128,19 +166,29 @@ function registerInBridgeRegistry(bin) {
 }
 
 seed();
-const bin = process.env.ASTRID_SERVE_BIN || 'astrid';
 
 console.error(`[real-bridge] seeding ${SEED_ROOT}`);
-registerInBridgeRegistry(bin);
-console.error(`[real-bridge] spawning ${bin} serve --projects-root ${SEED_ROOT} --port ${PORT}`);
-const child = spawn(bin, ['serve', '--projects-root', SEED_ROOT, '--port', String(PORT)], {
+console.error(`[real-bridge] Astrid provenance ${astrid.provenance}`);
+registerInBridgeRegistry(astrid);
+const serveArgs = [...astrid.prefix, 'serve', '--no-open-editor', '--projects-root', SEED_ROOT, '--port', String(PORT)];
+console.error(`[real-bridge] spawning ${astrid.command} ${serveArgs.join(' ')}`);
+const child = spawn(astrid.command, serveArgs, {
   stdio: 'inherit',
-  env: process.env,
+  cwd: astrid.cwd,
+  env: astrid.env,
 });
 
 const pidFile = process.env.ASTRID_BRIDGE_PID_FILE || '/tmp/astrid-real-bridge.pid';
 const tokenFile = process.env.ASTRID_REQUEST_TOKEN_FILE || '/tmp/astrid-real-bridge.token';
+const metadataFile = process.env.ASTRID_BRIDGE_METADATA_FILE || '/tmp/astrid-real-bridge.metadata.json';
 writeFileSync(pidFile, String(child.pid));
+writeFileSync(metadataFile, JSON.stringify({
+  astrid_provenance: astrid.provenance,
+  pinned_astrid_sha: PINNED_ASTRID_SHA,
+  projects_root: SEED_ROOT,
+  bridge_origin: `http://127.0.0.1:${PORT}`,
+  bridge_pid: child.pid,
+}, null, 2));
 
 // Serve mints the per-boot mutation token into <root>/.astrid/request-token
 // (mode 0600). The vite proxy injects it server-side; direct API callers
@@ -156,13 +204,20 @@ function publishToken(attempt = 0) {
 }
 publishToken();
 
-child.on('exit', () => {
+function cleanup() {
   try {
     rmSync(pidFile, { force: true });
     rmSync(tokenFile, { force: true });
+    rmSync(metadataFile, { force: true });
+    if (OWNS_SEED_ROOT) rmSync(SEED_ROOT, { recursive: true, force: true });
   } catch {
-    // pid/token file best-effort
+    // Harness-owned temp artifacts are best-effort cleanup.
   }
+}
+
+child.on('exit', (code, signal) => {
+  cleanup();
+  if (!process.exitCode) process.exitCode = code ?? (signal ? 1 : 0);
 });
 
 

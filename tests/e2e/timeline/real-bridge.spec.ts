@@ -9,8 +9,11 @@
  */
 import { expect, test } from '@playwright/test';
 import { readFileSync } from 'node:fs';
+import { BASE_URL, EDITOR_SETTLE_MS } from './support';
 
-test.describe.configure({ timeout: 120_000 });
+// The final watchdog case intentionally kills the one harness-owned bridge.
+// Serial mode guarantees it cannot race an otherwise independent acceptance.
+test.describe.configure({ mode: 'serial', timeout: 120_000 });
 
 // The harness registers the project through the astrid CLI, which mints the
 // timeline identity — resolve it from the discovery route instead of assuming
@@ -63,7 +66,7 @@ async function dragFirstClipRight(page: import('@playwright/test').Page) {
 }
 
 
-const BRIDGE_ORIGIN = 'http://127.0.0.1:17334';
+const BRIDGE_ORIGIN = `http://127.0.0.1:${process.env.ASTRID_BRIDGE_PORT ?? '17334'}`;
 
 /**
  * The bridge validates the per-boot request token on mutations; the vite
@@ -72,7 +75,7 @@ const BRIDGE_ORIGIN = 'http://127.0.0.1:17334';
  */
 function mutationHeaders(): Record<string, string> {
   try {
-    const token = readFileSync('/tmp/astrid-real-bridge.token', 'utf8').trim();
+    const token = readFileSync(process.env.ASTRID_REQUEST_TOKEN_FILE ?? '/tmp/astrid-real-bridge.token', 'utf8').trim();
     return { 'X-Astrid-Request-Token': token };
   } catch {
     return {};
