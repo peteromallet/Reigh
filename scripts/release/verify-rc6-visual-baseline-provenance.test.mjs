@@ -1,5 +1,12 @@
 import { strict as assert } from 'node:assert';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { describe, it } from 'node:test';
@@ -20,6 +27,21 @@ function withManifest(mutator, callback) {
     return callback(path);
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+}
+
+const VISUAL_DIFF_ROOT = resolve(
+  REPO_ROOT,
+  'docs/extensions/evidence/releases/extension-ship-quality-rc6/visual-diffs',
+);
+
+function withTemporaryArtifact(name, create, callback) {
+  const artifactPath = resolve(VISUAL_DIFF_ROOT, name);
+  try {
+    create(artifactPath);
+    return callback(artifactPath);
+  } finally {
+    rmSync(artifactPath, { force: true });
   }
 }
 
@@ -93,7 +115,116 @@ describe('RC6 visual baseline provenance verifier', () => {
     }, (manifestPath) => {
       assert.throws(
         () => verifyVisualBaselineProvenance({ repoRoot: REPO_ROOT, manifestPath }),
-        /reviewed diff artifact pixels mismatch/,
+        /canonical repository-relative path under docs\/extensions\/evidence\/releases\/extension-ship-quality-rc6\/visual-diffs/,
+      );
+    });
+  });
+
+  it('rejects an absolute path to an otherwise canonical diff artifact', () => {
+    withManifest((manifest) => {
+      manifest.entries[0].reviewedDiffArtifact.path = resolve(
+        REPO_ROOT,
+        manifest.entries[0].reviewedDiffArtifact.path,
+      );
+    }, (manifestPath) => {
+      assert.throws(
+        () => verifyVisualBaselineProvenance({ repoRoot: REPO_ROOT, manifestPath }),
+        /canonical repository-relative path under docs\/extensions\/evidence\/releases\/extension-ship-quality-rc6\/visual-diffs/,
+      );
+    });
+  });
+
+  it('rejects traversal paths even when they normalize inside the repository', () => {
+    withManifest((manifest) => {
+      manifest.entries[0].reviewedDiffArtifact.path =
+        'docs/extensions/evidence/releases/extension-ship-quality-rc6/visual-diffs/../visual-diffs/composed-desktop.diff.png';
+    }, (manifestPath) => {
+      assert.throws(
+        () => verifyVisualBaselineProvenance({ repoRoot: REPO_ROOT, manifestPath }),
+        /must not contain empty, current-directory, or traversal segments/,
+      );
+    });
+  });
+
+  it('rejects a symlinked reviewed diff artifact', () => {
+    withTemporaryArtifact(
+      'symlink.diff.png',
+      (artifactPath) => symlinkSync(
+        resolve(VISUAL_DIFF_ROOT, 'composed-desktop.diff.png'),
+        artifactPath,
+      ),
+      () => withManifest((manifest) => {
+        manifest.entries[0].reviewedDiffArtifact.path =
+          'docs/extensions/evidence/releases/extension-ship-quality-rc6/visual-diffs/symlink.diff.png';
+      }, (manifestPath) => {
+        assert.throws(
+          () => verifyVisualBaselineProvenance({ repoRoot: REPO_ROOT, manifestPath }),
+          /must not contain symlinks/,
+        );
+      }),
+    );
+  });
+
+  it('rejects a non-regular reviewed diff artifact', () => {
+    const artifactPath = resolve(VISUAL_DIFF_ROOT, 'directory.diff.png');
+    mkdirSync(artifactPath);
+    try {
+      withManifest((manifest) => {
+        manifest.entries[0].reviewedDiffArtifact.path =
+          'docs/extensions/evidence/releases/extension-ship-quality-rc6/visual-diffs/directory.diff.png';
+      }, (manifestPath) => {
+        assert.throws(
+          () => verifyVisualBaselineProvenance({ repoRoot: REPO_ROOT, manifestPath }),
+          /must be a regular file/,
+        );
+      });
+    } finally {
+      rmSync(artifactPath, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects an untracked file even when its bytes match the committed artifact', () => {
+    withTemporaryArtifact(
+      'untracked-same-bytes.diff.png',
+      (artifactPath) => writeFileSync(
+        artifactPath,
+        readFileSync(resolve(VISUAL_DIFF_ROOT, 'composed-desktop.diff.png')),
+      ),
+      () => withManifest((manifest) => {
+        manifest.entries[0].reviewedDiffArtifact.path =
+          'docs/extensions/evidence/releases/extension-ship-quality-rc6/visual-diffs/untracked-same-bytes.diff.png';
+      }, (manifestPath) => {
+        assert.throws(
+          () => verifyVisualBaselineProvenance({ repoRoot: REPO_ROOT, manifestPath }),
+          /could not read .* from Git/,
+        );
+      }),
+    );
+  });
+
+  it('rejects worktree bytes that diverge from the bound artifact commit', () => {
+    const artifactPath = resolve(VISUAL_DIFF_ROOT, 'composed-desktop.diff.png');
+    const originalBytes = readFileSync(artifactPath);
+    try {
+      writeFileSync(artifactPath, Buffer.concat([originalBytes, Buffer.from([0])]));
+      withManifest(() => {}, (manifestPath) => {
+        assert.throws(
+          () => verifyVisualBaselineProvenance({ repoRoot: REPO_ROOT, manifestPath }),
+          /reviewed diff artifact worktree bytes do not match/,
+        );
+      });
+    } finally {
+      writeFileSync(artifactPath, originalBytes);
+    }
+  });
+
+  it('rejects duplicate reviewed diff artifact paths', () => {
+    withManifest((manifest) => {
+      manifest.entries[1].reviewedDiffArtifact.path = manifest.entries[0].reviewedDiffArtifact.path;
+    }, (manifestPath) => {
+      assert.throws(
+        () => verifyVisualBaselineProvenance({ repoRoot: REPO_ROOT, manifestPath }),
+        /duplicate reviewed diff artifact path/,
       );
     });
   });

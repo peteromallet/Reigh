@@ -68,6 +68,7 @@
       },
       "reviewedDiffArtifact": {
         "path": "docs/extensions/evidence/releases/extension-ship-quality-rc6/visual-diffs/composed-desktop.diff.png",
+        "commit": "bedcc493c8f3d4ddc3a932487bbca2c8acf029d9",
         "sha256": "eed012aef1a4b0492bdbca0b40b7648f31ba35f647b354712bcd10ac7380a0ee",
         "oldSourceCommit": "b87720385079f2b097bd02a2ec2e7e9cf40c688f",
         "newSourceCommit": "e906a208c5fbbd4378165b8b1c59c5fbf33fc4cc"
@@ -93,6 +94,7 @@
       },
       "reviewedDiffArtifact": {
         "path": "docs/extensions/evidence/releases/extension-ship-quality-rc6/visual-diffs/composed-tablet.diff.png",
+        "commit": "bedcc493c8f3d4ddc3a932487bbca2c8acf029d9",
         "sha256": "c82a1b4dbe453f1f74e8f94ddae69eb54088f0bac5402d7150d2c66b870884c5",
         "oldSourceCommit": "b87720385079f2b097bd02a2ec2e7e9cf40c688f",
         "newSourceCommit": "e906a208c5fbbd4378165b8b1c59c5fbf33fc4cc"
@@ -118,6 +120,7 @@
       },
       "reviewedDiffArtifact": {
         "path": "docs/extensions/evidence/releases/extension-ship-quality-rc6/visual-diffs/composed-phone.diff.png",
+        "commit": "bedcc493c8f3d4ddc3a932487bbca2c8acf029d9",
         "sha256": "c26da78f0fb12ad16f09b500633043902b7ddfe102c8f46baa2f43671247d3ee",
         "oldSourceCommit": "b87720385079f2b097bd02a2ec2e7e9cf40c688f",
         "newSourceCommit": "e906a208c5fbbd4378165b8b1c59c5fbf33fc4cc"

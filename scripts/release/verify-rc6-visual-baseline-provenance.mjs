@@ -2,8 +2,8 @@
 
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { lstatSync, readFileSync } from 'node:fs';
+import { dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { inflateSync } from 'node:zlib';
 
@@ -21,6 +21,8 @@ export const EXPECTED_BASELINE_PATHS = Object.freeze([
   'tests/e2e/visual-snapshots/runaway-empty.png',
   'tests/e2e/visual-snapshots/runaway-error.png',
 ]);
+export const VISUAL_DIFF_ARTIFACT_ROOT =
+  'docs/extensions/evidence/releases/extension-ship-quality-rc6/visual-diffs';
 const SHA256 = /^[0-9a-f]{64}$/;
 const COMMIT = /^[0-9a-f]{40}$/;
 
@@ -217,6 +219,49 @@ function assertString(value, path, pattern = /.+/) {
   if (typeof value !== 'string' || !pattern.test(value)) fail(`${path} must be a valid string`);
 }
 
+/**
+ * Resolve a reviewed artifact only after proving it is a canonical,
+ * repository-relative regular file below the release evidence directory.
+ * lstat is intentionally used for every path component: a symlinked parent
+ * is just as capable of escaping the evidence directory as a symlink target.
+ */
+function assertSafeVisualDiffArtifactPath(repoRoot, artifactPath, label) {
+  assertString(artifactPath, label);
+  if (isAbsolute(artifactPath) || artifactPath.includes('\\') || artifactPath.includes('\0')) {
+    fail(`${label} must be a canonical repository-relative path under ${VISUAL_DIFF_ARTIFACT_ROOT}`);
+  }
+  const segments = artifactPath.split('/');
+  if (segments.some((segment) => segment === '' || segment === '.' || segment === '..')) {
+    fail(`${label} must not contain empty, current-directory, or traversal segments`);
+  }
+  if (!artifactPath.startsWith(`${VISUAL_DIFF_ARTIFACT_ROOT}/`)
+    || normalize(artifactPath) !== artifactPath) {
+    fail(`${label} must be a canonical repository-relative path under ${VISUAL_DIFF_ARTIFACT_ROOT}`);
+  }
+  const repoAbsolute = resolve(repoRoot);
+  const absolute = resolve(repoAbsolute, artifactPath);
+  const repoRelative = relative(repoAbsolute, absolute);
+  if (repoRelative !== artifactPath || repoRelative.startsWith(`..${sep}`) || isAbsolute(repoRelative)) {
+    fail(`${label} must remain strictly under ${VISUAL_DIFF_ARTIFACT_ROOT}`);
+  }
+
+  let current = repoAbsolute;
+  for (const segment of repoRelative.split(sep)) {
+    current = join(current, segment);
+    let stats;
+    try {
+      stats = lstatSync(current);
+    } catch (error) {
+      fail(`${label} does not exist as a checked-out repository path: ${error.message}`);
+    }
+    if (stats.isSymbolicLink()) fail(`${label} must not contain symlinks`);
+    const isFinal = current === absolute;
+    if (!isFinal && !stats.isDirectory()) fail(`${label} has a non-directory parent`);
+    if (isFinal && !stats.isFile()) fail(`${label} must be a regular file`);
+  }
+  return absolute;
+}
+
 function deriveDiffMask(oldImage, newImage) {
   const expected = Buffer.alloc(newImage.width * newImage.height * 4);
   let outputOffset = 0;
@@ -322,6 +367,7 @@ export function verifyVisualBaselineProvenance({
   const specBytes = readGitBlob(repoRoot, newCommit, refresh.spec.path);
   if (sha256(specBytes) !== refresh.spec.sha256) fail('refresh.spec hash does not match the source commit');
   const seenPaths = new Set();
+  const seenArtifactPaths = new Set();
   const verifiedEntries = [];
   for (const [index, entry] of manifest.entries.entries()) {
     const path = entry?.path;
@@ -351,15 +397,34 @@ export function verifyVisualBaselineProvenance({
       const artifact = entry.reviewedDiffArtifact;
       if (!artifact || !SHA256.test(artifact.sha256)
         || artifact.oldSourceCommit !== oldCommit
-        || artifact.newSourceCommit !== newCommit) {
+        || artifact.newSourceCommit !== newCommit
+        || !COMMIT.test(artifact.commit ?? '')) {
         fail(`${path} changed pixels require a hashed reviewed diff artifact bound to both source commits`);
       }
       assertString(artifact.path, `${path}.reviewedDiffArtifact.path`);
-      const artifactBytes = readFileSync(resolve(repoRoot, artifact.path));
-      if (sha256(artifactBytes) !== artifact.sha256) {
-        fail(`${path} reviewed diff artifact hash does not match ${artifact.path}`);
+      const artifactPath = assertSafeVisualDiffArtifactPath(
+        repoRoot,
+        artifact.path,
+        `${path}.reviewedDiffArtifact.path`,
+      );
+      if (seenArtifactPaths.has(artifact.path)) {
+        fail(`duplicate reviewed diff artifact path: ${artifact.path}`);
       }
-      const artifactImage = decodePng(artifactBytes);
+      seenArtifactPaths.add(artifact.path);
+      const artifactCommit = resolveCommit(
+        repoRoot,
+        artifact.commit,
+        `${path}.reviewedDiffArtifact.commit`,
+      );
+      const committedArtifactBytes = readGitBlob(repoRoot, artifactCommit, artifact.path);
+      if (sha256(committedArtifactBytes) !== artifact.sha256) {
+        fail(`${path} reviewed diff artifact hash does not match ${artifactCommit}:${artifact.path}`);
+      }
+      const currentArtifactBytes = readFileSync(artifactPath);
+      if (!currentArtifactBytes.equals(committedArtifactBytes)) {
+        fail(`${path} reviewed diff artifact worktree bytes do not match ${artifactCommit}:${artifact.path}`);
+      }
+      const artifactImage = decodePng(committedArtifactBytes);
       expectEqual(
         { width: artifactImage.width, height: artifactImage.height },
         { width: diff.width, height: diff.height },
