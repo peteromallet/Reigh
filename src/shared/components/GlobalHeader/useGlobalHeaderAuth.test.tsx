@@ -19,6 +19,14 @@ vi.mock('@/integrations/supabase/client', () => ({
   }),
 }));
 
+vi.mock('@/shared/contexts/AuthContext', () => ({
+  useAuthSafe: () => ({
+    userId: 'user-1',
+    isAuthenticated: true,
+    isLoading: false,
+  }),
+}));
+
 vi.mock('@/integrations/supabase/auth/AuthStateManager', () => ({
   getAuthStateManager: mocks.getAuthStateManager,
 }));
@@ -31,7 +39,15 @@ describe('useGlobalHeaderAuth', () => {
       data: { subscription: { unsubscribe: vi.fn() } },
     });
     mocks.getAuthStateManager.mockReset().mockReturnValue(null);
-    mocks.from.mockReset();
+    mocks.from.mockReset().mockImplementation((table: string) => ({
+      select: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          maybeSingle: vi.fn().mockResolvedValue(table === 'users'
+            ? { data: { username: 'peter' }, error: null }
+            : { data: { total_visits: 4, successful_referrals: 2 }, error: null }),
+        }),
+      }),
+    }));
   });
 
   afterEach(() => {
@@ -42,7 +58,11 @@ describe('useGlobalHeaderAuth', () => {
     window.history.replaceState({}, '', '/tools/video-editor/harness?localTest=1');
     const { result } = renderHook(() => useGlobalHeaderAuth());
 
-    expect(result.current).toEqual({ session: null, username: null, referralStats: null });
+    expect(result.current).toEqual({
+      session: { user: { id: 'user-1' } },
+      username: null,
+      referralStats: null,
+    });
     await Promise.resolve();
     expect(mocks.getSession).not.toHaveBeenCalled();
     expect(mocks.getAuthStateManager).not.toHaveBeenCalled();
@@ -50,16 +70,16 @@ describe('useGlobalHeaderAuth', () => {
     expect(mocks.from).not.toHaveBeenCalled();
   });
 
-  it('subscribes normally outside local-test mode', async () => {
-    const unsubscribe = vi.fn();
-    mocks.getAuthStateManager.mockReturnValue({
-      subscribe: vi.fn().mockReturnValue(unsubscribe),
-    });
-    const { unmount } = renderHook(() => useGlobalHeaderAuth());
+  it('loads the cloud-owned profile and referral data outside local-test mode', async () => {
+    const { result } = renderHook(() => useGlobalHeaderAuth());
 
-    await waitFor(() => expect(mocks.getSession).toHaveBeenCalledOnce());
-    expect(mocks.getAuthStateManager).toHaveBeenCalledOnce();
-    unmount();
-    expect(unsubscribe).toHaveBeenCalledOnce();
+    await waitFor(() => expect(result.current.username).toBe('peter'));
+    expect(result.current.referralStats).toEqual({ total_visits: 4, successful_referrals: 2 });
+    expect(mocks.from).toHaveBeenCalledWith('users');
+    expect(mocks.from).toHaveBeenCalledWith('referral_stats');
+    // Auth lifecycle remains owned by AuthContext; this hook only reads the
+    // profile/referral records needed by the header.
+    expect(mocks.getSession).not.toHaveBeenCalled();
+    expect(mocks.getAuthStateManager).not.toHaveBeenCalled();
   });
 });

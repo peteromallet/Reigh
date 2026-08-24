@@ -3,12 +3,15 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 
-// Mock calculateDerivedCountsSafe
-const mockCalculateDerivedCountsSafe = vi.fn();
+const mockGalleryList = vi.hoisted(() => vi.fn());
 
-vi.mock('@/shared/lib/generationTransformers', () => ({
-  calculateDerivedCountsSafe: (...args: unknown[]) => mockCalculateDerivedCountsSafe(...args),
+vi.mock('@/integrations/astrid/client', () => ({
+  AstridLocalClient: class {
+    gallery = { list: (...args: unknown[]) => mockGalleryList(...args) };
+  },
 }));
+
+import { initializeProjectSelectionStore } from '@/shared/contexts/projectSelectionStore';
 
 import { useVariantBadges } from '@/shared/hooks/variants/useVariantBadges';
 
@@ -23,10 +26,31 @@ function createWrapper() {
 describe('useVariantBadges', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockCalculateDerivedCountsSafe.mockResolvedValue({
-      derivedCounts: { 'gen-1': 3, 'gen-2': 0 },
-      hasUnviewedVariants: { 'gen-1': true, 'gen-2': false },
-      unviewedVariantCounts: { 'gen-1': 2, 'gen-2': 0 },
+    initializeProjectSelectionStore('project-1');
+    mockGalleryList.mockResolvedValue({
+      generations: [
+        {
+          generation_id: 'gen-1',
+          name: 'Generation 1',
+          type: 'image',
+          starred: false,
+          created_at: '2026-01-01T00:00:00.000Z',
+          updated_at: '2026-01-01T00:00:00.000Z',
+          primary: null,
+          variant_count: 3,
+        },
+        {
+          generation_id: 'gen-2',
+          name: 'Generation 2',
+          type: 'image',
+          starred: false,
+          created_at: '2026-01-01T00:00:00.000Z',
+          updated_at: '2026-01-01T00:00:00.000Z',
+          primary: null,
+          variant_count: 0,
+        },
+      ],
+      next_cursor: null,
     });
   });
 
@@ -51,8 +75,10 @@ describe('useVariantBadges', () => {
 
     const badge1 = result.current.getBadgeData('gen-1');
     expect(badge1.derivedCount).toBe(3);
-    expect(badge1.hasUnviewedVariants).toBe(true);
-    expect(badge1.unviewedVariantCount).toBe(2);
+    // R12 gallery summaries expose counts only. Unviewed detail is deliberately
+    // absent until the bounded R13 variant read is available.
+    expect(badge1.hasUnviewedVariants).toBe(false);
+    expect(badge1.unviewedVariantCount).toBe(0);
 
     const badge2 = result.current.getBadgeData('gen-2');
     expect(badge2.derivedCount).toBe(0);
@@ -86,8 +112,8 @@ describe('useVariantBadges', () => {
       expect(result.current.isLoading).toBe(false);
     });
 
-    // Before marking
-    expect(result.current.getBadgeData('gen-1').hasUnviewedVariants).toBe(true);
+    // R12 summaries have no unviewed detail, but the derived count is present.
+    expect(result.current.getBadgeData('gen-1').hasUnviewedVariants).toBe(false);
 
     // Mark as viewed
     act(() => {
@@ -107,7 +133,7 @@ describe('useVariantBadges', () => {
       { wrapper: createWrapper() }
     );
 
-    expect(mockCalculateDerivedCountsSafe).not.toHaveBeenCalled();
+    expect(mockGalleryList).not.toHaveBeenCalled();
   });
 
   it('does not fetch when generationIds is empty', () => {
@@ -116,7 +142,7 @@ describe('useVariantBadges', () => {
       { wrapper: createWrapper() }
     );
 
-    expect(mockCalculateDerivedCountsSafe).not.toHaveBeenCalled();
+    expect(mockGalleryList).not.toHaveBeenCalled();
   });
 
   it('passes correct IDs to calculateDerivedCountsSafe', async () => {
@@ -127,8 +153,7 @@ describe('useVariantBadges', () => {
       { wrapper: createWrapper() }
     );
 
-    await waitFor(() => {
-      expect(mockCalculateDerivedCountsSafe).toHaveBeenCalledWith(ids);
-    });
+    await waitFor(() => expect(mockGalleryList).toHaveBeenCalled());
+    expect(mockGalleryList).toHaveBeenCalledWith({ limit: 200, cursor: undefined });
   });
 });

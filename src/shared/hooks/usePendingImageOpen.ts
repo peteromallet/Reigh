@@ -32,11 +32,13 @@ export function usePendingImageOpen({
     // Capture variant ID before clearing (will be passed to MediaLightbox on next render)
     capturedVariantIdRef.current = pendingImageVariantId ?? null;
 
-    // Find image by shot_generations.id or generation_id
+    // Find image by shot_generations.id, legacy shot-image entry id, or
+    // generation_id. Deep links can carry any of these identifiers depending
+    // on which surface initiated the open request.
     const index = images.findIndex(
       (img) =>
         img.id === pendingImageToOpen ||
-        img.id === pendingImageToOpen ||
+        img.shotImageEntryId === pendingImageToOpen ||
         img.generation_id === pendingImageToOpen
     );
 

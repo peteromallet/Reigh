@@ -64,6 +64,10 @@ function makeStubHandle(file: File): FileSystemFileHandle {
     name: file.name,
     getFile: async () => file,
     isSameEntry: async () => false,
+    // Persisted local handles must expose the permission methods; a bare
+    // FileSystemFileHandle is intentionally not trusted for the local path.
+    queryPermission: async () => 'granted',
+    requestPermission: async () => 'granted',
   } as unknown as FileSystemFileHandle;
 }
 

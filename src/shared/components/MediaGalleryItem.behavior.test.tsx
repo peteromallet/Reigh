@@ -222,9 +222,9 @@ describe('MediaGalleryItem behavior', () => {
 
     const { container } = render(<MediaGalleryItem {...props} />);
 
-    const image = screen.getByAltText('Generated image 1');
-    expect(image).toHaveAttribute('src', expect.stringContaining('/placeholder.svg'));
-    expect(image).not.toBeVisible();
+    // Placeholder rows intentionally short-circuit before rendering an <img>:
+    // there is no persisted media to load, so the skeleton is the whole UI.
+    expect(screen.queryByAltText('Generated image 1')).toBeNull();
     expect(container.querySelector('.animate-pulse')).not.toBeNull();
   });
 

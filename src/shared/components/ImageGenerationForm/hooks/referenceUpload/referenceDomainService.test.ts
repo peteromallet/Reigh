@@ -77,10 +77,10 @@ describe('referenceDomainService', () => {
       id: 'shot-generation-1',
       generation_id: 'generation-1',
       location: 'https://example.com/generated.png',
-      thumbnail_url: 'https://example.com/generated-thumb.png',
+      thumbUrl: 'https://example.com/generated-thumb.png',
       type: 'uploaded-reference',
     } as import('@/domains/generation/types').GenerationRow & {
-      thumbnail_url: string;
+      thumbUrl: string;
     };
 
     const result = buildStyleReferenceMetadataFromGeneration(generation, 2);

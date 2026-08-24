@@ -137,9 +137,11 @@ describe('variantToGenerationRow', () => {
       createdAt: '2024-01-01T00:00:00Z',
       params: {
         prompt: 'a cat',
-        tool_type: 'image-gen',
-        variant_type: 'upscale',
-        variant_id: 'variant-1',
+        extra: {
+          tool_type: 'image-gen',
+          variant_type: 'upscale',
+          variant_id: 'variant-1',
+        },
       },
       starred: true,
     });
@@ -158,9 +160,11 @@ describe('variantToGenerationRow', () => {
     expect(result.starred).toBe(false);
     expect(result.params).toEqual({
       prompt: undefined,
-      tool_type: undefined,
-      variant_type: undefined,
-      variant_id: 'variant-2',
+      extra: {
+        tool_type: undefined,
+        variant_type: undefined,
+        variant_id: 'variant-2',
+      },
     });
   });
 });

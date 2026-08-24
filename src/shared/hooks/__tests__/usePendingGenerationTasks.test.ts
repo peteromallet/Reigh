@@ -8,16 +8,14 @@ import {
   upsertRealtimeTaskSnapshot,
 } from '@/shared/state/realtimeStore';
 
-const mockSelect = vi.fn();
-vi.mock('@/integrations/supabase/client', () => ({
-  getSupabaseClient: () => ({
-    from: vi.fn(() => ({
-      select: vi.fn(() => ({
-        eq: vi.fn(() => ({
-          in: vi.fn(() => mockSelect()),
-        })),
-      })),
-    })),
+const mockListBridgeTasks = vi.hoisted(() => vi.fn());
+vi.mock('@/integrations/astrid/bridgeTaskReads', () => ({
+  listBridgeTasks: (...args: unknown[]) => mockListBridgeTasks(...args),
+}));
+
+vi.mock('@/integrations/astrid/capabilityCensus.ts', () => ({
+  useAstridCapabilityCensus: () => ({
+    capabilities: { tasks: 'supported', generations: 'supported', media: 'supported' },
   }),
 }));
 
@@ -30,6 +28,7 @@ import { usePendingGenerationTasks } from '@/shared/hooks/tasks/usePendingGenera
 describe('usePendingGenerationTasks', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockListBridgeTasks.mockResolvedValue([]);
     __resetRealtimeTaskStoreForTests();
     resetProjectSelectionStoreForTests();
   });
@@ -50,29 +49,26 @@ describe('usePendingGenerationTasks', () => {
   });
 
   it('bootstraps current-project pending rows into the realtime store and derives generation-specific results from the selector', async () => {
-    mockSelect.mockResolvedValue({
-      data: [
-        {
-          id: 't1',
-          status: 'Queued',
-          task_type: 'video_generation',
-          params: { based_on: 'gen-1' },
-          created_at: '2026-04-17T00:00:00.000Z',
-          project_id: 'proj-1',
-          updated_at: null,
-        },
-        {
-          id: 't2',
-          status: 'In Progress',
-          task_type: 'video_generation',
-          params: { based_on: 'gen-other' },
-          created_at: '2026-04-17T00:00:01.000Z',
-          project_id: 'proj-1',
-          updated_at: null,
-        },
-      ],
-      error: null,
-    });
+    mockListBridgeTasks.mockResolvedValue([
+      {
+        id: 't1',
+        status: 'Queued',
+        taskType: 'video_generation',
+        params: { based_on: 'gen-1' },
+        createdAt: '2026-04-17T00:00:00.000Z',
+        projectId: 'proj-1',
+        updatedAt: null,
+      },
+      {
+        id: 't2',
+        status: 'In Progress',
+        taskType: 'video_generation',
+        params: { based_on: 'gen-other' },
+        createdAt: '2026-04-17T00:00:01.000Z',
+        projectId: 'proj-1',
+        updatedAt: null,
+      },
+    ]);
 
     const { result } = renderHookWithProviders(() =>
       usePendingGenerationTasks('gen-1', 'proj-1')
@@ -90,10 +86,7 @@ describe('usePendingGenerationTasks', () => {
   });
 
   it('handles query errors gracefully', async () => {
-    mockSelect.mockResolvedValue({
-      data: null,
-      error: { message: 'Query failed' },
-    });
+    mockListBridgeTasks.mockRejectedValue(new Error('Query failed'));
 
     const { result } = renderHookWithProviders(() =>
       usePendingGenerationTasks('gen-1', 'proj-1')
@@ -106,24 +99,21 @@ describe('usePendingGenerationTasks', () => {
   });
 
   it('detects generation references in nested params', async () => {
-    mockSelect.mockResolvedValue({
-      data: [
-        {
-          id: 't1',
-          status: 'Queued',
-          task_type: 'travel_segment',
-          params: {
-            orchestrator_details: {
-              pair_shot_generation_ids: ['gen-1', 'gen-2'],
-            },
+    mockListBridgeTasks.mockResolvedValue([
+      {
+        id: 't1',
+        status: 'Queued',
+        taskType: 'travel_segment',
+        params: {
+          orchestrator_details: {
+            pair_shot_generation_ids: ['gen-1', 'gen-2'],
           },
-          created_at: '2026-04-17T00:00:00.000Z',
-          project_id: 'proj-1',
-          updated_at: null,
         },
-      ],
-      error: null,
-    });
+        createdAt: '2026-04-17T00:00:00.000Z',
+        projectId: 'proj-1',
+        updatedAt: null,
+      },
+    ]);
 
     const { result } = renderHookWithProviders(() =>
       usePendingGenerationTasks('gen-1', 'proj-1')
@@ -135,20 +125,17 @@ describe('usePendingGenerationTasks', () => {
   });
 
   it('reflects realtime-store updates for the same generation after the bootstrap query seeds the project scope', async () => {
-    mockSelect.mockResolvedValue({
-      data: [
-        {
-          id: 't1',
-          status: 'Queued',
-          task_type: 'video_generation',
-          params: { based_on: 'gen-1' },
-          created_at: '2026-04-17T00:00:00.000Z',
-          project_id: 'proj-1',
-          updated_at: null,
-        },
-      ],
-      error: null,
-    });
+    mockListBridgeTasks.mockResolvedValue([
+      {
+        id: 't1',
+        status: 'Queued',
+        taskType: 'video_generation',
+        params: { based_on: 'gen-1' },
+        createdAt: '2026-04-17T00:00:00.000Z',
+        projectId: 'proj-1',
+        updatedAt: null,
+      },
+    ]);
 
     const { result } = renderHookWithProviders(() =>
       usePendingGenerationTasks('gen-1', 'proj-1')

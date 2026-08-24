@@ -177,7 +177,7 @@ describe('DesktopLightboxOverlay', () => {
     render(<DesktopLightboxOverlay {...props} />);
 
     fireEvent.click(screen.getByTestId('delete-image'));
-    expect(props.managerProps.onImageDelete).toHaveBeenCalledWith('entry-1');
+    expect(props.managerProps.onImageDelete).toHaveBeenCalledWith('img-1');
 
     fireEvent.click(screen.getByTestId('change-shot'));
     expect(props.setLightboxSelectedShotId).toHaveBeenCalledWith('shot-2');

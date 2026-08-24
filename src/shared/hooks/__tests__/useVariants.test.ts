@@ -2,13 +2,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
-// Mock supabase
-const mockFrom = vi.fn();
-vi.mock('@/integrations/supabase/client', () => ({
-  getSupabaseClient: () => ({
-    from: (...args: unknown[]) => mockFrom(...args),
-  }),
+
+const mockGalleryGet = vi.hoisted(() => vi.fn());
+vi.mock('@/integrations/astrid/client', () => ({
+  AstridLocalClient: class {
+    gallery = { get: (...args: unknown[]) => mockGalleryGet(...args) };
+  },
 }));
+
+import { initializeProjectSelectionStore } from '@/shared/contexts/projectSelectionStore';
 
 vi.mock('@/shared/contexts/AuthContext', () => ({
   useAuthSafe: () => ({
@@ -42,6 +44,23 @@ const createVariant = (
   ...overrides,
 });
 
+function setVariants(variants: GenerationVariant[]) {
+  mockGalleryGet.mockResolvedValue({
+    variants: variants.map((variant) => ({
+      id: variant.id,
+      generation_id: variant.generation_id,
+      media_id: variant.location,
+      variant_type: variant.variant_type,
+      name: variant.name,
+      params: variant.params ?? undefined,
+      is_primary: variant.is_primary,
+      starred: variant.starred,
+      viewed_at: variant.viewed_at,
+      created_at: variant.created_at,
+    })),
+  });
+}
+
 function createWrapper() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
@@ -56,6 +75,7 @@ function createWrapper() {
 describe('useVariants', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    initializeProjectSelectionStore('project-1');
   });
 
   describe('fetching', () => {
@@ -88,14 +108,7 @@ describe('useVariants', () => {
         createVariant({ id: 'v-2' }),
       ];
 
-      const mockOrder = vi.fn().mockResolvedValue({ data: variants, error: null });
-      mockFrom.mockReturnValue({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            order: mockOrder,
-          }),
-        }),
-      });
+      setVariants(variants);
 
       const { wrapper } = createWrapper();
 
@@ -117,13 +130,7 @@ describe('useVariants', () => {
       const primary = createVariant({ id: 'v-1', is_primary: true });
       const secondary = createVariant({ id: 'v-2', is_primary: false });
 
-      mockFrom.mockReturnValue({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            order: vi.fn().mockResolvedValue({ data: [primary, secondary], error: null }),
-          }),
-        }),
-      });
+      setVariants([primary, secondary]);
 
       const { wrapper } = createWrapper();
 
@@ -145,13 +152,7 @@ describe('useVariants', () => {
         createVariant({ id: 'v-2', is_primary: false }),
       ];
 
-      mockFrom.mockReturnValue({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            order: vi.fn().mockResolvedValue({ data: variants, error: null }),
-          }),
-        }),
-      });
+      setVariants(variants);
 
       const { wrapper } = createWrapper();
 
@@ -171,13 +172,7 @@ describe('useVariants', () => {
       const primary = createVariant({ id: 'v-1', is_primary: true });
       const secondary = createVariant({ id: 'v-2', is_primary: false });
 
-      mockFrom.mockReturnValue({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            order: vi.fn().mockResolvedValue({ data: [primary, secondary], error: null }),
-          }),
-        }),
-      });
+      setVariants([primary, secondary]);
 
       const { wrapper } = createWrapper();
 
@@ -199,13 +194,7 @@ describe('useVariants', () => {
         createVariant({ id: 'v-2', is_primary: false }),
       ];
 
-      mockFrom.mockReturnValue({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            order: vi.fn().mockResolvedValue({ data: variants, error: null }),
-          }),
-        }),
-      });
+      setVariants(variants);
 
       const { wrapper } = createWrapper();
 
@@ -227,13 +216,7 @@ describe('useVariants', () => {
       const primary = createVariant({ id: 'v-1', is_primary: true });
       const secondary = createVariant({ id: 'v-2', is_primary: false });
 
-      mockFrom.mockReturnValue({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            order: vi.fn().mockResolvedValue({ data: [primary, secondary], error: null }),
-          }),
-        }),
-      });
+      setVariants([primary, secondary]);
 
       const { wrapper } = createWrapper();
 
@@ -256,13 +239,7 @@ describe('useVariants', () => {
     it('falls back to primary when set to non-existent id', async () => {
       const primary = createVariant({ id: 'v-1', is_primary: true });
 
-      mockFrom.mockReturnValue({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            order: vi.fn().mockResolvedValue({ data: [primary], error: null }),
-          }),
-        }),
-      });
+      setVariants([primary]);
 
       const { wrapper } = createWrapper();
 
@@ -286,13 +263,7 @@ describe('useVariants', () => {
     it('can be set to null', async () => {
       const primary = createVariant({ id: 'v-1', is_primary: true });
 
-      mockFrom.mockReturnValue({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            order: vi.fn().mockResolvedValue({ data: [primary], error: null }),
-          }),
-        }),
-      });
+      setVariants([primary]);
 
       const { wrapper } = createWrapper();
 

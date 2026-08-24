@@ -140,7 +140,7 @@ describe('useTimelineEnhancedPromptOperations', () => {
         metadata: { enhanced_prompt: '', source: 'manual' },
       }),
       createGeneration({
-        id: 'sg-3',
+        id: '',
         shotImageEntryId: null,
         metadata: { enhanced_prompt: 'skipped because missing id' },
       }),
