@@ -2,7 +2,8 @@ import { extractVideoMetadata } from '@/shared/lib/media/videoMetadata.ts';
 import type { AssetRegistryEntry } from '@/tools/video-editor/types/index.ts';
 import { runAllParsers } from './assetParserRuntime';
 import type { RegisteredParser } from './assetParserRuntime';
-import type { AssetParserPreflightInput, ParserDiagnostic } from './assetParserRuntime';
+import type { AssetParserPreflightInput } from './assetParserRuntime';
+import type { ParserDiagnostic } from '@reigh/editor-sdk';
 
 const VIDEO_EXTENSION_TYPES: Record<string, string> = {
   '.avi': 'video/x-msvideo',

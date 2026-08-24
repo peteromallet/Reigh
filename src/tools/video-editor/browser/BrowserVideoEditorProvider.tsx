@@ -9,6 +9,7 @@ import type {
   VideoEditorExporter,
   VideoEditorHostContext,
 } from '@/tools/video-editor/lib/browser-runtime.ts';
+import { createLocalAssetResolver } from '@/tools/video-editor/lib/browser-runtime.ts';
 import type { ExtensionDiagnostic, ReighExtension } from '@reigh/editor-sdk';
 import { getExtensionSmokeExtension } from '@/sdk/smoke/extensionSmoke';
 import { useExtensionLoaderWiring } from '@/tools/video-editor/runtime/useExtensionLoaderWiring';
@@ -144,11 +145,11 @@ export function BrowserVideoEditorProvider({
       setEffectiveRepository(repo);
 
       // Derive bundleStore: if the repository has getBundleContent, use it.
-      if (
-        repo &&
-        typeof (repo as Record<string, unknown>).getBundleContent === "function"
-      ) {
-        setEffectiveBundleStore(repo as unknown as BundleContentStore);
+      if (repo && 'getBundleContent' in repo && typeof repo.getBundleContent === 'function') {
+        const getBundleContent = repo.getBundleContent;
+        setEffectiveBundleStore({
+          getBundleContent: (ref) => getBundleContent.call(repo, ref),
+        });
       } else {
         setEffectiveBundleStore(null);
       }
@@ -164,6 +165,8 @@ export function BrowserVideoEditorProvider({
       service.dispose().catch(() => {});
     };
   }, [explicitRepository, explicitBundleStore, userId, timelineId]);
+
+  const effectiveAssetResolver = assetResolver ?? createLocalAssetResolver();
 
   // ---- Smoke extension wiring (prepend when ?extensionSmoke=1) -------------
   const effectiveDirectExtensions = useMemo<readonly ReighExtension[] | undefined>(() => {
@@ -198,7 +201,7 @@ export function BrowserVideoEditorProvider({
       timelineName={timelineName}
       userId={userId}
       effectCatalog={effectCatalog}
-      runtime={{ assetResolver, exporter, hostContext }}
+      runtime={{ assetResolver: effectiveAssetResolver, exporter, hostContext }}
       extensions={resolvedExtensions}
       packageStateEntries={packageStateEntries}
       extensionStateRepository={effectiveRepository ?? null}

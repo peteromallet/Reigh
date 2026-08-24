@@ -30,7 +30,11 @@ import type {
   DisposeHandle,
   ExtensionDiagnostic,
 } from '@reigh/editor-sdk';
-import type { PackageStateInventoryEntry, ExtensionRuntime } from '@/tools/video-editor/runtime/extensionSurface';
+import type {
+  PackageContributionSummary,
+  PackageStateInventoryEntry,
+  ExtensionRuntime,
+} from '@/tools/video-editor/runtime/extensionSurface';
 import type {
   ExtensionPackRecord,
   ExtensionStateRepository,
@@ -51,6 +55,22 @@ export type HarnessScenario =
   | 'all';
 
 type MockHarnessScenario = Exclude<HarnessScenario, 'manager-cycle' | 'all'>;
+
+type HarnessDiagnostic = Omit<Diagnostic, 'code'> & {
+  code?: string;
+  timestamp?: number;
+};
+
+type HarnessContributionSummary = Omit<PackageContributionSummary, 'contributionIds'> & {
+  contributionIds?: Readonly<Record<string, readonly string[]>>;
+};
+
+type HarnessEntryOverrides = Omit<
+  Partial<PackageStateInventoryEntry>,
+  'contributionSummary'
+> & {
+  contributionSummary?: HarnessContributionSummary | null;
+};
 
 const VALID_SCENARIOS: ReadonlySet<string> = new Set([
   'populated',
@@ -76,8 +96,34 @@ class MockDiagnosticCollection implements DiagnosticCollection {
   private _diagnostics: Diagnostic[] = [];
   private _listeners = new Set<() => void>();
 
-  setDiagnostics(diags: Diagnostic[]) {
-    this._diagnostics = diags;
+  setDiagnostics(diags: readonly HarnessDiagnostic[]) {
+    this._diagnostics = diags.map(({ timestamp: _timestamp, code, ...diagnostic }) => ({
+      ...diagnostic,
+      code: code ?? 'harness/diagnostic',
+    }));
+    for (const l of this._listeners) l();
+  }
+
+  get snapshot(): readonly Diagnostic[] {
+    return this._diagnostics;
+  }
+
+  publish(diagnostic: Diagnostic): void {
+    this._diagnostics = [...this._diagnostics, diagnostic];
+    for (const l of this._listeners) l();
+  }
+
+  remove(predicate: (diagnostic: Diagnostic) => boolean): void {
+    this._diagnostics = this._diagnostics.filter((diagnostic) => !predicate(diagnostic));
+    for (const l of this._listeners) l();
+  }
+
+  removeByExtensionId(extensionId: string): void {
+    this.remove((diagnostic) => diagnostic.extensionId === extensionId);
+  }
+
+  clear(): void {
+    this._diagnostics = [];
     for (const l of this._listeners) l();
   }
 
@@ -130,7 +176,13 @@ function makeMockRepository(): ExtensionStateRepository {
     getLock: async () => ({ entries: {}, lastUpdatedAt: '' }),
     putLockEntry: async () => {},
     deleteLockEntry: async () => {},
-    getFullExtensionState: async () => ({ enablement: {}, devOverrides: {}, settings: {}, packs: {} }),
+    getFullExtensionState: async () => ({
+      enablement: {},
+      devOverrides: {},
+      settings: {},
+      packs: {},
+      lock: { entries: {}, lastUpdatedAt: '' },
+    }),
   };
 }
 
@@ -187,17 +239,31 @@ function makeEmptyExtensionRuntime(): ExtensionRuntime {
 // Scenario builders
 // ---------------------------------------------------------------------------
 
-function makeEntry(overrides: Partial<PackageStateInventoryEntry> & { extensionId: string; packageState: PackageStateInventoryEntry['packageState'] }): PackageStateInventoryEntry {
+function makeEntry(
+  overrides: HarnessEntryOverrides & {
+    extensionId: string;
+    packageState: PackageStateInventoryEntry['packageState'];
+  },
+): PackageStateInventoryEntry {
+  const { contributionSummary, ...entry } = overrides;
   return {
     stateReason: '',
     packageMetadata: null,
-    ...overrides,
+    ...entry,
+    ...(contributionSummary
+      ? {
+          contributionSummary: {
+            ...contributionSummary,
+            contributionIds: contributionSummary.contributionIds ?? {},
+          },
+        }
+      : {}),
   };
 }
 
 interface ScenarioData {
   packageStateInventory: PackageStateInventoryEntry[];
-  diagnostics: Diagnostic[];
+  diagnostics: HarnessDiagnostic[];
   activityEvents: ExtensionStatusEvent[];
 }
 
@@ -268,7 +334,7 @@ function buildPackageErrorScenario(): ScenarioData {
         extensionId: 'ext.invalid-manifest',
         packageState: 'invalid',
         stateReason: 'Manifest missing required field "id"',
-        packageMetadata: { label: 'Invalid Manifest', version: '?.?.?', publisher: null, description: 'Corrupted extension manifest.' },
+        packageMetadata: { label: 'Invalid Manifest', version: '?.?.?', description: 'Corrupted extension manifest.' },
       }),
       makeEntry({
         extensionId: 'ext.old-api',

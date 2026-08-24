@@ -25,6 +25,7 @@ import type { ExtensionPackRecord } from '@/tools/video-editor/runtime/extension
 import type { PackageStateInventoryEntry } from '@/tools/video-editor/runtime/extensionSurface';
 import { computePackageContributionSummary } from '@/tools/video-editor/runtime/extensionSurface';
 import type { ExtensionContribution } from '@reigh/editor-sdk';
+import type { PackageContributionSummary } from '@/tools/video-editor/runtime/families/FamilyRuntimeAssembly';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
