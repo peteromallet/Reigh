@@ -29,11 +29,40 @@ const BASE_URL = (process.env.BASE_URL || 'http://127.0.0.1:2222').replace(/\/+$
 // this file so the stub works from any cwd.
 const PUBLIC_DIR = new URL('../../../public/', import.meta.url);
 
-const { registry, config: initialConfig, timelineSummary } = createTimelineFixtures({
+const initialFixtures = createTimelineFixtures({
   assetSrcBaseUrl: BASE_URL,
 });
-let config = initialConfig;
+const { timelineSummary } = initialFixtures;
+let config = initialFixtures.config;
+let registry = initialFixtures.registry;
 let configVersion = 1;
+
+// Every mutating route shares one queue. This makes a hard reset atomic with
+// respect to CAS saves and registry writes instead of allowing an async body
+// read to interleave half of one mutation with another.
+let mutationTail = Promise.resolve();
+
+function serializeMutation(operation) {
+  const result = mutationTail.then(operation, operation);
+  mutationTail = result.then(() => undefined, () => undefined);
+  return result;
+}
+
+function resetPristineState() {
+  const pristine = createTimelineFixtures({ assetSrcBaseUrl: BASE_URL });
+  config = pristine.config;
+  registry = pristine.registry;
+  // Versions are store history, not fixture contents. Never rewind them: a
+  // client holding a pre-reset version must remain stale after every reset.
+  configVersion += 1;
+  return {
+    reset: true,
+    ...timelineSummary,
+    config,
+    config_version: configVersion,
+    registry,
+  };
+}
 
 const RUNAWAY_TOTAL_COUNT = 566;
 const RUNAWAY_PAGE_LIMIT = 1_000;
@@ -171,6 +200,12 @@ const server = http.createServer(async (req, res) => {
   if (path === '/health') return send(res, 200, { ok: true });
   if (path === '/projects') return send(res, 200, { projects: [PROJECT] });
 
+  // Test-only control plane for the deterministic stub. The real bridge never
+  // exposes this route, and support.ts never calls it under REAL_BRIDGE=1.
+  if (path === '/__test/reset' && req.method === 'POST') {
+    return serializeMutation(() => send(res, 200, resetPristineState()));
+  }
+
   const runawayMatch = path.match(/^\/v1\/projects\/([^/]+)\/runaway-transitions$/);
   if (runawayMatch && req.method === 'GET') {
     return send(res, 200, runawayPage(url));
@@ -251,35 +286,39 @@ const server = http.createServer(async (req, res) => {
 
   const saveMatch = path.match(/^\/projects\/([^/]+)\/timelines\/([^/]+)\/save$/);
   if (saveMatch && req.method === 'POST') {
-    const body = await readBody(req);
-    // Optimistic concurrency. `expected_version` is optional on the wire: a
-    // client that omits it keeps the old last-writer-wins behaviour, which is
-    // what every pre-CAS caller relies on. When it *is* sent and does not match
-    // head, the save is rejected so the client can reload and retry instead of
-    // silently reverting whatever landed in between.
-    if (typeof body?.expected_version === 'number' && body.expected_version !== configVersion) {
-      console.log(`[bridge] 409 conflict: expected_version ${body.expected_version} != config_version ${configVersion}`);
-      return send(res, 409, {
-        error: 'timeline_version_conflict',
-        detail: `expected_version ${body.expected_version} does not match config_version ${configVersion}`,
-        config_version: configVersion,
-      });
-    }
-    if (body?.config) config = body.config;
-    // B4: the combined CAS save carries config + registry (asset registration
-    // rides the save — there is no separate registry write path).
-    if (body?.registry) {
-      registry.assets = { ...registry.assets, ...(body.registry.assets ?? {}) };
-    }
-    configVersion += 1;
-    return send(res, 200, { ...timelineSummary, config, config_version: configVersion, registry });
+    return serializeMutation(async () => {
+      const body = await readBody(req);
+      // Optimistic concurrency. `expected_version` is optional on the wire: a
+      // client that omits it keeps the old last-writer-wins behaviour, which is
+      // what every pre-CAS caller relies on. When it *is* sent and does not match
+      // head, the save is rejected so the client can reload and retry instead of
+      // silently reverting whatever landed in between.
+      if (typeof body?.expected_version === 'number' && body.expected_version !== configVersion) {
+        console.log(`[bridge] 409 conflict: expected_version ${body.expected_version} != config_version ${configVersion}`);
+        return send(res, 409, {
+          error: 'timeline_version_conflict',
+          detail: `expected_version ${body.expected_version} does not match config_version ${configVersion}`,
+          config_version: configVersion,
+        });
+      }
+      if (body?.config) config = body.config;
+      // B4: the combined CAS save carries config + registry (asset registration
+      // rides the save — there is no separate registry write path).
+      if (body?.registry) {
+        registry.assets = { ...registry.assets, ...(body.registry.assets ?? {}) };
+      }
+      configVersion += 1;
+      return send(res, 200, { ...timelineSummary, config, config_version: configVersion, registry });
+    });
   }
 
   const registryMatch = path.match(/^\/projects\/([^/]+)\/timelines\/([^/]+)\/registry$/);
   if (registryMatch && req.method === 'PUT') {
-    const body = await readBody(req);
-    if (body?.assets) registry.assets = body.assets;
-    return send(res, 200, registry);
+    return serializeMutation(async () => {
+      const body = await readBody(req);
+      if (body?.assets) registry.assets = body.assets;
+      return send(res, 200, registry);
+    });
   }
 
   return send(res, 404, { error: 'not_found', detail: `No bridge route for ${path}` });

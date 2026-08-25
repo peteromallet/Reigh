@@ -1343,3 +1343,76 @@ identity.
   Backporting the newer clean-machine UX would create a new Astrid SHA, require
   every Reigh pin and runbook binding to change, and start a fresh paired
   evidence cycle; that is a deliberate future upgrade, not an RC6 hot fix.
+
+### A shared mutable browser stub needs a complete atomic reset
+
+- The timeline Playwright project reused one Astrid stub process across its
+  serial scenarios, while its reset helper restored only tracks and clips.
+  Tests that changed output settings, extension `app` metadata, or registry
+  assets therefore contaminated later files. Order-dependent failures looked
+  like unrelated viewport, overlay, and persistence regressions.
+- The stub now serializes every mutation and exposes a test-only atomic hard
+  reset that replaces the complete config and registry with a freshly built
+  pristine fixture while monotonically advancing the CAS version. Playwright
+  calls it before every ordinary stub test and verifies the public read surface;
+  real-bridge mode refuses the control route. The full 26-test timeline suite
+  passes twice in succession, proving reset behavior across repeated process
+  lifetimes rather than only in a unit fixture.
+
+### Browser test inventory must encode service authority
+
+- Real-bridge, caption-export, and caption frame-rate matrix specs were
+  collected by the generic stub project even though the stub intentionally
+  cannot admit or execute render tasks. Four authenticated real-bridge cases
+  failed at the first request, then serial mode hid the remaining cases as
+  unrun. A file's presence under one directory is not evidence that every
+  project provides its required services.
+- The ordinary timeline project now owns only deterministic stub scenarios;
+  the authenticated bridge command owns the real bridge contract. Caption
+  export remains a separate renderer-owned concern until its real Astrid task
+  executor and fixtures exist. List-only tests and explicit commands should
+  freeze these inventories so adding a spec cannot silently move authority.
+
+### Expected capability probes can emit two browser failure signals
+
+- A deliberate missing-media probe returns the expected HTTP 404, but Chromium
+  also emits `requestfailed` with `net::ERR_ABORTED` for the same request. Tests
+  that allowed only the response still failed; broad suppression of aborted
+  requests would have hidden unrelated network defects.
+- The affected suites now ignore only the exact sentinel pathname paired with
+  the exact abort error, while retaining every other 4xx/5xx and request
+  failure. Browser noise allowances need both URL and failure-class identity,
+  not message-prefix filtering alone.
+
+### A readiness script can be green in unit mode while its browser topology is absent
+
+- `test:readiness:e2e` started Vite but not the Astrid stub required by its
+  explicit local-test URLs. The first full run produced 33 failures and repeated
+  `/health` connection refusals. Eleven stale expectations were then repeated
+  across desktop, tablet, and phone: state attributes moved to package cards,
+  duplicate packages were incorrectly counted as runtime issues, the invalid
+  route omitted deterministic local parameters, and the empty fixture was
+  expected to invent an activity region.
+- The readiness command now explicitly opts into its isolated bridge topology,
+  while unrelated default Playwright projects remain bridge-independent. The
+  assertions target the current accessible contract without weakening counts
+  or geometry, and all 171 device cases pass. A named release script must own
+  every server its URL implies; ambient dev processes are not dependencies.
+
+### Task admission is not real video export
+
+- Reigh correctly admits project-scoped `render_export` work to Astrid and
+  polls the common task ledger, but the pinned Astrid capability resolves that
+  family to `rendering.timeline_visualize`. Its adapter publishes an evidence
+  directory, not an H.264 MP4, and the paired/browser harness starts no worker
+  that could settle an admitted render. A Download button assertion would
+  therefore wait until timeout even though admission, persistence, and bridge
+  authentication all work.
+- Astrid already contains a genuine `rendering.render` MP4 executor, but it has
+  no task adapter connecting timeline snapshot authority, managed inputs,
+  completion media, and the bridge ledger. Ship-quality requires that dedicated
+  adapter plus a bounded executor in the paired harness; adding auth headers or
+  fabricating a stub MP4 would only disguise the missing authority. The
+  seven-rate caption matrix remains valuable renderer-owned coverage and must
+  not be silently counted as a real-bridge pass until its assets and Runaway
+  fixtures are seeded through Astrid's managed stores.

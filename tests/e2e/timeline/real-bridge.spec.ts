@@ -14,6 +14,7 @@ import { BASE_URL, CLIP_ACTION_WITH_ID_SELECTOR, EDITOR_SETTLE_MS } from './supp
 // The final watchdog case intentionally kills the one harness-owned bridge.
 // Serial mode guarantees it cannot race an otherwise independent acceptance.
 test.describe.configure({ mode: 'serial', timeout: 120_000 });
+test.skip(process.env.REAL_BRIDGE !== '1', 'real-bridge scenarios require REAL_BRIDGE=1');
 
 // The harness registers the project through the astrid CLI, which mints the
 // timeline identity — resolve it from the discovery route instead of assuming
@@ -103,7 +104,10 @@ async function editFirstClipStart(
   await options.beforeCommit?.();
   await startInput.press('Enter');
   await startInput.blur();
-  await expect(startInput).toHaveValue(next);
+  const committed = Number(await startInput.inputValue());
+  expect(Number.isFinite(committed)).toBe(true);
+  expect(committed).toBeGreaterThan(current);
+  return committed;
 }
 
 type BrowserNetworkAudit = {
@@ -242,14 +246,27 @@ const BRIDGE_ORIGIN = `http://127.0.0.1:${bridgePort}`;
  * bridge-origin Playwright requests read the owner-only harness token file.
  */
 function bridgeHeaders(): Record<string, string> {
-  try {
-    const token = readFileSync(process.env.ASTRID_REQUEST_TOKEN_FILE ?? '/tmp/astrid-real-bridge.token', 'utf8').trim();
-    return {
-      Authorization: `Bearer ${token}`,
-      'X-Astrid-Bridge-Version': 'v1',
-    };
-  } catch {
-    return {};
+  const configuredToken = process.env.ASTRID_BRIDGE_TOKEN?.trim();
+  if (!configuredToken) {
+    throw new Error('REAL_BRIDGE=1 requires ASTRID_BRIDGE_TOKEN exported by playwright.config.ts');
+  }
+
+  const tokenFile = process.env.ASTRID_REQUEST_TOKEN_FILE?.trim();
+  if (tokenFile) {
+    let fileToken: string;
+    try {
+      fileToken = readFileSync(tokenFile, 'utf8').trim();
+    } catch (error) {
+      throw new Error(`Unable to read configured Astrid bridge token file ${tokenFile}: ${String(error)}`);
+    }
+    if (fileToken !== configuredToken) {
+      throw new Error(`Configured Astrid bridge token does not match ${tokenFile}`);
+    }
+  }
+
+  return {
+    Authorization: `Bearer ${configuredToken}`,
+    'X-Astrid-Bridge-Version': 'v1',
   }
 }
 

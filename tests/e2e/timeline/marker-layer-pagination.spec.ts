@@ -1,15 +1,52 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { BASE_URL, PROJECT_SLUG, TIMELINE_SLUG, browserEvidencePath } from './support';
 
 const EDITOR_URL = `${BASE_URL}/tools/video-editor?localProject=${PROJECT_SLUG}&localTimeline=${TIMELINE_SLUG}&localTest=1&timelineOverlayCanary=1`;
+const CAPABILITY_PROBE_PATH = `/api/astrid/projects/${PROJECT_SLUG}/media/__reigh_capability_probe__/content`;
+
+function collectIssues(page: Page): string[] {
+  const issues: string[] = [];
+  const isExpectedCapabilityProbe404 = (url: string, status: number): boolean => {
+    if (status !== 404) return false;
+    try {
+      return new URL(url).pathname === CAPABILITY_PROBE_PATH;
+    } catch {
+      return false;
+    }
+  };
+
+  page.on('pageerror', (error) => issues.push(`[pageerror] ${error.message}`));
+  page.on('console', (message) => {
+    // Chromium's generic failed-resource console text has no URL. Response
+    // and request events below classify it without hiding application errors.
+    if (message.type() === 'error' && !message.text().startsWith('Failed to load resource:')) {
+      issues.push(`[console.error] ${message.text()}`);
+    }
+  });
+  page.on('response', (response) => {
+    if (response.status() >= 400 && !isExpectedCapabilityProbe404(response.url(), response.status())) {
+      issues.push(`[http ${response.status()}] ${response.url()}`);
+    }
+  });
+  page.on('requestfailed', (request) => {
+    const failure = request.failure()?.errorText ?? 'unknown';
+    let expectedProbeAbort = false;
+    try {
+      expectedProbeAbort = failure === 'net::ERR_ABORTED'
+        && new URL(request.url()).pathname === CAPABILITY_PROBE_PATH;
+    } catch {
+      // Keep malformed URLs actionable below.
+    }
+    if (!expectedProbeAbort) {
+      issues.push(`[requestfailed] ${request.url()} — ${failure}`);
+    }
+  });
+  return issues;
+}
 
 test('declutters composed marker layers into deterministic accessible pages', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1200, height: 800 });
-  const issues: string[] = [];
-  page.on('pageerror', (error) => issues.push(`[pageerror] ${error.message}`));
-  page.on('console', (message) => {
-    if (message.type() === 'error') issues.push(`[console.error] ${message.text()}`);
-  });
+  const issues = collectIssues(page);
   await page.addInitScript(() => localStorage.removeItem('reigh.dev-extensions.disabled'));
   await page.goto(EDITOR_URL, { waitUntil: 'domcontentloaded', timeout: 45_000 });
 

@@ -5,6 +5,7 @@ import http from 'node:http';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { createTimelineFixtures } from '../../../src/test/bridgeFixtures.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const STUB = resolve(HERE, 'astrid-bridge-stub.mjs');
@@ -104,6 +105,58 @@ test('deterministic Astrid stub serves the typed Runaway contract', async () => 
     const generations = await fetch(`${origin}/projects/demo-project/generations?limit=1`);
     assert.equal(generations.status, 200);
     assert.deepEqual(await generations.json(), { generations: [], next_cursor: null });
+
+    const timelineUrl = `${origin}/projects/demo-project/timelines/demo-timeline`;
+    const pristine = createTimelineFixtures({ assetSrcBaseUrl: origin });
+    const initialTimeline = await (await fetch(timelineUrl)).json();
+    const mutatedConfig = {
+      ...initialTimeline.config,
+      app: { leaked_from_previous_test: true },
+      output: { ...initialTimeline.config.output, fps: 12 },
+      clips: [{ id: 'mutated-only', track: 'V1', at: 99, clipType: 'text', hold: 1 }],
+    };
+    const mutatedRegistry = {
+      assets: {
+        ...initialTimeline.registry.assets,
+        'mutated-only': { file: 'mutated.bin', type: 'application/octet-stream' },
+      },
+    };
+    const mutation = await fetch(`${timelineUrl}/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        config: mutatedConfig,
+        registry: mutatedRegistry,
+        expected_version: initialTimeline.config_version,
+      }),
+    });
+    assert.equal(mutation.status, 200);
+    const mutated = await mutation.json();
+    assert.deepEqual(mutated.config, mutatedConfig);
+    assert.ok(mutated.registry.assets['mutated-only']);
+
+    const firstResetResponse = await fetch(`${origin}/__test/reset`, { method: 'POST' });
+    assert.equal(firstResetResponse.status, 200);
+    assert.equal(firstResetResponse.headers.get('X-Astrid-Bridge-Version'), 'v1');
+    const firstReset = await firstResetResponse.json();
+    assert.equal(firstReset.reset, true);
+    assert.ok(firstReset.config_version > mutated.config_version);
+    assert.deepEqual(firstReset.config, pristine.config);
+    assert.deepEqual(firstReset.registry, pristine.registry);
+    assert.equal(firstReset.config.app, undefined);
+    assert.equal(firstReset.registry.assets['mutated-only'], undefined);
+
+    const publicAfterReset = await (await fetch(timelineUrl)).json();
+    assert.equal(publicAfterReset.config_version, firstReset.config_version);
+    assert.deepEqual(publicAfterReset.config, pristine.config);
+    assert.deepEqual(publicAfterReset.registry, pristine.registry);
+
+    const secondResetResponse = await fetch(`${origin}/__test/reset`, { method: 'POST' });
+    assert.equal(secondResetResponse.status, 200);
+    const secondReset = await secondResetResponse.json();
+    assert.equal(secondReset.config_version, firstReset.config_version + 1);
+    assert.deepEqual(secondReset.config, pristine.config);
+    assert.deepEqual(secondReset.registry, pristine.registry);
   } finally {
     child.kill('SIGTERM');
     await once(child, 'exit');

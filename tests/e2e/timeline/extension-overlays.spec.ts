@@ -706,17 +706,40 @@ test.describe('timeline extension overlays (desktop)', () => {
 
     // --- 8. disable mid-drag ------------------------------------------------
     await test.step('disabling the extension mid-drag terminates the session cleanly', async () => {
+      // Auto-scroll moved marker C, and the earlier geometry step moved A near
+      // B. Reseed/reload so the disable step cannot hit A's overlapping target
+      // when it intends to exercise B's drag lifecycle.
+      const reseedError = await seedSceneMarkers();
+      if (reseedError) throw new Error(reseedError);
+      await page.reload({ waitUntil: 'domcontentloaded', timeout: 45_000 });
+      await expect(sceneMarkerLayer(page)).toBeVisible({ timeout: 20_000 });
+      await expect(sceneMarkerLayer(page)).toHaveAttribute('data-marker-count', '3');
+
       // Bring the view back to the content origin so the marker is clickable.
       await resetScrollLeft(page);
       const marker = page.locator('[data-marker-id="e2e-marker-b"]');
       await expect(marker).toBeVisible({ timeout: 10_000 });
+
+      // Open the Extensions tab so the toggle is the real manager surface.
+      const extensionsTab = page.locator('[role="tab"]', { hasText: 'Extensions' }).first();
+      await extensionsTab.click({ timeout: 8_000 });
+      await expect(extensionsTab).toHaveAttribute('aria-selected', 'true');
+      // The tab can change the shell layout. Resolve the marker geometry only
+      // after that transition, then prove the intended marker owns the hit.
+      await page.waitForTimeout(300);
+      await resetScrollLeft(page);
       const box = await marker.boundingBox();
       if (!box) throw new Error('marker-b has no bounding box');
       const cx = box.x + box.width / 2;
       const cy = box.y + box.height / 2;
-
-      // Open the Extensions tab so the toggle is the real manager surface.
-      await page.locator('[role="tab"]', { hasText: 'Extensions' }).first().click({ timeout: 8_000 });
+      const hit = await page.evaluate(({ x, y }) => {
+        const target = document.elementFromPoint(x, y);
+        return {
+          markerId: target?.closest<HTMLElement>('[data-marker-id]')?.getAttribute('data-marker-id') ?? null,
+          target: target?.outerHTML.slice(0, 300) ?? null,
+        };
+      }, { x: cx, y: cy });
+      expect(hit.markerId, JSON.stringify({ hit, box })).toBe('e2e-marker-b');
 
       await page.mouse.move(cx, cy);
       await page.mouse.down();

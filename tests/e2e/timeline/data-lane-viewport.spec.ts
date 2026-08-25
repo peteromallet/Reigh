@@ -2,15 +2,46 @@ import { expect, test } from '@playwright/test';
 import { BASE_URL, PROJECT_SLUG, TIMELINE_SLUG } from './support';
 
 const EDITOR_URL = `${BASE_URL}/tools/video-editor?localProject=${PROJECT_SLUG}&localTimeline=${TIMELINE_SLUG}&localTest=1&transcriptLaneFixture=dense`;
+const CAPABILITY_PROBE_PATH = `/api/astrid/projects/${PROJECT_SLUG}/media/__reigh_capability_probe__/content`;
 
 test.setTimeout(60_000);
 
 test('dense data lane paints late viewport items with bounded DOM and real geometry', async ({ page }, testInfo) => {
-  await page.setViewportSize({ width: 900, height: 760 });
+  // At the 100px/s zoom ceiling a 900px viewport spans the whole four-second
+  // fixture. The sparse-window cap then quite correctly centers both the
+  // origin and late scroll around the same 128 items. Keep the viewport narrow
+  // enough that the two source windows are genuinely different.
+  await page.setViewportSize({ width: 500, height: 760 });
   const issues: string[] = [];
   page.on('pageerror', (error) => issues.push(`[pageerror] ${error.message}`));
   page.on('console', (message) => {
-    if (message.type() === 'error') issues.push(`[console.error] ${message.text()}`);
+    if (message.type() === 'error' && !message.text().startsWith('Failed to load resource:')) {
+      issues.push(`[console.error] ${message.text()}`);
+    }
+  });
+  page.on('response', (response) => {
+    let expectedProbe = false;
+    try {
+      expectedProbe = response.status() === 404 && new URL(response.url()).pathname === CAPABILITY_PROBE_PATH;
+    } catch {
+      // Keep malformed URLs actionable below.
+    }
+    if (response.status() >= 400 && !expectedProbe) {
+      issues.push(`[http ${response.status()}] ${response.url()}`);
+    }
+  });
+  page.on('requestfailed', (request) => {
+    const failure = request.failure()?.errorText ?? 'unknown';
+    let expectedProbeAbort = false;
+    try {
+      expectedProbeAbort = failure === 'net::ERR_ABORTED'
+        && new URL(request.url()).pathname === CAPABILITY_PROBE_PATH;
+    } catch {
+      // Keep malformed URLs actionable below.
+    }
+    if (!expectedProbeAbort) {
+      issues.push(`[requestfailed] ${request.url()} — ${failure}`);
+    }
   });
   await page.addInitScript(() => localStorage.removeItem('reigh.dev-extensions.disabled'));
   await page.goto(EDITOR_URL, { waitUntil: 'domcontentloaded', timeout: 45_000 });
@@ -46,6 +77,8 @@ test('dense data lane paints late viewport items with bounded DOM and real geome
 
   const lateIds = await chips.evaluateAll((elements) =>
     elements.map((element) => element.getAttribute('data-item-id')).filter(Boolean) as string[]);
+  const lateWindowStart = Number(await row.getAttribute('data-window-start'));
+  expect(lateWindowStart).toBeGreaterThan(earlyWindowStart);
   expect(lateIds.length).toBeGreaterThan(0);
   expect(lateIds.length).toBeLessThanOrEqual(128);
   expect(earlyIds.filter((id) => lateIds.includes(id))).toEqual([]);

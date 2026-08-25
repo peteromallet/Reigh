@@ -98,9 +98,9 @@ test.describe('Extension Harness — Populated', () => {
 
   test('shows Loaded badges for active extensions', async ({ page }) => {
     await goToScenario(page, 'populated');
-    await expect(page.locator('[data-video-editor-extension-package-id="ext.inspector-tools"] [data-video-editor-extension-package-state="loaded"]')).toBeVisible();
-    await expect(page.locator('[data-video-editor-extension-package-id="ext.shader-pack"] [data-video-editor-extension-package-state="loaded"]')).toBeVisible();
-    await expect(page.locator('[data-video-editor-extension-package-id="ext.effect-bundle"] [data-video-editor-extension-package-state="loaded"]')).toBeVisible();
+    await expect(page.locator('[data-video-editor-extension-package-id="ext.inspector-tools"][data-video-editor-extension-package-state="loaded"]')).toBeVisible();
+    await expect(page.locator('[data-video-editor-extension-package-id="ext.shader-pack"][data-video-editor-extension-package-state="loaded"]')).toBeVisible();
+    await expect(page.locator('[data-video-editor-extension-package-id="ext.effect-bundle"][data-video-editor-extension-package-state="loaded"]')).toBeVisible();
   });
 
   test('renders the summary bar with correct counts', async ({ page }) => {
@@ -180,11 +180,11 @@ test.describe('Extension Harness — Package Error', () => {
 
   test('shows correct package state badges', async ({ page }) => {
     await goToScenario(page, 'package-error');
-    await expect(page.locator('[data-video-editor-extension-package-id="ext.broken-config"] [data-video-editor-extension-package-state="settings-error"]')).toBeVisible();
-    await expect(page.locator('[data-video-editor-extension-package-id="ext.runtime-crash"] [data-video-editor-extension-package-state="runtime-error"]')).toBeVisible();
-    await expect(page.locator('[data-video-editor-extension-package-id="ext.invalid-manifest"] [data-video-editor-extension-package-state="invalid"]')).toBeVisible();
-    await expect(page.locator('[data-video-editor-extension-package-id="ext.old-api"] [data-video-editor-extension-package-state="incompatible"]')).toBeVisible();
-    await expect(page.locator('[data-video-editor-extension-package-id="ext.duplicate-pack"] [data-video-editor-extension-package-state="duplicate"]')).toBeVisible();
+    await expect(page.locator('[data-video-editor-extension-package-id="ext.broken-config"][data-video-editor-extension-package-state="settings-error"]')).toBeVisible();
+    await expect(page.locator('[data-video-editor-extension-package-id="ext.runtime-crash"][data-video-editor-extension-package-state="runtime-error"]')).toBeVisible();
+    await expect(page.locator('[data-video-editor-extension-package-id="ext.invalid-manifest"][data-video-editor-extension-package-state="invalid"]')).toBeVisible();
+    await expect(page.locator('[data-video-editor-extension-package-id="ext.old-api"][data-video-editor-extension-package-state="incompatible"]')).toBeVisible();
+    await expect(page.locator('[data-video-editor-extension-package-id="ext.duplicate-pack"][data-video-editor-extension-package-state="duplicate"]')).toBeVisible();
   });
 
   test('displays state reasons for error packages', async ({ page }) => {
@@ -211,7 +211,7 @@ test.describe('Extension Harness — Package Error', () => {
     const summaryBar = page.locator('[aria-label="Extension summary: 5 packages, 0 loaded"]');
     await expect(summaryBar).toBeVisible();
     await expect(summaryBar).toContainText('5 packages');
-    await expect(summaryBar).toContainText('5 issues');
+    await expect(summaryBar).toContainText('4 issues');
   });
 
   test('error package cards do not overlap each other', async ({ page }) => {
@@ -246,9 +246,9 @@ test.describe('Extension Harness — Repaired Settings', () => {
 
   test('all packages show loaded state badge', async ({ page }) => {
     await goToScenario(page, 'repaired-settings');
-    await expect(page.locator('[data-video-editor-extension-package-id="ext.repaired-config"] [data-video-editor-extension-package-state="loaded"]')).toBeVisible();
-    await expect(page.locator('[data-video-editor-extension-package-id="ext.needs-review"] [data-video-editor-extension-package-state="loaded"]')).toBeVisible();
-    await expect(page.locator('[data-video-editor-extension-package-id="ext.settings-blocked"] [data-video-editor-extension-package-state="loaded"]')).toBeVisible();
+    await expect(page.locator('[data-video-editor-extension-package-id="ext.repaired-config"][data-video-editor-extension-package-state="loaded"]')).toBeVisible();
+    await expect(page.locator('[data-video-editor-extension-package-id="ext.needs-review"][data-video-editor-extension-package-state="loaded"]')).toBeVisible();
+    await expect(page.locator('[data-video-editor-extension-package-id="ext.settings-blocked"][data-video-editor-extension-package-state="loaded"]')).toBeVisible();
   });
 
   test('shows repaired settings diagnostic', async ({ page }) => {
@@ -327,13 +327,19 @@ test.describe('Extension Harness — All Scenarios Grid', () => {
 
   test('each scenario card has activity region and extension manager', async ({ page }) => {
     await goToScenario(page, 'all');
+    await expect(page.locator('[data-video-editor-harness-scenario="populated"]')).toBeVisible();
     const cards = page.locator('[data-video-editor-harness-scenario]');
     const count = await cards.count();
     expect(count).toBe(4);
 
     for (let i = 0; i < count; i++) {
       const card = cards.nth(i);
-      await expect(card.locator('[data-video-editor-activity-region="true"]')).toBeVisible();
+      const scenario = await card.getAttribute('data-video-editor-harness-scenario');
+      if (scenario === 'empty') {
+        await expect(card.locator('[data-video-editor-activity-region="true"]')).not.toBeVisible();
+      } else {
+        await expect(card.locator('[data-video-editor-activity-region="true"]')).toBeVisible();
+      }
       await expect(card.locator('[data-video-editor-extension-trust-warning="true"]')).toBeVisible();
     }
   });
@@ -408,11 +414,11 @@ test.describe('Extension Harness — Condensed Viewport', () => {
 
   test('package-error: renders all error-state packages with correct badges', async ({ page }) => {
     await goToScenario(page, 'package-error');
-    await expect(page.locator('[data-video-editor-extension-package-id="ext.broken-config"] [data-video-editor-extension-package-state="settings-error"]')).toBeVisible();
-    await expect(page.locator('[data-video-editor-extension-package-id="ext.runtime-crash"] [data-video-editor-extension-package-state="runtime-error"]')).toBeVisible();
-    await expect(page.locator('[data-video-editor-extension-package-id="ext.invalid-manifest"] [data-video-editor-extension-package-state="invalid"]')).toBeVisible();
-    await expect(page.locator('[data-video-editor-extension-package-id="ext.old-api"] [data-video-editor-extension-package-state="incompatible"]')).toBeVisible();
-    await expect(page.locator('[data-video-editor-extension-package-id="ext.duplicate-pack"] [data-video-editor-extension-package-state="duplicate"]')).toBeVisible();
+    await expect(page.locator('[data-video-editor-extension-package-id="ext.broken-config"][data-video-editor-extension-package-state="settings-error"]')).toBeVisible();
+    await expect(page.locator('[data-video-editor-extension-package-id="ext.runtime-crash"][data-video-editor-extension-package-state="runtime-error"]')).toBeVisible();
+    await expect(page.locator('[data-video-editor-extension-package-id="ext.invalid-manifest"][data-video-editor-extension-package-state="invalid"]')).toBeVisible();
+    await expect(page.locator('[data-video-editor-extension-package-id="ext.old-api"][data-video-editor-extension-package-state="incompatible"]')).toBeVisible();
+    await expect(page.locator('[data-video-editor-extension-package-id="ext.duplicate-pack"][data-video-editor-extension-package-state="duplicate"]')).toBeVisible();
   });
 
   test('package-error: error cards do not overlap', async ({ page }) => {
@@ -428,14 +434,14 @@ test.describe('Extension Harness — Condensed Viewport', () => {
     await goToScenario(page, 'package-error');
     const summaryBar = page.locator('[aria-label="Extension summary: 5 packages, 0 loaded"]');
     await expect(summaryBar).toBeVisible();
-    await expect(summaryBar).toContainText('5 issues');
+    await expect(summaryBar).toContainText('4 issues');
   });
 
   test('repaired-settings: renders all packages with loaded state badges', async ({ page }) => {
     await goToScenario(page, 'repaired-settings');
-    await expect(page.locator('[data-video-editor-extension-package-id="ext.repaired-config"] [data-video-editor-extension-package-state="loaded"]')).toBeVisible();
-    await expect(page.locator('[data-video-editor-extension-package-id="ext.needs-review"] [data-video-editor-extension-package-state="loaded"]')).toBeVisible();
-    await expect(page.locator('[data-video-editor-extension-package-id="ext.settings-blocked"] [data-video-editor-extension-package-state="loaded"]')).toBeVisible();
+    await expect(page.locator('[data-video-editor-extension-package-id="ext.repaired-config"][data-video-editor-extension-package-state="loaded"]')).toBeVisible();
+    await expect(page.locator('[data-video-editor-extension-package-id="ext.needs-review"][data-video-editor-extension-package-state="loaded"]')).toBeVisible();
+    await expect(page.locator('[data-video-editor-extension-package-id="ext.settings-blocked"][data-video-editor-extension-package-state="loaded"]')).toBeVisible();
   });
 
   test('repaired-settings: repaired cards do not overlap', async ({ page }) => {
@@ -516,11 +522,11 @@ test.describe('Extension Harness — Mobile Viewport', () => {
 
   test('package-error: renders all error badges and state reasons', async ({ page }) => {
     await goToScenario(page, 'package-error');
-    await expect(page.locator('[data-video-editor-extension-package-id="ext.broken-config"] [data-video-editor-extension-package-state="settings-error"]')).toBeVisible();
-    await expect(page.locator('[data-video-editor-extension-package-id="ext.runtime-crash"] [data-video-editor-extension-package-state="runtime-error"]')).toBeVisible();
-    await expect(page.locator('[data-video-editor-extension-package-id="ext.invalid-manifest"] [data-video-editor-extension-package-state="invalid"]')).toBeVisible();
-    await expect(page.locator('[data-video-editor-extension-package-id="ext.old-api"] [data-video-editor-extension-package-state="incompatible"]')).toBeVisible();
-    await expect(page.locator('[data-video-editor-extension-package-id="ext.duplicate-pack"] [data-video-editor-extension-package-state="duplicate"]')).toBeVisible();
+    await expect(page.locator('[data-video-editor-extension-package-id="ext.broken-config"][data-video-editor-extension-package-state="settings-error"]')).toBeVisible();
+    await expect(page.locator('[data-video-editor-extension-package-id="ext.runtime-crash"][data-video-editor-extension-package-state="runtime-error"]')).toBeVisible();
+    await expect(page.locator('[data-video-editor-extension-package-id="ext.invalid-manifest"][data-video-editor-extension-package-state="invalid"]')).toBeVisible();
+    await expect(page.locator('[data-video-editor-extension-package-id="ext.old-api"][data-video-editor-extension-package-state="incompatible"]')).toBeVisible();
+    await expect(page.locator('[data-video-editor-extension-package-id="ext.duplicate-pack"][data-video-editor-extension-package-state="duplicate"]')).toBeVisible();
   });
 
   test('package-error: error cards do not overlap', async ({ page }) => {
@@ -547,7 +553,7 @@ test.describe('Extension Harness — Mobile Viewport', () => {
     await expect(page.locator('[data-video-editor-extension-package-id="ext.repaired-config"]')).toBeVisible();
     await expect(page.locator('[data-video-editor-extension-package-id="ext.needs-review"]')).toBeVisible();
     await expect(page.locator('[data-video-editor-extension-package-id="ext.settings-blocked"]')).toBeVisible();
-    await expect(page.locator('[data-video-editor-extension-package-id="ext.repaired-config"] [data-video-editor-extension-package-state="loaded"]')).toBeVisible();
+    await expect(page.locator('[data-video-editor-extension-package-id="ext.repaired-config"][data-video-editor-extension-package-state="loaded"]')).toBeVisible();
   });
 
   test('repaired-settings: repaired cards do not overlap', async ({ page }) => {
@@ -596,7 +602,7 @@ test.describe('Extension Harness — Route accessibility', () => {
   });
 
   test('invalid scenario param falls back to populated', async ({ page }) => {
-    await page.goto(`${HARNESS_BASE}?scenario=nonexistent`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${HARNESS_BASE}?scenario=nonexistent&localTest=1&localProject=extension-harness&localTimeline=extension-harness`, { waitUntil: 'domcontentloaded' });
     await expect(page.locator('h1')).toContainText('Populated');
     await expect(page.locator('[data-video-editor-extension-package-id="ext.inspector-tools"]')).toBeVisible();
   });

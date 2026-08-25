@@ -37,12 +37,20 @@ const launchOptions = chromiumExecutablePath
   ? { executablePath: chromiumExecutablePath, args: ['--no-sandbox', '--disable-dev-shm-usage'] }
   : undefined;
 
-// The timeline device specs need a live dev server plus the local-mode bridge
-// stub (both booted by `webServer` below), so they are registered only for their
-// opt-in script and are excluded from every default project.
+// Timeline device specs and the extension harness need a live dev server plus
+// the local-mode bridge stub (both booted by `webServer` below). They are
+// registered only for their opt-in scripts and are excluded from every default
+// project.
 // See `npm run test:e2e:timeline`.
 const TIMELINE_DEVICE_SPECS = /tests[\\/]e2e[\\/]timeline[\\/].*\.spec\.ts$/;
+// These specs exercise the authenticated Astrid task/render authority. The
+// generic timeline project owns only the deterministic local stub, which must
+// not silently turn those checks into 404s or run the release bridge against
+// an unauthenticated fixture.
+const REAL_BRIDGE_SPEC = /real-bridge\.spec\.ts$/;
+const RENDERER_OWNED_TIMELINE_SPECS = /(?:caption-render-export|caption-render-matrix)\.spec\.ts$/;
 const includeTimelineDevices = process.env.PLAYWRIGHT_TIMELINE_DEVICES === '1';
+const includeExtensionHarness = process.env.PLAYWRIGHT_EXTENSION_HARNESS === '1';
 // B5: REAL_BRIDGE=1 boots `astrid serve` (the actual bridge) instead of the
 // stub, and points the Vite dev proxy at it. Run:
 //   npm run test:e2e:timeline:realbridge
@@ -66,6 +74,7 @@ process.env.REIGH_TIMELINE_PORTS_ALLOCATED = '1';
 const bridgeServeCommand = useRealBridge
   ? 'node tests/e2e/timeline/real-bridge-serve.mjs'
   : 'node tests/e2e/timeline/astrid-bridge-stub.mjs';
+const includeBridgeServer = includeTimelineDevices || includeExtensionHarness;
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -114,7 +123,7 @@ export default defineConfig({
         ASTRID_REQUEST_TOKEN_FILE: process.env.ASTRID_REQUEST_TOKEN_FILE ?? '/tmp/astrid-real-bridge.token',
       },
     },
-    ...(includeTimelineDevices
+    ...(includeBridgeServer
       ? [{
           command: bridgeServeCommand,
           url: `http://127.0.0.1:${bridgePort}/health`,
@@ -146,7 +155,14 @@ export default defineConfig({
     ...(includeTimelineDevices
       ? [{
           name: 'timeline-devices',
-          testMatch: TIMELINE_DEVICE_SPECS,
+          testMatch: useRealBridge ? REAL_BRIDGE_SPEC : TIMELINE_DEVICE_SPECS,
+          // The authenticated project owns the bridge contract only. Caption
+          // export/matrix specs require a producing render worker plus managed
+          // media fixtures and therefore remain renderer-owned until their
+          // dedicated command provisions that topology.
+          testIgnore: useRealBridge
+            ? RENDERER_OWNED_TIMELINE_SPECS
+            : new RegExp(`${REAL_BRIDGE_SPEC.source}|${RENDERER_OWNED_TIMELINE_SPECS.source}`),
           // Each spec sets its own viewport/touch profile via test.use().
           use: { ...devices['Desktop Chrome'] },
         }]

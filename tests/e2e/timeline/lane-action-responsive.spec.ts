@@ -2,6 +2,15 @@ import { expect, test } from '@playwright/test';
 import { BASE_URL, PROJECT_SLUG, TIMELINE_SLUG, browserEvidencePath } from './support';
 
 const EDITOR_URL = `${BASE_URL}/tools/video-editor?localProject=${PROJECT_SLUG}&localTimeline=${TIMELINE_SLUG}&localTest=1&transcriptLaneFixture=1`;
+const CAPABILITY_PROBE_PATH = `/api/astrid/projects/${PROJECT_SLUG}/media/__reigh_capability_probe__/content`;
+
+const EXPECTED_TRANSCRIPT_ACTION_LABELS = [
+  'Render transcript as editable video text',
+  'Regenerate transcript captions and replace edits',
+  'Propose caption edits back to transcript source',
+  'Accept pending caption edits for transcript source update',
+  'Reject pending caption edits for transcript source update',
+] as const;
 
 const viewports = [
   { name: 'desktop', width: 1440, height: 900, screenshot: '22-lane-actions-desktop.png' },
@@ -15,7 +24,33 @@ for (const viewport of viewports) {
     const issues: string[] = [];
     page.on('pageerror', (error) => issues.push(`[pageerror] ${error.message}`));
     page.on('console', (message) => {
-      if (message.type() === 'error') issues.push(`[console.error] ${message.text()}`);
+      if (message.type() === 'error' && !message.text().startsWith('Failed to load resource:')) {
+        issues.push(`[console.error] ${message.text()}`);
+      }
+    });
+    page.on('response', (response) => {
+      let expectedProbe = false;
+      try {
+        expectedProbe = response.status() === 404 && new URL(response.url()).pathname === CAPABILITY_PROBE_PATH;
+      } catch {
+        // Keep malformed URLs actionable below.
+      }
+      if (response.status() >= 400 && !expectedProbe) {
+        issues.push(`[http ${response.status()}] ${response.url()}`);
+      }
+    });
+    page.on('requestfailed', (request) => {
+      const failure = request.failure()?.errorText ?? 'unknown';
+      let expectedProbeAbort = false;
+      try {
+        expectedProbeAbort = failure === 'net::ERR_ABORTED'
+          && new URL(request.url()).pathname === CAPABILITY_PROBE_PATH;
+      } catch {
+        // Keep malformed URLs actionable below.
+      }
+      if (!expectedProbeAbort) {
+        issues.push(`[requestfailed] ${request.url()} — ${failure}`);
+      }
     });
     await page.addInitScript(() => localStorage.removeItem('reigh.dev-extensions.disabled'));
     await page.goto(EDITOR_URL, { waitUntil: 'domcontentloaded', timeout: 45_000 });
@@ -78,11 +113,29 @@ for (const viewport of viewports) {
     await trigger.click();
     const menu = page.getByRole('menu', { name: 'Transcript actions' });
     await expect(menu).toBeVisible();
-    await expect(menu.getByRole('menuitem')).toHaveCount(3);
+    const menuItems = menu.getByRole('menuitem');
+    await expect(menuItems).toHaveCount(EXPECTED_TRANSCRIPT_ACTION_LABELS.length);
+    const accessibleLabels = await menuItems.evaluateAll((items) => items.map(
+      (item) => item.getAttribute('aria-label') ?? item.textContent?.trim() ?? '',
+    ));
+    expect(accessibleLabels).toEqual([...EXPECTED_TRANSCRIPT_ACTION_LABELS]);
+    for (const label of EXPECTED_TRANSCRIPT_ACTION_LABELS) {
+      const item = menu.getByRole('menuitem', { name: label, exact: true });
+      await expect(item).toBeVisible();
+      await expect(item).toBeEnabled();
+      const itemBox = await item.boundingBox();
+      expect(itemBox, label).not.toBeNull();
+      expect(itemBox!.x).toBeGreaterThanOrEqual(0);
+      expect(itemBox!.x + itemBox!.width).toBeLessThanOrEqual(viewport.width + 1);
+    }
     const menuBox = await menu.boundingBox();
     expect(menuBox).not.toBeNull();
     expect(menuBox!.x).toBeGreaterThanOrEqual(0);
     expect(menuBox!.x + menuBox!.width).toBeLessThanOrEqual(viewport.width + 1);
+    await menuItems.first().focus();
+    await expect(menuItems.first()).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+    await expect(menuItems.nth(1)).toBeFocused();
     await page.screenshot({ path: browserEvidencePath(testInfo, `chrome-acceptance/${viewport.screenshot}`), fullPage: true });
     expect(issues).toEqual([]);
   });

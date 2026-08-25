@@ -20,10 +20,11 @@
  * run-isolated `PLAYWRIGHT_PORT` published by `playwright.config.ts`.
  * `ASTRID_BRIDGE_PORT` is likewise run-isolated.
  */
-import type { BrowserContext, Page, TestInfo } from '@playwright/test';
+import { test as playwrightTest, type BrowserContext, type Page, type TestInfo } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import { dirname, resolve } from 'node:path';
+import { createTimelineFixtures } from '../../../src/test/bridgeFixtures.mjs';
 import {
   CLIP_BODY_SELECTOR,
   EDIT_AREA_SELECTOR,
@@ -90,6 +91,8 @@ export function browserEvidencePath(testInfo: TestInfo, relativePath: string): s
 }
 
 const BRIDGE_TIMELINE = `${BRIDGE_ORIGIN}/projects/${PROJECT_SLUG}/timelines/${TIMELINE_SLUG}`;
+const STUB_RESET_URL = `${BRIDGE_ORIGIN}/__test/reset`;
+const PRISTINE_STUB_FIXTURE = createTimelineFixtures({ assetSrcBaseUrl: BASE_URL });
 
 /** How long the editor needs to boot, resolve assets and lay the timeline out. */
 export const EDITOR_SETTLE_MS = 9_000;
@@ -117,41 +120,48 @@ export const BASELINE_TRACKS = [
 function resetBridgeBaselineOnce(): Promise<string | null> {
   return (async () => {
     try {
+      if (process.env.REAL_BRIDGE === '1') {
+        return '[reset] refusing to call the test-only stub reset route under REAL_BRIDGE=1';
+      }
       const healthResponse = await fetch(`${BRIDGE_ORIGIN}/health`);
       if (!healthResponse.ok) return `[reset] bridge health returned ${healthResponse.status}`;
       const health = await healthResponse.json();
       if (health?.ok !== true) return '[reset] bridge health response was not {ok:true}';
-      const response = await fetch(BRIDGE_TIMELINE);
-      if (!response.ok) return `[reset] bridge fixture GET returned ${response.status}`;
-      const current = await response.json();
+      const beforeResponse = await fetch(BRIDGE_TIMELINE);
+      if (!beforeResponse.ok) return `[reset] bridge fixture GET returned ${beforeResponse.status}`;
+      const current = await beforeResponse.json();
       if (!Number.isInteger(current.config_version)) {
         return '[reset] bridge fixture GET did not include an integer config_version';
       }
-      const currentAssetIds = Object.keys(current.registry?.assets ?? {}).sort();
-      const expectedAssetIds = ['demo-clip', 'demo-detail', 'demo-hero'];
-      if (currentAssetIds.join(',') !== expectedAssetIds.join(',')) {
-        return `[reset] unexpected bridge fixture assets: ${currentAssetIds.join(',')}`;
-      }
-      const config = {
-        ...(current.config ?? {}),
-        tracks: BASELINE_TRACKS.map((track) => ({ ...track })),
-        clips: BASELINE_CLIPS.map((clip) => ({ ...clip, ...(clip.text ? { text: { ...clip.text } } : {}) })),
-      };
-      const saveResponse = await fetch(`${BRIDGE_TIMELINE}/save`, {
+      const resetResponse = await fetch(STUB_RESET_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config, expected_version: current.config_version }),
       });
-      if (!saveResponse.ok) return `[reset] bridge fixture save returned ${saveResponse.status}`;
-      const saved = await saveResponse.json();
-      if (saved.config_version !== current.config_version + 1) {
-        return `[reset] bridge fixture version mismatch after save: expected ${current.config_version + 1}, got ${saved.config_version}`;
+      if (!resetResponse.ok) return `[reset] hard reset returned ${resetResponse.status}`;
+      const reset = await resetResponse.json();
+      if (reset?.reset !== true) return '[reset] hard reset response was not marked reset:true';
+      if (!Number.isInteger(reset.config_version) || reset.config_version <= current.config_version) {
+        return `[reset] hard reset did not monotonically advance config_version: before=${current.config_version}, after=${reset.config_version}`;
       }
-      if (!isDeepStrictEqual(saved.config, config)) {
-        return `[reset] bridge fixture config mismatch after save: expected ${JSON.stringify(config)}, got ${JSON.stringify(saved.config)}`;
+      if (!isDeepStrictEqual(reset.config, PRISTINE_STUB_FIXTURE.config)) {
+        return `[reset] hard reset config mismatch: expected ${JSON.stringify(PRISTINE_STUB_FIXTURE.config)}, got ${JSON.stringify(reset.config)}`;
       }
-      if (!isDeepStrictEqual(saved.registry?.assets, current.registry?.assets)) {
-        return '[reset] bridge fixture registry changed unexpectedly during baseline reset';
+      if (!isDeepStrictEqual(reset.registry, PRISTINE_STUB_FIXTURE.registry)) {
+        return `[reset] hard reset registry mismatch: expected ${JSON.stringify(PRISTINE_STUB_FIXTURE.registry)}, got ${JSON.stringify(reset.registry)}`;
+      }
+
+      // Verify the public read surface, not only the reset response assembled by
+      // the control route.
+      const afterResponse = await fetch(BRIDGE_TIMELINE);
+      if (!afterResponse.ok) return `[reset] bridge fixture verification GET returned ${afterResponse.status}`;
+      const after = await afterResponse.json();
+      if (after.config_version !== reset.config_version) {
+        return `[reset] verification version mismatch: reset=${reset.config_version}, read=${after.config_version}`;
+      }
+      if (!isDeepStrictEqual(after.config, PRISTINE_STUB_FIXTURE.config)) {
+        return '[reset] verification read did not return the pristine config';
+      }
+      if (!isDeepStrictEqual(after.registry, PRISTINE_STUB_FIXTURE.registry)) {
+        return '[reset] verification read did not return the pristine registry';
       }
       return null;
     } catch (error) {
@@ -168,6 +178,17 @@ export function resetBridgeBaseline(): Promise<string | null> {
   const result = resetTail.then(resetBridgeBaselineOnce, resetBridgeBaselineOnce);
   resetTail = result.then(() => undefined, () => undefined);
   return result;
+}
+
+// All ordinary timeline specs share one long-lived mutable stub process. Reset
+// its complete state before every test so file/order changes cannot leak config,
+// app metadata, or registry assets. The real Astrid bridge owns a real database
+// and must never receive this test-only control request.
+if (process.env.REAL_BRIDGE !== '1') {
+  playwrightTest.beforeEach(async () => {
+    const error = await resetBridgeBaseline();
+    if (error) throw new Error(error);
+  });
 }
 
 const pageIssues = new WeakMap<Page, string[]>();

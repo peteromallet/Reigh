@@ -27,14 +27,20 @@ The RC6 line has landed deterministic Runaway timing, clip-body selection,
 Suspense/bridge-stub contracts, runtime-isolated ports and CAS fixture resets,
 proxy Origin/Host/auth/protocol boundaries, strict-port plus nonce/commit
 readiness, tracked-evidence protection, and exact visual-baseline provenance.
-The remaining integration sequence adds native-tool attestation before
-provisioning and recomputes `C` from the resulting clean snapshot. Focused
-machine tests are useful diagnostics, but they are not a release receipt.
+Native-tool attestation and crash-safe bounded-command/paired-server containment
+are now on the pushed integration branch. The latest clean integration
+rehearsal passed the complete 13,669-test repository suite (13,667 pass, two
+intentional skips), all extension/compatibility/production-smoke payloads,
+type/lint/architecture/readiness checks, and visual provenance. These are useful
+pre-freeze diagnostics, but they are not a release receipt. `C` must still be
+computed from the final clean snapshot after the disk-gated build/browser/
+paired rehearsal and any resulting fixes.
 
 ## Phase 1 — publish and lock the integration baseline
 
-1. Finish the current focused fixes and native-tool attestation commit; keep `scorecard.png`, `artifacts/`, and
-   Playwright output outside the tracked release tree.
+1. Keep the pushed process-containment and native-tool-attestation checkpoints
+   intact; keep `scorecard.png`, `artifacts/`, and Playwright output outside the
+   tracked release tree.
 2. Require review of the RC6 code commits through the production startup-budget
    gate. Do not add feature work to this branch after the evidence rehearsal
    begins; fixes discovered by a gate receive a focused commit and restart the
@@ -49,8 +55,10 @@ branch synchronization is recorded separately from candidate identity.
 
 ## Phase 2 — recover disk and run exact-pair evidence rehearsals
 
-1. Confirm at least 11 GiB free with `df -h /System/Volumes/Data`; the machine
-   currently has enough headroom, but avoid unnecessary artifact-heavy work.
+1. Confirm at least 11 GiB free with `df -h /System/Volumes/Data`. The current
+   machine is below that enforced floor, so fresh archives, locked installs,
+   production builds, and retained browser/render evidence remain paused until
+   approved cache cleanup restores headroom.
 2. Use fresh clean worktrees at the exact Reigh candidate computed after native
    attestation and the pinned Astrid commit. Run the individual local release
    gates, complete unit suites,
@@ -142,8 +150,11 @@ disposition.
 
 ## Inputs still required from the owner
 
-- Approval to delete the surveyed unused Docker cache and two Reigh test images.
+- Approval to delete the surveyed 2.7 GiB Codex Sparkle update cache at
+  `~/Library/Caches/com.openai.codex/org.sparkle-project.Sparkle`; the tiny
+  Docker cache is no longer a meaningful recovery target.
 - Production target/access plus observability and on-call owners.
 - Edge/physical-device availability or an explicit release exception.
+- A real upstream transcript owner for the exact-fingerprint acknowledgement.
 - Four human participants and two independent reviewers, with their Ed25519
   public identities.

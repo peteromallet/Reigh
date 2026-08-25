@@ -261,7 +261,7 @@ test.describe.serial('real caption render/export release matrix', () => {
       if (fps === MATRIX_CASES[0]) {
         const runaway = page.getByTestId('runaway-timeline-lane');
         await expect(runaway).toHaveAttribute('data-total-items', '566', { timeout: 30_000 });
-        await expect(page.getByTestId('runaway-lane-summary')).toContainText('566 transitions');
+        await expect(page.getByRole('group', { name: /566 transitions/ })).toBeVisible();
         const mountedRunaway = page.getByTestId('runaway-transition-chip').first();
         await expect(mountedRunaway).toBeVisible();
         await mountedRunaway.click();
