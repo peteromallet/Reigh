@@ -631,8 +631,6 @@ export interface BanodocoRenderTimelinePayload {
   assets: unknown;
   theme_id: string;
   output_filename: string;
-  /** @deprecated The Astrid bridge is locally trusted and needs no user JWT. */
-  user_jwt?: string;
   project_id: string;
   correlation_id: string;
 }
@@ -646,8 +644,6 @@ export interface BuildRenderPayloadInput {
   request: Pick<TimelineRenderRequest, 'timelineId' | 'assetRegistry' | 'resolvedConfig' | 'renderRuntime'> & {
     outputFilename?: string;
   };
-  /** @deprecated Kept source-compatible while callers migrate off Supabase auth. */
-  userJwt?: string;
   /** Tests inject a deterministic UUID; production uses crypto.randomUUID. */
   correlationId?: string;
 }
@@ -688,7 +684,6 @@ export function buildRenderTimelinePayload(
       assets: request.assetRegistry ?? { assets: {} },
       theme_id: defaultThemeId(request.resolvedConfig),
       output_filename: request.outputFilename ?? defaultOutputFilename(request.timelineId),
-      ...(input.userJwt ? { user_jwt: input.userJwt } : {}),
       project_id: request.renderRuntime.projectId,
       correlation_id: input.correlationId ?? newCorrelationId(),
     },

@@ -189,7 +189,7 @@ export function createGalleryFixtures() {
 }
 
 /** Families this fake admits; everything else maps to capability_unavailable. */
-export const AVAILABLE_FAMILIES = ['image_generation'];
+export const AVAILABLE_FAMILIES = ['image_generation', 'render_export'];
 
 export function makeAdmittedTaskReadModel({ taskId, family = 'image_generation', capability = 'reigh.qwen_image' }) {
   const now = '2026-08-22T12:00:00Z';

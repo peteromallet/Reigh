@@ -1,0 +1,11 @@
+B5 complete on phase-c-exec @ 8332bad2d (2026-08-25)
+
+T5.1 — Shot groups/pools as document view: DONE (landed in converge/B5 771ba852b).
+T5.2 — Deep-copy duplicate with media refs, final-video assets, derived_from lineage: DONE (converge/B5).
+T5.3 — Promote-primary pack command + view refresh: DONE (converge/B5).
+This batch: root vite.config.ts forwarder so literal `npx vite build` gate passes (8332bad2d).
+
+Validation:
+- vitest {runtime,families,lib}: 117 files / 3981 tests passed.
+- grep shot_generations src/tools/video-editor: no matches -> GATE-OK.
+- npx vite build: passes.
