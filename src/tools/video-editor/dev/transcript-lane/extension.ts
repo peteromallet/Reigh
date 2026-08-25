@@ -46,6 +46,7 @@ import type {
 import { createElement, useCallback, useState, type ReactNode } from 'react';
 import {
   computeTranscriptChipPlacements,
+  hasChipText,
   readChipText,
   renderTranscriptItemInspector,
   renderTranscriptLane,
@@ -307,8 +308,7 @@ export function buildTranscriptCaptionPatch(
       Number.isFinite(item.timelineStart)
       && Number.isFinite(item.timelineEnd)
       && item.timelineEnd > item.timelineStart
-      && readChipText(item.payload).trim() !== ''
-      && readChipText(item.payload) !== '(no text)'
+      && hasChipText(item.payload)
     ))
     .sort((left, right) => (
       (left.timelineStart - right.timelineStart)

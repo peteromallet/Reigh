@@ -66,7 +66,13 @@ import {
   transcriptSourceReviewHandoffFingerprint,
   type TranscriptSourceReviewRecord,
 } from '../extension';
-import { computeTranscriptChipPlacements, renderTranscriptLane } from '../TranscriptLaneView';
+import {
+  computeTranscriptChipPlacements,
+  hasChipText,
+  NO_TEXT_LABEL,
+  readChipText,
+  renderTranscriptLane,
+} from '../TranscriptLaneView';
 
 // ---------------------------------------------------------------------------
 // Harness state (hoisted for vi.mock)
@@ -466,6 +472,56 @@ describe('transcript-lane dev example (dataKind V1 done-4)', () => {
 // ---------------------------------------------------------------------------
 
 describe('transcript lane chips (rework round-2 F3)', () => {
+  it('normalizes empty source text into a selectable diagnostic chip without changing caption eligibility', () => {
+    const onSelectItem = vi.fn();
+    const emptyItem: DataLaneRendererProps['items'][number] = {
+      id: 'empty-source',
+      timelineStart: 0.44,
+      timelineEnd: 0.52,
+      clipId: 'clip-1',
+      payload: { text: '   ' },
+    };
+    const { container } = render(renderTranscriptLane({
+      kindId: TRANSCRIPT_KIND_ID,
+      schemaRef: TRANSCRIPT_SCHEMA_REF,
+      shape: 'interval',
+      domain: 'source_seconds',
+      startLeft: 0,
+      pixelsPerSecond: 100,
+      onSelectItem,
+      items: [emptyItem],
+    }) as ReactElement);
+    const chip = container.querySelector<HTMLElement>('[data-testid="transcript-lane-chip"]');
+
+    expect(readChipText(emptyItem.payload)).toBe(NO_TEXT_LABEL);
+    expect(hasChipText(emptyItem.payload)).toBe(false);
+    expect(chip).not.toBeNull();
+    expect(chip).toHaveTextContent(NO_TEXT_LABEL);
+    expect(chip).toHaveAccessibleName(
+      'Transcript segment: (no text), 0.44 to 0.52 seconds',
+    );
+    expect(chip).toHaveAttribute('data-item-id', emptyItem.id);
+    expect(chip).toHaveStyle({ height: '100%' });
+    expect(Number.parseFloat(chip!.style.width)).toBeCloseTo(8, 8);
+
+    fireEvent.click(chip!);
+    expect(onSelectItem).toHaveBeenCalledWith(emptyItem.id);
+
+    const patch = buildTranscriptCaptionPatch({
+      baseVersion: 1,
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1', muted: false }],
+      clips: [],
+      outputMetadata: { resolution: '1280x720', fps: 30, file: 'matrix.mp4' },
+    }, [
+      emptyItem,
+      { ...emptyItem, id: 'meaningful-source', payload: { text: 'Meaningful caption' } },
+    ]);
+    const captionAdds = patch.operations.filter((operation) => operation.op === 'clip.add');
+    expect(captionAdds).toHaveLength(1);
+    expect(captionAdds[0]?.target).toBe(transcriptCaptionClipId('meaningful-source'));
+    expect(patch.operations.some((operation) => operation.target === transcriptCaptionClipId(emptyItem.id))).toBe(false);
+  });
+
   it('stacks every concurrent Unicode chip into a distinct pointer lane while preserving interval geometry', () => {
     const onSelectItem = vi.fn();
     const items: DataLaneRendererProps['items'] = [

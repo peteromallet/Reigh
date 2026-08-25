@@ -19,6 +19,7 @@ import type {
 
 /** Longest text snippet painted per segment chip (kept small on purpose). */
 const MAX_CHIP_CHARS = 48;
+export const NO_TEXT_LABEL = '(no text)';
 
 export interface TranscriptChipPlacement {
   /** Zero-based vertical lane within the item's connected overlap group. */
@@ -139,8 +140,11 @@ export function renderTranscriptLane(
           top: stacked ? `${(placement.lane * 100) / placement.laneCount}%` : '50%',
           transform: stacked ? 'none' : 'translateY(-50%)',
           left: item.timelineStart * props.pixelsPerSecond,
-          width: (item.timelineEnd - item.timelineStart) * props.pixelsPerSecond,
-          ...(stacked ? { height: `${100 / placement.laneCount}%` } : {}),
+          // Keep even empty/whitespace diagnostics keyboard- and pointer-
+          // reachable. A text node cannot be the source of the hit target's
+          // size because the diagnostic label is derived at render time.
+          width: Math.max(1, (item.timelineEnd - item.timelineStart) * props.pixelsPerSecond),
+          height: stacked ? `${100 / placement.laneCount}%` : '100%',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
@@ -213,7 +217,14 @@ export function renderTranscriptItemInspector(props: DataItemInspectorProps): un
 export function readChipText(payload: unknown): string {
   if (payload !== null && typeof payload === 'object' && 'text' in payload) {
     const text: unknown = payload.text;
-    if (typeof text === 'string') return text;
+    if (typeof text === 'string' && text.trim() !== '') return text;
   }
-  return '(no text)';
+  return NO_TEXT_LABEL;
+}
+
+/** Caption materialization must inspect source text, not the display label. */
+export function hasChipText(payload: unknown): boolean {
+  if (payload === null || typeof payload !== 'object' || !('text' in payload)) return false;
+  const text: unknown = payload.text;
+  return typeof text === 'string' && text.trim() !== '';
 }

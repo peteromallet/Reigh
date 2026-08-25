@@ -37,10 +37,18 @@ test.describe('transcript overlap hit targets', () => {
         height: (element as HTMLElement).style.height,
       },
     })));
-    const meaningfulChipData = chipData.filter(({ label }) => label && !/^Transcript segment:\s+,/.test(label));
+    expect(chipData.every(({ id, label }) => Boolean(id && label && label.includes('Transcript segment: ')))).toBe(true);
+    const diagnosticChipData = chipData.filter(({ label }) => label?.includes('(no text)'));
+    expect(diagnosticChipData).toHaveLength(1);
+    const meaningfulChipData = chipData.filter(({ label }) => !label?.includes('(no text)'));
     expect(meaningfulChipData).toHaveLength(EXPECTED_CAPTIONS);
-    expect(meaningfulChipData.every(({ id, label }) => Boolean(id && label))).toBe(true);
-    expect(meaningfulChipData.every(({ rect }) => rect.width > 0 && rect.height > 0)).toBe(true);
+    expect(chipData.every(({ rect }) => rect.width > 0 && rect.height > 0)).toBe(true);
+    const rowBox = await transcriptRow.boundingBox();
+    expect(rowBox).not.toBeNull();
+    expect(chipData.every(({ rect }) => (
+      rect.top >= rowBox!.y - 1
+      && rect.bottom <= rowBox!.y + rowBox!.height + 1
+    ))).toBe(true);
     expect(new Set(meaningfulChipData.map(({ style }) => `${style.top}:${style.height}`)).size).toBeGreaterThan(1);
     for (let leftIndex = 0; leftIndex < meaningfulChipData.length; leftIndex += 1) {
       for (let rightIndex = leftIndex + 1; rightIndex < meaningfulChipData.length; rightIndex += 1) {
@@ -56,9 +64,9 @@ test.describe('transcript overlap hit targets', () => {
     }
 
     const inspector = page.getByTestId('transcript-item-inspector');
-    for (const { id, label } of meaningfulChipData) {
+    for (const { id, label } of chipData) {
       await page.getByLabel(label!, { exact: true }).click();
-      await expect(inspector).toContainText(`id: ${id}`);
+      await expect(inspector.locator(':scope > div').first()).toHaveText(`id: ${id}`);
     }
     await testInfo.attach('transcript-overlap-hit-targets', {
       body: await page.screenshot(),
