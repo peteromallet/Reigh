@@ -1,6 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
+import { delimiter, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { DEFAULT_DEV_SUPABASE_URL } from './src/shared/dev/devSession.ts';
+import { resolvePinnedNodeExecutable } from './scripts/release/pinned-node-runtime.mjs';
 import {
   allocateIsolatedPort,
   readCanonicalBaseUrl,
@@ -55,6 +57,10 @@ const includeExtensionHarness = process.env.PLAYWRIGHT_EXTENSION_HARNESS === '1'
 // stub, and points the Vite dev proxy at it. Run:
 //   npm run test:e2e:timeline:realbridge
 const useRealBridge = process.env.REAL_BRIDGE === '1';
+const realBridgeNodeExecutable = useRealBridge ? resolvePinnedNodeExecutable() : null;
+const shellQuote = (value: string): string => process.platform === 'win32'
+  ? `"${value.replaceAll('"', '\\"')}"`
+  : `'${value.replaceAll("'", "'\\''")}'`;
 const realBridgeToken = useRealBridge
   ? process.env.ASTRID_BRIDGE_TOKEN?.trim() || randomBytes(32).toString('base64url')
   : null;
@@ -72,7 +78,7 @@ const bridgePort = inheritedRunPorts
 // as though they were stale external processes.
 process.env.REIGH_TIMELINE_PORTS_ALLOCATED = '1';
 const bridgeServeCommand = useRealBridge
-  ? 'node tests/e2e/timeline/real-bridge-serve.mjs'
+  ? `${shellQuote(realBridgeNodeExecutable!)} tests/e2e/timeline/real-bridge-serve.mjs`
   : 'node tests/e2e/timeline/astrid-bridge-stub.mjs';
 const includeBridgeServer = includeTimelineDevices || includeExtensionHarness;
 
@@ -144,6 +150,12 @@ export default defineConfig({
               ? { ASTRID_BRIDGE_TOKEN: realBridgeToken }
               : {}),
             ASTRID_REQUEST_TOKEN_FILE: process.env.ASTRID_REQUEST_TOKEN_FILE ?? '/tmp/astrid-real-bridge.token',
+            ...(useRealBridge
+              ? {
+                ASTRID_NODE_EXECUTABLE: realBridgeNodeExecutable!,
+                PATH: `${dirname(realBridgeNodeExecutable!)}${delimiter}${process.env.PATH ?? ''}`,
+              }
+              : {}),
           },
         }]
       : []),
