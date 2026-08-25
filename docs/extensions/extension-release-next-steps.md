@@ -11,13 +11,18 @@ by the [evidence ledger](extension-ship-evidence-ledger.md).
 
 ## Current disposition
 
-`codex/extension-ship-integration` is the current RC6 **integration cycle**,
-not a frozen release candidate. The local integration checkout and its upstream
+`codex/extension-ship-integration` at
+`7ae8419dac965ce0b3c2a6d17b7374ddff8da5bd` is the current RC6
+**integration cycle**. Its paired Astrid input is
+`bebfb913252827a581b791adb224db61816c00ef` on
+`codex/extension-ship-astrid-integration`; both worktrees are clean, pushed,
+and synchronized with their upstream branches. This is not a frozen release
+candidate. The local integration checkout and its upstream
 remote are synchronization points for the hardening sequence, not a release
 identity; do not infer the candidate from a moving branch head or from a dirty
 developer checkout. The manifest-pinned Astrid source remains the required
 paired input. The exact Reigh candidate `C` will be computed from a fresh clean
-snapshot after the native-tool attestation commit lands and all source fixes are
+snapshot after the current bridge/runtime fixes and all source changes are
 reviewed. Until then, the manifest status remains `integration` and no final
 SHA, tag, or controller pair is promised.
 
@@ -27,14 +32,20 @@ The RC6 line has landed deterministic Runaway timing, clip-body selection,
 Suspense/bridge-stub contracts, runtime-isolated ports and CAS fixture resets,
 proxy Origin/Host/auth/protocol boundaries, strict-port plus nonce/commit
 readiness, tracked-evidence protection, and exact visual-baseline provenance.
-Native-tool attestation and crash-safe bounded-command/paired-server containment
-are now on the pushed integration branch. The latest clean integration
-rehearsal passed the complete 13,669-test repository suite (13,667 pass, two
-intentional skips), all extension/compatibility/production-smoke payloads,
-type/lint/architecture/readiness checks, and visual provenance. These are useful
-pre-freeze diagnostics, but they are not a release receipt. `C` must still be
-computed from the final clean snapshot after the disk-gated build/browser/
-paired rehearsal and any resulting fixes.
+Native-tool attestation, crash-safe bounded-command/paired-server containment,
+managed-media seeding, exact runtime resolution, owned-origin Remotion CORS,
+and JSON task-output boolean normalization are now on the pushed pair. The most
+recent broad repository rehearsal passed 13,672 tests with two intentional
+skips; focused tests were rerun after the final UI corrections. At the current
+head, all ten disk-light static release gates pass, as do 1,160 extension
+contract tests, 102 Creative Lab tests, the 97-case compatibility matrix, 33
+production-smoke tests, runtime-rollout tests, and a production build. The
+installed Chrome acceptance lane also completed a real authenticated
+Reigh-to-Astrid export: the managed MP4 loaded at 1920x1080, played its complete
+4.053-second duration, exposed the Download link, and left no console warnings
+or errors. These are useful pre-freeze diagnostics, but they are not release
+receipts. `C` must still be computed from the final clean snapshot after the
+disk-gated fresh-install/browser/paired rehearsal and any resulting fixes.
 
 ## Phase 1 — publish and lock the integration baseline
 
@@ -56,7 +67,8 @@ branch synchronization is recorded separately from candidate identity.
 ## Phase 2 — recover disk and run exact-pair evidence rehearsals
 
 1. Confirm at least 11 GiB free with `df -h /System/Volumes/Data`. The current
-   machine is below that enforced floor, so fresh archives, locked installs,
+   machine has about 4.47 GiB free, a 6.53 GiB shortfall against that enforced
+   floor, so fresh archives, locked installs,
    production builds, and retained browser/render evidence remain paused until
    approved cache cleanup restores headroom.
 2. Use fresh clean worktrees at the exact Reigh candidate computed after native
