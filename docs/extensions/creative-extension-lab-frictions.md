@@ -1618,21 +1618,27 @@ fresh console collection.
   Render button there fails explicitly. This is an honest limitation, but the
   default local editor does not make it obvious before the click that export is
   unavailable in that topology.
-- The authenticated `real-bridge-serve.mjs` harness proves release protocol,
-  CAS, discovery, task admission, idempotency, cancellation, and media route
-  contracts. Its historical seed is not the paired release renderer seed: it
-  contains a legacy filename and an empty asset registry, and its launcher does
-  not provision the paired verifier's pinned Node, Remotion project, canonical
-  schema path, and managed-media evidence. In the installed-Chrome audit the
-  task was admitted correctly, then all three worker attempts failed with
-  `render_export_failed`.
-- The paired release verifier remains the authority for the real MP4 path
-  because it owns those dependencies and binds the downloaded bytes to the
-  admitted task and persisted timeline. A future one-command live acceptance
-  launcher should reuse that exact seed/runtime preparation and leave the app
-  open; asking an operator to compose a second Vite proxy, bearer token, bridge,
-  worker, media seed, schema root, and Remotion closure by hand is needless
-  release friction.
+- The authenticated `real-bridge-serve.mjs` harness originally proved release
+  protocol, CAS, discovery, task admission, idempotency, cancellation, and
+  media routes but not a real export. Its seed had a source filename without a
+  managed-media row, and its launcher did not validate the pinned Node,
+  Remotion closure, or canonical schema path. The harness now imports the seed
+  through Astrid, validates those release runtimes, records truthful pin
+  provenance, and cleans an owned seed root when setup fails.
+- The first corrected render then exposed two deeper ownership bugs. Remotion's
+  browser could fetch the media URL but not use it because Astrid's owned asset
+  server omitted CORS; Astrid now advertises only the exact owned Remotion
+  origin. The next render produced a valid MP4 but Reigh rejected task detail
+  because SQLite's integer `is_primary` leaked onto the JSON wire; the bridge
+  now projects that flag to a boolean and its route test asserts the exact type.
+- The final installed-Chrome repeat succeeded through the real pinned bridge.
+  The editor exposed the managed-media Download link, Chrome loaded the MP4 at
+  1920x1080 with `readyState=4`, and playback reached the complete 4.053-second
+  duration. The authenticated content route returned `video/mp4`, 176,694
+  bytes, and the final tab had no console warnings or errors. This path is now a
+  useful live acceptance lane; the paired verifier remains the release
+  authority because it additionally binds task, attempt, digest, bytes, and
+  frozen-repository provenance.
 
 ### Browser automation can itself invalidate responsive evidence
 
