@@ -894,6 +894,36 @@ describe('AudioAnalysisProvider', () => {
     expect(fakeWorker?.analyzePosts()).toBe(1);
   });
 
+  it('does not reset the debounce for a fresh equal clip array', async () => {
+    vi.useFakeTimers();
+    MockOfflineAudioContext.decodedBuffer = createRenderedFixtureBuffer();
+
+    const view = render(
+      <AudioAnalysisProvider clips={[createAudioClip()]} fps={FPS} totalDurationInFrames={AMPLITUDES.length}>
+        <AnalysisSummary />
+      </AudioAnalysisProvider>,
+    );
+
+    await act(async () => {
+      vi.advanceTimersByTime(119);
+    });
+
+    // A save acknowledgement can supply a fresh array with equivalent audio.
+    // It must not move the already scheduled trailing edge.
+    view.rerender(
+      <AudioAnalysisProvider clips={[{ ...createAudioClip(), label: 'equal-fresh-array' }]} fps={FPS} totalDurationInFrames={AMPLITUDES.length}>
+        <AnalysisSummary />
+      </AudioAnalysisProvider>,
+    );
+
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+    });
+    await flushWithFakeTimers();
+
+    expect(fakeWorker?.analyzePosts()).toBe(1);
+  });
+
   it('starts immediately without debounce in Remotion rendering mode', async () => {
     vi.useFakeTimers();
     remotionState.environment = {
