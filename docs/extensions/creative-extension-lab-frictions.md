@@ -1326,3 +1326,20 @@ identity.
   it in `finally`. A SIGKILL could leave the worktree corrupted. The verifier
   now accepts an in-process artifact reader for this negative test, allowing it
   to prove worktree-byte divergence without changing committed evidence.
+
+### Agent instructions must be versioned with the dependency pin
+
+- The globally installed Astrid skill described a newer `doctor --json`
+  contract (`state: "uninitialized"`, `ok: true`, and `next_action`) than the
+  retained RC6 Astrid commit. At `86153eef`, a missing store intentionally
+  fails closed and emits only `ok` plus `checks`; pin-local tests and the
+  pin-local skill freeze that behavior.
+- Release agents must read dependency-owned instructions from the exact pinned
+  checkout before interpreting a cross-repository result. Global instructions
+  are useful discovery aids, but they cannot silently redefine an immutable
+  dependency's contract.
+- This skew does not weaken the paired lane: it initializes Astrid before using
+  `doctor` and runs the check after backup restoration against a real store.
+  Backporting the newer clean-machine UX would create a new Astrid SHA, require
+  every Reigh pin and runbook binding to change, and start a fresh paired
+  evidence cycle; that is a deliberate future upgrade, not an RC6 hot fix.
