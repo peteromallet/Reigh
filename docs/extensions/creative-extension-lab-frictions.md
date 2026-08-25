@@ -1267,14 +1267,62 @@ identity.
   before provisioning. This native-tool attestation is a prerequisite to
   computing the exact candidate; a later source fix starts a new candidate
   sequence.
-- Every command has a phase timeout with diagnostics. Detached server groups are
-  terminated as groups (TERM, five-second wait, KILL, five-second wait), and a
-  readiness failure reaps descendants even when a start call has not returned.
-  This closes the orphan-process failure mode that made old browser evidence
-  ambiguous.
+- Every command has a phase timeout with diagnostics. Long-running servers use
+  per-server randomized process scopes and a detached supervisor that is
+  acknowledged before target code starts. Cleanup revalidates PID/PGID/start
+  identity, signals only exact scoped processes, requires three empty scans,
+  and reaps descendants when readiness or the verifier itself dies. Avoiding a
+  negative-PGID kill after a leader exits prevents an unrelated reused process
+  group from becoming a cleanup target.
 - Evidence is add-once: exclusive file creation, receipt before artifact index,
   detached index hash, and read-only final evidence. Reruns/corrections use a
   new untracked root and receipt rather than overwriting an earlier claim.
 - Dynamic editor/bridge ports are allocated per phase and included in readiness
   identity. A fixed port, stale server, or mismatched `BASE_URL` is an explicit
   failure, not a convenience for local testing.
+
+### Release commands need a stable launch gate, not a cleanup-time snapshot
+
+- The first bounded-command implementation scanned `ps` only after a command
+  returned or timed out. Under twenty concurrent calls, a detached child could
+  start, write its delayed marker, and exit between snapshots while the wrapper
+  still reported success. Increasing a delay only moved the race.
+- Bounded commands now register a unique environment scope with one private
+  per-host broker, attach an inert process-group leader before sending target
+  code, retain every observed identity, and require three quiescent scans. A
+  nested invocation preserves all ancestor scope keys so the outer owner can
+  still reap inner helpers.
+- Broker, wrapper, and launch-gate processes receive minimal environments;
+  command/environment/scope payloads travel over private stdin rather than
+  argv. The target never receives the internal broker session. A short private
+  socket path works across the supported macOS Node versions, and stale broker
+  replacement is serialized so concurrent candidates cannot delete a new
+  owner's lock or socket.
+- Supervisor loss is a first-class test case: broker death invokes a local
+  scope-drain fallback, wrapper death makes the gate kill its pinned group, and
+  host death makes the broker destroy partial client handshakes and drain every
+  registered scope. These paths are covered with delayed detached markers,
+  direct SIGKILL, corrupt lock/socket state, and broker restart.
+
+### Test isolation is part of determinism
+
+- Node's top-level test-file concurrency ran native hashing/provenance work
+  beside tight process-lifecycle assertions. The contained implementation was
+  correct in exclusive runs, but machine scheduling made timing evidence
+  nondeterministic. The release-verifier files now run serially; intentional
+  concurrency remains inside the explicit twenty-scope stress test.
+- Authoritative candidate evidence must likewise run on an isolated host phase.
+  Parallel audit agents may review source, but they must not start competing
+  browser servers or release helpers while timing-sensitive evidence is being
+  captured.
+
+### Negative provenance tests must not mutate tracked evidence
+
+- A visual-provenance test used a fixed temporary filename inside the tracked
+  evidence directory. An interrupted run left a directory behind, so the next
+  run failed before exercising the intended invariant. Temporary artifacts now
+  use per-process names and recursive cleanup.
+- Another negative test appended a byte to a tracked diff-mask PNG and restored
+  it in `finally`. A SIGKILL could leave the worktree corrupted. The verifier
+  now accepts an in-process artifact reader for this negative test, allowing it
+  to prove worktree-byte divergence without changing committed evidence.

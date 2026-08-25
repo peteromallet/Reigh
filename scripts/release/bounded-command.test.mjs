@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
-import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { execFileSync, spawn } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import { Worker } from 'node:worker_threads';
 import { tmpdir } from 'node:os';
@@ -90,6 +90,7 @@ describe('runBoundedCommand', () => {
       );
       assert.equal(result.ok, false);
       assert.equal(result.failureType, 'timeout');
+      assert.equal(result.status, null);
       assert.equal(result.signal, 'SIGKILL');
       assert.equal(result.error?.code, 'ETIMEDOUT');
       assert.equal(existsSync(marker), false);
@@ -104,6 +105,7 @@ describe('runBoundedCommand', () => {
       { timeoutMs: 50, killSignal: 'SIGTERM', allowFailure: true },
     );
     assert.equal(termResult.failureType, 'timeout');
+    assert.equal(termResult.status, null);
     assert.equal(termResult.killSignal, 'SIGTERM');
     assert.equal(termResult.signal, 'SIGTERM');
 
@@ -112,6 +114,7 @@ describe('runBoundedCommand', () => {
       { timeoutMs: 50, killSignal: 'SIGTERM', allowFailure: true },
     );
     assert.equal(killResult.failureType, 'timeout');
+    assert.equal(killResult.status, null);
     assert.equal(killResult.killSignal, 'SIGTERM');
     assert.equal(killResult.signal, 'SIGKILL');
   });
@@ -199,6 +202,353 @@ describe('runBoundedCommand', () => {
     }
   });
 
+  it('preserves outer scope ownership across a nested bounded command', async () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'bounded-command-nested-scope-'));
+    const ready = resolve(root, 'inner-ready');
+    const marker = resolve(root, 'nested-orphan-marker');
+    const moduleUrl = new URL('./bounded-command.mjs', import.meta.url).href;
+    try {
+      const innerSource = [
+        "const { spawn } = require('node:child_process');",
+        "const { writeFileSync } = require('node:fs');",
+        `writeFileSync(${JSON.stringify(ready)}, 'ready');`,
+        `const child = spawn(process.execPath, ['-e', ${JSON.stringify(
+          `setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'orphan'), 2_500);`,
+        )}], { detached: true, stdio: 'ignore' });`,
+        'child.unref(); setInterval(() => {}, 1_000);',
+      ].join('');
+      const outerSource = [
+        `import(${JSON.stringify(moduleUrl)}).then(({ runBoundedCommand }) => {`,
+        `runBoundedCommand(process.execPath, ['-e', ${JSON.stringify(innerSource)}], {`,
+        'timeoutMs: 10_000, maxBuffer: 64 * 1024, killSignal: "SIGTERM", allowFailure: true,',
+        '}); });',
+      ].join('');
+      const result = run(outerSource, { timeoutMs: 1_500, killSignal: 'SIGTERM', allowFailure: true });
+      assert.equal(result.failureType, 'timeout');
+      assert.equal(existsSync(ready), true, 'nested target never launched, so cleanup was not exercised');
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 2_800));
+      assert.equal(existsSync(marker), false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps invocation and environment secrets out of helper process listings', () => {
+    const secret = `bounded-secret-${process.pid}-${Date.now()}`;
+    const source = [
+      "const { execFileSync } = require('node:child_process');",
+      "const rows = execFileSync('/bin/ps', ['eww', '-axo', 'pid=,ppid=,command='], { encoding: 'utf8' }).split('\\n');",
+      'const parent = process.ppid;',
+      "const parentRow = rows.find((row) => Number(row.trim().split(/\\s+/, 1)[0]) === parent) || '';",
+      "const parentParts = parentRow.trim().split(/\\s+/);",
+      'const wrapper = Number(parentParts[1]);',
+      "const relevant = rows.filter((row) => Number(row.trim().split(/\\s+/, 1)[0]) !== process.pid && (row.includes('bounded-command-wrapper.mjs') || row.includes('bounded-command-target-gate.mjs')));",
+      "const leaked = relevant.some((row) => row.includes(process.env.BOUNDED_PARENT_SECRET)) || Boolean(process.env.REIGH_BOUNDED_BROKER_SESSION);",
+      "process.stdout.write(leaked ? 'leaked' : 'safe');",
+    ].join('');
+    const previous = process.env.BOUNDED_PARENT_SECRET;
+    process.env.BOUNDED_PARENT_SECRET = secret;
+    try {
+      const result = run(source, { timeoutMs: 2_000 });
+      assert.equal(result.failureType, 'success');
+      assert.equal(result.stdout, 'safe');
+      assert.equal(result.args.some((arg) => arg.includes(secret)), false);
+      assert.equal(result.error?.message?.includes(secret) ?? false, false);
+    } finally {
+      if (previous === undefined) delete process.env.BOUNDED_PARENT_SECRET;
+      else process.env.BOUNDED_PARENT_SECRET = previous;
+    }
+  });
+
+  it('fails closed and locally drains the scope when the shared broker is killed', async () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'bounded-command-broker-death-'));
+    const ready = resolve(root, 'target-ready');
+    const marker = resolve(root, 'broker-death-orphan');
+    const moduleUrl = new URL('./bounded-command.mjs', import.meta.url).href;
+    const workerSource = `
+      const { parentPort, workerData } = require('node:worker_threads');
+      import(workerData.moduleUrl).then(({ runBoundedCommand }) => {
+        parentPort.postMessage(runBoundedCommand(process.execPath, ['-e', workerData.source], workerData.options));
+      }).catch((error) => parentPort.postMessage({ workerError: error.stack || error.message }));
+    `;
+    try {
+      const targetSource = [
+        "const { spawn } = require('node:child_process');",
+        "const { writeFileSync } = require('node:fs');",
+        `writeFileSync(${JSON.stringify(ready)}, 'ready');`,
+        `const child = spawn(process.execPath, ['-e', ${JSON.stringify(
+          `setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'orphan'), 2_500);`,
+        )}], { detached: true, stdio: 'ignore' });`,
+        'child.unref(); setInterval(() => {}, 1_000);',
+      ].join('');
+      const resultPromise = new Promise((resolvePromise, reject) => {
+        const worker = new Worker(workerSource, {
+          eval: true,
+          workerData: {
+            moduleUrl,
+            source: targetSource,
+            options: { ...BASE, timeoutMs: 1_200, killSignal: 'SIGTERM', allowFailure: true },
+          },
+        });
+        worker.once('message', (message) => { worker.terminate(); resolvePromise(message); });
+        worker.once('error', reject);
+      });
+      const deadline = Date.now() + 4_000;
+      while (!existsSync(ready) && Date.now() < deadline) {
+        await new Promise((resolvePromise) => setTimeout(resolvePromise, 25));
+      }
+      assert.equal(existsSync(ready), true, 'target did not become ready before broker kill');
+      const brokerRow = execFileSync('/bin/ps', ['-axo', 'pid=,ppid=,command='], { encoding: 'utf8' })
+        .split('\n')
+        .map((line) => ({ line, match: line.match(/^\s*(\d+)\s+(\d+)\s+(.*)$/) }))
+        .find(({ match }) => match
+          && match[3].includes('bounded-command-wrapper.mjs --broker')
+          && !match[3].startsWith('/usr/bin/lockf '));
+      assert.ok(brokerRow?.match, 'shared broker process was not found');
+      process.kill(Number(brokerRow.match[1]), 'SIGKILL');
+      const result = await resultPromise;
+      assert.equal(result.failureType, 'cleanup-error');
+      assert.match(result.cleanupError?.message ?? '', /broker failed; local fallback cleanup completed/);
+      const recovered = run("process.stdout.write('recovered')", { timeoutMs: 2_000, allowFailure: true });
+      assert.equal(recovered.failureType, 'success');
+      assert.equal(recovered.stdout, 'recovered');
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 2_800));
+      assert.equal(existsSync(marker), false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('recovers corrupt stale broker lock, readiness, and socket artifacts', () => {
+    const moduleUrl = new URL('./bounded-command.mjs', import.meta.url).href;
+    const session = 'a'.repeat(32);
+    const childSource = [
+      "import { mkdirSync, rmSync, writeFileSync } from 'node:fs';",
+      "import { join } from 'node:path';",
+      `process.env.REIGH_BOUNDED_BROKER_SESSION = ${JSON.stringify(session)};`,
+      `const root = join(${JSON.stringify(process.platform === 'darwin' ? '/tmp' : tmpdir())}, \`rb-\${process.pid}-${session.slice(0, 12)}\`);`,
+      "mkdirSync(root, { mode: 0o700 });",
+      "const socket = join(root, 'broker.sock');",
+      "writeFileSync(`${socket}.lock`, 'corrupt-lock');",
+      "writeFileSync(`${socket}.lock.takeover`, 'stale-takeover-mutex');",
+      "writeFileSync(`${socket}.ready`, 'corrupt-ready');",
+      "writeFileSync(socket, 'not-a-socket');",
+      'try {',
+      `  const { runBoundedCommand } = await import(${JSON.stringify(moduleUrl)});`,
+      "  const result = runBoundedCommand(process.execPath, ['-e', \"process.stdout.write('recovered')\"], {",
+      "    timeoutMs: 2_000, maxBuffer: 64 * 1024, killSignal: 'SIGKILL', allowFailure: true,",
+      '  });',
+      "  process.stdout.write(JSON.stringify({ failureType: result.failureType, stdout: result.stdout }));",
+      '} finally {',
+      '  rmSync(root, { recursive: true, force: true });',
+      '}',
+    ].join('\n');
+    const output = execFileSync(NODE, ['--input-type=module', '-e', childSource], { encoding: 'utf8' });
+    assert.deepEqual(JSON.parse(output), { failureType: 'success', stdout: 'recovered' });
+  });
+
+  it('survives lock-guardian death and restarts after broker death', async () => {
+    const initial = run("process.stdout.write('initial')", { allowFailure: true });
+    assert.equal(initial.failureType, 'success');
+    const ownedBrokerPattern = new RegExp(
+      `bounded-command-wrapper\\.mjs --broker\\s+\\S+\\s+\\S+\\s+${process.pid}\\s+`,
+    );
+    const brokerRow = () => execFileSync('/bin/ps', ['-axo', 'pid=,ppid=,command='], { encoding: 'utf8' })
+      .split('\n')
+      .map((line) => line.match(/^\s*(\d+)\s+(\d+)\s+(.*)$/))
+      .find((match) => match
+        && ownedBrokerPattern.test(match[3])
+        && !match[3].startsWith('/usr/bin/lockf ')
+        && !match[3].startsWith('/usr/bin/flock '));
+    const before = brokerRow();
+    assert.ok(before, 'kernel-elected broker was not found');
+    const brokerPid = Number(before[1]);
+    const guardianPid = Number(before[2]);
+    const guardian = execFileSync('/bin/ps', ['-p', String(guardianPid), '-o', 'command='], { encoding: 'utf8' });
+    assert.match(guardian, process.platform === 'darwin' ? /\/usr\/bin\/lockf/ : /\/usr\/bin\/flock/);
+
+    process.kill(guardianPid, 'SIGKILL');
+    const guardianDeadline = Date.now() + 1_000;
+    while (Date.now() < guardianDeadline) {
+      try { process.kill(guardianPid, 0); } catch { break; }
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 20));
+    }
+    assert.throws(() => process.kill(guardianPid, 0), /ESRCH/);
+
+    const afterGuardian = run("process.stdout.write('still-owned')", { allowFailure: true });
+    assert.equal(afterGuardian.failureType, 'success');
+    assert.equal(afterGuardian.stdout, 'still-owned');
+    assert.equal(Number(brokerRow()?.[1]), brokerPid, 'guardian loss started a duplicate broker');
+
+    process.kill(brokerPid, 'SIGKILL');
+    const recovered = run("process.stdout.write('re-elected')", { allowFailure: true });
+    assert.equal(recovered.failureType, 'success');
+    assert.equal(recovered.stdout, 're-elected');
+    assert.notEqual(Number(brokerRow()?.[1]), brokerPid, 'broker death did not elect a replacement');
+  });
+
+  it('serializes concurrent recovery of a corrupt/dead broker lock', () => {
+    const moduleUrl = new URL('./bounded-command.mjs', import.meta.url).href;
+    const session = 'b'.repeat(32);
+    const childSource = [
+      "import { mkdirSync, rmSync, writeFileSync } from 'node:fs';",
+      "import { join } from 'node:path';",
+      "import { Worker } from 'node:worker_threads';",
+      `process.env.REIGH_BOUNDED_BROKER_SESSION = ${JSON.stringify(session)};`,
+      `const root = join(${JSON.stringify(process.platform === 'darwin' ? '/tmp' : tmpdir())}, \`rb-\${process.pid}-${session.slice(0, 12)}\`);`,
+      "mkdirSync(root, { mode: 0o700 });",
+      "const socket = join(root, 'broker.sock');",
+      "writeFileSync(`${socket}.lock`, JSON.stringify({ pid: 999999, nonce: 'cccccccccccccccccccccccccccccccc' }));",
+      "writeFileSync(`${socket}.ready`, 'stale-ready');",
+      "writeFileSync(socket, 'stale-socket');",
+      `const workerSource = ${JSON.stringify(`
+        const { parentPort, workerData } = require('node:worker_threads');
+        import(workerData.moduleUrl).then(({ runBoundedCommand }) => {
+          const result = runBoundedCommand(process.execPath, ['-e', "process.stdout.write('stress-ok')"], {
+            timeoutMs: 2_000, maxBuffer: 64 * 1024, killSignal: 'SIGKILL', allowFailure: true,
+          });
+          parentPort.postMessage({ failureType: result.failureType, stdout: result.stdout });
+        }).catch((error) => parentPort.postMessage({ error: error.stack || error.message }));
+      `)};`,
+      `const moduleUrl = ${JSON.stringify(moduleUrl)};`,
+      'const workers = Array.from({ length: 12 }, () => new Promise((resolvePromise, reject) => {',
+      '  const worker = new Worker(workerSource, { eval: true, execArgv: [], workerData: { moduleUrl } });',
+      '  worker.once(\'message\', resolvePromise); worker.once(\'error\', reject);',
+      '}));',
+      'const results = await Promise.all(workers);',
+      'process.stdout.write(JSON.stringify(results));',
+      'rmSync(root, { recursive: true, force: true });',
+    ].join('\n');
+    const output = execFileSync(NODE, ['--input-type=module', '-e', childSource], { encoding: 'utf8' });
+    const results = JSON.parse(output);
+    assert.equal(results.length, 12);
+    assert.deepEqual(results, Array.from({ length: 12 }, () => ({ failureType: 'success', stdout: 'stress-ok' })));
+  });
+
+  it('aborts a wrapper that loses its parent before target startup', async () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'bounded-command-pre-target-parent-death-'));
+    const wrapperPidFile = resolve(root, 'wrapper-pid');
+    const targetStarted = resolve(root, 'target-started');
+    const deadSocket = resolve(root, 'not-started.sock');
+    const wrapperPath = resolve(new URL('./bounded-command-wrapper.mjs', import.meta.url).pathname);
+    const callerSource = [
+      "const { spawn } = require('node:child_process');",
+      "const { writeFileSync } = require('node:fs');",
+      `const wrapper = spawn(process.execPath, [${JSON.stringify(wrapperPath)}], { stdio: ['pipe', 'ignore', 'ignore'] });`,
+      `writeFileSync(${JSON.stringify(wrapperPidFile)}, String(wrapper.pid));`,
+      `wrapper.stdin.end(JSON.stringify({ command: process.execPath, args: ['-e', ${JSON.stringify(`require('node:fs').writeFileSync(${JSON.stringify(targetStarted)}, 'started'); setTimeout(() => {}, 30000)`)}], timeoutMs: 30000, maxBuffer: 65536, killSignal: 'SIGKILL', scopeKey: 'REIGH_BOUNDED_PROCESS_SCOPE_pre_target', scopeToken: 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd', parentPid: process.pid, brokerSocket: ${JSON.stringify(deadSocket)} }));`,
+      'setInterval(() => {}, 1000);',
+    ].join('');
+    const caller = spawn(NODE, ['-e', callerSource], { stdio: 'ignore' });
+    try {
+      const deadline = Date.now() + 2_000;
+      while (!existsSync(wrapperPidFile) && Date.now() < deadline) {
+        await new Promise((resolvePromise) => setTimeout(resolvePromise, 10));
+      }
+      assert.equal(existsSync(wrapperPidFile), true, 'wrapper did not start');
+      const wrapperPid = Number(readFileSync(wrapperPidFile, 'utf8'));
+      process.kill(caller.pid, 'SIGKILL');
+      await new Promise((resolvePromise) => caller.once('close', resolvePromise));
+      const exitDeadline = Date.now() + 700;
+      while (Date.now() < exitDeadline) {
+        try { process.kill(wrapperPid, 0); } catch { break; }
+        await new Promise((resolvePromise) => setTimeout(resolvePromise, 25));
+      }
+      assert.throws(() => process.kill(wrapperPid, 0), /ESRCH/);
+      assert.equal(existsSync(targetStarted), false, 'target launched after parent death');
+    } finally {
+      try { process.kill(caller.pid, 'SIGKILL'); } catch { /* already exited */ }
+      try { rmSync(root, { recursive: true, force: true }); } catch { /* already removed */ }
+    }
+  });
+
+  it('drains the owned scope when the direct wrapper is killed', async () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'bounded-command-wrapper-death-'));
+    const ready = resolve(root, 'target-ready');
+    const marker = resolve(root, 'wrapper-death-orphan');
+    const moduleUrl = new URL('./bounded-command.mjs', import.meta.url).href;
+    const callerSource = [
+      `import(${JSON.stringify(moduleUrl)}).then(({ runBoundedCommand }) => {`,
+      `const result = runBoundedCommand(process.execPath, ['-e', ${JSON.stringify([
+        "const { spawn } = require('node:child_process');",
+        "const { writeFileSync } = require('node:fs');",
+        `writeFileSync(${JSON.stringify(ready)}, 'ready');`,
+        `const child = spawn(process.execPath, ['-e', ${JSON.stringify(
+          `setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'orphan'), 2_500);`,
+        )}], { detached: true, stdio: 'ignore' });`,
+        'child.unref(); setInterval(() => {}, 1_000);',
+      ].join(''))}], { timeoutMs: 30_000, maxBuffer: 65536, killSignal: 'SIGTERM', allowFailure: true });`,
+      'process.stdout.write(JSON.stringify({ failureType: result.failureType, signal: result.signal })); });',
+    ].join('');
+    const caller = spawn(NODE, ['--input-type=module', '-e', callerSource], { stdio: ['ignore', 'pipe', 'ignore'] });
+    try {
+      const readyDeadline = Date.now() + 4_000;
+      while (!existsSync(ready) && Date.now() < readyDeadline) {
+        await new Promise((resolvePromise) => setTimeout(resolvePromise, 25));
+      }
+      assert.equal(existsSync(ready), true, 'target did not become ready');
+      const wrapperRow = execFileSync('/bin/ps', ['-axo', 'pid=,ppid=,command='], { encoding: 'utf8' })
+        .split('\n')
+        .map((line) => ({ line, match: line.match(/^\s*(\d+)\s+(\d+)\s+(.*)$/) }))
+        .find(({ match }) => match && Number(match[2]) === caller.pid
+          && match[3].includes('bounded-command-wrapper.mjs')
+          && !match[3].includes(' --broker '));
+      assert.ok(wrapperRow?.match, 'direct wrapper process was not found');
+      process.kill(Number(wrapperRow.match[1]), 'SIGKILL');
+      await new Promise((resolvePromise) => caller.once('close', resolvePromise));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 2_800));
+      assert.equal(existsSync(marker), false);
+      const leaked = execFileSync('/bin/ps', ['-axo', 'command='], { encoding: 'utf8' })
+        .split('\n').some((line) => line.includes(marker));
+      assert.equal(leaked, false);
+    } finally {
+      try { process.kill(caller.pid, 'SIGKILL'); } catch { /* already exited */ }
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('kills the complete owned scope when the synchronous parent is SIGKILLed', async () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'bounded-command-parent-death-'));
+    const ready = resolve(root, 'target-ready');
+    const marker = resolve(root, 'parent-death-orphan');
+    const moduleUrl = new URL('./bounded-command.mjs', import.meta.url).href;
+    try {
+      const targetSource = [
+        "const { spawn } = require('node:child_process');",
+        "const { writeFileSync } = require('node:fs');",
+        `writeFileSync(${JSON.stringify(ready)}, 'ready');`,
+        `const child = spawn(process.execPath, ['-e', ${JSON.stringify(
+          `setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'orphan'), 2_500);`,
+        )}], { detached: true, stdio: 'ignore' });`,
+        'child.unref(); setInterval(() => {}, 1_000);',
+      ].join('');
+      const callerSource = [
+        `import(${JSON.stringify(moduleUrl)}).then(({ runBoundedCommand }) => {`,
+        `runBoundedCommand(process.execPath, ['-e', ${JSON.stringify(targetSource)}], {`,
+        'timeoutMs: 30_000, maxBuffer: 64 * 1024, killSignal: "SIGTERM", allowFailure: true,',
+        '}); });',
+      ].join('');
+      const caller = spawn(NODE, ['--input-type=module', '-e', callerSource], {
+        stdio: 'ignore',
+      });
+      const deadline = Date.now() + 4_000;
+      while (!existsSync(ready) && Date.now() < deadline) {
+        await new Promise((resolvePromise) => setTimeout(resolvePromise, 25));
+      }
+      assert.equal(existsSync(ready), true, 'target did not launch before parent death');
+      process.kill(caller.pid, 'SIGKILL');
+      await new Promise((resolvePromise) => caller.once('close', resolvePromise));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 2_800));
+      assert.equal(existsSync(marker), false);
+      const leaked = execFileSync('/bin/ps', ['-axo', 'command='], { encoding: 'utf8' })
+        .split('\n')
+        .some((line) => line.includes(marker));
+      assert.equal(leaked, false, 'a target or detached descendant survived its parent');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('kills a detached and unref grandchild before it can leave an orphan marker', async () => {
     const root = mkdtempSync(resolve(tmpdir(), 'bounded-command-grandchild-'));
     const marker = resolve(root, 'detached-grandchild-marker');
@@ -227,5 +577,7 @@ describe('runBoundedCommand', () => {
     }
     assert.throws(() => run('process.exit(0)', { shell: true }), /shell is forbidden/);
     assert.throws(() => run('process.exit(0)', { killSignal: '' }), /killSignal/);
+    assert.throws(() => run('process.exit(0)', { killSignal: 'SIG_NOT_REAL' }), /supported by this platform/);
+    assert.throws(() => run('process.exit(0)', { killSignal: 999_999 }), /supported by this platform/);
   });
 });

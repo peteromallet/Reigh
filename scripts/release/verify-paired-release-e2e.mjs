@@ -108,6 +108,15 @@ const BASE_ENV_KEYS = Object.freeze([
   'PATHEXT',
 ]);
 
+const SERVER_SCOPE_PREFIX = `${PROCESS_SCOPE_ENV_KEY}_`;
+const SERVER_SCOPE_QUIESCENCE_SCANS = 3;
+const SERVER_SCOPE_SCAN_DELAY_MS = 40;
+const SERVER_SCOPE_SCAN_TIMEOUT_MS = 1_000;
+const SERVER_SCOPE_SCAN_OUTPUT_CAP = 8 * 1024 * 1024;
+const SERVER_SUPERVISOR_ARG = '--paired-server-supervisor';
+const SERVER_PS_PATH = process.platform === 'darwin' ? '/bin/ps' : '/usr/bin/ps';
+const SERVER_SUPERVISOR_READY_TIMEOUT_MS = 3_000;
+
 function commandBudgetKey(command, args = [], requested) {
   if (typeof requested === 'string' && Object.hasOwn(COMMAND_BUDGETS_MS, requested)) return requested;
   const base = String(command).split(/[\\/]/).at(-1) ?? String(command);
@@ -984,27 +993,234 @@ export function requestRawHttp(url, { headers = {}, timeoutMs = 10_000 } = {}) {
   });
 }
 
-function startLoggedProcess(command, args, { cwd, env, logPath }) {
+function spawnServerSupervisor({ cwd, scopeKey, scopeToken, parentPid }) {
+  const supervisor = spawn(process.execPath, [fileURLToPath(import.meta.url), SERVER_SUPERVISOR_ARG], {
+    cwd,
+    // The supervisor receives its scope over stdin. Keeping the token out of
+    // argv and the supervisor's environment prevents it from appearing in
+    // ordinary process listings for the watchdog itself.
+    env: {
+      PATH: process.env.PATH ?? '/usr/bin:/bin',
+      ...(process.env.TMPDIR ? { TMPDIR: process.env.TMPDIR } : {}),
+    },
+    detached: true,
+    shell: false,
+    stdio: ['pipe', 'pipe', 'ignore'],
+  });
+  supervisor.unref();
+  supervisor.stdin.write(`${JSON.stringify({ scopeKey, scopeToken, parentPid })}\n`);
+  return supervisor;
+}
+
+async function awaitServerSupervisorReady(supervisor) {
+  if (!supervisor?.stdout) throw new Error('server supervisor did not expose a readiness channel');
+  supervisor.stdout.setEncoding('utf8');
+  return new Promise((resolvePromise, rejectPromise) => {
+    let buffer = '';
+    let settled = false;
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      supervisor.stdout.removeListener('data', onData);
+      supervisor.removeListener('error', onError);
+      supervisor.removeListener('close', onClose);
+      if (error) rejectPromise(error);
+      else resolvePromise();
+    };
+    const onData = (chunk) => {
+      buffer += chunk;
+      let index;
+      while ((index = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, index);
+        buffer = buffer.slice(index + 1);
+        try {
+          const message = JSON.parse(line);
+          if (message.type === 'supervisor-ready') return finish();
+          if (message.type === 'supervisor-error') return finish(new Error('server supervisor failed to initialize'));
+        } catch { /* wait for the next complete protocol line */ }
+      }
+    };
+    const onError = () => finish(new Error('server supervisor exited before readiness'));
+    const onClose = () => finish(new Error('server supervisor exited before readiness'));
+    const timer = setTimeout(() => finish(new Error(`server supervisor readiness timed out after ${SERVER_SUPERVISOR_READY_TIMEOUT_MS}ms`)), SERVER_SUPERVISOR_READY_TIMEOUT_MS);
+    supervisor.stdout.on('data', onData);
+    supervisor.once('error', onError);
+    supervisor.once('close', onClose);
+  });
+}
+
+async function terminateSupervisorProcess(supervisor) {
+  if (!supervisor || (supervisor.exitCode !== null && supervisor.exitCode !== undefined) || supervisor.signalCode) return;
+  try { supervisor.kill('SIGKILL'); } catch { /* already exited */ }
+  await new Promise((resolvePromise) => {
+    if (supervisor.exitCode !== null || supervisor.signalCode !== null) resolvePromise();
+    else {
+      const timer = setTimeout(resolvePromise, SERVER_SUPERVISOR_READY_TIMEOUT_MS);
+      supervisor.once('close', () => { clearTimeout(timer); resolvePromise(); });
+    }
+  });
+}
+
+async function releaseServerSupervisor(handle, signal = 'SIGTERM') {
+  const supervisor = handle.supervisor;
+  if (!supervisor) return;
+  if (supervisor.exitCode !== null || supervisor.signalCode !== null) {
+    if (supervisor.exitCode !== null && supervisor.exitCode !== 0) {
+      throw new Error('server supervisor exited during cleanup');
+    }
+    return;
+  }
+  try {
+    // Let the watchdog perform one final drain using the observations it has
+    // collected throughout the server lifetime. This closes the leader-exit
+    // to detached-child-start race after the verifier's first scan.
+    supervisor.stdin.write(`${JSON.stringify({ type: 'drain', signal })}\n`);
+    supervisor.stdin.end();
+  } catch { /* the supervisor may already have noticed parent loss */ }
+  await new Promise((resolvePromise) => {
+    if (supervisor.exitCode !== null || supervisor.signalCode !== null) resolvePromise();
+    else {
+      const timer = setTimeout(async () => {
+        await terminateSupervisorProcess(supervisor);
+        resolvePromise();
+      }, 10_000);
+      supervisor.once('close', () => { clearTimeout(timer); resolvePromise(); });
+    }
+  });
+  if (supervisor.exitCode !== null && supervisor.exitCode !== 0) {
+    throw new Error('server supervisor failed to drain its scope');
+  }
+  if (supervisor.signalCode) throw new Error('server supervisor was terminated during cleanup');
+}
+
+/**
+ * Detached watchdog for the asynchronous server handles. Its only normal
+ * exit is an explicit release from the verifier. If the verifier is killed,
+ * stdin closes or ppid changes and the watchdog drains the token scope.
+ */
+async function runServerSupervisor() {
+  let config = null;
+  let released = false;
+  let cleaning = false;
+  let timer = null;
+  let observing = false;
+  let buffer = '';
+  const finish = (code = 0) => {
+    if (timer) clearInterval(timer);
+    if (!process.stdin.destroyed) process.stdin.destroy();
+    process.exitCode = code;
+  };
+  const cleanup = async () => {
+    if (released || cleaning || !config) return;
+    cleaning = true;
+    try {
+      await drainServerScope(config, 'SIGKILL');
+      finish(0);
+    } catch {
+      // A supervisor must not linger after its owner is gone. There is no
+      // token-bearing diagnostic to expose here; the verifier's own cleanup
+      // reports failures when it remains alive to receive them.
+      finish(1);
+    }
+  };
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', async (chunk) => {
+    buffer += chunk;
+    let index;
+    while ((index = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, index);
+      buffer = buffer.slice(index + 1);
+      try {
+        const message = JSON.parse(line);
+        if (message.type === 'release') {
+          released = true;
+          finish(0);
+        } else if (!config && message.scopeKey && message.scopeToken && Number.isSafeInteger(message.parentPid)) {
+          config = message;
+          config.seen = new Map();
+          const observe = async () => {
+            if (observing || cleaning || released) return;
+            observing = true;
+            try {
+              const rows = await scanScopedPids(config.scopeKey, config.scopeToken);
+              for (const row of rows) config.seen.set(row.pid, row.identity);
+            } catch { /* cleanup performs bounded retries */ }
+            observing = false;
+          };
+          timer = setInterval(() => {
+            void observe();
+            if (process.ppid !== config.parentPid) void cleanup();
+          }, SERVER_SCOPE_SCAN_DELAY_MS);
+          // A readiness acknowledgement means the watchdog has completed an
+          // initial authoritative scan, not merely parsed its configuration.
+          // The target cannot start before this resolves.
+          await observe();
+          if (!cleaning && !released) process.stdout.write('{"type":"supervisor-ready"}\n');
+        } else if (config && message.type === 'drain') {
+          released = true;
+          try {
+            await drainServerScope(config, message.signal === 'SIGKILL' ? 'SIGKILL' : 'SIGTERM');
+            finish(0);
+          } catch {
+            finish(1);
+          }
+        }
+      } catch { /* malformed control input is treated as owner loss at EOF */ }
+    }
+  });
+  process.stdin.on('end', () => { if (!released) void cleanup(); });
+  process.once('SIGTERM', () => { if (!released) void cleanup(); else finish(0); });
+  process.once('SIGINT', () => { if (!released) void cleanup(); else finish(0); });
+}
+
+async function startLoggedProcess(command, args, { cwd, env, logPath }) {
   const log = createWriteStream(logPath, { flags: 'wx', mode: 0o600 });
   const scopeToken = randomBytes(32).toString('hex');
-  const child = spawn(command, args, {
+  // Every server owns a distinct environment key as well as a distinct
+  // token. This prevents inherited/caller-provided scope values from making
+  // concurrent server lifetimes indistinguishable to the scanner.
+  const scopeKey = `${SERVER_SCOPE_PREFIX}${randomBytes(12).toString('hex')}`;
+  const supervisor = process.platform === 'win32' ? null : spawnServerSupervisor({
     cwd,
-    // The scope is visible only to this server and descendants. The parent
-    // verifier and its ps probes never inherit the token.
-    env: { ...(env ?? process.env), [PROCESS_SCOPE_ENV_KEY]: scopeToken },
-    detached: process.platform !== 'win32',
-    shell: false,
-    stdio: ['ignore', 'pipe', 'pipe'],
+    scopeKey,
+    scopeToken,
+    parentPid: process.pid,
   });
+  try {
+    // No target code is started until the detached watchdog has parsed the
+    // scope and positively acknowledged that it is monitoring this owner.
+    if (supervisor) await awaitServerSupervisorReady(supervisor);
+  } catch (error) {
+    await terminateSupervisorProcess(supervisor);
+    await new Promise((resolvePromise) => log.end(resolvePromise));
+    throw error;
+  }
+  let child;
+  try {
+    child = spawn(command, args, {
+      cwd,
+      // The scope is visible only to this server and descendants. The parent
+      // verifier and its ps probes never inherit the token.
+      env: { ...(env ?? process.env), [scopeKey]: scopeToken },
+      detached: process.platform !== 'win32',
+      shell: false,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  } catch (error) {
+    await releaseServerSupervisor({ supervisor }, 'SIGKILL');
+    await new Promise((resolvePromise) => log.end(resolvePromise));
+    throw error;
+  }
   child.stdout.pipe(log, { end: false });
   child.stderr.pipe(log, { end: false });
   child.once('error', (error) => {
     child.pairedSpawnError = error;
     log.write(`\n${LABEL} spawn error: ${error.message}\n`);
   });
-  child.scopeKey = PROCESS_SCOPE_ENV_KEY;
+  child.scopeKey = scopeKey;
   child.scopeToken = scopeToken;
-  return { child, log, scopeKey: PROCESS_SCOPE_ENV_KEY, scopeToken };
+  return { child, log, scopeKey, scopeToken, supervisor };
 }
 
 /**
@@ -1014,7 +1230,7 @@ function startLoggedProcess(command, args, { cwd, env, logPath }) {
  * awaited assignment.
  */
 export async function startLoggedProcessUntilReady(command, args, options, readiness) {
-  const handle = startLoggedProcess(command, args, options);
+  const handle = await startLoggedProcess(command, args, options);
   try {
     await readiness(handle.child);
     return handle;
@@ -1028,10 +1244,12 @@ export async function startLoggedProcessUntilReady(command, args, options, readi
   }
 }
 
-async function stopLoggedProcess(handle) {
+export async function stopLoggedProcess(handle) {
   if (!handle) return;
   if (handle.stopped) return;
   const { child, log } = handle;
+  handle.stopping = true;
+  const failures = [];
   const isRunning = () => (
     !child.pairedSpawnError
     && child.exitCode === null
@@ -1044,46 +1262,43 @@ async function stopLoggedProcess(handle) {
       new Promise((resolvePromise) => setTimeout(() => resolvePromise(false), timeoutMs)),
     ]);
   };
-  if (child.pid && process.platform === 'win32') {
-    if (isRunning()) child.kill('SIGTERM');
-    await waitForExit(5_000);
-    if (isRunning()) child.kill('SIGKILL');
-    if (!await waitForExit(5_000)) fail(`server process ${child.pid} did not terminate after SIGKILL`);
-  } else if (child.pid) {
-    // The process group is a fast first step. Exact scope identity is the
-    // authority and catches detached/reparented descendants as well as a
-    // leader that exited before readiness rejected.
-    try { process.kill(-child.pid, 'SIGTERM'); } catch (error) {
-      if (error?.code !== 'ESRCH') throw error;
-    }
-    const termPids = await scanScopedPids(handle.scopeKey, handle.scopeToken);
-    signalScopedPids(termPids, 'SIGTERM');
-    await waitForExit(5_000);
-
-    // Re-scan immediately before each KILL so children created during TERM
-    // (and descendants of already-reparented children) are included.
-    let remaining = [];
-    for (let attempt = 0; attempt < 8; attempt += 1) {
-      remaining = await scanScopedPids(handle.scopeKey, handle.scopeToken);
-      if (remaining.length === 0) break;
-      try { process.kill(-child.pid, 'SIGKILL'); } catch (error) {
-        if (error?.code !== 'ESRCH') throw error;
+  try {
+    if (child.pid && process.platform === 'win32') {
+      if (isRunning()) child.kill('SIGTERM');
+      await waitForExit(5_000);
+      if (isRunning()) child.kill('SIGKILL');
+      if (!await waitForExit(5_000)) fail(`server process ${child.pid} did not terminate after SIGKILL`);
+    } else if (child.pid) {
+      await drainServerScope(handle, 'SIGTERM');
+      if (!await waitForExit(5_000)) {
+        fail(`server process did not terminate after scoped cleanup (pid ${child.pid})`);
       }
-      signalScopedPids(remaining, 'SIGKILL');
-      await new Promise((resolvePromise) => setTimeout(resolvePromise, 40));
     }
-    if (remaining.length > 0 || !await waitForExit(5_000)) {
-      fail(`server process scope ${handle.scopeToken} did not terminate after SIGKILL (remaining=${remaining.join(',')})`);
+  } catch (error) {
+    failures.push(error);
+  } finally {
+    try {
+      await releaseServerSupervisor(handle, failures.length > 0 ? 'SIGKILL' : 'SIGTERM');
+    } catch (error) {
+      failures.push(error);
+      await terminateSupervisorProcess(handle.supervisor);
     }
+    try {
+      await new Promise((resolvePromise, rejectPromise) => log.end((error) => (error ? rejectPromise(error) : resolvePromise())));
+    } catch (error) {
+      failures.push(error);
+    }
+    handle.stopped = true;
   }
-  await new Promise((resolvePromise) => log.end(resolvePromise));
-  handle.stopped = true;
+  if (failures.length > 0) {
+    throw new AggregateError(failures, 'failed to stop paired server process scope');
+  }
 }
 
-function readScopedPidsOnce(scopeKey, scopeToken) {
+function readScopedProcessesOnce(scopeKey, scopeToken) {
   if (process.platform === 'win32') return Promise.resolve([]);
   return new Promise((resolvePromise, rejectPromise) => {
-    const ps = spawn('ps', ['eww', '-axo', 'pid=,command='], {
+    const ps = spawn(SERVER_PS_PATH, ['eww', '-axo', 'pid=,pgid=,lstart=,command='], {
       stdio: ['ignore', 'pipe', 'ignore'],
     });
     const chunks = [];
@@ -1099,17 +1314,17 @@ function readScopedPidsOnce(scopeKey, scopeToken) {
     };
     const timer = setTimeout(() => {
       try { ps.kill('SIGKILL'); } catch { /* already exited */ }
-      finish(new Error('ps eww timed out after 1,000ms'));
-    }, 1_000);
+      finish(new Error(`ps eww timed out after ${SERVER_SCOPE_SCAN_TIMEOUT_MS}ms`));
+    }, SERVER_SCOPE_SCAN_TIMEOUT_MS);
     ps.stdout.on('data', (chunk) => {
       bytes += chunk.length;
-      if (bytes > 8 * 1024 * 1024) outputTooLarge = true;
-      if (bytes <= 8 * 1024 * 1024) chunks.push(Buffer.from(chunk));
+      if (bytes > SERVER_SCOPE_SCAN_OUTPUT_CAP) outputTooLarge = true;
+      if (bytes <= SERVER_SCOPE_SCAN_OUTPUT_CAP) chunks.push(Buffer.from(chunk));
     });
     ps.once('error', (error) => finish(new Error(`ps eww failed: ${error.message}`)));
     ps.once('close', (code) => {
       if (outputTooLarge) {
-        finish(new Error('ps eww output exceeded 8388608 bytes'));
+        finish(new Error(`ps eww output exceeded ${SERVER_SCOPE_SCAN_OUTPUT_CAP} bytes`));
         return;
       }
       if (code !== 0) {
@@ -1119,11 +1334,16 @@ function readScopedPidsOnce(scopeKey, scopeToken) {
       const escaped = String(scopeToken).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const key = String(scopeKey).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const pattern = new RegExp(`(?:^|\\s)${key}=${escaped}(?:\\s|$)`);
-      const pids = Buffer.concat(chunks).toString('utf8').split('\n').flatMap((line) => {
-        const match = line.match(/^\s*(\d+)\s+(.*)$/);
-        return match && pattern.test(match[2]) ? [Number(match[1])] : [];
+      const processes = Buffer.concat(chunks).toString('utf8').split('\n').flatMap((line) => {
+        const match = line.match(/^\s*(\d+)\s+(\d+)\s+(.{24})\s+(.*)$/);
+        if (!match || !pattern.test(match[4])) return [];
+        const pid = Number(match[1]);
+        const pgid = Number(match[2]);
+        if (!Number.isSafeInteger(pid) || pid <= 0 || !Number.isSafeInteger(pgid) || pgid <= 0) return [];
+        return [{ pid, identity: { pgid, start: match[3] } }];
       });
-      finish(null, [...new Set(pids)]);
+      const unique = new Map(processes.map((entry) => [entry.pid, entry]));
+      finish(null, [...unique.values()]);
     });
   });
 }
@@ -1132,7 +1352,7 @@ async function scanScopedPids(scopeKey, scopeToken) {
   let lastError;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
-      return await readScopedPidsOnce(scopeKey, scopeToken);
+      return await readScopedProcessesOnce(scopeKey, scopeToken);
     } catch (error) {
       lastError = error;
       await new Promise((resolvePromise) => setTimeout(resolvePromise, 40));
@@ -1141,12 +1361,59 @@ async function scanScopedPids(scopeKey, scopeToken) {
   throw new Error(`process-scope scan failed after 3 attempts: ${lastError?.message ?? 'unknown ps failure'}`);
 }
 
-function signalScopedPids(pids, signal) {
-  for (const pid of pids) {
-    try { process.kill(pid, signal); } catch (error) {
-      if (error?.code !== 'ESRCH') throw new Error(`scoped ${signal} failed for pid ${pid}: ${error.message}`);
+function sameProcessIdentity(left, right) {
+  return Boolean(left && right)
+    && left.pgid === right.pgid
+    && left.start === right.start;
+}
+
+async function signalScopedProcesses(handle, processes, signal) {
+  // Revalidate the PID and its process identity immediately before signaling.
+  // In particular, never signal a negative PGID: a dead leader's PID may have
+  // been reused for an unrelated process group.
+  const current = await scanScopedPids(handle.scopeKey, handle.scopeToken);
+  const byPid = new Map(current.map((entry) => [entry.pid, entry]));
+  for (const entry of processes) {
+    const fresh = byPid.get(entry.pid);
+    if (!sameProcessIdentity(fresh?.identity, entry.identity)) continue;
+    try { process.kill(entry.pid, signal); } catch (error) {
+      if (error?.code !== 'ESRCH') throw new Error(`scoped ${signal} failed during cleanup (${error.message})`);
     }
   }
+}
+
+async function drainServerScope(handle, initialSignal) {
+  let quietScans = 0;
+  const maxAttempts = 3 + SERVER_SCOPE_QUIESCENCE_SCANS + 24;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    // Scan before signaling. A leader can exit while a detached descendant is
+    // still starting; consecutive scans below keep that race observable.
+    const current = await scanScopedPids(handle.scopeKey, handle.scopeToken);
+    if (!(handle.seen instanceof Map)) handle.seen = new Map();
+    for (const row of current) handle.seen.set(row.pid, row.identity);
+    // Retain every identity observed by the watchdog, while requiring a
+    // current same-identity match before signaling it. This covers a detached
+    // child that appears between the leader's exit and the first cleanup scan
+    // without widening the PID-reuse window.
+    const currentByPid = new Map(current.map((row) => [row.pid, row]));
+    const processes = [...handle.seen].flatMap(([pid, identity]) => {
+      const row = currentByPid.get(pid);
+      return row && sameProcessIdentity(row.identity, identity) ? [row] : [];
+    });
+    if (processes.length === 0) {
+      quietScans += 1;
+    } else {
+      quietScans = 0;
+      const signal = initialSignal === 'SIGKILL' || attempt >= 3 ? 'SIGKILL' : initialSignal;
+      await signalScopedProcesses(handle, processes, signal);
+    }
+    // One empty scan is insufficient evidence of quiescence: a TERM handler
+    // may spawn a detached child immediately after it.
+    if (quietScans >= SERVER_SCOPE_QUIESCENCE_SCANS) return;
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, SERVER_SCOPE_SCAN_DELAY_MS));
+  }
+  const remaining = await scanScopedPids(handle.scopeKey, handle.scopeToken);
+  if (remaining.length > 0) fail(`server process scope did not reach quiescence (${remaining.length} remaining)`);
 }
 
 async function stopLoggedProcesses(handles) {
@@ -2657,8 +2924,12 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
 }
 
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
-  main().catch((error) => {
-    console.error(`${LABEL} FAIL: ${error.message}`);
-    process.exitCode = error instanceof UsageError ? 2 : 1;
-  });
+  if (process.argv[2] === SERVER_SUPERVISOR_ARG) {
+    runServerSupervisor().catch(() => { process.exitCode = 1; });
+  } else {
+    main().catch((error) => {
+      console.error(`${LABEL} FAIL: ${error.message}`);
+      process.exitCode = error instanceof UsageError ? 2 : 1;
+    });
+  }
 }

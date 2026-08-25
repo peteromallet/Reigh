@@ -34,14 +34,17 @@ const VISUAL_DIFF_ROOT = resolve(
   REPO_ROOT,
   'docs/extensions/evidence/releases/extension-ship-quality-rc6/visual-diffs',
 );
+let temporaryArtifactOrdinal = 0;
 
 function withTemporaryArtifact(name, create, callback) {
-  const artifactPath = resolve(VISUAL_DIFF_ROOT, name);
+  temporaryArtifactOrdinal += 1;
+  const uniqueName = `${process.pid}-${temporaryArtifactOrdinal}-${name}`;
+  const artifactPath = resolve(VISUAL_DIFF_ROOT, uniqueName);
   try {
     create(artifactPath);
-    return callback(artifactPath);
+    return callback(artifactPath, uniqueName);
   } finally {
-    rmSync(artifactPath, { force: true });
+    rmSync(artifactPath, { recursive: true, force: true });
   }
 }
 
@@ -153,9 +156,9 @@ describe('RC6 visual baseline provenance verifier', () => {
         resolve(VISUAL_DIFF_ROOT, 'composed-desktop.diff.png'),
         artifactPath,
       ),
-      () => withManifest((manifest) => {
+      (_artifactPath, uniqueName) => withManifest((manifest) => {
         manifest.entries[0].reviewedDiffArtifact.path =
-          'docs/extensions/evidence/releases/extension-ship-quality-rc6/visual-diffs/symlink.diff.png';
+          `docs/extensions/evidence/releases/extension-ship-quality-rc6/visual-diffs/${uniqueName}`;
       }, (manifestPath) => {
         assert.throws(
           () => verifyVisualBaselineProvenance({ repoRoot: REPO_ROOT, manifestPath }),
@@ -166,21 +169,19 @@ describe('RC6 visual baseline provenance verifier', () => {
   });
 
   it('rejects a non-regular reviewed diff artifact', () => {
-    const artifactPath = resolve(VISUAL_DIFF_ROOT, 'directory.diff.png');
-    mkdirSync(artifactPath);
-    try {
-      withManifest((manifest) => {
+    withTemporaryArtifact(
+      'directory.diff.png',
+      (artifactPath) => mkdirSync(artifactPath),
+      (_artifactPath, uniqueName) => withManifest((manifest) => {
         manifest.entries[0].reviewedDiffArtifact.path =
-          'docs/extensions/evidence/releases/extension-ship-quality-rc6/visual-diffs/directory.diff.png';
+          `docs/extensions/evidence/releases/extension-ship-quality-rc6/visual-diffs/${uniqueName}`;
       }, (manifestPath) => {
         assert.throws(
           () => verifyVisualBaselineProvenance({ repoRoot: REPO_ROOT, manifestPath }),
           /must be a regular file/,
         );
-      });
-    } finally {
-      rmSync(artifactPath, { recursive: true, force: true });
-    }
+      }),
+    );
   });
 
   it('rejects an untracked file even when its bytes match the committed artifact', () => {
@@ -190,9 +191,9 @@ describe('RC6 visual baseline provenance verifier', () => {
         artifactPath,
         readFileSync(resolve(VISUAL_DIFF_ROOT, 'composed-desktop.diff.png')),
       ),
-      () => withManifest((manifest) => {
+      (_artifactPath, uniqueName) => withManifest((manifest) => {
         manifest.entries[0].reviewedDiffArtifact.path =
-          'docs/extensions/evidence/releases/extension-ship-quality-rc6/visual-diffs/untracked-same-bytes.diff.png';
+          `docs/extensions/evidence/releases/extension-ship-quality-rc6/visual-diffs/${uniqueName}`;
       }, (manifestPath) => {
         assert.throws(
           () => verifyVisualBaselineProvenance({ repoRoot: REPO_ROOT, manifestPath }),
@@ -205,17 +206,18 @@ describe('RC6 visual baseline provenance verifier', () => {
   it('rejects worktree bytes that diverge from the bound artifact commit', () => {
     const artifactPath = resolve(VISUAL_DIFF_ROOT, 'composed-desktop.diff.png');
     const originalBytes = readFileSync(artifactPath);
-    try {
-      writeFileSync(artifactPath, Buffer.concat([originalBytes, Buffer.from([0])]));
-      withManifest(() => {}, (manifestPath) => {
-        assert.throws(
-          () => verifyVisualBaselineProvenance({ repoRoot: REPO_ROOT, manifestPath }),
-          /reviewed diff artifact worktree bytes do not match/,
-        );
-      });
-    } finally {
-      writeFileSync(artifactPath, originalBytes);
-    }
+    withManifest(() => {}, (manifestPath) => {
+      assert.throws(
+        () => verifyVisualBaselineProvenance({
+          repoRoot: REPO_ROOT,
+          manifestPath,
+          readWorktreeArtifact: (path) => path === artifactPath
+            ? Buffer.concat([originalBytes, Buffer.from([0])])
+            : readFileSync(path),
+        }),
+        /reviewed diff artifact worktree bytes do not match/,
+      );
+    });
   });
 
   it('rejects duplicate reviewed diff artifact paths', () => {

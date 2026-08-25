@@ -1,9 +1,10 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { closeSync, existsSync, lstatSync, mkdirSync, openSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
-import { dirname, resolve } from 'node:path';
+import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { constants as osConstants, tmpdir } from 'node:os';
 
 const FAILURE_TYPES = new Set([
   'success',
@@ -19,8 +20,29 @@ const FAILURE_TYPES = new Set([
 const moduleDir = dirname(fileURLToPath(import.meta.url));
 const WRAPPER_PATH = resolve(moduleDir, 'bounded-command-wrapper.mjs');
 const WRAPPER_PROTOCOL_BYTES = 16 * 1024;
-const TERMINATION_GRACE_MS = 250;
+const WRAPPER_CLEANUP_ALLOWANCE_MS = 10_000;
 export const PROCESS_SCOPE_ENV_KEY = 'REIGH_BOUNDED_PROCESS_SCOPE';
+const BROKER_SESSION_ENV_KEY = 'REIGH_BOUNDED_BROKER_SESSION';
+if (!/^[0-9a-f]{32}$/.test(process.env[BROKER_SESSION_ENV_KEY] ?? '')) {
+  process.env[BROKER_SESSION_ENV_KEY] = randomBytes(16).toString('hex');
+}
+const BROKER_TEMP_ROOT = process.platform === 'darwin' ? '/tmp' : tmpdir();
+const BROKER_DIR = join(BROKER_TEMP_ROOT, `rb-${process.pid}-${process.env[BROKER_SESSION_ENV_KEY].slice(0, 12)}`);
+const BROKER_SOCKET = join(BROKER_DIR, 'broker.sock');
+const BROKER_READY = `${BROKER_SOCKET}.ready`;
+const BROKER_ELECTION = `${BROKER_SOCKET}.election`;
+const BROKER_LOCK_TOOL = process.platform === 'darwin' ? '/usr/bin/lockf' : '/usr/bin/flock';
+const BROKER_OWNER_START_SECONDS = Math.floor((Date.now() - process.uptime() * 1_000) / 1_000);
+if (Buffer.byteLength(BROKER_SOCKET) > 100) {
+  throw new Error(`bounded-command broker socket path is too long: ${BROKER_SOCKET}`);
+}
+const INTERNAL_ENV = Object.freeze({
+  PATH: dirname(process.execPath),
+  ...(process.env.TMPDIR ? { TMPDIR: process.env.TMPDIR } : {}),
+  ...Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => key.startsWith(`${PROCESS_SCOPE_ENV_KEY}_`)),
+  ),
+});
 
 function hasOwn(value, key) {
   return Object.prototype.hasOwnProperty.call(value, key);
@@ -71,12 +93,15 @@ function cloneCwd(cwd) {
 }
 
 function normalizeKillSignal(killSignal) {
+  const signalValues = Object.values(osConstants.signals ?? {});
   if (
     (typeof killSignal !== 'string' && !Number.isSafeInteger(killSignal))
     || (typeof killSignal === 'string' && killSignal.length === 0)
     || (typeof killSignal === 'number' && killSignal <= 0)
+    || (typeof killSignal === 'string' && !(killSignal in (osConstants.signals ?? {})))
+    || (typeof killSignal === 'number' && !signalValues.includes(killSignal))
   ) {
-    throw new TypeError('killSignal must be a non-empty signal name or positive signal number');
+    throw new TypeError('killSignal must be a signal name or number supported by this platform');
   }
   return killSignal;
 }
@@ -144,14 +169,51 @@ function classify(result, stdout, stderr) {
   return 'unknown';
 }
 
-function encodeInvocation(value) {
-  return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
-}
-
 function wrapperOutputCap(maxBuffer) {
   // Each bounded stream is base64-encoded by the protocol. Leave room for
   // both streams plus the JSON envelope without weakening the target cap.
   return Math.ceil(maxBuffer * 8 / 3) + WRAPPER_PROTOCOL_BYTES;
+}
+
+function launchScopeBroker() {
+  // All wrappers in one Node process point at one broker. Launching a small
+  // candidate per invocation is race-safe: the broker's atomic lock elects a
+  // single owner and the losers exit immediately. This keeps `ps` centralized
+  // even when callers use worker threads.
+  try {
+    try {
+      mkdirSync(BROKER_DIR, { mode: 0o700 });
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error;
+      const stat = lstatSync(BROKER_DIR);
+      const ownedByCaller = typeof process.getuid !== 'function' || stat.uid === process.getuid();
+      if (!stat.isDirectory() || stat.isSymbolicLink() || !ownedByCaller || (stat.mode & 0o777) !== 0o700) {
+        throw new Error(`bounded-command broker directory is not a private caller-owned directory: ${BROKER_DIR}`);
+      }
+    }
+    const candidateNonce = randomBytes(16).toString('hex');
+    // The kernel lock is held by lockf/flock for the complete broker
+    // lifetime. It replaces the crash-prone application takeover mutex.
+    const lockArgs = process.platform === 'darwin'
+      ? ['-k', '-t', '0', BROKER_ELECTION, process.execPath, WRAPPER_PATH, '--broker', BROKER_SOCKET, candidateNonce, String(process.pid), String(BROKER_OWNER_START_SECONDS), BROKER_ELECTION]
+      : ['-n', BROKER_ELECTION, process.execPath, WRAPPER_PATH, '--broker', BROKER_SOCKET, candidateNonce, String(process.pid), String(BROKER_OWNER_START_SECONDS), BROKER_ELECTION];
+    const candidate = spawn(BROKER_LOCK_TOOL, lockArgs, {
+      stdio: 'ignore',
+      detached: true,
+      env: INTERNAL_ENV,
+    });
+    candidate.unref();
+  } catch {
+    // The wrapper reports an actionable broker connection failure.
+  }
+  // A synchronous caller cannot await the detached launch. The broker writes
+  // a private readiness sentinel after binding; wait briefly so wrappers do
+  // not race the server's listen() under a 20-worker startup burst.
+  const gate = new Int32Array(new SharedArrayBuffer(4));
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (existsSync(BROKER_READY)) return;
+    Atomics.wait(gate, 0, 0, 10);
+  }
 }
 
 function decodeWrapperResult(raw, maxBuffer, redact, tokens) {
@@ -213,6 +275,9 @@ export function formatBoundedCommandFailure(result) {
  * default; pass allowFailure:true when a caller needs to inspect the result.
  */
 export function runBoundedCommand(command, args, options = {}) {
+  if (!['darwin', 'linux'].includes(process.platform)) {
+    throw new Error(`runBoundedCommand requires Darwin or Linux process containment; ${process.platform} is unsupported`);
+  }
   assertCommand(command);
   const immutableArgs = cloneArgs(args);
   const cwd = cloneCwd(options.cwd);
@@ -244,20 +309,30 @@ export function runBoundedCommand(command, args, options = {}) {
   // wrapper itself never inherits it. Only the target receives it, and every
   // descendant (including detached/reparented descendants) inherits it.
   const scopeToken = randomBytes(32).toString('hex');
+  const scopeKey = `${PROCESS_SCOPE_ENV_KEY}_${randomBytes(12).toString('hex')}`;
   let raw;
   try {
     if (!existsSync(WRAPPER_PATH)) throw new Error(`bounded command wrapper is missing: ${WRAPPER_PATH}`);
-    const wrapperInput = encodeInvocation({
+    launchScopeBroker();
+    // Keep the command, environment, and scope token out of the wrapper's
+    // argv.  `ps eww` exposes argv to every local user; stdin is inherited by
+    // the wrapper only long enough to decode this private invocation.
+    const wrapperInput = JSON.stringify({
       command,
       args: immutableArgs,
       cwd,
-      env,
+      env: (() => {
+        const targetEnv = { ...(env ?? process.env) };
+        delete targetEnv[BROKER_SESSION_ENV_KEY];
+        return targetEnv;
+      })(),
       timeoutMs,
       maxBuffer,
       killSignal,
-      scopeKey: PROCESS_SCOPE_ENV_KEY,
+      scopeKey,
       scopeToken,
       parentPid: process.pid,
+      brokerSocket: BROKER_SOCKET,
       input: options.input === undefined
         ? undefined
         : Buffer.from(options.input).toString('base64'),
@@ -265,15 +340,16 @@ export function runBoundedCommand(command, args, options = {}) {
     // The wrapper owns the target's detached process group. Its watchdog is
     // responsible for TERM->KILL cleanup; leave a small outer allowance for
     // reaping and protocol serialization before the synchronous boundary.
-    raw = spawnSync(process.execPath, [WRAPPER_PATH, wrapperInput], {
+    raw = spawnSync(process.execPath, [WRAPPER_PATH], {
       cwd,
-      env: process.env,
+      env: INTERNAL_ENV,
       encoding: 'utf8',
       maxBuffer: wrapperOutputCap(maxBuffer),
       shell: false,
       stdio: ['pipe', 'pipe', 'pipe'],
+      input: wrapperInput,
       detached: process.platform !== 'win32',
-      timeout: timeoutMs + TERMINATION_GRACE_MS + 1_000,
+      timeout: timeoutMs + WRAPPER_CLEANUP_ALLOWANCE_MS,
       killSignal: 'SIGKILL',
     });
   } catch (error) {

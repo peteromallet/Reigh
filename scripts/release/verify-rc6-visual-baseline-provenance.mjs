@@ -315,7 +315,11 @@ function assertDiffMaskPixels(actualImage, oldImage, newImage, path) {
 export function verifyVisualBaselineProvenance({
   repoRoot = REPO_ROOT,
   manifestPath = DEFAULT_MANIFEST_PATH,
+  readWorktreeArtifact = readFileSync,
 } = {}) {
+  if (typeof readWorktreeArtifact !== 'function') {
+    throw new TypeError('readWorktreeArtifact must be a function');
+  }
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
   if (manifest.schemaVersion !== 1) fail('visual baseline provenance schemaVersion must be 1');
   if (manifest.release !== 'extension-ship-quality-rc6') fail('visual baseline provenance is not bound to RC6');
@@ -430,7 +434,10 @@ export function verifyVisualBaselineProvenance({
       if (sha256(committedArtifactBytes) !== artifact.sha256) {
         fail(`${path} reviewed diff artifact hash does not match ${artifactCommit}:${artifact.path}`);
       }
-      const currentArtifactBytes = readFileSync(artifactPath);
+      const currentArtifactBytes = readWorktreeArtifact(artifactPath);
+      if (!Buffer.isBuffer(currentArtifactBytes)) {
+        fail(`${path} reviewed diff artifact reader must return a Buffer`);
+      }
       if (!currentArtifactBytes.equals(committedArtifactBytes)) {
         fail(`${path} reviewed diff artifact worktree bytes do not match ${artifactCommit}:${artifact.path}`);
       }

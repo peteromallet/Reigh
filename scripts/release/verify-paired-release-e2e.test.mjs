@@ -1,4 +1,5 @@
 import { strict as assert } from 'node:assert';
+import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { arch, platform, release, tmpdir } from 'node:os';
@@ -40,6 +41,7 @@ import {
   waitForUrl,
   waitForViteReadiness,
   startLoggedProcessUntilReady,
+  stopLoggedProcess,
 } from './verify-paired-release-e2e.mjs';
 import { runBoundedCommand } from './bounded-command.mjs';
 import {
@@ -417,6 +419,75 @@ describe('paired repository release E2E gate', () => {
       await new Promise((resolvePromise) => setTimeout(resolvePromise, 850));
       assert.equal(existsSync(marker), false, 'TERM-spawned scoped descendant survived cleanup');
     } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('uses unique scope keys, avoids negative PGID signaling, and never leaks scope tokens in cleanup text', () => {
+    const source = readFileSync(resolve(REPO_ROOT, 'scripts/release/verify-paired-release-e2e.mjs'), 'utf8');
+    assert.match(source, /SERVER_SCOPE_PREFIX[^\n]*randomBytes/);
+    assert.doesNotMatch(source, /process\.kill\(-/);
+    assert.doesNotMatch(source, /server process scope \$\{handle\.scopeToken\}/);
+    assert.match(source, /sameProcessIdentity/);
+    assert.match(source, /SERVER_SCOPE_QUIESCENCE_SCANS/);
+  });
+
+  it('maintains independent simultaneous scopes and keeps tokens out of supervisor argv/env', async () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'paired-simultaneous-scopes-'));
+    const target = resolve(root, 'target.mjs');
+    const handles = [];
+    writeFileSync(target, 'setInterval(() => {}, 10_000);\n', { mode: 0o700 });
+    try {
+      handles.push(...await Promise.all([
+        startLoggedProcessUntilReady(process.execPath, [target], { cwd: root, env: process.env, logPath: resolve(root, 'one.log') }, async () => {}),
+        startLoggedProcessUntilReady(process.execPath, [target], { cwd: root, env: process.env, logPath: resolve(root, 'two.log') }, async () => {}),
+      ]));
+      assert.notEqual(handles[0].scopeKey, handles[1].scopeKey);
+      assert.notEqual(handles[0].scopeToken, handles[1].scopeToken);
+      for (const handle of handles) {
+        const psPath = platform() === 'darwin' ? '/bin/ps' : '/usr/bin/ps';
+        const listing = runTestCommand(psPath, ['eww', '-p', String(handle.supervisor.pid), '-o', 'command=']);
+        assert.equal(listing.status, 0, listing.stderr);
+        assert.doesNotMatch(listing.stdout, new RegExp(handle.scopeToken));
+      }
+    } finally {
+      await Promise.allSettled(handles.map(stopLoggedProcess));
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('cleans a server scope when the supervising verifier is killed', async () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'paired-supervisor-loss-'));
+    const marker = resolve(root, 'supervisor-loss-marker');
+    const target = resolve(root, 'target.mjs');
+    const driver = resolve(root, 'driver.mjs');
+    const logPath = resolve(root, 'server.log');
+    writeFileSync(target, [
+      "import { spawn } from 'node:child_process';",
+      "import { writeFileSync } from 'node:fs';",
+      `const grandchild = spawn(process.execPath, ['-e', ${JSON.stringify(
+        `setTimeout(() => writeFileSync(${JSON.stringify(marker)}, 'orphan'), 1_200)`,
+      )}], { detached: true, stdio: 'ignore' });`,
+      'grandchild.unref(); process.exit(0);',
+    ].join('\n'), { mode: 0o700 });
+    writeFileSync(driver, [
+      `import { startLoggedProcessUntilReady } from ${JSON.stringify(resolve(REPO_ROOT, 'scripts/release/verify-paired-release-e2e.mjs'))};`,
+      `const handle = await startLoggedProcessUntilReady(process.execPath, [${JSON.stringify(target)}], { cwd: ${JSON.stringify(root)}, env: process.env, logPath: ${JSON.stringify(logPath)} }, async () => {});`,
+      `process.stdout.write(JSON.stringify({ pid: handle.child.pid }) + '\\n');`,
+      'setInterval(() => {}, 10_000);',
+    ].join('\n'), { mode: 0o700 });
+    const child = spawn(process.execPath, [driver], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
+    try {
+      await new Promise((resolvePromise, reject) => {
+        child.stdout.once('data', resolvePromise);
+        child.once('error', reject);
+      });
+      child.kill('SIGKILL');
+      await new Promise((resolvePromise) => child.once('close', resolvePromise));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 1_700));
+      assert.equal(existsSync(marker), false, 'detached server survived supervisor loss');
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
       rmSync(root, { recursive: true, force: true });
     }
   });
