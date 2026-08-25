@@ -115,6 +115,29 @@ describe('useTimelineSave — recovered draft durability', () => {
     vi.useRealTimers();
   });
 
+  it('silently clears a recovery slot that already matches the loaded server snapshot', async () => {
+    const harness = setup(async () => 2);
+    const server = makeTimelineData('already-saved');
+    await saveTimelineDraft(
+      'timeline-1',
+      { config: server.config, registry: server.registry },
+      server.configVersion,
+    );
+
+    act(() => {
+      harness.hook.result.current.commitData(server, { save: false });
+    });
+    await flush();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(harness.hook.result.current.recoveryDraft).toBeNull();
+    expect(await loadTimelineDraft('timeline-1')).toBeNull();
+    harness.hook.unmount();
+  });
+
   it('uses the draft baseVersion for CAS and clears only after a successful ACK', async () => {
     const harness = setup(async () => 8);
     const recovered = makeTimelineData('recovered');

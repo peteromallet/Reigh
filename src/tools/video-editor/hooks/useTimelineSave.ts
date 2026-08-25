@@ -10,6 +10,7 @@ import { TimelineEventBus } from '@/tools/video-editor/hooks/useTimelineEventBus
 import { useTimelinePersistence } from '@/tools/video-editor/hooks/useTimelinePersistence.ts';
 import { clearTimelineDraft, loadTimelineDraft } from '@/tools/video-editor/data/timelineDraftIndexedDb.ts';
 import { buildTimelineData } from '@/tools/video-editor/lib/timeline-data.ts';
+import { getStableConfigSignature } from '@/tools/video-editor/lib/config-utils.ts';
 import type { AssetRegistry, TimelineConfig } from '@/tools/video-editor/types/index.ts';
 import { usePollSync, type UsePollSyncQueries } from '@/tools/video-editor/hooks/usePollSync.ts';
 import type { TimelineStoreApi } from '@/tools/video-editor/hooks/timelineStore.ts';
@@ -106,6 +107,20 @@ export function useTimelineSave(
     void loadTimelineDraft(timelineId)
       .then((record) => {
         if (cancelled || !record) {
+          return;
+        }
+        const draft = record.draft as { config?: TimelineConfig; registry?: AssetRegistry };
+        // A save ACK clears the slot asynchronously. Another tab can load the
+        // record in that window (or a late draft write can race the clear), so
+        // the mere presence of a slot is not proof of unsaved work. If the
+        // draft is already the server snapshot, discard it silently instead
+        // of showing a false recovery banner.
+        if (
+          draft.config
+          && getStableConfigSignature(draft.config, draft.registry ?? { assets: {} })
+            === commit.data.stableSignature
+        ) {
+          void clearTimelineDraft(timelineId).catch(() => {});
           return;
         }
         recoveryOfferedRef.current = true;
