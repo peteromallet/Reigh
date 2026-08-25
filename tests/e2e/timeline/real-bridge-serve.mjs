@@ -47,33 +47,14 @@ const SEED_ROOT = process.env.ASTRID_SEED_ROOT ? resolve(process.env.ASTRID_SEED
 const TIMELINE_ID = '11111111-1111-1111-1111-111111111111';
 const TIMELINE_ULID = '01JM4K5N7P0000000000000017';
 const PROJECT = { slug: 'demo-project', name: 'Demo Project' };
+const OTHER_TIMELINE_ID = '22222222-2222-2222-2222-222222222222';
+const OTHER_TIMELINE_ULID = '01JM4K5N7P0000000000000018';
+const OTHER_PROJECT = { slug: 'other-project', name: 'Other Project' };
+const RUNAWAY_RUN_ID = '01j5realbridgepage000000000000';
 const BRIDGE_TOKEN = process.env.ASTRID_BRIDGE_TOKEN ?? randomBytes(32).toString('hex');
 
 function seed() {
-  const projectDir = join(SEED_ROOT, PROJECT.slug);
-  mkdirSync(join(projectDir, 'timelines', TIMELINE_ULID), { recursive: true });
-  writeFileSync(join(projectDir, 'project.json'), JSON.stringify({
-    created_at: '2026-08-11T00:00:00Z',
-    name: PROJECT.name,
-    schema_version: 1,
-    slug: PROJECT.slug,
-    updated_at: '2026-08-11T00:00:00Z',
-    default_timeline_id: TIMELINE_ID,
-  }, null, 2));
-
-  const home = join(projectDir, 'timelines', TIMELINE_ULID);
-  writeFileSync(join(home, 'display.json'), JSON.stringify({
-    schema_version: 1,
-    slug: 'demo-timeline',
-    name: 'Demo Timeline',
-    is_default: true,
-  }, null, 2));
-  writeFileSync(join(home, 'assembly.identity.json'), JSON.stringify({
-    timeline_id: TIMELINE_ID,
-    provenance: 'created',
-    backend: 'local_fs',
-  }, null, 2));
-  writeFileSync(join(home, 'assembly.json'), JSON.stringify({
+  const config = {
     output: { resolution: '1920x1080', fps: 24, file: 'output.mp4' },
     clips: [
       { id: 'clip-1', track: 'V1', at: 0, clipType: 'media', hold: 4, asset: 'example-image1.jpg' },
@@ -83,8 +64,39 @@ function seed() {
       { id: 'V2', kind: 'visual', label: 'Video 2' },
       { id: 'A1', kind: 'audio', label: 'Audio' },
     ],
-  }, null, 2));
+  };
 
+  const writeProject = (project, timeline, timelineUlid, timelineSlug, timelineName) => {
+    const projectDir = join(SEED_ROOT, project.slug);
+    mkdirSync(join(projectDir, 'timelines', timelineUlid), { recursive: true });
+    writeFileSync(join(projectDir, 'project.json'), JSON.stringify({
+      created_at: '2026-08-11T00:00:00Z',
+      name: project.name,
+      schema_version: 1,
+      slug: project.slug,
+      updated_at: '2026-08-11T00:00:00Z',
+      default_timeline_id: timeline,
+    }, null, 2));
+
+    const home = join(projectDir, 'timelines', timelineUlid);
+    writeFileSync(join(home, 'display.json'), JSON.stringify({
+      schema_version: 1,
+      slug: timelineSlug,
+      name: timelineName,
+      is_default: true,
+    }, null, 2));
+    writeFileSync(join(home, 'assembly.identity.json'), JSON.stringify({
+      timeline_id: timeline,
+      provenance: 'created',
+      backend: 'local_fs',
+    }, null, 2));
+    writeFileSync(join(home, 'assembly.json'), JSON.stringify(config, null, 2));
+  };
+
+  writeProject(PROJECT, TIMELINE_ID, TIMELINE_ULID, 'demo-timeline', 'Demo Timeline');
+  writeProject(OTHER_PROJECT, OTHER_TIMELINE_ID, OTHER_TIMELINE_ULID, 'other-timeline', 'Other Timeline');
+
+  const projectDir = join(SEED_ROOT, PROJECT.slug);
   const sourcesDir = join(projectDir, 'sources');
   mkdirSync(sourcesDir, { recursive: true });
   const sourcePath = join(sourcesDir, 'example-image1.jpg');
@@ -311,6 +323,92 @@ function registerInBridgeRegistry(astrid, { sourcePath }) {
     cliEnv,
     'timeline registration',
   );
+  runAstridJson(
+    astrid,
+    ['projects', 'create', OTHER_PROJECT.slug, '--name', OTHER_PROJECT.name],
+    cliEnv,
+    'cross-project registration',
+  );
+  runAstridJson(
+    astrid,
+    ['timelines', 'create', 'other-timeline', '--project', OTHER_PROJECT.slug,
+      '--name', 'Other Timeline', '--default',
+      '--config', JSON.stringify(config), '--registry', JSON.stringify({ assets: {} })],
+    cliEnv,
+    'cross-project timeline registration',
+  );
+}
+
+function seedRunawayTransitions(astrid) {
+  const script = `
+import os
+from astrid.core.events.service import EventAppendService
+from astrid.core.receipts.service import ReceiptService
+from astrid.core.repositories.runs import RunRepository
+from astrid.core.store.uow import UnitOfWork
+from astrid.packs import compose_standard_bridge
+
+root = os.environ['ASTRID_PROJECTS_ROOT']
+composition = compose_standard_bridge(root)
+try:
+    with composition.writer.read_only_connection() as conn:
+        project = conn.execute(
+            'SELECT id FROM projects WHERE slug = ?', ('demo-project',)
+        ).fetchone()
+    if project is None:
+        raise RuntimeError('demo-project was not registered before Runaway seeding')
+    project_id = str(project[0])
+    runs = RunRepository(
+        events=EventAppendService(composition.registry),
+        receipts=ReceiptService(),
+    )
+    transitions = [
+        {
+            'ordinal': ordinal,
+            'start_ms': ordinal * 20,
+            'duration_ms': 20,
+            'prompt': f'real bridge transition {ordinal}',
+            'metadata': {'frame': ordinal + 1},
+        }
+        for ordinal in range(5)
+    ]
+    def seed(uow):
+        runs.create(
+            uow,
+            project_id=project_id,
+            run_id='${RUNAWAY_RUN_ID}',
+            children=[],
+            evidence=[],
+            idempotency_key='real-bridge:runaway:run',
+            kind='runaway:timing-v1',
+            title='Real bridge pagination',
+            input={},
+            created_at='2026-08-11T00:00:00Z',
+        )
+        composition.runaway.create(
+            uow,
+            project_id=project_id,
+            run_id='${RUNAWAY_RUN_ID}',
+            transitions=transitions,
+            idempotency_key='real-bridge:runaway:create',
+            created_at='2026-08-11T00:00:00Z',
+        )
+    UnitOfWork(composition.writer).run(seed)
+finally:
+    composition.close()
+`;
+  const env = { ...astrid.env, ASTRID_PROJECTS_ROOT: SEED_ROOT };
+  const python = env.ASTRID_PYTHON ?? astrid.command;
+  const result = spawnSync(python, ['-c', script], {
+    stdio: 'pipe',
+    cwd: astrid.cwd,
+    env,
+  });
+  if (result.status !== 0) {
+    throw new Error(
+      `[real-bridge] Runaway pagination seed failed\n${result.stderr?.toString() ?? ''}`,
+    );
+  }
 }
 
 function cleanupOwnedSeedRoot() {
@@ -327,6 +425,7 @@ try {
   console.error(`[real-bridge] seeding ${SEED_ROOT}`);
   console.error(`[real-bridge] Astrid provenance ${astrid.provenance}`);
   registerInBridgeRegistry(astrid, seedState);
+  seedRunawayTransitions(astrid);
 } catch (error) {
   cleanupOwnedSeedRoot();
   throw error;

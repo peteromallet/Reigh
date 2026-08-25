@@ -336,6 +336,7 @@ test('release bridge has explicit auth/protocol negatives and atomic two-writer 
   expect(replayPayload.config_version).toBe(winner.payload.config_version);
   expect(replayPayload.config.app['b8.cas.writer']).toBe(winner.data.config.app['b8.cas.writer']);
 });
+
 /**
  * OpenAPI conformance (B3 envelope) against the real bridge: GET timeline,
  * POST save with CAS, GET assets.

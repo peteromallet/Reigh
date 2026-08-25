@@ -352,6 +352,142 @@ describe('BrowserLocalFullSnapshotStore', () => {
       },
     );
 
+    it.each([
+      ['disk-full', 'QuotaExceededError'],
+      ['crash-during-durable-write', 'AbortError'],
+    ] as const)(
+      'release matrix: classifies %s, preserves atomic state, and recovers after restart',
+      async (failure, errorName) => {
+        const store = new BrowserLocalFullSnapshotStore(SCOPE_A);
+        const before = makeFullSnapshot(
+          { packs: { stable: { extensionId: 'stable', version: '1.0.0' } } },
+          {
+            'proposal-stable': {
+              id: 'proposal-stable',
+              extensionId: 'stable',
+              status: 'pending',
+              payload: { revision: 1 },
+              createdAt: '2026-01-01T00:00:00.000Z',
+              updatedAt: '2026-01-01T00:00:00.000Z',
+            },
+          },
+        );
+        const after = makeFullSnapshot(
+          { packs: { recovered: { extensionId: 'recovered', version: '2.0.0' } } },
+          {
+            'proposal-recovered': {
+              id: 'proposal-recovered',
+              extensionId: 'recovered',
+              status: 'accepted',
+              payload: { revision: 2 },
+              createdAt: '2026-01-02T00:00:00.000Z',
+              updatedAt: '2026-01-02T00:00:00.000Z',
+            },
+          },
+        );
+        await store.saveSnapshot(before);
+
+        const workingIndexedDb = globalThis.indexedDB;
+        if (failure === 'disk-full') {
+          // Quota errors can be reported while opening/allocating the durable
+          // store.  Keep this path as an explicit disk-full injection.
+          (globalThis as Record<string, unknown>).indexedDB = {
+            open() {
+              throw new DOMException('injected durable write failure', errorName);
+            },
+          } as unknown as IDBFactory;
+        } else {
+          // Crash after the durable write has begun: let the real IndexedDB
+          // open and transaction start, then abort immediately after the
+          // snapshot put request is queued.
+          const originalOpen = workingIndexedDb.open.bind(workingIndexedDb);
+          (globalThis as Record<string, unknown>).indexedDB = {
+            open(...args: Parameters<IDBFactory['open']>) {
+              const request = originalOpen(...args);
+              request.addEventListener('success', () => {
+                const database = request.result as IDBDatabase & {
+                  transaction: IDBDatabase['transaction'];
+                };
+                // The repository's checked-in fake-indexeddb intentionally
+                // keeps its store map simple and does not roll back records
+                // when abort() is called. Preserve the pre-write record here
+                // so this injected crash models the browser transaction
+                // contract the production store relies on.
+                const fakeDatabase = database as unknown as {
+                  recordsByStore?: Map<string, Map<string, unknown>>;
+                };
+                const snapshotRecords = fakeDatabase.recordsByStore?.get('snapshots');
+                const scopeKey = `${SCOPE_A.userId}:${SCOPE_A.timelineId}`;
+                const previousRecord = snapshotRecords?.get(scopeKey);
+                const originalTransaction = database.transaction.bind(database);
+                database.transaction = ((...transactionArgs: Parameters<IDBDatabase['transaction']>) => {
+                  const transaction = originalTransaction(...transactionArgs);
+                  const storeNames = transactionArgs[0];
+                  const mode = transactionArgs[1];
+                  const targetsSnapshots = typeof storeNames === 'string'
+                    ? storeNames === 'snapshots'
+                    : Array.from(storeNames).includes('snapshots');
+                  if (mode === 'readwrite' && targetsSnapshots) {
+                    const originalObjectStore = transaction.objectStore.bind(transaction);
+                    transaction.objectStore = ((name: string) => {
+                      const store = originalObjectStore(name);
+                      if (name === 'snapshots') {
+                        const originalPut = store.put.bind(store);
+                        store.put = ((...putArgs: Parameters<IDBObjectStore['put']>) => {
+                          const request = originalPut(...putArgs);
+                          // Abort when put() reports success, while the
+                          // transaction is still active and before its
+                          // completion event.  This models a crash during
+                          // the durable commit, rather than an open failure.
+                          request.addEventListener('success', () => {
+                            if (snapshotRecords) {
+                              if (previousRecord === undefined) snapshotRecords.delete(scopeKey);
+                              else snapshotRecords.set(scopeKey, previousRecord);
+                            }
+                            transaction.abort();
+                          }, { once: true });
+                          return request;
+                        }) as IDBObjectStore['put'];
+                      }
+                      return store;
+                    }) as IDBTransaction['objectStore'];
+                  }
+                  return transaction;
+                }) as IDBDatabase['transaction'];
+              });
+              return request;
+            },
+          } as unknown as IDBFactory;
+        }
+
+        try {
+          await expect(store.saveSnapshot(after)).rejects.toMatchObject({
+            name: 'ExtensionPersistenceWriteError',
+            kind: failure === 'disk-full' ? 'quota-exceeded' : 'write-interrupted',
+            operation: 'snapshot-write',
+          } satisfies Partial<ExtensionPersistenceWriteError>);
+        } finally {
+          (globalThis as Record<string, unknown>).indexedDB = workingIndexedDb;
+        }
+
+        // The failed attempt may have refreshed the compatibility mirror, but
+        // the authoritative record remains the old complete snapshot.
+        const afterFailure = JSON.parse((await store.loadSnapshot())!);
+        expect(afterFailure.packs.stable).toBeDefined();
+        expect(afterFailure.packs.recovered).toBeUndefined();
+        expect(Object.keys(afterFailure.proposals)).toEqual(['proposal-stable']);
+
+        // Retry after the injected fault is removed, then prove a fresh
+        // service/store observes the complete replacement after restart.
+        await store.saveSnapshot(after);
+        const restarted = new BrowserLocalFullSnapshotStore(SCOPE_A);
+        const recovered = JSON.parse((await restarted.loadSnapshot())!);
+        expect(recovered.packs.recovered).toBeDefined();
+        expect(recovered.packs.stable).toBeUndefined();
+        expect(Object.keys(recovered.proposals)).toEqual(['proposal-recovered']);
+      },
+    );
+
     it('does not report a state-only fallback as durable over an older atomic snapshot', async () => {
       const store = new BrowserLocalFullSnapshotStore(SCOPE_A);
       await store.saveSnapshot(makeFullSnapshot({
@@ -1042,9 +1178,10 @@ describe('createBrowserLocalExtensionPersistenceService', () => {
     ).rejects.toThrow();
     await service.dispose();
 
-    // Phase 2: clear the corrupt data so a fresh service starts empty,
-    // then write valid state to overwrite.
-    localStorage.removeItem(key);
+    // Phase 2: use the persistence store's canonical repair operation rather
+    // than reaching around it to mutate localStorage.  This clears both the
+    // mirrored record and any authoritative IndexedDB snapshot/proposals.
+    await new BrowserLocalFullSnapshotStore(SCOPE_A).deleteSnapshot();
 
     diagnostics = [];
     service = createBrowserLocalExtensionPersistenceService(SCOPE_A, diagnostics);

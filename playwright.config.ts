@@ -49,10 +49,11 @@ const TIMELINE_DEVICE_SPECS = /tests[\\/]e2e[\\/]timeline[\\/].*\.spec\.ts$/;
 // generic timeline project owns only the deterministic local stub, which must
 // not silently turn those checks into 404s or run the release bridge against
 // an unauthenticated fixture.
-const REAL_BRIDGE_SPEC = /real-bridge\.spec\.ts$/;
+const REAL_BRIDGE_SPEC = /real-bridge(?:-hardening|-rate-limit)?\.spec\.ts$/;
 const RENDERER_OWNED_TIMELINE_SPECS = /(?:caption-render-export|caption-render-matrix)\.spec\.ts$/;
 const includeTimelineDevices = process.env.PLAYWRIGHT_TIMELINE_DEVICES === '1';
 const includeExtensionHarness = process.env.PLAYWRIGHT_EXTENSION_HARNESS === '1';
+const includeHardening = process.env.PLAYWRIGHT_HARDENING === '1';
 // B5: REAL_BRIDGE=1 boots `astrid serve` (the actual bridge) instead of the
 // stub, and points the Vite dev proxy at it. Run:
 //   npm run test:e2e:timeline:realbridge
@@ -63,6 +64,9 @@ const shellQuote = (value: string): string => process.platform === 'win32'
   : `'${value.replaceAll("'", "'\\''")}'`;
 const realBridgeToken = useRealBridge
   ? process.env.ASTRID_BRIDGE_TOKEN?.trim() || randomBytes(32).toString('base64url')
+  : null;
+const hardeningBridgeToken = useRealBridge && includeHardening
+  ? process.env.ASTRID_HARDENING_BRIDGE_TOKEN?.trim() || randomBytes(32).toString('base64url')
   : null;
 // Playwright workers inherit the config process environment, not the separate
 // webServer.env objects. Direct Astrid auth-boundary assertions need the same
@@ -78,6 +82,24 @@ const bridgeReadyPort = useRealBridge
     ? readInheritedPort('ASTRID_BRIDGE_READY_PORT')
     : allocateIsolatedPort('ASTRID_BRIDGE_READY_PORT', allocatedPorts))
   : null;
+const hardeningBridgePort = useRealBridge && includeHardening
+  ? (inheritedRunPorts
+    ? readInheritedPort('ASTRID_HARDENING_BRIDGE_PORT')
+    : allocateIsolatedPort('ASTRID_HARDENING_BRIDGE_PORT', allocatedPorts))
+  : null;
+const hardeningBridgeReadyPort = useRealBridge && includeHardening
+  ? (inheritedRunPorts
+    ? readInheritedPort('ASTRID_HARDENING_BRIDGE_READY_PORT')
+    : allocateIsolatedPort('ASTRID_HARDENING_BRIDGE_READY_PORT', allocatedPorts))
+  : null;
+if (hardeningBridgeToken) process.env.ASTRID_HARDENING_BRIDGE_TOKEN = hardeningBridgeToken;
+if (hardeningBridgePort) process.env.ASTRID_HARDENING_BRIDGE_PORT = String(hardeningBridgePort);
+if (hardeningBridgeReadyPort) {
+  process.env.ASTRID_HARDENING_BRIDGE_READY_PORT = String(hardeningBridgeReadyPort);
+}
+if (hardeningBridgeToken) {
+  process.env.ASTRID_HARDENING_REQUEST_TOKEN_FILE = '/tmp/astrid-real-bridge-hardening.token';
+}
 // Playwright reloads this config in worker processes after webServer starts;
 // carry the values across those reloads without probing our own live servers
 // as though they were stale external processes.
@@ -167,7 +189,27 @@ export default defineConfig({
               }
               : {}),
           },
-        }]
+        },
+        ...(useRealBridge && includeHardening
+          ? [{
+              command: bridgeServeCommand,
+              url: `http://127.0.0.1:${hardeningBridgeReadyPort}/ready`,
+              reuseExistingServer: false,
+              timeout: 30_000,
+              gracefulShutdown: { signal: 'SIGTERM' as const, timeout: 5_000 },
+              env: {
+                ASTRID_BRIDGE_PORT: String(hardeningBridgePort),
+                ASTRID_BRIDGE_READY_PORT: String(hardeningBridgeReadyPort),
+                ASTRID_BRIDGE_TOKEN: hardeningBridgeToken!,
+                ASTRID_REQUEST_TOKEN_FILE: '/tmp/astrid-real-bridge-hardening.token',
+                ASTRID_BRIDGE_PID_FILE: '/tmp/astrid-real-bridge-hardening.pid',
+                ASTRID_BRIDGE_METADATA_FILE: '/tmp/astrid-real-bridge-hardening.metadata.json',
+                ASTRID_NODE_EXECUTABLE: realBridgeNodeExecutable!,
+                PATH: `${dirname(realBridgeNodeExecutable!)}${delimiter}${process.env.PATH ?? ''}`,
+              },
+            }]
+          : []),
+        ]
       : []),
   ],
   projects: [
