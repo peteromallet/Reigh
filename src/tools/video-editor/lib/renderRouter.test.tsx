@@ -1098,12 +1098,10 @@ describe('Sprint 8 router → enqueue integration', () => {
 describe('Sprint 8 render pipeline middleware', () => {
   const runtime = {
     projectId: 'project-1',
-    orchestratorBaseUrl: 'https://orchestrator.example.com',
-    getSupabaseSession: vi.fn(async () => null),
-    getWorkerJwt: vi.fn(async () => null),
   };
 
-  it('renders supported local fixture timelines in the browser path without Supabase auth', async () => {
+
+  it('renders supported local fixture timelines in the browser path with the local runtime type', async () => {
     const events: Array<{ type: string; request?: unknown; assetCount?: number; providerId?: string }> = [];
     const request = {
       timelineId: 'fixture-browser',
@@ -1131,9 +1129,6 @@ describe('Sprint 8 render pipeline middleware', () => {
       renderMetadata: null,
       renderRuntime: {
         projectId: 'project-1',
-        orchestratorBaseUrl: 'https://orchestrator.example.com',
-        getSupabaseSession: vi.fn(async () => null),
-        getWorkerJwt: vi.fn(async () => null),
       },
     };
     const startBrowserRender = vi.fn(async () => ({
@@ -1155,8 +1150,6 @@ describe('Sprint 8 render pipeline middleware', () => {
       providerId: 'browser-remotion',
     });
     expect(startBrowserRender).toHaveBeenCalledTimes(1);
-    expect(request.renderRuntime.getSupabaseSession).not.toHaveBeenCalled();
-    expect(request.renderRuntime.getWorkerJwt).not.toHaveBeenCalled();
     expect(events).toMatchObject([
       { type: 'beforeRender', request },
       { type: 'assetMaterialized', request, assetCount: 1 },
@@ -1238,10 +1231,6 @@ describe('Sprint 8 render pipeline middleware', () => {
     const workerRuntime = {
       ...runtime,
       bridgeBaseUrl: 'http://bridge.fake',
-      getSupabaseSession: vi.fn(async () => {
-        throw new Error('getSupabaseSession should not be called for worker dispatch');
-      }),
-      getWorkerJwt: vi.fn(async () => 'worker-jwt-123'),
     };
     const request = {
       timelineId: 'timeline-fixture-worker',
@@ -1288,8 +1277,6 @@ describe('Sprint 8 render pipeline middleware', () => {
     });
     expect(startBrowserRender).not.toHaveBeenCalled();
     expect(fetchImpl).toHaveBeenCalledTimes(1);
-    expect(workerRuntime.getWorkerJwt).not.toHaveBeenCalled();
-    expect(workerRuntime.getSupabaseSession).not.toHaveBeenCalled();
     const body = JSON.parse(fetchImpl.mock.calls[0][1].body as string);
     expect(body.family).toBe('render_export');
     expect(body.input.timeline_ref).toBe('timeline-fixture-worker');
