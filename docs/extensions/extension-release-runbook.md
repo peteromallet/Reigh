@@ -71,7 +71,7 @@ tag-object hash:
 ```sh
 REIGH_REF=<full-40-character-Reigh-candidate-C> \
 ASTRID_CHECKOUT=/absolute/path/to/clean/Astrid \
-ASTRID_REF=bd5998aee6e3659d009041bc66177b9e6f1838b3 \
+ASTRID_REF=9d714649f2f658ad508dbb4ead8eaf15bff2149b \
 ASTRID_PYTHON=/absolute/path/to/pinned/venv/bin/python \
 npm run verify:extension-ship
 ```
@@ -117,7 +117,7 @@ source for the complete `astrid.authenticated-release-bridge.v1` capability
 (`serve --release-mode`, token enforcement, bearer validation, and the v1
 protocol header). A newer checkout cannot satisfy an older pin. The manifest is
 pinned to the RC6 Astrid integration commit
-`bd5998aee6e3659d009041bc66177b9e6f1838b3`. The failed RC1–RC5 paired
+`9d714649f2f658ad508dbb4ead8eaf15bff2149b`. The failed RC1–RC5 paired
 receipts remain under their respective evidence roots as historical evidence
 only; none is a passing receipt. RC6 reruns the hostile-Host probe with the
 verifier's raw HTTP request and browser boot after the React server-entry,
