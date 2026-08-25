@@ -8,13 +8,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 
-const { mockGetSession, mockOnAuthStateChange, getAuthStateManagerMock, probeBridgeSessionMock } = vi.hoisted(() => ({
-  mockGetSession: vi.fn(), mockOnAuthStateChange: vi.fn(), getAuthStateManagerMock: vi.fn(), probeBridgeSessionMock: vi.fn(),
+const { probeBridgeSessionMock } = vi.hoisted(() => ({
+  probeBridgeSessionMock: vi.fn(),
 }));
-vi.mock('@/integrations/supabase/client', () => ({
-  getSupabaseClient: () => ({ auth: { getSession: mockGetSession, onAuthStateChange: mockOnAuthStateChange } }),
-}));
-vi.mock('@/integrations/supabase/auth/AuthStateManager', () => ({ getAuthStateManager: () => getAuthStateManagerMock() }));
 vi.mock('@/shared/auth/bridgeSession', () => ({ probeBridgeSession: probeBridgeSessionMock }));
 
 import { AuthProvider, useAuth } from '../AuthContext';
@@ -35,17 +31,6 @@ describe('AuthContext', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.history.replaceState({}, '', '/');
-    getAuthStateManagerMock.mockReturnValue(null);
-
-    // Default mock: no session
-    mockGetSession.mockResolvedValue({
-      data: { session: null },
-    });
-    mockOnAuthStateChange.mockReturnValue({
-      data: {
-        subscription: { unsubscribe: vi.fn() },
-      },
-    });
     probeBridgeSessionMock.mockReset();
   });
 
@@ -68,7 +53,7 @@ describe('AuthContext', () => {
   });
 
   describe('AuthProvider', () => {
-    it('is immediately anonymous and never initializes auth in localTest mode', () => {
+    it('is immediately anonymous and never probes in localTest mode', () => {
       window.history.replaceState({}, '', '/tools/video-editor?localTest=1');
 
       render(
@@ -79,9 +64,7 @@ describe('AuthContext', () => {
 
       expect(screen.getByTestId('isLoading')).toHaveTextContent('false');
       expect(screen.getByTestId('userId')).toHaveTextContent('null');
-      expect(mockGetSession).not.toHaveBeenCalled();
-      expect(mockOnAuthStateChange).not.toHaveBeenCalled();
-      expect(getAuthStateManagerMock).not.toHaveBeenCalled();
+      expect(probeBridgeSessionMock).not.toHaveBeenCalled();
     });
 
     it('renders children', async () => {

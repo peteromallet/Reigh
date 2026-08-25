@@ -1,0 +1,48 @@
+Batch B6 complete — Render/export UX on render-as-task (T6.1 + T6.2) — 2026-08-25.
+
+Worktree /workspace/reigh-phase-c/reigh-app, branch phase-c-exec @ 5535bb91e.
+(Substance of the cutover landed in converge/C3 a194dedc9; this batch closed
+the remaining gaps and verified acceptance end-to-end.)
+
+T6.1 — Render admission (66bc649b1):
+- renderRouter.ts enqueueBanodocoRenderTimeline POSTs family `render_export`
+  through AstridLocalClient.tasks.admit on the common R1 route
+  (`POST /projects/:slug/tasks`, Idempotency-Key
+  `reigh.render:v1:<timeline>:<version>:<destination>:<filename>`).
+- Clean cutover: removed the deprecated `user_jwt`/`userJwt` plumbing (bridge
+  is locally trusted; no second auth authority).
+- cancelAstridRenderTask exercised directly in vitest against the binding
+  router: queued cancel via POST /tasks/:id/cancel; running cancel retries
+  with the live attempt fence after the bounded 409.
+
+T6.2 — Runtime/UI cutover (34a5ed1b8):
+- Local domain type `RenderRuntime { projectId, bridgeBaseUrl?, destination? }`
+  at src/tools/video-editor/render/renderRuntime.ts; zero Session-era fields
+  anywhere in the render path (grep gate GATE-OK).
+- useRenderState: admission -> pollAstridRender on the declared 2 s cadence;
+  cancel rides the common fenced route; destination selection ('download' |
+  'project-media') preserved through TimelineRenderControls select and passed
+  to admission. TimelineExportMenu routes render-dependent formats through
+  startRender ("Render via Astrid").
+- Result URL = client.media.contentUrl(media_id) -> R9 content route; <video>
+  playback in TimelineRenderControls.
+- Stale Session-era literals purged from pipeline middleware tests.
+
+Smoke against binding (5535bb91e):
+- Additive executor hook `completeTask` on the fake bridge router; journey
+  vitest: admit render_export -> poll queued -> complete with committed
+  managed MP4 output -> tasks.get succeeded -> contentUrl serves 200 +
+  Accept-Ranges + ETag, Range seek 206 with Content-Range, If-None-Match 304.
+- AVAILABLE_FAMILIES fixture now includes 'render_export'.
+
+Validation (all green):
+- npx vitest run --config config/testing/vitest.config.ts
+  src/tools/video-editor/lib/renderRouter.test.tsx src/tools/video-editor/components
+  src/tools/video-editor/hooks src/integrations/astrid -> 88+ files, 1558 tests passed.
+- grep -rn "Session" src/tools/video-editor/lib/renderRuntime.ts -> GATE-OK
+  (local domain type carries no Session; lib/renderRuntime.ts intentionally
+  absent — type lives at render/renderRuntime.ts).
+- npx vite build -> passes (~37 s).
+
+Note: this file previously held the 2026-08-22 phase-a Astrid-side Batch B6
+marker (per-family journeys); overwritten per today's dispatch instruction.
