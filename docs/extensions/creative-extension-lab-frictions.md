@@ -1565,3 +1565,82 @@ timeline-schema install pass the real MP4 task round-trip. The complete paired
 verifier (including loss/retry, lease/fence, shutdown, and process-tree cases)
 and the browser/E2E suite must also pass with no leaked processes, ambiguous
 task leases, or unowned render work.
+
+## 2026-08-25 — Final installed-Chrome edge audit
+
+The post-integration Chrome pass was deliberately run after restarting Vite and
+the deterministic bridge, rather than trusting pages that had accumulated HMR
+state. It exercised all 13 enabled extensions together, the five-item mixed
+Unicode transcript fixture, four materialized caption clips, the 566-item
+Runaway lane, cross-reload persistence, proposal rejection and acceptance, and
+fresh console collection.
+
+### Minimum-width geometry needs separate interaction and paint policies
+
+- Short transcript intervals and caption clips are narrower than a readable
+  label at the 40-second overview zoom. A CSS minimum hit width made pointer and
+  keyboard selection possible, but overlapping horizontal hit boxes initially
+  caused an Ava click to select Boris. The host now assigns deterministic
+  vertical lanes to overlapping text-clip hit targets without changing their
+  timeline interval.
+- The source transcript lane had the inverse problem after its hit targets were
+  corrected: Chromium clipped a direct flex text node into partial, garbled
+  Unicode glyphs. The painted label now lives in a shrinkable ellipsis span,
+  while the complete accessible name and title remain intact. A tiny interval
+  is therefore honestly compact instead of pretending its full phrase fits.
+- Empty source text previously mounted as a zero-height blank control. It now
+  displays `(no text)`, remains selectable and inspectable, and is still
+  excluded from caption materialization. Diagnostic visibility and output
+  eligibility must be independent decisions.
+
+### A saved equivalent IndexedDB draft is not a recovery event
+
+- Timeline mutations write the IndexedDB recovery slot before the debounced
+  save. The save acknowledgement clears it asynchronously. With multiple tabs
+  or a late draft write, a tab could load a record that was byte-for-byte
+  equivalent to the server snapshot and still show “We recovered unsaved
+  changes” beside a `saved` status.
+- Recovery now compares the draft's stable config/registry signature with the
+  loaded server signature. Equivalent slots are silently cleared; only a
+  genuinely divergent draft is offered to the user. The clean Chrome repeat
+  materialized four captions, reloaded them, and showed no recovery banner.
+- Bridge hydration can take roughly six seconds in the full editor. An
+  acceptance probe that inspected at 2.8 seconds saw the base timeline and
+  would have reported false data loss; the same page converged to the saved
+  captions after the later authoritative read. Product loading state and test
+  helpers should expose hydration completion rather than requiring timing
+  folklore.
+
+### The lightweight bridge and the real render bridge own different truths
+
+- `npm run dev:editor` intentionally starts an unauthenticated deterministic
+  bridge with no `/projects/:project/tasks` admission route. Pressing the real
+  Render button there fails explicitly. This is an honest limitation, but the
+  default local editor does not make it obvious before the click that export is
+  unavailable in that topology.
+- The authenticated `real-bridge-serve.mjs` harness proves release protocol,
+  CAS, discovery, task admission, idempotency, cancellation, and media route
+  contracts. Its historical seed is not the paired release renderer seed: it
+  contains a legacy filename and an empty asset registry, and its launcher does
+  not provision the paired verifier's pinned Node, Remotion project, canonical
+  schema path, and managed-media evidence. In the installed-Chrome audit the
+  task was admitted correctly, then all three worker attempts failed with
+  `render_export_failed`.
+- The paired release verifier remains the authority for the real MP4 path
+  because it owns those dependencies and binds the downloaded bytes to the
+  admitted task and persisted timeline. A future one-command live acceptance
+  launcher should reuse that exact seed/runtime preparation and leave the app
+  open; asking an operator to compose a second Vite proxy, bearer token, bridge,
+  worker, media seed, schema root, and Remotion closure by hand is needless
+  release friction.
+
+### Browser automation can itself invalidate responsive evidence
+
+- The installed Chrome connector advertised a 390x844 viewport override and
+  returned success, but both existing and newly opened tabs still reported an
+  `innerWidth` of 1200 and desktop pointer mode. The override was reset and no
+  phone claim was made from that session.
+- The committed Chromium/Firefox/WebKit device suite remains the responsive
+  authority for this candidate. Manual Chrome receipts must record measured
+  `innerWidth`/`innerHeight`, not only the dimensions requested from the
+  automation layer.
