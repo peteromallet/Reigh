@@ -1,0 +1,36 @@
+# B7.done — Ops surfaces stubbed to doctor (C4-1)
+
+Branch: phase-c-exec · 2026-08-25
+
+## T7.2 Onboarding/model-setup re-stub to doctor checks — DONE (pre-existing, verified)
+- `src/shared/components/OnboardingModal/components/steps/SetupCompleteStep.tsx` probes
+  `checkAstridDoctorAvailability()` on mount + retry; renders checking/available/degraded/unavailable states.
+- `src/app/hooks/useOnboardingFlow.ts` gates tool entry on the same probe; unavailable surfaces
+  `capability_unavailable` recovery via `normalizeAndPresentError`.
+- Committed in `07887afe0 converge/C4: doctor-backed ops recovery surfaces`.
+
+## T7.3 Typed error/recovery UX — DONE (pre-existing, verified)
+- `src/integrations/astrid/bridgeRecovery.ts`: exhaustive
+  `Record<BridgeErrorCategory, BridgeRecoveryGuidance>` over all five
+  `bridgeErrorEnvelopeSchema` categories (`invalid_body`, `not_found`, `conflict`,
+  `capability_unavailable`, `payload_too_large`) + `isBridgeErrorCategory` guard.
+- Missing-model/capability path renders the doctor hint:
+  ``Run `python3 -m astrid doctor --json`, resolve the reported issue, then retry.``
+  asserted in `SetupCompleteStep.test.tsx:61-77` and `bridgeRecovery.test.ts:27-40`.
+
+## T7.1 Backup/restore hooks — BLOCKED (endpoint evidence filed)
+- `.oracle/findings/B7-T7.1-backup-blocked.md`
+- Evidence: `astrid/core/integrations/reigh/local_bridge_server.py` route tables
+  (do_GET :1333, do_POST :1627) expose health/projects/timelines/runaway-transitions/
+  tasks/generations/media only — zero backup/restore HTTP routes;
+  `astrid backup` exists solely as a pre-session CLI family
+  (`astrid/core/gateway/dispatch.py:85-93`). Client contract has no backup schema.
+- Stop condition honored: no Astrid-side patching from this repo.
+
+## Validation
+- `npx vitest run --config config/testing/vitest.config.ts src/shared/components/OnboardingModal src/integrations/astrid`
+  → 14 files / 51 tests passed.
+- `npx vite build` → ✓ built in 40.49s.
+
+Acceptance disposition: missing-model renders doctor hint (verified); backup round-trip
+superseded by formal blocked report with endpoint evidence per tasklist alternative.

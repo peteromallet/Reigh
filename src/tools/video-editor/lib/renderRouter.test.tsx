@@ -1041,6 +1041,62 @@ describe('cancelAstridRenderTask rides the common fenced task route', () => {
   });
 });
 
+describe('render-as-task journey against the binding stub (B6 smoke)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('admits, polls, completes, and plays the committed MP4 through R9 Range/ETag', async () => {
+    const router = stubFakeBridge();
+    const client = new AstridLocalClient({ projectSlug: 'demo-project', baseUrl: 'http://bridge.fake' });
+
+    // R1 admission through the common task route.
+    const result = await enqueueBanodocoRenderTimeline({
+      timeline_id: 't',
+      timeline: { clips: [] },
+      assets: { assets: {} },
+      theme_id: '2rp',
+      output_filename: 'journey.mp4',
+      project_id: 'demo-project',
+      correlation_id: 'c-journey',
+    }, { client });
+    expect(result).toMatchObject({ status: 'queued', task_id: expect.any(String) });
+    const taskId = result.task_id!;
+
+    // Declared poll cadence read model: queued with no attempts yet.
+    let detail = await client.tasks.get(taskId);
+    expect(detail.status).toBe('queued');
+    expect(detail.attempts).toEqual([]);
+
+    // The executor finishes and commits its render output as managed media.
+    const mp4Entry = [...router.state.media.entries()].find(([, media]) => media.mime === 'video/mp4');
+    if (!mp4Entry) throw new Error('fixture missing managed mp4');
+    router.completeTask(taskId, { role: 'render', media_id: mp4Entry[0], is_primary: true });
+
+    detail = await client.tasks.get(taskId);
+    expect(detail.status).toBe('succeeded');
+    const output = (detail.outputs ?? []).find((candidate) => candidate.role === 'render');
+    if (!output) throw new Error('completed render has no render-role output');
+
+    // Playback rides the R9 content route: full GET, then a Range seek, then
+    // an ETag revalidation — exactly what <video> issues.
+    const contentUrl = client.media.contentUrl(output.media_id);
+    expect(contentUrl).toBe('http://bridge.fake/projects/demo-project/media/' + output.media_id + '/content');
+    const full = await fetch(contentUrl);
+    expect(full.status).toBe(200);
+    expect(full.headers.get('Accept-Ranges')).toBe('bytes');
+    const etag = full.headers.get('ETag');
+    expect(etag).toBeTruthy();
+
+    const seek = await fetch(contentUrl, { headers: { Range: 'bytes=0-99' } });
+    expect(seek.status).toBe(206);
+    expect(seek.headers.get('Content-Range')).toBe(`bytes 0-99/${mp4Entry[1].bytes.byteLength}`);
+
+    const revalidated = await fetch(contentUrl, { headers: { 'If-None-Match': etag! } });
+    expect(revalidated.status).toBe(304);
+  });
+});
+
 describe('Sprint 8 router → enqueue integration', () => {
   it('themed timeline decision drives a banodoco-pool enqueue', async () => {
     const config = {
