@@ -34,12 +34,16 @@ proxy Origin/Host/auth/protocol boundaries, strict-port plus nonce/commit
 readiness, tracked-evidence protection, and exact visual-baseline provenance.
 Native-tool attestation, crash-safe bounded-command/paired-server containment,
 managed-media seeding, exact runtime resolution, owned-origin Remotion CORS,
-and JSON task-output boolean normalization are now on the pushed pair. The most
-recent broad repository rehearsal passed 13,672 tests with two intentional
-skips; focused tests were rerun after the final UI corrections. At the current
-head, all ten disk-light static release gates pass, as do 1,160 extension
-contract tests, 102 Creative Lab tests, the 97-case compatibility matrix, 33
-production-smoke tests, runtime-rollout tests, and a production build. The
+and JSON task-output boolean normalization are now on the pushed pair. The
+current integration product head passed 13,674 tests with two intentional
+skips across 1,199 passing files. All ten disk-light static release gates also
+pass, as do 1,160 extension contract tests, 102 Creative Lab tests, the 97-case
+compatibility matrix, 33 production-smoke tests, runtime-rollout tests, and a
+production build. Installed pre-freeze browser diagnostics pass across
+Chrome/Firefox/WebKit (9 cases), accessibility and responsive layouts (12),
+performance and degraded mode (2), visual baselines (6), the complete timeline
+device suite (28), the extension readiness harness (171), and the authenticated
+real-Astrid bridge suite (5). The
 installed Chrome acceptance lane also completed a real authenticated
 Reigh-to-Astrid export: the managed MP4 loaded at 1920x1080, played its complete
 4.053-second duration, exposed the Download link, and left no console warnings
