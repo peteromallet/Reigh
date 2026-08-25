@@ -1641,6 +1641,6 @@ fresh console collection.
   `innerWidth` of 1200 and desktop pointer mode. The override was reset and no
   phone claim was made from that session.
 - The committed Chromium/Firefox/WebKit device suite remains the responsive
-  authority for this candidate. Manual Chrome receipts must record measured
+  authority for this integration sequence. Manual Chrome receipts must record measured
   `innerWidth`/`innerHeight`, not only the dimensions requested from the
   automation layer.
