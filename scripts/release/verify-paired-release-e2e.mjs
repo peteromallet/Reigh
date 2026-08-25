@@ -1066,6 +1066,38 @@ export async function waitForViteReadiness(baseUrl, { expectedIdentity, process:
 }
 
 /**
+ * Wait for the contract exposed by the selected Reigh server mode.
+ *
+ * Production preview serves the generated, fail-closed runtime extension
+ * document and must match the paired candidate identity exactly. Development
+ * Vite intentionally does not fetch or publish that document: its extension
+ * controls default open so local iteration remains fast. Probing the release
+ * path in development receives Vite's SPA fallback (HTTP 200 HTML), which is
+ * not evidence of a runtime-config mismatch. In that mode the root document is
+ * the server-readiness primitive; the browser journey remains responsible for
+ * proving the development runtime itself.
+ */
+export async function waitForReighReadiness(
+  baseUrl,
+  { mode, expectedIdentity, process: child, timeoutMs = 120_000 } = {},
+) {
+  if (mode === 'preview') {
+    return waitForViteReadiness(baseUrl, {
+      expectedIdentity,
+      process: child,
+      timeoutMs,
+    });
+  }
+  if (mode === 'development') {
+    return waitForUrl(`${baseUrl}/`, {
+      process: child,
+      timeoutMs,
+    });
+  }
+  fail(`unsupported Reigh readiness mode: ${mode ?? '<missing>'}`);
+}
+
+/**
  * Issue a bounded loopback HTTP request without undici's browser-oriented
  * header normalization. Node's global fetch silently replaces a caller's
  * `Host` header with the URL authority, which makes a hostile-host rejection
@@ -2281,7 +2313,8 @@ export async function startReigh(context, suffix, port, bridgePort, token, mode)
       readinessIdentity: context.readinessIdentity,
     }),
     logPath: resolve(context.evidenceRoot, `reigh-${suffix}.log`),
-  }, (child) => waitForViteReadiness(`http://127.0.0.1:${port}`, {
+  }, (child) => waitForReighReadiness(`http://127.0.0.1:${port}`, {
+    mode,
     process: child,
     expectedIdentity: context.readinessIdentity,
     timeoutMs: 120_000,

@@ -104,12 +104,16 @@ They are drafts, never evidence. The closed-object validator is
 The operator CLI never accepts a private key and never marks a workstream
 `pass`. Initialize a draft outside the evidence closure:
 
+For each run, set `RELEASE_ID` to `release` and `NODE_VERSION` to
+`verification.node` from `config/releases/extension-ship-quality.json`; use
+those values below. Do not copy an RC number or tool version from an older run.
+
 ```sh
 npm run extension:evidence -- init \
   --type rollout-stage --output /tmp/rollout-stage.json \
-  --release extension-ship-quality-rc8 \
+  --release "$RELEASE_ID" \
   --reigh-commit <candidate-C> --astrid-commit <astrid-commit> \
-  --environment production-stage-0 --tool node=20.19.4
+  --environment production-stage-0 --tool "node=$NODE_VERSION"
 ```
 
 Fill the draft only from observed output. Validate it, then capture an immutable
@@ -119,18 +123,18 @@ copy under the release evidence root; `capture` refuses to overwrite a file:
 npm run extension:evidence -- validate --artifact /tmp/rollout-stage.json
 npm run extension:evidence -- capture \
   --input /tmp/rollout-stage.json \
-  --output docs/extensions/evidence/releases/extension-ship-quality-rc8/rollout/stage-0.json
+  --output "docs/extensions/evidence/releases/$RELEASE_ID/rollout/stage-0.json"
 ```
 
 Generate the unsigned receipt for review, or append it without changing status:
 
 ```sh
 npm run extension:evidence -- receipt \
-  --artifact docs/extensions/evidence/releases/extension-ship-quality-rc8/rollout/stage-0.json \
+  --artifact "docs/extensions/evidence/releases/$RELEASE_ID/rollout/stage-0.json" \
   --workstream 19 --id rollout-stage-0
 
 npm run extension:evidence -- receipt \
-  --artifact docs/extensions/evidence/releases/extension-ship-quality-rc8/rollout/stage-0.json \
+  --artifact "docs/extensions/evidence/releases/$RELEASE_ID/rollout/stage-0.json" \
   --workstream 19 --id rollout-stage-0 --append-ledger
 ```
 

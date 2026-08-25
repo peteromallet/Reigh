@@ -1725,3 +1725,18 @@ fresh console collection.
   responses are now readable by an allowed browser origin and remain opaque to
   disallowed origins. Tests cover both persisted timeline assets and the exact
   `/projects/:slug/media/:media_id/content` route that the paired gate exercises.
+
+### Preview and development Vite readiness are different contracts
+
+- RC10 exposed a harness ambiguity: the production-like Vite preview must serve
+  the exact revision-bound runtime-config document and fail closed when it is
+  missing or malformed, while the development server intentionally does not
+  fetch that document and defaults flags open for local authoring. Treating the
+  runtime-config fetch as universal readiness makes the development lane look
+  broken or weakens the preview contract.
+- Use the exact runtime-config probe and per-run nonce/commit identity only for
+  preview. Development readiness should prove only that the bounded root
+  server started on its strict port; development intentionally has no
+  runtime-config identity claim. Continue labeling editor/reload/render browser
+  coverage as development-only until production local-bridge selection is
+  implemented; do not infer production rollout safety from that lane.

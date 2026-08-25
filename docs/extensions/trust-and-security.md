@@ -6,12 +6,13 @@
 
 ---
 
-## RC8 release scope
+## Current release scope
 
-The RC8 security-boundary claim is limited to the reviewed statically bundled
-trusted-local extensions shipped in this release. Arbitrary third-party,
+The current manifest release's security-boundary claim is limited to the
+reviewed statically bundled trusted-local extensions shipped in this release.
+Arbitrary third-party,
 remote, marketplace, and dynamically installed extension execution remains
-disabled and unclaimed. The RC8 checklist covers manifest and contribution
+disabled and unclaimed. The release checklist covers manifest and contribution
 validation, namespace and least-privilege host-mediated checks, rejection of
 unsafe URLs/injection/traversal/oversized payloads, and host-selected
 project/timeline access.
@@ -215,4 +216,4 @@ Until then, the posture is explicit: **every extension is trusted code with the 
 | Date | Change |
 |---|---|
 | 2026-06-24 | Initial trust and security posture document for M5. Covers execution model, permission posture, error containment, diagnostic provenance, recovery keys, boundary audit, inventory truthfulness, and explicit non-provision of sandbox/marketplace/install/update. |
-| 2026-08-25 | Recorded the RC8 claim as limited to reviewed statically bundled trusted-local extensions; arbitrary third-party, remote, marketplace, and dynamically installed execution remains disabled and unclaimed. |
+| 2026-08-25 | Recorded the release claim as limited to reviewed statically bundled trusted-local extensions; arbitrary third-party, remote, marketplace, and dynamically installed execution remains disabled and unclaimed. |

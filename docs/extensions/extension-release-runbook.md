@@ -35,9 +35,12 @@ head is not a candidate and no final SHA should be recorded early.
 
 ## Running the frozen-candidate gate
 
-Prepare fresh, separate Reigh and Astrid checkouts. Install Node `20.19.4`, npm
-`10.8.2`, Python `3.11.11`, FFmpeg/FFprobe `7.1.1`, plus the dev tooling required by the pinned Astrid
-revision, GNU Make, FFmpeg/FFprobe, and the host libraries required by Chromium.
+Prepare fresh, separate Reigh and Astrid checkouts. Install the exact Node, npm,
+Astrid Python, and native-tool versions recorded in the verification block of
+`config/releases/extension-ship-quality.json`, plus the dev tooling required by
+the manifest-pinned Astrid revision, GNU Make, and the host libraries required
+by Chromium. Do not copy tool versions or release pins from a previous RC into
+this runbook.
 The paired gate installs the lock-aligned Playwright Chromium binary into its
 private runtime tree; it does not reuse a developer browser cache. Do not reuse
 a developer worktree for release evidence.
@@ -64,21 +67,23 @@ source, scripts, documentation, pins, and gate configuration. Create the
 annotated Reigh tag named by `reigh.releaseTag` at that candidate `C`; both the
 tag and `REIGH_REF` must resolve to `C`. Then commit the frozen ledger, the
 manifest's status-only freeze, and artifacts under
-`docs/extensions/evidence/releases/extension-ship-quality-rc8/` to produce the
-clean controller `H`. The verifier captures `C`, `H`, and the annotated
-tag-object hash:
+`docs/extensions/evidence/releases/<manifest.release>/` to produce the clean
+controller `H`. The verifier captures `C`, `H`, and the annotated tag-object
+hash. Resolve `<manifest.release>`, `reigh.releaseTag`, and `astrid.commit`
+from the manifest for every run; do not reuse values from an older candidate:
 
 ```sh
 REIGH_REF=<full-40-character-Reigh-candidate-C> \
 ASTRID_CHECKOUT=/absolute/path/to/clean/Astrid \
-ASTRID_REF=9d714649f2f658ad508dbb4ead8eaf15bff2149b \
+ASTRID_REF=<manifest.astrid.commit> \
 ASTRID_PYTHON=/absolute/path/to/pinned/venv/bin/python \
 npm run verify:extension-ship
 ```
 
 Capture complete stdout/stderr, exit status, Reigh `git rev-parse HEAD`, Reigh
-candidate `git rev-parse REIGH_REF`, Reigh
-`git rev-parse refs/tags/extension-ship-quality-rc8^{tag}`, Astrid
+candidate `git rev-parse REIGH_REF`, the tag named by
+`manifest.reigh.releaseTag` via `git rev-parse
+refs/tags/<manifest.reigh.releaseTag>^{tag}`, Astrid
 `git rev-parse HEAD`, UTC start/end times, and hashes of retained test/render
 artifacts. An exit code of zero is necessary, not sufficient: every frozen-RC
 item and both independent review slots below must also be complete.
@@ -92,16 +97,17 @@ ordinary test run.
 
 ### Immutable visual-baseline input
 
-RC8 intentionally compares its live six-image visual gate against the reviewed
-RC6 source baseline. The command
+The current candidate intentionally compares its live six-image visual gate
+against the immutable reviewed baseline owned by the RC6 provenance document.
+The command
 `verify:extension-visual-baseline-provenance` is the candidate-neutral release
 entrypoint; it delegates to the RC6 provenance verifier because that immutable
 document owns the baseline bytes, source commits, reviewed diff artifacts, and
 pixel metrics. This is an input-provenance check, not an RC6 release receipt.
-The RC8 visual receipt must separately bind the live RC8 screenshot result,
-the unchanged baseline hashes, and the RC8 candidate commit. Any baseline byte
+The current visual receipt must separately bind the live screenshot result, the
+unchanged baseline hashes, and the current candidate commit. Any baseline byte
 change requires a new reviewed provenance document rather than relabelling the
-RC6 artifact.
+immutable RC6 artifact.
 
 ### Typed external evidence
 
@@ -128,14 +134,11 @@ npm run verify:paired-release-e2e -- --plan
 The run accepts no skip flags. It first probes the exact manifest-pinned Astrid
 source for the complete `astrid.authenticated-release-bridge.v1` capability
 (`serve --release-mode`, token enforcement, bearer validation, and the v1
-protocol header). A newer checkout cannot satisfy an older pin. The manifest is
-pinned to the RC8 Astrid integration commit
-`9d714649f2f658ad508dbb4ead8eaf15bff2149b`. The failed RC1–RC7 paired
-receipts remain under their respective evidence roots as historical evidence
-only; none is a passing receipt. RC8 reruns the hostile-Host probe with the
-verifier's raw HTTP request and browser boot after the React server-entry,
-local-auth seam, clip-body locator, and same-origin proxy-origin repairs. Do
-not bypass either probe or substitute the unauthenticated stub.
+protocol header). A newer checkout cannot satisfy the manifest's exact pin. The
+failed paired receipts from prior cycles remain under their respective evidence
+roots as historical evidence only; none is a passing receipt. The current run
+must execute the hostile-Host probe with the verifier's raw HTTP request and
+browser boot, and must not substitute the unauthenticated stub.
 
 The acceptance chain is intentionally explicit. API proof is the authenticated
 release bridge (`serve --release-mode`, bearer token, `X-Astrid-Bridge-Version:

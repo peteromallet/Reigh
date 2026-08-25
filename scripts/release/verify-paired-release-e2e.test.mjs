@@ -44,6 +44,7 @@ import {
   validateRenderedMediaFrame,
   verifyBridgeMediaContent,
   waitForUrl,
+  waitForReighReadiness,
   waitForViteReadiness,
   waitForRenderWorkerReadiness,
   assertRenderWorkerCompleted,
@@ -338,6 +339,60 @@ describe('paired repository release E2E gate', () => {
     for (const [promise, expected] of cases) await assert.rejects(promise, expected);
     assert.ok(Date.now() - started < 1_000, 'terminal child states must not wait for readiness timeout');
     assert.match(childProcessFailure({ exitCode: 7, signalCode: null }), /exit 7/);
+  });
+
+  it('uses exact runtime identity for preview and root HTML for development readiness', async () => {
+    const expectedIdentity = 'paired-test-readiness';
+    const requests = [];
+    const server = createServer((request, response) => {
+      requests.push(request.url);
+      if (request.url?.startsWith('/runtime-config/v1/extensions.json')) {
+        response.writeHead(200, { 'Content-Type': 'application/json' });
+        response.end(JSON.stringify({
+          schemaVersion: 1,
+          revision: expectedIdentity,
+          extensions: {
+            hostEnabled: true,
+            transcriptCaptionFoundryEnabled: true,
+            runawayTypedTimelineEnabled: true,
+          },
+        }));
+        return;
+      }
+      response.writeHead(200, { 'Content-Type': 'text/html' });
+      response.end('<!doctype html><title>Vite development</title>');
+    });
+    await new Promise((resolvePromise, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', resolvePromise);
+    });
+    try {
+      const address = server.address();
+      assert.equal(typeof address, 'object');
+      const baseUrl = `http://127.0.0.1:${address.port}`;
+      const child = { exitCode: null, signalCode: null };
+      await waitForReighReadiness(baseUrl, {
+        mode: 'preview',
+        expectedIdentity,
+        process: child,
+        timeoutMs: 1_000,
+      });
+      await waitForReighReadiness(baseUrl, {
+        mode: 'development',
+        expectedIdentity: 'must-not-be-probed-in-development',
+        process: child,
+        timeoutMs: 1_000,
+      });
+      assert.equal(requests.length, 2);
+      assert.match(requests[0], /^\/runtime-config\/v1\/extensions\.json\?readiness=/);
+      assert.equal(requests[1], '/');
+      await assert.rejects(
+        waitForReighReadiness(baseUrl, { mode: 'unsupported', process: child, timeoutMs: 1_000 }),
+        /unsupported Reigh readiness mode/,
+      );
+    } finally {
+      await new Promise((resolvePromise, reject) => server.close((error) => (error ? reject(error) : resolvePromise())));
+    }
   });
 
   it('pins the dedicated render worker contract to the Astrid archive', () => {
