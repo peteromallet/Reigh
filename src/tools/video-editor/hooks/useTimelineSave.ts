@@ -101,6 +101,7 @@ export function useTimelineSave(
     if (recoveryOfferedRef.current || !commit.data) {
       return;
     }
+    const loadedData = commit.data;
     let cancelled = false;
     // Best-effort: IndexedDB unavailable (private mode) or a corrupt store
     // simply means no recovery offer; never an unhandled rejection.
@@ -118,7 +119,7 @@ export function useTimelineSave(
         if (
           draft.config
           && getStableConfigSignature(draft.config, draft.registry ?? { assets: {} })
-            === commit.data.stableSignature
+            === loadedData.stableSignature
         ) {
           void clearTimelineDraft(timelineId).catch(() => {});
           return;
