@@ -31,7 +31,10 @@ describe('Astrid bridge transport boundary', () => {
     [413, 'payload_too_large'],
   ])('preserves typed upstream %s errors without fallback', async (status, code) => {
     const server = createServer((_request, response) => {
-      response.writeHead(status, { 'Content-Type': 'application/json' });
+      response.writeHead(status, {
+        'Content-Type': 'application/json',
+        ...(status === 429 ? { 'Retry-After': '1' } : {}),
+      });
       response.end(JSON.stringify({ error: code, detail: 'server boundary' }));
     });
     const baseUrl = await listen(server);
@@ -46,6 +49,9 @@ describe('Astrid bridge transport boundary', () => {
 
       expect(error).toBeInstanceOf(BridgeRouteError);
       expect(error).toMatchObject({ status, code });
+      // `rate_limited` is an Astrid wire code, not one of Reigh's public
+      // recovery categories; preserve it without relabeling as conflict.
+      if (code === 'rate_limited') expect(error).toMatchObject({ category: 'unknown' });
     } finally {
       await close(server);
     }

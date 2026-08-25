@@ -50,6 +50,7 @@ const PROJECT = { slug: 'demo-project', name: 'Demo Project' };
 const OTHER_TIMELINE_ID = '22222222-2222-2222-2222-222222222222';
 const OTHER_TIMELINE_ULID = '01JM4K5N7P0000000000000018';
 const OTHER_PROJECT = { slug: 'other-project', name: 'Other Project' };
+const RUNAWAY_RUN_ID = '01j5realbridgepage000000000000';
 const BRIDGE_TOKEN = process.env.ASTRID_BRIDGE_TOKEN ?? randomBytes(32).toString('hex');
 
 function seed() {
@@ -338,6 +339,78 @@ function registerInBridgeRegistry(astrid, { sourcePath }) {
   );
 }
 
+function seedRunawayTransitions(astrid) {
+  const script = `
+import os
+from astrid.core.events.service import EventAppendService
+from astrid.core.receipts.service import ReceiptService
+from astrid.core.repositories.runs import RunRepository
+from astrid.core.store.uow import UnitOfWork
+from astrid.packs import compose_standard_bridge
+
+root = os.environ['ASTRID_PROJECTS_ROOT']
+composition = compose_standard_bridge(root)
+try:
+    with composition.writer.read_only_connection() as conn:
+        project = conn.execute(
+            'SELECT id FROM projects WHERE slug = ?', ('demo-project',)
+        ).fetchone()
+    if project is None:
+        raise RuntimeError('demo-project was not registered before Runaway seeding')
+    project_id = str(project[0])
+    runs = RunRepository(
+        events=EventAppendService(composition.registry),
+        receipts=ReceiptService(),
+    )
+    transitions = [
+        {
+            'ordinal': ordinal,
+            'start_ms': ordinal * 20,
+            'duration_ms': 20,
+            'prompt': f'real bridge transition {ordinal}',
+            'metadata': {'frame': ordinal + 1},
+        }
+        for ordinal in range(5)
+    ]
+    def seed(uow):
+        runs.create(
+            uow,
+            project_id=project_id,
+            run_id='${RUNAWAY_RUN_ID}',
+            children=[],
+            evidence=[],
+            idempotency_key='real-bridge:runaway:run',
+            kind='runaway:timing-v1',
+            title='Real bridge pagination',
+            input={},
+            created_at='2026-08-11T00:00:00Z',
+        )
+        composition.runaway.create(
+            uow,
+            project_id=project_id,
+            run_id='${RUNAWAY_RUN_ID}',
+            transitions=transitions,
+            idempotency_key='real-bridge:runaway:create',
+            created_at='2026-08-11T00:00:00Z',
+        )
+    UnitOfWork(composition.writer).run(seed)
+finally:
+    composition.close()
+`;
+  const env = { ...astrid.env, ASTRID_PROJECTS_ROOT: SEED_ROOT };
+  const python = env.ASTRID_PYTHON ?? astrid.command;
+  const result = spawnSync(python, ['-c', script], {
+    stdio: 'pipe',
+    cwd: astrid.cwd,
+    env,
+  });
+  if (result.status !== 0) {
+    throw new Error(
+      `[real-bridge] Runaway pagination seed failed\n${result.stderr?.toString() ?? ''}`,
+    );
+  }
+}
+
 function cleanupOwnedSeedRoot() {
   try {
     if (OWNS_SEED_ROOT) rmSync(SEED_ROOT, { recursive: true, force: true });
@@ -352,6 +425,7 @@ try {
   console.error(`[real-bridge] seeding ${SEED_ROOT}`);
   console.error(`[real-bridge] Astrid provenance ${astrid.provenance}`);
   registerInBridgeRegistry(astrid, seedState);
+  seedRunawayTransitions(astrid);
 } catch (error) {
   cleanupOwnedSeedRoot();
   throw error;
