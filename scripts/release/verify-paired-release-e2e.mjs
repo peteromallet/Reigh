@@ -20,7 +20,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
@@ -43,6 +43,8 @@ export const MANIFEST_PATH = resolve(REPO_ROOT, 'config/releases/extension-ship-
 export const EXPECTED_EXTENSION_COUNT = 13;
 export const EXPECTED_RUNAWAY_COUNT = 566;
 export const RELEASE_BRIDGE_CAPABILITY = 'astrid.authenticated-release-bridge.v1';
+export const PAIRED_RENDER_WORKER_CAPABILITY = 'rendering.render';
+export const PAIRED_RENDER_WORKER_DEADLINE_MS = 14 * 60_000;
 export const TIMELINE_SCHEMA_DISTRIBUTION_VERSION = '0.0.2';
 export const RUNAWAY_RELEASE_FIXTURE_HASHES = Object.freeze({
   'audio-reactive-v1.json': 'd7925d72b52180e206a2511a5d30cf1638c7007a962fd57d8a6eb9ffb10af886',
@@ -224,6 +226,9 @@ export function buildServerEnvironment({
   reighMode,
   reighPort,
   readinessIdentity,
+  nodeExecutable,
+  remotionProjectDir,
+  timelineSchemaPythonpath,
 }) {
   if (!token || typeof token !== 'string') fail('server token must be non-empty');
   const shared = safeBaseEnvironment({
@@ -231,6 +236,9 @@ export function buildServerEnvironment({
     TMPDIR: tmpdir(),
     ASTRID_PROJECTS_ROOT: projectsRoot,
     PYTHONPATH: pythonPath,
+    ...(nodeExecutable ? { ASTRID_NODE_EXECUTABLE: nodeExecutable } : {}),
+    ...(remotionProjectDir ? { ASTRID_REMOTION_PROJECT_DIR: remotionProjectDir } : {}),
+    ...(timelineSchemaPythonpath ? { ASTRID_TIMELINE_SCHEMA_PYTHONPATH: timelineSchemaPythonpath } : {}),
   });
   if (reighMode === undefined) {
     return {
@@ -323,6 +331,36 @@ export function validateAstridReleaseBridgeSources({ dispatchSource, serverSourc
   return Object.freeze({ capability: RELEASE_BRIDGE_CAPABILITY });
 }
 
+export function validateAstridRenderWorkerSources({
+  adapterSource,
+  capabilitySource,
+  taskBridgeSource,
+  remotionRuntimeSource = '',
+  envSource = '',
+  remotionPackageSource = '',
+  remotionLockSource = '',
+}) {
+  const missing = [];
+  if (!/class\s+RenderExportTaskAdapter/.test(adapterSource ?? '')) missing.push('RenderExportTaskAdapter');
+  if (!/execute_render_export_task/.test(adapterSource ?? '')) missing.push('bounded render adapter entrypoint');
+  if (!/rendering\.render/.test(capabilitySource ?? '')) missing.push('rendering.render capability');
+  if (!/timeline_snapshot/.test(taskBridgeSource ?? '')) missing.push('frozen timeline snapshot admission');
+  if (!/ASTRID_REMOTION_PROJECT_DIR/.test(envSource + remotionRuntimeSource)) missing.push('server-owned Remotion project env');
+  if (!/ASTRID_NODE_EXECUTABLE/.test(envSource + remotionRuntimeSource)) missing.push('server-owned Node executable env');
+  if (!/ASTRID_TIMELINE_SCHEMA_PYTHONPATH/.test(envSource + remotionRuntimeSource)) missing.push('server-owned timeline-schema env');
+  if (!/remotion_runtime_status/.test(remotionRuntimeSource ?? '')) missing.push('Remotion runtime readiness probe');
+  if (!/REMOTION_CLI_RELATIVE_PATH/.test(remotionRuntimeSource ?? '')) missing.push('locked local Remotion CLI resolution');
+  if (!/"name"\s*:\s*"tools-remotion"/.test(remotionPackageSource ?? '')) missing.push('pinned Remotion package manifest');
+  if (!/"lockfileVersion"\s*:\s*3/.test(remotionLockSource ?? '')) missing.push('pinned Remotion npm lockfile');
+  if (missing.length > 0) {
+    fail(
+      `Astrid pin lacks the paired render worker contract: ${missing.join(', ')}. `
+      + 'Repin only to a clean settled Astrid commit containing the reviewed render adapter.',
+    );
+  }
+  return Object.freeze({ capability: PAIRED_RENDER_WORKER_CAPABILITY });
+}
+
 function commandFailure(command, args, result, diagnosticsPath) {
   const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim();
   const detail = result.failureType === 'timeout'
@@ -391,6 +429,38 @@ export function capture(command, args, {
 
 function gitOutput(checkout, args) {
   return capture('git', args, { cwd: checkout }).stdout.trim();
+}
+
+function pinnedSource(checkout, commit, path) {
+  const result = capture('git', ['show', `${commit}:${path}`], {
+    cwd: checkout,
+    allowFailure: true,
+    phase: `pinned-source:${path}`,
+  });
+  if (result.status !== 0) fail(`Astrid pin is missing required source: ${path}`);
+  return result.stdout;
+}
+
+/** Resolve npm's executable bin wrapper; never execute its env-node shebang. */
+export function resolvePinnedNpmCli(npmExecutable) {
+  if (!npmExecutable || !isAbsolute(npmExecutable) || !existsSync(npmExecutable)) {
+    fail(`pinned npm executable is not an existing absolute file: ${npmExecutable ?? '<missing>'}`);
+  }
+  const shim = realpathSync(npmExecutable);
+  const source = readFileSync(shim, 'utf8');
+  const required = source.match(/require\(['"]([^'"]+)['"]\)/)?.[1];
+  if (!required || !required.endsWith('.js') || required.startsWith('node:')) {
+    fail(`pinned npm executable does not disclose a local CLI JavaScript target: ${shim}`);
+  }
+  const internalCli = realpathSync(resolve(dirname(shim), required));
+  const npmRoot = resolve(dirname(shim), '..');
+  if (!internalCli.startsWith(`${npmRoot}${sep}`) || !statSync(internalCli).isFile()) {
+    fail(`pinned npm internal CLI escaped the npm installation root: ${internalCli}`);
+  }
+  // The bin wrapper invokes the internal target with npm's required process
+  // bootstrap. Calling lib/cli.js directly is a false-success trap: it only
+  // exports a function and does not implement npm's command lifecycle.
+  return shim;
 }
 
 function resolveCommit(checkout, ref, label) {
@@ -485,12 +555,51 @@ export function preflightPinnedRepositories({ manifest, env }) {
     'show', `${manifestAstridCommit}:astrid/core/integrations/reigh/local_bridge_server.py`,
   ]);
   const capability = validateAstridReleaseBridgeSources({ dispatchSource, serverSource });
+  const renderWorker = validateAstridRenderWorkerSources({
+    adapterSource: pinnedSource(
+      resolvedAstridCheckout,
+      manifestAstridCommit,
+      'astrid/packs/rendering/executors/render/task_adapter.py',
+    ),
+    capabilitySource: pinnedSource(
+      resolvedAstridCheckout,
+      manifestAstridCommit,
+      'astrid/core/integrations/reigh/capabilities.py',
+    ),
+    taskBridgeSource: pinnedSource(
+      resolvedAstridCheckout,
+      manifestAstridCommit,
+      'astrid/core/integrations/reigh/task_bridge.py',
+    ),
+    remotionRuntimeSource: pinnedSource(
+      resolvedAstridCheckout,
+      manifestAstridCommit,
+      'astrid/core/integrations/reigh/remotion_runtime.py',
+    ),
+    envSource: pinnedSource(
+      resolvedAstridCheckout,
+      manifestAstridCommit,
+      'astrid/core/env_vars.py',
+    ),
+    remotionPackageSource: pinnedSource(
+      resolvedAstridCheckout,
+      manifestAstridCommit,
+      'remotion/package.json',
+    ),
+    remotionLockSource: pinnedSource(
+      resolvedAstridCheckout,
+      manifestAstridCommit,
+      'remotion/package-lock.json',
+    ),
+  });
   const nodeVersion = process.version.replace(/^v/, '');
   if (nodeVersion !== manifest.verification.node) {
     fail(`Node version mismatch: expected ${manifest.verification.node}, got ${nodeVersion}`);
   }
   const npmExecutable = resolvePinnedExecutable('npm', { pathValue: env.PATH ?? process.env.PATH });
-  const npmVersion = capture(npmExecutable, ['--version'], { cwd: REPO_ROOT }).stdout.trim();
+  const nodeExecutable = realpathSync(process.execPath);
+  const npmCliJs = resolvePinnedNpmCli(npmExecutable);
+  const npmVersion = capture(nodeExecutable, [npmCliJs, '--version'], { cwd: REPO_ROOT }).stdout.trim();
   if (npmVersion !== manifest.verification.npm) {
     fail(`npm version mismatch: expected ${manifest.verification.npm}, got ${npmVersion}`);
   }
@@ -516,6 +625,7 @@ export function preflightPinnedRepositories({ manifest, env }) {
     astridCommit: manifestAstridCommit,
     astridPython,
     capability: capability.capability,
+    renderWorkerCapability: renderWorker.capability,
     reighControllerHead: reighHead,
     reighCommit,
     reighProvenance,
@@ -524,6 +634,8 @@ export function preflightPinnedRepositories({ manifest, env }) {
     nodeVersion,
     npmVersion,
     npmExecutable,
+    npmCliJs,
+    nodeExecutable,
     astridPythonVersion: pythonIdentity.version,
   });
 }
@@ -543,8 +655,9 @@ export function preflightNativeToolchain({ manifest, env = process.env, pins = {
     },
   });
   const pinnedPlatform = assertPinnedPlatform(manifest, attestation.platform);
-  const nodeExecutable = realpathSync(process.execPath);
+  const nodeExecutable = realpathSync(pins.nodeExecutable ?? process.execPath);
   const npmExecutable = pins.npmExecutable ?? resolvePinnedExecutable('npm', { pathValue });
+  const npmCliJs = pins.npmCliJs ?? resolvePinnedNpmCli(npmExecutable);
   const runtime = {
     node: {
       executable: nodeExecutable,
@@ -554,6 +667,8 @@ export function preflightNativeToolchain({ manifest, env = process.env, pins = {
     npm: {
       executable: npmExecutable,
       executableSha256: `sha256:${sha256File(npmExecutable)}`,
+      cliJs: npmCliJs,
+      cliJsSha256: `sha256:${sha256File(npmCliJs)}`,
       version: pins.npmVersion ?? null,
     },
     astridPython: {
@@ -570,7 +685,7 @@ export function preflightNativeToolchain({ manifest, env = process.env, pins = {
 export const PAIRED_RELEASE_PHASES = Object.freeze([
   'exact-ref capability preflight',
   'clean archive materialization',
-  'locked Reigh, Playwright, and paired Python provisioning plus production build',
+  'locked Reigh, Playwright, paired Python, and archived Astrid Remotion runtime (attested Node/npm) provisioning plus production build',
   'Astrid database initialization and pre-migration backup',
   'Runaway migration first apply and idempotent second apply',
   'authenticated Astrid release bridge plus built Reigh preview smoke',
@@ -605,8 +720,9 @@ temporary archives of the exact manifest-bound commits. Run mode requires:
 
 The clean Reigh controller HEAD must be a strict evidence-only descendant of
 REIGH_REF. The candidate archive, tests, and receipt remain bound to REIGH_REF.
-The bearer credential is generated in memory and passed only to the Astrid and
-Reigh proxy server processes. Evidence is retained beneath /tmp and sealed
+The bearer credential is generated in memory and passed by environment only to
+the Astrid server (whose serve-owned worker completes render tasks) and Reigh
+proxy server. It is never placed on argv or exposed to the browser. Evidence is retained beneath /tmp and sealed
 read-only. The current Reigh production build deliberately cannot enter local
 bridge mode; the gate therefore proves the built preview/auth proxy boundary,
 then labels its browser editing lane as development-only until that production
@@ -1497,6 +1613,7 @@ export function validateTimelineSchemaInstallation({
   for (const [label, path, root] of [
     ['timeline schema module', probe?.modulePath, venv],
     ['Astrid module', probe?.astridModulePath, astridSnapshot],
+    ['timeline schema package parent', probe?.schemaPythonpath, venv],
   ]) {
     if (!path || !isAbsolute(path)) fail(`${label} probe did not return an absolute path`);
     const scopedPath = relative(root, path);
@@ -1504,10 +1621,15 @@ export function validateTimelineSchemaInstallation({
       fail(`${label} resolved outside its pinned runtime root: ${path}`);
     }
   }
+  const expectedPackage = resolve(probe.schemaPythonpath, 'banodoco_timeline_schema');
+  if (expectedPackage !== dirname(probe.modulePath)) {
+    fail(`timeline schema package parent does not own the imported module: ${probe.schemaPythonpath}`);
+  }
   return Object.freeze({
     astridModulePath: probe.astridModulePath,
     distributionVersion: probe.distributionVersion,
     modulePath: probe.modulePath,
+    schemaPythonpath: probe.schemaPythonpath,
     schemaSha256: probe.schemaSha256,
   });
 }
@@ -1579,6 +1701,7 @@ print(json.dumps({
     "astridModulePath": os.path.realpath(astrid.__file__),
     "distributionVersion": version("banodoco-timeline-schema"),
     "modulePath": os.path.realpath(banodoco_timeline_schema.__file__),
+    "schemaPythonpath": os.path.dirname(os.path.dirname(os.path.realpath(banodoco_timeline_schema.__file__))),
     "schemaSha256": hashlib.sha256(schema_path.read_bytes()).hexdigest(),
 }))
 `.trim()], {
@@ -1612,6 +1735,7 @@ print(json.dumps({
     { flag: 'wx', mode: 0o600 },
   );
   context.astridPython = python;
+  context.timelineSchemaPythonpath = realpathSync(timelineSchema.schemaPythonpath);
   return {
     lock: relative(context.astridSnapshot, lock),
     lockSha256: sha256File(lock),
@@ -1626,6 +1750,108 @@ print(json.dumps({
       sourceTreeSha256: timelineSchemaSourceSnapshot.sha256,
     },
   };
+}
+
+export function buildPinnedNpmArgs({ nodeExecutable, npmCliJs }, args) {
+  if (!nodeExecutable || !npmCliJs) fail('pinned npm invocation requires explicit Node executable and npm CLI JavaScript target');
+  return [nodeExecutable, npmCliJs, ...args];
+}
+
+function runPinnedNpm(context, args, options = {}) {
+  if (!context.nodeExecutable || !context.npmCliJs) fail('pinned npm invocation requires explicit Node executable and npm CLI JavaScript target');
+  const [command, npmCliJs, ...npmArgs] = buildPinnedNpmArgs(context, args);
+  return runLogged(command, [npmCliJs, ...npmArgs], options);
+}
+
+function installAstridRemotionRuntime(context, { npmUserConfig, npmGlobalConfig }) {
+  const projectDir = resolve(context.astridSnapshot, 'remotion');
+  const packageJsonPath = resolve(projectDir, 'package.json');
+  const lockPath = resolve(projectDir, 'package-lock.json');
+  if (!existsSync(projectDir) || !statSync(projectDir).isDirectory()) {
+    fail(`pinned Astrid archive has no Remotion project directory: ${projectDir}`);
+  }
+  if (!existsSync(packageJsonPath) || !existsSync(lockPath)) {
+    fail(`pinned Astrid Remotion runtime requires package.json and package-lock.json: ${projectDir}`);
+  }
+  let packageJson;
+  let packageLock;
+  try {
+    packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+    packageLock = JSON.parse(readFileSync(lockPath, 'utf8'));
+  } catch (error) {
+    fail(`pinned Astrid Remotion manifests are invalid: ${error.message}`);
+  }
+  if (packageJson?.name !== 'tools-remotion' || packageLock?.lockfileVersion !== 3) {
+    fail('pinned Astrid Remotion manifests do not match the lock-aligned runtime contract');
+  }
+  const cache = resolve(context.runtimeRoot, 'npm-cache-astrid-remotion');
+  mkdirSync(cache, { recursive: true, mode: 0o700 });
+  const env = safeBaseEnvironment({
+    HOME: context.home,
+    TMPDIR: context.runtimeRoot,
+    NPM_CONFIG_USERCONFIG: npmUserConfig,
+    NPM_CONFIG_GLOBALCONFIG: npmGlobalConfig,
+    NPM_CONFIG_CACHE: cache,
+    npm_config_cache: cache,
+    npm_config_update_notifier: 'false',
+    npm_config_audit: 'false',
+    npm_config_fund: 'false',
+  });
+  runPinnedNpm(context, ['ci', '--no-audit', '--no-fund'], {
+    cwd: projectDir,
+    env,
+    logPath: resolve(context.evidenceRoot, 'astrid-remotion-npm-ci.log'),
+    budgetKey: 'npm',
+  });
+  const nodeVersion = runLogged(context.nodeExecutable, ['--version'], {
+    cwd: projectDir,
+    env,
+    logPath: resolve(context.evidenceRoot, 'astrid-remotion-node-version.log'),
+    budgetKey: 'fastProbe',
+  }).stdout.trim();
+  const npmVersion = runPinnedNpm(context, ['--version'], {
+    cwd: projectDir,
+    env,
+    logPath: resolve(context.evidenceRoot, 'astrid-remotion-npm-version.log'),
+    budgetKey: 'fastProbe',
+  }).stdout.trim();
+  const inventory = runPinnedNpm(context, ['ls', '--json', '--all'], {
+    cwd: projectDir,
+    env,
+    logPath: resolve(context.evidenceRoot, 'astrid-remotion-npm-tree.log'),
+    parseJson: true,
+    budgetKey: 'npm',
+  }).payload;
+  const scrubbedInventory = JSON.stringify(inventory, (key, value) => (
+    ['path', '_resolved', 'resolved', 'from'].includes(key) ? undefined : value
+  ), 2) + '\n';
+  const provenance = {
+    schemaVersion: 1,
+    projectDir: relative(context.astridSnapshot, realpathSync(projectDir)),
+    packageJsonSha256: sha256File(packageJsonPath),
+    packageLockSha256: sha256File(lockPath),
+    node: {
+      executable: realpathSync(context.nodeExecutable),
+      executableSha256: `sha256:${sha256File(context.nodeExecutable)}`,
+      version: nodeVersion,
+    },
+    npm: {
+      executable: realpathSync(context.npmExecutable),
+      executableSha256: `sha256:${sha256File(context.npmExecutable)}`,
+      cliJs: realpathSync(context.npmCliJs),
+      cliJsSha256: `sha256:${sha256File(context.npmCliJs)}`,
+      version: npmVersion,
+    },
+    cache: relative(context.runtimeRoot, cache),
+    installedTreeSha256: createHash('sha256').update(scrubbedInventory).digest('hex'),
+  };
+  writeFileSync(
+    resolve(context.evidenceRoot, 'astrid-remotion-runtime-provenance.json'),
+    `${JSON.stringify({ ...provenance, installedTree: JSON.parse(scrubbedInventory) }, null, 2)}\n`,
+    { flag: 'wx', mode: 0o600 },
+  );
+  context.remotionProjectDir = realpathSync(projectDir);
+  return provenance;
 }
 
 function resolvePinnedBrowser(context) {
@@ -1861,8 +2087,11 @@ export async function startAstrid(context, suffix, port, token) {
       home: context.home,
       projectsRoot: context.projectsRoot,
       pythonPath: context.astridSnapshot,
+      nodeExecutable: context.nodeExecutable,
       bridgePort: port,
       token,
+      remotionProjectDir: context.remotionProjectDir,
+      timelineSchemaPythonpath: context.timelineSchemaPythonpath,
     }),
     logPath,
   }, async (child) => {
@@ -1890,6 +2119,122 @@ export async function startAstrid(context, suffix, port, token) {
     await assertFailure('disallowed origin', { ...headers, Origin: 'https://attacker.invalid' }, 403, 'forbidden');
     await assertFailure('disallowed host', { ...headers, Host: 'attacker.invalid' }, 403, 'forbidden');
   });
+}
+
+export async function waitForRenderWorkerReadiness(child, { timeoutMs = 10_000 } = {}) {
+  if (!child?.stdout) throw new Error('render worker did not expose a readiness channel');
+  child.stdout.setEncoding('utf8');
+  return new Promise((resolvePromise, rejectPromise) => {
+    let buffer = '';
+    let settled = false;
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      child.stdout.removeListener('data', onData);
+      child.removeListener('error', onError);
+      child.removeListener('close', onClose);
+      if (error) rejectPromise(error);
+      else resolvePromise();
+    };
+    const onData = (chunk) => {
+      buffer += chunk;
+      let index;
+      while ((index = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, index);
+        buffer = buffer.slice(index + 1);
+        let message;
+        try { message = JSON.parse(line); } catch { continue; }
+        if (message?.event === 'worker-ready' && message?.capability === PAIRED_RENDER_WORKER_CAPABILITY) {
+          finish();
+          return;
+        }
+        if (message?.event === 'worker-failed') {
+          finish(new Error(`render worker failed before readiness: ${String(message.error ?? 'unknown error')}`));
+          return;
+        }
+      }
+    };
+    const onError = (error) => finish(new Error(`render worker failed to spawn: ${error.message}`));
+    const onClose = () => finish(new Error('render worker exited before readiness'));
+    const timer = setTimeout(
+      () => finish(new Error(`render worker readiness timed out after ${timeoutMs}ms`)),
+      timeoutMs,
+    );
+    child.stdout.on('data', onData);
+    child.once('error', onError);
+    child.once('close', onClose);
+  });
+}
+
+export async function startRenderWorker(context, suffix, bridgePort, token) {
+  const script = resolve(context.reighSnapshot, 'scripts/release/paired-render-worker.py');
+  if (!existsSync(script)) fail(`paired render worker is missing from the archived Reigh candidate: ${script}`);
+  const evidencePath = resolve(context.evidenceRoot, `astrid-render-worker-${suffix}.json`);
+  const stagingRoot = resolve(context.runtimeRoot, `render-worker-staging-${suffix}`);
+  mkdirSync(stagingRoot, { recursive: true, mode: 0o700 });
+  const env = safeBaseEnvironment({
+    HOME: context.home,
+    TMPDIR: context.runtimeRoot,
+    PYTHONPATH: context.astridSnapshot,
+    ASTRID_PROJECTS_ROOT: context.projectsRoot,
+    ASTRID_NODE_EXECUTABLE: context.nodeExecutable,
+    ASTRID_REMOTION_PROJECT_DIR: context.remotionProjectDir,
+    ASTRID_TIMELINE_SCHEMA_PYTHONPATH: context.timelineSchemaPythonpath,
+    ASTRID_BRIDGE_TOKEN: token,
+    PAIRED_RENDER_BRIDGE_URL: `http://127.0.0.1:${bridgePort}`,
+    PAIRED_RENDER_WORKER_CAPABILITY: PAIRED_RENDER_WORKER_CAPABILITY,
+  });
+  const handle = await startLoggedProcessUntilReady(context.astridPython, [
+    '-u', script,
+    '--executor-id', `paired-render-worker:${suffix}`,
+    '--deadline-ms', String(PAIRED_RENDER_WORKER_DEADLINE_MS),
+    '--staging-root', stagingRoot,
+    '--evidence-path', evidencePath,
+  ], {
+    cwd: context.astridSnapshot,
+    env,
+    logPath: resolve(context.evidenceRoot, `astrid-render-worker-${suffix}.log`),
+  }, (child) => waitForRenderWorkerReadiness(child));
+  handle.renderWorkerEvidencePath = evidencePath;
+  return handle;
+}
+
+export async function assertRenderWorkerCompleted(handle, { timeoutMs = 10_000 } = {}) {
+  if (!handle?.child) throw new Error('render worker handle is missing');
+  if (handle.child.exitCode === null && handle.child.signalCode === null) {
+    await new Promise((resolvePromise, rejectPromise) => {
+      const timer = setTimeout(() => rejectPromise(new Error(`render worker did not exit within ${timeoutMs}ms`)), timeoutMs);
+      handle.child.once('close', () => { clearTimeout(timer); resolvePromise(); });
+      handle.child.once('error', (error) => { clearTimeout(timer); rejectPromise(error); });
+    });
+  }
+  if (handle.child.exitCode !== 0 || handle.child.signalCode) {
+    throw new Error(`render worker exited unsuccessfully: ${childProcessFailure(handle.child, 'render worker')}`);
+  }
+  const evidencePath = handle.renderWorkerEvidencePath;
+  if (!evidencePath || !existsSync(evidencePath)) throw new Error('render worker did not publish evidence');
+  let evidence;
+  try { evidence = JSON.parse(readFileSync(evidencePath, 'utf8')); } catch { throw new Error('render worker evidence is not valid JSON'); }
+  if (
+    evidence?.schemaVersion !== 1
+    || evidence?.status !== 'completed'
+    || evidence?.capability !== PAIRED_RENDER_WORKER_CAPABILITY
+    || typeof evidence?.executor_id !== 'string'
+    || typeof evidence?.task_id !== 'string'
+    || typeof evidence?.attempt_id !== 'string'
+    || !Number.isInteger(evidence?.attempt_no)
+    || typeof evidence?.project_slug !== 'string'
+    || !Number.isInteger(evidence?.bytes)
+    || evidence.bytes <= 0
+    || !/^[0-9a-f]{64}$/.test(evidence?.sha256 ?? '')
+    || typeof evidence?.media?.media_id !== 'string'
+    || evidence.media.mime_type !== 'video/mp4'
+    || evidence.media.content_hash !== evidence.sha256
+  ) {
+    throw new Error(`render worker evidence did not prove completion: ${JSON.stringify(evidence)}`);
+  }
+  return evidence;
 }
 
 export async function startReigh(context, suffix, port, bridgePort, token, mode) {
@@ -2348,7 +2693,183 @@ function noCaptionControlSeconds(captions, duration) {
   ));
 }
 
-function verifyRenderedArtifact(context) {
+export function validateRenderWorkerBinding({ browserReceipt, workerEvidence }) {
+  if (!workerEvidence || workerEvidence.status !== 'completed') return null;
+  if (!Number.isInteger(browserReceipt?.bytes) || browserReceipt.bytes !== workerEvidence.bytes) {
+    fail(`browser MP4 bytes do not match worker evidence: ${browserReceipt?.bytes} != ${workerEvidence.bytes}`);
+  }
+  if (browserReceipt.sha256 !== workerEvidence.sha256) {
+    fail(`browser MP4 hash does not match worker evidence: ${browserReceipt?.sha256} != ${workerEvidence.sha256}`);
+  }
+  const browserMediaId = typeof browserReceipt.mediaId === 'string' && browserReceipt.mediaId
+    ? browserReceipt.mediaId
+    : null;
+  if (browserMediaId && browserMediaId !== workerEvidence.media.media_id) {
+    fail(`browser media id does not match worker evidence: ${browserMediaId} != ${workerEvidence.media.media_id}`);
+  }
+  return {
+    taskId: workerEvidence.task_id,
+    attemptId: workerEvidence.attempt_id,
+    workerMediaId: workerEvidence.media.media_id,
+    browserMediaId,
+    bytes: workerEvidence.bytes,
+    sha256: workerEvidence.sha256,
+    binding: browserMediaId ? 'sha256+bytes+media_id' : 'sha256+bytes',
+    mediaIdSource: browserMediaId ? 'browser-download-url' : 'browser-receipt-no-media-id',
+  };
+}
+
+function parseTaskOutputParams(output) {
+  if (!output || typeof output !== 'object') return null;
+  if (output.params && typeof output.params === 'object') return output.params;
+  if (typeof output.params_json !== 'string') return null;
+  try {
+    const parsed = JSON.parse(output.params_json);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Validate the product-owned completion read model.  This is deliberately
+ * separate from validateRenderWorkerBinding: the paired verifier is not an
+ * executor and may not claim an attempt of its own.
+ */
+export function validateAstridServeOwnedRenderEvidence({ browserReceipt, taskDetail, mediaContent }) {
+  const task = taskDetail?.task;
+  const taskId = typeof task?.task_id === 'string' ? task.task_id : task?.id;
+  if (typeof taskId !== 'string' || taskId !== browserReceipt?.taskId) {
+    fail(`serve-owned task id does not match browser admission: ${taskId ?? '<missing>'} != ${browserReceipt?.taskId ?? '<missing>'}`);
+  }
+  if (task?.capability !== PAIRED_RENDER_WORKER_CAPABILITY || task?.spec?.family !== 'render_export') {
+    fail(`serve-owned task is not the admitted render_export capability: ${JSON.stringify({ capability: task?.capability, family: task?.spec?.family })}`);
+  }
+  if (task?.status !== 'succeeded') fail(`serve-owned render task did not succeed: ${String(task?.status)}`);
+  const attempts = Array.isArray(task?.attempts) ? task.attempts : [];
+  const winningAttemptId = task?.winning_attempt_id;
+  if (typeof winningAttemptId !== 'string' || !winningAttemptId) fail('serve-owned succeeded task omitted a non-empty winning_attempt_id');
+  const winningAttempts = attempts.filter((attempt) => (
+    attempt?.status === 'succeeded'
+    && (winningAttemptId ? (attempt.attempt_id ?? attempt.id) === winningAttemptId : true)
+  ));
+  if (winningAttempts.length !== 1) fail(`serve-owned task did not identify exactly one succeeded winning attempt: ${JSON.stringify({ winningAttemptId, attempts })}`);
+  const attempt = winningAttempts[0];
+  const attemptId = attempt.attempt_id ?? attempt.id;
+  if (typeof attemptId !== 'string' || !attemptId || attemptId !== winningAttemptId) fail('serve-owned winning attempt identity is not exact and non-empty');
+  const outputs = Array.isArray(task?.outputs) ? task.outputs : [];
+  const primary = outputs.filter((output) => output?.is_primary === true || output?.is_primary === 1);
+  if (primary.length !== 1) fail(`serve-owned render must expose exactly one primary output, got ${primary.length}`);
+  const output = primary[0];
+  const params = parseTaskOutputParams(output);
+  const digest = params?.content_hash;
+  const bytes = params?.byte_size;
+  if (typeof output?.media_id !== 'string' || !output.media_id) fail('serve-owned primary output omitted media_id');
+  if (!/^[0-9a-f]{64}$/.test(digest ?? '')) fail(`serve-owned primary output content_hash must be a bare sha256 digest: ${String(digest)}`);
+  if (!Number.isInteger(bytes) || bytes <= 0) fail(`serve-owned primary output byte_size is invalid: ${String(bytes)}`);
+  if (!mediaContent || mediaContent.status !== 200 || mediaContent.mimeType !== 'video/mp4') {
+    fail(`serve-owned primary media is not a video/mp4 content response: ${JSON.stringify(mediaContent)}`);
+  }
+  if (mediaContent.bytes !== bytes || mediaContent.sha256 !== digest) {
+    fail(`serve-owned media content does not match task output: ${JSON.stringify({ mediaBytes: mediaContent.bytes, outputBytes: bytes, mediaSha256: mediaContent.sha256, outputSha256: digest })}`);
+  }
+  const browserMediaId = typeof browserReceipt.mediaId === 'string' && browserReceipt.mediaId
+    ? browserReceipt.mediaId
+    : null;
+  if (browserMediaId && browserMediaId !== output.media_id) fail(`browser media id does not match serve-owned primary output: ${browserMediaId} != ${output.media_id}`);
+  if (browserReceipt.bytes !== bytes || browserReceipt.sha256 !== digest) fail('browser download does not match serve-owned primary output');
+  return Object.freeze({
+    schemaVersion: 1,
+    authority: 'astrid-serve-owned',
+    capability: PAIRED_RENDER_WORKER_CAPABILITY,
+    projectSlug: task?.spec?.project_slug ?? null,
+    taskId,
+    attemptId,
+    attemptNo: attempt.attempt_no,
+    status: task.status,
+    primaryMedia: {
+      mediaId: output.media_id,
+      mimeType: mediaContent.mimeType,
+      contentHash: digest,
+      bytes,
+    },
+    browserDownload: {
+      taskId: browserReceipt.taskId,
+      mediaId: browserMediaId,
+      sha256: browserReceipt.sha256,
+      bytes: browserReceipt.bytes,
+    },
+    binding: browserMediaId ? 'task+attempt+media_id+sha256+bytes' : 'task+attempt+sha256+bytes',
+    mediaIdSource: browserMediaId ? 'browser-download-url' : 'server-task-output-only',
+  });
+}
+
+async function readAstridTaskDetail({ bridgePort, projectSlug, taskId, token, timeoutMs = 10_000 }) {
+  const url = `http://127.0.0.1:${bridgePort}/projects/${encodeURIComponent(projectSlug)}/tasks/${encodeURIComponent(taskId)}`;
+  const response = await requestRawHttp(url, {
+    timeoutMs,
+    headers: { Authorization: `Bearer ${token}`, 'X-Astrid-Bridge-Version': 'v1' },
+  });
+  if (response.status !== 200) fail(`Astrid task detail returned HTTP ${response.status} for ${taskId}`);
+  return response.json();
+}
+
+async function waitForAstridServeOwnedTask({ bridgePort, projectSlug, taskId, token, timeoutMs = PAIRED_RENDER_WORKER_DEADLINE_MS }) {
+  const deadline = Date.now() + timeoutMs;
+  let lastStatus = '<missing>';
+  while (Date.now() < deadline) {
+    const detail = await readAstridTaskDetail({
+      bridgePort, projectSlug, taskId, token,
+      timeoutMs: Math.max(100, Math.min(10_000, deadline - Date.now())),
+    });
+    lastStatus = String(detail?.task?.status ?? '<missing>');
+    if (lastStatus === 'succeeded') return detail;
+    if (['failed', 'cancelled', 'expired'].includes(lastStatus)) fail(`serve-owned render task reached terminal ${lastStatus}`);
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 500));
+  }
+  fail(`timed out waiting for serve-owned render task ${taskId} (last status ${lastStatus})`);
+}
+
+async function readAstridMediaContent({ bridgePort, projectSlug, mediaId, token }) {
+  const url = `http://127.0.0.1:${bridgePort}/projects/${encodeURIComponent(projectSlug)}/media/${encodeURIComponent(mediaId)}/content`;
+  const response = await requestRawHttp(url, {
+    timeoutMs: 30_000,
+    headers: { Authorization: `Bearer ${token}`, 'X-Astrid-Bridge-Version': 'v1' },
+  });
+  const bytes = Buffer.from(await response.arrayBuffer());
+  return {
+    status: response.status,
+    mimeType: response.headers.get('content-type'),
+    bytes: bytes.length,
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+  };
+}
+
+async function captureAstridServeOwnedRenderEvidence(context, { bridgePort, token }) {
+  const browserReceipt = JSON.parse(readFileSync(resolve(context.evidenceRoot, 'render-browser-receipt.json'), 'utf8'));
+  if (browserReceipt.authority !== 'astrid-serve-owned' || typeof browserReceipt.taskId !== 'string') {
+    fail('browser render receipt did not capture the authenticated Astrid render task id');
+  }
+  const taskDetail = await waitForAstridServeOwnedTask({
+    bridgePort,
+    projectSlug: DEMO_PROJECT,
+    taskId: browserReceipt.taskId,
+    token,
+  });
+  const output = (Array.isArray(taskDetail?.task?.outputs) ? taskDetail.task.outputs : []).find((entry) => entry?.is_primary === true || entry?.is_primary === 1);
+  if (typeof output?.media_id !== 'string' || !output.media_id) fail('serve-owned task detail omitted primary media_id');
+  const mediaContent = await readAstridMediaContent({
+    bridgePort,
+    projectSlug: DEMO_PROJECT,
+    mediaId: output?.media_id,
+    token,
+  });
+  const evidence = validateAstridServeOwnedRenderEvidence({ browserReceipt, taskDetail, mediaContent });
+  writeFileSync(resolve(context.evidenceRoot, 'astrid-serve-owned-render-evidence.json'), `${JSON.stringify(evidence, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
+  return evidence;
+}
+
+function verifyRenderedArtifact(context, { serveOwnedEvidence = null } = {}) {
   const outputPath = resolve(context.evidenceRoot, 'paired-release-render.mp4');
   const browserReceipt = JSON.parse(readFileSync(
     resolve(context.evidenceRoot, 'render-browser-receipt.json'),
@@ -2364,6 +2885,8 @@ function verifyRenderedArtifact(context) {
   if (browserReceipt.sha256 !== sha256File(outputPath)) {
     fail('downloaded render hash changed between browser and media verification');
   }
+  if (!serveOwnedEvidence || serveOwnedEvidence.authority !== 'astrid-serve-owned') fail('render verification requires strict Astrid serve-owned evidence');
+  const workerBinding = serveOwnedEvidence;
   const ffprobeExecutable = context.nativeTools?.ffprobe?.executable;
   const ffmpegExecutable = context.nativeTools?.ffmpeg?.executable;
   const tesseractExecutable = context.nativeTools?.tesseract?.executable;
@@ -2558,6 +3081,7 @@ function verifyRenderedArtifact(context) {
     persistedStateHash: browserReceipt.persistedStateHash,
     mp4Sha256: browserReceipt.sha256,
     bytes: browserReceipt.bytes,
+    workerBinding,
     video: {
       codec: video.codec_name,
       width: video.width,
@@ -2604,6 +3128,8 @@ async function executeGate(manifest, pins, evidenceRoot) {
     ...pins,
     nativeTools: pins.nativeToolchain?.tools,
     npmExecutable: pins.npmExecutable,
+    npmCliJs: pins.npmCliJs,
+    nodeExecutable: pins.nodeExecutable,
     bootstrapAstridPython: pins.astridPython,
     evidenceRoot,
     runtimeRoot,
@@ -2661,12 +3187,17 @@ async function executeGate(manifest, pins, evidenceRoot) {
     });
     receipt.phases.push({ id: 'archives', status: 'pass' });
 
-    runLogged(context.npmExecutable, ['ci', '--no-audit', '--no-fund'], {
+    const astridRemotionRuntime = installAstridRemotionRuntime(context, {
+      npmUserConfig,
+      npmGlobalConfig,
+    });
+
+    runPinnedNpm(context, ['ci', '--no-audit', '--no-fund'], {
       cwd: context.reighSnapshot,
       env: safeBaseEnvironment({ HOME: context.home, TMPDIR: runtimeRoot, NPM_CONFIG_USERCONFIG: npmUserConfig, NPM_CONFIG_GLOBALCONFIG: npmGlobalConfig }),
       logPath: resolve(evidenceRoot, 'reigh-npm-ci.log'),
     });
-    runLogged(context.npmExecutable, ['run', 'build'], {
+    runPinnedNpm(context, ['run', 'build'], {
       cwd: context.reighSnapshot,
       env: safeBaseEnvironment({ ...PUBLIC_BUILD_ENV, HOME: context.home, TMPDIR: runtimeRoot, NPM_CONFIG_USERCONFIG: npmUserConfig, NPM_CONFIG_GLOBALCONFIG: npmGlobalConfig }),
       logPath: resolve(evidenceRoot, 'reigh-build.log'),
@@ -2686,7 +3217,12 @@ async function executeGate(manifest, pins, evidenceRoot) {
     receipt.phases.push({ id: 'reigh-build', status: 'pass', browser });
 
     const astridRuntime = installLockedAstridRuntime(context);
-    receipt.phases.push({ id: 'astrid-locked-runtime', status: 'pass', ...astridRuntime });
+    receipt.phases.push({
+      id: 'astrid-locked-runtime',
+      status: 'pass',
+      ...astridRuntime,
+      remotion: astridRemotionRuntime,
+    });
 
     const seededMedia = seedDemoProject(context);
     context.mediaId = seededMedia.mediaId;
@@ -2761,7 +3297,8 @@ async function executeGate(manifest, pins, evidenceRoot) {
     reighPort = await allocatePort();
     reighHandle = await startReigh(context, 'browser-restart', reighPort, bridgePort, token, 'development');
     runPlaywright(context, 'restart', reighPort);
-    const renderVerification = verifyRenderedArtifact(context);
+    const serveOwnedEvidence = await captureAstridServeOwnedRenderEvidence(context, { bridgePort, token });
+    const renderVerification = verifyRenderedArtifact(context, { serveOwnedEvidence });
     receipt.phases.push({
       id: 'restart-persistence-render',
       status: 'pass',
@@ -2770,6 +3307,15 @@ async function executeGate(manifest, pins, evidenceRoot) {
       videoFrames: renderVerification.video.frames,
       fullDecode: renderVerification.fullDecode,
       mediaEvidence: renderVerification.mediaEvidence,
+      render: {
+        authority: 'astrid-serve-owned',
+        taskId: serveOwnedEvidence.taskId,
+        attemptId: serveOwnedEvidence.attemptId,
+        bytes: serveOwnedEvidence.primaryMedia.bytes,
+        sha256: serveOwnedEvidence.primaryMedia.contentHash,
+        mediaId: serveOwnedEvidence.primaryMedia.mediaId,
+        workerBinding: renderVerification.workerBinding,
+      },
     });
     await stopLoggedProcesses([reighHandle, astridHandle]);
     reighHandle = undefined;

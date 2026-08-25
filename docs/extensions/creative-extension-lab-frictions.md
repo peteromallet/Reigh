@@ -1416,3 +1416,152 @@ identity.
   seven-rate caption matrix remains valuable renderer-owned coverage and must
   not be silently counted as a real-bridge pass until its assets and Runaway
   fixtures are seeded through Astrid's managed stores.
+
+## 2026-08-25 — Paired real-render friction audit
+
+The first real `render_export` round-trip exposed a second class of problems:
+the contract can be admitted and authenticated while the actual renderer,
+inputs, settlement authority, or installed runtime is absent. These findings
+are evidence from the paired worker/bridge path, not claims that a focused
+unit test is equivalent to release evidence.
+
+### Render authority must be distinct from visualization
+
+- The admitted `render_export` family initially resolved to
+  `rendering.timeline_visualize`. That executor produced a plausible evidence
+  directory, so task admission and a superficial download check could look
+  successful while no H.264 MP4 was rendered. The resolution is a dedicated
+  adapter that invokes canonical `rendering.render` against the admitted
+  timeline snapshot and managed inputs, then completes a real MP4 media record
+  whose bytes begin with the MP4 `ftyp` signature.
+- The pinned paired topology also had no serve-owned worker to claim and settle
+  the task; admitted work could remain queued forever. The resolution is an
+  explicitly owned bounded worker lifecycle (claim, heartbeat, render,
+  multipart complete, detail reconciliation, failure/cancel, and shutdown),
+  with browser tests assigned only to a topology that actually owns that
+  authority.
+
+### Caller locators are not asset authority
+
+- A registry `file` field is required for compatibility, but trusting its
+  absolute path, URL, or user-controlled locator lets a render read outside
+  the project. Valid entries now require a project-owned `media_id` and
+  verified digest/location; a benign relative display filename is retained
+  only as metadata. Absolute paths, URLs, traversal, missing/foreign media,
+  and digest mismatches fail closed.
+- The adapter stages verified managed bytes under a deterministic
+  `render-inputs` directory and rewrites the renderer registry to those staged
+  paths. The renderer never receives the caller's locator as authority.
+
+### Idempotency and completion fencing cross more boundaries than admission
+
+- An idempotency key alone was insufficient: changing the output filename,
+  correlation, expected version, destination, materialized input, or timeline
+  while reusing the key must mismatch; an identical replay after the timeline
+  head advances must reuse the original task/snapshot. The stored caller
+  envelope is now compared exactly before reuse.
+- Heartbeats mutate `status_version`. Serializing that version into a
+  completion manifest and then heartbeating during upload made a slow upload
+  self-conflict with `409`. Each completion attempt now extends the lease once,
+  freezes its fence, rebuilds the deterministic manifest/body, and streams
+  without version-mutating callbacks. A lost completion ACK or lost detail GET
+  retries/reconciles the same key, file, and body rather than rerendering.
+- Deterministic client errors such as `413` are not replayed. Ambiguous
+  transport/5xx outcomes may reconcile, but an authoritative non-running state
+  (`queued`, `blocked`, `failed`, `cancelled`, and similar) means ownership was
+  lost; only `running` may retry and `succeeded` is accepted as completion.
+
+### Streaming, leases, shutdown, and process trees are one failure domain
+
+- Completion now hashes and uploads in bounded chunks, checks stop/deadline
+  controls while hashing and streaming, and requests a lease long enough for
+  the bounded render plus settlement margin. The control path must continue
+  through post-render settlement rather than abandoning a task at the first
+  stop signal.
+- A signal handler that synchronously joined the worker deadlocked the bridge
+  needed for reconciliation. Shutdown now starts one coordinator, keeps HTTP
+  available while the worker settles or fenced-fails its task, then shuts down
+  HTTP and closes the writer. A stopped worker cannot remain as a daemon with a
+  long-running claim.
+- Renderer descendants escaped when cleanup assumed the child PID was its
+  process group or ran only on exceptions. On Darwin, process enumeration uses
+  `sess=` (not unsupported `sid=`); cleanup tracks descendants and detached
+  grandchildren and runs after both success and failure. The regression uses a
+  detached grandchild marker and proves no owned process remains.
+
+### Wire-shape normalization matters at the SQLite boundary
+
+- SQLite projections exposed integer booleans (`0`/`1`) where bridge consumers
+  required JSON booleans, and hash fields arrived with inconsistent bare versus
+  `sha256:` forms. Those shape mismatches made task detail, completion, and
+  media assertions disagree even when the underlying row was correct.
+- The resolution is canonicalization at the database/bridge boundary plus
+  exact JSON-shape assertions in route and worker tests; callers do not infer
+  truthiness or normalize hashes ad hoc.
+
+### An editable checkout is not an installed renderer runtime
+
+- Forced-caption/text timelines initially auto-routed through media-only
+  FFmpeg tests, masking that the installed wheel omitted the server-owned
+  Remotion bundle, Node dependencies, and package data. In a clean artifact,
+  qualified Remotion could not execute even though source-checkout tests were
+  green.
+- Remotion is now a trusted, server-configured runtime: readiness validates
+  its package, Node/npm entrypoints, dependencies, and generated registries;
+  forced non-media timelines fail before claim when it is unavailable. The
+  caller cannot choose `project_dir`, backend, engine, or backend config.
+
+### External editable schema paths can create false readiness
+
+- `banodoco_timeline_schema` resolved in one test interpreter only because an
+  external editable Reigh worktree/vendor path was ambient on `sys.path`;
+  another clean interpreter failed with the required schema import. Changing
+  the child interpreter symlink did not fix the packaging defect.
+- Readiness now provisions or names a trusted schema root, runs a bounded clean
+  interpreter probe with sanitized `PYTHONPATH`, verifies the imported module's
+  origin is inside that root, and checks the complete package including
+  `theme.py` and `derive`. A pre-cached ambient module cannot satisfy the
+  probe; worker and renderer children inherit only the validated runtime.
+
+### A release verifier must not compete with the product worker
+
+- Starting a verifier-owned render worker beside Astrid's serve-owned worker
+  created a claim race: either process could win, so the gate could fail
+  nondeterministically or prove the helper instead of the shipped topology.
+- The authoritative lane now has one claimant. Playwright captures the exact
+  server-issued task ID, and the verifier binds Astrid's winning attempt,
+  primary media ID, bare digest, byte size, authenticated media bytes, and the
+  browser download. Its production-shaped fixture keeps attempts and outputs
+  nested under `task`; the earlier top-level mock hid a guaranteed live failure.
+
+### Version checks do not pin the executable that actually runs
+
+- Attesting Node and npm versions did not help while npm's env shebang and a
+  bare `npx` could resolve different binaries through ambient `PATH`. Worse,
+  invoking npm's internal `lib/cli.js` exited zero without executing npm, so a
+  superficially bounded command could become a false success.
+- Astrid now requires an absolute server-owned Node and invokes the locked
+  project-local Remotion CLI directly. The paired verifier invokes npm's real
+  `bin/npm-cli.js` through that attested Node, validates the internal target
+  only for containment, records hashes, and uses hostile-PATH tests with real
+  version output and a side effect to prove the requested tool actually ran.
+
+### Why focused happy paths missed the frictions
+
+Media-only adapter fixtures exercised FFmpeg, not Remotion; mocked transports
+and child processes did not exercise real descendant cleanup, HTTP settlement,
+lost acknowledgements, SQLite serialization, or interpreter origin. Unit tests
+also ran inside the editable source checkout, where ambient schema and Node
+dependencies hid installed-artifact omissions. Finally, no single focused test
+owned the complete serve-worker, paired bridge, and browser topology, so green
+admission tests were mistaken for a real export. The release claim therefore
+requires the full path, not a larger pile of isolated happy paths.
+
+### Remaining release gate
+
+This lane is not release-ready until a clean isolated Python wheel, a separately
+provisioned pinned npm/Remotion runtime, and a separately provisioned canonical
+timeline-schema install pass the real MP4 task round-trip. The complete paired
+verifier (including loss/retry, lease/fence, shutdown, and process-tree cases)
+and the browser/E2E suite must also pass with no leaked processes, ambiguous
+task leases, or unowned render work.

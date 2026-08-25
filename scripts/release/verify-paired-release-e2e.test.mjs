@@ -1,7 +1,8 @@
 import { strict as assert } from 'node:assert';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { PassThrough } from 'node:stream';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { arch, platform, release, tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { describe, it } from 'node:test';
@@ -20,6 +21,7 @@ import {
   RUNAWAY_RELEASE_FIXTURE_HASHES,
   TIMELINE_SCHEMA_DISTRIBUTION_VERSION,
   buildBrowserEnvironment,
+  buildPinnedNpmArgs,
   buildReadinessIdentity,
   buildServerEnvironment,
   buildViteArgs,
@@ -32,14 +34,20 @@ import {
   parseCliArgs,
   requireFullCommitPin,
   requestRawHttp,
+  resolvePinnedNpmCli,
   validateTimelineSchemaInstallation,
   validateAstridReleaseBridgeSources,
+  validateAstridRenderWorkerSources,
   validateCaptionExpectations,
   validateMediaFixture,
   validateRenderedMediaFrame,
   verifyBridgeMediaContent,
   waitForUrl,
   waitForViteReadiness,
+  waitForRenderWorkerReadiness,
+  assertRenderWorkerCompleted,
+  validateRenderWorkerBinding,
+  validateAstridServeOwnedRenderEvidence,
   startLoggedProcessUntilReady,
   stopLoggedProcess,
 } from './verify-paired-release-e2e.mjs';
@@ -328,6 +336,203 @@ describe('paired repository release E2E gate', () => {
     for (const [promise, expected] of cases) await assert.rejects(promise, expected);
     assert.ok(Date.now() - started < 1_000, 'terminal child states must not wait for readiness timeout');
     assert.match(childProcessFailure({ exitCode: 7, signalCode: null }), /exit 7/);
+  });
+
+  it('pins the dedicated render worker contract to the Astrid archive', () => {
+    assert.deepEqual(validateAstridRenderWorkerSources({
+      adapterSource: 'class RenderExportTaskAdapter: ... execute_render_export_task',
+      capabilitySource: 'FAMILY_RENDER_EXPORT = "rendering.render"',
+      taskBridgeSource: 'timeline_snapshot = {}',
+      remotionRuntimeSource: 'remotion_runtime_status REMOTION_CLI_RELATIVE_PATH ASTRID_REMOTION_PROJECT_DIR ASTRID_NODE_EXECUTABLE ASTRID_TIMELINE_SCHEMA_PYTHONPATH',
+      envSource: 'ASTRID_REMOTION_PROJECT_DIR ASTRID_NODE_EXECUTABLE ASTRID_TIMELINE_SCHEMA_PYTHONPATH',
+      remotionPackageSource: '"name": "tools-remotion"',
+      remotionLockSource: '"lockfileVersion": 3',
+    }), { capability: 'rendering.render' });
+    assert.throws(() => validateAstridRenderWorkerSources({
+      adapterSource: '',
+      capabilitySource: '',
+      taskBridgeSource: '',
+    }), /paired render worker contract/);
+  });
+
+  it('resolves npm to its local CLI and invokes it through the attested Node binary', () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'paired-npm-cli-'));
+    const bin = resolve(root, 'bin');
+    const lib = resolve(root, 'lib');
+    mkdirSync(bin, { recursive: true });
+    mkdirSync(lib, { recursive: true });
+    const shim = resolve(bin, 'npm');
+    const cli = resolve(lib, 'cli.js');
+    const marker = resolve(root, 'npm-side-effect.txt');
+    writeFileSync(shim, "#!/usr/bin/env node\nrequire('../lib/cli.js')(process)\n", { mode: 0o700 });
+    writeFileSync(cli, `module.exports = (runtime) => { require('node:fs').writeFileSync(${JSON.stringify(marker)}, runtime.argv.slice(2).join(' ')); if (runtime.argv[2] === '--version') runtime.stdout.write('9.9.9\\n'); };\n`);
+    try {
+      const resolvedCli = resolvePinnedNpmCli(shim);
+      assert.equal(resolvedCli, realpathSync(shim));
+      assert.deepEqual(buildPinnedNpmArgs({ nodeExecutable: process.execPath, npmCliJs: resolvedCli }, ['ci', '--no-fund']), [
+        process.execPath, resolvedCli, 'ci', '--no-fund',
+      ]);
+      const executed = runTestCommand(process.execPath, [resolvedCli, '--version'], { cwd: root });
+      assert.equal(executed.status, 0);
+      assert.equal(executed.stdout, '9.9.9\n');
+      assert.equal(readFileSync(marker, 'utf8'), '--version');
+      const source = readFileSync(resolve(REPO_ROOT, 'scripts/release/verify-paired-release-e2e.mjs'), 'utf8');
+      const install = source.slice(source.indexOf('function installAstridRemotionRuntime'), source.indexOf('function resolvePinnedBrowser'));
+      assert.match(install, /runPinnedNpm\(context, \['ci'/);
+      assert.doesNotMatch(install, /\bnpx\b/);
+      assert.match(install, /node:[\s\S]*executableSha256/);
+      assert.match(source, /ASTRID_NODE_EXECUTABLE/);
+      assert.match(source, /REMOTION_CLI_RELATIVE_PATH/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('requires the bounded worker handshake and proves scrubbed worker ownership', async () => {
+    const stdout = new PassThrough();
+    const child = new PassThrough({ readableObjectMode: false });
+    child.stdout = stdout;
+    child.exitCode = null;
+    child.signalCode = null;
+    const ready = waitForRenderWorkerReadiness(child, { timeoutMs: 1_000 });
+    stdout.write('{"event":"worker-ready","capability":"rendering.render"}\n');
+    await ready;
+    const workerSource = readFileSync(resolve(REPO_ROOT, 'scripts/release/paired-render-worker.py'), 'utf8');
+    assert.match(workerSource, /X-Astrid-Bridge-Version/);
+    assert.match(workerSource, /Idempotency-Key/);
+    assert.match(workerSource, /heartbeat/);
+    assert.match(workerSource, /os\.killpg/);
+    assert.match(workerSource, /_stream_mp4_digest/);
+    assert.match(workerSource, /MappingProxyType/);
+    assert.match(workerSource, /heartbeat\.join\(timeout=HEARTBEAT_JOIN_TIMEOUT_SECONDS\)/);
+    assert.match(workerSource, /if heartbeat\.is_alive\(\)/);
+    assert.match(workerSource, /SETTLEMENT_RESERVE_SECONDS/);
+    assert.match(workerSource, /for replay in range\(2\)/);
+    assert.match(workerSource, /content_hash"\) != output_sha256/);
+    assert.match(workerSource, /parsed\.scheme != "http"/);
+    assert.match(workerSource, /parsed\.hostname != "127\.0\.0\.1"/);
+    assert.doesNotMatch(workerSource, /output_path\.read_bytes\(\)/);
+    assert.doesNotMatch(workerSource, /ASTRID_BRIDGE_TOKEN.*argv/);
+  });
+
+  it('validates completed worker evidence and rejects incomplete settlement', async () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'paired-render-worker-evidence-'));
+    const evidencePath = resolve(root, 'worker.json');
+    const child = new PassThrough();
+    child.exitCode = 0;
+    child.signalCode = null;
+    writeFileSync(evidencePath, `${JSON.stringify({
+      status: 'completed',
+      schemaVersion: 1,
+      capability: 'rendering.render',
+      executor_id: 'worker-1',
+      task_id: 'task-1',
+      attempt_id: 'attempt-1',
+      attempt_no: 1,
+      project_slug: 'demo',
+      bytes: 123,
+      sha256: 'a'.repeat(64),
+      media: { media_id: 'media-1', mime_type: 'video/mp4', content_hash: 'a'.repeat(64) },
+    })}\n`);
+    try {
+      const evidence = await assertRenderWorkerCompleted({ child, renderWorkerEvidencePath: evidencePath });
+      assert.equal(evidence.media.media_id, 'media-1');
+      writeFileSync(evidencePath, `${JSON.stringify({
+        schemaVersion: 1,
+        status: 'completed',
+        capability: 'rendering.render',
+        executor_id: 'worker-1',
+        task_id: 'task-1',
+        attempt_id: 'attempt-1',
+        attempt_no: 1,
+        project_slug: 'demo',
+        bytes: 123,
+        sha256: 'a'.repeat(64),
+        media: { media_id: 'media-1', mime_type: 'video/mp4', content_hash: `sha256:${'a'.repeat(64)}` },
+      })}\n`);
+      await assert.rejects(
+        assertRenderWorkerCompleted({ child, renderWorkerEvidencePath: evidencePath }),
+        /did not prove completion/,
+      );
+      writeFileSync(evidencePath, '{"status":"failed"}\n');
+      await assert.rejects(
+        assertRenderWorkerCompleted({ child, renderWorkerEvidencePath: evidencePath }),
+        /did not prove completion/,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('binds worker evidence to the browser MP4 by bytes and bare Astrid content hash', () => {
+    const workerEvidence = {
+      status: 'completed',
+      bytes: 123,
+      sha256: 'b'.repeat(64),
+      task_id: 'task-2',
+      attempt_id: 'attempt-2',
+      media: { media_id: 'media-2' },
+    };
+    assert.deepEqual(
+      validateRenderWorkerBinding({
+        browserReceipt: { bytes: 123, sha256: 'b'.repeat(64), mediaId: 'media-2' },
+        workerEvidence,
+      }),
+      {
+        taskId: 'task-2',
+        attemptId: 'attempt-2',
+        workerMediaId: 'media-2',
+        browserMediaId: 'media-2',
+        bytes: 123,
+        sha256: 'b'.repeat(64),
+        binding: 'sha256+bytes+media_id',
+        mediaIdSource: 'browser-download-url',
+      },
+    );
+    assert.throws(
+      () => validateRenderWorkerBinding({
+        browserReceipt: { bytes: 124, sha256: 'b'.repeat(64), mediaId: 'media-2' },
+        workerEvidence,
+      }),
+      /bytes do not match/,
+    );
+    assert.throws(
+      () => validateRenderWorkerBinding({
+        browserReceipt: { bytes: 123, sha256: 'b'.repeat(64), mediaId: 'other-media' },
+        workerEvidence,
+      }),
+      /media id does not match/,
+    );
+  });
+
+  it('makes Astrid serve the sole authoritative render owner and binds product evidence strictly', () => {
+    const source = readFileSync(resolve(REPO_ROOT, 'scripts/release/verify-paired-release-e2e.mjs'), 'utf8');
+    const gate = source.slice(source.indexOf('async function executeGate'), source.indexOf('async function executeGate') + 35_000);
+    assert.doesNotMatch(gate, /startRenderWorker\(/, 'the authoritative paired run must not launch a verifier worker');
+    assert.doesNotMatch(gate, /assertRenderWorkerCompleted\(/, 'the authoritative paired run must not count verifier evidence');
+    assert.match(gate, /captureAstridServeOwnedRenderEvidence/);
+    const digest = 'c'.repeat(64);
+    const taskDetail = {
+      task: {
+        task_id: 'task-serve-1', capability: 'rendering.render', status: 'succeeded',
+        winning_attempt_id: 'attempt-serve-1', spec: { family: 'render_export', project_slug: 'paired-release-demo' },
+        attempts: [{ attempt_id: 'attempt-serve-1', attempt_no: 2, status: 'succeeded' }],
+        outputs: [{ ordinal: 0, role: 'result', media_id: 'media-serve-1', is_primary: 1, params_json: JSON.stringify({ content_hash: digest, byte_size: 123 }) }],
+      },
+    };
+    const evidence = validateAstridServeOwnedRenderEvidence({
+      browserReceipt: { authority: 'astrid-serve-owned', taskId: 'task-serve-1', mediaId: 'media-serve-1', bytes: 123, sha256: digest },
+      taskDetail,
+      mediaContent: { status: 200, mimeType: 'video/mp4', bytes: 123, sha256: digest },
+    });
+    assert.equal(evidence.authority, 'astrid-serve-owned');
+    assert.equal(evidence.attemptId, 'attempt-serve-1');
+    assert.equal(evidence.primaryMedia.mediaId, 'media-serve-1');
+    assert.throws(() => validateAstridServeOwnedRenderEvidence({
+      browserReceipt: { taskId: 'task-serve-1', mediaId: 'media-serve-1', bytes: 123, sha256: `sha256:${digest}` },
+      taskDetail: { ...taskDetail, task: { ...taskDetail.task, outputs: [{ ...taskDetail.task.outputs[0], params_json: JSON.stringify({ content_hash: `sha256:${digest}`, byte_size: 123 }) }] } },
+      mediaContent: { status: 200, mimeType: 'video/mp4', bytes: 123, sha256: digest },
+    }), /bare sha256/);
   });
 
   it('reaps a real detached process group when readiness rejects before handle return', async () => {
@@ -712,6 +917,7 @@ describe('paired repository release E2E gate', () => {
         astridModulePath: '/tmp/astrid/astrid/__init__.py',
         distributionVersion: '0.0.2',
         modulePath: '/tmp/venv/lib/python3.11/site-packages/banodoco_timeline_schema/__init__.py',
+        schemaPythonpath: '/tmp/venv/lib/python3.11/site-packages',
         schemaSha256: expectedSchemaSha256,
       },
       astridSnapshot: '/tmp/astrid',
@@ -721,6 +927,7 @@ describe('paired repository release E2E gate', () => {
       astridModulePath: '/tmp/astrid/astrid/__init__.py',
       distributionVersion: '0.0.2',
       modulePath: '/tmp/venv/lib/python3.11/site-packages/banodoco_timeline_schema/__init__.py',
+      schemaPythonpath: '/tmp/venv/lib/python3.11/site-packages',
       schemaSha256: expectedSchemaSha256,
     });
     assert.throws(() => validateTimelineSchemaInstallation({
@@ -728,6 +935,7 @@ describe('paired repository release E2E gate', () => {
         astridModulePath: '/developer/astrid/__init__.py',
         distributionVersion: '0.0.2',
         modulePath: '/developer/site-packages/banodoco_timeline_schema/__init__.py',
+        schemaPythonpath: '/developer/site-packages',
         schemaSha256: expectedSchemaSha256,
       },
       astridSnapshot: '/tmp/astrid',
@@ -803,6 +1011,9 @@ describe('paired repository release E2E gate', () => {
         phase: 'first',
       });
       assert.equal(browser.ASTRID_BRIDGE_TOKEN, undefined);
+      assert.equal(browser.ASTRID_REMOTION_PROJECT_DIR, undefined);
+      assert.equal(browser.ASTRID_NODE_EXECUTABLE, undefined);
+      assert.equal(browser.ASTRID_TIMELINE_SCHEMA_PYTHONPATH, undefined);
       assert.equal(browser.OPENAI_API_KEY, undefined);
       assert.equal(browser.PLAYWRIGHT_CHROMIUM_EXECUTABLE, process.execPath);
       assert.equal(browser.PLAYWRIGHT_BROWSERS_PATH, '/tmp');
@@ -816,6 +1027,19 @@ describe('paired repository release E2E gate', () => {
       });
       assert.equal(server.ASTRID_BRIDGE_TOKEN, 'generated-server-secret');
       assert.equal(server.OPENAI_API_KEY, undefined);
+      const astridRenderServer = buildServerEnvironment({
+        home: '/tmp/paired-home',
+        projectsRoot: '/tmp/paired-projects',
+        pythonPath: '/tmp/paired-astrid',
+        bridgePort: 21001,
+        token: 'generated-server-secret',
+        nodeExecutable: '/usr/local/bin/node-pinned',
+        remotionProjectDir: '/tmp/paired-astrid/remotion',
+        timelineSchemaPythonpath: '/tmp/paired-venv/lib/python3.11/site-packages',
+      });
+      assert.equal(astridRenderServer.ASTRID_REMOTION_PROJECT_DIR, '/tmp/paired-astrid/remotion');
+      assert.equal(astridRenderServer.ASTRID_NODE_EXECUTABLE, '/usr/local/bin/node-pinned');
+      assert.equal(astridRenderServer.ASTRID_TIMELINE_SCHEMA_PYTHONPATH, '/tmp/paired-venv/lib/python3.11/site-packages');
 
       const development = buildServerEnvironment({
         home: '/tmp/paired-home',
@@ -850,7 +1074,7 @@ describe('paired repository release E2E gate', () => {
     assert.deepEqual(PAIRED_RELEASE_PHASES, [
       'exact-ref capability preflight',
       'clean archive materialization',
-      'locked Reigh, Playwright, and paired Python provisioning plus production build',
+      'locked Reigh, Playwright, paired Python, and archived Astrid Remotion runtime (attested Node/npm) provisioning plus production build',
       'Astrid database initialization and pre-migration backup',
       'Runaway migration first apply and idempotent second apply',
       'authenticated Astrid release bridge plus built Reigh preview smoke',
@@ -879,6 +1103,14 @@ describe('paired repository release E2E gate', () => {
     assert.match(plan.stdout, /no phase is optional/);
     assert.match(plan.stdout, /development-only local-editor paired acceptance/);
     assert.match(plan.stdout, new RegExp(RELEASE_BRIDGE_CAPABILITY.replaceAll('.', '\\.')));
+
+    const help = runTestCommand(process.execPath, [script, '--help'], {
+      cwd: REPO_ROOT,
+      env: { PATH: process.env.PATH },
+    });
+    assert.equal(help.status, 0, help.stderr);
+    assert.match(help.stdout, /serve-owned worker completes render tasks/);
+    assert.match(help.stdout, /never placed on argv or exposed to the browser/);
 
     const source = readFileSync(script, 'utf8');
     assert.doesNotMatch(source, /shell\s*:\s*true/);

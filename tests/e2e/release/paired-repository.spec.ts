@@ -638,12 +638,39 @@ async function renderAndDownload(
   page: Page,
   timelineState: TimelineEnvelope,
   persistedStateHash: string,
-): Promise<{ bytes: number; sha256: string }> {
+): Promise<{ taskId: string; bytes: number; sha256: string }> {
+  // The render is admitted by the authenticated Astrid proxy. Capture the
+  // server-issued task id before clicking Render so the release verifier can
+  // later prove that the serve-owned worker completed this exact task.
+  const admissions: Array<{ task: Record<string, unknown>; requestBody: unknown; url: string; status: number }> = [];
+  const onResponse = async (response: import('@playwright/test').Response) => {
+    if (response.request().method() !== 'POST') return;
+    const parsed = new URL(response.url());
+    if (!/^\/api\/astrid\/projects\/[^/]+\/tasks$/.test(parsed.pathname)) return;
+    let payload: unknown;
+    try { payload = await response.json(); } catch { return; }
+    const task = (payload as { task?: unknown } | null)?.task;
+    if (!task || typeof task !== 'object' || typeof (task as { id?: unknown }).id !== 'string') return;
+    let requestBody: unknown = null;
+    try { requestBody = response.request().postDataJSON(); } catch { /* request body is only advisory */ }
+    admissions.push({ task: task as Record<string, unknown>, requestBody, url: response.url(), status: response.status() });
+  };
+  page.on('response', onResponse);
   await page.getByRole('button', { name: 'Render', exact: true }).click();
   const downloadLink = page.getByRole('link', { name: 'Download', exact: true });
   await expect(downloadLink).toBeVisible({ timeout: 240_000 });
   const downloadPromise = page.waitForEvent('download', { timeout: 30_000 });
   await downloadLink.click();
+  const downloadUrl = await downloadLink.getAttribute('href');
+  const mediaId = (() => {
+    try {
+      const parsed = new URL(downloadUrl ?? '', page.url());
+      const match = parsed.pathname.match(/\/media\/([^/]+)\/content$/);
+      return match ? decodeURIComponent(match[1]) : null;
+    } catch {
+      return null;
+    }
+  })();
   const download = await downloadPromise;
   const path = resolve(evidenceDir!, 'paired-release-render.mp4');
   await download.saveAs(path);
@@ -662,20 +689,38 @@ async function renderAndDownload(
     .filter(Number.isFinite);
   expect(expectedDuration).toBeGreaterThan(0);
   expect(captionMidpoints.length).toBeGreaterThanOrEqual(2);
+  page.off('response', onResponse);
+  const renderAdmissions = admissions.filter((entry) => (
+    entry.task.capability === 'rendering.render'
+    || (entry.requestBody as { family?: unknown } | null)?.family === 'render_export'
+  ));
+  expect(renderAdmissions).toHaveLength(1);
+  const taskId = renderAdmissions[0]?.task.id;
+  expect(typeof taskId).toBe('string');
   await writeFile(
     resolve(evidenceDir!, 'render-browser-receipt.json'),
     `${JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 3,
+      authority: 'astrid-serve-owned',
+      taskId,
+      taskAdmission: {
+        url: renderAdmissions[0]?.url,
+        status: renderAdmissions[0]?.status,
+        capability: renderAdmissions[0]?.task.capability ?? null,
+        family: (renderAdmissions[0]?.requestBody as { family?: unknown } | null)?.family ?? null,
+      },
       persistedStateHash,
       expectedDuration,
       expectedFps,
       captionMidpoints,
       bytes,
       sha256: createHash('sha256').update(body).digest('hex'),
+      downloadUrl,
+      mediaId,
     }, null, 2)}\n`,
     { encoding: 'utf8', flag: 'wx', mode: 0o600 },
   );
-  return { bytes, sha256: createHash('sha256').update(body).digest('hex') };
+  return { taskId: taskId as string, bytes, sha256: createHash('sha256').update(body).digest('hex') };
 }
 
 test(`paired repository acceptance phase: ${phase}`, async ({ page, request }) => {
