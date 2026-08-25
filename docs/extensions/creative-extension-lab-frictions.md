@@ -1708,3 +1708,20 @@ fresh console collection.
   absolute destination/database paths; the verifier consumes only its boolean
   result today, but those fields must be normalized before they become receipt
   or validation inputs.
+
+### Version negotiation stopped at the JSON/media boundary
+
+- RC9 reached the direct managed-media content probe and received the expected
+  bytes and cache/range headers, but the response omitted
+  `X-Astrid-Bridge-Version`. JSON routes identified the wire protocol while the
+  binary route used by preview, render, and export did not, even though release
+  requests must declare the version and CORS already exposed the response name.
+- Treating this only as a verifier exception would preserve an asymmetric
+  contract: a client could validate structured metadata but not the media bytes
+  consumed from the same bridge. RC10 therefore extends the additive v1 response
+  contract across asset `200`, `206`, `304`, `HEAD`, malformed-range `400`, and
+  unsatisfiable-range `416` paths, with the same `nosniff` and referrer policy.
+- The edge audit also found that malformed Range responses omitted CORS. Those
+  responses are now readable by an allowed browser origin and remain opaque to
+  disallowed origins. Tests cover both persisted timeline assets and the exact
+  `/projects/:slug/media/:media_id/content` route that the paired gate exercises.
