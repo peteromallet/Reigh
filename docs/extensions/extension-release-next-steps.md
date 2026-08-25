@@ -14,10 +14,14 @@ by the [evidence ledger](extension-ship-evidence-ledger.md).
 `codex/extension-ship-integration` is the current RC6 **integration cycle**;
 resolve its moving synchronization head with `git rev-parse HEAD` rather than
 copying that value into release evidence. Its paired Astrid input is
-`bebfb913252827a581b791adb224db61816c00ef` on
-`codex/extension-ship-astrid-integration`; both worktrees are clean, pushed,
-and synchronized with their upstream branches. This is not a frozen release
-candidate. The local integration checkout and its upstream
+`8955eba21e1f71fb608bcbe993e03fc816e0f80c` on
+`codex/extension-ship-astrid-integration`. The Astrid repair is committed,
+pushed, clean, and synchronized with its upstream branch. Its focused gates
+pass, and every failure observed in the two final broad rehearsals passes in
+isolation under coverage after the corresponding lifecycle or timeout-budget
+repair. No single post-repair broad rehearsal has yet produced the final
+zero-exit transcript, so this is not a frozen release candidate. The local
+integration checkout and its upstream
 remote are synchronization points for the hardening sequence, not a release
 identity; do not infer the candidate from a moving branch head or from a dirty
 developer checkout. The manifest-pinned Astrid source remains the required
@@ -70,11 +74,12 @@ branch synchronization is recorded separately from candidate identity.
 
 ## Phase 2 — recover disk and run exact-pair evidence rehearsals
 
-1. Confirm at least 11 GiB free with `df -h /System/Volumes/Data`. The current
-   machine has about 4.47 GiB free, a 6.53 GiB shortfall against that enforced
-   floor, so fresh archives, locked installs,
-   production builds, and retained browser/render evidence remain paused until
-   approved cache cleanup restores headroom.
+1. Confirm at least 11 GiB free with `df -h /System/Volumes/Data`. Removing only
+   orphaned task-owned pytest and Astrid temporary roots restored roughly
+   12 GiB free without touching user caches, Playwright, active Chrome data,
+   release worktrees, or live release servers. The current margin above the
+   enforced floor is small, so recheck it before and after every heavyweight
+   phase and remove only verified task-owned residue.
 2. Use fresh clean worktrees at the exact Reigh candidate computed after native
    attestation and the pinned Astrid commit. Run the individual local release
    gates, complete unit suites,

@@ -9,7 +9,7 @@
   },
   "astrid": {
     "branch": "codex/extension-ship-astrid-integration",
-    "commit": "bebfb913252827a581b791adb224db61816c00ef"
+    "commit": "8955eba21e1f71fb608bcbe993e03fc816e0f80c"
   },
   "verification": {
     "profile": "extension-ship-quality-v1",
