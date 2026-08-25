@@ -73,6 +73,11 @@ if (realBridgeToken) process.env.ASTRID_BRIDGE_TOKEN = realBridgeToken;
 const bridgePort = inheritedRunPorts
   ? readInheritedPort('ASTRID_BRIDGE_PORT')
   : allocateIsolatedPort('ASTRID_BRIDGE_PORT', allocatedPorts);
+const bridgeReadyPort = useRealBridge
+  ? (inheritedRunPorts
+    ? readInheritedPort('ASTRID_BRIDGE_READY_PORT')
+    : allocateIsolatedPort('ASTRID_BRIDGE_READY_PORT', allocatedPorts))
+  : null;
 // Playwright reloads this config in worker processes after webServer starts;
 // carry the values across those reloads without probing our own live servers
 // as though they were stale external processes.
@@ -132,7 +137,9 @@ export default defineConfig({
     ...(includeBridgeServer
       ? [{
           command: bridgeServeCommand,
-          url: `http://127.0.0.1:${bridgePort}/health`,
+          url: useRealBridge
+            ? `http://127.0.0.1:${bridgeReadyPort}/ready`
+            : `http://127.0.0.1:${bridgePort}/health`,
           reuseExistingServer: false,
           timeout: 30_000,
           // The real-bridge harness owns a disposable Astrid root plus pid,
@@ -143,6 +150,9 @@ export default defineConfig({
             : {}),
           env: {
             ASTRID_BRIDGE_PORT: String(bridgePort),
+            ...(useRealBridge
+              ? { ASTRID_BRIDGE_READY_PORT: String(bridgeReadyPort) }
+              : {}),
             // The stub's media URLs must follow the run-isolated editor
             // origin; otherwise its default 2222 base yields browser 404s.
             BASE_URL: baseURL,

@@ -5,7 +5,8 @@
  *
  *   ASTRID_CHECKOUT    clean checkout at the release pin (default: the local
  *                      Astrid-extension-integration worktree)
- *   ASTRID_PYTHON      Python used for `<python> -m astrid` (default: python3)
+ *   ASTRID_PYTHON      absolute pinned Python executable; otherwise the exact
+ *                      release interpreter is resolved from PATH
  *   ASTRID_SERVE_BIN   explicit executable override (not provenance-checked)
  *   ASTRID_NODE_EXECUTABLE
  *                      absolute Node 20.19.4 executable override; otherwise
@@ -27,8 +28,15 @@ import { existsSync, mkdtempSync, mkdirSync, statSync, writeFileSync, rmSync } f
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path';
 import { resolvePinnedNodeExecutable } from '../../../scripts/release/pinned-node-runtime.mjs';
+import { resolvePinnedPythonExecutable } from '../../../scripts/release/pinned-python-runtime.mjs';
+import { createBridgeReadinessAdapter } from './real-bridge-readiness.mjs';
 
 const PORT = Number(process.env.ASTRID_BRIDGE_PORT ?? 17334);
+const READY_PORT = Number(process.env.ASTRID_BRIDGE_READY_PORT ?? 0);
+if (!Number.isInteger(READY_PORT) || READY_PORT < 1 || READY_PORT > 65_535) {
+  throw new Error('ASTRID_BRIDGE_READY_PORT must be a valid separately allocated TCP port');
+}
+if (READY_PORT === PORT) throw new Error('ASTRID_BRIDGE_READY_PORT must be distinct from ASTRID_BRIDGE_PORT');
 const PINNED_ASTRID_SHA = '9d714649f2f658ad508dbb4ead8eaf15bff2149b';
 const DEFAULT_ASTRID_CHECKOUT = '/Users/peteromalley/Documents/reigh-workspace/Astrid-extension-integration';
 const astrid = resolveAstridCommand();
@@ -170,6 +178,7 @@ function resolveReleaseRuntimeEnv(command) {
 }
 
 function resolveAstridCommand() {
+  const python = resolvePinnedPythonExecutable();
   if (process.env.ASTRID_SERVE_BIN) {
     const bin = resolve(process.env.ASTRID_SERVE_BIN);
     const result = commandSucceeded(bin, ['--version']);
@@ -180,7 +189,7 @@ function resolveAstridCommand() {
       command: bin,
       prefix: [],
       cwd: undefined,
-      env: process.env,
+      env: { ...process.env, ASTRID_PYTHON: python },
       checkout: process.env.ASTRID_CHECKOUT ? resolve(process.env.ASTRID_CHECKOUT) : null,
       provenance: `binary:${bin}`,
       pinVerified: false,
@@ -203,9 +212,9 @@ function resolveAstridCommand() {
     throw new Error(`Pinned Astrid checkout must be clean: ${checkout}`);
   }
 
-  const python = process.env.ASTRID_PYTHON ?? 'python3';
   const env = {
     ...process.env,
+    ASTRID_PYTHON: python,
     PYTHONPATH: [checkout, process.env.PYTHONPATH].filter(Boolean).join(':'),
   };
   const runnable = commandSucceeded(python, ['-m', 'astrid', '--version'], { cwd: checkout, env });
@@ -339,6 +348,19 @@ const child = spawn(astrid.command, serveArgs, {
   env: { ...astrid.env, ASTRID_BRIDGE_TOKEN: BRIDGE_TOKEN },
 });
 
+const readinessAdapter = createBridgeReadinessAdapter({
+  bridgePort: PORT,
+  readyPort: READY_PORT,
+  token: BRIDGE_TOKEN,
+});
+try {
+  await readinessAdapter.listen();
+} catch (error) {
+  child.kill('SIGTERM');
+  await readinessAdapter.close().catch(() => {});
+  throw error;
+}
+
 const pidFile = process.env.ASTRID_BRIDGE_PID_FILE || '/tmp/astrid-real-bridge.pid';
 const tokenFile = process.env.ASTRID_REQUEST_TOKEN_FILE || '/tmp/astrid-real-bridge.token';
 const metadataFile = process.env.ASTRID_BRIDGE_METADATA_FILE || '/tmp/astrid-real-bridge.metadata.json';
@@ -347,6 +369,7 @@ const metadata = {
   astrid_provenance: astrid.provenance,
   projects_root: SEED_ROOT,
   bridge_origin: `http://127.0.0.1:${PORT}`,
+  bridge_ready_origin: `http://127.0.0.1:${READY_PORT}`,
   bridge_pid: child.pid,
   astrid_pin_verified: astrid.pinVerified,
 };
@@ -361,6 +384,7 @@ writeFileSync(tokenFile, BRIDGE_TOKEN, { mode: 0o600 });
 console.error(`[real-bridge] request token published to ${tokenFile}`);
 
 function cleanup() {
+  void readinessAdapter.close().catch(() => {});
   try {
     rmSync(pidFile, { force: true });
     rmSync(tokenFile, { force: true });

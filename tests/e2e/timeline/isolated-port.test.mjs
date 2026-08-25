@@ -113,3 +113,13 @@ test('reclaims a stale lock and retries the same candidate after its child exits
     assert.equal(allocateIsolatedPort('HARNESS_STALE_PORT'), port);
   });
 });
+
+test('allocates distinct editor, bridge, and real-bridge readiness ports', () => {
+  withEnv({ ISOLATED_EDITOR_PORT: null, ISOLATED_BRIDGE_PORT: null, ISOLATED_READY_PORT: null }, () => {
+    const used = new Set();
+    const editor = allocateIsolatedPort('ISOLATED_EDITOR_PORT', used);
+    const bridge = allocateIsolatedPort('ISOLATED_BRIDGE_PORT', used);
+    const ready = allocateIsolatedPort('ISOLATED_READY_PORT', used);
+    assert.equal(new Set([editor, bridge, ready]).size, 3);
+  });
+});
