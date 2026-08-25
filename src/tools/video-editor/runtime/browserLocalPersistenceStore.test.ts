@@ -1042,9 +1042,10 @@ describe('createBrowserLocalExtensionPersistenceService', () => {
     ).rejects.toThrow();
     await service.dispose();
 
-    // Phase 2: clear the corrupt data so a fresh service starts empty,
-    // then write valid state to overwrite.
-    localStorage.removeItem(key);
+    // Phase 2: use the persistence store's canonical repair operation rather
+    // than reaching around it to mutate localStorage.  This clears both the
+    // mirrored record and any authoritative IndexedDB snapshot/proposals.
+    await new BrowserLocalFullSnapshotStore(SCOPE_A).deleteSnapshot();
 
     diagnostics = [];
     service = createBrowserLocalExtensionPersistenceService(SCOPE_A, diagnostics);

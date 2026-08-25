@@ -1145,6 +1145,59 @@ describe('executeLocalToInstalledMigration', () => {
     ]));
   });
 
+  it('blocks a conflicting migration without mutation, then resumes after the stale pack is restored', async () => {
+    const targetPack = makeInstalledPack();
+    const stalePack = makeInstalledPack({
+      manifest: { version: '0.9.0' },
+      bundleContent: '// stale bundle',
+    });
+    let persistedPack: ExtensionPackRecord | null = {
+      extensionId: stalePack.metadata.extensionId as string,
+      version: stalePack.manifest.version as string,
+      apiVersion: stalePack.manifest.apiVersion,
+      integrity: stalePack.metadata.integrity,
+      installedAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-01T00:00:00.000Z',
+      bundleContentRef: 'indexeddb://stale-pack',
+      manifestSnapshot: stalePack.manifest,
+      publisher: stalePack.manifest.publisher,
+      license: stalePack.manifest.license,
+      icon: stalePack.manifest.icon,
+    };
+    const putPackRecord = vi.fn(async (record: ExtensionPackRecord) => {
+      persistedPack = record;
+    });
+    const repo = makeMockRepository({
+      getPackRecord: vi.fn(async () => persistedPack),
+      putPackRecord,
+    });
+    const input: LocalInstalledMigrationInput = {
+      localManifest: makeLocalManifest(),
+      installedPack: targetPack,
+      repository: repo,
+      localSettings: { restored: true },
+      bundleContentRef: 'indexeddb://target-pack',
+    };
+
+    const blocked = await executeLocalToInstalledMigration(input);
+    expect(blocked.success).toBe(false);
+    expect(blocked.blockingDiagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'migration/pack-record-conflict' }),
+    ]));
+    expect(putPackRecord).not.toHaveBeenCalled();
+    expect(persistedPack?.version).toBe('0.9.0');
+
+    // Simulate the recovery controller restoring the exact target pack before
+    // retry.  The migration can now proceed without overwriting a different
+    // installed record or exposing a partially migrated state.
+    persistedPack = null;
+    const restored = await executeLocalToInstalledMigration(input);
+    expect(restored.success).toBe(true);
+    expect(restored.packRecord?.version).toBe(targetPack.manifest.version);
+    expect(putPackRecord).toHaveBeenCalledOnce();
+    expect(persistedPack?.bundleContentRef).toBe('indexeddb://target-pack');
+  });
+
   it.each([
     ['permission-denied', 'SecurityError'],
     ['quota-exceeded', 'QuotaExceededError'],

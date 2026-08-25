@@ -141,6 +141,19 @@ describe('Runaway timeline bridge adapter', () => {
       errorClass: 'bridge.invalid_response',
     },
     {
+      project: 'runaway-observation-truncated',
+      failure: () => Promise.resolve({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'X-Astrid-Bridge-Version': 'v1' }),
+        // A proxy/process can close a successful response before the JSON
+        // body is complete.  Keep this on the same fail-closed path as any
+        // other malformed bridge payload.
+        json: async () => { throw new SyntaxError('Unexpected end of JSON input'); },
+      } as Response),
+      errorClass: 'bridge.invalid_response',
+    },
+    {
       project: 'runaway-observation-timeout',
       failure: () => Promise.reject(new DOMException('timed out', 'TimeoutError')),
       errorClass: 'bridge.timeout',

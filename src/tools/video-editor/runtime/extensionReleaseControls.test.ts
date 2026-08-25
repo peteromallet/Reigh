@@ -212,6 +212,34 @@ describe('extension release controls', () => {
     ]);
   });
 
+  it('keeps disable and downgrade scope bounded to the host and reviewed children', () => {
+    const all = [
+      extension('com.reigh.scene-phase-markers'),
+      extension('com.reigh.unreviewed-local-example'),
+      extension(TRANSCRIPT_LANE_EXTENSION_ID),
+      extension(RUNAWAY_TIMELINE_EXTENSION_ID),
+    ];
+
+    expect(selectReleaseEnabledExtensions(all, {
+      extensionHostEnabled: true,
+      transcriptCaptionFoundryEnabled: false,
+      runawayTypedTimelineEnabled: true,
+      configurationRevision: 'rollback-18',
+    }).map((item) => item.manifest.id)).toEqual([
+      'com.reigh.scene-phase-markers',
+      RUNAWAY_TIMELINE_EXTENSION_ID,
+    ]);
+
+    // Disabling the parent is the only operation allowed to take the whole
+    // reviewed extension surface offline; child switches cannot override it.
+    expect(selectReleaseEnabledExtensions(all, {
+      extensionHostEnabled: false,
+      transcriptCaptionFoundryEnabled: true,
+      runawayTypedTimelineEnabled: true,
+      configurationRevision: 'rollback-18',
+    })).toEqual([]);
+  });
+
   it('accepts only host-owned manifest identities, versions, revisions, and error classes', () => {
     expect(sanitizeExtensionOperationalEvent({
       event: 'bridge.request',
