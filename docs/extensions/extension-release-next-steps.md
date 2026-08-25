@@ -14,13 +14,16 @@ by the [evidence ledger](extension-ship-evidence-ledger.md).
 `codex/extension-ship-integration` is the current RC6 **integration cycle**;
 resolve its moving synchronization head with `git rev-parse HEAD` rather than
 copying that value into release evidence. Its paired Astrid input is
-`8955eba21e1f71fb608bcbe993e03fc816e0f80c` on
+`daeb99639a7f61ff7ba7aab87980380237b12d9c` on
 `codex/extension-ship-astrid-integration`. The Astrid repair is committed,
 pushed, clean, and synchronized with its upstream branch. Its focused gates
-pass, and every failure observed in the two final broad rehearsals passes in
-isolation under coverage after the corresponding lifecycle or timeout-budget
-repair. No single post-repair broad rehearsal has yet produced the final
-zero-exit transcript, so this is not a frozen release candidate. The local
+pass. A fresh clean CI proof at the preceding pin passed 603 tests before
+exposing one ambient-package contract test and two missing-explicit-Node
+harness failures. The hermetic package-contract repair and both real-render
+paths now pass together under coverage (12 tests); the new exact pin above
+contains that repair. No single full clean rehearsal at the new pin has yet
+produced the final zero-exit transcript, so this is not a frozen release
+candidate. The local
 integration checkout and its upstream
 remote are synchronization points for the hardening sequence, not a release
 identity; do not infer the candidate from a moving branch head or from a dirty
@@ -54,6 +57,15 @@ Reigh-to-Astrid export: the managed MP4 loaded at 1920x1080, played its complete
 or errors. These are useful pre-freeze diagnostics, but they are not release
 receipts. `C` must still be computed from the final clean snapshot after the
 disk-gated fresh-install/browser/paired rehearsal and any resulting fixes.
+
+The current exact Reigh head also has fresh implementation-level diagnostics
+for the two previously weak resource lanes. Large-lane virtualization passed
+108 focused tests at 500, 5,000, and 50,000 intervals, plus a real Chromium
+late-scroll test with a 128-item DOM cap and zero unexpected errors. The
+performance/degraded-mode browser gate passed both cases and recorded bounded
+startup, activation, command search, virtual scrolling, DOM, project data,
+bridge traffic, and heap growth. These remain pre-freeze diagnostics rather
+than candidate-bound receipts.
 
 ## Phase 1 — publish and lock the integration baseline
 
