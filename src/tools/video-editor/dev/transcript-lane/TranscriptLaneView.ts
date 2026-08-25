@@ -181,7 +181,26 @@ export function renderTranscriptLane(
           props.onNavigateItem?.(item.id, direction);
         },
       },
-      truncate(readChipText(item.payload)),
+      createElement(
+        'span',
+        {
+          // A direct text node in a flex button is clipped by Chromium before
+          // text-overflow can ellipsize it, which leaves partial Unicode
+          // glyphs visible on narrow timeline chips. Keep the full label in
+          // aria-label/title while making the painted label a shrinkable box.
+          style: {
+            display: 'block',
+            flex: '0 1 auto',
+            minWidth: 0,
+            maxWidth: '100%',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            textAlign: 'center',
+          },
+        },
+        truncate(readChipText(item.payload)),
+      ),
       );
     })(),
   );

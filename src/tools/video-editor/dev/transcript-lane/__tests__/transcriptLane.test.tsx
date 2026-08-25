@@ -472,6 +472,38 @@ describe('transcript-lane dev example (dataKind V1 done-4)', () => {
 // ---------------------------------------------------------------------------
 
 describe('transcript lane chips (rework round-2 F3)', () => {
+  it('wraps narrow Unicode labels in a shrinkable ellipsis box without changing the accessible name', () => {
+    const props: DataLaneRendererProps = {
+      kindId: TRANSCRIPT_KIND_ID,
+      schemaRef: TRANSCRIPT_SCHEMA_REF,
+      shape: 'interval',
+      domain: 'source_seconds',
+      startLeft: 0,
+      pixelsPerSecond: 2,
+      items: [{
+        id: 'narrow-unicode',
+        timelineStart: 1.5,
+        timelineEnd: 2.75,
+        payload: { text: 'Борис — مرحبًا 👩🏽‍🚀' },
+      }],
+    };
+
+    const { container } = render(renderTranscriptLane(props) as ReactElement);
+    const chip = container.querySelector<HTMLElement>('[data-testid="transcript-lane-chip"]');
+    const label = chip?.querySelector<HTMLElement>('span');
+    expect(label).not.toBeNull();
+    expect(label).toHaveTextContent('Борис — مرحبًا 👩🏽‍🚀');
+    expect(label).toHaveStyle({
+      minWidth: '0',
+      maxWidth: '100%',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap',
+    });
+    expect(chip).toHaveAccessibleName('Transcript segment: Борис — مرحبًا 👩🏽‍🚀, 1.50 to 2.75 seconds');
+    expect(chip).toHaveAttribute('title', `narrow-unicode · ${TRANSCRIPT_SCHEMA_REF}`);
+  });
+
   it('normalizes empty source text into a selectable diagnostic chip without changing caption eligibility', () => {
     const onSelectItem = vi.fn();
     const emptyItem: DataLaneRendererProps['items'][number] = {
