@@ -69,7 +69,7 @@ export const REIGH_GATE_PROFILE = Object.freeze([
   // Keep the live pixel gate immediately before static provenance verification.
   // Its fixed argument vector intentionally has no snapshot-update switch.
   { id: 'visual-e2e', label: 'extension visual regression gate', command: 'npm', args: ['run', 'test:e2e:extension-visual'] },
-  { id: 'visual-baseline-provenance', label: 'RC6 visual baseline provenance gate', command: 'npm', args: ['run', 'verify:rc6-visual-baseline-provenance'] },
+  { id: 'visual-baseline-provenance', label: 'immutable visual baseline provenance gate (RC6 source baseline)', command: 'npm', args: ['run', 'verify:extension-visual-baseline-provenance'] },
   { id: 'lint', label: 'Reigh lint', command: 'npm', args: ['run', 'lint'] },
   { id: 'typecheck', label: 'Reigh strict-island typecheck', command: 'npm', args: ['run', 'typecheck:strict-probe'] },
   { id: 'unit', label: 'complete Reigh unit suite', command: 'npm', args: ['test'] },

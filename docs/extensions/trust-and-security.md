@@ -6,6 +6,25 @@
 
 ---
 
+## RC8 release scope
+
+The RC8 security-boundary claim is limited to the reviewed statically bundled
+trusted-local extensions shipped in this release. Arbitrary third-party,
+remote, marketplace, and dynamically installed extension execution remains
+disabled and unclaimed. The RC8 checklist covers manifest and contribution
+validation, namespace and least-privilege host-mediated checks, rejection of
+unsafe URLs/injection/traversal/oversized payloads, and host-selected
+project/timeline access.
+
+The current host-mediated tier binds `TimelineReader` and `TimelineOps` to the
+host-selected document; the extension API exposes no provider handle or
+project/timeline selector. This is a provider-scope boundary, not a claim of
+runtime isolation. The scope does not change V1's unsandboxed execution model
+or imply runtime permission enforcement, CSP subdivision, process isolation,
+signing, or a capability broker for untrusted code.
+
+---
+
 ## 1. Execution Model
 
 Extensions execute as **trusted, unsandboxed code** in the host browser environment.
@@ -196,3 +215,4 @@ Until then, the posture is explicit: **every extension is trusted code with the 
 | Date | Change |
 |---|---|
 | 2026-06-24 | Initial trust and security posture document for M5. Covers execution model, permission posture, error containment, diagnostic provenance, recovery keys, boundary audit, inventory truthfulness, and explicit non-provision of sandbox/marketplace/install/update. |
+| 2026-08-25 | Recorded the RC8 claim as limited to reviewed statically bundled trusted-local extensions; arbitrary third-party, remote, marketplace, and dynamically installed execution remains disabled and unclaimed. |

@@ -1862,6 +1862,27 @@ function installAstridRemotionRuntime(context, { npmUserConfig, npmGlobalConfig 
   return provenance;
 }
 
+export function resolvePinnedBrowserExecutable(browserRoot, relativeExecutable) {
+  if (!isAbsolute(browserRoot) || !relativeExecutable || isAbsolute(relativeExecutable)) {
+    fail('lock-aligned Playwright Chromium probe must return a non-empty relative executable path');
+  }
+  const executable = resolve(browserRoot, relativeExecutable);
+  const fromRoot = relative(browserRoot, executable);
+  if (!fromRoot || fromRoot === '..' || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
+    fail('lock-aligned Playwright Chromium executable escaped its browser root');
+  }
+  if (!existsSync(browserRoot) || !existsSync(executable)) {
+    fail(`lock-aligned Playwright Chromium executable is unavailable: ${relativeExecutable}`);
+  }
+  const realRoot = realpathSync(browserRoot);
+  const realExecutable = realpathSync(executable);
+  const fromRealRoot = relative(realRoot, realExecutable);
+  if (!fromRealRoot || fromRealRoot === '..' || fromRealRoot.startsWith(`..${sep}`) || isAbsolute(fromRealRoot)) {
+    fail('lock-aligned Playwright Chromium executable escaped its real browser root');
+  }
+  return realExecutable;
+}
+
 function resolvePinnedBrowser(context) {
   const playwrightCli = resolve(context.reighSnapshot, 'node_modules/playwright/cli.js');
   const browserRoot = resolve(context.runtimeRoot, 'playwright-browsers');
@@ -1876,18 +1897,17 @@ function resolvePinnedBrowser(context) {
     logPath: resolve(context.evidenceRoot, 'playwright-browser-install.log'),
   });
   const probe = runLogged(process.execPath, ['-e', [
+    "const path = require('node:path')",
     "const { chromium } = require('playwright')",
-    'process.stdout.write(chromium.executablePath())',
+    'process.stdout.write(path.relative(process.env.PLAYWRIGHT_BROWSERS_PATH, chromium.executablePath()))',
   ].join(';')], {
     cwd: context.reighSnapshot,
     env: browserEnv,
     logPath: resolve(context.evidenceRoot, 'playwright-browser-path.log'),
   });
-  const executable = probe.stdout.trim();
-  if (!isAbsolute(executable) || !existsSync(executable)) {
-    fail(`lock-aligned Playwright Chromium executable is unavailable: ${executable || '<empty>'}`);
-  }
-  context.browserExecutable = realpathSync(executable);
+  const relativeExecutable = probe.stdout.trim();
+  const executable = resolvePinnedBrowserExecutable(browserRoot, relativeExecutable);
+  context.browserExecutable = executable;
   context.browserRoot = realpathSync(browserRoot);
   return {
     executable: context.browserExecutable,

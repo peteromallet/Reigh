@@ -11,39 +11,33 @@ by the [evidence ledger](extension-ship-evidence-ledger.md).
 
 ## Current disposition
 
-`codex/extension-ship-integration` is the current RC6 **integration cycle**;
-resolve its moving synchronization head with `git rev-parse HEAD` rather than
-copying that value into release evidence. Its paired Astrid input is
+`codex/extension-ship-integration` is the current RC8 **integration cycle**.
+RC6 (`025438faeecb77ec747cc96ea94eb1d279ccee36`) and RC7
+(`5a3fe15268d5934113d5c408d62c21f9b53ede81`) remain immutable annotated
+historical candidates; neither may be moved or reused as RC8 evidence. Resolve
+the moving RC8 synchronization head with `git rev-parse HEAD` rather than
+copying it into a receipt before the source freeze. Its paired Astrid input is
 `9d714649f2f658ad508dbb4ead8eaf15bff2149b` on
-`codex/extension-ship-astrid-integration`. The Astrid repair is committed,
-pushed, clean, and synchronized with its upstream branch. Its focused gates
-pass. A fresh clean CI proof at the preceding pin passed 603 tests before
-exposing one ambient-package contract test and two missing-explicit-Node
-harness failures. The hermetic package-contract repair and both real-render
-paths now pass together under coverage (12 tests); the new exact pin above
-contains that repair. No single full clean rehearsal at the new pin has yet
-produced the final zero-exit transcript, so this is not a frozen release
-candidate. The local
-integration checkout and its upstream
-remote are synchronization points for the hardening sequence, not a release
-identity; do not infer the candidate from a moving branch head or from a dirty
-developer checkout. The manifest-pinned Astrid source remains the required
-paired input. The exact Reigh candidate `C` will be computed from a fresh clean
-snapshot after the current bridge/runtime fixes and all source changes are
-reviewed. Until then, the manifest status remains `integration` and no final
-SHA, tag, or controller pair is promised.
+`codex/extension-ship-astrid-integration`, with a clean hermetic `make ci`
+proof.
 
-RC1–RC5 tags and paired receipts remain immutable historical evidence; RC6 has
-no tag, no frozen candidate, and no signed ledger. The formal ledger is 0/23.
-The RC6 line has landed deterministic Runaway timing, clip-body selection,
+RC7's paired rehearsal reached the production build and lock-aligned browser
+install before exposing verifier-owned structured-output redaction defects.
+Those failed roots are preserved and are not passing receipts. RC8 contains
+the focused verifier repairs and trusted-local security-scope closure. Until
+its source sequence is reviewed and tagged, the manifest remains
+`integration`; the ledger starts at 0/23 and advances only through RC8-bound
+receipts.
+
+The integration line has landed deterministic Runaway timing, clip-body selection,
 Suspense/bridge-stub contracts, runtime-isolated ports and CAS fixture resets,
 proxy Origin/Host/auth/protocol boundaries, strict-port plus nonce/commit
 readiness, tracked-evidence protection, and exact visual-baseline provenance.
 Native-tool attestation, crash-safe bounded-command/paired-server containment,
 managed-media seeding, exact runtime resolution, owned-origin Remotion CORS,
 and JSON task-output boolean normalization are now on the pushed pair. The
-current integration product head passed 13,674 tests with two intentional
-skips across 1,199 passing files. All ten disk-light static release gates also
+current RC8 integration product head passed 13,688 tests with two intentional
+skips across 1,200 passing files. All ten disk-light static release gates also
 pass, as do 1,160 extension contract tests, 102 Creative Lab tests, the 97-case
 compatibility matrix, 33 production-smoke tests, runtime-rollout tests, and a
 production build. Installed pre-freeze browser diagnostics pass across
@@ -55,8 +49,9 @@ installed Chrome acceptance lane also completed a real authenticated
 Reigh-to-Astrid export: the managed MP4 loaded at 1920x1080, played its complete
 4.053-second duration, exposed the Download link, and left no console warnings
 or errors. These are useful pre-freeze diagnostics, but they are not release
-receipts. `C` must still be computed from the final clean snapshot after the
-disk-gated fresh-install/browser/paired rehearsal and any resulting fixes.
+receipts. RC8 candidate `C` must still be computed from the final clean snapshot
+after the disk-gated fresh-install/browser/paired rehearsal and any resulting
+fixes.
 
 The current exact Reigh head also has fresh implementation-level diagnostics
 for the two previously weak resource lanes. Large-lane virtualization passed
@@ -72,12 +67,12 @@ than candidate-bound receipts.
 1. Keep the pushed process-containment and native-tool-attestation checkpoints
    intact; keep `scorecard.png`, `artifacts/`, and Playwright output outside the
    tracked release tree.
-2. Require review of the RC6 code commits through the production startup-budget
+2. Require review of the RC8 code commits through the production startup-budget
    gate. Do not add feature work to this branch after the evidence rehearsal
    begins; fixes discovered by a gate receive a focused commit and restart the
    affected evidence phase.
 3. Keep the exact Astrid pin above; the RC3 raw-Host fix, RC4 browser React
-   renderer repair, `2e7f6a937` local-auth seam repair, and RC6 hardening must
+   renderer repair, `2e7f6a937` local-auth seam repair, and RC8 hardening must
    all be present before a candidate tag is created.
 
 Exit: the reviewed integration sequence is ready to be materialized as a fresh
@@ -167,7 +162,7 @@ not authorize removing Supabase from ordinary cloud or legacy Reigh routes.
 1. Register six authenticated Ed25519 principals: the four human personas and
    two independent reviewers. Keep private keys outside the repository.
 2. Freeze product candidate `C`, create annotated tag
-   `extension-ship-quality-rc6`, and permit only evidence/ledger/status commits
+   `extension-ship-quality-rc8`, and permit only evidence/ledger/status commits
    in controller history `C..H`.
 3. Bind every receipt and artifact hash to the exact Reigh candidate, controller
    commit, annotated tag object, Astrid commit, toolchain, and dependency locks.

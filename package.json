@@ -45,6 +45,7 @@
     "test:extension-ship-verifier": "node --test --test-concurrency=1 scripts/release/bounded-command.test.mjs scripts/release/reigh-release-provenance.test.mjs scripts/release/native-tool-attestation.test.mjs scripts/release/pinned-node-runtime.test.mjs scripts/release/pinned-python-runtime.test.mjs scripts/release/verify-extension-ship.test.mjs scripts/release/verify-rc6-visual-baseline-provenance.test.mjs",
     "test:rc6-visual-baseline-provenance": "node --test scripts/release/verify-rc6-visual-baseline-provenance.test.mjs",
     "verify:rc6-visual-baseline-provenance": "npm run test:rc6-visual-baseline-provenance && node scripts/release/verify-rc6-visual-baseline-provenance.mjs",
+    "verify:extension-visual-baseline-provenance": "npm run verify:rc6-visual-baseline-provenance",
     "test:paired-release-e2e-gate": "python3 scripts/release/test_paired_render_worker.py && node --test scripts/release/verify-paired-release-e2e.test.mjs",
     "test:extension-container-gate": "node --test scripts/runtime/verify-extension-container.test.mjs",
     "test:extensions:runtime-rollout": "npm run build && node --test scripts/runtime/write-extension-release-config.test.mjs scripts/runtime/verify-extension-runtime-rollout.test.mjs scripts/runtime/service-worker-release-config.test.mjs && vitest run --config config/testing/vitest.config.ts src/tools/video-editor/runtime/extensionReleaseControls.test.ts src/sdk/smoke/extensionSmoke.test.ts",

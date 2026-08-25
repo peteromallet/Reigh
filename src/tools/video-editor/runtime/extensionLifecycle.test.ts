@@ -1727,6 +1727,31 @@ describe('ExtensionLifecycle — creative.timeline with live TimelineOps (M3 pub
     expect(ops.apply).not.toHaveBeenCalled();
   });
 
+  it('keeps the host-selected document bound without exposing a project or timeline selector', () => {
+    const ops = mockTimelineOps();
+    const reader = {
+      snapshot: vi.fn().mockReturnValue({ projectId: 'project-a' }),
+    } as any;
+    const extension = ext('com.example.document-scope');
+    const ctx = createExtensionContext(extension, {
+      timeline: ops as any,
+      reader,
+    } as Partial<CreativeContext>);
+
+    // The host injects the reader and TimelineOps for its current provider
+    // mount. The public extension surface has no provider handle or selector
+    // with which an extension could choose another project/timeline.
+    expect(ctx.creative.reader).toBe(reader);
+    expect(ctx.creative.reader.snapshot().projectId).toBe('project-a');
+    const timeline = ctx.creative.timeline as unknown as Record<string, unknown>;
+    expect(timeline.projectId).toBeUndefined();
+    expect(timeline.timelineId).toBeUndefined();
+    expect(timeline.selectProject).toBeUndefined();
+    expect(timeline.selectTimeline).toBeUndefined();
+    expect((ctx as unknown as Record<string, unknown>).provider).toBeUndefined();
+    expect((ctx as unknown as Record<string, unknown>).dataProvider).toBeUndefined();
+  });
+
   it('live TimelineOps is passed to extension through ExtensionLifecycle.activate()', () => {
     const ops = mockTimelineOps();
     const capturedTimeline: TimelineOps[] = [];

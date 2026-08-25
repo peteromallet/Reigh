@@ -64,7 +64,7 @@ source, scripts, documentation, pins, and gate configuration. Create the
 annotated Reigh tag named by `reigh.releaseTag` at that candidate `C`; both the
 tag and `REIGH_REF` must resolve to `C`. Then commit the frozen ledger, the
 manifest's status-only freeze, and artifacts under
-`docs/extensions/evidence/releases/extension-ship-quality-rc6/` to produce the
+`docs/extensions/evidence/releases/extension-ship-quality-rc8/` to produce the
 clean controller `H`. The verifier captures `C`, `H`, and the annotated
 tag-object hash:
 
@@ -78,7 +78,7 @@ npm run verify:extension-ship
 
 Capture complete stdout/stderr, exit status, Reigh `git rev-parse HEAD`, Reigh
 candidate `git rev-parse REIGH_REF`, Reigh
-`git rev-parse refs/tags/extension-ship-quality-rc6^{tag}`, Astrid
+`git rev-parse refs/tags/extension-ship-quality-rc8^{tag}`, Astrid
 `git rev-parse HEAD`, UTC start/end times, and hashes of retained test/render
 artifacts. An exit code of zero is necessary, not sufficient: every frozen-RC
 item and both independent review slots below must also be complete.
@@ -89,6 +89,19 @@ evidence directory read-only before returning. A rerun must use a new untracked
 evidence root; correcting a captured document requires a new path and receipt.
 Do not overwrite a receipt or refresh tracked screenshots as a side effect of an
 ordinary test run.
+
+### Immutable visual-baseline input
+
+RC8 intentionally compares its live six-image visual gate against the reviewed
+RC6 source baseline. The command
+`verify:extension-visual-baseline-provenance` is the candidate-neutral release
+entrypoint; it delegates to the RC6 provenance verifier because that immutable
+document owns the baseline bytes, source commits, reviewed diff artifacts, and
+pixel metrics. This is an input-provenance check, not an RC6 release receipt.
+The RC8 visual receipt must separately bind the live RC8 screenshot result,
+the unchanged baseline hashes, and the RC8 candidate commit. Any baseline byte
+change requires a new reviewed provenance document rather than relabelling the
+RC6 artifact.
 
 ### Typed external evidence
 
@@ -116,10 +129,10 @@ The run accepts no skip flags. It first probes the exact manifest-pinned Astrid
 source for the complete `astrid.authenticated-release-bridge.v1` capability
 (`serve --release-mode`, token enforcement, bearer validation, and the v1
 protocol header). A newer checkout cannot satisfy an older pin. The manifest is
-pinned to the RC6 Astrid integration commit
-`9d714649f2f658ad508dbb4ead8eaf15bff2149b`. The failed RC1–RC5 paired
+pinned to the RC8 Astrid integration commit
+`9d714649f2f658ad508dbb4ead8eaf15bff2149b`. The failed RC1–RC7 paired
 receipts remain under their respective evidence roots as historical evidence
-only; none is a passing receipt. RC6 reruns the hostile-Host probe with the
+only; none is a passing receipt. RC8 reruns the hostile-Host probe with the
 verifier's raw HTTP request and browser boot after the React server-entry,
 local-auth seam, clip-body locator, and same-origin proxy-origin repairs. Do
 not bypass either probe or substitute the unauthenticated stub.

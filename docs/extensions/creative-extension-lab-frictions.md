@@ -1650,3 +1650,41 @@ fresh console collection.
   authority for this integration sequence. Manual Chrome receipts must record measured
   `innerWidth`/`innerHeight`, not only the dimensions requested from the
   automation layer.
+
+## 2026-08-25 — Frozen-candidate verifier edge audit
+
+### Redacting process output before consuming it corrupts structured probes
+
+- The bounded-command helper correctly treated environment values as sensitive,
+  but replaced the literal string `false` before the paired verifier parsed
+  `npm ls --json --all`. All 282 boolean `overridden` fields became unquoted
+  `[REDACTED]` tokens, so valid npm JSON failed as if the dependency tree were
+  corrupt.
+- The safe opt-out is now explicit and local to the verifier-owned npm inventory
+  environment. Default environment-value redaction remains enabled, explicit
+  secret tokens are still scrubbed, and focused tests cover both behaviors.
+- The same architectural hazard applies to any machine-readable stdout that can
+  contain an environment value. Structured probes should emit validated relative
+  identifiers when possible; disabling automatic environment redaction requires
+  a documented, secret-free environment and must never become the default.
+
+### An absolute npm invocation does not pin `node` inside an npm script
+
+- Invoking npm's exact `npm-cli.js` through Node 20 still let the package-script
+  shell resolve a bare `node` from ambient `PATH`, producing Node 24 inside the
+  verifier. The frozen manifest correctly failed the mismatch before product
+  execution.
+- Candidate runbooks must invoke the verifier itself with the pinned Node and a
+  toolchain-first path, then let the verifier attest the exact npm CLI and every
+  native executable. A version check after startup is useful only when the
+  startup executable is already under custody.
+
+### Browser installation and browser-path proof are separate gates
+
+- Playwright successfully downloaded the lock-aligned Chromium, FFmpeg, and
+  headless shell into its isolated cache. The following executable probe still
+  failed because its absolute cache path was scrubbed before `existsSync` used
+  it. A green installer log therefore did not prove a launchable browser.
+- The durable contract is: install the lock-aligned revision, derive a relative
+  executable path under the owned cache, reject traversal or escape, reconstruct
+  the absolute path locally, and hash the executable before launch.

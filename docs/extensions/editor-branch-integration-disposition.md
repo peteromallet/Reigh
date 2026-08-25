@@ -9,11 +9,11 @@ active editor branches. It is an integration plan, not release evidence.
 
 | Line | Audited head | Disposition |
 |---|---|---|
-| `codex/extension-ship-integration` | RC6 selector/proxy hardening in progress | RC6 integration in progress; the RC1–RC5 paired receipts and forensic diagnoses remain immutable historical evidence. |
+| `codex/extension-ship-integration` | RC8 verifier/security hardening in progress | RC8 integration in progress; RC6 and RC7 are immutable historical candidates and their paired forensic roots are not RC8 receipts. |
 | `timeline-patches` | `dbafe2cd4` | The committed Creative Lab patch was replayed as `7150085df` and subsequently hardened. Do not merge this commit again. Preserve and reconcile its uncommitted WIP separately. |
 | `exec-goal-20260822` | `8376d8231` | Direct ancestor of `exec-sqlite-20260823`; do not merge separately. |
 | `exec-sqlite-20260823` | `d21e6fc52` | Parked execution history. Do not merge wholesale: most changed paths are `.oracle` run artifacts. Forward-port reviewed product outcomes only. |
-| `phase-c` | `408d38ae4` | Genuine missing cutover work. B1-B4 are present; B5-B8 must be completed and gated before integration. |
+| `codex/phase-c-megado` | `ddfe01b211e1cf0ae6839013ad2a319ecb033924` base | B1-B7 and the extension-foundation merge are complete; the isolated Megado continuation owns only B8 real-browser/SQLite acceptance and evidence. |
 
 Every line above forked from `6c02bd3ba`. Merge simulation found no textual
 conflict markers, but Phase C and the exec lineage both modify sensitive bridge
@@ -24,8 +24,8 @@ merge them automatically.
 
 1. Keep `timeline-patches` physically untouched until its 17 tracked edits and
    20 untracked files have been snapshotted to a dedicated safety branch.
-2. Complete Phase C B5 shot mode, B6 render/export, B7 doctor/operations, and B8
-   acceptance gates on a clean branch.
+2. Preserve completed Phase C B5-B7 and finish only B8 acceptance gates on the
+   isolated `codex/phase-c-megado` branch.
 3. Merge the completed Phase C line onto the clean extension integration branch
    `codex/extension-ship-integration` only through reviewed product commits.
 4. Semantically review the shared bridge contract, data providers, external

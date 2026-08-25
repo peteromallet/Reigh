@@ -144,7 +144,7 @@ describe('extension ship verifier', () => {
     assert.ok(REIGH_GATE_PROFILE.some((gate) => (
       gate.id === 'visual-baseline-provenance'
       && gate.command === 'npm'
-      && gate.args.join(' ') === 'run verify:rc6-visual-baseline-provenance'
+      && gate.args.join(' ') === 'run verify:extension-visual-baseline-provenance'
     )));
     const visualGateIndex = REIGH_GATE_PROFILE.findIndex((gate) => gate.id === 'visual-e2e');
     const provenanceGateIndex = REIGH_GATE_PROFILE.findIndex((gate) => gate.id === 'visual-baseline-provenance');

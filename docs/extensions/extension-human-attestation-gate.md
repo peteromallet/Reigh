@@ -15,7 +15,7 @@ contents of an Ed25519 `.pub` file:
 ```json
 {
   "schemaVersion": 1,
-  "release": "extension-ship-quality-rc6",
+  "release": "extension-ship-quality-rc8",
   "namespace": "reigh-extension-ship-evidence-v1",
   "identities": [
     {

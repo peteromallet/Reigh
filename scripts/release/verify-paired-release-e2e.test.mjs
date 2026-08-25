@@ -2,7 +2,7 @@ import { strict as assert } from 'node:assert';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { PassThrough } from 'node:stream';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { arch, platform, release, tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { describe, it } from 'node:test';
@@ -35,6 +35,7 @@ import {
   requireFullCommitPin,
   requestRawHttp,
   resolvePinnedNpmCli,
+  resolvePinnedBrowserExecutable,
   validateTimelineSchemaInstallation,
   validateAstridReleaseBridgeSources,
   validateAstridRenderWorkerSources,
@@ -1140,6 +1141,39 @@ describe('paired repository release E2E gate', () => {
     assert.match(source, /reighControllerHead: pins\.reighControllerHead/);
     assert.match(source, /archiveCommit\(REPO_ROOT, pins\.reighCommit/);
     assert.ok(source.indexOf("'receipt.json'") < source.indexOf("'artifact-index.json'"));
+  });
+
+  it('reconstructs a relative Playwright executable beneath its pinned browser root', () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'paired-browser-root-'));
+    const outside = mkdtempSync(resolve(tmpdir(), 'paired-browser-outside-'));
+    try {
+      mkdirSync(resolve(root, 'chromium'));
+      writeFileSync(resolve(root, 'chromium/chrome'), 'browser');
+      const executable = resolvePinnedBrowserExecutable(root, 'chromium/chrome');
+      assert.equal(executable, realpathSync(resolve(root, 'chromium/chrome')));
+      assert.throws(
+        () => resolvePinnedBrowserExecutable(root, '../outside/chrome'),
+        /escaped its browser root/,
+      );
+      assert.throws(
+        () => resolvePinnedBrowserExecutable(root, '/tmp/outside/chrome'),
+        /non-empty relative executable path/,
+      );
+      writeFileSync(resolve(outside, 'chrome'), 'outside browser');
+      symlinkSync(outside, resolve(root, 'linked-outside'));
+      assert.throws(
+        () => resolvePinnedBrowserExecutable(root, 'linked-outside/chrome'),
+        /escaped its real browser root/,
+      );
+
+      const source = readFileSync(`${REPO_ROOT}/scripts/release/verify-paired-release-e2e.mjs`, 'utf8');
+      const browserResolver = source.slice(source.indexOf('function resolvePinnedBrowser(context)'), source.indexOf('function astridCommand'));
+      assert.match(browserResolver, /path\.relative\(process\.env\.PLAYWRIGHT_BROWSERS_PATH, chromium\.executablePath\(\)\)/);
+      assert.match(browserResolver, /resolvePinnedBrowserExecutable\(browserRoot, relativeExecutable\)/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 
   it('makes pinned ffmpeg -xerror reject an actually truncated bitstream', { timeout: 180_000 }, () => {

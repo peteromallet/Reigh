@@ -120,9 +120,16 @@ activation, rendering, commands, and disposal.
 
 ### 17. Extension security boundary
 
-Validate manifests and contributions, enforce namespaces and least privilege,
-and prevent unsafe URLs, injection, traversal, oversized payloads, and
-cross-project access.
+For the reviewed statically bundled trusted-local extensions shipped in this
+release, validate manifests and contributions, enforce namespaces and
+least-privilege host-mediated access, reject unsafe URLs, injection, traversal,
+and oversized payloads, and expose no extension-level project/timeline selector
+or raw provider capable of selecting another project.
+
+Arbitrary third-party, remote, marketplace, and dynamically installed
+extension execution remains disabled and unclaimed by this release. This item
+does not assert sandboxing, runtime permission enforcement, CSP subdivision,
+process isolation, signing, or a capability broker for such code.
 
 ### 18. Migration and rollback policy
 
