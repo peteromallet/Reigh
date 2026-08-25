@@ -386,6 +386,7 @@ export function capture(command, args, {
   phase = 'unscoped-command',
   diagnosticsPath,
   budgetKey,
+  redactEnvValues = true,
 } = {}) {
   const budget = commandTimeout(command, args, timeoutMs ?? budgetKey);
   const result = runBoundedCommand(command, args, {
@@ -397,6 +398,7 @@ export function capture(command, args, {
     killSignal: 'SIGKILL',
     allowFailure: true,
     label: phase,
+    redactEnvValues,
   });
   const failed = !result.ok;
   if (failed && diagnosticsPath) {
@@ -1550,6 +1552,7 @@ function runLogged(command, args, {
   strictStderr = false,
   phase = logPath,
   budgetKey,
+  redactEnvValues = true,
 } = {}) {
   const startedAt = new Date().toISOString();
   const start = Date.now();
@@ -1561,6 +1564,7 @@ function runLogged(command, args, {
     phase,
     budgetKey,
     diagnosticsPath: timeoutDiagnosticsPath,
+    redactEnvValues,
   });
   const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
   const unexpectedStderr = strictStderr && String(result.stderr ?? '').trim().length > 0;
@@ -1820,6 +1824,10 @@ function installAstridRemotionRuntime(context, { npmUserConfig, npmGlobalConfig 
     env,
     logPath: resolve(context.evidenceRoot, 'astrid-remotion-npm-tree.log'),
     parseJson: true,
+    // This verifier-owned environment contains no bearer or user secret. Keep
+    // npm's boolean JSON literals intact; bounded-command redaction remains
+    // enabled by default for every other command.
+    redactEnvValues: false,
     budgetKey: 'npm',
   }).payload;
   const scrubbedInventory = JSON.stringify(inventory, (key, value) => (

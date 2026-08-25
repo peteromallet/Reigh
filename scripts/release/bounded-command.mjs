@@ -114,7 +114,7 @@ function normalizeLabel(label, command) {
   return value;
 }
 
-function normalizeRedactions(redact, env) {
+function normalizeRedactions(redact, env, redactEnvValues = true) {
   const tokens = [];
   if (Array.isArray(redact)) {
     for (const token of redact) {
@@ -122,7 +122,7 @@ function normalizeRedactions(redact, env) {
     }
   }
   if (typeof redact === 'string' && redact.length > 0) tokens.push(redact);
-  if (env) {
+  if (redactEnvValues && env) {
     for (const value of Object.values(env)) {
       if (typeof value === 'string' && value.length >= 4) tokens.push(value);
     }
@@ -299,7 +299,11 @@ export function runBoundedCommand(command, args, options = {}) {
   if (redact !== undefined && !Array.isArray(redact) && typeof redact !== 'string' && typeof redact !== 'function') {
     throw new TypeError('redact must be a function, string, or string array');
   }
-  const tokens = normalizeRedactions(redact, env);
+  const redactEnvValues = options.redactEnvValues ?? true;
+  if (typeof redactEnvValues !== 'boolean') {
+    throw new TypeError('redactEnvValues must be a boolean');
+  }
+  const tokens = normalizeRedactions(redact, env, redactEnvValues);
   const binaryOutput = options.encoding === null;
   if (binaryOutput && redact !== undefined) {
     throw new TypeError('redact cannot be used with binary output');

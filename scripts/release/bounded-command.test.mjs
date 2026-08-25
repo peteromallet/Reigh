@@ -51,6 +51,37 @@ describe('runBoundedCommand', () => {
     );
   });
 
+  it('redacts environment values by default', () => {
+    const secret = `bounded-output-secret-${process.pid}-${Date.now()}`;
+    const result = run('process.stdout.write(process.env.BOUNDED_OUTPUT_SECRET)', {
+      env: { PATH: process.env.PATH ?? '', BOUNDED_OUTPUT_SECRET: secret },
+    });
+    assert.equal(result.failureType, 'success');
+    assert.equal(result.stdout, '[REDACTED]');
+  });
+
+  it('preserves boolean JSON when environment redaction is explicitly disabled', () => {
+    const secret = 'explicit-structured-secret';
+    const result = run('process.stdout.write(JSON.stringify({overridden: false, enabled: true, secret: process.env.BOUNDED_JSON_SECRET}))', {
+      env: {
+        PATH: process.env.PATH ?? '',
+        BOUNDED_JSON_CONTROL: 'false',
+        BOUNDED_JSON_SECRET: secret,
+      },
+      redact: [secret],
+      redactEnvValues: false,
+    });
+    assert.equal(result.failureType, 'success');
+    assert.deepEqual(JSON.parse(result.stdout), { overridden: false, enabled: true, secret: '[REDACTED]' });
+  });
+
+  it('rejects a non-boolean environment-redaction policy', () => {
+    assert.throws(
+      () => run("process.stdout.write('unreachable')", { redactEnvValues: 'false' }),
+      /redactEnvValues must be a boolean/,
+    );
+  });
+
   it('distinguishes a child signal from a timeout, including SIGTERM/SIGKILL-like signals', () => {
     for (const signal of ['SIGTERM', 'SIGKILL']) {
       const result = run(`process.kill(process.pid, '${signal}')`, { allowFailure: true });
