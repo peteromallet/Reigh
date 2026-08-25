@@ -44,7 +44,12 @@ import type {
   TimelineSnapshot,
 } from '@reigh/editor-sdk';
 import { createElement, useCallback, useState, type ReactNode } from 'react';
-import { readChipText, renderTranscriptItemInspector, renderTranscriptLane } from './TranscriptLaneView';
+import {
+  computeTranscriptChipPlacements,
+  readChipText,
+  renderTranscriptItemInspector,
+  renderTranscriptLane,
+} from './TranscriptLaneView';
 
 // ---------------------------------------------------------------------------
 // Identifiers
@@ -314,38 +319,9 @@ export function buildTranscriptCaptionPatch(
   const desiredClipIds = new Set(normalized.map((item) => transcriptCaptionClipId(item.id)));
   const operations: TimelinePatchOperation[] = [];
   // Interval-partition overlapping speakers into the first available vertical
-  // lane. Gaps reuse lane zero; overlaps no longer paint two strings into the
-  // same pixels. `normalized` is sorted above so direct SDK callers get the
-  // same placement even if their source items are shuffled.
-  const collisionGroups: Array<Array<{ item: DataLaneRenderItem; lane: number }>> = [];
-  let currentGroup: Array<{ item: DataLaneRenderItem; lane: number }> = [];
-  let overlapLaneEnds: number[] = [];
-  let currentGroupEnd = Number.NEGATIVE_INFINITY;
-  for (const item of normalized) {
-    // Once the next caption starts after every interval in this connected
-    // collision group, reset sizing. One pathological burst must not leave
-    // every later isolated caption permanently tiny.
-    if (currentGroup.length > 0 && item.timelineStart >= currentGroupEnd) {
-      collisionGroups.push(currentGroup);
-      currentGroup = [];
-      overlapLaneEnds = [];
-      currentGroupEnd = Number.NEGATIVE_INFINITY;
-    }
-    let lane = overlapLaneEnds.findIndex((laneEnd) => laneEnd <= item.timelineStart);
-    if (lane === -1) {
-      lane = overlapLaneEnds.length;
-      overlapLaneEnds.push(item.timelineEnd);
-    } else {
-      overlapLaneEnds[lane] = item.timelineEnd;
-    }
-    currentGroup.push({ item, lane });
-    currentGroupEnd = Math.max(currentGroupEnd, item.timelineEnd);
-  }
-  if (currentGroup.length > 0) collisionGroups.push(currentGroup);
-  const placed = collisionGroups.flatMap((group) => {
-    const groupLaneCount = Math.max(...group.map(({ lane }) => lane)) + 1;
-    return group.map((placement) => ({ ...placement, groupLaneCount }));
-  });
+  // lane. The renderer uses the same helper for pointer hit targets, keeping
+  // exported caption boxes and authoring geometry in lockstep.
+  const placements = computeTranscriptChipPlacements(normalized);
   // Preserve the normal lower-third box for one or two speakers. At higher
   // concurrency, divide all remaining safe canvas height evenly instead of
   // clamping later lanes onto the same bottom coordinate. Font size follows
@@ -373,7 +349,10 @@ export function buildTranscriptCaptionPatch(
     });
   }
 
-  for (const { item, lane: overlapLane, groupLaneCount } of placed) {
+  for (const item of normalized) {
+    const placement = placements.get(item.id) ?? { lane: 0, laneCount: 1 };
+    const overlapLane = placement.lane;
+    const groupLaneCount = placement.laneCount;
     const clipId = transcriptCaptionClipId(item.id);
     const text = readChipText(item.payload).trim();
     const duration = captionDurationSeconds(

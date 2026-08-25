@@ -20,6 +20,84 @@ import type {
 /** Longest text snippet painted per segment chip (kept small on purpose). */
 const MAX_CHIP_CHARS = 48;
 
+export interface TranscriptChipPlacement {
+  /** Zero-based vertical lane within the item's connected overlap group. */
+  readonly lane: number;
+  /** Number of vertical lanes required by this item's overlap group. */
+  readonly laneCount: number;
+}
+
+/**
+ * Assign transcript intervals to deterministic vertical hit-target lanes.
+ *
+ * The host's renderer coordinate system owns the horizontal geometry (the
+ * exact timeline interval remains `left`/`width`); this helper only partitions
+ * concurrent intervals vertically so one button cannot cover another button's
+ * center.  Connected overlap groups are sized independently, so a later
+ * isolated caption does not inherit a tiny height from an earlier burst.
+ *
+ * The lane assignment is intentionally based on the mounted window.  The host
+ * may virtualize the data lane, and the returned map therefore remains total
+ * for exactly the items that can receive pointer events in this render.
+ */
+export function computeTranscriptChipPlacements(
+  items: readonly DataLaneRendererProps['items'][number][],
+): ReadonlyMap<string, TranscriptChipPlacement> {
+  const sorted = items
+    .map((item, sourceIndex) => ({ item, sourceIndex }))
+    .sort((left, right) => (
+      (left.item.timelineStart - right.item.timelineStart)
+      || left.item.id.localeCompare(right.item.id)
+      || (left.sourceIndex - right.sourceIndex)
+    ));
+  const placements = new Map<string, TranscriptChipPlacement>();
+  let currentGroup: Array<{ id: string; lane: number }> = [];
+  let overlapLaneEnds: number[] = [];
+  let currentGroupEnd = Number.NEGATIVE_INFINITY;
+
+  const finishGroup = () => {
+    if (currentGroup.length === 0) return;
+    const laneCount = Math.max(...currentGroup.map(({ lane }) => lane)) + 1;
+    for (const placement of currentGroup) {
+      placements.set(placement.id, { lane: placement.lane, laneCount });
+    }
+    currentGroup = [];
+    overlapLaneEnds = [];
+    currentGroupEnd = Number.NEGATIVE_INFINITY;
+  };
+
+  for (const { item } of sorted) {
+    const start = item.timelineStart;
+    const end = item.timelineEnd;
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+      // Invalid intervals are still rendered by the host for diagnostics, but
+      // never participate in an overlap calculation or perturb valid chips.
+      placements.set(item.id, { lane: 0, laneCount: 1 });
+      continue;
+    }
+    if (currentGroup.length > 0 && start >= currentGroupEnd) finishGroup();
+
+    let lane = overlapLaneEnds.findIndex((laneEnd) => laneEnd <= start);
+    if (lane === -1) {
+      lane = overlapLaneEnds.length;
+      overlapLaneEnds.push(end);
+    } else {
+      overlapLaneEnds[lane] = end;
+    }
+    currentGroup.push({ id: item.id, lane });
+    currentGroupEnd = Math.max(currentGroupEnd, end);
+  }
+  finishGroup();
+
+  // Duplicate IDs are not expected from the typed host envelope. Keep the
+  // renderer total if a malformed provider does send one by giving the last
+  // duplicate a safe single lane rather than throwing during paint.
+  for (const item of items) {
+    if (!placements.has(item.id)) placements.set(item.id, { lane: 0, laneCount: 1 });
+  }
+  return placements;
+}
+
 function truncate(text: string): string {
   return text.length > MAX_CHIP_CHARS ? `${text.slice(0, MAX_CHIP_CHARS - 1)}…` : text;
 }
@@ -36,11 +114,15 @@ function truncate(text: string): string {
 export function renderTranscriptLane(
   props: DataLaneRendererProps,
 ): unknown {
+  const placements = computeTranscriptChipPlacements(props.items);
   const windowStartIndex = props.itemWindow?.startIndex ?? 0;
   const itemIndices = props.itemWindow?.itemIndices;
   const totalItemCount = props.itemWindow?.totalItemCount ?? props.items.length;
   const chips = props.items.map((item, localIndex) =>
-    createElement(
+    (() => {
+      const placement = placements.get(item.id) ?? { lane: 0, laneCount: 1 };
+      const stacked = placement.laneCount > 1;
+      return createElement(
       'button',
       {
         key: item.id,
@@ -54,16 +136,21 @@ export function renderTranscriptLane(
         tabIndex: item.id === props.activeItemId ? 0 : -1,
         style: {
           position: 'absolute',
-          top: '50%',
-          transform: 'translateY(-50%)',
+          top: stacked ? `${(placement.lane * 100) / placement.laneCount}%` : '50%',
+          transform: stacked ? 'none' : 'translateY(-50%)',
           left: item.timelineStart * props.pixelsPerSecond,
           width: (item.timelineEnd - item.timelineStart) * props.pixelsPerSecond,
+          ...(stacked ? { height: `${100 / placement.laneCount}%` } : {}),
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
           fontSize: 10,
-          lineHeight: '16px',
+          lineHeight: 'normal',
           padding: '0 6px',
+          boxSizing: 'border-box',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
           borderRadius: 4,
           border: 0,
           background: 'var(--video-editor-accent-bg-strong)',
@@ -91,7 +178,8 @@ export function renderTranscriptLane(
         },
       },
       truncate(readChipText(item.payload)),
-    ),
+      );
+    })(),
   );
   return createElement(
     'div',

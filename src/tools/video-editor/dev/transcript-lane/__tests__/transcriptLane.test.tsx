@@ -66,7 +66,7 @@ import {
   transcriptSourceReviewHandoffFingerprint,
   type TranscriptSourceReviewRecord,
 } from '../extension';
-import { renderTranscriptLane } from '../TranscriptLaneView';
+import { computeTranscriptChipPlacements, renderTranscriptLane } from '../TranscriptLaneView';
 
 // ---------------------------------------------------------------------------
 // Harness state (hoisted for vi.mock)
@@ -466,6 +466,53 @@ describe('transcript-lane dev example (dataKind V1 done-4)', () => {
 // ---------------------------------------------------------------------------
 
 describe('transcript lane chips (rework round-2 F3)', () => {
+  it('stacks every concurrent Unicode chip into a distinct pointer lane while preserving interval geometry', () => {
+    const onSelectItem = vi.fn();
+    const items: DataLaneRendererProps['items'] = [
+      { id: 'ava', timelineStart: 0, timelineEnd: 1, payload: { text: 'Ava: café — 👩🏽‍🚀' } },
+      { id: 'boris', timelineStart: 0.1, timelineEnd: 0.9, payload: { text: 'Борис: overlapping reply' } },
+      { id: 'li', timelineStart: 0.2, timelineEnd: 0.8, payload: { text: '李: 同时发言' } },
+      { id: 'maria', timelineStart: 0.3, timelineEnd: 0.7, payload: { text: 'María: مرحبًا' } },
+    ];
+    const placements = computeTranscriptChipPlacements(items);
+    expect(items.map((item) => placements.get(item.id))).toEqual([
+      { lane: 0, laneCount: 4 },
+      { lane: 1, laneCount: 4 },
+      { lane: 2, laneCount: 4 },
+      { lane: 3, laneCount: 4 },
+    ]);
+
+    const { container } = render(renderTranscriptLane({
+      kindId: TRANSCRIPT_KIND_ID,
+      schemaRef: TRANSCRIPT_SCHEMA_REF,
+      shape: 'interval',
+      domain: 'source_seconds',
+      startLeft: 0,
+      pixelsPerSecond: 100,
+      onSelectItem,
+      items,
+    }) as ReactElement);
+    const chips = Array.from(container.querySelectorAll<HTMLElement>('[data-testid="transcript-lane-chip"]'));
+    expect(chips.map((chip) => ({
+      top: chip.style.top,
+      height: chip.style.height,
+      left: chip.style.left,
+      transform: chip.style.transform,
+    }))).toEqual([
+      { top: '0%', height: '25%', left: '0px', transform: 'none' },
+      { top: '25%', height: '25%', left: '10px', transform: 'none' },
+      { top: '50%', height: '25%', left: '20px', transform: 'none' },
+      { top: '75%', height: '25%', left: '30px', transform: 'none' },
+    ]);
+    expect(chips.map((chip) => Number.parseFloat(chip.style.width))).toHaveLength(4);
+    for (const [index, width] of [100, 80, 60, 40].entries()) {
+      expect(Number.parseFloat(chips[index]!.style.width)).toBeCloseTo(width, 8);
+    }
+
+    for (const chip of chips) fireEvent.click(chip);
+    expect(onSelectItem.mock.calls).toEqual([['ava'], ['boris'], ['li'], ['maria']]);
+  });
+
   it('chip click dispatches onSelectItem with the item id', () => {
     const onSelectItem = vi.fn();
     const onNavigateItem = vi.fn();
