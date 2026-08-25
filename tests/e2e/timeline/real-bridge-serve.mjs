@@ -29,7 +29,7 @@ import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path';
 import { resolvePinnedNodeExecutable } from '../../../scripts/release/pinned-node-runtime.mjs';
 
 const PORT = Number(process.env.ASTRID_BRIDGE_PORT ?? 17334);
-const PINNED_ASTRID_SHA = 'fdcb6d9c6224ec1739566042d18923b89ce1c1f1';
+const PINNED_ASTRID_SHA = 'bebfb913252827a581b791adb224db61816c00ef';
 const DEFAULT_ASTRID_CHECKOUT = '/Users/peteromalley/Documents/reigh-workspace/Astrid-extension-integration';
 const astrid = resolveAstridCommand();
 astrid.env = resolveReleaseRuntimeEnv(astrid);
