@@ -388,11 +388,77 @@ describe('BrowserLocalFullSnapshotStore', () => {
         await store.saveSnapshot(before);
 
         const workingIndexedDb = globalThis.indexedDB;
-        (globalThis as Record<string, unknown>).indexedDB = {
-          open() {
-            throw new DOMException('injected durable write failure', errorName);
-          },
-        } as unknown as IDBFactory;
+        if (failure === 'disk-full') {
+          // Quota errors can be reported while opening/allocating the durable
+          // store.  Keep this path as an explicit disk-full injection.
+          (globalThis as Record<string, unknown>).indexedDB = {
+            open() {
+              throw new DOMException('injected durable write failure', errorName);
+            },
+          } as unknown as IDBFactory;
+        } else {
+          // Crash after the durable write has begun: let the real IndexedDB
+          // open and transaction start, then abort immediately after the
+          // snapshot put request is queued.
+          const originalOpen = workingIndexedDb.open.bind(workingIndexedDb);
+          (globalThis as Record<string, unknown>).indexedDB = {
+            open(...args: Parameters<IDBFactory['open']>) {
+              const request = originalOpen(...args);
+              request.addEventListener('success', () => {
+                const database = request.result as IDBDatabase & {
+                  transaction: IDBDatabase['transaction'];
+                };
+                // The repository's checked-in fake-indexeddb intentionally
+                // keeps its store map simple and does not roll back records
+                // when abort() is called. Preserve the pre-write record here
+                // so this injected crash models the browser transaction
+                // contract the production store relies on.
+                const fakeDatabase = database as unknown as {
+                  recordsByStore?: Map<string, Map<string, unknown>>;
+                };
+                const snapshotRecords = fakeDatabase.recordsByStore?.get('snapshots');
+                const scopeKey = `${SCOPE_A.userId}:${SCOPE_A.timelineId}`;
+                const previousRecord = snapshotRecords?.get(scopeKey);
+                const originalTransaction = database.transaction.bind(database);
+                database.transaction = ((...transactionArgs: Parameters<IDBDatabase['transaction']>) => {
+                  const transaction = originalTransaction(...transactionArgs);
+                  const storeNames = transactionArgs[0];
+                  const mode = transactionArgs[1];
+                  const targetsSnapshots = typeof storeNames === 'string'
+                    ? storeNames === 'snapshots'
+                    : Array.from(storeNames).includes('snapshots');
+                  if (mode === 'readwrite' && targetsSnapshots) {
+                    const originalObjectStore = transaction.objectStore.bind(transaction);
+                    transaction.objectStore = ((name: string) => {
+                      const store = originalObjectStore(name);
+                      if (name === 'snapshots') {
+                        const originalPut = store.put.bind(store);
+                        store.put = ((...putArgs: Parameters<IDBObjectStore['put']>) => {
+                          const request = originalPut(...putArgs);
+                          // Abort when put() reports success, while the
+                          // transaction is still active and before its
+                          // completion event.  This models a crash during
+                          // the durable commit, rather than an open failure.
+                          request.addEventListener('success', () => {
+                            if (snapshotRecords) {
+                              if (previousRecord === undefined) snapshotRecords.delete(scopeKey);
+                              else snapshotRecords.set(scopeKey, previousRecord);
+                            }
+                            transaction.abort();
+                          }, { once: true });
+                          return request;
+                        }) as IDBObjectStore['put'];
+                      }
+                      return store;
+                    }) as IDBTransaction['objectStore'];
+                  }
+                  return transaction;
+                }) as IDBDatabase['transaction'];
+              });
+              return request;
+            },
+          } as unknown as IDBFactory;
+        }
 
         try {
           await expect(store.saveSnapshot(after)).rejects.toMatchObject({
