@@ -374,7 +374,9 @@ function commandFailure(command, args, result, diagnosticsPath) {
         : result.failureType === 'spawn-error'
           ? `failed to spawn${result.error?.code ? ` (${result.error.code})` : ''}`
           : result.error?.message ?? `failed with exit ${result.status ?? 'unknown'}`;
-  return `${command} ${args.join(' ')} ${detail}${output ? `: ${output.slice(-3000)}` : ''}${diagnosticsPath ? `; diagnostics=${diagnosticsPath}` : ''}`;
+  const safeCommand = typeof result.command === 'string' ? result.command : command;
+  const safeArgs = Array.isArray(result.args) ? result.args : args;
+  return `${safeCommand} ${safeArgs.join(' ')} ${detail}${output ? `: ${output.slice(-3000)}` : ''}${diagnosticsPath ? `; diagnostics=${diagnosticsPath}` : ''}`;
 }
 
 export function capture(command, args, {
@@ -387,6 +389,7 @@ export function capture(command, args, {
   diagnosticsPath,
   budgetKey,
   redactEnvValues = true,
+  structuredOutput,
 } = {}) {
   const budget = commandTimeout(command, args, timeoutMs ?? budgetKey);
   const result = runBoundedCommand(command, args, {
@@ -399,6 +402,7 @@ export function capture(command, args, {
     allowFailure: true,
     label: phase,
     redactEnvValues,
+    structuredOutput,
   });
   const failed = !result.ok;
   if (failed && diagnosticsPath) {
@@ -1544,7 +1548,7 @@ async function stopLoggedProcesses(handles) {
   }
 }
 
-function runLogged(command, args, {
+export function runLogged(command, args, {
   cwd,
   env,
   logPath,
@@ -1565,6 +1569,7 @@ function runLogged(command, args, {
     budgetKey,
     diagnosticsPath: timeoutDiagnosticsPath,
     redactEnvValues,
+    structuredOutput: parseJson ? 'json' : undefined,
   });
   const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
   const unexpectedStderr = strictStderr && String(result.stderr ?? '').trim().length > 0;
@@ -1581,17 +1586,9 @@ function runLogged(command, args, {
       timeoutDiagnosticsPath,
     );
   }
-  let payload;
-  if (parseJson) {
-    try {
-      payload = JSON.parse(result.stdout);
-    } catch (error) {
-      fail(`${command} returned invalid JSON: ${error.message}`);
-    }
-  }
   return {
     durationMs: Date.now() - start,
-    payload,
+    payload: result.payload,
     startedAt,
     status: result.status,
     stdout: result.stdout,
@@ -1824,10 +1821,6 @@ function installAstridRemotionRuntime(context, { npmUserConfig, npmGlobalConfig 
     env,
     logPath: resolve(context.evidenceRoot, 'astrid-remotion-npm-tree.log'),
     parseJson: true,
-    // This verifier-owned environment contains no bearer or user secret. Keep
-    // npm's boolean JSON literals intact; bounded-command redaction remains
-    // enabled by default for every other command.
-    redactEnvValues: false,
     budgetKey: 'npm',
   }).payload;
   const scrubbedInventory = JSON.stringify(inventory, (key, value) => (
@@ -2013,7 +2006,14 @@ function runMigrationTwice(context) {
   }).payload;
   for (const [label, payload] of [['first', first], ['second', second]]) {
     if (payload.transition_count !== EXPECTED_RUNAWAY_COUNT || payload.stored_count !== EXPECTED_RUNAWAY_COUNT) {
-      fail(`Runaway ${label} migration count mismatch: ${JSON.stringify(payload)}`);
+      const summary = {
+        transitionCount: Number.isSafeInteger(payload?.transition_count) ? payload.transition_count : null,
+        storedCount: Number.isSafeInteger(payload?.stored_count) ? payload.stored_count : null,
+        evidenceCount: Number.isSafeInteger(payload?.evidence_count) ? payload.evidence_count : null,
+        hasProjectId: typeof payload?.project_id === 'string',
+        hasRunId: typeof payload?.run_id === 'string',
+      };
+      fail(`Runaway ${label} migration count mismatch: ${JSON.stringify(summary)}`);
     }
     if (payload.evidence_count !== 1) fail(`Runaway ${label} migration duplicated/missed evidence receipt`);
   }
@@ -3377,7 +3377,17 @@ async function executeGate(manifest, pins, evidenceRoot) {
       'doctor', '--projects-root', context.projectsRoot, '--json',
     ], 'astrid-restore-doctor.log').payload;
     if (doctor?.ok !== true || !Array.isArray(doctor.checks) || doctor.checks.some((check) => check.status !== 'ok')) {
-      fail(`Astrid doctor failed after restore: ${JSON.stringify(doctor)}`);
+      const summary = {
+        ok: doctor?.ok === true,
+        checks: Array.isArray(doctor?.checks)
+          ? doctor.checks.map((check) => ({
+              name: typeof check?.name === 'string' ? check.name : null,
+              status: typeof check?.status === 'string' ? check.status : null,
+              code: typeof check?.code === 'string' ? check.code : null,
+            }))
+          : [],
+      };
+      fail(`Astrid doctor failed after restore: ${JSON.stringify(summary)}`);
     }
     const restoredRunawayCount = sqliteCount(
       context,

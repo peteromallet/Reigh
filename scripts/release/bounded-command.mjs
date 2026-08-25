@@ -14,6 +14,7 @@ const FAILURE_TYPES = new Set([
   'output-cap',
   'timeout',
   'cleanup-error',
+  'structured-output',
   'unknown',
 ]);
 
@@ -149,6 +150,13 @@ function captureText(value, maxBuffer, redact, tokens) {
   });
 }
 
+function freezeStructuredJson(value, seen = new WeakSet()) {
+  if (value === null || typeof value !== 'object' || seen.has(value)) return value;
+  seen.add(value);
+  for (const child of Object.values(value)) freezeStructuredJson(child, seen);
+  return Object.freeze(value);
+}
+
 function safeError(error, redact, tokens) {
   if (!error) return null;
   return Object.freeze({
@@ -265,6 +273,8 @@ export function formatBoundedCommandFailure(result) {
             ? `failed to clean up scoped processes${result.error?.message ? ` (${result.error.message})` : ''}`
           : result.failureType === 'spawn-error'
             ? `failed to spawn${result.error?.code ? ` (${result.error.code})` : ''}`
+            : result.failureType === 'structured-output'
+              ? 'returned malformed structured output'
             : 'failed without a terminal status';
   return `${result.label} ${details} after ${result.elapsedMs}ms`;
 }
@@ -303,8 +313,15 @@ export function runBoundedCommand(command, args, options = {}) {
   if (typeof redactEnvValues !== 'boolean') {
     throw new TypeError('redactEnvValues must be a boolean');
   }
+  const structuredOutput = options.structuredOutput;
+  if (structuredOutput !== undefined && structuredOutput !== 'json') {
+    throw new TypeError('structuredOutput must be "json" when provided');
+  }
   const tokens = normalizeRedactions(redact, env, redactEnvValues);
   const binaryOutput = options.encoding === null;
+  if (binaryOutput && structuredOutput !== undefined) {
+    throw new TypeError('structuredOutput cannot be used with binary output');
+  }
   if (binaryOutput && redact !== undefined) {
     throw new TypeError('redact cannot be used with binary output');
   }
@@ -393,9 +410,26 @@ export function runBoundedCommand(command, args, options = {}) {
     : wrapped?.reason === 'output-cap'
       ? 'output-cap'
       : classify(effectiveRaw, stdout, stderr);
+  let payload;
+  let structuredOutputError = null;
+  if (structuredOutput === 'json' && failureType === 'success') {
+    const rawStdout = wrapped
+      ? wrapped.stdout.subarray(0, maxBuffer).toString('utf8')
+      : Buffer.from(raw.stdout ?? '').subarray(0, maxBuffer).toString('utf8');
+    try {
+      payload = freezeStructuredJson(JSON.parse(rawStdout));
+    } catch {
+      // Never include raw output in the error: it may contain a secret that
+      // was only discovered after parsing. Text/diagnostics remain redacted.
+      structuredOutputError = Object.assign(new Error('structured JSON output was malformed'), {
+        code: 'EJSONPARSE',
+      });
+    }
+  }
+  const terminalFailureType = structuredOutputError ? 'structured-output' : failureType;
   const result = freezeResult({
-    ok: failureType === 'success',
-    failureType,
+    ok: terminalFailureType === 'success',
+    failureType: terminalFailureType,
     label,
     command: redactText(command, redact, tokens),
     args: Object.freeze(immutableArgs.map((arg) => redactText(arg, redact, tokens))),
@@ -406,7 +440,9 @@ export function runBoundedCommand(command, args, options = {}) {
     elapsedMs,
     status: effectiveRaw.status ?? null,
     signal: effectiveRaw.signal ?? null,
-    error: safeError(effectiveRaw.error, redact, tokens),
+    error: structuredOutputError
+      ? safeError(structuredOutputError, redact, tokens)
+      : safeError(effectiveRaw.error, redact, tokens),
     stdout: binaryOutput
       ? (wrapped ? wrapped.stdout.subarray(0, maxBuffer) : Buffer.from(raw.stdout ?? '').subarray(0, maxBuffer))
       : stdout.text,
@@ -417,11 +453,12 @@ export function runBoundedCommand(command, args, options = {}) {
     stderrBytes: stderr.bytes,
     stdoutTruncated: stdout.truncated,
     stderrTruncated: stderr.truncated,
+    payload,
     cleanupError: wrapped?.cleanupError
       ? safeError(wrapped.cleanupError, redact, tokens)
       : null,
   });
-  if (!FAILURE_TYPES.has(failureType)) throw new Error(`unhandled bounded command failure type: ${failureType}`);
+  if (!FAILURE_TYPES.has(terminalFailureType)) throw new Error(`unhandled bounded command failure type: ${terminalFailureType}`);
   if (!result.ok && options.allowFailure !== true) throw new BoundedCommandError(result);
   return result;
 }

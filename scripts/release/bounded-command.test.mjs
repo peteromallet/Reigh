@@ -60,6 +60,64 @@ describe('runBoundedCommand', () => {
     assert.equal(result.stdout, '[REDACTED]');
   });
 
+  it('parses JSON before redaction, preserving CI booleans and freezing the payload', () => {
+    const runtimeRoot = `/var/folders/bounded-json-${process.pid}`;
+    const result = run(
+      'process.stdout.write(JSON.stringify({ ci: process.env.CI === "true", enabled: false, nested: { ok: true } }))',
+      {
+        env: { PATH: process.env.PATH ?? '', CI: 'true', TMPDIR: runtimeRoot },
+        structuredOutput: 'json',
+      },
+    );
+    assert.deepEqual(result.payload, { ci: true, enabled: false, nested: { ok: true } });
+    assert.ok(Object.isFrozen(result.payload));
+    assert.ok(Object.isFrozen(result.payload.nested));
+    assert.match(result.stdout, /\[REDACTED\]/);
+    assert.doesNotMatch(result.stdout, /bounded-json-/);
+  });
+
+  it('preserves absolute env-root paths and npm-like boolean/scrub shape in memory', () => {
+    const runtimeRoot = `/var/folders/npm-like-${process.pid}`;
+    const result = run(
+      'process.stdout.write(JSON.stringify({ name: "pkg", extraneous: false, resolved: `${process.env.TMPDIR}/node_modules/pkg`, dependencies: { dep: { dev: false } } }))',
+      {
+        env: { PATH: process.env.PATH ?? '', TMPDIR: runtimeRoot },
+        structuredOutput: 'json',
+      },
+    );
+    assert.equal(result.payload.resolved, `${runtimeRoot}/node_modules/pkg`);
+    assert.equal(result.payload.extraneous, false);
+    assert.equal(result.payload.dependencies.dep.dev, false);
+    const scrubbed = JSON.parse(JSON.stringify(result.payload, (key, value) => (
+      ['resolved', '_resolved', 'path', 'from'].includes(key) ? undefined : value
+    )));
+    assert.deepEqual(scrubbed, {
+      name: 'pkg',
+      extraneous: false,
+      dependencies: { dep: { dev: false } },
+    });
+    assert.doesNotMatch(result.stdout, new RegExp(runtimeRoot.replaceAll('/', '\\/')));
+  });
+
+  it('fails closed on malformed structured JSON without leaking a secret', () => {
+    const secret = `malformed-structured-secret-${process.pid}`;
+    const result = run(
+      `process.stdout.write('not-json:${secret}'); process.stderr.write('stderr:${secret}')`,
+      {
+        env: { PATH: process.env.PATH ?? '', STRUCTURED_SECRET: secret },
+        structuredOutput: 'json',
+        allowFailure: true,
+      },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.failureType, 'structured-output');
+    assert.equal(result.payload, undefined);
+    assert.equal(result.error?.code, 'EJSONPARSE');
+    assert.doesNotMatch(result.stdout, new RegExp(secret));
+    assert.doesNotMatch(result.stderr, new RegExp(secret));
+    assert.doesNotMatch(result.error?.message ?? '', new RegExp(secret));
+  });
+
   it('preserves boolean JSON when environment redaction is explicitly disabled', () => {
     const secret = 'explicit-structured-secret';
     const result = run('process.stdout.write(JSON.stringify({overridden: false, enabled: true, secret: process.env.BOUNDED_JSON_SECRET}))', {
@@ -79,6 +137,13 @@ describe('runBoundedCommand', () => {
     assert.throws(
       () => run("process.stdout.write('unreachable')", { redactEnvValues: 'false' }),
       /redactEnvValues must be a boolean/,
+    );
+  });
+
+  it('rejects structured output with binary mode', () => {
+    assert.throws(
+      () => run("process.stdout.write('x')", { encoding: null, structuredOutput: 'json' }),
+      /structuredOutput cannot be used with binary output/,
     );
   });
 
@@ -103,12 +168,14 @@ describe('runBoundedCommand', () => {
   it('caps captured output and fails closed without retaining the full stream', () => {
     const result = run("process.stdout.write('x'.repeat(100_000))", {
       maxBuffer: 256,
+      structuredOutput: 'json',
       allowFailure: true,
     });
     assert.equal(result.failureType, 'output-cap');
     assert.equal(result.ok, false);
     assert.ok(Buffer.byteLength(result.stdout) <= 256);
     assert.equal(result.stdoutTruncated, true);
+    assert.equal(result.payload, undefined);
   });
 
   it('times out and kills the child without leaving a marker behind', () => {
@@ -117,13 +184,14 @@ describe('runBoundedCommand', () => {
     try {
       const result = run(
         `setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'orphan'), 1_000)`,
-        { timeoutMs: 50, allowFailure: true },
+        { timeoutMs: 50, structuredOutput: 'json', allowFailure: true },
       );
       assert.equal(result.ok, false);
       assert.equal(result.failureType, 'timeout');
       assert.equal(result.status, null);
       assert.equal(result.signal, 'SIGKILL');
       assert.equal(result.error?.code, 'ETIMEDOUT');
+      assert.equal(result.payload, undefined);
       assert.equal(existsSync(marker), false);
     } finally {
       rmSync(root, { recursive: true, force: true });

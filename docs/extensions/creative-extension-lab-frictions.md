@@ -1660,13 +1660,14 @@ fresh console collection.
   `npm ls --json --all`. All 282 boolean `overridden` fields became unquoted
   `[REDACTED]` tokens, so valid npm JSON failed as if the dependency tree were
   corrupt.
-- The safe opt-out is now explicit and local to the verifier-owned npm inventory
-  environment. Default environment-value redaction remains enabled, explicit
-  secret tokens are still scrubbed, and focused tests cover both behaviors.
-- The same architectural hazard applies to any machine-readable stdout that can
-  contain an environment value. Structured probes should emit validated relative
-  identifiers when possible; disabling automatic environment redaction requires
-  a documented, secret-free environment and must never become the default.
+- Bounded commands now have an explicit JSON mode that parses the bounded raw
+  stream in memory before redaction and returns a frozen payload to the verifier,
+  while evidence logs and diagnostics receive only the separately redacted text.
+  The npm and schema exceptions were removed; plain-text commands retain the
+  original fail-closed environment redaction.
+- Machine-readable stdout must use that structured mode. Structured probes should
+  still emit validated relative identifiers when possible, and callers must not
+  stringify raw payloads into failure messages without field-level sanitization.
 
 ### An absolute npm invocation does not pin `node` inside an npm script
 
@@ -1688,3 +1689,22 @@ fresh console collection.
 - The durable contract is: install the lock-aligned revision, derive a relative
   executable path under the owned cache, reject traversal or escape, reconstruct
   the absolute path locally, and hash the executable before launch.
+
+### Canonical paths can contain a lexical environment path without being equal to it
+
+- On macOS the verifier supplied a lexical `/var/folders/...` runtime root, while
+  Python reported the same files through the canonical `/private/var/folders/...`
+  path. Substring redaction removed the lexical portion from inside the canonical
+  path, producing `/private[REDACTED]-venv/...`; the containment check then
+  correctly rejected a path that the logger had fabricated.
+- The repair is class-wide rather than a schema-only exception: structured JSON
+  is validated from the original bounded bytes, while the on-disk probe remains
+  redacted. Regressions reproduce the lexical-versus-canonical prefix collision,
+  `CI=true` boolean corruption, malformed JSON, and npm-like path payloads before
+  proving the preserved in-memory payload satisfies the pinned-root checks.
+- The more durable pattern for future structured probes is to emit relative
+  paths under explicit owned roots, reconstruct them in the verifier, and apply
+  lexical plus realpath containment there. Astrid backup JSON currently includes
+  absolute destination/database paths; the verifier consumes only its boolean
+  result today, but those fields must be normalized before they become receipt
+  or validation inputs.

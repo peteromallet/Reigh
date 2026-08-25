@@ -49,6 +49,7 @@ import {
   assertRenderWorkerCompleted,
   validateRenderWorkerBinding,
   validateAstridServeOwnedRenderEvidence,
+  runLogged,
   startLoggedProcessUntilReady,
   stopLoggedProcess,
 } from './verify-paired-release-e2e.mjs';
@@ -945,6 +946,91 @@ describe('paired repository release E2E gate', () => {
     }), /outside its pinned runtime root/);
   });
 
+  it('preserves runtime-root paths in the machine-readable schema import probe', () => {
+    const source = readFileSync(resolve(REPO_ROOT, 'scripts/release/verify-paired-release-e2e.mjs'), 'utf8');
+    const probeStart = source.indexOf('const schemaProbe = runLogged');
+    const probeEnd = source.indexOf('  }).payload;', probeStart);
+    assert.ok(probeStart >= 0 && probeEnd > probeStart, 'schema probe call must remain discoverable');
+    const probeSource = source.slice(probeStart, probeEnd);
+    assert.match(probeSource, /parseJson:\s*true/);
+    assert.doesNotMatch(probeSource, /redactEnvValues:\s*false/);
+    assert.match(source, /structuredOutput: parseJson \? 'json' : undefined/);
+  });
+
+  it('does not corrupt canonical schema paths with a lexical TMPDIR prefix', () => {
+    const lexicalRuntimeRoot = `/var/folders/paired-schema-runtime-${process.pid}`;
+    const canonicalRuntimeRoot = `/private${lexicalRuntimeRoot}`;
+    const expectedSchemaSha256 = 'c'.repeat(64);
+    const probe = {
+      astridModulePath: `${canonicalRuntimeRoot}/astrid/astrid/__init__.py`,
+      distributionVersion: TIMELINE_SCHEMA_DISTRIBUTION_VERSION,
+      modulePath: `${canonicalRuntimeRoot}-venv/lib/python3.11/site-packages/banodoco_timeline_schema/__init__.py`,
+      schemaPythonpath: `${canonicalRuntimeRoot}-venv/lib/python3.11/site-packages`,
+      schemaSha256: expectedSchemaSha256,
+    };
+    const command = ['-e', `process.stdout.write(${JSON.stringify(JSON.stringify(probe))})`];
+    const env = { PATH: process.env.PATH ?? '', TMPDIR: lexicalRuntimeRoot };
+
+    const redacted = runTestCommand(process.execPath, command, { env });
+    assert.match(redacted.stdout, /\/private\[REDACTED\]-venv/);
+
+    const structured = runTestCommand(process.execPath, command, {
+      env,
+      structuredOutput: 'json',
+    });
+    assert.deepEqual(validateTimelineSchemaInstallation({
+      probe: structured.payload,
+      astridSnapshot: `${canonicalRuntimeRoot}/astrid`,
+      expectedSchemaSha256,
+      venv: `${canonicalRuntimeRoot}-venv`,
+    }), probe);
+    assert.match(structured.stdout, /\/private\[REDACTED\]-venv/);
+  });
+
+  it('returns an unredacted structured payload through runLogged while keeping the log redacted', () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'paired-structured-log-'));
+    const logPath = resolve(root, 'structured.log');
+    try {
+      const result = runLogged(process.execPath, [
+        '-e',
+        'process.stdout.write(JSON.stringify({ ok: true, ci: process.env.CI === "true" }))',
+      ], {
+        cwd: root,
+        env: { PATH: process.env.PATH ?? '', CI: 'true' },
+        logPath,
+        parseJson: true,
+      });
+      assert.deepEqual(result.payload, { ok: true, ci: true });
+      assert.match(readFileSync(logPath, 'utf8'), /\[REDACTED\]/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('redacts malformed structured-output diagnostics without exposing command secrets', () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'paired-structured-malformed-'));
+    const logPath = resolve(root, 'malformed.log');
+    const secret = `run-logged-structured-secret-${process.pid}`;
+    try {
+      assert.throws(() => runLogged(process.execPath, [
+        '-e',
+        `process.stdout.write('not-json:${secret}')`,
+      ], {
+        cwd: root,
+        env: { PATH: process.env.PATH ?? '', STRUCTURED_SECRET: secret },
+        logPath,
+        parseJson: true,
+      }), (error) => {
+        assert.doesNotMatch(error.message, new RegExp(secret));
+        return true;
+      });
+      assert.doesNotMatch(readFileSync(logPath, 'utf8'), new RegExp(secret));
+      assert.doesNotMatch(readFileSync(`${logPath}.timeout.json`, 'utf8'), new RegExp(secret));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('rejects the old pre-auth pin and accepts the complete release capability', () => {
     assert.throws(
       () => validateAstridReleaseBridgeSources({
@@ -1216,6 +1302,15 @@ describe('paired repository release E2E gate', () => {
     assert.match(source, /failureType: result\.failureType/);
     assert.match(source, /commandDiagnostic/);
     assert.match(source, /kill=\$\{result\.killSignal\}/);
+  });
+
+  it('keeps structured-command failure messages to field-specific summaries', () => {
+    const source = readFileSync(resolve(REPO_ROOT, 'scripts/release/verify-paired-release-e2e.mjs'), 'utf8');
+    assert.doesNotMatch(source, /Runaway \$\{label\} migration count mismatch: \$\{JSON\.stringify\(payload\)\}/);
+    assert.doesNotMatch(source, /Astrid doctor failed after restore: \$\{JSON\.stringify\(doctor\)\}/);
+    assert.match(source, /hasProjectId: typeof payload\?\.project_id === 'string'/);
+    assert.match(source, /name: typeof check\?\.name === 'string'/);
+    assert.match(source, /code: typeof check\?\.code === 'string'/);
   });
 
   it('fails a bounded release probe closed without leaving a timed-out child behind', () => {
