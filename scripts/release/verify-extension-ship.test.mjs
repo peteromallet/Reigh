@@ -240,9 +240,10 @@ describe('extension ship verifier', () => {
   });
 
   it('builds only fixed argument-vector commands with Astrid last', () => {
+    const reighExecutionCheckout = '/tmp/reigh-detached-controller';
     const astridCheckout = '/tmp/astrid-pinned-fixture';
     const plan = buildExecutionPlan({
-      repoRoot: REPO_ROOT,
+      repoRoot: reighExecutionCheckout,
       astridCheckout,
       astridPython: '/tmp/astrid-python',
       astridRef: 'a'.repeat(40),
@@ -259,9 +260,10 @@ describe('extension ship verifier', () => {
     assert.equal(plan.at(-1).command, 'make');
     assert.deepEqual(plan.at(-1).args, ['ci']);
     assert.deepEqual(plan.at(-1).env, {
+      ASTRID_REIGH_CHECKOUT: reighExecutionCheckout,
       PY: '/tmp/astrid-python',
       PYTHON_BIN: '/tmp/astrid-python',
-      PYTHONPATH: `${REPO_ROOT}/vendor/timeline-schema/python`,
+      PYTHONPATH: `${reighExecutionCheckout}/vendor/timeline-schema/python`,
     });
     assert.ok(plan.every((step) => Array.isArray(step.args)));
     assert.ok(plan.every((step) => step.command === 'npm' || step.command === 'make'));
@@ -272,6 +274,7 @@ describe('extension ship verifier', () => {
       ASTRID_REF: 'a'.repeat(40),
       REIGH_REF: 'b'.repeat(40),
     });
+    assert.notEqual(plan.at(-1).env.ASTRID_REIGH_CHECKOUT, REPO_ROOT);
 
     const rendered = plan.map(formatCommand).join('\n');
     assert.doesNotMatch(
@@ -493,6 +496,7 @@ describe('extension ship verifier', () => {
       ASTRID_CI_SKIP_BROAD: '1',
       ASTRID_CI_SKIP_COVERAGE: '1',
       PYTHONPATH: '/tmp/attacker',
+      ASTRID_REIGH_CHECKOUT: '/tmp/operator-supplied-reigh',
       PYTEST_ADDOPTS: '-m not_release',
       NODE_OPTIONS: '--require=/tmp/attacker.cjs',
       NPM_CONFIG_SCRIPT_SHELL: '/usr/bin/true',
@@ -545,6 +549,39 @@ describe('extension ship verifier', () => {
       () => buildSanitizedEnvironment({ ASTRID_CI_SKIP_GATE: '1' }),
       /environment key is not allowed/,
     );
+    assert.equal(
+      buildSanitizedEnvironment({ ASTRID_REIGH_CHECKOUT: '/tmp/reigh-detached' }).ASTRID_REIGH_CHECKOUT,
+      '/tmp/reigh-detached',
+    );
+  });
+
+  it('executes Astrid CI with the detached Reigh checkout, never an ambient path', () => {
+    const reighExecutionCheckout = '/tmp/reigh-detached-controller';
+    const operatorPath = '/tmp/operator-supplied-reigh';
+    const previous = process.env.ASTRID_REIGH_CHECKOUT;
+    process.env.ASTRID_REIGH_CHECKOUT = operatorPath;
+
+    try {
+      const astridCi = buildExecutionPlan({
+        repoRoot: reighExecutionCheckout,
+        astridCheckout: '/tmp/astrid-pinned-fixture',
+        astridPython: '/tmp/astrid-python',
+        astridRef: 'a'.repeat(40),
+        reighRef: 'b'.repeat(40),
+      }).at(-1);
+      let captured;
+      executeSteps([astridCi], (_command, _args, options) => {
+        captured = options.env;
+        return { status: 0 };
+      });
+
+      assert.equal(captured.ASTRID_REIGH_CHECKOUT, reighExecutionCheckout);
+      assert.notEqual(captured.ASTRID_REIGH_CHECKOUT, operatorPath);
+      assert.equal(captured.PYTHONPATH, `${reighExecutionCheckout}/vendor/timeline-schema/python`);
+    } finally {
+      if (previous === undefined) delete process.env.ASTRID_REIGH_CHECKOUT;
+      else process.env.ASTRID_REIGH_CHECKOUT = previous;
+    }
   });
 
   it('rejects shell executables and non-absolute Astrid Python paths', () => {

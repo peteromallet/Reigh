@@ -143,6 +143,7 @@ const RELEASE_PATH = [
 const ALLOWED_STEP_ENV = new Set([
   'ASTRID_CHECKOUT',
   'ASTRID_PYTHON',
+  'ASTRID_REIGH_CHECKOUT',
   'ASTRID_REF',
   'PY',
   'PYTHON_BIN',
@@ -548,6 +549,7 @@ export function buildExecutionPlan({
       maxBuffer: RELEASE_COMMAND_MAX_BUFFER_BYTES,
       env: gate.id === 'astrid-ci'
         ? {
+            ASTRID_REIGH_CHECKOUT: repoRoot,
             PY: python,
             PYTHON_BIN: python,
             PYTHONPATH: resolve(repoRoot, 'vendor/timeline-schema/python'),

@@ -23,6 +23,11 @@ inputs such as `.env.production`, `public/files/`, and `public/uploads/`. The
 temporary worktree is removed after the run; any tracked mutation fails the
 post-gate clean check.
 
+The Astrid `make ci` gate receives that same fresh detached path in the
+verifier-owned `ASTRID_REIGH_CHECKOUT` environment variable. Astrid SQL-contract
+tests must resolve Reigh migrations through this explicit path; operators must
+not provide or substitute an ambient sibling checkout.
+
 Candidate identity is deliberately deferred during integration. Compute `C`
 from a fresh clean source snapshot only after the native-tool attestation commit
 has landed and the source sequence is reviewed; a moving local/remote branch
