@@ -11,9 +11,9 @@ by the [evidence ledger](extension-ship-evidence-ledger.md).
 
 ## Current disposition
 
-`codex/extension-ship-integration` at
-`7ae8419dac965ce0b3c2a6d17b7374ddff8da5bd` is the current RC6
-**integration cycle**. Its paired Astrid input is
+`codex/extension-ship-integration` is the current RC6 **integration cycle**;
+resolve its moving synchronization head with `git rev-parse HEAD` rather than
+copying that value into release evidence. Its paired Astrid input is
 `bebfb913252827a581b791adb224db61816c00ef` on
 `codex/extension-ship-astrid-integration`; both worktrees are clean, pushed,
 and synchronized with their upstream branches. This is not a frozen release
