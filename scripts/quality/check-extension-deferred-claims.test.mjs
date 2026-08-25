@@ -95,6 +95,26 @@ describe('deferred claim presence semantics', () => {
     }
   });
 
+  it('does not let a later colon-number token replace the real rg delimiter', () => {
+    const line = 'src/runtime.ts:58: // sandbox enforcement is implemented:123: // no sandbox remains';
+    const occurrences = scanSemanticClaimOccurrences([line], 'sandbox');
+
+    assert.equal(occurrences.length, 2);
+    assert.equal(occurrences[0].negative, false);
+    assert.equal(occurrences[0].path, 'src/runtime.ts');
+    assert.equal(occurrences[0].lineNumber, 58);
+    assert.deepEqual(filterSemanticPresenceMatches([line], 'sandbox'), [line]);
+  });
+
+  it('does not extend a coordinated negation over an affirmative repeated capability', () => {
+    const line = 'src/runtime.ts:59: // no sandbox and sandbox enforcement is implemented';
+    assert.deepEqual(
+      scanSemanticClaimOccurrences([line], 'sandbox').map(({ negative }) => negative),
+      [true, false],
+    );
+    assert.deepEqual(filterSemanticPresenceMatches([line], 'sandbox'), [line]);
+  });
+
   it('allows honest negatives but rejects double negatives', () => {
     const cases = [
       ['does not sandbox', true],

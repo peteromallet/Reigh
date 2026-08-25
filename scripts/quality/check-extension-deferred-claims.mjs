@@ -34,7 +34,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import {
   loadContractMatrix,
   isDeferred,
@@ -141,8 +141,9 @@ const isRelease = mode === 'release';
  */
 function grep(pattern, searchPath) {
   try {
-    const result = execSync(
-      `rg --line-number --no-heading --max-count 100 "${pattern}" "${searchPath}"`,
+    const result = execFileSync(
+      'rg',
+      ['--line-number', '--no-heading', '--max-count', '100', '--', pattern, searchPath],
       {
         encoding: 'utf8',
         stdio: ['pipe', 'pipe', 'pipe'],

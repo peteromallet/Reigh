@@ -9,9 +9,11 @@
  */
 
 function parseRipgrepLine(line) {
-  // `rg --line-number --no-heading` emits `path:line:text`. Use a greedy path
-  // capture so paths containing `:` are handled as well.
-  const match = line.match(/^(.+):(\d+):(.*)$/s);
+  // `rg --line-number --no-heading` emits `path:line:text`. The line-number
+  // delimiter is the first `:<digits>:` segment emitted after the path. A
+  // greedy path capture would instead consume source text such as `:123:` and
+  // let an attacker hide an earlier positive claim from semantic scanning.
+  const match = line.match(/^(.+?):(\d+):(.*)$/s);
   if (!match) return { path: null, lineNumber: null, text: line };
   return { path: match[1], lineNumber: Number(match[2]), text: match[3] };
 }
@@ -152,6 +154,15 @@ function hasNegativeRelation(text, occurrence) {
     || NEGATIVE_SUBJECT_AFTER.test(localAfter);
 
   if (!negative) return false;
+  // A coordinating negation may cover a list of different capabilities (`no
+  // sandbox or iframe support`), but it must not hide a repeated capability
+  // that starts an affirmative predicate (`no sandbox and sandbox enforcement
+  // is implemented`). Treat that repeated, affirmative occurrence as a new
+  // semantic scope even without punctuation.
+  const repeatedCapability = before.toLowerCase().includes(occurrence.value.toLowerCase());
+  const coordinatedRepeat = /\b(?:and|or)\s*$/i.test(localBefore);
+  const affirmativeAfter = /^(?:\s+[\w-]+){0,5}\s+(?:is|are|was|were|will\s+be|has\s+been|have\s+been)\s+(?:implemented|supported|available|present|enforced|enabled|provided|offered|included|permitted|allowed|ready|real|existing|true|valid)\b/i.test(localAfter);
+  if (repeatedCapability && coordinatedRepeat && affirmativeAfter) return false;
   if (isDoubleNegative(before, after)) return false;
   return true;
 }
