@@ -3,14 +3,17 @@
  *
  * A source comment may explicitly document a limitation (for example,
  * "does not sandbox trusted extension code"). Such a comment is evidence for
- * the absence claim, not an implementation of the deferred capability. Keep
- * this exception deliberately lexical: executable source that contains the
- * same words remains a presence match.
+ * the absence claim, not an implementation of the deferred capability. The
+ * important detail is that this is an occurrence-level decision: a negative
+ * occurrence must never hide a later, positive occurrence on the same line.
  */
 
-function ripgrepText(line) {
-  // `rg --line-number --no-heading` emits `path:line:text`.
-  return line.match(/^.*?:\d+:(.*)$/s)?.[1] ?? line;
+function parseRipgrepLine(line) {
+  // `rg --line-number --no-heading` emits `path:line:text`. Use a greedy path
+  // capture so paths containing `:` are handled as well.
+  const match = line.match(/^(.+):(\d+):(.*)$/s);
+  if (!match) return { path: null, lineNumber: null, text: line };
+  return { path: match[1], lineNumber: Number(match[2]), text: match[3] };
 }
 
 function isCommentText(text) {
@@ -21,52 +24,193 @@ function isCommentText(text) {
     || trimmed.startsWith('#');
 }
 
-function isProseText(text) {
-  return isCommentText(text)
-    // Test descriptions and matcher literals document expected absence; they
-    // do not claim that the runtime implements the capability.
-    || /^\s*(?:it|test)\s*\(\s*['"`]/i.test(text)
-    || /\b(?:toMatch|toContain|toEqual)\s*\(/.test(text);
+function isTestProse(text) {
+  const trimmed = text.trim();
+  return /^(?:it|test)(?:\.each)?\s*\(\s*['"`]/i.test(trimmed)
+    || /\b(?:toMatch|toContain|toEqual|toHaveProperty|toThrow)\s*\(/.test(text);
 }
 
-function hasNegativeRelation(text, pattern) {
-  let match;
-  try {
-    match = new RegExp(pattern, 'i').exec(text);
-  } catch {
-    return false;
-  }
-  if (!match || match.index === undefined) return false;
+function isProseText(text) {
+  return isCommentText(text) || isTestProse(text);
+}
 
-  const before = text.slice(Math.max(0, match.index - 100), match.index);
-  const after = text.slice(match.index, match.index + 120);
-  const negatingVerb = /(?:does\s+not|do\s+not|did\s+not|will\s+not|would\s+not|cannot|can't|doesn't|don't|won't|den(?:y|ies|ied))\s+(?:\w+\s+){0,4}$/i;
-  const negatingState = /(?:^|\s)(?:is|are|was|were)\s+not\s+(?:\w+\s+){0,3}$/i;
-  const negatingNoun = /(?:^|[^\w])(?:no|without|not)\s+(?:an?\s+)?(?:\w+\s+){0,2}$/i;
-  const postposedNegation = /^(?:[\w-]+\s+){0,4}(?:is|are|was|were)\s+not\b/i;
-  return /\bun$/i.test(before)
-    || negatingVerb.test(before)
-    || negatingState.test(before)
-    || negatingNoun.test(before)
-    || postposedNegation.test(after.slice(match[0].length));
+function makeGlobalRegExp(pattern) {
+  try {
+    return new RegExp(pattern, 'gi');
+  } catch {
+    return null;
+  }
+}
+
+function regexOccurrences(text, pattern) {
+  const expression = makeGlobalRegExp(pattern);
+  if (!expression) return [];
+
+  const occurrences = [];
+  let match;
+  while ((match = expression.exec(text)) !== null) {
+    const value = match[0];
+    occurrences.push({ value, index: match.index, end: match.index + value.length });
+    // Avoid an infinite loop for a zero-width regex.
+    if (value.length === 0) expression.lastIndex += 1;
+  }
+  return occurrences;
 }
 
 /**
- * Return true only for a source comment that explicitly negates the matched
- * capability. Code and positive claims are intentionally not exempted.
+ * Return the prose clause containing an occurrence. A semicolon or a
+ * contrastive conjunction starts a new scope, so `no sandbox yet; sandbox
+ * enforcement is implemented below` retains the second occurrence as a
+ * positive claim.
+ */
+function clauseFor(text, occurrence) {
+  const left = text.slice(0, occurrence.index);
+  // A dot in `expect(...).not.toContain(...)` or `foo.bar` is code syntax,
+  // not a prose boundary. A sentence-final dot is followed by whitespace or
+  // the end of text, which is what the negative lookahead preserves.
+  const punctuation = /[!?;:\n]|\.(?!\w)/g;
+  let start = 0;
+  let punctuationMatch;
+  while ((punctuationMatch = punctuation.exec(left)) !== null) {
+    start = punctuationMatch.index + 1;
+  }
+
+  // Do not split on plain `and`/`or`: they commonly coordinate one negative
+  // claim (`no sandbox or iframe support`).
+  const contrast = /\b(?:but|however|although|though|whereas|instead)\b/gi;
+  let contrastMatch;
+  while ((contrastMatch = contrast.exec(left)) !== null) {
+    start = Math.max(start, contrastMatch.index + contrastMatch[0].length);
+  }
+
+  return {
+    text: text.slice(start),
+    before: text.slice(start, occurrence.index),
+    after: text.slice(occurrence.end),
+    start,
+  };
+}
+
+const NEGATING_VERB = /\b(?:does|do|did|will|would|can|could|should|must|may|might|is|are|was|were|be|been|being)\s+(?:not|n't)\b/i;
+const NEGATING_MODAL = /\b(?:cannot|can't|won't|wouldn't|shouldn't|isn't|aren't|wasn't|weren't|don't|doesn't|didn't)\b/i;
+const NEGATIVE_ACTION = /\b(?:fail|fails|failed|avoid|avoids|avoided|lack|lacks|lacked|refuse|refuses|refused|deny|denies|denied|prevent|prevents|prevented|prohibit|prohibits|prohibited|block|blocks|blocked|exclude|excludes|excluded|omit|omits|omitted|skip|skips|skipped)\s+(?:to\s+)?/i;
+const NEGATIVE_ACTION_AT_END = /\b(?:fail|fails|failed|avoid|avoids|avoided|lack|lacks|lacked|refuse|refuses|refused|deny|denies|denied|prevent|prevents|prevented|prohibit|prohibits|prohibited|block|blocks|blocked|exclude|excludes|excluded|omit|omits|omitted|skip|skips|skipped)\s*$/i;
+const NEGATIVE_STATE = /(?:not|n't|cannot|can't|won't|wouldn't|shouldn't|isn't|aren't|wasn't|weren't)\s+(?:be\s+)?(?:implemented|supported|available|present|enforced|enabled|provided|offered|included|possible|permitted|allowed|secure|ready|real|existing|existent|provided|known|recognized|recognized|true|valid|there|exist|exists)\b/i;
+const NEGATIVE_SUBJECT_AFTER = new RegExp(
+  `^(?:\\s+(?:[\\w-]+)\\s+){0,5}${NEGATIVE_STATE.source}`,
+  'i',
+);
+
+function wordsSinceLastBoundary(text) {
+  // A long unrelated prefix should not turn a positive claim into a negative
+  // one merely because it mentions `not` somewhere earlier in the paragraph.
+  return text.trim().split(/\s+/).slice(-12).join(' ');
+}
+
+function isDoubleNegative(before, after) {
+  const localBefore = wordsSinceLastBoundary(before);
+  const localAfter = after.trim().slice(0, 80);
+
+  // `does not fail to sandbox`, `not without sandbox`, and
+  // `sandbox is not unsupported` are positive claims (two negations).
+  if (/(?:not|n't)\s+(?:without|no|unsupported|deferred|absent|missing)\b/i.test(localBefore)) return true;
+  if (new RegExp(`(?:not|n't)\\s+${NEGATIVE_ACTION.source}`, 'i').test(localBefore)) return true;
+  if (/\b(?:is|are|was|were|be|been|being)\s+(?:not|n't)\s+(?:unsupported|deferred|absent|missing|unavailable)\b/i.test(localAfter)) return true;
+  return false;
+}
+
+function hasNegativeRelation(text, occurrence) {
+  if (!isProseText(text)) return false;
+  const clause = clauseFor(text, occurrence);
+  const before = clause.before;
+  const after = clause.after;
+  const localBefore = wordsSinceLastBoundary(before);
+  // Keep the leading whitespace: postposed forms use it to distinguish the
+  // capability from the words that follow it (`sandbox is not ...`).
+  const localAfter = after.slice(0, 100);
+
+  // `unsandboxed`/`non-sandboxed` can match at the `sandbox` substring.
+  const adjacentPrefix = text.slice(Math.max(0, occurrence.index - 16), occurrence.index);
+  const lexicalNegative = /(?:^|[\s/'"([{:])(?:un|non[- ]?)$/i.test(adjacentPrefix);
+
+  const negativePrefix = /(?:^|[\s,/'"([{])(?:no|not|without|unsupported|deferred|absent|missing|unavailable|excluded)(?:\s+(?:an?|the|real|actual|proper|secure|runtime|execution|enforcement|support|supported|yet|currently|still))*\s*$/i;
+
+  const negative = lexicalNegative
+    || negativePrefix.test(localBefore)
+    || NEGATIVE_ACTION_AT_END.test(localBefore.slice(-80))
+    // Preserve a negation over a coordinated list (`no sandbox or iframe
+    // support`, `without sandbox, permissions, or signing`). A contrastive
+    // conjunction is already removed by clauseFor, so this cannot leak across
+    // `no sandbox, but sandbox enforcement is implemented`.
+    || /(?:^|[\s,/'"([{])(?:no|not|without|unsupported|deferred|absent|missing|unavailable|excluded)\b[^.!?;:]*\b(?:and|or)\s*$/i.test(localBefore)
+    || NEGATING_VERB.test(localBefore.slice(-60))
+    || NEGATING_MODAL.test(localBefore.slice(-60))
+    || /(?:^|[\s,/'"([{])(?:out\s+of\s+scope|no|not|without|unsupported|deferred|absent|missing|unavailable|excluded)\b[\s\w'-]*$/i.test(localBefore)
+    || /\bnot\s*\.\s*(?:toMatch|toContain|toEqual|toHaveProperty|toThrow)\s*\(/i.test(localBefore)
+    || /^(?:\s*(?:is|are|was|were|be|been|being)\s+)?(?:not|unsupported|deferred|absent|missing|unavailable|out\s+of\s+scope)\b/i.test(localAfter)
+    || /^(?:\s+(?:yet|currently|still))?\s*[,;]?\s*(?:(?:[\w-]+)\s+){0,5}(?:is|are|was|were|remains?|stays?)\s+(?:not|unsupported|deferred|absent|missing|unavailable)\b/i.test(localAfter)
+    || NEGATIVE_SUBJECT_AFTER.test(localAfter);
+
+  if (!negative) return false;
+  if (isDoubleNegative(before, after)) return false;
+  return true;
+}
+
+/**
+ * Scan every regex occurrence and classify it independently.
+ *
+ * @param {string[]} lines raw `rg --line-number --no-heading` output
+ * @param {string} pattern regex passed to rg
+ * @returns {Array<{line:string,text:string,path:string|null,lineNumber:number|null,match:string,index:number,end:number,negative:boolean,clause:string}>}
+ */
+export function scanSemanticClaimOccurrences(lines, pattern) {
+  const occurrences = [];
+  for (const line of lines) {
+    const parsed = parseRipgrepLine(line);
+    for (const occurrence of regexOccurrences(parsed.text, pattern)) {
+      const clause = clauseFor(parsed.text, occurrence);
+      occurrences.push({
+        line,
+        text: parsed.text,
+        path: parsed.path,
+        lineNumber: parsed.lineNumber,
+        match: occurrence.value,
+        index: occurrence.index,
+        end: occurrence.end,
+        negative: hasNegativeRelation(parsed.text, occurrence),
+        clause: clause.text,
+      });
+    }
+  }
+  return occurrences;
+}
+
+/** Return only positive/presence occurrences, retaining precise evidence. */
+export function findSemanticPresenceMatches(lines, pattern) {
+  return scanSemanticClaimOccurrences(lines, pattern).filter((occurrence) => !occurrence.negative);
+}
+
+// Descriptive alias for callers that prefer the scanner terminology.
+export const scanSemanticPresenceMatches = findSemanticPresenceMatches;
+
+/**
+ * Return true only when every matched occurrence on a prose line is an
+ * explicit negative limitation. Code and positive claims are not exempted.
  */
 export function isExplicitNegativeLimitation(line, pattern) {
-  const text = ripgrepText(line);
-  return isProseText(text) && hasNegativeRelation(text, pattern);
+  const occurrences = scanSemanticClaimOccurrences([line], pattern);
+  return occurrences.length > 0 && occurrences.every((occurrence) => occurrence.negative);
 }
 
 /**
- * Filter raw ripgrep lines to semantic presence matches.
+ * Filter raw ripgrep lines to semantic presence matches. A line is retained
+ * when at least one of its regex occurrences is a positive claim.
  *
  * @param {string[]} lines raw `rg --line-number --no-heading` output
  * @param {string} pattern regex passed to rg
  * @returns {string[]}
  */
 export function filterSemanticPresenceMatches(lines, pattern) {
-  return lines.filter((line) => !isExplicitNegativeLimitation(line, pattern));
+  const positiveLines = new Set(findSemanticPresenceMatches(lines, pattern).map((occurrence) => occurrence.line));
+  return lines.filter((line) => positiveLines.has(line));
 }
