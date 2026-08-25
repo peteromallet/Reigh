@@ -4,6 +4,9 @@ import { spawn } from 'node:child_process';
 
 const GRACE_MS = 250;
 const POLL_MS = 40;
+const SCAN_TIMEOUT_MS = 300;
+const SCAN_RETRIES = 3;
+const SCAN_OUTPUT_CAP = 8 * 1024 * 1024;
 
 function emit(value) {
   process.stdout.write(`${JSON.stringify({ protocol: 1, ...value })}\n`);
@@ -23,44 +26,88 @@ function signalGroup(pid, signal) {
   }
 }
 
-function listDescendantPids(rootPid) {
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function scanScopeOnce(scopeKey, scopeToken) {
   if (process.platform === 'win32') return Promise.resolve([]);
-  return new Promise((resolve) => {
-    const probe = spawn('ps', ['-axo', 'pid=,ppid='], {
+  return new Promise((resolve, reject) => {
+    const probe = spawn('ps', ['eww', '-axo', 'pid=,command='], {
       shell: false,
-      stdio: ['ignore', 'pipe', 'ignore'],
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
-    let output = '';
+    const chunks = [];
+    const errors = [];
+    let bytes = 0;
+    let outputTooLarge = false;
+    let settled = false;
+    const finish = (error, result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (error) reject(error);
+      else resolve(result);
+    };
     const timer = setTimeout(() => {
-      probe.kill('SIGKILL');
-      resolve([]);
-    }, 100);
-    probe.stdout.on('data', (chunk) => { output += chunk.toString(); });
-    probe.once('close', () => {
-      clearTimeout(timer);
-      const parents = new Map();
-      for (const line of output.split('\n')) {
-        const match = line.trim().match(/^(\d+)\s+(\d+)$/);
-        if (!match) continue;
-        const pid = Number(match[1]);
-        const ppid = Number(match[2]);
-        if (!parents.has(ppid)) parents.set(ppid, []);
-        parents.get(ppid).push(pid);
-      }
-      const found = [];
-      const queue = [...(parents.get(rootPid) ?? [])];
-      while (queue.length > 0) {
-        const pid = queue.shift();
-        found.push(pid);
-        queue.push(...(parents.get(pid) ?? []));
-      }
-      resolve(found);
+      try { probe.kill('SIGKILL'); } catch { /* already exited */ }
+      finish(new Error(`ps eww timed out after ${SCAN_TIMEOUT_MS}ms`));
+    }, SCAN_TIMEOUT_MS);
+    probe.stdout.on('data', (chunk) => {
+      bytes += chunk.length;
+      if (bytes > SCAN_OUTPUT_CAP) outputTooLarge = true;
+      if (bytes <= SCAN_OUTPUT_CAP) chunks.push(Buffer.from(chunk));
     });
-    probe.once('error', () => {
-      clearTimeout(timer);
-      resolve([]);
+    probe.stderr.on('data', (chunk) => {
+      if (errors.reduce((total, item) => total + item.length, 0) < 4_096) errors.push(Buffer.from(chunk));
+    });
+    probe.once('error', (error) => finish(new Error(`ps eww failed: ${error.message}`)));
+    probe.once('close', (code, signal) => {
+      if (outputTooLarge) {
+        finish(new Error(`ps eww output exceeded ${SCAN_OUTPUT_CAP} bytes`));
+        return;
+      }
+      if (code !== 0) {
+        const detail = Buffer.concat(errors).toString('utf8').trim();
+        finish(new Error(`ps eww exited with ${signal ?? `status ${code}`}${detail ? `: ${detail}` : ''}`));
+        return;
+      }
+      const pattern = new RegExp(`(?:^|\\s)${escapeRegExp(scopeKey)}=${escapeRegExp(scopeToken)}(?:\\s|$)`);
+      const pids = [];
+      for (const line of Buffer.concat(chunks).toString('utf8').split('\n')) {
+        const match = line.match(/^\s*(\d+)\s+(.*)$/);
+        if (match && pattern.test(match[2])) pids.push(Number(match[1]));
+      }
+      finish(null, [...new Set(pids)]);
     });
   });
+}
+
+async function scanScope(scopeKey, scopeToken) {
+  let lastError;
+  for (let attempt = 1; attempt <= SCAN_RETRIES; attempt += 1) {
+    try {
+      return await scanScopeOnce(scopeKey, scopeToken);
+    } catch (error) {
+      lastError = error;
+      if (attempt < SCAN_RETRIES) await delay(POLL_MS);
+    }
+  }
+  throw new Error(`process-scope scan failed after ${SCAN_RETRIES} attempts: ${lastError?.message ?? 'unknown ps failure'}`);
+}
+
+function signalScopedPids(pids, signal, diagnostics) {
+  for (const pid of pids) {
+    try {
+      process.kill(pid, signal);
+    } catch (error) {
+      if (error?.code !== 'ESRCH') diagnostics.push(`pid ${pid}: ${error?.message ?? String(error)}`);
+    }
+  }
 }
 
 function appendCapped(state, chunk, maxBuffer) {
@@ -73,23 +120,37 @@ function appendCapped(state, chunk, maxBuffer) {
 }
 
 async function terminate(child, reason, killSignal, state) {
-  if (!child.pid || child.exitCode !== null || child.signalCode !== null) return;
-  const descendants = await listDescendantPids(child.pid);
-  // The target is a detached group leader. The requested signal is sent first,
-  // then KILL after the grace period, to the negative PID so grandchildren in
-  // the owned group cannot outlive it.
-  for (const pid of descendants.reverse()) signalGroup(pid, killSignal);
-  signalGroup(child.pid, killSignal);
-  state.signal = killSignal;
+  const diagnostics = [];
+  // Keep the detached process-group signal as a fast first step. The scoped
+  // ps eww scan below is authoritative and also catches reparented children.
+  if (child.pid) signalGroup(child.pid, killSignal);
+  const scopeKey = child.scopeKey;
+  const scopeToken = child.scopeToken;
+  if (!scopeKey || !scopeToken) throw new Error('missing process-scope identity during cleanup');
+  const termPids = await scanScope(scopeKey, scopeToken);
+  signalScopedPids(termPids, killSignal, diagnostics);
+  if (diagnostics.length > 0) throw new Error(`scoped TERM failed: ${diagnostics.join('; ')}`);
+  state.signal = reason ? killSignal : null;
   await Promise.race([
     new Promise((resolve) => child.once('close', resolve)),
     new Promise((resolve) => setTimeout(resolve, GRACE_MS)),
   ]);
-  if (child.exitCode === null && child.signalCode === null) {
-    state.signal = 'SIGKILL';
-    signalGroup(child.pid, 'SIGKILL');
+
+  // Descendants are allowed to spawn during TERM. Re-scan before every KILL,
+  // and keep rescanning until the scope is empty so no late child is missed.
+  for (let attempt = 1; attempt <= SCAN_RETRIES + 3; attempt += 1) {
+    const remaining = await scanScope(scopeKey, scopeToken);
+    if (remaining.length === 0) return reason;
+    if (child.pid) signalGroup(child.pid, 'SIGKILL');
+    signalScopedPids(remaining, 'SIGKILL', diagnostics);
+    if (diagnostics.length > 0) throw new Error(`scoped KILL failed: ${diagnostics.join('; ')}`);
+    state.signal = reason ? 'SIGKILL' : null;
+    await delay(POLL_MS);
   }
-  for (const pid of descendants.reverse()) signalGroup(pid, 'SIGKILL');
+  const remaining = await scanScope(scopeKey, scopeToken);
+  if (remaining.length > 0) {
+    throw new Error(`scoped processes survived cleanup: ${remaining.join(',')}`);
+  }
   return reason;
 }
 
@@ -104,13 +165,19 @@ async function main() {
   const termination = { signal: null };
 
   try {
+    const targetEnv = {
+      ...(invocation.env ?? process.env),
+      [invocation.scopeKey]: invocation.scopeToken,
+    };
     child = spawn(invocation.command, invocation.args, {
       cwd: invocation.cwd,
-      env: invocation.env,
+      env: targetEnv,
       shell: false,
       detached: process.platform !== 'win32',
       stdio: ['pipe', 'pipe', 'pipe'],
     });
+    child.scopeKey = invocation.scopeKey;
+    child.scopeToken = invocation.scopeToken;
   } catch (error) {
     emit({
       status: null,
@@ -121,10 +188,14 @@ async function main() {
     return;
   }
 
+  let cleanupPromise;
+  let cleanupError = null;
   const terminateFor = (why) => {
     if (reason) return;
     reason = why;
-    void terminate(child, why, invocation.killSignal, termination);
+    cleanupPromise = terminate(child, why, invocation.killSignal, termination).catch((error) => {
+      cleanupError = { name: error.name, code: 'ECLEANUP', message: error.message };
+    });
   };
   child.stdout.on('data', (chunk) => {
     if (appendCapped(stdout, chunk, invocation.maxBuffer)) terminateFor('output-cap');
@@ -151,6 +222,12 @@ async function main() {
   await new Promise((resolve) => child.once('close', resolve));
   clearTimeout(timer);
   clearInterval(parentWatch);
+  if (!cleanupPromise) {
+    cleanupPromise = terminate(child, null, invocation.killSignal, termination).catch((error) => {
+      cleanupError = { name: error.name, code: 'ECLEANUP', message: error.message };
+    });
+  }
+  await cleanupPromise;
   if (reason === 'parent-abort') return;
 
   emit({
@@ -161,6 +238,7 @@ async function main() {
       : reason === 'timeout'
         ? { name: 'Error', code: 'ETIMEDOUT', message: `command timed out after ${invocation.timeoutMs}ms` }
         : null,
+    cleanupError,
     reason,
     stdout: stdout.data.toString('base64'),
     stderr: stderr.data.toString('base64'),

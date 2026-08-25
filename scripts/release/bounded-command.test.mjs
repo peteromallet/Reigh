@@ -1,6 +1,8 @@
 import { strict as assert } from 'node:assert';
+import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { describe, it } from 'node:test';
+import { Worker } from 'node:worker_threads';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 
@@ -98,7 +100,7 @@ describe('runBoundedCommand', () => {
 
   it('forwards SIGTERM as the first timeout signal and reports SIGKILL only after escalation', () => {
     const termResult = run(
-      "process.on('SIGTERM', () => process.exit(0)); setInterval(() => {}, 1_000)",
+      "process.on('SIGTERM', () => process.exit(0)); process.stdout.write('ready'); setInterval(() => {}, 1_000)",
       { timeoutMs: 50, killSignal: 'SIGTERM', allowFailure: true },
     );
     assert.equal(termResult.failureType, 'timeout');
@@ -106,12 +108,95 @@ describe('runBoundedCommand', () => {
     assert.equal(termResult.signal, 'SIGTERM');
 
     const killResult = run(
-      "process.on('SIGTERM', () => {}); setInterval(() => {}, 1_000)",
+      "process.on('SIGTERM', () => {}); process.stdout.write('ready'); setInterval(() => {}, 1_000)",
       { timeoutMs: 50, killSignal: 'SIGTERM', allowFailure: true },
     );
     assert.equal(killResult.failureType, 'timeout');
     assert.equal(killResult.killSignal, 'SIGTERM');
     assert.equal(killResult.signal, 'SIGKILL');
+  });
+
+  it('cleans a detached unref descendant after the scoped leader exits first', async () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'bounded-command-exited-leader-'));
+    const marker = resolve(root, 'exited-leader-marker');
+    try {
+      const source = [
+        "const { spawn } = require('node:child_process');",
+        `const grandchild = spawn(process.execPath, ['-e', ${JSON.stringify(
+          `setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'orphan'), 700);`,
+        )}], { detached: true, stdio: 'ignore' });`,
+        'grandchild.unref();',
+        'process.exit(0);',
+      ].join('');
+      const result = run(source, { timeoutMs: 1_000, allowFailure: true });
+      assert.equal(result.failureType, 'success');
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 850));
+      assert.equal(existsSync(marker), false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('rescans the scope when a descendant spawns during TERM', async () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'bounded-command-term-spawn-'));
+    const marker = resolve(root, 'term-spawn-marker');
+    try {
+      const source = [
+        "const { spawn } = require('node:child_process');",
+        `process.on('SIGTERM', () => { const child = spawn(process.execPath, ['-e', ${JSON.stringify(
+          `setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'orphan'), 700);`,
+        )}], { detached: true, stdio: 'ignore' }); child.unref(); process.exit(0); });`,
+        "process.stdout.write('ready'); setInterval(() => {}, 1_000);",
+      ].join('');
+      const result = run(source, { timeoutMs: 80, killSignal: 'SIGTERM', allowFailure: true });
+      assert.equal(result.failureType, 'timeout');
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 850));
+      assert.equal(existsSync(marker), false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps twenty concurrent scoped cleanups isolated from an unrelated process', async () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'bounded-command-parallel-scope-'));
+    const unrelated = spawn(NODE, ['-e', 'setInterval(() => {}, 1_000)'], { detached: true, stdio: 'ignore' });
+    unrelated.unref();
+    const moduleUrl = new URL('./bounded-command.mjs', import.meta.url).href;
+    const workerSource = `
+      const { parentPort, workerData } = require('node:worker_threads');
+      import(workerData.moduleUrl).then(({ runBoundedCommand }) => {
+        const result = runBoundedCommand(process.execPath, ['-e', workerData.source], workerData.options);
+        parentPort.postMessage(result.failureType);
+      }).catch((error) => parentPort.postMessage({ error: error.message }));
+    `;
+    try {
+      const workers = Array.from({ length: 20 }, (_, index) => {
+        const marker = resolve(root, `parallel-${index}.marker`);
+        const source = [
+          "const { spawn } = require('node:child_process');",
+          `const child = spawn(process.execPath, ['-e', ${JSON.stringify(
+            `setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'orphan'), 600);`,
+          )}], { detached: true, stdio: 'ignore' });`,
+          'child.unref(); process.exit(0);',
+        ].join('');
+        return new Promise((resolvePromise, reject) => {
+          const worker = new Worker(workerSource, {
+            eval: true,
+            workerData: { moduleUrl, source, options: { ...BASE, timeoutMs: 1_000, allowFailure: true } },
+          });
+          worker.once('message', (message) => { worker.terminate(); resolvePromise(message); });
+          worker.once('error', reject);
+        });
+      });
+      const results = await Promise.all(workers);
+      assert.deepEqual(results, Array(20).fill('success'));
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 750));
+      for (let index = 0; index < 20; index += 1) assert.equal(existsSync(resolve(root, `parallel-${index}.marker`)), false);
+      assert.doesNotThrow(() => process.kill(unrelated.pid, 0));
+    } finally {
+      try { process.kill(unrelated.pid, 'SIGKILL'); } catch { /* already exited */ }
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('kills a detached and unref grandchild before it can leave an orphan marker', async () => {

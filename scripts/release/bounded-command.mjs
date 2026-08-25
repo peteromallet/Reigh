@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { dirname, resolve } from 'node:path';
@@ -11,6 +12,7 @@ const FAILURE_TYPES = new Set([
   'spawn-error',
   'output-cap',
   'timeout',
+  'cleanup-error',
   'unknown',
 ]);
 
@@ -18,6 +20,7 @@ const moduleDir = dirname(fileURLToPath(import.meta.url));
 const WRAPPER_PATH = resolve(moduleDir, 'bounded-command-wrapper.mjs');
 const WRAPPER_PROTOCOL_BYTES = 16 * 1024;
 const TERMINATION_GRACE_MS = 250;
+export const PROCESS_SCOPE_ENV_KEY = 'REIGH_BOUNDED_PROCESS_SCOPE';
 
 function hasOwn(value, key) {
   return Object.prototype.hasOwnProperty.call(value, key);
@@ -162,6 +165,7 @@ function decodeWrapperResult(raw, maxBuffer, redact, tokens) {
       status: result.status ?? null,
       signal: result.signal ?? null,
       error: result.error ?? null,
+      cleanupError: result.cleanupError ?? null,
       reason: result.reason ?? null,
       stdout: Buffer.from(result.stdout ?? '', 'base64'),
       stderr: Buffer.from(result.stderr ?? '', 'base64'),
@@ -195,6 +199,8 @@ export function formatBoundedCommandFailure(result) {
         ? `terminated by ${result.signal}`
         : result.failureType === 'output-cap'
           ? `exceeded the ${result.maxBuffer}-byte output cap`
+          : result.failureType === 'cleanup-error'
+            ? `failed to clean up scoped processes${result.error?.message ? ` (${result.error.message})` : ''}`
           : result.failureType === 'spawn-error'
             ? `failed to spawn${result.error?.code ? ` (${result.error.code})` : ''}`
             : 'failed without a terminal status';
@@ -234,6 +240,10 @@ export function runBoundedCommand(command, args, options = {}) {
     throw new TypeError('redact cannot be used with binary output');
   }
   const startedAt = performance.now();
+  // The scope token is deliberately generated outside the wrapper so the
+  // wrapper itself never inherits it. Only the target receives it, and every
+  // descendant (including detached/reparented descendants) inherits it.
+  const scopeToken = randomBytes(32).toString('hex');
   let raw;
   try {
     if (!existsSync(WRAPPER_PATH)) throw new Error(`bounded command wrapper is missing: ${WRAPPER_PATH}`);
@@ -245,6 +255,8 @@ export function runBoundedCommand(command, args, options = {}) {
       timeoutMs,
       maxBuffer,
       killSignal,
+      scopeKey: PROCESS_SCOPE_ENV_KEY,
+      scopeToken,
       parentPid: process.pid,
       input: options.input === undefined
         ? undefined
@@ -273,7 +285,9 @@ export function runBoundedCommand(command, args, options = {}) {
     ? {
         status: wrapped.status,
         signal: wrapped.signal,
-        error: wrapped.error,
+        error: wrapped.error ?? (wrapped.cleanupError
+          ? { name: 'CleanupError', code: 'ECLEANUP', message: wrapped.cleanupError.message ?? String(wrapped.cleanupError) }
+          : null),
         stdout: wrapped.stdout,
         stderr: wrapped.stderr,
       }
@@ -292,7 +306,9 @@ export function runBoundedCommand(command, args, options = {}) {
         bytes: wrapped.stderrBytes,
       })
     : captureText(raw.stderr, maxBuffer, redact, tokens);
-  const failureType = wrapped?.reason === 'timeout'
+  const failureType = wrapped?.cleanupError
+    ? 'cleanup-error'
+    : wrapped?.reason === 'timeout'
     ? 'timeout'
     : wrapped?.reason === 'output-cap'
       ? 'output-cap'
@@ -321,6 +337,9 @@ export function runBoundedCommand(command, args, options = {}) {
     stderrBytes: stderr.bytes,
     stdoutTruncated: stdout.truncated,
     stderrTruncated: stderr.truncated,
+    cleanupError: wrapped?.cleanupError
+      ? safeError(wrapped.cleanupError, redact, tokens)
+      : null,
   });
   if (!FAILURE_TYPES.has(failureType)) throw new Error(`unhandled bounded command failure type: ${failureType}`);
   if (!result.ok && options.allowFailure !== true) throw new BoundedCommandError(result);

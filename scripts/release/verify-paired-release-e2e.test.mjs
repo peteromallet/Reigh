@@ -358,6 +358,69 @@ describe('paired repository release E2E gate', () => {
     }
   });
 
+  it('reaps a scoped detached descendant when the server leader exits immediately', async () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'paired-readiness-exited-leader-'));
+    const marker = resolve(root, 'orphan-marker');
+    const childScript = resolve(root, 'detached-parent.mjs');
+    writeFileSync(childScript, [
+      "import { spawn } from 'node:child_process';",
+      "import { writeFileSync } from 'node:fs';",
+      `const grandchild = spawn(process.execPath, ['-e', ${JSON.stringify(
+        `setTimeout(() => writeFileSync(${JSON.stringify(marker)}, 'orphan'), 700)`,
+      )}], { detached: true, stdio: 'ignore' });`,
+      'grandchild.unref(); process.exit(0);',
+    ].join('\n'), { mode: 0o700 });
+    const logPath = resolve(root, 'server.log');
+    try {
+      await assert.rejects(
+        startLoggedProcessUntilReady(
+          process.execPath,
+          [childScript],
+          { cwd: root, env: process.env, logPath },
+          async () => { throw new Error('readiness probe rejected'); },
+        ),
+        /readiness probe rejected/,
+      );
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 850));
+      assert.equal(existsSync(marker), false, 'scoped descendant survived after leader exit');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('rescans paired server scope when a descendant spawns during TERM', async () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'paired-readiness-term-spawn-'));
+    const marker = resolve(root, 'term-spawn-marker');
+    const childScript = resolve(root, 'term-parent.mjs');
+    writeFileSync(childScript, [
+      "import { spawn } from 'node:child_process';",
+      "import { writeFileSync } from 'node:fs';",
+      `process.on('SIGTERM', () => { const child = spawn(process.execPath, ['-e', ${JSON.stringify(
+        `setTimeout(() => writeFileSync(${JSON.stringify(marker)}, 'orphan'), 700)`,
+      )}], { detached: true, stdio: 'ignore' }); child.unref(); process.exit(0); });`,
+      "process.stdout.write('ready'); setInterval(() => {}, 1_000);",
+    ].join('\n'), { mode: 0o700 });
+    const logPath = resolve(root, 'server.log');
+    try {
+      await assert.rejects(
+        startLoggedProcessUntilReady(
+          process.execPath,
+          [childScript],
+          { cwd: root, env: process.env, logPath },
+          async (child) => {
+            await new Promise((resolvePromise) => child.stdout.once('data', resolvePromise));
+            throw new Error('readiness probe rejected after handshake');
+          },
+        ),
+        /readiness probe rejected after handshake/,
+      );
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 850));
+      assert.equal(existsSync(marker), false, 'TERM-spawned scoped descendant survived cleanup');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('attests every native tool, exact build identity, traineddata bytes, and platform', () => {
     const root = mkdtempSync(resolve(tmpdir(), 'paired-native-attestation-'));
     const bin = resolve(root, 'bin');

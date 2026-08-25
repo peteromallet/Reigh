@@ -28,7 +28,7 @@ import {
   inspectCandidateController,
   resolveAnnotatedCandidateTag,
 } from './reigh-release-provenance.mjs';
-import { runBoundedCommand } from './bounded-command.mjs';
+import { PROCESS_SCOPE_ENV_KEY, runBoundedCommand } from './bounded-command.mjs';
 import {
   assertPinnedPlatform,
   attestNativeTools,
@@ -986,9 +986,12 @@ export function requestRawHttp(url, { headers = {}, timeoutMs = 10_000 } = {}) {
 
 function startLoggedProcess(command, args, { cwd, env, logPath }) {
   const log = createWriteStream(logPath, { flags: 'wx', mode: 0o600 });
+  const scopeToken = randomBytes(32).toString('hex');
   const child = spawn(command, args, {
     cwd,
-    env,
+    // The scope is visible only to this server and descendants. The parent
+    // verifier and its ps probes never inherit the token.
+    env: { ...(env ?? process.env), [PROCESS_SCOPE_ENV_KEY]: scopeToken },
     detached: process.platform !== 'win32',
     shell: false,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -999,7 +1002,9 @@ function startLoggedProcess(command, args, { cwd, env, logPath }) {
     child.pairedSpawnError = error;
     log.write(`\n${LABEL} spawn error: ${error.message}\n`);
   });
-  return { child, log };
+  child.scopeKey = PROCESS_SCOPE_ENV_KEY;
+  child.scopeToken = scopeToken;
+  return { child, log, scopeKey: PROCESS_SCOPE_ENV_KEY, scopeToken };
 }
 
 /**
@@ -1039,138 +1044,109 @@ async function stopLoggedProcess(handle) {
       new Promise((resolvePromise) => setTimeout(() => resolvePromise(false), timeoutMs)),
     ]);
   };
-  const processTable = child.pid && process.platform !== 'win32'
-    ? await readProcessTable()
-    : [];
-  const rootIdentity = child.pid && process.platform !== 'win32'
-    ? processTable.find((entry) => entry.pid === child.pid)
-    : null;
-  // Detached descendants have their own process group, so capture the whole
-  // tree before terminating the leader. Each identity is re-validated before
-  // signalling; a PID that was reused for an unrelated process is skipped.
-  const processTree = rootIdentity ? await snapshotProcessTree(rootIdentity.pid, [], processTable) : [];
   if (child.pid && process.platform === 'win32') {
     if (isRunning()) child.kill('SIGTERM');
     await waitForExit(5_000);
     if (isRunning()) child.kill('SIGKILL');
     if (!await waitForExit(5_000)) fail(`server process ${child.pid} did not terminate after SIGKILL`);
-  } else if (rootIdentity) {
-    await signalProcessTree(processTree, 'SIGTERM');
-    await signalOwnedProcessGroup(rootIdentity, 'SIGTERM');
+  } else if (child.pid) {
+    // The process group is a fast first step. Exact scope identity is the
+    // authority and catches detached/reparented descendants as well as a
+    // leader that exited before readiness rejected.
+    try { process.kill(-child.pid, 'SIGTERM'); } catch (error) {
+      if (error?.code !== 'ESRCH') throw error;
+    }
+    const termPids = await scanScopedPids(handle.scopeKey, handle.scopeToken);
+    signalScopedPids(termPids, 'SIGTERM');
     await waitForExit(5_000);
 
-    // Re-scan immediately before KILL so children created during the TERM
-    // grace period are included while their parent identity is still valid.
-    const refreshedTree = await snapshotProcessTree(rootIdentity.pid, processTree);
-    await signalProcessTree(refreshedTree, 'SIGKILL');
-    await signalOwnedProcessGroup(rootIdentity, 'SIGKILL');
-    if (!await waitForExit(5_000) || (await waitForProcessIdentitiesGone(refreshedTree, 5_000)) === false) {
-      fail(`server process tree rooted at ${rootIdentity.pid} did not terminate after SIGKILL`);
+    // Re-scan immediately before each KILL so children created during TERM
+    // (and descendants of already-reparented children) are included.
+    let remaining = [];
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      remaining = await scanScopedPids(handle.scopeKey, handle.scopeToken);
+      if (remaining.length === 0) break;
+      try { process.kill(-child.pid, 'SIGKILL'); } catch (error) {
+        if (error?.code !== 'ESRCH') throw error;
+      }
+      signalScopedPids(remaining, 'SIGKILL');
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 40));
+    }
+    if (remaining.length > 0 || !await waitForExit(5_000)) {
+      fail(`server process scope ${handle.scopeToken} did not terminate after SIGKILL (remaining=${remaining.join(',')})`);
     }
   }
   await new Promise((resolvePromise) => log.end(resolvePromise));
   handle.stopped = true;
 }
 
-/**
- * Read stable POSIX process identities. `lstart` plus the full command line
- * protects the targeted PID from being reused during bounded cleanup.
- */
-function readProcessTable() {
+function readScopedPidsOnce(scopeKey, scopeToken) {
   if (process.platform === 'win32') return Promise.resolve([]);
-  return new Promise((resolvePromise) => {
-    const ps = spawn('ps', ['-axo', 'pid=,ppid=,lstart=,command='], {
+  return new Promise((resolvePromise, rejectPromise) => {
+    const ps = spawn('ps', ['eww', '-axo', 'pid=,command='], {
       stdio: ['ignore', 'pipe', 'ignore'],
     });
     const chunks = [];
+    let bytes = 0;
+    let outputTooLarge = false;
     let settled = false;
-    const finish = (entries) => {
+    const finish = (error, entries = []) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      resolvePromise(entries);
+      if (error) rejectPromise(error);
+      else resolvePromise(entries);
     };
     const timer = setTimeout(() => {
       try { ps.kill('SIGKILL'); } catch { /* already exited */ }
-      finish([]);
+      finish(new Error('ps eww timed out after 1,000ms'));
     }, 1_000);
-    ps.stdout.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
-    ps.once('error', () => finish([]));
-    ps.once('close', () => {
-      const output = Buffer.concat(chunks).toString('utf8');
-      finish(output.split('\n').flatMap((line) => {
-        const match = line.match(/^\s*(\d+)\s+(\d+)\s+(.{24})\s+(.*)$/);
-        if (!match) return [];
-        return [{
-          pid: Number(match[1]),
-          ppid: Number(match[2]),
-          startTime: match[3].trim(),
-          command: match[4].trim(),
-          depth: 0,
-        }];
-      }));
+    ps.stdout.on('data', (chunk) => {
+      bytes += chunk.length;
+      if (bytes > 8 * 1024 * 1024) outputTooLarge = true;
+      if (bytes <= 8 * 1024 * 1024) chunks.push(Buffer.from(chunk));
+    });
+    ps.once('error', (error) => finish(new Error(`ps eww failed: ${error.message}`)));
+    ps.once('close', (code) => {
+      if (outputTooLarge) {
+        finish(new Error('ps eww output exceeded 8388608 bytes'));
+        return;
+      }
+      if (code !== 0) {
+        finish(new Error(`ps eww exited with status ${code}`));
+        return;
+      }
+      const escaped = String(scopeToken).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const key = String(scopeKey).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const pattern = new RegExp(`(?:^|\\s)${key}=${escaped}(?:\\s|$)`);
+      const pids = Buffer.concat(chunks).toString('utf8').split('\n').flatMap((line) => {
+        const match = line.match(/^\s*(\d+)\s+(.*)$/);
+        return match && pattern.test(match[2]) ? [Number(match[1])] : [];
+      });
+      finish(null, [...new Set(pids)]);
     });
   });
 }
 
-function sameProcess(left, right) {
-  return Boolean(left && right)
-    && left.pid === right.pid
-    && left.startTime === right.startTime
-    && left.command === right.command;
+async function scanScopedPids(scopeKey, scopeToken) {
+  let lastError;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      return await readScopedPidsOnce(scopeKey, scopeToken);
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 40));
+    }
+  }
+  throw new Error(`process-scope scan failed after 3 attempts: ${lastError?.message ?? 'unknown ps failure'}`);
 }
 
-async function snapshotProcessTree(rootPid, previous = [], table = null) {
-  table ??= await readProcessTable();
-  const root = table.find((entry) => entry.pid === rootPid);
-  const prior = new Map(previous.map((entry) => [entry.pid, entry]));
-  if (!root && !prior.has(rootPid)) return previous;
-  const byParent = new Map();
-  for (const entry of table) {
-    const siblings = byParent.get(entry.ppid) ?? [];
-    siblings.push(entry);
-    byParent.set(entry.ppid, siblings);
+function signalScopedPids(pids, signal) {
+  for (const pid of pids) {
+    try { process.kill(pid, signal); } catch (error) {
+      if (error?.code !== 'ESRCH') throw new Error(`scoped ${signal} failed for pid ${pid}: ${error.message}`);
+    }
   }
-  const found = new Map();
-  const visit = (entry, depth) => {
-    const existing = found.get(entry.pid);
-    if (existing && existing.depth <= depth) return;
-    found.set(entry.pid, { ...entry, depth });
-    for (const child of byParent.get(entry.pid) ?? []) visit(child, depth + 1);
-  };
-  if (root) visit(root, 0);
-  // Preserve descendants that have already been reparented after their
-  // leader exited; their captured identity remains safe to target.
-  for (const entry of prior.values()) {
-    if (!found.has(entry.pid)) found.set(entry.pid, entry);
-  }
-  return [...found.values()].sort((left, right) => right.depth - left.depth || right.pid - left.pid);
-}
-
-async function waitForProcessIdentitiesGone(identities, timeoutMs) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const table = await readProcessTable();
-    if (!identities.some((entry) => table.some((current) => sameProcess(entry, current)))) return true;
-    await new Promise((resolvePromise) => setTimeout(resolvePromise, 50));
-  }
-  const table = await readProcessTable();
-  return !identities.some((entry) => table.some((current) => sameProcess(entry, current)));
-}
-
-async function signalProcessTree(identities, signal) {
-  const current = await readProcessTable();
-  for (const identity of [...identities].sort((left, right) => right.depth - left.depth || right.pid - left.pid)) {
-    const match = current.find((entry) => sameProcess(entry, identity));
-    if (!match) continue;
-    try { process.kill(identity.pid, signal); } catch { /* exited between scan and signal */ }
-  }
-}
-
-async function signalOwnedProcessGroup(rootIdentity, signal) {
-  const current = (await readProcessTable()).find((entry) => sameProcess(entry, rootIdentity));
-  if (!current) return;
-  try { process.kill(-rootIdentity.pid, signal); } catch { /* group already gone */ }
 }
 
 async function stopLoggedProcesses(handles) {
