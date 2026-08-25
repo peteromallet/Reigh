@@ -47,33 +47,13 @@ const SEED_ROOT = process.env.ASTRID_SEED_ROOT ? resolve(process.env.ASTRID_SEED
 const TIMELINE_ID = '11111111-1111-1111-1111-111111111111';
 const TIMELINE_ULID = '01JM4K5N7P0000000000000017';
 const PROJECT = { slug: 'demo-project', name: 'Demo Project' };
+const OTHER_TIMELINE_ID = '22222222-2222-2222-2222-222222222222';
+const OTHER_TIMELINE_ULID = '01JM4K5N7P0000000000000018';
+const OTHER_PROJECT = { slug: 'other-project', name: 'Other Project' };
 const BRIDGE_TOKEN = process.env.ASTRID_BRIDGE_TOKEN ?? randomBytes(32).toString('hex');
 
 function seed() {
-  const projectDir = join(SEED_ROOT, PROJECT.slug);
-  mkdirSync(join(projectDir, 'timelines', TIMELINE_ULID), { recursive: true });
-  writeFileSync(join(projectDir, 'project.json'), JSON.stringify({
-    created_at: '2026-08-11T00:00:00Z',
-    name: PROJECT.name,
-    schema_version: 1,
-    slug: PROJECT.slug,
-    updated_at: '2026-08-11T00:00:00Z',
-    default_timeline_id: TIMELINE_ID,
-  }, null, 2));
-
-  const home = join(projectDir, 'timelines', TIMELINE_ULID);
-  writeFileSync(join(home, 'display.json'), JSON.stringify({
-    schema_version: 1,
-    slug: 'demo-timeline',
-    name: 'Demo Timeline',
-    is_default: true,
-  }, null, 2));
-  writeFileSync(join(home, 'assembly.identity.json'), JSON.stringify({
-    timeline_id: TIMELINE_ID,
-    provenance: 'created',
-    backend: 'local_fs',
-  }, null, 2));
-  writeFileSync(join(home, 'assembly.json'), JSON.stringify({
+  const config = {
     output: { resolution: '1920x1080', fps: 24, file: 'output.mp4' },
     clips: [
       { id: 'clip-1', track: 'V1', at: 0, clipType: 'media', hold: 4, asset: 'example-image1.jpg' },
@@ -83,8 +63,39 @@ function seed() {
       { id: 'V2', kind: 'visual', label: 'Video 2' },
       { id: 'A1', kind: 'audio', label: 'Audio' },
     ],
-  }, null, 2));
+  };
 
+  const writeProject = (project, timeline, timelineUlid, timelineSlug, timelineName) => {
+    const projectDir = join(SEED_ROOT, project.slug);
+    mkdirSync(join(projectDir, 'timelines', timelineUlid), { recursive: true });
+    writeFileSync(join(projectDir, 'project.json'), JSON.stringify({
+      created_at: '2026-08-11T00:00:00Z',
+      name: project.name,
+      schema_version: 1,
+      slug: project.slug,
+      updated_at: '2026-08-11T00:00:00Z',
+      default_timeline_id: timeline,
+    }, null, 2));
+
+    const home = join(projectDir, 'timelines', timelineUlid);
+    writeFileSync(join(home, 'display.json'), JSON.stringify({
+      schema_version: 1,
+      slug: timelineSlug,
+      name: timelineName,
+      is_default: true,
+    }, null, 2));
+    writeFileSync(join(home, 'assembly.identity.json'), JSON.stringify({
+      timeline_id: timeline,
+      provenance: 'created',
+      backend: 'local_fs',
+    }, null, 2));
+    writeFileSync(join(home, 'assembly.json'), JSON.stringify(config, null, 2));
+  };
+
+  writeProject(PROJECT, TIMELINE_ID, TIMELINE_ULID, 'demo-timeline', 'Demo Timeline');
+  writeProject(OTHER_PROJECT, OTHER_TIMELINE_ID, OTHER_TIMELINE_ULID, 'other-timeline', 'Other Timeline');
+
+  const projectDir = join(SEED_ROOT, PROJECT.slug);
   const sourcesDir = join(projectDir, 'sources');
   mkdirSync(sourcesDir, { recursive: true });
   const sourcePath = join(sourcesDir, 'example-image1.jpg');
@@ -310,6 +321,20 @@ function registerInBridgeRegistry(astrid, { sourcePath }) {
       '--config', JSON.stringify(config), '--registry', JSON.stringify(registry)],
     cliEnv,
     'timeline registration',
+  );
+  runAstridJson(
+    astrid,
+    ['projects', 'create', OTHER_PROJECT.slug, '--name', OTHER_PROJECT.name],
+    cliEnv,
+    'cross-project registration',
+  );
+  runAstridJson(
+    astrid,
+    ['timelines', 'create', 'other-timeline', '--project', OTHER_PROJECT.slug,
+      '--name', 'Other Timeline', '--default',
+      '--config', JSON.stringify(config), '--registry', JSON.stringify({ assets: {} })],
+    cliEnv,
+    'cross-project timeline registration',
   );
 }
 
