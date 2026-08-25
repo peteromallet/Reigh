@@ -2,8 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
+import { queryKeys } from '@/shared/lib/queryKeys';
 
 // Mock supabase
+const mockIsDeferredCloudDataAuthority = vi.hoisted(() => vi.fn(() => true));
 const mockFrom = vi.fn();
 const mockRpc = vi.fn();
 const mockResolveGenerationProjectScope = vi.fn();
@@ -13,6 +15,10 @@ vi.mock('@/integrations/supabase/client', () => ({
     from: (...args: unknown[]) => mockFrom(...args),
     rpc: (...args: unknown[]) => mockRpc(...args),
   }),
+}));
+
+vi.mock('@/app/runtime/dataAuthority.ts', () => ({
+  isDeferredCloudDataAuthority: mockIsDeferredCloudDataAuthority,
 }));
 
 vi.mock('@/shared/lib/tasks/generationTaskRepository', () => ({
@@ -60,6 +66,7 @@ function createWrapper() {
 describe('useDeleteGeneration', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockIsDeferredCloudDataAuthority.mockReturnValue(true);
     mockResolveGenerationProjectScope.mockResolvedValue({
       generationId: 'gen-123',
       projectId: 'project-1',
@@ -105,11 +112,25 @@ describe('useDeleteGeneration', () => {
 
     await expect(result.current.mutateAsync({ id: 'gen-123', projectId: 'project-1' })).rejects.toThrow('Not found');
   });
+
+  it('rejects in Astrid authority before repository or client calls', async () => {
+    mockIsDeferredCloudDataAuthority.mockReturnValue(false);
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useDeleteGeneration(), { wrapper });
+
+    await expect(result.current.mutateAsync({ id: 'gen-123', projectId: 'project-1' }))
+      .rejects.toMatchObject({ code: 'capability_unavailable' });
+
+    expect(mockResolveGenerationProjectScope).not.toHaveBeenCalled();
+    expect(mockFrom).not.toHaveBeenCalled();
+  });
 });
 
 describe('useDeleteVariant', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockIsDeferredCloudDataAuthority.mockReturnValue(true);
     mockResolveVariantProjectScope.mockResolvedValue({
       variantId: 'variant-123',
       generationId: 'gen-123',
@@ -138,6 +159,19 @@ describe('useDeleteVariant', () => {
 
     expect(mockFrom).toHaveBeenCalledWith('generation_variants');
     expect(deleteVariantTypeNeq).toHaveBeenCalledWith('variant_type', 'original');
+  });
+
+  it('rejects in Astrid authority before repository or client calls', async () => {
+    mockIsDeferredCloudDataAuthority.mockReturnValue(false);
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useDeleteVariant(), { wrapper });
+
+    await expect(result.current.mutateAsync({ id: 'variant-123', projectId: 'project-1' }))
+      .rejects.toMatchObject({ code: 'capability_unavailable' });
+
+    expect(mockResolveVariantProjectScope).not.toHaveBeenCalled();
+    expect(mockFrom).not.toHaveBeenCalled();
   });
 });
 
@@ -247,6 +281,7 @@ describe('useCreateGeneration', () => {
 describe('useToggleGenerationStar', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockIsDeferredCloudDataAuthority.mockReturnValue(true);
     mockResolveGenerationProjectScope.mockResolvedValue({
       generationId: 'gen-123',
       projectId: 'project-1',
@@ -339,5 +374,27 @@ describe('useToggleGenerationStar', () => {
         await result.current.mutateAsync({ id: 'gen-123', starred: true, projectId: 'project-1' });
       })
     ).rejects.toThrow('No rows updated');
+  });
+
+  it('rejects in Astrid authority without optimistic cache drift or repository calls', async () => {
+    mockIsDeferredCloudDataAuthority.mockReturnValue(false);
+    const { wrapper, queryClient } = createWrapper();
+    const key = queryKeys.unified.byProject('project-1', 1, 50, null, false);
+    const previous = {
+      items: [{ id: 'gen-123', starred: false }],
+    };
+    queryClient.setQueryData(key, previous);
+
+    const { result } = renderHook(() => useToggleGenerationStar(), { wrapper });
+
+    await expect(result.current.mutateAsync({
+      id: 'gen-123',
+      starred: true,
+      projectId: 'project-1',
+    })).rejects.toMatchObject({ code: 'capability_unavailable' });
+
+    expect(queryClient.getQueryData(key)).toEqual(previous);
+    expect(mockResolveGenerationProjectScope).not.toHaveBeenCalled();
+    expect(mockFrom).not.toHaveBeenCalled();
   });
 });

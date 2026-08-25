@@ -16,6 +16,7 @@
  */
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { isDeferredCloudDataAuthority } from '@/app/runtime/dataAuthority.ts';
 import type { Json } from '@/integrations/supabase/jsonTypes';
 import {
   createExternalUploadGeneration,
@@ -36,6 +37,7 @@ import { coerceGenerationRowDto, mapGenerationRowDtoToRow } from '@/domains/gene
 import { resourceQueryKeys } from '@/shared/lib/queryKeys/resources';
 import { settingsQueryKeys } from '@/shared/lib/queryKeys/settings';
 import { SETTINGS_IDS } from '@/shared/lib/settingsIds';
+import { bridgeCapabilityUnavailable } from '@/integrations/astrid/capability';
 
 // ===== Helper Functions (internal) =====
 
@@ -59,6 +61,17 @@ interface CreateGenerationInput {
   thumbnailUrl?: string;
   resolution?: string;
   aspectRatio?: string;
+}
+
+function assertDeferredCloudGenerationMutation(operation: string): void {
+  if (isDeferredCloudDataAuthority()) {
+    return;
+  }
+
+  throw bridgeCapabilityUnavailable(
+    operation,
+    'Use an Astrid pack command after generation mutation routes are installed.',
+  );
 }
 
 function buildExternalUploadGenerationParams(input: CreateGenerationInput): ExternalUploadGenerationParams {
@@ -126,6 +139,7 @@ async function toggleGenerationStar(params: ScopedGenerationInput & { starred: b
  * Delete a generation with project-scoped verification.
  */
 async function deleteGenerationScoped(input: ScopedGenerationInput): Promise<void> {
+  assertDeferredCloudGenerationMutation('delete a generation');
   await deleteGenerationInProject(input);
 }
 
@@ -133,6 +147,7 @@ async function deleteGenerationScoped(input: ScopedGenerationInput): Promise<voi
  * Delete a variant with project-scoped verification via its parent generation.
  */
 async function deleteVariantScoped(input: ScopedVariantInput): Promise<void> {
+  assertDeferredCloudGenerationMutation('delete a generation variant');
   await deleteVariantInProject(input);
 }
 
@@ -206,9 +221,11 @@ export function useToggleGenerationStar() {
 
   return useMutation({
     mutationFn: ({ id, starred, projectId }: { id: string; starred: boolean; projectId: string; shotId?: string }) => {
+      assertDeferredCloudGenerationMutation('toggle a generation star');
       return toggleGenerationStar({ id, starred, projectId });
     },
     onMutate: async ({ id, starred, shotId }) => {
+      assertDeferredCloudGenerationMutation('toggle a generation star');
       return applyOptimisticGenerationStarUpdate(queryClient, {
         generationId: id,
         starred,
