@@ -352,6 +352,76 @@ describe('BrowserLocalFullSnapshotStore', () => {
       },
     );
 
+    it.each([
+      ['disk-full', 'QuotaExceededError'],
+      ['crash-during-durable-write', 'AbortError'],
+    ] as const)(
+      'release matrix: classifies %s, preserves atomic state, and recovers after restart',
+      async (failure, errorName) => {
+        const store = new BrowserLocalFullSnapshotStore(SCOPE_A);
+        const before = makeFullSnapshot(
+          { packs: { stable: { extensionId: 'stable', version: '1.0.0' } } },
+          {
+            'proposal-stable': {
+              id: 'proposal-stable',
+              extensionId: 'stable',
+              status: 'pending',
+              payload: { revision: 1 },
+              createdAt: '2026-01-01T00:00:00.000Z',
+              updatedAt: '2026-01-01T00:00:00.000Z',
+            },
+          },
+        );
+        const after = makeFullSnapshot(
+          { packs: { recovered: { extensionId: 'recovered', version: '2.0.0' } } },
+          {
+            'proposal-recovered': {
+              id: 'proposal-recovered',
+              extensionId: 'recovered',
+              status: 'accepted',
+              payload: { revision: 2 },
+              createdAt: '2026-01-02T00:00:00.000Z',
+              updatedAt: '2026-01-02T00:00:00.000Z',
+            },
+          },
+        );
+        await store.saveSnapshot(before);
+
+        const workingIndexedDb = globalThis.indexedDB;
+        (globalThis as Record<string, unknown>).indexedDB = {
+          open() {
+            throw new DOMException('injected durable write failure', errorName);
+          },
+        } as unknown as IDBFactory;
+
+        try {
+          await expect(store.saveSnapshot(after)).rejects.toMatchObject({
+            name: 'ExtensionPersistenceWriteError',
+            kind: failure === 'disk-full' ? 'quota-exceeded' : 'write-interrupted',
+            operation: 'snapshot-write',
+          } satisfies Partial<ExtensionPersistenceWriteError>);
+        } finally {
+          (globalThis as Record<string, unknown>).indexedDB = workingIndexedDb;
+        }
+
+        // The failed attempt may have refreshed the compatibility mirror, but
+        // the authoritative record remains the old complete snapshot.
+        const afterFailure = JSON.parse((await store.loadSnapshot())!);
+        expect(afterFailure.packs.stable).toBeDefined();
+        expect(afterFailure.packs.recovered).toBeUndefined();
+        expect(Object.keys(afterFailure.proposals)).toEqual(['proposal-stable']);
+
+        // Retry after the injected fault is removed, then prove a fresh
+        // service/store observes the complete replacement after restart.
+        await store.saveSnapshot(after);
+        const restarted = new BrowserLocalFullSnapshotStore(SCOPE_A);
+        const recovered = JSON.parse((await restarted.loadSnapshot())!);
+        expect(recovered.packs.recovered).toBeDefined();
+        expect(recovered.packs.stable).toBeUndefined();
+        expect(Object.keys(recovered.proposals)).toEqual(['proposal-recovered']);
+      },
+    );
+
     it('does not report a state-only fallback as durable over an older atomic snapshot', async () => {
       const store = new BrowserLocalFullSnapshotStore(SCOPE_A);
       await store.saveSnapshot(makeFullSnapshot({
