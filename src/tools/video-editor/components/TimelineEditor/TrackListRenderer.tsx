@@ -28,6 +28,81 @@ import {
   type ResizeOverride,
 } from './timeline-canvas-constants.ts';
 
+export interface ActionVerticalPlacement {
+  readonly lane: number;
+  readonly laneCount: number;
+}
+
+interface ActionVerticalPlacementOptions {
+  readonly actions: readonly TimelineAction[];
+  readonly pixelsPerSecond: number;
+  readonly resizeHandleWidth: number;
+  readonly shouldStack?: (action: TimelineAction, row: TimelineRow) => boolean;
+  readonly row: TimelineRow;
+}
+
+/**
+ * Partition only the caller-designated action kinds whose rendered minimum
+ * width would otherwise make their DOM hit targets overlap. The horizontal
+ * interval and width remain untouched; this helper changes only vertical
+ * placement, and therefore leaves ordinary clips on their existing geometry.
+ */
+export function computeActionVerticalPlacements({
+  actions,
+  pixelsPerSecond,
+  resizeHandleWidth,
+  shouldStack,
+  row,
+}: ActionVerticalPlacementOptions): ReadonlyMap<string, ActionVerticalPlacement> {
+  const placements = new Map<string, ActionVerticalPlacement>();
+  const candidates = actions
+    .map((action, sourceIndex) => ({ action, sourceIndex }))
+    .filter(({ action }) => shouldStack?.(action, row) ?? false)
+    .sort((left, right) => (
+      left.action.start - right.action.start
+      || left.action.id.localeCompare(right.action.id)
+      || left.sourceIndex - right.sourceIndex
+    ));
+  const minWidthSeconds = resizeHandleWidth * 3 / Math.max(pixelsPerSecond, Number.EPSILON);
+  let group: Array<{ id: string; lane: number }> = [];
+  let laneEnds: number[] = [];
+  let groupEnd = Number.NEGATIVE_INFINITY;
+
+  const finishGroup = () => {
+    if (group.length === 0) return;
+    const laneCount = Math.max(...group.map(({ lane }) => lane)) + 1;
+    for (const { id, lane } of group) placements.set(id, { lane, laneCount });
+    group = [];
+    laneEnds = [];
+    groupEnd = Number.NEGATIVE_INFINITY;
+  };
+
+  for (const { action } of candidates) {
+    const start = action.start;
+    const end = Math.max(action.end, start + minWidthSeconds);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+      placements.set(action.id, { lane: 0, laneCount: 1 });
+      continue;
+    }
+    if (group.length > 0 && start >= groupEnd) finishGroup();
+    let lane = laneEnds.findIndex((laneEnd) => laneEnd <= start);
+    if (lane === -1) {
+      lane = laneEnds.length;
+      laneEnds.push(end);
+    } else {
+      laneEnds[lane] = end;
+    }
+    group.push({ id: action.id, lane });
+    groupEnd = Math.max(groupEnd, end);
+  }
+  finishGroup();
+
+  for (const action of actions) {
+    if (!placements.has(action.id)) placements.set(action.id, { lane: 0, laneCount: 1 });
+  }
+  return placements;
+}
+
 interface SortableRowProps {
   row: TimelineRow;
   track: TrackDefinition;
@@ -40,6 +115,7 @@ interface SortableRowProps {
   resizePreviewSnapshot: Readonly<Record<string, ResizeOverride>>;
   resizeHandleWidth: number;
   getActionRender?: (action: TimelineAction, row: TimelineRow, width: number) => ReactNode;
+  shouldStackOverlappingActions?: (action: TimelineAction, row: TimelineRow) => boolean;
   onSelectTrack: (trackId: string) => void;
   onTrackChange: (trackId: string, patch: Partial<TrackDefinition>) => void;
   onRemoveTrack: (trackId: string) => void;
@@ -54,6 +130,7 @@ interface RowActionLayerProps {
   resizePreviewSnapshot: Readonly<Record<string, ResizeOverride>>;
   resizeHandleWidth: number;
   getActionRender?: (action: TimelineAction, row: TimelineRow, width: number) => ReactNode;
+  shouldStackOverlappingActions?: (action: TimelineAction, row: TimelineRow) => boolean;
 }
 
 interface TrackListRendererProps {
@@ -68,6 +145,7 @@ interface TrackListRendererProps {
   rowResizePreview: Readonly<Record<string, ResizeOverride>>[];
   resizeHandleWidth: number;
   getActionRender?: (action: TimelineAction, row: TimelineRow, width: number) => ReactNode;
+  shouldStackOverlappingActions?: (action: TimelineAction, row: TimelineRow) => boolean;
   onSelectTrack: (trackId: string) => void;
   onTrackChange: (trackId: string, patch: Partial<TrackDefinition>) => void;
   onRemoveTrack: (trackId: string) => void;
@@ -87,6 +165,7 @@ function SortableRow({
   resizePreviewSnapshot,
   resizeHandleWidth,
   getActionRender,
+  shouldStackOverlappingActions,
   onSelectTrack,
   onTrackChange,
   onRemoveTrack,
@@ -134,6 +213,7 @@ function SortableRow({
         resizePreviewSnapshot={resizePreviewSnapshot}
         resizeHandleWidth={resizeHandleWidth}
         getActionRender={getActionRender}
+        shouldStackOverlappingActions={shouldStackOverlappingActions}
       />
     </div>
   );
@@ -148,15 +228,25 @@ function RowActionLayer({
   resizePreviewSnapshot,
   resizeHandleWidth,
   getActionRender,
+  shouldStackOverlappingActions,
 }: RowActionLayerProps) {
   const actionHeight = Math.max(12, rowHeight - ACTION_VERTICAL_MARGIN * 2);
+  const renderedActions = row.actions.map((action) => {
+    const override = resizePreviewSnapshot[action.id];
+    return override ? { ...action, ...override } : action;
+  });
+  const placements = computeActionVerticalPlacements({
+    actions: renderedActions,
+    pixelsPerSecond,
+    resizeHandleWidth,
+    shouldStack: shouldStackOverlappingActions,
+    row,
+  });
 
-  return row.actions.map((action) => {
+  return renderedActions.map((renderedAction) => {
     // Render both handles on every clip — including grouped children.
     // The document-level resize gesture hook resolves whether a handle
     // starts a free or group resize session.
-    const override = resizePreviewSnapshot[action.id];
-    const renderedAction = override ? { ...action, ...override } : action;
     const left = startLeft + renderedAction.start * pixelsPerSecond;
     // Keep one handle-width of selectable clip body between the two trim
     // handles. A two-handle minimum left short captions completely covered by
@@ -166,32 +256,35 @@ function RowActionLayer({
       (renderedAction.end - renderedAction.start) * pixelsPerSecond,
       resizeHandleWidth * 3,
     );
+    const placement = placements.get(renderedAction.id) ?? { lane: 0, laneCount: 1 };
+    const laneHeight = actionHeight / placement.laneCount;
 
     return (
       <div
-        key={action.id}
+        key={renderedAction.id}
         className={cn(
           'group absolute',
-          clampedActionId === action.id && 'rounded-md ring-2 ring-[var(--video-editor-warning-ring)] ring-offset-1 ring-offset-background',
+          clampedActionId === renderedAction.id && 'rounded-md ring-2 ring-[var(--video-editor-warning-ring)] ring-offset-1 ring-offset-background',
         )}
-        {...actionSlotAttrs(action.id, row.id)}
+        {...actionSlotAttrs(renderedAction.id, row.id)}
         style={{
           left,
-          top: ACTION_VERTICAL_MARGIN,
+          top: ACTION_VERTICAL_MARGIN + placement.lane * laneHeight,
           width,
-          height: actionHeight,
+          height: laneHeight,
+          ...(placement.laneCount > 1 ? { zIndex: placement.lane + 1 } : {}),
         }}
       >
         {getActionRender?.(renderedAction, row, width)}
         <div
           className="absolute inset-y-0 left-0 z-10 cursor-ew-resize rounded-l-sm border-l border-[color:var(--video-editor-accent-ring)] bg-transparent transition-colors group-hover:bg-[var(--video-editor-accent-bg)]"
           style={{ width: resizeHandleWidth }}
-          {...resizeHandleAttrs('left', action.id, row.id)}
+          {...resizeHandleAttrs('left', renderedAction.id, row.id)}
         />
         <div
           className="absolute inset-y-0 right-0 z-10 cursor-ew-resize rounded-r-sm border-r border-[color:var(--video-editor-accent-ring)] bg-transparent transition-colors group-hover:bg-[var(--video-editor-accent-bg)]"
           style={{ width: resizeHandleWidth }}
-          {...resizeHandleAttrs('right', action.id, row.id)}
+          {...resizeHandleAttrs('right', renderedAction.id, row.id)}
         />
       </div>
     );
@@ -208,6 +301,7 @@ function areRowActionLayerPropsEqual(left: RowActionLayerProps, right: RowAction
     && left.resizePreviewSnapshot === right.resizePreviewSnapshot
     && left.resizeHandleWidth === right.resizeHandleWidth
     && left.getActionRender === right.getActionRender
+    && left.shouldStackOverlappingActions === right.shouldStackOverlappingActions
   );
 }
 
@@ -226,6 +320,7 @@ function areSortableRowPropsEqual(left: SortableRowProps, right: SortableRowProp
     && left.resizePreviewSnapshot === right.resizePreviewSnapshot
     && left.resizeHandleWidth === right.resizeHandleWidth
     && left.getActionRender === right.getActionRender
+    && left.shouldStackOverlappingActions === right.shouldStackOverlappingActions
     && left.onSelectTrack === right.onSelectTrack
     && left.onTrackChange === right.onTrackChange
     && left.onRemoveTrack === right.onRemoveTrack
@@ -248,6 +343,7 @@ export function TrackListRenderer({
   rowResizePreview,
   resizeHandleWidth,
   getActionRender,
+  shouldStackOverlappingActions,
   onSelectTrack,
   onTrackChange,
   onRemoveTrack,
@@ -293,6 +389,7 @@ export function TrackListRenderer({
               resizePreviewSnapshot={rowResizePreview[index] ?? EMPTY_RESIZE_PREVIEW_SNAPSHOT}
               resizeHandleWidth={resizeHandleWidth}
               getActionRender={getActionRender}
+              shouldStackOverlappingActions={shouldStackOverlappingActions}
               onSelectTrack={onSelectTrack}
               onTrackChange={onTrackChange}
               onRemoveTrack={onRemoveTrack}

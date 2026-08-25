@@ -6,7 +6,10 @@ import { VideoEditorRuntimeProvider, type VideoEditorRuntimeContextValue } from 
 import { createCommandRegistry, type CommandRegistry } from '@/tools/video-editor/runtime/commandRegistry';
 import { AIInputModeProvider } from '@/shared/contexts/AIInputModeContext.tsx';
 import { TrackLabelContent } from '@/tools/video-editor/components/TimelineEditor/TrackLabel';
-import { TrackListRenderer } from '@/tools/video-editor/components/TimelineEditor/TrackListRenderer';
+import {
+  computeActionVerticalPlacements,
+  TrackListRenderer,
+} from '@/tools/video-editor/components/TimelineEditor/TrackListRenderer';
 import type { TrackDefinition } from '@/tools/video-editor/types';
 import type { TimelineRow } from '@/tools/video-editor/types/timeline-canvas';
 import type { ReighExtension } from '@reigh/editor-sdk';
@@ -100,6 +103,67 @@ function registerTrackMenuCommand(
 }
 
 describe('TrackListRenderer', () => {
+  it('partitions overlapping minimum-width text hit targets while leaving generic clips alone', () => {
+    const row: TimelineRow = {
+      id: 'V1',
+      actions: [
+        { id: 'ava', start: 0, end: 0.04, effectId: 'text-ava' },
+        { id: 'boris', start: 0.1, end: 0.2, effectId: 'text-boris' },
+        { id: 'isolated', start: 0.5, end: 0.6, effectId: 'text-isolated' },
+        { id: 'generic', start: 0, end: 0.04, effectId: 'video-generic' },
+      ],
+    };
+    const placements = computeActionVerticalPlacements({
+      actions: row.actions,
+      row,
+      pixelsPerSecond: 100,
+      resizeHandleWidth: 8,
+      shouldStack: (action) => action.id !== 'generic',
+    });
+
+    expect(placements.get('ava')).toEqual({ lane: 0, laneCount: 2 });
+    expect(placements.get('boris')).toEqual({ lane: 1, laneCount: 2 });
+    expect(placements.get('isolated')).toEqual({ lane: 0, laneCount: 1 });
+    expect(placements.get('generic')).toEqual({ lane: 0, laneCount: 1 });
+  });
+
+  it('applies the vertical placement to clip bodies without changing their rendered width', () => {
+    const stackedRows: TimelineRow[] = [{
+      id: 'V1',
+      actions: [
+        { id: 'ava', start: 0, end: 0.04, effectId: 'text-ava' },
+        { id: 'boris', start: 0.1, end: 0.2, effectId: 'text-boris' },
+        { id: 'generic', start: 0, end: 0.04, effectId: 'video-generic' },
+      ],
+    }];
+    const { container } = render(
+      <TrackListRenderer
+        rows={stackedRows}
+        tracks={[tracks[0]]}
+        rowHeight={48}
+        startLeft={0}
+        pixelsPerSecond={100}
+        selectedTrackId={null}
+        deviceClass="desktop"
+        resizeClampedActionId={null}
+        rowResizePreview={[{}]}
+        resizeHandleWidth={8}
+        getActionRender={() => <div>clip</div>}
+        shouldStackOverlappingActions={(action) => action.id !== 'generic'}
+        onSelectTrack={vi.fn()}
+        onTrackChange={vi.fn()}
+        onRemoveTrack={vi.fn()}
+        onTrackDragEnd={vi.fn()}
+        trackSensors={[] as never}
+      />,
+    );
+
+    const slot = (id: string) => container.querySelector<HTMLElement>(`[data-action-id="${id}"]`)!;
+    expect(slot('ava').style).toMatchObject({ top: '4px', height: '20px', width: '24px' });
+    expect(slot('boris').style).toMatchObject({ top: '24px', height: '20px', width: '24px' });
+    expect(slot('generic').style).toMatchObject({ top: '4px', height: '40px', width: '24px' });
+  });
+
   it('keeps a selectable clip body between both resize handles for very short clips', () => {
     const shortRows: TimelineRow[] = [{
       id: 'V1',

@@ -614,6 +614,14 @@ function TimelineEditorCoreComponent({
     });
   }, [applyEdit, dataRef]);
 
+  const shouldStackOverlappingActions = useCallback((action: TimelineAction) => {
+    // Text clips are duration-driven labels and are commonly generated in
+    // short overlapping bursts (for example transcript captions). Their
+    // minimum visual width can otherwise make one full-row hit target cover
+    // the previous one. Keep video/audio/effect clips on the legacy geometry.
+    return data?.meta[action.id]?.clipType === 'text';
+  }, [data?.meta]);
+
   const getActionRender = useCallback((action: TimelineAction, _row: TimelineRow, clipWidth: number) => {
     const clipMeta = data?.meta[action.id];
     if (!clipMeta) {
@@ -781,6 +789,7 @@ function TimelineEditorCoreComponent({
           maxScaleCount={timelineExtent.scaleCount}
           selectedTrackId={selectedTrackId}
           getActionRender={getActionRender}
+          shouldStackOverlappingActions={shouldStackOverlappingActions}
           onSelectTrack={setSelectedTrackId}
           onTrackChange={handleTrackPopoverChange}
           onRemoveTrack={handleRemoveTrack}
