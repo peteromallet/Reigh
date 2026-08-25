@@ -14,7 +14,7 @@ by the [evidence ledger](extension-ship-evidence-ledger.md).
 `codex/extension-ship-integration` is the current RC6 **integration cycle**;
 resolve its moving synchronization head with `git rev-parse HEAD` rather than
 copying that value into release evidence. Its paired Astrid input is
-`daeb99639a7f61ff7ba7aab87980380237b12d9c` on
+`bd5998aee6e3659d009041bc66177b9e6f1838b3` on
 `codex/extension-ship-astrid-integration`. The Astrid repair is committed,
 pushed, clean, and synchronized with its upstream branch. Its focused gates
 pass. A fresh clean CI proof at the preceding pin passed 603 tests before
