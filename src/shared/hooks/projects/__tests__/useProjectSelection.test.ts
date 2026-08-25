@@ -65,6 +65,29 @@ describe('useProjectSelection', () => {
     expect(result.current.selectedProjectId).toBe('project-from-storage');
   });
 
+  it('clears a cloud selection when the authenticated user becomes local-mode/null without persisting', () => {
+    localStorageMock['lastSelectedProjectId'] = 'cloud-project';
+    const updateUserSettings = vi.fn().mockResolvedValue(undefined);
+    const { result, rerender } = renderHook(
+      ({ userId }: { userId: string | null }) => useProjectSelection({
+        ...defaultOptions,
+        userId,
+        updateUserSettings,
+      }),
+      { initialProps: { userId: 'user-1' } },
+    );
+
+    expect(result.current.selectedProjectId).toBe('cloud-project');
+
+    act(() => {
+      rerender({ userId: null });
+    });
+
+    expect(result.current.selectedProjectId).toBeNull();
+    expect(localStorageMock['lastSelectedProjectId']).toBeUndefined();
+    expect(updateUserSettings).not.toHaveBeenCalled();
+  });
+
   it('setSelectedProjectId updates state and localStorage', () => {
     const updateUserSettings = vi.fn().mockResolvedValue(undefined);
 

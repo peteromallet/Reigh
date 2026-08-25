@@ -27,6 +27,7 @@ import {
 import type {
   AssetProfile,
   AssetResolveRequest,
+  AssetUploadRequest,
   UploadedAssetResult,
   UploadAssetOptions,
 } from '@/tools/video-editor/data/AssetResolver.ts';
@@ -535,8 +536,8 @@ export class AstridBridgeDataProvider implements DataProvider {
     return { assetId, entry };
   }
 
-  async onUpload(): Promise<UploadedAssetResult> {
-    throw new AstridBridgeReadOnlyError('onUpload');
+  async onUpload(request: AssetUploadRequest): Promise<UploadedAssetResult> {
+    return this.uploadAsset(request.file, request.options);
   }
 
   async loadWaveform(): Promise<null> {

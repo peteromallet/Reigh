@@ -24,6 +24,7 @@ import {
   AstridBridgeDataProvider,
   defaultAstridBridgeAssetBaseUrl,
 } from '@/tools/video-editor/data/AstridBridgeDataProvider.ts';
+import { uploadAssetWithResolver } from '@/tools/video-editor/data/AssetResolver.ts';
 import {
   isTimelineSchemaIncompatibleError,
   isTimelineVersionConflictError,
@@ -729,6 +730,37 @@ describe('AstridBridgeDataProvider', () => {
         duration: 4,
       },
     });
+  });
+
+  it('routes resolver uploads through the real provider uploadAsset/FSA/bridge path', async () => {
+    const handleTree = createDirectoryHandleTree();
+    vi.mocked(getDirectoryHandle).mockResolvedValue(handleTree.projectRootHandle);
+
+    const provider = new AstridBridgeDataProvider({
+      projectSlug: 'ados-talks',
+      timelineRef: 'intro-cut',
+      timelineId: '11111111-1111-1111-1111-111111111111',
+    });
+
+    const result = await uploadAssetWithResolver(provider, {
+      file: new File(['video'], 'resolver-upload.mp4', { type: 'video/mp4' }),
+      options: {
+        timelineId: '11111111-1111-1111-1111-111111111111',
+        userId: 'user-1',
+      },
+    });
+
+    expect(result.assetId).toEqual(expect.any(String));
+    expect(handleTree.localDropsHandle.getFileHandle).toHaveBeenCalledWith(
+      'resolver-upload.mp4',
+      { create: true },
+    );
+    expect(handleTree.writable.write).toHaveBeenCalledTimes(1);
+    expect(getSupabaseClient).not.toHaveBeenCalled();
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/projects/ados-talks/timelines/'),
+      expect.objectContaining({ method: 'POST' }),
+    );
   });
 
   it('prompts for an Astrid project root when no persisted handle exists', async () => {

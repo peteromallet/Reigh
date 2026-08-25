@@ -28,6 +28,7 @@ export function useProjectSelection({
   // CROSS-DEVICE SYNC: Track if we had a localStorage value at startup
   const hadLocalStorageValueRef = useRef<boolean>(false);
   const hasAppliedServerPreferencesRef = useRef<boolean>(false);
+  const previousUserIdRef = useRef(userId);
 
   // FAST RESUME: Try to restore selectedProjectId from localStorage immediately.
   // Only for a real user: with no session (dev local-mode editor), restoring a
@@ -69,8 +70,22 @@ export function useProjectSelection({
 
   // CROSS-DEVICE SYNC: Reset sync flag when user logs out
   useEffect(() => {
-    if (!userId) {
+    const previousUserId = previousUserIdRef.current;
+    previousUserIdRef.current = userId;
+
+    if (previousUserId && !userId) {
+      // Auth/local-mode transitions must not retain a cloud project identity:
+      // otherwise project-scoped Supabase queries can briefly outlive the
+      // session. Clear local resume state without writing a logout preference.
+      hadLocalStorageValueRef.current = false;
       hasAppliedServerPreferencesRef.current = false;
+      setSelectedProjectIdState(null);
+      try {
+        localStorage.removeItem('lastSelectedProjectId');
+      } catch (e) {
+        normalizeAndPresentError(e, { context: 'ProjectContext.logout', showToast: false });
+      }
+      preloadingService.onProjectChange(null);
     }
   }, [userId]);
 
