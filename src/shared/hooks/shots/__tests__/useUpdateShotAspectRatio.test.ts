@@ -22,6 +22,7 @@ const {
   updateEqMock: vi.fn(),
   updateMock: vi.fn(),
 }));
+const mockIsDeferredCloudDataAuthority = vi.hoisted(() => vi.fn(() => true));
 
 vi.mock('@/shared/lib/errorHandling/runtimeError', () => ({
   normalizeAndPresentError: normalizeAndPresentErrorMock,
@@ -31,6 +32,10 @@ vi.mock('@/integrations/supabase/client', () => ({
   getSupabaseClient: () => ({
     from: fromMock,
   }),
+}));
+
+vi.mock('@/app/runtime/dataAuthority.ts', () => ({
+  isDeferredCloudDataAuthority: mockIsDeferredCloudDataAuthority,
 }));
 
 import { useUpdateShotAspectRatio } from '../useUpdateShotAspectRatio';
@@ -47,6 +52,7 @@ function createQueryClient() {
 describe('useUpdateShotAspectRatio', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockIsDeferredCloudDataAuthority.mockReturnValue(true);
 
     selectEqMock.mockReturnValue({ single: singleMock });
     selectMock.mockReturnValue({ eq: selectEqMock });

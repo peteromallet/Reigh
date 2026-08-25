@@ -17,6 +17,7 @@ import {
   updateAllShotsCaches,
   rollbackShotsCaches,
 } from './cacheUtils';
+import { assertDeferredCloudShotOperation } from './shotAuthority';
 
 // ============================================================================
 // DELETE SHOT
@@ -27,6 +28,7 @@ export const useDeleteShot = () => {
 
   return useMutation({
     mutationFn: async ({ shotId, projectId }: { shotId: string; projectId: string }) => {
+      assertDeferredCloudShotOperation('delete a shot');
       const { error } = await supabase().from('shots')
         .delete()
         .eq('id', shotId);
@@ -37,6 +39,7 @@ export const useDeleteShot = () => {
     },
 
     onMutate: async (variables) => {
+      assertDeferredCloudShotOperation('delete a shot');
       const { shotId, projectId } = variables;
 
       // Cancel in-flight queries
@@ -97,6 +100,7 @@ export const useCreateShot = () => {
       shouldSelectAfterCreation?: boolean;
       position?: number;
     }) => {
+      assertDeferredCloudShotOperation('create a shot');
       let resolvedPosition = position;
 
       if (resolvedPosition === undefined) {
@@ -196,6 +200,7 @@ export const useDuplicateShot = () => {
 
   return useMutation({
     mutationFn: async ({ shotId, projectId }: { shotId: string; projectId: string }) => {
+      assertDeferredCloudShotOperation('duplicate a shot');
       const { data, error } = await supabase().rpc('duplicate_shot', {
         original_shot_id: shotId,
         project_id: projectId,
@@ -216,6 +221,7 @@ export const useDuplicateShot = () => {
     },
 
     onMutate: async (variables) => {
+      assertDeferredCloudShotOperation('duplicate a shot');
       const { shotId, projectId } = variables;
 
       await cancelShotsQueries(queryClient, projectId);
@@ -287,6 +293,7 @@ export const useReorderShots = () => {
       projectId: string;
       shotOrders: Array<{ shotId: string; position: number }>;
     }) => {
+      assertDeferredCloudShotOperation('reorder shots');
       const promises = shotOrders.map(({ shotId, position }) =>
         supabase().from('shots')
           .update({ position })
@@ -306,6 +313,7 @@ export const useReorderShots = () => {
     },
 
     onMutate: async (variables) => {
+      assertDeferredCloudShotOperation('reorder shots');
       const { projectId, shotOrders } = variables;
 
       await cancelShotsQueries(queryClient, projectId);

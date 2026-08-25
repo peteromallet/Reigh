@@ -14,6 +14,7 @@ import {
   rollbackShotsCaches,
   updateAllShotsCaches,
 } from './cacheUtils';
+import { assertDeferredCloudShotOperation } from './shotAuthority';
 
 type UpdateShotNameVariables = {
   shotId: string;
@@ -49,6 +50,7 @@ async function mutateShotName({
   newName,
   projectId,
 }: UpdateShotNameVariables): Promise<UpdateShotNameResult> {
+  assertDeferredCloudShotOperation('rename a shot');
   const shotName = resolveShotName({ name, newName });
   const { error } = await supabase().from('shots')
     .update({ name: shotName })
@@ -82,6 +84,7 @@ async function handleUpdateShotNameMutate(
   queryClient: ReturnType<typeof useQueryClient>,
   { shotId, name, newName, projectId }: UpdateShotNameVariables,
 ): Promise<UpdateShotNameContext> {
+  assertDeferredCloudShotOperation('rename a shot');
   const shotName = resolveShotName({ name, newName });
 
   await cancelShotsQueries(queryClient, projectId);

@@ -7,6 +7,7 @@ import { parseRatio } from '@/shared/lib/media/aspectRatios';
 import { createGenerationForLocalFile, createGenerationForUploadedImage } from '@/shared/lib/media/createGenerationFromFile';
 import { IMAGE_INLINE_UPLOAD_LIMIT_BYTES } from '@/shared/lib/media/dropToGenerationConfig';
 import type { PersistedLocalMediaHandle } from '@/shared/lib/media/localHandleStore';
+import { assertDeferredCloudShotOperation } from './shotAuthority';
 
 function isPersistedLocalFileHandle(
   handle: FileSystemFileHandle,
@@ -335,6 +336,7 @@ async function processSingleDroppedImage(input: {
 export async function processDroppedImages(
   input: ProcessDroppedImagesInput,
 ): Promise<{ shotId: string; generationIds: string[]; generationMetadata: UploadedGenerationMetadata[] } | null> {
+  assertDeferredCloudShotOperation('process dropped images for a shot');
   const {
     variables,
     projectId,

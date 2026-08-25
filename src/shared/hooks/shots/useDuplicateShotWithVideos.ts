@@ -7,6 +7,7 @@ import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeErro
 import { queryKeys } from '@/shared/lib/queryKeys';
 
 import { invalidateShotsQueries, upsertShotInCache } from './cacheUtils';
+import { assertDeferredCloudShotOperation } from './shotAuthority';
 
 type DuplicateShotWithVideosInput = {
   shotId: string;
@@ -79,6 +80,7 @@ export const useDuplicateShotWithVideos = () => {
 
   return useMutation({
     mutationFn: async ({ shotId, projectId }: DuplicateShotWithVideosInput): Promise<Shot> => {
+      assertDeferredCloudShotOperation('duplicate a shot with videos');
       const { data, error } = await supabase().rpc('duplicate_shot_with_videos', {
         original_shot_id: shotId,
         project_id: projectId,

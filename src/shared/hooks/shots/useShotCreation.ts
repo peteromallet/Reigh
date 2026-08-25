@@ -12,6 +12,7 @@ import { useCreateShot } from './useShotsCrud';
 import { useAddImageToShot } from './useShotGenerationMutations';
 import { processDroppedImages, type ExternalImageDropVariables } from './externalImageDrop';
 import type { CreateShotWithGenerationsRpcResult } from '@/shared/hooks/shotCreation/shotCreationTypes';
+import { assertDeferredCloudShotOperation } from './shotAuthority';
 
 export const useCreateShotWithGenerations = () => {
   const queryClient = useQueryClient();
@@ -26,6 +27,7 @@ export const useCreateShotWithGenerations = () => {
       shotName: string;
       generationIds: string[];
     }) => {
+      assertDeferredCloudShotOperation('create a shot with generations');
       const { data, error } = await supabase().rpc('create_shot_with_generations', {
           p_project_id: projectId,
           p_shot_name: shotName,
@@ -75,6 +77,7 @@ export const useHandleExternalImageDrop = () => {
       }
 
       try {
+        assertDeferredCloudShotOperation('process dropped images for a shot');
         return await processDroppedImages({
           variables,
           projectId: currentProjectQueryKey,

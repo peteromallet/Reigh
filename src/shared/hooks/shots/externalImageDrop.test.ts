@@ -9,12 +9,17 @@ const mocks = vi.hoisted(() => ({
   uploadImageWithThumbnail: vi.fn(),
   createGenerationForLocalFile: vi.fn(),
   cropImageToProjectAspectRatio: vi.fn(),
+  isDeferredCloudDataAuthority: vi.fn(() => true),
 }));
 
 vi.mock('@/integrations/supabase/client', () => ({
   getSupabaseClient: () => ({
     from: mocks.from,
   }),
+}));
+
+vi.mock('@/app/runtime/dataAuthority.ts', () => ({
+  isDeferredCloudDataAuthority: () => mocks.isDeferredCloudDataAuthority(),
 }));
 
 vi.mock('@/shared/components/ui/runtime/sonner', () => ({
@@ -97,6 +102,7 @@ function createInsertOnlyResult() {
 describe('processDroppedImages', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.isDeferredCloudDataAuthority.mockReturnValue(true);
     mocks.generateClientThumbnail.mockResolvedValue({
       thumbnailBlob: new Blob(['thumb'], { type: 'image/jpeg' }),
     });
@@ -133,6 +139,28 @@ describe('processDroppedImages', () => {
       }
       return createQueryResult(null);
     });
+  });
+
+  it('rejects in Astrid before the internal crop/read wrapper touches Supabase', async () => {
+    mocks.isDeferredCloudDataAuthority.mockReturnValue(false);
+    const createShot = vi.fn();
+
+    await expect(processDroppedImages({
+      variables: {
+        imageFiles: [new File(['img'], 'one.png', { type: 'image/png' })],
+        targetShotId: 'shot-1',
+        currentProjectQueryKey: 'project-1',
+        currentShotCount: 1,
+      },
+      projectId: 'project-1',
+      createShot,
+      addImageToShot: vi.fn(),
+      addImageToShotWithoutPosition: vi.fn(),
+    })).rejects.toMatchObject({ code: 'capability_unavailable' });
+
+    expect(mocks.from).not.toHaveBeenCalled();
+    expect(createShot).not.toHaveBeenCalled();
+    expect(mocks.uploadImageToStorage).not.toHaveBeenCalled();
   });
 
   it('returns null when shot creation fails for missing target shot', async () => {

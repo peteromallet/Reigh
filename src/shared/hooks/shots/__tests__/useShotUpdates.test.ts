@@ -17,6 +17,7 @@ const {
   normalizeAndPresentErrorMock: vi.fn(),
   updateMock: vi.fn(),
 }));
+const mockIsDeferredCloudDataAuthority = vi.hoisted(() => vi.fn(() => true));
 
 vi.mock('@/shared/lib/errorHandling/runtimeError', () => ({
   normalizeAndPresentError: normalizeAndPresentErrorMock,
@@ -26,6 +27,10 @@ vi.mock('@/integrations/supabase/client', () => ({
   getSupabaseClient: () => ({
     from: fromMock,
   }),
+}));
+
+vi.mock('@/app/runtime/dataAuthority.ts', () => ({
+  isDeferredCloudDataAuthority: mockIsDeferredCloudDataAuthority,
 }));
 
 import { useUpdateShotName } from '../useShotUpdates';
@@ -42,6 +47,7 @@ function createQueryClient() {
 describe('useUpdateShotName', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockIsDeferredCloudDataAuthority.mockReturnValue(true);
     eqMock.mockImplementation(() => mockUpdate());
     updateMock.mockReturnValue({ eq: eqMock });
     fromMock.mockReturnValue({ update: updateMock });
@@ -110,6 +116,24 @@ describe('useUpdateShotName', () => {
       })
     ).rejects.toThrow('Shot name is required');
     expect(updateMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects in Astrid before Supabase or optimistic cache effects', async () => {
+    mockIsDeferredCloudDataAuthority.mockReturnValue(false);
+    const queryClient = createQueryClient();
+    const key = shotQueryKeys.list('proj-1', 0);
+    const previous = [{ id: 'shot-1', name: 'Old Name' }];
+    queryClient.setQueryData(key, previous);
+    const { result } = renderHookWithProviders(() => useUpdateShotName(), { queryClient });
+
+    await expect(result.current.mutateAsync({
+      shotId: 'shot-1',
+      name: 'New Name',
+      projectId: 'proj-1',
+    })).rejects.toMatchObject({ code: 'capability_unavailable' });
+
+    expect(fromMock).not.toHaveBeenCalled();
+    expect(queryClient.getQueryData(key)).toEqual(previous);
   });
 
   it('rolls back caches and normalizes the error when the DB update fails', async () => {

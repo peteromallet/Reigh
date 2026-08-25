@@ -6,6 +6,7 @@ import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeErro
 import { queryKeys } from '@/shared/lib/queryKeys';
 import { toJson } from '@/shared/lib/supabaseTypeHelpers';
 import { TOOL_IDS } from '@/shared/lib/tooling/toolIds';
+import { assertDeferredCloudShotOperation } from './shotAuthority';
 
 const SHOT_ASPECT_RATIO_UPDATE_DEBOUNCE_MS = 300;
 
@@ -73,6 +74,7 @@ export function useUpdateShotAspectRatio() {
     projectId,
     newAspectRatio,
   }: PersistShotAspectRatioArgs): Promise<boolean> => {
+    assertDeferredCloudShotOperation('update a shot aspect ratio');
     try {
       const { data: currentShot, error: selectError } = await supabase()
         .from('shots')
@@ -127,6 +129,7 @@ export function useUpdateShotAspectRatio() {
     options: UpdateShotAspectRatioOptions = {},
   ): Promise<boolean> => {
     clearPendingUpdate();
+    assertDeferredCloudShotOperation('update a shot aspect ratio');
 
     if (options.immediate) {
       try {

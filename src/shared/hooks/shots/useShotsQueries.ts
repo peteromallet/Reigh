@@ -10,13 +10,13 @@ import { getGenerationId } from '@/shared/lib/media/mediaTypeHelpers';
 import { queryKeys } from '@/shared/lib/queryKeys';
 import { isDeferredCloudDataAuthority } from '@/app/runtime/dataAuthority';
 import { hasLocalModeUrlParams } from '@/shared/dev/devSession';
+import { assertDeferredCloudShotOperation } from './shotAuthority';
 
 function canReadCloudShots(): boolean {
   return isDeferredCloudDataAuthority() && !hasLocalModeUrlParams(
     typeof window === 'undefined' ? '' : window.location.search,
   );
 }
-
 // ============================================================================
 // LIST SHOTS
 // ============================================================================
@@ -35,6 +35,7 @@ export const useListShots = (
   return useQuery({
     queryKey: queryKeys.shots.list(projectId ?? '', maxImagesPerShot),
     queryFn: async () => {
+      assertDeferredCloudShotOperation('read shots');
       if (!projectId) {
         return [];
       }
@@ -146,6 +147,7 @@ export const useProjectImageStats = (projectId?: string | null) => {
   return useQuery({
     queryKey: projectId ? queryKeys.projectStats.images(projectId) : ['project-image-stats', null],
     queryFn: async () => {
+      assertDeferredCloudShotOperation('read project shot image stats');
       if (!projectId) return { allCount: 0, noShotCount: 0 };
 
       // Get total unique generations in project

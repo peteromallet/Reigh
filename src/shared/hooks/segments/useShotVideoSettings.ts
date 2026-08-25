@@ -11,6 +11,7 @@ import { shotQueryKeys } from '@/shared/lib/queryKeys/shots';
 import { readShotSettings, type ShotVideoSettings } from '@/shared/lib/settingsMigration';
 import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
 import { TOOL_IDS } from '@/shared/lib/tooling/toolIds';
+import { assertDeferredCloudShotOperation } from '@/shared/hooks/shots/shotAuthority';
 
 interface UseShotVideoSettingsReturn {
   data: ShotVideoSettings | null | undefined;
@@ -25,6 +26,7 @@ export function useShotVideoSettings(
   const query = useQuery({
     queryKey: shotQueryKeys.batchSettings(shotId || ''),
     queryFn: async (): Promise<ShotVideoSettings | null> => {
+      assertDeferredCloudShotOperation('read shot video settings');
       if (!shotId) return null;
 
       const { data, error } = await supabase().from('shots')

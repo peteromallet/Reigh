@@ -13,6 +13,7 @@
 import { useMemo, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
+import { assertDeferredCloudShotOperation } from '@/shared/hooks/shots/shotAuthority';
 import { ASPECT_RATIO_TO_RESOLUTION } from '@/shared/lib/media/aspectRatios';
 import {
   buildTravelGuidanceFromControls,
@@ -181,6 +182,7 @@ export function useVideoRegenerateMode({
   const { data: shotDataForRegen, isLoading: isLoadingShotData } = useQuery({
     queryKey: queryKeys.shots.regenData(shotId!),
     queryFn: async () => {
+      assertDeferredCloudShotOperation('read shot regeneration settings');
       if (!shotId) return null;
       const { data, error } = await supabase().from('shots')
         .select('aspect_ratio, settings')

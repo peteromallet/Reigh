@@ -3,6 +3,7 @@ import { waitFor } from '@testing-library/react';
 import { renderHookWithProviders } from '@/test/test-utils';
 
 const mockSingle = vi.fn();
+const mockIsDeferredCloudDataAuthority = vi.hoisted(() => vi.fn(() => true));
 vi.mock('@/integrations/supabase/client', () => ({
   getSupabaseClient: () => ({
     from: vi.fn(() => ({
@@ -13,6 +14,10 @@ vi.mock('@/integrations/supabase/client', () => ({
       })),
     })),
   }),
+}));
+
+vi.mock('@/app/runtime/dataAuthority.ts', () => ({
+  isDeferredCloudDataAuthority: mockIsDeferredCloudDataAuthority,
 }));
 
 vi.mock('@/shared/lib/settingsMigration', () => ({
@@ -33,6 +38,7 @@ import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeErro
 describe('useShotVideoSettings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockIsDeferredCloudDataAuthority.mockReturnValue(true);
   });
 
   it('returns null data when shotId is null', () => {

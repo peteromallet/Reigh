@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
 import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
 import { Shot } from '@/domains/generation/types';
+import { assertDeferredCloudShotOperation } from '@/shared/hooks/shots/shotAuthority';
 
 interface UseHashDeepLinkOptions {
   /** Current shot ID from context */
@@ -148,6 +149,7 @@ export function useHashDeepLink({
     let cancelled = false;
     (async () => {
       try {
+        assertDeferredCloudShotOperation('resolve a shot deep link');
         const { data, error } = await supabase().from('shots')
           .select('project_id')
           .eq('id', hashShotId)

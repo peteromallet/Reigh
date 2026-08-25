@@ -7,12 +7,17 @@ import { useDuplicateShotWithVideos } from '../useDuplicateShotWithVideos';
 
 const mockFrom = vi.fn();
 const mockRpc = vi.fn();
+const mockIsDeferredCloudDataAuthority = vi.hoisted(() => vi.fn(() => true));
 
 vi.mock('@/integrations/supabase/client', () => ({
   getSupabaseClient: () => ({
     from: (...args: unknown[]) => mockFrom(...args),
     rpc: (...args: unknown[]) => mockRpc(...args),
   }),
+}));
+
+vi.mock('@/app/runtime/dataAuthority.ts', () => ({
+  isDeferredCloudDataAuthority: mockIsDeferredCloudDataAuthority,
 }));
 
 function createWrapper() {
@@ -29,6 +34,7 @@ function createWrapper() {
 describe('useDuplicateShotWithVideos', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockIsDeferredCloudDataAuthority.mockReturnValue(true);
   });
 
   it('calls duplicate_shot_with_videos, fetches the cloned shot, and avoids duplicate_shot', async () => {

@@ -15,6 +15,7 @@ import { toast } from '@/shared/components/ui/runtime/sonner';
 import { DEFAULT_STEERABLE_MOTION_SETTINGS } from '../../components/ShotEditor/state/types';
 import { useSessionInheritedDefaults } from './inheritedDefaults';
 import { hasLocalModeUrlParams } from '@/shared/dev/devSession';
+import { assertDeferredCloudShotOperation } from '@/shared/hooks/shots/shotAuthority';
 
 export interface UseShotSettingsReturn {
   // State
@@ -267,6 +268,7 @@ export const useShotSettings = (
     }
 
     try {
+      assertDeferredCloudShotOperation('read settings from another shot');
       const { data, error: fetchError } = await supabase().from('shots')
         .select('settings')
         .eq('id', sourceShotId)

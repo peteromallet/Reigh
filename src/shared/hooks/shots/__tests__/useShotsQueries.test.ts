@@ -29,6 +29,7 @@ const mockShotGenerations = [
 ];
 
 const mockNot = vi.fn();
+const mockIsDeferredCloudDataAuthority = vi.hoisted(() => vi.fn(() => true));
 
 vi.mock('@/integrations/supabase/client', () => ({
   getSupabaseClient: () => ({
@@ -76,6 +77,10 @@ vi.mock('@/integrations/supabase/client', () => ({
   }),
 }));
 
+vi.mock('@/app/runtime/dataAuthority.ts', () => ({
+  isDeferredCloudDataAuthority: mockIsDeferredCloudDataAuthority,
+}));
+
 vi.mock('../mappers', () => ({
   mapShotGenerationToRow: vi.fn((sg: Record<string, unknown>) => {
     const gen = sg.generation as Record<string, unknown> | null;
@@ -100,6 +105,7 @@ import { useListShots, useProjectImageStats } from '../useShotsQueries';
 describe('useListShots', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockIsDeferredCloudDataAuthority.mockReturnValue(true);
   });
 
   it('is disabled when projectId is null', () => {
@@ -110,6 +116,13 @@ describe('useListShots', () => {
   it('is disabled when projectId is undefined', () => {
     const { result } = renderHookWithProviders(() => useListShots(undefined));
     expect(result.current.isFetching).toBe(false);
+  });
+
+  it('rejects in Astrid before a Supabase read', async () => {
+    mockIsDeferredCloudDataAuthority.mockReturnValue(false);
+    const { result } = renderHookWithProviders(() => useListShots('proj-1'));
+    await vi.waitFor(() => expect(result.current.error).toMatchObject({ code: 'capability_unavailable' }));
+    expect(result.current.error?.name).toBe('BridgeCapabilityUnavailableError');
   });
 });
 
