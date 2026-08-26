@@ -1970,3 +1970,27 @@ fresh console collection.
 - The failed raw evidence has artifact-index SHA-256
   `c88e06d1a127247cdb0a17cb3c7386869d5ed1714bf1029978df7a7ab30bfeff`.
   It is retained as RC20 diagnostic history and is not a passing receipt.
+
+### Persisted documents and extension snapshots express clip duration differently
+
+- RC21 advanced through transcript materialization and the full Runaway
+  lifecycle, then reported that Pulse Map never persisted. Its captured
+  network evidence proves the opposite: the third successful CAS request used
+  `expected_version: 3`, wrote eight Pulse Map entries for the two authored and
+  two generated caption clips, and received `config_version: 4` with the same
+  envelope. The extension and bridge save path were working.
+- The semantic validator counted only clips carrying a test-only `duration`
+  property. Real persisted timelines carry authored `hold` timing or
+  `from`/`to`/`speed`; the host-owned extension reader derives `duration` when
+  it creates `TimelineSnapshot`. The validator therefore expected zero entries
+  from the real document and rejected the valid eight-entry output.
+- Release validation now projects persisted timing through the same public
+  duration rules before checking extension output. Each polling attempt also
+  reads the output and its source timeline config from one bridge envelope, so
+  an asynchronous save cannot pair a new output with an older source snapshot.
+  A hold-and-trim regression uses persisted shapes rather than another
+  extension-shaped fake. Poll failures now expose the final validation object
+  and reason instead of the initialization-time `not read` placeholder.
+- The failed raw evidence has artifact-index SHA-256
+  `d763ee5a0259a2d21b4d28d58a70abf5b083a6ab9b4c175becd3559f178b130c`.
+  It is retained as RC21 diagnostic history and is not a passing receipt.

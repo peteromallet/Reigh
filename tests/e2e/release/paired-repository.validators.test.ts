@@ -69,12 +69,60 @@ describe('paired release semantic validators', () => {
     }, timeline).valid).toBe(false);
   });
 
+  it('validates command output against real persisted hold and trim timing', () => {
+    const persistedTimeline = {
+      tracks: [
+        { id: 'V1', kind: 'visual', muted: false },
+        { id: 'A1', kind: 'audio', muted: false },
+      ],
+      clips: [
+        { id: 'visual-hold', track: 'V1', at: 0, hold: 4, clipType: 'media' },
+        { id: 'audio-trim', track: 'A1', at: 2, from: 1, to: 7, speed: 2, clipType: 'media' },
+      ],
+    };
+    const pulseMap = {
+      schemaVersion: 1,
+      generatedFromVersion: 3,
+      entries: [
+        { id: 'pulse-visual-hold-start', sourceClipId: 'visual-hold', edge: 'start', time: 0, offset: 0, intensity: 0.8, color: '#ff4d8d' },
+        { id: 'pulse-audio-trim-start', sourceClipId: 'audio-trim', edge: 'start', time: 2, offset: 0, intensity: 0.6, color: '#52e8ff' },
+        { id: 'pulse-audio-trim-end', sourceClipId: 'audio-trim', edge: 'end', time: 5, offset: 0, intensity: 0.6, color: '#52e8ff' },
+        { id: 'pulse-visual-hold-end', sourceClipId: 'visual-hold', edge: 'end', time: 4, offset: 0, intensity: 0.8, color: '#ff4d8d' },
+      ],
+    };
+
+    const result = validateExtensionOutput(
+      'com.reigh.creative-lab.pulse-map',
+      pulseMap,
+      persistedTimeline,
+    );
+    expect(result.valid, result.reason).toBe(true);
+    expect(result.count).toBe(4);
+
+    expect(validateExtensionOutput(
+      'com.reigh.creative-lab.pulse-map',
+      {
+        ...pulseMap,
+        entries: pulseMap.entries.map((entry, index) => (
+          index === 2 ? { ...entry, time: 6 } : entry
+        )),
+      },
+      persistedTimeline,
+    )).toMatchObject({ valid: false, reason: expect.stringContaining('does not match boundary') });
+
+    expect(validateExtensionOutput(
+      'com.reigh.creative-lab.pulse-map',
+      { ...pulseMap, entries: [...pulseMap.entries.slice(0, 3), pulseMap.entries[0]] },
+      persistedTimeline,
+    )).toMatchObject({ valid: false, reason: expect.stringContaining('duplicate id') });
+  });
+
   it('enforces each persisted command contract and canonical fingerprints', () => {
     const outputs: Record<string, unknown> = {
       'com.reigh.scene-phase-markers': [{ id: 'marker-1', time: 1 }],
       'com.reigh.creative-lab.pulse-map': { schemaVersion: 1, generatedFromVersion: 1, entries: [
-        { id: 'pulse-clip-a-start', sourceClipId: 'clip-a', edge: 'start', time: 1, offset: 0, intensity: 0.4, color: '#fff' },
-        { id: 'pulse-clip-a-end', sourceClipId: 'clip-a', edge: 'end', time: 3, offset: 0, intensity: 0.4, color: '#fff' },
+        { id: 'pulse-clip-a-start', sourceClipId: 'clip-a', edge: 'start', time: 1, offset: 0, intensity: 0.4, color: '#ff4d8d' },
+        { id: 'pulse-clip-a-end', sourceClipId: 'clip-a', edge: 'end', time: 3, offset: 0, intensity: 0.4, color: '#ff4d8d' },
       ] },
       'com.reigh.creative-lab.soundtrack-cartographer': { schemaVersion: 1, generatedFromVersion: 1, entries: [
         { id: 'terrain-clip-a-start', sourceClipId: 'clip-a', edge: 'start', kind: 'rise', time: 1, offset: 0, intensity: 0.4, color: '#fff', label: 'rise' },

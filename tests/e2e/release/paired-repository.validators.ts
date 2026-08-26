@@ -5,6 +5,9 @@ export type ProbeClip = {
   at?: number;
   duration?: number;
   hold?: number;
+  from?: number;
+  to?: number;
+  speed?: number;
   track?: string;
   clipType?: string;
   text?: unknown;
@@ -368,27 +371,134 @@ const label = (entry: Record<string, unknown>) => nonEmpty(entry.label);
 const intensity = (entry: Record<string, unknown>) => bounded(entry.intensity, 0, 1);
 const offset = (entry: Record<string, unknown>) => bounded(entry.offset, -Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER);
 
+/**
+ * Project persistence stores authored timing (`hold` or `from`/`to`/`speed`),
+ * while extensions consume the host-owned TimelineSnapshot projection where
+ * every clip has a derived `duration`. Release validators must compare an
+ * extension's output with that same public projection, not a test-only
+ * `duration` field that does not exist in a real persisted document.
+ */
+function snapshotDuration(clip: ProbeClip): number {
+  if (finite(clip.hold)) return clip.hold;
+  // `duration` is accepted for an already-projected TimelineSnapshot (the
+  // validator's unit fixtures and any future direct reader capture).
+  if (finite(clip.duration)) return clip.duration;
+  const from = finite(clip.from) ? clip.from : 0;
+  const to = finite(clip.to) ? clip.to : 0;
+  const speed = typeof clip.speed === 'number' ? clip.speed : 1;
+  return to > from ? (to - from) / speed : 0;
+}
+
+function snapshotClips(timeline: ProbeTimeline): ProbeClip[] {
+  return (timeline.clips ?? [])
+    .filter((clip) => typeof clip.id === 'string' && finite(clip.at))
+    .map((clip) => ({ ...clip, duration: snapshotDuration(clip) }))
+    .filter((clip) => finite(clip.duration));
+}
+
 function expectedVisualClips(timeline: ProbeTimeline): ProbeClip[] {
   const tracks = new Map((timeline.tracks ?? []).map((track) => [track.id, track]));
   const primary = (timeline.tracks ?? []).find((track) => track.kind === 'visual' && track.muted !== true);
-  return (timeline.clips ?? []).filter((clip) => (
-    typeof clip.id === 'string'
-    && finite(clip.at)
-    && finite(clip.duration)
-    && (!primary || clip.track === primary.id)
+  return snapshotClips(timeline).filter((clip) => (
+    (!primary || clip.track === primary.id)
     && (!primary ? (!clip.track || tracks.get(clip.track)?.kind === 'visual') : true)
     && !['text', 'automation', 'effect', 'transition'].includes(clip.clipType?.trim().toLowerCase() ?? '')
   ));
 }
 
 function allUsableClips(timeline: ProbeTimeline): ProbeClip[] {
-  return (timeline.clips ?? []).filter((clip) => typeof clip.id === 'string' && finite(clip.at) && finite(clip.duration));
+  return snapshotClips(timeline);
 }
 
 function expectedBoundaryCount(timeline: ProbeTimeline): number {
   return Math.min(128, allUsableClips(timeline).reduce((total, clip) => (
     total + 1 + (Math.max(0, clip.duration ?? 0) > 0 ? 1 : 0)
   ), 0));
+}
+
+const PULSE_COLORS = ['#ff4d8d', '#52e8ff', '#ffd166', '#b388ff'] as const;
+
+function normalizePulseTime(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  return Math.round(value * 1000) / 1000;
+}
+
+function pulseIntensity(duration: number): number {
+  return Math.round(Math.min(Math.max(duration, 0) / 5, 1) * 1000) / 1000;
+}
+
+function expectedPulseEntries(timeline: ProbeTimeline): Array<{
+  id: string;
+  sourceClipId: string;
+  edge: 'start' | 'end';
+  structuralTime: number;
+  intensity: number;
+  color: string;
+}> {
+  const ordered = allUsableClips(timeline).slice().sort((left, right) => (
+    (left.at ?? 0) - (right.at ?? 0) || left.id!.localeCompare(right.id!)
+  ));
+  const expected: ReturnType<typeof expectedPulseEntries> = [];
+  for (const [index, clip] of ordered.entries()) {
+    if (expected.length >= 128) break;
+    const sourceClipId = clip.id!;
+    const start = Math.max(0, clip.at ?? 0);
+    const duration = Math.max(0, clip.duration ?? 0);
+    const shared = {
+      sourceClipId,
+      intensity: pulseIntensity(duration),
+      color: PULSE_COLORS[index % PULSE_COLORS.length],
+    };
+    expected.push({
+      ...shared,
+      id: `pulse-${sourceClipId}-start`,
+      edge: 'start',
+      structuralTime: start,
+    });
+    if (duration > 0 && expected.length < 128) {
+      expected.push({
+        ...shared,
+        id: `pulse-${sourceClipId}-end`,
+        edge: 'end',
+        structuralTime: start + duration,
+      });
+    }
+  }
+  return expected;
+}
+
+function validatePulseMap(value: unknown, timeline: ProbeTimeline): ValidationResult {
+  const expected = expectedPulseEntries(timeline);
+  const shape = envelope(value, 1, {
+    id,
+    sourceClipId,
+    edge: (entry) => entry.edge === 'start' || entry.edge === 'end',
+    time,
+    offset,
+    intensity,
+    color: (entry) => nonEmpty(entry.color),
+  }, timeline, expected.length);
+  if (!shape.valid || !record(value) || !Array.isArray(value.entries)) return shape;
+
+  const expectedById = new Map(expected.map((entry) => [entry.id, entry]));
+  const seen = new Set<string>();
+  for (const [index, candidate] of value.entries.entries()) {
+    const entry = candidate as Record<string, unknown>;
+    const entryId = entry.id as string;
+    if (seen.has(entryId)) return invalid(`entry ${index} has duplicate id ${entryId}`);
+    seen.add(entryId);
+    const source = expectedById.get(entryId);
+    if (!source) return invalid(`entry ${index} does not map to a current clip boundary`);
+    const expectedTime = normalizePulseTime(source.structuralTime + (entry.offset as number));
+    if (entry.sourceClipId !== source.sourceClipId
+      || entry.edge !== source.edge
+      || entry.time !== expectedTime
+      || entry.intensity !== source.intensity
+      || entry.color !== source.color) {
+      return invalid(`entry ${index} does not match boundary ${entryId}`);
+    }
+  }
+  return shape;
 }
 
 function expectedPrimaryBoundaryCount(timeline: ProbeTimeline): number {
@@ -423,7 +533,6 @@ function arrayOutput(value: unknown, fields: Record<string, (entry: Record<strin
 /** Validate one persisted command result against its extension's public contract. */
 export function validateExtensionOutput(extensionId: string, value: unknown, timeline: ProbeTimeline): ValidationResult {
   if (value === undefined || value === null) return invalid('persisted output is null or undefined');
-  const expected = expectedBoundaryCount(timeline);
   switch (extensionId) {
     case 'com.reigh.scene-phase-markers': {
       const result = entries(value, { id, time: (entry) => bounded(entry.time, 0, 9999.999) });
@@ -431,7 +540,7 @@ export function validateExtensionOutput(extensionId: string, value: unknown, tim
       return result.count > 0 ? valid(value, result.count) : invalid('scene marker command produced no marker');
     }
     case 'com.reigh.creative-lab.pulse-map':
-      return envelope(value, 1, { id, sourceClipId, edge: (e) => e.edge === 'start' || e.edge === 'end', time, offset, intensity, color: (e) => nonEmpty(e.color) }, timeline, expected);
+      return validatePulseMap(value, timeline);
     case 'com.reigh.creative-lab.soundtrack-cartographer':
       return envelope(value, 1, { id, sourceClipId, edge: (e) => e.edge === 'start' || e.edge === 'release', kind: (e) => e.kind === 'rise' || e.kind === 'peak' || e.kind === 'release', time, offset, intensity, color: (e) => nonEmpty(e.color), label }, timeline, expectedTerrainBoundaryCount(timeline));
     case 'com.reigh.creative-lab.caption-safe-zone-orchestra':

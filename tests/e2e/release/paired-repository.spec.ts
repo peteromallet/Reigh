@@ -68,6 +68,9 @@ type TimelineConfig = {
     at?: number;
     hold?: number;
     duration?: number;
+    from?: number;
+    to?: number;
+    speed?: number;
     clipType?: string;
     track?: string;
     asset?: string;
@@ -578,17 +581,19 @@ async function readValidatedProjectData(
   request: APIRequestContext,
   extensionId: string,
   key: string,
-  config: TimelineConfig,
 ): Promise<{ value: unknown; validation: ValidationResult }> {
-  const value = await persistedProjectData(request, extensionId, key);
-  return { value, validation: validateExtensionOutput(extensionId, value, config) };
+  const timeline = await readTimeline(request);
+  const value = timeline.config.app?.[extensionId]?.[key];
+  return {
+    value,
+    validation: validateExtensionOutput(extensionId, value, timeline.config),
+  };
 }
 
 async function expectValidatedProjectData(
   request: APIRequestContext,
   extensionId: string,
   key: string,
-  config: TimelineConfig,
   before: ValidationResult | null,
   requireChange: boolean,
 ): Promise<ValidationResult> {
@@ -597,9 +602,12 @@ async function expectValidatedProjectData(
     validation: { valid: false, reason: 'not read', fingerprint: null, count: 0 },
   };
   await expect.poll(async () => {
-    latest = await readValidatedProjectData(request, extensionId, key, config);
-    return latest.validation.valid;
-  }, { timeout: 30_000, message: `${extensionId} did not persist a valid ${key}: ${latest.validation.reason}` }).toBe(true);
+    latest = await readValidatedProjectData(request, extensionId, key);
+    return latest.validation;
+  }, {
+    timeout: 30_000,
+    message: `${extensionId} did not persist a valid ${key}`,
+  }).toMatchObject({ valid: true });
   if (requireChange && before && !meaningfulChange(before, latest.validation)) {
     throw new Error(`${extensionId} command did not create a meaningful new ${key} output`);
   }
@@ -657,7 +665,6 @@ async function proveAllExtensionLifecycles(page: Page, request: APIRequestContex
             request,
             probe.id,
             probe.projectDataKey!,
-            (await readTimeline(request)).config,
             beforeValidation,
             true,
           );
@@ -668,7 +675,6 @@ async function proveAllExtensionLifecycles(page: Page, request: APIRequestContex
             request,
             probe.id,
             probe.projectDataKey!,
-            (await readTimeline(request)).config,
             null,
             false,
           );
