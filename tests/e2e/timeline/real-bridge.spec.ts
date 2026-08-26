@@ -8,6 +8,7 @@
  * project root; the Vite dev server comes from the shared webServer config.
  */
 import { expect, test } from '@playwright/test';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { BASE_URL, CLIP_ACTION_WITH_ID_SELECTOR, EDITOR_SETTLE_MS } from './support';
 
@@ -696,6 +697,140 @@ test('B9 recovery Retry re-POSTs the draft at its base version and clears the sl
   expect(draftSlot).toBeNull();
   const after = await (await request.get(url, { headers: bridgeHeaders() })).json();
   expect(after.config.clips[0].at).toBeGreaterThan(timeline.config.clips[0].at);
+});
+
+/**
+ * B8-T5 [XHARD]: the document-derived shot surface (runtime.userId === null)
+ * driven against the REAL SQLite-backed bridge over ONE CAS document.
+ *
+ * Group legs:
+ *   1. Render        — the seeded `Bridge Shot A` pinned-shot group renders
+ *                      from deriveTimelineShotGroupViews(config, registry);
+ *                      relational shot actions stay dormant in document mode.
+ *   2. Duplicate     — PROBED-BLOCKED: the pinned checkout's family registry
+ *                      (astrid/core/integrations/reigh/capabilities.py
+ *                      FAMILY_DERIVATIONS) has no `duplicate` family, so the
+ *                      admission must fail TYPED, mutate nothing, and never
+ *                      fabricate success. Raw transcript written to
+ *                      .oracle/evidence/b8-batch5-probes/.
+ *   3. Promote       — PRE-BLOCKED (rev 6): the live gallery cannot be seeded
+ *                      via the pinned CLI, so gallery.get for the documented
+ *                      generation must surface a typed bridge failure.
+ *   4. Reload        — page.reload() re-fetches a BYTE-IDENTICAL document.
+ */
+test('document shot surface: render, duplicate, promote, reload over one bridge document', async ({ page, request }) => {
+  const audit = installBrowserNetworkAudit(page);
+  const url = await timelineUrl(request);
+
+  // Head facts come from the bridge itself, never from client-side state.
+  const headResponse = await request.get(url, { headers: bridgeHeaders() });
+  expect(headResponse.status()).toBe(200);
+  const head = await headResponse.json();
+  const headVersion = head.config_version as number;
+  const headDocument = await headResponse.text();
+  expect(head.config.pinnedShotGroups).toEqual([expect.objectContaining({
+    shotId: 'shot-bridge-a',
+    trackId: 'V1',
+    clipIds: ['clip-1', 'clip-2'],
+    name: 'Bridge Shot A',
+  })]);
+
+  await openEditorAt(page);
+
+  // ── Group 1: Render ────────────────────────────────────────────────────────
+  // The document-derived group label renders from the CAS config+registry.
+  const groupLabel = page.locator('[title="Bridge Shot A"]').first();
+  await expect(groupLabel).toBeVisible({ timeout: 20_000 });
+
+  // Document-mode branch: relational (Supabase shots) actions are dormant;
+  // the document-native pack affordances are the wired ones.
+  await groupLabel.click({ button: 'right' });
+  await expect(page.getByRole('button', { name: 'Duplicate shot' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Promote next variant' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Jump to Shot' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Generate Video' })).toHaveCount(0);
+
+  // ── Group 2: Duplicate — probe-gated BLOCKED leg ───────────────────────────
+  // In-run: the duplicate affordance must surface a typed failure toast and
+  // leave the document untouched (invisible-failure default, no fake success).
+  await page.getByRole('button', { name: 'Duplicate shot' }).click();
+  await expect(page.getByText('Failed to duplicate shot')).toBeVisible({ timeout: 20_000 });
+
+  // Direct admission probe against the live bridge for the raw transcript the
+  // ledger records (same policy as T4c: probe evidence, no invented worker).
+  const admitProbe = await request.post(`${BRIDGE_ORIGIN}/projects/demo-project/tasks`, {
+    headers: { ...bridgeHeaders(), 'Idempotency-Key': 'reigh:shot-pack:v1:t5-duplicate-probe' },
+    data: {
+      family: 'duplicate',
+      input: {
+        source_group: { shot_id: 'shot-bridge-a', track_id: 'V1' },
+        destination_group: { shot_id: 'shot-bridge-a-copy-probe', track_id: 'V1' },
+        derived_from: { shot_id: 'shot-bridge-a', track_id: 'V1' },
+      },
+    },
+  });
+  const admitStatus = admitProbe.status();
+  const admitBody = await admitProbe.text();
+  expect(admitStatus).toBeGreaterThanOrEqual(400);
+  expect(admitStatus).toBeLessThan(500);
+  const probeDir = 'tests/e2e/timeline/.b8-batch5-probes';
+  await mkdir(probeDir, { recursive: true });
+  await writeFile(
+    `${probeDir}/duplicate-admission-probe.json`,
+    JSON.stringify({ status: admitStatus, body: JSON.parse(admitBody) }, null, 2),
+  );
+
+  // No fabricated mutation: the bridge document is exactly where it was.
+  const afterDuplicate = await (await request.get(url, { headers: bridgeHeaders() })).text();
+  expect(afterDuplicate).toBe(headDocument);
+
+  // ── Group 3: Promote — pre-BLOCKED (live gallery not seedable at the pin) ──
+  await groupLabel.click({ button: 'right' });
+  const galleryGet = page.waitForResponse((response) =>
+    /\/api\/astrid\/projects\/demo-project\/generations\//.test(new URL(response.url()).pathname),
+    { timeout: 20_000 });
+  await page.getByRole('button', { name: 'Promote next variant' }).click();
+  const galleryResponse = await galleryGet;
+  const galleryBody = await galleryResponse.text().catch(() => '');
+  expect(galleryResponse.status()).toBeGreaterThanOrEqual(400);
+  await writeFile(
+    `${probeDir}/promote-gallery-get.json`,
+    JSON.stringify({ status: galleryResponse.status(), url: galleryResponse.url(), body: galleryBody }, null, 2),
+  );
+  // Typed bridge failure surfaced — never a fabricated success toast.
+  await expect(page.getByText('Failed to promote primary variant')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText('Primary variant promoted')).toHaveCount(0);
+  const afterPromote = await (await request.get(url, { headers: bridgeHeaders() })).text();
+  expect(afterPromote).toBe(headDocument);
+
+  // ── Group 4: Reload restores the SAME bridge document ─────────────────────
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(EDITOR_SETTLE_MS);
+  await expect(page.locator(CLIP_ACTION_WITH_ID_SELECTOR).first()).toBeVisible({ timeout: 20_000 });
+  await expect(groupLabel).toBeVisible({ timeout: 20_000 });
+  const reloadedResponse = await request.get(url, { headers: bridgeHeaders() });
+  expect(reloadedResponse.status()).toBe(200);
+  const reloadedDocument = await reloadedResponse.text();
+  expect(reloadedDocument).toBe(headDocument);
+  const reloadedPayload: { config_version?: unknown } = JSON.parse(reloadedDocument);
+  expect(typeof reloadedPayload.config_version).toBe('number');
+  expect(reloadedPayload.config_version).toBe(headVersion);
+
+  audit.assertAllowed();
+  audit.assertSingleTaskPollingOwner();
+  audit.assertNoUnexpectedBrowserErrors([
+    /404.*\/media\/__reigh_capability_probe__\/content/i,
+    // Known typed failure (see .oracle/BLOCKED-B8-T5-asset-media-id.md): any
+    // editor-mediated CAS save strips the bridge-managed `media_id` from
+    // registry entries (not in ASSET_REGISTRY_ENTRY_FIELDS), after which the
+    // bridge's timeline-scoped asset content route answers 404 for previews.
+    /404.*\/timelines\/[^/]+\/assets\//i,
+    /failed to load resource.*\/api\/astrid\/projects\/demo-project\/generations\//i,
+    /failed to load resource.*\/api\/astrid\/projects\/demo-project\/tasks/i,
+    /unknown family/i,
+    /\[video-editor:duplicate-shot-group\] AppError.*unknown family/i,
+    /\[video-editor:promote-shot-primary\] AppError.*was not found/i,
+  ]);
 });
 
 /**

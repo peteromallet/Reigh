@@ -53,18 +53,71 @@ const OTHER_PROJECT = { slug: 'other-project', name: 'Other Project' };
 const RUNAWAY_RUN_ID = '01j5realbridgepage000000000000';
 const BRIDGE_TOKEN = process.env.ASTRID_BRIDGE_TOKEN ?? randomBytes(32).toString('hex');
 
-function seed() {
+// B8-T5a: ONE builder for the demo `{config, registry}` pair so the on-disk
+// assembly.json mirror written by seed() and the SQLite CAS document written
+// by registerInBridgeRegistry() can never diverge. The generation/variant
+// asset entries give the DOCUMENT its generation references (render/duplicate
+// reads); they do NOT create gallery rows and never satisfy promote-primary.
+const BRIDGE_SHOT_A = Object.freeze({
+  shotId: 'shot-bridge-a',
+  trackId: 'V1',
+  clipIds: Object.freeze(['clip-1', 'clip-2']),
+  mode: 'images',
+  name: 'Bridge Shot A',
+});
+const BRIDGE_GENERATION_ID = '01j5genbridgea0000000000000a';
+const BRIDGE_VARIANT_PRIMARY_ID = '01j5varbridgeapri00000000000';
+const BRIDGE_VARIANT_ALT_ID = '01j5varbridgeaalt00000000000';
+
+function demoDocument(imported) {
+  const managed = imported ? {
+    media_id: imported.id,
+    content_sha256: imported.content_hash,
+    type: imported.mime_type,
+  } : {};
   const config = {
     output: { resolution: '1920x1080', fps: 24, file: 'output.mp4' },
     clips: [
       { id: 'clip-1', track: 'V1', at: 0, clipType: 'media', hold: 4, asset: 'example-image1.jpg' },
+      { id: 'clip-2', track: 'V1', at: 4, clipType: 'media', hold: 4, asset: 'gen-shot-a-primary' },
     ],
     tracks: [
       { id: 'V1', kind: 'visual', label: 'Video' },
       { id: 'V2', kind: 'visual', label: 'Video 2' },
       { id: 'A1', kind: 'audio', label: 'Audio' },
     ],
+    pinnedShotGroups: [{ ...BRIDGE_SHOT_A, clipIds: [...BRIDGE_SHOT_A.clipIds] }],
   };
+  const registry = {
+    assets: {
+      'example-image1.jpg': {
+        file: 'example-image1.jpg',
+        ...managed,
+      },
+      'gen-shot-a-primary': {
+        file: 'example-image1.jpg',
+        ...managed,
+        generationId: BRIDGE_GENERATION_ID,
+        variantId: BRIDGE_VARIANT_PRIMARY_ID,
+        origin: 'refreshable-from-generation',
+      },
+      'gen-shot-a-alt': {
+        file: 'example-image1.jpg',
+        ...managed,
+        generationId: BRIDGE_GENERATION_ID,
+        variantId: BRIDGE_VARIANT_ALT_ID,
+        origin: 'refreshable-from-generation',
+      },
+    },
+  };
+  return { config, registry };
+}
+
+function seed() {
+  // Lockstep mirror: same builder as the SQLite registration (managed media
+  // fields are runtime-derived and only exist post-import, so the mirror is
+  // built pre-import; the extension itself is byte-identical).
+  const { config } = demoDocument(null);
 
   const writeProject = (project, timeline, timelineUlid, timelineSlug, timelineName) => {
     const projectDir = join(SEED_ROOT, project.slug);
@@ -280,17 +333,10 @@ function runAstridJson(astrid, args, env, label) {
 
 function registerInBridgeRegistry(astrid, { sourcePath }) {
   const cliEnv = { ...astrid.env, ASTRID_PROJECTS_ROOT: SEED_ROOT };
-  const config = {
-    output: { resolution: '1920x1080', fps: 24, file: 'output.mp4' },
-    clips: [
-      { id: 'clip-1', track: 'V1', at: 0, clipType: 'media', hold: 4, asset: 'example-image1.jpg' },
-    ],
-    tracks: [
-      { id: 'V1', kind: 'visual', label: 'Video' },
-      { id: 'V2', kind: 'visual', label: 'Video 2' },
-      { id: 'A1', kind: 'audio', label: 'Audio' },
-    ],
-  };
+  // B8-T5a: the SQLite bridge document is created HERE (not by seed()), so
+  // the clip-2 / pinnedShotGroups / generation-variant extension travels in
+  // these registration payloads via the same demoDocument() helper that
+  // builds seed()'s assembly.json mirror.
   runAstridJson(astrid, ['projects', 'create', PROJECT.slug, '--name', PROJECT.name], cliEnv, 'project registration');
   const imported = runAstridJson(
     astrid,
@@ -305,16 +351,7 @@ function registerInBridgeRegistry(astrid, { sourcePath }) {
   ) {
     throw new Error(`[real-bridge] managed media import returned incomplete data: ${JSON.stringify(imported)}`);
   }
-  const registry = {
-    assets: {
-      'example-image1.jpg': {
-        file: 'example-image1.jpg',
-        media_id: imported.id,
-        content_sha256: imported.content_hash,
-        type: imported.mime_type,
-      },
-    },
-  };
+  const { config, registry } = demoDocument(imported);
   runAstridJson(
     astrid,
     ['timelines', 'create', 'demo-timeline', '--project', PROJECT.slug,

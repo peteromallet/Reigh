@@ -1,0 +1,7 @@
+{
+  "status": 422,
+  "body": {
+    "error": "capability_unavailable",
+    "detail": "duplicate: unknown family; supported families are the code-declared registry families"
+  }
+}

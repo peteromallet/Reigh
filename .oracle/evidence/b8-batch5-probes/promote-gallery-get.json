@@ -1,0 +1,5 @@
+{
+  "status": 404,
+  "url": "http://127.0.0.1:36828/api/astrid/projects/demo-project/generations/01j5genbridgea0000000000000a",
+  "body": "{\"error\": \"generation_not_found\", \"detail\": \"generation '01j5genbridgea0000000000000a' was not found\"}"
+}
