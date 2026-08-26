@@ -773,10 +773,12 @@ async function expectedTranscriptCaptions(page: Page): Promise<ExpectedCaption[]
     timeout: 30_000,
     message: 'paired transcript fixture did not expose its exact two source segments',
   }).toBe(2);
-  return chips.evaluateAll((mountedChips) => mountedChips.map((chip) => {
-    const title = chip.getAttribute('title') ?? '';
+  const mountedCaptionAttributes = await chips.evaluateAll((mountedChips) => mountedChips.map((chip) => ({
+    title: chip.getAttribute('title') ?? '',
+    aria: chip.getAttribute('aria-label') ?? '',
+  })));
+  return mountedCaptionAttributes.map(({ title, aria }) => {
     const itemId = title.split(' · ', 1)[0];
-    const aria = chip.getAttribute('aria-label') ?? '';
     const match = aria.match(/^Transcript segment: (.*), ([0-9]+(?:\.[0-9]+)?) to ([0-9]+(?:\.[0-9]+)?) seconds$/);
     if (!itemId || !match) throw new Error(`transcript chip has malformed identity/timing: ${aria}`);
     const at = Number(match[2]);
@@ -787,7 +789,7 @@ async function expectedTranscriptCaptions(page: Page): Promise<ExpectedCaption[]
       at,
       duration: end - at,
     };
-  }));
+  });
 }
 
 async function materializeTranscript(page: Page, request: APIRequestContext): Promise<ValidationResult> {

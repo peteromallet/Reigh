@@ -1935,3 +1935,21 @@ fresh console collection.
 - The failed raw evidence has artifact-index SHA-256
   `6642b45c9ca6f0d0d85a763953cbd85eb6c803f6fbf06373167cf7576ad5f80f`.
   It is retained as RC18 diagnostic history and is not a passing receipt.
+
+### Browser evaluation cannot close over release-runner helpers
+
+- RC19 proved the Runaway tail, authoritative transcript count, React viewport
+  synchronization, and two remounted chips, then failed while turning those DOM
+  attributes into expected caption clips. The `evaluateAll` callback called
+  `transcriptCaptionClipId`, a Node-side helper that Playwright serializes by
+  source rather than lexical closure. It therefore existed in the runner but
+  was undefined in the browser utility world.
+- Page evaluation now performs only the browser-owned operation: extracting
+  `title` and `aria-label` strings from the two row-scoped elements. Identity,
+  timing parsing, validation, and `transcriptCaptionClipId` mapping run back in
+  Node, where their owning functions and failure diagnostics are available.
+  This makes the execution boundary explicit instead of duplicating the helper
+  inside the page or weakening the expected-caption contract.
+- The failed raw evidence has artifact-index SHA-256
+  `9d38e5983ee06ed1a3fff9b612b5ad3efaf6bd271f6acea17395eccd477774ff`.
+  It is retained as RC19 diagnostic history and is not a passing receipt.
