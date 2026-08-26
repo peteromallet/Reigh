@@ -971,8 +971,8 @@ async function stopRestartInstance(instance: RestartInstance) {
   if (instance.process.exitCode !== null || instance.process.signalCode !== null) return;
   const pid = Number(readFileSync(RESTART_PID_FILE, 'utf8'));
   expect(pid).toBeGreaterThan(0);
-  try { process.kill(pid, 'SIGKILL'); } catch {}
-  try { instance.process.kill('SIGKILL'); } catch {}
+  try { process.kill(pid, 'SIGKILL'); } catch (_e) { void _e; }
+  try { instance.process.kill('SIGKILL'); } catch (_e) { void _e; }
   // Same Node-20 pin: executor form instead of Promise.withResolvers().
   await new Promise<void>((resolveExit, rejectExit) => {
     const timer = setTimeout(
