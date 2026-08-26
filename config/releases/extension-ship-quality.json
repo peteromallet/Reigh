@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "release": "extension-ship-quality-rc42",
-  "status": "integration",
+  "status": "frozen",
   "reigh": {
     "branch": "codex/extension-ship-integration",
     "releaseTag": "extension-ship-quality-rc42",
