@@ -112,12 +112,27 @@ export declare const TextClipData: z.ZodObject<{
     bold?: boolean | undefined;
     italic?: boolean | undefined;
 }>;
+export declare const KeyframeInterpolation: z.ZodEnum<["linear", "hold"]>;
+export declare const ClipKeyframe: z.ZodObject<{
+    time: z.ZodNumber;
+    value: z.ZodUnion<[z.ZodNumber, z.ZodString, z.ZodBoolean]>;
+    interpolation: z.ZodEnum<["linear", "hold"]>;
+}, "strip", z.ZodTypeAny, {
+    value: string | number | boolean;
+    time: number;
+    interpolation: "linear" | "hold";
+}, {
+    value: string | number | boolean;
+    time: number;
+    interpolation: "linear" | "hold";
+}>;
 export declare const TimelineClip: z.ZodObject<{
     id: z.ZodString;
     at: z.ZodNumber;
     track: z.ZodString;
     source_uuid: z.ZodOptional<z.ZodString>;
     clipType: z.ZodOptional<z.ZodString>;
+    label: z.ZodOptional<z.ZodString>;
     asset: z.ZodOptional<z.ZodString>;
     from: z.ZodOptional<z.ZodNumber>;
     to: z.ZodOptional<z.ZodNumber>;
@@ -243,6 +258,19 @@ export declare const TimelineClip: z.ZodObject<{
     }>, "many">, z.ZodRecord<z.ZodString, z.ZodNumber>]>>;
     params: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodAny>>;
     generation: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodAny>>;
+    keyframes: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodArray<z.ZodObject<{
+        time: z.ZodNumber;
+        value: z.ZodUnion<[z.ZodNumber, z.ZodString, z.ZodBoolean]>;
+        interpolation: z.ZodEnum<["linear", "hold"]>;
+    }, "strip", z.ZodTypeAny, {
+        value: string | number | boolean;
+        time: number;
+        interpolation: "linear" | "hold";
+    }, {
+        value: string | number | boolean;
+        time: number;
+        interpolation: "linear" | "hold";
+    }>, "many">>>;
     app: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodAny>>;
     pool_id: z.ZodOptional<z.ZodString>;
     clip_order: z.ZodOptional<z.ZodNumber>;
@@ -251,13 +279,14 @@ export declare const TimelineClip: z.ZodObject<{
     id: string;
     track: string;
     params?: Record<string, any> | undefined;
+    hold?: number | undefined;
     source_uuid?: string | undefined;
     clipType?: string | undefined;
+    label?: string | undefined;
     asset?: string | undefined;
     from?: number | undefined;
     to?: number | undefined;
     speed?: number | undefined;
-    hold?: number | undefined;
     volume?: number | undefined;
     x?: number | undefined;
     y?: number | undefined;
@@ -309,6 +338,11 @@ export declare const TimelineClip: z.ZodObject<{
         fade_out?: number | undefined;
     }[] | Record<string, number> | undefined;
     generation?: Record<string, any> | undefined;
+    keyframes?: Record<string, {
+        value: string | number | boolean;
+        time: number;
+        interpolation: "linear" | "hold";
+    }[]> | undefined;
     app?: Record<string, any> | undefined;
     pool_id?: string | undefined;
     clip_order?: number | undefined;
@@ -317,13 +351,14 @@ export declare const TimelineClip: z.ZodObject<{
     id: string;
     track: string;
     params?: Record<string, any> | undefined;
+    hold?: number | undefined;
     source_uuid?: string | undefined;
     clipType?: string | undefined;
+    label?: string | undefined;
     asset?: string | undefined;
     from?: number | undefined;
     to?: number | undefined;
     speed?: number | undefined;
-    hold?: number | undefined;
     volume?: number | undefined;
     x?: number | undefined;
     y?: number | undefined;
@@ -375,6 +410,11 @@ export declare const TimelineClip: z.ZodObject<{
         fade_out?: number | undefined;
     }[] | Record<string, number> | undefined;
     generation?: Record<string, any> | undefined;
+    keyframes?: Record<string, {
+        value: string | number | boolean;
+        time: number;
+        interpolation: "linear" | "hold";
+    }[]> | undefined;
     app?: Record<string, any> | undefined;
     pool_id?: string | undefined;
     clip_order?: number | undefined;
@@ -392,8 +432,8 @@ export declare const TrackDefinition: z.ZodObject<{
     app: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodAny>>;
 }, "strip", z.ZodTypeAny, {
     id: string;
-    kind: "visual" | "audio";
     label: string;
+    kind: "visual" | "audio";
     volume?: number | undefined;
     opacity?: number | undefined;
     app?: Record<string, any> | undefined;
@@ -403,8 +443,8 @@ export declare const TrackDefinition: z.ZodObject<{
     blendMode?: "normal" | "multiply" | "screen" | "overlay" | "darken" | "lighten" | "soft-light" | "hard-light" | undefined;
 }, {
     id: string;
-    kind: "visual" | "audio";
     label: string;
+    kind: "visual" | "audio";
     volume?: number | undefined;
     opacity?: number | undefined;
     app?: Record<string, any> | undefined;
@@ -548,6 +588,7 @@ export declare const TimelineConfig: z.ZodObject<{
         track: z.ZodString;
         source_uuid: z.ZodOptional<z.ZodString>;
         clipType: z.ZodOptional<z.ZodString>;
+        label: z.ZodOptional<z.ZodString>;
         asset: z.ZodOptional<z.ZodString>;
         from: z.ZodOptional<z.ZodNumber>;
         to: z.ZodOptional<z.ZodNumber>;
@@ -673,6 +714,19 @@ export declare const TimelineConfig: z.ZodObject<{
         }>, "many">, z.ZodRecord<z.ZodString, z.ZodNumber>]>>;
         params: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodAny>>;
         generation: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodAny>>;
+        keyframes: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodArray<z.ZodObject<{
+            time: z.ZodNumber;
+            value: z.ZodUnion<[z.ZodNumber, z.ZodString, z.ZodBoolean]>;
+            interpolation: z.ZodEnum<["linear", "hold"]>;
+        }, "strip", z.ZodTypeAny, {
+            value: string | number | boolean;
+            time: number;
+            interpolation: "linear" | "hold";
+        }, {
+            value: string | number | boolean;
+            time: number;
+            interpolation: "linear" | "hold";
+        }>, "many">>>;
         app: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodAny>>;
         pool_id: z.ZodOptional<z.ZodString>;
         clip_order: z.ZodOptional<z.ZodNumber>;
@@ -681,13 +735,14 @@ export declare const TimelineConfig: z.ZodObject<{
         id: string;
         track: string;
         params?: Record<string, any> | undefined;
+        hold?: number | undefined;
         source_uuid?: string | undefined;
         clipType?: string | undefined;
+        label?: string | undefined;
         asset?: string | undefined;
         from?: number | undefined;
         to?: number | undefined;
         speed?: number | undefined;
-        hold?: number | undefined;
         volume?: number | undefined;
         x?: number | undefined;
         y?: number | undefined;
@@ -739,6 +794,11 @@ export declare const TimelineConfig: z.ZodObject<{
             fade_out?: number | undefined;
         }[] | Record<string, number> | undefined;
         generation?: Record<string, any> | undefined;
+        keyframes?: Record<string, {
+            value: string | number | boolean;
+            time: number;
+            interpolation: "linear" | "hold";
+        }[]> | undefined;
         app?: Record<string, any> | undefined;
         pool_id?: string | undefined;
         clip_order?: number | undefined;
@@ -747,13 +807,14 @@ export declare const TimelineConfig: z.ZodObject<{
         id: string;
         track: string;
         params?: Record<string, any> | undefined;
+        hold?: number | undefined;
         source_uuid?: string | undefined;
         clipType?: string | undefined;
+        label?: string | undefined;
         asset?: string | undefined;
         from?: number | undefined;
         to?: number | undefined;
         speed?: number | undefined;
-        hold?: number | undefined;
         volume?: number | undefined;
         x?: number | undefined;
         y?: number | undefined;
@@ -805,6 +866,11 @@ export declare const TimelineConfig: z.ZodObject<{
             fade_out?: number | undefined;
         }[] | Record<string, number> | undefined;
         generation?: Record<string, any> | undefined;
+        keyframes?: Record<string, {
+            value: string | number | boolean;
+            time: number;
+            interpolation: "linear" | "hold";
+        }[]> | undefined;
         app?: Record<string, any> | undefined;
         pool_id?: string | undefined;
         clip_order?: number | undefined;
@@ -822,8 +888,8 @@ export declare const TimelineConfig: z.ZodObject<{
         app: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodAny>>;
     }, "strip", z.ZodTypeAny, {
         id: string;
-        kind: "visual" | "audio";
         label: string;
+        kind: "visual" | "audio";
         volume?: number | undefined;
         opacity?: number | undefined;
         app?: Record<string, any> | undefined;
@@ -833,8 +899,8 @@ export declare const TimelineConfig: z.ZodObject<{
         blendMode?: "normal" | "multiply" | "screen" | "overlay" | "darken" | "lighten" | "soft-light" | "hard-light" | undefined;
     }, {
         id: string;
-        kind: "visual" | "audio";
         label: string;
+        kind: "visual" | "audio";
         volume?: number | undefined;
         opacity?: number | undefined;
         app?: Record<string, any> | undefined;
@@ -928,19 +994,21 @@ export declare const TimelineConfig: z.ZodObject<{
         background?: string | null | undefined;
         background_scale?: number | null | undefined;
     }>>;
+    app: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodAny>>;
 }, "strip", z.ZodTypeAny, {
     clips: {
         at: number;
         id: string;
         track: string;
         params?: Record<string, any> | undefined;
+        hold?: number | undefined;
         source_uuid?: string | undefined;
         clipType?: string | undefined;
+        label?: string | undefined;
         asset?: string | undefined;
         from?: number | undefined;
         to?: number | undefined;
         speed?: number | undefined;
-        hold?: number | undefined;
         volume?: number | undefined;
         x?: number | undefined;
         y?: number | undefined;
@@ -992,15 +1060,21 @@ export declare const TimelineConfig: z.ZodObject<{
             fade_out?: number | undefined;
         }[] | Record<string, number> | undefined;
         generation?: Record<string, any> | undefined;
+        keyframes?: Record<string, {
+            value: string | number | boolean;
+            time: number;
+            interpolation: "linear" | "hold";
+        }[]> | undefined;
         app?: Record<string, any> | undefined;
         pool_id?: string | undefined;
         clip_order?: number | undefined;
     }[];
+    app?: Record<string, any> | undefined;
     theme?: string | undefined;
     tracks?: {
         id: string;
-        kind: "visual" | "audio";
         label: string;
+        kind: "visual" | "audio";
         volume?: number | undefined;
         opacity?: number | undefined;
         app?: Record<string, any> | undefined;
@@ -1044,13 +1118,14 @@ export declare const TimelineConfig: z.ZodObject<{
         id: string;
         track: string;
         params?: Record<string, any> | undefined;
+        hold?: number | undefined;
         source_uuid?: string | undefined;
         clipType?: string | undefined;
+        label?: string | undefined;
         asset?: string | undefined;
         from?: number | undefined;
         to?: number | undefined;
         speed?: number | undefined;
-        hold?: number | undefined;
         volume?: number | undefined;
         x?: number | undefined;
         y?: number | undefined;
@@ -1102,15 +1177,21 @@ export declare const TimelineConfig: z.ZodObject<{
             fade_out?: number | undefined;
         }[] | Record<string, number> | undefined;
         generation?: Record<string, any> | undefined;
+        keyframes?: Record<string, {
+            value: string | number | boolean;
+            time: number;
+            interpolation: "linear" | "hold";
+        }[]> | undefined;
         app?: Record<string, any> | undefined;
         pool_id?: string | undefined;
         clip_order?: number | undefined;
     }[];
+    app?: Record<string, any> | undefined;
     theme?: string | undefined;
     tracks?: {
         id: string;
-        kind: "visual" | "audio";
         label: string;
+        kind: "visual" | "audio";
         volume?: number | undefined;
         opacity?: number | undefined;
         app?: Record<string, any> | undefined;

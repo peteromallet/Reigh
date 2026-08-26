@@ -30,6 +30,15 @@ import {
 } from './reigh-release-provenance.mjs';
 import { PROCESS_SCOPE_ENV_KEY, runBoundedCommand } from './bounded-command.mjs';
 import {
+  PROCESS_SCOPE_CLEANUP_ALLOWANCE_MS,
+  PROCESS_SCOPE_MAX_DRAIN_ATTEMPTS,
+  PROCESS_SCOPE_POLL_MS,
+  PROCESS_SCOPE_SCAN_RETRIES,
+  PROCESS_SCOPE_SCAN_TIMEOUT_MS,
+  PROCESS_SCOPE_SINGLE_SCAN_BUDGET_MS,
+  retryProcessScan,
+} from './bounded-command-scan-policy.mjs';
+import {
   assertPinnedPlatform,
   attestNativeTools,
   buildContainerBoundaryAttestation,
@@ -160,12 +169,14 @@ const BASE_ENV_KEYS = Object.freeze([
 
 const SERVER_SCOPE_PREFIX = `${PROCESS_SCOPE_ENV_KEY}_`;
 const SERVER_SCOPE_QUIESCENCE_SCANS = 3;
-const SERVER_SCOPE_SCAN_DELAY_MS = 40;
-const SERVER_SCOPE_SCAN_TIMEOUT_MS = 1_000;
+const SERVER_SCOPE_SCAN_DELAY_MS = PROCESS_SCOPE_POLL_MS;
+const SERVER_SCOPE_SCAN_TIMEOUT_MS = PROCESS_SCOPE_SCAN_TIMEOUT_MS;
+const SERVER_SCOPE_SCAN_RETRIES = PROCESS_SCOPE_SCAN_RETRIES;
 const SERVER_SCOPE_SCAN_OUTPUT_CAP = 8 * 1024 * 1024;
 const SERVER_SUPERVISOR_ARG = '--paired-server-supervisor';
 const SERVER_PS_PATH = process.platform === 'darwin' ? '/bin/ps' : '/usr/bin/ps';
-const SERVER_SUPERVISOR_READY_TIMEOUT_MS = 3_000;
+const SERVER_SUPERVISOR_READY_TIMEOUT_MS = PROCESS_SCOPE_SINGLE_SCAN_BUDGET_MS + 1_000;
+const SERVER_SUPERVISOR_DRAIN_TIMEOUT_MS = PROCESS_SCOPE_CLEANUP_ALLOWANCE_MS;
 
 function commandBudgetKey(command, args = [], requested) {
   if (typeof requested === 'string' && Object.hasOwn(COMMAND_BUDGETS_MS, requested)) return requested;
@@ -1400,9 +1411,9 @@ async function releaseServerSupervisor(handle, signal = 'SIGTERM') {
     return;
   }
   try {
-    // Let the watchdog perform one final drain using the observations it has
-    // collected throughout the server lifetime. This closes the leader-exit
-    // to detached-child-start race after the verifier's first scan.
+    // Let the watchdog perform a final bounded drain from fresh authoritative
+    // scans. This closes the leader-exit to detached-child-start race without
+    // continuously scanning the process table throughout server lifetime.
     supervisor.stdin.write(`${JSON.stringify({ type: 'drain', signal })}\n`);
     supervisor.stdin.end();
   } catch { /* the supervisor may already have noticed parent loss */ }
@@ -1412,7 +1423,7 @@ async function releaseServerSupervisor(handle, signal = 'SIGTERM') {
       const timer = setTimeout(async () => {
         await terminateSupervisorProcess(supervisor);
         resolvePromise();
-      }, 10_000);
+      }, SERVER_SUPERVISOR_DRAIN_TIMEOUT_MS);
       supervisor.once('close', () => { clearTimeout(timer); resolvePromise(); });
     }
   });
@@ -1432,7 +1443,6 @@ async function runServerSupervisor() {
   let released = false;
   let cleaning = false;
   let timer = null;
-  let observing = false;
   let buffer = '';
   const finish = (code = 0) => {
     if (timer) clearInterval(timer);
@@ -1467,23 +1477,22 @@ async function runServerSupervisor() {
         } else if (!config && message.scopeKey && message.scopeToken && Number.isSafeInteger(message.parentPid)) {
           config = message;
           config.seen = new Map();
-          const observe = async () => {
-            if (observing || cleaning || released) return;
-            observing = true;
-            try {
-              const rows = await scanScopedPids(config.scopeKey, config.scopeToken);
-              for (const row of rows) config.seen.set(row.pid, row.identity);
-            } catch { /* cleanup performs bounded retries */ }
-            observing = false;
-          };
+          // Prove that the process table is observable before authorizing the
+          // target launch. A failed initial scan must fail closed and cannot
+          // produce a readiness acknowledgement.
+          try {
+            await scanScopedPids(config.scopeKey, config.scopeToken);
+          } catch {
+            process.stdout.write('{"type":"supervisor-error"}\n');
+            finish(1);
+            continue;
+          }
+          // Do not poll the complete process table throughout server life.
+          // Cleanup performs bounded repeated scans; lifetime polling caused
+          // simultaneous scan storms with the shared command broker.
           timer = setInterval(() => {
-            void observe();
             if (process.ppid !== config.parentPid) void cleanup();
           }, SERVER_SCOPE_SCAN_DELAY_MS);
-          // A readiness acknowledgement means the watchdog has completed an
-          // initial authoritative scan, not merely parsed its configuration.
-          // The target cannot start before this resolves.
-          await observe();
           if (!cleaning && !released) process.stdout.write('{"type":"supervisor-ready"}\n');
         } else if (config && message.type === 'drain') {
           released = true;
@@ -1677,16 +1686,13 @@ function readScopedProcessesOnce(scopeKey, scopeToken) {
 }
 
 async function scanScopedPids(scopeKey, scopeToken) {
-  let lastError;
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    try {
-      return await readScopedProcessesOnce(scopeKey, scopeToken);
-    } catch (error) {
-      lastError = error;
-      await new Promise((resolvePromise) => setTimeout(resolvePromise, 40));
-    }
-  }
-  throw new Error(`process-scope scan failed after 3 attempts: ${lastError?.message ?? 'unknown ps failure'}`);
+  return retryProcessScan(
+    () => readScopedProcessesOnce(scopeKey, scopeToken),
+    {
+      attempts: SERVER_SCOPE_SCAN_RETRIES,
+      delayMs: SERVER_SCOPE_SCAN_DELAY_MS,
+    },
+  );
 }
 
 function sameProcessIdentity(left, right) {
@@ -1712,7 +1718,7 @@ async function signalScopedProcesses(handle, processes, signal) {
 
 async function drainServerScope(handle, initialSignal) {
   let quietScans = 0;
-  const maxAttempts = 3 + SERVER_SCOPE_QUIESCENCE_SCANS + 24;
+  const maxAttempts = PROCESS_SCOPE_MAX_DRAIN_ATTEMPTS;
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     // Scan before signaling. A leader can exit while a detached descendant is
     // still starting; consecutive scans below keep that race observable.

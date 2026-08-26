@@ -42,6 +42,12 @@ export const TextClipData = z.object({
     bold: z.boolean().optional(),
     italic: z.boolean().optional(),
 }).partial();
+export const KeyframeInterpolation = z.enum(["linear", "hold"]);
+export const ClipKeyframe = z.object({
+    time: z.number(),
+    value: z.union([z.number(), z.string(), z.boolean()]),
+    interpolation: KeyframeInterpolation,
+});
 // SD-024: clipType is an open string at the schema level; effect-id validation
 // happens against a registry, not in the schema.
 export const TimelineClip = z.object({
@@ -50,6 +56,7 @@ export const TimelineClip = z.object({
     track: z.string(),
     source_uuid: z.string().optional(),
     clipType: z.string().optional(),
+    label: z.string().optional(),
     asset: z.string().optional(),
     from: z.number().optional(),
     to: z.number().optional(),
@@ -73,6 +80,7 @@ export const TimelineClip = z.object({
     effects: z.union([z.array(TimelineEffect), z.record(z.number())]).optional(),
     params: z.record(z.any()).optional(),
     generation: z.record(z.any()).optional(),
+    keyframes: z.record(z.array(ClipKeyframe)).optional(),
     // Editor-extension metadata (e.g. scale-bake markers, clip-local shader
     // refs) round-trips through providers; keep the shared schema a superset
     // of Reigh's own TimelineClip type (types/index.ts:384).
@@ -148,6 +156,10 @@ export const TimelineConfig = z.object({
     theme_overrides: ThemeOverrides.optional(),
     generation_defaults: z.record(z.unknown()).optional(),
     output: TimelineOutput.optional(),
+    // Host-owned editor and extension state is durable timeline data. Keep the
+    // canonical package aligned with Reigh's TimelineConfig type instead of
+    // forcing renderers to strip provenance before validation.
+    app: z.record(z.any()).optional(),
 });
 export const Theme = z.object({
     id: z.string(),

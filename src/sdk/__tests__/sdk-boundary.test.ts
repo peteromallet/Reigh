@@ -26,6 +26,7 @@ import {
 // proves the canonical @banodoco/timeline-schema artifact is consumable.
 // Path is relative from src/sdk/__tests__/ to vendor/timeline-schema.
 import {
+  TimelineClip,
   TimelineConfig,
   resolveTheme,
   deepMergeTheme,
@@ -63,6 +64,28 @@ describe('Real vendored timeline-schema boundary', () => {
   it('parses a minimal valid TimelineConfig', () => {
     const result = TimelineConfig.safeParse({ clips: [] });
     expect(result.success).toBe(true);
+  });
+
+  it('accepts host-owned extension fields used by persisted render timelines', () => {
+    const clip = TimelineClip.safeParse({
+      id: 'caption-1',
+      at: 1,
+      track: 'captions',
+      clipType: 'text',
+      label: 'Human-readable caption',
+      app: { __generated__: { extensionId: 'com.reigh.transcript-lane' } },
+      keyframes: {
+        opacity: [
+          { time: 0, value: 0, interpolation: 'linear' },
+          { time: 1, value: 1, interpolation: 'hold' },
+        ],
+      },
+    });
+    expect(clip.success).toBe(true);
+    expect(TimelineConfig.safeParse({
+      clips: clip.success ? [clip.data] : [],
+      app: { 'com.reigh.scene-phase-markers': { sceneMarkers: [] } },
+    }).success).toBe(true);
   });
 
   it('rejects invalid TimelineConfig', () => {

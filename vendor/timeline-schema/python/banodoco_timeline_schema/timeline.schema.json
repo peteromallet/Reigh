@@ -28,6 +28,9 @@
               "clipType": {
                 "type": "string"
               },
+              "label": {
+                "type": "string"
+              },
               "asset": {
                 "type": "string"
               },
@@ -237,6 +240,40 @@
                 "type": "object",
                 "additionalProperties": {}
               },
+              "keyframes": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "time": {
+                        "type": "number"
+                      },
+                      "value": {
+                        "type": [
+                          "number",
+                          "string",
+                          "boolean"
+                        ]
+                      },
+                      "interpolation": {
+                        "type": "string",
+                        "enum": [
+                          "linear",
+                          "hold"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "time",
+                      "value",
+                      "interpolation"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
               "app": {
                 "type": "object",
                 "additionalProperties": {}
@@ -445,6 +482,10 @@
             "file"
           ],
           "additionalProperties": false
+        },
+        "app": {
+          "type": "object",
+          "additionalProperties": {}
         }
       },
       "required": [
@@ -468,6 +509,9 @@
           "type": "string"
         },
         "clipType": {
+          "type": "string"
+        },
+        "label": {
           "type": "string"
         },
         "asset": {
@@ -678,6 +722,40 @@
         "generation": {
           "type": "object",
           "additionalProperties": {}
+        },
+        "keyframes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "time": {
+                  "type": "number"
+                },
+                "value": {
+                  "type": [
+                    "number",
+                    "string",
+                    "boolean"
+                  ]
+                },
+                "interpolation": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "hold"
+                  ]
+                }
+              },
+              "required": [
+                "time",
+                "value",
+                "interpolation"
+              ],
+              "additionalProperties": false
+            }
+          }
         },
         "app": {
           "type": "object",

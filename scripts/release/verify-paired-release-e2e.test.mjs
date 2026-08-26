@@ -934,6 +934,22 @@ describe('paired repository release E2E gate', () => {
     assert.match(source, /SERVER_SCOPE_QUIESCENCE_SCANS/);
   });
 
+  it('keeps server supervisors fail-closed without continuous process-table polling', () => {
+    const source = readFileSync(resolve(REPO_ROOT, 'scripts/release/verify-paired-release-e2e.mjs'), 'utf8');
+    const supervisor = source.slice(
+      source.indexOf('async function runServerSupervisor'),
+      source.indexOf('async function startLoggedProcess'),
+    );
+    assert.match(supervisor, /await scanScopedPids\(config\.scopeKey, config\.scopeToken\)/);
+    assert.match(supervisor, /supervisor-error/);
+    assert.match(supervisor, /setInterval\(\(\) => \{\s*if \(process\.ppid !== config\.parentPid\)/);
+    assert.doesNotMatch(
+      supervisor,
+      /setInterval\([\s\S]{0,300}scanScopedPids/,
+      'a live supervisor must not create a full process-table scan storm',
+    );
+  });
+
   it('maintains independent simultaneous scopes and keeps tokens out of supervisor argv/env', async () => {
     const root = mkdtempSync(resolve(tmpdir(), 'paired-simultaneous-scopes-'));
     const target = resolve(root, 'target.mjs');
@@ -1156,6 +1172,19 @@ describe('paired repository release E2E gate', () => {
         'assert get_args(get_type_hints(TimelineConfig)["clips"])[0] is TimelineClip',
       ].join('\n')]);
       assert.equal(typeIdentity.status, 0, typeIdentity.stderr);
+      const schemaAcceptance = runTestCommand(python, ['-c', [
+        'from banodoco_timeline_schema import validate_timeline',
+        'validate_timeline({',
+        '  "clips": [{',
+        '    "id": "caption-1", "at": 1, "track": "captions",',
+        '    "clipType": "text", "label": "Human-readable caption",',
+        '    "app": {"__generated__": {"extensionId": "com.reigh.transcript-lane"}},',
+        '    "keyframes": {"opacity": [{"time": 0, "value": 1, "interpolation": "linear"}]}',
+        '  }],',
+        '  "app": {"com.reigh.scene-phase-markers": {"sceneMarkers": []}}',
+        '})',
+      ].join('\n')]);
+      assert.equal(schemaAcceptance.status, 0, schemaAcceptance.stderr);
     } finally {
       rmSync(runtimeRoot, { recursive: true, force: true });
     }

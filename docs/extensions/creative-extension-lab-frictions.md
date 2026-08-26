@@ -2200,3 +2200,35 @@ fresh console collection.
 - The failed raw evidence has artifact-index SHA-256
   `4913cbb585276ce337eb748b0d65eaf83ee9af9992ce2aa37c8ad0ba1daaaceb`.
   It is retained as RC29 diagnostic history and is not a passing receipt.
+
+### Cross-repository schema drift must fail with bounded, actionable diagnostics
+
+- RC30 passed the complete browser lifecycle, persistence, restart, and visual
+  checks, then failed during the first real render. Reigh legitimately emitted
+  `TimelineClip.label`, clip `keyframes`, and top-level `TimelineConfig.app`,
+  but the pinned shared timeline schema rejected those fields. Astrid's second
+  semantic allowlist also rejected `label`. The RC30 worker discarded both
+  child streams, so the release receipt collapsed the real validation reason
+  into `render_export child failed` and the browser surfaced only a timeout.
+- The shared TypeScript source, generated TypeScript/JSON/Python artifacts,
+  Reigh SDK boundary tests, and Astrid allowlist now carry the same three
+  fields. Replaying RC30's exact task snapshot after that repair produced a
+  valid 493,241-byte MP4 with SHA-256
+  `09fc6b41fd6eda7a0c2d0cf35eb54425d2c72cfdfbfb37a0a303f891dc9ca6a1`.
+- Astrid now drains bounded stdout/stderr tails from the render child from the
+  moment it starts, retains exit code and useful tail markers, and preserves
+  structured renderer support reasons without copying command, task, or
+  ambient environment data into the error. The child receives a canonical
+  allowlisted environment instead of inherited API keys or bridge tokens.
+  Noisy-child tests prove the pipes cannot deadlock and diagnostic payloads
+  remain bounded.
+- Cleanup then exposed a second masking failure: two server supervisors polled
+  the full process table every 40 ms while the shared cleanup broker scanned it
+  too. Three 1-second scan timeouts obscured the primary render failure. Server
+  supervisors now perform an authoritative fail-closed readiness scan, poll
+  only parent liveness during the run, and share the release scan budget for
+  teardown. Process discovery remains fail-closed without generating a scan
+  storm under browser/build load.
+- The failed RC30 evidence has artifact-index SHA-256
+  `574720b2453841f0e0376de071d32c6e69779d2c0d381171a1a331cefac9cc07`.
+  It is retained as diagnostic history and is not a passing receipt.

@@ -43,6 +43,31 @@ errors. This is the browser-level degraded/cancellation guard; the lower-level
 pagination, timeout classification, stale-reply, and retry unit suites remain
 the authoritative coverage for transport cancellation and recovery details.
 
+The deterministic large-lane scale gate runs with:
+
+```sh
+npm run test:extension-scale
+```
+
+It exercises 500, 5,000, and 50,000 source intervals through the production
+Runaway parser, typed `DataLaneRow`, and paginated bridge/cache path. Each size
+must retain the source count, mount at most 128 selectable transition controls,
+stay below 5,000 live DOM nodes, expose an 11-region density summary, and keep
+Home/End navigation pinned to the first and last source interval. Pagination is
+bounded to the page limit and a cache hit must not issue another bridge request.
+
+The isolated parser-plus-row render budgets are explicit and complement the
+unchanged 566-transition browser gate above:
+
+| Source intervals | Parse/render wall-clock budget | Heap-growth budget |
+| ---: | ---: | ---: |
+| 500 | 1,000 ms | 64 MiB |
+| 5,000 | 3,000 ms | 96 MiB |
+| 50,000 | 12,000 ms | 192 MiB |
+
+The scale test measures Node process heap growth for the isolated fixture; these
+budgets are deterministic regression guards, not production-project claims.
+
 Visual regression uses three complementary gates:
 
 - `tests/e2e/timeline/layout-geometry.spec.ts` compares committed desktop,

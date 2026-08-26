@@ -42,6 +42,7 @@
     "test:creative-extension": "node scripts/quality/check-creative-lab-extension.mjs",
     "test:extensions:production-smoke": "vitest run --config config/testing/vitest.config.ts src/sdk/smoke/extensionSmoke.test.ts",
     "test:extension-compatibility": "vitest run --config config/testing/vitest.config.ts src/tools/video-editor/examples/extensions/creative-lab/compatibilityMatrix.test.tsx",
+    "test:extension-scale": "vitest run --config config/testing/vitest.config.ts src/tools/video-editor/dev/runaway-timeline/largeLaneScale.test.tsx",
     "test:extension-ship-verifier": "node --test --test-concurrency=1 scripts/release/bounded-command.test.mjs scripts/release/reigh-release-provenance.test.mjs scripts/release/native-tool-attestation.test.mjs scripts/release/pinned-node-runtime.test.mjs scripts/release/pinned-python-runtime.test.mjs scripts/release/verify-extension-ship.test.mjs scripts/release/verify-rc6-visual-baseline-provenance.test.mjs",
     "test:rc6-visual-baseline-provenance": "node --test scripts/release/verify-rc6-visual-baseline-provenance.test.mjs",
     "verify:rc6-visual-baseline-provenance": "npm run test:rc6-visual-baseline-provenance && node scripts/release/verify-rc6-visual-baseline-provenance.mjs",

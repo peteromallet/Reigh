@@ -13,6 +13,9 @@ import {
 import {
   PROCESS_SCOPE_CLEANUP_ALLOWANCE_MS,
   PROCESS_SCOPE_MAX_DRAIN_ATTEMPTS,
+  PROCESS_SCOPE_POLL_MS,
+  PROCESS_SCOPE_SCAN_RETRIES,
+  PROCESS_SCOPE_SCAN_TIMEOUT_MS,
   PROCESS_SCOPE_SINGLE_SCAN_BUDGET_MS,
   retryProcessScan,
 } from './bounded-command-scan-policy.mjs';
@@ -68,11 +71,15 @@ describe('runBoundedCommand', () => {
   });
 
   it('derives the outer cleanup allowance from broker plus fallback scan budgets', () => {
+    assert.equal(PROCESS_SCOPE_SCAN_TIMEOUT_MS, 2_000);
+    assert.equal(PROCESS_SCOPE_SCAN_RETRIES, 2);
+    assert.equal(PROCESS_SCOPE_POLL_MS, 250);
+    assert.equal(PROCESS_SCOPE_SINGLE_SCAN_BUDGET_MS, 4_250);
     assert.equal(
       PROCESS_SCOPE_CLEANUP_ALLOWANCE_MS,
       PROCESS_SCOPE_SINGLE_SCAN_BUDGET_MS * (PROCESS_SCOPE_MAX_DRAIN_ATTEMPTS * 2 + 1) + 5_000,
     );
-    assert.equal(PROCESS_SCOPE_CLEANUP_ALLOWANCE_MS, 82_000);
+    assert.equal(PROCESS_SCOPE_CLEANUP_ALLOWANCE_MS, 111_250);
   });
 
   it('returns spawnSync-shaped success output and immutable invocation details', () => {

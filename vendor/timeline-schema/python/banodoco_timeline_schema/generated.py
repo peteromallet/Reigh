@@ -57,6 +57,12 @@ class Effect(TypedDict, closed=True):
     fade_out: NotRequired[float]
 
 
+class Keyframe(TypedDict, closed=True):
+    time: float
+    value: float | str | bool
+    interpolation: Literal["linear", "hold"]
+
+
 Clip = TypedDict(
     "Clip",
     {
@@ -65,6 +71,7 @@ Clip = TypedDict(
         "track": str,
         "source_uuid": NotRequired[str],
         "clipType": NotRequired[str],
+        "label": NotRequired[str],
         "asset": NotRequired[str],
         "from": NotRequired[float],
         "to": NotRequired[float],
@@ -88,6 +95,7 @@ Clip = TypedDict(
         "effects": NotRequired[list[Effect] | dict[str, float]],
         "params": NotRequired[dict[str, Any]],
         "generation": NotRequired[dict[str, Any]],
+        "keyframes": NotRequired[dict[str, list[Keyframe]]],
         "app": NotRequired[dict[str, Any]],
         "pool_id": NotRequired[str],
         "clip_order": NotRequired[int],
@@ -161,6 +169,7 @@ class TimelineConfig(TypedDict, closed=True):
     theme_overrides: NotRequired[ThemeOverrides]
     generation_defaults: NotRequired[dict[str, Any]]
     output: NotRequired[Output]
+    app: NotRequired[dict[str, Any]]
 
 
 class Transition2(TypedDict, closed=True):
@@ -184,6 +193,7 @@ TimelineClip = TypedDict(
         "track": str,
         "source_uuid": NotRequired[str],
         "clipType": NotRequired[str],
+        "label": NotRequired[str],
         "asset": NotRequired[str],
         "from": NotRequired[float],
         "to": NotRequired[float],
@@ -207,6 +217,7 @@ TimelineClip = TypedDict(
         "effects": NotRequired[list[Effect] | dict[str, float]],
         "params": NotRequired[dict[str, Any]],
         "generation": NotRequired[dict[str, Any]],
+        "keyframes": NotRequired[dict[str, list[Keyframe]]],
         "app": NotRequired[dict[str, Any]],
         "pool_id": NotRequired[str],
         "clip_order": NotRequired[int],
