@@ -1,0 +1,248 @@
+[launch_hermes_agent] model=stealth/ox-alpha → resolved=stealth/ox-alpha toolsets=['file', 'web'] max_tokens=65536 context_budget_tokens=(auto)
+[launch_hermes_agent] NOTE: omp gives the full toolset (Bash, Read, Edit, web, …); the file/web/terminal subset is a superset here.
+[launch_hermes_agent] cwd=/workspace/reigh-phase-c-megado/reigh-app
+Working...
+# Phase B8 Tasklist — Acceptance/Evidence Batch (frozen-ready)
+
+Custody SHA at freeze: `ddfe01b21` on `codex/phase-c-megado`. Prior PASS evidence (`docs/phase-c/b8-real-bridge-acceptance-blocked.md`, pinned pair Reigh `949dfad8` / bridge `97314cce`) does **not** transfer — every gate is re-proven at this custody.
+
+Model policy (USER-PINNED): every checkpoint verdict, cumulative boundary, and final verdict is owned by **Grok 4.6** as oracle. All execution/validation work by stealth/ox-alpha. No Luna/Sol. Oracle unavailability ⇒ STOP per agent goal stop conditions.
+
+Batching rule: each batch ends at a natural seam (green command set or delivered receipt), is self-contained, and names its exact validation commands. Two HUGE-RUN CUMULATIVE BOUNDARIES sit after B8-T3 (unit re-proof) and B8-T7 (failure/recovery) — environment first, then expensive browser proofs, then receipts over everything actually run.
+
+Classification legend:
+- **normal** — standard checkpoint evidence: commands exit 0, assertions green, diff reviewed.
+- **[XHARD]** — full exceptional-threshold evidence required: pinned-SHA provenance recorded, OS-level blocking mechanism proven active (not just asserted), raw command transcripts retained, oracle sees the actual run not a summary.
+
+---
+
+## Batch B8-1 — Environment bootstrap (T0)
+
+**Goal:** Make this workspace executable at all: deps present, correct pinned Astrid checkout provisioned on Linux, gate tooling runnable. This is currently the only hard blocker.
+
+**Tasks**
+| id | Work | Files | Classification |
+|---|---|---|---|
+| B8-T0a | `npm ci` to restore `node_modules` from lockfile | `package.json`, lockfile | normal |
+| B8-T0b | Resolve the Astrid pin for **this** branch (recorded by `acfc81d5d`/`6d2f84c02`), clone/checkout it outside the repo, build if required, export `ASTRID_CHECKOUT` | external checkout dir (not repo); harness reads env | **[XHARD]** |
+| B8-T0c | Record provenance receipt: pin SHA, checkout SHA, OS, node/npm versions, `ASTRID_CHECKOUT` value | `.oracle/status.md` (append-only note) | **[XHARD]** |
+
+**Checkpoint acceptance (Grok verifies exactly)**
+- `npm ci` exit 0.
+- Pinned Astrid checkout hash verified against the pin reference; mismatch = FAIL, not "close enough".
+- Harness's explicit missing-checkout rejection no longer triggers (harness starts past its guard).
+- Provenance receipt exists with all four fields; zero unverifiable claims.
+
+**Agent-goal criteria advanced:** Done-criterion 4 prerequisite (nothing else can run without this). North Star: *correctness by primitives* — the bridge under test is the real `astrid serve`, never a stand-in; anti-pattern avoided: substituting a mock transport to dodge provisioning.
+
+**Validation commands**
+```bash
+npm ci && echo "npm-ci: exit 0"
+git -C "$ASTRID_CHECKOUT" rev-parse HEAD   # must equal the resolved pin
+node scripts/c5-grep-gates.mjs             # smoke: tooling runs
+```
+
+---
+
+## Batch B8-2 — Static gates green (T1 + T2)
+
+**Goal:** Cheap static truth before expensive browser work: import-boundary gate and build/typecheck/lint/architecture gates all pass at HEAD custody.
+
+**Tasks**
+| id | Work | Files | Classification |
+|---|---|---|---|
+| B8-T1 | Run grep gates at HEAD; audit coverage list against files added since last run (J1 boot/auth cutover files included) — add any new covered module | `scripts/c5-grep-gates.mjs`, `scripts/c5-grep-gates.sh`, coverage manifest within | normal |
+| B8-T2 | Build + typecheck + lint + arch test; confirm zero new suppressions vs prior evidence | `config/vite/vite.config.ts`, tsconfigs, lint config, arch-test sources | normal |
+
+**Checkpoint acceptance**
+- Gate exits 0; zero supabase-js imports in covered modules; deferred boundary exists only in `src/integrations/astrid/deferredRuntime.ts`.
+- Coverage list includes every new source file since the previous gate run; diff of coverage list shown to oracle.
+- `npm run build`, `npx tsc --noEmit`, `npm run lint`, `npm run test:arch` all exit 0.
+- `grep -rn "@ts-ignore\|eslint-disable" <changed-since-pin files>` shows no new suppressions.
+
+**Agent-goal criteria advanced:** Done-criterion 4 groundwork; confirms post-J1 auth cutover introduced no second authority (no supabase-js anywhere except the deferred seam). North Star: *one authority* enforced mechanically; anti-pattern avoided: silent cloud fallback re-entering via a new import.
+
+**Validation commands**
+```bash
+node scripts/c5-grep-gates.mjs
+./scripts/c5-grep-gates.sh
+npm run build && npx tsc --noEmit && npm run lint && npm run test:arch
+```
+
+---
+
+## Batch B8-3 — Unit subset re-proof (T3)
+
+### 🚩 HUGE-RUN CUMULATIVE BOUNDARY #1 (after this batch)
+Rationale: unit-level correctness re-proven **post-J1-cutover and in the fresh environment** before any browser-time investment. If the focused suites fail here, B8-4+ is not started — root cause first.
+
+**Tasks**
+| id | Work | Files | Classification |
+|---|---|---|---|
+| B8-T3 | Re-run the vitest subset named in the closed doc (astrid client, recovery, polling, proxy) at HEAD; subset must be same-or-larger than prior evidence | vitest specs under astrid client/recovery/polling/proxy paths named in `docs/phase-c/b8-real-bridge-acceptance-blocked.md` | normal |
+
+**Checkpoint acceptance**
+- Focused suites exit 0; suite list compared against prior-evidence list — equal or superset, else FAIL.
+- Polling-budget assertions intact (2s active / 10s idle backoff still asserted).
+- Cumulative boundary verdict recorded by Grok before B8-4 opens.
+
+**Agent-goal criteria advanced:** Done-criterion 4 (proof chain step 3 of 4). North Star: *honest latency* — promised polling budgets remain tested primitives; *correctness by primitives* — CAS/idempotency unit contracts re-proven at new custody.
+
+**Validation commands**
+```bash
+npx vitest run <subset-paths-from-closed-doc>   # exact paths enumerated in batch notes
+```
+
+---
+
+## Batch B8-4 — OS-network-blocked real-browser journey (T4)
+
+### **[XHARD] batch** — the core done-criterion proof.
+
+**Tasks**
+| id | Work | Files | Classification |
+|---|---|---|---|
+| B8-T4a | Decide and implement the OS blocking mechanism (unshare-netns-with-loopback-only preferred for non-root reproducibility; nftables/iptables drop if privileges allow) — decision + activation transcript recorded | runbook section of `.oracle/status.md`; no product code changes | **[XHARD]** |
+| B8-T4b | Start real `python3 -m astrid serve` against pinned checkout + SQLite fixture; bind test runner; prove block rules active (outbound probe fails, loopback passes) | `tests/e2e/timeline/real-bridge.spec.ts`, `tests/e2e/timeline/real-bridge-serve.mjs` (505-line harness), playwright config | **[XHARD]** |
+| B8-T4c | Run full 5-case journey: browse → gallery → admit → poll → generation → placement over one document; browser-level assertions prove zero Supabase/remote traffic (loopback-only host allowlist) | same spec | **[XHARD]** |
+
+**Checkpoint acceptance**
+- Full suite green **with block rules verifiably active** — an in-run probe demonstrating non-loopback egress fails is part of the evidence.
+- Assertions cover both layers: OS drop/netns AND assertion-level loopback-only allowlist.
+- Raw run transcript + block-rule state captured; oracle sees the run, not a summary.
+- Render/export scope honesty: admission + Range/ETag serving asserted; decoded MP4 export explicitly recorded as downstream gate, not silently widened.
+
+**Agent-goal criteria advanced:** Done-criterion 4 directly. North Star: *end state* clause proven (local single-user product, loopback bridge only, no cloud in supported path); *one authority* — traffic assertions structurally forbid a second authority; anti-patterns avoided: cloud fallback, mirrored state.
+
+**Validation commands**
+```bash
+# inside netns/firewall wrapper per B8-T4a runbook
+python3 -m astrid serve ...            # pinned checkout, SQLite fixture
+npx playwright test tests/e2e/timeline/real-bridge.spec.ts
+```
+
+---
+
+## Batch B8-5 — Timeline + shot-view single-document proof (T5)
+
+**Tasks**
+| id | Work | Files | Classification |
+|---|---|---|---|
+| B8-T5 | Extend/run spec so shot view is exercised: shot view reads the **same** SQLite-backed document as editor; placement/generation state identical across both surfaces; no second fetch authority observed | `tests/e2e/timeline/real-bridge.spec.ts`, shot-view route | normal |
+
+**Checkpoint acceptance**
+- Assertions compare both surfaces against one authority (same document ID/state read twice, not two stores reconciled).
+- Zero additional network authorities observed in browser traffic log during shot-view segment.
+
+**Agent-goal criteria advanced:** North Star end-state: "shots are a view mode of the same timeline document"; *one authority* — view parity is the observable form of single-authority.
+
+**Validation commands**
+```bash
+npx playwright test tests/e2e/timeline/real-bridge.spec.ts -g "<shot-view case tag>"
+```
+
+---
+
+## Batch B8-6 — Persistence across reload & service restart (T6)
+
+**Tasks**
+| id | Work | Files | Classification |
+|---|---|---|---|
+| B8-T6a | Verify whether `real-bridge.spec.ts` already contains explicit reload + restart cases; extend where missing (restart-against-same-DB likely absent given line-count survey) | `tests/e2e/timeline/real-bridge.spec.ts` | normal |
+| B8-T6b | Case: reload preserves timeline/placement. Case: kill `astrid serve`, restart against same SQLite file, identical state restored | same spec, `real-bridge-serve.mjs` lifecycle hooks | normal |
+
+**Checkpoint acceptance**
+- Both cases green; media tree bytes unchanged across restart (hash before == hash after).
+- No repair/migration code path fires — recovery is pure re-read from sole authority.
+
+**Agent-goal criteria advanced:** North Star: *invisible failure default* — crash/restart leaves no partial authority, replay from SQLite+media tree only; anti-pattern avoided: reconciliation machinery.
+
+**Validation commands**
+```bash
+npx playwright test tests/e2e/timeline/real-bridge.spec.ts -g "<reload|restart tags>"
+sha256sum -c <media-tree-manifest>       # pre/post restart equality
+```
+
+---
+
+## Batch B8-7 — Failure/recovery behavior (T7)
+
+### 🚩 HUGE-RUN CUMULATIVE BOUNDARY #2 (after this batch)
+Rationale: all behavioral browser proofs complete — cumulative verdict covers environment + static + unit + every browser surface before any receipt-writing effort.
+
+**Tasks**
+| id | Work | Files | Classification |
+|---|---|---|---|
+| B8-T7a | Bridge-down path: typed offline/watchdog state surfaces with Retry (existing case ~line 705 stays green post-J1) | `src/integrations/astrid/bridgeRecovery.ts`, `networkStatusManager.ts`, degraded-states e2e spec | normal |
+| B8-T7b | `capability_unavailable` path: LocalSetupModal setup hint appears; **no fabricated success** anywhere | `LocalSetupModal` component + spec | normal |
+
+**Checkpoint acceptance**
+- Cases assert **typed error codes** surfacing in UI, not generic spinners or swallowed errors.
+- Negative-path assertions explicitly forbid false success (assertion that success UI does NOT render).
+- Cumulative boundary verdict recorded by Grok.
+
+**Agent-goal criteria advanced:** North Star: *invisible failure is the default failure state* made user-visible-honest; anti-pattern avoided: silent fallback / executor swap after claim.
+
+**Validation commands**
+```bash
+npx playwright test tests/e2e/<degraded-states-spec>.spec.ts
+npx vitest run src/integrations/astrid/bridgeRecovery*.test.*
+```
+
+---
+
+## Batch B8-8 — Evidence & receipt gap closure (T8)
+
+**Tasks**
+| id | Work | Files | Classification |
+|---|---|---|---|
+| B8-T8a | Rewrite `docs/phase-c/b8-real-bridge-acceptance-blocked.md` (or successor doc-of-record) with the **new** pair SHAs (Reigh `ddfe01b21`-lineage HEAD + bridge checkout SHA), commands, and results from B8-1…B8-7 | `docs/phase-c/b8-real-bridge-acceptance-blocked.md` | normal |
+| B8-T8b | Gap ledger: every prior evidence gap either evidenced (link to receipt) or explicitly BLOCKED with reason — C5-matrix style; zero unverifiable claims | `.oracle/status.md` | normal |
+
+**Checkpoint acceptance**
+- Every claim in the doc traceable to a command + exit code captured in B8-1…B8-7 transcripts; grep for unpinned SHAs returns nothing stale.
+- Each primitive receipt (CAS 409, idempotency, fences, Range/ETag, polling budgets) re-pinned to this custody.
+- Ledger has no row in state other than {evidenced, BLOCKED}.
+
+**Agent-goal criteria advanced:** Done-criterion 5 directly. North Star: *correctness by primitives* — each primitive keeps its named, re-pinned receipt; anti-pattern avoided: ceremony receipts without consumers (ledger rows map to actual runs).
+
+**Validation commands**
+```bash
+grep -rnE "949dfad8|97314cce" docs/ .oracle/    # expect: only historical-context mentions
+grep -c "BLOCKED\|evidenced" .oracle/status.md  # ledger completeness spot-check
+```
+
+---
+
+## Batch B8-9 — Final verdict + push (T9)
+
+**Tasks**
+| id | Work | Files | Classification |
+|---|---|---|---|
+| B8-T9a | Grok oracle runs cumulative review over B8-1…B8-8 evidence, then final verdict (model policy: Grok owns this, no substitution) | oracle session artifacts | normal (oracle-owned) |
+| B8-T9b | On PASS: push branch to origin; record final SHAs | repo → `origin/codex/phase-c-megado` | normal |
+
+**Checkpoint acceptance**
+- Final PASS issued by Grok under pinned model policy.
+- `origin/codex/phase-c-megado` contains custody HEAD; push SHA recorded in status.
+- Any residual gap carries an explicit BLOCKED entry, never silence.
+
+**Agent-goal criteria advanced:** Done-criteria 3, 5, 6 close out. Stop conditions respected: Grok unavailable ⇒ STOP with exact prerequisite; nothing irreducible handled off-policy.
+
+**Validation commands**
+```bash
+git push origin codex/phase-c-megado
+git rev-parse HEAD origin/codex/phase-c-megado   # equality check
+```
+
+---
+
+## Dependency graph
+
+```
+B8-1 ──► B8-2 ──► B8-3 ══🚩BOUNDARY#1══► B8-4 [XHARD] ──► B8-5 ──► B8-6 ──► B8-7 ══🚩BOUNDARY#2══► B8-8 ──► B8-9
+```
+
+No batch may open before its predecessor's checkpoint verdict. Boundary failures halt forward progress — root cause first, no evidence written over red runs.
+[launch_hermes_agent] done in 100.8s (exit=0)
+0

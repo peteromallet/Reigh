@@ -1,0 +1,61 @@
+[launch_hermes_agent] model=stealth/ox-alpha → resolved=stealth/ox-alpha toolsets=['file', 'web'] max_tokens=65536 context_budget_tokens=(auto)
+[launch_hermes_agent] NOTE: omp gives the full toolset (Bash, Read, Edit, web, …); the file/web/terminal subset is a superset here.
+[launch_hermes_agent] cwd=/workspace/reigh-phase-c-megado/reigh-app
+Working...
+Grounded before revising: `real-bridge-serve.mjs:40` pins `9d714649f2…`; `playwright.config.ts:38-40` launch args are only `--no-sandbox --disable-dev-shm-usage` (no resolver rules); `real-bridge.spec.ts:17` hard-skips without `REAL_BRIDGE=1`; `useShotsQueries.ts:35` shows `useListShots` → `supabase().from('shots')` (live second authority), and `clientFacadeBehavior.test.ts:42-45` confirms un-bootstrapped supabase throws rather than deferring to the bridge. Full revised plan follows — no file writes.
+
+````markdown
+# Phase B8 Plan — Acceptance/Evidence Batch (planner output, rev 3)
+
+Grounding notes: custody HEAD `ddfe01b21` on `codex/phase-c-megado` already contains `tests/e2e/timeline/real-bridge.spec.ts` (5 serial cases), `real-bridge-serve.mjs` (harness), `real-bridge-readiness.mjs`, hardening/rate-limit specs, `scripts/c5-grep-gates.mjs|.sh`, and `src/integrations/astrid/{capability,transport,bridgeRecovery,capabilityCensus}.ts`. **The Astrid bridge pin is frozen at `9d714649f2f658ad508dbb4ead8eaf15bff2149b`** — hardcoded as `PINNED_ASTRID_SHA` at `tests/e2e/timeline/real-bridge-serve.mjs:40`; the harness hard-fails any checkout whose HEAD ≠ this SHA (`real-bridge-serve.mjs:217-225`). This is the only pin; no other 40-hex SHA may appear outside historical prose. Prior PASS evidence (`docs/phase-c/b8-real-bridge-acceptance-blocked.md`) was produced at a *different* pinned pair on a different branch and does **not** transfer. The J1 boot/auth cutover landed after those pins, so every gate must be re-proven here. Workspace has no `node_modules` and no Astrid checkout (harness default points at a macOS path).
+
+### 1. Tasklist covering the ENTIRE remaining goal
+
+| # | id/title | Files | Criterion | Deps | Acceptance |
+|---|---|---|---|---|---|
+| 1 | **B8-T0 environment bootstrap** | `package.json`, lockfile | Install deps; provision clean Astrid checkout at pin **`9d714649f2f658ad508dbb4ead8eaf15bff2149b`**; set `ASTRID_CHECKOUT`; provision pinned Node 20.19.4 (`.nvmrc`) + Python 3.11.11 (release manifest `verification.astridPython`) + locked Remotion runtime | – | `npm ci` exit 0; `git -C "$ASTRID_CHECKOUT" rev-parse HEAD` = `9d714649f2…` exactly; clean worktree; Remotion lock blob equality holds; provenance receipt records clone URL + all version pins |
+| 2 | **B8-T1 grep gate green** | `scripts/c5-grep-gates.mjs`, `.sh` | Zero supabase-js imports in covered modules; deferred boundary only where the gate allows | T0 | Gate exits 0 at HEAD; any new-covered-file since last run added to coverage list |
+| 3 | **B8-T2 build + static gates** | `config/vite/vite.config.ts`, tsconfigs | `npm run build`, `npx tsc --noEmit`, `npm run lint`, `npm run test:arch` all pass | T0 | All exit 0; no new suppressions |
+| 4 | **B8-T3 unit subset re-proof** | astrid client/recovery/polling/proxy vitest files named in the closed doc | Focused suites pass post-J1-cutover | T0 | Same or larger subset than prior evidence passes |
+| 5 | **B8-T4 browser-network-blocked real-browser journey** | `playwright.config.ts` (launch args), `real-bridge.spec.ts`, `real-bridge-serve.mjs` | Real `python3 -m astrid serve` at the frozen pin via Playwright-owned webServer; **Chromium `--host-resolver-rules` blackholes every Supabase/cloud-provider host to `127.0.0.1:1`** so any second-authority fetch fails inside the browser; assertion-level loopback-only network audit over one document run | T1–T3 | Suite green with resolver rules provably active (non-loopback fetch attempt fails fast; loopback bridge traffic flows); blocking layer honestly labeled browser-level, never "OS firewall" |
+| 6 | **B8-T5 timeline+shot-view single-document proof** | new/extended case in `real-bridge.spec.ts` + `/shots` route | Shot view reads the same SQLite-backed document as editor — **conditional on `ShotsPage` being bridge-backed**; see §2 second-authority gate | T4 | Either parity asserted against one authority, OR slice BLOCKED with evidence (supabase `shots` dependency) — no B1–B7 shots rewrite |
+| 7 | **B8-T6 persistence across reload & service restart** | `real-bridge.spec.ts` (extend if reload/restart case missing at HEAD) | Reload preserves timeline/placement; killing and restarting `astrid serve` against the same SQLite file restores identical state | T4 | Two new/extended cases green under `REAL_BRIDGE=1`; media tree bytes unchanged across restart |
+| 8 | **B8-T7 failure/recovery behavior** | `bridgeRecovery.ts`, `networkStatusManager.ts`, `OnboardingModal`/`SetupCompleteStep`/`useOnboardingFlow.ts`, e2e degraded-states spec | Bridge death → watchdog banner + Retry against the REAL bridge (`real-bridge.spec.ts:705`); `capability_unavailable` → setup-recovery hint via `SetupCompleteStep` + `useOnboardingFlow.doctorUnavailable`, no fabricated success | T4 | Typed error codes asserted in UI; negative-path assertions forbid false success |
+| 9 | **B8-T8 evidence/receipt gap closure** | `docs/phase-c/b8-real-bridge-acceptance-blocked.md`, `.oracle/status.md` | Receipts pinned to **this** custody lineage + bridge pin `9d714649f2…`; each gap either evidenced or explicitly BLOCKED | T4–T7 | Doc updated with new pair SHAs, commands, results; zero unverifiable claims; stale-SHA whitelist audit passes |
+| 10 | **B8-T9 final verdict + push** | repo, origin | Grok oracle cumulative/final per model policy | T8 | Final PASS; pushed to `origin/codex/phase-c-megado` |
+
+Ordering rationale: environment first (only hard blocker), static gates before expensive browser work, persistence/failure cases before receipt writing so evidence covers everything actually run.
+
+### 2. Additional areas to explore
+- **Astrid checkout provenance**: the pin is exactly `9d714649f2f658ad508dbb4ead8eaf15bff2149b` (`real-bridge-serve.mjs:40`). Obtain that checkout on Linux; harness verifies HEAD equality + clean status independently. Closed evidence ran on macOS — irrelevant except for toolchain pinning (Node 20.19.4, Python 3.11.11, Remotion lock blob).
+- **Blocking mechanism (resolved)**: capability-less by design. This container lacks `CAP_NET_ADMIN` (`CapEff …a80425fb`, bit 12 unset); `unshare -n` → EPERM; iptables rule-adds fail even as uid 0. Any wrapper that exits non-zero without privileges would make `apply && probe` never reach Playwright — rejected. T4 instead adds **Chromium-level DNS blackholing** via `--host-resolver-rules` (see T4 row): map every Supabase/project cloud-provider hostname to `127.0.0.1:1` (connection-refused) while excluding loopback. `playwright.config.ts:38-40` currently sets only `['--no-sandbox', '--disable-dev-shm-usage']` — **T4 must ADD the resolver rules** (both branches of the `chromiumExecutablePath` ternary, since the sandbox escape hatch must not silently drop blocking). Scope honesty: this blocks at the browser process boundary (DNS resolution), not the kernel; the kernel-firewall shortfall is a mandatory BLOCKED ledger row in T8, never presented as satisfied.
+- **T4c feasibility gate**: the seeded document contains one 1×1 JPEG (`example-image1.jpg`) and the pinned Astrid checkout ships **no local generation worker**, so admit→generation-completion may be unreachable locally. T4c FIRST probes whether a real admit→queue→poll path exists against the bridge; if it does not, the journey case is BLOCKED outright — **no invented worker stub, no fabricated completion** (that would be a second authority).
+- **T5 second-authority gate**: `ShotsPage` → `useListShots` → `supabase().from('shots')` (`src/shared/hooks/shots/useShotsQueries.ts:35`); `getSupabaseClient()` throws when bootstrap hasn't run (`integrations/supabase/__tests__/clientFacadeBehavior.test.ts:42-45`) rather than falling back to the bridge. Before writing the T5 case, run a probe: load `/shots` under the blocked real-bridge run and inspect traffic/state. If `/shots` still hits deferred Supabase, **T5's shot-view slice is BLOCKED** — recorded with evidence (failed request to a blackholed host, or thrown init error). Do NOT rewrite B1–B7 shots surfaces in this batch; that is product work outside B8 scope.
+- **Post-J1 auth cutover deltas**: verify release-auth negative cases match the new boot path.
+- **Reload/restart coverage**: confirm whether `real-bridge.spec.ts` already contains explicit reload+restart cases or whether T6 extends it.
+- **Render/export honesty**: closed doc explicitly excludes decoded MP4 export — record export as downstream gate, never silently widen.
+
+### 3. Open questions
+- Is obtaining/building the pinned Astrid checkout inside this workspace permitted? If not, B8 is BLOCKED on prerequisite (fail-closed, like C5).
+- Does the environment offer any pre-provisioned Chromium without Playwright's download? If `PLAYWRIGHT_CHROMIUM_EXECUTABLE` is used, T4's rules must ride the same `args` array — verified by config diff, not assumption.
+
+### 4. Effort estimate
+T0–T3: ~0.5–1 day. T4–T7: 1–2 days (suite is 44s when green; risk is environment/flake hunting plus the T4/T5 feasibility probes). T8–T9: 0.5 day. **Total ≈ 2–4 working days. Not a HUGE-RUN (>2 weeks? No)** — bounded because B1–B7 are complete and the harness exists.
+
+### 5. North Star check
+- **One authority**: T4 proves SQLite+media-tree sole truth behind the loopback bridge; resolver blackholing + audit assertions forbid any second authority from even resolving. T5 runs only behind its second-authority gate — a supabase-backed `/shots` is BLOCKED evidence, not a forced pass. ✔ advanced.
+- **Correctness by primitives**: existing cases exercise CAS 409, idempotency, fences, Range/ETag — receipts re-pinned per primitive (T8). ✔.
+- **Invisible failure default**: T7 asserts typed offline/capability states, watchdog Retry, no fabricated success; T4c ends at typed pending state or is BLOCKED — never invented completion. ✔.
+- **Growth by declaration / honest latency**: polling backoff assertions (2s active/10s idle) retained; no new machinery beyond the resolver-rules config lines T4 adds. ✔.
+- **Anti-patterns avoided**: no OS-firewall ceremony that cannot execute here; no worker stub; no cloud fallback, mirrored state, new registries, or scope creep into MP4-export/backup/accessibility/B1–B7 rewrites (explicitly recorded downstream or BLOCKED). ✔.
+````
+
+Key deltas vs rev 2, mapped to the five issues:
+
+1. **Stale refs purged**: `acfc81d5d`/`6d2f84c02`/`LocalSetupModal` appear nowhere; single pin `9d714649f2…` cited with grounding line (`real-bridge-serve.mjs:40`); failure surface renamed to `OnboardingModal`/`SetupCompleteStep`/`useOnboardingFlow.ts`.
+2. **T4 executable**: dropped the fail-closed OS wrapper entirely; T4 now ADDS `--host-resolver-rules=MAP <host> 127.0.0.1:1 …EXCLUDE 127.0.0.1,[::1]` to both branches of `launchOptions` (`playwright.config.ts:38-40` has none today), labeled browser-level with the kernel gap as a mandatory T8 BLOCKED row.
+3. **No false green**: T5/T6 acceptance requires `REAL_BRIDGE=1 PLAYWRIGHT_TIMELINE_DEVICES=1 npx playwright test …` explicitly (`real-bridge.spec.ts:17` skip gate).
+4. **T5 gated**: probe-first design grounded in `useShotsQueries.ts:35` + facade throw-on-uninitialized; supabase-backed `/shots` ⇒ slice BLOCKED with evidence, zero B1–B7 rewrites.
+5. **T4c gated**: feasibility probe before writing the case; no local worker ⇒ BLOCKED, no stub.
+[launch_hermes_agent] done in 108.2s (exit=0)
+0

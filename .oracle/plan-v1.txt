@@ -1,0 +1,47 @@
+[launch_hermes_agent] model=stealth/ox-alpha → resolved=stealth/ox-alpha toolsets=['file', 'web'] max_tokens=65536 context_budget_tokens=(auto)
+[launch_hermes_agent] NOTE: omp gives the full toolset (Bash, Read, Edit, web, …); the file/web/terminal subset is a superset here.
+[launch_hermes_agent] cwd=/workspace/reigh-phase-c-megado/reigh-app
+Working...
+# Phase B8 Plan — Acceptance/Evidence Batch (planner output)
+
+Grounding notes: HEAD `ddfe01b21` already contains `tests/e2e/timeline/real-bridge.spec.ts` (5 cases), `real-bridge-serve.mjs` (505-line harness), `real-bridge-readiness.mjs`, hardening/rate-limit specs, `scripts/c5-grep-gates.mjs|.sh`, `src/integrations/astrid/{capability,transport,bridgeRecovery,capabilityCensus}.ts`, and `LocalSetupModal`. `docs/phase-c/b8-real-bridge-acceptance-blocked.md` records PASS — but at a *different* pinned pair (Reigh `949dfad8`, bridge `97314cce`) on `codex/phase-c-completion`. Custody here is `ddfe01b21`; that evidence does **not** transfer. This branch added the J1 boot/auth cutover after those pins, so every gate must be re-proven here. Workspace has no `node_modules` and no Astrid checkout (harness default points at a macOS path).
+
+### 1. Tasklist covering the ENTIRE remaining goal
+
+| # | id/title | Files | Criterion | Deps | Acceptance |
+|---|---|---|---|---|---|
+| 1 | **B8-T0 environment bootstrap** | `package.json`, lockfile | Install deps; provision clean Astrid checkout at the pin recorded by `acfc81d5d`/`6d2f84c02`; set `ASTRID_CHECKOUT` | – | `npm ci` exit 0; pinned checkout hash verified; `node scripts/c5-grep-gates.mjs` runs |
+| 2 | **B8-T1 grep gate green** | `scripts/c5-grep-gates.mjs`, `.sh` | Zero supabase-js imports in covered modules; deferred boundary only in `deferredRuntime.ts` | T0 | Gate exits 0 at HEAD; any new-covered-file since the last run added to coverage list |
+| 3 | **B8-T2 build + static gates** | `config/vite/vite.config.ts`, tsconfigs | `npm run build`, `npx tsc --noEmit`, `npm run lint`, `npm run test:arch` all pass | T0 | All exit 0; no new suppressions |
+| 4 | **B8-T3 unit subset re-proof** | astrid client/recovery/polling/proxy vitest files named in the closed doc | Focused suites pass post-J1-cutover | T0 | Same or larger subset than prior evidence passes |
+| 5 | **B8-T4 OS-network-blocked real-browser journey** | `real-bridge.spec.ts`, `real-bridge-serve.mjs`, playwright config | Real `python3 -m astrid serve` + test binding, OS firewall blocks all non-loopback hosts; browse→gallery→admit→poll→generation→placement over one document; browser assertions prove zero Supabase/remote traffic | T1–T3 | Full suite green with block rules active (nftables/iptables drop + assertion-level host allowlist = loopback only) |
+| 6 | **B8-T5 timeline+shot-view single-document proof** | same spec + shot-view route | Shot view reads the same SQLite-backed document as editor; placement/generation state identical in both views | T4 | Assertions compare both surfaces against one authority; no second fetch authority observed |
+| 7 | **B8-T6 persistence across reload & service restart** | `real-bridge.spec.ts` (extend if reload/restart case missing at HEAD) | Reload preserves timeline/placement; killing and restarting `astrid serve` against the same SQLite file restores identical state | T4 | Two new/extended cases green; media tree bytes unchanged across restart |
+| 8 | **B8-T7 failure/recovery behavior** | `bridgeRecovery.ts`, `networkStatusManager.ts`, `LocalSetupModal`, e2e degraded-states spec | Bridge down → typed offline/watchdog state with Retry (existing case at line ~705); `capability_unavailable` → LocalSetupModal setup hint, no fabricated success | T4 | Cases assert typed error codes surface in UI; no silent fallback |
+| 9 | **B8-T8 evidence/receipt gap closure** | `docs/phase-c/b8-real-bridge-acceptance-blocked.md`, `.oracle/status.md` | Re-run produces receipts pinned to **this** custody SHA + bridge SHA; each gap either evidenced or explicitly BLOCKED (like C5 matrix) | T4–T7 | Doc updated with new pair SHAs, command, results; zero unverifiable claims |
+| 10 | **B8-T9 final verdict + push** | repo, origin | Grok oracle cumulative/final per model policy | T8 | Final PASS; pushed to `origin/codex/phase-c-megado` |
+
+Ordering rationale: environment first (currently the only hard blocker), static gates before expensive browser work, persistence/failure cases before receipt writing so evidence covers everything actually run.
+
+### 2. Additional areas to explore
+- **Astrid checkout provenance**: which SHA is "the pin" on this branch (`acfc81d5d` vs `97314cce` in the closed doc)? Harness rejects missing checkouts explicitly — good — but we must obtain the right one on Linux; the closed evidence ran on macOS.
+- **OS blocking mechanism**: the closed doc asserts loopback-only at the *browser* level; the brief demands OS-level blocking. Decide nftables vs. unshare-netns-with-loopback-only before T4; affects reproducibility of the runbook.
+- **Post-J1 auth cutover deltas**: `AuthProvider` probe-only change landed after the pinned-pair evidence; verify release-auth negative cases still match the new boot path.
+- **Reload/restart coverage**: confirm whether `real-bridge.spec.ts` already contains explicit reload+restart cases or whether T6 extends it (line count suggests CAS-conflict and bridge-death exist; restart-against-same-DB may not).
+- **Render/export honesty**: closed doc explicitly excludes decoded MP4 export — scope T4/T5 to render admission + Range/ETag serving, and record export as downstream gate rather than silently widening scope.
+
+### 3. Open questions
+- Is obtaining/building the pinned Astrid checkout inside this workspace permitted (it lives outside the repo today)? If not, B8 is BLOCKED on prerequisite, not executable.
+- Does "OS-network-blocked" require root/nftables privileges in this container, or is a netns sandbox acceptable evidence?
+
+### 4. Effort estimate
+T0–T3: ~0.5–1 day. T4–T7: 1–2 days (suite is 44s when green; risk is environment/flake hunting). T8–T9: 0.5 day. **Total ≈ 2–4 working days. Not a huge-run (>2 weeks? No)** — confirmed borderline per `.oracle/status.md`; the batch is bounded because B1–B7 are complete and the harness exists.
+
+### 5. North Star check
+- **One authority**: T4/T5/T6 prove SQLite+media-tree sole truth via loopback bridge; traffic assertions forbid second authorities. ✔ advanced.
+- **Correctness by primitives**: existing cases exercise CAS 409, idempotency, fences, Range/ETag — receipts re-pinned per primitive (T8). ✔.
+- **Invisible failure**: T7 asserts typed offline/capability states, watchdog Retry, no fabricated success. ✔.
+- **Growth by declaration / honest latency**: polling backoff assertions (2s active/10s idle) retained in suite; no new machinery introduced — B8 adds evidence only, zero speculative code. ✔.
+- **Anti-patterns avoided**: no cloud fallback, no mirrored state, no new registries, no scope creep into MP4-export/backup/accessibility (explicitly recorded downstream). ✔.
+[launch_hermes_agent] done in 110.5s (exit=0)
+0

@@ -1,0 +1,273 @@
+[launch_hermes_agent] model=stealth/ox-alpha → resolved=stealth/ox-alpha toolsets=['file', 'web'] max_tokens=65536 context_budget_tokens=(auto)
+[launch_hermes_agent] NOTE: omp gives the full toolset (Bash, Read, Edit, web, …); the file/web/terminal subset is a superset here.
+[launch_hermes_agent] cwd=/workspace/reigh-phase-c-megado/reigh-app
+Working...
+Grounded all four points against HEAD before revising: `playwright.config.ts:38-40` has zero resolver rules on either branch (headed branch carries only `--no-sandbox --disable-dev-shm-usage`; headless branch is bare `undefined`); `real-bridge.spec.ts:17` hard-skips without `REAL_BRIDGE=1`; `useShotsQueries.ts:35` still calls `supabase().from('shots')`. Full revised tasklist follows — no file writes.
+
+````markdown
+# Phase B8 Tasklist — Acceptance/Evidence Batch (rev 3)
+
+Custody SHA at freeze: `ddfe01b21` on `codex/phase-c-megado`. Prior PASS evidence (`docs/phase-c/b8-real-bridge-acceptance-blocked.md`) was produced on a different branch/pair and does **not** transfer — every gate is re-proven at this custody.
+
+**Astrid bridge pin (FROZEN): `9d714649f2f658ad508dbb4ead8eaf15bff2149b`** — hardcoded at `tests/e2e/timeline/real-bridge-serve.mjs:40` (`PINNED_ASTRID_SHA`). This is the only pin. The harness hard-fails any checkout whose HEAD ≠ this SHA (`real-bridge-serve.mjs:217-225`) and requires a clean worktree.
+
+**Pinned toolchain (all enforced by the harness / release manifest — T0 provisions exactly these):**
+| Component | Pin | Source of truth |
+|---|---|---|
+| Node | **20.19.4** | `.nvmrc` (`pinned-node-runtime.mjs:7` reads it verbatim); `package.json` engines `>=20.19.0`; release manifest `verification.node` |
+| npm | **10.8.2** | release manifest `verification.npm` |
+| Python | **3.11.11** | `config/releases/extension-ship-quality.json` → `verification.astridPython`; resolved by `scripts/release/pinned-python-runtime.mjs` |
+| Remotion lock | **`$ASTRID_CHECKOUT/remotion/package-lock.json` as a git blob at the frozen Astrid commit** | content-equality against `git -C "$ASTRID_CHECKOUT" rev-parse 9d714649f2f658ad508dbb4ead8eaf15bff2149b:remotion/package-lock.json`; installed with `npm ci --prefix "$ASTRID_CHECKOUT/remotion"`; harness additionally requires the locked CLI + `@banodoco/{timeline-composition,timeline-schema,timeline-theme-2rp}` packages (`real-bridge-serve.mjs:140-166`) |
+
+Model policy (USER-PINNED): every checkpoint verdict, cumulative boundary, and final verdict is owned by **Grok 4.6** as oracle. All execution/validation work by stealth/ox-alpha. No Luna/Sol. Oracle unavailability ⇒ STOP per agent goal stop conditions.
+
+Batching rule: each batch ends at a natural seam (green command set or delivered receipt), is self-contained, and names its exact validation commands. Two HUGE-RUN CUMULATIVE BOUNDARIES sit after B8-T3 (unit re-proof) and B8-T7 (failure/recovery).
+
+Classification legend:
+- **normal** — standard checkpoint evidence: commands exit 0, assertions green, diff reviewed.
+- **[XHARD]** — full exceptional-threshold evidence required: pinned-SHA provenance recorded, blocking mechanism proven active at the strongest layer available (not just asserted), raw command transcripts retained, oracle sees the actual run not a summary.
+
+---
+
+## Batch B8-1 — Environment bootstrap (T0)
+
+**Goal:** Make this workspace executable at all: deps present, correct pinned Astrid checkout provisioned on Linux with the full pinned toolchain, gate tooling runnable. This is currently the only hard blocker.
+
+**Tasks**
+| id | Work | Files | Classification |
+|---|---|---|---|
+| B8-T0a | Install pinned Node **20.19.4** (`.nvmrc`; system node must report `v20.19.4`) and pinned Python **3.11.11** (release manifest `verification.astridPython`; place a `python3.11` resolving first on PATH or export `ASTRID_PYTHON=/abs/path`) | `.nvmrc`, `scripts/release/pinned-node-runtime.mjs`, `scripts/release/pinned-python-runtime.mjs` | normal |
+| B8-T0b | Clone/checkout Astrid at **`9d714649f2f658ad508dbb4ead8eaf15bff2149b`** outside the repo; record the clone URL used in the provenance receipt. Export `ASTRID_CHECKOUT`. Then provision the locked Remotion runtime inside it: `npm ci --prefix "$ASTRID_CHECKOUT/remotion"`; verify the lockfile blob equals `git -C "$ASTRID_CHECKOUT" rev-parse 9d714649f2f658ad508dbb4ead8eaf15bff2149b:remotion/package-lock.json`. Harness independently verifies HEAD equality + clean status (`real-bridge-serve.mjs:40,217-225`) and the locked Remotion CLI + `@banodoco/*` packages (`real-bridge-serve.mjs:148-166`) | external checkout dir (not repo); `$ASTRID_CHECKOUT/remotion/node_modules`; harness reads env | **[XHARD]** |
+| B8-T0c | Record provenance receipt: pin SHA `9d714649f2f658ad508dbb4ead8eaf15bff2149b`, checkout HEAD SHA, clone URL, Remotion lock blob SHA (both sides of the equality), OS/kernel, `node --version` (= v20.19.4), `npm --version` (= 10.8.2), `<python> --version` (= 3.11.11), `ASTRID_CHECKOUT` value | `.oracle/status.md` (append-only note) | **[XHARD]** |
+
+**Checkpoint acceptance (Grok verifies exactly)**
+- `npm ci` exit 0.
+- `git -C "$ASTRID_CHECKOUT" rev-parse HEAD` outputs exactly `9d714649f2f658ad508dbb4ead8eaf15bff2149b`; mismatch = FAIL, not "close enough".
+- Remotion lock blob equality holds.
+- Harness's explicit missing-checkout / wrong-pin rejection no longer triggers; locked CLI and all three `@banodoco` packages resolve.
+- Provenance receipt exists with ALL fields; zero unverifiable claims.
+
+**Validation commands**
+```bash
+node --version                 # v20.19.4 exactly
+python3.11 --version           # Python 3.11.11 exactly (or $ASTRID_PYTHON --version)
+npm ci && echo "npm-ci: exit 0"
+git -C "$ASTRID_CHECKOUT" rev-parse HEAD                    # 9d714649f2f658ad508dbb4ead8eaf15bff2149b
+git -C "$ASTRID_CHECKOUT" status --porcelain                # empty
+test "$(git -C "$ASTRID_CHECKOUT" rev-parse HEAD:remotion/package-lock.json)" \
+  = "$(git -C "$ASTRID_CHECKOUT" rev-parse 9d714649f2f658ad508dbb4ead8eaf15bff2149b:remotion/package-lock.json)" \
+  && echo "remotion-lock: pinned"
+test -x "$ASTRID_CHECKOUT/remotion/node_modules/@remotion/cli/remotion-cli.js" && echo "remotion-cli: locked"
+node scripts/c5-grep-gates.mjs                              # smoke: tooling runs
+```
+
+---
+
+## Batch B8-2 — Static gates green (T1 + T2)
+
+**Tasks**
+| id | Work | Files | Classification |
+|---|---|---|---|
+| B8-T1 | Run grep gates at HEAD; audit coverage list against files added since last run (J1 boot/auth cutover files included) — add any new covered module | `scripts/c5-grep-gates.mjs`, `scripts/c5-grep-gates.sh`, coverage manifest within | normal |
+| B8-T2 | Build + typecheck + lint + arch test; confirm zero new suppressions vs prior evidence | `config/vite/vite.config.ts`, tsconfigs, lint config, arch-test sources | normal |
+
+**Checkpoint acceptance**
+- Gate exits 0; zero supabase-js imports in covered modules; deferred boundary exists only where the gate allows.
+- Coverage list includes every new source file since the previous gate run; diff shown to oracle.
+- `npm run build`, `npx tsc --noEmit`, `npm run lint`, `npm run test:arch` all exit 0; no new suppressions.
+
+**Validation commands**
+```bash
+node scripts/c5-grep-gates.mjs && ./scripts/c5-grep-gates.sh
+npm run build && npx tsc --noEmit && npm run lint && npm run test:arch
+```
+
+---
+
+## Batch B8-3 — Unit subset re-proof (T3)
+
+### 🚩 HUGE-RUN CUMULATIVE BOUNDARY #1 (after this batch)
+Rationale: unit-level correctness re-proven post-J1-cutover in the fresh environment before any browser-time investment. Failure here halts B8-4+ — root cause first.
+
+**Task:** re-run the exact 13-file vitest subset enumerated below at HEAD; subset must be same-or-larger than prior evidence (10 files / 188 tests focused + 44-test polling subset). Polling-budget assertions intact (`taskPollingCadence.test.ts`: 2s active / 10s idle). Cumulative boundary verdict recorded by Grok before B8-4 opens.
+
+**Validation commands**
+```bash
+npx vitest run \
+  src/integrations/astrid/client.test.ts \
+  src/integrations/astrid/transport.test.ts \
+  src/integrations/astrid/bridgeRecovery.test.ts \
+  src/integrations/astrid/capabilityCensus.test.ts \
+  src/integrations/astrid/doctorAvailability.test.ts \
+  src/integrations/astrid/bridgeTaskOutputs.test.ts \
+  src/test/astridProxySecurity.test.ts \
+  src/tools/video-editor/data/astridBridgeProxyPolicy.test.ts \
+  src/tools/video-editor/data/bridgeContract.test.ts \
+  src/tools/video-editor/hooks/usePollSync.test.ts \
+  src/shared/hooks/tasks/taskPollingCadence.test.ts \
+  src/shared/lib/__tests__/debugPolling.test.ts \
+  src/shared/hooks/__tests__/useSmartPolling.test.ts
+```
+
+---
+
+## Batch B8-4 — Network-blocked real-browser journey (T4)
+
+### **[XHARD] batch** — the core done-criterion proof.
+
+**Who spawns the bridge (binding):** the operator NEVER starts `real-bridge-serve.mjs` manually and NEVER backgrounds it. Under `REAL_BRIDGE=1`, Playwright's `webServer` array (`playwright.config.ts:107-109,159-192`) owns the entire lifecycle: spawns the harness on run-isolated ports, waits on `/ready` (`reuseExistingServer: false` rejects any hand-started process), tears down after the run. Pre-spawning would collide with Playwright's port allocation — prohibited.
+
+**Blocking mechanism (binding — browser-level, no OS wrapper):** this container has no `CAP_NET_ADMIN` (`CapEff …a80425fb`); `unshare -n` → EPERM; iptables rule-adds fail even as uid 0. Any OS-firewall wrapper fails closed and never reaches Playwright — that path is dropped entirely. Instead T4a adds **Chromium `--host-resolver-rules` DNS blackholing** to `playwright.config.ts:38-40`:
+- Hoist a shared Chromium args array containing `--no-sandbox`, `--disable-dev-shm-usage`, AND
+  `--host-resolver-rules=MAP <each supabase/provider host> 127.0.0.1:1,...,EXCLUDE 127.0.0.1,EXCLUDE [::1]`
+  covering every Supabase/cloud-provider hostname the app references, with loopback excluded so bridge traffic flows.
+- The rules MUST be active on **BOTH branches** of the `launchOptions` ternary at `playwright.config.ts:38-40`: today the headed/custom-executable branch carries only `['--no-sandbox', '--disable-dev-shm-usage']` and the default-headless branch is bare `undefined` — neither blocks anything. After T4a every Chromium launch under this config resolves provider hosts to a dead port, whichever executable is selected (including via `PLAYWRIGHT_CHROMIUM_EXECUTABLE`).
+- Labeled honestly in all evidence as **browser-process-level DNS blocking**, never "OS firewall". The kernel-level gap is a mandatory BLOCKED ledger row in B8-T8b.
+
+**Coverage honesty:** `tests/e2e/timeline/real-bridge.spec.ts` contains five serial cases — auth/CAS negatives, API surface GET/HEAD/Range, CAS-409 divergence, B9 recovery Retry, watchdog-on-bridge-death. T4 proves those green under blocking AND adds the scoped journey case below.
+
+**Journey scoping (B8-T4c — probe-then-BLOCK, binding):** the seeded document contains one 1×1 JPEG asset (`example-image1.jpg`, seeded at `real-bridge-serve.mjs:102,310`) and the pinned Astrid checkout provides **no local generation worker**, so admit→generation-completion may be unreachable locally. T4c FIRST runs a feasibility probe of the admit path against the real bridge; if admit→queue→poll cannot be driven end-to-end locally, the journey case is **BLOCKED outright with captured probe evidence** — NO invented worker stub, NO fabricated completion (either would be a second authority).
+
+**Tasks**
+| id | Work | Files | Classification |
+|---|---|---|---|
+| B8-T4a | Add `--host-resolver-rules` Supabase/provider blackholing to **both `launchOptions` branches** in `playwright.config.ts:38-40` (shared args array; rules survive `PLAYWRIGHT_CHROMIUM_EXECUTABLE` selection). Verify activation in-run: non-loopback fetch attempt fails fast inside the page; loopback bridge traffic flows | `playwright.config.ts` | **[XHARD]** |
+| B8-T4b | Run the existing 5-case suite green through Playwright's owned webServer (command below) under `REAL_BRIDGE=1`; prove the resolver rules provably active (blackholed-host request fails/refuses; loopback passes) | `tests/e2e/timeline/real-bridge.spec.ts`, `tests/e2e/timeline/real-bridge-serve.mjs` | **[XHARD]** |
+| B8-T4c | **Probe first:** attempt to drive the real UI through browse → gallery → admit → queue → poll against seeded document `11111111-1111-1111-1111-111111111111` under the blocked run. If the admit path completes to queue+poll: land ONE serial case asserting admit success, bridge queue entry, polling observation, and the typed pending/generating state (not a spinner, not fabricated completion), plus loopback-only network assertions. If unreachable: record **BLOCKED with exact probe evidence** (request/response transcript showing where the journey dies) — no stub worker | `tests/e2e/timeline/real-bridge.spec.ts`, `.oracle/status.md` (probe/BLOCKED evidence) | **[XHARD]** |
+
+**Checkpoint acceptance**
+- Existing suite green **with resolver rules provably active on both branches** (config diff + in-run probe evidence included).
+- Journey case EITHER asserts typed pending state explicitly OR carries a BLOCKED row with raw probe transcript — never an implied completion.
+- Raw run transcript + blocking-layer state captured; oracle sees the run, not a summary.
+- Render/export scope honesty: admission + Range/ETag serving asserted; decoded MP4 export AND local-generation-completion are BLOCKED ledger rows in T8b, not silent omissions.
+
+**Validation commands**
+```bash
+# Playwright owns the bridge lifecycle; REAL_BRIDGE=1 required (spec skip-gates at :17):
+REAL_BRIDGE=1 npx playwright test tests/e2e/timeline/real-bridge.spec.ts
+# equivalently via project runner:
+npm run test:e2e:timeline:realbridge
+
+# T4c probe / journey case, when reachable:
+REAL_BRIDGE=1 npx playwright test tests/e2e/timeline/real-bridge.spec.ts \
+  -g "local-only journey"
+```
+
+---
+
+## Batch B8-5 — Timeline + shot-view single-document proof (T5)
+
+### Second-authority gate (BINDING — outcome may be BLOCKED)
+
+Grounded fact: `ShotsPage` → `useListShots` → **`supabase().from('shots')` at `src/shared/hooks/shots/useShotsQueries.ts:35`** — the shots list is still Supabase-backed, and `getSupabaseClient()` throws when bootstrap hasn't run rather than deferring to the bridge (`clientFacadeBehavior.test.ts:42-45`). Under T4's resolver blackholing, `/shots` traffic to Supabase hosts will refuse/fail.
+
+**Procedure (in order):**
+1. **Probe:** load `/shots` under the blocked `REAL_BRIDGE=1` run; capture network traffic and console/state for the shots segment.
+2. **If `/shots` reads the SQLite-backed document** (bridge serves the shots data; zero additional authorities in the segment): land ONE serial case titled **`shot view at /shots reads the same document as the editor`** asserting parity against one authority.
+3. **If `/shots` still hits deferred Supabase**: the shot-view slice is **BLOCKED** — ledgered in B8-T8b with exact evidence (failed request to a blackholed Supabase host, or the thrown unbootstrapped-client error citing `useShotsQueries.ts:35`). Do NOT force green parity; do NOT rewrite B1–B7 shots surfaces — that is product work outside B8 scope.
+
+Either terminal state satisfies this batch's checkpoint; a forced pass over a live second authority does not.
+
+**Validation commands**
+```bash
+# Probe + case MUST carry REAL_BRIDGE=1 (skip gate at real-bridge.spec.ts:17 makes a
+# bare invocation a silent skip-pass):
+REAL_BRIDGE=1 npx playwright test tests/e2e/timeline/real-bridge.spec.ts \
+  -g "shot view at /shots reads the same document as the editor"
+```
+
+---
+
+## Batch B8-6 — Persistence across reload & service restart (T6)
+
+Cases **`reload preserves timeline and placement`** and **`restart of astrid serve against the same SQLite document restores identical state`** (restart relaunches its own isolated-port harness instance with `ASTRID_SEED_ROOT` pinned to the same root — never the Playwright-owned server); media-tree byte equality across restart via `find … sha256sum | diff`.
+
+**Checkpoint acceptance**
+- Both cases green under `REAL_BRIDGE=1`; media tree bytes unchanged across restart.
+
+**Validation commands**
+```bash
+# REAL_BRIDGE=1 mandatory — without it real-bridge.spec.ts:17 skips everything green:
+REAL_BRIDGE=1 npx playwright test tests/e2e/timeline/real-bridge.spec.ts \
+  -g "reload preserves timeline and placement|restart of astrid serve against the same SQLite document"
+```
+
+---
+
+## Batch B8-7 — Failure/recovery behavior (T7)
+
+### 🚩 HUGE-RUN CUMULATIVE BOUNDARY #2 (after this batch)
+
+**Surface facts (grounded):** the real watchdog case is **`bridge death during an edit → watchdog banner with retry`** at `tests/e2e/timeline/real-bridge.spec.ts:705` — it SIGKILLs the harness-written PID, edits, and asserts the persistent unsaved-changes banner + Retry button. It is part of `REAL_BRIDGE_SPEC`, so under `REAL_BRIDGE=1` it runs **against the real bridge, unstubbed**. By contrast `runaway-degraded-states.spec.ts` is built entirely on `page.route` stubs and is excluded from the `REAL_BRIDGE=1` project by `testMatch` (`playwright.config.ts:52,222`).
+
+**Tasks**
+| id | Work | Files | Classification |
+|---|---|---|---|
+| B8-T7a | Run the REAL watchdog case under `REAL_BRIDGE=1` (explicit `-g` invocation below — do not rely on it riding along inside the T4 batch): assert typed offline/watchdog state surfaces with Retry, resolver-blackholing keeps the run loopback-clean | `tests/e2e/timeline/real-bridge.spec.ts` (case at :705), `src/integrations/astrid/bridgeRecovery.ts`, `networkStatusManager.ts` | normal |
+| B8-T7b | `capability_unavailable` path (unit scope, honestly labeled): `SetupCompleteStep` shows the doctor/setup recovery hint, `useOnboardingFlow.doctorUnavailable` toast fires, and **no fabricated success** anywhere. There is no REAL_BRIDGE e2e case for this surface today; adding one is out of B8 scope — noted, not silently widened | `src/shared/components/modals/OnboardingModal.tsx`, `SetupCompleteStep.tsx` (+ test), `src/app/hooks/useOnboardingFlow.test.ts` | normal |
+
+**Checkpoint acceptance**
+- Watchdog case green under `REAL_BRIDGE=1` against the real bridge (not the stubbed degraded-states spec).
+- Typed error codes asserted in UI; negative-path assertions forbid false success.
+- Cumulative boundary verdict recorded by Grok.
+
+**Validation commands**
+```bash
+REAL_BRIDGE=1 npx playwright test tests/e2e/timeline/real-bridge.spec.ts \
+  -g "bridge death during an edit"
+npx vitest run \
+  src/integrations/astrid/bridgeRecovery.test.ts \
+  src/shared/components/OnboardingModal/components/steps/SetupCompleteStep.test.tsx \
+  src/app/hooks/useOnboardingFlow.test.ts
+```
+
+---
+
+## Batch B8-8 — Evidence & receipt gap closure (T8)
+
+**Tasks**
+| id | Work | Files | Classification |
+|---|---|---|---|
+| B8-T8a | Rewrite `docs/phase-c/b8-real-bridge-acceptance-blocked.md` (or successor doc-of-record) with the NEW pair SHAs (Reigh custody-lineage HEAD + bridge pin checkout + the three runtime pins from B8-T0), commands, and results from B8-1…B8-7 | `docs/phase-c/b8-real-bridge-acceptance-blocked.md` | normal |
+| B8-T8b | Gap ledger — every prior gap either evidenced (link to receipt) or explicitly BLOCKED with reason + evidence. **Mandatory BLOCKED rows:** decoded MP4 export (downstream gate); local generation completion (no local generation worker in the pinned checkout; 1×1 JPEG seed — per B8-T4c probe outcome, admit→pending or fully BLOCKED with probe transcript); shot-view `/shots` parity IF the B8-5 probe showed supabase-backed shots (`useShotsQueries.ts:35` — exact failing request/error attached); OS-kernel firewall drop evidence (container lacks `CAP_NET_ADMIN` — strongest achieved layer is browser-level `--host-resolver-rules` + assertion-level audit, per `playwright.config.ts:38-40`); backup/restore; accessibility/device matrix | `.oracle/status.md` | normal |
+
+**Checkpoint acceptance**
+- Every claim traceable to a captured command + exit code from B8-1…B8-7.
+- Stale-SHA audit passes: every 40-hex commit SHA appearing outside historical prose must be the current custody-lineage HEAD or the bridge pin `9d714649f2f658ad508dbb4ead8eaf15bff2149b`.
+- Ledger rows exist only in {evidenced, BLOCKED}; all six mandatory rows present with reasons and evidence links.
+
+**Validation commands**
+```bash
+grep -rhoE "\b[0-9a-f]{40}\b" docs/phase-c .oracle/ | sort -u   # audit vs whitelist {custody HEAD, 9d714649f2…}
+grep -rn "os-block-supabase\|LocalSetupModal" docs/phase-c .oracle/   # expect zero hits (historical prose excepted)
+grep -c "BLOCKED\|evidenced" .oracle/status.md                   # ledger completeness spot-check
+```
+
+---
+
+## Batch B8-9 — Final verdict + push (T9)
+
+Grok oracle cumulative review over B8-1…B8-8, final verdict under pinned model policy; on PASS push to `origin/codex/phase-c-megado` and record final SHAs; any residual gap carries an explicit BLOCKED entry. A final verdict of PASS-with-BLOCKED-rows is valid when every BLOCKED row carries evidence; a verdict resting on any forced-green gate is invalid.
+
+```bash
+git push origin codex/phase-c-megado
+git rev-parse HEAD origin/codex/phase-c-megado   # equality check
+```
+
+---
+
+## Dependency graph
+
+```
+B8-1 ──► B8-2 ──► B8-3 ══🚩BOUNDARY#1══► B8-4 [XHARD] ──► B8-5 ──► B8-6 ──► B8-7 ══🚩BOUNDARY#2══► B8-8 ──► B8-9
+```
+
+No batch may open before its predecessor's checkpoint verdict. Boundary failures halt forward progress — root cause first, no evidence written over red runs.
+
+## Revision notes (round 3)
+1. **OS-block wrapper removed; resolver rules are the mechanism**: `scripts/os-block-supabase.sh` (iptables apply/probe/teardown) is gone — it fail-closes in this container (no `CAP_NET_ADMIN`, `unshare -n` EPERM) and would never reach Playwright: ceremony without consumer. B8-T4a now adds `--host-resolver-rules` Supabase/provider blackholing to **both `launchOptions` branches** at `playwright.config.ts:38-40` (today: headed branch has none, headless branch is bare `undefined`), verified by config diff + in-run probe. Kernel-gap remains a mandatory T8b BLOCKED row, labeled browser-level everywhere.
+2. **T5 is gated, not forced**: B8-5 codifies probe-`/shots`-first; supabase-backed shots (`useShotsQueries.ts:35`) ⇒ slice BLOCKED with exact evidence, appended to the T8b mandatory rows. No green-parity requirement, no B1–B7 rewrite.
+3. **Every real-bridge invocation carries `REAL_BRIDGE=1`**: T4b/T4c, T5, T6, T7a validation commands all prefix it (or use `npm run test:e2e:timeline:realbridge`) — `real-bridge.spec.ts:17` otherwise silently skips the entire spec to a false green.
+4. **T4c is probe-then-BLOCK**: feasibility probe of admit→queue→poll precedes any case authorship; unreachable ⇒ BLOCKED with raw probe transcript in T8b. No worker stub, no fabricated completion.
+```
+````

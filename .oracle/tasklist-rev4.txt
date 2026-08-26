@@ -1,0 +1,218 @@
+[launch_hermes_agent] model=stealth/ox-alpha → resolved=stealth/ox-alpha toolsets=['file', 'web'] max_tokens=65536 context_budget_tokens=(auto)
+[launch_hermes_agent] NOTE: omp gives the full toolset (Bash, Read, Edit, web, …); the file/web/terminal subset is a superset here.
+[launch_hermes_agent] cwd=/workspace/reigh-phase-c-megado/reigh-app
+Working...
+Ground truth verified before writing:
+
+- **Issue 1**: The guard chain is `real-bridge-hardening.spec.ts:8-13` throws unless `ASTRID_HARDENING_BRIDGE_PORT`; that port exists only when `PLAYWRIGHT_HARDENING=1` && `REAL_BRIDGE=1` (`playwright.config.ts:56,85-96`). So the actual env flag is **`PLAYWRIGHT_HARDING`… precisely `PLAYWRIGHT_HARDENING=1`**, not `ASTRID_HARDENING=1` — matching the r5 verdict wording. Scoping decision: only T4 collects `real-bridge-hardening.spec.ts`; T5/T6 pass only `real-bridge.spec.ts`, so Playwright never loads the hardening spec there and the flag would just spawn an unused third webServer (config :193-211). Flag goes on T4 only.
+- **Issue 2**: Confirmed `seed()` writes exactly one clip `{id:'clip-1', track:'V1', at:0}` (`real-bridge-serve.mjs:59-61`), tracks V1/V2/A1, no second clip id, no generation/variant registry. T5a rewritten as an explicit seed extension.
+- **Issue 3**: Chose **move restart into T6** — the bridge serve process *is* the Playwright-owned webServer (`playwright.config.ts:159-192`), so "restart only astrid serve while webServer stays alive" isn't cleanly possible without killing a Playwright-managed process mid-case. T6 already owns an isolated-port instance and forbids touching the owned server.
+- **Issue 4**: Exact T3/T7 command sets recovered from `.oracle/tasklist-rev2.txt` and every cited test file verified present.
+
+Full revised tasklist:
+
+````markdown
+# Phase B8 Tasklist — Acceptance/Evidence Batch (rev 4)
+
+Custody SHA at freeze: `ddfe01b21` on `codex/phase-c-megado`. Prior PASS evidence (`docs/phase-c/b8-real-bridge-acceptance-blocked.md`) does not transfer — every gate re-proven at this custody.
+
+**Astrid bridge pin (FROZEN): `9d714649f2f658ad508dbb4ead8eaf15bff2149b`** — hardcoded at `tests/e2e/timeline/real-bridge-serve.mjs:40` (`PINNED_ASTRID_SHA`); harness hard-fails any checkout whose HEAD ≠ pin (:217-225). Only pin.
+
+**Pinned toolchain (enforced by harness / release manifest; T0 provisions exactly these):**
+| Component | Pin | Source of truth |
+|---|---|---|
+| Node | **20.19.4** | `.nvmrc`; `package.json` engines; release manifest `verification.node` |
+| npm | **10.8.2** | release manifest `verification.npm` |
+| Python | **3.11.11** | `config/releases/extension-ship-quality.json` → `verification.astridPython`; `scripts/release/pinned-python-runtime.mjs` |
+| Remotion lock | **git blob `$PIN:remotion/package-lock.json`**, content-equal, installed via `npm ci --prefix "$ASTRID_CHECKOUT/remotion"`; locked CLI + `@banodoco/{timeline-composition,timeline-schema,timeline-theme-2rp}` verified (`real-bridge-serve.mjs:140-166`) |
+
+Model policy (USER-PINNED): every checkpoint/cumulative/final verdict owned by **Grok 4.6** as oracle; execution by stealth/ox-alpha. Oracle unavailable ⇒ STOP.
+
+Classification legend: **normal** = standard checkpoint evidence. **[XHARD]** = pinned-SHA provenance recorded, blocking mechanism proven active (not just asserted), raw transcripts retained, oracle sees the actual run.
+
+---
+
+## Batch B8-1 — Environment bootstrap (T0)
+
+*(unchanged from rev 2)* Provision deps, pinned Node 20.19.4 + Python 3.11.11, clean Astrid checkout at `9d714649f2…`, locked Remotion runtime, provenance receipt (pin SHA, checkout HEAD, clone URL, lock blob equality, OS/kernel, runtime versions, `ASTRID_CHECKOUT`). **[XHARD]**
+
+```bash
+node --version                 # v20.19.4 exactly
+python3.11 --version           # Python 3.11.11 exactly
+npm ci && echo "npm-ci: exit 0"
+git -C "$ASTRID_CHECKOUT" rev-parse HEAD     # 9d714649f2f658ad508dbb4ead8eaf15bff2149b
+git -C "$ASTRID_CHECKOUT" status --porcelain # empty
+test "$(git -C "$ASTRID_CHECKOUT" rev-parse HEAD:remotion/package-lock.json)" \
+  = "$(git -C "$ASTRID_CHECKOUT" rev-parse 9d714649f2f658ad508dbb4ead8eaf15bff2149b:remotion/package-lock.json)" \
+  && echo "remotion-lock: pinned"
+```
+
+---
+
+## Batch B8-2 — Static gates green (T1 + T2)
+
+*(unchanged)* Grep gates at HEAD with coverage audit; build/typecheck/lint/arch with zero new suppressions.
+
+```bash
+node scripts/c5-grep-gates.mjs && ./scripts/c5-grep-gates.sh
+npm run build && npx tsc --noEmit && npm run lint && npm run test:arch
+```
+
+---
+
+## Batch B8-3 — Unit subset re-proof (T3)
+
+### 🚩 HUGE-RUN CUMULATIVE BOUNDARY #1
+
+Re-run the exact 13-file vitest subset from rev 2 (astrid client/transport/recovery/capability ×6, proxy ×3, polling/realtime ×4) at HEAD; polling-budget assertions intact (`taskPollingCadence.test.ts`: 2s active / 10s idle). Subset same-or-larger than prior evidence (10 files / 188 tests focused + 44-test polling subset). Boundary verdict recorded by Grok before B8-4 opens.
+
+```bash
+npx vitest run \
+  src/integrations/astrid/client.test.ts \
+  src/integrations/astrid/transport.test.ts \
+  src/integrations/astrid/bridgeRecovery.test.ts \
+  src/integrations/astrid/capabilityCensus.test.ts \
+  src/integrations/astrid/doctorAvailability.test.ts \
+  src/integrations/astrid/bridgeTaskOutputs.test.ts \
+  src/test/astridProxySecurity.test.ts \
+  src/tools/video-editor/data/astridBridgeProxyPolicy.test.ts \
+  src/tools/video-editor/data/bridgeContract.test.ts \
+  src/tools/video-editor/hooks/usePollSync.test.ts \
+  src/shared/hooks/tasks/taskPollingCadence.test.ts \
+  src/shared/lib/__tests__/debugPolling.test.ts \
+  src/shared/hooks/__tests__/useSmartPolling.test.ts
+```
+
+---
+
+## Batch B8-4 — Network-blocked real-browser journey (T4)
+
+### **[XHARD] batch**
+
+**Who spawns the bridge (binding):** Playwright's `webServer` array owns the entire lifecycle under `REAL_BRIDGE=1` (`playwright.config.ts:107-109,159-192`, `reuseExistingServer: false`, `/ready` probe). Nothing hand-started.
+
+**Chromium DNS blackholing (retained Grok finding, binding):** add `--host-resolver-rules=MAP <each Supabase/project cloud-provider host> 127.0.0.1:1,…,EXCLUDE 127.0.0.1,[::1]` to **EVERY `launchOptions` branch** in `playwright.config.ts` (both arms of the `chromiumExecutablePath` ternary; today :38-40 carries only `--no-sandbox --disable-dev-shm-usage`). Blocking layer labeled browser-level; kernel-firewall shortfall is a mandatory BLOCKED ledger row in T8b.
+
+**Hardening-spec env requirement (binding):** `tests/e2e/timeline/real-bridge-hardening.spec.ts:8` throws unless `ASTRID_HARDENING_BRIDGE_PORT` is set; the config allocates that port (plus token and a dedicated second bridge webServer, `playwright.config.ts:85-102,193-211`) only when `PLAYWRIGHT_HARDENING=1` alongside `REAL_BRIDGE=1`. That flag therefore appears on THIS batch's command — and ONLY here: T5/T6 collect only `real-bridge.spec.ts`, so the hardening spec is never loaded there, and setting the flag would spin up an unused third managed server for zero assertions.
+
+**Tasks**
+| id | Work | Files | Classification |
+|---|---|---|---|
+| B8-T4a | Add resolver rules to every launchOptions branch; prove active in-run (non-loopback fetch fails fast, loopback flows) | `playwright.config.ts` | **[XHARD]** |
+| B8-T4b | Existing 5-case suite green through the owned webServer | `real-bridge.spec.ts`, `real-bridge-serve.mjs` | **[XHARD]** |
+| B8-T4c | Journey case `browse → gallery → admit → queue → poll → typed pending state` over seeded document `11111111-1111-1111-1111-111111111111`. **May be honestly BLOCKED** if the pinned checkout ships no real local worker path — record the probe transcript; **no invented stub, no fabricated completion** | `real-bridge.spec.ts` | **[XHARD]** |
+
+```bash
+PLAYWRIGHT_TIMELINE_DEVICES=1 REAL_BRIDGE=1 PLAYWRIGHT_HARDENING=1 \
+npx playwright test \
+  --config playwright.config.ts --project=timeline-devices --workers=1 \
+  tests/e2e/timeline/real-bridge.spec.ts tests/e2e/timeline/real-bridge-hardening.spec.ts
+```
+
+---
+
+## Batch B8-5 — Document-shot REAL_BRIDGE browser proof in /tools/video-editor (T5) — REWRITTEN
+
+**Corrected surface (binding production evidence):** the B5 shot mode is the **document-derived shot UI inside `ReighTimelineEditor.tsx`**, active when `runtime.userId === null` (:53), consuming `usePinnedShotGroupViews(data)` / `useShotGroups` / `duplicateShotGroup` / `promotePrimaryVariant`. Unit-focused proof exists (`ReighTimelineEditor.document-shots.test.tsx`); T5 upgrades it to a **REAL_BRIDGE browser proof against the real SQLite-backed bridge**. Legacy `/shots` (`ShotsPage` → `useListShots` → Supabase) is explicitly supabase-deferred — separate ledger row in T8b, NOT touched here, NOT a blocker.
+
+**Task B8-T5a — SEED EXTENSION (mandatory first step)** *(normal)*: the current seed contains **exactly ONE clip** — `{ id: 'clip-1', track: 'V1', at: 0, clipType: 'media', hold: 4, asset: 'example-image1.jpg' }` at `real-bridge-serve.mjs:59-61` — plus tracks V1/V2/A1 (:62-66). There is **no second clip id and no generation/variant registry anywhere in the seeded document today.** Duplicate/promote-primary are therefore unreachable against the stock seed, so T5a FIRST extends `seed()` so the demo timeline config carries:
+1. a second contiguous clip on V1 (`clip-2`, immediately after `clip-1`);
+2. ONE real `pinnedShotGroups` entry — `{ shotId: <fixed id>, trackId: 'V1', clipIds: ['clip-1','clip-2'], mode: 'images', name: 'Bridge Shot A' }` — contiguous within the extended `clips`, so `deriveTimelineShotGroupViews(config, registry)` yields exactly one view;
+3. a generation/variant registry entry (with `generationId` + ≥2 variants) in the same CAS config document, so `promotePrimaryVariant` has a seeded target.
+
+All three additions travel inside the SAME `{config, registry}` document — no new authority, no second data source. If the canonicalize step rejects any part of the extension, that fact is recorded and the corresponding T5b leg is BLOCKED up front (never silently dropped).
+
+**Task B8-T5b — serial REAL_BRIDGE case** *([XHARD])* titled **`document shot surface: render, duplicate, promote, reload over one bridge document`**, driving `/tools/video-editor?localTest=1` (project `demo-project`, timeline `demo-timeline` via existing support URLs) with no auth session so `isDocumentShotMode` is active. FOUR assertion groups, all in one run covered by `installBrowserNetworkAudit` loopback-only allowlist:
+
+1. **Render**: the editor displays the document-derived group (name/clip grouping from `deriveTimelineShotGroupViews` over the extended CAS config+registry), and relational shot actions are dormant (document-mode branch rendering — mirrors the focused test's dormant-action assertion).
+2. **Duplicate mutates timeline AND config version**: trigger the duplicate path; `duplicateShotGroup` pre-checks head `config_version` (`shot-group-pack-commands.ts:391`), admits the pack task, waits terminal, CAS-saves. Assert: bridge `client.timelines.get(timelineRef)` reports `config_version` = N+1, and the fetched document contains the duplicated group/clips.
+3. **Promote mutates timeline AND config version**: trigger promote-primary against the seeded generation/variant added by T5a; assert `config_version` increments again and registry references now point at the promoted variant (`refreshGenerationPrimaryInDocument` effect visible in the re-fetched document).
+4. **Reload restores the same bridge document**: `page.reload()`; editor re-fetches and renders identical group set + matching `config_version`.
+
+The fifth leg of the prior revision — service restart — is **MOVED to T6** (see B8-6): T5 must never stop or relaunch the Playwright-owned webServer harness mid-case.
+
+**Feasibility probe FIRST (before writing the case)**: confirm the pinned checkout's bridge implements the duplicate/promote pack families (`shot-group-pack-commands.ts:260-284`). A missing family ⇒ that leg is a BLOCKED ledger row with the raw admission-error transcript — **no invented worker, no fabricated completion**; the remaining legs still run and are reported individually.
+
+**Network audit (mandatory across the whole case)**: ZERO requests to relational shots endpoints, Supabase hosts, or any provider host; loopback-only traffic. Any hit = FAIL, not warning.
+
+```bash
+# Retained Grok finding: BOTH flags required (spec hard-skips otherwise, real-bridge.spec.ts:17).
+# NO PLAYWRIGHT_HARDENING here: only real-bridge.spec.ts is collected.
+PLAYWRIGHT_TIMELINE_DEVICES=1 REAL_BRIDGE=1 npx playwright test \
+  --config playwright.config.ts --project=timeline-devices --workers=1 \
+  tests/e2e/timeline/real-bridge.spec.ts \
+  -g "document shot surface: render, duplicate, promote, reload over one bridge document"
+```
+
+**Checkpoint acceptance:** all reachable assertion groups green in one audit-covered run; `config_version` increments observed twice from the bridge itself (not client-side state); reload leg byte-identical documents; audit transcript shows zero non-loopback requests; any BLOCKED leg has raw probe evidence.
+
+---
+
+## Batch B8-6 — Persistence across reload & service restart, general (T6) — ABSORBS T5 RESTART LEG
+
+*(command corrected per retained Grok finding — BOTH flags explicit)* Cases **`reload preserves timeline and placement`** and **`restart of astrid serve against the same SQLite document restores identical state`**, PLUS the restart leg moved out of T5: after the T5a seed extension, the restart case asserts the re-fetched document still contains the `Bridge Shot A` pinned-shot group with its duplicated/promoted mutations intact — identical `config_version` and group set, media-tree byte equality across restart (`find … sha256sum | diff`).
+
+**Binding constraint:** the Playwright-owned webServer (`reuseExistingServer: false`) is NEVER stopped or relaunched mid-case — not by T5, not here. The restart legs use their OWN isolated-port harness instance launched with `ASTRID_SEED_ROOT` pinned to the same root (same SQLite file; `real-bridge-serve.mjs:44-45` supports reuse). Killing the owned server would trip SQLite's exclusive lock and orphan the run.
+
+```bash
+PLAYWRIGHT_TIMELINE_DEVICES=1 REAL_BRIDGE=1 npx playwright test \
+  --config playwright.config.ts --project=timeline-devices --workers=1 \
+  tests/e2e/timeline/real-bridge.spec.ts \
+  -g "reload preserves timeline and placement|restart of astrid serve against the same SQLite document"
+```
+
+---
+
+## Batch B8-7 — Failure/recovery behavior (T7)
+
+### 🚩 HUGE-RUN CUMULATIVE BOUNDARY #2
+
+Real watchdog case `bridge death during an edit → watchdog banner with retry` (`real-bridge.spec.ts:705`) run unstubbed under `REAL_BRIDGE=1`: it SIGKILLs the harness-written PID (`/tmp/astrid-real-bridge.pid`), edits, and asserts the persistent unsaved-changes banner + `Retry save`. `capability_unavailable` recovery asserted at unit scope (`SetupCompleteStep`, `useOnboardingFlow.doctorUnavailable`) with negative-path assertions forbidding fabricated success. Stubbed `runaway-degraded-states.spec.ts` documented as excluded by the REAL_BRIDGE `testMatch`.
+
+```bash
+PLAYWRIGHT_TIMELINE_DEVICES=1 REAL_BRIDGE=1 npx playwright test \
+  --config playwright.config.ts --project=timeline-devices --workers=1 \
+  tests/e2e/timeline/real-bridge.spec.ts \
+  -g "bridge death during an edit"
+
+npx vitest run \
+  src/integrations/astrid/bridgeRecovery.test.ts \
+  src/shared/components/OnboardingModal/components/steps/SetupCompleteStep.test.tsx \
+  src/shared/components/OnboardingModal/lib/onboardingColors.test.ts \
+  src/app/hooks/useOnboardingFlow.test.ts
+```
+
+---
+
+## Batch B8-8 — Evidence & receipt gap closure (T8)
+
+| id | Work | Classification |
+|---|---|---|
+| B8-T8a | Rewrite `docs/phase-c/b8-real-bridge-acceptance-blocked.md` with NEW pair SHAs, pins, commands, results from B8-1…B8-7 | normal |
+| B8-T8b | Gap ledger — every gap evidenced or BLOCKED. **Mandatory BLOCKED/deferred rows:** decoded MP4 export; local generation completion (T4c scoping); **legacy `/shots` shot-view route — Supabase-backed (`useListShots`), explicitly supabase-deferred, separate ledger item outside B8 scope**; OS-kernel firewall drop evidence; backup/restore; accessibility/device matrix; any T5 pack-family leg the probe proved absent | normal |
+
+Stale-SHA whitelist audit (only custody-lineage HEAD + `9d714649f2…` allowed as active 40-hex SHAs) and ledger completeness checks unchanged from rev 2.
+
+---
+
+## Batch B8-9 — Final verdict + push (T9)
+
+Grok oracle cumulative review over B8-1…B8-8; on PASS push to `origin/codex/phase-c-megado`, record final SHAs; residual gaps carry explicit BLOCKED entries.
+
+---
+
+## Dependency graph
+
+```
+B8-1 ──► B8-2 ──► B8-3 ══🚩BOUNDARY#1══► B8-4 [XHARD] ──► B8-5 [XHARD] ──► B8-6 ──► B8-7 ══🚩BOUNDARY#2══► B8-8 ──► B8-9
+```
+
+## Revision notes (round 4)
+1. **T4 command fixed**: `real-bridge-hardening.spec.ts:8` requires `ASTRID_HARDENING_BRIDGE_PORT`, allocated only under `PLAYWRIGHT_HARDENING=1` (`playwright.config.ts:56,85-96`). `PLAYWRIGHT_HARDENING=1` added to the T4 invocation — and scoped there deliberately: T5/T6 collect only `real-bridge.spec.ts`, so the hardening spec is never loaded and the flag would boot an unused third webServer (`playwright.config.ts:193-211`).
+2. **T5a grounded in the real seed**: the seed has ONE clip (`clip-1`, `real-bridge-serve.mjs:59-61`), no second clip, no generation/variant registry. T5a is now an explicit three-part seed extension (second contiguous `clip-2`, one `pinnedShotGroups` group over both clips, one generation/variant registry entry) before any assertion; unrepresentable extensions ⇒ corresponding T5b leg BLOCKED up front.
+3. **Restart ownership fixed**: T5's fifth assertion group (service restart) moved verbatim into T6, which already forbids touching the Playwright-owned webServer and owns an isolated-port `ASTRID_SEED_ROOT` instance. T5 is now FOUR groups; its title, `-g` filter, and acceptance updated to match. T6 additionally asserts the shot-group document survives restart.
+4. **T3/T7 commands inlined**: exact 13-file vitest subset (T3) and watchdog + capability-unit invocations (T7) copied from rev 2 into this document; all cited test files verified present at HEAD.
+```
+````
+[launch_hermes_agent] done in 237.9s (exit=0)
+0

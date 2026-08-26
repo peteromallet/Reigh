@@ -1,0 +1,335 @@
+[launch_hermes_agent] model=stealth/ox-alpha → resolved=stealth/ox-alpha toolsets=['file', 'web'] max_tokens=65536 context_budget_tokens=(auto)
+[launch_hermes_agent] NOTE: omp gives the full toolset (Bash, Read, Edit, web, …); the file/web/terminal subset is a superset here.
+[launch_hermes_agent] cwd=/workspace/reigh-phase-c-megado/reigh-app
+Working...
+All facts grounded. Key findings: pin lives at `tests/e2e/timeline/real-bridge-serve.mjs:40` (`PINNED_ASTRID_SHA = '9d714649f2f658ad508dbb4ead8eaf15bff2149b'`, enforced at lines 217–225); serve spawns `<python> -m astrid serve --release-mode --no-open-editor --projects-root <seed> --port <port>` via the harness entrypoint; shot-view route is `/shots` → `src/pages/ShotsPage.tsx` (`src/app/routes.tsx:147`); surfaces are `src/shared/components/modals/OnboardingModal.tsx` + `src/shared/components/OnboardingModal/**` + `src/app/hooks/useOnboardingFlow.ts`; `capability_unavailable` hint renders in `OnboardingModal/components/steps/SetupCompleteStep.tsx` and `useOnboardingFlow.ts:46`; `real-bridge.spec.ts` has five titled cases, none reload/restart/shot-view.
+
+---
+
+# Phase B8 Tasklist — Acceptance/Evidence Batch (frozen-ready, rev 1)
+
+Custody SHA at freeze: `ddfe01b21` on `codex/phase-c-megado`. Prior PASS evidence (`docs/phase-c/b8-real-bridge-acceptance-blocked.md`, pinned pair Reigh `949dfad8` / bridge `97314cce`) does **not** transfer — every gate is re-proven at this custody.
+
+**Astrid bridge pin (FROZEN): `9d714649f2f658ad508dbb4ead8eaf15bff2149b`** — the HEAD pin hardcoded at `tests/e2e/timeline/real-bridge-serve.mjs:40` (`PINNED_ASTRID_SHA`). This supersedes the older `acfc81d5d`/`6d2f84c02` commit references (they authored pins, they are not one) and the closed-doc pair `97314cce`. The harness itself hard-fails any checkout whose HEAD ≠ this SHA (`real-bridge-serve.mjs:217-225`) and requires a clean worktree.
+
+Model policy (USER-PINNED): every checkpoint verdict, cumulative boundary, and final verdict is owned by **Grok 4.6** as oracle. All execution/validation work by stealth/ox-alpha. No Luna/Sol. Oracle unavailability ⇒ STOP per agent goal stop conditions.
+
+Batching rule: each batch ends at a natural seam (green command set or delivered receipt), is self-contained, and names its exact validation commands. Two HUGE-RUN CUMULATIVE BOUNDARIES sit after B8-T3 (unit re-proof) and B8-T7 (failure/recovery) — environment first, then expensive browser proofs, then receipts over everything actually run.
+
+Classification legend:
+- **normal** — standard checkpoint evidence: commands exit 0, assertions green, diff reviewed.
+- **[XHARD]** — full exceptional-threshold evidence required: pinned-SHA provenance recorded, OS-level blocking mechanism proven active (not just asserted), raw command transcripts retained, oracle sees the actual run not a summary.
+
+---
+
+## Batch B8-1 — Environment bootstrap (T0)
+
+**Goal:** Make this workspace executable at all: deps present, correct pinned Astrid checkout provisioned on Linux, gate tooling runnable. This is currently the only hard blocker.
+
+**Tasks**
+| id | Work | Files | Classification |
+|---|---|---|---|
+| B8-T0a | `npm ci` to restore `node_modules` from lockfile | `package.json`, lockfile | normal |
+| B8-T0b | Clone/checkout Astrid at **`9d714649f2f658ad508dbb4ead8eaf15bff2149b`** outside the repo, build if required, export `ASTRID_CHECKOUT` pointing at it. Do NOT resolve via the `acfc81d5d`/`6d2f84c02` commits or the closed-doc `97314cce` — the frozen SHA above is the only pin. Harness independently verifies HEAD equality + clean status at `real-bridge-serve.mjs:40,217-225` | external checkout dir (not repo); harness reads env | **[XHARD]** |
+| B8-T0c | Record provenance receipt: pin SHA `9d714649f2f658ad508dbb4ead8eaf15bff2149b`, checkout HEAD SHA, OS, node/npm versions, `ASTRID_CHECKOUT` value | `.oracle/status.md` (append-only note) | **[XHARD]** |
+
+**Checkpoint acceptance (Grok verifies exactly)**
+- `npm ci` exit 0.
+- `git -C "$ASTRID_CHECKOUT" rev-parse HEAD` outputs exactly `9d714649f2f658ad508dbb4ead8eaf15bff2149b`; mismatch = FAIL, not "close enough".
+- Harness's explicit missing-checkout / wrong-pin rejection (`real-bridge-serve.mjs:213-224`) no longer triggers.
+- Provenance receipt exists with all fields; zero unverifiable claims.
+
+**Agent-goal criteria advanced:** Done-criterion 4 prerequisite (nothing else can run without this). North Star: *correctness by primitives* — the bridge under test is the real `astrid serve` at the frozen pin, never a stand-in; anti-pattern avoided: substituting a mock transport to dodge provisioning.
+
+**Validation commands**
+```bash
+npm ci && echo "npm-ci: exit 0"
+git -C "$ASTRID_CHECKOUT" rev-parse HEAD   # must print 9d714649f2f658ad508dbb4ead8eaf15bff2149b
+git -C "$ASTRID_CHECKOUT" status --porcelain  # must be empty
+node scripts/c5-grep-gates.mjs             # smoke: tooling runs
+```
+
+---
+
+## Batch B8-2 — Static gates green (T1 + T2)
+
+**Goal:** Cheap static truth before expensive browser work: import-boundary gate and build/typecheck/lint/architecture gates all pass at HEAD custody.
+
+**Tasks**
+| id | Work | Files | Classification |
+|---|---|---|---|
+| B8-T1 | Run grep gates at HEAD; audit coverage list against files added since last run (J1 boot/auth cutover files included) — add any new covered module | `scripts/c5-grep-gates.mjs`, `scripts/c5-grep-gates.sh`, coverage manifest within | normal |
+| B8-T2 | Build + typecheck + lint + arch test; confirm zero new suppressions vs prior evidence | `config/vite/vite.config.ts`, tsconfigs, lint config, arch-test sources | normal |
+
+**Checkpoint acceptance**
+- Gate exits 0; zero supabase-js imports in covered modules; deferred boundary exists only in `src/integrations/astrid/deferredRuntime.ts`.
+- Coverage list includes every new source file since the previous gate run; diff of coverage list shown to oracle.
+- `npm run build`, `npx tsc --noEmit`, `npm run lint`, `npm run test:arch` all exit 0.
+- `grep -rn "@ts-ignore\|eslint-disable" <changed-since-pin files>` shows no new suppressions.
+
+**Agent-goal criteria advanced:** Done-criterion 4 groundwork; confirms post-J1 auth cutover introduced no second authority (no supabase-js anywhere except the deferred seam). North Star: *one authority* enforced mechanically; anti-pattern avoided: silent cloud fallback re-entering via a new import.
+
+**Validation commands**
+```bash
+node scripts/c5-grep-gates.mjs
+./scripts/c5-grep-gates.sh
+npm run build && npx tsc --noEmit && npm run lint && npm run test:arch
+```
+
+---
+
+## Batch B8-3 — Unit subset re-proof (T3)
+
+### 🚩 HUGE-RUN CUMULATIVE BOUNDARY #1 (after this batch)
+Rationale: unit-level correctness re-proven **post-J1-cutover and in the fresh environment** before any browser-time investment. If the focused suites fail here, B8-4+ is not started — root cause first.
+
+**Tasks**
+| id | Work | Files | Classification |
+|---|---|---|---|
+| B8-T3 | Re-run the exact vitest subset below at HEAD; subset must be same-or-larger than prior evidence (closed doc records counts only: "10 files / 188 tests" focused + "polling/proxy/realtime unit subset: 44 tests") | 13 literal paths listed under Validation commands | normal |
+
+**Exact subset (enumerated from this repo, replacing `<subset-paths-from-closed-doc>`):**
+
+*Astrid client / transport / recovery / capability:*
+```
+src/integrations/astrid/client.test.ts
+src/integrations/astrid/transport.test.ts
+src/integrations/astrid/bridgeRecovery.test.ts
+src/integrations/astrid/capabilityCensus.test.ts
+src/integrations/astrid/doctorAvailability.test.ts
+src/integrations/astrid/bridgeTaskOutputs.test.ts
+```
+*Proxy:*
+```
+src/test/astridProxySecurity.test.ts
+src/tools/video-editor/data/astridBridgeProxyPolicy.test.ts
+src/tools/video-editor/data/bridgeContract.test.ts
+```
+*Polling / realtime cadence:*
+```
+src/tools/video-editor/hooks/usePollSync.test.ts
+src/shared/hooks/tasks/taskPollingCadence.test.ts
+src/shared/lib/__tests__/debugPolling.test.ts
+src/shared/hooks/__tests__/useSmartPolling.test.ts
+```
+
+**Checkpoint acceptance**
+- Focused suites exit 0; file count (13) ≥ prior-evidence count (10) — else FAIL.
+- Polling-budget assertions intact (`taskPollingCadence.test.ts`: 2s active / 10s idle backoff still asserted).
+- Cumulative boundary verdict recorded by Grok before B8-4 opens.
+
+**Agent-goal criteria advanced:** Done-criterion 4 (proof chain step 3 of 4). North Star: *honest latency* — promised polling budgets remain tested primitives; *correctness by primitives* — CAS/idempotency unit contracts re-proven at new custody.
+
+**Validation commands**
+```bash
+npx vitest run \
+  src/integrations/astrid/client.test.ts \
+  src/integrations/astrid/transport.test.ts \
+  src/integrations/astrid/bridgeRecovery.test.ts \
+  src/integrations/astrid/capabilityCensus.test.ts \
+  src/integrations/astrid/doctorAvailability.test.ts \
+  src/integrations/astrid/bridgeTaskOutputs.test.ts \
+  src/test/astridProxySecurity.test.ts \
+  src/tools/video-editor/data/astridBridgeProxyPolicy.test.ts \
+  src/tools/video-editor/data/bridgeContract.test.ts \
+  src/tools/video-editor/hooks/usePollSync.test.ts \
+  src/shared/hooks/tasks/taskPollingCadence.test.ts \
+  src/shared/lib/__tests__/debugPolling.test.ts \
+  src/shared/hooks/__tests__/useSmartPolling.test.ts
+```
+
+---
+
+## Batch B8-4 — OS-network-blocked real-browser journey (T4)
+
+### **[XHARD] batch** — the core done-criterion proof.
+
+**Coverage honesty (from pre-execution review):** `tests/e2e/timeline/real-bridge.spec.ts` currently contains exactly five serial cases — auth/CAS negatives, API surface GET/HEAD/Range, CAS-409 divergence, B9 recovery Retry, watchdog-on-bridge-death. It is NOT yet the browse→gallery→admit→poll→generation→placement journey. T4 therefore has two parts: prove the existing five cases green under OS blocking, AND add the missing end-to-end journey case over one document (title fixed below so the `-g` selector is deterministic).
+
+**Exact serve invocation** (replacing `python3 -m astrid serve ...`): the bridge is never spawned directly. The harness `tests/e2e/timeline/real-bridge-serve.mjs` seeds SQLite fixtures, registers the project in the bridge registry, then spawns, from `cwd=$ASTRID_CHECKOUT` with `PYTHONPATH=$ASTRID_CHECKOUT` and `ASTRID_PYTHON=<pinned python>`:
+
+```
+<pinned-python> -m astrid serve --release-mode --no-open-editor --projects-root "$SEED_ROOT" --port "$ASTRID_BRIDGE_PORT"
+```
+
+The operator-facing entrypoint is the harness itself; ports default to `ASTRID_BRIDGE_PORT=17334` plus a distinct `ASTRID_BRIDGE_READY_PORT`; PID/token/metadata land in `/tmp/astrid-real-bridge.{pid,token,metadata.json}` (overridable per closed-doc convention).
+
+**Tasks**
+| id | Work | Files | Classification |
+|---|---|---|---|
+| B8-T4a | Decide and implement the OS blocking mechanism (unshare-netns-with-loopback-only preferred for non-root reproducibility; nftables/iptables drop if privileges allow) — decision + activation transcript recorded | runbook section of `.oracle/status.md`; no product code changes | **[XHARD]** |
+| B8-T4b | Launch the harness inside the block wrapper: `node tests/e2e/timeline/real-bridge-serve.mjs` (which spawns the pinned `… -m astrid serve --release-mode …` shown above); wait on the readiness adapter (`real-bridge-readiness.mjs`); prove block rules active (outbound probe fails, loopback passes) | `tests/e2e/timeline/real-bridge.spec.ts`, `tests/e2e/timeline/real-bridge-serve.mjs` (505-line harness), `playwright.config.ts` | **[XHARD]** |
+| B8-T4c | Run the existing 5-case suite green, then add and run ONE new serial case titled **`local-only journey: browse → gallery → admit → poll → generation → placement over one document`** driving the real UI through the whole journey against the seeded document `11111111-1111-1111-1111-111111111111`; browser-level assertions prove zero Supabase/remote traffic (loopback-only host allowlist via `installBrowserNetworkAudit`) | `tests/e2e/timeline/real-bridge.spec.ts` | **[XHARD]** |
+
+**Checkpoint acceptance**
+- Full suite (existing 5 + new journey case = 6) green **with block rules verifiably active** — an in-run probe demonstrating non-loopback egress fails is part of the evidence.
+- Assertions cover both layers: OS drop/netns AND assertion-level loopback-only allowlist.
+- Raw run transcript + block-rule state captured; oracle sees the run, not a summary.
+- Render/export scope honesty: admission + Range/ETag serving asserted; decoded MP4 export explicitly carried to T8 as a BLOCKED ledger row, not silently widened.
+
+**Agent-goal criteria advanced:** Done-criterion 4 directly. North Star: *end state* clause proven (local single-user product, loopback bridge only, no cloud in supported path); *one authority* — traffic assertions structurally forbid a second authority; anti-patterns avoided: cloud fallback, mirrored state.
+
+**Validation commands**
+```bash
+# inside netns/firewall wrapper per B8-T4a runbook; harness spawns the pinned bridge itself:
+ASTRID_CHECKOUT="$ASTRID_CHECKOUT" \
+ASTRID_BRIDGE_PORT=17334 \
+ASTRID_BRIDGE_READY_PORT=17335 \
+REAL_BRIDGE=1 \
+PLAYWRIGHT_TIMELINE_DEVICES=1 \
+node tests/e2e/timeline/real-bridge-serve.mjs &        # spawns: <python> -m astrid serve --release-mode --no-open-editor --projects-root <seed> --port 17334
+npx playwright test --config playwright.config.ts --project=timeline-devices --workers=1 \
+  tests/e2e/timeline/real-bridge.spec.ts
+```
+
+---
+
+## Batch B8-5 — Timeline + shot-view single-document proof (T5)
+
+**Surface correction:** the shot-view route is **`/shots`**, declared at `src/app/routes.tsx:147` (`<Route path="/shots" element={<ShotsPage />} />`, page at `src/pages/ShotsPage.tsx`). There is no `/shot-view` path in this codebase.
+
+**Tasks**
+| id | Work | Files | Classification |
+|---|---|---|---|
+| B8-T5 | Add one serial case titled **`shot view at /shots reads the same document as the editor`**: navigate the running app to `/shots`, assert ShotsPage reads placement/generation state from the same SQLite-backed document (same timeline ID `11111111-1111-1111-1111-111111111111`, identical state values observed in both surfaces after edits made in the editor view); assert no second fetch authority appears in the browser traffic log during the `/shots` segment | `tests/e2e/timeline/real-bridge.spec.ts`, route `/shots` (`src/app/routes.tsx:147`, `src/pages/ShotsPage.tsx`) | normal |
+
+**Checkpoint acceptance**
+- New case green; assertions compare both surfaces against one authority (same document ID/state read twice, not two stores reconciled).
+- Zero additional network authorities observed in browser traffic log during the `/shots` segment.
+
+**Agent-goal criteria advanced:** North Star end-state: "shots are a view mode of the same timeline document"; *one authority* — view parity is the observable form of single-authority.
+
+**Validation commands**
+```bash
+npx playwright test --config playwright.config.ts --project=timeline-devices --workers=1 \
+  tests/e2e/timeline/real-bridge.spec.ts -g "shot view at /shots reads the same document as the editor"
+```
+
+---
+
+## Batch B8-6 — Persistence across reload & service restart (T6)
+
+**Survey result:** `real-bridge.spec.ts` contains NO reload-persistence case and NO service-restart case (its five cases are auth/CAS, API surface, 409 divergence, B9 Retry, watchdog). Both cases are added here. Three scenarios are covered explicitly, including **restart against the SAME document**.
+
+**Tasks**
+| id | Work | Files | Classification |
+|---|---|---|---|
+| B8-T6a | Case titled **`reload preserves timeline and placement`**: make an editor edit, `page.reload()`, assert identical timeline/placement state re-read from the bridge | `tests/e2e/timeline/real-bridge.spec.ts` | normal |
+| B8-T6b | Case titled **`restart of astrid serve against the same SQLite document restores identical state`**: record media-tree hash, kill the bridge via the harness PID file (`/tmp/astrid-real-bridge.pid`), relaunch the harness with `ASTRID_SEED_ROOT` pinned to the SAME seed root (so `serve` reopens the same SQLite file and same document), assert identical timeline/placement/generation state restored | same spec, `tests/e2e/timeline/real-bridge-serve.mjs` lifecycle hooks (`ASTRID_SEED_ROOT` env, PID-file kill at `:463-466`) | normal |
+
+**Checkpoint acceptance**
+- Both cases green — including the restart-same-document scenario: the restarted bridge serves the identical document (same ID, same `config_version` lineage, same placements) with zero repair/migration code path firing; recovery is pure re-read from sole authority.
+- Media tree bytes unchanged across restart: hash before == hash after.
+
+**Agent-goal criteria advanced:** North Star: *invisible failure default* — crash/restart leaves no partial authority, replay from SQLite+media tree only; anti-pattern avoided: reconciliation machinery.
+
+**Validation commands**
+```bash
+npx playwright test --config playwright.config.ts --project=timeline-devices --workers=1 \
+  tests/e2e/timeline/real-bridge.spec.ts \
+  -g "reload preserves timeline and placement|restart of astrid serve against the same SQLite document"
+# media-tree byte equality across restart (SEED_ROOT exported by the harness runbook):
+find "$ASTRID_SEED_ROOT" -type f -print0 | sort -z | xargs -0 sha256sum > /tmp/media-before.sha256
+find "$ASTRID_SEED_ROOT" -type f -print0 | sort -z | xargs -0 sha256sum > /tmp/media-after.sha256
+diff /tmp/media-before.sha256 /tmp/media-after.sha256    # must be empty
+```
+
+---
+
+## Batch B8-7 — Failure/recovery behavior (T7)
+
+### 🚩 HUGE-RUN CUMULATIVE BOUNDARY #2 (after this batch)
+Rationale: all behavioral browser proofs complete — cumulative verdict covers environment + static + unit + every browser surface before any receipt-writing effort.
+
+**Surface correction:** `LocalSetupModal` does not exist in this codebase. The local-setup/onboarding surfaces are:
+- `src/shared/components/modals/OnboardingModal.tsx` + step components under `src/shared/components/OnboardingModal/` (notably `components/steps/SetupCompleteStep.tsx:20`, which renders `getBridgeRecoveryGuidance('capability_unavailable')`);
+- flow logic in `src/app/hooks/useOnboardingFlow.ts` (+ `.test.ts`), wired via `src/app/Layout.tsx:83`;
+- typed guidance source `src/integrations/astrid/bridgeRecovery.ts:36` (`capability_unavailable` → doctor next-action).
+
+**Tasks**
+| id | Work | Files | Classification |
+|---|---|---|---|
+| B8-T7a | Bridge-down path: typed offline/watchdog state surfaces with Retry (existing case `bridge death during an edit → watchdog banner with retry` at `real-bridge.spec.ts:705` stays green post-J1) | `src/integrations/astrid/bridgeRecovery.ts`, `networkStatusManager.ts`, `tests/e2e/timeline/runaway-degraded-states.spec.ts`, `tests/e2e/timeline/real-bridge-hardening.spec.ts` | normal |
+| B8-T7b | `capability_unavailable` path: OnboardingModal SetupCompleteStep shows the doctor/setup recovery hint (`getBridgeRecoveryGuidance('capability_unavailable')`), `useOnboardingFlow.doctorUnavailable` toast path fires, and **no fabricated success** anywhere (assert success UI does NOT render when availability.status === 'unavailable') | `src/shared/components/modals/OnboardingModal.tsx`, `src/shared/components/OnboardingModal/components/steps/SetupCompleteStep.tsx` (+ its `.test.tsx`), `src/app/hooks/useOnboardingFlow.test.ts` | normal |
+
+**Checkpoint acceptance**
+- Cases assert **typed error codes** (`capability_unavailable`, watchdog codes) surfacing in UI, not generic spinners or swallowed errors.
+- Negative-path assertions explicitly forbid false success (assertion that success UI does NOT render).
+- Cumulative boundary verdict recorded by Grok.
+
+**Agent-goal criteria advanced:** North Star: *invisible failure is the default failure state* made user-visible-honest; anti-pattern avoided: silent fallback / executor swap after claim.
+
+**Validation commands**
+```bash
+npx playwright test --config playwright.config.ts --project=timeline-devices --workers=1 \
+  tests/e2e/timeline/runaway-degraded-states.spec.ts tests/e2e/timeline/real-bridge-hardening.spec.ts
+npx vitest run \
+  src/integrations/astrid/bridgeRecovery.test.ts \
+  src/shared/components/OnboardingModal/components/steps/SetupCompleteStep.test.tsx \
+  src/shared/components/OnboardingModal/lib/onboardingColors.test.ts \
+  src/app/hooks/useOnboardingFlow.test.ts
+```
+
+---
+
+## Batch B8-8 — Evidence & receipt gap closure (T8)
+
+**Tasks**
+| id | Work | Files | Classification |
+|---|---|---|---|
+| B8-T8a | Rewrite `docs/phase-c/b8-real-bridge-acceptance-blocked.md` (or successor doc-of-record) with the **new** pair SHAs (Reigh `ddfe01b21`-lineage HEAD + bridge `9d714649f2f658ad508dbb4ead8eaf15bff2149b` checkout), commands, and results from B8-1…B8-7 | `docs/phase-c/b8-real-bridge-acceptance-blocked.md` | normal |
+| B8-T8b | Gap ledger: every prior evidence gap either evidenced (link to receipt) or explicitly BLOCKED with reason — C5-matrix style; zero unverifiable claims. **Mandatory BLOCKED rows:** decoded MP4 export (downstream gate per closed doc boundary), OS-firewall production release evidence beyond the netns/wrapper used in T4, backup/restore, accessibility/device matrix — each carries reason + successor-gate pointer | `.oracle/status.md` | normal |
+
+**Checkpoint acceptance**
+- Every claim in the doc traceable to a command + exit code captured in B8-1…B8-7 transcripts; grep for unpinned SHAs returns nothing stale except historical-context mentions.
+- Each primitive receipt (CAS 409, idempotency, fences, Range/ETag, polling budgets, shot-view parity, restart-same-document persistence) re-pinned to this custody.
+- Ledger has no row in state other than {evidenced, BLOCKED}; decoded MP4 export is a BLOCKED row, never silent omission.
+
+**Agent-goal criteria advanced:** Done-criterion 5 directly. North Star: *correctness by primitives* — each primitive keeps its named, re-pinned receipt; anti-pattern avoided: ceremony receipts without consumers (ledger rows map to actual runs).
+
+**Validation commands**
+```bash
+grep -rnE "949dfad8|97314cce|acfc81d5d|6d2f84c02" docs/ .oracle/   # expect: only historical-context mentions; active pins are ddfe01b21 + 9d714649f2f658ad508dbb4ead8eaf15bff2149b
+grep -c "BLOCKED\|evidenced" .oracle/status.md                     # ledger completeness spot-check
+```
+
+---
+
+## Batch B8-9 — Final verdict + push (T9)
+
+**Tasks**
+| id | Work | Files | Classification |
+|---|---|---|---|
+| B8-T9a | Grok oracle runs cumulative review over B8-1…B8-8 evidence, then final verdict (model policy: Grok owns this, no substitution) | oracle session artifacts | normal (oracle-owned) |
+| B8-T9b | On PASS: push branch to origin; record final SHAs | repo → `origin/codex/phase-c-megado` | normal |
+
+**Checkpoint acceptance**
+- Final PASS issued by Grok under pinned model policy.
+- `origin/codex/phase-c-megado` contains custody HEAD; push SHA recorded in status.
+- Any residual gap carries an explicit BLOCKED entry, never silence.
+
+**Agent-goal criteria advanced:** Done-criteria 3, 5, 6 close out. Stop conditions respected: Grok unavailable ⇒ STOP with exact prerequisite; nothing irreducible handled off-policy.
+
+**Validation commands**
+```bash
+git push origin codex/phase-c-megado
+git rev-parse HEAD origin/codex/phase-c-megado   # equality check
+```
+
+---
+
+## Dependency graph
+
+```
+B8-1 ──► B8-2 ──► B8-3 ══🚩BOUNDARY#1══► B8-4 [XHARD] ──► B8-5 ──► B8-6 ──► B8-7 ══🚩BOUNDARY#2══► B8-8 ──► B8-9
+```
+
+No batch may open before its predecessor's checkpoint verdict. Boundary failures halt forward progress — root cause first, no evidence written over red runs.
+
+## Revision notes (round 1)
+1. **Pin frozen** to `9d714649f2f658ad508dbb4ead8eaf15bff2149b` (B8-T0b/T0c, header, T8 stale-SHA grep extended to catch `acfc81d5d`/`6d2f84c02`).
+2. **Commands exact**: T3 lists 13 literal vitest paths; T4 uses the real entrypoint `node tests/e2e/timeline/real-bridge-serve.mjs` (spawning `… -m astrid serve --release-mode --no-open-editor --projects-root … --port …` per `real-bridge-serve.mjs:433-448`); T5/T6 `-g` selectors name fixed case titles; T6 media-hash uses concrete `find|sha256sum|diff`; T7 names real spec files.
+3. **Surfaces corrected**: `LocalSetupModal` → `OnboardingModal` + `useOnboardingFlow.ts` everywhere; shot-view route named as `/shots` (`routes.tsx:147`, `ShotsPage.tsx`); T4c acknowledges the 5-case suite is not the journey and adds a titled end-to-end case; T6 adds restart-same-document explicitly (three persistence scenarios total: reload, restart-same-document, media-byte equality).
+4. **MP4 export framing kept**: recorded as downstream gate, now enforced as a mandatory BLOCKED ledger row in T8b.
+[launch_hermes_agent] done in 249.9s (exit=0)
+0
