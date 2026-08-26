@@ -1740,3 +1740,23 @@ fresh console collection.
   runtime-config identity claim. Continue labeling editor/reload/render browser
   coverage as development-only until production local-bridge selection is
   implemented; do not infer production rollout safety from that lane.
+
+### A synthetic fixture can silently become the acceptance contract for a real repository
+
+- RC11's paired run reached the real Astrid bridge, migrated all 566 Runaway
+  transitions, and returned complete typed provenance, but Reigh rejected the
+  response because its release validator still pinned the older in-process stub's
+  fabricated run id, uniform regions, frames, labels, and row ids. The combined
+  predicate misleadingly reported the real provenance as missing.
+- Stub fixtures remain useful for isolated browser states, but real-repository
+  acceptance must bind to the independently owned migration contract. RC12 pins
+  the real source SHA, stable migration run, summary facts, segment histogram,
+  first/last semantics, and a normalized semantic hash across every prompt and
+  metadata field. It also verifies frame-derived timings and row integrity.
+- Database-generated row/evidence/project ids and timestamps are validated for
+  shape, uniqueness, and consistency but excluded from the restart fingerprint.
+  This lets a fresh migration compare equal without allowing a changed prompt,
+  manifest row, colour, timing, or provenance summary to pass.
+- Failure diagnostics now distinguish a missing evidence receipt, a wrong run
+  identity, wrong summary facts, malformed rows, timing drift, and whole-fixture
+  semantic drift instead of collapsing them into “missing typed provenance.”

@@ -27,32 +27,56 @@ export type ValidationResult = {
  * but internally stable, 566-row response.
  */
 export const RUNAWAY_FIXTURE_FACTS = Object.freeze({
+  apiVersion: 'v1',
+  project: 'runaway-piano-colour-demo',
   count: 566,
   frameCount: 8_085,
   fps: 48,
-  runId: 'runaway-stub-run-v1',
+  runId: '01j5runawaytimingv1000000000000',
+  summary: 'Runaway timing v1 migrated from timing-manifest.json',
+  subtype: 'runaway_timing_migrated',
+  source: 'external/timing-manifest.json',
+  sourceSha256: '44b5c0eea0aeb8b35a83e3e7620b5dbab27a106bf575fcc6e0ca6591dd4612bb',
   firstManifestId: 'T0001',
   lastManifestId: 'T0566',
-  firstFrame: 0,
-  lastFrame: 8_084,
+  firstFrame: 14,
+  lastFrame: 7_951,
+  firstSegmentLabel: 'Opening main notes',
+  lastSegmentLabel: 'Sustained-note outro',
+  declaredRegions: 11,
   segmentCounts: Object.freeze({
-    S01: 57,
-    S02: 57,
-    S03: 57,
-    S04: 57,
-    S05: 57,
-    S06: 57,
-    S07: 57,
-    S08: 57,
-    S09: 57,
-    S10: 53,
+    S01: 16,
+    S02: 125,
+    S03: 0,
+    S04: 211,
+    S05: 12,
+    S06A: 21,
+    S06B: 11,
+    S07: 24,
+    S08: 140,
+    S09: 4,
+    S10: 2,
   }),
-  // SHA-256 of canonical { timingSummary, transitions } for the pinned
-  // browser fixture. This is intentionally not obtained from a restart.
-  canonicalHash: '9de2262222abc1cb9021ab7f792eb001f2bf4f541a98482ba33908a1a6e7c405',
+  colours: Object.freeze({
+    blue: '#26A7D0',
+    gold: '#B59432',
+    green: '#77A95B',
+    indigo: '#7B94E2',
+    orange: '#D57F57',
+    rose: '#D47795',
+    teal: '#16B09B',
+    violet: '#B481CB',
+  }),
+  // SHA-256 of the deterministic migration semantics in the pinned real
+  // Astrid response. Database-owned ids, project ids, and timestamps are
+  // validated separately but excluded so fresh migrations compare cleanly.
+  semanticHash: '82a6d870a02322857792677f60e64b8b0ba7e5c084637b070b93c9e9a2da5307',
 });
 
 type RunawayResponse = {
+  api_version?: unknown;
+  project?: unknown;
+  snapshot?: unknown;
   count?: unknown;
   total_count?: unknown;
   transitions?: unknown;
@@ -95,22 +119,69 @@ function nonEmpty(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+const LOWERCASE_ULID = /^[0123456789abcdefghjkmnpqrstvwxyz]{26}$/;
+
+function lowercaseUlid(value: unknown): value is string {
+  return typeof value === 'string' && LOWERCASE_ULID.test(value);
+}
+
 function bounded(value: unknown, min = 0, max = Number.POSITIVE_INFINITY): boolean {
   return finite(value) && value >= min && value <= max;
 }
 
-function runawaySegment(index: number): string {
-  return `S${String(Math.min(10, Math.floor(index / 57) + 1)).padStart(2, '0')}`;
+function integer(value: unknown): value is number {
+  return Number.isInteger(value);
 }
 
-function runawayFrame(index: number): number {
-  return Math.round((index * (RUNAWAY_FIXTURE_FACTS.frameCount - 1)) / (RUNAWAY_FIXTURE_FACTS.count - 1));
+function timestamp(value: unknown): value is string {
+  return nonEmpty(value) && Number.isFinite(Date.parse(value));
+}
+
+/** Match Python's round-to-even used by the pinned migration. */
+function frameMilliseconds(frame: number): number {
+  const numerator = frame * 1_000;
+  const quotient = Math.floor(numerator / RUNAWAY_FIXTURE_FACTS.fps);
+  const remainder = numerator % RUNAWAY_FIXTURE_FACTS.fps;
+  const doubled = remainder * 2;
+  if (doubled < RUNAWAY_FIXTURE_FACTS.fps) return quotient;
+  if (doubled > RUNAWAY_FIXTURE_FACTS.fps) return quotient + 1;
+  return quotient % 2 === 0 ? quotient : quotient + 1;
+}
+
+function runawaySemantics(
+  summary: Record<string, unknown>,
+  transitions: Record<string, unknown>[],
+): unknown {
+  return {
+    timingSummary: {
+      run_id: summary.run_id,
+      summary: summary.summary,
+      data: summary.data,
+    },
+    transitions: transitions.map((transition) => ({
+      run_id: transition.run_id,
+      task_id: transition.task_id,
+      ordinal: transition.ordinal,
+      start_ms: transition.start_ms,
+      duration_ms: transition.duration_ms,
+      prompt: transition.prompt,
+      metadata: transition.metadata,
+    })),
+  };
 }
 
 /** Validate the complete, single-page Runaway release response. */
 export function validateRunawayResponse(value: unknown): ValidationResult {
   if (!record(value)) return invalid('expected a Runaway response object');
   const response = value as RunawayResponse;
+  const snapshotMatch = typeof response.snapshot === 'string'
+    ? /^runaway-v1:([0123456789abcdefghjkmnpqrstvwxyz]{26}):(0|[1-9]\d*)$/.exec(response.snapshot)
+    : null;
+  if (response.api_version !== RUNAWAY_FIXTURE_FACTS.apiVersion
+    || response.project !== RUNAWAY_FIXTURE_FACTS.project
+    || snapshotMatch === null) {
+    return invalid('response identity does not match the real Astrid v1 Runaway fixture');
+  }
   if (response.count !== RUNAWAY_FIXTURE_FACTS.count) return invalid('count must be exactly 566');
   if (response.total_count !== RUNAWAY_FIXTURE_FACTS.count) return invalid('total_count must be exactly 566');
   if (!Array.isArray(response.transitions)) return invalid('transitions must be an array');
@@ -123,47 +194,100 @@ export function validateRunawayResponse(value: unknown): ValidationResult {
   }
 
   const summary = response.timing_summary;
-  if (!record(summary) || !nonEmpty(summary.evidence_id) || summary.run_id !== RUNAWAY_FIXTURE_FACTS.runId
-    || !nonEmpty(summary.summary) || !record(summary.data)) {
-    return invalid('timing summary is missing typed provenance');
-  }
+  if (!record(summary)) return invalid('timing summary must be an object');
+  if (summary.evidence_id === '') return invalid('timing summary is missing evidence_id provenance');
+  if (!lowercaseUlid(summary.evidence_id)) return invalid('timing summary evidence_id is not a lowercase Crockford ULID');
+  if (summary.run_id !== RUNAWAY_FIXTURE_FACTS.runId) return invalid('timing summary has the wrong migration run_id');
+  if (summary.summary !== RUNAWAY_FIXTURE_FACTS.summary) return invalid('timing summary text does not match the migration receipt');
+  if (!timestamp(summary.created_at)) return invalid('timing summary has an invalid created_at timestamp');
+  if (!record(summary.data)) return invalid('timing summary data must be an object');
   const data = summary.data;
   if (data.frame_count !== RUNAWAY_FIXTURE_FACTS.frameCount
     || data.transition_count !== RUNAWAY_FIXTURE_FACTS.count
     || data.fps !== RUNAWAY_FIXTURE_FACTS.fps
+    || data.subtype !== RUNAWAY_FIXTURE_FACTS.subtype
+    || data.source !== RUNAWAY_FIXTURE_FACTS.source
+    || data.source_sha256 !== RUNAWAY_FIXTURE_FACTS.sourceSha256
+    || !nonEmpty(data.manifest_intent)
     || !record(data.segment_counts)
     || canonicalFingerprint(data.segment_counts) !== canonicalFingerprint(RUNAWAY_FIXTURE_FACTS.segmentCounts)) {
     return invalid('timing summary does not match the pinned manifest facts');
   }
 
+  const transitions: Record<string, unknown>[] = [];
+  const rowIds = new Set<string>();
+  const segmentCounts = Object.fromEntries(
+    Object.keys(RUNAWAY_FIXTURE_FACTS.segmentCounts).map((segment) => [segment, 0]),
+  ) as Record<string, number>;
+  let projectId: string | null = null;
+  let previousFrame = -1;
   for (const [index, candidate] of response.transitions.entries()) {
     if (!record(candidate) || !record(candidate.metadata)) return invalid(`transition ${index} is missing provenance`);
     const metadata = candidate.metadata;
-    const expectedColour = index % 2 === 0 ? 'rose' : 'teal';
-    const expectedHex = index % 2 === 0 ? '#D47795' : '#26A7D0';
-    if (candidate.id !== `runaway-stub-row-${String(index + 1).padStart(4, '0')}`
-      || candidate.run_id !== RUNAWAY_FIXTURE_FACTS.runId
+    if (!lowercaseUlid(candidate.id) || rowIds.has(candidate.id)) return invalid(`transition ${index} has a malformed or duplicate id`);
+    rowIds.add(candidate.id);
+    if (!lowercaseUlid(candidate.project_id)) return invalid(`transition ${index} has a malformed project_id`);
+    projectId ??= candidate.project_id;
+    if (snapshotMatch[1] !== projectId) return invalid(`transition ${index} project_id does not match the snapshot`);
+    if (candidate.project_id !== projectId) return invalid(`transition ${index} belongs to a different project`);
+    if (candidate.run_id !== RUNAWAY_FIXTURE_FACTS.runId
       || candidate.task_id !== null
       || candidate.ordinal !== index
-      || !finite(candidate.start_ms) || (candidate.start_ms as number) < 0
-      || !finite(candidate.duration_ms) || (candidate.duration_ms as number) <= 0
+      || !integer(candidate.start_ms) || (candidate.start_ms as number) < 0
+      || !integer(candidate.duration_ms) || (candidate.duration_ms as number) <= 0
       || !nonEmpty(candidate.prompt)
+      || !timestamp(candidate.created_at)
       || metadata.manifest_id !== `T${String(index + 1).padStart(4, '0')}`
-      || metadata.segment_id !== runawaySegment(index)
-      || metadata.segment_label !== `Runaway fixture region ${String(runawaySegment(index).slice(1)).padStart(2, '0')}`
-      || metadata.timing_mode !== (index % 5 === 0 ? 'hard_cut' : 'hold')
-      || metadata.colour_name !== expectedColour
-      || metadata.colour_hex !== expectedHex
-      || metadata.frame !== runawayFrame(index)
+      || !nonEmpty(metadata.segment_id)
+      || !Object.prototype.hasOwnProperty.call(segmentCounts, metadata.segment_id)
+      || !nonEmpty(metadata.segment_label)
+      || !nonEmpty(metadata.timing_mode)
+      || !nonEmpty(metadata.colour_name)
+      || RUNAWAY_FIXTURE_FACTS.colours[metadata.colour_name as keyof typeof RUNAWAY_FIXTURE_FACTS.colours] !== metadata.colour_hex
+      || !integer(metadata.colour_index) || !bounded(metadata.colour_index, 0, 7)
+      || !integer(metadata.frame) || !bounded(metadata.frame, 0, RUNAWAY_FIXTURE_FACTS.frameCount - 1)
       || metadata.fps !== RUNAWAY_FIXTURE_FACTS.fps
-      || !nonEmpty(candidate.created_at)) {
+      || metadata.range_end_frame !== RUNAWAY_FIXTURE_FACTS.frameCount) {
       return invalid(`transition ${index} does not match the pinned manifest row`);
+    }
+    const frame = metadata.frame as number;
+    if (frame <= previousFrame) return invalid(`transition ${index} frame is not strictly increasing`);
+    previousFrame = frame;
+    segmentCounts[metadata.segment_id as string] += 1;
+    transitions.push(candidate);
+  }
+
+  if (canonicalFingerprint(segmentCounts) !== canonicalFingerprint(RUNAWAY_FIXTURE_FACTS.segmentCounts)) {
+    return invalid('transition segment histogram does not match the pinned manifest');
+  }
+  for (const [index, transition] of transitions.entries()) {
+    const metadata = transition.metadata as Record<string, unknown>;
+    const frame = metadata.frame as number;
+    const nextFrame = index + 1 < transitions.length
+      ? ((transitions[index + 1].metadata as Record<string, unknown>).frame as number)
+      : RUNAWAY_FIXTURE_FACTS.frameCount;
+    if (transition.start_ms !== frameMilliseconds(frame)) {
+      return invalid(`transition ${index} start_ms does not match its frame`);
+    }
+    if (transition.duration_ms !== frameMilliseconds(nextFrame - frame)) {
+      return invalid(`transition ${index} duration_ms does not match the next frame`);
     }
   }
 
-  const fingerprint = canonicalFingerprint({ timingSummary: summary, transitions: response.transitions });
-  if (fingerprint !== RUNAWAY_FIXTURE_FACTS.canonicalHash) {
-    return invalid(`canonical Runaway fixture hash mismatch: ${fingerprint}`);
+  const first = transitions[0].metadata as Record<string, unknown>;
+  const last = transitions.at(-1)!.metadata as Record<string, unknown>;
+  if (first.manifest_id !== RUNAWAY_FIXTURE_FACTS.firstManifestId
+    || first.frame !== RUNAWAY_FIXTURE_FACTS.firstFrame
+    || first.segment_label !== RUNAWAY_FIXTURE_FACTS.firstSegmentLabel
+    || last.manifest_id !== RUNAWAY_FIXTURE_FACTS.lastManifestId
+    || last.frame !== RUNAWAY_FIXTURE_FACTS.lastFrame
+    || last.segment_label !== RUNAWAY_FIXTURE_FACTS.lastSegmentLabel) {
+    return invalid('first/last Runaway transition semantics do not match the pinned manifest');
+  }
+
+  const fingerprint = canonicalFingerprint(runawaySemantics(summary, transitions));
+  if (fingerprint !== RUNAWAY_FIXTURE_FACTS.semanticHash) {
+    return invalid(`semantic Runaway fixture hash mismatch: ${fingerprint}`);
   }
   return { valid: true, reason: '', fingerprint, count: response.transitions.length };
 }

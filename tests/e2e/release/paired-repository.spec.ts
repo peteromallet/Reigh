@@ -88,6 +88,24 @@ type RunawayUiProof = {
   lastManifestId: string;
 };
 
+type MutableRunawayPayload = {
+  snapshot: string;
+  timing_summary: Record<string, unknown>;
+  transitions: Array<Record<string, unknown>>;
+};
+
+const TEST_ULID_ALPHABET = '0123456789abcdefghjkmnpqrstvwxyz';
+
+function deterministicTestUlid(index: number): string {
+  let value = index;
+  let suffix = '';
+  for (let position = 0; position < 10; position += 1) {
+    suffix = `${TEST_ULID_ALPHABET[value % TEST_ULID_ALPHABET.length]}${suffix}`;
+    value = Math.floor(value / TEST_ULID_ALPHABET.length);
+  }
+  return `01m0xmky6xyxjy5e${suffix}`;
+}
+
 function canonicalValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalValue);
   if (value !== null && typeof value === 'object') {
@@ -132,6 +150,28 @@ async function readRunawaySnapshot(request: APIRequestContext): Promise<RunawayS
   };
   const validation = validateRunawayResponse(payload);
   if (!validation.valid) throw new Error(`Runaway response failed fixture validation: ${validation.reason}`);
+  expect(validation.fingerprint).toBe(RUNAWAY_FIXTURE_FACTS.semanticHash);
+  if (phase === 'first') {
+    const volatilePayload = structuredClone(payload) as unknown as MutableRunawayPayload;
+    const freshProjectId = '01m0xmky6xyxjy5c0000000000';
+    volatilePayload.snapshot = `runaway-v1:${freshProjectId}:9999`;
+    volatilePayload.timing_summary.evidence_id = '01m0xmky6xyxjy5d0000000000';
+    volatilePayload.timing_summary.created_at = '2026-08-26T00:00:00Z';
+    volatilePayload.transitions.forEach((row, index) => {
+      row.id = deterministicTestUlid(index);
+      row.project_id = freshProjectId;
+      row.created_at = '2026-08-26T00:00:00Z';
+    });
+    const volatileValidation = validateRunawayResponse(volatilePayload);
+    expect(volatileValidation.valid, volatileValidation.reason).toBe(true);
+    expect(volatileValidation.fingerprint).toBe(validation.fingerprint);
+
+    const semanticDrift = structuredClone(payload) as unknown as MutableRunawayPayload;
+    semanticDrift.transitions[200].prompt = `${String(semanticDrift.transitions[200].prompt)} drift`;
+    const driftValidation = validateRunawayResponse(semanticDrift);
+    expect(driftValidation.valid).toBe(false);
+    expect(driftValidation.reason).toMatch(/^semantic Runaway fixture hash mismatch:/);
+  }
   const count = payload.count;
   expect(payload.count).toBe(RUNAWAY_FIXTURE_FACTS.count);
   expect(payload.transitions.length).toBe(RUNAWAY_FIXTURE_FACTS.count);
@@ -371,21 +411,21 @@ async function proveRunawayLane(page: Page): Promise<RunawayUiProof> {
   await expect(first).toBeFocused();
   const inspector = page.getByTestId('runaway-transition-inspector');
   await expect(inspector).toContainText('T0001 · S01');
-  await expect(inspector).toContainText('Runaway fixture region 01');
-  await expect(inspector).toContainText('frame 0 @ 48fps');
+  await expect(inspector).toContainText(RUNAWAY_FIXTURE_FACTS.firstSegmentLabel);
+  await expect(inspector).toContainText(`frame ${RUNAWAY_FIXTURE_FACTS.firstFrame} @ 48fps`);
   await expect(inspector).toContainText(`run: ${RUNAWAY_FIXTURE_FACTS.runId}`);
   await expect(inspector).toContainText('task: none');
-  await expect(inspector).toContainText('566 typed transitions · 10 declared regions');
+  await expect(inspector).toContainText(`566 typed transitions · ${RUNAWAY_FIXTURE_FACTS.declaredRegions} declared regions`);
 
   await first.press('End');
   const last = page.getByRole('button', { name: /^T0566,/ });
   await expect(last).toBeFocused();
   await expect(inspector).toContainText('T0566 · S10');
-  await expect(inspector).toContainText('Runaway fixture region 10');
-  await expect(inspector).toContainText('frame 8084 @ 48fps');
+  await expect(inspector).toContainText(RUNAWAY_FIXTURE_FACTS.lastSegmentLabel);
+  await expect(inspector).toContainText(`frame ${RUNAWAY_FIXTURE_FACTS.lastFrame} @ 48fps`);
   await expect(inspector).toContainText(`run: ${RUNAWAY_FIXTURE_FACTS.runId}`);
   await expect(inspector).toContainText('task: none');
-  await expect(inspector).toContainText('566 typed transitions · 10 declared regions');
+  await expect(inspector).toContainText(`566 typed transitions · ${RUNAWAY_FIXTURE_FACTS.declaredRegions} declared regions`);
 
   const remountedCount = await page.getByTestId('runaway-transition-chip').count();
   expect(remountedCount).toBeGreaterThan(0);

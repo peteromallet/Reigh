@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   meaningfulChange,
+  RUNAWAY_FIXTURE_FACTS,
   validateExtensionOutput,
   validateRunawayResponse,
   validateTranscriptCaptions,
@@ -117,5 +118,64 @@ describe('paired release semantic validators', () => {
       transitions: Array.from({ length: 566 }, () => ({})),
       timing_summary: { evidence_id: 'evidence', run_id: 'run', data: { frame_count: 8085, transition_count: 566, fps: 48 } },
     }).valid).toBe(false);
+  });
+
+  it('reports missing evidence and wrong migration identity separately', () => {
+    const transitions = Array.from({ length: RUNAWAY_FIXTURE_FACTS.count }, () => ({}));
+    const projectId = 'e94c704d0cdec4a279c7196de4';
+    const base = {
+      api_version: RUNAWAY_FIXTURE_FACTS.apiVersion,
+      project: RUNAWAY_FIXTURE_FACTS.project,
+      snapshot: `runaway-v1:${projectId}:566`,
+      count: RUNAWAY_FIXTURE_FACTS.count,
+      total_count: RUNAWAY_FIXTURE_FACTS.count,
+      page: { limit: 1000, next_cursor: null },
+      transitions,
+    };
+    expect(validateRunawayResponse({
+      ...base,
+      timing_summary: {
+        evidence_id: '',
+        run_id: RUNAWAY_FIXTURE_FACTS.runId,
+        summary: RUNAWAY_FIXTURE_FACTS.summary,
+        data: {},
+        created_at: '2026-08-25T00:00:00Z',
+      },
+    }).reason).toBe('timing summary is missing evidence_id provenance');
+    expect(validateRunawayResponse({
+      ...base,
+      timing_summary: {
+        evidence_id: '01m0xmky6ap84680et0pa3cx2r',
+        run_id: 'runaway-stub-run-v1',
+        summary: RUNAWAY_FIXTURE_FACTS.summary,
+        data: {},
+        created_at: '2026-08-25T00:00:00Z',
+      },
+    }).reason).toBe('timing summary has the wrong migration run_id');
+  });
+
+  it('rejects malformed snapshot and generated identifier shapes', () => {
+    const transitions = Array.from({ length: RUNAWAY_FIXTURE_FACTS.count }, () => ({}));
+    const base = {
+      api_version: RUNAWAY_FIXTURE_FACTS.apiVersion,
+      project: RUNAWAY_FIXTURE_FACTS.project,
+      count: RUNAWAY_FIXTURE_FACTS.count,
+      total_count: RUNAWAY_FIXTURE_FACTS.count,
+      page: { limit: 1000, next_cursor: null },
+      transitions,
+      timing_summary: {
+        evidence_id: 'not-a-ulid',
+        run_id: RUNAWAY_FIXTURE_FACTS.runId,
+        summary: RUNAWAY_FIXTURE_FACTS.summary,
+        data: {},
+        created_at: '2026-08-25T00:00:00Z',
+      },
+    };
+    expect(validateRunawayResponse({ ...base, snapshot: 'garbage' }).reason)
+      .toBe('response identity does not match the real Astrid v1 Runaway fixture');
+    expect(validateRunawayResponse({
+      ...base,
+      snapshot: 'runaway-v1:e94c704d0cdec4a279c7196de4:566',
+    }).reason).toBe('timing summary evidence_id is not a lowercase Crockford ULID');
   });
 });

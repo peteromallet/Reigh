@@ -145,8 +145,9 @@ release bridge (`serve --release-mode`, bearer token, `X-Astrid-Bridge-Version:
 v1`), the raw hostile-`Host` rejection, and the exact media response bytes and
 cache headers. UI proof is the real browser lane: the Runaway lane reports 566
 transitions, keyboard navigation reaches T0001 and T0566, the inspector shows
-frame 8084 at 48 fps, and the paired editor persists/reloads the caption and
-Runaway state before render/export. The built preview's same-origin proxy smoke
+the real manifest boundary frames 14 and 7951 at 48 fps across 11 declared
+regions, and the paired editor persists/reloads the caption and Runaway state
+before render/export. The built preview's same-origin proxy smoke
 is separate from the development-only local editor because production local
 bridge selection is intentionally unavailable today.
 

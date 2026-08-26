@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "release": "extension-ship-quality-rc11",
-  "status": "frozen",
+  "release": "extension-ship-quality-rc12",
+  "status": "integration",
   "candidate": {
-    "reighCommit": "bf3a96c637305bf0c81fdf0e0e159013b04d1c11",
+    "reighCommit": null,
     "astridCommit": "8d470914382928a9604f6c487dc79487decb11aa"
   },
   "workstreams": [
@@ -137,14 +137,14 @@
       "id": "22-human-acceptance-testing",
       "title": "Human acceptance testing",
       "status": "blocked",
-      "blocker": "Four independent human persona sessions have not yet been completed on the RC11 paired release candidate.",
+      "blocker": "Four independent human persona sessions have not yet been completed on the RC12 paired release candidate.",
       "receipts": []
     },
     {
       "id": "23-frozen-release-candidate",
       "title": "Frozen release candidate",
       "status": "blocked",
-      "blocker": "RC11 is frozen at bf3a96c637305bf0c81fdf0e0e159013b04d1c11; the two independent frozen-candidate approvals are not yet available.",
+      "blocker": "RC12 has not yet been frozen and the two independent frozen-candidate approvals are not yet available.",
       "receipts": []
     }
   ]
