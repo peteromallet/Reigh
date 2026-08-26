@@ -121,7 +121,11 @@ const DEMO_PROJECT = 'paired-release-demo';
 const DEMO_TIMELINE = 'paired-release-timeline';
 const RUNAWAY_PROJECT = 'runaway-piano-colour-demo';
 export const PAIRED_RELEASE_TIMELINE_CONFIG = Object.freeze({
-  output: { resolution: '1280x720', fps: 24, file: 'paired-release-output.mp4' },
+  theme_overrides: {
+    visual: {
+      canvas: { width: 1280, height: 720, fps: 24 },
+    },
+  },
   clips: [
     { id: 'paired-release-clip', track: 'V1', at: 0, clipType: 'media', hold: 4, asset: 'paired-release-test-card.png' },
     { id: 'paired-release-audio', track: 'A1', at: 0, clipType: 'media', hold: 8, asset: 'motion-output-audio.aac' },

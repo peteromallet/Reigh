@@ -2356,3 +2356,28 @@ fresh console collection.
 - The failed RC35 evidence has artifact-index SHA-256
   `3e867ac2ccd48195d9416b4553f0ba1c0d76780560acf116481587964d14f2bc`.
   It remains immutable diagnostic history and is not a passing receipt.
+
+### Release fixtures must author canonical timing, not a derived output view
+
+- RC36 deliberately held port 3000 occupied and proved the CORS fix end to end:
+  Remotion selected port 57966, the invocation asset server used port 57967,
+  the exact renderer origin received `Access-Control-Allow-Origin`, a wrong
+  port-3000 origin did not, and the browser downloaded a valid MP4.
+- The next assertion exposed a deeper fixture-contract error. The release seed
+  authored `output.fps=24` and `output.resolution=1280x720`, but the Astrid data
+  provider intentionally removes `output` before persistence because it is a
+  derived render view. The persisted document therefore retained no authored
+  canvas timing and correctly fell back to the default theme: 1920x1080 at
+  30fps. The 493,241-byte render was valid, but it did not match the gate's
+  intended contract.
+- The fixture now authors width, height, and FPS through the canonical
+  `theme_overrides.visual.canvas` source. The browser receipt reads those exact
+  persisted values; the later independent FFprobe gate still requires the MP4
+  to be 1280x720 at 24fps with the expected frame count and duration. This
+  avoids weakening the verification to whatever artifact happened to render.
+- Regression coverage rejects reintroducing a derived `output` block into the
+  seed. The paired release harness suite passes 53/53, TypeScript and focused
+  ESLint pass, and Playwright discovers the frozen paired project.
+- The failed RC36 evidence has artifact-index SHA-256
+  `97eedc4e95664c517242e287ceb9f89a5ae1181a59dd9342b4e46df5b148b148`.
+  It remains immutable diagnostic history and is not a passing receipt.

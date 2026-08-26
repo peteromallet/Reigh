@@ -71,6 +71,11 @@ const editorUrl = `${baseUrl}/tools/video-editor?localProject=${project}&localTi
 
 type TimelineConfig = {
   app?: Record<string, Record<string, unknown>>;
+  theme_overrides?: {
+    visual?: {
+      canvas?: { width?: number; height?: number; fps?: number };
+    };
+  };
   tracks?: Array<{ id?: string; kind?: string; label?: string; muted?: boolean }>;
   clips?: Array<{
     id?: string;
@@ -1050,7 +1055,10 @@ async function renderAndDownload(
     expect(bytes).toBeGreaterThan(10_000);
     const body = await readFile(path);
     expect(body.subarray(4, 8).toString('ascii')).toBe('ftyp');
-    const expectedFps = timelineState.config.output?.fps;
+    const expectedCanvas = timelineState.config.theme_overrides?.visual?.canvas;
+    const expectedFps = expectedCanvas?.fps;
+    expect(expectedCanvas?.width).toBe(1280);
+    expect(expectedCanvas?.height).toBe(720);
     expect(expectedFps).toBe(24);
     const expectedDuration = Math.max(...(timelineState.config.clips ?? []).map((clip) => (
       Number(clip.at ?? 0) + Number(clip.hold ?? clip.duration ?? 0)

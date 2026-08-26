@@ -83,6 +83,15 @@ function runTestCommand(command, args, options = {}) {
 }
 
 describe('paired repository release E2E gate', () => {
+  it('authors render dimensions and FPS through canonical theme overrides', () => {
+    assert.deepEqual(PAIRED_RELEASE_TIMELINE_CONFIG.theme_overrides, {
+      visual: {
+        canvas: { width: 1280, height: 720, fps: 24 },
+      },
+    });
+    assert.equal('output' in PAIRED_RELEASE_TIMELINE_CONFIG, false);
+  });
+
   it('pins a real sound-bearing audio fixture and fails closed on byte drift', () => {
     const fixturePath = resolve(REPO_ROOT, PAIRED_RELEASE_AUDIO_FIXTURE);
     const fixture = validateAudioFixture({
