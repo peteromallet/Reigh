@@ -33,7 +33,11 @@ export function WaveformOverlay({ waveform }: WaveformOverlayProps) {
   }
 
   return (
-    <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden opacity-25" aria-hidden="true">
+    <div
+      className="pointer-events-none absolute inset-0 z-0 overflow-hidden opacity-25"
+      aria-hidden="true"
+      data-testid="timeline-audio-waveform"
+    >
       <svg
         className="h-full w-full"
         viewBox="0 0 100 100"

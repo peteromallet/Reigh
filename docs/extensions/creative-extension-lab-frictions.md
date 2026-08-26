@@ -1800,3 +1800,50 @@ fresh console collection.
   preserving the npm budget without weakening probe timeouts. A regression test
   exercises the exact Node-wrapped argv shape. The failed RC13 evidence root and
   bounded-command diagnostic remain preserved for audit.
+
+### A cancelled media request is not evidence that audio failed
+
+- RC14 reached a complete editor UI with the real audio clip, decoded waveform,
+  transcript lane, Runaway lane, and extension contributions, but the browser
+  gate rejected one `net::ERR_ABORTED` AAC request. The trace showed Chromium's
+  metadata loader first requesting the leading range, cancelling it after it had
+  enough information, and then successfully fetching the tail range. Independent
+  full-file analysis fetches had already returned all 457,980 bytes.
+- Ignoring every abort would conceal real transport failures. The durable browser
+  contract permits at most one cancellation for the exact AAC URL, `GET`, media
+  resource type, `net::ERR_ABORTED`, and leading-byte range. The same run must
+  separately prove an exact-size `200` analysis fetch, a successful `206` media
+  tail, a visible decoded waveform, a finite-duration audio element with no media
+  error, and zero other failed requests.
+- A standalone Chromium reproduction with the tracked carrier reached
+  `readyState=4`, duration `39.156558`, and no media error while exhibiting the
+  same cancellation. No `AudioTrack` product change is warranted; the defect was
+  an over-broad harness invariant.
+
+### Content-addressed storage erased the asset MIME at the bridge boundary
+
+- The same trace exposed a separate real defect: Astrid imported the AAC as
+  `audio/x-aac`, but the timeline asset route guessed MIME from the verified
+  managed path. Managed paths are hash-addressed and suffixless, so the bridge
+  served `application/octet-stream` despite holding a typed repository row.
+- The repository media row is the authority already used for project scoping,
+  identity, and byte verification. The asset route now serves its persisted MIME
+  rather than inferring from the storage implementation. Exact AAC `GET`, `HEAD`,
+  and `Range` coverage plus the complete local-bridge server suite prevent the
+  metadata and transport contracts from drifting again.
+
+### Broker election leaked zombie children during synchronous release bursts
+
+- The bounded-command helper launched a detached `lockf`/`flock` election
+  candidate for every synchronous command. Losing candidates exited immediately,
+  but no listener retained and reaped them while the JavaScript event loop was
+  blocked in the next `spawnSync`. Long release preflights accumulated direct
+  zombie children and repeatedly scanned a growing process table.
+- The helper now validates the ready sentinel's PID, nonce, wrapper path, and
+  socket before launching an election, so a healthy shared broker is reused.
+  Election candidates are retained until `error` or `close`; elected brokers stay
+  detached and stale/dead broker recovery remains fail-closed.
+- A real macOS regression performs repeated bounded commands in a holder process,
+  yields to the event loop, and asserts zero direct zombie children. Broker death,
+  corrupt-sentinel, concurrent recovery, and complete descendant cleanup tests
+  remain green; a source-string assertion alone would not have caught this class.

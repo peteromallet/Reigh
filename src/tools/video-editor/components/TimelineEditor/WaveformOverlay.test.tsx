@@ -10,6 +10,7 @@ describe('WaveformOverlay', () => {
     const path = container.querySelector('path');
 
     expect(overlay).toHaveClass('pointer-events-none', 'absolute', 'inset-0', 'opacity-25');
+    expect(overlay).toHaveAttribute('data-testid', 'timeline-audio-waveform');
     expect(svg).toHaveAttribute('preserveAspectRatio', 'none');
     expect(svg).toHaveAttribute('fill', 'currentColor');
     expect(path?.getAttribute('d')).toContain('Z');

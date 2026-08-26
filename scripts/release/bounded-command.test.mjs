@@ -34,6 +34,25 @@ describe('runBoundedCommand', () => {
     assert.ok(Object.isFrozen(result.args));
   });
 
+  it('reaps repeated broker-election candidates on macOS', { skip: process.platform !== 'darwin' || !existsSync('/usr/bin/lockf') }, () => {
+    const moduleUrl = new URL('./bounded-command.mjs', import.meta.url).href;
+    const childSource = [
+      `process.env.REIGH_BOUNDED_BROKER_SESSION = ${JSON.stringify('c'.repeat(32))};`,
+      `const { runBoundedCommand } = await import(${JSON.stringify(moduleUrl)});`,
+      'for (let index = 0; index < 12; index += 1) {',
+      "  const result = runBoundedCommand(process.execPath, ['-e', \"process.stdout.write('reap-ok')\"], { timeoutMs: 2_000, maxBuffer: 64 * 1024, killSignal: 'SIGKILL' });",
+      "  if (result.failureType !== 'success' || result.stdout !== 'reap-ok') throw new Error(`bounded invocation ${index} failed: ${result.failureType}`);",
+      '}',
+      "await new Promise((resolvePromise) => setTimeout(resolvePromise, 100));",
+      "const { execFileSync } = await import('node:child_process');",
+      "const rows = execFileSync('/bin/ps', ['-axo', 'pid=,ppid=,stat=,command='], { encoding: 'utf8' }).split('\\n');",
+      "const zombieCount = rows.filter((line) => { const match = line.match(/^\\s*(\\d+)\\s+(\\d+)\\s+(\\S+)\\s+(.*)$/); return match && Number(match[2]) === process.pid && match[3].includes('Z'); }).length;",
+      'process.stdout.write(JSON.stringify({ zombieCount }));',
+    ].join('\n');
+    const output = execFileSync(NODE, ['--input-type=module', '-e', childSource], { encoding: 'utf8' });
+    assert.deepEqual(JSON.parse(output), { zombieCount: 0 });
+  });
+
   it('throws structured diagnostics for a nonzero exit', () => {
     assert.throws(
       () => run("process.stdout.write('token=secret'); process.stderr.write('bad'); process.exit(7)", {

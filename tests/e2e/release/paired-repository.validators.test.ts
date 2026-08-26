@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AUDIO_CARRIER_BYTES,
+  hasSuccessfulAudioFullFetch,
+  hasSuccessfulAudioMediaRange,
+  isExpectedAudioMetadataAbort,
   meaningfulChange,
   RUNAWAY_FIXTURE_FACTS,
   validateExtensionOutput,
@@ -13,6 +17,48 @@ const timeline = {
 };
 
 describe('paired release semantic validators', () => {
+  it('permits only the exact Chromium AAC metadata cancellation after separate transport proofs', () => {
+    const expectedUrl = 'http://127.0.0.1:2222/api/astrid/projects/demo/timelines/main/assets/motion-output-audio.aac';
+    const abort = {
+      url: expectedUrl,
+      method: 'GET',
+      resourceType: 'media',
+      range: 'bytes=0-',
+      failure: 'net::ERR_ABORTED',
+    };
+    expect(isExpectedAudioMetadataAbort(abort, expectedUrl)).toBe(true);
+    expect(isExpectedAudioMetadataAbort({ ...abort, url: `${expectedUrl}.other` }, expectedUrl)).toBe(false);
+    expect(isExpectedAudioMetadataAbort({ ...abort, resourceType: 'fetch' }, expectedUrl)).toBe(false);
+    expect(isExpectedAudioMetadataAbort({ ...abort, range: 'bytes=1-' }, expectedUrl)).toBe(false);
+    expect(isExpectedAudioMetadataAbort({ ...abort, failure: 'net::ERR_FAILED' }, expectedUrl)).toBe(false);
+
+    const observations = [{
+      url: expectedUrl,
+      method: 'GET',
+      resourceType: 'fetch',
+      range: undefined,
+      status: 200,
+      contentLength: String(AUDIO_CARRIER_BYTES),
+      contentType: 'audio/x-aac',
+    }, {
+      url: expectedUrl,
+      method: 'GET',
+      resourceType: 'media',
+      range: `bytes=${AUDIO_CARRIER_BYTES - 31_996}-`,
+      status: 206,
+      contentRange: `bytes ${AUDIO_CARRIER_BYTES - 31_996}-${AUDIO_CARRIER_BYTES - 1}/${AUDIO_CARRIER_BYTES}`,
+      contentType: 'audio/x-aac',
+    }];
+    expect(hasSuccessfulAudioFullFetch(observations, expectedUrl)).toBe(true);
+    expect(hasSuccessfulAudioMediaRange(observations, expectedUrl)).toBe(true);
+    expect(hasSuccessfulAudioFullFetch([
+      { ...observations[0], contentType: 'application/octet-stream' },
+    ], expectedUrl)).toBe(false);
+    expect(hasSuccessfulAudioMediaRange([
+      { ...observations[1], status: 200 },
+    ], expectedUrl)).toBe(false);
+  });
+
   it('rejects null, empty and malformed command output', () => {
     expect(validateExtensionOutput('com.reigh.creative-lab.pulse-map', null, timeline).valid).toBe(false);
     expect(validateExtensionOutput('com.reigh.creative-lab.pulse-map', { schemaVersion: 1, generatedFromVersion: 1, entries: [] }, timeline).valid).toBe(false);

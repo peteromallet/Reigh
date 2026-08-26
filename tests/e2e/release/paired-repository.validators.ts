@@ -21,6 +21,64 @@ export type ValidationResult = {
   count: number;
 };
 
+export const AUDIO_CARRIER_FILE = 'motion-output-audio.aac';
+export const AUDIO_CARRIER_BYTES = 457_980;
+
+export type AudioTransportObservation = {
+  url: string;
+  method: string;
+  resourceType: string;
+  range: string | undefined;
+  failure?: string;
+  status?: number;
+  contentLength?: string;
+  contentRange?: string;
+  contentType?: string;
+};
+
+/**
+ * Chromium may cancel its initial metadata range after learning enough to
+ * issue a tail range.  Only that exact media request is eligible; successful
+ * transport and media readiness are proven separately by the browser gate.
+ */
+export function isExpectedAudioMetadataAbort(
+  observation: AudioTransportObservation,
+  expectedUrl: string,
+): boolean {
+  const lastByte = AUDIO_CARRIER_BYTES - 1;
+  return observation.url === expectedUrl
+    && observation.method === 'GET'
+    && observation.resourceType === 'media'
+    && observation.failure === 'net::ERR_ABORTED'
+    && (observation.range === 'bytes=0-' || observation.range === `bytes=0-${lastByte}`);
+}
+
+export function hasSuccessfulAudioFullFetch(
+  observations: AudioTransportObservation[],
+  expectedUrl: string,
+): boolean {
+  return observations.some((observation) => observation.url === expectedUrl
+    && observation.method === 'GET'
+    && observation.resourceType === 'fetch'
+    && observation.status === 200
+    && observation.contentLength === String(AUDIO_CARRIER_BYTES)
+    && observation.contentType === 'audio/x-aac');
+}
+
+export function hasSuccessfulAudioMediaRange(
+  observations: AudioTransportObservation[],
+  expectedUrl: string,
+): boolean {
+  const contentRange = new RegExp(`^bytes \\d+-${AUDIO_CARRIER_BYTES - 1}/${AUDIO_CARRIER_BYTES}$`);
+  return observations.some((observation) => observation.url === expectedUrl
+    && observation.method === 'GET'
+    && observation.resourceType === 'media'
+    && observation.status === 206
+    && observation.contentType === 'audio/x-aac'
+    && typeof observation.contentRange === 'string'
+    && contentRange.test(observation.contentRange));
+}
+
 /**
  * The release Runaway fixture is deliberately owned by this test contract.
  * Keeping these facts here means a restart receipt cannot bless a changed,

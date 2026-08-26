@@ -5,12 +5,17 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import { CLIP_BODY_SELECTOR } from '../../../src/tools/video-editor/lib/timeline-dom.ts';
 import { transcriptCaptionClipId } from '../../../src/tools/video-editor/dev/transcript-lane/extension.ts';
 import {
+  AUDIO_CARRIER_FILE,
+  hasSuccessfulAudioFullFetch,
+  hasSuccessfulAudioMediaRange,
+  isExpectedAudioMetadataAbort,
   meaningfulChange,
   validateExtensionOutput,
   validateRunawayResponse,
   validateTranscriptCaptions,
   RUNAWAY_FIXTURE_FACTS,
   type ExpectedCaption,
+  type AudioTransportObservation,
   type ValidationResult,
 } from './paired-repository.validators.ts';
 
@@ -72,6 +77,8 @@ type TimelineConfig = {
 };
 
 type TimelineEnvelope = {
+  timeline_id?: string;
+  timeline_ulid?: string;
   config: TimelineConfig;
   registry: Record<string, unknown>;
   config_version: number;
@@ -338,13 +345,17 @@ if (EXTENSION_PROBES.length !== 13) {
   throw new Error(`paired release extension probe inventory must contain 13 entries, got ${EXTENSION_PROBES.length}`);
 }
 
-async function openEditor(page: Page): Promise<string[]> {
+async function openEditor(page: Page, timelineWireRef: string): Promise<string[]> {
   const issues: string[] = [];
   const consoleWarnings: string[] = [];
   const failedRequests: string[] = [];
-  const expectedFailedRequests: string[] = [];
+  const expectedCapabilityFailures: string[] = [];
+  const expectedAudioMediaAborts: AudioTransportObservation[] = [];
+  const audioTransportResponses: AudioTransportObservation[] = [];
   const capabilityProbeResponses: string[] = [];
   const capabilityProbePath = `/api/astrid/projects/${encodeURIComponent(project!)}/media/__reigh_capability_probe__/content`;
+  const audioAssetPath = `/api/astrid/projects/${encodeURIComponent(project!)}/timelines/${encodeURIComponent(timelineWireRef)}/assets/${encodeURIComponent(AUDIO_CARRIER_FILE)}`;
+  const audioAssetUrl = new URL(audioAssetPath, `${baseUrl}/`).href;
   page.on('pageerror', (error) => issues.push(`[pageerror] ${error.message}`));
   page.on('console', (message) => {
     if (message.type() === 'error') {
@@ -358,11 +369,26 @@ async function openEditor(page: Page): Promise<string[]> {
     if (message.type() === 'warning') consoleWarnings.push(`[console.warn] ${message.text()}`);
   });
   page.on('response', (response) => {
-    if (!response.url().includes('__reigh_capability_probe__')) return;
-    const method = response.request().method();
-    capabilityProbeResponses.push(`${method}:${response.status()}`);
-    if (response.status() !== 404) {
-      issues.push(`[capability-probe] ${method} ${response.url()} returned ${response.status()}`);
+    const request = response.request();
+    if (response.url() === audioAssetUrl) {
+      const headers = response.headers();
+      audioTransportResponses.push({
+        url: response.url(),
+        method: request.method(),
+        resourceType: request.resourceType(),
+        range: request.headers().range,
+        status: response.status(),
+        contentLength: headers['content-length'],
+        contentRange: headers['content-range'],
+        contentType: headers['content-type'],
+      });
+    }
+    if (response.url().includes('__reigh_capability_probe__')) {
+      const method = request.method();
+      capabilityProbeResponses.push(`${method}:${response.status()}`);
+      if (response.status() !== 404) {
+        issues.push(`[capability-probe] ${method} ${response.url()} returned ${response.status()}`);
+      }
     }
   });
   page.on('requestfailed', (request) => {
@@ -371,8 +397,19 @@ async function openEditor(page: Page): Promise<string[]> {
       && request.method() === 'HEAD'
       && failure === 'net::ERR_ABORTED';
     if (isExpectedCapabilityAbort) {
-      expectedFailedRequests.push(`[requestfailed] ${request.method()} ${request.url()} — ${failure}`);
+      expectedCapabilityFailures.push(`[requestfailed] ${request.method()} ${request.url()} — ${failure}`);
     } else {
+      const observation: AudioTransportObservation = {
+        url: request.url(),
+        method: request.method(),
+        resourceType: request.resourceType(),
+        range: request.headers().range,
+        failure,
+      };
+      if (isExpectedAudioMetadataAbort(observation, audioAssetUrl)) {
+        expectedAudioMediaAborts.push(observation);
+        return;
+      }
       failedRequests.push(`[requestfailed] ${request.method()} ${request.url()} — ${failure}`);
     }
   });
@@ -410,9 +447,35 @@ async function openEditor(page: Page): Promise<string[]> {
       return candidate.complete && candidate.naturalWidth > 0;
     });
   }, { timeout: 30_000 }).toBe(true);
+  await expect(clipBody(page, 'paired-release-audio').getByTestId('timeline-audio-waveform'))
+    .toBeVisible({ timeout: 30_000 });
+  const audioElement = page.locator(`audio[src="${audioAssetPath}"]`).first();
+  await expect(audioElement).toHaveCount(1);
+  expect(await audioElement.evaluate((element) => (element as HTMLAudioElement).currentSrc)).toBe(audioAssetUrl);
+  await expect.poll(async () => audioElement.evaluate((element) => {
+    const candidate = element as HTMLAudioElement;
+    return {
+      readyState: candidate.readyState,
+      durationIsFinite: Number.isFinite(candidate.duration) && candidate.duration > 0,
+      errorCode: candidate.error?.code ?? null,
+    };
+  }), { timeout: 30_000 }).toMatchObject({
+    readyState: expect.any(Number),
+    durationIsFinite: true,
+    errorCode: null,
+  });
+  const audioState = await audioElement.evaluate((element) => {
+    const candidate = element as HTMLAudioElement;
+    return { readyState: candidate.readyState, duration: candidate.duration };
+  });
+  expect(audioState.readyState).toBeGreaterThanOrEqual(1);
+  expect(audioState.duration).toBeCloseTo(39.156558, 3);
+  expect(hasSuccessfulAudioFullFetch(audioTransportResponses, audioAssetUrl)).toBe(true);
+  expect(hasSuccessfulAudioMediaRange(audioTransportResponses, audioAssetUrl)).toBe(true);
+  expect(expectedAudioMediaAborts.length).toBeLessThanOrEqual(1);
   await expect(page.locator('[data-lane-kind="reigh.transcript"]')).toBeVisible();
   expect(capabilityProbeResponses).toEqual(expect.arrayContaining(['HEAD:404', 'GET:404']));
-  expect(expectedFailedRequests).toHaveLength(1);
+  expect(expectedCapabilityFailures).toHaveLength(1);
   expect(failedRequests).toEqual([]);
   return issues;
 }
@@ -807,11 +870,12 @@ test(`paired repository acceptance phase: ${phase}`, async ({ page, request }) =
   await mkdir(evidenceDir!, { recursive: true });
   const initial = await readTimeline(request);
   assertPairedAudioCarrier(initial);
+  expect(initial.timeline_ulid).toMatch(/^[0123456789abcdefghjkmnpqrstvwxyz]{26}$/);
   const initialStateHash = timelineStateHash(initial);
   const initialAt = primaryClip(initial.config)?.at;
   expect(typeof initialAt).toBe('number');
   const runawaySnapshot = await readRunawaySnapshot(request);
-  const issues = await openEditor(page);
+  const issues = await openEditor(page, initial.timeline_ulid!);
   const runawayUi = phase === 'restore' ? null : await proveRunawayLane(page);
   const extensionFingerprints = await proveAllExtensionLifecycles(page, request);
 

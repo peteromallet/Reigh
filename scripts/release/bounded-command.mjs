@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { closeSync, existsSync, lstatSync, mkdirSync, openSync } from 'node:fs';
+import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,7 +33,9 @@ const BROKER_SOCKET = join(BROKER_DIR, 'broker.sock');
 const BROKER_READY = `${BROKER_SOCKET}.ready`;
 const BROKER_ELECTION = `${BROKER_SOCKET}.election`;
 const BROKER_LOCK_TOOL = process.platform === 'darwin' ? '/usr/bin/lockf' : '/usr/bin/flock';
+const BROKER_PS_TOOL = process.platform === 'darwin' ? '/bin/ps' : '/usr/bin/ps';
 const BROKER_OWNER_START_SECONDS = Math.floor((Date.now() - process.uptime() * 1_000) / 1_000);
+const brokerCandidates = new Set();
 if (Buffer.byteLength(BROKER_SOCKET) > 100) {
   throw new Error(`bounded-command broker socket path is too long: ${BROKER_SOCKET}`);
 }
@@ -183,11 +185,40 @@ function wrapperOutputCap(maxBuffer) {
   return Math.ceil(maxBuffer * 8 / 3) + WRAPPER_PROTOCOL_BYTES;
 }
 
+function brokerReadinessIsLive() {
+  if (process.platform === 'win32') return false;
+  try {
+    const record = JSON.parse(readFileSync(BROKER_READY, 'utf8'));
+    if (!Number.isSafeInteger(record?.pid) || record.pid <= 0 || !/^[0-9a-f]{32}$/.test(record?.nonce ?? '')) {
+      return false;
+    }
+    const probe = spawnSync(BROKER_PS_TOOL, ['-p', String(record.pid), '-o', 'command='], {
+      encoding: 'utf8',
+      maxBuffer: 16 * 1024,
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 1_000,
+    });
+    if (probe.error || probe.status !== 0) return false;
+    const expectedArgv = `${WRAPPER_PATH} --broker ${BROKER_SOCKET} ${record.nonce}`;
+    return String(probe.stdout ?? '').split('\n').some((line) => line.includes(expectedArgv));
+  } catch {
+    return false;
+  }
+}
+
+function retainBrokerCandidate(candidate) {
+  brokerCandidates.add(candidate);
+  const release = () => brokerCandidates.delete(candidate);
+  candidate.once('error', release);
+  candidate.once('close', release);
+  candidate.unref();
+}
+
 function launchScopeBroker() {
-  // All wrappers in one Node process point at one broker. Launching a small
-  // candidate per invocation is race-safe: the broker's atomic lock elects a
-  // single owner and the losers exit immediately. This keeps `ps` centralized
-  // even when callers use worker threads.
+  // All wrappers in one Node process point at one broker. During startup (or
+  // stale-broker recovery), launching a small candidate is race-safe: the
+  // broker's atomic lock elects a single owner and the losers exit immediately.
+  // This keeps `ps` centralized even when callers use worker threads.
   try {
     try {
       mkdirSync(BROKER_DIR, { mode: 0o700 });
@@ -199,6 +230,10 @@ function launchScopeBroker() {
         throw new Error(`bounded-command broker directory is not a private caller-owned directory: ${BROKER_DIR}`);
       }
     }
+    // A readiness sentinel is only a fast path when it still names the live
+    // broker that created it.  Dead/corrupt sentinels continue through the
+    // election path so stale-broker recovery remains available.
+    if (brokerReadinessIsLive()) return;
     const candidateNonce = randomBytes(16).toString('hex');
     // The kernel lock is held by lockf/flock for the complete broker
     // lifetime. It replaces the crash-prone application takeover mutex.
@@ -210,7 +245,7 @@ function launchScopeBroker() {
       detached: true,
       env: INTERNAL_ENV,
     });
-    candidate.unref();
+    retainBrokerCandidate(candidate);
   } catch {
     // The wrapper reports an actionable broker connection failure.
   }
