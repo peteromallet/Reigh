@@ -2301,3 +2301,33 @@ fresh console collection.
 - The failed RC33 evidence has artifact-index SHA-256
   `c77221b8b8a59779a849f7a69258b2baa4406a5680d2c8c8ec8990c46d33cfc8`.
   It remains immutable diagnostic history and is not a passing receipt.
+
+### Portable Python manifest commands must bind to the owning runtime
+
+- RC34 proved the new failure race worked: the restart browser stopped on the
+  exact failed Astrid task in about thirty seconds instead of waiting the
+  four-minute download timeout. The task adapter was using the pinned Astrid
+  source in-process as intended, but its renderer transport launched a deeper
+  backend manifest through bare `python3`.
+- The clean release environment installed an ARM64 CPython 3.11 `xxhash`
+  extension and exposed that 3.11 site-packages directory through the bounded
+  child environment. Bare `python3` resolved from the sanitized `PATH` to a
+  different interpreter, which could read `xxhash/__init__.py` but could not
+  load `_xxhash.cpython-311-darwin.so`. Live-checkout replay happened to find a
+  compatible 3.11 interpreter and therefore masked the release-only ABI drift.
+- Astrid's command transport now binds only the portable bare tokens `python`
+  and `python3` (including their Windows aliases) to the interpreter that owns
+  the running Astrid process. Explicit interpreter paths and version-qualified
+  commands remain untouched. Regression tests put a deliberately failing
+  `python3` first on `PATH`, prove the generic token still uses the owning
+  runtime, and prove explicit/versioned commands retain their selected
+  executable.
+- The exact archive plus fresh locked venv reproduction now renders the same
+  493,241-byte MP4 with SHA-256
+  `09fc6b41fd6eda7a0c2d0cf35eb54425d2c72cfdfbfb37a0a303f891dc9ca6a1`.
+  The focused suite passes 36/36; the broader rendering run passes 588/588
+  when its two real-Remotion tests receive the required server-owned runtime
+  variables.
+- The failed RC34 evidence has artifact-index SHA-256
+  `2ada003a66599f94a0512bfa08c891bd8755d67fa334f8bf625c58d02b71cd58`.
+  It remains immutable diagnostic history and is not a passing receipt.
