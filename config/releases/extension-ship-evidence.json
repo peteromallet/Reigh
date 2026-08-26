@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "release": "extension-ship-quality-rc16",
-  "status": "integration",
+  "status": "frozen",
   "candidate": {
     "reighCommit": "2867e0d18d9506bf03ad18d6fd4c52da37421759",
     "astridCommit": "73fff7d5990b2563d7c31805d0c4aa8f01ed94a1"
@@ -144,7 +144,7 @@
       "id": "23-frozen-release-candidate",
       "title": "Frozen release candidate",
       "status": "blocked",
-      "blocker": "RC16 remains in integration; the immutable candidate binding and two independent frozen-candidate approvals are not yet available.",
+      "blocker": "RC16 is source-frozen and candidate-bound; the paired acceptance receipt and two independent frozen-candidate approvals are not yet available.",
       "receipts": []
     }
   ]
