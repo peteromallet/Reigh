@@ -1,14 +1,18 @@
-# B8-1 — Environment bootstrap (T0) evidence
+# B8-1 — Environment bootstrap (T0) evidence — re-proof at custody `227eefd78`
 
-Date: 2026-08-26 · Executor: stealth/ox-alpha · Repo HEAD at run: `38d191af8` (branch `codex/phase-c-megado`, clean tree)
+Date: 2026-08-26 · Executor: stealth/ox-alpha · Repo HEAD at run: `227eefd78badecfed1d4fa01fb0d1c2f37f5d6c1` (branch `codex/phase-c-megado`, clean tree)
+
+Prior PASS evidence (`38d191af8` run) does NOT transfer; every gate below re-executed at this custody.
 
 ## Provisioned runtimes (exact pins)
 
 | Component | Required | Observed |
 |---|---|---|
-| Node | 20.19.4 | **v20.19.4** (tarball `node-v20.19.4-linux-x64.tar.xz` from nodejs.org → `/workspace/pinned-runtimes/node-v20.19.4-linux-x64`) |
-| npm | 10.8.2 | **10.8.2** |
-| Python | 3.11.11 | **Python 3.11.11** (`python3.11 --version`) |
+| Node | 20.19.4 | **v20.19.4** (tarball install `/workspace/pinned-runtimes/node-v20.19.4-linux-x64`; system node 20.20.2 NOT on PATH for these runs) |
+| npm | 10.8.2 | **10.8.2** (from the pinned tarball) |
+| Python | 3.11.11 | **Python 3.11.11** (`/root/.pyenv/versions/3.11.11/bin/python3.11`) |
+
+`.nvmrc` content: `20.19.4` — matches provisioned runtime.
 
 ## Gate outputs (verbatim)
 
@@ -17,8 +21,12 @@ $ node --version
 v20.19.4
 $ python3.11 --version
 Python 3.11.11
-$ npm ci   # in /workspace/reigh-phase-c-megado/reigh-app
-added 550 packages in 9s
+$ npm --version
+10.8.2
+$ cat .nvmrc
+20.19.4
+$ npm ci   # in /workspace/reigh-phase-c-megado/reigh-app @ 227eefd78
+added 550 packages in 6s
 npm-ci: exit 0
 ```
 
@@ -36,6 +44,15 @@ added 282 packages in 4s
 remotion-npm-ci: exit 0
 ```
 
+Locked-runtime artifact checks (`real-bridge-serve.mjs:140-166` contract):
+
+```
+locked-remotion-cli: present      # $ASTRID_CHECKOUT/remotion/node_modules/@remotion/cli/remotion-cli.js
+@banodoco/timeline-composition: present
+@banodoco/timeline-schema: present
+@banodoco/timeline-theme-2rp: present
+```
+
 ## Provenance receipt
 
 - Pin SHA: `9d714649f2f658ad508dbb4ead8eaf15bff2149b`
@@ -43,6 +60,5 @@ remotion-npm-ci: exit 0
 - Clone URL: `https://github.com/peteromallet/Astrid.git`
 - Remotion lock blob equality: PASS (`git rev-parse HEAD:remotion/package-lock.json` == pin's blob)
 - OS/kernel: Linux ba64af041573 6.8.0-136-generic #136-Ubuntu SMP PREEMPT_DYNAMIC Wed Jul  1 21:53:05 UTC 2026 x86_64 GNU/Linux
-- Node runtime path: `/workspace/pinned-runtimes/node-v20.19.4-linux-x64` (system node 20.20.2 NOT used; all commands above ran with the pinned toolchain on PATH, npm 10.8.2 from the tarball)
+- Node runtime path: `/workspace/pinned-runtimes/node-v20.19.4-linux-x64` (all commands ran with the pinned toolchain first on PATH)
 - `ASTRID_CHECKOUT`: `/workspace/astrid-checkout`
-- `.nvmrc` content: `20.19.4` (matches provisioned runtime)
