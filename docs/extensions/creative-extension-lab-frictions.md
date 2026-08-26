@@ -2454,3 +2454,25 @@ fresh console collection.
 - The failed RC39 evidence has artifact-index SHA-256
   `0465158c0563e6f9cfb66dafa1ebe1969623948a87578e771d0d0fa594683e2f`.
   It remains immutable diagnostic history and is not a passing receipt.
+
+### Negative visual controls must overlap the media they control
+
+- RC40 passed the corrected caption identity check and again produced the
+  deterministic 490,466-byte Astrid-owned MP4. Its no-caption oracle sampled
+  1.0 seconds, saw black, and correctly rejected the frame because it expected
+  the committed test card.
+- The fixture's scene-phase extension had moved the test card to `[2,6)`, while
+  captions occupy `[2,4)` and `[5,8)`. The old helper chose half the time before
+  the first caption without considering whether the controlled visual media
+  existed there. The renderer was correct: 1.0 seconds is black, while the
+  actual caption-free card interval is `[4,5)`.
+- The oracle now reads the exact persisted restart timeline, requires exactly
+  one committed test-card clip on a visual track, intersects its render
+  interval with caption-free spans, and samples the midpoint of the widest
+  valid span. RC40's independently decoded 4.5-second frame has the expected
+  card probe colours and no Tesseract text. Missing media, malformed intervals,
+  fully caption-covered media, or no valid overlap fails closed instead of
+  falling back to a black frame.
+- The failed RC40 evidence has artifact-index SHA-256
+  `b526fb95c288732fbbfa238634e53d4ea37ceea35901db6b573d94911b44cb34`.
+  It remains immutable diagnostic history and is not a passing receipt.

@@ -37,6 +37,7 @@ import {
   isExactViteReadiness,
   isRetryablePlaywrightContextSetupFailure,
   normalizeCaptionText,
+  noCaptionControlSeconds,
   pcmS16leStats,
   parseCliArgs,
   requireFullCommitPin,
@@ -723,6 +724,20 @@ process.exit(1);
     assert.equal(probes[2].frame, 95);
     assert.equal(probes[3].frame, 120);
     assert.equal(probes[5].frame, 191);
+    assert.equal(noCaptionControlSeconds(captions, 8, [{ start: 2, end: 6 }]), 4.5);
+    assert.equal(noCaptionControlSeconds(captions, 8, [{ start: 0, end: 1.5 }]), 0.75);
+    assert.equal(Number.isNaN(noCaptionControlSeconds(captions, 8, [{ start: 2, end: 4 }])), true);
+    assert.equal(Number.isNaN(noCaptionControlSeconds(captions, 8, [])), true);
+    assert.equal(Number.isNaN(noCaptionControlSeconds(
+      [{ ...captions[0], duration: Number.NaN }],
+      8,
+      [{ start: 2, end: 6 }],
+    )), true);
+    assert.equal(Number.isNaN(noCaptionControlSeconds(
+      [{ ...captions[0], duration: 0 }],
+      8,
+      [{ start: 2, end: 6 }],
+    )), true);
   });
 
   it('fails duplicate, overlapping, wrong-ID, wrong-text, and wrong-interval persistence', () => {

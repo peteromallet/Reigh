@@ -3018,15 +3018,66 @@ function imageDifferenceMetric(framePath, controlPath, region, kind, magickExecu
   return value;
 }
 
-function noCaptionControlSeconds(captions, duration) {
-  const intervals = captions.map((caption) => ({ start: caption.at, end: caption.at + caption.duration }));
-  const candidates = [
-    Math.max(0, Math.min(...intervals.map((interval) => interval.start)) / 2),
-    Math.max(...intervals.map((interval) => interval.end)) + 0.05,
-  ];
-  return candidates.find((seconds) => seconds >= 0 && seconds < duration && intervals.every(
-    (interval) => seconds < interval.start || seconds >= interval.end,
+export function noCaptionControlSeconds(captions, duration, mediaIntervals = []) {
+  if (!Number.isFinite(duration) || duration <= 0 || !Array.isArray(captions) || captions.length === 0) {
+    return Number.NaN;
+  }
+  const captionIntervals = captions.map((caption) => ({
+    start: Number(caption.at),
+    end: Number(caption.at) + Number(caption.duration),
+  }));
+  if (captionIntervals.some((interval) => (
+    !Number.isFinite(interval.start)
+    || !Number.isFinite(interval.end)
+    || interval.start < 0
+    || interval.end <= interval.start
+    || interval.end > duration
+  ))) return Number.NaN;
+  const candidates = [];
+  for (const media of mediaIntervals) {
+    const mediaStart = Math.max(0, Number(media?.start));
+    const mediaEnd = Math.min(duration, Number(media?.end));
+    if (!Number.isFinite(mediaStart) || !Number.isFinite(mediaEnd) || mediaEnd <= mediaStart) continue;
+    const boundaries = [...new Set([
+      mediaStart,
+      mediaEnd,
+      ...captionIntervals.flatMap((interval) => [interval.start, interval.end])
+        .filter((boundary) => boundary > mediaStart && boundary < mediaEnd),
+    ])].sort((left, right) => left - right);
+    for (let index = 1; index < boundaries.length; index += 1) {
+      const start = boundaries[index - 1];
+      const end = boundaries[index];
+      const seconds = start + ((end - start) / 2);
+      if (captionIntervals.every((interval) => seconds < interval.start || seconds >= interval.end)) {
+        candidates.push({ seconds, span: end - start });
+      }
+    }
+  }
+  candidates.sort((left, right) => right.span - left.span || left.seconds - right.seconds);
+  return candidates[0]?.seconds ?? Number.NaN;
+}
+
+function seededVisualMediaIntervals(evidenceRoot) {
+  const envelope = JSON.parse(readFileSync(resolve(evidenceRoot, 'timeline-restart.json'), 'utf8'));
+  const config = envelope?.timeline?.config ?? envelope?.config;
+  const visualTrackIds = new Set((Array.isArray(config?.tracks) ? config.tracks : [])
+    .filter((track) => track?.kind === 'visual')
+    .map((track) => track.id));
+  const asset = PAIRED_RELEASE_MEDIA_FIXTURE.split('/').at(-1);
+  const clips = (Array.isArray(config?.clips) ? config.clips : []).filter((clip) => (
+    clip?.clipType === 'media'
+    && clip?.asset === asset
+    && visualTrackIds.has(clip?.track)
   ));
+  if (clips.length !== 1) {
+    fail(`paired render requires exactly one seeded visual media clip, found ${clips.length}`);
+  }
+  const start = Number(clips[0].at);
+  const duration = captionDuration(clips[0]);
+  if (!Number.isFinite(start) || start < 0 || !Number.isFinite(duration) || duration <= 0) {
+    fail('seeded visual media clip has an invalid render interval');
+  }
+  return Object.freeze([Object.freeze({ start, end: start + duration })]);
 }
 
 export function validateRenderWorkerBinding({ browserReceipt, workerEvidence }) {
@@ -3414,7 +3465,11 @@ function verifyRenderedArtifact(context, { serveOwnedEvidence = null } = {}) {
   ) {
     fail(`render receipt caption midpoint set mismatch: expected ${expectedMidpoints.join(', ')}, got ${receiptMidpoints.join(', ')}`);
   }
-  const controlSeconds = noCaptionControlSeconds(captions, expectedDuration);
+  const controlSeconds = noCaptionControlSeconds(
+    captions,
+    expectedDuration,
+    seededVisualMediaIntervals(context.evidenceRoot),
+  );
   if (!Number.isFinite(controlSeconds)) {
     fail('paired render has no no-caption control interval for caption semantics');
   }
