@@ -61,6 +61,7 @@ export const bridgeTimelineConfigSchema = z.looseObject({
 
 export const bridgeAssetRegistryEntrySchema = z.looseObject({
   file: z.string().optional(),
+  media_id: z.string().min(1).optional(),
   src: z.string().optional(),
   type: z.string().optional(),
   duration: z.number().optional(),

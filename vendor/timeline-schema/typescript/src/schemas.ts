@@ -140,6 +140,7 @@ export const TimelineOutput = z.object({
 
 export const AssetEntry = z.object({
   file: z.string().optional(),
+  media_id: z.string().optional(),
   url: z.string().optional(),
   etag: z.string().optional(),
   content_sha256: z.string().optional(),

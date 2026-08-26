@@ -550,6 +550,8 @@ export type AssetMetadata = {
 
 export type AssetRegistryEntry = {
   file: string;
+  /** Stable project-owned media identity used by the Astrid bridge byte route. */
+  media_id?: string;
   url?: string;
   etag?: string;
   content_sha256?: string;

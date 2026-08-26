@@ -11,6 +11,7 @@ describe('asset registry contract helpers', () => {
   it('preserves extended fields during sanitization', () => {
     const sanitized = sanitizeAssetRegistryEntry({
       file: 'sources/main.mp4',
+      media_id: '01jpairedreleaseasset000001',
       url: 'https://cdn.example.com/main.mp4',
       etag: '"main-etag"',
       content_sha256: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
@@ -34,6 +35,7 @@ describe('asset registry contract helpers', () => {
 
     expect(sanitized).toEqual({
       file: 'sources/main.mp4',
+      media_id: '01jpairedreleaseasset000001',
       url: 'https://cdn.example.com/main.mp4',
       etag: '"main-etag"',
       content_sha256: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
@@ -61,6 +63,15 @@ describe('asset registry contract helpers', () => {
     });
 
     expect(sanitized.url).toBe('https://cdn.example.com/assets/a.mp4');
+  });
+
+  it('preserves the Astrid media identity through sanitization', () => {
+    const sanitized = sanitizeAssetRegistryEntry({
+      file: 'a.mp4',
+      media_id: '01jpairedreleaseasset000001',
+    });
+
+    expect(sanitized.media_id).toBe('01jpairedreleaseasset000001');
   });
 
   it('preserves etag through sanitization', () => {

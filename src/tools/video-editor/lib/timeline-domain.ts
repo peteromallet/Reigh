@@ -220,6 +220,7 @@ const ALLOWED_TOP_LEVEL_KEYS = new Set([
 
 const ASSET_REGISTRY_ENTRY_FIELDS = [
   'file',
+  'media_id',
   'url',
   'etag',
   'content_sha256',

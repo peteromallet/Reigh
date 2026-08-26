@@ -88,6 +88,7 @@ Clip = TypedDict(
         "effects": NotRequired[list[Effect] | dict[str, float]],
         "params": NotRequired[dict[str, Any]],
         "generation": NotRequired[dict[str, Any]],
+        "app": NotRequired[dict[str, Any]],
         "pool_id": NotRequired[str],
         "clip_order": NotRequired[int],
     },
@@ -116,6 +117,12 @@ class Track(TypedDict, closed=True):
             "hard-light",
         ]
     ]
+    app: NotRequired[dict[str, Any]]
+
+
+class DerivedFrom(TypedDict, closed=True):
+    shotId: str
+    trackId: str
 
 
 class PinnedShotGroup(TypedDict, closed=True):
@@ -127,7 +134,7 @@ class PinnedShotGroup(TypedDict, closed=True):
     videoAssetKey: NotRequired[str]
     imageClipSnapshot: NotRequired[list[dict[str, Any]]]
     poolGenerationIds: NotRequired[list[str]]
-    derivedFrom: NotRequired[dict[str, str]]
+    derivedFrom: NotRequired[DerivedFrom]
 
 
 class ThemeOverrides(TypedDict, closed=True):
@@ -200,6 +207,7 @@ TimelineClip = TypedDict(
         "effects": NotRequired[list[Effect] | dict[str, float]],
         "params": NotRequired[dict[str, Any]],
         "generation": NotRequired[dict[str, Any]],
+        "app": NotRequired[dict[str, Any]],
         "pool_id": NotRequired[str],
         "clip_order": NotRequired[int],
     },
@@ -226,6 +234,7 @@ class TimelineOutput(TypedDict, closed=True):
 
 class AssetEntry(TypedDict, closed=True):
     file: NotRequired[str]
+    media_id: NotRequired[str]
     url: NotRequired[str]
     etag: NotRequired[str]
     content_sha256: NotRequired[str]

@@ -243,6 +243,7 @@ export declare const TimelineClip: z.ZodObject<{
     }>, "many">, z.ZodRecord<z.ZodString, z.ZodNumber>]>>;
     params: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodAny>>;
     generation: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodAny>>;
+    app: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodAny>>;
     pool_id: z.ZodOptional<z.ZodString>;
     clip_order: z.ZodOptional<z.ZodNumber>;
 }, "strip", z.ZodTypeAny, {
@@ -308,6 +309,7 @@ export declare const TimelineClip: z.ZodObject<{
         fade_out?: number | undefined;
     }[] | Record<string, number> | undefined;
     generation?: Record<string, any> | undefined;
+    app?: Record<string, any> | undefined;
     pool_id?: string | undefined;
     clip_order?: number | undefined;
 }, {
@@ -373,6 +375,7 @@ export declare const TimelineClip: z.ZodObject<{
         fade_out?: number | undefined;
     }[] | Record<string, number> | undefined;
     generation?: Record<string, any> | undefined;
+    app?: Record<string, any> | undefined;
     pool_id?: string | undefined;
     clip_order?: number | undefined;
 }>;
@@ -386,12 +389,14 @@ export declare const TrackDefinition: z.ZodObject<{
     volume: z.ZodOptional<z.ZodNumber>;
     muted: z.ZodOptional<z.ZodBoolean>;
     blendMode: z.ZodOptional<z.ZodEnum<["normal", "multiply", "screen", "overlay", "darken", "lighten", "soft-light", "hard-light"]>>;
+    app: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodAny>>;
 }, "strip", z.ZodTypeAny, {
     id: string;
     kind: "visual" | "audio";
     label: string;
     volume?: number | undefined;
     opacity?: number | undefined;
+    app?: Record<string, any> | undefined;
     scale?: number | undefined;
     fit?: "cover" | "contain" | "manual" | undefined;
     muted?: boolean | undefined;
@@ -402,6 +407,7 @@ export declare const TrackDefinition: z.ZodObject<{
     label: string;
     volume?: number | undefined;
     opacity?: number | undefined;
+    app?: Record<string, any> | undefined;
     scale?: number | undefined;
     fit?: "cover" | "contain" | "manual" | undefined;
     muted?: boolean | undefined;
@@ -409,25 +415,49 @@ export declare const TrackDefinition: z.ZodObject<{
 }>;
 export declare const PinnedShotGroup: z.ZodObject<{
     shotId: z.ZodOptional<z.ZodOptional<z.ZodString>>;
+    name: z.ZodOptional<z.ZodOptional<z.ZodString>>;
     trackId: z.ZodOptional<z.ZodOptional<z.ZodString>>;
     clipIds: z.ZodOptional<z.ZodOptional<z.ZodArray<z.ZodString, "many">>>;
     mode: z.ZodOptional<z.ZodOptional<z.ZodEnum<["images", "video"]>>>;
     videoAssetKey: z.ZodOptional<z.ZodOptional<z.ZodString>>;
     imageClipSnapshot: z.ZodOptional<z.ZodOptional<z.ZodArray<z.ZodRecord<z.ZodString, z.ZodAny>, "many">>>;
+    poolGenerationIds: z.ZodOptional<z.ZodOptional<z.ZodArray<z.ZodString, "many">>>;
+    derivedFrom: z.ZodOptional<z.ZodOptional<z.ZodObject<{
+        shotId: z.ZodString;
+        trackId: z.ZodString;
+    }, "strip", z.ZodTypeAny, {
+        shotId: string;
+        trackId: string;
+    }, {
+        shotId: string;
+        trackId: string;
+    }>>>;
 }, "strip", z.ZodTypeAny, {
     shotId?: string | undefined;
+    name?: string | undefined;
     trackId?: string | undefined;
     clipIds?: string[] | undefined;
     mode?: "images" | "video" | undefined;
     videoAssetKey?: string | undefined;
     imageClipSnapshot?: Record<string, any>[] | undefined;
+    poolGenerationIds?: string[] | undefined;
+    derivedFrom?: {
+        shotId: string;
+        trackId: string;
+    } | undefined;
 }, {
     shotId?: string | undefined;
+    name?: string | undefined;
     trackId?: string | undefined;
     clipIds?: string[] | undefined;
     mode?: "images" | "video" | undefined;
     videoAssetKey?: string | undefined;
     imageClipSnapshot?: Record<string, any>[] | undefined;
+    poolGenerationIds?: string[] | undefined;
+    derivedFrom?: {
+        shotId: string;
+        trackId: string;
+    } | undefined;
 }>;
 export declare const ThemeOverrides: z.ZodObject<{
     visual: z.ZodOptional<z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodAny>>>;
@@ -469,6 +499,7 @@ export declare const TimelineOutput: z.ZodObject<{
 }>;
 export declare const AssetEntry: z.ZodObject<{
     file: z.ZodOptional<z.ZodOptional<z.ZodString>>;
+    media_id: z.ZodOptional<z.ZodOptional<z.ZodString>>;
     url: z.ZodOptional<z.ZodOptional<z.ZodString>>;
     etag: z.ZodOptional<z.ZodOptional<z.ZodString>>;
     content_sha256: z.ZodOptional<z.ZodOptional<z.ZodString>>;
@@ -486,6 +517,7 @@ export declare const AssetEntry: z.ZodObject<{
     resolution?: string | undefined;
     fps?: number | undefined;
     file?: string | undefined;
+    media_id?: string | undefined;
     url?: string | undefined;
     etag?: string | undefined;
     content_sha256?: string | undefined;
@@ -499,6 +531,7 @@ export declare const AssetEntry: z.ZodObject<{
     resolution?: string | undefined;
     fps?: number | undefined;
     file?: string | undefined;
+    media_id?: string | undefined;
     url?: string | undefined;
     etag?: string | undefined;
     content_sha256?: string | undefined;
@@ -640,6 +673,7 @@ export declare const TimelineConfig: z.ZodObject<{
         }>, "many">, z.ZodRecord<z.ZodString, z.ZodNumber>]>>;
         params: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodAny>>;
         generation: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodAny>>;
+        app: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodAny>>;
         pool_id: z.ZodOptional<z.ZodString>;
         clip_order: z.ZodOptional<z.ZodNumber>;
     }, "strip", z.ZodTypeAny, {
@@ -705,6 +739,7 @@ export declare const TimelineConfig: z.ZodObject<{
             fade_out?: number | undefined;
         }[] | Record<string, number> | undefined;
         generation?: Record<string, any> | undefined;
+        app?: Record<string, any> | undefined;
         pool_id?: string | undefined;
         clip_order?: number | undefined;
     }, {
@@ -770,6 +805,7 @@ export declare const TimelineConfig: z.ZodObject<{
             fade_out?: number | undefined;
         }[] | Record<string, number> | undefined;
         generation?: Record<string, any> | undefined;
+        app?: Record<string, any> | undefined;
         pool_id?: string | undefined;
         clip_order?: number | undefined;
     }>, "many">;
@@ -783,12 +819,14 @@ export declare const TimelineConfig: z.ZodObject<{
         volume: z.ZodOptional<z.ZodNumber>;
         muted: z.ZodOptional<z.ZodBoolean>;
         blendMode: z.ZodOptional<z.ZodEnum<["normal", "multiply", "screen", "overlay", "darken", "lighten", "soft-light", "hard-light"]>>;
+        app: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodAny>>;
     }, "strip", z.ZodTypeAny, {
         id: string;
         kind: "visual" | "audio";
         label: string;
         volume?: number | undefined;
         opacity?: number | undefined;
+        app?: Record<string, any> | undefined;
         scale?: number | undefined;
         fit?: "cover" | "contain" | "manual" | undefined;
         muted?: boolean | undefined;
@@ -799,6 +837,7 @@ export declare const TimelineConfig: z.ZodObject<{
         label: string;
         volume?: number | undefined;
         opacity?: number | undefined;
+        app?: Record<string, any> | undefined;
         scale?: number | undefined;
         fit?: "cover" | "contain" | "manual" | undefined;
         muted?: boolean | undefined;
@@ -806,25 +845,49 @@ export declare const TimelineConfig: z.ZodObject<{
     }>, "many">>;
     pinnedShotGroups: z.ZodOptional<z.ZodArray<z.ZodObject<{
         shotId: z.ZodOptional<z.ZodOptional<z.ZodString>>;
+        name: z.ZodOptional<z.ZodOptional<z.ZodString>>;
         trackId: z.ZodOptional<z.ZodOptional<z.ZodString>>;
         clipIds: z.ZodOptional<z.ZodOptional<z.ZodArray<z.ZodString, "many">>>;
         mode: z.ZodOptional<z.ZodOptional<z.ZodEnum<["images", "video"]>>>;
         videoAssetKey: z.ZodOptional<z.ZodOptional<z.ZodString>>;
         imageClipSnapshot: z.ZodOptional<z.ZodOptional<z.ZodArray<z.ZodRecord<z.ZodString, z.ZodAny>, "many">>>;
+        poolGenerationIds: z.ZodOptional<z.ZodOptional<z.ZodArray<z.ZodString, "many">>>;
+        derivedFrom: z.ZodOptional<z.ZodOptional<z.ZodObject<{
+            shotId: z.ZodString;
+            trackId: z.ZodString;
+        }, "strip", z.ZodTypeAny, {
+            shotId: string;
+            trackId: string;
+        }, {
+            shotId: string;
+            trackId: string;
+        }>>>;
     }, "strip", z.ZodTypeAny, {
         shotId?: string | undefined;
+        name?: string | undefined;
         trackId?: string | undefined;
         clipIds?: string[] | undefined;
         mode?: "images" | "video" | undefined;
         videoAssetKey?: string | undefined;
         imageClipSnapshot?: Record<string, any>[] | undefined;
+        poolGenerationIds?: string[] | undefined;
+        derivedFrom?: {
+            shotId: string;
+            trackId: string;
+        } | undefined;
     }, {
         shotId?: string | undefined;
+        name?: string | undefined;
         trackId?: string | undefined;
         clipIds?: string[] | undefined;
         mode?: "images" | "video" | undefined;
         videoAssetKey?: string | undefined;
         imageClipSnapshot?: Record<string, any>[] | undefined;
+        poolGenerationIds?: string[] | undefined;
+        derivedFrom?: {
+            shotId: string;
+            trackId: string;
+        } | undefined;
     }>, "many">>;
     theme_overrides: z.ZodOptional<z.ZodObject<{
         visual: z.ZodOptional<z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodAny>>>;
@@ -929,6 +992,7 @@ export declare const TimelineConfig: z.ZodObject<{
             fade_out?: number | undefined;
         }[] | Record<string, number> | undefined;
         generation?: Record<string, any> | undefined;
+        app?: Record<string, any> | undefined;
         pool_id?: string | undefined;
         clip_order?: number | undefined;
     }[];
@@ -939,6 +1003,7 @@ export declare const TimelineConfig: z.ZodObject<{
         label: string;
         volume?: number | undefined;
         opacity?: number | undefined;
+        app?: Record<string, any> | undefined;
         scale?: number | undefined;
         fit?: "cover" | "contain" | "manual" | undefined;
         muted?: boolean | undefined;
@@ -946,11 +1011,17 @@ export declare const TimelineConfig: z.ZodObject<{
     }[] | undefined;
     pinnedShotGroups?: {
         shotId?: string | undefined;
+        name?: string | undefined;
         trackId?: string | undefined;
         clipIds?: string[] | undefined;
         mode?: "images" | "video" | undefined;
         videoAssetKey?: string | undefined;
         imageClipSnapshot?: Record<string, any>[] | undefined;
+        poolGenerationIds?: string[] | undefined;
+        derivedFrom?: {
+            shotId: string;
+            trackId: string;
+        } | undefined;
     }[] | undefined;
     theme_overrides?: {
         visual?: Record<string, any> | undefined;
@@ -1031,6 +1102,7 @@ export declare const TimelineConfig: z.ZodObject<{
             fade_out?: number | undefined;
         }[] | Record<string, number> | undefined;
         generation?: Record<string, any> | undefined;
+        app?: Record<string, any> | undefined;
         pool_id?: string | undefined;
         clip_order?: number | undefined;
     }[];
@@ -1041,6 +1113,7 @@ export declare const TimelineConfig: z.ZodObject<{
         label: string;
         volume?: number | undefined;
         opacity?: number | undefined;
+        app?: Record<string, any> | undefined;
         scale?: number | undefined;
         fit?: "cover" | "contain" | "manual" | undefined;
         muted?: boolean | undefined;
@@ -1048,11 +1121,17 @@ export declare const TimelineConfig: z.ZodObject<{
     }[] | undefined;
     pinnedShotGroups?: {
         shotId?: string | undefined;
+        name?: string | undefined;
         trackId?: string | undefined;
         clipIds?: string[] | undefined;
         mode?: "images" | "video" | undefined;
         videoAssetKey?: string | undefined;
         imageClipSnapshot?: Record<string, any>[] | undefined;
+        poolGenerationIds?: string[] | undefined;
+        derivedFrom?: {
+            shotId: string;
+            trackId: string;
+        } | undefined;
     }[] | undefined;
     theme_overrides?: {
         visual?: Record<string, any> | undefined;

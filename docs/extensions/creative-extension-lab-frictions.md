@@ -2109,3 +2109,31 @@ fresh console collection.
 - The failed raw evidence has artifact-index SHA-256
   `9f251171350b6be6d482f5f56a6b86fb4fefcc6df1d58ba246e4c15041989c8d`.
   It is retained as RC26 diagnostic history and is not a passing receipt.
+
+### Closed asset-registry projections silently sever stable media identity
+
+- RC27 passed the pinned build, real bridge bootstrap, byte transport, editor
+  load, extension lifecycles, and browser edit before the persisted-state check
+  found that `motion-output-audio.aac` had retained its file and MIME type but
+  lost its Astrid `media_id`. The create response and first persisted baseline
+  both contained the ID, proving the bridge and Astrid repository had not
+  stripped it.
+- Reigh rebuilt edited documents through `buildTimelineData` and
+  `canonicalizeTimelinePair`. The registry sanitizer used a closed field list
+  which omitted `media_id`, so the next otherwise-valid CAS save durably wrote
+  the projected entry without its stable identity. The shared schema, bridge
+  contract, public type, sanitizer, and Astrid validator now all carry an
+  optional non-empty `media_id`; a load -> edit rebuild -> debounced save
+  regression covers the complete failure path rather than only the helper.
+- Regenerating the vendored schema exposed another release friction: its local
+  dependency directory lacked its declared TypeScript and schema-emitter
+  versions, allowing the application root's incompatible Zod toolchain to be
+  hoisted into the build. Installing the package's declared versions locally
+  made generation complete in seconds and revealed older committed source
+  fields whose generated JSON, declarations, and Python types were stale.
+  The canonical build is now deterministic across a second generation pass;
+  generated artifacts must be checked at candidate freeze instead of trusting
+  an ambient monorepo dependency graph.
+- The failed raw evidence has artifact-index SHA-256
+  `b78841bd6dd5a113097dcea8cd2b7322a5acd7fa38fa5ab74b2f57efe9cac00e`.
+  It is retained as RC27 diagnostic history and is not a passing receipt.

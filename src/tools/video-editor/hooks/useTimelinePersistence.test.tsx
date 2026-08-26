@@ -14,8 +14,9 @@ import {
   type TimelineStoreApi,
 } from './timelineStore';
 import { createInteractionState, notifyInteractionEndIfIdle, type InteractionStateRef } from '../lib/interaction-state';
-import { configToRows, type TimelineData } from '../lib/timeline-data';
+import { buildTimelineData, configToRows, type TimelineData } from '../lib/timeline-data';
 import { getConfigSignature, getStableConfigSignature } from '../lib/config-utils';
+import { buildDataFromCurrentRegistry } from '../lib/timeline-save-utils';
 import { createDefaultTimelineConfig } from '../lib/defaults';
 import type { AssetResolver } from '../data/AssetResolver';
 import { TimelineSchemaIncompatibleError, TimelineVersionConflictError, type DataProvider } from '../data/DataProvider';
@@ -624,6 +625,37 @@ describe('useTimelinePersistence — interaction gating', () => {
     // 5th slot is the optional data-bundle arg (V2): undefined until a
     // reload populates loadedBundleRef.
     expect(harness.saveTimeline).toHaveBeenCalledWith('timeline-1', nextData.config, 1, registry, undefined);
+  });
+
+  it('preserves Astrid media_id through load, edit rebuild, and save', async () => {
+    const registry: AssetRegistry = {
+      assets: {
+        'motion-output-audio.aac': {
+          file: 'motion-output-audio.aac',
+          media_id: '01jpairedreleaseasset000001',
+          type: 'audio/aac',
+        },
+      },
+    };
+    const source = makeTimelineData('astrid-media-id').config;
+    const loaded = await buildTimelineData(source, registry);
+    const edited = buildDataFromCurrentRegistry({
+      ...loaded.config,
+      clips: loaded.config.clips.map((clip) => ({ ...clip, at: clip.at + 1 })),
+    }, loaded);
+    const harness = setup({ initialData: loaded });
+
+    harness.scheduleSave(edited);
+
+    await act(async () => {
+      vi.advanceTimersByTime(600);
+      await Promise.resolve();
+    });
+
+    expect(harness.saveTimeline).toHaveBeenCalledTimes(1);
+    const savedRegistry = harness.saveTimeline.mock.calls[0]?.[3] as AssetRegistry;
+    expect(savedRegistry.assets['motion-output-audio.aac']?.media_id)
+      .toBe('01jpairedreleaseasset000001');
   });
 
   it('a 409 enters diverged: no version reload, no re-POST (CAS-defeating retry removed)', async () => {

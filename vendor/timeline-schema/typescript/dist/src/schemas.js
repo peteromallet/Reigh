@@ -73,6 +73,10 @@ export const TimelineClip = z.object({
     effects: z.union([z.array(TimelineEffect), z.record(z.number())]).optional(),
     params: z.record(z.any()).optional(),
     generation: z.record(z.any()).optional(),
+    // Editor-extension metadata (e.g. scale-bake markers, clip-local shader
+    // refs) round-trips through providers; keep the shared schema a superset
+    // of Reigh's own TimelineClip type (types/index.ts:384).
+    app: z.record(z.any()).optional(),
     pool_id: z.string().optional(),
     clip_order: z.number().int().positive().optional(),
 });
@@ -86,14 +90,24 @@ export const TrackDefinition = z.object({
     volume: z.number().optional(),
     muted: z.boolean().optional(),
     blendMode: TrackBlendMode.optional(),
+    // Editor-extension metadata (e.g. TRACK_SCALE_BAKE_MARKER) round-trips
+    // through providers; keep the shared schema a superset of Reigh's own
+    // TrackDefinition type (types/index.ts:86).
+    app: z.record(z.any()).optional(),
 });
 export const PinnedShotGroup = z.object({
     shotId: z.string().optional(),
+    name: z.string().optional(),
     trackId: z.string().optional(),
     clipIds: z.array(z.string()).optional(),
     mode: z.enum(["images", "video"]).optional(),
     videoAssetKey: z.string().optional(),
     imageClipSnapshot: z.array(z.record(z.any())).optional(),
+    poolGenerationIds: z.array(z.string()).optional(),
+    derivedFrom: z.object({
+        shotId: z.string(),
+        trackId: z.string(),
+    }).optional(),
 }).partial();
 export const ThemeOverrides = z.object({
     visual: z.record(z.any()).optional(),
@@ -113,6 +127,7 @@ export const TimelineOutput = z.object({
 });
 export const AssetEntry = z.object({
     file: z.string().optional(),
+    media_id: z.string().optional(),
     url: z.string().optional(),
     etag: z.string().optional(),
     content_sha256: z.string().optional(),
