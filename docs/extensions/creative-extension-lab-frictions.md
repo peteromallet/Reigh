@@ -2137,3 +2137,27 @@ fresh console collection.
 - The failed raw evidence has artifact-index SHA-256
   `b78841bd6dd5a113097dcea8cd2b7322a5acd7fa38fa5ab74b2f57efe9cac00e`.
   It is retained as RC27 diagnostic history and is not a passing receipt.
+
+### One transient process-table timeout must not poison a successful gate
+
+- RC28 proved the repaired media-identity path in the real browser: the first
+  paired Playwright phase completed successfully in 1.2 minutes. The release
+  still failed after Playwright exited zero because its shared process-scope
+  broker gave one `ps eww` scan only 1,000 ms. That scan timed out under the
+  production-build/browser load, permanently failed the broker client, and
+  converted a successful command plus completed local fallback cleanup into a
+  `cleanup-error` before restart, restore, and render could run.
+- Process discovery remains fail-closed, but an individual operating-system
+  scan is now treated as transient uncertainty. The broker, stale-owner probe,
+  and local fallback share a bounded three-attempt retry policy; exhausting all
+  attempts still fails with `EPSCAN`, and broker loss still produces the
+  existing cleanup error after locally draining the scope. The broker connect
+  window covers the complete retry budget so recovery cannot create a new
+  startup race, and the outer synchronous cleanup allowance is derived from
+  the maximum broker-plus-fallback scan budget rather than a shorter magic
+  timeout. Deterministic tests prove both two-timeout recovery and terminal
+  failure after the full budget, while the existing orphan, PID-reuse, broker
+  death, and concurrent-cleanup suite remains green.
+- The failed raw evidence has artifact-index SHA-256
+  `128350457ed70e42b46790a04b487e37665e1abf89cdf2c187e18a54ceda5fbf`.
+  It is retained as RC28 diagnostic history and is not a passing receipt.

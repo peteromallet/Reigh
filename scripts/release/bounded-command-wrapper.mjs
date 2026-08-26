@@ -6,13 +6,21 @@ import { closeSync, existsSync, openSync, readFileSync, rmdirSync, unlinkSync, w
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+  PROCESS_SCOPE_MAX_DRAIN_ATTEMPTS,
+  PROCESS_SCOPE_POLL_MS,
+  PROCESS_SCOPE_SCAN_RETRIES,
+  PROCESS_SCOPE_SCAN_TIMEOUT_MS,
+  retryProcessScan,
+} from './bounded-command-scan-policy.mjs';
+
 const GRACE_MS = 250;
-const POLL_MS = 40;
-const SCAN_TIMEOUT_MS = 1_000;
-const SCAN_RETRIES = 3;
+const POLL_MS = PROCESS_SCOPE_POLL_MS;
+const SCAN_TIMEOUT_MS = PROCESS_SCOPE_SCAN_TIMEOUT_MS;
+const SCAN_RETRIES = PROCESS_SCOPE_SCAN_RETRIES;
 const SCAN_OUTPUT_CAP = 8 * 1024 * 1024;
 const QUIESCENCE_SCANS = 3;
-const BROKER_CONNECT_RETRIES = 40;
+const BROKER_CONNECT_RETRIES = 240;
 const BROKER_CONNECT_DELAY_MS = 25;
 const TERM_SCAN_ATTEMPTS = 3;
 const moduleDir = dirname(fileURLToPath(import.meta.url));
@@ -107,6 +115,14 @@ function scanAllOnce() {
       }
       finish(null, rows);
     });
+  });
+}
+
+function scanAll() {
+  return retryProcessScan(scanAllOnce, {
+    attempts: SCAN_RETRIES,
+    delayMs: POLL_MS,
+    wait: delay,
   });
 }
 
@@ -222,7 +238,7 @@ class ScopeBroker {
     let quiet = 0;
     let signaledLive = false;
     let escalated = false;
-    const maxAttempts = TERM_SCAN_ATTEMPTS + QUIESCENCE_SCANS + SCAN_RETRIES + 3;
+    const maxAttempts = PROCESS_SCOPE_MAX_DRAIN_ATTEMPTS;
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       const live = await this.observe();
       // Retention prevents a short-lived scope member from being forgotten,
@@ -293,7 +309,7 @@ async function runBroker(socketPath, candidateNonce, ownerPid, ownerStartSeconds
         } else {
           // A failed process scan is uncertainty, not proof that the lock is
           // stale. Never delete a lock/socket because ps was unavailable.
-          const rows = await scanAllOnce();
+          const rows = await scanAll();
           const liveOwner = rows.find((row) => row.pid === owner.pid);
           const expectedArgv = `${process.argv[1]} --broker ${socketPath} ${owner.nonce}`;
           if (liveOwner?.command.includes(expectedArgv)) return;
@@ -332,7 +348,7 @@ async function runBroker(socketPath, candidateNonce, ownerPid, ownerStartSeconds
     && Number.isSafeInteger(ownerStartSeconds) && ownerStartSeconds > 0;
   let ownerStart = null;
   if (hasOwner) {
-    const rows = await scanAllOnce().catch(() => null);
+    const rows = await scanAll().catch(() => null);
     const ownerRow = rows?.find((row) => row.pid === ownerPid
       && Math.abs(Math.floor(Date.parse(row.start) / 1_000) - ownerStartSeconds) <= 2);
     if (!ownerRow) {
@@ -424,7 +440,7 @@ async function runBroker(socketPath, candidateNonce, ownerPid, ownerStartSeconds
     idleTimer = null;
     if (scanning) return;
     scanning = true;
-    scanAllOnce().then((rows) => {
+    scanAll().then((rows) => {
       const ownerAlive = !hasOwner || rows.some((row) => row.pid === ownerPid
         && row.start === ownerStart);
       if (!ownerAlive) {
@@ -475,9 +491,9 @@ async function fallbackDrainScope(scopeKey, scopeToken, initialSignal, excludePi
   const pattern = new RegExp(`(?:^|\\s)${escapeRegExp(scopeKey)}=${escapeRegExp(scopeToken)}(?:\\s|$)`);
   let quiet = 0;
   let escalated = false;
-  const maxAttempts = TERM_SCAN_ATTEMPTS + QUIESCENCE_SCANS + SCAN_RETRIES + 3;
+  const maxAttempts = PROCESS_SCOPE_MAX_DRAIN_ATTEMPTS;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const rows = await scanAllOnce();
+    const rows = await scanAll();
     const pids = rows
       .filter((row) => row.pid !== excludePid && pattern.test(row.command))
       .map((row) => row.pid);

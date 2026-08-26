@@ -10,6 +10,12 @@ import {
   BoundedCommandError,
   runBoundedCommand,
 } from './bounded-command.mjs';
+import {
+  PROCESS_SCOPE_CLEANUP_ALLOWANCE_MS,
+  PROCESS_SCOPE_MAX_DRAIN_ATTEMPTS,
+  PROCESS_SCOPE_SINGLE_SCAN_BUDGET_MS,
+  retryProcessScan,
+} from './bounded-command-scan-policy.mjs';
 
 const NODE = process.execPath;
 const BASE = Object.freeze({ timeoutMs: 2_000, maxBuffer: 64 * 1024, killSignal: 'SIGKILL' });
@@ -19,6 +25,56 @@ function run(source, options = {}) {
 }
 
 describe('runBoundedCommand', () => {
+  it('recovers transient process-scan timeouts before poisoning the shared broker', async () => {
+    const failures = [new Error('ps eww timed out after 1000ms'), new Error('ps eww timed out after 1000ms')];
+    const waits = [];
+    let calls = 0;
+    const rows = await retryProcessScan(
+      async () => {
+        const failure = failures[calls];
+        calls += 1;
+        if (failure) throw failure;
+        return [{ pid: 42 }];
+      },
+      {
+        attempts: 3,
+        delayMs: 40,
+        wait: async (milliseconds) => { waits.push(milliseconds); },
+      },
+    );
+
+    assert.deepEqual(rows, [{ pid: 42 }]);
+    assert.equal(calls, 3);
+    assert.deepEqual(waits, [40, 40]);
+  });
+
+  it('still fails closed after the complete process-scan retry budget', async () => {
+    let calls = 0;
+    await assert.rejects(
+      retryProcessScan(
+        async () => {
+          calls += 1;
+          throw new Error(`scan failure ${calls}`);
+        },
+        { attempts: 3, delayMs: 0, wait: async () => {} },
+      ),
+      (error) => {
+        assert.equal(error.code, 'EPSCAN');
+        assert.match(error.message, /process scan failed after 3 attempts: scan failure 3/);
+        return true;
+      },
+    );
+    assert.equal(calls, 3);
+  });
+
+  it('derives the outer cleanup allowance from broker plus fallback scan budgets', () => {
+    assert.equal(
+      PROCESS_SCOPE_CLEANUP_ALLOWANCE_MS,
+      PROCESS_SCOPE_SINGLE_SCAN_BUDGET_MS * (PROCESS_SCOPE_MAX_DRAIN_ATTEMPTS * 2 + 1) + 5_000,
+    );
+    assert.equal(PROCESS_SCOPE_CLEANUP_ALLOWANCE_MS, 82_000);
+  });
+
   it('returns spawnSync-shaped success output and immutable invocation details', () => {
     const args = ['-e', "process.stdout.write('hello'); process.stderr.write('warn')"];
     const result = runBoundedCommand(NODE, args, { ...BASE, label: 'greeting' });

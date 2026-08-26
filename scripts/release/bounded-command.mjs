@@ -6,6 +6,8 @@ import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { constants as osConstants, tmpdir } from 'node:os';
 
+import { PROCESS_SCOPE_CLEANUP_ALLOWANCE_MS } from './bounded-command-scan-policy.mjs';
+
 const FAILURE_TYPES = new Set([
   'success',
   'exit',
@@ -21,7 +23,7 @@ const FAILURE_TYPES = new Set([
 const moduleDir = dirname(fileURLToPath(import.meta.url));
 const WRAPPER_PATH = resolve(moduleDir, 'bounded-command-wrapper.mjs');
 const WRAPPER_PROTOCOL_BYTES = 16 * 1024;
-const WRAPPER_CLEANUP_ALLOWANCE_MS = 10_000;
+const WRAPPER_CLEANUP_ALLOWANCE_MS = PROCESS_SCOPE_CLEANUP_ALLOWANCE_MS;
 export const PROCESS_SCOPE_ENV_KEY = 'REIGH_BOUNDED_PROCESS_SCOPE';
 const BROKER_SESSION_ENV_KEY = 'REIGH_BOUNDED_BROKER_SESSION';
 if (!/^[0-9a-f]{32}$/.test(process.env[BROKER_SESSION_ENV_KEY] ?? '')) {
