@@ -1788,3 +1788,15 @@ fresh console collection.
   synthesize a transcript would make the test pass while violating the product
   contract. Future extension fixtures should inventory their required carrier
   types up front and fail preflight when the seeded timeline lacks one.
+
+### Wrapping npm in pinned Node erased its command budget
+
+- RC13's clean paired run was killed while Vite was normally rendering chunks.
+  The release harness assigned a ten-minute budget to npm, but its pinned-runtime
+  helper executes `node /path/to/npm-cli.js`; the generic classifier therefore
+  misidentified the build as a 30-second probe. Cold snapshot builds could fail
+  even though the same candidate built successfully outside the harness.
+- RC14 recognizes the pinned `npm-cli.js` argument as npm at the command boundary,
+  preserving the npm budget without weakening probe timeouts. A regression test
+  exercises the exact Node-wrapped argv shape. The failed RC13 evidence root and
+  bounded-command diagnostic remain preserved for audit.

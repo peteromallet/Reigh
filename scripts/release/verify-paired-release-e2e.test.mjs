@@ -33,6 +33,7 @@ import {
   assessNoCaptionControl,
   captionProbePlan,
   childProcessFailure,
+  commandTimeout,
   isExactViteReadiness,
   normalizeCaptionText,
   pcmS16leStats,
@@ -1592,6 +1593,11 @@ describe('paired repository release E2E gate', () => {
     for (const [phase, budgetMs] of Object.entries(COMMAND_BUDGETS_MS)) {
       assert.ok(Number.isSafeInteger(budgetMs) && budgetMs > 0, `${phase} budget must be positive`);
     }
+    assert.equal(
+      commandTimeout(process.execPath, ['/pinned/npm-cli.js', 'run', 'build']),
+      COMMAND_BUDGETS_MS.npm,
+      'pinned npm invoked through Node must retain the npm phase budget',
+    );
     assert.match(source, /failureType: result\.failureType/);
     assert.match(source, /commandDiagnostic/);
     assert.match(source, /kill=\$\{result\.killSignal\}/);
