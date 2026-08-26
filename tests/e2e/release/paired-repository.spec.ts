@@ -517,6 +517,19 @@ async function proveRunawayLane(page: Page): Promise<RunawayUiProof> {
   const remountedCount = await page.getByTestId('runaway-transition-chip').count();
   expect(remountedCount).toBeGreaterThan(0);
   expect(remountedCount).toBeLessThanOrEqual(128);
+
+  // End navigation intentionally moves the one shared timeline viewport to the
+  // Runaway tail. Prove that the transcript source remains authoritative while
+  // its early items are correctly virtualized out before any later helper
+  // restores the viewport. Without this precondition, a destructive projection
+  // bug could be hidden by remounting the transcript at time zero.
+  const transcriptLane = page.locator('[data-lane-kind="reigh.transcript"]');
+  await expect(transcriptLane).toHaveAttribute('data-total-items', '2', { timeout: 30_000 });
+  await expect.poll(async () => Number(await transcriptLane.getAttribute('data-viewport-start')), {
+    timeout: 30_000,
+    message: 'Runaway End navigation did not move the shared viewport away from the transcript source',
+  }).toBeGreaterThan(0);
+  await expect(transcriptLane.getByTestId('transcript-lane-chip')).toHaveCount(0);
   return { firstManifestId: 'T0001', lastManifestId: 'T0566' };
 }
 
@@ -729,11 +742,38 @@ async function waitForPersistedEdit(request: APIRequestContext, previousAt: numb
 }
 
 async function expectedTranscriptCaptions(page: Page): Promise<ExpectedCaption[]> {
-  await expect.poll(() => page.getByTestId('transcript-lane-chip').count(), {
+  const transcriptLane = page.locator('[data-lane-kind="reigh.transcript"]');
+  await expect(transcriptLane).toHaveAttribute('data-total-items', '2', { timeout: 30_000 });
+
+  const viewportStart = Number(await transcriptLane.getAttribute('data-viewport-start'));
+  if (viewportStart > 0) {
+    // The source count above must survive even while virtualization unmounts
+    // every early transcript chip at the Runaway tail.
+    await expect(transcriptLane.getByTestId('transcript-lane-chip')).toHaveCount(0);
+  }
+
+  const scroller = page.locator('.timeline-canvas-edit-area');
+  await expect(scroller).toHaveCount(1);
+  await scroller.evaluate((element) => {
+    const target = element as HTMLElement;
+    target.scrollLeft = 0;
+    target.dispatchEvent(new Event('scroll', { bubbles: true }));
+  });
+  await expect.poll(() => scroller.evaluate((element) => (element as HTMLElement).scrollLeft), {
+    timeout: 10_000,
+    message: 'shared timeline scroller did not return to the transcript source',
+  }).toBe(0);
+  await expect.poll(async () => Number(await transcriptLane.getAttribute('data-viewport-start')), {
+    timeout: 30_000,
+    message: 'React timeline viewport did not synchronize with the reset shared scroller',
+  }).toBe(0);
+
+  const chips = transcriptLane.getByTestId('transcript-lane-chip');
+  await expect.poll(() => chips.count(), {
     timeout: 30_000,
     message: 'paired transcript fixture did not expose its exact two source segments',
   }).toBe(2);
-  return page.getByTestId('transcript-lane-chip').evaluateAll((chips) => chips.map((chip) => {
+  return chips.evaluateAll((mountedChips) => mountedChips.map((chip) => {
     const title = chip.getAttribute('title') ?? '';
     const itemId = title.split(' · ', 1)[0];
     const aria = chip.getAttribute('aria-label') ?? '';

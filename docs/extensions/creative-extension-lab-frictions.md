@@ -1913,3 +1913,25 @@ fresh console collection.
 - The failed raw evidence has artifact-index SHA-256
   `d8da64fb5bd14f6c981d47be5077c33e76d152e90720fe18ced05082b0dd01d0`.
   It is retained as RC17 diagnostic history and is not a passing receipt.
+
+### A shared virtualized viewport made mounted transcript chips look like lost source data
+
+- RC18 passed the Runaway focus and semantic lifecycle edges, then stopped when
+  transcript acceptance counted zero mounted chips. The same screenshot showed
+  `transcript 0/2` beside `Runaway 128/566` at the timeline tail: the two typed
+  transcript source rows still existed, but `End` navigation for `T0566` had
+  correctly moved the shared horizontal viewport beyond both early captions.
+- Mounted controls are a viewport projection, not the data contract. The paired
+  gate now first proves the tail state—Runaway retains focused `T0566` within
+  the 128-control ceiling while transcript reports two total source items and
+  zero mounted chips. Only then does the reusable transcript helper set the
+  real shared scroller to zero, dispatch a bubbling scroll event, wait for
+  React's `data-viewport-start` to synchronize, and read two row-scoped chips.
+- Resetting only the DOM property would be a false pass because React could keep
+  its stale viewport state. Resetting before the tail assertions could also hide
+  destructive projection loss. The helper is shared by initial, reload, and
+  restart checks so later phases cannot reintroduce the mounted-equals-source
+  assumption.
+- The failed raw evidence has artifact-index SHA-256
+  `6642b45c9ca6f0d0d85a763953cbd85eb6c803f6fbf06373167cf7576ad5f80f`.
+  It is retained as RC18 diagnostic history and is not a passing receipt.
