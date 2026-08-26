@@ -2245,3 +2245,28 @@ fresh console collection.
   and an executable regression launches the pinned npm CLI under the exact
   allowlisted environment. RC31 remains immutable preflight-failure history;
   no product or browser result is claimed from it.
+
+### Browser media cancellation must be classified by chronology, not count alone
+
+- RC32 reached the real paired browser and proved a healthy 39.156558-second
+  AAC element, a complete 457,980-byte waveform fetch, and a valid terminal
+  `206` media range. It nevertheless stopped because the gate assumed Chromium
+  would abort at most one metadata request. The trace showed two distinct,
+  valid probes (`bytes=0-457979` followed by `bytes=65536-`) being replaced
+  before the successful tail request; there was no duplicate retry or server
+  transport failure.
+- The gate now accepts no more than two valid, distinct abort signatures. A
+  two-probe sequence must progress from byte zero to a later offset, while the
+  separate full-fetch, terminal-range, finite-duration, ready-state, and media
+  error checks remain mandatory. Duplicate aborts, more than two probes,
+  malformed ranges, wrong URLs/types, and non-abort failures all fail. This
+  encodes the observed browser state machine without hiding request storms.
+- The same audit exposed a false uniqueness assertion: applying `.first()`
+  before `toHaveCount(1)` could never detect duplicate exact-source audio
+  elements. The gate now counts the unqualified exact-source locator first,
+  then inspects that sole element. It also requires exactly two successful
+  full-file fetches—the intentional waveform and audio-analysis producers—so
+  an added consumer cannot silently amplify network and decoding work.
+- The failed RC32 evidence has artifact-index SHA-256
+  `39e5e5885559ad31a7feaf0e55975b8d0222a09cf634d6cd2f3dff265ff54609`.
+  It remains immutable diagnostic history and is not a passing receipt.

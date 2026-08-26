@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { computeHostFingerprint } from '../../../src/sdk/video/timeline/sourceMap';
 import {
   AUDIO_CARRIER_BYTES,
+  countSuccessfulAudioFullFetches,
+  hasBoundedAudioMetadataAborts,
   hasSuccessfulAudioFullFetch,
   hasSuccessfulAudioMediaRange,
   isExpectedAudioMetadataAbort,
@@ -50,6 +52,26 @@ describe('paired release semantic validators', () => {
     expect(isExpectedAudioMetadataAbort({ ...abort, range: 'bytes=0-1,3-4' }, expectedUrl)).toBe(false);
     expect(isExpectedAudioMetadataAbort({ ...abort, range: undefined }, expectedUrl)).toBe(false);
     expect(isExpectedAudioMetadataAbort({ ...abort, failure: 'net::ERR_FAILED' }, expectedUrl)).toBe(false);
+    expect(hasBoundedAudioMetadataAborts([], expectedUrl)).toBe(true);
+    expect(hasBoundedAudioMetadataAborts([abort], expectedUrl)).toBe(true);
+    expect(hasBoundedAudioMetadataAborts([
+      { ...abort, range: `bytes=0-${AUDIO_CARRIER_BYTES - 1}` },
+      { ...abort, range: 'bytes=65536-' },
+    ], expectedUrl)).toBe(true);
+    expect(hasBoundedAudioMetadataAborts([abort, abort], expectedUrl)).toBe(false);
+    expect(hasBoundedAudioMetadataAborts([
+      { ...abort, range: 'bytes=1-' },
+      { ...abort, range: 'bytes=65536-' },
+    ], expectedUrl)).toBe(false);
+    expect(hasBoundedAudioMetadataAborts([
+      abort,
+      { ...abort, range: 'bytes=65536-' },
+      { ...abort, range: 'bytes=425984-' },
+    ], expectedUrl)).toBe(false);
+    expect(hasBoundedAudioMetadataAborts([
+      abort,
+      { ...abort, failure: 'net::ERR_FAILED' },
+    ], expectedUrl)).toBe(false);
 
     const observations = [{
       url: expectedUrl,
@@ -70,6 +92,8 @@ describe('paired release semantic validators', () => {
       contentType: 'audio/x-aac',
     }];
     expect(hasSuccessfulAudioFullFetch(observations, expectedUrl)).toBe(true);
+    expect(countSuccessfulAudioFullFetches(observations, expectedUrl)).toBe(1);
+    expect(countSuccessfulAudioFullFetches([...observations, observations[0]], expectedUrl)).toBe(2);
     expect(hasSuccessfulAudioMediaRange(observations, expectedUrl)).toBe(true);
     expect(hasSuccessfulAudioFullFetch([
       { ...observations[0], contentType: 'application/octet-stream' },

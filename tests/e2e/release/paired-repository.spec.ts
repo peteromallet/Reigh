@@ -7,6 +7,8 @@ import { transcriptCaptionClipId } from '../../../src/tools/video-editor/dev/tra
 import {
   AUDIO_CARRIER_FILE,
   canonicalFingerprint,
+  countSuccessfulAudioFullFetches,
+  hasBoundedAudioMetadataAborts,
   hasSuccessfulAudioFullFetch,
   hasSuccessfulAudioMediaRange,
   isExpectedAudioMetadataAbort,
@@ -474,8 +476,9 @@ async function openEditor(page: Page, timelineWireRef: string): Promise<string[]
   }, { timeout: 30_000 }).toBe(true);
   await expect(clipBody(page, 'paired-release-audio').getByTestId('timeline-audio-waveform'))
     .toBeVisible({ timeout: 30_000 });
-  const audioElement = page.locator(`audio[src="${audioAssetPath}"]`).first();
-  await expect(audioElement).toHaveCount(1);
+  const audioElements = page.locator(`audio[src="${audioAssetPath}"]`);
+  await expect(audioElements).toHaveCount(1);
+  const audioElement = audioElements.first();
   expect(await audioElement.evaluate((element) => (element as HTMLAudioElement).currentSrc)).toBe(audioAssetUrl);
   await expect.poll(async () => audioElement.evaluate((element) => {
     const candidate = element as HTMLAudioElement;
@@ -496,8 +499,14 @@ async function openEditor(page: Page, timelineWireRef: string): Promise<string[]
   expect(audioState.readyState).toBeGreaterThanOrEqual(1);
   expect(audioState.duration).toBeCloseTo(39.156558, 3);
   expect(hasSuccessfulAudioFullFetch(audioTransportResponses, audioAssetUrl)).toBe(true);
+  // The current editor has exactly two intentional full-file consumers:
+  // timeline waveform decoding and the renderer's audio-analysis provider.
+  // Keep this explicit so a third consumer cannot silently amplify traffic.
+  expect(countSuccessfulAudioFullFetches(audioTransportResponses, audioAssetUrl)).toBe(2);
   expect(hasSuccessfulAudioMediaRange(audioTransportResponses, audioAssetUrl)).toBe(true);
-  expect(expectedAudioMediaAborts.length).toBeLessThanOrEqual(1);
+  expect(hasBoundedAudioMetadataAborts(expectedAudioMediaAborts, audioAssetUrl),
+    `unbounded or duplicate Chromium audio metadata aborts: ${JSON.stringify(expectedAudioMediaAborts)}`)
+    .toBe(true);
   await expect(page.locator('[data-lane-kind="reigh.transcript"]')).toBeVisible();
   expect(capabilityProbeResponses).toEqual(expect.arrayContaining(['HEAD:404', 'GET:404']));
   expect(expectedCapabilityFailures).toHaveLength(1);

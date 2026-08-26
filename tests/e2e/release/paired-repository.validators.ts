@@ -73,16 +73,45 @@ export function isExpectedAudioMetadataAbort(
     && validSingleRange;
 }
 
+/**
+ * Chromium can replace its initial AAC metadata range with one later probe
+ * before completing the tail request. Keep that browser behavior bounded:
+ * at most two distinct, valid ranges are allowed, and a two-probe sequence
+ * must progress from byte zero to a later offset. This rejects duplicate
+ * retries and request storms instead of merely allowing a larger count.
+ */
+export function hasBoundedAudioMetadataAborts(
+  observations: AudioTransportObservation[],
+  expectedUrl: string,
+): boolean {
+  if (observations.length > 2) return false;
+  if (!observations.every((observation) => isExpectedAudioMetadataAbort(observation, expectedUrl))) {
+    return false;
+  }
+  const ranges = observations.map((observation) => observation.range!);
+  if (new Set(ranges).size !== ranges.length) return false;
+  if (observations.length < 2) return true;
+  const starts = ranges.map((range) => Number(/^bytes=(\d+)-/.exec(range)![1]));
+  return starts.includes(0) && starts.some((start) => start > 0);
+}
+
 export function hasSuccessfulAudioFullFetch(
   observations: AudioTransportObservation[],
   expectedUrl: string,
 ): boolean {
-  return observations.some((observation) => observation.url === expectedUrl
+  return countSuccessfulAudioFullFetches(observations, expectedUrl) > 0;
+}
+
+export function countSuccessfulAudioFullFetches(
+  observations: AudioTransportObservation[],
+  expectedUrl: string,
+): number {
+  return observations.filter((observation) => observation.url === expectedUrl
     && observation.method === 'GET'
     && observation.resourceType === 'fetch'
     && observation.status === 200
     && observation.contentLength === String(AUDIO_CARRIER_BYTES)
-    && observation.contentType === 'audio/x-aac');
+    && observation.contentType === 'audio/x-aac').length;
 }
 
 export function hasSuccessfulAudioMediaRange(
