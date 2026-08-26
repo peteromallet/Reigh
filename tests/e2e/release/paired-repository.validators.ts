@@ -609,7 +609,11 @@ function expectedFaultlineEntries(timeline: ProbeTimeline): Array<Record<string,
     }
   }
 
-  const primary = tracks.find((track) => track.kind === 'visual' && track.muted === false);
+  // Persisted timeline JSON omits default-false booleans, while the host
+  // snapshot given to extensions materializes `muted: false`.  Treat only an
+  // explicit true as muted so the release oracle validates the same semantic
+  // timeline the extension actually observed.
+  const primary = tracks.find((track) => track.kind === 'visual' && track.muted !== true);
   const continuity = primary
     ? clips.filter((clip) => clip.track === primary.id
       && finite(clip.at) && clip.at >= 0

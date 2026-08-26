@@ -177,6 +177,25 @@ describe('paired release semantic validators', () => {
     )).toMatchObject({ valid: true, count: 1 });
     expect(validateExtensionOutput(
       'com.reigh.creative-lab.timeline-faultline',
+      faultline,
+      {
+        ...anomalousTimeline,
+        tracks: [{ id: 'V1', kind: 'visual' }],
+      },
+    )).toMatchObject({ valid: true, count: 1 });
+    expect(validateExtensionOutput(
+      'com.reigh.creative-lab.timeline-faultline',
+      faultline,
+      {
+        ...anomalousTimeline,
+        tracks: [{ id: 'V1', kind: 'visual', muted: true }],
+      },
+    )).toMatchObject({
+      valid: false,
+      reason: 'expected 0 entries, got 1',
+    });
+    expect(validateExtensionOutput(
+      'com.reigh.creative-lab.timeline-faultline',
       { ...faultline, entries: [{ ...faultline.entries[0], time: 2 }] },
       anomalousTimeline,
     )).toMatchObject({

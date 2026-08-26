@@ -604,13 +604,24 @@ async function expectValidatedProjectData(
     value: undefined,
     validation: { valid: false, reason: 'not read', fingerprint: null, count: 0 },
   };
-  await expect.poll(async () => {
-    latest = await readValidatedProjectData(request, extensionId, key);
-    return latest.validation;
-  }, {
-    timeout: 30_000,
-    message: `${extensionId} did not persist a valid ${key}`,
-  }).toMatchObject({ valid: true });
+  try {
+    await expect.poll(async () => {
+      latest = await readValidatedProjectData(request, extensionId, key);
+      return latest.validation;
+    }, {
+      timeout: 30_000,
+      message: `${extensionId} did not persist a valid ${key}`,
+    }).toMatchObject({ valid: true });
+  } catch (error) {
+    const original = error instanceof Error ? error.message : String(error);
+    throw new Error([
+      `${extensionId} did not persist a valid ${key}`,
+      `reason=${latest.validation.reason}`,
+      `count=${latest.validation.count}`,
+      `fingerprint=${latest.validation.fingerprint ?? 'none'}`,
+      `original=${original}`,
+    ].join('; '));
+  }
   if (requireChange && before && !meaningfulChange(before, latest.validation)) {
     throw new Error(`${extensionId} command did not create a meaningful new ${key} output`);
   }

@@ -2041,3 +2041,24 @@ fresh console collection.
 - The failed raw evidence has artifact-index SHA-256
   `325aaaf2ed0034f11ddc015c968fa2e7f32049e4d14b1c88dc3726e071ae07bc`.
   It is retained as RC23 diagnostic history and is not a passing receipt.
+
+### Omitted persisted defaults must be normalized like the extension host
+
+- RC24 passed the pinned build/runtime, bridge bootstrap, audio proofs, and the
+  first six command lifecycles. Timeline Faultline persisted the exact expected
+  one-gap envelope for the generated transcript-caption track, but the release
+  validator derived zero gaps from the same document.
+- The persisted JSON correctly omitted the default-false `muted` property. The
+  extension host materializes that default as `muted: false` in its public
+  `TimelineSnapshot`; the validator required an explicitly persisted false and
+  therefore ignored every default-unmuted visual track. Validation now mirrors
+  the host boundary: only `muted: true` excludes a track. Regressions prove that
+  omitted and explicit false are equivalent while explicit true remains muted.
+- The polling assertion also discarded the validator's final reason behind a
+  generic `valid: false` diff. It now reports the bounded validation reason,
+  count, and fingerprint, preserving the original assertion text without
+  dumping project payloads. Future semantic mismatches should be diagnosable
+  from the primary receipt rather than requiring manual trace extraction.
+- The failed raw evidence has artifact-index SHA-256
+  `7cab29d356d6fc80b959bfd68cb2cf65a5d19e407e767d0e56d658da15efab1d`.
+  It is retained as RC24 diagnostic history and is not a passing receipt.
