@@ -3231,6 +3231,20 @@ export function validateRenderedStreamContract(probe, { expectedFps, expectedDur
   const duration = Number(video?.duration ?? probe?.format?.duration);
   const formatDuration = Number(probe?.format?.duration);
   const frames = Number(video?.nb_frames);
+  const videoFrameTolerance = 1 / expectedFps;
+  const audioSampleRate = Number(audio?.sample_rate);
+  const audioDurationTicks = Number(audio?.duration_ts);
+  const audioFrames = Number(audio?.nb_frames);
+  const aacSamplesPerAccessUnit = 1_024;
+  const ffprobeDecimalTolerance = 0.000_001;
+  // AAC-LC encodes 1,024 samples per access unit. Remotion/FFmpeg may retain
+  // one priming and one flush access unit in the stream/MP4 duration while the
+  // decoded authored signal remains exactly the requested duration. Validate
+  // this in integer codec ticks; decimal durations are only allowed FFprobe's
+  // six-decimal rendering tolerance. Never relax video correctness.
+  const aacAccessUnitSeconds = aacSamplesPerAccessUnit / audioSampleRate;
+  const aacTailTolerance = (2 * aacAccessUnitSeconds) + ffprobeDecimalTolerance;
+  const muxTailTolerance = Math.max(videoFrameTolerance, aacTailTolerance);
   if (
     video?.codec_name !== 'h264'
     || video?.width !== 1280
@@ -3239,24 +3253,51 @@ export function validateRenderedStreamContract(probe, { expectedFps, expectedDur
     || !Number.isInteger(frames)
     || Math.abs(frames - Math.round(expectedDuration * expectedFps)) > 1
     || !Number.isFinite(duration)
-    || Math.abs(duration - expectedDuration) > (1 / expectedFps)
+    || Math.abs(duration - expectedDuration) > videoFrameTolerance
     || !Number.isFinite(formatDuration)
-    || Math.abs(formatDuration - expectedDuration) > (1 / expectedFps)
+    || formatDuration < expectedDuration - videoFrameTolerance
+    || formatDuration > expectedDuration + muxTailTolerance
   ) {
     fail(`render stream contract mismatch: ${JSON.stringify({ video, formatDuration, expectedFps, expectedDuration })}`);
   }
-  const audioDuration = Number(audio?.duration ?? probe?.format?.duration);
+  const audioDuration = Number(audio?.duration);
+  const exactAudioDuration = audioDurationTicks / audioSampleRate;
+  const expectedAudioSamples = expectedDuration * audioSampleRate;
+  const expectedAuthoredAudioFrames = Math.ceil(expectedAudioSamples / aacSamplesPerAccessUnit);
+  const maxStreamDuration = Math.max(duration, exactAudioDuration);
   if (audioStreams.length !== 1
     || !audio
     || audio.codec_name !== 'aac'
-    || !Number.isInteger(Number(audio.channels)) || Number(audio.channels) < 1
-    || !Number.isInteger(Number(audio.sample_rate)) || Number(audio.sample_rate) < 8_000
+    || audio.profile !== 'LC'
+    || Number(audio.channels) !== 2
+    || audioSampleRate !== 48_000
+    || audio.time_base !== '1/48000'
+    || !Number.isInteger(audioDurationTicks) || audioDurationTicks <= 0
+    || !Number.isInteger(audioFrames)
+    || audioDurationTicks !== audioFrames * aacSamplesPerAccessUnit
+    || !Number.isInteger(expectedAudioSamples) || expectedAudioSamples <= 0
+    || audioFrames < expectedAuthoredAudioFrames
+    || audioFrames > expectedAuthoredAudioFrames + 2
     || !Number.isFinite(audioDuration)
-    || audioDuration < expectedDuration - (1 / expectedFps)
-    || audioDuration > expectedDuration + (1 / expectedFps)) {
+    || Math.abs(audioDuration - exactAudioDuration) > ffprobeDecimalTolerance
+    || exactAudioDuration < expectedDuration - videoFrameTolerance
+    || exactAudioDuration > expectedDuration + aacTailTolerance
+    || Math.abs(formatDuration - maxStreamDuration) > ffprobeDecimalTolerance) {
     fail(`render audio stream contract mismatch: ${JSON.stringify({ audioStreams, expectedDuration })}`);
   }
-  return Object.freeze({ video, audio, fps, duration, formatDuration, frames, audioDuration });
+  return Object.freeze({
+    video,
+    audio,
+    fps,
+    duration,
+    formatDuration,
+    frames,
+    audioDuration,
+    audioDurationTicks,
+    audioFrames,
+    exactAudioDuration,
+    aacTailTolerance,
+  });
 }
 
 function decodeAudioEvidence(context, inputPath, label, durationSeconds) {
@@ -3304,7 +3345,7 @@ function verifyRenderedArtifact(context, { serveOwnedEvidence = null } = {}) {
   }
   const probe = runLogged(ffprobeExecutable, [
     '-v', 'error',
-    '-show_entries', 'stream=codec_name,codec_type,width,height,avg_frame_rate,nb_frames,duration,channels,sample_rate:format=duration',
+    '-show_entries', 'stream=codec_name,profile,codec_type,width,height,avg_frame_rate,nb_frames,duration,duration_ts,time_base,channels,sample_rate:format=duration',
     '-of', 'json',
     outputPath,
   ], {

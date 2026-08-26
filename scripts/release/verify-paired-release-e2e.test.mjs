@@ -347,12 +347,90 @@ process.exit(1);
           avg_frame_rate: '24/1', nb_frames: '192', duration: '8',
         },
         {
-          codec_type: 'audio', codec_name: 'aac', channels: 2,
-          sample_rate: '44100', duration: '8',
+          codec_type: 'audio', codec_name: 'aac', profile: 'LC', channels: 2,
+          sample_rate: '48000', time_base: '1/48000', duration_ts: 384000,
+          duration: '8', nb_frames: '375',
         },
       ],
     };
     assert.doesNotThrow(() => validateRenderedStreamContract(probe, { expectedFps: 24, expectedDuration: 8 }));
+    const twoAccessUnitTail = {
+      ...probe,
+      format: { duration: '8.042667' },
+      streams: [
+        probe.streams[0],
+        {
+          ...probe.streams[1], duration: '8.042667', duration_ts: 386048,
+          nb_frames: '377',
+        },
+      ],
+    };
+    assert.doesNotThrow(() => validateRenderedStreamContract(
+      twoAccessUnitTail,
+      { expectedFps: 24, expectedDuration: 8 },
+    ));
+    assert.throws(
+      () => validateRenderedStreamContract({
+        ...twoAccessUnitTail,
+        format: { duration: '8.064' },
+        streams: [
+          probe.streams[0],
+          {
+            ...probe.streams[1], duration: '8.064', duration_ts: 387072,
+            nb_frames: '378',
+          },
+        ],
+      }, { expectedFps: 24, expectedDuration: 8 }),
+      /render stream contract mismatch|render audio stream contract mismatch/,
+    );
+    assert.throws(
+      () => validateRenderedStreamContract({
+        ...probe,
+        streams: [probe.streams[0], { ...probe.streams[1], profile: 'HE-AAC' }],
+      }, { expectedFps: 24, expectedDuration: 8 }),
+      /render audio stream contract mismatch/,
+    );
+    const oneAccessUnitTail = {
+      ...probe,
+      format: { duration: '8.021333' },
+      streams: [
+        probe.streams[0],
+        {
+          ...probe.streams[1], duration: '8.021333', duration_ts: 385024,
+          nb_frames: '376',
+        },
+      ],
+    };
+    assert.doesNotThrow(() => validateRenderedStreamContract(
+      oneAccessUnitTail,
+      { expectedFps: 24, expectedDuration: 8 },
+    ));
+    for (const audioMutation of [
+      { duration_ts: undefined },
+      { duration_ts: 386047 },
+      { time_base: '1/90000' },
+      { sample_rate: '44100', time_base: '1/44100' },
+      { channels: 1 },
+      { nb_frames: '374', duration_ts: 382976, duration: '7.978667' },
+    ]) {
+      assert.throws(
+        () => validateRenderedStreamContract({
+          ...twoAccessUnitTail,
+          streams: [
+            probe.streams[0],
+            { ...twoAccessUnitTail.streams[1], ...audioMutation },
+          ],
+        }, { expectedFps: 24, expectedDuration: 8 }),
+        /render audio stream contract mismatch/,
+      );
+    }
+    assert.throws(
+      () => validateRenderedStreamContract({
+        ...twoAccessUnitTail,
+        format: { duration: '8.042665' },
+      }, { expectedFps: 24, expectedDuration: 8 }),
+      /render audio stream contract mismatch/,
+    );
     assert.throws(
       () => validateRenderedStreamContract({ ...probe, streams: [...probe.streams, probe.streams[1]] }, { expectedFps: 24, expectedDuration: 8 }),
       /render audio stream contract mismatch/,

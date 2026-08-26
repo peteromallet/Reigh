@@ -2404,3 +2404,30 @@ fresh console collection.
 - The failed RC37 evidence has artifact-index SHA-256
   `c31e81936600b831ecd63d94b117aa3a0f58678958fbf713b8a6b8ae3b661019`.
   It remains immutable diagnostic history and is not a passing receipt.
+
+### Encoded audio tail tolerance must follow codec access units
+
+- RC38 passed the fresh installs, build, migration, authenticated proxy, first
+  browser phase, all thirteen extension lifecycles, restart persistence, and a
+  real Astrid-owned export. The MP4 was H.264 at 1280x720 and exactly 24 fps,
+  192 frames, and 8.000000 seconds; its sole AAC-LC stream was 48 kHz stereo.
+  The verifier rejected it because the AAC/container duration was 8.042667
+  seconds, about one millisecond beyond the unrelated one-video-frame bound.
+- The encoded stream contained 377 AAC access units. Eight authored seconds at
+  48 kHz require 375 1,024-sample units; the remaining two are the bounded
+  encoder priming/flush tail (`2048 / 48000 = 0.042666…` seconds), not missing
+  or stretched picture timing. Visual inspection confirmed both transcript
+  captions and the moved source card at the intended intervals.
+- The stream gate now keeps video duration and frame count on the strict
+  one-video-frame boundary and requires one AAC-LC stereo stream at the pinned
+  48 kHz rate. It validates `time_base=1/48000`, integer `duration_ts`, and the
+  identity `duration_ts = nb_frames * 1024`, then permits at most two positive
+  AAC units plus one microsecond solely for FFprobe's decimal rendering. The
+  container duration must agree with the longest exact stream duration. Three
+  tail units, missing or inconsistent tick metadata, another AAC profile/rate,
+  an early audio end, extra streams, or any video drift still fails. Decoded
+  PCM energy, duration, and source/output ratios remain separate mandatory
+  checks after the container contract.
+- The failed RC38 evidence has artifact-index SHA-256
+  `79daafcde40f8ba49c8f7cb18e6cdf3dcb74254197bd5de30a607b44888ce615`.
+  It remains immutable diagnostic history and is not a passing receipt.
