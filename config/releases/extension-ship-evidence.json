@@ -3,7 +3,7 @@
   "release": "extension-ship-quality-rc16",
   "status": "integration",
   "candidate": {
-    "reighCommit": null,
+    "reighCommit": "2867e0d18d9506bf03ad18d6fd4c52da37421759",
     "astridCommit": "73fff7d5990b2563d7c31805d0c4aa8f01ed94a1"
   },
   "workstreams": [
