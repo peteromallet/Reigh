@@ -629,8 +629,9 @@ async function proveAllExtensionLifecycles(page: Page, request: APIRequestContex
     try {
       const row = inventory.locator(`[data-video-editor-dev-local-extension="${probe.id}"]`);
       const toggle = inventory.locator(`[data-video-editor-dev-local-toggle="${probe.id}"]`);
-      await expect(row).toContainText('Active', { timeout: 8_000 });
+      await expect(row).toBeVisible({ timeout: 8_000 });
       await expect(toggle).toHaveAccessibleName(`Disable ${probe.id}`);
+      await expect(toggle).toHaveAttribute('aria-pressed', 'true');
 
       if (probe.contribution === 'command') {
         await expectCommandAvailability(page, probe.commandId!, true);
@@ -681,6 +682,7 @@ async function proveAllExtensionLifecycles(page: Page, request: APIRequestContex
 
       await toggle.click();
       await expect(toggle).toHaveAccessibleName(`Enable ${probe.id}`, { timeout: 8_000 });
+      await expect(toggle).toHaveAttribute('aria-pressed', 'false');
       if (probe.contribution === 'command') {
         await expectCommandAvailability(page, probe.commandId!, false);
       } else if (probe.contribution === 'transcript-lane') {
@@ -691,6 +693,7 @@ async function proveAllExtensionLifecycles(page: Page, request: APIRequestContex
 
       await toggle.click();
       await expect(toggle).toHaveAccessibleName(`Disable ${probe.id}`, { timeout: 8_000 });
+      await expect(toggle).toHaveAttribute('aria-pressed', 'true');
       if (probe.contribution === 'command') {
         await expectCommandAvailability(page, probe.commandId!, true);
       } else if (probe.contribution === 'transcript-lane') {

@@ -1895,4 +1895,21 @@ fresh console collection.
   `End`, flushes the pin-to-viewport hand-off, and asserts both
   durable focus and an exact 128-control ceiling. Because the defect is in
   candidate source, RC16 remains an immutable failed candidate and the fix must
-  ship in RC17.
+  first entered RC17, whose paired run advanced past this edge, and carries
+  forward into RC18.
+
+### Lifecycle acceptance depended on presentation-case text
+
+- RC17 passed the 566-item keyboard-focus edge and then stopped at the first
+  extension lifecycle probe. The extension row was visible and enabled, its
+  toggle had accessible name `Disable com.reigh.scene-phase-markers` and
+  `aria-pressed=true`, and the row reported `4 contributions · 1 active`; the
+  gate nevertheless required a case-sensitive `Active` substring.
+- Human-facing summary copy is not the lifecycle contract. The paired gate now
+  proves the row is visible and asserts the toggle's accessible name plus
+  `aria-pressed` state before disable, after disable, and after re-enable. It
+  still separately proves command/lane removal and restoration, so replacing
+  the brittle copy check does not weaken extension behavior coverage.
+- The failed raw evidence has artifact-index SHA-256
+  `d8da64fb5bd14f6c981d47be5077c33e76d152e90720fe18ced05082b0dd01d0`.
+  It is retained as RC17 diagnostic history and is not a passing receipt.
