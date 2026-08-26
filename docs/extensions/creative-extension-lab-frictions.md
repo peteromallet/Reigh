@@ -1847,3 +1847,26 @@ fresh console collection.
   yields to the event loop, and asserts zero direct zombie children. Broker death,
   corrupt-sentinel, concurrent recovery, and complete descendant cleanup tests
   remain green; a source-string assertion alone would not have caught this class.
+
+### A second hardcoded release pin made the real bridge test reject the candidate
+
+- RC15's in-place real-bridge browser gate failed before startup even though the
+  Astrid worktree was clean at the manifest pin. The bridge launcher retained an
+  older RC6 Astrid SHA as a second source of truth and therefore rejected the
+  current `config/releases/extension-ship-quality.json` candidate.
+- The launcher now reads and validates the exact lowercase 40-character
+  `astrid.commit` from the checked-in release manifest. Missing, abbreviated,
+  uppercase, or malformed pins fail before any server starts. The real bridge
+  still verifies clean worktree status and exact `HEAD`; only the duplicated pin
+  ownership was removed.
+- The adjacent user-specific checkout fallback was removed as well. The pinned
+  git-checkout lane now requires an explicit absolute `ASTRID_CHECKOUT`, so a
+  clean machine cannot accidentally use one developer's ambient worktree or fail
+  with a misleading path error. The documented `ASTRID_SERVE_BIN` escape hatch
+  remains explicitly provenance-unverified for development; if it supplies a
+  checkout path, that path must also be absolute and it cannot produce a pinned
+  candidate receipt.
+- A lightweight provenance regression binds the launcher to the manifest, while
+  the live real-bridge browser suite proves that the resolved checkout actually
+  starts. Candidate tags remain immutable: discovering this after RC15 was tagged
+  requires a new candidate rather than moving or overwriting the existing tag.

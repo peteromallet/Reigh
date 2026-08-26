@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "release": "extension-ship-quality-rc15",
+  "release": "extension-ship-quality-rc16",
   "status": "integration",
   "candidate": {
     "reighCommit": null,
@@ -137,14 +137,14 @@
       "id": "22-human-acceptance-testing",
       "title": "Human acceptance testing",
       "status": "blocked",
-      "blocker": "Four independent human persona sessions have not yet been completed on the RC15 paired release candidate.",
+      "blocker": "Four independent human persona sessions have not yet been completed on the RC16 paired release candidate.",
       "receipts": []
     },
     {
       "id": "23-frozen-release-candidate",
       "title": "Frozen release candidate",
       "status": "blocked",
-      "blocker": "RC15 remains in integration; the immutable candidate binding and two independent frozen-candidate approvals are not yet available.",
+      "blocker": "RC16 remains in integration; the immutable candidate binding and two independent frozen-candidate approvals are not yet available.",
       "receipts": []
     }
   ]

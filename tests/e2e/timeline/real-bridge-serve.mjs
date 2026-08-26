@@ -3,8 +3,7 @@
  * B5 harness: boot the REAL Astrid bridge (`astrid serve`) against a temp
  * seeded project root, for the Playwright CAS/watchdog/draft specs.
  *
- *   ASTRID_CHECKOUT    clean checkout at the release pin (default: the local
- *                      Astrid-extension-integration worktree)
+ *   ASTRID_CHECKOUT    required absolute clean checkout at the release pin
  *   ASTRID_PYTHON      absolute pinned Python executable; otherwise the exact
  *                      release interpreter is resolved from PATH
  *   ASTRID_SERVE_BIN   explicit executable override (not provenance-checked)
@@ -30,6 +29,10 @@ import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path';
 import { resolvePinnedNodeExecutable } from '../../../scripts/release/pinned-node-runtime.mjs';
 import { resolvePinnedPythonExecutable } from '../../../scripts/release/pinned-python-runtime.mjs';
 import { createBridgeReadinessAdapter } from './real-bridge-readiness.mjs';
+import {
+  readPinnedAstridSha,
+  resolveAstridCheckoutPath,
+} from './release-pin.mjs';
 
 const PORT = Number(process.env.ASTRID_BRIDGE_PORT ?? 17334);
 const READY_PORT = Number(process.env.ASTRID_BRIDGE_READY_PORT ?? 0);
@@ -37,8 +40,7 @@ if (!Number.isInteger(READY_PORT) || READY_PORT < 1 || READY_PORT > 65_535) {
   throw new Error('ASTRID_BRIDGE_READY_PORT must be a valid separately allocated TCP port');
 }
 if (READY_PORT === PORT) throw new Error('ASTRID_BRIDGE_READY_PORT must be distinct from ASTRID_BRIDGE_PORT');
-const PINNED_ASTRID_SHA = '9d714649f2f658ad508dbb4ead8eaf15bff2149b';
-const DEFAULT_ASTRID_CHECKOUT = '/Users/peteromalley/Documents/reigh-workspace/Astrid-extension-integration';
+const PINNED_ASTRID_SHA = readPinnedAstridSha();
 const astrid = resolveAstridCommand();
 astrid.env = resolveReleaseRuntimeEnv(astrid);
 const OWNS_SEED_ROOT = !process.env.ASTRID_SEED_ROOT;
@@ -202,13 +204,13 @@ function resolveAstridCommand() {
       prefix: [],
       cwd: undefined,
       env: { ...process.env, ASTRID_PYTHON: python },
-      checkout: process.env.ASTRID_CHECKOUT ? resolve(process.env.ASTRID_CHECKOUT) : null,
+      checkout: process.env.ASTRID_CHECKOUT ? resolveAstridCheckoutPath() : null,
       provenance: `binary:${bin}`,
       pinVerified: false,
     };
   }
 
-  const checkout = resolve(process.env.ASTRID_CHECKOUT ?? DEFAULT_ASTRID_CHECKOUT);
+  const checkout = resolveAstridCheckoutPath();
   if (!existsSync(join(checkout, '.git'))) {
     throw new Error(
       `Pinned Astrid checkout is unavailable at ${checkout}; set ASTRID_CHECKOUT or ASTRID_SERVE_BIN explicitly`,
