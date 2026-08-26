@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { computeHostFingerprint } from '../../../src/sdk/video/timeline/sourceMap';
 import {
   AUDIO_CARRIER_BYTES,
   hasSuccessfulAudioFullFetch,
   hasSuccessfulAudioMediaRange,
   isExpectedAudioMetadataAbort,
   meaningfulChange,
+  releaseHostFingerprint,
   RUNAWAY_FIXTURE_FACTS,
   validateExtensionOutput,
   validateRunawayResponse,
@@ -12,11 +14,23 @@ import {
 } from './paired-repository.validators';
 
 const timeline = {
-  tracks: [{ id: 'V1', kind: 'visual', muted: false }],
+  tracks: [{ id: 'V1', kind: 'visual', label: 'Video', muted: false }],
   clips: [{ id: 'clip-a', track: 'V1', at: 1, duration: 2, clipType: 'media' }],
+  assetKeys: [],
 };
 
 describe('paired release semantic validators', () => {
+  it('independently reproduces the host fingerprint canonicalization contract', () => {
+    const values = [
+      { b: 2, a: [1, 'x', null] },
+      { nested: { z: Number.POSITIVE_INFINITY, a: false }, omitted: undefined },
+      ['text', { duration: 2, clipType: null }],
+    ];
+    for (const value of values) {
+      expect(releaseHostFingerprint(value)).toBe(computeHostFingerprint(value));
+    }
+  });
+
   it('permits only the exact Chromium AAC metadata cancellation after separate transport proofs', () => {
     const expectedUrl = 'http://127.0.0.1:2222/api/astrid/projects/demo/timelines/main/assets/motion-output-audio.aac';
     const abort = {
@@ -205,6 +219,24 @@ describe('paired release semantic validators', () => {
   });
 
   it('enforces each persisted command contract and canonical fingerprints', () => {
+    const recallSourceSignature = releaseHostFingerprint({
+      sourceContract: 'recall-pulse/v3',
+      primaryTrack: { id: 'V1', index: 0, kind: 'visual', muted: false },
+      clips: [{ id: 'clip-a', track: 'V1', at: 1, duration: 2, clipType: 'media' }],
+    });
+    const locklineSourceSignature = releaseHostFingerprint({
+      sourceContract: 'lockline-inspector/v2',
+      assetKeys: [],
+      trackIds: ['V1'],
+      clips: [{
+        id: 'clip-a',
+        track: 'V1',
+        at: '1',
+        duration: '2',
+        materialRefs: [],
+        sourceRefs: [],
+      }],
+    });
     const outputs: Record<string, unknown> = {
       'com.reigh.scene-phase-markers': [{ id: 'marker-1', time: 1 }],
       'com.reigh.creative-lab.pulse-map': { schemaVersion: 1, generatedFromVersion: 1, entries: [
@@ -223,9 +255,9 @@ describe('paired release semantic validators', () => {
         { id: 'foley-clip-a-end', sourceClipId: 'clip-a', boundary: 'end', time: 3, category: 'unassigned', offset: 0, pan: 0, distance: 0.5, intensity: 0.45, label: 'Unassigned Foley cue · clip-a · end' },
       ] },
       'com.reigh.creative-lab.branching-cut': { schemaVersion: 1, generatedFromVersion: 1, entries: [] },
-      'com.reigh.creative-lab.chromatic-constellation': { schemaVersion: 1, coverage: { totalCandidates: 1, persistedCount: 1, displayLimit: 64, displayedCount: 1, omittedCount: 0, sourceTrackId: 'V1', sourceTrackLabel: 'Video', status: 'complete' }, entries: [{ id: 'constellation-clip-a', sourceClipId: 'clip-a', trackId: 'V1', trackLabel: 'Video', trackOrder: 0, pacingClass: 'steady', time: 1, duration: 2, intensity: 0.4, color: '#fff', label: 'steady' }] },
-      'com.reigh.creative-lab.recall-pulse': { schemaVersion: 3, sourceSignature: 'sig', stale: false, suggestions: [{ id: 'recall-clip-a', sourceClipId: 'clip-a', checkpointId: 'checkpoint-clip-a', trackId: 'V1', category: 'concept', assignment: 'unassigned', time: 1, duration: 2, intensity: 0.4, prompt: 'Recall this', label: 'concept', color: '#fff', heuristic: 'timing', method: 'structural' }] },
-      'com.reigh.creative-lab.lockline-inspector': { schemaVersion: 2, sourceSignature: 'sig', coverage: { totalClips: 1, scannedClips: 1, eligibleClips: 1, skippedInvalidClips: 0, candidateFindings: 0, persistedFindings: 0, omittedFindings: 0, omittedClips: 0 }, entries: [] },
+      'com.reigh.creative-lab.chromatic-constellation': { schemaVersion: 1, generatedFromVersion: 1, coverage: { totalCandidates: 1, persistedCount: 1, displayLimit: 128, displayedCount: 1, omittedCount: 0, sourceTrackId: 'V1', sourceTrackLabel: 'Video', status: 'complete' }, entries: [{ id: 'constellation-clip-a', sourceClipId: 'clip-a', trackId: 'V1', trackLabel: 'Video', trackOrder: 0, pacingClass: 'steady', time: 1, duration: 2, intensity: 0.5, color: '#52e8d4', label: 'Pacing steady · Video · steady pacing (structural fallback)' }] },
+      'com.reigh.creative-lab.recall-pulse': { schemaVersion: 3, generatedFromVersion: 1, sourceSignature: recallSourceSignature, stale: false, suggestions: [{ id: 'recall-suggestion-clip-a', sourceClipId: 'clip-a', checkpointId: 'recall-checkpoint-clip-a', trackId: 'V1', category: 'concept', assignment: 'unassigned', time: 1, duration: 2, intensity: 0.8, prompt: 'What is the central idea introduced at this point?', label: 'Unassigned review question · What is the central idea introduced at this point?', color: '#52e8ff', heuristic: 'ordered-clip:concept; duration-proxy:2.000s', method: 'timeline-structure:v2; first-unmuted-visual-track; no semantic/audio analysis' }] },
+      'com.reigh.creative-lab.lockline-inspector': { schemaVersion: 2, generatedFromVersion: 1, sourceSignature: locklineSourceSignature, coverage: { totalClips: 1, scannedClips: 1, eligibleClips: 1, skippedInvalidClips: 0, candidateFindings: 0, persistedFindings: 0, omittedFindings: 0, omittedClips: 0 }, entries: [] },
     };
     for (const [extensionId, output] of Object.entries(outputs)) {
       const result = validateExtensionOutput(extensionId, output, timeline);
@@ -246,6 +278,20 @@ describe('paired release semantic validators', () => {
     )).toMatchObject({
       valid: false,
       reason: 'foley entries do not match the current timeline',
+    });
+    const recall = outputs['com.reigh.creative-lab.recall-pulse'] as {
+      suggestions: Array<Record<string, unknown>>;
+    };
+    expect(validateExtensionOutput(
+      'com.reigh.creative-lab.recall-pulse',
+      { ...outputs['com.reigh.creative-lab.recall-pulse'] as object, suggestions: [
+        ...recall.suggestions,
+        { ...recall.suggestions[0], id: 'unexpected-extra' },
+      ] },
+      timeline,
+    )).toMatchObject({
+      valid: false,
+      reason: 'expected 1 recall suggestions, got 2',
     });
   });
 
@@ -278,6 +324,204 @@ describe('paired release semantic validators', () => {
       output,
       { ...captionTimeline, tracks: [{ id: 'captions', kind: 'visual', muted: true }] },
     )).toMatchObject({ valid: false, reason: 'expected 0 entries, got 2' });
+  });
+
+  it('derives exact adjacent clip links from the complete primary visual track', () => {
+    const captionTimeline = {
+      tracks: [
+        { id: 'captions', kind: 'visual' },
+        { id: 'V1', kind: 'visual' },
+      ],
+      clips: [
+        { id: 'caption-b', track: 'captions', at: 5, hold: 3, clipType: 'text' },
+        { id: 'caption-a', track: 'captions', at: 2, hold: 2, clipType: 'text' },
+        { id: 'media-a', track: 'V1', at: 0, hold: 4, clipType: 'media' },
+      ],
+    };
+    const output = {
+      schemaVersion: 1,
+      generatedFromVersion: 8,
+      entries: [{
+        id: 'clip-link-caption-a-to-caption-b',
+        sourceClipId: 'caption-a',
+        targetClipId: 'caption-b',
+        trackId: 'captions',
+        time: 4,
+        offset: 0,
+        label: 'Link caption-a → caption-b',
+      }],
+    };
+    expect(validateExtensionOutput(
+      'com.reigh.creative-lab.branching-cut',
+      output,
+      captionTimeline,
+    )).toMatchObject({ valid: true, count: 1 });
+    expect(validateExtensionOutput(
+      'com.reigh.creative-lab.branching-cut',
+      { ...output, entries: [{ ...output.entries[0], targetClipId: 'media-a' }] },
+      captionTimeline,
+    )).toMatchObject({
+      valid: false,
+      reason: 'clip-link entries do not match the current timeline',
+    });
+  });
+
+  it('persists complete Chromatic and Recall streams beyond the 128-marker viewport', () => {
+    const clips = Array.from({ length: 129 }, (_, index) => ({
+      id: `caption-${String(index).padStart(3, '0')}`,
+      track: 'captions',
+      at: index * 2,
+      duration: 1,
+      clipType: 'text',
+    }));
+    const tracks = [{ id: 'captions', kind: 'visual', label: 'Captions', muted: false }];
+    const chromaticEntries = clips.map((clip) => ({
+      id: `constellation-${clip.id}`,
+      sourceClipId: clip.id,
+      trackId: 'captions',
+      trackLabel: 'Captions',
+      trackOrder: 0,
+      pacingClass: 'steady',
+      time: clip.at,
+      duration: 1,
+      intensity: 0.5,
+      color: '#52e8d4',
+      label: 'Pacing steady · Captions · steady pacing (structural fallback)',
+    }));
+    expect(validateExtensionOutput(
+      'com.reigh.creative-lab.chromatic-constellation',
+      {
+        schemaVersion: 1,
+        generatedFromVersion: 5,
+        coverage: {
+          totalCandidates: 129,
+          persistedCount: 129,
+          displayLimit: 128,
+          displayedCount: 128,
+          omittedCount: 1,
+          sourceTrackId: 'captions',
+          sourceTrackLabel: 'Captions',
+          status: 'truncated',
+        },
+        entries: chromaticEntries,
+      },
+      { tracks, clips },
+    )).toMatchObject({ valid: true, count: 129 });
+
+    const sourceSignature = releaseHostFingerprint({
+      sourceContract: 'recall-pulse/v3',
+      primaryTrack: { id: 'captions', index: 0, kind: 'visual', muted: false },
+      clips: clips.map((clip) => ({
+        id: clip.id,
+        track: clip.track,
+        at: clip.at,
+        duration: clip.duration,
+        clipType: clip.clipType,
+      })),
+    });
+    const questions = {
+      concept: 'What is the central idea introduced at this point?',
+      example: 'What concrete example should a learner be able to recall here?',
+      recap: 'What should be recapped before moving beyond this point?',
+      retrieval: 'What question could test retrieval of the material here?',
+    } as const;
+    const colors = {
+      concept: '#52e8ff', example: '#ffd166', recap: '#b388ff', retrieval: '#ff4d8d',
+    } as const;
+    const recallEntries = clips.map((clip, index) => {
+      const category: keyof typeof questions = index === 0
+        ? 'concept'
+        : index === clips.length - 1
+          ? 'recap'
+          : clip.duration <= 1.5 || index % 3 === 1
+            ? 'example'
+            : 'retrieval';
+      const prompt = questions[category];
+      return {
+        id: `recall-suggestion-${clip.id}`,
+        sourceClipId: clip.id,
+        checkpointId: `recall-checkpoint-${clip.id}`,
+        trackId: 'captions',
+        category,
+        assignment: 'unassigned',
+        time: clip.at,
+        duration: 1,
+        intensity: category === 'concept' ? 0.8 : category === 'recap' ? 0.65 : category === 'retrieval' ? 0.9 : 0.575,
+        prompt,
+        label: `Unassigned review question · ${prompt}`,
+        color: colors[category],
+        heuristic: `ordered-clip:${category}; duration-proxy:1.000s`,
+        method: 'timeline-structure:v2; first-unmuted-visual-track; no semantic/audio analysis',
+      };
+    });
+    const recallResult = validateExtensionOutput(
+      'com.reigh.creative-lab.recall-pulse',
+      { schemaVersion: 3, generatedFromVersion: 6, sourceSignature, stale: false, suggestions: recallEntries },
+      { tracks, clips },
+    );
+    expect(recallResult.valid, recallResult.reason).toBe(true);
+    expect(recallResult.count).toBe(129);
+  });
+
+  it('binds Lockline findings, coverage, and source signature to registry facts', () => {
+    const locklineTimeline = {
+      tracks: [{ id: 'V1', kind: 'visual', label: 'Video', muted: false }],
+      assetKeys: ['online.mov'],
+      knownExtensionIds: ['com.reigh.transcript-lane'],
+      clips: [{
+        id: 'asset-clip',
+        track: 'V1',
+        at: 12.25,
+        duration: 2,
+        asset: 'missing.mov',
+        source_uuid: 'com.reigh.transcript-lane',
+      }],
+    };
+    const sourceSignature = releaseHostFingerprint({
+      sourceContract: 'lockline-inspector/v2',
+      assetKeys: ['online.mov'],
+      trackIds: ['V1'],
+      clips: [{
+        id: 'asset-clip',
+        track: 'V1',
+        at: '12.25',
+        duration: '2',
+        materialRefs: [['material.asset.missing.mov.asset-clip', 'asset-clip', 'missing.mov']],
+        sourceRefs: [[
+          'source.com.reigh.transcript-lane.asset-clip',
+          'asset-clip',
+          'extension',
+          'com.reigh.transcript-lane',
+          '',
+          'com.reigh.transcript-lane',
+        ]],
+      }],
+    });
+    const output = {
+      schemaVersion: 2,
+      generatedFromVersion: 9,
+      sourceSignature,
+      coverage: {
+        totalClips: 1, scannedClips: 1, eligibleClips: 1, skippedInvalidClips: 0,
+        candidateFindings: 1, persistedFindings: 1, omittedFindings: 0, omittedClips: 0,
+      },
+      entries: [
+        { id: 'lockline-missing-registry-asset-key-asset-clip', sourceClipId: 'asset-clip', trackId: 'V1', kind: 'missing-registry-asset-key', severity: 'error', time: 12.25, label: 'error · clip asset-clip · missing registry asset key: missing.mov · refs: material.asset.missing.mov.asset-clip', color: '#ff8c42', referenceIds: ['material.asset.missing.mov.asset-clip'], assetKeys: ['missing.mov'] },
+      ],
+    };
+    expect(validateExtensionOutput(
+      'com.reigh.creative-lab.lockline-inspector',
+      output,
+      locklineTimeline,
+    )).toMatchObject({ valid: true, count: 1 });
+    expect(validateExtensionOutput(
+      'com.reigh.creative-lab.lockline-inspector',
+      { ...output, sourceSignature: `${sourceSignature}drift` },
+      locklineTimeline,
+    )).toMatchObject({
+      valid: false,
+      reason: 'Lockline output does not match the current registry and timeline',
+    });
   });
 
   it('requires exact caption IDs, text and timing and proves idempotence', () => {

@@ -2082,3 +2082,30 @@ fresh console collection.
 - The failed raw evidence has artifact-index SHA-256
   `092eb5ec7db34ede275a6c38a32872eb8327217a96cff040315f16e2dd34c4dd`.
   It is retained as RC25 diagnostic history and is not a passing receipt.
+
+### Release oracles need per-extension semantics and phase-aware persistence
+
+- RC26 advanced through Foley and then exposed the same abstraction failure in
+  Sequential Clip-Link Scaffolder: a visual-media helper excluded the two text
+  clips that its producer intentionally links, so the validator expected zero
+  links while the command correctly persisted one.
+- Auditing the remaining command tail found the broader pattern before another
+  candidate cycle. Chromatic and Recall also consume text clips and persist
+  complete streams beyond their 128-marker viewport; their validators had
+  excluded text and imposed a false persistence cap. Lockline consumes registry
+  asset keys plus projected material/source references, but its validator was
+  not receiving those facts and only checked loose coverage inequalities.
+- Each remaining validator now independently derives its exact public contract:
+  adjacent links; pacing classifications and truthful display coverage; review
+  categories, questions, and host FNV source signatures; and bounded Lockline
+  findings, coverage, registry references, and source signature. Regressions
+  cover default-unmuted text tracks, forged values, 129 persisted suggestions,
+  and concrete missing/mismatched registry provenance.
+- The multi-phase gate also deliberately drags a clip after commands run. On
+  restart, those derived outputs may be honestly stale. First phase therefore
+  performs semantic validation; restart proves byte-identical persistence
+  against the first phase's trusted fingerprints rather than recomputing output
+  against a timeline the commands never observed.
+- The failed raw evidence has artifact-index SHA-256
+  `9f251171350b6be6d482f5f56a6b86fb4fefcc6df1d58ba246e4c15041989c8d`.
+  It is retained as RC26 diagnostic history and is not a passing receipt.

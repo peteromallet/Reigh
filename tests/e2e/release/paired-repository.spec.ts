@@ -6,6 +6,7 @@ import { CLIP_BODY_SELECTOR } from '../../../src/tools/video-editor/lib/timeline
 import { transcriptCaptionClipId } from '../../../src/tools/video-editor/dev/transcript-lane/extension.ts';
 import {
   AUDIO_CARRIER_FILE,
+  canonicalFingerprint,
   hasSuccessfulAudioFullFetch,
   hasSuccessfulAudioMediaRange,
   isExpectedAudioMetadataAbort,
@@ -17,6 +18,7 @@ import {
   type ExpectedCaption,
   type AudioTransportObservation,
   type ValidationResult,
+  type ProbeTimeline,
 } from './paired-repository.validators.ts';
 
 const phase = process.env.PAIRED_RELEASE_PHASE;
@@ -62,7 +64,7 @@ const editorUrl = `${baseUrl}/tools/video-editor?localProject=${project}&localTi
 
 type TimelineConfig = {
   app?: Record<string, Record<string, unknown>>;
-  tracks?: Array<{ id?: string; kind?: string; muted?: boolean }>;
+  tracks?: Array<{ id?: string; kind?: string; label?: string; muted?: boolean }>;
   clips?: Array<{
     id?: string;
     at?: number;
@@ -74,6 +76,8 @@ type TimelineConfig = {
     clipType?: string;
     track?: string;
     asset?: string;
+    source_uuid?: string;
+    generation?: Record<string, unknown>;
     text?: string;
   }>;
   output?: { fps?: number; resolution?: string; file?: string };
@@ -100,6 +104,20 @@ type RunawaySnapshot = {
 type RunawayUiProof = {
   firstManifestId: string;
   lastManifestId: string;
+};
+
+type FirstPhaseState = {
+  timelineStateHash?: string;
+  runawayHash?: string;
+  runawayCount?: number;
+  runawayRunId?: string;
+  runawayFirstManifestId?: string;
+  runawayLastManifestId?: string;
+  runawayFirstFrame?: number;
+  runawayLastFrame?: number;
+  runawayUiFirstManifestId?: string;
+  runawayUiLastManifestId?: string;
+  extensionFingerprints?: Record<string, string>;
 };
 
 type MutableRunawayPayload = {
@@ -587,9 +605,20 @@ async function readValidatedProjectData(
 ): Promise<{ value: unknown; validation: ValidationResult }> {
   const timeline = await readTimeline(request);
   const value = timeline.config.app?.[extensionId]?.[key];
+  const registryAssets = timeline.registry.assets;
+  const assetKeys = registryAssets !== null
+    && typeof registryAssets === 'object'
+    && !Array.isArray(registryAssets)
+    ? Object.keys(registryAssets)
+    : [];
+  const probeTimeline: ProbeTimeline = {
+    ...timeline.config,
+    assetKeys,
+    knownExtensionIds: EXTENSION_PROBES.map((probe) => probe.id),
+  };
   return {
     value,
-    validation: validateExtensionOutput(extensionId, value, timeline.config),
+    validation: validateExtensionOutput(extensionId, value, probeTimeline),
   };
 }
 
@@ -642,7 +671,11 @@ async function assertPulseAudioBoundaries(request: APIRequestContext) {
   ]);
 }
 
-async function proveAllExtensionLifecycles(page: Page, request: APIRequestContext): Promise<Record<string, string>> {
+async function proveAllExtensionLifecycles(
+  page: Page,
+  request: APIRequestContext,
+  persistedFingerprints: Record<string, string> | null = null,
+): Promise<Record<string, string>> {
   const fingerprints: Record<string, string> = {};
   await page.getByRole('tab', { name: 'Extensions' }).click();
   const inventory = page.getByRole('region', { name: 'Local extensions' });
@@ -685,14 +718,20 @@ async function proveAllExtensionLifecycles(page: Page, request: APIRequestContex
           fingerprints[probe.id] = after.fingerprint!;
           if (probe.id === 'com.reigh.creative-lab.pulse-map') await assertPulseAudioBoundaries(request);
         } else if (phase === 'restart') {
-          const after = await expectValidatedProjectData(
-            request,
-            probe.id,
-            probe.projectDataKey!,
-            null,
-            false,
-          );
-          fingerprints[probe.id] = after.fingerprint!;
+          // The first phase deliberately edits the timeline after commands
+          // run. Derived outputs may therefore be honestly stale on restart.
+          // Prove byte-identical persistence against the first phase's output
+          // fingerprint instead of pretending they were regenerated.
+          const expectedFingerprint = persistedFingerprints?.[probe.id];
+          if (!expectedFingerprint) {
+            throw new Error(`missing first-phase fingerprint for ${probe.id}`);
+          }
+          if (beforeValue === undefined || beforeValue === null) {
+            throw new Error(`${probe.id} lost persisted ${probe.projectDataKey}`);
+          }
+          const persistedFingerprint = canonicalFingerprint(beforeValue);
+          expect(persistedFingerprint).toBe(expectedFingerprint);
+          fingerprints[probe.id] = persistedFingerprint;
           if (probe.id === 'com.reigh.creative-lab.pulse-map') await assertPulseAudioBoundaries(request);
         }
       } else if (probe.contribution === 'transcript-lane') {
@@ -938,6 +977,11 @@ async function renderAndDownload(
 
 test(`paired repository acceptance phase: ${phase}`, async ({ page, request }) => {
   await mkdir(evidenceDir!, { recursive: true });
+  const firstState = phase === 'restart'
+    ? JSON.parse(
+      await readFile(resolve(evidenceDir!, 'browser-first-state.json'), 'utf8'),
+    ) as FirstPhaseState
+    : null;
   const initial = await readTimeline(request);
   assertPairedAudioCarrier(initial);
   expect(initial.timeline_ulid).toMatch(/^[0123456789abcdefghjkmnpqrstvwxyz]{26}$/);
@@ -947,7 +991,11 @@ test(`paired repository acceptance phase: ${phase}`, async ({ page, request }) =
   const runawaySnapshot = await readRunawaySnapshot(request);
   const issues = await openEditor(page, initial.timeline_ulid!);
   const runawayUi = phase === 'restore' ? null : await proveRunawayLane(page);
-  const extensionFingerprints = await proveAllExtensionLifecycles(page, request);
+  const extensionFingerprints = await proveAllExtensionLifecycles(
+    page,
+    request,
+    firstState?.extensionFingerprints ?? null,
+  );
 
   if (phase === 'first') {
     expect(runawaySnapshot?.count).toBe(expectedRunaway);
@@ -971,9 +1019,7 @@ test(`paired repository acceptance phase: ${phase}`, async ({ page, request }) =
     await expect.poll(async () => validateTranscriptCaptions((await readTimeline(request)).config.clips ?? [], expected).valid).toBe(true);
     expect(primaryClip(saved.config)?.at).not.toBe(initialAt);
   } else if (phase === 'restart') {
-    const firstState = JSON.parse(
-      await readFile(resolve(evidenceDir!, 'browser-first-state.json'), 'utf8'),
-    ) as { timelineStateHash?: string; runawayHash?: string; runawayCount?: number; runawayRunId?: string; runawayFirstManifestId?: string; runawayLastManifestId?: string; runawayFirstFrame?: number; runawayLastFrame?: number; runawayUiFirstManifestId?: string; runawayUiLastManifestId?: string; extensionFingerprints?: Record<string, string> };
+    if (!firstState) throw new Error('restart phase did not load first-phase evidence');
     expect(runawaySnapshot?.count).toBe(expectedRunaway);
     expect(initialStateHash).toBe(firstState.timelineStateHash);
     expect(runawaySnapshot?.hash).toBe(firstState.runawayHash);

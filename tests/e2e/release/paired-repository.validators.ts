@@ -11,11 +11,19 @@ export type ProbeClip = {
   track?: string;
   clipType?: string;
   text?: unknown;
+  asset?: string;
+  source_uuid?: string;
+  generation?: Record<string, unknown>;
 };
 
-export type ProbeTrack = { id?: string; kind?: string; muted?: boolean };
+export type ProbeTrack = { id?: string; kind?: string; label?: string; muted?: boolean };
 
-export type ProbeTimeline = { clips?: ProbeClip[]; tracks?: ProbeTrack[] };
+export type ProbeTimeline = {
+  clips?: ProbeClip[];
+  tracks?: ProbeTrack[];
+  assetKeys?: string[];
+  knownExtensionIds?: string[];
+};
 
 export type ValidationResult = {
   valid: boolean;
@@ -188,6 +196,38 @@ function canonical(value: unknown): unknown {
 
 export function canonicalFingerprint(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex');
+}
+
+function hostCanonical(value: unknown, seen: Set<unknown>): unknown {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value !== 'object') return null;
+  if (seen.has(value)) throw new TypeError('release host fingerprint received circular input');
+  seen.add(value);
+  try {
+    if (Array.isArray(value)) return value.map((entry) => hostCanonical(entry, seen));
+    return Object.fromEntries(Object.keys(value as Record<string, unknown>)
+      .sort()
+      .flatMap((key) => {
+        const entry = (value as Record<string, unknown>)[key];
+        return entry === undefined || typeof entry === 'function' || typeof entry === 'symbol'
+          ? []
+          : [[key, hostCanonical(entry, seen)]];
+      }));
+  } finally {
+    seen.delete(value);
+  }
+}
+
+/** Independent implementation of the public reigh-fnv1a64-v1 contract. */
+export function releaseHostFingerprint(value: unknown): string {
+  const serialized = JSON.stringify(hostCanonical(value, new Set()));
+  let hash = 0xcbf29ce484222325n;
+  for (const byte of new TextEncoder().encode(serialized)) {
+    hash ^= BigInt(byte);
+    hash = (hash * 0x100000001b3n) & 0xffffffffffffffffn;
+  }
+  return `reigh-fnv1a64-v1:${hash.toString(16).padStart(16, '0')}`;
 }
 
 function invalid(reason: string): ValidationResult {
@@ -663,7 +703,7 @@ function validateFaultline(value: unknown, timeline: ProbeTimeline): ValidationR
     : invalid('faultline entries do not match the current timeline');
 }
 
-function normalizeFoleyNumber(value: number): number {
+function normalizeStructuralTime(value: number): number {
   if (!Number.isFinite(value) || value <= 0) return 0;
   return Math.round(value * 1_000) / 1_000;
 }
@@ -693,7 +733,7 @@ function expectedFoleyEntries(timeline: ProbeTimeline): Array<Record<string, unk
       sourceClipId: clip.id,
       boundary,
       category: 'unassigned',
-      time: normalizeFoleyNumber(structuralTime),
+      time: normalizeStructuralTime(structuralTime),
       offset: 0,
       pan: 0,
       distance: 0.5,
@@ -731,6 +771,525 @@ function validateFoley(value: unknown, timeline: ProbeTimeline): ValidationResul
   return canonicalFingerprint(value.entries) === canonicalFingerprint(expected)
     ? shape
     : invalid('foley entries do not match the current timeline');
+}
+
+function expectedClipLinkEntries(timeline: ProbeTimeline): Array<Record<string, unknown>> {
+  const primary = (timeline.tracks ?? [])
+    .find((track) => track.kind === 'visual' && track.muted !== true);
+  if (!primary) return [];
+  const clips = snapshotClips(timeline)
+    .filter((clip) => clip.track === primary.id
+      && nonEmpty(clip.id)
+      && finite(clip.at) && clip.at >= 0
+      && finite(clip.duration) && clip.duration > 0)
+    .sort((left, right) => (
+      (left.at ?? 0) - (right.at ?? 0) || left.id!.localeCompare(right.id!)
+    ));
+  return clips.slice(0, -1).map((source, index) => {
+    const target = clips[index + 1]!;
+    return {
+      id: `clip-link-${source.id}-to-${target.id}`,
+      sourceClipId: source.id,
+      targetClipId: target.id,
+      trackId: source.track,
+      time: normalizeStructuralTime((source.at ?? 0) + (source.duration ?? 0)),
+      offset: 0,
+      label: `Link ${source.id} → ${target.id}`,
+    };
+  });
+}
+
+function validateClipLinks(value: unknown, timeline: ProbeTimeline): ValidationResult {
+  const expected = expectedClipLinkEntries(timeline);
+  const shape = envelope(value, 1, {
+    id,
+    sourceClipId,
+    targetClipId: (entry) => nonEmpty(entry.targetClipId),
+    trackId: (entry) => nonEmpty(entry.trackId),
+    time,
+    offset,
+    label,
+  }, timeline, expected.length);
+  if (!shape.valid || !record(value) || !Array.isArray(value.entries)) return shape;
+  return canonicalFingerprint(value.entries) === canonicalFingerprint(expected)
+    ? shape
+    : invalid('clip-link entries do not match the current timeline');
+}
+
+const CHROMATIC_COLORS = {
+  compact: '#ff5c8a',
+  sustained: '#ffc857',
+  steady: '#52e8d4',
+  open: '#8f7cff',
+} as const;
+
+function chromaticMethodLabel(pacingClass: keyof typeof CHROMATIC_COLORS): string {
+  switch (pacingClass) {
+    case 'compact': return 'compact pacing (duration ≤ 0.75s)';
+    case 'sustained': return 'sustained pacing (duration ≥ 4s)';
+    case 'open': return 'open pacing (gap ≥ 2s)';
+    default: return 'steady pacing (structural fallback)';
+  }
+}
+
+function expectedChromaticOutput(timeline: ProbeTimeline): {
+  coverage: Record<string, unknown>;
+  entries: Array<Record<string, unknown>>;
+} {
+  const trackOrder = (timeline.tracks ?? [])
+    .findIndex((track) => track.kind === 'visual' && track.muted !== true);
+  const primary = trackOrder >= 0 ? timeline.tracks?.[trackOrder] : undefined;
+  const trackLabel = primary?.label;
+  const clips = primary ? snapshotClips(timeline)
+    .filter((clip) => clip.track === primary.id
+      && nonEmpty(clip.id)
+      && finite(clip.at) && clip.at >= 0
+      && finite(clip.duration) && clip.duration >= 0)
+    .sort((left, right) => (
+      (left.at ?? 0) - (right.at ?? 0) || left.id!.localeCompare(right.id!)
+    )) : [];
+  let previousEnd = 0;
+  const entries = clips.map((clip) => {
+    const start = Math.max(0, clip.at ?? 0);
+    const duration = Math.max(0, clip.duration ?? 0);
+    const gap = Math.max(0, start - previousEnd);
+    const pacingClass: keyof typeof CHROMATIC_COLORS = gap >= 2
+      ? 'open'
+      : duration >= 4
+        ? 'sustained'
+        : duration <= 0.75
+          ? 'compact'
+          : 'steady';
+    const rawIntensity = pacingClass === 'open'
+      ? 0.35 + Math.min(gap / 6, 0.65)
+      : pacingClass === 'sustained'
+        ? 0.35 + Math.min(duration / 12, 0.65)
+        : pacingClass === 'compact'
+          ? 0.35 + Math.min(1 / Math.max(duration, 0.25), 0.65)
+          : 0.5;
+    previousEnd = Math.max(previousEnd, start + duration);
+    return {
+      id: `constellation-${clip.id}`,
+      sourceClipId: clip.id,
+      trackId: primary!.id,
+      trackLabel,
+      trackOrder,
+      pacingClass,
+      time: normalizeStructuralTime(start),
+      duration: normalizeStructuralTime(duration),
+      intensity: Math.round(Math.min(Math.max(rawIntensity, 0), 1) * 1_000) / 1_000,
+      color: CHROMATIC_COLORS[pacingClass],
+      label: `Pacing ${pacingClass} · ${trackLabel} · ${chromaticMethodLabel(pacingClass)}`,
+    };
+  }).sort((left, right) => left.time - right.time || left.id.localeCompare(right.id));
+  const displayedCount = Math.min(entries.length, 128);
+  return {
+    coverage: {
+      totalCandidates: entries.length,
+      persistedCount: entries.length,
+      displayLimit: 128,
+      displayedCount,
+      omittedCount: Math.max(0, entries.length - displayedCount),
+      sourceTrackId: entries[0]?.trackId ?? null,
+      sourceTrackLabel: entries[0]?.trackLabel ?? null,
+      status: entries.length > 128 ? 'truncated' : 'complete',
+    },
+    entries,
+  };
+}
+
+function validateChromatic(value: unknown, timeline: ProbeTimeline): ValidationResult {
+  if (!record(value)) return invalid('expected a chromatic envelope object');
+  if (value.schemaVersion !== 1) return invalid('schemaVersion must be 1');
+  if (!finite(value.generatedFromVersion) || value.generatedFromVersion < 0) {
+    return invalid('generatedFromVersion must be non-negative');
+  }
+  if (!record(value.coverage) || !Array.isArray(value.entries)) {
+    return invalid('chromatic envelope requires coverage and entries');
+  }
+  const expected = expectedChromaticOutput(timeline);
+  const actualShape = entries(value.entries, {
+    id,
+    sourceClipId,
+    trackId: (entry) => nonEmpty(entry.trackId),
+    trackLabel: (entry) => nonEmpty(entry.trackLabel),
+    trackOrder: (entry) => integer(entry.trackOrder) && bounded(entry.trackOrder, 0),
+    pacingClass: (entry) => Object.prototype.hasOwnProperty.call(CHROMATIC_COLORS, String(entry.pacingClass)),
+    time,
+    duration: (entry) => bounded(entry.duration, 0),
+    intensity,
+    color: (entry) => nonEmpty(entry.color),
+    label,
+  });
+  if (!actualShape.valid) return actualShape;
+  return canonicalFingerprint({ coverage: value.coverage, entries: value.entries })
+    === canonicalFingerprint(expected)
+    ? valid(value, value.entries.length)
+    : invalid('chromatic output does not match the current timeline');
+}
+
+const RECALL_COLORS = {
+  concept: '#52e8ff',
+  example: '#ffd166',
+  recap: '#b388ff',
+  retrieval: '#ff4d8d',
+} as const;
+
+const RECALL_QUESTIONS = {
+  concept: 'What is the central idea introduced at this point?',
+  example: 'What concrete example should a learner be able to recall here?',
+  recap: 'What should be recapped before moving beyond this point?',
+  retrieval: 'What question could test retrieval of the material here?',
+} as const;
+
+function expectedRecallOutput(timeline: ProbeTimeline): {
+  sourceSignature: string;
+  suggestions: Array<Record<string, unknown>>;
+} {
+  const trackIndex = (timeline.tracks ?? [])
+    .findIndex((track) => track.kind === 'visual' && track.muted !== true);
+  const primary = trackIndex >= 0 ? timeline.tracks?.[trackIndex] : undefined;
+  const clips = primary ? snapshotClips(timeline)
+    .filter((clip) => clip.track === primary.id
+      && nonEmpty(clip.id)
+      && finite(clip.at) && clip.at >= 0
+      && finite(clip.duration) && clip.duration > 0)
+    .sort((left, right) => (
+      (left.at ?? 0) - (right.at ?? 0) || left.id!.localeCompare(right.id!)
+    )) : [];
+  const sourceSignature = releaseHostFingerprint(primary ? {
+    sourceContract: 'recall-pulse/v3',
+    primaryTrack: {
+      id: primary.id,
+      index: trackIndex,
+      kind: primary.kind,
+      muted: primary.muted ?? false,
+    },
+    clips: clips.map((clip) => ({
+      id: clip.id,
+      track: clip.track,
+      at: clip.at,
+      duration: clip.duration,
+      clipType: clip.clipType ?? null,
+    })),
+  } : { sourceContract: 'recall-pulse/v3', primaryTrack: null, clips: [] });
+  const lastIndex = clips.length - 1;
+  const suggestions = clips.map((clip, index) => {
+    const duration = clip.duration!;
+    const category: keyof typeof RECALL_COLORS = index === 0
+      ? 'concept'
+      : index === lastIndex
+        ? 'recap'
+        : duration <= 1.5 || index % 3 === 1
+          ? 'example'
+          : 'retrieval';
+    const prompt = RECALL_QUESTIONS[category];
+    const rawIntensity = category === 'concept'
+      ? 0.8
+      : category === 'recap'
+        ? 0.65
+        : category === 'retrieval'
+          ? 0.9
+          : 0.45 + Math.min(duration / 8, 0.45);
+    return {
+      id: `recall-suggestion-${clip.id}`,
+      sourceClipId: clip.id,
+      checkpointId: `recall-checkpoint-${clip.id}`,
+      trackId: primary!.id,
+      category,
+      assignment: 'unassigned',
+      time: normalizeStructuralTime(clip.at!),
+      duration: normalizeStructuralTime(duration),
+      intensity: Math.round(Math.min(Math.max(rawIntensity, 0), 1) * 1_000) / 1_000,
+      prompt,
+      label: `Unassigned review question · ${prompt}`,
+      color: RECALL_COLORS[category],
+      heuristic: `ordered-clip:${category}; duration-proxy:${duration.toFixed(3)}s`,
+      method: 'timeline-structure:v2; first-unmuted-visual-track; no semantic/audio analysis',
+    };
+  }).sort((left, right) => left.time - right.time || left.id.localeCompare(right.id));
+  return { sourceSignature, suggestions };
+}
+
+function validateRecall(value: unknown, timeline: ProbeTimeline): ValidationResult {
+  if (!record(value)) return invalid('expected a recall envelope object');
+  if (value.schemaVersion !== 3) return invalid('schemaVersion must be 3');
+  if (!finite(value.generatedFromVersion) || value.generatedFromVersion < 0) {
+    return invalid('generatedFromVersion must be non-negative');
+  }
+  if (value.stale !== false || !nonEmpty(value.sourceSignature) || !Array.isArray(value.suggestions)) {
+    return invalid('invalid recall source provenance or suggestions');
+  }
+  const shape = entries(value.suggestions, {
+    id,
+    sourceClipId,
+    checkpointId: (entry) => nonEmpty(entry.checkpointId),
+    trackId: (entry) => nonEmpty(entry.trackId),
+    category: (entry) => Object.prototype.hasOwnProperty.call(RECALL_COLORS, String(entry.category)),
+    assignment: (entry) => entry.assignment === 'unassigned',
+    time,
+    duration: (entry) => bounded(entry.duration, 0),
+    intensity,
+    prompt: (entry) => nonEmpty(entry.prompt),
+    label,
+    color: (entry) => nonEmpty(entry.color),
+    heuristic: (entry) => nonEmpty(entry.heuristic),
+    method: (entry) => nonEmpty(entry.method),
+  });
+  if (!shape.valid) return shape;
+  const expected = expectedRecallOutput(timeline);
+  if (value.sourceSignature !== expected.sourceSignature) {
+    return invalid(`recall source signature mismatch: expected ${expected.sourceSignature}, got ${String(value.sourceSignature)}`);
+  }
+  if (value.suggestions.length !== expected.suggestions.length) {
+    return invalid(`expected ${expected.suggestions.length} recall suggestions, got ${value.suggestions.length}`);
+  }
+  const actualFingerprint = canonicalFingerprint(value.suggestions);
+  const expectedFingerprint = canonicalFingerprint(expected.suggestions);
+  const mismatchIndex = value.suggestions.findIndex((entry, index) => (
+    canonicalFingerprint(entry) !== canonicalFingerprint(expected.suggestions[index])
+  ));
+  return actualFingerprint === expectedFingerprint
+    ? valid(value, value.suggestions.length)
+    : invalid(`recall suggestions do not match the current timeline at index ${mismatchIndex}: expectedFingerprint=${expectedFingerprint}; actualFingerprint=${actualFingerprint}`);
+}
+
+const LOCKLINE_COLORS = {
+  'missing-registry-asset-key': '#ff8c42',
+  'material-ref-clip-mismatch': '#b388ff',
+  'source-ref-clip-mismatch': '#52e8ff',
+} as const;
+
+const LOCKLINE_SEVERITIES = {
+  'missing-registry-asset-key': 'error',
+  'material-ref-clip-mismatch': 'warning',
+  'source-ref-clip-mismatch': 'warning',
+} as const;
+
+type LocklineKind = keyof typeof LOCKLINE_COLORS;
+
+function objectString(value: Record<string, unknown> | undefined, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const candidate = value?.[key];
+    if (typeof candidate === 'string' && candidate.length > 0) return candidate;
+  }
+  return undefined;
+}
+
+function probeMaterialRefs(clip: ProbeClip): Array<{ id: string; clipId: string; assetKey?: string }> {
+  const result: Array<{ id: string; clipId: string; assetKey?: string }> = [];
+  if (nonEmpty(clip.asset) && nonEmpty(clip.id)) {
+    result.push({ id: `material.asset.${clip.asset}.${clip.id}`, clipId: clip.id, assetKey: clip.asset });
+  }
+  if (record(clip.generation) && nonEmpty(clip.id)) {
+    result.push({ id: `material.generation.${clip.id}`, clipId: clip.id });
+  }
+  return result;
+}
+
+function probeSourceRefs(clip: ProbeClip, knownExtensionIds: ReadonlySet<string>): Array<{
+  id: string;
+  clipId: string;
+  sourceKind: string;
+  sourceUuid?: string;
+  generationId?: string;
+  extensionId?: string;
+}> {
+  const result: Array<{
+    id: string;
+    clipId: string;
+    sourceKind: string;
+    sourceUuid?: string;
+    generationId?: string;
+    extensionId?: string;
+  }> = [];
+  if (nonEmpty(clip.source_uuid) && nonEmpty(clip.id)) {
+    const extensionOwned = knownExtensionIds.has(clip.source_uuid);
+    result.push({
+      id: `source.${clip.source_uuid}.${clip.id}`,
+      clipId: clip.id,
+      sourceKind: extensionOwned ? 'extension' : 'unknown',
+      sourceUuid: clip.source_uuid,
+      ...(extensionOwned ? { extensionId: clip.source_uuid } : {}),
+    });
+  }
+  if (record(clip.generation) && nonEmpty(clip.id)) {
+    const generationId = objectString(clip.generation, ['id', 'generationId', 'uuid']);
+    const extensionId = objectString(clip.generation, ['extensionId', 'providerId']);
+    result.push({
+      id: `source.generation.${generationId ?? clip.id}`,
+      clipId: clip.id,
+      sourceKind: extensionId ? 'extension' : 'generation',
+      ...(generationId ? { generationId } : {}),
+      ...(extensionId ? { extensionId } : {}),
+    });
+  }
+  return result;
+}
+
+function uniqueLockline(values: string[]): string[] {
+  return [...new Set(values)].sort().slice(0, 32);
+}
+
+function locklineSummary(values: string[]): string {
+  return values.length <= 3 ? values.join(', ') : `${values.slice(0, 3).join(', ')} +${values.length - 3} more`;
+}
+
+function expectedLocklineOutput(timeline: ProbeTimeline): {
+  sourceSignature: string;
+  coverage: Record<string, unknown>;
+  entries: Array<Record<string, unknown>>;
+} {
+  const knownExtensionIds = new Set(Array.isArray(timeline.knownExtensionIds)
+    ? timeline.knownExtensionIds.filter(nonEmpty)
+    : []);
+  const clips = (timeline.clips ?? []).map((clip) => ({
+    ...clip,
+    duration: snapshotDuration(clip),
+    materialRefs: probeMaterialRefs(clip),
+    sourceRefs: probeSourceRefs(clip, knownExtensionIds),
+  }));
+  const trackIds = new Set((timeline.tracks ?? []).flatMap((track) => nonEmpty(track.id) ? [track.id] : []));
+  const assetKeys = new Set(timeline.assetKeys ?? []);
+  const ordered = clips.slice().sort((left, right) => {
+    const at = (finite(left.at) ? left.at : 0) - (finite(right.at) ? right.at : 0);
+    if (at !== 0) return at;
+    const track = String(left.track ?? '').localeCompare(String(right.track ?? ''));
+    return track !== 0 ? track : String(left.id ?? '').localeCompare(String(right.id ?? ''));
+  });
+  const scanned = ordered.slice(0, 512);
+  const candidates: Array<Record<string, unknown>> = [];
+  let eligibleClips = 0;
+  let skippedInvalidClips = 0;
+  const add = (
+    clip: typeof clips[number],
+    kind: LocklineKind,
+    referenceIds: string[],
+    findingLabel: string,
+    missingAssetKeys?: string[],
+  ): void => {
+    candidates.push({
+      id: `lockline-${kind}-${clip.id}`,
+      sourceClipId: clip.id,
+      trackId: clip.track,
+      kind,
+      severity: LOCKLINE_SEVERITIES[kind],
+      time: normalizeStructuralTime(finite(clip.at) ? clip.at : 0),
+      label: findingLabel,
+      color: LOCKLINE_COLORS[kind],
+      referenceIds: uniqueLockline(referenceIds),
+      ...(missingAssetKeys ? { assetKeys: uniqueLockline(missingAssetKeys) } : {}),
+    });
+  };
+  for (const clip of scanned) {
+    const validClip = nonEmpty(clip.id) && nonEmpty(clip.track)
+      && finite(clip.at) && finite(clip.duration)
+      && clip.at >= 0 && clip.duration > 0 && trackIds.has(clip.track);
+    if (!validClip) {
+      skippedInvalidClips += 1;
+      continue;
+    }
+    eligibleClips += 1;
+    const missing = clip.materialRefs.filter((entry) => (
+      nonEmpty(entry.assetKey) && !assetKeys.has(entry.assetKey)
+    ));
+    if (missing.length > 0) {
+      const keys = uniqueLockline(missing.flatMap((entry) => entry.assetKey ? [entry.assetKey] : []));
+      const refs = uniqueLockline(missing.map((entry) => entry.id));
+      add(clip, 'missing-registry-asset-key', refs,
+        `error · clip ${clip.id} · missing registry asset key: ${locklineSummary(keys)} · refs: ${locklineSummary(refs)}`,
+        keys);
+    }
+    const wrongMaterials = clip.materialRefs.filter((entry) => entry.clipId !== clip.id);
+    if (wrongMaterials.length > 0) {
+      const refs = uniqueLockline(wrongMaterials.map((entry) => entry.id));
+      add(clip, 'material-ref-clip-mismatch', refs,
+        `warning · clip ${clip.id} · material refs identify another clip: ${locklineSummary(refs)}`);
+    }
+    const wrongSources = clip.sourceRefs.filter((entry) => entry.clipId !== clip.id);
+    if (wrongSources.length > 0) {
+      const refs = uniqueLockline(wrongSources.map((entry) => entry.id));
+      add(clip, 'source-ref-clip-mismatch', refs,
+        `warning · clip ${clip.id} · source refs identify another clip: ${locklineSummary(refs)}`);
+    }
+  }
+  const findings = candidates.slice().sort((left, right) => {
+    const severity = (left.severity === 'error' ? 0 : 1) - (right.severity === 'error' ? 0 : 1);
+    if (severity !== 0) return severity;
+    const kind = String(left.kind).localeCompare(String(right.kind));
+    return kind !== 0
+      ? kind
+      : (left.time as number) - (right.time as number)
+        || String(left.id).localeCompare(String(right.id));
+  }).slice(0, 256).sort((left, right) => (
+    (left.time as number) - (right.time as number)
+    || String(left.id).localeCompare(String(right.id))
+  ));
+  const signatureClips = clips.slice().sort((left, right) => String(left.id).localeCompare(String(right.id)))
+    .map((clip) => ({
+      id: clip.id,
+      track: clip.track,
+      at: String(clip.at),
+      duration: String(clip.duration),
+      materialRefs: clip.materialRefs.map((entry) => [entry.id, entry.clipId, entry.assetKey ?? ''])
+        .sort((left, right) => left.join('\u0000').localeCompare(right.join('\u0000'))),
+      sourceRefs: clip.sourceRefs.map((entry) => [
+        entry.id,
+        entry.clipId,
+        entry.sourceKind,
+        entry.sourceUuid ?? '',
+        entry.generationId ?? '',
+        entry.extensionId ?? '',
+      ]).sort((left, right) => left.join('\u0000').localeCompare(right.join('\u0000'))),
+    }));
+  return {
+    sourceSignature: releaseHostFingerprint({
+      sourceContract: 'lockline-inspector/v2',
+      assetKeys: [...assetKeys].sort(),
+      trackIds: [...trackIds].sort(),
+      clips: signatureClips,
+    }),
+    coverage: {
+      totalClips: clips.length,
+      scannedClips: scanned.length,
+      eligibleClips,
+      skippedInvalidClips,
+      candidateFindings: candidates.length,
+      persistedFindings: findings.length,
+      omittedFindings: Math.max(0, candidates.length - findings.length),
+      omittedClips: Math.max(0, clips.length - scanned.length),
+    },
+    entries: findings,
+  };
+}
+
+function validateLockline(value: unknown, timeline: ProbeTimeline): ValidationResult {
+  if (!record(value)) return invalid('expected a Lockline envelope object');
+  if (value.schemaVersion !== 2) return invalid('schemaVersion must be 2');
+  if (!finite(value.generatedFromVersion) || value.generatedFromVersion < 0) {
+    return invalid('generatedFromVersion must be non-negative');
+  }
+  if (!nonEmpty(value.sourceSignature) || !record(value.coverage) || !Array.isArray(value.entries)) {
+    return invalid('invalid Lockline source provenance, coverage, or entries');
+  }
+  const shape = entries(value.entries, {
+    id,
+    sourceClipId,
+    trackId: (entry) => nonEmpty(entry.trackId),
+    kind: (entry) => Object.prototype.hasOwnProperty.call(LOCKLINE_COLORS, String(entry.kind)),
+    severity: (entry) => entry.severity === 'warning' || entry.severity === 'error',
+    time,
+    label,
+    color: (entry) => nonEmpty(entry.color),
+    referenceIds: (entry) => Array.isArray(entry.referenceIds) && entry.referenceIds.every(nonEmpty),
+  });
+  if (!shape.valid) return shape;
+  const expected = expectedLocklineOutput(timeline);
+  return value.sourceSignature === expected.sourceSignature
+    && canonicalFingerprint({ coverage: value.coverage, entries: value.entries })
+      === canonicalFingerprint({ coverage: expected.coverage, entries: expected.entries })
+    ? valid(value, value.entries.length)
+    : invalid('Lockline output does not match the current registry and timeline');
 }
 
 function envelope(value: unknown, expectedSchema: number, fieldValidators: Record<string, (entry: Record<string, unknown>) => boolean>, timeline: ProbeTimeline, expectedEntries = expectedBoundaryCount(timeline)): ValidationResult {
@@ -772,30 +1331,15 @@ export function validateExtensionOutput(extensionId: string, value: unknown, tim
     case 'com.reigh.creative-lab.foley-constellation':
       return validateFoley(value, timeline);
     case 'com.reigh.creative-lab.branching-cut':
-      return envelope(value, 1, { id, sourceClipId, targetClipId: (e) => nonEmpty(e.targetClipId), trackId: (e) => nonEmpty(e.trackId), time, offset, label }, timeline, Math.max(0, expectedVisualClips(timeline).length - 1));
+      return validateClipLinks(value, timeline);
     case 'com.reigh.creative-lab.chromatic-constellation': {
-      if (!record(value) || value.schemaVersion !== 1 || !record(value.coverage)) return invalid('invalid chromatic constellation envelope');
-      const result = entries(value.entries, { id, sourceClipId, trackId: (e) => nonEmpty(e.trackId), trackLabel: (e) => nonEmpty(e.trackLabel), trackOrder: (e) => finite(e.trackOrder), pacingClass: (e) => nonEmpty(e.pacingClass), time, duration: (e) => bounded(e.duration, 0), intensity, color: (e) => nonEmpty(e.color), label });
-      const expectedConstellationCount = Math.min(128, expectedVisualClips(timeline).length);
-      if (!result.valid || result.count !== expectedConstellationCount) return result.valid ? invalid(`expected ${expectedConstellationCount} entries, got ${result.count}`) : result;
-      const coverage = value.coverage as Record<string, unknown>;
-      if (!Number.isInteger(coverage.totalCandidates) || (coverage.totalCandidates as number) < result.count || coverage.persistedCount !== result.count || coverage.displayedCount !== result.count || coverage.omittedCount !== (coverage.totalCandidates as number) - result.count) return invalid('chromatic coverage does not describe entries');
-      return valid(value, result.count);
+      return validateChromatic(value, timeline);
     }
     case 'com.reigh.creative-lab.recall-pulse': {
-      if (!record(value) || value.schemaVersion !== 3 || !nonEmpty(value.sourceSignature) || value.stale !== false) return invalid('invalid recall pulse envelope');
-      const result = entries(value.suggestions, { id, sourceClipId, checkpointId: (e) => nonEmpty(e.checkpointId), trackId: (e) => nonEmpty(e.trackId), category: (e) => ['concept', 'example', 'retrieval', 'recap'].includes(String(e.category)), assignment: (e) => e.assignment === 'unassigned', time, duration: (e) => bounded(e.duration, 0), intensity, prompt: (e) => nonEmpty(e.prompt), label, color: (e) => nonEmpty(e.color), heuristic: (e) => nonEmpty(e.heuristic), method: (e) => nonEmpty(e.method) });
-      if (!result.valid) return result;
-      const expectedSuggestionCount = Math.min(128, expectedVisualClips(timeline).length);
-      return result.count === expectedSuggestionCount ? valid(value, result.count) : invalid(`expected ${expectedSuggestionCount} suggestions, got ${result.count}`);
+      return validateRecall(value, timeline);
     }
     case 'com.reigh.creative-lab.lockline-inspector': {
-      if (!record(value) || value.schemaVersion !== 2 || !nonEmpty(value.sourceSignature) || !record(value.coverage)) return invalid('invalid lockline report envelope');
-      const result = entries(value.entries, { id, sourceClipId, trackId: (e) => nonEmpty(e.trackId), kind: (e) => nonEmpty(e.kind), severity: (e) => e.severity === 'warning' || e.severity === 'error', time, label, color: (e) => nonEmpty(e.color), referenceIds: (e) => Array.isArray(e.referenceIds) && e.referenceIds.every(nonEmpty) });
-      if (!result.valid) return result;
-      const coverage = value.coverage as Record<string, unknown>;
-      if (coverage.persistedFindings !== result.count || typeof coverage.candidateFindings !== 'number' || coverage.omittedFindings !== coverage.candidateFindings - result.count || typeof coverage.scannedClips !== 'number' || typeof coverage.totalClips !== 'number' || typeof coverage.eligibleClips !== 'number' || coverage.scannedClips > coverage.totalClips || coverage.eligibleClips > coverage.scannedClips) return invalid('lockline coverage does not describe entries');
-      return valid(value, result.count);
+      return validateLockline(value, timeline);
     }
     default:
       return invalid(`no validator registered for ${extensionId}`);
