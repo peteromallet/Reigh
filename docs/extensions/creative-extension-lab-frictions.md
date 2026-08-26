@@ -2062,3 +2062,23 @@ fresh console collection.
 - The failed raw evidence has artifact-index SHA-256
   `7cab29d356d6fc80b959bfd68cb2cf65a5d19e407e767d0e56d658da15efab1d`.
   It is retained as RC24 diagnostic history and is not a passing receipt.
+
+### Shared count helpers can erase an extension's distinct clip semantics
+
+- RC25 proved that the new validation diagnostic is actionable: Foley
+  Constellation reported `expected 0 entries, got 4` directly in the primary
+  browser receipt. The command correctly created start/end cues for two text
+  clips on the primary transcript-caption track.
+- Its release validator reused a helper built for visual-media extensions. That
+  helper deliberately excludes text clips, but Foley's public producer accepts
+  every valid clip on the primary unmuted visual track. A superficially generic
+  boundary count therefore encoded the wrong product contract.
+- Foley validation now derives the complete producer-shaped cue set: host
+  default normalization, primary-track selection, persisted duration
+  projection, 64-clip/128-cue bounds, ordering, deduplication, exact IDs,
+  boundary times, neutral spatial/category fields, structural intensity, and
+  labels. Canonical equality rejects plausible-looking but forged cue output;
+  regressions use default-unmuted text clips and prove explicit mute exclusion.
+- The failed raw evidence has artifact-index SHA-256
+  `092eb5ec7db34ede275a6c38a32872eb8327217a96cff040315f16e2dd34c4dd`.
+  It is retained as RC25 diagnostic history and is not a passing receipt.

@@ -531,12 +531,6 @@ function validatePulseMap(value: unknown, timeline: ProbeTimeline): ValidationRe
   return shape;
 }
 
-function expectedPrimaryBoundaryCount(timeline: ProbeTimeline): number {
-  return Math.min(128, expectedVisualClips(timeline).reduce((total, clip) => (
-    total + 1 + (Math.max(0, clip.duration ?? 0) > 0 ? 1 : 0)
-  ), 0));
-}
-
 function expectedTerrainBoundaryCount(timeline: ProbeTimeline): number {
   const tracks = new Map((timeline.tracks ?? []).map((track) => [track.id, track]));
   const clips = allUsableClips(timeline).filter((clip) => tracks.get(clip.track)?.kind === 'visual' && tracks.get(clip.track)?.muted !== true);
@@ -669,6 +663,76 @@ function validateFaultline(value: unknown, timeline: ProbeTimeline): ValidationR
     : invalid('faultline entries do not match the current timeline');
 }
 
+function normalizeFoleyNumber(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  return Math.round(value * 1_000) / 1_000;
+}
+
+function expectedFoleyEntries(timeline: ProbeTimeline): Array<Record<string, unknown>> {
+  const primary = (timeline.tracks ?? [])
+    .find((track) => track.kind === 'visual' && track.muted !== true);
+  if (!primary) return [];
+  const clips = snapshotClips(timeline)
+    .filter((clip) => clip.track === primary.id
+      && nonEmpty(clip.id)
+      && finite(clip.at) && clip.at >= 0
+      && finite(clip.duration) && clip.duration >= 0)
+    .sort((left, right) => (
+      (left.at ?? 0) - (right.at ?? 0) || left.id!.localeCompare(right.id!)
+    ))
+    .slice(0, 64);
+  const cues: Array<Record<string, unknown>> = [];
+  const seen = new Set<string>();
+  const add = (clip: ProbeClip, boundary: 'start' | 'end', structuralTime: number): void => {
+    const cueId = `foley-${clip.id}-${boundary}`;
+    if (seen.has(cueId) || cues.length >= 128) return;
+    seen.add(cueId);
+    const durationWeight = Math.min(Math.max(0, clip.duration ?? 0) / 5, 1);
+    cues.push({
+      id: cueId,
+      sourceClipId: clip.id,
+      boundary,
+      category: 'unassigned',
+      time: normalizeFoleyNumber(structuralTime),
+      offset: 0,
+      pan: 0,
+      distance: 0.5,
+      intensity: Math.round((0.25 + durationWeight * 0.5) * 1_000) / 1_000,
+      label: `Unassigned Foley cue · ${clip.id} · ${boundary}`,
+    });
+  };
+  for (const clip of clips) {
+    const start = Math.max(0, clip.at ?? 0);
+    add(clip, 'start', start);
+    if ((clip.duration ?? 0) > 0) add(clip, 'end', start + clip.duration!);
+  }
+  return cues.sort((left, right) => (
+    (left.time as number) - (right.time as number)
+    || (left.id as string).localeCompare(right.id as string)
+  ));
+}
+
+function validateFoley(value: unknown, timeline: ProbeTimeline): ValidationResult {
+  const expected = expectedFoleyEntries(timeline);
+  const shape = envelope(value, 1, {
+    id,
+    sourceClipId: (entry) => entry.sourceClipId === null || nonEmpty(entry.sourceClipId),
+    boundary: (entry) => entry.boundary === 'start'
+      || entry.boundary === 'end' || entry.boundary === 'playhead',
+    time,
+    category: (entry) => nonEmpty(entry.category),
+    offset,
+    pan: (entry) => bounded(entry.pan, -1, 1),
+    distance: (entry) => bounded(entry.distance, 0, 1),
+    intensity,
+    label,
+  }, timeline, expected.length);
+  if (!shape.valid || !record(value) || !Array.isArray(value.entries)) return shape;
+  return canonicalFingerprint(value.entries) === canonicalFingerprint(expected)
+    ? shape
+    : invalid('foley entries do not match the current timeline');
+}
+
 function envelope(value: unknown, expectedSchema: number, fieldValidators: Record<string, (entry: Record<string, unknown>) => boolean>, timeline: ProbeTimeline, expectedEntries = expectedBoundaryCount(timeline)): ValidationResult {
   if (!record(value)) return invalid('expected an envelope object');
   if (value.schemaVersion !== expectedSchema) return invalid(`schemaVersion must be ${expectedSchema}`);
@@ -706,7 +770,7 @@ export function validateExtensionOutput(extensionId: string, value: unknown, tim
     case 'com.reigh.creative-lab.timeline-faultline':
       return validateFaultline(value, timeline);
     case 'com.reigh.creative-lab.foley-constellation':
-      return envelope(value, 1, { id, sourceClipId: (e) => e.sourceClipId === null || nonEmpty(e.sourceClipId), boundary: (e) => e.boundary === 'start' || e.boundary === 'end' || e.boundary === 'playhead', time, category: (e) => nonEmpty(e.category), offset, pan: (e) => bounded(e.pan, -1, 1), distance: (e) => bounded(e.distance, 0, 1), intensity, label }, timeline, expectedPrimaryBoundaryCount(timeline));
+      return validateFoley(value, timeline);
     case 'com.reigh.creative-lab.branching-cut':
       return envelope(value, 1, { id, sourceClipId, targetClipId: (e) => nonEmpty(e.targetClipId), trackId: (e) => nonEmpty(e.trackId), time, offset, label }, timeline, Math.max(0, expectedVisualClips(timeline).length - 1));
     case 'com.reigh.creative-lab.chromatic-constellation': {

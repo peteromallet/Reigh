@@ -219,8 +219,8 @@ describe('paired release semantic validators', () => {
       'com.reigh.creative-lab.emotional-weather-map': [{ id: 'weather-clip-a', sourceClipId: 'clip-a', kind: 'breeze', time: 1, intensity: 0.4, color: '#fff', label: 'breeze' }],
       'com.reigh.creative-lab.timeline-faultline': { schemaVersion: 1, generatedFromVersion: 1, entries: [] },
       'com.reigh.creative-lab.foley-constellation': { schemaVersion: 1, generatedFromVersion: 1, entries: [
-        { id: 'foley-clip-a-start', sourceClipId: 'clip-a', boundary: 'start', time: 1, category: 'unassigned', offset: 0, pan: 0, distance: 0.5, intensity: 0.4, label: 'cue' },
-        { id: 'foley-clip-a-end', sourceClipId: 'clip-a', boundary: 'end', time: 3, category: 'unassigned', offset: 0, pan: 0, distance: 0.5, intensity: 0.4, label: 'cue' },
+        { id: 'foley-clip-a-start', sourceClipId: 'clip-a', boundary: 'start', time: 1, category: 'unassigned', offset: 0, pan: 0, distance: 0.5, intensity: 0.45, label: 'Unassigned Foley cue · clip-a · start' },
+        { id: 'foley-clip-a-end', sourceClipId: 'clip-a', boundary: 'end', time: 3, category: 'unassigned', offset: 0, pan: 0, distance: 0.5, intensity: 0.45, label: 'Unassigned Foley cue · clip-a · end' },
       ] },
       'com.reigh.creative-lab.branching-cut': { schemaVersion: 1, generatedFromVersion: 1, entries: [] },
       'com.reigh.creative-lab.chromatic-constellation': { schemaVersion: 1, coverage: { totalCandidates: 1, persistedCount: 1, displayLimit: 64, displayedCount: 1, omittedCount: 0, sourceTrackId: 'V1', sourceTrackLabel: 'Video', status: 'complete' }, entries: [{ id: 'constellation-clip-a', sourceClipId: 'clip-a', trackId: 'V1', trackLabel: 'Video', trackOrder: 0, pacingClass: 'steady', time: 1, duration: 2, intensity: 0.4, color: '#fff', label: 'steady' }] },
@@ -232,6 +232,52 @@ describe('paired release semantic validators', () => {
       expect(result.valid, `${extensionId}: ${result.reason}`).toBe(true);
       expect(result.fingerprint).toMatch(/^[a-f0-9]{64}$/);
     }
+    const foley = outputs['com.reigh.creative-lab.foley-constellation'] as {
+      schemaVersion: number;
+      generatedFromVersion: number;
+      entries: Array<Record<string, unknown>>;
+    };
+    expect(validateExtensionOutput(
+      'com.reigh.creative-lab.foley-constellation',
+      { ...foley, entries: foley.entries.map((entry, index) => (
+        index === 0 ? { ...entry, intensity: 0.46 } : entry
+      )) },
+      timeline,
+    )).toMatchObject({
+      valid: false,
+      reason: 'foley entries do not match the current timeline',
+    });
+  });
+
+  it('derives exact Foley cues from text clips on a default-unmuted primary track', () => {
+    const captionTimeline = {
+      tracks: [
+        { id: 'captions', kind: 'visual' },
+        { id: 'V1', kind: 'visual' },
+      ],
+      clips: [
+        { id: 'caption-a', track: 'captions', at: 2, hold: 2, clipType: 'text' },
+        { id: 'media-a', track: 'V1', at: 0, hold: 4, clipType: 'media' },
+      ],
+    };
+    const output = {
+      schemaVersion: 1,
+      generatedFromVersion: 7,
+      entries: [
+        { id: 'foley-caption-a-start', sourceClipId: 'caption-a', boundary: 'start', category: 'unassigned', time: 2, offset: 0, pan: 0, distance: 0.5, intensity: 0.45, label: 'Unassigned Foley cue · caption-a · start' },
+        { id: 'foley-caption-a-end', sourceClipId: 'caption-a', boundary: 'end', category: 'unassigned', time: 4, offset: 0, pan: 0, distance: 0.5, intensity: 0.45, label: 'Unassigned Foley cue · caption-a · end' },
+      ],
+    };
+    expect(validateExtensionOutput(
+      'com.reigh.creative-lab.foley-constellation',
+      output,
+      captionTimeline,
+    )).toMatchObject({ valid: true, count: 2 });
+    expect(validateExtensionOutput(
+      'com.reigh.creative-lab.foley-constellation',
+      output,
+      { ...captionTimeline, tracks: [{ id: 'captions', kind: 'visual', muted: true }] },
+    )).toMatchObject({ valid: false, reason: 'expected 0 entries, got 2' });
   });
 
   it('requires exact caption IDs, text and timing and proves idempotence', () => {
