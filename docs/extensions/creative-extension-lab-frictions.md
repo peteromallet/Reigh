@@ -2575,3 +2575,31 @@ fresh console collection.
 - The exact four former cold-start cases passed in 18.5 seconds including the
   setup project. The full cumulative gate then passed 172/172 in 8.2 minutes;
   focused TypeScript, ESLint, and 13 route/readiness tests also passed.
+
+### Production preview needs its runtime config dependency, and remote Docker is not local loopback
+
+- The first production-container attempt built a digest-pinned, non-root image
+  but exited before Docker could publish its port. `vite preview` loads the
+  TypeScript Vite config at runtime; its Astrid proxy imports
+  `astridBridgeWire.ts`, while the minimal runtime stage previously copied only
+  `config`, runtime scripts, dependencies, and `dist`. The image now copies
+  that exact protocol carrier rather than broadening the runtime source tree.
+- The verifier originally reported only a missing ephemeral port, hiding the
+  preview import error. Startup validation now fails with container state,
+  exit code, and bounded logs, with focused negative coverage for the
+  diagnostic contract.
+- The corrected image then ran successfully but the gate still timed out. With
+  `DOCKER_HOST=ssh://…`, `--publish 127.0.0.1::8080` binds the remote Docker
+  host, while Node's parent-process `fetch('http://127.0.0.1:…')` addresses the
+  Mac. A scoped diagnostic container proved the same image returned HTTP 200
+  and the exact rollout JSON from its own Docker boundary.
+- HTTP probes now execute through `docker exec` against the container's
+  loopback, which works identically for local and remote daemons. The gate
+  separately requires an exact `127.0.0.1` ephemeral binding and Docker's
+  healthy state, so remote compatibility does not weaken exposure or health
+  assertions.
+- The complete fresh-image rerun passed both smoke and rollback from image
+  `sha256:92f1202382001f9a1258c76cb4986e91c777aea485a49c2b742e2247886edcc3`:
+  exact root/runtime config, non-root attestation, Docker health, isolated
+  localhost ports, same-image reuse, and scoped cleanup. Focused verifier tests
+  remain 6/6 green and lint passes.

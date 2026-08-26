@@ -15,6 +15,24 @@ export const NODE_IMAGE_LABEL = 'org.opencontainers.image.base.digest';
 export const POLL_INTERVAL_MS = 500;
 export const POLL_TIMEOUT_MS = 90_000;
 
+const CONTAINER_PROBE_SOURCE = `
+const baseUrl = 'http://127.0.0.1:${CONTAINER_PORT}';
+Promise.all([
+  fetch(baseUrl + '/', { cache: 'no-store', redirect: 'manual', signal: AbortSignal.timeout(2000) }),
+  fetch(baseUrl + '${RUNTIME_CONFIG_PATH}', { cache: 'no-store', redirect: 'manual', signal: AbortSignal.timeout(2000) }),
+]).then(async ([rootResponse, runtimeResponse]) => {
+  const runtimeConfig = await runtimeResponse.json();
+  console.log(JSON.stringify({
+    rootStatus: rootResponse.status,
+    runtimeStatus: runtimeResponse.status,
+    runtimeConfig,
+  }));
+}).catch((error) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});
+`.trim();
+
 const IMAGE_REPOSITORY = 'reigh-extension-container-gate';
 const IMAGE_TAG = `${IMAGE_REPOSITORY}:local-${process.pid}`;
 const CONTAINER_PREFIX = `${IMAGE_REPOSITORY}-${process.pid}`;
@@ -158,12 +176,42 @@ export function assertNonRootConfigUser(configUser) {
 
 export function parsePublishedPort(containerInspect) {
   const bindings = containerInspect?.NetworkSettings?.Ports?.[`${CONTAINER_PORT}/tcp`];
-  const hostPort = bindings?.find((binding) => binding?.HostPort)?.HostPort;
+  const hostPort = bindings?.find(
+    (binding) => binding?.HostIp === '127.0.0.1' && binding?.HostPort,
+  )?.HostPort;
   const port = Number(hostPort);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error(`container did not publish an ephemeral localhost port for ${CONTAINER_PORT}/tcp`);
   }
   return port;
+}
+
+export function buildContainerProbeArgv(containerName) {
+  return ['exec', containerName, 'node', '--input-type=module', '--eval', CONTAINER_PROBE_SOURCE];
+}
+
+export function assertContainerProbe(actual, expected) {
+  if (actual?.rootStatus !== 200) {
+    throw new Error(`root returned HTTP ${actual?.rootStatus ?? 'unknown'}`);
+  }
+  if (actual?.runtimeStatus !== 200) {
+    throw new Error(`runtime config returned HTTP ${actual?.runtimeStatus ?? 'unknown'}`);
+  }
+  return assertRuntimeConfig(actual.runtimeConfig, expected);
+}
+
+export function assertContainerStarted(containerInspect, logs = '') {
+  const status = containerInspect?.State?.Status ?? 'unknown';
+  const running = containerInspect?.State?.Running === true;
+  if (status !== 'running' || !running) {
+    const exitCode = containerInspect?.State?.ExitCode ?? 'unknown';
+    const diagnostic = String(logs).trim().slice(-4_000);
+    throw new Error(
+      `container exited before port publication (state=${status} exitCode=${exitCode})`
+      + (diagnostic ? `: ${diagnostic}` : ''),
+    );
+  }
+  return containerInspect;
 }
 
 export function assertRuntimeConfig(actual, expected) {
@@ -238,37 +286,39 @@ function startContainer(containerName, imageTag, env, createdContainers) {
   if (!runContainerId || !(container.Id === runContainerId || container.Id.startsWith(runContainerId))) {
     throw new Error(`container ${containerName} run ID did not match docker inspect (${runContainerId || 'missing'})`);
   }
+  if (container.State?.Status !== 'running' || container.State?.Running !== true) {
+    const logs = runDocker(['logs', containerName], { allowFailure: true });
+    assertContainerStarted(container, `${logs.stdout ?? ''}${logs.stderr ?? ''}`);
+  }
   return {
     imageId: container.Image,
     port: parsePublishedPort(container),
   };
 }
 
-async function fetchProbe(url) {
-  const response = await fetch(url, {
-    cache: 'no-store',
-    redirect: 'manual',
-    signal: AbortSignal.timeout(2_000),
-  });
-  return response;
+function probeContainer(containerName) {
+  const args = buildContainerProbeArgv(containerName);
+  const result = runDocker(args, { allowFailure: true });
+  const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim();
+  if (result.error || result.status !== 0) {
+    throw new Error(
+      `container-local HTTP probe failed with status ${result.status ?? 'unknown'}`
+      + (output ? `: ${output.slice(-4_000)}` : ''),
+    );
+  }
+  try {
+    return JSON.parse(result.stdout);
+  } catch (error) {
+    throw new Error(`container-local HTTP probe returned invalid JSON: ${error.message}`);
+  }
 }
 
-async function pollContainer(containerName, port, expected) {
-  const baseUrl = `http://127.0.0.1:${port}`;
+async function pollContainer(containerName, expected) {
   const deadline = Date.now() + POLL_TIMEOUT_MS;
   let lastFailure = 'container probes have not passed yet';
   while (Date.now() < deadline) {
     try {
-      const rootResponse = await fetchProbe(`${baseUrl}/`);
-      if (rootResponse.status !== 200) {
-        throw new Error(`root returned HTTP ${rootResponse.status}`);
-      }
-      const runtimeResponse = await fetchProbe(`${baseUrl}${RUNTIME_CONFIG_PATH}`);
-      if (runtimeResponse.status !== 200) {
-        throw new Error(`runtime config returned HTTP ${runtimeResponse.status}`);
-      }
-      const config = await runtimeResponse.json();
-      assertRuntimeConfig(config, expected);
+      const config = assertContainerProbe(probeContainer(containerName), expected);
       const container = inspectContainer(containerName);
       const health = container.State?.Health?.Status;
       if (container.State?.Status !== 'running' || health !== 'healthy') {
@@ -310,8 +360,11 @@ export async function runContainerGate() {
       if (started.imageId !== image.Id) {
         throw new Error(`scenario ${scenario.id} did not reuse image ${image.Id}`);
       }
-      await pollContainer(containerName, started.port, scenario.expected);
-      console.log(`[extension-container] ${scenario.id} root/runtime-config/health passed on localhost:${started.port}`);
+      await pollContainer(containerName, scenario.expected);
+      console.log(
+        `[extension-container] ${scenario.id} container-local root/runtime-config/health passed; `
+        + `published on remote-or-local Docker localhost:${started.port}`,
+      );
       stopContainer(containerName);
       removeScopedContainer(containerName);
       createdContainers.delete(containerName);

@@ -4,9 +4,12 @@ import { resolve } from 'node:path';
 import { describe, it } from 'node:test';
 
 import {
+  assertContainerProbe,
+  assertContainerStarted,
   assertNonRootConfigUser,
   assertRuntimeConfig,
   buildDockerArgv,
+  buildContainerProbeArgv,
   parsePublishedPort,
   REPO_ROOT,
   ROLLOUT_SCENARIOS,
@@ -23,6 +26,10 @@ describe('production extension container gate', () => {
     assert.match(pin.digest.replace(/^@/, ''), /^sha256:[0-9a-f]{64}$/);
     assert.match(dockerfile, /^HEALTHCHECK .*\\$/m);
     assert.match(dockerfile, /USER node/);
+    assert.match(
+      dockerfile,
+      /^COPY --chown=node:node src\/tools\/video-editor\/data\/astridBridgeWire\.ts \.\/src\/tools\/video-editor\/data\/astridBridgeWire\.ts$/m,
+    );
   });
 
   it('fails closed when the configured digest or built-image attestation drifts', async () => {
@@ -68,6 +75,15 @@ describe('production extension container gate', () => {
   });
 
   it('rejects root image users and malformed port bindings', () => {
+    const running = { State: { Status: 'running', Running: true, ExitCode: 0 } };
+    assert.equal(assertContainerStarted(running), running);
+    assert.throws(
+      () => assertContainerStarted(
+        { State: { Status: 'exited', Running: false, ExitCode: 1 } },
+        'preview config import failed',
+      ),
+      /exited before port publication.*exitCode=1.*preview config import failed/,
+    );
     assert.equal(assertNonRootConfigUser('node'), 'node');
     assert.throws(() => assertNonRootConfigUser('root'), /non-root/);
     assert.throws(() => assertNonRootConfigUser('0'), /non-root/);
@@ -75,6 +91,9 @@ describe('production extension container gate', () => {
     assert.equal(parsePublishedPort({
       NetworkSettings: { Ports: { '8080/tcp': [{ HostIp: '127.0.0.1', HostPort: '49123' }] } },
     }), 49123);
+    assert.throws(() => parsePublishedPort({
+      NetworkSettings: { Ports: { '8080/tcp': [{ HostIp: '0.0.0.0', HostPort: '49123' }] } },
+    }), /ephemeral localhost/);
     assert.throws(() => parsePublishedPort({ NetworkSettings: { Ports: {} } }), /ephemeral localhost/);
   });
 
@@ -88,7 +107,21 @@ describe('production extension container gate', () => {
         runawayTypedTimelineEnabled: false,
       },
     }, ROLLOUT_SCENARIOS[0].expected);
+    assert.equal(assertContainerProbe({
+      rootStatus: 200,
+      runtimeStatus: 200,
+      runtimeConfig: ROLLOUT_SCENARIOS[0].expected,
+    }, ROLLOUT_SCENARIOS[0].expected), ROLLOUT_SCENARIOS[0].expected);
+    assert.throws(
+      () => assertContainerProbe({ rootStatus: 503 }, ROLLOUT_SCENARIOS[0].expected),
+      /root returned HTTP 503/,
+    );
     assert.throws(() => assertRuntimeConfig({ revision: 'wrong' }, ROLLOUT_SCENARIOS[0].expected), /runtime config mismatch/);
+
+    const probeArgs = buildContainerProbeArgv('scoped-container');
+    assert.deepEqual(probeArgs.slice(0, 3), ['exec', 'scoped-container', 'node']);
+    assert.ok(probeArgs.includes('--eval'));
+    assert.match(probeArgs.at(-1), /http:\/\/127\.0\.0\.1:8080/);
 
     const source = await readFile(scriptPath, 'utf8');
     assert.match(source, /spawnSync\(DOCKER_COMMAND, args/);

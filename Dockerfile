@@ -42,6 +42,11 @@ LABEL org.opencontainers.image.base.digest="sha256:df02558528d3d3d0d621f112e2326
 COPY package.json package-lock.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --chown=node:node config ./config
+# `config/vite/astridBridgeProxy.ts` imports the shared protocol constants
+# while Vite loads its TypeScript config at preview startup. Keep that exact
+# source carrier in the minimal runtime image; copying only `dist/` is not
+# sufficient for `vite preview`.
+COPY --chown=node:node src/tools/video-editor/data/astridBridgeWire.ts ./src/tools/video-editor/data/astridBridgeWire.ts
 COPY scripts/runtime ./scripts/runtime
 COPY --chown=node:node --from=build /app/dist ./dist
 
