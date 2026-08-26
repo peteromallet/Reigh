@@ -436,15 +436,17 @@ function extractTestReadinessFiles(script) {
  *
  * - Doc-only or missing anchors are rejected.
  * - Playwright/spec files under `tests/e2e/` require a `(slow gate)` note and
- *   a `Command: npx playwright test ...` line.
+ *   either a direct Playwright command or an existing npm script that
+ *   explicitly owns the anchored spec.
  * - All other cleared rows require the referenced test file to be listed as
  *   a vitest argument in `npm run test:readiness`.
  *
  * @param {ReadinessRow} row
  * @param {string[]} testReadinessFiles
+ * @param {Record<string, string>} packageScripts
  * @returns {{ valid: boolean, reason?: string }}
  */
-function validateEvidence(row, testReadinessFiles) {
+function validateEvidence(row, testReadinessFiles, packageScripts) {
   const anchor = (row.testAnchor || '').trim();
 
   if (!anchor) {
@@ -468,8 +470,26 @@ function validateEvidence(row, testReadinessFiles) {
     if (!notes.startsWith('(slow gate)')) {
       return { valid: false, reason: `e2e Test Anchor ${filePath} must be classified with a Notes column starting with "(slow gate)"` };
     }
-    if (!/Command:\s*npx playwright test/.test(notes)) {
-      return { valid: false, reason: `e2e Test Anchor ${filePath} Notes must contain a "Command: npx playwright test ..." line` };
+    const directPlaywrightCommand = /Command:\s*npx playwright test/.test(notes);
+    const npmScriptMatch = notes.match(/Command:\s*npm run ([\w:-]+)/);
+    if (!directPlaywrightCommand && !npmScriptMatch) {
+      return {
+        valid: false,
+        reason: `e2e Test Anchor ${filePath} Notes must contain a direct Playwright command or an npm run command`,
+      };
+    }
+    if (npmScriptMatch) {
+      const scriptName = npmScriptMatch[1];
+      const script = packageScripts[scriptName];
+      if (typeof script !== 'string') {
+        return { valid: false, reason: `e2e Test Anchor ${filePath} references missing npm script "${scriptName}"` };
+      }
+      if (!script.includes(filePath)) {
+        return {
+          valid: false,
+          reason: `e2e npm script "${scriptName}" does not explicitly run anchored spec ${filePath}`,
+        };
+      }
     }
     return { valid: true };
   }
@@ -491,9 +511,10 @@ function validateEvidence(row, testReadinessFiles) {
  * @param {ReadinessRow} row
  * @param {boolean} strictMode
  * @param {string[]} testReadinessFiles
+ * @param {Record<string, string>} packageScripts
  * @returns {{ valid: boolean, errors: string[], warnings: string[] }}
  */
-function validateRow(row, strictMode, testReadinessFiles) {
+function validateRow(row, strictMode, testReadinessFiles, packageScripts) {
   const errors = [];
   const warnings = [];
 
@@ -541,7 +562,7 @@ function validateRow(row, strictMode, testReadinessFiles) {
 
     // Strict mode: cleared rows must have runnable evidence.
     if (strictMode && testResult.valid) {
-      const evidenceResult = validateEvidence(row, testReadinessFiles);
+      const evidenceResult = validateEvidence(row, testReadinessFiles, packageScripts);
       if (!evidenceResult.valid) {
         errors.push(`${row.id}: Evidence validation failed — ${evidenceResult.reason}`);
       }
@@ -573,10 +594,12 @@ if (rows.length === 0) {
 // Load the test:readiness script so strict mode can enforce that every cleared
 // unit-test row is wired into the fast release gate.
 let testReadinessFiles = [];
+let packageScripts = {};
 try {
   const packageJsonPath = resolve(repoRoot, 'package.json');
   const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
-  testReadinessFiles = extractTestReadinessFiles(packageJson.scripts?.['test:readiness']);
+  packageScripts = packageJson.scripts ?? {};
+  testReadinessFiles = extractTestReadinessFiles(packageScripts['test:readiness']);
 } catch (err) {
   console.warn(`${LABEL} Could not read test:readiness script: ${err.message}`);
 }
@@ -598,7 +621,12 @@ for (const row of rows) {
 
   if (row.status === 'cleared') {
     clearedCount++;
-    const { valid, errors, warnings } = validateRow(row, strictMode, testReadinessFiles);
+    const { valid, errors, warnings } = validateRow(
+      row,
+      strictMode,
+      testReadinessFiles,
+      packageScripts,
+    );
 
     if (valid) {
       clearedValidCount++;

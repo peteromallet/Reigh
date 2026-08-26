@@ -33,6 +33,7 @@ async function goToScenario(page: Page, scenario: string) {
     `${HARNESS_BASE}?scenario=${scenario}&localTest=1&localProject=extension-harness&localTimeline=extension-harness`,
     { waitUntil: 'domcontentloaded' },
   );
+  await page.locator('[data-video-editor-harness-ready="true"]').waitFor({ state: 'visible' });
 }
 
 /**
@@ -591,8 +592,12 @@ test.describe('Extension Harness — Mobile Viewport', () => {
 
 test.describe('Extension Harness — Route accessibility', () => {
   test('harness route loads without errors', async ({ page }) => {
-    const response = await page.goto(`${HARNESS_BASE}?scenario=populated`, { waitUntil: 'domcontentloaded' });
+    const response = await page.goto(
+      `${HARNESS_BASE}?scenario=populated&localTest=1&localProject=extension-harness&localTimeline=extension-harness`,
+      { waitUntil: 'domcontentloaded' },
+    );
     expect(response?.ok()).toBe(true);
+    await expect(page.locator('[data-video-editor-harness-ready="true"]')).toBeVisible();
     await expect(page.locator('vite-error-overlay')).toHaveCount(0);
   });
 

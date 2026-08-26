@@ -734,7 +734,10 @@ export default function ExtensionHarnessPage() {
     // Render all scenarios in a grid
     const scenarios = ['populated', 'empty', 'package-error', 'repaired-settings'] as const;
     return (
-      <div className="min-h-screen bg-background p-6">
+      <div
+        className="min-h-screen bg-background p-6"
+        data-video-editor-harness-ready="true"
+      >
         <div className="mb-6">
           <h1 className="text-xl font-bold text-foreground">Extension Harness — All Scenarios</h1>
           <p className="text-sm text-muted-foreground">
@@ -758,7 +761,10 @@ export default function ExtensionHarnessPage() {
 
   if (scenario === 'manager-cycle') {
     return (
-      <div className="min-h-screen bg-background p-6">
+      <div
+        className="min-h-screen bg-background p-6"
+        data-video-editor-harness-ready="true"
+      >
         <div className="mb-6">
           <h1 className="text-xl font-bold text-foreground">
             Extension Harness — Manager Cycle
@@ -775,7 +781,10 @@ export default function ExtensionHarnessPage() {
   // Single scenario
   const data = buildScenarioData(scenario);
   return (
-    <div className="min-h-screen bg-background p-6">
+    <div
+      className="min-h-screen bg-background p-6"
+      data-video-editor-harness-ready="true"
+    >
       <div className="mb-6">
         <h1 className="text-xl font-bold text-foreground">
           Extension Harness — {SCENARIO_META[scenario]?.title ?? scenario}

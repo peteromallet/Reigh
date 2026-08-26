@@ -53,6 +53,7 @@ const REAL_BRIDGE_SPEC = /real-bridge(?:-hardening|-rate-limit)?\.spec\.ts$/;
 const RENDERER_OWNED_TIMELINE_SPECS = /(?:caption-render-export|caption-render-matrix)\.spec\.ts$/;
 const includeTimelineDevices = process.env.PLAYWRIGHT_TIMELINE_DEVICES === '1';
 const includeExtensionHarness = process.env.PLAYWRIGHT_EXTENSION_HARNESS === '1';
+const EXTENSION_HARNESS_SETUP_SPEC = /extension-harness\.setup\.ts$/;
 const includeHardening = process.env.PLAYWRIGHT_HARDENING === '1';
 // B5: REAL_BRIDGE=1 boots `astrid serve` (the actual bridge) instead of the
 // stub, and points the Vite dev proxy at it. Run:
@@ -108,6 +109,10 @@ const bridgeServeCommand = useRealBridge
   ? `${shellQuote(realBridgeNodeExecutable!)} tests/e2e/timeline/real-bridge-serve.mjs`
   : 'node tests/e2e/timeline/astrid-bridge-stub.mjs';
 const includeBridgeServer = includeTimelineDevices || includeExtensionHarness;
+const extensionHarnessDependencies = includeExtensionHarness
+  ? ['extension-harness-setup']
+  : [];
+const defaultProjectIgnores = [TIMELINE_DEVICE_SPECS, EXTENSION_HARNESS_SETUP_SPEC];
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -213,9 +218,31 @@ export default defineConfig({
       : []),
   ],
   projects: [
-    { name: 'chromium-desktop', testIgnore: TIMELINE_DEVICE_SPECS, use: { ...devices['Desktop Chrome'] } },
-    { name: 'chromium-condensed', testIgnore: TIMELINE_DEVICE_SPECS, use: { ...devices['iPad Mini'] } },
-    { name: 'chromium-mobile', testIgnore: TIMELINE_DEVICE_SPECS, use: { ...devices['iPhone 13'] } },
+    ...(includeExtensionHarness
+      ? [{
+          name: 'extension-harness-setup',
+          testMatch: EXTENSION_HARNESS_SETUP_SPEC,
+          use: { ...devices['Desktop Chrome'] },
+        }]
+      : []),
+    {
+      name: 'chromium-desktop',
+      testIgnore: defaultProjectIgnores,
+      dependencies: extensionHarnessDependencies,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'chromium-condensed',
+      testIgnore: defaultProjectIgnores,
+      dependencies: extensionHarnessDependencies,
+      use: { ...devices['iPad Mini'] },
+    },
+    {
+      name: 'chromium-mobile',
+      testIgnore: defaultProjectIgnores,
+      dependencies: extensionHarnessDependencies,
+      use: { ...devices['iPhone 13'] },
+    },
     ...(includeTimelineDevices
       ? [{
           name: 'timeline-devices',

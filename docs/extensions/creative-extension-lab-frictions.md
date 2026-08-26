@@ -2542,3 +2542,36 @@ fresh console collection.
 - The failed RC43 evidence has artifact-index SHA-256
   `b7fa5846601893ccd675d66b7693ff5c5d51c15f330fff8f2b6e279bbbd7e4d3`.
   It remains immutable diagnostic history and is not a passing receipt.
+
+### Browser readiness must provision engines and warm the mounted route
+
+- The first local readiness attempt failed all 171 cases in a few
+  milliseconds because `npm ci` had installed Playwright's package but not its
+  matching Chromium executable. Installing Chromium, Firefox, and WebKit with
+  the lockfile-installed Playwright CLI fixed browser launch. The release
+  runbook now states this local prerequisite explicitly; the paired release
+  verifier still owns its separate private Chromium installation.
+- The next attempt exercised the product but failed the first four parallel
+  desktop cases at the 30-second budget. The remaining 167 cases passed.
+  Direct probes showed the managed Astrid stub and all capability routes
+  responding in 0.01–0.2 seconds. The actual gap was that Playwright's server
+  readiness probe covered only Vite's HTML listener: four workers then
+  simultaneously cold-loaded the lazy harness and large application module
+  graph.
+- The readiness command now adds a conditional setup project. One Chromium
+  page opens the exact local-test URL and waits up to 120 seconds for the
+  page-owned `data-video-editor-harness-ready="true"` sentinel plus real
+  extension inventory. Only then do the unchanged desktop, condensed, and
+  mobile projects run in parallel with their original 30-second test budgets
+  and zero retries. Scenario navigation waits on the same mounted-page
+  contract, and the formerly bare route check now uses deterministic
+  local-test parameters.
+- The strict readiness-document validator initially rejected the canonical
+  package command because it hard-coded `Command: npx playwright test ...`.
+  It now accepts either a direct Playwright command or an existing npm script,
+  and an npm script passes only when its actual package definition explicitly
+  runs the anchored E2E spec. This preserves executable evidence validation
+  while allowing the command to own required setup flags and dependencies.
+- The exact four former cold-start cases passed in 18.5 seconds including the
+  setup project. The full cumulative gate then passed 172/172 in 8.2 minutes;
+  focused TypeScript, ESLint, and 13 route/readiness tests also passed.

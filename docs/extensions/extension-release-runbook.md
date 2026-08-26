@@ -35,6 +35,35 @@ head is not a candidate and no final SHA should be recorded early.
 
 ## Running the frozen-candidate gate
 
+### Local browser-gate provisioning
+
+The local readiness, compatibility, accessibility, and timeline commands use
+the Playwright package installed by the Reigh lockfile, but `npm ci` does not
+install its browser executables. Provision the matching engines once after a
+fresh install or Playwright version change:
+
+```sh
+npm ci --no-audit --no-fund
+npx playwright install chromium firefox webkit
+```
+
+Do not interpret an all-tests failure in a few milliseconds as an application
+regression until the error output confirms that the pinned browser executable
+exists. The frozen paired-repository verifier is separate: it provisions its
+own Chromium binary inside the private release runtime.
+
+Run the deterministic readiness browser gate through its package command:
+
+```sh
+npm run test:readiness:e2e
+```
+
+That command starts isolated editor and Astrid-stub ports. Its conditional
+setup project opens the real local-test harness and waits for
+`data-video-editor-harness-ready="true"` before the three device projects
+begin in parallel. This warms the lazy route and complete Vite module graph
+without increasing the ordinary 30-second test budget or retrying failures.
+
 Prepare fresh, separate Reigh and Astrid checkouts. Install the exact Node, npm,
 Astrid Python, and native-tool versions recorded in the verification block of
 `config/releases/extension-ship-quality.json`, plus the dev tooling required by
