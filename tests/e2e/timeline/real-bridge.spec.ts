@@ -9,8 +9,14 @@
  */
 import { expect, test } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { readFileSync } from 'node:fs';
+import { execFileSync, spawn } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createServer } from 'node:net';
 import { BASE_URL, CLIP_ACTION_WITH_ID_SELECTOR, EDITOR_SETTLE_MS } from './support';
+import type { APIRequestContext, Page } from '@playwright/test';
+import type { ChildProcess } from 'node:child_process';
 
 // The final watchdog case intentionally kills the one harness-owned bridge.
 // Serial mode guarantees it cannot race an otherwise independent acceptance.
@@ -831,6 +837,269 @@ test('document shot surface: render, duplicate, promote, reload over one bridge 
     /\[video-editor:duplicate-shot-group\] AppError.*unknown family/i,
     /\[video-editor:promote-shot-primary\] AppError.*was not found/i,
   ]);
+});
+
+// ── B8-T6: persistence across reload & service restart ─────────────────────
+
+/** One currently-free loopback port for an isolated restart-pair instance. */
+async function freeLoopbackPort(): Promise<number> {
+  // NOTE: no Promise.withResolvers() here — the pinned Node 20.19.4 runtime
+  // predates it, so this file keeps the executor form deliberately.
+  return new Promise<number>((resolvePort, reject) => {
+    const server = createServer();
+    server.unref();
+    server.on('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      if (!address || typeof address === 'string') {
+        reject(new Error('unexpected loopback listen address'));
+        return;
+      }
+      server.close(() => resolvePort(address.port));
+    });
+  });
+}
+
+const RESTART_PID_FILE = '/tmp/astrid-real-bridge-restart.pid';
+
+
+/**
+ * Content manifest of a bridge projects root: every file byte except
+ * `.astrid/bridge-boot-secret`, which `astrid serve` regenerates on every boot
+ * by design (probed at the pin: it is the ONLY root byte that differs across a
+ * restart). Covers the SQLite database itself and the sha256-addressed media
+ * tree, so byte equality here IS media-tree byte equality.
+ */
+function projectsRootManifest(root: string): string {
+  return execFileSync('/bin/sh',
+    ['-c',
+      'set -e; cd "$1"; find . -type f ! -path "./.astrid/bridge-boot-secret" -print0 | LC_ALL=C sort -z | xargs -0 sha256sum',
+      'sh', root],
+    { encoding: 'utf8' });
+}
+
+type RestartInstance = {
+  process: ChildProcess;
+  origin: string;
+  readyOrigin: string;
+  stderrTail: () => string;
+};
+
+/**
+ * Launch one isolated real-bridge harness instance on its OWN port pair.
+ *
+ * Restart env is CHILD-ONLY (r12/r13 binding): the worker's process.env is
+ * NEVER mutated, so the watchdog case keeps SIGKILLing the OWNED pid via the
+ * default pid file. This instance gets a DISTINCT pid file, a SECOND isolated
+ * port pair (the owned pair is still listening — reuse is EADDRINUSE), and is
+ * probed at ITS origins. Both launches share ONE explicit token because the
+ * harness default is per-process random bytes.
+ */
+async function launchRestartHarness(seedRoot: string, seedSkip: boolean): Promise<RestartInstance> {
+  const token = process.env.ASTRID_BRIDGE_TOKEN?.trim();
+  if (!token) throw new Error('REAL_BRIDGE=1 requires ASTRID_BRIDGE_TOKEN exported by playwright.config.ts');
+  const port = await freeLoopbackPort();
+  const readyPort = await freeLoopbackPort();
+  const child = spawn(process.execPath, ['tests/e2e/timeline/real-bridge-serve.mjs'], {
+    env: {
+      ...process.env,
+      ASTRID_BRIDGE_PORT: String(port),
+      ASTRID_BRIDGE_READY_PORT: String(readyPort),
+      // ASTRID_SEED_ROOT keeps OWNS_SEED_ROOT=false so the persistent root and
+      // its SQLite document survive wrapper exits between the pair's launches.
+      ASTRID_SEED_ROOT: seedRoot,
+      ...(seedSkip ? { ASTRID_SEED_SKIP: '1' } : {}),
+      ASTRID_BRIDGE_TOKEN: token,
+      ASTRID_REQUEST_TOKEN_FILE: '/tmp/astrid-real-bridge-restart.token',
+      ASTRID_BRIDGE_PID_FILE: RESTART_PID_FILE,
+      ASTRID_BRIDGE_METADATA_FILE: '/tmp/astrid-real-bridge-restart.metadata.json',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  child.stderr?.setEncoding('utf8');
+  let stderr = '';
+  child.stderr?.on('data', (chunk: string) => { stderr = `${stderr}${chunk}`.slice(-4000); });
+  return {
+    process: child,
+    origin: `http://127.0.0.1:${port}`,
+    readyOrigin: `http://127.0.0.1:${readyPort}`,
+    stderrTail: () => stderr,
+  };
+}
+
+async function awaitRestartReady(
+  request: APIRequestContext,
+  instance: RestartInstance,
+) {
+  // Probe the RESTART origin's readiness endpoint — never BRIDGE_ORIGIN.
+  await expect.poll(async () => {
+    try {
+      const response = await request.get(`${instance.readyOrigin}/ready`, { headers: restartHeaders() });
+      return response.status();
+    } catch {
+      return 0;
+    }
+  }, { timeout: 60_000, intervals: [500] }).toBe(200);
+}
+
+function restartHeaders(): Record<string, string> {
+  const token = process.env.ASTRID_BRIDGE_TOKEN?.trim();
+  if (!token) throw new Error('REAL_BRIDGE=1 requires ASTRID_BRIDGE_TOKEN exported by playwright.config.ts');
+  return {
+    Authorization: `Bearer ${token}`,
+    'X-Astrid-Bridge-Version': 'v1',
+  };
+}
+
+async function fetchRestartDocument(
+  request: APIRequestContext,
+  origin: string,
+): Promise<string> {
+  const listResponse = await request.get(`${origin}/projects/demo-project/timelines`, { headers: restartHeaders() });
+  expect(listResponse.status()).toBe(200);
+  const list = await listResponse.json() as { timelines?: Array<{ timeline_id: string; is_default?: boolean }> };
+  const chosen = (list.timelines ?? []).find((row) => row.is_default) ?? (list.timelines ?? [])[0];
+  if (!chosen) throw new Error(`restart harness at ${origin} registered no timelines`);
+  const response = await request.get(`${origin}/projects/demo-project/timelines/${chosen.timeline_id}`, {
+    headers: restartHeaders(),
+  });
+  expect(response.status()).toBe(200);
+  return response.text();
+}
+
+async function stopRestartInstance(instance: RestartInstance) {
+  if (instance.process.exitCode !== null || instance.process.signalCode !== null) return;
+  const pid = Number(readFileSync(RESTART_PID_FILE, 'utf8'));
+  expect(pid).toBeGreaterThan(0);
+  try { process.kill(pid, 'SIGKILL'); } catch {}
+  try { instance.process.kill('SIGKILL'); } catch {}
+  // Same Node-20 pin: executor form instead of Promise.withResolvers().
+  await new Promise<void>((resolveExit, rejectExit) => {
+    const timer = setTimeout(
+      () => rejectExit(new Error(`restart harness did not exit after SIGKILL\n${instance.stderrTail()}`)),
+      15_000,
+    );
+    instance.process.once('exit', () => {
+      clearTimeout(timer);
+      resolveExit();
+    });
+  });
+}
+
+type ClipPlacement = { clipId: string | null; x: number; y: number; width: number; height: number };
+
+async function readClipPlacement(page: Page): Promise<ClipPlacement[]> {
+  return page.evaluate((selector) =>
+    Array.from(document.querySelectorAll(selector)).map((element) => {
+      const box = element.getBoundingClientRect();
+      return {
+        clipId: element.getAttribute('data-clip-id'),
+        x: Math.round(box.x),
+        y: Math.round(box.y),
+        width: Math.round(box.width),
+        height: Math.round(box.height),
+      };
+    }), CLIP_ACTION_WITH_ID_SELECTOR);
+}
+
+test('reload preserves timeline and placement', async ({ page, request }) => {
+  const audit = installBrowserNetworkAudit(page);
+  const url = await timelineUrl(request);
+
+  // Head facts come from the bridge itself.
+  const headResponse = await request.get(url, { headers: bridgeHeaders() });
+  expect(headResponse.status()).toBe(200);
+  const headDocument = await headResponse.text();
+  // Named cast: the bridge envelope's config_version is re-asserted for
+  // byte-equality below; no other field of the parsed body is trusted blind.
+  const headPayload = JSON.parse(headDocument) as { config_version?: unknown };
+  const headVersion = headPayload.config_version;
+
+  await openEditorAt(page);
+  const placementBefore = await readClipPlacement(page);
+  expect(placementBefore.length).toBeGreaterThan(0);
+  await expect(page.locator('[title="Bridge Shot A"]').first()).toBeVisible({ timeout: 20_000 });
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(EDITOR_SETTLE_MS);
+  await expect(page.locator(CLIP_ACTION_WITH_ID_SELECTOR).first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('[title="Bridge Shot A"]').first()).toBeVisible({ timeout: 20_000 });
+  const placementAfter = await readClipPlacement(page);
+  expect(placementAfter).toEqual(placementBefore);
+
+  // The re-fetched bridge document is BYTE-IDENTICAL to the pre-reload head.
+  const reloadedResponse = await request.get(url, { headers: bridgeHeaders() });
+  expect(reloadedResponse.status()).toBe(200);
+  const reloadedDocument = await reloadedResponse.text();
+  expect(reloadedDocument).toBe(headDocument);
+  const reloadedPayload = JSON.parse(reloadedDocument) as { config_version?: unknown };
+  expect(reloadedPayload.config_version).toBe(headVersion);
+
+  audit.assertAllowed();
+  audit.assertSingleTaskPollingOwner();
+  audit.assertNoUnexpectedBrowserErrors([
+    /404.*\/media\/__reigh_capability_probe__\/content/i,
+    /404.*\/timelines\/[^/]+\/assets\//i,
+  ]);
+});
+
+/**
+ * B8-T6 [XHARD]: SIGKILL an isolated `astrid serve` and relaunch it against
+ * the SAME SQLite document with ASTRID_SEED_SKIP=1 (no re-seed, no
+ * re-registration, no runaway setup) — restored state must come from the
+ * database, not from bootstrap code.
+ *
+ * Rev-7 conditional: T5b's duplicate leg was BLOCKED at this pin
+ * (DUPLICATE_SHOT_GROUP_FAMILY absent; raw 422 admission transcript ledgered),
+ * so this case asserts SEED-ONLY persistence — the T5a-extended document
+ * survives byte-identical, no duplicated group expected — and THAT counts as
+ * T6 PASS. No mutation is driven; the Playwright-owned webServer is never
+ * stopped or relaunched.
+ */
+test('restart of astrid serve against the same SQLite document restores identical state', async ({ request }) => {
+  // The pair owns one persistent root (ASTRID_SEED_ROOT ⇒ the wrapper does not
+  // delete it between launches); the owned server's temp root is untouched.
+  const seedRoot = mkdtempSync(join(tmpdir(), 'astrid-restart-pair-'));
+  try {
+    // Launch A performs the full seed/register/runaway setup exactly like the
+    // owned webServer does, into this pair-owned root.
+    const first = await launchRestartHarness(seedRoot, false);
+    await awaitRestartReady(request, first);
+    const seededDocument = await fetchRestartDocument(request, first.origin);
+    const parsedSeeded = JSON.parse(seededDocument) as {
+      config_version?: unknown;
+      config?: { pinnedShotGroups?: Array<Record<string, unknown>> };
+    };
+    // The T5a extension is present in the document that must survive.
+    expect(parsedSeeded.config?.pinnedShotGroups).toEqual([expect.objectContaining({
+      shotId: 'shot-bridge-a',
+      trackId: 'V1',
+      clipIds: ['clip-1', 'clip-2'],
+      name: 'Bridge Shot A',
+    })]);
+    const manifestBefore = projectsRootManifest(seedRoot);
+
+    await stopRestartInstance(first);
+
+    // Launch B: ASTRID_SEED_SKIP=1 serves the existing root AS-IS.
+    const second = await launchRestartHarness(seedRoot, true);
+    try {
+      await awaitRestartReady(request, second);
+      const restoredDocument = await fetchRestartDocument(request, second.origin);
+      // Byte-identical CAS document from the restarted bridge itself.
+      expect(restoredDocument).toBe(seededDocument);
+      // Named cast: same envelope contract whose pinnedShotGroups shape was
+      // asserted via objectContaining above.
+      const restoredPayload = JSON.parse(restoredDocument) as { config_version?: unknown };
+      expect(restoredPayload.config_version).toBe(parsedSeeded.config_version);
+      // Whole-root content equality across restart (media tree included).
+      expect(projectsRootManifest(seedRoot)).toBe(manifestBefore);
+    } finally {
+      await stopRestartInstance(second);
+    }
+  } finally {
+    rmSync(seedRoot, { recursive: true, force: true });
+  }
 });
 
 /**

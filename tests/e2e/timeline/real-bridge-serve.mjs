@@ -456,13 +456,23 @@ function cleanupOwnedSeedRoot() {
   }
 }
 
+// B8-T6: ASTRID_SEED_SKIP=1 turns this harness into a pure re-server of an
+// EXISTING root — no seed(), no registration, no runaway setup. `astrid serve`
+// then opens the same SQLite file as-is, so a relaunched instance PROVES
+// persistence instead of wiping the state it is supposed to restore. The
+// restart child must also carry an explicit shared ASTRID_BRIDGE_TOKEN (the
+// default is per-process random bytes) so both launches answer the same auth.
 let seedState;
 try {
-  seedState = seed();
-  console.error(`[real-bridge] seeding ${SEED_ROOT}`);
-  console.error(`[real-bridge] Astrid provenance ${astrid.provenance}`);
-  registerInBridgeRegistry(astrid, seedState);
-  seedRunawayTransitions(astrid);
+  if (process.env.ASTRID_SEED_SKIP === '1') {
+    console.error(`[real-bridge] ASTRID_SEED_SKIP=1 — serving existing root without reseeding: ${SEED_ROOT}`);
+  } else {
+    seedState = seed();
+    console.error(`[real-bridge] seeding ${SEED_ROOT}`);
+    console.error(`[real-bridge] Astrid provenance ${astrid.provenance}`);
+    registerInBridgeRegistry(astrid, seedState);
+    seedRunawayTransitions(astrid);
+  }
 } catch (error) {
   cleanupOwnedSeedRoot();
   throw error;
