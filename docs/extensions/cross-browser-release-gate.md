@@ -82,6 +82,7 @@ errors. The passing screenshots are stored in the project-named evidence
 directories described above. The final candidate must rerun this gate from the
 fresh clean source snapshot computed after native-tool attestation. The paired
 caption proof is owned by the paired release verifier (two exact captions ×
-first/midpoint/last plus a no-caption seeded-media control); this cross-browser
+three motion-safe interior frames, exact negative boundary frames, and a
+no-caption seeded-media control); this cross-browser
 gate does not promote its structural marker checks into general caption
 semantics.

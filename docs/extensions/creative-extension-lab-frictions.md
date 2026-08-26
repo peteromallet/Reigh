@@ -2476,3 +2476,25 @@ fresh console collection.
 - The failed RC40 evidence has artifact-index SHA-256
   `b526fb95c288732fbbfa238634e53d4ea37ceea35901db6b573d94911b44cb34`.
   It remains immutable diagnostic history and is not a passing receipt.
+
+### Caption probes must respect declared motion and decode exact frames
+
+- RC41 passed the corrected caption identity, the media-overlapping 4.5-second
+  no-caption control, both browser phases, restart persistence, all thirteen
+  extensions, 566 Runaway rows, and the deterministic Astrid-owned export. It
+  then rejected the first caption at exactly 2.0 seconds because the release
+  oracle incorrectly required fully legible text on its first encoded frame.
+- Astrid's `TextCard` owns an 11-frame fade at 24 fps. Its exact first and final
+  local frames are intentionally zero opacity; the interior is fully legible.
+  Manual exact-frame decoding and cropped, grayscale, thresholded OCR proved
+  both captions at their 25%, 50%, and 75% frames. This is declared renderer
+  motion, not a Three.js, CanvasTexture, browser, or encoder defect.
+- The oracle now decodes frames by integer index instead of timestamp seeking,
+  requires exact cropped OCR plus region/occupancy/contrast at three
+  motion-safe interior frames per caption, and separately requires OCR-empty
+  before/start/final/after boundary frames. This tests intended motion without
+  weakening the persisted text, interval, geometry, or outside-interval
+  contract.
+- The failed RC41 evidence has artifact-index SHA-256
+  `b0f0c8ff786921090c4020626da44420af931df8a8e526cdaebe0363396d7187`.
+  It remains immutable diagnostic history and is not a passing receipt.

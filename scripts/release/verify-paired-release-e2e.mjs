@@ -2968,13 +2968,55 @@ export function captionProbePlan(captions, fps) {
     const firstFrame = Math.round(caption.at * fps);
     const endFrame = Math.round((caption.at + caption.duration) * fps);
     const lastFrame = endFrame - 1;
-    if (lastFrame < firstFrame) fail(`caption ${caption.id} has no encoded frames`);
+    const frameCount = endFrame - firstFrame;
+    const motionSafeMargin = Math.floor(frameCount / 4);
+    const earlyFrame = firstFrame + motionSafeMargin;
+    const midpointFrame = Math.round((firstFrame + lastFrame) / 2);
+    const lateFrame = firstFrame + Math.floor(frameCount * 0.75);
+    if (frameCount < 4 || !(earlyFrame < midpointFrame && midpointFrame < lateFrame)) {
+      fail(`caption ${caption.id} has no distinct motion-safe probe frames`);
+    }
     return [
-      { captionId: caption.id, kind: 'first', frame: firstFrame, seconds: firstFrame / fps },
-      { captionId: caption.id, kind: 'midpoint', frame: (firstFrame + lastFrame) / 2, seconds: caption.at + (caption.duration / 2) },
-      { captionId: caption.id, kind: 'last', frame: lastFrame, seconds: lastFrame / fps },
+      { captionId: caption.id, kind: 'early', frame: earlyFrame, seconds: earlyFrame / fps },
+      { captionId: caption.id, kind: 'midpoint', frame: midpointFrame, seconds: midpointFrame / fps },
+      { captionId: caption.id, kind: 'late', frame: lateFrame, seconds: lateFrame / fps },
     ];
   });
+}
+
+export function captionBoundaryProbePlan(captions, fps, totalFrames) {
+  if (!Number.isFinite(fps) || fps <= 0 || !Number.isInteger(totalFrames) || totalFrames <= 0) {
+    fail('caption boundary probe geometry is invalid');
+  }
+  return captions.flatMap((caption) => {
+    const startFrame = Math.round(caption.at * fps);
+    const endFrame = Math.round((caption.at + caption.duration) * fps);
+    if (startFrame < 0 || endFrame <= startFrame || endFrame > totalFrames) {
+      fail(`caption ${caption.id} has invalid encoded boundaries`);
+    }
+    return [
+      ...(startFrame > 0 ? [{ captionId: caption.id, kind: 'before', frame: startFrame - 1 }] : []),
+      { captionId: caption.id, kind: 'start-zero-opacity', frame: startFrame },
+      { captionId: caption.id, kind: 'final-zero-opacity', frame: endFrame - 1 },
+      ...(endFrame < totalFrames ? [{ captionId: caption.id, kind: 'after', frame: endFrame }] : []),
+    ].map((probe) => ({ ...probe, seconds: probe.frame / fps }));
+  });
+}
+
+export function assessCaptionBoundaryProbe({ expectedText, recognizedText }) {
+  const normalizedExpected = normalizeCaptionText(expectedText);
+  const normalizedRecognized = normalizeCaptionText(recognizedText);
+  const reasons = [];
+  if (!normalizedExpected) reasons.push('expected caption text is empty');
+  if (normalizedRecognized) {
+    reasons.push('OCR text is visible on a required-empty boundary frame');
+  }
+  return {
+    pass: reasons.length === 0,
+    reasons,
+    expectedText,
+    recognizedText,
+  };
 }
 
 function parseTesseractTsv(tsv) {
@@ -3474,8 +3516,11 @@ function verifyRenderedArtifact(context, { serveOwnedEvidence = null } = {}) {
     fail('paired render has no no-caption control interval for caption semantics');
   }
   const controlPath = resolve(context.evidenceRoot, 'render-caption-control.png');
+  const controlFrame = Math.round(controlSeconds * expectedFps);
   runLogged(ffmpegExecutable, [
-    '-v', 'error', '-ss', String(controlSeconds), '-i', outputPath, '-frames:v', '1', '-y', controlPath,
+    '-v', 'error', '-i', outputPath,
+    '-vf', `select=eq(n\\,${controlFrame})`, '-fps_mode', 'passthrough',
+    '-frames:v', '1', '-y', controlPath,
   ], {
     cwd: context.reighSnapshot,
     env: safeBaseEnvironment(),
@@ -3534,18 +3579,39 @@ function verifyRenderedArtifact(context, { serveOwnedEvidence = null } = {}) {
     const framePath = resolve(context.evidenceRoot, `${fileStem}.png`);
     const logPath = resolve(context.evidenceRoot, `${fileStem}.log`);
     runLogged(ffmpegExecutable, [
-      '-v', 'error', '-ss', String(probeEntry.seconds), '-i', outputPath, '-frames:v', '1', '-y', framePath,
+      '-v', 'error', '-i', outputPath,
+      '-vf', `select=eq(n\\,${probeEntry.frame})`, '-fps_mode', 'passthrough',
+      '-frames:v', '1', '-y', framePath,
     ], {
       cwd: context.reighSnapshot,
       env: safeBaseEnvironment(),
       logPath,
     });
+    const ocrInputPath = resolve(context.evidenceRoot, `${fileStem}-ocr-input.png`);
+    const crop = `${Math.round(caption.region.width)}x${Math.round(caption.region.height)}+${Math.round(caption.region.x)}+${Math.round(caption.region.y)}`;
+    runLogged(magickExecutable, [
+      framePath, '-crop', crop, '+repage', '-colorspace', 'gray',
+      '-threshold', '70%', ocrInputPath,
+    ], {
+      cwd: context.reighSnapshot,
+      env: safeBaseEnvironment(),
+      logPath: resolve(context.evidenceRoot, `${fileStem}-ocr-input.log`),
+      strictStderr: true,
+    });
     const ocrPath = resolve(context.evidenceRoot, `${fileStem}-ocr.tsv`);
     const tesseract = capture(tesseractExecutable, [
-      framePath, 'stdout', '--psm', '11', '-l', 'eng', 'tsv',
+      ocrInputPath, 'stdout', '--psm', '7', '-l', 'eng', 'tsv',
     ], { cwd: context.reighSnapshot, env: safeBaseEnvironment() });
     writeFileSync(ocrPath, tesseract.stdout, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
-    const recognized = recognizedCaption(parseTesseractTsv(tesseract.stdout));
+    const recognizedInCrop = recognizedCaption(parseTesseractTsv(tesseract.stdout));
+    const recognized = {
+      text: recognizedInCrop.text,
+      bounds: recognizedInCrop.bounds ? {
+        ...recognizedInCrop.bounds,
+        left: recognizedInCrop.bounds.left + caption.region.x,
+        top: recognizedInCrop.bounds.top + caption.region.y,
+      } : null,
+    };
     // Caption foreground and contrast are measured from frame-vs-control
     // differencing. Absolute luminance is intentionally not evidence: a
     // dark-but-present caption and a bright omitted-media frame must remain
@@ -3578,12 +3644,67 @@ function verifyRenderedArtifact(context, { serveOwnedEvidence = null } = {}) {
       sha256: sha256File(framePath),
       path: relative(context.evidenceRoot, framePath),
       logPath: relative(context.evidenceRoot, logPath),
+      ocrInputPath: relative(context.evidenceRoot, ocrInputPath),
       ocrPath: relative(context.evidenceRoot, ocrPath),
       occupancy,
       controlOccupancy: semantics.controlOccupancy,
       contrast,
       recognizedBounds: recognized.bounds,
       expectedRegion: caption.region,
+    };
+  });
+  const expectedBoundaryProbes = captionBoundaryProbePlan(captions, expectedFps, frames);
+  const boundaryProbeEvidence = expectedBoundaryProbes.map((probeEntry, index) => {
+    const caption = captions.find((candidate) => candidate.id === probeEntry.captionId);
+    if (!caption) fail(`caption boundary probe references missing persisted ID ${probeEntry.captionId}`);
+    const fileStem = `render-caption-boundary-${probeEntry.kind}-${index}`;
+    const framePath = resolve(context.evidenceRoot, `${fileStem}.png`);
+    const logPath = resolve(context.evidenceRoot, `${fileStem}.log`);
+    runLogged(ffmpegExecutable, [
+      '-v', 'error', '-i', outputPath,
+      '-vf', `select=eq(n\\,${probeEntry.frame})`, '-fps_mode', 'passthrough',
+      '-frames:v', '1', '-y', framePath,
+    ], {
+      cwd: context.reighSnapshot,
+      env: safeBaseEnvironment(),
+      logPath,
+    });
+    const ocrInputPath = resolve(context.evidenceRoot, `${fileStem}-ocr-input.png`);
+    const crop = `${Math.round(caption.region.width)}x${Math.round(caption.region.height)}+${Math.round(caption.region.x)}+${Math.round(caption.region.y)}`;
+    runLogged(magickExecutable, [
+      framePath, '-crop', crop, '+repage', '-colorspace', 'gray',
+      '-threshold', '70%', ocrInputPath,
+    ], {
+      cwd: context.reighSnapshot,
+      env: safeBaseEnvironment(),
+      logPath: resolve(context.evidenceRoot, `${fileStem}-ocr-input.log`),
+      strictStderr: true,
+    });
+    const ocrPath = resolve(context.evidenceRoot, `${fileStem}-ocr.tsv`);
+    const tesseract = capture(tesseractExecutable, [
+      ocrInputPath, 'stdout', '--psm', '7', '-l', 'eng', 'tsv',
+    ], { cwd: context.reighSnapshot, env: safeBaseEnvironment() });
+    writeFileSync(ocrPath, tesseract.stdout, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+    const recognized = recognizedCaption(parseTesseractTsv(tesseract.stdout));
+    const semantics = assessCaptionBoundaryProbe({
+      expectedText: caption.text,
+      recognizedText: recognized.text,
+    });
+    if (!semantics.pass) {
+      fail(`caption boundary proof failed for ${caption.id} ${probeEntry.kind} frame ${probeEntry.frame}: ${semantics.reasons.join('; ')}`);
+    }
+    return {
+      kind: probeEntry.kind,
+      frame: probeEntry.frame,
+      seconds: probeEntry.seconds,
+      captionId: caption.id,
+      expectedText: caption.text,
+      recognizedText: recognized.text,
+      sha256: sha256File(framePath),
+      path: relative(context.evidenceRoot, framePath),
+      logPath: relative(context.evidenceRoot, logPath),
+      ocrInputPath: relative(context.evidenceRoot, ocrInputPath),
+      ocrPath: relative(context.evidenceRoot, ocrPath),
     };
   });
   const midpointEvidence = probeEvidence.filter((entry) => entry.kind === 'midpoint');
@@ -3621,13 +3742,15 @@ function verifyRenderedArtifact(context, { serveOwnedEvidence = null } = {}) {
         region: caption.region,
       })),
       controlSeconds,
+      controlFrame,
       controlFrameSha256,
       controlFramePath: relative(context.evidenceRoot, controlPath),
       controlOcrPath: relative(context.evidenceRoot, controlOcrPath),
       controlForegroundByRegion,
       controlContrastByRegion,
-      boundaryFrames: probeEvidence.filter((entry) => entry.kind !== 'midpoint'),
+      motionSafeInteriorFrames: probeEvidence.filter((entry) => entry.kind !== 'midpoint'),
       probes: probeEvidence,
+      boundaryProbes: boundaryProbeEvidence,
     },
   };
   writeFileSync(

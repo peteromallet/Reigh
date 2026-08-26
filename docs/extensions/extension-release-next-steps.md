@@ -85,10 +85,13 @@ evidence.
 The paired receipt's render gate is code-owned. It requires exactly the two
 persisted captions (`Fixture segment one` at 2–4 seconds and `Fixture segment
 two` at 5–8 seconds), bound by ID, text, interval, and render region. It probes
-each caption at its first, midpoint, and last encoded frame (six probes total),
-then probes a no-caption control interval. The control must contain the
+each caption at exact motion-safe 25%, 50%, and 75% encoded frames (six
+positive probes total), then probes the exact frames immediately before, at
+the zero-opacity start, at the zero-opacity final frame, and immediately after
+each interval when those frames exist. It also probes a no-caption control
+interval. The control must contain the
 committed 1280×720 paired-release test card with its metadata/hash and pixel
-probes; caption frames must pass exact OCR plus region, occupancy, and
+probes; positive caption frames must pass exact OCR plus region, occupancy, and
 frame-vs-control contrast checks. The MP4 is fully decoded and its codec,
 dimensions, frame rate, duration, frame count, and media bytes are bound to the
 persisted state. This replaces the old shorthand of “two caption midpoints.”

@@ -31,6 +31,8 @@ import {
   buildViteArgs,
   assessCaptionProbe,
   assessNoCaptionControl,
+  assessCaptionBoundaryProbe,
+  captionBoundaryProbePlan,
   captionProbePlan,
   childProcessFailure,
   commandTimeout,
@@ -705,7 +707,7 @@ process.exit(1);
     assert.doesNotMatch(source, /controlOccupancy:\s*imageDifferenceMetric\(controlPath,\s*controlPath/);
   });
 
-  it('binds the exact persisted caption set and probes every ID at first, midpoint, and last frame', () => {
+  it('binds every persisted caption to motion-safe interiors and exact negative boundaries', () => {
     const captions = validateCaptionExpectations(EXPECTED_PERSISTED_CAPTIONS.map((caption) => ({
       ...caption,
       region: { ...caption.region },
@@ -713,17 +715,30 @@ process.exit(1);
     assert.deepEqual(captions.map((caption) => caption.id), EXPECTED_PERSISTED_CAPTIONS.map((caption) => caption.id));
     const probes = captionProbePlan(captions, 24);
     assert.deepEqual(probes.map((probe) => [probe.captionId, probe.kind]), [
-      [EXPECTED_PERSISTED_CAPTIONS[0].id, 'first'],
+      [EXPECTED_PERSISTED_CAPTIONS[0].id, 'early'],
       [EXPECTED_PERSISTED_CAPTIONS[0].id, 'midpoint'],
-      [EXPECTED_PERSISTED_CAPTIONS[0].id, 'last'],
-      [EXPECTED_PERSISTED_CAPTIONS[1].id, 'first'],
+      [EXPECTED_PERSISTED_CAPTIONS[0].id, 'late'],
+      [EXPECTED_PERSISTED_CAPTIONS[1].id, 'early'],
       [EXPECTED_PERSISTED_CAPTIONS[1].id, 'midpoint'],
-      [EXPECTED_PERSISTED_CAPTIONS[1].id, 'last'],
+      [EXPECTED_PERSISTED_CAPTIONS[1].id, 'late'],
     ]);
-    assert.equal(probes[0].frame, 48);
-    assert.equal(probes[2].frame, 95);
-    assert.equal(probes[3].frame, 120);
-    assert.equal(probes[5].frame, 191);
+    assert.equal(probes[0].frame, 60);
+    assert.equal(probes[1].frame, 72);
+    assert.equal(probes[2].frame, 84);
+    assert.equal(probes[3].frame, 138);
+    assert.equal(probes[4].frame, 156);
+    assert.equal(probes[5].frame, 174);
+    assert.deepEqual(captionBoundaryProbePlan(captions, 24, 192).map((probe) => (
+      [probe.captionId, probe.kind, probe.frame]
+    )), [
+      [EXPECTED_PERSISTED_CAPTIONS[0].id, 'before', 47],
+      [EXPECTED_PERSISTED_CAPTIONS[0].id, 'start-zero-opacity', 48],
+      [EXPECTED_PERSISTED_CAPTIONS[0].id, 'final-zero-opacity', 95],
+      [EXPECTED_PERSISTED_CAPTIONS[0].id, 'after', 96],
+      [EXPECTED_PERSISTED_CAPTIONS[1].id, 'before', 119],
+      [EXPECTED_PERSISTED_CAPTIONS[1].id, 'start-zero-opacity', 120],
+      [EXPECTED_PERSISTED_CAPTIONS[1].id, 'final-zero-opacity', 191],
+    ]);
     assert.equal(noCaptionControlSeconds(captions, 8, [{ start: 2, end: 6 }]), 4.5);
     assert.equal(noCaptionControlSeconds(captions, 8, [{ start: 0, end: 1.5 }]), 0.75);
     assert.equal(Number.isNaN(noCaptionControlSeconds(captions, 8, [{ start: 2, end: 4 }])), true);
@@ -738,6 +753,22 @@ process.exit(1);
       8,
       [{ start: 2, end: 6 }],
     )), true);
+    assert.equal(assessCaptionBoundaryProbe({
+      expectedText: 'Fixture segment one',
+      recognizedText: '',
+    }).pass, true);
+    const wrongBoundaryText = assessCaptionBoundaryProbe({
+      expectedText: 'Fixture segment one',
+      recognizedText: 'Fixture segment two',
+    });
+    assert.equal(wrongBoundaryText.pass, false);
+    assert.match(wrongBoundaryText.reasons.join('; '), /required-empty boundary frame/);
+    const visibleBoundary = assessCaptionBoundaryProbe({
+      expectedText: 'Fixture segment one',
+      recognizedText: 'Fixture segment one',
+    });
+    assert.equal(visibleBoundary.pass, false);
+    assert.match(visibleBoundary.reasons.join('; '), /required-empty boundary frame/);
   });
 
   it('fails duplicate, overlapping, wrong-ID, wrong-text, and wrong-interval persistence', () => {
