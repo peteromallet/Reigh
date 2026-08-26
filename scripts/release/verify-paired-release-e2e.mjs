@@ -158,7 +158,8 @@ function commandBudgetKey(command, args = [], requested) {
   if (typeof requested === 'string' && Object.hasOwn(COMMAND_BUDGETS_MS, requested)) return requested;
   const base = String(command).split(/[\\/]/).at(-1) ?? String(command);
   const joined = args.map(String).join(' ');
-  if (base === 'npm' || /(?:^|[\\/])npm-cli\.js$/.test(String(args[0] ?? ''))) return 'npm';
+  if (base === 'npm'
+    || (/^node(?:\.exe)?$/i.test(base) && /(?:^|[\\/])npm-cli\.js$/.test(String(args[0] ?? '')))) return 'npm';
   if (base === 'ffmpeg') return 'ffmpeg';
   if (base === 'ffprobe') return 'ffprobe';
   if (base === 'magick' || base === 'convert') return 'magick';

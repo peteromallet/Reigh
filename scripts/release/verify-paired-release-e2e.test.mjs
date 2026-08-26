@@ -1598,6 +1598,11 @@ describe('paired repository release E2E gate', () => {
       COMMAND_BUDGETS_MS.npm,
       'pinned npm invoked through Node must retain the npm phase budget',
     );
+    assert.equal(
+      commandTimeout('/usr/bin/python', ['/tmp/npm-cli.js', 'run', 'build']),
+      COMMAND_BUDGETS_MS.fastProbe,
+      'an npm-cli.js-looking argument under a non-Node executable must not escalate its budget',
+    );
     assert.match(source, /failureType: result\.failureType/);
     assert.match(source, /commandDiagnostic/);
     assert.match(source, /kill=\$\{result\.killSignal\}/);
