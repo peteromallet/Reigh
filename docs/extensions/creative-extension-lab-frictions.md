@@ -2431,3 +2431,26 @@ fresh console collection.
 - The failed RC38 evidence has artifact-index SHA-256
   `79daafcde40f8ba49c8f7cb18e6cdf3dcb74254197bd5de30a607b44888ce615`.
   It remains immutable diagnostic history and is not a passing receipt.
+
+### Code-owned generated IDs must move with their source carrier
+
+- RC39 passed both browser phases, restart persistence for all thirteen
+  extensions and 566 Runaway transitions, and the real Astrid-owned render.
+  The later exact-caption gate rejected the two persisted caption IDs even
+  though their text, intervals, geometry, provenance, and rendered frames were
+  correct and stable across RC38 and RC39.
+- The sound-bearing transcript fixture added in `afb460ce3` intentionally
+  moved the transcript source from the silent visual carrier to
+  `motion-output-audio.aac`. Caption IDs are deterministic fingerprints of the
+  source item IDs, but the independent release oracle still expected the two
+  IDs from the old carrier. Earlier candidates failed before reaching this
+  assertion, so the stale expectation remained hidden until RC39.
+- The release oracle now pins the two audio-carrier source item IDs alongside
+  their independently expected generated caption IDs. Validation rejects a
+  changed ID or a caption whose provenance points at a different source item;
+  it still pins exact text, timing, non-overlap, and render geometry. This
+  updates the expected identity without weakening the independent contract to
+  accept whatever IDs the application emits.
+- The failed RC39 evidence has artifact-index SHA-256
+  `0465158c0563e6f9cfb66dafa1ebe1969623948a87578e771d0d0fa594683e2f`.
+  It remains immutable diagnostic history and is not a passing receipt.

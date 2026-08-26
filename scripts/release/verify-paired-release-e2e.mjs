@@ -2700,14 +2700,16 @@ const CAPTION_FRAME_WIDTH = 1280;
 const CAPTION_FRAME_HEIGHT = 720;
 export const EXPECTED_PERSISTED_CAPTIONS = Object.freeze([
   Object.freeze({
-    id: 'transcript-caption-94f8d62cad776aca',
+    id: 'transcript-caption-6e7dcef2cb98889a',
+    sourceItemId: 'motion-output-audio.aac:src:ea892f3b2652',
     text: 'Fixture segment one',
     at: 2,
     duration: 2,
     region: Object.freeze({ x: 128, y: 418, width: 1024, height: 101 }),
   }),
   Object.freeze({
-    id: 'transcript-caption-5b0feed951226a00',
+    id: 'transcript-caption-50f32a12c9f2b48c',
+    sourceItemId: 'motion-output-audio.aac:src:c386749c4fa3',
     text: 'Fixture segment two',
     at: 5,
     duration: 3,
@@ -2919,6 +2921,9 @@ export function validateCaptionExpectations(captions, expected = EXPECTED_PERSIS
   for (const caption of captions) {
     const wanted = expectedById.get(caption.id);
     if (!wanted) fail(`unexpected persisted caption ID: ${caption.id}`);
+    if (caption.sourceItemId !== wanted.sourceItemId) {
+      fail(`persisted caption ${caption.id} source item mismatch`);
+    }
     if (caption.text !== wanted.text) fail(`persisted caption ${caption.id} text mismatch`);
     if (caption.at !== wanted.at || caption.duration !== wanted.duration) {
       fail(`persisted caption ${caption.id} interval mismatch: expected ${wanted.at}-${wanted.at + wanted.duration}s`);
@@ -2951,6 +2956,7 @@ function captionExpectations(evidenceRoot) {
       duration: captionDuration(clip),
       text: captionText(clip),
       region: rectangleFromClip(clip),
+      sourceItemId: clip?.app?.__generated__?.provenance?.sourceItemId ?? null,
     }))
     .filter((clip) => Number.isFinite(clip.at) && clip.duration > 0 && clip.text && clip.region);
   return validateCaptionExpectations(captions);

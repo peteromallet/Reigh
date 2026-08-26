@@ -743,6 +743,9 @@ process.exit(1);
       index === 1 ? { ...caption, text: 'Wrong text' } : caption
     ))), /text mismatch/);
     assert.throws(() => validateCaptionExpectations(copy().map((caption, index) => (
+      index === 1 ? { ...caption, sourceItemId: 'wrong-source:src:000000000000' } : caption
+    ))), /source item mismatch/);
+    assert.throws(() => validateCaptionExpectations(copy().map((caption, index) => (
       index === 1 ? { ...caption, duration: 2 } : caption
     ))), /interval mismatch/);
   });
