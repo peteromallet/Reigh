@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "release": "extension-ship-quality-rc20",
-  "status": "integration",
+  "status": "frozen",
   "candidate": {
-    "reighCommit": null,
+    "reighCommit": "a2db6a51327c2fc18721a122f133b79762d32c08",
     "astridCommit": "73fff7d5990b2563d7c31805d0c4aa8f01ed94a1"
   },
   "workstreams": [
@@ -144,7 +144,7 @@
       "id": "23-frozen-release-candidate",
       "title": "Frozen release candidate",
       "status": "blocked",
-      "blocker": "RC20 is in integration; the paired acceptance receipt and two independent frozen-candidate approvals are not yet available.",
+      "blocker": "RC20 is source-frozen and candidate-bound; the paired acceptance receipt and two independent frozen-candidate approvals are not yet available.",
       "receipts": []
     }
   ]
