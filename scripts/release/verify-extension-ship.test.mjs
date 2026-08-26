@@ -245,6 +245,7 @@ describe('extension ship verifier', () => {
     const plan = buildExecutionPlan({
       repoRoot: reighExecutionCheckout,
       astridCheckout,
+      nodeExecutable: '/tmp/pinned-node',
       astridPython: '/tmp/astrid-python',
       astridRef: 'a'.repeat(40),
       reighRef: 'b'.repeat(40),
@@ -260,6 +261,7 @@ describe('extension ship verifier', () => {
     assert.equal(plan.at(-1).command, 'make');
     assert.deepEqual(plan.at(-1).args, ['ci']);
     assert.deepEqual(plan.at(-1).env, {
+      ASTRID_NODE_EXECUTABLE: '/tmp/pinned-node',
       ASTRID_REIGH_CHECKOUT: reighExecutionCheckout,
       PY: '/tmp/astrid-python',
       PYTHON_BIN: '/tmp/astrid-python',
@@ -495,6 +497,7 @@ describe('extension ship verifier', () => {
       ASTRID_CI_SKIP_GATE: '1',
       ASTRID_CI_SKIP_BROAD: '1',
       ASTRID_CI_SKIP_COVERAGE: '1',
+      ASTRID_NODE_EXECUTABLE: '/tmp/attacker-node',
       PYTHONPATH: '/tmp/attacker',
       ASTRID_REIGH_CHECKOUT: '/tmp/operator-supplied-reigh',
       PYTEST_ADDOPTS: '-m not_release',
@@ -579,6 +582,7 @@ describe('extension ship verifier', () => {
       const astridCi = buildExecutionPlan({
         repoRoot: reighExecutionCheckout,
         astridCheckout: '/tmp/astrid-pinned-fixture',
+        nodeExecutable: '/tmp/pinned-node',
         astridPython: '/tmp/astrid-python',
         astridRef: 'a'.repeat(40),
         reighRef: 'b'.repeat(40),
@@ -590,6 +594,7 @@ describe('extension ship verifier', () => {
       });
 
       assert.equal(captured.ASTRID_REIGH_CHECKOUT, reighExecutionCheckout);
+      assert.equal(captured.ASTRID_NODE_EXECUTABLE, '/tmp/pinned-node');
       assert.notEqual(captured.ASTRID_REIGH_CHECKOUT, operatorPath);
       assert.equal(captured.PYTHONPATH, `${reighExecutionCheckout}/vendor/timeline-schema/python`);
     } finally {

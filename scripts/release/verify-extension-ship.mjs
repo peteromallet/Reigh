@@ -145,6 +145,7 @@ const RELEASE_PATH = [
 ].filter((entry, index, entries) => entries.indexOf(entry) === index).join(':');
 const ALLOWED_STEP_ENV = new Set([
   'ASTRID_CHECKOUT',
+  'ASTRID_NODE_EXECUTABLE',
   'ASTRID_PYTHON',
   'ASTRID_REIGH_CHECKOUT',
   'ASTRID_REF',
@@ -525,11 +526,13 @@ export function validatePackageJson(packageJson, manifest) {
 export function buildExecutionPlan({
   repoRoot,
   astridCheckout,
+  nodeExecutable,
   astridPython,
   astridRef,
   reighRef,
 }) {
   const astridCwd = astridCheckout || '<ASTRID_CHECKOUT required for execution>';
+  const node = nodeExecutable || '<PINNED_NODE required for execution>';
   const python = astridPython || '<ASTRID_PYTHON required for execution>';
   return [
     ...REIGH_GATE_PROFILE.map((gate) => ({
@@ -552,6 +555,7 @@ export function buildExecutionPlan({
       maxBuffer: RELEASE_COMMAND_MAX_BUFFER_BYTES,
       env: gate.id === 'astrid-ci'
         ? {
+            ASTRID_NODE_EXECUTABLE: node,
             ASTRID_REIGH_CHECKOUT: repoRoot,
             PY: python,
             PYTHON_BIN: python,
@@ -1007,6 +1011,7 @@ function printPlan(manifest, packageJson, env) {
   const steps = buildExecutionPlan({
     repoRoot: RELEASE_REIGH_WORKTREE,
     astridCheckout: env.ASTRID_CHECKOUT,
+    nodeExecutable: realpathSync(process.execPath),
     astridPython: env.ASTRID_PYTHON,
     astridRef: env.ASTRID_REF,
     reighRef: env.REIGH_REF,
@@ -1106,6 +1111,7 @@ export function main(argv = process.argv.slice(2), env = process.env) {
     const steps = buildExecutionPlan({
       repoRoot: releaseReighWorktree,
       astridCheckout: astrid.checkout,
+      nodeExecutable: realpathSync(process.execPath),
       astridPython,
       astridRef: env.ASTRID_REF,
       reighRef: env.REIGH_REF,
