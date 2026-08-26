@@ -2381,3 +2381,26 @@ fresh console collection.
 - The failed RC36 evidence has artifact-index SHA-256
   `97eedc4e95664c517242e287ceb9f89a5ae1181a59dd9342b4e46df5b148b148`.
   It remains immutable diagnostic history and is not a passing receipt.
+
+### Browser-context infrastructure retries must never replay product actions
+
+- RC37 completed the exact-source checkout, locked installs, production build,
+  media import, backup, migration, and authenticated preview checks. Chromium
+  launched successfully, but Playwright's `browser.newContext()` fixture never
+  returned and exhausted the five-minute test budget before the test body
+  existed. The trace contains only `Launch browser` and `Create context`; there
+  is no page, request, extension action, or timeline write.
+- A fresh probe using the same Playwright 1.60.0, Chrome for Testing 148,
+  recorded video, viewport, user agent, and launch arguments created its
+  context in 21 ms. The one-off browser-process deadlock was therefore an
+  infrastructure failure, not a product assertion that should be retried.
+- The paired gate now permits exactly one retry only when the bounded command
+  failed by process exit and Playwright emitted both exact pre-body context
+  diagnostics. It also refuses the retry if any phase state or timeline
+  artifact exists. The original log and timeout diagnostic remain immutable;
+  the retry gets a separate output directory and log plus a hashed retry
+  receipt. Locator, persistence, rendering, timeout, and application failures
+  are never retried, and Playwright's general retry count remains zero.
+- The failed RC37 evidence has artifact-index SHA-256
+  `c31e81936600b831ecd63d94b117aa3a0f58678958fbf713b8a6b8ae3b661019`.
+  It remains immutable diagnostic history and is not a passing receipt.

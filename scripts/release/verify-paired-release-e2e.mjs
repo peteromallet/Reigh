@@ -244,6 +244,13 @@ function commandDiagnosticSummary(error) {
   };
 }
 
+export function isRetryablePlaywrightContextSetupFailure(error) {
+  if (error?.name !== 'ReleaseCommandError' || error?.result?.failureType !== 'exit') return false;
+  const output = `${String(error.result.stdout ?? '')}\n${String(error.result.stderr ?? '')}`;
+  return output.includes('Test timeout of 300000ms exceeded while setting up "context".')
+    && output.includes('Error: browser.newContext: Test ended.');
+}
+
 function fail(message) {
   throw new Error(message);
 }
@@ -352,12 +359,23 @@ export function buildViteArgs(viteBin, mode, port) {
     : [viteBin, '--config', 'config/vite/vite.config.ts', '--host', '127.0.0.1', '--port', String(port), '--strictPort'];
 }
 
-export function buildBrowserEnvironment({ baseUrl, browserExecutable, browserRoot, evidenceDir, phase, audioMediaId }) {
+export function buildBrowserEnvironment({
+  baseUrl,
+  browserExecutable,
+  browserRoot,
+  evidenceDir,
+  phase,
+  outputPhase = phase,
+  audioMediaId,
+}) {
   if (!browserExecutable || !isAbsolute(browserExecutable) || !existsSync(browserExecutable)) {
     fail('paired browser executable must be an existing absolute path');
   }
   if (!browserRoot || !isAbsolute(browserRoot) || !existsSync(browserRoot)) {
     fail('paired browser root must be an existing absolute path');
+  }
+  if (!/^(?:first|restart|restore)(?:-context-retry-1)?$/.test(outputPhase ?? '')) {
+    fail(`invalid paired browser evidence phase: ${outputPhase ?? '<missing>'}`);
   }
   return safeBaseEnvironment({
     PAIRED_RELEASE_BASE_URL: baseUrl,
@@ -371,7 +389,7 @@ export function buildBrowserEnvironment({ baseUrl, browserExecutable, browserRoo
     ...(audioMediaId ? { PAIRED_RELEASE_AUDIO_MEDIA_ID: audioMediaId } : {}),
     PLAYWRIGHT_CHROMIUM_EXECUTABLE: browserExecutable,
     PLAYWRIGHT_BROWSERS_PATH: browserRoot,
-    PLAYWRIGHT_OUTPUT_DIR: resolve(evidenceDir, `playwright-${phase}`),
+    PLAYWRIGHT_OUTPUT_DIR: resolve(evidenceDir, `playwright-${outputPhase}`),
   });
 }
 
@@ -2601,9 +2619,9 @@ async function smokeBuiltPreview(port, expectedIdentity) {
   };
 }
 
-function runPlaywright(context, phase, port) {
+export function runPlaywright(context, phase, port) {
   const cli = resolve(context.reighSnapshot, 'node_modules/@playwright/test/cli.js');
-  return runLogged(process.execPath, [
+  const execute = (outputPhase) => runLogged(process.execPath, [
     cli, 'test', '--config', 'playwright.paired-release.config.ts', '--workers=1',
   ], {
     cwd: context.reighSnapshot,
@@ -2613,10 +2631,56 @@ function runPlaywright(context, phase, port) {
       browserRoot: context.browserRoot,
       evidenceDir: context.evidenceRoot,
       phase,
+      outputPhase,
       audioMediaId: context.audioMediaId,
     }),
-    logPath: resolve(context.evidenceRoot, `playwright-${phase}.log`),
+    logPath: resolve(context.evidenceRoot, `playwright-${outputPhase}.log`),
   });
+
+  try {
+    return { ...execute(phase), contextSetupRetries: 0 };
+  } catch (error) {
+    // A Chromium process can very rarely accept the Playwright launch protocol
+    // and then deadlock before Browser.createBrowserContext returns. Retrying a
+    // product assertion would be unsafe because the first attempt may already
+    // have mutated the timeline. This exact Playwright fixture error happens
+    // before the test body exists, so one fresh browser process is safe.
+    if (!isRetryablePlaywrightContextSetupFailure(error)) throw error;
+    for (const path of [
+      resolve(context.evidenceRoot, `browser-${phase}-state.json`),
+      resolve(context.evidenceRoot, `timeline-${phase}.json`),
+    ]) {
+      if (existsSync(path)) throw error;
+    }
+
+    const retryPath = resolve(context.evidenceRoot, `playwright-${phase}-context-retry.json`);
+    const initialLogPath = resolve(context.evidenceRoot, `playwright-${phase}.log`);
+    writeFileSync(retryPath, `${JSON.stringify({
+      schemaVersion: 1,
+      kind: 'playwright-pre-body-context-retry',
+      phase,
+      reason: 'browser.newContext fixture timed out before the test body',
+      maxRetries: 1,
+      initialFailure: {
+        failureType: error.result.failureType,
+        elapsedMs: error.result.elapsedMs,
+        logPath: relative(context.evidenceRoot, initialLogPath),
+        logSha256: sha256File(initialLogPath),
+        diagnosticsPath: error.diagnosticsPath
+          ? relative(context.evidenceRoot, error.diagnosticsPath)
+          : null,
+        diagnosticsSha256: error.diagnosticsPath && existsSync(error.diagnosticsPath)
+          ? sha256File(error.diagnosticsPath)
+          : null,
+      },
+    }, null, 2)}\n`, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+
+    return {
+      ...execute(`${phase}-context-retry-1`),
+      contextSetupRetries: 1,
+      contextSetupRetryEvidence: relative(context.evidenceRoot, retryPath),
+    };
+  }
 }
 
 function parseRate(value) {
@@ -3656,8 +3720,15 @@ async function executeGate(manifest, pins, evidenceRoot) {
     astridHandle = await startAstrid(context, 'browser-first', bridgePort, token);
     reighPort = await allocatePort();
     reighHandle = await startReigh(context, 'browser-first', reighPort, bridgePort, token, 'development');
-    runPlaywright(context, 'first', reighPort);
-    receipt.phases.push({ id: 'browser-first', status: 'pass' });
+    const firstBrowser = runPlaywright(context, 'first', reighPort);
+    receipt.phases.push({
+      id: 'browser-first',
+      status: 'pass',
+      contextSetupRetries: firstBrowser.contextSetupRetries,
+      ...(firstBrowser.contextSetupRetryEvidence
+        ? { contextSetupRetryEvidence: firstBrowser.contextSetupRetryEvidence }
+        : {}),
+    });
     await stopLoggedProcesses([reighHandle, astridHandle]);
     reighHandle = undefined;
     astridHandle = undefined;
@@ -3666,12 +3737,16 @@ async function executeGate(manifest, pins, evidenceRoot) {
     astridHandle = await startAstrid(context, 'browser-restart', bridgePort, token);
     reighPort = await allocatePort();
     reighHandle = await startReigh(context, 'browser-restart', reighPort, bridgePort, token, 'development');
-    runPlaywright(context, 'restart', reighPort);
+    const restartBrowser = runPlaywright(context, 'restart', reighPort);
     const serveOwnedEvidence = await captureAstridServeOwnedRenderEvidence(context, { bridgePort, token });
     const renderVerification = verifyRenderedArtifact(context, { serveOwnedEvidence });
     receipt.phases.push({
       id: 'restart-persistence-render',
       status: 'pass',
+      contextSetupRetries: restartBrowser.contextSetupRetries,
+      ...(restartBrowser.contextSetupRetryEvidence
+        ? { contextSetupRetryEvidence: restartBrowser.contextSetupRetryEvidence }
+        : {}),
       persistedStateHash: renderVerification.persistedStateHash,
       mp4Sha256: renderVerification.mp4Sha256,
       videoFrames: renderVerification.video.frames,
@@ -3758,10 +3833,14 @@ async function executeGate(manifest, pins, evidenceRoot) {
     });
     reighPort = await allocatePort();
     reighHandle = await startReigh(context, 'restore', reighPort, bridgePort, token, 'development');
-    runPlaywright(context, 'restore', reighPort);
+    const restoreBrowser = runPlaywright(context, 'restore', reighPort);
     receipt.phases.push({
       id: 'rollback-restore',
       status: 'pass',
+      contextSetupRetries: restoreBrowser.contextSetupRetries,
+      ...(restoreBrowser.contextSetupRetryEvidence
+        ? { contextSetupRetryEvidence: restoreBrowser.contextSetupRetryEvidence }
+        : {}),
       runawayRows: restoredRows,
       baselineDbCounts,
       restoredDbCounts,

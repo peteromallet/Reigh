@@ -35,11 +35,13 @@ import {
   childProcessFailure,
   commandTimeout,
   isExactViteReadiness,
+  isRetryablePlaywrightContextSetupFailure,
   normalizeCaptionText,
   pcmS16leStats,
   parseCliArgs,
   requireFullCommitPin,
   requestRawHttp,
+  runPlaywright,
   resolvePinnedNpmCli,
   resolvePinnedBrowserExecutable,
   validateTimelineSchemaInstallation,
@@ -83,6 +85,96 @@ function runTestCommand(command, args, options = {}) {
 }
 
 describe('paired repository release E2E gate', () => {
+  it('retries only the exact pre-body Playwright context deadlock', () => {
+    const exactFailure = {
+      name: 'ReleaseCommandError',
+      result: {
+        failureType: 'exit',
+        stdout: 'Test timeout of 300000ms exceeded while setting up "context".\nError: browser.newContext: Test ended.',
+        stderr: '',
+      },
+    };
+    assert.equal(isRetryablePlaywrightContextSetupFailure(exactFailure), true);
+    assert.equal(isRetryablePlaywrightContextSetupFailure({
+      ...exactFailure,
+      result: { ...exactFailure.result, stdout: 'expect(locator).toBeVisible failed' },
+    }), false);
+    assert.equal(isRetryablePlaywrightContextSetupFailure({
+      ...exactFailure,
+      result: { ...exactFailure.result, failureType: 'timeout' },
+    }), false);
+    assert.equal(isRetryablePlaywrightContextSetupFailure(new Error('browser.newContext: Test ended.')), false);
+  });
+
+  it('preserves the failed browser setup and retries once in an isolated output directory', () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'paired-context-retry-'));
+    const reighSnapshot = resolve(root, 'reigh');
+    const evidenceRoot = resolve(root, 'evidence');
+    const cli = resolve(reighSnapshot, 'node_modules/@playwright/test/cli.js');
+    mkdirSync(resolve(cli, '..'), { recursive: true });
+    mkdirSync(evidenceRoot, { recursive: true });
+    writeFileSync(cli, `
+const output = process.env.PLAYWRIGHT_OUTPUT_DIR ?? '';
+if (output.endsWith('playwright-first')) {
+  console.log('Test timeout of 300000ms exceeded while setting up "context".');
+  console.log('Error: browser.newContext: Test ended.');
+  process.exit(1);
+}
+if (!output.endsWith('playwright-first-context-retry-1')) process.exit(2);
+`);
+    try {
+      const result = runPlaywright({
+        reighSnapshot,
+        evidenceRoot,
+        browserExecutable: process.execPath,
+        browserRoot: '/tmp',
+        audioMediaId: 'audio-id',
+      }, 'first', 21000);
+      assert.equal(result.contextSetupRetries, 1);
+      assert.equal(result.contextSetupRetryEvidence, 'playwright-first-context-retry.json');
+      assert.equal(existsSync(resolve(evidenceRoot, 'playwright-first.log')), true);
+      assert.equal(existsSync(resolve(evidenceRoot, 'playwright-first.log.timeout.json')), true);
+      assert.equal(existsSync(resolve(evidenceRoot, 'playwright-first-context-retry-1.log')), true);
+      const retry = JSON.parse(readFileSync(
+        resolve(evidenceRoot, 'playwright-first-context-retry.json'),
+        'utf8',
+      ));
+      assert.equal(retry.kind, 'playwright-pre-body-context-retry');
+      assert.equal(retry.maxRetries, 1);
+      assert.match(retry.initialFailure.logSha256, /^[0-9a-f]{64}$/);
+      assert.match(retry.initialFailure.diagnosticsSha256, /^[0-9a-f]{64}$/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('does not retry a context failure after any phase-owned state exists', () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'paired-context-no-retry-'));
+    const reighSnapshot = resolve(root, 'reigh');
+    const evidenceRoot = resolve(root, 'evidence');
+    const cli = resolve(reighSnapshot, 'node_modules/@playwright/test/cli.js');
+    mkdirSync(resolve(cli, '..'), { recursive: true });
+    mkdirSync(evidenceRoot, { recursive: true });
+    writeFileSync(cli, `
+console.log('Test timeout of 300000ms exceeded while setting up "context".');
+console.log('Error: browser.newContext: Test ended.');
+process.exit(1);
+`);
+    writeFileSync(resolve(evidenceRoot, 'browser-first-state.json'), '{}\n');
+    try {
+      assert.throws(() => runPlaywright({
+        reighSnapshot,
+        evidenceRoot,
+        browserExecutable: process.execPath,
+        browserRoot: '/tmp',
+      }, 'first', 21000), /failed with exit 1/);
+      assert.equal(existsSync(resolve(evidenceRoot, 'playwright-first-context-retry.json')), false);
+      assert.equal(existsSync(resolve(evidenceRoot, 'playwright-first-context-retry-1.log')), false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('authors render dimensions and FPS through canonical theme overrides', () => {
     assert.deepEqual(PAIRED_RELEASE_TIMELINE_CONFIG.theme_overrides, {
       visual: {
@@ -1437,6 +1529,29 @@ describe('paired repository release E2E gate', () => {
       assert.equal(browser.OPENAI_API_KEY, undefined);
       assert.equal(browser.PLAYWRIGHT_CHROMIUM_EXECUTABLE, process.execPath);
       assert.equal(browser.PLAYWRIGHT_BROWSERS_PATH, '/tmp');
+      assert.equal(browser.PLAYWRIGHT_OUTPUT_DIR, '/tmp/paired-evidence/playwright-first');
+
+      const retryBrowser = buildBrowserEnvironment({
+        baseUrl: 'http://127.0.0.1:21000',
+        browserExecutable: process.execPath,
+        browserRoot: '/tmp',
+        evidenceDir: '/tmp/paired-evidence',
+        phase: 'first',
+        outputPhase: 'first-context-retry-1',
+      });
+      assert.equal(retryBrowser.PAIRED_RELEASE_PHASE, 'first');
+      assert.equal(
+        retryBrowser.PLAYWRIGHT_OUTPUT_DIR,
+        '/tmp/paired-evidence/playwright-first-context-retry-1',
+      );
+      assert.throws(() => buildBrowserEnvironment({
+        baseUrl: 'http://127.0.0.1:21000',
+        browserExecutable: process.execPath,
+        browserRoot: '/tmp',
+        evidenceDir: '/tmp/paired-evidence',
+        phase: 'first',
+        outputPhase: '../overwrite',
+      }), /invalid paired browser evidence phase/);
 
       const server = buildServerEnvironment({
         home: '/tmp/paired-home',
