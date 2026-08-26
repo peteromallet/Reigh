@@ -1870,3 +1870,29 @@ fresh console collection.
   the live real-bridge browser suite proves that the resolved checkout actually
   starts. Candidate tags remain immutable: discovering this after RC15 was tagged
   requires a new candidate rather than moving or overwriting the existing tag.
+
+### Dense sparse windows could evict the keyboard-focused transition
+
+- RC16's exact paired run selected `T0566` in the inspector after pressing
+  `End`, but then removed its button from the DOM. The retained screenshot and
+  accessibility snapshot showed the inspector on `T0566` while the 128 mounted
+  controls stopped at `T0565`, leaving keyboard focus nowhere. The failed raw
+  evidence root remains under the local `reigh-paired-release-evidence`
+  directory with artifact-index SHA-256
+  `42733cd8dc0054bca22cec14d36b6416750dfc9ee963da2b109c11ab8336fb59`;
+  it is diagnostic history, never an RC17 receipt.
+- The hand-off pin correctly mounted the target for one render. Once scrolling
+  made its time range visible, the sparse overlap ranker immediately reclaimed
+  the window and could rank the focused short interval below 128 older,
+  long-running overlaps. Selection state therefore looked correct while the
+  accessibility contract was broken.
+- Sparse virtualization now reserves one of the existing 128 slots for the
+  keyboard focus target when that target intersects the viewport. It replaces
+  the lowest-priority retained overlap rather than increasing the DOM budget;
+  ordinary unselected windows keep their deterministic ranking unchanged.
+- The regression uses 566 dense transitions, widens the sparse query beyond the
+  DOM budget, navigates from the first item to the far-edge last item with
+  `End`, flushes the pin-to-viewport hand-off, and asserts both
+  durable focus and an exact 128-control ceiling. Because the defect is in
+  candidate source, RC16 remains an immutable failed candidate and the fix must
+  ship in RC17.

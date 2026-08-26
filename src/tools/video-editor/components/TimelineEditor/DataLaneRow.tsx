@@ -209,6 +209,7 @@ function capOverlappingIndices(
   indices: readonly number[],
   viewportStartSeconds: number,
   viewportEndSeconds: number,
+  protectedIndex?: number,
 ): readonly number[] {
   if (indices.length <= DATA_LANE_DOM_ITEM_BUDGET) return indices;
   const viewportMiddle = (viewportStartSeconds + viewportEndSeconds) / 2;
@@ -264,6 +265,19 @@ function capOverlappingIndices(
       siftDown();
     }
   }
+  // A roving-tabindex target that is still inside the viewport must not be
+  // evicted merely because its sparse query window contains over 128 items.
+  // Removing
+  // the focused element from the DOM loses keyboard focus even though the
+  // inspector has already selected the requested item. Replace the lowest
+  // priority retained overlap so the DOM budget stays hard-bounded.
+  if (
+    protectedIndex !== undefined
+    && indices.includes(protectedIndex)
+    && !heap.includes(protectedIndex)
+  ) {
+    heap[0] = protectedIndex;
+  }
   return heap.sort((left, right) => left - right);
 }
 
@@ -273,6 +287,7 @@ function selectViewportWindow(
   viewport: DataLaneViewport,
   pinnedIndex?: number,
   supportsSparseItemWindows = false,
+  protectedIndex?: number,
 ): DataLaneItemWindow {
   const safePixelsPerSecond = Math.max(Number.EPSILON, pixelsPerSecond);
   // The sticky LABEL_WIDTH gutter occludes the left side of the scroller. In
@@ -332,6 +347,7 @@ function selectViewportWindow(
     overlapping,
     viewportStartSeconds,
     viewportEndSeconds,
+    protectedIndex,
   );
   return {
     startIndex: itemIndices[0],
@@ -395,12 +411,16 @@ export function DataLaneRow({
   // active-item window only for that compatibility path. TimelineCanvas always
   // supplies viewport geometry and never takes this branch.
   const pinnedWindowIndex = pinnedIndex ?? (viewport ? undefined : clampedActiveIndex);
+  const protectedFocusIndex = focusItemId === undefined
+    ? undefined
+    : orderedItems.findIndex((view) => view.item.id === focusItemId);
   const itemWindow = selectViewportWindow(
     temporalIndex,
     pixelsPerSecond,
     resolvedViewport,
     pinnedWindowIndex,
     lane.opaque || supportsSparseItemWindows === true,
+    protectedFocusIndex === -1 ? undefined : protectedFocusIndex,
   );
   const {
     startIndex: windowStartIndex,

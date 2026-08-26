@@ -504,6 +504,57 @@ describe('DataLaneList', () => {
     expect(onSelectItem.mock.calls).toEqual([['item-499'], ['item-498'], ['item-0']]);
   });
 
+  it('keeps the focused End target mounted when dense sparse overlaps exceed the DOM budget', async () => {
+    const pixelsPerSecond = 10;
+    const initialCanvasWidth = 10;
+    const targetCanvasWidth = 1_000;
+    const items = Array.from({ length: 566 }, (_, index) => ({
+      item: item(`overlap-${index}`),
+      timelineStart: index * 0.75,
+      timelineEnd: index * 0.75 + 0.01,
+    }));
+    const lane = laneView({
+      laneId: 'opaque:keyboard-overlap.schema/v1',
+      kindId: '',
+      opaque: true,
+      items,
+    }) as unknown as DataLaneView;
+
+    function KeyboardOverlapHarness() {
+      const [viewport, setViewport] = useState({
+        scrollLeft: 0,
+        clientWidth: START_LEFT + initialCanvasWidth,
+      });
+      return (
+        <DataLaneRow
+          lane={lane}
+          pixelsPerSecond={pixelsPerSecond}
+          viewport={viewport}
+          onRequestItemIntoView={(_timelineStart, timelineEnd) => {
+            // Match TimelineCanvas: put a late target against the viewport's
+            // right edge, where the nearest-128 sparse ranker used to evict it.
+            setViewport({
+              scrollLeft: Math.max(0, timelineEnd * pixelsPerSecond - targetCanvasWidth),
+              clientWidth: START_LEFT + targetCanvasWidth,
+            });
+          }}
+        />
+      );
+    }
+
+    render(<KeyboardOverlapHarness />);
+    const first = screen.getByTitle('overlap-0');
+    first.focus();
+    fireEvent.keyDown(first, { key: 'End' });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    const last = screen.getByTitle('overlap-565');
+    expect(last).toHaveFocus();
+    expect(screen.getAllByTestId('data-lane-extent-bar')).toHaveLength(DATA_LANE_DOM_ITEM_BUDGET);
+  });
+
   it.each([5_000, 50_000])(
     'preserves the selected interval by id across reorder and uses a nearest fallback when removed (%i items)',
     (itemCount) => {
