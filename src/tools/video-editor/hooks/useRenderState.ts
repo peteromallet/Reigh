@@ -33,6 +33,7 @@ import { syncPlannerDiagnosticsToCollection } from '@/tools/video-editor/runtime
 import type { PlannerBackedRenderRouteDecision } from '@/tools/video-editor/lib/renderRouter.ts';
 import type { RenderExportDestination } from '@/tools/video-editor/lib/renderRouter.ts';
 import type {
+  BridgeTaskDetailPayload,
   CapabilityFinding,
   Diagnostic,
   ExtensionContribution,
@@ -48,6 +49,112 @@ export type RenderStatus = 'idle' | 'rendering' | 'done' | 'error';
 export type ExportStatus = 'idle' | 'exporting' | 'done' | 'error';
 
 type RenderProgress = { current: number; total: number; percent: number; phase: string } | null;
+
+const ASTRID_DIAGNOSTIC_LOG_MAX_CHARS = 4_000;
+const ASTRID_DIAGNOSTIC_FIELD_MAX_CHARS = 1_000;
+
+/**
+ * Bridge diagnostics are user-visible, but their executor is not a trusted
+ * source. Keep useful error vocabulary while removing credentials and host
+ * paths that a misconfigured/compromised bridge could echo back.
+ */
+function redactDiagnosticText(value: string): string {
+  let redacted = value;
+
+  // Remove the complete URL authority userinfo, including malformed values
+  // containing more than one `@`, while retaining the scheme and host.
+  redacted = redacted.replace(
+    /\b[a-z][a-z\d+.-]*:\/\/[^/?#\s]*@/gi,
+    (match) => `${match.slice(0, match.indexOf('://') + 3)}[REDACTED]@`,
+  );
+
+  // Header-style authorization values. Preserve the auth scheme as useful
+  // context, but never display the credential itself.
+  redacted = redacted.replace(
+    /\b(authorization)\s*([:=])\s*(['"]?)(?:(bearer|basic)\s+)?[^\s,"';&)}\]]+\3/gi,
+    (_match, key: string, separator: string, _quote: string, scheme?: string) => (
+      `${key}${separator} ${scheme ? `${scheme} ` : ''}[REDACTED]`
+    ),
+  );
+  redacted = redacted.replace(
+    /\b(authorization)\s+(bearer|basic)\s+[^\s,"';&)}\]]+/gi,
+    (_match, key: string, scheme: string) => `${key} ${scheme} [REDACTED]`,
+  );
+  redacted = redacted.replace(
+    /\bBearer\s+[^\s,;&)}\]]+/gi,
+    (match) => `${match.slice(0, match.search(/\s+/))} [REDACTED]`,
+  );
+
+  // Credential-shaped fields cover query strings, JSON-ish diagnostics, and
+  // environment/config key names (including AWS secret keys).
+  redacted = redacted.replace(
+    /\b(access[_-]?token|refresh[_-]?token|id[_-]?token|access[_-]?key(?:[_-]?id)?|api[_-]?key|apikey|secret[_-]?access[_-]?key|token|secret|password|passwd|client[_-]?secret|private[_-]?key|session[_-]?token)\s*([:=])\s*(?:"[^"]*"|'[^']*'|[^\s,;&)}\]]+)/gi,
+    (_match, key: string, separator: string) => `${key}${separator}[REDACTED]`,
+  );
+
+  // Common AWS access-key ID families. Secret values are handled above when
+  // they are labeled; unlabeled arbitrary 40-character secrets are not
+  // reliably distinguishable from ordinary executor output.
+  redacted = redacted.replace(
+    /\b(?:AKIA|ASIA|AIDA|AROA|AGPA|ANPA|ANVA|ASCA)[A-Z0-9]{16}\b/g,
+    '[REDACTED_AWS_KEY]',
+  );
+
+  // Do not expose machine/user names or workspace locations. Restrict this
+  // to local/staging roots so ordinary remote URL paths remain useful.
+  redacted = redacted.replace(
+    /(?<![\w:])\/(?:Users|home|tmp|var|private|workspace|workspaces|staging|srv|opt|mnt|Volumes|root|app|build|dist|run|etc)(?=$|[/\s"'`<>;,)])(?:\/[^\s"'`<>;,)]*)?/gi,
+    '[REDACTED_PATH]',
+  );
+  redacted = redacted.replace(
+    /(?<![\w])(?:[A-Za-z]:[\\/]|\\\\)[^\s"'`<>;,)]*/g,
+    '[REDACTED_PATH]',
+  );
+
+  return redacted;
+}
+
+function compactDiagnosticValue(value: unknown, maxChars = ASTRID_DIAGNOSTIC_FIELD_MAX_CHARS): string | null {
+  if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') return null;
+  const text = redactDiagnosticText(String(value).trim().replace(/\s+/g, ' '));
+  if (!text) return null;
+  return text.length > maxChars ? `${text.slice(0, maxChars - 3)}...` : text;
+}
+
+/** Render the bridge's small executor error projection without log flooding. */
+export function formatAstridExecutorDiagnostic(
+  task: Pick<BridgeTaskDetailPayload['task'], 'attempts'>,
+): string {
+  const error = task.attempts?.at(-1)?.diagnostics.error;
+  if (!error) return 'Astrid render failed. No executor diagnostic was provided.';
+
+  const message = compactDiagnosticValue(error.message, 4_000);
+  const fields = [
+    ['code', error.code],
+    ['reason', error.reason],
+    ['type', error.type],
+    ['retryable', error.retryable],
+  ].flatMap(([key, value]) => {
+    const compact = compactDiagnosticValue(value);
+    return compact === null ? [] : [`${key}=${compact}`];
+  });
+  const details = [message, ...fields].filter((part): part is string => Boolean(part)).join(' · ');
+  if (!details) return 'Astrid render failed. No executor diagnostic was provided.';
+
+  const line = `Astrid render failed: ${details}`;
+  return line.length > ASTRID_DIAGNOSTIC_LOG_MAX_CHARS
+    ? `${line.slice(0, ASTRID_DIAGNOSTIC_LOG_MAX_CHARS - 3)}...`
+    : line;
+}
+
+function progressNumber(progress: Record<string, unknown> | undefined, key: string): number | undefined {
+  const value = progress?.[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function progressPhase(progress: Record<string, unknown> | undefined): string | undefined {
+  return compactDiagnosticValue(progress?.phase);
+}
 
 const CLIENT_CLIP_TYPES = new Set(['media', 'text', 'effect-layer', 'hold']);
 
@@ -512,26 +619,23 @@ export function useRenderState(
       if (task.status === 'failed' || task.status === 'cancelled') {
         setRenderStatus(task.status === 'cancelled' ? 'idle' : 'error');
         setRenderProgress(null);
-        setRenderLog(task.status === 'cancelled' ? 'Render cancelled.' : 'Astrid render failed. Open task details for executor diagnostics.');
+        setRenderLog(task.status === 'cancelled' ? 'Render cancelled.' : formatAstridExecutorDiagnostic(task));
         setActiveRenderTaskId(null);
         return;
       }
 
-      const attempt = task.attempts?.at(-1) as (Record<string, unknown> & {
-        progress?: { current?: number; total?: number; percent?: number; phase?: string };
-      }) | undefined;
-      const progress = attempt?.progress;
-      const total = Math.max(1, progress?.total ?? renderMetadata?.durationInFrames ?? 1);
-      const current = Math.max(0, Math.min(total, progress?.current ?? 0));
+      const progress = task.attempts?.at(-1)?.diagnostics.progress as Record<string, unknown> | undefined;
+      const total = Math.max(1, progressNumber(progress, 'total') ?? renderMetadata?.durationInFrames ?? 1);
+      const current = Math.max(0, Math.min(total, progressNumber(progress, 'current') ?? 0));
       const percent = Math.max(0, Math.min(100,
-        progress?.percent ?? Math.round((current / total) * 100),
+        progressNumber(progress, 'percent') ?? Math.round((current / total) * 100),
       ));
       setRenderStatus('rendering');
       setRenderProgress({
         current,
         total,
         percent,
-        phase: progress?.phase ?? task.status,
+        phase: progressPhase(progress) ?? task.status,
       });
       setRenderLog(task.status === 'queued' ? 'Render queued in Astrid.' : 'Astrid is rendering the timeline.');
       renderPollTimerRef.current = setTimeout(() => {

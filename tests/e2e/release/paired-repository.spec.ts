@@ -22,6 +22,10 @@ import {
   type ValidationResult,
   type ProbeTimeline,
 } from './paired-repository.validators.ts';
+import {
+  formatRenderFailureDiagnostic,
+  isTerminalRenderTaskStatus,
+} from './paired-render-diagnostics.ts';
 
 const phase = process.env.PAIRED_RELEASE_PHASE;
 const evidenceDir = process.env.PAIRED_RELEASE_EVIDENCE_DIR;
@@ -889,8 +893,23 @@ async function materializeTranscript(page: Page, request: APIRequestContext): Pr
   return latest;
 }
 
+async function raceWithClearableTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 async function renderAndDownload(
   page: Page,
+  request: APIRequestContext,
   timelineState: TimelineEnvelope,
   persistedStateHash: string,
 ): Promise<{ taskId: string; bytes: number; sha256: string }> {
@@ -898,6 +917,11 @@ async function renderAndDownload(
   // server-issued task id before clicking Render so the release verifier can
   // later prove that the serve-owned worker completed this exact task.
   const admissions: Array<{ task: Record<string, unknown>; requestBody: unknown; url: string; status: number }> = [];
+  let admittedRenderTask: Record<string, unknown> | null = null;
+  let resolveAdmission: (admission: typeof admissions[number] | null) => void = () => {};
+  const admissionPromise = new Promise<typeof admissions[number] | null>((resolve) => {
+    resolveAdmission = resolve;
+  });
   const onResponse = async (response: import('@playwright/test').Response) => {
     if (response.request().method() !== 'POST') return;
     const parsed = new URL(response.url());
@@ -908,74 +932,171 @@ async function renderAndDownload(
     if (!task || typeof task !== 'object' || typeof (task as { id?: unknown }).id !== 'string') return;
     let requestBody: unknown = null;
     try { requestBody = response.request().postDataJSON(); } catch { /* request body is only advisory */ }
-    admissions.push({ task: task as Record<string, unknown>, requestBody, url: response.url(), status: response.status() });
+    const admission = { task: task as Record<string, unknown>, requestBody, url: response.url(), status: response.status() };
+    admissions.push(admission);
+    if (
+      admission.task.capability === 'rendering.render'
+      || (admission.requestBody as { family?: unknown } | null)?.family === 'render_export'
+    ) {
+      admittedRenderTask = admission.task;
+      resolveAdmission(admission);
+    }
   };
   page.on('response', onResponse);
-  await page.getByRole('button', { name: 'Render', exact: true }).click();
+  const renderBlocker = page.locator('[data-video-editor-render-blocker="true"]');
   const downloadLink = page.getByRole('link', { name: 'Download', exact: true });
-  await expect(downloadLink).toBeVisible({ timeout: 240_000 });
-  const downloadPromise = page.waitForEvent('download', { timeout: 30_000 });
-  await downloadLink.click();
-  const downloadUrl = await downloadLink.getAttribute('href');
-  const mediaId = (() => {
-    try {
-      const parsed = new URL(downloadUrl ?? '', page.url());
-      const match = parsed.pathname.match(/\/media\/([^/]+)\/content$/);
-      return match ? decodeURIComponent(match[1]) : null;
-    } catch {
-      return null;
+  const renderTimeout = 240_000;
+  let renderFinished = false;
+  let resolveRenderFinished: () => void = () => {};
+  const renderFinishedPromise = new Promise<void>((resolve) => {
+    resolveRenderFinished = resolve;
+  });
+
+  type RenderOutcome =
+    | { kind: 'success' }
+    | { kind: 'blocker'; text: string }
+    | { kind: 'task'; task: Record<string, unknown> }
+    | { kind: 'timeout' };
+  const visibleOutcome = async (locator: typeof downloadLink, kind: 'success' | 'blocker'): Promise<RenderOutcome> => {
+    const deadline = Date.now() + renderTimeout;
+    while (!renderFinished && Date.now() < deadline) {
+      try {
+        if (await locator.isVisible()) {
+          return kind === 'blocker'
+            ? { kind, text: (await locator.textContent())?.trim() ?? '<empty blocker>' }
+            : { kind };
+        }
+      } catch {
+        // A page teardown or detached locator is equivalent to no outcome;
+        // the other watcher may still report the useful terminal state.
+      }
+      try {
+        await Promise.race([page.waitForTimeout(250), renderFinishedPromise]);
+      } catch {
+        return { kind: 'timeout' };
+      }
     }
+    return { kind: 'timeout' };
+  };
+  const taskFailureOutcome = (async (): Promise<RenderOutcome> => {
+    // An admission response normally arrives immediately after the click. A
+    // bounded wait keeps this watcher from outliving a UI-side blocker when
+    // admission itself fails before a task id is issued.
+    const admission = await raceWithClearableTimeout(
+      Promise.race([admissionPromise, renderFinishedPromise.then(() => null)]),
+      renderTimeout,
+    );
+    if (!admission || renderFinished) return { kind: 'timeout' };
+    const taskId = String(admission.task.id);
+    const taskUrl = `${baseUrl}/api/astrid/projects/${encodeURIComponent(project!)}/tasks/${encodeURIComponent(taskId)}`;
+    const deadline = Date.now() + renderTimeout;
+    while (!renderFinished && Date.now() < deadline) {
+      try {
+        const response = await request.get(taskUrl, { timeout: 5_000 });
+        if (response.ok()) {
+          const payload = await response.json() as { task?: unknown };
+          const task = payload.task;
+          if (isTerminalRenderTaskStatus((task as { status?: unknown } | null)?.status)) {
+            return { kind: 'task', task: (task ?? {}) as Record<string, unknown> };
+          }
+        }
+      } catch {
+        // The blocker or the next poll may still provide the useful failure;
+        // transient task-read errors must not mask either outcome.
+      }
+      try {
+        await Promise.race([page.waitForTimeout(1_000), renderFinishedPromise]);
+      } catch {
+        return { kind: 'timeout' };
+      }
+    }
+    return { kind: 'timeout' };
   })();
-  const download = await downloadPromise;
-  const path = resolve(evidenceDir!, 'paired-release-render.mp4');
-  await download.saveAs(path);
-  const bytes = (await stat(path)).size;
-  expect(bytes).toBeGreaterThan(10_000);
-  const body = await readFile(path);
-  expect(body.subarray(4, 8).toString('ascii')).toBe('ftyp');
-  const expectedFps = timelineState.config.output?.fps;
-  expect(expectedFps).toBe(24);
-  const expectedDuration = Math.max(...(timelineState.config.clips ?? []).map((clip) => (
-    Number(clip.at ?? 0) + Number(clip.hold ?? clip.duration ?? 0)
-  )));
-  const captionMidpoints = (timelineState.config.clips ?? [])
-    .filter((clip) => clip.id?.startsWith('transcript-caption-'))
-    .map((clip) => Number(clip.at ?? 0) + Number(clip.hold ?? clip.duration ?? 0) / 2)
-    .filter(Number.isFinite);
-  expect(expectedDuration).toBeGreaterThan(0);
-  expect(captionMidpoints.length).toBeGreaterThanOrEqual(2);
-  page.off('response', onResponse);
-  const renderAdmissions = admissions.filter((entry) => (
-    entry.task.capability === 'rendering.render'
-    || (entry.requestBody as { family?: unknown } | null)?.family === 'render_export'
-  ));
-  expect(renderAdmissions).toHaveLength(1);
-  const taskId = renderAdmissions[0]?.task.id;
-  expect(typeof taskId).toBe('string');
-  await writeFile(
-    resolve(evidenceDir!, 'render-browser-receipt.json'),
-    `${JSON.stringify({
-      schemaVersion: 3,
-      authority: 'astrid-serve-owned',
-      taskId,
-      taskAdmission: {
-        url: renderAdmissions[0]?.url,
-        status: renderAdmissions[0]?.status,
-        capability: renderAdmissions[0]?.task.capability ?? null,
-        family: (renderAdmissions[0]?.requestBody as { family?: unknown } | null)?.family ?? null,
-      },
-      persistedStateHash,
-      expectedDuration,
-      expectedFps,
-      captionMidpoints,
-      bytes,
-      sha256: createHash('sha256').update(body).digest('hex'),
-      downloadUrl,
-      mediaId,
-    }, null, 2)}\n`,
-    { encoding: 'utf8', flag: 'wx', mode: 0o600 },
-  );
-  return { taskId: taskId as string, bytes, sha256: createHash('sha256').update(body).digest('hex') };
+
+  try {
+    await page.getByRole('button', { name: 'Render', exact: true }).click();
+    const outcome = await Promise.race([
+      visibleOutcome(downloadLink, 'success'),
+      visibleOutcome(renderBlocker, 'blocker'),
+      taskFailureOutcome,
+    ]);
+    if (outcome.kind !== 'success') {
+      const blockerText = outcome.kind === 'blocker'
+        ? outcome.text
+        : ((await renderBlocker.textContent().catch(() => null))?.trim() ?? null);
+      const task = outcome.kind === 'task' ? outcome.task : admittedRenderTask;
+      throw new Error(formatRenderFailureDiagnostic({
+        blockerText,
+        taskId: task ? String(task.task_id ?? task.id ?? '') || null : null,
+        task,
+      }));
+    }
+    const downloadPromise = page.waitForEvent('download', { timeout: 30_000 });
+    await downloadLink.click();
+    const downloadUrl = await downloadLink.getAttribute('href');
+    const mediaId = (() => {
+      try {
+        const parsed = new URL(downloadUrl ?? '', page.url());
+        const match = parsed.pathname.match(/\/media\/([^/]+)\/content$/);
+        return match ? decodeURIComponent(match[1]) : null;
+      } catch {
+        return null;
+      }
+    })();
+    const download = await downloadPromise;
+    const path = resolve(evidenceDir!, 'paired-release-render.mp4');
+    await download.saveAs(path);
+    const bytes = (await stat(path)).size;
+    expect(bytes).toBeGreaterThan(10_000);
+    const body = await readFile(path);
+    expect(body.subarray(4, 8).toString('ascii')).toBe('ftyp');
+    const expectedFps = timelineState.config.output?.fps;
+    expect(expectedFps).toBe(24);
+    const expectedDuration = Math.max(...(timelineState.config.clips ?? []).map((clip) => (
+      Number(clip.at ?? 0) + Number(clip.hold ?? clip.duration ?? 0)
+    )));
+    const captionMidpoints = (timelineState.config.clips ?? [])
+      .filter((clip) => clip.id?.startsWith('transcript-caption-'))
+      .map((clip) => Number(clip.at ?? 0) + Number(clip.hold ?? clip.duration ?? 0) / 2)
+      .filter(Number.isFinite);
+    expect(expectedDuration).toBeGreaterThan(0);
+    expect(captionMidpoints.length).toBeGreaterThanOrEqual(2);
+    const renderAdmissions = admissions.filter((entry) => (
+      entry.task.capability === 'rendering.render'
+      || (entry.requestBody as { family?: unknown } | null)?.family === 'render_export'
+    ));
+    expect(renderAdmissions).toHaveLength(1);
+    const taskId = renderAdmissions[0]?.task.id;
+    expect(typeof taskId).toBe('string');
+    await writeFile(
+      resolve(evidenceDir!, 'render-browser-receipt.json'),
+      `${JSON.stringify({
+        schemaVersion: 3,
+        authority: 'astrid-serve-owned',
+        taskId,
+        taskAdmission: {
+          url: renderAdmissions[0]?.url,
+          status: renderAdmissions[0]?.status,
+          capability: renderAdmissions[0]?.task.capability ?? null,
+          family: (renderAdmissions[0]?.requestBody as { family?: unknown } | null)?.family ?? null,
+        },
+        persistedStateHash,
+        expectedDuration,
+        expectedFps,
+        captionMidpoints,
+        bytes,
+        sha256: createHash('sha256').update(body).digest('hex'),
+        downloadUrl,
+        mediaId,
+      }, null, 2)}\n`,
+      { encoding: 'utf8', flag: 'wx', mode: 0o600 },
+    );
+    return { taskId: taskId as string, bytes, sha256: createHash('sha256').update(body).digest('hex') };
+  } finally {
+    renderFinished = true;
+    resolveRenderFinished();
+    page.off('response', onResponse);
+  }
 }
 
 test(`paired repository acceptance phase: ${phase}`, async ({ page, request }) => {
@@ -1041,7 +1162,7 @@ test(`paired repository acceptance phase: ${phase}`, async ({ page, request }) =
     expect(captionCount(initial.config)).toBe(expected.length);
     expect(validateTranscriptCaptions(initial.config.clips ?? [], expected).valid).toBe(true);
     await expect.poll(async () => validateTranscriptCaptions((await readTimeline(request)).config.clips ?? [], expected).valid).toBe(true);
-    await renderAndDownload(page, initial, initialStateHash);
+    await renderAndDownload(page, request, initial, initialStateHash);
   } else {
     const baseline = JSON.parse(
       await readFile(resolve(evidenceDir!, 'browser-first-baseline.json'), 'utf8'),

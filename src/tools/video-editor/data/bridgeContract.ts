@@ -156,6 +156,33 @@ export const bridgeTaskAttemptSchema = z.looseObject({
 });
 
 /**
+ * Detail-only executor diagnostics. `progress` is a sanitized, bounded
+ * object whose keys are executor-family specific; `error` is the deliberately
+ * small stable vocabulary exposed by the bridge. Keep this extension off
+ * `bridgeTaskAttemptSchema`: fence responses must remain the minimal lease
+ * projection and never carry executor payloads.
+ */
+export const bridgeTaskAttemptDiagnosticsProgressSchema = z.record(z.string(), z.unknown());
+
+export const bridgeTaskAttemptDiagnosticsErrorSchema = z.strictObject({
+  code: z.string().max(1_000).optional(),
+  reason: z.string().max(1_000).optional(),
+  type: z.string().max(1_000).optional(),
+  message: z.string().max(4_000).optional(),
+  retryable: z.boolean().optional(),
+});
+
+export const bridgeTaskAttemptDiagnosticsSchema = z.strictObject({
+  progress: bridgeTaskAttemptDiagnosticsProgressSchema,
+  error: bridgeTaskAttemptDiagnosticsErrorSchema,
+});
+
+/** Current-attempt detail projection; diagnostics are never part of a fence. */
+export const bridgeTaskDetailAttemptSchema = bridgeTaskAttemptSchema.extend({
+  diagnostics: bridgeTaskAttemptDiagnosticsSchema,
+});
+
+/**
  * Polling task summary (`ReighTaskBridge._task_summary`): the shape returned
  * by `GET /projects/:slug/tasks[/:task_id]` and cancel's terminal replay.
  */
@@ -235,7 +262,7 @@ export const bridgeTaskOutputRowSchema = z.looseObject({
 /** `GET /projects/:slug/tasks/:task_id` → `{task: summary + attempts + outputs}`. */
 export const bridgeTaskDetailPayloadSchema = z.looseObject({
   task: bridgeTaskSummarySchema.extend({
-    attempts: z.array(bridgeTaskAttemptSchema).optional(),
+    attempts: z.array(bridgeTaskDetailAttemptSchema).optional(),
     outputs: z.array(bridgeTaskOutputRowSchema).optional(),
   }),
 });
@@ -370,6 +397,10 @@ export type BridgeHealthPayload = z.infer<typeof bridgeHealthSchema>;
 export type BridgeTaskStatus = z.infer<typeof bridgeTaskStatusSchema>;
 export type BridgeTaskSpec = z.infer<typeof bridgeTaskSpecSchema>;
 export type BridgeTaskAttempt = z.infer<typeof bridgeTaskAttemptSchema>;
+export type BridgeTaskAttemptDiagnosticsProgress = z.infer<typeof bridgeTaskAttemptDiagnosticsProgressSchema>;
+export type BridgeTaskAttemptDiagnosticsError = z.infer<typeof bridgeTaskAttemptDiagnosticsErrorSchema>;
+export type BridgeTaskAttemptDiagnostics = z.infer<typeof bridgeTaskAttemptDiagnosticsSchema>;
+export type BridgeTaskDetailAttempt = z.infer<typeof bridgeTaskDetailAttemptSchema>;
 export type BridgeTaskSummary = z.infer<typeof bridgeTaskSummarySchema>;
 export type BridgeAdmittedTask = z.infer<typeof bridgeAdmittedTaskSchema>;
 export type BridgeTaskAdmissionRequest = z.infer<typeof bridgeTaskAdmissionRequestSchema>;

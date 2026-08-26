@@ -281,7 +281,12 @@ export function createFakeBridgeRouter(): FakeBridgeRouter {
       const detail = {
         task: {
           ...summary,
-          attempts: summary.status === 'running' ? [makeAttemptWireShape({})] : [],
+          attempts: summary.status === 'running'
+            ? [{
+                ...makeAttemptWireShape({}),
+                diagnostics: { progress: {}, error: {} },
+              }]
+            : [],
           outputs: [],
         },
       };

@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   BridgeContractError,
+  bridgeTaskAttemptDiagnosticsSchema,
+  bridgeTaskAttemptSchema,
+  bridgeTaskDetailPayloadSchema,
   bridgeTimelinePayloadSchema,
   parseBridgePayload,
 } from '@/tools/video-editor/data/bridgeContract.ts';
@@ -114,5 +117,65 @@ describe('bridgeTimelinePayloadSchema: optional bundle', () => {
     ));
     expect(error).toBeInstanceOf(BridgeContractError);
     expect(error?.message).toMatch(/sourceArtifactRef/);
+  });
+});
+
+describe('task detail attempt diagnostics contract', () => {
+  const attempt = {
+    attempt_id: 'attempt-1',
+    attempt_no: 1,
+    status: 'failed',
+    status_version: 4,
+    lease_id: 'lease-1',
+    lease_expires_at: '2026-08-22T12:05:00Z',
+    heartbeat_counter: 2,
+    last_heartbeat_at: null,
+  };
+
+  it('accepts the detail-only safe progress and executor error projection', () => {
+    const payload = {
+      task: {
+        task_id: 'task-1',
+        project_id: 'project-1',
+        capability: 'rendering.timeline_visualize',
+        status: 'failed',
+        priority: 0,
+        max_attempts: 1,
+        created_at: '2026-08-22T12:00:00Z',
+        updated_at: '2026-08-22T12:00:00Z',
+        attempts: [{
+          ...attempt,
+          diagnostics: {
+            progress: { phase: 'render', current: 12, total: 30, percent: 40 },
+            error: {
+              code: 'render_export_failed',
+              reason: 'child_exit',
+              type: 'executor',
+              message: 'ffmpeg exited with code 7',
+              retryable: false,
+            },
+          },
+        }],
+        outputs: [],
+      },
+    };
+
+    const parsed = parseBridgePayload(bridgeTaskDetailPayloadSchema, payload, 'task detail');
+    expect(parsed).toBe(payload);
+    expect(parsed.task.attempts?.[0].diagnostics.error.code).toBe('render_export_failed');
+    expect(parsed.task.attempts?.[0].diagnostics.progress.phase).toBe('render');
+  });
+
+  it('keeps diagnostics off the minimal fence attempt schema', () => {
+    const parsed = parseBridgePayload(bridgeTaskAttemptSchema, attempt, 'attempt');
+    expect(parsed).toBe(attempt);
+    expect('diagnostics' in parsed).toBe(false);
+  });
+
+  it('rejects unknown executor error fields instead of widening the stable detail contract', () => {
+    expect(() => bridgeTaskAttemptDiagnosticsSchema.parse({
+      progress: {},
+      error: { message: 'failed', executor_stack: 'secret internals' },
+    })).toThrow();
   });
 });

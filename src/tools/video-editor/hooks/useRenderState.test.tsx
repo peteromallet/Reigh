@@ -1,7 +1,10 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { useRenderState } from '@/tools/video-editor/hooks/useRenderState';
+import {
+  formatAstridExecutorDiagnostic,
+  useRenderState,
+} from '@/tools/video-editor/hooks/useRenderState';
 import { createProcessResultAttachRecord } from '@/tools/video-editor/runtime/composition/processResultAttach';
 import type { ResolvedTimelineConfig } from '@/tools/video-editor/types';
 import type { ExtensionRuntime } from '@/tools/video-editor/runtime/extensionSurface';
@@ -106,7 +109,10 @@ const buildConfig = (clip: ResolvedTimelineConfig['clips'][number]): ResolvedTim
   registry: {},
 });
 
-function renderTaskDetail(status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled') {
+function renderTaskDetail(
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled',
+  attempts: unknown[] = [],
+) {
   const admitted = makeAdmittedTaskReadModel({
     taskId: 'render-task-1',
     family: 'render_export',
@@ -120,7 +126,7 @@ function renderTaskDetail(status: 'queued' | 'running' | 'succeeded' | 'failed' 
         ...admitted.spec,
         params: { timeline_ref: 'timeline-1' },
       },
-      attempts: [],
+      attempts,
       outputs: status === 'succeeded'
         ? [{ ordinal: 0, role: 'render', media_id: 'media-render-1', is_primary: true }]
         : [],
@@ -655,6 +661,128 @@ describe('useRenderState render routing', () => {
     unmount();
     vi.unstubAllGlobals();
     vi.useRealTimers();
+  });
+
+  it('consumes bounded detail diagnostics for running progress and failed executor output', async () => {
+    vi.useFakeTimers();
+    const attempt = {
+      attempt_id: 'attempt-render-1',
+      attempt_no: 1,
+      status: 'running',
+      status_version: 2,
+      lease_id: 'lease-render-1',
+      lease_expires_at: '2026-08-22T12:05:00Z',
+      heartbeat_counter: 1,
+      last_heartbeat_at: null,
+    };
+    let detail = renderTaskDetail('running', [{
+      ...attempt,
+      diagnostics: {
+        progress: { current: 12, total: 30, percent: 40, phase: 'render' },
+        error: {},
+      },
+    }]);
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify(detail), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const runtimeValue = {
+      project: { projectId: 'demo-project' },
+      timelineId: 'timeline-1',
+      provider: { apiBaseUrl: '/api/astrid' },
+      telemetry: { warn: vi.fn() },
+    } as unknown as VideoEditorRuntimeContextValue;
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <VideoEditorRuntimeContext.Provider value={runtimeValue}>{children}</VideoEditorRuntimeContext.Provider>
+    );
+    const { result, unmount } = renderHook(() => useRenderState(
+      buildConfig({ id: 'clip-native', clipType: 'media', track: 'V1', at: 0, hold: 1 }),
+      { fps: 30, durationInFrames: 30, compositionWidth: 1920, compositionHeight: 1080 },
+      undefined,
+      undefined,
+      async () => 7,
+    ), { wrapper });
+
+    await act(async () => { await result.current.startRender(); });
+    expect(result.current.renderProgress).toMatchObject({ current: 12, total: 30, percent: 40, phase: 'render' });
+
+    detail = renderTaskDetail('failed', [{
+      ...attempt,
+      status: 'failed',
+      diagnostics: {
+        progress: {},
+        error: {
+          code: 'render_export_failed',
+          reason: 'child_exit',
+          type: 'executor',
+          message: 'ffmpeg exited with code 7',
+          retryable: false,
+        },
+      },
+    }]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+    expect(result.current.renderStatus).toBe('error');
+    expect(result.current.renderLog).toContain('Astrid render failed: ffmpeg exited with code 7');
+    expect(result.current.renderLog).toContain('code=render_export_failed');
+    expect(result.current.renderLog).not.toContain('Open task details');
+
+    unmount();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it('redacts bridge-controlled credentials, access keys, and local paths without losing error context', () => {
+    const accessKey = 'AKIAIOSFODNN7EXAMPLE';
+    const bearer = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.secret-value';
+    const quotedBearer = 'quoted-bearer-secret';
+    const token = 'render-token-value';
+    const password = 'local-password';
+    const diagnostic = formatAstridExecutorDiagnostic({
+      attempts: [{
+        diagnostics: {
+          progress: {},
+          error: {
+            code: 'render_export_failed',
+            reason: 'child_exit',
+            type: 'executor',
+            message: [
+              'ffmpeg failed while opening https://alice:password@example.test/render',
+              `Authorization: Bearer ${bearer}`,
+              `Authorization: "Bearer ${quotedBearer}"`,
+              `token=${token}`,
+              `password=${password}`,
+              accessKey,
+              'input=/Users/alice/project/output.mp4',
+              'cache=/tmp/reigh-render/frame-001.png',
+              'staging=C:\\Users\\alice\\AppData\\Local\\Temp\\render.mp4',
+              'staging-forward=C:/Users/alice/AppData/Local/Temp/render.mp4',
+            ].join(' '),
+            retryable: false,
+          },
+        },
+      }],
+    } as Parameters<typeof formatAstridExecutorDiagnostic>[0]);
+
+    expect(diagnostic).toContain('ffmpeg failed while opening');
+    expect(diagnostic).toContain('code=render_export_failed');
+    expect(diagnostic).toContain('reason=child_exit');
+    expect(diagnostic).toContain('type=executor');
+    expect(diagnostic).toContain('retryable=false');
+    expect(diagnostic).toContain('https://[REDACTED]@example.test/render');
+    expect(diagnostic).toContain('Authorization: Bearer [REDACTED]');
+    expect(diagnostic).toContain('token=[REDACTED]');
+    expect(diagnostic).toContain('password=[REDACTED]');
+    expect(diagnostic).toContain('[REDACTED_AWS_KEY]');
+    expect(diagnostic).toContain('input=[REDACTED_PATH]');
+    expect(diagnostic).not.toContain('alice:password');
+    expect(diagnostic).not.toContain(bearer);
+    expect(diagnostic).not.toContain(quotedBearer);
+    expect(diagnostic).not.toContain(token);
+    expect(diagnostic).not.toContain(password);
+    expect(diagnostic).not.toContain(accessKey);
+    expect(diagnostic).not.toContain('/Users/alice/project');
+    expect(diagnostic).not.toContain('/tmp/reigh-render');
+    expect(diagnostic).not.toContain('C:\\Users\\alice');
+    expect(diagnostic).not.toContain('C:/Users/alice');
+    expect(diagnostic.length).toBeLessThanOrEqual(4_000);
   });
 
   it('cancels an active scoped render through the common fenced task helper', async () => {

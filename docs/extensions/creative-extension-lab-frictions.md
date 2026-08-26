@@ -2270,3 +2270,34 @@ fresh console collection.
 - The failed RC32 evidence has artifact-index SHA-256
   `39e5e5885559ad31a7feaf0e55975b8d0222a09cf634d6cd2f3dff265ff54609`.
   It remains immutable diagnostic history and is not a passing receipt.
+
+### Nested executor processes must retain the admitting Astrid revision
+
+- RC33 passed the complete first browser phase, restart persistence, the
+  thirteen extension fingerprints, and the strengthened audio transport gate.
+  The render task then failed all three attempts in about thirteen seconds,
+  while Playwright waited the full four-minute download timeout. Replaying the
+  exact frozen task snapshot exposed the real error: the renderer saw the
+  database's applied `runaway` migration through an Astrid composition that did
+  not register the Runaway schema pack.
+- The bridge worker had launched the pinned render task adapter correctly, but
+  that adapter launched a second `python -m` process. The canonical sanitized
+  child environment deliberately dropped ambient `PYTHONPATH`, so the nested
+  process could import an unrelated editable Astrid checkout through the shared
+  interpreter. The bridge adapter is already the isolation boundary; it now
+  invokes the registered render entrypoint in that isolated process, preserving
+  the exact source and schema-pack composition that admitted the task.
+  In-process entrypoints temporarily scope process-global cwd/environment/argv,
+  so this remains safe only while the worker executes one task per adapter
+  process; a future concurrent adapter must add serialization or restore a
+  source-pinned subprocess boundary.
+- The exact RC33 task snapshot now produces an 8.042667-second 1920x1080 H.264
+  MP4 with AAC audio, 493,241 bytes, and SHA-256
+  `09fc6b41fd6eda7a0c2d0cf35eb54425d2c72cfdfbfb37a0a303f891dc9ca6a1`.
+  The adapter suite passes 19/19. The next release candidate also makes the
+  browser race a terminal render failure against download success and exposes a
+  bounded, secret-safe attempt diagnostic, so an already-failed task cannot be
+  disguised as a long export timeout.
+- The failed RC33 evidence has artifact-index SHA-256
+  `c77221b8b8a59779a849f7a69258b2baa4406a5680d2c8c8ec8990c46d33cfc8`.
+  It remains immutable diagnostic history and is not a passing receipt.

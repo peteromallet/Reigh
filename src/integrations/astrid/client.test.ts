@@ -103,6 +103,21 @@ describe('AstridLocalClient', () => {
     expect(detail.attempts).toEqual([]);
   });
 
+  it('reads detail-only diagnostics while keeping a fence conflict minimal', async () => {
+    const client = makeClient();
+    const { task } = await client.tasks.admit(admissionRequest(), 'reigh.admit:diagnostics');
+    const summary = router.state.tasks.get(task.id);
+    if (!summary) throw new Error('fixture missing');
+    summary.status = 'running';
+
+    const detail = await client.tasks.get(task.id);
+    expect(detail.attempts?.[0]?.diagnostics).toEqual({ progress: {}, error: {} });
+
+    const error = await client.tasks.cancel(task.id).catch((cause: unknown) => cause);
+    expect(error).toBeInstanceOf(BridgeRouteError);
+    expect((error as BridgeRouteError).envelope?.attempt).not.toHaveProperty('diagnostics');
+  });
+
   it('cancels a queued task without a fence and replays terminal state', async () => {
     const client = makeClient();
     const { task } = await client.tasks.admit(admissionRequest(), 'reigh.admit:cancel');

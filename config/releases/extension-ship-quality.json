@@ -1,15 +1,15 @@
 {
   "schemaVersion": 1,
-  "release": "extension-ship-quality-rc33",
-  "status": "frozen",
+  "release": "extension-ship-quality-rc34",
+  "status": "integration",
   "reigh": {
     "branch": "codex/extension-ship-integration",
-    "releaseTag": "extension-ship-quality-rc33",
+    "releaseTag": "extension-ship-quality-rc34",
     "baseCommit": "0fb8cda1054b9727ce1fae3a7ee33081d08b52a5"
   },
   "astrid": {
     "branch": "codex/extension-ship-astrid-integration",
-    "commit": "4fe98bb6a6043145a3f21be65a96089bbd49dc91"
+    "commit": "271aec097c86313f9c862ed6e40d45ced85b8538"
   },
   "verification": {
     "profile": "extension-ship-quality-v1",
