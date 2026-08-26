@@ -27,9 +27,14 @@ describe('paired release semantic validators', () => {
       failure: 'net::ERR_ABORTED',
     };
     expect(isExpectedAudioMetadataAbort(abort, expectedUrl)).toBe(true);
+    expect(isExpectedAudioMetadataAbort({ ...abort, range: 'bytes=32768-425983' }, expectedUrl)).toBe(true);
+    expect(isExpectedAudioMetadataAbort({ ...abort, range: 'bytes=1-' }, expectedUrl)).toBe(true);
     expect(isExpectedAudioMetadataAbort({ ...abort, url: `${expectedUrl}.other` }, expectedUrl)).toBe(false);
     expect(isExpectedAudioMetadataAbort({ ...abort, resourceType: 'fetch' }, expectedUrl)).toBe(false);
-    expect(isExpectedAudioMetadataAbort({ ...abort, range: 'bytes=1-' }, expectedUrl)).toBe(false);
+    expect(isExpectedAudioMetadataAbort({ ...abort, range: `bytes=${AUDIO_CARRIER_BYTES}-` }, expectedUrl)).toBe(false);
+    expect(isExpectedAudioMetadataAbort({ ...abort, range: 'bytes=9-3' }, expectedUrl)).toBe(false);
+    expect(isExpectedAudioMetadataAbort({ ...abort, range: 'bytes=0-1,3-4' }, expectedUrl)).toBe(false);
+    expect(isExpectedAudioMetadataAbort({ ...abort, range: undefined }, expectedUrl)).toBe(false);
     expect(isExpectedAudioMetadataAbort({ ...abort, failure: 'net::ERR_FAILED' }, expectedUrl)).toBe(false);
 
     const observations = [{
@@ -47,6 +52,7 @@ describe('paired release semantic validators', () => {
       range: `bytes=${AUDIO_CARRIER_BYTES - 31_996}-`,
       status: 206,
       contentRange: `bytes ${AUDIO_CARRIER_BYTES - 31_996}-${AUDIO_CARRIER_BYTES - 1}/${AUDIO_CARRIER_BYTES}`,
+      contentLength: '31996',
       contentType: 'audio/x-aac',
     }];
     expect(hasSuccessfulAudioFullFetch(observations, expectedUrl)).toBe(true);
@@ -57,6 +63,24 @@ describe('paired release semantic validators', () => {
     expect(hasSuccessfulAudioMediaRange([
       { ...observations[1], status: 200 },
     ], expectedUrl)).toBe(false);
+    expect(hasSuccessfulAudioMediaRange([
+      { ...observations[1], range: 'bytes=0-', contentLength: String(AUDIO_CARRIER_BYTES) },
+    ], expectedUrl)).toBe(false);
+    expect(hasSuccessfulAudioMediaRange([
+      { ...observations[1], contentLength: '1' },
+    ], expectedUrl)).toBe(false);
+    expect(hasSuccessfulAudioMediaRange([{
+      ...observations[1],
+      range: `bytes=${AUDIO_CARRIER_BYTES}-${AUDIO_CARRIER_BYTES - 1}`,
+      contentRange: `bytes ${AUDIO_CARRIER_BYTES}-${AUDIO_CARRIER_BYTES - 1}/${AUDIO_CARRIER_BYTES}`,
+      contentLength: '0',
+    }], expectedUrl)).toBe(false);
+    expect(hasSuccessfulAudioMediaRange([{
+      ...observations[1],
+      range: `bytes=${AUDIO_CARRIER_BYTES - 1}-${AUDIO_CARRIER_BYTES}`,
+      contentRange: `bytes ${AUDIO_CARRIER_BYTES - 1}-${AUDIO_CARRIER_BYTES}/${AUDIO_CARRIER_BYTES}`,
+      contentLength: '2',
+    }], expectedUrl)).toBe(false);
   });
 
   it('rejects null, empty and malformed command output', () => {

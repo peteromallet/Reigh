@@ -1994,3 +1994,29 @@ fresh console collection.
 - The failed raw evidence has artifact-index SHA-256
   `d763ee5a0259a2d21b4d28d58a70abf5b083a6ab9b4c175becd3559f178b130c`.
   It is retained as RC21 diagnostic history and is not a passing receipt.
+
+### Media decoders cancel valid non-leading byte ranges too
+
+- RC22 passed the clean build, bridge bootstrap, audio import, and editor boot,
+  then rejected one `net::ERR_ABORTED` AAC request before extension lifecycle.
+  All independent audio proofs had already passed: an exact 457,980-byte
+  analysis fetch, successful typed `206` media transport, a visible waveform,
+  and an audio element at metadata readiness with finite duration `39.156558`
+  and no media error.
+- The network trace shows Chromium issuing several valid single media ranges:
+  the complete `bytes=0-457979`, a middle `bytes=32768-425983`, and the tail
+  `bytes=425984-`. The prior cancellation exception admitted only the two
+  leading-range spellings. That assumption was narrower than Chromium's real
+  metadata/decoder behavior and could turn a healthy cancellation into a false
+  transport failure.
+- The exception remains tightly bounded to one request for the exact asset URL,
+  `GET`, media resource type, `net::ERR_ABORTED`, and one syntactically valid
+  in-bounds byte range. Missing, malformed, multiple, reversed, or out-of-file
+  ranges still fail. The positive `206` proof is stronger too: request and
+  response ranges must agree exactly, end at the known last byte, declare the
+  known total, and carry the exact derived content length. Unclassified failure
+  messages now retain resource type and range so another browser variation is
+  diagnosable from the receipt rather than requiring inference from the trace.
+- The failed raw evidence has artifact-index SHA-256
+  `ca8cb4c05ef5825d025fd0cb9717d4e17053b10c7e64079b99089c7909e2d6a0`.
+  It is retained as RC22 diagnostic history and is not a passing receipt.

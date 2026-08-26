@@ -413,7 +413,10 @@ async function openEditor(page: Page, timelineWireRef: string): Promise<string[]
         expectedAudioMediaAborts.push(observation);
         return;
       }
-      failedRequests.push(`[requestfailed] ${request.method()} ${request.url()} — ${failure}`);
+      failedRequests.push(
+        `[requestfailed] ${request.method()} ${request.url()} — ${failure}`
+        + ` [resourceType=${request.resourceType()}; range=${request.headers().range ?? 'none'}]`,
+      );
     }
   });
   await page.addInitScript(() => {

@@ -49,11 +49,20 @@ export function isExpectedAudioMetadataAbort(
   expectedUrl: string,
 ): boolean {
   const lastByte = AUDIO_CARRIER_BYTES - 1;
+  const match = observation.range?.match(/^bytes=(\d+)-(\d*)$/);
+  if (!match) return false;
+  const start = Number(match[1]);
+  const end = match[2] === '' ? lastByte : Number(match[2]);
+  const validSingleRange = Number.isSafeInteger(start)
+    && Number.isSafeInteger(end)
+    && start >= 0
+    && start <= end
+    && end <= lastByte;
   return observation.url === expectedUrl
     && observation.method === 'GET'
     && observation.resourceType === 'media'
     && observation.failure === 'net::ERR_ABORTED'
-    && (observation.range === 'bytes=0-' || observation.range === `bytes=0-${lastByte}`);
+    && validSingleRange;
 }
 
 export function hasSuccessfulAudioFullFetch(
@@ -72,14 +81,35 @@ export function hasSuccessfulAudioMediaRange(
   observations: AudioTransportObservation[],
   expectedUrl: string,
 ): boolean {
-  const contentRange = new RegExp(`^bytes \\d+-${AUDIO_CARRIER_BYTES - 1}/${AUDIO_CARRIER_BYTES}$`);
-  return observations.some((observation) => observation.url === expectedUrl
-    && observation.method === 'GET'
-    && observation.resourceType === 'media'
-    && observation.status === 206
-    && observation.contentType === 'audio/x-aac'
-    && typeof observation.contentRange === 'string'
-    && contentRange.test(observation.contentRange));
+  const lastByte = AUDIO_CARRIER_BYTES - 1;
+  return observations.some((observation) => {
+    if (observation.url !== expectedUrl
+      || observation.method !== 'GET'
+      || observation.resourceType !== 'media'
+      || observation.status !== 206
+      || observation.contentType !== 'audio/x-aac') return false;
+    const requestMatch = observation.range?.match(/^bytes=(\d+)-(\d*)$/);
+    const responseMatch = observation.contentRange?.match(/^bytes (\d+)-(\d+)\/(\d+)$/);
+    if (!requestMatch || !responseMatch) return false;
+    const requestStart = Number(requestMatch[1]);
+    const requestEnd = requestMatch[2] === '' ? lastByte : Number(requestMatch[2]);
+    const responseStart = Number(responseMatch[1]);
+    const responseEnd = Number(responseMatch[2]);
+    const responseTotal = Number(responseMatch[3]);
+    return Number.isSafeInteger(requestStart)
+      && Number.isSafeInteger(requestEnd)
+      && requestStart >= 0
+      && requestStart <= requestEnd
+      && requestEnd <= lastByte
+      && responseStart >= 0
+      && responseStart <= responseEnd
+      && responseEnd <= lastByte
+      && requestStart === responseStart
+      && requestEnd === responseEnd
+      && responseEnd === lastByte
+      && responseTotal === AUDIO_CARRIER_BYTES
+      && observation.contentLength === String(responseEnd - responseStart + 1);
+  });
 }
 
 /**
