@@ -205,7 +205,10 @@ Finally the gate restores
 the backup, compares exact logical database content/schema hashes, managed-media
 file hashes, table counts, and the complete baseline
 timeline hash, runs `astrid doctor`, restarts both servers again, and requires
-zero Runaway data rows.
+zero Runaway data rows. Because the Runaway project itself is migration-created
+after that backup, the restore browser must omit its authoring selector and
+prove there is no Runaway lane, chip, loading state, error state, or bridge
+request while the bundled extension remains independently toggleable.
 
 The bridge bearer token is generated per run and exists only in the Astrid and
 Vite server environments. The Playwright process receives an allowlisted

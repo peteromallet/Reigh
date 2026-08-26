@@ -67,7 +67,10 @@ if (process.env.ASTRID_BRIDGE_TOKEN) {
 
 const timelineUrl = `${baseUrl}/api/astrid/projects/${project}/timelines/${timeline}`;
 const runawayUrl = `${baseUrl}/api/astrid/v1/projects/${runawayProject}/runaway-transitions?limit=1000`;
-const editorUrl = `${baseUrl}/tools/video-editor?localProject=${project}&localTimeline=${timeline}&localTest=1&transcriptLaneFixture=1&runawayTimelineProject=${runawayProject}`;
+const runawaySelector = phase === 'restore'
+  ? ''
+  : `&runawayTimelineProject=${encodeURIComponent(runawayProject!)}`;
+const editorUrl = `${baseUrl}/tools/video-editor?localProject=${project}&localTimeline=${timeline}&localTest=1&transcriptLaneFixture=1${runawaySelector}`;
 
 type TimelineConfig = {
   app?: Record<string, Record<string, unknown>>;
@@ -760,20 +763,31 @@ async function proveAllExtensionLifecycles(
           fingerprints[probe.id] = transcript.fingerprint!;
         }
       } else {
+        const lane = page.locator('[data-lane-kind="reigh.runaway.transitions"]');
         const chip = page.getByTestId('runaway-transition-chip').first();
-        await expect(chip).toBeVisible({ timeout: 30_000 });
-        // Selection is the lane's meaningful safe action. Preserve the user's
-        // current panel choice, then explicitly visit Inspector to prove the
-        // selected transition's real provenance without mutating timeline or
-        // bridge data. Item selection must not forcibly switch panel tabs.
-        await chip.click();
-        await page.getByRole('tab', { name: 'Inspector' }).click();
-        await expect(page.getByTestId('runaway-transition-inspector')).toBeVisible({ timeout: 8_000 });
-        await page.getByRole('tab', { name: 'Extensions' }).click();
-        await expect(inventory).toBeVisible({ timeout: 8_000 });
-        const runaway = await readRunawaySnapshot(request);
-        if (!runaway) throw new Error('Runaway lane action lost the typed bridge output');
-        fingerprints[probe.id] = runaway.hash;
+        if (phase === 'restore') {
+          // The backup predates the migration-created Runaway project. Restore
+          // must not keep authoring a selector for a project that rollback
+          // correctly removed, nor render a false error/empty data lane.
+          await expect(lane).toHaveCount(0);
+          await expect(chip).toHaveCount(0);
+          await expect(page.getByTestId('runaway-load-state')).toHaveCount(0);
+        } else {
+          await expect(lane).toBeVisible({ timeout: 30_000 });
+          await expect(chip).toBeVisible({ timeout: 30_000 });
+          // Selection is the lane's meaningful safe action. Preserve the user's
+          // current panel choice, then explicitly visit Inspector to prove the
+          // selected transition's real provenance without mutating timeline or
+          // bridge data. Item selection must not forcibly switch panel tabs.
+          await chip.click();
+          await page.getByRole('tab', { name: 'Inspector' }).click();
+          await expect(page.getByTestId('runaway-transition-inspector')).toBeVisible({ timeout: 8_000 });
+          await page.getByRole('tab', { name: 'Extensions' }).click();
+          await expect(inventory).toBeVisible({ timeout: 8_000 });
+          const runaway = await readRunawaySnapshot(request);
+          if (!runaway) throw new Error('Runaway lane action lost the typed bridge output');
+          fingerprints[probe.id] = runaway.hash;
+        }
       }
 
       await toggle.click();
@@ -784,6 +798,7 @@ async function proveAllExtensionLifecycles(
       } else if (probe.contribution === 'transcript-lane') {
         await expect(page.locator('[data-lane-kind="reigh.transcript"]')).toHaveCount(0, { timeout: 15_000 });
       } else {
+        await expect(page.locator('[data-lane-kind="reigh.runaway.transitions"]')).toHaveCount(0, { timeout: 15_000 });
         await expect(page.getByTestId('runaway-transition-chip')).toHaveCount(0, { timeout: 15_000 });
       }
 
@@ -795,7 +810,15 @@ async function proveAllExtensionLifecycles(
       } else if (probe.contribution === 'transcript-lane') {
         await expect(page.locator('[data-lane-kind="reigh.transcript"]')).toBeVisible({ timeout: 15_000 });
       } else {
-        await expect(page.getByTestId('runaway-transition-chip').first()).toBeVisible({ timeout: 30_000 });
+        const lane = page.locator('[data-lane-kind="reigh.runaway.transitions"]');
+        if (phase === 'restore') {
+          await expect(lane).toHaveCount(0);
+          await expect(page.getByTestId('runaway-transition-chip')).toHaveCount(0);
+          await expect(page.getByTestId('runaway-load-state')).toHaveCount(0);
+        } else {
+          await expect(lane).toBeVisible({ timeout: 30_000 });
+          await expect(page.getByTestId('runaway-transition-chip').first()).toBeVisible({ timeout: 30_000 });
+        }
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -1109,6 +1132,7 @@ async function renderAndDownload(
 
 test(`paired repository acceptance phase: ${phase}`, async ({ page, request }) => {
   await mkdir(evidenceDir!, { recursive: true });
+  expect(new URL(editorUrl).searchParams.has('runawayTimelineProject')).toBe(phase !== 'restore');
   const firstState = phase === 'restart'
     ? JSON.parse(
       await readFile(resolve(evidenceDir!, 'browser-first-state.json'), 'utf8'),
@@ -1121,6 +1145,13 @@ test(`paired repository acceptance phase: ${phase}`, async ({ page, request }) =
   const initialAt = primaryClip(initial.config)?.at;
   expect(typeof initialAt).toBe('number');
   const runawaySnapshot = await readRunawaySnapshot(request);
+  const runawayApiStatus = runawaySnapshot === null ? 404 : 200;
+  let runawayBrowserRequestCount = 0;
+  page.on('request', (browserRequest) => {
+    if (new URL(browserRequest.url()).pathname.endsWith('/runaway-transitions')) {
+      runawayBrowserRequestCount += 1;
+    }
+  });
   const issues = await openEditor(page, initial.timeline_ulid!);
   const runawayUi = phase === 'restore' ? null : await proveRunawayLane(page);
   const extensionFingerprints = await proveAllExtensionLifecycles(
@@ -1180,6 +1211,11 @@ test(`paired repository acceptance phase: ${phase}`, async ({ page, request }) =
     expect(initialAt).toBe(0);
     expect(captionCount(initial.config)).toBe(0);
   }
+  if (phase === 'restore') {
+    expect(runawayBrowserRequestCount).toBe(0);
+  } else {
+    expect(runawayBrowserRequestCount).toBeGreaterThan(0);
+  }
 
   const final = await readTimeline(request);
   assertPairedAudioCarrier(final);
@@ -1192,6 +1228,7 @@ test(`paired repository acceptance phase: ${phase}`, async ({ page, request }) =
     primaryClipAt: primaryClip(final.config)?.at,
     captionCount: captionCount(final.config),
     runawayCount: runawaySnapshot?.count ?? null,
+    runawayApiStatus,
     runawayHash: runawaySnapshot?.hash ?? null,
     runawayRunId: runawaySnapshot?.runId ?? null,
     runawayFirstManifestId: runawaySnapshot?.firstManifestId ?? null,
@@ -1200,6 +1237,7 @@ test(`paired repository acceptance phase: ${phase}`, async ({ page, request }) =
     runawayLastFrame: runawaySnapshot?.lastFrame ?? null,
     runawayUiFirstManifestId: runawayUi?.firstManifestId ?? null,
     runawayUiLastManifestId: runawayUi?.lastManifestId ?? null,
+    runawayBrowserRequestCount,
     extensionFingerprints,
     extensionCount: expectedExtensions,
   };

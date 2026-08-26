@@ -2519,3 +2519,26 @@ fresh console collection.
 - The failed RC42 evidence has artifact-index SHA-256
   `ccb6149793b288f774596ac3446784d2c2ad1afeaead54e939ea097fa247d5a0`.
   It remains immutable diagnostic history and is not a passing receipt.
+
+### Rollback acceptance must not request migration-created projects
+
+- RC43 passed both browser phases, real export, decoded audio/video, all six
+  exact interior caption probes, and all seven clean-pixel boundary probes. It
+  also restored the pre-migration backup exactly: logical snapshots and media
+  hashes matched, `astrid doctor` passed SQLite/FK/schema checks, and Runaway
+  rows returned to zero.
+- The final browser phase nevertheless kept the Runaway URL selector for
+  `runaway-piano-colour-demo`. That project was correctly created by the
+  migration after the backup and correctly removed by rollback. Astrid
+  therefore returned project-not-found, the editor rendered a red retry error,
+  and the shared lifecycle helper simultaneously demanded a transition chip.
+  The assertion and UI request contradicted the rollback contract.
+- Restore acceptance now omits the removed Runaway selector entirely, requires
+  no Runaway lane, chips, loading/error state, or bridge request, and still
+  toggles the installed extension off and on to prove its inventory lifecycle.
+  Direct API, database-count, schema, doctor, logical-state, and managed-media
+  checks remain mandatory evidence that rollback removed the typed data and
+  restored the original project rather than merely hiding a lane.
+- The failed RC43 evidence has artifact-index SHA-256
+  `b7fa5846601893ccd675d66b7693ff5c5d51c15f330fff8f2b6e279bbbd7e4d3`.
+  It remains immutable diagnostic history and is not a passing receipt.
