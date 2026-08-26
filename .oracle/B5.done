@@ -1,0 +1,31 @@
+B5.done — B8-5 complete at HEAD 2aff19f50 (branch codex/phase-c-megado).
+
+T5a [normal]: real-bridge-serve.mjs now builds the demo {config, registry} pair via ONE shared
+demoDocument(imported) helper — clip-2 contiguous on V1, one pinnedShotGroups entry
+(shot-bridge-a / 'Bridge Shot A' over clip-1+clip-2), generation/variant document references
+(gen-shot-a-primary/-alt, ≥2 variants, no gallery rows) — used by BOTH seed()'s assembly.json mirror
+and registerInBridgeRegistry() (the SQLite writer the browser reads). Canonicalize acceptance probed
+at the pin: accepted verbatim.
+
+T5b [XHARD]: serial case "document shot surface: render, duplicate, promote, reload over one bridge
+document" INSERTED BEFORE the watchdog case; frozen command green solo (1 passed, 33.2s).
+Group 1 render GREEN (Bridge Shot A from deriveTimelineShotGroupViews; Jump-to-Shot/Generate-Video
+dormant count 0). Group 2 duplicate BLOCKED honestly: DUPLICATE_SHOT_GROUP_FAMILY absent at pin
+(FAMILY_DERIVATIONS has neither duplicate nor promote_primary); raw transcript = direct admission probe
+HTTP 422 capability_unavailable "duplicate: unknown family…" (.oracle/evidence/b8-batch5-probes/) plus
+in-run typed toast/console AppError; document byte-stable after. Group 3 promote PRE-BLOCKED (rev 6,
+gallery CLI negative stands): in-run gallery.get → HTTP 404 generation_not_found transcript + typed
+toast, success asserted absent. Group 4 reload GREEN: full GET body byte-identical across page.reload(),
+config_version matches bridge head (no increment — correctly none since group 2 blocked).
+Network audit: zero non-loopback requests; single task-polling owner held.
+
+Post-T5a whole-spec re-run (binding): PLAYWRIGHT_HARDENING=1 frozen command, WHOLE spec no -g,
+serial → 7 passed (1.5m), watchdog last.
+
+Discovered gap ledgered (.oracle/BLOCKED-B8-T5-asset-media-id.md): editor CAS saves strip bridge-managed
+media_id (ASSET_REGISTRY_ENTRY_FIELDS omits it) ⇒ bridge asset content route 404s afterwards; isolated
+pinned-bridge probe attached (200 pre-save → save 200 v2 → 404 post-save); pre-existing for stock doc;
+precise commented allowlist in spec; fix left to T8b.
+
+Gates: node --check OK; tsc/eslint clean on changed files. Evidence: .oracle/evidence/b8-batch5.md.
+STOPPING per instruction — B8-6 not entered.
