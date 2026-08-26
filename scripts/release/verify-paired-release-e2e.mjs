@@ -35,6 +35,7 @@ import {
   buildContainerBoundaryAttestation,
   resolvePinnedExecutable,
 } from './native-tool-attestation.mjs';
+import { assertHeavyStepDiskCapacity } from './verify-extension-ship.mjs';
 
 const LABEL = '[paired-release-e2e]';
 const moduleDir = dirname(fileURLToPath(import.meta.url));
@@ -95,6 +96,18 @@ export const COMMAND_TIMEOUTS_MS = Object.freeze({
   tesseract: COMMAND_BUDGETS_MS.tesseract,
 });
 export const COMMAND_MAX_BUFFER_BYTES = 20 * 1024 * 1024;
+export function assertPairedReleaseDiskCapacity({ astridCheckout, tempPath = tmpdir() }, dependencies = {}) {
+  return assertHeavyStepDiskCapacity(
+    { id: 'paired-release-e2e' },
+    { astridCheckout, tempPath },
+    dependencies,
+  ).map(({ availableBytes, requiredBytes, ...measurement }) => Object.freeze({
+    ...measurement,
+    availableBytes: availableBytes.toString(),
+    requiredBytes: requiredBytes.toString(),
+  }));
+}
+
 const DEMO_PROJECT = 'paired-release-demo';
 const DEMO_TIMELINE = 'paired-release-timeline';
 const RUNAWAY_PROJECT = 'runaway-piano-colour-demo';
@@ -3493,6 +3506,7 @@ async function executeGate(manifest, pins, evidenceRoot) {
     reighEvidencePaths: pins.reighProvenance.changedPaths,
     astridCommit: pins.astridCommit,
     capability: pins.capability,
+    diskCapacity: pins.diskCapacity,
     toolchainAttestation: pins.nativeToolchain,
     toolchainAttestationPath: relative(evidenceRoot, toolchainAttestationPath),
     expected: { extensions: EXPECTED_EXTENSION_COUNT, runawayTransitions: EXPECTED_RUNAWAY_COUNT },
@@ -3798,10 +3812,17 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   }
   const evidenceRoot = createEvidenceRoot(manifest.release);
   let pins;
+  let preflightPhase = 'exact-ref capability preflight';
   try {
     pins = preflightPinnedRepositories({ manifest, env });
+    preflightPhase = 'disk-capacity preflight';
+    const diskCapacity = assertPairedReleaseDiskCapacity({
+      astridCheckout: pins.astridCheckout,
+    });
+    preflightPhase = 'native toolchain preflight';
     pins = Object.freeze({
       ...pins,
+      diskCapacity,
       nativeToolchain: preflightNativeToolchain({ manifest, env, pins }),
     });
   } catch (error) {
@@ -3809,7 +3830,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
       schemaVersion: 1,
       release: manifest.release,
       status: 'failed',
-      phase: 'exact-ref capability preflight',
+      phase: preflightPhase,
       reighRef: env.REIGH_REF || null,
       astridRef: env.ASTRID_REF || null,
       manifestAstridPin: manifest.astrid.commit,

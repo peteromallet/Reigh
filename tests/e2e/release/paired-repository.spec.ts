@@ -30,6 +30,7 @@ const runawayProject = process.env.PAIRED_RELEASE_RUNAWAY_PROJECT;
 const expectedExtensions = Number(process.env.PAIRED_RELEASE_EXPECTED_EXTENSIONS);
 const expectedRunaway = Number(process.env.PAIRED_RELEASE_EXPECTED_RUNAWAY);
 const expectedAudioMediaId = process.env.PAIRED_RELEASE_AUDIO_MEDIA_ID;
+const TRANSCRIPT_FIXTURE_END_SECONDS = 8;
 
 for (const [name, value] of Object.entries({
   PAIRED_RELEASE_PHASE: phase,
@@ -551,8 +552,8 @@ async function proveRunawayLane(page: Page): Promise<RunawayUiProof> {
   await expect(transcriptLane).toHaveAttribute('data-total-items', '2', { timeout: 30_000 });
   await expect.poll(async () => Number(await transcriptLane.getAttribute('data-viewport-start')), {
     timeout: 30_000,
-    message: 'Runaway End navigation did not move the shared viewport away from the transcript source',
-  }).toBeGreaterThan(0);
+    message: 'Runaway End navigation did not move the shared viewport beyond the transcript source',
+  }).toBeGreaterThan(TRANSCRIPT_FIXTURE_END_SECONDS);
   await expect(transcriptLane.getByTestId('transcript-lane-chip')).toHaveCount(0);
   return { firstManifestId: 'T0001', lastManifestId: 'T0566' };
 }
@@ -808,13 +809,6 @@ async function waitForPersistedEdit(request: APIRequestContext, previousAt: numb
 async function expectedTranscriptCaptions(page: Page): Promise<ExpectedCaption[]> {
   const transcriptLane = page.locator('[data-lane-kind="reigh.transcript"]');
   await expect(transcriptLane).toHaveAttribute('data-total-items', '2', { timeout: 30_000 });
-
-  const viewportStart = Number(await transcriptLane.getAttribute('data-viewport-start'));
-  if (viewportStart > 0) {
-    // The source count above must survive even while virtualization unmounts
-    // every early transcript chip at the Runaway tail.
-    await expect(transcriptLane.getByTestId('transcript-lane-chip')).toHaveCount(0);
-  }
 
   const scroller = page.locator('.timeline-canvas-edit-area');
   await expect(scroller).toHaveCount(1);

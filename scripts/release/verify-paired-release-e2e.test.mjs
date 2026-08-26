@@ -57,6 +57,7 @@ import {
   waitForViteReadiness,
   waitForRenderWorkerReadiness,
   assertRenderWorkerCompleted,
+  assertPairedReleaseDiskCapacity,
   validateRenderWorkerBinding,
   validateAstridServeOwnedRenderEvidence,
   runLogged,
@@ -1464,6 +1465,69 @@ describe('paired repository release E2E gate', () => {
       'backup restore, second restart, and rollback-state acceptance',
       'immutable receipt and artifact hash index publication',
     ]);
+  });
+
+  it('fails before provisioning when the standalone paired gate lacks its release disk budgets', () => {
+    const gib = 1024n ** 3n;
+    const capacities = new Map([
+      ['/paired-temp', 5n * gib],
+      ['/paired-astrid', 2n * gib],
+    ]);
+    const dependencies = {
+      platform: 'linux',
+      exists: () => true,
+      ancestor: (candidate) => candidate,
+      realpath: (candidate) => candidate,
+      stat: (candidate) => ({ dev: candidate === '/paired-temp' ? 1n : 2n }),
+      statfs: (candidate) => ({ bavail: capacities.get(candidate), bsize: 1n }),
+    };
+
+    assert.deepEqual(assertPairedReleaseDiskCapacity({
+      astridCheckout: '/paired-astrid',
+      tempPath: '/paired-temp',
+    }, dependencies), [
+      {
+        target: '/paired-temp',
+        availableBytes: String(5n * gib),
+        requiredBytes: String(5n * gib),
+        volume: 'dev:1',
+      },
+      {
+        target: '/paired-astrid',
+        availableBytes: String(2n * gib),
+        requiredBytes: String(2n * gib),
+        volume: 'dev:2',
+      },
+    ]);
+
+    capacities.set('/paired-temp', (5n * gib) - 1n);
+    assert.throws(
+      () => assertPairedReleaseDiskCapacity({
+        astridCheckout: '/paired-astrid',
+        tempPath: '/paired-temp',
+      }, dependencies),
+      /insufficient release disk capacity.*requires at least 5\.0 GiB.*available 4\.9 GiB/,
+    );
+    capacities.set('/paired-temp', 5n * gib);
+    capacities.set('/paired-astrid', (2n * gib) - 1n);
+    assert.throws(
+      () => assertPairedReleaseDiskCapacity({
+        astridCheckout: '/paired-astrid',
+        tempPath: '/paired-temp',
+      }, dependencies),
+      /insufficient release disk capacity.*requires at least 2\.0 GiB.*available 1\.9 GiB/,
+    );
+
+    const source = readFileSync(resolve(REPO_ROOT, 'scripts/release/verify-paired-release-e2e.mjs'), 'utf8');
+    const main = source.slice(source.indexOf('export async function main'));
+    const repositoryPreflight = main.indexOf('preflightPinnedRepositories');
+    const diskPreflight = main.indexOf('assertPairedReleaseDiskCapacity');
+    const toolchainPreflight = main.indexOf('preflightNativeToolchain');
+    const execution = main.indexOf('await executeGate');
+    assert.ok(repositoryPreflight >= 0);
+    assert.ok(repositoryPreflight < diskPreflight);
+    assert.ok(diskPreflight < toolchainPreflight);
+    assert.ok(toolchainPreflight < execution);
   });
 
   it('pins the independently owned canonical Runaway release inputs', () => {

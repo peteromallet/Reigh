@@ -2161,3 +2161,42 @@ fresh console collection.
 - The failed raw evidence has artifact-index SHA-256
   `128350457ed70e42b46790a04b487e37665e1abf89cdf2c187e18a54ceda5fbf`.
   It is retained as RC28 diagnostic history and is not a passing receipt.
+
+### Standalone heavy gates need the same early disk budget as the orchestrator
+
+- RC29's first paired run passed exact-ref provenance and began provisioning,
+  then exhausted the host volume while downloading the isolated Playwright
+  browser. The top-level ship verifier already requires 5 GiB on the temporary
+  volume and 2 GiB on a separate Astrid volume before this heavy step, but the
+  standalone paired command did not apply that policy. A direct invocation
+  could therefore spend minutes and substantial I/O before failing with
+  `ENOSPC` instead of rejecting the machine state at preflight.
+- The standalone gate now delegates to the same code-owned heavy-step disk
+  policy before native-tool attestation or runtime materialization. It groups
+  requirements by physical volume, fails closed below either threshold, and
+  records the successful byte measurements in the immutable paired receipt.
+  Deterministic tests cover exact-threshold success and one-byte-short failures
+  on both volumes, preventing the standalone and orchestrated entry points from
+  drifting apart again.
+- The failed raw evidence has artifact-index SHA-256
+  `f3d8ff7e303d0f7dd72f9cf6b38edcfcdb400099bd1b8f9a10623c2def9bce31`.
+  It is retained as RC29 diagnostic history and is not a passing receipt.
+
+### A positive viewport origin is not proof that early data is virtualized out
+
+- RC29's second paired run passed the complete first browser phase and the
+  hardened cleanup path, then failed during restart because the transcript
+  helper interpreted any `data-viewport-start > 0` as the Runaway tail. The
+  trace reported `0.46875s` with a viewport ending at `34.65625s`; both fixture
+  captions occupy `2–8s`, so the two visible chips in the screenshot were the
+  correct product behavior.
+- The redundant conditional assertion has been removed from caption recovery.
+  That helper now resets the shared scroller, waits for React's viewport state
+  to reach exactly zero, and proves both caption chips and their semantics.
+  The distinct Runaway-tail proof remains authoritative and is stronger: it
+  requires the shared viewport to move beyond the transcript fixture's actual
+  8-second end before requiring zero mounted transcript chips. Fractional
+  scroll offsets can no longer masquerade as a virtualization boundary.
+- The failed raw evidence has artifact-index SHA-256
+  `4913cbb585276ce337eb748b0d65eaf83ee9af9992ce2aa37c8ad0ba1daaaceb`.
+  It is retained as RC29 diagnostic history and is not a passing receipt.
