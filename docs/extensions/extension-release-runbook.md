@@ -182,8 +182,10 @@ to that state hash, probed for H.264/1280x720/24 fps/frame count/duration,
 fully decoded, and checked against exactly two persisted captions: each exact
 ID/text/interval/region is sampled at exact motion-safe 25%, 50%, and 75%
 encoded frames (six positive probes total), while exact before/start/final/after
-frames prove its caption region is OCR-empty at declared zero-opacity
-boundaries and outside its interval. A no-caption control interval must contain the
+frames prove its caption region matches independently expected clean media or
+black pixels at declared zero-opacity boundaries and outside its interval. OCR
+is retained as a diagnostic but cannot overrule exact pixel-difference and
+contrast evidence. A no-caption control interval must contain the
 committed `tests/e2e/fixtures/paired-release/paired-release-test-card.png` and
 its JSON metadata: 1280×720 PNG, SHA-256
 `72ddb137c72fcb910c4acede94a76281e865fecbbd54166ae538bd3d6431dce0`, and all

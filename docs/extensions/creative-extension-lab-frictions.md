@@ -2491,10 +2491,31 @@ fresh console collection.
   motion, not a Three.js, CanvasTexture, browser, or encoder defect.
 - The oracle now decodes frames by integer index instead of timestamp seeking,
   requires exact cropped OCR plus region/occupancy/contrast at three
-  motion-safe interior frames per caption, and separately requires OCR-empty
+  motion-safe interior frames per caption, and separately requires pixel-clean
   before/start/final/after boundary frames. This tests intended motion without
   weakening the persisted text, interval, geometry, or outside-interval
   contract.
 - The failed RC41 evidence has artifact-index SHA-256
   `b0f0c8ff786921090c4020626da44420af931df8a8e526cdaebe0363396d7187`.
+  It remains immutable diagnostic history and is not a passing receipt.
+
+### Negative OCR cannot overrule independently clean pixels
+
+- RC42 completed both browser phases, persisted and restarted all thirteen
+  extensions and 566 Runaway transitions, and produced the deterministic real
+  export. Its new first-caption `before` probe then failed because Tesseract
+  returned the low-confidence token `re` from a completely uniform black crop.
+- The exact frame-47 caption region had mean `0`, standard deviation `0`, one
+  colour, and zero pixel difference from an independently generated black
+  frame. There were no caption pixels to detect; treating any OCR token as
+  authoritative created a false failure on provably empty visual evidence.
+- Boundary absence now compares each exact decoded caption region against its
+  independently expected clean frame: the committed test card while that media
+  interval is active, otherwise a generated 1280×720 black frame. Both
+  thresholded occupancy and difference contrast must remain under the same
+  strict no-caption budgets. OCR output is still retained for diagnosis, but
+  it cannot veto stronger pixel evidence. Manual probes of all seven RC42
+  boundaries pass these budgets, including exact zero difference on frame 47.
+- The failed RC42 evidence has artifact-index SHA-256
+  `ccb6149793b288f774596ac3446784d2c2ad1afeaead54e939ea097fa247d5a0`.
   It remains immutable diagnostic history and is not a passing receipt.

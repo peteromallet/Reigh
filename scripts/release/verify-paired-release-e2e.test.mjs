@@ -756,19 +756,36 @@ process.exit(1);
     assert.equal(assessCaptionBoundaryProbe({
       expectedText: 'Fixture segment one',
       recognizedText: '',
+      occupancy: 0,
+      contrast: 0,
     }).pass, true);
-    const wrongBoundaryText = assessCaptionBoundaryProbe({
+    assert.equal(assessCaptionBoundaryProbe({
       expectedText: 'Fixture segment one',
       recognizedText: 'Fixture segment two',
-    });
-    assert.equal(wrongBoundaryText.pass, false);
-    assert.match(wrongBoundaryText.reasons.join('; '), /required-empty boundary frame/);
+      occupancy: 0,
+      contrast: 0,
+    }).pass, true);
     const visibleBoundary = assessCaptionBoundaryProbe({
       expectedText: 'Fixture segment one',
       recognizedText: 'Fixture segment one',
+      occupancy: 0.02,
+      contrast: 0.08,
     });
     assert.equal(visibleBoundary.pass, false);
-    assert.match(visibleBoundary.reasons.join('; '), /required-empty boundary frame/);
+    assert.match(visibleBoundary.reasons.join('; '), /expected clean pixels/);
+    assert.match(visibleBoundary.reasons.join('; '), /caption-like contrast/);
+    for (const metrics of [
+      { occupancy: Number.NaN, contrast: 0 },
+      { occupancy: 0, contrast: Number.POSITIVE_INFINITY },
+      { occupancy: 0.001501, contrast: 0 },
+      { occupancy: 0, contrast: 0.020001 },
+    ]) {
+      assert.equal(assessCaptionBoundaryProbe({
+        expectedText: 'Fixture segment one',
+        recognizedText: '',
+        ...metrics,
+      }).pass, false);
+    }
   });
 
   it('fails duplicate, overlapping, wrong-ID, wrong-text, and wrong-interval persistence', () => {

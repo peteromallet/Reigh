@@ -3003,19 +3003,23 @@ export function captionBoundaryProbePlan(captions, fps, totalFrames) {
   });
 }
 
-export function assessCaptionBoundaryProbe({ expectedText, recognizedText }) {
+export function assessCaptionBoundaryProbe({ expectedText, recognizedText, occupancy, contrast }) {
   const normalizedExpected = normalizeCaptionText(expectedText);
-  const normalizedRecognized = normalizeCaptionText(recognizedText);
   const reasons = [];
   if (!normalizedExpected) reasons.push('expected caption text is empty');
-  if (normalizedRecognized) {
-    reasons.push('OCR text is visible on a required-empty boundary frame');
+  if (!Number.isFinite(occupancy) || occupancy > CONTROL_MAX_FOREGROUND) {
+    reasons.push('boundary frame differs from its independently expected clean pixels');
+  }
+  if (!Number.isFinite(contrast) || contrast > CONTROL_MAX_CONTRAST) {
+    reasons.push('boundary frame has caption-like contrast against its independently expected clean pixels');
   }
   return {
     pass: reasons.length === 0,
     reasons,
     expectedText,
     recognizedText,
+    occupancy,
+    contrast,
   };
 }
 
@@ -3507,10 +3511,11 @@ function verifyRenderedArtifact(context, { serveOwnedEvidence = null } = {}) {
   ) {
     fail(`render receipt caption midpoint set mismatch: expected ${expectedMidpoints.join(', ')}, got ${receiptMidpoints.join(', ')}`);
   }
+  const visualMediaIntervals = seededVisualMediaIntervals(context.evidenceRoot);
   const controlSeconds = noCaptionControlSeconds(
     captions,
     expectedDuration,
-    seededVisualMediaIntervals(context.evidenceRoot),
+    visualMediaIntervals,
   );
   if (!Number.isFinite(controlSeconds)) {
     fail('paired render has no no-caption control interval for caption semantics');
@@ -3572,6 +3577,15 @@ function verifyRenderedArtifact(context, { serveOwnedEvidence = null } = {}) {
   if (!controlSemantics.pass) {
     fail(`no-caption control semantic proof failed at ${controlSeconds}s: ${controlSemantics.reasons.join('; ')}`);
   }
+  const blackControlPath = resolve(context.evidenceRoot, 'render-black-control.png');
+  runLogged(magickExecutable, [
+    '-size', `${CAPTION_FRAME_WIDTH}x${CAPTION_FRAME_HEIGHT}`, 'xc:black', blackControlPath,
+  ], {
+    cwd: context.reighSnapshot,
+    env: safeBaseEnvironment(),
+    logPath: resolve(context.evidenceRoot, 'render-black-control.log'),
+    strictStderr: true,
+  });
   const probeEvidence = expectedProbes.map((probeEntry, index) => {
     const caption = captions.find((candidate) => candidate.id === probeEntry.captionId);
     if (!caption) fail(`caption probe references missing persisted ID ${probeEntry.captionId}`);
@@ -3686,9 +3700,29 @@ function verifyRenderedArtifact(context, { serveOwnedEvidence = null } = {}) {
     ], { cwd: context.reighSnapshot, env: safeBaseEnvironment() });
     writeFileSync(ocrPath, tesseract.stdout, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
     const recognized = recognizedCaption(parseTesseractTsv(tesseract.stdout));
+    const usesSeededMedia = visualMediaIntervals.some((interval) => (
+      probeEntry.seconds >= interval.start && probeEntry.seconds < interval.end
+    ));
+    const expectedCleanPath = usesSeededMedia ? context.mediaFixture.path : blackControlPath;
+    const occupancy = imageDifferenceMetric(
+      framePath,
+      expectedCleanPath,
+      caption.region,
+      'occupancy',
+      magickExecutable,
+    );
+    const contrast = imageDifferenceMetric(
+      framePath,
+      expectedCleanPath,
+      caption.region,
+      'contrast',
+      magickExecutable,
+    );
     const semantics = assessCaptionBoundaryProbe({
       expectedText: caption.text,
       recognizedText: recognized.text,
+      occupancy,
+      contrast,
     });
     if (!semantics.pass) {
       fail(`caption boundary proof failed for ${caption.id} ${probeEntry.kind} frame ${probeEntry.frame}: ${semantics.reasons.join('; ')}`);
@@ -3700,6 +3734,13 @@ function verifyRenderedArtifact(context, { serveOwnedEvidence = null } = {}) {
       captionId: caption.id,
       expectedText: caption.text,
       recognizedText: recognized.text,
+      occupancy,
+      contrast,
+      expectedCleanFrameKind: usesSeededMedia ? 'seeded-media-fixture' : 'generated-black',
+      expectedCleanFrameSource: usesSeededMedia
+        ? PAIRED_RELEASE_MEDIA_FIXTURE
+        : relative(context.evidenceRoot, blackControlPath),
+      expectedCleanFrameSha256: sha256File(expectedCleanPath),
       sha256: sha256File(framePath),
       path: relative(context.evidenceRoot, framePath),
       logPath: relative(context.evidenceRoot, logPath),
@@ -3748,6 +3789,8 @@ function verifyRenderedArtifact(context, { serveOwnedEvidence = null } = {}) {
       controlOcrPath: relative(context.evidenceRoot, controlOcrPath),
       controlForegroundByRegion,
       controlContrastByRegion,
+      blackControlFramePath: relative(context.evidenceRoot, blackControlPath),
+      blackControlFrameSha256: sha256File(blackControlPath),
       motionSafeInteriorFrames: probeEvidence.filter((entry) => entry.kind !== 'midpoint'),
       probes: probeEvidence,
       boundaryProbes: boundaryProbeEvidence,
