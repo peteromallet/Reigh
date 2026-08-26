@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "release": "extension-ship-quality-rc20",
-  "status": "frozen",
+  "release": "extension-ship-quality-rc21",
+  "status": "integration",
   "candidate": {
-    "reighCommit": "a2db6a51327c2fc18721a122f133b79762d32c08",
+    "reighCommit": null,
     "astridCommit": "73fff7d5990b2563d7c31805d0c4aa8f01ed94a1"
   },
   "workstreams": [
@@ -137,14 +137,14 @@
       "id": "22-human-acceptance-testing",
       "title": "Human acceptance testing",
       "status": "blocked",
-      "blocker": "Four independent human persona sessions have not yet been completed on the RC20 paired release candidate.",
+      "blocker": "Four independent human persona sessions have not yet been completed on the RC21 paired release candidate.",
       "receipts": []
     },
     {
       "id": "23-frozen-release-candidate",
       "title": "Frozen release candidate",
       "status": "blocked",
-      "blocker": "RC20 is source-frozen and candidate-bound; the paired acceptance receipt and two independent frozen-candidate approvals are not yet available.",
+      "blocker": "RC21 is in integration; the paired acceptance receipt and two independent frozen-candidate approvals are not yet available.",
       "receipts": []
     }
   ]

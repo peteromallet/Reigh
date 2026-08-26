@@ -684,10 +684,15 @@ async function proveAllExtensionLifecycles(page: Page, request: APIRequestContex
       } else {
         const chip = page.getByTestId('runaway-transition-chip').first();
         await expect(chip).toBeVisible({ timeout: 30_000 });
-        // Selection is the lane's meaningful safe action: it opens the real
-        // provenance inspector without mutating the timeline or bridge data.
+        // Selection is the lane's meaningful safe action. Preserve the user's
+        // current panel choice, then explicitly visit Inspector to prove the
+        // selected transition's real provenance without mutating timeline or
+        // bridge data. Item selection must not forcibly switch panel tabs.
         await chip.click();
+        await page.getByRole('tab', { name: 'Inspector' }).click();
         await expect(page.getByTestId('runaway-transition-inspector')).toBeVisible({ timeout: 8_000 });
+        await page.getByRole('tab', { name: 'Extensions' }).click();
+        await expect(inventory).toBeVisible({ timeout: 8_000 });
         const runaway = await readRunawaySnapshot(request);
         if (!runaway) throw new Error('Runaway lane action lost the typed bridge output');
         fingerprints[probe.id] = runaway.hash;

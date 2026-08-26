@@ -1953,3 +1953,20 @@ fresh console collection.
 - The failed raw evidence has artifact-index SHA-256
   `9d38e5983ee06ed1a3fff9b612b5ad3efaf6bd271f6acea17395eccd477774ff`.
   It is retained as RC19 diagnostic history and is not a passing receipt.
+
+### Selecting lane data must not override the user's properties-panel tab
+
+- RC20 advanced through transcript materialization and reached the Runaway
+  lifecycle action. The transition chip was visible and selectable, but the
+  gate waited for its provenance inspector while the Properties panel still
+  showed the explicitly selected Extensions tab. Inspectors render under the
+  sibling Inspector tab; item selection intentionally does not seize the
+  user's panel choice.
+- Lifecycle acceptance now clicks the real chip, explicitly opens Inspector,
+  verifies the Runaway provenance component, and returns to Extensions before
+  testing disable/re-enable behavior. This proves both selected-item state and
+  panel navigation without requiring surprising automatic UI navigation or
+  weakening the inspector assertion.
+- The failed raw evidence has artifact-index SHA-256
+  `c88e06d1a127247cdb0a17cb3c7386869d5ed1714bf1029978df7a7ab30bfeff`.
+  It is retained as RC20 diagnostic history and is not a passing receipt.
