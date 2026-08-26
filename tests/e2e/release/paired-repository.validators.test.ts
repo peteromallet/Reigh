@@ -91,6 +91,13 @@ describe('paired release semantic validators', () => {
       generatedFromVersion: 1,
       entries: [{ id: 'pulse-clip-a-start', sourceClipId: 'clip-a', edge: 'start', time: 1, offset: 0, intensity: 0.4, color: '#fff' }],
     }, timeline).valid).toBe(false);
+    expect(validateExtensionOutput('com.reigh.creative-lab.timeline-faultline', [], timeline))
+      .toMatchObject({ valid: false, reason: 'expected an envelope object' });
+    expect(validateExtensionOutput('com.reigh.creative-lab.timeline-faultline', {
+      schemaVersion: 1,
+      generatedFromVersion: -1,
+      entries: [],
+    }, timeline)).toMatchObject({ valid: false, reason: 'generatedFromVersion must be non-negative' });
   });
 
   it('validates command output against real persisted hold and trim timing', () => {
@@ -141,6 +148,43 @@ describe('paired release semantic validators', () => {
     )).toMatchObject({ valid: false, reason: expect.stringContaining('duplicate id') });
   });
 
+  it('validates the exact versioned Faultline envelope for an anomalous persisted timeline', () => {
+    const anomalousTimeline = {
+      tracks: [{ id: 'V1', kind: 'visual', muted: false }],
+      clips: [
+        { id: 'clip-a', track: 'V1', at: 0, hold: 1, clipType: 'media' },
+        { id: 'clip-b', track: 'V1', at: 3, hold: 1, clipType: 'media' },
+      ],
+    };
+    const faultline = {
+      schemaVersion: 1,
+      generatedFromVersion: 4,
+      entries: [{
+        id: 'fault-gap-clip-b-clip-a',
+        sourceClipId: 'clip-b',
+        relatedClipId: 'clip-a',
+        kind: 'gap',
+        severity: 'warning',
+        time: 1,
+        label: 'gap before clip-b',
+        color: '#52e8ff',
+      }],
+    };
+    expect(validateExtensionOutput(
+      'com.reigh.creative-lab.timeline-faultline',
+      faultline,
+      anomalousTimeline,
+    )).toMatchObject({ valid: true, count: 1 });
+    expect(validateExtensionOutput(
+      'com.reigh.creative-lab.timeline-faultline',
+      { ...faultline, entries: [{ ...faultline.entries[0], time: 2 }] },
+      anomalousTimeline,
+    )).toMatchObject({
+      valid: false,
+      reason: 'faultline entries do not match the current timeline',
+    });
+  });
+
   it('enforces each persisted command contract and canonical fingerprints', () => {
     const outputs: Record<string, unknown> = {
       'com.reigh.scene-phase-markers': [{ id: 'marker-1', time: 1 }],
@@ -154,7 +198,7 @@ describe('paired release semantic validators', () => {
       ] },
       'com.reigh.creative-lab.caption-safe-zone-orchestra': [],
       'com.reigh.creative-lab.emotional-weather-map': [{ id: 'weather-clip-a', sourceClipId: 'clip-a', kind: 'breeze', time: 1, intensity: 0.4, color: '#fff', label: 'breeze' }],
-      'com.reigh.creative-lab.timeline-faultline': [],
+      'com.reigh.creative-lab.timeline-faultline': { schemaVersion: 1, generatedFromVersion: 1, entries: [] },
       'com.reigh.creative-lab.foley-constellation': { schemaVersion: 1, generatedFromVersion: 1, entries: [
         { id: 'foley-clip-a-start', sourceClipId: 'clip-a', boundary: 'start', time: 1, category: 'unassigned', offset: 0, pan: 0, distance: 0.5, intensity: 0.4, label: 'cue' },
         { id: 'foley-clip-a-end', sourceClipId: 'clip-a', boundary: 'end', time: 3, category: 'unassigned', offset: 0, pan: 0, distance: 0.5, intensity: 0.4, label: 'cue' },

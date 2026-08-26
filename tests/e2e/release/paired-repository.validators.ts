@@ -543,6 +543,128 @@ function expectedTerrainBoundaryCount(timeline: ProbeTimeline): number {
   return Math.min(128, clips.reduce((total, clip) => total + 1 + (Math.max(0, clip.duration ?? 0) > 0 ? 1 : 0), 0));
 }
 
+const FAULTLINE_COLORS = {
+  overlap: '#ff4d6d',
+  gap: '#52e8ff',
+  'missing-track': '#ffd166',
+  'negative-start': '#b388ff',
+  'negative-duration': '#ff8c42',
+  'zero-duration': '#f72585',
+  'non-finite': '#ffffff',
+} as const;
+
+function normalizeFaultlineTime(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  return Math.round(value * 1_000) / 1_000;
+}
+
+function expectedFaultlineEntries(timeline: ProbeTimeline): Array<Record<string, unknown>> {
+  const tracks = timeline.tracks ?? [];
+  const trackIds = new Set(tracks.map((track) => track.id));
+  const clips = (timeline.clips ?? [])
+    .filter((clip) => nonEmpty(clip.id))
+    .map((clip) => ({ ...clip, duration: snapshotDuration(clip) }))
+    .sort((left, right) => (
+      String(left.track ?? '').localeCompare(String(right.track ?? ''))
+      || (finite(left.at) ? left.at : 0) - (finite(right.at) ? right.at : 0)
+      || left.id!.localeCompare(right.id!)
+    ))
+    .slice(0, 1_024);
+  const expected: Array<Record<string, unknown>> = [];
+  const add = (
+    sourceClipId: string,
+    kind: keyof typeof FAULTLINE_COLORS,
+    structuralTime: number,
+    severity: 'warning' | 'error',
+    findingLabel: string,
+    relatedClipId?: string,
+  ): void => {
+    expected.push({
+      id: `fault-${kind}-${sourceClipId}${relatedClipId ? `-${relatedClipId}` : ''}`,
+      sourceClipId,
+      ...(relatedClipId ? { relatedClipId } : {}),
+      kind,
+      severity,
+      time: normalizeFaultlineTime(structuralTime),
+      label: findingLabel,
+      color: FAULTLINE_COLORS[kind],
+    });
+  };
+
+  for (const clip of clips) {
+    const start = finite(clip.at) ? clip.at : 0;
+    if (!finite(clip.at) || !finite(clip.duration)) {
+      add(clip.id!, 'non-finite', start, 'error', 'non-finite clip timing');
+    }
+    if (finite(clip.at) && clip.at < 0) {
+      add(clip.id!, 'negative-start', 0, 'error', 'clip starts before timeline zero');
+    }
+    if (finite(clip.duration) && clip.duration < 0) {
+      add(clip.id!, 'negative-duration', start, 'error', 'clip has negative duration');
+    } else if (clip.duration === 0) {
+      add(clip.id!, 'zero-duration', start, 'warning', 'zero-duration clip');
+    }
+    if (!trackIds.has(clip.track)) {
+      add(clip.id!, 'missing-track', start, 'error', `clip references missing track ${clip.track}`);
+    }
+  }
+
+  const primary = tracks.find((track) => track.kind === 'visual' && track.muted === false);
+  const continuity = primary
+    ? clips.filter((clip) => clip.track === primary.id
+      && finite(clip.at) && clip.at >= 0
+      && finite(clip.duration) && clip.duration > 0)
+    : [];
+  let previous: ProbeClip | undefined;
+  let previousEnd = 0;
+  for (const clip of continuity.sort((left, right) => (
+    (left.at ?? 0) - (right.at ?? 0) || left.id!.localeCompare(right.id!)
+  ))) {
+    const end = clip.at! + clip.duration!;
+    if (previous) {
+      if (clip.at! < previousEnd) {
+        add(clip.id!, 'overlap', clip.at!, 'warning', `overlaps ${previous.id}`, previous.id);
+      } else if (clip.at! > previousEnd) {
+        add(clip.id!, 'gap', previousEnd, 'warning', `gap before ${clip.id}`, previous.id);
+      }
+    }
+    if (end > previousEnd) {
+      previousEnd = end;
+      previous = clip;
+    }
+  }
+
+  return expected
+    .sort((left, right) => (
+      (left.severity === 'error' ? 0 : 1) - (right.severity === 'error' ? 0 : 1)
+      || (left.time as number) - (right.time as number)
+      || (left.id as string).localeCompare(right.id as string)
+    ))
+    .slice(0, 256)
+    .sort((left, right) => (
+      (left.time as number) - (right.time as number)
+      || (left.id as string).localeCompare(right.id as string)
+    ));
+}
+
+function validateFaultline(value: unknown, timeline: ProbeTimeline): ValidationResult {
+  const expected = expectedFaultlineEntries(timeline);
+  const shape = envelope(value, 1, {
+    id,
+    sourceClipId,
+    relatedClipId: (entry) => entry.relatedClipId === undefined || nonEmpty(entry.relatedClipId),
+    kind: (entry) => Object.prototype.hasOwnProperty.call(FAULTLINE_COLORS, String(entry.kind)),
+    severity: (entry) => entry.severity === 'warning' || entry.severity === 'error',
+    time,
+    label,
+    color: (entry) => nonEmpty(entry.color),
+  }, timeline, expected.length);
+  if (!shape.valid || !record(value) || !Array.isArray(value.entries)) return shape;
+  return canonicalFingerprint(value.entries) === canonicalFingerprint(expected)
+    ? shape
+    : invalid('faultline entries do not match the current timeline');
+}
+
 function envelope(value: unknown, expectedSchema: number, fieldValidators: Record<string, (entry: Record<string, unknown>) => boolean>, timeline: ProbeTimeline, expectedEntries = expectedBoundaryCount(timeline)): ValidationResult {
   if (!record(value)) return invalid('expected an envelope object');
   if (value.schemaVersion !== expectedSchema) return invalid(`schemaVersion must be ${expectedSchema}`);
@@ -578,7 +700,7 @@ export function validateExtensionOutput(extensionId: string, value: unknown, tim
     case 'com.reigh.creative-lab.emotional-weather-map':
       return arrayOutput(value, { id, sourceClipId, kind: (e) => ['breeze', 'fog', 'lightning', 'sunshine'].includes(String(e.kind)), time, intensity, color: (e) => nonEmpty(e.color), label }, Math.min(128, expectedVisualClips(timeline).length));
     case 'com.reigh.creative-lab.timeline-faultline':
-      return arrayOutput(value, { id, sourceClipId, relatedClipId: (e) => e.relatedClipId === undefined || nonEmpty(e.relatedClipId), kind: (e) => ['negative-start', 'negative-duration', 'zero-duration', 'missing-track', 'non-finite', 'overlap', 'gap'].includes(String(e.kind)), severity: (e) => e.severity === 'warning' || e.severity === 'error', time, label, color: (e) => nonEmpty(e.color) }, 0);
+      return validateFaultline(value, timeline);
     case 'com.reigh.creative-lab.foley-constellation':
       return envelope(value, 1, { id, sourceClipId: (e) => e.sourceClipId === null || nonEmpty(e.sourceClipId), boundary: (e) => e.boundary === 'start' || e.boundary === 'end' || e.boundary === 'playhead', time, category: (e) => nonEmpty(e.category), offset, pan: (e) => bounded(e.pan, -1, 1), distance: (e) => bounded(e.distance, 0, 1), intensity, label }, timeline, expectedPrimaryBoundaryCount(timeline));
     case 'com.reigh.creative-lab.branching-cut':

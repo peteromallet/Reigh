@@ -2020,3 +2020,24 @@ fresh console collection.
 - The failed raw evidence has artifact-index SHA-256
   `ca8cb4c05ef5825d025fd0cb9717d4e17053b10c7e64079b99089c7909e2d6a0`.
   It is retained as RC22 diagnostic history and is not a passing receipt.
+
+### Release validators can drift behind an extension's persisted schema
+
+- RC23 passed the pinned build/runtime, real bridge bootstrap, authenticated
+  proxy, audio transport and decode proofs, and the first six command
+  extension lifecycles. Timeline Faultline then wrote its current versioned
+  `{schemaVersion, generatedFromVersion, entries}` envelope, but the paired
+  validator still required the pre-migration raw findings array.
+- The extension's producer, reader, focused tests, and public type all agree on
+  the envelope. The release inventory fixture was the outlier: it supplied
+  `[]`, so its broad contract test blessed a shape the real command no longer
+  produces. The validator now checks the versioned envelope and derives the
+  exact deterministic findings from the same public timeline projection.
+  Regressions cover both a clean zero-entry demo and a real gap, and explicitly
+  reject a legacy raw array, invalid envelope provenance, and forged timing.
+- This is a release-harness friction as much as a one-line schema bug: every
+  persisted extension contract needs a producer-shaped fixture, otherwise a
+  generic validator can remain green while rejecting the live application.
+- The failed raw evidence has artifact-index SHA-256
+  `325aaaf2ed0034f11ddc015c968fa2e7f32049e4d14b1c88dc3726e071ae07bc`.
+  It is retained as RC23 diagnostic history and is not a passing receipt.
