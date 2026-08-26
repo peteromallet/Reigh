@@ -134,6 +134,8 @@ const RELEASE_HOME = resolve(
   `reigh-extension-ship-home-${process.pid}`,
 );
 const RELEASE_REIGH_WORKTREE = resolve(RELEASE_HOME, 'reigh-controller');
+const RELEASE_NPM_USERCONFIG = resolve(RELEASE_HOME, 'npm-userconfig');
+const RELEASE_NPM_GLOBALCONFIG = resolve(RELEASE_HOME, 'npm-globalconfig');
 const RELEASE_PATH = [
   dirname(realpathSync(process.execPath)),
   '/opt/homebrew/bin',
@@ -605,8 +607,11 @@ export function buildSanitizedEnvironment(stepEnv = {}) {
     // Never consult user- or machine-owned npm configuration. A poisoned
     // script-shell or lifecycle setting can otherwise turn an npm gate into a
     // successful no-op even with a private HOME.
-    NPM_CONFIG_USERCONFIG: '/dev/null',
-    NPM_CONFIG_GLOBALCONFIG: '/dev/null',
+    // npm 10 rejects loading the exact same file as both user and global
+    // config. Keep both paths private and distinct while ensuring neither can
+    // resolve to operator-owned configuration.
+    NPM_CONFIG_USERCONFIG: RELEASE_NPM_USERCONFIG,
+    NPM_CONFIG_GLOBALCONFIG: RELEASE_NPM_GLOBALCONFIG,
     CI: 'true',
     LANG: 'C',
     LC_ALL: 'C',

@@ -533,11 +533,25 @@ describe('extension ship verifier', () => {
       });
       for (const key of Object.keys(ambientBypasses)) {
         if (key === 'NPM_CONFIG_USERCONFIG' || key === 'NPM_CONFIG_GLOBALCONFIG') {
-          assert.equal(captured[key], '/dev/null', `${key} was not neutralized`);
+          assert.notEqual(captured[key], ambientBypasses[key], `${key} was not neutralized`);
+          assert.match(captured[key], /\/npm-(?:user|global)config$/);
         } else {
           assert.equal(captured[key], undefined, `${key} leaked into the gate`);
         }
       }
+      assert.notEqual(
+        captured.NPM_CONFIG_USERCONFIG,
+        captured.NPM_CONFIG_GLOBALCONFIG,
+        'npm user/global config paths must remain distinct',
+      );
+
+      const npmProbe = spawnSync('npm', ['--version'], {
+        cwd: REPO_ROOT,
+        env: captured,
+        encoding: 'utf8',
+      });
+      assert.equal(npmProbe.status, 0, npmProbe.stderr);
+      assert.match(npmProbe.stdout.trim(), /^\d+\.\d+\.\d+$/);
     } finally {
       for (const [key, value] of Object.entries(previous)) {
         if (value === undefined) delete process.env[key];

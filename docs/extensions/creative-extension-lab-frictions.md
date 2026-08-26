@@ -2232,3 +2232,16 @@ fresh console collection.
 - The failed RC30 evidence has artifact-index SHA-256
   `574720b2453841f0e0376de071d32c6e69779d2c0d381171a1a331cefac9cc07`.
   It is retained as diagnostic history and is not a passing receipt.
+
+### Sanitized package-manager configuration paths must remain distinct
+
+- RC31's full verifier stopped at the first npm identity probe, before any
+  product gate. The verifier correctly refused user and machine npm config,
+  but assigned both `NPM_CONFIG_USERCONFIG` and
+  `NPM_CONFIG_GLOBALCONFIG` to `/dev/null`. npm 10.8.2 treats that as the same
+  config file loaded under two roles and exits before resolving configuration.
+- The sanitized environment now uses two distinct paths inside the verifier's
+  private release home. Neither path can resolve to operator configuration,
+  and an executable regression launches the pinned npm CLI under the exact
+  allowlisted environment. RC31 remains immutable preflight-failure history;
+  no product or browser result is claimed from it.
