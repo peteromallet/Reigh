@@ -32,12 +32,27 @@ process.env.PLAYWRIGHT_BASE_URL = baseURL;
 // Concurrent acceptance lanes must not clean or overwrite each other's traces.
 const outputDir = process.env.PLAYWRIGHT_OUTPUT_DIR ?? 'test-results';
 
-// Escape hatch for sandboxes with a pre-provisioned Chromium instead of
-// Playwright's downloaded one (see `npm run test:e2e:timeline`).
+// Browser-level network blocking for real-bridge acceptance: Chromium resolves
+// every provider/Supabase host to a closed loopback port so a stray remote
+// fetch fails fast inside the browser (the local dev Supabase is the raw IP
+// 127.0.0.1:54321, which resolver MAP cannot cover — the network-audit
+// assertion "zero requests to 127.0.0.1:54321" covers that leg). Applied on
+// EVERY launchOptions branch so no executable path skips the blackhole.
+const BROWSER_DNS_BLACKHOLE_ARGS = [
+  '--no-sandbox',
+  // NOTE: no shell-style quotes around the value — Playwright passes argv
+  // verbatim (no shell), and Chromium rejects every rule if the value carries
+  // literal quote characters (proven: quoted form leaves supabase.co reachable,
+  // unquoted form fails fast at 127.0.0.1:1).
+  '--host-resolver-rules=MAP supabase.co 127.0.0.1:1, MAP *.supabase.co 127.0.0.1:1, '
+    + 'MAP *.supabase.in 127.0.0.1:1, MAP openrouter.ai 127.0.0.1:1, MAP *.openrouter.ai 127.0.0.1:1, '
+    + 'MAP api.openai.com 127.0.0.1:1, MAP api.anthropic.com 127.0.0.1:1, '
+    + 'MAP huggingface.co 127.0.0.1:1, MAP *.huggingface.co 127.0.0.1:1',
+] as const;
 const chromiumExecutablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;
 const launchOptions = chromiumExecutablePath
-  ? { executablePath: chromiumExecutablePath, args: ['--no-sandbox', '--disable-dev-shm-usage'] }
-  : undefined;
+  ? { executablePath: chromiumExecutablePath, args: [...BROWSER_DNS_BLACKHOLE_ARGS] }
+  : { args: [...BROWSER_DNS_BLACKHOLE_ARGS] };
 
 // Timeline device specs and the extension harness need a live dev server plus
 // the local-mode bridge stub (both booted by `webServer` below). They are
