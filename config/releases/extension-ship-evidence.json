@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "release": "extension-ship-quality-rc14",
-  "status": "integration",
+  "status": "frozen",
   "candidate": {
-    "reighCommit": null,
+    "reighCommit": "b402eede724ca563f9c14ff7151ea49de9ec8504",
     "astridCommit": "8d470914382928a9604f6c487dc79487decb11aa"
   },
   "workstreams": [
@@ -144,7 +144,7 @@
       "id": "23-frozen-release-candidate",
       "title": "Frozen release candidate",
       "status": "blocked",
-      "blocker": "RC14 has not yet been frozen and the two independent frozen-candidate approvals are not yet available.",
+      "blocker": "RC14 is frozen at b402eede724ca563f9c14ff7151ea49de9ec8504; the two independent frozen-candidate approvals are not yet available.",
       "receipts": []
     }
   ]
