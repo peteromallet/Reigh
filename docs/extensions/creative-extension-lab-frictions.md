@@ -2331,3 +2331,28 @@ fresh console collection.
 - The failed RC34 evidence has artifact-index SHA-256
   `2ada003a66599f94a0512bfa08c891bd8755d67fa334f8bf625c58d02b71cd58`.
   It remains immutable diagnostic history and is not a passing receipt.
+
+### Renderer asset CORS must follow the invocation-owned browser origin
+
+- RC35 passed the clean archive, locked installs, build, migration, preview,
+  and first browser phase. Its restart render then served the expected
+  7,428-byte PNG successfully, but Chromium rejected it: another local
+  Remotion process already owned port 3000, so the release render used
+  `http://localhost:3001` while Astrid's invocation asset server still allowed
+  only the hard-coded origin `http://localhost:3000`.
+- An HTTP 200 is not proof that browser media is usable. The paired gate's real
+  Chromium render exposed the missing `Access-Control-Allow-Origin` header;
+  direct fetches, file hashes, and non-browser renderer tests could not.
+- Astrid now selects a renderer port under its global render lock, passes that
+  exact port to Remotion, and configures the invocation asset server to allow
+  only the matching `http://localhost:<port>` origin. It does not use a wildcard
+  or reflect arbitrary localhost origins. If the selected port is stolen
+  before Remotion binds it, Remotion fails closed instead of silently changing
+  origin.
+- Regression coverage proves that the selected port is shared by the Remotion
+  command and asset server, and rejects other localhost ports, `127.0.0.1`,
+  HTTPS, URL userinfo, and localhost lookalikes. The combined rendering core,
+  task-adapter, and Remotion-backend suite passes 614/614.
+- The failed RC35 evidence has artifact-index SHA-256
+  `3e867ac2ccd48195d9416b4553f0ba1c0d76780560acf116481587964d14f2bc`.
+  It remains immutable diagnostic history and is not a passing receipt.
