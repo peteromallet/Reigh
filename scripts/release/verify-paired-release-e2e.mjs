@@ -52,6 +52,20 @@ export const RUNAWAY_RELEASE_FIXTURE_HASHES = Object.freeze({
 });
 export const PAIRED_RELEASE_MEDIA_FIXTURE = 'tests/e2e/fixtures/paired-release/paired-release-test-card.png';
 export const PAIRED_RELEASE_MEDIA_METADATA = 'tests/e2e/fixtures/paired-release/paired-release-test-card.json';
+export const PAIRED_RELEASE_AUDIO_FIXTURE = 'public/motion-output-audio.aac';
+export const PAIRED_RELEASE_AUDIO_EXPECTED = Object.freeze({
+  sha256: '2ed05a66ecf1cd5a2da308f507e02d99d86f52a0a5848f158983cb4b7b2ec8c2',
+  sizeBytes: 457_980,
+  bridgeMimeType: 'audio/x-aac',
+  registryMimeType: 'audio/aac',
+  formatName: 'aac',
+  codecName: 'aac',
+  profile: 'LC',
+  sampleRate: 44_100,
+  channels: 2,
+  channelLayout: 'stereo',
+  durationSeconds: 39.156558,
+});
 export const DEFAULT_COMMAND_TIMEOUT_MS = 120_000;
 export const COMMAND_BUDGETS_MS = Object.freeze({
   fastProbe: 30_000,
@@ -84,10 +98,11 @@ export const COMMAND_MAX_BUFFER_BYTES = 20 * 1024 * 1024;
 const DEMO_PROJECT = 'paired-release-demo';
 const DEMO_TIMELINE = 'paired-release-timeline';
 const RUNAWAY_PROJECT = 'runaway-piano-colour-demo';
-const TIMELINE_CONFIG = Object.freeze({
+export const PAIRED_RELEASE_TIMELINE_CONFIG = Object.freeze({
   output: { resolution: '1280x720', fps: 24, file: 'paired-release-output.mp4' },
   clips: [
     { id: 'paired-release-clip', track: 'V1', at: 0, clipType: 'media', hold: 4, asset: 'paired-release-test-card.png' },
+    { id: 'paired-release-audio', track: 'A1', at: 0, clipType: 'media', hold: 8, asset: 'motion-output-audio.aac' },
   ],
   tracks: [
     { id: 'V1', kind: 'visual', label: 'Video' },
@@ -95,6 +110,26 @@ const TIMELINE_CONFIG = Object.freeze({
     { id: 'A1', kind: 'audio', label: 'Audio' },
   ],
 });
+
+export function buildPairedReleaseRegistry({ mediaId, audioMediaId } = {}) {
+  if (typeof mediaId !== 'string' || !mediaId || typeof audioMediaId !== 'string' || !audioMediaId) {
+    fail('paired release registry requires exact image and audio media IDs');
+  }
+  return Object.freeze({
+    assets: Object.freeze({
+      'paired-release-test-card.png': Object.freeze({
+        file: 'paired-release-test-card.png',
+        media_id: mediaId,
+        type: 'image/png',
+      }),
+      'motion-output-audio.aac': Object.freeze({
+        file: 'motion-output-audio.aac',
+        media_id: audioMediaId,
+        type: PAIRED_RELEASE_AUDIO_EXPECTED.registryMimeType,
+      }),
+    }),
+  });
+}
 const PUBLIC_BUILD_ENV = Object.freeze({
   VITE_SUPABASE_URL: 'https://example.invalid',
   VITE_SUPABASE_ANON_KEY: 'paired-release-public-anon-key',
@@ -288,7 +323,7 @@ export function buildViteArgs(viteBin, mode, port) {
     : [viteBin, '--config', 'config/vite/vite.config.ts', '--host', '127.0.0.1', '--port', String(port), '--strictPort'];
 }
 
-export function buildBrowserEnvironment({ baseUrl, browserExecutable, browserRoot, evidenceDir, phase }) {
+export function buildBrowserEnvironment({ baseUrl, browserExecutable, browserRoot, evidenceDir, phase, audioMediaId }) {
   if (!browserExecutable || !isAbsolute(browserExecutable) || !existsSync(browserExecutable)) {
     fail('paired browser executable must be an existing absolute path');
   }
@@ -304,6 +339,7 @@ export function buildBrowserEnvironment({ baseUrl, browserExecutable, browserRoo
     PAIRED_RELEASE_RUNAWAY_PROJECT: RUNAWAY_PROJECT,
     PAIRED_RELEASE_EXPECTED_EXTENSIONS: String(EXPECTED_EXTENSION_COUNT),
     PAIRED_RELEASE_EXPECTED_RUNAWAY: String(EXPECTED_RUNAWAY_COUNT),
+    ...(audioMediaId ? { PAIRED_RELEASE_AUDIO_MEDIA_ID: audioMediaId } : {}),
     PLAYWRIGHT_CHROMIUM_EXECUTABLE: browserExecutable,
     PLAYWRIGHT_BROWSERS_PATH: browserRoot,
     PLAYWRIGHT_OUTPUT_DIR: resolve(evidenceDir, `playwright-${phase}`),
@@ -510,6 +546,12 @@ export function preflightPinnedRepositories({ manifest, env }) {
     gitCheckout: REPO_ROOT,
     gitRef: reighCommit,
   });
+  const audioFixture = validateAudioFixture({
+    fixturePath: resolve(REPO_ROOT, PAIRED_RELEASE_AUDIO_FIXTURE),
+    expectedRoot: REPO_ROOT,
+    gitCheckout: REPO_ROOT,
+    gitRef: reighCommit,
+  });
   const reighHead = gitOutput(REPO_ROOT, ['rev-parse', 'HEAD']);
   const reighTag = resolveAnnotatedCandidateTag({
     repoRoot: REPO_ROOT,
@@ -636,6 +678,7 @@ export function preflightPinnedRepositories({ manifest, env }) {
     reighCommit,
     reighProvenance,
     reighTagObject: reighTag.tagObject,
+    audioFixture,
     mediaFixture,
     nodeVersion,
     npmVersion,
@@ -874,6 +917,123 @@ export function validateMediaFixture({ fixturePath, metadataPath, gitCheckout, g
     width: image.width,
     height: image.height,
     probes: metadata.probes,
+  });
+}
+
+export function validateAudioFixture({ fixturePath, expectedRoot, gitCheckout, gitRef, ffprobeExecutable } = {}) {
+  if (!fixturePath || !existsSync(fixturePath) || !statSync(fixturePath).isFile()) {
+    fail(`paired audio fixture is required: ${fixturePath}`);
+  }
+  const actualSha256 = sha256File(fixturePath);
+  const actualSizeBytes = statSync(fixturePath).size;
+  if (actualSha256 !== PAIRED_RELEASE_AUDIO_EXPECTED.sha256
+    || actualSizeBytes !== PAIRED_RELEASE_AUDIO_EXPECTED.sizeBytes) {
+    fail(`paired audio fixture hash/size mismatch: ${JSON.stringify({ actualSha256, actualSizeBytes })}`);
+  }
+  if (expectedRoot) {
+    const relativePath = relative(realpathSync(expectedRoot), realpathSync(fixturePath));
+    if (relativePath !== PAIRED_RELEASE_AUDIO_FIXTURE) {
+      fail(`paired audio fixture path mismatch: expected ${PAIRED_RELEASE_AUDIO_FIXTURE}, got ${relativePath}`);
+    }
+  }
+  let gitBlobSha;
+  if (gitCheckout && gitRef) {
+    const checkoutRoot = realpathSync(gitCheckout);
+    const fixtureRealPath = realpathSync(fixturePath);
+    const relativePath = relative(checkoutRoot, fixtureRealPath);
+    if (relativePath.startsWith('..') || isAbsolute(relativePath)) {
+      fail(`paired audio fixture is outside controller checkout: ${fixturePath}`);
+    }
+    gitBlobSha = gitOutput(gitCheckout, ['rev-parse', `${gitRef}:${relativePath}`]);
+    const workingTreeBlobSha = gitOutput(gitCheckout, ['hash-object', '--', relativePath]);
+    if (workingTreeBlobSha !== gitBlobSha) fail('working-tree paired audio fixture bytes do not match the exact pinned Git blob');
+  }
+  let mediaProperties;
+  if (ffprobeExecutable) {
+    const probe = capture(ffprobeExecutable, [
+      '-v', 'error',
+      '-show_entries', 'format=duration,size,format_name:stream=codec_name,codec_type,profile,channels,channel_layout,sample_rate',
+      '-of', 'json',
+      fixturePath,
+    ], { phase: 'paired-audio-fixture-probe' });
+    let payload;
+    try {
+      payload = JSON.parse(probe.stdout);
+    } catch {
+      fail('paired audio fixture ffprobe returned invalid JSON');
+    }
+    const audioStreams = Array.isArray(payload?.streams)
+      ? payload.streams.filter((stream) => stream?.codec_type === 'audio')
+      : [];
+    const stream = audioStreams[0];
+    const media = {
+      formatName: payload?.format?.format_name,
+      codecName: stream?.codec_name,
+      profile: stream?.profile,
+      sampleRate: Number(stream?.sample_rate),
+      channels: Number(stream?.channels),
+      channelLayout: stream?.channel_layout,
+      durationSeconds: Number(payload?.format?.duration),
+      sizeBytes: Number(payload?.format?.size),
+      audioStreamCount: audioStreams.length,
+      streamCount: Array.isArray(payload?.streams) ? payload.streams.length : 0,
+    };
+    if (media.formatName !== PAIRED_RELEASE_AUDIO_EXPECTED.formatName
+      || media.codecName !== PAIRED_RELEASE_AUDIO_EXPECTED.codecName
+      || media.profile !== PAIRED_RELEASE_AUDIO_EXPECTED.profile
+      || media.sampleRate !== PAIRED_RELEASE_AUDIO_EXPECTED.sampleRate
+      || media.channels !== PAIRED_RELEASE_AUDIO_EXPECTED.channels
+      || media.channelLayout !== PAIRED_RELEASE_AUDIO_EXPECTED.channelLayout
+      || media.durationSeconds !== PAIRED_RELEASE_AUDIO_EXPECTED.durationSeconds
+      || media.sizeBytes !== PAIRED_RELEASE_AUDIO_EXPECTED.sizeBytes
+      || media.audioStreamCount !== 1
+      || media.streamCount !== 1) {
+      fail(`paired audio fixture media properties mismatch: ${JSON.stringify(media)}`);
+    }
+    mediaProperties = Object.freeze(media);
+  }
+  return Object.freeze({
+    path: fixturePath,
+    sha256: actualSha256,
+    sizeBytes: actualSizeBytes,
+    mimeType: PAIRED_RELEASE_AUDIO_EXPECTED.bridgeMimeType,
+    gitBlobSha,
+    mediaProperties,
+  });
+}
+
+export function validateImportedAudio(payload) {
+  const data = payload?.data;
+  const mediaId = data?.id ?? data?.media_id;
+  const managedLocations = Array.isArray(data?.locations)
+    ? data.locations.filter((location) => location?.realm === 'managed_local' && location?.media_id === mediaId)
+    : [];
+  if (payload?.ok !== true
+    || typeof mediaId !== 'string' || !mediaId
+    || data?.media_kind !== 'audio'
+    || data?.content_hash !== PAIRED_RELEASE_AUDIO_EXPECTED.sha256
+    || data?.byte_size !== PAIRED_RELEASE_AUDIO_EXPECTED.sizeBytes
+    || data?.mime_type !== PAIRED_RELEASE_AUDIO_EXPECTED.bridgeMimeType
+    || data?.metadata?.rel_path !== PAIRED_RELEASE_AUDIO_FIXTURE.split('/').at(-1)
+    || managedLocations.length !== 1) {
+    fail(`Astrid audio import contract mismatch: ${JSON.stringify({
+      ok: payload?.ok,
+      hasMediaId: typeof mediaId === 'string' && Boolean(mediaId),
+      mediaKind: data?.media_kind,
+      contentHash: data?.content_hash,
+      byteSize: data?.byte_size,
+      mimeType: data?.mime_type,
+      relativePath: data?.metadata?.rel_path,
+      managedLocationCount: managedLocations.length,
+    })}`);
+  }
+  return Object.freeze({
+    mediaId,
+    contentHash: data.content_hash,
+    byteSize: data.byte_size,
+    mediaKind: data.media_kind,
+    mimeType: data.mime_type,
+    relativePath: data.metadata.rel_path,
   });
 }
 
@@ -1959,13 +2119,24 @@ function seedDemoProject(context) {
   const sourceDir = resolve(context.projectsRoot, 'seed-sources');
   mkdirSync(sourceDir, { recursive: true, mode: 0o700 });
   const fixturePath = resolve(context.reighSnapshot, PAIRED_RELEASE_MEDIA_FIXTURE);
+  const audioFixturePath = resolve(context.reighSnapshot, PAIRED_RELEASE_AUDIO_FIXTURE);
   const imagePath = resolve(sourceDir, 'paired-release-test-card.png');
+  const audioPath = resolve(sourceDir, 'motion-output-audio.aac');
   writeFileSync(imagePath, readFileSync(fixturePath), { mode: 0o600 });
+  writeFileSync(audioPath, readFileSync(audioFixturePath), { mode: 0o600 });
   if (sha256File(imagePath) !== context.mediaFixture.sha256) fail('seeded media bytes changed before import');
+  if (sha256File(audioPath) !== context.audioFixture.sha256) fail('seeded audio bytes changed before import');
   writeFileSync(resolve(context.evidenceRoot, 'seed-media-fixture.json'), `${JSON.stringify({
-    ...context.mediaFixture,
-    source: relative(context.reighSnapshot, fixturePath),
-    seeded: relative(context.projectsRoot, imagePath),
+    image: {
+      ...context.mediaFixture,
+      source: relative(context.reighSnapshot, fixturePath),
+      seeded: relative(context.projectsRoot, imagePath),
+    },
+    audio: {
+      ...context.audioFixture,
+      source: relative(context.reighSnapshot, audioFixturePath),
+      seeded: relative(context.projectsRoot, audioPath),
+    },
   }, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
   astridCommand(context, [
     'projects', 'create', DEMO_PROJECT,
@@ -1982,25 +2153,34 @@ function seedDemoProject(context) {
   ], 'astrid-media-import.log').payload;
   const mediaId = media?.data?.id ?? media?.data?.media_id;
   if (typeof mediaId !== 'string' || !mediaId) fail('Astrid media seed returned no media id');
+  const audioImportArgs = [
+    'media', 'import', audioPath,
+    '--project', DEMO_PROJECT,
+    '--realm', 'managed_local',
+    '--idempotency-key', 'paired-release-audio-v1',
+    '--json',
+  ];
+  const audioImport = validateImportedAudio(
+    astridCommand(context, audioImportArgs, 'astrid-audio-import.log').payload,
+  );
+  const repeatedAudioImport = validateImportedAudio(
+    astridCommand(context, audioImportArgs, 'astrid-audio-import-idempotent.log').payload,
+  );
+  if (repeatedAudioImport.mediaId !== audioImport.mediaId) {
+    fail('Astrid idempotent audio import returned a different media id');
+  }
+  const audioMediaId = audioImport.mediaId;
   astridCommand(context, [
     'timelines', 'create', DEMO_TIMELINE,
     '--project', DEMO_PROJECT,
     '--name', 'Paired Release Timeline',
-    '--config', JSON.stringify(TIMELINE_CONFIG),
-    '--registry', JSON.stringify({
-      assets: {
-        'paired-release-test-card.png': {
-          file: 'paired-release-test-card.png',
-          media_id: mediaId,
-          type: 'image/png',
-        },
-      },
-    }),
+    '--config', JSON.stringify(PAIRED_RELEASE_TIMELINE_CONFIG),
+    '--registry', JSON.stringify(buildPairedReleaseRegistry({ mediaId, audioMediaId })),
     '--default',
     '--idempotency-key', 'paired-release-timeline-v1',
     '--json',
   ], 'astrid-timeline-create.log');
-  return Object.freeze({ mediaId });
+  return Object.freeze({ audioMediaId, mediaId });
 }
 
 function runMigrationTwice(context) {
@@ -2409,6 +2589,7 @@ function runPlaywright(context, phase, port) {
       browserRoot: context.browserRoot,
       evidenceDir: context.evidenceRoot,
       phase,
+      audioMediaId: context.audioMediaId,
     }),
     logPath: resolve(context.evidenceRoot, `playwright-${phase}.log`),
   });
@@ -2930,6 +3111,84 @@ async function captureAstridServeOwnedRenderEvidence(context, { bridgePort, toke
   return evidence;
 }
 
+export function pcmS16leStats(bytes) {
+  const buffer = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes ?? []);
+  if (buffer.length < 2 || buffer.length % 2 !== 0) fail('decoded audio probe is not non-empty signed 16-bit PCM');
+  const sampleCount = buffer.length / 2;
+  let sumSquares = 0;
+  let peak = 0;
+  let nonZeroSamples = 0;
+  for (let offset = 0; offset < buffer.length; offset += 2) {
+    const sample = buffer.readInt16LE(offset);
+    const magnitude = Math.abs(sample);
+    sumSquares += sample * sample;
+    if (magnitude > peak) peak = magnitude;
+    if (magnitude > 2) nonZeroSamples += 1;
+  }
+  return Object.freeze({
+    sampleCount,
+    rms: Math.sqrt(sumSquares / sampleCount) / 32_768,
+    peak: peak / 32_768,
+    nonZeroRatio: nonZeroSamples / sampleCount,
+    sha256: createHash('sha256').update(buffer).digest('hex'),
+  });
+}
+
+export function validateRenderedStreamContract(probe, { expectedFps, expectedDuration } = {}) {
+  const streams = Array.isArray(probe?.streams) ? probe.streams : [];
+  const video = streams.find((stream) => stream.codec_type === 'video');
+  const audioStreams = streams.filter((stream) => stream.codec_type === 'audio');
+  const audio = audioStreams[0];
+  const fps = parseRate(video?.avg_frame_rate);
+  const duration = Number(video?.duration ?? probe?.format?.duration);
+  const formatDuration = Number(probe?.format?.duration);
+  const frames = Number(video?.nb_frames);
+  if (
+    video?.codec_name !== 'h264'
+    || video?.width !== 1280
+    || video?.height !== 720
+    || fps !== expectedFps
+    || !Number.isInteger(frames)
+    || Math.abs(frames - Math.round(expectedDuration * expectedFps)) > 1
+    || !Number.isFinite(duration)
+    || Math.abs(duration - expectedDuration) > (1 / expectedFps)
+    || !Number.isFinite(formatDuration)
+    || Math.abs(formatDuration - expectedDuration) > (1 / expectedFps)
+  ) {
+    fail(`render stream contract mismatch: ${JSON.stringify({ video, formatDuration, expectedFps, expectedDuration })}`);
+  }
+  const audioDuration = Number(audio?.duration ?? probe?.format?.duration);
+  if (audioStreams.length !== 1
+    || !audio
+    || audio.codec_name !== 'aac'
+    || !Number.isInteger(Number(audio.channels)) || Number(audio.channels) < 1
+    || !Number.isInteger(Number(audio.sample_rate)) || Number(audio.sample_rate) < 8_000
+    || !Number.isFinite(audioDuration)
+    || audioDuration < expectedDuration - (1 / expectedFps)
+    || audioDuration > expectedDuration + (1 / expectedFps)) {
+    fail(`render audio stream contract mismatch: ${JSON.stringify({ audioStreams, expectedDuration })}`);
+  }
+  return Object.freeze({ video, audio, fps, duration, formatDuration, frames, audioDuration });
+}
+
+function decodeAudioEvidence(context, inputPath, label, durationSeconds) {
+  const outputPath = resolve(context.evidenceRoot, `${label}.s16le`);
+  runLogged(context.nativeTools.ffmpeg.executable, [
+    '-xerror', '-v', 'error', '-i', inputPath,
+    '-t', String(durationSeconds), '-vn', '-ac', '1', '-ar', '8000',
+    '-f', 's16le', '-y', outputPath,
+  ], {
+    cwd: context.reighSnapshot,
+    env: safeBaseEnvironment(),
+    logPath: resolve(context.evidenceRoot, `${label}.log`),
+    strictStderr: true,
+  });
+  return Object.freeze({
+    path: relative(context.evidenceRoot, outputPath),
+    ...pcmS16leStats(readFileSync(outputPath)),
+  });
+}
+
 function verifyRenderedArtifact(context, { serveOwnedEvidence = null } = {}) {
   const outputPath = resolve(context.evidenceRoot, 'paired-release-render.mp4');
   const browserReceipt = JSON.parse(readFileSync(
@@ -2957,7 +3216,7 @@ function verifyRenderedArtifact(context, { serveOwnedEvidence = null } = {}) {
   }
   const probe = runLogged(ffprobeExecutable, [
     '-v', 'error',
-    '-show_entries', 'stream=codec_name,codec_type,width,height,avg_frame_rate,nb_frames,duration:format=duration',
+    '-show_entries', 'stream=codec_name,codec_type,width,height,avg_frame_rate,nb_frames,duration,channels,sample_rate:format=duration',
     '-of', 'json',
     outputPath,
   ], {
@@ -2966,29 +3225,36 @@ function verifyRenderedArtifact(context, { serveOwnedEvidence = null } = {}) {
     logPath: resolve(context.evidenceRoot, 'render-ffprobe.json'),
     parseJson: true,
   }).payload;
-  const streams = Array.isArray(probe?.streams) ? probe.streams : [];
-  const video = streams.find((stream) => stream.codec_type === 'video');
-  const audio = streams.find((stream) => stream.codec_type === 'audio');
-  const fps = parseRate(video?.avg_frame_rate);
-  const duration = Number(video?.duration ?? probe?.format?.duration);
-  const frames = Number(video?.nb_frames);
   const expectedFps = Number(browserReceipt.expectedFps);
   const expectedDuration = Number(browserReceipt.expectedDuration);
-  if (
-    video?.codec_name !== 'h264'
-    || video?.width !== 1280
-    || video?.height !== 720
-    || fps !== expectedFps
-    || !Number.isInteger(frames)
-    || Math.abs(frames - Math.round(expectedDuration * expectedFps)) > 1
-    || !Number.isFinite(duration)
-    || Math.abs(duration - expectedDuration) > (1 / expectedFps)
-  ) {
-    fail(`render stream contract mismatch: ${JSON.stringify({ video, expectedFps, expectedDuration })}`);
+  const { video, audio, fps, duration, frames, audioDuration } = validateRenderedStreamContract(
+    probe,
+    { expectedFps, expectedDuration },
+  );
+  const sourceAudio = decodeAudioEvidence(context, context.audioFixture.path, 'render-audio-source', expectedDuration);
+  const renderedAudio = decodeAudioEvidence(context, outputPath, 'render-audio-output', expectedDuration);
+  const rmsRatio = renderedAudio.rms / sourceAudio.rms;
+  const peakRatio = renderedAudio.peak / sourceAudio.peak;
+  const sampleCountRatio = renderedAudio.sampleCount / sourceAudio.sampleCount;
+  if (sourceAudio.rms <= 0.001 || sourceAudio.peak <= 0.01
+    || renderedAudio.rms <= 0.001 || renderedAudio.peak <= 0.01
+    || renderedAudio.nonZeroRatio < 0.1
+    || sampleCountRatio < 0.99 || sampleCountRatio > 1.01
+    || rmsRatio < 0.5 || rmsRatio > 2
+    || peakRatio < 0.5 || peakRatio > 2) {
+    fail(`rendered audio does not preserve the seeded audible signal: ${JSON.stringify({ sourceAudio, renderedAudio, sampleCountRatio, rmsRatio, peakRatio })}`);
   }
-  if (audio && audio.codec_name !== 'aac') {
-    fail(`render audio codec is not AAC: ${audio.codec_name}`);
-  }
+  const audioEvidence = Object.freeze({
+    codec: audio.codec_name,
+    channels: Number(audio.channels),
+    sampleRate: Number(audio.sample_rate),
+    duration: audioDuration,
+    source: sourceAudio,
+    output: renderedAudio,
+    sampleCountRatio,
+    rmsRatio,
+    peakRatio,
+  });
   const fullDecodeResult = runLogged(ffmpegExecutable, [
     '-xerror', '-v', 'error', '-i', outputPath, '-f', 'null', '-',
   ], {
@@ -3151,7 +3417,7 @@ function verifyRenderedArtifact(context, { serveOwnedEvidence = null } = {}) {
       frames,
       duration,
     },
-    audioCodec: audio?.codec_name ?? null,
+    audio: audioEvidence,
     fullDecode,
     mediaEvidence,
     captionSemantics: {
@@ -3246,6 +3512,11 @@ async function executeGate(manifest, pins, evidenceRoot) {
       fixturePath: resolve(context.reighSnapshot, PAIRED_RELEASE_MEDIA_FIXTURE),
       metadataPath: resolve(context.reighSnapshot, PAIRED_RELEASE_MEDIA_METADATA),
     });
+    context.audioFixture = validateAudioFixture({
+      fixturePath: resolve(context.reighSnapshot, PAIRED_RELEASE_AUDIO_FIXTURE),
+      expectedRoot: context.reighSnapshot,
+      ffprobeExecutable: context.nativeTools?.ffprobe?.executable,
+    });
     receipt.phases.push({ id: 'archives', status: 'pass' });
 
     const astridRemotionRuntime = installAstridRemotionRuntime(context, {
@@ -3287,6 +3558,7 @@ async function executeGate(manifest, pins, evidenceRoot) {
 
     const seededMedia = seedDemoProject(context);
     context.mediaId = seededMedia.mediaId;
+    context.audioMediaId = seededMedia.audioMediaId;
     const baselineDbCounts = sqliteCountSnapshot(context, 'astrid-pre-migration-counts.log');
     const backupDir = resolve(runtimeRoot, 'pre-migration-backup');
     const backup = astridCommand(context, [
@@ -3328,17 +3600,29 @@ async function executeGate(manifest, pins, evidenceRoot) {
 
     let bridgePort = await allocatePort();
     astridHandle = await startAstrid(context, 'preview', bridgePort, token);
-    const bridgeMedia = await verifyBridgeMediaContent({
+    const bridgeImage = await verifyBridgeMediaContent({
       baseUrl: `http://127.0.0.1:${bridgePort}`,
       projectSlug: DEMO_PROJECT,
       mediaId: context.mediaId,
       fixture: context.mediaFixture,
       token,
     });
+    const bridgeAudio = await verifyBridgeMediaContent({
+      baseUrl: `http://127.0.0.1:${bridgePort}`,
+      projectSlug: DEMO_PROJECT,
+      mediaId: context.audioMediaId,
+      fixture: context.audioFixture,
+      token,
+    });
     let reighPort = await allocatePort();
     reighHandle = await startReigh(context, 'preview', reighPort, bridgePort, token, 'preview');
     const preview = await smokeBuiltPreview(reighPort, context.readinessIdentity);
-    receipt.phases.push({ id: 'built-preview-auth-proxy', status: 'pass', ...preview, bridgeMedia });
+    receipt.phases.push({
+      id: 'built-preview-auth-proxy',
+      status: 'pass',
+      ...preview,
+      bridgeMedia: { image: bridgeImage, audio: bridgeAudio },
+    });
     await stopLoggedProcesses([reighHandle, astridHandle]);
     reighHandle = undefined;
     astridHandle = undefined;
@@ -3366,6 +3650,7 @@ async function executeGate(manifest, pins, evidenceRoot) {
       persistedStateHash: renderVerification.persistedStateHash,
       mp4Sha256: renderVerification.mp4Sha256,
       videoFrames: renderVerification.video.frames,
+      audio: renderVerification.audio,
       fullDecode: renderVerification.fullDecode,
       mediaEvidence: renderVerification.mediaEvidence,
       render: {
@@ -3439,6 +3724,13 @@ async function executeGate(manifest, pins, evidenceRoot) {
     }
     bridgePort = await allocatePort();
     astridHandle = await startAstrid(context, 'restore', bridgePort, token);
+    const restoredBridgeAudio = await verifyBridgeMediaContent({
+      baseUrl: `http://127.0.0.1:${bridgePort}`,
+      projectSlug: DEMO_PROJECT,
+      mediaId: context.audioMediaId,
+      fixture: context.audioFixture,
+      token,
+    });
     reighPort = await allocatePort();
     reighHandle = await startReigh(context, 'restore', reighPort, bridgePort, token, 'development');
     runPlaywright(context, 'restore', reighPort);
@@ -3452,6 +3744,7 @@ async function executeGate(manifest, pins, evidenceRoot) {
       restoredDbSha256: restoredDbSnapshot.sha256,
       baselineMediaSha256: baselineMediaSnapshot.sha256,
       restoredMediaSha256: restoredMediaSnapshot.sha256,
+      restoredBridgeAudio,
       doctorChecks: doctor.checks.length,
     });
 

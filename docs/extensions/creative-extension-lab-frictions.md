@@ -1760,3 +1760,31 @@ fresh console collection.
 - Failure diagnostics now distinguish a missing evidence receipt, a wrong run
   identity, wrong summary facts, malformed rows, timing drift, and whole-fixture
   semantic drift instead of collapsing them into “missing typed provenance.”
+
+### A visual-only seed cannot exercise sound-derived extension behavior
+
+- RC12 proved the real Runaway lane and then timed out waiting for the transcript
+  lane. The development transcript decorator was present and enabled, but the
+  paired timeline contained only a PNG. The lane loader deliberately profiles
+  only video or audio assets, so no source asset was eligible and the fixture
+  provider was never called.
+- Release fixtures must represent every media capability they claim to test.
+  RC13 adds a tracked AAC source with an exact Git blob, SHA-256, byte size,
+  codec, channel, sample-rate, and duration contract; imports it into Astrid's
+  managed media store; registers it in the same timeline document; and places an
+  eight-second clip on `A1`. The authenticated bridge is required to return the
+  exact audio bytes and headers before browser acceptance starts.
+- File-extension MIME and timeline media type are adjacent but distinct
+  contracts. Astrid imports `.aac` as `audio/x-aac` and serves that persisted
+  MIME, while Reigh's timeline registry uses the normalized `audio/aac` type.
+  The paired gate now attests both and binds the registry media ID to the exact
+  idempotent import instead of assuming one spelling can stand in for both.
+- An AAC stream in an MP4 was previously optional evidence: the verifier only
+  rejected a wrong codec when a stream happened to exist. RC13 requires an
+  eight-second AAC stream, decodes the source and output to canonical mono PCM,
+  rejects silence, and bounds output/source RMS and peak ratios. This closes the
+  “timeline shows audio but export drops it” false positive.
+- The sound-bearing filter remains unchanged. Loosening it so an image could
+  synthesize a transcript would make the test pass while violating the product
+  contract. Future extension fixtures should inventory their required carrier
+  types up front and fail preflight when the seeded timeline lacks one.

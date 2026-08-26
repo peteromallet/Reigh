@@ -13,13 +13,17 @@ import {
   EXPECTED_RUNAWAY_COUNT,
   COMMAND_BUDGETS_MS,
   COMMAND_MAX_BUFFER_BYTES,
+  PAIRED_RELEASE_AUDIO_EXPECTED,
+  PAIRED_RELEASE_AUDIO_FIXTURE,
   PAIRED_RELEASE_MEDIA_FIXTURE,
   PAIRED_RELEASE_MEDIA_METADATA,
   PAIRED_RELEASE_PHASES,
+  PAIRED_RELEASE_TIMELINE_CONFIG,
   RELEASE_BRIDGE_CAPABILITY,
   REPO_ROOT,
   RUNAWAY_RELEASE_FIXTURE_HASHES,
   TIMELINE_SCHEMA_DISTRIBUTION_VERSION,
+  buildPairedReleaseRegistry,
   buildBrowserEnvironment,
   buildPinnedNpmArgs,
   buildReadinessIdentity,
@@ -31,6 +35,7 @@ import {
   childProcessFailure,
   isExactViteReadiness,
   normalizeCaptionText,
+  pcmS16leStats,
   parseCliArgs,
   requireFullCommitPin,
   requestRawHttp,
@@ -39,8 +44,11 @@ import {
   validateTimelineSchemaInstallation,
   validateAstridReleaseBridgeSources,
   validateAstridRenderWorkerSources,
+  validateAudioFixture,
+  validateImportedAudio,
   validateCaptionExpectations,
   validateMediaFixture,
+  validateRenderedStreamContract,
   validateRenderedMediaFrame,
   verifyBridgeMediaContent,
   waitForUrl,
@@ -73,6 +81,197 @@ function runTestCommand(command, args, options = {}) {
 }
 
 describe('paired repository release E2E gate', () => {
+  it('pins a real sound-bearing audio fixture and fails closed on byte drift', () => {
+    const fixturePath = resolve(REPO_ROOT, PAIRED_RELEASE_AUDIO_FIXTURE);
+    const fixture = validateAudioFixture({
+      fixturePath,
+      expectedRoot: REPO_ROOT,
+      gitCheckout: REPO_ROOT,
+      gitRef: 'HEAD',
+      ffprobeExecutable: 'ffprobe',
+    });
+    assert.equal(fixture.sha256, PAIRED_RELEASE_AUDIO_EXPECTED.sha256);
+    assert.equal(fixture.sizeBytes, PAIRED_RELEASE_AUDIO_EXPECTED.sizeBytes);
+    assert.deepEqual(fixture.mediaProperties, {
+      formatName: 'aac',
+      codecName: 'aac',
+      profile: 'LC',
+      sampleRate: 44_100,
+      channels: 2,
+      channelLayout: 'stereo',
+      durationSeconds: 39.156558,
+      sizeBytes: 457_980,
+      audioStreamCount: 1,
+      streamCount: 1,
+    });
+    assert.deepEqual(
+      PAIRED_RELEASE_TIMELINE_CONFIG.clips.find((clip) => clip.id === 'paired-release-audio'),
+      {
+        id: 'paired-release-audio',
+        track: 'A1',
+        at: 0,
+        clipType: 'media',
+        hold: 8,
+        asset: 'motion-output-audio.aac',
+      },
+    );
+    const registry = buildPairedReleaseRegistry({ mediaId: 'image-id', audioMediaId: 'audio-id' });
+    assert.deepEqual(registry.assets['motion-output-audio.aac'], {
+      file: 'motion-output-audio.aac',
+      media_id: 'audio-id',
+      type: 'audio/aac',
+    });
+
+    const root = mkdtempSync(resolve(tmpdir(), 'paired-audio-fixture-negative-'));
+    const alteredPath = resolve(root, 'paired-release-audio.aac');
+    try {
+      copyFileSync(fixturePath, alteredPath);
+      const altered = readFileSync(alteredPath);
+      altered[altered.length - 1] ^= 1;
+      writeFileSync(alteredPath, altered);
+      assert.throws(() => validateAudioFixture({ fixturePath: alteredPath }), /hash\/size mismatch/);
+      assert.throws(
+        () => validateAudioFixture({ fixturePath, expectedRoot: root }),
+        /path mismatch/,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+
+    const source = readFileSync(resolve(REPO_ROOT, 'scripts/release/verify-paired-release-e2e.mjs'), 'utf8');
+    assert.match(source, /'media', 'import', audioPath/);
+    assert.match(source, /'motion-output-audio\.aac': Object\.freeze\(\{[\s\S]*?media_id: audioMediaId/);
+    assert.match(source, /mediaId: context\.audioMediaId,[\s\S]*?fixture: context\.audioFixture/);
+  });
+
+  it('fails closed on wrong probed audio media properties and extra streams', () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'paired-audio-probe-negative-'));
+    const fakeFfprobe = resolve(root, 'ffprobe');
+    const fixturePath = resolve(REPO_ROOT, PAIRED_RELEASE_AUDIO_FIXTURE);
+    const base = {
+      streams: [{
+        codec_name: 'aac',
+        profile: 'LC',
+        codec_type: 'audio',
+        sample_rate: '44100',
+        channels: 2,
+        channel_layout: 'stereo',
+      }],
+      format: { format_name: 'aac', duration: '39.156558', size: '457980' },
+    };
+    const writeProbe = (payload) => {
+      writeFileSync(fakeFfprobe, `#!/bin/sh\nprintf '%s' '${JSON.stringify(payload)}'\n`);
+      chmodSync(fakeFfprobe, 0o700);
+    };
+    try {
+      writeProbe(base);
+      assert.doesNotThrow(() => validateAudioFixture({ fixturePath, ffprobeExecutable: fakeFfprobe }));
+      const mutations = [
+        { ...base, streams: [{ ...base.streams[0], codec_name: 'mp3' }] },
+        { ...base, streams: [{ ...base.streams[0], profile: 'HE-AAC' }] },
+        { ...base, streams: [{ ...base.streams[0], sample_rate: '48000' }] },
+        { ...base, streams: [{ ...base.streams[0], channels: 1, channel_layout: 'mono' }] },
+        { ...base, streams: [] },
+        { ...base, streams: [...base.streams, { codec_type: 'video', codec_name: 'h264' }] },
+        { ...base, format: { ...base.format, duration: '1.0' } },
+      ];
+      for (const payload of mutations) {
+        writeProbe(payload);
+        assert.throws(
+          () => validateAudioFixture({ fixturePath, ffprobeExecutable: fakeFfprobe }),
+          /media properties mismatch/,
+        );
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('validates Astrid audio import metadata and registry linkage', () => {
+    const payload = {
+      ok: true,
+      data: {
+        id: 'audio-media-id',
+        media_kind: 'audio',
+        content_hash: PAIRED_RELEASE_AUDIO_EXPECTED.sha256,
+        byte_size: PAIRED_RELEASE_AUDIO_EXPECTED.sizeBytes,
+        mime_type: PAIRED_RELEASE_AUDIO_EXPECTED.bridgeMimeType,
+        metadata: { rel_path: 'motion-output-audio.aac' },
+        locations: [{ realm: 'managed_local', media_id: 'audio-media-id' }],
+      },
+    };
+    assert.equal(validateImportedAudio(payload).mediaId, 'audio-media-id');
+    for (const [field, value] of [
+      ['media_kind', 'video'],
+      ['content_hash', '0'.repeat(64)],
+      ['byte_size', 1],
+      ['mime_type', 'audio/aac'],
+    ]) {
+      assert.throws(
+        () => validateImportedAudio({ ...payload, data: { ...payload.data, [field]: value } }),
+        /audio import contract mismatch/,
+      );
+    }
+    assert.throws(
+      () => validateImportedAudio({ ...payload, data: { ...payload.data, id: null } }),
+      /audio import contract mismatch/,
+    );
+    assert.throws(
+      () => buildPairedReleaseRegistry({ mediaId: 'image-id', audioMediaId: '' }),
+      /requires exact image and audio media IDs/,
+    );
+  });
+
+  it('requires decoded render audio to contain measurable signed PCM energy', () => {
+    const audible = Buffer.alloc(8);
+    audible.writeInt16LE(8_000, 0);
+    audible.writeInt16LE(-8_000, 2);
+    audible.writeInt16LE(4_000, 4);
+    audible.writeInt16LE(-4_000, 6);
+    const stats = pcmS16leStats(audible);
+    assert.equal(stats.sampleCount, 4);
+    assert.ok(stats.rms > 0.1);
+    assert.ok(stats.peak > 0.2);
+    assert.equal(stats.nonZeroRatio, 1);
+    assert.throws(() => pcmS16leStats(Buffer.alloc(0)), /non-empty signed 16-bit PCM/);
+    assert.throws(() => pcmS16leStats(Buffer.alloc(3)), /non-empty signed 16-bit PCM/);
+
+    const probe = {
+      format: { duration: '8' },
+      streams: [
+        {
+          codec_type: 'video', codec_name: 'h264', width: 1280, height: 720,
+          avg_frame_rate: '24/1', nb_frames: '192', duration: '8',
+        },
+        {
+          codec_type: 'audio', codec_name: 'aac', channels: 2,
+          sample_rate: '44100', duration: '8',
+        },
+      ],
+    };
+    assert.doesNotThrow(() => validateRenderedStreamContract(probe, { expectedFps: 24, expectedDuration: 8 }));
+    assert.throws(
+      () => validateRenderedStreamContract({ ...probe, streams: [...probe.streams, probe.streams[1]] }, { expectedFps: 24, expectedDuration: 8 }),
+      /render audio stream contract mismatch/,
+    );
+    assert.throws(
+      () => validateRenderedStreamContract({ ...probe, format: { duration: '9' } }, { expectedFps: 24, expectedDuration: 8 }),
+      /render stream contract mismatch/,
+    );
+    assert.throws(
+      () => validateRenderedStreamContract({
+        ...probe,
+        streams: [probe.streams[0], { ...probe.streams[1], duration: '7.5' }],
+      }, { expectedFps: 24, expectedDuration: 8 }),
+      /render audio stream contract mismatch/,
+    );
+
+    const source = readFileSync(resolve(REPO_ROOT, 'scripts/release/verify-paired-release-e2e.mjs'), 'utf8');
+    assert.match(source, /renderedAudio\.nonZeroRatio < 0\.1/);
+    assert.match(source, /sampleCountRatio < 0\.99 \|\| sampleCountRatio > 1\.01/);
+    assert.match(source, /rmsRatio < 0\.5 \|\| rmsRatio > 2/);
+  });
+
   it('fails closed for altered fixture bytes and wrong committed probes', () => {
     const root = mkdtempSync(resolve(tmpdir(), 'paired-media-fixture-negative-'));
     const fixture = resolve(root, 'paired-release-test-card.png');
@@ -149,6 +348,45 @@ describe('paired repository release E2E gate', () => {
       );
     } finally {
       await new Promise((resolvePromise, reject) => server.close((error) => (error ? reject(error) : resolvePromise())));
+    }
+  });
+
+  it('rejects a bridge response that rewrites Astrid AAC MIME semantics', async () => {
+    const fixture = validateAudioFixture({
+      fixturePath: resolve(REPO_ROOT, PAIRED_RELEASE_AUDIO_FIXTURE),
+    });
+    const server = createServer((_request, response) => {
+      const body = readFileSync(fixture.path);
+      response.writeHead(200, {
+        'Content-Type': 'audio/aac',
+        'Content-Length': String(body.length),
+        'Accept-Ranges': 'bytes',
+        'Cache-Control': 'private, no-cache',
+        'X-Astrid-Bridge-Version': 'v1',
+        ETag: '"audio-negative"',
+        'Last-Modified': new Date(0).toUTCString(),
+      });
+      response.end(body);
+    });
+    await new Promise((resolvePromise, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', resolvePromise);
+    });
+    try {
+      const address = server.address();
+      assert.equal(typeof address, 'object');
+      await assert.rejects(
+        verifyBridgeMediaContent({
+          baseUrl: `http://127.0.0.1:${address.port}`,
+          projectSlug: 'paired-release-demo',
+          mediaId: 'audio-media-test',
+          fixture,
+          token: 'test-token',
+        }),
+        /content-type mismatch/,
+      );
+    } finally {
+      await new Promise((resolvePromise) => server.close(resolvePromise));
     }
   });
 

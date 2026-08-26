@@ -185,8 +185,16 @@ frame (six probes total). A no-caption control interval must contain the
 committed `tests/e2e/fixtures/paired-release/paired-release-test-card.png` and
 its JSON metadata: 1280×720 PNG, SHA-256
 `72ddb137c72fcb910c4acede94a76281e865fecbbd54166ae538bd3d6431dce0`, and all
-declared pixel probes. Its bytes, metadata/hash, and probes are validated before
-import. OCR must match each expected caption,
+declared pixel probes. The same timeline contains the tracked
+`public/motion-output-audio.aac` on `A1` for the complete eight-second transcript
+interval. Its SHA-256 is
+`2ed05a66ecf1cd5a2da308f507e02d99d86f52a0a5848f158983cb4b7b2ec8c2`;
+the gate also pins its Git blob, byte size, AAC-LC profile, stereo 44.1 kHz
+stream, duration, Astrid import metadata, idempotent media ID, registry join,
+and exact authenticated bridge bytes/headers. The exported MP4 must contain an
+AAC stream spanning the eight-second composition and decoded audio energy
+within the bounded level ratio of the seeded source; an absent or silent mix
+fails. Both assets are validated before browser acceptance. OCR must match each expected caption,
 and region occupancy/contrast must differ from the control; this proves caption
 presence, absence, and media binding rather than a whole-frame brightness proxy.
 Finally the gate restores

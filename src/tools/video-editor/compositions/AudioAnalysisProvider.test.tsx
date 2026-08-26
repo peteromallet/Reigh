@@ -299,12 +299,14 @@ const stubAudioEnvironment = (): void => {
 
 let fakeWorker: FakeAudioAnalysisWorker | null = null;
 let workerFailWith: string | null = null;
+let workerAutoDeliver = true;
 
 describe('AudioAnalysisProvider', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     fakeWorker = null;
     workerFailWith = null;
+    workerAutoDeliver = true;
     remotionState.environment = {
       isRendering: false,
       isClientSideRendering: false,
@@ -315,6 +317,7 @@ describe('AudioAnalysisProvider', () => {
     setAudioAnalysisWorkerFactory(() => {
       const created = new FakeAudioAnalysisWorker();
       created.failWith = workerFailWith;
+      created.autoDeliver = workerAutoDeliver;
       fakeWorker = created;
       return created;
     });
@@ -385,9 +388,7 @@ describe('AudioAnalysisProvider', () => {
       isRendering: true,
     };
     MockOfflineAudioContext.decodedBuffer = createRenderedFixtureBuffer();
-    if (fakeWorker) {
-      fakeWorker.autoDeliver = false;
-    }
+    workerAutoDeliver = false;
 
     const view = render(
       <AudioAnalysisProvider clips={[createAudioClip()]} fps={FPS} totalDurationInFrames={3}>
@@ -395,8 +396,7 @@ describe('AudioAnalysisProvider', () => {
       </AudioAnalysisProvider>,
     );
 
-    await flushAsync();
-    expect(fakeWorker?.analyzePosts()).toBe(1);
+    await waitFor(() => expect(fakeWorker?.analyzePosts()).toBe(1));
     const jobId = analyzeJobIds(fakeWorker)[0];
 
     view.unmount();

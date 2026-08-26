@@ -141,6 +141,41 @@ describe('useDataLanes', () => {
     expect(result.current).toBe(base);
   });
 
+  it('maps Astrid audio/x-aac transcript segments onto the exact A1 carrier', async () => {
+    const segments = [
+      { start: 2, end: 4, text: 'first' },
+      { start: 5, end: 8, text: 'second' },
+    ];
+    const loadSegments: LoadDataSegments = vi.fn(async () => segments);
+    const audioClip = {
+      id: 'paired-release-audio',
+      at: 0,
+      track: 'A1',
+      asset: 'motion-output-audio.aac',
+      from: 0,
+      speed: 1,
+      assetEntry: mediaEntry('motion-output-audio.aac', 'audio/x-aac'),
+    };
+    const base = buildBase([audioClip]);
+
+    const { result } = renderHook(() =>
+      useDataLanes({ base, kinds: [transcriptKind()], loadSegments }),
+    );
+
+    await waitFor(() => expect(result.current?.dataLanes).toHaveLength(1));
+    expect(loadSegments).toHaveBeenCalledTimes(1);
+    expect(loadSegments).toHaveBeenCalledWith('motion-output-audio.aac');
+    expect(result.current?.dataLanes[0]?.items).toHaveLength(2);
+    expect(result.current?.dataLanes[0]?.items.map((item) => ({
+      clipId: item.clipId,
+      start: item.timelineStart,
+      end: item.timelineEnd,
+    }))).toEqual([
+      { clipId: 'paired-release-audio', start: 2, end: 4 },
+      { clipId: 'paired-release-audio', start: 5, end: 8 },
+    ]);
+  });
+
   it('last-write-wins: re-merges on base change from cached segments without refetching', async () => {
     const loadSegments: LoadDataSegments = vi.fn(async () => [SEGMENT]);
     const base = buildBase([VIDEO_CLIP]);

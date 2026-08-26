@@ -22,6 +22,7 @@ const timeline = process.env.PAIRED_RELEASE_DEMO_TIMELINE;
 const runawayProject = process.env.PAIRED_RELEASE_RUNAWAY_PROJECT;
 const expectedExtensions = Number(process.env.PAIRED_RELEASE_EXPECTED_EXTENSIONS);
 const expectedRunaway = Number(process.env.PAIRED_RELEASE_EXPECTED_RUNAWAY);
+const expectedAudioMediaId = process.env.PAIRED_RELEASE_AUDIO_MEDIA_ID;
 
 for (const [name, value] of Object.entries({
   PAIRED_RELEASE_PHASE: phase,
@@ -30,6 +31,7 @@ for (const [name, value] of Object.entries({
   PAIRED_RELEASE_DEMO_PROJECT: project,
   PAIRED_RELEASE_DEMO_TIMELINE: timeline,
   PAIRED_RELEASE_RUNAWAY_PROJECT: runawayProject,
+  PAIRED_RELEASE_AUDIO_MEDIA_ID: expectedAudioMediaId,
 })) {
   if (!value) throw new Error(`${name} is required`);
 }
@@ -62,6 +64,8 @@ type TimelineConfig = {
     hold?: number;
     duration?: number;
     clipType?: string;
+    track?: string;
+    asset?: string;
     text?: string;
   }>;
   output?: { fps?: number; resolution?: string; file?: string };
@@ -207,6 +211,25 @@ async function readRunawaySnapshot(request: APIRequestContext): Promise<RunawayS
 
 function primaryClip(config: TimelineConfig) {
   return config.clips?.find((clip) => clip.id === 'paired-release-clip');
+}
+
+function assertPairedAudioCarrier(timelineState: TimelineEnvelope) {
+  const audioClips = timelineState.config.clips?.filter((clip) => clip.id === 'paired-release-audio') ?? [];
+  expect(audioClips).toHaveLength(1);
+  expect(audioClips[0]).toMatchObject({
+    id: 'paired-release-audio',
+    track: 'A1',
+    at: 0,
+    hold: 8,
+    clipType: 'media',
+    asset: 'motion-output-audio.aac',
+  });
+  const assets = (timelineState.registry as { assets?: Record<string, Record<string, unknown>> }).assets;
+  expect(assets?.['motion-output-audio.aac']).toMatchObject({
+    file: 'motion-output-audio.aac',
+    media_id: expectedAudioMediaId,
+    type: 'audio/aac',
+  });
 }
 
 /**
@@ -361,6 +384,7 @@ async function openEditor(page: Page): Promise<string[]> {
   expect(response?.ok()).toBe(true);
   try {
     await expect(clipBody(page, 'paired-release-clip')).toBeVisible({ timeout: 30_000 });
+    await expect(clipBody(page, 'paired-release-audio')).toBeVisible({ timeout: 30_000 });
   } catch (error) {
     // Preserve the useful browser failure signal in the receipt. Without this
     // context a module-evaluation crash is misreported as a missing seeded
@@ -506,6 +530,20 @@ async function expectValidatedProjectData(
   return latest.validation;
 }
 
+async function assertPulseAudioBoundaries(request: APIRequestContext) {
+  const value = await persistedProjectData(
+    request,
+    'com.reigh.creative-lab.pulse-map',
+    'pulseMap',
+  ) as { entries?: Array<Record<string, unknown>> } | undefined;
+  const audioEntries = value?.entries?.filter((entry) => entry.sourceClipId === 'paired-release-audio') ?? [];
+  expect(audioEntries).toHaveLength(2);
+  expect(audioEntries.map((entry) => ({ edge: entry.edge, time: entry.time }))).toEqual([
+    { edge: 'start', time: 0 },
+    { edge: 'end', time: 8 },
+  ]);
+}
+
 async function proveAllExtensionLifecycles(page: Page, request: APIRequestContext): Promise<Record<string, string>> {
   const fingerprints: Record<string, string> = {};
   await page.getByRole('tab', { name: 'Extensions' }).click();
@@ -547,6 +585,7 @@ async function proveAllExtensionLifecycles(page: Page, request: APIRequestContex
             true,
           );
           fingerprints[probe.id] = after.fingerprint!;
+          if (probe.id === 'com.reigh.creative-lab.pulse-map') await assertPulseAudioBoundaries(request);
         } else if (phase === 'restart') {
           const after = await expectValidatedProjectData(
             request,
@@ -557,6 +596,7 @@ async function proveAllExtensionLifecycles(page: Page, request: APIRequestContex
             false,
           );
           fingerprints[probe.id] = after.fingerprint!;
+          if (probe.id === 'com.reigh.creative-lab.pulse-map') await assertPulseAudioBoundaries(request);
         }
       } else if (probe.contribution === 'transcript-lane') {
         await expect(page.locator('[data-lane-kind="reigh.transcript"]')).toBeVisible({ timeout: 15_000 });
@@ -766,6 +806,7 @@ async function renderAndDownload(
 test(`paired repository acceptance phase: ${phase}`, async ({ page, request }) => {
   await mkdir(evidenceDir!, { recursive: true });
   const initial = await readTimeline(request);
+  assertPairedAudioCarrier(initial);
   const initialStateHash = timelineStateHash(initial);
   const initialAt = primaryClip(initial.config)?.at;
   expect(typeof initialAt).toBe('number');
@@ -791,6 +832,7 @@ test(`paired repository acceptance phase: ${phase}`, async ({ page, request }) =
     const saved = await readTimeline(request);
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(clipBody(page, 'paired-release-clip')).toBeVisible({ timeout: 30_000 });
+    await expect(clipBody(page, 'paired-release-audio')).toBeVisible({ timeout: 30_000 });
     const expected = await expectedTranscriptCaptions(page);
     await expect.poll(async () => validateTranscriptCaptions((await readTimeline(request)).config.clips ?? [], expected).valid).toBe(true);
     expect(primaryClip(saved.config)?.at).not.toBe(initialAt);
@@ -828,6 +870,7 @@ test(`paired repository acceptance phase: ${phase}`, async ({ page, request }) =
   }
 
   const final = await readTimeline(request);
+  assertPairedAudioCarrier(final);
   const finalStateHash = timelineStateHash(final);
   const state = {
     schemaVersion: 1,
