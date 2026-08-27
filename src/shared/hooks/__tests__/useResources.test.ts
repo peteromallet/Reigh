@@ -54,6 +54,13 @@ vi.mock('@/shared/lib/query/queryDefaults', () => ({
   },
 }));
 
+// This suite exercises the Supabase-backed resource hooks. Phase C defaults
+// the application to Astrid authority, so opt this test boundary into the
+// explicitly deferred cloud surface rather than depending on ambient env.
+vi.mock('@/app/runtime/dataAuthority', () => ({
+  isDeferredCloudDataAuthority: () => true,
+}));
+
 import {
   useListPublicResources,
   useListResources,

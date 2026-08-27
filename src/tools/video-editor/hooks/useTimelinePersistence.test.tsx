@@ -857,6 +857,8 @@ describe('useTimelinePersistence — interaction gating', () => {
     });
 
     expect(harness.assetResolver.onResolve).toHaveBeenCalledWith({
+      assetId: 'asset-reload',
+      entry: registry.assets['asset-reload'],
       file: 'media/reload.mp4',
       timelineId: 'timeline-1',
     });
