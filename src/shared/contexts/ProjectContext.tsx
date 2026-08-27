@@ -1,8 +1,9 @@
-import { createContext, useContext, ReactNode, useMemo } from 'react';
+import { createContext, useContext, ReactNode, useEffect, useMemo } from 'react';
 import { Project } from '@/types/project';
 import { useRenderLogger } from '@/shared/lib/debug/debugRendering';
 import { useProjectSessionCoordinator } from './useProjectSessionCoordinator';
 import { requireContextValue } from './contextGuard';
+import { setProjectSelectionFallbackId } from './projectSelectionStore';
 
 // Type for updating projects (re-exported for consumers that may need it)
 interface ProjectUpdate {
@@ -49,6 +50,13 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
   const projects = crud.projects || [];
   const selectedProjectId = selection.selectedProjectId;
   const project = projects.find((item) => item.id === selectedProjectId) ?? null;
+
+  // ProjectProvider is the composition boundary for React and non-React
+  // project consumers. Keep both views synchronized even when the session
+  // coordinator is replaced by a test or an alternate host implementation.
+  useEffect(() => {
+    setProjectSelectionFallbackId(selectedProjectId);
+  }, [selectedProjectId]);
 
   const selectionValue = useMemo(
     (): ProjectSelectionContextType => ({

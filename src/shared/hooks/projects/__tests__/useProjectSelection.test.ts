@@ -24,6 +24,7 @@ describe('useProjectSelection', () => {
 
   beforeEach(() => {
     localStorageMock = {};
+    window.history.replaceState({}, '', '/');
 
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(
       (key: string) => localStorageMock[key] ?? null

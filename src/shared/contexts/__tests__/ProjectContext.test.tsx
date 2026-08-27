@@ -40,6 +40,7 @@ function ProjectConsumer() {
 describe('ProjectContext', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.history.replaceState({}, '', '/');
     setProjectSelectionSnapshot({ selectedProjectId: null });
     mockUseProjectSessionCoordinator.mockReturnValue({
       userId: 'user-123',
