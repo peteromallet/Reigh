@@ -79,7 +79,6 @@ export function deriveShotExpectations(timelinePayload) {
 
 const sorted = (values) => [...values].sort();
 const unique = (values) => [...new Set(values)];
-const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 async function waitUntil(predicate, timeout = 30_000, interval = 100) {
   const deadline = Date.now() + timeout;
@@ -139,17 +138,40 @@ function assertDiagnostics(diagnostics) {
   assert.deepEqual(unique(diagnostics.pageErrors), [], 'local Astrid journey must not throw page errors');
   assert.deepEqual(unique(diagnostics.consoleErrors), [], 'local Astrid journey must not emit browser console errors');
   const unexpectedResponses = diagnostics.failedResponses.filter((line) => !line.includes('/media/__reigh_capability_probe__/content'));
-  const unexpectedRequests = diagnostics.failedRequests.filter((line) => !line.includes('/media/__reigh_capability_probe__/content'));
+  const unexpectedRequests = diagnostics.failedRequests.filter((line) => {
+    if (line.includes('/media/__reigh_capability_probe__/content')) return false;
+    // Route changes can cancel the capability census' non-user-visible HEAD
+    // probe after the destination has already mounted. Keep every GET/POST
+    // failure strict; only this exact abort is an expected navigation race.
+    return !/^HEAD .*\/media\/[^/]+\/content \(net::ERR_ABORTED\)$/.test(line);
+  });
   assert.deepEqual(unique(unexpectedResponses), [], 'local Astrid journey must not receive unexpected HTTP failures');
   assert.deepEqual(unique(unexpectedRequests), [], 'local Astrid journey must not have failed network requests');
   const probes = diagnostics.failedResponses.filter((line) => line.includes('/media/__reigh_capability_probe__/content'));
   assert.ok(probes.length <= 6, 'capability sentinel failures remain bounded');
 }
 
-async function readCardClipIds(locator) {
-  const timeline = locator.getByRole('img', { name: /visual timeline:/i });
-  assert.equal(await timeline.count(), 1, 'shot owns one mini timeline');
-  return timeline.locator('[title]').evaluateAll((elements) => elements.map((element) => element.getAttribute('title')?.split(':')[0]).filter(Boolean));
+function hasRenderableAsset(timelinePayload, clipId) {
+  const clip = (timelinePayload?.config?.clips ?? []).find((candidate) => candidate?.id === clipId);
+  if (!clip || typeof clip.asset !== 'string') return false;
+  const asset = timelinePayload?.registry?.assets?.[clip.asset];
+  return Boolean(asset && (asset.media_id || asset.file || asset.src || asset.url));
+}
+
+function localAssetUrl(project, timeline, assetId) {
+  // Browser image attributes are same-origin paths even when the acceptance
+  // origin is an absolute URL; compare the canonical route, not its host.
+  return `/api/astrid/projects/${encodeURIComponent(project)}/timelines/${encodeURIComponent(timeline)}/assets/${encodeURIComponent(assetId)}`;
+}
+
+async function readCardImageAssetIds(locator) {
+  return locator.locator('img[alt^="Shot image "]').evaluateAll((elements) => elements
+    .map((element) => {
+      const src = element.getAttribute('src') ?? '';
+      const match = /\/assets\/([^/?#]+)/.exec(src);
+      return match ? decodeURIComponent(match[1]) : null;
+    })
+    .filter((assetId) => assetId));
 }
 
 async function runRow(page, origin, row, evidenceRoot, rowNumber) {
@@ -171,35 +193,73 @@ async function runRow(page, origin, row, evidenceRoot, rowNumber) {
   diagnosticsForPage(page, diagnostics, origin, project);
   await page.goto(travelUrl, { waitUntil: 'commit', timeout: 45_000 });
   await page.getByRole('heading', { name: 'Timeline shots' }).waitFor({ timeout: 30_000 });
-  const shotCards = page.getByRole('button', { name: /^Select shot / });
-  await waitUntil(async () => (await shotCards.count()) === shots.length);
-  assert.equal(await shotCards.count(), shots.length, `${project} timeline overview matches pinnedShotGroups`);
+  // The production ShotListDisplay uses the established VideoShotDisplay card
+  // (a clickable div), not the removed focused mini-timeline button.
+  const documentShotCards = page.locator('div.click-ripple').filter({ has: page.locator('button[aria-label="Duplicate shot"]') });
+  await waitUntil(async () => (await documentShotCards.count()) === shots.length);
+  assert.equal(await documentShotCards.count(), shots.length, `${project} timeline overview matches pinnedShotGroups`);
   for (let index = 0; index < shots.length; index += 1) {
     const expected = shots[index];
-    const card = shotCards.nth(index);
-    assert.equal(await card.getAttribute('aria-label'), `Select shot ${expected.name}`, `${project} shot ${index + 1} name is document-derived`);
-    assert.deepEqual(sorted(unique(await readCardClipIds(card))), sorted(unique(expected.visualClipIds)), `${project} shot ${index + 1} mini timeline is scoped to its pinned clipIds`);
+    const card = documentShotCards.nth(index);
+    assert.equal(await card.locator('h3').textContent(), expected.name, `${project} shot ${index + 1} name is document-derived`);
+    const expectedAssetIds = expected.visualClipIds
+      .filter((clipId) => hasRenderableAsset(timelinePayload, clipId))
+      .map((clipId) => (timelinePayload.config.clips.find((clip) => clip.id === clipId)).asset);
+    assert.deepEqual(sorted(unique(await readCardImageAssetIds(card))), sorted(unique(expectedAssetIds)), `${project} shot ${index + 1} card images are scoped to its document assets`);
+    for (const selector of ['button:has(svg.lucide-pencil)', 'button:has(svg.lucide-copy)', 'button:has(svg.lucide-grip-vertical)', 'button:has(svg.lucide-video)']) {
+      const controls = card.locator('div.flex.justify-between.items-start').first().locator(selector);
+      assert.ok((await controls.count()) === 0 || await controls.evaluateAll((elements) => elements.every((element) => element.disabled)), `${project} shot ${index + 1} local unsupported controls remain disabled`);
+    }
   }
 
   const representativeShot = shots.find((shot) => shot.visualClipIds.length > 0) ?? shots[0];
   const representativeIndex = shots.indexOf(representativeShot);
-  await shotCards.nth(representativeIndex).click();
+  await documentShotCards.nth(representativeIndex).click();
   const selectedHash = new URL(page.url()).hash;
   assert.notEqual(selectedHash, '', `${project} shot selection is linkable`);
-  const detail = page.getByLabel(`Shot detail: ${representativeShot.name}`);
-  await detail.waitFor({ timeout: 30_000 });
-  const focusedTimeline = detail.getByRole('img', { name: new RegExp(`${escapeRegExp(representativeShot.name)} focused visual timeline`, 'i') });
-  assert.equal(await focusedTimeline.count(), 1, `${project} focused shot has one detail timeline`);
-  const focusedClipIds = await focusedTimeline.locator('[title]').evaluateAll((elements) => elements.map((element) => element.getAttribute('title')?.split(':')[0]).filter(Boolean));
-  assert.deepEqual(sorted(unique(focusedClipIds)), sorted(unique(representativeShot.visualClipIds)), `${project} focused shot only renders that shot's clips`);
+  const backButton = page.getByTitle('Back to shots').first();
+  await backButton.waitFor({ timeout: 30_000 });
+  assert.equal(await page.getByText('Final Video', { exact: true }).count(), 1, `${project} restored editor exposes Final Video`);
+  assert.ok(await page.getByText('Guidance', { exact: true }).count() >= 1, `${project} restored editor exposes Guidance/Input Images`);
+  assert.ok(await page.getByText('Generate', { exact: true }).count() >= 1, `${project} restored editor exposes Generate`);
+  assert.ok(await page.getByText('Settings', { exact: true }).count() >= 1, `${project} restored editor exposes Settings`);
+  assert.equal(await page.getByText('Local Astrid timeline: generation and cloud-only actions are disabled. Settings are shown for reference.', { exact: true }).count(), 1, `${project} local-disabled note is visible`);
 
+  const expectedEditorClipIds = representativeShot.visualClipIds
+    .filter((clipId) => hasRenderableAsset(timelinePayload, clipId))
+    .map((clipId) => `${representativeShot.id}:${clipId}`);
+  const editorTimeline = page.locator('[data-tour="timeline"]').first();
+  await editorTimeline.waitFor({ timeout: 30_000 });
+  await waitUntil(async () => (await editorTimeline.locator('[data-item-id]').count()) === expectedEditorClipIds.length);
+  assert.deepEqual(sorted(unique(await editorTimeline.locator('[data-item-id]').evaluateAll((elements) => elements.map((element) => element.getAttribute('data-item-id')).filter(Boolean)))), sorted(unique(expectedEditorClipIds)), `${project} editor renders exactly the selected shot images`);
+  const expectedEditorAssetUrls = representativeShot.visualClipIds
+    .filter((clipId) => hasRenderableAsset(timelinePayload, clipId))
+    .map((clipId) => localAssetUrl(project, timeline, timelinePayload.config.clips.find((clip) => clip.id === clipId).asset));
+  assert.deepEqual(sorted(await editorTimeline.locator('[data-item-id] img').evaluateAll((elements) => elements.map((element) => { const src = element.getAttribute('src'); return src ? new URL(src, window.location.origin).pathname : null; }).filter(Boolean))), sorted(expectedEditorAssetUrls), `${project} editor image assets match the selected document clips`);
+
+  for (const selector of ['input[type="range"]', 'input[type="file"]', 'button:has(svg.lucide-video)']) {
+    const controls = selector === 'button:has(svg.lucide-video)'
+      ? page.getByRole('button', { name: /Generate Video/i })
+      : editorTimeline.locator(selector);
+    assert.ok((await controls.count()) === 0 || await controls.evaluateAll((elements) => elements.every((element) => element.disabled)), `${project} editor unsupported controls remain disabled`);
+  }
+  const ratioControl = page.getByRole('combobox').filter({ hasText: '16:9' }).first();
+  await ratioControl.waitFor({ timeout: 30_000 });
+  assert.equal(await ratioControl.isDisabled(), true, `${project} aspect ratio control is disabled locally`);
+
+  // Let the selected document assets and the editor's bridge reads finish
+  // before deliberately reloading; otherwise the reload itself records
+  // avoidable aborted GETs as failed network requests.
+  await page.waitForLoadState('networkidle', { timeout: 30_000 });
   await page.reload({ waitUntil: 'commit', timeout: 45_000 });
-  await waitUntil(async () => (await page.getByLabel(`Shot detail: ${representativeShot.name}`).count()) > 0, 60_000);
+  await backButton.waitFor({ timeout: 60_000 });
   assert.equal(new URL(page.url()).hash, selectedHash, `${project} deep-link survives refresh`);
+  await page.waitForLoadState('networkidle', { timeout: 30_000 });
   await page.goBack({ waitUntil: 'commit', timeout: 45_000 });
   await page.getByRole('heading', { name: 'Timeline shots' }).waitFor({ timeout: 30_000 });
-  assert.equal(await page.getByRole('button', { name: /^Select shot / }).count(), shots.length, `${project} browser back returns to shot overview`);
-  assert.equal(await page.getByLabel(`Shot detail: ${representativeShot.name}`).count(), 0, `${project} browser back leaves shot detail`);
+  await page.waitForLoadState('networkidle', { timeout: 30_000 });
+  assert.equal(await page.locator('div.click-ripple').filter({ has: page.locator('button[aria-label="Duplicate shot"]') }).count(), shots.length, `${project} browser back returns to shot overview`);
+  assert.equal(await page.getByTitle('Back to shots').count(), 0, `${project} browser back leaves shot detail`);
 
   await page.getByRole('button', { name: 'Go to Image Generation tool' }).click();
   await page.getByRole('heading', { name: 'Image Generation' }).waitFor({ timeout: 30_000 });
@@ -230,6 +290,14 @@ async function runRow(page, origin, row, evidenceRoot, rowNumber) {
   assert.ok(matchingDetailRequests.length >= 1, `${project} lightbox requests representative generation detail`);
   assert.equal(new Set(matchingDetailRequests).size, 1, `${project} lightbox detail requests stay scoped to one generation`);
   await page.screenshot({ path: resolve(evidenceRoot, `${String(rowNumber).padStart(2, '0')}-${project}-gallery.png`), fullPage: true });
+
+  // Close the lightbox and let its viewed mutation plus media probes settle.
+  // Reloading while media requests are in flight produces Playwright
+  // net::ERR_ABORTED events that are caused by the test navigation itself.
+  await page.keyboard.press('Escape');
+  await lightbox.waitFor({ state: 'hidden', timeout: 30_000 });
+  await page.waitForLoadState('networkidle', { timeout: 30_000 });
+  assertDiagnostics(diagnostics);
 
   // We are already on this exact URL. A same-URL goto can be a no-op and
   // leave the modal mounted, so use a true document reload for persistence.
