@@ -32,8 +32,8 @@ import {
 import { syncPlannerDiagnosticsToCollection } from '@/tools/video-editor/runtime/diagnosticCollectionSync.ts';
 import type { PlannerBackedRenderRouteDecision } from '@/tools/video-editor/lib/renderRouter.ts';
 import type { RenderExportDestination } from '@/tools/video-editor/lib/renderRouter.ts';
+import type { BridgeTaskDetailPayload } from '@/tools/video-editor/data/bridgeContract.ts';
 import type {
-  BridgeTaskDetailPayload,
   CapabilityFinding,
   Diagnostic,
   ExtensionContribution,
@@ -153,7 +153,7 @@ function progressNumber(progress: Record<string, unknown> | undefined, key: stri
 }
 
 function progressPhase(progress: Record<string, unknown> | undefined): string | undefined {
-  return compactDiagnosticValue(progress?.phase);
+  return compactDiagnosticValue(progress?.phase) ?? undefined;
 }
 
 const CLIENT_CLIP_TYPES = new Set(['media', 'text', 'effect-layer', 'hold']);
