@@ -8,6 +8,12 @@ import {
   updateSettingsCache,
 } from '@/shared/hooks/settings/useToolSettings';
 import { enqueueSettingsWrite } from '@/shared/lib/settingsWriteQueue';
+import { fetchToolSettingsSupabase } from '@/shared/settings';
+import { queryKeys } from '@/shared/lib/queryKeys';
+
+const { normalizeAndPresentErrorMock } = vi.hoisted(() => ({
+  normalizeAndPresentErrorMock: vi.fn(),
+}));
 
 // ============================================================================
 // Tests for exported pure helper functions
@@ -224,6 +230,16 @@ vi.mock('@/shared/lib/errorHandling/errorUtils', () => ({
   isErrorWithStatus: () => false,
 }));
 
+vi.mock('@/shared/lib/errorHandling/runtimeError', async () => {
+  const actual = await vi.importActual<typeof import('@/shared/lib/errorHandling/runtimeError')>(
+    '@/shared/lib/errorHandling/runtimeError',
+  );
+  return {
+    ...actual,
+    normalizeAndPresentError: normalizeAndPresentErrorMock,
+  };
+});
+
 function createWrapper() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
@@ -239,6 +255,8 @@ describe('useToolSettings hook', () => {
 
   beforeEach(async () => {
     vi.mocked(enqueueSettingsWrite).mockClear();
+    vi.mocked(fetchToolSettingsSupabase).mockClear();
+    normalizeAndPresentErrorMock.mockClear();
     const mod = await import('@/shared/hooks/settings/useToolSettings');
     useToolSettings = mod.useToolSettings;
   });
@@ -274,6 +292,43 @@ describe('useToolSettings hook', () => {
 
     // When disabled, settings should be undefined
     expect(result.current.settings).toBeUndefined();
+  });
+
+  it('does not fetch or re-present cached settings errors in local editor mode', () => {
+    const previousUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    window.history.replaceState(
+      {},
+      '',
+      '/tools/video-editor?localProject=desert-plant-growth&localTimeline=01KYPVKMW5STB4W6FE05ED8242',
+    );
+
+    try {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false, gcTime: 0 } },
+      });
+      const queryKey = queryKeys.settings.tool('test-tool', undefined, undefined);
+      const query = queryClient.getQueryCache().build(queryClient, { queryKey });
+      const cachedError = new Error('cached auth failure');
+      query.setState({
+        error: cachedError,
+        errorUpdateCount: 1,
+        errorUpdatedAt: Date.now(),
+        fetchFailureCount: 1,
+        fetchFailureReason: cachedError,
+        fetchStatus: 'idle',
+        status: 'error',
+      });
+
+      const wrapper = ({ children }: { children: React.ReactNode }) =>
+        React.createElement(QueryClientProvider, { client: queryClient }, children);
+      const { result } = renderHook(() => useToolSettings('test-tool'), { wrapper });
+
+      expect(result.current.error).toBe(cachedError);
+      expect(fetchToolSettingsSupabase).not.toHaveBeenCalled();
+      expect(normalizeAndPresentErrorMock).not.toHaveBeenCalled();
+    } finally {
+      window.history.replaceState({}, '', previousUrl);
+    }
   });
 
   it('uses provided projectId over context', async () => {

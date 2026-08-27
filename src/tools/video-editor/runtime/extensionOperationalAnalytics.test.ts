@@ -40,6 +40,24 @@ describe('extension operational analytics browser sink', () => {
     }
   });
 
+  it('never installs transport for a local editor URL without localTest', async () => {
+    const previousUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    window.history.replaceState({}, '', '/tools/video-editor?localProject=desert-plant-growth&localTimeline=01KYPVKMW5STB4W6FE05ED8242');
+    try {
+      const invoke = vi.fn().mockResolvedValue(undefined);
+      const sink = installExtensionOperationalAnalyticsSink({ invoke, flushDelayMs: 0 });
+      for (let i = 0; i < OPERATIONAL_ANALYTICS_BATCH_SIZE; i += 1) {
+        window.dispatchEvent(new CustomEvent(EXTENSION_OPERATIONAL_EVENT_DOM_NAME, { detail: event }));
+      }
+      await sink.flush();
+      expect(invoke).not.toHaveBeenCalled();
+      expect(sink.getDroppedCount()).toBe(0);
+      sink.dispose();
+    } finally {
+      window.history.replaceState({}, '', previousUrl);
+    }
+  });
+
   it('rebuilds only fixed fields and rejects content-bearing DOM payloads', () => {
     expect(toTransportSafeOperationalEvent({ ...event, prompt: 'secret' })).toBeNull();
     expect(toTransportSafeOperationalEvent({ ...event, projectId: 'private' })).toBeNull();

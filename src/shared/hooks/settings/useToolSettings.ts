@@ -228,7 +228,7 @@ export function useToolSettings<T extends object>(
   const hasShotSettings = wrapper ? ((queryResult as SettingsFetchResult<T>).hasShotSettings ?? false) : false;
 
   // Log errors for debugging (except expected cancellations)
-  if (error && classifyToolSettingsError(error).code !== 'cancelled') {
+  if (error && !isLocalMode && classifyToolSettingsError(error).code !== 'cancelled') {
     normalizeAndPresentError(error, { context: 'useToolSettings', showToast: false });
   }
 
