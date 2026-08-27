@@ -43,7 +43,11 @@ export function useProjectVideoCountsCache(projectId: string | null) {
   const { data: projectCounts, isLoading, error, refetch } = useQuery<Map<string, ShotCounts>>({
     queryKey: projectStatsQueryKeys.videos(effectiveProjectId),
     queryFn: () => fetchProjectShotDataFromDB(projectId!),
-    enabled: !!projectId,
+    // Neither current authority exposes this capability: the Astrid bridge
+    // has no per-shot counts route and the former Supabase fetcher was removed
+    // during cutover. Keep the query disabled until a real route is available.
+    enabled: false,
+    retry: false,
     gcTime: 10 * 60 * 1000,
     placeholderData: (previousData) => previousData,
     ...smartPollingConfig,

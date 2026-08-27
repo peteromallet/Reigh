@@ -11,6 +11,7 @@ import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
 import { finalVideoQueryKeys } from '@/shared/lib/queryKeys/finalVideos';
 import { getDurationSecondsFromFinalVideoParams } from '@/tools/video-editor/lib/finalVideoAssets';
 import { isUuid } from '@/shared/lib/uuid.ts';
+import { isDeferredCloudDataAuthority } from '@/app/runtime/dataAuthority';
 
 export interface ShotFinalVideo {
   id: string;
@@ -22,6 +23,7 @@ export interface ShotFinalVideo {
 
 export function useShotFinalVideos(projectId: string | null) {
   const isUuidProjectId = isUuid(projectId);
+  const isDeferredCloudMode = isDeferredCloudDataAuthority();
   if (projectId && !isUuidProjectId) {
     console.warn('[useShotFinalVideos] skipping Supabase query for non-UUID projectId:', projectId);
   }
@@ -42,7 +44,7 @@ export function useShotFinalVideos(projectId: string | null) {
       }
       return data || [];
     },
-    enabled: !!projectId && isUuidProjectId,
+    enabled: !!projectId && isUuidProjectId && isDeferredCloudMode,
     staleTime: 30_000,
   });
 

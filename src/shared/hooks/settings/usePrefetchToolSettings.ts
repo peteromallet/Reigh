@@ -9,6 +9,7 @@ import {
   type SettingsFetchResult,
 } from '@/shared/settings';
 import { hasLocalModeUrlParams } from '@/shared/dev/devSession';
+import { isDeferredCloudDataAuthority } from '@/app/runtime/dataAuthority';
 
 // Central list of tool IDs we want to preload. Update when you add more tools.
 const PREFETCH_TOOL_IDS = [
@@ -41,6 +42,7 @@ export function usePrefetchToolSettings(projectId?: string | null, shotIds: stri
   const isLocalMode = hasLocalModeUrlParams(
     typeof window === 'undefined' ? '' : window.location.search,
   );
+  const isDeferredCloudMode = isDeferredCloudDataAuthority();
   const shotIdsKey = shotIds.join(',');
   const shotIdsForPrefetch = useMemo(
     () => (shotIdsKey ? shotIdsKey.split(',') : EMPTY_SHOT_IDS),
@@ -48,7 +50,7 @@ export function usePrefetchToolSettings(projectId?: string | null, shotIds: stri
   );
 
   useEffect(() => {
-    if (!projectId || isLocalMode) {
+    if (!projectId || isLocalMode || !isDeferredCloudMode) {
       return;
     }
 
@@ -76,5 +78,5 @@ export function usePrefetchToolSettings(projectId?: string | null, shotIds: stri
         });
       });
     }
-  }, [isLocalMode, projectId, shotIdsForPrefetch, queryClient]);
+  }, [isDeferredCloudMode, isLocalMode, projectId, shotIdsForPrefetch, queryClient]);
 }

@@ -3,6 +3,14 @@ import { renderHook } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 
+const { isDeferredCloudDataAuthorityMock } = vi.hoisted(() => ({
+  isDeferredCloudDataAuthorityMock: vi.fn(() => false),
+}));
+
+vi.mock('@/app/runtime/dataAuthority', () => ({
+  isDeferredCloudDataAuthority: isDeferredCloudDataAuthorityMock,
+}));
+
 // Mock supabase
 vi.mock('@/integrations/supabase/client', () => {
   const mockFrom = vi.fn((table: string) => {
@@ -65,6 +73,7 @@ function createWrapper() {
 describe('useProjectVideoCountsCache', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    isDeferredCloudDataAuthorityMock.mockReturnValue(false);
   });
 
   it('returns null values when projectId is null', () => {
@@ -129,5 +138,20 @@ describe('useProjectVideoCountsCache', () => {
 
     // Initially loading
     expect(typeof result.current.isLoading).toBe('boolean');
+  });
+
+  it('keeps the unsupported per-shot counts query disabled with zero retries', () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 0, gcTime: 0 } } });
+    renderHook(() => useProjectVideoCountsCache('project-1'), {
+      wrapper: ({ children }) =>
+        React.createElement(QueryClientProvider, { client: queryClient }, children),
+    });
+
+    const query = queryClient.getQueryCache().find({
+      queryKey: ['project-video-counts', 'project-1'],
+    });
+    expect(query?.options.enabled).toBe(false);
+    expect(query?.options.retry).toBe(false);
+    expect(query?.state.error).toBeNull();
   });
 });

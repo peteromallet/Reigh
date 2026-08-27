@@ -6,15 +6,21 @@ const {
   mockSelect,
   mockUpdate,
   mockGetSupabaseClient,
+  isDeferredCloudDataAuthorityMock,
 } = vi.hoisted(() => ({
   mockGetUser: vi.fn(),
   mockSelect: vi.fn(),
   mockUpdate: vi.fn(),
   mockGetSupabaseClient: vi.fn(),
+  isDeferredCloudDataAuthorityMock: vi.fn().mockReturnValue(true),
 }));
 
 vi.mock('@/integrations/supabase/client', () => ({
   getSupabaseClient: mockGetSupabaseClient,
+}));
+
+vi.mock('@/app/runtime/dataAuthority', () => ({
+  isDeferredCloudDataAuthority: isDeferredCloudDataAuthorityMock,
 }));
 
 import { useOnboarding } from '../useOnboarding';
@@ -23,6 +29,7 @@ describe('useOnboarding', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
+    isDeferredCloudDataAuthorityMock.mockReturnValue(true);
     window.history.replaceState({}, '', '/');
     mockGetSupabaseClient.mockReturnValue({
       auth: {
@@ -103,6 +110,21 @@ describe('useOnboarding', () => {
     expect(result.current.showOnboardingModal).toBe(false);
     expect(mockGetUser).not.toHaveBeenCalled();
     expect(mockSelect).not.toHaveBeenCalled();
+  });
+
+  it('does not probe Supabase under default Astrid authority', async () => {
+    isDeferredCloudDataAuthorityMock.mockReturnValue(false);
+    const { result } = renderHook(() => useOnboarding());
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(600);
+    });
+
+    expect(result.current.showOnboardingModal).toBe(false);
+    expect(mockGetSupabaseClient).not.toHaveBeenCalled();
+
+    act(() => result.current.closeOnboardingModal());
+    expect(mockGetSupabaseClient).not.toHaveBeenCalled();
   });
 
   it('closeOnboardingModal hides modal', async () => {

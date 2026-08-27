@@ -3,6 +3,7 @@ import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
 import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
 import { isLocalTestMode } from '@/app/localTestRuntime';
 import { hasLocalModeUrlParams } from '@/shared/dev/devSession';
+import { isDeferredCloudDataAuthority } from '@/app/runtime/dataAuthority';
 
 /**
  * Hook to check if user has completed onboarding and show modal if not
@@ -11,9 +12,10 @@ export function useOnboarding() {
   const [showModal, setShowModal] = useState(false);
   const localTestMode = isLocalTestMode();
   const isLocalMode = hasLocalModeUrlParams(typeof window === 'undefined' ? '' : window.location.search);
+  const isDeferredCloudMode = isDeferredCloudDataAuthority();
 
   useEffect(() => {
-    if (localTestMode || isLocalMode) return undefined;
+    if (localTestMode || isLocalMode || !isDeferredCloudMode) return undefined;
     let timeoutId: NodeJS.Timeout;
 
     const checkOnboardingStatus = async () => {
@@ -57,10 +59,10 @@ export function useOnboarding() {
     return () => {
       if (timeoutId) clearTimeout(timeoutId);
     };
-  }, [localTestMode, isLocalMode]);
+  }, [isDeferredCloudMode, localTestMode, isLocalMode]);
 
   const completeOnboarding = async () => {
-    if (localTestMode || isLocalMode) return;
+    if (localTestMode || isLocalMode || !isDeferredCloudMode) return;
     try {
       const { data: { user } } = await supabase().auth.getUser();
       if (!user) return;

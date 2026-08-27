@@ -11,6 +11,7 @@ import type { VideoMetadata } from '@/shared/lib/media/videoUploader';
 import { QUERY_PRESETS } from '@/shared/lib/query/queryDefaults';
 import { resourceQueryKeys } from '@/shared/lib/queryKeys/resources';
 import type { ParameterSchema } from '@/tools/video-editor';
+import { isDeferredCloudDataAuthority } from '@/app/runtime/dataAuthority';
 
 export interface PhaseConfigMetadata {
     name: string;
@@ -439,7 +440,7 @@ export const useDeleteResource = () => {
 
 /** Fetch all public LoRAs with metadata extracted */
 export const usePublicLoras = () => {
-    const query = useListPublicResources('lora');
+    const query = useListPublicResources('lora', { enabled: isDeferredCloudDataAuthority() });
     const data = useMemo(
         () => (query.data || []).map(r => r.metadata || {}) as LoraModel[],
         [query.data]
