@@ -1,5 +1,5 @@
 import React from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { useProjectCrudContext, useProjectSelectionContext } from '@/shared/contexts/ProjectContext';
 import { useCurrentShot } from '@/shared/state/selectionStore';
 import { useVideoTravelData } from '../hooks/workflow/useVideoTravelData';
@@ -18,6 +18,7 @@ import {
   type ShotEditorViewProps,
   type ShotListViewProps,
 } from './videoTravelPageModel';
+import { LocalTimelineShotBrowser } from './LocalTimelineShotBrowser';
 
 /**
  * VideoTravelToolPage - Main page for the travel-between-images tool.
@@ -27,7 +28,9 @@ import {
  * 2. Decides whether to show list view or editor view
  * 3. Delegates all logic to child components
  */
-const VideoTravelToolPage: React.FC = () => {
+/** App/cloud travel page. Local Astrid documents use the sibling browser below
+ * so the relational shots hooks never run for a local URL. */
+const VideoTravelToolPageContent: React.FC = () => {
   const location = useLocation();
   const viaShotClick = location.state?.fromShotClick === true;
   const shotFromState = location.state?.shotData;
@@ -145,6 +148,18 @@ const VideoTravelToolPage: React.FC = () => {
       shotListProps={shotListProps}
     />
   );
+};
+
+const VideoTravelToolPage: React.FC = () => {
+  const [searchParams] = useSearchParams();
+  const localProject = searchParams.get('localProject');
+  const localTimeline = searchParams.get('localTimeline');
+
+  if (localProject && localTimeline) {
+    return <LocalTimelineShotBrowser projectSlug={localProject} timelineRef={localTimeline} />;
+  }
+
+  return <VideoTravelToolPageContent />;
 };
 
 export default VideoTravelToolPage;
