@@ -2603,3 +2603,40 @@ fresh console collection.
   exact root/runtime config, non-root attestation, Docker health, isolated
   localhost ports, same-image reuse, and scoped cleanup. Focused verifier tests
   remain 6/6 green and lint passes.
+
+### Local timeline acceptance exposed three cross-boundary drift classes
+
+- Some imported timeline assets stored a managed-media UUID in the legacy
+  `file` field instead of the canonical media reference. The editor could load
+  the timeline but the browser had no playable URL, so audio appeared present
+  while playback remained silent. An audited, compare-and-swap migration
+  verified project ownership, object hash, and size before repairing 375/375
+  affected references; a second run was entirely idempotent. All repaired
+  assets now pass full or ranged HTTP reads, while malformed, unknown, and
+  cross-project references fail closed.
+- Timeline-list discovery accepted uppercase ULIDs, but the single-timeline
+  bridge route rejected them as non-canonical. That split contract made a
+  selector-produced Desert URL return HTTP 400. Identifier parsing now applies
+  the same canonical UUID, case-insensitive ULID, and immutable-slug rules at
+  both boundaries, with the original identifier preserved for lookup.
+- A globally mounted Tasks pane queried the legacy Supabase shot hook even
+  while the editor was explicitly in Astrid/SQLite authority mode. This caused
+  unrelated credit/auth warnings and refused localhost requests on otherwise
+  healthy pages. The pane now consumes the host-owned authority-aware shots
+  surface. The genuinely deferred legacy `/shots` route remains explicit; it
+  is not silently presented as an Astrid-backed feature.
+
+### Virtualization tests must observe motion, not only settled frames
+
+- The Runaway lane mounted the correct virtual window after scrolling stopped,
+  but fast horizontal motion could briefly unmount every visible chip. A
+  direction-aware overscan window now follows wheel velocity while retaining a
+  bounded mounted-node count.
+- Early regression drafts produced false confidence by sharing one page across
+  concurrent trajectories, starting an edge case at the edge, using an
+  unreachable scroll extent, and applying a forward-only distance assertion to
+  reverse motion. The final browser test runs phases serially and samples every
+  animation frame during fast-forward, right-edge, reverse, and slow movement.
+  It requires a non-empty visible intersection throughout and independently
+  caps mounted nodes, so both blank-lane flicker and accidental devirtualization
+  fail the gate.
