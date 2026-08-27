@@ -36,6 +36,37 @@ function makeClipInfo(overrides: Partial<ManagedObjectInfo> = {}): ManagedObject
 // ---------------------------------------------------------------------------
 
 describe('ManagedObjectConfirmationDialog', () => {
+  it('renders the description without console diagnostics', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      render(
+        <ManagedObjectConfirmationDialog
+          open={true}
+          onOpenChange={() => {}}
+          managedInfo={makeClipInfo({ provenance: { prompt: 'a test' } })}
+          onEditAnyway={() => {}}
+          onOpenSource={() => {}}
+        />,
+      );
+
+      expect(consoleError).not.toHaveBeenCalled();
+      expect(consoleWarn).not.toHaveBeenCalled();
+
+      const dialog = screen.getByRole('alertdialog');
+      const describedBy = dialog.getAttribute('aria-describedby');
+      expect(describedBy).not.toBeNull();
+      const description = describedBy ? document.getElementById(describedBy) : null;
+      expect(description?.tagName).toBe('DIV');
+      expect(description).toHaveClass('space-y-3', 'text-sm', 'text-muted-foreground');
+      expect(description?.querySelectorAll('p')).toHaveLength(2);
+    } finally {
+      consoleError.mockRestore();
+      consoleWarn.mockRestore();
+    }
+  });
+
   // ── Null / empty state ───────────────────────────────────────────
 
   it('renders null when managedInfo is null', () => {

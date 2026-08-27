@@ -72,8 +72,12 @@ export function ManagedObjectConfirmationDialog({
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Managed {kindLabel}</AlertDialogTitle>
-          <AlertDialogDescription>
-            <div className="space-y-3 text-sm">
+          <AlertDialogDescription
+            // The default Description element is a <p>. This content contains
+            // multiple paragraphs and a provenance block, so render the
+            // accessible description as a div to keep the HTML outline valid.
+            render={<div className="space-y-3 text-sm" />}
+          >
             <p>
               This {kindLabel.toLowerCase()} is managed by{' '}
               <span className="font-semibold text-foreground">
@@ -98,7 +102,6 @@ export function ManagedObjectConfirmationDialog({
                 <code>{JSON.stringify(managedInfo.provenance)}</code>
               </div>
             )}
-          </div>
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
