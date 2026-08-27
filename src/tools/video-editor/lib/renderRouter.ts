@@ -155,6 +155,9 @@ const NATIVE_BUILTIN_CLIP_TYPES: ReadonlySet<string> = new Set([
   'effect-layer',
   'hold',
   'automation',
+  // First-party custom preview, but still rendered by the host's deterministic
+  // browser composition. It is not an Astrid worker/theme contribution.
+  'audio-reactive-colour',
 ]);
 
 const isNativeBuiltinClipType = (value: unknown): boolean => {
@@ -166,6 +169,9 @@ const isNativeBuiltinClipType = (value: unknown): boolean => {
 
 const isCustomRenderClipType = (value: unknown): boolean => {
   if (typeof value !== 'string') {
+    return false;
+  }
+  if (NATIVE_BUILTIN_CLIP_TYPES.has(value)) {
     return false;
   }
   const descriptor = getRegisteredClipTypeDescriptor(value);

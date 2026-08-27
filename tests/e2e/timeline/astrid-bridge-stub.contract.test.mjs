@@ -5,7 +5,11 @@ import http from 'node:http';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { createTimelineFixtures } from '../../../src/test/bridgeFixtures.mjs';
+import {
+  AUDIO_REACTIVE_FIXTURE_TIMELINE_ID,
+  createAudioReactiveColourFixtures,
+  createTimelineFixtures,
+} from '../../../src/test/bridgeFixtures.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const STUB = resolve(HERE, 'astrid-bridge-stub.mjs');
@@ -157,6 +161,37 @@ test('deterministic Astrid stub serves the typed Runaway contract', async () => 
     assert.equal(secondReset.config_version, firstReset.config_version + 1);
     assert.deepEqual(secondReset.config, pristine.config);
     assert.deepEqual(secondReset.registry, pristine.registry);
+
+    // The audio-reactive proof is a separate timeline state. Mutating it must
+    // not leak into the ordinary demo timeline, and the same hard reset must
+    // restore both states atomically.
+    const audioTimelineUrl = `${origin}/projects/demo-project/timelines/${AUDIO_REACTIVE_FIXTURE_TIMELINE_ID}`;
+    const audioPristine = createAudioReactiveColourFixtures({ assetSrcBaseUrl: origin });
+    const audioInitial = await (await fetch(audioTimelineUrl)).json();
+    assert.deepEqual(audioInitial.config, audioPristine.config);
+    assert.deepEqual(audioInitial.registry, audioPristine.registry);
+    assert.equal(audioInitial.config.output.fps, 30);
+    assert.deepEqual(
+      audioInitial.config.clips[0].params.events.map((event) => event.frame),
+      [2, 4],
+    );
+    const audioMutation = await fetch(`${audioTimelineUrl}/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        config: { ...audioInitial.config, clips: [] },
+        expected_version: audioInitial.config_version,
+      }),
+    });
+    assert.equal(audioMutation.status, 200);
+    const defaultAfterAudioMutation = await (await fetch(timelineUrl)).json();
+    assert.deepEqual(defaultAfterAudioMutation.config, pristine.config);
+
+    const audioResetResponse = await fetch(`${origin}/__test/reset`, { method: 'POST' });
+    assert.equal(audioResetResponse.status, 200);
+    const audioAfterReset = await (await fetch(audioTimelineUrl)).json();
+    assert.deepEqual(audioAfterReset.config, audioPristine.config);
+    assert.deepEqual(audioAfterReset.registry, audioPristine.registry);
   } finally {
     child.kill('SIGTERM');
     await once(child, 'exit');

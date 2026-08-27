@@ -1,5 +1,6 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AstridLocalClient } from '@/integrations/astrid/client.ts';
+import { isLocalTestMode } from '@/app/localTestRuntime.ts';
 import { useClientRender } from '@/tools/video-editor/hooks/useClientRender.ts';
 import type { CompositionMetadata } from '@/tools/video-editor/hooks/useDerivedTimeline.ts';
 import type { VideoEditorExporter } from '@/tools/video-editor/lib/browser-runtime.ts';
@@ -156,7 +157,7 @@ function progressPhase(progress: Record<string, unknown> | undefined): string | 
   return compactDiagnosticValue(progress?.phase) ?? undefined;
 }
 
-const CLIENT_CLIP_TYPES = new Set(['media', 'text', 'effect-layer', 'hold']);
+const CLIENT_CLIP_TYPES = new Set(['media', 'text', 'effect-layer', 'hold', 'audio-reactive-colour']);
 
 /**
  * Append the planner's own blocker messages to a route-level error line.
@@ -207,6 +208,16 @@ function getFastRenderRouteDecision(resolvedConfig: ResolvedTimelineConfig | nul
   }
 
   return { route: 'browser-remotion' as const, reason: 'pure_native_clips' };
+}
+
+/**
+ * Local browser-render proof is intentionally opt-in and DEV-only. The normal
+ * project-scoped editor remains Astrid-task-owned; this flag provides the
+ * explicit unscoped host used by deterministic WebCodecs acceptance tests.
+ */
+function isLocalBrowserRenderProof(): boolean {
+  return isLocalTestMode()
+    && new URLSearchParams(window.location.search).get('localBrowserRender') === '1';
 }
 
 type FastRenderRouteDecision = NonNullable<ReturnType<typeof getFastRenderRouteDecision>>;
@@ -823,7 +834,7 @@ export function useRenderState(
     // Once an editor is project-scoped, every supported render uses the same
     // Astrid task authority. Headless/browser-only hosts keep the WebCodecs
     // path below as an explicit unscoped capability, not a silent fallback.
-    if (await startAstridRender()) return;
+    if (!isLocalBrowserRenderProof() && await startAstridRender()) return;
 
     if (exporter && resolvedConfig) {
       setRenderStatus('rendering');

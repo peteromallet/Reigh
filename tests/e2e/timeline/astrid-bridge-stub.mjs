@@ -17,7 +17,9 @@ import fs from 'node:fs';
 import http from 'node:http';
 
 import {
+  createAudioReactiveColourFixtures,
   createTimelineFixtures,
+  AUDIO_REACTIVE_FIXTURE_TIMELINE_ID,
   FIXTURE_PROJECT as PROJECT,
   FIXTURE_TIMELINE_ID as TIMELINE_ID,
 } from '../../../src/test/bridgeFixtures.mjs';
@@ -32,10 +34,33 @@ const PUBLIC_DIR = new URL('../../../public/', import.meta.url);
 const initialFixtures = createTimelineFixtures({
   assetSrcBaseUrl: BASE_URL,
 });
-const { timelineSummary } = initialFixtures;
-let config = initialFixtures.config;
-let registry = initialFixtures.registry;
-let configVersion = 1;
+const audioReactiveFixtures = createAudioReactiveColourFixtures({
+  assetSrcBaseUrl: BASE_URL,
+});
+const timelineStates = new Map([
+  [TIMELINE_ID, {
+    timelineSummary: initialFixtures.timelineSummary,
+    config: initialFixtures.config,
+    registry: initialFixtures.registry,
+    configVersion: 1,
+  }],
+  [AUDIO_REACTIVE_FIXTURE_TIMELINE_ID, {
+    timelineSummary: audioReactiveFixtures.timelineSummary,
+    config: audioReactiveFixtures.config,
+    registry: audioReactiveFixtures.registry,
+    configVersion: 1,
+  }],
+]);
+
+function stateForTimeline(timelineId) {
+  const ref = decodeURIComponent(timelineId);
+  return timelineStates.get(ref)
+    ?? [...timelineStates.values()].find((state) => (
+      state.timelineSummary.timeline_id === ref
+      || state.timelineSummary.slug === ref
+      || state.timelineSummary.timeline_ulid === ref
+    ));
+}
 
 // Every mutating route shares one queue. This makes a hard reset atomic with
 // respect to CAS saves and registry writes instead of allowing an async body
@@ -50,17 +75,23 @@ function serializeMutation(operation) {
 
 function resetPristineState() {
   const pristine = createTimelineFixtures({ assetSrcBaseUrl: BASE_URL });
-  config = pristine.config;
-  registry = pristine.registry;
+  const audioPristine = createAudioReactiveColourFixtures({ assetSrcBaseUrl: BASE_URL });
+  const defaultState = stateForTimeline(TIMELINE_ID);
+  const audioState = stateForTimeline(AUDIO_REACTIVE_FIXTURE_TIMELINE_ID);
+  defaultState.config = pristine.config;
+  defaultState.registry = pristine.registry;
+  audioState.config = audioPristine.config;
+  audioState.registry = audioPristine.registry;
   // Versions are store history, not fixture contents. Never rewind them: a
   // client holding a pre-reset version must remain stale after every reset.
-  configVersion += 1;
+  defaultState.configVersion += 1;
+  audioState.configVersion += 1;
   return {
     reset: true,
-    ...timelineSummary,
-    config,
-    config_version: configVersion,
-    registry,
+    ...defaultState.timelineSummary,
+    config: defaultState.config,
+    config_version: defaultState.configVersion,
+    registry: defaultState.registry,
   };
 }
 
@@ -241,21 +272,27 @@ const server = http.createServer(async (req, res) => {
   }
 
   const timelinesMatch = path.match(/^\/projects\/([^/]+)\/timelines$/);
-  if (timelinesMatch) return send(res, 200, { timelines: [timelineSummary] });
+  if (timelinesMatch) {
+    return send(res, 200, { timelines: [...timelineStates.values()].map((state) => state.timelineSummary) });
+  }
 
   const timelineMatch = path.match(/^\/projects\/([^/]+)\/timelines\/([^/]+)$/);
   if (timelineMatch) {
+    const state = stateForTimeline(timelineMatch[2]);
+    if (!state) return send(res, 404, { error: 'timeline_not_found' });
     return send(res, 200, {
-      ...timelineSummary,
-      config,
-      config_version: configVersion,
-      registry,
+      ...state.timelineSummary,
+      config: state.config,
+      config_version: state.configVersion,
+      registry: state.registry,
     });
   }
 
   const assetMatch = path.match(/^\/projects\/([^/]+)\/timelines\/([^/]+)\/assets\/([^/]+)$/);
   if (assetMatch) {
-    const entry = registry.assets[decodeURIComponent(assetMatch[3])];
+    const state = stateForTimeline(assetMatch[2]);
+    if (!state) return send(res, 404, { error: 'timeline_not_found' });
+    const entry = state.registry.assets[decodeURIComponent(assetMatch[3])];
     if (!entry) return send(res, 404, { error: 'asset_not_found' });
     const file = new URL(entry.file, PUBLIC_DIR);
     let body;
@@ -304,37 +341,46 @@ const server = http.createServer(async (req, res) => {
   const saveMatch = path.match(/^\/projects\/([^/]+)\/timelines\/([^/]+)\/save$/);
   if (saveMatch && req.method === 'POST') {
     return serializeMutation(async () => {
+      const state = stateForTimeline(saveMatch[2]);
+      if (!state) return send(res, 404, { error: 'timeline_not_found' });
       const body = await readBody(req);
       // Optimistic concurrency. `expected_version` is optional on the wire: a
       // client that omits it keeps the old last-writer-wins behaviour, which is
       // what every pre-CAS caller relies on. When it *is* sent and does not match
       // head, the save is rejected so the client can reload and retry instead of
       // silently reverting whatever landed in between.
-      if (typeof body?.expected_version === 'number' && body.expected_version !== configVersion) {
-        console.log(`[bridge] 409 conflict: expected_version ${body.expected_version} != config_version ${configVersion}`);
+      if (typeof body?.expected_version === 'number' && body.expected_version !== state.configVersion) {
+        console.log(`[bridge] 409 conflict: expected_version ${body.expected_version} != config_version ${state.configVersion}`);
         return send(res, 409, {
           error: 'timeline_version_conflict',
-          detail: `expected_version ${body.expected_version} does not match config_version ${configVersion}`,
-          config_version: configVersion,
+          detail: `expected_version ${body.expected_version} does not match config_version ${state.configVersion}`,
+          config_version: state.configVersion,
         });
       }
-      if (body?.config) config = body.config;
+      if (body?.config) state.config = body.config;
       // B4: the combined CAS save carries config + registry (asset registration
       // rides the save — there is no separate registry write path).
       if (body?.registry) {
-        registry.assets = { ...registry.assets, ...(body.registry.assets ?? {}) };
+        state.registry.assets = { ...state.registry.assets, ...(body.registry.assets ?? {}) };
       }
-      configVersion += 1;
-      return send(res, 200, { ...timelineSummary, config, config_version: configVersion, registry });
+      state.configVersion += 1;
+      return send(res, 200, {
+        ...state.timelineSummary,
+        config: state.config,
+        config_version: state.configVersion,
+        registry: state.registry,
+      });
     });
   }
 
   const registryMatch = path.match(/^\/projects\/([^/]+)\/timelines\/([^/]+)\/registry$/);
   if (registryMatch && req.method === 'PUT') {
     return serializeMutation(async () => {
+      const state = stateForTimeline(registryMatch[2]);
+      if (!state) return send(res, 404, { error: 'timeline_not_found' });
       const body = await readBody(req);
-      if (body?.assets) registry.assets = body.assets;
-      return send(res, 200, registry);
+      if (body?.assets) state.registry.assets = body.assets;
+      return send(res, 200, state.registry);
     });
   }
 

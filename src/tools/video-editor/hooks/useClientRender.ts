@@ -266,6 +266,10 @@ export function useClientRender({
         licenseKey: FREE_LICENSE_KEY,
         videoCodec: resolvedVideoCodec,
         audioCodec: resolvedAudioCodec,
+        // Keep host exports aligned with Astrid's canonical 44.1 kHz stereo
+        // audio fixtures instead of relying on the Web Renderer default of
+        // 48 kHz. The browser encoder still determines the codec profile.
+        sampleRate: 44_100,
         onProgress: (progress: unknown) => {
           setRenderProgress(getProgressUpdate(progress, metadata.durationInFrames));
         },

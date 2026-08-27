@@ -25,6 +25,7 @@ export const FIXTURE_PROJECT = {
 };
 
 export const FIXTURE_TIMELINE_ID = 'demo-timeline';
+export const AUDIO_REACTIVE_FIXTURE_TIMELINE_ID = 'audio-reactive-colour-timeline';
 
 /**
  * Timeline document + registry exactly as the editor's Local mode expects
@@ -84,6 +85,82 @@ export function createTimelineFixtures({ assetSrcBaseUrl = '' } = {}) {
         { id: 'clip-title', track: 'V1', at: 4, clipType: 'text', hold: 2.5, text: { content: 'Hello timeline' } },
         { id: 'clip-detail', track: 'V1', at: 6.5, clipType: 'media', hold: 4, asset: 'demo-detail' },
         { id: 'clip-video', track: 'V2', at: 1.5, clipType: 'media', hold: 5, asset: 'demo-clip' },
+      ],
+    },
+  };
+}
+
+/**
+ * The isolated browser/export fixture for Astrid's pinned
+ * `audio-reactive-colour` semantic contract.  Keep this separate from the
+ * general four-clip demo: the effect fast path is deliberately one visual
+ * effect plus one audio clip, and must not be accidentally coupled to the
+ * caption/Runaway paired-release fixture.
+ *
+ * The marker values and frame positions are copied from Astrid's pinned
+ * renderer-parity fixture (`audio-reactive-colour.timeline.json`).  At 30fps
+ * the 0.6s hold is exactly 18 frames, making the decoded MP4 boundary
+ * assertions deterministic.
+ */
+export function createAudioReactiveColourFixtures({ assetSrcBaseUrl = '' } = {}) {
+  const src = (file) => `${assetSrcBaseUrl}/${file}`;
+  return {
+    timelineSummary: {
+      timeline_id: AUDIO_REACTIVE_FIXTURE_TIMELINE_ID,
+      timeline_ulid: '01j0000000000000000000colour',
+      slug: AUDIO_REACTIVE_FIXTURE_TIMELINE_ID,
+      name: 'Audio Reactive Colour Fixture',
+      is_default: false,
+    },
+    registry: {
+      assets: {
+        'audio-fixture': {
+          file: 'audio-reactive-colour-tone.wav',
+          src: src('audio-reactive-colour-tone.wav'),
+          type: 'audio/wav',
+          duration: 0.6,
+        },
+      },
+    },
+    config: {
+      output: {
+        resolution: '640x360',
+        fps: 30,
+        file: 'audio-reactive-colour.mp4',
+        background: null,
+        background_scale: null,
+      },
+      tracks: [
+        { id: 'colour', kind: 'visual', label: 'Colour', scale: 1, fit: 'contain', opacity: 1, blendMode: 'normal' },
+        { id: 'audio', kind: 'audio', label: 'Audio', scale: 1, fit: 'contain', opacity: 1, blendMode: 'normal' },
+      ],
+      clips: [
+        {
+          id: 'colour_map',
+          at: 0,
+          track: 'colour',
+          clipType: 'audio-reactive-colour',
+          hold: 0.6,
+          params: {
+            schemaVersion: 1,
+            initialColor: '#000000',
+            events: [
+              { id: 'first', frame: 2, color: '#203040' },
+              { id: 'second', frame: 4, color: '#405060' },
+            ],
+          },
+        },
+        {
+          id: 'audio_source',
+          at: 0,
+          track: 'audio',
+          clipType: 'media',
+          asset: 'audio-fixture',
+          from: 0,
+          to: 0.6,
+          speed: 1,
+          volume: 1,
+        },
       ],
     },
   };

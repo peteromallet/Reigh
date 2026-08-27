@@ -103,6 +103,18 @@ describe('Sprint 8 render-button router (decideRenderRoute)', () => {
     expect(decision.hasThemedClip).toBe(false);
   });
 
+  it('keeps the first-party audio-reactive colour effect on the browser export path', () => {
+    const decision = decideRenderRoute({
+      clips: [{ clipType: 'audio-reactive-colour' }],
+    });
+    expect(decision).toMatchObject({
+      route: 'browser-remotion',
+      hasThemedClip: false,
+      hasMediaClip: true,
+      reason: 'pure_native_clips',
+    });
+  });
+
   it('routes valid remotion_module clips by lane metadata before clipType fallback', () => {
     const decision = decideRenderRoute({
       clips: [{
