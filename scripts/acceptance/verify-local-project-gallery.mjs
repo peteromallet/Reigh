@@ -9,9 +9,9 @@ const DEFAULT_TIMELINE = '01KYPVKMW5STB4W6FE05ED8242';
 
 /** Checked-in examples for explicit matrix mode; override with REIGH_LOCAL_PROJECT_MATRIX. */
 export const DEFAULT_MATRIX = [
-  { project: 'desert-plant-growth', timeline: '01KYPVKMW5STB4W6FE05ED8242' },
-  { project: '2rp-launch-video', timeline: '01KZRNBQPERQB6KHBDZBZWEKZS' },
-  { project: 'ados-talks', timeline: '01KTBWN632Z935SD2SRXAP70YJ' },
+  { project: 'desert-plant-growth', timeline: '01KYPVKMW5STB4W6FE05ED8242', expectedShots: 5, expectedGenerations: 35 },
+  { project: 'music3-cybernetic', timeline: 'ygx6wd3ve4vfa3y6sh5sq7m8n9', expectedShots: 1, expectedGenerations: 9 },
+  { project: 'reigh-gallery-acceptance', timeline: '6efnn8cxnb6c0c7jr333dngdfx', expectedShots: 4, expectedGenerations: 12 },
 ];
 
 function rowFromValue(value, index) {
@@ -79,6 +79,37 @@ export function deriveShotExpectations(timelinePayload) {
 
 const sorted = (values) => [...values].sort();
 const unique = (values) => [...new Set(values)];
+
+/**
+ * Drop only source-route reads cancelled by the intentional editor→gallery
+ * navigation. The baseline keeps this exception scoped to the click window;
+ * media/detail requests, writes, other projects, and earlier failures remain
+ * diagnostics failures.
+ */
+export function discardExpectedGalleryNavigationAborts(diagnostics, origin, project, baselineLength) {
+  const expectedOrigin = new URL(origin).origin;
+  const projectPrefix = `/api/astrid/projects/${encodeURIComponent(project)}`;
+  const retained = diagnostics.failedRequests.filter((line, index) => {
+    if (index < baselineLength) return true;
+    const match = /^GET (\S+) \(net::ERR_ABORTED\)$/.exec(line);
+    if (!match) return true;
+    let requestUrl;
+    try {
+      requestUrl = new URL(match[1], origin);
+    } catch {
+      return true;
+    }
+    if (requestUrl.origin !== expectedOrigin) return true;
+    return !(
+      requestUrl.pathname === `${projectPrefix}/generations`
+      || requestUrl.pathname === `${projectPrefix}/timelines`
+      || requestUrl.pathname.startsWith(`${projectPrefix}/timelines/`)
+    );
+  });
+  const removed = diagnostics.failedRequests.length - retained.length;
+  diagnostics.failedRequests.splice(0, diagnostics.failedRequests.length, ...retained);
+  return removed;
+}
 
 async function waitUntil(predicate, timeout = 30_000, interval = 100) {
   const deadline = Date.now() + timeout;
@@ -264,8 +295,10 @@ async function runRow(page, origin, row, evidenceRoot, rowNumber) {
   // The destination starts its own bridge census and gallery reads. Do not
   // make the click wait for that background navigation to become idle; assert
   // the destination separately once the route has mounted.
+  const galleryNavigationFailureBaseline = diagnostics.failedRequests.length;
   await page.getByRole('button', { name: 'Go to Image Generation tool' }).click({ noWaitAfter: true });
   await page.getByRole('heading', { name: 'Image Generation' }).waitFor({ timeout: 30_000 });
+  discardExpectedGalleryNavigationAborts(diagnostics, origin, project, galleryNavigationFailureBaseline);
   const destination = new URL(page.url());
   assert.equal(destination.searchParams.get('localProject'), project, `${project} tool navigation preserves local project`);
   assert.equal(destination.searchParams.get('localTimeline'), timeline, `${project} tool navigation preserves local timeline`);
@@ -300,6 +333,9 @@ async function runRow(page, origin, row, evidenceRoot, rowNumber) {
   await page.keyboard.press('Escape');
   await lightbox.waitFor({ state: 'hidden', timeout: 30_000 });
   await page.waitForLoadState('networkidle', { timeout: 30_000 });
+  // A source-route request can report its cancellation after the destination
+  // heading mounts; keep the same baseline/window for that final settlement.
+  discardExpectedGalleryNavigationAborts(diagnostics, origin, project, galleryNavigationFailureBaseline);
   assertDiagnostics(diagnostics);
 
   // We are already on this exact URL. A same-URL goto can be a no-op and

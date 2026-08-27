@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_MATRIX, deriveShotExpectations, parseProjectMatrix } from './verify-local-project-gallery.mjs';
+import { DEFAULT_MATRIX, deriveShotExpectations, discardExpectedGalleryNavigationAborts, parseProjectMatrix } from './verify-local-project-gallery.mjs';
 
 test('parses explicit JSON matrix rows and optional expected counts', () => {
   assert.deepEqual(parseProjectMatrix(JSON.stringify([
@@ -44,4 +44,36 @@ test('derives pinned visual clip scope and excludes audio clips', () => {
 test('ignores malformed pinned groups without hiding valid groups', () => {
   const shots = deriveShotExpectations({ config: { pinnedShotGroups: [null, {}, { shotId: 'valid', clipIds: [] }] } });
   assert.deepEqual(shots.map((shot) => shot.id), ['valid']);
+});
+
+test('discards only new same-project source-route GET aborts during gallery navigation', () => {
+  const diagnostics = {
+    failedRequests: [
+      'GET http://127.0.0.1:2222/api/astrid/projects/demo/generations?limit=100 (net::ERR_ABORTED)',
+      'POST http://127.0.0.1:2222/api/astrid/projects/demo/timelines (net::ERR_ABORTED)',
+      'GET http://127.0.0.1:2222/api/astrid/projects/demo/media/asset/content (net::ERR_ABORTED)',
+      'GET http://127.0.0.1:2222/api/astrid/projects/other/timelines (net::ERR_ABORTED)',
+    ],
+  };
+  const removed = discardExpectedGalleryNavigationAborts(diagnostics, 'http://127.0.0.1:2222', 'demo', 1);
+  assert.equal(removed, 0);
+  assert.deepEqual(diagnostics.failedRequests, [
+    'GET http://127.0.0.1:2222/api/astrid/projects/demo/generations?limit=100 (net::ERR_ABORTED)',
+    'POST http://127.0.0.1:2222/api/astrid/projects/demo/timelines (net::ERR_ABORTED)',
+    'GET http://127.0.0.1:2222/api/astrid/projects/demo/media/asset/content (net::ERR_ABORTED)',
+    'GET http://127.0.0.1:2222/api/astrid/projects/other/timelines (net::ERR_ABORTED)',
+  ]);
+
+  const windowed = {
+    failedRequests: [
+      'GET http://127.0.0.1:2222/api/astrid/projects/demo/generations?limit=100 (net::ERR_ABORTED)',
+      'GET http://127.0.0.1:2222/api/astrid/projects/demo/timelines (net::ERR_ABORTED)',
+      'GET http://127.0.0.1:2222/api/astrid/projects/demo/timelines/demo-timeline (net::ERR_ABORTED)',
+      'GET http://127.0.0.1:2222/api/astrid/projects/demo/generations/generation-detail (net::ERR_ABORTED)',
+    ],
+  };
+  assert.equal(discardExpectedGalleryNavigationAborts(windowed, 'http://127.0.0.1:2222', 'demo', 0), 3);
+  assert.deepEqual(windowed.failedRequests, [
+    'GET http://127.0.0.1:2222/api/astrid/projects/demo/generations/generation-detail (net::ERR_ABORTED)',
+  ]);
 });
