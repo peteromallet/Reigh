@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto';
-import { lstatSync, readFileSync } from 'node:fs';
+import { lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { inflateSync } from 'node:zlib';
@@ -27,6 +27,13 @@ const SHA256 = /^[0-9a-f]{64}$/;
 const COMMIT = /^[0-9a-f]{40}$/;
 const PROBE_TIMEOUT_MS = 60 * 1_000;
 const GIT_OUTPUT_MAX_BUFFER = 32 * 1024 * 1024;
+// Git object IDs are full, immutable pins. Reusing a successfully verified
+// blob across manifest assertions keeps the adversarial test matrix bounded.
+// The namespace binds entries to the canonical worktree and Git object store;
+// a replacement repository at the same path therefore cannot reuse old data.
+const gitBlobCache = new Map();
+const verifiedCommitCache = new Set();
+const gitIdentityCache = new Map();
 
 class ProvenanceError extends Error {}
 
@@ -38,35 +45,123 @@ function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
 }
 
-function readGitBlob(repoRoot, commit, path) {
-  const result = runBoundedCommand('git', ['show', `${commit}:${path}`], {
+function gitProbeOptions(repoRoot, label, maxBuffer) {
+  return {
     cwd: repoRoot,
-    encoding: null,
     timeoutMs: PROBE_TIMEOUT_MS,
-    maxBuffer: GIT_OUTPUT_MAX_BUFFER,
+    maxBuffer,
     killSignal: 'SIGKILL',
-    label: `git show ${commit}:${path}`,
+    label,
     allowFailure: true,
+  };
+}
+
+function fileIdentity(path) {
+  const stats = statSync(path);
+  return `${stats.dev}:${stats.ino}:${stats.size}:${stats.mtimeMs}`;
+}
+
+export function resolveGitCacheNamespace(repoRoot) {
+  let canonicalRoot;
+  try {
+    canonicalRoot = realpathSync(resolve(repoRoot));
+  } catch (error) {
+    fail(`could not establish Git repository identity: ${error.message}`);
+  }
+  const cachedIdentity = gitIdentityCache.get(canonicalRoot);
+  if (cachedIdentity) {
+    try {
+      const currentSignatures = cachedIdentity.paths.map(fileIdentity);
+      if (currentSignatures.every((signature, index) => signature === cachedIdentity.signatures[index])) {
+        return cachedIdentity.namespace;
+      }
+    } catch {
+      // The Git directory/object store was replaced or removed. Re-resolve it
+      // below; a failed fresh probe remains fail-closed.
+    }
+    gitIdentityCache.delete(canonicalRoot);
+  }
+  const result = runBoundedCommand(
+    'git',
+    ['rev-parse', '--git-dir', '--git-common-dir', '--show-object-format'],
+    gitProbeOptions(repoRoot, 'Git repository identity', 64 * 1024),
+  );
+  if (result.error || result.status !== 0) {
+    fail(`could not establish Git repository identity: ${result.stderr.trim() || result.error?.message || 'unknown error'}`);
+  }
+  const [gitDir, commonDir, objectFormat, ...extra] = result.stdout.trim().split(/\r?\n/);
+  if (!gitDir || !commonDir || !/^[a-z0-9]+$/.test(objectFormat ?? '') || extra.length > 0) {
+    fail('could not establish Git repository identity: malformed Git metadata');
+  }
+  const objectsResult = runBoundedCommand(
+    'git',
+    ['rev-parse', '--git-path', 'objects'],
+    gitProbeOptions(repoRoot, 'Git object-store identity', 64 * 1024),
+  );
+  if (objectsResult.error || objectsResult.status !== 0) {
+    fail(`could not establish Git repository identity: ${objectsResult.stderr.trim() || objectsResult.error?.message || 'object store unavailable'}`);
+  }
+  const objectsDir = objectsResult.stdout.trim();
+  if (!objectsDir || objectsDir.includes('\n')) {
+    fail('could not establish Git repository identity: malformed object-store metadata');
+  }
+  try {
+    const canonicalGitDir = realpathSync(resolve(repoRoot, gitDir));
+    const canonicalCommonDir = realpathSync(resolve(repoRoot, commonDir));
+    const canonicalObjectsDir = realpathSync(resolve(repoRoot, objectsDir));
+    const canonicalConfig = join(canonicalCommonDir, 'config');
+    const gitStats = statSync(canonicalGitDir);
+    const commonStats = statSync(canonicalCommonDir);
+    const objectStats = statSync(canonicalObjectsDir);
+    const namespace = [
+      canonicalRoot,
+      canonicalGitDir,
+      `${gitStats.dev}:${gitStats.ino}`,
+      canonicalCommonDir,
+      `${commonStats.dev}:${commonStats.ino}`,
+      canonicalObjectsDir,
+      `${objectStats.dev}:${objectStats.ino}:${objectStats.size}:${objectStats.mtimeMs}`,
+      objectFormat,
+    ].join('\0');
+    const paths = [canonicalRoot, canonicalGitDir, canonicalCommonDir, canonicalObjectsDir, canonicalConfig];
+    gitIdentityCache.set(canonicalRoot, {
+      namespace,
+      paths,
+      signatures: paths.map(fileIdentity),
+    });
+    return namespace;
+  } catch (error) {
+    fail(`could not establish Git repository identity: ${error.message}`);
+  }
+}
+
+export function readGitBlob(repoRoot, cacheNamespace, commit, path) {
+  const cacheKey = `${cacheNamespace}\0${commit}\0${path}`;
+  const cached = gitBlobCache.get(cacheKey);
+  if (cached) return Buffer.from(cached);
+  const result = runBoundedCommand('git', ['show', `${commit}:${path}`], {
+    ...gitProbeOptions(repoRoot, `git show ${commit}:${path}`, GIT_OUTPUT_MAX_BUFFER),
+    encoding: null,
   });
   if (result.error || result.status !== 0) {
     fail(`could not read ${commit}:${path} from Git: ${result.stderr?.toString().trim() || result.error?.message || 'unknown error'}`);
   }
-  return result.stdout;
+  const bytes = Buffer.from(result.stdout);
+  gitBlobCache.set(cacheKey, bytes);
+  return Buffer.from(bytes);
 }
 
-function resolveCommit(repoRoot, ref, label) {
+function resolveCommit(repoRoot, cacheNamespace, ref, label) {
   if (!COMMIT.test(ref ?? '')) fail(`${label} must be a full lowercase commit pin`);
+  const cacheKey = `${cacheNamespace}\0${ref}`;
+  if (verifiedCommitCache.has(cacheKey)) return ref;
   const result = runBoundedCommand('git', ['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`], {
-    cwd: repoRoot,
-    timeoutMs: PROBE_TIMEOUT_MS,
-    maxBuffer: 64 * 1024,
-    killSignal: 'SIGKILL',
-    label: `${label} git rev-parse`,
-    allowFailure: true,
+    ...gitProbeOptions(repoRoot, `${label} git rev-parse`, 64 * 1024),
   });
   if (result.error || result.status !== 0 || result.stdout.trim() !== ref) {
     fail(`${label} is not available as the exact commit ${ref}`);
   }
+  verifiedCommitCache.add(cacheKey);
   return ref;
 }
 
@@ -320,6 +415,7 @@ export function verifyVisualBaselineProvenance({
   if (typeof readWorktreeArtifact !== 'function') {
     throw new TypeError('readWorktreeArtifact must be a function');
   }
+  const cacheNamespace = resolveGitCacheNamespace(repoRoot);
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
   if (manifest.schemaVersion !== 1) fail('visual baseline provenance schemaVersion must be 1');
   if (manifest.release !== 'extension-ship-quality-rc6') fail('visual baseline provenance is not bound to RC6');
@@ -350,14 +446,14 @@ export function verifyVisualBaselineProvenance({
       + `unexpected: ${unexpectedPaths.join(', ') || '<none>'}`,
     );
   }
-  const oldCommit = resolveCommit(repoRoot, refresh.oldSourceCommit, 'refresh.oldSourceCommit');
-  const newCommit = resolveCommit(repoRoot, refresh.newSourceCommit, 'refresh.newSourceCommit');
+  const oldCommit = resolveCommit(repoRoot, cacheNamespace, refresh.oldSourceCommit, 'refresh.oldSourceCommit');
+  const newCommit = resolveCommit(repoRoot, cacheNamespace, refresh.newSourceCommit, 'refresh.newSourceCommit');
   if (oldCommit === newCommit) fail('visual baseline refresh must have distinct old/new source commits');
   if (!Array.isArray(refresh.history) || refresh.history.length < 2) {
     fail('refresh.history must preserve the initial refresh and final correction stages');
   }
   for (const [index, stage] of refresh.history.entries()) {
-    resolveCommit(repoRoot, stage?.commit, `refresh.history[${index}].commit`);
+    resolveCommit(repoRoot, cacheNamespace, stage?.commit, `refresh.history[${index}].commit`);
     assertString(stage?.role, `refresh.history[${index}].role`);
     assertString(stage?.rationale, `refresh.history[${index}].rationale`);
   }
@@ -376,9 +472,9 @@ export function verifyVisualBaselineProvenance({
   assertString(refresh.review.agent.name, 'refresh.review.agent.name');
   assertString(refresh.review.agent.reviewedAt, 'refresh.review.agent.reviewedAt');
   assertString(refresh.review.human.status, 'refresh.review.human.status');
-  const configBytes = readGitBlob(repoRoot, newCommit, refresh.config.path);
+  const configBytes = readGitBlob(repoRoot, cacheNamespace, newCommit, refresh.config.path);
   if (sha256(configBytes) !== refresh.config.sha256) fail('refresh.config hash does not match the source commit');
-  const specBytes = readGitBlob(repoRoot, newCommit, refresh.spec.path);
+  const specBytes = readGitBlob(repoRoot, cacheNamespace, newCommit, refresh.spec.path);
   if (sha256(specBytes) !== refresh.spec.sha256) fail('refresh.spec hash does not match the source commit');
   const seenPaths = new Set();
   const seenArtifactPaths = new Set();
@@ -394,9 +490,9 @@ export function verifyVisualBaselineProvenance({
       fail(`${path} must bind old/new hashes to the refresh source commits`);
     }
     if (!SHA256.test(oldMeta.sha256) || !SHA256.test(newMeta.sha256)) fail(`${path} has an invalid image hash`);
-    const oldBytes = readGitBlob(repoRoot, oldCommit, path);
+    const oldBytes = readGitBlob(repoRoot, cacheNamespace, oldCommit, path);
     const newBytes = readFileSync(resolve(repoRoot, path));
-    const committedNewBytes = readGitBlob(repoRoot, newCommit, path);
+    const committedNewBytes = readGitBlob(repoRoot, cacheNamespace, newCommit, path);
     if (sha256(oldBytes) !== oldMeta.sha256) fail(`${path} old image hash does not match ${oldCommit}`);
     if (sha256(newBytes) !== newMeta.sha256) fail(`${path} current image hash does not match provenance`);
     if (sha256(committedNewBytes) !== newMeta.sha256) fail(`${path} current image is not the committed refresh image`);
@@ -427,10 +523,11 @@ export function verifyVisualBaselineProvenance({
       seenArtifactPaths.add(artifact.path);
       const artifactCommit = resolveCommit(
         repoRoot,
+        cacheNamespace,
         artifact.commit,
         `${path}.reviewedDiffArtifact.commit`,
       );
-      const committedArtifactBytes = readGitBlob(repoRoot, artifactCommit, artifact.path);
+      const committedArtifactBytes = readGitBlob(repoRoot, cacheNamespace, artifactCommit, artifact.path);
       if (sha256(committedArtifactBytes) !== artifact.sha256) {
         fail(`${path} reviewed diff artifact hash does not match ${artifactCommit}:${artifact.path}`);
       }

@@ -1,10 +1,16 @@
 import { strict as assert } from 'node:assert';
+import { execFileSync } from 'node:child_process';
 import {
   mkdtempSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
+  lstatSync,
+  renameSync,
+  rmdirSync,
   rmSync,
   symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -14,11 +20,32 @@ import { describe, it } from 'node:test';
 import {
   DEFAULT_MANIFEST_PATH,
   REPO_ROOT,
+  readGitBlob,
+  resolveGitCacheNamespace,
   verifyVisualBaselineProvenance,
 } from './verify-rc6-visual-baseline-provenance.mjs';
 
+// An outer release supervisor may terminate this worker between a fixture's
+// create() and finally blocks. Keep cleanup scoped to paths registered by this
+// process so an interrupted run cannot leave probe files in tracked evidence.
+const registeredTemporaryPaths = new Set();
+function cleanupRegisteredTemporaryPaths() {
+  for (const path of registeredTemporaryPaths) {
+    try { rmSync(path, { recursive: true, force: true }); } catch { /* best effort during signal */ }
+  }
+}
+process.once('SIGTERM', () => {
+  cleanupRegisteredTemporaryPaths();
+  process.exit(143);
+});
+process.once('SIGINT', () => {
+  cleanupRegisteredTemporaryPaths();
+  process.exit(130);
+});
+
 function withManifest(mutator, callback) {
   const root = mkdtempSync(resolve(tmpdir(), 'rc6-visual-provenance-test-'));
+  registeredTemporaryPaths.add(root);
   const path = resolve(root, 'manifest.json');
   const manifest = JSON.parse(readFileSync(DEFAULT_MANIFEST_PATH, 'utf8'));
   mutator(manifest);
@@ -27,6 +54,7 @@ function withManifest(mutator, callback) {
     return callback(path);
   } finally {
     rmSync(root, { recursive: true, force: true });
+    registeredTemporaryPaths.delete(root);
   }
 }
 
@@ -34,19 +62,155 @@ const VISUAL_DIFF_ROOT = resolve(
   REPO_ROOT,
   'docs/extensions/evidence/releases/extension-ship-quality-rc6/visual-diffs',
 );
+
+// A SIGTERM sent to `node --test` can reach the runner before its worker,
+// leaving a fixture created by that worker without running its finally block.
+// On the next run, reclaim only this test's PID-prefixed probe names whose
+// owning PID is definitely gone. Live or reused PIDs are never touched.
+function isLiveProcess(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code !== 'ESRCH';
+  }
+}
+
+function removeTemporaryEntry(path) {
+  let stats;
+  try {
+    stats = lstatSync(path);
+  } catch (error) {
+    if (error?.code === 'ENOENT') return;
+    return;
+  }
+  if (stats.isDirectory()) {
+    try {
+      // Never recurse: a nonempty directory is left intact for inspection.
+      rmdirSync(path);
+    } catch (error) {
+      if (error?.code === 'ENOENT' || error?.code === 'ENOTEMPTY' || error?.code === 'EEXIST') return;
+      if (error?.code !== 'ENOTDIR') return;
+      try { unlinkSync(path); } catch { /* raced with another cleanup */ }
+    }
+    return;
+  }
+  try {
+    unlinkSync(path);
+  } catch (error) {
+    if (error?.code !== 'EISDIR' && error?.code !== 'EPERM') return;
+    try { rmdirSync(path); } catch { /* raced or nonempty; never recurse */ }
+  }
+}
+
+function cleanupStaleTemporaryArtifacts() {
+  for (const name of readdirSync(VISUAL_DIFF_ROOT)) {
+    const match = name.match(/^(\d+)-\d+-(?:symlink|directory|untracked-same-bytes)\.diff\.png$/);
+    if (!match || isLiveProcess(Number(match[1]))) continue;
+    removeTemporaryEntry(resolve(VISUAL_DIFF_ROOT, name));
+  }
+}
+
+cleanupStaleTemporaryArtifacts();
 let temporaryArtifactOrdinal = 0;
 
 function withTemporaryArtifact(name, create, callback) {
   temporaryArtifactOrdinal += 1;
   const uniqueName = `${process.pid}-${temporaryArtifactOrdinal}-${name}`;
   const artifactPath = resolve(VISUAL_DIFF_ROOT, uniqueName);
+  registeredTemporaryPaths.add(artifactPath);
   try {
     create(artifactPath);
     return callback(artifactPath, uniqueName);
   } finally {
     rmSync(artifactPath, { recursive: true, force: true });
+    registeredTemporaryPaths.delete(artifactPath);
   }
 }
+
+it('does not recursively delete an unrelated nonempty stale probe directory', () => {
+  const path = resolve(VISUAL_DIFF_ROOT, `${Number.MAX_SAFE_INTEGER}-1-directory.diff.png`);
+  const child = resolve(path, 'keep-me.txt');
+  mkdirSync(path);
+  writeFileSync(child, 'must survive');
+  try {
+    cleanupStaleTemporaryArtifacts();
+    assert.equal(readFileSync(child, 'utf8'), 'must survive');
+    assert.equal(lstatSync(path).isDirectory(), true);
+  } finally {
+    rmSync(path, { recursive: true, force: true });
+  }
+});
+
+function createTemporaryGitRepo(root, contents) {
+  execFileSync('git', ['init', '--quiet', root]);
+  execFileSync('git', ['-C', root, 'config', 'user.email', 'rc6-test@example.invalid']);
+  execFileSync('git', ['-C', root, 'config', 'user.name', 'RC6 test']);
+  writeFileSync(resolve(root, 'blob.txt'), contents);
+  execFileSync('git', ['-C', root, 'add', '--', 'blob.txt']);
+  execFileSync('git', ['-C', root, 'commit', '--quiet', '-m', 'fixture']);
+  return execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+}
+
+it('invalidates Git probe caches across repository replacement, object loss, and test swaps', () => {
+  const root = mkdtempSync(resolve(tmpdir(), 'rc6-git-cache-test-'));
+  try {
+    const firstCommit = createTemporaryGitRepo(root, 'first');
+    const firstNamespace = resolveGitCacheNamespace(root);
+    assert.equal(readGitBlob(root, firstNamespace, firstCommit, 'blob.txt').toString(), 'first');
+
+    // Replace .git in-place. Canonical path alone must not reuse the first
+    // repository's bytes; inode identity and object-store metadata change.
+    rmSync(resolve(root, '.git'), { recursive: true, force: true });
+    const secondCommit = createTemporaryGitRepo(root, 'second');
+    const secondNamespace = resolveGitCacheNamespace(root);
+    assert.notEqual(secondNamespace, firstNamespace);
+    assert.equal(readGitBlob(root, secondNamespace, secondCommit, 'blob.txt').toString(), 'second');
+
+    // Removing the object store changes the namespace, and the fresh probe
+    // fails rather than reusing bytes cached under the old store identity.
+    const objectsDir = resolve(root, execFileSync('git', ['-C', root, 'rev-parse', '--git-path', 'objects'], { encoding: 'utf8' }).trim());
+    const missingObjectsDir = `${objectsDir}.missing`;
+    renameSync(objectsDir, missingObjectsDir);
+    mkdirSync(objectsDir);
+    try {
+      const missingNamespace = resolveGitCacheNamespace(root);
+      assert.notEqual(missingNamespace, secondNamespace);
+      assert.throws(
+        () => readGitBlob(root, missingNamespace, secondCommit, 'blob.txt'),
+        /could not read .* from Git/,
+      );
+    } finally {
+      rmSync(objectsDir, { recursive: true, force: true });
+      renameSync(missingObjectsDir, objectsDir);
+    }
+
+    // A failed read is never cached. After the same path becomes available
+    // under a new commit/store fingerprint, it is read normally.
+    assert.throws(
+      () => readGitBlob(root, secondNamespace, secondCommit, 'missing.txt'),
+      /could not read .* from Git/,
+    );
+    writeFileSync(resolve(root, 'missing.txt'), 'recovered');
+    execFileSync('git', ['-C', root, 'add', '--', 'missing.txt']);
+    execFileSync('git', ['-C', root, 'commit', '--quiet', '-m', 'recovery']);
+    const recoveredCommit = execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+    const recoveredNamespace = resolveGitCacheNamespace(root);
+    assert.notEqual(recoveredNamespace, secondNamespace);
+    assert.equal(readGitBlob(root, recoveredNamespace, recoveredCommit, 'missing.txt').toString(), 'recovered');
+
+    // A different temporary repository cannot inherit either cache namespace.
+    const otherRoot = mkdtempSync(resolve(tmpdir(), 'rc6-git-cache-swap-'));
+    try {
+      createTemporaryGitRepo(otherRoot, 'other');
+      assert.notEqual(resolveGitCacheNamespace(otherRoot), secondNamespace);
+    } finally {
+      rmSync(otherRoot, { recursive: true, force: true });
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 describe('RC6 visual baseline provenance verifier', () => {
   it('recomputes all old/new hashes, dimensions, and exact pixel ratios', () => {
