@@ -111,10 +111,12 @@ function ClipPreview({
 
 function LocalShotCard({
   shot,
-  onOpen,
+  selected,
+  onSelect,
 }: {
   shot: LocalTimelineShot;
-  onOpen: (shot: LocalTimelineShot) => void;
+  selected: boolean;
+  onSelect: (shot: LocalTimelineShot) => void;
 }) {
   const total = shot.durationSeconds;
   const status = shot.clips.length === 0
@@ -124,13 +126,17 @@ function LocalShotCard({
   return (
     <button
       type="button"
-      className="group w-full rounded-lg border border-border bg-card p-3 text-left shadow-sm transition-colors hover:border-primary/60 hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      onClick={() => onOpen(shot)}
-      aria-label={`Open shot ${shot.name}`}
+      className={`group w-full rounded-lg border bg-card p-3 text-left shadow-sm transition-colors hover:border-primary/60 hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selected ? 'border-primary ring-1 ring-primary/30' : 'border-border'}`}
+      onClick={() => onSelect(shot)}
+      aria-label={`Select shot ${shot.name}`}
+      aria-pressed={selected}
     >
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="truncate text-sm font-medium">{shot.name}</span>
-        <span className="shrink-0 text-[10px] text-muted-foreground">{formatDuration(shot.durationSeconds)}</span>
+        <span className="flex shrink-0 items-center gap-1.5 text-[10px] text-muted-foreground">
+          {selected && <span className="rounded bg-primary/10 px-1.5 py-0.5 text-primary">Selected</span>}
+          {formatDuration(shot.durationSeconds)}
+        </span>
       </div>
       <div
         className="relative w-full overflow-hidden rounded-md bg-muted/50 p-1"
@@ -172,11 +178,18 @@ export function LocalTimelineShotBrowser({ projectSlug, timelineRef }: LocalTime
     () => selectDocumentDerivedShots(documentQuery.data?.config, documentQuery.data?.registry, projectSlug),
     [documentQuery.data, projectSlug],
   );
+  const selectedShotId = useMemo(() => {
+    const encoded = location.hash.startsWith('#') ? location.hash.slice(1) : location.hash;
+    try {
+      return decodeURIComponent(encoded);
+    } catch {
+      return encoded;
+    }
+  }, [location.hash]);
 
-  const openShot = (shot: LocalTimelineShot) => {
-    // Keep the local scope in the URL while using the travel tool's existing
-    // hash-driven shot/editor flow. State carries the document-derived name
-    // for optimistic editor headers if the host supports it.
+  const selectShot = (shot: LocalTimelineShot) => {
+    // Selection is durable and linkable, but every card remains a complete,
+    // shot-scoped mini timeline; selecting a card never swaps in cloud state.
     navigate({
       pathname: location.pathname,
       search: location.search,
@@ -218,7 +231,14 @@ export function LocalTimelineShotBrowser({ projectSlug, timelineRef }: LocalTime
         <span className="rounded bg-muted px-2 py-1 text-[10px] text-muted-foreground">Local timeline</span>
       </div>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-        {shots.map((shot) => <LocalShotCard key={shot.id} shot={shot} onOpen={openShot} />)}
+        {shots.map((shot) => (
+          <LocalShotCard
+            key={shot.id}
+            shot={shot}
+            selected={shot.id === selectedShotId}
+            onSelect={selectShot}
+          />
+        ))}
       </div>
     </section>
   );

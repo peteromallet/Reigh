@@ -65,20 +65,24 @@ describe('LocalTimelineShotBrowser', () => {
   it('renders document groups and keeps unrelated clips out of each mini timeline', async () => {
     renderBrowser();
 
-    expect(await screen.findByRole('button', { name: 'Open shot Opening' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Select shot Opening' })).toBeInTheDocument();
     expect(screen.getByRole('img', { name: /Opening visual timeline: 1 visual clip/i })).toBeInTheDocument();
     expect(screen.queryByText('9.0s')).not.toBeInTheDocument();
     expect(screen.getByText('1 visual clip · 2.0s')).toBeInTheDocument();
   });
 
-  it('opens the existing hash-driven shot flow without dropping local scope', async () => {
+  it('persists visible shot selection in the hash without dropping local scope', async () => {
     renderBrowser();
-    fireEvent.click(await screen.findByRole('button', { name: 'Open shot Opening' }));
+    const shot = await screen.findByRole('button', { name: 'Select shot Opening' });
+    expect(shot).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(shot);
 
     await waitFor(() => {
       expect(screen.getByTestId('location')).toHaveTextContent(
         '/tools/travel-between-images?localProject=demo&localTimeline=timeline-1#shot-a',
       );
+      expect(shot).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByText('Selected')).toBeInTheDocument();
     });
   });
 
