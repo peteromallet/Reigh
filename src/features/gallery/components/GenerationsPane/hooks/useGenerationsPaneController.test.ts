@@ -181,7 +181,7 @@ describe('useGenerationsPaneController', () => {
     mocks.useIsMobile.mockReturnValue(false);
     mocks.useContainerWidth.mockReturnValue([{ current: null }, 640]);
     mocks.calculateGalleryLayout.mockReturnValue({ columns: 3 });
-    mocks.useLocation.mockReturnValue({ pathname: '/home' });
+    mocks.useLocation.mockReturnValue({ pathname: '/home', search: '' });
     mocks.useNavigate.mockReturnValue(vi.fn());
     mocks.isSpecialFilter.mockReturnValue(false);
     mocks.usePaneInteractionLifecycle.mockReturnValue({
@@ -287,6 +287,22 @@ describe('useGenerationsPaneController', () => {
     });
   });
 
+  it('keeps the Astrid project and timeline when the gallery shortcut changes tools', () => {
+    const navigate = vi.fn();
+    mocks.useNavigate.mockReturnValue(navigate);
+    mocks.useLocation.mockReturnValue({
+      pathname: '/tools/travel-between-images',
+      search: '?localProject=desert-plant-growth&localTimeline=01KYPVKMW5STB4W6FE05ED8242',
+    });
+
+    const { result } = renderHook(() => useGenerationsPaneController());
+    act(() => result.current.navigation.handleNavigateToImageGeneration());
+
+    expect(navigate).toHaveBeenCalledWith(
+      '/tools/image-generation?localProject=desert-plant-growth&localTimeline=01KYPVKMW5STB4W6FE05ED8242',
+    );
+  });
+
   it('forces unlock on image-generation route and prefers gallery shot data over fallback context', () => {
     const setIsGenerationsPaneLocked = vi.fn();
     const galleryPageState = buildGalleryPageState({
@@ -296,7 +312,7 @@ describe('useGenerationsPaneController', () => {
       starredOnly: true,
     });
 
-    mocks.useLocation.mockReturnValue({ pathname: '/tools/image-generation' });
+    mocks.useLocation.mockReturnValue({ pathname: '/tools/image-generation', search: '' });
     mocks.panesState = buildPanesState({
       isGenerationsPaneOpen: false,
       isGenerationsPaneLocked: true,

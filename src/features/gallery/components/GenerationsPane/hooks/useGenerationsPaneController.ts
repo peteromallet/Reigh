@@ -31,6 +31,7 @@ import { useStableObject } from '@/shared/hooks/useStableObject';
 import { usePaneInteractionLifecycle } from '@/shared/components/panes/usePaneInteractionLifecycle';
 import { SHOT_FILTER, isSpecialFilter } from '@/shared/constants/filterConstants';
 import { useAppEventListener } from '@/shared/lib/typedEvents';
+import { withLocalModeParams } from '@/shared/dev/localModeUrl';
 
 // Fallback rows for pane (smaller than full page galleries)
 const PANE_ROWS = 2;
@@ -344,8 +345,8 @@ export const useGenerationsPaneController = () => {
 
   const handleNavigateToImageGeneration = useCallback(() => {
     setIsGenerationsPaneLocked(false);
-    navigate(TOOL_ROUTES.IMAGE_GENERATION);
-  }, [navigate, setIsGenerationsPaneLocked]);
+    navigate(withLocalModeParams(TOOL_ROUTES.IMAGE_GENERATION, location.search));
+  }, [location.search, navigate, setIsGenerationsPaneLocked]);
 
   useRenderLogger('GenerationsPane', {
     page: generationData.page,
