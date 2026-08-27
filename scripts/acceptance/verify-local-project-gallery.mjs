@@ -261,7 +261,10 @@ async function runRow(page, origin, row, evidenceRoot, rowNumber) {
   assert.equal(await page.locator('div.click-ripple').filter({ has: page.locator('button[aria-label="Duplicate shot"]') }).count(), shots.length, `${project} browser back returns to shot overview`);
   assert.equal(await page.getByTitle('Back to shots').count(), 0, `${project} browser back leaves shot detail`);
 
-  await page.getByRole('button', { name: 'Go to Image Generation tool' }).click();
+  // The destination starts its own bridge census and gallery reads. Do not
+  // make the click wait for that background navigation to become idle; assert
+  // the destination separately once the route has mounted.
+  await page.getByRole('button', { name: 'Go to Image Generation tool' }).click({ noWaitAfter: true });
   await page.getByRole('heading', { name: 'Image Generation' }).waitFor({ timeout: 30_000 });
   const destination = new URL(page.url());
   assert.equal(destination.searchParams.get('localProject'), project, `${project} tool navigation preserves local project`);
