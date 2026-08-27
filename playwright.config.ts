@@ -145,8 +145,8 @@ export default defineConfig({
   },
   // Array form: the timeline device specs also need the local-mode bridge, so
   // their opt-in flag adds it as a second managed server instead of a second
-  // terminal. `reuseExistingServer` keeps a hand-started bridge/dev server valid
-  // for anyone iterating against a hot process.
+  // terminal. Every server is owned by this run; an existing process is never
+  // adopted, which keeps browser evidence tied to the configured checkout.
   webServer: [
     {
       command: `npm run dev -- --host 127.0.0.1 --port ${port}`,

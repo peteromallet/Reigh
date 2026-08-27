@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -26,13 +27,13 @@ export const VISUAL_DIFF_ARTIFACT_ROOT =
 const SHA256 = /^[0-9a-f]{64}$/;
 const COMMIT = /^[0-9a-f]{40}$/;
 const PROBE_TIMEOUT_MS = 60 * 1_000;
-const GIT_OUTPUT_MAX_BUFFER = 32 * 1024 * 1024;
-// Git object IDs are full, immutable pins. Reusing a successfully verified
-// blob across manifest assertions keeps the adversarial test matrix bounded.
-// The namespace binds entries to the canonical worktree and Git object store;
-// a replacement repository at the same path therefore cannot reuse old data.
-const gitBlobCache = new Map();
-const verifiedCommitCache = new Set();
+const GIT_BATCH_OUTPUT_MAX_BUFFER = 128 * 1024 * 1024;
+// Git object IDs are full, immutable pins, but the object store is still an
+// external mutable input to this process (for example, a damaged loose object
+// or a test fixture replacing .git in place). Never return cached commit/blob
+// data without first asking Git to resolve the current commit/path to its
+// object ID and type. Blob bytes are cached only by that immutable object ID
+// inside a single verification-run snapshot.
 const gitIdentityCache = new Map();
 
 class ProvenanceError extends Error {}
@@ -136,32 +137,129 @@ export function resolveGitCacheNamespace(repoRoot) {
 }
 
 export function readGitBlob(repoRoot, cacheNamespace, commit, path) {
-  const cacheKey = `${cacheNamespace}\0${commit}\0${path}`;
-  const cached = gitBlobCache.get(cacheKey);
-  if (cached) return Buffer.from(cached);
-  const result = runBoundedCommand('git', ['show', `${commit}:${path}`], {
-    ...gitProbeOptions(repoRoot, `git show ${commit}:${path}`, GIT_OUTPUT_MAX_BUFFER),
-    encoding: null,
+  return createGitBlobSnapshot(repoRoot, cacheNamespace, [{ commit, path }]).read(commit, path);
+}
+
+function validateGitBlobSpec(spec) {
+  if (!COMMIT.test(spec?.commit ?? '')) fail('could not read Git blob: invalid commit pin');
+  if (typeof spec?.path !== 'string' || spec.path.length === 0 || /[\0\r\n]/.test(spec.path)) {
+    fail('could not read Git blob: invalid path');
+  }
+}
+
+function runFixedGit(repoRoot, args, { input, encoding, maxBuffer, label }) {
+  const result = spawnSync('git', args, {
+    cwd: repoRoot,
+    ...(input === undefined ? {} : { input }),
+    encoding,
+    timeout: PROBE_TIMEOUT_MS,
+    maxBuffer,
+    shell: false,
+    windowsHide: true,
   });
   if (result.error || result.status !== 0) {
-    fail(`could not read ${commit}:${path} from Git: ${result.stderr?.toString().trim() || result.error?.message || 'unknown error'}`);
+    fail(`${label}: ${result.stderr?.toString().trim() || result.error?.message || 'unknown error'}`);
   }
-  const bytes = Buffer.from(result.stdout);
-  gitBlobCache.set(cacheKey, bytes);
-  return Buffer.from(bytes);
+  return result;
+}
+
+function gitBlobSpecKey(commit, path) {
+  return `${commit}\0${path}`;
+}
+
+function readGitBatch(repoRoot, specs, label) {
+  const result = runFixedGit(
+    repoRoot,
+    ['cat-file', '--batch'],
+    {
+      input: `${specs.map(({ commit, path }) => `${commit}:${path}`).join('\n')}\n`,
+      encoding: null,
+      maxBuffer: GIT_BATCH_OUTPUT_MAX_BUFFER,
+      label,
+    },
+  );
+  const output = Buffer.from(result.stdout);
+  const records = new Map();
+  let offset = 0;
+  for (const spec of specs) {
+    const headerEnd = output.indexOf(0x0a, offset);
+    if (headerEnd < 0) fail(`${label}: truncated Git batch header for ${spec.commit}:${spec.path}`);
+    const header = output.subarray(offset, headerEnd).toString('utf8').split(' ');
+    const [objectId, objectType, sizeText] = header;
+    if (!/^[0-9a-f]{40,64}$/.test(objectId ?? '') || objectType !== 'blob' || !/^\d+$/.test(sizeText ?? '')) {
+      fail(`could not read ${spec.commit}:${spec.path} from Git: expected a blob object`);
+    }
+    const size = Number(sizeText);
+    if (!Number.isSafeInteger(size) || size < 0) fail(`${label}: invalid Git blob size for ${spec.commit}:${spec.path}`);
+    const dataStart = headerEnd + 1;
+    const dataEnd = dataStart + size;
+    if (dataEnd >= output.length || output[dataEnd] !== 0x0a) {
+      fail(`${label}: truncated Git batch blob for ${spec.commit}:${spec.path}`);
+    }
+    records.set(gitBlobSpecKey(spec.commit, spec.path), {
+      objectId,
+      objectType,
+      bytes: Buffer.from(output.subarray(dataStart, dataEnd)),
+    });
+    offset = dataEnd + 1;
+  }
+  if (offset !== output.length) fail(`${label}: unexpected trailing Git batch output`);
+  return records;
+}
+
+/**
+ * Capture and revalidate one verification run's Git inputs. The snapshot is
+ * intentionally not module-global: a new verifier call always rebuilds it.
+ * Before PASS, revalidate() resolves every commit/path again and compares the
+ * current OID, type, and bytes, detecting replacement or in-run tampering.
+ */
+export function createGitBlobSnapshot(repoRoot, cacheNamespace, inputSpecs) {
+  if (!Array.isArray(inputSpecs) || inputSpecs.length === 0) {
+    fail('Git blob snapshot requires at least one path');
+  }
+  const specs = [];
+  const seen = new Set();
+  for (const spec of inputSpecs) {
+    validateGitBlobSpec(spec);
+    const key = gitBlobSpecKey(spec.commit, spec.path);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    specs.push({ commit: spec.commit, path: spec.path });
+  }
+  const records = readGitBatch(repoRoot, specs, 'Git blob snapshot');
+  const read = (commit, path) => {
+    const record = records.get(gitBlobSpecKey(commit, path));
+    if (!record) fail(`Git blob was not included in this verification snapshot: ${commit}:${path}`);
+    return Buffer.from(record.bytes);
+  };
+  const revalidate = () => {
+    const current = readGitBatch(repoRoot, specs, 'Git blob snapshot revalidation');
+    for (const spec of specs) {
+      const key = gitBlobSpecKey(spec.commit, spec.path);
+      const expected = records.get(key);
+      const actual = current.get(key);
+      if (!actual || actual.objectId !== expected.objectId || actual.objectType !== expected.objectType
+        || !actual.bytes.equals(expected.bytes)) {
+        fail(`Git blob changed during visual provenance verification: ${spec.commit}:${spec.path}`);
+      }
+    }
+  };
+  return Object.freeze({ read, revalidate, specs: Object.freeze(specs) });
 }
 
 function resolveCommit(repoRoot, cacheNamespace, ref, label) {
   if (!COMMIT.test(ref ?? '')) fail(`${label} must be a full lowercase commit pin`);
-  const cacheKey = `${cacheNamespace}\0${ref}`;
-  if (verifiedCommitCache.has(cacheKey)) return ref;
-  const result = runBoundedCommand('git', ['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`], {
-    ...gitProbeOptions(repoRoot, `${label} git rev-parse`, 64 * 1024),
-  });
+  // Do not cache successful resolution: refs/object stores can change while a
+  // verifier is running, and a prior success must not hide that mutation.
+  void cacheNamespace;
+  const result = runFixedGit(
+    repoRoot,
+    ['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`],
+    { encoding: 'utf8', maxBuffer: 64 * 1024, label: `${label} git rev-parse` },
+  );
   if (result.error || result.status !== 0 || result.stdout.trim() !== ref) {
     fail(`${label} is not available as the exact commit ${ref}`);
   }
-  verifiedCommitCache.add(cacheKey);
   return ref;
 }
 
@@ -472,9 +570,35 @@ export function verifyVisualBaselineProvenance({
   assertString(refresh.review.agent.name, 'refresh.review.agent.name');
   assertString(refresh.review.agent.reviewedAt, 'refresh.review.agent.reviewedAt');
   assertString(refresh.review.human.status, 'refresh.review.human.status');
-  const configBytes = readGitBlob(repoRoot, cacheNamespace, newCommit, refresh.config.path);
+  const gitSpecs = [
+    { commit: newCommit, path: refresh.config.path },
+    { commit: newCommit, path: refresh.spec.path },
+  ];
+  const artifactCommits = new Map();
+  for (const [index, entry] of manifest.entries.entries()) {
+    gitSpecs.push({ commit: oldCommit, path: entry.path }, { commit: newCommit, path: entry.path });
+    const artifact = entry.reviewedDiffArtifact;
+    if (artifact && COMMIT.test(artifact.commit ?? '')
+      && typeof artifact.path === 'string' && SHA256.test(artifact.sha256 ?? '')) {
+      const artifactPath = assertSafeVisualDiffArtifactPath(
+        repoRoot,
+        artifact.path,
+        `${entry.path}.reviewedDiffArtifact.path`,
+      );
+      const artifactCommit = resolveCommit(
+        repoRoot,
+        cacheNamespace,
+        artifact.commit,
+        `${entry.path}.reviewedDiffArtifact.commit`,
+      );
+      artifactCommits.set(index, { artifact, artifactPath, artifactCommit });
+      gitSpecs.push({ commit: artifactCommit, path: artifact.path });
+    }
+  }
+  const gitSnapshot = createGitBlobSnapshot(repoRoot, cacheNamespace, gitSpecs);
+  const configBytes = gitSnapshot.read(newCommit, refresh.config.path);
   if (sha256(configBytes) !== refresh.config.sha256) fail('refresh.config hash does not match the source commit');
-  const specBytes = readGitBlob(repoRoot, cacheNamespace, newCommit, refresh.spec.path);
+  const specBytes = gitSnapshot.read(newCommit, refresh.spec.path);
   if (sha256(specBytes) !== refresh.spec.sha256) fail('refresh.spec hash does not match the source commit');
   const seenPaths = new Set();
   const seenArtifactPaths = new Set();
@@ -490,9 +614,9 @@ export function verifyVisualBaselineProvenance({
       fail(`${path} must bind old/new hashes to the refresh source commits`);
     }
     if (!SHA256.test(oldMeta.sha256) || !SHA256.test(newMeta.sha256)) fail(`${path} has an invalid image hash`);
-    const oldBytes = readGitBlob(repoRoot, cacheNamespace, oldCommit, path);
+    const oldBytes = gitSnapshot.read(oldCommit, path);
     const newBytes = readFileSync(resolve(repoRoot, path));
-    const committedNewBytes = readGitBlob(repoRoot, cacheNamespace, newCommit, path);
+    const committedNewBytes = gitSnapshot.read(newCommit, path);
     if (sha256(oldBytes) !== oldMeta.sha256) fail(`${path} old image hash does not match ${oldCommit}`);
     if (sha256(newBytes) !== newMeta.sha256) fail(`${path} current image hash does not match provenance`);
     if (sha256(committedNewBytes) !== newMeta.sha256) fail(`${path} current image is not the committed refresh image`);
@@ -512,22 +636,15 @@ export function verifyVisualBaselineProvenance({
         fail(`${path} changed pixels require a hashed reviewed diff artifact bound to both source commits`);
       }
       assertString(artifact.path, `${path}.reviewedDiffArtifact.path`);
-      const artifactPath = assertSafeVisualDiffArtifactPath(
-        repoRoot,
-        artifact.path,
-        `${path}.reviewedDiffArtifact.path`,
-      );
+      const prevalidatedArtifact = artifactCommits.get(index);
+      if (!prevalidatedArtifact) fail(`${path} reviewed diff artifact metadata could not be safely snapshotted`);
+      const artifactPath = prevalidatedArtifact.artifactPath;
       if (seenArtifactPaths.has(artifact.path)) {
         fail(`duplicate reviewed diff artifact path: ${artifact.path}`);
       }
       seenArtifactPaths.add(artifact.path);
-      const artifactCommit = resolveCommit(
-        repoRoot,
-        cacheNamespace,
-        artifact.commit,
-        `${path}.reviewedDiffArtifact.commit`,
-      );
-      const committedArtifactBytes = readGitBlob(repoRoot, cacheNamespace, artifactCommit, artifact.path);
+      const artifactCommit = prevalidatedArtifact.artifactCommit;
+      const committedArtifactBytes = gitSnapshot.read(artifactCommit, artifact.path);
       if (sha256(committedArtifactBytes) !== artifact.sha256) {
         fail(`${path} reviewed diff artifact hash does not match ${artifactCommit}:${artifact.path}`);
       }
@@ -554,6 +671,7 @@ export function verifyVisualBaselineProvenance({
       ...(entry.reviewedDiffArtifact ? { reviewedDiffArtifact: entry.reviewedDiffArtifact } : {}),
     });
   }
+  gitSnapshot.revalidate();
   return Object.freeze({
     release: manifest.release,
     oldSourceCommit: oldCommit,

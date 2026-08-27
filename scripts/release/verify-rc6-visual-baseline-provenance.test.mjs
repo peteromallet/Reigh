@@ -1,6 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { execFileSync } from 'node:child_process';
 import {
+  chmodSync,
   mkdtempSync,
   mkdirSync,
   readdirSync,
@@ -10,6 +11,8 @@ import {
   rmdirSync,
   rmSync,
   symlinkSync,
+  statSync,
+  utimesSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -20,6 +23,7 @@ import { describe, it } from 'node:test';
 import {
   DEFAULT_MANIFEST_PATH,
   REPO_ROOT,
+  createGitBlobSnapshot,
   readGitBlob,
   resolveGitCacheNamespace,
   verifyVisualBaselineProvenance,
@@ -152,7 +156,7 @@ function createTemporaryGitRepo(root, contents) {
   return execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 }
 
-it('invalidates Git probe caches across repository replacement, object loss, and test swaps', () => {
+it('rebuilds run-scoped Git snapshots across repository replacement, object loss, and test swaps', () => {
   const root = mkdtempSync(resolve(tmpdir(), 'rc6-git-cache-test-'));
   try {
     const firstCommit = createTemporaryGitRepo(root, 'first');
@@ -207,6 +211,64 @@ it('invalidates Git probe caches across repository replacement, object loss, and
     } finally {
       rmSync(otherRoot, { recursive: true, force: true });
     }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+it('rejects an in-place loose Git object replacement even with restored metadata', () => {
+  const root = mkdtempSync(resolve(tmpdir(), 'rc6-git-object-integrity-'));
+  try {
+    const commit = createTemporaryGitRepo(root, 'integrity');
+    const namespace = resolveGitCacheNamespace(root);
+    assert.equal(readGitBlob(root, namespace, commit, 'blob.txt').toString(), 'integrity');
+
+    const blob = execFileSync('git', ['-C', root, 'rev-parse', `${commit}:blob.txt`], { encoding: 'utf8' }).trim();
+    const objectPath = resolve(root, '.git', 'objects', blob.slice(0, 2), blob.slice(2));
+    const original = readFileSync(objectPath);
+    const originalStats = statSync(objectPath);
+    try {
+      // Keep the path, inode, size, and timestamps as close as possible to the
+      // original while corrupting the object. A namespace/metadata cache must
+      // not turn the prior successful bytes into a false PASS.
+      chmodSync(objectPath, 0o600);
+      writeFileSync(objectPath, Buffer.alloc(original.length, 0));
+      utimesSync(objectPath, originalStats.atime, originalStats.mtime);
+      assert.throws(() => readGitBlob(root, namespace, commit, 'blob.txt'), /could not (?:probe|read) .* Git/);
+    } finally {
+      writeFileSync(objectPath, original);
+      chmodSync(objectPath, originalStats.mode & 0o7777);
+      utimesSync(objectPath, originalStats.atime, originalStats.mtime);
+    }
+    assert.equal(readGitBlob(root, namespace, commit, 'blob.txt').toString(), 'integrity');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+it('revalidates a run-scoped Git snapshot after in-run object tampering', () => {
+  const root = mkdtempSync(resolve(tmpdir(), 'rc6-git-snapshot-integrity-'));
+  try {
+    const commit = createTemporaryGitRepo(root, 'snapshot');
+    const namespace = resolveGitCacheNamespace(root);
+    const snapshot = createGitBlobSnapshot(root, namespace, [{ commit, path: 'blob.txt' }]);
+    assert.equal(snapshot.read(commit, 'blob.txt').toString(), 'snapshot');
+
+    const blob = execFileSync('git', ['-C', root, 'rev-parse', `${commit}:blob.txt`], { encoding: 'utf8' }).trim();
+    const objectPath = resolve(root, '.git', 'objects', blob.slice(0, 2), blob.slice(2));
+    const original = readFileSync(objectPath);
+    const originalStats = statSync(objectPath);
+    try {
+      chmodSync(objectPath, 0o600);
+      writeFileSync(objectPath, Buffer.alloc(original.length, 0));
+      utimesSync(objectPath, originalStats.atime, originalStats.mtime);
+      assert.throws(() => snapshot.revalidate(), /could not read .* from Git/);
+    } finally {
+      writeFileSync(objectPath, original);
+      chmodSync(objectPath, originalStats.mode & 0o7777);
+      utimesSync(objectPath, originalStats.atime, originalStats.mtime);
+    }
+    snapshot.revalidate();
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
