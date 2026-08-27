@@ -2,9 +2,10 @@
 
 Date: 2026-08-23
 
-This is the release-hardening reference for the ten Creative Lab extensions,
-Transcript Caption Foundry, and the Astrid Runaway typed-timeline viewer. It
-turns the exploratory implementation into a measurable production release.
+This is the release-hardening reference for the 13 dev-local extensions: the
+ten Creative Lab extensions, Scene Phase Markers, Transcript Caption Foundry,
+and the Astrid Runaway typed-timeline viewer. It turns the exploratory
+implementation into a measurable production release.
 
 For the implementation history and concrete frictions already found, see
 [`creative-extension-lab-frictions.md`](./creative-extension-lab-frictions.md).

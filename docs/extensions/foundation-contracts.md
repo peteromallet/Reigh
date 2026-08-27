@@ -27,7 +27,7 @@ Every extension manifest (`reigh-extension.json`) must include:
 
 Optional fields: `description`, `contributions`, `settingsDefaults`, `settingsSchema`, `messages`, `permissions`, `processes`, `dependsOn`, `migrations`.
 
-**Manifest format is frozen for V1.** There are 9 consistent example manifests in `src/tools/video-editor/examples/extensions/*/reigh-extension.json`.
+**Manifest format is frozen for V1.** There are 18 checked-in extension manifests under `src/tools/video-editor/examples/extensions/` (8 core example manifests plus 10 Creative Lab manifests).
 
 ### 1.3 Immutability
 
