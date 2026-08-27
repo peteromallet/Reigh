@@ -11,6 +11,7 @@ import {
   PROCESS_SCOPE_POLL_MS,
   PROCESS_SCOPE_SCAN_RETRIES,
   PROCESS_SCOPE_SCAN_TIMEOUT_MS,
+  inspectBrokerOwner,
   retryProcessScan,
 } from './bounded-command-scan-policy.mjs';
 
@@ -354,13 +355,18 @@ async function runBroker(socketPath, candidateNonce, ownerPid, ownerStartSeconds
   let ownerStart = null;
   if (hasOwner) {
     const rows = await scanAll().catch(() => null);
-    const ownerRow = rows?.find((row) => row.pid === ownerPid
-      && Math.abs(Math.floor(Date.parse(row.start) / 1_000) - ownerStartSeconds) <= 2);
-    if (!ownerRow) {
+    const ownerProbe = inspectBrokerOwner(rows, ownerPid, ownerStartSeconds);
+    if (ownerProbe.status === 'unknown') {
+      // A process-table failure is uncertainty, not evidence that the parent
+      // died.  Leave the private lock/socket artifacts for the next caller's
+      // stale-owner recovery instead of deleting a potentially live broker.
+      return;
+    }
+    if (ownerProbe.status === 'dead') {
       cleanupOwnedArtifacts();
       return;
     }
-    ownerStart = ownerRow.start;
+    ownerStart = ownerProbe.row.start;
   }
   try { unlinkSync(socketPath); } catch { /* no stale socket */ }
   const clients = new Set();

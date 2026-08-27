@@ -16,6 +16,19 @@ export const PROCESS_SCOPE_CLEANUP_ALLOWANCE_MS = (
   + 5_000
 );
 
+/**
+ * Classify the broker owner's startup probe without treating an unavailable
+ * process scan as proof that the owner is dead.  The broker must only remove
+ * its lock/socket artifacts after a successful scan positively excludes the
+ * owner; process-table contention is an unknown result.
+ */
+export function inspectBrokerOwner(rows, ownerPid, ownerStartSeconds) {
+  if (!Array.isArray(rows)) return Object.freeze({ status: 'unknown', row: null });
+  const row = rows.find((candidate) => candidate?.pid === ownerPid
+    && Math.abs(Math.floor(Date.parse(candidate.start) / 1_000) - ownerStartSeconds) <= 2) ?? null;
+  return Object.freeze({ status: row ? 'alive' : 'dead', row });
+}
+
 export async function retryProcessScan(
   scanOnce,
   {

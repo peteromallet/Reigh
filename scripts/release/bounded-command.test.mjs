@@ -17,6 +17,7 @@ import {
   PROCESS_SCOPE_SCAN_RETRIES,
   PROCESS_SCOPE_SCAN_TIMEOUT_MS,
   PROCESS_SCOPE_SINGLE_SCAN_BUDGET_MS,
+  inspectBrokerOwner,
   retryProcessScan,
 } from './bounded-command-scan-policy.mjs';
 
@@ -28,6 +29,20 @@ function run(source, options = {}) {
 }
 
 describe('runBoundedCommand', () => {
+  it('keeps an unavailable broker owner scan fail-closed instead of deleting artifacts', () => {
+    assert.deepEqual(inspectBrokerOwner(null, 42, 1_700_000_000), {
+      status: 'unknown',
+      row: null,
+    });
+    assert.equal(inspectBrokerOwner([], 42, 1_700_000_000).status, 'dead');
+    assert.equal(
+      inspectBrokerOwner([
+        { pid: 42, start: new Date(1_700_000_000 * 1_000).toString() },
+      ], 42, 1_700_000_000).status,
+      'alive',
+    );
+  });
+
   it('recovers transient process-scan timeouts before poisoning the shared broker', async () => {
     const failures = [new Error('ps eww timed out after 1000ms'), new Error('ps eww timed out after 1000ms')];
     const waits = [];
