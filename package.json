@@ -116,6 +116,8 @@
     "test:e2e:timeline": "PLAYWRIGHT_TIMELINE_DEVICES=1 PLAYWRIGHT_PORT=${PLAYWRIGHT_PORT:-} ASTRID_BRIDGE_PORT=${ASTRID_BRIDGE_PORT:-} playwright test --config playwright.config.ts --project=timeline-devices --workers=1",
     "test:e2e:timeline:bridge": "node tests/e2e/timeline/astrid-bridge-stub.mjs",
     "test:acceptance:local-project": "node scripts/acceptance/verify-local-project-gallery.mjs",
+    "test:acceptance:local-project:matrix": "REIGH_ACCEPTANCE_MATRIX=1 node scripts/acceptance/verify-local-project-gallery.mjs",
+    "test:acceptance:local-project:unit": "node --test scripts/acceptance/verify-local-project-gallery.test.mjs",
     "test:e2e:timeline:realbridge": "PLAYWRIGHT_TIMELINE_DEVICES=1 REAL_BRIDGE=1 PLAYWRIGHT_HARDENING=1 ASTRID_BRIDGE_PORT=${ASTRID_BRIDGE_PORT:-} PLAYWRIGHT_PORT=${PLAYWRIGHT_PORT:-} playwright test --config playwright.config.ts --project=timeline-devices --workers=1 tests/e2e/timeline/real-bridge.spec.ts tests/e2e/timeline/real-bridge-hardening.spec.ts && PLAYWRIGHT_TIMELINE_DEVICES=1 REAL_BRIDGE=1 PLAYWRIGHT_RATE_LIMIT=1 ASTRID_BRIDGE_PORT=${ASTRID_BRIDGE_PORT:-} PLAYWRIGHT_PORT=${PLAYWRIGHT_PORT:-} playwright test --config playwright.config.ts --project=timeline-devices --workers=1 tests/e2e/timeline/real-bridge-rate-limit.spec.ts"
   },
   "dependencies": {
