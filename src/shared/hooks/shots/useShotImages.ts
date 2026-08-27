@@ -10,6 +10,7 @@ import { QUERY_PRESETS, STANDARD_RETRY, STANDARD_RETRY_DELAY } from '@/shared/li
 import { generationQueryKeys } from '@/shared/lib/queryKeys/generations';
 import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
 import React from 'react';
+import { hasLocalModeUrlParams } from '@/shared/dev/devSession';
 
 import { mapShotGenerationToRow } from '@/shared/hooks/shots';
 import {
@@ -31,7 +32,12 @@ const useAllShotGenerations = (
     if (options?.disableRefetch) {
       return false;
     }
-    return !!stableShotId;
+    // Local Astrid shots are document-derived and are already supplied by the
+    // local timeline adapter. Never fall through to the retired relational
+    // shot_generations read path for those URLs.
+    return !!stableShotId && !hasLocalModeUrlParams(
+      typeof window === 'undefined' ? '' : window.location.search,
+    );
   }, [stableShotId, options?.disableRefetch]);
   
   const queryClient = useQueryClient();

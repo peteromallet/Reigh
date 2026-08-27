@@ -1,15 +1,18 @@
 import React, { useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { AlertCircle, ImageOff, Music2 } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 import { AstridBridgeDataProvider } from '@/tools/video-editor/data/AstridBridgeDataProvider.ts';
 import { resolveTimelineConfig } from '@/tools/video-editor/lib/config-utils.ts';
 import type { AssetRegistry, TimelineConfig } from '@/tools/video-editor/types/index.ts';
 import { bridgeMediaUrl } from '@/shared/lib/media/bridgeMediaUrl.ts';
+import { ShotsContextProvider } from '@/shared/contexts/ShotsContext.tsx';
+import { ShotListDisplay } from '../components/VideoGallery/ShotListDisplay.tsx';
+import { ShotEditorView } from './ShotEditorView.tsx';
 import {
   selectDocumentDerivedShots,
+  selectDocumentDerivedShotModels,
   type LocalTimelineShot,
-  type LocalTimelineShotClip,
 } from './localTimelineShotModel.ts';
 
 type LocalTimelineShotBrowserProps = {
@@ -60,138 +63,16 @@ function useLocalTimelineDocument(projectSlug: string, timelineRef: string) {
   });
 }
 
-function formatDuration(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds <= 0) return 'Duration unavailable';
-  return `${seconds < 10 ? seconds.toFixed(1) : Math.round(seconds)}s`;
-}
-
-function ClipPreview({
-  clip,
-  widthPercent,
-}: {
-  clip: LocalTimelineShotClip;
-  widthPercent: { left: number; width: number };
-}) {
-  const label = clip.missingAsset
-    ? `${clip.clipId}: missing media`
-    : `${clip.clipId}: ${formatDuration(clip.durationSeconds)}`;
-  return (
-    <div
-      className="absolute min-w-[18px] overflow-hidden rounded-sm border border-border/70 bg-muted"
-      style={{
-        left: `${Math.max(0, Math.min(100, widthPercent.left))}%`,
-        width: `${Math.max(widthPercent.width, 1.5)}%`,
-        top: `${clip.lane * 3.25}rem`,
-        height: '3rem',
-      }}
-      title={label}
-      aria-label={label}
-    >
-      {clip.thumbnailUrl ? (
-        <img
-          src={clip.thumbnailUrl}
-          alt=""
-          className="h-full w-full object-cover"
-          loading="lazy"
-          onError={(event) => {
-            event.currentTarget.style.display = 'none';
-          }}
-        />
-      ) : (
-        <div className="flex h-full items-center justify-center text-muted-foreground" aria-hidden="true">
-          {clip.missingAsset ? <ImageOff className="h-4 w-4" /> : <span className="text-[10px]">No preview</span>}
-        </div>
-      )}
-      <span className="absolute inset-x-0 bottom-0 truncate bg-black/60 px-1 py-0.5 text-[9px] text-white">
-        {formatDuration(clip.durationSeconds)}
-      </span>
-    </div>
-  );
-}
-
-function ShotTimeline({
-  shot,
-  detail = false,
-}: {
-  shot: LocalTimelineShot;
-  detail?: boolean;
-}) {
-  const total = shot.durationSeconds;
-  const status = shot.clips.length === 0
-    ? shot.nonVisualClipCount > 0 ? 'Audio-only shot' : 'No visual clips in this shot'
-    : `${shot.clips.length} visual clip${shot.clips.length === 1 ? '' : 's'} · ${formatDuration(shot.durationSeconds)}`;
-
-  return (
-    <div
-      className={`relative w-full overflow-hidden rounded-md bg-muted/50 p-1 ${detail ? 'min-h-48' : ''}`}
-      style={{ minHeight: `${Math.max(1, shot.laneCount) * (detail ? 4.5 : 3.25)}rem` }}
-      role="img"
-      aria-label={`${shot.name} ${detail ? 'focused ' : ''}visual timeline: ${status}`}
-    >
-      {shot.clips.map((clip) => (
-        <ClipPreview
-          key={`${shot.id}:${clip.clipId}`}
-          clip={clip}
-          widthPercent={{
-            left: total > 0 ? (clip.relativeStartSeconds / total) * 100 : 0,
-            width: total > 0 ? (clip.durationSeconds / total) * 100 : 100,
-          }}
-        />
-      ))}
-      {shot.clips.length === 0 && (
-        <div className="flex flex-1 items-center justify-center gap-1 text-[11px] text-muted-foreground">
-          {shot.nonVisualClipCount > 0 ? <Music2 className="h-3.5 w-3.5" /> : <ImageOff className="h-3.5 w-3.5" />}
-          {status}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function LocalShotCard({
-  shot,
-  selected,
-  onSelect,
-}: {
-  shot: LocalTimelineShot;
-  selected: boolean;
-  onSelect: (shot: LocalTimelineShot) => void;
-}) {
-  const status = shot.clips.length === 0
-    ? shot.nonVisualClipCount > 0 ? 'Audio-only shot' : 'No visual clips in this shot'
-    : `${shot.clips.length} visual clip${shot.clips.length === 1 ? '' : 's'} · ${formatDuration(shot.durationSeconds)}`;
-
-  return (
-    <button
-      type="button"
-      className={`group w-full rounded-lg border bg-card p-3 text-left shadow-sm transition-colors hover:border-primary/60 hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selected ? 'border-primary ring-1 ring-primary/30' : 'border-border'}`}
-      onClick={() => onSelect(shot)}
-      aria-label={`Select shot ${shot.name}`}
-      aria-pressed={selected}
-    >
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <span className="truncate text-sm font-medium">{shot.name}</span>
-        <span className="flex shrink-0 items-center gap-1.5 text-[10px] text-muted-foreground">
-          {selected && <span className="rounded bg-primary/10 px-1.5 py-0.5 text-primary">Selected</span>}
-          {formatDuration(shot.durationSeconds)}
-        </span>
-      </div>
-      <ShotTimeline shot={shot} />
-      <div className="mt-2 flex flex-wrap gap-x-2 gap-y-1 text-[10px] text-muted-foreground">
-        <span>{status}</span>
-        {shot.missingClipCount > 0 && <span>{shot.missingClipCount} missing clip ID{shot.missingClipCount === 1 ? '' : 's'}</span>}
-        {shot.clips.some((clip) => clip.missingAsset) && <span>Missing media</span>}
-      </div>
-    </button>
-  );
-}
-
 export function LocalTimelineShotBrowser({ projectSlug, timelineRef }: LocalTimelineShotBrowserProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const documentQuery = useLocalTimelineDocument(projectSlug, timelineRef);
   const shots = useMemo(
     () => selectDocumentDerivedShots(documentQuery.data?.config, documentQuery.data?.registry, projectSlug),
+    [documentQuery.data, projectSlug],
+  );
+  const shotModels = useMemo(
+    () => selectDocumentDerivedShotModels(documentQuery.data?.config, documentQuery.data?.registry, projectSlug),
     [documentQuery.data, projectSlug],
   );
   const hashShotId = useMemo(() => {
@@ -206,6 +87,10 @@ export function LocalTimelineShotBrowser({ projectSlug, timelineRef }: LocalTime
   const selectedShot = useMemo(
     () => shots.find((shot) => shot.id === hashShotId),
     [hashShotId, shots],
+  );
+  const selectedShotModel = useMemo(
+    () => selectedShot ? shotModels.find((shot) => shot.id === selectedShot.id) : undefined,
+    [selectedShot, shotModels],
   );
 
   useEffect(() => {
@@ -229,10 +114,6 @@ export function LocalTimelineShotBrowser({ projectSlug, timelineRef }: LocalTime
     });
   };
 
-  const showAllShots = () => {
-    navigate({ pathname: location.pathname, search: location.search, hash: '' });
-  };
-
   if (documentQuery.isLoading) {
     return <div className="p-6 text-center text-sm text-muted-foreground" role="status">Loading timeline shots…</div>;
   }
@@ -252,48 +133,46 @@ export function LocalTimelineShotBrowser({ projectSlug, timelineRef }: LocalTime
     );
   }
 
+  const shotsContext = {
+    shots: shotModels,
+    isLoading: false,
+    error: null,
+    refetchShots: () => undefined,
+    allImagesCount: shotModels.reduce((total, shot) => total + (shot.images?.length ?? 0), 0),
+    noShotImagesCount: 0,
+  };
+
   return (
-    <section className="mx-auto w-full max-w-7xl px-4 py-5" aria-label="Timeline shots">
-      {selectedShot ? (
-        <div aria-label={`Shot detail: ${selectedShot.name}`}>
-          <button
-            type="button"
-            className="mb-4 rounded-md border border-border px-3 py-2 text-sm font-medium transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={showAllShots}
-          >
-            ← Back to all shots
-          </button>
-          <div className="mb-4 flex items-baseline justify-between gap-3">
-            <div>
-              <h1 className="text-lg font-semibold">{selectedShot.name}</h1>
-              <p className="text-xs text-muted-foreground">Focused shot timeline · {formatDuration(selectedShot.durationSeconds)}</p>
-            </div>
-            <span className="rounded bg-muted px-2 py-1 text-[10px] text-muted-foreground">Local timeline</span>
-          </div>
-          <ShotTimeline shot={selectedShot} detail />
-          <div className="mt-2 flex flex-wrap gap-x-2 gap-y-1 text-[10px] text-muted-foreground">
-            <span>{selectedShot.clips.length} visual clip{selectedShot.clips.length === 1 ? '' : 's'}</span>
-            {selectedShot.missingClipCount > 0 && <span>{selectedShot.missingClipCount} missing clip ID{selectedShot.missingClipCount === 1 ? '' : 's'}</span>}
-            {selectedShot.clips.some((clip) => clip.missingAsset) && <span>Missing media</span>}
-          </div>
-        </div>
+    <ShotsContextProvider value={shotsContext}>
+      {selectedShot && selectedShotModel ? (
+        <ShotEditorView
+          shotToEdit={selectedShotModel}
+          selectedProjectId={projectSlug}
+          isNewlyCreatedShot={false}
+          shotFromState={undefined}
+          shots={shotModels}
+          availableLoras={[]}
+          shotSortMode="ordered"
+        />
       ) : (
-        <>
-          <div className="mb-4 flex items-baseline justify-between gap-3">
+        <section className="mx-auto w-full max-w-7xl" aria-label="Timeline shots">
+          <div className="flex items-baseline justify-between gap-3 px-4 pt-5">
             <div>
               <h1 className="text-lg font-semibold">Timeline shots</h1>
-              <p className="text-xs text-muted-foreground">Astrid document · {shots.length} shot{shots.length === 1 ? '' : 's'}</p>
+              <p className="text-xs text-muted-foreground">Astrid document · {shotModels.length} shot{shotModels.length === 1 ? '' : 's'}</p>
             </div>
             <span className="rounded bg-muted px-2 py-1 text-[10px] text-muted-foreground">Local timeline</span>
           </div>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-            {shots.map((shot) => (
-          <LocalShotCard key={shot.id} shot={shot} selected={false} onSelect={selectShot} />
-            ))}
-          </div>
-        </>
+          <ShotListDisplay
+            readOnly
+            projectId={projectSlug}
+            shots={shotModels}
+            onSelectShot={selectShot}
+            sortMode="ordered"
+          />
+        </section>
       )}
-    </section>
+    </ShotsContextProvider>
   );
 }
 

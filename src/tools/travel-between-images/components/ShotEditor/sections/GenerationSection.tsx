@@ -8,6 +8,7 @@ import { JoinModeContent } from './generation/JoinModeContent';
 import { useShotSettingsGeneration, useShotSettingsMedia } from '../ShotSettingsContext';
 
 export interface GenerationSectionProps {
+  readOnly?: boolean;
   refs: {
     generateVideosCardRef: React.RefObject<HTMLDivElement>;
     ctaContainerRef?: (node: HTMLDivElement | null) => void;
@@ -23,6 +24,7 @@ export interface GenerationSectionProps {
 }
 
 export const GenerationSection: React.FC<GenerationSectionProps> = ({
+  readOnly = false,
   refs,
   cta,
 }) => {
@@ -32,7 +34,7 @@ export const GenerationSection: React.FC<GenerationSectionProps> = ({
   const canSwitchToJoin = joinState.joinValidationData.videoCount >= 2;
 
   return (
-    <div className="w-full" ref={refs.generateVideosCardRef} style={{ overflowAnchor: 'none' }}>
+    <div className="w-full" ref={refs.generateVideosCardRef} style={{ overflowAnchor: 'none' }} aria-disabled={readOnly || undefined}>
       <Card>
         <CardHeader className="pb-2">
           {showSimpleHeader ? (
@@ -58,11 +60,12 @@ export const GenerationSection: React.FC<GenerationSectionProps> = ({
                   {generationMode.generateMode === 'batch' ? 'Batch Generate' : 'Join Segments'}
                 </span>
                 <button
+                  disabled={readOnly || (generationMode.generateMode === 'batch' && !canSwitchToJoin)}
                   onClick={() => {
                     generationMode.setGenerateMode(generationMode.generateMode === 'batch' ? 'join' : 'batch');
                   }}
                   className={`p-1 rounded-full transition-colors ${
-                    (generationMode.generateMode === 'batch' && !canSwitchToJoin)
+                    (readOnly || (generationMode.generateMode === 'batch' && !canSwitchToJoin))
                       ? 'text-muted-foreground/30 cursor-not-allowed'
                       : 'text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer'
                   }`}
@@ -71,11 +74,12 @@ export const GenerationSection: React.FC<GenerationSectionProps> = ({
                   <ArrowLeftRight className="w-4 h-4" />
                 </button>
                 <button
+                  disabled={readOnly || (generationMode.generateMode === 'batch' && !canSwitchToJoin)}
                   onClick={() => {
                     generationMode.setGenerateMode(generationMode.generateMode === 'batch' ? 'join' : 'batch');
                   }}
                   className={`text-sm transition-colors ${
-                    (generationMode.generateMode === 'batch' && !canSwitchToJoin)
+                    (readOnly || (generationMode.generateMode === 'batch' && !canSwitchToJoin))
                       ? 'text-muted-foreground/30 cursor-not-allowed'
                       : 'text-muted-foreground hover:text-foreground cursor-pointer'
                   }`}
@@ -99,8 +103,15 @@ export const GenerationSection: React.FC<GenerationSectionProps> = ({
           )}
         </CardHeader>
         <CardContent>
+          {readOnly && (
+            <div className="mb-4 rounded-md border border-muted-foreground/30 bg-muted/40 px-3 py-2 text-sm text-muted-foreground" role="note">
+              Local Astrid timeline: generation and cloud-only actions are disabled. Settings are shown for reference.
+            </div>
+          )}
+          <fieldset disabled={readOnly} className={readOnly ? 'opacity-70' : undefined}>
           {generationMode.generateMode === 'batch' ? (
             <BatchModeContent
+              readOnly={readOnly}
               ctaContainerRef={refs.ctaContainerRef}
               swapButtonRef={refs.swapButtonRef}
               parentVariantName={cta.parentVariantName}
@@ -110,10 +121,12 @@ export const GenerationSection: React.FC<GenerationSectionProps> = ({
             />
           ) : (
             <JoinModeContent
+              readOnly={readOnly}
               joinSegmentsSectionRef={refs.joinSegmentsSectionRef}
               swapButtonRef={refs.swapButtonRef}
             />
           )}
+          </fieldset>
         </CardContent>
       </Card>
     </div>

@@ -11,6 +11,7 @@ import { MODEL_DEFAULTS } from '@/tools/travel-between-images/settings';
 import { usePanesStore } from '@/shared/state/panesStore';
 
 interface TimelineSectionProps {
+  readOnly?: boolean;
   timelineSectionRef?: (node: HTMLDivElement | null) => void;
   isModeReady: boolean;
   settingsError: string | null;
@@ -36,6 +37,7 @@ interface TimelineSectionProps {
 }
 
 export const TimelineSection: React.FC<TimelineSectionProps> = ({
+  readOnly = false,
   timelineSectionRef,
   isModeReady,
   settingsError,
@@ -93,7 +95,7 @@ export const TimelineSection: React.FC<TimelineSectionProps> = ({
               projectAspectRatio={effectiveAspectRatio}
             />
           ),
-          readOnly: false,
+          readOnly,
           projectAspectRatio: effectiveAspectRatio,
           cachedHasStructureVideo,
           maxFrameLimit,

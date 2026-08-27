@@ -35,6 +35,7 @@ interface HeaderProps {
   centerSectionRef?: React.RefObject<HTMLDivElement>;
   /** Hide header when floating sticky header is visible */
   isSticky?: boolean;
+  readOnly?: boolean;
 }
 
 // Internal component - not memoized to allow hooks
@@ -61,6 +62,7 @@ const HeaderComponent: React.FC<HeaderProps> = ({
   projectId,
   centerSectionRef,
   isSticky = false,
+  readOnly = false,
 }) => {
   const { updateShotAspectRatio } = useUpdateShotAspectRatio();
 
@@ -178,6 +180,7 @@ const HeaderComponent: React.FC<HeaderProps> = ({
             value={selectedShot?.aspect_ratio || projectAspectRatio || '16:9'}
             onValueChange={handleAspectRatioChange}
             showVisualizer={false}
+            disabled={readOnly}
             className="w-full"
           />
         </div>
@@ -266,6 +269,7 @@ const HeaderComponent: React.FC<HeaderProps> = ({
                 value={selectedShot?.aspect_ratio || projectAspectRatio || '16:9'}
                 onValueChange={handleAspectRatioChange}
                 showVisualizer={false}
+                disabled={readOnly}
                 className="w-full text-[10px]"
               />
             </div>

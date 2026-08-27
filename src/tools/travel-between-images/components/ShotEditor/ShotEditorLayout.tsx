@@ -20,6 +20,7 @@ export interface ShotEditorLayoutProps {
   header: HeaderSectionCallbacks & HeaderSectionLayout;
 
   finalVideo: {
+    readOnly?: boolean;
     selectedShotId: string;
     projectId: string;
     effectiveAspectRatio?: string;
@@ -39,6 +40,7 @@ export interface ShotEditorLayoutProps {
   };
 
   timeline: {
+    readOnly?: boolean;
     timelineSectionRef?: (node: HTMLDivElement | null) => void;
     isModeReady: boolean;
     settingsError: string | null;
@@ -63,6 +65,7 @@ export interface ShotEditorLayoutProps {
   };
 
   generation: {
+    readOnly?: boolean;
     ctaContainerRef?: (node: HTMLDivElement | null) => void;
     swapButtonRef: React.RefObject<HTMLButtonElement>;
     joinSegmentsSectionRef: React.RefObject<HTMLDivElement>;
@@ -118,11 +121,13 @@ export const ShotEditorLayout: React.FC<ShotEditorLayoutProps> = ({
             headerContainerRef: header.headerContainerRef,
             centerSectionRef: header.centerSectionRef,
             isSticky: header.isSticky,
+            readOnly: header.readOnly,
           }}
         />
 
         <div ref={finalVideo.videoGalleryRef} className="flex flex-col gap-4">
-          <FinalVideoSection
+          <fieldset disabled={Boolean(finalVideo.readOnly)} className={finalVideo.readOnly ? 'opacity-70' : undefined}>
+            <FinalVideoSection
             shotId={finalVideo.selectedShotId}
             projectId={finalVideo.projectId}
             projectAspectRatio={finalVideo.effectiveAspectRatio}
@@ -136,11 +141,13 @@ export const ShotEditorLayout: React.FC<ShotEditorLayoutProps> = ({
             getFinalVideoCount={finalVideo.getFinalVideoCount}
             onDelete={finalVideo.onDeleteFinalVideo}
             isDeleting={finalVideo.isClearingFinalVideo}
-          />
+            />
+          </fieldset>
         </div>
 
         <div className="flex flex-col gap-4">
           <TimelineSection
+            readOnly={timeline.readOnly}
             timelineSectionRef={timeline.timelineSectionRef}
             isModeReady={timeline.isModeReady}
             settingsError={timeline.settingsError}
@@ -168,6 +175,7 @@ export const ShotEditorLayout: React.FC<ShotEditorLayoutProps> = ({
           />
 
           <GenerationSection
+            readOnly={generation.readOnly}
             refs={{
               generateVideosCardRef: finalVideo.generateVideosCardRef,
               ctaContainerRef: generation.ctaContainerRef,

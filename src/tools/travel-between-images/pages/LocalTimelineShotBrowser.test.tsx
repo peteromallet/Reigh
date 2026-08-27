@@ -2,9 +2,41 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LocalTimelineShotBrowser } from './LocalTimelineShotBrowser';
+
+// The production list/editor are integration-tested separately. These focused
+// tests keep the document-to-shot adapter and URL contract deterministic without
+// requiring the full application provider tree (auth, panes, and settings).
+vi.mock('../components/VideoGallery/ShotListDisplay.tsx', () => ({
+  ShotListDisplay: ({ shots, onSelectShot }: { shots: Array<{ id: string; name: string }>; onSelectShot: (shot: unknown) => void }) => (
+    <div data-testid="production-shot-list">
+      {shots.map((shot) => (
+        <button key={shot.id} type="button" onClick={() => onSelectShot(shot)}>
+          Select shot {shot.name}
+        </button>
+      ))}
+    </div>
+  ),
+}));
+
+vi.mock('./ShotEditorView.tsx', () => ({
+  ShotEditorView: ({ shotToEdit }: { shotToEdit: { name: string; images?: Array<{ id: string }> } }) => {
+    const navigate = useNavigate();
+    const location = useLocation();
+    return (
+      <div data-testid="production-shot-editor">
+        <button
+          type="button"
+          onClick={() => navigate({ pathname: location.pathname, search: location.search, hash: '' })}
+        >Back to all shots</button>
+        <h1>{shotToEdit.name}</h1>
+        <div data-testid="selected-shot-image-ids">{shotToEdit.images?.map((image) => image.id).join(',')}</div>
+      </div>
+    );
+  },
+}));
 
 const mocks = vi.hoisted(() => ({
   loadTimeline: vi.fn(),
@@ -62,16 +94,14 @@ describe('LocalTimelineShotBrowser', () => {
     });
   });
 
-  it('renders the overview and keeps unrelated clips out of each mini timeline', async () => {
+  it('renders the established shot list from document-derived shot models', async () => {
     renderBrowser();
 
     expect(await screen.findByRole('button', { name: 'Select shot Opening' })).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: /Opening visual timeline: 1 visual clip/i })).toBeInTheDocument();
-    expect(screen.queryByText('9.0s')).not.toBeInTheDocument();
-    expect(screen.getByText('1 visual clip · 2.0s')).toBeInTheDocument();
+    expect(screen.getByTestId('production-shot-list')).toBeInTheDocument();
   });
 
-  it('opens a focused shot timeline from the overview without dropping local scope', async () => {
+  it('opens the established shot editor with only the selected group clips', async () => {
     renderBrowser();
     const shot = await screen.findByRole('button', { name: 'Select shot Opening' });
     fireEvent.click(shot);
@@ -81,9 +111,9 @@ describe('LocalTimelineShotBrowser', () => {
         '/tools/travel-between-images?localProject=demo&localTimeline=timeline-1#shot-a',
       );
       expect(screen.getByRole('heading', { name: 'Opening' })).toBeInTheDocument();
-      expect(screen.getByRole('img', { name: /Opening focused visual timeline: 1 visual clip/i })).toBeInTheDocument();
-      expect(screen.getByLabelText('clip-a: 2.0s')).toBeInTheDocument();
-      expect(screen.queryByLabelText('clip-other: 9.0s')).not.toBeInTheDocument();
+      expect(screen.getByTestId('production-shot-editor')).toBeInTheDocument();
+      expect(screen.getByTestId('selected-shot-image-ids')).toHaveTextContent('shot-a:clip-a');
+      expect(screen.queryByText('shot-a:clip-other')).not.toBeInTheDocument();
     });
   });
 
@@ -109,7 +139,7 @@ describe('LocalTimelineShotBrowser', () => {
         '/tools/travel-between-images?localProject=demo&localTimeline=timeline-1',
       );
     });
-    expect(screen.queryByRole('button', { name: /Back to all shots/i })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('production-shot-editor')).not.toBeInTheDocument();
   });
 
   it('returns from shot detail to the complete overview while preserving local scope', async () => {

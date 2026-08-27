@@ -84,6 +84,7 @@ export const HeaderSection: React.FC<HeaderSectionProps> = ({
         projectId={projectId}
         centerSectionRef={layout.centerSectionRef}
         isSticky={layout.isSticky}
+        readOnly={layout.readOnly}
       />
     </div>
   );

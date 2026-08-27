@@ -60,6 +60,8 @@ interface ShotEditorRefsProps {
 }
 
 interface ShotEditorUiProps {
+  /** Disable actions that have no Astrid document-native equivalent. */
+  readOnly?: boolean;
   /** Whether the floating sticky header is visible (hide main header when true) */
   isSticky?: boolean;
   variantName?: string;

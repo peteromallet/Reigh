@@ -78,7 +78,10 @@ describe('useOutputController', () => {
       undefined,
       'output-1',
       mocks.useOutputSelection.mock.results[0].value.setSelectedOutputId,
-      undefined,
+      [
+        { id: 'img-1' },
+        { id: 'img-2' },
+      ],
       'img-2',
     );
     expect(mocks.useEnsureSelectedOutput).toHaveBeenCalledWith({
@@ -112,7 +115,10 @@ describe('useOutputController', () => {
       undefined,
       undefined,
       undefined,
-      undefined,
+      [
+        { id: 'img-1' },
+        { id: 'img-2' },
+      ],
       'img-2',
     );
   });

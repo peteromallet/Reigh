@@ -5,6 +5,7 @@ import { useSmartPollingConfig } from '@/shared/hooks/useSmartPolling';
 import type { GenerationModeNormalized } from '@/shared/lib/settingsResolution';
 import { settingsQueryKeys } from '@/shared/lib/queryKeys/settings';
 import { ProjectScopedCache } from '@/shared/lib/cache/ProjectScopedCache';
+import { hasLocalModeUrlParams } from '@/shared/dev/devSession';
 
 // Global cache instance that persists across component remounts
 const globalProjectGenerationModesCache = new ProjectScopedCache<GenerationModeNormalized>();
@@ -29,6 +30,7 @@ async function fetchProjectGenerationModesFromDB(projectId: string): Promise<Map
  */
 export function useProjectGenerationModesCache(projectId: string | null, options?: { enabled?: boolean }) {
   const { enabled = true } = options ?? {};
+  const isLocalMode = hasLocalModeUrlParams(typeof window === 'undefined' ? '' : window.location.search);
   const cacheRef = useRef(globalProjectGenerationModesCache);
   const queryClient = useQueryClient();
   
@@ -38,7 +40,10 @@ export function useProjectGenerationModesCache(projectId: string | null, options
   const { data: projectModes, isLoading, error, refetch } = useQuery<Map<string, GenerationModeNormalized>>({
     queryKey: settingsQueryKeys.generationModes(projectId!),
     queryFn: () => fetchProjectGenerationModesFromDB(projectId!),
-    enabled: !!projectId && enabled,
+    // Document-derived local shots do not have a relational generation-mode
+    // table. Keep the established editor's settings controls available while
+    // avoiding a guaranteed bridge-capability error on first render.
+    enabled: !!projectId && enabled && !isLocalMode,
     gcTime: 10 * 60 * 1000, // 10 minutes
     placeholderData: (previousData) => previousData, // Keep showing previous data while refetching
     ...smartPollingConfig,

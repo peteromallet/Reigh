@@ -116,6 +116,7 @@ interface UseShotEditorLayoutModelParams {
   };
   contextValue: ShotSettingsContextValue;
   sections: {
+    readOnly?: boolean;
     onBack: ShotEditorProps['onBack'];
     onPreviousShot: ShotEditorProps['onPreviousShot'];
     onNextShot: ShotEditorProps['onNextShot'];
@@ -331,6 +332,7 @@ function buildShotEditorLayoutSections({
   return {
     contextValue,
     header: {
+      readOnly: sections.readOnly,
       onBack: sections.onBack,
       onPreviousShot: sections.onPreviousShot,
       onNextShot: sections.onNextShot,
@@ -346,6 +348,7 @@ function buildShotEditorLayoutSections({
       isSticky: sections.isSticky,
     },
     finalVideo: {
+      readOnly: sections.readOnly,
       selectedShotId: core.selectedShotId,
       projectId: core.projectId,
       effectiveAspectRatio: core.effectiveAspectRatio,
@@ -364,6 +367,7 @@ function buildShotEditorLayoutSections({
       generateVideosCardRef: sections.refs.generateVideosCardRef,
     },
     timeline: {
+      readOnly: sections.readOnly,
       timelineSectionRef: sections.timelineSectionRef,
       isModeReady: core.state.isModeReady,
       settingsError: core.state.settingsError,
@@ -389,6 +393,7 @@ function buildShotEditorLayoutSections({
       getHasStructureVideo: sections.getHasStructureVideo,
     },
     generation: {
+      readOnly: sections.readOnly,
       ctaContainerRef: sections.ctaContainerRef,
       swapButtonRef: sections.refs.swapButtonRef,
       joinSegmentsSectionRef: sections.refs.joinSegmentsSectionRef,

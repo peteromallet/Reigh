@@ -7,6 +7,7 @@ import type {
 } from '@/tools/video-editor/types/index.ts';
 import { getClipTimelineDuration } from '@/tools/video-editor/lib/config-utils.ts';
 import { bridgeMediaUrl } from '@/shared/lib/media/bridgeMediaUrl.ts';
+import type { GenerationRow, Shot } from '@/domains/generation/types';
 
 export type LocalTimelineShotClip = {
   clipId: string;
@@ -34,6 +35,17 @@ export type LocalTimelineShot = {
   missingClipCount: number;
   durationSeconds: number;
   laneCount: number;
+};
+
+/**
+ * The legacy Shots editor consumes GenerationRow/Shot records.  Astrid owns
+ * these values in the timeline document instead of relational shot tables, so
+ * keep this adapter next to the document selector.  It is deliberately pure:
+ * callers can provide the selected group's rows to the existing editor
+ * without opening a second (Supabase) source of truth.
+ */
+export type LocalTimelineShotModel = Shot & {
+  images: GenerationRow[];
 };
 
 type RegistryEntryWithSource = AssetRegistryEntry & { src?: string };
@@ -105,6 +117,82 @@ function assetThumbnailUrl(
     ?? sourceEntry.media_id;
   if (typeof reference !== 'string' || reference.trim().length === 0) return undefined;
   return bridgeMediaUrl(projectSlug, reference.trim());
+}
+
+function assetDisplayUrl(
+  asset: AssetRegistryEntry | undefined,
+  projectSlug: string | undefined,
+): string | undefined {
+  if (!asset) return undefined;
+  const sourceEntry = asset as RegistryEntryWithSource;
+  const reference = sourceEntry.src
+    ?? sourceEntry.url
+    ?? sourceEntry.file
+    ?? sourceEntry.media_id;
+  if (typeof reference !== 'string' || reference.trim().length === 0) return undefined;
+  return bridgeMediaUrl(projectSlug, reference.trim());
+}
+
+/** Convert one document-derived shot group into the legacy editor's model. */
+export function toDocumentDerivedShotModel(
+  shot: LocalTimelineShot,
+  config: TimelineConfig,
+  projectSlug?: string,
+): LocalTimelineShotModel {
+  const fps = Number.isFinite(config.output?.fps) && config.output.fps > 0 ? config.output.fps : 30;
+  const images = shot.clips.flatMap((item, index) => {
+    const location = assetDisplayUrl(item.asset, projectSlug);
+    if (!location) return [];
+    const thumbnail = item.thumbnailUrl ?? location;
+    const generationId = item.asset?.generationId ?? item.asset?.variantId ?? item.clip.asset ?? item.clipId;
+    const frame = Math.max(0, Math.round(item.startSeconds * fps));
+    return [{
+      id: `${shot.id}:${item.clipId}`,
+      shot_generation_id: `${shot.id}:${item.clipId}`,
+      generation_id: generationId,
+      location,
+      imageUrl: location,
+      thumbUrl: thumbnail,
+      type: item.asset?.type ?? 'image',
+      createdAt: new Date(index).toISOString(),
+      name: item.clip.label ?? item.clipId,
+      timeline_frame: frame,
+      metadata: {
+        source: 'astrid-timeline',
+        projectSlug,
+        timelineShotId: shot.id,
+        clipId: item.clipId,
+        timelineRef: config.app?.timelineRef,
+      },
+      params: item.clip.params,
+    } satisfies GenerationRow];
+  });
+
+  return {
+    id: shot.id,
+    name: shot.name,
+    created_at: '1970-01-01T00:00:00.000Z',
+    updated_at: null,
+    project_id: projectSlug,
+    aspect_ratio: null,
+    position: 0,
+    settings: {},
+    images,
+    imageCount: images.length,
+    positionedImageCount: images.filter((image) => image.timeline_frame != null).length,
+    unpositionedImageCount: images.filter((image) => image.timeline_frame == null).length,
+    hasUnpositionedImages: images.some((image) => image.timeline_frame == null),
+  };
+}
+
+export function selectDocumentDerivedShotModels(
+  config: TimelineConfig | null | undefined,
+  registry: AssetRegistry | null | undefined,
+  projectSlug?: string,
+): LocalTimelineShotModel[] {
+  if (!config) return [];
+  return selectDocumentDerivedShots(config, registry, projectSlug)
+    .map((shot) => toDocumentDerivedShotModel(shot, config, projectSlug));
 }
 
 /**

@@ -282,6 +282,7 @@ export function useShotEditorController({
   isGeneratingVideo: parentIsGeneratingVideo,
   videoJustQueued: parentVideoJustQueued,
   onDragStateChange,
+  readOnly,
 }: ShotEditorProps): ShotEditorControllerResult {
   const {
     promptSettings,
@@ -662,6 +663,7 @@ export function useShotEditorController({
       onCustomHeightChange,
     },
     sections: {
+      readOnly,
       onBack,
       onPreviousShot,
       onNextShot,

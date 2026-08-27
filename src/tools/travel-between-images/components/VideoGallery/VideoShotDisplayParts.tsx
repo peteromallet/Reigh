@@ -10,6 +10,7 @@ import { HoverScrubVideo } from '@/shared/components/media/HoverScrubVideo';
 import type { ShotFinalVideo } from '../../hooks/video/useShotFinalVideos';
 
 interface ActionButtonsRowProps {
+  readOnly?: boolean;
   isTempShot: boolean;
   displayImagesCount: number;
   isEditingName: boolean;
@@ -30,6 +31,7 @@ interface ActionButtonsRowProps {
 }
 
 const ActionButtonsRow: React.FC<ActionButtonsRowProps> = ({
+  readOnly = false,
   isTempShot,
   displayImagesCount,
   isEditingName,
@@ -64,7 +66,7 @@ const ActionButtonsRow: React.FC<ActionButtonsRowProps> = ({
                 onVideoClick();
               }
             }}
-            disabled={displayImagesCount === 0 || isTempShot}
+            disabled={readOnly || displayImagesCount === 0 || isTempShot}
             className={`h-8 w-8 ${
               displayImagesCount === 0 || isTempShot
                 ? 'text-zinc-400 cursor-not-allowed opacity-50'
@@ -75,7 +77,7 @@ const ActionButtonsRow: React.FC<ActionButtonsRowProps> = ({
           </Button>
         </TooltipTrigger>
         <TooltipContent>
-          <p>{isTempShot ? 'Saving...' : displayImagesCount === 0 ? 'Add images to generate video' : 'Generate Video'}</p>
+          <p>{readOnly ? 'Unavailable for local timeline' : isTempShot ? 'Saving...' : displayImagesCount === 0 ? 'Add images to generate video' : 'Generate Video'}</p>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
@@ -108,7 +110,7 @@ const ActionButtonsRow: React.FC<ActionButtonsRowProps> = ({
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8 cursor-grab active:cursor-grabbing"
-                disabled={dragHandleProps.disabled}
+                disabled={readOnly || dragHandleProps.disabled}
                 {...dragHandleProps}
               >
                 <GripVertical className="h-4 w-4" />
@@ -125,12 +127,12 @@ const ActionButtonsRow: React.FC<ActionButtonsRowProps> = ({
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon" onClick={onEditName} className="h-8 w-8" disabled={isTempShot}>
+            <Button variant="ghost" size="icon" onClick={onEditName} className="h-8 w-8" disabled={readOnly || isTempShot}>
               <Pencil className="h-4 w-4" />
             </Button>
           </TooltipTrigger>
           <TooltipContent>
-            <p>{isTempShot ? 'Saving...' : 'Edit shot name'}</p>
+            <p>{readOnly ? 'Unavailable for local timeline' : isTempShot ? 'Saving...' : 'Edit shot name'}</p>
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
@@ -144,7 +146,7 @@ const ActionButtonsRow: React.FC<ActionButtonsRowProps> = ({
               size="icon"
               onClick={onDuplicate}
               className="h-8 w-8"
-              disabled={duplicateIsPending || isTempShot}
+              disabled={readOnly || duplicateIsPending || isTempShot}
               aria-label="Duplicate shot"
               title="Duplicate shot"
             >
@@ -156,7 +158,7 @@ const ActionButtonsRow: React.FC<ActionButtonsRowProps> = ({
             </Button>
           </TooltipTrigger>
           <TooltipContent>
-            <p>{isTempShot ? 'Saving...' : duplicateIsPending ? 'Duplicating...' : 'Duplicate shot'}</p>
+            <p>{readOnly ? 'Unavailable for local timeline' : isTempShot ? 'Saving...' : duplicateIsPending ? 'Duplicating...' : 'Duplicate shot'}</p>
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
@@ -168,7 +170,7 @@ const ActionButtonsRow: React.FC<ActionButtonsRowProps> = ({
               size="icon"
               onClick={onDuplicateWithVideos}
               className="absolute -right-1 -top-1 z-10 h-5 w-5 rounded-full bg-background/90 opacity-0 shadow-sm transition-opacity focus:opacity-100 group-hover/duplicate:opacity-100"
-              disabled={duplicateIsPending || duplicateWithVideosIsPending || isTempShot}
+              disabled={readOnly || duplicateIsPending || duplicateWithVideosIsPending || isTempShot}
               aria-label="Duplicate with videos"
               title="Duplicate with videos"
             >
@@ -180,7 +182,7 @@ const ActionButtonsRow: React.FC<ActionButtonsRowProps> = ({
             </Button>
           </TooltipTrigger>
           <TooltipContent>
-            <p>{isTempShot ? 'Saving...' : duplicateWithVideosIsPending ? 'Duplicating with videos...' : 'Duplicate with videos'}</p>
+            <p>{readOnly ? 'Unavailable for local timeline' : isTempShot ? 'Saving...' : duplicateWithVideosIsPending ? 'Duplicating with videos...' : 'Duplicate with videos'}</p>
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
@@ -197,7 +199,7 @@ const ActionButtonsRow: React.FC<ActionButtonsRowProps> = ({
                 onToggleHidden(e);
               }}
               className="h-8 w-8"
-              disabled={isTempShot}
+              disabled={readOnly || isTempShot}
               aria-label={isHidden ? 'Unhide shot' : 'Hide shot'}
             >
               {isHidden ? (
@@ -208,7 +210,7 @@ const ActionButtonsRow: React.FC<ActionButtonsRowProps> = ({
             </Button>
           </TooltipTrigger>
           <TooltipContent>
-            <p>{isTempShot ? 'Saving...' : isHidden ? 'Unhide shot' : 'Hide shot'}</p>
+            <p>{readOnly ? 'Unavailable for local timeline' : isTempShot ? 'Saving...' : isHidden ? 'Unhide shot' : 'Hide shot'}</p>
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
@@ -217,12 +219,12 @@ const ActionButtonsRow: React.FC<ActionButtonsRowProps> = ({
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon" onClick={onDelete} className="text-destructive hover:text-destructive-foreground hover:bg-destructive h-8 w-8" disabled={isTempShot}>
+            <Button variant="ghost" size="icon" onClick={onDelete} className="text-destructive hover:text-destructive-foreground hover:bg-destructive h-8 w-8" disabled={readOnly || isTempShot}>
               <Trash2 className="h-4 w-4" />
             </Button>
           </TooltipTrigger>
           <TooltipContent>
-            <p>{isTempShot ? 'Saving...' : 'Delete shot'}</p>
+            <p>{readOnly ? 'Unavailable for local timeline' : isTempShot ? 'Saving...' : 'Delete shot'}</p>
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
@@ -233,6 +235,7 @@ const ActionButtonsRow: React.FC<ActionButtonsRowProps> = ({
 const IMAGES_PER_ROW = 3;
 
 interface ThumbnailMosaicProps {
+  readOnly?: boolean;
   displayImages: GenerationRow[];
   pendingUploads: number;
   imagesOverlay?: React.ReactNode;
@@ -249,6 +252,7 @@ interface ThumbnailMosaicProps {
 }
 
 const ThumbnailMosaic: React.FC<ThumbnailMosaicProps> = ({
+  readOnly = false,
   displayImages,
   pendingUploads,
   imagesOverlay,
@@ -377,7 +381,7 @@ const ThumbnailMosaic: React.FC<ThumbnailMosaicProps> = ({
 
             {/* Bottom overlay buttons */}
             <div className="absolute bottom-1 right-1 flex items-center gap-1 z-10">
-              {onGenerate && (
+              {onGenerate && !readOnly && (
                 <button
                   className="text-xs bg-black/60 hover:bg-black/80 text-white p-1 rounded flex items-center"
                   onClick={(e) => {
@@ -522,6 +526,7 @@ export const ShotMetadata: React.FC<ShotMetadataProps> = ({
 };
 
 interface ShotControlsProps {
+  readOnly?: boolean;
   isTempShot: boolean;
   displayImagesCount: number;
   isEditingName: boolean;
@@ -546,6 +551,7 @@ export const ShotControls: React.FC<ShotControlsProps> = (props) => (
 );
 
 interface ShotPreviewProps {
+  readOnly?: boolean;
   displayImages: GenerationRow[];
   pendingUploads: number;
   imagesOverlay?: React.ReactNode;

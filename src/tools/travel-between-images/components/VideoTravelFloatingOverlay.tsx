@@ -17,6 +17,7 @@ import { useIsTablet } from '@/shared/hooks/mobile';
 // =============================================================================
 
 interface StickyHeaderProps {
+  readOnly?: boolean;
   shouldShowShotEditor: boolean;
   stickyHeader: {
     isSticky: boolean;
@@ -49,6 +50,7 @@ export const VideoTravelFloatingOverlay: React.FC<VideoTravelFloatingOverlayProp
 }) => {
   const {
     shouldShowShotEditor,
+    readOnly = false,
     stickyHeader,
     shotToEdit,
     isMobile,
@@ -128,8 +130,8 @@ export const VideoTravelFloatingOverlay: React.FC<VideoTravelFloatingOverlayProp
 
               <span
                 className="text-base sm:text-xl font-semibold text-primary truncate px-2 sm:px-4 w-[140px] sm:w-[200px] text-center border-2 border-transparent rounded-md py-1 sm:py-2 cursor-pointer hover:underline"
-                title="Click to edit shot name"
-                onClick={onFloatingHeaderNameClick}
+                title={readOnly ? 'Local Astrid timeline (read-only)' : 'Click to edit shot name'}
+                onClick={readOnly ? undefined : onFloatingHeaderNameClick}
               >
                 {shotToEdit.name || 'Untitled Shot'}
               </span>

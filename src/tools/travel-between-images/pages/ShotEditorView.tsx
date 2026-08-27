@@ -31,6 +31,7 @@ import { useStickyHeader } from '../hooks/useStickyHeader';
 import { useNavigationState } from '../hooks/navigation/useNavigationState';
 import { useOperationTracking } from '../hooks/useOperationTracking';
 import { usePanesStore } from '@/shared/state/panesStore';
+import { hasLocalModeUrlParams } from '@/shared/dev/devSession';
 
 interface ShotEditorViewProps {
   /** The shot to edit */
@@ -65,6 +66,7 @@ export function ShotEditorView({
   const navigate = useNavigate();
   const location = useLocation();
   const isMobile = useIsMobile();
+  const isLocalMode = hasLocalModeUrlParams(location.search);
 
   const { setCurrentShotId } = useCurrentShot();
   const { navigateToPreviousShot, navigateToNextShot } = useShotNavigation();
@@ -149,8 +151,14 @@ export function ShotEditorView({
   // Navigation handlers
   const handleBackToShotList = useCallback(() => {
     setCurrentShotId(null);
-    navigate(location.pathname, { replace: true, state: { fromShotClick: false } });
-  }, [setCurrentShotId, navigate, location.pathname]);
+    const localScope = hasLocalModeUrlParams(location.search);
+    navigate(
+      localScope
+        ? { pathname: location.pathname, search: location.search, hash: '' }
+        : location.pathname,
+      { replace: true, state: { fromShotClick: false } },
+    );
+  }, [setCurrentShotId, navigate, location.pathname, location.search]);
 
   const handlePreviousShot = useCallback(() => {
     if (sortedShots && shotToEdit) {
@@ -195,13 +203,14 @@ export function ShotEditorView({
   }, [selectedProjectId, shotToEdit.id, invalidateGenerations, signalShotOperation]);
 
   const handleFloatingHeaderNameClick = useCallback(() => {
+    if (isLocalMode) return;
     window.scrollTo({ top: 0, behavior: 'smooth' });
     setTimeout(() => {
       if (nameClickRef.current) {
         nameClickRef.current();
       }
     }, 600);
-  }, []);
+  }, [isLocalMode]);
 
   return (
     <>
@@ -214,7 +223,7 @@ export function ShotEditorView({
             availableLoras={availableLoras}
             updateShotMode={updateShotMode}
           >
-            <SettingsAutoDisable shotId={shotToEdit.id} isCloudGenerationEnabled={isCloudGenerationEnabled} />
+            <SettingsAutoDisable shotId={shotToEdit.id} isCloudGenerationEnabled={isCloudGenerationEnabled} readOnly={isLocalMode} />
             <ShotSettingsEditor
               // Core identifiers
               selectedShotId={shotToEdit.id}
@@ -235,7 +244,8 @@ export function ShotEditorView({
               onNextShot={handleNextShot}
               hasPrevious={hasPrevious}
               hasNext={hasNext}
-              onUpdateShotName={handleUpdateShotName}
+              onUpdateShotName={isLocalMode ? undefined : handleUpdateShotName}
+              readOnly={isLocalMode}
               // Loading and cache
               getFinalVideoCount={getFinalVideoCount}
               getHasStructureVideo={getHasStructureVideo}
@@ -253,6 +263,7 @@ export function ShotEditorView({
       <VideoTravelFloatingOverlay
         sticky={{
           shouldShowShotEditor: true,
+          readOnly: isLocalMode,
           stickyHeader,
           shotToEdit,
           isMobile,
@@ -276,9 +287,10 @@ export function ShotEditorView({
  * Renderless component that auto-disables conflicting settings.
  * Lives inside VideoTravelSettingsProvider to access settings context.
  */
-function SettingsAutoDisable({ shotId, isCloudGenerationEnabled }: {
+function SettingsAutoDisable({ shotId, isCloudGenerationEnabled, readOnly }: {
   shotId: string;
   isCloudGenerationEnabled: boolean;
+  readOnly?: boolean;
 }) {
   const { settings, status, shotId: loadedShotId, updateField, updateFields } =
     useVideoTravelSettingsMutations();
@@ -286,15 +298,15 @@ function SettingsAutoDisable({ shotId, isCloudGenerationEnabled }: {
 
   // Auto-disable turbo mode when cloud generation is disabled
   useEffect(() => {
-    if (status !== 'ready' || loadedShotId !== shotId) return;
+    if (readOnly || status !== 'ready' || loadedShotId !== shotId) return;
     if (!isCloudGenerationEnabled && turboMode) updateField('turboMode', false);
-  }, [isCloudGenerationEnabled, turboMode, status, loadedShotId, shotId, updateField]);
+  }, [isCloudGenerationEnabled, turboMode, status, loadedShotId, shotId, updateField, readOnly]);
 
   // Auto-disable advanced mode when turbo mode is on
   useEffect(() => {
-    if (status !== 'ready' || loadedShotId !== shotId) return;
+    if (readOnly || status !== 'ready' || loadedShotId !== shotId) return;
     if (turboMode && advancedMode) updateFields({ advancedMode: false, motionMode: 'basic' });
-  }, [turboMode, advancedMode, status, loadedShotId, shotId, updateFields]);
+  }, [turboMode, advancedMode, status, loadedShotId, shotId, updateFields, readOnly]);
 
   return null;
 }

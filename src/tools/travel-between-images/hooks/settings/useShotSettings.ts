@@ -14,6 +14,7 @@ import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
 import { toast } from '@/shared/components/ui/runtime/sonner';
 import { DEFAULT_STEERABLE_MOTION_SETTINGS } from '../../components/ShotEditor/state/types';
 import { useSessionInheritedDefaults } from './inheritedDefaults';
+import { hasLocalModeUrlParams } from '@/shared/dev/devSession';
 
 export interface UseShotSettingsReturn {
   // State
@@ -107,6 +108,7 @@ export const useShotSettings = (
     revert,
   } = autoSave;
   const seededLastEditedLoraShotIdRef = useRef<string | null>(null);
+  const isLocalMode = hasLocalModeUrlParams(typeof window === 'undefined' ? '' : window.location.search);
 
   useEffect(() => {
     seededLastEditedLoraShotIdRef.current = null;
@@ -163,7 +165,9 @@ export const useShotSettings = (
     const seedUnopenedShotLoras = async () => {
       try {
         const localLastEditedLora = readLastEditedLoraFromLocalStorage(projectId);
-        const lastEditedLora = localLastEditedLora === undefined
+        const lastEditedLora = isLocalMode
+          ? localLastEditedLora
+          : localLastEditedLora === undefined
           ? await readLastEditedLoraFromProject(projectId)
           : localLastEditedLora;
         if (cancelled) {
@@ -194,7 +198,7 @@ export const useShotSettings = (
     return () => {
       cancelled = true;
     };
-  }, [hasShotSettings, inheritedSettings, projectId, saveImmediate, settings, shotId, status]);
+  }, [hasShotSettings, inheritedSettings, isLocalMode, projectId, saveImmediate, settings, shotId, status]);
   
   // Persist settings to localStorage for future inheritance
   useEffect(() => {
@@ -253,6 +257,10 @@ export const useShotSettings = (
   
   // Apply settings from another shot
   const applyShotSettings = useCallback(async (sourceShotId: string) => {
+    if (isLocalMode) {
+      toast.info('Applying settings is unavailable for a local Astrid timeline.');
+      return;
+    }
     if (!shotIdRef.current || !sourceShotId) {
       toast.error('Cannot apply settings: missing shot ID');
       return;
@@ -276,10 +284,14 @@ export const useShotSettings = (
     } catch (err) {
       normalizeAndPresentError(err, { context: 'useShotSettings', toastTitle: 'Failed to apply settings' });
     }
-  }, [autoSaveUpdateFields]);
+  }, [autoSaveUpdateFields, isLocalMode]);
 
   // Apply project defaults
   const applyProjectDefaults = useCallback(async () => {
+    if (isLocalMode) {
+      toast.info('Project defaults are unavailable for a local Astrid timeline.');
+      return;
+    }
     if (!projectIdRef.current) {
       toast.error('Cannot apply defaults: no project selected');
       return;
@@ -303,7 +315,7 @@ export const useShotSettings = (
     } catch (err) {
       normalizeAndPresentError(err, { context: 'useShotSettings', toastTitle: 'Failed to apply defaults' });
     }
-  }, [autoSaveUpdateFields]);
+  }, [autoSaveUpdateFields, isLocalMode]);
 
   // Reset to hardcoded defaults
   const resetToDefaults = useCallback(() => {

@@ -21,6 +21,7 @@ import {
 import { useShotListDisplayController } from './hooks/useShotListDisplayController';
 
 interface ShotListDisplayProps {
+  readOnly?: boolean;
   projectId: string;
   onSelectShot: (shot: Shot) => void;
   onCreateNewShot?: () => void;
@@ -38,6 +39,7 @@ interface ShotListDisplayProps {
 }
 
 export const ShotListDisplay: React.FC<ShotListDisplayProps> = ({
+  readOnly = false,
   projectId,
   onSelectShot,
   onCreateNewShot,
@@ -133,8 +135,9 @@ export const ShotListDisplay: React.FC<ShotListDisplayProps> = ({
                 shotIndex={index}
                 projectAspectRatio={currentProject?.aspectRatio}
                 isHighlighted={highlightedShotId === shot.id}
-                onGenerationDrop={onGenerationDropOnShot}
-                onFilesDrop={onFilesDropOnShot}
+                onGenerationDrop={readOnly ? undefined : onGenerationDropOnShot}
+                onFilesDrop={readOnly ? undefined : onFilesDropOnShot}
+                readOnly={readOnly}
                 initialPendingUploads={shot.id === pendingNewShot.newlyCreatedShotId ? pendingNewShot.newlyCreatedShotExpectedImages : 0}
                 initialPendingBaselineNonVideoCount={shot.id === pendingNewShot.newlyCreatedShotId ? pendingNewShot.newlyCreatedShotBaselineNonVideoCount : undefined}
                 onInitialPendingUploadsConsumed={shot.id === pendingNewShot.newlyCreatedShotId ? pendingNewShot.clearNewlyCreatedShot : undefined}

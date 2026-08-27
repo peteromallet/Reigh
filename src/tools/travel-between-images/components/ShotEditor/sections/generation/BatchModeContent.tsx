@@ -35,6 +35,7 @@ import {
 import { buildJoinClipsFormProps } from './joinClipsFormProps';
 
 interface BatchModeContentProps {
+  readOnly?: boolean;
   ctaContainerRef?: (node: HTMLDivElement | null) => void;
   swapButtonRef: React.RefObject<HTMLButtonElement>;
   parentVariantName?: string;
@@ -44,6 +45,7 @@ interface BatchModeContentProps {
 }
 
 export const BatchModeContent: React.FC<BatchModeContentProps> = ({
+  readOnly = false,
   ctaContainerRef,
   swapButtonRef,
   parentVariantName,
@@ -166,6 +168,7 @@ export const BatchModeContent: React.FC<BatchModeContentProps> = ({
             onBlurSave={blurSaveHandler}
             onClearEnhancedPrompts={generationHandlers.clearAllEnhancedPrompts}
             videoControlMode={generationModeSettings.videoControlMode}
+            readOnly={readOnly}
             textBeforePrompts={promptSettings.textBeforePrompts}
             onTextBeforePromptsChange={promptSettings.setTextBeforePrompts}
             textAfterPrompts={promptSettings.textAfterPrompts}
@@ -245,7 +248,7 @@ export const BatchModeContent: React.FC<BatchModeContentProps> = ({
           onGenerate={() => generationHandlers.handleGenerateBatch(parentVariantName || '')}
           isGenerating={parentIsGeneratingVideo || generationMode.isSteerableMotionEnqueuing}
           justQueued={parentVideoJustQueued || generationMode.steerableMotionJustQueued}
-          disabled={generationMode.isGenerationDisabled}
+            disabled={readOnly || generationMode.isGenerationDisabled}
           enhancementProgress={generationMode.enhancementProgress}
           inputId="variant-name"
           videoCount={Math.max(0, simpleFilteredImages.length - 1)}

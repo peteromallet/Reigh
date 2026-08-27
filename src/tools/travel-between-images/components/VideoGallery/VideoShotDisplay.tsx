@@ -19,6 +19,7 @@ import { useShotAdditionSelectionOptional } from '@/shared/state/selectionStore'
 import { usePanesStore } from '@/shared/state/panesStore';
 
 interface VideoShotDisplayProps {
+  readOnly?: boolean;
   shot: Shot;
   onSelectShot: () => void;
   onDuplicateShot?: () => void;
@@ -44,6 +45,7 @@ interface VideoShotDisplayProps {
 const SKIP_DELETE_CONFIRMATION_KEY = 'reigh-skip-delete-shot-confirmation';
 
 export const VideoShotDisplay: React.FC<VideoShotDisplayProps> = ({
+  readOnly = false,
   shot,
   onSelectShot,
   onDuplicateShot,
@@ -126,6 +128,7 @@ export const VideoShotDisplay: React.FC<VideoShotDisplayProps> = ({
 
   const handleNameEditToggle = (e?: React.MouseEvent) => {
     e?.stopPropagation();
+    if (readOnly) return;
     if (isEditingName) {
       cancelNameEdit(shot.name);
       return;
@@ -134,6 +137,7 @@ export const VideoShotDisplay: React.FC<VideoShotDisplayProps> = ({
   };
 
   const handleSaveName = async () => {
+    if (readOnly) return;
     if (!currentProjectId) {
       toast.error('Cannot update shot: Project ID is missing.');
       return;
@@ -164,6 +168,7 @@ export const VideoShotDisplay: React.FC<VideoShotDisplayProps> = ({
   };
 
   const performDelete = async () => {
+    if (readOnly) return;
     if (!currentProjectId) {
       toast.error('Cannot delete shot: Project ID is missing.');
       return;
@@ -185,6 +190,7 @@ export const VideoShotDisplay: React.FC<VideoShotDisplayProps> = ({
 
   const handleDeleteShot = async (e?: React.MouseEvent) => {
     e?.stopPropagation();
+    if (readOnly) return;
     if (!currentProjectId) {
       toast.error('Cannot delete shot: Project ID is missing.');
       return;
@@ -200,6 +206,7 @@ export const VideoShotDisplay: React.FC<VideoShotDisplayProps> = ({
   };
 
   const handleConfirmDelete = async () => {
+    if (readOnly) return;
     if (skipConfirmationChecked) {
       localStorage.setItem(SKIP_DELETE_CONFIRMATION_KEY, 'true');
     }
@@ -210,6 +217,7 @@ export const VideoShotDisplay: React.FC<VideoShotDisplayProps> = ({
 
   const handleDuplicateShot = async (e?: React.MouseEvent) => {
     e?.stopPropagation();
+    if (readOnly) return;
     if (!currentProjectId) {
       return;
     }
@@ -227,6 +235,7 @@ export const VideoShotDisplay: React.FC<VideoShotDisplayProps> = ({
 
   const handleDuplicateShotWithVideos = async (e?: React.MouseEvent) => {
     e?.stopPropagation();
+    if (readOnly) return;
     if (!currentProjectId || isTempShot) {
       return;
     }
@@ -291,6 +300,7 @@ export const VideoShotDisplay: React.FC<VideoShotDisplayProps> = ({
             )}
           </div>
           <ShotControls
+            readOnly={readOnly}
             isTempShot={isTempShot}
             displayImagesCount={displayImages.length}
             isEditingName={isEditingName}
@@ -321,11 +331,12 @@ export const VideoShotDisplay: React.FC<VideoShotDisplayProps> = ({
           showMobileSelect={isGenerationsPaneLocked && isMobile}
           isSelectedForAddition={isSelectedForAddition}
           onSelectShotForAddition={handleSelectShotForAddition}
-          onGenerate={() => setIsImageGenModalOpen(true)}
+          readOnly={readOnly}
+          onGenerate={readOnly ? undefined : () => setIsImageGenModalOpen(true)}
         />
       </div>
 
-      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+      <AlertDialog open={!readOnly && isDeleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Shot</AlertDialogTitle>
@@ -359,7 +370,7 @@ export const VideoShotDisplay: React.FC<VideoShotDisplayProps> = ({
         </AlertDialogContent>
       </AlertDialog>
 
-      {isVideoModalOpen && (
+      {!readOnly && isVideoModalOpen && (
         <VideoGenerationModal
           isOpen={isVideoModalOpen}
           onClose={() => setVideoModalOpen(false)}
@@ -370,7 +381,7 @@ export const VideoShotDisplay: React.FC<VideoShotDisplayProps> = ({
         />
       )}
 
-      {isImageGenModalOpen && (
+      {!readOnly && isImageGenModalOpen && (
         <ImageGenerationModal
           isOpen={isImageGenModalOpen}
           onClose={() => setIsImageGenModalOpen(false)}

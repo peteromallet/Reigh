@@ -14,6 +14,7 @@ export interface HeaderSectionCallbacks {
 }
 
 export interface HeaderSectionLayout {
+  readOnly?: boolean;
   headerContainerRef?: (node: HTMLDivElement | null) => void;
   centerSectionRef: React.RefObject<HTMLDivElement>;
   isSticky?: boolean;

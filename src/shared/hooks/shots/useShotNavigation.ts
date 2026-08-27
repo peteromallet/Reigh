@@ -5,6 +5,7 @@ import { useIsMobile } from '@/shared/hooks/mobile';
 import { Shot } from '@/domains/generation/types';
 import { TOOL_ROUTES, travelShotUrl } from '@/shared/lib/tooling/toolRoutes';
 import { dispatchAppEvent } from '@/shared/lib/typedEvents';
+import { hasLocalModeUrlParams } from '@/shared/dev/devSession';
 
 interface ShotNavigationOptions {
   /** Whether to scroll to top after navigation */
@@ -100,7 +101,12 @@ export const useShotNavigation = (): ShotNavigationResult => {
     // Instead, we let the hash drive everything: useSelectedShotResolution
     // resolves shotToEdit from hashShotId + shotFromState, and useUrlSync/
     // useSyncCurrentShotId set currentShotId from the hash after navigation.
-    const targetUrl = travelShotUrl(shot.id);
+    // Local Astrid documents use query parameters as their project/timeline
+    // identity. Preserve them when moving between shots; dropping the scope
+    // would switch the page back to the deferred cloud surface.
+    const targetUrl = typeof window !== 'undefined' && hasLocalModeUrlParams(window.location.search)
+      ? `${window.location.pathname}${window.location.search}#${encodeURIComponent(shot.id)}`
+      : travelShotUrl(shot.id);
     navigateRef.current(targetUrl, {
       state: {
         fromShotClick: true,
@@ -119,7 +125,10 @@ export const useShotNavigation = (): ShotNavigationResult => {
 
     setCurrentShotIdRef.current(null);
 
-    navigateRef.current(TOOL_ROUTES.TRAVEL_BETWEEN_IMAGES, {
+    const targetUrl = typeof window !== 'undefined' && hasLocalModeUrlParams(window.location.search)
+      ? `${window.location.pathname}${window.location.search}`
+      : TOOL_ROUTES.TRAVEL_BETWEEN_IMAGES;
+    navigateRef.current(targetUrl, {
       state: { fromShotClick: false },
       replace: opts.replace,
     });

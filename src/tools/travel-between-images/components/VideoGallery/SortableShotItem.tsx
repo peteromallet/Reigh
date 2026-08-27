@@ -19,6 +19,7 @@ import {
 export type { DropOptions };
 
 interface SortableShotItemProps {
+  readOnly?: boolean;
   shot: Shot;
   onSelectShot: () => void;
   onDuplicateShot?: () => void;
@@ -41,6 +42,7 @@ interface SortableShotItemProps {
 }
 
 export const SortableShotItem: React.FC<SortableShotItemProps> = ({
+  readOnly = false,
   shot,
   onSelectShot,
   onDuplicateShot,
@@ -67,7 +69,7 @@ export const SortableShotItem: React.FC<SortableShotItemProps> = ({
     isDragging,
   } = useSortable({
     id: shot.id,
-    disabled: isDragDisabled,
+    disabled: isDragDisabled || readOnly,
   });
 
   const {
@@ -87,8 +89,8 @@ export const SortableShotItem: React.FC<SortableShotItemProps> = ({
     handleWithoutPositionDragLeave,
   } = useSortableShotDropFeedback({
     shot,
-    onGenerationDrop,
-    onFilesDrop,
+    onGenerationDrop: readOnly ? undefined : onGenerationDrop,
+    onFilesDrop: readOnly ? undefined : onFilesDrop,
     initialPendingUploads,
     initialPendingBaselineNonVideoCount,
     onInitialPendingUploadsConsumed,
@@ -140,12 +142,12 @@ export const SortableShotItem: React.FC<SortableShotItemProps> = ({
     <div
       ref={setNodeRef}
       style={style}
-      draggable
+      draggable={!readOnly}
       onDragStart={handleShotDragStart}
-      onDragEnter={handleDragEnter}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
+      onDragEnter={readOnly ? undefined : handleDragEnter}
+      onDragOver={readOnly ? undefined : handleDragOver}
+      onDragLeave={readOnly ? undefined : handleDragLeave}
+      onDrop={readOnly ? undefined : handleDrop}
       className={cn(
         'transition-all duration-200 relative self-start',
         isDropTarget && 'ring-2 ring-primary ring-offset-2 ring-offset-background scale-[1.02]'
@@ -153,6 +155,7 @@ export const SortableShotItem: React.FC<SortableShotItemProps> = ({
     >
       <VideoShotDisplay
         {...sharedShotDisplayProps}
+        readOnly={readOnly}
         isHighlighted={isHighlighted || isDropTarget}
         pendingUploads={pendingSkeletonCount}
         dropLoadingState={withPositionDropState}
