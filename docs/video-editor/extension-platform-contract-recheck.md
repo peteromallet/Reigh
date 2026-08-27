@@ -66,7 +66,7 @@ This matrix maps every Done Criteria claim from prior milestone briefs to concre
 | M2-004 | Accessibility labels and announcements are testable | gap | supported | `frontend-closure-checklist.md` documents a11y expectations; canary container role/label gaps resolved by removing the demo surfaces 2026-08-11 | `docs/video-editor/frontend-closure-checklist.md` |
 | M2-005 | Diagnostics can represent source ranges for compiler/user-authored-code errors | pass | supported | `DiagnosticSourceRange` in `src/sdk/index.ts` (1-based); `code-panel-diagnostics-example.ts` demonstrates | `src/sdk/index.ts` |
 | M2-006 | `SchemaForm` renders and validates common schema subset and reports unsupported types as diagnostics | pass | supported | `SchemaForm` host primitive referenced in M2 brief; schema capability registry; `src/sdk/index.ts` includes parameter schema types | `src/tools/video-editor/components/` |
-| M2-007 | Schema capability registry tests cover supported widgets, unsupported diagnostics, validation paths, and custom widget placeholder | gap | supported | Schema capability registry concept documented; dedicated registry tests not identified as standalone test file | `src/tools/video-editor/` |
+| M2-007 | Schema capability registry tests cover supported widgets, unsupported diagnostics, validation paths, and custom widget placeholder | pass | supported | `src/tools/video-editor/runtime/schemaCapabilityRegistry.test.ts` (72 tests) covers supported widgets, unsupported diagnostics, custom widget placeholders, validation paths, edge cases, and registry isolation | `src/tools/video-editor/runtime/schemaCapabilityRegistry.ts` |
 | M2-008 | Diagnostic fallback links open `DiagnosticPanel` filtered to failing extension/contribution | pass | supported | `ContributionErrorBoundary` with "View diagnostics" action documented in `frontend-closure-checklist.md` | `docs/video-editor/frontend-closure-checklist.md` |
 | M2-009 | Extension status drawer shows active extension IDs, contribution inventory, diagnostics, and current blockers without becoming an install/settings manager | gap | supported | Skeletal status drawer concept referenced; M14 owns full manager UI; standalone status drawer tests not identified | `docs/video-editor/frontend-closure-checklist.md` |
 | M2-010 | Code panel example publishes syntax error diagnostic and shows it in diagnostic panel | pass | supported | `src/examples/code-panel-diagnostics-example.ts` — publishes 3 structured diagnostics + export-blocker; diagnostic panel tests in `src/tools/video-editor/components/DiagnosticPanel/DiagnosticPanel.test.tsx` | `src/examples/code-panel-diagnostics-example.ts` |
@@ -312,15 +312,15 @@ The following gaps are significant enough to warrant explicit blocker documentat
 
 | Status | Count |
 |---|---|
-| pass | 75 |
-| gap | 52 |
+| pass | 102 |
+| gap | 69 |
 | blocked | 0 |
-| **Total** | **127** |
+| **Total** | **171** |
 
 | Disposition | Count |
 |---|---|
-| supported | 113 |
-| deferred | 14 |
+| supported | 159 |
+| deferred | 13 |
 | unsupported | 0 |
 | release-blocking | 0 (see § 3.1 for release-blocking gap analysis) |
 

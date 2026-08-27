@@ -76,6 +76,7 @@ This document is the downstream consumer of the [M15 Contract-Recheck Matrix](./
 | S-025 | Reserved frontend component slots compile as inert placeholders | **supported** | CR:M2-013; `InertReservedPlaceholder` in `TimelineEditorShellReservedSlots.tsx` |
 | S-026 | Writing/script and canvas/stage canaries demonstrate non-timeline-native workflows | **supported** | CR:M2-014; EX:writing-canary-example.ts, stage-canary-example.ts |
 | S-027 | Frontend closure checklist documented and applied to at least one primitive | **supported** | CR:M2-012, CR:X-008; DOC:frontend-closure-checklist.md |
+| S-028 | Schema capability registry covers supported widgets, unsupported diagnostics, validation paths, custom widget placeholders, and registry isolation | **supported** | CR:M2-007; TEST:src/tools/video-editor/runtime/schemaCapabilityRegistry.test.ts (72 tests) |
 
 ### 2.4 TimelinePatch & Proposal System
 
@@ -364,7 +365,6 @@ This document is the downstream consumer of the [M15 Contract-Recheck Matrix](./
 | D-130 | Proposal UI component tests (previewable, non-previewable, accepted, rejected, stale) | **deferred** | CR:M3-006; proposal-runtime.test.ts covers runtime; dedicated UI tests not identified |
 | D-131 | DSL/compiler canary reading `CreativeContext.timeline`, storing source/source-map, emitting `TimelineProposal` | **deferred** | CR:M3-013; `SourceMapRuntime` exists; explicit DSL canary test not identified |
 | D-132 | Proposal diff rendering, source-map navigation from diff/diagnostic UI, stale badges | **deferred** | CR:M3-015; infrastructure exists; dedicated rendering tests not identified |
-| D-133 | Schema capability registry tests (supported widgets, unsupported diagnostics, validation, custom widget placeholder) | **deferred** | CR:M2-007; concept documented; dedicated registry tests not identified |
 | D-134 | Extension status drawer: active extension IDs, contribution inventory, diagnostics, current blockers, and composition-spine expansion | **deferred** | CR:M2-009; skeletal concept; the manager UI basics (enable/disable, settings editing, persistence) are now supported and credited to M5/M14 cross-delivery (see S-160–S-164); composition-spine and status-drawer expansion remain staged |
 | D-135 | Subscription cleanup dedicated tests (leaked listener prevention) | **deferred** | CR:M2-002; `DisposeHandle` infrastructure exists; dedicated leak tests not identified |
 | D-136 | Standalone `@reigh/editor-sdk` npm package publishing (independent npm registry publication with its own `package.json`, versioning, and distribution outside the monorepo) | **deferred** | ABSENCE:grep -r 'standalone-publish' src/sdk/; `@reigh/editor-sdk` is a monorepo path alias resolving to `src/sdk/index.ts` — it does not have its own `package.json`, publishConfig, or independent build pipeline (no standalone-publish markers exist). The SDK is monorepo-extractable (verified by `scripts/quality/check-video-editor-sdk-imports.mjs` external-consumption smoke). Standalone npm publishing has not been implemented. |
@@ -422,7 +422,7 @@ These behaviors are documented as unsupported across all milestones and have no 
 | Cross-Cutting Guarantees | 6 |
 | Extension Manager, Persistence & Cleanup | 5 |
 | Timeline Overlay Host, Markers & Dev-Local Manager | 7 |
-| **Total supported** | **103** |
+| **Total supported** | **104** |
 
 ### 5.2 Deferred V1 behaviors
 
@@ -440,8 +440,8 @@ These behaviors are documented as unsupported across all milestones and have no 
 | Shader Frontend (M13) | 3 |
 | TimelinePatch Reserved Ops | 2 |
 | Permissions & Sandboxing | 4 |
-| Structural Deferrals | 7 |
-| **Total deferred** | **70** |
+| Structural Deferrals | 6 |
+| **Total deferred** | **69** |
 
 ---
 

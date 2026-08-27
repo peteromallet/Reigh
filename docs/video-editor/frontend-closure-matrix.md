@@ -327,7 +327,7 @@ slot. The M3/M4 canary demo surfaces (`CodePanelCanary`, `WritingPanelCanary`,
 - **Evidence:** `src/tools/video-editor/components/SchemaForm/SchemaForm.test.tsx`.
 - **Status:** `pass`
 - **Disposition:** `supported`
-- **Contract-recheck:** CR:M2-006, CR:M2-007 (gap: schema capability registry tests)
+- **Contract-recheck:** CR:M2-006, CR:M2-007; schema capability registry coverage is proven by `src/tools/video-editor/runtime/schemaCapabilityRegistry.test.ts` (72 tests).
 
 ---
 
