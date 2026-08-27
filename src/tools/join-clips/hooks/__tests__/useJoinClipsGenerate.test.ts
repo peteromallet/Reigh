@@ -7,11 +7,13 @@ const {
   mockCreateTask,
   mockAddIncomingTask,
   mockRemoveIncomingTask,
+  mockResolveTaskIds,
   mockToast,
 } = vi.hoisted(() => ({
   mockCreateTask: vi.fn(),
   mockAddIncomingTask: vi.fn().mockReturnValue('incoming-1'),
   mockRemoveIncomingTask: vi.fn(),
+  mockResolveTaskIds: vi.fn(),
   mockToast: vi.fn(),
 }));
 
@@ -45,6 +47,7 @@ vi.mock('@/shared/contexts/IncomingTasksContext', () => ({
   useIncomingTasks: () => ({
     addIncomingTask: mockAddIncomingTask,
     removeIncomingTask: mockRemoveIncomingTask,
+    resolveTaskIds: mockResolveTaskIds,
     cancelIncoming: vi.fn(),
     cancelAllIncoming: vi.fn(),
     wasCancelled: vi.fn(() => false),
@@ -344,6 +347,7 @@ describe('useJoinClipsGenerate', () => {
           }),
         }),
       );
+      expect(mockResolveTaskIds).toHaveBeenCalledWith('incoming-1', ['task-1']);
     });
   });
 
