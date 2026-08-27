@@ -49,7 +49,7 @@ describe('selectDocumentDerivedShots', () => {
     expect(shot.clips[1]).toMatchObject({ relativeStartSeconds: 0.5, lane: 1 });
     expect(shot.clips[2]?.relativeStartSeconds).toBe(5);
     expect(shot.clips[0]?.thumbnailUrl).toBe('https://cdn.test/a.png');
-    expect(shot.clips[2]?.missingAsset).toBe(true);
+    expect(shot.clips[3]?.missingAsset).toBe(true);
   });
 
   it('keeps empty groups as empty shots and handles a missing groups block', () => {
@@ -59,11 +59,12 @@ describe('selectDocumentDerivedShots', () => {
       clips: [],
     });
     expect(selectDocumentDerivedShots(config({ pinnedShotGroups: undefined }), registry)).toEqual([]);
-    expect(selectDocumentDerivedShots(config(), registry)[2]).toMatchObject({
+    const duplicatedMembershipShot = selectDocumentDerivedShots(config(), registry)[2];
+    expect(duplicatedMembershipShot).toMatchObject({
       id: 'shot-c',
       name: 'shot-c',
-      clips: [{ clipId: 'early' }],
     });
+    expect(duplicatedMembershipShot?.clips.map((clip) => clip.clipId)).toEqual(['early', 'anchor']);
   });
 
   it('does not let clips on another track leak into a visual shot', () => {
