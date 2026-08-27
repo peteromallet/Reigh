@@ -2680,3 +2680,73 @@ fresh console collection.
   both image cards, visible variants, exactly one detail request, refresh
   durability, zero Supabase traffic, zero unexpected HTTP failures, and zero
   console errors.
+
+### Matrix acceptance exposed remaining gallery contract boundaries
+
+- Desert had 37 succeeded generation tasks but no generation or
+  generation-variant rows. The repair projected 35 eligible outputs (2 images,
+  33 videos) and skipped two storyboard artifacts; that is a project-owned
+  repair receipt, not a reason to fabricate rows. The matrix runner has three
+  checked-in example rows, but a configured row is not a fixture: `runRow` fails
+  when its real bridge timeline has no `pinnedShotGroups` or image generations.
+  Evidence: `e7bb2183d`, `f4df47821`,
+  `scripts/acceptance/verify-local-project-gallery.mjs`.
+- A succeeded task is not evidence of a gallery generation, and the current
+  local data does not provide trustworthy historical task-to-variant grouping.
+  The completion contract is the committed task-detail output: it is the
+  authority for task-to-media association. Gallery acceptance separately
+  checks the generation summary's `variant_count` and that generation detail's
+  `variants`; the deterministic fixture intentionally contains only one
+  two-variant generation. Evidence: `e7bb2183d`, `5535bb91e`,
+  `src/integrations/astrid/bridgeTaskOutputs.ts`, `src/test/bridgeFixtures.mjs`,
+  `src/integrations/astrid/galleryRoutes.ts`.
+- `isMobile` was being treated as an input-device fact, so a desktop browser
+  narrowed to a mobile-width viewport lost its mouse double-click lightbox
+  path. The correction keeps mouse double-click available at every breakpoint
+  and tests that exact narrow-width case. Evidence: `c5a4383a2`,
+  `src/shared/components/MediaGalleryItem/components/ImageContent.tsx` and
+  its behavior test.
+- Mark-viewed still had a local-mode Supabase write path. The hook now selects
+  the project-scoped Astrid gallery mutation when local URL authority is
+  active, with a bridge response schema and focused tests; cloud mode retains
+  its existing Supabase path. Evidence: `8031de318`,
+  `src/shared/hooks/variants/useMarkVariantViewed.ts`,
+  `src/shared/hooks/__tests__/useMarkVariantViewed.test.ts`.
+- A timeline overview was not enough to prove shot isolation: the focused
+  per-shot view, hash deep link, refresh, and browser-back behavior are now
+  explicit acceptance checks. The runner derives each card's visual clip set
+  from `pinnedShotGroups` and rejects cross-shot clips. Evidence: `7e101339e`
+  and `f4df47821`, `src/tools/travel-between-images/pages/LocalTimelineShotBrowser.tsx`.
+- Same-URL navigation is not a reload contract. After opening the gallery
+  lightbox, a same-URL `goto` could be a no-op and leave the modal mounted;
+  persistence coverage now performs a real document reload. Evidence:
+  `0c2149aa4`, `scripts/acceptance/verify-local-project-gallery.mjs`.
+- The real bridge discovers projects from SQLite while `serve` owns an
+  exclusive lock; registration must finish and close its writer before serve
+  starts. The stub likewise serializes reset/save/registry mutations. Treat
+  setup mutations as sequential and do not parallelize writers against the
+  serving bridge. Evidence: `0d631aad4`,
+  `tests/e2e/timeline/real-bridge-serve.mjs` lines 302–305,
+  `tests/e2e/timeline/astrid-bridge-stub.mjs`.
+- Disposable browser evidence and transformed-test caches can exhaust the host
+  volume even when the implementation is healthy. Preserve logs, remove only
+  verified task-owned pytest/Astrid temporary roots, confirm at least 11 GiB
+  free before retrying, and recheck the volume around heavyweight phases;
+  do not touch user caches, active browser data, worktrees, or live servers.
+  Evidence: `docs/extensions/evidence/releases/extension-ship-quality-rc6/late-friction-addendum.md`
+  and `docs/extensions/extension-release-next-steps.md` (Phase 2).
+- The capability census reports tasks, generations, and media, but does not
+  census the timeline-document route. A green boot census therefore does not
+  prove that local shot browsing can load `{config, registry}`; the matrix
+  acceptance must retain its direct timeline read. This is a coverage
+  limitation, not a proven route defect. Evidence:
+  `src/integrations/astrid/capabilityCensus.ts`, `f4df47821`.
+- Imported timeline assets and gallery generations are different authorities:
+  the former live in the timeline's registry/config and enrich the document,
+  while the latter come from the project generations list/detail. The real
+  bridge fixture explicitly says generation/variant asset references do not
+  create gallery rows or satisfy promotion. Never count an imported asset as a
+  generation without a bridge generation row and primary variant. Evidence:
+  `2aff19f50`, `tests/e2e/timeline/real-bridge-serve.mjs`,
+  `src/tools/travel-between-images/pages/LocalTimelineShotBrowser.tsx`, and
+  `f4df47821`.
