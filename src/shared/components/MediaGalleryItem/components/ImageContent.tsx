@@ -33,7 +33,6 @@ export const ImageContent: React.FC<ImageContentProps> = ({
   isThumbShowing,
   isFullLoaded,
   progressiveRef,
-  isMobile,
   onOpenLightbox,
   onImageLoad,
   onImageError,
@@ -74,7 +73,11 @@ export const ImageContent: React.FC<ImageContentProps> = ({
           // via pointerdown/pointerup with manual movement tracking — the
           // wrapper is `draggable` and the browser eats native clicks at small
           // movement thresholds. Only `onDoubleClick` stays here.
-          onDoubleClick={isMobile ? undefined : () => onOpenLightbox(image)}
+          // `isMobile` is viewport-derived, not an input-device guarantee.
+          // A desktop browser in a narrow window still emits mouse double
+          // clicks, so keep that route available at every breakpoint. Touch
+          // double-taps are handled separately by useMobileInteractions.
+          onDoubleClick={() => onOpenLightbox(image)}
           draggable={false}
           style={{ cursor: 'pointer' }}
         />

@@ -240,6 +240,25 @@ describe('MediaGalleryItem behavior', () => {
     expect(props.actions.onOpenLightbox).toHaveBeenCalledWith(props.image);
   });
 
+  it('keeps mouse double-click lightbox access at a mobile-width breakpoint', async () => {
+    mocks.hasLoadedImage.mockReturnValue(true);
+    const props = buildProps({
+      mobileInteraction: {
+        isMobile: true,
+        mobileActiveImageId: null,
+        mobilePopoverOpenImageId: null,
+        onMobileTap: vi.fn(),
+        setMobilePopoverOpenImageId: vi.fn(),
+      },
+    });
+
+    render(<MediaGalleryItem {...props} />);
+
+    fireEvent.doubleClick(await screen.findByAltText('Sunset over water'));
+
+    expect(props.actions.onOpenLightbox).toHaveBeenCalledWith(props.image);
+  });
+
   it('forwards context menu events to the item action handler', () => {
     const onContextMenu = vi.fn();
     const props = buildProps({
