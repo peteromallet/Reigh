@@ -117,6 +117,16 @@ export interface ExtensionOperationalAnalyticsSink {
 
 let installedSink: ExtensionOperationalAnalyticsSink | undefined;
 
+function isOfflineEditorMode(): boolean {
+  return typeof window === 'undefined'
+    || hasLocalModeUrlParams(window.location.search)
+    || isLocalTestMode();
+}
+
+function createNoopSink(): ExtensionOperationalAnalyticsSink {
+  return { dispose: () => {}, flush: async () => {}, getDroppedCount: () => 0 };
+}
+
 /**
  * Install once at app bootstrap. Queueing, retries and transport failures are
  * deliberately best-effort and never escape the event listener or block React.
@@ -128,10 +138,12 @@ export function installExtensionOperationalAnalyticsSink(
   // for browser assertions, but never install the network sink or let a timer
   // manufacture a Supabase request. `localTest=1` is only the deterministic
   // test-runtime refinement; local editor URLs without it are offline too.
-  const localMode = typeof window !== 'undefined'
-    && hasLocalModeUrlParams(window.location.search);
-  if (typeof window === 'undefined' || localMode || isLocalTestMode()) {
-    return { dispose: () => {}, flush: async () => {}, getDroppedCount: () => 0 };
+  if (isOfflineEditorMode()) {
+    // A single-page navigation can enter local mode after the sink was
+    // installed on a cloud-capable route. Tear down that old listener rather
+    // than leaving a cloud transport reachable from the local editor.
+    installedSink?.dispose();
+    return createNoopSink();
   }
   if (installedSink) return installedSink;
 
@@ -157,6 +169,22 @@ export function installExtensionOperationalAnalyticsSink(
 
   const flush = async (): Promise<void> => {
     if (disposed || flushing || queue.length === 0) return;
+    // Re-check authority at send time. The URL can change without a full app
+    // bootstrap, so an event queued before entering local mode must not cross
+    // the no-user/offline boundary.
+    if (isOfflineEditorMode()) {
+      if (flushTimer) {
+        clearTimeout(flushTimer);
+        flushTimer = undefined;
+      }
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+        retryTimer = undefined;
+      }
+      queue.length = 0;
+      retryAttempts = 0;
+      return;
+    }
     if (flushTimer) {
       clearTimeout(flushTimer);
       flushTimer = undefined;
@@ -202,6 +230,9 @@ export function installExtensionOperationalAnalyticsSink(
   };
 
   const onEvent = (event: Event): void => {
+    // Do not even retain events while the browser is in local/no-user mode.
+    // This also protects a sink installed before an SPA route transition.
+    if (isOfflineEditorMode()) return;
     const safe = toTransportSafeOperationalEvent((event as CustomEvent<unknown>).detail);
     if (!safe || disposed) return;
     if (queue.length >= OPERATIONAL_ANALYTICS_QUEUE_LIMIT) {
