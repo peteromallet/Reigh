@@ -306,6 +306,7 @@ describe('collectBuiltInKnownIds', () => {
     expect(ids.clipTypes.has('hold')).toBe(true);
     expect(ids.clipTypes.has('text')).toBe(true);
     expect(ids.clipTypes.has('effect-layer')).toBe(true);
+    expect(ids.clipTypes.has('audio-reactive-colour')).toBe(true);
   });
 
   it('includes TRUSTED_CLIP_TYPES', () => {

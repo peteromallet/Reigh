@@ -327,6 +327,31 @@ describe('TimelineRenderer registered sequences', () => {
     });
   });
 
+  it('dispatches audio-reactive-colour through the first-party clip-relative renderer', () => {
+    currentFrame = 4;
+    render(<TimelineRenderer config={{
+      ...buildConfig(),
+      clips: [{
+        id: 'colour-map',
+        clipType: 'audio-reactive-colour',
+        track: 'V1',
+        at: 2,
+        hold: 3,
+        params: {
+          initialColor: '#000000',
+          events: [{ frame: 4, color: '#405060' }],
+        },
+      }],
+    }} />);
+
+    expect(screen.queryByTestId('unknown-clip-placeholder')).not.toBeInTheDocument();
+    expect(screen.getByTestId('audio-reactive-colour-renderer')).toHaveAttribute('data-frame', '4');
+    expect(screen.getByTestId('audio-reactive-colour-renderer')).toHaveStyle({
+      backgroundColor: '#405060',
+    });
+    expect(sequenceProps[0]).toMatchObject({ from: 60, durationInFrames: 90 });
+  });
+
   it('uses shared duration helpers for speed-adjusted registered sequence clips', () => {
     render(<TimelineRenderer config={{
       ...buildConfig({ theme: '2rp' }),

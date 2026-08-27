@@ -331,6 +331,35 @@ const BUILTIN_CLIP_TYPE_REGISTRATIONS = [
       },
     }),
   },
+  {
+    id: 'audio-reactive-colour',
+    source: 'builtin',
+    descriptor: defineClipType({
+      id: 'audio-reactive-colour',
+      label: 'Audio-reactive colour',
+      description: 'Deterministic full-frame colour effect driven by clip-relative frame markers.',
+      hold: {
+        kind: 'required',
+        defaultSeconds: 5,
+        minSeconds: 0.05,
+        maxSeconds: 120,
+        stepSeconds: 0.1,
+      },
+      defaults: {
+        params: {
+          schemaVersion: 1,
+          initialColor: '#000000',
+          events: [],
+        },
+      },
+      renderCapabilities: {
+        previewRoute: 'custom',
+        exportRoute: 'client',
+        features: ['visual', 'hold-duration'],
+        knownLimitations: ['Colour changes are marker-driven; no live audio analysis occurs in the browser renderer.'],
+      },
+    }),
+  },
 ] as const satisfies readonly BuiltinClipTypeRegistration[];
 
 const BUILTIN_CLIP_TYPE_REGISTRATION_MAP = new Map(

@@ -201,7 +201,8 @@ function createProcessAttachEvidenceIndex(
 
 /**
  * Collect every built-in known ID from the host-owned registries:
- * - `BUILTIN_CLIP_TYPES` (media, hold, text, effect-layer)
+ * - `BUILTIN_CLIP_TYPES` (media, hold, text, effect-layer, automation,
+ *   audio-reactive-colour)
  * - `TRUSTED_CLIP_TYPES` (image-jump, title-card, section-hook, etc.)
  * - `entranceEffectTypes` / `exitEffectTypes` / `continuousEffectTypes`
  * - The current dynamic effect registry's `listAll()` set

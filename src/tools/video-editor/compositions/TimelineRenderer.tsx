@@ -14,6 +14,7 @@ import { AudioTrack } from '@/tools/video-editor/compositions/AudioTrack.tsx';
 import { AudioAnalysisProvider } from '@/tools/video-editor/compositions/AudioAnalysisProvider.tsx';
 import { EffectLayerSequence } from '@/tools/video-editor/compositions/EffectLayerSequence.tsx';
 import { TextClipSequence } from '@/tools/video-editor/compositions/TextClip.tsx';
+import { AudioReactiveColourSequence } from '@/tools/video-editor/compositions/AudioReactiveColour.tsx';
 import { VisualClipSequence } from '@/tools/video-editor/compositions/VisualClip.tsx';
 import { UnknownClipPlaceholderSequence } from '@/tools/video-editor/compositions/UnknownClipPlaceholder.tsx';
 import { resolveTimelineRenderTheme } from '@/tools/video-editor/compositions/installed-themes.ts';
@@ -1059,6 +1060,14 @@ const VisualTrack: FC<VisualTrackProps> = ({
 
         if (clip.clipType === 'text') {
           return <TextClipSequence key={clip.id} clip={clip} track={track} fps={fps} />;
+        }
+
+        // First-party Astrid parity renderer. This is deliberately dispatched
+        // before extension/unknown fallbacks so the frozen audio-reactive
+        // colour contract uses the same component in preview and client
+        // render/export.
+        if (clip.clipType === 'audio-reactive-colour') {
+          return <AudioReactiveColourSequence key={clip.id} clip={clip} fps={fps} />;
         }
 
         // EFFECT_REGISTRY dispatch (Sprint 5 / SD-026): if the clipType
