@@ -16,6 +16,21 @@ also requires an exact clean Astrid checkout supplied by commit through the
 environment. It never fetches, changes a Git ref, resets, cleans, or applies a
 production migration. A mismatch or failed command stops the run.
 
+Before recruiting participants or changing a production flag, run the
+read-only operational preflight. It fails closed while the release is still in
+integration and prints the exact missing human, rollout, observability,
+recovery, and review evidence plus the documented draft/capture commands:
+
+```sh
+npm run check:extension-release-preflight
+```
+
+This command never creates evidence, signs receipts, changes the ledger, calls
+production, or changes rollout state. A preflight `PASS` only means the
+external evidence prerequisites are represented in the local ledger; it does
+not replace participant approval, production observation, or the blocking
+ship verifier.
+
 After preflight, every Reigh gate runs from a newly created detached worktree at
 the verified evidence-controller commit, never from the operator checkout. This
 keeps Git ancestry available to evidence gates while excluding ignored local
