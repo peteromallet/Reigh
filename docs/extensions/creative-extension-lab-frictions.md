@@ -2625,6 +2625,13 @@ fresh console collection.
   healthy pages. The pane now consumes the host-owned authority-aware shots
   surface. The genuinely deferred legacy `/shots` route remains explicit; it
   is not silently presented as an Astrid-backed feature.
+- Local-mode suppression at app bootstrap was insufficient for single-page
+  navigation: an extension analytics sink installed on an earlier cloud route
+  could retain queued events and timers after the URL entered Astrid/SQLite
+  authority mode. The sink now re-checks authority at event and flush time,
+  drops queued events on that transition, and tears down an already-installed
+  sink when local mode is mounted. Exact navigation coverage prevents both the
+  `extension-operational-events` localhost noise and a privacy-boundary leak.
 
 ### Virtualization tests must observe motion, not only settled frames
 
