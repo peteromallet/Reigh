@@ -2346,4 +2346,32 @@ describe('AstridBridgeDataProvider', () => {
     });
   });
 
+  it('loads the exact uppercase legacy ULID reported by the Astrid bridge', async () => {
+    const legacyUlid = '01KYPVKMW5STB4W6FE05ED8242';
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      expect(String(input)).toBe(
+        `/api/astrid/projects/desert-plant-growth/timelines/${legacyUlid}`,
+      );
+      return new Response(JSON.stringify({
+        timeline_id: legacyUlid,
+        timeline_ulid: legacyUlid,
+        config: { clips: [], tracks: [] },
+        registry: { assets: {} },
+        config_version: 953,
+      }), { status: 200 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const provider = new AstridBridgeDataProvider({
+      projectSlug: 'desert-plant-growth',
+      timelineRef: legacyUlid,
+      timelineId: legacyUlid,
+    });
+
+    await expect(provider.loadTimeline(legacyUlid)).resolves.toMatchObject({
+      configVersion: 953,
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
 });
