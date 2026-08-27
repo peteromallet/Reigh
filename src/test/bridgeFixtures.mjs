@@ -117,8 +117,11 @@ export function createAudioReactiveColourFixtures({ assetSrcBaseUrl = '' } = {})
     },
     registry: {
       assets: {
-        'audio-fixture': {
+        source_audio: {
           file: 'audio-reactive-colour-tone.wav',
+          // Managed-media identity is canonical; file remains as a
+          // compatibility/source locator for the isolated bridge fixture.
+          media_id: 'fixture-media-audio',
           src: src('audio-reactive-colour-tone.wav'),
           type: 'audio/wav',
           duration: 0.6,
@@ -158,7 +161,7 @@ export function createAudioReactiveColourFixtures({ assetSrcBaseUrl = '' } = {})
           at: 0,
           track: 'audio',
           clipType: 'media',
-          asset: 'audio-fixture',
+          asset: 'source_audio',
           from: 0,
           to: 0.6,
           speed: 1,

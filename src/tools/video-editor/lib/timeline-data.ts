@@ -516,11 +516,12 @@ export const buildTimelineDataWithResolver = async (
 ): Promise<TimelineData> => {
   const canonical = canonicalizeTimelinePair(config, registry);
 
-  const urlResolver: UrlResolver = (file) => {
+  const urlResolver: UrlResolver = (file, entry, assetId) => {
+    const resolutionToken = file || entry?.media_id || assetId || '';
     if (resolver.onResolve) {
-      return resolver.onResolve({ file, timelineId });
+      return resolver.onResolve({ file: resolutionToken, entry, assetId, timelineId });
     }
-    return resolver.resolveAssetUrl(file);
+    return resolver.resolveAssetUrl(resolutionToken);
   };
 
   const resolvedConfig = await resolveTimelineConfig(canonical.config, canonical.registry, urlResolver);

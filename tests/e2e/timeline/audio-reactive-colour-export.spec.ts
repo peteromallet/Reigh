@@ -188,6 +188,65 @@ async function assertDecodedFixture(
 test.describe('audio-reactive-colour browser export proof', () => {
   test.use({ viewport: { width: 1440, height: 900 }, acceptDownloads: true });
 
+  test('loads and plays the managed source_audio asset after a user gesture', async ({ page }) => {
+    test.setTimeout(60_000);
+    const pageErrors: string[] = [];
+    const consoleErrors: string[] = [];
+    const sourceRequests: Array<{ method: string; status: number; url: string }> = [];
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+    page.on('console', (message) => {
+      if (message.type() === 'error') consoleErrors.push(message.text());
+    });
+    page.on('response', (response) => {
+      if (response.url().includes('/assets/source_audio')) {
+        sourceRequests.push({ method: response.request().method(), status: response.status(), url: response.url() });
+      }
+    });
+
+    const reset = await fetch(`${BRIDGE_ORIGIN}/__test/reset`, { method: 'POST' });
+    expect(reset.ok).toBe(true);
+    const sourceUrl = `${BRIDGE_ORIGIN}/projects/${PROJECT_SLUG}/timelines/${TIMELINE_SLUG}/assets/source_audio`;
+    const head = await page.request.fetch(sourceUrl, { method: 'HEAD' });
+    expect(head.status()).toBe(200);
+    expect(head.headers()['accept-ranges']).toBe('bytes');
+    expect(head.headers()['content-type']).toContain('audio/wav');
+    expect(Number(head.headers()['content-length'])).toBeGreaterThan(100);
+    const range = await page.request.get(sourceUrl, { headers: { Range: 'bytes=0-127' } });
+    expect(range.status()).toBe(206);
+    expect(range.headers()['content-range']).toMatch(/^bytes 0-127\//);
+    expect((await range.body())).toHaveLength(128);
+
+    await page.goto(EDITOR_URL, { waitUntil: 'domcontentloaded', timeout: 45_000 });
+    await expect.poll(async () => page.locator('audio').evaluateAll((elements) => elements.some((element) => (
+      element.src.includes('/assets/source_audio')
+      && element.readyState >= 2
+      && Number.isFinite(element.duration)
+      && element.error === null
+    ))), { timeout: 30_000 }).toBe(true);
+    const before = await page.locator('audio').evaluateAll((elements) => {
+      const audio = elements.find((element) => element.src.includes('/assets/source_audio'));
+      return audio ? { readyState: audio.readyState, duration: audio.duration, currentTime: audio.currentTime, paused: audio.paused } : null;
+    });
+    expect(before).not.toBeNull();
+    expect(before?.readyState).toBeGreaterThanOrEqual(2);
+    expect(Number.isFinite(before?.duration)).toBe(true);
+    expect(before?.duration).toBeGreaterThan(0.5);
+
+    const playButton = page.getByRole('button', { name: 'Play', exact: true }).first();
+    await expect(playButton).toBeVisible({ timeout: 15_000 });
+    await playButton.click();
+    await expect.poll(async () => page.locator('audio').evaluateAll((elements) => {
+      const audio = elements.find((element) => element.src.includes('/assets/source_audio'));
+      return Boolean(audio && audio.readyState >= 2 && audio.error === null && audio.paused === false);
+    }), { timeout: 15_000 }).toBe(true);
+    const playingAt = await page.locator('audio').evaluateAll((elements) => elements.find((element) => element.src.includes('/assets/source_audio'))?.currentTime ?? -1);
+    await expect.poll(async () => page.locator('audio').evaluateAll((elements) => elements.find((element) => element.src.includes('/assets/source_audio'))?.currentTime ?? -1), { timeout: 5_000 }).toBeGreaterThan(playingAt);
+    expect(sourceRequests.some((request) => request.status === 200)).toBe(true);
+    expect(sourceRequests.some((request) => request.status === 206)).toBe(true);
+    expect(pageErrors).toEqual([]);
+    expect(consoleErrors.filter((message) => !/Failed to load resource.*404/i.test(message))).toEqual([]);
+  });
+
   test('renders the pinned Astrid marker fixture with exact decoded frame boundaries', async ({ page }, testInfo) => {
     test.setTimeout(180_000);
     const pageErrors: string[] = [];

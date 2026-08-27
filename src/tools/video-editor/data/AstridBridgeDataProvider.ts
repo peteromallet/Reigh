@@ -270,6 +270,8 @@ export class AstridBridgeDataProvider implements DataProvider {
   private inFlightFreshFetch: Promise<BridgeTimelinePayload> | null = null;
   private assetKeyToFile = new Map<string, string>();
   private fileToAssetKey = new Map<string, string>();
+  private mediaIdToAssetKey = new Map<string, string>();
+  private assetKeys = new Set<string>();
   private localObjectUrls = new Map<string, string>();
   private materializationStates = new Map<string, AssetMaterializationState>();
   private localAssetHandles: LocalAssetHandles | null = null;
@@ -373,11 +375,14 @@ export class AstridBridgeDataProvider implements DataProvider {
       return resolved;
     }
 
-    const assetKey = this.fileToAssetKey.get(candidate);
-    if (!assetKey) {
+    // Explicit managed identities take precedence over compatibility file
+    // locators, including the (pathological) case where their strings match.
+    const resolvedAssetKey = this.mediaIdToAssetKey.get(candidate)
+      ?? this.fileToAssetKey.get(candidate);
+    if (!resolvedAssetKey) {
       return candidate;
     }
-    const url = this.buildAssetUrl(assetKey);
+    const url = this.buildAssetUrl(resolvedAssetKey);
     return url;
   }
 
@@ -749,13 +754,22 @@ export class AstridBridgeDataProvider implements DataProvider {
   private rebuildAssetMaps(registry: AssetRegistry): void {
     this.assetKeyToFile.clear();
     this.fileToAssetKey.clear();
+    this.mediaIdToAssetKey.clear();
+    this.assetKeys.clear();
     for (const [assetKey, entry] of Object.entries(registry.assets ?? {})) {
-      if (!entry || typeof entry.file !== 'string' || entry.file.length === 0) {
+      if (!entry) {
         continue;
       }
-      this.assetKeyToFile.set(assetKey, entry.file);
-      if (!this.fileToAssetKey.has(entry.file)) {
-        this.fileToAssetKey.set(entry.file, assetKey);
+      this.assetKeys.add(assetKey);
+      if (typeof entry.file === 'string' && entry.file.length > 0) {
+        this.assetKeyToFile.set(assetKey, entry.file);
+        if (!this.fileToAssetKey.has(entry.file)) {
+          this.fileToAssetKey.set(entry.file, assetKey);
+        }
+      }
+      if (typeof entry.media_id === 'string' && entry.media_id.length > 0
+        && !this.mediaIdToAssetKey.has(entry.media_id)) {
+        this.mediaIdToAssetKey.set(entry.media_id, assetKey);
       }
     }
   }
@@ -829,8 +843,14 @@ export class AstridBridgeDataProvider implements DataProvider {
   }
 
   private getPreferredAssetKey(request: AssetResolveRequest): string | null {
-    if (request.assetId && this.assetKeyToFile.has(request.assetId)) {
+    if (request.assetId && this.assetKeys.has(request.assetId)) {
       return request.assetId;
+    }
+    if (request.entry?.media_id) {
+      const assetKey = this.mediaIdToAssetKey.get(request.entry.media_id);
+      if (assetKey) {
+        return assetKey;
+      }
     }
     if (request.entry?.file) {
       const assetKey = this.fileToAssetKey.get(request.entry.file);

@@ -1,5 +1,6 @@
 import type {
   AssetRegistry,
+  AssetRegistryEntry,
   ResolvedAssetRegistryEntry,
   ResolvedTimelineConfig,
   TimelineClip,
@@ -158,7 +159,11 @@ export type {
   TimelineConfigSignatureInput,
 };
 
-export type UrlResolver = (file: string) => string | Promise<string>;
+export type UrlResolver = (
+  file: string,
+  entry?: AssetRegistryEntry,
+  assetId?: string,
+) => string | Promise<string>;
 
 export const isRemoteUrl = (url: string): boolean => /^https?:\/\//.test(url);
 
@@ -172,14 +177,22 @@ export const resolveTimelineConfig = async (
   await Promise.all(
     Object.entries(registry.assets ?? {}).map(async ([assetId, entry]) => {
       const sanitizedFile = getSanitizedAssetFile(entry.file);
-      if (!sanitizedFile) {
-        console.warn(`Asset '${assetId}' has no file path - skipping`);
+      // Managed media identity is canonical. A file locator is retained for
+      // compatibility, but must not win when both fields are present.
+      const resolutionToken = getSanitizedAssetFile(entry.media_id) ?? sanitizedFile;
+      if (!resolutionToken) {
+        console.warn(`Asset '${assetId}' has no file path or media identity - skipping`);
         return;
       }
 
       let resolvedSrc: string;
       try {
-        resolvedSrc = isRemoteUrl(sanitizedFile) ? sanitizedFile : await resolveUrl(sanitizedFile);
+        // A managed identity is authoritative even when a stale/foreign URL
+        // remains as a compatibility locator; only URL-only entries bypass
+        // the resolver.
+        resolvedSrc = isRemoteUrl(resolutionToken) && !entry.media_id
+          ? resolutionToken
+          : await resolveUrl(resolutionToken, entry, assetId);
       } catch (error) {
         console.warn(`Asset '${assetId}' failed to resolve URL - skipping`, error);
         return;
@@ -188,7 +201,7 @@ export const resolveTimelineConfig = async (
       const sanitizedSrc = getSanitizedMediaSrc(resolvedSrc);
       if (!sanitizedSrc) {
         console.warn(`Asset '${assetId}' resolved to an invalid media URL - skipping`, {
-          file: sanitizedFile,
+          file: resolutionToken,
           src: resolvedSrc,
         });
         return;
@@ -196,7 +209,7 @@ export const resolveTimelineConfig = async (
 
       resolvedRegistry[assetId] = {
         ...entry,
-        file: sanitizedFile,
+        ...(sanitizedFile ? { file: sanitizedFile } : {}),
         src: sanitizedSrc,
       };
     }),

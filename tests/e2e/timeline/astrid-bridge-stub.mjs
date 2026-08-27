@@ -344,12 +344,14 @@ const server = http.createServer(async (req, res) => {
       });
       return res.end(slice);
     }
-    res.writeHead(200, {
+    const headers = {
       'Content-Type': entry.type,
       'Content-Length': body.length,
       'Accept-Ranges': 'bytes',
       'Access-Control-Allow-Origin': '*',
-    });
+    };
+    res.writeHead(200, headers);
+    if (req.method === 'HEAD') return res.end();
     return res.end(body);
   }
 

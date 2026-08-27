@@ -328,6 +328,33 @@ describe('AstridBridgeDataProvider', () => {
     expect(getSupabaseClient).not.toHaveBeenCalled();
   });
 
+  it('resolves media_id-only entries by registry key without UUID heuristics', async () => {
+    const mediaId = '08b43be5-58ad-534a-9713-d2e0f68ba151';
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      ...makePayload(),
+      registry: { assets: { source_audio: { media_id: mediaId, type: 'audio/mpeg' } } },
+    }), { status: 200 })));
+    const provider = new AstridBridgeDataProvider({
+      projectSlug: 'runaway-piano-colour-demo',
+      timelineRef: 'rhzerepmv7mz8yw5jr0qkjk30b',
+      apiBaseUrl: '/api/astrid',
+      assetBaseUrl: '/api/astrid',
+    });
+
+    await provider.loadAssetRegistry('timeline-id');
+    await expect(provider.resolveAssetUrl(mediaId)).resolves.toBe(
+      '/api/astrid/projects/runaway-piano-colour-demo/timelines/01JM4K5N7P0000000000000017/assets/source_audio',
+    );
+    await expect(provider.onResolve({
+      file: mediaId,
+      assetId: 'source_audio',
+      entry: { media_id: mediaId, type: 'audio/mpeg' },
+    })).resolves.toBe(
+      '/api/astrid/projects/runaway-piano-colour-demo/timelines/01JM4K5N7P0000000000000017/assets/source_audio',
+    );
+    await expect(provider.resolveAssetUrl('unregistered-media-id')).resolves.toBe('unregistered-media-id');
+  });
+
   it('prefers the explicit asset key during onResolve when files overlap', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
       ...makePayload(),
@@ -353,6 +380,33 @@ describe('AstridBridgeDataProvider', () => {
       assetId: 'asset-b',
     })).resolves.toBe(
       'http://127.0.0.1:17333/projects/ados-talks/timelines/01JM4K5N7P0000000000000017/assets/asset-b',
+    );
+  });
+
+  it('prefers media_id over a stale file locator during onResolve', async () => {
+    const mediaId = 'managed-audio-id';
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      ...makePayload(),
+      registry: {
+        assets: {
+          stale_file_asset: { file: 'shared/file.wav', type: 'audio/wav' },
+          source_audio: { file: 'shared/file.wav', media_id: mediaId, type: 'audio/wav' },
+        },
+      },
+    }), { status: 200 })));
+
+    const provider = new AstridBridgeDataProvider({
+      projectSlug: 'runaway-piano-colour-demo',
+      timelineRef: 'rhzerepmv7mz8yw5jr0qkjk30b',
+      assetBaseUrl: '/api/astrid',
+    });
+
+    await provider.loadAssetRegistry('timeline-id');
+    await expect(provider.onResolve({
+      file: 'shared/file.wav',
+      entry: { file: 'shared/file.wav', media_id: mediaId, type: 'audio/wav' },
+    })).resolves.toBe(
+      '/api/astrid/projects/runaway-piano-colour-demo/timelines/01JM4K5N7P0000000000000017/assets/source_audio',
     );
   });
 

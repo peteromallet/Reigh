@@ -295,6 +295,8 @@ describe('timeline data sequence clip persistence', () => {
     expect(data.configVersion).toBe(4);
     expect(assetResolver.onResolve).toHaveBeenCalledWith({
       file: 'asset-ok.mp4',
+      assetId: 'asset-ok',
+      entry: assetRegistry.assets['asset-ok'],
       timelineId: 'timeline-1',
     });
     expect(assetResolver.onMissing).toHaveBeenCalledWith(expect.objectContaining({
@@ -336,6 +338,8 @@ describe('timeline data sequence clip persistence', () => {
 
     expect(assetResolver.onResolve).toHaveBeenCalledWith({
       file: 'asset-refresh.mp4',
+      assetId: 'asset-refresh',
+      entry: assetRegistry.assets['asset-refresh'],
       timelineId: 'timeline-refresh',
     });
     expect(data.configVersion).toBe(7);

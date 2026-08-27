@@ -87,6 +87,41 @@ describe('config-utils media sanitizers', () => {
     expect(resolved.clips[0].assetEntry).toBeUndefined();
   });
 
+  it('resolves managed media_id-only entries and passes identity context', async () => {
+    const entry = { media_id: 'media-runaway', type: 'audio/mpeg' };
+    const resolveUrl = vi.fn(async (file: string) => `https://bridge.test/${file}`);
+    const resolved = await resolveTimelineConfig(
+      {
+        output: { file: 'out.mp4', resolution: '1920x1080' },
+        clips: [{ id: 'audio-1', at: 0, track: 'A1', clipType: 'media', asset: 'source_audio' }],
+        tracks: [{ id: 'A1', kind: 'audio', label: 'Audio' }],
+      },
+      { assets: { source_audio: entry } },
+      resolveUrl,
+    );
+
+    expect(resolveUrl).toHaveBeenCalledWith('media-runaway', entry, 'source_audio');
+    expect(resolved.registry.source_audio).toMatchObject({ ...entry, src: 'https://bridge.test/media-runaway' });
+    expect(resolved.clips[0].assetEntry?.media_id).toBe('media-runaway');
+  });
+
+  it('lets managed media identity override a stale remote compatibility locator', async () => {
+    const entry = { file: 'https://stale.example/audio.wav', media_id: 'media-runaway' };
+    const resolveUrl = vi.fn(async () => 'https://bridge.test/projects/demo/assets/source_audio');
+    const resolved = await resolveTimelineConfig(
+      {
+        output: { file: 'out.mp4', resolution: '1920x1080' },
+        clips: [{ id: 'audio-1', at: 0, track: 'A1', clipType: 'media', asset: 'source_audio' }],
+        tracks: [{ id: 'A1', kind: 'audio', label: 'Audio' }],
+      },
+      { assets: { source_audio: entry } },
+      resolveUrl,
+    );
+
+    expect(resolveUrl).toHaveBeenCalledWith(entry.media_id, entry, 'source_audio');
+    expect(resolved.registry.source_audio?.src).toBe('https://bridge.test/projects/demo/assets/source_audio');
+  });
+
   it('carries optional timeline theme extras into resolved config', async () => {
     const resolved = await resolveTimelineConfig(
       {
