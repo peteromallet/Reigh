@@ -39,6 +39,7 @@ import {
 } from '@/tools/video-editor/lib/overhang.ts';
 import { insertEffectLayerAt } from '@/tools/video-editor/lib/external-drop-utils.ts';
 import { getTimelinePostprocessShader } from '@/tools/video-editor/lib/timeline-domain.ts';
+import { getAssetFileLocator } from '@/tools/video-editor/lib/asset-registry.ts';
 import type { TimelineActionResizeStart, TimelineClipEdgeResizeEnd } from '@/tools/video-editor/hooks/useTimelineState.types.ts';
 import type { ResolvedTimelineClip, TimelinePostprocessShaderMetadata, TrackDefinition } from '@/tools/video-editor/types/index.ts';
 import type { TimelineAction, TimelineRow } from '@/tools/video-editor/types/timeline-canvas.ts';
@@ -474,7 +475,7 @@ function TimelineEditorCoreComponent({
   const handleDoubleClickVideoClip = useCallback((clipId: string) => {
     const assetKey = data?.meta[clipId]?.asset;
     const generationId = assetKey ? data?.registry?.assets[assetKey]?.generationId : undefined;
-    const fileUrl = assetKey ? data?.registry?.assets[assetKey]?.file : undefined;
+    const fileUrl = assetKey ? getAssetFileLocator(data?.registry?.assets[assetKey]) : undefined;
     const resolution = resolveVideoClipDoubleClickResolution({
       clipId,
       assetKey,

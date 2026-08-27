@@ -3,6 +3,7 @@ import { Textarea } from '@/shared/components/ui/textarea.tsx';
 import { getRegisteredClipTypeDescriptor, getSequenceDescriptorParams } from '@/tools/video-editor/clip-types/runtime.ts';
 import type { AvailableSequenceMetadata } from '@/tools/video-editor/sequences/registry.ts';
 import type { ResolvedTimelineConfig } from '@/tools/video-editor/types/index.ts';
+import { getAssetDisplayReference } from '@/tools/video-editor/lib/asset-registry.ts';
 
 type SequenceParamEditorProps = {
   clipType?: string;
@@ -124,7 +125,7 @@ export function SequenceParamEditor({
                     <span
                       key={key}
                       className="max-w-full truncate rounded-md border border-border/70 bg-muted px-2 py-1 text-[11px] text-muted-foreground"
-                      title={registry[key]?.src ?? registry[key]?.file ?? key}
+                      title={getAssetDisplayReference(registry[key], key)}
                     >
                       {key}{count > 1 ? ` x${count}` : ''}
                     </span>

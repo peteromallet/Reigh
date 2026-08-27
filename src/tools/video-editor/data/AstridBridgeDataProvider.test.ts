@@ -355,6 +355,73 @@ describe('AstridBridgeDataProvider', () => {
     await expect(provider.resolveAssetUrl('unregistered-media-id')).resolves.toBe('unregistered-media-id');
   });
 
+  it('fails closed when an onResolve media_id is unknown instead of falling back to file', async () => {
+    const knownMediaId = 'known-managed-audio';
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      ...makePayload(),
+      registry: {
+        assets: {
+          stale_file_asset: { file: 'shared/file.wav', type: 'audio/wav' },
+          source_audio: { file: 'shared/file.wav', media_id: knownMediaId, type: 'audio/wav' },
+        },
+      },
+    }), { status: 200 })));
+    const provider = new AstridBridgeDataProvider({
+      projectSlug: 'runaway-piano-colour-demo',
+      timelineRef: 'rhzerepmv7mz8yw5jr0qkjk30b',
+      assetBaseUrl: '/api/astrid',
+    });
+
+    await provider.loadAssetRegistry('timeline-id');
+    await expect(provider.onResolve({
+      file: 'shared/file.wav',
+      assetId: 'source_audio',
+      entry: { file: 'shared/file.wav', media_id: 'unknown-managed-audio', type: 'audio/wav' },
+    })).rejects.toThrow("Unknown managed media_id 'unknown-managed-audio'");
+  });
+
+  it('rejects explicit assetId and media_id mismatches', async () => {
+    const mediaId = 'known-managed-audio';
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      ...makePayload(),
+      registry: { assets: { source_audio: { media_id: mediaId, type: 'audio/mpeg' } } },
+    }), { status: 200 })));
+    const provider = new AstridBridgeDataProvider({
+      projectSlug: 'runaway-piano-colour-demo',
+      timelineRef: 'rhzerepmv7mz8yw5jr0qkjk30b',
+      assetBaseUrl: '/api/astrid',
+    });
+
+    await provider.loadAssetRegistry('timeline-id');
+    await expect(provider.onResolve({
+      file: mediaId,
+      assetId: 'wrong_asset',
+      entry: { media_id: mediaId, type: 'audio/mpeg' },
+    })).rejects.toThrow(
+      "Asset identity mismatch: assetId 'wrong_asset' does not own media_id 'known-managed-audio'",
+    );
+  });
+
+  it('rejects duplicate media_id registry entries deterministically', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      ...makePayload(),
+      registry: {
+        assets: {
+          z_asset: { media_id: 'duplicate-media', type: 'audio/mpeg' },
+          a_asset: { media_id: 'duplicate-media', type: 'audio/mpeg' },
+        },
+      },
+    }), { status: 200 })));
+    const provider = new AstridBridgeDataProvider({
+      projectSlug: 'ados-talks',
+      timelineRef: 'intro-cut',
+    });
+
+    await expect(provider.loadAssetRegistry('timeline-id')).rejects.toThrow(
+      "Asset registry media_id 'duplicate-media' is ambiguous between 'a_asset' and 'z_asset'",
+    );
+  });
+
   it('prefers the explicit asset key during onResolve when files overlap', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
       ...makePayload(),

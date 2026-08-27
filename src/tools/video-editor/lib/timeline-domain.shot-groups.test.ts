@@ -67,4 +67,18 @@ describe('timeline-domain document-native shot groups', () => {
       derivedFrom: { shotId: 'shot-source', trackId: 'V1' },
     });
   });
+
+  it('projects managed media identity for media-only assets', () => {
+    const [view] = deriveTimelineShotGroupViews(config, {
+      assets: {
+        'asset-a': { media_id: 'media-a', generationId: 'gen-a', variantId: 'variant-a' },
+        'gen:gen-pool': { media_id: 'media-pool', generationId: 'gen-pool', variantId: 'variant-pool' },
+        'asset-final': { media_id: 'media-final', generationId: 'gen-final', variantId: 'variant-final' },
+      },
+    });
+
+    expect(view?.placedMembers[0]?.mediaRef).toBe('media-a');
+    expect(view?.pooledMembers[0]?.mediaRef).toBe('media-pool');
+    expect(view?.finalVideo?.mediaRef).toBe('media-final');
+  });
 });

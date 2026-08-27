@@ -34,6 +34,11 @@ import type {
 import { extractAssetRegistryEntry } from '@/tools/video-editor/lib/mediaMetadata.ts';
 import { resolveGenerationAsset } from '@/tools/video-editor/data/generationAssetResolver.ts';
 import { enrichRegistryEntryWithParsers } from '@/tools/video-editor/lib/mediaMetadata';
+import {
+  getAssetFileLocator,
+  getAssetMediaId,
+  validateAssetRegistryMediaIds,
+} from '@/tools/video-editor/lib/asset-registry.ts';
 import type { RegisteredParser } from '@/tools/video-editor/lib/assetParserRuntime';
 import {
   ensurePermission,
@@ -388,8 +393,13 @@ export class AstridBridgeDataProvider implements DataProvider {
 
   async onResolve(request: AssetResolveRequest): Promise<string> {
     const assetKey = this.getPreferredAssetKey(request);
+    if (getAssetMediaId(request.entry) && assetKey) {
+      return this.buildAssetUrl(assetKey);
+    }
     if (this.localAssetHandles !== null) {
-      const file = request.entry?.file ?? (assetKey ? this.assetKeyToFile.get(assetKey) : undefined) ?? request.file;
+      const file = getAssetFileLocator(request.entry)
+        ?? (assetKey ? this.assetKeyToFile.get(assetKey) : undefined)
+        ?? request.file;
       if (file && !isHttpUrl(file)) {
         const resolved = await this.resolveLocalAssetUrl(file);
         return resolved;
@@ -441,6 +451,7 @@ export class AstridBridgeDataProvider implements DataProvider {
     // always travel through this versioned bridge save (one writer, one file).
     await this.ensureLocalAssetHandles();
     const materializedRegistry = await this.materializeGenerationAssets(timelineId, nextRegistry);
+    validateAssetRegistryMediaIds(materializedRegistry);
 
     let savePayload: BridgeTimelinePayload;
     const bridgeStartedAt = performance.now();
@@ -752,6 +763,7 @@ export class AstridBridgeDataProvider implements DataProvider {
 
 
   private rebuildAssetMaps(registry: AssetRegistry): void {
+    validateAssetRegistryMediaIds(registry);
     this.assetKeyToFile.clear();
     this.fileToAssetKey.clear();
     this.mediaIdToAssetKey.clear();
@@ -761,15 +773,16 @@ export class AstridBridgeDataProvider implements DataProvider {
         continue;
       }
       this.assetKeys.add(assetKey);
-      if (typeof entry.file === 'string' && entry.file.length > 0) {
-        this.assetKeyToFile.set(assetKey, entry.file);
-        if (!this.fileToAssetKey.has(entry.file)) {
-          this.fileToAssetKey.set(entry.file, assetKey);
+      const file = getAssetFileLocator(entry);
+      if (file) {
+        this.assetKeyToFile.set(assetKey, file);
+        if (!this.fileToAssetKey.has(file)) {
+          this.fileToAssetKey.set(file, assetKey);
         }
       }
-      if (typeof entry.media_id === 'string' && entry.media_id.length > 0
-        && !this.mediaIdToAssetKey.has(entry.media_id)) {
-        this.mediaIdToAssetKey.set(entry.media_id, assetKey);
+      const mediaId = getAssetMediaId(entry);
+      if (mediaId) {
+        this.mediaIdToAssetKey.set(mediaId, assetKey);
       }
     }
   }
@@ -843,14 +856,21 @@ export class AstridBridgeDataProvider implements DataProvider {
   }
 
   private getPreferredAssetKey(request: AssetResolveRequest): string | null {
+    const mediaId = getAssetMediaId(request.entry);
+    if (mediaId) {
+      const assetKey = this.mediaIdToAssetKey.get(mediaId);
+      if (!assetKey) {
+        throw new Error(`Unknown managed media_id '${mediaId}'`);
+      }
+      if (request.assetId && request.assetId !== assetKey) {
+        throw new Error(
+          `Asset identity mismatch: assetId '${request.assetId}' does not own media_id '${mediaId}'`,
+        );
+      }
+      return assetKey;
+    }
     if (request.assetId && this.assetKeys.has(request.assetId)) {
       return request.assetId;
-    }
-    if (request.entry?.media_id) {
-      const assetKey = this.mediaIdToAssetKey.get(request.entry.media_id);
-      if (assetKey) {
-        return assetKey;
-      }
     }
     if (request.entry?.file) {
       const assetKey = this.fileToAssetKey.get(request.entry.file);
@@ -990,8 +1010,12 @@ export class AstridBridgeDataProvider implements DataProvider {
       this.materializationStates.set(assetId, { state: 'not-attempted' });
       const result = await this.materializeGenerationAsset(timelineId, assetId, entry);
       if (result.ok) {
+        const materializedFile = getAssetFileLocator(result.entry);
+        if (!materializedFile) {
+          throw new Error(`Materialized asset '${assetId}' has no file locator`);
+        }
         nextRegistry.assets[assetId] = result.entry;
-        this.materializationStates.set(assetId, { state: 'materialized', file: result.entry.file });
+        this.materializationStates.set(assetId, { state: 'materialized', file: materializedFile });
         changed = true;
       } else {
         this.materializationStates.set(assetId, {

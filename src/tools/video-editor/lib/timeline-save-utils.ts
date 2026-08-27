@@ -5,6 +5,10 @@ import type {
   ResolvedAssetRegistryEntry,
   TimelineConfig,
 } from '@/tools/video-editor/types/index.ts';
+import {
+  buildAssetReferenceMap,
+  getAssetResolvedSource,
+} from '@/tools/video-editor/lib/asset-registry.ts';
 
 export function shouldAcceptPolledData(
   editSeq: number,
@@ -49,9 +53,7 @@ export function buildDataFromCurrentRegistry(
     configVersion: current.configVersion,
     registry: current.registry,
     resolvedConfig,
-    assetMap: Object.fromEntries(
-      Object.entries(current.registry.assets ?? {}).map(([assetId, entry]) => [assetId, entry.file]),
-    ),
+    assetMap: buildAssetReferenceMap(current.registry),
     output: { ...canonicalConfig.output },
   });
 }
@@ -65,13 +67,10 @@ export function buildDataFromSnapshot(
   const canonicalConfig = canonical.config;
 
   const snapshotResolvedRegistry: Record<string, ResolvedAssetRegistryEntry> = Object.fromEntries(
-    Object.entries(registry.assets ?? {}).map(([assetId, entry]) => [
-      assetId,
-      {
-        ...entry,
-        src: entry.file,
-      },
-    ]),
+    Object.entries(registry.assets ?? {}).flatMap(([assetId, entry]) => {
+      const src = getAssetResolvedSource(entry);
+      return src ? [[assetId, { ...entry, src }] as const] : [];
+    }),
   );
   const mergedResolvedRegistry = {
     ...snapshotResolvedRegistry,
@@ -95,9 +94,7 @@ export function buildDataFromSnapshot(
     configVersion: current.configVersion,
     registry,
     resolvedConfig,
-    assetMap: Object.fromEntries(
-      Object.entries(registry.assets ?? {}).map(([assetId, entry]) => [assetId, entry.file]),
-    ),
+    assetMap: buildAssetReferenceMap(registry),
     output: { ...canonicalConfig.output },
   });
 }

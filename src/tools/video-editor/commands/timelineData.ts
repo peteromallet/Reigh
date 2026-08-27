@@ -5,16 +5,17 @@ import type {
   ResolvedAssetRegistryEntry,
   ResolvedTimelineConfig,
 } from '@/tools/video-editor/types/index.ts';
+import {
+  buildAssetReferenceMap,
+  getAssetResolvedSource,
+} from '@/tools/video-editor/lib/asset-registry.ts';
 
 const buildResolvedRegistry = (registry: AssetRegistry): Record<string, ResolvedAssetRegistryEntry> => {
   return Object.fromEntries(
-    Object.entries(registry.assets ?? {}).map(([assetKey, entry]) => [
-      assetKey,
-      {
-        ...entry,
-        src: entry.file,
-      },
-    ]),
+    Object.entries(registry.assets ?? {}).flatMap(([assetKey, entry]) => {
+      const src = getAssetResolvedSource(entry);
+      return src ? [[assetKey, { ...entry, src }] as const] : [];
+    }),
   );
 };
 
@@ -44,8 +45,6 @@ export const buildTimelineCommandData = (
     registry,
     resolvedConfig,
     output: { ...migratedConfig.output },
-    assetMap: Object.fromEntries(
-      Object.entries(registry.assets ?? {}).map(([assetKey, entry]) => [assetKey, entry.file]),
-    ),
+    assetMap: buildAssetReferenceMap(registry),
   });
 };

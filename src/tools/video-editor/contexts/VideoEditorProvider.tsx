@@ -45,6 +45,7 @@ import type {
 } from '@/tools/video-editor/hooks/useTimelineState.types.ts';
 import { useVideoEditorLightboxNavigation } from '@/tools/video-editor/hooks/useVideoEditorLightboxNavigation.ts';
 import { isOpenableAssetType } from '@/tools/video-editor/lib/editor-utils.ts';
+import { getAssetDisplayReference, getAssetResolvedSource } from '@/tools/video-editor/lib/asset-registry.ts';
 import { loadGenerationForLightbox } from '@/tools/video-editor/lib/generation-utils.ts';
 import { getClipTimelineDuration } from '@/tools/video-editor/lib/config-utils.ts';
 import {
@@ -203,7 +204,7 @@ export function buildVideoEditorLightboxMedia(
     return null;
   }
 
-  const src = asset.src || asset.file;
+  const src = getAssetResolvedSource(asset);
   if (!src || !isOpenableAssetType(asset.type, src)) {
     return null;
   }
@@ -219,7 +220,7 @@ export function buildVideoEditorLightboxMedia(
     thumbUrl: asset.thumbnailUrl || src,
     type: isVideo ? 'video' : 'image',
     primary_variant_id: asset.variantId || null,
-    name: asset.file,
+    name: getAssetDisplayReference(asset, assetKey),
   };
 }
 

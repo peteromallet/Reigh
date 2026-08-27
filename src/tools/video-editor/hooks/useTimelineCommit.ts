@@ -18,6 +18,7 @@ import { buildTrackClipOrder } from '@/tools/video-editor/lib/coordinate-utils.t
 import { migrateToFlatTracks } from '@/tools/video-editor/lib/migrate.ts';
 import { serializeForDisk } from '@/tools/video-editor/lib/serialize.ts';
 import { buildDataFromCurrentRegistry } from '@/tools/video-editor/lib/timeline-save-utils.ts';
+import { buildAssetReferenceMap, getAssetResolvedSource } from '@/tools/video-editor/lib/asset-registry.ts';
 import {
   assembleTimelineData,
   preserveUploadingClips,
@@ -420,11 +421,17 @@ export function useTimelineCommit({
         [assetId]: entry,
       },
     };
+    const resolvedSource = src ?? current.resolvedConfig.registry[assetId]?.src ?? getAssetResolvedSource(entry);
+    if (!resolvedSource) {
+      console.error(`[timeline] Cannot patch asset '${assetId}' without a file locator or media identity`);
+      eventBus.emit('lostEdit');
+      return;
+    }
     const nextResolvedRegistry = {
       ...current.resolvedConfig.registry,
       [assetId]: {
         ...entry,
-        src: src ?? current.resolvedConfig.registry[assetId]?.src ?? entry.file,
+        src: resolvedSource,
       },
     };
     const nextConfig = { ...current.config };
@@ -448,9 +455,7 @@ export function useTimelineCommit({
         ...(migratedConfig.theme_overrides !== undefined ? { theme_overrides: migratedConfig.theme_overrides } : {}),
         ...(migratedConfig.generation_defaults !== undefined ? { generation_defaults: migratedConfig.generation_defaults } : {}),
       },
-      assetMap: Object.fromEntries(
-        Object.entries(nextRegistry.assets ?? {}).map(([nextAssetId, nextEntry]) => [nextAssetId, nextEntry.file]),
-      ),
+      assetMap: buildAssetReferenceMap(nextRegistry),
       output: { ...migratedConfig.output },
     });
 
@@ -496,9 +501,7 @@ export function useTimelineCommit({
         ...(migratedConfig.theme_overrides !== undefined ? { theme_overrides: migratedConfig.theme_overrides } : {}),
         ...(migratedConfig.generation_defaults !== undefined ? { generation_defaults: migratedConfig.generation_defaults } : {}),
       },
-      assetMap: Object.fromEntries(
-        Object.entries(remainingAssets).map(([nextAssetId, nextEntry]) => [nextAssetId, nextEntry.file]),
-      ),
+      assetMap: buildAssetReferenceMap({ assets: remainingAssets }),
       output: { ...migratedConfig.output },
     });
 

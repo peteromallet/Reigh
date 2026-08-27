@@ -4,6 +4,7 @@ import type { LightboxNavigationProps } from '@/domains/media-lightbox/types.ts'
 import { getClipTypeOverlayBehavior, getRegisteredClipTypeDescriptor } from '@/tools/video-editor/clip-types/index.ts';
 import { getShotColor } from '@/tools/video-editor/hooks/useShotGroups.ts';
 import { isOpenableAssetType } from '@/tools/video-editor/lib/editor-utils.ts';
+import { getAssetResolvedSource } from '@/tools/video-editor/lib/asset-registry.ts';
 import type { TimelineData } from '@/tools/video-editor/lib/timeline-data.ts';
 
 interface NavigableItem {
@@ -104,7 +105,7 @@ function buildNavigationModel(
 
     const resolvedAsset = data.resolvedConfig.registry[meta.asset];
     const rawAsset = data.registry.assets[meta.asset];
-    const src = resolvedAsset?.src ?? rawAsset?.file;
+    const src = getAssetResolvedSource({ ...rawAsset, src: resolvedAsset?.src });
     const type = resolvedAsset?.type ?? rawAsset?.type;
     if (!isOpenableAssetType(type, src)) {
       return null;

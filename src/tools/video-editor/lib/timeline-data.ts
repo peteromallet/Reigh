@@ -34,6 +34,7 @@ import {
   canonicalizeTimelinePair,
   serializeTimelineConfigSnapshot,
 } from '@/tools/video-editor/lib/timeline-domain.ts';
+import { buildAssetReferenceMap } from '@/tools/video-editor/lib/asset-registry.ts';
 import { snapToFrameGrid } from '@/tools/video-editor/lib/time-grid.ts';
 
 export interface ClipMeta {
@@ -199,9 +200,7 @@ const resolveAssetUrl = (file: string): string => {
 };
 
 const buildAssetMap = (registry: AssetRegistry): Record<string, string> => {
-  return Object.fromEntries(
-    Object.entries(registry.assets ?? {}).map(([assetId, entry]) => [assetId, entry.file]),
-  );
+  return buildAssetReferenceMap(registry);
 };
 
 export const resolveTimelineConfig = async (

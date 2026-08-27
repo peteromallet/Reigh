@@ -3,6 +3,7 @@ import { getNextClipId, type TimelineData } from '@/tools/video-editor/lib/timel
 import type { AssetRegistry, TimelineClip, ResolvedTimelineConfig } from '@/tools/video-editor/types/index.ts';
 import { applyTimelineCommandEffect, createTimelineCommandRunner } from './runner.ts';
 import { buildTimelineCommandData } from './timelineData.ts';
+import { getAssetResolvedSource } from '@/tools/video-editor/lib/asset-registry.ts';
 import type {
   TimelineCommand,
   TimelineCommandDescriptor,
@@ -216,6 +217,10 @@ export const buildSwapMediaCommandEffect = (
   currentData: TimelineData,
   payload: SwapMediaCommand['payload'],
 ): TimelineCommandEffect => {
+  const src = getAssetResolvedSource(payload.asset.entry);
+  if (!src) {
+    throw new Error(`Cannot swap asset '${payload.asset.assetKey}' without a file locator or media identity`);
+  }
   const nextResolvedConfig: ResolvedTimelineConfig = {
     ...currentData.resolvedConfig,
     output: { ...currentData.resolvedConfig.output },
@@ -224,7 +229,7 @@ export const buildSwapMediaCommandEffect = (
       ...currentData.resolvedConfig.registry,
       [payload.asset.assetKey]: {
         ...payload.asset.entry,
-        src: payload.asset.entry.file,
+        src,
       },
     },
     clips: currentData.resolvedConfig.clips.map((clip) => (

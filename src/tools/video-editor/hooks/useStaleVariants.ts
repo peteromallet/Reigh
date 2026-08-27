@@ -12,6 +12,7 @@ import type {
   TimelineRegisterAsset,
 } from '@/tools/video-editor/hooks/timeline-state-types.ts';
 import { useAstridCapabilityCensus } from '@/integrations/astrid/capabilityCensus.ts';
+import { getAssetFileLocator } from '@/tools/video-editor/lib/asset-registry.ts';
 
 interface UseStaleVariantsArgs {
   registry: Record<string, ResolvedAssetRegistryEntry> | undefined;
@@ -48,11 +49,15 @@ export function useStaleVariants({ registry, patchRegistry, registerAsset }: Use
 
     for (const [assetKey, entry] of Object.entries(registry)) {
       if (entry.generationId) {
+        const file = getAssetFileLocator(entry);
+        // Variant comparison is file-locator based; managed-media-only
+        // entries are not silently compared using their media identity.
+        if (!file) continue;
         generationAssetKeys.add(assetKey);
         if (!assetsByGeneration[entry.generationId]) {
           assetsByGeneration[entry.generationId] = [];
         }
-        assetsByGeneration[entry.generationId].push({ assetKey, file: entry.file });
+        assetsByGeneration[entry.generationId].push({ assetKey, file });
       }
     }
 

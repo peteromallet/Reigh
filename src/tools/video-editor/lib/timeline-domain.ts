@@ -21,6 +21,7 @@ import type {
   TrackDefinition,
 } from '../types/index.ts';
 import { validateAssetMetadata } from './assetMetadata';
+import { getAssetResolutionToken } from './asset-registry.ts';
 import {
   sameCompositionShaderIdentity,
   shaderScopeOccupiedMessage,
@@ -374,7 +375,7 @@ export const deriveTimelineShotGroupViews = (
           clipId,
           assetKey: clip.asset ?? null,
           variantId: entry?.variantId ?? null,
-          mediaRef: entry?.file ?? null,
+          mediaRef: getAssetResolutionToken(entry) ?? null,
           at: clip.at,
           duration: getConfigTimelineClipDuration(clip),
           pooled: false,
@@ -402,7 +403,7 @@ export const deriveTimelineShotGroupViews = (
           clipId: null,
           assetKey,
           variantId: entry?.variantId ?? null,
-          mediaRef: entry?.file ?? null,
+          mediaRef: getAssetResolutionToken(entry) ?? null,
           at: null,
           duration: null,
           pooled: true,
@@ -416,7 +417,7 @@ export const deriveTimelineShotGroupViews = (
           assetKey: group.videoAssetKey,
           generationId: finalEntry?.generationId ?? null,
           variantId: finalEntry?.variantId ?? null,
-          mediaRef: finalEntry?.file ?? null,
+          mediaRef: getAssetResolutionToken(finalEntry) ?? null,
           stale: !finalEntry,
         }
       : null;

@@ -1,4 +1,5 @@
 import { buildTrackClipOrder } from '@/tools/video-editor/lib/coordinate-utils.ts';
+import { buildAssetReferenceMap } from '@/tools/video-editor/lib/asset-registry.ts';
 import { serializeForDisk } from '@/tools/video-editor/lib/serialize.ts';
 import { buildDataFromCurrentRegistry } from '@/tools/video-editor/lib/timeline-save-utils.ts';
 import {
@@ -128,9 +129,7 @@ const buildDataFromSerializedConfig = (
       configVersion: current.configVersion,
       registry: current.registry,
       resolvedConfig,
-      assetMap: Object.fromEntries(
-        Object.entries(current.registry.assets ?? {}).map(([assetId, entry]) => [assetId, entry.file]),
-      ),
+      assetMap: buildAssetReferenceMap(current.registry),
       output: { ...config.output },
     }),
   );

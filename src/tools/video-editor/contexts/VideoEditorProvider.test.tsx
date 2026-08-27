@@ -630,6 +630,18 @@ describe('VideoEditorProvider', () => {
     }));
   });
 
+  it('uses managed media identity as the lightbox label when file is absent', () => {
+    expect(buildVideoEditorLightboxMedia('asset-managed', {
+      media_id: 'media-123',
+      src: 'https://example.com/video.mp4',
+      type: 'video/mp4',
+    })).toEqual(expect.objectContaining({
+      id: 'asset-managed',
+      location: 'https://example.com/video.mp4',
+      name: 'media-123',
+    }));
+  });
+
   it('reports only effective host activation and real per-extension lifecycle transitions', async () => {
     const provider: DataProvider = {
       loadTimeline: vi.fn(),

@@ -22,6 +22,7 @@ import {
   type ClipMeta,
   type TimelineData,
 } from '@/tools/video-editor/lib/timeline-data.ts';
+import { getAssetResolutionToken } from '@/tools/video-editor/lib/asset-registry.ts';
 import type { UseAssetManagementResult } from '@/tools/video-editor/hooks/useAssetManagement.ts';
 import type { DragCoordinator } from '@/tools/video-editor/hooks/useDragCoordinator.ts';
 import type {
@@ -297,7 +298,9 @@ export async function handleFileDrop({
     if (directAssetUploadAllFiles) {
       try {
         const result = await uploadAsset(file);
-        const sourceUrl = await resolveAssetUrl(result.entry.file);
+        const sourceReference = getAssetResolutionToken(result.entry);
+        if (!sourceReference) throw new Error('Uploaded asset has no file locator or media identity');
+        const sourceUrl = await resolveAssetUrl(sourceReference);
         patchRegistry(result.assetId, result.entry, sourceUrl);
         dropAsset(
           result.assetId,
@@ -408,7 +411,9 @@ export async function handleFileDrop({
         }
 
         const result = await uploadAsset(file);
-        const sourceUrl = await resolveAssetUrl(result.entry.file);
+        const sourceReference = getAssetResolutionToken(result.entry);
+        if (!sourceReference) throw new Error('Uploaded asset has no file locator or media identity');
+        const sourceUrl = await resolveAssetUrl(sourceReference);
         patchRegistry(result.assetId, result.entry, sourceUrl);
 
         const current = dataRef.current;
