@@ -95,6 +95,13 @@ function GenerationsPaneSurface({ controller }: { controller: GenerationsPaneCon
   const { pane, filters, gallery, layout } = controller;
   const effectiveGenerationsPaneHeight = usePanesStore((state) => state.effectiveGenerationsPaneHeight);
 
+  // The Image Generation tool owns the full-page gallery. Keep the app-shell
+  // generations pane out of that route, including when it was left hovered or
+  // locked open before navigation.
+  if (pane.isOnImageGenerationPage) {
+    return null;
+  }
+
   return (
     <div
       {...pane.paneProps}

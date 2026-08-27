@@ -2,6 +2,8 @@ import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LayoutMainContent } from './LayoutMainContent';
 
+let locationPathname = '/home';
+
 const panesState = vi.hoisted(() => ({
   state: {
     isEditorPaneLocked: false,
@@ -35,6 +37,7 @@ const defaultPanesState = {
 
 vi.mock('react-router-dom', () => ({
   Outlet: () => <div data-testid="layout-outlet" />,
+  useLocation: () => ({ pathname: locationPathname }),
 }));
 
 vi.mock('@/shared/components/GlobalHeader', () => ({
@@ -74,6 +77,7 @@ vi.mock('@/app/runtime/dataAuthority.ts', () => ({
 describe('LayoutMainContent', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    locationPathname = '/home';
     panesState.state = {
       isEditorPaneLocked: false,
       effectiveEditorPaneHeight: 0,
@@ -226,6 +230,19 @@ describe('LayoutMainContent', () => {
       effectiveGenerationsPaneHeight: 180,
     };
 
+    const { container } = render(
+      <LayoutMainContent isMobileSplitView={false} onOpenSettings={vi.fn()} />
+    );
+
+    const contentContainer = container.querySelector('.content-container');
+    expect(contentContainer).not.toBeNull();
+    expect(contentContainer).toHaveStyle({
+      paddingBottom: '0px',
+    });
+  });
+
+  it('does not reserve app-shell pane space on the image generation page', () => {
+    locationPathname = '/tools/image-generation';
     const { container } = render(
       <LayoutMainContent isMobileSplitView={false} onOpenSettings={vi.fn()} />
     );

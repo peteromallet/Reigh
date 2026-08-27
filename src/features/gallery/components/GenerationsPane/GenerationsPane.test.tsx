@@ -193,6 +193,16 @@ describe('GenerationsPane', () => {
     expect(screen.queryByTestId('generations-drop-chip')).not.toBeInTheDocument();
   });
 
+  it('suppresses the app-shell pane on the image generation page', () => {
+    const controller = buildController();
+    controller.pane.isOnImageGenerationPage = true;
+    useGenerationsPaneControllerMock.mockReturnValue(controller);
+
+    render(<GenerationsPane />);
+
+    expect(screen.queryByTestId('generations-pane')).not.toBeInTheDocument();
+  });
+
   it('routes dropped files through the generation drop hook and clears the drag overlay', async () => {
     useIsDraggingFilesMock.mockReturnValue(true);
     render(<GenerationsPane />);

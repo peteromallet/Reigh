@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
 import { GlobalHeader } from '@/shared/components/GlobalHeader';
 import { GlobalProcessingWarning } from '@/shared/components/ProcessingWarnings';
 import { useHeaderState } from '@/shared/contexts/ToolPageHeaderContext';
@@ -8,6 +8,7 @@ import { cn } from '@/shared/components/ui/contracts/cn';
 import { useVideoEditorRouteState } from '@/app/hooks/useVideoEditorRouteState';
 import { usePanesStore } from '@/shared/state/panesStore';
 import { isDeferredCloudDataAuthority } from '@/app/runtime/dataAuthority.ts';
+import { TOOL_ROUTES } from '@/shared/lib/tooling/toolRoutes';
 
 interface LayoutMainContentProps {
   isMobileSplitView: boolean;
@@ -29,6 +30,7 @@ function shouldRenderGlobalProcessingWarning(
 
 export function LayoutMainContent(props: LayoutMainContentProps) {
   const { isMobileSplitView, onOpenSettings } = props;
+  const { pathname } = useLocation();
   const { isEditorRoute, isVideoEditorShellActive } = useVideoEditorRouteState();
   const isEditorPaneLocked = usePanesStore((state) => state.isEditorPaneLocked);
   const effectiveEditorPaneHeight = usePanesStore((state) => state.effectiveEditorPaneHeight);
@@ -44,12 +46,15 @@ export function LayoutMainContent(props: LayoutMainContentProps) {
 
   const containerPadding = isLg ? 'px-6' : isSm ? 'px-4' : 'px-2';
   const containerSpacing = 'py-1';
+  const isImageGenerationPage = pathname === TOOL_ROUTES.IMAGE_GENERATION;
 
   const contentStyle = {
     marginRight: isTasksPaneLocked ? `${tasksPaneWidth}px` : '0px',
     marginLeft: isShotsPaneLocked ? `${shotsPaneWidth}px` : '0px',
     paddingTop: isEditorPaneLocked && isVideoEditorShellActive ? `${effectiveEditorPaneHeight}px` : '0px',
-    paddingBottom: isMobileSplitView ? '0px' : ((isGenerationsPaneLocked || isGenerationsPaneOpen) ? `${effectiveGenerationsPaneHeight}px` : '0px'),
+    paddingBottom: isMobileSplitView || isImageGenerationPage
+      ? '0px'
+      : ((isGenerationsPaneLocked || isGenerationsPaneOpen) ? `${effectiveGenerationsPaneHeight}px` : '0px'),
     '--content-width': `${contentWidth}px`,
     '--content-height': `${contentHeight}px`,
     '--content-sm': isSm ? '1' : '0',
