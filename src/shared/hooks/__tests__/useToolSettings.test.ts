@@ -14,6 +14,9 @@ import { queryKeys } from '@/shared/lib/queryKeys';
 const { normalizeAndPresentErrorMock } = vi.hoisted(() => ({
   normalizeAndPresentErrorMock: vi.fn(),
 }));
+const { isDeferredCloudDataAuthorityMock } = vi.hoisted(() => ({
+  isDeferredCloudDataAuthorityMock: vi.fn(() => true),
+}));
 
 // ============================================================================
 // Tests for exported pure helper functions
@@ -240,6 +243,10 @@ vi.mock('@/shared/lib/errorHandling/runtimeError', async () => {
   };
 });
 
+vi.mock('@/app/runtime/dataAuthority', () => ({
+  isDeferredCloudDataAuthority: isDeferredCloudDataAuthorityMock,
+}));
+
 function createWrapper() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
@@ -257,6 +264,7 @@ describe('useToolSettings hook', () => {
     vi.mocked(enqueueSettingsWrite).mockClear();
     vi.mocked(fetchToolSettingsSupabase).mockClear();
     normalizeAndPresentErrorMock.mockClear();
+    isDeferredCloudDataAuthorityMock.mockReturnValue(true);
     const mod = await import('@/shared/hooks/settings/useToolSettings');
     useToolSettings = mod.useToolSettings;
   });
@@ -295,6 +303,7 @@ describe('useToolSettings hook', () => {
   });
 
   it('does not fetch or re-present cached settings errors in local editor mode', () => {
+    isDeferredCloudDataAuthorityMock.mockReturnValue(false);
     const previousUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
     window.history.replaceState(
       {},
@@ -329,6 +338,17 @@ describe('useToolSettings hook', () => {
     } finally {
       window.history.replaceState({}, '', previousUrl);
     }
+  });
+
+  it('does not fetch or present stale errors under Astrid authority', () => {
+    isDeferredCloudDataAuthorityMock.mockReturnValue(false);
+    const wrapper = createWrapper();
+    const { result } = renderHook(() => useToolSettings('test-tool'), { wrapper });
+
+    expect(result.current.settings).toBeUndefined();
+    expect(result.current.error).toBeNull();
+    expect(fetchToolSettingsSupabase).not.toHaveBeenCalled();
+    expect(normalizeAndPresentErrorMock).not.toHaveBeenCalled();
   });
 
   it('uses provided projectId over context', async () => {

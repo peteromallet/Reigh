@@ -16,6 +16,7 @@ import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeErro
 import { SETTINGS_IDS } from '@/shared/lib/settingsIds';
 import { ToolSettingsError } from '@/shared/settings';
 import { hasLocalModeUrlParams } from '@/shared/dev/devSession';
+import { isDeferredCloudDataAuthority } from '@/app/runtime/dataAuthority';
 import { useAuth } from './AuthContext';
 import { requireContextValue } from './contextGuard';
 
@@ -46,6 +47,7 @@ export const UserSettingsProvider = ({ children }: { children: ReactNode }) => {
   const isLocalMode = hasLocalModeUrlParams(
     typeof window === 'undefined' ? '' : window.location.search,
   );
+  const isDeferredCloudMode = isDeferredCloudDataAuthority();
 
   const [userSettings, setUserSettings] = useState<UserPreferences | undefined>(undefined);
   const [isLoadingSettings, setIsLoadingSettings] = useState(false);
@@ -53,7 +55,7 @@ export const UserSettingsProvider = ({ children }: { children: ReactNode }) => {
 
   // Settings fetching
   const fetchUserSettings = useCallback(async () => {
-    if (!userId || isLocalMode) return;
+    if (!userId || isLocalMode || !isDeferredCloudMode) return;
 
     setIsLoadingSettings(true);
 
@@ -77,11 +79,11 @@ export const UserSettingsProvider = ({ children }: { children: ReactNode }) => {
     } finally {
       setIsLoadingSettings(false);
     }
-  }, [isLocalMode, userId]);
+  }, [isDeferredCloudMode, isLocalMode, userId]);
 
   // Update user settings directly using the global write queue
   const updateUserSettings = useCallback(async (_scope: 'user', patch: Partial<UserPreferences>) => {
-    if (isLocalMode) return;
+    if (isLocalMode || !isDeferredCloudMode) return;
 
     if (!userId) {
       const authError = new ToolSettingsError(
@@ -114,11 +116,11 @@ export const UserSettingsProvider = ({ children }: { children: ReactNode }) => {
       normalizeAndPresentError(error, { context: 'UserSettingsContext', showToast: false });
       throw error;
     }
-  }, [isLocalMode, userId]);
+  }, [isDeferredCloudMode, isLocalMode, userId]);
 
   // Fetch settings when user changes
   useEffect(() => {
-    if (isLocalMode) {
+    if (isLocalMode || !isDeferredCloudMode) {
       setUserSettings(undefined);
       userSettingsRef.current = undefined;
       setIsLoadingSettings(false);
@@ -129,7 +131,7 @@ export const UserSettingsProvider = ({ children }: { children: ReactNode }) => {
       userSettingsRef.current = undefined;
       setIsLoadingSettings(false);
     }
-  }, [fetchUserSettings, isLocalMode, userId]);
+  }, [fetchUserSettings, isDeferredCloudMode, isLocalMode, userId]);
 
   // [MobileStallFix] Fallback recovery: set empty defaults if settings loading stalls
   const handleSettingsTimeout = useCallback(() => {
@@ -143,7 +145,7 @@ export const UserSettingsProvider = ({ children }: { children: ReactNode }) => {
     onTimeout: handleSettingsTimeout,
     mobileTimeoutMs: 10000,
     desktopTimeoutMs: 5000,
-    enabled: !!userId && !isLocalMode,
+    enabled: !!userId && !isLocalMode && isDeferredCloudMode,
   });
 
   const contextValue = useMemo(

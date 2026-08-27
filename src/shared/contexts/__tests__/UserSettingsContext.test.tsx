@@ -9,10 +9,16 @@ import { render, screen, waitFor, act } from '@testing-library/react';
 import { useState } from 'react';
 
 // Use vi.hoisted for variables referenced inside vi.mock factories
-const { mockGetUserId, mockSupabaseSelect, mockUpdateToolSettings } = vi.hoisted(() => ({
+const {
+  mockGetUserId,
+  mockSupabaseSelect,
+  mockUpdateToolSettings,
+  isDeferredCloudDataAuthorityMock,
+} = vi.hoisted(() => ({
   mockGetUserId: vi.fn().mockReturnValue('user-123'),
   mockSupabaseSelect: vi.fn(),
   mockUpdateToolSettings: vi.fn().mockResolvedValue(undefined),
+  isDeferredCloudDataAuthorityMock: vi.fn().mockReturnValue(true),
 }));
 
 vi.mock('../AuthContext', () => ({
@@ -39,6 +45,10 @@ vi.mock('@/shared/hooks/useMobileTimeoutFallback', () => ({
   useMobileTimeoutFallback: vi.fn(),
 }));
 
+vi.mock('@/app/runtime/dataAuthority', () => ({
+  isDeferredCloudDataAuthority: isDeferredCloudDataAuthorityMock,
+}));
+
 import { UserSettingsProvider, useUserSettings } from '../UserSettingsContext';
 
 // Test consumer
@@ -56,6 +66,7 @@ describe('UserSettingsContext', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetUserId.mockReturnValue('user-123');
+    isDeferredCloudDataAuthorityMock.mockReturnValue(true);
     mockSupabaseSelect.mockResolvedValue({
       data: {
         settings: {
@@ -154,6 +165,39 @@ describe('UserSettingsContext', () => {
 
       await act(async () => {
         screen.getByTestId('local-update').click();
+      });
+
+      expect(mockSupabaseSelect).not.toHaveBeenCalled();
+      expect(mockUpdateToolSettings).not.toHaveBeenCalled();
+    });
+
+    it('does not read or write Supabase under default Astrid authority', async () => {
+      isDeferredCloudDataAuthorityMock.mockReturnValue(false);
+
+      function UpdateConsumer() {
+        const { updateUserSettings } = useUserSettings();
+        return (
+          <button
+            data-testid="astrid-update"
+            onClick={() => void updateUserSettings('user', { theme: 'light' } as Record<string, unknown>)}
+          >
+            Update
+          </button>
+        );
+      }
+
+      render(
+        <UserSettingsProvider>
+          <SettingsConsumer />
+          <UpdateConsumer />
+        </UserSettingsProvider>,
+      );
+
+      expect(screen.getByTestId('isLoading')).toHaveTextContent('false');
+      expect(screen.getByTestId('settings')).toHaveTextContent('undefined');
+
+      await act(async () => {
+        screen.getByTestId('astrid-update').click();
       });
 
       expect(mockSupabaseSelect).not.toHaveBeenCalled();

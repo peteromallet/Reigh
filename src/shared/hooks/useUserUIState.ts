@@ -7,6 +7,7 @@ import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeErro
 import { SETTINGS_IDS } from '@/shared/lib/settingsIds';
 import { isLocalTestMode } from '@/app/localTestRuntime';
 import { hasLocalModeUrlParams } from '@/shared/dev/devSession';
+import { isDeferredCloudDataAuthority } from '@/app/runtime/dataAuthority';
 
 // Module-level request deduplication cache for the raw `users.settings` DB fetch.
 //
@@ -373,6 +374,7 @@ export function useUserUIState<K extends keyof UISettings>(
   const isLocalMode = hasLocalModeUrlParams(
     typeof window === 'undefined' ? '' : window.location.search,
   );
+  const isDeferredCloudMode = isDeferredCloudDataAuthority();
   // Stabilize fallback using a ref so callers can pass inline objects without causing
   // infinite render loops. The load effect reads fallbackRef.current instead of depending
   // on fallback directly, preventing re-runs when the reference changes but values don't.
@@ -382,7 +384,9 @@ export function useUserUIState<K extends keyof UISettings>(
   useRenderLogger(`UserUIState:${key}`);
 
   const [value, setValue] = useState<UISettings[K]>(fallback);
-  const [isLoading, setIsLoading] = useState(!(localTestMode || isLocalMode));
+  const [isLoading, setIsLoading] = useState(
+    !(localTestMode || isLocalMode || !isDeferredCloudMode),
+  );
   const userIdRef = useRef<string>();
   const debounceRef = useRef<NodeJS.Timeout>();
   // Ref so that `update` can read the latest value without depending on it
@@ -394,7 +398,7 @@ export function useUserUIState<K extends keyof UISettings>(
   // IMPORTANT: Only runs when the key is completely missing from database (undefined)
   // Does NOT override explicit user choices (including both options set to false)
   const saveFallbackToDatabase = useCallback(async (userId: string) => {
-    if (localTestMode || isLocalMode) return;
+    if (localTestMode || isLocalMode || !isDeferredCloudMode) return;
 
     try {
       const fallbackToSave = normalizeUserUISetting(key, fallbackRef.current, fallbackRef.current);
@@ -414,11 +418,11 @@ export function useUserUIState<K extends keyof UISettings>(
     } catch (error) {
       normalizeAndPresentError(error, { context: 'useUserUIState.saveFallbackToDatabase', showToast: false });
     }
-  }, [isLocalMode, key, localTestMode]);
+  }, [isDeferredCloudMode, isLocalMode, key, localTestMode]);
 
   // Load initial value from database
   useEffect(() => {
-    if (localTestMode || isLocalMode) {
+    if (localTestMode || isLocalMode || !isDeferredCloudMode) {
       userIdRef.current = undefined;
       setIsLoading(false);
       return;
@@ -489,7 +493,7 @@ export function useUserUIState<K extends keyof UISettings>(
     };
 
     loadUserSettings();
-  }, [isLocalMode, key, localTestMode, saveFallbackToDatabase]);
+  }, [isDeferredCloudMode, isLocalMode, key, localTestMode, saveFallbackToDatabase]);
 
   // Debounced update function
   // Uses the global settings write queue (via updateToolSettingsSupabase) to prevent
@@ -504,7 +508,7 @@ export function useUserUIState<K extends keyof UISettings>(
     );
     setValue(normalizedPatch);
 
-    if (localTestMode || isLocalMode) {
+    if (localTestMode || isLocalMode || !isDeferredCloudMode) {
       return;
     }
 
@@ -516,7 +520,7 @@ export function useUserUIState<K extends keyof UISettings>(
     // Preference changes inside local mode are intentionally ephemeral.  The
     // caller still gets an immediate local update for responsive UI, but no
     // timer is armed and therefore no Supabase write can happen later.
-    if (isLocalMode) return;
+    if (isLocalMode || !isDeferredCloudMode) return;
 
     // Debounce the database write via the global settings write queue
     debounceRef.current = setTimeout(async () => {
@@ -540,7 +544,7 @@ export function useUserUIState<K extends keyof UISettings>(
         normalizeAndPresentError(error, { context: 'useUserUIState.update', showToast: false });
       }
     }, 200);
-  }, [isLocalMode, key, localTestMode]);
+  }, [isDeferredCloudMode, isLocalMode, key, localTestMode]);
 
   // Cleanup timeout on unmount
   useEffect(() => {

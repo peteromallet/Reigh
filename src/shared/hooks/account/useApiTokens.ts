@@ -11,6 +11,7 @@ import {
 } from '@/integrations/supabase/auth/ensureAuthenticatedSession';
 import { isLocalTestMode } from '@/app/localTestRuntime';
 import { hasLocalModeUrlParams } from '@/shared/dev/devSession';
+import { isDeferredCloudDataAuthority } from '@/app/runtime/dataAuthority';
 
 interface ApiToken {
   id: string;
@@ -93,6 +94,7 @@ export const useApiTokens = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedToken, setGeneratedToken] = useState<string | null>(null);
   const localTestMode = isLocalTestMode();
+  const isDeferredCloudMode = isDeferredCloudDataAuthority();
   
   // Query to fetch API tokens
   const {
@@ -104,14 +106,14 @@ export const useApiTokens = () => {
     queryFn: fetchApiTokens,
     // API tokens are account credentials, not Astrid document data. The local
     // editor must not even attempt the auth probe that precedes this query.
-    enabled: !localTestMode && !isLocalMode,
+    enabled: !localTestMode && !isLocalMode && isDeferredCloudMode,
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
   // Mutation to generate a new API token
   const generateMutation = useMutation({
     mutationFn: (params: { label: string }) => {
-      if (isLocalMode) {
+      if (isLocalMode || !isDeferredCloudMode) {
         throw new Error('API tokens are unavailable in local editor mode');
       }
       return generateApiToken(params);
@@ -134,7 +136,7 @@ export const useApiTokens = () => {
   // Mutation to revoke an API token
   const revokeMutation = useMutation({
     mutationFn: (tokenId: string) => {
-      if (isLocalMode) {
+      if (isLocalMode || !isDeferredCloudMode) {
         throw new Error('API tokens are unavailable in local editor mode');
       }
       return revokeApiToken(tokenId);
@@ -150,7 +152,7 @@ export const useApiTokens = () => {
 
   const refreshTokenMutation = useMutation({
     mutationFn: async (tokenToRefresh: ApiToken) => {
-      if (isLocalMode) {
+      if (isLocalMode || !isDeferredCloudMode) {
         throw new Error('API tokens are unavailable in local editor mode');
       }
       await revokeApiToken(tokenToRefresh.id);
@@ -169,17 +171,17 @@ export const useApiTokens = () => {
   });
 
   const generateToken = (label: string) => {
-    if (localTestMode) return;
+    if (localTestMode || !isDeferredCloudMode) return;
     generateMutation.mutate({ label });
   };
 
   const revokeToken = (tokenId: string) => {
-    if (localTestMode) return;
+    if (localTestMode || !isDeferredCloudMode) return;
     revokeMutation.mutate(tokenId);
   };
 
   const refreshToken = (token: ApiToken) => {
-    if (localTestMode) return;
+    if (localTestMode || !isDeferredCloudMode) return;
     refreshTokenMutation.mutate(token);
   };
 

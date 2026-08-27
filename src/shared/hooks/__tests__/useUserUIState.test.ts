@@ -6,6 +6,9 @@ const { mockGetUser, mockSingle, mockUpdateToolSettings } = vi.hoisted(() => ({
   mockSingle: vi.fn(),
   mockUpdateToolSettings: vi.fn().mockResolvedValue(undefined),
 }));
+const { isDeferredCloudDataAuthorityMock } = vi.hoisted(() => ({
+  isDeferredCloudDataAuthorityMock: vi.fn(() => true),
+}));
 
 vi.mock('@/integrations/supabase/client', () => ({
   getSupabaseClient: () => ({
@@ -24,6 +27,10 @@ vi.mock('@/integrations/supabase/client', () => ({
 
 vi.mock('@/shared/hooks/settings/useToolSettings', () => ({
   updateToolSettingsSupabase: mockUpdateToolSettings,
+}));
+
+vi.mock('@/app/runtime/dataAuthority', () => ({
+  isDeferredCloudDataAuthority: isDeferredCloudDataAuthorityMock,
 }));
 
 import {
@@ -48,6 +55,7 @@ describe('useUserUIState', () => {
       },
       error: null,
     });
+    isDeferredCloudDataAuthorityMock.mockReturnValue(true);
     window.history.replaceState({}, '', '/');
   });
 
@@ -58,6 +66,26 @@ describe('useUserUIState', () => {
 
   it('keeps local-test preferences deterministic without initializing Supabase', async () => {
     window.history.replaceState({}, '', '/tools/video-editor?localTest=1');
+    const fallback = { darkMode: true };
+    const { result } = renderHook(() => useUserUIState('theme', fallback));
+
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.value).toEqual(fallback);
+    expect(mockGetUser).not.toHaveBeenCalled();
+
+    act(() => {
+      result.current.update({ darkMode: false });
+    });
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+
+    expect(result.current.value).toEqual({ darkMode: false });
+    expect(mockUpdateToolSettings).not.toHaveBeenCalled();
+  });
+
+  it('keeps Astrid-authority preferences local without loading or writing Supabase', async () => {
+    isDeferredCloudDataAuthorityMock.mockReturnValue(false);
     const fallback = { darkMode: true };
     const { result } = renderHook(() => useUserUIState('theme', fallback));
 

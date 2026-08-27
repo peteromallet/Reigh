@@ -21,6 +21,7 @@ import {
 } from '@/shared/settings';
 import type { ToolDefaultsById, ToolDefaultsId } from '@/tooling/toolDefaultsRegistry';
 import { hasLocalModeUrlParams } from '@/shared/dev/devSession';
+import { isDeferredCloudDataAuthority } from '@/app/runtime/dataAuthority';
 
 export { updateToolSettingsSupabase } from '@/shared/settings';
 export type { SettingsScope } from '@/shared/settings';
@@ -189,6 +190,7 @@ export function useToolSettings<T extends object>(
   const isLocalMode = hasLocalModeUrlParams(
     typeof window === 'undefined' ? '' : window.location.search,
   );
+  const isDeferredCloudMode = isDeferredCloudDataAuthority();
 
   // Determine parameter shapes
   const projectIdFromRuntime = getProjectSelectionFallbackId() ?? undefined;
@@ -198,7 +200,8 @@ export function useToolSettings<T extends object>(
   // local-mode editor, or any logged-out page) they cannot resolve and the
   // callers that omit `enabled` (AgentChatContext, ToolsPane, …) must not
   // fire a backend request. This is the single choke point.
-  const fetchEnabled: boolean = (context?.enabled ?? true) && isAuthenticated && !isLocalMode;
+  const fetchEnabled: boolean =
+    (context?.enabled ?? true) && isAuthenticated && !isLocalMode && isDeferredCloudMode;
 
   // Refs to access current values in stable callbacks without recreating them
   const projectIdRef = useRef(projectId);
@@ -228,7 +231,11 @@ export function useToolSettings<T extends object>(
   const hasShotSettings = wrapper ? ((queryResult as SettingsFetchResult<T>).hasShotSettings ?? false) : false;
 
   // Log errors for debugging (except expected cancellations)
-  if (error && !isLocalMode && classifyToolSettingsError(error).code !== 'cancelled') {
+  if (
+    error
+    && isDeferredCloudMode
+    && classifyToolSettingsError(error).code !== 'cancelled'
+  ) {
     normalizeAndPresentError(error, { context: 'useToolSettings', showToast: false });
   }
 
@@ -239,7 +246,7 @@ export function useToolSettings<T extends object>(
       settings: Partial<T>;
       entityId?: string;
     }) => {
-      if (isLocalMode) return null;
+      if (isLocalMode || !isDeferredCloudMode) return null;
 
       let idForScope: string | undefined = entityId;
 
