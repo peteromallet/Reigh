@@ -2,14 +2,16 @@
 // Mirrors the sprint brief's three cases (pure media, themed, mixed) +
 // the orchestrator dispatch shape.
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildRenderTimelinePayload,
+  cancelAstridRenderTask,
   decideRenderRoute,
   enqueueBanodocoRenderTimeline,
 } from '@/tools/video-editor/lib/renderRouter';
 import { executeRenderPipeline } from '@/tools/video-editor/render/renderPipeline';
 import { AstridLocalClient } from '@/integrations/astrid/client.ts';
+import { createFakeBridgeRouter } from '@/test/fakeBridgeRouter.ts';
 import { makeAdmittedTaskReadModel } from '@/test/bridgeFixtures.mjs';
 
 const renderAdmissionResponse = (taskId = 'task-42') => ({
@@ -767,12 +769,8 @@ describe('Sprint 8 buildRenderTimelinePayload', () => {
       renderMetadata: null,
       renderRuntime: {
         projectId: '22222222-2222-2222-2222-222222222222',
-        orchestratorBaseUrl: 'https://orchestrator.example.com',
-        getSupabaseSession: vi.fn(async () => null),
-        getWorkerJwt: vi.fn(async () => null),
       },
     },
-    userJwt: 'user.jwt.token',
     correlationId: '33333333-3333-3333-3333-333333333333',
   };
 
@@ -782,7 +780,6 @@ describe('Sprint 8 buildRenderTimelinePayload', () => {
     expect(payload).toBeDefined();
     expect(payload!.timeline_id).toBe(baseInput.request.timelineId);
     expect(payload!.project_id).toBe(baseInput.request.renderRuntime.projectId);
-    expect(payload!.user_jwt).toBe(baseInput.userJwt);
     expect(payload!.correlation_id).toBe(baseInput.correlationId);
     expect(payload!.theme_id).toBe('2rp');
     expect(payload!.output_filename).toContain(baseInput.request.timelineId);
@@ -841,8 +838,8 @@ describe('Sprint 8 buildRenderTimelinePayload', () => {
     expect(payload!.theme_id).toBe('2rp');
   });
 
-  it('does not require a Supabase JWT for local Astrid admission', () => {
-    const { payload, error } = buildRenderTimelinePayload({ ...baseInput, userJwt: '' });
+  it('carries no legacy auth fields for local Astrid admission', () => {
+    const { payload, error } = buildRenderTimelinePayload(baseInput);
     expect(payload).toBeDefined();
     expect(error).toBeUndefined();
     expect(payload).not.toHaveProperty('user_jwt');
@@ -922,7 +919,6 @@ describe('Sprint 8 enqueueBanodocoRenderTimeline', () => {
     assets: { assets: {} },
     theme_id: '2rp',
     output_filename: 'render.mp4',
-    user_jwt: 'jwt',
     project_id: 'p',
     correlation_id: 'c',
   };
@@ -983,6 +979,124 @@ describe('Sprint 8 enqueueBanodocoRenderTimeline', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// B6 T6.1/T6.2: cancel rides the common fenced task route
+// ---------------------------------------------------------------------------
+
+function stubFakeBridge() {
+  const router = createFakeBridgeRouter();
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    return await router.handle(new Request(`http://bridge.fake${url.pathname}${url.search}`, init));
+  }));
+  return router;
+}
+
+describe('cancelAstridRenderTask rides the common fenced task route', () => {
+  const admission = {
+    family: 'render_export',
+    input: {
+      timeline_ref: 't',
+      format: 'mp4',
+      output_filename: 'render.mp4',
+      destination: 'download',
+      correlation_id: 'c',
+    },
+  };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('cancels a queued render directly through POST /tasks/:id/cancel', async () => {
+    const router = stubFakeBridge();
+    const client = new AstridLocalClient({ projectSlug: 'demo-project', baseUrl: 'http://bridge.fake' });
+    const { task } = await client.tasks.admit(admission, 'reigh.render:cancel-queued');
+
+    await expect(cancelAstridRenderTask(client, task.id)).resolves.toBeUndefined();
+    expect(await client.tasks.get(task.id)).toMatchObject({ status: 'cancelled' });
+  });
+
+  it('retries a running render cancel with the live attempt fence', async () => {
+    const router = stubFakeBridge();
+    const client = new AstridLocalClient({ projectSlug: 'demo-project', baseUrl: 'http://bridge.fake' });
+    const { task } = await client.tasks.admit(admission, 'reigh.render:cancel-running');
+    const summary = router.state.tasks.get(task.id);
+    if (!summary) throw new Error('fixture missing');
+    summary.status = 'running';
+
+    await expect(cancelAstridRenderTask(client, task.id)).resolves.toBeUndefined();
+
+    const cancelCalls = vi.mocked(globalThis.fetch).mock.calls.filter(
+      ([url, init]) =>
+        String(url).includes('/cancel')
+        && (init as RequestInit | undefined)?.method === 'POST',
+    );
+    expect(cancelCalls).toHaveLength(2); // unfenced 409, then the fenced retry
+    const fence = JSON.parse((cancelCalls[1][1] as RequestInit).body as string);
+    expect(fence.attempt_id).toBeTruthy();
+    expect(fence.lease_id).toBeTruthy();
+    expect(fence.status_version).toBeGreaterThan(0);
+    expect(await client.tasks.get(task.id)).toMatchObject({ status: 'cancelled' });
+  });
+});
+
+describe('render-as-task journey against the binding stub (B6 smoke)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('admits, polls, completes, and plays the committed MP4 through R9 Range/ETag', async () => {
+    const router = stubFakeBridge();
+    const client = new AstridLocalClient({ projectSlug: 'demo-project', baseUrl: 'http://bridge.fake' });
+
+    // R1 admission through the common task route.
+    const result = await enqueueBanodocoRenderTimeline({
+      timeline_id: 't',
+      timeline: { clips: [] },
+      assets: { assets: {} },
+      theme_id: '2rp',
+      output_filename: 'journey.mp4',
+      project_id: 'demo-project',
+      correlation_id: 'c-journey',
+    }, { client });
+    expect(result).toMatchObject({ status: 'queued', task_id: expect.any(String) });
+    const taskId = result.task_id!;
+
+    // Declared poll cadence read model: queued with no attempts yet.
+    let detail = await client.tasks.get(taskId);
+    expect(detail.status).toBe('queued');
+    expect(detail.attempts).toEqual([]);
+
+    // The executor finishes and commits its render output as managed media.
+    const mp4Entry = [...router.state.media.entries()].find(([, media]) => media.mime === 'video/mp4');
+    if (!mp4Entry) throw new Error('fixture missing managed mp4');
+    router.completeTask(taskId, { role: 'render', media_id: mp4Entry[0], is_primary: true });
+
+    detail = await client.tasks.get(taskId);
+    expect(detail.status).toBe('succeeded');
+    const output = (detail.outputs ?? []).find((candidate) => candidate.role === 'render');
+    if (!output) throw new Error('completed render has no render-role output');
+
+    // Playback rides the R9 content route: full GET, then a Range seek, then
+    // an ETag revalidation — exactly what <video> issues.
+    const contentUrl = client.media.contentUrl(output.media_id);
+    expect(contentUrl).toBe('http://bridge.fake/projects/demo-project/media/' + output.media_id + '/content');
+    const full = await fetch(contentUrl);
+    expect(full.status).toBe(200);
+    expect(full.headers.get('Accept-Ranges')).toBe('bytes');
+    const etag = full.headers.get('ETag');
+    expect(etag).toBeTruthy();
+
+    const seek = await fetch(contentUrl, { headers: { Range: 'bytes=0-99' } });
+    expect(seek.status).toBe(206);
+    expect(seek.headers.get('Content-Range')).toBe(`bytes 0-99/${mp4Entry[1].bytes.byteLength}`);
+
+    const revalidated = await fetch(contentUrl, { headers: { 'If-None-Match': etag! } });
+    expect(revalidated.status).toBe(304);
+  });
+});
+
 describe('Sprint 8 router → enqueue integration', () => {
   it('themed timeline decision drives a banodoco-pool enqueue', async () => {
     const config = {
@@ -1003,12 +1117,8 @@ describe('Sprint 8 router → enqueue integration', () => {
         renderMetadata: null,
         renderRuntime: {
           projectId: 'p',
-          orchestratorBaseUrl: 'https://orchestrator.example.com',
-          getSupabaseSession: vi.fn(async () => null),
-          getWorkerJwt: vi.fn(async () => null),
         },
       },
-      userJwt: 'jwt',
       correlationId: 'corr-x',
     });
     expect(payload).toBeDefined();
@@ -1044,12 +1154,10 @@ describe('Sprint 8 router → enqueue integration', () => {
 describe('Sprint 8 render pipeline middleware', () => {
   const runtime = {
     projectId: 'project-1',
-    orchestratorBaseUrl: 'https://orchestrator.example.com',
-    getSupabaseSession: vi.fn(async () => null),
-    getWorkerJwt: vi.fn(async () => null),
   };
 
-  it('renders supported local fixture timelines in the browser path without Supabase auth', async () => {
+
+  it('renders supported local fixture timelines in the browser path with the local runtime type', async () => {
     const events: Array<{ type: string; request?: unknown; assetCount?: number; providerId?: string }> = [];
     const request = {
       timelineId: 'fixture-browser',
@@ -1077,9 +1185,6 @@ describe('Sprint 8 render pipeline middleware', () => {
       renderMetadata: null,
       renderRuntime: {
         projectId: 'project-1',
-        orchestratorBaseUrl: 'https://orchestrator.example.com',
-        getSupabaseSession: vi.fn(async () => null),
-        getWorkerJwt: vi.fn(async () => null),
       },
     };
     const startBrowserRender = vi.fn(async () => ({
@@ -1101,8 +1206,6 @@ describe('Sprint 8 render pipeline middleware', () => {
       providerId: 'browser-remotion',
     });
     expect(startBrowserRender).toHaveBeenCalledTimes(1);
-    expect(request.renderRuntime.getSupabaseSession).not.toHaveBeenCalled();
-    expect(request.renderRuntime.getWorkerJwt).not.toHaveBeenCalled();
     expect(events).toMatchObject([
       { type: 'beforeRender', request },
       { type: 'assetMaterialized', request, assetCount: 1 },
@@ -1184,10 +1287,6 @@ describe('Sprint 8 render pipeline middleware', () => {
     const workerRuntime = {
       ...runtime,
       bridgeBaseUrl: 'http://bridge.fake',
-      getSupabaseSession: vi.fn(async () => {
-        throw new Error('getSupabaseSession should not be called for worker dispatch');
-      }),
-      getWorkerJwt: vi.fn(async () => 'worker-jwt-123'),
     };
     const request = {
       timelineId: 'timeline-fixture-worker',
@@ -1234,8 +1333,6 @@ describe('Sprint 8 render pipeline middleware', () => {
     });
     expect(startBrowserRender).not.toHaveBeenCalled();
     expect(fetchImpl).toHaveBeenCalledTimes(1);
-    expect(workerRuntime.getWorkerJwt).not.toHaveBeenCalled();
-    expect(workerRuntime.getSupabaseSession).not.toHaveBeenCalled();
     const body = JSON.parse(fetchImpl.mock.calls[0][1].body as string);
     expect(body.family).toBe('render_export');
     expect(body.input.timeline_ref).toBe('timeline-fixture-worker');

@@ -41,6 +41,8 @@ export type FakeBridgeState = ReturnType<typeof createJourneyState> & {
   admittedByTaskId: Map<string, Record<string, unknown>>;
   /** IdempotencyKey → task_id, for replay responses. */
   receiptTasks: Map<string, string>;
+  /** task_id → committed output rows surfaced on the detail read. */
+  taskOutputs: Map<string, Array<{ ordinal: number; role: string; media_id: string; is_primary?: boolean }>>;
 };
 
 export type FakeBridgeRouter = {
@@ -48,6 +50,8 @@ export type FakeBridgeRouter = {
   handle(request: Request): Promise<Response>;
   /** Mutate directly to drive poll/cancel scenarios. */
   state: FakeBridgeState;
+  /** Executor hook: mark a task succeeded and commit one output row (R9 media). */
+  completeTask(taskId: string, output: { role: string; media_id: string; is_primary?: boolean }): void;
 };
 
 const JSON_HEADERS = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
@@ -87,6 +91,23 @@ export function createFakeBridgeRouter(): FakeBridgeRouter {
   const state = createJourneyState() as FakeBridgeState;
   state.admittedByTaskId = new Map();
   state.receiptTasks = new Map();
+  state.taskOutputs = new Map();
+
+  function completeTask(taskId: string, output: { role: string; media_id: string; is_primary?: boolean }): void {
+    const summary = state.tasks.get(taskId);
+    if (summary === undefined) throw new Error(`task ${taskId} was not admitted`);
+    summary.status = 'succeeded';
+    const readModel = state.admittedByTaskId.get(taskId);
+    if (readModel !== undefined && typeof readModel === 'object') {
+      readModel.status = 'succeeded';
+    }
+    state.taskOutputs.set(taskId, [{
+      ordinal: 1,
+      role: output.role,
+      media_id: output.media_id,
+      ...(output.is_primary ? { is_primary: true } : {}),
+    }]);
+  }
 
   function timelinePayload() {
     return {
@@ -287,7 +308,7 @@ export function createFakeBridgeRouter(): FakeBridgeRouter {
                 diagnostics: { progress: {}, error: {} },
               }]
             : [],
-          outputs: [],
+          outputs: state.taskOutputs.get(parts[3]) ?? [],
         },
       };
       bridgeTaskDetailPayloadSchema.parse(detail);
@@ -345,5 +366,5 @@ export function createFakeBridgeRouter(): FakeBridgeRouter {
     return errorEnvelope(404, 'not_found', `No fake route for ${url.pathname}`);
   }
 
-  return { handle, state };
+  return { handle, state, completeTask };
 }
