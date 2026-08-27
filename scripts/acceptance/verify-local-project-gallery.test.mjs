@@ -69,11 +69,14 @@ test('discards only new same-project source-route GET aborts during gallery navi
       'GET http://127.0.0.1:2222/api/astrid/projects/demo/generations?limit=100 (net::ERR_ABORTED)',
       'GET http://127.0.0.1:2222/api/astrid/projects/demo/timelines (net::ERR_ABORTED)',
       'GET http://127.0.0.1:2222/api/astrid/projects/demo/timelines/demo-timeline (net::ERR_ABORTED)',
+      'GET http://127.0.0.1:2222/api/astrid/projects/demo/tasks?limit=200&offset=0 (net::ERR_ABORTED)',
       'GET http://127.0.0.1:2222/api/astrid/projects/demo/generations/generation-detail (net::ERR_ABORTED)',
+      'GET http://127.0.0.1:2222/api/astrid/projects/demo/tasks/task-detail (net::ERR_ABORTED)',
     ],
   };
-  assert.equal(discardExpectedGalleryNavigationAborts(windowed, 'http://127.0.0.1:2222', 'demo', 0), 3);
+  assert.equal(discardExpectedGalleryNavigationAborts(windowed, 'http://127.0.0.1:2222', 'demo', 0), 4);
   assert.deepEqual(windowed.failedRequests, [
     'GET http://127.0.0.1:2222/api/astrid/projects/demo/generations/generation-detail (net::ERR_ABORTED)',
+    'GET http://127.0.0.1:2222/api/astrid/projects/demo/tasks/task-detail (net::ERR_ABORTED)',
   ]);
 });
