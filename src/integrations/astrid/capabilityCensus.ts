@@ -3,6 +3,7 @@ import {
   BRIDGE_PROBE_BASE_URL,
   probeBridgeSession,
 } from '@/shared/auth/bridgeSession.ts';
+import { getLocalProjectSlug } from '@/shared/dev/devSession.ts';
 import { AstridBridgeTransport, BridgeRouteError } from './transport.ts';
 import { AstridLocalProjectRoutes } from './projectRoutes.ts';
 import {
@@ -125,6 +126,30 @@ async function probeMediaCapability(
 }
 
 /**
+ * Select only from projects returned by the local bridge. A local-mode URL
+ * owns project selection when it names one of those projects; otherwise keep
+ * the historical first-project fallback. Never consult cloud or persisted
+ * project selection here: this census is a bridge-only boot probe.
+ */
+function selectCapabilityProbeProject(
+  projects: Array<{ slug: string }>,
+): string | null {
+  const fallback = projects[0]?.slug ?? null;
+  if (typeof window === 'undefined') return fallback;
+
+  let requested: string | null = null;
+  try {
+    requested = getLocalProjectSlug(window.location.search);
+  } catch {
+    // A malformed location must not prevent the bridge health census from
+    // completing; use the bridge-owned fallback below.
+  }
+  return requested && projects.some((project) => project.slug === requested)
+    ? requested
+    : fallback;
+}
+
+/**
  * One bounded boot census. Health and feature support are deliberately
  * separate: a healthy older bridge can lack the task/gallery/media routes.
  */
@@ -146,7 +171,7 @@ export async function inspectAstridCapabilities(
   let projectSlug: string | null = null;
   try {
     const projects = await new AstridLocalProjectRoutes(transport).list();
-    projectSlug = projects[0]?.slug ?? null;
+    projectSlug = selectCapabilityProbeProject(projects);
   } catch (error) {
     return {
       health: 'available',
