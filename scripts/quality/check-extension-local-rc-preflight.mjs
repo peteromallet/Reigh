@@ -282,6 +282,32 @@ function splitExternalBlockers(blockers = []) {
   return { external, human, phase };
 }
 
+/**
+ * Keep infrastructure readiness distinct from admission to the expensive
+ * verifier. Integration can have a completely healthy machine while still
+ * being categorically ineligible for the frozen verifier.
+ */
+export function computeVerifierReadiness({
+  localInfrastructureReady,
+  phase,
+  phaseBlockers = [],
+  evidenceReady,
+} = {}) {
+  const frozenPhaseReady = phase === 'frozen' && phaseBlockers.length === 0;
+  const readyForVerifier = Boolean(localInfrastructureReady && frozenPhaseReady && evidenceReady);
+  return {
+    localInfrastructureReady: Boolean(localInfrastructureReady),
+    frozenPhaseReady,
+    evidenceReady: Boolean(evidenceReady),
+    readyForVerifier,
+    status: readyForVerifier
+      ? 'ready-for-verifier'
+      : localInfrastructureReady
+        ? 'local-infrastructure-ready'
+        : 'blocked',
+  };
+}
+
 export function buildLocalRcPreflight({
   manifest,
   ledger,
@@ -300,12 +326,22 @@ export function buildLocalRcPreflight({
     externalResult = { ready: false, status: 'blocked', blockers: [`external-preflight: ${error.message}`], checks: [] };
   }
   const split = splitExternalBlockers(externalResult.blockers);
+  const readiness = computeVerifierReadiness({
+    localInfrastructureReady: local.ready,
+    phase: manifest?.status,
+    phaseBlockers: split.phase,
+    evidenceReady: externalResult.ready,
+  });
   return {
     schemaVersion: 1,
     release: manifest?.release ?? ledger?.release ?? null,
     phase: manifest?.status ?? null,
-    status: local.ready ? 'ready-for-local-verifier' : 'blocked',
-    ready: local.ready,
+    status: readiness.status,
+    ready: readiness.readyForVerifier,
+    readyForVerifier: readiness.readyForVerifier,
+    localInfrastructureReady: readiness.localInfrastructureReady,
+    frozenPhaseReady: readiness.frozenPhaseReady,
+    evidenceReady: readiness.evidenceReady,
     local,
     external: { ready: externalResult.ready, status: externalResult.status, checks: externalResult.checks, blockers: split.external },
     human: { blockers: split.human },
@@ -320,6 +356,8 @@ function formatReport(result) {
     `${LABEL} ${result.status.toUpperCase()}`,
     `${LABEL} release: ${result.release ?? '<unknown>'} (${result.phase ?? '<unknown phase>'})`,
     `${LABEL} ${result.disclaimer}`,
+    `${LABEL} local infrastructure ready: ${result.localInfrastructureReady}`,
+    `${LABEL} ready for frozen verifier: ${result.readyForVerifier}`,
     `${LABEL} local checks:`,
     ...result.local.checks.map((check) => `- ${check.status.toUpperCase()} ${check.id}: ${check.detail}`),
     `${LABEL} external blockers:`,

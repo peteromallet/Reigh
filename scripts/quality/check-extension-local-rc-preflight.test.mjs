@@ -8,6 +8,7 @@ import { describe, it } from 'node:test';
 import {
   buildLocalRcPreflight,
   checkTagState,
+  computeVerifierReadiness,
   DOCUMENTED_MIN_FREE_BYTES,
   REPO_ROOT,
 } from './check-extension-local-rc-preflight.mjs';
@@ -72,6 +73,19 @@ describe('local RC readiness preflight', () => {
     assert.ok(report.blockers.human.some((blocker) => blocker.startsWith('workstream-22:')));
     assert.ok(report.phaseBlockers.some((blocker) => blocker.startsWith('manifest-frozen:')));
     assert.ok(!report.blockers.external.some((blocker) => /workstream-(22|23)/.test(blocker)));
+  });
+
+  it('never claims verifier readiness during integration even when every local check passes', () => {
+    const readiness = computeVerifierReadiness({
+      localInfrastructureReady: true,
+      phase: 'integration',
+      phaseBlockers: [],
+      evidenceReady: true,
+    });
+    assert.equal(readiness.localInfrastructureReady, true);
+    assert.equal(readiness.frozenPhaseReady, false);
+    assert.equal(readiness.readyForVerifier, false);
+    assert.equal(readiness.status, 'local-infrastructure-ready');
   });
 
   it('fails closed when the documented 11 GiB disk floor is unavailable', () => {

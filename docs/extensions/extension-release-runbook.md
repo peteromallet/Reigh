@@ -35,10 +35,11 @@ npm --silent run check:extension-local-rc-preflight:json \
   > /tmp/extension-local-rc-preflight.json
 ```
 
-`ready` covers only local admission to the expensive verifier. The JSON keeps
-production/external blockers, human/reviewer blockers, and integration/frozen
-phase blockers in separate arrays; a local-ready result does not imply that
-those gates are complete.
+`localInfrastructureReady` covers only the machine checks. Top-level `ready`
+and `readyForVerifier` remain false until the manifest/ledger are frozen and
+all required evidence is present. The JSON keeps production/external blockers,
+human/reviewer blockers, and integration/frozen phase blockers in separate
+arrays; an infrastructure-ready result does not imply verifier admission.
 
 Before recruiting participants or changing a production flag, run the
 read-only operational preflight. It fails closed while the release is still in
