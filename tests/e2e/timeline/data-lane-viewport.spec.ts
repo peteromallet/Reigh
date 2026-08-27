@@ -6,6 +6,11 @@ const CAPABILITY_PROBE_PATH = `/api/astrid/projects/${PROJECT_SLUG}/media/__reig
 
 test.setTimeout(60_000);
 
+const RUNAWAY_SCALE_CASES = [
+  { count: 5_000, project: 'runaway-scale-5000', lastManifestId: 'T5000', pages: 5 },
+  { count: 50_000, project: 'runaway-scale-50000', lastManifestId: 'T50000', pages: 50 },
+] as const;
+
 test('dense data lane paints late viewport items with bounded DOM and real geometry', async ({ page }, testInfo) => {
   // At the 100px/s zoom ceiling a 900px viewport spans the whole four-second
   // fixture. The sparse-window cap then quite correctly centers both the
@@ -115,4 +120,72 @@ test('dense data lane paints late viewport items with bounded DOM and real geome
     contentType: 'image/png',
   });
   expect(issues).toEqual([]);
+});
+
+test.describe('Runaway extension interval scale gate', () => {
+  for (const { count, project, lastManifestId, pages } of RUNAWAY_SCALE_CASES) {
+    test(`${count.toLocaleString()} intervals load, scroll, and select late items`, async ({ page }) => {
+      test.setTimeout(120_000);
+      await page.setViewportSize({ width: 1_280, height: 800 });
+      const runawayRequests: string[] = [];
+      const issues: string[] = [];
+      page.on('pageerror', (error) => issues.push(`[pageerror] ${error.message}`));
+      page.on('console', (message) => {
+        if (message.type() === 'error' && !message.text().startsWith('Failed to load resource:')) {
+          issues.push(`[console.error] ${message.text()}`);
+        }
+      });
+      page.on('request', (request) => {
+        const url = new URL(request.url());
+        if (url.pathname === `/api/astrid/v1/projects/${project}/runaway-transitions`) {
+          runawayRequests.push(request.url());
+        }
+      });
+
+      await page.addInitScript(() => localStorage.removeItem('reigh.dev-extensions.disabled'));
+      await page.goto(
+        `${BASE_URL}/tools/video-editor?localProject=${PROJECT_SLUG}&localTimeline=${TIMELINE_SLUG}`
+          + `&localTest=1&timelineOverlayCanary=1&transcriptLaneFixture=1`
+          + `&runawayTimelineProject=${project}`,
+        { waitUntil: 'domcontentloaded', timeout: 45_000 },
+      );
+
+      const row = page.locator('[data-lane-kind="reigh.runaway.transitions"]');
+      await expect(row).toBeVisible({ timeout: 30_000 });
+      await expect(row).toHaveAttribute('data-total-items', String(count), { timeout: 30_000 });
+      const lane = row.getByTestId('runaway-timeline-lane');
+      await expect(lane).toHaveAttribute('data-total-items', String(count), { timeout: 30_000 });
+      await expect.poll(() => runawayRequests.length, { timeout: 30_000 }).toBe(pages);
+
+      const scroller = page.locator('.timeline-canvas-edit-area');
+      const earlyWindowStart = Number(await row.getAttribute('data-window-start'));
+      const initialMounted = await row.getByTestId('runaway-transition-chip').count();
+      expect(initialMounted).toBeGreaterThan(0);
+      expect(initialMounted).toBeLessThanOrEqual(128);
+
+      const zoomIn = page.getByRole('button', { name: 'Zoom in timeline' }).first();
+      for (let index = 0; index < 30; index += 1) await zoomIn.click();
+      const maxScrollLeft = await scroller.evaluate((element) => element.scrollWidth - element.clientWidth);
+      expect(maxScrollLeft).toBeGreaterThan(1_000);
+      await scroller.evaluate((element, left) => { element.scrollLeft = left; }, maxScrollLeft);
+      await expect.poll(async () => Number(await row.getAttribute('data-window-start')), { timeout: 30_000 })
+        .toBeGreaterThan(earlyWindowStart);
+
+      const lateChip = row.getByTestId('runaway-transition-chip').last();
+      await expect(lateChip).toHaveAttribute('data-item-id', `${lastManifestId}@timeline`, { timeout: 30_000 });
+      expect(await row.getByTestId('runaway-transition-chip').count()).toBeLessThanOrEqual(128);
+      expect(await row.evaluate((element) => element.querySelectorAll('*').length)).toBeLessThanOrEqual(512);
+
+      await lateChip.click();
+      const inspector = page.getByTestId('runaway-transition-inspector');
+      await expect(inspector).toBeVisible({ timeout: 15_000 });
+      await expect(inspector).toContainText(`${lastManifestId} · S10`);
+      await expect(inspector).toContainText(`${count} typed transitions`);
+
+      // Scrolling is a local viewport operation: once the paginated source is
+      // loaded, neither selecting nor moving to a late window may re-fetch it.
+      expect(runawayRequests).toHaveLength(pages);
+      expect(issues).toEqual([]);
+    });
+  }
 });
