@@ -4,6 +4,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { z } from 'zod';
 
+import { BridgeContractError } from '@/tools/video-editor/data/bridgeContract.ts';
 import {
   AstridBridgeTransport,
   BridgeRouteError,
@@ -80,6 +81,34 @@ describe('Astrid bridge transport boundary', () => {
       await expect(closed).resolves.toBeUndefined();
     } finally {
       if (timer.value) clearTimeout(timer.value);
+      await close(server);
+    }
+  });
+
+  it.each([
+    ['malformed JSON', '{"ok":'],
+    ['truncated JSON', '{"ok": true'],
+  ])('rejects a %s success response as a contract failure', async (_label, body) => {
+    const server = createServer((_request, response) => {
+      response.writeHead(200, {
+        'Content-Type': 'application/json',
+        // A short declared body exercises the same fetch consumption path as
+        // a peer that disconnects during a streamed JSON response.
+        'Content-Length': String(body.length + 8),
+        Connection: 'close',
+      });
+      response.end(body);
+    });
+    const baseUrl = await listen(server);
+    try {
+      const transport = new AstridBridgeTransport({ baseUrl });
+      await expect(transport.requestJson(
+        '/health',
+        {},
+        z.object({ ok: z.boolean() }),
+        'health',
+      )).rejects.toBeInstanceOf(BridgeContractError);
+    } finally {
       await close(server);
     }
   });
