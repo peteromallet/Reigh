@@ -135,7 +135,16 @@ test('dense data lane paints late viewport items with bounded DOM and real geome
     elements.map((element) => element.getAttribute('data-item-id')).filter(Boolean) as string[]);
   const earlyWindowStart = Number(await row.getAttribute('data-window-start'));
 
-  const maxScrollLeft = await scroller.evaluate((element) => element.scrollWidth - element.clientWidth);
+  // Use the browser's observed maximum rather than `scrollWidth-clientWidth`:
+  // the vertical scrollbar can make that arithmetic 16px larger than the
+  // actually reachable horizontal position in Chromium.
+  const maxScrollLeft = await scroller.evaluate((element) => {
+    const current = element.scrollLeft;
+    element.scrollLeft = element.scrollWidth;
+    const observedMaximum = element.scrollLeft;
+    element.scrollLeft = current;
+    return observedMaximum;
+  });
   expect(maxScrollLeft).toBeGreaterThan(500);
   await scroller.evaluate((element) => { element.scrollLeft = 100; });
   await expect.poll(async () => Number(await row.getAttribute('data-viewport-start'))).toBeGreaterThan(0);
@@ -210,32 +219,91 @@ test('keeps Runaway data visible on every frame of fast, edge, reverse, and slow
   await scroller.evaluate((element) => { element.scrollLeft = 0; });
   await page.waitForTimeout(100);
 
+  // Chromium's vertical scrollbar can make scrollWidth-clientWidth larger
+  // than the actually reachable horizontal position. Measure the real clamp.
+  const observedMaximum = await scroller.evaluate((element) => {
+    const current = element.scrollLeft;
+    element.scrollLeft = element.scrollWidth;
+    const maximum = element.scrollLeft;
+    element.scrollLeft = current;
+    return maximum;
+  });
+  expect(observedMaximum).toBeGreaterThan(3_000);
+  const clampScroll = (value: number) => Math.max(0, Math.min(observedMaximum, value));
   const trajectories = [
-    { name: 'fast-right', deltas: Array.from({ length: 32 }, () => 500) },
-    { name: 'right-edge', deltas: Array.from({ length: 8 }, () => 1_200) },
-    { name: 'fast-reverse', deltas: Array.from({ length: 32 }, () => -500) },
-    { name: 'slow-right', deltas: Array.from({ length: 40 }, () => 120) },
+    // Keep this burst below the edge so it proves ordinary high-velocity
+    // movement rather than accidentally exercising only clamping behavior.
+    {
+      name: 'fast-right',
+      start: clampScroll(Math.min(observedMaximum * 0.1, observedMaximum - 4_000)),
+      deltas: Array.from({ length: 4 }, () => 400),
+      direction: 'right',
+      reachesEdge: false,
+    },
+    {
+      name: 'right-edge',
+      start: clampScroll(observedMaximum - 3_000),
+      deltas: Array.from({ length: 10 }, () => 1_200),
+      direction: 'right',
+      reachesEdge: true,
+    },
+    {
+      name: 'fast-reverse',
+      start: clampScroll(Math.min(observedMaximum * 0.8, observedMaximum - 1_000)),
+      deltas: Array.from({ length: 5 }, () => -500),
+      direction: 'left',
+      reachesEdge: false,
+    },
+    {
+      name: 'slow-right',
+      start: clampScroll(Math.min(observedMaximum * 0.2, observedMaximum - 5_000)),
+      deltas: Array.from({ length: 10 }, () => 100),
+      direction: 'right',
+      reachesEdge: false,
+    },
   ] as const;
   const samples: DataLaneTrajectorySample[] = [];
-  const phasePositions: Array<{ name: string; before: number; after: number; max: number }> = [];
-  for (const { name, deltas } of trajectories) {
+  const phasePositions: Array<{
+    name: string;
+    before: number;
+    after: number;
+    max: number;
+    minVisibleIntersections: number;
+    maxMounted: number;
+  }> = [];
+  for (const { name, start, deltas, direction, reachesEdge } of trajectories) {
+    await scroller.evaluate((element, left) => {
+      element.scrollLeft = left;
+      element.dispatchEvent(new Event('scroll', { bubbles: true }));
+    }, start);
+    await page.waitForTimeout(100);
     const before = await scroller.evaluate((element) => element.scrollLeft);
     const phaseSamples = await collectWheelTrajectory(page, name, deltas);
     samples.push(...phaseSamples);
     const after = await scroller.evaluate((element) => element.scrollLeft);
-    const max = await scroller.evaluate((element) => element.scrollWidth - element.clientWidth);
-    phasePositions.push({ name, before, after, max });
-    if (name === 'fast-right' || name === 'right-edge' || name === 'slow-right') {
+    const max = observedMaximum;
+    const minVisibleIntersections = Math.min(...phaseSamples.map((sample) => sample.visibleIntersections));
+    const maxMounted = Math.max(...phaseSamples.map((sample) => sample.mounted));
+    phasePositions.push({ name, before, after, max, minVisibleIntersections, maxMounted });
+    const blankFrames = phaseSamples.filter((sample) => sample.visibleIntersections === 0);
+    expect(blankFrames, `${name} zero-visible-intersection frames: ${JSON.stringify(blankFrames.slice(0, 8))}`)
+      .toEqual([]);
+    if (direction === 'right') {
       expect(after, `${name} must move right`).toBeGreaterThan(before);
     } else {
       expect(after, `${name} must move left`).toBeLessThan(before);
     }
-    if (name === 'right-edge') expect(after).toBeGreaterThanOrEqual(max - 1);
+    if (reachesEdge) {
+      expect(after, `${name} must reach the right edge`).toBeGreaterThanOrEqual(max - 1);
+    } else {
+      expect(after, `${name} must remain below the right edge`).toBeLessThan(max - 1);
+    }
   }
   await testInfo.attach('runaway-wheel-trajectory-positions.json', {
     body: JSON.stringify(phasePositions, null, 2),
     contentType: 'application/json',
   });
+  console.info(`runaway-wheel-trajectory ${JSON.stringify(phasePositions)}`);
   await testInfo.attach('runaway-wheel-trajectory.json', {
     body: JSON.stringify(samples, null, 2),
     contentType: 'application/json',
@@ -247,8 +315,6 @@ test('keeps Runaway data visible on every frame of fast, edge, reverse, and slow
 
   expect(samples.length).toBeGreaterThan(40);
   expect(samples.every((sample) => sample.mounted <= 128)).toBe(true);
-  const blankFrames = samples.filter((sample) => sample.visibleIntersections === 0);
-  expect(blankFrames, `zero-visible-intersection frames: ${JSON.stringify(blankFrames.slice(0, 8))}`).toEqual([]);
 });
 
 test.describe('Runaway extension interval scale gate', () => {
