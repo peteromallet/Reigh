@@ -27,7 +27,6 @@ const DEFAULT_INITIAL_COLOR = '#000000';
 const isRecord = (value: unknown): value is Record<string, unknown> => (
   value !== null && typeof value === 'object' && !Array.isArray(value)
 );
-
 /**
  * Normalize browser-preview events exactly as Astrid does. Invalid entries
  * are ignored, valid entries are sorted by frame, and source order is an
@@ -131,4 +130,3 @@ export const AudioReactiveColourSequence: FC<{
     <AudioReactiveColour clipId={clip.id} params={clip.params} />
   </Sequence>
 );
-
