@@ -48,28 +48,10 @@ function normalizePrompt(params: unknown): string | undefined {
  * route in the doc-27 §4.1 v1 set — that half of the surface is dispositioned
  * `defer` in docs/cutover-inventory.md.
  */
-export async function fetchDerivedItemsFromRepository(
-  sourceGenerationId: string | null,
-): Promise<DerivedItem[]> {
-  if (!sourceGenerationId) {
-    return [];
-  }
-
-  const projectSlug = getProjectSelectionFallbackId();
-  if (!projectSlug) {
-    return [];
-  }
-
-  let detail: BridgeGenerationDetailPayload['generation'];
-  try {
-    detail = await new AstridLocalClient({ projectSlug }).gallery.get(sourceGenerationId);
-  } catch (error) {
-    if (error instanceof BridgeRouteError && error.status === 404) {
-      return [];
-    }
-    throw error;
-  }
-
+export function mapDerivedItemsFromGenerationDetail(
+  detail: BridgeGenerationDetailPayload['generation'],
+  projectSlug: string,
+): DerivedItem[] {
   const variantItems: DerivedItem[] = detail.variants
     .filter((variant) =>
       !variant.is_primary
@@ -97,4 +79,29 @@ export async function fetchDerivedItemsFromRepository(
     if (!a.starred && b.starred) return 1;
     return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
   });
+}
+
+export async function fetchDerivedItemsFromRepository(
+  sourceGenerationId: string | null,
+): Promise<DerivedItem[]> {
+  if (!sourceGenerationId) {
+    return [];
+  }
+
+  const projectSlug = getProjectSelectionFallbackId();
+  if (!projectSlug) {
+    return [];
+  }
+
+  let detail: BridgeGenerationDetailPayload['generation'];
+  try {
+    detail = await new AstridLocalClient({ projectSlug }).gallery.get(sourceGenerationId);
+  } catch (error) {
+    if (error instanceof BridgeRouteError && error.status === 404) {
+      return [];
+    }
+    throw error;
+  }
+
+  return mapDerivedItemsFromGenerationDetail(detail, projectSlug);
 }

@@ -1,8 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
 import { GenerationRow } from '@/domains/generation/types';
-import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
 import { expandShotData } from '@/shared/lib/shots/shotData';
+import { getProjectSelectionFallbackId } from '@/shared/contexts/projectSelectionStore';
+import { bridgeMediaUrl } from '@/shared/lib/media/bridgeMediaUrl';
+import { bridgeDetailToGenerationRecord } from '@/integrations/supabase/repositories/generationRepository';
+import { useGenerationDetail } from '@/shared/hooks/generations/useGenerationDetail';
 
 interface UseSourceGenerationParams {
   media: GenerationRow;
@@ -34,76 +37,44 @@ interface UseSourceGenerationReturn {
 export const useSourceGeneration = ({
   media
 }: UseSourceGenerationParams): UseSourceGenerationReturn => {
-  const [sourceGenerationData, setSourceGenerationData] = useState<SourceGenerationWithAssociations | null>(null);
-  const [sourcePrimaryVariant, setSourcePrimaryVariant] = useState<SourceVariantData | null>(null);
   const metadataBasedOnId = (media.metadata as Record<string, unknown> | null)?.based_on as string | undefined;
+  const effectiveBasedOnId = media.based_on || metadataBasedOnId || null;
+  const detailQuery = useGenerationDetail(effectiveBasedOnId);
 
   useEffect(() => {
-    const basedOnId = media.based_on;
-    const basedOnFromMetadata = metadataBasedOnId;
-
-    // Check both direct field and metadata
-    const effectiveBasedOnId = basedOnId || basedOnFromMetadata;
-    
-    if (!effectiveBasedOnId) {
-      setSourceGenerationData(null);
-      setSourcePrimaryVariant(null);
-      return;
+    if (detailQuery.error) {
+      normalizeAndPresentError(detailQuery.error, { context: 'useSourceGeneration', showToast: false });
     }
-    
-    const fetchSourceGeneration = async () => {
-      try {
-        // Fetch source generation with shot associations and primary variant
-        // Use left join (no !inner) so we get the generation even if it's not in any shot
-        const { data, error } = await supabase().from('generations')
-          .select(`
-            *,
-            generation_variants!generation_variants_generation_id_fkey(
-              id,
-              location,
-              thumbnail_url,
-              variant_type,
-              is_primary
-            )
-          `)
-          .eq('id', effectiveBasedOnId)
-          .maybeSingle();
+  }, [detailQuery.error]);
 
-        if (error) throw error;
+  const { sourceGenerationData, sourcePrimaryVariant } = useMemo(() => {
+    const projectSlug = getProjectSelectionFallbackId();
+    const detail = detailQuery.data;
+    if (!projectSlug || !detail) {
+      return {
+        sourceGenerationData: null,
+        sourcePrimaryVariant: null,
+      };
+    }
 
-        if (data) {
-          // Extract shot associations from joined data
-          const joinedData = data as unknown as Record<string, unknown>;
-          const shotAssociations = expandShotData(
-            joinedData.shot_data as Record<string, unknown> | null | undefined,
-          );
-          const variants = (joinedData.generation_variants || []) as SourceVariantData[];
-          
-          // Find primary variant
-          const primaryVariant = variants.find((v) => v.is_primary) || null;
-          
-          // Add shot associations to the data for easy access
-          const enrichedData: SourceGenerationWithAssociations = {
-            ...data as unknown as GenerationRow,
-            all_shot_associations: shotAssociations,
-          };
-
-          setSourceGenerationData(enrichedData);
-          setSourcePrimaryVariant(primaryVariant);
-        } else {
-          setSourceGenerationData(null);
-          setSourcePrimaryVariant(null);
-        }
-      } catch (error) {
-        normalizeAndPresentError(error, { context: 'useSourceGeneration', showToast: false });
-        // Don't show toast - this is a non-critical feature
-        setSourceGenerationData(null);
-        setSourcePrimaryVariant(null);
-      }
+    const record = bridgeDetailToGenerationRecord(detail, projectSlug);
+    const sourceData: SourceGenerationWithAssociations = {
+      ...record as unknown as GenerationRow,
+      all_shot_associations: expandShotData(record.shot_data as Record<string, unknown> | null | undefined),
     };
-    
-    void fetchSourceGeneration();
-  }, [media.based_on, metadataBasedOnId]);
+    const primaryVariant = detail.variants.find((variant) => variant.is_primary) ?? null;
+
+    return {
+      sourceGenerationData: sourceData,
+      sourcePrimaryVariant: primaryVariant ? {
+        id: primaryVariant.id,
+        location: bridgeMediaUrl(projectSlug, primaryVariant.media_id),
+        thumbnail_url: bridgeMediaUrl(projectSlug, primaryVariant.media_id),
+        variant_type: primaryVariant.variant_type ?? null,
+        is_primary: primaryVariant.is_primary,
+      } : null,
+    };
+  }, [detailQuery.data]);
 
   return {
     sourceGenerationData,

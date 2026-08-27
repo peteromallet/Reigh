@@ -1,11 +1,11 @@
 import { useCallback, useRef } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { generationQueryKeys } from '@/shared/lib/queryKeys/generations';
 import { useAutoSaveSettings } from '@/shared/settings/hooks/useAutoSaveSettings';
 import type { Json } from '@/integrations/supabase/jsonTypes';
 import { toJson } from '@/shared/lib/supabaseTypeHelpers';
-import { fetchGenerationRecordById } from '@/integrations/supabase/repositories/generationRepository';
 import { updateGenerationParams } from '@/integrations/supabase/repositories/generationMutationsRepository';
+import { fetchGenerationDetailQuery } from '@/shared/hooks/generations/useGenerationDetail';
 
 // Import canonical types from single source of truth
 import {
@@ -91,8 +91,8 @@ interface UseGenerationEditSettingsProps {
 /**
  * Load settings from generations.params.ui.editSettings
  */
-async function loadGenerationSettings(generationId: string): Promise<AutoSaveGenerationEditSettings | null> {
-  const generation = await fetchGenerationRecordById(generationId);
+async function loadGenerationSettings(generationId: string, queryClient: QueryClient): Promise<AutoSaveGenerationEditSettings | null> {
+  const generation = await fetchGenerationDetailQuery(queryClient, generationId);
   if (!generation) {
     return null;
   }
@@ -113,9 +113,9 @@ async function loadGenerationSettings(generationId: string): Promise<AutoSaveGen
 /**
  * Save settings to generations.params.ui.editSettings
  */
-async function saveGenerationSettings(generationId: string, settings: AutoSaveGenerationEditSettings): Promise<void> {
+async function saveGenerationSettings(generationId: string, settings: AutoSaveGenerationEditSettings, queryClient: QueryClient): Promise<void> {
   // Fetch current params to merge
-  const current = await fetchGenerationRecordById(generationId);
+  const current = await fetchGenerationDetailQuery(queryClient, generationId);
 
   if (!current) {
     // Generation was deleted, skip save
@@ -188,8 +188,8 @@ export function useGenerationEditSettings({
     customLoadSave: {
       entityId: generationId,
       domainKey: 'generation-edit-settings',
-      load: loadGenerationSettings,
-      save: saveGenerationSettings,
+      load: (entityId) => loadGenerationSettings(entityId, queryClient),
+      save: (entityId, settings) => saveGenerationSettings(entityId, settings, queryClient),
       onFlush: (entityId) => {
         // Invalidate generation queries after flush
         queryClient.invalidateQueries({

@@ -9,9 +9,7 @@
  */
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { AstridLocalClient } from '@/integrations/astrid/client';
-import { BridgeRouteError } from '@/integrations/astrid/transport';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getProjectSelectionFallbackId } from '@/shared/contexts/projectSelectionStore';
 import { bridgeMediaUrl } from '@/shared/lib/media/bridgeMediaUrl';
 import { bridgeCapabilityUnavailable } from '@/integrations/astrid/capability';
@@ -19,6 +17,7 @@ import { useAuthSafe } from '@/shared/contexts/AuthContext';
 import { coerceVariantType, type VariantType } from '@/shared/constants/variantTypes';
 import { generationQueryKeys } from '@/shared/lib/queryKeys/generations';
 import { useAppEventListener } from '@/shared/lib/typedEvents';
+import { fetchGenerationDetailQuery } from '@/shared/hooks/generations/useGenerationDetail';
 
 /**
  * A variant of a generation (from generation_variants table)
@@ -62,6 +61,7 @@ export const useVariants = ({
   enabled = true,
 }: UseVariantsProps): UseVariantsReturn => {
   const { isAuthenticated } = useAuthSafe();
+  const queryClient = useQueryClient();
   const [activeVariantId, setActiveVariantIdInternal] = useState<string | null>(null);
   
   // Stable callback - no deps needed since we just forward to internal setter
@@ -70,46 +70,34 @@ export const useVariants = ({
   }, []);
 
   // Fetch variants for this generation
-  const {
-    data: variants = [],
-    isLoading,
-    error,
-    refetch,
-  } = useQuery({
+  const { data: variants = [], isLoading, error, refetch } = useQuery({
     queryKey: generationId ? generationQueryKeys.variants(generationId) : ['generation-variants', null],
     queryFn: async () => {
       if (!generationId) return [];
+      const detail = await fetchGenerationDetailQuery(queryClient, generationId);
+      if (!detail) return [];
 
       const projectSlug = getProjectSelectionFallbackId();
       if (!projectSlug) return [];
 
-      try {
-        const detail = await new AstridLocalClient({ projectSlug }).gallery.get(generationId);
-
-        // Wire order is recency-first; the content route doubles as the
-        // thumbnail address (no separate thumb media on the wire).
-        return detail.variants.map((variant) => ({
-          id: variant.id,
-          generation_id: variant.generation_id,
-          location: bridgeMediaUrl(projectSlug, variant.media_id),
-          thumbnail_url: bridgeMediaUrl(projectSlug, variant.media_id),
-          params: variant.params ?? null,
-          is_primary: variant.is_primary,
-          starred: variant.starred,
-          variant_type: coerceVariantType(variant.variant_type),
-          name: variant.name ?? null,
-          created_at: variant.created_at,
-          viewed_at: variant.viewed_at ?? null,
-        })) as GenerationVariant[];
-      } catch (error) {
-        if (error instanceof BridgeRouteError && error.status === 404) {
-          return [];
-        }
-        throw error;
-      }
+      // Wire order is recency-first; the content route doubles as the
+      // thumbnail address (no separate thumb media on the wire).
+      return detail.variants.map((variant) => ({
+        id: variant.id,
+        generation_id: variant.generation_id,
+        location: bridgeMediaUrl(projectSlug, variant.media_id),
+        thumbnail_url: bridgeMediaUrl(projectSlug, variant.media_id),
+        params: variant.params ?? null,
+        is_primary: variant.is_primary,
+        starred: variant.starred,
+        variant_type: coerceVariantType(variant.variant_type),
+        name: variant.name ?? null,
+        created_at: variant.created_at,
+        viewed_at: variant.viewed_at ?? null,
+      })) as GenerationVariant[];
     },
     enabled: enabled && !!generationId && isAuthenticated,
-    staleTime: 30000, // 30 seconds
+    staleTime: 30000,
   });
 
   // Listen for realtime variant changes and refetch when our generationId is affected

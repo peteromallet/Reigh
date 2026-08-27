@@ -96,7 +96,9 @@ export function bridgeDetailToGenerationRecord(
   };
 }
 
-async function fetchBridgeDetail(generationId: string): Promise<BridgeGenerationDetailPayload['generation'] | null> {
+export async function fetchGenerationDetailById(
+  generationId: string,
+): Promise<BridgeGenerationDetailPayload['generation'] | null> {
   const projectSlug = resolveProjectSlug();
   if (!projectSlug) {
     return null;
@@ -113,7 +115,7 @@ async function fetchBridgeDetail(generationId: string): Promise<BridgeGeneration
 }
 
 export async function fetchGenerationById(generationId: string): Promise<GenerationRow | null> {
-  const detail = await fetchBridgeDetail(generationId);
+  const detail = await fetchGenerationDetailById(generationId);
   if (!detail) {
     return null;
   }
@@ -128,7 +130,7 @@ export async function fetchGenerationById(generationId: string): Promise<Generat
 }
 
 export async function fetchGenerationRecordById(generationId: string): Promise<GenerationRecord | null> {
-  const detail = await fetchBridgeDetail(generationId);
+  const detail = await fetchGenerationDetailById(generationId);
   if (!detail) {
     return null;
   }

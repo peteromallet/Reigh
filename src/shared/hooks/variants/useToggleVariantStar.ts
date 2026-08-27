@@ -67,6 +67,9 @@ export function useToggleVariantStar() {
       queryClient.invalidateQueries({
         queryKey: generationQueryKeys.variants(generationId),
       });
+      queryClient.invalidateQueries({
+        queryKey: generationQueryKeys.detail(generationId),
+      });
     },
   });
 
