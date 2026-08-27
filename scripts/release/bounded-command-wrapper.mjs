@@ -19,7 +19,12 @@ const POLL_MS = PROCESS_SCOPE_POLL_MS;
 const SCAN_TIMEOUT_MS = PROCESS_SCOPE_SCAN_TIMEOUT_MS;
 const SCAN_RETRIES = PROCESS_SCOPE_SCAN_RETRIES;
 const SCAN_OUTPUT_CAP = 8 * 1024 * 1024;
-const QUIESCENCE_SCANS = 3;
+// Keep the scope attached through a full launch-and-settle window. Detached
+// descendants can be spawned after their leader exits; under concurrent load,
+// three 250ms scans can finish just before a delayed descendant becomes
+// visible to ps. Extra quiet scans are fail-closed: they only delay release
+// and never broaden which processes are eligible for signaling.
+const QUIESCENCE_SCANS = 5;
 const BROKER_CONNECT_RETRIES = 240;
 const BROKER_CONNECT_DELAY_MS = 25;
 const TERM_SCAN_ATTEMPTS = 3;
