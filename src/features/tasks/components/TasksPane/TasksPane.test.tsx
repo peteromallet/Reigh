@@ -117,8 +117,8 @@ vi.mock('@/domains/media-lightbox/MediaLightbox', () => ({
   MediaLightbox: () => <div data-testid="media-lightbox" />,
 }));
 
-vi.mock('@/shared/hooks/shots', () => ({
-  useListShots: () => ({ data: [] }),
+vi.mock('@/shared/contexts/ShotsContext', () => ({
+  useShots: () => ({ shots: [] }),
 }));
 
 vi.mock('@/shared/hooks/shots/useLastAffectedShot', () => ({

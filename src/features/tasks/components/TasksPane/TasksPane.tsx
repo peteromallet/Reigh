@@ -16,7 +16,7 @@ import { useIncomingTasks } from '@/shared/contexts/IncomingTasksContext';
 import { TasksPaneProcessingWarning } from '@/shared/components/ProcessingWarnings';
 import { useBottomOffset } from '@/shared/hooks/layout/useBottomOffset';
 import { MediaLightbox } from '@/domains/media-lightbox/MediaLightbox';
-import { useListShots } from '@/shared/hooks/shots';
+import { useShots } from '@/shared/contexts/ShotsContext';
 import { useLastAffectedShot } from '@/shared/hooks/shots/useLastAffectedShot';
 import { useCurrentShot } from '@/shared/state/selectionStore';
 import { usePaneInteractionLifecycle } from '@/shared/components/panes/usePaneInteractionLifecycle';
@@ -63,7 +63,11 @@ const TasksPaneComponent: React.FC<TasksPaneProps> = ({ onOpenSettings }) => {
   const { projects } = useProjectCrudContext();
 
   // Shots data for lightbox
-  const { data: shots } = useListShots(selectedProjectId);
+  // Consume the authority-selected context. Astrid mode intentionally exposes
+  // an empty compatibility view; the explicit supabase-deferred provider owns
+  // the legacy relational query. This pane is mounted in the global shell, so
+  // a direct useListShots call here would leak a cloud request on every route.
+  const { shots } = useShots();
   const { currentShotId } = useCurrentShot();
   const { lastAffectedShotId } = useLastAffectedShot();
 
