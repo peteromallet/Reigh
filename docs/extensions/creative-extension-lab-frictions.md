@@ -2647,3 +2647,36 @@ fresh console collection.
   It requires a non-empty visible intersection throughout and independently
   caps mounted nodes, so both blank-lane flicker and accidental devirtualization
   fail the gate.
+
+### Local project galleries need an explicit projection and navigation contract
+
+- Desert had 37 succeeded generation tasks and valid managed media, but zero
+  generation and generation-variant rows. Task success alone is not a gallery
+  contract. A dry-run-first Astrid migration now projects 35 eligible outputs
+  (2 images, 33 videos), skips two storyboard artifacts, verifies project/media
+  ownership, and is receipt-idempotent. The live database was backed up and
+  integrity-checked before the bridge-owned unit-of-work applied it.
+- URL project authority was not consistently propagated through the React
+  selection fallback or the generations-pane shortcut. Directly opening Image
+  Generation looked correct, while clicking there from Travel silently dropped
+  both localProject and localTimeline. Both selection and every tool transition
+  now preserve the URL-owned scope without consulting Supabase.
+- The full-page Image Generation gallery and the globally mounted generations
+  pane rendered at the same time, producing a valid project gallery followed
+  by a contradictory empty-state pane. The shell pane is now absent on the
+  route that owns the full gallery, including stale hovered or locked states,
+  and the layout no longer reserves phantom bottom space.
+- One lightbox open independently fetched the same generation detail through
+  variants, lineage, source-generation, and edit-settings consumers. Those
+  paths now share one canonical React Query detail read while retaining their
+  domain-specific projections and invalidation behavior.
+- Capability discovery intentionally probed a nonexistent media sentinel with
+  HEAD and GET. That correctly detected old bridges but emitted two browser
+  404s per mount. When the gallery exposes a real primary managed-media ID, the
+  census now probes that object; the sentinel remains only for empty galleries.
+- The repeatable live acceptance command now exercises the user click path,
+  not only direct URLs: five document-derived shot timelines with isolated clip
+  membership, selected-shot refresh persistence, all 35 generation summaries,
+  both image cards, visible variants, exactly one detail request, refresh
+  durability, zero Supabase traffic, zero unexpected HTTP failures, and zero
+  console errors.

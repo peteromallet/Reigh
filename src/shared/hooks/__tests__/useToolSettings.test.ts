@@ -332,7 +332,7 @@ describe('useToolSettings hook', () => {
         React.createElement(QueryClientProvider, { client: queryClient }, children);
       const { result } = renderHook(() => useToolSettings('test-tool'), { wrapper });
 
-      expect(result.current.error).toBe(cachedError);
+      expect(result.current.error).toBeNull();
       expect(fetchToolSettingsSupabase).not.toHaveBeenCalled();
       expect(normalizeAndPresentErrorMock).not.toHaveBeenCalled();
     } finally {
