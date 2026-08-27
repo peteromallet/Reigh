@@ -68,7 +68,10 @@ describe('local RC readiness preflight', () => {
     });
 
     assert.equal(report.phase, 'integration');
-    assert.ok(report.local.blockers.some((blocker) => blocker.startsWith('reigh-branch-commit:')));
+    // The fixture intentionally omits Astrid, so this local blocker is stable
+    // across branches. Do not assert a Reigh branch mismatch: the test must
+    // remain valid when run from the release branch itself.
+    assert.ok(report.local.blockers.some((blocker) => blocker.startsWith('astrid-branch-commit:')));
     assert.ok(report.blockers.external.some((blocker) => blocker.startsWith('workstream-19:')));
     assert.ok(report.blockers.human.some((blocker) => blocker.startsWith('workstream-22:')));
     assert.ok(report.phaseBlockers.some((blocker) => blocker.startsWith('manifest-frozen:')));
