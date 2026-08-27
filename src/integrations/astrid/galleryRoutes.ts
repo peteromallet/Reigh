@@ -9,8 +9,10 @@ import { observeAstridCapabilityFailure } from './capabilityCensus.ts';
 import {
   bridgeGenerationDetailPayloadSchema,
   bridgeGenerationListSchema,
+  bridgeGenerationViewedResponseSchema,
   type BridgeGenerationDetailPayload,
   type BridgeGenerationList,
+  type BridgeGenerationViewedResponse,
 } from '@/tools/video-editor/data/bridgeContract.ts';
 
 export type GalleryRoutesOptions = {
@@ -67,5 +69,21 @@ export class AstridLocalGalleryRoutes {
       'generation detail',
     ));
     return payload.generation;
+  }
+
+  /** Mark one variant, or all variants when `variantId` is omitted, viewed. */
+  async markViewed(
+    generationId: string,
+    variantId?: string,
+  ): Promise<BridgeGenerationViewedResponse> {
+    return await this.request(() => this.transport.requestJson(
+      `${this.base()}/${encodeURIComponent(generationId)}/viewed`,
+      {
+        method: 'POST',
+        body: variantId === undefined ? {} : { variant_id: variantId },
+      },
+      bridgeGenerationViewedResponseSchema,
+      'mark generation variant viewed',
+    ));
   }
 }

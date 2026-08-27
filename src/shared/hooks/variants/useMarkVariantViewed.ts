@@ -15,6 +15,8 @@
 
 import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
+import { AstridLocalClient } from '@/integrations/astrid/client';
+import { getLocalProjectSlug, hasLocalModeUrlParams } from '@/shared/dev/devSession';
 import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
 import { DerivedCountsResult } from '@/shared/lib/generationTransformers';
 import { queryKeys } from '@/shared/lib/queryKeys';
@@ -136,11 +138,30 @@ function clearBadgeCountOptimistically(
   );
 }
 
+function localBridgeClientOrNull(): AstridLocalClient | null {
+  if (typeof window === 'undefined' || !hasLocalModeUrlParams(window.location.search)) {
+    return null;
+  }
+  const projectSlug = getLocalProjectSlug(window.location.search);
+  if (!projectSlug) {
+    throw new Error('localProject is required for local viewed mutations');
+  }
+  return new AstridLocalClient({ projectSlug });
+}
+
 export function useMarkVariantViewed() {
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
     mutationFn: async ({ variantId, generationId }: MarkViewedParams) => {
+      const localClient = localBridgeClientOrNull();
+      if (localClient) {
+        if (!generationId) {
+          throw new Error('generationId is required for local viewed mutations');
+        }
+        await localClient.gallery.markViewed(generationId, variantId);
+        return { variantId, generationId };
+      }
       const { error } = await supabase().from('generation_variants')
         .update({ viewed_at: new Date().toISOString() })
         .eq('id', variantId)
@@ -177,6 +198,11 @@ export function useMarkVariantViewed() {
   // Bulk mutation: mark ALL unviewed variants for a generation
   const bulkMutation = useMutation({
     mutationFn: async ({ generationId }: MarkAllViewedParams) => {
+      const localClient = localBridgeClientOrNull();
+      if (localClient) {
+        await localClient.gallery.markViewed(generationId);
+        return { generationId };
+      }
       const { error } = await supabase().from('generation_variants')
         .update({ viewed_at: new Date().toISOString() })
         .eq('generation_id', generationId)

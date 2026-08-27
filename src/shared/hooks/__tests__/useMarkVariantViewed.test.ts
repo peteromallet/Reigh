@@ -14,11 +14,23 @@ const mockUpdate = vi.fn(() => ({
 const mockFrom = vi.fn(() => ({
   update: mockUpdate,
 }));
+const mockLocalMarkViewed = vi.fn().mockResolvedValue({
+  generation_id: 'gen-local',
+  variant_id: 'variant-local',
+  viewed_at: '2026-08-27T00:00:00.000Z',
+  marked_count: 1,
+});
 
 vi.mock('@/integrations/supabase/client', () => ({
   getSupabaseClient: vi.fn(() => ({
     from: mockFrom,
   })),
+}));
+
+vi.mock('@/integrations/astrid/client', () => ({
+  AstridLocalClient: class {
+    gallery = { markViewed: mockLocalMarkViewed };
+  },
 }));
 
 import { useMarkVariantViewed } from '@/shared/hooks/variants/useMarkVariantViewed';
@@ -36,6 +48,7 @@ describe('useMarkVariantViewed', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockIs.mockResolvedValue({ error: null });
+    window.history.replaceState({}, '', '/');
   });
 
   it('returns markViewed and markAllViewed functions', () => {
@@ -146,5 +159,25 @@ describe('useMarkVariantViewed', () => {
     expect(badges.unviewedVariantCounts['gen-1']).toBe(0);
     expect(mockEq).toHaveBeenCalledWith('generation_id', 'gen-1');
     expect(mockIs).toHaveBeenCalledWith('viewed_at', null);
+  });
+
+  it('uses the authenticated local bridge and never calls Supabase in local mode', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/tools/video-editor?localProject=local-project&localTimeline=local-timeline',
+    );
+    const queryClient = createQueryClient();
+    const { result } = renderHookWithProviders(() => useMarkVariantViewed(), { queryClient });
+
+    act(() => {
+      result.current.markViewed({ variantId: 'variant-local', generationId: 'gen-local' });
+      result.current.markAllViewed('gen-local');
+    });
+
+    await waitFor(() => expect(mockLocalMarkViewed).toHaveBeenCalledTimes(2));
+    expect(mockLocalMarkViewed).toHaveBeenCalledWith('gen-local', 'variant-local');
+    expect(mockLocalMarkViewed.mock.calls.some((args) => args.length === 1 && args[0] === 'gen-local')).toBe(true);
+    expect(mockFrom).not.toHaveBeenCalled();
   });
 });

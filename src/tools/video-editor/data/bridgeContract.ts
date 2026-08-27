@@ -341,6 +341,14 @@ export const bridgeGenerationDetailPayloadSchema = z.looseObject({
   }),
 });
 
+/** `POST /projects/:slug/generations/:id/viewed` mutation response. */
+export const bridgeGenerationViewedResponseSchema = z.looseObject({
+  generation_id: z.string(),
+  variant_id: z.string().optional(),
+  viewed_at: z.string().nullable().optional(),
+  marked_count: z.number(),
+});
+
 /**
  * `GET|HEAD /projects/:slug/media/:media_id/content` is a byte route
  * (Range/ETag, frozen asset-serving semantics) — there is no JSON body to
@@ -413,6 +421,7 @@ export type BridgeGenerationSummary = z.infer<typeof bridgeGenerationSummarySche
 export type BridgeGenerationList = z.infer<typeof bridgeGenerationListSchema>;
 export type BridgeGenerationVariant = z.infer<typeof bridgeGenerationVariantSchema>;
 export type BridgeGenerationDetailPayload = z.infer<typeof bridgeGenerationDetailPayloadSchema>;
+export type BridgeGenerationViewedResponse = z.infer<typeof bridgeGenerationViewedResponseSchema>;
 
 const describeIssues = (issues: readonly z.core.$ZodIssue[]): string => {
 
