@@ -80,8 +80,16 @@ function boundedActionError(cause: unknown): string {
 /** Maximum interactive item controls a lane may contribute to the DOM. */
 export const DATA_LANE_DOM_ITEM_BUDGET = 128;
 
-/** Extra timeline pixels mounted on either side of the visible canvas. */
-export const DATA_LANE_VIEWPORT_OVERSCAN_PX = 256;
+/**
+ * Extra timeline pixels mounted on either side of the visible canvas.
+ *
+ * Scroll events update the browser's scroll position before React can commit a
+ * new virtual window. Keep enough already-mounted runway for a normal
+ * high-velocity wheel frame so the old window cannot paint as an empty lane
+ * while the next window is being reconciled. The DOM budget remains hard
+ * capped at DATA_LANE_DOM_ITEM_BUDGET.
+ */
+export const DATA_LANE_VIEWPORT_OVERSCAN_PX = 1_024;
 
 /** Isolated-render fallback; TimelineCanvas always supplies measured geometry. */
 export const DATA_LANE_DEFAULT_VIEWPORT_WIDTH_PX = 1_024;
@@ -89,6 +97,8 @@ export const DATA_LANE_DEFAULT_VIEWPORT_WIDTH_PX = 1_024;
 export interface DataLaneViewport {
   readonly scrollLeft: number;
   readonly clientWidth: number;
+  /** Last native scroll direction; used to retain more runway ahead of motion. */
+  readonly scrollDirection?: 'backward' | 'forward';
 }
 
 type NavigationDirection = 'previous' | 'next' | 'first' | 'last';
@@ -209,9 +219,56 @@ function capOverlappingIndices(
   indices: readonly number[],
   viewportStartSeconds: number,
   viewportEndSeconds: number,
+  scrollDirection?: DataLaneViewport['scrollDirection'],
   protectedIndex?: number,
 ): readonly number[] {
   if (indices.length <= DATA_LANE_DOM_ITEM_BUDGET) return indices;
+  if (scrollDirection) {
+    // Preserve every item actually intersecting the visible canvas, then spend
+    // the remaining budget in the direction of motion. This gives a sparse
+    // lane a real prior/next runway without exceeding the 128-item budget.
+    const visible = indices.filter((itemIndex) => {
+      const item = index.items[itemIndex];
+      return timelineEndForIndex(item) >= viewportStartSeconds
+        && item.timelineStart <= viewportEndSeconds;
+    });
+    if (visible.length <= DATA_LANE_DOM_ITEM_BUDGET) {
+      const visibleSet = new Set(visible);
+      const runway = indices
+        .filter((itemIndex) => !visibleSet.has(itemIndex))
+        .sort((leftIndex, rightIndex) => {
+          const left = index.items[leftIndex];
+          const right = index.items[rightIndex];
+          const leftEnd = timelineEndForIndex(left);
+          const rightEnd = timelineEndForIndex(right);
+          const leftAhead = scrollDirection === 'forward'
+            ? left.timelineStart > viewportEndSeconds
+            : leftEnd < viewportStartSeconds;
+          const rightAhead = scrollDirection === 'forward'
+            ? right.timelineStart > viewportEndSeconds
+            : rightEnd < viewportStartSeconds;
+          const leftDistance = scrollDirection === 'forward'
+            ? (leftAhead ? left.timelineStart - viewportEndSeconds : viewportStartSeconds - leftEnd)
+            : (leftAhead ? viewportStartSeconds - leftEnd : left.timelineStart - viewportEndSeconds);
+          const rightDistance = scrollDirection === 'forward'
+            ? (rightAhead ? right.timelineStart - viewportEndSeconds : viewportStartSeconds - rightEnd)
+            : (rightAhead ? viewportStartSeconds - rightEnd : right.timelineStart - viewportEndSeconds);
+          return (Number(!leftAhead) - Number(!rightAhead))
+            || (leftDistance - rightDistance)
+            || compareLaneItems(left, right)
+            || (leftIndex - rightIndex);
+        });
+      const selected = [...visible, ...runway.slice(0, DATA_LANE_DOM_ITEM_BUDGET - visible.length)];
+      if (
+        protectedIndex !== undefined
+        && indices.includes(protectedIndex)
+        && !selected.includes(protectedIndex)
+      ) {
+        selected[selected.length - 1] = protectedIndex;
+      }
+      return selected.sort((left, right) => left - right);
+    }
+  }
   const viewportMiddle = (viewportStartSeconds + viewportEndSeconds) / 2;
   const comparePriority = (leftIndex: number, rightIndex: number): number => {
     const left = index.items[leftIndex];
@@ -347,6 +404,7 @@ function selectViewportWindow(
     overlapping,
     viewportStartSeconds,
     viewportEndSeconds,
+    viewport.scrollDirection,
     protectedIndex,
   );
   return {

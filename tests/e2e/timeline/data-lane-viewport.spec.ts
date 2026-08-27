@@ -11,6 +11,74 @@ const RUNAWAY_SCALE_CASES = [
   { count: 50_000, project: 'runaway-scale-50000', lastManifestId: 'T50000', pages: 50 },
 ] as const;
 
+interface DataLaneTrajectorySample {
+  readonly phase: string;
+  readonly frame: number;
+  readonly scrollLeft: number;
+  readonly mounted: number;
+  readonly visibleIntersections: number;
+  readonly windowStart: number;
+  readonly windowEnd: number;
+}
+
+/**
+ * Collect one sample on every browser animation frame while real horizontal
+ * wheel input is in flight. Keeping this in the E2E suite matters: a settled
+ * `scrollLeft` assertion cannot see the one-frame stale virtualization state
+ * that users report during trackpad/wheel motion.
+ */
+async function collectWheelTrajectory(
+  page: import('@playwright/test').Page,
+  phase: string,
+  deltas: readonly number[],
+): Promise<readonly DataLaneTrajectorySample[]> {
+  const durationMs = Math.max(500, deltas.length * 24 + 250);
+  const tracePromise = page.evaluate(async ({ phase: samplePhase, durationMs: sampleDuration }) => {
+    const editArea = document.querySelector<HTMLElement>('.timeline-canvas-edit-area');
+    const row = document.querySelector<HTMLElement>('[data-lane-kind="reigh.runaway.transitions"]');
+    if (!editArea || !row) throw new Error('Runaway lane trajectory requires a mounted editor row');
+    const label = row.querySelector<HTMLElement>('[title="Runaway transitions"]')?.parentElement;
+    const samples: DataLaneTrajectorySample[] = [];
+    const startedAt = performance.now();
+    let frame = 0;
+    await new Promise<void>((resolve) => {
+      const sample = () => {
+        const scrollerRect = editArea.getBoundingClientRect();
+        const visibleLeft = label?.getBoundingClientRect().right ?? scrollerRect.left;
+        const visibleRight = scrollerRect.right;
+        const chips = Array.from(row.querySelectorAll<HTMLElement>('[data-testid="runaway-transition-chip"]'));
+        const visibleIntersections = chips.filter((chip) => {
+          const rect = chip.getBoundingClientRect();
+          return rect.right > visibleLeft && rect.left < visibleRight;
+        }).length;
+        samples.push({
+          phase: samplePhase,
+          frame,
+          scrollLeft: editArea.scrollLeft,
+          mounted: chips.length,
+          visibleIntersections,
+          windowStart: Number(row.dataset.windowStart ?? -1),
+          windowEnd: Number(row.dataset.windowEnd ?? -1),
+        });
+        frame += 1;
+        if (performance.now() - startedAt >= sampleDuration) {
+          resolve();
+        } else {
+          requestAnimationFrame(sample);
+        }
+      };
+      requestAnimationFrame(sample);
+    });
+    return samples;
+  }, { phase, durationMs });
+
+  for (const deltaX of deltas) {
+    await page.mouse.wheel(deltaX, 0);
+    await page.waitForTimeout(8);
+  }
+  return tracePromise;
+}
+
 test('dense data lane paints late viewport items with bounded DOM and real geometry', async ({ page }, testInfo) => {
   // At the 100px/s zoom ceiling a 900px viewport spans the whole four-second
   // fixture. The sparse-window cap then quite correctly centers both the
@@ -120,6 +188,67 @@ test('dense data lane paints late viewport items with bounded DOM and real geome
     contentType: 'image/png',
   });
   expect(issues).toEqual([]);
+});
+
+test('keeps Runaway data visible on every frame of fast, edge, reverse, and slow wheel trajectories', async ({ page }, testInfo) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 1_280, height: 800 });
+  await page.addInitScript(() => localStorage.removeItem('reigh.dev-extensions.disabled'));
+  await page.goto(
+    `${BASE_URL}/tools/video-editor?localProject=${PROJECT_SLUG}&localTimeline=${TIMELINE_SLUG}`
+      + '&localTest=1&timelineOverlayCanary=1&transcriptLaneFixture=1&runawayTimelineProject=runaway-8085',
+    { waitUntil: 'domcontentloaded', timeout: 45_000 },
+  );
+
+  const row = page.locator('[data-lane-kind="reigh.runaway.transitions"]');
+  await expect(row).toBeVisible({ timeout: 30_000 });
+  await expect(row).toHaveAttribute('data-total-items', '566', { timeout: 30_000 });
+  const scroller = page.locator('.timeline-canvas-edit-area');
+  const box = await scroller.boundingBox();
+  expect(box).not.toBeNull();
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await scroller.evaluate((element) => { element.scrollLeft = 0; });
+  await page.waitForTimeout(100);
+
+  const trajectories = [
+    { name: 'fast-right', deltas: Array.from({ length: 32 }, () => 500) },
+    { name: 'right-edge', deltas: Array.from({ length: 8 }, () => 1_200) },
+    { name: 'fast-reverse', deltas: Array.from({ length: 32 }, () => -500) },
+    { name: 'slow-right', deltas: Array.from({ length: 40 }, () => 120) },
+  ] as const;
+  const samples: DataLaneTrajectorySample[] = [];
+  const phasePositions: Array<{ name: string; before: number; after: number; max: number }> = [];
+  for (const { name, deltas } of trajectories) {
+    const before = await scroller.evaluate((element) => element.scrollLeft);
+    const phaseSamples = await collectWheelTrajectory(page, name, deltas);
+    samples.push(...phaseSamples);
+    const after = await scroller.evaluate((element) => element.scrollLeft);
+    const max = await scroller.evaluate((element) => element.scrollWidth - element.clientWidth);
+    phasePositions.push({ name, before, after, max });
+    if (name === 'fast-right' || name === 'right-edge' || name === 'slow-right') {
+      expect(after, `${name} must move right`).toBeGreaterThan(before);
+    } else {
+      expect(after, `${name} must move left`).toBeLessThan(before);
+    }
+    if (name === 'right-edge') expect(after).toBeGreaterThanOrEqual(max - 1);
+  }
+  await testInfo.attach('runaway-wheel-trajectory-positions.json', {
+    body: JSON.stringify(phasePositions, null, 2),
+    contentType: 'application/json',
+  });
+  await testInfo.attach('runaway-wheel-trajectory.json', {
+    body: JSON.stringify(samples, null, 2),
+    contentType: 'application/json',
+  });
+  await testInfo.attach('runaway-wheel-trajectory.png', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+
+  expect(samples.length).toBeGreaterThan(40);
+  expect(samples.every((sample) => sample.mounted <= 128)).toBe(true);
+  const blankFrames = samples.filter((sample) => sample.visibleIntersections === 0);
+  expect(blankFrames, `zero-visible-intersection frames: ${JSON.stringify(blankFrames.slice(0, 8))}`).toEqual([]);
 });
 
 test.describe('Runaway extension interval scale gate', () => {

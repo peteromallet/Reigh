@@ -14,7 +14,7 @@ import React, {
   type ReactNode,
   type UIEvent,
 } from 'react';
-import { createPortal } from 'react-dom';
+import { createPortal, flushSync } from 'react-dom';
 import { type DragEndEvent, useSensors } from '@dnd-kit/core';
 import { Layers, Sparkles } from 'lucide-react';
 import { cn } from '@/shared/components/ui/contracts/cn.ts';
@@ -326,6 +326,7 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
   const laneData = useDataLanes({ base: mountedEditorData?.data ?? null });
   const { dataRef, selectedClipIdsRef, ops, previewRef } = useTimelineMutableAdapters();
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const latestScrollMetricsRef = useRef({ scrollLeft: 0, scrollTop: 0, viewportWidth: 0 });
   const [overlayScrollContainer, setOverlayScrollContainer] = useState<HTMLDivElement | null>(null);
   const [contentOverlayRoot, setContentOverlayRoot] = useState<HTMLDivElement | null>(null);
   const [rulerOverlayRoot, setRulerOverlayRoot] = useState<HTMLDivElement | null>(null);
@@ -338,6 +339,7 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
   const [scrollLeft, setScrollLeft] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportWidth, setViewportWidth] = useState(0);
+  const [scrollDirection, setScrollDirection] = useState<'backward' | 'forward'>('forward');
   const [shotGroupMenu, setShotGroupMenu] = useState<ShotGroupMenuState>(null);
   const [timelineAreaMenu, setTimelineAreaMenu] = useState<TimelineAreaContextMenuState | null>(null);
   const shotGroupMenuRef = useRef<HTMLDivElement>(null);
@@ -349,6 +351,11 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
 
   const setScrollContainer = useCallback((node: HTMLDivElement | null) => {
     scrollContainerRef.current = node;
+    latestScrollMetricsRef.current = {
+      scrollLeft: node?.scrollLeft ?? 0,
+      scrollTop: node?.scrollTop ?? 0,
+      viewportWidth: node?.clientWidth ?? 0,
+    };
     setOverlayScrollContainer(node);
     setViewportWidth(node?.clientWidth ?? 0);
   }, []);
@@ -509,6 +516,12 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
     }
     // Do not wait for the browser's scroll event: the target must mount in the
     // same interaction turn so focus restoration cannot observe a blank lane.
+    latestScrollMetricsRef.current = {
+      scrollLeft: nextScrollLeft,
+      scrollTop: container.scrollTop,
+      viewportWidth: measuredWidth,
+    };
+    setScrollDirection(nextScrollLeft < visibleLeft ? 'backward' : 'forward');
     setScrollLeft(nextScrollLeft);
   }, [pixelsPerSecond, totalWidth, viewportWidth]);
   const overlayGeometry = useMemo(() => createTimelineOverlayGeometry({
@@ -935,16 +948,21 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
       scrollLeft: event.currentTarget.scrollLeft,
       scrollTop: event.currentTarget.scrollTop,
     };
-
-    if (nextMetrics.scrollLeft !== scrollLeft) {
+    const viewportWidth = event.currentTarget.clientWidth;
+    const previousScrollLeft = latestScrollMetricsRef.current.scrollLeft;
+    latestScrollMetricsRef.current = { ...nextMetrics, viewportWidth };
+    // Scroll is a continuous browser event, but the native scroll position can
+    // paint before a concurrent React update. Commit the virtual-window
+    // coordinates synchronously so a stale window cannot produce a blank
+    // frame. The lane itself retains directional runway for the next frame.
+    flushSync(() => {
       setScrollLeft(nextMetrics.scrollLeft);
-    }
-    if (event.currentTarget.clientWidth !== viewportWidth) {
-      setViewportWidth(event.currentTarget.clientWidth);
-    }
-    if (nextMetrics.scrollTop !== scrollTop) {
       setScrollTop(nextMetrics.scrollTop);
-    }
+      setViewportWidth(viewportWidth);
+      if (nextMetrics.scrollLeft !== previousScrollLeft) {
+        setScrollDirection(nextMetrics.scrollLeft < previousScrollLeft ? 'backward' : 'forward');
+      }
+    });
     overlayStores.viewport.update({
       ...nextMetrics,
       viewportWidth: event.currentTarget.clientWidth,
@@ -1117,7 +1135,7 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
             data={laneData}
             startLeft={startLeft}
             pixelsPerSecond={pixelsPerSecond}
-            viewport={{ scrollLeft, clientWidth: viewportWidth }}
+            viewport={{ scrollLeft, clientWidth: viewportWidth, scrollDirection }}
             onRequestItemIntoView={scrollDataLaneItemIntoView}
             clearSelection={ops?.clearSelection}
             setSelectedTrackId={ops?.setSelectedTrackId}

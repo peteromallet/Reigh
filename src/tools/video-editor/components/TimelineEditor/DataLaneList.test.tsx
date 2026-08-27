@@ -300,6 +300,49 @@ describe('DataLaneList', () => {
     },
   );
 
+  it('keeps visible sparse items and biases the bounded runway in scroll direction', () => {
+    const pixelsPerSecond = 10;
+    const clientWidth = START_LEFT + 100;
+    const items = Array.from({ length: 1_000 }, (_, index) => ({
+      item: item(`direction-${index}`),
+      timelineStart: index / 2,
+      timelineEnd: index / 2 + 0.25,
+    }));
+    const lane = laneView({
+      laneId: 'directional-sparse',
+      kindId: 'directional-sparse',
+      items,
+    }) as unknown as DataLaneView;
+    const renderLane = (scrollDirection: 'backward' | 'forward') => render(
+      <DataLaneRow
+        lane={lane}
+        pixelsPerSecond={pixelsPerSecond}
+        supportsSparseItemWindows
+        viewport={{ scrollLeft: 1_000, clientWidth, scrollDirection }}
+      />,
+    );
+
+    const forward = renderLane('forward');
+    const forwardIds = within(screen.getByTestId('data-lane-row'))
+      .getAllByTestId('data-lane-extent-bar')
+      .map((bar) => bar.getAttribute('data-item-id'));
+    expect(forwardIds).toContain('direction-200');
+    expect(forwardIds).toContain('direction-220');
+    expect(forwardIds).toContain('direction-300');
+    expect(forwardIds).not.toContain('direction-50');
+    forward.unmount();
+
+    const backward = renderLane('backward');
+    const backwardIds = within(screen.getByTestId('data-lane-row'))
+      .getAllByTestId('data-lane-extent-bar')
+      .map((bar) => bar.getAttribute('data-item-id'));
+    expect(backwardIds).toContain('direction-200');
+    expect(backwardIds).toContain('direction-220');
+    expect(backwardIds).toContain('direction-100');
+    expect(backwardIds).not.toContain('direction-50');
+    expect(backwardIds).not.toContain('direction-300');
+  });
+
   it('includes overlapping, zero-duration, and exact overscan-boundary items', () => {
     const pixelsPerSecond = 10;
     const viewport = { scrollLeft: 5_000, clientWidth: START_LEFT + 100 };
