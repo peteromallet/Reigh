@@ -18,7 +18,9 @@ import http from 'node:http';
 
 import {
   createAudioReactiveColourFixtures,
+  createOffsetAudioReactiveColourFixtures,
   createTimelineFixtures,
+  AUDIO_REACTIVE_OFFSET_FIXTURE_TIMELINE_ID,
   AUDIO_REACTIVE_FIXTURE_TIMELINE_ID,
   FIXTURE_PROJECT as PROJECT,
   FIXTURE_TIMELINE_ID as TIMELINE_ID,
@@ -37,6 +39,9 @@ const initialFixtures = createTimelineFixtures({
 const audioReactiveFixtures = createAudioReactiveColourFixtures({
   assetSrcBaseUrl: BASE_URL,
 });
+const audioReactiveOffsetFixtures = createOffsetAudioReactiveColourFixtures({
+  assetSrcBaseUrl: BASE_URL,
+});
 const timelineStates = new Map([
   [TIMELINE_ID, {
     timelineSummary: initialFixtures.timelineSummary,
@@ -48,6 +53,12 @@ const timelineStates = new Map([
     timelineSummary: audioReactiveFixtures.timelineSummary,
     config: audioReactiveFixtures.config,
     registry: audioReactiveFixtures.registry,
+    configVersion: 1,
+  }],
+  [AUDIO_REACTIVE_OFFSET_FIXTURE_TIMELINE_ID, {
+    timelineSummary: audioReactiveOffsetFixtures.timelineSummary,
+    config: audioReactiveOffsetFixtures.config,
+    registry: audioReactiveOffsetFixtures.registry,
     configVersion: 1,
   }],
 ]);
@@ -76,12 +87,16 @@ function serializeMutation(operation) {
 function resetPristineState() {
   const pristine = createTimelineFixtures({ assetSrcBaseUrl: BASE_URL });
   const audioPristine = createAudioReactiveColourFixtures({ assetSrcBaseUrl: BASE_URL });
+  const audioOffsetPristine = createOffsetAudioReactiveColourFixtures({ assetSrcBaseUrl: BASE_URL });
   const defaultState = stateForTimeline(TIMELINE_ID);
   const audioState = stateForTimeline(AUDIO_REACTIVE_FIXTURE_TIMELINE_ID);
+  const audioOffsetState = stateForTimeline(AUDIO_REACTIVE_OFFSET_FIXTURE_TIMELINE_ID);
   defaultState.config = pristine.config;
   defaultState.registry = pristine.registry;
   audioState.config = audioPristine.config;
   audioState.registry = audioPristine.registry;
+  audioOffsetState.config = audioOffsetPristine.config;
+  audioOffsetState.registry = audioOffsetPristine.registry;
   // Versions are store history, not fixture contents. Never rewind them: a
   // client holding a pre-reset version must remain stale after every reset.
   defaultState.configVersion += 1;

@@ -26,6 +26,9 @@ export const FIXTURE_PROJECT = {
 
 export const FIXTURE_TIMELINE_ID = 'demo-timeline';
 export const AUDIO_REACTIVE_FIXTURE_TIMELINE_ID = 'audio-reactive-colour-timeline';
+export const AUDIO_REACTIVE_OFFSET_FIXTURE_TIMELINE_ID = 'audio-reactive-colour-offset-timeline';
+export const AUDIO_REACTIVE_OFFSET_START_FRAME = 6;
+export const AUDIO_REACTIVE_OFFSET_INITIAL_COLOR = '#102030';
 
 /**
  * Timeline document + registry exactly as the editor's Local mode expects
@@ -162,6 +165,37 @@ export function createAudioReactiveColourFixtures({ assetSrcBaseUrl = '' } = {})
           volume: 1,
         },
       ],
+    },
+  };
+}
+
+/**
+ * The same pinned colour contract with both clips starting after a deliberate
+ * global gap. This catches renderers that apply marker frames in composition
+ * coordinates instead of clip-relative coordinates.
+ */
+export function createOffsetAudioReactiveColourFixtures({ assetSrcBaseUrl = '' } = {}) {
+  const base = createAudioReactiveColourFixtures({ assetSrcBaseUrl });
+  const offsetSeconds = AUDIO_REACTIVE_OFFSET_START_FRAME / base.config.output.fps;
+  return {
+    ...base,
+    timelineSummary: {
+      ...base.timelineSummary,
+      timeline_id: AUDIO_REACTIVE_OFFSET_FIXTURE_TIMELINE_ID,
+      timeline_ulid: '01j0000000000000000000offset',
+      slug: AUDIO_REACTIVE_OFFSET_FIXTURE_TIMELINE_ID,
+      name: 'Audio Reactive Colour Offset Fixture',
+    },
+    config: {
+      ...base.config,
+      output: { ...base.config.output, file: 'audio-reactive-colour-offset.mp4' },
+      clips: base.config.clips.map((clip) => ({
+        ...clip,
+        at: clip.at + offsetSeconds,
+        ...(clip.clipType === 'audio-reactive-colour'
+          ? { params: { ...clip.params, initialColor: AUDIO_REACTIVE_OFFSET_INITIAL_COLOR } }
+          : {}),
+      })),
     },
   };
 }

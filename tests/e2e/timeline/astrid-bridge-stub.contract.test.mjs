@@ -7,7 +7,10 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import {
   AUDIO_REACTIVE_FIXTURE_TIMELINE_ID,
+  AUDIO_REACTIVE_OFFSET_FIXTURE_TIMELINE_ID,
+  AUDIO_REACTIVE_OFFSET_START_FRAME,
   createAudioReactiveColourFixtures,
+  createOffsetAudioReactiveColourFixtures,
   createTimelineFixtures,
 } from '../../../src/test/bridgeFixtures.mjs';
 
@@ -192,6 +195,19 @@ test('deterministic Astrid stub serves the typed Runaway contract', async () => 
     const audioAfterReset = await (await fetch(audioTimelineUrl)).json();
     assert.deepEqual(audioAfterReset.config, audioPristine.config);
     assert.deepEqual(audioAfterReset.registry, audioPristine.registry);
+
+    const offsetTimelineUrl = `${origin}/projects/demo-project/timelines/${AUDIO_REACTIVE_OFFSET_FIXTURE_TIMELINE_ID}`;
+    const offsetPristine = createOffsetAudioReactiveColourFixtures({ assetSrcBaseUrl: origin });
+    const offsetInitial = await (await fetch(offsetTimelineUrl)).json();
+    assert.deepEqual(offsetInitial.config, offsetPristine.config);
+    assert.deepEqual(offsetInitial.registry, offsetPristine.registry);
+    assert.equal(offsetInitial.config.clips[0].at, AUDIO_REACTIVE_OFFSET_START_FRAME / 30);
+    assert.equal(offsetInitial.config.clips[0].hold, 0.6);
+    assert.equal(offsetInitial.config.clips[0].params.initialColor, '#102030');
+    assert.deepEqual(
+      offsetInitial.config.clips[0].params.events.map((event) => event.frame),
+      [2, 4],
+    );
   } finally {
     child.kill('SIGTERM');
     await once(child, 'exit');
