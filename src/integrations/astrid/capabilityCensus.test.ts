@@ -96,8 +96,9 @@ describe('Astrid boot capability census', () => {
     expect(requests).toEqual(expect.arrayContaining([
       '/api/astrid/projects/selected-project/tasks',
       '/api/astrid/projects/selected-project/generations',
-      '/api/astrid/projects/selected-project/media/__reigh_capability_probe__/content',
     ]));
+    expect(requests.some((pathname) => pathname.startsWith('/api/astrid/projects/selected-project/media/'))).toBe(true);
+    expect(requests.every((pathname) => !pathname.startsWith('/api/astrid/projects/first-project/media/'))).toBe(true);
     expect(requests).not.toContain('/api/astrid/projects/first-project/tasks');
     expect(requests).not.toContain('/api/astrid/projects/first-project/generations');
   });

@@ -85,10 +85,13 @@ async function probeJsonCapability(operation: () => Promise<unknown>) {
 async function probeMediaCapability(
   transport: AstridBridgeTransport,
   projectSlug: string,
+  knownMediaId?: string,
 ): Promise<{ support: AstridCapabilitySupport; reason?: string }> {
+  const mediaRef = knownMediaId || '__reigh_capability_probe__';
+  const contentPath = `/projects/${encodeURIComponent(projectSlug)}/media/${encodeURIComponent(mediaRef)}/content`;
   try {
     const response = await transport.requestRaw(
-      `/projects/${encodeURIComponent(projectSlug)}/media/__reigh_capability_probe__/content`,
+      contentPath,
       { method: 'HEAD' },
     );
     if (response.ok) return { support: 'supported' };
@@ -101,7 +104,7 @@ async function probeMediaCapability(
       // route's ordinary object-not-found from the bridge router's unknown
       // route envelope.
       const diagnostic = await transport.requestRaw(
-        `/projects/${encodeURIComponent(projectSlug)}/media/__reigh_capability_probe__/content`,
+        contentPath,
         { method: 'GET' },
       );
       let detail = '';
@@ -120,6 +123,26 @@ async function probeMediaCapability(
       return { support: 'unavailable', reason: 'media content capability unavailable' };
     }
     return { support: 'unknown', reason: `media probe responded ${response.status}` };
+  } catch (error) {
+    return supportAfterProbe(error);
+  }
+}
+
+async function probeGenerationCapability(
+  transport: AstridBridgeTransport,
+  encodedProject: string,
+): Promise<{ support: AstridCapabilitySupport; reason?: string; mediaId?: string }> {
+  try {
+    const page = await transport.requestJson(
+      `/projects/${encodedProject}/generations?limit=1`,
+      {},
+      bridgeGenerationListSchema,
+      'generation capability probe',
+    );
+    return {
+      support: 'supported',
+      mediaId: page.generations.find((generation) => generation.primary)?.primary?.media_id,
+    };
   } catch (error) {
     return supportAfterProbe(error);
   }
@@ -193,21 +216,19 @@ export async function inspectAstridCapabilities(
   }
 
   const encodedProject = encodeURIComponent(projectSlug);
-  const [tasks, generations, media] = await Promise.all([
+  const [tasks, generations] = await Promise.all([
     probeJsonCapability(() => transport.requestJson(
       `/projects/${encodedProject}/tasks?limit=1`,
       {},
       bridgeTaskListSchema,
       'task capability probe',
     )),
-    probeJsonCapability(() => transport.requestJson(
-      `/projects/${encodedProject}/generations?limit=1`,
-      {},
-      bridgeGenerationListSchema,
-      'generation capability probe',
-    )),
-    probeMediaCapability(transport, projectSlug),
+    probeGenerationCapability(transport, encodedProject),
   ]);
+  // When the bridge already exposed a primary managed-media id, probe that
+  // real object instead of intentionally generating a noisy sentinel 404.
+  // Empty/older galleries retain the diagnostic sentinel fallback.
+  const media = await probeMediaCapability(transport, projectSlug, generations.mediaId);
   const capabilities = {
     tasks: tasks.support,
     generations: generations.support,
