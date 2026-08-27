@@ -3,12 +3,17 @@ import { renderHook, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 
-const { mockGetSupabaseClient } = vi.hoisted(() => ({
+const { mockGetSupabaseClient, mockIsDeferredCloudDataAuthority } = vi.hoisted(() => ({
   mockGetSupabaseClient: vi.fn(),
+  mockIsDeferredCloudDataAuthority: vi.fn(),
 }));
 
 vi.mock('@/integrations/supabase/client', () => ({
   getSupabaseClient: mockGetSupabaseClient,
+}));
+
+vi.mock('@/app/runtime/dataAuthority', () => ({
+  isDeferredCloudDataAuthority: mockIsDeferredCloudDataAuthority,
 }));
 
 const createMockSupabaseClient = () => ({
@@ -74,6 +79,10 @@ function createWrapper() {
 describe('useApiTokens', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // These tests exercise the account-token behavior of the deferred cloud
+    // shell. Astrid is the production default, so opt into the authority that
+    // deliberately permits Supabase account I/O for this fixture.
+    mockIsDeferredCloudDataAuthority.mockReturnValue(true);
     window.history.replaceState({}, '', '/');
     mockGetSupabaseClient.mockReturnValue(createMockSupabaseClient());
   });
