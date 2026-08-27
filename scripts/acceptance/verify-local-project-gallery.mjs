@@ -231,7 +231,9 @@ async function runRow(page, origin, row, evidenceRoot, rowNumber) {
   assert.equal(new Set(matchingDetailRequests).size, 1, `${project} lightbox detail requests stay scoped to one generation`);
   await page.screenshot({ path: resolve(evidenceRoot, `${String(rowNumber).padStart(2, '0')}-${project}-gallery.png`), fullPage: true });
 
-  await page.goto(`${origin}/tools/image-generation?${query}`, { waitUntil: 'commit', timeout: 45_000 });
+  // We are already on this exact URL. A same-URL goto can be a no-op and
+  // leave the modal mounted, so use a true document reload for persistence.
+  await page.reload({ waitUntil: 'commit', timeout: 45_000 });
   await page.getByRole('heading', { name: 'Image Generation' }).waitFor({ timeout: 30_000 });
   await waitUntil(async () => (await page.locator('[data-gallery-item-id]').count()) >= Math.min(expectedImageIds.length, 45));
   assertDiagnostics(diagnostics);
