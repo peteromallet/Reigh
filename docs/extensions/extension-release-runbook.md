@@ -16,6 +16,30 @@ also requires an exact clean Astrid checkout supplied by commit through the
 environment. It never fetches, changes a Git ref, resets, cleans, or applies a
 production migration. A mismatch or failed command stops the run.
 
+Before the 40+ minute verifier, run the cheap local readiness probe. It checks
+the documented 11 GiB free-space floor, pinned Node/npm/Python/native tools,
+the exact Reigh and explicitly supplied Astrid checkout, clean worktrees,
+manifest/ledger pin agreement, and phase-appropriate release-tag state. The
+Astrid path is mandatory; the probe never guesses a sibling directory:
+
+```sh
+ASTRID_CHECKOUT=/absolute/path/to/clean/Astrid \
+npm run check:extension-local-rc-preflight
+```
+
+For automation, parse JSON even when the expected blocked exit is 1:
+
+```sh
+ASTRID_CHECKOUT=/absolute/path/to/clean/Astrid \
+npm --silent run check:extension-local-rc-preflight:json \
+  > /tmp/extension-local-rc-preflight.json
+```
+
+`ready` covers only local admission to the expensive verifier. The JSON keeps
+production/external blockers, human/reviewer blockers, and integration/frozen
+phase blockers in separate arrays; a local-ready result does not imply that
+those gates are complete.
+
 Before recruiting participants or changing a production flag, run the
 read-only operational preflight. It fails closed while the release is still in
 integration and prints the exact missing human, rollout, observability,
