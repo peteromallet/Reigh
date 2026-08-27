@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { AstridLocalClient } from '@/integrations/astrid/client';
 import { bridgeCapabilityUnavailable } from '@/integrations/astrid/capability';
 import { toast } from '@/shared/components/ui/runtime/sonner';
@@ -6,6 +6,7 @@ import { Project } from '@/types/project';
 import { UserPreferences } from '@/shared/settings/userPreferences';
 import { normalizeAndPresentError } from '@/shared/lib/errorHandling/runtimeError';
 import { ensureUserRecordExists } from '@/features/projects/services/projectSetupService';
+import { getLocalProjectSlug, hasLocalModeUrlParams } from '@/shared/dev/devSession';
 
 // Type for updating projects
 interface ProjectUpdate {
@@ -61,14 +62,39 @@ export function useProjectCRUD({
   onProjectDeleted: _onProjectDeleted,
   updateUserSettings: _updateUserSettings,
 }: UseProjectCRUDOptions) {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [isLoadingProjects, setIsLoadingProjects] = useState(true);
+  const localProjectSlug = getLocalProjectSlug(
+    typeof window === 'undefined' ? '' : window.location.search,
+  );
+  const localProject = useMemo(
+    () => localProjectSlug
+      ? { id: localProjectSlug, name: localProjectSlug, user_id: 'local-user' }
+      : null,
+    [localProjectSlug],
+  );
+  const [projects, setProjects] = useState<Project[]>(() => localProject ? [localProject] : []);
+  const [isLoadingProjects, setIsLoadingProjects] = useState(!localProject);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [isUpdatingProject, setIsUpdatingProject] = useState(false);
   const [isDeletingProject, setIsDeletingProject] = useState(false);
 
+  // Keep the URL-owned project visible in ProjectContext while navigating
+  // between local tools/projects. No discovery or cloud setup is needed for
+  // this entry: the slug itself is the bridge project identity.
+  useEffect(() => {
+    if (localProject) {
+      setProjects([localProject]);
+      setIsLoadingProjects(false);
+    } else if (!userId) {
+      setProjects([]);
+      setIsLoadingProjects(false);
+    }
+  }, [localProject, userId]);
+
   const fetchProjects = useCallback(async () => {
     try {
+      if (hasLocalModeUrlParams(typeof window === 'undefined' ? '' : window.location.search)) {
+        return;
+      }
       if (!userId) throw new Error('Not authenticated');
       const user = { id: userId };
 

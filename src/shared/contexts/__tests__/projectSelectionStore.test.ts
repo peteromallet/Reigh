@@ -29,4 +29,23 @@ describe('projectSelectionStore', () => {
 
     expect(getProjectSelectionFallbackId()).toBeNull();
   });
+
+  it('uses localProject URL authority over stale storage for bridge consumers', () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockReturnValue('stale-cloud-project');
+    window.history.replaceState({}, '', '/tools/image-generation?localProject=desert-plant-growth');
+
+    initializeProjectSelectionStore();
+
+    expect(getProjectSelectionFallbackId()).toBe('desert-plant-growth');
+    expect(getProjectSelectionFallbackId()).not.toBe('stale-cloud-project');
+  });
+
+  it('does not expose stale storage when local mode has no project slug', () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockReturnValue('stale-cloud-project');
+    window.history.replaceState({}, '', '/tools/travel-between-images?localTimeline=main');
+
+    initializeProjectSelectionStore();
+
+    expect(getProjectSelectionFallbackId()).toBeNull();
+  });
 });

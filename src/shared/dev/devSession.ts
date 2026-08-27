@@ -51,3 +51,15 @@ export function hasLocalModeUrlParams(search: string): boolean {
   const params = new URLSearchParams(search);
   return LOCAL_MODE_URL_PARAMS.some((name) => params.has(name));
 }
+
+/**
+ * Return the URL-owned local project slug, if one is present.
+ *
+ * Local project URLs are authoritative across every tool, not only the
+ * timeline editor. Keep this parser here so project/session consumers cannot
+ * accidentally fall back to a cloud selection or persisted storage value.
+ */
+export function getLocalProjectSlug(search: string): string | null {
+  const slug = new URLSearchParams(search).get('localProject')?.trim();
+  return slug || null;
+}

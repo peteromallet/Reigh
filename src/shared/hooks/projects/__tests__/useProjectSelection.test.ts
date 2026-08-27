@@ -65,6 +65,29 @@ describe('useProjectSelection', () => {
     expect(result.current.selectedProjectId).toBe('project-from-storage');
   });
 
+  it('uses localProject URL authority without reading stale localStorage', () => {
+    localStorageMock['lastSelectedProjectId'] = 'stale-cloud-project';
+    const getItem = vi.mocked(Storage.prototype.getItem);
+    window.history.replaceState({}, '', '/tools/travel-between-images?localProject=desert-plant-growth');
+
+    const { result } = renderHook(() => useProjectSelection(defaultOptions));
+
+    expect(result.current.selectedProjectId).toBe('desert-plant-growth');
+    expect(getItem).not.toHaveBeenCalledWith('lastSelectedProjectId');
+    expect(defaultOptions.updateUserSettings).not.toHaveBeenCalled();
+  });
+
+  it('updates selection and fallback when local URL navigation changes project', () => {
+    window.history.replaceState({}, '', '/tools/travel-between-images?localProject=first-project');
+    const { result, rerender } = renderHook(() => useProjectSelection(defaultOptions));
+    expect(result.current.selectedProjectId).toBe('first-project');
+
+    window.history.replaceState({}, '', '/tools/travel-between-images?localProject=second-project');
+    rerender();
+
+    expect(result.current.selectedProjectId).toBe('second-project');
+  });
+
   it('clears a cloud selection when the authenticated user becomes local-mode/null without persisting', () => {
     localStorageMock['lastSelectedProjectId'] = 'cloud-project';
     const updateUserSettings = vi.fn().mockResolvedValue(undefined);

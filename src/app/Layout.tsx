@@ -31,6 +31,7 @@ import { useResetCurrentShotOnRouteChange } from './hooks/useResetCurrentShotOnR
 import { LayoutMainContent } from './components/LayoutMainContent';
 import { usePanesStore } from '@/shared/state/panesStore';
 import { isLocalTestMode } from '@/app/localTestRuntime';
+import { hasLocalModeUrlParams } from '@/shared/dev/devSession';
 
 // Scroll to top component
 function ScrollToTop() {
@@ -56,6 +57,7 @@ export const Layout: React.FC = () => {
   const localParams = new URLSearchParams(search);
   const localProject = localParams.get('localProject')?.trim();
   const localTimeline = localParams.get('localTimeline')?.trim();
+  const isLocalMode = hasLocalModeUrlParams(search);
   const isLocalEditorTest = isVideoEditorRoute(pathname)
     && isLocalTestMode(import.meta.env, search)
     && Boolean(localProject)
@@ -102,7 +104,7 @@ export const Layout: React.FC = () => {
   // probe fails the user is sent to the public home page — one hop, no loop:
   // `/` outside Layout does not re-enter this gate (and in WEB env `/` is
   // `HomeWithAuthRedirect`, which renders HomePage directly).
-  if (!isAuthenticated && !isLocalEditorTest) {
+  if (!isAuthenticated && !isLocalMode && !isLocalEditorTest) {
     return <Navigate to="/home" replace state={{ fromProtected: true }} />;
   }
 

@@ -12,6 +12,13 @@ import { QUERY_PRESETS } from '@/shared/lib/query/queryDefaults';
 import { resourceQueryKeys } from '@/shared/lib/queryKeys/resources';
 import type { ParameterSchema } from '@/tools/video-editor';
 import { isDeferredCloudDataAuthority } from '@/app/runtime/dataAuthority';
+import { hasLocalModeUrlParams } from '@/shared/dev/devSession';
+
+function canReadCloudResources(): boolean {
+    return isDeferredCloudDataAuthority() && !hasLocalModeUrlParams(
+        typeof window === 'undefined' ? '' : window.location.search,
+    );
+}
 
 export interface PhaseConfigMetadata {
     name: string;
@@ -450,7 +457,7 @@ export const usePublicLoras = () => {
 
 /** Fetch all public style references with metadata extracted */
 export const usePublicStyleReferences = () => {
-    const query = useListPublicResources('style-reference');
+    const query = useListPublicResources('style-reference', { enabled: canReadCloudResources() });
     const data = useMemo(
         () => (query.data || []).map(r => r.metadata || {}) as StyleReferenceMetadata[],
         [query.data]
@@ -460,7 +467,7 @@ export const usePublicStyleReferences = () => {
 
 /** Fetch current user's style references with metadata extracted */
 export const useMyStyleReferences = () => {
-    const query = useListResources('style-reference');
+    const query = useListResources('style-reference', { enabled: canReadCloudResources() });
     const data = useMemo(
         () => (query.data || []).map(r => r.metadata || {}) as StyleReferenceMetadata[],
         [query.data]

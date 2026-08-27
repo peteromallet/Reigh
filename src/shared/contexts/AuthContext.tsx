@@ -2,6 +2,7 @@ import React, { createContext, useState, useContext, ReactNode, useEffect, useMe
 import { probeBridgeSession } from '@/shared/auth/bridgeSession';
 import { requireContextValue } from './contextGuard';
 import { isLocalTestMode } from '@/app/localTestRuntime';
+import { hasLocalModeUrlParams } from '@/shared/dev/devSession';
 
 interface AuthContextType {
   userId: string | null;
@@ -17,11 +18,14 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
  * reaches browser code. */
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const localTestMode = isLocalTestMode();
+  const isLocalMode = hasLocalModeUrlParams(
+    typeof window === 'undefined' ? '' : window.location.search,
+  );
   const [userId, setUserId] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(!localTestMode);
+  const [isLoading, setIsLoading] = useState(!localTestMode && !isLocalMode);
 
   useEffect(() => {
-    if (localTestMode) {
+    if (localTestMode || isLocalMode) {
       setUserId(null);
       setIsLoading(false);
       return;
@@ -35,7 +39,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return () => {
       cancelled = true;
     };
-  }, [localTestMode]);
+  }, [isLocalMode, localTestMode]);
 
   const value = useMemo(() => ({ userId, isAuthenticated: !!userId, isLoading }), [userId, isLoading]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

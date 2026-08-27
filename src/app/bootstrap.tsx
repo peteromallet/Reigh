@@ -15,6 +15,7 @@ import { notifyError } from '@/shared/lib/errorHandling/notifyError';
 import { installRuntimeErrorPresenter } from '@/shared/lib/errorHandling/runtimeErrorPresenter';
 import { initializeViewportLockRuntime } from '@/shared/runtime/viewportLockRuntime';
 import { initializeProjectSelectionStore } from '@/shared/contexts/projectSelectionStore';
+import { hasLocalModeUrlParams } from '@/shared/dev/devSession';
 import { initializePreloadingService } from '@/shared/lib/preloading';
 import { initializeToolSettingsWriteRuntime } from '@/shared/settings';
 import { initializeNetworkStatusManager } from '@/shared/services/network/networkStatusManager';
@@ -114,7 +115,8 @@ export function initializeAppEnvironment(): void {
   // Astrid bridge with NO Supabase environment configured. Initializing the
   // Supabase runtime without config used to throw synchronously and
   // white-screen the app — skip it entirely when no URL is set.
-  if (!isTestRuntimeEnvironment(env) && !localTestMode && hasSupabaseConfig()) {
+  const localModeUrl = typeof window !== 'undefined' && hasLocalModeUrlParams(window.location.search);
+  if (!isTestRuntimeEnvironment(env) && !localTestMode && !localModeUrl && hasSupabaseConfig()) {
     const supabaseInitResult = initializeSupabaseResult();
     if (!supabaseInitResult.ok) {
       normalizeAndPresentError(supabaseInitResult.error, {

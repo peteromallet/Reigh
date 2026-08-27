@@ -70,7 +70,7 @@ const ImageGenerationToolPage: React.FC = React.memo(() => {
     return fromRuntime ?? null;
   }, [selectedProjectId]);
 
-  const currentProject = projects.find(project => project.id === selectedProjectId);
+  const currentProject = projects.find(project => project.id === effectiveProjectId);
   const projectAspectRatio = currentProject?.aspectRatio;
 
   const formContainerRef = useRef<HTMLDivElement>(null);

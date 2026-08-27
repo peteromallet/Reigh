@@ -13,29 +13,10 @@ const mockFetchProjects = vi.fn();
 const mockAddNewProject = vi.fn();
 const mockUpdateProject = vi.fn();
 const mockDeleteProject = vi.fn();
+const mockUseProjectSessionCoordinator = vi.hoisted(() => vi.fn());
 
 vi.mock('../useProjectSessionCoordinator', () => ({
-  useProjectSessionCoordinator: vi.fn(() => {
-    setProjectSelectionSnapshot({ selectedProjectId: 'proj-1' });
-    return {
-      userId: 'user-123',
-      selection: {
-        selectedProjectId: 'proj-1',
-        setSelectedProjectId: mockSetSelectedProjectId,
-      },
-      crud: {
-        projects: [{ id: 'proj-1', name: 'Test Project' }],
-        isLoadingProjects: false,
-        fetchProjects: mockFetchProjects,
-        addNewProject: mockAddNewProject,
-        isCreatingProject: false,
-        updateProject: mockUpdateProject,
-        isUpdatingProject: false,
-        deleteProject: mockDeleteProject,
-        isDeletingProject: false,
-      },
-    };
-  }),
+  useProjectSessionCoordinator: () => mockUseProjectSessionCoordinator(),
 }));
 
 import { ProjectProvider, useProject } from '../ProjectContext';
@@ -60,6 +41,24 @@ describe('ProjectContext', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     setProjectSelectionSnapshot({ selectedProjectId: null });
+    mockUseProjectSessionCoordinator.mockReturnValue({
+      userId: 'user-123',
+      selection: {
+        selectedProjectId: 'proj-1',
+        setSelectedProjectId: mockSetSelectedProjectId,
+      },
+      crud: {
+        projects: [{ id: 'proj-1', name: 'Test Project' }],
+        isLoadingProjects: false,
+        fetchProjects: mockFetchProjects,
+        addNewProject: mockAddNewProject,
+        isCreatingProject: false,
+        updateProject: mockUpdateProject,
+        isUpdatingProject: false,
+        deleteProject: mockDeleteProject,
+        isDeletingProject: false,
+      },
+    });
   });
 
   describe('useProject hook', () => {
@@ -113,6 +112,38 @@ describe('ProjectContext', () => {
       expect(getProjectSelectionSnapshot()).toEqual({
         selectedProjectId: 'proj-1',
       });
+    });
+
+    it('exposes the URL-owned local project as selection and a project context entry', () => {
+      mockUseProjectSessionCoordinator.mockReturnValue({
+        userId: null,
+        selection: {
+          selectedProjectId: 'desert-plant-growth',
+          setSelectedProjectId: mockSetSelectedProjectId,
+        },
+        crud: {
+          projects: [{ id: 'desert-plant-growth', name: 'desert-plant-growth', user_id: 'local-user' }],
+          isLoadingProjects: false,
+          fetchProjects: mockFetchProjects,
+          addNewProject: mockAddNewProject,
+          isCreatingProject: false,
+          updateProject: mockUpdateProject,
+          isUpdatingProject: false,
+          deleteProject: mockDeleteProject,
+          isDeletingProject: false,
+        },
+      });
+      window.history.replaceState({}, '', '/tools/travel-between-images?localProject=desert-plant-growth');
+
+      render(
+        <ProjectProvider>
+          <ProjectConsumer />
+        </ProjectProvider>,
+      );
+
+      expect(screen.getByTestId('selectedProjectId')).toHaveTextContent('desert-plant-growth');
+      expect(screen.getByTestId('userId')).toHaveTextContent('null');
+      expect(screen.getByTestId('projectCount')).toHaveTextContent('1');
     });
   });
 });

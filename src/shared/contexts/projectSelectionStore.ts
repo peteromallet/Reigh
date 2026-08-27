@@ -5,6 +5,19 @@
  */
 const PROJECT_SELECTION_STORAGE_KEY = 'lastSelectedProjectId';
 
+function readLocalProjectFromUrl(): string | null {
+  if (typeof window === 'undefined') return null;
+
+  const slug = new URLSearchParams(window.location.search).get('localProject')?.trim();
+  return slug || null;
+}
+
+function isLocalModeUrl(): boolean {
+  if (typeof window === 'undefined') return false;
+  const params = new URLSearchParams(window.location.search);
+  return params.has('localProject') || params.has('localTimeline');
+}
+
 interface ProjectSelectionSnapshot {
   selectedProjectId: string | null;
 }
@@ -33,7 +46,9 @@ let initialized = false;
 const listeners = new Set<ProjectSelectionListener>();
 
 export function initializeProjectSelectionStore(
-  initialSelectedProjectId: string | null = readPersistedProjectSelection(),
+  initialSelectedProjectId: string | null = isLocalModeUrl()
+    ? readLocalProjectFromUrl()
+    : readPersistedProjectSelection(),
 ): ProjectSelectionSnapshot {
   const normalized: ProjectSelectionSnapshot = {
     selectedProjectId: normalizeSelectedProjectId(initialSelectedProjectId),
@@ -55,12 +70,19 @@ export function setProjectSelectionSnapshot(next: ProjectSelectionSnapshot): voi
   initializeProjectSelectionStore(next.selectedProjectId ?? null);
 }
 
+/** Update the fallback used by non-React bridge consumers. */
+export function setProjectSelectionFallbackId(selectedProjectId: string | null): void {
+  setProjectSelectionSnapshot({ selectedProjectId });
+}
+
 export function getProjectSelectionSnapshot(): ProjectSelectionSnapshot {
   return { ...snapshot };
 }
 
 export function getProjectSelectionFallbackId(): string | null {
-  return snapshot.selectedProjectId;
+  // The URL remains authoritative during local navigation, including for
+  // consumers that render before ProjectProvider's synchronization effect.
+  return isLocalModeUrl() ? readLocalProjectFromUrl() : snapshot.selectedProjectId;
 }
 
 /** @internal Only for test isolation — do not call in production code. */
