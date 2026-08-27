@@ -1,4 +1,5 @@
 import { strict as assert } from 'node:assert';
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 
@@ -32,6 +33,21 @@ function fixtureLedger(overrides = {}) {
 }
 
 describe('extension release operational preflight', () => {
+  it('keeps the documented silent npm JSON command parseable while preserving exit 1', () => {
+    const result = spawnSync(
+      'npm',
+      ['--silent', 'run', 'check:extension-release-preflight:json'],
+      { cwd: process.cwd(), encoding: 'utf8' },
+    );
+    assert.equal(result.status, 1);
+    assert.equal(result.error, undefined);
+    assert.equal(result.stderr, '');
+    const report = JSON.parse(result.stdout);
+    assert.equal(report.ready, false);
+    assert.equal(report.status, 'blocked');
+    assert.ok(report.blockers.length > 0);
+  });
+
   it('fails closed on the checked-in integration state and names human/production blockers', () => {
     const result = buildPreflight({
       ledger: JSON.parse(readFileSync(new URL('../../config/releases/extension-ship-evidence.json', import.meta.url), 'utf8')),

@@ -25,6 +25,17 @@ recovery, and review evidence plus the documented draft/capture commands:
 npm run check:extension-release-preflight
 ```
 
+For automation, use npm's silent mode so its lifecycle banner cannot be mixed
+into the JSON stream. The command intentionally exits 1 while any blocker is
+present; parse stdout even on that expected exit and use the `ready` field:
+
+```sh
+npm --silent run check:extension-release-preflight:json > /tmp/extension-release-preflight.json
+```
+
+Do not use `npm run check:extension-release-preflight -- --json` for machine
+output: npm prints its banner to stdout unless `--silent` is supplied.
+
 This command never creates evidence, signs receipts, changes the ledger, calls
 production, or changes rollout state. A preflight `PASS` only means the
 external evidence prerequisites are represented in the local ledger; it does

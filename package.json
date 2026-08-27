@@ -88,6 +88,7 @@
     "check:extension-ship-evidence": "node scripts/quality/check-extension-ship-evidence.mjs --audit",
     "check:extension-ship-evidence:release": "node scripts/quality/check-extension-ship-evidence.mjs --release",
     "check:extension-release-preflight": "node scripts/quality/check-extension-release-preflight.mjs",
+    "check:extension-release-preflight:json": "node scripts/quality/check-extension-release-preflight.mjs --json",
     "extension:evidence": "node scripts/quality/capture-extension-external-evidence.mjs",
     "test:extension-evidence": "node --test scripts/quality/check-extension-ship-evidence.test.mjs scripts/quality/capture-extension-external-evidence.test.mjs",
     "test:extension-release-preflight": "node --test scripts/quality/check-extension-release-preflight.test.mjs",
