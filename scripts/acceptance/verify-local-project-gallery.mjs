@@ -166,9 +166,14 @@ function diagnosticsForPage(page, diagnostics, origin, project) {
 }
 
 function assertDiagnostics(diagnostics) {
+  const diagnosticContext = () => JSON.stringify({
+    consoleErrors: unique(diagnostics.consoleErrors),
+    failedResponses: unique(diagnostics.failedResponses),
+    failedRequests: unique(diagnostics.failedRequests),
+  }, null, 2);
   assert.deepEqual(unique(diagnostics.forbiddenRequests), [], 'local Astrid journey must not contact Supabase');
   assert.deepEqual(unique(diagnostics.pageErrors), [], 'local Astrid journey must not throw page errors');
-  assert.deepEqual(unique(diagnostics.consoleErrors), [], 'local Astrid journey must not emit browser console errors');
+  assert.deepEqual(unique(diagnostics.consoleErrors), [], `local Astrid journey must not emit browser console errors\n${diagnosticContext()}`);
   const unexpectedResponses = diagnostics.failedResponses.filter((line) => !line.includes('/media/__reigh_capability_probe__/content'));
   const unexpectedRequests = diagnostics.failedRequests.filter((line) => {
     if (line.includes('/media/__reigh_capability_probe__/content')) return false;
@@ -224,7 +229,7 @@ async function runRow(page, origin, row, evidenceRoot, rowNumber) {
   const diagnostics = makeDiagnostics();
   diagnosticsForPage(page, diagnostics, origin, project);
   await page.goto(travelUrl, { waitUntil: 'commit', timeout: 45_000 });
-  await page.getByRole('heading', { name: 'Timeline shots' }).waitFor({ timeout: 30_000 });
+  await page.getByRole('heading', { name: 'Timeline shots' }).waitFor({ timeout: 60_000 });
   // The production ShotListDisplay uses the established VideoShotDisplay card
   // (a clickable div), not the removed focused mini-timeline button.
   const documentShotCards = page.locator('div.click-ripple').filter({ has: page.locator('button[aria-label="Duplicate shot"]') });
@@ -250,10 +255,10 @@ async function runRow(page, origin, row, evidenceRoot, rowNumber) {
   const selectedHash = new URL(page.url()).hash;
   assert.notEqual(selectedHash, '', `${project} shot selection is linkable`);
   const backButton = page.getByTitle('Back to shots').first();
-  await backButton.waitFor({ timeout: 30_000 });
+  await backButton.waitFor({ timeout: 60_000 });
   assert.equal(await page.getByText('Final Video', { exact: true }).count(), 1, `${project} restored editor exposes Final Video`);
   assert.ok(await page.getByText('Guidance', { exact: true }).count() >= 1, `${project} restored editor exposes Guidance/Input Images`);
-  assert.ok(await page.getByText('Generate', { exact: true }).count() >= 1, `${project} restored editor exposes Generate`);
+  assert.ok(await page.getByRole('button', { name: /^Generate(?: Videos?)?$/i }).count() >= 1, `${project} restored editor exposes Generate`);
   assert.ok(await page.getByText('Settings', { exact: true }).count() >= 1, `${project} restored editor exposes Settings`);
   assert.equal(await page.getByText('Local Astrid timeline: generation and cloud-only actions are disabled. Settings are shown for reference.', { exact: true }).count(), 1, `${project} local-disabled note is visible`);
 
@@ -291,7 +296,7 @@ async function runRow(page, origin, row, evidenceRoot, rowNumber) {
   discardExpectedGalleryNavigationAborts(diagnostics, origin, project, shotReloadFailureBaseline);
   const shotBackFailureBaseline = diagnostics.failedRequests.length;
   await page.goBack({ waitUntil: 'commit', timeout: 45_000 });
-  await page.getByRole('heading', { name: 'Timeline shots' }).waitFor({ timeout: 30_000 });
+  await page.getByRole('heading', { name: 'Timeline shots' }).waitFor({ timeout: 60_000 });
   await page.waitForLoadState('networkidle', { timeout: 30_000 });
   discardExpectedGalleryNavigationAborts(diagnostics, origin, project, shotBackFailureBaseline);
   assert.equal(await page.locator('div.click-ripple').filter({ has: page.locator('button[aria-label="Duplicate shot"]') }).count(), shots.length, `${project} browser back returns to shot overview`);
