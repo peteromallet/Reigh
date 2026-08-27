@@ -25,11 +25,11 @@ function LocationProbe() {
   return <output data-testid="location">{location.pathname}{location.search}{location.hash}</output>;
 }
 
-function renderBrowser() {
+function renderBrowser(initialEntry = '/tools/travel-between-images?localProject=demo&localTimeline=timeline-1') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/tools/travel-between-images?localProject=demo&localTimeline=timeline-1']}>
+      <MemoryRouter initialEntries={[initialEntry]}>
         <LocalTimelineShotBrowser projectSlug="demo" timelineRef="timeline-1" />
         <LocationProbe />
       </MemoryRouter>
@@ -62,7 +62,7 @@ describe('LocalTimelineShotBrowser', () => {
     });
   });
 
-  it('renders document groups and keeps unrelated clips out of each mini timeline', async () => {
+  it('renders the overview and keeps unrelated clips out of each mini timeline', async () => {
     renderBrowser();
 
     expect(await screen.findByRole('button', { name: 'Select shot Opening' })).toBeInTheDocument();
@@ -71,18 +71,59 @@ describe('LocalTimelineShotBrowser', () => {
     expect(screen.getByText('1 visual clip · 2.0s')).toBeInTheDocument();
   });
 
-  it('persists visible shot selection in the hash without dropping local scope', async () => {
+  it('opens a focused shot timeline from the overview without dropping local scope', async () => {
     renderBrowser();
     const shot = await screen.findByRole('button', { name: 'Select shot Opening' });
-    expect(shot).toHaveAttribute('aria-pressed', 'false');
     fireEvent.click(shot);
 
     await waitFor(() => {
       expect(screen.getByTestId('location')).toHaveTextContent(
         '/tools/travel-between-images?localProject=demo&localTimeline=timeline-1#shot-a',
       );
-      expect(shot).toHaveAttribute('aria-pressed', 'true');
-      expect(screen.getByText('Selected')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Opening' })).toBeInTheDocument();
+      expect(screen.getByRole('img', { name: /Opening focused visual timeline: 1 visual clip/i })).toBeInTheDocument();
+      expect(screen.getByLabelText('clip-a: 2.0s')).toBeInTheDocument();
+      expect(screen.queryByLabelText('clip-other: 9.0s')).not.toBeInTheDocument();
+    });
+  });
+
+  it('opens a valid deep link directly in shot detail after refresh', async () => {
+    renderBrowser('/tools/travel-between-images?localProject=demo&localTimeline=timeline-1#shot-a');
+
+    expect(await screen.findByRole('heading', { name: 'Opening' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Back to all shots/i })).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent(
+      '/tools/travel-between-images?localProject=demo&localTimeline=timeline-1#shot-a',
+    );
+  });
+
+  it.each([
+    ['malformed', '/tools/travel-between-images?localProject=demo&localTimeline=timeline-1#%E0%A4%A'],
+    ['unknown', '/tools/travel-between-images?localProject=demo&localTimeline=timeline-1#not-a-shot'],
+  ])('falls back to the overview for a %s hash', async (_kind, initialEntry) => {
+    renderBrowser(initialEntry);
+
+    expect(await screen.findByRole('button', { name: 'Select shot Opening' })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId('location')).toHaveTextContent(
+        '/tools/travel-between-images?localProject=demo&localTimeline=timeline-1',
+      );
+    });
+    expect(screen.queryByRole('button', { name: /Back to all shots/i })).not.toBeInTheDocument();
+  });
+
+  it('returns from shot detail to the complete overview while preserving local scope', async () => {
+    renderBrowser();
+    fireEvent.click(await screen.findByRole('button', { name: 'Select shot Opening' }));
+
+    const back = await screen.findByRole('button', { name: /Back to all shots/i });
+    fireEvent.click(back);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location')).toHaveTextContent(
+        '/tools/travel-between-images?localProject=demo&localTimeline=timeline-1',
+      );
+      expect(screen.getByRole('button', { name: 'Select shot Opening' })).toBeInTheDocument();
     });
   });
 
