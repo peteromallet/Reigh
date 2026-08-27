@@ -438,6 +438,8 @@ describe('extension ship evidence gate', () => {
   });
 
   it('keeps the checked-in integration ledger structurally honest', () => {
+    assert.equal(checkedInLedger.candidate.reighCommit, null);
+    assert.equal(checkedInLedger.candidate.astridCommit, checkedInManifest.astrid.commit);
     const result = validateLedger({
       ledger: checkedInLedger,
       checklistMarkdown,
