@@ -302,7 +302,7 @@ This document is the downstream consumer of the [M15 Contract-Recheck Matrix](./
 |---|---|---|---|
 | D-060 | End-to-end test: parser + compile-only export, ingest, persist, export | **deferred** | CR:M6-007; DEFER:D-002 |
 | D-061 | Consent/provenance metadata persistence and export into sidecar | **deferred** | CR:M6-009; DEFER:D-002 |
-| D-062 | Deferred enrichment record round-trip through asset metadata | **deferred** | CR:M6-010; DEFER:D-002 |
+| D-062 | Deferred enrichment record round-trip through asset metadata | **supported** | CR:M6-010; TEST:assetParserRuntime.test.ts |
 | D-063 | Enrichment status persistence, asset-panel/search-surface display, stub search provider result merge | **deferred** | CR:M6-011; DEFER:D-002 |
 | D-064 | Metadata facet rendering, search result badges, enrichment claim detail, provenance chain rendering | **deferred** | CR:M6-012; DEFER:D-002 |
 

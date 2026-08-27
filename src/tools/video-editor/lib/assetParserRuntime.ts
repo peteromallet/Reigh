@@ -72,6 +72,9 @@ const normalizeExtension = (ext: string): string =>
 const normalizeMimeType = (mime: string): string =>
   mime.toLowerCase().trim();
 
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+
 /**
  * Check whether `candidate` matches `accepted`.
  * Supports exact match and wildcard subtypes (`image/*`).
@@ -359,13 +362,29 @@ const enrichmentRecordToClaim = (
   if (typeof id !== 'string' || !id) return null;
   if (typeof extensionId !== 'string' || !extensionId) return null;
   if (typeof createdAt !== 'string' || !createdAt) return null;
-  return {
+  const claim: AssetMetadataEnrichmentClaim = {
     claimId: id,
     parserId: extensionId,
     timestamp: createdAt,
     field: typeof record.kind === 'string' ? record.kind : undefined,
     summary: typeof record.diagnostic === 'string' ? record.diagnostic : undefined,
   };
+  // Keep the lifecycle/provenance payload intact instead of reducing a
+  // deferred record to display-only fields. This is required for recovery:
+  // resolved, failed, and expired records must remain distinguishable after
+  // persistence and reload.
+  if (typeof record.assetId === 'string' && record.assetId) claim.assetId = record.assetId;
+  if (typeof record.kind === 'string' && record.kind) claim.kind = record.kind;
+  if (typeof record.status === 'string' && ['pending', 'claimed', 'resolving', 'resolved', 'failed', 'expired'].includes(record.status)) {
+    claim.status = record.status as NonNullable<AssetMetadataEnrichmentClaim['status']>;
+  }
+  claim.extensionId = extensionId;
+  if (typeof record.contributionId === 'string' && record.contributionId) claim.contributionId = record.contributionId;
+  if (typeof record.updatedAt === 'string' && record.updatedAt) claim.updatedAt = record.updatedAt;
+  if (isPlainObject(record.input)) claim.input = { ...record.input };
+  if (isPlainObject(record.output)) claim.output = { ...record.output };
+  if (typeof record.diagnostic === 'string' && record.diagnostic) claim.diagnostic = record.diagnostic;
+  return claim;
 };
 
 /**
@@ -403,9 +422,17 @@ const normalizeParserMetadata = (
       }
     }
     if (claims.length > 0) {
+      const hasStatuses = claims.some((claim) => claim.status !== undefined);
       normalized.enrichment = {
-        pending: claims.length,
-        failed: 0,
+        // Legacy records without status were always pending. For typed records
+        // derive counters from lifecycle state so a failed/expired record is
+        // not silently presented as pending after a reload.
+        pending: hasStatuses
+          ? claims.filter((claim) => claim.status === 'pending' || claim.status === 'claimed' || claim.status === 'resolving').length
+          : claims.length,
+        failed: hasStatuses
+          ? claims.filter((claim) => claim.status === 'failed' || claim.status === 'expired').length
+          : 0,
         claims,
       } satisfies AssetMetadataEnrichment;
     }

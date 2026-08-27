@@ -9,6 +9,7 @@ import {
   checkRejectedOutputFields,
   PARSER_DIAGNOSTIC_CODES,
 } from './assetParserRuntime';
+import { validateAssetMetadata } from './assetMetadata';
 import type { VideoEditorAssetParserDescriptor } from '../runtime/extensionSurface';
 import type {
   ParserHandler,
@@ -563,6 +564,60 @@ describe('mergeParserMetadata', () => {
       expect(merged.entry.metadata.enrichment.pending).toBe(2);
       expect(merged.entry.metadata.enrichment.failed).toBe(0);
     }
+  });
+
+  it('round-trips deferred enrichment lifecycle and provenance fields through asset metadata', () => {
+    const records = [
+      {
+        id: 'pending-1', assetId: 'asset-1', kind: 'caption', status: 'pending',
+        extensionId: 'ext-caption', contributionId: 'caption-parser',
+        createdAt: '2026-08-27T10:00:00Z', updatedAt: '2026-08-27T10:00:00Z',
+        input: { locale: 'en-US' },
+      },
+      {
+        id: 'resolving-1', assetId: 'asset-1', kind: 'objects', status: 'resolving',
+        extensionId: 'ext-objects', createdAt: '2026-08-27T10:01:00Z', updatedAt: '2026-08-27T10:02:00Z',
+        input: { threshold: 0.8 },
+      },
+      {
+        id: 'resolved-1', assetId: 'asset-1', kind: 'embedding', status: 'resolved',
+        extensionId: 'ext-embedding', createdAt: '2026-08-27T10:03:00Z', updatedAt: '2026-08-27T10:04:00Z',
+        output: { vector: [0.1, 0.2] },
+      },
+      {
+        id: 'failed-1', assetId: 'asset-1', kind: 'caption', status: 'failed',
+        extensionId: 'ext-caption', createdAt: '2026-08-27T10:05:00Z', updatedAt: '2026-08-27T10:06:00Z',
+        diagnostic: 'provider unavailable',
+      },
+      {
+        id: 'expired-1', assetId: 'asset-1', kind: 'objects', status: 'expired',
+        extensionId: 'ext-objects', createdAt: '2026-08-27T10:07:00Z', updatedAt: '2026-08-27T10:08:00Z',
+        diagnostic: 'claim lease expired',
+      },
+    ];
+
+    const merged = mergeParserMetadata(makeRegistryEntry(), [{
+      result: { metadata: { enrichment: records } } as unknown as ParserResult,
+      parserId: 'parser-host',
+      extensionId: 'parser-host-extension',
+    }]);
+
+    expect(merged.diagnostics).toEqual([]);
+    expect(merged.entry.metadata?.enrichment).toMatchObject({ pending: 2, failed: 2 });
+    expect(merged.entry.metadata?.enrichment?.claims).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        claimId: 'pending-1', assetId: 'asset-1', kind: 'caption', status: 'pending',
+        extensionId: 'ext-caption', contributionId: 'caption-parser', input: { locale: 'en-US' },
+      }),
+      expect.objectContaining({
+        claimId: 'resolved-1', status: 'resolved', output: { vector: [0.1, 0.2] },
+      }),
+      expect.objectContaining({ claimId: 'failed-1', status: 'failed', diagnostic: 'provider unavailable' }),
+      expect.objectContaining({ claimId: 'expired-1', status: 'expired', diagnostic: 'claim lease expired' }),
+    ]));
+
+    const reloaded = validateAssetMetadata(merged.entry.metadata);
+    expect(reloaded?.enrichment).toEqual(merged.entry.metadata?.enrichment);
   });
 
   it('filters invalid extension namespace keys', () => {

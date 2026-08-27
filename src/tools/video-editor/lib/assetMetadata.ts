@@ -214,6 +214,30 @@ const validateEnrichmentClaim = (input: unknown): AssetMetadataEnrichmentClaim |
     claim.summary = summary;
   }
 
+  // Preserve the complete SDK DeferredEnrichmentRecord when it crosses the
+  // host registry boundary.  The legacy claim fields above remain the compact
+  // display projection, while these optional fields keep recovery state and
+  // provenance available for a later claim/resolve pass.
+  const assetId = input.assetId;
+  if (isOptionalString(assetId)) claim.assetId = assetId;
+  const kind = input.kind;
+  if (isOptionalString(kind)) claim.kind = kind;
+  const extensionId = input.extensionId;
+  if (isOptionalString(extensionId)) claim.extensionId = extensionId;
+  const contributionId = input.contributionId;
+  if (isOptionalString(contributionId)) claim.contributionId = contributionId;
+  const updatedAt = input.updatedAt;
+  if (isOptionalString(updatedAt)) claim.updatedAt = updatedAt;
+  const diagnostic = input.diagnostic;
+  if (isOptionalString(diagnostic)) claim.diagnostic = diagnostic;
+  const status = input.status;
+  if (status === 'pending' || status === 'claimed' || status === 'resolving'
+    || status === 'resolved' || status === 'failed' || status === 'expired') {
+    claim.status = status;
+  }
+  if (isPlainObject(input.input)) claim.input = { ...input.input };
+  if (isPlainObject(input.output)) claim.output = { ...input.output };
+
   return claim;
 };
 

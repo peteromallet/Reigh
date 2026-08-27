@@ -527,6 +527,16 @@ export type AssetMetadataEnrichmentClaim = {
   timestamp: string;
   field?: string;
   summary?: string;
+  /** SDK deferred-enrichment identity and lifecycle fields. */
+  assetId?: string;
+  kind?: string;
+  status?: 'pending' | 'claimed' | 'resolving' | 'resolved' | 'failed' | 'expired';
+  extensionId?: string;
+  contributionId?: string;
+  updatedAt?: string;
+  diagnostic?: string;
+  input?: Record<string, unknown>;
+  output?: Record<string, unknown>;
 };
 
 export type AssetMetadataEnrichment = {
