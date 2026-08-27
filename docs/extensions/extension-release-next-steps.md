@@ -161,9 +161,11 @@ disposition.
 
 - The surveyed Codex Sparkle update cache at
   `~/Library/Caches/com.openai.codex/org.sparkle-project.Sparkle` is only
-  2.8 MiB, not 2.7 GiB, and the current volume has 1.6 GiB free. It is not a
-  meaningful recovery target; continue to remove only verified task-owned
-  residue when the disk-gated phases run.
+  2.8 MiB, not 2.7 GiB, and is not a useful recovery target. Before each
+  heavyweight frozen-gate phase, run `df -h /System/Volumes/Data` and require
+  at least 11 GiB free. Additional cache cleanup permission may be needed if
+  that fresh check remains below the floor; remove only verified task-owned
+  residue.
 - Production target/access plus observability and on-call owners.
 - Edge/physical-device availability or an explicit release exception.
 - A real upstream transcript owner for the exact-fingerprint acknowledgement.
