@@ -30,6 +30,7 @@ import { transformGeneration, type RawGeneration } from '@/shared/lib/generation
 import { bridgeMediaUrl } from '@/shared/lib/media/bridgeMediaUrl';
 import { getProjectSelectionFallbackId } from '@/shared/contexts/projectSelectionStore';
 import { useAstridCapabilityCensus } from '@/integrations/astrid/capabilityCensus.ts';
+import { isImageMedia, isVideoMedia } from '@/shared/lib/media/mediaTypeFilters';
 
 /** Cache garbage collection time for paginated generation queries */
 const GENERATIONS_GC_TIME_MS = 10 * 60 * 1000; // 10 minutes
@@ -72,14 +73,13 @@ function toRawGeneration(row: BridgeGenerationSummary, projectSlug: string): Raw
  * data. Only the media-type split is derivable (row `type`, mirroring the
  * previous `%video%` SQL match).
  */
-function matchesClientSideFilters(
+export function matchesClientSideFilters(
   item: GeneratedImageWithMetadata,
   filters?: GenerationFilters,
 ): boolean {
   if (filters?.mediaType && filters.mediaType !== 'all') {
-    const isVideo = (item.type ?? '').includes('video');
-    if (filters.mediaType === 'video' && !isVideo) return false;
-    if (filters.mediaType === 'image' && isVideo) return false;
+    if (filters.mediaType === 'video' && !isVideoMedia(item)) return false;
+    if (filters.mediaType === 'image' && !isImageMedia(item)) return false;
   }
   return true;
 }

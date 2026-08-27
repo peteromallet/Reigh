@@ -1,7 +1,7 @@
 import { useReducer, useCallback, useMemo, useRef, useEffect } from 'react';
 import type { GeneratedImageWithMetadata } from '../types';
 import { GalleryFilterState, DEFAULT_GALLERY_FILTERS } from '../types';
-import { hasVideoExtension } from '@/shared/lib/typeGuards';
+import { isImageMedia, isVideoMedia } from '@/shared/lib/media/mediaTypeFilters';
 
 // Maps GalleryFilterState keys to reducer action types
 const FILTER_ACTIONS = {
@@ -187,9 +187,8 @@ export const useMediaGalleryFilters = ({
 
     if (!isServerPagination && currentFilters.mediaType !== 'all') {
       currentFiltered = currentFiltered.filter(image => {
-        const isActuallyVideo = typeof image.isVideo === 'boolean' ? image.isVideo : hasVideoExtension(image.url);
-        if (currentFilters.mediaType === 'image') return !isActuallyVideo;
-        if (currentFilters.mediaType === 'video') return isActuallyVideo;
+        if (currentFilters.mediaType === 'image') return isImageMedia(image);
+        if (currentFilters.mediaType === 'video') return isVideoMedia(image);
         return true;
       });
     }

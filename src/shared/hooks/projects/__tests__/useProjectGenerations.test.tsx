@@ -3,7 +3,8 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 
-import { fetchGenerations, useProjectGenerations } from '../useProjectGenerations';
+import { fetchGenerations, matchesClientSideFilters, useProjectGenerations } from '../useProjectGenerations';
+import type { GeneratedImageWithMetadata } from '@/shared/components/MediaGallery/types';
 import { createFakeBridgeRouter, type FakeBridgeRouter } from '@/test/fakeBridgeRouter.ts';
 import { createJourneyState, FIXTURE_PROJECT } from '@/test/bridgeFixtures.mjs';
 import {
@@ -42,6 +43,22 @@ describe('useProjectGenerations (bridge gallery reads R12)', () => {
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     );
   }
+
+  it('keeps image, audio, and video media types distinct in bridge-side filters', () => {
+    const image = { id: 'image', url: '/image.png', type: 'image', isVideo: false } as GeneratedImageWithMetadata;
+    const audio = { id: 'audio', url: '/audio.aac', type: 'audio', isVideo: false } as GeneratedImageWithMetadata;
+    const video = { id: 'video', url: '/video.mp4', type: 'video', isVideo: true } as GeneratedImageWithMetadata;
+
+    expect(matchesClientSideFilters(image, { mediaType: 'image' })).toBe(true);
+    expect(matchesClientSideFilters(audio, { mediaType: 'image' })).toBe(false);
+    expect(matchesClientSideFilters(video, { mediaType: 'image' })).toBe(false);
+
+    expect(matchesClientSideFilters(image, { mediaType: 'video' })).toBe(false);
+    expect(matchesClientSideFilters(audio, { mediaType: 'video' })).toBe(false);
+    expect(matchesClientSideFilters(video, { mediaType: 'video' })).toBe(true);
+
+    expect(matchesClientSideFilters(audio, { mediaType: 'all' })).toBe(true);
+  });
 
   it('fetchGenerations maps GET /generations rows into gallery items with R9 display URLs', async () => {
     const result = await fetchGenerations(SLUG, 100, 0);
