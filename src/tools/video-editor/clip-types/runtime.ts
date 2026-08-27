@@ -342,7 +342,11 @@ const BUILTIN_CLIP_TYPE_REGISTRATIONS = [
         kind: 'required',
         defaultSeconds: 5,
         minSeconds: 0.05,
-        maxSeconds: 120,
+        // Match the host's bounded persisted-time domain. Astrid's frozen
+        // contract has no 120s effect limit; this admits the 8085-frame
+        // Runaway fixture (168.4375s at 48fps) while retaining the platform's
+        // existing 9999.999s safety ceiling.
+        maxSeconds: 9999.999,
         stepSeconds: 0.1,
       },
       defaults: {

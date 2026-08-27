@@ -5,7 +5,7 @@ import type { ResolvedTimelineClip } from '@/tools/video-editor/types/index.ts';
 
 /**
  * Loud placeholder for clips the editor cannot render — either because
- * `clipType` is unknown to the editor (Phase 4 will enable), or because a
+ * `clipType` is unknown to the editor or because a
  * known clipType is missing the asset it needs to render. Per SD-025 these
  * cases must be visible, never silent.
  *
@@ -36,7 +36,7 @@ const STYLES: Record<UnknownClipReason, CSSProperties> = {
 const messageFor = (reason: UnknownClipReason, clipType: string): string => {
   switch (reason) {
     case 'unsupported':
-      return `clipType '${clipType}' not yet supported by editor — Phase 4 will enable`;
+      return `clipType '${clipType}' renderer unavailable in this Reigh build`;
     case 'missing-asset':
       return `clipType '${clipType}' missing asset — clip will not appear in render`;
   }

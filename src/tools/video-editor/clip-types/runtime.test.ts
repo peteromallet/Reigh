@@ -6,11 +6,21 @@ import {
   defineClipTypeFromExtensionRecord,
   getClipTypeOverlayBehavior,
   getExtensionClipTypeDescriptor,
+  getBuiltinClipTypeDescriptor,
   getRegisteredClipTypeDescriptor,
   isClipTypeCommandAvailable,
 } from '@/tools/video-editor/clip-types/runtime';
 
 describe('clip-type runtime registry', () => {
+  it('keeps the audio-reactive colour hold bound above the 168.4375s Runaway fixture', () => {
+    expect(getBuiltinClipTypeDescriptor('audio-reactive-colour')?.hold).toMatchObject({
+      kind: 'required',
+      maxSeconds: 9999.999,
+    });
+    expect(getBuiltinClipTypeDescriptor('audio-reactive-colour')?.hold.kind === 'required'
+      && getBuiltinClipTypeDescriptor('audio-reactive-colour')!.hold.maxSeconds).toBeGreaterThan(168.4375);
+  });
+
   it('resolves builtin, available sequence, unavailable sequence, and unknown clip types distinctly', () => {
     const view = createEditorClipTypeRegistry({
       'resource-card': { component: () => null },

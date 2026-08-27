@@ -999,6 +999,9 @@ describe('TimelineRenderer — extension clip renderer dispatch (M9 T10)', () =>
 
     // Not in registry → falls through to !isBuiltinClipType check → loud placeholder
     expect(screen.getByTestId('unknown-clip-placeholder')).toBeInTheDocument();
+    expect(screen.getByTestId('unknown-clip-placeholder')).toHaveTextContent(
+      "renderer unavailable in this Reigh build",
+    );
     expect(screen.queryByTestId('extension-clip-renderer')).not.toBeInTheDocument();
     expect(visualClipMock).not.toHaveBeenCalled();
   });
