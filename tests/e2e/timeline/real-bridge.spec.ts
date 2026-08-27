@@ -717,14 +717,14 @@ test('B9 recovery Retry re-POSTs the draft at its base version and clears the sl
  *                      (astrid/core/integrations/reigh/capabilities.py
  *                      FAMILY_DERIVATIONS) has no `duplicate` family, so the
  *                      admission must fail TYPED, mutate nothing, and never
- *                      fabricate success. Raw transcript written to
- *                      .oracle/evidence/b8-batch5-probes/.
+ *                      fabricate success. Raw transcript is retained in the
+ *                      Playwright test-result directory.
  *   3. Promote       — PRE-BLOCKED (rev 6): the live gallery cannot be seeded
  *                      via the pinned CLI, so gallery.get for the documented
  *                      generation must surface a typed bridge failure.
  *   4. Reload        — page.reload() re-fetches a BYTE-IDENTICAL document.
  */
-test('document shot surface: render, duplicate, promote, reload over one bridge document', async ({ page, request }) => {
+test('document shot surface: render, duplicate, promote, reload over one bridge document', async ({ page, request }, testInfo) => {
   const audit = installBrowserNetworkAudit(page);
   const url = await timelineUrl(request);
 
@@ -779,7 +779,7 @@ test('document shot surface: render, duplicate, promote, reload over one bridge 
   const admitBody = await admitProbe.text();
   expect(admitStatus).toBeGreaterThanOrEqual(400);
   expect(admitStatus).toBeLessThan(500);
-  const probeDir = 'tests/e2e/timeline/.b8-batch5-probes';
+  const probeDir = testInfo.outputPath('b8-batch5-probes');
   await mkdir(probeDir, { recursive: true });
   await writeFile(
     `${probeDir}/duplicate-admission-probe.json`,
