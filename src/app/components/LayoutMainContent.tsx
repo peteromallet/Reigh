@@ -7,10 +7,24 @@ import { useViewportResponsive } from '@/shared/hooks/responsive/useViewportResp
 import { cn } from '@/shared/components/ui/contracts/cn';
 import { useVideoEditorRouteState } from '@/app/hooks/useVideoEditorRouteState';
 import { usePanesStore } from '@/shared/state/panesStore';
+import { isDeferredCloudDataAuthority } from '@/app/runtime/dataAuthority.ts';
 
 interface LayoutMainContentProps {
   isMobileSplitView: boolean;
   onOpenSettings: (initialTab?: string, creditsTab?: 'purchase' | 'history') => void;
+}
+
+/**
+ * The processing warning belongs to the deferred legacy cloud shell.  Astrid
+ * authority has no credits/account-settings surface, and mounting the warning
+ * would execute its Supabase-backed hooks even when the user is in the local
+ * application. Keep this decision at the layout boundary so the legacy
+ * component is not mounted (and its hooks cannot issue requests) at all.
+ */
+function shouldRenderGlobalProcessingWarning(
+  search: string = typeof window === 'undefined' ? '' : window.location.search,
+): boolean {
+  return isDeferredCloudDataAuthority(search);
 }
 
 export function LayoutMainContent(props: LayoutMainContentProps) {
@@ -67,7 +81,9 @@ export function LayoutMainContent(props: LayoutMainContentProps) {
         data-video-editor-shell-active={isVideoEditorShellActive ? 'true' : 'false'}
         style={contentStyle}
       >
-        {!isVideoEditorShellActive && <GlobalProcessingWarning onOpenSettings={onOpenSettings} />}
+        {!isVideoEditorShellActive && shouldRenderGlobalProcessingWarning() && (
+          <GlobalProcessingWarning onOpenSettings={onOpenSettings} />
+        )}
 
         <main
           className={cn(

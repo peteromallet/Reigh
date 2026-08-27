@@ -20,6 +20,7 @@ const useViewportResponsiveMock = vi.fn();
 const useVideoEditorRouteStateMock = vi.fn();
 const globalHeaderMock = vi.fn();
 const globalProcessingWarningMock = vi.fn();
+const isDeferredCloudDataAuthorityMock = vi.fn();
 
 const defaultPanesState = {
   isTasksPaneLocked: true,
@@ -66,6 +67,10 @@ vi.mock('@/app/hooks/useVideoEditorRouteState', () => ({
   useVideoEditorRouteState: () => useVideoEditorRouteStateMock(),
 }));
 
+vi.mock('@/app/runtime/dataAuthority.ts', () => ({
+  isDeferredCloudDataAuthority: (search: string) => isDeferredCloudDataAuthorityMock(search),
+}));
+
 describe('LayoutMainContent', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -90,6 +95,7 @@ describe('LayoutMainContent', () => {
       isEditorRoute: false,
       isVideoEditorShellActive: false,
     });
+    isDeferredCloudDataAuthorityMock.mockReturnValue(true);
   });
 
   it('renders global layout pieces and applies pane offsets', () => {
@@ -124,6 +130,29 @@ describe('LayoutMainContent', () => {
       paddingBottom: '180px',
       willChange: 'margin, padding',
     });
+  });
+
+  it('does not mount the Supabase-backed warning in default Astrid authority', () => {
+    isDeferredCloudDataAuthorityMock.mockReturnValue(false);
+
+    render(
+      <LayoutMainContent isMobileSplitView={false} onOpenSettings={vi.fn()} />
+    );
+
+    expect(screen.queryByTestId('processing-warning')).not.toBeInTheDocument();
+    expect(globalProcessingWarningMock).not.toHaveBeenCalled();
+    expect(isDeferredCloudDataAuthorityMock).toHaveBeenCalledWith('');
+  });
+
+  it('mounts the legacy warning when cloud authority is explicitly deferred', () => {
+    isDeferredCloudDataAuthorityMock.mockReturnValue(true);
+
+    render(
+      <LayoutMainContent isMobileSplitView={false} onOpenSettings={vi.fn()} />
+    );
+
+    expect(screen.getByTestId('processing-warning')).toBeInTheDocument();
+    expect(globalProcessingWarningMock).toHaveBeenCalledTimes(1);
   });
 
   it('does not apply top padding when the editor pane is hidden', () => {
