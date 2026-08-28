@@ -3,6 +3,12 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 
+const mockIsDeferredCloudDataAuthority = vi.hoisted(() => vi.fn(() => true));
+
+vi.mock('@/app/runtime/dataAuthority.ts', () => ({
+  isDeferredCloudDataAuthority: mockIsDeferredCloudDataAuthority,
+}));
+
 // Mock supabase
 vi.mock('@/integrations/supabase/client', () => {
   const createSupabaseMockChain = () => {
@@ -61,6 +67,7 @@ function createWrapper() {
 describe('useShotImages', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockIsDeferredCloudDataAuthority.mockReturnValue(true);
   });
 
   it('is disabled when shotId is null', () => {
@@ -78,6 +85,16 @@ describe('useShotImages', () => {
     });
 
     expect(result.current.isLoading).toBe(true);
+  });
+
+  it('does not fetch relational shot images in Astrid authority', () => {
+    mockIsDeferredCloudDataAuthority.mockReturnValue(false);
+    const { result } = renderHook(() => useShotImages('shot-1'), {
+      wrapper: createWrapper(),
+    });
+
+    expect(result.current.isFetching).toBe(false);
+    expect(result.current.error).toBeNull();
   });
 
   it('is disabled when disableRefetch is true', () => {
