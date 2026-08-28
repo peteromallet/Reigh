@@ -29,11 +29,13 @@ const mockShotGenerations = [
 ];
 
 const mockNot = vi.fn();
+const mockSupabaseFrom = vi.hoisted(() => vi.fn());
 const mockIsDeferredCloudDataAuthority = vi.hoisted(() => vi.fn(() => true));
 
 vi.mock('@/integrations/supabase/client', () => ({
   getSupabaseClient: () => ({
     from: vi.fn((table: string) => {
+      mockSupabaseFrom(table);
       if (table === 'shots') {
         return {
           select: vi.fn(() => ({
@@ -118,11 +120,12 @@ describe('useListShots', () => {
     expect(result.current.isFetching).toBe(false);
   });
 
-  it('rejects in Astrid before a Supabase read', async () => {
+  it('does not start a Supabase read in Astrid authority', () => {
     mockIsDeferredCloudDataAuthority.mockReturnValue(false);
     const { result } = renderHookWithProviders(() => useListShots('proj-1'));
-    await vi.waitFor(() => expect(result.current.error).toMatchObject({ code: 'capability_unavailable' }));
-    expect(result.current.error?.name).toBe('BridgeCapabilityUnavailableError');
+    expect(result.current.isFetching).toBe(false);
+    expect(result.current.error).toBeNull();
+    expect(mockSupabaseFrom).not.toHaveBeenCalled();
   });
 });
 

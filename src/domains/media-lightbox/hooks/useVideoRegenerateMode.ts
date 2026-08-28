@@ -14,6 +14,7 @@ import { useMemo, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getSupabaseClient as supabase } from '@/integrations/supabase/client';
 import { assertDeferredCloudShotOperation } from '@/shared/hooks/shots/shotAuthority';
+import { isDeferredCloudDataAuthority } from '@/app/runtime/dataAuthority';
 import { ASPECT_RATIO_TO_RESOLUTION } from '@/shared/lib/media/aspectRatios';
 import {
   buildTravelGuidanceFromControls,
@@ -205,7 +206,7 @@ export function useVideoRegenerateMode({
         structure_guidance: structureVideoSettings.structure_guidance ?? null,
       };
     },
-    enabled: !!shotId && isVideo,
+    enabled: !!shotId && isVideo && isDeferredCloudDataAuthority(),
     staleTime: 60000,
   });
 

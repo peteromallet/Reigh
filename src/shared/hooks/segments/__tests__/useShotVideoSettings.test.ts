@@ -47,6 +47,13 @@ describe('useShotVideoSettings', () => {
     expect(result.current.isLoading).toBe(false);
   });
 
+  it('does not start a Supabase read in Astrid authority', () => {
+    mockIsDeferredCloudDataAuthority.mockReturnValue(false);
+    const { result } = renderHookWithProviders(() => useShotVideoSettings('shot-1'));
+    expect(result.current.isLoading).toBe(false);
+    expect(mockSingle).not.toHaveBeenCalled();
+  });
+
   it('fetches settings when shotId is provided', async () => {
     mockSingle.mockResolvedValue({
       data: {
