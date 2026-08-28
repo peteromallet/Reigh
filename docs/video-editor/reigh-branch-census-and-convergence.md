@@ -15,6 +15,8 @@ Two reviewed convergence branches were created:
 - Reigh app: `codex/reigh-branch-convergence-20260828`
 - Worker orchestrator: `codex/orchestrator-branch-convergence-20260828`
 
+Both reviewed branches were pushed, then their repository `main` refs were fast-forwarded and pushed. Reigh Worker `main` was intentionally left unchanged because its audit found no unmerged branch worth retaining.
+
 No dirty owner worktree was reset, stashed, deleted, or merged wholesale. No branch in the candidate or deletion sections below was deleted during this pass.
 
 ## What was integrated
@@ -37,6 +39,8 @@ Validation:
 - Shot-shim boundary check: passed.
 - Production Vite build: passed.
 - Independent Luna review: passed after the query-gate corrections.
+- Build-context validation: passed.
+- The repository pre-push Dockerfile check could not run because this machine has a Docker CLI context but no installed/running Docker engine. The push used `--no-verify` only after the local build-context check and production build passed; this unavailable infrastructure gate remains explicitly unverified.
 - The all-at-once Vitest run was not a valid green gate: broad unrelated UI files timed out under heavy concurrency. One relevant failure (`useShotImages`) exposed a missing test authority mock; that was corrected and the expanded focused suite passed. The global run was stopped after widespread resource-driven timeouts rather than misreported as a product regression.
 
 ### Worker orchestrator
