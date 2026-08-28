@@ -112,6 +112,22 @@ export function discardExpectedGalleryNavigationAborts(diagnostics, origin, proj
   return removed;
 }
 
+function isSourceReadRequest(url, origin, project) {
+  const projectPrefix = `/api/astrid/projects/${encodeURIComponent(project)}`;
+  let requestUrl;
+  try {
+    requestUrl = new URL(url, origin);
+  } catch {
+    return false;
+  }
+  return requestUrl.origin === new URL(origin).origin && (
+    requestUrl.pathname === `${projectPrefix}/generations`
+    || requestUrl.pathname === `${projectPrefix}/timelines`
+    || requestUrl.pathname.startsWith(`${projectPrefix}/timelines/`)
+    || requestUrl.pathname === `${projectPrefix}/tasks`
+  );
+}
+
 async function waitUntil(predicate, timeout = 30_000, interval = 100) {
   const deadline = Date.now() + timeout;
   let lastError;
@@ -121,6 +137,22 @@ async function waitUntil(predicate, timeout = 30_000, interval = 100) {
   }
   if (lastError) throw lastError;
   throw new Error(`timed out after ${timeout}ms`);
+}
+
+async function waitForSourceReadsToSettle(diagnostics) {
+  await waitUntil(() => diagnostics.activeSourceReads.size === 0, 15_000, 50);
+}
+
+async function settleNavigation(page) {
+  // The real editor keeps a small capability census alive while mounted, so
+  // Playwright's networkidle state is a useful best-effort settling hint, not
+  // a reliable completion condition. Diagnostics remain strict for every
+  // response/request that settles after this point.
+  try {
+    await page.waitForLoadState('networkidle', { timeout: 10_000 });
+  } catch {
+    await page.waitForTimeout(500);
+  }
 }
 
 async function fetchJson(url) {
@@ -149,7 +181,7 @@ async function fetchGenerations(origin, project) {
 }
 
 function makeDiagnostics() {
-  return { forbiddenRequests: [], failedResponses: [], failedRequests: [], pageErrors: [], consoleErrors: [], generationDetailRequests: [] };
+  return { forbiddenRequests: [], failedResponses: [], failedRequests: [], pageErrors: [], consoleErrors: [], generationDetailRequests: [], activeSourceReads: new Set() };
 }
 
 function diagnosticsForPage(page, diagnostics, origin, project) {
@@ -158,8 +190,13 @@ function diagnosticsForPage(page, diagnostics, origin, project) {
     const url = request.url();
     if (/127\.0\.0\.1:54321|localhost:54321|supabase\.(?:co|in)/i.test(url)) diagnostics.forbiddenRequests.push(`${request.method()} ${url}`);
     if (url.startsWith(generationPrefix) && !url.includes('?')) diagnostics.generationDetailRequests.push(`${request.method()} ${url}`);
+    if (request.method() === 'GET' && isSourceReadRequest(url, origin, project)) diagnostics.activeSourceReads.add(request);
   });
-  page.on('requestfailed', (request) => diagnostics.failedRequests.push(`${request.method()} ${request.url()} (${request.failure()?.errorText ?? 'unknown'})`));
+  page.on('requestfinished', (request) => diagnostics.activeSourceReads.delete(request));
+  page.on('requestfailed', (request) => {
+    diagnostics.activeSourceReads.delete(request);
+    diagnostics.failedRequests.push(`${request.method()} ${request.url()} (${request.failure()?.errorText ?? 'unknown'})`);
+  });
   page.on('response', (response) => { if (response.status() >= 400) diagnostics.failedResponses.push(`${response.status()} ${response.url()}`); });
   page.on('pageerror', (error) => diagnostics.pageErrors.push(error.message));
   page.on('console', (message) => { if (message.type() === 'error') diagnostics.consoleErrors.push(message.text()); });
@@ -287,17 +324,19 @@ async function runRow(page, origin, row, evidenceRoot, rowNumber) {
   // Let the selected document assets and the editor's bridge reads finish
   // before deliberately reloading; otherwise the reload itself records
   // avoidable aborted GETs as failed network requests.
-  await page.waitForLoadState('networkidle', { timeout: 30_000 });
+  await settleNavigation(page);
   const shotReloadFailureBaseline = diagnostics.failedRequests.length;
   await page.reload({ waitUntil: 'commit', timeout: 45_000 });
   await backButton.waitFor({ timeout: 60_000 });
   assert.equal(new URL(page.url()).hash, selectedHash, `${project} deep-link survives refresh`);
-  await page.waitForLoadState('networkidle', { timeout: 30_000 });
+  await settleNavigation(page);
+  await waitForSourceReadsToSettle(diagnostics);
   discardExpectedGalleryNavigationAborts(diagnostics, origin, project, shotReloadFailureBaseline);
   const shotBackFailureBaseline = diagnostics.failedRequests.length;
   await page.goBack({ waitUntil: 'commit', timeout: 45_000 });
   await page.getByRole('heading', { name: 'Timeline shots' }).waitFor({ timeout: 60_000 });
-  await page.waitForLoadState('networkidle', { timeout: 30_000 });
+  await settleNavigation(page);
+  await waitForSourceReadsToSettle(diagnostics);
   discardExpectedGalleryNavigationAborts(diagnostics, origin, project, shotBackFailureBaseline);
   assert.equal(await page.locator('div.click-ripple').filter({ has: page.locator('button[aria-label="Duplicate shot"]') }).count(), shots.length, `${project} browser back returns to shot overview`);
   assert.equal(await page.getByTitle('Back to shots').count(), 0, `${project} browser back leaves shot detail`);
@@ -308,6 +347,7 @@ async function runRow(page, origin, row, evidenceRoot, rowNumber) {
   const galleryNavigationFailureBaseline = diagnostics.failedRequests.length;
   await page.getByRole('button', { name: 'Go to Image Generation tool' }).click({ noWaitAfter: true });
   await page.getByRole('heading', { name: 'Image Generation' }).waitFor({ timeout: 60_000 });
+  await waitForSourceReadsToSettle(diagnostics);
   discardExpectedGalleryNavigationAborts(diagnostics, origin, project, galleryNavigationFailureBaseline);
   const destination = new URL(page.url());
   assert.equal(destination.searchParams.get('localProject'), project, `${project} tool navigation preserves local project`);
@@ -342,19 +382,38 @@ async function runRow(page, origin, row, evidenceRoot, rowNumber) {
   // net::ERR_ABORTED events that are caused by the test navigation itself.
   await page.keyboard.press('Escape');
   await lightbox.waitFor({ state: 'hidden', timeout: 30_000 });
-  await page.waitForLoadState('networkidle', { timeout: 30_000 });
+  await settleNavigation(page);
   // A source-route request can report its cancellation after the destination
   // heading mounts; keep the same baseline/window for that final settlement.
+  await waitForSourceReadsToSettle(diagnostics);
   discardExpectedGalleryNavigationAborts(diagnostics, origin, project, galleryNavigationFailureBaseline);
   assertDiagnostics(diagnostics);
 
   // We are already on this exact URL. A same-URL goto can be a no-op and
   // leave the modal mounted, so use a true document reload for persistence.
   const galleryReloadFailureBaseline = diagnostics.failedRequests.length;
+  const reloadResponses = [];
+  const reloadResponseListener = (response) => reloadResponses.push(`${response.status()} ${response.url()}`);
+  page.on('response', reloadResponseListener);
   await page.reload({ waitUntil: 'commit', timeout: 45_000 });
-  await page.getByRole('heading', { name: 'Image Generation' }).waitFor({ timeout: 60_000 });
+  try {
+    await page.getByRole('heading', { name: 'Image Generation' }).waitFor({ timeout: 60_000 });
+  } catch (error) {
+    const bodyText = await page.locator('body').innerText().catch(() => '');
+    throw new Error(`${error?.message || error}\nGallery reload context: ${JSON.stringify({
+      url: page.url(),
+      bodyText: bodyText.replace(/\s+/g, ' ').slice(0, 1000),
+      responses: reloadResponses.slice(-30),
+      failedResponses: unique(diagnostics.failedResponses).slice(-30),
+      failedRequests: unique(diagnostics.failedRequests).slice(-30),
+      consoleErrors: unique(diagnostics.consoleErrors).slice(-10),
+    }, null, 2)}`);
+  } finally {
+    page.off('response', reloadResponseListener);
+  }
   await waitUntil(async () => (await page.locator('[data-gallery-item-id]').count()) >= Math.min(expectedImageIds.length, 45));
-  await page.waitForLoadState('networkidle', { timeout: 30_000 });
+  await settleNavigation(page);
+  await waitForSourceReadsToSettle(diagnostics);
   discardExpectedGalleryNavigationAborts(diagnostics, origin, project, galleryReloadFailureBaseline);
   assertDiagnostics(diagnostics);
   return { project, timeline, shots: shots.length, generations: generations.length, imageGenerations: imageGenerations.length, representativeShot: representativeShot.id, representativeGeneration: representativeGeneration.generation_id, variantCount: expectedVariantCount, detailRequestsOnOpen: diagnostics.generationDetailRequests.length, diagnostics: { failedResponses: unique(diagnostics.failedResponses), failedRequests: unique(diagnostics.failedRequests), consoleErrors: unique(diagnostics.consoleErrors) } };
@@ -362,10 +421,19 @@ async function runRow(page, origin, row, evidenceRoot, rowNumber) {
 
 export async function runAcceptance({ origin, rows, evidenceDir, headed = false } = {}) {
   const browser = await chromium.launch({ headless: !headed });
-  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   const results = [];
   try {
-    for (let index = 0; index < rows.length; index += 1) results.push(await runRow(page, origin, rows[index], evidenceDir, index + 1));
+    for (let index = 0; index < rows.length; index += 1) {
+      // Keep each project journey's React-query consumers and request
+      // listeners isolated. Reusing a page leaves source-route observers
+      // alive across rows and needlessly amplifies bridge reads.
+      const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+      try {
+        results.push(await runRow(page, origin, rows[index], evidenceDir, index + 1));
+      } finally {
+        await page.close();
+      }
+    }
   } finally { await browser.close(); }
   return results;
 }
