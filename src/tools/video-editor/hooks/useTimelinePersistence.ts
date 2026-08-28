@@ -378,7 +378,6 @@ export function useTimelinePersistence({
       store?.getState().setConfigVersion(freshVersion);
       clearErrorRetry();
       setIsConflictExhausted(false);
-      void clearTimelineDraft(timelineId);
       if (seq > savedSeqRef.current) {
         savedSeqRef.current = seq;
         lastSavedSignatureRef.current = nextData.stableSignature;
@@ -386,6 +385,9 @@ export function useTimelinePersistence({
       setSaveStatus(seq >= editSeqRef.current ? 'saved' : 'dirty');
       if (seq >= editSeqRef.current) {
         eventBus.emit('saveSuccess');
+        // Match normal save acknowledgements: an older retry receipt must not
+        // erase a recovery draft belonging to a newer edit.
+        void clearTimelineDraft(timelineId).catch(() => {});
       }
       return true;
     } catch {
@@ -862,14 +864,20 @@ export function useTimelinePersistence({
       isMountedRef.current = false;
       clearErrorRetry();
       rejectFlushWaiters(new Error('Timeline closed before the save-for-render barrier completed.'));
+      const hadPendingSave = Boolean(saveTimer.current || deferredSaveRef.current);
+      const deferred = deferredSaveRef.current;
+      deferredSaveRef.current = null;
       if (saveTimer.current) {
         clearTimeout(saveTimer.current);
         saveTimer.current = null;
-        // A navigation can unmount the editor before the debounce fires. Flush
-        // the latest committed payload so the final edit is not silently lost.
-        // `doSave` is intentionally invoked through the ref to avoid a stale
-        // closure; transport retries remain mounted-gated by isMountedRef.
-        const pendingData = dataRef.current;
+      }
+      if (hadPendingSave) {
+        // A navigation can unmount the editor before the debounce fires, or
+        // while a drag has deferred its save. Flush the latest pending payload
+        // so neither path silently loses the final edit.
+        // `doSave` bypasses the interaction gate because the editor is closing;
+        // transport retries remain mounted-gated by isMountedRef.
+        const pendingData = deferred?.data ?? dataRef.current;
         if (pendingData) {
           void doSaveRef.current?.(pendingData, editSeqRef.current);
         }

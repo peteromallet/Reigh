@@ -50,7 +50,7 @@ export function ScenePhaseMarkersPanel({ ctx, playback, isConflictExhausted = fa
   // provider-owned `ctx.creative.timelineView` store — no module cache.
   // Keep the module-level conflict flag in sync so the B-key command (which
   // runs outside any render context) is gated by the same signal.
-  setScenePhaseTimelineConflicted(isConflictExhausted);
+  setScenePhaseTimelineConflicted(ctx, isConflictExhausted);
 
   const extensionId = ctx.extension.id;
   // Hooks must be unconditional (before the snapshot guard) so the component

@@ -490,6 +490,22 @@ describe('useTimelinePersistence — interaction gating', () => {
     expect(harness.saveTimeline.mock.calls[0]?.[1].output.file).toBe('output-flush-on-unmount.mp4');
   });
 
+  it('flushes an interaction-deferred edit when the editor unmounts', async () => {
+    const nextData = makeTimelineData('flush-deferred-on-unmount');
+    const harness = setup({ initialData: nextData });
+    harness.interactionStateRef.current.drag = true;
+    harness.scheduleSave(nextData);
+    harness.unmount();
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(harness.saveTimeline).toHaveBeenCalledTimes(1);
+    expect(harness.saveTimeline.mock.calls[0]?.[1].output.file).toBe('output-flush-deferred-on-unmount.mp4');
+  });
+
   it('reconciles a retry 409 when fresh remote state matches the attempted payload', async () => {
     const nextData = makeTimelineData('lost-ack');
     let attempt = 0;
@@ -524,6 +540,71 @@ describe('useTimelinePersistence — interaction gating', () => {
     expect(harness.loadTimeline).toHaveBeenCalledTimes(1);
     expect(harness.result.current.isConflictExhausted).toBe(false);
     expect(harness.result.current.saveStatus).toBe('saved');
+  });
+
+  it('keeps a newer recovery draft when an older retry is reconciled as a lost ack', async () => {
+    const firstData = makeTimelineData('lost-ack-older');
+    const newerData = makeTimelineData('lost-ack-newer');
+    let attempt = 0;
+    let releaseFresh!: () => void;
+    let releaseNewerSave!: (version: number) => void;
+    const freshRead = new Promise<void>((resolve) => { releaseFresh = resolve; });
+    const harness = setup({
+      initialData: firstData,
+      saveTimelineImpl: async () => {
+        attempt += 1;
+        if (attempt === 1) {
+          throw new Error('Astrid bridge save timeline failed: timeout');
+        }
+        if (attempt === 2) {
+          throw new TimelineVersionConflictError();
+        }
+        return new Promise<number>((resolve) => { releaseNewerSave = resolve; });
+      },
+      loadTimelineImpl: async () => {
+        await freshRead;
+        return { config: firstData.config, configVersion: 5 };
+      },
+      loadAssetRegistryImpl: async () => firstData.registry,
+    });
+
+    harness.scheduleSave(firstData);
+    await act(async () => {
+      vi.advanceTimersByTime(600);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(600);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(harness.saveTimeline).toHaveBeenCalledTimes(2);
+
+    // A newer edit arrives while the retry's fresh-state reconciliation is
+    // still in flight. It supersedes the old sequence and owns the draft.
+    harness.editSeqRef.current = 2;
+    harness.scheduleSave(newerData);
+    releaseFresh();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(harness.saveTimeline).toHaveBeenCalledTimes(3);
+    expect((await loadTimelineDraft('timeline-1'))?.draft).toEqual({
+      config: newerData.config,
+      registry: newerData.registry,
+    });
+    // Leave the newer save pending so its later receipt cannot erase the
+    // draft before this assertion completes.
+    releaseNewerSave(6);
+    harness.unmount();
   });
 
   it('keeps a retry 409 as a genuine conflict when fresh state differs', async () => {

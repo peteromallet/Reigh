@@ -376,6 +376,9 @@ export function moveMarkerToTime(
   markerId: string,
   time: number,
 ): void {
+  if (!ensureScenePhaseWritable(ctx)) {
+    return;
+  }
   const snapshot = ctx.creative.reader.snapshot();
   const markers = readMarkers(snapshot, ctx.extension.id);
   if (!markers.some((marker) => marker.id === markerId)) {
@@ -1034,21 +1037,24 @@ function resolvePlaybackFromRenderContext(
 }
 
 /**
- * Latest diverged (409 conflict) state observed from the host chrome, kept in
- * a module-level flag so the B-key command (which runs outside any render
- * context) is gated too. The footer panel writes this on every render from the
- * host chrome context it receives.
+ * Latest diverged (409 conflict) state observed from the host chrome. It is
+ * keyed by ExtensionContext rather than held in one module-global boolean so
+ * multiple timelines/editors cannot gate one another's marker commands.
  */
-let currentConflictState = false;
+const conflictStates = new WeakMap<ExtensionContext, true>();
 
 /** True when the timeline is in the diverged (409) state. */
-export function isScenePhaseTimelineConflicted(): boolean {
-  return currentConflictState;
+export function isScenePhaseTimelineConflicted(ctx: ExtensionContext): boolean {
+  return conflictStates.has(ctx);
 }
 
-/** Update the module-level diverged-state flag (called by the footer panel). */
-export function setScenePhaseTimelineConflicted(value: boolean): void {
-  currentConflictState = value;
+/** Update the context-scoped diverged-state flag (called by the footer panel). */
+export function setScenePhaseTimelineConflicted(ctx: ExtensionContext, value: boolean): void {
+  if (value) {
+    conflictStates.set(ctx, true);
+  } else {
+    conflictStates.delete(ctx);
+  }
 }
 
 /** Extract the host chrome diverged-state flag from a render context. */
@@ -1075,7 +1081,7 @@ export function resolveChromeConflictFromRenderContext(
  * patches — surface the actionable message instead of a generic failure.
  */
 export function ensureScenePhaseWritable(ctx: ExtensionContext): boolean {
-  if (!currentConflictState) {
+  if (!isScenePhaseTimelineConflicted(ctx)) {
     return true;
   }
   ctx.chrome.toast('Resolve the save conflict first (Reload or Save as copy).', 'warning');

@@ -49,6 +49,7 @@ import {
   readMarkers,
   readTimelineSnapshot,
   scenePhaseMarkersExtension,
+  setScenePhaseTimelineConflicted,
   visualClips,
   visualTrackIds,
   type ScenePhaseMarker,
@@ -305,6 +306,28 @@ describe('moveMarkerToTime (commit-once drag persistence)', () => {
     );
     moveMarkerToTime(ctx, 'ghost', 9);
     expect(applied).toHaveLength(0);
+  });
+
+  it('does not persist a drag while the timeline save conflict is unresolved', () => {
+    const { ops, applied } = makeOps();
+    const reader: TimelineReader = {
+      snapshot: () => makeSnapshot({
+        app: {
+          [SCENE_PHASE_EXTENSION_ID]: {
+            [MARKERS_DATA_KEY]: [{ id: 'm1', time: 2 }],
+          },
+        },
+      }),
+    };
+    const ctx = createExtensionContext(scenePhaseMarkersExtension, { timeline: ops, reader });
+
+    setScenePhaseTimelineConflicted(ctx, true);
+    try {
+      moveMarkerToTime(ctx, 'm1', 9);
+      expect(applied).toHaveLength(0);
+    } finally {
+      setScenePhaseTimelineConflicted(ctx, false);
+    }
   });
 });
 
