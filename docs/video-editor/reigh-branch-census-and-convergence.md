@@ -6,42 +6,38 @@
 
 ## Executive decision
 
-The current canonical Reigh application line is `main` at `feff3e03f`. The shot-scoped timeline UI work is already there: the established shot editor renders a shot timeline above the existing generation settings and is backed by document-derived Astrid timeline data.
+The canonical Reigh application line is the local `main` checkout at `aefe34c10`. It contains the four accepted timeline convergence commits recorded below. The shot-scoped timeline UI work is backed by document-derived Astrid timeline data, with save recovery, idempotent scene markers, stable seeded timeline IDs, and anchored empty-shot creation included in the accepted line.
 
-The branch population is much larger than the amount of unmerged product work. Most app refs are strict ancestors of `main`, patch-equivalent duplicates, historical execution/evidence branches, or superseded architecture. Existing worker branches contain no hidden SQLite/bridge implementation. The orchestrator has one focused family of operational fixes worth retaining.
+The branch population is much larger than the amount of unmerged product work. Most app refs are strict ancestors of `main`, patch-equivalent duplicates, historical execution/evidence branches, or superseded architecture.
 
-Two reviewed convergence branches were created:
-
-- Reigh app: `codex/reigh-branch-convergence-20260828`
-- Worker orchestrator: `codex/orchestrator-branch-convergence-20260828`
-
-Both reviewed branches were pushed, then their repository `main` refs were fast-forwarded and pushed. Reigh Worker `main` was intentionally left unchanged because its audit found no unmerged branch worth retaining.
-
-No dirty owner worktree was reset, stashed, deleted, or merged wholesale. No branch in the candidate or deletion sections below was deleted during this pass.
+The final cleanup target is one canonical Reigh app checkout: all non-`main` local and remote Reigh app branches and all other Reigh app worktrees are disposable after the verified recovery bundle is retained. Release tags remain. Reigh Worker, the worker orchestrator, Astrid, VibeComfy, and all other repositories are outside this cleanup and remain untouched.
 
 ## What was integrated
 
 ### Reigh app
 
-The convergence branch adds four commits on top of `feff3e03f`:
+Local `main` advances from `d738cd342` through these four accepted commits:
 
-1. `aa81d2a94` — operation-boundary guards for relational shot routes.
-2. `cf6fe52d9` — query-level authority gates for shot settings, regeneration settings, and shot images.
-3. `42d552f20` — explicit negative coverage proving Astrid authority does not start a relational shot-image query.
-4. `97e503701` — the neutral Banodoco Workspace Runtime vision and SQLite-only local-v1 implementation plan.
+1. `abea7a212` — reconcile saves and make scene markers idempotent.
+2. `f183d5822` — use ULIDs for seeded default timelines in the real-bridge harness.
+3. `35b691acb` — preserve newer drafts during recovery.
+4. `aefe34c10` — add the anchored empty-shot workflow.
 
-The integration deliberately retains both layers of protection: queries do not start under Astrid authority, and imperative operation boundaries fail closed if reached accidentally. There is no fallback to Supabase.
+Together these commits complete the accepted local timeline convergence without introducing a fallback to Supabase.
 
-Validation:
+Final local-main validation:
 
-- Focused authority suite: 8 files, 43 tests passed.
-- Targeted ESLint: passed.
-- Shot-shim boundary check: passed.
-- Production Vite build: passed.
-- Independent Luna review: passed after the query-gate corrections.
-- Build-context validation: passed.
-- The repository pre-push Dockerfile check could not run because this machine has a Docker CLI context but no installed/running Docker engine. The push used `--no-verify` only after the local build-context check and production build passed; this unavailable infrastructure gate remains explicitly unverified.
-- The all-at-once Vitest run was not a valid green gate: broad unrelated UI files timed out under heavy concurrency. One relevant failure (`useShotImages`) exposed a missing test authority mock; that was corrected and the expanded focused suite passed. The global run was stopped after widespread resource-driven timeouts rather than misreported as a product regression.
+- 205 focused Vitest tests passed.
+- 11 timeline harness checks passed.
+- Changed-surface ESLint passed.
+- TypeScript compilation passed.
+- Production build passed.
+- Browser validation passed.
+- The broad Vitest run was resource-starved and interrupted. It is not claimed green and was not used as the acceptance gate.
+
+### Explicitly rejected broker harvest
+
+Commit `0c88173ea` (`fix(release): avoid full process scans on broker hot path`) is explicitly rejected from the canonical line. Its process-cleanup behavior was not proven sufficiently, so no broker cleanup change from that harvest is accepted.
 
 ### Worker orchestrator
 
@@ -157,7 +153,9 @@ These remain intentionally unmerged:
 7. **Extension RC evidence.** The dirty RC worktree has unresolved conflicts and blocked legs. Preserve useful restart tests only after they are adapted to the neutral runtime.
 8. **Capacity reconciler.** The orchestrator `megaplan/capacity-reconciler-20260513` branch is substantial but incomplete and tightly coupled to the old Supabase/Postgres control plane. Archive it; do not merge into the SQLite plan.
 
-## Dirty worktrees that must remain preserved
+## Worktrees captured before cleanup
+
+The following dirty worktrees were captured in the recovery bundle before cleanup. Their paths are historical capture sources, not exceptions to the final one-checkout state:
 
 ```text
 /Users/peteromalley/Documents/reigh-workspace/reigh-app
@@ -169,20 +167,21 @@ These remain intentionally unmerged:
 /Users/peteromalley/Documents/reigh-workspace/reigh-worker-orchestrator-capacity-reconciler
 ```
 
-Each contains uncommitted owner work, generated evidence, or an unresolved historical operation. Branch equivalence alone is not permission to remove the worktree.
+Each contained uncommitted owner work, generated evidence, or an unresolved historical operation at capture time. The recovery bundle preserves those materials; after verification, these non-`main` worktrees are included in the cleanup target.
 
-## Deletion candidates
+## Recovery bundle and final cleanup state
 
-After preserving this census and a machine-readable ref/SHA manifest:
+Recovery was recorded at `/Users/peteromalley/Documents/reigh-app-cleanup-recovery-20260828` and includes the complete app ref bundle plus captured status, tracked diffs, and untracked-file archives. Both recovery checks passed:
 
-1. Delete the clean app temporary worktrees listed above.
-2. Delete app local and remote refs already represented on `main`.
-3. Delete the duplicate `exec-goal-20260822` ref after retaining `exec-goal` as the archive name.
-4. Archive, then delete the artifact-only `megaplan/slot-first-m2-frontend` ref.
-5. Archive superseded app histories: old long-clip, source-proxy, extension-foundation, slot-first M1, Phase-C execution histories, and the older exec branches.
-6. In `reigh-worker`, delete/archive the eleven ancestor branches and stale `megaplan/vibecomfy-sprint-00a-baselines`; retain the five migration tags.
-7. In the orchestrator, archive `megaplan/capacity-reconciler-20260513` after preserving its unfinished plan artifacts.
-8. Keep release tags. They are immutable historical release records, not redundant branch heads.
+- `sha256sum -c /Users/peteromalley/Documents/reigh-app-cleanup-recovery-20260828/SHA256SUMS` — all entries `OK`.
+- `git bundle verify /Users/peteromalley/Documents/reigh-app-cleanup-recovery-20260828/reigh-app-all-refs.bundle` — bundle is valid and records complete history.
+
+The intended final outcome is:
+
+1. One canonical Reigh app checkout at `/Users/peteromalley/Documents/reigh-workspace/reigh-app`, on `main` at `aefe34c10` before this decision-record commit.
+2. All non-`main` local and remote Reigh app branches and all other Reigh app worktrees deleted after the verified recovery bundle is retained.
+3. Reigh app tags retained as immutable historical release records.
+4. Reigh Worker, `reigh-worker-orchestrator`, and every other non-Reigh repository untouched.
 
 ## Next implementation seam
 
