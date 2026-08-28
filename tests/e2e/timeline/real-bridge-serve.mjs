@@ -130,7 +130,9 @@ function seed() {
       schema_version: 1,
       slug: project.slug,
       updated_at: '2026-08-11T00:00:00Z',
-      default_timeline_id: timeline,
+      // The pinned Astrid renderer validates this field as a Crockford ULID
+      // (26 chars); the canonical UUID stays in assembly.identity.json.
+      default_timeline_id: timelineUlid,
     }, null, 2));
 
     const home = join(projectDir, 'timelines', timelineUlid);
