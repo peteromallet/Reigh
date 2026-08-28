@@ -51,10 +51,12 @@ describe('resolveSelectedGenerationIdsForShotCreation', () => {
     expect(result).toEqual({
       canCreateShot: true,
       generationIds: ['gen-1', 'gen-2', 'gen-3'],
+      orderedClipIds: ['clip-1', 'clip-2', 'clip-3'],
+      trackId: 'V1',
     });
   });
 
-  it('marks the selection as ineligible when any selected clip lacks a generation id', () => {
+  it('keeps non-generation clips in an ordered shot selection', () => {
     const assetGenerationMap = {
       'asset-1': 'gen-1',
       'asset-3': 'gen-3',
@@ -67,8 +69,10 @@ describe('resolveSelectedGenerationIdsForShotCreation', () => {
       selectedClipIds: ['clip-1', 'clip-2', 'clip-3'],
     });
 
-    expect(result.canCreateShot).toBe(false);
+    expect(result.canCreateShot).toBe(true);
     expect(result.generationIds).toEqual(['gen-1', 'gen-3']);
+    expect(result.orderedClipIds).toEqual(['clip-1', 'clip-2', 'clip-3']);
+    expect(result.trackId).toBe('V1');
   });
 });
 

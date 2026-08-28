@@ -11,6 +11,7 @@ import { VideoGenerationModal } from '@/tools/travel-between-images/components/V
 import { AstridLocalClient } from '@/integrations/astrid/client.ts';
 import { useVideoEditorRuntime } from '@/tools/video-editor/contexts/VideoEditorRuntimeContext.tsx';
 import { TimelineEditorCore, resolveSelectedGenerationIdsForShotCreation } from '@/tools/video-editor/components/TimelineEditor/TimelineEditorCore.tsx';
+import { buildEmptyShotAnchorEdit } from '@/tools/video-editor/lib/shot-group-commands.ts';
 import { useActiveTaskClips } from '@/tools/video-editor/hooks/useActiveTaskClips.ts';
 import { useFinalVideoAvailable } from '@/tools/video-editor/hooks/useFinalVideoAvailable.ts';
 import {
@@ -96,7 +97,7 @@ function ReighTimelineEditorComponent({ onOpenSequenceCreator }: ReighTimelineEd
 
   const selectionShotCreationState = useMemo(() => {
     if (!data?.rows || !data?.meta) {
-      return { canCreateShot: false, generationIds: [] as string[] };
+      return { canCreateShot: false, generationIds: [] as string[], orderedClipIds: [] as string[], trackId: undefined as string | undefined };
     }
 
     return resolveSelectedGenerationIdsForShotCreation({
@@ -136,28 +137,28 @@ function ReighTimelineEditorComponent({ onOpenSequenceCreator }: ReighTimelineEd
       return null;
     }
 
-    const selectedClipId = [...selectedClipIds][0];
-    const trackId = selectedClipId ? data?.meta[selectedClipId]?.track : undefined;
+    const trackId = selectionShotCreationState.trackId;
+    const orderedClipIds = selectionShotCreationState.orderedClipIds;
 
     const result = await createShot({ generationIds: selectionShotCreationState.generationIds });
     if (result?.shot && trackId) {
-      pinGroup(result.shot.id, trackId, [...selectedClipIds], result.shot.name);
+      pinGroup(result.shot.id, trackId, orderedClipIds, result.shot.name);
     }
     if (result?.shot) {
       return result.shot;
     }
     return null;
-  }, [createShot, data?.meta, pinGroup, selectedClipIds, selectionShotCreationState]);
+  }, [createShot, pinGroup, selectionShotCreationState]);
 
   const handleCreateDocumentShotFromSelection = useCallback(async (): Promise<Shot | null> => {
     if (!selectionShotCreationState.canCreateShot) return null;
-    const selectedClipId = [...selectedClipIds][0];
-    const trackId = selectedClipId ? data?.meta[selectedClipId]?.track : undefined;
+    const trackId = selectionShotCreationState.trackId;
+    const orderedClipIds = selectionShotCreationState.orderedClipIds;
     if (!trackId) return null;
     const suffix = globalThis.crypto?.randomUUID?.().slice(0, 8) ?? String(Date.now());
-    pinGroup(`shot-${suffix}`, trackId, [...selectedClipIds], 'New shot');
+    pinGroup(`shot-${suffix}`, trackId, orderedClipIds, 'New shot');
     return null;
-  }, [data?.meta, pinGroup, selectedClipIds, selectionShotCreationState.canCreateShot]);
+  }, [pinGroup, selectionShotCreationState]);
 
   const handleGenerateVideoFromSelection = useCallback(async () => {
     if (!selectionShotCreationState.canCreateShot) {
@@ -169,8 +170,8 @@ function ReighTimelineEditorComponent({ onOpenSequenceCreator }: ReighTimelineEd
       return;
     }
 
-    const selectedClipId = [...selectedClipIds][0];
-    const trackId = selectedClipId ? data?.meta[selectedClipId]?.track : undefined;
+    const trackId = selectionShotCreationState.trackId;
+    const orderedClipIds = selectionShotCreationState.orderedClipIds;
 
     const result = await createShot({ generationIds: selectionShotCreationState.generationIds });
     if (!result?.shotId) {
@@ -178,18 +179,46 @@ function ReighTimelineEditorComponent({ onOpenSequenceCreator }: ReighTimelineEd
     }
 
     if (trackId) {
-      pinGroup(result.shotId, trackId, [...selectedClipIds], result.shot?.name);
+      pinGroup(result.shotId, trackId, orderedClipIds, result.shot?.name);
     }
 
     const createdShot = result.shot ?? shots?.find((shot) => shot.id === result.shotId) ?? null;
     if (createdShot) {
       setVideoModalShot(createdShot);
     }
-  }, [createShot, data?.meta, existingShotsForSelection, pinGroup, selectedClipIds, selectionShotCreationState, shots]);
+  }, [createShot, existingShotsForSelection, pinGroup, selectionShotCreationState, shots]);
 
   const handleNavigateToShot = useCallback((shot: Shot) => {
     navigateToShot(shot, { isNewlyCreated: true });
   }, [navigateToShot]);
+
+  const handleCreateEmptyShotAt = useCallback(async (anchor: { time: number; trackId?: string }): Promise<void> => {
+    const current = dataRef.current;
+    if (!current) return;
+
+    const result = await createShot();
+    if (!result?.shot) return;
+
+    const anchorEdit = buildEmptyShotAnchorEdit(current, {
+      shotId: result.shot.id,
+      shotName: result.shotName ?? result.shot.name,
+      time: anchor.time,
+      preferredTrackId: anchor.trackId,
+    });
+    if (!anchorEdit) {
+      normalizeAndPresentError(new Error('No visual track available for the new shot.'), {
+        context: 'video-editor:create-empty-shot',
+        toastTitle: 'Shot created but could not be placed on the timeline',
+      });
+      return;
+    }
+
+    applyEdit(anchorEdit.mutation, {
+      selectedClipId: anchorEdit.clipId,
+      selectedTrackId: anchorEdit.trackId,
+      semantic: true,
+    });
+  }, [applyEdit, createShot, dataRef]);
 
   const handleOpenGenerateVideo = useCallback((shot: Shot) => {
     setVideoModalShot(shot);
@@ -435,6 +464,7 @@ function ReighTimelineEditorComponent({ onOpenSequenceCreator }: ReighTimelineEd
         onNavigateToShot={isDocumentShotMode ? undefined : handleNavigateToShot}
         onOpenGenerateVideo={isDocumentShotMode ? undefined : handleOpenGenerateVideo}
         isCreatingShot={isDocumentShotMode ? false : isCreating}
+        onCreateEmptyShotAt={handleCreateEmptyShotAt}
         duplicatingClipId={duplicatingClipId}
         onDuplicateGenerationClip={handleDuplicateGenerationClip}
         onOpenShotVideoModal={isDocumentShotMode ? undefined : handleOpenShotVideoModal}

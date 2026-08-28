@@ -16,6 +16,7 @@ import { VideoEditorRuntimeContext } from '@/tools/video-editor/contexts/VideoEd
 import { useWaveformData } from '@/tools/video-editor/hooks/useWaveformData.ts';
 import type { ClipMeta } from '@/tools/video-editor/lib/timeline-data.ts';
 import { CLIP_ACTION_CLASS, clipActionAttrs } from '@/tools/video-editor/lib/timeline-dom.ts';
+import { EMPTY_SHOT_ANCHOR_APP_KEY } from '@/tools/video-editor/lib/shot-group-commands.ts';
 import type { CommandRegistry, ContextMenuItemEntry } from '@/tools/video-editor/runtime/commandRegistry.ts';
 import type { TimelineAction } from '@/tools/video-editor/types/timeline-canvas.ts';
 import type { ReighExtension, TargetContextPayload } from '@reigh/editor-sdk';
@@ -311,7 +312,7 @@ function ClipContextMenu(props: ClipContextMenuProps) {
           )}
           {props.showShotActions && !createdShot && props.onCreateShotFromSelection && (
             <ClipContextMenuItem icon={FolderPlus} onClick={() => void handleCreateShot()} disabled={isCreatingLocal || props.isCreatingShot}>
-              {isCreatingLocal ? 'Creating…' : 'Create Shot'}
+              {isCreatingLocal ? 'Creating…' : (props.hasBatchSelection ? 'Create Shot from selection' : 'Create Shot')}
             </ClipContextMenuItem>
           )}
           {props.showShotActions && createdShot && props.onNavigateToShot && (
@@ -470,7 +471,21 @@ function ClipActionComponent({
   };
 
   const isEffectLayer = clipMeta.clipType === 'effect-layer';
-  const icon = isEffectLayer
+  const isEmptyShotAnchor = Boolean(
+    clipMeta.app && EMPTY_SHOT_ANCHOR_APP_KEY in clipMeta.app,
+  );
+  const emptyShotLabel = (
+    isEmptyShotAnchor
+    && clipMeta.app
+    && typeof clipMeta.app[EMPTY_SHOT_ANCHOR_APP_KEY] === 'object'
+    && clipMeta.app[EMPTY_SHOT_ANCHOR_APP_KEY] !== null
+    && 'shotName' in (clipMeta.app[EMPTY_SHOT_ANCHOR_APP_KEY] as Record<string, unknown>)
+  )
+    ? String((clipMeta.app[EMPTY_SHOT_ANCHOR_APP_KEY] as Record<string, unknown>).shotName)
+    : null;
+  const icon = isEmptyShotAnchor
+    ? <FolderPlus className="h-3 w-3" />
+    : isEffectLayer
     ? <Layers className="h-3 w-3" />
     : clipMeta.clipType === 'text'
     ? <Type className="h-3 w-3" />
@@ -537,6 +552,8 @@ function ClipActionComponent({
             ? 'border-violet-400 bg-violet-500/20 text-violet-50'
             : isEffectLayer
               ? 'border-violet-500/30 bg-violet-500/10 text-violet-300 hover:border-violet-400/60'
+            : isEmptyShotAnchor
+              ? 'border-dashed border-border bg-background/40 text-muted-foreground hover:border-accent'
             : isSelected
             ? 'border-sky-400 bg-sky-500/20 text-sky-50'
             : 'border-border bg-card/90 text-foreground hover:border-accent',
@@ -601,9 +618,11 @@ function ClipActionComponent({
         )}
         <div className={`relative z-10 min-w-0 flex-1 px-2 py-1 transition-opacity ${isSelected ? 'opacity-100' : 'opacity-20'}`}>
           <div className="truncate text-[11px] font-medium">
-            {isEffectLayer
-              ? (clipMeta.continuous?.type || 'Effect Layer')
-              : (clipMeta.text?.content || clipMeta.asset || action.id)}
+            {isEmptyShotAnchor
+              ? (emptyShotLabel ?? 'New Shot')
+              : isEffectLayer
+                ? (clipMeta.continuous?.type || 'Effect Layer')
+                : (clipMeta.text?.content || clipMeta.asset || action.id)}
           </div>
           {effectBadges.length > 0 && (
             <div className="mt-1 flex gap-1 overflow-hidden">

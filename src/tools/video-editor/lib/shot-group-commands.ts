@@ -1,4 +1,5 @@
 import { updateClipOrder } from '@/tools/video-editor/lib/coordinate-utils.ts';
+import { createClipMetaFromDescriptor } from '@/tools/video-editor/clip-types/runtime.ts';
 import {
   findGroupForTrack,
   orderClipIdsByAt,
@@ -6,8 +7,12 @@ import {
 } from '@/tools/video-editor/lib/pinned-group-projection.ts';
 import { ensureGroupContiguity } from '@/tools/video-editor/lib/shot-group-contiguity.ts';
 import { getNextClipId, type ClipMeta, type TimelineData } from '@/tools/video-editor/lib/timeline-data.ts';
+import { snapToFrameGrid } from '@/tools/video-editor/lib/time-grid.ts';
 import type { PinnedShotGroup, PinnedShotImageClipSnapshot } from '@/tools/video-editor/types/index.ts';
 import type { TimelineAction } from '@/tools/video-editor/types/timeline-canvas.ts';
+
+/** Host-owned `clip.app` key marking an empty-shot anchor clip on the timeline. */
+export const EMPTY_SHOT_ANCHOR_APP_KEY = 'emptyShotAnchor';
 
 type ShotGroupLocator = {
   shotId: string;
@@ -119,6 +124,77 @@ export function buildPinShotGroupMutation(
   return {
     type: 'pinnedShotGroups' as const,
     pinnedShotGroups: buildPinnedShotGroupsOverride(currentData, group),
+  };
+}
+
+export type EmptyShotAnchorInput = {
+  shotId: string;
+  shotName?: string;
+  time: number;
+  preferredTrackId?: string;
+  duration?: number;
+};
+
+/** Build the local timeline edit that places a visible empty shot at `time`. */
+export function buildEmptyShotAnchorEdit(
+  currentData: TimelineData,
+  input: EmptyShotAnchorInput,
+): {
+  mutation: {
+    type: 'rows';
+    rows: TimelineData['rows'];
+    metaUpdates: Record<string, ClipMeta>;
+    clipOrderOverride: TimelineData['clipOrder'];
+    pinnedShotGroupsOverride: NonNullable<TimelineData['config']['pinnedShotGroups']>;
+  };
+  clipId: string;
+  trackId: string;
+} | null {
+  const { shotId, shotName, time, preferredTrackId, duration = 5 } = input;
+  const startTime = snapToFrameGrid(Math.max(0, time), currentData.output?.fps ?? 24);
+  const preferredTrack = preferredTrackId
+    ? currentData.tracks.find((track) => track.id === preferredTrackId && track.kind === 'visual')
+    : undefined;
+  const anchorTrack = preferredTrack ?? currentData.tracks.find((track) => track.kind === 'visual');
+  if (!anchorTrack) {
+    return null;
+  }
+
+  const trackId = anchorTrack.id;
+  const clipId = getNextClipId(currentData.meta);
+  const baseMeta = createClipMetaFromDescriptor({ clipType: 'text', trackId });
+  if (!baseMeta) {
+    return null;
+  }
+  const label = shotName ?? 'New Shot';
+  const clipMeta: ClipMeta = {
+    ...(baseMeta as unknown as ClipMeta),
+    text: { ...((baseMeta as unknown as ClipMeta).text ?? {}), content: '' },
+    label,
+    app: { [EMPTY_SHOT_ANCHOR_APP_KEY]: { shotId, shotName: label } },
+  };
+  const action: TimelineAction = {
+    id: clipId,
+    start: startTime,
+    end: startTime + duration,
+    effectId: `effect-${clipId}`,
+  };
+  const rows = currentData.rows.map((row) => (
+    row.id === trackId ? { ...row, actions: [...row.actions, action] } : row
+  ));
+  const clipOrderOverride = updateClipOrder(currentData.clipOrder, trackId, (ids) => [...ids, clipId]);
+  const group: ShotGroupModeInput = { shotId, trackId, clipIds: [clipId], mode: 'images' };
+
+  return {
+    mutation: {
+      type: 'rows',
+      rows,
+      metaUpdates: { [clipId]: clipMeta },
+      clipOrderOverride,
+      pinnedShotGroupsOverride: buildPinnedShotGroupsOverride(currentData, group),
+    },
+    clipId,
+    trackId,
   };
 }
 

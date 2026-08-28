@@ -16,7 +16,8 @@ import React, {
 } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { type DragEndEvent, useSensors } from '@dnd-kit/core';
-import { Layers, Sparkles } from 'lucide-react';
+import { FolderPlus, Layers, Sparkles } from 'lucide-react';
+import type { Shot } from '@/domains/generation/types/index.ts';
 import { cn } from '@/shared/components/ui/contracts/cn.ts';
 import { usePortalMousedownGuard } from '@/shared/hooks/usePortalMousedownGuard.ts';
 import {
@@ -50,6 +51,7 @@ import { useTimelineSelectionStore } from '@/shared/state/selectionStore.ts';
 import { LABEL_WIDTH } from '@/tools/video-editor/lib/coordinate-utils.ts';
 import {
   EDIT_AREA_CLASS,
+  ROW_ID_ATTR,
   TIMELINE_AREA_CONTEXT_MENU_IGNORE_SELECTOR,
   touchGestureModeAttrs,
 } from '@/tools/video-editor/lib/timeline-dom.ts';
@@ -169,6 +171,13 @@ export interface TimelineCanvasProps {
   postprocessShader?: TimelinePostprocessShaderMetadata;
   /** Selects the timeline-scoped postprocess shader inspector target. */
   onSelectPostprocessShader?: (shader: TimelinePostprocessShaderMetadata) => void;
+  /** Creates a new empty shot anchored at an empty timeline position. */
+  onCreateEmptyShotAt?: (anchor: { time: number; trackId?: string }) => void | Promise<void>;
+  /** Creates a shot from the selected clips. */
+  onCreateShotFromSelection?: () => Promise<Shot | null>;
+  canCreateShotFromSelection?: boolean;
+  isCreatingShot?: boolean;
+  selectedClipCount?: number;
 }
 
 const TOOL_BUTTON_BASE_CLASS = 'pointer-events-auto relative flex items-center justify-center rounded-full ring-1 transition-all duration-150 hover:-translate-y-0.5 hover:scale-105 active:translate-y-0 active:scale-100';
@@ -190,6 +199,8 @@ const MENU_VIEWPORT_MARGIN = 8;
 interface TimelineAreaContextMenuState {
   x: number;
   y: number;
+  time: number;
+  trackId?: string;
   target: TargetContextPayload;
 }
 
@@ -197,10 +208,20 @@ function TimelineAreaExtensionContextMenu({
   menu,
   menuRef,
   closeMenu,
+  onCreateEmptyShotAt,
+  onCreateShotFromSelection,
+  canCreateShotFromSelection,
+  isCreatingShot,
+  selectedClipCount,
 }: {
   menu: TimelineAreaContextMenuState;
   menuRef: React.RefObject<HTMLDivElement>;
   closeMenu: () => void;
+  onCreateEmptyShotAt?: TimelineCanvasProps['onCreateEmptyShotAt'];
+  onCreateShotFromSelection?: TimelineCanvasProps['onCreateShotFromSelection'];
+  canCreateShotFromSelection?: boolean;
+  isCreatingShot?: boolean;
+  selectedClipCount?: number;
 }) {
   const [adjusted, setAdjusted] = useState<{ x: number; y: number } | null>(null);
   const runtime = useContext(VideoEditorRuntimeContext);
@@ -209,6 +230,11 @@ function TimelineAreaExtensionContextMenu({
   const items = commandRegistry
     ? commandRegistry.getSnapshot().contextMenuItems.filter((item) => item.target === menu.target.target)
     : [];
+  const hasExtensionItems = hasEligibleExtensionContextMenuItems(commandRegistry, extensions, menu.target);
+  const showSelectionItem = Boolean(
+    canCreateShotFromSelection && (selectedClipCount ?? 0) >= 2 && onCreateShotFromSelection,
+  );
+  const hasBuiltInItems = Boolean(onCreateEmptyShotAt) || showSelectionItem;
 
   useLayoutEffect(() => {
     const node = menuRef.current;
@@ -240,9 +266,23 @@ function TimelineAreaExtensionContextMenu({
   return createPortal(
     <div
       ref={menuRef}
+      role="menu"
       className="fixed z-50 min-w-[10rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95"
       style={{ left: pos.x, top: pos.y, visibility: adjusted ? 'visible' : 'hidden' }}
     >
+      {showSelectionItem && (
+        <button type="button" role="menuitem" className="relative flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent disabled:opacity-50" disabled={isCreatingShot} onClick={() => { void onCreateShotFromSelection!(); closeMenu(); }}>
+          <FolderPlus className="h-4 w-4" />
+          Create Shot from selection
+        </button>
+      )}
+      {onCreateEmptyShotAt && (
+        <button type="button" role="menuitem" className="relative flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent disabled:opacity-50" disabled={isCreatingShot} onClick={() => { void onCreateEmptyShotAt({ time: menu.time, trackId: menu.trackId }); closeMenu(); }}>
+          <FolderPlus className="h-4 w-4" />
+          Create Shot
+        </button>
+      )}
+      {hasBuiltInItems && hasExtensionItems && <div className="my-1 h-px bg-border" />}
       <ExtensionContextMenuItems
         items={items}
         target={menu.target}
@@ -315,6 +355,11 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
   sourceMapStaleClipIds,
   postprocessShader,
   onSelectPostprocessShader,
+  onCreateEmptyShotAt,
+  onCreateShotFromSelection,
+  canCreateShotFromSelection,
+  isCreatingShot,
+  selectedClipCount = 0,
 }: TimelineCanvasProps, ref) {
   useRenderBudget('TimelineCanvas', 3);
   // dataKind V2: reactive base TimelineData → assembled duration-neutral
@@ -747,8 +792,26 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
       return;
     }
 
+    if (marqueeRect) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
+    const container = scrollContainerRef.current;
+    const containerRect = container?.getBoundingClientRect();
+    const time = container && containerRect
+      ? Math.max(0, pixelToTime(container.scrollLeft + (event.clientX - containerRect.left)))
+      : 0;
+    const rowElement = eventTarget?.closest(`[${ROW_ID_ATTR}]`);
+    const trackId = rowElement instanceof HTMLElement ? rowElement.dataset.rowId : undefined;
+
     const target: TargetContextPayload = { target: 'timeline-area' };
-    if (!hasEligibleExtensionContextMenuItems(commandRegistry, extensions, target)) {
+    const hasSelectionActions = Boolean(
+      canCreateShotFromSelection && selectedClipCount >= 2 && onCreateShotFromSelection,
+    );
+    const hasBuiltInActions = Boolean(onCreateEmptyShotAt) || hasSelectionActions;
+    if (!hasBuiltInActions && !hasEligibleExtensionContextMenuItems(commandRegistry, extensions, target)) {
       return;
     }
 
@@ -757,9 +820,11 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
     setTimelineAreaMenu({
       x: event.clientX,
       y: event.clientY,
+      time,
+      trackId,
       target,
     });
-  }, [commandRegistry, extensions]);
+  }, [canCreateShotFromSelection, commandRegistry, extensions, marqueeRect, onCreateEmptyShotAt, onCreateShotFromSelection, pixelToTime, selectedClipCount]);
 
   const handlePostprocessShaderBadgeClick = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
@@ -1100,6 +1165,11 @@ export const TimelineCanvas = forwardRef<TimelineCanvasHandle, TimelineCanvasPro
               menu={timelineAreaMenu}
               menuRef={timelineAreaMenuRef}
               closeMenu={() => setTimelineAreaMenu(null)}
+              onCreateEmptyShotAt={onCreateEmptyShotAt}
+              onCreateShotFromSelection={onCreateShotFromSelection}
+              canCreateShotFromSelection={canCreateShotFromSelection}
+              isCreatingShot={isCreatingShot}
+              selectedClipCount={selectedClipCount}
             />
           )}
           <TimelineGhostLayer

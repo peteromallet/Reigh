@@ -114,7 +114,12 @@ export function resolveSelectedGenerationIdsForShotCreation({
 }) {
   const selectedSet = new Set(selectedClipIds);
   if (selectedSet.size === 0) {
-    return { canCreateShot: false, generationIds: [] as string[] };
+    return {
+      canCreateShot: false,
+      generationIds: [] as string[],
+      orderedClipIds: [] as string[],
+      trackId: undefined as string | undefined,
+    };
   }
 
   const orderedSelections = rows
@@ -125,6 +130,8 @@ export function resolveSelectedGenerationIdsForShotCreation({
         const generationId = assetKey ? assetGenerationMap[assetKey] : undefined;
 
         return {
+          clipId: action.id,
+          trackId: row.id,
           trackIndex,
           start: action.start,
           generationId,
@@ -137,8 +144,12 @@ export function resolveSelectedGenerationIdsForShotCreation({
     .filter((generationId): generationId is string => typeof generationId === 'string' && generationId.length > 0);
 
   return {
-    canCreateShot: orderedSelections.length > 0 && generationIds.length === orderedSelections.length,
+    // Non-generation clips (text/import/effect clips) are still valid shot
+    // selection members; the shot simply starts with the generations present.
+    canCreateShot: orderedSelections.length > 0,
     generationIds,
+    orderedClipIds: orderedSelections.map((selection) => selection.clipId),
+    trackId: orderedSelections[0]?.trackId,
   };
 }
 
@@ -192,6 +203,8 @@ export interface TimelineEditorCoreProps {
   onNavigateToShot?: (shot: Shot) => void;
   onOpenGenerateVideo?: (shot: Shot) => void;
   isCreatingShot?: boolean;
+  /** Creates a new empty shot anchored at an empty timeline position. */
+  onCreateEmptyShotAt?: (anchor: { time: number; trackId?: string }) => void | Promise<void>;
   duplicatingClipId?: string | null;
   onDuplicateGenerationClip?: (clipId: string) => void | Promise<void>;
   onOpenShotVideoModal?: (shotId: string, reason: 'pinned-group' | 'final-video-file') => void;
@@ -220,6 +233,7 @@ function TimelineEditorCoreComponent({
   onNavigateToShot,
   onOpenGenerateVideo,
   isCreatingShot = false,
+  onCreateEmptyShotAt,
   duplicatingClipId = null,
   onDuplicateGenerationClip,
   onOpenShotVideoModal,
@@ -830,6 +844,11 @@ function TimelineEditorCoreComponent({
           newTrackDropLabel={newTrackDropLabel}
           postprocessShader={postprocessShader}
           onSelectPostprocessShader={handlePostprocessShaderSelect}
+          onCreateEmptyShotAt={onCreateEmptyShotAt}
+          onCreateShotFromSelection={onCreateShotFromSelection}
+          canCreateShotFromSelection={canCreateShotFromSelection}
+          isCreatingShot={isCreatingShot}
+          selectedClipCount={selectedClipIds.size}
         />
         <DropIndicator ref={indicatorRef} editAreaRef={editAreaRef} onNewTrackLabel={setNewTrackDropLabel} />
       </div>

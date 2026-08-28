@@ -170,11 +170,11 @@ describe('ClipAction', () => {
 
     expect(screen.getByText('Mute/Unmute 2 clips')).toBeInTheDocument();
     expect(screen.getByText('Split 2 clips at playhead')).toBeInTheDocument();
-    expect(screen.getByText('Create Shot')).toBeInTheDocument();
+    expect(screen.getByText('Create Shot from selection')).toBeInTheDocument();
     expect(screen.getByText('Generate Video')).toBeInTheDocument();
     expect(screen.getByText('Delete 2 clips')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText('Create Shot'));
+    fireEvent.click(screen.getByText('Create Shot from selection'));
 
     expect(props.onCreateShotFromSelection).toHaveBeenCalledTimes(1);
   });
@@ -313,7 +313,7 @@ describe('ClipAction', () => {
     expect(screen.getByText('Shot 9')).toBeInTheDocument();
     expect(screen.getByTitle('Jump to shot')).toBeInTheDocument();
     expect(screen.getByTitle('Generate Video')).toBeInTheDocument();
-    expect(screen.getByText('Create Shot')).toBeInTheDocument();
+    expect(screen.getByText('Create Shot from selection')).toBeInTheDocument();
 
     rerender(<ClipAction {...props} existingShots={[]} />);
 
@@ -334,6 +334,26 @@ describe('ClipAction', () => {
     fireEvent.click(screen.getByText('Duplicate generation'));
 
     expect(props.onDuplicateGeneration).toHaveBeenCalledWith('clip-1');
+  });
+
+  it('presents an empty-shot anchor marker as a labeled placeholder, not as text', () => {
+    mockUseWaveformData();
+    const props = buildProps({
+      clipMeta: {
+        track: 'V1',
+        clipType: 'text',
+        text: { content: '' },
+        app: { emptyShotAnchor: { shotId: 'shot-new', shotName: 'Shot 9' } },
+      },
+      selectedClipIds: ['clip-1'],
+    });
+    const { container } = render(<ClipAction {...props} />);
+
+    const clip = container.querySelector('[data-clip-id="clip-1"]');
+    expect(clip).not.toBeNull();
+    expect(clip?.textContent).toContain('Shot 9');
+    expect(clip?.textContent).not.toContain('clip-1');
+    expect(clip?.className).toContain('border-dashed');
   });
 
   it('renders eligible extension clip menu items and invokes with a snapshotted clip target', async () => {

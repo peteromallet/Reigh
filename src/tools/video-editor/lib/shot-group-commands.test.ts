@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { repairConfig } from '@/tools/video-editor/lib/migrate';
 import { configToRows, type TimelineData } from '@/tools/video-editor/lib/timeline-data';
 import {
+  EMPTY_SHOT_ANCHOR_APP_KEY,
+  buildEmptyShotAnchorEdit,
   buildPinShotGroupMutation,
   buildDeleteShotGroupMutation,
   buildSwitchShotGroupToFinalVideoMutation,
@@ -471,5 +473,84 @@ describe('shot-group-commands', () => {
         ],
       }],
     });
+  });
+
+  it('buildEmptyShotAnchorEdit places an empty-shot marker at the clicked time on the preferred visual track', () => {
+    const currentData = makeTimelineData(
+      {
+        output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
+        tracks: [
+          { id: 'V1', kind: 'visual', label: 'V1' },
+          { id: 'A1', kind: 'audio', label: 'A1' },
+        ],
+        clips: [],
+      },
+      { assets: {} },
+    );
+
+    const edit = buildEmptyShotAnchorEdit(currentData, {
+      shotId: 'shot-empty',
+      shotName: 'Shot 1',
+      time: 3.2,
+      preferredTrackId: 'A1',
+    });
+
+    expect(edit).not.toBeNull();
+    const { mutation, clipId, trackId } = edit!;
+    expect(trackId).toBe('V1');
+    expect(clipId).toBe('clip-0');
+    expect(mutation.rows).toEqual([
+      { id: 'V1', actions: [{ id: 'clip-0', start: 3.2, end: 8.2, effectId: 'effect-clip-0' }] },
+      { id: 'A1', actions: [] },
+    ]);
+    expect(mutation.metaUpdates['clip-0']).toEqual(expect.objectContaining({
+      track: 'V1',
+      clipType: 'text',
+      label: 'Shot 1',
+      app: { [EMPTY_SHOT_ANCHOR_APP_KEY]: { shotId: 'shot-empty', shotName: 'Shot 1' } },
+    }));
+    expect(mutation.clipOrderOverride).toEqual({ V1: ['clip-0'], A1: [] });
+    expect(mutation.pinnedShotGroupsOverride).toEqual([{
+      shotId: 'shot-empty',
+      trackId: 'V1',
+      clipIds: ['clip-0'],
+      mode: 'images',
+    }]);
+  });
+
+  it('buildEmptyShotAnchorEdit falls back to the first visual track and clamps negative times', () => {
+    const currentData = makeTimelineData(
+      {
+        output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
+        tracks: [{ id: 'V2', kind: 'visual', label: 'V2' }],
+        clips: [],
+      },
+      { assets: {} },
+    );
+
+    const edit = buildEmptyShotAnchorEdit(currentData, {
+      shotId: 'shot-empty',
+      time: -1,
+    });
+
+    expect(edit).not.toBeNull();
+    expect(edit!.trackId).toBe('V2');
+    expect(edit!.mutation.rows[0].actions[0].start).toBe(0);
+  });
+
+  it('buildEmptyShotAnchorEdit returns null when no visual track exists', () => {
+    const currentData = makeTimelineData(
+      {
+        output: { resolution: '1920x1080', fps: 30, file: 'out.mp4' },
+        tracks: [{ id: 'A1', kind: 'audio', label: 'A1' }],
+        clips: [],
+      },
+      { assets: {} },
+    );
+
+    expect(buildEmptyShotAnchorEdit(currentData, {
+      shotId: 'shot-empty',
+      time: 0,
+    })).toBeNull();
   });
 });
