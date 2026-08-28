@@ -176,12 +176,13 @@ Recovery was recorded at `/Users/peteromalley/Documents/reigh-app-cleanup-recove
 - `sha256sum -c /Users/peteromalley/Documents/reigh-app-cleanup-recovery-20260828/SHA256SUMS` — all entries `OK`.
 - `git bundle verify /Users/peteromalley/Documents/reigh-app-cleanup-recovery-20260828/reigh-app-all-refs.bundle` — bundle is valid and records complete history.
 
-The intended final outcome is:
+The cleanup completed on 2026-08-28 with this verified final outcome:
 
-1. One canonical Reigh app checkout at `/Users/peteromalley/Documents/reigh-workspace/reigh-app`, on `main` at `aefe34c10` before this decision-record commit.
-2. All non-`main` local and remote Reigh app branches and all other Reigh app worktrees deleted after the verified recovery bundle is retained.
-3. Reigh app tags retained as immutable historical release records.
-4. Reigh Worker, `reigh-worker-orchestrator`, and every other non-Reigh repository untouched.
+1. One canonical Reigh app checkout at `/Users/peteromalley/Documents/reigh-workspace/reigh-app`, on `main`, with its working tree clean and `origin/main` matching.
+2. `git worktree list` reports exactly that one checkout; the local branch set is exactly `main`; the remote branch set is exactly `origin/main` plus its symbolic `origin/HEAD`.
+3. All non-`main` local and remote Reigh app branches and all other Reigh app worktrees were deleted after the verified recovery bundle was retained.
+4. Reigh app tags were retained as immutable historical release records.
+5. Reigh Worker, `reigh-worker-orchestrator`, Astrid, VibeComfy, and every other non-Reigh repository were untouched.
 
 ## Next implementation seam
 
