@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { bridgeCapabilityUnavailable } from '@/integrations/astrid/capability.ts';
+import { isUuid } from '@/shared/lib/uuid.ts';
 import type { AgentTurn } from '@/tools/video-editor/types/agent-session.ts';
 
 type AgentMessageAttachment = NonNullable<AgentTurn['attachments']>[number];
@@ -30,7 +31,9 @@ export const agentSessionQueryKey = (sessionId: string | null | undefined) =>
 export function useAgentSessions(timelineId: string | null | undefined) {
   return useQuery({
     queryKey: agentSessionsQueryKey(timelineId),
-    enabled: Boolean(timelineId),
+    // Supabase's legacy timeline_id column is UUID-typed; local SQLite/Astrid
+    // timelines use ULIDs and must never trigger a PostgREST request.
+    enabled: typeof timelineId === 'string' && isUuid(timelineId),
     queryFn: async () => { throw unavailable(); },
   });
 }
@@ -47,6 +50,11 @@ export function useCreateSession(timelineId: string | null | undefined) {
   return useMutation({
     mutationFn: async () => {
       if (!timelineId) throw new Error('timelineId is required');
+      if (!isUuid(timelineId)) {
+        throw new Error(
+          `Agent sessions are only supported for UUID timeline ids (received "${timelineId}").`,
+        );
+      }
       throw unavailable();
     },
   });

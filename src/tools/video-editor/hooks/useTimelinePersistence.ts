@@ -12,6 +12,7 @@ import {
   type TimelineSchemaIssue,
 } from '@/tools/video-editor/data/DataProvider.ts';
 import { buildTimelineData, buildTimelineDataWithResolver, type TimelineData } from '@/tools/video-editor/lib/timeline-data.ts';
+import { getStableConfigSignature } from '@/tools/video-editor/lib/config-utils.ts';
 import type { AssetResolver } from '@/tools/video-editor/data/AssetResolver.ts';
 import { BRIDGE_REQUEST_TIMEOUT_MS } from '@/tools/video-editor/data/bridgeContract.ts';
 import { clearTimelineDraft, saveTimelineDraft } from '@/tools/video-editor/data/timelineDraftIndexedDb.ts';
@@ -147,7 +148,7 @@ export function useTimelinePersistence({
   const errorRetryRef = useRef(0);
   const errorRetryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isMountedRef = useRef(true);
-  const doSaveRef = useRef<((nextData: TimelineData, seq: number) => void) | null>(null);
+  const doSaveRef = useRef<((nextData: TimelineData, seq: number, options?: { attemptKind?: 'initial' | 'transport-retry' }) => void) | null>(null);
   const flushWaitersRef = useRef<Array<{
     targetSeq: number;
     resolve: (version: number) => void;
@@ -193,6 +194,8 @@ export function useTimelinePersistence({
   }) => {
     console.log('[TimelineSave] conflict retries exhausted', details);
     setIsConflictExhausted(true);
+    // Keep the synchronous poll/write gate ahead of React's next render.
+    isConflictExhaustedRef.current = true;
     setSaveStatus('error');
   }, []);
 
@@ -309,7 +312,7 @@ export function useTimelinePersistence({
    * backoff, from a timer this hook owns and cancels on unmount. Unbounded in
    * attempts (the edit must eventually land) but bounded in rate.
    */
-  const scheduleErrorRetry = useCallback((nextData: TimelineData) => {
+  const scheduleErrorRetry = useCallback((nextData: TimelineData, seq: number) => {
     if (!isMountedRef.current) {
       return;
     }
@@ -338,12 +341,57 @@ export function useTimelinePersistence({
         // Same gate `scheduleSave` applies: no save round-trip mid-gesture.
         // Waiting out a drag is not a failure, so re-arm at the same level.
         errorRetryRef.current = attempt;
-        scheduleErrorRetry(nextData);
+        scheduleErrorRetry(nextData, seq);
         return;
       }
-      doSaveRef.current?.(nextData, editSeqRef.current);
+      doSaveRef.current?.(nextData, seq, { attemptKind: 'transport-retry' });
     }, delay);
   }, [editSeqRef, getInteractionStateRef]);
+
+  /**
+   * Verify a transport-retry 409 was a lost acknowledgement rather than a
+   * concurrent edit. A timed-out POST may have committed remotely; the retry
+   * then uses a stale expected version and receives 409. Only acknowledge it
+   * when the remote version advanced and its config plus registry exactly
+   * match the payload we attempted to save.
+   */
+  const tryRecoverLostAck = useCallback(async (
+    nextData: TimelineData,
+    seq: number,
+  ): Promise<boolean> => {
+    const expectedVersion = configVersionRef.current;
+    try {
+      const [loadedTimeline, registry] = await Promise.all([
+        provider.loadTimeline(timelineId),
+        provider.loadAssetRegistry(timelineId),
+      ]);
+      const freshVersion = loadedTimeline.configVersion;
+      if (freshVersion <= expectedVersion) {
+        return false;
+      }
+      if (getStableConfigSignature(loadedTimeline.config, registry) !== nextData.stableSignature) {
+        return false;
+      }
+
+      logConfigVersionUpdate('conflict-retry', freshVersion);
+      configVersionRef.current = freshVersion;
+      store?.getState().setConfigVersion(freshVersion);
+      clearErrorRetry();
+      setIsConflictExhausted(false);
+      void clearTimelineDraft(timelineId);
+      if (seq > savedSeqRef.current) {
+        savedSeqRef.current = seq;
+        lastSavedSignatureRef.current = nextData.stableSignature;
+      }
+      setSaveStatus(seq >= editSeqRef.current ? 'saved' : 'dirty');
+      if (seq >= editSeqRef.current) {
+        eventBus.emit('saveSuccess');
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }, [clearErrorRetry, configVersionRef, editSeqRef, eventBus, lastSavedSignatureRef, logConfigVersionUpdate, provider, savedSeqRef, store, timelineId]);
 
   const doSave = useCallback(async (
     nextData: TimelineData,
@@ -351,6 +399,7 @@ export function useTimelinePersistence({
     options?: {
       bypassQueue?: boolean;
       completedSeqRef?: { current: number | null };
+      attemptKind?: 'initial' | 'transport-retry';
     },
   ) => {
     if (isSavingRef.current && !options?.bypassQueue) {
@@ -439,6 +488,9 @@ export function useTimelinePersistence({
       }
 
       if (isTimelineVersionConflictError(error)) {
+        if (options?.attemptKind === 'transport-retry' && await tryRecoverLostAck(nextData, seq)) {
+          return;
+        }
         // Diverged: the document changed elsewhere. No version reload, no
         // re-POST of local state (that silently overwrote the other writer —
         // the incident's CAS-defeating bug). Enter diverged and let the banner
@@ -474,7 +526,7 @@ export function useTimelinePersistence({
         // error — the user sees a neutral `retrying` badge while the backend
         // recovers. `error` is reserved for 404/409/lost-edit/unrecoverable.
         setSaveStatus('retrying');
-        scheduleErrorRetry(retryData);
+        scheduleErrorRetry(retryData, seq);
       } else {
         setSaveStatus('error');
       }
@@ -509,13 +561,14 @@ export function useTimelinePersistence({
     saveMutation,
     savedSeqRef,
     scheduleErrorRetry,
+    tryRecoverLostAck,
     selectedClipIdRef,
     selectedTrackIdRef,
   ]);
 
   // `scheduleErrorRetry` fires `doSave` from a timer, and `doSave` schedules the
   // retry — the indirection keeps that cycle out of the dependency arrays.
-  doSaveRef.current = (nextData, seq) => { void doSave(nextData, seq); };
+  doSaveRef.current = (nextData, seq, options) => { void doSave(nextData, seq, options); };
 
   const scheduleSave = useCallback<ScheduleSaveFn>((nextData, options) => {
     // Every mutation gets the latest coalesced recovery slot before any
@@ -811,9 +864,18 @@ export function useTimelinePersistence({
       rejectFlushWaiters(new Error('Timeline closed before the save-for-render barrier completed.'));
       if (saveTimer.current) {
         clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+        // A navigation can unmount the editor before the debounce fires. Flush
+        // the latest committed payload so the final edit is not silently lost.
+        // `doSave` is intentionally invoked through the ref to avoid a stale
+        // closure; transport retries remain mounted-gated by isMountedRef.
+        const pendingData = dataRef.current;
+        if (pendingData) {
+          void doSaveRef.current?.(pendingData, editSeqRef.current);
+        }
       }
     };
-  }, [clearErrorRetry, rejectFlushWaiters]);
+  }, [clearErrorRetry, dataRef, editSeqRef, rejectFlushWaiters]);
 
   return {
     scheduleSave,

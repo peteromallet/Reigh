@@ -475,6 +475,93 @@ describe('useTimelinePersistence — interaction gating', () => {
     });
   });
 
+  it('flushes a debounce-pending edit when the editor unmounts', async () => {
+    const nextData = makeTimelineData('flush-on-unmount');
+    const harness = setup({ initialData: nextData });
+    harness.scheduleSave(nextData);
+    harness.unmount();
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(harness.saveTimeline).toHaveBeenCalledTimes(1);
+    expect(harness.saveTimeline.mock.calls[0]?.[1].output.file).toBe('output-flush-on-unmount.mp4');
+  });
+
+  it('reconciles a retry 409 when fresh remote state matches the attempted payload', async () => {
+    const nextData = makeTimelineData('lost-ack');
+    let attempt = 0;
+    const harness = setup({
+      initialData: nextData,
+      saveTimelineImpl: async () => {
+        attempt += 1;
+        if (attempt === 1) {
+          throw new Error('Astrid bridge save timeline failed: timeout');
+        }
+        throw new TimelineVersionConflictError();
+      },
+      loadTimelineImpl: async () => ({ config: nextData.config, configVersion: 5 }),
+      loadAssetRegistryImpl: async () => nextData.registry,
+    });
+
+    harness.scheduleSave(nextData);
+    await act(async () => {
+      vi.advanceTimersByTime(600);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(600);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(harness.saveTimeline).toHaveBeenCalledTimes(2);
+    expect(harness.loadTimeline).toHaveBeenCalledTimes(1);
+    expect(harness.result.current.isConflictExhausted).toBe(false);
+    expect(harness.result.current.saveStatus).toBe('saved');
+  });
+
+  it('keeps a retry 409 as a genuine conflict when fresh state differs', async () => {
+    const nextData = makeTimelineData('lost-ack-mismatch');
+    let attempt = 0;
+    const otherData = makeTimelineData('other-writer');
+    const harness = setup({
+      initialData: nextData,
+      saveTimelineImpl: async () => {
+        attempt += 1;
+        if (attempt === 1) {
+          throw new Error('Astrid bridge save timeline failed: timeout');
+        }
+        throw new TimelineVersionConflictError();
+      },
+      loadTimelineImpl: async () => ({ config: otherData.config, configVersion: 5 }),
+      loadAssetRegistryImpl: async () => otherData.registry,
+    });
+
+    harness.scheduleSave(nextData);
+    await act(async () => {
+      vi.advanceTimersByTime(600);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(600);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(harness.saveTimeline).toHaveBeenCalledTimes(2);
+    expect(harness.result.current.isConflictExhausted).toBe(true);
+    expect(harness.result.current.saveStatus).toBe('error');
+  });
+
   it('warns when the backend\'s config_version goes backwards', async () => {
     // Versions are monotonic per backend generation. A decrease means the
     // backend lost its history (a restarted local bridge back at its seed) and

@@ -33,10 +33,15 @@ import {
   SCENE_PHASE_EXTENSION_ID,
   alignShotsToTransitions,
   buildAlignShotsPatch,
+  buildCreateEmptyShotsPatch,
   buildCreateShotsPatch,
   buildMarkersPatch,
+  collectTrackItemSpans,
+  createShotsFromMarkers,
+  isMarkerCoveredByItems,
   markPhaseAtPlayhead,
   measureMarkersPayloadBytes,
+  moveExistingShotsToMarkers,
   moveMarkerToTime,
   normalizeMarkerTime,
   normalizeMarkers,
@@ -542,6 +547,180 @@ describe('buildCreateShotsPatch', () => {
   });
 });
 
+describe('collectTrackItemSpans / isMarkerCoveredByItems', () => {
+  const generationClip = (id: string, at: number, duration: number): TimelineSnapshot['clips'][number] => ({
+    id,
+    track: 'V1',
+    at,
+    duration,
+    clipType: 'media',
+    managed: false,
+    sourceRefs: [{ id: `source.generation.${id}`, clipId: id, sourceKind: 'generation', generationId: `gen-${id}` }],
+  });
+
+  it('counts a shot with multiple generations inside as ONE item (shot prioritised over generation)', () => {
+    const snapshot = makeSnapshot({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1', muted: false }],
+      clips: [
+        generationClip('g1', 0, 2),
+        generationClip('g2', 2, 2),
+      ],
+      renderGroups: [{
+        id: 'shot-1:V1',
+        clipIds: ['g1', 'g2'],
+        groupType: 'pinned-shot-group',
+      }],
+    });
+
+    const spans = collectTrackItemSpans(snapshot, 'V1');
+    // One span covering both generations, not two.
+    expect(spans).toEqual([{ start: 0, end: 4 }]);
+    expect(isMarkerCoveredByItems(1, spans)).toBe(true);
+    expect(isMarkerCoveredByItems(5, spans)).toBe(false);
+  });
+
+  it('counts a standalone generation as one item when not inside a shot', () => {
+    const snapshot = makeSnapshot({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1', muted: false }],
+      clips: [generationClip('g1', 2, 3)],
+    });
+
+    const spans = collectTrackItemSpans(snapshot, 'V1');
+    expect(spans).toEqual([{ start: 2, end: 5 }]);
+    expect(isMarkerCoveredByItems(2, spans)).toBe(true);
+    expect(isMarkerCoveredByItems(5, spans)).toBe(false);
+  });
+
+  it('ignores clips on other tracks and non-generation clips', () => {
+    const snapshot = makeSnapshot({
+      tracks: [
+        { id: 'V1', kind: 'visual', label: 'V1', muted: false },
+        { id: 'V2', kind: 'visual', label: 'V2', muted: false },
+      ],
+      clips: [
+        generationClip('g1', 2, 3),
+        { id: 'plain', track: 'V1', at: 10, duration: 2, clipType: 'hold', managed: false },
+        { id: 'g-v2', track: 'V2', at: 0, duration: 4, clipType: 'media', managed: false, sourceRefs: [{ id: 's', clipId: 'g-v2', sourceKind: 'generation', generationId: 'gen-v2' }] },
+      ],
+    });
+
+    const spans = collectTrackItemSpans(snapshot, 'V1');
+    expect(spans).toEqual([{ start: 2, end: 5 }]);
+  });
+});
+
+describe('buildCreateEmptyShotsPatch', () => {
+  const markers = [
+    { id: 'm1', time: 0 },
+    { id: 'm2', time: 5 },
+    { id: 'm3', time: 8 },
+  ];
+  const options = { trackId: 'V1', durationSeconds: 0, createEmptyShots: true };
+
+  it('creates a shot only for markers not covered by a generation (markers beyond existing items)', () => {
+    // One generation covers [1,4): marker m1 (0) is uncovered, m2 (5) is
+    // uncovered, m3 (8) is uncovered — nothing covered here, all three created.
+    const snapshot = makeSnapshot({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1', muted: false }],
+      clips: [{
+        id: 'g1', track: 'V1', at: 1, duration: 3, clipType: 'media', managed: false,
+        sourceRefs: [{ id: 's', clipId: 'g1', sourceKind: 'generation', generationId: 'gen-1' }],
+      }],
+    });
+
+    const patch = buildCreateEmptyShotsPatch(snapshot, markers, SCENE_PHASE_EXTENSION_ID, options);
+    expect(patch.meta.kind).toBe('scene-phase-markers/create-empty-shots');
+    const adds = patch.operations.filter((op) => op.op === 'clip.add');
+    expect(adds.map((op) => (op.payload as Record<string, unknown>).at)).toEqual([0, 5, 8]);
+  });
+
+  it('skips markers covered by a shot whose generations absorb multiple items', () => {
+    // Shot spans [0,4) containing two generations: marker m1 (0) covered,
+    // m2 (5) and m3 (8) uncovered.
+    const snapshot = makeSnapshot({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1', muted: false }],
+      clips: [
+        { id: 'g1', track: 'V1', at: 0, duration: 2, clipType: 'media', managed: false, sourceRefs: [{ id: 's1', clipId: 'g1', sourceKind: 'generation', generationId: 'gen-1' }] },
+        { id: 'g2', track: 'V1', at: 2, duration: 2, clipType: 'media', managed: false, sourceRefs: [{ id: 's2', clipId: 'g2', sourceKind: 'generation', generationId: 'gen-2' }] },
+      ],
+      renderGroups: [{
+        id: 'shot-1:V1',
+        clipIds: ['g1', 'g2'],
+        groupType: 'pinned-shot-group',
+      }],
+    });
+
+    const patch = buildCreateEmptyShotsPatch(snapshot, markers, SCENE_PHASE_EXTENSION_ID, options);
+    const adds = patch.operations.filter((op) => op.op === 'clip.add');
+    // m1 covered by the shot; m2/m3 get empty shots.
+    expect(adds.map((op) => (op.payload as Record<string, unknown>).at)).toEqual([5, 8]);
+    const labels = patch.operations
+      .filter((op) => op.op === 'clip.update')
+      .map((op) => (op.payload as Record<string, unknown>).label);
+    expect(labels).toEqual(['Shot 1', 'Shot 2']);
+    // Add/update pairs stay adjacent with sequential order (0,1,2,3).
+    expect(patch.operations.map((op) => op.order)).toEqual([0, 1, 2, 3]);
+    expect(patch.operations.map((op) => op.op)).toEqual([
+      'clip.add', 'clip.update', 'clip.add', 'clip.update',
+    ]);
+  });
+
+  it('creates nothing when every marker is covered', () => {
+    const snapshot = makeSnapshot({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1', muted: false }],
+      clips: [{
+        id: 'g1', track: 'V1', at: 0, duration: 10, clipType: 'media', managed: false,
+        sourceRefs: [{ id: 's', clipId: 'g1', sourceKind: 'generation', generationId: 'gen-1' }],
+      }],
+    });
+
+    const patch = buildCreateEmptyShotsPatch(snapshot, markers, SCENE_PHASE_EXTENSION_ID, options);
+    expect(patch.operations).toEqual([]);
+  });
+
+  it('is idempotent: markers whose generated shot already exists are skipped', () => {
+    const snapshot = makeSnapshot({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1', muted: false }],
+      // m1 and m3 already have generated shots; m2 does not.
+      clips: [
+        { id: 'scene-phase-shot-m1', track: 'V1', at: 0, duration: 5, clipType: 'hold', managed: false },
+        { id: 'scene-phase-shot-m3', track: 'V1', at: 8, duration: 2, clipType: 'hold', managed: false },
+      ],
+    });
+
+    const patch = buildCreateEmptyShotsPatch(snapshot, markers, SCENE_PHASE_EXTENSION_ID, options);
+    const adds = patch.operations.filter((op) => op.op === 'clip.add');
+    expect(adds.map((op) => (op.payload as Record<string, unknown>).at)).toEqual([5]);
+    expect(adds.map((op) => op.target)).toEqual(['scene-phase-shot-m2']);
+  });
+});
+
+describe('buildCreateShotsPatch idempotency', () => {
+  const markers = [
+    { id: 'm1', time: 0 },
+    { id: 'm2', time: 5 },
+  ];
+  const options = { trackId: 'V1', durationSeconds: 0 };
+
+  it('skips markers whose generated shot already exists (unchecked create at every marker)', () => {
+    const snapshot = makeSnapshot({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1', muted: false }],
+      clips: [
+        { id: 'scene-phase-shot-m1', track: 'V1', at: 0, duration: 5, clipType: 'hold', managed: false },
+      ],
+    });
+
+    const patch = buildCreateShotsPatch(snapshot, markers, SCENE_PHASE_EXTENSION_ID, options);
+    const adds = patch.operations.filter((op) => op.op === 'clip.add');
+    expect(adds.map((op) => (op.payload as Record<string, unknown>).at)).toEqual([5]);
+    // m2 is the only created shot → labelled Shot 1.
+    const labels = patch.operations
+      .filter((op) => op.op === 'clip.update')
+      .map((op) => (op.payload as Record<string, unknown>).label);
+    expect(labels).toEqual(['Shot 1']);
+  });
+});
+
 describe('buildAlignShotsPatch', () => {
   it('moves each clip to its chosen marker time with the snapshot base version', () => {
     const snapshot = makeSnapshot({ baseVersion: 4 });
@@ -661,6 +840,96 @@ describe('alignShotsToTransitions (unified panel action)', () => {
     const { ctx, applied } = makeCtx(makeSnapshot());
     alignShotsToTransitions(ctx, { trackId: 'V1', durationSeconds: 0 });
     expect(applied).toHaveLength(0);
+  });
+});
+
+describe('split panel entry points (createShotsFromMarkers / moveExistingShotsToMarkers)', () => {
+  function makeCtx(
+    snapshot: TimelineSnapshot,
+  ): { ctx: ExtensionContext; applied: TimelinePatch[] } {
+    const { ops, applied } = makeOps();
+    const reader: TimelineReader = { snapshot: () => snapshot };
+    const ctx = createExtensionContext(
+      scenePhaseMarkersExtension,
+      { timeline: ops, reader },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    );
+    return { ctx, applied };
+  }
+
+  const markerApp = (): TimelineSnapshot['app'] => ({
+    [SCENE_PHASE_EXTENSION_ID]: {
+      [MARKERS_DATA_KEY]: [
+        { id: 'm1', time: 0 },
+        { id: 'm2', time: 5 },
+        { id: 'm3', time: 8 },
+      ],
+    },
+  });
+
+  it('createShotsFromMarkers creates at every marker regardless of existing clips (unchecked)', () => {
+    const snapshot = makeSnapshot({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1', muted: false }],
+      clips: [{ id: 'clip-a', track: 'V1', at: 12, duration: 4, managed: false }],
+      app: markerApp(),
+    });
+    const { ctx, applied } = makeCtx(snapshot);
+    createShotsFromMarkers(ctx, { trackId: 'V1', durationSeconds: 0 });
+    expect(applied).toHaveLength(1);
+    expect(applied[0]!.meta.kind).toBe('scene-phase-markers/create-shots');
+    const adds = applied[0]!.operations.filter((op) => op.op === 'clip.add');
+    expect(adds.map((op) => (op.payload as Record<string, unknown>).at)).toEqual([0, 5, 8]);
+  });
+
+  it('createShotsFromMarkers with createEmptyShots skips covered markers', () => {
+    const snapshot = makeSnapshot({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1', muted: false }],
+      clips: [{
+        id: 'g1', track: 'V1', at: 0, duration: 6, clipType: 'media', managed: false,
+        sourceRefs: [{ id: 's', clipId: 'g1', sourceKind: 'generation', generationId: 'gen-1' }],
+      }],
+      app: markerApp(),
+    });
+    const { ctx, applied } = makeCtx(snapshot);
+    createShotsFromMarkers(ctx, {
+      trackId: 'V1',
+      durationSeconds: 0,
+      createEmptyShots: true,
+    });
+    expect(applied).toHaveLength(1);
+    expect(applied[0]!.meta.kind).toBe('scene-phase-markers/create-empty-shots');
+    const adds = applied[0]!.operations.filter((op) => op.op === 'clip.add');
+    // Generation covers [0,6): m1 (0) and m2 (5) covered; m3 (8) uncovered.
+    expect(adds.map((op) => (op.payload as Record<string, unknown>).at)).toEqual([8]);
+  });
+
+  it('moveExistingShotsToMarkers aligns existing clips even when the checkbox is on', () => {
+    const snapshot = makeSnapshot({
+      tracks: [{ id: 'V1', kind: 'visual', label: 'V1', muted: false }],
+      clips: [
+        { id: 'clip-a', track: 'V1', at: 12, duration: 4, managed: false },
+        { id: 'clip-b', track: 'V1', at: 20, duration: 4, managed: false },
+      ],
+      app: markerApp(),
+    });
+    const { ctx, applied } = makeCtx(snapshot);
+    moveExistingShotsToMarkers(ctx, { trackId: 'V1', durationSeconds: 0 });
+    expect(applied).toHaveLength(1);
+    expect(applied[0]!.meta.kind).toBe('scene-phase-markers/align-shots');
+    // clip-a -> m1 (0s) hold 5; clip-b -> m2 (5s) hold 3.
+    expect(applied[0]!.operations).toEqual([
+      { op: 'clip.move', target: 'clip-a', payload: { track: 'V1', at: 0 } },
+      { op: 'clip.update', target: 'clip-a', payload: { hold: 5, mode: 'merge' } },
+      { op: 'clip.move', target: 'clip-b', payload: { track: 'V1', at: 5 } },
+      { op: 'clip.update', target: 'clip-b', payload: { hold: 3, mode: 'merge' } },
+    ]);
   });
 });
 

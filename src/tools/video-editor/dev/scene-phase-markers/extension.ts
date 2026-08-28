@@ -407,6 +407,177 @@ export interface ShotPlacementOptions {
    * (default 2s when 0 or negative).
    */
   durationSeconds: number;
+  /**
+   * When true, "Align shots to transitions" first organises the track's
+   * existing items — each SHOT (pinned render group) counts as one item
+   * regardless of how many generations it contains (a shot is prioritised
+   * over the generations inside it), and each standalone GENERATION (a clip
+   * with a generation source ref, not inside a shot) counts as one item —
+   * then creates an EMPTY shot only for markers not already covered by a
+   * shot or generation. Covered markers are left untouched.
+   */
+  createEmptyShots?: boolean;
+}
+
+/** A time span covered by an existing shot or generation item on a track. */
+export interface TrackItemSpan {
+  start: number;
+  end: number;
+}
+
+/** True when the clip carries a generation source ref (a generation item). */
+function isGenerationClip(clip: TimelineClipSummary): boolean {
+  return Boolean(clip.sourceRefs?.some((ref) => typeof ref.generationId === 'string' && ref.generationId.length > 0));
+}
+
+/**
+ * Collect the spans covered by existing items on `trackId`, in item terms:
+ *
+ * - Each SHOT (pinned render group) is ONE item spanning its clips — the
+ *   generations inside it do not count separately (shot prioritised over
+ *   generation).
+ * - Each standalone GENERATION clip (generation source ref, not inside a
+ *   shot) is one item spanning its own [at, at+duration).
+ *
+ * Returns the union of both, so a marker whose time falls in any returned
+ * span is already covered and must not receive a new empty shot.
+ */
+export function collectTrackItemSpans(
+  snapshot: TimelineSnapshot,
+  trackId: string,
+): TrackItemSpan[] {
+  const clipById = new Map(snapshot.clips.map((clip) => [clip.id, clip]));
+
+  // Shots first: every render group (pinned shot group) is one item spanning
+  // its member clips on this track.
+  const shotSpans: TrackItemSpan[] = [];
+  const clipIdsInShots = new Set<string>();
+  for (const group of snapshot.renderGroups ?? []) {
+    const groupClips = group.clipIds
+      .map((clipId) => clipById.get(clipId))
+      .filter((clip): clip is TimelineClipSummary => Boolean(clip && clip.track === trackId));
+    if (groupClips.length === 0) {
+      continue;
+    }
+    for (const clipId of group.clipIds) {
+      clipIdsInShots.add(clipId);
+    }
+    shotSpans.push({
+      start: Math.min(...groupClips.map((clip) => clip.at)),
+      end: Math.max(...groupClips.map((clip) => clip.at + clip.duration)),
+    });
+  }
+
+  // Then standalone generations NOT inside a shot.
+  const generationSpans: TrackItemSpan[] = [];
+  for (const clip of snapshot.clips) {
+    if (clip.track !== trackId) continue;
+    if (clipIdsInShots.has(clip.id)) continue;
+    if (!isGenerationClip(clip)) continue;
+    generationSpans.push({ start: clip.at, end: clip.at + clip.duration });
+  }
+
+  return [...shotSpans, ...generationSpans];
+}
+
+/** True when `time` falls inside any covered item span. */
+export function isMarkerCoveredByItems(time: number, spans: readonly TrackItemSpan[]): boolean {
+  return spans.some((span) => time >= span.start && time < span.end);
+}
+
+/** Deterministic clip id for the shot generated from a scene marker. */
+export function scenePhaseShotId(markerId: string): string {
+  return `scene-phase-shot-${markerId}`;
+}
+
+/**
+ * True when a generated shot clip for `marker` already exists on the track.
+ * Idempotency guard: re-running "Create shots from markers" must not stack a
+ * second clip with the same deterministic id (compileTimelinePatch appends
+ * duplicates unconditionally). The extension's own generated hold clips are
+ * detected by their id prefix; ordinary user clips never suppress creation.
+ */
+export function hasScenePhaseShot(
+  snapshot: TimelineSnapshot,
+  marker: ScenePhaseMarker,
+  trackId: string,
+): boolean {
+  const clipId = scenePhaseShotId(marker.id);
+  return snapshot.clips.some(
+    (clip) => clip.id === clipId && clip.track === trackId,
+  );
+}
+
+/** True when the clip id belongs to a scene-phase-markers generated shot. */
+export function isScenePhaseShotClipId(clipId: string): boolean {
+  return clipId.startsWith('scene-phase-shot-');
+}
+
+/** True when the marker already has a generated shot clip on the track. */
+function markerAlreadyHasShot(
+  snapshot: TimelineSnapshot,
+  markers: readonly ScenePhaseMarker[],
+  index: number,
+  options: ShotPlacementOptions,
+): boolean {
+  return hasScenePhaseShot(snapshot, markers[index]!, options.trackId);
+}
+
+/**
+ * Build a patch that creates an EMPTY shot (hold clip) at each marker NOT
+ * already covered by an existing shot or generation item on the track, AND
+ * whose generated shot clip does not already exist (idempotent re-runs). This
+ * is the "Create empty shots" mode of Align shots to transitions: the track's
+ * existing shots (each counting once, generations inside them absorbed) and
+ * standalone generations are organised first, and only the ADDITIONAL markers
+ * beyond them receive new shots. Each created shot spans its marker to the
+ * next marker (same tiling as {@link buildCreateShotsPatch}).
+ */
+export function buildCreateEmptyShotsPatch(
+  snapshot: TimelineSnapshot,
+  markers: ScenePhaseMarker[],
+  extensionId: string,
+  options: ShotPlacementOptions,
+): TimelinePatch {
+  const coveredSpans = collectTrackItemSpans(snapshot, options.trackId);
+  const operations: TimelinePatchOperation[] = [];
+  let createdCount = 0;
+  markers.forEach((marker, index) => {
+    if (isMarkerCoveredByItems(marker.time, coveredSpans)) {
+      return;
+    }
+    if (markerAlreadyHasShot(snapshot, markers, index, options)) {
+      return;
+    }
+    createdCount += 1;
+    const clipId = scenePhaseShotId(marker.id);
+    const duration = shotDurationAt(markers, index, options);
+    const baseOrder = (createdCount - 1) * 2;
+    operations.push(
+      {
+        op: 'clip.add',
+        target: clipId,
+        payload: { track: options.trackId, at: marker.time, clipType: 'hold' },
+        order: baseOrder,
+      },
+      {
+        op: 'clip.update',
+        target: clipId,
+        payload: {
+          hold: duration,
+          label: `Shot ${createdCount}`,
+          mode: 'merge',
+        },
+        order: baseOrder + 1,
+      },
+    );
+  });
+  return {
+    version: snapshot.baseVersion,
+    source: extensionId,
+    meta: { kind: 'scene-phase-markers/create-empty-shots' },
+    operations,
+  };
 }
 
 /**
@@ -444,25 +615,34 @@ export function buildCreateShotsPatch(
   options: ShotPlacementOptions,
 ): TimelinePatch {
   const operations: TimelinePatchOperation[] = [];
+  let createdCount = 0;
   markers.forEach((marker, index) => {
-    const clipId = `scene-phase-shot-${marker.id}`;
+    // Idempotent re-runs: a marker whose generated shot already exists is
+    // skipped, so repeated clicks never stack duplicate clips with the same
+    // deterministic id.
+    if (markerAlreadyHasShot(snapshot, markers, index, options)) {
+      return;
+    }
+    createdCount += 1;
+    const clipId = scenePhaseShotId(marker.id);
     const duration = shotDurationAt(markers, index, options);
+    const baseOrder = (createdCount - 1) * 2;
     operations.push(
       {
         op: 'clip.add',
         target: clipId,
         payload: { track: options.trackId, at: marker.time, clipType: 'hold' },
-        order: index * 2,
+        order: baseOrder,
       },
       {
         op: 'clip.update',
         target: clipId,
         payload: {
           hold: duration,
-          label: `Shot ${index + 1}`,
+          label: `Shot ${createdCount}`,
           mode: 'merge',
         },
-        order: index * 2 + 1,
+        order: baseOrder + 1,
       },
     );
   });
@@ -542,10 +722,64 @@ export function visualClips(snapshot: TimelineSnapshot): TimelineClipSummary[] {
  *
  * Toasts the outcome; no-op with a warning when there are no markers.
  */
-export function alignShotsToTransitions(
+/**
+ * Create a shot at each marker on the track. With `options.createEmptyShots`,
+ * the track's existing shots and generations are organised first (each shot
+ * counts once, generations inside it absorbed; standalone generations count
+ * once each) and a shot is created ONLY for markers not already covered by an
+ * item. Otherwise a shot is created at every marker, each lasting until the
+ * next marker (tail after the last marker uses `options.durationSeconds`,
+ * default 2s).
+ *
+ * Toasts the outcome; no-op with a warning when there are no markers.
+ */
+export function createShotsFromMarkers(
   ctx: ExtensionContext,
   options: ShotPlacementOptions,
 ): void {
+  if (!ensureScenePhaseWritable(ctx)) {
+    return;
+  }
+  const snapshot = ctx.creative.reader.snapshot();
+  const markers = readMarkers(snapshot, ctx.extension.id);
+  if (markers.length === 0) {
+    ctx.chrome.toast('No markers yet — press B during playback first.', 'warning');
+    return;
+  }
+
+  const patch = options.createEmptyShots
+    ? buildCreateEmptyShotsPatch(snapshot, markers, ctx.extension.id, options)
+    : buildCreateShotsPatch(snapshot, markers, ctx.extension.id, options);
+  const createdCount = patch.operations.filter((op) => op.op === 'clip.add').length;
+  if (createdCount === 0) {
+    ctx.chrome.toast('Every marker is already covered by a shot or generation — nothing to create.', 'info');
+    return;
+  }
+  ctx.creative.timeline.apply(patch);
+  ctx.chrome.toast(
+    options.createEmptyShots
+      ? `Created ${createdCount} empty shot${createdCount === 1 ? '' : 's'} for uncovered markers on ${options.trackId}.`
+      : `Created ${createdCount} shot${createdCount === 1 ? '' : 's'} at markers on ${options.trackId}.`,
+    'info',
+  );
+}
+
+/**
+ * Move every existing visual clip so it STARTS at its corresponding marker
+ * time (clip i -> marker i), keeping its track, and RESIZE it so it lasts
+ * until the next marker (the last shot takes `options.durationSeconds`,
+ * default 2s). Does not create new clips.
+ *
+ * Toasts the outcome; no-op with a warning when there are no markers or no
+ * visual clips to move.
+ */
+export function moveExistingShotsToMarkers(
+  ctx: ExtensionContext,
+  options: ShotPlacementOptions,
+): void {
+  if (!ensureScenePhaseWritable(ctx)) {
+    return;
+  }
   const snapshot = ctx.creative.reader.snapshot();
   const markers = readMarkers(snapshot, ctx.extension.id);
   if (markers.length === 0) {
@@ -554,12 +788,7 @@ export function alignShotsToTransitions(
   }
   const clips = visualClips(snapshot);
   if (clips.length === 0) {
-    const patch = buildCreateShotsPatch(snapshot, markers, ctx.extension.id, options);
-    ctx.creative.timeline.apply(patch);
-    ctx.chrome.toast(
-      `Created ${markers.length} shot${markers.length === 1 ? '' : 's'} between transitions on ${options.trackId}.`,
-      'info',
-    );
+    ctx.chrome.toast('No visual clips on the timeline to move.', 'info');
     return;
   }
   const alignments: ShotAlignment[] = clips.map((clip, index) => {
@@ -580,12 +809,44 @@ export function alignShotsToTransitions(
   );
 }
 
+/**
+ * Unified entry kept for backward compatibility with the original single
+ * button: routes to the same code paths the panel now exposes separately.
+ * No markers → warning; `createEmptyShots` → uncovered-marker creation; no
+ * visual clips → create at every marker; otherwise → move existing clips to
+ * markers.
+ */
+export function alignShotsToTransitions(
+  ctx: ExtensionContext,
+  options: ShotPlacementOptions,
+): void {
+  const snapshot = ctx.creative.reader.snapshot();
+  const markers = readMarkers(snapshot, ctx.extension.id);
+  if (markers.length === 0) {
+    ctx.chrome.toast('No markers yet — press B during playback first.', 'warning');
+    return;
+  }
+  if (options.createEmptyShots) {
+    createShotsFromMarkers(ctx, options);
+    return;
+  }
+  const clips = visualClips(snapshot);
+  if (clips.length === 0) {
+    createShotsFromMarkers(ctx, options);
+    return;
+  }
+  moveExistingShotsToMarkers(ctx, options);
+}
+
 // ---------------------------------------------------------------------------
 // Phase 1 — command handler
 // ---------------------------------------------------------------------------
 
 /** Append a marker at the current playhead position and persist it. */
 export function markPhaseAtPlayhead(ctx: ExtensionContext): void {
+  if (!ensureScenePhaseWritable(ctx)) {
+    return;
+  }
   const view = ctx.creative.timelineView.getSnapshot();
   if (!view.surfaceMounted) {
     ctx.chrome.toast(
@@ -640,8 +901,9 @@ export const scenePhaseMarkersExtension: ReighExtension = defineExtension({
     label: 'Scene Phase Markers',
     description:
       'Mark scene phases with the B key while playing audio, drag markers on the '
-      + 'timeline ruler, then convert markers into shot positions and align shots '
-      + 'to them.',
+      + 'timeline ruler, then create shots at the markers — optionally only for '
+      + 'markers not already covered by a shot or generation — or move existing '
+      + 'shots to the marker times.',
     apiVersion: 1,
     contributions: [
       {
@@ -718,7 +980,11 @@ export const scenePhaseMarkersExtension: ReighExtension = defineExtension({
       FOOTER_RENDER_ID,
       (renderContext: unknown) => createElement(
         ScenePhaseMarkersPanel,
-        { ctx, playback: resolvePlaybackFromRenderContext(renderContext) },
+        {
+          ctx,
+          playback: resolvePlaybackFromRenderContext(renderContext),
+          isConflictExhausted: resolveChromeConflictFromRenderContext(renderContext),
+        },
       ),
     );
     handles.push(footerHandle);
@@ -765,4 +1031,53 @@ function resolvePlaybackFromRenderContext(
     return { currentTime: renderContext.playback.currentTime };
   }
   return { currentTime: 0 };
+}
+
+/**
+ * Latest diverged (409 conflict) state observed from the host chrome, kept in
+ * a module-level flag so the B-key command (which runs outside any render
+ * context) is gated too. The footer panel writes this on every render from the
+ * host chrome context it receives.
+ */
+let currentConflictState = false;
+
+/** True when the timeline is in the diverged (409) state. */
+export function isScenePhaseTimelineConflicted(): boolean {
+  return currentConflictState;
+}
+
+/** Update the module-level diverged-state flag (called by the footer panel). */
+export function setScenePhaseTimelineConflicted(value: boolean): void {
+  currentConflictState = value;
+}
+
+/** Extract the host chrome diverged-state flag from a render context. */
+export function resolveChromeConflictFromRenderContext(
+  renderContext: unknown,
+): boolean {
+  if (
+    renderContext !== null
+    && typeof renderContext === 'object'
+    && 'chrome' in renderContext
+    && renderContext.chrome !== null
+    && typeof renderContext.chrome === 'object'
+    && 'isConflictExhausted' in renderContext.chrome
+  ) {
+    return (renderContext.chrome as { isConflictExhausted?: unknown }).isConflictExhausted === true;
+  }
+  return false;
+}
+
+/**
+ * Guard for every scene-phase-marker mutation (Mark / Create / Move / Clear).
+ * While the timeline is diverged (a 409 conflict is unresolved), timeline
+ * writes cannot persist and `useTimelineOps.apply` rejects stale-baseVersion
+ * patches — surface the actionable message instead of a generic failure.
+ */
+export function ensureScenePhaseWritable(ctx: ExtensionContext): boolean {
+  if (!currentConflictState) {
+    return true;
+  }
+  ctx.chrome.toast('Resolve the save conflict first (Reload or Save as copy).', 'warning');
+  return false;
 }

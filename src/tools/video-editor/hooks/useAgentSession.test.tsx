@@ -21,7 +21,7 @@ describe('timeline agent Phase C cut', () => {
     expect(isTimelineAgentSessionsAvailable()).toBe(false);
   });
   it('surfaces capability_unavailable for session reads', async () => {
-    const list = renderHook(() => useAgentSessions('tl-1'), { wrapper });
+    const list = renderHook(() => useAgentSessions('54ef3daf-0b75-4c9c-ae1b-172220f372d8'), { wrapper });
     await waitFor(() => expect(list.result.current.isError).toBe(true));
     expect(list.result.current.error).toMatchObject({ code: 'capability_unavailable' });
     list.unmount();
@@ -32,7 +32,7 @@ describe('timeline agent Phase C cut', () => {
   });
 
   it('surfaces capability_unavailable for every session mutation', async () => {
-    const create = renderHook(() => useCreateSession('tl-1'), { wrapper });
+    const create = renderHook(() => useCreateSession('54ef3daf-0b75-4c9c-ae1b-172220f372d8'), { wrapper });
     let createError: unknown;
     await act(async () => { try { await create.result.current.mutateAsync(); } catch (error) { createError = error; } });
     expect(createError).toMatchObject({ code: 'capability_unavailable' });
@@ -60,5 +60,12 @@ describe('timeline agent Phase C cut', () => {
     let sendError: unknown;
     await act(async () => { try { await send.result.current.mutateAsync({ message: 'hello' }); } catch (error) { sendError = error; } });
     expect(sendError).toMatchObject({ message: 'sessionId is required' });
+  });
+
+  it('rejects local ULID timeline ids before the legacy session capability probe', async () => {
+    const create = renderHook(() => useCreateSession('01KYPVKMW5STB4W6FE05ED8242'), { wrapper });
+    await expect(
+      act(async () => { await create.result.current.mutateAsync(); }),
+    ).rejects.toThrow(/only supported for UUID timeline ids/);
   });
 });
