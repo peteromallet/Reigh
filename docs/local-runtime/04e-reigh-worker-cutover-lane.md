@@ -53,6 +53,7 @@ Worker must not reinterpret these contracts or create aliases for them.
 - identify the one future supported launcher and its transitive imports;
 - map every currently reachable queue, Supabase, storage, completion, backend-selector, task-registry, and engine-route module to `retain utility`, `move to pack`, or `delete`;
 - map every accepted route to its producer as well as its consumer; where REIGH exposes the route, name the required [REIGH plan](./02-reigh-plan.md) R3/R5 runtime-admission receipt before consumer deletion;
+- make any unsupported/retired substitute disposition identify the route, current producer, live-user status, rationale, and explicit human decision authority; an agent-authored free-text waiver is invalid;
 - use the existing capability-contract ledger where it remains factual; do not create another route manifest;
 - record exact owners for files shared with the Wan2GP and VibeComfy migrations.
 
@@ -65,7 +66,8 @@ Worker must not reinterpret these contracts or create aliases for them.
 **Estimate:** 0.75–1.25 engineering weeks
 **Depends on:** W0; engine lanes provide required pins
 
-- describe portable execution requirements without engine routing logic: dependency lock, engine checkout/package SHA, custom-node lock, runner protocol, fixed non-selectable pack model dependencies/model-catalog definition, and GPU/resource requirements; task-selected model artifact hashes remain in the task;
+- describe portable execution requirements without engine routing logic: dependency lock, engine checkout/package SHA, custom-node lock, fixed non-selectable pack model dependencies/model-catalog definition, and GPU/resource requirements; task-selected model artifact hashes remain in the task;
+- declare runner-protocol compatibility separately for host preflight/reuse rather than folding it into durable capability identity;
 - describe the host instance separately: resolved Python executable/launch command, model/I/O/scratch roots, ports, GPU identity, and verified mappings from both pack-fixed and task-selected required artifact hashes to local bytes;
 - support separate `wan2gp`, `vibecomfy-pip`, and `vibecomfy-checkout` environment profiles;
 - make portable environment identity deterministic and suitable for the composite execution digest while keeping all machine-local fields only in readiness and the runner reuse key;

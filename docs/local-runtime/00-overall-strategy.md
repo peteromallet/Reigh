@@ -93,7 +93,7 @@ These are deliberately sharp. If implementation makes any statement false, it ha
 | Stage 1: Astrid beta | independent runtime; one current-Mac realm; complete Astrid client cutover; one generic pack-executor host; broad truthful capability parity; minimal resource/settlement contracts; one-time migration; legacy authority deleted | packet graph, ownership shards, and integration lanes agreed; Astrid works end to end after restart; real data reconciles; authority/capability censuses have zero unclassified entries |
 | Stage 2A: basic REIGH | REIGH uses the generated TypeScript client and the same realm for the basic visual journey; R0 adds any REIGH-specific neutral contract deltas no longer pre-built in Stage 1 | recorded browser journey, shared identities/state, zero Supabase/direct-DB traffic |
 | Overall single-user beta | Stage 1 plus Stage 2A integrated on the current machine | combined editable-checkout composition smoke, backup/restore, integrity, restart, and rollback evidence |
-| Stage 2B+: fuller REIGH | adds gallery/extension/full-composition contracts when proven by REIGH, progressively replaces the remaining REIGH/Reigh Worker local control plane, and expands the accepted worker/resource profile without reopening authority boundaries | each accepted product slice deletes its old authority before activation |
+| Stage 2B+: fuller REIGH | adds gallery/extension/full-composition contracts when proven by REIGH, progressively replaces the remaining REIGH/Reigh Worker local control plane, and expands the accepted worker/resource profile without reopening authority boundaries; Astrid-first GPU pack/host work may begin earlier in parallel, but deletion of a REIGH-exposed producer/consumer route waits for its R3/R5 receipt or explicit signed disposition | each accepted product slice deletes its old authority before activation, and `GenericPackHost` remains the sole claim/settlement host |
 | Stage 3: hardening | begins only after Stage 2 R7; adds verified CAS GC and exhaustively tests the integrated fuller REIGH + accepted worker/resource profile, packaged components where applicable, and the supported Astrid editable-checkout lifecycle | full hardening matrix passes with reproducible evidence |
 
 ## 5. Source and dependency order
@@ -146,7 +146,7 @@ Implementation is maintained in a repository-owned machine-readable dependency g
 
 Packets should normally fit one bounded subagent task and be comparable to roughly half to three engineering-equivalent days of conventional work. A larger item remains a planning container and is split before dispatch. With one worker subagent, adjacent ready packets may be executed as a batch to avoid orchestration overhead; at high scale, the packet boundary prevents two subagents from discovering ownership conflicts after writing code.
 
-The work registry uses the states `blocked`, `ready`, `active`, `review`, `integrated`, and `evidenced`. Adding capacity means claiming more `ready` packets. It does not mean starting blocked work against guessed contracts or creating temporary compatibility paths.
+The one work/criterion registry vocabulary is `blocked`, `ready`, `active`, `review`, `failed`, `integrated`, and `evidenced`. `evidenced` is the terminal accepted state; `failed` requires bounded correction and re-review. Adding capacity means claiming more `ready` packets. It does not mean starting blocked work against guessed contracts or creating temporary compatibility paths.
 
 ### 6.2 Cells and hierarchical integration
 

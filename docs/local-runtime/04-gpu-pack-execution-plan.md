@@ -53,7 +53,7 @@ Use VibeComfy ready templates and `session.run(workflow, backend="api")` through
 
 Support both ComfyUI installation shapes behind the same pack contract:
 
-- `pip_embedded` is the intended first canonical Worker profile. During M0, a bounded compatibility probe must prove that the representative production template and its required custom nodes run under the pinned pip-installable ComfyUI/HiddenSwitch package. If that probe fails, `checkout_server` becomes the first integration order while the shared typed contract remains unchanged; both profiles still have to pass M4.
+- `pip_embedded` is the intended first canonical Worker profile. During M0, a bounded static/import-only compatibility probe inspects the representative production template and required custom-node imports under the pinned pip-installable ComfyUI/HiddenSwitch package. If that probe fails, `checkout_server` becomes the first integration order while the shared typed contract remains unchanged. Representative GPU execution waits for M4, where both profiles still have to pass.
 - `checkout_server` is a second supported profile for a traditional ComfyUI checkout. Its portable requirements pin the checkout commit, dependency/custom-node locks, and canonical launch semantics; its host-instance profile resolves the Python executable, command path, ports, and model/I/O roots. The host owns the resulting server process and VibeComfy uses `ServerSession` against it.
 
 VibeComfy can already connect to an arbitrary existing ComfyUI server URL, but that is an interactive/development mode rather than production Worker acceptance because the host cannot guarantee cancellation, cleanup, configuration, or restart. The task/capability schema is identical across the two supported profiles; the composite execution digest pins their distinct portable dependency/profile identity without pinning a particular machine path.
@@ -126,7 +126,7 @@ Every admitted engine task pins:
 - declared resource profile and output contract;
 - idempotency identity and any predeclared settlement effect.
 
-Today Astrid's `capability_digest` hashes the canonical definition while definition/source/dependency digests are otherwise separate registration metadata. Before migration, make the admitted task's one `capability_digest` value a composite execution digest covering the canonical definition, adapter/source, request/output schemas, machine-independent dependency specification/lock, engine SHA, template source, custom-node locks, and runner protocol version. Do not add a second admitted digest field.
+Today Astrid's `capability_digest` hashes the canonical definition while definition/source/dependency digests are otherwise separate registration metadata. Before migration, make the admitted task's one `capability_digest` value a composite execution digest covering the canonical definition, adapter/source, request/output schemas, machine-independent dependency specification/lock, engine SHA, template source, and custom-node locks. Do not add a second admitted digest field. Runner protocol compatibility is checked between host and pack at registration/load time; changing that host-internal transport version alone does not invalidate queued task identity.
 
 Keep three identities deliberately separate:
 
@@ -357,6 +357,7 @@ The bounded closure above remains the pre-review record. The external review dis
 ## 14. External review adjustment record
 
 **Reviewed:** external architecture critique supplied on 2026-09-01
+**Provenance:** `/Users/peteromalley/Downloads/message (1).txt`, `message (2).txt`, and `message (3).txt` are byte-identical copies with SHA-256 `774df351f84dd6380f2999eb3a1293559c6728b71c9e3b9c2908e4cc4802c5ad`. Repeated copies do not reopen settled decisions.
 
 Accepted into the plan:
 
@@ -377,3 +378,33 @@ Not accepted as plan changes:
 - treating ComfyUI interrupt primitives as a proven VibeComfy cancellation API; v1 keeps owned-process termination and warmth loss;
 - removing the merge-train receipts or infinite-engineer capacity analysis, because they are useful for agent-parallel execution and were explicitly requested; the normal recommendation remains three to four active lanes over five to eight calendar weeks;
 - adding multi-machine scheduling to Stage 2, because the immediate accepted journey is one configured GPU host and portable identity now keeps a later fleet additive.
+
+## 15. Authorized remote GPU validation transport
+
+Astrid's existing RunPod pack is an authorized Lane F validation transport for real-GPU evidence. It is not a product task authority, scheduler, Worker replacement, or seventh implementation lane. Product execution still follows Astrid task admission → Banodoco runtime lease → `GenericPackHost` → typed engine pack.
+
+M0 freezes the validation environment before any paid run: exact Astrid RunPod capability/source digest, `runpod-lifecycle>=0.3` dependency, immutable image digest, GPU type, existing storage-volume identity if used, remote root, maximum runtime, timeout, spend ceiling, fixed artifact root, and teardown/orphan-recovery procedure. Credentials are checked by presence only and never copied into fixtures or receipts. The connector must not create a storage volume implicitly.
+
+Real-GPU checkpoints run one curated immutable composition capsule through Astrid's `runpod.provision`, `runpod.exec`, `runpod.pull`, and `runpod.teardown` capabilities under a parent-owned outer cleanup guard. The current `runpod.session` helper is not an acceptance dependency because a failure before its handle is established can escape its internal cleanup. M2 proves warmth with two executions against the same provisioned pod and host process, then tears it down explicitly. After a teardown failure, no new pod may be created until provider-side orphan recovery is recorded. M6 uses a fresh pod and permits evidence only.
+
+Each remote receipt names the composition digest, connector/source digest, immutable image digest, GPU type, storage identity, model hashes, timeouts, cost receipt, remote-environment identity, locally verified artifact checksums, and teardown/recovery result without recording secrets or treating a transient pod identifier as durable product identity. The remote script emits a small digest manifest under the connector's fixed output root; arbitrary pulled bytes are independently hashed because `runpod.pull` does not verify integrity. This path avoids the local machine's GPU/model/output capacity constraint; local worktree and control-state preflights still apply.
+
+## 16. Second external review adjustment record
+
+**Reviewed:** `/Users/peteromalley/Downloads/message (4).txt`, SHA-256 `da078c99e92bcb59581edfccb40f1a9ca77e7319789cc17341deea39bcef7ff4`
+
+Accepted into the finite execution plan:
+
+- register the RunPod validation profile as the named Linux/CUDA evidence environment, while keeping it outside product authority and durable capability identity;
+- keep M0's VibeComfy order probe static/import-only and run representative GPU templates at M4 in the resulting order;
+- restore lane B's fake one-shot host E2E as a B-only prerequisite; the real C/E join remains Lane F's M1 gate;
+- keep runner protocol version in host/pack compatibility and reuse identity, not the admitted durable capability digest;
+- require evidence for each historical Stage 1 base before M0 selects it;
+- amend REIGH R6 so Astrid `GenericPackHost`, not Worker-owned code, is the generated-client claimant and settlement host;
+- use Grok for M6's adversarial review while retaining the independently executed final Sol integration review required by this Megado run.
+
+Recorded as current blockers or follow-ups rather than architecture changes:
+
+- local free space is 3.5 GiB at this review and blocks child-worktree fan-out until a new preflight passes; RunPod solves GPU/model execution capacity, not local Git/control capacity;
+- bounded automatic poison-task retries, fleet scheduling, model distribution, and richer warm telemetry remain follow-ups because the frozen v1 failure/fencing and manual-retry criteria are already sufficient;
+- the three warm-policy names and both VibeComfy profiles remain deliberate end-state requirements, implemented through one supervisor and ordered evidence respectively.

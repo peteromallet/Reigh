@@ -19,6 +19,7 @@ This lane owns:
 - the integration worktree and merge queue;
 - cross-repository cold-launch, task, artifact, cancellation, warm-reuse, restart, and forbidden-authority evidence;
 - final reviewer input, promotion receipt, and remote-SHA verification.
+- the bounded Astrid RunPod validation transport, its environment pin, cost/timeout budget, artifact custody, and teardown evidence.
 
 It does not own runtime schemas, host lifecycle, pack adapters, Worker implementation, engine code, or route-specific fixes. A failing lane returns to its owner with a minimal reproducer; the reviewed integration head does not move until the corrected lane is re-reviewed.
 
@@ -39,7 +40,7 @@ Each replacement/cutover train pairs additive replacement with same-train deleti
 
 | Train | Inputs | What merges | Exit |
 |---|---|---|---|
-| M0 — Contract fixtures | clean baselines | composite-digest fixture, attempt directory/output manifest, split portable/host-instance profile fixtures, model-hash manifest, Vibe profile-order probe, progress decision | all lanes consume identical portable bytes; local path/port variance affects readiness/reuse but not capability digest |
+| M0 — Contract fixtures | clean, receipt-backed baselines | composite-digest fixture, attempt directory/output manifest, split portable/host-instance profile fixtures, model-hash manifest, static/import-only Vibe profile-order probe, progress decision | all lanes consume identical portable bytes; local path/port variance affects readiness/reuse but not capability digest |
 | M1 — First light | M0 | one-shot Wan pack, existing GenericPackHost path, Worker environment/thin launcher | one tiny Astrid-created task settles below inline limit |
 | M2 — Warm lifecycle | M1 | persistent JSONL host, Wan warm runner, lifecycle tests | second task reuses model; cancel/restart/digest drift pass |
 | M3 — Real video | M2 | runtime staged output, generated clients, real Wan video, direct-route deletion | large video reaches CAS and legacy Wan path is gone |
@@ -56,13 +57,14 @@ M1 is the first useful product result. M2–M4 add warmth, real video custody, a
 **Estimate:** 1 engineering day
 **Depends on:** lane plans approved
 
-- record exact clean source bases and working-tree status;
+- record exact clean source bases, working-tree status, and the actual Stage 1 acceptance/promotion receipt or provenance that makes each historical base eligible;
 - freeze one canonical tiny request, input object, expected output manifest, composite digest vector, portable environment profile, and fake-runner transcript;
 - freeze paired host-instance fixtures with different paths/ports but identical verified dependencies/model hashes and require equal portable capability digests plus distinct reuse identities;
-- probe the representative VibeComfy template/custom nodes under `pip_embedded` and record whether pip or checkout integrates first; both remain M4 gates;
+- run a bounded static/import compatibility probe for the representative VibeComfy template/custom nodes under `pip_embedded` and record the provisional integration order; the first representative GPU execution occurs at M4 and both profiles remain M4 gates;
 - record whether existing task/run events and heartbeat reads satisfy Astrid observation and REIGH R3 progress display, or freeze the minimal bounded runtime addition;
 - allocate unique ports, actor credentials, runtime roots, output roots, and evidence directories per lane;
 - publish the composition-manifest schema and merge-receipt template.
+- freeze the Astrid RunPod capability/source digest and remote validation profile: connector dependency, image, GPU type, existing storage identity if any, remote/artifact roots, timeouts, spend ceiling, and teardown recovery; verify credential presence without recording secrets.
 
 **Gate:** every lane validates the same digest/transcript fixtures without modifying them.
 
@@ -76,6 +78,7 @@ M1 is the first useful product result. M2–M4 add warmth, real video custody, a
 - force runner policy `never`; `auto` and `always` are not enabled in first light;
 - prove task placement, exact capability/digest routing, input materialization, engine execution, inline CAS output, fenced settlement, and user-visible task/run state;
 - capture a cold restart after completion.
+- when local GPU capacity is unavailable, run the exact immutable candidate through Astrid's explicit RunPod provision/exec/pull/teardown sequence and retrieve only declared evidence/artifacts after parent-verified cleanup.
 
 **Gate:** one real task succeeds without persistent-runner, staged-upload, Supabase, Gradio, MCP, or Worker routing.
 
@@ -91,6 +94,7 @@ M1 is the first useful product result. M2–M4 add warmth, real video custody, a
 - when the host survives, prove engine/runner crash calls fenced `failAttempt` exactly once; use lease reclaim only for actual host loss;
 - enable `auto` only after the reuse and cold-equivalence checks pass; keep `always` explicit opt-in;
 - cold restart and execute again.
+- for remote evidence, execute both compatible tasks against the same provisioned pod and host process so the claimed warmth is real; do not infer reuse across separately provisioned pods.
 
 **Gate:** warm execution is faster/reused but semantically indistinguishable from cold execution.
 
@@ -105,6 +109,7 @@ M1 is the first useful product result. M2–M4 add warmth, real video custody, a
 - verify the applicable producer receipt/disposition before merging consumer deletion;
 - merge the corresponding Worker direct-Wan deletion and rerun the task;
 - prove no legacy path can handle the accepted route.
+- record the RunPod environment, model hashes, cost receipt, artifact checksums, and teardown receipt when remote GPU validation is used.
 
 **Gate:** the output remains valid after independent Astrid/runtime/Worker restart and the old route is unreachable.
 
@@ -120,6 +125,7 @@ M1 is the first useful product result. M2–M4 add warmth, real video custody, a
 - prove arbitrary external-server and dynamic template/plugin discovery are absent from production acceptance;
 - verify the applicable producer receipt/disposition before merging consumer deletion;
 - merge migrated Worker VibeComfy-route deletion and rerun.
+- use the same frozen remote validation profile for both supported VibeComfy shapes, grouping only executions that can share one immutable candidate and bounded session.
 
 **Gate:** both supported profiles work without a Worker route registry or shared unmanaged server.
 
@@ -130,6 +136,7 @@ M1 is the first useful product result. M2–M4 add warmth, real video custody, a
 
 - integrate accepted capability families in disjoint batches;
 - require every route to be migrated, explicitly unsupported with prerequisite, or retired;
+- require every unsupported/retired disposition to name the route's current producer, whether it has live users, rationale, and explicit human decision authority; an agent-authored free-text waiver cannot satisfy the gate;
 - for every accepted route exposed by REIGH, require its [REIGH plan](./02-reigh-plan.md) R3/R5 runtime-admission receipt before deleting the legacy consumer; a legacy Supabase producer is not an accepted parallel authority;
 - run dependency closure from every supported launcher;
 - reject any reachable Supabase queue/storage, direct DB, `REIGH_BACKEND`, engine-specific Worker selector, dynamic VibeComfy plugin root, Gradio/MCP, or second settlement path;
@@ -154,6 +161,8 @@ On one unmoving multi-repository SHA set:
 8. verify completed outputs and events after independent component restarts;
 9. run focused repository suites and forbidden dependency/network scans;
 10. emit the final composition manifest and evidence index.
+
+When Lane F uses RunPod for this gate, M6 starts from a fresh bounded pod and the remote script performs the full cold-launch, warm-repeat, cancellation, restart/recovery, and both-engine/profile journey without changing source. Parent custody wraps the explicit provision/exec/pull/teardown sequence because the current session helper has a pre-handle cleanup gap. A pod teardown failure is a resource incident and blocks another provision until recovered; it does not authorize moving the reviewed SHA.
 
 Observation uses the existing Astrid task/run list, show, and event surfaces plus host readiness/warm telemetry. A new operator CLI or status store is not part of this lane.
 
@@ -193,6 +202,8 @@ Rollback is composition-level:
 
 A missing GPU/model/dependency/disk prerequisite is one explicit external-capacity blocker. It does not authorize recycling tests, moving acceptance boundaries, or mutating user data.
 
+RunPod is a validation environment only. Use one pod lifecycle per immutable checkpoint by default, an explicit maximum runtime and spend ceiling frozen at M0, a pre-existing named storage volume only when model caching is required, and parent-verified explicit teardown plus provider-side orphan recovery. No live pod is provisioned merely to validate contracts that fake/CPU tests can prove.
+
 ## 9. Final evidence index
 
 The release receipt must link:
@@ -208,6 +219,7 @@ The release receipt must link:
 - forbidden import/network/dynamic-plugin scans;
 - focused suite results and final integrated run;
 - reviewer decisions against the same immutable SHA set.
+- for every remote GPU checkpoint: RunPod connector/source digest, environment pin, cost, model identities, artifact checksums, and teardown/recovery receipt, with no secret material.
 
 ## 10. Definition of done
 

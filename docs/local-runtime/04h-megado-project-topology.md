@@ -52,25 +52,28 @@ A and early D/E work do not wait for M1. Real GPU evidence serializes per device
 
 - GPT-5.6 Sol is the fixed planner.
 - GPT-5.6 Luna owns normal implementation, focused validation, and the default one independent checkpoint review.
-- Grok 4.6 is reserved for exceptional `[XHARD]` work, oracle judgment, and rework triage.
-- The final independent integrated leaf review is one GPT-5.6 Sol review, with Grok adjudication only if needed.
+- Grok 4.6 is reserved for exceptional `[XHARD]` work, oracle judgment, rework triage, and M6's adversarial delta review.
+- The final independent integrated leaf review is one GPT-5.6 Sol review of the unmoving implementation/evidence candidate; it does not re-plan the settled architecture.
 - Cumulative reviews occur at M1, M3, M4, M5, and M6. Approvals are criterion-scoped and monotonic; corrections rerun only affected criteria and dependency closure.
 - M6 allows evidence only. No implementation head may move during final acceptance.
 
 ## Resource rule
 
-Before fan-out or expensive tests, each checkpoint records disk/inode headroom, run-owned temporary/output roots, dependency and model identities, candidate SHA, ports, credentials, GPU/VRAM, and worktree feasibility. The setup audit found only 6.4 GiB free after the parent worktree, so model downloads, large-video evidence, and migration are currently capacity-blocked. That does not block M0 contract work or lightweight fake/CPU work. A capacity failure is recorded once and is not retried until a durable remedy passes preflight.
+Before fan-out or expensive tests, each checkpoint records disk/inode headroom, run-owned temporary/output roots, dependency and model identities, candidate SHA, ports, credentials, GPU/VRAM, and worktree feasibility. The latest audit found only 3.5 GiB free, so local child-worktree fan-out and local model/video work are capacity-blocked. That does not block M0 contract work or lightweight fake/CPU work. RunPod may supply later GPU/model/video capacity, but does not waive local Git/control-space requirements. A capacity failure is recorded once and is not retried until a durable remedy passes preflight.
+
+Lane F may satisfy real-GPU evidence through Astrid's existing RunPod pack. M0 must freeze the connector/source digest, `runpod-lifecycle` dependency, immutable image digest, GPU type, existing storage identity if any, remote/artifact roots, timeout/runtime limits, spend ceiling, and teardown/orphan recovery. Use explicit provision/exec/pull/teardown under parent custody because the current session helper has a pre-handle cleanup gap; RunPod is not another child project, scheduler, or product authority. One immutable candidate enters a pod lifecycle, only declared evidence leaves it, and no subsequent provision occurs after a teardown failure until recovery is recorded.
 
 ## Exact next executable slice
 
 Run only M0/I0 first:
 
-1. preserve protected dirty repositories and choose one immutable runtime base;
+1. preserve protected dirty repositories and choose immutable bases only after linking their actual Stage 1 acceptance/promotion receipts;
 2. freeze Astrid, runtime, Worker, Wan2GP, VibeComfy, ComfyUI, and custom-node refs;
 3. publish shared digest, task-resource, paired host-instance, model-hash, runner, attempt/output, receipt, and composition fixtures;
-4. run the bounded VibeComfy profile-order probe and progress sufficiency audit;
+4. run the bounded static/import-only VibeComfy profile-order probe and progress sufficiency audit; representative template execution waits for M4 GPU evidence;
 5. allocate isolated lane roots, ports, actors, credentials, and evidence directories;
 6. repeat resource preflight and emit the M0 receipt;
-7. register children A–E from the frozen bases, then dispatch all ready M1 and parallel prerequisite work.
+7. freeze and mock-validate the RunPod evidence profile without provisioning a paid pod;
+8. register children A–E from the frozen bases, then dispatch all ready M1 and parallel prerequisite work.
 
 The machine-readable child registry, frozen parent tasklist, acceptance ledger, briefs, receipt schema, and composition template live in the parent run directory. Push/main promotion is not part of the conversion and requires explicit authorization after M6 PASS.

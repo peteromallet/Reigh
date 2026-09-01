@@ -10,7 +10,7 @@
 
 Astrid's `GenericPackHost` has one digest-pinned, profile-aware execution boundary that works cold or warm when supplied a valid engine profile. The same host owns claim, authorized input materialization, attempt directories, process supervision, heartbeat, output collection/upload, and fenced settlement. A first host-level E2E proves the existing one-shot command-per-attempt ABI; only after that passes does a minimal persistent JSONL runner add optional warm reuse. Lane F alone owns integrated GPU acceptance; engine packs supply cases, Worker supplies environments, and this lane supplies lifecycle fixtures.
 
-Wan2GP and VibeComfy are engine implementations behind Astrid packs. The host consumes a portable execution-requirements profile plus a machine-local host-instance profile. It computes one composite execution digest from the portable definition/source/schema/lock/engine/template/protocol identity, so a task cannot silently run with different executable content. Task-selected model/settings and immutable model artifact hashes remain in the task; resolved paths, ports, launch commands, Python executable, GPU identity, and other host-local facts remain in preflight and the runner fingerprint. Warmth is a cache policy, never task meaning.
+Wan2GP and VibeComfy are engine implementations behind Astrid packs. The host consumes a portable execution-requirements profile plus a machine-local host-instance profile. It computes one composite execution digest from portable definition/source/schema/lock/engine/template identity, so a task cannot silently run with different executable content. Runner-protocol version is checked separately for host/pack compatibility and reuse. Task-selected model/settings and immutable model artifact hashes remain in the task; resolved paths, ports, launch commands, Python executable, GPU identity, and other host-local facts remain in preflight and the runner fingerprint. Warmth is a cache policy, never task meaning.
 
 The implementation starts from Astrid baseline `132b846b`, Worker context `68b70149`, and exactly the runtime snapshot selected once by M0 (`7618aebb` or one reviewed successor). The present default worktrees are dirty and are not implementation authority. Branch from or rebase once onto M0's immutable composition before changing shared host files; do not switch later.
 
@@ -43,7 +43,8 @@ Every packet in this lane is evaluated against:
 - Worker baseline `68b70149` only for launcher/environment facts, not as a second authority;
 - the current generated `workspace.v1` inline client for M1/M2, followed by lane 04a's staged-output client for M3;
 - the admitted capability definition/source/dependency digests and exact typed request/output schemas;
-- the composite execution digest inputs supplied by the portable pack/profile contract: capability definition, adapter/source tree, pack source, dependency specification/lock, engine SHA, template source digest, custom-node lock, and runner protocol version;
+- the composite execution digest inputs supplied by the portable pack/profile contract: capability definition, adapter/source tree, pack source, dependency specification/lock, engine SHA, template source digest, and custom-node lock;
+- the separate host/pack runner-protocol compatibility version checked at registration/load time and included in reuse identity, not durable task identity;
 - the separate host-instance inputs used only for readiness and runner reuse: resolved interpreter and launch command, ports, model/I/O/scratch roots, GPU identity, and verified mappings from task-required model hashes to local bytes;
 - attempt tuple `attempt_id`, `lease_id`, `fence`, and `runtime_epoch` supplied by the runtime claim;
 - host custody roots: attempt-local input/output directories with no caller-supplied materialized paths; engine-private spools stay inside pack runners;
@@ -61,7 +62,8 @@ Every packet in this lane is evaluated against:
 **Deliverables:**
 
 - canonical composite execution digest recipe and versioned fixture;
-- a versioned portable profile schema covering package/checkout pin, engine SHA, dependency/custom-node locks, template source, runner protocol, fixed non-selectable pack model dependencies or model-catalog definition, and plugin-discovery policy; task-selected model artifact hashes stay in the task rather than this profile;
+- a versioned portable profile schema covering package/checkout pin, engine SHA, dependency/custom-node locks, template source, fixed non-selectable pack model dependencies or model-catalog definition, and plugin-discovery policy; task-selected model artifact hashes stay in the task rather than this profile;
+- a runner-protocol compatibility declaration that is validated separately and participates in reuse identity without changing the admitted capability digest;
 - a separate host-instance schema covering interpreter, launch command, ports, model/I/O/scratch roots, GPU identity, and local resolution of both fixed pack dependencies and task-selected artifact hashes;
 - host validation for supplied `pip_embedded`, `checkout_server`, and Wan2GP descriptors; profile implementation and packaging remain with the Worker/engine lanes;
 - composite digest fixtures that include every portable field and fail closed on executable-content drift, missing profile, dirty/unpinned source, ambient plugin discovery, or wrong model content; host readiness fixtures fail on unresolved/mismatched roots without changing the portable digest.

@@ -74,13 +74,16 @@ capability ID + capability_digest (the composite execution digest)
 The one admitted `capability_digest` value covers the pack definition/adapter/source,
 request/output schemas, VibeComfy revision/lock, ComfyUI/HiddenSwitch package
 or checkout revision, portable profile kind, ready-template source bytes/digest,
-custom-node lock/revisions, dependency lock, runner protocol, and postprocessing
+custom-node lock/revisions, dependency lock, and postprocessing
 version. Task-selected model/settings and model artifact hashes remain typed
 task/resource identity. Resolved Python executable, launch argv, model/I/O/temp
 roots, port, and GPU identity remain host readiness/reuse identity rather than a
 second durable digest. A source-only or lock-only change therefore makes an old
 queued task fail closed, while moving identical verified bytes to another root
 does not.
+Runner-protocol compatibility is checked separately between host and pack and
+joins reuse identity; changing that internal transport version alone does not
+change a queued task's durable capability identity.
 
 Production resolves only a known checked-in `ready_templates/<media>/<id>.py`,
 verifies its digest and `pure_python` classification, calls `build()`, and

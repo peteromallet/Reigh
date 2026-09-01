@@ -33,7 +33,7 @@ This removes the failure mode where Astrid, Reigh Worker, Supabase, ComfyUI, and
 4. **Native engine seams.** Wan2GP uses `WanGPSession`; VibeComfy uses native embedded or host-owned server sessions. Gradio, MCP, arbitrary external Comfy servers, and generic production `vibecomfy.run` are outside the supported path.
 5. **Adapters are not engines.** Astrid contains adapters and contracts; Wan2GP and VibeComfy keep model loading and inference implementation.
 6. **Cold is canonical; warmth is optional.** A task means the same thing cold or warm. Warm state may improve latency but may always be discarded.
-7. **One portable durable digest.** The admitted `capability_digest` covers definition, adapter source, schemas, machine-independent dependency locks, engine pin, template source, custom-node locks, and runner protocol. Task-selected model/artifact hashes remain task resource identity; local paths, ports, launch commands, and GPU identity remain preflight/reuse identity.
+7. **One portable durable digest.** The admitted `capability_digest` covers definition, adapter source, schemas, machine-independent dependency locks, engine pin, template source, and custom-node locks. Task-selected model/artifact hashes remain task resource identity; runner-protocol compatibility, local paths, ports, launch commands, and GPU identity remain preflight/reuse identity.
 8. **Attempt-fenced custody.** Inputs are authorized and materialized beneath an attempt root. Large outputs are staged, hashed, validated, promoted into CAS, and settled only by the live attempt.
 9. **Replacement and deletion travel together.** A migrated route and its legacy Worker path merge in the same train. No compatibility flag or fallback survives.
 10. **One immutable final composition.** Final evidence is produced against an unmoving multi-repository SHA set.
@@ -82,6 +82,8 @@ The implementation is six owned lanes converging through seven merge trains. The
 | M6 — release candidate | evidence only on one immutable SHA composition | canonical launch/task/warm/cancel/restart journey and final reviewers pass |
 
 The first executable slice is **M0 / I0**: establish integration custody, pin clean baselines, and publish the shared fixtures and composition-manifest schema. M1 deliberately proves the smallest useful vertical before persistent runners or large-output work are allowed to complicate the path.
+
+Real-GPU proof may run through Astrid's existing RunPod pack under Lane F custody. RunPod is only the bounded validation environment: M0 pins its connector source, immutable image/GPU/storage profile, timeouts, spend ceiling, artifact root, and teardown/orphan recovery; the candidate still uses the same runtime lease and `GenericPackHost` product path. Warmth is proved by two tasks against one provisioned pod/host process, and M6 uses a fresh pod on the unmoving composition. Parent custody uses explicit provision/exec/pull/teardown because the current session helper has a pre-handle cleanup gap. Secrets never enter receipts.
 
 ## If engineers were infinite: how wide can this really go?
 
@@ -133,6 +135,7 @@ These are the material uncertainties, in priority order. Each has a contained re
 | Large-output staging and crash recovery | Video-sized bytes expose disk, restart, stale-attempt, and duplicate-publish failures | Runtime-only conformance uses large synthetic files and crash/reclaim tests before the first real video |
 | Producer/consumer cutover | A new runtime consumer can strand a still-Supabase producer, or leave a second authority reachable | Require the matching REIGH R3/R5 runtime-admission receipt or unsupported/retired disposition before each legacy consumer deletion |
 | GPU/model availability and evidence throughput | Model downloads, CUDA compatibility, VRAM, and one-device serialization can dominate elapsed time | Preflight profiles, disks, models, drivers, scratch, and credentials before each train; reserve separate GPUs if available |
+| Remote validation reproducibility and cost | An ephemeral GPU can drift, leak spend, or produce evidence against the wrong source | Use Astrid's pinned RunPod session lifecycle, ship one immutable composition capsule, cap runtime/spend, collect checksummed evidence and `cost.json`, and require teardown before another provision |
 | Cold-launch simplicity | Correct components can still produce a brittle first-run experience | Treat launch, bootstrap/reuse, task creation, routing, output, independent restart, and recovery as one canonical M6 journey |
 | Cancellation semantics in VibeComfy/ComfyUI | There is not yet a proven cooperative per-run interrupt surface | Own the runner/server process group, kill it on cancellation, clear or abandon the depth-one prompt queue, and rely on runtime fencing |
 | Integration head movement | Late conflict fixes can silently invalidate prior approvals | One integration custodian, exact SHA receipts, affected-gate-only reruns, and no implementation edits during M6 |

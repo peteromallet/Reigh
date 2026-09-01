@@ -274,9 +274,11 @@ Extension executable code remains outside the runtime. A timeline revision pins 
 
 **Gate R5:** Browser acceptance covers project/gallery/variant/shot/main-timeline workflows, extension composition, audio playback, stale writes, restart persistence, backup/restore, and export. All additions remain visible to Astrid or a neutral client by shared identity; no REIGH-only hidden authority is introduced.
 
-### R6 — Adapt Reigh Worker to the neutral worker protocol
+### R6 — Adapt Reigh Worker to the neutral GPU substrate contract
 
-Classify every Reigh Worker task family as reusable compute, control-plane-entangled, orchestrator-owned, or retired. Preserve model loading, workflow construction, inference, progress translation, and output discovery where reusable. Replace Supabase claim/status/completion/storage and worker-owned child insertion with the generated Python client and runtime operations for:
+Classify every Reigh Worker task family as reusable compute, control-plane-entangled, orchestrator-owned, or retired. Preserve model loading, workflow construction, inference, progress translation, and output discovery where reusable. The [Astrid GPU pack plan](./04-gpu-pack-execution-plan.md) supersedes the earlier notion of a Worker-owned generated-client claim loop: Astrid's `GenericPackHost` is the sole runtime client that claims, materializes, heartbeats, uploads, and settles. Reigh Worker supplies pinned environments, GPU/resource telemetry, reusable compute utilities, and a thin launcher for that host.
+
+Replace Supabase claim/status/completion/storage and worker-owned child insertion with the `GenericPackHost`-owned generated Python client and runtime operations for:
 
 - registration, capability/resource advertisement, readiness, heartbeat, drain, and shutdown;
 - claim, start, attempt heartbeat/control, cancellation, failure, and fenced settlement;
@@ -284,11 +286,11 @@ Classify every Reigh Worker task family as reusable compute, control-plane-entan
 - staged output upload, hash verification, publication, media/generation/provenance settlement; and
 - parent-attempt child admission with allowlist, depth, fan-out, dependency, epoch, lease, version, and idempotency checks.
 
-Reigh Worker receives endpoint, realm, and scoped expiring credential only. It receives no SQLite path, Supabase credential, broad object-store access, or authority to insert task rows.
+The launched `GenericPackHost` receives endpoint, realm, and scoped expiring credential only. Worker-owned modules receive no runtime claim/settlement credential, SQLite path, Supabase credential, broad object-store access, or authority to insert task rows.
 
 R6 must preserve the Stage 1 worker fence: immutable typed outputs, client-applied proposals or predeclared runtime-validated settlement effects, no general mutation credential, lease-bound resource reservations, and exact blocked reasons. Reigh Worker may advertise richer resource requirements but may not introduce a second scheduler.
 
-**Gate R6:** A dependency-light worker source/build suite passes without Supabase/PostgREST present. Two workers prove unique sessions, exactly-one claim, stale-epoch/lease rejection, cancel/retry, kill/restart recovery, child-admission fencing, declared-effect enforcement, reservation release/expiry, digest-verified settlement, and orphan accounting. Every manifest validates/registers/preflights; real end-to-end evidence covers each distinct adapter plus unique/high-risk/high-use behavior, while explicitly equivalent variants may use declared fixtures.
+**Gate R6:** A dependency-light Worker source/build suite passes without Supabase/PostgREST or runtime-client claim/settle code in Worker-owned modules. Two Worker-launched `GenericPackHost` instances prove unique sessions, exactly-one claim, stale-epoch/lease rejection, cancel/retry, kill/restart recovery, child-admission fencing, declared-effect enforcement, reservation release/expiry, digest-verified settlement, and orphan accounting. Every manifest validates/registers/preflights; real end-to-end evidence covers each distinct Astrid pack adapter plus unique/high-risk/high-use behavior, while explicitly equivalent variants may use declared fixtures.
 
 ### R7 — Compose the full local stack and migrate REIGH-only state
 
