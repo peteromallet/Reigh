@@ -19,6 +19,8 @@ Build one local creative workspace authority shared by Astrid and REIGH:
 
 This is a clean cutover, delivered in three ordered stages. Astrid-first is delivery sequencing, not runtime ownership.
 
+> **Parallel-first, elastically subagented:** the stages and tranches below are convergence and acceptance gates, not a waterfall. Once a contract snapshot or fixture is usable, every independent downstream packet begins in a separate subagent thread, worktree, and isolated realm. The same graph must remain executable by one worker subagent wearing every role or by 100+ worker subagents in bounded cells. One root/coordinator agent controls dispatch, contract epochs, hierarchical integration, and the release candidate. Serial work is allowed only for a named dependency, single-writer surface, scarce physical resource, live-data operation, or final integration decision.
+
 ## 2. Decision record
 
 The current decision is a single-user beta on the owner's current machine, followed by REIGH, followed by exhaustive hardening.
@@ -88,7 +90,7 @@ These are deliberately sharp. If implementation makes any statement false, it ha
 
 | Landmark | Outcome | Blocking gate |
 |---|---|---|
-| Stage 1: Astrid beta | independent runtime; one current-Mac realm; complete Astrid client cutover; one generic pack-executor host; broad truthful capability parity; minimal resource/settlement contracts; one-time migration; legacy authority deleted | Astrid works end to end after restart; real data reconciles; authority/capability censuses have zero unclassified entries |
+| Stage 1: Astrid beta | independent runtime; one current-Mac realm; complete Astrid client cutover; one generic pack-executor host; broad truthful capability parity; minimal resource/settlement contracts; one-time migration; legacy authority deleted | packet graph, ownership shards, and integration lanes agreed; Astrid works end to end after restart; real data reconciles; authority/capability censuses have zero unclassified entries |
 | Stage 2A: basic REIGH | REIGH uses the generated TypeScript client and the same realm for the basic visual journey; R0 adds any REIGH-specific neutral contract deltas no longer pre-built in Stage 1 | recorded browser journey, shared identities/state, zero Supabase/direct-DB traffic |
 | Overall single-user beta | Stage 1 plus Stage 2A integrated on the current machine | combined editable-checkout composition smoke, backup/restore, integrity, restart, and rollback evidence |
 | Stage 2B+: fuller REIGH | adds gallery/extension/full-composition contracts when proven by REIGH, progressively replaces the remaining REIGH/Reigh Worker local control plane, and expands the accepted worker/resource profile without reopening authority boundaries | each accepted product slice deletes its old authority before activation |
@@ -97,28 +99,106 @@ These are deliberately sharp. If implementation makes any statement false, it ha
 ## 5. Source and dependency order
 
 ```text
-neutral DDL + OpenAPI + conformance fixtures
-                      |
-                      v
-          banodoco-workspace-runtime
-             /          |           \
-            v           v            v
-   Python client   TypeScript client  worker protocol/fake worker
-       |                  |                    |
-       v                  v                    v
- Astrid + pack host   REIGH local adapter   later Reigh Worker
-       |                  |
-       +--------+---------+
-                v
-        one shared local realm
-                |
-                v
-       exhaustive hardening
+             SINGLE-WRITER CONTRACT SPINE
+       DDL + OpenAPI + schemas + generator inputs
+                          |
+             immutable alpha / beta / RC snapshots
+                          |
+       +------------------+------------------+
+       |                  |                  |
+ runtime data/control  clients/conformance  worker protocol
+       |                  |                  |
+       +--------+---------+---------+--------+
+                |                   |
+        Astrid product lanes   pack capability lanes
+                |                   |
+                +---------+---------+
+                          |
+                STAGE 1 INTEGRATION GATE
+                          |
+       +------------------+------------------+
+       |                  |                  |
+ REIGH boundary/UI   richer domain lanes   Reigh Worker lanes
+       +------------------+------------------+
+                          |
+                STAGE 2 INTEGRATION GATE
+                          |
+       crash/storage/security/platform/resource shards
+                          |
+                STAGE 3 RELEASE GATE
 ```
 
-Code may be extracted from Astrid or REIGH, but the final dependency direction never reverses.
+The vertical spine is serialized only where semantic authorship must be singular. The horizontal branches are the normal execution shape and should fan out as soon as their exact input snapshot exists. Code may be extracted from Astrid or REIGH, but the final dependency direction never reverses.
 
-## 6. Cross-stage execution rules
+## 6. Elastic concurrency operating model
+
+### 6.1 The plan is a subagent work graph, not a staffing chart
+
+Implementation is maintained in a repository-owned machine-readable dependency graph—for example `execution/packets.yaml` plus evidence manifests—of bounded work packets. Conversation threads may explain progress, but they are never the authoritative scheduler or record. Each packet declares:
+
+- a stable ID, outcome, owning component/domain, and expected size;
+- the immutable contract/fixture/commit inputs it consumes;
+- its exclusive write set: repositories, directories, schemas, manifests, or generated artifacts it may change;
+- predecessors and the exact condition that makes it ready;
+- an isolated worktree, disposable realm/CAS root, ports, credentials, process group, fixtures, and evidence directory;
+- required tests, machine-readable evidence, and deletion obligations;
+- its merge destination, reviewer/integration owner, and invalidation rules.
+
+Packets should normally fit one bounded subagent task and be comparable to roughly half to three engineering-equivalent days of conventional work. A larger item remains a planning container and is split before dispatch. With one worker subagent, adjacent ready packets may be executed as a batch to avoid orchestration overhead; at high scale, the packet boundary prevents two subagents from discovering ownership conflicts after writing code.
+
+The work registry uses the states `blocked`, `ready`, `active`, `review`, `integrated`, and `evidenced`. Adding capacity means claiming more `ready` packets. It does not mean starting blocked work against guessed contracts or creating temporary compatibility paths.
+
+### 6.2 Cells and hierarchical integration
+
+At more than a handful of active threads, work is grouped into cells around stable ownership boundaries:
+
+| Cell | Exclusive responsibility | Normal fan-out |
+|---|---|---|
+| contract authority | canonical DDL, OpenAPI, closed schemas, state machines, migration ordering, generator inputs | one active writer; reviewers may work in parallel |
+| runtime data plane | realm/project/document/media/CAS/backup vertical slices | shard by non-overlapping service and fixture |
+| runtime control plane | tasks/runs/events, worker lifecycle, leases, effects, reservations | shard by vertical slice behind one settlement/state-machine owner |
+| clients and conformance | generators, Python/TypeScript packages, fake actors/workers, golden fixtures | generators and fixtures may fan out; publication is single-owner |
+| product cells | Astrid domains, capability families, REIGH domains/UI, Reigh Worker adapters | shard by behavior/domain with explicit shared-shell owners |
+| migration and deletion | source mappings, rehearsal fixtures, reconciliation, static/runtime negative proof | mappings and fixtures fan out; numbering, activation, and destructive cutover serialize |
+| evidence and release | scenario registry, evidence schema, aggregation, integration candidates, release gate | scenario execution fans out; candidate declaration is singular |
+
+Each subagent cell has one integration subagent for at most roughly four to six active code-changing lanes. At larger scale, cell integrators feed a stage-integration subagent cell, which feeds the root-controlled release candidate. This hierarchical fan-in is what allows 100+ worker subagents without routing every merge through one thread.
+
+### 6.3 Elastic subagent profiles
+
+| Available worker-subagent capacity | Operating shape |
+|---|---|
+| 1 | traverse the same ready queue topologically; treat contract, implementation, review, and integration as explicit hats; keep only one code-changing packet active |
+| 2–8 | keep one integration/review lane free and run the remaining lanes across different components or domains |
+| 9–30 | establish dedicated contract, runtime, product/capability, migration/proof, and integration cells; use cell-local merge queues |
+| 31–100+ | use roughly 8–16 bounded cells with hierarchical integration; expand domain ports, capability families, fixtures, audits, and test shards rather than adding writers to choke-point contracts |
+
+The coordinator must scale down as aggressively as it scales up. If fewer packets are ready than subagents, contract review, fixture construction, proof tooling, documentation, or later-stage preparation may absorb capacity. If integration queues, shared files, real GPU/provider quotas, or contract churn become the bottleneck, stop opening lanes. One productive subagent is better than 100 branches waiting on the same unstable decision.
+
+At any moment, useful concurrency is the minimum of conflict-free ready packets, isolated environments, scarce-resource capacity, reviewer-subagent capacity, and integration throughput. Available subagent capacity above that minimum is not delivery capacity and need not be used.
+
+### 6.4 Synchronization protocol
+
+- Contract authority publishes immutable `alpha`, `beta`, and `rc` snapshots. Downstream packets pin a snapshot and upgrade deliberately.
+- One owner at a time edits canonical schema/protocol sources, migration numbering, generator templates, shared lockfiles, activation manifests, or the release evidence index.
+- Generated clients and shared conformance rerun after every contract merge; generated output is never independently hand-edited by product lanes.
+- Each lane merges thin vertical slices through an ordered queue. Long-lived tranche branches are forbidden.
+- Every cell continuously rebases or retests against the current integration candidate; contract changes explicitly invalidate dependent evidence.
+- A blocked lane must name the missing schema, endpoint, fixture, artifact, physical resource, or decision. “Waiting for Stage/T/R” is not an actionable blocker.
+- The user’s activated realm and sole backup are never parallel test fixtures. Live migration, writer freeze, activation, rollback rehearsal, destructive purge, final evidence capture, signing/publishing, and release declaration remain serialized.
+- Intentional concurrency tests are controlled by one scenario owner launching all competing actors. Uncoordinated threads never share a realm merely to simulate a race.
+
+### 6.5 Cross-stage overlap
+
+Acceptance remains ordered, but preparation does not. During Stage 1, separate cells may complete the REIGH authority census, browser journey inventory, Worker task-family classification, security threat model, fault-injection hooks, deterministic fixture factories, and evidence aggregation schema. During the REIGH beta, richer-domain and Reigh Worker lanes may proceed behind frozen contracts while the basic UI is integrated. Hardening harnesses may be built early, but production hardening results count only when rerun against the accepted integrated candidate.
+
+### 6.6 Stop-fan-out rule
+
+Immediately reduce concurrency when contract epochs change faster than consumers can rebase, several cells edit the same authority surface, review wait approaches implementation time, composition stays red, evidence becomes nondeterministic, duplicate defects appear across cells, or merge conflicts dominate useful change. Restore one green reference slice, merge or kill stale packets, and reopen fan-out only when the ready queue is genuinely independent again.
+
+The rule is deliberately asymmetric: the coordinator may dispatch 100+ worker subagents when that helps, but never needs to. **Scale at the leaves, not the roots; prove one vertical slice before building a factory; subagent count follows ready work.**
+
+## 7. Cross-stage execution rules
 
 - Freeze a machine-readable authority, public-surface, shared-domain, and capability census before cutover. Completion requires zero unclassified entry.
 - Develop the one-time migrator alongside schema extraction, not after schema decisions have drifted.
@@ -127,19 +207,24 @@ Code may be extracted from Astrid or REIGH, but the final dependency direction n
 - Every gate runs with the runtime, Astrid/generic pack host, and REIGH in separate processes and isolated environments. Editable checkouts are allowed; direct source imports across the protocol boundary are not.
 - Evidence is machine-readable where practical: source revisions and dirty-tree digests, manifests, capability hashes, censuses, reconciliation reports, filesystem traces, and network captures.
 - A deferred exhaustive test does not excuse a known data-loss, authority, or security-critical bug found during beta work.
+- Preserve one integration/review lane at every scale; do not assign all available capacity to implementation.
+- Prefer behavior/domain shards with disjoint write sets over file-count sharding or multiple threads editing the same central composition.
+- Re-plan concurrency whenever contract churn, rebase time, failed integrations, or review queues erase the expected throughput gain.
 
-## 7. Estimates and planning assumptions
+## 8. Estimates and planning assumptions
 
-- Stage 1 Astrid: **18–30 engineer-weeks**.
-- Stage 2A basic REIGH: **5–9 engineer-weeks**, including contract work deliberately moved out of Stage 1.
-- Combined path to the overall single-user beta: **23–39 engineer-weeks**, approximately **9–13 calendar weeks with three focused engineers**, or roughly **5–8 months solo**.
-- Stage 2B fuller REIGH/Reigh Worker after the beta gate: **15–25 additional engineer-weeks**, subject to the R0 census.
-- Total Stage 2 from Astrid handoff through fuller REIGH: **20–34 engineer-weeks**.
-- Stage 3 exhaustive hardening and verified GC/resource lifecycle: **8–13 engineer-weeks** before any scope discovered by testing.
+- Stage 1 Astrid: **18–30 engineering-equivalent weeks**.
+- Stage 2A basic REIGH: **5–9 engineering-equivalent weeks**, including contract work deliberately moved out of Stage 1.
+- Combined path to the overall single-user beta: **23–39 engineering-equivalent weeks**, approximately **11–18 calendar weeks with three sustained productive subagent lanes**, **10–16 weeks when Stage 1 sustains four to six isolated lanes and Stage 2A sustains three implementation lanes plus integration**, or roughly **5–9 months at conventional single-engineer throughput**.
+- Stage 2B fuller REIGH/Reigh Worker after the beta gate: **15–25 additional engineering-equivalent weeks**, subject to the R0 census.
+- Total Stage 2 from Astrid handoff through fuller REIGH: **20–34 engineering-equivalent weeks**.
+- Stage 3 exhaustive hardening and verified GC/resource lifecycle: **8–13 engineering-equivalent weeks** before any scope discovered by testing.
 
 The largest uncertainty is Astrid capability parity; the next largest is the distance between current REIGH timeline/media behavior and the neutral protocol.
 
-## 8. Canonical stage documents
+Engineering-equivalent weeks are a conventional complexity/effort unit, not a plan to hire or assign human engineers. All execution roles are subagents. Calendar targets assume contract stability, ready packets, isolated environments, and sufficient subagent integration/review capacity. They do not improve linearly beyond the useful fan-out of each stage; every stage reforecasts from measured ready-queue depth, merge latency, rework, and acceptance throughput.
+
+## 9. Canonical stage documents
 
 - [Stage 1 — Astrid beta](./01-astrid-beta.md) contains the detailed extraction, launch, capability, migration, deletion, and Astrid acceptance plan.
 - [Stage 2 — REIGH next](./02-reigh-plan.md) contains the basic beta slice and the clean path to fuller REIGH/Reigh Worker.

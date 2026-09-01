@@ -25,6 +25,8 @@ The governing rule is:
 
 > **Astrid-first is release sequencing, not ownership sequencing.**
 
+> **Stage 1 is parallel-first and elastically subagented.** T0–T6 are convergence gates, not calendar phases. One root/coordinator agent dispatches the graph. One worker subagent may walk it alone; 100+ worker subagents may claim every ready, non-overlapping packet on its frontier. Scale is optional and used only when it shortens the path to integrated evidence. Scale at the leaves—domains, capability families, fixtures, migration mappings, and proofs—not by creating competing authors of the runtime contract, generated clients, generic-host core, live migration, or release candidate.
+
 ## 2. Stage boundary
 
 | Stage 1 owns | Stage 1 publishes | Stage 2 owns |
@@ -268,9 +270,71 @@ Deleting in-process execution during T3 may never leave a capability advertised 
 
 ## 8. Astrid-First Beta Trunk
 
-Each tranche has a hard exit gate. Work may overlap behind stable reviewed contracts, but no later tranche can paper over a failed earlier gate with a fallback.
+Each tranche has a hard exit gate, but overlap is the default. A lane waits for its named schema, operation, client, fixture, or runtime slice—not for an entire preceding tranche. No later tranche may paper over a failed earlier gate with a fallback.
+
+### Parallel-first workstream topology
+
+Stage 1 applies the overall strategy's work-packet contract using this standing topology:
+
+| Lane | Exclusive ownership | Earliest safe start | Convergence point |
+|---|---|---|---|
+| P0 contract authority | DDL, OpenAPI, closed schemas, state machines, error/idempotency rules, migration ordering, generator inputs | immediately; integrates concurrent censuses | publishes immutable domain `alpha`, `beta`, and `rc` snapshots |
+| P1 runtime data plane | realm/project/documents, media/CAS, relations/evidence, backup/restore/doctor | relevant P0 domain alpha | T1 vertical-slice gates |
+| P2 runtime control plane | tasks/runs/events, worker registration, leases, effects, reservations, fake worker | task/worker alpha | T1 settlement/state-machine gate |
+| P3 clients and conformance | Python/TypeScript generators, golden envelopes, fake actor, `second-client-core-v1.yaml` | P0 alpha | regenerates after every contract merge; publication is single-owner |
+| P4 bootstrap/lifecycle | catalog, discovery, credentials, launch/reconnect/reboot, zero-logic Astrid launcher | handshake/health alpha; initially against fakes | T2 integration gate |
+| P5 migration/reconciliation | source inventory, mappings, importer, validator, reconciliation, backups, rollback fixtures | day one | rehearses every schema epoch; live activation at T5 only |
+| P6 Astrid product cutover | CLI/SDK domain adapters and legacy product-surface deletion | relevant Python client alpha and mock/real slice | T3 domain gates then central composition merge |
+| P7 pack host/parity | generic host, adapter families, manifest/preflight census, capability E2E proof | worker alpha; discovery starts day one | T4 gate |
+| P8 evidence/negative proof | dependency bans, authority scanners, traces, acceptance schema and aggregator | day one | continuously attaches evidence; T6 freezes one candidate |
+
+P6 fans out by disjoint product domain: projects/documents/preferences; managed media/relations; timelines/shots/references; tasks/runs/events; experiments/reviews/theme documents; CLI envelopes/errors/versioning; and legacy deletion/docs/skill correction. One named owner retains the central Astrid application/SDK composition modules.
+
+P7 first proves one end-to-end reference capability through admission, resource reservation, generic-host execution, typed settlement, CAS publication, events, retry/fencing, and restart. It then becomes a factory whose independent cells shard by distinct behavior: host/registration shell; CPU/FFmpeg/media; Remotion rendering; GPT/provider generation; VibeComfy/local generation; tool-isolated subprocesses; orchestration/child tasks; and manifest/preflight fixtures for equivalent variants. It does not create one bespoke architecture per manifest.
+
+### Progressive domain gates
+
+T0 remains the complete boundary gate, but it is not a big-bang freeze. Each domain advances through mini-gates that immediately unlock its downstream packets:
+
+1. `M0`: authority and disposition approved;
+2. `M1`: schema, operations, invariants, errors, and fixtures frozen;
+3. `M2`: generated clients and fake conformance pass;
+4. `M3`: neutral runtime slice passes;
+5. `M4`: Astrid or pack adapter passes against a real daemon; and
+6. `M5`: negative-authority proof and integrated evidence pass.
+
+This makes the wavefront:
+
+```text
+concurrent censuses + fixture inventory + proof harness
+                         |
+              domain contract mini-gates
+                         |
+     +-------------------+-------------------+
+     |                   |                   |
+ runtime domain cells  clients/conformance  bootstrap + migrator
+     |                   |                   |
+     +--------- stable slices unlock --------+
+                         |
+          +--------------+--------------+
+          |                             |
+ Astrid product cells          host/capability cells
+          |                             |
+ deletion/proof cells           parity/evidence cells
+          +--------------+--------------+
+                         |
+             schema/source RC freeze
+                         |
+       live migration + final deletion switch
+                         |
+                  T6 acceptance
+```
+
+The scheduler runs all ready packets concurrently only while their write sets, environments, and merge owners remain independent. DDL semantics/migration numbering, generator publication, shared Astrid composition, generic-host common path, atomic settlement design, the actual owner-data migration, final deletion switch, and final `acceptance.json` remain single-owner operations.
 
 ### T0 — Freeze the boundary and census
+
+Run the authority/product-surface census, shared-domain/state mapping, capability/dependency census, bootstrap/process census, migration inventory, and acceptance/negative-test design in parallel. P0 continuously integrates their findings into progressive domain contracts rather than waiting for every audit to finish before publishing any usable input.
 
 Deliver:
 
@@ -296,6 +360,8 @@ Deliver:
 
 Move/generalize the proven SQLite writer, repositories, receipts/events, ownership lock, migrations, append-only CAS, task lifecycle, minimal resource reservations, settlement effects, backup/restore, and bridge primitives into `banodoco-workspace-runtime`. Complete the frozen core tables/services and generic versioned-document/evidence/relations substrate. Generate both Python and TypeScript clients, build a protocol-only fake worker, and start the offline migrator against every schema increment rather than deferring it to T5.
 
+P1 data-plane domains, P2 control-plane domains, P3 clients/conformance, P5 migration mappings, and P8 proof tooling run as separate concurrent cells against pinned domain snapshots. They merge thin, independently conforming vertical slices; T1 is their convergence gate, not a reason to hold one monolithic extraction branch.
+
 Delete product imports from the extracted runtime. Run daemon, schema migration, CRUD, media transfer, task settlement, event reads, backup, restore, and shutdown with the Astrid checkout absent.
 
 **Gate T1:** The runtime in its own checkout/environment, persistent realm catalog APIs, both generated clients, one fake TypeScript product actor, and a fake worker pass `second-client-core-v1.yaml` with the Astrid and REIGH checkouts absent from its import path. Static checks forbid Astrid/Reigh/worker imports and direct non-runtime SQLite/CAS writes. Undeclared/stale settlement effects and stale resource reservations are rejected. The one-time migrator can inventory and dry-run the current machine's source without mutation.
@@ -303,6 +369,8 @@ Delete product imports from the extracted runtime. Run daemon, schema migration,
 ### T2 — Prove the neutral bootstrap and zero-logic Astrid launcher
 
 Implement the current-Mac, one-realm core bootstrap in section 5 steps 1–9: fixed catalog/data/support paths, ephemeral discovery, the selected realm, one scoped Astrid credential, basic stale-discovery validation, duplicate-owner refusal, legacy-root collision refusal, ordinary restart/reboot resolution, workspace readiness, and diagnostic UX. Do not register/start the executor host at T2. Define a current-machine editable source profile whose launcher only executes the neutral bootstrap and presents its result. Packaging, multi-realm/profile UX, Linux support, and polished update/uninstall operations are follow-up work; executor activation remains T4.
+
+P4 starts during T1 against the frozen handshake/health contract and a fake runtime. T2 blocks accepting the integrated launcher, not writing or testing downstream product adapters against generated clients and mocks.
 
 **Gate T2:** On a clean sandbox matching the current Mac, the neutral bootstrap and zero-logic Astrid checkout launcher produce one healthy realm and owner; a second launch reconnects; an ordinary restart and one reboot reopen the same realm. Static/runtime checks prove the Astrid source/import graph contains no SQLite/CAS open or migration path outside the generated client boundary. Ordinary product commands are not accepted as cut over until T3.
 
@@ -312,17 +380,23 @@ Use `/Users/peteromalley/Documents/reigh-workspace/Astrid-live-main` as the name
 
 Update the Astrid skill and docs: `plan.md`, project paths, direct file manifests, and local event projections stop being live guidance. Keep only explicit import/export and attempt-local file usage.
 
+Execute the P6 domain shards concurrently wherever their generated-client surfaces and write sets do not overlap. Shared application composition, public envelope behavior, and removal of central `serve`/thread wiring have one integration owner; domain cells propose changes to that owner rather than racing edits in the same modules.
+
 **Gate T3:** The full CLI/SDK journey passes across a real daemon boundary, including restart and stale-write tests; network/filesystem traces show no direct database access or legacy file read/write.
 
 ### T4 — Cut capabilities over and prove the classified beta set
 
 Build one generic Astrid pack-executor host with registration/preflight/readiness, resource advertisement/reservations, input materialization, staged typed outputs, settlement-effect adapter, child-task protocol, and a truthful current-machine capability matrix. It loads GPT/provider, CPU, render, and supported local-generation pack code from the configured editable checkout and uses specialised subprocesses only where demanded by tool/environment isolation. Port the required capability surface and apply the adapter-family parity proof in section 7. This work runs in parallel with T3 after T1/T0 contracts stabilize. The runtime and neutral bootstrap take no code dependency on Astrid pack code.
 
+After one reference capability proves the common host path, P7 adapter-family cells run concurrently and own disjoint pack/manifests and fixtures. Contract or host-core deltas return through their single owners; capability cells never fork worker semantics to unblock themselves. Real GPU, provider-quota, fixed-port, or whole-host tests reserve those scarce resources and serialize only the physical execution, while implementation and fixture analysis continue elsewhere.
+
 **Gate T4:** Every current capability has a disposition and truthful manifest validation/registration/preflight; every distinct adapter plus every high-risk/high-use/unique capability passes its required end-to-end proof through the generic host. Editing a pack changes that capability's digest, requires deliberate re-registration, affects only later admissions, and does not block unrelated capabilities or the runtime connection. Declared settlement, undeclared-effect rejection, named resource reservation/release, one heavyweight concurrency key, exact blocked reasons, low-space preflight, cancellation, retry, lease fencing, duplicate settlement, and runtime restart pass; exhaustive scheduling/race/failure matrices remain later.
 
 ### T5 — Migrate Astrid and delete legacy authority
 
 Finish the one-time migrator developed alongside T1–T4. Freeze old writers, create and verify an immutable source backup, archive/hash the source, import current Astrid kernel rows first, fill genuinely absent facts from files, ingest required bytes, validate conflicts/invariants, write an activation manifest, and activate a fresh realm atomically.
+
+Extractor mappings, validators, reconciliation reports, rollback tooling, and cloned-source rehearsals have run concurrently since T0. Only the final schema/source freeze, real writer freeze, backup, import, conflict decision, activation, rollback rehearsal, and shared legacy-deletion switch are serialized under one migration owner.
 
 Then remove `ASTRID_PROJECTS_ROOT` as a live authority selector, application-side database composition, file discovery/fallback/repair/projections, Astrid bridge routes/types, legacy schemas, and migration code from normal import/process graphs.
 
@@ -332,44 +406,36 @@ Then remove `ASTRID_PROJECTS_ROOT` as a live authority selector, application-sid
 
 Run the Stage 1 acceptance matrix in section 10 and publish one hash-recorded `acceptance.json` that links the authority census, capability census, migration reconciliation/backup hashes, automated negative tests, source/dependency/capability manifest, filesystem/network traces, and `second-client-core-v1.yaml` result. `ASTRID-BETA.md` is the concise human index to that evidence rather than a duplicate report.
 
+P8 has validated and accumulated packet-level evidence throughout the stage. T6 regenerates the aggregate from machine-readable receipts and reruns the whole composition against one exact release-candidate commit; it does not assemble a retrospective narrative from thread histories.
+
 **Gate T6:** Astrid is independently and broadly useful, every legacy authority is deleted and proven absent, this machine's work is safely migrated, all disabled/optional capabilities are truthful, and Stage 2 can consume the generated TypeScript contract without any Astrid implementation dependency. Astrid is not represented as production-hardened.
 
 ## 9. Critical-path source/process DAG
 
 ```text
-neutral DDL + OpenAPI + conformance contracts
-                    |
-                    v
-       banodoco-workspace-runtime
-          |              |                 |
-          v              v                 v
- generated Python   generated TS     worker protocol,
-      client            client        fake worker, migrator
-          |              |                 |
-          |              +-------> narrow second-client conformance
-          |                                |
-          +----------------+---------------+
-                           v
-                  neutral core bootstrap (T2)
-                    /                     \
-                   v                       v
-        Astrid CLI / SDK (T3)     one pack executor host (T4)
-                                             |
-                                             v
-                                   render + other pack code
-                   \                       /
-                    +----------+----------+
-                               v
-              one-time local migration (T5)
-                               |
-                               v
-              ASTRID STAGE GATE (T6)
-                               |
-                               v
-                 Stage 2 REIGH adapter
+                   contract alpha
+                         |
+       project/media/task/settlement reference slice
+                         |
+           clients + fake-worker conformance
+                         |
+       +-----------------+-----------------+
+       |                 |                 |
+ bootstrap/catalog   Astrid domain cells  host/capability cells
+       |                 |                 |
+ migration rehearsals   deletion/proof    parity/E2E proof
+       +-----------------+-----------------+
+                         |
+              contract/schema/source RC
+                         |
+        live migration + final deletion switch
+                         |
+                 ASTRID GATE (T6)
+                         |
+                 Stage 2 integration
 ```
 
-Extraction provenance does not reverse this graph. Code may originate in Astrid, but after extraction the runtime publishes contracts/clients and Astrid consumes them.
+The critical path is the narrow vertical spine, not the sum of every horizontal packet. Bootstrap, migration development, pack conversion, static proof, and acceptance tooling are parallel side lanes that join at named gates. Extraction provenance does not reverse this graph: code may originate in Astrid, but after extraction the runtime publishes contracts/clients and Astrid consumes them.
 
 ## 10. Astrid Stage 1 acceptance matrix
 
@@ -491,9 +557,9 @@ The Astrid stage gate requires:
 
 ## 15. Estimated effort
 
-The Astrid stage is re-baselined at **18–30 engineer-weeks** after the accepted current-Mac/one-realm, generic-host, narrow-REIGH-proof, and append-only-CAS scope revision:
+The Astrid stage is re-baselined at **18–30 engineering-equivalent weeks** after the accepted current-Mac/one-realm, generic-host, narrow-REIGH-proof, and append-only-CAS scope revision. This is a complexity unit; execution is performed by subagents:
 
-| Tranche | Engineer-weeks |
+| Tranche | Engineering-equivalent weeks |
 |---|---:|
 | T0–T2: census/core contracts, runtime extraction, generated clients, migrator start, current-Mac one-realm launch | 5–8 |
 | T3: complete CLI/SDK and state cutover | 4–6 |
@@ -501,9 +567,20 @@ The Astrid stage is re-baselined at **18–30 engineer-weeks** after the accepte
 | T5: one-time migration, activation, and legacy deletion proof | 2–3 |
 | T6: consolidated Astrid acceptance, evidence, and fixes | 1–3 |
 
-With three focused engineers and T3/T4 overlapping, Stage 1 is approximately **8–12 calendar weeks**. One strong engineer should plan for roughly **4–7 months**. The principal variance remains T4: broad capability parity may expose path-coupled packs or undeclared model/provider dependencies.
+Engineering-equivalent weeks describe total effort, not a prescribed subagent count. The coordinator expands or contracts the worker-subagent pool only to match the safe ready frontier:
 
-Stage 2A basic REIGH is provisionally **5–9 engineer-weeks** because R0 now owns more contract finalisation, yielding the roadmap's **23–39 engineer-week** estimate to the overall single-user beta. The fuller Stage 2B REIGH/Reigh Worker follow-on is provisionally **15–25 additional engineer-weeks**, and Stage 3 exhaustive hardening/GC/resource lifecycle is another **8–13 engineer-weeks**; R0 must re-estimate both against the real census before execution.
+| Sustained productive shape | Provisional elapsed Stage 1 |
+|---|---:|
+| one worker subagent, one active code packet | 18–30 engineering-equivalent working weeks, roughly 4–7 months if executed at conventional single-engineer throughput |
+| two independent lanes with shared integration | 11–17 weeks |
+| three sustained lanes | 8–12 weeks |
+| four to six implementation lanes plus a protected integration/review lane | roughly 7–10 weeks |
+
+More available subagents do not automatically shorten the Stage 1 critical spine. After domain contracts and the reference capability pass, larger capacity can accelerate capability families, Astrid domain ports, fixtures, migration mappings, proof shards, and Stage 2/3 preparation. It must not create extra contract, generic-host, migration-activation, or release-candidate owners. Roughly twenty percent of active subagent capacity stays available for integration, review, rebasing, and composition failures; if the ready queue or merge train cannot absorb more work, do not scale up.
+
+The principal variance remains T4: broad capability parity may expose path-coupled packs or undeclared model/provider dependencies. Six elapsed weeks is an optimistic floor because contract/source RC, integrated T3/T4 convergence, the one real migration, and final acceptance remain sequential checkpoints regardless of subagent count.
+
+Stage 2A basic REIGH is provisionally **5–9 engineering-equivalent weeks** because R0 now owns more contract finalisation, yielding the roadmap's **23–39 engineering-equivalent-week** estimate to the overall single-user beta. The fuller Stage 2B REIGH/Reigh Worker follow-on is provisionally **15–25 additional engineering-equivalent weeks**, and Stage 3 exhaustive hardening/GC/resource lifecycle is another **8–13 engineering-equivalent weeks**; R0 must re-estimate both against the real census before execution.
 
 ### 15.1 Astrid Stage 1 versus later stages
 

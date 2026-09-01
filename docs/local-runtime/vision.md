@@ -8,7 +8,7 @@
 **Working name:** Banodoco Workspace Runtime; naming may change, ownership may not
 **Canonical execution strategy:** [Local Workspace Runtime — Overall Strategy and Roadmap](./00-overall-strategy.md)
 
-**Current sequencing note:** this document describes the long-term destination, not parallel delivery. The accepted order is Stage 1 Astrid, Stage 2 REIGH, then Stage 3 exhaustive hardening; the canonical strategy owns scope and timing.
+**Current sequencing note:** this document describes the long-term destination. Stage 1 Astrid, Stage 2 REIGH, and Stage 3 hardening are dependency and acceptance order—not a requirement to execute all preparation or implementation serially. The project is concurrency-first: once an input is frozen, every workstream depending only on that input should begin in parallel. Stage 2 discovery may overlap Stage 1, and Stage 3 harness/threat-model preparation may overlap Stages 1–2, but no later stage may claim acceptance against an unaccepted upstream candidate. The canonical strategy owns scope, workstream topology, and timing.
 
 ## 1. Executive thesis
 
@@ -25,6 +25,20 @@ The database and task queue do not belong to Astrid or Reigh conceptually or phy
 The immediate goal is to ship the proper neutral architecture on one machine in stages: first Astrid from an editable checkout with registered executor workers, then Reigh and Reigh Worker as peer protocol clients. One Banodoco Workspace Runtime is backed by SQLite and a local content-addressed object store. Proven kernel code currently inside Astrid should be extracted and generalized into the neutral runtime rather than making Astrid the runtime's temporary owner. Turso, remote workers, and hosted connectors follow as new placements of the same contracts—not as a rewrite of the local system.
 
 The cutover is intentionally absolute. A one-time offline importer may understand the old world, but the supported runtime and clients do not: no shims, legacy aliases, dual-write, fallback reads, backend-selection mode, schema compatibility views, or silent translation of old payloads. Active components use one compatible versioned protocol set or fail closed.
+
+### 1.1 Parallel delivery doctrine
+
+The execution workforce is entirely subagents: one root/coordinator agent owns the packet DAG and convergence, while worker/reviewer/integration subagents occupy bounded cells. Human input is reserved for explicit product choices, credentials/authority only the owner can provide, the real-data activation decision, and final risk acceptance. The architecture is designed to make this subagent implementation parallelizable without making authority ambiguous:
+
+1. freeze contracts and representative fixtures before fanning dependent work out;
+2. assign one owner to each production component and one exclusive owner to each shared contract or generated artifact;
+3. run every agent thread in its own worktree with an isolated disposable realm, ports, credentials, processes, and evidence directory;
+4. let runtime slices, clients, conformance, bootstrap, migration fixtures, adapters, capability families, product cutovers, and test harnesses proceed concurrently as soon as their exact inputs exist;
+5. merge small vertical slices through one ordered integration queue rather than allowing long-lived parallel branches to invent incompatible seams;
+6. aggregate evidence mechanically, then rerun the integrated suite on one exact candidate commit after all required branches merge; and
+7. never confuse parallel implementation with parallel authority: one runtime still owns the realm, SQLite, CAS publication, scheduling epoch, leases, and settlement.
+
+Every serial edge in a delivery plan must state why it exists. “Waiting for the previous tranche” is not sufficient; the blocker must name the missing schema, endpoint, generated client, fixture, physical-machine resource, live migration step, or acceptance decision.
 
 ## 2. The product vision
 
@@ -452,6 +466,7 @@ Autoscaling reads queue summaries and executor registration from the runtime. It
 12. Gate connections on protocol/schema compatibility, pin capability/source digests per admitted task, and retain whole-checkout state as diagnostics rather than a connection gate.
 13. Use one generic Astrid pack-executor host in Stage 1 and keep rendering as pack code behind the neutral worker contract.
 14. Keep the Stage 1 scheduler and CAS deliberately minimal; implement advanced resource policy and object collection only after the end-to-end products work.
+15. Organize every stage as an elastic dependency graph of contract-pinned work packets; run every safe frontier concurrently, reserve integration capacity, and attach an explicit reason to every serial edge.
 
 ## 15. Open questions and uncertainties
 

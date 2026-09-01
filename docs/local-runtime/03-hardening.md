@@ -24,7 +24,43 @@ The stage is deferred to protect delivery focus, not because its concerns are un
 - the accepted current-Mac, one-selected-realm bootstrap/restart path; and
 - runtime/REIGH build-artifact smokes where applicable plus Astrid editable-checkout composition smokes, doctor/integrity checks, bounded redacted logs, and reproducible beta manifests.
 
-## 3. H1 — Crash and race matrix
+## 3. Concurrency-first hardening model
+
+Stage 3 is a high-fan-out subagent evidence program after a small harness/oracle spine is frozen. The root/coordinator agent owns the scenario graph and release candidate. One worker subagent can execute the DAG sequentially; 100+ worker subagents can shard the matrix across isolated machines and realms. Scale is useful only while deterministic cases, environments, reviewer subagents, and owning fix cells are available. It is not a reason to add optional resource policies or platforms to the release.
+
+| Lane | Work | Earliest safe start |
+|---|---|---|
+| H0 integration spine | candidate commit, scenario registry, fixture factories, evidence schema, result aggregator, merge queue, invariant oracles | first; remains active throughout |
+| H1 crash/race | transaction, lease, process, restart, settlement, migration, and backup races | after H0 baseline |
+| H2 storage | reachability/GC design, disk-full, corruption, backup/restore, and object faults | design may start early; execution after storage fixtures/oracles freeze |
+| H3 security | threat model, authorization matrix, static scans, credential and adversarial tests | threat modeling during earlier stages; dynamic tests after identity fixtures |
+| H4 lifecycle/platform | checkout lifecycle, realm switching, packaging, Linux, service-manager, reboot | fixture preparation early; execution when artifacts/environments exist |
+| H5 resources | reservation/load faults and only the advanced policies explicitly selected | minimal reservation contract stable |
+| release integration | cross-lane defect arbitration, ordered merges, candidate reruns, final evidence | continuous; one exact candidate at the final gate |
+
+At small scale, one worker subagent rotates across these lanes. At larger scale, the normal cell is one integration/reviewer subagent plus several scenario or implementation subagents; approximately one integration owner is reserved per four to six active code-changing lanes. Stage 3 may eventually expose 50–150 safe scenario shards, but its useful concurrency is bounded by isolated hosts, destructive-test environments, GPUs/provider quotas, reproducible oracles, review throughput, and ready cases.
+
+### 3.1 Isolation and intentional races
+
+Every packet owns a worktree/branch, temporary realm root, SQLite/CAS/staging/log directories, unique ports/credentials/actor IDs/process group, deterministic seed, scenario ID, evidence directory, and harness-controlled cleanup. Disk-full cases use isolated bounded volumes; corruption cases mutate disposable copies. No scenario touches the user's realm or sole backup.
+
+An intentional race is one scenario, not several uncoordinated threads. One controller launches all competitors, records their ordering, and evaluates a deterministic oracle. Whole-host disk pressure, reboot/service-manager, signing, GPU saturation, thermal, and similar physical-machine cases reserve that host exclusively; preparation and result analysis may still proceed elsewhere.
+
+### 3.2 Evidence aggregation and defect routing
+
+Every scenario emits a machine-readable record containing its scenario/shard ID, candidate commit and component digests, schema/protocol versions, fixture digest and seed, host/resource profile, timings, outcome/invariants, evidence references, and defect IDs. One aggregator rejects duplicate/missing shards, mismatched candidates, and incomplete evidence. Final reports are generated from those records rather than hand-edited.
+
+The discovering subagent lane remains evidence owner; the affected component receives one fix-owner subagent. Duplicate failure signatures attach to the same defect instead of spawning competing fixes. Cross-component defects receive one integration-owner subagent with named contributor subagents. Contract/schema defects serialize through contract authority and invalidate affected evidence; data-loss or critical/high security findings stop affected integration paths immediately while unrelated isolated lanes may continue.
+
+Each fix reruns the original seed, adjacent boundary cases, the owning lane regression set, and shared conformance before entering the merge queue. The integration owner merges only after lane-local evidence, reproducer, authority/protocol/generated-client drift checks, and rebase pass. All lanes finally rerun against one exact release-candidate commit; any production merge after that matrix invalidates it.
+
+### 3.3 Early preparation and scale-down rule
+
+Fault hooks, deterministic fixture factories, evidence/result schemas, threat models, authorization matrices, reachability semantics, disk/corruption harnesses, lifecycle manifests, and resource-load harness design may begin during Stages 1–2. They create later ready packets but do not count as production-hardening evidence until rerun against the accepted Stage 2 composition.
+
+If cases rediscover the same failure, fix queues grow, evidence is nondeterministic, contract churn invalidates results, or shared-machine reservations dominate, stop dispatching scenario subagents and concentrate capacity on the paved road. Maximum useful concurrency—not maximum subagent count—is the objective.
+
+## 4. H1 — Crash and race matrix
 
 Inject termination or concurrency at every meaningful boundary:
 
@@ -37,7 +73,7 @@ Inject termination or concurrency at every meaningful boundary:
 
 Required outcome: deterministic retry or fail-closed behavior, no split authority, no reachable-object loss, no stale writer resurrection, and correct epoch/version/lease fencing.
 
-## 4. H2 — Storage lifecycle, disk, and corruption matrix
+## 5. H2 — Storage lifecycle, disk, and corruption matrix
 
 First design and implement the storage lifecycle deliberately deferred from the beta: reachability rules, retention windows, tombstones, orphan classification, dry-run reporting, collection transactions, crash recovery, and operator controls. Automatic collection remains off until backup/restore and fault-injection gates prove that no reachable or retention-protected object can be removed.
 
@@ -49,7 +85,7 @@ First design and implement the storage lifecycle deliberately deferred from the 
 
 Required outcome: no corrupt activation, no deletion of reachable data, verified restore into a new realm, and explicit human recovery steps where automatic recovery is unsafe.
 
-## 5. H3 — Credential and security matrix
+## 6. H3 — Credential and security matrix
 
 - least-privilege scopes for Astrid, REIGH, executors, bootstrap, and diagnostic actors;
 - credential creation, file permissions, precedence, expiry, rotation, revocation, replay, theft simulation, and log/redaction scans;
@@ -61,7 +97,7 @@ Required outcome: no corrupt activation, no deletion of reachable data, verified
 
 Required outcome: reproducible security evidence, documented threat model, zero known critical/high issue in the supported local path, and explicit risk acceptance for anything lower.
 
-## 6. H4 — Broader platform, realm, and component lifecycle
+## 7. H4 — Broader platform, realm, and component lifecycle
 
 - where later chosen for the runtime, REIGH, or other packaged components: signed/notarized macOS and supported Linux artifacts with pinned digests and reproducible manifests;
 - for packaged components: clean install, update, interrupted update, rollback-by-restoring the matching release/backup, uninstall/reinstall, multi-profile reuse, and explicit purge;
@@ -74,7 +110,7 @@ Required outcome: reproducible security evidence, documented threat model, zero 
 
 Packaged-component uninstall and Astrid checkout removal/relink must preserve realms, backups, and managed media. Purge remains the only destructive operation and requires the realm ID repeated exactly.
 
-## 7. H5 — Resource policy and generalization deferred from the beta
+## 8. H5 — Resource policy and generalization deferred from the beta
 
 Extend the Stage 1 reservation seam only as observed workloads justify it. Candidate policies include GPU memory bin-packing, CPU/RAM reservations, priorities and fairness, model-affinity/warm-model placement, thermal limits, provider quotas, preemption, cloud capacity, and multi-machine scheduling. Each policy must remain runtime-owned, lease-bound, observable, and optional; workers may describe capacity but may not become the scheduler.
 
@@ -89,7 +125,7 @@ Only after the concrete owner migration is proven should the team decide whether
 
 Each item is a separate product decision, not an automatic consequence of Stage 3.
 
-## 8. Exit evidence
+## 9. Exit evidence
 
 - full fault-injection matrix with seeds, versions, and results;
 - security threat model, authorization matrix, scan results, and resolved findings;
@@ -101,6 +137,8 @@ Each item is a separate product decision, not an automatic consequence of Stage 
 - final authority and network captures proving no legacy or hosted local dependency has returned;
 - `SHIP.md` that states supported platforms/profiles, residual risks, recovery procedures, exact packaged-component digests where applicable, and the exact Astrid source composition.
 
-## 9. Estimate
+## 10. Estimate
 
-Plan **8–13 engineer-weeks** for the known matrix, with contingency added for defects discovered. The increase reflects that CAS collection, broader realm/platform lifecycle, and advanced resource policy were intentionally moved out of Stages 1–2. This excludes new product scope such as collaboration, cloud placement, or a general migration product.
+Plan **8–13 engineering-equivalent weeks** for the known matrix, with contingency added for defects discovered. This is a complexity unit; all execution roles are subagents. With three productive scenario/fix subagent lanes plus an integration subagent, target roughly **4–7 calendar weeks**; large, well-provisioned scenario farms may increase breadth and shorten matrix execution, but defect repair, contract changes, shared-machine tests, and final release convergence do not scale linearly. Use additional subagent capacity only when the ready case graph and environment pool can absorb it.
+
+The estimate increase reflects that CAS collection, broader realm/platform lifecycle, and advanced resource policy were intentionally moved out of Stages 1–2. It excludes new product scope such as collaboration, cloud placement, or a general migration product.
