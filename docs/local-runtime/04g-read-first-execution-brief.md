@@ -166,5 +166,6 @@ If those four pass in order, most remaining risk is bounded adapter work and ope
 5. [04d-vibecomfy-pack-lane.md](./04d-vibecomfy-pack-lane.md) — typed VibeComfy adapters for embedded and checkout profiles.
 6. [04e-reigh-worker-cutover-lane.md](./04e-reigh-worker-cutover-lane.md) — neutral GPU substrate and legacy authority deletion.
 7. [04f-integration-acceptance-lane.md](./04f-integration-acceptance-lane.md) — merge custody, evidence, and promotion.
+8. [04h-megado-project-topology.md](./04h-megado-project-topology.md) — executable parent/child Megado hierarchy, receipts, review policy, and exact launch slice.
 
-This brief is an orientation layer. Where wording is compressed, the seven converged planning documents above are authoritative.
+This brief is an orientation layer. Where wording is compressed, the seven converged architecture/lane documents are authoritative; the topology document converts them into executable Megado project custody without changing their product scope.
